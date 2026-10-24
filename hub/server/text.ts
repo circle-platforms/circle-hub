@@ -9,7 +9,7 @@ import { isCallResult, isAcceptance } from '../../contracts/generated/vocabulary
 // console page. structuredContent keeps the whole answer as JSON.
 import { createHash } from 'node:crypto';
 import { applicabilityText } from '../knowledge/api.ts';
-import type { z } from 'zod';
+import { ZodError, type z } from 'zod';
 import { REFERENCE_FORMS } from '../../contracts/generated/protocol.ts';
 import {
   CHECK_TIER,
@@ -40,7 +40,7 @@ import {
   type SubmitResultOutput,
   type UploadFileOutput,
 } from '../../contracts/src/tools.ts';
-import { PartitionCounts, PartitionItem, Partitions, ValidationResult, partitionCountsOf, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
+import { PartitionCounts, StoredPartitionItem, Partitions, ValidationResult, readStoredValidationResult, storedItemNotices, partitionCountsOf, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { ReferenceSyntaxError, UNAVAILABLE_MESSAGE, canonicalJson, parseReference, pointerTokens, recReference, srcFragment, withRange, type Reference } from '../refs/api.ts';
 import { TEXT_BUDGET, fit, oneLine, softCap, type Block, type Entry, type Omission } from './budget.ts';
 import { NOT_APPLICABLE, claimFields, coverageText, requirementText, statusText, terminalLabel, terminalSymbol, terminalText, type LayerTerminal } from './claims.ts';
@@ -680,6 +680,8 @@ function problemLines(result: ValidationResult, record: string | null, more: str
       const shown = r.layers.filter((l) => l.terminal !== 'pass' && l.terminal !== 'judgment');
       const terminals = (shown.length > 0 ? shown : r.layers).map(terminalText).join('；');
       const columns = [...base(clip), clip.field(r.requirement, CLIP.code, '要求项键的超出部分'), terminals === '' ? '—' : terminals, statusText(r)];
+      const notices=storedItemNotices({requirements:[r]});
+      if(notices.length)columns.push(clip.field(notices.map(n=>n.message).join('、'),CLIP.problemMessage,'历史记录缺失提示的超出部分'));
       const message = messageOf(r);
       if (message !== null) columns.push(clip.field(message, CLIP.problemMessage, '问题说明的超出部分'));
       lines.push({ entry: clip.entry(`- ${columns.join(SEPARATOR)}`), tokens, item: item.item });
@@ -696,6 +698,7 @@ function itemBlock(partition: Partition, item: ItemResult, clip: Clip, limits: L
     lines.push(`  · ${clip.field(requirementText(r), limits.field, '要求项结果的超出部分')}`);
     for (const claim of r.claims) lines.push(`    - ${claimText(claim, clip, limits.field)}`);
   }
+  for(const notice of storedItemNotices(item))lines.push('  · '+clip.field('历史记录 '+notice.path+'：'+notice.message,limits.field,'历史记录缺失提示的超出部分'));
   return lines;
 }
 
@@ -1133,9 +1136,10 @@ function buildView(c: Content & { text: string }): ContentView {
   if (value === null || typeof value !== 'object' || canonicalJson(value) !== c.text) return { ...text, record: ref.record };
   const record = ref.record;
   if (tokens.length === 0) {
-    const parsed = ValidationResult.safeParse(value);
-    if (parsed.success) {
-      const result = parsed.data;
+    let read:ReturnType<typeof readStoredValidationResult>|null;
+    try{read=readStoredValidationResult(value);}catch(error){if(!(error instanceof ZodError))throw error;read=null;}
+    if (read !== null) {
+      const result = read.result;
       const head = [
         `结果 ${c.reference}（运行 ${result.run}）：${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}`,
         `修复轮数：已用 ${result.rounds.used}，最多 ${result.rounds.max}；覆盖：${oneLine(coverageText(result.coverage) ?? '')}；锁定：任务包 ${oneLine(result.locks.pack)}${result.locks.root ? `，知识根 ${result.locks.root}` : ''}`,
@@ -1146,7 +1150,7 @@ function buildView(c: Content & { text: string }): ContentView {
   }
   if (tokens[0] === 'partitions' && (tokens.length === 2 || tokens.length === 3) && (PARTITION as readonly string[]).includes(tokens[1]) && (tokens.length === 2 || NUMBER.test(tokens[2]))) {
     const p = tokens[1] as Partition;
-    const shape = PartitionItem[p];
+    const shape = StoredPartitionItem[p];
     const parsed = tokens.length === 2 ? shape.array().safeParse(value) : shape.safeParse(value);
     if (parsed.success) {
       const items = (Array.isArray(parsed.data) ? parsed.data : [parsed.data]) as ItemResult[];

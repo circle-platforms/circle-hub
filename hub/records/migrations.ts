@@ -159,7 +159,7 @@ CREATE TABLE record_keys (
 ${APPEND_ONLY('record_keys')}
 `;
 
-const V4_CALL_REASONS = `
+const V6_CALL_REASONS = `
 -- Full private reasons stay outside the call record and its public digest; call_notes remains the bounded summary.
 CREATE TABLE call_reasons (
   digest text NOT NULL REFERENCES call_logs (digest),
@@ -175,7 +175,13 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
   { version: 1, name: 'records', sql: V1_RECORDS },
   { version: 2, name: 'leases', sql: V2_LEASES },
   { version: 3, name: 'record_keys', sql: V3_RECORD_KEYS },
-  { version: 4, name: 'call_reasons', sql: V4_CALL_REASONS },
+  { version: 4, name: 'unbounded_leases', sql: 'ALTER TABLE leases ALTER COLUMN expires_at DROP NOT NULL;' },
+  { version: 5, name: 'lease_registrations', sql: `CREATE TABLE lease_registrations (
+    prefix text PRIMARY KEY CHECK (right(prefix, 1) = '/'),
+    owner text NOT NULL,
+    registered_at timestamptz NOT NULL
+  );` },
+  { version: 6, name: 'call_reasons', sql: V6_CALL_REASONS },
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (no DELETE, no TRUNCATE, no DDL, not the owner). */
@@ -192,6 +198,7 @@ export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
   users: 'SELECT, INSERT, UPDATE (role, disabled, updated_at)',
   tokens: 'SELECT, INSERT, UPDATE (last_used_at, revoked_at, revoked_by)',
   pointers: 'SELECT, INSERT, UPDATE (target, version, moved_at, action_digest)',
+  lease_registrations: 'SELECT, INSERT, UPDATE, DELETE',
   leases: 'SELECT, INSERT, UPDATE (lease_id, run_id, user_id, token, acquired_at, expires_at, released_at)',
 });
 

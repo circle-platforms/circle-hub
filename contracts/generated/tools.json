@@ -2800,7 +2800,8 @@
                                   },
                                   "identity": {
                                     "type": "string",
-                                    "pattern": "\\S"
+                                    "pattern": "\\S",
+                                    "description": "External account identity bound by the referenced mapping"
                                   }
                                 },
                                 "required": [
@@ -3411,7 +3412,8 @@
                                                       },
                                                       "identity": {
                                                         "type": "string",
-                                                        "pattern": "\\S"
+                                                        "pattern": "\\S",
+                                                        "description": "External account identity bound by the referenced mapping"
                                                       }
                                                     },
                                                     "required": [
@@ -3589,7 +3591,8 @@
                                                             },
                                                             "identity": {
                                                               "type": "string",
-                                                              "pattern": "\\S"
+                                                              "pattern": "\\S",
+                                                              "description": "External account identity bound by the referenced mapping"
                                                             }
                                                           },
                                                           "required": [
@@ -3847,7 +3850,8 @@
                                                       },
                                                       "identity": {
                                                         "type": "string",
-                                                        "pattern": "\\S"
+                                                        "pattern": "\\S",
+                                                        "description": "External account identity bound by the referenced mapping"
                                                       }
                                                     },
                                                     "required": [
@@ -4025,7 +4029,8 @@
                                                             },
                                                             "identity": {
                                                               "type": "string",
-                                                              "pattern": "\\S"
+                                                              "pattern": "\\S",
+                                                              "description": "External account identity bound by the referenced mapping"
                                                             }
                                                           },
                                                           "required": [
@@ -4718,7 +4723,8 @@
                                                       },
                                                       "identity": {
                                                         "type": "string",
-                                                        "pattern": "\\S"
+                                                        "pattern": "\\S",
+                                                        "description": "External account identity bound by the referenced mapping"
                                                       }
                                                     },
                                                     "required": [
@@ -4896,7 +4902,8 @@
                                                             },
                                                             "identity": {
                                                               "type": "string",
-                                                              "pattern": "\\S"
+                                                              "pattern": "\\S",
+                                                              "description": "External account identity bound by the referenced mapping"
                                                             }
                                                           },
                                                           "required": [
@@ -5154,7 +5161,8 @@
                                                       },
                                                       "identity": {
                                                         "type": "string",
-                                                        "pattern": "\\S"
+                                                        "pattern": "\\S",
+                                                        "description": "External account identity bound by the referenced mapping"
                                                       }
                                                     },
                                                     "required": [
@@ -5332,7 +5340,8 @@
                                                             },
                                                             "identity": {
                                                               "type": "string",
-                                                              "pattern": "\\S"
+                                                              "pattern": "\\S",
+                                                              "description": "External account identity bound by the referenced mapping"
                                                             }
                                                           },
                                                           "required": [
@@ -6038,7 +6047,8 @@
                                                       },
                                                       "identity": {
                                                         "type": "string",
-                                                        "pattern": "\\S"
+                                                        "pattern": "\\S",
+                                                        "description": "External account identity bound by the referenced mapping"
                                                       }
                                                     },
                                                     "required": [
@@ -6216,7 +6226,8 @@
                                                             },
                                                             "identity": {
                                                               "type": "string",
-                                                              "pattern": "\\S"
+                                                              "pattern": "\\S",
+                                                              "description": "External account identity bound by the referenced mapping"
                                                             }
                                                           },
                                                           "required": [
@@ -6474,7 +6485,8 @@
                                                       },
                                                       "identity": {
                                                         "type": "string",
-                                                        "pattern": "\\S"
+                                                        "pattern": "\\S",
+                                                        "description": "External account identity bound by the referenced mapping"
                                                       }
                                                     },
                                                     "required": [
@@ -6652,7 +6664,8 @@
                                                             },
                                                             "identity": {
                                                               "type": "string",
-                                                              "pattern": "\\S"
+                                                              "pattern": "\\S",
+                                                              "description": "External account identity bound by the referenced mapping"
                                                             }
                                                           },
                                                           "required": [
@@ -7358,7 +7371,8 @@
                                                       },
                                                       "identity": {
                                                         "type": "string",
-                                                        "pattern": "\\S"
+                                                        "pattern": "\\S",
+                                                        "description": "External account identity bound by the referenced mapping"
                                                       }
                                                     },
                                                     "required": [
@@ -7536,7 +7550,8 @@
                                                             },
                                                             "identity": {
                                                               "type": "string",
-                                                              "pattern": "\\S"
+                                                              "pattern": "\\S",
+                                                              "description": "External account identity bound by the referenced mapping"
                                                             }
                                                           },
                                                           "required": [
@@ -7794,7 +7809,8 @@
                                                       },
                                                       "identity": {
                                                         "type": "string",
-                                                        "pattern": "\\S"
+                                                        "pattern": "\\S",
+                                                        "description": "External account identity bound by the referenced mapping"
                                                       }
                                                     },
                                                     "required": [
@@ -7972,7 +7988,8 @@
                                                             },
                                                             "identity": {
                                                               "type": "string",
-                                                              "pattern": "\\S"
+                                                              "pattern": "\\S",
+                                                              "description": "External account identity bound by the referenced mapping"
                                                             }
                                                           },
                                                           "required": [

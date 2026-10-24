@@ -1,3 +1,4 @@
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../../hub/connectors/testing/credentials.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, before, describe, test } from 'node:test';
@@ -107,9 +108,9 @@ describe('reads through the connectors', () => {
     kit = await openSystemKit(postgres, ['plm']);
     agile = await startAgileStub(agileOptions());
     plm = await startStub((request) => plmReply(request, (token) => agile.tokens.has(token), () => void (writes += 1)));
-    const { id } = await kit.connectors.admin.addResource(kit.admin, { system_pack: 'plm', name: '合成 PLM', environment: 'shared', origins: { 'plm-oauth': agile.origin, 'plm-api': plm.origin }, allow_plaintext: [agile.origin, plm.origin] });
-    await kit.connectors.admin.setCredential(kit.admin, id, 'username', AGILE_ACCOUNT.username);
-    await kit.connectors.admin.setCredential(kit.admin, id, 'password', AGILE_ACCOUNT.password);
+    const { id } = await addSyntheticResource(kit.records, kit.packs, kit.connectors, kit.admin, { system_pack: 'plm', name: '合成 PLM', environment: 'shared', origins: { 'plm-oauth': agile.origin, 'plm-api': plm.origin }, allow_plaintext: [agile.origin, plm.origin] });
+    await setSyntheticCredential(kit.records, kit.connectors, kit.admin, id, 'username', AGILE_ACCOUNT.username);
+    await setSyntheticCredential(kit.records, kit.connectors, kit.admin, id, 'password', AGILE_ACCOUNT.password);
   });
   after(async () => {
     await plm?.close();

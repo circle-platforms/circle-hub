@@ -32,7 +32,7 @@ export function findingSources(input: unknown): CheckOutcome[] {
   const item = typeof subject.item === 'string' ? subject.item : undefined;
   const own = item !== undefined ? { item } : {};
   const slots = isRecord(subject.slots) ? subject.slots : null;
-  if (slots === null) return [{ verdict: 'unknown', reason: 'missing_input', statement: '这个条目没有提交槽位记录，发现的根据无从核对', grounds: [], tier: 'blocking', ...own }];
+  if (slots === null) return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('这个条目没有提交槽位记录，发现的根据无从核对'), reason: 'missing_input', statement: '这个条目没有提交槽位记录，发现的根据无从核对', grounds: [], tier: 'blocking', ...own }];
   const roles = new Map<string, unknown>();
   for (const evidence of Array.isArray(subject.evidence) ? subject.evidence : []) {
     if (isRecord(evidence) && typeof evidence.reference === 'string' && evidence.resolved === true) roles.set(evidence.reference, evidence.role);
@@ -123,7 +123,7 @@ function total(run: (input: unknown) => CheckOutcome[], name: string, tier: Chec
     try {
       return run(input);
     } catch {
-      return [{ verdict: 'unknown', reason: 'check_error', statement: `检查 ${name} 内部出错（任务包的缺陷）`, grounds: [], tier }];
+      return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`检查 ${name} 内部出错（任务包的缺陷）`), reason: 'check_error', statement: `检查 ${name} 内部出错（任务包的缺陷）`, grounds: [], tier }];
     }
   };
 }

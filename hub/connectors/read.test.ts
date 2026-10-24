@@ -1,3 +1,4 @@
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials, syntheticStoredCredential } from './testing/credentials.ts';
 // Reads end to end: the synthetic system packs' functions run in the real sandbox against loopback stubs; every response is
 // stored by SHA-256 before anything interprets it; the derived content and meta of a mind map; the folder trees read once and
 // cached; POST reads on listed routes while planners that try a write, a foreign origin or dot segments get nothing out;
@@ -54,7 +55,7 @@ async function world(t: { after: (fn: () => Promise<void>) => void }, extra: Par
     for (const server of [agile, plm, site, dav]) await server.close();
     await k.close();
   });
-  const add = (input: Parameters<ConnectorKit['connectors']['admin']['addResource']>[1]) => k.connectors.admin.addResource(k.admin, input);
+  const add = (input: Parameters<ConnectorKit['connectors']['admin']['addResource']>[1]) => addSyntheticResource(k.records, k.packs, k.connectors, k.admin, input);
   const resources = {
     agile: await add({ system_pack: 'agile-test', name: '合成敏捷平台', environment: 'test', origins: { 'agile-oauth': agile.origin, 'agile-api': agile.origin }, allow_plaintext: [agile.origin], settings: { roots: ['7714'] } }),
     plm: await add({ system_pack: 'plm-test', name: '合成 PLM', environment: 'shared', origins: { 'plm-oauth': agile.origin, 'plm-api': plm.origin }, allow_plaintext: [agile.origin, plm.origin] }),
@@ -62,8 +63,8 @@ async function world(t: { after: (fn: () => Promise<void>) => void }, extra: Par
     docstore: await add({ system_pack: 'docstore-test', name: '合成手册库', environment: 'shared', origins: { 'manual-store': dav.origin } }),
   };
   for (const id of [resources.agile.id, resources.plm.id]) {
-    await k.connectors.admin.setCredential(k.admin, id, 'username', 'reader');
-    await k.connectors.admin.setCredential(k.admin, id, 'password', PASSWORD);
+    await setSyntheticCredential(k.records, k.connectors, k.admin, id, 'username', 'reader');
+    await setSyntheticCredential(k.records, k.connectors, k.admin, id, 'password', PASSWORD);
   }
   return { k, fixture, agile, plm, site, dav, resources, ctx: { principal: k.user, run: null, purpose: 'expected source' } };
 }
@@ -318,8 +319,8 @@ test('a reader without the right pack is refused; ambiguity, disabled resources 
   w.k.packs.set(await writePack(w.k.packRoot, { id: 'agile-test', version: '1.3.0', system: { ...agileSystem(), routes: [] } }));
   await assert.rejects(w.k.connectors.admin.updateResource(w.k.admin, w.resources.agile.id, { system_pack: 'agile-test@1.3.0' }), (e: unknown) => (e as { code?: string }).code === 'PROFILE_INVALID');
   assert.equal(await w.k.connectors.reader.accepts('agile:tree:7714'), false);
-  // One enabled resource per type and environment; routing across two environments is still ambiguous.
-  const second = await w.k.connectors.admin.addResource(w.k.admin, { system_pack: 'docstore-test', name: '第二个手册库', environment: 'production', origins: { 'manual-store': w.dav.origin } });
+  // One resource per environment; two environments still require explicit routing.
+  const second = await addSyntheticResource(w.k.records, w.k.packs, w.k.connectors, w.k.admin, { system_pack: 'docstore-test', name: '第二个手册库', environment: 'production', origins: { 'manual-store': w.dav.origin } });
   assert.equal(await w.k.connectors.reader.accepts('manual:file:spec/a.md'), true);
   failure(await w.k.connectors.reader.read('manual:file:spec/widget-list.md', w.ctx), /2 个启用的资源/);
   await w.k.connectors.admin.disable(w.k.admin, second.id);
@@ -374,15 +375,15 @@ test('a static header credential: sent as declared to the roles that carry it, r
   const w = await world(t);
   w.k.packs.set(await writePack(w.k.packRoot, { id: 'keyed-store', system: keyedStoreSystem(), functions: DOCSTORE_FUNCTIONS }));
   await w.k.connectors.admin.disable(w.k.admin, w.resources.docstore.id);
-  const keyed = await w.k.connectors.admin.addResource(w.k.admin, { system_pack: 'keyed-store', name: '带密钥的手册库', environment: 'test', origins: { 'manual-store': w.dav.origin }, allow_plaintext: [w.dav.origin] });
+  const keyed = await addSyntheticResource(w.k.records, w.k.packs, w.k.connectors, w.k.admin, { system_pack: 'keyed-store', name: '带密钥的手册库', environment: 'test', origins: { 'manual-store': w.dav.origin }, allow_plaintext: [w.dav.origin] });
   failure(await w.k.connectors.reader.read('manual:file:spec/widget-list.md', w.ctx), /CREDENTIAL_MISSING/);
-  await w.k.connectors.admin.setCredential(w.k.admin, keyed.id, 'token', 'k3y-Synthetic-0042');
+  await setSyntheticCredential(w.k.records, w.k.connectors, w.k.admin, keyed.id, 'token', 'k3y-Synthetic-0042');
   const before = w.dav.requests.length;
   success(await w.k.connectors.reader.read('manual:file:spec/widget-list.md', w.ctx));
   assert.equal(w.dav.requests[before].headers['x-api-key'], 'Bearer k3y-Synthetic-0042');
-  assert.equal(await w.k.records.vault.getText(keyed.credentials.token), 'k3y-Synthetic-0042', 'a plain credential is kept as given');
+  assert.equal(await syntheticStoredCredential(w.k.records,keyed,'token'), 'k3y-Synthetic-0042', 'a plain credential is kept as given');
   await w.k.connectors.admin.updateResource(w.k.admin, keyed.id, { allow_plaintext: [] });
-  failure(await w.k.connectors.reader.read('manual:file:spec/widget-list.md', w.ctx), /PLAINTEXT_REFUSED/);
+  failure(await w.k.connectors.reader.read('manual:file:spec/widget-list.md', w.ctx), /CREDENTIAL_MISSING/);
   assert.equal(w.dav.requests.length, before + 1, 'refused before any request');
   assert.ok(!JSON.stringify(w.k.log).includes('k3y-Synthetic-0042'));
 });
@@ -499,6 +500,7 @@ test('an answer echoing the credential the Hub sent is kept retain_only; neither
     origins: { 'plm-oauth': w.agile.origin, 'plm-api': debug.origin },
     allow_plaintext: [w.agile.origin, debug.origin],
   });
+  await setSyntheticCredentials(w.k.records,w.k.connectors,w.k.admin,w.resources.plm.id,{username:'reader',password:PASSWORD});
   failure(await w.k.connectors.reader.read('plm:bug:4242', w.ctx), /SOURCE_HTTP_STATUS/);
   failure(await w.k.connectors.reader.read('plm:story:777', w.ctx), /SOURCE_CREDENTIAL/);
   const token = debug.requests[0].headers.authorization;
@@ -508,7 +510,10 @@ test('an answer echoing the credential the Hub sent is kept retain_only; neither
   for (const bytes of holders) {
     const sha = sha256Hex(bytes);
     assert.ok((await w.k.records.artifacts.records(sha)).every((record) => record.body.read_tier === 'retain_only'));
-    assert.equal((await w.k.records.artifacts.text(w.k.user, sha))?.readable, false);
+    assert.equal(await w.k.records.artifacts.text(w.k.user,sha),null,'echoed originals have no reader visibility');
+    const entries=(await w.k.records.store.list<any>({kind:'action',limit:500})).items.filter(r=>r.schema==='read-manifest@1').flatMap(r=>r.body.requests);
+    assert.ok(entries.filter((r:any)=>r.artifact===null&&r.sha256===null).length>=1);
+    assert.ok(!entries.some((r:any)=>r.sha256===sha));
   }
   const manifests=await w.k.records.store.list<ReadManifest>({kind:'action',limit:100});
   for(const read of manifests.items.filter(record=>record.schema==='read-manifest@1'))for(const request of read.body.requests){
@@ -524,8 +529,8 @@ test('a plan that would send a credential value the Hub holds is refused before 
   const w = await world(t);
   w.k.packs.set(await writePack(w.k.packRoot, { id: 'keyed-store', system: keyedStoreSystem(), functions: DOCSTORE_FUNCTIONS }));
   await w.k.connectors.admin.disable(w.k.admin, w.resources.docstore.id);
-  const keyed = await w.k.connectors.admin.addResource(w.k.admin, { system_pack: 'keyed-store', name: '带密钥的手册库', environment: 'test', origins: { 'manual-store': w.dav.origin }, allow_plaintext: [w.dav.origin] });
-  await w.k.connectors.admin.setCredential(w.k.admin, keyed.id, 'token', 'k3y-Synthetic-0042');
+  const keyed = await addSyntheticResource(w.k.records, w.k.packs, w.k.connectors, w.k.admin, { system_pack: 'keyed-store', name: '带密钥的手册库', environment: 'test', origins: { 'manual-store': w.dav.origin }, allow_plaintext: [w.dav.origin] });
+  await setSyntheticCredential(w.k.records, w.k.connectors, w.k.admin, keyed.id, 'token', 'k3y-Synthetic-0042');
   const before = w.dav.requests.length;
   const outcome = await w.k.connectors.executeRead(keyed.id, 'echo-path', { id: 'x', args: { path: 'spec/k3y-Synthetic-0042.md' } }, w.ctx);
   assert.equal(outcome.ok, false);
@@ -541,8 +546,8 @@ test('a static credential the source answers 401 is not sent again until an admi
   await w.k.connectors.admin.disable(w.k.admin, w.resources.docstore.id);
   const guarded = await startStub((request) => (request.headers['x-api-key'] === 'Bearer k3y-Right-0042' ? text('# 正文\n', 'text/markdown; charset=utf-8') : text('unauthorized', 'text/plain', 401)));
   t.after(() => guarded.close());
-  const keyed = await w.k.connectors.admin.addResource(w.k.admin, { system_pack: 'keyed-store', name: '带密钥的手册库', environment: 'test', origins: { 'manual-store': guarded.origin }, allow_plaintext: [guarded.origin] });
-  await w.k.connectors.admin.setCredential(w.k.admin, keyed.id, 'token', 'k3y-Wrong-0042');
+  const keyed = await addSyntheticResource(w.k.records, w.k.packs, w.k.connectors, w.k.admin, { system_pack: 'keyed-store', name: '带密钥的手册库', environment: 'test', origins: { 'manual-store': guarded.origin }, allow_plaintext: [guarded.origin] });
+  await setSyntheticCredential(w.k.records, w.k.connectors, w.k.admin, keyed.id, 'token', 'k3y-Wrong-0042');
   for (let i = 0; i < 5; i++) failure(await w.k.connectors.reader.read('manual:file:spec/a.md', w.ctx), /CREDENTIAL_REFUSED/);
   assert.equal(guarded.requests.length, 1, 'one failed authentication, not five');
   const status = await w.k.connectors.admin.loginStatus(w.k.admin, keyed.id);
@@ -553,7 +558,7 @@ test('a static credential the source answers 401 is not sent again until an admi
   await w.k.connectors.admin.resetLogin(w.k.admin, keyed.id);
   failure(await w.k.connectors.reader.read('manual:file:spec/a.md', w.ctx), /CREDENTIAL_REFUSED/);
   assert.equal(guarded.requests.length, 2, 'a reset allows one attempt');
-  await w.k.connectors.admin.setCredential(w.k.admin, keyed.id, 'token', 'k3y-Right-0042');
+  await setSyntheticCredential(w.k.records, w.k.connectors, w.k.admin, keyed.id, 'token', 'k3y-Right-0042');
   success(await w.k.connectors.reader.read('manual:file:spec/a.md', w.ctx));
   assert.equal(guarded.requests.length, 3);
 });
@@ -598,6 +603,9 @@ test('a resource moved to another system is not served from the trees cached for
     origins: { 'agile-oauth': other.origin, 'agile-api': other.origin },
     allow_plaintext: [other.origin],
   });
+  assert.equal((await w.k.connectors.reader.read(`agile:mindmap:${DOC}`,w.ctx)).ok,false,'new destination requires renewed enrollment');
+  assert.equal(other.requests.length,0);
+  await setSyntheticCredentials(w.k.records,w.k.connectors,w.k.admin,w.resources.agile.id,{username:'reader',password:PASSWORD});
   const moved = success(await w.k.connectors.reader.read(`agile:mindmap:${DOC}`, w.ctx));
   assert.equal(other.count('/agile/get_child_node_task/'), 1, 'the tree is read from the new system');
   const meta = JSON.parse((await bytesOf(w, moved.artifacts[2].artifact)).toString('utf8')) as { folders: string[] };
@@ -686,8 +694,9 @@ for (const mode of ['sandbox exception', 'empty plan'] as const) {
     assert.doesNotMatch(JSON.stringify(answer.content), /settings\.repository_path/);
     const userLog = await server.records.callLog.query(user.principal, { tool: 'start_run', limit: 1 });
     assert.equal(userLog.items[0].admin_note, undefined);
-    assert.match(adminLog.items[0].admin_note ?? '', /settings\.repository_path/);
-    assert.doesNotMatch(adminLog.items[0].admin_note ?? '', new RegExp(PASSWORD.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.equal(userLog.items[0].admin_reasons, undefined);
+    assert.match((adminLog.items[0].admin_reasons ?? []).join('\n'), /settings\.repository_path/);
+    assert.doesNotMatch((adminLog.items[0].admin_reasons ?? []).join('\n'), new RegExp(PASSWORD.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     const manifests = await w.k.records.store.list({ kind: 'action', limit: 10 });
     assert.ok(manifests.items.length > 0);
     assert.doesNotMatch(JSON.stringify(manifests), /settings\.repository_path/);

@@ -50,6 +50,9 @@ export type PackFunctionRunner = (target: { packDir: string; module: string; exp
 
 /** Everything the engine needs of one enabled resource. */
 export interface ResourceRuntime {
+  variables?: import('../../contracts/src/variables.ts').VariableUse[];
+  dependencies?: string[];
+  gate?: import('./credential-stop.ts').CredentialStop|null;
   resource: ResourceRecord;
   /** Digest of the authorization record that put the definition in force. */
   decision: string;
@@ -96,7 +99,7 @@ export interface ReadEngineOptions {
   parsers: ParserRegistry;
   callFunction: PackFunctionRunner;
   /** The enabled resources whose profile declares an external type (resolution for nested reads). */
-  resolve: (type: string) => Promise<{ runtime: ResourceRuntime; read: ReadDeclaration }[]>;
+  resolve: (type: string, context?: ExternalReadContext) => Promise<{ runtime: ResourceRuntime; read: ReadDeclaration }[]>;
   redactor: Redactor;
   now: () => Date;
   log?: ConnectorLog;
@@ -310,7 +313,7 @@ export class ReadEngine {
           origin: { read: { object: subject.id, resource: runtime.resource.id, action: null } },
           author: { user: null },
           provenanceType: 'observed',
-          visibility,
+          visibility: echoed ? {admins:true,readers:[],packs:[],shareable:false} : visibility,
           name: `${read.name}/${key}`,
           capturedAt: new Date(exchange.endedAt).toISOString(),
           ...(echoed ? { readTier: RETAIN_ONLY } : {}),
@@ -520,7 +523,9 @@ export class ReadEngine {
         }
         return;
       }
+      const guarded = <T>(fn:()=>Promise<T>)=>runtime.gate?runtime.gate.run(fn):fn();
       if (auth.kind === 'static_header') {
+        return guarded(async()=>{
         const credential = runtime.credential;
         if (credential === null) throw new ConnectorError('PROFILE_INVALID', '资源没有静态凭据的处理');
         const header: StaticHeader = await credential.acquire();
@@ -537,7 +542,7 @@ export class ReadEngine {
         } finally {
           header.settle(accepted);
         }
-        return;
+        });
       }
       const login = runtime.login;
       if (login === null || auth.kind !== 'login_token') throw new ConnectorError('PROFILE_INVALID', '资源没有登录的处理');
@@ -556,13 +561,15 @@ export class ReadEngine {
         await login.confirmed(token);
         return false;
       };
-      const first = await login.token();
+      const cached=await login.cachedToken();
+      if(cached)await runtime.gate?.assertOpen();
+      const first = cached??await guarded(()=>login.token());
       if (!(await sendWith(first.token, false))) return;
       // One login for an explicit "expired" answer to a confirmed token (none for a token nothing confirmed), then the
       // request once more; another "expired" ends the read and, for a token a login just produced, stops the logins.
-      const next = await login.expired(first.token);
+      const next = await guarded(()=>login.expired(first.token));
       if (!(await sendWith(next, true))) return;
-      await login.refused(next);
+      await guarded(()=>login.refused(next));
     };
 
     const nestedRead = async (wanted: { external: string; refresh?: boolean }): Promise<void> => {
@@ -693,7 +700,7 @@ export class ReadEngine {
               derivedSources: generatedInputs.map(input => input.slice('src:'.length)),
               author: { user: null },
               provenanceType: 'projected',
-              visibility,
+              visibility: echoed ? {admins:true,readers:[],packs:[],shareable:false} : visibility,
               name: derived.name,
               capturedAt: this.#o.now().toISOString(),
               ...(echoed ? { readTier: RETAIN_ONLY } : {}),
@@ -757,7 +764,8 @@ export class ReadEngine {
       action: 'read',
       run: RunId.safeParse(context.run).success ? (context.run as string) : null,
       item: null,
-      inputs: [`rec:${runtime.decision}`, ...nestedOrder.flatMap((key) => {
+      variables:runtime.variables ?? [],
+      inputs: [`rec:${runtime.decision}`, ...(runtime.dependencies??[]).map(d=>`rec:${d}`), ...nestedOrder.flatMap((key) => {
         const state = nested.get(key);
         return state === undefined || state.manifest === null ? [] : [`rec:${state.manifest}`];
       })],
@@ -783,7 +791,7 @@ export class ReadEngine {
       original,
       artifacts: ok ? artifacts.map(({ name, artifact }) => ({ name, record: artifact.digest, sha256: artifact.body.sha256, media_type: artifact.body.media_type, size: artifact.body.size })) : [],
       coverage: ok && complete && examined === total ? { complete: true, examined, total, ...(note ? { note: this.#o.redactor.text(note).slice(0, 500) } : {}) } : { complete: false, examined, total, ...(note ? { note: this.#o.redactor.text(note).slice(0, 500) } : {}) },
-      reason: failure === null ? null : this.#o.redactor.text(failure.message).slice(0, 2000),
+      reason: failure === null ? null : failure.code,
       warnings,
     };
     // A manifest that is not read-manifest@1 is a programming error: it is never stored under that schema.
@@ -833,7 +841,7 @@ export class ReadEngine {
 
   /** A nested or top-level read of another object, from the cache unless refreshed or expired. */
   async nested(target: ReadSubject, context: ExternalReadContext, reader: string, refresh: boolean, depth: number): Promise<ReadOutcome & { cached?: boolean }> {
-    const candidates = await this.#o.resolve(`${target.system}:${target.type}`);
+    const candidates = await this.#o.resolve(`${target.system}:${target.type}`,context);
     if (candidates.length !== 1) {
       return {
         ok: false,
@@ -869,7 +877,7 @@ export class ReadEngine {
 
   /** The configuration in force and the pack are part of the key: a moved or re-bound resource never sees old entries. */
   #cacheKey(runtime: ResourceRuntime, reader: string, target: ReadSubject): string {
-    return `${runtime.resource.id}|${runtime.decision}|${runtime.pack.digest}|${reader}|${target.id}${target.revision === null ? '' : `@${target.revision}`}`;
+    return `${runtime.resource.id}|${runtime.decision}|${runtime.pack.digest}|${runtime.dependencies?.join(",") ?? ""}|${reader}|${target.id}${target.revision === null ? '' : `@${target.revision}`}`;
   }
 
   #forget(key: string): void {

@@ -1,3 +1,4 @@
+import type {Environment} from '../../contracts/generated/vocabulary.ts';
 import assert from 'node:assert/strict';
 import {after,before,test} from 'node:test';
 import {startPostgres,type TemporaryPostgres} from '../testing/postgres.ts';
@@ -8,7 +9,7 @@ before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
 async function world(t:{after:(fn:()=>Promise<void>)=>void}){
  const kit=await openConnectorKit(postgres);t.after(()=>kit.close());
  for(const id of ['unique-one','unique-two']){kit.packs.set(await writePack(kit.packRoot,{id,system:{schema:'system@1',title:'合成资源',roles:[{name:'source'}],auth:{kind:'none'},routes:[{id:'one',role:'source',method:'GET',path:'/one',response:'json',read:true,max_bytes:1024}],reads:[{name:'one',external:'fixture:item',request:{route:'one'}}]}}));}
- return {kit,add:(pack='unique-one',environment:'test'|'production'='test')=>kit.connectors.admin.addResource(kit.admin,{system_pack:pack,name:pack,environment,origins:{source:'http://192.0.2.1'}})};
+ return {kit,add:(pack='unique-one',environment:Environment='test')=>kit.connectors.admin.addResource(kit.admin,{system_pack:pack,name:pack,environment,origins:{source:'http://192.0.2.1'}})};
 }
 test('an enabled external type is unique within each environment even across different packs',async t=>{
  const w=await world(t);await w.add();await assert.rejects(w.add('unique-two'),/fixture:item.*test|test.*fixture:item/);
@@ -26,7 +27,7 @@ test('an update cannot move a resource into a conflicting environment',async t=>
 });
 
 test('broken bound profiles are visible in admin resource lists and private read diagnostics',async t=>{
- const w=await world(t);const resource=await w.add();w.kit.packs.remove('unique-one');
+ const w=await world(t);const resource=await w.add();w.kit.packs.remove('unique-one');w.kit.connectors.refresh();
  const notes:string[]=[];
  const result=await w.kit.connectors.reader.read('fixture:item:sample',{principal:w.kit.user,purpose:'synthetic diagnostics',adminNote:reason=>notes.push(reason)});
  assert.equal(result.ok,false);assert.ok(notes.some(note=>note.includes(resource.id)&&note.includes('恢复原包')));

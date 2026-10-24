@@ -1,3 +1,4 @@
+import {addSyntheticExecutor} from './testing/credentials.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setup } from './testing/context.ts';
@@ -34,7 +35,7 @@ test('R02 simultaneous reservations serialize shared targets and origins despite
   const {newJob,digestOfValue}=await import('./journal.ts');
   for(const shared of ['target','origin'] as const) {
     const c=await setup();t.after(()=>c.close());
-    const second=await c.registry.add(c.admin,{...c.executor.definition,resources:['synthetic/device/c'],...(shared==='target'?{endpoint:'http://127.0.0.1:1/'}:{target:'synthetic-other-target'})},'synthetic-other-secret');
+    const second=await addSyntheticExecutor(c.kit,c.registry,c.admin,{...c.executor.definition,resources:['synthetic/device/c'],...(shared==='target'?{endpoint:'http://127.0.0.1:1/'}:{target:'synthetic-other-target'})},'synthetic-other-secret');
     const binding=(executor:typeof c.executor):import('./journal.ts').JobBinding=>({job:newJob(),initiated_by:c.admin.id,executor:executor.id,executor_digest:executor.digest,target_key:digestOfValue(executor.definition.resources),scope:{target:executor.definition.target,origin:new URL(executor.definition.endpoint).origin},input:null,user:c.owner.id,resources:executor.definition.resources});
     const original=c.service.journal.blockers.bind(c.service.journal);let arrived=0;
     let release!:()=>void;const both=new Promise<void>(resolve=>{release=resolve;});
@@ -66,8 +67,13 @@ test('R03 repeated unreadable accepted work escalates to a named disposition req
 
 test('R04 a local post-intent fence refusal proves no submission rather than inventing an unknown remote id',async t=>{
   const c=await setup();t.after(()=>c.close());
-  const holders=c.leases.holderSnapshot.bind(c.leases);let reads=0;
-  c.leases.holderSnapshot=async keys=>{const values=await holders(keys);return ++reads===3?values.map(v=>({...v,fencing:v.fencing+1,lease:'different-lease'})):values;};
+  const holders=c.leases.holderSnapshot.bind(c.leases);let injected=false;
+  c.leases.holderSnapshot=async (keys,tx)=>{
+    const values=await holders(keys,tx);
+    const intents=await c.kit.store.findMany({kind:'action',key:'dispatch.phase',values:['intent']});
+    if(!injected&&intents.length){injected=true;return values.map(v=>({...v,fencing:v.fencing+1,lease:'different-lease'}));}
+    return values;
+  };
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(result.outcome,'not_dispatched');assert.equal(result.frozen,false);assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
   assert.ok((await c.service.journal.events(result.job)).some(e=>e.body.detail.submit_invoked===false && e.body.detail.done===true));

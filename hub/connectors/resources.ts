@@ -3,14 +3,14 @@
 // force by a resource_config authorization bound to that digest; every change is a new definition and a new decision, and a
 // disable is the revocation of the configuration. Only admins decide; only admins see addresses and plaintext declarations.
 // The definition binds one published system pack version and its content digest (B04 R[1]): `id` is resolved to the version
-// current when the admin decides, and a newer version takes effect only through an update. Credentials go into the vault
-// entries the definition names, each under the digest rule the definition records; a password is kept only as the digest
-// its system requires; several credentials are set in one call, then the session is forgotten once. An update drops the
-// stored values of credentials that are no longer declared or whose rule changed. `describe` gives admins one resource with
-// its credential names and rules (never a value).
+// current when the admin decides, and a newer version takes effect only through an update. Credentials use
+// named versions enrolled for this resource and destination. The definition records the wire rule; a named version records
+// its storage rule. Updates preserve shared material. Legacy owned entries migrate explicitly, and metadata never reads values.
+import { VariableName, referencesIn, secretNameOf } from '../../contracts/src/variables.ts';
 import { createHash } from 'node:crypto';
 import { EnvironmentSchema, type Environment, type PermissionKind } from '../../contracts/generated/vocabulary.ts';
-import { ResourceId, ResourceRecord, type DigestRule, type ResourceLimits, type SystemProfile } from '../../contracts/src/resources.ts';
+import type { DigestRule } from '../../contracts/generated/vocabulary.ts';
+import { ResourceId, ResourceRecord, type ResourceLimits, type SystemProfile } from '../../contracts/src/resources.ts';
 import type { ResourceListing } from '../ports.ts';
 import {
   WHOLE_HUB,
@@ -27,6 +27,9 @@ import {
   type Principals,
   type User,
   type Vault,
+  type RecordVariables,
+  type PreparedSecrets,
+  type SecretWrite,
 } from '../records/api.ts';
 import { ConnectorError } from './errors.ts';
 import type { ConnectorLog } from './http.ts';
@@ -38,6 +41,8 @@ const CONFIGURATION_QUEUES=new WeakMap<RecordStore,Promise<void>>();
 export interface AddResourceInput {
   /** `id` or `id@x.y.z` of a published system pack; the definition binds the exact version (and digest) current now. */
   system_pack: string;
+  credentials?: Record<string, string>;
+  unset_settings?: string[];
   name: string;
   environment: Environment;
   /** Role of the system pack -> base URL (`http(s)://host[:port][/path]`, no trailing slash). */
@@ -52,12 +57,17 @@ export interface AddResourceInput {
 
 export type UpdateResourceInput = Partial<Omit<AddResourceInput, 'note'>> & { note?: string | null };
 
-/** One credential a resource declares: its vault entry, the digest rule it is kept under, and whether a value is set (never the value). */
+/** One credential reference: required wire rule, actual named storage metadata and presence, never material. */
 export interface CredentialDescription {
   name: string;
   entry: string;
   digest: DigestRule;
+  stored_digest?: DigestRule;
+  revoked?: boolean;
   set: boolean;
+  version?: number;
+  length?: number;
+  registered?: boolean;
 }
 
 /** One resource as admins see it: the admins' listing row (addresses included) and every credential its definition declares, by name. */
@@ -77,6 +87,7 @@ export interface ResourceState {
 export interface ResourceRegistryOptions {
   store: RecordStore;
   objects: ObjectStore;
+  variables: RecordVariables;
   authorizations: Authorizations;
   principals: Principals;
   vault: Vault;
@@ -85,7 +96,7 @@ export interface ResourceRegistryOptions {
   now: () => Date;
   log?: ConnectorLog;
   /**
-   * Called after a credential of a resource changed or its login was reset: the session is forgotten and its vault entry
+   * Called when an administrator resets login: the session is forgotten and its vault entry
    * removed, which another process (the running Hub) reads as the end of its stop. A removal that fails reaches the admin.
    */
   onCredentialChange?: (resource: string) => Promise<void>;
@@ -94,7 +105,6 @@ export interface ResourceRegistryOptions {
 }
 
 const PERMISSION: PermissionKind = 'resource_config';
-const MAX_SECRET_CHARS = 4096;
 
 /** Vault entry of a credential of a resource. */
 export function credentialEntry(resource: string, name: string): string {
@@ -107,14 +117,14 @@ export function sessionEntry(resource: string): string {
 }
 
 /** Credential names a profile declares, with their digest rule. */
-export function declaredCredentials(profile: SystemProfile): { name: string; digest: 'plain' | 'sha512_base64' }[] {
+export function declaredCredentials(profile: SystemProfile): { name: string; digest: DigestRule }[] {
   if (profile.auth.kind === 'none') return [];
   if (profile.auth.kind === 'static_header') return [{ name: profile.auth.credential, digest: 'plain' }];
   return profile.auth.credentials.map((c) => ({ name: c.name, digest: c.digest }));
 }
 
 /** What the vault keeps for a credential under its digest rule: the value, or Base64(SHA-512(UTF-8 of the value)). */
-export function storedCredential(value: string, digest: 'plain' | 'sha512_base64'): string {
+export function storedCredential(value: string, digest: DigestRule): string {
   return digest === 'sha512_base64' ? createHash('sha512').update(value, 'utf8').digest('base64') : value;
 }
 
@@ -148,6 +158,7 @@ export class ResourceRegistry {
   readonly #o: ResourceRegistryOptions;
   #cache: { at: number; states: ResourceState[] } | null = null;
   #loading: Promise<ResourceState[]> | null = null;
+  #generation=0;
 
   constructor(options: ResourceRegistryOptions) {
     this.#o = options;
@@ -155,6 +166,8 @@ export class ResourceRegistry {
 
   invalidate(): void {
     this.#cache = null;
+    this.#loading=null;
+    this.#generation++;
   }
 
   /** The exact published version a reference names now (`id` resolves to the latest), with its digest and profile. */
@@ -166,10 +179,6 @@ export class ResourceRegistry {
   }
 
   async add(by: Principal, input: AddResourceInput): Promise<ResourceRecord> {
-    return this.#configuration(tx=>this.#add(by,input,tx));
-  }
-
-  async #add(by: Principal, input: AddResourceInput,tx:Transaction): Promise<ResourceRecord> {
     const admin = await this.#admin(by);
     const bound = await this.#bind(String(input?.system_pack));
     const declared = declaredCredentials(bound.profile);
@@ -184,7 +193,7 @@ export class ResourceRegistry {
         environment: input.environment,
         origins: input.origins,
         allow_plaintext: input.allow_plaintext ?? [],
-        credentials: Object.fromEntries(declared.map((c) => [c.name, credentialEntry(id, c.name)])),
+        credentials: this.#credentials(declared, input.credentials ?? {}),
         credential_digests: Object.fromEntries(declared.map((c) => [c.name, c.digest])),
         settings: input.settings ?? {},
         ...(input.limits === undefined ? {} : { limits: input.limits }),
@@ -193,22 +202,17 @@ export class ResourceRegistry {
       },
       bound.profile,
     );
-    await this.#unique(record,bound.profile,tx);
-    await this.#configure(admin, record, input.note ?? null,tx);
+    await this.#configure(admin, record, input.note ?? null);
     this.#event('resource_added', { resource: id, system_pack: record.system_pack, environment: record.environment });
     return record;
   }
 
   /**
-   * A new definition for an enabled resource (same id, same vault entries for the credentials that stay). `system_pack`
-   * given as `id` binds the latest published version now; left out, the bound version stays. A credential that is no
-   * longer declared, or whose digest rule changed, loses its stored value (it is set again with setCredential).
+   * A new definition for an enabled resource, preserving unchanged named references. `system_pack`
+   * given as `id` binds the latest published version now; left out, the bound version stays. Shared named values are
+   * preserved when a declaration changes; legacy owned entries are retired only after the configuration commits.
    */
   async update(by: Principal, id: string, changes: UpdateResourceInput): Promise<ResourceRecord> {
-    return this.#configuration(tx=>this.#update(by,id,changes,tx));
-  }
-
-  async #update(by: Principal, id: string, changes: UpdateResourceInput,tx:Transaction): Promise<ResourceRecord> {
     const admin = await this.#admin(by);
     const state = await this.#state(id);
     if (!state.enabled) throw new ConnectorError('RESOURCE_INVALID', `资源 ${id} 已停用；先启用再修改`, { detail: { resource: id } });
@@ -218,32 +222,61 @@ export class ResourceRegistry {
       throw new ConnectorError('PACK_UNAVAILABLE', `系统包 ${current.system_pack} 现在的内容与资源配置绑定的不同；修改时请重新指定系统包`, { detail: { pack: current.system_pack } });
     }
     const declared = declaredCredentials(bound.profile);
-    const { note, ...rest } = changes;
+    const { note, credentials: given, unset_settings, ...rest } = changes;
+    const settings = {...current.settings, ...changes.settings};
+    for (const key of unset_settings ?? []) delete settings[key];
     const record = this.#validated(
       {
         ...current,
         ...rest,
+        settings,
         system_pack: bound.system_pack,
         system_pack_digest: bound.system_pack_digest,
         schema: 'resource@1',
         id: current.id,
-        credentials: Object.fromEntries(declared.map((c) => [c.name, current.credentials[c.name] ?? credentialEntry(current.id, c.name)])),
+        credentials: this.#credentials(declared, given ?? {}, current.credentials),
         credential_digests: Object.fromEntries(declared.map((c) => [c.name, c.digest])),
         created_by: current.created_by,
         created_at: current.created_at,
       },
       bound.profile,
     );
-    await this.#unique(record,bound.profile,tx);
-    // A value kept under another digest rule, or for a credential the pack no longer declares, is never sent again.
-    for (const [name, entry] of Object.entries(current.credentials)) {
-      const rule = record.credential_digests[name];
-      const why = rule === undefined ? 'undeclared' : rule !== current.credential_digests[name] ? 'digest_rule_changed' : null;
-      if (why === null) continue;
-      await this.#o.vault.remove(entry);
-      this.#event('credential_dropped', { resource: id, credential: name, why });
+    const migrating = Object.keys(record.credentials).filter(name => current.credentials[name] === credentialEntry(id,name) && secretNameOf(record.credentials[name]));
+    if (migrating.length && (canonicalBytes(current.origins).toString() !== canonicalBytes(record.origins).toString() || canonicalBytes(current.allow_plaintext).toString() !== canonicalBytes(record.allow_plaintext).toString()))
+      throw new ConnectorError('RESOURCE_INVALID','迁移凭据和改地址须分开做：先迁移，再改地址并重新输入密钥');
+    const writes: SecretWrite[] = [];
+    const expectedSecrets=new Map<string,string|null>();
+    for (const item of migrating) {
+      const value = await this.#o.vault.getText(current.credentials[item]);
+      if (value === null) continue;
+      const name = secretNameOf(record.credentials[item])!;
+      const previous = (await this.#o.variables.list(by)).find(v => v.kind === 'secret' && v.name === name && v.definition !== null);
+      expectedSecrets.set(name,previous?.decision.digest??null);
+      let consumers = [resourceConsumer(record,item)];
+      let keptValue=value,keptRule=current.credential_digests[item];
+      if (previous?.definition && previous.definition.schema === 'secret@1') {
+        const metadata = previous.definition;
+        const old = await this.#o.vault.getText(metadata.entry);
+        if(old===null || [...old].length!==metadata.length)throw new ConnectorError('RESOURCE_INVALID','已有密钥条目不可用或长度不合登记：先 secret set 重新输入后迁移');
+        let incoming=value,existing=old;
+        if(current.credential_digests[item]==='sha512_base64'&&metadata.digest_rule==='plain'){
+          existing=storedCredential(old,'sha512_base64');keptValue=old;keptRule='plain';
+        } else if(current.credential_digests[item]==='plain'&&metadata.digest_rule==='sha512_base64')incoming=storedCredential(value,'sha512_base64');
+        if(incoming!==existing)throw new ConnectorError('RESOURCE_INVALID','迁移的值与已有密钥不同：换一个名字');
+        consumers = [...metadata.consumers.filter(c => !(c.definition === id && c.item === item)),resourceConsumer(record,item)];
+      }
+      writes.push({name,value:keptValue,digest_rule:keptRule,alreadyStored:true,short:true,consumers});
     }
-    await this.#configure(admin, record, note ?? null,tx);
+    if (new Set(writes.map(v=>v.name)).size !== writes.length) throw new ConnectorError('RESOURCE_INVALID','一次迁移的凭据项须使用不同名字');
+    const prepared = writes.length ? await this.#o.variables.prepareSecrets(admin,writes,`从资源 ${id} 的凭据项迁移来`) : undefined;
+    await this.#configure(admin, record, note ?? null, prepared,expectedSecrets);
+    try {
+      for (const [name,entry] of Object.entries(current.credentials))
+        if(entry===credentialEntry(id,name) && (record.credentials[name]!==entry || current.credential_digests[name]!==record.credential_digests[name]))await this.#o.vault.remove(entry);
+      // A failed post-commit deletion is retried by the same update, even after the definition already uses a name.
+      for(const item of Object.keys(changes.credentials??{}))if(secretNameOf(record.credentials[item]??''))await this.#o.vault.remove(credentialEntry(id,item));
+      for(const name of new Set(Object.values(record.credentials).map(secretNameOf).filter((v):v is string=>v!==null)))await this.#o.variables.cleanupSecret(name);
+    }catch(error){throw new ConnectorError('STORE_FAILED',`资源 ${id} 的新定义${writes.length?'与迁移密钥决定':''}已提交，旧条目清理未完成；管理员修复密钥库权限后重跑同一 resource update 清理，不重新输入值`,{cause:error});}
     this.#event('resource_updated', { resource: id, system_pack: record.system_pack });
     return record;
   }
@@ -283,73 +316,12 @@ export class ResourceRegistry {
   }
 
   async enable(by: Principal, id: string, note?: string | null): Promise<void> {
-    return this.#configuration(tx=>this.#enable(by,id,note,tx));
-  }
-
-  async #enable(by: Principal, id: string, note: string|null|undefined,tx:Transaction): Promise<void> {
     const admin = await this.#admin(by);
     const state = await this.#state(id);
     if (state.enabled) return;
-    const bound=await this.#o.profiles.load(state.resource.system_pack);
-    if(bound.pack.digest!==state.resource.system_pack_digest)throw new ConnectorError('PACK_UNAVAILABLE','缺少资源绑定的原包；请管理员恢复原包或重新配置后启用');
-    await this.#unique(state.resource,bound.profile,tx);
-    await this.#o.authorizations.configureResource(admin, id, state.bound, note ?? null,tx);
+    await this.#configure(admin, state.resource, note ?? null);
     this.invalidate();
     this.#event('resource_enabled', { resource: id });
-  }
-
-  /**
-   * Sets one credential of a resource in its vault entry (setCredentials with one value). A credential the profile digests
-   * (sha512_base64) is kept only as that digest. The value is never logged, returned or stored anywhere else.
-   */
-  async setCredential(by: Principal, id: string, name: string, value: string): Promise<void> {
-    await this.setCredentials(by, id, { [String(name)]: value });
-  }
-
-  /**
-   * Sets several credentials of one resource: every name and value is checked before any is stored, the values are stored
-   * in the order the definition declares them, and the session is forgotten once, after the last. A login that takes two
-   * credentials (a user name and a password) thus changes both before a running Hub ends its stop: set one at a time, a
-   * read in between would log in with the new user name and the old password. When a value cannot be stored after others
-   * were, the session is kept (no login with half of the new values) and the error names what was stored.
-   */
-  async setCredentials(by: Principal, id: string, values: Readonly<Record<string, string>>): Promise<void> {
-    await this.#admin(by);
-    const state = await this.#state(id);
-    const { credentials, credential_digests: digests } = state.resource;
-    if (typeof values !== 'object' || values === null || Array.isArray(values) || Object.keys(values).length === 0) {
-      throw new ConnectorError('RESOURCE_INVALID', `没有给出资源 ${id} 的凭据`, { detail: { resource: id } });
-    }
-    // The definition says which credentials exist and under which rule each is kept.
-    for (const name of Object.keys(values)) {
-      if (!Object.hasOwn(credentials, name) || !Object.hasOwn(digests, name)) throw new ConnectorError('RESOURCE_INVALID', `资源 ${id} 没有凭据项 ${name}`, { detail: { resource: id } });
-      const value = values[name];
-      if (typeof value !== 'string' || value.length === 0 || value.length > MAX_SECRET_CHARS || /[\u0000-\u001f\u007f]/.test(value)) {
-        throw new ConnectorError('RESOURCE_INVALID', `凭据 ${name} 必须是 1 到 ${MAX_SECRET_CHARS} 个字符、不含控制字符的文本`, { detail: { resource: id } });
-      }
-    }
-    const names = Object.keys(credentials).filter((name) => Object.hasOwn(values, name));
-    const stored: string[] = [];
-    for (const name of names) {
-      const value = values[name];
-      const digest = digests[name];
-      this.#o.redactor.add(value);
-      const kept = storedCredential(value, digest);
-      this.#o.redactor.add(kept);
-      try {
-        await this.#o.vault.put(credentials[name], kept);
-      } catch (error) {
-        if (stored.length === 0) throw error;
-        throw new ConnectorError('STORE_FAILED', `凭据 ${stored.join('、')} 已存进密钥库，${name} 没能存进去（${systemCode(error)}）；登录状态没有清除，请把这些凭据再设置一次`, {
-          detail: { resource: id },
-          cause: error,
-        });
-      }
-      // Logged once stored: the session reset that follows can fail on its own (and then says so to the admin).
-      this.#event('credential_set', { resource: id, credential: name, digest });
-      stored.push(name);
-    }
-    await this.#forgetSession(id, `凭据 ${names.join('、')} 已存进密钥库，但资源 ${id} 的登录状态没能清除`);
   }
 
   /**
@@ -364,9 +336,13 @@ export class ResourceRegistry {
     if (state === null) return null;
     const { resource } = state;
     const credentials: CredentialDescription[] = [];
+    const versions=await this.#o.variables.list(by);
     for (const name of Object.keys(resource.credentials).sort()) {
       const entry = resource.credentials[name];
-      credentials.push({ name, entry, digest: resource.credential_digests[name], set: await this.#o.vault.has(entry) });
+      const ref = secretNameOf(entry);
+      const version = ref ? versions.find(v=>v.kind === 'secret' && v.name === ref) : undefined;
+      const metadata = version?.definition?.schema === 'secret@1' ? version.definition : null;
+      credentials.push({name,entry,digest:resource.credential_digests[name],set: metadata ? await this.#o.vault.has(metadata.entry) : ref ? false : await this.#o.vault.has(entry),...(version?{version:version.version,revoked:version.decision.body.revoked}:{}),...(metadata ? {stored_digest:metadata.digest_rule,length:metadata.length,registered:metadata.consumers.some(c=>canonicalBytes(c).toString()===canonicalBytes(resourceConsumer(resource,name)).toString())} : {})});
     }
     return { ...listing(state, true), credentials };
   }
@@ -381,14 +357,15 @@ export class ResourceRegistry {
 
   /** Every resource, enabled or not, by name (no access check: for the connectors themselves). */
   async states(): Promise<ResourceState[]> {
-    const ttl = this.#o.cacheMs ?? 5_000;
-    const now = Date.now();
-    if (this.#cache !== null && now - this.#cache.at < ttl) return this.#cache.states;
-    this.#loading ??= this.#read().finally(() => {
-      this.#loading = null;
-    });
-    const states = await this.#loading;
-    this.#cache = { at: Date.now(), states };
+    const ttl=this.#o.cacheMs??5000,now=Date.now(),generation=this.#generation;
+    if(this.#cache!==null&&now-this.#cache.at<ttl)return this.#cache.states;
+    if(this.#loading===null){
+      const loading:Promise<ResourceState[]>=this.#read().finally(()=>{if(this.#loading===loading)this.#loading=null;});
+      this.#loading=loading;
+    }
+    const states=await this.#loading;
+    // An invalidated in-flight reader keeps its own snapshot, but never supplies or overwrites the new generation.
+    if(generation===this.#generation)this.#cache={at:Date.now(),states};
     return states;
   }
 
@@ -451,15 +428,51 @@ export class ResourceRegistry {
     if (!EnvironmentSchema.safeParse(parsed.data.environment).success) throw new ConnectorError('RESOURCE_INVALID', '环境类别无效');
     const problem = profileProblem(parsed.data, profile);
     if (problem !== null) throw new ConnectorError('RESOURCE_INVALID', problem);
+    for (const ref of referencesIn(parsed.data)) {
+      if (ref.at.startsWith('/settings/') && ref.kind === 'var') continue;
+      if (ref.at.startsWith('/credentials/') && ref.kind === 'secret') continue;
+      throw new ConnectorError('RESOURCE_INVALID','设置只能引用普通变量；密钥只能用于凭据项，地址不许引用');
+    }
     const scan = scanForCredentials(canonicalBytes(parsed.data.settings));
-    if (scan.findings.length > 0) throw new ConnectorError('RESOURCE_INVALID', '设置里像是有凭据；凭据只经 setCredential 进密钥库', { detail: { findings: scan.findings.length } });
+    if (scan.findings.length > 0) throw new ConnectorError('RESOURCE_INVALID', '设置里像是有凭据；凭据只经 circle-hub secret set --name <名字> 进密钥库', { detail: { findings: scan.findings.length } });
     return parsed.data;
   }
 
-  async #configure(admin: User, record: ResourceRecord, note: string | null,tx:Transaction): Promise<void> {
-    const bytes = canonicalBytes(record);
-    const stored = await this.#o.objects.put(bytes, 'application/json');
-    await this.#o.authorizations.configureResource(admin, record.id, stored.sha256, note,tx);
+  #credentials(declared: {name:string}[], given: Record<string,string>, previous: Record<string,string> = {}): Record<string,string> {
+    for (const key of Object.keys(given)) if (!declared.some(c=>c.name===key)) throw new ConnectorError('RESOURCE_INVALID','凭据项不在系统包声明中');
+    return Object.fromEntries(declared.map(c=>{
+      if (given[c.name] !== undefined) {
+        const parsed = VariableName.safeParse(given[c.name]);
+        if (!parsed.success) throw new ConnectorError('RESOURCE_INVALID','凭据项的密钥名字不合规则');
+        return [c.name,'${secret:'+parsed.data+'}'];
+      }
+      if (previous[c.name]) return [c.name,previous[c.name]];
+      throw new ConnectorError('RESOURCE_INVALID',`凭据项 ${c.name} 缺少密钥名字：用 --credential <凭据项>=<密钥名>`);
+    }));
+  }
+  async #configure(admin: User, record: ResourceRecord, note: string | null, prepared?: PreparedSecrets, expectedSecrets=new Map<string,string|null>()): Promise<void> {
+    const refs = referencesIn(record.settings);
+    const snapshot = await this.#o.variables.snapshot();
+    const resolved = await this.#o.variables.resolveVariables(record.settings,record.id,snapshot);
+    if (Buffer.byteLength(JSON.stringify(resolved.value),'utf8') > 65536) throw new ConnectorError('RESOURCE_INVALID','解析后的设置超过 64 KiB');
+    const stored = await this.#o.objects.put(canonicalBytes(record), 'application/json');
+    const bound=await this.#o.profiles.load(record.system_pack);
+    if(bound.pack.digest!==record.system_pack_digest)throw new ConnectorError('PACK_UNAVAILABLE','缺少资源绑定的原包；请管理员恢复原包或重新配置后启用');
+    await this.#configuration(async tx => {
+      await this.#unique(record,bound.profile,tx);
+      await this.#o.variables.lockNames([...refs.map(r=>r.name),...(prepared?.items.map(i=>i.name)??[])],tx);
+      for (const ref of refs) {
+        const rows = await this.#o.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|var:${ref.name}`,kind:'authorization',newestFirst:true,limit:1},tx);
+        if (rows.items[0]?.body.revoked || rows.items[0]?.digest !== snapshot.get(ref.name)) throw new ConnectorError('RESOURCE_INVALID',`变量 ${ref.name} 已变：先 var set，再重做配置`);
+      }
+      for(const [name,expected] of expectedSecrets) {
+        const rows=await this.#o.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|secret:${name}`,kind:'authorization',newestFirst:true,limit:1},tx);
+        const current=rows.items[0];
+        if((!current||current.body.revoked?null:current.digest)!==expected)throw new ConnectorError('RESOURCE_INVALID','迁移期间密钥版本已变：核对现有名字后重新运行 update');
+      }
+      if (prepared) await this.#o.variables.commitSecrets(admin,prepared,tx);
+      await this.#o.authorizations.configureResourceInTransaction(admin,record.id,stored.sha256,note ?? '',tx);
+    });
     this.invalidate();
   }
 
@@ -525,4 +538,9 @@ export function listing(state: ResourceState, admin: boolean): ResourceListing {
     row.allow_plaintext = [...resource.allow_plaintext];
   }
   return row;
+}
+
+/** Identity and exact destination enrollment; no secret material. */
+export function resourceConsumer(resource: ResourceRecord, item: string) {
+  return {definition:resource.id,item,sends_to:createHash('sha256').update(canonicalBytes({origins:resource.origins,allow_plaintext:[...resource.allow_plaintext].sort()})).digest('hex')};
 }

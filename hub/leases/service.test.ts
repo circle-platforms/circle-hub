@@ -339,3 +339,97 @@ function runRecord(run: string): Record<string, unknown> {
     runner: holder.user,
   };
 }
+
+test('an uncapped lease has no expiry, cannot extend, survives time and releases only for its holder', async () => {
+  const service = new LeaseService(db, { now: clock('2026-10-24T08:00:00Z') });
+  const held = await service.acquire({ keys: ['endless/a/k'], holder, prefix: 'endless/' });
+  assert.ok(held.ok, JSON.stringify(held));
+  assert.equal(held.until, null);
+  const later = new LeaseService(db, { now: clock('2036-10-24T08:00:00Z') });
+  assert.deepEqual((await later.view('endless/')).entries.map(e => e.until), [null]);
+  const denied = await later.extend({ keys: ['endless/a/k'], holder, ttlSeconds: 60 });
+  assert.ok(!denied.ok && denied.code === 'LEASE_TTL');
+  assert.match(denied.message, /不到期，不用续/);
+  assert.ok(!(await later.release({ keys: ['endless/a/k'], holder: other })).ok);
+  assert.ok((await later.release({ keys: ['endless/a/k'], holder })).ok);
+  assert.equal((await later.view('endless/')).entries.length, 0);
+});
+
+test('registration is exclusive, disjoint and replayable with audited administrator reassignment', async () => {
+  const s = new LeaseService(db, { now: clock('2026-10-24T09:00:00Z') });
+  const input = { prefix: 'owned/a/', declaredPrefix: 'owned/', owner: holder.user, by: holder.user, reason: '合成登记' };
+  assert.ok((await s.register(input)).ok);
+  const duplicate = await s.register({ ...input, owner: other.user, by: other.user });
+  assert.ok(!duplicate.ok && duplicate.code === 'LEASE_UNAVAILABLE');
+  assert.match(duplicate.message, /已经有主人/);
+  assert.ok(!duplicate.message.includes(holder.user));
+  for (const prefix of ['owned/', 'owned/a', 'owned/a/nested/']) assert.ok(!(await s.register({ ...input, prefix })).ok);
+  assert.ok(!(await s.unregister({ prefix: input.prefix, by: other.user, reason: '合成注销' })).ok);
+  assert.ok((await s.register({ ...input, owner: other.user, by: 'admin', admin: true, reason: '更正归属' })).ok);
+  assert.equal((await s.registrations('owned/'))[0]!.owner, other.user);
+  assert.ok(!(await s.unregister({ prefix: input.prefix, by: holder.user, reason: '合成注销' })).ok);
+  assert.ok((await s.acquire({ keys: ['owned/a/k'], holder, prefix: 'owned/' })).ok);
+  const busy = await s.unregister({ prefix: input.prefix, by: other.user, reason: '合成注销' });
+  assert.ok(!busy.ok && busy.code === 'LEASE_UNAVAILABLE');
+  assert.match(busy.message, /先强制释放，或等它释放/);
+  assert.ok((await s.release({ keys: ['owned/a/k'], holder })).ok);
+  assert.ok((await s.unregister({ prefix: input.prefix, by: 'admin', admin: true, reason: '管理员注销' })).ok);
+  assert.ok((await s.register({ ...input, prefix: 'owned/kept/' })).ok);
+  const state = new Map<string, string>();
+  for (const record of await s.actionLog('owned/')) {
+    if (record.op === 'register') state.set(String(record.prefix), String(record.owner));
+    if (record.op === 'unregister') state.delete(String(record.prefix));
+    if (record.reason === '更正归属') assert.equal(record.previous_owner, holder.user);
+  }
+  assert.deepEqual([...state], (await s.registrations('owned/')).map(r => [r.prefix, r.owner]));
+  assert.ok((await s.unregister({ prefix: 'owned/kept/', by: holder.user, reason: '主人注销' })).ok);
+});
+
+test('two connections registering a prefix or overlapping prefixes have exactly one winner in 50 rounds', async () => {
+  const a = new LeaseService(db); const b = new LeaseService(db);
+  for (let i = 0; i < 50; i++) {
+    const base = { declaredPrefix: 'owners/', owner: holder.user, by: holder.user, reason: '合成并发' };
+    const results = await Promise.all([
+      a.register({ ...base, prefix: `owners/r${i}/` }),
+      b.register({ ...base, prefix: i % 2 ? `owners/r${i}/nested/` : `owners/r${i}/`, owner: other.user, by: other.user }),
+    ]);
+    assert.equal(results.filter(r => r.ok).length, 1);
+  }
+});
+
+test('the default mutation clock uses its transaction connection instead of starving a bounded pool',async()=>{
+  const original=db.query.bind(db);
+  db.query=async function(text,values=[],tx){
+    if(text==='SELECT now()::timestamptz AS now'||text==='SELECT clock_timestamp()::timestamptz AS now')assert.ok(tx,'mutation clock needs the held transaction connection');
+    return original(text,values,tx);
+  } as typeof db.query;
+  try{
+    const service=new LeaseService(db);
+    assert.ok((await service.acquire({keys:['clock-transaction/k'],prefix:'clock-transaction/',holder})).ok);
+  }finally{db.query=original;}
+});
+
+test('a different user cannot release a known run identity and receives a refusal rather than an exception',async()=>{
+  const service=new LeaseService(db,{now:clock('2026-10-24T08:00:00Z')});
+  assert.ok((await service.acquire({keys:['identity/owned/k'],prefix:'identity/',holder})).ok);
+  const refused=await service.release({keys:['identity/owned/k'],holder:{user:other.user,run:holder.run}});
+  assert.ok(!refused.ok&&refused.code==='LEASE_UNAVAILABLE');
+  assert.equal((await service.holders(['identity/owned/k']))[0]!.released,false);
+});
+
+test('waiting for the mutation lock does not backdate a capped acquisition to transaction start',async()=>{
+  const service=new LeaseService(db);
+  let held!:()=>void;const heldSignal=new Promise<void>(resolve=>held=resolve);
+  let release!:()=>void;const pause=new Promise<void>(resolve=>release=resolve);
+  const blocking=service.withMutationLock(async()=>{held();await pause;});await heldSignal;
+  const original=db.query.bind(db);let waiting!:()=>void;const waitingSignal=new Promise<void>(resolve=>waiting=resolve);
+  db.query=async function(text,values=[],tx){if(text.includes('pg_advisory_xact_lock'))waiting();return original(text,values,tx);} as typeof db.query;
+  const attempt=service.acquire({keys:['clock-wait/k'],prefix:'clock-wait/',ttlSeconds:600,maxTtlSeconds:600,holder});
+  try{
+    await waitingSignal;
+    const checkpoint=(await original<{moment:Date}>('SELECT clock_timestamp() AS moment FROM pg_sleep(0.03)')).rows[0]!.moment;
+    release();await blocking;assert.ok((await attempt).ok);
+    const since=(await original<{acquired_at:Date}>('SELECT acquired_at FROM leases WHERE key=$1',['clock-wait/k'])).rows[0]!.acquired_at;
+    assert.ok(since.getTime()>=checkpoint.getTime(),'acquisition clock must be read after obtaining the lock');
+  }finally{release();await Promise.allSettled([blocking,attempt]);db.query=original;}
+});

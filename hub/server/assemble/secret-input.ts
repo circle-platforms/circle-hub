@@ -32,13 +32,13 @@ function withoutLineBreak(text: string): string {
   return text;
 }
 
-async function readPiped(input: Readable): Promise<string> {
+async function readPiped(input: Readable, maximum = MAX_SECRET_BYTES): Promise<string> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of input) {
     const buffer = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk as Uint8Array);
     size += buffer.length;
-    if (size > MAX_SECRET_BYTES) throw new SecretInputError(`标准输入超过 ${MAX_SECRET_BYTES} 字节，不是一个凭据`);
+    if (size > maximum) throw new SecretInputError(`标准输入超过 ${maximum} 字节，不是一个凭据`);
     chunks.push(buffer);
   }
   const bytes = Buffer.concat(chunks);
@@ -128,4 +128,15 @@ export async function readSecret(label: string, options: SecretInput = {}): Prom
     return readTerminal(input, options.prompt ?? ((text) => process.stderr.write(`${text}\n`)), label);
   }
   return readPiped(input);
+}
+
+/** One prompt per terminal value; a pipe is consumed once and must contain exactly one line per name. */
+export async function readSecrets(labels: readonly string[], options: SecretInput = {}): Promise<string[]> {
+  const input = options.input ?? (process.stdin as NonNullable<SecretInput['input']>);
+  if (input.isTTY === true && typeof input.setRawMode === 'function') {
+    const values: string[] = []; for (const label of labels) values.push(await readTerminal(input, options.prompt ?? (text => process.stderr.write(text + '\n')), label)); return values;
+  }
+  const values = (await readPiped(input, Math.max(MAX_SECRET_BYTES, labels.length * (4096 * 4 + 2)))).split(/\r?\n/);
+  if (values.length !== labels.length) throw new SecretInputError('标准输入的行数须与密钥名字数相同；一行一个，未写入任何密钥');
+  return values;
 }

@@ -77,6 +77,7 @@ function memoryVault(delays: number[] = []): MemoryVault {
     async has(name) {
       return entries.has(name);
     },
+    async stat(name) { return entries.has(name) ? {written_at: '2026-10-24T00:00:00.000Z'} : null; },
     async list() {
       return [...entries.keys()].sort();
     },

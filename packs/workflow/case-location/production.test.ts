@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { StartRunOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
-import { ValidationResult, partitionCountsOf, type ItemResult } from '../../../contracts/src/validation.ts';
+import { LayerResult, ValidationResult, partitionCountsOf, type ItemResult } from '../../../contracts/src/validation.ts';
 import { createPacksPort, createWorkflowStore } from '../../../hub/runs/api.ts';
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
@@ -15,6 +15,21 @@ import { BUILD, ROOT, call, openHub, publishProduct, type Hub } from './test-hub
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 let postgres: TemporaryPostgres;
 let hub: Hub;
+
+function terminalFields(layers: LayerResult[]): Omit<LayerResult, 'missing' | 'exit' | 'gaps'>[] {
+  return layers.map(layer => {
+    LayerResult.parse(layer);
+    if (layer.reason !== undefined) {
+      assert.ok(layer.missing);
+      assert.equal(layer.exit?.action, 'request');
+      assert.equal(layer.exit?.request_kind, 'clarification');
+      assert.deepEqual(layer.exit?.audience, { user: hub.alice.id });
+    }
+    const { missing, exit, gaps, ...fields } = layer;
+    return fields;
+  });
+}
+
 
 const P0 = '030：APV/NSAE测试项目';
 const DOCUMENTS: Record<string, { title: string; root: string; ancestors: string[] }> = {
@@ -141,7 +156,7 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(candidates.claims.length, 1, id);
       const candidatesClaim = candidates.claims[0];
       assert.equal(candidatesClaim.statement.verdict, expectedCandidates.verdict, id);
-      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: 'case-location.candidates@1.4.1', independence: 'judge_not_author' }, id);
+      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: 'case-location.candidates@1.4.2', independence: 'judge_not_author' }, id);
       const candidatesData = candidatesClaim.statement.data as { kind: string; line: string | null; candidates: unknown[] };
       assert.equal(candidatesData.kind, 'candidates', id);
       assert.equal(candidatesData.line, expectedCandidates.line, id);
@@ -150,7 +165,7 @@ describe('a production run of case-location', { skip }, () => {
         assert.deepEqual(candidatesData.candidates, CANDIDATES_10_6_1, id);
         assert.match(candidatesClaim.statement.text, /版本线 10\.6\.1 的构建候选 5 个，其中别名 1 个（别名基于它所基于的构建），按制作时间从新到旧/, id);
       } else {
-        assert.deepEqual(candidates.layers, [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap' }], id);
+        assert.deepEqual(terminalFields(candidates.layers), [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap' }], id);
         assert.match(candidatesClaim.statement.text, /版本线/, id);
         assert.deepEqual(candidatesData.candidates, [], id);
       }
@@ -178,7 +193,7 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(answer.case_id, id);
       assert.equal(answer.source, `agile:mindmap:${id}@1`);
       assert.deepEqual(answer.ancestor_path, [DOCUMENTS[id].root, ...DOCUMENTS[id].ancestors]);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.4.1', independence: 'judge_not_author' });
+      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.4.2', independence: 'judge_not_author' });
       assert.deepEqual(claim.grounds, [run.items.find((i) => i.id === id)!.location]);
       // The folders are not in the cited node: the claim points at the item's fields, as the run record holds them.
       assert.equal(claim.pointer, `/items/${k}/fields`);
@@ -189,7 +204,7 @@ describe('a production run of case-location', { skip }, () => {
         assert.deepEqual(requirement.layers, [{ layer: 'static', terminal: 'pass' }]);
       } else {
         assert.deepEqual([claim.qualifier.nature, claim.statement.reason, requirement.status], ['unknown', 'missing_input', 'pending']);
-        assert.deepEqual(requirement.layers, [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap' }]);
+        assert.deepEqual(terminalFields(requirement.layers), [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap' }]);
       }
     }
     // The result is the run's latest and readable by reference.

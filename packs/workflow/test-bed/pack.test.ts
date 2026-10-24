@@ -24,23 +24,23 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['test-bed', '1.1.3', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['test-bed', '1.2.2', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/project.ts') && files.includes('functions/check-bed.ts') && files.includes('samples/negative/acquire-mismatch.json') && files.includes('examples/bed-topology.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
   });
 
-  it('binds nothing, reads the inventory named document, and declares the leases context and the bed/ namespace with its cap', () => {
+  it('binds nothing, reads the inventory named document, and declares the leases context and the bed/ namespace without an expiry cap', () => {
     const workflow = WorkflowFile.parse(json('workflow.json'));
     assert.deepEqual(workflow.inputs, [
       { slot: 'inventory', role: 'subject', description: workflow.inputs[0].description, accepts: ['doc:doc'], required: true, many: false },
     ]);
     assert.deepEqual(workflow.product, { catalogs: [] }, 'unbound: the inventory names everything');
     assert.deepEqual(workflow.context, ['leases'], 'the workflow asks for the frozen lease view (D04)');
-    assert.deepEqual(workflow.leases, { prefix: 'bed/', max_ttl_seconds: 86400 }, 'bed/ namespace; the declared number is the cumulative 24-hour cap the Hub judges (single requests stay at 8 hours, enforced by the pack)');
+    assert.deepEqual(workflow.leases, { prefix: 'bed/' }, 'the reservation has no expiry cap');
     assert.deepEqual(
       workflow.parameters.map((p) => p.name),
-      ['action', 'need', 'bed', 'hours', 'booking', 'addresses'],
+      ['action', 'need', 'bed', 'hours', 'booking', 'addresses', 'devices', 'reason'],
     );
     assert.deepEqual([workflow.subject, workflow.projection], ['inventory', { module: 'functions/project.ts' }]);
     const requirements = RequirementsFile.parse(json('requirements.json')).requirements;
@@ -91,10 +91,10 @@ describe('the staged pack', { skip: (await osIsolationAvailable()) ? false : 'no
     const report = await runPublishCheck({ pack: validation.pack, packDir: dir });
     assert.deepEqual(report.failures, [], JSON.stringify(report.failures, null, 1));
     assert.deepEqual(report.unsampled, []);
-    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed], [12, 12, 0]);
+    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed], [16, 16, 0]);
     assert.deepEqual(
       report.checks.map((c) => [c.check, c.tier, c.positive, c.negative, c.marks]),
-      [['bed', 'advisory', 6, 6, ['author_samples_only']]],
+      [['bed', 'advisory', 8, 8, ['author_samples_only']]],
     );
   });
 });

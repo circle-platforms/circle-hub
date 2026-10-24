@@ -14,6 +14,7 @@ live only here. Other packages use `api.ts` (types, named functions, and `FUNCTI
 | `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
 | `functions/producers.ts` | the producers (ProducerInput -> ProducerOutput) over `command-tree.ts`, `manual.ts`, `release-notes.ts` and `fixed-bugs.ts` (the build site's fixed-bug page, html@1) || `functions/sources.ts` | the build-site external ids (`buildsite:listing:<page>`, `buildsite:file:<link>`, the same rule as the build-site system pack; a test keeps them equal) and the source roles `tree`, `fixed_bugs` |
 | `functions/documents.ts` | the version lines of documents: manual folders `rel_apv_<line>` / `rel_nsae_<line>`, version tokens in spec, product and qa names (an NSAE-named document has the same line as the APV-named one) |
+| `functions/adoc/` | the adoc producer (K4): the restricted expansion and intermediate model of step one (`index.ts` over `includes.ts`, `origins.ts`, `input.ts`, `engine.ts`, `types.ts`), the K1 mapping and the per-family runs of step two (`k1-model.ts`, `families.ts`), and the pinned third-party engine in `vendor/` (the bundle, its license, and the declarations of the API this adapter uses) |
 | `functions/locate.ts`, `ids.ts`, `commands.ts` | the agile location rule (ancestor labels -> line, train, module), the story and bug ids of titles, the command extractor (phrases whose first word is a catalog head) |
 | other `functions/*.ts` | the building blocks below (listing parser, naming, builds, sync-plan, select-build, command-tree, manual, release-notes, util, types) |
 
@@ -57,6 +58,10 @@ list and release notes `defect`; the finer form stays in
 | `cases-nodes.ts` | `caseNodes` | kityminder@1 model → the case nodes with title, labels above, tags, priority, expected count, steps, vague, autoid |
 | `cases-commands.ts` | `commandCatalog`, `textCommands`, `resolvePhrase` | xml@1 command tree → catalog; texts → the catalog paths their phrases resolve to |
 | `cases-sync.ts` | `caseTree`, `caseDocumentsFor`, `caseIndexOptions` | the read agile tree → the located documents; a build line → its `case_documents` |
+| `adoc/index.ts` | `compileAdoc` | `{ main, revision, files, attributes? }` of one manual group on one SVN revision → `{ ok: true, composition, model, report }` (the expanded intermediate model) or `{ ok: false, error }` for the whole group |
+| `adoc/k1-model.ts` | `toK1Model`, `citationFor` | the expanded model, its composition and the family's manual name → the markdown@1-shaped model K1's `produceManualEntries` reads, each block with its own citation, plus the report lines and the blocks that could not be cited |
+| `adoc/entries.ts` | `produceAdocEntries` | the mapped model → K1's entries with every fragment rewritten to `{slot, source, parser: text@1, selector}`, or one typed group refusal |
+| `adoc/families.ts` | `compileFamilies`, `familyManualName` | `{ main, revision, families, familyAttributes }` and the product's names → one expanded model, composition and report per name family, or one group failure |
 
 ## Walking the build site (brief section 8)
 
@@ -311,6 +316,329 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
   took about 0.2 s here (direct call 0.13 s; 6.3 MB in, 1.3 MB out), about 15 s of producer time for a build of 3,000
   documents (75 calls).
 
+## The adoc producer (K4)
+
+`functions/adoc/index.ts` exports `compileAdoc(input)` (also the default export). Step one is the restricted expansion:
+the file table, conditions and attributes, source-line verification, the composition identity and the whole-group
+refusal. It registers no knowledge producer, changes no sync plan and does not read signatures, value domains or
+`catalog.json`. Step two maps that intermediate model onto K1's document model and runs it once per name family; the
+placement code in `manual.ts` is not changed by it.
+
+### Input and composition identity
+
+The input is `{main, revision, files, attributes?}`, where `files` maps a relative path to `{text, revision, sha256}`:
+
+- `text` is the UTF-8 original decoded, keeping NUL bytes and CRLF; a text whose NUL bytes are already gone while the
+  original digest is declared is refused, and so is a lone surrogate. `revision` is the SVN revision the whole group was
+  read at and every file must carry it (not each file's last-changed revision). The bytes of every declared file,
+  including the ones nothing includes, are digest-checked first.
+- `attributes` defaults to empty, that is "all unset" like today's markdown reading; a value is a single-line string or
+  a boolean. Whether an external attribute overrides a definition in the source follows the engine's own precedence.
+  Names are lower-cased as the engine does; a case-folded duplicate, a clock attribute, an execution-policy attribute and
+  a value that could inject a preprocessor directive are refused.
+- The composition record holds the main file, the revision, the sorted file/digest table, the declared attributes, the
+  engine version and digest, the expansion policy and the budgets; its `sha256` is the canonical-JSON digest of that
+  identity object. A real composition record still has to bind this intermediate product and the pack version when the
+  producer is wired into a production.
+
+Success returns `{ok: true, composition, model, report}`; failure returns only `{ok: false, error}`, with no applicable
+partial model and no digest, and the error names the gap and the next action. The same input gives the same JSON bytes;
+the insertion order of the file and attribute objects does not change the output, and a different attribute set changes
+the identity. `compileAdoc` is pure and never writes a knowledge root; a step-two caller must treat a failure as the
+failure of the whole group, keep the old root and never commit the remaining chapters after skipping a bad one.
+
+The budgets are fixed: 128 files, 16 MiB of originals, 8 MiB expanded, 16 include levels, 512 includes, 250000 lines,
+1024 conditional branches, 250000 engine nodes. A test may tighten them through the second argument; the production
+default entry takes no budget override from the input. The producer sandbox's own time, memory and JSON size limits still
+apply outside.
+
+### Includes, conditions and attributes
+
+Only `include::relative[]` of a file in the table is expanded, recursively and in order of appearance — never by the
+digits in a file name. An include path may be composed of the source attributes actually in effect: the engine reads the
+prefix and the adapter replays the state through the public playback API, without rewriting the engine's attribute
+rules. No paragraph separator is invented; an author who wants a paragraph or a chapter break keeps the blank line.
+
+A missing file, a URI, an absolute, parent or backslash path, any include option, an include inside a condition (even an
+unselected branch), a cycle and every budget overrun refuse the whole group. An include that is not alone on its line and
+an unsupported conditional syntax are refused too, so the engine's built-in include I/O is never reached. Files the main
+file does not include are listed in `unused_files` only and do not enter the book.
+
+The pinned engine evaluates ifdef and ifndef, including their OR/AND and single-line forms; ifeval is not supported. The
+report gives, per branch, the directive text, the source file and line, whether the branch is retained, the parent branch
+and the removed source ranges with their line counts. Nested branches are reported separately, never as one whole-book
+difference, and no paragraph is dropped quietly. To observe the engine's attribute state at the same moment, the condition
+check uses a small predicate probe with a fixed marker and counts toward the parent branch's state; the original document
+is still parsed by the main engine, so there is no second implementation of ifdef.
+
+Body attribute changes are replayed during the AST walk with the public `document.playbackAttributes(node.attributes)`;
+`raw` and `expanded` are kept apart. Any use, definition or conditional reference of docdate, doctime, docdatetime,
+docyear, localdate, localtime, localdatetime or localyear is refused, including inside an unselected branch; no engine
+clock, object identity or environment metadata is emitted.
+
+Logging uses the public LoggerManager in a serialized session that is restored at the end; the `load.logger` option, which
+would trigger a `node:async_hooks` dynamic import, is not passed. Concurrent calls in one process are serialized too. The
+third-party engine bytes and the sandbox import allowlist are unmodified.
+
+### The intermediate model and the source lines
+
+`model.expanded_text` is the include-expanded text with NUL removed and line endings normalized to LF, keeping the
+conditional directives; `line_map` keeps each line's original file and line number. `blocks` come only from the AST after
+condition evaluation and carry the engine kind, the section level, the title, the author id and role, the section path
+(each element with the index of that section's own block, so two sections with the same title stay two sections), the
+heading text as written in the verified source line (`heading`, attributes expanded), `raw`/`expanded` and, for the
+contexts that keep their source text and carry inline content of their own (a paragraph, an admonition, a simple quote, a
+verse), the engine's own inline output of that text (`converted`, empty when the engine rendered child blocks instead); a
+block that is an example or sits inside one is marked (`example`), and a table keeps its head, body and foot cells with the
+line the engine reported for each. Nothing here promotes a listing, a bold run, a title
+or a role into a command rule.
+
+Every sourcemap line number is only a candidate. The locator tries a verbatim match in a fixed neighbourhood and then
+re-reads the original file's lines independently; only a single match emits `src:<digest>/text@1/l/<a>-<b>` (`l/a` for one
+line), and the verbatim text that text@1 would return is kept with it. Source lines that are not contiguous, or lines of
+another file, become separate origins: no continuous range is invented. NUL removal and CR/LF splitting follow text@1,
+while the file digest stays over the original bytes.
+
+A match is tried in two passes and both are collected before anything is decided. The exact pass compares the source line
+as written, or that line with the narrow marker of the context taken off (a heading's equals signs, a `*`/`-`/`.`/`1.`
+list bullet, an admonition label, a table row's cell separators). The folded pass runs too, and compares words instead of
+spelling: `text.ts plainText` decodes character references, reduces an inline macro to its text, resolves escapes, drops
+inline markup marks, folds the engine's typographic replacements back to ASCII and collapses white space, while the engine
+itself expands the candidate line's attribute references; it strips every structural marker the source can carry (any list
+bullet, a description list's `term::` separator, an admonition label, a heading's equals signs, a table row's cell
+separators and the `ifdef::name[...]` wrapper of a retained single-line branch, in any order). The engine's own text of a
+list item, a description-list item or a table cell is converted, so the fold is what lets those blocks be cited at all; it
+locates a line and never becomes a citation or a statement, and a block whose inline conversion the fold cannot invert (a
+menu path, a key cap, a footnote number, a checkbox mark) stays uncited and is reported. Both passes' candidates are kept,
+because a neighbouring line that literally holds the engine's words — an admonition whose label the engine dropped, an
+item whose attribute expands to what the next item says — is an exact match for the wrong line, and had the exact pass
+alone decided, the folded pass that finds the block's own line would never have run. The one exception is the exact pass
+finding the cursor's own line: that line holds this block's text as written where the engine says the block is, and
+nothing stronger exists, so the folded pass is not run (on a table-dense book it would cost more than the rest of the
+expansion together). For the same reason the engine's attribute substitution is asked only of a candidate line that
+carries a `{`.
+
+The window is counted in visible lines: the cursor's own line, three visible lines before it and two after, so a block the
+engine reports at the `endif` of a removed branch still reaches the line it was read from. A candidate is used only when
+the engine's cursor can belong to it, which takes two things: the cursor's own line is one no block's text stands on (a line
+a condition removed, one the reader consumes without producing a block, or a blank one), and every line between the cursor
+and the candidate is one the reader consumes (a conditional control, a block delimiter, a block attribute or title line, a
+heading, an attribute entry, an include) or a line a condition removed. A blank line between them is not one of those,
+because a blank line ends a paragraph: a candidate on the other side of one is another block's line. Neither is a cursor on
+another block's own text a recovery — that is the engine pointing at the block it means, and a neighbour that happens to
+hold the same words (the item before a checkbox item, a paragraph above an admonition) is not this block's line, however
+equal the text is. So a listing is still found one line under its delimiter and a paragraph one line before a removed
+branch, while a block whose own line folds to nothing is reported and cites nothing.
+
+When several candidates are left, the one at the cursor is the block's line — the text is proven on every candidate, so
+only the position is chosen. How many lines hold the text is disclosed whenever it is more than one (`disambiguated`,
+`disambiguated_count`, `disambiguated_examples_truncated`, the same 100-example cap as `unverified`), also when the
+reachability rule and not the cursor left one line; when none of the candidates is at the cursor and more than one
+reaches it, nothing is cited. A cursor that reaches no candidate leaves the block uncited too.
+
+A single-line comment (`// …`) is not content: the reader drops it, so the walk steps over one when a block's lines sit on
+either side of it, and such a block cites two ranges and is mapped as two blocks. A `////` block-comment delimiter is not
+stepped over, and a comment line inside a verbatim listing is content and is matched like any other line.
+
+A block or cell that cannot be verified uniquely has no reference. `unverified_count` gives the total, `unverified` keeps
+the first 100 diagnostics and `unverified_examples_truncated` is true past that. The model keeps the empty `origins`
+explicitly, with the line the engine reported (`reportedLine`) and the reason (`unverifiedReason`): having a sourcemap is
+never taken for a proven position. A container with no text of its own (a list, an example, an open, sidebar or table
+container) is not reported at all — there is nothing to verify, its content is the blocks the engine gives for its
+children, each verified on its own — and it gets no invented range.
+
+Per file the report counts NUL, CRLF, LF and CR; a UTF-8 BOM is reported as 3 extra bytes and is dropped when lines are
+re-read, while the digest still covers it. A line with more equals signs than a legal heading is listed in
+`invalid_headings` and not promoted to a section; engine messages stay in the report, and an error or an unterminated
+block refuses the group.
+
+### The third-party engine
+
+- Upstream `@asciidoctor/core@4.1.1`, taken outside the repository with `npm pack --ignore-scripts`;
+  `package/build/browser/index.js` was copied byte for byte to `vendor/core.mjs`, 990496 bytes.
+- SHA-256 `5a8785bf8dc39a216170b836bb274957f079f77e5f40b33453c988f85de9203d`, equal to the digest pinned in
+  `docs/hub-r4-research/adoc-sandbox.md`.
+- `vendor/LICENSE.txt` is the LICENSE of the upstream tag v4.1.1 byte for byte, SHA-256
+  `5dc8600d56eb0cae83dcdecde260d5b5568e7a5431fb9a9cf7906d02818bac7e`, with the MIT copyright and permission notice kept
+  complete.
+- `core.d.mts` declares only the API this adapter uses. There is no npm runtime dependency, no install script, no patch
+  of the library and no new sandbox permission.
+
+### Synthetic scale
+
+2026-10-24, macOS arm64, Node v24.17.0, single concurrency, one cold sandbox process. The profile quoted is the public
+`DEFAULT_SANDBOX.producer` of `hub/knowledge/api.ts`: 120000 ms, memoryMb 1024, 128 MiB of JSON input, 64 MiB of output.
+The RSS watchdog's own 192 MiB of overhead was not raised and no configuration was changed.
+
+One group of 12 table-dense chapters, 3146572 bytes: wall clock 953 ms, parse and extract plus one serialization of the
+result 712.7 ms, peak process RSS 680928 KiB (664.8 MiB), heap at the end 247139008 bytes, output JSON 44145472 bytes.
+The RSS was sampled after the first serialization of the result, so it is not the kernel peak of the later transfer stage;
+the transfer stays under the original watchdog. This is one round of synthetic capacity evidence, not an SLA, and it does
+not show that real adoc of any syntax or size works.
+
+Step two added one engine call per paragraph, admonition, quote and verse (its own inline output, which the mapping reads
+instead of re-implementing AsciiDoc inline semantics), so a paragraph-dense group was measured as well, outside the
+sandbox: 12 chapters of 1200 short paragraphs each with an attribute reference and inline marks, 1527895 bytes and 14400
+paragraphs, 358 ms in one warm host process, 19575674 bytes of output JSON. Both runs stay far inside the producer
+profile; neither is an SLA.
+
+The tests run with `node --test --test-concurrency=1 "packs/product/apv/functions/adoc/*.test.ts"`. A cold process gives
+the same bytes under a different Date and Math.random, and the same sandbox still refuses the network, file writes and
+child processes. Where the environment gives no OS network isolation the sandbox evidence is skipped explicitly instead of
+being weakened into a pass. Every check so far uses synthetic originals: no real manual and no knowledge root has been
+accepted.
+
+### Step two: the K1 document model, explicit signatures and the name families
+
+- `k1-model.ts` maps the expanded model to the markdown@1 shape: the `=` levels become sections (a `[discrete]` heading is
+  a block, not a section; a `=======` line is reported by step one and stays an ordinary block), blocks carry their section
+  path, and every block carries its citation: the chapter file's digest and the plain text@1 `l/<a>-<b>` line selector of
+  the range step one verified, as two fields (a table block's citation covers every line of its verified cells). K1's
+  placement code (`produceManualEntries` in `manual.ts`) applies to the result unchanged: signatures hang at /commands,
+  table rows split, text entries hang at their section node.
+- K1 copies a block's `selector` verbatim into the fragments of the entries it makes and stamps its own parser key on them
+  (`markdown@1`), so the mapped model puts a citation key of its own in that field (`cite/<index of the block>`) and
+  `entries.ts` (`produceAdocEntries`) turns every fragment back into the shape the Hub verifies: the chapter file's digest
+  in `source`, `text@1` as the parser, the plain line selector and the producer's slot. A byte range inside a mapped
+  table's text is only how K1 names a row; the fragment of a row is that row's own source line, with no range. A fragment
+  this rewrite cannot resolve (`apv.adoc.fragment_not_cited`) refuses the whole group: no entry goes out citing a
+  reference to nothing, and the old root does not move.
+- Section paths follow K1 and have the same shape as markdown@1's. A section is keyed by the node the engine gave for it
+  (the index of its own block, carried by every path element), never by its title text, so two sections with the same title
+  stay two sections and `IPv4/IPv6` is not the parent of `IPv4` and `IPv6`. The segment is the heading's own source text:
+  the attribute references of this family expanded, character references decoded, and the inline marks paired by
+  AsciiDoc's constrained rule off (no white space inside them) — never the engine's converted title, which would carry
+  `<code>` and `&#8217;` into the path. Every other character of the title stays, because a `_`, `+` or `#` inside a word
+  is part of the word, not markup, and a spaced mark is no markup either: `health_check`, `C++`, `C#` and `步骤 #1` keep
+  their paths, and two titles that differ only by such a character are told apart by their own text rather than by an
+  ordinal. Repeated sibling keys are numbered
+  `[k]` from 1, as markdown@1 numbers them (also when a key is empty or already ends in `[digits]`), and the selector is
+  the encoded `h/` path, null past 4096 characters: such a section cannot be cited and its blocks hang at the manual
+  namespace root, which K1 counts in its own warning. Every section of the expanded model is created before any block is
+  placed, in document order, so an empty section — or one whose content is all uncited — still takes its ordinal among its
+  siblings, a later sibling never inherits an earlier sibling's path, and the numbering does not move when an unrelated
+  block starts or stops verifying. The document title (`=`, level 0) is not a chapter: the manual's name comes from the
+  producer, and the engine puts the `==` sections beside it rather than under it, so a section path never carries the book
+  title. A heading that verified on no source line falls back to the engine's own title, plain, cites nothing, and the
+  mapping says so in a warning. Because a segment carries no marks, a title is
+  never read as a signature (task item 6: K1 reads one only from a title that opens with `**`).
+- Nothing is placed that cannot be cited. A container with no text of its own is not mapped (the engine gives a block for
+  each of its children, and each carries and cites its own text); a list item is mapped as its own block on its own line,
+  and a description-list entry becomes one block for the term and the value of one source line, used only when the two
+  items really are that line. A block whose verified lines are not one contiguous range — a conditional branch inside it,
+  an include boundary, a line the reader dropped — becomes one mapped block per range, each part with its own lines and
+  its own citation, because a fragment has to hold the words its entry claims; when the text's lines do not map one to one
+  onto the ranges, the block is reported instead of being cited on its first range alone. A part of a paragraph is mapped
+  as `paragraph_part`, a kind K1 places like any other text block but reads no anchor from: the author wrote one paragraph,
+  whose text spans lines and is therefore no anchor of K1's single-line grammar, and a source boundary is not a semantic
+  one, so a part whose first line happens to be a bold command must not become a definition the source does not have. A block whose text step one
+  could not verify stays out of the model and is returned in
+  `uncited` with its kind, reason, next action and its place — the chapter file and that file's own line, because the
+  engine reports a line of the expanded text, which in an included chapter is no line a reader can open; the expanded line
+  is kept beside it as `expanded_line`, for the line map and step one's report. The misaligned-table and unverified-heading
+  warnings name the same place. One warning line for the production goes with it: a block is never
+  handed to K1 without a selector, because K1 counts such a block as malformed and skips it, so the text would disappear
+  from the knowledge with only a count left behind.
+- A paragraph entry cites the source line step one verified verbatim, and a table is mapped as the engine's own rows, one
+  line each, in the order head, body and foot give them: the head row is K1's header, a table the engine reads without a
+  head row gets an empty header line (never a body row promoted into one, and that produced line cites the table's own
+  source range), a cell that spans source lines stays on its row line, and every character reference in a cell is decoded,
+  the numeric ones included. Nothing is regrouped by verified line number, so no row is merged, split, dropped or
+  invented; a table whose rows the engine reads with unequal cell counts is mapped as the engine reports it and reported
+  in the production warnings, with the delimiter row (`| --- | --- |`) K1's pipe-table reader needs under the header. The
+  delimiter is a produced line and cites nothing; every row line carries that row's own citation: the range covering the
+  row's verified cells, bridged over lines that re-read as blank (AsciiDoc's implicit header puts a blank line after the
+  head row, and a table written one cell per line is often spaced out — neither costs a row). A table stands on its cited
+  rows, not on one gap-free range over all of them: the range that covers the whole table is used for the fallback entry
+  and for a produced empty header, and when it cannot be built the first cited row's own range is used instead. A row
+  entry therefore cites the line the row is written on, never the header's line and never a byte range inside the mapped
+  text. A row that cites nothing is left out of the mapped table and reported with the table's file and line, the row's own
+  line, and which of three things happened: no cell verified, a cell that holds words verified on no line (so the row's
+  text cannot be cited on the lines of its other cells — a line that does not hold what the entry says is no citation), or
+  the row's own cells are separated by a line that holds something else. A table with no cited row at all is reported the
+  same way, and the reasons are kept apart ("no cell verified" is not said of a table whose cells verified). Nothing
+  borrows another row's source line.
+- A statement carries what the source says under the family's own attribute set, in the reader's spelling: every block
+  gives the engine's own inline output where there is one (a paragraph, an admonition, a simple quote, a verse — strong as
+  `**…**`, em as `*…*`, code as backticks, character references decoded, a hard break as the line break the engine already
+  puts after its `<br>`, so no tag reaches a statement), else its attribute-expanded text, except a listing or literal
+  block, which the engine leaves verbatim and which stays verbatim here. A brand word written `{product}` therefore reaches
+  each copy with that family's value, and an admonition or a quote gives K1 the same spelling a paragraph gives, so the
+  command literal a read-time link resolves (K05 R[2]) is recorded for them too. The fragment always stays on the verified
+  source line, which still holds the placeholder and the author's own marks (K02 R[4]: a statement need not be the source
+  verbatim).
+- Only an explicit structure gives a signature (task item 6): a command-table row (under a header that names commands, two
+  bold runs joined by a slash also split), every line of a `[role=signature]` block, and a paragraph the author marked as
+  one — bold and italic in AsciiDoc spelling (`*demo pool add* _<name>_ _[interval]_`), or one whole monospace line
+  (`` `demo pool add <name>` ``, or the `+…+` spelling the engine renders as plain text). The paragraph's inline markup is
+  read as the engine converts it, not re-implemented: step one keeps the engine's own inline output of a paragraph next to
+  its source text, and the mapping spells strong as `**…**`, em as `*…*` and code as backticks, which is the one spelling
+  K1's anchor grammar reads. A monospace line, whose parts the source does not mark, is read by an explicit rule instead:
+  the words before the first parameter group are the command head and every group after it is a parameter, while an
+  alternative group (`{add|del}`) and an optional group that words follow (`[no] demo pool add`) stay in the head because
+  K1 reads them as alternatives of the command itself. A line that rule does not read, or that K1 would not accept, is not
+  emitted with invented marks.
+- Every line of a `[role=signature]` block is read on its own and cited on its own source line (the block's verified range,
+  line by line), so a line never cites the whole block. A blank line makes no entry. A listing is verbatim, so the engine
+  gives no conversion of its lines and the marks are read here — but only by AsciiDoc's constrained-markup rule: an
+  opening mark at the start of a token with its text beginning immediately, and a closing run of the same length ending
+  that text at the end, before white space or before punctuation (`*demo pool del* _<name>_` reads as
+  `demo pool del <name>`, `\<name\>` as `<name>`). Never a character inside a word — `max_conn`, `health_check` and
+  `aes128+sha` keep the command words the source has, so a signature block and a command table row of the same command land
+  on the same node — and never a mark with white space inside it: `demo + pool + add <name>` is no markup, so such a line
+  reads as no signature, is reported through `unparsed` and stays the text it is instead of becoming a command the source
+  does not have. Nor is a mark escaped by an odd number of backslashes markup: `demo *pool\*_ add <name>` keeps its literal
+  asterisk, reads as no signature and is reported the same way, because deleting an escaped character would invent a
+  command word (`demo pool_ add`) that the source does not have — an even run of backslashes is a literal backslash and the
+  mark after it is markup as usual. Since a listing is verbatim, a reported line keeps its escapes in the statement; the
+  same pairing rule decides the marks of a heading segment. A line the rule does not
+  read stays the ordinary text it is — placed as text on its own line, and reported with its file, line, reason and next
+  action (`unparsed` of the mapping and one warning of the production). Nothing is wrapped in bold marks the source does
+  not have, so no statement is fabricated and no head/parameter split is guessed.
+- A title, ordinary bold prose and an example are never a signature. Step one marks every block that is an example or sits
+  inside one (the `====` block, or a block whose role or style says example, and all their children), and the mapping hands
+  K1 such a block as reference content: never as a paragraph, the one kind K1 reads anchors from, and never as a table,
+  which K1 would split into row signatures. A listing stays code, which K1 never anchors either, so a `[role=signature]`
+  block inside an example stays the reference text it is and the paragraph after the example follows no command from
+  inside it. K1 still places that text where it places any other block — under the command before it, with that command's
+  words in `data` — so `produceAdocEntries` marks every entry whose fragments all cite example content with
+  `data.reference_only: true`. The source literals of an example are preserved under `data.reference.command_literals`
+  and `data.reference.signature_literals` when present; the top-level fields of those names are absent. The product's
+  declared relation rules read only the top-level fields, so the shared relation evaluator includes the same literals
+  from real prose while an example creates neither links nor drift candidates. K1's placement code is unchanged and
+  runs once; it no longer supplies drift warnings. One production warning discloses the reference entries and literals.
+  Consumers that judge or count the original prose still need to respect `data.reference_only`; moving the relation
+  inputs does not claim that every other reader filters example text.
+- A version line with an adoc source stops the transitional `catalog.json` reading (task item 6), and the adoc producer is
+  where that is known: `catalogOnAdocLine(slot)` in `entries.ts` reads the slot's parser and schema, and `catalogRefusal()`
+  is the typed failure (`apv.adoc.catalog_reading_off`) the wired producer returns for it, naming the family, how the
+  line's manual source is changed into an adoc file table, and that the old root stays until then. It is a failure and
+  never an empty `{entries: [], warnings: […]}`: `ProducerOutput` has no failure channel, so an empty output would be
+  stored as a production that read this line's manual and found nothing in it. A line without an adoc source reads the
+  catalog as before — K1's own code, unchanged by this package.
+  An earlier revision of this branch had put that stop inside K1's `produceManualEntries` as an `adocSource` option. It is
+  reverted, and `manual.ts` and `functions/types.ts` are byte for byte K1's again: no caller ever set the option, the
+  catalog path cannot be reached from a production anyway (the manual producer reads markdown@1 slots only), and when it
+  was set it returned an empty success — which the producer protocol stores as a production that read this line's manual
+  and found nothing in it, the opposite of a refusal, with a next action that told a line which already has an adoc source
+  to get one.
+- `families.ts` (decision 35): every name family runs the expansion with its own attribute set and gets its own document
+  model. The manual name carries the family, spelled `<manual>-<family lower-cased>` (`cli-apv`, `cli-nsae`), and both
+  copies hang under the manual namespace of the same version line. An attribute-set key must be one of the `names` in
+  `product.json`, or the group is refused (`apv.adoc.family_not_a_name`). The conditional branches are reported per family,
+  and any family's expansion failure fails the group and returns no partial result, so the old knowledge root does not
+  move.
+- What a family records about its attribute set is only what this producer was given: whether the parameter named the
+  family (`attributes.declared` — an explicit empty set is declared, and a synthetic set is as declared as a real one), the
+  set it ran with (`attributes.values`, which the composition record also carries) and a note saying which set was used.
+  The producer claims no origin it cannot know: where an attribute set came from is the Hub's record, `param_sources` of
+  apv-deployment-conventions step one, which this task only reads. Until that record exists, "this family's attribute set
+  is not configured" is not written here; a family the parameter names no key for produces with the pack default (all
+  unset, like today's markdown), its note says exactly that and names the `param_sources` step as the way to tell a
+  configured set from an unconfigured one, and nothing is recorded as unknown. The real attribute names and values are
+  deployment data: the integrator collects them read-only from the source and overrides the parameter through that
+  mechanism.
+
 ## Deviations from the brief and the task
 
 - `basis` is `declared` / `projected` (provenance_type axis, A01 R[1]) instead of `declared` / `rule`: the task asked for
@@ -366,6 +694,25 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
   section: the producer uses it as-is and never decodes h/ then. `sectionSelector` cannot turn a section path into a
   line range — an adoc model supplies either its own `path` arrays or selectors it can build from a path. The adoc
   producer needs no change here for placement; only the markdown@1 h/ decoding stays the default.
+  The adoc producer (K4 step two) still takes the other route its page allows: its mapping produces a markdown@1-shaped
+  model and `adoc/entries.ts` rewrites K1's fragments into text@1 references of the chapter files; moving it onto these
+  options is a follow-up for the wiring step.
+- adoc: the locator's folded comparison (`text.ts plainText`) inverts what the engine does to inline markup, character
+  references, inline macros and typographic replacements, and nothing else. A list item, description-list item or table
+  cell whose inline conversion the fold cannot invert — a menu path, a key cap, a footnote number, a cell carrying a span
+  marker (`2+|`) — is reported and cited on no line; the same words in a paragraph verify exactly, because a paragraph
+  keeps its source text. How often real manuals hit this is unknown until the integrator's adoc-versus-markdown
+  comparison runs.
+- adoc: what cannot be cited is not placed. A block, a table row or a heading line with no verified source line stays out
+  of the mapped model and is reported (`uncited`, `unparsed` and the production warnings) instead of reaching K1 without
+  a citation, which K1 would skip as malformed: the words are then not in the knowledge, and the report is the only
+  record. Nothing is placed on a line that was not read back.
+- adoc: the mapped model's `line` and `lines` are the source line numbers of the file a block cites, not indices in one
+  document-wide line list as in markdown@1: a group has many files. K1 reads neither field; the citations carry the file
+  digest with the line selector.
+- adoc: a table the engine reads without a head row gets an empty header line, which is a produced line and cites the
+  table's own range (the merged range of its verified cells) — the only fragment of this producer that cites a range no
+  single row was verified on.
 - Release notes were not sampled: the structure is the one described in the task, so the heading and column patterns may
   need additions once real notes are read.
 - Platform tokens of build names (`HG-K`) and of page names (`hg_k`, `ft_kylinv10`) are kept as written; they are not
@@ -451,6 +798,30 @@ pack and reviews a mind map against the root it produced.
 
 ## Needs from other packages
 
+- **integrator (adoc)**: the adoc producer is not wired into `product.json` yet (no slot for a group of chapter files, and
+  decision 35's `attributes.<family>` parameter keys wait for apv-deployment-conventions step one), so
+  `catalogOnAdocLine`/`catalogRefusal` have no production caller yet and two checks stop at this package: that a family's
+  failure leaves the old knowledge root where it is, asserted here only as "no partial result is returned", needs a
+  knowledge sync to be seen on a root; and "this family's attribute set is not configured" can only be written from
+  `param_sources`, which this producer must not guess. Both are follow-ups for the wiring step.
+- **K1 (adoc)**: `produceManualEntries` reads an anchor from any block whose kind is `paragraph` and whose text parses, and
+  its model has no way to say "this block is part of a larger block the author wrote, so it is no standalone signature".
+  The mapping works around that with a kind of its own (`paragraph_part`) for the parts of a split paragraph; a flag on the
+  block, or an option that switches anchor reading off for parts, would be the clean interface. This package does not
+  change K1's files.
+- **integrator (adoc, examples)**: the shared relation interface is verified with the real evaluator: example literals
+  remain in `data.reference` and are absent from the declared top-level relation fields, while the same-shaped literal
+  in real prose still yields a link or drift result. This does not depend on a consumer recognizing the reference flag.
+  Read-time views, reviews and regression checks that interpret original prose must still filter `data.reference_only`
+  entries before judging behaviour or counting mentions. No general consumer filtering is claimed by this pack.
+- **knowledge (adoc)**: the mapping's report must not stay an object only a test can see. When the producer is wired,
+  `uncited` (a block or a table row that cites no source line), `unparsed` (a line declared a signature that reads as
+  none), the misaligned-table lines and the unverified-heading lines have to reach the knowledge sync's result for the
+  root they belong to: readable per root, with file, line, reason and next action, and counted with the unplaced entries
+  (the counts a facet or index view already gives), so an operator sees how much of a manual did not become knowledge and
+  why. Today `toK1Model` returns them and the producer copies them into `ProducerOutput.warnings`, which is capped and is
+  a text line, not a count; carrying them as records needs a field in the production result (`contracts` and
+  `hub/knowledge`), which this package cannot add.
 - **contracts**: a parameter type for "IPv4 or IPv6 address" and one for "dotted mask or prefix length" (or a union of types
   in `CatalogParam`) would replace the overload expansion.
 - **knowledge**: the Hub calls no model (decision 15): `path: null` entries and `unplaced` spans stay unplaced at the

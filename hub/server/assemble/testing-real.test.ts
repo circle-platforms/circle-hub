@@ -194,10 +194,11 @@ describe('createTestHub', () => {
     assert.deepEqual(errors.map((e) => [e.code, e.message]), [['SOURCE_UNAVAILABLE', '对你不可用']]);
     const asAdmin = (await hub.records.callLog.query(hub.admin.principal, { userId: bob.user.id, tool: 'start_run' })).items;
     assert.equal(asAdmin.length, 1);
-    assert.match(asAdmin[0].admin_note ?? '', new RegExp(`start_run: pack ${REVIEW_PACK} is unknown, not assigned to ${bob.user.id}`));
+    assert.match((asAdmin[0].admin_reasons ?? []).join('\n'), new RegExp(`start_run: pack ${REVIEW_PACK} is unknown, not assigned to ${bob.user.id}`));
     const asBob = (await hub.records.callLog.query(bob.principal, { tool: 'start_run' })).items;
     assert.equal(asBob.length, 1);
     assert.equal(asBob[0].admin_note, undefined, 'the caller never sees the reason');
+    assert.equal(asBob[0].admin_reasons, undefined, 'the caller never sees private reasons');
     assert.ok(!JSON.stringify(started).includes('not assigned'));
   });
 

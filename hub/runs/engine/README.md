@@ -13,7 +13,7 @@ await runs.startRun(user, input, { traceId, sessionId });   // RunsService of hu
 resolveReference, getRun, listRuns; answers are the tool outputs without `trace`) plus `startRunDetailed` (the answer, the
 whole production result of a fact-only pack, the run record digest and the evidence gaps), `startHubRun` (a run the Hub
 executes for a standing obligation), `getResult` (a result by its submission digest, accepted or not) and `runsFor`.
-Deps: `records` (store, objects, artifacts of the records kit, and optionally its `config`, whose `limits.maxRecordBytes` lets
+Deps: `records` (store, objects, artifacts and the read-only `variables.snapshot` port of the records kit, and optionally its `config`, whose `limits.maxRecordBytes` lets
 start_run size a run before storing anything; pass the whole kit), the ports `WorkflowStore`, `PacksPort`, `KnowledgePort`,
 `ExternalReaderPort` (the assembly gives it the knowledge views beside the connectors); optional `parsers` (default the core
 parsers), `sandbox` and `sandboxLimits` for every pack function call, `now`, `clientKeyWindowMs` (default 24 h) and
@@ -36,6 +36,12 @@ well-formed text). The same reasons go to the admin note of the call they belong
 | `preview.ts`, `queries.ts` | resolve_reference; getRun, listRuns, getResult, runsFor |
 | `store.ts`, `readers.ts` | records and index keys (`runs.*`, `action.kind`, `action.run`); visibility and the readers hub/refs resolves with |
 | `testing/` | fakes of the ports, the synthetic toy packs (written to temp directories with real function files), mind maps, the harness |
+
+## Ordinary-variable snapshots and parameter admission
+
+Each accepted `start_run` call reads all current ordinary-variable decisions in one verified snapshot. Input binding and expected-source reads receive the same process-local map through `ExternalReadContext`; nested connector reads inherit it. The map is never serialized into the run. The returned input bytes and their source references remain frozen, so a later variable change affects a new run only. A newly referenced name absent from this snapshot requires setting the name and reopening the operation; it is never silently resolved against current state.
+
+Before schema diagnostics or any external read, the entry point scans the complete JSON tool arguments for recognizable credentials. A hit refuses the whole call with `SUBMISSION_SCHEMA_VIOLATION` and the fixed instruction “参数里不能有凭据”; no run is stored and neither values nor sensitive syntax are quoted. Reference-looking parameter strings are ordinary text: the Hub never substitutes them, and accepted parameters remain byte-equivalent JSON values in the run.
 
 ## Decisions
 
@@ -551,3 +557,46 @@ retry evidence. This merge changes no timeout, caller scope, generated contract 
 外部输入及包声明的预期来源把 coverage 冻结进 SourceBinding。主张构造按其对象位置、根据/精确值的根摘要和检查声明的 reads 选取对应覆盖；运行级检查还涵盖它判定的条目位置。依据未完整来源的事实或判断加生成词表的 partial，并保留 qualifier.coverage；生产投影说明使用同一规则。完整的无关来源不被别的部分来源牵连，旧运行也不因一次后续完整读而升级。合计仅使用已声明覆盖的观察；所依外部来源缺覆盖时不伪造 total，原始旧绑定仍可解析。start_run 文字直接披露部分来源的读取覆盖。
 
 外部缺席与读取恢复：ReadOutcome/ExternalRead 的 absent 是系统对整份对象的确定观察。连接器保留原始应答，并提供带系统、对象、读取时刻的规范 JSON 观察；期望来源按原角色绑定它，声明 reads 的检查照常读取，其本身不替检查决定通过或驳回。必填输入缺席以 SOURCE_ABSENT 拒绝；输入重试耗尽以 SOURCE_RETRYABLE 给下次时间，期望来源重试耗尽也保留明确的缺失事实和重读后重开运行的动作。引用的新故障码按内部 reason 进入已有未完成路径，保留原修复轮记账规则。登录停止的具名管理员请求记录等 hub-unknown-exits 的接口，尚未声称已发请求。
+
+## Transitional recovery metadata
+
+New unknown outcomes name `missing` at their producer. Evaluation binds every transitional layer to its missing facts
+and complete `exit`, preserving independent causes in `gaps`. Pack repairs address the published pack owner;
+clarification and artifact repair address the runner (or standing-obligation configurer); administrator actions address
+the first active administrator in account-id order. A legacy test port without publication ownership instead asks its
+runner to clarify that missing authority; it never invents a pack owner.
+
+Until `hub-unknown-exits` binds actual request records and deadline processing, every exit intent has an absolute due
+at evaluation time plus 72 hours, matching the administrator acceptance request default. These fields do not claim
+that a request was created or an action was performed. Existing finite retries and splitting remain unchanged. Missing
+input from a temporarily unavailable quote schedules rereading; withheld ordinary sources require administrator
+acceptance; digest mismatches require trusted-backup restoration, never blind rereading. Actual credential echoes
+remain excluded at the input boundary and cannot gain an administrator-acceptance exit here.
+
+Historical stored results remain byte-for-byte unchanged. A transitional layer without a recorded exit displays
+`出口未写`; the reader never invents its missing facts, audience or deadline.
+
+A lease declaration without `max_ttl_seconds` grants no-expiry reservations (`until: null`). Acquire needs no TTL;
+extend is refused for the whole request before effects, and release still requires the same user and predecessor
+lineage. Capped workflows keep their existing validation. The trusted dispatch boundary treats a null expiry as
+unbounded; fences, holder identity and lineage remain mandatory.
+
+Lease views freeze `since`, `run`, `until`, `mine`, unfinished `jobs` and authorized `holder` identities, plus registration
+rows (prefix/mine, owner identity only for admins). `lease_context` and `lease_registrations` are retained on the run;
+evaluation reconstructs these frozen facts instead of consulting current ownership. Missing user identity or the trusted
+read-only `leaseJobs` port refuses start with an administrator repair action. Assembly connects that port to
+`DispatchService.activeLeaseJobs`; read-only jobs are excluded and unresolved frozen effects remain blockers.
+
+Owner `force_release` checks every key, owner/admin authority, active row, nonempty reason and unfinished dispatch job
+before any operation executes. Unfinished jobs refuse with job status/disposition instructions; local release cannot
+stop remote work. The service rechecks owner authorization under the registration lock, increments fences, and records
+the acting user, reason and original holders. Run records preserve released keys and their prior runs; originals remain
+append-only. Registration operations use the same projection request boundary. Administrator CLI release uses the same
+read-only job guard. As with the existing release/extend operations, successful ownership changes are irreversible if a
+later acquire or run-record write fails; their action records remain the source of truth.
+
+The final force-release guard runs under the same database lock used by dispatch reservation insertion. It re-reads
+unfinished jobs while the lock is held; a competing reservation rechecks fences in that transaction before it commits.
+The lock is released before connecting to an executor. This closes the gap between a read-only job snapshot and release.
+Historical run@1 lease snapshots remain readable in their original key/until/mine shape and are passed unchanged to
+older pinned packs. Current start_run contexts still require since/run/jobs; no historical identity or time is invented.

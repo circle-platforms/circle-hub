@@ -526,8 +526,24 @@ Every accepted fallback is disclosed through `recordIntegrityNotes()` in the pub
 
 唯一业务键锁使用独立的 `UNIQUE_KEY_LOCK_SPACE`，与来源去重和普通业务事务锁的命名空间均不同；合并保留三种用途，不让它们互相占用同一个锁空间。
 
-完整管理员理由（hub-read-absence）：新增迁移 4 call_reasons，只追加每条理由的序号、完整正文和时刻；原 call_notes 的 2,000 字摘要与已应用迁移 1–3 的 SQL 均保留。CallLogInput.adminReasons 不参与调用记录及其摘要，在同一事务中批量写入；当前管理员查询才有 admin_reasons，普通读者无该字段。追加回执可带私有摘要；JSONL 的新写、重试与 repairFiles 重建只带调用回执字段，不带 admin_note 或 admin_reasons。部署迁移由整合者另行执行；本分支只在临时 PostgreSQL 验证。
+完整管理员理由（hub-read-absence）：新增迁移 6 call_reasons，只追加每条理由的序号、完整正文和时刻；原 call_notes 的 2,000 字摘要与已应用迁移 1–5 的 SQL 均保留。CallLogInput.adminReasons 不参与调用记录及其摘要，在同一事务中批量写入；当前管理员查询才有 admin_reasons，普通读者无该字段。追加回执可带私有摘要；JSONL 的新写、重试与 repairFiles 重建只带调用回执字段，不带 admin_note 或 admin_reasons。部署迁移由整合者另行执行；本分支只在临时 PostgreSQL 验证。
 
 日志理由不是源文件：完整理由和摘要均拒绝保存触发凭据扫描的原文，不写命中文字或其摘要；只保留已触发日志保护这一确定说明。管理员仍可在原系统或受限原件中重现并私审，不能靠日志旁路读凭据。
 
 首轮复核修正：MCP 的管理员摘要只记理由条数，不拼接理由原文；旧调用方单独提供的 adminNote 仍只在数据库管理员查询里可见，文件序列化统一剔除所有私有备注字段。
+
+## Named deployment versions
+
+`RecordsKit.variables` persists `variable@1` and metadata-only `secret@1` objects through ordinary append-only resource-configuration decisions (`var:<name>` / `secret:<name>`). Every write requires the current administrator and a scanned, nonempty reason. Both kinds share the sorted `variable-name:<name>` transaction locks; a name retains its kind after withdrawal. Ordinary canonical same-values reuse the version; every secret setting makes a fresh random vault entry and decision. Batch settings commit all decisions in one transaction; transport reads select the current decisions together and refresh the whole batch once if any vault entry has disappeared.
+
+The snapshot for ordinary variables is one verified database query. Values are loaded by those immutable decisions when used, so later settings cannot alter an existing snapshot. Cross-object validation joins the caller's transaction through `configureResourceInTransaction`; validators must use that transaction and avoid opening a second database connection while holding name locks.
+
+Secret bytes never enter these objects, records or their hashes. Current and previous vault versions remain available across one rotation; older entries and unbound entries older than an hour are collected on the next setting. `Vault.stat` exposes only the entry write time, without decryption or a master-key read. Revocation removes every entry for that name. Missing bytes, length mismatches and consumer/address changes refuse before transport, with the setting command as the next action. Listing and history remain administrator-only. If a secret was mistakenly persisted as an ordinary variable, the only remedy is to rotate it at its issuer; immutable history cannot be erased.
+
+Synthetic regressions include fifty concurrent writers, cross-kind races, coherent two-secret reads, rotation and exact consumer binding, orphan age, missing/altered vault entries and caller-transaction rollback. No schema migration or deployed history is changed.
+
+Secret withdrawal deletes only entries named by grant decisions preceding its revocation. A concurrently prepared or later committed version is not removed. A post-commit cleanup failure explicitly reports that revocation is effective and instructs the administrator to repair storage and repeat the withdrawal. Reversible spellings can be requested from `secretForms(value, {hashes:false})`; general reason redaction also includes digest spellings.
+
+短密钥的理由检查先排除每种写法的完整值，再检查长度至少 8 的连续片段；`--short` 的脱敏提示不豁免完整值检查。拒绝不写决定或密钥条目，也不引用原始理由。
+
+Ordinary JSON token screening checks both object keys and values recursively, including objects inside arrays. A key meeting the strict token rule requires the same explicit `--not-secret` confirmation; refusal never quotes that key.

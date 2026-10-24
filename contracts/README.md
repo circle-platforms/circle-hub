@@ -121,6 +121,11 @@ Rules for a stub:
 
 ## Needs from other packages
 
+- **hub-unknown-exits (codex-b), review item 5:** connect reason selectors in terminals.ts routeOf and evaluate.ts routing,
+  and make repairRounds match the reachable routes. Currently reasons do not route but may raise the repair budget;
+  contract/publication validation is not a substitute for that runtime work. Define and test exact-code/reason/wildcard
+  precedence there. This repair intentionally does not edit terminals.ts or any unknown producer.
+
 - **records**: `hub/records/store.ts` accepts only `/^[a-z_]+@[0-9]+$/` as a schema name, so storing a body registered as `catalog-entry@1`, `check-outcome@1`, `run-summary@1`, `pack-summary@1` or `submission-received@1` throws `schema must be name@major`. Please validate schema names with contracts' `SchemaId` (which also refuses leading-zero majors).
 - **rules**: `CheckOutcome.grounds` in `contracts/src/tables.ts` should be `z.array(Ground)` (import it from `./reference.ts`), so an outcome never rests on a bare `entry:` (B01 R[5]); `JsonPointer` can be imported from `./common.ts` instead of declared twice; give `JsonPath` its `.max(512, { abort: true })` and `JsonPointer` a length cap the same way, since their patterns overflow on megabytes. Then run `npm run gen:contracts` or ask here.
 - **rules, refs, packs, records**: the reference grammar is tighter (decision 3) and every shape is strict (decision 5); please rerun your tests against this version. The contracts owner ran only `contracts/**` tests.
@@ -195,9 +200,10 @@ changed. hub-unknown-exits must derive actions/create requests, preserve gaps, a
 
 The required flags describe a verified refutation (`core.structure.required_empty`, `data.missing`) attributed to whoever
 provided the subject. They never convert a mandatory absent location into unknown. Optional absence is distinct from an
-empty selected collection. `range@1` min/max thresholds accept `empty: fail|pass`, omission meaning fail; count and sum
+empty selected collection. `range@1` min/max thresholds accept `empty: refute|support`, omission meaning refute; count and sum
 keep their defined empty numeric value and do not accept the min/max-only option. This is a table-format selector derived
-from generated terminal codes. Interpreter execution/attribution remains hub-retry-split's work. Complete catalog absence
+from the generated verdict axis. The range interpreter executes the empty min/max decision with `data.empty: true`;
+required-location attribution remains hub-retry-split's work. Complete catalog absence
 is a refutation; an incomplete catalog needs its missing sources and recovery, not a fabricated complete scope. View scope
 fields are deliberately left to the owner of views.ts.
 
@@ -213,8 +219,8 @@ new result `skip_reason` field when the consumer projects it, rather than being 
 
 `PublishableRequirementsFile` is the strict new-publication guard: a static fact layer has a check, and a dynamic fact
 layer names its P07 `observation` contract. Judgment-capable requirements are not forced to install a fact check. The base
-`RequirementsFile` remains the frozen legacy-file reader; publication consumers must use the strict guard, as
-hub-unknown-exits is tasked to wire it. These guards do not claim that a referenced observation has actually happened.
+`RequirementsFile` remains the frozen legacy-file reader. `hub/runs/packs/validate.ts` now uses the strict guard
+at publication, preserving per-field checks/observation refusal paths; `load.ts` keeps the historical reader. These guards do not claim that a referenced observation has actually happened.
 
 `CheckEntry.limits` has the sandbox's camel-case work controls (timeoutMs, memoryMb, outputBytes, logBytes, inputBytes).
 Bounds are refused, not silently clamped; omission inherits service defaults. A source-only cross-check test anchors the
@@ -267,3 +273,26 @@ branch does not rewrite it. Besides the explicitly approved label/source note it
 The strict check-outcome boundary intentionally rejects a new unknown without top-level missing; engines/pack producers that
 still emit the old form must migrate in the dependent tasks. Only history uses the permissive stored-result reader. No
 runtime scheduler, re-evaluation loop, B07 persistence, deadline worker, real read or deployment is claimed by this task.
+
+History rendering is connected through `readStoredValidationResult` and `StoredPartitionItem`: `get_nodes` retains
+counts, requirement states, problem lists and item blocks for legacy omissions. Missing recovery fields are disclosed as
+“出口未写” and “缺失事实未写”, including partition/item pointers and paged results. Reading never backfills those fields
+or changes stored bytes; current admission remains strict.
+
+### Required vocabulary scan for contract changes
+
+In addition to focused contract tests and generation checks, run:
+
+```sh
+node --test --test-concurrency=1 --test-name-pattern='uses generated axes' packs/workflow/case-review/packs.test.ts
+```
+
+The existing `.github/workflows/checks.yml` Unit tests job runs `npm run test:unit`; its `packs/**/*.test.ts` pattern
+already includes this scan. No extra CI job or relaxed exception is needed. Review item 6's old dispatch comparisons are
+fixed on this baseline. The narrow scan still reports unrelated lease_op comparisons in `hub/server/cli-admin.ts` and
+`packs/workflow/test-bed/functions/check-bed.ts`; those remain visible failures, not exclusions or verified passes.
+Their owners must fix the generated types; this branch does not edit the pack's unknown producers.
+
+The check-work contract now names both `CHECK_LIMITS_MIN` and `CHECK_LIMITS_MAX`; source-only tests anchor each bound
+to the independent sandbox protocol constants and reject values below the lower bound. `MappedIdentity` describes a
+mapped external account; it deliberately has its own diagnostic instead of reusing the missing-fact field type.

@@ -227,7 +227,7 @@ describe('start-up order and failure modes', () => {
       const admin = (await after.principals.findByName('管理员'))!;
       const lines = (await after.callLog.query({ id: admin.id, name: admin.name, role: 'admin' }, { tool: 'start_run' })).items;
       assert.equal(lines.length, 1);
-      assert.match(lines[0].admin_note ?? '', /start_run/, 'the engine reason behind the neutral answer is the admin note');
+      assert.match((lines[0].admin_reasons ?? []).join('\n'), /start_run/, 'the engine reason behind the neutral answer is private');
       assert.equal(lines[0].session, 'assembly-1');
     } finally {
       await after.close();

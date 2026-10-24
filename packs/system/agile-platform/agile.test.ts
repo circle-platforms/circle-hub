@@ -1,3 +1,4 @@
+import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../../hub/connectors/testing/credentials.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, before, describe, test } from 'node:test';
@@ -240,7 +241,7 @@ describe('reads through the connectors', () => {
     kit = await openSystemKit(postgres, ['agile-platform']);
     agile = await startAgileStub(agileOptions());
     resource = (
-      await kit.connectors.admin.addResource(kit.admin, {
+      await addSyntheticResource(kit.records, kit.packs, kit.connectors, kit.admin, {
         system_pack: 'agile-platform',
         name: '合成敏捷平台',
         environment: 'test',
@@ -249,8 +250,8 @@ describe('reads through the connectors', () => {
         settings: { roots: [ROOTS.first, ROOTS.second] },
       })
     ).id;
-    await kit.connectors.admin.setCredential(kit.admin, resource, 'username', AGILE_ACCOUNT.username);
-    await kit.connectors.admin.setCredential(kit.admin, resource, 'password', AGILE_ACCOUNT.password);
+    await setSyntheticCredential(kit.records, kit.connectors, kit.admin, resource, 'username', AGILE_ACCOUNT.username);
+    await setSyntheticCredential(kit.records, kit.connectors, kit.admin, resource, 'password', AGILE_ACCOUNT.password);
   });
   after(async () => {
     await agile?.close();

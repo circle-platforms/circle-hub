@@ -24,4 +24,13 @@
 9. 有效性：读出时列出没能评估的条件，适用条件全部评过才报 valid（read.ts:412-500）。
 10. 命令树与用例条目：照新的 catalog-entry@1 改 packs/product/apv/functions/command-tree.ts（参数地址角色、地址或主机名联合类型、单数 limit）；没打标签的用例在条目上记“正负向和测试类型未声明”。（产品同步不列出的用例文档放进不分版本的范围，改由 kb-unversioned 做。）
 
+## 集成者答复（2026-10-24 凌晨）
+
+- **05:24，答 codex-f，第 6 条**：自动接受的来源类别按决定 20（用例文档、手册），通过 `KnowledgeOptions` 显式配置，默认名单为空；交管理员的请求期限为 72 小时。
+- **05:37，可改路径补充**：APV 的 `pack.json` 可重签并升补丁号；`contracts/src/product.ts` 的 `SyncPlanOutput` 可加可选 `failed_builds`，核心同步把它存成失败动作/无根构建，相关生成物与测试同步。
+- **05:56，可改路径补充**：`hub/ports.ts` 的失败分支可加可选 manifest，`hub/connectors/connectors.ts` 透传并测试。hub-read-absence 也改 ports/connectors，后合并方解决冲突。
+- **06:02，第 6 条**：`hub/records/api.ts` 可加管理员命中分页方法；`acceptFindings` 可加可选的检测类选择，兼容旧调用，`artifacts.ts`、`scan.ts`、`coverage.ts` 实现并测试。默认自动接受名单仍为空，retain_only 中真实的凭据回显不自动接受。
+- **06:35，第 2 条**：用 `KnowledgeOptions` 的额外根回调；缺配置时不判略去，记待核对并向具名管理员发请求，等 kb-unversioned 接线。
+- **07:41、07:45，第 10 条**：授权 `contracts/src/tables.ts` 的 `CatalogParam` 携带未核对约束的 missing、原因、修复动作，及 `hub/rules/catalog/**` 的匹配分支、对应生成物和测试。匹配器对该约束返回 unknown 与顶层 missing，不报反驳。APV 命令树的非空 limit 这一轮只实现区间；其他写法的确定诊断和补证出口照[决定 46](../hub-r4-progress.md)，不猜约束。
+
 完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。

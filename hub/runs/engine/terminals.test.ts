@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { bindRecovery } from './recovery.ts';
 import { REASON, SOURCE_ROLE } from '../../../contracts/generated/vocabulary.ts';
 import type { RequirementTemplate } from '../../../contracts/src/pack.ts';
 import { LayerResult } from '../../../contracts/src/validation.ts';
@@ -173,7 +174,7 @@ test('attribution only on non-pass terminals that miss the expectation, by rule 
   const judgment = staticLayer(applyRouting(staticTerminal({ producer: 'judgment', hasProducer: true, checks: 0, outcomes: [], handling: 'handled', expectation: SUPPORT }), t, 0), SUPPORT);
   assert.equal(judgment.attribution, undefined);
   // every layer the functions build is a valid layer result of the contract
-  for (const l of [layer, judgment, dynamicLayer()]) assert.ok(LayerResult.safeParse(l).success, JSON.stringify(l));
+  for (const l of [layer, judgment, dynamicLayer()]) assert.ok(LayerResult.safeParse(bindRecovery(l, [], { now: new Date('2026-01-01T00:00:00Z'), runner: 'usr_' + '1'.repeat(26), owner: 'usr_' + '2'.repeat(26), admin: 'usr_' + '3'.repeat(26) })).success, JSON.stringify(l));
 });
 
 test('error routing: repair with rounds left and exhaustion, request waits, unknown records unknown, reject keeps the violation', () => {
@@ -250,7 +251,7 @@ test('a requirement incomplete at every declared layer: skipped, not covered, re
     assert.deepEqual(dynamicLayer(applyRouting(raw, template(), 0)), dynamicLayer());
   }
   assert.equal(dynamicLayer(applyRouting(fact([judged(refute('p.code'), 'subject')]), template({ error_handling: [{ code: '*', action: 'request' }] }), 0)).terminal, 'not_run');
-  for (const l of [dynamicLayer(skipped), dynamicLayer(exhausted)]) assert.ok(LayerResult.safeParse(l).success, JSON.stringify(l));
+  for (const l of [dynamicLayer(skipped), dynamicLayer(exhausted)]) assert.ok(LayerResult.safeParse(bindRecovery(l, [], { now: new Date('2026-01-01T00:00:00Z'), runner: 'usr_' + '1'.repeat(26), owner: 'usr_' + '2'.repeat(26), admin: 'usr_' + '3'.repeat(26) })).success, JSON.stringify(l));
 });
 
 test('item cell: strongest terminal per layer with the counts of the other non-pass terminals; undeclared layers have none', () => {

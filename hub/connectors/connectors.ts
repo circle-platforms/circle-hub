@@ -4,6 +4,8 @@
 // configuration binds, nothing else. The credential handling of a resource is kept while what its session depends on (the
 // binding: origins, plaintext declarations, pack version and digest, credentials and their rules) stays the same.
 // The reader never throws and never says more to its caller than ok or not: the reason of a failure is for the admin log.
+import { secretNameOf } from '../../contracts/src/variables.ts';
+import { CredentialStop } from './credential-stop.ts';
 import { callPackFunction, osIsolationAvailable, type SandboxLimits } from '../rules/api.ts';
 import { createDefaultRegistry, type ParserRegistry } from '../refs/api.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort, ResourceCatalogPort, ResourceListing } from '../ports.ts';
@@ -15,12 +17,12 @@ import { LoginManager, StaticCredential, type LoginStatus } from './login.ts';
 import { ProfileCache, type LoadedProfile } from './profiles.ts';
 import { ReadEngine, externalRoutingType, externalSizeReason, parseExternal, type PackFunctionRunner, type ReadArgs, type ReadOutcome, type ResourceRuntime } from './read.ts';
 import { Redactor } from './redact.ts';
-import { ResourceRegistry, sessionEntry, type AddResourceInput, type ResourceDescription, type ResourceState, type UpdateResourceInput } from './resources.ts';
+import { ResourceRegistry, sessionEntry, resourceConsumer, storedCredential, type AddResourceInput, type ResourceDescription, type ResourceState, type UpdateResourceInput } from './resources.ts';
 import { compileRoutes } from './routes.ts';
 import type { ResourceRecord } from '../../contracts/src/resources.ts';
 
 export interface ConnectorsOptions {
-  records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts' | 'vault' | 'principals' | 'authorizations'>;
+  records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts' | 'vault' | 'principals' | 'authorizations' | 'variables'>;
   /** Provided by runs: published packs (the system pack of each resource). */
   packs: PacksPort;
   /** Injectable for tests; default the global fetch. */
@@ -58,18 +60,11 @@ export interface ResourceAdmin {
   /** Admins get addresses and plaintext declarations; any other valid account the rows without them. */
   listResources(by: Principal): Promise<ResourceListing[]>;
   /**
-   * Admins only: one resource, enabled or not, with the name, vault entry and digest rule of every credential it declares
-   * and whether a value is set (never a value). Needs neither the system pack nor the vault key. Null for an id that is not
+   * Admins only: one resource, enabled or not, with each named reference, wire rule and current storage metadata
+   * and whether an entry is present (never a value). Needs neither the system pack nor the vault key. Null for an id that is not
    * a resource.
    */
   describe(by: Principal, id: string): Promise<ResourceDescription | null>;
-  setCredential(by: Principal, id: string, name: string, value: string): Promise<void>;
-  /**
-   * Admins only: several credentials of one resource in one call. Every value is checked before any is stored, and the
-   * session is forgotten once, after the last (as setCredential does for one): a login that takes a user name and a
-   * password needs both changed before a running Hub ends its stop, or a read in between logs in with half of them.
-   */
-  setCredentials(by: Principal, id: string, values: Readonly<Record<string, string>>): Promise<void>;
   disable(by: Principal, id: string, note?: string | null): Promise<void>;
   enable(by: Principal, id: string, note?: string | null): Promise<void>;
   /**
@@ -86,6 +81,8 @@ export interface ResourceAdmin {
 }
 
 export interface Connectors {
+  redactor: Redactor;
+  primeSecrets():Promise<void>;
   reader: ExternalReaderPort;
   catalog: ResourceCatalogPort;
   admin: ResourceAdmin;
@@ -111,6 +108,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
   const registry = new ResourceRegistry({
     store: records.store,
     objects: records.objects,
+    variables: records.variables,
     authorizations: records.authorizations,
     principals: records.principals,
     vault: records.vault,
@@ -146,8 +144,32 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       return result.output;
     });
 
-  function runtimeOf(state: ResourceState, loaded: Awaited<ReturnType<ProfileCache['load']>>): ResourceRuntime {
-    const key = `${state.bound}|${state.decision}|${loaded.pack.digest}`;
+  async function runtimeOf(state: ResourceState, loaded: Awaited<ReturnType<ProfileCache['load']>>, context?: ExternalReadContext): Promise<ResourceRuntime> {
+    for (const material of await records.variables.recentSecrets()) redactor.add(material.value);
+    const resolved = await records.variables.resolveVariables(state.resource.settings,state.resource.id,context?.variables);
+    resolved.uses=resolved.uses.map(u=>({...u,at:u.at.replace('#/','#/settings/')}));
+    const original = state.resource;
+    const requests = Object.entries(original.credentials).map(([item,entry])=>{
+      const name=secretNameOf(entry);
+      if(!name)throw new ConnectorError('CREDENTIAL_MISSING',`资源 ${original.id} 的凭据还是旧写法：用 circle-hub resource update ${original.id} --credential ${item}=<密钥名> 改成引用，原值会迁移过去`);
+      return {name,consumer:resourceConsumer(original,item)};
+    });
+    let materials;
+    try {materials=await records.variables.readSecrets(requests);}catch(error) {throw new ConnectorError('CREDENTIAL_MISSING',error instanceof Error ? error.message : '密钥未设置；请 secret set');}
+    const values=new Map<string,string>();
+    for(const [index,item] of Object.keys(original.credentials).entries()) {
+      const m=materials[index],rule=original.credential_digests[item];
+      if(m.metadata.digest_rule!=='plain'&&m.metadata.digest_rule!==rule)throw new ConnectorError('CREDENTIAL_MISSING',`密钥 ${m.name} 的摘要规则不合：换一个名字并 secret set`);
+      const value=m.metadata.digest_rule===rule?m.value:storedCredential(m.value,rule);
+      redactor.addSent(value);values.set(original.credentials[item]+'#'+item,value);
+    }
+    const gate=materials.length?new CredentialStop(records.store,records.vault,materials.map(m=>m.decision),materials.map(m=>m.name),original.id):null;
+    const epoch=await gate?.epoch() ?? '';
+    const dependencies=[...resolved.uses.map(u=>u.decision),...materials.map(m=>m.decision)];
+    const vault=new Proxy(records.vault,{get(target,key){if(key==='getText')return async (entry:string)=>values.has(entry)?values.get(entry)!:target.getText(entry);const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;}});
+    const credentials=Object.fromEntries(Object.entries(original.credentials).map(([item,entry])=>[item,entry+'#'+item]));
+    state={...state,resource:{...original,settings:resolved.value as Record<string,unknown>}};
+    const key = `${state.bound}|${state.decision}|${loaded.pack.digest}|${dependencies.join("|")}|${epoch}`;
     const known = runtimes.get(state.resource.id);
     if (known !== undefined && known.key === key) return known.runtime;
     const { resource } = state;
@@ -175,6 +197,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         system_pack_digest: resource.system_pack_digest,
         credentials: resource.credentials,
         credential_digests: resource.credential_digests,
+        dependencies, epoch,
       }),
     );
     let guard = guards.get(resource.id);
@@ -186,10 +209,10 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
             ? new LoginManager({
                 resource: resource.id,
                 login: auth.login,
-                credentials: resource.credentials,
+                credentials,
                 sessionEntry: sessionEntry(resource.id),
                 binding,
-                vault: records.vault,
+                vault,
                 http,
                 now: () => now().getTime(),
                 cooldownMs: loginOptions.cooldownMs,
@@ -203,11 +226,11 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
             ? new StaticCredential({
                 resource: resource.id,
                 credential: auth.credential,
-                entry: resource.credentials[auth.credential],
+                entry: credentials[auth.credential],
                 header: auth.header,
                 sessionEntry: sessionEntry(resource.id),
                 binding,
-                vault: records.vault,
+                vault,
                 now: () => now().getTime(),
                 redactor,
                 log: options.log,
@@ -221,6 +244,9 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     }
     const runtime: ResourceRuntime = {
       resource,
+      variables:[...resolved.uses,...materials.map((m,i)=>({at:resource.id+'#/credentials/'+Object.keys(original.credentials)[i].replaceAll('~','~0').replaceAll('/','~1'),name:m.name,decision:m.decision}))],
+      dependencies,
+      gate,
       decision: state.decision,
       pack: loaded.pack,
       profile,
@@ -234,7 +260,8 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
   }
 
   /** Enabled resources whose system pack declares the external type, with the read that serves it. */
-  async function resolve(type: string,context?:ExternalReadContext): Promise<{ runtime: ResourceRuntime; read: ReadDeclaration }[]> {
+  async function resolve(type: string, context?: ExternalReadContext): Promise<{ runtime: ResourceRuntime; read: ReadDeclaration }[]> {
+    registry.invalidate();
     const out: { runtime: ResourceRuntime; read: ReadDeclaration }[] = [];
     for (const state of await registry.states()) {
       if (!state.enabled) continue;
@@ -249,7 +276,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         continue;
       }
       const read = loaded.profile.reads.find((r) => r.external === type);
-      if (read !== undefined) out.push({ runtime: runtimeOf(state, loaded), read });
+      if (read !== undefined) out.push({ runtime: await runtimeOf(state, loaded, context), read });
     }
     return out;
   }
@@ -283,7 +310,17 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       try {
         const type = typeof id === 'string' ? externalRoutingType(id) : null;
         if (type === null) return false;
-        return (await resolve(type,context)).length > 0;
+        registry.invalidate();
+        for(const state of await registry.states()) if(state.enabled) {
+          try {if((await loadBound(state)).profile.reads.some(r=>r.external===type))return true;}
+          catch(error){
+            const failed=asConnectorError(error,'PACK_UNAVAILABLE');
+            const reason=redactor.text(`资源 ${state.resource.id} 的绑定不可读：${failed.code}：${failed.message}；缺少原包的核验结果，请管理员恢复原包或重新配置`);
+            event('resource_binding_failed',{resource:state.resource.id,code:failed.code,reason});
+            context?.adminNote?.(reason);
+          }
+        }
+        return false;
       } catch (error) {
         event('accepts_failed', { reason: asConnectorError(error, 'RESOURCE_UNAVAILABLE').message });
         return false;
@@ -292,6 +329,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
       const shown = typeof id === 'string' ? id : String(id);
       try {
+        context={...context,variables:context.variables??await records.variables.snapshot()};
         const sizeReason = typeof id === 'string' ? externalSizeReason(id) : null;
         if (sizeReason !== null) {
           const account = await records.principals.get(context.principal.id);
@@ -338,6 +376,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         return { ok: true, id: subject.id, revision: outcome.revision, artifacts: outcome.artifacts, manifest: outcome.manifest,coverage:outcome.coverage,...(outcome.absent?{absent:outcome.absent}:{}) };
       } catch (error) {
         const failure = asConnectorError(error, 'STORE_FAILED');
+        event('read_failed',{reason:failure.message});
         return { ok: false, id: shown, reason: `${failure.code}：${redactor.text(failure.message)}` };
       }
     },
@@ -381,8 +420,6 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     },
     listResources: (by) => resourceList(by),
     describe: (by, id) => registry.describe(by, id),
-    setCredential: (by, id, name, value) => registry.setCredential(by, id, name, value),
-    setCredentials: (by, id, values) => registry.setCredentials(by, id, values),
     disable: async (by, id, note) => {
       await registry.disable(by, id, note);
       engine.clearCache();
@@ -396,25 +433,37 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       if (viewer === null || viewer.disabled || viewer.role !== 'admin') throw new ConnectorError('ACCESS_DENIED', '只有管理员能看登录状态');
       const state = await registry.get(id);
       if (state === null) return null;
-      const runtime = runtimeOf(state, await loadBound(state));
-      return (await (runtime.login ?? runtime.credential)?.status()) ?? null;
+      const runtime = await runtimeOf(state, await loadBound(state));
+      const status=(await (runtime.login ?? runtime.credential)?.status())??null;
+      const shared=await runtime.gate?.status();
+      return status&&shared?.stopped?{...status,stopped:true,cooldownUntil:null,failure:status.failure??shared.code??'LOGIN_FAILED'}:status;
     },
-    resetLogin: (by, id, note) => registry.resetLogin(by, id, note),
+    resetLogin: async (by,id,note)=>{
+      const actual=await records.principals.get(by.id);if(!actual||actual.disabled||actual.role!=='admin')throw new ConnectorError('ACCESS_DENIED');
+      registry.invalidate();const state=await registry.get(id);
+      if(state) { const defs=await records.variables.list(by);const names=Object.values(state.resource.credentials).map(secretNameOf).filter((name):name is string=>name!==null);const decisions=names.map(name=>defs.find(d=>d.kind==='secret'&&d.name===name&&d.definition)?.decision.digest).filter((v):v is string=>!!v);
+      if(decisions.length)await new CredentialStop(records.store,records.vault,decisions,names,id).reset(); }
+      await registry.resetLogin(by,id,note);
+    },
   };
 
   return {
+    redactor,
+    async primeSecrets(){for(const material of await records.variables.recentSecrets())redactor.add(material.value);},
     reader,
     catalog,
     admin,
     async executeRead(resource: string, readName: string, args: ReadArgs, context: ExternalReadContext): Promise<ReadOutcome> {
       const external = `${String(resource)}/${String(readName)}`;
       try {
+        context={...context,variables:context.variables??await records.variables.snapshot()};
+        registry.invalidate();
         const state = await registry.get(resource);
         if (state === null || !state.enabled) return { ok: false, external, code: 'RESOURCE_UNAVAILABLE', reason: `资源 ${redactor.text(String(resource))} 不存在或已停用`, manifest: null };
         const loaded = await loadBound(state);
         const read = loaded.profile.reads.find((r) => r.name === readName);
         if (read === undefined) return { ok: false, external, code: 'READ_UNDECLARED', reason: `系统包没有读取 ${redactor.text(String(readName))}`, manifest: null };
-        return await engine.execute(runtimeOf(state, loaded), read, args, context);
+        return await engine.execute(await runtimeOf(state, loaded, context), read, args, context);
       } catch (error) {
         const failure = asConnectorError(error, 'STORE_FAILED');
         return { ok: false, external, code: failure.code, reason: redactor.text(failure.message), manifest: null };

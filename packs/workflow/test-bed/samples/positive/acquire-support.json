@@ -2,7 +2,7 @@
   "id": "acquire_support",
   "source": "author",
   "check": "bed",
-  "note": "合成正例：预订 bed-a 的负载均衡与客户端各一台并要一个地址，租约键 bed/bed-a/apv0、bed/bed-a/client0、bed/bed-a/ip/192.0.2.66，期限 3 小时；检查按冻结内容重算一致，记支持",
+  "note": "合成正例：acquire 按冻结清单和租约重算；没有时长上限",
   "subject": {
     "items": [
       {
@@ -11,12 +11,19 @@
         "fields": {
           "action": "acquire",
           "bed": "bed-a",
-          "devices": ["apv0", "client0"],
-          "addresses": ["192.0.2.66"],
-          "keys": ["bed/bed-a/apv0", "bed/bed-a/client0", "bed/bed-a/ip/192.0.2.66"],
-          "ttl_seconds": 10800,
-          "hours": 3,
-          "conclusion": "预订 bed-a，设备 apv0、client0，地址 192.0.2.66，3 小时"
+          "devices": [
+            "apv0",
+            "client0"
+          ],
+          "addresses": [
+            "192.0.2.66"
+          ],
+          "keys": [
+            "bed/bed-a/apv0",
+            "bed/bed-a/client0",
+            "bed/bed-a/ip/192.0.2.66"
+          ],
+          "conclusion": "预订 bed-a，设备 apv0、client0，地址 192.0.2.66，不限时长，用完由运行释放"
         }
       }
     ],
@@ -24,28 +31,78 @@
       "groups": [
         {
           "action": "acquire",
-          "need": { "devices": [{ "type": "load-balancer", "count": 1 }, { "type": "client", "count": 1 }], "hours": 3 },
+          "need": {
+            "devices": [
+              {
+                "type": "load-balancer",
+                "count": 1
+              },
+              {
+                "type": "client",
+                "count": 1
+              }
+            ]
+          },
           "bed": "bed-a",
-          "addresses": { "segment": "192.0.2.64/26", "count": 1 },
+          "addresses": {
+            "segment": "192.0.2.64/26",
+            "count": 1
+          },
+          "booking": null,
+          "reason": "",
+          "devices": null,
           "manifest": {
             "schema": "test-bed-manifest@1",
             "beds": [
               {
                 "name": "bed-a",
                 "devices": [
-                  { "name": "apv0", "type": "load-balancer", "ipv4": ["192.0.2.10/26"], "ipv6": [] },
-                  { "name": "client0", "type": "client", "ipv4": ["192.0.2.74/26"], "ipv6": [] }
+                  {
+                    "name": "apv0",
+                    "type": "load-balancer",
+                    "ipv4": [
+                      "192.0.2.10/26"
+                    ],
+                    "ipv6": []
+                  },
+                  {
+                    "name": "client0",
+                    "type": "client",
+                    "ipv4": [
+                      "192.0.2.74/26"
+                    ],
+                    "ipv6": []
+                  }
                 ],
                 "services": [],
-                "reserved": ["192.0.2.65-192.0.2.65"]
+                "reserved": [
+                  "192.0.2.65-192.0.2.65"
+                ]
               }
             ]
           },
-          "leases": { "now": "2026-10-22T02:00:00.000Z", "entries": [] },
-          "lease_requests": [{ "keys": ["bed/bed-a/apv0", "bed/bed-a/client0", "bed/bed-a/ip/192.0.2.66"], "ttl_seconds": 10800 }]
+          "leases": {
+            "now": "2026-10-22T02:00:00.000Z",
+            "entries": [],
+            "registrations": []
+          },
+          "lease_requests": [
+            {
+              "keys": [
+                "bed/bed-a/apv0",
+                "bed/bed-a/client0",
+                "bed/bed-a/ip/192.0.2.66"
+              ]
+            }
+          ]
         }
       ]
     }
   },
-  "expect": [{ "verdict": "support", "tier": "advisory" }]
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "advisory"
+    }
+  ]
 }

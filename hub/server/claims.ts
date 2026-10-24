@@ -122,6 +122,7 @@ export function terminalText(layer: LayerResult): string {
     layer.code,
     layer.tier && labelOf('check_tier', layer.tier),
     layer.reason && labelOf('reason', layer.reason),
+    layer.reason && layer.exit === undefined && '出口未写',
     layer.attribution && `${axisLabel('attribution')} ${labelOf('attribution', layer.attribution)}`,
   ]);
 }

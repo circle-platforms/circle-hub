@@ -20,8 +20,9 @@ export interface AdminLogEntry {
 export interface RunsEngineDeps {
   /** The records kit parts the engine uses; with `config`, start_run knows the record size limit before it stores anything. */
   records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts'> & {
+    variables: Pick<RecordsKit['variables'], 'snapshot'>;
     config?: Pick<RecordsKit['config'], 'limits'>;
-    principals?: Pick<Principals, 'get'>;
+    principals?: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'>>;
   };
   workflows: WorkflowStore;
   packs: PacksPort;
@@ -40,6 +41,8 @@ export interface RunsEngineDeps {
   adminLog?: (entry: AdminLogEntry) => void;
   /** The lease service (D04 R[0]); without it a workflow that declares leases cannot start. */
   leases?: LeaseService;
+  /** Trusted, read-only unfinished jobs by resource key; no fencing data leaves this port. */
+  leaseJobs?: (keys: readonly string[]) => Promise<Array<{ key: string; job: string }>>;
 }
 
 export const ENGINE_COMPONENT = 'runs.engine@1';

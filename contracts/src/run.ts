@@ -6,13 +6,14 @@ import {
   DoneRuleSchema,
   ExecutionHostSchema,
   LayerSchema,
+  LeaseOpSchema,
   PackKindSchema,
   SourceRoleSchema,
   TriggerSchema,
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
 import { Coverage, Versioned, IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
-import { ContextBuild } from './pack.ts';
+import { ContextBuild, LeaseContextRow, LeaseRegistrationRow } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
 /** One input given to start_run: bytes already uploaded, or an external object the Hub reads (read-only) with the pack's system adapter. Exactly one key. */
@@ -125,6 +126,12 @@ const CONFIGURED = TriggerSchema.extract(['event_or_schedule', 'standing_obligat
  * Body of a `run` record (run@1): the summary plus what only the Hub needs (W06 F[0]-F[10], W09 F[1], D05 R[4]-R[5]).
  * Phase is derived from records, never stored. A Hub-side run (a standing obligation the Hub executes) has no runner.
  */
+// Earlier run@1 snapshots contain only key/until/mine. They remain immutable and readable.
+const PersistedLeaseContextRow=LeaseContextRow.partial({since:true,run:true,jobs:true}).superRefine((row,ctx)=>{
+  const known=[row.since,row.run,row.jobs].filter(value=>value!==undefined).length;
+  if(known!==0&&known!==3||known===0&&row.holder!==undefined)ctx.addIssue({code:'custom',message:'lease snapshot has either all current facts or the historical key/until/mine shape'});
+});
+
 export const RunRecord = RunSummary.extend({
   runner: UserId.optional().describe('the user the run is executed for; absent only when the Hub itself executes a standing obligation'),
   host: ExecutionHostSchema,
@@ -143,14 +150,17 @@ export const RunRecord = RunSummary.extend({
   client_key_expires_at: IsoTime.optional().describe('end of the window in which repeating the client key returns this run'),
   leases: z
     .array(z.union([
-      z.strictObject({ op: z.literal('acquire').optional(), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime }),
-      z.strictObject({ op: z.literal('extend'), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime }),
+      z.strictObject({ op: z.literal('acquire').optional(), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime.nullable() }),
+      z.strictObject({ op: z.literal('extend'), lease: LeaseId, keys: z.array(z.string().min(1)).min(1), until: IsoTime.nullable() }),
+      z.strictObject({ op: LeaseOpSchema.extract(['register','unregister']), prefix:z.string().min(1), owner:z.string().min(1) }),
+      z.strictObject({ op: LeaseOpSchema.extract(['force_release']), keys:z.array(z.string().min(1)).min(1), reason:z.string().min(1), until:IsoTime.nullable(), previous_holders:z.array(z.strictObject({key:z.string().min(1),run:RunId})) }),
       z.strictObject({ op: z.literal('release'), keys: z.array(z.string().min(1)).min(1), until: IsoTime.nullable() }),
     ]))
     .optional()
     .describe('the lease operations this run performed before it was stored (acquire\'s grant, extend\'s new end, release\'s keys with their former end); the fencing token stays in the lease table, never in the record'),
+  lease_registrations: z.array(LeaseRegistrationRow).optional(),
   lease_context: z
-    .array(z.strictObject({ key: z.string().min(1), until: IsoTime, mine: z.boolean() }))
+    .array(PersistedLeaseContextRow)
     .optional()
     .describe('the frozen lease rows of the workflow\'s declared prefix at start_run (every holder\'s rows, no tokens), `mine` marking the rows held by this run\'s lineage (D04 R[0])'),
 }).superRefine((r, ctx) => {

@@ -55,7 +55,7 @@ test('CONTEXT_KEY gains leases and RunContext carries the frozen lease view (no 
     root: null,
     parameters: {},
     groups: [],
-    leases: { now: '2026-10-22T08:00:00.000Z', entries: [{ key: 'some/prefix/key-1', until: '2026-10-22T10:00:00.000Z', mine: true }, { key: 'some/prefix/key-2', until: '2026-10-23T10:00:00.000Z', mine: false }] },
+    leases: { now: '2026-10-22T08:00:00.000Z', entries: [{ since:'2026-10-22T08:00:00.000Z',run:'run_synthetic',jobs:[],key: 'some/prefix/key-1', until: '2026-10-22T10:00:00.000Z', mine: true }, { since:'2026-10-22T08:00:00.000Z',run:'run_synthetic',jobs:[],key: 'some/prefix/key-2', until: '2026-10-23T10:00:00.000Z', mine: false }] },
   });
   assert.ok(parsed.success, JSON.stringify(parsed.error?.issues));
   // a token or a holder name never appears in the frozen view
@@ -196,4 +196,34 @@ test('the lease action detail shape is a zod schema the records package can chec
   assert.ok(!LeaseDetail.safeParse({ ...good, holder: { user: 'user-1' } }).success);
   assert.ok(!LeaseDetail.safeParse({ ...good, holder: { user: 'usr_0123456789abcdefghjkmnpqrs', run: 'not-a-run' } }).success);
   assert.ok(!LeaseDetail.safeParse({ ...good, token: 'seven' }).success);
+});
+
+test('uncapped workflows accept a lease acquisition without a deadline', () => {
+  assert.ok(WorkflowFile.safeParse(workflow({ leases: { prefix: 'zone/' }, context: ['leases'] })).success);
+  assert.ok(ProjectionOutput.safeParse({ items: [], warnings: [], lease_requests: [{ keys: ['zone/a/k'] }] }).success);
+});
+
+test('projection operations include owner registration and reasoned force release without tokens', () => {
+  for (const request of [
+    {op:'register',prefix:'zone/a/'},
+    {op:'unregister',prefix:'zone/a/',reason:'合成注销'},
+    {op:'force_release',keys:['zone/a/k'],reason:'合成处置'},
+  ]) assert.ok(ProjectionOutput.safeParse({items:[],warnings:[],lease_requests:[request]}).success);
+  assert.ok(!ProjectionOutput.safeParse({items:[],warnings:[],lease_requests:[{op:'force_release',keys:['zone/a/k'],reason:' '}]}).success);
+});
+
+test('a force release preserves the user reason verbatim while rejecting whitespace alone',()=>{
+  const value=ProjectionOutput.parse({items:[],warnings:[],lease_requests:[{op:'force_release',keys:['zone/a/k'],reason:'  合成原话  '}]});
+  assert.ok('items' in value);
+  const request=value.lease_requests![0]!;
+  assert.equal('reason' in request?request.reason:undefined,'  合成原话  ');
+});
+
+test('historical lease snapshots stay readable without manufacturing current context fields',()=>{
+  const legacy={key:'zone/a/k',until:'2026-10-24T10:00:00.000Z',mine:false};
+  const record={run:'run_0123456789abcdefghjkmnpqrs',pack:'demo@1.0.0',pack_digest:'a'.repeat(64),sources:[],requirements:[],target_basis:[],items:[],instructions:'合成规程',instructions_digest:'b'.repeat(64),started_at:'2026-10-24T08:00:00.000Z',runner:'usr_0123456789abcdefghjkmnpqrs',host:'local_circle',trigger:'session',parameters:{},lease_context:[legacy]};
+  const parsed=RunRecord.safeParse(record);assert.ok(parsed.success,JSON.stringify(parsed.error?.issues));
+  assert.deepEqual(parsed.data.lease_context,[legacy]);
+  assert.ok(!RunContext.safeParse({product:null,names:[],line:null,build:null,root:null,parameters:{},groups:[],leases:{now:record.started_at,entries:[legacy],registrations:[]}}).success,'new run context still requires the complete row');
+  assert.ok(!RunRecord.safeParse({...record,lease_context:[{...legacy,token:1}]}).success);
 });
