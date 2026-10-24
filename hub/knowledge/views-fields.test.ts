@@ -1,3 +1,4 @@
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 // The index view's `fields` parameter: entries carry only the named data fields with an empty statement; entry, kind and
 // reference are unchanged; truncation is judged by the slimmed size; a view of 150,000 entries does not truncate with
 // fields. And what the "未归位" note counts: entries (each once, even a document with several), not documents or rows.
@@ -218,9 +219,9 @@ describe('the fields parameter of the index view', () => {
     ];
     const f = await fixture(t, entries);
     const view = IndexView.parse((await f.json(await f.read(`knowledge:index:acme:${A}?kind=case&key=defects`))).value);
-    assert.ok(view.notes.includes('未归位条目 2 个，标在根下'), view.notes.join('\n'));
+    assert.ok(view.notes.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ' 2 个，标在根下'), view.notes.join('\n'));
     // The facets view says the same and counts them in the totals.
     const facets = await f.json(await f.read(`knowledge:facets:acme:${A}?kind=case&by=module`));
-    assert.ok((facets.value as { notes: string[] }).notes.includes('未归位条目 2 个，标在根下，计入合计'));
+    assert.ok((facets.value as { notes: string[] }).notes.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ' 2 个，标在根下，计入合计'));
   });
 });

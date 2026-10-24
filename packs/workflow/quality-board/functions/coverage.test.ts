@@ -1,3 +1,4 @@
+import { labelOf } from './generated/vocabulary.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { canonicalTag, TAG_SPELLINGS } from './tags.ts';
@@ -29,7 +30,7 @@ test('all six types, duplicate spellings, unknown tags and exact untagged counts
   assert.equal(coverage.present.length, 6); assert.deepEqual(coverage.missing, []); assert.equal(coverage.untagged, 1);
   assert.match(out.items[0].summary!, /未打标签 1 个/);
   assert.match(boardOutcomes(subject(out))[0].statement, /未打标签 1 个/);
-  assert.match(totalsOutcome(subject(out)).statement, /2 个用例没有解析出命令/);
+  assert.ok(totalsOutcome(subject(out)).statement.includes(labelOf('knowledge_count', 'commandless_cases') + ' 2 个'));
 });
 test('only untagged cases and unknown tags show no recognized types', () => {
   for (const tag of [null, 'release-label']) {
@@ -53,7 +54,7 @@ test('wrong roots, duplicate count views and missing placement are refusals with
 });
 test('truncated placement without the null row refuses rather than finishing unknown', () => {
   const out = project(undefined, facetViewOf([facetRow({ commands: '/synthetic' }, 1)], { by: ['commands'], total: 3, truncated: true }));
-  assert.ok('error' in out); assert.match(out.error.message, /未归位数/); assert.match(out.error.fix, /能力缺口/);
+  assert.ok('error' in out); assert.ok(out.error.message.includes(labelOf('knowledge_count', 'commandless_cases'))); assert.match(out.error.fix, /能力缺口/);
 });
 test('without tags the board metrics and summary stay unchanged', () => {
   const out = items(project());
@@ -105,9 +106,9 @@ test('coverage matches independent per-case calculation on 100000 random cases a
 
 test('complete placement without null means zero; truncated with null retains the exact indexed count', () => {
   const complete = items(project(undefined, facetViewOf([facetRow({ commands: '/synthetic' }, 3)], { by: ['commands'], total: 3 })));
-  assert.match(totalsOutcome(subject(complete)).statement, /0 个用例没有解析出命令/);
+  assert.ok(totalsOutcome(subject(complete)).statement.includes(labelOf('knowledge_count', 'commandless_cases') + ' 0 个'));
   const truncated = items(project(undefined, { ...placement, truncated: true }));
-  assert.match(totalsOutcome(subject(truncated)).statement, /2 个用例没有解析出命令/);
+  assert.ok(totalsOutcome(subject(truncated)).statement.includes(labelOf('knowledge_count', 'commandless_cases') + ' 2 个'));
   const skipped = items(project(tags([{ tags: 'Functional', count: 3 }], { skipped: 1 })));
   assert.match(skipped.items[0].summary!, /部分/);
 });

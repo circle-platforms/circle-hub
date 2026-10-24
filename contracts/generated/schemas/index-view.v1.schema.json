@@ -613,6 +613,33 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "entry_counts": {
+          "description": "All distinct entries of the requested kind, even without the indexed key or outside only; the carrier total remains total_entries",
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "placed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "unplaced": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "total",
+            "placed",
+            "unplaced"
+          ],
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

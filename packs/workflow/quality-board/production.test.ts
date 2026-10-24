@@ -1,3 +1,4 @@
+import { labelOf } from './functions/generated/vocabulary.ts';
 // A production run end to end: the published quality-board pack, the real run engine, and a hand-built facet view served by
 // a fake knowledge reader. start_run computes and stores the validation result with no submission; every group's metrics
 // come back as fact claims, the threshold violations as advisory refutations, and the totals as a cross-item claim.
@@ -104,7 +105,7 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual(metrics.ratios.missing, { num: 1, den: 20 });
     assert.deepEqual([metrics.display.missing, metrics.display.negative], [0.05, 0.05]);
     assert.equal(board.claims[0].statement.verdict, 'support');
-    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@1.1.1', independence: 'judge_not_author' });
+    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@1.1.2', independence: 'judge_not_author' });
     assert.deepEqual(ssl.requirements[1].claims.map((c) => c.statement.verdict), ['support']);
 
     const webui = located(result, '10.6.1/WebUI');
@@ -129,7 +130,7 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual([data.view.total, data.view.listed_rows], [32, 8]);
     assert.match(totals.statement.text, /合计：用例 32 个/);
     assert.match(totals.statement.text, /不是整套测试/);
-    assert.match(totals.statement.text, /没有解析出命令的用例是未归位条目，也计入合计/);
+    assert.ok(totals.statement.text.includes(labelOf('knowledge_count', 'commandless_cases')));
 
     // The result is the run's latest and readable by reference.
     const view = (await hub.service.getRun(hub.alice, run.run))!;
@@ -153,7 +154,7 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual(data.coverage.present, ['功能测试']);
     assert.equal(data.coverage.untagged, 10);
     assert.equal(data.coverage.missing.length, 5);
-    assert.match(result.cross_item.find((c) => c.requirement === 'totals')!.statement.text, /2 个用例没有解析出命令/);
+    assert.ok(result.cross_item.find((c) => c.requirement === 'totals')!.statement.text.includes(labelOf('knowledge_count', 'commandless_cases') + ' 2 个'));
     assert.ok(hub.views.reads.some((id) => id.startsWith(TAGS_ID)));
   });
 

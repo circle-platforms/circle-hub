@@ -74,6 +74,7 @@ export const GENERATED_DIR = 'contracts/generated';
 /** Runtime vocabulary snapshots shipped inside sandboxed packs. Only these model axes belong to each target. */
 interface PackVocabularyTarget { axes: readonly string[]; labels?: boolean }
 export const PACK_VOCABULARY_TARGETS: Readonly<Record<string, PackVocabularyTarget>> = {
+  'packs/workflow/quality-board/functions/generated/vocabulary.ts': { axes: ['knowledge_count'], labels: true },
   'packs/product/apv/functions/generated/vocabulary.ts': { axes: ['applicability_field'], labels: true },
   'packs/workflow/maintenance-sweep/functions/generated/vocabulary.ts': { axes: ['entry_kind', 'change_kind'] },
   'packs/workflow/regression-scope/functions/generated/vocabulary.ts': { axes: ['entry_kind', 'change_kind'] },
