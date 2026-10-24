@@ -85,8 +85,8 @@ export class RecordAuthorizations implements Authorizations {
     this.#now = now;
   }
 
-  async grant(by: Principal, input: AuthorizationInput): Promise<AuthorizationRecord> {
-    return this.#decide(by, input, false);
+  async grant(by: Principal, input: AuthorizationInput, tx?: Transaction): Promise<AuthorizationRecord> {
+    return this.#decide(by, input, false, tx);
   }
 
   async revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>): Promise<AuthorizationRecord> {

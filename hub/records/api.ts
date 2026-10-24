@@ -517,7 +517,7 @@ export interface Authorizations {
    * the pack id (the subject of its first publication); a version once published keeps its content. Withdrawing a
    * publication is the owner or an admin. Every other permission is decided by an admin.
    */
-  grant(by: Principal, input: AuthorizationInput): Promise<AuthorizationRecord>;
+  grant(by: Principal, input: AuthorizationInput, tx?: Transaction): Promise<AuthorizationRecord>;
   revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>): Promise<AuthorizationRecord>;
   /** Latest record for the triple, revoked or not. */
   latest(permission: PermissionKind, subject: string, object: string): Promise<AuthorizationRecord | null>;
