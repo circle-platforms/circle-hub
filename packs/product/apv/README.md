@@ -965,3 +965,19 @@ ROOT 的三种情形：
 两个名称族均有合成输入覆盖，没有改 include、AST 或源读取。
 
 合并 view-scope 与主线后为 1.4.3：保留部署变量、按名称族 adoc、适用条件闭集，以及构建时间失败诊断和未打标签说明；按合并后的原字节重签。
+
+
+## Command grammar
+
+关键词整改 R4（所有者 2026-10-24；模型 C07 R[7–8]、W05；模型前置 1cb6562d）。本包声明支持的命令树输入为 `apv-command-tree@2`，出处是本节和随本包发布的 `functions/command-tree.ts`。这是版本化的产品语法声明，不是声称所有历史原件都符合；不符合的原件须补证或修订，不容错当作完整目录。
+
+- 容器是未经修复的 `xml@1`：根 `commands`，`scope` 重置菜单路径，`menu[name]` 与 `item[name]` 给出完整词；`item/arguments/arg` 给出按位置排列的重载参数。任何 `irregular` 或 NUL 修复拒绝。XML 属性已经解码，不再二次实体解码。
+- 词以 ASCII SP/HT 分隔，字符及大小写完全相等；命令行以 CR/LF 分隔，节点之间不拼词。单/双引号只界定参数值，允许转义同一引号或反斜杠，不允许换行或 NUL 藏在引号中。散文、编号、提示符、全角写法不擦除、不折叠，不扫描最长匹配。`no`/`clear` 只有树中存在完整路径才成立。参数中的另一条命令只是参数。
+- 类型只按原始 `type` 精确字段和本包的 `ARGUMENT_TYPES` 定义：STRING/XSTRING 为字符串；U16/U32 为对应无符号范围；DOTTEDIP 为 IPv4；IPADDR 为 IPv4/IPv6；IPMASK 为连续点分掩码或 0–128 前缀；HOSTNAME/IP_OR_HOSTNAME 为 contracts 的对应显式类型。help 只保留说明，不能改变类型。所有重载完整消费所有参数；展开或数量上限不转 STRING，给缺口与重产出口。
+- `optional` 精确值为 `YES` 或 `NO`，省略按本语法的 `NO`；空串、大小写变体、yes/y/true/1 等不是别名。未知值是结构违规，不能默认必填。未声明或没有定义的 type 保留原参数位置，不填占位类型；状态取生成的 `type_declaration_status.undeclared`、`command_parse_status.parameters_unchecked`，补证约束交通用检查返回现有 unknown/missing_input。
+- 类型覆盖只按精确 schema=`apv-command-argument-types@1`、origin=`product:apv/README.md#command-grammar` 的发布声明中的原样 command + position；字段不做 trim、大小写或同义归并，不能从 help 推。没有这种来源授权不得做覆盖。limit 只解释本语法声明的完整含端点 `[low - high]`，以及 STRING 上完整 `{value|value}` 的精确成员集（不许空项、重复、嵌套或隐式转义）；未声明约束语法保留未核对，不判已满足。
+- 直接 commands 函数必须收到完整 definitions（words/signatures）；旧 heads 单独不足以证明命令。标题、祖先、步骤及期望用同一个完整解析器，结果路径去重并稳定排序。
+
+手册结构语法为 `apv-manual-signature@2`：完整单行 `**head** *<required> [optional]*` 是候选结构；只有全部精确 head/variant 及参数位置和 optional 结构对上锁定树才产生命令定义。格式本身不证明命令。表的签名列必须是精确机器列标识 `command_signature@2`，不能凭“命令/Command”等自然语言表头或连接词猜列角色。普通代码块每行完整过树后可产生 canonical 命令引用，并保留原始 command_lines；散文强调/引号不抽命令。JSON 过渡输入目前只直接调用可达：head_tokens 是精确身份，params.required 必须是显式布尔；数字或非英文不使签名变示例，例子不找最长前缀。没有锁定树时只保留章节原文和补树出口。AsciiDoc AST 只映射候选结构，语言、粗体和单词外形不能决定命令身份。
+
+新 APV 包 1.5.0 接续基线 1.4.3。旧包生产的根和运行保留，不改原字节；受影响字段为命令定义的 signatures、用例 commands/归位路径、手册 signature_literals/command_literals 及相应回归/巡检计数。旧结果须附生成词表的 `legacy_keyword_rules` 限定；这不是删改原结果。新规则须另产根和运行，并引用旧生产记录的血缘；真实重产和旧结果限定的管理员操作由集成者另行安排，本次仅合成验证，不执行真实迁移。1.5.0 的组成按新包摘要及 grammar 身份区分。

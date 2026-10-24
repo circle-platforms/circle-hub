@@ -206,21 +206,21 @@ export type ProducedEntry = {
 export type CommandEntryData = { words: string[]; signatures: CatalogSignature[]; summary?: string };
 
 /**
- * A declared argument type (pack data, authored from the help texts of the tree): argument `position` (1-based) of the
+ * A declared argument type authorized by the versioned apv-command-argument-types@1 schema: argument `position` (1-based) of the
  * command `command` (its words joined by spaces) may declare a tree `type` (a key of ARGUMENT_TYPES), an explicit
  * `address_role`, or both. `origin` says where the declaration comes from; a row without one is ignored.
  */
-export type ArgumentTypeDeclaration = { command: string; position: number; type?: string; address_role?:string; origin: string };
+export type ArgumentTypeDeclaration = { schema?:'apv-command-argument-types@1'; command: string; position: number; type?: string; address_role?:string; origin: string };
 
 export type CommandTreeParams = {
   /** Tree path the commands go under; default /commands. */
   path?: string;
-  /** Declared argument types; they win over the type table and over the help-text rule. */
+  /** Declared argument types; they require the exact schema/origin identity; help text never supplies types. */
   argumentTypes?: ArgumentTypeDeclaration[];
 };
 
 export type CommandTreeInput = XmlModel | { model: XmlModel; params?: CommandTreeParams };
-export type CommandTreeResult = { entries: ProducedEntry[]; warnings: string[] };
+export type CommandTreeResult = { entries: ProducedEntry[]; warnings: string[]; diagnostics?:import('../../../../contracts/src/product.ts').ProducerDiagnostic[]; grammar?:import('../../../../contracts/src/product.ts').ProducerOutput['grammar'] };
 
 /** The manual command catalog JSON (schema ist.manual-command-catalog). */
 export type ManualCatalog = {
@@ -289,8 +289,9 @@ export type ReleaseResult = {
 
 export type CommandsInput = {
   text: string;
-  /** Catalog heads: full heads (show slb virtual) or first words (show); the first word of each starts a phrase. */
-  heads: string[];
+  /** Complete locked definitions are required; heads alone are insufficient evidence. */
+  definitions:import('./commands.ts').CommandDefinition[];
+  heads?: string[];
 };
 
 /** A command phrase: text.slice(start, end) exactly, offsets in UTF-16 code units, end exclusive. */

@@ -3,6 +3,9 @@
 // default_value]. One entry per full command (menu words + item name) at /commands/<words>, a definition (K02 R[3]); the
 // argument lists of one path are the overloads of that entry. Argument types map onto the generic catalog parameter types
 // of hub/rules.
+import {commandTokens} from './commands.ts';
+import {labelOf} from './generated/vocabulary.ts';
+import type {ProducerDiagnostic} from '../../../../contracts/src/product.ts';
 import type { CatalogParam, CatalogParamType, CatalogSignature, CatalogUncheckedConstraint } from '../../../../contracts/src/tables.ts';
 import type { CommandEntryData, CommandTreeParams, CommandTreeResult, EntryKind, FragmentRef, ProducedEntry, XmlModel } from './types.ts';
 import { asArray, decodeEntities, guarded, internalError, isRecord, pathText, selectorText, squeeze } from './util.ts';
@@ -17,21 +20,11 @@ export const ARGUMENT_TYPES: Readonly<{ [type: string]: readonly Alternative[] }
   IP_OR_HOSTNAME: [{ type: 'ip_or_hostname' }],
   U16: [{ type: 'int', minimum: 0, maximum: 65535 }],
   U32: [{ type: 'int', minimum: 0, maximum: 4294967295 }],
-  // An address of either family (the help texts of these arguments describe IPv4 and IPv6 forms).
+  // IPADDR is the declared union of IPv4/IPv6; descriptions never alter it.
   IPADDR: [{ type: 'ipv4' }, { type: 'ipv6' }],
   DOTTEDIP: [{ type: 'ipv4' }],
-  // A dotted IPv4 netmask or a prefix length up to 128 (as the help texts of these arguments describe them).
+  // IPMASK is the declared dotted mask / prefix-length union; descriptions never alter it.
   IPMASK: [{ type: 'mask' }, { type: 'int', minimum: 0, maximum: 128 }],
-};
-
-/**
- * Help texts that say an argument of a type takes more than the type's value set (pack data); such an argument is read as
- * a string unless the explicit hostname forms can be represented by the catalog. Origin: the help texts of the 66 DOTTEDIP arguments of the command tree sampled on 2026-10-21: the 10 that take
- * a host name, a URL, a parameter list or an empty value say so with "or ...", "hostname" or "URL"; the other 56 name an
- * IPv4 address only. IPADDR and IPMASK help texts use "or" for their IPv4 and IPv6 forms, which the unions cover.
- */
-export const OTHER_FORMS: Readonly<{ [type: string]: readonly RegExp[] }> = {
-  DOTTEDIP: [/\bor\b/i, /\bhost\s*names?\b/i, /\burls?\b/i],
 };
 
 const KIND: EntryKind = 'definition';
@@ -47,8 +40,12 @@ function declaredTypes(value: unknown, warnings: string[]): Declared {
       warnings.push(`第 ${row} 条声明的参数类型格式不对（要 command、position、type、origin），已忽略`);
       return;
     }
-    const type = typeof item.type==='string'?item.type.trim().toUpperCase():undefined;
-    const role=typeof item.address_role==='string'?item.address_role.trim():undefined;
+    if(item.schema!=='apv-command-argument-types@1'||item.origin!=='product:apv/README.md#command-grammar'){
+      warnings.push(`第 ${row} 条参数声明没有本包授权的精确 schema/origin，未覆盖原类型；下一步：包作者在下一次生产前核验发布声明后重产`);
+      return;
+    }
+    const type = typeof item.type==='string'?item.type:undefined;
+    const role=typeof item.address_role==='string'?item.address_role:undefined;
     if(!type&&!role){warnings.push(`第 ${row} 条声明没有参数类型或有效地址角色，已忽略`);return;}
     if (type!==undefined&&!Object.hasOwn(ARGUMENT_TYPES, type)) {
       warnings.push(`第 ${row} 条声明的参数类型 ${String(item.type).slice(0, 40)} 不在类型表里，已忽略`);
@@ -58,7 +55,7 @@ function declaredTypes(value: unknown, warnings: string[]): Declared {
       warnings.push(`第 ${row} 条声明的参数类型没有写来源（origin），已忽略`);
       return;
     }
-    const command = squeeze(item.command).toLowerCase();
+    const command = item.command;
     const key = `${command}\u0000${item.position}`;
     if (!out.has(key)) out.set(key, { ...(type?{type}:{}),...(role?{address_role:role}:{}), row, command, position: item.position as number, used: false });
   });
@@ -104,28 +101,28 @@ function attribute(node: XmlNode, name: string): string {
   return squeeze(decodeEntities(node.attributes[name] ?? ''));
 }
 
-export type Limit = {kind:'range';low:number;high:number}|{kind:'unknown';text:string};
+export type Limit = {kind:'range';low:number;high:number}|{kind:'enum';values:string[]}|{kind:'unknown';text:string};
 /** Only the documented inclusive bracket form is interpreted; other spellings retain a recovery diagnostic. */
 export function parseLimit(text:string):Limit|null{
-  const value=squeeze(text);if(value==='')return null;
+  const value=text;if(value==='')return null;
+  if(value.startsWith('{')&&value.endsWith('}')){const values=value.slice(1,-1).split('|');if(values.length>0&&values.every(value=>value.length>0&&!value.includes('{')&&!value.includes('}')&&!value.includes('\n')&&!value.includes('\r'))&&new Set(values).size===values.length)return {kind:'enum',values};}
   const match=/^\[\s*(-?[0-9]{1,15})\s*-\s*(-?[0-9]{1,15})\s*\]$/.exec(value);
   if(match){const low=Number(match[1]),high=Number(match[2]);if(Number.isSafeInteger(low)&&Number.isSafeInteger(high)&&low<=high)return {kind:'range',low,high};}
   return {kind:'unknown',text:value};
 }
 
-function optionalFlag(text: string, where: string, warnings: string[]): boolean {
-  if (/^(?:yes|y|true|1)$/i.test(text)) return true;
-  if (/^(?:no|n|false|0|)$/i.test(text)) return false;
-  warnings.push(`${where} 的 optional 取值 ${text.slice(0, 20)} 认不出，按必填处理`);
-  return false;
+/** apv-command-tree@2 in README: absent/NO is required, YES is optional; exact case, no aliases. */
+function optionalFlag(text: string | undefined, where: string, warnings: string[]): boolean | null {
+  if (text === 'YES') return true;
+  if (text === undefined || text === 'NO') return false;
+  warnings.push(`${where} 的 optional 不符合 apv-command-tree@2（仅 YES/NO，或字段省略）；结构违规，下一步：命令树维护者在下次生产前修订字段后重产`);
+  return null;
 }
 
 /** Default value as documented: character references decoded once more, one pair of surrounding double quotes removed. */
 function defaultOf(text: string): string | undefined {
-  const value = decodeEntities(text).replaceAll('\u0000', '').trim();
-  if (value === '') return undefined;
-  const quoted = /^"(.*)"$/s.exec(value);
-  return quoted ? quoted[1] : value;
+  if(text==='')return undefined;
+  return text.startsWith('"')&&text.endsWith('"')&&text.length>=2?text.slice(1,-1):text;
 }
 
 /** Unknown source syntax stays independently unchecked, not a guessed generic constraint. */
@@ -139,6 +136,7 @@ function applyLimit(params:CatalogParam[],raw:string,attributeName:'limit'|'leng
     if(!warned){warnings.push(`${path}/@${attributeName}（参数内路径 ${gap.path}）的 limit 写法不认识（${attributeName}=${JSON.stringify(raw)}），这条约束未核对；缺失事实：${gap.missing}；下一步：${gap.next_action}`);warned=true;}
   };
   for(const param of params){
+    if(attributeName==='limit'&&parsed.kind==='enum'&&param.type==='string'){param.type='enum';param.values=parsed.values;continue;}
     if(attributeName!=='limit'||parsed.kind!=='range'){unchecked(param);continue;}
     if(param.type==='string'||param.type==='hostname'||param.type==='ip_or_hostname'){
       if(parsed.low<0){unchecked(param);continue;}param.minLength=parsed.low;param.maxLength=parsed.high;continue;
@@ -158,52 +156,52 @@ function typeLabel(param: CatalogParam): string {
     return param.minimum === undefined && param.maximum === undefined ? param.type : `${param.type} ${param.minimum ?? ''}..${param.maximum ?? ''}`;
   }
   if (param.type === 'string' && (param.minLength !== undefined || param.maxLength !== undefined)) return `string ${param.minLength ?? 0}..${param.maxLength ?? ''}`;
-  return param.type;
+  return param.type ?? labelOf('type_declaration_status','undeclared');
 }
 
 type SourceParam = { name: string; alternatives: CatalogParam[]; optional: boolean; default?: string; description?: string; label: string };
 
-type TypeCounters = { unknown: Map<string, number>; otherForms: Map<string, number> };
+type TypeCounters = { unknown: Map<string, number>; diagnostics:ProducerDiagnostic[] };
 
 /** One argument: its catalog alternatives (several for a union type) and its text in the statement. */
-function argumentParam(arg: XmlNode, position: number, where: string, warnings: string[], counters: TypeCounters, declared: Declared,parameterPath:string): SourceParam {
+function argumentParam(arg: XmlNode, position: number, where: string, warnings: string[], counters: TypeCounters, declared: Declared,parameterPath:string): SourceParam | null {
   const argName = attribute(arg, 'name');
   const name = argName === '' ? `arg${position}` : argName.replace(/\s+/g, '_');
   const at = `${where} 参数 ${name}`;
   const description = attribute(arg, 'help_string');
-  let typeName = attribute(arg, 'type').toUpperCase();
-  const declaration = declared.get(`${where.toLowerCase()}\u0000${position}`);
+  let typeName = arg.attributes.type ?? '';
+  const declaration = declared.get(`${where}\u0000${position}`);
   if (declaration !== undefined) {
     declaration.used = true;
     if(declaration.type!==undefined)typeName = declaration.type;
   }
-  if (declaration?.type===undefined && !/\bhost[ -]*names?\b/i.test(description) && Object.hasOwn(OTHER_FORMS, typeName) && OTHER_FORMS[typeName].some((pattern) => pattern.test(description))) {
-    counters.otherForms.set(typeName, (counters.otherForms.get(typeName) ?? 0) + 1);
-    typeName = 'STRING';
+  const declaredType = Object.hasOwn(ARGUMENT_TYPES,typeName);
+  const optional = optionalFlag(arg.attributes.optional, at, warnings);
+  if (optional === null) {
+    counters.diagnostics.push({command:where.split(' '),path:parameterPath+'/@optional',attribute:'optional',position,type_declaration_status:declaredType?'declared':'undeclared',command_parse_status:'parameters_unchecked',syntax_valid:false,reason:'missing_input',missing:'apv-command-tree@2 的精确 optional 字段',next_action:'修订结构字段后重产',audience:'命令树维护者',due:'下一次生产之前',source_value:arg.attributes.optional});
+    return null;
   }
-  let alternatives: readonly Alternative[] = [{ type: 'string' }];
-  if (Object.hasOwn(ARGUMENT_TYPES, typeName)) alternatives = ARGUMENT_TYPES[typeName];
-  else {
-    const key = typeName === '' ? '（空）' : typeName.slice(0, 40);
-    counters.unknown.set(key, (counters.unknown.get(key) ?? 0) + 1);
-  }
-  if(declaration?.type===undefined&&(typeName==='DOTTEDIP'||typeName==='IPADDR')&&/\bhost[ -]*names?\b/i.test(description)){
-    if(/\burls?\b|\blist\b|\bempty\b/i.test(description)){
-      alternatives=[{type:'string'}];counters.otherForms.set(typeName,(counters.otherForms.get(typeName)??0)+1);
-    }else if(!/\bip(?:v[46])?\b|\baddress(?:es)?\b/i.test(description))alternatives=[{type:'hostname'}];
-    else alternatives=typeName==='DOTTEDIP'?[{type:'ipv4'},{type:'hostname'}]:[{type:'ip_or_hostname'}];
-  }
-  const optional = optionalFlag(attribute(arg, 'optional'), at, warnings);
   const defaultValue = defaultOf(arg.attributes.default_value ?? '');
-  const params: CatalogParam[] = alternatives.map((alternative) => {
-    const param: CatalogParam = { name, type: alternative.type };
-    const role=declaration?.address_role??attribute(arg,'address_role');if(role)param.address_role=role;
-    if (alternative.minimum !== undefined) param.minimum = alternative.minimum;
-    if (alternative.maximum !== undefined) param.maximum = alternative.maximum;
+  let params:CatalogParam[];
+  if(!declaredType){
+    counters.unknown.set(typeName,(counters.unknown.get(typeName)??0)+1);
+    const gap={path:'./arguments/'+parameterPath.slice(parameterPath.lastIndexOf('/')+1)+'/@type',reason:'missing_input' as const,missing:'命令树结构化参数类型及版本化定义',next_action:'命令树维护者或包作者在下一次生产之前补类型声明后重产',source_value:typeName};
+    params=[{name,type_declaration_status:'undeclared',unchecked_constraints:[gap]}];
+    counters.diagnostics.push({command:where.split(' '),path:parameterPath+'/@type',attribute:'type',position,type_declaration_status:'undeclared',command_parse_status:'parameters_unchecked',syntax_valid:true,reason:'missing_input',missing:gap.missing,next_action:gap.next_action,audience:'命令树维护者或包作者',due:'下一次生产之前',source_value:typeName});
+  }else params=ARGUMENT_TYPES[typeName].map(alternative=>{
+    const param:CatalogParam={name,type:alternative.type};
+    const role=declaration?.address_role??arg.attributes.address_role;if(role)param.address_role=role;
+    if(alternative.minimum!==undefined)param.minimum=alternative.minimum;
+    if(alternative.maximum!==undefined)param.maximum=alternative.maximum;
     return param;
   });
   applyLimit(params,arg.attributes.limit??'','limit',parameterPath,warnings);
   applyLimit(params,arg.attributes.length??'','length',parameterPath,warnings);
+  for(const param of params) for(const gap of param.unchecked_constraints??[]){
+    if(param.type===undefined)continue;
+    const sourceAttribute=gap.path.endsWith('/@limit')?'limit':'length';
+    counters.diagnostics.push({command:where.split(' '),path:parameterPath+'/@'+sourceAttribute,attribute:sourceAttribute,position,type_declaration_status:'declared',command_parse_status:'parameters_unchecked',syntax_valid:true,reason:gap.reason,missing:gap.missing,next_action:gap.next_action,audience:'包作者',due:'下一次生产之前',source_value:gap.source_value});
+  }
   for (const param of params) {
     if (optional) param.optional = true;
     if (defaultValue !== undefined) param.default = defaultValue;
@@ -213,16 +211,6 @@ function argumentParam(arg: XmlNode, position: number, where: string, warnings: 
   const out: SourceParam = { name, alternatives: params, optional, label: optional ? `[${label}]` : label };
   if (defaultValue !== undefined) out.default = defaultValue;
   if (description !== '') out.description = description;
-  return out;
-}
-
-function asStringParam(param: SourceParam): CatalogParam {
-  const out: CatalogParam = { name: param.name, type: 'string' };
-  if (param.optional) out.optional = true;
-  if (param.default !== undefined) out.default = param.default;
-  if (param.description !== undefined) out.description = param.description;
-  const role=param.alternatives[0]?.address_role;if(role)out.address_role=role;
-  const gaps=param.alternatives.flatMap(alternative=>alternative.unchecked_constraints??[]);if(gaps.length)out.unchecked_constraints=[...new Map(gaps.map(gap=>[gap.path,gap])).values()];
   return out;
 }
 
@@ -236,10 +224,13 @@ function expand(params: SourceParam[], id: string, where: string, warnings: stri
     budget *= param.alternatives.length;
     kept.add(param);
   }
-  if (kept.size < unions.length) warnings.push(`${where} 的联合类型参数太多，有 ${unions.length - kept.size} 个按字符串处理`);
+  if (kept.size < unions.length) {
+    warnings.push(`${where} 的联合类型展开超过 ${MAX_EXPANSION}；参数未核对，缺少可完整处理的类型语法；下一步：包作者在下一次生产前拆分声明后重产`);
+    return [];
+  }
   let lists: CatalogParam[][] = [[]];
   for (const param of params) {
-    const choices = param.alternatives.length === 1 || kept.has(param) ? param.alternatives : [asStringParam(param)];
+    const choices = param.alternatives;
     const next: CatalogParam[][] = [];
     for (const list of lists) for (const choice of choices) next.push([...list, { ...choice, ...(choice.values ? { values: [...choice.values] } : {}) }]);
     lists = next;
@@ -253,13 +244,30 @@ type Frame = { node: XmlNode; steps: string[]; words: string[] };
 
 export function produceCommandEntries(model: XmlModel, params: CommandTreeParams = {}): CommandTreeResult {
   const warnings: string[] = [];
+  const diagnostics:ProducerDiagnostic[]=[];
+  const output=(entries:ProducedEntry[],notes:string[]):CommandTreeResult=>({entries,warnings:notes,diagnostics,grammar:{id:'apv-command-tree@2',source:'product:apv/README.md#command-grammar',complete:diagnostics.length===0}});
+  const invalid=(note:string,path='x/commands',attribute='syntax'):CommandTreeResult=>{
+    diagnostics.push({command:[],path,attribute,type_declaration_status:'undeclared',command_parse_status:'parameters_unchecked',syntax_valid:false,reason:'missing_input',missing:note,next_action:'修订 apv-command-tree@2 原件或补完整语法后重产',audience:'命令树维护者或包作者',due:'下一次生产之前'});
+    return output([],[...warnings,note+'；下一步：命令树维护者或包作者在下一次生产之前修订原件后重产']);
+  };
   try {
     const rootNode = isRecord(model) ? asNode(model.root) : null;
-    if (rootNode === null) return { entries: [], warnings: ['输入不是 xml@1 模型（缺 root）'] };
+    if (rootNode === null) return invalid('输入不是 xml@1 模型（缺 root）');
+    // xml@1 retains explicit repair flags. A repaired source is not the declared complete XML grammar.
+    const structural:Array<{item:unknown;parent:string|null;opaque?:boolean}>=[{item:rootNode.raw,parent:null}];const checked=new WeakSet<object>();let structuralCount=0;
+    // This is the declared XML production grammar, not a word list over free text.
+    const childrenByElement:Record<string,readonly string[]>={commands:['scope','menu','item'],scope:['menu','item'],menu:['menu','item'],item:['arguments','results'],arguments:['arg'],arg:[],results:[]};
+    while(structural.length){
+      const {item,parent,opaque}=structural.pop()!;if(typeof item==='string')continue;if(!isRecord(item))return invalid('XML 子元素不是声明结构');if(checked.has(item))return invalid('XML 元素共享或循环，不能核验完整结构');checked.add(item);
+      if(++structuralCount>MAX_ELEMENTS)return invalid('XML 元素超过完整解析限额');
+      if(typeof item.name!=='string'||!opaque&&(!Object.hasOwn(childrenByElement,item.name)||parent!==null&&!childrenByElement[parent]?.includes(item.name)))return invalid('XML 元素不符合 apv-command-tree@2 的容器语法');
+      if(Array.isArray(item.irregular)&&item.irregular.length>0||Number(model.nulRemoved??0)>0)return invalid('XML 原件含容错恢复或 NUL，缺完整权威 XML');
+      if(Array.isArray(item.children))for(const child of item.children)structural.push({item:child,parent:item.name as string,opaque:opaque||item.name==='results'});
+    }
     const base = isRecord(params) && typeof params.path === 'string' && /^\/[^\s]*$/.test(params.path) ? params.path : '/commands';
     const baseSegments = base.split('/').filter((segment) => segment !== '');
     const declared = declaredTypes(isRecord(params) ? params.argumentTypes : undefined, warnings);
-    if (rootNode.name !== 'commands') warnings.push(`根元素是 ${rootNode.name.slice(0, 40)}，不是 commands；仍按菜单与命令读取`);
+    if (rootNode.name !== 'commands') return invalid('XML 根不是 commands，结构违规');
     const byPath = new Map<string, { words: string[]; overloads: Overload[] }>();
     const scopes = new Set<string>();
     const seen = new WeakSet<object>([rootNode.raw]);
@@ -306,9 +314,11 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
           scopes.add(attribute(child, 'type'));
           pending.push({ node: child, steps: childSteps, words: [] });
         } else if (child.name === 'menu' || child.name === 'item') {
-          const name = attribute(child, 'name');
-          const childWords = [...words, ...name.split(' ')];
-          if (name === '') unnamed++;
+          const name = child.attributes.name ?? '';
+          const tokens=commandTokens(name);
+          if(tokens===null||tokens.some(token=>token.quoted))return invalid('命令路径不符合完整词语法',selectorText(['x',...childSteps])??'x/commands','name');
+          const childWords = [...words, ...tokens.map(token=>token.value)];
+          if (tokens.length === 0) unnamed++;
           else if (childWords.length > MAX_WORDS) tooLong++;
           else pending.push({ node: child, steps: childSteps, words: childWords });
         } else pending.push({ node: child, steps: childSteps, words });
@@ -321,7 +331,8 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
     if (tooDeep > 0) warnings.push(`有 ${tooDeep} 处元素嵌套超过 ${MAX_DEPTH} 层，其下的内容未读`);
     if (scopes.size > 1) warnings.push(`命令树有 ${scopes.size} 个作用域（${[...scopes].join('、')}），同一路径的参数表按重载合并`);
 
-    const counters: TypeCounters = { unknown: new Map(), otherForms: new Map() };
+    if(unnamed||badSelector||tooLong||tooDeep||visited>MAX_ELEMENTS)return invalid('命令结构缺失、无法精确引用或超过完整解析限额');
+    const counters: TypeCounters = { unknown: new Map(), diagnostics };
     const entries: ProducedEntry[] = [];
     for (const { words, overloads } of byPath.values()) {
       const where = words.join(' ');
@@ -339,26 +350,30 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
         if (summary !== '') summaries.add(summary);
         for (const args of overload.argumentLists) {
           fragments.push({ parser: PARSER, selector: overload.selector });
-          if (args.length > MAX_PARAMS) warnings.push(`${where} 的参数超过 ${MAX_PARAMS} 个，只取前 ${MAX_PARAMS} 个`);
+          if (args.length > MAX_PARAMS) return invalid('参数数量超过完整解析限额',overload.selector,'arguments');
           const sourceParams = args.slice(0, MAX_PARAMS).map((arg, index) => argumentParam(arg.node, index + 1, where, warnings, counters, declared,arg.path));
-          signatures.push(...expand(sourceParams, String(fragments.length), where, warnings));
-          lines.push([where, ...sourceParams.map((param) => param.label)].join(' '));
+          if (sourceParams.some(param => param === null)) continue;
+          const complete = sourceParams as SourceParam[];
+          const expanded = expand(complete, String(fragments.length), where, warnings);
+          if (expanded.length === 0) return invalid('联合类型展开超过完整解析限额',overload.selector,'arguments');
+          signatures.push(...expanded);
+          lines.push([where, ...complete.map((param) => param.label)].join(' '));
           if (summary !== '') lines.push(`  ${summary}`);
-          for (const param of sourceParams){if (param.description !== undefined) lines.push(`  ${param.name}: ${param.description}`);for(const gap of param.alternatives[0].unchecked_constraints??[])lines.push(`  ${param.name} 约束未核对：${gap.path}；缺失事实：${gap.missing}；下一步：${gap.next_action}`);}
+          for (const param of complete){if (param.description !== undefined) lines.push(`  ${param.name}: ${param.description}`);for(const gap of param.alternatives[0].unchecked_constraints??[])lines.push(`  ${param.name} 约束未核对：${gap.path}；缺失事实：${gap.missing}；下一步：${gap.next_action}`);}
         }
       }
+      if (signatures.length === 0) continue;
       const data: CommandEntryData = { words, signatures };
       if (summaries.size > 0) data.summary = [...summaries].join('\n');
       entries.push({ kind: KIND, path, statement: lines.join('\n'), data, fragments, applicability: null });
     }
-    for (const [type, count] of counters.unknown) warnings.push(`参数类型 ${type} 不在类型表里（${count} 处），按字符串处理`);
-    for (const [type, count] of counters.otherForms) warnings.push(`有 ${count} 个 ${type} 参数的说明写了地址以外的写法（主机名、URL 等），按字符串处理`);
+    for (const [type, count] of counters.unknown) warnings.push(`参数类型 ${type} 不在类型表里（${count} 处），类型未声明、参数未核对；下一步：命令树维护者或包作者在下一次生产前补结构化类型声明后重产`);
     for (const item of declared.values()) {
       if (!item.used) warnings.push(`第 ${item.row} 条声明的参数类型（${item.command} 第 ${item.position} 个参数）在命令树里没有这个参数，未用上`);
     }
-    return { entries, warnings };
+    return output(entries,warnings);
   } catch (error) {
-    return { entries: [], warnings: [...warnings, internalError(error)] };
+    return invalid(internalError(error));
   }
 }
 

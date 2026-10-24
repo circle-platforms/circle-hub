@@ -1367,7 +1367,8 @@
       "rules": [
         "槽位内容是未判定的产出",
         "组件只声明槽位模式、不内含模型，填槽后必须跟确定性验收",
-        "工作流闭集与原合约角色/类型是发布声明，不是同义词词典；业务枚举由所属包的闭集表作唯一词表源，表 id 与显式值精确相等。通用模型只提供状态/限定及通用协议，不把某团队模板类别或产品命名族写成核心枚举；未分类/未判断的缺口有 A06 出口，空主张不能冒充已完成判断。"
+        "工作流闭集与原合约角色/类型是发布声明，不是同义词词典；业务枚举由所属包的闭集表作唯一词表源，表 id 与显式值精确相等。通用模型只提供状态/限定及通用协议，不把某团队模板类别或产品命名族写成核心枚举；未分类/未判断的缺口有 A06 出口，空主张不能冒充已完成判断。",
+        "producer-output@1 增 grammar（id/source/complete）与 diagnostics：精确 command/path/attribute/position，type_declaration_status、command_parse_status、syntax_valid、reason、missing、next_action、具名 audience 和 due。catalog-entry@1 的参数保留原位置；缺 type 时必须是 undeclared 并带补证约束，禁止填占位类型；目录匹配相关值记现有 unknown/missing_input，不增加终态。"
       ],
       "tracedTo": [
         "E1-110",
@@ -1382,7 +1383,8 @@
       ],
       "changes11": [
         "语义主张槽包含稳定 item 身份、发布闭集中的值、逐字 quote/reference、片段路径/范围、来源/判断者及受理记录引用；来源选择槽只给显式 source id 或带逐字引文、可核路径的模型候选。分类、判断、类型声明和命令解析状态分别取对应词表，不把自然语言错误句当结构字段。（来源：决定（集成者，10-24，关键词整改））",
-        "工作流闭集与原合约角色/类型是发布声明，不是同义词词典；业务枚举由所属包的闭集表作唯一词表源，表 id 与显式值精确相等。通用模型只提供状态/限定及通用协议，不把某团队模板类别或产品命名族写成核心枚举；未分类/未判断的缺口有 A06 出口，空主张不能冒充已完成判断。（来源：决定（集成者，10-24，关键词整改））"
+        "工作流闭集与原合约角色/类型是发布声明，不是同义词词典；业务枚举由所属包的闭集表作唯一词表源，表 id 与显式值精确相等。通用模型只提供状态/限定及通用协议，不把某团队模板类别或产品命名族写成核心枚举；未分类/未判断的缺口有 A06 出口，空主张不能冒充已完成判断。（来源：决定（集成者，10-24，关键词整改））",
+        "producer-output@1 增 grammar（id/source/complete）与 diagnostics：精确 command/path/attribute/position，type_declaration_status、command_parse_status、syntax_valid、reason、missing、next_action、具名 audience 和 due。catalog-entry@1 的参数保留原位置；缺 type 时必须是 undeclared 并带补证约束，禁止填占位类型；目录匹配相关值记现有 unknown/missing_input，不增加终态。（来源：集成者 2026-10-24 对 R4 最小消费接线的明确授权）"
       ]
     },
     {

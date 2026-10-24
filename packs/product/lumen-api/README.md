@@ -11,7 +11,7 @@ read through the same system packs (the document store) and produced by the same
 | `product.json` | `product@1`: one name `Lumen API`; `sync` (start `manual:file:lumen/releases.md`, plan `functions/sync.ts`); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `endpoints`, complete, case-insensitive); producer `endpoints` (slot `spec` <- source role `spec`) |
 | `functions/sync.ts` | the release list (a Markdown table: build, version, build time, release time, the path of the endpoint reference in the document store) -> one build per row, its own base, line = the first two numbers of the version, source `spec` = `manual:file:<path>`; a row that does not parse (or whose path leaves the store) is skipped with a note |
 | `functions/select.ts` | the newest released build of the line asked for (else of the newest released line); a line without a release gets its newest build, said so in the basis |
-| `functions/endpoints.ts` | the endpoint reference (markdown@1) -> one `definition` per section titled `<METHOD> <path>` at `/endpoints/<METHOD>/<segments>`, catalog-entry@1 data (`words` = method and path, one signature from the parameter table: 整数 int with a range, 字符串 string with a length range, 枚举 enum with values separated by 、, 端口 port, 可选 optional) |
+| `functions/endpoints.ts` | the endpoint reference (markdown@1) -> one `definition` per section titled `<METHOD> <path>` at `/endpoints/<METHOD>/<segments>`, catalog-entry@1 data (`words` = method and path, one signature from the parameter table: exact int/string/enum/port types, explicit JSON boolean optional, typed bounds and JSON enum arrays) |
 | `functions/common.ts` | table rows, lines, ISO times, version order |
 
 An endpoint is cited as `<METHOD> <path> <values...>`, the values in the order of its parameter table: `GET /v1/pools 500` is
@@ -40,3 +40,8 @@ and shows that the same membership statement (`DELETE /v1/pools/{id}` exists) ho
 ## Needs from other packages
 
 None.
+
+
+## 参数结构语法 2（R4 / U22，包 1.1.0）
+
+`lumen-endpoint-parameters@2` 是本包给合成 API 参考声明的完整八列语法，列名和顺序必须精确为 `name | type | optional | minimum | maximum | minLength | maxLength | values`。type 只支持 contracts 已声明的 int/string/enum/port；optional 是精确 JSON 布尔 `true`/`false`，不能从说明推断。数值约束是完整非负安全 JSON 整数，空单元格代表该约束未声明；enum 的 values 是非空且无重复的 JSON 字符串数组，其余类型的该列必须空。错列、错值或未知 type 拒绝该 endpoint 的目录生产，并给来源作者在下次同步前修订的出口；不把坏参数忽略成无参 endpoint。旧三列中文说明表不再是参数语法。1.0.0 的旧结果不改，参数域和 optional 字段按旧规则限定；1.1.0 重产新根，真实迁移由集成者另行授权。

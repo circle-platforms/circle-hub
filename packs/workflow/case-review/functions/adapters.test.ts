@@ -302,8 +302,8 @@ describe('subject builders', () => {
   it('commandSubject: a command line the case does not write is no cited line of the case (it is the model\'s statement)', () => {
     const fields = { ...projected[0].fields, title: 'widget health interval pool1 5', steps: [{ text: '1.执行 widget health retries pool1 3。\nshow health', expected: ['显示 3'] }], expected: ['显示 3'], preconditions: [] };
     const item = { ...projected[0], fields };
-    const quoted = ['widget health interval pool1 5', 'Widget  Health INTERVAL pool1 5', 'widget health retries pool1 3', 'show health'];
-    const invented = ['widget health interval pool1 999', 'widget health interval pool1', 'health interval pool1 5', 'widget health retries pool1 33', 'widget health interval pool1 5 10'];
+    const quoted = ['widget health interval pool1 5','show health'];
+    const invented = ['Widget  Health INTERVAL pool1 5','widget health retries pool1 3','widget health interval pool1 999', 'widget health interval pool1', 'health interval pool1 5', 'widget health retries pool1 33', 'widget health interval pool1 5 10'];
     const slots = { findings: [{ text: 't', commands: [...quoted, ...invented].map((command) => ({ command })) }] };
     const out = commandSubject({ applies: 'item', item, slots, evidence: [], context }) as { phrases: string[]; unquoted: string[] };
     assert.deepEqual(out.phrases, quoted);
@@ -320,15 +320,16 @@ describe('subject builders', () => {
 
   it('quotedFromCase: whole words of one line in the matching form; no argument cut off or added', () => {
     const lines = ['Box(config)#widget health interval pool1 5', '执行widget backend add 192.0.2.5 80后查看', 'widget health retries pool1 3.'];
-    for (const yes of ['widget health interval pool1 5', 'WIDGET health interval POOL1 5', 'widget backend add 192.0.2.5 80', 'widget health retries pool1 3']) assert.equal(quotedFromCase(yes, lines), true, yes);
+    for (const yes of ['widget health interval pool1 5', 'WIDGET health interval POOL1 5', 'widget backend add 192.0.2.5 80', 'widget health retries pool1 3']) assert.equal(quotedFromCase(yes, lines), false, yes);
+    for(const original of lines)assert.equal(quotedFromCase(original,lines),true,'an exact original line remains quotable; catalog validity is separate');
     for (const no of ['widget health interval pool1 50', 'widget health interval pool1', 'idget health interval pool1 5', 'widget backend add 192.0.2', 'widget backend add 192.0.2.5', 'health retries pool1 3', '', '   ']) assert.equal(quotedFromCase(no, lines), false, no);
   });
 
   it('scanSubject: the text lines of the case', () => {
     const item = { ...projected[0], fields: { ...projected[0].fields, title: 'a\nb', steps: [{ text: 'health interval pool1 5\nshow pool', expected: [] }], expected: ['x '], preconditions: [' '] } };
-    assert.deepEqual(caseLines(item.fields), ['a', 'b', 'health interval pool1 5', 'show pool', 'x']);
+    assert.deepEqual(caseLines(item.fields), ['a', 'b', 'health interval pool1 5', 'show pool', 'x ', ' ']);
     const out = scanSubject({ applies: 'item', item, slots: null, evidence: [], context }) as { commands: string[]; id: string };
-    assert.deepEqual(out.commands, ['a', 'b', 'health interval pool1 5', 'show pool', 'x']);
+    assert.deepEqual(out.commands, ['a', 'b', 'health interval pool1 5', 'show pool', 'x ', ' ']);
     assert.equal(out.id, item.id);
   });
 });
@@ -363,7 +364,8 @@ describe('the pack check findings_sources', () => {
     ]);
     assert.ok(out.every((o) => o.tier === 'blocking' && CheckOutcome.safeParse(o).success));
     assert.match(out[1].statement, /widget health interval pool1 999/);
-    assert.deepEqual(findingSources(withFields([{ text: 'ok', location, quotes: [{ reference: spec, text: 'q' }], commands: [{ command: 'Widget Health Interval POOL1 5' }] }])).map((o) => o.verdict), ['support']);
+    assert.deepEqual(findingSources(withFields([{ text: 'ok', location, quotes: [{ reference: spec, text: 'q' }], commands: [{ command: 'Widget Health Interval POOL1 5' }] }])).map((o) => o.verdict), ['refute']);
+    assert.deepEqual(findingSources(withFields([{text:'ok',location,quotes:[{reference:spec,text:'q'}],commands:[{command:'widget health interval pool1 5'}]}])).map(o=>o.verdict),['support']);
   });
 
   it('is unknown without a slot record and total on hostile input', () => {

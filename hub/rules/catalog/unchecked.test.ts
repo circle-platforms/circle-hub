@@ -21,3 +21,12 @@ test('parameterized existence and nonexistence claims both remain unknown when t
  const outcomes=run([{params:[{name:'n',type:'int',unchecked_constraints:[gap]}]}],[],[{command:'demo 7',present:true},{command:'demo 7',present:false}]);
  assert.deepEqual(outcomes.map(outcome=>outcome.verdict),['unknown','unknown']);
 });
+test('R4 an undeclared native type stays unknown and is never silently treated as string',()=>{
+ const signatures=[{params:[{name:'peer',type_declaration_status:'undeclared',unchecked_constraints:[{...gap,path:'./arguments/arg/@type',missing:'native type declaration'}]}]}];
+ const parsed=CatalogEntry.parse({words:['demo'],signatures,reference});
+ assert.equal(parsed.signatures[0].params[0].type,undefined);
+ for(const command of ['demo peer.invalid','demo 192.0.2.7','demo arbitrary']){
+  const outcome=run(signatures,[command])[0];assert.equal(outcome.verdict,'unknown');assert.equal(outcome.missing,'native type declaration');
+ }
+ assert.equal(run([...signatures,{params:[{name:'peer',type:'ipv4'}]}],['demo 192.0.2.7'])[0].verdict,'support','a complete declared overload still wins');
+});

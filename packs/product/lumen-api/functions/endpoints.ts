@@ -2,7 +2,9 @@
 // build (slot spec, markdown@1) -> one definition entry per endpoint at /endpoints/<METHOD>/<path segments>. An endpoint is
 // a section titled `<METHOD> <path>`; its parameter table (name, type, values) gives the typed positional parameters of the
 // catalog entry (catalog-entry@1 data: words, signatures, summary): an endpoint is cited as `<METHOD> <path> <values...>`.
-// Types: 整数 int (range a-b), 字符串 string (length a-b), 枚举 enum (values a、b), 端口 port; 可选 marks an optional one.
+// lumen-endpoint-parameters@2 (README): the exact header fixes eight named columns;
+// optional is a JSON boolean, bounds are complete JSON nonnegative integers, enum values a JSON string array.
+// Natural-language descriptions never determine a domain or optionality.
 import type { ProducedEntry, ProducerOutput } from '../../../../contracts/src/product.ts';
 import type { CatalogParamType } from '../../../../contracts/src/tables.ts';
 import { asArray, asString, isRecord, tableRows } from './common.ts';
@@ -14,27 +16,31 @@ const MAX_ENDPOINTS = 2000;
 
 type Param = { name: string; type: Extract<CatalogParamType, 'int' | 'string' | 'enum' | 'port'>; optional?: boolean; minimum?: number; maximum?: number; minLength?: number; maxLength?: number; values?: string[] };
 
-/** One parameter row (name, type, values), or why it is not one. */
+const PARAMETER_COLUMNS = ['name','type','optional','minimum','maximum','minLength','maxLength','values'] as const;
+/** One complete typed row of the declared source schema, or its structural violation. */
 export function paramOf(row: readonly string[]): Param | string {
-  const [name, type, values = ''] = row;
-  if (name === undefined || !NAME.test(name)) return `参数名 ${String(name).slice(0, 40)} 不合法`;
-  const optional = /可选/.test(values);
-  const range = /([0-9]{1,9})\s*[-~]\s*([0-9]{1,9})/.exec(values);
-  const base: Param = { name, type: 'string', ...(optional ? { optional: true } : {}) };
-  switch (type) {
-    case '整数':
-      return { ...base, type: 'int', ...(range ? { minimum: Number(range[1]), maximum: Number(range[2]) } : {}) };
-    case '端口':
-      return { ...base, type: 'port' };
-    case '字符串':
-      return { ...base, type: 'string', ...(range ? { minLength: Number(range[1]), maxLength: Number(range[2]) } : {}) };
-    case '枚举': {
-      const list = values.replace(/[，,]?\s*可选\s*$/, '').split(/[、/]/).map((v) => v.trim()).filter((v) => /^[A-Za-z0-9_.-]{1,40}$/.test(v));
-      return list.length > 0 ? { ...base, type: 'enum', values: list } : `参数 ${name} 是枚举却没有取值`;
-    }
-    default:
-      return `参数 ${name} 的类型 ${String(type).slice(0, 20)} 不认识`;
+  if(row.length!==PARAMETER_COLUMNS.length)return '缺 lumen-endpoint-parameters@2 的完整八列；下一步：来源作者在下次同步前补显式类型和 optional 布尔字段';
+  const [name,type,optional,...tail]=row;
+  if(!NAME.test(name))return '参数名不符合 schema';
+  if(optional!=='true'&&optional!=='false')return 'optional 不是 JSON 布尔字段';
+  if(type!=='int'&&type!=='port'&&type!=='string'&&type!=='enum')return 'type 不在本 schema 支持的精确类型闭集';
+  const base:Param={name,type,optional:optional==='true'};
+  for(let at=0;at<4;at++){
+    const value=tail[at];if(value==='')continue;
+    let parsed:unknown;try{parsed=JSON.parse(value);}catch{return '约束不是完整 JSON 整数';}
+    if(typeof parsed!=='number'||!Number.isSafeInteger(parsed)||parsed<0)return '约束不是非负安全整数';
+    const key=PARAMETER_COLUMNS[at+3] as 'minimum'|'maximum'|'minLength'|'maxLength';
+    if((key==='minimum'||key==='maximum')&&type!=='int'&&type!=='port'||(key==='minLength'||key==='maxLength')&&type!=='string')return '约束字段与声明类型不相容';
+    base[key]=parsed;
   }
+  if(base.minimum!==undefined&&base.maximum!==undefined&&base.minimum>base.maximum||base.minLength!==undefined&&base.maxLength!==undefined&&base.minLength>base.maxLength)return '约束上下界颠倒';
+  const raw=tail[4];
+  if(type==='enum'){
+    let values:unknown;try{values=JSON.parse(raw);}catch{return '枚举不是完整 JSON 字符串数组';}
+    if(!Array.isArray(values)||!values.length||values.some(v=>typeof v!=='string'||v.length===0)||new Set(values).size!==values.length)return '枚举值为空、重复或不是字符串';
+    base.values=values;
+  }else if(raw!=='')return '非枚举参数不得填 values';
+  return base;
 }
 
 /** The tree path of an endpoint: /endpoints/<METHOD>/<segments> (braces kept, empty segments dropped). */
@@ -73,13 +79,20 @@ export function produceEndpoints(input: unknown): ProducerOutput {
     const summary = own.find((b) => b.kind === 'paragraph' && typeof b.text === 'string')?.text as string | undefined;
     const table = own.find((b) => b.kind === 'table' && typeof b.text === 'string');
     const params: Param[] = [];
+    let invalid = false;
     if (table !== undefined) {
+      const header = (table.text as string).split('\n')[0].split('|').slice(1,-1).map(cell=>cell.trim());
+      if(header.length!==PARAMETER_COLUMNS.length||header.some((value,k)=>value!==PARAMETER_COLUMNS[k])){
+        warnings.push(`${key}：缺声明的 lumen-endpoint-parameters@2 表头；下一步：来源作者在下次同步前补完整结构字段`);
+        continue;
+      }
       for (const row of tableRows(table.text as string)) {
         const param = paramOf(row);
-        if (typeof param === 'string') warnings.push(`${key}：${param}`);
+        if (typeof param === 'string') {warnings.push(`${key}：${param}；下一步：来源作者在下次同步前修订结构字段后重产`);invalid=true;}
         else params.push(param);
       }
     }
+    if(invalid)continue;
     const fragments = [{ parser: PARSER, selector: section.selector }, ...(table !== undefined && typeof table.selector === 'string' ? [{ parser: PARSER, selector: table.selector }] : [])];
     const signature = params.length === 0 ? '无参数' : params.map((p) => `${p.name}${p.optional ? '?' : ''}:${p.type}`).join(' ');
     entries.push({
