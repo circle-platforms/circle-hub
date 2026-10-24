@@ -721,3 +721,5 @@ an exact-code or wildcard row.
 
 A known layer that misses the expectation makes its requirement unsatisfied; otherwise any transitional layer keeps it
 pending. This integrator decision changes no raw layer, recovery exit, partition membership or unknown count.
+
+Submission-handling errors apply only to actual submit_result bodies. Fact production checks its bound artifacts directly and does not require a model handling declaration.

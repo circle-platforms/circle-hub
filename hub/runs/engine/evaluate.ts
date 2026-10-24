@@ -823,7 +823,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput): Prom
         const check=checks.get(outcome.check);
         errors.push({code:outcome.outcome.reason??'check_error',message:outcome.outcome.missing??outcome.outcome.statement,item:it.id,requirement:t.key,path:check?submissionPointer(it.id,check,outcome.outcome.pointer)??'/items':'/items',rounds_left:roundsLeftOf(t),fix:'补齐点名的事实后重交；不能补齐的按具名请求处理'});
       }
-      if ((handling === 'skipped' || handling === 'not_covered') && (isJudgment(t) || artifactRequirements.has(t.key))) {
+      if (submission!==null&&(handling === 'skipped' || handling === 'not_covered') && (isJudgment(t) || artifactRequirements.has(t.key))) {
         handlingErrorRecorded=true;
         problems.add(t.key);
         const reason=entry?.entry.handling==='skipped'?entry.entry.reason:'没有提交这个条目的处理声明';
