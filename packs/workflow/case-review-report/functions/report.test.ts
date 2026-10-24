@@ -92,7 +92,7 @@ describe('the projection of case-review-report', () => {
     const out = run([{result}]);
     assert.deepEqual(reportItemOf(out).fields.overall,{verdict:'PARTIAL',level:'P5',reference:`rec:${'1'.repeat(64)}#/cross_item/2`});
     result.cross_item = (result.cross_item as Record<string,unknown>[]).slice(0,2);
-    assert.equal(reportItemOf(run([{result}])).fields.overall,null,'an unmatched submission pointer cannot supply a final');
+    assert.equal(run([{result}]).error?.code,'case-review-report.incomplete_blocks');
   });
 
   it('an item unfinished in one block and delivered in another counts as delivered (that block wins)', () => {
@@ -114,51 +114,22 @@ describe('the projection of case-review-report', () => {
     assert.match(out.error?.message ?? '', /c1/);
   });
 
-  it('an item delivered in no block makes the overall unknown with the missing items named (no verdict code)', () => {
-    const out = run([
-      { result: block({ verdict: 'PASS', level: 'P3', entries: [{ item: 'c1' }] }) },
-      { result: block({ verdict: 'PASS', level: 'P3', partition: 'incomplete', entries: [{ item: 'c9' }] }) },
-    ]);
-    const report = reportItemOf(out);
-    assert.deepEqual(report.fields.missing_items, ['c9']);
-    assert.equal(report.fields.overall, null, '有缺漏条目时整体记未知，不给结论码');
-    assert.match(report.summary ?? '', /覆盖不完整/);
-    assert.match(report.summary ?? '', /c9/);
-    assert.doesNotMatch(report.summary ?? '', /结论码/);
+  it('an item delivered in no block refuses the report with the missing item named',()=>{
+    const out=run([{result:block({verdict:'PASS',level:'P3',entries:[{item:'c1'}]})},{result:block({verdict:'PASS',level:'P3',partition:'incomplete',entries:[{item:'c9'}]})}]);
+    assert.equal(out.error?.code,'case-review-report.incomplete_blocks');assert.match(out.error?.message ?? '',/c9/);assert.match(out.error?.fix ?? '',/复核.*重交/);assert.ok(!out.items);
   });
 
-  it('an item only ever in a non-delivered partition (rejected) counts as missing too', () => {
-    const out = run([
-      { result: block({ verdict: 'PASS', level: 'P3', entries: [{ item: 'c1' }] }) },
-      { result: block({ verdict: 'PASS', level: 'P3', partition: 'rejected', entries: [{ item: 'c8' }, { item: 'c7' }] }) },
-    ]);
-    const report = reportItemOf(out);
-    assert.deepEqual(report.fields.missing_items, ['c8']);
-    assert.equal(report.fields.overall, null);
+  it('a rejected-only item also refuses report projection',()=>{
+    const out=run([{result:block({verdict:'PASS',level:'P3',entries:[{item:'c1'}]})},{result:block({verdict:'PASS',level:'P3',partition:'rejected',entries:[{item:'c8'},{item:'c7'}]})}]);
+    assert.equal(out.error?.code,'case-review-report.incomplete_blocks');assert.match(out.error?.message ?? '',/c8/);
   });
 
-  it('the Hub refuting (or not knowing) a block\'s final makes the block\'s conclusion unknown', () => {
-    const out = run([
-      { result: block({ verdict: 'PASS', level: 'P3', entries: [{ item: 'c1' }] }) },
-      { result: block({ verdict: 'PARTIAL', level: 'P5', hub: 'refute', entries: [{ item: 'c2' }] }) },
-    ]);
-    assert.equal(reportItemOf(out).fields.overall, null, '被 Hub 驳回的结论不采信');
-    assert.match(reportItemOf(out).summary??'', /第 2 块.*结论.*下一步/);
-    const unknownHub = run([
-      { result: block({ verdict: 'PASS', level: 'P3', entries: [{ item: 'c1' }] }) },
-      { result: block({ verdict: 'PARTIAL', level: 'P5', hub: 'unknown', entries: [{ item: 'c2' }] }) },
-    ]);
-    assert.equal(reportItemOf(unknownHub).fields.overall, null, 'Hub 记未知的结论不采信');
+  it('a final not supported by Hub must be reverified before a report can start',()=>{
+    for(const hub of ['refute','unknown'] as const){const out=run([{result:block({verdict:'PASS',level:'P3',entries:[{item:'c1'}]})},{result:block({verdict:'PARTIAL',level:'P5',hub,entries:[{item:'c2'}]})}]);assert.equal(out.error?.code,'case-review-report.incomplete_blocks');assert.match(out.error?.message ?? '',/第 2 块/);}
   });
 
-  it('a block without a readable final makes the overall unknown', () => {
-    const out = run([
-      { result: block({ verdict: 'PASS', level: 'P3', entries: [{ item: 'c1' }] }) },
-      { result: block({ verdict: null, level: null, entries: [{ item: 'c2' }] }) },
-    ]);
-    const report = reportItemOf(out);
-    assert.equal(report.fields.overall, null);
-    assert.match(report.summary??'', /第 2 块.*结论.*下一步/);
+  it('a block without a readable final refuses startup',()=>{
+    const out=run([{result:block({verdict:'PASS',level:'P3',entries:[{item:'c1'}]})},{result:block({verdict:null,level:null,entries:[{item:'c2'}]})}]);assert.equal(out.error?.code,'case-review-report.incomplete_blocks');assert.match(out.error?.message ?? '',/第 2 块/);
   });
 
   it('real shape (two blocks, 45 findings, 1 refuted): summaries expose all citable references and overall, checks pass on first attempt', () => {
@@ -277,11 +248,11 @@ describe('the checks of case-review-report', () => {
     const items = [{ id: 'report', label: '评审终稿', location: `src:${DIGEST}/kityminder@1/n/c1`, fields: { overall: null, findings } }];
     const claimsAny = { applies: 'run', items, context: {}, cross_item: [verdictClaim('PARTIAL', 'P4', refs)] };
     const out = overallCheck({ subject: claimsAny })[0]!;
-    assert.equal(out.verdict, 'unknown');
-    assert.equal(out.reason, 'missing_input');
+    assert.equal(out.verdict, 'refute');
+    assert.equal(out.code, 'case-review-report.report_missing');
     const withMissing = { applies: 'run', items: [{ id: 'report', label: '评审终稿', location: `src:${DIGEST}/kityminder@1/n/c1`, fields: { overall: null, findings, missing_items: ['c9', 'c10'] } }], context: {}, cross_item: [verdictClaim('PARTIAL', 'P4', refs)] };
     const outMissing = overallCheck({ subject: withMissing })[0]!;
-    assert.deepEqual([outMissing.verdict, outMissing.reason], ['unknown', 'missing_input']);
+    assert.deepEqual([outMissing.verdict, outMissing.code], ['refute', 'case-review-report.report_missing']);
     assert.match(outMissing.statement, /c9/);
   });
 
@@ -316,7 +287,7 @@ describe('the table projection binding',()=>{
   });
   it('does not produce tables until missing conclusions and undelivered items are repaired',()=>{
     for(const entries of [[{result:block({verdict:null,level:null,entries:[{item:'c1'}]})}],[{result:block({verdict:'PASS',level:'P3',entries:[{item:'c1'}],partition:'incomplete'})}]]){
-      const report=reportItemOf(run(entries));assert.equal(report.fields.overall,null);assert.equal(report.fields.review_tables,undefined);assert.match(report.summary??'',/下一步.*复核.*终稿/);
+      const out=run(entries);assert.equal(out.error?.code,'case-review-report.incomplete_blocks');assert.ok(!out.items);assert.match(out.error?.fix??'',/复核.*重交/);
     }
   });
 });
@@ -402,7 +373,7 @@ it('modern missing disposition support asks for the current receipt instead of a
   const result=block({verdict:'PARTIAL',level:'P5',entries:[{item:'c1'}]});(result.locks as any).pack='case-review-verify@1.1.1';
   for(const requirement of (result.partitions as any).delivered[0].requirements)requirement.claims=requirement.claims.filter((claim:any)=>claim.warrant?.producer!=='function');
   const report=reportItemOf(run([{result}]));assert.equal(report.fields.overall,null);assert.match(report.summary??'',/^下一步：.*处置.*重交/);assert.doesNotMatch(report.summary??'',/新版|升级/);
-  const checked=overallCheck({subject:{items:[{id:'report',fields:report.fields}],cross_item:[{code:'PARTIAL',rank:'P5'}]}});assert.ok(checked[0].verdict==='unknown');assert.doesNotMatch(checked[0].statement,/新版|升级/);
+  const checked=overallCheck({subject:{items:[{id:'report',fields:report.fields}],cross_item:[{code:'PARTIAL',rank:'P5'}]}});assert.equal(checked[0].verdict,'refute');assert.equal(checked[0].code,'case-review-report.report_missing');assert.doesNotMatch(checked[0].statement,/新版|升级/);
 });
 
 it('records the authorization provenance of the generic core string field renderer',()=>{
@@ -463,4 +434,10 @@ it('no producer and independence unknown refusals request the missing contributi
 it('repair refusals preserve the first stored error corrective action',()=>{
   const result=block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]});result.errors=[{code:'case-review-verify.synthetic_error',fix:'请修正合成位置并保留原文',item:'c1'}];
   const out=run([{result}]);assert.match(out.error?.fix??'',/请修正合成位置并保留原文.*重交.*复核/);
+});
+
+it('pack findings refuses missing block finals and uncovered items before starting a report',()=>{
+ for(const result of [block({verdict:null,level:null,entries:[{item:'c1'}]}),block({verdict:'PASS',level:'P4',partition:'incomplete',entries:[{item:'c9'}]})]){
+  const out=run([{result}]);assert.ok(out.error);assert.match(out.error.message ?? '',/第.*块|条目.*c9/);assert.match(out.error.fix ?? '',/复核|重交/);assert.ok(!out.items);
+ }
 });

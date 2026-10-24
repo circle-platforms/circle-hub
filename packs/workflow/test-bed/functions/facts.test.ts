@@ -91,19 +91,17 @@ describe('bedFacts of bed-a', () => {
       [['lb0', '192.0.2.130', '192.0.2.128/26']],
     );
   });
-  it('a device without any address yields unknown reachability, not an empty fact', () => {
-    const bed = manifestOf([
-      {
-        name: 'bed-c',
-        devices: [
-          { name: 'lb0', type: 'load-balancer', ipv4: [], ipv6: [] },
-          { name: 'cli0', type: 'client', ipv4: ['192.0.2.10/26'], ipv6: [] },
-        ],
-        services: [],
-        reserved: [],
-      },
-    ])[0];
-    const facts = bedFacts(bed);
+  it('a device without any address yields unknown reachability, not an empty fact (defence: import refuses such a device)', () => {
+    // Import refuses a device with no interface address at all (manifest.ts), so this bed is built directly: bedFacts
+    // stays total and keeps reporting unknown reachability should such a device ever reach it.
+    const bed = {
+      name: 'bed-c', family: 4 as const, segments: [], reserved: [], services: [],
+      devices: [
+        { name: 'lb0', type: 'load-balancer' as const, product: null, installed: null, ipv4: [], ipv6: [] },
+        { name: 'cli0', type: 'client' as const, product: null, installed: null, ipv4: [{ family: 4 as const, address: '192.0.2.10', value: 0n, subnet: '192.0.2.0/26' }], ipv6: [] },
+      ],
+    };
+    const facts = bedFacts(bed as unknown as Parameters<typeof bedFacts>[0]);
     assert.deepEqual(facts.unknowns, [{ device: 'lb0', reason: '设备没有任何接口地址，可达性未知' }]);
     assert.deepEqual(facts.listeners, []);
   });

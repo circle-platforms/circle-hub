@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { canonicalize, CanonicalizationError } from './canonical.ts';
-import { digestOf, envelopeCanonical, recordDigest, sha256Hex } from './digest.ts';
+import { digestOf, envelopeCanonical, envelopeDigest, recordDigest, sha256Hex } from './digest.ts';
 
 const BS = String.fromCharCode(0x5c);
 /** JSON text of a \uXXXX escape. */
@@ -157,5 +157,39 @@ test('digest vectors: record envelope digests computed independently', () => {
   for (const envelope of [first, second]) {
     const { body, ...meta } = envelope;
     assert.equal(envelopeCanonical(meta, canonicalize(body)), canonicalize(envelope));
+    assert.equal(envelopeDigest(meta, canonicalize(body)), recordDigest(envelope));
+  }
+});
+
+test('streamed bytes and size preserve the predecessor SHA across chunk boundaries, Unicode, escapes and numeric member names', async () => {
+  const { canonicalBytes, canonicalByteLength } = await import('./canonical.ts');
+  const value = { '2': 'two', '10': 'ten', arr: Array.from({ length: 2500 }, (_, i) => ({ z: '合成😀\u0000' + i, a: [i, -0, 1e30] })) };
+  const bytes = canonicalBytes(value);
+  assert.equal(sha256Hex(bytes), '0a217a890459db6f9e22b55c509ada276ba998cdb13753c14cc47570a4c44336');
+  assert.equal(canonicalByteLength(value), bytes.length);
+  assert.equal(Buffer.from(bytes).toString(), canonicalize(value));
+  for (const encode of [canonicalBytes, canonicalByteLength]) {
+    assert.throws(() => encode({ nested: [undefined] }), (error: unknown) => error instanceof CanonicalizationError && error.path === '/nested/0');
+    const cyclic: { self?: unknown ;} = {}; cyclic.self = cyclic; assert.throws(() => encode(cyclic), CanonicalizationError);
+  }
+});
+
+test('one operation encoder preserves canonical bytes after another mode or a rejected value', async () => {
+  const { createCanonicalEncoder, canonicalBytes, canonicalByteLength } = await import('./canonical.ts');
+  const encoder = createCanonicalEncoder();
+  for (let i = 0; i < 20; i++) {
+    const value = { ['field-' + i]: ['合成😀', i, { '10': i, '2': -0 }], drop: undefined };
+    assert.equal(encoder.text(value), canonicalize(value));
+    assert.deepEqual(encoder.bytes(value), canonicalBytes(value));
+    assert.equal(encoder.size(value), canonicalByteLength(value));
+    assert.throws(() => encoder.bytes({ bad: Infinity }), CanonicalizationError);
+  }
+});
+
+test('streamed envelope hashing preserves UTF-8 at surrogate pairs on a chunk boundary', () => {
+  const meta = { kind: 'tree_root', schema: 'tree_root-rows@1', provenance: 'projected', created_at: '2026-10-24T00:00:00.000Z' };
+  for (const padding of [16380, 16381, 16382, 16383, 16384]) {
+    const body = canonicalize({ text: 'a'.repeat(padding) + '😀合成'.repeat(20000) });
+    assert.equal(envelopeDigest(meta, body), sha256Hex(envelopeCanonical(meta, body)));
   }
 });

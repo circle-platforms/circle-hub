@@ -100,7 +100,7 @@ export { commandOutcomes } from './functions/command-check.ts';
 export { commandSubject } from './functions/command-subject.ts';
 export { commandCoverage, caseCategories } from './functions/commands.ts';
 export { coverageSubject } from './functions/subject.ts';
-export { categoryFacts, keywordForm, matchForm, readTemplate, MAX_EVIDENCE, TEMPLATE_SCHEMA } from './functions/template.ts';
+export { categoryFacts, readTemplate, MAX_EVIDENCE, TEMPLATE_SCHEMA } from './functions/template.ts';
 export { casePath, casesOf, CASE_LIMITS, PRIORITIES } from './functions/cases.ts';
 export type { DocumentCases, NodeTable } from './functions/cases.ts';
 export { CANONICAL_TAGS, canonicalTag, canonicalTags } from './functions/tags.ts';

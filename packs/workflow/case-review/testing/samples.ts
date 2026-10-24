@@ -96,6 +96,9 @@ export function samples(): Entry[] {
   const negativeCase = caseItem('n1', { tags: ['Negative'], tagsNormalized: ['Negative'], negative: true, title: '探测间隔超出范围时报错', steps: [{ text: 'health interval pool1 0', expected: ['提示取值超出范围'] }], expected: ['提示取值超出范围'] });
   const withLine = (node: string, line: string): Item => caseItem(node, { steps: [{ text: line, expected: ['显示的探测间隔与设置一致'] }] });
   return [
+    sample('positive','negative_command_present','negative_commands','反向用例从自身取命令行',itemSubject(commandSubject,negativeCase,{findings:[]}),[{verdict:'support',item:'sample:n1',tier:'advisory'}],{catalog:CATALOG}),
+    sample('negative','negative_command_missing','negative_commands','反向用例自身没有目录命令行',itemSubject(commandSubject,caseItem('n1',{tags:['Negative'],tagsNormalized:['Negative'],negative:true,title:'拒绝非法输入',steps:[],expected:['拒绝非法输入']}),{findings:[]}),[{verdict:'refute',code:'case-review.negative_command_missing',item:'sample:n1',tier:'advisory'}],{catalog:CATALOG}),
+
     // structure (literal): fields, ranges and duplicates of the whole run.
     sample('positive', 'structure_clean', 'structure', '两个字段齐全、内容不同的用例', runSubject(good), [
       { verdict: 'support', item: 'sample:c1' },

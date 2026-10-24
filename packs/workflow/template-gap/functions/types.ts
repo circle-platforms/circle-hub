@@ -1,11 +1,16 @@
+import type { CommandIdentity } from '../../../../contracts/generated/shared-interfaces.ts';
+
+import type {TestTypeId,ResourceTagDeclaration} from './generated/vocabulary.ts';
 // Types of the template-gap functions. Type-only imports: they are erased at run time, so the functions stay self-contained
 // inside the pack (the sandbox admits only modules inside the pack); the contract types keep the outputs in their shapes.
+import type { ClassificationStatus } from '../../../../contracts/generated/vocabulary.ts';
+import type { ClassifiedCase } from './classification.ts';
 import type { ItemSubjectInput, PackError, PackFailure, PackWarning, ProjectedItem, ProjectionInput } from '../../../../contracts/src/pack.ts';
 
 export type { ItemSubjectInput, PackError, PackFailure, PackWarning, ProjectedItem, ProjectionInput };
 
 /** The canonical test types of the team template; every tag spelling maps to one of them or to null. */
-export type CanonicalTag = 'Functional' | 'Configuration' | 'Integration' | 'Compatibility' | 'Negative' | 'Stress';
+export type CanonicalTag = TestTypeId;
 
 /** One case of a document as the template matching reads it (the fields case-review projects that the template searches). */
 export type CaseRecord = {
@@ -20,6 +25,12 @@ export type CaseRecord = {
   title: string;
   /** The resource entries as written (text only). */
   tags: string[];
+  /** AuthoredCategoryFields.category_ids read unchanged from the original node. */
+  category_ids?: unknown;
+
+  resource?: unknown;
+  resourcePresent?: boolean;
+  tagDeclaration?: ResourceTagDeclaration;
   /** Texts of the children that have children of their own. */
   steps: string[];
   /** Every leaf below the case that is not a precondition, in document order. */
@@ -46,7 +57,7 @@ export type CategoryFact = {
 };
 
 /** A category declared skipped with its reason (run parameter `skipped`). */
-export type Skip = { category: string; reason: string; command?: string };
+export type Skip = { category: string; reason: string; command?: CommandIdentity };
 
 /** The fields of one document item. */
 export type DocumentFields = {
@@ -64,6 +75,14 @@ export type DocumentFields = {
   data: { case_rule: 'marked' | 'tagged'; marked_only: number };
   /** Every category of the template, in template order. */
   categories: CategoryFact[];
+  classification_status: ClassificationStatus;
+  classifications: ClassifiedCase[];
+  unclassified: string[];
+  scope_complete: boolean;
+
+  case_resources?: Array<{case:string;present:boolean;resource:unknown}>;
+  tag_table?: ResourceTagDeclaration['table'];
+  tag_undeclared_cases?: number;
   command_coverage?: CommandCoverage;
   /** Ids of the required categories (in template v3: every category) no case shows and no skip names, in template order. */
   missing: string[];
@@ -94,12 +113,15 @@ export type CoverageSubject = {
 };
 
 /** Frozen per-case category membership, before evidence lists are capped for display. */
-export type CaseCategory = { id: string; visit: number; categories: string[] };
+export type CaseCategory = { id: string; visit: number; categories: string[]; status?: ClassificationStatus };
 export type CaseRevisionNodes = { texts: string[]; parents: number[] };
-export type CommandFact = { command: string; caseCount: number; categories: (CategoryFact & { references: string[] })[]; missing: string[]; skipped: Skip[]; references: string[] };
+export type CommandFact = { command: string; identity?: CommandIdentity; unclassified?: string[]; potential_missing?: string[]; caseCount: number; categories: (CategoryFact & { references: string[] })[]; missing: string[]; skipped: Skip[]; references: string[] };
 export type CommandCoverage = {
   case_rule: 'marked' | 'tagged'; rule_mismatch: boolean; bound: boolean; uploaded: boolean; documentIndexed: boolean; root: string | null; build: string | null;
   caseCount: number; matchedCases: number; unmatched: string[]; orphaned: string[]; pending_commands: string[]; pending_skips: Skip[]; commandlessCases: number;
   truncated: boolean; skippedSources: number; cutKeys: string[]; unplacedRoot: number | null; notes: string[];
+  missing_identities?: string[];
+  unclassified?: string[];
+  pending_identities?: CommandIdentity[];
   commands: CommandFact[];
 };

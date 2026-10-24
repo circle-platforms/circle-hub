@@ -156,3 +156,5 @@ Neither rule, thresholds nor null-group handling changes. Both labels come from 
 registers this pack and `--check` locks that snapshot. For example, the same synthetic view
 has five distinct case contents, two with a tree position and three without, while four lack
 command ownership. The board still reports four.
+
+标签按 resource-tags@1 的精确原文闭集读取，保留 resource 原值。闭集外是提示档结构违规“未声明的标签”；大小写、全半角与同义词不相等。非法声明不进入正反向比例分母。此版本替代旧关键词规则，历史结果不改写；应以新包重产新根与新运行。本次续接按所有者指令未运行验证。

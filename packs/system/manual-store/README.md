@@ -7,7 +7,7 @@ documents; reads only.
 | --- | --- |
 | `manual:file:<path>` | one file by its path below the base |
 | `manual:cli:<line>`, `manual:app:<line>` | the CLI or application manual of a version line: the subfolder of `settings.cli_folder` (default `cli`) or `settings.app_folder` (`app`) whose name ends in the line's numbers (`rel_x_10_7_1` is line 10.7.1), file `settings.cli_file` (`cli_cn/cli_cn.md`) or `settings.app_file`; content `text/markdown` without NUL bytes (the original keeps them), meta `{title, line, folder, nul_removed}` |
-| `manual:spec-search:<terms joined by +>` | `settings.spec_folder` (default `spec`) listed once with PROPFIND Depth 1; every file name scored by the number of terms it contains (case-insensitive, an ASCII acronym counts like any term where no ASCII letter touches it), ties to the file whose terms are rarer in the folder, the best five with at least one term read; the derived content (Markdown) lists the files read and holds their texts; nothing found is an empty listing, not an error |
+| `manual:spec-search:<terms joined by +>` | `settings.spec_folders` (default `["spec"]`) listed once each with PROPFIND Depth 1; every file name scored by the number of terms it contains (case-insensitive, an ASCII acronym counts like any term where no ASCII letter touches it), ties to the file whose terms are rarer in the folder, the best five with at least one term read; the derived content (Markdown) lists the files read and holds their texts; nothing found is an empty listing, not an error |
 | `manual:qa-search:<terms joined by +>` | the same over the test strategy documents (`settings.qa_folder`, default `qa`); the workflows bind it with role hint (evidence group d) |
 
 **Links of a listing are never followed.** A member is read by its name below the listed folder (`params.path`, route
@@ -33,3 +33,11 @@ end-to-end test binds the spec and the qa search and syncs the Lumen API product
 Needs: none.
 
 缺席观察：读取声明的 `absent_codes` 包含 `manual.not_found`。仅在原始应答已保存、根据全部可读且无其他读取故障时，Hub 将该码转为带系统、对象、读取时刻和应答键的 SOURCE_ABSENT；原件照存，检查读取独立的规范 JSON 观察。401/403、未读完或凭据保留不作缺席。
+
+## Declared specification folders
+
+`manual:spec-list:configured` lists the direct members of `settings.spec_folders` (up to 32 directories) as JSON `folders`, `files` (`name`, resource-relative `path`, optional WebDAV `displayname` as `title`), `directories` (`name`, `path`), `unread` and `complete`. It never follows member links or descends into child directories. Unsafe member names are skipped and named in warnings; an unread directory makes the listing incomplete and names the permission/path repair. At least one directory must be declared, so the read has an inventory original; a configured directory with no files is a complete zero selection. No product or QA folders are added. Deployment may bind the setting to `${var:MANUAL_SPEC_FOLDERS}`.
+
+Legacy `spec_folder` joins the same list, once per normalized path; reads warn “旧设置 spec_folder 已并入 spec_folders，下一步资源管理员改用 spec_folders”. Specification searches use that same list and select at most five files across all directories.
+
+Specification inventory reads require an explicit `spec_folders` list or the legacy `spec_folder` setting; an undeclared list refuses with the resource-administrator configuration action. An empty directory list refuses before requests, with the action to configure at least one readable directory (which may itself be empty). Only the existing search keeps its legacy `spec` fallback.

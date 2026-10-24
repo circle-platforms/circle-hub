@@ -10,6 +10,7 @@ import {knowledgeSourceLoader,reconcileCredentialRequests} from './credential-po
 import { z } from 'zod';
 import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
 import {resolveProductVariables,sameVariableUses,productionVariableUses} from './variables.ts';
+import {emptyScopeNote} from './empty-scope.ts';
 import type {VariableUse} from '../../contracts/src/variables.ts';
 import { BuildInfo, SyncPlanOutput, expandTemplate } from '../../contracts/src/product.ts';
 import type { SyncPlanInput } from '../../contracts/src/product.ts';
@@ -501,7 +502,7 @@ async function processOwnTree(
       else if(ids.length>0)changed=`上次跳过 ${ids.length} 份来源，本次全部重试`;
     }
     if (changed === null && !options.recheck) {
-      return { ...base, outcome: 'skipped', reason: '已有根，来源和生产器都没有变', root: existing.detail.root, composition: existing.detail.composition };
+      return { ...base, outcome: 'skipped', reason: ['已有根，来源和生产器都没有变',emptyScopeNote((await context.store.composition(existing.detail.composition!))?.empty_scope)].filter(Boolean).join('；'), root: existing.detail.root, composition: existing.detail.composition };
     }
     if (changed === null) {
       let unchanged = true;
@@ -535,7 +536,7 @@ async function processOwnTree(
           if (sha256Hex(canonicalize(pairs)) !== list.loaded) unchanged = false;
         }
       }
-      if (unchanged) return { ...base, outcome: 'skipped', reason: '已有根，重读后来源摘要没有变', root: existing.detail.root, composition: existing.detail.composition };
+      if (unchanged) return { ...base, outcome: 'skipped', reason: ['已有根，重读后来源摘要没有变',emptyScopeNote((await context.store.composition(existing.detail.composition!))?.empty_scope)].filter(Boolean).join('；'), root: existing.detail.root, composition: existing.detail.composition };
       changed = '来源变了';
     }
   }
@@ -569,7 +570,7 @@ async function processOwnTree(
   return {
     ...base,
     outcome: 'produced',
-    reason: `产出根，${produced.nodes} 个节点（新写 ${produced.created} 个）、条目共 ${produced.entryCounts.total} 个（按内容去重；已挂到树上位置 ${produced.entryCounts.placed} 个）；树上挂载 ${produced.entries} 处（按路径与内容）${same}${note}${skipped}${calls}${unplacedNote}${cause}`,
+    reason: `产出根，${produced.nodes} 个节点（新写 ${produced.created} 个）、条目共 ${produced.entryCounts.total} 个（按内容去重；已挂到树上位置 ${produced.entryCounts.placed} 个）；树上挂载 ${produced.entries} 处（按路径与内容）${same}${note}${skipped}${calls}${unplacedNote}${cause}${produced.reason?'；'+produced.reason:''}`,
     root: produced.root,
     composition: produced.composition,
     refused: produced.refusedCount,

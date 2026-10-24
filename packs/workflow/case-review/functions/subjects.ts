@@ -5,8 +5,8 @@
 //   `claims` are the statements that a command exists (present true) or does not (present false); `phrases` are the
 //   command lines the findings cite from the case (present left out) that the case really writes (lines.ts), whose arguments
 //   are checked against the signatures; `unquoted` are the other cited lines, the model's statements, which no catalog table
-//   reads (findings_sources sends them back). On a negative case without any cited line of its own `phrases` is missing, not
-//   empty: the invalid input was not cited, so the catalog requirement stays unknown instead of passing (C04 R[4]);
+//   reads (findings_sources sends them back). A negative case without a cited line falls back to the case's own lines;
+//   negative_commands reports an advisory source defect when none resolves at a catalog head;
 // - scanSubject (ItemSubjectInput): the optional scan of the case's own text lines for command phrases (tables/catalog.json,
 //   advisory, listed by no requirement of this pack: off).
 import { guarded, isRecord } from './common.ts';
@@ -54,7 +54,7 @@ export function commandSubject(input: unknown): unknown {
       location: typeof item.location === 'string' ? item.location : null,
       negative,
       claims: cited.claims,
-      ...(negative && phrases.length === 0 ? {} : { phrases }),
+      phrases: negative && phrases.length === 0 ? [...new Set(lines)] : phrases,
       unquoted,
     };
   });

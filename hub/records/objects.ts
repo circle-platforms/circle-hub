@@ -1,6 +1,6 @@
 // Content-addressed bytes under <root>/ab/<sha256> (adapted from the earlier knowledge object store): atomic write through a
 // hard link, read-only files, verified on every read, never overwritten and never deleted.
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { link, mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ObjectInfo, ObjectStore } from './api.ts';
@@ -104,8 +104,10 @@ export class FileObjectStore implements ObjectStore {
       return true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      const existing = await readFile(target);
-      if (sha256Hex(existing) !== sha256) {
+      const existing = await open(target, 'r');
+      const hash = createHash('sha256'), scratch = Buffer.allocUnsafe(64 * 1024);
+      try { for (; ;) { const { bytesRead } = await existing.read(scratch, 0, scratch.length, null); if (bytesRead === 0) break; hash.update(scratch.subarray(0, bytesRead)); } } finally { await existing.close(); }
+      if (hash.digest('hex') !== sha256) {
         throw new IntegrityError('已保存的原件与它的 SHA-256 不符；原件从不覆盖，请从备份恢复', { detail: { sha256 } });
       }
       return false;

@@ -5,6 +5,8 @@ import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts
 import { createRunsService } from './api.ts';
 import { openRetryHarness } from './testing/retry-harness.ts';
 import { sandboxSkip } from './testing/harness.ts';
+import { createEngineContext } from './deps.ts';
+import { applyDispatchResults } from './dispatch-results.ts';
 import { standardDocument, toyMap } from './testing/mindmap.ts';
 import type { RunJob } from '../../dispatch/api.ts';
 let pg:TemporaryPostgres;let h:Awaited<ReturnType<typeof openRetryHarness>>;const skip=await sandboxSkip();
@@ -53,4 +55,33 @@ test('unknown dispatch quarantines only its bound item, reconciles without sendi
   const unresolved=rejected.requirements.find(r=>r.requirement==='catalog')!.layers.find(l=>l.layer==='dynamic')!;
   assert.equal(unresolved.terminal,'no_verdict');assert.deepEqual(unresolved.exit,job.management_exit);
   assert.ok((await service.listRequests!(h.alice,run.run)).find(q=>q.record===request.record)!.answered_by);
+});
+
+test('dispatch recomputation keeps an unruled static judgment unmet for a fact-only requirement', {skip},async()=>{
+  const template=h.review.requirements.find(r=>r.key==='catalog')!;
+  template.layers=['static','dynamic'];template.observation='dispatch@1';template.run_table=true;
+  const map=await h.upload(h.alice,toyMap(standardDocument()));
+  const run=(await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}},h.call())).run!;
+  const submitted=await h.service.submitResult(h.alice,{run:run.run,model:'synthetic',items:run.items.map(i=>({item:i.id,handling:'handled',slots:{findings:[]}})),cross_item:[{nature:'judgment',statement:'合成等级',grounds:[],code:'draft_level',rank:'P4'}],checks:[{requirement:'catalog',interpreter:'unruled@1',table:{},samples:[]}]},h.call('synthetic-unruled-dispatch'));
+  assert.equal(submitted.acceptance,'accepted');
+  const result=submitted.result!;
+  const item=run.items[0].id;
+  const requirementOf=(value:typeof result)=>Object.values(value.partitions).flat().find(row=>row.item===item)!.requirements.find(row=>row.requirement==='catalog')!;
+  assert.equal(requirementOf(result).layers.find(layer=>layer.layer==='static')!.terminal,'judgment');
+  assert.deepEqual([requirementOf(result).status,requirementOf(result).unsatisfied_reason],['unsatisfied','outcome_mismatch']);
+  assert.ok(result.cross_item.some(claim=>claim.qualifier.marks.includes('decision_shape_unruled')));
+  const record=(await h.service.getRun(h.alice,run.run))!.run;
+  const ctx=createEngineContext({records:h.kit,workflows:h.workflows,packs:h.packs,knowledge:h.knowledge,external:h.external});
+  const job:RunJob={job:'c'.repeat(64),verification_run:run.run,plan_run:run.run,verification_item:item,items:[item],sha256:'d'.repeat(64),status:{job:'c'.repeat(64),phase:'unknown',outcome:'unknown',frozen:true,events:1,missing_fact:'合成作业缺少完整观察'}};
+  const pending=structuredClone(result);
+  assert.equal(await applyDispatchResults(ctx,record,pending,[job]),true);
+  assert.equal(requirementOf(pending).layers.find(layer=>layer.layer==='dynamic')!.terminal,'no_verdict');
+  assert.deepEqual([requirementOf(pending).status,requirementOf(pending).unsatisfied_reason],['unsatisfied','outcome_mismatch']);
+  const artifact=await h.kit.artifacts.ingest({bytes:canonicalBytes({job:job.job,sha256:job.sha256,rows:[{item,dynamic_terminal:'pass',accepted_as_fact:false,qualifier:{nature:'judgment',marks:['target_reported','report_for_dispatch','local_ops_not_excluded']},missing_facts:[]}]}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[]}},author:{user:null},provenanceType:'projected',visibility:{readers:[h.alice.id],admins:true,packs:[],shareable:false}});
+  job.status={...job.status,phase:'complete',outcome:'effective',frozen:false,events:2,result:`src:${artifact.body.sha256}`};
+  const observed=structuredClone(result);
+  await applyDispatchResults(ctx,record,observed,[job]);
+  assert.equal(requirementOf(observed).layers.find(layer=>layer.layer==='static')!.terminal,'judgment');
+  assert.equal(requirementOf(observed).layers.find(layer=>layer.layer==='dynamic')!.terminal,'pass');
+  assert.equal(requirementOf(observed).status,'unsatisfied');
 });

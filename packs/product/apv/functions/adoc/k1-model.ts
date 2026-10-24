@@ -142,17 +142,13 @@ function mappedKind(block: Block): string {
 /** A group token of a signature line: `<name>`, `[weight]`, `{add|del}`. */
 const GROUP = /^([<[{])[\s\S]*[>\]}]$/;
 /** A word of a command head, spelled as K1's anchor grammar reads it. */
-const WORD = /^[A-Za-z0-9?][A-Za-z0-9_.?:/+-]{0,63}$/;
 
 /** Whether every group of a line is closed: `<name`, `name>` and `[a<b]` are no signature. */
 function groupsBalanced(text: string): boolean {
-  let depth = 0;
-  for (const ch of text) {
-    if (ch === '<' || ch === '[' || ch === '{') depth++;
-    else if (ch === '>' || ch === ']' || ch === '}') depth--;
-    if (depth < 0) return false;
-  }
-  return depth === 0;
+  const stack:string[]=[];
+  const pairs:Record<string,string>={'<':'>','[':']','{':'}'};
+  for(const ch of text){if(Object.hasOwn(pairs,ch))stack.push(pairs[ch]);else if(ch==='>'||ch===']'||ch==='}'){if(stack.pop()!==ch)return false;}}
+  return stack.length===0;
 }
 
 /**
@@ -185,9 +181,8 @@ export function readSignatureLine(plain: string): SignatureLine {
     else params.push(token);
   }
   if (head.length === 0) return { spelling: null, problem: '第一个参数组之前没有命令词' };
-  if (head.some((token) => GROUP.test(token) === false && WORD.test(token) === false)) {
-    return { spelling: null, problem: '命令词位置上有不是命令词的文字（例如中文说明或标点）' };
-  }
+  // This maps declared signature syntax only; word appearance does not establish command identity.
+  // The manual producer subsequently verifies every head and parameter position against its locked tree.
   const spelling = `**${head.join(' ')}**${params.length > 0 ? ` *${params.join(' ')}*` : ''}`;
   return parseAnchor(spelling, null) === null ? { spelling: null, problem: '这一行按 K1 的锚点语法读不成命令签名' } : { spelling, problem: null };
 }

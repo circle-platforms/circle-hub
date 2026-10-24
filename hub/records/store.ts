@@ -12,7 +12,7 @@ import type { FindQuery, IndexEntry, ListQuery, Page, PutResult, RecordInput, Re
 import { canonicalize } from './canonical.ts';
 import { decodeCursor, encodeCursor, iso, normalizeTime, pageLimit } from './db.ts';
 import type { Database, Row } from './db.ts';
-import { envelopeCanonical, isSha256, sha256Hex } from './digest.ts';
+import { envelopeDigest, isSha256 } from './digest.ts';
 import { IntegrityError, LimitError } from './errors.ts';
 import { newId } from './ids.ts';
 
@@ -57,7 +57,7 @@ export class PgRecordStore implements RecordStore {
     const index = validateIndex(input.index ?? []);
     if (input.unique_key !== undefined) validateUniqueKey(input.unique_key);
     const meta = { kind: kind.data, schema: input.schema, provenance: input.provenance, created_at: createdAt };
-    const digest = sha256Hex(envelopeCanonical(meta, body));
+    const digest = envelopeDigest(meta, body);
     return this.#db.transaction(async (t) => {
       if (input.unique_key !== undefined) {
         await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [UNIQUE_KEY_LOCK_SPACE, `${meta.kind}:${input.unique_key}`], t);
@@ -106,6 +106,16 @@ export class PgRecordStore implements RecordStore {
     return result.rows[0] === undefined ? null : verifiedRecord<B>(result.rows[0]);
   }
 
+  async getText(digest: string, tx?: Transaction): Promise<(Omit<StoredRecord, 'body'> & { bodyText: string ;}) | null> {
+    return (await this.getTexts([digest], tx)).get(digest) ?? null;
+  }
+
+  async getTexts(digests: readonly string[], tx?: Transaction): Promise<Map<string, Omit<StoredRecord, 'body'> & { bodyText: string ;}>> {
+    const wanted = [...new Set(digests.filter(isSha256))]; if (!wanted.length) return new Map();
+    const result = await this.#db.query(`SELECT ${COLUMNS} FROM records WHERE digest=ANY($1::text[])`, [wanted], tx);
+    return new Map(result.rows.map(row => { const record = verifiedRecordText(row); return [record.digest, record]; }));
+  }
+
   async getMany<B = unknown>(digests: readonly string[], tx?: Transaction): Promise<Map<string, StoredRecord<B>>> {
     const wanted = [...new Set(digests.filter(isSha256))];
     if (!wanted.length) return new Map();
@@ -124,6 +134,22 @@ export class PgRecordStore implements RecordStore {
        WHERE i.key=$1 AND i.value=ANY($2::text[]) ${query.kind === undefined ? '' : 'AND r.kind=$3'} ORDER BY r.seq`,
       query.kind === undefined ? [query.key,values] : [query.key,values,query.kind],tx);
     return result.rows.map(row => verifiedRecord<B>(row));
+  }
+
+  async findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: import('./api.ts').RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>> {
+    if (!INDEX_KEY.test(query.key)) throw new TypeError('invalid index key');
+    if (query.kind !== undefined && !RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');
+    const values = [...new Set(query.values.filter(isIndexValue))];
+    if (!values.length) return new Map();
+    const result = await this.#db.query(
+      `SELECT wanted.value, matched.* FROM unnest($2::text[]) AS wanted(value)
+       CROSS JOIN LATERAL (
+         SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
+         FROM record_index i JOIN records r ON r.digest=i.digest
+         WHERE i.key=$1 AND i.value=wanted.value ${query.kind === undefined ? '' : 'AND r.kind=$3'}
+         ORDER BY i.record_seq LIMIT 1
+       ) AS matched`, query.kind === undefined ? [query.key, values] : [query.key, values, query.kind], tx);
+    return new Map(result.rows.map(row => [row.value as string, verifiedRecord<B>(row)]));
   }
 
   async getById<B = unknown>(id: string, tx?: Transaction): Promise<StoredRecord<B> | null> {
@@ -216,17 +242,29 @@ export function validateIndex(entries: readonly IndexEntry[]): IndexEntry[] {
 }
 
 /** Rebuilds a record from its row and refuses it when the stored text no longer hashes to the stored digest. */
+function verifiedRecordText(row: Row): Omit<StoredRecord, 'body'> & { bodyText: string ;} {
+  const meta = { kind: String(row.kind), schema: String(row.schema), provenance: String(row.provenance), created_at: iso(row.created_at) };
+  const bodyText = String(row.body);
+  if (envelopeDigest(meta, bodyText) !== row.digest) {
+    const { body, ...record } = verifiedRecord(row);
+    return { ...record, bodyText: canonicalize(body) };
+  }
+  const kind = RecordKindSchema.safeParse(meta.kind);
+  if (!kind.success || !isProvenanceType(meta.provenance) || !SchemaId.safeParse(meta.schema).success) throw new IntegrityError('记录的种类、来源类型或模式不在合约里');
+  return { id: String(row.id), digest: String(row.digest), ...meta, kind: kind.data, provenance: meta.provenance, bodyText };
+}
+
 export function verifiedRecord<B>(row: Row): StoredRecord<B> {
   const createdAt = iso(row.created_at);
   const meta = { kind: String(row.kind), schema: String(row.schema), provenance: String(row.provenance), created_at: createdAt };
   const body = String(row.body);
   let parsedFallback: unknown;
   let noncanonical = false;
-  if (sha256Hex(envelopeCanonical(meta, body)) !== row.digest) {
+  if (envelopeDigest(meta, body) !== row.digest) {
     try {
       parsedFallback = parseStrictJson(body);
       const canonicalBody = canonicalize(parsedFallback);
-      if (sha256Hex(envelopeCanonical(meta, canonicalBody)) !== row.digest) throw new Error('digest mismatch');
+      if (envelopeDigest(meta, canonicalBody) !== row.digest) throw new Error('digest mismatch');
       noncanonical = true;
     } catch {
       throw new IntegrityError('记录内容与它的摘要不符（存储被改动过或正文不能规范化）', { detail: { record: row.id, digest: row.digest } });

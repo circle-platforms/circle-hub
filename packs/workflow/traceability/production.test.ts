@@ -50,7 +50,9 @@ const CASES = [
 
 const located = (result: ValidationResult, id: string): { partition: string; item: ItemResult } => {
   for (const [partition, items] of Object.entries(result.partitions)) {
-    const item = (items as ItemResult[]).find((i) => i.item === id);
+    const matches=(items as ItemResult[]).filter(i=>i.item===id || i.item==='plm:'+id || i.item==='bugzilla:'+id);
+    assert.ok(matches.length<=1,'number-only lookup cannot choose a cross-system collision');
+    const item=matches[0];
     if (item) return { partition, item };
   }
   throw new Error(`item ${id} is in no partition`);
@@ -138,7 +140,7 @@ describe('a production run of traceability', { skip }, () => {
       assert.equal(requirement.claims.length, 1, id);
       const [claim] = requirement.claims;
       assert.equal(claim.statement.verdict, expected.verdict, id);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.6', independence: 'judge_not_author' }, id);
+      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.7', independence: 'judge_not_author' }, id);
       assert.equal(claim.qualifier.nature, expected.verdict === 'unknown' ? 'unknown' : 'fact', id);
       const data = claim.statement.data as unknown as MatrixRow & { case_count: number; status: string | null };
       assert.deepEqual(

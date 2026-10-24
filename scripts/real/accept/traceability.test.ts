@@ -64,11 +64,11 @@ describe('traceability scenario checks', () => {
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    assert.ok(allOk(scenario, turns), JSON.stringify(checks));
+    assert.ok(!allOk(scenario, turns), JSON.stringify(checks));
     const knownCheck = checks.find((c) => c.name.includes(hash('7300')));
     assert.ok(knownCheck && knownCheck.ok);
     const unknownCheck = checks.find((c) => c.name.includes(hash('7402')));
-    assert.ok(unknownCheck && unknownCheck.ok && unknownCheck.actual === '无已索引用例（未知）');
+    assert.ok(unknownCheck && !unknownCheck.ok && unknownCheck.actual.includes('未知'));
   });
 
   test('holds when unknown defect has two lines and only one contains honest marker (未知缺陷两行（只有一行含标记）仍相符)', () => {
@@ -88,9 +88,9 @@ describe('traceability scenario checks', () => {
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    assert.ok(allOk(scenario, turns), JSON.stringify(checks));
+    assert.ok(!allOk(scenario, turns), JSON.stringify(checks));
     const unknownCheck = checks.find((c) => c.name.includes(hash('7402')));
-    assert.ok(unknownCheck && unknownCheck.ok && unknownCheck.actual === '无已索引用例（未知）');
+    assert.ok(unknownCheck && !unknownCheck.ok && unknownCheck.actual.includes('未知'));
   });
 
   test('fails when count matches but statement case ID does not belong to gold (个数对但用例号不属于 gold 的不符)', () => {
@@ -199,19 +199,19 @@ describe('traceability scenario checks', () => {
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    assert.ok(allOk(scenario, turns), JSON.stringify(checks));
+    assert.ok(!allOk(scenario, turns), JSON.stringify(checks));
 
     const statusCheck7300 = checks.find((c) => c.name.includes(hash('7300')) && c.name.includes('缺陷系统状态'));
     assert.ok(statusCheck7300 && statusCheck7300.ok);
 
     const statusCheck7402 = checks.find((c) => c.name.includes(hash('7402')) && c.name.includes('缺陷系统状态'));
-    assert.ok(statusCheck7402 && statusCheck7402.ok);
+    assert.ok(statusCheck7402 && !statusCheck7402.ok);
 
     const countsCheck = checks.find((c) => c.name.includes('已关闭缺陷统计'));
     assert.ok(countsCheck && countsCheck.ok);
 
     const unknownCountsCheck = checks.find((c) => c.name.includes('缺陷系统状态未知统计'));
-    assert.ok(unknownCountsCheck && unknownCountsCheck.ok);
+    assert.ok(unknownCountsCheck && !unknownCountsCheck.ok);
   });
 
   test('fails when defect system status, closed counts, or status unknown counts do not match gold', () => {
@@ -290,13 +290,13 @@ describe('traceability scenario checks', () => {
 
     const turns = turnsOf([startRunText, fullResultText]);
     const checks = scenario.check(turns);
-    assert.ok(checks.filter((c) => c.name !== '已关闭且已追溯的缺陷至少 1 个').every((c) => c.ok), JSON.stringify(checks));
+    assert.ok(checks.some((c) => !c.ok && c.actual.includes('未知')), JSON.stringify(checks));
     assert.equal(checks.find((c) => c.name === '已关闭且已追溯的缺陷至少 1 个')?.ok, false);
     assert.doesNotMatch(JSON.stringify(checks), /800[1-5]|9001|会话检查/);
 
     for (const b of ['8001', '8002', '8003', '8004', '8005']) {
       const c = checks.find((chk) => chk.name.includes(hash(b)) && chk.name.includes('缺陷系统状态'));
-      assert.ok(c && c.ok);
+      assert.ok(c && !c.ok && c.actual.includes('未知'));
     }
   });
 
@@ -407,3 +407,10 @@ describe('traceability scenario respond flow', () => {
     assert.ok(counts !== undefined && !counts.ok, 'the count comparison must not run against an invented 0');
     assert.match(String(counts.actual), /标准答案没有已关闭状态：重跑 trace\.ts，加 --plm --closed-statuses/);
   });
+
+ test('pack findings unknown traceability cannot be a passing independent check',()=>{
+ const scenario=traceability({product:'apv',build:'Rel_APV_10_6_1_7',closed_defects:0,defects:[{bug:'980001',status:'fixed',cases:[]}]});
+ const rows=scenario.check(turnsOf(['运行 rn_synthetic\n条目（1 个；编号 | 名称 | 摘要）：\n- 980001 | 缺陷 980001 | 无已索引用例（未知）']));
+ assert.ok(rows.some(row=>row.name.includes('没有用例')&&!row.ok&&row.actual.includes('未知')));
+ assert.ok(scenario.countLines?.some(line=>line.includes('原因')&&line.includes('下一步')));assert.ok(!scenario.countLines?.join('').includes('980001'));
+});

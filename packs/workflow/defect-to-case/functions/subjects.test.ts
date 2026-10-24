@@ -66,3 +66,14 @@ describe('subjects', () => {
     assert.equal(subject.indexed_cases.total_entries, 1);
   });
 });
+
+it('duplicate subject derives distinct longest catalog heads for engine narrowed reads', () => {
+  const input = makeItemInput([makeGoodDraft()]);
+  input.catalog = [{ words: ['widget'] }, { words: ['widget', 'health', 'interval'] }];
+  const subject = duplicateSubject(input) as { read_keys: string[] };
+  assert.deepEqual(subject.read_keys, ['widget health interval']);
+});
+it('duplicate subject never guesses an unresolved command head', () => {
+  const input = makeItemInput([makeGoodDraft()]); input.catalog = [];
+  assert.deepEqual((duplicateSubject(input) as { read_keys: string[] }).read_keys, []);
+});
