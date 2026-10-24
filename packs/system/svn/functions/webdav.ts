@@ -2,6 +2,9 @@
 type Element = { name: string; attributes?: Record<string, string>; children: (Element | string)[] };
 type Response = { ok?: boolean; model?: { root?: Element } };
 type Input = { round?: number; external: { key: string }; settings?: Record<string, unknown>; responses?: Record<string, Response> };
+export const MAX_DIRECTORY_MEMBERS = 512;
+export const MAX_DIRECTORY_PATH_DEPTH = 32;
+const directoryBudget = () => ({error:{code:'svn.directory_budget',message:'SVN 目录深度或成员数量超过只读上限；请管理员缩小目录范围或复核预算后重跑，不截断目录清单'}});
 const REVISION = /^[0-9]{1,200}$/;
 const BAD_SEGMENT = /[;\\\u0000-\u001f\u007f]/;
 const configurationFailure = () => ({ error: { code: 'svn.invalid_configuration', message: '缺少或无效的资源设置 settings.repository_path；必须配置服务器 href 中的仓库根绝对路径' } });
@@ -111,7 +114,11 @@ export function directoryProject(input: unknown): unknown {
   const dir = pathKey(external.key);
   const rev = dir && revision(responses.revision, repository, dir);
   if (!dir || !rev) return failure();
-  const all = rows(responses.list);
+  return projectDirectory(repository,dir,rev,responses.list);
+}
+function projectDirectory(repository:string[],dir:string,rev:string,response:Response|undefined):unknown{
+  const all = rows(response);
+  if(all.length>MAX_DIRECTORY_MEMBERS+1)return directoryBudget();
   const expected = directorySegments(repository, dir, rev);
   const self = all.filter((row) => sameDirectory(hrefPath(row), expected));
   if (self.length !== 1) return failure();
@@ -138,4 +145,23 @@ export function directoryProject(input: unknown): unknown {
   }
   members.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
   return { revision: rev, artifacts: [{ name: 'content', media_type: 'application/json', json: { directory: dir, revision: rev, members } }] };
+}
+
+
+/** A fixed version-root listing for descendants of a directory already pinned by the caller. */
+export function directoryAtPlan(input:unknown):unknown{
+ const {external,settings}=input as Input;
+ if(repositoryPath(settings)===null)return {requests:[],done:true};
+ const key=fileKey(external.key);
+ if(!key || key.path.split('/').length>MAX_DIRECTORY_PATH_DEPTH)return {requests:[],done:true};
+ return {requests:[{key:'list',route:'list',params:{rev:key.rev,dir:key.path}}],original:'list',done:true};
+}
+export function directoryAtProject(input:unknown):unknown{
+ const {external,settings,responses={}}=input as Input;
+ const repository=repositoryPath(settings);
+ if(repository===null)return configurationFailure();
+ const key=fileKey(external.key);
+ if(!key)return failure();
+ if(key.path.split('/').length>MAX_DIRECTORY_PATH_DEPTH)return directoryBudget();
+ return projectDirectory(repository,key.path,key.rev,responses.list);
 }
