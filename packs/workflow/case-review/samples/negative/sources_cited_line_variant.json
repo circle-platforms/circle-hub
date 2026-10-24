@@ -1,0 +1,84 @@
+{
+  "id": "sources_cited_line_variant",
+  "source": "author",
+  "check": "findings_sources",
+  "note": "Health  Interval pool1 30 与原文 health interval pool1 30 不逐字相等；没有 present 的引用必须退回修正，不能按大小写和空白归一化",
+  "subject": {
+    "item": "sample:c1",
+    "label": "设置池 c1 的探测间隔",
+    "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c1",
+    "fields": {
+      "document": "sample",
+      "nodeId": "c1",
+      "path": [
+        "示例文档",
+        "池管理"
+      ],
+      "title": "设置池 c1 的探测间隔",
+      "priority": 2,
+      "degree": null,
+      "tags": [
+        "functional"
+      ],
+      "tagsNormalized": [
+        "functional"
+      ],
+      "expected": [
+        "显示的探测间隔与设置一致"
+      ],
+      "expectedCount": 1,
+      "steps": [
+        {
+          "text": "health interval pool1 30",
+          "expected": [
+            "显示的探测间隔与设置一致"
+          ]
+        }
+      ],
+      "preconditions": [],
+      "autoid": null,
+      "automated": false,
+      "negative": false,
+      "hasNote": false,
+      "nested": false
+    },
+    "slots": {
+      "findings": [
+        {
+          "text": "缺少探测间隔为最大值 300 的用例",
+          "code": "edge_case_gap",
+          "rank": "minor",
+          "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c1",
+          "quotes": [
+            {
+              "reference": "src:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/markdown@1/s/interval",
+              "text": "取值范围 1-300 秒"
+            }
+          ],
+          "commands": [
+            {
+              "command": "Health  Interval pool1 30"
+            }
+          ]
+        }
+      ]
+    },
+    "evidence": [
+      {
+        "reference": "src:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/markdown@1/s/interval",
+        "resolved": true,
+        "source": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "role": "expected",
+        "text": null
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review.command_not_in_case",
+      "item": "sample:c1",
+      "tier": "blocking"
+    }
+  ]
+}
