@@ -356,9 +356,9 @@ export class RecordArtifacts implements Artifacts {
     if (!parsed.success || parsed.data.run !== run) return null;
     const snapshot = parsed.data;
     const visible = viewer.role === ADMIN || snapshot.host !== 'hub' && snapshot.runner === viewer.id || await runIsSharedWith(this.#store,viewer.id,snapshot,this.#options.now());
-    if (!visible || !snapshot.sources.some(binding => /^src:([0-9a-f]{64})(?:\/|$)/.exec(binding.reference)?.[1] === sha256)) return null;
+    if (!visible || ![...snapshot.sources.map(binding=>binding.reference),...snapshot.items.map(item=>item.location)].some(reference => /^src:([0-9a-f]{64})(?:\/|$)/.exec(reference)?.[1] === sha256)) return null;
     const all = await this.records(sha256);
-    const generated = [...all].reverse().find(artifact => 'generated' in artifact.body.origin && artifact.body.author.user === null);
+    const generated = [...all].reverse().find(artifact => 'generated' in artifact.body.origin);
     if (!generated) return null;
     return this.#sourceChoice(await this.#effectiveChoice(generated,all),consumer);
   }

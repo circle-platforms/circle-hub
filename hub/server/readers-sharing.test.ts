@@ -54,3 +54,22 @@ test('sharing a run does not expose connector originals even when they are bound
   assert.ok(await h.service.getRun(h.bob,run.run));
   assert.equal(await sourceReaderFor(h.kit,h.bob).read(artifact.body.sha256,{user:h.bob.id,role:h.bob.role,run:run.run}),null);
 });
+
+test('Hub-rendered record inputs retain their user author and are shared through the verified projected digest', {skip}, async t => {
+  const h=await openHarness(postgres);t.after(()=>h.close());
+  const source=await h.upload(h.alice,toyMap(standardDocument()));
+  const first=(await h.service.startRun(h.alice,{pack:'toy-locate',inputs:{map:{reference:source}}},h.call())).run!;
+  const result=(await h.service.getRun(h.alice,first.run))!.production!;
+  const {writeFile}=await import('node:fs/promises');const {join}=await import('node:path');
+  await writeFile(join(h.locate.pack.directory,'functions/record-input.ts'),"export default input => ({items:[{id:'record',label:'合成记录',location:{parser:'json@1',selector:'p'},fields:{path:['root','record'],expected:['合成期望']}}],warnings:[]});");
+  h.locate.workflow.projection={module:'functions/record-input.ts'};
+  const started=await h.service.startRun(h.alice,{pack:'toy-locate',inputs:{map:{reference:'rec:'+result.record}}},h.call());
+  assert.equal(started.call_result,'ok',JSON.stringify(started.errors));
+  const run=started.run!;assert.ok(run.sources[0].reference.startsWith('rec:'));
+  const sha=/^src:([0-9a-f]{64})/.exec(run.items[0].location)![1];
+  const generated=(await h.kit.artifacts.records(sha)).find(a=>'generated' in a.body.origin)!;
+  assert.equal(generated.body.author.user,h.alice.id);
+  await h.kit.authorizations.share(h.admin,run.run,[h.bob.id]);
+  const read=await sourceReaderFor(h.kit,h.bob).read(sha,{user:h.bob.id,role:h.bob.role,run:run.run});
+  assert.ok(read?.bytes);assert.equal(await h.kit.artifacts.source(h.bob,sha),null);
+});

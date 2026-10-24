@@ -567,7 +567,7 @@ permissions. No package-specific policy is built into these keys.
 
 `artifacts.sourceForRun(viewer, sha, run, {consumer})` is a read-only capability for generated evidence. It reads and
 validates the immutable run, checks owner/admin or current sharing access, and requires an exact `src:` digest in its
-frozen source bindings. Only an anonymous Hub-generated artifact record can decide this read. Uploads and connector
+frozen source bindings or verified projected locations. Only a generated-origin artifact record can decide this read; a recorded user author does not turn Hub rendering into a connector read. Uploads and connector
 originals gain no visibility from a run share. The ordinary scanner/acceptance and consumer-tier calculation is reused;
 there is no trusted-bytes fallback and no source ACL rewrite. Missing/corrupt stored bytes retain the ordinary integrity
 error. A source reference without the authorized run continues to use the reader's original source visibility.
