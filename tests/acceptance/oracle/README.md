@@ -52,6 +52,6 @@ The driving pack intentionally retains old declarations with no static check or 
 
 Target-check scripts are part of the synthetic source original and remain readable when a submission skips an item. Artifact checks read the submitted slots. Each random case uses a fresh frozen run, so its stated initial counters are true. Fixed repeated-body cases separately pin per-requirement charging and the existing independent-session rules. Missing facts and exits themselves have dedicated boundary and read-only historical tests.
 
-## Existing cross-layer status difference
+## Cross-layer status
 
-One separate regression records a definite existing difference: with an unexpected static violation and a dynamic layer not run, the engine keeps the requirement pending while the independent conjunction concludes unsatisfied. The test states both values and is separate from equal-answer comparisons. This task changes neither status precedence nor partitions; it retains the dynamic missing fact and its named recovery exit. Integrator Claude can decide a separate model/status change from these exact inputs.
+Integrator decision 2026-10-24: a known terminal that misses the declared expectation makes the requirement unsatisfied even when another layer remains transitional. With no known miss, an unsettled layer keeps it pending. The separate regression compares both answers, retains the raw dynamic unknown and its exit, and the engine property test verifies unchanged partition membership and unknown counts.

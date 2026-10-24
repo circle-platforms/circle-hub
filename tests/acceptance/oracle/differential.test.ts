@@ -744,8 +744,8 @@ test('random submissions and the revised fixed branches agree with the independe
 
 });
 
-// Keep this pre-existing semantic difference separate from equal-answer comparisons.
-test('the existing cross-layer requirement-status difference stays explicit',{skip},async()=>{
+// Integrator 2026-10-24: a known expectation miss wins over an unsettled layer; raw layers remain separate.
+test('a known cross-layer expectation miss agrees without hiding the dynamic unknown',{skip},async()=>{
   const judge={session:'sess-both',model:'beta@2'};
   const supporting=Object.fromEntries(SPECS.filter(spec=>spec.check!==undefined).map(spec=>[spec.key,[{verdict:'support' as const}]]));
   const outcomes={...supporting,both:[{verdict:'refute' as const,code:HIT,tier:'blocking' as const}]};
@@ -754,5 +754,7 @@ test('the existing cross-layer requirement-status difference stays explicit',{sk
   assert.equal(answer.acceptance,'accepted');assert.ok(answer.result);
   const actual=Object.values(answer.result.partitions).flat().find(item=>item.item==='i1')!.requirements.find(requirement=>requirement.requirement==='both')!;
   const independent=referenceOf(plan).items.find(item=>item.item==='i1')!.requirements.find(requirement=>requirement.requirement==='both')!;
-  assert.equal(actual.status,'pending');assert.equal(independent.status,'unsatisfied');
+  assert.equal(actual.status,'unsatisfied');assert.equal(independent.status,'unsatisfied');
+  assert.equal(actual.unsatisfied_reason,'outcome_mismatch');assert.equal(independent.unsatisfied_reason,'outcome_mismatch');
+  const dynamic=actual.layers.find(layer=>layer.layer==='dynamic')!;assert.equal(dynamic.terminal,'not_run');assert.ok(dynamic.missing&&dynamic.exit);
 });

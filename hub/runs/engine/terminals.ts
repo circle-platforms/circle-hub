@@ -346,6 +346,7 @@ export interface StatusInput {
  */
 export function requirementStatus(input: StatusInput): { status: RequirementStatus; unsatisfied_reason?: UnsatisfiedReason } {
   if (!input.hasProducer) return { status: 'unsatisfied', unsatisfied_reason: 'no_producer' };
+  if (input.layers.some(layer=>!isUnsettled(layer)&&!meets(layer,input.expectation,input.expectedRefutation))) return {status:'unsatisfied',unsatisfied_reason:'outcome_mismatch'};
   if (input.layers.some(isUnsettled)) return { status: 'pending' };
   if (!input.layers.every((l) => meets(l, input.expectation, input.expectedRefutation))) return { status: 'unsatisfied', unsatisfied_reason: 'outcome_mismatch' };
   if (input.independence !== null && !(input.independence === 'independent' && input.acceptsDeclared)) {

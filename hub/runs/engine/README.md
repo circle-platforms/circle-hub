@@ -656,8 +656,7 @@ recovered delivery record answers its repair request. Internal write causes rema
 The oracle differential driver now separates fresh-admission rejection from synthetic legacy-run playback. Target facts
 come from its frozen original, while artifact checks read submitted slots. Random cases start with true zero counters;
 fixed repeat cases supply their independently counted per-requirement charges. The oracle computes unknown/skip errors
-and W07 target-fact handling independently. Its pre-existing cross-layer status difference remains a separately named
-regression, without changing the engine's status precedence.
+and W07 target-fact handling independently. Its cross-layer regression now follows the integrator's 2026-10-24 precedence: a known expectation miss is unsatisfied before considering unsettled layers.
 
 ## Transitional recovery metadata
 
@@ -719,3 +718,6 @@ also covers outcomes with a reason but no code. Layer routing and request projec
 repair rows contribute the declared requirement budget and actually route artifact work through its exhaustion path.
 Reject handling applies only to a blocking artifact refutation with a code; an unknown never becomes a rejection through
 an exact-code or wildcard row.
+
+A known layer that misses the expectation makes its requirement unsatisfied; otherwise any transitional layer keeps it
+pending. This integrator decision changes no raw layer, recovery exit, partition membership or unknown count.

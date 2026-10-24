@@ -1,8 +1,9 @@
+import {partitionItems} from './partitions.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { REASON, SOURCE_ROLE } from '../../../contracts/generated/vocabulary.ts';
 import type { RequirementTemplate } from '../../../contracts/src/pack.ts';
-import { LayerResult } from '../../../contracts/src/validation.ts';
+import { LayerResult,partitionCountsOf } from '../../../contracts/src/validation.ts';
 import type { CheckOutcome } from '../../rules/api.ts';
 import {
   applyRouting,
@@ -274,4 +275,18 @@ test('item cell: strongest terminal per layer with the counts of the other non-p
   assert.equal(itemCell([r('a', [{ layer: 'static', terminal: 'pass' }])]).static?.terminal, 'pass');
   assert.ok(isUnsettled({ layer: 'dynamic', terminal: 'no_verdict', reason: 'integrity_unproven' }));
   assert.ok(!isUnsettled({ layer: 'static', terminal: 'judgment' }));
+});
+
+test('a known expectation miss outranks an unsettled layer without changing facts or partition counts',()=>{
+  const dynamic=bindRecovery(dynamicLayer(),{runner:'usr_00000000000000000000000001',owner:'usr_00000000000000000000000002',administrator:'usr_00000000000000000000000003',due:'2026-10-25T00:00:00.000Z',location:'synthetic'});
+  const layers:LayerResult[]=[{layer:'static',terminal:'violation',code:'synthetic.violation'},dynamic];
+  const before=structuredClone(layers);
+  const status=requirementStatus({layers,hasProducer:true,expectation:SUPPORT,expectedRefutation:false,independence:null,acceptsDeclared:false});
+  assert.deepEqual(status,{status:'unsatisfied',unsatisfied_reason:'outcome_mismatch'});
+  assert.deepEqual(layers,before);
+  const make=(value:{status:'pending'}|typeof status)=>partitionItems([{item:'synthetic',label:'合成条目',location:'src:'+'a'.repeat(64),requirements:[{requirement:'r',layers,claims:[],...value}],required:new Set(['r']),notCovered:false,rejection:null}],['synthetic']);
+  const pending=make({status:'pending'}),unmet=make(status);
+  assert.deepEqual(Object.keys(unmet).map(key=>unmet[key as keyof typeof unmet].map(item=>item.item)),Object.keys(pending).map(key=>pending[key as keyof typeof pending].map(item=>item.item)));
+  assert.deepEqual(partitionCountsOf(unmet),partitionCountsOf(pending));assert.equal(partitionCountsOf(unmet).unknown,1);
+  assert.deepEqual(requirementStatus({layers,hasProducer:true,expectation:{outcome:'refute',codes:['synthetic.violation']},expectedRefutation:true,independence:null,acceptsDeclared:false}),{status:'pending'},'a matching known terminal leaves the other layer pending');
 });
