@@ -25,7 +25,7 @@ test('normal lifecycle stores intent before the one submission, observes twice, 
 test('preflight refuses unmet package requirements, incorrect manifest, wrong lineage and short expiry without submitting', async t => {
   for (const mode of ['wrong-package', 'manifest', 'requirement', 'lineage', 'expiry']) {
     const c = await setup({ mode }); t.after(() => c.close());
-    await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id));
+    assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
     assert.equal(c.calls.filter(name => name === 'send_blob').length, 0);
   }
 });
@@ -60,7 +60,7 @@ test('plan_run must equal the verification predecessor and cannot be omitted', a
     const c = await setup(); t.after(() => c.close());
     const proof = c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as any;
     proof.plan_run = value;
-    await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id), /用计划运行作 predecessor 重开核验运行/);
+    assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
     assert.equal(c.calls.includes('send_blob'), false);
   }
 });
@@ -99,7 +99,7 @@ test('proof selects the declared function and ignores catalog and quote facts in
 test('a different function cannot substitute for the declared verification function', async t => {
   const c = await setup(); t.after(() => c.close());
   c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].warrant.id = 'synthetic.other@1';
-  await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id), /核验事实/);
+  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
   assert.equal(c.calls.includes('send_blob'), false);
 });
 

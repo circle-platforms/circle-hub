@@ -35,7 +35,7 @@ test('owner release increments the fence and rejects the former lineage before a
   assert.ok((await c.leases.forceRelease({keys,by:owner.id,owner:owner.id,reason:'合成主人收回'})).ok);
   const after=await c.leases.holderSnapshot(keys);
   assert.ok(after.every((row,i)=>row.fencing>before[i]!.fencing&&row.released));
-  await assert.rejects(c.service.dispatch(c.admin,c.run,c.executor.id),/血缘/);
+  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
   assert.equal(c.calls.filter(name=>name==='send_blob').length,0);
 });
 

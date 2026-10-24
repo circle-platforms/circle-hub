@@ -1,3 +1,4 @@
+import {effectsDocument} from '../../hub/dispatch/testing/effects.ts';
 // Scenario 25 (acceptance): the test-bed pack end to end through the real Hub and the MCP client. An admin publishes a
 // synthetic inventory with `doc put` (the named document doc:doc:bed-topology); a user searches and acquires; the
 // second user on the same device is refused with LEASE_UNAVAILABLE and the earliest free moment; the booking's lineage
@@ -325,7 +326,8 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const fact={requirement:'workbook_verified',statement:{verdict:'support',text:'合成核验事实',data:{plan_run:plan,sha256:payload.body.sha256,autoids:['synthetic-case'],bed:{id:'owned',manifest_sha256:sha},build:'synthetic-10.6',generator:'synthetic-workflow@1.0.0'}},qualifier:{nature:'fact'},warrant:{producer:'function',id:'synthetic.verify@1'},validity:{status:'valid'}};
     const detail={run:{...(booked.body as object),run:verification,pack:'synthetic-workflow@1.0.0',pack_digest:digest,runner:b.user.id,predecessor:plan,items:[{id:'synthetic-item'}],sources:[{reference:`src:${payload.body.sha256}`,slot:'synthetic-artifact',role:'artifact_under_verification'},{reference:`src:${sha}`,role:'expected'}]},submissions:[],latest:{record:sha256Hex('synthetic validation'),result:{run:verification,acceptance:'accepted',errors:[],partitions:{delivered:[{item:'synthetic-item',requirements:[{requirement:'workbook_verified',status:'satisfied',claims:[fact]}]}],rejected:[],incomplete:[],quarantined:[]},cross_item:[]}}} as unknown as import('../../hub/ports.ts').RunDetail;
     const runs={getRun:async(by:import('../../hub/records/api.ts').Principal,id:string)=>id===verification?detail:id===plan?{...detail,run:{...detail.run,run:plan,predecessor:booking}}:bed.hub.hub.runs.getRun(by,id)};
-    const workflows={byDigest:async()=>({pack:{id:'synthetic-workflow',version:'1.0.0',digest},requirements:[{key:'workbook_verified',required:true,target:'item',accepted_producer:'fact'}]}) as unknown as import('../../hub/ports.ts').LoadedWorkflow};
+    const allowed=effectsDocument({target:'owned',manifest_sha256:sha,build:'synthetic-10.6',sha256:payload.body.sha256,items:['synthetic-case'],generator:'synthetic-workflow@1.0.0'});
+    const workflows={byDigest:async()=>({pack:{id:'synthetic-workflow',version:'1.0.0',digest},requirements:[{key:'workbook_verified',required:true,target:'item',accepted_producer:'fact'}],readJson:async()=>allowed}) as unknown as import('../../hub/ports.ts').LoadedWorkflow};
     const proof=await verifyInput(admin.principal,verification,d,bed.hub.records,runs,workflows,new Date());
     assert.ok(proof.ancestors.includes(booking));assert.equal(proof.user,b.user.id);
     const dispatcher=new DispatchService({records:bed.hub.records,leases:bed.hub.leases,runs,workflows});
@@ -335,7 +337,10 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const after=(await bed.hub.leases.holderSnapshot([key]))[0]!;
     assert.ok(after.released&&after.fencing>before.fencing);
     assert.equal((await stored(booking)).digest,booked.digest,'the original booking is immutable');
-    await assert.rejects(dispatcher.dispatch(admin.principal,verification,executor.id),/血缘/);
+    const refusedDispatch=await dispatcher.dispatch(admin.principal,verification,executor.id);
+    assert.equal(refusedDispatch.outcome,'not_dispatched');assert.match(refusedDispatch.missing_fact!,/血缘/);
+    const dispatchEvents=await dispatcher.journal.events(refusedDispatch.job);const refusal=dispatchEvents.find(event=>event.body.detail.phase==='boundary_refused')!;
+    assert.equal(refusal.body.detail.boundary_clause,5);assert.equal(refusal.body.error_code,'LEASE_UNAVAILABLE');assert.equal(dispatchEvents.some(event=>event.body.detail.phase==='intent'),false);
     assert.ok((await bed.hub.leases.actionLog('bed/owned/')).some(row=>row.op==='force_release'&&row.by===a.user.id&&row.reason===reason));
     await invoke(['register','bed/owned/','--owner',c.user.id,'--reason','合成管理员更正']);
     const nextBooking=runId(await call(cb,{action:'acquire',bed:'owned',need:{devices:[{type:'client',count:1}]}}));

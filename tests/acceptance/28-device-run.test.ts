@@ -189,14 +189,22 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     }
     assert.equal(new Set(hashes).size, 2); assert.equal(new Set(bookings).size, 2);
   });
+  test('a frozen workflow without its allowed effect row cannot submit a verified workbook',async()=>{
+    const booked=await booking(),v=await verify(await plan(booked)),before=submissions;
+    const workflows=dispatch().options.workflows,read=workflows.byDigest.bind(workflows);
+    // An older workflow port has no effects declaration; all source and result fixtures remain the real run's.
+    workflows.byDigest=async digest=>{const workflow=await read(digest);if(!workflow)return workflow;return {...workflow,readJson:async path=>{const value=await workflow.readJson(path);if(path!=='requirements.json')return value;const {effects,...legacy}=value as Record<string,unknown>;return legacy;}};};
+    try{const state=await dispatch().dispatch(bed.hub.admin.principal,v.run,executor);assert.equal(state.outcome,'not_dispatched');const event=(await dispatch().journal.events(state.job)).find(e=>e.body.detail.phase==='boundary_refused')!;assert.equal(event.body.error_code,'EFFECT_NOT_ALLOWED');assert.equal(event.body.detail.boundary_clause,1);assert.equal(submissions,before);}
+    finally{workflows.byDigest=read;await release(booked);}
+  });
   test('a plan without a workbook cannot dispatch', async () => {
     const booked = await booking(); const p = await plan(booked); const before = submissions;
-    await assert.rejects(dispatch().dispatch(bed.hub.admin.principal, p.run, executor)); assert.equal(submissions, before); await release(booked);
+    assert.equal((await dispatch().dispatch(bed.hub.admin.principal,p.run,executor)).outcome,'not_dispatched'); assert.equal(submissions, before); await release(booked);
   });
   test('one altered workbook byte gains no support and never dispatches', async () => {
     const booked = await booking(); const p = await plan(booked); const v = await verify(p, 0, true); const before = submissions;
     assert.equal(v.result, null, 'the changed ZIP was refused by the core parser before any workbook support could exist');
-    await assert.rejects(dispatch().dispatch(bed.hub.admin.principal, v.run, executor)); assert.equal(submissions, before); await release(booked);
+    assert.equal((await dispatch().dispatch(bed.hub.admin.principal,v.run,executor)).outcome,'not_dispatched'); assert.equal(submissions, before); await release(booked);
   });
   test('a parseable but altered workbook fails semantic verification and cannot dispatch', async () => {
     const booked = await booking(); const p = await plan(booked); const changed = structuredClone(p.recipe);
@@ -205,7 +213,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.ok(v.result?.result);
     const rows = Object.values(v.result.result.partitions).flat();
     assert.ok(rows.some(row => row.requirements.some(r => r.requirement === 'workbook_verified' && r.status !== 'satisfied')));
-    await assert.rejects(dispatch().dispatch(bed.hub.admin.principal, v.run, executor)); assert.equal(submissions, before); await release(booked);
+    assert.equal((await dispatch().dispatch(bed.hub.admin.principal,v.run,executor)).outcome,'not_dispatched'); assert.equal(submissions, before); await release(booked);
   });
   test('failed declared environment precheck submits nothing and releases its gateway lease', async () => {
     const booked = await booking(); const v = await verify(await plan(booked)); const before = submissions; const closed = releases; mismatch = true;
@@ -216,7 +224,14 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const booked = await booking(); const first = await verify(await plan(booked)); const before = submissions; lose = true;
     const frozen = await dispatch().dispatch(bed.hub.admin.principal, first.run, executor); lose = false;
     assert.equal(frozen.outcome, 'unknown'); assert.equal(frozen.frozen, true); assert.match(frozen.next_action!, /管理员/);
-    await assert.rejects(dispatch().dispatch(bed.hub.admin.principal, first.run, executor), /冻结|占用|已.*派发|提交/); assert.equal(submissions, before + 1);
+    const budgetRefused=await dispatch().dispatch(bed.hub.admin.principal,first.run,executor);
+    assert.equal(budgetRefused.outcome,'not_dispatched');
+    const refusal=(await dispatch().journal.events(budgetRefused.job)).find(event=>event.body.detail.phase==='boundary_refused')!;
+    assert.equal(refusal.body.error_code,'EFFECT_BUDGET_EXHAUSTED');assert.equal(refusal.body.detail.boundary_clause,4);assert.equal(refusal.body.detail.effect_row,'submit_verified_workbook');
+    assert.equal((await dispatch().status(bed.hub.admin.principal,frozen.job)).frozen,true,'a new budget refusal never unfreezes the original effect');
+    const whileFrozen=await verify(await plan(booked,1),1);
+    await assert.rejects(dispatch().dispatch(bed.hub.admin.principal,whileFrozen.run,executor),/冻结|占用/);
+    assert.equal(submissions,before+1);
     assert.deepEqual(latest.ids, [ids[0]], 'the next authored case has not been dispatched');
     const recovered = await dispatch().dispose(bed.hub.admin.principal, frozen.job, { choice: 'reconcile', remote_id: latest.key });
     assert.equal(recovered.frozen, false); assert.equal(recovered.outcome, 'effective'); assert.equal(submissions, before + 1); await resultReport(recovered);
