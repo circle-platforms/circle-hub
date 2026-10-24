@@ -45,9 +45,9 @@
 
 3. 删除 A48/A49 help_string 决定类型的全部分支；只消费原件结构化 type 和版本化类型定义。不认识/未声明类型记类型未声明、未核对，缺类型证据，出口包作者或命令树补类型；不能 fallback STRING。已有 origin-bearing 声明仅在权威 schema 授权的精确身份覆盖下可用。
 
-4. 表头列角色只认手册明确 schema/列标识；自然语言表头不是语法授权。命令引用范围和签名 parsing 先给出正式 grammar 及原文出处，U12/U13 未定部分按 kw-undecided 推荐等待所有者，不预先扩充容错。
+4. 表头列角色只认手册明确 schema/列标识；自然语言表头不是语法授权。命令引用范围和签名 parsing 先给出正式 grammar 及原文出处，U12/U13 已按 A 要改裁定：格式不证明命令，不扩充容错。
 
-5. optional 和 XML 容错 U01–U05/U14 的推荐须先裁定；在没有明确权威语法时不接受 yes/y/true/1 alias、未知默认必填或引号外形恢复。把 syntax invalid 与 type absent 分开。
+5. optional 和 XML 容错 U01–U05 已按 B 要改、U14 已按 A 要改裁定；在没有明确权威语法时不接受 yes/y/true/1 alias、未知默认必填或引号外形恢复。把 syntax invalid 与 type absent 分开。
 
 ## 必须有的测试
 

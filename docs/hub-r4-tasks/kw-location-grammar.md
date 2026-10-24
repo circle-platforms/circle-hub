@@ -31,14 +31,14 @@
 - U24：`packs/product/apv/functions/naming.ts:86`；待核：去前导零/末尾 .0 合并版本身份需要权威版本规范；它不是简单的身份完全相等。列为待核，不能把该合并当 C 的自动许可。
 
 - 分支和工作树：待集成者从合入模型前置项后的 `hub-redesign` 开 `kw-location-grammar`，目录 `circle-hub-kw-location-grammar`；本次只编写任务页的分支是 `keyword-remediation-pages`，目录 `circle-hub-keyword-pages`。
-- 可以改的路径（实施分支）：`packs/workflow/case-location/**`；`packs/product/apv/functions/locate.ts`、`documents.ts`、`cases-sync.ts`、`listing.ts`、`naming.ts` 的定位/资产语法段及相应测试；case-review 与 case-review-verify 的 `functions/expected-sources.ts`、`expected.ts` 和来源选择测试；相关 README/SKILL/pack.json。gold、PLM 系统包、Hub 通用 parser 不在本页路径，需裁定后另分派。
+- 可以改的路径（实施分支）：`packs/workflow/case-location/**`；`packs/product/apv/functions/locate.ts`、`documents.ts`、`cases-sync.ts`、`listing.ts`、`naming.ts` 的定位/资产语法段（含 U24 版本线规则文件头）及相应测试；case-review 与 case-review-verify 的 `functions/expected-sources.ts`、`expected.ts` 和来源选择测试；相关 README/SKILL/pack.json。gold、PLM 系统包、Hub 通用 parser 不在本页路径，需裁定后另分派。
 - 规则：本页是待分派的实施任务，不是本次文档分支已经实现的能力。实施者只在下列范围改动，模型和共享契约先由集成者另行提交。只用合成资源、脚本化模型；不碰 7420、钥匙串、环境配置文件、真实数据、设备和任何真实系统。不推送、不建 PR、不发布、不部署；不改 Circle、foundation/circle、references。显式路径暂存、`git commit -s`。未知必须给 missing 和出口（动作、具名受众、期限），不能停在未知，也不能转成支持或反驳。
 
 ## 集成者先做：模型与词表
 
 基线词表已核对：`nature` 有 `fact/judgment/unknown`；`static_terminal` 有 `unchecked`；`reason` 有 `missing_input/not_covered/check_error`；`qualifier_mark` 有 `semantics_unasserted/conditional_on_judgment/partial/independence_declared`；`exit_action` 已有补证出口。不存在“未分类”“未判断”“类型未声明”“旧规则（关键词）”“可能含凭据”这些精确词表值；不能用相近值暗中充当同一状态，也不增加新终态。
 
-集成者先做 M6：W01/K01/C07 定义目录层角色、grammar id/version/origin 与身份字段；当前无“目录层未知/语法未声明”专用值，优先复用 unknown+missing_input+出口，若要新限定先生成。产品/资产角色及 alias/版本等价不得私造枚举；既有 family/page-kind 的包内声明与生成边界需统一。来源关联模型主张必须保留 judgment。
+集成者先做 M6：W01/K01/C07 定义目录层角色、grammar id/version/origin 与身份字段；当前无“目录层未知/语法未声明”专用值，优先复用 unknown+missing_input+出口，若要新限定先生成。产品/资产角色及 alias 不得私造枚举；既有 family/page-kind 的包内声明与生成边界需统一。来源关联模型主张必须保留 judgment。
 
 ## 要做的
 
@@ -46,11 +46,11 @@
 
 2. 语法不识别、层级缺失或身份不唯一时记未知，缺具体哪层的语法/目录身份，出口包作者补 grammar 或作者改目录名。不能用“看起来不是活动名”把剩余文本认成模块，不让 unknown 进入已定位分组。
 
-3. 编号只按已声明 defect/story/build grammar 提身份；U06–U11 的错拼容错、活动前缀及数字排除等待 kw-undecided 裁定。标题不是正式编号字段时不推来源种类；优先作者显式编号，结构外由模型引用提出关联。
+3. 编号只按已声明 defect/story/build grammar 提身份；U06–U11 已由集成者按 A 要改裁定，删除错拼容错、活动前缀和数字语义排除。标题不是正式编号字段时不推来源种类；优先作者显式编号，结构外由模型引用提出关联。
 
-4. A87–A90 的 featureTerms/中英前缀抽取不再自动制造期望来源清单：采用显式来源 id，或模型带标题引文提出查询/关联；已取到的来源不代表查全。检索排序 U19/U20 的边界由所有者决定前不能用它证明召回完备。
+4. A87–A90 的 featureTerms/中英前缀抽取不再自动制造期望来源清单：采用显式来源 id，或模型带逐字引文提出候选并经 Hub 核验；所有者已裁定 U19/U20：关键词检索连候选来源也禁止，其结果不作任何输入或查全依据，删除检索评分/排序入口。
 
-5. 对接 case-location location/build_candidates、APV 索引的版本/模块及 trace/board 分组；构建 family、版本等价或别名 U23/U24 未获裁定不能偷偷归一。完整构建名 C 类 grammar 保留其声明范围，不扩成任意正文扫描。
+5. 对接 case-location location/build_candidates、APV 索引的版本/模块及 trace/board 分组；U23 已按 B 要改裁定，产品 alias 不做同义映射；U24 已由所有者裁定为 C：版本线前导零和末尾 .0 不改变版本线，将这一显式命名规则写进 APV README 和 naming.ts 文件头，再按语法解析。该规则不改变构建 id。完整构建名 C 类 grammar 保留其声明范围，不扩成任意正文扫描。
 
 ## 必须有的测试
 
@@ -58,7 +58,7 @@
 
 - 模块名含“测试/bug/回归”但符合声明层级/grammar 时正常定位；活动名不符合语法时未知。去除语义排除后结果不能由关键词决定。
 - 标题夹带版本/协议/数字不会改变目录的版本；目录层未知带 missing/exit；字面相似文件名但不符整名 grammar 不判资产角色。
-- 显式目录 id 与产品名正文冲突只披露，不按标题改产品；不同 build id、未知 alias/版本等价不合并。
+- 显式目录 id 与产品名正文冲突只披露，不按标题改产品；不同 build id、未声明产品 alias 不合并；版本线仅前导零或末尾 .0 不同则按 U24 同线处理，非零数字段不同仍不同线。
 - 编号/来源分支用合成编号 grammar、显式 source id 与脚本化模型引用测遗漏/误关联；金标准不得复制 NOT_MODULE 或 featureTerms。
 
 ## 验证与交付
@@ -69,4 +69,4 @@
 
 ## 先后与碰头文件
 
-先 M6，R4 的命令身份先合入 APV，再由本页改定位/同步；R2 的 cases 标签也先交接。R3 等本页版本/模块身份契约后聚合看板。本页拥有 expected-sources.ts，不让 R1/R3/R12 并发修改。R7 在本页 release 日期/构建结构先定好后消费；R9 最后独立解析定位。U23/U24 与系统适配器路径另待所有者裁定，不扩大当前 scope。
+先 M6，R4 的命令身份先合入 APV，再由本页改定位/同步；R2 的 cases 标签也先交接。R3 等本页版本/模块身份契约后聚合看板。本页拥有 expected-sources.ts，不让 R1/R3/结构证据任务并发修改。R7 在本页 release 日期/构建结构先定好后消费；R9 最后独立解析定位。U19/U20/U23 的系统适配器实现路径由集成者明确分派；U24 的 APV README/naming.ts 规则在本页范围内落实。
