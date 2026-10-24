@@ -1,5 +1,8 @@
 // Independent board answer from mindmaps and agile tree originals. No Hub/pack runtime imports.
-import { createHash } from 'node:crypto';
+// Placement only: hub/knowledge/README.md:1083 requires placement_paths before legacy paths.
+// Owner 2026-10-24 deferred non-command metrics: testType aliases, caseGold vague/negative
+// word tables and boardLocate prose exclusions remain a disclosed gap, NOT compliant or
+// exercised for this command-placement validation. No new semantic judgment is inferred here.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -72,7 +75,7 @@ export function boardGold(options: { product: string; build: string; tree: unkno
   return { types: options.types ?? false, product: options.product, build: options.build, groups: sorted, totals: sorted.reduce((sum, g) => ({ cases: sum.cases + g.cases, missing: sum.missing + g.missing, vague: sum.vague + g.vague, negative: sum.negative + g.negative }), { cases: 0, missing: 0, vague: 0, negative: 0 }), documents: { count: options.maps.length, not_in_tree: notInTree, no_cases: noCases } };
 }
 /** Validate the independent measurement before interpreting missing rows as zero. */
-function measuredUnplaced(raw: unknown, listed: ReadonlySet<string>): number {
+export function measuredUnplaced(raw: unknown, listed: ReadonlySet<string>): number {
   const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
   const refuse = (detail: string): never => { throw new GoldRefusal(`case-commands 独立答案${detail}：按这个构建的清单重跑 case-commands.ts`); };
   if (!record(raw) || !Array.isArray(raw.cases)) return refuse('里 cases 不是数组');
@@ -94,8 +97,9 @@ function measuredUnplaced(raw: unknown, listed: ReadonlySet<string>): number {
   for (const value of raw.cases) {
     if (!record(value) || typeof value.document !== 'string' || !documents.has(cleanDocId(value.document)) || typeof value.comparable !== 'boolean'
       || !Array.isArray(value.paths) || !value.paths.every(match) || !Array.isArray(value.steps) || !value.steps.every(match)) return refuse('的用例行或命令路径无效');
+    if (value.placement_paths !== undefined && (!Array.isArray(value.placement_paths) || !value.placement_paths.every(match))) return refuse('的 placement_paths 不是完整命令路径集合');
     const document = cleanDocId(value.document);
-    rows.push({document, paths:value.paths}); observed.set(document, (observed.get(document) ?? 0) + 1);
+    rows.push({document, paths:value.placement_paths ?? value.paths}); observed.set(document, (observed.get(document) ?? 0) + 1);
   }
   for (const [doc, count] of counts) if ((observed.get(doc) ?? 0) !== count) return refuse('的用例行数与文档计数不一致');
   const required = new Set([...listed].map(cleanDocId));
@@ -107,6 +111,19 @@ function measuredUnplaced(raw: unknown, listed: ReadonlySet<string>): number {
 export function main(argv: string[], print = (line: string) => process.stdout.write(`${line}\n`)): number {
   const value = (key: string) => { const i = argv.indexOf(`--${key}`); return i < 0 ? undefined : argv[i + 1]; };
   const tree = value('tree'), cases = value('cases-dir'), docs = value('docs'), product = value('product'), build = value('build'), out = value('out');
+  // Owner deferred all non-command judgments. This mode never calls boardGold/caseGold/testType/boardLocate.
+  if (argv.includes('--placement-only')) {
+    const commands = value('case-commands');
+    if (!docs || !commands || !out) { process.stderr.write('缺 --docs、--case-commands 或 --out；命令归位计数未执行\n'); return 2; }
+    try {
+      const listed = parseDocumentList(readFileSync(docs, 'utf8'));
+      if (!listed.size) throw new GoldRefusal('文档清单为空；补齐后再计数');
+      const unplaced = measuredUnplaced(JSON.parse(readFileSync(commands, 'utf8')), listed);
+      writeFileSync(out, JSON.stringify({ placement: true, unplaced, omitted: ['non_command_metrics_require_independent_judgments'] }, null, 2) + '\n');
+      print(`命令归位：未归位 ${unplaced}；非命令指标未核对`); return 0;
+    } catch (error) { process.stderr.write((error instanceof GoldRefusal ? error.line : '命令归位输入无效；补齐文档清单与独立命令结果后重跑')+'\n'); return 1; }
+  }
+
   const missing = [!tree && '--tree', !cases && '--cases-dir', !docs && '--docs', !product && '--product', !build && '--build', !out && '--out'].filter((f): f is string => f !== false);
   if (missing.length > 0) { process.stderr.write(`缺 ${missing.join('、')}\n用法：node scripts/real/gold/board.ts --tree <敏捷树导出> --cases-dir <目录> --docs <文档清单> --product <产品> --build <构建> [--case-rule marked|tagged] [--types] [--placement | --case-commands <case-commands.json>] --out <文件>\n`); return 2; }
   try {
@@ -122,37 +139,12 @@ export function main(argv: string[], print = (line: string) => process.stdout.wr
     // incident: a silently dropped document computed the gold on a subset). The check lives in trace.ts, shared.
     const missing = missingMapDocuments(listed, maps);
     if (missing.length > 0) { process.stderr.write(`清单 ${listed.size} 份，导出的脑图缺 ${missing.length} 份：用 circle-hub original export 导出后重跑\n`); return 1; }
-      let treeJson: unknown;
-      try {
-        treeJson = JSON.parse(readFileSync(tree!, 'utf8'));
-      } catch {
-        throw new GoldRefusal('敏捷树导出读不了或不是 JSON：重新导出敏捷树');
-      }
-      const gold = boardGold({ types: argv.includes('--types'), product: product!, build: build!, tree: treeJson, maps, caseRule: value('case-rule') === 'tagged' ? 'tagged' : 'marked' });
-    // --case-commands: the unplaced count from the independent case-to-command gold of the gold-case-commands work
-    // item (its out JSON: comparable cases with no parsed path; only cases of THIS build's documents count).
-    const caseCommandsPath = value('case-commands');
-    if (caseCommandsPath !== undefined) {
-      let commands: unknown;
-      try {
-        commands = JSON.parse(readFileSync(caseCommandsPath, 'utf8'));
-      } catch {
-        throw new GoldRefusal('case-commands 独立答案不是 JSON：按这个构建的清单重跑 case-commands.ts');
-      }
-      const unplaced = measuredUnplaced(commands, listed);
-      (gold as { unplaced?: number }).unplaced = unplaced;
-      (gold as { placement?: boolean }).placement = true;
+    try {
+      JSON.parse(readFileSync(tree!, 'utf8'));
+    } catch {
+      throw new GoldRefusal('敏捷树导出读不了或不是 JSON：重新导出敏捷树');
     }
-    // --placement (quality-board 1.1.0 requires the slot): bind it without an independent count. A run against
-    // 1.1+ needs one of --placement, --case-commands or --types.
-    if (argv.includes('--placement') && !('placement' in gold)) {
-      (gold as { placement?: boolean }).placement = true;
-    }
-    writeFileSync(out!, `${JSON.stringify(gold, null, 2)}\n`);
-    print(`清单 ${listed.size} 份，导出的脑图 ${gold.documents.count} 份，其中不在树里 ${gold.documents.not_in_tree} 份，没有用例 ${gold.documents.no_cases} 份`);
-    print(`分组 ${gold.groups!.length} 组；用例 ${gold.totals!.cases}；无期望 ${gold.totals!.missing}；含糊 ${gold.totals!.vague}；负面 ${gold.totals!.negative}`);
-    print(`指标计数 SHA-256 ${createHash('sha256').update(JSON.stringify(gold.groups!.map(({ cases, missing, vague, negative }) => ({ cases, missing, vague, negative })).sort((a, b) => a.cases - b.cases || a.missing - b.missing || a.vague - b.vague || a.negative - b.negative))).digest('hex').slice(0, 12)}`);
-    return 0;
+    throw new GoldRefusal('非命令看板指标缺口：词表/同义词判断不符合所有者 10-24 新规；本次只用 --placement-only 核命令归位，其他指标须补独立规则或判断');
   } catch (error) {
     if (error instanceof GoldRefusal) {
       process.stderr.write(`${error.line}\n`);

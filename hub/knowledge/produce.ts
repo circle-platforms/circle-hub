@@ -2,6 +2,7 @@ import { countEntryPositions } from './counts.ts';
 import type { KnowledgeEntryCounts } from '../../contracts/src/views.ts';
 import {knowledgeSourceLoader} from './credential-policy.ts';
 import {resolveProductVariables,productionVariableUses} from './variables.ts';
+import {emptyScopeNote} from './empty-scope.ts';
 import type {VariableUse} from '../../contracts/src/variables.ts';
 // Producing the root of one build (K01, K02, K04): read each declared source through the external reader in an admin
 // context, parse it with the core parser for its media type, run each producer function in the sandbox (a list slot in
@@ -235,6 +236,10 @@ interface Collected {
 
 /** One producer call's verified output, with indices local to the call. */
 interface Verified {
+  grammar?:ProducerOutput['grammar'];
+
+  inventory: NonNullable<TreeRootBody['empty_scope']>['sources'];
+  inventoryError: string | null;
   /** Entries with a path: its segments and canonical text, shared by every entry at that path. */
   placed: Array<Collected & { segments: string[]; path: string }>;
   toPlace: Array<Collected & { section: string }>;
@@ -334,7 +339,18 @@ type PathCache = Map<string, ReturnType<typeof checkPath>>;
 
 /** Verifies one producer call's output (K02 R[0], R[3]): kinds, storable text, sizes, fragments in their sources, paths. */
 function verifyOutput(context: KnowledgeContext, producer: string, output: ProducerOutput, sources: FragmentSources, loader: SourceLoader, paths: PathCache): Verified {
-  const out: Verified = { placed: [], toPlace: [], refused: [], refusedCount: 0, refusedKinds: new Map(), warnings: output.warnings, entries: output.entries.length, spans: (output.unplaced ?? []).length };
+  const out: Verified = { grammar:output.grammar, inventory:[],inventoryError:null,placed: [], toPlace: [], refused: [], refusedCount: 0, refusedKinds: new Map(), warnings: output.warnings, entries: output.entries.length, spans: (output.unplaced ?? []).length };
+  for(const row of output.inventory??[]){
+    const listed=verifyFragment(row.listed,sources,loader),complete=verifyFragment(row.complete,sources,loader);
+    if(!listed.ok||!complete.ok||listed.value.sha256!==complete.value.sha256||row.selected!==0||(sources.list?.elements.size??0)!==0){out.inventoryError='空范围的清单来源或选中数不符；下一步核对生产器清单证明后重产';continue;}
+    const source=sources.single.get(listed.value.slot);
+    try{
+      if(!source||row.listed.parser!=='json@1'||row.complete.parser!=='json@1')throw Error('invalid inventory');
+      const items=JSON.parse(source.document.locate(row.listed.selector)!.text),done=JSON.parse(source.document.locate(row.complete.selector)!.text);
+      if(!Array.isArray(items)||done!==true)throw Error('incomplete inventory');
+      out.inventory.push({producer,label:row.label,listed:listed.value.reference,completion:complete.value.reference,total:items.length,selected:0});
+    }catch{out.inventoryError='空范围缺少完整清单数组及完成标记；下一步重读完整来源清单后重产';}
+  }
   const refuse = (item: RefusedEntry): void => {
     out.refusedCount++;
     out.refusedKinds.set(item.kind, (out.refusedKinds.get(item.kind) ?? 0) + 1);
@@ -457,6 +473,8 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   const sourceFailures:SourceObservation[]=[];
   const lists: ListDetail[] = [];
   const totals: CallTotals = { made: 0, reused: 0, timeouts: 0, warnings: [] };
+  const inventory:NonNullable<TreeRootBody['empty_scope']>['sources']=[];
+  const inventoryErrors:string[]=[];
   let listLoader: ListLoader | null = null;
   const result = (partial: Partial<ProduceResult>): ProduceResult => ({
     ok: false,
@@ -618,8 +636,13 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   const skippedPlacement = new Map<string, number>();
   const contents = new Map<string, EntryContent>();
   const pathCache: PathCache = new Map();
+  const incompleteGrammars = new Set<string>();
   // The verified items themselves are kept (their indices moved to the concatenated output), never copied.
   const take = (producer: string, verified: Verified, offsets: { entries: number; spans: number }): void => {
+    if(verified.grammar?.complete===false)incompleteGrammars.add(producer);
+
+    inventory.push(...verified.inventory);
+    if(verified.inventoryError)inventoryErrors.push(verified.inventoryError);
     for (const warning of verified.warnings) problems.warn(`${producer}：${warning}`);
     for (const item of verified.refused) problems.keep({ ...item, index: item.index + (item.unplaced ? offsets.spans : offsets.entries) });
     for (const [kind, count] of verified.refusedKinds) problems.countRefusal(producer, kind, count);
@@ -678,7 +701,10 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     lists.push(outcome.detail);
   }
   for (const warning of totals.warnings) problems.warn(warning);
-  if (placedEntries.length === 0 && toPlace.length === 0 && directUnplaced.length === 0) {
+  const empty=placedEntries.length===0&&toPlace.length===0&&directUnplaced.length===0;
+  const emptyScope:TreeRootBody['empty_scope']=empty&&build===null&&problems.refusedCount===0&&problems.skippedCount===0&&!missing.some(source=>source.external!==null)&&inventoryErrors.length===0&&product.product.producers.every(producer=>inventory.some(row=>row.producer===producer.id))?{complete:true,sources:inventory}:undefined;
+  if (empty && !emptyScope) {
+    if(build===null&&problems.refusedCount===0)return fail(inventoryErrors[0]??(problems.skippedCount>0?`空范围仍略去 ${problems.skippedCount} 份来源；下一步补齐来源后重产`:missing.some(source=>source.external!==null)?'空范围仍有来源读取失败；下一步恢复读取后重产':'空范围缺少清单完整且选中 0 份的逐生产器证明；下一步补齐清单证明后重产'));
     return fail(problems.refusedCount > 0 ? `生产器的 ${problems.refusedCount} 个条目都没有通过核对，没有可以挂树的内容` : '生产器没有产出任何条目');
   }
 
@@ -852,7 +878,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     }catch(error){return fail(`链接声明无法核对：${describeError(error)}`);}
   }
 
-  const catalogs = rootCatalogs(product, composition, unplacedRows, problems.refusedOf, problems.skippedOf, contents);
+  const catalogs = rootCatalogs(product, composition, unplacedRows, problems.refusedOf, problems.skippedOf, contents, incompleteGrammars);
   const kinds = Object.fromEntries(ENTRY_KIND.map((kind) => [kind, 0])) as Record<EntryKind, number>;
   for (const row of composition) kinds[row.kind]++;
 
@@ -897,6 +923,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
           kinds,
           warnings: problems.warnings,
           warnings_count: problems.warningsCount,
+          ...(emptyScope?{empty_scope:emptyScope}:{}),
           produced_at: context.now().toISOString(),
         }),
         action: async (record, tx) => {
@@ -923,6 +950,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   return result({
     ok: true,
     root: root.digest,
+    ...(emptyScope?{reason:emptyScopeNote(emptyScope)}:{}),
     composition: written.composition,
     action: written.action,
     nodes: nodes.length,
@@ -1263,6 +1291,7 @@ function rootCatalogs(
   refusedOf: ReadonlyMap<string, ReadonlyMap<string, number>>,
   skippedOf: ReadonlyMap<string, number>,
   contents: Map<string, EntryContent>,
+  incompleteGrammars:ReadonlySet<string>,
 ): RootCatalog[] {
   // The entry kinds each producer gave in this root (placed, unplaced, or declared on a refused entry).
   const kindsOf = new Map<string, Set<string>>();
@@ -1291,6 +1320,8 @@ function rootCatalogs(
       skippers.push(producer);
     }
     const reasons: string[] = [];
+    const grammars=[...incompleteGrammars].filter(producer=>ours([producer])).sort(compareText);
+    if(grammars.length)reasons.push(`生产器 ${grammars.join('、')} 的声明语法未完整核对，缺失事实与出口见生产诊断`);
     if (invalid > 0) reasons.push(`${invalid} 个条目没有可用的目录数据`);
     if (lost > 0) reasons.push(`${lost} 个条目没能挂树`);
     if (refusedHere > 0) reasons.push(`${refusedHere} 个条目没有通过核对`);

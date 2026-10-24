@@ -14,7 +14,7 @@ const nodes = { texts: ['root', 'kept'], parents: [-1, 0] };
 const subject = (index: unknown) => ({ document, item: document, uploaded: false, case_rule: 'marked', cases, case_count: 1, nodes, index, scope: [document], lock: LOCK });
 test('deletion-only stale indices give the same conclusions as fresh indices with shared or exclusive commands', () => {
   for (const shared of [false, true]) {
-    const rows = records.map(row => ({ ...row, commands: shared ? ['CLI/widget/kept'] : row.commands }));
+    const rows = records.map(row => ({ ...row, commands: shared ? ['/CLI/widget/kept'] : row.commands }));
     const stale = commandOutcomes(subject(indexView(rows)));
     const fresh = commandOutcomes(subject(indexView(rows.slice(0, 1))));
     const conclusions = (outcomes: ReturnType<typeof commandOutcomes>) => outcomes.map(o => ({ verdict: o.verdict, code: o.code, command: o.data?.command, missing: o.data?.missing }));

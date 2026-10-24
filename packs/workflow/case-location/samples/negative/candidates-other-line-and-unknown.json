@@ -115,8 +115,8 @@
       "tier": "advisory"
     },
     {
-      "verdict": "unknown",
-      "reason": "missing_input",
+      "verdict": "refute",
+      "code": "case-location.build_not_listed",
       "item": "24024",
       "tier": "advisory"
     }

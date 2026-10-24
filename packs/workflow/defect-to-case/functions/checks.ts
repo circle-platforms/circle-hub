@@ -1,3 +1,4 @@
+import { commandHeadOf } from './command-head.ts';
 // Pack check functions for defect-to-case.
 import type { CatalogEntry, CheckOutcome } from '../../../../contracts/src/tables.ts';
 import type { IndexView } from '../../../../contracts/src/views.ts';
@@ -6,10 +7,9 @@ import {
   commandSetKey,
   isCompactIndex,
   normalizeCommand,
-  normalizeText,
-  titleKey,
 } from './compact-index.ts';
 import { extractDrafts } from './subjects.ts';
+import {declaredResourceTag,declareResourceTags} from './generated/vocabulary.ts';
 import { CANONICAL_CATEGORIES, CODES, type CanonicalCategory, type DraftCase } from './types.ts';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -39,46 +39,10 @@ export function countDuplicateClaims(outcomes: readonly CheckOutcome[]): Map<str
   return counts;
 }
 
-const CATEGORY_MAP: Record<string, CanonicalCategory> = {
-  functional: 'Functional',
-  function: 'Functional',
-  functions: 'Functional',
-  func: 'Functional',
-  功能: 'Functional',
-  功能测试: 'Functional',
-  基本功能: 'Functional',
-  configuration: 'Configuration',
-  configure: 'Configuration',
-  config: 'Configuration',
-  配置: 'Configuration',
-  配置测试: 'Configuration',
-  integration: 'Integration',
-  integrate: 'Integration',
-  集成: 'Integration',
-  集成测试: 'Integration',
-  compatibility: 'Compatibility',
-  compat: 'Compatibility',
-  兼容: 'Compatibility',
-  兼容性: 'Compatibility',
-  negative: 'Negative',
-  neg: 'Negative',
-  负向: 'Negative',
-  反向: 'Negative',
-  异常: 'Negative',
-  stress: 'Stress',
-  pressure: 'Stress',
-  压力: 'Stress',
-  压测: 'Stress',
-};
-
+/** Exact membership in the declared type field; no prefix, suffix or synonym recovery. */
 export function normalizeTag(tag: string): CanonicalCategory | null {
-  const norm = normalizeText(tag).replace(/^[\[\(\{【（<]+/, '').replace(/[\]\)\}】）>]+$/, '');
-  const direct = CATEGORY_MAP[norm];
-  if (direct) return direct;
-  for (const [k, v] of Object.entries(CATEGORY_MAP)) {
-    if (norm === k || norm.startsWith(k) || norm.endsWith(k)) return v;
-  }
-  return null;
+  const declaration=declaredResourceTag(tag);
+  return declaration?.test_type===true?declaration.id:null;
 }
 
 /** Check 1: draft_shape - validates team case structure rules */
@@ -192,54 +156,19 @@ export function checkDraftShape(input: unknown): CheckOutcome[] {
       });
     }
 
-    // Tags check
-    if (!draft.tags || draft.tags.length === 0) {
-      outcomes.push({
-        verdict: 'refute',
-        code: CODES.SHAPE_INVALID,
-        statement: `${prefix}缺少标签：至少需要包含一个属于团队模板类别的标签`,
-        grounds: [],
-        tier: 'blocking',
-        ...own,
-      });
-    } else {
-      let hasNegativeTag = false;
-      for (const t of draft.tags) {
-        const canonical = normalizeTag(t);
-        if (!canonical) {
-          outcomes.push({
-            verdict: 'refute',
-            code: CODES.SHAPE_INVALID,
-            statement: `${prefix}标签“${t}”不属于团队模板类别（${CANONICAL_CATEGORIES.join('、')}）`,
-            grounds: [],
-            tier: 'blocking',
-            ...own,
-          });
-        } else if (canonical === 'Negative') {
-          hasNegativeTag = true;
-        }
-      }
-      if (hasNegativeTag && draft.negative !== true) {
-        outcomes.push({
-          verdict: 'refute',
-          code: CODES.SHAPE_INVALID,
-          statement: `${prefix}包含反向标签（Negative），但 negative 未标记为 true`,
-          grounds: [],
-          tier: 'blocking',
-          ...own,
-        });
-      }
-    }
+    const declaration=declareResourceTags(draft.resource);
+    if(declaration.issues.length)outcomes.push({verdict:'refute',code:CODES.SHAPE_INVALID,tier:'advisory',...own,grounds:[],pointer:`/cases/${i}/resource`,statement:`${prefix}未声明的标签；允许的精确原文：${declaration.issues[0].allowed.join('、')}。作者选择闭集原文修正 resource 后重新核验`,data:{table:declaration.table,issues:declaration.issues}});
+    else if(declaration.status==='undeclared')outcomes.push({verdict:'unknown',reason:'missing_input',tier:'advisory',...own,grounds:[],pointer:`/cases/${i}/resource`,missing:declaration.missing!,statement:declaration.missing!+'；下一步：'+declaration.next_action});
+    if(declaration.negative!==null&&draft.negative!==declaration.negative)outcomes.push({verdict:'refute',code:CODES.SHAPE_INVALID,tier:'advisory',...own,grounds:[],pointer:`/cases/${i}/negative`,statement:`${prefix}negative 与 resource 的精确类型声明不一致；按已声明类型修正派生标记后重新核验`});
 
-    // Duplicate check within submission
-    const normTitle = normalizeText(draft.title);
-    const normSteps = draft.steps.map((s) => normalizeCommand(s.command)).join(';');
-    const sig = `${normTitle}|${normSteps}`;
+    // Duplicate check within submission: the author-declared identity compared verbatim (title text, command lines
+    // as written, negative flag) — no folding, no normalization of free text (owner's rule 10-24).
+    const sig = JSON.stringify([draft.title, draft.negative, draft.steps.map((s) => s.command)]);
     if (seenSignatures.has(sig)) {
       outcomes.push({
         verdict: 'refute',
         code: CODES.DUPLICATE_DRAFT,
-        statement: `${prefix}“${draft.title}”在同一次提交中重复起草（规范化标题与命令行完全相同）`,
+        statement: `${prefix}“${draft.title}”在同一次提交中重复起草（标题、命令行与反向标记逐字相同）`,
         grounds: [],
         tier: 'blocking',
         ...own,
@@ -248,11 +177,11 @@ export function checkDraftShape(input: unknown): CheckOutcome[] {
     seenSignatures.add(sig);
   }
 
-  if (outcomes.length > 0) return outcomes;
-  return [
+  if (outcomes.some(outcome=>outcome.tier==='blocking')) return outcomes;
+  return [...outcomes,
     {
       verdict: 'support',
-      statement: `${drafts.length} 个起草用例符合团队用例结构规范`,
+      statement: outcomes.length?`${drafts.length} 个起草用例的主体结构已核对；标签声明的问题另列，不表示标签通过`:`${drafts.length} 个起草用例符合团队用例结构规范`,
       grounds: [],
       tier: 'blocking',
       ...own,
@@ -260,31 +189,16 @@ export function checkDraftShape(input: unknown): CheckOutcome[] {
   ];
 }
 
-/**
- * The command head of a line: the longest catalog entry whose words head the line's words (NFKC, case-insensitive,
- * whitespace collapsed). Null when no entry heads it — the commands check refutes such a line on its own.
- */
-export function commandHeadOf(line: string, catalogEntries: CatalogEntry[]): string | null {
-  const words = normalizeCommand(line).split(' ').filter(Boolean);
-  if (words.length === 0) return null;
-  let best: { head: string; length: number } | null = null;
-  for (const entry of catalogEntries) {
-    const entryWords = (entry.words ?? []).map((word) => normalizeText(word));
-    if (entryWords.length === 0 || entryWords.length > words.length) continue;
-    if (!entryWords.every((word, i) => word === words[i])) continue;
-    if (best === null || entryWords.length > best.length) best = { head: normalizeCommand(entry.words.join(' ')), length: entryWords.length };
-  }
-  return best?.head ?? null;
-}
+export { commandHeadOf } from './command-head.ts';
 
 /** Helper to match a command against catalog entries */
 function matchCatalogCommand(cmdText: string, catalogEntries: CatalogEntry[]): { matched: boolean; head?: string } {
-  const norm = normalizeCommand(cmdText);
-  const words = norm.split(' ').filter(Boolean);
+  // Word-by-word exact match against the catalog's words (no case or spacing folding — owner's rule 10-24).
+  const words = cmdText.split(' ').filter((word) => word !== '');
   if (words.length === 0) return { matched: false };
 
   for (const entry of catalogEntries) {
-    const entryWords = entry.words.map((w) => w.toLowerCase());
+    const entryWords = entry.words;
     if (words.length < entryWords.length) continue;
     const isPrefix = entryWords.every((w, i) => w === words[i]);
     if (!isPrefix) continue;
@@ -362,11 +276,16 @@ export function checkCommandsRefutation(input: unknown): CheckOutcome[] {
     const draft = drafts[i];
     const prefix = `第 ${i + 1} 个起草用例`;
 
+    const declaration=declareResourceTags(draft.resource);
+    if(declaration.status!=='declared'){
+      outcomes.push({verdict:'unknown',reason:'missing_input',tier:'advisory',...own,grounds:[],pointer:`/cases/${i}/resource`,missing:declaration.missing!,statement:declaration.missing!+'；下一步：'+declaration.next_action});
+      continue;
+    }
     for (const step of draft.steps) {
       if (!step.command || !step.command.trim()) continue;
       const { matched, head } = matchCatalogCommand(step.command, catalog);
 
-      if (draft.expects_refutation === true && draft.negative === true) {
+      if (draft.expects_refutation === true && declaration.negative === true) {
         if (matched) {
           outcomes.push({
             verdict: 'refute',
@@ -567,7 +486,6 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
     const candidates = buckets[draftKey];
     if (!candidates || candidates.length === 0) continue;
 
-    const draftTitle = normalizeText((draft as { title?: string }).title ?? '');
 
     for (const cand of candidates) {
       // 1. Same negative flag
@@ -575,9 +493,10 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
       if ((draft as { negative?: boolean }).negative === true !== candNegative) continue;
 
       // Case entries carry no expected-text field (the index fields are commands,document,node,title,negative): the
-      // comparison is the normalised title (plus the negative flag above and the command-set key that picked the bucket).
-      const candTitle = normalizeText(cand.title);
-      const titlesEqual = draftTitle !== '' && (typeof cand.title_key === 'string' ? titleKey(draftTitle) === cand.title_key : draftTitle === candTitle);
+      // comparison is the title compared verbatim (plus the negative flag above and the command-set key that picked
+      // the bucket); a title that differs by case or spacing is only a same-titled case, not a duplicate.
+      const candTitle = cand.title;
+      const titlesEqual = (draft as { title?: string }).title === candTitle;
 
       if (titlesEqual) {
         duplicated.add(draft);
@@ -585,9 +504,8 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
         const node = cand.node || '未知节点';
         const title = cand.title || '未知标题';
         outcomes.push({
-          verdict: 'refute',
-          code: CODES.DUPLICATE_CASE,
-          statement: `起草用例“${(draft as { title?: string }).title ?? '（无标题）'}”与已索引用例重复：文档 ${doc} 节点 ${node}“${title}”（${cand.reference}）`,
+          verdict: 'unknown', reason: 'missing_input', missing: '相同标题不是用例身份；缺少命令路径、参数及期望引文身份；下一步由作者补声明身份或模型提交两侧逐字引文后重跑',
+          statement: `起草用例“${(draft as { title?: string }).title ?? '（无标题）'}”与已索引用例标题相同，重复身份未核：文档 ${doc} 节点 ${node}“${title}”（${cand.reference}）`,
           grounds: [cand.reference],
           tier: 'advisory',
           ...own,

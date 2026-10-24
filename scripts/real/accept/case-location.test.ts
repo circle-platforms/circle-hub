@@ -176,3 +176,10 @@ test('location review 3: unknown location values cannot pass as facts and privat
   const list = caseLocation({ product: 'apv', documents: [d] }).check(turnsOf('运行 run_synthetic\n' + answer(d).replaceAll('产品线 apv', '产品线 wrong-product')));
   assert.ok(list.some(c => c.name.includes('产品线') && !c.ok));
 });
+
+test('pack findings never accepts an unknown build-candidate claim whose values happen to match',()=>{
+ const d=doc(),said=answer(d).replace(position(d.document,'build_candidates',statement(builds(),d.line)),position(d.document,'build_candidates',statement(builds(),d.line)).replace('，支持；性质','，未知；性质'));
+ const scenario=caseLocation(d);const rows=scenario.check(turnsOf('运行 run_synthetic\n'+said));assert.ok(rows.some(row=>!row.ok&&row.name.includes('构建候选结论')&&row.actual.includes('未知')));
+ assert.ok(scenario.countLines?.some(line=>line.includes('原因')&&line.includes('下一步')));
+ scenario.check(turnsOf('运行 run_synthetic\n'+answer(d)));assert.deepEqual(scenario.countLines,[]);
+});

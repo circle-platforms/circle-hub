@@ -7,7 +7,7 @@
     "items": [
       {
         "id": "10.6.1/HA",
-        "location": "src:683a8e8857a249b8877c4e498d13808e2afad62ac913c3cfa51788340679269c/json@1/p/rows",
+        "location": "src:f99997db9e6dfa3d6df6ff49fea4c79264cf8feabc5af99001c73498d369881a/json@1/p/rows",
         "fields": {
           "line": "10.6.1",
           "module": "HA",
@@ -18,6 +18,12 @@
             "vague": 0,
             "negative": 0
           },
+          "quality": {
+            "judged": 0,
+            "unjudged": 20,
+            "conflicted": 0,
+            "sources": []
+          },
           "ratios": {
             "missing": {
               "num": 0,
@@ -25,7 +31,7 @@
             },
             "vague": {
               "num": 0,
-              "den": 20
+              "den": 0
             },
             "negative": {
               "num": 0,
@@ -34,14 +40,14 @@
           },
           "display": {
             "missing": 0,
-            "vague": 0,
+            "vague": null,
             "negative": 0
           }
         }
       },
       {
         "id": "10.6.1/SSL",
-        "location": "src:683a8e8857a249b8877c4e498d13808e2afad62ac913c3cfa51788340679269c/json@1/p/rows",
+        "location": "src:f99997db9e6dfa3d6df6ff49fea4c79264cf8feabc5af99001c73498d369881a/json@1/p/rows",
         "fields": {
           "line": "10.6.1",
           "module": "SSL",
@@ -49,8 +55,14 @@
           "counts": {
             "cases": 3,
             "missing": 2,
-            "vague": 1,
+            "vague": 0,
             "negative": 2
+          },
+          "quality": {
+            "judged": 0,
+            "unjudged": 3,
+            "conflicted": 0,
+            "sources": []
           },
           "ratios": {
             "missing": {
@@ -58,8 +70,8 @@
               "den": 3
             },
             "vague": {
-              "num": 1,
-              "den": 3
+              "num": 0,
+              "den": 0
             },
             "negative": {
               "num": 2,
@@ -68,7 +80,7 @@
           },
           "display": {
             "missing": 0.6667,
-            "vague": 0.3333,
+            "vague": null,
             "negative": 0.6667
           }
         }
@@ -85,7 +97,7 @@
         {
           "placement": {
             "unplaced": 0,
-            "source": "src:4af360c4ddfa17d0c3aacdb171e95255ff4f3e0569c9341ef888f259ab7abc49",
+            "source": "src:cbceba8cd5dd42fc33ef46c12bb3fda6692c7cf33a99771ed3e853782c09aab2",
             "skipped": 0,
             "truncated": false
           },
@@ -93,7 +105,7 @@
           "build": "Rel_APV_10_6_1_57",
           "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
           "view": {
-            "source": "src:683a8e8857a249b8877c4e498d13808e2afad62ac913c3cfa51788340679269c",
+            "source": "src:f99997db9e6dfa3d6df6ff49fea4c79264cf8feabc5af99001c73498d369881a",
             "total": 23,
             "truncated": false,
             "skipped": 0,

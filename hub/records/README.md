@@ -579,3 +579,11 @@ frozen source bindings or verified projected locations. Only a generated-origin 
 originals gain no visibility from a run share. The ordinary scanner/acceptance and consumer-tier calculation is reused;
 there is no trusted-bytes fallback and no source ACL rewrite. Missing/corrupt stored bytes retain the ordinary integrity
 error. A source reference without the authorized run continues to use the reader's original source visibility.
+
+### 视图性能支持：hub-view-perf
+
+`ingest` 仍在异步工作前复制输入。新增的内部 SDK 方法 `ingestTransferred` 明确消费完整可转移缓冲区：调用方及其全部别名会被分离；池化切片等不可转移输入仍复制快照。其余来源、权限、凭据扫描、受理与入库规则共用原路径。调用方不可再次使用被消费的输入。
+
+`getTexts` 按有界窗口批量读取并核对每个记录摘要，返回的是文本而非已校验业务对象，消费者仍须核对 JSON 和对应业务合约。`findFirstMany` 保留逐值查询的最早记录选择，单次 SQL 内按索引查询；规范编码和摘要以固定块避免整份中间字符串。当前改进由集成者接收，合成冷读 RSS 回归护栏为实测 494,448 KiB 加 15%；原三分之一目标保留为后续项。这里只证明合成路径，不代表持久部署或发布验证。
+
+合成测量、预算和后续项见[视图性能任务页](../../docs/hub-r4-tasks/hub-view-perf.md)。

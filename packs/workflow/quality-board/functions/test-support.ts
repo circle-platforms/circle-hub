@@ -12,7 +12,7 @@ export const BUILD = 'Rel_APV_10_6_1_57';
 export const ROOT = sha256('quality-board synthetic root of Rel_APV_10_6_1_57');
 
 /** The five fields the board's view is keyed by; the caller may add priority. */
-export const BY = ['line', 'module', 'has_expected', 'vague_expected', 'negative'];
+export const BY = ['line', 'module', 'has_expected', 'vague_expected', 'negative','test_type_status'];
 
 export type Scalar = string | number | boolean | null;
 
@@ -23,6 +23,7 @@ export interface CorpusCase {
   has_expected?: Scalar;
   vague_expected?: Scalar;
   negative?: Scalar;
+  test_type_status?: Scalar;
   priority?: Scalar;
 }
 
@@ -30,7 +31,10 @@ export type FacetRow = { values: Record<string, Scalar>; count: number };
 
 /** One row of a facet view by hand. */
 export function facetRow(values: Record<string, Scalar>, count: number): FacetRow {
-  return { values, count };
+  const authored={...values};
+  if(Object.hasOwn(authored,'negative')&&!Object.hasOwn(authored,'test_type_status'))authored.test_type_status=typeof authored.negative==='boolean'?'declared':'undeclared';
+  if(Object.hasOwn(authored,'tags')){authored.resource_empty??=authored.tags===null;authored.tag_valid??=true;}
+  return { values:authored, count };
 }
 
 export interface ViewOverrides {
@@ -64,7 +68,8 @@ export function facetViewOf(rows: FacetRow[], overrides: ViewOverrides = {}): Re
 /** The rows of a corpus under the reader's rule: one row per distinct combination of the by fields, counted. */
 export function rowsOfCorpus(corpus: CorpusCase[], by: readonly string[] = BY): FacetRow[] {
   const map = new Map<string, { values: Record<string, Scalar>; count: number }>();
-  for (const entry of corpus) {
+  for (const original of corpus) {
+    const entry={...original,test_type_status:original.test_type_status??(typeof original.negative==='boolean'?'declared':'undeclared')};
     const values: Record<string, Scalar> = {};
     for (const field of by) values[field] = (entry as Record<string, Scalar>)[field] ?? null;
     const key = JSON.stringify(by.map((field) => values[field]));

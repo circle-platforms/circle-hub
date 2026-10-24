@@ -2,7 +2,7 @@
 // names and digests and its entry digests; an entry digest covers kind, normalised statement, data and applicability. No
 // source digest enters either, so unchanged content of two builds gives equal digests and shared subtrees.
 import type { Applicability } from '../../contracts/src/product.ts';
-import { canonicalize, sha256Hex } from '../records/api.ts';
+import { canonicalize, canonicalByteLength, sha256Hex } from '../records/api.ts';
 import type { TreeNodeChild } from '../../contracts/src/knowledge.ts';
 
 /** The content an entry digest covers. */
@@ -68,8 +68,13 @@ export function entryContentOf(entry: { kind: string; statement: string; data: R
   return content;
 }
 
+/** The single canonical recipe shared by entry hashing and operation-scoped batch encoders. */
+export function entryCanonical(content:EntryContent,encode:(value:unknown)=>string=canonicalize):string {
+  return encode({kind:content.kind,statement:content.statement,data:content.data,applicability:content.applicability});
+}
+
 export function entryDigest(content: EntryContent): string {
-  return sha256Hex(canonicalize({ kind: content.kind, statement: content.statement, data: content.data, applicability: content.applicability }));
+  return sha256Hex(entryCanonical(content));
 }
 
 export function nodeDigest(content: NodeContent): string {
@@ -80,7 +85,7 @@ export function nodeDigest(content: NodeContent): string {
 
 /** UTF-8 size of the canonical JSON of a value. */
 export function canonicalSize(value: unknown): number {
-  return Buffer.byteLength(canonicalize(value), 'utf8');
+  return canonicalByteLength(value);
 }
 
 /**

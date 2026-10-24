@@ -340,6 +340,8 @@ function requirementFacts(q: RequirementSummary, clip: Clip): string {
     `${axisLabel('layer')} ${declared}${undeclared.length > 0 ? `（${undeclared.join('；')}）` : ''}`,
     labelOf('done_rule', q.done_rule),
     `修复轮数 ${q.repair_rounds}`,
+    `规则 ${q.rules.length ? q.rules.join('、') : '无'}`,
+    `运行内表的已裁定解释器 ${q.run_interpreters.length ? q.run_interpreters.join('、') : '无'}`,
   ].join('；');
 }
 
@@ -695,6 +697,7 @@ function problemLines(result: ValidationResult, record: string | null, more: str
 function itemBlock(partition: Partition, item: ItemResult, clip: Clip, limits: Limits): string[] {
   const head = `- ${[oneLine(item.item), clip.field(item.label, limits.label, '条目名称的超出部分'), `${labelOf('partition', partition)}${partitionWhy(item, clip)}`].join(SEPARATOR)}${item.carried_over ? `；沿用 ${item.carried_over}` : ''}`;
   const lines = [head];
+  for(const change of item.replaced_criteria??[])lines.push('  · '+clip.field(`被取代的判据 ${change.criterion}：旧值 ${change.old}；新值 ${change.new}；声明 ${change.declaration}；复核 ${change.review}；复核人 ${change.reviewer}`,limits.field,'被取代判据的超出部分'));
   for (const r of item.requirements) {
     lines.push(`  · ${clip.field(requirementText(r), limits.field, '要求项结果的超出部分')}`);
     for (const claim of r.claims) lines.push(`    - ${claimText(claim, clip, limits.field)}`);
@@ -819,6 +822,12 @@ function startText(v: StartOut, context: TextContext): string {
   else if (r.product !== undefined) head.push('这条产品线还没有不分版本的根；下一步：同步这条产品线');
   if (r.predecessor !== undefined) head.push(`前驱运行 ${r.predecessor}`);
   blocks.push({ priority: 0, head, omitted: headClip.omitted });
+  if(r.criterion_changes?.length)blocks.push({priority:1,head:['判据变更声明：'],entries:r.criterion_changes.map(change=>{
+    const clip=new Clip(null,seeConsole(r.run));
+    const state=change.superseded_by?`由后一份提交的同名声明取代：${change.superseded_by}`:change.accepted===true?`已接受；复核人 ${change.reviewer}；理由 ${change.reason}；开始以后才接受的只进后续修订`:change.accepted===false?`未接受；复核人 ${change.reviewer}；理由 ${change.reason}`:change.expired?'已过期，仍等作者以外的账号复核；新修订不带这条声明':'还没有回答；等作者以外的账号复核；新修订不带这条声明';
+    return clip.entry(`- ${clip.field(change.assertion,CLIP.field,'声明的超出部分')}；声明 ${change.declaration}；请求 ${change.request}；${state}；受众 ${change.audience}；期限 ${change.due}；旧值 ${clip.field(change.old,CLIP.field,'旧判据的超出部分')}；新值 ${clip.field(change.new,CLIP.field,'新判据的超出部分')}；下一步 ${clip.field(change.next_action,CLIP.field,'下一步的超出部分')}`);
+  }),unit:'判据变更声明',measure:'条',more:()=>seeConsole(r.run)});
+
   if (full !== null && layout !== null && production !== null) {
     if (full.cross_item.length > 0) {
       const clip = (k: number) => new Clip(`${production.reference}#/cross_item/${k}`);

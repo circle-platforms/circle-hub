@@ -183,7 +183,7 @@ describe('one item per case (granularity case)', () => {
     ],
   };
 
-  it('projects every tagged node with the map path above it', () => {
+  it('projects every case node (tagged or marked) with the map path above it', () => {
     const d = doc('24041', map, { title: 'SSL 卸载', ...TREE });
     const out = items(run([d], { granularity: 'case' }));
     assert.deepEqual(
@@ -192,6 +192,7 @@ describe('one item per case (granularity case)', () => {
         ['24041:24041n2', 'bug 61500 证书链加载', 'n/24041n2'],
         ['24041:@4', '证书过期时报错', 'i/0/1'],
         ['24041:@6', '证书过期时报错（副本）', 'i/0/2'],
+        ['24041:24041n8', '没有标签的节点', 'n/24041n8'],
       ],
     );
     const first = out.items[0];
@@ -277,4 +278,47 @@ for (const granularity of ['document', 'case']) it(`a directory identifier belon
     assert.deepEqual(answer.requirements, ['20931']);
     assert.deepEqual(answer.id_sources.find(id => id.id === '20931')?.from, ['folders']);
   }
+});
+
+describe('the case rule: tagged or marked (decision 18)', () => {
+  const projectedIds = (model: Node): string[] => {
+    const inputs = [boundDocument('2430', model, { title: '合成标题', root: 'NSAE', ancestors: ['030：APV/NSAE测试项目', '060：10.6.1'] })];
+    const out = projectItems({ inputs, parameters: { granularity: 'case' }, context: { ...BOUND, parameters: { granularity: 'case' } } }) as { items: ProjectedItem[] };
+    return out.items.map((item) => item.id);
+  };
+  const model = (children: Node[]): Node => ({ text: '合成文档', children: [{ text: '基本功能', data: { priority: 1 }, children }] });
+
+  it('a node with the case priority and no tag is a case by the default marked rule', () => {
+    const ids = projectedIds(model([
+      { text: '查看部件状态', data: { priority: 2 }, children: [{ text: '结果符合预期' }] },
+      { text: '带标签的用例', data: { priority: 2, resource: ['Function'] }, children: [{ text: '结果符合预期' }] },
+    ]));
+    assert.equal(ids.length, 2, JSON.stringify(ids));
+    assert.ok(ids.every((id) => id.startsWith('2430:')), JSON.stringify(ids));
+  });
+
+  it('a node without a tag and without the case priority is not a case, so its document falls back to whole-document', () => {
+    const ids = projectedIds(model([
+      { text: '普通节点', data: { priority: 3 }, children: [{ text: '结果' }] },
+    ]));
+    assert.deepEqual(ids, ['2430'], JSON.stringify(ids));
+  });
+
+  it('a marked case inside another case is a case of its own', () => {
+    const ids = projectedIds(model([
+      { text: '外层用例', data: { priority: 2, resource: ['Function'] }, children: [
+        { text: '操作步骤', children: [{ text: '结果符合预期' }] },
+        { text: '嵌套用例', data: { priority: 2 }, children: [{ text: '嵌套结果' }] },
+      ] },
+    ]));
+    assert.equal(ids.length, 2, JSON.stringify(ids));
+  });
+
+  it('the warning for a document without case nodes names the rule', () => {
+    const inputs = [boundDocument('2431', model([{ text: '普通', data: { priority: 3 }, children: [] }]), { title: '无用例', root: 'NSAE', ancestors: ['030：APV/NSAE测试项目', '060：10.6.1'] })];
+    const out = projectItems({ inputs, parameters: { granularity: 'case' }, context: { ...BOUND, parameters: { granularity: 'case' } } }) as { warnings: Array<{ code: string; message: string }> };
+    const warning = out.warnings.find((w) => w.code === 'case-location.no_case_nodes');
+    assert.ok(warning, JSON.stringify(out.warnings));
+    assert.match(warning.message, /带标签或带标记/);
+  });
 });

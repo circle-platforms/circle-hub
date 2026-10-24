@@ -16,7 +16,7 @@ function check(title: string, expected: string) {
 test('dedup contract promises normalized titles rather than expected-text comparison', () => {
   const requirements = JSON.parse(readFileSync(new URL('./requirements.json', import.meta.url), 'utf8'));
   const requirement = requirements.requirements.find((r: { key: string }) => r.key === 'not_duplicate');
-  assert.match(requirement.description, /规范化标题相同/);
+  assert.match(requirement.description, /标题逐字相同/);
   assert.doesNotMatch(requirement.description, /或规范化期望结果相同/);
   const skill = readFileSync(new URL('./SKILL.md', import.meta.url), 'utf8');
   assert.doesNotMatch(skill, /标题或期望结果相同/);
@@ -24,9 +24,11 @@ test('dedup contract promises normalized titles rather than expected-text compar
 test('identical expectations with different titles are not duplicates', () => {
   assert.equal(check('另一个合成标题', '合成期望')[0].verdict, 'support');
 });
-test('normalized equal titles are duplicates even when expectations differ', () => {
+test('a folded variant of a title is not a duplicate: only the verbatim title counts (10-24 rule)', () => {
   const result = check('  合成\tＷＩＤＧＥＴ\u00A0标题 ', '另一段期望');
-  assert.equal(result[0].verdict, 'refute'); assert.equal(result[0].code, 'defect-to-case.duplicate_case');
+  assert.equal(result[0].verdict, 'support');
+  const exact = check('合成 Widget 标题', '另一段期望');
+  assert.equal(exact[0].verdict, 'refute'); assert.equal(exact[0].code, 'defect-to-case.duplicate_case');
 });
 
 test('the requirement names command heads and every incompleteness class rather than promising success from skipped alone', () => {

@@ -71,6 +71,7 @@ export { planBuilds, isoTime } from './functions/sync.ts';
 export { chooseBuild, asBuild } from './functions/select.ts';
 export { commandTree as commandTreeProducer, manual as manualProducer, releaseNotes as releaseNotesProducer } from './functions/producers.ts';
 export { fixedBugEntries } from './functions/fixed-bugs.ts';
+export { specifications as specificationsProducer, specificationScope, productDocument } from './functions/specifications.ts';
 export { documentLines, folderLine, folderNames } from './functions/documents.ts';
 export { INDEX_ID, SOURCE_ROLES, fileId, fileKey, listingId } from './functions/sources.ts';
 export { cases as casesProducer, caseStatement, elementDocument, elementDocuments, listedIds, storable, treeFolders } from './functions/cases.ts';
@@ -78,7 +79,7 @@ export { MAX_DEPTH as CASE_MAX_DEPTH, MAX_ITEM_ID, caseKeys, caseNodes } from '.
 export type { CaseNode, CaseScan } from './functions/cases-nodes.ts';
 export { commandCatalog, foldText, resolvePhrase, resolvePhrasePaths, textCommands, withoutListNumbers } from './functions/cases-commands.ts';
 export type { CommandCatalog, TextCommands } from './functions/cases-commands.ts';
-export { MAX_CASE_DOCUMENTS, NOTE_EXAMPLES, caseDocumentsFor, caseIndexOptions, caseNote, caseSources, caseTree, isProductRoot, uncoveredDocuments } from './functions/cases-sync.ts';
+export { MAX_CASE_DOCUMENTS, NOTE_EXAMPLES, caseDocumentsFor, caseIndexOptions, caseNote, caseSources, caseTree, isProductRoot, uncoveredDocuments, unversionedCaseSources } from './functions/cases-sync.ts';
 export type { CaseCounts, CaseDocument, CaseIndexOptions, CaseTree, Counted } from './functions/cases-sync.ts';
 export {
   AGILE_ID,
@@ -90,11 +91,8 @@ export {
   CASE_TREE_ROLE,
   DEFAULT_MIN_LINE,
   MINDMAP_PREFIX,
-  VAGUE_EXPECTED,
-  isVague,
   negativeOf,
   tagKey,
-  vagueKey,
 } from './functions/cases-rules.ts';
 
 /**

@@ -1,3 +1,4 @@
+import {applyExpectedJudgments} from './judgments.ts';
 import { labelOf } from './generated/vocabulary.ts';
 // Item projection of the quality-board pack (W01): the bound facet view becomes one item per (line, module) group, with the
 // counts and the exact ratios frozen in the item fields and the view facts frozen in the run's groups for the totals check.
@@ -42,7 +43,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   const fix = `inputs.facets 绑定一个 by=line,module,has_expected,vague_expected,negative 计数视图，可再绑一个 by=line,module,tags 标签视图；inputs.placement 必填，绑定 by=commands ${COMMANDLESS_CASES}视图，三个视图同产品同知识根`;
   if (inputs.length < 1 || inputs.length > 2) return refusal('invalid_input', 'facets 需要一个计数视图和可选的一个标签视图', fix);
   const countInputs = inputs.filter((b) => isRecord(b.model) && Array.isArray(b.model.by) && b.model.by.includes('has_expected'));
-  const tagInputs = inputs.filter((b) => { const model = b.model; if (!isRecord(model) || !Array.isArray(model.by)) return false; const by = model.by; return by.length === 3 && ['line', 'module', 'tags'].every((key) => by.includes(key)); });
+  const tagInputs = inputs.filter((b) => { const model = b.model; if (!isRecord(model) || !Array.isArray(model.by)) return false; const by = model.by; return by.length === 5 && ['line', 'module', 'tags','resource_empty','tag_valid'].every((key) => by.includes(key)); });
   if (countInputs.length !== 1 || (inputs.length === 2 && tagInputs.length !== 1)) return refusal('wrong_view', '计数视图和标签视图的组合不正确', fix);
   const read = readFacetView(countInputs[0] as unknown as BoundInput, SLOT);
   if (!read.ok) return refusal(read.code, `输入槽 ${SLOT}：${read.message}`, read.fix);
@@ -50,7 +51,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   if (view.by.includes('tags') || view.by.includes('commands')) return refusal('wrong_view', '计数视图不能混入列表字段 tags 或 commands，否则同一用例重复计数', fix);
   let tags: typeof view | undefined;
   if (tagInputs.length) {
-    const tagRead = readFacetView(tagInputs[0] as unknown as BoundInput, SLOT, ['line', 'module', 'tags']);
+    const tagRead = readFacetView(tagInputs[0] as unknown as BoundInput, SLOT, ['line', 'module', 'tags','resource_empty','tag_valid']);
     if (!tagRead.ok) return refusal(tagRead.code, tagRead.message, tagRead.fix);
     tags = tagRead.view;
     if (tags.product !== view.product || tags.root !== view.root || tags.total !== view.total) return refusal('view_mismatch', '标签和计数视图必须同产品同知识根，且 total 相同', fix);
@@ -73,6 +74,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   }
 
   const groups = groupBoard(view);
+  applyExpectedJudgments(groups,view,bound);
   if (tags) attachCoverage(groups, tags);
   if (groups.length === 0) {
     return refusal('no_cases', `构建 ${view.build} 的根里没有用例条目（视图的 total 是 ${view.total}），看板没有条目可算`, '确认这个构建的用例索引已经同步（knowledge sync），再开始运行', warnings);
@@ -92,7 +94,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   const items: ProjectedItem[] = groups.map((group) => ({
     id: group.id,
     label: group.id,
-    summary: summaryOf(group.counts) + coverageSummary(group.coverage),
+    summary: summaryOf(group.counts,group.quality) + coverageSummary(group.coverage),
     location: { slot: SLOT, source, parser: PARSER, selector: 'p/rows' },
     fields: group as unknown as Record<string, unknown>,
   }));

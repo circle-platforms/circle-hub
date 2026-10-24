@@ -1,9 +1,9 @@
 {
   "note": "合成示例：一份没有压力测试用例的脑图（内容是编的），作为上传文件开始运行时 Hub 给出的条目和覆盖检查的结果；条目编号按上传文件的 SHA-256 前 12 位",
   "input": "examples/synthetic-gap.km.json",
-  "sha256": "81aa5650aa4a4758425647dd7b1ada6957e8f392bb639182a240dd805b1ae5a1",
+  "sha256": "aebb0808aa5c2f597202f43c9833b0711605d12311c88afddb34ac6c9255d783",
   "item": {
-    "id": "upload-81aa5650aa4a",
+    "id": "upload-aebb0808aa5c",
     "label": "小部件探测测试用例（示例）",
     "summary": "用例 66 个；按命令：上传文件不在索引里；缺 1 个模板类别：压力测试（stress）；模板类别出现 23/24 个；用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）",
     "location": {
@@ -11,7 +11,7 @@
       "selector": "n/r0example001"
     },
     "fields": {
-      "document": "upload-81aa5650aa4a",
+      "document": "upload-aebb0808aa5c",
       "title": "小部件探测测试用例（示例）",
       "path": [],
       "caseCount": 66,
@@ -29,27 +29,28 @@
           "group": "test_type",
           "required": true,
           "present": true,
-          "count": 19,
+          "count": 20,
           "evidence": [
-            "upload-81aa5650aa4a:0j9mbggwjytw",
-            "upload-81aa5650aa4a:2zlrkcoz9mr4",
-            "upload-81aa5650aa4a:3td81tprwfs4",
-            "upload-81aa5650aa4a:4wlclalycny1",
-            "upload-81aa5650aa4a:5jp998s5k5lh",
-            "upload-81aa5650aa4a:7i05at912jhi",
-            "upload-81aa5650aa4a:gv8eovpocm23",
-            "upload-81aa5650aa4a:gzcm7ldrqfa7",
-            "upload-81aa5650aa4a:i7dd1j74o4ur",
-            "upload-81aa5650aa4a:jr493b74wl4l",
-            "upload-81aa5650aa4a:k7kd4d8qddqg",
-            "upload-81aa5650aa4a:ofi6w1u55y47",
-            "upload-81aa5650aa4a:q4gngrp4drre",
-            "upload-81aa5650aa4a:rycuaqhi8w9x",
-            "upload-81aa5650aa4a:s2aneti8p9dd",
-            "upload-81aa5650aa4a:u2wenvki1nxw",
-            "upload-81aa5650aa4a:vaujn95az8d8",
-            "upload-81aa5650aa4a:vpp6bkv9luc6",
-            "upload-81aa5650aa4a:ybwqxua4vqej"
+            "upload-aebb0808aa5c:0j9mbggwjytw",
+            "upload-aebb0808aa5c:2zlrkcoz9mr4",
+            "upload-aebb0808aa5c:3td81tprwfs4",
+            "upload-aebb0808aa5c:4wlclalycny1",
+            "upload-aebb0808aa5c:5jp998s5k5lh",
+            "upload-aebb0808aa5c:7i05at912jhi",
+            "upload-aebb0808aa5c:gv8eovpocm23",
+            "upload-aebb0808aa5c:gzcm7ldrqfa7",
+            "upload-aebb0808aa5c:i7dd1j74o4ur",
+            "upload-aebb0808aa5c:jr493b74wl4l",
+            "upload-aebb0808aa5c:k7kd4d8qddqg",
+            "upload-aebb0808aa5c:ofi6w1u55y47",
+            "upload-aebb0808aa5c:q4gngrp4drre",
+            "upload-aebb0808aa5c:rycuaqhi8w9x",
+            "upload-aebb0808aa5c:s2aneti8p9dd",
+            "upload-aebb0808aa5c:u2wenvki1nxw",
+            "upload-aebb0808aa5c:v99unez89wsx",
+            "upload-aebb0808aa5c:vaujn95az8d8",
+            "upload-aebb0808aa5c:vpp6bkv9luc6",
+            "upload-aebb0808aa5c:ybwqxua4vqej"
           ]
         },
         {
@@ -60,25 +61,25 @@
           "present": true,
           "count": 19,
           "evidence": [
-            "upload-81aa5650aa4a:01qbgqo02rm3",
-            "upload-81aa5650aa4a:0f1sd7awiefi",
-            "upload-81aa5650aa4a:1hccmdu8ssig",
-            "upload-81aa5650aa4a:2g1g1d0vhy65",
-            "upload-81aa5650aa4a:4few8h0jrcxe",
-            "upload-81aa5650aa4a:4ltan31kcjqa",
-            "upload-81aa5650aa4a:b9ckh74kaobq",
-            "upload-81aa5650aa4a:be4tibl8k307",
-            "upload-81aa5650aa4a:hxg6y0nsqerm",
-            "upload-81aa5650aa4a:i2pfefpoghe8",
-            "upload-81aa5650aa4a:jfhp3uwle991",
-            "upload-81aa5650aa4a:jsvykub8vild",
-            "upload-81aa5650aa4a:kbig1f2yc6q4",
-            "upload-81aa5650aa4a:lvkk0ejfn1ap",
-            "upload-81aa5650aa4a:o6ccpg02s6ou",
-            "upload-81aa5650aa4a:saqa73tqfrw0",
-            "upload-81aa5650aa4a:v0dyf7d8h0a5",
-            "upload-81aa5650aa4a:v0mcr4ryvsai",
-            "upload-81aa5650aa4a:z04xch3i7ck8"
+            "upload-aebb0808aa5c:01qbgqo02rm3",
+            "upload-aebb0808aa5c:0f1sd7awiefi",
+            "upload-aebb0808aa5c:1hccmdu8ssig",
+            "upload-aebb0808aa5c:2g1g1d0vhy65",
+            "upload-aebb0808aa5c:4few8h0jrcxe",
+            "upload-aebb0808aa5c:4ltan31kcjqa",
+            "upload-aebb0808aa5c:b9ckh74kaobq",
+            "upload-aebb0808aa5c:be4tibl8k307",
+            "upload-aebb0808aa5c:hxg6y0nsqerm",
+            "upload-aebb0808aa5c:i2pfefpoghe8",
+            "upload-aebb0808aa5c:jfhp3uwle991",
+            "upload-aebb0808aa5c:jsvykub8vild",
+            "upload-aebb0808aa5c:kbig1f2yc6q4",
+            "upload-aebb0808aa5c:lvkk0ejfn1ap",
+            "upload-aebb0808aa5c:o6ccpg02s6ou",
+            "upload-aebb0808aa5c:saqa73tqfrw0",
+            "upload-aebb0808aa5c:v0dyf7d8h0a5",
+            "upload-aebb0808aa5c:v0mcr4ryvsai",
+            "upload-aebb0808aa5c:z04xch3i7ck8"
           ]
         },
         {
@@ -89,15 +90,15 @@
           "present": true,
           "count": 9,
           "evidence": [
-            "upload-81aa5650aa4a:2g0h89f0w1uf",
-            "upload-81aa5650aa4a:93jureq5up99",
-            "upload-81aa5650aa4a:9nufkipey4f4",
-            "upload-81aa5650aa4a:fzstcob8zis6",
-            "upload-81aa5650aa4a:l0r4glerzq3j",
-            "upload-81aa5650aa4a:lvdxvzfm1hg6",
-            "upload-81aa5650aa4a:nxaakfyiqtum",
-            "upload-81aa5650aa4a:t8da3mog62t8",
-            "upload-81aa5650aa4a:uu88965cspsf"
+            "upload-aebb0808aa5c:2g0h89f0w1uf",
+            "upload-aebb0808aa5c:93jureq5up99",
+            "upload-aebb0808aa5c:9nufkipey4f4",
+            "upload-aebb0808aa5c:fzstcob8zis6",
+            "upload-aebb0808aa5c:l0r4glerzq3j",
+            "upload-aebb0808aa5c:lvdxvzfm1hg6",
+            "upload-aebb0808aa5c:nxaakfyiqtum",
+            "upload-aebb0808aa5c:t8da3mog62t8",
+            "upload-aebb0808aa5c:uu88965cspsf"
           ]
         },
         {
@@ -108,9 +109,9 @@
           "present": true,
           "count": 3,
           "evidence": [
-            "upload-81aa5650aa4a:b1bl63v94rk3",
-            "upload-81aa5650aa4a:rrgj1uagx1dv",
-            "upload-81aa5650aa4a:uotmwgdkke7b"
+            "upload-aebb0808aa5c:b1bl63v94rk3",
+            "upload-aebb0808aa5c:rrgj1uagx1dv",
+            "upload-aebb0808aa5c:uotmwgdkke7b"
           ]
         },
         {
@@ -121,22 +122,22 @@
           "present": true,
           "count": 16,
           "evidence": [
-            "upload-81aa5650aa4a:2i0r5yfvn3ta",
-            "upload-81aa5650aa4a:58rev5vsqzyw",
-            "upload-81aa5650aa4a:a6gosvhh50zv",
-            "upload-81aa5650aa4a:auch71u6uxce",
-            "upload-81aa5650aa4a:f6eulx5b954g",
-            "upload-81aa5650aa4a:fiwo7utmxxne",
-            "upload-81aa5650aa4a:i579m39pc230",
-            "upload-81aa5650aa4a:nmb6vclhv6bb",
-            "upload-81aa5650aa4a:p8cwxc1ye2np",
-            "upload-81aa5650aa4a:py9uoksarpjw",
-            "upload-81aa5650aa4a:q3r7am57ohue",
-            "upload-81aa5650aa4a:vodmb3tlqxbo",
-            "upload-81aa5650aa4a:wznpmaoyl6xb",
-            "upload-81aa5650aa4a:y34nt14ss7ok",
-            "upload-81aa5650aa4a:y6gok9s3idfh",
-            "upload-81aa5650aa4a:z04xch3i7ck8"
+            "upload-aebb0808aa5c:2i0r5yfvn3ta",
+            "upload-aebb0808aa5c:58rev5vsqzyw",
+            "upload-aebb0808aa5c:a6gosvhh50zv",
+            "upload-aebb0808aa5c:auch71u6uxce",
+            "upload-aebb0808aa5c:f6eulx5b954g",
+            "upload-aebb0808aa5c:fiwo7utmxxne",
+            "upload-aebb0808aa5c:i579m39pc230",
+            "upload-aebb0808aa5c:nmb6vclhv6bb",
+            "upload-aebb0808aa5c:p8cwxc1ye2np",
+            "upload-aebb0808aa5c:py9uoksarpjw",
+            "upload-aebb0808aa5c:q3r7am57ohue",
+            "upload-aebb0808aa5c:vodmb3tlqxbo",
+            "upload-aebb0808aa5c:wznpmaoyl6xb",
+            "upload-aebb0808aa5c:y34nt14ss7ok",
+            "upload-aebb0808aa5c:y6gok9s3idfh",
+            "upload-aebb0808aa5c:z04xch3i7ck8"
           ]
         },
         {
@@ -156,9 +157,9 @@
           "present": true,
           "count": 3,
           "evidence": [
-            "upload-81aa5650aa4a:i2pfefpoghe8",
-            "upload-81aa5650aa4a:rycuaqhi8w9x",
-            "upload-81aa5650aa4a:ybwqxua4vqej"
+            "upload-aebb0808aa5c:i2pfefpoghe8",
+            "upload-aebb0808aa5c:rycuaqhi8w9x",
+            "upload-aebb0808aa5c:ybwqxua4vqej"
           ]
         },
         {
@@ -169,9 +170,9 @@
           "present": true,
           "count": 3,
           "evidence": [
-            "upload-81aa5650aa4a:f6eulx5b954g",
-            "upload-81aa5650aa4a:i2pfefpoghe8",
-            "upload-81aa5650aa4a:kbig1f2yc6q4"
+            "upload-aebb0808aa5c:f6eulx5b954g",
+            "upload-aebb0808aa5c:i2pfefpoghe8",
+            "upload-aebb0808aa5c:kbig1f2yc6q4"
           ]
         },
         {
@@ -182,8 +183,8 @@
           "present": true,
           "count": 2,
           "evidence": [
-            "upload-81aa5650aa4a:0f1sd7awiefi",
-            "upload-81aa5650aa4a:2g1g1d0vhy65"
+            "upload-aebb0808aa5c:0f1sd7awiefi",
+            "upload-aebb0808aa5c:2g1g1d0vhy65"
           ]
         },
         {
@@ -194,9 +195,9 @@
           "present": true,
           "count": 3,
           "evidence": [
-            "upload-81aa5650aa4a:5jp998s5k5lh",
-            "upload-81aa5650aa4a:7i05at912jhi",
-            "upload-81aa5650aa4a:93jureq5up99"
+            "upload-aebb0808aa5c:5jp998s5k5lh",
+            "upload-aebb0808aa5c:7i05at912jhi",
+            "upload-aebb0808aa5c:93jureq5up99"
           ]
         },
         {
@@ -207,7 +208,7 @@
           "present": true,
           "count": 1,
           "evidence": [
-            "upload-81aa5650aa4a:ybwqxua4vqej"
+            "upload-aebb0808aa5c:ybwqxua4vqej"
           ]
         },
         {
@@ -218,9 +219,9 @@
           "present": true,
           "count": 3,
           "evidence": [
-            "upload-81aa5650aa4a:a6gosvhh50zv",
-            "upload-81aa5650aa4a:gzcm7ldrqfa7",
-            "upload-81aa5650aa4a:i7dd1j74o4ur"
+            "upload-aebb0808aa5c:a6gosvhh50zv",
+            "upload-aebb0808aa5c:gzcm7ldrqfa7",
+            "upload-aebb0808aa5c:i7dd1j74o4ur"
           ]
         },
         {
@@ -231,7 +232,7 @@
           "present": true,
           "count": 1,
           "evidence": [
-            "upload-81aa5650aa4a:s2aneti8p9dd"
+            "upload-aebb0808aa5c:s2aneti8p9dd"
           ]
         },
         {
@@ -242,9 +243,9 @@
           "present": true,
           "count": 3,
           "evidence": [
-            "upload-81aa5650aa4a:4wlclalycny1",
-            "upload-81aa5650aa4a:58rev5vsqzyw",
-            "upload-81aa5650aa4a:ofi6w1u55y47"
+            "upload-aebb0808aa5c:4wlclalycny1",
+            "upload-aebb0808aa5c:58rev5vsqzyw",
+            "upload-aebb0808aa5c:ofi6w1u55y47"
           ]
         },
         {
@@ -255,9 +256,9 @@
           "present": true,
           "count": 3,
           "evidence": [
-            "upload-81aa5650aa4a:58rev5vsqzyw",
-            "upload-81aa5650aa4a:b9ckh74kaobq",
-            "upload-81aa5650aa4a:ofi6w1u55y47"
+            "upload-aebb0808aa5c:58rev5vsqzyw",
+            "upload-aebb0808aa5c:b9ckh74kaobq",
+            "upload-aebb0808aa5c:ofi6w1u55y47"
           ]
         },
         {
@@ -268,8 +269,8 @@
           "present": true,
           "count": 2,
           "evidence": [
-            "upload-81aa5650aa4a:l0r4glerzq3j",
-            "upload-81aa5650aa4a:py9uoksarpjw"
+            "upload-aebb0808aa5c:l0r4glerzq3j",
+            "upload-aebb0808aa5c:py9uoksarpjw"
           ]
         },
         {
@@ -280,8 +281,8 @@
           "present": true,
           "count": 2,
           "evidence": [
-            "upload-81aa5650aa4a:2g0h89f0w1uf",
-            "upload-81aa5650aa4a:jr493b74wl4l"
+            "upload-aebb0808aa5c:2g0h89f0w1uf",
+            "upload-aebb0808aa5c:jr493b74wl4l"
           ]
         },
         {
@@ -292,8 +293,8 @@
           "present": true,
           "count": 2,
           "evidence": [
-            "upload-81aa5650aa4a:0j9mbggwjytw",
-            "upload-81aa5650aa4a:9nufkipey4f4"
+            "upload-aebb0808aa5c:0j9mbggwjytw",
+            "upload-aebb0808aa5c:9nufkipey4f4"
           ]
         },
         {
@@ -304,8 +305,8 @@
           "present": true,
           "count": 2,
           "evidence": [
-            "upload-81aa5650aa4a:u2wenvki1nxw",
-            "upload-81aa5650aa4a:wznpmaoyl6xb"
+            "upload-aebb0808aa5c:u2wenvki1nxw",
+            "upload-aebb0808aa5c:wznpmaoyl6xb"
           ]
         },
         {
@@ -316,8 +317,8 @@
           "present": true,
           "count": 2,
           "evidence": [
-            "upload-81aa5650aa4a:b1bl63v94rk3",
-            "upload-81aa5650aa4a:saqa73tqfrw0"
+            "upload-aebb0808aa5c:b1bl63v94rk3",
+            "upload-aebb0808aa5c:saqa73tqfrw0"
           ]
         },
         {
@@ -328,7 +329,7 @@
           "present": true,
           "count": 1,
           "evidence": [
-            "upload-81aa5650aa4a:rrgj1uagx1dv"
+            "upload-aebb0808aa5c:rrgj1uagx1dv"
           ]
         },
         {
@@ -339,8 +340,8 @@
           "present": true,
           "count": 2,
           "evidence": [
-            "upload-81aa5650aa4a:2i0r5yfvn3ta",
-            "upload-81aa5650aa4a:uotmwgdkke7b"
+            "upload-aebb0808aa5c:2i0r5yfvn3ta",
+            "upload-aebb0808aa5c:uotmwgdkke7b"
           ]
         },
         {
@@ -351,8 +352,8 @@
           "present": true,
           "count": 2,
           "evidence": [
-            "upload-81aa5650aa4a:be4tibl8k307",
-            "upload-81aa5650aa4a:fiwo7utmxxne"
+            "upload-aebb0808aa5c:be4tibl8k307",
+            "upload-aebb0808aa5c:fiwo7utmxxne"
           ]
         },
         {
@@ -363,11 +364,650 @@
           "present": true,
           "count": 2,
           "evidence": [
-            "upload-81aa5650aa4a:2zlrkcoz9mr4",
-            "upload-81aa5650aa4a:y34nt14ss7ok"
+            "upload-aebb0808aa5c:2zlrkcoz9mr4",
+            "upload-aebb0808aa5c:y34nt14ss7ok"
           ]
         }
       ],
+      "classifications": [
+        {
+          "id": "upload-aebb0808aa5c:k7kd4d8qddqg",
+          "visit": 2,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:vpp6bkv9luc6",
+          "visit": 4,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:vaujn95az8d8",
+          "visit": 7,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:rycuaqhi8w9x",
+          "visit": 11,
+          "categories": [
+            "functional",
+            "command_add"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:5jp998s5k5lh",
+          "visit": 13,
+          "categories": [
+            "functional",
+            "command_query"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:q4gngrp4drre",
+          "visit": 15,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:3td81tprwfs4",
+          "visit": 18,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:v99unez89wsx",
+          "visit": 21,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:hxg6y0nsqerm",
+          "visit": 24,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:4ltan31kcjqa",
+          "visit": 26,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:jfhp3uwle991",
+          "visit": 28,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:2g1g1d0vhy65",
+          "visit": 30,
+          "categories": [
+            "configuration",
+            "command_modify"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:kbig1f2yc6q4",
+          "visit": 32,
+          "categories": [
+            "configuration",
+            "command_delete"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:i2pfefpoghe8",
+          "visit": 34,
+          "categories": [
+            "configuration",
+            "command_delete",
+            "command_add"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:lvdxvzfm1hg6",
+          "visit": 38,
+          "categories": [
+            "integration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:uu88965cspsf",
+          "visit": 40,
+          "categories": [
+            "integration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:t8da3mog62t8",
+          "visit": 42,
+          "categories": [
+            "integration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:93jureq5up99",
+          "visit": 45,
+          "categories": [
+            "integration",
+            "command_query"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:nxaakfyiqtum",
+          "visit": 47,
+          "categories": [
+            "integration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:fzstcob8zis6",
+          "visit": 51,
+          "categories": [
+            "integration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:rrgj1uagx1dv",
+          "visit": 54,
+          "categories": [
+            "compatibility",
+            "upgrade_old_to_new"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:b1bl63v94rk3",
+          "visit": 56,
+          "categories": [
+            "compatibility",
+            "upgrade_new_to_new"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:uotmwgdkke7b",
+          "visit": 58,
+          "categories": [
+            "compatibility",
+            "upgrade_new_to_old"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:i579m39pc230",
+          "visit": 61,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:auch71u6uxce",
+          "visit": 63,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:q3r7am57ohue",
+          "visit": 65,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:z04xch3i7ck8",
+          "visit": 67,
+          "categories": [
+            "negative",
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:nmb6vclhv6bb",
+          "visit": 69,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:y6gok9s3idfh",
+          "visit": 72,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:vodmb3tlqxbo",
+          "visit": 75,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:p8cwxc1ye2np",
+          "visit": 77,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:i7dd1j74o4ur",
+          "visit": 81,
+          "categories": [
+            "functional",
+            "no_command"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:s2aneti8p9dd",
+          "visit": 83,
+          "categories": [
+            "functional",
+            "clear_command"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:0f1sd7awiefi",
+          "visit": 85,
+          "categories": [
+            "configuration",
+            "command_modify"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:7i05at912jhi",
+          "visit": 87,
+          "categories": [
+            "functional",
+            "command_query"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:gzcm7ldrqfa7",
+          "visit": 90,
+          "categories": [
+            "functional",
+            "no_command"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:ofi6w1u55y47",
+          "visit": 93,
+          "categories": [
+            "functional",
+            "operation_log",
+            "audit_log"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:58rev5vsqzyw",
+          "visit": 95,
+          "categories": [
+            "negative",
+            "operation_log",
+            "audit_log"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:l0r4glerzq3j",
+          "visit": 98,
+          "categories": [
+            "integration",
+            "configuration_sync"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:jr493b74wl4l",
+          "visit": 100,
+          "categories": [
+            "functional",
+            "configuration_save"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:0j9mbggwjytw",
+          "visit": 102,
+          "categories": [
+            "functional",
+            "configuration_restore"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:u2wenvki1nxw",
+          "visit": 104,
+          "categories": [
+            "functional",
+            "configuration_clear"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:fiwo7utmxxne",
+          "visit": 107,
+          "categories": [
+            "negative",
+            "security"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:2zlrkcoz9mr4",
+          "visit": 109,
+          "categories": [
+            "functional",
+            "database"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:gv8eovpocm23",
+          "visit": 111,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:1hccmdu8ssig",
+          "visit": 114,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:v0dyf7d8h0a5",
+          "visit": 117,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:01qbgqo02rm3",
+          "visit": 120,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:jsvykub8vild",
+          "visit": 123,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:lvkk0ejfn1ap",
+          "visit": 126,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:o6ccpg02s6ou",
+          "visit": 129,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:4few8h0jrcxe",
+          "visit": 132,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:v0mcr4ryvsai",
+          "visit": 135,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:ybwqxua4vqej",
+          "visit": 139,
+          "categories": [
+            "functional",
+            "show_at_maximum",
+            "command_add"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:f6eulx5b954g",
+          "visit": 141,
+          "categories": [
+            "negative",
+            "command_delete"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:a6gosvhh50zv",
+          "visit": 143,
+          "categories": [
+            "negative",
+            "no_command"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:4wlclalycny1",
+          "visit": 145,
+          "categories": [
+            "functional",
+            "operation_log"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:b9ckh74kaobq",
+          "visit": 147,
+          "categories": [
+            "configuration",
+            "audit_log"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:py9uoksarpjw",
+          "visit": 149,
+          "categories": [
+            "negative",
+            "configuration_sync"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:2g0h89f0w1uf",
+          "visit": 151,
+          "categories": [
+            "integration",
+            "configuration_save"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:9nufkipey4f4",
+          "visit": 153,
+          "categories": [
+            "integration",
+            "configuration_restore"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:wznpmaoyl6xb",
+          "visit": 155,
+          "categories": [
+            "negative",
+            "configuration_clear"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:saqa73tqfrw0",
+          "visit": 157,
+          "categories": [
+            "configuration",
+            "upgrade_new_to_new"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:2i0r5yfvn3ta",
+          "visit": 159,
+          "categories": [
+            "negative",
+            "upgrade_new_to_old"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:be4tibl8k307",
+          "visit": 161,
+          "categories": [
+            "configuration",
+            "security"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:y34nt14ss7ok",
+          "visit": 163,
+          "categories": [
+            "negative",
+            "database"
+          ],
+          "status": "classified",
+          "judgments": []
+        }
+      ],
+      "classification_status": "classified",
+      "unclassified": [],
+      "scope_complete": true,
       "command_coverage": {
         "case_rule": "marked",
         "rule_mismatch": false,
@@ -379,75 +1019,76 @@
         "caseCount": 66,
         "matchedCases": 0,
         "unmatched": [
-          "upload-81aa5650aa4a:01qbgqo02rm3",
-          "upload-81aa5650aa4a:0f1sd7awiefi",
-          "upload-81aa5650aa4a:0j9mbggwjytw",
-          "upload-81aa5650aa4a:1hccmdu8ssig",
-          "upload-81aa5650aa4a:2g0h89f0w1uf",
-          "upload-81aa5650aa4a:2g1g1d0vhy65",
-          "upload-81aa5650aa4a:2i0r5yfvn3ta",
-          "upload-81aa5650aa4a:2zlrkcoz9mr4",
-          "upload-81aa5650aa4a:3td81tprwfs4",
-          "upload-81aa5650aa4a:4few8h0jrcxe",
-          "upload-81aa5650aa4a:4ltan31kcjqa",
-          "upload-81aa5650aa4a:4wlclalycny1",
-          "upload-81aa5650aa4a:58rev5vsqzyw",
-          "upload-81aa5650aa4a:5jp998s5k5lh",
-          "upload-81aa5650aa4a:7i05at912jhi",
-          "upload-81aa5650aa4a:93jureq5up99",
-          "upload-81aa5650aa4a:9nufkipey4f4",
-          "upload-81aa5650aa4a:a6gosvhh50zv",
-          "upload-81aa5650aa4a:auch71u6uxce",
-          "upload-81aa5650aa4a:b1bl63v94rk3",
-          "upload-81aa5650aa4a:b9ckh74kaobq",
-          "upload-81aa5650aa4a:be4tibl8k307",
-          "upload-81aa5650aa4a:f6eulx5b954g",
-          "upload-81aa5650aa4a:fiwo7utmxxne",
-          "upload-81aa5650aa4a:fzstcob8zis6",
-          "upload-81aa5650aa4a:gv8eovpocm23",
-          "upload-81aa5650aa4a:gzcm7ldrqfa7",
-          "upload-81aa5650aa4a:hxg6y0nsqerm",
-          "upload-81aa5650aa4a:i2pfefpoghe8",
-          "upload-81aa5650aa4a:i579m39pc230",
-          "upload-81aa5650aa4a:i7dd1j74o4ur",
-          "upload-81aa5650aa4a:jfhp3uwle991",
-          "upload-81aa5650aa4a:jr493b74wl4l",
-          "upload-81aa5650aa4a:jsvykub8vild",
-          "upload-81aa5650aa4a:k7kd4d8qddqg",
-          "upload-81aa5650aa4a:kbig1f2yc6q4",
-          "upload-81aa5650aa4a:l0r4glerzq3j",
-          "upload-81aa5650aa4a:lvdxvzfm1hg6",
-          "upload-81aa5650aa4a:lvkk0ejfn1ap",
-          "upload-81aa5650aa4a:nmb6vclhv6bb",
-          "upload-81aa5650aa4a:nxaakfyiqtum",
-          "upload-81aa5650aa4a:o6ccpg02s6ou",
-          "upload-81aa5650aa4a:ofi6w1u55y47",
-          "upload-81aa5650aa4a:p8cwxc1ye2np",
-          "upload-81aa5650aa4a:py9uoksarpjw",
-          "upload-81aa5650aa4a:q3r7am57ohue",
-          "upload-81aa5650aa4a:q4gngrp4drre",
-          "upload-81aa5650aa4a:rrgj1uagx1dv",
-          "upload-81aa5650aa4a:rycuaqhi8w9x",
-          "upload-81aa5650aa4a:s2aneti8p9dd",
-          "upload-81aa5650aa4a:saqa73tqfrw0",
-          "upload-81aa5650aa4a:t8da3mog62t8",
-          "upload-81aa5650aa4a:u2wenvki1nxw",
-          "upload-81aa5650aa4a:uotmwgdkke7b",
-          "upload-81aa5650aa4a:uu88965cspsf",
-          "upload-81aa5650aa4a:v0dyf7d8h0a5",
-          "upload-81aa5650aa4a:v0mcr4ryvsai",
-          "upload-81aa5650aa4a:v99unez89wsx",
-          "upload-81aa5650aa4a:vaujn95az8d8",
-          "upload-81aa5650aa4a:vodmb3tlqxbo",
-          "upload-81aa5650aa4a:vpp6bkv9luc6",
-          "upload-81aa5650aa4a:wznpmaoyl6xb",
-          "upload-81aa5650aa4a:y34nt14ss7ok",
-          "upload-81aa5650aa4a:y6gok9s3idfh",
-          "upload-81aa5650aa4a:ybwqxua4vqej",
-          "upload-81aa5650aa4a:z04xch3i7ck8"
+          "upload-aebb0808aa5c:01qbgqo02rm3",
+          "upload-aebb0808aa5c:0f1sd7awiefi",
+          "upload-aebb0808aa5c:0j9mbggwjytw",
+          "upload-aebb0808aa5c:1hccmdu8ssig",
+          "upload-aebb0808aa5c:2g0h89f0w1uf",
+          "upload-aebb0808aa5c:2g1g1d0vhy65",
+          "upload-aebb0808aa5c:2i0r5yfvn3ta",
+          "upload-aebb0808aa5c:2zlrkcoz9mr4",
+          "upload-aebb0808aa5c:3td81tprwfs4",
+          "upload-aebb0808aa5c:4few8h0jrcxe",
+          "upload-aebb0808aa5c:4ltan31kcjqa",
+          "upload-aebb0808aa5c:4wlclalycny1",
+          "upload-aebb0808aa5c:58rev5vsqzyw",
+          "upload-aebb0808aa5c:5jp998s5k5lh",
+          "upload-aebb0808aa5c:7i05at912jhi",
+          "upload-aebb0808aa5c:93jureq5up99",
+          "upload-aebb0808aa5c:9nufkipey4f4",
+          "upload-aebb0808aa5c:a6gosvhh50zv",
+          "upload-aebb0808aa5c:auch71u6uxce",
+          "upload-aebb0808aa5c:b1bl63v94rk3",
+          "upload-aebb0808aa5c:b9ckh74kaobq",
+          "upload-aebb0808aa5c:be4tibl8k307",
+          "upload-aebb0808aa5c:f6eulx5b954g",
+          "upload-aebb0808aa5c:fiwo7utmxxne",
+          "upload-aebb0808aa5c:fzstcob8zis6",
+          "upload-aebb0808aa5c:gv8eovpocm23",
+          "upload-aebb0808aa5c:gzcm7ldrqfa7",
+          "upload-aebb0808aa5c:hxg6y0nsqerm",
+          "upload-aebb0808aa5c:i2pfefpoghe8",
+          "upload-aebb0808aa5c:i579m39pc230",
+          "upload-aebb0808aa5c:i7dd1j74o4ur",
+          "upload-aebb0808aa5c:jfhp3uwle991",
+          "upload-aebb0808aa5c:jr493b74wl4l",
+          "upload-aebb0808aa5c:jsvykub8vild",
+          "upload-aebb0808aa5c:k7kd4d8qddqg",
+          "upload-aebb0808aa5c:kbig1f2yc6q4",
+          "upload-aebb0808aa5c:l0r4glerzq3j",
+          "upload-aebb0808aa5c:lvdxvzfm1hg6",
+          "upload-aebb0808aa5c:lvkk0ejfn1ap",
+          "upload-aebb0808aa5c:nmb6vclhv6bb",
+          "upload-aebb0808aa5c:nxaakfyiqtum",
+          "upload-aebb0808aa5c:o6ccpg02s6ou",
+          "upload-aebb0808aa5c:ofi6w1u55y47",
+          "upload-aebb0808aa5c:p8cwxc1ye2np",
+          "upload-aebb0808aa5c:py9uoksarpjw",
+          "upload-aebb0808aa5c:q3r7am57ohue",
+          "upload-aebb0808aa5c:q4gngrp4drre",
+          "upload-aebb0808aa5c:rrgj1uagx1dv",
+          "upload-aebb0808aa5c:rycuaqhi8w9x",
+          "upload-aebb0808aa5c:s2aneti8p9dd",
+          "upload-aebb0808aa5c:saqa73tqfrw0",
+          "upload-aebb0808aa5c:t8da3mog62t8",
+          "upload-aebb0808aa5c:u2wenvki1nxw",
+          "upload-aebb0808aa5c:uotmwgdkke7b",
+          "upload-aebb0808aa5c:uu88965cspsf",
+          "upload-aebb0808aa5c:v0dyf7d8h0a5",
+          "upload-aebb0808aa5c:v0mcr4ryvsai",
+          "upload-aebb0808aa5c:v99unez89wsx",
+          "upload-aebb0808aa5c:vaujn95az8d8",
+          "upload-aebb0808aa5c:vodmb3tlqxbo",
+          "upload-aebb0808aa5c:vpp6bkv9luc6",
+          "upload-aebb0808aa5c:wznpmaoyl6xb",
+          "upload-aebb0808aa5c:y34nt14ss7ok",
+          "upload-aebb0808aa5c:y6gok9s3idfh",
+          "upload-aebb0808aa5c:ybwqxua4vqej",
+          "upload-aebb0808aa5c:z04xch3i7ck8"
         ],
         "orphaned": [],
         "pending_commands": [],
+        "pending_identities": [],
         "pending_skips": [],
         "commandlessCases": 0,
         "truncated": false,
@@ -455,6 +1096,8 @@
         "cutKeys": [],
         "unplacedRoot": null,
         "notes": [],
+        "missing_identities": [],
+        "unclassified": [],
         "commands": []
       },
       "missing": [
@@ -464,18 +1107,394 @@
     }
   },
   "outcome": {
-    "verdict": "refute",
-    "code": "core.coverage.shortfall",
-    "statement": "覆盖到的集合没有包含表要求的全部成员：缺 1 个：“stress”",
-    "grounds": [
-      "src:81aa5650aa4a4758425647dd7b1ada6957e8f392bb639182a240dd805b1ae5a1/kityminder@1/n/r0example001"
-    ],
     "tier": "advisory",
-    "item": "upload-81aa5650aa4a",
+    "grounds": [
+      "src:aebb0808aa5c2f597202f43c9833b0711605d12311c88afddb34ac6c9255d783/kityminder@1/n/r0example001"
+    ],
+    "item": "upload-aebb0808aa5c",
+    "verdict": "refute",
+    "code": "template-gap.category_shortfall",
+    "statement": "按原件声明或本次引文核验成立的模型分类，在完整用例范围内未覆盖且未声明跳过：stress",
     "data": {
-      "required": 24,
-      "covered": 23,
+      "classification_status": "classified",
+      "classified": 66,
+      "total": 66,
+      "unclassified": [],
+      "judgments": [],
       "skipped": [],
+      "qualifier_marks": [],
+      "categories": [
+        {
+          "id": "functional",
+          "label": "功能测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 20,
+          "evidence": [
+            "upload-aebb0808aa5c:0j9mbggwjytw",
+            "upload-aebb0808aa5c:2zlrkcoz9mr4",
+            "upload-aebb0808aa5c:3td81tprwfs4",
+            "upload-aebb0808aa5c:4wlclalycny1",
+            "upload-aebb0808aa5c:5jp998s5k5lh",
+            "upload-aebb0808aa5c:7i05at912jhi",
+            "upload-aebb0808aa5c:gv8eovpocm23",
+            "upload-aebb0808aa5c:gzcm7ldrqfa7",
+            "upload-aebb0808aa5c:i7dd1j74o4ur",
+            "upload-aebb0808aa5c:jr493b74wl4l",
+            "upload-aebb0808aa5c:k7kd4d8qddqg",
+            "upload-aebb0808aa5c:ofi6w1u55y47",
+            "upload-aebb0808aa5c:q4gngrp4drre",
+            "upload-aebb0808aa5c:rycuaqhi8w9x",
+            "upload-aebb0808aa5c:s2aneti8p9dd",
+            "upload-aebb0808aa5c:u2wenvki1nxw",
+            "upload-aebb0808aa5c:v99unez89wsx",
+            "upload-aebb0808aa5c:vaujn95az8d8",
+            "upload-aebb0808aa5c:vpp6bkv9luc6",
+            "upload-aebb0808aa5c:ybwqxua4vqej"
+          ]
+        },
+        {
+          "id": "configuration",
+          "label": "配置测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 19,
+          "evidence": [
+            "upload-aebb0808aa5c:01qbgqo02rm3",
+            "upload-aebb0808aa5c:0f1sd7awiefi",
+            "upload-aebb0808aa5c:1hccmdu8ssig",
+            "upload-aebb0808aa5c:2g1g1d0vhy65",
+            "upload-aebb0808aa5c:4few8h0jrcxe",
+            "upload-aebb0808aa5c:4ltan31kcjqa",
+            "upload-aebb0808aa5c:b9ckh74kaobq",
+            "upload-aebb0808aa5c:be4tibl8k307",
+            "upload-aebb0808aa5c:hxg6y0nsqerm",
+            "upload-aebb0808aa5c:i2pfefpoghe8",
+            "upload-aebb0808aa5c:jfhp3uwle991",
+            "upload-aebb0808aa5c:jsvykub8vild",
+            "upload-aebb0808aa5c:kbig1f2yc6q4",
+            "upload-aebb0808aa5c:lvkk0ejfn1ap",
+            "upload-aebb0808aa5c:o6ccpg02s6ou",
+            "upload-aebb0808aa5c:saqa73tqfrw0",
+            "upload-aebb0808aa5c:v0dyf7d8h0a5",
+            "upload-aebb0808aa5c:v0mcr4ryvsai",
+            "upload-aebb0808aa5c:z04xch3i7ck8"
+          ]
+        },
+        {
+          "id": "integration",
+          "label": "集成测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 9,
+          "evidence": [
+            "upload-aebb0808aa5c:2g0h89f0w1uf",
+            "upload-aebb0808aa5c:93jureq5up99",
+            "upload-aebb0808aa5c:9nufkipey4f4",
+            "upload-aebb0808aa5c:fzstcob8zis6",
+            "upload-aebb0808aa5c:l0r4glerzq3j",
+            "upload-aebb0808aa5c:lvdxvzfm1hg6",
+            "upload-aebb0808aa5c:nxaakfyiqtum",
+            "upload-aebb0808aa5c:t8da3mog62t8",
+            "upload-aebb0808aa5c:uu88965cspsf"
+          ]
+        },
+        {
+          "id": "compatibility",
+          "label": "兼容性测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:b1bl63v94rk3",
+            "upload-aebb0808aa5c:rrgj1uagx1dv",
+            "upload-aebb0808aa5c:uotmwgdkke7b"
+          ]
+        },
+        {
+          "id": "negative",
+          "label": "反向测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 16,
+          "evidence": [
+            "upload-aebb0808aa5c:2i0r5yfvn3ta",
+            "upload-aebb0808aa5c:58rev5vsqzyw",
+            "upload-aebb0808aa5c:a6gosvhh50zv",
+            "upload-aebb0808aa5c:auch71u6uxce",
+            "upload-aebb0808aa5c:f6eulx5b954g",
+            "upload-aebb0808aa5c:fiwo7utmxxne",
+            "upload-aebb0808aa5c:i579m39pc230",
+            "upload-aebb0808aa5c:nmb6vclhv6bb",
+            "upload-aebb0808aa5c:p8cwxc1ye2np",
+            "upload-aebb0808aa5c:py9uoksarpjw",
+            "upload-aebb0808aa5c:q3r7am57ohue",
+            "upload-aebb0808aa5c:vodmb3tlqxbo",
+            "upload-aebb0808aa5c:wznpmaoyl6xb",
+            "upload-aebb0808aa5c:y34nt14ss7ok",
+            "upload-aebb0808aa5c:y6gok9s3idfh",
+            "upload-aebb0808aa5c:z04xch3i7ck8"
+          ]
+        },
+        {
+          "id": "stress",
+          "label": "压力测试",
+          "group": "test_type",
+          "required": true,
+          "present": false,
+          "count": 0,
+          "evidence": []
+        },
+        {
+          "id": "command_add",
+          "label": "命令的添加",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:i2pfefpoghe8",
+            "upload-aebb0808aa5c:rycuaqhi8w9x",
+            "upload-aebb0808aa5c:ybwqxua4vqej"
+          ]
+        },
+        {
+          "id": "command_delete",
+          "label": "命令的删除",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:f6eulx5b954g",
+            "upload-aebb0808aa5c:i2pfefpoghe8",
+            "upload-aebb0808aa5c:kbig1f2yc6q4"
+          ]
+        },
+        {
+          "id": "command_modify",
+          "label": "命令的修改",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:0f1sd7awiefi",
+            "upload-aebb0808aa5c:2g1g1d0vhy65"
+          ]
+        },
+        {
+          "id": "command_query",
+          "label": "命令的查询",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:5jp998s5k5lh",
+            "upload-aebb0808aa5c:7i05at912jhi",
+            "upload-aebb0808aa5c:93jureq5up99"
+          ]
+        },
+        {
+          "id": "show_at_maximum",
+          "label": "最大配置下的 show",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 1,
+          "evidence": [
+            "upload-aebb0808aa5c:ybwqxua4vqej"
+          ]
+        },
+        {
+          "id": "no_command",
+          "label": "no 命令",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:a6gosvhh50zv",
+            "upload-aebb0808aa5c:gzcm7ldrqfa7",
+            "upload-aebb0808aa5c:i7dd1j74o4ur"
+          ]
+        },
+        {
+          "id": "clear_command",
+          "label": "clear 命令",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 1,
+          "evidence": [
+            "upload-aebb0808aa5c:s2aneti8p9dd"
+          ]
+        },
+        {
+          "id": "operation_log",
+          "label": "操作日志",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:4wlclalycny1",
+            "upload-aebb0808aa5c:58rev5vsqzyw",
+            "upload-aebb0808aa5c:ofi6w1u55y47"
+          ]
+        },
+        {
+          "id": "audit_log",
+          "label": "审计日志",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:58rev5vsqzyw",
+            "upload-aebb0808aa5c:b9ckh74kaobq",
+            "upload-aebb0808aa5c:ofi6w1u55y47"
+          ]
+        },
+        {
+          "id": "configuration_sync",
+          "label": "配置同步",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:l0r4glerzq3j",
+            "upload-aebb0808aa5c:py9uoksarpjw"
+          ]
+        },
+        {
+          "id": "configuration_save",
+          "label": "配置保存",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:2g0h89f0w1uf",
+            "upload-aebb0808aa5c:jr493b74wl4l"
+          ]
+        },
+        {
+          "id": "configuration_restore",
+          "label": "配置恢复",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:0j9mbggwjytw",
+            "upload-aebb0808aa5c:9nufkipey4f4"
+          ]
+        },
+        {
+          "id": "configuration_clear",
+          "label": "配置清除",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:u2wenvki1nxw",
+            "upload-aebb0808aa5c:wznpmaoyl6xb"
+          ]
+        },
+        {
+          "id": "upgrade_new_to_new",
+          "label": "升级兼容：新版本之间",
+          "group": "upgrade",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:b1bl63v94rk3",
+            "upload-aebb0808aa5c:saqa73tqfrw0"
+          ]
+        },
+        {
+          "id": "upgrade_old_to_new",
+          "label": "升级兼容：老版本到新版本",
+          "group": "upgrade",
+          "required": true,
+          "present": true,
+          "count": 1,
+          "evidence": [
+            "upload-aebb0808aa5c:rrgj1uagx1dv"
+          ]
+        },
+        {
+          "id": "upgrade_new_to_old",
+          "label": "升级兼容：新版本到老版本",
+          "group": "upgrade",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:2i0r5yfvn3ta",
+            "upload-aebb0808aa5c:uotmwgdkke7b"
+          ]
+        },
+        {
+          "id": "security",
+          "label": "安全",
+          "group": "other",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:be4tibl8k307",
+            "upload-aebb0808aa5c:fiwo7utmxxne"
+          ]
+        },
+        {
+          "id": "database",
+          "label": "数据库",
+          "group": "other",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:2zlrkcoz9mr4",
+            "upload-aebb0808aa5c:y34nt14ss7ok"
+          ]
+        }
+      ],
+      "covered": [
+        "functional",
+        "configuration",
+        "integration",
+        "compatibility",
+        "negative",
+        "command_add",
+        "command_delete",
+        "command_modify",
+        "command_query",
+        "show_at_maximum",
+        "no_command",
+        "clear_command",
+        "operation_log",
+        "audit_log",
+        "configuration_sync",
+        "configuration_save",
+        "configuration_restore",
+        "configuration_clear",
+        "upgrade_new_to_new",
+        "upgrade_old_to_new",
+        "upgrade_new_to_old",
+        "security",
+        "database"
+      ],
       "missing": [
         "stress"
       ]
@@ -484,16 +1503,16 @@
   "command_outcomes": [
     {
       "tier": "advisory",
-      "item": "upload-81aa5650aa4a",
+      "item": "upload-aebb0808aa5c",
       "grounds": [
-        "src:81aa5650aa4a4758425647dd7b1ada6957e8f392bb639182a240dd805b1ae5a1/kityminder@1/n/r0example001",
+        "src:aebb0808aa5c2f597202f43c9833b0711605d12311c88afddb34ac6c9255d783/kityminder@1/n/r0example001",
         "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/"
       ],
       "verdict": "refute",
       "code": "template-gap.not_indexed",
-      "statement": "上传文件 upload-81aa5650aa4a 不在用例索引里；根 3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c，构建 Rel_MEADOW_10_6_8_1。下一步：用敏捷平台的文档编号重跑",
+      "statement": "上传文件 upload-aebb0808aa5c 不在用例索引里；根 3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c，构建 Rel_MEADOW_10_6_8_1。下一步：用敏捷平台的文档编号重跑",
       "data": {
-        "document": "upload-81aa5650aa4a",
+        "document": "upload-aebb0808aa5c",
         "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
         "build": "Rel_MEADOW_10_6_8_1",
         "scope": "document",

@@ -93,6 +93,9 @@ function inBounds(n: number, min: number | undefined, max: number | undefined): 
 
 /** Checks one argument against one parameter. `fold`: compare enum values and keywords without case. */
 export function checkParam(param: CatalogParam, value: string, fold: boolean): ParamCheck {
+  // CatalogParam admits an absent type only together with undeclared+unchecked recovery.
+  // No type is inferred here; matchSignatures carries the constraint to an unknown outcome.
+  if(param.type===undefined)return {ok:true};
   const same = (a: string, b: string): boolean => (fold ? foldWord(a) === foldWord(b) : a === b);
   switch (param.type) {
     case 'string': {

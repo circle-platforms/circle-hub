@@ -1,5 +1,6 @@
 // Validation result (W08, validation@1): what the Hub's boundary validation produces for one submission.
 import { z } from 'zod';
+import {ReplacedCriterion} from './criterion.ts';
 import {
   AcceptanceSchema,
   AttributionSchema,
@@ -121,6 +122,7 @@ export type RequirementResult = z.infer<typeof RequirementResult>;
 function itemResult<const E extends z.ZodRawShape>(extra: E) {
   return z.strictObject({
     item: ItemId,
+    replaced_criteria:z.array(ReplacedCriterion).optional(),
     label: z.string(),
     skip_reason:MissingFact.optional().describe('The submitted skipped-item reason preserved verbatim in the result; never inferred from a generic reason code'),
     location: ReferenceUri.describe('reference URI of the item in the judged source'),

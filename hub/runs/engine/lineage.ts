@@ -1,3 +1,4 @@
+import {authorAccount,type AccountAuthors} from './independence.ts';
 // The author of the work a run judges (A04; case-review method step 5: the drafter can never sign the conclusion). A run that is
 // independent of its predecessor judges the work of its lineage, not its own earlier revisions. When the predecessor chain
 // reaches another pack, that draft and its revisions are the author and this pack's earlier revisions are not. When the chain
@@ -150,4 +151,14 @@ export async function foreignArtifacts(store: RecordStore, predecessor: string, 
   if (records.length === 0) return [];
   const lineage = new Set((await lineageOf(store, predecessor)).map((r) => r.run));
   return records.flatMap((r) => (r.run !== null && !lineage.has(r.run) ? [{ record: r.record, run: r.run }] : []));
+}
+
+/** Authenticated authors of the declaration run and its entire predecessor lineage. */
+export async function authorAccountsOf(ctx:EngineContext,run:string|undefined):Promise<AccountAuthors|null>{
+ if(!run)return null;
+ const chain=await lineageOf(ctx.deps.records.store,run),accounts=new Set<string>();
+ let complete=chain.length>0;
+ for(const record of chain){const account=authorAccount(record);if(account)accounts.add(account);else complete=false;}
+ if(chain.at(-1)?.predecessor)complete=false;
+ return {accounts,complete};
 }

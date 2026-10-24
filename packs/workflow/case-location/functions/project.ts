@@ -75,8 +75,11 @@ function idSelectors(model: KityMinderModel): Set<string> {
   return new Set(model.nodes.filter((n) => n.selector.startsWith('n/')).map((n) => n.selector));
 }
 
+/** The case priority of the team template (decision 18: a node is a case when tagged or marked with it). */
+const CASE_PRIORITY = 2;
+
 function isCase(node: MindMapNode): boolean {
-  return isRecord(node.data) && Array.isArray(node.data.resource) && node.data.resource.length > 0;
+  return isRecord(node.data) && ((Array.isArray(node.data.resource) && node.data.resource.length > 0) || node.data.priority === CASE_PRIORITY);
 }
 
 /** Texts of the map nodes between the map root and a node (both excluded), top down. */
@@ -185,7 +188,7 @@ export function projectItems(input: unknown): Output {
     const nodes = d.model.nodes;
     const cases = nodes.map((node, index) => ({ node, index })).filter(({ node, index }) => index > 0 && isCase(node));
     if (cases.length === 0) {
-      warnings.push({ code: `${PACK}.no_case_nodes`, message: `文档 ${d.document} 里没有用例节点（带标签 resource 的节点），按整份文档定位`, document: d.document });
+      warnings.push({ code: `${PACK}.no_case_nodes`, message: `文档 ${d.document} 里没有用例节点（带标签或带标记的节点），按整份文档定位`, document: d.document });
       const item = documentItem(d, k);
       if (item === null) ambiguous.push(d.document);
       else items.push(item);

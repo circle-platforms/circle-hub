@@ -11,7 +11,7 @@ import tagsFn from './tags.ts';
 import templateCoverageFn from './template-coverage.ts';
 import projectionFn from './projection.ts';
 import expectedFn from './expected.ts';
-import { findingSources, tagSpelling } from './checks.ts';
+import { negativeCommands, findingSources, tagSpelling } from './checks.ts';
 import { toStructureSubjects } from './subject.ts';
 import { parseFixture, parseLarge, parseText, table } from '../testing/test-support.ts';
 import type { Failure, Warning } from './types.ts';
@@ -121,7 +121,7 @@ describe('the core tables', () => {
   it('require only the six test types of the template; the other categories are reported, not counted missing', () => {
     const template = table('template-v3.json') as { categories: Array<{ id: string; group: string; required?: boolean }> };
     assert.deepEqual(
-      template.categories.filter((category) => category.required !== false).map((category) => category.id),
+      (table('template-v3-coverage.json') as {required:{values:string[]}}).required.values,
       ['functional', 'configuration', 'integration', 'compatibility', 'negative', 'stress'],
     );
     assert.ok(template.categories.filter((category) => category.required === false).every((category) => category.group !== 'test_type'));
@@ -185,6 +185,7 @@ describe('codes.json', () => {
     collect(expectedFn(null));
     const tagged = (id: string, tags: string[]) => ({ id, location: 'src:x', fields: { document: 'd', title: id, tags, expected: ['e'], path: [] } });
     for (const outcome of [
+      ...negativeCommands({subject:{item:'i',negative:true,phrases:[]},catalog:[]}),
       ...findingSources({ subject: { item: 'i', slots: { findings: [{ text: 't', quotes: [{ reference: 'src:x', text: 'q' }], commands: [{ command: 'widget x 1' }] }, { text: 'u' }] }, evidence: [{ reference: 'src:x', resolved: true, role: 'hint' }] } }),
       ...tagSpelling({ subject: { subjects: toStructureSubjects([tagged('a', ['Functional']), tagged('b', ['Functional']), tagged('c', ['功能'])]) } }),
     ]) {
@@ -205,7 +206,7 @@ describe('the pack functions', () => {
         .filter((line) => !line.trimStart().startsWith('//') && !line.trimStart().startsWith('*') && !line.trimStart().startsWith('/**'))
         .join('\n');
       for (const match of code.matchAll(/^\s*import\s+(type\s+)?[^'"]*from\s+'([^']+)'/gm)) {
-        if (match[1] === undefined) assert.match(match[2], /^\.\/(?:[a-z-]+\.ts|generated\/vocabulary\.ts)$/, `${name} imports ${match[2]} at run time`);
+        if (match[1] === undefined && !(name === 'template-coverage.ts' && match[2] === '../tables/template-v3-coverage.json')) assert.match(match[2], /^\.\/(?:[a-z-]+\.ts|generated\/vocabulary\.ts)$/, `${name} imports ${match[2]} at run time`);
       }
       for (const forbidden of [/\bDate\b/, /Math\.random/, /\bprocess\b/, /\brequire\(/, /\bfetch\(/, /\bsetTimeout\b/, /\bperformance\b/, /\beval\(/, /new Function/, /\bimport\(/, /\bglobalThis\b/, /from 'node:/, /\bBuffer\b/]) {
         assert.ok(!forbidden.test(code), `${name} uses ${forbidden}`);

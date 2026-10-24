@@ -53,17 +53,15 @@ describe('buildMatrix on hand-built views', () => {
     assert.deepEqual([rows.length, rows[0].cases.length], [1, 0]);
   });
 
-  it('a bug two systems write is one row naming both, with the collision note in the summary', () => {
-    const rows = matrixOf([defectEntry({ bug: '7020', system: 'plm' }), defectEntry({ bug: '7020', system: 'bugzilla' })], [caseEntry({ defects: ['7020'], case: 'C-9' })]);
-    assert.equal(rows.length, 1, 'the join is by number alone: the two systems collide into one row');
-    assert.deepEqual(rows[0].systems, ['bugzilla', 'plm']);
-    assert.match(summaryOf(rows[0]), /系统 bugzilla、plm（两个系统的缺陷号可能撞号）/);
-    const one = matrixOf([defectEntry({ bug: '7021', system: 'plm' })], []);
-    assert.deepEqual(one[0].systems, ['plm']);
-    assert.doesNotMatch(summaryOf(one[0]), /撞号/);
-    const none = matrixOf([defectEntry({ bug: '7022' })], []);
-    assert.deepEqual(none[0].systems, []);
-    assert.doesNotMatch(summaryOf(none[0]), /撞号/);
+  it('same numbers in two named systems remain separate and do not borrow unqualified cases', () => {
+    const rows = matrixOf([defectEntry({bug:'7020',system:'plm'}),defectEntry({bug:'7020',system:'bugzilla'})],[caseEntry({defects:['7020'],case:'C-9'})]);
+    assert.equal(rows.length,2);assert.deepEqual(rows.map(r=>r.identity).sort(),['bugzilla:7020','plm:7020']);
+    for(const row of rows){assert.equal(row.cases.length,0);assert.deepEqual(row.collision_systems,['bugzilla','plm']);assert.equal(row.ambiguous_cases?.length,1);assert.match(summaryOf(row),/撞号/);}
+  });
+  it('explicit case systems join only their own defect system',()=>{
+    const plm=caseEntry({defects:['7021'],case:'PLM-case'});plm.data.system='plm';
+    const rows=matrixOf([defectEntry({bug:'7021',system:'plm'}),defectEntry({bug:'7021',system:'bugzilla'})],[plm],{},false);
+    assert.deepEqual(rows.find(r=>r.identity==='plm:7021')?.cases.map(c=>c.case),['PLM-case']);assert.equal(rows.find(r=>r.identity==='bugzilla:7021')?.cases.length,0);
   });
 
   it('a case carrying two defects traces both', () => {
@@ -234,4 +232,9 @@ describe('buildMatrix against an independent join', () => {
     assert.equal(rows.length, 5000);
     assert.ok(elapsed < 5000, `the join took ${elapsed.toFixed(0)} ms`);
   });
+});
+
+it('an explicitly unknown system is not promoted to a named tracker',()=>{
+ const rows=matrixOf([defectEntry({bug:'7091',system:'unknown'})],[caseEntry({defects:['7091'],case:'C-unknown-system'})]);
+ assert.equal(rows[0].identity,'7091');assert.equal(rows[0].cases.length,1);assert.equal(rows[0].collision_systems,undefined);
 });

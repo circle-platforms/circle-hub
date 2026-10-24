@@ -8,7 +8,7 @@ import { commandSubject } from './command-subject.ts';
 import { commandOutcomes } from './command-check.ts';
 const doc = '900001';
 function fixture(source = baseDocument(), options: { missing?: boolean; skipped?: number; extra?: boolean; upload?: boolean; commandless?: boolean; absent?: boolean; truncated?: boolean; cut?: boolean } = {}) {
-  const records = assignedCases(source, doc, () => options.commandless ? [] : ['CLI/widget/probe']);
+  const records = assignedCases(source, doc, () => options.commandless ? [] : ['/CLI/widget/probe']);
   const view = indexView(options.absent ? [] : records.slice(0, options.extra ? -1 : undefined), [doc]);
   view.skipped = options.skipped ?? 0;
   view.truncated = options.truncated === true || options.cut === true;
