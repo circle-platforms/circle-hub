@@ -38,6 +38,45 @@ async function failure(promise: Promise<unknown>): Promise<SandboxError> {
   assert.fail('expected the call to fail');
 }
 
+/**
+ * Kills every process whose command line names `dir` (the sandboxed child of one call and the shells that carry it) and
+ * returns how many were killed: an exit by signal, without a result frame, for the tests that need one.
+ */
+async function killChildren(dir: string): Promise<number> {
+  const listing = (): Promise<string> =>
+    new Promise((resolve) => {
+      const ps = spawn('/bin/ps', ['-eo', 'pid=,command='], { stdio: ['ignore', 'pipe', 'ignore'] });
+      let text = '';
+      ps.stdout.setEncoding('utf8');
+      ps.stdout.on('data', (chunk: string) => (text += chunk));
+      ps.on('error', () => resolve(text));
+      ps.on('close', () => resolve(text));
+    });
+  for (let round = 0; round < 100; round++) {
+    const pids: number[] = [];
+    for (const line of (await listing()).split('\n')) {
+      const match = /^\s*(\d+)\s+(.*)$/.exec(line);
+      // The child's command line carries the pack directory as one read allowance; a sibling pack whose name starts with
+      // the same characters must not match, so the allowance has to end there.
+      const command = match?.[2] ?? '';
+      const allowance = `--allow-fs-read=${dir}`;
+      if (match !== null && (command.includes(`${allowance} `) || command.endsWith(allowance))) pids.push(Number(match[1]));
+    }
+    if (pids.length > 0) {
+      for (const pid of pids) {
+        try {
+          process.kill(pid, 'SIGKILL');
+        } catch {
+          // Already gone.
+        }
+      }
+      return pids.length;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return 0;
+}
+
 /** A loopback server that counts connections, to prove a denial against a port that really listens. */
 async function listening(): Promise<{ server: Server; port: number; connections: () => number }> {
   let connections = 0;
@@ -361,7 +400,41 @@ describe('boundaries', () => {
       const error = await failure(call(dir, null, { memoryMb: 64, timeoutMs: 20_000 }, undefined, module));
       assert.equal(error.code, 'SANDBOX_VIOLATION', module);
       assert.equal(error.detail.limit, 'memory', module);
+      // The cause is a measurement of the parent's poller, not a sentence of the child's: the observed bytes are kept.
+      assert.equal(typeof error.detail.residentBytes, 'number', module);
     }
+  });
+
+  it('text about the heap in the streams is not a memory observation', async () => {
+    // Reproduces the retired rule: a child that died without a result frame while the runtime's heap message stood in its
+    // stderr was reported as a memory limit on the strength of that text alone. Only a measurement of the parent's own
+    // poller may name the limit; an exit without a frame reports the exit and says the resource observation is absent.
+    const dir = pack({
+      'victim.ts': [
+        'export default function () {',
+        '  const until = Date.now() + 30_000;',
+        '  while (Date.now() < until) { /* hold the call open until the test kills this child */ }',
+        '  return 1;',
+        '}',
+      ].join('\n'),
+      'printer.ts': "export default function () { process.stderr.write('FATAL ERROR: Reached heap limit - JavaScript heap out of memory\\n'); return 7; }",
+      'liar.ts': "export default function () { process.stderr.write('Reached heap limit\\n'); throw new Error('JavaScript heap out of memory'); }",
+    });
+    const pending = failure(call(dir, null, { memoryMb: 1024, timeoutMs: 60_000 }, undefined, 'victim.ts'));
+    const killed = await killChildren(dir);
+    assert.ok(killed > 0, 'the sandboxed child of this pack was not found among the processes');
+    const aborted = await pending;
+    assert.equal(aborted.code, 'SANDBOX_VIOLATION');
+    assert.equal(aborted.detail.reason, 'signal');
+    assert.notEqual(aborted.detail.limit, 'memory');
+    assert.equal(aborted.detail.resourceObservation, 'absent');
+    // The same words from a function's own stream are carried as data: the call succeeds and no reason is derived.
+    const printed = await call(dir, null, {}, undefined, 'printer.ts');
+    assert.equal(printed.output, 7);
+    assert.ok(printed.stderr.includes('heap out of memory'), printed.stderr);
+    const threw = await failure(call(dir, null, {}, undefined, 'liar.ts'));
+    assert.equal(threw.code, 'FUNCTION_THREW');
+    assert.notEqual(threw.detail.limit, 'memory');
   });
 
   it('an infinite loop is killed at the time limit', async () => {

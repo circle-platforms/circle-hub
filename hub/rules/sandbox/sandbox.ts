@@ -422,12 +422,14 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
       }
       if (frame === 'invalid') return reject(new SandboxError('SANDBOX_VIOLATION', { reason: 'invalid_result_frame', durationMs }, logs));
       if (signal === 'SIGXCPU') return reject(new SandboxError('SANDBOX_TIMEOUT', { limit: 'cpu', durationMs }, logs));
-      if (/heap out of memory|Reached heap limit/i.test(stderrText)) {
-        return reject(new SandboxError('SANDBOX_VIOLATION', { limit: 'memory', memoryMb: lim.memoryMb, durationMs }, logs));
-      }
+      // No result frame: the process ended before it reported anything structured. What is observed is the exit itself
+      // (signal or exit code); why the runtime aborted is not. The text of the streams is never read to name a cause: a
+      // memory cause is reported only by the resident watchdog above, which measured the bytes (detail.residentBytes).
+      // What is missing is that measurement; the next step is the administrator's: raise memoryMb or the poller's reach
+      // and rerun, or read the captured streams as a human. No cause is claimed here.
       if (exitCode === 70) return reject(new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'cpu_limit', durationMs }, logs));
-      if (signal) return reject(new SandboxError('SANDBOX_VIOLATION', { reason: 'signal', signal, durationMs }, logs));
-      return reject(new SandboxError('FUNCTION_THREW', { reason: 'exit_without_result', exitCode, durationMs }, logs));
+      if (signal) return reject(new SandboxError('SANDBOX_VIOLATION', { reason: 'signal', signal, durationMs, resourceObservation: 'absent' }, logs));
+      return reject(new SandboxError('FUNCTION_THREW', { reason: 'exit_without_result', exitCode, durationMs, resourceObservation: 'absent' }, logs));
     };
     child.on('error', (error) => {
       if (settled) return;
