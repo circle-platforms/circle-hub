@@ -11,5 +11,5 @@ export type FrozenCriterion=z.infer<typeof FrozenCriterion>;
 export const ReplacedCriterion=z.strictObject({criterion:Ground,old:z.string(),new:z.string(),...AcceptedCriterionRef.shape});
 
 /** Derived status, never persisted over the original request or declaration. */
-export const CriterionNotice=CriterionChange.extend({request:referenceUriOf('rec'),declaration:referenceUriOf('rec'),audience:UserId,due:IsoTime,answered:z.boolean(),expired:z.boolean(),accepted:z.boolean().optional(),reviewer:UserId.optional(),reason:z.string().optional(),next_action:z.string()});
+export const CriterionNotice=CriterionChange.extend({request:referenceUriOf('rec'),declaration:referenceUriOf('rec'),audience:UserId,due:IsoTime,answered:z.boolean(),expired:z.boolean(),superseded_by:referenceUriOf('rec').optional(),accepted:z.boolean().optional(),reviewer:UserId.optional(),reason:z.string().optional(),next_action:z.string()});
 export type CriterionNotice=z.infer<typeof CriterionNotice>;

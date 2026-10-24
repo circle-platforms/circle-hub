@@ -824,7 +824,7 @@ function startText(v: StartOut, context: TextContext): string {
   blocks.push({ priority: 0, head, omitted: headClip.omitted });
   if(r.criterion_changes?.length)blocks.push({priority:1,head:['判据变更声明：'],entries:r.criterion_changes.map(change=>{
     const clip=new Clip(null,seeConsole(r.run));
-    const state=change.accepted===true?`已接受；复核人 ${change.reviewer}；理由 ${change.reason}；开始以后才接受的只进后续修订`:change.accepted===false?`未接受；复核人 ${change.reviewer}；理由 ${change.reason}`:change.expired?'已过期，仍等作者以外的账号复核；新修订不带这条声明':'还没有回答；等作者以外的账号复核；新修订不带这条声明';
+    const state=change.superseded_by?`由后一份提交的同名声明取代：${change.superseded_by}`:change.accepted===true?`已接受；复核人 ${change.reviewer}；理由 ${change.reason}；开始以后才接受的只进后续修订`:change.accepted===false?`未接受；复核人 ${change.reviewer}；理由 ${change.reason}`:change.expired?'已过期，仍等作者以外的账号复核；新修订不带这条声明':'还没有回答；等作者以外的账号复核；新修订不带这条声明';
     return clip.entry(`- ${clip.field(change.assertion,CLIP.field,'声明的超出部分')}；声明 ${change.declaration}；请求 ${change.request}；${state}；受众 ${change.audience}；期限 ${change.due}；旧值 ${clip.field(change.old,CLIP.field,'旧判据的超出部分')}；新值 ${clip.field(change.new,CLIP.field,'新判据的超出部分')}；下一步 ${clip.field(change.next_action,CLIP.field,'下一步的超出部分')}`);
   }),unit:'判据变更声明',measure:'条',more:()=>seeConsole(r.run)});
 

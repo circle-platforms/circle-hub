@@ -1301,3 +1301,7 @@ test('criterion start notices distinguish pending expired and rejected requests 
 test('criterion result text shows all replacement values and review attribution',()=>{
  const result=resultOf(items(1)),row=result.partitions.delivered[0];row.replaced_criteria=[{criterion:SUBJECT,old:'合成旧值',new:'合成新值',declaration:'rec:'+H('8')+'#/criterion_changes/0',review:'rec:'+H('7'),reviewer:'usr_'+'1'.repeat(26)}];const text=toolText('submit_result',submitAnswer(result));for(const value of Object.values(row.replaced_criteria[0]))assert.ok(text.includes(value));assert.match(text,/被取代的判据/);
 });
+test('superseded criterion declarations are displayed as replaced rather than unanswered',()=>{
+ const run=runOf(items(1));run.criterion_changes=[{item:run.items[0].id,criterion:SUBJECT,assertion:'旧声明',old:'旧判据',new:'先前提议',grounds:[{reference:SUBJECT,quote:'合成'}],request:'rec:'+H('7'),declaration:'rec:'+H('8')+'#/criterion_changes/0',audience:'usr_'+'1'.repeat(26),due:'2026-10-25T08:00:00.000Z',answered:true,expired:false,superseded_by:'rec:'+H('6'),next_action:'按后一份提交的新请求复核'}] as any;
+ const text=toolText('start_run',startAnswer(run));assert.match(text,/由后一份提交的同名声明取代/);assert.ok(text.includes('rec:'+H('6')));assert.ok(!text.includes('还没有回答'));
+});

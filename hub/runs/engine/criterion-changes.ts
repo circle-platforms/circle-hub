@@ -92,9 +92,8 @@ function declarationRef(request:RequestView):string{return 'rec:'+request.source
 async function noticeAt(ctx:EngineContext,request:RequestView,at:string):Promise<import('../../../contracts/src/criterion.ts').CriterionNotice|null>{
  const change=await requestChange(ctx,request),answer=await answerAt(ctx,request.record,at);
  if(!change||!request.declaration)throw new Refusal([protocolError('REFERENCE_UNRESOLVED','判据请求的声明原件或位置缺失',{fix:'管理员从可信备份恢复请求所引的提交记录和声明位置，再重新核验'})]);
- if(answer?.superseded)return null;
  const summary=answer?.summary??{};
- return {...change,request:'rec:'+request.record,declaration:declarationRef(request),audience:request.audience,due:request.due,answered:answer!==null,expired:request.due<at,...(typeof summary.accepted==='boolean'?{accepted:summary.accepted}:{}),...(typeof summary.reviewer==='string'?{reviewer:summary.reviewer}:{}),...(typeof summary.reason==='string'?{reason:summary.reason}:{}),next_action:typeof summary.accepted==='boolean'?(summary.accepted?'接受以后以声明运行为前驱开新运行；本次冻结以后才接受的只进后续修订':'保留原判据；若有新依据，由作者重交声明并请非作者账号重新复核'):request.next_action};
+ return {...change,request:'rec:'+request.record,declaration:declarationRef(request),audience:request.audience,due:request.due,answered:answer!==null,expired:request.due<=at,...(answer?.superseded?{superseded_by:'rec:'+answer.source}:{}),...(typeof summary.accepted==='boolean'?{accepted:summary.accepted}:{}),...(typeof summary.reviewer==='string'?{reviewer:summary.reviewer}:{}),...(typeof summary.reason==='string'?{reason:summary.reason}:{}),next_action:answer?.superseded?'由后一份提交的同名声明取代；按 '+String(summary.replacement)+' 的新请求复核，不再回答这条旧请求':typeof summary.accepted==='boolean'?(summary.accepted?'接受以后以声明运行为前驱开新运行；本次冻结以后才接受的只进后续修订':'保留原判据；若有新依据，由作者重交声明并请非作者账号重新复核'):request.next_action};
 }
 /** Hydrate only declarations named by the frozen refs; private review result bodies are never disclosed. */
 export async function frozenCriteria(ctx:EngineContext,refs:NonNullable<RunRecord['accepted_criteria']>,seen=new Set<string>()):Promise<import('../../../contracts/src/criterion.ts').FrozenCriterion[]>{
@@ -126,7 +125,7 @@ export async function freezeCriteria(ctx:EngineContext,previous:RunRecord|null,p
  for(const request of candidates){
   const notice=await noticeAt(ctx,request,at);if(!notice)continue;notices.push(notice);requests.push(request.record);
   const answer=await answerAt(ctx,request.record,at);
-  if(!answer||notice.accepted!==true||!notice.reviewer)continue;
+  if(!answer||answer.superseded||notice.accepted!==true||!notice.reviewer)continue;
   const frozen=(await frozenCriteria(ctx,[{declaration:notice.declaration,review:'rec:'+answer.source,reviewer:notice.reviewer}]))[0];
   effective.set(criterionKey(frozen.item,frozen.target),frozen);
  }

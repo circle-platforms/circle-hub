@@ -22,6 +22,7 @@ test('resubmitting the same item and criterion appends a replacement answer with
  await h.submit(run.run,[{...h.proposal,new:'另一个判据'}]);const after=(await service.all(run.run)).filter(row=>row.declaration);assert.equal(after.length,2);
  const old=after.find(row=>row.record===before.record)!;assert.ok(old.answered_by);assert.equal(JSON.stringify((await h.kit.store.get(before.record))!.body),bytes);
  const event=await h.kit.store.find<any>({kind:'action',key:'runs.request.answer',value:old.record,limit:1,newestFirst:true});assert.equal(event.items[0].body.detail.criterion_answer.message,'由后一份提交的同名声明取代');
+ const notices=(await h.service.getRun(h.alice,run.run))!.run.criterion_changes!;assert.equal(notices.length,2);assert.equal(notices.find(notice=>notice.request==='rec:'+old.record)!.superseded_by,'rec:'+old.answered_by);
 });
 test('legacy runs without a submission deadline reject declarations but do not invent a request deadline',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const h=await criterionHarness(pg);t.after(()=>h.close());const run=await h.start();const source=await runById(h.kit.store,run.run);assert.ok(source);
