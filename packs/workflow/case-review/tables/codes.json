@@ -121,16 +121,6 @@
       "fix": "由产品包给出缺陷系统的编号范围（参数 idRanges），或在参数 stories、bugs 里直接给出编号"
     },
     {
-      "code": "case-review.skip_ignored",
-      "when": "一条跳过声明没有已知的类别或没有写理由，已忽略",
-      "fix": "写明要跳过的类别和理由"
-    },
-    {
-      "code": "case-review.item_ignored",
-      "when": "有条目缺少 id 或 fields，没有参与统计",
-      "fix": "传入投影函数输出的条目"
-    },
-    {
       "code": "case-review.warnings_clipped",
       "when": "逐个节点的警告太多，只列出前 100 条（按文档的汇总警告不受这个上限影响）；data.codes 按码给出没有列出的条数",
       "fix": "先处理已列出的警告"
@@ -159,8 +149,13 @@
     },
     {
       "code": "case-review.tag_variant",
-      "when": "检查 tags：一个用例的类别标签（Functional、Configuration、Integration、Compatibility、Negative、Stress）写法和本文档这一类别最常用的写法不同",
-      "fix": "改成本文档这一类别最常用的写法（陈述里给出了）"
+      "when": "resource 含未声明的标签或形状违规；精确原文闭集为 functional、configuration、integration、compatibility、negative、stress 及表中明确声明的其他标签",
+      "fix": "作者从 tables/resource-tags.json 选择精确原文修正 resource 后重核；不按相似文字推荐值"
+    },
+    {
+      "code": "case-review.negative_command_missing",
+      "when": "反向用例自身没有可核验的目录命令行",
+      "fix": "修正原用例命令行后重开评审"
     }
   ],
   "findings": [

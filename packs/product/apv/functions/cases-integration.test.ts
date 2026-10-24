@@ -173,7 +173,7 @@ describe('the sync with the case index', () => {
         assert.equal(entry.statement, caseStatement(entry.data));
         assert.ok(entry.statement.startsWith(`${document}:${k.node} | ${k.title}`));
         assert.deepEqual(entry.data.commands, k.commands.b.map(commandPath).sort());
-        assert.deepEqual([entry.data.line, entry.data.train, entry.data.module, entry.data.defects, entry.data.stories, entry.data.vague_expected], [doc.line, doc.train, doc.module, k.defects, k.stories, k.vague_expected]);
+        assert.deepEqual([entry.data.line, entry.data.train, entry.data.module, entry.data.defects, entry.data.stories, entry.data.vague_expected], [doc.line, doc.train, doc.module, k.defects, k.stories, undefined]);
         assert.match(entry.reference, placed ? /^tree:[0-9a-f]{64}\/commands\// : /^tree:[0-9a-f]{64}\/@[0-9a-f]{64}$/);
       }
     }

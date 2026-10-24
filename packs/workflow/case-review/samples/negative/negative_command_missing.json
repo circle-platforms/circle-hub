@@ -1,0 +1,71 @@
+{
+  "id": "negative_command_missing",
+  "source": "author",
+  "check": "negative_commands",
+  "note": "反向用例自身没有目录命令行",
+  "subject": {
+    "item": "sample:n1",
+    "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/n1",
+    "negative": true,
+    "claims": [],
+    "phrases": [
+      "拒绝非法输入"
+    ],
+    "unquoted": []
+  },
+  "catalog": {
+    "root": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "complete": true,
+    "entries": [
+      {
+        "head": "pool create",
+        "signatures": [
+          [
+            {
+              "name": "name",
+              "type": "string",
+              "maxLength": 32
+            }
+          ]
+        ]
+      },
+      {
+        "head": "health interval",
+        "signatures": [
+          [
+            {
+              "name": "pool",
+              "type": "string"
+            },
+            {
+              "name": "seconds",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 300
+            }
+          ]
+        ]
+      },
+      {
+        "head": "show pool",
+        "signatures": [
+          [],
+          [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review.negative_command_missing",
+      "item": "sample:n1",
+      "tier": "advisory"
+    }
+  ]
+}

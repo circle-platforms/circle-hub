@@ -2,12 +2,11 @@
 // because duplicates and spelling consistency are only visible across items; the catalog table judges one subject each.
 // Duplicates are keyed by (document, path) and the whole content of a case (title, steps, expected results, preconditions):
 // real documents reuse a short title for variants that differ in their steps, and repeat titles under different paths.
-// Tag spelling is judged inside one document: a category written several ways there is an inconsistent field format; each
-// variant spelling carries the usual spelling of its category in the document (the tag check names both).
+// Type declarations are compared literally; frequency within a document never authorizes a value.
 import { PACK, failure, guarded, isRecord, warningSink } from './common.ts';
-import { CANONICAL_TAGS, normalizeTag } from './tags.ts';
+import { CANONICAL_TAGS, normalizeTag, declareResourceTags } from './tags.ts';
 import { codePointLength, collapseWhitespace, fold, textOf, trimWhitespace } from './text.ts';
-import type { CanonicalTag, CatalogSubject, JsonValue, StructureSubject, SubjectOutput, TagVariant } from './types.ts';
+import type { CanonicalTag, CatalogSubject, JsonValue, StructureSubject, SubjectOutput } from './types.ts';
 
 function strings(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -45,17 +44,11 @@ export function toStructureSubject(item: unknown): StructureSubject {
   const path = strings(fields.path);
   const title = typeof fields.title === 'string' ? fields.title : '';
   const tags = strings(fields.tags);
-  const categories = new Set<CanonicalTag>();
-  const categoryTags: string[] = [];
-  const otherTags: string[] = [];
-  for (const tag of tags) {
-    const { canonical } = normalizeTag(tag);
-    if (canonical === null) otherTags.push(tag);
-    else {
-      categories.add(canonical);
-      categoryTags.push(tag);
-    }
-  }
+  const resource=fields.resourcePresent===false?undefined:Object.hasOwn(fields,'resource')?fields.resource:fields.tags;
+  const tagDeclaration=declareResourceTags(resource);
+  const categories = new Set<CanonicalTag>(tagDeclaration.types);
+  const categoryTags = tags.filter(tag=>{const normalized=normalizeTag(tag);return normalized.canonical!==null;});
+  const otherTags = tags.filter(tag=>normalizeTag(tag).canonical===null);
   const expected = strings(fields.expected);
   const count = fields.expectedCount;
   const tagCount = tags.filter((tag) => trimWhitespace(tag) !== '').length;
@@ -72,6 +65,9 @@ export function toStructureSubject(item: unknown): StructureSubject {
     content: contentKey(fields),
     priority: jsonPriority(fields.priority),
     tags,
+    resource: resource ?? null,
+    resourcePresent: resource!==undefined,
+    tagDeclaration,
     tagCount,
     categories: CANONICAL_TAGS.filter((tag) => categories.has(tag)),
     categoryTags,
@@ -79,62 +75,13 @@ export function toStructureSubject(item: unknown): StructureSubject {
     otherTags,
     expected,
     expectedCount: typeof count === 'number' && Number.isSafeInteger(count) && count >= expected.length ? count : expected.length,
-    negative: tagCount === 0 ? null : categories.has('Negative'),
+    negative: tagDeclaration.negative,
   };
 }
 
-/**
- * The usual spelling of each category in each document: the most frequent one; a tie goes to the canonical name, else to
- * the spelling seen first. Spellings are compared as written, with white space collapsed.
- */
-const spellingKey = (document: string, tag: string): string => JSON.stringify([document, normalizeTag(tag).canonical]);
-
-function usualSpellings(subjects: readonly StructureSubject[]): Map<string, string> {
-  type Seen = { count: number; first: number };
-  const tally = new Map<string, { canonical: string; spellings: Map<string, Seen> }>();
-  let order = 0;
-  for (const subject of subjects) {
-    for (const tag of subject.categoryTags) {
-      const key = spellingKey(subject.document, tag);
-      const entry = tally.get(key) ?? { canonical: String(normalizeTag(tag).canonical), spellings: new Map<string, Seen>() };
-      tally.set(key, entry);
-      const spelling = collapseWhitespace(tag);
-      const seen = entry.spellings.get(spelling) ?? { count: 0, first: order++ };
-      seen.count += 1;
-      entry.spellings.set(spelling, seen);
-    }
-  }
-  const usual = new Map<string, string>();
-  for (const [key, { canonical, spellings }] of tally) {
-    let best: [string, Seen] | null = null;
-    for (const candidate of spellings) {
-      if (best === null) best = candidate;
-      else if (candidate[1].count !== best[1].count) {
-        if (candidate[1].count > best[1].count) best = candidate;
-      } else if ((candidate[0] === canonical) !== (best[0] === canonical)) {
-        if (candidate[0] === canonical) best = candidate;
-      } else if (candidate[1].first < best[1].first) best = candidate;
-    }
-    if (best !== null) usual.set(key, best[0]);
-  }
-  return usual;
-}
-
-/** Subjects of several items, with the tag spellings compared inside each document. */
+/** Subjects are checked against the declared closed field; document frequency cannot authorize a spelling. */
 export function toStructureSubjects(items: readonly unknown[]): StructureSubject[] {
-  const subjects = items.map(toStructureSubject);
-  const usual = usualSpellings(subjects);
-  for (const subject of subjects) {
-    const variants: TagVariant[] = [];
-    for (const tag of subject.categoryTags) {
-      const category = normalizeTag(tag).canonical;
-      const spelling = usual.get(spellingKey(subject.document, tag));
-      if (category === null || spelling === undefined || spelling === collapseWhitespace(tag) || variants.some((v) => v.tag === tag)) continue;
-      variants.push({ tag, usual: spelling, category });
-    }
-    subject.tagVariants = variants;
-  }
-  return subjects;
+  return items.map(toStructureSubject);
 }
 
 function catalogFrom(subject: StructureSubject, commands: unknown): CatalogSubject {

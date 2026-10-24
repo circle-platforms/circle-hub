@@ -11,8 +11,5 @@ export function foldText(text:string):string {
     return isQuotationWide(left)||isQuotationWide(right)?'':' ';
   });
 }
-export function quoteMatches(fragment:string,quote:string):boolean {
-  if(!quote.isWellFormed())return false;
-  const text=foldText(quote);
-  return text.length>0&&foldText(fragment).includes(text);
-}
+/** A quote is verbatim; display whitespace policies cannot manufacture source evidence. */
+export function quoteMatches(fragment:string,quote:string):boolean{return quote.length>0&&quote.isWellFormed()&&fragment.includes(quote);}

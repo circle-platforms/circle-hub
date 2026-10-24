@@ -4,7 +4,7 @@
     {
       "slot": "facets",
       "role": "subject",
-      "description": "构建的用例计数视图：knowledge:facets:<产品>:<构建>?kind=case&by=line,module,has_expected,vague_expected,negative（可以加 priority 等字段；构建名写任一名称族的写法都可以）；可加同根标签视图 by=line,module,tags",
+      "description": "结构计数视图 by=line,module,has_expected,negative,test_type_status；同根标签视图可选；旧 vague_expected 语义布尔不作为判断依据",
       "accepts": [
         "knowledge:facets"
       ],
@@ -20,6 +20,36 @@
       ],
       "required": true,
       "many": false
+    },
+    {
+      "slot": "cases",
+      "role": "subject",
+      "description": "同根用例索引 knowledge:index:<产品>:<构建>?kind=case&key=case_location，供评审原件与用例身份关联；无此索引时所有用例未判断",
+      "accepts": [
+        "knowledge:index"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "reviews",
+      "role": "artifact_under_verification",
+      "description": "显式声明的已受理 case-review 结果 rec: 引用，可绑定多个分块；不接受上传 JSON 冒充受理结果。仅同根、同原件的期望质量主张参与计数",
+      "accepts": [
+        "application/json"
+      ],
+      "required": false,
+      "many": true
+    },
+    {
+      "slot": "facets",
+      "role": "subject",
+      "description": "构建的用例计数视图 by=line,module,has_expected,vague_expected,negative,test_type_status；可选同根标签视图 by=line,module,tags,resource_empty,tag_valid；必须由新包按精确 resource 声明重产",
+      "accepts": [
+        "knowledge:facets"
+      ],
+      "required": true,
+      "many": true
     }
   ],
   "parameters": [

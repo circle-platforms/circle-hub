@@ -40,11 +40,6 @@
       "code": "maintenance-sweep.case.command_removed",
       "item": "doc-1:n1",
       "tier": "blocking"
-    },
-    {
-      "verdict": "unknown",
-      "reason": "missing_input",
-      "tier": "blocking"
     }
   ]
 }

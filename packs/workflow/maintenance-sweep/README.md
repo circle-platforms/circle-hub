@@ -46,11 +46,15 @@ only in the later build is not an item.
 still compared. Several definitions on one side are sorted by canonical JSON. Equal multisets are not a change; otherwise
 they are compared as an array (`/0/...`). One definition on each side is compared as a value (`/help`, `/args/0/type`).
 
-The run note always says that nothing is claimed about cases the index does not hold. When `skipped.from` is above zero
-it also says the earlier build's index lacks that many listed documents, so a clean result is not proof that no case is
-stale. Skipped sources add an unknown cross-item claim (`missing_input`) from `command_exists`. Unplaced counts remain hints in the run note and the client reads the bound facet source to disclose them in its answer, never as validation claims. A truncated view adds `integrity_unproven`. A bound view that names no catalog adds one conclusion
-line (`catalog-hint`): the changes were then counted by entry kind alone, and another producer's entries on the same
-path may be mixed in. Before those, `command_unchanged` leads with one cross-item fact: the whole command diff, one
+The run note claims nothing about cases the index does not hold only when sources were actually skipped: with
+`skipped.from` above zero it says the earlier build's index lacks that many listed documents, and `command_exists` adds
+an unknown cross-item claim (`missing_input`) naming them and the next step. A fully read scope with no maintenance
+items is a deterministic empty support (巡检范围是空的), never an unconditional unknown. Unplaced counts remain hints in
+the run note and the client reads the bound facet source to disclose them in its answer, never as validation claims. A
+truncated view adds `integrity_unproven`. A bound view that names no catalog (or one other than `commands@1`) is refused
+at projection with the fix spelled out; a view that names a definition digest it does not carry leaves that path a
+missing fact on the note's detail row (`missing`), an unknown in the check, never a fabricated `/ null → null`
+difference. Before those, `command_unchanged` leads with one cross-item fact: the whole command diff, one
 line per changed path (path, change kind, earlier-build case count from `note.diff`, every changed path — added
 paths listed and marked 不进范围； `note.details` still holds only the maintenance paths' field rows) — sorted, at most
 200 lines, then 另有 M 条 and `note.diff` holds the full table; a statement longer than 1,400 characters continues in

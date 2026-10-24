@@ -91,6 +91,12 @@ async function main(): Promise<void> {
     subject: mismatched,
     expect: [{ verdict: 'refute', code: 'traceability.count_mismatch', tier: 'advisory' }],
   });
+  const collisions=subjectOf([defectEntry({bug:'71061',system:'plm'}),defectEntry({bug:'71061',system:'bugzilla'})],[caseEntry({defects:['71061'],case:'C-ambiguous'})]);
+  await write('negative','system-collision',{
+    id:'system_collision',source:'author',check:'traced',note:'Two named systems share a number; an unqualified case is not attributed to either',subject:collisions,
+    expect:['bugzilla:71061','plm:71061'].map(item=>({verdict:'refute',code:'traceability.id_collision',item,tier:'advisory'})),
+  });
+
 }
 
 await main();

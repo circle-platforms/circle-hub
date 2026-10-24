@@ -12,9 +12,9 @@ import type {
   TreeRootBody,
   UnplacedRow,
 } from '../../contracts/src/knowledge.ts';
-import { chunks, mapLimited } from './concurrency.ts';
+import { chunks } from './concurrency.ts';
 import { compareText, type EntryContent } from './digest.ts';
-import { SCHEMAS, type KnowledgeStore } from './store.ts';
+import { SCHEMAS, type KnowledgeStore, type RowsReadHandle } from './store.ts';
 
 /** Average rows of a part (a boundary after a row whose digest's leading 32 bits are 0 modulo this). */
 export const PART_TARGET_ROWS = 512;
@@ -156,12 +156,34 @@ export class CompositionView {
     }
     const kept = this.body.composition.filter((row) => (kinds === undefined || kinds.has(row.kind)) && keep(row));
     for (const group of chunks(kept, 64)) {
-      const filled = await mapLimited(group, 16, async (row) => {
-        const content = await this.#store.entry(row.entry);
-        return content === null ? null : { ...row, content };
-      });
+      const contents = await this.#store.entries(group.map(row => row.entry),undefined,{cache:false});
+      const filled = group.map(row => { const content = contents.get(row.entry); return content === undefined ? null : { ...row, content }; });
       for (const row of filled) if (row !== null) yield row;
     }
+  }
+
+  /** Synchronous entry consumers avoid one promise chain per row while parts still stream one at a time. */
+  async forEachEntry(kind: string, consume: (entry: string, path: string, content: EntryContent, unplaced: boolean) => void, validated?: RowsReadHandle): Promise<void> {
+    const seen = new Set<string>();
+    const emit = (entry: string, path: string, content: EntryContent, unplaced: boolean) => {
+      if (seen.has(entry)) return;
+      // A parsed string can be a slice of a whole part. Keep only an owned digest in the seen set.
+      const owned = Buffer.from(entry).toString(); seen.add(owned); consume(owned, path, content, unplaced);
+    };
+    if (this.parted) {
+      for (const group of chunks((this.body.parts?.composition ?? []).filter(ref => ref.kind === kind), 2)) {
+        await this.#store.forEachRowsParts(group.map(ref => ref.record), row => emit(row.entry, row.path, { kind: row.kind, statement: row.statement, data: row.data, applicability: row.applicability }, false), validated);
+      }
+    } else {
+      for (const group of chunks(this.body.composition.filter(row => row.kind === kind), 128)) {
+        const contents = await this.#store.entries(group.map(row => row.entry),undefined,{cache:false});
+        for (const row of group) { const content = contents.get(row.entry); if (content) emit(row.entry, row.path, content, false); }
+      }
+    }
+    const batch: string[] = [];
+    const flush = async () => { const group = batch.splice(0); const contents = await this.#store.entries(group,undefined,{cache:false}); for (const entry of group) { const content = contents.get(entry); if (content) emit(entry, '/', content, true); } };
+    for await (const row of this.unplacedRows(kind)) { batch.push(row.entry); if (batch.length >= 128) await flush(); }
+    if (batch.length) await flush();
   }
 
   /** contentRows collected. */
@@ -208,10 +230,8 @@ export class CompositionView {
     const batch: UnplacedRow[] = [];
     const flush = async (): Promise<Array<{ entry: string; content: EntryContent } | null>> => {
       const group = batch.splice(0, batch.length);
-      return mapLimited(group, 32, async (row) => {
-        const content = await this.#store.entry(row.entry);
-        return content === null ? null : { entry: row.entry, content };
-      });
+      const contents = await this.#store.entries(group.map(row => row.entry),undefined,{cache:false});
+      return group.map(row => { const content = contents.get(row.entry); return content === undefined ? null : { entry: row.entry, content }; });
     };
     for await (const row of this.unplacedRows(kind)) {
       batch.push(row);

@@ -170,7 +170,10 @@ describe('maintenance sweep on a hand-built pair of trees', () => {
     const run = projected(buildImpact([]));
     assert.deepEqual(run.output.items, []);
     assert.match(String(run.output.groups[0].message), /没有需要维护的用例/);
-    assert.match(String(run.output.groups[0].message), /索引没有收录的用例，这里不作结论/);
+    assert.doesNotMatch(String(run.output.groups[0].message), /索引没有收录的用例，这里不作结论/);
+    const empty = run.exists.find((outcome) => outcome.item === undefined && outcome.statement.includes('巡检范围是空的'));
+    assert.ok(empty, JSON.stringify(run.exists));
+    assert.equal(empty.verdict, 'support');
   });
 
   it('says a short earlier index is not proof that nothing is stale', () => {
@@ -232,5 +235,35 @@ describe('projection refusals', () => {
     assert.equal(missing.error.code, 'maintenance-sweep.no_impact');
     const parameter = projectItems({ inputs: [{ slot: 'impact', sha256: SOURCE, model: buildImpact([]) }], parameters: { ignore_fields: [1] } }) as { error: { code: string } };
     assert.equal(parameter.error.code, 'maintenance-sweep.invalid_parameter');
+  });
+});
+
+describe('a named definition the view did not carry', () => {
+  const viewWithoutEntry = (): { [key: string]: unknown } => {
+    const view = buildImpact([
+      { path: '/commands/show', change: 'modified', before: [{ name: 'show' }], after: [{ name: 'show' }], from: [{ document: 'doc-1', node: 'n1', title: '查看', priority: 1 }] },
+    ], { catalog: 'commands@1' });
+    const row = (view.changes as Array<{ before: string[]; after: string[] }>)[0];
+    delete (view.entries as { [key: string]: unknown })[row.before[0]];
+    delete (view.entries as { [key: string]: unknown })[row.after[0]];
+    return view;
+  };
+
+  it('records an unknown with the missing fact and the next step, never a fabricated / null → null difference', () => {
+    const { unchanged, output } = projected(viewWithoutEntry());
+    const item = unchanged.find((o) => o.item !== undefined);
+    assert.ok(item, JSON.stringify(unchanged));
+    assert.equal(item.verdict, 'unknown');
+    assert.equal(item.reason, 'missing_input');
+    assert.match(item.statement, /没有带出/);
+    assert.match(item.missing ?? '', /下一步/);
+    for (const outcome of [...unchanged]) {
+      assert.doesNotMatch(outcome.statement, /null → null/, outcome.statement);
+      assert.doesNotMatch(outcome.statement, /字段差异 1 处：\/ /, outcome.statement);
+    }
+    const summary = unchanged.find((o) => o.item === undefined);
+    assert.ok(summary, JSON.stringify(unchanged));
+    assert.match(summary.statement, /未带出|无从比较/, summary.statement);
+    assert.ok(output.warnings.some((w) => w.code === 'maintenance-sweep.missing_entry'), JSON.stringify(output.warnings));
   });
 });

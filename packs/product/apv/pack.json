@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "apv",
-  "version": "1.4.5",
+  "version": "1.5.14",
   "kind": "product",
   "title": "APV / NSAE（产品包）",
   "description": "APV 与 NSAE 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册、修复缺陷和用例索引的知识生产器",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/adoc/index.ts",
-      "sha256": "2ed0405f8a10dc4b63c1c0707bb0e23fbddb304a08c6ed87443c775671fc9173",
-      "size": 14525
+      "sha256": "d454e1c24a04f225f0f43d240b2fca753a4f88ef0c2fb8db4d2d46e55b6326c8",
+      "size": 13425
     },
     {
       "path": "functions/adoc/input.ts",
@@ -43,8 +43,8 @@
     },
     {
       "path": "functions/adoc/k1-model.ts",
-      "sha256": "12f7de7c495abd9dd31792af2cf4962d6f79f480aa8cc36c59160952f1772f6b",
-      "size": 39359
+      "sha256": "4c5a8ed1e24885b469487be9385c1c20c59695b57b32167cf297f61a6c0e0d36",
+      "size": 39337
     },
     {
       "path": "functions/adoc/origins.ts",
@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/adoc/vendor/core.d.mts",
-      "sha256": "f50422d778f6cfc7b501caece0e31b69b221b20c185b359595934aaec5833203",
-      "size": 1688
+      "sha256": "1709dd334f70a4c1947414fa8e851e653cab16621b72b744eeb8f2435070ec57",
+      "size": 1545
     },
     {
       "path": "functions/adoc/vendor/core.mjs",
@@ -83,18 +83,18 @@
     },
     {
       "path": "functions/cases-commands.ts",
-      "sha256": "5ef1dcd3a1361b747c11d526070f192a5ad143a867a5bb26aa19c37da021cee4",
-      "size": 12355
+      "sha256": "4104ac5e2ad8b383bb193e695690d565c75c772dcca146df867d965bccacb47d",
+      "size": 3320
     },
     {
       "path": "functions/cases-nodes.ts",
-      "sha256": "ee75214e1fb2cefc3bcd6385b30fa00c9400b1e9a36127d82b8716c38076e3cd",
-      "size": 10577
+      "sha256": "aea1296c67fccb8e5982d8a6ecf0f84332cb5b4863f60fa7906ac491c4b9e1c1",
+      "size": 10487
     },
     {
       "path": "functions/cases-rules.ts",
-      "sha256": "b5097e0a6f7a305c34925c9f2ea5662578b431b74102c02e073a06b78cbb509d",
-      "size": 7000
+      "sha256": "504bea6558b49745767376b63e9aea8cbfd720a46a57d5e4cda82c559f78b263",
+      "size": 3574
     },
     {
       "path": "functions/cases-sync.ts",
@@ -103,18 +103,18 @@
     },
     {
       "path": "functions/cases.ts",
-      "sha256": "82cb37cb7b6040df95ac65665c7421d8ef8c25076f333036c6d973a92ee7b0f0",
-      "size": 22282
+      "sha256": "c805e899bce7317f035bca78dd28808eef3b629b0cc309d31b492e4d5bc928b7",
+      "size": 22980
     },
     {
       "path": "functions/command-tree.ts",
-      "sha256": "2f5005857a8c4972092fc4b7fadddae3049643b7eac21c28b47022ac3c701e6a",
-      "size": 22276
+      "sha256": "0e1aaf73c4591b4b6e94e3daf4d932f1fcb3e9b16ed1c019b037899993865f3a",
+      "size": 26455
     },
     {
       "path": "functions/commands.ts",
-      "sha256": "022c5fda682e480b9418fd065bf9978ad55f71451ecbd327ec5915ddff8f76f4",
-      "size": 8683
+      "sha256": "e4b1c65cc8c9b637a833c2fc663170d9a7c873819bcf5ab4f21f82f8f4f298fc",
+      "size": 11908
     },
     {
       "path": "functions/documents.ts",
@@ -128,8 +128,8 @@
     },
     {
       "path": "functions/generated/vocabulary.ts",
-      "sha256": "0a5458b85cb5729adb3097a42fb28685752424683d2524cc5af588f44f7bb035",
-      "size": 1115
+      "sha256": "0f67d84322e34f2650ef499b0f79ea477518319a130f266599345b3fcc652df0",
+      "size": 8054
     },
     {
       "path": "functions/ids.ts",
@@ -148,8 +148,8 @@
     },
     {
       "path": "functions/manual.ts",
-      "sha256": "dc6c897dd100c4a8980f23bbadc16f50fae91b1869c638b842a9722922af0321",
-      "size": 90551
+      "sha256": "481598c177b25b9ded6c6f0427964c60cb4252993fcfb8bdf3dfc17e3781f8e8",
+      "size": 75600
     },
     {
       "path": "functions/naming.ts",
@@ -158,8 +158,8 @@
     },
     {
       "path": "functions/producers.ts",
-      "sha256": "3dd2c4daa58c85fc13de50e2aa7aa9dfe6f434d6784361cddd74ad6ca1185bf1",
-      "size": 9364
+      "sha256": "ba5ff77838074a3433742056b6e142a8f7186c72b9c3f3c34d140c99b3275b82",
+      "size": 8968
     },
     {
       "path": "functions/release-notes.ts",
@@ -198,8 +198,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "19918198a105253b9ac75ae4a24b600b92846ac79c64919410a82bb13d8607ba",
-      "size": 14926
+      "sha256": "6496e0328022241cfab813e98138ecc66d3a03a7d3272520b1c33c5aef02238f",
+      "size": 15301
     },
     {
       "path": "functions/util.ts",
@@ -208,8 +208,13 @@
     },
     {
       "path": "product.json",
-      "sha256": "d3c18ea3e4956e5b76a7ab536dc99154c06f778251e5d62c55c7f3f02df33bce",
-      "size": 9491
+      "sha256": "e5c2e7943f4c1daf73befb8ef92c8f5cc1dbb7bc2821885222e2300861f8e8d6",
+      "size": 9739
+    },
+    {
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
     }
   ]
 }

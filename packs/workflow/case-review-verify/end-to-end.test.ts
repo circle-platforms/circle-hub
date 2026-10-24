@@ -150,7 +150,9 @@ describe('the draft review (case-review) and its independent verification (case-
     assert.equal(normalCatalog.layers[0].terminal,'pass','a settled fact is not rewritten by another requirement repair');
     assert.notEqual(normalCatalog.layers[0].code, 'core.catalog.param_out_of_range');
     const negativeCatalog = requirement(answer.result!, negative.id, 'catalog');
-    assert.notEqual(negativeCatalog.status, 'satisfied');
+    assert.equal(negativeCatalog.status,'satisfied');
+    assert.ok(negativeCatalog.claims.some(c=>c.statement.code==='core.catalog.param_out_of_range' && c.statement.data?.command==='widget health interval pool1 61'));
+    assert.ok(!negativeCatalog.claims.some(c=>c.statement.data?.command==='widget health interval pool1 5'));
     assert.notEqual(negativeCatalog.unsatisfied_reason, 'outcome_mismatch', JSON.stringify(negativeCatalog).slice(0, 800));
   });
 

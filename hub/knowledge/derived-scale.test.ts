@@ -10,6 +10,7 @@ import { canonicalBytes, openRecords, sha256Hex, type ActionBody } from '../reco
 import { createKnowledgeReader } from './api.ts';
 import { INDEX, SCHEMAS } from './store.ts';
 import { DEFAULT_PRODUCERS, BASE_CATALOG, casesProducer, catalogXml, makeWorld, mindMap, startPostgres } from './test-support.ts';
+import { mapLimited } from './concurrency.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 
 let postgres: TemporaryPostgres;
@@ -17,10 +18,21 @@ before(async () => { postgres = await startPostgres(); });
 after(() => postgres?.stop());
 
 test('one view prepares its 3000-source graph once and budgets 200 covered entries without truncation', {timeout:120_000}, async t => {
+  const started = performance.now();
+  const phases: Record<string, { queries: number; ms: number ;}> = {};
+  let stage = 'setup';
+  let mark = started;
+  const switchStage = (next: string) => { (phases[stage] ??= { queries: 0, ms: 0 }).ms += performance.now() - mark; stage = next; mark = performance.now(); };
+  const rawQuery = pg.Client.prototype.query;
+  t.mock.method(pg.Client.prototype, 'query', function (this: pg.Client, ...args: unknown[]) {
+    (phases[stage] ??= { queries: 0, ms: 0 }).queries++;
+    return Reflect.apply(rawQuery, this, args);
+  });
+  t.after(() => { switchStage('done'); t.diagnostic(JSON.stringify({ phases, wallMs: performance.now() - started, maxRSS: process.resourceUsage().maxRSS })); });
   const w = await makeWorld(postgres,{pack:{declaration:{producers:[DEFAULT_PRODUCERS[0],casesProducer({batch:20})]}},knowledge:{limits:{inlineRows:1}}});
   let counted: Awaited<ReturnType<typeof openRecords>> | undefined;
   t.after(async () => { await counted?.close(); await w.close(); });
-  const build: KnownBuild = {name:'Rel_ACME_1_2_15',family:'ACME',line:'1.2',base:'Rel_ACME_1_2_15',platform:null,built_at:null,released_at:null,sources:{tree:'site:tree:scale',cases:[]},root:null};
+  const build: KnownBuild = { name: 'Rel_ACME_10_6_15', family: 'ACME', line: '10.6', base: 'Rel_ACME_10_6_15', platform: null, built_at: null, released_at: null, sources: { tree: 'site:tree:scale', cases: [] }, root: null };
   w.external.set('site:tree:scale',{bytes:catalogXml(BASE_CATALOG),mediaType:'application/xml'});
   const oldPins = new Map<string,string>();
   let admittedBytes = 0;
@@ -43,12 +55,14 @@ test('one view prepares its 3000-source graph once and budgets 200 covered entri
   assert.ok(currentCasePart);
   // Keep the actual historical held records as pins. Current acceptance, not their stored tier, must decide eligibility.
   for (const row of currentCasePart.body.rows) if (oldPins.has(row.sha256)) { row.artifact = oldPins.get(row.sha256)!; row.read_tier = 'retain_only'; }
+  switchStage('empty-source-ingest');
   const empty: RootSource[] = [];
-  for (let i=0;i<2979;i++) {
+  await mapLimited(Array.from({ length: 2979 }, (_, i) => i), 32, async i => {
     const id = `store:mindmap:empty-${i}`, bytes = Buffer.from(mindMap({id:`empty-${i}`},[]));
     const artifact = await w.kit.artifacts.ingest({bytes,mediaType:'application/json',origin:{read:{object:id}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
     empty.push({...currentCasePart.body.rows[0],external:id,sha256:artifact.body.sha256,artifact:artifact.digest,size:bytes.length,read_tier:'model_readable'});
-  }
+  });
+  switchStage('composition-and-getNodes');
   empty.sort((a,b) => a.sha256 < b.sha256 ? -1 : a.sha256 > b.sha256 ? 1 : 0);
   const allSources = [...currentCasePart.body.rows,...empty].sort((a,b) => a.sha256 < b.sha256 ? -1 : a.sha256 > b.sha256 ? 1 : 0);
   root.parts.sources = [];
@@ -72,18 +86,21 @@ test('one view prepares its 3000-source graph once and budgets 200 covered entri
   const stats = {view:{queries:0,scans:0,bytes:0},read:{queries:0,scans:0,bytes:0}};
   const query = pg.Client.prototype.query;
   t.mock.method(pg.Client.prototype,'query',function(this: pg.Client,...args: unknown[]) {
-    if (phase !== 'setup') { const s=stats[phase]; if (++s.queries > (phase === 'view' ? 128 : 16)) throw new Error('synthetic query budget exceeded'); }
+    if (phase !== 'setup') { const s=stats[phase]; if (++s.queries > (phase === 'view' ? 64 : 16)) throw new Error('synthetic query budget exceeded'); }
     return Reflect.apply(query,this,args);
   });
-  counted = await openRecords({dataDir:w.kit.config.dataDir,logDir:w.kit.config.logDir,database:w.kit.database,limits:w.kit.config.limits},{migrate:false,keyProvider:w.kit.keyProvider,onCredentialScan:length => {
+  counted = await openRecords({ dataDir: w.kit.config.dataDir, logDir: w.kit.config.logDir, database: w.kit.database, limits: w.kit.config.limits }, {
+migrate: false, keyProvider: w.kit.keyProvider, onCredentialScan: length => {
     if (phase === 'setup') return;
     const s=stats[phase]; s.scans++; s.bytes+=length;
     if (phase === 'read') throw new Error('a read rescanned credential bytes');
     if (s.scans > 226) throw new Error('synthetic scanner-call budget exceeded');
   }});
   w.kit.artifacts = counted.artifacts;
+  switchStage('view');
   phase = 'view';
   const result = await createKnowledgeReader(w.knowledge).read(`knowledge:index:acme:${build.name}?kind=case&key=module`,{principal:w.user,run:null,purpose:'合成规模验证'});
+  switchStage('read-and-withdraw');
   phase = 'setup';
   assert.equal(result.ok,true,result.ok ? '' : result.reason); if (!result.ok) return;
   const output = result.artifacts[0].artifact;
@@ -103,6 +120,7 @@ test('one view prepares its 3000-source graph once and budgets 200 covered entri
   assert.equal(stats.view.scans,226,'20 sources + 200 entries + index key, skeleton, final answer, meta and two scope chunks');
   assert.ok(stats.view.bytes <= admittedBytes + 4*canonicalBytes(all).length + 2*output.body.size + scopeBytes + 4096);
   assert.deepEqual([stats.read.scans,stats.read.bytes],[0,0]);
+  assert.ok(performance.now() - started < 60_000, 'loose wall-clock regression allowance; controlled measurements establish the 30-second target');
   t.diagnostic(JSON.stringify({sources:3000,admitted:20,entries:200,kept:200,limited:0,sourceScanBytes:admittedBytes,view:stats.view,read:stats.read}));
   // Withdrawal is visible without re-scanning; the immutable coverage fact must not be recalculated on a read.
   assert.ok(output.body.scan.derived?.sources.length);

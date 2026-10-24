@@ -87,7 +87,7 @@ describe('the endpoint producer', () => {
     const pools = out.entries[0].data;
     assert.deepEqual(pools.words, ['GET', '/v1/pools']);
     assert.deepEqual(pools.signatures, [{ id: '1', params: [{ name: 'limit', type: 'int', optional: true, minimum: 1, maximum: 100 }] }]);
-    assert.deepEqual((out.entries[1].data.signatures as Array<{ params: unknown[] }>)[0].params, [{ name: 'name', type: 'string', minLength: 1, maxLength: 32 }, { name: 'mode', type: 'enum', optional: true, values: ['rr', 'lc', 'hash'] }]);
+    assert.deepEqual((out.entries[1].data.signatures as Array<{ params: unknown[] }>)[0].params, [{ name: 'name', type: 'string', optional: false, minLength: 1, maxLength: 32 }, { name: 'mode', type: 'enum', optional: true, values: ['rr', 'lc', 'hash'] }]);
     for (const entry of out.entries) {
       assert.equal(entry.kind, 'definition');
       assert.ok(CatalogEntry.safeParse({ words: entry.data.words, signatures: entry.data.signatures, reference: `tree:${'a'.repeat(64)}/x` }).success, entry.path ?? '');
@@ -98,14 +98,15 @@ describe('the endpoint producer', () => {
   });
 
   it('reports what it cannot read: bad rows, duplicate endpoints, a reference without endpoints, a wrong parser', () => {
-    const text = '## GET /v1/a\n\n| 参数 | 类型 | 取值 |\n| --- | --- | --- |\n| Bad | 整数 | 1-2 |\n| x | 浮点 | 1 |\n| e | 枚举 | ， |\n\n## GET /v1/a\n\n重复\n';
+    const text = '## GET /v1/a\n\n| name | type | optional | minimum | maximum | minLength | maxLength | values |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| Bad | int | false | 1 | 2 | | | |\n| x | float | false | | | | | |\n| e | enum | false | | | | | [] |\n\n## GET /v1/a\n\n重复\n';
     const out = produceEndpoints(input({ parser: 'markdown@1', model: markdown(text) }));
-    assert.equal(out.entries.length, 1);
-    assert.equal(out.warnings.length, 4);
+    assert.equal(out.entries.length, 0);
+    assert.equal(out.warnings.length, 5);
     assert.match(produceEndpoints(input({ parser: 'markdown@1', model: markdown('# 只有标题') })).warnings[0], /没有/);
     assert.match(produceEndpoints(input({ parser: 'json@1', model: {} })).warnings[0], /不是 Markdown/);
     assert.deepEqual(produceEndpoints(input(null)).entries, []);
-    assert.equal(typeof paramOf(['limit', '整数', '1-100']), 'object');
+    assert.equal(typeof paramOf(['limit','int','false','1','100','','','']), 'object');
+    assert.equal(typeof paramOf(['limit','整数','1-100']), 'string');
     assert.equal(endpointPath('GET', '/v1//pools/'), '/endpoints/GET/v1/pools');
   });
 

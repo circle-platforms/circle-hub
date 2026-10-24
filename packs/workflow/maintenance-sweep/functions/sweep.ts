@@ -27,6 +27,8 @@ export interface PathDetail {
   change: Extract<ChangeKind, Extract<ChangeKind, Extract<ChangeKind, 'removed' | 'modified'>>>;
   fields: FieldDiff[];
   references: string[];
+  /** Definition digests the view named but did not carry (never compared, never fabricated). */
+  missing?: string[];
 }
 
 export interface SweepItem {
@@ -56,6 +58,8 @@ export interface SweepNote {
   changed_paths: number;
   ignore_fields: string[];
   message: string;
+  /** The notes the view itself wrote (skipped sources, truncation), carried through for the check to name them. */
+  view_notes: string[];
   /** One row per changed path (every path the reasons index): the change kind, the field differences and the tree
    * references of that path. */
   details: PathDetail[];
@@ -130,13 +134,13 @@ function cited(view: NormView, digests: readonly string[], warnings: Warning[], 
   return out;
 }
 
-function definitionData(view: NormView, digests: readonly string[], warnings: Warning[], seen: Set<string>, path: string): { data: unknown[]; missing: boolean } {
+function definitionData(view: NormView, digests: readonly string[], warnings: Warning[], seen: Set<string>, path: string): { data: unknown[]; missing: string[] } {
   const data: unknown[] = [];
-  let missing = false;
+  const missing: string[] = [];
   for (const digest of uniqueSorted(digests)) {
     const entry = view.entries.get(digest);
     if (entry === undefined) {
-      missing = true;
+      missing.push(digest);
       if (!seen.has(digest)) {
         seen.add(digest);
         warnings.push({ code: `${PACK}.missing_entry`, message: `路径 ${path} 点名的条目 ${digest.slice(0, 12)} 不在视图里` });
@@ -148,11 +152,9 @@ function definitionData(view: NormView, digests: readonly string[], warnings: Wa
   return { data, missing };
 }
 
-/** What the run note says about cases the index does not hold. */
+/** What the run note says about cases the index does not hold; called only when sources were actually skipped. */
 export function indexNote(skippedFrom: number): string {
-  const base = '索引没有收录的用例，这里不作结论。缺少索引外或未归位用例的命令归属事实；下一步由客户端提取一页供人工查看，或由集成者安排归位提议，不能把未读范围当成没有。';
-  if (skippedFrom > 0) return `较早构建的索引缺少 ${skippedFrom} 份列出的文档，没有维护项并不能证明没有过期的用例。${base}`;
-  return base;
+  return `较早构建的索引缺少 ${skippedFrom} 份列出的文档，没有维护项并不能证明没有过期的用例。索引没有收录的用例，这里不作结论。缺少这些文档里用例的命令归属事实；下一步由集成者按视图说明补齐来源、重新同步知识库后重跑巡检，不能把未读范围当成没有。`;
 }
 
 /** The cases that need maintenance, and the run-level note. */
@@ -191,14 +193,16 @@ export function sweepOf(view: NormView, parameters: Parameters): SweepResult {
     if (side.change === 'added') continue;
     if (side.change !== 'removed' && side.change !== 'modified') continue;
     let fields: FieldDiff[] = [];
+    let missingEntries: string[] = [];
     if (side.change === 'modified') {
       const before = definitionData(view, side.before, warnings, missing, path);
       const after = definitionData(view, side.after, warnings, missing, path);
       fields = definitionDiff(before.data, after.data, parameters.ignoreFields);
-      // A named definition that is not in the view is not evidence that the two sides agree.
-      if (fields.length === 0 && (before.missing || after.missing)) fields = [{ path: '/', before: null, after: null }];
+      // A named definition that is not in the view is not evidence that the two sides agree: the digests are kept on
+      // the detail row and the check records a missing fact for them; a "/ null → null" difference is never written.
+      missingEntries = uniqueSorted([...before.missing, ...after.missing]);
     }
-    if (side.change === 'modified' && fields.length === 0) continue;
+    if (side.change === 'modified' && fields.length === 0 && missingEntries.length === 0) continue;
     const digests = placed.get(path)?.from ?? [];
     for (const digest of digests) {
       const entry = view.entries.get(digest);
@@ -240,7 +244,7 @@ export function sweepOf(view: NormView, parameters: Parameters): SweepResult {
         const beforeCited = cited(view, side.before, warnings, missing, path);
         const afterCited = cited(view, side.after, warnings, missing, path);
         const change = side.change as Reason['change'];
-        detailRows.set(path, { path, change, fields, references: uniqueSorted([...beforeCited, ...afterCited].map((c) => c.reference).filter((r) => r !== '')) });
+        detailRows.set(path, { path, change, fields, references: uniqueSorted([...beforeCited, ...afterCited].map((c) => c.reference).filter((r) => r !== '')), ...(missingEntries.length > 0 ? { missing: missingEntries } : {}) });
         acc.reasons.set(path, change);
       }
     }
@@ -277,7 +281,8 @@ export function sweepOf(view: NormView, parameters: Parameters): SweepResult {
   const parts: string[] = [`比较 ${view.fromBuild} 与 ${view.toBuild}。`];
   if (items.length === 0) parts.push('没有需要维护的用例。');
   else parts.push(`有 ${items.length} 条用例需要维护。`);
-  parts.push(indexNote(view.skippedFrom));
+  // Only actually skipped sources make the index note; a fully read scope says so without an unknown.
+  if (view.skippedFrom > 0) parts.push(indexNote(view.skippedFrom));
   if (view.truncated) parts.push(`影响视图被截断，变更路径共 ${view.changedPaths} 条，列出的不是全部。`);
   const message = parts.join('');
   if (items.length === 0) warnings.unshift({ code: `${PACK}.clean`, message });
@@ -295,6 +300,7 @@ export function sweepOf(view: NormView, parameters: Parameters): SweepResult {
       changed_paths: view.changedPaths,
       ignore_fields: parameters.ignoreFields,
       message,
+      view_notes: view.notes,
       details,
       diff,
     },

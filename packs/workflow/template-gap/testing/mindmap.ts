@@ -352,6 +352,7 @@ export function renamed(doc: DocumentSpec, rootId: string, title = doc.title): D
 /** The KityMinder document (key order id, created, text, ... as the real documents write it). */
 export function render(doc: DocumentSpec): KmDocument {
   const ids = new Set<string>([doc.rootId]);
+  const declared = new Map(casesWithCategories(doc).map(c => [c.spec.id, [...c.categories]]));
   const toNode = (spec: NodeSpec): KmNode => {
     if (ids.has(spec.id)) throw new Error(`node id ${spec.id} is used twice in the synthetic document`);
     ids.add(spec.id);
@@ -360,6 +361,7 @@ export function render(doc: DocumentSpec): KmDocument {
       data.text = spec.title;
       if (spec.priority !== null) data.priority = spec.priority ?? 2;
       data.resource = spec.tags;
+      data.category_ids = declared.get(spec.id);
     } else if (spec.kind === 'group') {
       data.text = spec.text;
       data.priority = 1;
@@ -367,6 +369,8 @@ export function render(doc: DocumentSpec): KmDocument {
     } else {
       data.text = spec.text;
       if (spec.priority !== undefined) data.priority = spec.priority;
+      // This synthetic marked case explicitly declares its category independently of its free text or test-type tags.
+      if (spec.untagged) data.category_ids = ['functional'];
     }
     return { data, children: spec.children.map(toNode) };
   };
@@ -401,7 +405,7 @@ export function goldOf(doc: DocumentSpec, documentId: string, options: { caseRul
   let untagged = 0;
   const visit = (nodes: NodeSpec[]): void => {
     for (const node of nodes) {
-      if (node.kind === 'node' && node.untagged === true) untagged += 1;
+      if (node.kind === 'node' && node.untagged === true) { untagged += 1; if (rule === 'marked') byCategory.set('functional', [...(byCategory.get('functional') ?? []), `${documentId}:${node.id}`].sort()); }
       if (node.kind === 'group' && node.tags !== undefined && !node.children.some((child) => child.kind === 'case')) {
         throw new Error(`the tagged group ${node.text} holds no case: the synthetic gold does not model it becoming a case`);
       }

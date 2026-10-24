@@ -106,13 +106,15 @@ describe('candidatesOutcomes', () => {
     assert.deepEqual([data.name, data.line], ['Rel_APV_10_7_4_101', '10.7.4']);
   });
 
-  it('a written name the knowledge base does not know is an unknown with the reason, never a violation', () => {
+  it('a written name the build site does not list is a deterministic advisory refutation, never an unknown', () => {
     const outcomes = candidatesOutcomes(subjectOf([item('24005', '回归 Rel_APV_10_9_9_9')]));
-    const unknown = byVerdict(outcomes, 'unknown')[0];
-    assert.deepEqual([unknown.reason, unknown.item], ['missing_input', '24005']);
-    assert.match(unknown.statement, /Rel_APV_10_9_9_9/);
-    assert.match(unknown.statement, /知识库/);
-    assert.equal(byVerdict(outcomes, 'refute').length, 0);
+    const refute = outcomes.find((o) => o.code === 'case-location.build_not_listed');
+    assert.ok(refute, JSON.stringify(outcomes));
+    assert.equal(refute.item, '24005');
+    assert.equal(refute.tier, 'advisory');
+    assert.match(refute.statement, /Rel_APV_10_9_9_9/);
+    assert.match(refute.statement, /构建站没有列出/);
+    assert.equal(refute.missing, undefined);
   });
 
   it('no located line, or a line without any known build, is an unknown with the reason — never a pass', () => {
@@ -248,4 +250,18 @@ it('a version-only label uses that version as the candidate line', () => {
   assert.equal(candidates?.verdict, 'support');
   assert.equal(candidates?.data?.line, '10.9.1');
   assert.equal((candidates?.statement ?? '').includes('没有版本层'), false);
+});
+
+describe('a written build name the build site does not list', () => {
+  it('is a deterministic advisory refutation, never an unknown', () => {
+    const subject = subjectOf([item('2499', '回归 Rel_APV_10_9_9_2')]);
+    const outcomes = candidatesOutcomes(subject);
+    const outcome = outcomes.find((o) => o.code === 'case-location.build_not_listed');
+    assert.ok(outcome, JSON.stringify(outcomes));
+    assert.equal(outcome.verdict, 'refute');
+    assert.equal(outcome.tier, 'advisory');
+    assert.match(outcome.statement, /构建站没有列出写出的构建名 Rel_APV_10_9_9_2/);
+    assert.match(outcome.statement, /不认识不等于写错/);
+    assert.equal(outcome.missing, undefined);
+  });
 });

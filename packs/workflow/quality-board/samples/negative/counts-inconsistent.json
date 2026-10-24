@@ -7,7 +7,7 @@
     "items": [
       {
         "id": "10.6.1/HA",
-        "location": "src:96d8ab41d0b971ca0a4f6f53b489ab52edb999c53edd78a5ae2ad57a68880b73/json@1/p/rows",
+        "location": "src:c4d149748106b12596f2042dad9b34fb4042d36fb6bbcd208425cdd61cbe4df8/json@1/p/rows",
         "fields": {
           "line": "10.6.1",
           "module": "HA",
@@ -18,6 +18,12 @@
             "vague": 0,
             "negative": 0
           },
+          "quality": {
+            "judged": 0,
+            "unjudged": 3,
+            "conflicted": 0,
+            "sources": []
+          },
           "ratios": {
             "missing": {
               "num": 3,
@@ -25,7 +31,7 @@
             },
             "vague": {
               "num": 0,
-              "den": 3
+              "den": 0
             },
             "negative": {
               "num": 0,
@@ -34,7 +40,7 @@
           },
           "display": {
             "missing": 1,
-            "vague": 0,
+            "vague": null,
             "negative": 0
           }
         }
@@ -51,7 +57,7 @@
         {
           "placement": {
             "unplaced": 0,
-            "source": "src:05f8f5c738660a3a59f9da95632304bfd73d37c8f5d3fb777c63ed57f4e04e87",
+            "source": "src:79326eb622e1f37dc95c74a630bf181e735627fdf6236266fb6cb3b55a13c79f",
             "skipped": 0,
             "truncated": false
           },
@@ -59,7 +65,7 @@
           "build": "Rel_APV_10_6_1_57",
           "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
           "view": {
-            "source": "src:96d8ab41d0b971ca0a4f6f53b489ab52edb999c53edd78a5ae2ad57a68880b73",
+            "source": "src:c4d149748106b12596f2042dad9b34fb4042d36fb6bbcd208425cdd61cbe4df8",
             "total": 3,
             "truncated": false,
             "skipped": 0,
