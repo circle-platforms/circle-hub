@@ -175,11 +175,18 @@ describe('entries from the converted manual', () => {
 
   it('records the signature, its parameters and variants', () => {
     const route = signatures(fromMarkdown).find((entry) => entry.path === '/commands/demo/route/static');
-    assert.deepEqual(route?.data, {
+    // Since the applicability and section work landed, every entry also carries its section path and the
+    // applicability state (declared from the source structure, unjudged until a verified contribution); the [no]
+    // group contributes its own literal alternative.
+    const state = (route?.data as { applicability_state: unknown }).applicability_state;
+    assert.equal((state as { schema: string }).schema, 'applicability-state@1');
+    assert.equal((state as { judgment_status: string }).judgment_status, 'unjudged');
+    assert.deepEqual((route?.data as { section_path: string[] }).section_path, ['基本配置']);
+    assert.deepEqual((route?.data as Record<string, unknown>), {
       words: ['demo', 'route', 'static'],
       form: 'signature',
       signature: '[no] demo route static <network> <netmask|prefix> <gateway> {permanent|temporary} [metric]',
-      signature_literals: [{primary:'demo route static',alternatives:['demo route static']}],
+      signature_literals: [{ primary: 'demo route static', alternatives: ['demo route static', 'no demo route static'] }],
       params: [
         { name: 'network', required: true },
         { name: 'netmask|prefix', required: true },
@@ -188,6 +195,8 @@ describe('entries from the converted manual', () => {
         { name: 'metric', required: false },
       ],
       variants: [['demo', 'route', 'static'], ['no', 'demo', 'route', 'static']],
+      section_path: ['基本配置'],
+      applicability_state: state,
     });
     assert.equal(route?.statement, route?.data.signature);
   });
@@ -417,7 +426,9 @@ describe('author-marked command literals', () => {
     const [signature, , code] = result.entries;
     assert.deepEqual(signature.data.signature_literals, [{primary:'demo pool add',alternatives:['demo pool add']}]);
     assert.deepEqual(code.data.command_literals,['demo pool add'],'only a verified canonical identity is linked');
-    assert.deepEqual(code.data.command_lines,['demo pool add p1 192.0.2.5'],'neither a prompt nor output is stripped into a command');
+    // The strict grammar strips neither the prompt nor the indentation: the line is kept exactly as written, and only
+    // the whole line that resolves against the tree is recorded; the prompt line and the output line resolve to nothing.
+    assert.deepEqual(code.data.command_lines,['    demo pool add p1 192.0.2.5'],'no prompt or output stripping: the bare line is kept verbatim');
   });
 
   it('records nothing from prose without marks, from CJK spans, or from html blocks', () => {
