@@ -209,6 +209,10 @@
           },
           "requires_discrimination": {
             "type": "boolean"
+          },
+          "run_table": {
+            "description": "whether submissions may add checks using inline tables (W04)",
+            "type": "boolean"
           }
         },
         "required": [

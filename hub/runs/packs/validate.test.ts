@@ -528,3 +528,18 @@ test('variable declaration diagnostics explain unused declarations in Chinese',a
  const p=await refused(editJson<Json>(variableProduct(),'product.json',p=>{delete p.producers[0].params;}),'product.shape');
  assert.match(p.message,/DEMO_OPTIONS.*声明了却没有引用/);
 });
+
+test('ledger shapes require a declared runtime table, an installed interpreter and a unique shape', async () => {
+  const row = { requirement: 'titles', interpreter: 'structure@1', ruled_in: '10.6.0' };
+  const ledger = (rows: unknown[]) => ({ 'ledger.json': JSON.stringify({schema:'ledger@1', shapes:rows}) });
+  const enabled = editJson<Json>(base, 'requirements.json', f => {f.requirements[0].run_table = true;});
+  await accepted(withFiles(enabled, ledger([row])));
+  await refused(withFiles(base, ledger([row])), 'ledger.run_table');
+  await refused(withFiles(enabled, ledger([{...row, requirement:'absent'}])), 'ledger.requirement');
+  await refused(withFiles(enabled, ledger([{...row, interpreter:'absent@1'}])), 'ledger.interpreter');
+  await refused(withFiles(enabled, ledger([row,row])), 'ledger.duplicate');
+  await refused(withFiles(enabled, ledger([{...row, from:'src:not-a-record'}])), 'ledger.shape');
+  const empty = await accepted(enabled);
+  assert.ok(empty.pack.warnings.some(w=>w.rule==='ledger.unruled'));
+  assert.deepEqual((await accepted(base)).pack.warnings, []);
+});

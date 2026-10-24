@@ -28,7 +28,7 @@ import {
 import { PACK_FILE_PATHS } from '../generated/protocol.ts';
 import { ItemId, IsoTime, JsonPointer, PackId, PackVersion, Sha256, Versioned } from './common.ts';
 import { FragmentRef, PackFunctionRef } from './product.ts';
-import { ExternalObjectId, Ground, ReferenceUri } from './reference.ts';
+import { ExternalObjectId, Ground, ReferenceUri, referenceUriOf } from './reference.ts';
 import { ExternalType } from './resources.ts';
 
 /** A subject builder may name refuted prerequisites; unknown shapes remain ordinary subjects. */
@@ -164,6 +164,7 @@ export const RequirementTemplate = z
     observation:Versioned.optional().describe('P07 observation contract that fills a declared dynamic fact layer; actual observations are verified by the consuming engine'),
     error_handling: z.array(ErrorHandlingRow),
     requires_discrimination: z.boolean().optional(),
+    run_table: z.boolean().optional().describe('whether submissions may add checks using inline tables (W04)'),
   })
   .superRefine((r, ctx) => {
     if ((r.accepted_producer === 'independent_judgment') !== (r.independent_of !== undefined)) {
@@ -637,9 +638,22 @@ export const PackSample = z.strictObject({
 });
 export type PackSample = z.infer<typeof PackSample>;
 
+/** W04: the owner’s published rulings; tables supplied during a run remain declared data. */
+export const LedgerFile = z.strictObject({
+  schema: z.literal('ledger@1'),
+  shapes: z.array(z.strictObject({
+    requirement: Key,
+    interpreter: Versioned,
+    ruled_in: PackVersion,
+    from: referenceUriOf('rec').optional(),
+  })),
+});
+export type LedgerFile = z.infer<typeof LedgerFile>;
+
 export const schemas: Record<string, z.ZodType> = {
   'subject-blocked@1': SubjectBlocked,
   'pack@1': PackManifest,
+  'ledger@1': LedgerFile,
   'requirements@1': RequirementsFile,
   'checks@1': ChecksFile,
   'slots@1': SlotsFile,
