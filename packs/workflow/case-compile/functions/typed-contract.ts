@@ -35,7 +35,7 @@ function argumentValue(raw:string):string|null {
 function canonical(value:unknown):unknown {if(Array.isArray(value))return value.map(canonical);if(isRecord(value))return Object.fromEntries(Object.keys(value).sort().map(k=>[k,canonical(value[k])]));return value;}
 export function identityKey(i:CommandIdentity):string{return JSON.stringify([i.tree_root,i.path,i.signature,[...i.parameters].sort((a,b)=>a.position-b.position).map(p=>[p.position,p.name,[p.type.name,p.type.grammar,p.type.declaration],canonical(p.parsed)])]);}
 export function commandLine(i:CommandIdentity):string|null {try{return [...i.path.split('/').slice(2).map(decodeURIComponent),...[...i.parameters].sort((a,b)=>a.position-b.position).map(p=>p.raw)].join(' ');}catch{return null;}}
-export function readAuthority(contract:Record<string,unknown>,entry:Record<string,unknown>,names:string[]):Authority|null {
+export function readAuthority(contract:Record<string,unknown>,entry:Record<string,unknown>,names:string[],unsupplied:readonly string[]=[]):Authority|null {
  if(contract.schema!=='runtime-contract@2'||!isRecord(contract.types)||!isRecord(contract.roles)||!isRecord(contract.effects)||!isRecord(entry.typed_authority))return null;
  const roles:Record<string,RoleDeclaration>={};for(const [id,row]of Object.entries(contract.roles)){if(!isRecord(row)||!ground(id,row.source)||row.bed_member!==undefined&&typeof row.bed_member!=='boolean')return null;roles[id]={source:row.source,...(typeof row.bed_member==='boolean'?{bed_member:row.bed_member}:{})};}
  const types:Record<string,ValueType>={};for(const [id,row]of Object.entries(contract.types)){if(!isRecord(row)||!Type.safeParse(row.declaration).success)return null;const d=row.declaration as DeclaredParameterType;if(!d.catalog_type)return null;
@@ -58,8 +58,9 @@ export function readAuthority(contract:Record<string,unknown>,entry:Record<strin
  const raw=entry.typed_authority;if(!ground(String(entry.f),raw.source)||!isRecord(raw.parameters)||!Array.isArray(raw.effects)||!raw.effects.length||raw.effects.some(id=>typeof id!=='string'||!effects[id]))return null;
  const source=raw.source;
  const selected=(raw.effects as string[]).map(id=>effects[id]);const parameters:Authority['parameters']={};
- if(Object.keys(raw.parameters).length!==names.length)return null;
- for(const name of names){const p=raw.parameters[name];if(!isRecord(p)||typeof p.type!=='string'||!types[p.type]||typeof p.role!=='string'||!roles[p.role]||!selected.some(e=>e.roles.includes(p.role as string)))return null;parameters[name]={type:types[p.type],role:p.role};}
+ const exempt=new Set(unsupplied),counted=names.filter(name=>!exempt.has(name)),declared=Object.keys(raw.parameters);
+ if(declared.filter(name=>!exempt.has(name)).length!==counted.length||counted.some(name=>!Object.hasOwn(raw.parameters,name))||declared.some(name=>!names.includes(name)))return null;
+ for(const name of declared){const p=raw.parameters[name];if(!isRecord(p)||typeof p.type!=='string'||!types[p.type]||typeof p.role!=='string'||!roles[p.role]||!selected.some(e=>e.roles.includes(p.role as string)))return null;parameters[name]={type:types[p.type],role:p.role};}
  return {source,parameters,roles,effects:selected};
 }
 export function valueProblem(type:ValueType,value:unknown):string|null {
