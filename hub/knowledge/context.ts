@@ -109,6 +109,8 @@ export class WriteQueue {
 
 export interface KnowledgeContext {
   knownBuildInventory?:ReadonlyArray<{name:string;record:string}>;
+  /** Reads the feeding layer beside seedlings (kb-feeding); absent when no feeding records exist yet (nothing fed). */
+  feeding?:import('./feeding-types.ts').FeedingReader;
   /** Whether the generic additional-root scope was explicitly declared, beyond automatic unversioned discovery. */
   additionalScopeRootsDeclared?: boolean;
   additionalScopeRoots?: (product:string)=>Promise<readonly {root:string;composition:string}[]>;

@@ -7,3 +7,5 @@
 每个条目的 review 槽交一条陈述：code 为 accept 或 reject，text 写确认内容，location 为本条声明位置，data.reason 写理由，quotes 附声明所引期望来源的逐字原文。
 
 缺原件或权限时补绑 evidence、请管理员补授权或由有权的非作者复核，不把缺输入当作拒绝新判据的理由。Hub 不判断新判据的内容是否正确，不修改源文件。
+
+喂入层：这个包读到的用例、缺陷、构建、规格凡经 Hub 读的都由程序自动进喂入层（带锁定树苗和冻结序号），视图按"锁定树苗 + 冻结序号之前的喂入层"读；版本未声明和矛盾的对象单列计数，不进版本差。Circle 只经 knowledge-contribution 回注补程序填不了的语义（带逐字引文），运行中不问人；结构契约见该包 tables/knowledge-structure.json 或 get_nodes 根路径。

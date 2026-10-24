@@ -11,3 +11,5 @@ Hub 只分发和核验，所有交互动作由客户端执行。本包没有模�
 构建路径的 build_id 必须唯一，PLM 原始 name 必须和 cases 视图构建名在 NFKC、去首尾空白后逐字相同。异名回执会列出两个名字，下一步重绑与 PLM 原始 name 同名的 cases 视图后重开；不要另给 start_run 的 product、version、build，也不能猜别名。跨名称族需等待核心的只读别名查询接口。构建身份与引用从 groups[0].selected_build 读取一次；逐条转述紧凑 selected_build 的编号和 name，完整引用保留在 grounds，不能把另一个 PLM 构建的需求说成本构建的范围。
 
 PLM 返回的状态或阶段不是单个值，是确定的观察事实：先转述汇总中的 status_nonscalar、stage_nonscalar 计数，说明没有按状态计数；不当作 null 状态分组，不改成未知，原始 JSON 在 PLM 原件中。长条目被截断时汇总计数照样保留并转述。
+
+喂入层：这个包读到的用例、缺陷、构建、规格凡经 Hub 读的都由程序自动进喂入层（带锁定树苗和冻结序号），视图按"锁定树苗 + 冻结序号之前的喂入层"读；版本未声明和矛盾的对象单列计数，不进版本差。Circle 只经 knowledge-contribution 回注补程序填不了的语义（带逐字引文），运行中不问人；结构契约见该包 tables/knowledge-structure.json 或 get_nodes 根路径。
