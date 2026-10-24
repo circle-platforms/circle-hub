@@ -13,6 +13,20 @@ import type { Applicability } from '../../contracts/src/product.ts';
 import { TreePath } from '../../contracts/src/reference.ts';
 import { MAX_IMPACT_PATHS } from '../../contracts/src/views.ts';
 import type { EntryDiff, NodesPage, NodesQuery, NodeViews, RootDiff } from '../ports.ts';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+let feedingStructureText: string | null | undefined;
+/** The knowledge-structure@1 contract document this Hub serves on the root path; null when it cannot be read. */
+const FEEDING_STRUCTURE_TEXT: string | null = (() => {
+  if (feedingStructureText !== undefined) return feedingStructureText;
+  try {
+    feedingStructureText = readFileSync(fileURLToPath(new URL('../../contracts/generated/schemas/knowledge-structure.v1.schema.json', import.meta.url)), 'utf8');
+  } catch {
+    feedingStructureText = null;
+  }
+  return feedingStructureText;
+})();
 import {emptyScopeNote} from './empty-scope.ts';
 import type { Principal } from '../records/api.ts';
 import { ReferenceSyntaxError, parseReference, pathOf, pathSegments, treeReference } from '../refs/api.ts';
@@ -406,6 +420,12 @@ export class TreeReading {
       }
     }
     for(const message of await relations?.pageNotes?.()??[])if(!notes.includes(message))notes.push(message);
+    // The root path of a page that starts there carries the feeding structure contract (kb-feeding): the one shape the
+    // model may feed against, shipped beside seedlings and served from this Hub's generated contracts, never hand-written.
+    if (page.length > 0 && page[0].path === '/') {
+      const structure = FEEDING_STRUCTURE_TEXT;
+      if (structure !== null && query.depth >= 1) page[0].feeding_structure = structure;
+    }
     const note = notes.length === 0 ? undefined : notes.join('；');
     const cursor = walk.next === null ? null : encodeCursor({ ...walk.next, q: queryKey, ...(cursorComposition?{c:cursorComposition}:{}) });
     const examined = walk.position;

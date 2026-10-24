@@ -40,3 +40,5 @@ Hub 不调用模型。类别语义来自作者原件的 `category_ids`，或你�
 | upgrade_new_to_old | 升级兼容：新版本到老版本 | upgrade | 用例检验新版本回退到老版本的兼容行为。 |
 | security | 安全 | other | 用例检验所声明的安全需求。 |
 | database | 数据库 | other | 用例检验数据库相关的行为和结果。 |
+
+喂入层：这个包读到的用例、缺陷、构建、规格凡经 Hub 读的都由程序自动进喂入层（带锁定树苗和冻结序号），视图按"锁定树苗 + 冻结序号之前的喂入层"读；版本未声明和矛盾的对象单列计数，不进版本差。Circle 只经 knowledge-contribution 回注补程序填不了的语义（带逐字引文），运行中不问人；结构契约见该包 tables/knowledge-structure.json 或 get_nodes 根路径。

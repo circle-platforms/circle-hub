@@ -41,6 +41,8 @@ export interface KnowledgeOptions {
   /** Default admin context of syncs and productions that name none. */
   admin?: Principal | null;
   credentialAcceptance?:import('./credential-policy.ts').CredentialAcceptanceOptions;
+  /** Reads the feeding layer beside seedlings (kb-feeding); absent when nothing was fed yet. */
+  feeding?:import('./feeding-types.ts').FeedingReader;
 }
 
 export interface BuildCalibrationInput {
@@ -124,6 +126,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     },
     limits: { ...DEFAULT_KNOWLEDGE_LIMITS, ...(options.limits ?? {}) },
     admin: options.admin ?? null,
+    feeding: options.feeding,
     credentialAcceptance:{autoAcceptSources:options.credentialAcceptance?.autoAcceptSources??[],deadlineHours},
     writes: new WriteQueue(),
   };

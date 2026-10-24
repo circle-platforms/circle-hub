@@ -32,6 +32,10 @@ import {
   type UnversionedView,
 } from '../../contracts/src/views.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort } from '../ports.ts';
+import type { FeedingCut } from './feeding-types.ts';
+
+/** The feeding-layer context a view read carries: the run's frozen cut (null offset: everything now in the layer). */
+type FeedingNotes = { context: ExternalReadContext | undefined; cut: FeedingCut | null };
 import { sha256Hex, canonicalBytes, canonicalByteLength, createCanonicalEncoder, canonicalize, MAX_ADMIN_FINDINGS, type DerivedCoverage, type ActionBody, type SourceArtifact } from '../records/api.ts';
 import { pathSegments, treeReference } from '../refs/api.ts';
 import { LinksView } from '../../contracts/src/views.ts';
@@ -440,6 +444,31 @@ export class KnowledgeViews {
     this.#relations = relations;
   }
 
+  /**
+   * Notes of the feeding layer for a view over a product (the kb-feeding task): the layer beside seedlings is read at
+   * the run's frozen offset (or everything, when no run context froze one). Undeclared-version and contradicted objects
+   * are counted apart and never enter version differences; a fed kind the roots hold nothing of falls back to the
+   * layer, and when the layer holds nothing either, the view says so plainly and names the way in (used = fed).
+   */
+  async #feedingNotes(product: string, context: ExternalReadContext | undefined, kindEmpty: readonly EntryKind[], rootCaseCount: number, feeding: FeedingNotes | null = null): Promise<string[]> {
+    void product; void context; void rootCaseCount;
+    if (feeding === null) return kindEmpty.map((kind) => `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：喂入层还没有记录；在运行里经 Hub 读到或上传后即进入喂入层`);
+    const cut = feeding.cut;
+    if (cut === null) return kindEmpty.map((kind) => `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：喂入层为空；在运行里经 Hub 读到或上传后即进入`);
+    const notes: string[] = [];
+    let undeclared = 0;
+    for (const bindings of cut.bindings.values()) if (bindings.some((binding) => binding.state === 'undeclared')) undeclared++;
+    if (undeclared > 0) notes.push(`喂入层里 ${undeclared} 个对象版本未声明，单列计数，不进版本差`);
+    if (cut.contradicted.size > 0) notes.push(`喂入层里 ${cut.contradicted.size} 个对象有矛盾（contradicts），单列`);
+    for (const kind of kindEmpty) {
+      const inLayer = kind === 'case' ? cut.objects.size : 0;
+      notes.push(inLayer > 0
+        ? `根里没有${labelOf('entry_kind', kind)}种类的条目；喂入层（冻结序号之前）有 ${inLayer} 个对象，按锁定树苗 + 喂入层读`
+        : `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：根和喂入层都没有；在运行里经 Hub 读到或上传后即进入喂入层`);
+    }
+    return notes;
+  }
+
   get #packs(): PacksPort {
     return this.#context.packs;
   }
@@ -526,7 +555,7 @@ export class KnowledgeViews {
    * one only itself. With `catalog` only the catalog's members count as changes, read per root and compared by syntax:
    * a path whose members differ only in the descriptive fields or the overload order is not a change, counted in the notes.
    */
-  async impact(product: string, from: At, to: At, changed: readonly EntryKind[], attached: readonly EntryKind[], attachedFields: readonly string[] | null = null, catalog: string | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{from:CompositionView|null;to:CompositionView|null;reserve?:number},scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null): Promise<ImpactView> {
+  async impact(product: string, from: At, to: At, changed: readonly EntryKind[], attached: readonly EntryKind[], attachedFields: readonly string[] | null = null, catalog: string | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{from:CompositionView|null;to:CompositionView|null;reserve?:number},scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null, feeding: FeedingNotes | null = null): Promise<ImpactView> {
     const scope = await this.#scopeView(product,scopeRoot === undefined ? await this.#scope(product) : scopeRoot);
     const summary = await this.#scopeSummary(scope,attached);
     let membersFrom: ReadonlyMap<string, string> | null = null;
@@ -676,6 +705,11 @@ export class KnowledgeViews {
       if (syntaxOnly > 0) notes.push(`${syntaxOnly} 个路径的目录成员只有说明性内容（参数说明、条目摘要）或签名顺序的差异，不算变更`);
       if (attachedFields !== null) notes.push(`附着的${attached.map((k) => labelOf('entry_kind', k)).join('、')}条目只带字段 ${attachedFields.join('、')}（attached_fields 参数），陈述为空；变更的条目不受影响`);
       if (from.root === to.root) notes.push(`两个构建用的是同一个根 ${to.root}，没有版本差`);
+      const missingAttachedOverall: EntryKind[] = [];
+      {
+        const countsBySide = await Promise.all([fromComposition, toComposition].map(async (composition) => composition === null ? new Map<string, number>() : await composition.kindCounts()));
+        for (const kind of attached) if (countsBySide.every((counts) => (counts.get(kind) ?? 0) === 0)) missingAttachedOverall.push(kind);
+      }
       for (const [side, composition] of [
         [from, fromComposition],
         [to, toComposition],
@@ -687,6 +721,7 @@ export class KnowledgeViews {
         const skipped = skippedNote(side, composition);
         if (skipped !== null) notes.push(skipped);
       }
+      if (feeding !== null && missingAttachedOverall.length > 0) notes.push(...await this.#feedingNotes(product, feeding.context, missingAttachedOverall, 0, feeding));
       return notes;
     };
     const build = async (count: number): Promise<ImpactView> => {
@@ -755,7 +790,7 @@ export class KnowledgeViews {
    * exactly. `exclude` names rows left out (by the canonical JSON of their values) because their values have credential
    * scan hits.
    */
-  async facets(product: string, at: At, kind: EntryKind, by: readonly string[], exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{composition:CompositionView|null;reserve?:number},scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null): Promise<FacetView> {
+  async facets(product: string, at: At, kind: EntryKind, by: readonly string[], exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{composition:CompositionView|null;reserve?:number},scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null, feeding: FeedingNotes | null = null): Promise<FacetView> {
     const composition = pinned===undefined?await this.#buildView(product,at):pinned.composition;
     const scope = await this.#scopeView(product,scopeRoot === undefined ? await this.#scope(product) : scopeRoot);
     // The existing scope scan records positions without changing the build-preferred reference carrier.
@@ -817,7 +852,8 @@ export class KnowledgeViews {
     }
     const entryCounts = { total: seen.size, placed: seen.size - unplacedCount, unplaced: unplacedCount };
     const notes: string[] = [];
-    if (seen.size === 0) notes.push(`构建 ${at.build} 的根里没有${labelOf('entry_kind', kind)}种类的条目`);
+    if (seen.size === 0 && feeding !== null) notes.push(...await this.#feedingNotes(product, feeding.context, [kind], 0, feeding));
+    if (seen.size === 0 && feeding === null) notes.push(`构建 ${at.build} 的根里没有${labelOf('entry_kind', kind)}种类的条目`);
     if (unplacedCount > 0) notes.push(`${labelOf('knowledge_count', 'tree_unplaced_entries')} ${unplacedCount} 个，标在根下，计入合计`);
     if (page.offset>0 || page.offset+rows.length < all.length) notes.push(`取值组合有 ${all.length} 种，按取值排序；本页跳过前 ${page.offset} 种，列出 ${rows.length} 种（上限 ${MAX_FACET_ROWS} 行、约 ${this.#context.limits.maxViewBytes} 字节）`);
     if (unlisted > 0) notes.push(`取值组合超过 ${limit} 种以后出现的新组合没有收集：${unlisted} 个条目有组合没有计入任何一行（total 里计入），列出的行是先遇到的组合`);
@@ -852,10 +888,10 @@ export class KnowledgeViews {
    * the held entries fit the byte budget; a listed entry not held is read in a second scan. `exclude` names entries left
    * out because their text has credential scan hits.
    */
-  async index(product: string, at: At, kind: EntryKind, key: string, only: readonly string[] | null, fields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{composition:CompositionView|null;reserve?:number},scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null): Promise<IndexView> {
-    return withReadCache(()=>this.#index(product, at, kind, key, only, fields, exclude, after, pinned, scopeRoot, scopeLocked));
+  async index(product: string, at: At, kind: EntryKind, key: string, only: readonly string[] | null, fields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{composition:CompositionView|null;reserve?:number},scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null, feeding: FeedingNotes | null = null): Promise<IndexView> {
+    return withReadCache(()=>this.#index(product, at, kind, key, only, fields, exclude, after, pinned, scopeRoot, scopeLocked, false, feeding));
   }
-  async #index(product: string, at: At, kind: EntryKind, key: string, only: readonly string[] | null, fields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{composition:CompositionView|null;reserve?:number},scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null, encodedOnly = false): Promise<IndexView> {
+  async #index(product: string, at: At, kind: EntryKind, key: string, only: readonly string[] | null, fields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set(), after: string | null = null,pinned?:{composition:CompositionView|null;reserve?:number},scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null, encodedOnly = false, feeding: FeedingNotes | null = null): Promise<IndexView> {
     // With fields, entries carry only those data fields and an empty statement; the identity (entry digest) and the
     // reference are unchanged. The truncation accounting uses the slimmed size: the fields decide what an entry costs.
     const slim = (content: EntryContent): EntryContent => {
@@ -1004,9 +1040,10 @@ export class KnowledgeViews {
       if (entry === undefined) { const bytes = held.get(digest)!; entry = JSON.parse(Buffer.from(bytes).toString('utf8')) as ViewEntry; this.#entryBytes.set(entry, bytes); decoded.set(digest, entry); held.delete(digest); }
       return entry;
     }
+    const feedingNotes: string[] = ofKind === 0 && feeding !== null ? await this.#feedingNotes(product, feeding.context, [kind], 0, feeding) : [];
     const notes = (count: number): string[] => {
       const out: string[] = [];
-      if (ofKind === 0) out.push(`构建 ${at.build} 的根里没有${labelOf('entry_kind', kind)}种类的条目`);
+      if (ofKind === 0) { out.push(`构建 ${at.build} 的根里没有${labelOf('entry_kind', kind)}种类的条目`); out.push(...feedingNotes); }
       else if (keys.size === 0) out.push(`没有${labelOf('entry_kind', kind)}条目在数据字段 ${key} 上有${only === null ? '取值' : '所列的取值'}`);
       if (only !== null) {
         const absent = only.filter((value) => !keys.has(value));
@@ -1222,6 +1259,14 @@ export class KnowledgeViews {
     let key: string;
     let compute: (exclude: ReadonlySet<string>) => Promise<ImpactView | FacetView | IndexView>;
     let title: string;
+    const feeding: FeedingNotes | null = await (async () => {
+      const reader = this.#context.feeding;
+      if (reader === undefined) return null;
+      const handle = await this.#packs.productById(product) ?? await this.#packs.productByName(product);
+      if (handle === null) return null;
+      const offset = context.run === undefined || context.run === null ? null : await reader.frozenOffset(context.run);
+      return { context, cut: await reader.cut(handle.product.id, offset) };
+    })();
     if (request.type === 'impact') {
       const from = await resolve(request.from);
       if (typeof from === 'string') return { ok: false, id: bare, reason: from };
@@ -1229,7 +1274,7 @@ export class KnowledgeViews {
       if (typeof to === 'string') return { ok: false, id: bare, reason: to };
       roots = [from.root, to.root];
       key = canonicalize({ type: request.type, product, from, to, changed: request.changed, attached: request.attached, attached_fields: request.attached_fields, catalog: request.catalog, after:request.after??null });
-      compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, request.catalog, exclude, request.after??null,{from:pins.get(`${from.root}\0${from.build}`)!,to:pins.get(`${to.root}\0${to.build}`)!,reserve},scopeRoot,Boolean(context.run));
+      compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, request.catalog, exclude, request.after??null,{from:pins.get(`${from.root}\0${from.build}`)!,to:pins.get(`${to.root}\0${to.build}`)!,reserve},scopeRoot,Boolean(context.run),feeding);
       title = `版本差 ${from.build} → ${to.build}（${product}）`;
     } else {
       const at = await resolve(request.build);
@@ -1237,11 +1282,11 @@ export class KnowledgeViews {
       roots = [at.root];
       if (request.type === 'facets') {
         key = canonicalize({ type: request.type, product, at, kind: request.kind, by: request.by, after:request.after??null });
-        compute = (exclude) => this.facets(product, at, request.kind, request.by, exclude, request.after??null,{composition:pins.get(`${at.root}\0${at.build}`)!,reserve},scopeRoot,Boolean(context.run));
+        compute = (exclude) => this.facets(product, at, request.kind, request.by, exclude, request.after??null,{composition:pins.get(`${at.root}\0${at.build}`)!,reserve},scopeRoot,Boolean(context.run),feeding);
         title = `${labelOf('entry_kind', request.kind)}按 ${request.by.join('、')} 计数（${at.build}）`;
       } else {
         key = canonicalize({ type: request.type, product, at, kind: request.kind, key: request.key, only: request.only, fields: request.fields, after:request.after??null });
-        compute = (exclude) => this.#index(product, at, request.kind, request.key, request.only, request.fields, exclude, request.after??null,{composition:pins.get(`${at.root}\0${at.build}`)!,reserve},scopeRoot,Boolean(context.run),true);
+        compute = (exclude) => this.#index(product, at, request.kind, request.key, request.only, request.fields, exclude, request.after??null,{composition:pins.get(`${at.root}\0${at.build}`)!,reserve},scopeRoot,Boolean(context.run),true,feeding);
         title = `${labelOf('entry_kind', request.kind)}按 ${request.key} 索引（${at.build}）`;
       }
     }
