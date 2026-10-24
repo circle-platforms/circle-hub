@@ -133,14 +133,14 @@ export function samples(): Entry[] {
       { verdict: 'refute', code: 'core.structure.duplicate_key', item: 'sample:c1', tier: 'advisory' },
       { verdict: 'refute', code: 'core.structure.duplicate_key', item: 'sample:c2', tier: 'advisory' },
     ]),
-    // tags (literal, advisory): one spelling per category inside a document.
+    // R2: every resource value must equal a declared text; variants are advisory structural violations.
     sample('positive', 'tags_consistent', 'tags', '整份文档同一类别用同一种写法', runSubject(good), [
       { verdict: 'support', item: 'sample:c1', tier: 'advisory' },
       { verdict: 'support', item: 'sample:c2', tier: 'advisory' },
     ]),
-    sample('negative', 'tags_variant', 'tags', '两个用例写 Functional，一个写 function', runSubject([caseItem('c1'), caseItem('c2'), caseItem('c3', { tags: ['function'] })]), [
-      { verdict: 'support', item: 'sample:c1', tier: 'advisory' },
-      { verdict: 'support', item: 'sample:c2', tier: 'advisory' },
+    sample('negative', 'tags_variant', 'tags', 'R2：保留原始变体 Functional、function；它们均不等于闭集原文 functional，逐条反驳为提示档结构违规，不能按大小写或同义词归一化后支持', runSubject([caseItem('c1', { tags: ['Functional'] }), caseItem('c2', { tags: ['Functional'] }), caseItem('c3', { tags: ['function'] })]), [
+      { verdict: 'refute', code: 'case-review.tag_variant', item: 'sample:c1', tier: 'advisory' },
+      { verdict: 'refute', code: 'case-review.tag_variant', item: 'sample:c2', tier: 'advisory' },
       { verdict: 'refute', code: 'case-review.tag_variant', item: 'sample:c3', tier: 'advisory' },
     ]),
     // cited_commands (catalog): command lines the findings quote from the case; only lines the case writes are judged.
@@ -172,8 +172,11 @@ export function samples(): Entry[] {
     sample('positive', 'sources_product', 'findings_sources', '发现写了位置，引用规格书（期望来源）', defaultSubject(caseItem('c1'), { findings: [finding()] }, [evidence(loc('c1'), 'subject'), evidence(`src:${SPEC}/markdown@1/s/interval`, 'expected')]), [
       { verdict: 'support', item: 'sample:c1', tier: 'blocking' },
     ]),
-    sample('positive', 'sources_cited_line', 'findings_sources', '发现照用例原样引用了用例步骤里的命令行（命令文字完全相等）', defaultSubject(withLine('c1', 'health interval pool1 30'), { findings: [finding({ commands: [{ command: 'health interval pool1 30' }, { command: 'show pool', present: true }] })] }, [evidence(`src:${SPEC}/markdown@1/s/interval`, 'expected')]), [
+    sample('positive', 'sources_cited_line', 'findings_sources', '原文为 health interval pool1 30，发现逐字引用同一整行才支持；R4 不允许大小写或空白折叠。show pool 带 present:true，属于另行核对的成员主张', defaultSubject(withLine('c1', 'health interval pool1 30'), { findings: [finding({ commands: [{ command: 'health interval pool1 30' }, { command: 'show pool', present: true }] })] }, [evidence(`src:${SPEC}/markdown@1/s/interval`, 'expected')]), [
       { verdict: 'support', item: 'sample:c1', tier: 'blocking' },
+    ]),
+    sample('negative', 'sources_cited_line_variant', 'findings_sources', 'Health  Interval pool1 30 与原文 health interval pool1 30 不逐字相等；没有 present 的引用必须退回修正，不能按大小写和空白归一化', defaultSubject(withLine('c1', 'health interval pool1 30'), { findings: [finding({ commands: [{ command: 'Health  Interval pool1 30' }] })] }, [evidence(`src:${SPEC}/markdown@1/s/interval`, 'expected')]), [
+      { verdict: 'refute', code: 'case-review.command_not_in_case', item: 'sample:c1', tier: 'blocking' },
     ]),
     sample(
       'negative',

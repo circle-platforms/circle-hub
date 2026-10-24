@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-review",
-  "version": "1.1.18",
+  "version": "1.1.19",
   "kind": "workflow",
   "title": "测试脑图评审（初评）",
   "description": "按团队的评审方法（test-list-review）初评一份测试脑图：Hub 判定字面问题、命令与目录、引文与位置，模型写七类评审发现和 P0-P7 等级；结论由复核任务包 case-review-verify 独立复核",
@@ -152,6 +152,11 @@
       "size": 1555
     },
     {
+      "path": "samples/negative/sources_cited_line_variant.json",
+      "sha256": "8499db8bcc2a7ff988ff6399b373e0f3ad2a2e357f5de6601dce272224f6d933",
+      "size": 2358
+    },
+    {
       "path": "samples/negative/sources_command_not_in_case.json",
       "sha256": "8b0222de959e6e06f5693be346d1c4f2a9910c6616ae12fd1d1841fca2145ce3",
       "size": 2502
@@ -178,8 +183,8 @@
     },
     {
       "path": "samples/negative/tags_variant.json",
-      "sha256": "04c7982f1f849694acad5c51a5f28dd5f9225da7cb4136dfd18691f13ccb595e",
-      "size": 5902
+      "sha256": "9d104adb4dda6f22415b0dc72925b8b4b009cb4dcc9e088ece92dcf656c3e845",
+      "size": 7248
     },
     {
       "path": "samples/positive/cited_none.json",
@@ -228,8 +233,8 @@
     },
     {
       "path": "samples/positive/sources_cited_line.json",
-      "sha256": "7c79c9954045e8b452f1862ae33586e81b8054cc1dd3360e2e30b33e37ba6e8d",
-      "size": 2325
+      "sha256": "e6f3c0abf2e6592c2e443e1606dc6ef8d8e067c2eed8704f8318a77479b16f6d",
+      "size": 2418
     },
     {
       "path": "samples/positive/sources_product.json",
