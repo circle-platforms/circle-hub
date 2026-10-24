@@ -89,7 +89,7 @@ describe('command entries from the command tree', () => {
         { name: 'arg2', type: 'int', minimum: 0, maximum: 128, description: 'Mask, dotted or as a prefix length' },
       ],
     );
-    assert.deepEqual(data('/commands/ping').signatures[0].params[1], { name: 'arg2', type: 'int', minimum: 1, maximum: 5000, optional: true, default: '&quot;5&quot;', description: 'Count' });
+    assert.deepEqual(data('/commands/ping').signatures[0].params[1], { name: 'arg2', type: 'int', minimum: 1, maximum: 5000, optional: true, default: '5', description: 'Count' });
     assert.deepEqual(data('/commands/clear/counters/all').signatures, [{ id: '1', params: [] }]);
   });
 

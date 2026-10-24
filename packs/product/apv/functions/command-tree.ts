@@ -119,10 +119,15 @@ function optionalFlag(text: string | undefined, where: string, warnings: string[
   return null;
 }
 
-/** Default value as documented: character references decoded once more, one pair of surrounding double quotes removed. */
+/** Default value as documented (apv-command-tree@2): the character references are decoded once more, because the
+ * produced tree escapes them twice, and then one pair of surrounding double quotes is removed. Only the five XML
+ * character references are decoded and only once; anything else is kept exactly as written. */
+const DOCUMENTED_REFERENCES: Readonly<Record<string, string>> = Object.freeze({ '&quot;': '"', '&apos;': "'", '&lt;': '<', '&gt;': '>', '&amp;': '&' });
+
 function defaultOf(text: string): string | undefined {
   if(text==='')return undefined;
-  return text.startsWith('"')&&text.endsWith('"')&&text.length>=2?text.slice(1,-1):text;
+  const decoded = text.replace(/&(?:quot|apos|lt|gt|amp);/gu, (reference) => DOCUMENTED_REFERENCES[reference] ?? reference);
+  return decoded.startsWith('"')&&decoded.endsWith('"')&&decoded.length>=2?decoded.slice(1,-1):decoded;
 }
 
 /** Unknown source syntax stays independently unchecked, not a guessed generic constraint. */
