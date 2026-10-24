@@ -15,7 +15,7 @@ function record(value: unknown, message: string): Record<string, unknown> { if (
 export function satisfiedRecipe(input: { run: unknown; result: unknown; submission: unknown; contract: Uint8Array; profile: Uint8Array; inventory: Uint8Array }): GenerationInput {
   const exportRun = record(input.run, '缺少运行导出'); const run = record(isRecord(exportRun.run) ? exportRun.run : exportRun, '缺少运行摘要');
   const exportResult = record(input.result, '缺少已受理结果'); const result = record(exportResult.result ?? exportResult, '缺少校验结果'); const submission = record(input.submission, '缺少原样提交');
-  if (typeof run.run !== 'string' || submission.run !== run.run || result.run !== run.run || result.schema !== 'validation@1' || result.acceptance !== 'accepted' || !Array.isArray(result.errors) || result.errors.length) throw new Error('运行、提交和受理结果不一致或仍有反驳；先修复计划再生成');
+  if (typeof run.run !== 'string' || submission.run !== run.run || result.run !== run.run || result.schema !== 'validation@1' || result.acceptance !== 'accepted' || !Array.isArray(result.errors)) throw new Error('运行、提交和受理结果不一致或仍有反驳；先修复计划再生成');
   const locks = record(result.locks, '结果缺少锁定身份');
   if (locks.pack !== GENERATOR) throw new Error('生成器版本与计划运行锁定的包版本不符');
   if (locks.pack_digest !== run.pack_digest || locks.root !== run.root || sha256(canonicalJson(submission)) !== result.submission) throw new Error('提交摘要或锁定输入与受理结果不符，不能拿旧结果生成');
@@ -30,7 +30,15 @@ export function satisfiedRecipe(input: { run: unknown; result: unknown; submissi
   const partitions = record(result.partitions, '缺少结果分区'); const rows = Object.values(partitions).flatMap((v) => Array.isArray(v) ? v : []);
   const matching = rows.filter((v) => isRecord(v) && v.item === item.id); if (matching.length !== 1) throw new Error('结果没有唯一的目标条目');
   const itemResult = record(matching[0], '结果条目不合式');
+  const errors=result.errors as unknown[];
+  if(errors.some(error=>!isRecord(error)||error.requirement!=='workbook_verified'||error.code!=='missing_input'||error.item!==item.id))throw new Error('计划仍有工作簿缺输入以外的错误，先修复计划再生成');
+
   if (!Array.isArray(run.requirements) || !Array.isArray(itemResult.requirements)) throw new Error('缺少完整的计划要求项状态');
+  const workbook=itemResult.requirements.find((value:unknown)=>isRecord(value)&&value.requirement==='workbook_verified');
+  const onlyMissingWorkbook=isRecord(workbook)&&workbook.status==='pending'&&Array.isArray(workbook.layers)&&workbook.layers.length===1&&workbook.layers.every((layer:unknown)=>isRecord(layer)&&layer.layer==='static'&&layer.terminal==='unchecked'&&layer.reason==='missing_input'&&(layer.gaps===undefined||Array.isArray(layer.gaps)&&layer.gaps.every((gap:unknown)=>isRecord(gap)&&gap.reason==='missing_input')));
+  if(errors.length&&!onlyMissingWorkbook)throw new Error('工作簿要求项不是生成前缺输入，不把未核验或反驳当成可生成');
+  if(isRecord(workbook)&&Array.isArray(workbook.layers)&&workbook.layers.some((layer:unknown)=>isRecord(layer)&&(layer.terminal==='violation'||layer.terminal==='fail')))throw new Error('工作簿已有确定反驳，不能用缺输入绕过');
+
   const coverage = record(result.coverage, '缺少核对覆盖范围'); if (coverage.complete !== true || coverage.total !== 1 || coverage.examined !== 1) throw new Error('结果没有完整核对这个唯一用例');
   for (const template of REQUIREMENTS.requirements.filter((v) => v.required && v.key !== 'workbook_verified')) {
     if (!run.requirements.some((v) => isRecord(v) && v.key === template.key && v.accepted_producer === template.accepted_producer)) throw new Error('运行缺少当前包的必需计划要求项');
