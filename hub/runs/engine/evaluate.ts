@@ -368,7 +368,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     };
   }
 
-  if(ctx.deps.knowledge.feeding&&resolveCtx.sources){const original=resolveCtx.sources;resolveCtx.sources={async read(sha,reader){const value=await original.read(sha,reader);if(value?.bytes&&value.readTier==='model_readable')await ctx.deps.knowledge.feeding!.observeSource(principalOf(reader),sha,{composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version});return value;}};}
+  if(ctx.deps.knowledge.feeding&&resolveCtx.sources){const original=resolveCtx.sources;resolveCtx.sources={async read(sha,reader){const value=await original.read(sha,reader);if(value?.bytes&&value.readTier==='model_readable')await ctx.deps.knowledge.feeding!.observeSourceBounded(principalOf(reader),sha,{composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version});return value;}};}
   const boundSourceCache = new Map<string, Promise<{ resolved: boolean; text: string | null; byteLength?: number; reason?: ReadFailureReason }>>();
 
   const resolveBoundSource = (reference: string) => {
@@ -571,7 +571,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
             if (!read.ok) { onError(new Error(read.reason), check.id); throw new Error('narrow read unavailable'); }
             const chosen = read.artifacts.find(a => a.name === 'content') ?? read.artifacts.find(a => a.name === 'original');
             if (!chosen) throw new Error('narrow read has no content');
-            await ctx.deps.knowledge.feeding?.observeSource(principal,chosen.artifact.body.sha256,{composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version,sourceRecord:chosen.artifact.digest,metaSource:read.artifacts.find(a=>a.name==='meta')?.artifact.body.sha256});
+            await ctx.deps.knowledge.feeding?.observeSourceBounded(principal,chosen.artifact.body.sha256,{composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version,sourceRecord:chosen.artifact.digest,metaSource:read.artifacts.find(a=>a.name==='meta')?.artifact.body.sha256});
             const content = await ctx.deps.records.artifacts.source(principal, chosen.artifact.body.sha256, { consumer: 'function' });
             if (!content) throw new Error('narrow read unavailable');
             return { text: content.bytes === null ? null : new TextDecoder('utf-8', { fatal: true }).decode(content.bytes), reference: `src:${chosen.artifact.body.sha256}`, revision: read.revision, manifest: read.manifest };

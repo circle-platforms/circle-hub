@@ -263,7 +263,7 @@ export async function bindInputs(
         errors.push(refusal ?? protocolError('SOURCE_UNPARSEABLE', `媒体类型 ${read.mediaType} 没有可用的核心解析器`, { path }));
         continue;
       }
-      if(ctx.deps.knowledge.feeding)await ctx.deps.knowledge.feeding.observeSource(user,read.sha256,{...feeding,sourceRecord:read.sourceRecord,metaSource:read.metaSource,requested:read.requested});
+      if(ctx.deps.knowledge.feeding)await ctx.deps.knowledge.feeding.observeSourceBounded(user,read.sha256,{...feeding,sourceRecord:read.sourceRecord,metaSource:read.metaSource,requested:read.requested});
       out.push({
         slot: slot.slot,
         role: slot.role,

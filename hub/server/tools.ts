@@ -511,7 +511,7 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     if (problem !== null) return { answer: errorAnswer('get_nodes', [violation('get_nodes', '/cursor', problem, CURSOR_FIX)]) };
   }
   let feedingReceipt:import('../knowledge/feeding.ts').FeedingReceipt|undefined;
-  if(parsed.scheme==='src'&&result.readable){const detail=run?await deps.runs.getRun(call.principal,run):null;feedingReceipt=await deps.knowledge.feeding?.observeSource(call.principal,parsed.sha256,{composition:detail?.run.target_basis.find(claim=>claim.statement.data?.root===detail?.run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:detail?.run.product,root:detail?.run.root,run,line:detail?.run.version});}
+  if(parsed.scheme==='src'&&result.readable){const detail=run?await deps.runs.getRun(call.principal,run):null;feedingReceipt=await deps.knowledge.feeding?.observeSourceBounded(call.principal,parsed.sha256,{composition:detail?.run.target_basis.find(claim=>claim.statement.data?.root===detail?.run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:detail?.run.product,root:detail?.run.root,run,line:detail?.run.version});}
   const feedingState=parsed.scheme==='rec'?await deps.knowledge.feeding?.recordState(parsed.record,call.principal):null;
   const derivedNote=[result.note,contributionNote,feedingState?.validity==='invalid'?'喂入根据已失效；撤回及来源修订记录：'+feedingState.retractions.join('、'):null].filter(Boolean).join('；');
   const content = {
@@ -562,7 +562,7 @@ export async function callTool(deps: ServerDeps, call: ToolCall, name: string, a
     reply = { answer: fromThrown(name, error, call) };
   }
   const feedRun=call.state.runId?await deps.runs.getRun(call.principal,call.state.runId):null;
-  if(feedRun&&deps.knowledge.feeding)reply.answer={...reply.answer,feeding_objects:await deps.knowledge.feeding.usages(call.principal,feedRun.run.run),...(feedRun.run.feeding_offset?{feeding_offset:feedRun.run.feeding_offset}:{})};
+  if(feedRun&&deps.knowledge.feeding)reply.answer={...reply.answer,feeding_objects:await deps.knowledge.feeding.usages(call.principal,feedRun.run.run),feeding_pending:await deps.knowledge.feeding.pending(call.principal,feedRun.run.run),...(feedRun.run.feeding_offset?{feeding_offset:feedRun.run.feeding_offset}:{})};
   const checked = definition.output.safeParse({ ...reply.answer, trace: call.context.traceId });
   if (!checked.success) {
     call.state.callResult = 'error';
