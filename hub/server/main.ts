@@ -157,14 +157,18 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
   await sweepOrphans().catch((error: unknown) => operatorLog(`清理遗留的沙箱子进程失败（不影响启动）：${error instanceof Error ? error.message : String(error)}`));
 
   let app: HubApp | undefined;
+  let maintenance: import('./api.ts').ServerDeps['maintenance'];
   try {
     const assembly = await (options.assembly ?? (() => import('./assemble.ts') as Promise<AssemblyModule>))();
     const deps = await assembly.assemble(config, records);
+    maintenance=deps.maintenance;
+    await maintenance?.startMaintenance();
     app = createApp(deps, { log: operatorLog, ...options.appOptions });
     const info = await app.listen();
     io.stdout(`circle-hub 在 ${info.url} 上监听${app.release === null ? '' : `（发布 ${app.release}）`}`);
     options.onListening?.(info);
   } catch (error) {
+    await maintenance?.stopMaintenance().catch(() => {});
     await app?.close().catch(() => {});
     await records.close().catch(() => {});
     if (isAssemblyMissing(error)) {
@@ -183,6 +187,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
   try {
     const signal = await (options.stopSignal ?? defaultStop)();
     io.stdout(`收到${typeof signal === 'string' ? ` ${signal}` : '停止请求'}，正在停止：等进行中的请求结束`);
+    await maintenance?.stopMaintenance();
     await running.close();
     // Pack-function children still running after the requests ended are stopped (hub/rules README).
     stopAll();

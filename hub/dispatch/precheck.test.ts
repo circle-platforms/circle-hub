@@ -24,6 +24,7 @@ test('bootstrap collection needs no invented manifest or resource keys, but disp
   const c = await setup(); t.after(() => c.close());
   const input = { ...c.executor.definition, manifest_sha256: null, resources: [] };
   const draft = await c.registry.update(c.admin, c.executor.id, input);
+    await c.freezeExecutor();
   assert.equal(draft.definition.manifest_sha256, null);
   const state = await c.service.precheck(c.admin, c.executor.id);
   assert.ok(c.calls.includes('inspect_slot')); assert.ok(c.calls.includes('close_slot'));
@@ -38,6 +39,7 @@ test('multiple registered read-only sources are checked in order; a cache mismat
   for (const mismatch of [false, true]) {
     const c = await setup({ extraTools: ['peek_cache'], alter: (name, value) => name === 'peek_cache' ? { cached: { stable: !mismatch } } : value }); t.after(() => c.close());
     await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, allowed_tools: [...c.executor.definition.allowed_tools, 'peek_cache'], precheck_reads: [{ tool: 'peek_cache', arguments: { refresh: false }, conditions: [{ pointer: '/cached', sha256: sha256Hex(canonicalBytes({ stable: true })) }] }] });
+    await c.freezeExecutor();
     const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
     assert.ok(c.calls.indexOf('peek_cache') > c.calls.indexOf('inspect_slot'));
     assert.equal(state.outcome, mismatch ? 'not_dispatched' : 'effective');
@@ -48,6 +50,7 @@ test('multiple registered read-only sources are checked in order; a cache mismat
 test('missing fields do not satisfy explicit-null checks', async t => {
   const c = await setup(); t.after(() => c.close());
   await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, conditions: [{ pointer: '/missing', equals: null }] });
+    await c.freezeExecutor();
   const state = await c.service.precheck(c.admin, c.executor.id);
   assert.ok((await c.service.journal.events(state.job)).some(e => e.body.detail.readonly_verified === false));
 });
@@ -55,6 +58,7 @@ test('missing fields do not satisfy explicit-null checks', async t => {
 test('capture-only cached sources can bootstrap expectations but never make dispatch ready', async t => {
   const c = await setup({ extraTools: ['peek_cache'], alter: (name, value) => name === 'peek_cache' ? { cached: [1, 2] } : value }); t.after(() => c.close());
   await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, manifest_sha256: null, resources: [], conditions: [], capture_pointers: ['/build'], allowed_tools: [...c.executor.definition.allowed_tools, 'peek_cache'], precheck_reads: [{ tool: 'peek_cache', arguments: { refresh: false }, conditions: [], capture_pointers: ['/cached'] }] });
+    await c.freezeExecutor();
   const state = await c.service.precheck(c.admin, c.executor.id);
   assert.ok(c.calls.includes('inspect_slot')); assert.ok(c.calls.includes('peek_cache'));
   assert.match(state.next_action!, /转换脚本.*update/);
@@ -65,6 +69,7 @@ test('capture-only cached sources can bootstrap expectations but never make disp
 test('overprivileged credentials produce a concrete reason in both precheck and dispatch without tool calls',async t=>{
   const c=await setup({extraTools:['synthetic_admin_reset']});t.after(()=>c.close());
   await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,refused_tools:['synthetic_admin_reset']});
+    await c.freezeExecutor();
   for(const state of [await c.service.precheck(c.admin,c.executor.id),await c.service.dispatch(c.admin,c.run,c.executor.id)]) {
     assert.equal(state.outcome,'not_dispatched');assert.match(state.reason!,/密钥权限超出运行权限/);
   }

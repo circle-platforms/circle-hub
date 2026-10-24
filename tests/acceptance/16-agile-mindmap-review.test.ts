@@ -148,8 +148,12 @@ describe('scenario 16: whole review of ~150-node agile mind map with linked expe
     assert.ok(submitAnswer.text.includes('读其余部分：'));
     // Soft-cap splits the problem list at ~9000 chars so that later items and problems are partially omitted
     assert.ok(
-      submitAnswer.text.includes('略去了条目明细') || submitAnswer.text.includes('略去了问题与未知'),
-      'softCap and fit must omit parts beyond budget',
+      submitAnswer.text.includes('略去了条目明细') || submitAnswer.text.includes('略去了问题与未知') || submitAnswer.text.includes('略去了错误'),
+      'softCap and fit must name omitted errors, problems or item detail: '+submitAnswer.text.split('部分：').at(-1),
     );
+    const counts=submitAnswer.out.counts!;
+    assert.equal(counts.delivered+counts.rejected+counts.quarantined+counts.incomplete,95,'counts survive truncation');
+    const saved=(await bed.hub.records.store.find({key:'runs.result.run',value:bigRun.run})).items[0];assert.ok(saved);
+    const full=await client.call('get_nodes',{reference:'rec:'+saved.digest});assert.equal(full.isError,false,'the saved result remains readable');
   });
 });

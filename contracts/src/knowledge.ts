@@ -13,7 +13,7 @@ import { KNOWLEDGE_CONTRIBUTION_SCHEMA, KnowledgeContributionBody } from './cont
 import { z } from 'zod';
 import { EntryKindSchema, NodeLevelSchema, ProvenanceTypeSchema, ReadTierSchema, type NodeLevel } from '../generated/vocabulary.ts';
 import { IsoTime, PackId, PackVersion, Sha256, UserId, Versioned } from './common.ts';
-import { Applicability, BuildInfo, CatalogDeclaration, LinkDeclaration, MAX_LIST_SOURCES, PackFunctionRef, ProductId } from './product.ts';
+import { Applicability, ApplicabilityOrigin, BuildInfo, CatalogDeclaration, LinkDeclaration, MAX_LIST_SOURCES, PackFunctionRef, ProductId } from './product.ts';
 import { ExternalObjectId, TreePath, referenceUriOf } from './reference.ts';
 
 // ---------------------------------------------------------------- levels and bases
@@ -117,12 +117,16 @@ export const ModelPlacement = z.strictObject({
 export type ModelPlacement = z.infer<typeof ModelPlacement>;
 
 /** One row of a version's composition (K01 R[7]): which source fragments provide an entry at a path, on which basis. */
+export const ApplicabilitySource=ApplicabilityOrigin.extend({fragment:SrcReferenceUri});
+export type ApplicabilitySource=z.infer<typeof ApplicabilitySource>;
+
 export const CompositionRow = z.strictObject({
   path: TreePath,
   entry: Sha256,
   kind: EntryKindSchema,
   producers: ProducerIds,
   fragments: z.array(SrcReferenceUri).min(1).describe('canonical src references in the order the producers gave them'),
+  applicability_sources:z.array(ApplicabilitySource).optional(),
   basis: CompositionBasisSchema,
   decided_by: z.string().min(1).describe('who decided the source belongs to the version: the product pack id@version'),
   placement: ModelPlacement.optional().describe('present when the typed-judgment model chose the position'),
@@ -136,6 +140,7 @@ export const UnplacedRow = z.strictObject({
   producers: ProducerIds,
   section: z.string(),
   fragments: z.array(SrcReferenceUri).min(1).describe('every source piece with this content, in the order the producers gave them'),
+  applicability_sources:z.array(ApplicabilitySource).optional(),
   basis: CompositionBasisSchema,
   decided_by: z.string().min(1),
   stopped_at: TreePath.describe('the node where placement stopped (/ when it never descended)'),
@@ -258,8 +263,8 @@ export type TreeRootSourcesPart = z.infer<typeof TreeRootSourcesPart>;
 export const TreeRootBody = z.strictObject({
   variables:z.array(VariableUse).optional(),
   product: ProductId,
-  version: z.strictObject({ line: z.string().min(1), build: z.string().min(1), family: z.string().min(1), platform: z.string().min(1).nullable() }),
-  build: RecordedBuild.describe('the build the root was produced for, as the sync listed it (list roles by reference)'),
+  version: z.strictObject({ line: z.string().min(1), build: z.string().min(1), family: z.string().min(1), platform: z.string().min(1).nullable() }).nullable(),
+  build: RecordedBuild.nullable().describe('the build the root was produced for, as the sync listed it (list roles by reference)'),
   root: Sha256.describe('digest of the root node'),
   producer: z.strictObject({
     pack: PackId,
@@ -299,11 +304,11 @@ export type TreeRootBody = z.infer<typeof TreeRootBody>;
  */
 export const RootPointerBody = z.strictObject({
   product: ProductId,
-  line: z.string().min(1),
+  line: z.string().min(1).nullable(),
   pointer: z.string().min(1),
   expected: Sha256.nullable(),
   root: Sha256,
-  build: z.string().min(1).describe('the build whose root the pointer now names'),
+  build: z.string().min(1).nullable().describe('the build whose root the pointer now names'),
   composition: Sha256.describe('digest of its tree_root record'),
   move: Sha256.describe('digest of the move_root action'),
   version: z.number().int().min(1),

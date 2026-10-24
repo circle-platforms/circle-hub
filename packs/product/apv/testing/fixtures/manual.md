@@ -87,3 +87,11 @@
 **demo pool add** *\<pool_name\> \<member_host\>*
 
 同一个命令的另一种写法。
+
+# 合成适用范围：装有 Card-A 时
+
+装有 Card-A 时。内存至少8GB。需要 Permit-A 许可。适用于 Form-A 部署形态。
+
+## 合成子节
+
+合成条件下的普通说明。

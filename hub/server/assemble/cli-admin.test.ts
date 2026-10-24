@@ -1,3 +1,4 @@
+import type {Environment} from '../../../contracts/generated/vocabulary.ts';
 import {secretNameOf} from '../../../contracts/src/variables.ts';
 import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../connectors/testing/credentials.ts';
 // The administrator commands through the server CLI's main, in-process, on a temporary socket-only PostgreSQL: init-admin
@@ -785,11 +786,24 @@ describe('original', () => {
       const filtered = await expectOk(admin, ['original', 'list', '--external', 'agile:']);
       assert.equal(filtered.out.length, 1);
       assert.ok(filtered.out[0].startsWith(`agile:page:release-100@1\t${shaOne}`), filtered.text);
+      const suffix = await expectOk(admin, ['original', 'list', '--suffix', '.xml@1', '--limit', '1']);
+      assert.equal(suffix.out.length, 1);
+      assert.ok(suffix.out[0].startsWith(`build:file:tree-100.xml@1\t${shaTwo}`), suffix.text);
       const limited = await expectOk(admin, ['original', 'list', '--limit', '1']);
       assert.equal(limited.out.length, 1);
       for (const line of [...all.out, ...filtered.out]) {
         assert.ok(!line.includes('修复了'), 'the content never reaches the screen');
         assert.ok(!line.includes('<tree'), 'the content never reaches the screen');
+      }
+    });
+  });
+
+  test('an unmatched suffix names the suffix filter with or without a prefix', async () => {
+    await withOriginals(async admin => {
+      for (const prefix of [[], ['--external', 'agile:']]) {
+        const empty = await expectOk(admin, ['original', 'list', ...prefix, '--suffix', '.synthetic-missing']);
+        assert.match(empty.text, /后缀/);
+        assert.ok(!empty.text.includes('以这个前缀开头'));
       }
     });
   });
@@ -1339,8 +1353,8 @@ async function importResource(admin: Admin): Promise<string> {
   await expectOk(admin, ['pack', 'publish', packs.agile]);
   return addImportResource(admin);
 }
-async function addImportResource(admin: Admin): Promise<string> {
-  const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '合成导入', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', ...syntheticCredentialArgs('username','password')]);
+async function addImportResource(admin: Admin,environment:Environment='test'): Promise<string> {
+  const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '合成导入', '--environment', environment, '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', ...syntheticCredentialArgs('username','password')]);
   return /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
 }
 async function importFile(admin: Admin, bytes: string | Uint8Array): Promise<string> {
@@ -1354,7 +1368,7 @@ const importArgs = async (admin:Admin,file:string,id:string) => {
 
 describe('secret import', () => {
   test('imports grouped credentials, hashes the password, shares a key across resources and supports dry run', async () => {
-    const admin = await setup(); const id = await importResource(admin); const second = await addImportResource(admin);
+    const admin = await setup(); const id = await importResource(admin); const second = await addImportResource(admin,'production');
     const unrelated = 'SyntheticUnrelatedValue47'; secrets.add(unrelated); secrets.add('reader');
     const file = await importFile(admin, `# --- synthetic ---\nPORTAL_USER = reader\nPORTAL_PASSWORD = "${PASSWORD}"\nUNRELATED = ${unrelated}\n`);
     const args = [...await importArgs(admin,file,id), '--key', `PORTAL_USER=${await nameOf(admin,second,'username')}`, '--short',await nameOf(admin,second,'username')];
@@ -1373,7 +1387,7 @@ describe('secret import', () => {
   });
 
   test('review 5: an invalid later resource value is refused before any credential is written', async () => {
-    const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin);
+    const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin,'production');
     const bad = 'Synthetic\tInvalidValue85'; secrets.add(bad); secrets.add('reader');
     const file = await importFile(admin, `PORTAL_USER=reader\nBAD=${bad}`);
     const result = await admin.run(['secret', 'import', '--env-file', file, '--key', `PORTAL_USER=${await nameOf(admin,first,'username')}`, '--key', `BAD=${await nameOf(admin,second,'password')}`, '--reason', 'DEMO_IMPORT']);
@@ -1531,7 +1545,7 @@ test('review 1: resource read exposes connector diagnostics only with the explic
 
 
 test('review 5: dry-run and real import validate every value before the first write', async () => {
-  const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin);
+  const admin = await setup(); const first = await importResource(admin); const second = await addImportResource(admin,'production');
   for (const value of ['SensitiveCtlPrivate95\tValue', 'X'.repeat(4097)]) {
     secrets.add(value); secrets.add(value.slice(0, 12));
     const file = await importFile(admin, `PORTAL_USER=reader\nBAD=${value}`);
@@ -1622,6 +1636,23 @@ test('c3 Secrets documentation follows the supported irreversible key loss proce
  assert.ok(!text.includes('the advice is always to restore'));
 });
 
+test('pack publish forwards repeated explicit answer-request flags without touching the real keychain',async()=>{
+  const admin=await setup();
+  await expectOk(admin,['pack','grant-publish','根管理员']);
+  await expectOk(admin,['pack','publish',packs.review]);
+  const requestIds=await withKit(admin,async kit=>{
+    const {createRequestService}=await import('../../requests/api.ts');
+    const owner=(await kit.principals.findByName('根管理员'))!;
+    const version=(await kit.store.list<{digest:string}>({kind:'pack_version',limit:10})).items[0];
+    const requests=createRequestService(kit);
+    return Promise.all(['合成缺口甲','合成缺口乙'].map(missing=>requests.write({pack_digest:version.body.digest,kind:'repair',audience:owner.id,due:'2026-10-26T00:00:00.000Z',missing,next_action:'发布修复版本',source:version.digest,code:'check_error'}))).then(records=>records.map(r=>r.digest));
+  });
+  const dir=(await writePack(join(packRoot,'explicit-answer'),reviewPack('1.0.1'))).dir;
+  const answer=await expectOk(admin,['pack','publish',dir,'--answer-request',requestIds[0],'--answer-request',requestIds[1]]);
+  assert.match(answer.text,/请求作答.*2 个指定请求/);
+  await withKit(admin,async kit=>{const {createRequestService}=await import('../../requests/api.ts');for(const id of requestIds)assert.ok((await createRequestService(kit).inspect(id))?.answered_by);});
+});
+
 test('lease release refuses an unfinished dispatch job before changing the row',async t=>{
   const admin=await setup();const kit=await admin.kit();t.after(()=>kit.close());
   const user=(await kit.principals.findByName('根管理员'))!;
@@ -1668,4 +1699,34 @@ test('lease ownership commands audit reassignment and list owner, holder and run
   assert.ok(actions.some(row=>row.op==='register'&&row.owner===next.id&&row.previous_owner===owner.id&&row.reason==='合成归属更正'));
   assert.ok(actions.some(row=>row.op==='unregister'&&row.owner===next.id));
   assert.equal((await admin.run(['lease','register','bed/sample/','--owner',next.id])).code,2);
+});
+
+test('administrator sharing commands cover users package audiences policy listing and withdrawals', async t => {
+  const admin = await setup();
+  await expectOk(admin,['pack','grant-publish','根管理员']); await expectOk(admin,['pack','publish',packs.review]);
+  const token = await userWithToken(admin,'合成分享读者');
+  await expectOk(admin,['pack','assign','合成分享读者',REVIEW_PACK]);
+  const kit = await admin.kit(); t.after(()=>kit.close());
+  const {RunRecord} = await import('../../../contracts/src/run.ts');
+  const {newId,productionShareKey} = await import('../../records/api.ts');
+  const owner = (await kit.principals.findByName('根管理员'))!;
+  const reader = (await kit.principals.findByName('合成分享读者'))!;
+  const run = newId('run');
+  const body = RunRecord.parse({run,pack:REVIEW_PACK+'@1.0.0',pack_digest:'a'.repeat(64),target_basis:[],sources:[],requirements:[],items:[],instructions:'合成说明',instructions_digest:'b'.repeat(64),started_at:'2026-10-24T00:00:00Z',runner:owner.id,host:'local_circle',trigger:'session',parameters:{},session:'synthetic-session',client_key:'synthetic-key',request_digest:'c'.repeat(64),client_key_expires_at:'2026-10-25T00:00:00Z'});
+  await kit.store.put({kind:'run',schema:'run@1',provenance:'observed',body,index:[{key:'runs.id',value:run}]});
+  await expectOk(admin,['share','run',run,'--users',reader.name,'--reason','合成只读分享']);
+  assert.equal(await kit.authorizations.isSharedWith(reader.id,run),true);
+  assert.match((await expectOk(admin,['share','list','--object',run])).text,new RegExp(run));
+  await expectOk(admin,['unshare','run',run,'--user',reader.name]);
+  assert.equal(await kit.authorizations.isSharedWith(reader.id,run),false);
+  await expectOk(admin,['share','run',run,'--pack-users']);
+  assert.equal(await kit.authorizations.isSharedWith(reader.id,run),true);
+  await expectOk(admin,['unshare','run',run,'--pack-users']);
+  assert.equal(await kit.authorizations.isSharedWith(reader.id,run),false);
+  await expectOk(admin,['share','production',REVIEW_PACK]);
+  assert.equal(await kit.authorizations.isSharedWith(reader.id,productionShareKey(REVIEW_PACK)),true);
+  await expectOk(admin,['unshare','production',REVIEW_PACK]);
+  assert.equal(await kit.authorizations.isSharedWith(reader.id,productionShareKey(REVIEW_PACK)),false);
+  for(const args of [['share','list'],['share','run',run,'--pack-users'],['unshare','run',run,'--pack-users'],['share','production',REVIEW_PACK],['unshare','production',REVIEW_PACK]]) assert.equal((await admin.run(args,{[OPERATOR_TOKEN_VARIABLE]:token})).code,1);
+  const missing = await admin.run(['share','run','run_'+'1'.repeat(26),'--pack-users']); assert.equal(missing.code,1); assert.match(missing.text,/对你不可用/);
 });

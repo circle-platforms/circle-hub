@@ -4,7 +4,7 @@
 
 ## 模型与范围
 
-按 D02、D03、D04、B05、B06、B07、P07、V03 实现。`executor@1` 暂由本包的 `definition.ts` 定义，不改共享合约。词表类型和标签来自 `contracts/generated`。目标的工具名、代表身份头、字段指针、阶段词、状态词、命令和收尾标记都来自部署的执行器定义；核心不识别任何产品命令或网关专有字段。
+按 D02、D03、D04、B05、B06、B07、P07、V03 实现。`executor@1`、`write-declaration@1`、`effect@1` 定义在共享合约 resources.ts；本包只保留调用绑定与运行服务。词表类型和标签来自 `contracts/generated`。目标的工具名、代表身份头、字段指针、阶段词、状态词、命令和收尾标记都来自部署的执行器定义；核心不识别任何产品命令或网关专有字段。
 
 开发只使用临时 PostgreSQL、回环 MCP 桩和合成字节；不能据此认证真实目标。真实协议、固定 CA、设备座位、全部物理资源键、版本别名、日志格式及结果保留规则由集成者核验后登记。
 
@@ -16,7 +16,7 @@
 - `allowed_tools` 必须全部存在。`refused_tools` 中任何工具出现在任一清单页时立即停止，生命周期调用次数为零，原因是“密钥权限超出运行权限”。允许和拒绝清单不能重叠。
 - `calls` 声明 acquire、heartbeat、release、precheck、submit、status、result，以及可选的 query。模板的 `{$value: ...}` 绑定 Hub 的事实；真正的内容参数由 `payload_argument` 定位，必须且只能绑定一次 `payload_base64`，其他角色不能携带它。
 - 启用请求协议时 submit 必须各绑定一次 `request_id`、`not_after`；query 必须绑定原 `request_id`。`receipt.request_id` 是回显指针，必须与意图逐字相等。
-- JSON-RPC/SSE 先交存储回调再解释。每次调用只发一个 POST，不跟重定向、不重连、不重发提交、不发取消通知。截断、超限和超时的已有字节仍保留并标不完整；SSE 可在完整匹配响应边界停止接收，不能假称读完无限流。
+- JSON-RPC/SSE 先交存储回调再解释。每次调用只发一个 POST，不跟重定向、不重连、不在传输层重发提交、不发取消通知。截断、超限和超时的已有字节仍保留并标不完整；SSE 可在完整匹配响应边界停止接收，不能假称读完无限流。
 - `read_retry_when` 复用条件表语法，声明哪些明确的工具拒绝可安全重读（例如部署声明的“忙且未触达”条件；具体字段和值全由定义提供）。默认不重试明确工具拒绝、认证 HTTP 错误、完整协议错误或本地存储失败；停止该批后续探测，不反复登录。网络和暂时性 HTTP 失败最多自动重读三次。
 - 工具错误的原件同样先保存。只有提交角色允许解释这种回答中的结构化拒绝；只读工具错误仅在明确的安全重读条件满足时重读，不能当作“查无记录”。
 
@@ -50,7 +50,7 @@
 
 提交断开、超时或提交中进程退出后：
 
-1. 活命令自动等到 notAfter，再按原请求号只读查询；已退出进程用 `job resume` 走同一路径。可安全重读的查询失败自动重读最多三次，从不重发提交。
+1. 活命令自动等到 notAfter，再按原请求号只读查询；已退出进程用 `job resume` 走同一路径。可安全重读的查询失败自动重读最多三次；只有下文显式认证的重试类允许一次同键重发。
 2. 查到已发出的正面记录，且请求、摘要、远端编号相符，reached_device 严格为 JSON true，就追加回读回执，继续状态和结果读取。正面记录不要求负面证明的认证。处理中尚无开始标记时的 null 只表示缺开始事实，不转换成 false，也不凭状态映射或编号代替开始标记；明确 pending 的状态继续自动查询，超过窗口请原操作者核对处理进程。
 3. 查到明确未触达的拒收或未启动记录，只有当前版本请求记录前提有效时才采用。
 4. 查无记录，只有日志身份和完整主体与投递前快照相同、发送会话已确认支持协议、目标时钟严格晚于原 notAfter、原 notAfter 严格晚于 GC 保留边界、GC 边界不早于可靠记账起点，而且当前版本的请求记录前提有效，才记已证明未执行。clock_skew_ms 不放宽这条不等式。
@@ -66,7 +66,7 @@
 
 旧定义仍可读，缺少上述声明时不得开始新的请求协议投递。旧意图没有投递前快照或发送会话的协议支持事实时，升级后的查询会话不能追认；查空不产生未执行证明。conformance 仍只做四次协议调用，同时核各次日志身份、记账起点和主体的一致性，不自动认证。
 
-`conformance: {expected_stage, payloads}` 声明受理阶段的目标原样词及两份不同的合成、不可执行探测字节的规范 base64。解码必须非空且字节不同，过期拒绝及随后查到的记录都必须正好处于 expected_stage，不能把后续预检拒绝混成拒收过期请求。`job conformance` 在一个租约里只做四次请求协议调用：查未发出的编号；交已过期请求；同编号换字节；再查原记录。核 found/时刻、受理阶段、未触达、原摘要未改绑及拒收状态，原件先存，结果只给摘要和引用。它只采证，不会自动修改 premises，也不调用设备预检命令。真正认证由管理员复核后登记。
+`conformance: {expected_stage, payloads}` 只保留为历史定义的兼容字段。当前采证只读，不外发探测字节；完整前提认证须由管理员登记受限审计证据，见下文 P11 与一致性采证。
 
 ## 逐座位只读探测
 
@@ -130,7 +130,7 @@ version 的单个提取值须逐字等于锁定构建的名字、基础名或知
 ## 本轮偏离与后续
 
 - 认证暂放执行器定义，不新增认证记录合约；管理员提供认证，Hub 只核版本、范围与可读取证据，不自动认证真实目标。
-- retry_safety 使用生成的词表，当前登记 unsafe 或 dedup_window。本轮即使有时间窗去重认证也不在窗口内重发原键，只按原请求记录核对；不启用其他重发策略。
+- retry_safety 使用生成的四类词表。缺写声明的旧定义按 unsafe 运行；完整声明可启用下文的认证重发策略。
 - B06/B07 暂以 action@1.detail 表达，旧记录保持不变；运行状态仍归引擎，本包不回写条目终态。
 - 派发由管理员 CLI 触发，尚无提交后自动派发钩子；CLI 中断的查询由 resume 自动继续。
 - 目标的全部入口隔离和真实结果归属不能由合成桩证明。第一步网关的真实目录、报告地址、保留规则，以及真实探测和版本认证仍由集成者核验；本分支不部署、不触达真实设备。
@@ -204,3 +204,47 @@ protocol_versions 声明不替代认证。否定结论同时重核查询会话�
 复核确认：`credential` 的名字属于原作业的固定字段，不在兼容只读修补范围内。恢复和对账仍可取得这个固定名字的当前密钥版本；修改源定义为另一个名字只记录漂移并拒绝采用该修补，不能替换已发出作业的钥匙名字。状态、结果和认证的兼容只读修补沿用集成者确认的 D02 R[6] 口径，只用原作业固定的变量决定解析。
 
 期望值引用不得进入任何 `$value` 路径段，包括嵌套对象；登记、更新、离线解析和已有定义的 `var set` 都先核对源引用位置。字面的管理员调用绑定仍可登记，变量不能决定其绑定键名；旧的不合格源定义须先通过 executor update 修正。
+
+## D03/P11 contract assembly
+
+`executor@1`, its source-definition validator and `write-declaration@1` now live in contracts/resources. The dispatch module retains runtime binding helpers and ordinary-variable resolution only. Credential references and all existing expected-value positions move with the schema; write declarations and environment never accept ordinary variables. A submit declaration uses generated interaction, effect, retry and signing axes. It names a target-key binding, reversibility, audience, read-back tool/pointer, refusal pointers, optional before-state read and Hub-record behavior. Executors admit job effects only, with no external audience and with durable Hub records. Before-state calls cannot use the submit tool.
+
+A historical definition without a write declaration retains the existing job/service-on-behalf semantics and unsafe retry semantics; executor list explicitly reports 写声明未写. Environment is not guessed: an absent environment prevents dispatch until an administrator updates it. Ordered multi-step writes are outside this round. The request-record integration remains pending hub-unknown-exits; existing action details do not stand for a sent durable request.
+
+允许的效果表随 requirements.json 冻结。资源种类和动作是通用 executor/submit 协议角色，不是目标工具名。参数范围只针对通用作业参数 target、manifest_sha256、build、sha256、items、generator；可以列取值集合，或绑定 policies/ 表及编译时同一个检查。政策引用要求正反例齐全，发布仍运行样例。触发方式取生成词表。运行者收窄效果表不在本轮；包未声明效果表时发布行为兼容，但派发边界不留下旧路。
+
+全局政策表在 policy/boundary.json，按生成词表的效果类、可逆性与环境逐格列出。生产只允许 none/read，测试和共享另允许 job；同步写与通知全部拒绝。表摘要和逐个变量解析后的执行器摘要在 start_run 用同一次变量快照冻结，真实定义另存对象，运行只保存登记对象摘要。内部端口不借运行者身份列管理员清单，也不读密钥值。
+
+### P11 与一致性采证
+
+`executor conformance` 只读取请求日志身份、主体、时刻与保留边界，导出受限原件。管理员给的探测字节没有核验运行，不能满足 P11 第 8 款，因此不再提交这两份字节，也不写 `probe_intent`。缺少的过期拒收、同键去重等事实，由管理员从目标自己的受限审计记录只读取证，连同版本与证据引用登记到 `premises`；只读查空不自动认证这些前提。已有探测意图的历史对账继续支持。
+
+### 有序边界、预算和效果快照
+
+写意图前按 P11 的九款依次核对，前款拒绝不运行后款。效果行、通用参数、放行事实与预算先在准备阶段核一遍；提交前完整重核，预算还在写意图的同一事务中以（运行、行号）加锁复核。只按已经写下的意图累计次数和最长运行预留时长，不用远端成功与否归还额度。参数匹配多行也拒绝，不能挑预算较宽的一行。拒绝记 dispatch 动作、固定码、款号、效果行及其要求项，effect@1 为 not_dispatched，对方提交次数为零。
+
+政策版本和所用执行器解析后摘要必须与开跑快照相符，缺环境也在此拒绝；别的执行器更新不影响。包政策重核通过 runs 的只读端口复用 evaluate 的被判对象、冻结包脚本与表，不增加提交或修复轮。生产核验结果以原运行记录摘要识别，仅全事实包且摘要与受理结果相符时按原生产路径重核；普通提交仍须解析原提交，不能用任意摘要冒充生产结果。内容只发绑定原件，不重新生成外发内容；摘要、支持事实和当前完整凭据扫描都须相符。XLSX 同时解析完整模型、逐个读取有界安全解压的所有成员，扫描原文及 XML 模型；未知二进制成员或任何不完整扫描都拒绝。作业的 audience 固定 null，没有通知/评论的外部受众空间，第九款在此不启用受众写入。
+
+声明 before_state 时，在提交的同一远端租约下只读一次并比较绑定值；不相等就未发出。仅在 conditional_write 为真、premises.conditional_write 的目标版本与证据已认证、提交参数恰好带一次 before_state 时记已绑定；只读比较通过而目标不支持条件写，仍记未绑定前状态。写声明的 target_key 用同一份核验事实绑定并取摘要。
+
+丢回复按 `Record<RetrySafety, …>` 的全表处理。same_key_safe 须 premises.retry_safety 的版本与受限证据认证；dedup_window 还须 premises.window_resend 的显式认证及 window_ms 时长，并在该窗口与原投递截止的较早者之前；duplicate_tolerant 认证后最多再发一次，追加 possible_duplicate；unsafe 和任何前提未认证的类只读原请求/结果，不重发。重发复用相同意图键、请求号、截止与原字节，再核 P11（自身已花的意图预算不重复扣）。任何重发前提失败都不能抹去第一次投递：继续原请求对账。
+
+effect@1 随意图、回执、终局与处置追加快照，保存上个快照摘要，原 action detail 保持可读。未分配意图的边界拒绝，其请求号、截止、动作摘要为 null；未声明或未观察到的目标主体也保留 null，不冒称实际账号已认证。未决快照明确缺的执行事实，出口指向具名发起管理员的 disposition 请求及持久化期限。
+
+### Needs（已确认的依赖）
+
+- 基线没有 hub-unknown-exits 的请求服务。经所有者确认，第 7 条 request@1 写入/列出/处置了结待该接口合入；当前只有动作中的具名处置说明和 effect 的结构化 request 出口，不声称已创建请求记录。
+- 同一依赖的“效果预算耗尽 → 相关要求项各层未完成”入口尚不存在。当前已持久化 EFFECT_BUDGET_EXHAUSTED、行号和受影响要求项，提交为零；运行终态回传待接口合入，不冒充已回传。
+- 有序多步、运行者收窄效果表不在本轮。submit_result 的工具注解不变，不自动派发；当前仅管理员命令代 hub_template 触发，后续接自动派发时再按分配包中最宽的一行计算注解。
+
+合入 trunk-fixes-4 前的基线对照：使用合成数据与回环桩，合约测试 283 个通过；冻结运行的端口测试随运行目录一起跑。运行目录 418 个中 339 过、79 失败；未修改的 643f7613 基线为 415 个中 336 过、79 失败，逐项比较失败名集合完全相同，本分支新增 3 个运行测试均过。既有未知层 missing/exit 等失败待 trunk-fixes-4，本分支不修。
+
+合入 21c919c7（含 trunk-fixes-4 的 1697ffff）后复验：合约与编译包纯函数 536 项通过；派发、运行和编译包的其余 978 项通过；场景 28 完整复跑 7 项通过。原 missing/exit 与旧 hours 夹具造成的基线失败已消失。一次预算已花掉的同一运行再派发，按 P11 第 4 款返回 EFFECT_BUDGET_EXHAUSTED；这不解除原作业冻结，另一个核验运行仍被目标冻结挡住。只有原请求具名对账后，才继续下一个用例。所有验证均为合成字节和回环桩，不证明真实目标的前提已经认证。
+
+首轮复核第 1 条：参数政策没有取得结论时不再记成参数超范围。缺已受理核验事实归放行条件未满足；缺重核接口、政策抛错或没有完整判定归政策无法重核，写明缺的结论和恢复读取/检查后重核的动作。唯一可确定的效果行及要求项保留在拒绝上；一个匹配行不能遮住另一个未能求值的候选行。只有全部候选都完成判断且不匹配，才给参数超范围。非受控异常原文不进入效果记录。
+
+首轮复核第 2 条：外发容器的只读解压路径拒绝 ZIP 归档/成员注释、本地/中央目录 extra 字段与 ZIP64 扩展区域，不能把不属于成员正文的可藏字节区当作已扫净。普通 XLSX 解析仍保留原支持；外发路径另外加严。解码器既有的成员连续性、Deflate 全量消费、CRC 和大小限制继续强制。合成凭据放在归档注释、成员注释和扩展字段的三个反例都被拒绝。
+
+首轮复核第 3 条：首次意图和丢回复重发两个实际写入点都要求 boundary.checked === 9。准备阶段的四款结果仅供准备，不构成放行授权；意外复用或携带 until:4 时，首次不写意图、不提交，重发路径则保留第一次投递并按原请求只读对账。两条回环故障注入测试在改前分别实际提交一次/两次，改后零次/一次。
+
+首轮复核第 4 条：端到端派发测试明确覆盖缺环境的旧执行器与缺冻结登记表的旧运行，均在第 6 款给 BOUNDARY_POLICY_DENIED，零意图、零提交并写 not_dispatched 效果记录。环境用管理员更新后的定义重新冻结，不能借旧定义兼容默认成测试环境。临时注入这种错误默认时，新测试实际捕获一次提交；恢复正确代码后通过。

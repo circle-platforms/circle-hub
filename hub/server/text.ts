@@ -1,3 +1,4 @@
+import { isAbandonedResult } from '../runs/api.ts';
 import { isCallResult, isAcceptance } from '../../contracts/generated/vocabulary.ts';
 // The Chinese plain text of every tool answer (D05 R[0], R[1], R[6]; display rules 0, 4-7 and 11): the only content block,
 // and the only part of a tool result the real Circle client hands to the model (structuredContent never reaches it). Every
@@ -40,7 +41,7 @@ import {
   type SubmitResultOutput,
   type UploadFileOutput,
 } from '../../contracts/src/tools.ts';
-import { PartitionCounts, StoredPartitionItem, Partitions, ValidationResult, readStoredValidationResult, storedItemNotices, partitionCountsOf, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
+import { PartitionCounts, StoredValidationResult, StoredPartitionItem, Partitions, ValidationResult, readStoredValidationResult, storedItemNotices, partitionCountsOf, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { ReferenceSyntaxError, UNAVAILABLE_MESSAGE, canonicalJson, parseReference, pointerTokens, recReference, srcFragment, withRange, type Reference } from '../refs/api.ts';
 import { TEXT_BUDGET, fit, oneLine, softCap, type Block, type Entry, type Omission } from './budget.ts';
 import { NOT_APPLICABLE, claimFields, coverageText, requirementText, statusText, terminalLabel, terminalSymbol, terminalText, type LayerTerminal } from './claims.ts';
@@ -182,7 +183,7 @@ function reasonCounts(items: readonly ItemResult[] | undefined): string {
 /** Items per partition (a declared skip is told apart from an item the submission did not cover) and the items with an unknown terminal (V03 R[4]); unknown is never an error. */
 export function countsText(counts: PartitionCounts, partitions?: Partitions): string {
   const shown = PARTITION.map((p) => `${labelOf('partition', p)} ${counts[p]}${reasonCounts(partitions?.[p])}`).join('，');
-  return `${axisLabel('partition')}：${shown}；${labelOf('nature', 'unknown')} ${counts.unknown}`;
+  return `${axisLabel('partition')}：${shown}；${labelOf('nature', 'unknown')} ${counts.unknown}${counts.pending_unknown ? `；其中 ${counts.pending_unknown} 个还有未决未知` : ''}`;
 }
 
 /** The partition counts line: receipt, items per partition and the items with an unknown terminal. */
@@ -814,6 +815,8 @@ function startText(v: StartOut, context: TextContext): string {
   const target = [r.product && `产品 ${headClip.field(r.product, CLIP.name, '产品名的超出部分')}`, r.version && `版本 ${headClip.field(r.version, CLIP.name, '版本名的超出部分')}`, r.build && `构建 ${headClip.field(r.build, CLIP.name, '构建名的超出部分')}`].filter(Boolean);
   if (target.length > 0) head.push(target.join('，'));
   head.push(r.root !== undefined ? `锁定的知识根 ${r.root}` : '知识根：没有锁定');
+  if (r.unversioned_root !== undefined) head.push(`不分版本的知识根 ${r.unversioned_root}（构建未声明）`);
+  else if (r.product !== undefined) head.push('这条产品线还没有不分版本的根；下一步：同步这条产品线');
   if (r.predecessor !== undefined) head.push(`前驱运行 ${r.predecessor}`);
   blocks.push({ priority: 0, head, omitted: headClip.omitted });
   if (full !== null && layout !== null && production !== null) {
@@ -944,6 +947,7 @@ function sourceEntry(s: SourceBinding, run: string): Entry {
     s.external && `外部对象 ${clip.field(s.external, CLIP.name, '外部对象编号的超出部分')}`,
     s.media_type && clip.field(s.media_type, CLIP.name, '媒体类型的超出部分'),
     s.label && clip.field(s.label, CLIP.name, '来源名称的超出部分'),
+    s.coverage?.complete===false && `读取覆盖 ${clip.field(coverageText(s.coverage)??'',CLIP.message,'读取覆盖说明的超出部分')}`,
   ].filter(Boolean);
   return clip.entry(`- ${labelOf('source_role', s.role)} ${s.reference}${parts.length > 0 ? `（${parts.join('，')}）` : ''}`);
 }
@@ -1139,9 +1143,16 @@ function buildView(c: Content & { text: string }): ContentView {
     try{read=readStoredValidationResult(value);}catch(error){if(!(error instanceof ZodError))throw error;read=null;}
     if (read !== null) {
       const result = read.result;
+      const notices=read.notices;
+      const management=isAbandonedResult(result);
+      const unwritten=management?result.cross_item.find(c=>c.warrant.id==='runs.engine@1'&&c.statement.data?.run_disposition==='abandon')?.statement.data?.legacy_unwritten_fields:undefined;
+      const missingExits=notices.filter(n=>n.message==='出口未写'),missingFacts=notices.filter(n=>n.message==='缺失事实未写');
       const head = [
-        `结果 ${c.reference}（运行 ${result.run}）：${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}`,
+        ...(management?['管理放弃：要求项未满足（已放弃）；技术层沿用原记录，未重验；保留未知计数，不改变原效果及冻结。',`原技术记录有 ${typeof unwritten==='number'?unwritten:0} 处字段未写；管理出口不是旧技术出口，原件不回填。`]:[]),
+        `结果 ${c.reference}（运行 ${result.run}）：${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}`,
         `修复轮数：已用 ${result.rounds.used}，最多 ${result.rounds.max}；覆盖：${oneLine(coverageText(result.coverage) ?? '')}；锁定：任务包 ${oneLine(result.locks.pack)}${result.locks.root ? `，知识根 ${result.locks.root}` : ''}`,
+        ...(notices.length?[`旧结果：出口未写 ${missingExits.length} 处，缺失事实未写 ${missingFacts.length} 处；首处 ${notices[0].path}。原记录不回填，请按具名请求补齐事实后重评或开新修订`]:[]),
+        ...(result.system_input?[`系统交付输入摘要 ${result.submission}；来源 ${result.system_input}`]:[]),
         `内容${RESULT_PARTS}`,
       ];
       return { head, lines: resultLayout(result, recReference(record)).lines, unit: '结果', run: result.run, record, tree: null, text: false };
@@ -1253,12 +1264,42 @@ function pieceEnd(text: string, from: number, room: number): number {
   return end;
 }
 
+/** Page the disclosed structure itself, never manufacture source byte ranges from a summary. */
+function structurePage(c:Content,trace:string,context:TextContext):string {
+  const {parser,summary,...rest}=c.structure!;
+  const fields=isRecord(summary)?summary:summary===undefined?{}:{summary};
+  const lines=Object.entries({...fields,...rest}).map(([key,value])=>`  ${oneLine(key)} ${valueText(value)}`);
+  const head=[`内容 ${c.reference}：${labelOf('read_tier',c.read_tier)}`,...(c.sha256?[`sha256 ${c.sha256}`]:[]),...(c.note?[oneLine(c.note)]:[]),...(typeof parser==='string'?[`解析器 ${oneLine(parser)} 认出了这份文件`]:[]),'结构摘要：'];
+  const tail=[traceLine(trace)];
+  if(!lines.length)return fit([{priority:0,head:[...head,'（空）']}],{tail}).text;
+  const at=context.cursor?cursorPosition(c.reference,context.cursor):null;
+  const valid=at && lines[at.line] && at.offset<lines[at.line].length;
+  const start=valid?at:{line:0,offset:0};
+  if(context.cursor && !valid)head.push('cursor 不对应本页结构的有效位置，下面从第一页显示');
+  const way=(line:number,offset=0):string=>context.paging===true
+    ? `下一页：${callText('get_nodes',{reference:c.reference,cursor:pageCursor(c.reference,line,offset)})}`
+    : '缺少结构续读入口；请管理员提供可公开的结构摘录，再用 get_nodes 按摘录引用读取';
+  const room=TEXT_BUDGET-sizeOf(head)-sizeOf(tail)-1500;
+  const end=pieceEnd(lines[start.line],start.offset,room);
+  let entries:Entry[],more:(shown:number)=>string;
+  if(end<lines[start.line].length) {
+    const next=way(start.line,end);
+    entries=[{lines:[lines[start.line].slice(start.offset,end)],omitted:[{what:'本行及后续结构摘要',more:next}]}];
+    more=()=>next;
+  } else {
+    entries=[lines[start.line].slice(start.offset),...lines.slice(start.line+1)];
+    more=shown=>way(start.line+shown,shown===0?start.offset:0);
+  }
+  return fit([{priority:0,head},{priority:1,entries,unit:'结构摘要',measure:'行',first:start.line+1,more}],{tail,fallback:way(start.line,start.offset)}).text;
+}
+
 /**
  * The content a reference points at, one page at a time within the budget: whole lines, and a line longer than the room
  * of a page in pieces. The way to the rest is a page cursor when the server pages; otherwise a byte range or text@1 lines of
  * a source, a pointer to the next part of a record, or the console page.
  */
 function contentText(c: Content, trace: string, context: TextContext): string {
+  if(c.text===undefined && c.structure!==undefined)return structurePage(c,trace,context);
   const tail = [traceLine(trace)];
   const head = [`内容 ${c.reference}：${labelOf('read_tier', c.read_tier)}`];
   if (c.sha256 !== undefined) head.push(`sha256 ${c.sha256}`);

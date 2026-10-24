@@ -174,7 +174,7 @@ Personal credentials (whose reads are visible to the reader only and never enter
 
 ## Errors
 
-Internal codes (`CONNECTOR_ERRORS`), never protocol codes; each read error carries its D01 R[5] layer:
+Internal adapter codes (`CONNECTOR_ERRORS`) retain their D01 R[5] layer. Authorized, determined read outcomes map to registered protocol codes below; private causes remain separate:
 
 | Layer | Codes |
 | --- | --- |
@@ -225,8 +225,9 @@ The named-variable sections above supersede older review notes below that mentio
    that content (canonical JSON), so it lives in the content-addressed store and the decision chain is the history.
 6. **Nested reads** are one level deep and cached per reader (the artifacts they store are the reader's), not shared across
    readers.
-7. **No automatic retry of a failed read** (D03 R[0] allows retries; the caller may read again). Nothing is recorded as
-   unknown for a failed read.
+7. **Bounded automatic read retry.** Transient transport failures retry within the shared attempt and wait budget.
+   Exhaustion exposes the missing read and its next eligible retry time; no successful read is invented. Login failures
+   retain their existing stop boundary pending the administrator-request integration listed under Needs.
 8. **Concurrency** is limited per resource (one HttpSource per resource), the interval between request starts too.
 9. **Determinism.** Responses, nested reads, manifest entries and generated inputs follow plan order.
 10. **Stop, not cool-down, after a judged or unknown login.** D01 R[9] ("再失败就停下来报告，不重试") and the brief ("never a
@@ -498,5 +499,33 @@ External-id size advice in core is deliberately generic (缩短读取键后重�
 Counted identity refusals carry a typed inputError only for an active Hub reader. The engine exposes this deterministic
 caller-input fact only after workflow access checks, using its existing input-schema code and a shortening instruction.
 Other read failures stay neutral; neither the supplied key nor resource existence/permission is disclosed by this field.
+
+## 有界读重试（hub-read-absence 第 4 条）
+
+仅重试 SOURCE_TIMEOUT、SOURCE_UNREACHABLE 和 HTTP 429/5xx。每个已规划请求共享两次传输重试，退避从 100 ms 起；有效 Retry-After（秒或 HTTP-date）是不得提前的时刻，累计等待至多 30 秒，超过预算便返回 retry 的原码、最早时间与实际尝试数，不缩短服务器要求。非法或不可表示的 Retry-After 是确定的格式故障。每次完整应答先存为原件；读清单逐次记录 attempt 和 retry_at，逻辑覆盖数不因重试重复累计，所有完整应答仍共用原字节预算。
+
+max_requests 继续约束规划请求槽位。每槽位最多三次传输尝试；原有的明确登录失效再发一次沿用同一传输重试预算，物理读尝试最多四次。路由许可与原有登录停止规则保留：登录交换本身不重试，401/403/404/410、格式、凭据或本地存储故障不进入传输重试。ExternalRead 保留 retry 元数据；对外读取耗尽使用已登记的 SOURCE_RETRYABLE，带下次重读时间；登录请求记录仍等 hub-unknown-exits。
+
+## 读取覆盖（hub-read-absence 第 3 条）
+
+成功的 ReadOutcome、ExternalRead 与运行 SourceBinding 保留同一 coverage。计数单位是这次读声明的请求槽位和嵌套对象，不是业务条目；重试不会重复累计，尚未发出的已规划目标也进入 total。嵌套对象不完整时父对象同样不完整，其名称和补读动作进入 note。部分结果不进入成功缓存；新的读会重新取得它，不把曾经的部分当成完整缓存。
+
+ReadPlanOutput.concurrency 可为一个计划指定更低的在途上限，实际发送仍受资源限流。敏捷包不再用五轮乘每轮四条的切片丢掉剩余根或页；所有配置根、所需页都列进计划后才答 done，同时声明 concurrency=4。请求、字节与轮数上限仍会拒绝超预算的读取。缺席/中性码、登录请求和第 9 条按运行授权读取器仍按任务依赖后接。
+
+读取出口接口 Needs：登录停止需要 hub-unknown-exits 的具名资源管理员请求记录（请求号、缺失事实、期限、处置后重读入口）。接口合并前保持登录停止，不虚构已发出的请求。
+
+缺席观察（hub-read-absence）：HTTP 404/410 的原件仍先保存；仅当它是本次对象的原件请求，才形成 SOURCE_ABSENT。系统包可在读取声明的 absent_codes 中列出表示整份对象缺席的投影错误码；代码不在声明里则仍是投影错误。ReadProjectionOutput.absent 也会核对系统、对象和应答键。支持应答必须本次已存且可读，401/403、凭据保留、超时或其他失败不能作缺席根据。Hub 以自己的读取时刻写规范 JSON 观察为 content，生成血缘指向支持应答，ReadOutcome/ExternalRead 同时带 absent；这类观察不进入嵌套缓存。必填输入直接答 SOURCE_ABSENT，期望来源则绑定该可读观察，供声明 reads 的检查读取。缺席不等同于对被测行为的通过或驳回。
+
+资源启用的唯一性：同一环境类别内，每个外部类型至多一个启用资源，跨系统包也一样。新增、修改和启用在记录库业务锁下核对当前已提交的配置，与配置授权在同一事务里写入；同一连接池的其他配置调用在取数据库连接前排队。默认配置调用的行为保留，可选事务只用于这条核对。绑定包损坏或丢失时，缺少可核验的读取类型，拒绝新的冲突核对并说明恢复原包或停用旧资源的动作。读取的绑定错误进入私有诊断与管理员资源列表，普通读者列表不带这些原因。
+
+分页与重定向：路由的 pagination.max_pages 约束该路由在一次对象读取中的显式分页请求数，仍受整份 max_requests、字节预算和规划轮数约束，超限拒绝，不能截断后答完成。重定向由 HttpSource 以 manual 接收并先存应答，安全的 Location 作为观察写入读清单和规划输入。只有源路由声明 redirects.same_origin、未超过 max_hops，且下一条规划请求以 against 指向该应答、href 逐字采用 Location，才跟随；同源、角色根路径、目标路由、参数和凭据规则逐项重验，不自动复用请求或跟随网络跳转。已跟随到成功应答的跳转计入完整覆盖。未声明、越源或超限的跳转给 SOURCE_REDIRECT_REFUSED，保留状态、可公开的 Location 和管理员核对动作；含凭据或不可安全公开的值不回显、不另存其摘要。
+
+分页或整次读取预算用完，对有权读者由内部 READ_LIMIT 映射为 SOURCE_READ_LIMIT，说明页数、请求数或字节预算和管理员调整声明／缩小范围后重读的动作。未取得读权的调用仍不带这些诊断。
+
+确定的非重试故障（来源状态／格式、规划、投影、存储、锁定修订）向已验证读取身份的调用者映射 SOURCE_READ_FAILED，给安全的核心错误说明与对应管理员／系统包负责人的修复动作；不回显仅管理员可见的附加诊断。无权、身份未定、来源拒绝凭据与凭据保留不借这个码透露内容；有界传输重试仍用 SOURCE_RETRYABLE，预算仍用 SOURCE_READ_LIMIT。旧内部原因前缀在管理员记录中保留，便于逐层核对。
+
+保留原件的非重试故障不升为公开诊断。真实回显还隐藏原始 sha256、源记录身份和 ETag：函数视图与读清单不带这些值，派生来源不把回显原件的引用带出去，原件记录号仅写管理员事件。派生出件含实际 Hub 凭据回显或试图原样引用该原件时整次读取拒绝；普通来源的凭据受理与现有作用域规则保留。
+
+环境边界 Needs：唯一性以“环境类别 + 外部类型”为键。两个不同环境仍可各启用一个同类型资源；外部读端口未声明环境时保留原来的歧义拒绝，不暗选生产或测试。管理员可使当前 Hub 的读取类型只采用一个资源；若要并用，后续需明确声明环境选择接口与绑定规则。
 
 Shared-stop repair messages retain the actual secret names and the resource id supplied by the caller. Both stop paths emit the named `secret set --name …` and complete `resource reset-login <resource>` actions; the stop key still depends only on the shared decision digests.

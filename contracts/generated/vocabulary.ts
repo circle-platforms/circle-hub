@@ -3,6 +3,8 @@
 import { z } from 'zod';
 
 export const AXES = {
+  effect_trigger: { label: '触发方式', owner: 'W03', values: [{ code: 'runner_session', label: '由运行者会话经效果写入发起' }, { code: 'hub_template', label: '放行条件满足后由 Hub 按模板派发' }] },
+  write_interaction: { label: '交互方式', owner: 'D03', values: [{ code: 'submit_then_read', label: '提交一次，再读状态和结果' }] },
   nature: { label: '性质', owner: 'B01', values: [{ code: 'fact', label: '事实' }, { code: 'judgment', label: '判断' }, { code: 'unknown', label: '未知' }] },
   basis_rank: { label: '依据等级', owner: 'A02', values: [{ code: 'rule_over_observation', label: '观察上的规则' }, { code: 'rule_over_claims', label: '主张上的规则' }, { code: 'judgment', label: '判断' }, { code: 'relay', label: '转述' }] },
   provenance_type: { label: '来源类型', owner: 'A01', values: [{ code: 'observed', label: '观察' }, { code: 'projected', label: '投影' }, { code: 'declared', label: '声明' }, { code: 'candidate', label: '候选' }] },
@@ -70,9 +72,29 @@ export const AXES = {
   link_match: { label: '链接匹配方式', owner: 'K05', values: [{ code: 'exact', label: '精确匹配' }, { code: 'longest_prefix', label: '最长前缀匹配' }] },
   variable_kind: { label: '变量种类', owner: 'D01', values: [{ code: 'var', label: '普通变量' }, { code: 'secret', label: '密钥' }] },
   digest_rule: { label: '摘要规则', owner: 'D01', values: [{ code: 'plain', label: '原样' }, { code: 'sha512_base64', label: 'Base64(SHA-512)' }] },
+  share_audience: { label: '受众', owner: 'B04', values: [{ code: 'user', label: '用户' }, { code: 'pack_users', label: '能用这个包的用户' }] },
+  applicability_field: { label: '适用条件字段', owner: 'K02', values: [{ code: 'models', label: '型号' }, { code: 'platforms', label: '平台' }, { code: 'builds', label: '起止构建' }, { code: 'components', label: '部件' }, { code: 'memory', label: '内存' }, { code: 'licenses', label: '许可' }, { code: 'deployment_forms', label: '部署形态' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
+
+/** 触发方式 (W03) */
+export const EFFECT_TRIGGER = ['runner_session', 'hub_template'] as const;
+export type EffectTrigger = (typeof EFFECT_TRIGGER)[number];
+export const EFFECT_TRIGGER_LABEL = { 'runner_session': '由运行者会话经效果写入发起', 'hub_template': '放行条件满足后由 Hub 按模板派发' } as const satisfies { readonly [K in EffectTrigger]: string };
+export const EffectTriggerSchema = z.enum(EFFECT_TRIGGER);
+export function isEffectTrigger(value: unknown): value is EffectTrigger {
+  return (EFFECT_TRIGGER as readonly unknown[]).includes(value);
+}
+
+/** 交互方式 (D03) */
+export const WRITE_INTERACTION = ['submit_then_read'] as const;
+export type WriteInteraction = (typeof WRITE_INTERACTION)[number];
+export const WRITE_INTERACTION_LABEL = { 'submit_then_read': '提交一次，再读状态和结果' } as const satisfies { readonly [K in WriteInteraction]: string };
+export const WriteInteractionSchema = z.enum(WRITE_INTERACTION);
+export function isWriteInteraction(value: unknown): value is WriteInteraction {
+  return (WRITE_INTERACTION as readonly unknown[]).includes(value);
+}
 
 /** 性质 (B01) */
 export const NATURE = ['fact', 'judgment', 'unknown'] as const;
@@ -677,7 +699,27 @@ export function isDigestRule(value: unknown): value is DigestRule {
   return (DIGEST_RULE as readonly unknown[]).includes(value);
 }
 
+/** 受众 (B04) */
+export const SHARE_AUDIENCE = ['user', 'pack_users'] as const;
+export type ShareAudience = (typeof SHARE_AUDIENCE)[number];
+export const SHARE_AUDIENCE_LABEL = { 'user': '用户', 'pack_users': '能用这个包的用户' } as const satisfies { readonly [K in ShareAudience]: string };
+export const ShareAudienceSchema = z.enum(SHARE_AUDIENCE);
+export function isShareAudience(value: unknown): value is ShareAudience {
+  return (SHARE_AUDIENCE as readonly unknown[]).includes(value);
+}
+
+/** 适用条件字段 (K02) */
+export const APPLICABILITY_FIELD = ['models', 'platforms', 'builds', 'components', 'memory', 'licenses', 'deployment_forms'] as const;
+export type ApplicabilityField = (typeof APPLICABILITY_FIELD)[number];
+export const APPLICABILITY_FIELD_LABEL = { 'models': '型号', 'platforms': '平台', 'builds': '起止构建', 'components': '部件', 'memory': '内存', 'licenses': '许可', 'deployment_forms': '部署形态' } as const satisfies { readonly [K in ApplicabilityField]: string };
+export const ApplicabilityFieldSchema = z.enum(APPLICABILITY_FIELD);
+export function isApplicabilityField(value: unknown): value is ApplicabilityField {
+  return (APPLICABILITY_FIELD as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
+  effect_trigger: EffectTrigger;
+  write_interaction: WriteInteraction;
   nature: Nature;
   basis_rank: BasisRank;
   provenance_type: ProvenanceType;
@@ -745,9 +787,13 @@ export interface AxisValues {
   link_match: LinkMatch;
   variable_kind: VariableKind;
   digest_rule: DigestRule;
+  share_audience: ShareAudience;
+  applicability_field: ApplicabilityField;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
+  effect_trigger: EFFECT_TRIGGER_LABEL,
+  write_interaction: WRITE_INTERACTION_LABEL,
   nature: NATURE_LABEL,
   basis_rank: BASIS_RANK_LABEL,
   provenance_type: PROVENANCE_TYPE_LABEL,
@@ -815,6 +861,8 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   link_match: LINK_MATCH_LABEL,
   variable_kind: VARIABLE_KIND_LABEL,
   digest_rule: DIGEST_RULE_LABEL,
+  share_audience: SHARE_AUDIENCE_LABEL,
+  applicability_field: APPLICABILITY_FIELD_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

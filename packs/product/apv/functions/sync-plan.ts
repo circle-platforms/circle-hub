@@ -107,7 +107,7 @@ export function planSync(input: PlanSyncInput): PlanSyncResult {
     const hrefOf = new Map<string, string>();
     let duplicates = 0;
     const listing = (page: string, href: string, from: string | null): void => {
-      const parts = parsePageName(page);
+      const parts = parsePageName(page,asStrings(options.mainline_page_words));
       if (parts === null) {
         skipped.push({ page, href, reason: '名称不符合列表页命名' });
         return;

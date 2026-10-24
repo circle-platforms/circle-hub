@@ -94,6 +94,7 @@ function outcomeProblems(outcomes: CheckOutcome[], pack: string): string | undef
     const at = `第 ${i + 1} 项`;
     if (o.verdict === 'refute' && o.code === undefined) return `${at}是反驳却没有码`;
     if (o.verdict !== 'refute' && o.code !== undefined) return `${at}不是反驳却带了码 ${o.code}`;
+    if (o.verdict === 'unknown' && (typeof o.missing !== 'string' || !o.missing.trim())) return `${at}是未知却没有顶层 missing`;
     if (o.verdict === 'unknown' && o.reason === undefined) return `${at}是未知却没有原因`;
     if (o.verdict !== 'unknown' && o.reason !== undefined) return `${at}不是未知却带了原因 ${o.reason}`;
     if (o.reason !== undefined && !CHECK_REASONS.includes(o.reason)) return `${at}的原因 ${o.reason} 不是检查能给的原因（只能是 ${CHECK_REASONS.join('、')}）`;
@@ -162,7 +163,7 @@ export async function runCheck(declaration: CheckDeclaration, bindings: CheckBin
     // A declaration without tier leaves the table's own tier to the interpreter (tierOf, C05 R[1]).
     const interpreter = getInterpreter(declaration.interpreter);
     if (!interpreter) return [];
-    return interpreter.run({
+    const outcomes = await interpreter.run({
       interpreter: interpreter.id,
       table: bindings.table,
       tier: declaration.tier,
@@ -171,6 +172,7 @@ export async function runCheck(declaration: CheckDeclaration, bindings: CheckBin
       sources: bindings.sources,
       context: bindings.context,
     });
+    return outcomes.map(o => o.verdict === 'unknown' && !o.missing ? {...o, missing: o.statement} : o);
   }
   if (declaration.tier === undefined) {
     // A pack function without a declared tier is a pack defect (publication refuses it, checks.tier_missing): do not

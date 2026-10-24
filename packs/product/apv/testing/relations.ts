@@ -12,6 +12,6 @@ export function manualRelations(result:{entries:readonly (Parameters<typeof entr
     nodes.set(path,relationNode(node.path?[{kind:'definition',producers:['command-tree']}]:[]));
     for(const [word,child] of node.children)visit(child,[...words,word]);
   };visit(catalog.root,[]);
-  const sources=result.entries.map(entry=>{const content=entryContentOf(entry);return {path:entry.path??'/',entry:entryDigest(content),content,producers:['manual']};});
+  const sources=result.entries.map(entry=>{const content=entryContentOf(entry);return {path:entry.path??'/',entry:entryDigest(content),content,producers:['manual-apv']};});
   return relationFacts('a'.repeat(64),product.links??[],nodes,sources);
 }

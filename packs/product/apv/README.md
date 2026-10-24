@@ -8,7 +8,7 @@ live only here. Other packages use `api.ts` (types, named functions, and `FUNCTI
 
 | File | Content |
 | --- | --- |
-| `product.json` | `product@1` (pack version 1.3.0): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional, `tree` <- role `tree` for signature placement; the Hub computes relation diagnostics; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
+| `product.json` | `product@1`: names `[APV, NSAE]`; deployment variables below; sync start `buildsite:listing:index`, plan `functions/sync.ts`, up to 10 rounds; producers `command-tree`, independent `manual-apv` and `manual-nsae`, `release-notes`, `cases`; each family manual has its own `root`, `main`, `attributes.<family>` references, directory metadata slot and one bounded complete chapter-list slot |
 | `functions/sync.ts` | the plan (SyncPlanInput -> SyncPlanOutput): every round recomputed from the pages read so far, index -> hub pages -> listing pages (depth 2, dead links tolerated, both name families, platform and customer pages only when `include` opts them in), then the builds; with `case_index`, `agile:tree:roots` and every own-tree build's case documents (`cases-sync.ts`) |
 | `functions/cases.ts` and `cases-*.ts` | the case index: the producer `cases` (`cases.ts`), case nodes (`cases-nodes.ts`), the command catalog, phrase extraction and resolution (`cases-commands.ts`), the sync plan's part (`cases-sync.ts`), shared pack data (`cases-rules.ts`) |
 | `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
@@ -106,8 +106,8 @@ Selection (K01 R[10], W03 R[0], W06 F[6])
   date, build time, APV before NSAE, build number, name; the first one whose root can be determined is chosen, better-ranked
   ones without a root are named in a note and stay in `alternatives`. When none has a root the best one is returned with
   `base` null. The result does not depend on the order of the candidates, duplicate names included.
-- `base`: an APV name is its own base; an NSAE name with its own command tree is its own base (the newest lines 10.4.5,
-  10.4.6: their trees equal the APV twin's, so the content-addressed roots coincide); an NSAE name without a tree follows
+- `base`: an APV name is its own base; an NSAE name with its own command tree is its own base (the newest lines 10.6.145,
+  10.6.146: their trees equal the APV twin's, so the content-addressed roots coincide); an NSAE name without a tree follows
   its `based on` chain to the first APV build or NSAE build with a tree. Cycles, missing bases, a base of another family
   and an NSAE build with neither tree nor base give `base` null with a note. The base is never guessed from equal numbers.
 - `basis` is the provenance type: `declared` or `projected`.
@@ -117,7 +117,7 @@ Sync plan
   (`apv_trunk`, `apv_10_x_patch`). Their content decides: a hub page read that lists builds is a listing page (warning).
   Hub pages linked from hub pages are beyond depth 2 and skipped with a reason.
 - Listing pages by name: `[rel_]<family>[_<platform>]_<n>_<n>[...]_<tokens>`. Mainline: only the version or a mainline
-  token (`tls13`). Platform: version and a platform token (`hg_uos`, `hg_k`, `ft_kylinv10`, `zx_neokylin`, `zhaoxin`, ...
+  token (`demoqualifier`). Platform: version and a platform token (`hg_uos`, `hg_k`, `ft_kylinv10`, `zx_neokylin`, `zhaoxin`, ...
   in `PAGE_PLATFORMS`). Patch: any `patch` token. Customer: anything else (customer, POC, feature, special branches, extra
   build numbers). No customer names are in the code.
 - Default: mainline listing pages of APV and NSAE. `include` / `exclude` are case-insensitive globs (`*`, `?`) over page
@@ -198,9 +198,9 @@ Producers (K02, K04, C07)
   Warning lists retain whole literals within 800 characters and append 等; their full counts remain exact.
   The fixed fixture contains five distinct drifting spellings and six rule/literal groups: `enable` occurs under both
   mention and signature rules (three groups each). No `no demo route static` or mode-value alternatives drift.
-- Applicability (K02 F[6]): only what an entry's own text says explicitly, and only the fields the contract holds; a
-  table row's condition is read from that row alone, and nothing is inherited from a heading, a sibling block or another
-  row (a section-wide rule waits on the owner's decision). `适用于 X 平台` and `仅 X 平台支持` give `platforms`, X only
+- Applicability (K02 F[6]): explicit conditions on an entry take priority; otherwise each field inherits the nearest
+  chapter-opening declaration. A chapter opening is its title and first paragraph before any other block or child.
+  Ordinary sibling blocks and table rows never supply scope to each other. `适用于 X 平台` and `仅 X 平台支持` give `platforms`, X only
   from the closed set of the pack's platform tokens (`PAGE_PLATFORMS`, hyphen-joined) and the Han words 虚拟/物理;
   `适用于 X 系列/机型/型号` and `仅 X 系列/机型/型号 支持` give `models` (as written), the product's own names (APV, NSAE)
   never being models. A coordinated list (`X、Y 平台`, `X 平台和 Y 平台`) counts only when every item is readable; vague,
@@ -258,8 +258,8 @@ Sync (`cases-sync.ts`, called by `sync.ts` when the sync option `case_index` is 
   (no versions) is read too; its documents have no line and are counted. Other roots of the resource are counted, not read.
 - Each document is located with `locate.ts` (its ancestors from the root title down, as the mind-map meta has them). A
   build whose own command tree is listed (`tree`) gets `case_documents`: the `agile:mindmap:<id>` of the documents with a
-  line not later than the build's and not earlier than `min_line` (default 10.4.2, a dotted line; another value is noted
-  and replaced), at most 20,000 (product@1 `MAX_LIST_SOURCES`; more are noted, not listed), ordered by id (numbers by
+  line not later than the build's and not earlier than `min_line` (default null; explicit null imposes no lower bound; only a dotted version line supplies a floor;
+  other values withhold case-bearing builds for this sync and name `circle-hub var set APV_MIN_LINE --file`), at most 20,000 (product@1 `MAX_LIST_SOURCES`; more are noted, not listed), ordered by id (numbers by
   value): new documents come last, so the Hub's consecutive batches of an earlier list stay where they were. It also gets
   `case_tree: agile:tree:roots`. Aliases (no tree of their own) list nothing. Ids the agile pack cannot read (outside
   `[0-9A-Za-z_-]{1,64}`) are not listed. The plan note counts the documents read, listed, and not listed by reason: no
@@ -628,16 +628,7 @@ accepted.
   `product.json`, or the group is refused (`apv.adoc.family_not_a_name`). The conditional branches are reported per family,
   and any family's expansion failure fails the group and returns no partial result, so the old knowledge root does not
   move.
-- What a family records about its attribute set is only what this producer was given: whether the parameter named the
-  family (`attributes.declared` — an explicit empty set is declared, and a synthetic set is as declared as a real one), the
-  set it ran with (`attributes.values`, which the composition record also carries) and a note saying which set was used.
-  The producer claims no origin it cannot know: where an attribute set came from is the Hub's record, `param_sources` of
-  apv-deployment-conventions step one, which this task only reads. Until that record exists, "this family's attribute set
-  is not configured" is not written here; a family the parameter names no key for produces with the pack default (all
-  unset, like today's markdown), its note says exactly that and names the `param_sources` step as the way to tell a
-  configured set from an unconfigured one, and nothing is recorded as unknown. The real attribute names and values are
-  deployment data: the integrator collects them read-only from the source and overrides the parameter through that
-  mechanism.
+- The family helper records only what it was given: `attributes.declared`, `attributes.values` and a note. It does not infer deployment provenance. The published family producers receive resolved values; the Hub root composition's `variables` records each reference and its immutable configuration decision, not an invented producer claim about its origin. Real sync refuses missing variables before any read. Only direct synthetic samples and dry runs may exercise absent/default attributes. Real attribute names and values remain deployment data supplied explicitly by the integrator.
 
 ## Deviations from the brief and the task
 
@@ -683,8 +674,10 @@ accepted.
   recorded too and then shows up in the drift candidates; what is a command is decided when a literal is resolved at
   read time.
 - Only pipe tables split by row; a grid, multiline or simple table stays one block at its section node.
-- The section-opening scope of applicability is gone: every entry reads only its own text (a section-wide rule waits on
-  the owner's decision).
+- Chapter-opening fields inherit independently. Same-section title/paragraph disagreement leaves that field undeclared,
+  retains both values and verified source fragments, and marks conflict without adjudication or outer fallback.
+  Inner scope takes priority over outer scope, with the difference reported. Provenance stays in composition metadata,
+  outside entry content: heading edits alone do not change inherited entry digests.
 - The producer is still tied to markdown@1: the fragment parser key, the anchor and literal inline syntax (`**…**`,
   backticks, `*\<param\>*`), the pipe-table row split, the `h/` selector decoding and the block kinds are Markdown's;
   only the section placement reads the neutral block path. The task asks for dependence on a document model with
@@ -734,8 +727,8 @@ accepted.
   reported in `skipped` and do not drop the command tree. The required-list share stays 0.5. The gate lives in
   hub/knowledge/produce.ts; hub/knowledge/lists.ts does not decide it.
 - Case index: which line is not later than a build's line is the earliest release-train month of that line in the agile
-  tree (`YYYY/M` in the train label), not the numeric order of the dotted line. Brief section 8: 10.4.5 and 10.4.6 are
-  newer lines than 10.5. A line with no dated train is listed only on a build of that same line. `min_line` is the same
+  tree (`YYYY/M` in the train label), not the numeric order of the dotted line. Brief section 8: 10.6.145 and 10.6.146 are
+  newer lines than 10.6.150. A line with no dated train is listed only on a build of that same line. `min_line` is the same
   date floor when the tree dates that line. `compareLines` still sorts build names for display, and it is the comparison
   used only while the tree is unread (there is no train date then) to decide which builds wait. The synthetic corpus uses
   the dotted labels of that scenario so the default `min_line` is exercised; in that corpus the train months follow the
@@ -779,7 +772,7 @@ reasons, each build's list equal to the truth for the dated lines and another `m
 ids before it, pending, failed and incomplete trees, the plan reading the tree once in round 1 without an extra round,
 own-tree builds listing their documents and aliases nothing, no build while the tree is unreadable or incomplete, lines
 ordered by release-train date, a line no build covers, hostile input), `cases.test.ts` (every entry of a 10.6.1 and a
-10.4.6 build equal to the truth in the Hub's own batches (`listBatches`), the later tree, counts by reason and at most 20
+10.6.146 build equal to the truth in the Hub's own batches (`listBatches`), the later tree, counts by reason and at most 20
 examples; another document id changes only the key, a renamed tree label changes nothing, reversed cases change nothing,
 a document twice or listed twice doubles nothing, a document alone gives its entries of the batch; a short batch keeps
 every document that carries `external` and does not guess the rest; a case with no command and a case with no command
@@ -798,12 +791,7 @@ pack and reviews a mind map against the root it produced.
 
 ## Needs from other packages
 
-- **integrator (adoc)**: the adoc producer is not wired into `product.json` yet (no slot for a group of chapter files, and
-  decision 35's `attributes.<family>` parameter keys wait for apv-deployment-conventions step one), so
-  `catalogOnAdocLine`/`catalogRefusal` have no production caller yet and two checks stop at this package: that a family's
-  failure leaves the old knowledge root where it is, asserted here only as "no partial result is returned", needs a
-  knowledge sync to be seen on a root; and "this family's attribute set is not configured" can only be written from
-  `param_sources`, which this producer must not guess. Both are follow-ups for the wiring step.
+- **adoc 接线已完成**：每族有独立的手册生产器与变量引用。同步先读根目录固定修订号，再用 `svn:directory-at` 按该修订号递归列子目录，绑定完整目录清单和全部章文件。每族属性的来历由 Hub 组成记录的 `variables` 写；生产器只接收解析后的属性。原件缺失、不同修订号、摘要不符、非 UTF-8 或展开失败均不能换成空手册，合成同步测试已核对失败时旧根不动。
 - **K1 (adoc)**: `produceManualEntries` reads an anchor from any block whose kind is `paragraph` and whose text parses, and
   its model has no way to say "this block is part of a larger block the author wrote, so it is no standalone signature".
   The mapping works around that with a kind of its own (`paragraph_part`) for the parts of a split paragraph; a flag on the
@@ -883,3 +871,74 @@ classification and current-parameter/value-row state. K1's standalone drift accu
 signature groups use the declared exact primary/alternatives rule, other cells retain prose mentions, and Hub production and
 reading share one evaluator. The c3 row regressions now check that evaluator and all 105 retained signature groups instead
 of depending on a truncated field or a producer-local warning.
+
+## 适用条件闭集（kb-applicability）
+
+`APV_COMPONENTS`、`APV_LICENSES`、`APV_DEPLOYMENT_FORMS` 是部署变量，三者均声明为字符串列表，
+样例／试运行默认值均为空列表。真实生产前须分别 `circle-hub var set <名字> --file <JSON文件> --reason <理由>`；
+确实没有值时显式设 `[]`。生产器只接解析后的 params，变量决定由核心冻结进组成记录；仓库不带真实闭集。
+
+支持的窄写法：部件用“装有 X 时”“没有 X 时”（可带“部件”）；许可用“需要 X 许可”；
+三个闭集均可用“适用于 X”“仅 X 支持”，可带对应字段名。名称逐字比较，不补同义词或大小写别名；
+并列列表的每一项都须在同一闭集中，且只能确定一个字段。否定、例外、部分、可能、也等扩泛写法不抽，
+整组留在原文；未知成员不截成已知前缀。单个条件组读取上限 200 字符，超出的不作猜测。
+部件缺席只在明确“没有 X 时”中记录 without。空闭集不会为该字段产生条件。
+
+内存只读紧挨“内存”的明写数值与关系：不少于／至少／以上含下端点，大于不含；不超过／以下含上端点，小于不含。
+“N G 内存的设备”是两端相等且都包含端点。GB、G 按 1024³ 字节，MB、M 按 1024² 字节；
+普通十进制小数只有在能精确换成安全整数个字节时才记录，不四舍五入。不读模糊大小、约数、指数、其他单位和不安全数值。
+原文写法单独保存为 raw，不含无关的章节标题；读取字段不声称目标已经满足它。或分支、例外和不一致的多个范围不合成条件。
+
+章节条件的来历按字段绑定到原片段和章节路径，存在组成记录的 `applicability_sources`，不参与条目摘要。
+同章标题与首段矛盾时不裁决，也不回退外层；字段按未声明显示，双方声明与片段保留，并标记冲突。
+显式但无法结构化的章节条件同样阻止该字段向外回退，原文仍可回读。
+
+生产结果的 warnings 沿用知识同步报告通道：七个字段逐一报告直接抽取条目数和继承条目数（含零），
+签名、正文、拆分表格行分别按实际条目计数。内外层不同和同章冲突逐处列出字段、章节、声明值及源选择器，
+包内不截断这些明细；核心同步报告仍有保留条数和每条 1000 字符上限，完整字段来源及冲突双方以组成记录为准。冲突写明来源维护者在再次同步前核对原片段、修订或保留矛盾再生产。
+这里的计数只证明合成输入下的规则行为，不证明目标上的部件、内存、许可或部署形态已满足条件。
+
+适用条件扩展初版为 1.4.0，未发布。新变量启用前须显式设置三个闭集（允许 []）。
+
+adoc 的条目适配器 `functions/adoc/entries.ts` 转交三个闭集选项及字段来历，并以合成展开模型核验。
+名称族部署接线已合入；`familyManual` 传入解析后的闭集，不能以未传参的空集代替显式部署设置。
+include 展开、AST 和源读取没有改动。
+
+## 部署约定与变量（决定 44）
+
+真实取值属于部署数据，不进包、不进 Git。由集成者在这一版发布以后、启用以前，用 `circle-hub var set <名字> --file <Git外暂存文件> --reason <理由>` 显式设置。变量默认值仅供发布样例和试运行；真实同步的任一引用未设置，会在读任何页之前确定拒绝，并给出逐名设置命令。即使决定不设下限或不用 adoc，也必须显式设置对应的 null。
+
+| 名字 | 类型与合成默认值 | 部署含义 |
+| --- | --- | --- |
+| `APV_MIN_LINE` | 字符串或 null，默认 null | 用例清单的发布火车下限；不设下限就显式设 null |
+| `APV_MAINLINE_PAGE_WORDS` | 字符串列表，默认 `[]` | 版本号后仍算主线页的附加词；真实词由集成者从源只读核对 |
+| `APV_ADOC_ROOT` | 含 `{line}` 的相对 SVN 目录模板或 null，默认 null | APV 的来源选择 |
+| `APV_ADOC_MAIN` | 字符串，合成默认 `book.adoc` | 主文件相对上述目录的路径 |
+| `NSAE_ADOC_ROOT` | 含 `{line}` 的相对 SVN 目录模板或 null，默认 null | NSAE 的来源选择 |
+| `NSAE_ADOC_MAIN` | 字符串，合成默认 `book.adoc` | 主文件相对上述目录的路径 |
+| `APV_ADOC_ATTRIBUTES_APV` | 属性名到字符串或布尔的对象，默认 `{}` | APV 本族属性集；空集也要显式设置 |
+| `APV_ADOC_ATTRIBUTES_NSAE` | 属性名到字符串或布尔的对象，默认 `{}` | NSAE 本族属性集；不从另一族借用 |
+
+ROOT 的三种情形：
+
+- 未设置：真实同步在读任何页之前拒绝；请管理员按回执运行 `circle-hub var set <族>_ADOC_ROOT --file <JSON文件> --reason <理由>` 后重跑。
+- 显式 null：这一族继续现有 Markdown 读法；MAIN 和属性变量仍按声明显式设置，不把 null 当成“尚未设置”。
+- 字符串模板：先固定 SVN 根目录修订号，所有子目录和章文件都用同一个版本根；任何读取、身份、完整性、UTF-8 或展开失败均保留旧根，绝不退回 Markdown 或当成没有 adoc。
+
+同一组最多 5 层子目录、32 个目录、128 个 adoc 文件、512 个目录成员；生产器的一批容纳完整目录清单和文件（上限 200 个来源），不拆分一个文件组。超限整份拒绝，请管理员核对范围和预算后重跑，不截断。SVN 依赖 1.1.0 的 `svn:directory-at`；文本模型需保留可往返的 UTF-8 原件，包先核对字节摘要再展开，既有函数输入序列化预算照常执行。
+
+每族独立生产器只引用本族 ROOT、MAIN 和属性变量。改一族属性时，Hub 重核组成记录，输入不变的另一族生产调用复用；合成测试核对了另一族条目摘要不变。ROOT 模板改变会改变传给函数的来源清单和构建输入，按完整输入重核，不猜函数内分支。
+
+属性来源由 Hub 组成记录的 `variables` 固定；生产器不自己宣称“从部署取得”。试运行不写知识结果，读取仍留审计。合成默认值和上述测试都不构成真实手册验收，真实属性、目录、主文件和主线词由集成者核对并写部署数据。
+
+1.4.1 把部署约定和按族 adoc 接线带入包声明（此后包版本以 `pack.json` 为准）。发布前运行 `node packs/product/apv/api.ts sign`，再运行 `node packs/product/apv/api.ts check` 核对清单。
+
+在 Literal links 的生产器范围中，`source_producers` 为 `manual-apv` 与 `manual-nsae`，`target_producers` 仍为 `command-tree`；两族共用同一套关系规则和规范化器。
+
+被内层取代的外层声明也保留在组成记录的 `applicability_sources`，标 `superseded: true`。
+它们仍带原值和核验后的片段；读时不把它们当作生效字段、继承路径或当前冲突。
+因此同步 warning 被条数或长度预算截断后，内外层来源仍可经组成记录回查。
+
+首轮复核合并主线的名称族部署接线后，包升至 1.4.2 并重签。`familyManual` 从解析后的 params
+把 components、licenses、deployment_forms 透传给条目适配器，Markdown 和 adoc 两路使用同一组部署闭集；
+两个名称族均有合成输入覆盖，没有改 include、AST 或源读取。

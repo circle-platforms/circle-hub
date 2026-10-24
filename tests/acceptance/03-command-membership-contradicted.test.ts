@@ -61,9 +61,12 @@ describe('scenario 3: command membership contradicted', () => {
     assert.equal(error.requirement, 'findings');
     assert.equal(error.rounds_left, 2, '2 repair rounds remaining');
 
-    // Item result: delivered, with findings requirement layer showing violation
+    // Settled facts and the known violation remain unchanged; only unsettled layers may wait for repairs.
     const itemRes = itemResult(result, item0.id);
-    assert.equal(itemRes.partition, 'delivered');
+    assert.equal(itemRes.partition,'delivered');
+    const waiting=itemRes.item.requirements.flatMap(requirement=>requirement.layers).filter(layer=>layer.reason==='awaiting_step');
+    assert.equal(waiting.length,0,'settled facts do not become incomplete because of another repair');
+
     const findingsReq = requirementOf(result, item0.id, 'findings');
     const staticLayer = findingsReq.layers.find((l) => l.layer === 'static');
     assert.ok(staticLayer);

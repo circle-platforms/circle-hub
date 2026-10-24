@@ -16,6 +16,7 @@ import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
 
 export interface ContributionScope {
   root: string | null;
+  additionalRoots?: Array<{root:string;composition:string|null}>;
   product: string | null;
   composition:string|null;
   model?: string;
@@ -30,6 +31,7 @@ export type PreparedContribution = Omit<KnowledgeContributionBody, 'submitted_at
 interface GroundState {visible:boolean;held:boolean}
 interface Preparation {
   composition: CompositionView;
+  compositions: CompositionView[];
   originals: Map<string, RootSource>;
   lineage: Map<string, Promise<void>>;
   custodian: Principal;
@@ -85,23 +87,31 @@ export class ContributionLayer {
     return (await this.#context.records.principals.list?.() ?? []).find(p => p.role === 'admin' && !p.disabled) ?? reader;
   }
 
-  async #preparation(scope: ContributionScope, reader: Principal): Promise<Preparation> {
-    let readers = this.#preparations.get(scope);
-    if (readers === undefined) { readers = new Map(); this.#preparations.set(scope, readers); }
-    let preparation = readers.get(reader.id);
+  async #preparation(scope: ContributionScope, reader: Principal, cacheScope = scope): Promise<Preparation> {
+    let readers = this.#preparations.get(cacheScope);
+    if (readers === undefined) { readers = new Map(); this.#preparations.set(cacheScope, readers); }
+    const key=JSON.stringify([reader.id,scope.root,scope.composition]);
+    let preparation = readers.get(key);
     if (preparation === undefined) {
       preparation = (async () => {
         if (scope.product === null || scope.root === null || !(await this.mayRead(scope.product, reader))) return refuse("core.contribution.product_unavailable", '缺少当前产品的读取权限');
         const body=scope.composition===null?null:await this.#context.store.composition(scope.composition);
         if(body===null||body.product!==scope.product||body.root!==scope.root)return refuse("core.contribution.composition_missing", '缺少本次运行锁定的产品、根和组成快照对应事实');
         const composition=new CompositionView(this.#context.store,scope.composition!,body);
-        const originals = new Map((await composition.sources()).map(source => [source.sha256, source]));
+        const compositions = [composition];
+        for(const lock of scope.additionalRoots ?? []) {
+          const extra=lock.composition===null?null:await this.#context.store.composition(lock.composition);
+          if(extra===null||extra.product!==scope.product||extra.root!==lock.root)return refuse("core.contribution.composition_missing", '缺少本次运行锁定的额外根和组成快照对应事实');
+          if(!compositions.some(view=>view.record===lock.composition))compositions.push(new CompositionView(this.#context.store,lock.composition!,extra));
+        }
+        const originals = new Map<string,RootSource>();
+        for(const view of compositions)for(const source of await view.sources())originals.set(source.sha256,source);
         // Root publication authorizes its readers. The service account only rechecks the effective tier
         // of shared, Hub-owned originals; it is never used for personal sources or scoped resolution.
         const custodian = await this.#custodian(reader);
-        return {composition, originals, custodian, lineage:new Map(), fragments:new Map()};
+        return {composition, compositions, originals, custodian, lineage:new Map(), fragments:new Map()};
       })();
-      readers.set(reader.id, preparation);
+      readers.set(key, preparation);
     }
     return preparation;
   }
@@ -110,8 +120,12 @@ export class ContributionLayer {
     const checked = ContributionInput.safeParse(raw);
     if (!checked.success) return fail('回注结构不合格：只收产出种类、陈述、根、路径、原文引文和关系；不得自报来源类型、依据等级或适用条件；按 start_run 的槽位 schema 修正后重交');
     const input = checked.data;
+    const cacheScope = scope;
+    const additional = scope.additionalRoots?.find(lock => lock.root === input.root);
+    if (additional) scope = { ...scope, root: additional.root, composition: additional.composition,
+      additionalRoots: [...(scope.root === null ? [] : [{root:scope.root,composition:scope.composition}]),...(scope.additionalRoots??[]).filter(lock=>lock!==additional)] };
     if (scope.root !== input.root || scope.product === null) return fail('回注必须使用本次运行锁定的产品和根；缺少与锁定根的对应关系，按 start_run 的 root 原样填写，或为目标根另开运行','REFERENCE_UNRESOLVED');
-    const {composition, originals, lineage, custodian, fragments} = await this.#preparation(scope, reader);
+    const {composition, compositions, originals, lineage, custodian, fragments} = await this.#preparation(scope, reader, cacheScope);
     let segments:string[];
     try{segments=pathSegments(input.path);}catch(error){if(error instanceof ReferenceSyntaxError)return fail(`归位路径不是规范写法：${error.message}；按 get_nodes 返回的 path 原样填写后重交`,'REFERENCE_UNRESOLVED');throw error;}
     const node = await this.#reading.nodeAt(input.root, segments);
@@ -165,12 +179,14 @@ export class ContributionLayer {
         if(record?.kind==='submission'||(record?.kind==='source_artifact'&&(record.provenance==='declared'||record.provenance==='candidate')))return refuse("core.contribution.signature_required", SIGNATURE);
         return refuse("core.contribution.record_not_original", '记录转述或回注条目不能作回注根据，缺少锁定根中的原文片段');
       }
-      else if (ref.scheme === 'tree' && ref.root === input.root) {
-        const rows = await composition.rowsAt(ref.path);
+      else if (ref.scheme === 'tree') {
+        for(const sourceComposition of compositions.filter(view=>view.body.root===ref.root)){
+        const rows = await sourceComposition.rowsAt(ref.path);
         for (const row of rows.values()) if (ref.entry === undefined || row.entry === ref.entry) for (const f of row.fragments) {
           const ground = parseReference(f);
           if (ground.scheme === 'src') shas.push(ground.sha256);
         }
+      }
       }
       // A run-bound record not in the root is not silently attached to a root node.
       if (shas.length === 0) return refuse("core.contribution.source_not_original", '这个节点没有原文条目，读到的只是子节点名单，缺少原文片段');

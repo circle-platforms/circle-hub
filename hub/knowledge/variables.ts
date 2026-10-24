@@ -82,3 +82,10 @@ export async function variableUsesOfRoot(store:RecordStore,root:string):Promise<
    return {composition:row.digest,variables:checked.data.variables??[]};
  });
 }
+
+/** Keep original published positions while excluding parameters of producers outside this root's scope. */
+export function productionVariableUses(product:ProductHandle,unversioned:boolean,uses:readonly VariableUse[]):VariableUse[]{
+ const prefix=`${product.id}@${product.version}#/producers/`;
+ const active=product.product.producers.flatMap((producer,index)=>(producer.unversioned===true)===unversioned?[`${prefix}${index}/params/`]:[]);
+ return uses.filter(use=>!use.at.startsWith(prefix)||active.some(path=>use.at.startsWith(path)));
+}

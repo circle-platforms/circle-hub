@@ -526,6 +526,12 @@ Every accepted fallback is disclosed through `recordIntegrityNotes()` in the pub
 
 唯一业务键锁使用独立的 `UNIQUE_KEY_LOCK_SPACE`，与来源去重和普通业务事务锁的命名空间均不同；合并保留三种用途，不让它们互相占用同一个锁空间。
 
+完整管理员理由（hub-read-absence）：新增迁移 6 call_reasons，只追加每条理由的序号、完整正文和时刻；原 call_notes 的 2,000 字摘要与已应用迁移 1–5 的 SQL 均保留。CallLogInput.adminReasons 不参与调用记录及其摘要，在同一事务中批量写入；当前管理员查询才有 admin_reasons，普通读者无该字段。追加回执可带私有摘要；JSONL 的新写、重试与 repairFiles 重建只带调用回执字段，不带 admin_note 或 admin_reasons。部署迁移由整合者另行执行；本分支只在临时 PostgreSQL 验证。
+
+日志理由不是源文件：完整理由和摘要均拒绝保存触发凭据扫描的原文，不写命中文字或其摘要；只保留已触发日志保护这一确定说明。管理员仍可在原系统或受限原件中重现并私审，不能靠日志旁路读凭据。
+
+首轮复核修正：MCP 的管理员摘要只记理由条数，不拼接理由原文；旧调用方单独提供的 adminNote 仍只在数据库管理员查询里可见，文件序列化统一剔除所有私有备注字段。
+
 ## Named deployment versions
 
 `RecordsKit.variables` persists `variable@1` and metadata-only `secret@1` objects through ordinary append-only resource-configuration decisions (`var:<name>` / `secret:<name>`). Every write requires the current administrator and a scanned, nonempty reason. Both kinds share the sorted `variable-name:<name>` transaction locks; a name retains its kind after withdrawal. Ordinary canonical same-values reuse the version; every secret setting makes a fresh random vault entry and decision. Batch settings commit all decisions in one transaction; transport reads select the current decisions together and refresh the whole batch once if any vault entry has disappeared.
@@ -543,3 +549,25 @@ Secret withdrawal deletes only entries named by grant decisions preceding its re
 Ordinary JSON token screening checks both object keys and values recursively, including objects inside arrays. A key meeting the strict token rule requires the same explicit `--not-secret` confirmation; refusal never quotes that key.
 
 `authorizations.grant(by, input, tx?)` 可以加入调用方事务，许可核对不变；事务回滚时决定一起回滚。产品包声明变量时，在同一事务取名字锁、核对归属并写发布决定。
+
+## Sharing audiences and objects (B04, decision 35 item 22)
+
+`share` retains the user-array API and also accepts `{kind: 'pack_users', pack}`. User decisions use the user id as
+`subject`; a pack audience uses `pack_users:<pack>` and one record. New decisions carry generated `share_audience`;
+legacy shares without it are user decisions only. The newest decision of each permission/subject/object wins, including
+withdrawals. `shares(admin, object?)` lists only currently active decisions. Pack membership is re-read through the latest
+assignment when an object is read, so unassignment revokes the audience immediately without rewriting the share.
+
+A run share uses its immutable run id as the object. The policy object `production:<pack>` binds
+`{pack, accepted_producer: 'fact'}` by canonical content digest and applies only to frozen fact-only requirements of that
+pack, including future and Hub-side runs. A pack audience of a run must name that run's pack. Records expose a read-only
+sharing query for consumers that have a record store; it grants no decision capability. Sharing grants viewing, never
+submission or lineage continuation; it never overrides connector-source visibility, credential holding or knowledge-tree
+permissions. No package-specific policy is built into these keys.
+
+`artifacts.sourceForRun(viewer, sha, run, {consumer})` is a read-only capability for generated evidence. It reads and
+validates the immutable run, checks owner/admin or current sharing access, and requires an exact `src:` digest in its
+frozen source bindings or verified projected locations. Only a generated-origin artifact record can decide this read; a recorded user author does not turn Hub rendering into a connector read. Uploads and connector
+originals gain no visibility from a run share. The ordinary scanner/acceptance and consumer-tier calculation is reused;
+there is no trusted-bytes fallback and no source ACL rewrite. Missing/corrupt stored bytes retain the ordinary integrity
+error. A source reference without the authorized run continues to use the reader's original source visibility.

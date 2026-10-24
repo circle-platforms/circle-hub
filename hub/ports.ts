@@ -1,8 +1,10 @@
+import type {ProtocolCode} from '../contracts/generated/protocol.ts';
+import type {SourceAbsent} from '../contracts/src/resources.ts';
 // Interfaces between packages that are built at the same time. A package that provides a port exports a factory returning it
 // from its api.ts; a package that needs one takes it as an argument and imports nothing else of the provider. Tests use fakes.
 // A port answers only what its consumers need; whatever else a provider offers stays in the provider's own api.ts.
 import type { z } from 'zod';
-import type { EntryKind, PackKind } from '../contracts/generated/vocabulary.ts';
+import type { EntryKind, PackKind, RequestKind, ExitAction } from '../contracts/generated/vocabulary.ts';
 import type { PathChange } from '../contracts/src/views.ts';
 import type { Coverage } from '../contracts/src/common.ts';
 import type { ChecksFile, KnowledgeFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../contracts/src/pack.ts';
@@ -73,6 +75,9 @@ export type WorkflowAbsence = 'unknown' | 'unassigned' | 'withdrawn' | 'disabled
 
 /** What the engine needs of the pack registry (provided by runs/packs, consumed by runs/engine and the server). */
 export interface WorkflowStore {
+  /** Owner of a published workflow version, for named B07 repair requests. */
+  ownerOf?(digest: string): Promise<string | null>;
+  publicationOf?(digest: string): Promise<string | null>;
   /** A version the user may use: `id` (latest published, assigned to the user) or `id@version`. Unknown, unassigned and withdrawn give the same null. */
   forUser(user: Principal, ref: string): Promise<LoadedWorkflow | null>;
   /**
@@ -90,6 +95,8 @@ export interface WorkflowStore {
 // ---------------------------------------------------------------- external systems (provided by connectors)
 
 export interface ExternalReadContext {
+  /** Private diagnostics for the calling service; never part of read content. */
+  adminNote?:(reason:string)=>void;
   /** Ordinary-variable decisions frozen for this caller; never persisted as run parameters. */
   variables?: ReadonlyMap<string,string>;
   /** Whose credential and visibility the read uses: the user of a run, or an admin for a standing sync. */
@@ -99,6 +106,8 @@ export interface ExternalReadContext {
   purpose: string;
   /** Composition already selected by the caller; it is never replaced with a newer production. */
   composition?: string | null;
+  /** Product-wide snapshot selected before the run is persisted; null explicitly means none. */
+  unversioned?: {root:string;composition:string} | null;
   /** Canonical name of the build selected by the run; absent on legacy callers. */
   build?:string;
 }
@@ -117,15 +126,19 @@ export interface ExternalArtifact {
  * SHA-256 before anything interprets it) and the others are artifacts derived from it by the system pack's projection. When a
  * `content` artifact exists it is what a consumer parses; otherwise the original is. A failure is never an exception: `reason`
  * is for the admin log; inputError is a deterministic caller-input problem safe for an authorized reader,
- * while other failures show the neutral SOURCE_UNAVAILABLE.
+ * while read exhaustion carries retry metadata and permission failures remain neutral.
  */
+export interface ExternalRedirect {status:number;location:string|null;observed_at:string;location_redacted?:true}
+
+export interface ExternalReadRetry {code:string;at:string;attempts:number}
+
 export type ExternalRead =
-  | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string }
-  | { ok: false; id: string; reason: string; inputError?: { message: string; fix: string } };
+  | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string; coverage?:Coverage;absent?:SourceAbsent }
+  | { ok: false; id: string; reason: string; retry?:ExternalReadRetry; redirect?:ExternalRedirect; inputError?: { code?:ProtocolCode; message: string; fix: string } };
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */
-  accepts(id: string): Promise<boolean>;
+  accepts(id: string, context?:ExternalReadContext): Promise<boolean>;
   read(id: string, context: ExternalReadContext): Promise<ExternalRead>;
 }
 
@@ -152,17 +165,28 @@ export interface RunSubmissionView {
   result: string | null;
 }
 
+export interface RunRequestView {
+  record:string; answer_action?:ExitAction; run?:string; pack_digest?:string; job?:string; sources?:string[]; kind:RequestKind; audience:string; due:string; missing:string; next_action:string;
+  source:string; code:string; item?:string; requirement?:string; answered_by:string|null;
+}
+
 /** Everything the console shows about one run. */
 export interface RunDetail {
+  management?:{record:string;disposition:'abandon';result:string|null};
   run: RunRecord;
   submissions: RunSubmissionView[];
+  requests?: RunRequestView[];
   /** The latest validation result (an accepted submission, or the result of a production run), with its record digest. */
   latest: { record: string; result: ValidationResult } | null;
   /** The result computed at start_run (submission equals this run record's digest), never a later commentary result. */
   production: { record: string; result: ValidationResult } | null;
 }
 
+export interface RunListing extends Page<RunRecord> {requests?:RunRequestView[];overdue_requests?:RunRequestView[];open_runs?:string[]}
+
 export interface RunsService {
+  abandonRun?(user:Principal,run:string,request:string,reason:string):Promise<{record:string;result:ValidationResult;decision:string;created:boolean;current:boolean}>;
+  listRequests?(user: Principal, run?: string): Promise<RunRequestView[]>;
   /** Absent and forbidden give the same SOURCE_UNAVAILABLE answer with the tool's empty shape. */
   startRun(user: Principal, input: z.infer<typeof StartRunInput>, context: CallContext): Promise<Untraced<z.infer<typeof StartRunOutput>>>;
   /** `args` are the raw arguments of the call: they are stored as received before anything else (W07). */
@@ -171,7 +195,7 @@ export interface RunsService {
   /** Own runs for a user, any run for an admin; null when absent or forbidden. */
   getRun(user: Principal, run: string): Promise<RunDetail | null>;
   /** Own runs for a user, every run for an admin, newest first. */
-  listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null }): Promise<Page<RunRecord>>;
+  listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null }): Promise<RunListing>;
 }
 
 // ---------------------------------------------------------------- read-only listings for the console
@@ -200,6 +224,8 @@ export interface PackCatalogPort {
 }
 
 export interface ResourceListing {
+  /** A broken bound profile, admins only; absence is never silently treated as disabled. */
+  binding_error?:{code:string;message:string;fix:string};
   id: string;
   system_pack: string;
   name: string;
@@ -218,13 +244,14 @@ export interface ResourceCatalogPort {
 
 // ---------------------------------------------------------------- knowledge (provided by knowledge)
 
-export interface RootInfo {
+export interface RootInfo<B extends KnownBuild | null = KnownBuild> {
   /** Root node digest: what a run locks and what tree references name. Equal content gives equal roots. */
   root: string;
   /** Digest of the tree_root record that composed it (the build it was produced for and what every entry rests on). */
   composition: string;
   product: string;
-  build: KnownBuild;
+  build: B;
+  source_count?: number;
   produced_at: string;
 }
 
@@ -272,6 +299,8 @@ export interface EntryDiff {
 }
 
 export interface KnowledgePort {
+  /** Current product-wide root; absent on older ports. */
+  unversionedRoot?(product: string): Promise<(RootInfo<null> & { source_count: number }) | null>;
   /** Builds the knowledge base knows for a product, any name family, newest first. */
   builds(product: string, filter?: { line?: string; released?: boolean }): Promise<KnownBuild[]>;
   /** Any build name, of any family, to the build record whose tree it uses (aliases resolved). Null when unknown. */
@@ -281,14 +310,14 @@ export interface KnowledgePort {
   /** The root a build name of any family resolves to. This is what a run locks. */
   rootOfBuild(product: string, name: string): Promise<RootInfo | null>;
   /** Every composition record of a root digest (equal content from different builds shares one root). */
-  rootInfo(root: string): Promise<RootInfo[]>;
+  rootInfo(root: string): Promise<RootInfo<KnownBuild | null>[]>;
   /** The closed catalog declared by the product pack, built from the entries of the root; null when the root has none of that id. */
   catalog(root: string, catalogId: string): Promise<CatalogView | null>;
   /**
    * Reads nodes and entries for reference resolution; permission is enforced inside. `lock.composition` binds the reader to the
    * composition a run locked (RootInfo.composition): grounds and premises come from it alone.
    */
-  treeReader(lock?: { composition?: string | null } | null): TreeReader;
+  treeReader(lock?: { composition?: string | null; compositions?: string[] } | null): TreeReader;
   /** Absent and forbidden give the same null (D05 R[3]). */
   getNodes(query: NodesQuery, reader: Principal): Promise<NodesPage | null>;
   diffRoots(from: string, to: string): Promise<RootDiff | null>;
@@ -298,4 +327,14 @@ export interface KnowledgePort {
    * diffRoots it takes no reader: callers check the reader first.
    */
   diffEntries(from: string, to: string, options: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null>;
+}
+
+/** Internal effect-boundary metadata, frozen with the same ordinary-variable snapshot as start_run. */
+export interface EffectRegistryPort {
+ snapshot(variables:import('./records/api.ts').VariableSnapshot):Promise<{policy:string;executors:string}>;
+}
+
+/** Pure re-evaluation of named frozen-package checks; it cannot store submissions or spend repair rounds. */
+export interface EffectCheckReplay {
+ (input:{run:string;submission:string;checks:readonly string[]}):Promise<Record<string,import('../contracts/src/tables.ts').CheckOutcome[]>>;
 }

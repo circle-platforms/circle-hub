@@ -361,6 +361,8 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
     const interpreterOf = new Map((checks?.checks ?? []).map((x) => [x.id, x.interpreter?.split('@')[0]]));
     const used = new Set<string>();
     for (const [i, r] of requirements.requirements.entries()) {
+      if(r.accepted_producer==='fact'&&r.layers.includes('static')&&r.checks.length===0)c.add(problem('requirements.no_check','requirements.json',`要求项 ${r.key} 声明静态事实却没有检查`,'给它安装检查后重新发布',{field:`/requirements/${i}/checks`}));
+      if(r.accepted_producer==='fact'&&r.layers.includes('dynamic')&&!r.observation)c.add(problem('requirements.no_observation','requirements.json',`要求项 ${r.key} 声明动态事实却没有观察合同`,'声明 observation 后重新发布',{field:`/requirements/${i}/observation`}));
       const seen = new Set<string>();
       r.checks.forEach((id, j) => {
         const field = `/requirements/${i}/checks/${j}`;
@@ -473,6 +475,18 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
       else if (s.sample.catalog !== undefined && check.catalog === undefined) {
         c.add(problem('samples.catalog_unused', s.file, `样例 ${s.sample.id} 带了目录，但检查 ${check.id} 不查目录（checks.json 没有给它写 catalog）；运行时不会绑定目录，样例要和运行一样判定`, `删掉样例的 catalog，或者给检查 ${check.id} 写 catalog`, { field: '/catalog' }));
       }
+    }
+  }
+
+  if(requirements && checks)for(const [index,row] of (requirements.effects??[]).entries()) {
+    const names=new Set([...row.policy_checks,...('policy' in row.parameters?[row.parameters.check]:[])]);
+    for(const id of names) {
+      const check=checks.checks.find(check=>check.id===id);
+      if(!check || !check.table?.startsWith('policies/')) {
+        c.add(problem('effects.policy_binding','requirements.json',`效果 ${row.id} 的政策检查 ${id} 没有绑定 policies/ 下的表`,'在 checks.json 点名同一脚本和政策表，并提供正反例',{field:`/effects/${index}`}));continue;
+      }
+      if('policy' in row.parameters && id===row.parameters.check && check.table!==row.parameters.policy)c.add(problem('effects.policy_binding','requirements.json',`效果 ${row.id} 的参数政策表与检查 ${id} 用表不一致`,'指向编译时同一个检查与同一张表',{field:`/effects/${index}/parameters`}));
+      if(!samples.some(sample=>sample.sample.check===id && sample.polarity==='positive') || !samples.some(sample=>sample.sample.check===id && sample.polarity==='negative'))c.add(problem('effects.policy_samples','requirements.json',`效果 ${row.id} 的政策检查 ${id} 缺正例或反例`,'为该检查提供正反例并在发布时运行',{field:`/effects/${index}/policy_checks`}));
     }
   }
 

@@ -58,3 +58,22 @@ test('staging publishes identical client bytes under tools and the staged entry 
     const result = spawnSync(process.execPath, [join(root, 'tools/generate-workbook.ts'), ...args, '--out', join(dir, 'artifact.xlsx')], { encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).generator, GENERATOR);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('the client generator permits only the explicit pre-generation workbook gap',()=>{
+  const value=fixture();const result:any=value.result;
+  result.errors=[{code:'missing_input',message:'生成前尚未绑定工作簿',requirement:'workbook_verified',item:'fixture-case'}];
+  const workbook=result.partitions.delivered[0].requirements.find((r:any)=>r.requirement==='workbook_verified');
+  workbook.status='pending';workbook.layers=[{layer:'static',terminal:'unchecked',reason:'missing_input'}];
+  assert.equal(satisfiedRecipe(value).plan_run,value.run.run);
+  for(const error of [
+    {code:'check_error',requirement:'workbook_verified',item:'fixture-case'},
+    {code:'case-compile.workbook_invalid',requirement:'workbook_verified',item:'fixture-case'},
+    {code:'missing_input',requirement:'commands_known',item:'fixture-case'},
+    {code:'missing_input',requirement:'workbook_verified',item:'other-case'},
+  ]){
+    result.errors=[error];assert.throws(()=>satisfiedRecipe(value));
+  }
+  result.errors=[{code:'missing_input',requirement:'workbook_verified',item:'fixture-case'}];
+  workbook.layers=[{layer:'static',terminal:'violation',code:'case-compile.workbook_invalid'}];
+  assert.throws(()=>satisfiedRecipe(value),'a known workbook refutation never becomes a generation gap');
+});

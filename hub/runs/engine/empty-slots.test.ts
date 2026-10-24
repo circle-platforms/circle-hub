@@ -23,7 +23,7 @@ async function fixture(t: TestContext, applies: Applies, itemJudgment: boolean, 
   spec.id='toy-empty';
   const base={description:'合成核对',required:true,done_rule:'bookkeeping',accepted_producer:'fact',layers:['static']};
   spec.files['requirements.json']={json:{schema:'requirements@1',requirements:[
-    {...base,key:'plan_shape',name:'产物',target:runArtifact?'run':'item',checks:['artifact'],layers:['static','dynamic'],error_handling:[{code:'toy-empty.artifact_invalid',action:'repair',max_rounds:2}]},
+    {...base,key:'plan_shape',name:'产物',target:runArtifact?'run':'item',checks:['artifact'],layers:['static','dynamic'],observation:'synthetic-observation@1',error_handling:[{code:'toy-empty.artifact_invalid',action:'repair',max_rounds:2}]},
     {...base,key:'target',name:'对象',target:'item',checks:['target'],error_handling:[{code:'*',action:'repair',max_rounds:2}]},
     ...(itemJudgment?[{...base,key:'findings',name:'模型产物',target:'item',accepted_producer:'judgment',checks:[],error_handling:[{code:'toy-empty.model_issue',action:'repair',max_rounds:2}]}]:[]),
     {...base,key:'level',name:'等级',target:'run',accepted_producer:'judgment',checks:[],error_handling:[]},
@@ -78,14 +78,14 @@ for(const applies of ['item','run'] as const) for(const itemJudgment of [false,t
     assert.ok(target.claims.some(c=>c.statement.code==='toy-empty.target_invalid'),'the target itself is still judged');
     assert.equal(f.calls.target,applies==='item'?2:1);
     assert.ok(!answer.errors.some(e=>e.code==='toy-empty.artifact_invalid'));
-    assert.deepEqual(await f.repair(),mode==='not_covered' && itemJudgment?['findings']:[],'keep coverage bookkeeping, never charge artifact absence');
+    assert.deepEqual(await f.repair(),itemJudgment?['findings','plan_shape']:['plan_shape'],'missing work consumes a requirement round without invoking absent-artifact checks');
     if(mode==='not_covered') assert.ok(answer.errors.some(e=>e.code==='core.coverage.shortfall' && e.item===f.run.items[0].id));
     const normal=answer.result!.partitions.delivered.find(item=>item.item===f.run.items[1].id)!;
     assert.ok(normal.requirements.find(r=>r.requirement==='plan_shape')!.claims.some(c=>c.statement.verdict==='support'));
     const checked=await f.submit('handled',false,false);
     const genuine=checked.errors.filter(e=>e.code==='toy-empty.artifact_invalid');
     assert.equal(genuine.length,2);
-    assert.ok(genuine.every(e=>e.rounds_left===2),'absence did not use artifact-check repair budget');
+    assert.ok(genuine.every(e=>e.rounds_left===1),'missing work consumed one shared requirement round');
   });
 }
 for(const applies of ['item','run'] as const) for(const mode of ['skipped','not_covered'] as const) {
@@ -97,7 +97,7 @@ for(const applies of ['item','run'] as const) for(const mode of ['skipped','not_
     assert.equal(answer.result!.partitions.incomplete.length,2);
     assert.ok(answer.result!.partitions.incomplete.every(it=>it.requirements.find(r=>r.requirement==='plan_shape')!.claims.length===0));
     assert.ok(!answer.errors.some(e=>e.code==='toy-empty.artifact_invalid'));
-    assert.ok(!(await f.repair() as string[]).includes('plan_shape'));
+    assert.ok((await f.repair() as string[]).includes('plan_shape'));
   });
 }
 for(const mode of ['skipped','not_covered'] as const) {

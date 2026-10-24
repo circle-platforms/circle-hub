@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 // Static scan of pack functions at publish (T01 F[8], C03): every module a declared function reaches, what it imports and
 // what it exports. The sandbox of hub/rules enforces the import policy at run time; this is the early warning, so a pack
 // whose functions would be refused there is refused at publish instead. Type-only imports (`import type`, `export type`)
@@ -74,7 +75,13 @@ function typescript(): Promise<typeof TS> {
   return loaded;
 }
 
+// Integrator-reviewed static-only exception (2026-10-24). Runtime policy remains unchanged.
+const REVIEWED_DYNAMIC_IMPORTS:Readonly<Record<string,{sha256:string;specifiers:readonly string[]}>>=Object.freeze({
+  'functions/adoc/vendor/core.mjs':{sha256:'5a8785bf8dc39a216170b836bb274957f079f77e5f40b33453c988f85de9203d',specifiers:['node:fs','node:fs/promises','node:async_hooks']},
+});
+
 interface ImportUse {
+  dynamic?: boolean;
   specifier: string;
   line: number;
   json: boolean;
@@ -243,7 +250,7 @@ function analyze(ts: typeof TS, path: string, text: string, tools = false): Modu
       const specifier = literalText(ts, node.arguments[0]);
       if (tools && (specifier === 'module' || specifier === 'node:module')) facts.computed.push({ line: lineOf(node), what: 'createRequire' });
       else if (specifier === undefined) facts.computed.push({ line: lineOf(node), what: 'import' });
-      else facts.imports.push({ specifier, line: lineOf(node), json: dynamicJsonAttribute(ts, node.arguments[1]), builtinOnly: false });
+      else facts.imports.push({ specifier, line: lineOf(node), json: dynamicJsonAttribute(ts, node.arguments[1]), builtinOnly: false, dynamic:true });
     } else if (isGetBuiltinModule(ts, node)) {
       // Only a direct call with a literal name can be checked; any other use of it (a computed name, a reference kept for
       // later) is reported like a computed import. The module builtin exposes createRequire, which loads any package.
@@ -364,13 +371,15 @@ async function scanModules(files: ReadonlyMap<string, Uint8Array>, entries: read
         problem('functions.module_format', path, `${path} 去掉类型后没有 ES 模块语法（import、export、import.meta 或顶层 await），Node 会把它当作 CommonJS 加载，沙箱只运行 ES 模块`, `在 ${path} 里加一行 export {};`),
       );
     }
+    const reviewed=REVIEWED_DYNAMIC_IMPORTS[path];
+    const reviewedBytes=reviewed!==undefined&&createHash('sha256').update(files.get(path)!).digest('hex')===reviewed.sha256;
     for (const use of module.imports) {
       const at = { line: use.line };
       const spec = use.specifier;
       if (spec.startsWith('node:') || isBuiltin(spec)) {
         const name = spec.startsWith('node:') ? spec.slice(5) : spec;
         if (!isBuiltin(spec)) problems.push(problem('functions.import_builtin', path, `${path} 第 ${use.line} 行导入的 ${spec} 不是 Node 的内置模块`, '删掉这个导入', at));
-        else if (!tools && !policy.builtins.includes(name)) {
+        else if (!tools && !policy.builtins.includes(name) && !(reviewedBytes&&use.dynamic===true&&reviewed.specifiers.includes(spec))) {
           problems.push(problem('functions.import_builtin', path, `${path} 第 ${use.line} 行导入了内置模块 ${spec}；沙箱里的包内函数只能用纯计算的内置模块（${policy.builtins.join('、')}）`, '包内函数不读写文件、不联网、不起进程：删掉这个导入，所需的数据作为函数输入传进来', at));
         }
         continue;

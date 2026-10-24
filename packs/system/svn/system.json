@@ -121,6 +121,20 @@
         "export": "fileProject"
       },
       "max_requests": 1
+    },
+    {
+      "name": "directory-at",
+      "external": "svn:directory-at",
+      "description": "按指定修订号列出一个子目录，不读取当前修订号",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "directoryAtPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "directoryAtProject"
+      },
+      "max_requests": 1
     }
   ]
 }

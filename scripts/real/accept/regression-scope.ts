@@ -5,6 +5,8 @@ import { resultTexts, type LoggedTurn, type Scenario } from '../lib/accept.ts';
 import type { Turn, Reply } from '../scripted-model.ts';
 import type { Check } from '../lib/report.ts';
 import { lengthBounded, pathSetMatches, runStarted } from './checks.ts';
+import { contentHeader } from './content-header.ts';
+import { labelOf } from '../../../contracts/generated/vocabulary.ts';
 
 export interface ScopeCaseGold {
   /** The item id as the Hub writes it (document:node). */
@@ -120,14 +122,22 @@ export function facetReader(): (turn: Turn, done: string) => Reply {
 /** Reassemble only the MCP pages of the bound source. Headers and omission notes are never input data. */
 export function facetCountCheck(area: string, expected: number, turns: readonly LoggedTurn[]): Check {
   const reference = boundFacetReference(resultTexts(turns));
-  const pages = turns.flatMap((t) => t.toolResults).filter((r) => !r.isError && reference !== null && r.text.startsWith(`内容 ${reference}`));
+  const pages = turns.flatMap((t) => t.toolResults).filter((r) => !r.isError && reference !== null && contentHeader(r.text)?.reference === reference);
   let raw = '';
+  let declared: number | null = null;
   let valid = pages.length > 0;
   for (let i = 0; i < pages.length; i++) {
     const text = pages[i].text;
-    const lines = text.split('\n');
+    const header = contentHeader(text)!;
+    const lines = header.lines;
+    if (header.tier !== labelOf('read_tier', 'model_readable')) valid = false;
     const head = lines.findIndex((line) => line.startsWith('原文（'));
     if (head < 0) { valid = false; continue; }
+    if (i === 0) {
+      const count = /^原文（([0-9]+) 个字符）：$/.exec(lines[head]);
+      declared = count ? Number(count[1]) : null;
+      if (declared === null || !Number.isSafeInteger(declared)) valid = false;
+    }
     const continuedLine = /第 \d+ 个字符/.test(lines[head]);
     let from = head + 1;
     if (lines[from]?.startsWith('（接上页：')) from++;
@@ -136,6 +146,7 @@ export function facetCountCheck(area: string, expected: number, turns: readonly 
     raw += (i > 0 && !continuedLine ? '\n' : '') + lines.slice(from, to).join('\n');
     if (i === pages.length - 1 && continuation(text)) valid = false;
   }
+  if (declared !== raw.length) valid = false;
   let actual: number | null = null;
   try {
     const value = JSON.parse(raw) as { schema?: string; kind?: string; by?: string[]; rows?: Array<{ values: { commands?: unknown }; count: number }>; truncated?: boolean; skipped?: number };
@@ -152,7 +163,7 @@ export function facetCountCheck(area: string, expected: number, turns: readonly 
 /** Hint source pages are observations for the numeric check, never the scope answer being judged. */
 export function withoutFacetPages(turns: readonly LoggedTurn[]): LoggedTurn[] {
   const reference = boundFacetReference(resultTexts(turns));
-  return turns.map((turn) => ({ ...turn, toolResults: turn.toolResults.filter((r) => !reference || !r.text.startsWith(`内容 ${reference}`)) }));
+  return turns.map((turn) => ({ ...turn, toolResults: turn.toolResults.filter((r) => !reference || contentHeader(r.text)?.reference !== reference) }));
 }
 
 export class ScopeGoldError extends Error {readonly reason:'live_replay'|'gold_count';constructor(reason:'live_replay'|'gold_count',message:string){super(message);this.name='ScopeGoldError';this.reason=reason;}}

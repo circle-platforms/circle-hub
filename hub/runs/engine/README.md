@@ -237,19 +237,16 @@ Before schema diagnostics or any external read, the entry point scans the comple
 
 - **Partition step 4** counts only *required* requirements, as V05 R[3] ④ says ("某个必需要求项"); the task says "any declared
   layer". With every requirement required (the case-review packs) both agree.
-- **Facts of skipped or uncovered items.** Only the requirements that accept judgments become incomplete for a skipped or
-  uncovered item (at every layer they declare); fact requirements keep the Hub's own terminal, since the Hub computes them
-  whatever the model did. W07 R[2]-R[3] literally say every requirement of the item; the item still goes to `incomplete`.
-  Open question 3.
+- **Facts of skipped or uncovered items.** Judgment requirements and facts that need a missing submitted artifact become incomplete for a skipped or
+  uncovered item; target-only facts keep the Hub's computed terminal. The current W07 R[2]-R[3] distinguishes target facts from missing artifacts; only a required incomplete requirement forces the incomplete partition.
 - **Unknown outcomes** become claims with nature `unknown`, not `fact` (B01: an unknown verdict has no grounds to be a fact).
 - **Default run subject**: `{ items: [{ id, label, location, fields, slots }], cross_item }` — `slots` (the item's slot record
   or null, references canonical) and `cross_item` (the submitted entries, grounds canonical) are added to the documented
   `{ items: [...] }` so that a run-level check can judge the submission (the verdict consistency of scenario 15). The default
   item subject is exactly as documented.
-- **A draft's independent findings are never satisfied** without a predecessor (A04 R[5]), nor in a revision of the draft
-  (its predecessor is its own earlier revision, not an author); the case-review draft pack declares `findings` as an
-  independent judgment, so its draft results show `unsatisfied (independence_unknown)` for every handled item. The owner may
-  prefer `judgment` for the draft and `independent_judgment` for the verification.
+- **Draft versus independent verification.** The draft pack has answered this distinction: findings are judgments.
+  A template that explicitly requires independence still needs the predecessor's author lineage (A04 R[5]); a revision
+  does not turn its own author into an independent verifier.
 - **Finding locations**: section 6 of the brief says "finding locations are references into the target ... and into sources
   (tree:, src:)". The engine reads the second half as the evidence (grounds, quotations): SlotClaim.location is "where in the
   judged source the statement applies" and scenario 16 refuses a location that is not in the target.
@@ -310,8 +307,7 @@ one or every item absent, mixed valid/invalid artifacts, and run-level finals' r
 - An item location must resolve in exactly one source of its slot; a slot with several sources and positional selectors is
   refused (FragmentRef names no source).
 - Commands are split at white space to find heads; quoted arguments are judged by the catalog check, not at resolution.
-- `knowledge.json` (`requires` a complete catalog) is not enforced at start_run: a missing catalog gives unknown outcomes
-  (missing input), an incomplete one unknown absence (integrity unproven), both visible as unchecked terminals.
+- `knowledge.json` requirements are enforced before input binding; missing/incomplete required catalogs refuse the start and name selectable complete builds.
 - Locks are per process. Pack function calls in one evaluation run at most 8 at a time. A lineage is followed for at most 100
   runs; a bound record is walked for model warrants up to 2,000,000 nodes.
 - A submission nests at most 64 levels; check outcome data at most 32. A result must fit one record (`maxRecordBytes`,
@@ -386,13 +382,12 @@ read; results, run records and production results over the record limit; queries
 
 ## Open questions
 
-1. Should `findings` of the draft review be `judgment` (see Deviations), so that a draft can be satisfied?
-2. Should a reuse whose cited content changed between offer and submit be a structure violation (as now) or make the item
-   uncovered (W07 R[3])? Within one run it cannot happen (content-addressed), so only the interim matters.
-3. Should the fact requirements of a skipped or uncovered item also be incomplete, as W07 R[2]-R[3] literally say (see
-   Deviations)? The engine keeps the Hub's facts and makes only the judgment requirements incomplete.
-4. Is the family rule of decision 19 acceptable until a declared family exists? It treats any shared word as one family
-   (`aster-chat` and `birch-4-chat` share `chat`), which errs towards `not_independent`.
+1. Resolved by the draft pack: findings are judgments. Independent verification requires an observed session at both start and submission.
+2. Current reuse rule: changed cited content is a structure violation. Frozen content-addressed references do not change
+   within a run; this task retains that deterministic rule.
+3. Resolved by W07 R[2]-R[3]: target facts retain Hub terminals; missing item-artifact facts and judgments are incomplete.
+4. The family rule of decision 19 remains unchanged, as directed by the integrator: any shared word means one family
+   (`aster-chat` and `birch-4-chat` share `chat`), conservatively yielding `not_independent`.
 
 ### 生产投影的确定说明
 
@@ -414,7 +409,7 @@ real temporary records, including the bytes actually delivered to the sandboxed 
 Checks that use the same pure subject builder previously started another isolated process for each check, even when
 its function and JSON input were identical. The bounded sandbox pool then spent slots rebuilding the same item or run
 subject. The run-keyed submission lock remains unchanged: different runs enter independently, and identical submissions
-of one run still return the existing receipt without another validation action.
+of one run return an existing settled receipt without another validation action. Transitional receipts are rechecked.
 
 Each evaluation of one submission and locked pack version now creates a separate subject-builder scope for the whole run
 and a short-lived scope for each item. A scope keys by function identity and SHA-256 of the exact JSON input bytes. It
@@ -438,7 +433,7 @@ store their retry_attempts, including the first transient failure and the recove
 module and item where applicable, generated reasons, durations and 50/100 ms backoff. Successful first calls do not enlarge this
 retry log. Production start actions and submitted-result actions both retain it. The per-evaluation subject cache
 shares successful construction and exhausted transient failures, and replay of a completed identical submission creates no new attempt or action.
-Exhausted sandbox errors still need the exit/request contract from hub-unknown-model; this step adds no exit field.
+Exhausted sandbox errors now use the named exits and durable requests described below.
 
 Bound check sources are re-read at most three times after unavailable/failed reads, with 50/100 ms backoff; the validation
 action retains read retry attempts. Source/permission absence stays neutral SOURCE_UNAVAILABLE; internal failures
@@ -446,8 +441,7 @@ use registered check_error or integrity_unproven, an unresolved selector REFEREN
 uses missing_input; a pinned text exceeding reads.max_bytes uses budget_exhausted. Deterministic no-text/size limits do not
 repeat identical reads. Free-text diagnostics go only to the admin log. Every affected check outcome carries the actual
 unread list into its fact claim's statement.data.unread_sources even if the pack omits it. This is not a new top-level
-validation field. Read recovery reuses the same bound reference and retains integrity/permission checks. Exit ownership,
-requests, deadlines and whether unread_sources belongs at top level await hub-unknown-model.
+validation field. Read recovery reuses the same bound reference and retains integrity/permission checks. Named exit ownership, durable requests and deadlines are connected below; unread_sources remains structured claim data.
 
 Exact-value resolution retries only SOURCE_UNAVAILABLE carrying an internal check_error or integrity_unproven reason
 (and thrown read failures), using the same three-attempt 50/100 ms policy. Genuine absent/forbidden references and invalid
@@ -458,9 +452,8 @@ requirement/rounds_left. The raw submission is still stored once. Hub-failure ac
 repair attempt, so the identical body can be checked after restoration; genuine errors then consume their normal round.
 A completed result still replays idempotently. The model-facing resolver keeps its neutral return rather than throwing.
 
-Pending hub-unknown-model: explicit exit/request ownership and deadlines after retry exhaustion; automatic routing to a
-named administrator or pack author; top-level unread_sources and a storage location on not-accepted results that have no
-fact claims. This change adds no exit field, request contract, split, automatic re-evaluation or interpreter policy change.
+The exit flow below supplies named administrators/pack authors, finite requests and automatic re-evaluation. Refused
+submissions still retain their original bytes and validation action; unread_sources remains structured evidence.
 
 
 Subject-copy review: a successful build is serialized once as JSON text, and every check parses an independent value.
@@ -530,7 +523,7 @@ Retain-only data quotes preserve structured credential_unreadable evidence in da
 missing administrator acceptance and the administrator acceptance/re-evaluation next action. quote@1 uses awaiting_step
 from the generated Reason axis; credential_unreadable belongs to ValidityStatus and is not a legal CheckOutcome.reason.
 No contract axis is widened. Legacy retain_only views receive the same evidence, and source reads remain single-attempt
-for this deterministic state. Request dispatch and automatic re-evaluation still await the model-owned exit contract.
+for this deterministic state. Named administrator requests and automatic re-evaluation are connected below.
 
 Startup-failure diagnostics retain the actual host errno/message for check and subject onError logging after retry
 exhaustion. Neither the submitted-result receipt nor persisted retry evidence carries those private causes; fixed
@@ -552,23 +545,135 @@ K2 admission exclusions are applied before subject priming and before forming it
 contribution writes and identity locks stay atomic with the result, and both successful saves and fallback refusals retain
 retry evidence. This merge changes no timeout, caller scope, generated contract or real-system configuration.
 
+## Unknown exits
+
+New transitional layer results bind every missing fact to a named, finite exit before partition validation.
+`EXIT_BY_REASON` exhausts the generated cause vocabulary; a pack cannot choose another account through its exit.
+Check outcomes require top-level `missing`; `data.missing` remains refutation evidence, never its alias.
+The workflow port reads the recorded pack owner; the records account port selects an enabled administrator.
+Missing identity wiring refuses evaluation rather than inventing a recipient. Requests use a 24-hour response window.
+Stored results are never passed through this new-write binding; missing historical exits remain “出口未写”.
+The following commits connect these exits to durable requests and automatic maintenance.
+
+W07 R[2]–R[3]: skipped/omitted handling changes only judgment requirements and facts that judge the missing
+item artifact. Target-only facts retain the Hub-computed pass/violation, including fact-only workflows.
+A required incomplete requirement still takes the item into the incomplete partition (V05 R[3]).
+
+Independent starts validate their own observed session before binding any input, including starts without a predecessor.
+The judged lineage lists historical starts and accepted submissions missing a session; new independent starts refuse
+until the author supplies a new revision with sessions. Missing-session submissions are kept and checked for all
+other problems but refused as a whole. Their action records `refusal: session_missing` without repair keys and
+never enter the distinct-submission repair ledger; the same bytes with a session are evaluated again.
+
+Every unknown outcome is named in errors with its item, requirement, missing fact, submission path and remaining
+repair rounds; the requirement is charged once per distinct submission. Cause selectors route alongside exact
+codes without treating reason strings as interpreter codes. Repair routing is restricted to the artifact provider.
+
+Skipped items retain their verbatim submitted `skip_reason`, including on delivered target-fact items. Every affected
+requirement is named in errors with that reason and remaining rounds; one distinct submission charges one round per
+requirement. At zero remaining rounds, missing artifact work becomes `repair_exhausted`, not another coverage prompt.
+
+B07 requests are append-only records keyed by the exact run, item, requirement, source and missing fact. Repeating the
+same problem never extends its original due date. Result errors name the request and the existing tool to answer it;
+full replacement submissions remain allowed after exhaustion. Answers reference actual stored records and never
+rewrite requests or old results. `getRun`/`listRequests` apply run visibility before listing requests. Unknown-routing
+rows retain an empty hypothesis set with the mandatory open residual and a named judgment request, without inventing
+hypotheses or predictions. The console lists unanswered requests with their named audience and deadline.
+
+Installed checks returning no outcome for an item are `check_error`, not `no_check`. Output failures retain
+`output_failed` on the dynamic not-run layer. Work-limit exhaustion is unchecked; it is distinct from an effect budget.
+Every distinct unknown is retained in layer gaps even beside a settled violation. `pending_unknown` is an optional
+additional item count, never a partition; the primary-terminal partitions remain disjoint and covering. Replies state
+“其中 N 个还有未决未知”. Explicit `Claim.validity.premises` submission paths can wait on another requirement's repair;
+these layers inherit its named exit and identify the requirement and repair path. No dependency is inferred from prose.
+
+New runs freeze a finite submission deadline (explicit future `submission_due`, otherwise 24 hours after start).
+The serving lifecycle runs maintenance at startup and every minute, with one pass in flight, and drains it before
+closing records; command-only assemblies do not start maintenance. An expired run with no accepted submission gets
+one append-only Hub delivery containing every frozen item as not-covered/incomplete and a named disposition request.
+A late full submission remains possible. Old runs without deadlines are not assigned invented historical deadlines: a
+named disposition request asks their runner to open a dated successor. The console shows deadline and delivery state.
+
+Unexpected evaluation failures now append a validation action with null acceptance, a stable check-error code and a
+retry instruction; internal exception details go only to administrator notes. getRun distinguishes “未校验（中断）”
+from refusal, including submissions left with no action. Startup/minute maintenance revalidates orphan submissions
+using the session actually recorded by the interrupted call, never the run's start session. Three failed attempts
+lead to a finite named administrator repair request; missing historical session facts likewise go to a named request.
+
+Publication rejects a static fact requirement without checks through the generated publishable shape (`requirements.shape`, at its `checks` field) and a dynamic fact requirement
+without an observation contract. Start rejects invalid layer/schema/contribution declarations and records a repair
+request addressed to the recorded pack owner. These pre-run requests bind the published pack digest, without making up
+an unstarted run. Owner-facing requests can be listed without granting access to unrelated run contents.
+`knowledge.requires` is checked before inputs are read; refusals name the missing catalogs and list currently eligible
+builds. A workflow may require an explicit predecessor. Model-driven runs whose selected named build root changes receive a named
+successor request; their frozen roots and prior results remain unchanged. Publication answers a package repair request only when --answer-request explicitly binds it; the actual pack-version
+record is the answer source, and affected runners are prompted to open successors.
+
+Hub-observed retain-only source reads produce administrator disposition requests with structured source references.
+Maintenance polls their effective read permission/tier; after acceptance it revalidates with the originally observed
+session and appends a new result/answer. Same-observer lookup returns the newest receipt, and by-submission result lookup
+also returns the newest result. No old result is backfilled. Actual credential echo originals remain excluded from
+acceptance; the next step is a redacted source/new revision. Non-source requests keep their explicit human next action.
+
+Console product/diff arrays use snapshot-bound cursors (500 builds or 1000 paths per page), with explicit per-page and
+whole-list counts. Changed snapshots refuse stale cursors rather than silently skipping. Run call logs pass the existing
+stored cursor through `call_cursor`. Historical transitional layers show “出口未写” without backfilling an actor or due date;
+new exits and every retained gap remain visible as escaped read-only text.
+
+The shared core outcome constructor copies the existing concrete detail verbatim into top-level `missing`, without
+changing any interpreter verdict. trunk-fixes-4 may carry the same constructor fix; keep one equivalent version when
+merging. Pack functions still must declare their own missing fact and do not receive this trusted-core normalization.
+
+Run-level unknown facts also enter errors with their cross-item path and remaining rounds, and produce B07 requests;
+there is no `data.missing` alias. Shared request storage is exposed by `hub/requests/api.ts` for the dependent tasks.
+Only settled results are cached: a repeated transitional submission is checked again and can resolve against new facts.
+Legacy missing exits are reported as “出口未写”, with separate named repair requests; re-evaluation appends a new result.
+
+Administrative abandonment is permanent for that run: new submissions are kept verbatim and refused with
+`RUN_ABANDONED`; continuing requires a successor revision. The current run view selects the management projection by
+its real input-action reference rather than confusing later evidence records with a resumption. It preserves old layer
+terminals and unknown counts, marks requirements unsatisfied/abandoned, and cites the old result. If old technical fields
+were unwritten, the new projection explicitly says so and binds only this real management request; the old bytes still
+show “出口未写”. This is an administrative view, not a new target check. Remote execution and safety freezes remain
+independent; pending effect reconciliation continues as its own recorded work.
+
+System deliveries store their exact canonical input in an append-only action and name it through `system_input`. The
+`submission` field is its recomputable digest, shown as “系统交付输入摘要”; these results have only run/system-input
+indexes and cannot satisfy a user-submission cache lookup. Expiration and management deliveries never impersonate a user.
+
+Dispatch integration reads existing journal bindings through the read-only API and calls the existing reconciliation
+entry once per observed state. It never plans, dispatches or resends. Integrity-checked dispatch projections bind the
+exact job, output digest and complete item set; target-reported conclusions remain judgments. Unsettled effects quarantine
+only bound items. A named mark-failed disposition uses `EFFECT_UNKNOWN_DISPOSED`; abandonment is a management choice.
+Neither choice rewrites the original dynamic observation or the physical safety freeze. Private journal references stay
+in administrator-only evidence because they may reach lease material. User requests cite the safe observation record.
+
+If a committed management choice is left without its delivery projection, maintenance retries projection at most three
+times. Continued failure creates a finite request to an enabled named administrator, identifying the exact choice record
+and the existing `run abandon` retry command. An identical retry completes that choice without repeating it; the actual
+recovered delivery record answers its repair request. Internal write causes remain in administrator notes.
+
+The oracle differential driver now separates fresh-admission rejection from synthetic legacy-run playback. Target facts
+come from its frozen original, while artifact checks read submitted slots. Random cases start with true zero counters;
+fixed repeat cases supply their independently counted per-requirement charges. The oracle computes unknown/skip errors
+and W07 target-fact handling independently. Its cross-layer regression now follows the integrator's 2026-10-24 precedence: a known expectation miss is unsatisfied before considering unsettled layers.
+
+### 外部读取覆盖限定
+
+外部输入及包声明的预期来源把 coverage 冻结进 SourceBinding。主张构造按其对象位置、根据/精确值的根摘要和检查声明的 reads 选取对应覆盖；运行级检查还涵盖它判定的条目位置。依据未完整来源的事实或判断加生成词表的 partial，并保留 qualifier.coverage；生产投影说明使用同一规则。完整的无关来源不被别的部分来源牵连，旧运行也不因一次后续完整读而升级。合计仅使用已声明覆盖的观察；所依外部来源缺覆盖时不伪造 total，原始旧绑定仍可解析。start_run 文字直接披露部分来源的读取覆盖。
+
+外部缺席与读取恢复：ReadOutcome/ExternalRead 的 absent 是系统对整份对象的确定观察。连接器保留原始应答，并提供带系统、对象、读取时刻的规范 JSON 观察；期望来源按原角色绑定它，声明 reads 的检查照常读取，其本身不替检查决定通过或驳回。必填输入缺席以 SOURCE_ABSENT 拒绝；输入重试耗尽以 SOURCE_RETRYABLE 给下次时间，期望来源重试耗尽也保留明确的缺失事实和重读后重开运行的动作。引用的新故障码按内部 reason 进入已有未完成路径，保留原修复轮记账规则。登录停止的具名管理员请求记录等 hub-unknown-exits 的接口，尚未声称已发请求。
+
 ## Transitional recovery metadata
 
-New unknown outcomes name `missing` at their producer. Evaluation binds every transitional layer to its missing facts
-and complete `exit`, preserving independent causes in `gaps`. Pack repairs address the published pack owner;
-clarification and artifact repair address the runner (or standing-obligation configurer); administrator actions address
-the first active administrator in account-id order. A legacy test port without publication ownership instead asks its
-runner to clarify that missing authority; it never invents a pack owner.
-
-Until `hub-unknown-exits` binds actual request records and deadline processing, every exit intent has an absolute due
-at evaluation time plus 72 hours, matching the administrator acceptance request default. These fields do not claim
-that a request was created or an action was performed. Existing finite retries and splitting remain unchanged. Missing
-input from a temporarily unavailable quote schedules rereading; withheld ordinary sources require administrator
-acceptance; digest mismatches require trusted-backup restoration, never blind rereading. Actual credential echoes
-remain excluded at the input boundary and cannot gain an administrator-acceptance exit here.
-
-Historical stored results remain byte-for-byte unchanged. A transitional layer without a recorded exit displays
-`出口未写`; the reader never invents its missing facts, audience or deadline.
+The mainline pure-intent interface and the named runtime interface share the single reason table in recovery.ts.
+terminals.ts keeps its existing exports. New writes keep producer-authored missing facts, bind audiences from actual
+Hub identities and create the durable requests described above; missing ownership wiring fails explicitly.
+Package-authored exits cannot nominate another account. Only an explicitly trusted parent observation can propose a
+Hub reread or reevaluation intent through the compatibility interface; the helper itself performs neither action.
+The older intent interface retains its 72-hour default for compatibility. Runtime requests retain their actual fixed
+due dates (24 hours by default), without extending them on repeats. Historical records remain unchanged and readers
+continue to report “出口未写” rather than synthesizing an old actor, fact or deadline.
 
 A lease declaration without `max_ttl_seconds` grants no-expiry reservations (`until: null`). Acquire needs no TTL;
 extend is refused for the whole request before effects, and release still requires the same user and predecessor
@@ -594,3 +699,88 @@ unfinished jobs while the lock is held; a competing reservation rechecks fences 
 The lock is released before connecting to an executor. This closes the gap between a read-only job snapshot and release.
 Historical run@1 lease snapshots remain readable in their original key/until/mine shape and are passed unchanged to
 older pinned packs. Current start_run contexts still require since/run/jobs; no historical identity or time is invented.
+
+## Unknown exits
+
+New transitional layer results bind every missing fact to a named, finite exit before partition validation.
+`EXIT_BY_REASON` exhausts the generated cause vocabulary; a pack cannot choose another account through its exit.
+Check outcomes require top-level `missing`; `data.missing` remains refutation evidence, never its alias.
+The workflow port reads the recorded pack owner; the records account port selects an enabled administrator.
+Missing identity wiring refuses evaluation rather than inventing a recipient. Requests use a 24-hour response window.
+Stored results are never passed through this new-write binding; missing historical exits remain “出口未写”.
+The following commits connect these exits to durable requests and automatic maintenance.
+
+Supplementary recovery gaps keep their own cause codes and receipt rows even beside a settled violation. Request
+projection fills remaining rounds and uses the received submission's actual item order for paths; it never treats a
+projection index or an invented slot as a submitted location. The primary terminal and partition do not change.
+
+Receipt reuse is gated by the current same-owner successor state and the frozen workflow's session requirement. A
+settled contribution receipt does not stand in for a missing caller session; refused calls keep their own receipt and
+charge no session-repair round. Cached success cannot revive a superseded run. Ordinary settled contribution retries
+still reuse their original receipt and do not append effects.
+
+Error-handling selector priority is exact code, then generated reason, then `*`, regardless of row order. The wildcard
+also covers outcomes with a reason but no code. Layer routing and request projection use the same selector. Cause-based
+repair rows contribute the declared requirement budget and actually route artifact work through its exhaustion path.
+Reject handling applies only to a blocking artifact refutation with a code; an unknown never becomes a rejection through
+an exact-code or wildcard row.
+
+A known layer that misses the expectation makes its requirement unsatisfied; otherwise any transitional layer keeps it
+pending. This integrator decision changes no raw layer, recovery exit, partition membership or unknown count.
+
+Submission-handling errors apply only to actual submit_result bodies. Fact production checks its bound artifacts directly and does not require a model handling declaration.
+
+Accepted unknowns following exhausted transient parent unavailability are rechecked by maintenance at most once per
+pass and at most three times. Only structured onAttempt evidence can set that signal; pack-authored sandbox fields
+cannot. Rechecks preserve the originally observed session, frozen input and distinct-submission repair charge. Continued
+failure appends a recomputable system-delivery input and a real administrator repair request, retaining old bytes and
+technical terminals. A fresh parent execution observation supplies the actual answer record after recovery.
+
+## Task coverage
+
+| Task | Runtime path | Synthetic regression |
+| --- | --- | --- |
+| 1 | Shared recovery rules and strict write boundary | recovery, exits, unknown-missing |
+| 2 | Cause routing and located per-requirement errors | unknown-routing, request-gaps, cross-exits |
+| 3 | Preserved skipped reasons and distinct-body charges | skipped-reasons, submit |
+| 4 | Durable requests, hypothesis records and answer sources | requests, request-readers, registry |
+| 5 | Frozen submission due date and system delivery | deadlines, system-input, abandon |
+| 6 | Interrupted actions, startup/minute recovery and bounded parent retries | interrupted, parent-recovery |
+| 7 | Empty checks, output failure, retained gaps and explicit premises | fragile, terminal-gaps, terminals |
+| 8 | Declaration admission, required catalogs and observed source acceptance | start-requirements, standing-sources, registry |
+| 9 | Snapshot-bound product/diff pages and call-log cursors | server console-pagination |
+| 10 | Read-only journal binding, reconciliation and dynamic projection | dispatch read-runs, engine dispatch-results |
+| 11 | Observed sessions and cache policy before receipt reuse | session-boundary, contributions, cache-policy |
+| 12 | Bound target facts survive skipped/omitted artifact handling | target-facts, production-handling, independent oracle |
+
+The workbook client permits only its declared pre-generation workbook-input gap; it still requires every other plan
+prerequisite and the exact bound byte identities. The successor verification, not generation, supplies dispatch evidence.
+
+A same-owner, same-pack successor stops replaying old submissions but never discards a trusted host-recovery gap. Maintenance appends a named administrator request and a system-input projection immediately, preserving the old result bytes and the actual retry count. A later trusted parent-success validation in that run or a same-pack successor answers the host-repair request; creating a successor alone never does. Unanswered requests keep their run open even after supersession.
+
+Maintenance compares every unanswered request deadline with its clock. Expiry appends a separate named administrator clarification that cites the original request, with a new finite deadline; repeated passes reuse that escalation. An expired escalation advances in the same way. Originals are immutable, and actual original answers propagate through escalation references. Run listings expose overdue_requests separately, including superseded runs with unanswered requests; the console shows their original deadlines in a separate table.
+
+## Shared read access
+
+`canSeeRun` remains the synchronous owner/administrator capability used by submissions and predecessor checks.
+`canViewRun` adds only the current sharing decisions and assignment checks. Production policies evaluate the frozen
+requirements, include Hub-side runs, and never include judgment workflows. Shared readers receive the original run,
+including runner, session and client key; accepted validation results and run-scoped submission/action records remain
+citable by their exact record digests. Rejected validation bodies, administrator notes and call logs are not shared.
+
+Run lists filter visible records before paging, ordered by start time with run identity as the stable tie breaker.
+Cursors bind the reader, package filter and last ordering key; hidden records cannot create visible empty pages.
+Sharing confers no submission, lease lineage, repair round or client-key ownership. The model's conditional read-only
+predecessor exception requires a workflow declaration that the present format does not yet expose; this task keeps the
+existing predecessor guard, as specified by its task page, and introduces no such declaration.
+
+Shared previews use the same run-bound generated-source accessor for fragment resolution and quotation candidates.
+A shared run never grants knowledge-tree permission: live catalogs are omitted from a preview when its reader cannot
+read the product, and tree references still pass the ordinary tree reader. Connector originals retain their own ACLs.
+
+Shared run-detail receipts use only the action codes and their registered descriptions for rejected validations. Instance
+messages, fixes, paths and requirement pointers from those validation bodies do not enter the shared aggregate view.
+Owners and administrators retain the full diagnostics. The underlying submissions, actions, results and run record are
+never rewritten or redacted under their original digests.
+
+The sharing/unknown-exit merge keeps visibility filtering before stable pagination, alongside unanswered and overdue requests. System-input deliveries remain independent of user-submission receipt lookup. Sharing grants accepted validation bodies and the run/submission/action records declared by B04; run-bound request and hypothesis-set records remain owner/administrator-only in both record readers, matching the request listing policy. Management delivery stays current without changing historical technical results.

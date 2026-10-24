@@ -156,6 +156,14 @@ const fact = (id: string, requirement: string, text: string, code?: string): Cla
 
 /** A validation result over given partitions and errors, with one cross-item fact. */
 function resultWith(partitions: Record<string, ItemResult[]>, errors: ProtocolError[] = [], cross: Claim[] | null = null): ValidationResult {
+  partitions=structuredClone(partitions);
+  // New synthetic results carry real-shaped recovery metadata; legacy reads have their own tests.
+  for(const list of Object.values(partitions))for(const item of list)for(const requirement of item.requirements)for(const layer of requirement.layers){
+    if(layer.terminal==='unchecked'||layer.terminal==='incomplete'||layer.terminal==='no_verdict'||layer.terminal==='not_run'){
+      layer.missing??='合成条目缺少完整观察';
+      layer.exit??={action:'request',request_kind:'clarification',audience:{user:'usr_00000000000000000000000001'},due:'2026-10-25T00:00:00.000Z'};
+    }
+  }
   const total = Object.values(partitions).reduce((n, list) => n + list.length, 0);
   return ValidationResult.parse({
     schema: 'validation@1',
@@ -1256,4 +1264,25 @@ test('node definitions and children precede relation hints and the omitted hint 
   assert.ok(text.indexOf('Own definition')<text.indexOf('Related source'));
   assert.ok(text.indexOf('Own child')<text.indexOf('Related source'));
   assert.ok(text.includes(view));
+});
+
+test('start_run prints the locked product-wide root beside the build root', () => {
+  const run = {...runOf(items(1)),version:'10.6',unversioned_root:H('b')};
+  const text = toolText('start_run',startAnswer(run));
+  assert.match(text,new RegExp(`不分版本的知识根 ${H('b')}`));
+});
+
+test('large function-only structure summaries have real cursor continuation without inventing source text',()=>{
+ const reference=`src:${H('e')}`;
+ const summary=Object.fromEntries(Array.from({length:5000},(_,i)=>['field'+i,'value'+i]));
+ const answer={call_result:'ok',errors:[],trace:TRACE,content:{reference,read_tier:'function_bytes_only',readable:false,structure:{parser:'xml@1',summary}}};
+ const seen=new Set<number>();let cursor:string|undefined;
+ for(let page=0;page<20;page++){
+   const text=toolText('get_nodes',answer,{paging:true,...(cursor?{cursor}:{})});withinBudget(text,'structure summary');assert.ok(!text.includes('原文（'));
+   for(const match of text.matchAll(/field(\d+) value\d+/g))seen.add(Number(match[1]));
+   const next=/get_nodes (\{[^\n]*"cursor"[^\n]*?\})/.exec(text);
+   if(!next)break;
+   const parsed=JSON.parse(next[1]);assert.equal(parsed.reference,reference);assert.notEqual(parsed.cursor,cursor);cursor=parsed.cursor;
+ }
+ assert.equal(seen.size,5000);
 });

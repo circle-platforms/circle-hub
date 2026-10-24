@@ -19,8 +19,8 @@ export const CASE_PREFIX = 'agile:case:';
 export const CASE_MEMBER = 'agile';
 /** The review read of a document (title and folders as nested reads); the case index does not use it. */
 export const MINDMAP_PREFIX = 'agile:mindmap:';
-/** The earliest version line whose case documents are listed when the sync options name none. */
-export const DEFAULT_MIN_LINE = '10.4.2';
+/** The synthetic default imposes no case-index floor; real sync receives the declared deployment variable. */
+export const DEFAULT_MIN_LINE: string | null = null;
 /** Document ids the agile system pack can read (agile.ts ID); anything else is never listed. */
 export const AGILE_ID = /^[0-9A-Za-z_-]{1,64}$/;
 

@@ -7,8 +7,15 @@
       "pattern": "^[a-z][a-z0-9-]{1,40}$"
     },
     "line": {
-      "type": "string",
-      "minLength": 1
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "pointer": {
       "type": "string",
@@ -30,8 +37,15 @@
       "pattern": "^[0-9a-f]{64}$"
     },
     "build": {
-      "type": "string",
-      "minLength": 1,
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ],
       "description": "the build whose root the pointer now names"
     },
     "composition": {

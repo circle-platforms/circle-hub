@@ -261,7 +261,7 @@ describe('skipped documents are unknown, not absent (finding: catalogs and views
     assert.ok(facets.notes.some((n) => note.test(n)), facets.notes.join('\n'));
     assert.equal(facets.skipped, 1);
     const clean = IndexView.parse((await views.json(`knowledge:index:acme:${A}?kind=case&key=doc`)).value);
-    assert.deepEqual(clean.notes, []);
+    assert.deepEqual(clean.notes, ['这条产品线还没有不分版本的根；下一步：同步这条产品线']);
     assert.equal(clean.skipped, 0);
   });
 });
@@ -271,7 +271,7 @@ describe('the memo key covers what the function receives (finding: build and bat
   const entries: any[] = [];
   for (const doc of input.lists?.cases ?? []) for (const node of doc.model.nodes) {
     if (!Array.isArray(node.data.resource)) continue;
-    entries.push({ kind: 'case', path: '/commands/system/reboot', statement: node.text + '（' + input.build.line + '）', data: { line: input.build.line, build: input.build.name, batch: input.batch.index }, fragments: [{ slot: 'cases', source: doc.sha256, parser: 'kityminder@1', selector: node.selector }], applicability: { builds: [input.build.name] } });
+    entries.push({ kind: 'case', path: '/commands/system/reboot', statement: node.text + '（' + input.build!.line + '）', data: { line: input.build!.line, build: input.build!.name, batch: input.batch.index }, fragments: [{ slot: 'cases', source: doc.sha256, parser: 'kityminder@1', selector: node.selector }], applicability: { builds: [input.build!.name] } });
   }
   return { entries, warnings: [] };
 }
@@ -418,16 +418,16 @@ describe('list roles in records (finding: list ids copied into every build recor
     const [claim] = await claims();
     const body = KnowledgeBuildBody.parse(claim.body);
     assert.deepEqual(body.lists, ['cases']);
-    assert.deepEqual(Object.keys(body.build.sources), ['tree']);
+    assert.deepEqual(Object.keys(body.build!.sources), ['tree']);
     assert.ok(!JSON.stringify(claim.body).includes('store:mindmap:'), 'no listed id in the build record');
     const production = await w.knowledge.store.latestProduction('acme', A);
-    const reference = production?.detail.build.sources.cases as { list: string; count: number };
+    const reference = production?.detail.build!.sources.cases as { list: string; count: number };
     assert.equal(reference.count, 300);
     assert.ok(!JSON.stringify(production?.record.body).includes('store:mindmap:d1"'), 'no listed id in the generate action');
     const stored = await w.kit.objects.get(reference.list);
     assert.deepEqual(JSON.parse(new TextDecoder().decode(stored ?? new Uint8Array())), ids, 'the list is one object, by its digest');
     const root = await composition(w, production?.detail.composition ?? null);
-    assert.deepEqual(root.build.sources.cases, reference);
+    assert.deepEqual(root.build!.sources.cases, reference);
     // One more document: the build is produced again, and no build record is written for the list.
     const more = [...ids, ...documents(w, 301, 301)];
     const second = await w.knowledge.syncProduct(w.product, { by: w.admin, options: { builds: [listed(build(A, more))] } });
@@ -438,7 +438,7 @@ describe('list roles in records (finding: list ids copied into every build recor
     const [known] = await w.knowledge.builds('acme');
     assert.deepEqual(Object.keys(known.sources), ['tree']);
     assert.deepEqual(Object.keys((await w.knowledge.resolveBuild('acme', A))?.sources ?? {}), ['tree']);
-    assert.deepEqual(Object.keys((await w.knowledge.rootOfBuild('acme', A))?.build.sources ?? {}), ['tree']);
+    assert.deepEqual(Object.keys((await w.knowledge.rootOfBuild('acme', A))?.build!.sources ?? {}), ['tree']);
   });
 });
 

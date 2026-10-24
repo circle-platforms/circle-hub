@@ -263,6 +263,7 @@ test('build-site-like reads: ISO-8859-1 kept as received, unquoted links followe
   ]);
   const manifest = await w.k.records.store.get<ReadManifest>(hub.manifest);
   assert.deepEqual(manifest!.body.coverage, { complete: false, examined: 3, total: 4 }, 'a dead link leaves the coverage incomplete');
+  assert.deepEqual(hub.coverage,manifest!.body.coverage,'external readers retain the exact read coverage');
   assert.ok(w.site.requests.every((r) => r.headers.authorization === undefined), 'an anonymous system never gets a credential');
   assert.equal(w.site.maxInFlight, 1, 'the resource limits requests in flight');
 });
@@ -318,8 +319,8 @@ test('a reader without the right pack is refused; ambiguity, disabled resources 
   w.k.packs.set(await writePack(w.k.packRoot, { id: 'agile-test', version: '1.3.0', system: { ...agileSystem(), routes: [] } }));
   await assert.rejects(w.k.connectors.admin.updateResource(w.k.admin, w.resources.agile.id, { system_pack: 'agile-test@1.3.0' }), (e: unknown) => (e as { code?: string }).code === 'PROFILE_INVALID');
   assert.equal(await w.k.connectors.reader.accepts('agile:tree:7714'), false);
-  // Two enabled resources for one type.
-  const second = await addSyntheticResource(w.k.records, w.k.packs, w.k.connectors, w.k.admin, { system_pack: 'docstore-test', name: '第二个手册库', environment: 'test', origins: { 'manual-store': w.dav.origin } });
+  // One resource per environment; two environments still require explicit routing.
+  const second = await addSyntheticResource(w.k.records, w.k.packs, w.k.connectors, w.k.admin, { system_pack: 'docstore-test', name: '第二个手册库', environment: 'production', origins: { 'manual-store': w.dav.origin } });
   assert.equal(await w.k.connectors.reader.accepts('manual:file:spec/a.md'), true);
   failure(await w.k.connectors.reader.read('manual:file:spec/widget-list.md', w.ctx), /2 个启用的资源/);
   await w.k.connectors.admin.disable(w.k.admin, second.id);
@@ -342,7 +343,7 @@ test('executeRead by resource and read name; the reasons never name a host', asy
   const unknown = await w.k.connectors.executeRead('res_01jacd5z8q3w7v9h2k4m6n8p0t', 'products', { id: 'x' }, w.ctx);
   assert.equal(!unknown.ok && unknown.code, 'RESOURCE_UNAVAILABLE');
   const absent = await w.k.connectors.executeRead(w.resources.docstore.id, 'file', { id: 'spec/none.md' }, w.ctx);
-  assert.equal(!absent.ok && absent.code, 'SOURCE_ABSENT');
+  assert.ok(absent.ok && absent.absent?.code==='SOURCE_ABSENT');
   // No host or port in any manifest or log event.
   const reads: Page<StoredRecord> = await w.k.records.store.list({ kind: 'action', limit: 500 });
   for (const server of [w.agile, w.plm, w.site, w.dav]) {
@@ -514,6 +515,11 @@ test('an answer echoing the credential the Hub sent is kept retain_only; neither
     assert.ok(entries.filter((r:any)=>r.artifact===null&&r.sha256===null).length>=1);
     assert.ok(!entries.some((r:any)=>r.sha256===sha));
   }
+  const manifests=await w.k.records.store.list<ReadManifest>({kind:'action',limit:100});
+  for(const read of manifests.items.filter(record=>record.schema==='read-manifest@1'))for(const request of read.body.requests){
+    if(request.artifact!==null){const artifact=await w.k.records.store.get<SourceArtifact['body']>(request.artifact);assert.ok(!artifact || !holders.some(bytes=>sha256Hex(bytes)===artifact.body.sha256),'echo original record identities are private');}
+    assert.ok(!holders.some(bytes=>sha256Hex(bytes)===request.sha256),'echo original digests are private');
+  }
   assert.ok(w.k.log.some((event) => event.event === 'secret_echoed'));
   assert.ok(!(await allRecordsText(w)).includes(token), 'no record carries the token');
   assert.ok(!JSON.stringify(w.k.log).includes(token), 'no log event carries the token');
@@ -681,15 +687,16 @@ for (const mode of ['sandbox exception', 'empty plan'] as const) {
     t.after(() => server.close());
     server.deps.runs.startRun = (_principal, input, context) => h.service.startRun(h.alice, input, context);
     const user = await server.createUser('合成读者');
-    const client = await server.client(user.token);
+    const client = await server.client(user.token,{sessionId:'synthetic-diagnostic-observer'});
     const answer = await client.call('start_run', { pack: 'toy-review', product: 'Meadow', inputs: { map: { external: 'toy:mindmap:docq7' } } });
     const adminLog = await server.records.callLog.query(server.admin.principal, { tool: 'start_run', limit: 1 });
     assert.doesNotMatch(JSON.stringify(answer.structuredContent), /settings\.repository_path/);
     assert.doesNotMatch(JSON.stringify(answer.content), /settings\.repository_path/);
     const userLog = await server.records.callLog.query(user.principal, { tool: 'start_run', limit: 1 });
     assert.equal(userLog.items[0].admin_note, undefined);
-    assert.match(adminLog.items[0].admin_note ?? '', /settings\.repository_path/);
-    assert.doesNotMatch(adminLog.items[0].admin_note ?? '', new RegExp(PASSWORD.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.equal(userLog.items[0].admin_reasons, undefined);
+    assert.match((adminLog.items[0].admin_reasons ?? []).join('\n'), /settings\.repository_path/);
+    assert.doesNotMatch((adminLog.items[0].admin_reasons ?? []).join('\n'), new RegExp(PASSWORD.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     const manifests = await w.k.records.store.list({ kind: 'action', limit: 10 });
     assert.ok(manifests.items.length > 0);
     assert.doesNotMatch(JSON.stringify(manifests), /settings\.repository_path/);

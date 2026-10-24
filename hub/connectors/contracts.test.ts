@@ -194,5 +194,5 @@ test('every registered connectors shape is representable in JSON Schema 2020-12'
     const json = z.toJSONSchema(schema, { target: 'draft-2020-12', io: 'output', unrepresentable: 'throw' }) as Record<string, unknown>;
     assert.equal(typeof json, 'object', id);
   }
-  assert.deepEqual(Object.keys(schemas).sort(), ['read-manifest@1', 'read-plan-input@1', 'read-plan-output@1', 'read-projection-input@1', 'read-projection-output@1', 'resource@1', 'system@1']);
+  assert.deepEqual(Object.keys(schemas).sort(), ['effect@1', 'executor@1', 'read-manifest@1', 'read-plan-input@1', 'read-plan-output@1', 'read-projection-input@1', 'read-projection-output@1', 'resource@1', 'system@1', 'write-declaration@1']);
 });

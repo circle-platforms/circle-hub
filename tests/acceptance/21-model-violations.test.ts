@@ -338,7 +338,11 @@ describe('scenario 21: model violations handling and error routing', () => {
       const cycleErr = cycleAnswer.out.errors.find((e) => e.code === 'REFERENCE_UNRESOLVED');
       assert.ok(cycleErr, `expected REFERENCE_UNRESOLVED, got: ${JSON.stringify(cycleAnswer.out.errors)}`);
       assert.equal(cycleErr.path, '/items/0/slots/findings/0/grounds/0');
-      assert.equal(cycleErr.fix, `成环的引用：${cyclicRef}`);
+      assert.ok(cycleErr.fix?.startsWith(`成环的引用：${cyclicRef}`));
+      const request=/请求 rec:([0-9a-f]{64})/.exec(cycleErr.fix??'');assert.ok(request,'exhausted work names its durable repair request');
+      const stored=await bed.hub.records.store.get<{run:string;kind:string;audience:string}>(request[1]);
+      assert.ok(stored);assert.equal(stored.kind,'request');assert.equal(stored.body.run,run.run);assert.equal(stored.body.kind,'repair');
+      assert.equal(stored.body.audience,bed.reviewer.principal.id);
     } finally {
       bed.hub.deps.knowledge.treeReader = originalTreeReader;
     }

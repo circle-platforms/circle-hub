@@ -5,9 +5,8 @@
 //
 // Where an attribute set came from is not this producer's to say. It records what it was given — whether the parameter
 // named this family, and the set it ran with — and nothing else: an explicit empty set is declared, and a synthetic set
-// is as declared as a real one. The origin of every parameter key is the Hub's record (`param_sources`, added by
-// apv-deployment-conventions step one); once that exists, "this family's attribute set is not configured" is written
-// from `param_sources[attributes.<family>]` being null, not guessed here, and no unknown is recorded.
+// is as declared as a real one. The origin belongs to the Hub composition's `variables` list; the producer receives
+// only resolved parameters and does not invent provenance. Missing deployment variables refuse a real sync before reads.
 import { compileAdoc } from './index.ts';
 import type { AdocResult, Composition, ExpandedModel, Report } from './types.ts';
 
@@ -73,8 +72,8 @@ export async function compileFamilies(rawInput: unknown, names: readonly string[
         declared: given,
         values,
         note: given
-          ? `参数给了这一族的属性集（${Object.keys(values).length} 个属性），已按它展开。这一组属性从哪来由 Hub 的组成记录（param_sources）写，生产器不自己记来源。`
-          : '参数里没有这一族的键，按包的默认值（全不设，与现在的 md 一致）展开。这一族的属性集有没有配置，要等 param_sources 接入以后照它写；生产器不自己记来源，也不记未知。',
+          ? `参数给了这一族的属性集（${Object.keys(values).length} 个属性），已按它展开。这一组属性从哪来由 Hub 的组成记录（variables）写，生产器不自己记来源。`
+          : '参数里没有这一族的键，按包的默认值（全不设，与现在的 md 一致）展开。样例和试运行可用此默认值；真实同步缺少变量时由 Hub 在读页前拒绝，来历记在组成记录 variables；生产器不自己记来源，也不记未知。',
       },
     };
   }

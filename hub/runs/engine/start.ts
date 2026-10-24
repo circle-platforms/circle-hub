@@ -1,3 +1,6 @@
+import { PublishableRequirementsFile } from '../../../contracts/src/pack.ts';
+import { recordResultRequests, putRequest, answerSuccessorRequests } from './requests.ts';
+import { authorOriginOf } from './lineage.ts';
 import type { ExecutionHost } from '../../../contracts/generated/vocabulary.ts';
 // start_run (W06): check the arguments, answer a repeated client key, authorize the pack, fix the target, bind the inputs,
 // project the items, bind the expected sources, offer carry-overs, freeze everything in a run record and, for a pack whose
@@ -19,8 +22,8 @@ import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError, unavailable } from './errors.ts';
-import { evaluate, type Evaluation } from './evaluate.ts';
-import { factClaim, rootDigest, strongestRole } from './claims.ts';
+import { productionEvaluationInput, evaluate, type Evaluation } from './evaluate.ts';
+import { factClaim, sourceCoverage, rootDigest, strongestRole } from './claims.ts';
 import { buildScope, createResolver } from './exact.ts';
 import { bindInputs } from './inputs.ts';
 import { foreignArtifacts, packIdOf } from './lineage.ts';
@@ -74,7 +77,7 @@ export function isProduction(workflow: LoadedWorkflow): boolean {
 }
 
 export function requirementSummary(t: RequirementTemplate): RequirementSummary {
-  return { key: t.key, name: t.name, description: t.description, layers: t.layers, done_rule: t.done_rule, accepted_producer: t.accepted_producer, repair_rounds: repairRounds(t) };
+  return { key: t.key, name: t.name, description: t.description, layers: t.layers, done_rule: t.done_rule, accepted_producer: t.accepted_producer, repair_rounds: repairRounds(t), ...(t.observation?{observation:t.observation}:{}) };
 }
 
 /** The summary part of a run record, as start_run returns it (the frozen context extras — groups, builds — stay out). */
@@ -371,6 +374,13 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
   }
 }
 
+async function packRefusal(ctx:EngineContext,workflow:LoadedWorkflow,at:Date,errors:ProtocolError[],adminNote:string|null=null):Promise<Refusal>{
+  const owner=await ctx.deps.workflows.ownerOf?.(workflow.pack.digest);
+  if(!owner)return new Refusal(errors.map(e=>({...e,fix:`${e.fix??''}；管理员须补齐包 ownerOf 身份接线后重试`})),adminNote);
+  const request=await putRequest(ctx,{pack_digest:workflow.pack.digest,kind:'repair',audience:owner,due:new Date(at.getTime()+86400000).toISOString(),missing:errors.map(e=>e.message).join('；'),source:workflow.pack.digest,code:'check_error',next_action:'包作者发布修复版本，运行者以原运行为 predecessor 用 start_run 重跑；本次未开始的运行直接重新开始'});
+  return new Refusal(errors.map(e=>({...e,fix:`${e.fix??''}；请求 rec:${request.digest}：${request.body.next_action}`})),adminNote);
+}
+
 async function authorizedStart(
   ctx: EngineContext,
   user: Principal,
@@ -383,25 +393,22 @@ async function authorizedStart(
 ): Promise<StartRunDetail> {
   const workflow = await ctx.deps.workflows.forUser(user, input.pack);
   if (workflow === null || workflow.pack.kind !== 'workflow') throw unavailable('/pack', `pack ${input.pack} is unknown, not assigned to ${user.id}, withdrawn or not a workflow pack`);
+  const declaration=PublishableRequirementsFile.safeParse({schema:'requirements@1',requirements:workflow.requirements});
+  if(!declaration.success){
+    const owner=await ctx.deps.workflows.ownerOf?.(workflow.pack.digest);
+    if(!owner)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','任务包声明有误，且没有包作者身份读取接线',{path:'/pack',fix:'管理员补齐 ownerOf 接线并修复包声明后重新开始'})]);
+    const request=await putRequest(ctx,{pack_digest:workflow.pack.digest,kind:'repair',audience:owner,due:new Date(at.getTime()+86400000).toISOString(),missing:`任务包 ${workflow.pack.id}@${workflow.pack.version} 缺少已声明层的检查或观察：${declaration.error.issues.map(i=>i.path.join('/')+': '+i.message).join('；')}`,source:workflow.pack.digest,code:'check_error',next_action:'包作者发布带完整检查和观察声明的修复版本，运行者用 start_run 重新开始；已有运行以它为 predecessor 重跑'});
+    throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION',request.body.missing,{path:'/pack',fix:`请求 rec:${request.digest}：${request.body.next_action}`})]);
+  }
   const contribution=workflow.workflow.contribution;
   if(contribution!==undefined&&(!workflow.slots.item[contribution.slot]||!workflow.requirements.some(r=>r.key===contribution.requirement&&r.target==='item'&&r.accepted_producer==='fact'))){
-    throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','任务包缺少回注槽位或对应的逐条目事实核验要求项',{path:'/pack',fix:'请任务包维护人修正 workflow.contribution 的 slot 和 requirement 声明，再重开运行'})]);
+    throw await packRefusal(ctx,workflow,at,[protocolError('SUBMISSION_SCHEMA_VIOLATION','任务包缺少回注槽位或对应的逐条目事实核验要求项',{path:'/pack',fix:'请任务包维护人修正 workflow.contribution 的 slot 和 requirement 声明，再重开运行'})]);
   }
   if (mode.host === 'hub' && !isProduction(workflow)) {
     throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '含模型槽位的任务包不能由 Hub 执行（W09 R[3]：常设义务只许确定性函数）', { path: '/pack', fix: '改用只含事实要求项的任务包' })]);
   }
   const unsafe = schemaProblems(workflow);
-  if (unsafe.length > 0) {
-    throw new Refusal(
-      [
-        protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id}@${workflow.pack.version} 声明的 JSON Schema 不能在 Hub 里安全执行：${unsafe.join('；')}`, {
-          path: '/pack',
-          fix: '请联系任务包作者：去掉正则表达式关键字（pattern、patternProperties），只用 Hub 读得懂的模式',
-        }),
-      ],
-      `pack ${workflow.pack.id}@${workflow.pack.version} declares schemas the engine cannot enforce: ${unsafe.join('; ')}`,
-    );
-  }
+  if (unsafe.length > 0) throw await packRefusal(ctx,workflow,at,[protocolError('SUBMISSION_SCHEMA_VIOLATION',`任务包声明的 JSON Schema 不能安全执行：${unsafe.join('；')}`,{path:'/pack',fix:'包作者去掉不支持的模式关键字后发布修复版本'})],`pack ${workflow.pack.id}@${workflow.pack.version} declares schemas the engine cannot enforce: ${unsafe.join('; ')}`);
   return startFresh(ctx, user, input, call, mode, workflow, at, requestDigest,variables);
 }
 
@@ -459,13 +466,40 @@ async function startFresh(
     predecessor = await runById(store, input.predecessor);
     if (predecessor === null || !canSeeRun(user, predecessor.body)) throw unavailable('/predecessor', `predecessor ${input.predecessor} is unknown or not visible to ${user.id}`);
   }
+  if (workflow.requirements.some(t => t.independent_of !== undefined)) {
+    if (sessionOf(call) === null) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '独立复核运行缺少本会话的 id，运行没有开始', {path:'',fix:'在请求头 Circle-Session-Id 里带上本会话的 id（1 到 200 个可打印 ASCII 字符），原样再开始'})]);
+    if (predecessor !== null) {
+      const author = await authorOriginOf(ctx, {...predecessor.body, pack: `${workflow.pack.id}@${workflow.pack.version}`, predecessor: predecessor.body.run, sources: []});
+      if (author?.missingSessions.length) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `被判工作的来源缺少会话 id：${author.missingSessions.join('；')}`, {path:'/predecessor',fix:'带上 Circle-Session-Id，以被判工作为前驱开新修订并重新提交，再对新修订开复核运行'})]);
+    }
+  }
+  if(input.submission_due!==undefined&&Date.parse(input.submission_due)<=at.getTime())throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','提交期限必须晚于开始时刻',{path:'/submission_due',fix:'给出未来的 submission_due 后重新开始'})]);
+  if(workflow.workflow.predecessor==='required'&&!input.predecessor)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','任务包要求显式前驱运行',{path:'/predecessor',fix:'在 predecessor 中给出前驱运行后重新开始'})]);
   const parameters = checkParameters(workflow, input.parameters ?? {});
   if (predecessor !== null) await checkLineage(ctx, user, workflow, input, predecessor.body);
   const target = await resolveTarget(ctx, user, workflow, input, startedAt, call.traceId);
+  if(workflow.knowledge?.requires.length){
+    const missing=[] as string[];
+    for(const requirement of workflow.knowledge.requires){
+      const catalog=target.root?await ctx.deps.knowledge.catalog(target.root.root,requirement.catalog):null;
+      if(!catalog||requirement.complete&&!catalog.complete)missing.push(requirement.catalog);
+    }
+    if(missing.length){
+      const candidates=[] as string[];
+      if(target.product)for(const build of await ctx.deps.knowledge.builds(target.product.product.id)){
+        if(!build.root)continue;
+        let valid=true;
+        for(const requirement of workflow.knowledge.requires){const catalog=await ctx.deps.knowledge.catalog(build.root,requirement.catalog);if(!catalog||requirement.complete&&!catalog.complete){valid=false;break;}}
+        if(valid)candidates.push(build.name);
+      }
+      throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION',`所选知识根没有满足要求的完整目录：${missing.join('、')}`,{path:'/build',fix:`可选构建：${candidates.length?candidates.join('、'):'当前没有满足要求的构建，请先生产所缺目录后重新开始'}`})]);
+    }
+  }
   const runId = newId('run', at.getTime());
+  return ctx.lock(`submit:${runId}`,async()=>{
   const selectedBuild=target.buildName===null?undefined:(await ctx.deps.knowledge.builds(target.product!.product.id)).find(build=>build.name.normalize('NFC').toLowerCase()===target.buildName!.normalize('NFC').toLowerCase())?.name??target.buildName;
 
-  const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables);
+  const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null);
   // The projection runs before any group exists; the expected sources and the checks see the frozen groups. The builds of
   // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
   const builds = await contextBuilds(ctx, workflow, target.product?.product.id ?? null);
@@ -494,7 +528,7 @@ async function startFresh(
     ...(leaseRows !== null ? { leases: { now: startedAt, registrations: leaseView!.registrations, entries: leaseRows.map((row) => ({ ...row, mine: leaseLineageHolders.has(row.key) })) } } : {}),
   };
   const projection = await projectItems(ctx, user, workflow, bound, parameters, context, call.traceId);
-  const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables);
+  const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null);
   // The leases are granted after the projection asked for them and before anything is stored; every failure from here
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
   let grantedLeases: Array<LeaseDone> = [];
@@ -517,6 +551,7 @@ async function startFresh(
         workflow,
         packDigest: workflow.pack.digest,
         root: target.root?.root ?? null,
+        unversionedRoot: target.unversionedRoot?.root ?? null,
         boundShas,
         boundRecords,
         subjectShas: bound.filter((b) => b.slot === workflow.workflow.subject).map((b) => b.sha256),
@@ -542,7 +577,9 @@ async function startFresh(
   const slots = slotSchemaOf(workflow);
   const hub = mode.host === 'hub';
   const session = sessionOf(call);
+  const effectRegistry=await ctx.deps.effectRegistry?.snapshot(variables);
   const record: RunRecord = RunRecord.parse({
+    ...(effectRegistry??{}),
     run: runId,
     pack: `${workflow.pack.id}@${workflow.pack.version}`,
     pack_digest: workflow.pack.digest,
@@ -551,6 +588,7 @@ async function startFresh(
     ...(target.buildName !== null ? { build: target.buildName } : {}),
     target_basis: target.basis,
     ...(target.root !== null ? { root: target.root.root } : {}),
+    ...(target.unversionedRoot ? { unversioned_root: target.unversionedRoot.root } : {}),
     sources: [...bound.map((b) => b.binding), ...expected.sources],
     requirements: workflow.requirements.map(requirementSummary),
     items,
@@ -561,6 +599,7 @@ async function startFresh(
     ...(predecessor !== null ? { predecessor: predecessor.body.run } : {}),
     ...(session !== null ? { session } : {}),
     started_at: startedAt,
+    submission_due: input.submission_due ?? new Date(at.getTime()+86400000).toISOString(),
     ...(hub ? { host: 'hub' as const, trigger: 'standing_obligation' as const, configurer: user.id } : { runner: user.id, host: 'local_circle' as const, trigger: 'session' as const }),
     parameters,
     ...(projection.groups.length > 0 ? { groups: projection.groups } : {}),
@@ -609,7 +648,9 @@ async function startFresh(
       handover,
     },
   });
+  if(production!==null)await recordResultRequests(ctx,record,production.evaluation.result);
   const result = production === null ? null : await keepProduction(ctx, stored, production, call);
+  if(predecessor!==null)await answerSuccessorRequests(ctx,predecessor.body,stored);
   return {
     answer: okAnswer(record, result),
     production: result,
@@ -627,23 +668,13 @@ async function startFresh(
     }
     throw error;
   }
+  });
 }
 
 /** The evaluation of a production run, made before its run record is stored (the result names the record's digest). */
 async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest: string, workflow: LoadedWorkflow, traceId: string, user: Principal): Promise<{ evaluation: Evaluation; startedAt: string }> {
   const startedAt = ctx.now().toISOString();
-  const evaluation = await evaluate(ctx, {
-    run,
-    workflow,
-    submission: null,
-    submissionDigest: runDigest,
-    exact: null,
-    carried: new Map(),
-    roundsUsed: new Map(),
-    origin: null,
-    author: null,
-    traceId,
-  });
+  const evaluation = await evaluate(ctx, productionEvaluationInput(run, workflow, runDigest, traceId));
   const notes = (run.groups ?? []).map((group, i) => ({group, i})).filter(({group}) => group.nature === 'fact' && group.verdict === 'support');
   if (notes.length === 0) return {evaluation, startedAt};
   const noteSchema = z.strictObject({
@@ -671,6 +702,7 @@ async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest:
     }
     // Projection notes are advisory cross-item facts, never evidence satisfying a requirement.
     evaluation.result.cross_item.push({...factClaim({
+      coverage:sourceCoverage(run.sources,grounds),
       outcome:{verdict:'support',statement:note.data.message,grounds,...(note.data.data === undefined ? {} : {data:note.data.data})},
       rule:`${workflow.pack.id}.projection@${workflow.pack.version}`,judges:strongestRole(roles) ?? 'subject',
       overClaims:false,discrimination:false,bound:[runDigest, workflow.pack.digest, ...(run.root === undefined ? [] : [run.root]), ...grounds.flatMap(ref => {const digest = rootDigest(ref); return digest === null ? [] : [digest];})],
@@ -701,7 +733,16 @@ async function keepProduction(ctx: EngineContext, stored: StoredRecord<RunRecord
     endedAt,
     acceptance: null,
     codes: [],
-    detail: { submission: stored.digest, session: sessionOf(call), model: null, repair: [], result: result.digest, production: true, retry_attempts: production.evaluation.retryAttempts },
+    detail: { submission: stored.digest, session: sessionOf(call), model: null, repair: [], result: result.digest, production: true, retry_attempts: production.evaluation.retryAttempts,...(production.evaluation.parentObservedSuccess?{parent_observed_success:true}:{}) },
   });
   return { reference: recReference(result.digest), record: result.digest, result: result.body, counts: partitionCountsOf(result.body.partitions) };
+}
+
+/** Re-evaluate only deterministic production, with the existing frozen run and current authorized source availability. */
+export async function recheckProduction(ctx:EngineContext,stored:StoredRecord<RunRecord>,user:Principal,traceId:string):Promise<ProductionResult|null>{
+  const workflow=await ctx.deps.workflows.byDigest(stored.body.pack_digest);
+  if(!workflow||!isProduction(workflow))return null;
+  const produced=await evaluateProduction(ctx,stored.body,stored.digest,workflow,traceId,user);
+  await recordResultRequests(ctx,stored.body,produced.evaluation.result);
+  return keepProduction(ctx,stored,produced,{traceId,sessionId:stored.body.session??null});
 }

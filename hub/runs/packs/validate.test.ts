@@ -473,6 +473,10 @@ test('reason selectors remain typed causes rather than installed-interpreter cod
   assert.ok(!result.pack.warnings.some(warning=>warning.rule==='requirements.code_unused'));
 });
 
+test('static fact layers without checks cannot be newly published',async()=>{
+  await refused(editJson(workflowPack(),'requirements.json',(json:Json)=>{const requirement=json.requirements.find((r:Json)=>r.accepted_producer==='fact');requirement.checks=[];}),'requirements.shape',{field:'/requirements/0/checks'});
+});
+
 test('publication rejects static facts without checks and dynamic facts without an observation',async()=>{
   for(const target of ['item','run']){
     await refused(requirements(file=>{Object.assign(file.requirements[0],{target,layers:['static'],checks:[],error_handling:[]});}), 'requirements.shape',{field:'/requirements/0/checks'});
@@ -489,6 +493,15 @@ test('publication refuses reject by reason even when an artifact blocking check 
   await refused(editJson<Json>(pack,'requirements.json',file=>{file.requirements[0].error_handling=[{reason:'check_error',action:'reject'}];}),'requirements.shape',{field:'/requirements/0/error_handling/0/action'});
 });
 
+test('effect policy references use the same declared check and require both sample polarities',async()=>{
+ let checkId='';
+ let spec=withFiles(checks(file=>{checkId=file.checks[0].id;file.checks[0].table='policies/titles.json';}),{'tables/titles.json':null,'policies/titles.json':base.files['tables/titles.json']});
+ spec=editJson<Json>(spec,'requirements.json',file=>{const key=file.requirements[0].key;file.effects=[{id:'send_checked',resource_kind:'executor',action:'submit',effect_class:'job',parameters:{policy:'policies/titles.json',check:checkId},release:{requirements:[key],artifact:key},trigger:'hub_template',budget:{count:1,duration_ms:10000},deadline_ms:86400000,optional:false,policy_checks:[checkId]}];});
+ await accepted(spec);
+ const removed=Object.fromEntries(Object.keys(spec.files).filter(path=>path.startsWith('samples/negative/')).map(path=>[path,null]));
+ await refused(withFiles(spec,removed),'effects.policy_samples');
+ await refused(editJson<Json>(spec,'requirements.json',file=>{file.effects[0].parameters.policy='policies/other.json';}),'effects.policy_binding');
+});
 
 test('product variable declarations accept a referenced synthetic default and reject invalid contracts', async () => {
   const declared = () => editJson<Json>(productPack(), 'product.json', p => {

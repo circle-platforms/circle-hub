@@ -29,6 +29,7 @@ import {
 } from '../../../../hub/runs/api.ts';
 import type { TemporaryPostgres } from '../../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../../hub/testing/records.ts';
+import { productVariableNameAvailable } from '../../../../hub/server/variables.ts';
 import { AGILE_ACCOUNT, ROOTS, agileOptions } from '../../../../tests/fixtures/agile/index.ts';
 import { manualStoreFiles } from '../../../../tests/fixtures/manual-store/index.ts';
 import { plmReply } from '../../../../tests/fixtures/plm/index.ts';
@@ -80,7 +81,7 @@ export async function openReviewBed(postgres: TemporaryPostgres): Promise<Review
     const reviewer = principal(await kit.principals.createUser(admin, '评审人'));
     await kit.authorizations.grantPublishRight(admin, owner.id);
 
-    const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted'), now, sandbox: { requireOsIsolation: isolation } });
+    const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted'), now, sandbox: { requireOsIsolation: isolation }, variableNameAvailable: (name, tx) => productVariableNameAvailable(kit, name, tx) });
     const publications: Record<string, PublishOutcome> = {};
     for (const id of [...SYSTEM_PACKS, ...PRODUCT_PACKS, ...WORKFLOW_PACKS]) {
       const staged = await stagePack(PACK_DIRECTORIES[id], join(temp.path, 'staged', id));
@@ -88,6 +89,7 @@ export async function openReviewBed(postgres: TemporaryPostgres): Promise<Review
       if (!publications[id].ok) throw new Error(`publishing ${id} was refused: ${JSON.stringify(publications[id]).slice(0, 2000)}`);
     }
     for (const id of PRODUCT_PACKS) await registry.activate(admin, id);
+    for (const active of await registry.activeProducts()) for (const variable of active.product.variables ?? []) await kit.variables.setVariable(admin, variable.name, variable.default, '合成端到端显式部署设置');
     for (const id of WORKFLOW_PACKS) await registry.assign(admin, reviewer.id, id);
     const packs = createPacksPort(registry);
 

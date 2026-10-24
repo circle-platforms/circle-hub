@@ -49,7 +49,7 @@ Needs: none.
 
 Batch story fields `status` and `stage` preserve JSON scalar values (including numbers, booleans and explicit null).
 `fields_absent` names fields the successful original did not contain; no missing lifecycle value is inferred.
-The current 1.3.2 manifest signs the read description and function bytes together; raw originals remain unchanged.
+Since 1.3.2 the manifest signs the read description and function bytes together (the current version is in `pack.json`); raw originals remain unchanged.
 
 复核 3：构建 content 每条新增 fields，逐字保留原始记录的全部 JSON 标量字段（含数字 id、name、布尔、null）；数组和对象不混作标量。顶层 id/name/stories 维持已有接口，原始 name 不 trim、不另取字段兜底。原件不变，workflow 通过 name 与绑定视图和可信构建上下文核对同构建、同根，再在条目 data/陈述中指明选中记录。
 
@@ -84,3 +84,5 @@ c3 #4：有权启动本任务包的有效读者看到确定的标识超长错误
 Closure B2: storiesProject retains the entire batch when status or stage is not a scalar. It emits fields_nonscalar,
 separate from fields_absent and explicit null; the workflow counts these observed fields outside the scalar-status groups.
 A regression feeds this actual projection into story-traceability instead of manufacturing the marker in a fixture.
+
+缺席观察：读取声明的 `absent_codes` 包含 `plm.absent`。仅在原始应答已保存、根据全部可读且无其他读取故障时，Hub 将该码转为带系统、对象、读取时刻和应答键的 SOURCE_ABSENT；原件照存，检查读取独立的规范 JSON 观察。401/403、未读完或凭据保留不作缺席。

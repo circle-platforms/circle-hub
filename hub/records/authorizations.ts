@@ -4,9 +4,12 @@
 // even when it repeats an earlier one in the same millisecond. A permission is not evidence, and a passed check is not a
 // permission (B04 R[0]).
 import { PackId, PackVersion, UserId } from '../../contracts/src/common.ts';
-import { isPermissionKind } from '../../contracts/generated/vocabulary.ts';
+import type { RunRecord } from '../../contracts/src/run.ts';
+import { isPermissionKind, isShareAudience } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionKind, PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type {
+  ShareAudienceInput,
+  PackShareAudience,
   AuthorizationBody,
   AuthorizationInput,
   AuthorizationRecord,
@@ -21,7 +24,7 @@ import type {
 import { RECORD_SCHEMAS, WHOLE_HUB } from './constants.ts';
 import { normalizeTime } from './db.ts';
 import type { Database } from './db.ts';
-import { isSha256 } from './digest.ts';
+import { digestOf, isSha256 } from './digest.ts';
 import { verifiedRecord } from './store.ts';
 import { AccessError, ConflictError, IntegrityError } from './errors.ts';
 
@@ -139,14 +142,17 @@ export class RecordAuthorizations implements Authorizations {
     return this.revoke(by, { permission: PUBLISH_RIGHT, subject: userId(user), object: WHOLE_HUB, note: reason });
   }
 
-  async configureResource(by: Principal, resourceId: string, bound: string, reason?: string | null): Promise<AuthorizationRecord> {
+  async configureResource(by: Principal, resourceId: string, bound: string, reason?: string | null, tx?: Transaction): Promise<AuthorizationRecord> {
     if (!isSha256(bound)) throw new TypeError('a resource configuration binds the digest of its content');
-    return this.grant(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: term(resourceId, 'resource id'), bound, note: reason });
+    return this.#decide(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: term(resourceId, 'resource id'), bound, note: reason }, false, tx);
   }
 
   async configureResourceInTransaction(by: Principal, object: string, bound: string | null, reason: string, tx: Transaction, revoked = false): Promise<AuthorizationRecord> {
-    if (!revoked && !isSha256(bound)) throw new TypeError('a resource configuration binds the digest of its content');
-    return this.#decide(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: term(object, 'resource id'), bound, note: reason }, revoked, tx);
+    if (!revoked) {
+      if (!isSha256(bound)) throw new TypeError('a resource configuration binds the digest of its content');
+      return this.configureResource(by,object,bound,reason,tx);
+    }
+    return this.#decide(by, { permission: RESOURCE_CONFIG, subject: WHOLE_HUB, object: term(object, 'resource id'), bound, note: reason }, true, tx);
   }
 
   async resourceConfig(resourceId: string): Promise<AuthorizationRecord | null> {
@@ -171,21 +177,36 @@ export class RecordAuthorizations implements Authorizations {
     return out;
   }
 
-  async share(by: Principal, object: string, audience: string[], reason?: string | null): Promise<AuthorizationRecord[]> {
+  async share(by: Principal, object: string, audience: ShareAudienceInput, reason?: string | null): Promise<AuthorizationRecord[]> {
     const target = term(object, 'shared object');
-    if (!Array.isArray(audience) || audience.length === 0 || audience.length > 500) throw new TypeError('the audience is 1 to 500 users');
-    // Sorted, so concurrent shares take their per-decision locks in the same order.
-    const members = [...new Set(audience.map(userId))].sort();
-    for (const member of members) await this.#existingUser(member);
-    return this.#store.withTransaction(async (tx) => {
+    const members = Array.isArray(audience) ? [...new Set(audience.map(userId))].sort() : [packAudienceSubject(audience)];
+    if (members.length === 0 || members.length > 500) throw new TypeError('the audience is 1 to 500 users or one pack');
+    return this.#store.withTransaction(async tx => {
+      const actor = await this.#decider(by, tx);
+      if (actor.role !== ADMIN) throw new AccessError('只有管理员可以分享');
+      if (Array.isArray(audience)) for (const member of members) await this.#existingUser(member);
       const out: AuthorizationRecord[] = [];
-      for (const member of members) out.push(await this.#decide(by, { permission: SHARE, subject: member, object: target, note: reason }, false, tx));
+      for (const member of members) out.push(await this.#decide(by, {
+        permission: SHARE, subject: member, object: target, note: reason,
+        shareAudience: Array.isArray(audience) ? 'user' : audience.kind,
+        ...(target.startsWith('production:') ? { bound: productionShareBinding(target.slice('production:'.length)) } : {}),
+      }, false, tx));
       return out;
     });
   }
 
-  async unshare(by: Principal, object: string, user: string, reason?: string | null): Promise<AuthorizationRecord> {
-    return this.revoke(by, { permission: SHARE, subject: userId(user), object: term(object, 'shared object'), note: reason });
+  async unshare(by: Principal, object: string, audience: string | PackShareAudience, reason?: string | null): Promise<AuthorizationRecord> {
+    return this.revoke(by, { permission: SHARE, subject: typeof audience === 'string' ? userId(audience) : packAudienceSubject(audience),
+      shareAudience: typeof audience === 'string' ? 'user' : audience.kind, object: term(object, 'shared object'), note: reason });
+  }
+
+  async shares(by: Principal, object?: string): Promise<AuthorizationRecord[]> {
+    return this.#store.withTransaction(async tx => {
+      const actor = await this.#decider(by, tx);
+      if (actor.role !== ADMIN) throw new AccessError('只有管理员可以列出分享');
+      if (object !== undefined) term(object, 'shared object');
+      return activeShares(this.#store, object, this.#now());
+    });
   }
 
   async packsFor(user: string): Promise<string[]> {
@@ -207,7 +228,7 @@ export class RecordAuthorizations implements Authorizations {
   }
 
   async isSharedWith(user: string, object: string): Promise<boolean> {
-    return this.isActive(SHARE, user, object);
+    return sharedWith(this.#store, user, object, this.#now());
   }
 
   async ownerOf(pack: string): Promise<string | null> {
@@ -268,6 +289,7 @@ export class RecordAuthorizations implements Authorizations {
   async #decide(by: Principal, input: AuthorizationInput, revoked: boolean, outer?: Transaction): Promise<AuthorizationRecord> {
     if (!isPermissionKind(input.permission)) throw new TypeError(`unknown permission kind ${JSON.stringify(input.permission)}`);
     const permission = input.permission;
+    if (input.shareAudience !== undefined && (!isShareAudience(input.shareAudience) || permission !== SHARE)) throw new TypeError('invalid share audience');
     const subject = term(input.subject, 'subject');
     const object = term(input.object, 'object');
     const bound = input.bound ?? null;
@@ -294,6 +316,7 @@ export class RecordAuthorizations implements Authorizations {
       const previous = await this.#latest(permission, subject, object, tx);
       const decidedAt = this.#now().toISOString();
       const body: AuthorizationBody = {
+        ...(permission === SHARE ? { share_audience: input.shareAudience ?? 'user' } : {}),
         permission,
         subject,
         object,
@@ -353,4 +376,60 @@ export class RecordAuthorizations implements Authorizations {
     if (row === undefined || row.disabled === true) throw new AccessError('操作人不是有效的 Hub 账号');
     return { id: String(row.id), role: row.role === ADMIN ? ADMIN : 'user' };
   }
+}
+
+function packAudienceSubject(audience: PackShareAudience): string {
+  if (!audience || audience.kind !== 'pack_users') throw new TypeError('not a pack audience');
+  return `pack_users:${packId(audience.pack)}`;
+}
+
+/** A policy object binds this pack and the fact-only condition; each run retains its immutable content digest. */
+export function productionShareKey(pack: string): string { return `production:${packId(pack)}`; }
+export function productionShareBinding(pack: string): string { return digestOf({ pack: packId(pack), accepted_producer: 'fact' }); }
+const activeAt = (record: AuthorizationRecord, now: Date): boolean => !record.body.revoked && (record.body.expires_at === null || Date.parse(record.body.expires_at) > now.getTime());
+
+async function activeShares(store: RecordStore, object: string | undefined, now: Date): Promise<AuthorizationRecord[]> {
+  const latest = new Map<string, AuthorizationRecord>();
+  let cursor: string | null = null;
+  do {
+    const page: Page<AuthorizationRecord> = await store.find<AuthorizationBody>({ kind: 'authorization',
+      key: object === undefined ? 'authz.permission' : 'authz.object', value: object === undefined ? SHARE : `${SHARE}|${object}`,
+      newestFirst: true, limit: 500, cursor });
+    for (const record of page.items) {
+      const key = `${record.body.subject}|${record.body.object}`;
+      if (!latest.has(key)) latest.set(key, record);
+    }
+    cursor = page.next;
+  } while (cursor !== null);
+  return [...latest.values()].filter(record => record.body.permission === SHARE && activeAt(record, now)).sort((a,b) => a.body.object.localeCompare(b.body.object) || a.body.subject.localeCompare(b.body.subject));
+}
+
+/** Read-only authorization view for readers that have a record store, never a database or a decision capability. */
+export async function sharedWith(store: RecordStore, user: string, object: string, now = new Date(), expectedPack?: string): Promise<boolean> {
+  if (!UserId.safeParse(user).success || !isTerm(object)) return false;
+  for (const share of await activeShares(store, object, now)) {
+    const body = share.body;
+    if (object.startsWith('production:')) {
+      const target = object.slice('production:'.length);
+      if (!PackId.safeParse(target).success || body.bound !== productionShareBinding(target)) continue;
+    }
+    if ((body.share_audience === undefined || body.share_audience === 'user') && body.subject === user) return true;
+    if (body.share_audience === 'pack_users' && body.subject.startsWith('pack_users:')) {
+      const pack = body.subject.slice('pack_users:'.length);
+      if (!PackId.safeParse(pack).success || expectedPack !== undefined && pack !== expectedPack) continue;
+      const assignment = (await store.find<AuthorizationBody>({ kind:'authorization', key:'authz.key', value:`assign|${user}|${pack}`, newestFirst:true, limit:1 })).items[0];
+      if (assignment && activeAt(assignment, now)) return true;
+    }
+  }
+  return false;
+}
+
+/** Sharing is based on frozen requirements, never the currently installed workflow version. */
+export async function runIsSharedWith(store: RecordStore, user: string, run: Pick<RunRecord, 'run'|'pack'|'requirements'>, now = new Date()): Promise<boolean> {
+  const pack = run.pack.slice(0, run.pack.lastIndexOf('@'));
+  if (!PackId.safeParse(pack).success) return false;
+  if (await sharedWith(store, user, run.run, now, pack)) return true;
+  if (!PackId.safeParse(pack).success || !run.requirements.length || !run.requirements.every(r => r.accepted_producer === 'fact')) return false;
+  const assignment = (await store.find<AuthorizationBody>({kind:'authorization',key:'authz.key',value:`assign|${user}|${pack}`,newestFirst:true,limit:1})).items[0];
+  return !!assignment && activeAt(assignment,now) && sharedWith(store,user,productionShareKey(pack),now,pack);
 }

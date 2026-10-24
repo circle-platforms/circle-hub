@@ -45,7 +45,7 @@ export type MoveRootResult =
 
 /** What reconciling the current root of one line did. */
 export interface LineReconciliation {
-  line: string;
+  line: string | null;
   from: string | null;
   to: string | null;
   build: string | null;
@@ -124,7 +124,7 @@ export class Builds {
     if (names.size === 1) return withoutLists(records[records.length - 1].body.build);
     if (names.size > 1) return null;
     const produced = await this.#store.latestProduction(product, name);
-    return produced === null ? null : withoutLists(produced.detail.build);
+    return produced?.detail.build == null ? null : withoutLists(produced.detail.build);
   }
 
   /** The record of a name and the last build its alias chain reaches (itself when it is not an alias); null when unknown. */
@@ -158,26 +158,27 @@ export class Builds {
   }
 
   /** RootInfo of a production; its build without list roles (they are in the composition, by reference). */
-  rootInfoOf(production: ProduceAction, product: string): RootInfo {
+  rootInfoOf(production: ProduceAction, product: string): RootInfo<KnownBuild | null> {
     return {
       root: production.detail.root as string,
       composition: production.detail.composition as string,
       product,
-      build: { ...withoutLists(production.detail.build), root: production.detail.root },
+      build: production.detail.build === null ? null : { ...withoutLists(production.detail.build), root: production.detail.root },
       produced_at: production.record.body.ended_at,
     };
   }
 
   /** The root a build name of any family resolves to. */
-  async rootOfBuild(product: string, name: string): Promise<RootInfo | null> {
+  async rootOfBuild(product: string, name: string): Promise<(RootInfo & { build: KnownBuild }) | null> {
     const build = await this.resolve(product, name);
     if (build === null) return null;
     const production = await this.#store.latestProduction(product, baseOf(build));
-    return production === null ? null : this.rootInfoOf(production, product);
+    const info = production === null ? null : this.rootInfoOf(production, product);
+    return info?.build ? { ...info, build: info.build } : null;
   }
 
   /** Every composition of a root digest (equal content from different builds or products shares one root). */
-  async rootInfo(root: string): Promise<RootInfo[]> {
+  async rootInfo(root: string): Promise<RootInfo<KnownBuild | null>[]> {
     if (!SHA256.test(root)) return [];
     const productions = await this.#store.productionsOfRoot(root);
     return productions.map((production) => this.rootInfoOf(production, production.detail.product));
@@ -194,7 +195,10 @@ export class Builds {
   }
 
   /** The root the current-root pointer of a product line names. */
-  async currentRoot(product: string, line: string): Promise<RootInfo | null> {
+  async currentRoot(product: string, line: string): Promise<(RootInfo & { build: KnownBuild }) | null>;
+  async currentRoot(product: string, line: null): Promise<RootInfo<null> | null>;
+  async currentRoot(product: string, line: string | null): Promise<RootInfo<KnownBuild | null> | null>;
+  async currentRoot(product: string, line: string | null): Promise<RootInfo<KnownBuild | null> | null> {
     let name: string;
     try {
       name = pointerName(product, line);
@@ -209,7 +213,7 @@ export class Builds {
       const production = productions.find((p) => p.detail.composition === move.composition) ?? productions[productions.length - 1];
       if (production !== undefined) return this.rootInfoOf(production, product);
     }
-    const productions = (await this.#store.productionsOfRoot(pointer.target)).filter((p) => p.detail.product === product && p.detail.build.line === line);
+    const productions = (await this.#store.productionsOfRoot(pointer.target)).filter((p) => p.detail.product === product && (p.detail.build?.line ?? null) === line);
     const latest = productions[productions.length - 1];
     return latest === undefined ? null : this.rootInfoOf(latest, product);
   }
@@ -235,7 +239,7 @@ export class Builds {
    * the completed generate action that produced `root` for this product as `cause` (B05 R[4]); the build the pointer will
    * name is on this line and uses that production's tree. A refused compare-and-set writes nothing.
    */
-  async moveRoot(product: string, line: string, expected: string | null, root: string, cause: string | null, options: MoveRootOptions = {}): Promise<MoveRootResult> {
+  async moveRoot(product: string, line: string | null, expected: string | null, root: string, cause: string | null, options: MoveRootOptions = {}): Promise<MoveRootResult> {
     const by = await requireAdmin(this.#context, options.by, '移动当前根');
     if (!SHA256.test(root) || (expected !== null && !SHA256.test(expected))) throw new KnowledgeError('根摘要必须是 64 位小写十六进制');
     const name = pointerName(product, line);
@@ -249,13 +253,15 @@ export class Builds {
       throw new KnowledgeError(`组成记录 ${options.composition} 不是这个生产动作的结果`);
     }
     // The build the pointer names: its own record is on this line, and its alias chain ends at the produced build.
-    const buildName = options.build ?? production.detail.build.name;
-    const chain = await this.#chain(product, buildName);
-    const named = chain?.named ?? (buildName === production.detail.build.name ? withoutLists(production.detail.build) : null);
-    if (named === null) throw new KnowledgeError(`不认识构建 ${buildName}`);
-    if (named.line !== line) throw new KnowledgeError(`构建 ${named.name} 属于版本线 ${named.line}，不是 ${line}`);
-    const base = chain === null ? named.name : baseOf(chain.last);
-    if (base !== production.detail.build.name) throw new KnowledgeError(`构建 ${named.name} 用的是 ${base} 的树，不用这个生产动作的树（${production.detail.build.name}）`);
+    if ((line === null) !== (production.detail.build === null)) throw new KnowledgeError('生产动作的构建范围和指针范围不符');
+    const producedBuild = production.detail.build;
+    const buildName = options.build ?? producedBuild?.name ?? null;
+    const chain = buildName === null ? null : await this.#chain(product, buildName);
+    const named = chain?.named ?? (producedBuild !== null && buildName === producedBuild.name ? withoutLists(producedBuild) : null);
+    if (named === null && line !== null) throw new KnowledgeError(`不认识构建 ${buildName}`);
+    if (named !== null && named.line !== line) throw new KnowledgeError(`构建 ${named.name} 属于版本线 ${named.line}，不是 ${line}`);
+    const base = chain === null ? named?.name ?? null : baseOf(chain.last);
+    if (base !== (producedBuild?.name ?? null)) throw new KnowledgeError(`构建 ${named?.name} 用的是 ${base} 的树，不用这个生产动作的树（${producedBuild?.name}）`);
     const current = await this.#context.records.pointers.get(name);
     if(expected===root&&current?.target===root){const previous=await this.#store.pointerMove(current.action);if(previous?.composition===production.detail.composition)return {moved:false,current,reason:'当前根和组成已经相同'};}
     const records = this.#context.records;
@@ -271,7 +277,7 @@ export class Builds {
         pointer: name,
         expected,
         root,
-        build: named.name,
+        build: named?.name ?? null,
         composition: production.detail.composition as string,
         move: moved.action.digest,
         version: moved.pointer.version,

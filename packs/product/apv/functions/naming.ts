@@ -28,8 +28,6 @@ export const PAGE_PLATFORMS: readonly (readonly string[])[] = [
   ['infosecos'],
 ];
 
-/** Tokens after the version that still name a mainline page (the brief lists APV 10.4.TLS1.3 among the mainline lines). */
-export const MAINLINE_TOKENS: readonly string[] = ['tls13'];
 
 export function familyOf(token: string): Family {
   const key = token.toLowerCase();
@@ -156,12 +154,12 @@ export function parseHubName(name: string): HubNameParts | null {
 
 /**
  * Classifies a listing page by its name (without the extension): `[rel_]<family>[_<platform>]_<n>_<n>[...]_<tokens>`.
- * Mainline: only the version (or a mainline token such as tls13); platform: the version and a platform; patch: any
+ * Mainline: only the version (or a token explicitly supplied by the sync options); platform: the version and a platform; patch: any
  * `patch` token; customer: anything else (customer, POC, feature and special branches, extra build numbers). Names
  * without `rel_` must start with a product name and carry more than a version. Returns null for hub pages and for names
  * that are not listing pages of a version.
  */
-export function parsePageName(name: string): PageNameParts | null {
+export function parsePageName(name: string, mainlineWords: readonly string[] = []): PageNameParts | null {
   const tokens = pageTokens(name);
   if (tokens === null || parseHubName(name) !== null) return null;
   let at = 0;
@@ -191,7 +189,7 @@ export function parsePageName(name: string): PageNameParts | null {
   }
   let kind: PageKind;
   if (tail.some((token) => token === 'patch' || token.startsWith('patch'))) kind = 'patch';
-  else if (extra.length === 0 && tail.every((token) => MAINLINE_TOKENS.includes(token))) kind = platform === null ? 'mainline' : 'platform';
+  else if (extra.length === 0 && tail.every((token) => mainlineWords.includes(token))) kind = platform === null ? 'mainline' : 'platform';
   else kind = 'customer';
   return { family, line, platform, kind, tokens };
 }

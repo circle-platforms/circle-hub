@@ -471,7 +471,7 @@ catalogs, grounds and provenance.
 - The memo key identifies every element and slot by `{sha256, media_type, parser}` and adds the production component
   (`knowledge.producer@1`), not by the digest alone: the function receives all three, and a Hub with another parser
   version gives other models. It also covers the build and the batch position, which the function receives too.
-- Every producer receives `build.root: null` (ProducerInput.build is a KnownBuild): the root is what the production
+- Every build producer receives `build.root: null` (ProducerInput.build is a KnownBuild); product-wide producers omit build: the root is what the production
   makes, and handing the previous root would make a root depend on production history (decision 18).
 - A batch the producer fails on is split to find the document instead of failing the production, and a batch over the
   byte cap is handed in several calls (decisions 16, 19): the contract speaks of one call per batch.
@@ -690,7 +690,7 @@ Milestone 2:
   `knowledge` external type where the console lists resources, if it should appear there.
 - **runs**: none for lists: `builds()`, `resolveBuild()` and `RootInfo.build` carry no list roles any more (decision 10),
   so the stripping in `hub/runs/engine/target.ts` (`selectCandidate`) is now redundant but harmless.
-- **contracts** (milestone 2, after the review): (1) list calls without build-specific input: `ProducerInput.build`
+- **contracts** (milestone 2, after the review): (1) Product-wide producers now omit build; cross-build list calls without build-specific input still need a separate declaration: `ProducerInput.build`
   absent (or a fixed, build-free context) for a producer with a list slot, or a `Producer` flag that declares its output
   independent of the build; the reuse key could then leave the build out again (another build listing the same
   documents shares every batch) and content-defined batch boundaries would let an inserted document re-run only its
@@ -818,7 +818,7 @@ entry edits. Ordinary-field declarations and their counts keep their existing be
 | `rule_withdrawn` 规则已撤回 | 组成行的 `decided_by`（决定该条目的包 id@version）；读时查包端口，下架即标。一次读里同版本的查询有缓存 | 有数据，已算 |
 | `cited_fragment_changed` 被引片段已变 | **所引根 X 与读者根 Y 比**（K03 R[5]）：X ≠ Y，且 Y 里同一路径的条目摘要与 X 里的不同、或 Y 里没有这个路径，才标，并写出 X 和 Y 两个根（`cited_root`、`reader_root`）。读者根：运行里 = 读者的锁（锁定组成）所属的根；**运行外（K01 R[6]）= 这条产品线的当前根指针**（指针已移到别的根时同样标，并注明主张在所引根上仍成立）；**同一个根永远不会变**（根按内容寻址）；当前指针也取不到（这条产品线@构建还没有根）时不标，照实不算 | 有数据，已算 |
 | `expired` 已过期 | 记录主张 `validity.expires_at`，解析时按解析上下文注入的时钟（没有才用墙钟）重读（B01 R[3]）；树条目自身无过期字段，不算 | 记录主张有数据，已算；树条目无来源 |
-| `contradicted` 出现矛盾主张 | `claim` 记录带 `relation: 'contradicts'`，见下；**只算读者本人可见的关系**（本人的候选关系 + Hub 确定性规则产出的关系），别人的私有候选关系不给另一个读者打标（K05 R[4]，管理员也不例外） | 合成关系记录已算；候选层的提议通道由另一终端在建 |
+| `contradicted` 出现矛盾主张 | `claim` 记录带 `relation: 'contradicts'`，见下；**只算读者本人可见的关系**（本人的候选关系 + Hub 确定性规则产出的关系），别人的私有候选关系不给另一个读者打标（K05 R[4]，管理员也不例外）；也包括组成记录 `applicability_sources` 标记的适用条件冲突，含义是「来源声明互相矛盾」：凡可读这个根的人都能看到这些组成出处，只有 claim 关系受上述读者可见范围限制；这一来源不补造 claim，也不写入 `validity.contradictions` 关系列表 | 合成关系记录与组成出处已算；候选层的提议通道由另一终端在建 |
 | `grounds_withdrawn` 根据已撤回 | 无撤回记录通道 | 无数据来源，先不算 |
 | `premise_failed` 前提失效 | 前提的认证状态没有机器可读记录 | 无数据来源，先不算 |
 
@@ -841,6 +841,90 @@ K2 closureA2：回注公开正文保留会话标识；准备阶段扫描提交�
 
 合入模型第 10 版和最新 K1 时保留了链接读取与回注覆盖层两条通路：get_nodes 同时能展示两类数据；树引用继续计算撤回、片段变化及矛盾条件，并保留按组成的未归位索引、权限筛选和页级链接说明。既有 composition/build 透传不改变运行目标判定。link_match 在第 10 版词表之后追加为第 65 个轴，来源记录仍保留在 K05。
 
+
+### Product-wide production
+
+`sync-plan-output@1.scope` lists source roles without a version or build. A producer
+with `unversioned: true` runs only for that scope; other producers run only for builds.
+Its `ProducerInput` omits `build`; its composition records `version: null`, `build: null`
+and sources with `basis: declared`, decided by the product pack id and version.
+The product-wide pointer is `knowledge/<product>`; version pointers always have one
+more path segment, so even a line named `unversioned` cannot collide. Moves use the
+same audited compare-and-set operation, including composition refresh at equal roots.
+Sync reports put this result in `scope`, separately from `builds`. Without `scope`,
+no product-wide production or pointer move occurs.
+
+Integrated with hub-variables step two at e9c08866. Both production scopes use the
+same declared-variable snapshot as the plan and external reads. Resolution precedes
+producer selection, preserving published reference positions. Each composition and
+change detector keeps sync-option uses plus only the active producers' parameter uses;
+a variable used solely by the other scope cannot force this root to reproduce.
+
+`KnowledgePort.unversionedRoot?(product)` returns the current product-wide root and
+composition, including the required `source_count`. An older port without this method means no product-wide root. `RootInfo.build`
+is nullable; build-specific `currentRoot` and `rootOfBuild` retain non-null build results.
+Reading by digest uses the same product permission checks, the product-wide pointer
+for currentness, and displays build provenance as “未声明”. The console labels it “构建未声明”.
+
+Runs lock both roots and their compositions in `target_basis`. The product-wide
+basis is projected by `runs.unversioned_root@1`; no root is a definite fact followed
+by the instruction to sync the product. Boundaries, check fragments, reuse and
+contribution admission recognize the locked set, never a newly moved pointer.
+A changed product-wide lock prevents predecessor reuse. Older ports remain compatible.
+
+The start answer lists the product-wide digest separately. The knowledge overview
+always has an “不分版本” row per readable product, with the current digest and source
+count (including source parts); a missing pointer displays “—”. No extra read right
+is implied by either display.
+
+Build differences remain differences of the two build roots alone. Product-wide
+paths never become added/removed paths or regression changes merely because the
+product-wide scope is readable alongside those roots.
+
+### Product-wide views and snapshot handoff
+
+Index and facet scans stream the selected build composition and the product-wide
+composition, deduplicating entry digests. Product-wide entries keep their own tree
+reference, `root` and `build: null`; a facet row records `unversioned_count` and
+`unversioned_root`. Impact includes the product-wide attached entries for reading,
+without adding paths to `changes` or `placements`. Links views expose the scope's
+entries beside the selected composition's relations; they do not invent links
+between roots.
+
+Every view has an `unversioned` snapshot with complete entry/document totals,
+independent of detail limits. Existing totals also include those counts when a
+scope exists. Document counts count distinct nonempty `data.document` strings;
+index counts apply its key/only selection. A missing scope has a definite note and
+the sync action. All bytes, including the scope, pass the existing credential gate.
+Scope composition identity participates in cache/revision identity and artifact
+lineage. Build-only revisions retain their legacy format when no scope is present.
+
+`KnowledgeOptions.additionalScopeRoots` has the same callback shape as hub-view-scope:
+`(product) => Promise<readonly {root, composition}[]>`. Its default reads this package's
+product-wide current pointer. It is the read adapter for omission classification
+when those changes are merged; the ordinary view scan uses the same snapshot.
+Callbacks must return at most one matching product-wide composition. Run reads use
+the stored target basis instead. Before the run is persisted, `ExternalReadContext.unversioned`
+transports that exact snapshot (including explicit null) through input and expected
+source binding. It never follows a pointer after the lock was selected.
+
+Needs: this is the core first step only. The manual-store/openkm readers and APV
+scope declarations/producers remain the separately scheduled second step. The
+hub-variables dependency is now merged and its snapshot integration has synthetic
+coverage; no deployment or real-source verification is claimed.
+
+Link pagination cursors carry both the selected composition and the product-wide
+snapshot (including explicit absence). Later pages validate that snapshot against a
+run lock and preserve it across pointer movement. Legacy cursors remain readable.
+`unversioned.skipped_sources` discloses sources omitted during production; index,
+facet and impact skipped counters include these sources, so complete produced-entry
+counts never imply coverage of a source that production could not read.
+
+A catalog tied to a named producer is advertised only in a root where that producer
+runs. Link declaration producer ids are validated against the whole product pack,
+so a valid declaration does not become invalid merely because one producer belongs
+to the other scope; the root retains the declaration snapshot.
+
 ### 产品声明的部署变量
 
 真实同步开始时一次读取全部普通变量的当前决定；计划、外部读取、生产器参数都用这一份快照。声明中任何名字没设置或不合所属包的模式，产品在读页之前确定失败，报告逐名给出 `circle-hub var set <名字> --file <JSON文件> --reason <理由>`，不写值。直接生产入口同样核对，不把占位符交给函数。
@@ -852,3 +936,39 @@ K2 closureA2：回注公开正文保留会话标识；准备阶段扫描提交�
 Needs：依赖按实际交给函数的完整参数记录，不推断函数内部的名称族分支。要精确到只重产某个族，由产品包在对应接线任务中拆出只引用该族变量的独立产出范围。试运行保留读取审计，以及这个依赖边界，均经集成者确认（2026-10-24）。
 
 `var list --root` 接受同步回执里的根节点摘要，也兼容组成记录摘要。同内容根可以对应不同的变量决定；按根查时列出全部组成记录，每行带组成摘要，不拿当前值代替历史版本。
+
+Applicability now also records explicit components (with/without), numeric memory bounds in bytes with endpoint flags
+and raw source spelling, licenses and deployment forms. Lists sort and deduplicate before hashing. Existing entries
+without these fields keep their digest. `inherited` stores generated applicability_field codes only; selectors and
+section paths remain composition provenance. Display labels use labelOf, and these four new target prerequisites state
+“目标前提，未核对：缺目标上的<字段>观察；下一步：在目标上观察”; source declarations do not certify a target observation.
+
+Product-wide sync failures are isolated in the scope report; pointer failures are
+separate `pointers` rows with `line: null`. Successful build reconciliation still
+runs. Scope pointers use the observation captured before production and the exact
+successful action matching the returned composition, so a concurrent newer root
+cannot be overwritten or mistaken for this production's cause. An already aborted
+scope is reported without consulting production storage.
+
+Links scope payloads use half of the shared page budget after the same 4096-byte
+reserve as the relationship page. The build-side page receives the remaining byte
+budget and the final artifact is checked as a whole. Product-wide entry details are
+sent only on the first page; cursors retain the original cut count and snapshot.
+`unversioned.totals.cut_entries` remains available even without configured relations;
+`totals.unversioned_entries_cut` mirrors it when link totals exist. Both count entries
+omitted by that first-page detail budget, independently of total scope membership.
+The note directs readers to get_nodes on the scope root for omitted details.
+
+An absent scope in a run/read snapshot is described as absence from that locked
+range, with a new-run or restart-from-first-page action. It does not claim that the
+product currently has no pointer, and no mutable current-pointer lookup is added to
+the immutable answer. Unbound current reads retain the product-level sync advice.
+
+View skipped counters include both the build composition and its selected scope.
+For impact, the shared scope count contributes to each side; the two counters are
+not disjoint source totals. Scope notes name the root, skipped count and producers
+actually retained in the bounded summary, disclose absent legacy producer detail,
+and request source/producer repair followed by automatic resync and a new run.
+They never infer that no entries exist from a source that did not produce.
+
+适用条件出处的 `superseded: true` 表示已被内层作用域取代，仅保留来历；读时不参与字段显示和 `contradicted` 打标。原值、章节路径和原片段仍完整保存在组成记录中。
