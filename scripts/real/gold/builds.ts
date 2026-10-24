@@ -2,9 +2,13 @@
 // Strictly independent by design — imports nothing from hub/ or packs/; the build naming, version line, and
 // based-on alias rules are re-implemented directly from packs/product/apv/README.md.
 //   node scripts/real/gold/builds.ts --page <listing.html> [--page <listing.html> ...] --line <versionLine> --out <gold.json>
+//     [--include <page-name-glob> ...] [--exclude <page-name-glob> ...]
+// Default: main-platform builds only, even on a mainline page that also lists platform builds. To include those,
+// explicitly include their page name. Globs (*, ?) are case-insensitive; exclude removes the page and wins over include.
+// Keep the exported listing's page filename: selection uses that basename, never a directory or a build name.
 // The output JSON is { line, candidates: [{ name, family, base, built, released }] }.
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 
 export interface BuildCandidate {
   name: string;
@@ -17,6 +21,7 @@ export interface BuildCandidate {
 
 interface RawEntry {
   name: string;
+  platform: boolean;
   family: string;
   line: string;
   built: string | null;
@@ -44,14 +49,14 @@ function parseLineFromNumbers(nums: string[]): string {
 }
 
 /** Extracts the name, family, and version line from a build name. */
-function parseBuildName(name: string): { family: string; line: string } | null {
+function parseBuildName(name: string): { family: string; line: string; platform: boolean } | null {
   // Pattern: [prefix-]Rel|Beta <sep> family[-PLATFORM] <sep> n <sep> n ... [suffix]
   const match = /(?:^|[._\-])(?:Rel|Beta)[_.](APV|NSAE)(?:-([A-Za-z0-9-]+))?[_.]([0-9]+(?:[_.][0-9]+)*)/i.exec(name);
   if (!match) return null;
   const family = match[1].toUpperCase();
   const numParts = match[3].split(/[._]/);
   const line = parseLineFromNumbers(numParts);
-  return { family, line };
+  return { family, line, platform: match[2] !== undefined };
 }
 
 /** Reads a complete release date (YYYY-MM-DD or YYYY-MM), returning ISO string or null. */
@@ -112,6 +117,7 @@ function parseRawEntries(html: string): RawEntry[] {
     entries.push({
       name: cur.name,
       family: parsed.family,
+      platform: parsed.platform,
       line: parsed.line,
       built: cur.built,
       released,
@@ -148,10 +154,53 @@ function resolveBase(entry: RawEntry, byName: Map<string, RawEntry>): string {
   return entry.name;
 }
 
-/** Parses candidate builds of the specified version line from build site HTML. */
-export function parseBuildCandidates(html: string | readonly string[], targetLine: string): BuildCandidate[] {
+export interface BuildListingPage {
+  /** Exported listing page filename; selection ignores any directory components. */
+  name: string;
+  html: string;
+}
+export interface BuildPageSelection {
+  include?: readonly string[];
+  exclude?: readonly string[];
+}
+
+/** Independent wildcard matching: only * and ? are special, every other character is literal. */
+function pageMatches(pattern: string, name: string): boolean {
+  const glob = pattern.toLowerCase(), text = name.toLowerCase();
+  let at = 0, token = 0, star = -1, retry = 0;
+  while (at < text.length) {
+    if (glob[token] === '?' || glob[token] === text[at]) { token++; at++; }
+    else if (glob[token] === '*') { star = token++; retry = at; }
+    else if (star >= 0) { token = star + 1; at = ++retry; }
+    else return false;
+  }
+  while (glob[token] === '*') token++;
+  return token === glob.length;
+}
+
+/** Candidate scope follows the named listing pages: unmarked builds by default, platform builds by explicit opt-in. */
+export function parseBuildCandidates(
+  input: string | BuildListingPage | readonly (string | BuildListingPage)[],
+  targetLine: string,
+  selection: BuildPageSelection = {},
+): BuildCandidate[] {
   const targetKey = lineKey(targetLine);
-  const rawEntries = (typeof html === 'string' ? [html] : html).flatMap(parseRawEntries);
+  const pages = typeof input === 'string' || 'html' in input ? [input] : input;
+  const needsNames = (selection.include?.length ?? 0) > 0 || (selection.exclude?.length ?? 0) > 0;
+  const rawEntries: RawEntry[] = [];
+  for (const page of pages) {
+    if (typeof page === 'string') {
+      if (needsNames) throw new TypeError('按页名筛选需要每份页面的页名；下一步：提供带 name 和 html 的输入');
+      for (const entry of parseRawEntries(page)) if (!entry.platform) rawEntries.push(entry);
+      continue;
+    }
+    if (typeof page.name !== 'string' || page.name.trim() === '') throw new TypeError('页面缺少页名；下一步：提供导出页面的文件名');
+    const name = basename(page.name);
+    if (selection.exclude?.some(pattern => pageMatches(pattern, name))) continue;
+    const optedIn = selection.include?.some(pattern => pageMatches(pattern, name)) ?? false;
+    // Filter before deduplication: a non-opted-in copy cannot supply a platform candidate's fields or alias chain.
+    for (const entry of parseRawEntries(page.html)) if (!entry.platform || optedIn) rawEntries.push(entry);
+  }
 
   // Map by name keeping latest copy if duplicated
   const byName = new Map<string, RawEntry>();
@@ -218,23 +267,25 @@ export function writePrivateJson(path: string, value: unknown): string {
 export interface BuildsGold { line: string; candidates: BuildCandidate[] }
 
 export async function main(argv: string[]): Promise<number> {
-  const pages: string[] = [];
+  const pages: string[] = [], include: string[] = [], exclude: string[] = [];
   let line: string | undefined, out: string | undefined;
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i], value = argv[i + 1];
-    if (!value || value.startsWith('--') || !['--page', '--line', '--out'].includes(flag)) { process.stderr.write(`第 ${i / 2 + 1} 个参数无效；下一步只用 --page、--line、--out 并补齐参数值\n`); return 2; }
+    if (!value || value.startsWith('--') || !['--page', '--line', '--out', '--include', '--exclude'].includes(flag)) { process.stderr.write(`第 ${i / 2 + 1} 个参数无效；下一步只用 --page、--line、--out、--include、--exclude 并补齐参数值\n`); return 2; }
     if (flag === '--page') pages.push(value);
     else if (flag === '--line') line = value;
-    else out = value;
+    else if (flag === '--out') out = value;
+    else if (flag === '--include') include.push(value);
+    else exclude.push(value);
   }
   if (!pages.length || !line || !out || !/^v?[0-9]+(?:[._][0-9]+)+$/i.test(line)) {
-    process.stderr.write('用法：--page <页面> [--page <页面>] --line <版本线> --out <仓库外文件>\n');
+    process.stderr.write('用法：--page <页面> [--page <页面>] --line <版本线> --out <仓库外文件> [--include <页名通配>] [--exclude <页名通配>]（可重复；* 和 ?；忽略大小写；exclude 优先）\n');
     return 2;
   }
   let pageIndex = 0, writing = false;
   try {
-    const texts = pages.map((page, index) => { pageIndex = index + 1; return readFileSync(privatePath(page), 'utf8'); });
-    const candidates = parseBuildCandidates(texts, line.replace(/^v/i, ''));
+    const texts = pages.map((page, index) => { pageIndex = index + 1; return { name: basename(page), html: readFileSync(privatePath(page), 'utf8') }; });
+    const candidates = parseBuildCandidates(texts, line.replace(/^v/i, ''), { include, exclude });
     writing = true;
     writePrivateJson(out, { line: lineKey(line.replace(/^v/i, '')), candidates } satisfies BuildsGold);
     process.stdout.write(`候选 ${candidates.length} 个，APV ${candidates.filter(c => c.family === 'APV').length}、NSAE ${candidates.filter(c => c.family === 'NSAE').length}、别名 ${candidates.filter(c => c.name !== c.base).length}、没有制作时间 ${candidates.filter(c => c.built === null).length}\n`);
