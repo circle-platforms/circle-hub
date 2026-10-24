@@ -366,7 +366,10 @@ catalogs, grounds and provenance.
     accounting uses the slimmed size, and the answer records the fields it carries (`fields`) and says so in a note, so a
     big index fits the byte budget. MAX_INDEX_ENTRIES is 200,000 since `fields` exists: the byte budget is the effective
     bound and the entry cap only guards an injected bigger one.
-    An unplaced entry is cited at the root. When any entries of the kind are unplaced, a note says how many
+    An unplaced entry is cited at the root, and only its own reference reads it back (`tree:<root>/@<digest>`): get_nodes
+    lists the entries hung on nodes, so no walk of the tree enumerates them while `total_keys` and `total_entries` count
+    them — a consumer that needs every key behind a truncated index reads the facets view of the same scan.
+    When any entries of the kind are unplaced, a note says how many
     (`未归位条目 N 个，标在根下`), including entries that carry no value of the key; `total_entries` stays the entries that carry a
     value. The value `__proto__` is not listed as a key (a JSON reader that builds plain objects would take it for the
     prototype; noted, counted in `total_keys`); the content of an entry is held during the scan only while the held
