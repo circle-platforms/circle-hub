@@ -3,17 +3,30 @@
   "title": "手册库",
   "description": "手册库的只读访问（WebDAV，匿名、明文 HTTP）：目录用 PROPFIND Depth 1 列出（目录地址带结尾的斜杠），文件按它在所列目录下的路径用 GET 读，从不跟随列表里的链接（指向别的来源或目录以外的条目跳过并在警告里列出）。读法：manual:file:<路径>；manual:cli:<版本线> 与 manual:app:<版本线>（手册目录下名称以版本线数字结尾的子目录里的手册文件，目录和文件名取资源设置，默认 cli、cli_cn/cli_cn.md、app、app_cn/app_cn.md）；manual:spec-search:<检索词，用 + 连接>（规格书目录只列一次，按文件名包含的检索词个数选最好的五个读出）；manual:qa-search:<检索词>（同样检索测试策略文档，目录默认 qa）。只有读路由，没有写路由。",
   "roles": [
-    { "name": "manual-store", "description": "手册库的根地址；目录、文件都在它下面" }
+    {
+      "name": "manual-store",
+      "description": "手册库的根地址；目录、文件都在它下面"
+    }
   ],
-  "auth": { "kind": "none" },
+  "auth": {
+    "kind": "none"
+  },
   "routes": [
     {
       "id": "list",
       "role": "manual-store",
       "method": "PROPFIND",
       "path": "/{dir*}/",
-      "params": { "dir": { "type": "string", "maxLength": 255, "pattern": "^[^;]{1,255}$" } },
-      "headers": { "Depth": "1" },
+      "params": {
+        "dir": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[^;]{1,255}$"
+        }
+      },
+      "headers": {
+        "Depth": "1"
+      },
       "response": "xml",
       "parse": "xml@1",
       "max_bytes": 16777216,
@@ -26,7 +39,13 @@
       "role": "manual-store",
       "method": "GET",
       "path": "/{path*}",
-      "params": { "path": { "type": "string", "maxLength": 255, "pattern": "^[^;]{1,255}$" } },
+      "params": {
+        "path": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[^;]{1,255}$"
+        }
+      },
       "response": "text",
       "max_bytes": 33554432,
       "timeout_ms": 120000,
@@ -39,42 +58,87 @@
       "name": "file",
       "external": "manual:file",
       "description": "按路径读一个文件",
-      "plan": { "module": "functions/webdav.ts", "export": "filePlan" },
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "filePlan"
+      },
       "max_requests": 1
     },
     {
       "name": "cli",
       "external": "manual:cli",
       "description": "一个版本线的 CLI 手册",
-      "plan": { "module": "functions/webdav.ts", "export": "manualPlan" },
-      "project": { "module": "functions/webdav.ts", "export": "manualProject" },
-      "absent_codes": ["manual.not_found"],
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "manualPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "manualProject"
+      },
+      "absent_codes": [
+        "manual.not_found"
+      ],
       "max_requests": 6
     },
     {
       "name": "app",
       "external": "manual:app",
       "description": "一个版本线的应用手册",
-      "plan": { "module": "functions/webdav.ts", "export": "manualPlan" },
-      "project": { "module": "functions/webdav.ts", "export": "manualProject" },
-      "absent_codes": ["manual.not_found"],
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "manualPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "manualProject"
+      },
+      "absent_codes": [
+        "manual.not_found"
+      ],
       "max_requests": 6
     },
     {
       "name": "spec-search",
       "external": "manual:spec-search",
       "description": "按功能词检索规格书：文件名包含的检索词越多越靠前，读出最好的五个",
-      "plan": { "module": "functions/webdav.ts", "export": "searchPlan" },
-      "project": { "module": "functions/webdav.ts", "export": "searchProject" },
-      "max_requests": 6
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "searchPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "searchProject"
+      },
+      "max_requests": 37
     },
     {
       "name": "qa-search",
       "external": "manual:qa-search",
       "description": "按功能词检索测试策略文档：读法同规格书检索，目录取资源设置 qa_folder（默认 qa）；只作线索",
-      "plan": { "module": "functions/webdav.ts", "export": "searchPlan" },
-      "project": { "module": "functions/webdav.ts", "export": "searchProject" },
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "searchPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "searchProject"
+      },
       "max_requests": 6
+    },
+    {
+      "name": "spec-list",
+      "external": "manual:spec-list",
+      "description": "列出 spec_folders 配置目录的直接文件成员，不跟链接；旧 spec_folder 并入同一列表并警告",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "specListPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "specListProject"
+      },
+      "max_requests": 32
     }
   ]
 }
