@@ -131,11 +131,13 @@ describe('a production run', { skip }, () => {
     assert.equal(run.items[0].location, `src:${sha256(bytesOf(base))}/kityminder@1/n/r0e2ebase001`);
     for (const it of run.items) assert.match(it.digest ?? '', /^[0-9a-f]{64}$/);
 
-    // The production result: accepted without a submission, every item delivered, nothing unknown.
+    // Production is accepted without a model submission; missing indexed facts remain unknown and named in errors.
     const production = detail.production;
     assert.ok(production !== null);
     const result = ValidationResult.parse(production.result);
-    assert.deepEqual([result.acceptance, result.errors, result.cross_item, result.coverage], ['accepted', [], [], { complete: true, examined: documents.length, total: documents.length }]);
+    assert.deepEqual([result.acceptance,result.cross_item,result.coverage],['accepted',[],{complete:true,examined:documents.length,total:documents.length}]);
+    assert.equal(result.errors.length,documents.length-1);
+    assert.ok(result.errors.every(error=>error.code==='missing_input'&&error.requirement==='command_coverage'&&error.item!==undefined&&error.rounds_left===0&&error.path!==undefined&&error.fix?.includes('请求 rec:')));
     assert.deepEqual(production.counts, { delivered: documents.length, rejected: 0, quarantined: 0, incomplete: 0, unknown: documents.length - 1 });
     assert.deepEqual(production.counts, partitionCountsOf(result.partitions));
     assert.equal(production.reference, `rec:${production.record}`);

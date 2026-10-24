@@ -139,7 +139,9 @@ describe('a production run of case-location', { skip }, () => {
     assert.ok(production);
     const result = production.result;
     assert.ok(ValidationResult.safeParse(result).success);
-    assert.deepEqual([result.acceptance, result.errors, result.cross_item], ['accepted', [], []]);
+    assert.equal(result.acceptance,'accepted');assert.deepEqual(result.cross_item,[]);
+    assert.ok(result.errors.length>0,'missing location facts are visible in the accepted receipt');
+    assert.ok(result.errors.every(error=>error.code==='missing_input'&&error.item!==undefined&&error.requirement!==undefined&&error.rounds_left===0&&error.path!==undefined&&error.fix?.includes('请求 rec:')));
     // 24002 and 24003 are unknown on both requirements (no version line), 24004 on location (a root of no product line).
     assert.deepEqual(production.counts, { delivered: 4, rejected: 0, quarantined: 0, incomplete: 0, unknown: 3 });
     assert.deepEqual(production.counts, partitionCountsOf(result.partitions));
