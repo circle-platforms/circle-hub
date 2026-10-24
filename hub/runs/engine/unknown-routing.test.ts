@@ -42,3 +42,15 @@ test('a wildcard reject row never treats an unknown as a blocking refutation',()
   const routed=applyRouting(raw,{...template,error_handling:[{code:'*',action:'reject'}]},0,[outcome]);
   assert.deepEqual(routed.routed,[]);assert.equal(routed.terminal,'unchecked');
 });
+
+test('inapplicable exact and cause rows fall through to the next applicable selector',()=>{
+  const outcome={check:'c',judges:'subject' as const,outcome:{verdict:'unknown' as const,code:'synthetic.code',reason:'missing_input' as const,missing:'合成对象缺正文',statement:'没有正文',grounds:[],tier:'advisory' as const}};
+  const raw=staticTerminal({producer:'fact',hasProducer:true,checks:1,outcomes:[outcome],handling:null,expectation:{outcome:'support',codes:[]}});
+  const exact={code:'synthetic.code',action:'repair',max_rounds:2} as const;
+  const request={reason:'missing_input',action:'request'} as const;
+  const wildcard={code:'*',action:'unknown'} as const;
+  const routed=applyRouting(raw,{...template,error_handling:[wildcard,request,exact]},0,[outcome]);
+  assert.equal(routed.routed.length,1);assert.equal(routed.routed[0].action,'request');
+  const fallback=applyRouting(raw,{...template,error_handling:[wildcard,{...request,action:'repair',max_rounds:2},exact]},0,[outcome]);
+  assert.equal(fallback.routed.length,1);assert.equal(fallback.routed[0].action,'unknown');
+});

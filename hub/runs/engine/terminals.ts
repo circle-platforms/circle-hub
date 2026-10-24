@@ -141,7 +141,8 @@ export function staticTerminal(input: StaticInput): RawStatic {
 }
 
 /** Selector priority: exact code, then generated cause, then wildcard (W02 F[7]). */
-export function routeOf(rows: readonly ErrorHandlingRow[], code?: string, reason?: Reason): ErrorHandlingRow | undefined {
+export function routeOf(rows: readonly ErrorHandlingRow[], code?: string, reason?: Reason, outcome?: JudgedOutcome): ErrorHandlingRow | undefined {
+  if(outcome)rows=rows.filter(row=>rowApplies(row,outcome));
   const exact=code===undefined||code==='*'?undefined:rows.find(row=>row.code===code);
   const cause=reason===undefined?undefined:rows.find(row=>row.reason===reason);
   return exact??cause??rows.find(row=>row.code==='*');
@@ -199,7 +200,7 @@ export function applyRouting(raw: RawStatic, template: RequirementTemplate, roun
   const exhausted = roundsUsed >= rounds;
   const routed: Routed[] = [];
   for (const o of [...raw.unexpected, ...outcomes.filter(o => o.outcome.verdict === 'unknown')]) {
-    const row = routeOf(template.error_handling, o.outcome.code, o.outcome.reason);
+    const row = routeOf(template.error_handling, o.outcome.code, o.outcome.reason, o);
     if (row === undefined || !rowApplies(row, o)) continue;
     routed.push(row.action === 'repair' ? { outcome: o, action: 'repair', roundsLeft } : { outcome: o, action: row.action });
   }
