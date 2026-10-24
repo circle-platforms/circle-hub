@@ -236,6 +236,8 @@ interface Collected {
 
 /** One producer call's verified output, with indices local to the call. */
 interface Verified {
+  grammar?:ProducerOutput['grammar'];
+
   inventory: NonNullable<TreeRootBody['empty_scope']>['sources'];
   inventoryError: string | null;
   /** Entries with a path: its segments and canonical text, shared by every entry at that path. */
@@ -337,7 +339,7 @@ type PathCache = Map<string, ReturnType<typeof checkPath>>;
 
 /** Verifies one producer call's output (K02 R[0], R[3]): kinds, storable text, sizes, fragments in their sources, paths. */
 function verifyOutput(context: KnowledgeContext, producer: string, output: ProducerOutput, sources: FragmentSources, loader: SourceLoader, paths: PathCache): Verified {
-  const out: Verified = { inventory:[],inventoryError:null,placed: [], toPlace: [], refused: [], refusedCount: 0, refusedKinds: new Map(), warnings: output.warnings, entries: output.entries.length, spans: (output.unplaced ?? []).length };
+  const out: Verified = { grammar:output.grammar, inventory:[],inventoryError:null,placed: [], toPlace: [], refused: [], refusedCount: 0, refusedKinds: new Map(), warnings: output.warnings, entries: output.entries.length, spans: (output.unplaced ?? []).length };
   for(const row of output.inventory??[]){
     const listed=verifyFragment(row.listed,sources,loader),complete=verifyFragment(row.complete,sources,loader);
     if(!listed.ok||!complete.ok||listed.value.sha256!==complete.value.sha256||row.selected!==0||(sources.list?.elements.size??0)!==0){out.inventoryError='空范围的清单来源或选中数不符；下一步核对生产器清单证明后重产';continue;}
@@ -634,8 +636,11 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   const skippedPlacement = new Map<string, number>();
   const contents = new Map<string, EntryContent>();
   const pathCache: PathCache = new Map();
+  const incompleteGrammars = new Set<string>();
   // The verified items themselves are kept (their indices moved to the concatenated output), never copied.
   const take = (producer: string, verified: Verified, offsets: { entries: number; spans: number }): void => {
+    if(verified.grammar?.complete===false)incompleteGrammars.add(producer);
+
     inventory.push(...verified.inventory);
     if(verified.inventoryError)inventoryErrors.push(verified.inventoryError);
     for (const warning of verified.warnings) problems.warn(`${producer}：${warning}`);
@@ -873,7 +878,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     }catch(error){return fail(`链接声明无法核对：${describeError(error)}`);}
   }
 
-  const catalogs = rootCatalogs(product, composition, unplacedRows, problems.refusedOf, problems.skippedOf, contents);
+  const catalogs = rootCatalogs(product, composition, unplacedRows, problems.refusedOf, problems.skippedOf, contents, incompleteGrammars);
   const kinds = Object.fromEntries(ENTRY_KIND.map((kind) => [kind, 0])) as Record<EntryKind, number>;
   for (const row of composition) kinds[row.kind]++;
 
@@ -1286,6 +1291,7 @@ function rootCatalogs(
   refusedOf: ReadonlyMap<string, ReadonlyMap<string, number>>,
   skippedOf: ReadonlyMap<string, number>,
   contents: Map<string, EntryContent>,
+  incompleteGrammars:ReadonlySet<string>,
 ): RootCatalog[] {
   // The entry kinds each producer gave in this root (placed, unplaced, or declared on a refused entry).
   const kindsOf = new Map<string, Set<string>>();
@@ -1314,6 +1320,8 @@ function rootCatalogs(
       skippers.push(producer);
     }
     const reasons: string[] = [];
+    const grammars=[...incompleteGrammars].filter(producer=>ours([producer])).sort(compareText);
+    if(grammars.length)reasons.push(`生产器 ${grammars.join('、')} 的声明语法未完整核对，缺失事实与出口见生产诊断`);
     if (invalid > 0) reasons.push(`${invalid} 个条目没有可用的目录数据`);
     if (lost > 0) reasons.push(`${lost} 个条目没能挂树`);
     if (refusedHere > 0) reasons.push(`${refusedHere} 个条目没有通过核对`);

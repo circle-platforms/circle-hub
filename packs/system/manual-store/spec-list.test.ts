@@ -46,8 +46,14 @@ test('listing titles come from WebDAV displayname and searches retain each folde
  const model=xmlParser.parse(Buffer.from('<D:multistatus xmlns:D="DAV:"><D:response><D:href>/spec/</D:href></D:response><D:response><D:href>/spec/neutral.md</D:href><D:propstat><D:prop><D:displayname>NSAE synthetic specification</D:displayname></D:prop></D:propstat></D:response></D:multistatus>')).model;
  const projected:any=dav.specListProject({settings:{spec_folders:['spec']},responses:{list:{ok:true,model}}});
  assert.equal(content(projected).files[0].title,'NSAE synthetic specification');
- const planned=dav.searchPlan({round:2,external:{type:'spec-search',key:'demo'},settings:{spec_folders:['spec','design']},responses:{'list-0':{ok:true,model:listing('/spec/',['/spec/demo.md'])},'list-1':{ok:true,model:listing('/design/',['/design/demo.md'])}}});
- assert.deepEqual(planned.requests.map(r=>r.params?.path),['spec/demo.md','design/demo.md']);
+ // A search keeps every configured folder in its listing and reads nothing: keyword retrieval selects no source.
+ const responses={'list-0':{ok:true,model:listing('/spec/',['/spec/demo.md'])},'list-1':{ok:true,model:listing('/design/',['/design/demo.md'])}};
+ const planned=dav.searchPlan({round:2,external:{type:'spec-search',key:'demo'},settings:{spec_folders:['spec','design']},responses});
+ assert.deepEqual(planned.requests,[]);assert.equal(planned.done,true);assert.equal(planned.original,'list-0');
+ const searched:any=dav.searchProject({external:{type:'spec-search',key:'demo'},settings:{spec_folders:['spec','design']},responses,original:'list-0'});
+ const meta=searched.artifacts.find((a:any)=>a.name==='meta').json;
+ assert.deepEqual(meta.files.map((f:any)=>f.path),['spec/demo.md','design/demo.md']);
+ assert.equal(meta.terms_used,false);
 });
 test('the connector reads declared and empty directories but refuses undeclared inventory',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const kit=await openSystemKit(pg,['manual-store']);t.after(()=>kit.close());

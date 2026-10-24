@@ -62,7 +62,7 @@ line is `unquoted`: a statement of the model, which no catalog table reads and `
 engine decision 9) never becomes a fact about the case, and another case's line never meets or fakes a negative case's
 expectation. A statement that contradicts the catalog is the model's error: `command_claims` judges the artifact under
 verification and the findings requirement sends it back for repair. A negative case whose findings quote no command line of
-its own gives `phrases` missing, not empty, so the catalog requirement stays unknown (the invalid input was not cited)
+its own falls back to the case's own lines; negative_commands reports a missing-command advisory refutation when no line starts with a catalog head
 instead of failing the expectation.
 
 `findingSources` refutes a finding without a location (`case-review.location_missing`), one without a verbatim quotation
@@ -165,7 +165,7 @@ the owner decided the unified rule on 2026-10-22 (docs/hub-r4-tasks/union-case-r
 | `command-claims.json` | catalog@1 | blocking | the membership statements of the findings (`$.claims[*]`) |
 | `findings-quotes.json` | quote@1 | blocking | quotations of the findings verbatim in their fragments |
 | `catalog.json` | catalog@1 | advisory | the optional scan of the case's own lines (`$.commands`), scope resolved, negative flag |
-| `template-v3-coverage.json`, `template-v3.json` | coverage@1, `case-review.template@1` | advisory | the template coverage of `template-coverage.ts`; no check of this pack uses them (the template gap check is the pack `template-gap`) |
+| `template-v3-coverage.json`, `template-v3.json` | coverage@1, `case-review.template@2` | advisory | the template coverage of `template-coverage.ts`; no check of this pack uses them (the template gap check is the pack `template-gap`) |
 | `codes.json` | `case-review.codes@1` | | refusals, warnings and check codes with Chinese when and fix; finding codes, bands, levels |
 
 Every core table passes the contract shape and the interpreter's admission, names its origin, and a blocking one names its
@@ -227,20 +227,21 @@ default 8).
 
 ## Template coverage
 
+The exported templateCoverage utility is not wired into checks.json. Its known repository callers are the template utility
+and table/sandbox tests and template-gap parity tests. R1 affects historical direct calls and the active template-gap copy;
+it does not establish that case-review literal, catalog or level checks consumed the old matcher.
 
-`tables/template-v3.json` lists 24 categories (author-written from the description of the team template, not copied from it):
-the six test types by canonical tag; per command add, delete, modify, query, show at maximum configuration, no and clear
-commands, operation log and audit log; configuration sync, save, restore and clear; upgrade new→newer, old→new and new→old;
-security; database. A category is shown by a canonical tag or by literal keywords (`contains`, `prefixes`, `equals`) in the
-texts it names, compared in the matching form with arrows written as `->`; a keyword with a space at an end only matches at
-word boundaries (" add " does not match "address"). The template is admitted like a table (C04 R[0]): a closed shape, an
-origin, literal keywords only; anything else is `case-review.template_invalid`. Output: `required`, `covered`, `missing`,
-`skipped` (declared skips with a reason) and per category `present`, `count` and up to 50 item ids as evidence.
+The descriptive template table has only id, label, group and description. Required scope lives in template-v3-coverage.json
+(the six test types here); explicit user skips require a known id and a nonempty reason. No keyword, prefix, synonym or tag
+matching is performed. The utility reads category_ids only from bound original inputs at the item's exact node, not from
+caller-added projected fields. Missing declarations are unclassified and prevent asserting unseen categories as missing.
+Invalid declarations are structural errors. Counts are complete; sorted display evidence is capped at 50 ids.
 
-Only the six test types are required. With all 24 required, every sampled document missed 8 to 23 categories (median 19) and
-four categories matched in none, because whether a per-command or per-feature category applies needs the commands of the
-feature, and their real wording is often a product command (which a workflow pack cannot name). They are reported (present,
-count, evidence) but not counted missing; the sampled documents now miss 0 to 6 categories (median 3).
+Model classification is accepted through template-gap's generated CategoryJudgment slot and Hub source/quote checks. This
+legacy pure utility cannot resolve accepted-result records, so it refuses caller-supplied judgments and points to that workflow.
+It never treats a reference supplied by a caller as proof of acceptance. Author categories and test_type_ids are independent.
+Old results remain immutable; the integrator appends legacy_keyword_rules annotations for affected direct calls and records
+the new model/pack/root/run lineage when re-producing. No real results were read or re-produced for this change.
 
 ## Fixtures (`tests/fixtures/mindmaps`)
 
@@ -340,7 +341,7 @@ manifest with `node packs/workflow/case-review/api.ts sign`.
 
 ## Limits
 
-- A negative case whose findings quote no command line of its own leaves the catalog requirement unknown (pending), by design.
+- A negative case with no cited line uses its own text lines. If none starts with a catalog command head, negative_commands reports an advisory refutation; it does not accept the missing command as unknown.
 - A cited command line counts as the case's own only when it occurs in one line of the case (a step written over two nodes is
   two lines); shorthand the model expands is the model's statement and goes back for repair.
 - A finding can only say that a command exists or not, or quote a command line; a command named in the text of a finding is
@@ -459,6 +460,14 @@ CHANGE_KIND 的值与标签随包快照生成，两包不再手抄标签；固�
 
 评审最后一步照终稿包的容量协议：放不下整表时依据冻结字符边界标明部分、已贴范围，并给权威运行页与完整记录，不能静默截断。
 
+本包的跳过不是完成：handling=skipped 必须附 reason，列入待续做清单，按回执继续本条目或以当前运行为前驱续做；不能因跳过而省略发现、处置、结论或等级。缺判定时按修正说明补齐并重交；初评缺等级、报告缺块或有未交付条目时先修复所列块或条目，再用新回执重开后续运行。
+
 标签按 resource-tags@1 的精确原文闭集读取，保留 resource 原值。闭集外是提示档结构违规“未声明的标签”；大小写、全半角与同义词不相等。非法声明不进入正反向比例分母。此版本替代旧关键词规则，历史结果不改写；应以新包重产新根与新运行。本次续接按所有者指令未运行验证。
 
 R6（所有者 2026-10-24）：声明 apv-directory@1，产品根精确等于产品 names 成员；版本层为三位字母数字码（至少一位数字）、冒号、完整 dotted version，下一层为同版本加列车后缀，再下一层为非空单目录段模块（允许“测试/bug/回归”等字面内容）。不从正文版本或活动词推断层级。缺层、重名或语法外写明缺失身份，下一步由包作者补语法或作者调整目录后重产。apv-id-fields@1 只接受整字段 bug:编号列表 或 story:编号列表（逗号分隔非零十进制），不从标题散文抽取；未声明须作者补字段或模型逐字引用。apv-assets@1 只识别完整 Rel_APV/NSAE_数字构建名加 _command-tree.xml、_bugs-fixed.json、_mib.txt/mib/my 或声明的镜像扩展名，其余保留原链接但不认角色。版本线前导零与末尾 .0 按 U24 同线，构建 id 不变。页面只认完整声明的 mainline/platform、patch数字 或 customer_标识结构；无兜底客户类。旧关键词结果原样保留，新包重产新根并沿原运行建立血缘。本次未运行验证。
+
+## R4 的命令引用边界（1.1.0）
+
+所有者 2026-10-24 严格规则：finding 的命令引用必须与本用例的一条完整原文行逐字符相等；不做 NFKC、大小写/空白折叠，不从提示符、中文说明或标点中裁短。这里只证明引用在用例中，命令及参数是否成立仍由锁定构建的 typed catalog 核验。原 1.0.9 的 command_not_in_case/命令目录判据属于旧规则范围；旧运行不改写，新包的新运行另保留血缘。未涉及的类别、含糊期望等由各整改任务负责。
+
+R3：含糊期望不再由词表或生产器布尔决定。case-review 逐用例提交全部期望叶子的逐字引文及判断，由 Hub 核验身份、路径和引文；不可读原件保持未知并补读。quality-board 仅接 Hub 绑定的同根、同原件、已受理且有效的 case-review 记录；重复回执去重，同原件相互冲突的判断单计冲突并留在未判断中，不挑最后一句。含糊率分母仅为已判断数；零分母显示未判断并补评审，不能显示 0% 或判阈值通过。资源类型比例另按精确声明分母计算。旧结果不改写，新版本须重产新根和评审后再开看板。本次续接未运行验证。

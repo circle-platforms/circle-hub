@@ -1,405 +1,152 @@
 {
-  "schema": "case-review.template@1",
+  "schema": "case-review.template@2",
   "id": "template-v3",
-  "origin": "决定：按团队“测试用例模板 v3”的类别由作者整理（类别和关键词是作者写的，不是模板原文）；判定由 functions/template-coverage.ts 执行，结果由 tables/template-v3-coverage.json（coverage@1）判定",
-  "description": "一份功能测试脑图应覆盖的类别：六种测试类型；每个 CLI 命令的增删改查、最大配置下的 show、no 与 clear 命令、操作日志与审计日志；配置同步；配置的保存、恢复和清除；三种升级兼容（新到新、老到新、新到老）；安全；数据库。必选的只有六种测试类型（按规范类别的标签判定）；按命令和按功能的类别要看功能有没有对应的命令或行为，适用性要等按命令的覆盖（需要产品包取出命令）才能判定，所以先标成非必选：照样报告是否出现和证据，但不算缺失。关键词按路径、标题和步骤判定（NFKC、小写、空白折叠、箭头统一写成 ->）",
+  "origin": "决定：团队测试用例模板 v3 的闭集类别；类别由作者整理。集成者 R1（2026-10-24）：说明供客户端模型阅读，不是匹配规则；必选范围与跳过政策见 template-v3-coverage.json",
+  "description": "作者在原件 category_ids 中声明精确类别编号，或由客户端模型逐用例提出带原件逐字引文的类别主张；Hub 核验来源身份、闭集与引文，不从正文判断类别。未分类不等于缺少类别。",
   "categories": [
     {
       "id": "functional",
       "label": "功能测试",
       "group": "test_type",
-      "tags": [
-        "functional"
-      ]
+      "description": "用例检验所声明功能的行为与结果。"
     },
     {
       "id": "configuration",
       "label": "配置测试",
       "group": "test_type",
-      "tags": [
-        "configuration"
-      ]
+      "description": "用例检验配置的设置和生效行为。"
     },
     {
       "id": "integration",
       "label": "集成测试",
       "group": "test_type",
-      "tags": [
-        "integration"
-      ]
+      "description": "用例检验多个组件协作的行为。"
     },
     {
       "id": "compatibility",
       "label": "兼容性测试",
       "group": "test_type",
-      "tags": [
-        "compatibility"
-      ]
+      "description": "用例检验不同环境或版本之间的兼容行为。"
     },
     {
       "id": "negative",
       "label": "反向测试",
       "group": "test_type",
-      "tags": [
-        "negative"
-      ]
+      "description": "用例检验不合法输入或失败路径的预期行为。"
     },
     {
       "id": "stress",
       "label": "压力测试",
       "group": "test_type",
-      "tags": [
-        "stress"
-      ]
+      "description": "用例检验负载或容量压力下的行为。"
     },
     {
       "id": "command_add",
       "label": "命令的添加",
       "group": "command",
-      "required": false,
-      "contains": [
-        "添加",
-        "新增",
-        "增加",
-        "创建",
-        " add ",
-        " create "
-      ],
-      "prefixes": [
-        "add ",
-        "create "
-      ],
-      "fields": [
-        "title",
-        "steps"
-      ]
+      "description": "用例检验命令创建对象的行为。"
     },
     {
       "id": "command_delete",
       "label": "命令的删除",
       "group": "command",
-      "required": false,
-      "contains": [
-        "删除",
-        "移除",
-        " delete ",
-        " remove "
-      ],
-      "prefixes": [
-        "delete ",
-        "remove "
-      ],
-      "fields": [
-        "title",
-        "steps"
-      ]
+      "description": "用例检验命令移除对象的行为。"
     },
     {
       "id": "command_modify",
       "label": "命令的修改",
       "group": "command",
-      "required": false,
-      "contains": [
-        "修改",
-        "更改",
-        "变更",
-        "编辑",
-        " modify ",
-        " edit ",
-        " rename ",
-        " change "
-      ],
-      "prefixes": [
-        "modify ",
-        "edit ",
-        "rename ",
-        "change "
-      ],
-      "fields": [
-        "title",
-        "steps"
-      ]
+      "description": "用例检验命令更改对象的行为。"
     },
     {
       "id": "command_query",
       "label": "命令的查询",
       "group": "command",
-      "required": false,
-      "contains": [
-        "查询",
-        "查看",
-        "显示",
-        " show ",
-        " query "
-      ],
-      "prefixes": [
-        "show ",
-        "query "
-      ],
-      "fields": [
-        "title",
-        "steps",
-        "expected"
-      ]
+      "description": "用例检验命令读取对象信息的行为。"
     },
     {
       "id": "show_at_maximum",
       "label": "最大配置下的 show",
       "group": "command",
-      "required": false,
-      "contains": [
-        "最大配置",
-        "满配",
-        "最大规格",
-        "规格上限",
-        "最大数量",
-        "最大个数",
-        "maximum configuration"
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps"
-      ]
+      "description": "用例检验配置达到所声明上限时的信息展示。"
     },
     {
       "id": "no_command",
       "label": "no 命令",
       "group": "command",
-      "required": false,
-      "equals": [
-        "no"
-      ],
-      "contains": [
-        " no ",
-        "no 命令",
-        "no命令"
-      ],
-      "prefixes": [
-        "no "
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps"
-      ]
+      "description": "用例检验模板规定的 no 命令行为。"
     },
     {
       "id": "clear_command",
       "label": "clear 命令",
       "group": "command",
-      "required": false,
-      "equals": [
-        "clear"
-      ],
-      "contains": [
-        " clear ",
-        "clear 命令",
-        "clear命令"
-      ],
-      "prefixes": [
-        "clear "
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps"
-      ]
+      "description": "用例检验模板规定的 clear 命令行为。"
     },
     {
       "id": "operation_log",
       "label": "操作日志",
       "group": "command",
-      "required": false,
-      "contains": [
-        "操作日志",
-        "operation log"
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps",
-        "expected"
-      ]
+      "description": "用例检验操作日志记录的内容和行为。"
     },
     {
       "id": "audit_log",
       "label": "审计日志",
       "group": "command",
-      "required": false,
-      "contains": [
-        "审计日志",
-        "审计",
-        "audit"
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps",
-        "expected"
-      ]
+      "description": "用例检验审计日志记录的内容和行为。"
     },
     {
       "id": "configuration_sync",
       "label": "配置同步",
       "group": "configuration",
-      "required": false,
-      "contains": [
-        "配置同步",
-        "同步配置",
-        "configuration sync",
-        "config sync"
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps"
-      ]
+      "description": "用例检验配置在节点之间同步的行为。"
     },
     {
       "id": "configuration_save",
       "label": "配置保存",
       "group": "configuration",
-      "required": false,
-      "contains": [
-        "保存配置",
-        "配置保存",
-        "save configuration",
-        "save config"
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps"
-      ]
+      "description": "用例检验配置持久保存的行为。"
     },
     {
       "id": "configuration_restore",
       "label": "配置恢复",
       "group": "configuration",
-      "required": false,
-      "contains": [
-        "恢复配置",
-        "配置恢复",
-        "restore configuration",
-        "restore config"
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps"
-      ]
+      "description": "用例检验从保存状态恢复配置的行为。"
     },
     {
       "id": "configuration_clear",
       "label": "配置清除",
       "group": "configuration",
-      "required": false,
-      "contains": [
-        "清除配置",
-        "配置清除",
-        "清空配置",
-        "恢复出厂",
-        "clear configuration",
-        "clear config"
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps"
-      ]
+      "description": "用例检验清除配置的行为。"
     },
     {
       "id": "upgrade_new_to_new",
       "label": "升级兼容：新版本之间",
       "group": "upgrade",
-      "required": false,
-      "contains": [
-        "新版本->新版本",
-        "新->新",
-        "new->new",
-        "新版本之间升级",
-        "升级到更高的新版本"
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps"
-      ]
+      "description": "用例检验两个新版本之间升级的兼容行为。"
     },
     {
       "id": "upgrade_old_to_new",
       "label": "升级兼容：老版本到新版本",
       "group": "upgrade",
-      "required": false,
-      "contains": [
-        "老版本->新版本",
-        "旧版本->新版本",
-        "老->新",
-        "旧->新",
-        "old->new",
-        "旧版本升级到新版本",
-        "低版本升级到高版本"
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps"
-      ]
+      "description": "用例检验老版本升级到新版本的兼容行为。"
     },
     {
       "id": "upgrade_new_to_old",
       "label": "升级兼容：新版本到老版本",
       "group": "upgrade",
-      "required": false,
-      "contains": [
-        "新版本->老版本",
-        "新版本->旧版本",
-        "新->老",
-        "新->旧",
-        "new->old",
-        "降级到老版本",
-        "降级到旧版本",
-        "downgrade"
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps"
-      ]
+      "description": "用例检验新版本回退到老版本的兼容行为。"
     },
     {
       "id": "security",
       "label": "安全",
       "group": "other",
-      "required": false,
-      "contains": [
-        "安全",
-        "攻击",
-        "漏洞",
-        "security"
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps"
-      ]
+      "description": "用例检验所声明的安全需求。"
     },
     {
       "id": "database",
       "label": "数据库",
       "group": "other",
-      "required": false,
-      "contains": [
-        "数据库",
-        "数据表",
-        "database"
-      ],
-      "fields": [
-        "path",
-        "title",
-        "steps"
-      ]
+      "description": "用例检验数据库相关的行为和结果。"
     }
   ]
 }

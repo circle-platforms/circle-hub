@@ -76,8 +76,8 @@ export const GENERATED_DIR = 'contracts/generated';
 /** Runtime vocabulary snapshots shipped inside sandboxed packs. Only these model axes belong to each target. */
 interface PackVocabularyTarget { axes: readonly string[]; labels?: boolean; resourceTags?: boolean }
 export const PACK_VOCABULARY_TARGETS: Readonly<Record<string, PackVocabularyTarget>> = {
-  'packs/workflow/quality-board/functions/generated/vocabulary.ts': { axes: ['knowledge_count','declaration_status'], labels: true, resourceTags: true },
-  'packs/product/apv/functions/generated/vocabulary.ts': { axes: ['applicability_field','declaration_status'], labels: true, resourceTags: true },
+  'packs/workflow/quality-board/functions/generated/vocabulary.ts': { axes: ['knowledge_count','declaration_status','judgment_status'], labels: true, resourceTags: true },
+  'packs/product/apv/functions/generated/vocabulary.ts': { axes: ['applicability_field','declaration_status','judgment_status','type_declaration_status','command_parse_status','reason'], labels: true, resourceTags: true },
   'packs/workflow/case-review/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
   'packs/workflow/template-gap/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
   'packs/workflow/defect-to-case/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
@@ -817,6 +817,14 @@ export async function main(args: string[], root: string = REPO_ROOT): Promise<nu
   try {
     files = await generate(root);
     packFiles = packVocabularyFiles(root);
+    for (const [target,source] of Object.entries({
+      'packs/workflow/template-gap/tables/command-identity.schema.json':'schemas/command-identity.v1.schema.json',
+      'packs/workflow/case-compile/tables/command-identity.schema.json':'schemas/command-identity.v1.schema.json',
+      'packs/workflow/case-compile/tables/declared-type.schema.json':'schemas/declared-parameter-type.v1.schema.json',
+      'packs/workflow/case-compile/tables/declared-role.schema.json':'schemas/declared-parameter-role.v1.schema.json',
+      'packs/workflow/case-compile/tables/typed-address.schema.json':'schemas/typed-address-value.v1.schema.json',
+      'packs/workflow/template-gap/tables/category-judgment.schema.json':'schemas/category-judgment.v1.schema.json',
+    })) if(files[source]!==undefined)packFiles[target]=files[source];
   } catch (error) {
     const problems = error instanceof ContractsError ? error.problems : [(error as Error).stack ?? String(error)];
     console.error(`cannot generate contracts (${problems.length} problem${problems.length > 1 ? 's' : ''}):`);

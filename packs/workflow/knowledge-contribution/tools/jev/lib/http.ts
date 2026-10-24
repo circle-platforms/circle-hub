@@ -215,48 +215,49 @@ async function readBody(response: Response, cap: number, truncate: boolean): Pro
 interface ErrorScan {
   reasons: string[];
   tokenLimit: boolean;
+  /** False when the body carried no machine-readable cause at all: nothing about the cause is claimed then. */
+  causeObserved: boolean;
 }
 
-// The places where an error body names its cause: the documented 422 {detail: [{type, msg}]} and the usual envelopes
-// {detail: "..."}, {detail: {type, msg}}, {error: "..."}, {error: {type, code, message}} and {type, code, message}.
-// Request content a body echoes (the documented `input` members, or a gateway's copy of the request) is never read.
-function causesOf(body: unknown): { codes: string[]; texts: string[] } {
+// The places where an error body names its cause with a machine-readable code: the documented 422 {detail: [{type, msg}]}
+// and the usual envelopes {detail: {type, code}}, {error: {type, code, message}} and {type, code, message}. Only these
+// structured members are read; a sentence in `detail`, `message` or `msg` names no cause here (owner rule 2026-10-24,
+// sweep A81), and request content a body echoes (the documented `input` members, or a gateway's copy of the request) is
+// never read.
+function causesOf(body: unknown): string[] {
   const codes: string[] = [];
-  const texts: string[] = [];
-  if (!isPlainObject(body)) return { codes, texts };
+  if (!isPlainObject(body)) return codes;
   const places: unknown[] = [body];
   for (const member of ['detail', 'error']) {
     const value = body[member];
-    if (typeof value === 'string') texts.push(value);
-    else if (Array.isArray(value)) places.push(...value.slice(0, 64));
-    else places.push(value);
+    if (Array.isArray(value)) places.push(...value.slice(0, 64));
+    else if (typeof value !== 'string') places.push(value);
   }
   for (const place of places) {
     if (!isPlainObject(place)) continue;
     for (const member of ['type', 'code']) if (typeof place[member] === 'string') codes.push(place[member]);
-    for (const member of ['message', 'msg']) if (typeof place[member] === 'string') texts.push(place[member]);
   }
-  return { codes, texts };
+  return codes;
 }
 
-// Looks into an error body only for the context-limit marker and machine-readable cause codes; the body itself is
-// discarded. A body cut at ERROR_BODY_BYTES is no longer JSON: only its text before the first "input" member is searched
-// for the marker, and it gives no reasons. Plain text is searched whole.
-function scanErrorBody(bytes: Uint8Array, truncated: boolean): ErrorScan {
+// Reads an error body for machine-readable cause codes only and discards it. A code is taken by exact equality with the
+// value the service documents; nothing is searched for in text. A body cut at ERROR_BODY_BYTES is no longer JSON, so it
+// carries no observable cause at all.
+function scanErrorBody(bytes: Uint8Array): ErrorScan {
   const text = new TextDecoder('utf-8').decode(bytes);
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    const echo = truncated ? text.indexOf('"input"') : -1;
-    const tokenLimit = (echo >= 0 ? text.slice(0, echo) : text).includes(TOKEN_LIMIT_MARKER);
-    return { reasons: tokenLimit ? [TOKEN_LIMIT_MARKER] : [], tokenLimit };
+    return { reasons: [], tokenLimit: false, causeObserved: false };
   }
-  const { codes, texts } = causesOf(parsed);
-  const tokenLimit = codes.includes(TOKEN_LIMIT_MARKER) || texts.some((text) => text.includes(TOKEN_LIMIT_MARKER));
+  const codes = causesOf(parsed);
+  const tokenLimit = codes.includes(TOKEN_LIMIT_MARKER);
+  // REASON is this client's own declared shape for a code it echoes back as a diagnostic (lower-case letters, digits,
+  // '_' and '.', 1 to 64 characters): it keeps foreign text out of a message. It classifies nothing.
   const reasons = [...new Set(codes.filter((code) => REASON.test(code)))].slice(0, 10);
   if (tokenLimit && !reasons.includes(TOKEN_LIMIT_MARKER)) reasons.push(TOKEN_LIMIT_MARKER);
-  return { reasons, tokenLimit };
+  return { reasons, tokenLimit, causeObserved: codes.length > 0 };
 }
 
 function statusFault(status: number, scan: ErrorScan, requestId: string | null, headers: Headers): Fault {
@@ -274,7 +275,9 @@ function statusFault(status: number, scan: ErrorScan, requestId: string | null, 
   }
   if (status >= 400) {
     const what = status === 422 ? '，请求校验不通过' : '';
-    return fault('JEV_BAD_REQUEST', `Jev 服务拒绝了请求（HTTP ${status}${what}）；响应正文可能回显请求内容，不予显示`, false, extra);
+    // No machine-readable cause code in the body: say that instead of naming a cause read out of a sentence.
+    const cause = scan.causeObserved ? '' : '；正文里没有可核对的结构化原因码，不推断原因（缺的事实：服务的结构化原因码；下一步：缩小请求后重跑，或由集成者向服务方索取带原因码的错误正文）';
+    return fault('JEV_BAD_REQUEST', `Jev 服务拒绝了请求（HTTP ${status}${what}）；响应正文可能回显请求内容，不予显示${cause}`, false, extra);
   }
   return fault('JEV_BAD_RESPONSE', `Jev 服务返回了意外的状态（HTTP ${status}）`, false, extra);
 }
@@ -418,7 +421,7 @@ export class HttpJev implements JevClient {
       if (status !== 200) {
         const read = await readBody(response, ERROR_BODY_BYTES, true);
         if(read.kind==='ok'){const text=new TextDecoder().decode(read.bytes);if(echoes(text))return fault('JEV_BAD_RESPONSE','Jev 应答回显密钥，整份丢弃',false,{status,requestId});try{if(echoes(JSON.stringify(JSON.parse(text))))return fault('JEV_BAD_RESPONSE','Jev 应答回显密钥，整份丢弃',false,{status,requestId});}catch{}}
-        const scan = read.kind === 'ok' ? scanErrorBody(read.bytes, read.truncated) : { reasons: [], tokenLimit: false };
+        const scan = read.kind === 'ok' ? scanErrorBody(read.bytes) : { reasons: [], tokenLimit: false, causeObserved: false };
         scan.reasons = scan.reasons.filter((reason) => !echoes(reason));
         return statusFault(status, scan, requestId, response.headers);
       }

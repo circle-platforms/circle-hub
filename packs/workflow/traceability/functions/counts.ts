@@ -59,12 +59,14 @@ export function countsOutcome(
   let closedTraced = 0;
   let closedUntraced = 0;
   let statusUnknown = 0;
+  let statusUnread = 0;
 
   for (const item of items) {
     const bug = typeof item.fields.bug === 'string' && item.fields.bug !== '' ? item.fields.bug : item.id;
     const systems = Array.isArray(item.fields.systems) ? (item.fields.systems as string[]) : [];
     const info = defectSystemInfoOf(bug, systems, plmStatuses, plmUnread, closedSet, hasPlmSource, hasUnreadSources);
-    if (info.status === null) {
+    if (info.unconnectedSystem) statusUnread++;
+    else if (info.status === null) {
       statusUnknown += 1;
     } else if (info.isClosed) {
       closedDefects += 1;
@@ -83,6 +85,7 @@ export function countsOutcome(
     closed_traced: closedTraced,
     closed_untraced: closedUntraced,
     status_unknown: statusUnknown,
+    status_unread: statusUnread,
     closed_statuses: closedStatuses,
     statuses: facts.statuses,
     product: facts.product,
@@ -95,6 +98,7 @@ export function countsOutcome(
     return { verdict: 'refute', code: 'traceability.count_mismatch', statement: `视图的计数自相矛盾，矩阵计数不可信：${mismatches.join('；')}`, grounds, tier: TIER, data };
   }
   let statement = `缺陷 ${defects} 个：已追溯 ${traced} 个，未追溯 ${untraced} 个；其中已关闭缺陷 ${closedDefects} 个：已追溯 ${closedTraced} 个，未追溯 ${closedUntraced} 个；缺陷系统状态未知 ${statusUnknown} 个（不算已关闭也不算未关闭）`;
+  if (statusUnread > 0) statement += `；状态未读：系统未接入 ${statusUnread} 个（不算已关闭也不算未关闭）`;
   if (conflicts > 0) statement += `；其中状态矛盾的缺陷 ${conflicts} 个`;
   if (facts.views.defects.skipped > 0) statement += `；缺陷索引有 ${facts.views.defects.skipped} 份列出的来源没有读取`;
   if (facts.views.cases.skipped > 0) statement += `；用例索引有 ${facts.views.cases.skipped} 份列出的来源没有读取，其中的用例不在计数里`;

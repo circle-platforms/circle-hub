@@ -44,7 +44,7 @@ async function main(): Promise<void> {
     id: 'within_thresholds',
     source: 'author',
     check: 'thresholds',
-    note: '合成样例：三项占比 5.0%、5.0%、5.0%——等于上限不算越界，高于下限，记支持（提示档）',
+    note: '合成样例：已判断 19 个、含糊 0 个；无期望和负面各 5.0%——等于上限不算越界，高于下限，记支持（提示档）',
     subject: within,
     expect: [{ verdict: 'support', item: '10.6.1/SSL', tier: 'advisory' }],
   });
@@ -67,11 +67,12 @@ async function main(): Promise<void> {
     facetRow({ line: '10.6.1', module: 'WebUI', has_expected: true, vague_expected: true, negative: false }, 3),
     facetRow({ line: '10.6.1', module: 'WebUI', has_expected: true, vague_expected: false, negative: false }, 3),
   ]);
+  const ef=exceeded.items[0].fields as GroupBoard;ef.quality={judged:6,unjudged:4,conflicted:0,sources:[]};ef.counts.vague=3;ef.ratios.vague={num:3,den:6};ef.display.vague=0.5;
   await write('negative', 'thresholds-exceeded', {
     id: 'thresholds_exceeded',
     source: 'author',
     check: 'thresholds',
-    note: '合成样例：无期望结果占 40.0% 超过上限 5.0%，含糊期望占 30.0% 超过上限 5.0%，负面用例占 0.0% 低于下限 2.0%——一个分组三个提示档的不通过',
+    note: '合成样例：无期望结果占 40.0% 超过上限 5.0%，已判断 6 个中含糊 3 个占 50.0% 超过上限 5.0%，负面用例占 0.0% 低于下限 2.0%——一个分组三个提示档的不通过',
     subject: exceeded,
     expect: [
       { verdict: 'refute', code: 'quality-board.missing_expected', item: '10.6.1/WebUI', tier: 'advisory' },

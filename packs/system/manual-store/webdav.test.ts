@@ -8,7 +8,7 @@ import type { ExternalRead } from '../../../hub/ports.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { QA_SEARCH_FILE, SPEC_SEARCH_FILES, SPEC_SEARCH_TERMS, SPEC_SEARCH_TEXT, manualStoreFiles, storeFiles } from '../../../tests/fixtures/manual-store/index.ts';
 import { artifactBytes, openSystemKit, type SystemKit } from '../testing/kit.ts';
-import { containsTerm, entriesOf, filePlan, folderLine, lineKey, manualCandidates, manualPlan, manualProject, membersOf, rankFiles, searchPlan, searchProject, setting, termsOf } from './functions/webdav.ts';
+import { entriesOf, filePlan, folderLine, lineKey, manualCandidates, manualPlan, manualProject, membersOf, searchPlan, searchProject, setting, termsOf } from './functions/webdav.ts';
 
 const profile = SystemProfile.parse(JSON.parse(readFileSync(new URL('./system.json', import.meta.url), 'utf8')));
 
@@ -114,42 +114,57 @@ describe('the read functions', () => {
     assert.ok((projected.warnings ?? []).some((w) => w.includes('rel_x_7_2')), 'a candidate on another origin is named as skipped');
   });
 
-  test('the spec search: terms by number contained, ASCII terms at letter boundaries, rarer terms first on a tie, five at most', () => {
+  test('the spec search parses the terms of its key and selects nothing with them', () => {
     assert.deepEqual(termsOf('信标组+权重继承+TTL+%E9%85%8D%E7%BD%AE+ttl+'), SPEC_SEARCH_TERMS);
-    assert.equal(containsTerm('信标组(TTL)权重继承.md', 'ttl'), true);
-    assert.equal(containsTerm('TTLOG模式说明.md', 'TTL'), false);
-    assert.equal(containsTerm('x-TTL2.md', 'TTL'), true, 'a digit does not join an ASCII term');
     const names = Object.keys(storeFiles()).filter((p) => p.startsWith('/spec/'));
     const model = multistatus('/spec/', names.map((p) => encodeURI(p)));
-    const ranked = rankFiles(model, SPEC_SEARCH_TERMS);
-    assert.equal(ranked.length, 5);
-    assert.deepEqual(ranked.slice(0, 2).map((f) => f.name), SPEC_SEARCH_FILES, 'the two files of the feature come first');
-    assert.ok(ranked.every((f) => f.name.endsWith('.md') && f.score >= 1));
-    assert.ok(!ranked.some((f) => f.name.startsWith('TTLOG')));
-    assert.deepEqual(rankFiles(model, ['不存在的词']), []);
+    // Round two plans no read at all: a keyword search chooses no source (owner ruling U19/U20, 2026-10-24).
     const plan = searchPlan({ round: 2, external: { type: 'spec-search', key: SPEC_SEARCH_TERMS.join('+') }, responses: { list: { ok: true, model } } });
     assert.ok(ReadPlanOutput.safeParse(plan).success);
-    assert.equal(plan.requests.length, 5);
+    assert.deepEqual(plan.requests, []);
+    assert.equal(plan.done, true);
     assert.equal(plan.original, 'list');
-    assert.deepEqual(plan.requests[0], { key: 'file-1', route: 'file', params: { path: `spec/${SPEC_SEARCH_FILES[0]}` } });
-  });
-
-  test('a search skips listed files it may not read, names them, and is incomplete when one of them matched', () => {
-    const model = multistatus('/spec/', ['/spec/%E4%BF%A1%E6%A0%87%E7%BB%84.md', 'http://192.0.2.77/spec/%E4%BF%A1%E6%A0%87%E7%BB%84%E5%A4%96%E9%83%A8.md', '/spec/other.md']);
-    const plan = searchPlan({ round: 2, external: { type: 'spec-search', key: '信标组' }, responses: { list: { ok: true, model } } });
-    assert.deepEqual(plan.requests.map((r) => r.params?.path), ['spec/信标组.md']);
-    const projected = searchProject({ external: { type: 'spec-search', key: '信标组' }, settings: {}, responses: { list: { ok: true, model }, 'file-1': { ok: true, text: '# 信标组' } }, original: 'list' }) as { complete?: boolean; warnings?: string[]; artifacts: Array<{ name: string; text?: string }> };
+    const projected = searchProject({ external: { type: 'spec-search', key: SPEC_SEARCH_TERMS.join('+') }, settings: {}, responses: { list: { ok: true, model } }, original: 'list' }) as { note?: string; complete?: boolean; artifacts: Array<{ name: string; text?: string; json?: { files: Array<{ name: string; path: string }>; terms: string[]; terms_used: boolean; selection: string } }> };
     assert.ok(ReadProjectionOutput.safeParse(projected).success);
-    assert.equal(projected.complete, false);
-    assert.ok((projected.warnings ?? []).some((w) => w.includes('信标组外部.md')));
-    assert.match(projected.artifacts.find((a) => a.name === 'content')?.text ?? '', /没有读：信标组外部\.md/);
+    const meta = projected.artifacts.find((a) => a.name === 'meta')!.json!;
+    assert.deepEqual(meta.terms, SPEC_SEARCH_TERMS);
+    assert.equal(meta.terms_used, false);
+    assert.equal(meta.selection, 'retired');
+    // Every readable member is listed, in name order: the two files of the feature and the ones no term touches alike.
+    const listed = membersOf(model).members.filter((entry) => !entry.collection).map((entry) => entry.name).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    assert.deepEqual(meta.files.map((f) => f.name), listed);
+    assert.ok(listed.length > SPEC_SEARCH_FILES.length, 'the listing is not narrowed to the terms');
+    for (const name of SPEC_SEARCH_FILES) assert.ok(listed.includes(name), name);
+    assert.ok(meta.files.every((f) => f.path.startsWith('spec/')));
+    const content = projected.artifacts.find((a) => a.name === 'content')!.text!;
+    assert.match(content, /关键词检索已退役/);
+    assert.match(content, /缺的事实/);
+    assert.match(content, /下一步/);
+    assert.equal(projected.complete, undefined);
   });
 
-  test('the test-strategy search reads qa/ (settings.qa_folder) with the same ranking', () => {
+  test('a search names the listed members it may not read and is incomplete only when a folder was not listed', () => {
+    const model = multistatus('/spec/', ['/spec/%E4%BF%A1%E6%A0%87%E7%BB%84.md', 'http://192.0.2.77/spec/%E4%BF%A1%E6%A0%87%E7%BB%84%E5%A4%96%E9%83%A8.md', '/spec/other.md']);
+    assert.deepEqual(searchPlan({ round: 2, external: { type: 'spec-search', key: '信标组' }, responses: { list: { ok: true, model } } }).requests, []);
+    const projected = searchProject({ external: { type: 'spec-search', key: '信标组' }, settings: {}, responses: { list: { ok: true, model } }, original: 'list' }) as { complete?: boolean; note?: string; warnings?: string[]; artifacts: Array<{ name: string; text?: string; json?: { files: Array<{ name: string }>; skipped: Array<{ name: string; why: string }> } }> };
+    assert.ok(ReadProjectionOutput.safeParse(projected).success);
+    assert.equal(projected.complete, undefined, 'a listing that arrived needs no read any more');
+    assert.ok((projected.warnings ?? []).some((w) => w.includes('信标组外部.md')));
+    const meta = projected.artifacts.find((a) => a.name === 'meta')!.json!;
+    assert.deepEqual(meta.files.map((f) => f.name), ['other.md', '信标组.md']);
+    assert.deepEqual(meta.skipped.map((entry) => entry.name), ['信标组外部.md']);
+    assert.match(projected.artifacts.find((a) => a.name === 'content')!.text ?? '', /列表里没有读的项（1 个）：信标组外部\.md/);
+    // A folder whose listing did not arrive is the missing fact: not complete, and named.
+    const unread = searchProject({ external: { type: 'spec-search', key: '信标组' }, settings: {}, responses: {}, original: 'list' }) as { complete?: boolean; artifacts: Array<{ name: string; text?: string }> };
+    assert.equal(unread.complete, false);
+    assert.match(unread.artifacts.find((a) => a.name === 'content')!.text ?? '', /没有读到的目录：spec/);
+  });
+
+  test('the test-strategy search lists qa/ (settings.qa_folder) with the same functions', () => {
     assert.deepEqual(searchPlan({ round: 1, external: { type: 'qa-search', key: '信标组' }, settings: {} }).requests, [{ key: 'list', route: 'list', params: { dir: 'qa' } }]);
     assert.deepEqual(searchPlan({ round: 1, external: { type: 'qa-search', key: '信标组' }, settings: { qa_folder: 'docs/qa' } }).requests[0].params, { dir: 'docs/qa' });
     const model = multistatus('/qa/', ['/qa/%E4%BF%A1%E6%A0%87%E7%BB%84%E6%B5%8B%E8%AF%95%E7%AD%96%E7%95%A5.md']);
-    const projected = searchProject({ external: { type: 'qa-search', key: '信标组' }, settings: {}, responses: { list: { ok: true, model }, 'file-1': { ok: true, text: '# x' } }, original: 'list' }) as { artifacts: Array<{ name: string; text?: string; json?: { title: string; folder: string } }> };
+    const projected = searchProject({ external: { type: 'qa-search', key: '信标组' }, settings: {}, responses: { list: { ok: true, model } }, original: 'list' }) as { artifacts: Array<{ name: string; text?: string; json?: { title: string; folder: string } }> };
     assert.match(projected.artifacts[0].text ?? '', /^# 测试策略检索/);
     assert.deepEqual([projected.artifacts[1].json?.folder, /测试策略/.test(projected.artifacts[1].json?.title ?? '')], ['qa', true]);
   });
@@ -234,28 +249,41 @@ describe('reads through the connectors', () => {
     const noApp=await read('manual:app:7.2');assert.ok(noApp.ok && noApp.absent?.code==='SOURCE_ABSENT','no application manual for 7.2');
   });
 
-  test('the spec search finds the two files of the feature first and lists every file it read', async () => {
+  test('the spec search lists the members of the folder and reads no file', async () => {
+    const before = dav.requests.length;
     const search = ok(await read(`manual:spec-search:${SPEC_SEARCH_TERMS.join('+')}`));
     const content = new TextDecoder().decode(await artifactBytes(kit, named(search, 'content').sha256));
-    for (const name of SPEC_SEARCH_FILES) assert.ok(content.includes(`# ${name}`), name);
-    assert.ok(content.includes('读到的文件（5 个'));
-    assert.ok(content.includes(SPEC_SEARCH_TEXT), 'the file text is in the content');
+    assert.match(content, /关键词检索已退役/);
+    assert.match(content, /file:<路径>/);
+    assert.ok(!content.includes(SPEC_SEARCH_TEXT), 'a keyword search retrieves no file text any more');
     const meta = JSON.parse(new TextDecoder().decode(await artifactBytes(kit, named(search, 'meta').sha256)));
-    assert.deepEqual(meta.files.slice(0, 2).map((f: { name: string }) => f.name), SPEC_SEARCH_FILES);
-    assert.equal(dav.requests.filter((r) => r.method === 'PROPFIND' && r.path === '/spec/').length, 1, 'the folder is listed once');
+    assert.equal(meta.terms_used, false);
+    assert.deepEqual(meta.terms, SPEC_SEARCH_TERMS);
+    for (const name of SPEC_SEARCH_FILES) assert.ok(meta.files.some((f: { name: string }) => f.name === name), name);
+    assert.deepEqual(dav.requests.slice(before).map((r) => `${r.method} ${decodeURIComponent(r.path)}`), ['PROPFIND /spec/'], 'the folder is listed once and no file is read');
   });
 
-  test('the test-strategy search reads qa/', async () => {
+  test('the test-strategy search lists qa/ and reads no file', async () => {
+    const before = dav.requests.length;
     const search = ok(await read(`manual:qa-search:${encodeURIComponent('信标组')}`));
     const content = new TextDecoder().decode(await artifactBytes(kit, named(search, 'content').sha256));
-    assert.ok(content.includes(`# ${QA_SEARCH_FILE}`), content.slice(0, 400));
-    assert.ok(dav.requests.some((r) => r.method === 'PROPFIND' && r.path === '/qa/'));
+    assert.ok(content.includes(QA_SEARCH_FILE), content.slice(0, 400));
+    assert.match(content, /没有打分、没有选择、没有读取/);
+    assert.deepEqual(dav.requests.slice(before).map((r) => `${r.method} ${decodeURIComponent(r.path)}`), ['PROPFIND /qa/']);
   });
 
-  test('a search that finds nothing is an empty listing, not an error', async () => {
-    const empty = ok(await read('manual:spec-search:%E6%B2%A1%E6%9C%89%E8%BF%99%E4%B8%AA%E8%AF%8D'));
-    const content = new TextDecoder().decode(await artifactBytes(kit, named(empty, 'content').sha256));
-    assert.match(content, /没有文件名包含这些词的文件/);
+  test('the terms of a search key do not change what is listed', async () => {
+    const contentOf = async (key: string): Promise<string> => {
+      const search = ok(await read(`manual:spec-search:${key}`));
+      return new TextDecoder().decode(await artifactBytes(kit, named(search, 'content').sha256));
+    };
+    const matched = await contentOf(SPEC_SEARCH_TERMS.join('+'));
+    const unmatched = await contentOf('%E6%B2%A1%E6%9C%89%E8%BF%99%E4%B8%AA%E8%AF%8D');
+    // Reproduces the retired rule: a term no file name held gave an empty listing. Only the disclosed terms differ now.
+    const withoutTerms = (text: string): string[] => text.split('\n').filter((line) => !line.startsWith('检索词：'));
+    assert.deepEqual(withoutTerms(unmatched), withoutTerms(matched));
+    assert.match(unmatched, /检索词：没有这个词（只作披露/);
+    assert.ok(unmatched.includes(SPEC_SEARCH_FILES[0]!), 'a term that matches nothing still lists every member');
   });
 
   test('links to another host or outside the folder in a listing are skipped, not followed, and the read still succeeds', async () => {
@@ -271,10 +299,10 @@ describe('reads through the connectors', () => {
     }
     assert.equal(search.ok, true, search.ok ? '' : search.reason);
     const sent = odd.requests.slice(before);
-    assert.deepEqual(sent.map((r) => `${r.method} ${decodeURIComponent(r.path)}`), ['PROPFIND /spec/', 'GET /spec/信标组权重.md']);
+    assert.deepEqual(sent.map((r) => `${r.method} ${decodeURIComponent(r.path)}`), ['PROPFIND /spec/'], 'a search lists the folder and follows nothing');
     const content = new TextDecoder().decode(await artifactBytes(kit, (search as Extract<ExternalRead, { ok: true }>).artifacts.find((a) => a.name === 'content')!.artifact.body.sha256));
-    assert.ok(content.includes('# 信标组权重.md'));
-    assert.match(content, /没有读：/);
+    assert.ok(content.includes('spec/信标组权重.md'));
+    assert.match(content, /列表里没有读的项/);
   });
 
   test('a file by its path, and only reads reach the store', async () => {

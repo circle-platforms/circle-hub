@@ -24,3 +24,15 @@ test('catalog impact ignores unchecked constraint locators and recovery wording 
  const moved=structuredClone(entry);moved.signatures[0].params[0].unchecked_constraints[0].path='x/item[2]/arg/@limit';moved.signatures[0].params[0].unchecked_constraints[0].next_action='another synthetic action';
  assert.equal(catalogCanon(entry),catalogCanon(moved));moved.signatures[0].params[0].unchecked_constraints[0].source_value='8';assert.notEqual(catalogCanon(entry),catalogCanon(moved));
 });
+
+test('R4 unknown native types survive the tree and grammar evidence prevents a complete-catalog claim',async t=>{
+ const bytes=Buffer.from('<commands><item name="demo"><arguments><arg name="peer"/></arguments></item></commands>');
+ const produced=produceCommandEntries(xmlParser.parse(bytes).model as never);
+ const w=await makeWorld(postgres,{pack:{functions:{'commands.ts':`export default ()=>(${JSON.stringify(produced)});`}}});t.after(()=>w.close());
+ w.external.set('site:tree:synthetic',{bytes,mediaType:'application/xml'});const name='Rel_ACME_10_7_9_71';
+ const result=await w.knowledge.produceTree({product:w.product,build:{name,family:'ACME',line:'10.7.9',base:name,platform:null,built_at:null,released_at:null,root:null,sources:{tree:'site:tree:synthetic'}}});assert.equal(result.ok,true,result.reason??'');
+ const catalog=await w.knowledge.catalog(result.root!,'catalog@1');assert.ok(catalog);assert.equal(catalog.complete,false);
+ const param=catalog.get(['demo'])!.signatures[0].params[0];assert.equal(param.type,undefined);assert.equal(param.type_declaration_status,'undeclared');
+ const [outcome]=getInterpreter('catalog@1')!.run({interpreter:'catalog@1',table:{schema:'catalog@1',origin:'synthetic R4 native type evidence',catalog:'commands',commands:['$.commands']},subject:{commands:['demo arbitrary']},context:{},catalog});
+ assert.equal(outcome.verdict,'unknown');assert.match(outcome.missing??'',/类型/);CheckOutcome.parse(outcome);
+});

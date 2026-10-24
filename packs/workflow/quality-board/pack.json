@@ -1,25 +1,25 @@
 {
   "schema": "pack@1",
   "id": "quality-board",
-  "version": "1.1.4",
+  "version": "2.0.6",
   "kind": "workflow",
   "title": "质量看板",
   "description": "构建的用例质量看板：每个（版本线、模块）分组的用例数、无期望结果占比、只有含糊期望结果占比、负面用例占比，以及合计；阈值越界是提示档的管理信号，从不是阻断；不绑定产品线（输入的外部标识写明产品和构建）；只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "c8cde500649518a6dcdf9debdcfbddbe6c872f31ec19bbcee96cf7c5f25e8b26",
-      "size": 3779
+      "sha256": "76dcf54f0dd059ef0937a3fd132e41f3315235c30bbfd3ab94d81a32671c61cb",
+      "size": 4008
     },
     {
       "path": "checks.json",
-      "sha256": "8e750a46f6da5906def8c387cdd7c0eb8d6fcca53a8f21351624b20030854233",
-      "size": 801
+      "sha256": "b97cf90dc46fa98c3f0c083199310b89e636582eec3d0a976ef92cf9297f3ebd",
+      "size": 1332
     },
     {
       "path": "functions/board.ts",
-      "sha256": "ab8295ee8f940cff1fd062a150c7672635660cc48c7c479e3986c613380ec157",
-      "size": 10642
+      "sha256": "e7e40bcb25d47f91f2428e5babd9f00fb0d0f0d15f309a87f01bf67c9361ff32",
+      "size": 10863
     },
     {
       "path": "functions/coverage.ts",
@@ -28,13 +28,13 @@
     },
     {
       "path": "functions/generated/vocabulary.ts",
-      "sha256": "d61b7947cb3a9a39b80117656c8b04d4188062c843b370f93a46129322fe6bec",
-      "size": 5253
+      "sha256": "7b1bc63dd7dc065ea749c7fb47636ef3ad57b56ef76226a83cb088224fb72848",
+      "size": 5762
     },
     {
       "path": "functions/project.ts",
-      "sha256": "148edc26f9efc4dab891c867d9e0900effe456d19c215472ecbb0e19cd2f2db0",
-      "size": 8653
+      "sha256": "532051e8adbbb32e9b6bee0ab090e1bcfd5405f5ac3c6087face584a1ebc721b",
+      "size": 8767
     },
     {
       "path": "functions/subject.ts",
@@ -58,58 +58,58 @@
     },
     {
       "path": "functions/thresholds.ts",
-      "sha256": "0e53a4f833a04d082512b34274f5ed48567ebb45054c66d5b7b5472482074f93",
-      "size": 7765
+      "sha256": "bb6cea922bcdd74943aa192f40690d91f7f9df42c4c3fb9f042a817d78ed8bf1",
+      "size": 8315
     },
     {
       "path": "functions/totals.ts",
-      "sha256": "7907e06e4530cdaec439ad48ed4ae76a7426fa5d7de79a76021400d7df57d358",
-      "size": 6276
+      "sha256": "ed374b21fa2995aaf03f78062a335f31c5ac670f743ef6a0c80901b54f917647",
+      "size": 6387
     },
     {
       "path": "functions/types.ts",
-      "sha256": "39aac394630d43ead911d694084c6745926b92a5b7f7791b515835d097f6ed05",
-      "size": 3139
+      "sha256": "82f116b858b595eb30c27284759515af4418a402ee160c23292fb4a6499fa241",
+      "size": 3226
     },
     {
       "path": "functions/views.ts",
-      "sha256": "00b9d096830354796bce848c1db5a87b393f2edb40a030b749853756f57dd4c8",
-      "size": 5349
+      "sha256": "3700cbd51a33f7a5ef369db159e3be017901d6b14323b768cd51cfaa2289a2fe",
+      "size": 5331
     },
     {
       "path": "requirements.json",
-      "sha256": "454f8bf10a3f0db50cd758fd2b15bce32025fbfda1909c91d8328abeb241e7fd",
-      "size": 2556
+      "sha256": "388fb2c78cf3016eec76d73a7e9bb232dec2b09c6353a53cce91669e06849d46",
+      "size": 3147
     },
     {
       "path": "samples/negative/counts-inconsistent.json",
-      "sha256": "cc523477454fe71d14c44ca5cd4fac85111430eedcccad0c23373b0b567bcf07",
-      "size": 2024
+      "sha256": "6d03fb1a493324dc7f487c0560d47a98838df23d21aece259955c7da32406c18",
+      "size": 2170
     },
     {
       "path": "samples/negative/thresholds-exceeded.json",
-      "sha256": "721f2e72052239af0d55f6e13786b583de547682cebfae667031efe9f9da812e",
-      "size": 2365
+      "sha256": "ab75b17298025acd156aa8fd0fa83001c3205ecfc5e6d019163aab5d79553642",
+      "size": 2525
     },
     {
       "path": "samples/negative/total-undercount.json",
-      "sha256": "6d6f1d0bf5c88ffc2d8442366b82c83a45ce32d8990c5da053ed8caa8612656d",
-      "size": 2006
+      "sha256": "5316a087218df58cc1f74e4408cbfcf911bdaeab84875b9c40d50301a80d1430",
+      "size": 2152
     },
     {
       "path": "samples/positive/board-with-metrics.json",
-      "sha256": "f26f848c638cd4a5fbdea42def036a9a90e23228c6c458ea6646aa0915d119f4",
-      "size": 2001
+      "sha256": "ddd98423d162d77db5b5717dc5d2a547a9b062a7cf442f60389c8223a603aac3",
+      "size": 2144
     },
     {
       "path": "samples/positive/totals-consistent.json",
-      "sha256": "7e516dfd2d872f7c1a9dd26749759400caa45f8da6349f401f9b90d78c561d38",
-      "size": 2777
+      "sha256": "7c90f7dc58759c00adb7edd54f1cc2f3d5a997da0fd23658b6d96c6e9f8c674f",
+      "size": 3064
     },
     {
       "path": "samples/positive/within-thresholds.json",
-      "sha256": "ccecf0b300bef70ae50ae9fba9efd19880450bb5b1743efee8175d8aa38b4813",
-      "size": 1964
+      "sha256": "e861cf1a06d700764ce5aafcef7356718bd36533feacf16a743518d01e792562",
+      "size": 2136
     },
     {
       "path": "slots.schema.json",
@@ -128,8 +128,13 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "ea882f9665fa75ba4002e22aea43f09e78c9d38fb448fcfea2e912821e43737c",
-      "size": 1824
+      "sha256": "634be9ae2b25bc7fff455cb849948c64c0443b54f7addf9a57e76634c10a2036",
+      "size": 2891
+    },
+    {
+      "path": "functions/judgments.ts",
+      "sha256": "1d5b11bf75c39e8c9c410296e4f2e68af35ac1addfe7315b2f168a4cfad782eb",
+      "size": 5044
     }
   ]
 }

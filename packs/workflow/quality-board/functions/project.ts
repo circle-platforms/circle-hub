@@ -1,3 +1,4 @@
+import {applyExpectedJudgments} from './judgments.ts';
 import { labelOf } from './generated/vocabulary.ts';
 // Item projection of the quality-board pack (W01): the bound facet view becomes one item per (line, module) group, with the
 // counts and the exact ratios frozen in the item fields and the view facts frozen in the run's groups for the totals check.
@@ -73,6 +74,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   }
 
   const groups = groupBoard(view);
+  applyExpectedJudgments(groups,view,bound);
   if (tags) attachCoverage(groups, tags);
   if (groups.length === 0) {
     return refusal('no_cases', `构建 ${view.build} 的根里没有用例条目（视图的 total 是 ${view.total}），看板没有条目可算`, '确认这个构建的用例索引已经同步（knowledge sync），再开始运行', warnings);
@@ -92,7 +94,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   const items: ProjectedItem[] = groups.map((group) => ({
     id: group.id,
     label: group.id,
-    summary: summaryOf(group.counts) + coverageSummary(group.coverage),
+    summary: summaryOf(group.counts,group.quality) + coverageSummary(group.coverage),
     location: { slot: SLOT, source, parser: PARSER, selector: 'p/rows' },
     fields: group as unknown as Record<string, unknown>,
   }));

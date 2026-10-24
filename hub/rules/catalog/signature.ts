@@ -33,7 +33,7 @@ export interface SignatureMatch {
 
 export type SignatureResult =
   | { kind: 'match'; best: SignatureMatch }
-  | { kind: 'unchecked'; best: SignatureMatch }
+  | { kind: 'unchecked'; best: SignatureMatch; missing:string; exit:{next_action:string;audience:string;due:string} }
   | { kind: 'violations'; best: SignatureMatch }
   | { kind: 'arity'; arities: { min: number; max: number }[] };
 
@@ -61,7 +61,7 @@ function solve(signature: CatalogSignature, overload: number, args: readonly str
   };
   const cost = (i: number, j: number): number => {
     if (j === n) return i === m ? 0 : Number.POSITIVE_INFINITY;
-    if (i === m) return optionalFrom[j] ? params.slice(j).filter(param=>param.default!==undefined&&param.unchecked_constraints?.length).length/(n+1) : Number.POSITIVE_INFINITY;
+    if (i === m) return optionalFrom[j] ? params.slice(j).filter(param=>(param.type===undefined||param.default!==undefined)&&param.unchecked_constraints?.length).length/(n+1) : Number.POSITIVE_INFINITY;
     const key = i * (n + 1) + j;
     const known = memo.get(key);
     if (known !== undefined) return known;
@@ -95,7 +95,7 @@ function solve(signature: CatalogSignature, overload: number, args: readonly str
       for(const constraint of p.unchecked_constraints??[])unchecked.push({param:p.name,position:i+1,constraint});
       i += 1;
     } else {
-      if(p.default!==undefined)for(const constraint of p.unchecked_constraints??[])unchecked.push({param:p.name,position:j+1,constraint});
+      if(p.type===undefined||p.default!==undefined)for(const constraint of p.unchecked_constraints??[])unchecked.push({param:p.name,position:j+1,constraint});
       bindings.push({ param: p.name, omitted: true, ...(p.default !== undefined ? { default: p.default } : {}) });
     }
   }
@@ -112,5 +112,5 @@ export function matchSignatures(entry: CatalogEntry, args: readonly string[], fo
   if (!best) {
     return { kind: 'arity', arities: signatures.map((s) => ({ min: s.params.filter((p) => p.optional !== true).length, max: s.params.length })) };
   }
-  return best.violations.length>0?{kind:'violations',best}:best.unchecked.length>0?{kind:'unchecked',best}:{kind:'match',best};
+  return best.violations.length>0?{kind:'violations',best}:best.unchecked.length>0?{kind:'unchecked',best,missing:[...new Set(best.unchecked.map(g=>g.constraint.missing))].join('；'),exit:{next_action:[...new Set(best.unchecked.map(g=>g.constraint.next_action))].join('；'),audience:'包作者',due:'补结构化类型并重产之前'}}:{kind:'match',best};
 }

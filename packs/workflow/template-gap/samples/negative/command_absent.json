@@ -13,6 +13,7 @@
       {
         "id": "900001:case0",
         "visit": 1,
+        "status": "classified",
         "categories": [
           "command_add"
         ]
@@ -20,6 +21,7 @@
       {
         "id": "900001:case1",
         "visit": 2,
+        "status": "classified",
         "categories": [
           "command_delete"
         ]
@@ -27,6 +29,7 @@
       {
         "id": "900001:case2",
         "visit": 3,
+        "status": "classified",
         "categories": [
           "command_modify"
         ]
@@ -34,6 +37,7 @@
       {
         "id": "900001:case3",
         "visit": 4,
+        "status": "classified",
         "categories": [
           "command_query"
         ]
@@ -41,6 +45,7 @@
       {
         "id": "900001:case4",
         "visit": 5,
+        "status": "classified",
         "categories": [
           "show_at_maximum"
         ]
@@ -48,6 +53,7 @@
       {
         "id": "900001:case5",
         "visit": 6,
+        "status": "classified",
         "categories": [
           "no_command"
         ]
@@ -55,6 +61,7 @@
       {
         "id": "900001:case6",
         "visit": 7,
+        "status": "classified",
         "categories": [
           "clear_command"
         ]
@@ -62,6 +69,7 @@
       {
         "id": "900001:case7",
         "visit": 8,
+        "status": "classified",
         "categories": [
           "operation_log"
         ]
@@ -69,6 +77,7 @@
       {
         "id": "900001:case8",
         "visit": 9,
+        "status": "classified",
         "categories": [
           "audit_log"
         ]
@@ -117,6 +126,7 @@
         "document",
         "node",
         "commands",
+        "command_identities",
         "title",
         "path_labels"
       ],

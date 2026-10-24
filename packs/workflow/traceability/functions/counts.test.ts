@@ -73,6 +73,7 @@ describe('countsOutcome', () => {
       closed_traced: number;
       closed_untraced: number;
       status_unknown: number;
+      status_unread: number;
     };
     assert.equal(data.defects, 4);
     assert.equal(data.traced, 1);
@@ -80,8 +81,9 @@ describe('countsOutcome', () => {
     assert.equal(data.closed_defects, 2);
     assert.equal(data.closed_traced, 1);
     assert.equal(data.closed_untraced, 1);
-    assert.equal(data.status_unknown, 1);
-    assert.match(outcome.statement, /已关闭缺陷 2 个：已追溯 1 个，未追溯 1 个；缺陷系统状态未知 1 个（不算已关闭也不算未关闭）/);
+    assert.equal(data.status_unknown, 0);
+    assert.equal(data.status_unread, 1);
+    assert.match(outcome.statement, /已关闭缺陷 2 个：已追溯 1 个，未追溯 1 个；缺陷系统状态未知 0 个（不算已关闭也不算未关闭）/);
   });
 
   it('custom closed table changes the set of statuses counted as closed', () => {
@@ -147,6 +149,7 @@ describe('countsOutcome', () => {
       closed_traced: number;
       closed_untraced: number;
       status_unknown: number;
+      status_unread: number;
     };
     assert.equal(data.defects, 4);
     assert.equal(data.traced, 4);

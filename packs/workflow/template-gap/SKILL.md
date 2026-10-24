@@ -1,15 +1,42 @@
-# 模板缺口检查（团队测试用例模板 v3）
+# 模板类别核验（模板 v3，R1）
 
-这个任务包只有事实要求项：start_run 时 Hub 按模板表直接算出每份脑图的结果，你不需要填写槽位，也不需要调用 submit_result。
+Hub 不调用模型。类别语义来自作者原件的 `category_ids`，或你逐用例提交的模型判断；Hub 只核验结构、身份、逐字引文、用例归属与集合运算。引文存在不证明分类语义正确，结果仍需独立复核查漏。不得用关键词、词典、同义词、前缀、自由文本正则判断类别，也不得把 Functional 等测试类型标签映射成 functional。
 
-1. 开始运行：pack 写 template-gap；inputs.documents 写要检查的脑图，可以给多份，一次最多约 30 份（文档很大时更少；Hub 说输入太大时分几批运行）。敏捷平台的脑图写 {"external": "agile:mindmap:<文档编号>"}；本地文件先用 upload_file 上传，再写 {"reference": "src:<sha256>"}。按命令的覆盖要求默认 case_rule=marked（可不写）；tagged 只用于文档级 24 类，按命令要求项会明确报规则不一致，下一步用默认 marked 重跑，不靠知识同步修复。开始运行时写 product 和 build，Hub 按 commands@1 目录绑定产品线并锁定根。可选输入 case_index 写 {"external":"knowledge:index:<产品>:<同一个构建>?kind=case&key=document&only=<本次敏捷平台文档编号，逗号分隔>&fields=document,node,commands,title,path_labels"}；only 不多不少，只含本次敏捷平台文档，不写上传文件。根或 only 不符合时整次不受理，按回执给出的锁定构建和 only 修正。
-2. 每份脑图有两个事实要求项：coverage 仍核验全部 24 类；command_coverage 按已解析的命令逐一核验模板 command 组的 9 类。每份脑图是一个条目，条目编号是文档编号（上传的文件是 upload-<sha256 前 12 位>）。条目摘要就是结果：用例数（含用例规则与靠标记识别的用例数）、缺的模板类别、参数声明跳过的类别、出现了几个模板类别，以及限制为 tagged 时未计入的未打标签节点数。模板的 24 个类别都要覆盖；摘要里的类别写成“名称（编号）”，写不下时只列编号，名称见文末的类别表。
-3. 证据用例：start_run 的回答里给出了运行记录的引用（rec:<摘要>，是运行记录本身，不是“完整结果”那个校验结果的引用）时，用 get_nodes 读条目的字段：reference 写运行记录的引用加上 #/items/<条目序号>/fields（序号从 0 起，按条目列出的顺序）。字段 categories 列出每个类别是否出现、用例数和证据用例编号（按编号排序，最多 20 个），missing 是文档级缺的类别，skipped 是文档级声明跳过的类别；command_coverage 列出每个命令的用例数、9 类计数、最多 20 个排序证据和对应 tree: 引用。回答里没有运行记录的引用时，证据用例只在控制台的运行页里：告诉用户去那里看，不要拿校验结果的引用去读条目字段，那里没有。
-4. 跳过由用户决定：只有用户明确说某个类别对某份脑图不适用并给出理由时，才重新开始运行，在参数 skipped 里写类别编号，reason 照用户的原话写，例如 [{"category": "stress", "reason": "<用户的原话>"}]；只对其中一份文档跳过时加 "document": "<文档编号>"。只跳过一个命令时再加 "command":"<索引给出的命令路径>"，只能用 command 组类别；不写 command 的跳过同时对文档和每个命令生效，command 跳过不影响文档级 24 类。不要按你自己的判断跳过：你认为某个类别可能不适用时，写进第 6 步的评论，由用户决定。跳过的类别单独列出，不算缺失；转述时说明这是用户声明的。skipped 写得不对时 start_run 不受理，按回答里的修正改。
-5. 把 Hub 的结果原样转述给用户：每份脑图缺哪些类别、跳过了哪些、读到的证据用例，不增不减，不改写结论。测试类型主要按用例的标签判定，靠标记识别的用例因没有标签，相关测试类型会如实报缺，其余类别按关键词判定，可能误报；摘要里提到用例规则、只靠标记识别的用例数或未打标签的节点时一并转述。
-6. 你自己的看法（例如建议补哪些用例、哪些缺口可能只是没打标签、哪些类别可能不适用）另起一段，开头标明“模型转述，未经校验”，不要混进 Hub 的结果。也可以用 submit_result 把看法交成跨条目判断（cross_item 里 nature 写 judgment，不带 code）；它只作为模型的判断记下，不改变 Hub 算出的事实。
+1. 用 get_workflow 读此版本的要求项、槽位及本规程末尾按 `tables/template-v3.json` 列出的描述性闭集。类别的 id、label、group、description 供阅读，不能编译成文字匹配规则。24 个类别的必选范围与用户跳过政策在 `template-v3-coverage.json`。
+2. start_run：pack=template-gap；documents 绑定敏捷平台脑图或 upload_file 回执；product、build 锁定目录。每份脑图一个条目。默认 case_rule=marked；tagged 会与按命令的默认用例范围不一致，按回执改用 marked 重跑。批量过大时拆批。
+3. 可选 case_index 绑定 `knowledge:index:<产品>:<同构建>?kind=case&key=document&only=<本次敏捷平台文档编号>&fields=document,node,commands,command_identities,title,path_labels`。only 不多不少，不含上传文件。commands 是 command_identities 派生的路径集合；完整身份包含根、路径、签名及带类型的参数，不能按路径相同合并不同参数调用。
+4. 读 start_run 的条目字段和运行记录。unclassified 是还缺类别判断的用例，不是缺类别。读取原件中这些用例的节点及下属步骤/结果；用模型逐用例判断可适用类别，按该包声明的 id 提出 CategoryJudgment。每条写 item（用例编号）、category_id、quote、producer；quote.identity 写原件 source_sha256、kityminder@1、精确 selector、原始字节 span（unit=byte、offset、length），quote.text 逐字对应这些原始字节；producer 显式写 model_id、model_family_id。不得拿祖先、兄弟或嵌套用例的同文当证据。JSON 转义和双重编码按原始字节身份写，不正规化宽窄、大小写或空白。
+5. submit_result：每份文档条目的 slots.coverage 为 SlotClaim 列表，每条的 data 是一份 CategoryJudgment，statement 是你的分类陈述。已有作者精确声明且不另补判断的文档也显式交 coverage:[]。空列表只代表没交模型判断，不能把未分类用例变成已分类。提交回执不受理时，按逐条结构/引文错误修正后重交；原件字段非法时请作者改正原件再重读、开始新运行，不暗中修剪或映射标签。
+6. 遇到未分类立即继续第 4–5 步补判断，不停下来向用户索要已绑定的原件。来源读失败则按回执重读；命令身份缺失则用新生产器重产知识、重读索引并开新运行；命令未连接则按文档键和精确修订事实补同步。补证仍失败时记清缺的事实及做过的动作，交具名集成者 Claude 作为设计缺口，本轮不得声称核验完成。
+7. skipped 只按用户明确声明填写：category 是精确 id，reason 照用户原话，可选 document 限定文档；可选 command 是完整 CommandIdentity 对象，不能写命令路径字符串。它与未分类分栏披露，不制造覆盖证据；默认文档跳过也应用于该文档每个命令身份。
+8. 完整范围内全部用例分类完成后，才把未覆盖、未显式跳过的必选类别称为缺类别。按命令的结果比较完整身份；缺 command_identities 的旧根不能判覆盖完整。已找到的覆盖和计数可据证转述，未见部分、未读完整范围、未分类和显式跳过分别说明。计数含全量，证据列表只为显示截断。
+9. 最终只转述受理回执及其限定：类别语义仍是作者声明或模型判断，Hub 核对的是引用和集合；不要把“引用核验通过”说成“语义正确”。引用新的结果记录。旧运行、旧结果、旧根的字节不改写；由集成者另行对旧规则结果追加 legacy_keyword_rules 注记及新模型/包/根/运行血缘，真实重产由集成者执行。
 
-模板类别（编号 名称，24 个都要覆盖）：functional 功能测试、configuration 配置测试、integration 集成测试、compatibility 兼容性测试、negative 反向测试、stress 压力测试；command_add 命令的添加、command_delete 命令的删除、command_modify 命令的修改、command_query 命令的查询、show_at_maximum 最大配置下的 show、no_command no 命令、clear_command clear 命令、operation_log 操作日志、audit_log 审计日志、configuration_sync 配置同步、configuration_save 配置保存、configuration_restore 配置恢复、configuration_clear 配置清除、upgrade_new_to_new 升级兼容：新版本之间、upgrade_old_to_new 升级兼容：老版本到新版本、upgrade_new_to_old 升级兼容：新版本到老版本、security 安全、database 数据库。
+## 发布表的类别声明
 
-7. 过渡未知不能当完成：遇到 command_coverage 缺输入时，读取该结论 data.missing 和 data.recovery（动作、文档/构建对象、期限；最多一次补读）。没绑 case_index 就按第 1 步补绑并重开；skipped>0、截断或有用例键/标题/上级标签没对上时，先让有权限的集成者知识同步，再重新读取同构建、相同文档范围的索引并重跑受影响文档。期限是本轮最终回报前，补齐后立即重跑；仍取不全时明确报来源读取、字段保真或索引补读能力缺口，把缺的事实和回执交给集成者，不无限重试，不说“覆盖完整”。六个 MCP 工具不提供知识同步时，明确说缺这个能力并跟进同步回执后再跑。已知命令的支持照给，文档级缺输入另说。
-8. 不在完整索引里的文档：上传文件要改用敏捷平台文档编号；其他文档用收了它的构建（文档版本线不晚于构建）或同步以后重跑。若它属于产品线不分版本范围，先取得该范围根，再用 get_nodes 读 tree:<不分版本根>/；kb-unversioned 入口未落地时报告能力缺口，不能反复换构建，也不能拿不分版本根冒充 case_index 的锁定构建根。
+| id | 名称 | 分组 | 模型可读说明 |
+| --- | --- | --- | --- |
+| functional | 功能测试 | test_type | 用例检验所声明功能的行为与结果。 |
+| configuration | 配置测试 | test_type | 用例检验配置的设置和生效行为。 |
+| integration | 集成测试 | test_type | 用例检验多个组件协作的行为。 |
+| compatibility | 兼容性测试 | test_type | 用例检验不同环境或版本之间的兼容行为。 |
+| negative | 反向测试 | test_type | 用例检验不合法输入或失败路径的预期行为。 |
+| stress | 压力测试 | test_type | 用例检验负载或容量压力下的行为。 |
+| command_add | 命令的添加 | command | 用例检验命令创建对象的行为。 |
+| command_delete | 命令的删除 | command | 用例检验命令移除对象的行为。 |
+| command_modify | 命令的修改 | command | 用例检验命令更改对象的行为。 |
+| command_query | 命令的查询 | command | 用例检验命令读取对象信息的行为。 |
+| show_at_maximum | 最大配置下的 show | command | 用例检验配置达到所声明上限时的信息展示。 |
+| no_command | no 命令 | command | 用例检验模板规定的 no 命令行为。 |
+| clear_command | clear 命令 | command | 用例检验模板规定的 clear 命令行为。 |
+| operation_log | 操作日志 | command | 用例检验操作日志记录的内容和行为。 |
+| audit_log | 审计日志 | command | 用例检验审计日志记录的内容和行为。 |
+| configuration_sync | 配置同步 | configuration | 用例检验配置在节点之间同步的行为。 |
+| configuration_save | 配置保存 | configuration | 用例检验配置持久保存的行为。 |
+| configuration_restore | 配置恢复 | configuration | 用例检验从保存状态恢复配置的行为。 |
+| configuration_clear | 配置清除 | configuration | 用例检验清除配置的行为。 |
+| upgrade_new_to_new | 升级兼容：新版本之间 | upgrade | 用例检验两个新版本之间升级的兼容行为。 |
+| upgrade_old_to_new | 升级兼容：老版本到新版本 | upgrade | 用例检验老版本升级到新版本的兼容行为。 |
+| upgrade_new_to_old | 升级兼容：新版本到老版本 | upgrade | 用例检验新版本回退到老版本的兼容行为。 |
+| security | 安全 | other | 用例检验所声明的安全需求。 |
+| database | 数据库 | other | 用例检验数据库相关的行为和结果。 |

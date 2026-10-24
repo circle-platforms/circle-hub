@@ -1,3 +1,4 @@
+import { commandHeadOf } from './command-head.ts';
 // Pack check functions for defect-to-case.
 import type { CatalogEntry, CheckOutcome } from '../../../../contracts/src/tables.ts';
 import type { IndexView } from '../../../../contracts/src/views.ts';
@@ -6,8 +7,6 @@ import {
   commandSetKey,
   isCompactIndex,
   normalizeCommand,
-  normalizeText,
-  titleKey,
 } from './compact-index.ts';
 import { extractDrafts } from './subjects.ts';
 import {declaredResourceTag,declareResourceTags} from './generated/vocabulary.ts';
@@ -139,15 +138,14 @@ export function checkDraftShape(input: unknown): CheckOutcome[] {
     else if(declaration.status==='undeclared')outcomes.push({verdict:'unknown',reason:'missing_input',tier:'advisory',...own,grounds:[],pointer:`/cases/${i}/resource`,missing:declaration.missing!,statement:declaration.missing!+'；下一步：'+declaration.next_action});
     if(declaration.negative!==null&&draft.negative!==declaration.negative)outcomes.push({verdict:'refute',code:CODES.SHAPE_INVALID,tier:'advisory',...own,grounds:[],pointer:`/cases/${i}/negative`,statement:`${prefix}negative 与 resource 的精确类型声明不一致；按已声明类型修正派生标记后重新核验`});
 
-    // Duplicate check within submission
-    const normTitle = normalizeText(draft.title);
-    const normSteps = draft.steps.map((s) => normalizeCommand(s.command)).join(';');
-    const sig = `${normTitle}|${normSteps}`;
+    // Duplicate check within submission: the author-declared identity compared verbatim (title text, command lines
+    // as written, negative flag) — no folding, no normalization of free text (owner's rule 10-24).
+    const sig = JSON.stringify([draft.title, draft.negative, draft.steps.map((s) => s.command)]);
     if (seenSignatures.has(sig)) {
       outcomes.push({
         verdict: 'refute',
         code: CODES.DUPLICATE_DRAFT,
-        statement: `${prefix}“${draft.title}”在同一次提交中重复起草（规范化标题与命令行完全相同）`,
+        statement: `${prefix}“${draft.title}”在同一次提交中重复起草（标题、命令行与反向标记逐字相同）`,
         grounds: [],
         tier: 'blocking',
         ...own,
@@ -168,31 +166,16 @@ export function checkDraftShape(input: unknown): CheckOutcome[] {
   ];
 }
 
-/**
- * The command head of a line: the longest catalog entry whose words head the line's words (NFKC, case-insensitive,
- * whitespace collapsed). Null when no entry heads it — the commands check refutes such a line on its own.
- */
-export function commandHeadOf(line: string, catalogEntries: CatalogEntry[]): string | null {
-  const words = normalizeCommand(line).split(' ').filter(Boolean);
-  if (words.length === 0) return null;
-  let best: { head: string; length: number } | null = null;
-  for (const entry of catalogEntries) {
-    const entryWords = (entry.words ?? []).map((word) => normalizeText(word));
-    if (entryWords.length === 0 || entryWords.length > words.length) continue;
-    if (!entryWords.every((word, i) => word === words[i])) continue;
-    if (best === null || entryWords.length > best.length) best = { head: normalizeCommand(entry.words.join(' ')), length: entryWords.length };
-  }
-  return best?.head ?? null;
-}
+export { commandHeadOf } from './command-head.ts';
 
 /** Helper to match a command against catalog entries */
 function matchCatalogCommand(cmdText: string, catalogEntries: CatalogEntry[]): { matched: boolean; head?: string } {
-  const norm = normalizeCommand(cmdText);
-  const words = norm.split(' ').filter(Boolean);
+  // Word-by-word exact match against the catalog's words (no case or spacing folding — owner's rule 10-24).
+  const words = cmdText.split(' ').filter((word) => word !== '');
   if (words.length === 0) return { matched: false };
 
   for (const entry of catalogEntries) {
-    const entryWords = entry.words.map((w) => w.toLowerCase());
+    const entryWords = entry.words;
     if (words.length < entryWords.length) continue;
     const isPrefix = entryWords.every((w, i) => w === words[i]);
     if (!isPrefix) continue;
@@ -480,7 +463,6 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
     const candidates = buckets[draftKey];
     if (!candidates || candidates.length === 0) continue;
 
-    const draftTitle = normalizeText((draft as { title?: string }).title ?? '');
 
     for (const cand of candidates) {
       // 1. Same negative flag
@@ -488,9 +470,10 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
       if ((draft as { negative?: boolean }).negative === true !== candNegative) continue;
 
       // Case entries carry no expected-text field (the index fields are commands,document,node,title,negative): the
-      // comparison is the normalised title (plus the negative flag above and the command-set key that picked the bucket).
-      const candTitle = normalizeText(cand.title);
-      const titlesEqual = draftTitle !== '' && (typeof cand.title_key === 'string' ? titleKey(draftTitle) === cand.title_key : draftTitle === candTitle);
+      // comparison is the title compared verbatim (plus the negative flag above and the command-set key that picked
+      // the bucket); a title that differs by case or spacing is only a same-titled case, not a duplicate.
+      const candTitle = cand.title;
+      const titlesEqual = (draft as { title?: string }).title === candTitle;
 
       if (titlesEqual) {
         duplicated.add(draft);
@@ -498,9 +481,8 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
         const node = cand.node || '未知节点';
         const title = cand.title || '未知标题';
         outcomes.push({
-          verdict: 'refute',
-          code: CODES.DUPLICATE_CASE,
-          statement: `起草用例“${(draft as { title?: string }).title ?? '（无标题）'}”与已索引用例重复：文档 ${doc} 节点 ${node}“${title}”（${cand.reference}）`,
+          verdict: 'unknown', reason: 'missing_input', missing: '相同标题不是用例身份；缺少命令路径、参数及期望引文身份；下一步由作者补声明身份或模型提交两侧逐字引文后重跑',
+          statement: `起草用例“${(draft as { title?: string }).title ?? '（无标题）'}”与已索引用例标题相同，重复身份未核：文档 ${doc} 节点 ${node}“${title}”（${cand.reference}）`,
           grounds: [cand.reference],
           tier: 'advisory',
           ...own,

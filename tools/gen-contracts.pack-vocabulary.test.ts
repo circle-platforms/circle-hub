@@ -22,7 +22,7 @@ test('pack vocabulary targets contain only their required axes and deterministic
   assert.equal(Object.keys(files).length, Object.keys(PACK_VOCABULARY_TARGETS).length+4);
   const apv='packs/product/apv/functions/generated/vocabulary.ts';
   assert.ok(files[apv]);
-  assert.deepEqual(PACK_VOCABULARY_TARGETS[apv],{axes:['applicability_field','declaration_status'],labels:true,resourceTags:true});
+  assert.deepEqual(PACK_VOCABULARY_TARGETS[apv],{axes:['applicability_field','declaration_status','judgment_status','type_declaration_status','command_parse_status','reason'],labels:true,resourceTags:true});
   for (const [path, text] of Object.entries(files)) {
     if(path.endsWith('.json')){assert.equal(text,readFileSync(join(root,RESOURCE_SOURCE),'utf8'));continue;}
     assert.match(text, /^\/\/ 生成物，勿手改/);

@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "case-review",
-  "version": "1.0.12",
+  "version": "1.1.18",
   "kind": "workflow",
   "title": "测试脑图评审（初评）",
   "description": "按团队的评审方法（test-list-review）初评一份测试脑图：Hub 判定字面问题、命令与目录、引文与位置，模型写七类评审发现和 P0-P7 等级；结论由复核任务包 case-review-verify 独立复核",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "f9d7284ac8d4cce07f3609907920392df7d3d60e05a8810468cf52511325aa91",
-      "size": 11449
+      "sha256": "d5ef641f7405053f389894beba3cd6f65cee9e31786ae277249432d9fcc603d6",
+      "size": 12199
     },
     {
       "path": "checks.json",
-      "sha256": "527c27201db62afb4ba18183b8eda64fbf62d3cf587992d94ffa6e283e22e7a3",
-      "size": 3115
+      "sha256": "afc5bde3f02a7b7e41df7ca1282c70e33558c2323d5152d233e3708a3d867ecf",
+      "size": 4132
     },
     {
       "path": "examples/start-run.json",
@@ -33,13 +33,18 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "65c346301dbc0b94a3675bc0a2a696728278f9f34f282d7fc294661f3e7ce803",
-      "size": 8562
+      "sha256": "f0dc86b51c2cb6d274b5024b4af6207a0310cd5d8f80a93ce7bcd351e147937d",
+      "size": 10754
     },
     {
       "path": "functions/common.ts",
       "sha256": "d5101160a09a43ffa0c4c02a69cd45bd76d166aa428500e404d59b9f902a49b0",
       "size": 4131
+    },
+    {
+      "path": "functions/expected-quality.ts",
+      "sha256": "78b17136ed985dd8d5030feb2b6f90ff457828cbb78b97afd5362680354a6d49",
+      "size": 3113
     },
     {
       "path": "functions/expected-sources.ts",
@@ -58,13 +63,13 @@
     },
     {
       "path": "functions/lines.ts",
-      "sha256": "8c12649ec999a77a61d116cccb2e009039a9f16b3f44faae9aaaf7b09c71c64e",
-      "size": 4005
+      "sha256": "23e60be80031d29d4892b4ffaf8b111a3418a90a189ce96bfafae7387b36f48d",
+      "size": 2865
     },
     {
       "path": "functions/project.ts",
-      "sha256": "af20c30d16030b664a03606a15cc26cca4987832611c900fca7ba5ab57f52bcb",
-      "size": 27584
+      "sha256": "e9eaac8a49ed8c250d234463cb926466d6fe56c1add35e6d3230c7d98275c897",
+      "size": 27685
     },
     {
       "path": "functions/projection.ts",
@@ -78,8 +83,8 @@
     },
     {
       "path": "functions/subjects.ts",
-      "sha256": "904bb959100618930d7087123fd333743b805cdd71340747620fe8a2eeb84eef",
-      "size": 3885
+      "sha256": "ec212f7032b4ba0aa09638b3ab2700e4ce763f16780a8fe9a6f3a851b77d74cc",
+      "size": 3874
     },
     {
       "path": "functions/tags.ts",
@@ -88,8 +93,8 @@
     },
     {
       "path": "functions/template-coverage.ts",
-      "sha256": "2d0d199729ccb49833b75909e0534f4eb9e891b1a14fc8d6f3aa13421123ab50",
-      "size": 10599
+      "sha256": "3cb4fbaf1b0996d1b64bc3c0398503d2c51a47435518e85172df9e04549eccdf",
+      "size": 5549
     },
     {
       "path": "functions/text.ts",
@@ -98,13 +103,13 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "1a1d39ac57b55578181730ccca43e6cf057b690ac0eb8319af378f9bb3049804",
-      "size": 13139
+      "sha256": "800558cf66086af6af1dbcf4edff315484f3b6d6ad02dcf3c322278a11babb83",
+      "size": 12339
     },
     {
       "path": "requirements.json",
-      "sha256": "d78c0d83af0074abad7baa7db2aee1816f69ea79e20ff8656bbc1dd4e3e64124",
-      "size": 3542
+      "sha256": "cc72ecfa3207eae62b130fbe3e5d422733052437c232fba5f344806cb6a68286",
+      "size": 4805
     },
     {
       "path": "samples/negative/cited_negative_case.json",
@@ -120,6 +125,11 @@
       "path": "samples/negative/claims_contradicted.json",
       "sha256": "915242d7722dc915dc97d294e72676ffabc57b65539a2bbdd6a17604f6d4535e",
       "size": 1533
+    },
+    {
+      "path": "samples/negative/negative_command_missing.json",
+      "sha256": "e5804f97be5d35511077fad67974df2bc2430ca1ecdb99b3999c2172cf15803f",
+      "size": 1495
     },
     {
       "path": "samples/negative/node_ids_shared.json",
@@ -187,6 +197,11 @@
       "size": 1620
     },
     {
+      "path": "samples/positive/negative_command_present.json",
+      "sha256": "ff539d9eb13d9263d953f65def2db22f641781663918667cbbe006bc10346d71",
+      "size": 1518
+    },
+    {
       "path": "samples/positive/node_ids_unique.json",
       "sha256": "c71888c99d5482cdb934eb3caee8cbd988e5c3bdc930eb7309f05b1c2da2a52d",
       "size": 2214
@@ -223,8 +238,8 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "6155249d46fe5be3783ac9abfa2a833620a0a1c7205252d7bddb770dfd4b3e4e",
-      "size": 2381
+      "sha256": "57adab74c6c1822fc9b6d23e090b6f8346c4256aae3c24cb78a1b81924e6a41d",
+      "size": 4002
     },
     {
       "path": "tables/catalog.json",
@@ -233,13 +248,13 @@
     },
     {
       "path": "tables/cited-commands.json",
-      "sha256": "c8fdf064dce3b390766bf36e0a8110b0718e0553ec0b945c736e397119485834",
-      "size": 1552
+      "sha256": "43b92d0d5f164dd24180fd438d4ec9cb533edcf5d65ce1af1176a5a3019c86fb",
+      "size": 1673
     },
     {
       "path": "tables/codes.json",
-      "sha256": "8b51718d57757e1c971292526f6f91c6ae3b6ba76c240d662d6878159fab629e",
-      "size": 12416
+      "sha256": "50e9d4d5c0d3e717e4600df19a5ecf06f21a2f1320938f2df31a297222e1253e",
+      "size": 12244
     },
     {
       "path": "tables/command-claims.json",
@@ -268,13 +283,13 @@
     },
     {
       "path": "tables/template-v3-coverage.json",
-      "sha256": "c0b565791ef2bc38321bb5b2b9bbca9015b007deaa7d68aa31e3e17c0c275759",
-      "size": 678
+      "sha256": "1978a8d80e80623e9e80085202810c7905aeb4bc75370e59a17655d620e63484",
+      "size": 901
     },
     {
       "path": "tables/template-v3.json",
-      "sha256": "29a0d7f90731d41ff889ceed51239d20fc10a043e8143bcea3f112259b1de358",
-      "size": 8599
+      "sha256": "14d6e7ea0fded942bf4aa6fb9d9a84a22ad5ea33bd918e8b410d2a2c6c4c2d74",
+      "size": 4820
     },
     {
       "path": "workflow.json",

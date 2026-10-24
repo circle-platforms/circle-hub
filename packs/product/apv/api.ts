@@ -91,11 +91,8 @@ export {
   CASE_TREE_ROLE,
   DEFAULT_MIN_LINE,
   MINDMAP_PREFIX,
-  VAGUE_EXPECTED,
-  isVague,
   negativeOf,
   tagKey,
-  vagueKey,
 } from './functions/cases-rules.ts';
 
 /**

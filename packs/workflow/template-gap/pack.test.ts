@@ -35,7 +35,7 @@ describe('the pack directory', () => {
   it('pack.json lists every pack file with its SHA-256 and size, and nothing else', async () => {
     assert.deepEqual(await manifestProblems(), []);
     const manifest = await readManifest();
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['template-gap', '1.1.3', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['template-gap', '1.2.0', 'workflow']);
     assert.deepEqual(manifest.files, await packFiles());
     for (const own of ['README.md', 'api.ts', 'pack.test.ts', 'engine.test.ts', 'testing/bed.ts', 'functions/project.test.ts']) assert.equal(isPackFile(own), false, own);
     const paths = manifest.files.map((f) => f.path);
@@ -214,7 +214,7 @@ describe('codes.json', () => {
 });
 
 describe('the pack functions', () => {
-  const sources = ['functions/cases.ts', 'functions/command-check.ts', 'functions/command-subject.ts', 'functions/commands.ts', 'functions/common.ts', 'functions/index.ts', 'functions/project.ts', 'functions/subject.ts', 'functions/tags.ts', 'functions/template.ts', 'functions/text.ts', 'functions/types.ts'];
+  const sources = ['functions/cases.ts', 'functions/category-evidence.ts', 'functions/command-check.ts', 'functions/command-subject.ts', 'functions/commands.ts', 'functions/common.ts', 'functions/index.ts', 'functions/project.ts', 'functions/subject.ts', 'functions/tags.ts', 'functions/template.ts', 'functions/text.ts', 'functions/types.ts'];
 
   it('are exactly the listed modules, import only the pack at run time and use no clock, randomness or I/O', async () => {
     assert.deepEqual((await readManifest()).files.map((f) => f.path).filter((p) => p.startsWith('functions/')), sources);

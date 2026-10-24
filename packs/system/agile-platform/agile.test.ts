@@ -16,12 +16,10 @@ import {
   caseContent,
   casePlan,
   caseProject,
-  containsTerm,
   documentsOf,
+  listedDocuments,
   mindmapPlan,
   mindmapProject,
-  outlineOf,
-  rankDocuments,
   rootsOf,
   rootsPlan,
   searchKeyOf,
@@ -173,17 +171,22 @@ describe('the read functions', () => {
     assert.deepEqual(termsOf(`%21x+!${DOCUMENTS.review}`), ['!x'], 'an encoded ! is a term, a raw one names a document');
     const tree = { ok: true, content: { root: { id: ROOTS.second, title: 'COMET' }, children: agileTrees()[ROOTS.second] } };
     const reads = { [`agile:tree:${ROOTS.second}`]: tree };
-    assert.ok(rankDocuments(reads, [ROOTS.second], ['HTTP', '探活']).some((d) => d.id === DOCUMENTS.review));
-    assert.ok(!rankDocuments(reads, [ROOTS.second], ['HTTP', '探活'], [DOCUMENTS.review]).some((d) => d.id === DOCUMENTS.review));
+    // The exclusion is an exact document id, not a title match: the listing holds every other document of the root.
+    assert.ok(listedDocuments(reads, [ROOTS.second]).some((d) => d.id === DOCUMENTS.review));
+    assert.ok(!listedDocuments(reads, [ROOTS.second], [DOCUMENTS.review]).some((d) => d.id === DOCUMENTS.review));
+    assert.ok(listedDocuments(reads, [ROOTS.second], [DOCUMENTS.review]).length > 0);
   });
 
-  test('search terms, ASCII terms at letter boundaries, outlines of double-encoded documents', () => {
+  test('search terms are parsed for disclosure only and list every document whatever they are', () => {
     assert.deepEqual(termsOf('健康检查+HTTP+%E6%8E%A2%E6%B4%BB'), ['健康检查', 'HTTP', '探活']);
-    assert.equal(containsTerm('HTTPS 探测', 'HTTP'), false);
-    assert.equal(containsTerm('支持HTTP探活', 'http'), true);
-    const doc = JSON.stringify(JSON.stringify({ root: { data: { text: '根' }, children: [{ data: { text: '子' }, children: [] }] } }));
-    assert.deepEqual(outlineOf(JSON.parse(doc)), ['根', '  子']);
-    assert.deepEqual(outlineOf('not json'), []);
+    assert.deepEqual(searchKeyOf('健康检查').terms, ['健康检查']);
+    // Reproduces the retired rule: a title was kept when a term stood in it at a letter boundary (支持HTTP探活 and not
+    // HTTPS 探测). A listing does not depend on the terms at all, so no title is matched any more.
+    const tree = { ok: true, content: { root: { id: ROOTS.second, title: 'COMET' }, children: agileTrees()[ROOTS.second] } };
+    const reads = { [`agile:tree:${ROOTS.second}`]: tree };
+    const every = listedDocuments(reads, [ROOTS.second]);
+    assert.ok(every.length > 1, 'the configured root holds more than one document');
+    assert.deepEqual(every.map((d) => d.id), documentsOf({ root: { id: ROOTS.second, title: 'COMET' }, children: agileTrees()[ROOTS.second] }).map((d) => d.id));
   });
 
   test('case document functions: plan requests case data alone, project wraps document with agile id', () => {
@@ -306,17 +309,31 @@ describe('reads through the connectors', () => {
     assert.ok(!agile.requests.some((r) => r.path === '/agile/get_root_node/' && (r.json as { page: number }).page > 3), 'no page past the total');
   });
 
-  test('similar test lists: titles with the most terms, with outlines', async () => {
+  test('a search lists the documents of the configured roots, discloses the terms and reads no document', async () => {
     const search = ok(await read(`agile:search:${encodeURIComponent('健康检查')}+HTTP+${encodeURIComponent('探活')}`));
-    const content = (await json(search, 'content')) as { documents: { id: string; matched: string[] }[]; outlines: { id: string; lines: string[] }[] };
-    assert.equal(content.documents[0].id, DOCUMENTS.review);
-    assert.deepEqual(content.documents[0].matched, ['HTTP', '探活']);
-    assert.ok(content.outlines[0].lines.length > 10);
+    const content = (await json(search, 'content')) as { documents: { id: string; title: string | null }[]; terms: string[]; terms_used: boolean; outlines?: unknown; total: number };
+    assert.deepEqual(content.terms, ['健康检查', 'HTTP', '探活']);
+    assert.equal(content.terms_used, false);
+    assert.equal(content.outlines, undefined, 'a search reads no document, so it holds no outline');
+    assert.equal(content.documents.length, content.total);
+    assert.ok(content.documents.some((d) => d.id === DOCUMENTS.review), 'the listing holds every document, not only the ones a term touched');
+    assert.match((await json(search, 'meta') as { title: string; selection: string }).title, /文档清单/);
+    assert.equal((await json(search, 'meta') as { selection: string }).selection, 'retired');
+    // A term no title holds lists exactly the same documents: the terms decide nothing.
     const none = ok(await read('agile:search:%E6%B2%A1%E6%9C%89'));
-    assert.deepEqual(((await json(none, 'content')) as { documents: unknown[] }).documents, []);
+    assert.deepEqual(((await json(none, 'content')) as { documents: { id: string }[] }).documents.map((d) => d.id), content.documents.map((d) => d.id));
     const excluded = ok(await read(`agile:search:${encodeURIComponent('健康检查')}+HTTP+${encodeURIComponent('探活')}+!${DOCUMENTS.review}`));
-    const others = (await json(excluded, 'content')) as { documents: { id: string }[] };
+    const others = (await json(excluded, 'content')) as { documents: { id: string }[]; excluded: string[] };
     assert.ok(!others.documents.some((d) => d.id === DOCUMENTS.review), 'the reviewed document is not its own similar test list');
+    assert.deepEqual(others.excluded, [DOCUMENTS.review]);
+  });
+
+  test('a search requests no case data: the trees it lists from are all it reads', async () => {
+    const before = agile.requests.length;
+    ok(await read(`agile:search:${encodeURIComponent('健康检查')}`));
+    const sent = agile.requests.slice(before);
+    assert.ok(sent.length > 0);
+    assert.ok(!sent.some((r) => r.path === '/agile/get_case_data/'), 'no document is read by a search');
   });
 
   test('a case document (agile:case:<id>): requests case data directly without reading trees, wraps content with agile id', async () => {

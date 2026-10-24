@@ -13,6 +13,7 @@
 // (model.meta.agile.id), so every element carries its identity however the Hub cuts the list into calls; an element that
 // carries its own external id is taken at its word. The id must be one the build lists. An element without either is a
 // document of unknown identity (document, line, train and module null), never guessed from its position.
+import {labelOf} from './generated/vocabulary.ts';
 import type { ProducedEntry, ProducerOutput } from '../../../../contracts/src/product.ts';
 import { commandCatalog, textCommands, type CommandCatalog } from './cases-commands.ts';
 import { MAX_DEPTH, caseKeys, caseNodes, type CaseNode } from './cases-nodes.ts';
@@ -98,7 +99,8 @@ export function caseStatement(data: Record<string, unknown>): string {
   const priority = typeof data.priority === 'string' ? JSON.stringify(data.priority) : valueOf(data.priority, '无');
   lines.push(`优先级：${priority}；标签：${listOf(data.tags, '、', ITEM)}；负向：${yesNo(data.negative, '未标注')}`);
   if (data.tags_note === '正负向和测试类型未声明') lines.push(data.tags_note);
-  lines.push(`期望结果：${valueOf(data.expected_count, '无')} 条（${data.has_expected === true ? '有内容' : '没有内容'}，${data.vague_expected === true ? '笼统' : '不笼统'}）；步骤：${valueOf(data.steps_count, '无')} 个`);
+  lines.push(`期望结果：${valueOf(data.expected_count, '无')} 条（${data.has_expected === true ? '有内容' : '没有内容'}，${labelOf('judgment_status','unjudged')}）；步骤：${valueOf(data.steps_count, '无')} 个`);
+  lines.push(`原件：${valueOf(data.source_sha256, '未知')}；用例位置：${valueOf(data.case_location, '未知')}`);
   lines.push(`命令：${listOf(data.commands, '、', ITEM)}`);
   lines.push(`需求：${listOf(data.stories, '、', ITEM)}；缺陷：${listOf(data.defects, '、', ITEM)}`);
   lines.push(`版本线：${valueOf(data.line, '未知')}；发布火车：${valueOf(data.train, '未知')}；模块：${valueOf(data.module, '未知')}`);
@@ -205,7 +207,7 @@ export function cases(input: unknown): ProducerOutput {
       warnings.push(rawPhrases?`${where}不分版本范围不带命令树，这一批 ${elements.length} 份文档的命令短语照录，用例条目保留为未归位`:`${where}没有命令树（或不是 XML），这一批 ${elements.length} 份文档的用例都不能按命令归档，各记一条不带路径的条目`);
       catalog = { root: { children: new Map(), path: null }, heads: [], size: 0 };
     } else {
-      const built = commandCatalog(tree.model as XmlModel);
+      const built = commandCatalog(tree.model as XmlModel, typeof tree.sha256==='string'?tree.sha256:undefined);
       catalog = built.catalog;
       for (const warning of built.warnings) warnings.push(`${where}${warning}`);
       if (catalog.size === 0) warnings.push(`${where}命令树里没有命令，这一批 ${elements.length} 份文档的用例都记为不带路径的条目`);
@@ -308,7 +310,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
       counts.cases++;
       const key = doc.keys[k];
       const results = [node.title, ...node.path, ...node.bodyTexts].map((text) => scanned.results[textIndex.get(text) as number]);
-      const paths = [...new Set(results.flatMap((r) => r.paths))].sort(compareText);
+      const paths = [...new Set(results.flatMap(r => (r.identities ?? []).map(identity => identity.path)))].sort(compareText);
       if (paths.length === 0) {
         counts.toPlace++;
         if (results.reduce((sum, r) => sum + r.phrases, 0) === 0) {
@@ -346,9 +348,12 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         ...(!node.tags.some(tag => !isBlank(tag)) ? {tags_note:'正负向和测试类型未声明'} : {}),
         expected_count: node.expectedCount,
         has_expected: node.hasExpected,
-        vague_expected: node.vague,
+        source_sha256: doc.sha256,
+        case_location: `src:${doc.sha256}/${PARSER}/${node.selector}`,
         steps_count: node.steps,
         commands: paths,
+        command_identities: results.flatMap(r=>r.identities??[]),
+        command_tree_root: catalog.tree_root ?? null,
         stories: [...stories].sort(byNumber),
         defects: [...defects].sort(byNumber),
         line: located.line,
@@ -357,7 +362,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         autoid: node.autoid === null ? null : storable(node.autoid, MAX_TAG),
       };
       const statement = caseStatement(data);
-      if(rawPhrases)data.command_phrases=[...new Set([node.title,...node.path].flatMap(text=>[...text.matchAll(/(?<![A-Za-z0-9_])[a-z][a-z0-9_.?:/-]*(?:[ \t]+[A-Za-z0-9_<>{}\[\].?:/=-]+)*/g)].map(match=>match[0])))];
+      if(rawPhrases)data.command_phrases=[];
       const fragments = [{ slot: LIST_SLOT, source: doc.sha256, parser: PARSER, selector: node.selector }];
       for (const path of paths.length === 0 ? [null] : paths) entries.push({ kind: KIND, path, statement, data, fragments, applicability: null });
     });
