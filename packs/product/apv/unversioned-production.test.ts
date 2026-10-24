@@ -46,4 +46,11 @@ test('APV synchronizes specifications into an immutable product-wide root withou
  }
  const repeat=await knowledge.syncProduct(handle,{by:admin,options:{case_index:true,min_line:null}});
  assert.equal(repeat.scope?.root,combined.scope.root);assert.equal(repeat.scope?.composition,combined.scope.composition);assert.equal(repeat.scope?.outcome,'skipped');
+ external.set('manual:spec-list:configured',{bytes:JSON.stringify({complete:true,folders:['spec'],files:[{name:'Other.md',path:'spec/Other.md'}]}),mediaType:'application/json'});
+ external.set('agile:tree:roots',{bytes:JSON.stringify({complete:true,roots:[{id:'root',title:'APV'}],documents:[]}),mediaType:'application/json'});
+ const empty=await knowledge.syncProduct(handle,{by:admin,recheck:true,options:{case_index:true,min_line:null}});
+ const note='不分版本的根为空（清单完整，规格 0 份、未覆盖用例 0 份）';assert.equal(empty.scope?.outcome,'produced',JSON.stringify(empty));assert.equal(empty.counts.failed,0);assert.ok(empty.scope?.reason.includes(note));
+ const body:any=(await kit.store.get(empty.scope!.composition!))!.body;
+ assert.deepEqual(body.empty_scope.sources.map((row:any)=>[row.label,row.total,row.selected]),[['规格',1,0],['未覆盖用例',0,0]]);
+ const emptyRead=await knowledge.getNodes({root:empty.scope!.root!,paths:['/'],depth:0},admin);assert.deepEqual(emptyRead?.nodes,[]);assert.equal(emptyRead?.coverage.note,note);
 });

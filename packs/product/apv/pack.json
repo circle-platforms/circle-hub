@@ -103,8 +103,8 @@
     },
     {
       "path": "functions/cases.ts",
-      "sha256": "ef757a0f3b1b866517ba7c6bfd83c109ed96486c0f702cc83a15360f86c28d94",
-      "size": 21864
+      "sha256": "6be8e7384a2e95853ddf3e9c8fe056fd7d2fcc6b413306a0895accc606a34c4e",
+      "size": 22086
     },
     {
       "path": "functions/command-tree.ts",
@@ -183,8 +183,8 @@
     },
     {
       "path": "functions/specifications.ts",
-      "sha256": "edb6cc86090774f6d0b52aa05b208ace361c0a8a72b4801938ba25b96718cff6",
-      "size": 4144
+      "sha256": "69d5f70b980c63f87170351a2b9fec9c64beeecddbabc3b7a03220c2b8adef62",
+      "size": 4347
     },
     {
       "path": "functions/sync-plan.ts",

@@ -972,3 +972,9 @@ and request source/producer repair followed by automatic resync and a new run.
 They never infer that no entries exist from a source that did not produce.
 
 适用条件出处的 `superseded: true` 表示已被内层作用域取代，仅保留来历；读时不参与字段显示和 `contradicted` 打标。原值、章节路径和原片段仍完整保存在组成记录中。
+
+## Complete empty product-wide roots
+
+An empty result remains a refusal for builds. For a product-wide root only, every active producer must return a complete zero-selection inventory proof. `ProducerOutput.inventory` labels each list and cites two fragments of the same bound JSON source: `listed` must locate an array and `complete` must locate JSON true. The Hub checks these source references, derives the total from the array length, checks the actual batch is empty and selected is zero, and also requires zero refused entries, zero skipped sources and no failed optional reads. Missing evidence, source failures, a producer exception, refused entries or an incomplete list still refuse production and leave the pointer unchanged. No placeholder knowledge entry is generated.
+
+The optional `tree_root@1.empty_scope` stores complete=true and each producer label, checked list/completion references, total and selected=0. Thus a complete empty root differs from a product that has never synced. It is content-addressed and can replace a formerly populated second root by the existing compare-and-set path. Production and unchanged-sync reports render the frozen labels and zero counts as “不分版本的根为空（清单完整，…）”. Authorized node reads return an empty page and that definite coverage note, with no unknown; root-reference reads retain the same note. Compositions keep the proof even when an empty node digest is shared with a root carrying unplaced entries; callers can pin the composition.

@@ -196,7 +196,7 @@ export function cases(input: unknown): ProducerOutput {
     const where = batch === null ? '' : `第 ${count(batch.index, 1)}/${count(batch.of, 0)} 批：`;
     if (elements.length === 0) {
       if (batch === null || batch.of === 1) warnings.push(rawPhrases?'这个不分版本范围没有列出用例文档':'这个构建没有列出用例文档');
-      return { entries: [], warnings };
+      return { entries: [], warnings,...(rawPhrases&&isRecord(slots.folders)?{inventory:[{label:'未覆盖用例',listed:{slot:'folders',parser:'json@1',selector:'p/documents'},complete:{slot:'folders',parser:'json@1',selector:'p/complete'},selected:0}]}:{}) };
     }
     const tree = isRecord(slots.tree) ? slots.tree : null;
     let catalog: CommandCatalog;

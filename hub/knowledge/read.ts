@@ -11,6 +11,7 @@ import type { Applicability } from '../../contracts/src/product.ts';
 import { TreePath } from '../../contracts/src/reference.ts';
 import { MAX_IMPACT_PATHS } from '../../contracts/src/views.ts';
 import type { EntryDiff, NodesPage, NodesQuery, NodeViews, RootDiff } from '../ports.ts';
+import {emptyScopeNote} from './empty-scope.ts';
 import type { Principal } from '../records/api.ts';
 import { ReferenceSyntaxError, parseReference, pathOf, pathSegments, treeReference } from '../refs/api.ts';
 import type { JsonValue, ReaderIdentity, TreeRead, TreeReader } from '../refs/api.ts';
@@ -287,8 +288,21 @@ export class TreeReading {
     const queryKey=createHash('sha256').update(JSON.stringify([root,paths.map(p=>p.text),depth,...(cursorComposition?[cursorComposition]:[])])).digest('hex').slice(0,16);
     if(decoded&&decoded.q!==queryKey)throw new KnowledgeError('游标不属于本次查询；保持原 root、paths、depth 从第一页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
     const offset=decoded?.o??0,entryOffset=decoded?.e??0;
-    if ((await this.#context.store.node(root)) === null) throw new KnowledgeError('已授权的根缺少原件；请管理员从备份恢复后重读',{code:'SOURCE_INTEGRITY_UNPROVEN'});
-    const composition = relationComposition ?? await this.compositionOf(root);
+    const rootNode=await this.#context.store.node(root);
+    if (rootNode === null) throw new KnowledgeError('已授权的根缺少原件；请管理员从备份恢复后重读',{code:'SOURCE_INTEGRITY_UNPROVEN'});
+    let composition = relationComposition ?? await this.compositionOf(root);
+    if(composition?.body.empty_scope||rootNode.entries.length===0&&rootNode.children.length===0){
+      if(!composition||!await this.mayReadProducts(reader,[composition.body.product])){
+        const candidates=relationComposition?[relationComposition]:await this.compositionsOf(root);
+        composition=null;
+        for(const view of candidates)if(await this.mayReadProducts(reader,[view.body.product])){composition=view;break;}
+      }
+      if(!composition)return null;
+      if(composition.body.empty_scope){
+        if(offset!==0||entryOffset!==0)throw new KnowledgeError('空根没有后续页；从首页重读',{code:'REFERENCE_UNRESOLVED',detail:{path:'/cursor'}});
+        return {nodes:[],next:null,coverage:{complete:true,examined:0,total:0,note:emptyScopeNote(composition.body.empty_scope)!}};
+      }
+    }
     const { pageNodes } = this.#context.limits;
     const pageBytes = budget ?? this.#context.limits.pageBytes;
 
@@ -619,12 +633,13 @@ export class TreeReading {
     const entries = await this.#entriesAt(rowsOf[0] ?? null, found.node.entries);
     const { grounds, tagged } = groundsOf(entries.map((e) => e.digest));
     const validity = await validityOfRows(entries.map((e) => e.digest));
-    const text = entries.length > 0 ? entries.map((e) => e.content.statement).join('\n\n') : found.node.children.map((c) => c.name).join('\n');
+    const emptyNote=canonical==='/'?emptyScopeNote(compositions[0]?.body.empty_scope):null;
+    const text = entries.length > 0 ? entries.map((e) => e.content.statement).join('\n\n') : emptyNote??found.node.children.map((c) => c.name).join('\n');
     return {
       text,
       mediaType: 'text/plain',
       readTier: 'model_readable',
-      data: { name: found.node.name, level: found.node.level, children: found.node.children.map((c) => c.name), entries: [...found.node.entries] },
+      data: { name: found.node.name, level: found.node.level, children: found.node.children.map((c) => c.name), entries: [...found.node.entries],...(emptyNote?{note:emptyNote}:{}) },
       grounds,
       validity: { ...validity, premises:[...new Set([...premises,...entries.flatMap(entry=>applicabilityPremises(entry.content.applicability))])], compositions: tagged } as JsonValue,
     };
