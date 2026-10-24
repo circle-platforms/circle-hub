@@ -1,3 +1,4 @@
+import {fixedStatusDeclaration} from './fixed-status.ts';
 // Projection function for defect-to-case: turns bound defects into run items.
 import type {
   BoundInput,
@@ -139,6 +140,7 @@ export function projectDefects(input: unknown): ProjectionOutput {
         id,
         title,
         status,
+        fixed_status:fixedStatusDeclaration(model),
         allowed_quote_sources: { defect: b.sha256, fix_field: fixField, fix_notes: notes, manual: manual?.sha256 ?? null },
         fields: isRecord(model.fields) ? model.fields : {},
         html_fields: htmlFields,

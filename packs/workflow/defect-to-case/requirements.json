@@ -150,6 +150,22 @@
         "duplicate_check"
       ],
       "error_handling": []
+    },
+    {
+      "key": "fixed_status",
+      "name": "已修复状态",
+      "description": "原始结构 status 为 fixed 才支持已修复；未声明为未知并请求来源维护者补字段，不从修复说明文字推断",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "fixed_status"
+      ],
+      "error_handling": []
     }
   ]
 }

@@ -275,34 +275,12 @@ describe('the producers', () => {
     assert.ok(without.entries.every((e) => (e.path ?? '').startsWith('/manual/')), 'no synthetic /commands path without a usable tree');
   });
 
-  it('release notes: defects of the build from the site\'s fixed-bug list or a release note', () => {
-    const page = html('<html><body><table><tr><th>Bug ID</th><th>Summary</th></tr><tr><td><a href=x?id=61001>61001</a></td><td>HA 切换后状态不对</td></tr><tr><td>61002</td><td>权重为 0 时调度异常</td></tr></table><p>61003: 拼写错误</p></body></html>');
-    const fromPage = releaseNotes({ build: knownBuild, slots: { notes: slot('html@1', page) }, params: {} });
-    assert.ok(ProducerOutput.safeParse(fromPage).success);
-    assert.deepEqual(fromPage.entries.map((e) => [e.kind, e.data.bug, e.fragments[0].selector, e.applicability]), [
-      ['defect', '61001', 'a/0', { builds: ['Rel_APV_10_6_1_57'] }],
-      ['defect', '61002', 'b/4-5', { builds: ['Rel_APV_10_6_1_57'] }],
-      ['defect', '61003', 'b/6', { builds: ['Rel_APV_10_6_1_57'] }],
-    ]);
-    const rawNote = markdown(fixtureBytes('release-note.md'));
-    const fromRaw = releaseNotes({ build: knownBuild, slots: { notes: slot('markdown@1', rawNote) }, params: {} });
-    assert.ok(ProducerOutput.safeParse(fromRaw).success);
-    assert.equal(fromRaw.entries.length, 0);
-    assert.ok(fromRaw.warnings.some((warning) => warning.includes('缺的事实') && warning.includes('status') && warning.includes('发布页作者')));
-    const declaredNote = markdown(fixtureBytes('release-note.md'));
-    for (const section of declaredNote.sections) {
-      if (section.title.includes('已修复问题')) Object.assign(section, { status: 'fixed' });
-      else if (section.title.includes('遗留问题')) Object.assign(section, { status: 'known' });
-    }
-    for (const block of declaredNote.blocks) {
-      if (block.text.includes('Bug ID')) Object.assign(block, { columns: { bug: 0, text: 1 } });
-      else if (block.text.includes('编号')) Object.assign(block, { columns: { bug: 0, text: 1, module: 2 } });
-      else if (block.text.includes('问题单号')) Object.assign(block, { columns: { bug: 0, text: 1 } });
-    }
-    const fromNote = releaseNotes({ build: knownBuild, slots: { notes: slot('markdown@1', declaredNote) }, params: {} });
-    assert.ok(ProducerOutput.safeParse(fromNote).success);
-    assert.ok(fromNote.entries.length > 5 && fromNote.entries.every((e) => e.kind === 'defect' && e.path === null));
-    assert.deepEqual(fixedBugEntries({ blocks: [] }, null), { entries: [], warnings: ['修复缺陷清单里没有认出缺陷编号'] });
+  it('release notes: a status gap is local; only structured original status establishes fixed', () => {
+    const page=html('<html><body><a href="?m=bug&amp;f=view&amp;id=61001">已修复 61001</a><p>61002: 仅正文</p></body></html>');
+    const fromPage=releaseNotes({build:knownBuild,slots:{notes:slot('html@1',page)}});assert.ok(ProducerOutput.safeParse(fromPage).success);assert.equal(fromPage.incomplete,undefined);assert.deepEqual(fromPage.entries.map(row=>[row.data.bug,row.data.status,row.data.declaration_status]),[['61001',null,'undeclared']]);
+    const fromRaw=releaseNotes({build:knownBuild,slots:{notes:slot('markdown@1',markdown(fixtureBytes('release-note.md')))}});assert.equal(fromRaw.incomplete,undefined);assert.ok(fromRaw.entries.every(row=>row.data.status===null&&row.data.declaration_status==='undeclared'));
+    const declared={schema:'release-notes@2',complete:true,product:'APV',build:knownBuild.name,defects:[{bug:'61001',status:'fixed',text:'原始结构声明'}]};
+    const native=releaseNotes({build:knownBuild,slots:{notes:slot('json@1',declared)}});assert.ok(ProducerOutput.safeParse(native).success);assert.equal(native.entries[0].data.status,'fixed');assert.equal(native.entries[0].data.declaration_status,'declared');
   });
 
   it('are total on hostile input and their output is always producer-output@1', () => {

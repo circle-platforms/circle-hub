@@ -7,9 +7,10 @@
     "items": [
       {
         "id": "71001",
-        "location": "src:ae8ae8b9f4fae027a3bfe8fadd35bee2541ccbed4631312161e74bda8d94d416/json@1/p/entries/d21450a45f43575e862665fc74cfecb3e212edd8cdc83e56101d7eee93796230",
+        "location": "src:01c51eb283bbd94ab12e8ba739e011cde7a1db049a414d2108b2288d9187a3ba/json@1/p/entries/d21450a45f43575e862665fc74cfecb3e212edd8cdc83e56101d7eee93796230",
         "fields": {
           "bug": "71001",
+          "declaration_status": "declared",
           "identity": "71001",
           "ids": [
             "71001"
@@ -48,9 +49,10 @@
       },
       {
         "id": "71002",
-        "location": "src:ae8ae8b9f4fae027a3bfe8fadd35bee2541ccbed4631312161e74bda8d94d416/json@1/p/entries/1770c0b47855b4165c9b65b9394d5045f5017f7bd8480d0afa336668de6a2d80",
+        "location": "src:01c51eb283bbd94ab12e8ba739e011cde7a1db049a414d2108b2288d9187a3ba/json@1/p/entries/1770c0b47855b4165c9b65b9394d5045f5017f7bd8480d0afa336668de6a2d80",
         "fields": {
           "bug": "71002",
+          "declaration_status": "declared",
           "identity": "71002",
           "ids": [
             "71002"
@@ -98,7 +100,7 @@
           ],
           "views": {
             "defects": {
-              "source": "src:ae8ae8b9f4fae027a3bfe8fadd35bee2541ccbed4631312161e74bda8d94d416",
+              "source": "src:01c51eb283bbd94ab12e8ba739e011cde7a1db049a414d2108b2288d9187a3ba",
               "skipped": 0,
               "truncated": false,
               "total_keys": 2,

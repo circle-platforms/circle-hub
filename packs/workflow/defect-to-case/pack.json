@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.6.14",
+  "version": "1.6.15",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
@@ -13,8 +13,8 @@
     },
     {
       "path": "checks.json",
-      "sha256": "d86593e232c32eb6193b6f7ca5cb40b5f07425fd201f8573c25938c78b9315fa",
-      "size": 4919
+      "sha256": "f8d14b907092c62656622c8611b21812797380d57b63484fb8a17f6053533e62",
+      "size": 5263
     },
     {
       "path": "examples/start-run.json",
@@ -57,14 +57,19 @@
       "size": 1936
     },
     {
+      "path": "functions/fixed-status.ts",
+      "sha256": "5b5b1f3b83c43415ea040b4485ebc35bf1317177cba6636a70e9288a7b2623b2",
+      "size": 2189
+    },
+    {
       "path": "functions/generated/vocabulary.ts",
-      "sha256": "2645a7b984a70645f5fb187bdb284c96022e123a614dc279fd6f18a36c263cac",
-      "size": 4642
+      "sha256": "017b9a82df6b1a492b37631aec4f8525cd13347b49944d8021fbd358a3d032b6",
+      "size": 5128
     },
     {
       "path": "functions/projection.ts",
-      "sha256": "2ec72faad32e68f385f2c21b3377e6ee1ab594f342e8fb81ebc53a113775e2ed",
-      "size": 8343
+      "sha256": "78c62f2b1f4de38e93557ecff99ee54baaea8b013c3fa1cbe56a6d202d2cf8e6",
+      "size": 8453
     },
     {
       "path": "functions/subjects.ts",
@@ -73,13 +78,13 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "6b4fcbd92fe66b456b218d612e6f5eb6a061420e8059cef62e55f672b0f12002",
-      "size": 1622
+      "sha256": "f9b1efca596987c507eb68a6e35102f4d327c0222bd86044bddfa09acefa19a3",
+      "size": 1656
     },
     {
       "path": "requirements.json",
-      "sha256": "2421d6b005d253fcef29ccbefea6a43b9c3051b6073fdba61224a4ae5e4b1e3b",
-      "size": 5338
+      "sha256": "b8ab6fdb6a0acf3bd39114ce13c5537a59354c412678376da9b944cdc3fa3ff0",
+      "size": 5811
     },
     {
       "path": "samples/negative/commands_out_of_range.json",
@@ -90,6 +95,11 @@
       "path": "samples/negative/duplicate_found.json",
       "sha256": "b025084a8a27c158357b8655c2b575645a23946fc1296e108c34d42c1471179b",
       "size": 6961
+    },
+    {
+      "path": "samples/negative/fixed_status_known.json",
+      "sha256": "1179328c5f6fdc6d60d6a80892c779bfeb4134b7e1d04a615892ca9683cf180f",
+      "size": 434
     },
     {
       "path": "samples/negative/negative_accepted.json",
@@ -130,6 +140,11 @@
       "path": "samples/positive/duplicate_none.json",
       "sha256": "bc1735341748056ee9f4df18abcb639d0cd08bbc79929f867e21cc6488252dfb",
       "size": 6811
+    },
+    {
+      "path": "samples/positive/fixed_status_declared.json",
+      "sha256": "22ee0a6c25df63d03cb14e23fafe65358bf41c3d146e46ee6b827c30627a7771",
+      "size": 399
     },
     {
       "path": "samples/positive/quotes_verbatim.json",

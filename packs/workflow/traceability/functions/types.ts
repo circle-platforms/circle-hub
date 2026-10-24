@@ -63,6 +63,10 @@ export type MatrixRow = {
   ambiguous_cases?: CaseRef[];
   /** The normalised bug id (the item id). */
   bug: string;
+  declaration_status?:import('./generated/vocabulary.ts').DeclarationStatus;
+  identity_declaration_status?:import('./generated/vocabulary.ts').DeclarationStatus;
+  missing?:string;
+  next_action?:string;
   /** The raw keys of the defect view this bug was listed under, sorted. */
   ids: string[];
   /** The selected statuses the entries carry, sorted; more than one is a conflict of the source. */

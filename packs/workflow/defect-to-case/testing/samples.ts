@@ -135,6 +135,8 @@ export function samples(): Entry[] {
   };
 
   return [
+    sample('positive','fixed_status_declared','fixed_status','原始结构状态明确 fixed',{item:BUG_ID,fields:{fixed_status:{declaration_status:'declared',status:'fixed'}}},[{verdict:'support',item:BUG_ID,tier:'advisory'}]),
+    sample('negative','fixed_status_known','fixed_status','known 不能支持已修复',{item:BUG_ID,fields:{fixed_status:{declaration_status:'declared',status:'known'}}},[{verdict:'refute',code:'defect-to-case.not_fixed',item:BUG_ID,tier:'advisory'}]),
     // 1. draft_shape
     sample(
       'positive',

@@ -137,6 +137,17 @@
       "judges": "artifact_under_verification",
       "tier": "blocking",
       "basis": "R4/R7：只按冻结树完整签名核对显式成员主张，反向例外只来自精确类型声明"
+    },
+    {
+      "id": "fixed_status",
+      "title": "原始已修复状态",
+      "function": {
+        "module": "functions/fixed-status.ts"
+      },
+      "applies": "item",
+      "judges": "subject",
+      "tier": "advisory",
+      "basis": "R7：仅原始结构状态支持已修复判断，未声明状态不阻止其他来源成根"
     }
   ]
 }

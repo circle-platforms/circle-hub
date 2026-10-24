@@ -1,0 +1,23 @@
+{
+  "id": "fixed_status_known",
+  "source": "author",
+  "check": "fixed_status",
+  "note": "known 不能支持已修复",
+  "subject": {
+    "item": "74001",
+    "fields": {
+      "fixed_status": {
+        "declaration_status": "declared",
+        "status": "known"
+      }
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "defect-to-case.not_fixed",
+      "item": "74001",
+      "tier": "advisory"
+    }
+  ]
+}
