@@ -159,12 +159,24 @@ function basename(href: string): string {
 
 type FileKind = 'commandTree' | 'bugsFixed' | 'mib' | 'image';
 
+/**
+ * apv-assets@1 (declared grammar; origin: the listing page's own file naming as documented in this pack's README —
+ * `command_tree-<build>.xml`, `Bugs_Fixed_with_<build>.html`, `<prefix>-MIB[_<language>]-<build>.txt|mib|my` and
+ * `<prefix>-<build>.<image extension>`, with `<build>` a complete build name in the product's own naming grammar —
+ * declared for the owner's R6 rule 2026-10-24). A role is read from a whole file name; nothing is recognised by a
+ * substring, a word or an extension alone, and a name the grammar does not read keeps its link and is reported as an
+ * unchecked role. A variant build's entry is named after its own image file, which the same image form covers.
+ */
+const ASSET_BUILD = '(?:Rel|Beta)[_.][A-Za-z][A-Za-z0-9]{0,31}(?:-[A-Za-z0-9]{1,16}){0,6}[_.][0-9]{1,9}(?:[_.][0-9]{1,9}){1,15}';
+const ASSET_FORMS: ReadonlyArray<[FileKind, RegExp]> = [
+  ['commandTree', new RegExp(`^command_tree-${ASSET_BUILD}\\.xml$`)],
+  ['bugsFixed', new RegExp(`^Bugs_Fixed_with_${ASSET_BUILD}\\.html?$`)],
+  ['mib', new RegExp(`^[A-Za-z0-9]+-MIB(?:_[A-Za-z0-9]+)?-${ASSET_BUILD}\\.(?:txt|mib|my)$`)],
+  ['image', new RegExp(`^[A-Za-z0-9]+-${ASSET_BUILD}\\.(?:array|click|img|iso|qcow2|ova|bin|tgz|tar\\.gz)$`)],
+];
+
 function fileKind(name: string): FileKind | null {
-  const lower = name.toLowerCase();
-  if (/command[_-]?tree/.test(lower) && lower.endsWith('.xml')) return 'commandTree';
-  if (/bugs?[_-]?fixed/.test(lower)) return 'bugsFixed';
-  if (/mib/.test(lower) && /\.(?:txt|mib|my)$/.test(lower)) return 'mib';
-  if (/\.(?:array|click|img|iso|qcow2|ova|bin|tgz|tar\.gz)$/.test(lower)) return 'image';
+  for (const [kind, form] of ASSET_FORMS) if (form.test(name)) return kind;
   return null;
 }
 
@@ -187,6 +199,7 @@ function filesOf(name: string, links: Link[], warnings: string[]): BuildFiles {
     const ref: FileRef = { name: file, href: link.href };
     if (file !== '' && !file.includes(name)) warnings.push(`构建 ${name} 的链接 ${file} 不含构建名，仍按位置归到该构建`);
     const kind = file === '' ? null : fileKind(file);
+    if (kind === null) warnings.push(`构建 ${name} 的资产角色未核对：${file} 不符合 apv-assets@1 整名语法；下一步由包作者补资产语法或作者声明角色后重读，保留原链接`);
     if (kind === 'image' && files.image === null) {
       const image: ImageRef = { ...ref, ...imageDetails(link.text) };
       files.image = image;

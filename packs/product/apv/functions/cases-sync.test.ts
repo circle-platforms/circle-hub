@@ -37,9 +37,14 @@ describe('options', () => {
     assert.equal(bad.notes.length, 1);
   });
 
-  it('product roots are titled with a product name of either family', () => {
-    for (const title of ['APV', 'NSAE', ' nsae ', 'ＡＰＶ', 'APV 测试', 'NSAE-项目']) assert.equal(isProductRoot(title), true, title);
-    for (const title of ['APVX', 'NSAEtest', '演示产品', '', null, 7]) assert.equal(isProductRoot(title), false, String(title));
+  it('a product root is titled with a declared product name, compared exactly', () => {
+    // U23 (owner, 2026-10-24): no case, width or synonym folding, and no surrounding words. A root titled with anything
+    // else is not the product root; the author renames it or the pack declares the form.
+    for (const title of ['APV', 'NSAE']) assert.equal(isProductRoot(title), true, title);
+    for (const title of [' nsae ', 'nsae', 'ＡＰＶ', 'APV 测试', 'NSAE-项目', 'APVX', 'NSAEtest', '演示产品', '', null, 7]) {
+      assert.equal(isProductRoot(title), false, String(title));
+    }
+    assert.equal(isProductRoot('apv', ['apv']), true, 'the declared names decide, exactly');
   });
 });
 

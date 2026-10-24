@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "apv",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "kind": "product",
   "title": "APV / NSAE（产品包）",
   "description": "APV 与 NSAE 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册的知识生产器（用例、缺陷、规格按 10-24 修订由 Circle 喂入，不再整批生产）",
@@ -103,8 +103,8 @@
     },
     {
       "path": "functions/cases-sync.ts",
-      "sha256": "343e3802ef649f7298f8983587f226eee742b63479d604047b4826272ae0d0cb",
-      "size": 16766
+      "sha256": "102ba31202d11f913e010185757928e8776b6cb3e7bdc5b7365780a0d7b2d33e",
+      "size": 16569
     },
     {
       "path": "functions/cases.ts",
@@ -123,8 +123,8 @@
     },
     {
       "path": "functions/documents.ts",
-      "sha256": "56a96048f95df722085f51a3f24389e1ee204628a1dd67b32d44613ca897c0af",
-      "size": 3232
+      "sha256": "b99cc5383d889830a1de513ec818c4a792cc5335cece7ffb99481b438326cacc",
+      "size": 3976
     },
     {
       "path": "functions/feeding.ts",
@@ -143,18 +143,18 @@
     },
     {
       "path": "functions/ids.ts",
-      "sha256": "0e4a4abb64774805ef04940d0d4fe9d4898235620f4313ff2df464a8d5075e42",
-      "size": 8528
+      "sha256": "98e9fb0bfebf719cd3920bc7c407eea5d3ad1c9e1bfecfb5c83efcc43918c3b1",
+      "size": 1334
     },
     {
       "path": "functions/listing.ts",
-      "sha256": "bd3bd277a227f5c102ae9ad618ac144a9b54048ba1fa7b8d100324d0733c2d1d",
-      "size": 15338
+      "sha256": "d346ac341524dba685cb43bf48c5f4f4bed42df7234a3c90667084f36058eeb1",
+      "size": 16528
     },
     {
       "path": "functions/locate.ts",
-      "sha256": "d8bf6064b4f355ccf3b129faf5d3c58c862af9ae7bc84dc6dad9bd296f49d350",
-      "size": 4689
+      "sha256": "7c52936d93ea36bf51a59b785cfe433667face22f676051e1cc8c1b87e0bb7f1",
+      "size": 4625
     },
     {
       "path": "functions/manual.ts",
@@ -163,8 +163,8 @@
     },
     {
       "path": "functions/naming.ts",
-      "sha256": "2cdf3bedeceb9463dabab023e7651596fdaeadd9570143648f00836dec819874",
-      "size": 9738
+      "sha256": "a9933e34576b2ecb4c3e1a90c9ff02fd70420ec6a7edf811d9d3df83332b4730",
+      "size": 10568
     },
     {
       "path": "functions/producers.ts",
@@ -193,8 +193,8 @@
     },
     {
       "path": "functions/specifications.ts",
-      "sha256": "41459b61a72748c32f4fd48282db002f453d218969cc37a18892aa28fe672bad",
-      "size": 5299
+      "sha256": "bf974ec88c25d33bd41cba7d7376ea5c69313d8264bf90bfb32ce2f37a082330",
+      "size": 5321
     },
     {
       "path": "functions/sync-plan.ts",

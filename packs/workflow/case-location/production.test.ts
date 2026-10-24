@@ -3,6 +3,7 @@
 // the validation result with no submission; each answer, written down here first, comes back as the data of a fact claim.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
+import { IDENTITY } from './pack-files.ts';
 import { StartRunOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { LayerResult, ValidationResult, partitionCountsOf, type ItemResult } from '../../../contracts/src/validation.ts';
 import { createPacksPort, createWorkflowStore } from '../../../hub/runs/api.ts';
@@ -33,10 +34,10 @@ function terminalFields(layers: LayerResult[]): Omit<LayerResult, 'missing' | 'e
 
 const P0 = '030：APV/NSAE测试项目';
 const DOCUMENTS: Record<string, { title: string; root: string; ancestors: string[] }> = {
-  '24001': { title: '需求20931 证书链校验', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SSL'] },
-  '24002': { title: 'bug to case 90220 告警', root: 'APV', ancestors: ['通用用例', '基础功能'] },
+  '24001': { title: 'story:20931', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SSL'] },
+  '24002': { title: 'bug:90220', root: 'APV', ancestors: ['通用用例', '基础功能'] },
   '24003': { title: 'NSAE 10.6.2.31 升级兼容', root: 'NSAE', ancestors: [P0, '专项'] },
-  '24004': { title: 'Bug 61001 会话保持', root: '合成平台', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SLB'] },
+  '24004': { title: 'bug:61001', root: '合成平台', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SLB'] },
 };
 const external = (id: string) => ({ external: `agile:mindmap:${id}` });
 const ALL = { documents: Object.keys(DOCUMENTS).map(external) };
@@ -45,7 +46,7 @@ const ALL = { documents: Object.keys(DOCUMENTS).map(external) };
 const EXPECTED: Record<string, { verdict: string; product: [string | null, string | null]; version: string | null; source: string; confidence: string; line: string | null; train: string | null; module: string | null; build_names: string[]; requirements: string[]; defects: string[]; unclassified: string[] }> = {
   '24001': { verdict: 'support', product: ['apv', 'NSAE'], version: '10.6.1', source: 'folders', confidence: 'high', line: '10.6.1', train: '10.6.1-R2-2026/7', module: 'SSL', build_names: [], requirements: ['20931'], defects: [], unclassified: [] },
   '24002': { verdict: 'unknown', product: ['apv', 'APV'], version: null, source: 'none', confidence: 'none', line: null, train: null, module: null, build_names: [], requirements: [], defects: ['90220'], unclassified: [] },
-  '24003': { verdict: 'unknown', product: ['apv', 'NSAE'], version: '10.6.2.31', source: 'title', confidence: 'low', line: null, train: null, module: null, build_names: [], requirements: [], defects: [], unclassified: [] },
+  '24003': { verdict: 'unknown', product: ['apv', 'NSAE'], version: null, source: 'none', confidence: 'none', line: null, train: null, module: null, build_names: [], requirements: [], defects: [], unclassified: [] },
   '24004': { verdict: 'unknown', product: [null, '合成平台'], version: '10.6.1', source: 'folders', confidence: 'high', line: '10.6.1', train: '10.6.1-R2-2026/7', module: 'SLB', build_names: [], requirements: [], defects: ['61001'], unclassified: [] },
 };
 
@@ -73,14 +74,14 @@ before(async () => {
     hub.external.put(`agile:mindmap:${id}`, { bytes: new TextEncoder().encode(mindMapJson(id, smallMap(id, d.title))), mediaType: 'application/json', meta: { title: d.title, root: d.root, ancestors: d.ancestors } });
   }
   hub.external.put('agile:mindmap:24005', {
-    bytes: new TextEncoder().encode(mindMapJson('24005', smallMap('24005', '33001-SSL证书链'))),
+    bytes: new TextEncoder().encode(mindMapJson('24005', smallMap('24005', '33001'))),
     mediaType: 'application/json',
-    meta: { title: '33001-SSL证书链', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SSL'] },
+    meta: { title: '33001', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SSL'] },
   });
   hub.external.put('agile:mindmap:24006', {
-    bytes: new TextEncoder().encode(mindMapJson('24006', smallMap('24006', '回归 Rel_APV_10_7_4_101 会话保持'))),
+    bytes: new TextEncoder().encode(mindMapJson('24006', smallMap('24006', 'Rel_APV_10_7_4_101 会话保持'))),
     mediaType: 'application/json',
-    meta: { title: '回归 Rel_APV_10_7_4_101 会话保持', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SLB'] },
+    meta: { title: 'Rel_APV_10_7_4_101 会话保持', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'SLB'] },
   });
   hub.external.put('plm:story:20931', { bytes: new TextEncoder().encode('# 需求 20931 证书链校验\n\n设备校验服务器证书链，链不完整时拒绝连接。\n'), mediaType: 'text/markdown', meta: { title: '需求 20931 证书链校验' } });
   hub.external.put('plm:story:33001', { bytes: new TextEncoder().encode('# 需求 33001 证书链\n\n证书链的长度上限可配置。\n'), mediaType: 'text/markdown', meta: { title: '需求 33001 证书链' } });
@@ -122,8 +123,8 @@ describe('a production run of case-location', { skip }, () => {
       Object.entries(DOCUMENTS).map(([id, d]) => [id, d.title]),
     );
     assert.equal(run.items[0].summary, '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；需求 20931');
-    assert.match(run.items[1].summary!, /^不确定（没有版本层）：产品线 apv（APV）；版本未知/);
-    // Marker words and the bug-to-case convention bind expected sources without guessing a second kind.
+    assert.match(run.items[1].summary!, /^不确定（没有版本层，发布火车层未知，模块层未知）：产品线 apv（APV）；版本未知/);
+    // apv-id-fields@1: a whole declared field binds its expected source; a marker word in prose binds nothing.
     assert.deepEqual(
       run.sources.filter((s) => s.role === 'expected').map((s) => s.external),
       ['plm:story:20931@1', 'plm:bug:90220@1', 'plm:bug:61001@1'],
@@ -158,7 +159,7 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(candidates.claims.length, 1, id);
       const candidatesClaim = candidates.claims[0];
       assert.equal(candidatesClaim.statement.verdict, expectedCandidates.verdict, id);
-      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: 'case-location.candidates@1.4.4', independence: 'judge_not_author' }, id);
+      assert.deepEqual(candidatesClaim.warrant, { producer: 'function', id: `case-location.candidates@${IDENTITY.version}`, independence: 'judge_not_author' }, id);
       const candidatesData = candidatesClaim.statement.data as { kind: string; line: string | null; candidates: unknown[] };
       assert.equal(candidatesData.kind, 'candidates', id);
       assert.equal(candidatesData.line, expectedCandidates.line, id);
@@ -195,7 +196,7 @@ describe('a production run of case-location', { skip }, () => {
       assert.equal(answer.case_id, id);
       assert.equal(answer.source, `agile:mindmap:${id}@1`);
       assert.deepEqual(answer.ancestor_path, [DOCUMENTS[id].root, ...DOCUMENTS[id].ancestors]);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'case-location.locate@1.4.4', independence: 'judge_not_author' });
+      assert.deepEqual(claim.warrant, { producer: 'function', id: `case-location.locate@${IDENTITY.version}`, independence: 'judge_not_author' });
       assert.deepEqual(claim.grounds, [run.items.find((i) => i.id === id)!.location]);
       // The folders are not in the cited node: the claim points at the item's fields, as the run record holds them.
       assert.equal(claim.pointer, `/items/${k}/fields`);
@@ -272,7 +273,7 @@ describe('a production run of case-location', { skip }, () => {
       ],
     );
     const answer = answerOf(detail.production!.result, '24001:24001n2');
-    assert.deepEqual([answer.version, answer.module, answer.ancestor_path.slice(-2)], ['10.6.1', 'SSL', ['需求20931 证书链校验', '基本功能']]);
+    assert.deepEqual([answer.version, answer.module, answer.ancestor_path.slice(-2)], ['10.6.1', 'SSL', ['story:20931', '基本功能']]);
     assert.deepEqual(detail.production!.counts, { delivered: 2, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
   });
 

@@ -65,7 +65,7 @@ export function expectedSources(input: unknown): { sources: Source[]; warnings: 
     const named = unread.slice(0, MAX_NAMED);
     warnings.push({
       code: `${PACK}.id_kind_unknown`,
-      message: `${unread.length} 个编号没有标明是需求还是缺陷（${named.slice(0, 5).map(id => unreadOriginals.get(id) ?? id).join('、')}${unread.length > 5 ? ' 等' : ''}），需求与缺陷分别读取，存在的那一个决定种类；参数 id_ranges 给出编号范围时按声明读作一种`,
+      message: `${unread.length} 个编号没有标明是需求还是缺陷（${named.slice(0, 5).map(id => unreadOriginals.get(id) ?? id).join('、')}${unread.length > 5 ? ' 等' : ''}），需求与缺陷分别读取，存在的那一个决定种类；两种都存在时保留来源歧义，下一步作者补类型；参数 id_ranges 给出编号范围时按声明读作一种`,
       data: { ids: named, count: unread.length },
     });
   }

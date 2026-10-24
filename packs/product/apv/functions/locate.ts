@@ -7,26 +7,25 @@ import { idsFromTitle } from './ids.ts';
 import { lineKey } from './naming.ts';
 import { asArray, guarded, internalError, isRecord, squeeze } from './util.ts';
 
-const PREFIX = /^((?=[0-9A-Za-z-]*[0-9])[0-9A-Za-z]{3}(?:-[0-9A-Za-z]{3}){0,3})\s*:\s*/;
+// apv-directory@1, declared in README: prefix code, colon, version line, train, then module.
+const PREFIX = /^((?=[0-9A-Za-z-]*[0-9])[0-9A-Za-z]{3}(?:-[0-9A-Za-z]{3}){0,3})\s*[:：]\s*/;
 const LINE = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})$/i;
-const TRAIN = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})(?=[-_\s])\S*?[-_\s]+\S/i;
-/** Words of activities and documents, not of functional modules. */
-const NOT_MODULE = /测试|回归|用例|需求|bug|case|patch|story|plm|提测/i;
+// apv-directory@1, train layer: the whole label after the prefix code is a version, one or more of the declared
+// separators (`-`, `_` or a space) and a non-empty single-line suffix.
+const TRAIN = /^v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})[-_\s]+([^\r\n]+)$/i;
 const MAX_LABELS = 64;
 const MAX_LABEL = 1000;
 
-/** The label text with its prefix code removed (full-width colon and digits normalized); labels are cut at MAX_LABEL. */
+/** The label text with a declared prefix code removed; nothing is folded, and labels are cut at MAX_LABEL. */
 export function stripPrefix(label: string): string {
-  const text = squeeze(label.slice(0, MAX_LABEL).normalize('NFKC'));
+  const text = label.slice(0, MAX_LABEL);
   const match = PREFIX.exec(text);
   return match ? text.slice(match[0].length).trim() : text;
 }
 
 function isModuleName(text: string): boolean {
-  if (text === '' || text.length > 40 || NOT_MODULE.test(text) || LINE.test(text) || TRAIN.test(text)) return false;
-  if (/[0-9]{4,}/.test(text)) return false;
-  const ids = idsFromTitle(text);
-  return ids.bugs.length + ids.stories.length + ids.plm.length + ids.unclassified.length === 0;
+  // apv-directory@1: the single segment immediately below the release-train node is the module.
+  return /^[^\r\n]{1,1000}$/.test(text);
 }
 
 export function locateFromAncestors(labels: string[]): LocateResult {

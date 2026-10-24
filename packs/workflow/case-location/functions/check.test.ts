@@ -69,7 +69,9 @@ describe('the locate check', () => {
       [outcomes[0].data?.product_line, outcomes[0].data?.version, outcomes[0].data?.module, outcomes[0].data?.unclassified],
       ['apv', '10.6.1', 'SLB', []],
     );
-    assert.deepEqual(outcomes[0].data?.defects, ['61001']);
+    // apv-id-fields@1: an identifier comes from a whole declared field, never from prose in a title or a folder label.
+    assert.deepEqual(outcomes[0].data?.defects, []);
+    assert.deepEqual(outcomes[0].data?.id_sources, []);
   });
 
   it('refutes a declaration that contradicts the tree and stays unknown for what it fills in', () => {

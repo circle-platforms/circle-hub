@@ -18,9 +18,12 @@ describe('location from the agile tree', () => {
     assert.deepEqual([space.line, space.train, space.module], ['10.6.2', '10.6.2 主线HG UOS-2026/08/02', 'HA']);
   });
 
-  it('normalizes full-width colons, digits and spaces', () => {
-    assert.equal(stripPrefix('０６０：１０．６．１'), '10.6.1');
-    assert.deepEqual(locateFromAncestors(['０６０：１０.６.１', '００４：１０.６.１－Ｒ１－２０２６/７', '认证']).train, '10.6.1-R1-2026/7');
+  it('reads a declared prefix code and keeps every other label exactly as written', () => {
+    // No folding (owner rule 2026-10-24, U23): full-width digits and punctuation are not normalized into the declared
+    // grammar, so such a layer is not read at all; the author's exit is to rename the folder or declare the form.
+    assert.equal(stripPrefix('０６０：１０．６．１'), '０６０：１０．６．１');
+    const unfolded = locateFromAncestors(['０６０：１０.６.１', '００４：１０.６.１－Ｒ１－２０２６/７', '认证']);
+    assert.deepEqual([unfolded.line, unfolded.train, unfolded.module], [null, null, null]);
     assert.equal(stripPrefix('SSL:设置'), 'SSL:设置');
   });
 
@@ -38,11 +41,14 @@ describe('location from the agile tree', () => {
     assert.ok(nothing.notes.includes('祖先里没有版本线节点'));
   });
 
-  it('does not take a document folder for a module', () => {
-    for (const label of ['bug to case 61001', '61001-会话保持', '回归测试', 'IT环境 回归测试', '需求 7001', '10.6.1第二阶段测试']) {
+  it('takes any whole single-line label below a train for the module name', () => {
+    // The retired rule excluded activities, documents, versions and identifiers by meaning. apv-directory@1 reads the
+    // layer below a release train as the module name its author wrote, so a label that mentions 测试, bug or 回归 is a
+    // module, and no word excludes one.
+    for (const label of ['bug to case 61001', '61001-会话保持', '回归测试', 'IT环境 回归测试', '需求 7001', '10.6.1第二阶段测试', 'SSL']) {
       const result = locateFromAncestors([...ROOT, '060：10.6.1', '004：10.6.1-R2-2026/7', label]);
-      assert.equal(result.module, null, label);
-      assert.ok(result.notes.some((note) => note.includes('不是模块名')), label);
+      assert.equal(result.module, label, label);
+      assert.ok(!result.notes.some((note) => note.includes('不是模块名')), label);
     }
     assert.equal(locateFromAncestors([...ROOT, '060：10.6.1', '004：10.6.1-R2-2026/7']).module, null);
   });

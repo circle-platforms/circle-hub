@@ -9,16 +9,27 @@
         "case_id": "24001",
         "kind": "document",
         "root": "NSAE",
-        "ancestors": ["030：APV/NSAE测试项目", "060：10.6.1", "004：10.6.1-R2-2026/7", "SSL"],
+        "ancestors": [
+          "030：APV/NSAE测试项目",
+          "060：10.6.1",
+          "004：10.6.1-R2-2026/7",
+          "SSL"
+        ],
         "title": "需求20931 证书链校验",
         "source": "agile:mindmap:24001@1",
-        "names": ["APV", "NSAE"],
+        "names": [
+          "APV",
+          "NSAE"
+        ],
         "product": "apv",
-        "declared": {"product": null, "line": null},
+        "declared": {
+          "product": null,
+          "line": null
+        },
         "id_ranges": null
       },
       "verdict": "support",
-      "summary": "产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；需求 20931",
+      "summary": "产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL",
       "answer": {
         "case_id": "24001",
         "product_line": "apv",
@@ -29,21 +40,41 @@
         "line": "10.6.1",
         "train": "10.6.1-R2-2026/7",
         "module": "SSL",
-        "ancestor_path": ["NSAE", "030：APV/NSAE测试项目", "060：10.6.1", "004：10.6.1-R2-2026/7", "SSL"],
+        "ancestor_path": [
+          "NSAE",
+          "030：APV/NSAE测试项目",
+          "060：10.6.1",
+          "004：10.6.1-R2-2026/7",
+          "SSL"
+        ],
         "version_source": "folders",
         "confidence": "high",
         "build_source": "none",
         "patch_source": "none",
         "source": "agile:mindmap:24001@1",
         "build_names": [],
-        "requirements": ["20931"],
+        "requirements": [],
         "defects": [],
         "unclassified": [],
-        "id_sources": [{"id": "20931", "kind": "story", "from": ["title"]}],
-        "ranged": {"requirements": [], "defects": []},
+        "id_sources": [],
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
         "declared": [],
         "conflicts": [],
-        "version_values": [{"version": "10.6.1", "level": 2, "label": "060：10.6.1"}, {"version": "10.6.1", "level": 3, "label": "004：10.6.1-R2-2026/7"}],
+        "version_values": [
+          {
+            "version": "10.6.1",
+            "level": 2,
+            "label": "060：10.6.1"
+          },
+          {
+            "version": "10.6.1",
+            "level": 3,
+            "label": "004：10.6.1-R2-2026/7"
+          }
+        ],
         "missing": []
       }
     },
@@ -54,16 +85,25 @@
         "case_id": "24004",
         "kind": "document",
         "root": "APV",
-        "ancestors": ["通用用例", "基础功能"],
+        "ancestors": [
+          "通用用例",
+          "基础功能"
+        ],
         "title": "bug to case 90220 告警",
         "source": "agile:mindmap:24004@1",
-        "names": ["APV", "NSAE"],
+        "names": [
+          "APV",
+          "NSAE"
+        ],
         "product": "apv",
-        "declared": {"product": null, "line": null},
+        "declared": {
+          "product": null,
+          "line": null
+        },
         "id_ranges": null
       },
       "verdict": "unknown",
-      "summary": "不确定（没有版本层）：产品线 apv（APV）；版本未知；缺陷 90220",
+      "summary": "不确定（没有版本层，发布火车层未知，模块层未知）：产品线 apv（APV）；版本未知",
       "answer": {
         "case_id": "24004",
         "product_line": "apv",
@@ -74,7 +114,11 @@
         "line": null,
         "train": null,
         "module": null,
-        "ancestor_path": ["APV", "通用用例", "基础功能"],
+        "ancestor_path": [
+          "APV",
+          "通用用例",
+          "基础功能"
+        ],
         "version_source": "none",
         "confidence": "none",
         "build_source": "none",
@@ -82,46 +126,66 @@
         "source": "agile:mindmap:24004@1",
         "build_names": [],
         "requirements": [],
-        "defects": ["90220"],
+        "defects": [],
         "unclassified": [],
-        "id_sources": [{"id": "90220", "kind": "bug", "from": ["title"]}],
-        "ranged": {"requirements": [], "defects": []},
+        "id_sources": [],
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
         "declared": [],
         "conflicts": [],
         "version_values": [],
-        "missing": ["目录里的版本层"]
+        "missing": [
+          "目录里的版本层",
+          "apv-directory@1 的发布火车层身份",
+          "apv-directory@1 的模块层身份"
+        ]
       }
     },
     {
       "id": "title_reference_version",
-      "note": "目录里没有版本层，标题里带构建号的版本只作参考，置信度低；不由它推出任何构建名",
+      "note": "合成样例：版本只写在标题散文里。标题不是声明的目录层，apv-directory@1 只读整段标签，所以版本层、发布火车层和模块层都未知（缺的事实：目录里的版本层身份；下一步：包作者补语法或作者改目录名），不从标题里捞版本",
       "input": {
         "case_id": "24005",
         "kind": "document",
         "root": "NSAE",
-        "ancestors": ["030：APV/NSAE测试项目", "专项"],
+        "ancestors": [
+          "030：APV/NSAE测试项目",
+          "专项"
+        ],
         "title": "NSAE 10.6.2.31 升级兼容",
         "source": "agile:mindmap:24005@1",
-        "names": ["APV", "NSAE"],
+        "names": [
+          "APV",
+          "NSAE"
+        ],
         "product": "apv",
-        "declared": {"product": null, "line": null},
+        "declared": {
+          "product": null,
+          "line": null
+        },
         "id_ranges": null
       },
       "verdict": "unknown",
-      "summary": "不确定（版本只在标题里）：产品线 apv（NSAE）；版本 10.6.2.31（标题，置信度低）",
+      "summary": "不确定（没有版本层，发布火车层未知，模块层未知）：产品线 apv（NSAE）；版本未知",
       "answer": {
         "case_id": "24005",
         "product_line": "apv",
         "product_name": "NSAE",
-        "version": "10.6.2.31",
+        "version": null,
         "build": null,
         "patch": null,
         "line": null,
         "train": null,
         "module": null,
-        "ancestor_path": ["NSAE", "030：APV/NSAE测试项目", "专项"],
-        "version_source": "title",
-        "confidence": "low",
+        "ancestor_path": [
+          "NSAE",
+          "030：APV/NSAE测试项目",
+          "专项"
+        ],
+        "version_source": "none",
+        "confidence": "none",
         "build_source": "none",
         "patch_source": "none",
         "source": "agile:mindmap:24005@1",
@@ -130,11 +194,18 @@
         "defects": [],
         "unclassified": [],
         "id_sources": [],
-        "ranged": {"requirements": [], "defects": []},
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
         "declared": [],
         "conflicts": [],
         "version_values": [],
-        "missing": ["目录里的版本层"]
+        "missing": [
+          "目录里的版本层",
+          "apv-directory@1 的发布火车层身份",
+          "apv-directory@1 的模块层身份"
+        ]
       }
     },
     {
@@ -144,16 +215,27 @@
         "case_id": "24006",
         "kind": "document",
         "root": "NSAE",
-        "ancestors": ["030：APV/NSAE测试项目", "060：10.6.1", "004：10.6.2-R2-2026/7", "SLB"],
+        "ancestors": [
+          "030：APV/NSAE测试项目",
+          "060：10.6.1",
+          "004：10.6.2-R2-2026/7",
+          "SLB"
+        ],
         "title": "bug to case 74001 会话保持",
         "source": "agile:mindmap:24006@1",
-        "names": ["APV", "NSAE"],
+        "names": [
+          "APV",
+          "NSAE"
+        ],
         "product": "apv",
-        "declared": {"product": null, "line": null},
+        "declared": {
+          "product": null,
+          "line": null
+        },
         "id_ranges": null
       },
       "verdict": "refute",
-      "summary": "目录版本层自相矛盾（发布火车与版本线不一致）：产品线 apv（NSAE）；版本 10.6.1（目录，置信度低）；发布火车 10.6.2-R2-2026/7；模块 SLB；缺陷 74001",
+      "summary": "目录版本层自相矛盾（发布火车与版本线不一致）：产品线 apv（NSAE）；版本 10.6.1（目录，置信度低）；发布火车 10.6.2-R2-2026/7；模块 SLB",
       "answer": {
         "case_id": "24006",
         "product_line": "apv",
@@ -164,7 +246,13 @@
         "line": "10.6.1",
         "train": "10.6.2-R2-2026/7",
         "module": "SLB",
-        "ancestor_path": ["NSAE", "030：APV/NSAE测试项目", "060：10.6.1", "004：10.6.2-R2-2026/7", "SLB"],
+        "ancestor_path": [
+          "NSAE",
+          "030：APV/NSAE测试项目",
+          "060：10.6.1",
+          "004：10.6.2-R2-2026/7",
+          "SLB"
+        ],
         "version_source": "folders",
         "confidence": "low",
         "build_source": "none",
@@ -172,13 +260,27 @@
         "source": "agile:mindmap:24006@1",
         "build_names": [],
         "requirements": [],
-        "defects": ["74001"],
+        "defects": [],
         "unclassified": [],
-        "id_sources": [{"id": "74001", "kind": "bug", "from": ["title"]}],
-        "ranged": {"requirements": [], "defects": []},
+        "id_sources": [],
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
         "declared": [],
         "conflicts": [],
-        "version_values": [{"version": "10.6.1", "level": 2, "label": "060：10.6.1"}, {"version": "10.6.2", "level": 3, "label": "004：10.6.2-R2-2026/7"}],
+        "version_values": [
+          {
+            "version": "10.6.1",
+            "level": 2,
+            "label": "060：10.6.1"
+          },
+          {
+            "version": "10.6.2",
+            "level": 3,
+            "label": "004：10.6.2-R2-2026/7"
+          }
+        ],
         "missing": []
       }
     },
@@ -189,16 +291,27 @@
         "case_id": "24001",
         "kind": "document",
         "root": "NSAE",
-        "ancestors": ["030：APV/NSAE测试项目", "060：10.6.1", "004：10.6.1-R2-2026/7", "SSL"],
+        "ancestors": [
+          "030：APV/NSAE测试项目",
+          "060：10.6.1",
+          "004：10.6.1-R2-2026/7",
+          "SSL"
+        ],
         "title": "需求20931 证书链校验",
         "source": "agile:mindmap:24001@1",
-        "names": ["APV", "NSAE"],
+        "names": [
+          "APV",
+          "NSAE"
+        ],
         "product": "apv",
-        "declared": {"product": null, "line": "10.7.3"},
+        "declared": {
+          "product": null,
+          "line": "10.7.3"
+        },
         "id_ranges": null
       },
       "verdict": "refute",
-      "summary": "与声明矛盾（声明的版本线 10.7.3 与目录的 10.6.1 矛盾）：产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；需求 20931",
+      "summary": "与声明矛盾（声明的版本线 10.7.3 与目录的 10.6.1 矛盾）：产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL",
       "answer": {
         "case_id": "24001",
         "product_line": "apv",
@@ -209,41 +322,75 @@
         "line": "10.6.1",
         "train": "10.6.1-R2-2026/7",
         "module": "SSL",
-        "ancestor_path": ["NSAE", "030：APV/NSAE测试项目", "060：10.6.1", "004：10.6.1-R2-2026/7", "SSL"],
+        "ancestor_path": [
+          "NSAE",
+          "030：APV/NSAE测试项目",
+          "060：10.6.1",
+          "004：10.6.1-R2-2026/7",
+          "SSL"
+        ],
         "version_source": "folders",
         "confidence": "high",
         "build_source": "none",
         "patch_source": "none",
         "source": "agile:mindmap:24001@1",
         "build_names": [],
-        "requirements": ["20931"],
+        "requirements": [],
         "defects": [],
         "unclassified": [],
-        "id_sources": [{"id": "20931", "kind": "story", "from": ["title"]}],
-        "ranged": {"requirements": [], "defects": []},
+        "id_sources": [],
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
         "declared": [],
-        "conflicts": [{"field": "line", "declared": "10.7.3", "tree": "10.6.1"}],
-        "version_values": [{"version": "10.6.1", "level": 2, "label": "060：10.6.1"}, {"version": "10.6.1", "level": 3, "label": "004：10.6.1-R2-2026/7"}],
+        "conflicts": [
+          {
+            "field": "line",
+            "declared": "10.7.3",
+            "tree": "10.6.1"
+          }
+        ],
+        "version_values": [
+          {
+            "version": "10.6.1",
+            "level": 2,
+            "label": "060：10.6.1"
+          },
+          {
+            "version": "10.6.1",
+            "level": 3,
+            "label": "004：10.6.1-R2-2026/7"
+          }
+        ],
         "missing": []
       }
     },
     {
       "id": "build_folder_consistent",
-      "note": "构建名目录提供版本；版本层冲突保留所有版本",
+      "note": "构建名目录按声明语法给出版本；发布火车层与模块层读不出时整条记未知，并点名缺的层身份（R6），不进已定位分组",
       "input": {
         "case_id": "24401",
         "kind": "document",
         "root": "NSAE",
-        "ancestors": ["Rel_NSAE_10_9_1_37 回归"],
+        "ancestors": [
+          "Rel_NSAE_10_9_1_37 回归"
+        ],
         "title": "合成构建目录",
         "source": "agile:mindmap:24401@1",
-        "names": ["APV", "NSAE"],
+        "names": [
+          "APV",
+          "NSAE"
+        ],
         "product": "apv",
-        "declared": {"product": null, "line": null},
+        "declared": {
+          "product": null,
+          "line": null
+        },
         "id_ranges": null
       },
-      "verdict": "support",
-      "summary": "产品线 apv（NSAE）；版本 10.9.1（目录，置信度高）；写出的构建名 Rel_NSAE_10_9_1_37",
+      "verdict": "unknown",
+      "summary": "不确定（发布火车层未知，模块层未知）：产品线 apv（NSAE）；版本 10.9.1（目录，置信度高）；写出的构建名 Rel_NSAE_10_9_1_37",
       "answer": {
         "case_id": "24401",
         "product_line": "apv",
@@ -254,22 +401,39 @@
         "line": "10.9.1",
         "train": null,
         "module": null,
-        "ancestor_path": ["NSAE", "Rel_NSAE_10_9_1_37 回归"],
+        "ancestor_path": [
+          "NSAE",
+          "Rel_NSAE_10_9_1_37 回归"
+        ],
         "version_source": "folders",
         "confidence": "high",
         "build_source": "none",
         "patch_source": "none",
         "source": "agile:mindmap:24401@1",
-        "build_names": ["Rel_NSAE_10_9_1_37"],
+        "build_names": [
+          "Rel_NSAE_10_9_1_37"
+        ],
         "requirements": [],
         "defects": [],
         "unclassified": [],
         "id_sources": [],
-        "ranged": {"requirements": [], "defects": []},
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
         "declared": [],
         "conflicts": [],
-        "version_values": [{"version": "10.9.1", "level": 1, "label": "Rel_NSAE_10_9_1_37 回归"}],
-        "missing": []
+        "version_values": [
+          {
+            "version": "10.9.1",
+            "level": 1,
+            "label": "Rel_NSAE_10_9_1_37 回归"
+          }
+        ],
+        "missing": [
+          "apv-directory@1 的发布火车层身份",
+          "apv-directory@1 的模块层身份"
+        ]
       }
     },
     {
@@ -279,12 +443,21 @@
         "case_id": "24402",
         "kind": "document",
         "root": "NSAE",
-        "ancestors": ["Rel_NSAE_10_9_1_37 回归", "060：10.8.1"],
+        "ancestors": [
+          "Rel_NSAE_10_9_1_37 回归",
+          "060：10.8.1"
+        ],
         "title": "合成构建目录",
         "source": "agile:mindmap:24402@1",
-        "names": ["APV", "NSAE"],
+        "names": [
+          "APV",
+          "NSAE"
+        ],
         "product": "apv",
-        "declared": {"product": null, "line": null},
+        "declared": {
+          "product": null,
+          "line": null
+        },
         "id_ranges": null
       },
       "verdict": "refute",
@@ -299,22 +472,45 @@
         "line": "10.8.1",
         "train": null,
         "module": null,
-        "ancestor_path": ["NSAE", "Rel_NSAE_10_9_1_37 回归", "060：10.8.1"],
+        "ancestor_path": [
+          "NSAE",
+          "Rel_NSAE_10_9_1_37 回归",
+          "060：10.8.1"
+        ],
         "version_source": "folders",
         "confidence": "low",
         "build_source": "none",
         "patch_source": "none",
         "source": "agile:mindmap:24402@1",
-        "build_names": ["Rel_NSAE_10_9_1_37"],
+        "build_names": [
+          "Rel_NSAE_10_9_1_37"
+        ],
         "requirements": [],
         "defects": [],
         "unclassified": [],
         "id_sources": [],
-        "ranged": {"requirements": [], "defects": []},
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
         "declared": [],
         "conflicts": [],
-        "version_values": [{"version": "10.9.1", "level": 1, "label": "Rel_NSAE_10_9_1_37 回归"}, {"version": "10.8.1", "level": 2, "label": "060：10.8.1"}],
-        "missing": []
+        "version_values": [
+          {
+            "version": "10.9.1",
+            "level": 1,
+            "label": "Rel_NSAE_10_9_1_37 回归"
+          },
+          {
+            "version": "10.8.1",
+            "level": 2,
+            "label": "060：10.8.1"
+          }
+        ],
+        "missing": [
+          "apv-directory@1 的发布火车层身份",
+          "apv-directory@1 的模块层身份"
+        ]
       }
     }
   ]
