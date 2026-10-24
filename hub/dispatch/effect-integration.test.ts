@@ -73,3 +73,18 @@ test('closed parameter sets also name absent verification facts instead of inven
  const state=await c.service.dispatch(c.admin,c.run,c.executor.id),refusal=(await c.service.journal.events(state.job)).find(event=>event.body.detail.phase==='boundary_refused')!;
  assert.equal(c.calls.includes('send_blob'),false);assert.equal(refusal.body.error_code,'EFFECT_RELEASE_UNMET');assert.equal(refusal.body.detail.effect_row,'submit_verified');assert.match(state.missing_fact!,/受理.*核验事实/);
 });
+test('a legacy executor without an environment cannot dispatch even after its definition is frozen',async t=>{
+ const c=await setup();t.after(()=>c.close());const {environment,...legacy}=c.executor.definition;
+ await c.registry.update(c.admin,c.executor.id,legacy);await c.freezeExecutor();
+ const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+ assert.equal(c.calls.filter(name=>name==='send_blob').length,0);assert.equal(state.outcome,'not_dispatched');
+ const events=await c.service.journal.events(state.job),refusal=events.find(event=>event.body.detail.phase==='boundary_refused')!;
+ assert.equal(events.some(event=>event.body.detail.phase==='intent'),false);assert.equal(refusal.body.detail.boundary_clause,6);assert.equal(refusal.body.error_code,'BOUNDARY_POLICY_DENIED');
+ const effects=await c.kit.store.findMany<{outcome:string;boundary:{clause:number;code:string}}>({kind:'effect',key:'effect.job',values:[state.job]});assert.equal(effects.length,1);assert.equal(effects[0].body.outcome,'not_dispatched');assert.equal(effects[0].body.boundary.clause,6);assert.equal(effects[0].body.boundary.code,'BOUNDARY_POLICY_DENIED');
+});
+test('a historical run without its frozen executor registry cannot dispatch',async t=>{
+ const c=await setup();t.after(()=>c.close());delete c.detail.run.executors;
+ const state=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(c.calls.includes('send_blob'),false);assert.equal(state.outcome,'not_dispatched');
+ const refusal=(await c.service.journal.events(state.job)).find(event=>event.body.detail.phase==='boundary_refused')!;assert.equal(refusal.body.detail.boundary_clause,6);assert.equal(refusal.body.error_code,'BOUNDARY_POLICY_DENIED');
+ const effects=await c.kit.store.findMany<{outcome:string}>({kind:'effect',key:'effect.job',values:[state.job]});assert.equal(effects.length,1);assert.equal(effects[0].body.outcome,'not_dispatched');
+});
