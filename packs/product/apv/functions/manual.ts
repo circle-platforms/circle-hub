@@ -772,11 +772,14 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   };
   const topics=(text:string,own:Conditions):Set<Field>=>{
     const found=new Set<Field>(APPLICABILITY_FIELD.filter(field=>own[field]!==undefined));
-    if(/(?:装有|没有)[^。；\n]{1,200}时/u.test(text))found.add('components');
-    if(/需要[^。；\n]{1,200}许可/u.test(text))found.add('licenses');
+    const hasMember=(candidate:string,words:ReadonlySet<string>,noun:RegExp)=>candidate.split(SERIES_SEPARATOR).some(part=>words.has(part.trim().replace(/^(?:\*\*|__|`)([\s\S]*?)(?:\*\*|__|`)$/u,'$1').replace(noun,'').trim()));
+    if(vocabulary.components.size)for(const match of text.matchAll(/(?:装有|没有)\s*([^。；\n]{1,200}?)\s*时/gu)){
+      if(hasMember(match[1]!,vocabulary.components,/\s*(?:部件|单板|模块|卡)$/u)||/(?:部件|单板|模块|卡$)/u.test(match[1]!))found.add('components');
+    }
+    if(vocabulary.licenses.size&&/需要[^。；\n]{1,200}许可/u.test(text))found.add('licenses');
     if(/(?:适用于|仅|只)[^。；\n]{0,200}平台/u.test(text))found.add('platforms');
     if(/(?:适用于|仅|只)[^。；\n]{0,200}(?:型号|机型|系列)/u.test(text))found.add('models');
-    if(/(?:适用于|仅|只)[^。；\n]{0,200}部署(?:形态|方式)?/u.test(text))found.add('deployment_forms');
+    if(vocabulary.deployment_forms.size&&/(?:适用于|仅|只)[^。；\n]{0,200}部署(?:形态|方式)?/u.test(text))found.add('deployment_forms');
     if(/内存\s*(?:不少于|至少|大于|小于|不超过|[0-9]|较大|较小)|[0-9]\s*(?:GB|G|MB|M)\s*内存/u.test(text))found.add('memory');
     // A mixed closed series still identifies its field when at least one member is known; do not inherit a narrower parent.
     for(const match of text.matchAll(/(?:适用于|仅|只)\s*([^。；：\n]{1,200})/gu)){

@@ -49,3 +49,25 @@ test('a paragraph after a nonparagraph block is not a chapter opening',()=>{
   const out=result('# Outer\n\n```text\nexample\n```\n\n装有 Card-A 时。\n\n## Inner\n\n普通正文。\n');
   assert.equal(out.entries.find(e=>e.statement==='普通正文。')!.applicability,null);
 });
+
+test('ordinary absence prose never blocks an outer component declaration',()=>{
+  for(const prose of ['没有输出时，检查端口状态。','没有配置该命令时，系统给出提示。','当没有告警时，指示灯熄灭。','没有响应时请重启。']){
+    const out=result('# Outer 装有 Card-A 时\n\n## Inner\n\n'+prose+'\n\n### Leaf\n\n普通正文。\n');
+    const entry=out.entries.find(row=>row.statement==='普通正文。')!;
+    assert.deepEqual(entry.applicability?.components,{with:['Card-A']},prose);
+    assert.ok(!entry.fragments.flatMap(fragment=>fragment.applicability??[]).some(origin=>origin.declaration[origin.field]===undefined),prose);
+  }
+});
+test('empty closed sets do not invent unread declarations from ordinary or closed-name prose',()=>{
+  const out=produceManualEntries(markdown('# Outer\n\n## Inner\n\n没有输出时需要管理员许可，适用于 Form-A 部署形态。\n\n普通正文。\n'),null,{components:[],licenses:[],deployment_forms:[]});
+  assert.ok(out.entries.every(entry=>entry.applicability===null));
+  assert.ok(out.entries.every(entry=>!entry.fragments.some(fragment=>fragment.applicability?.length)));
+});
+test('an explicit unknown part or mixed closed list still blocks a narrower inherited condition',()=>{
+  for(const prose of ['没有未知部件时。','装有 Card-A、Unknown 时。']){
+    const out=result('# Outer 装有 Card-A 时\n\n## Inner\n\n'+prose+'\n\n普通正文。\n');
+    const entry=out.entries.find(row=>row.statement==='普通正文。')!;
+    assert.equal(entry.applicability?.components,undefined,prose);
+    assert.ok(entry.fragments.some(fragment=>fragment.applicability?.some(origin=>origin.field==='components'&&origin.declaration.components===undefined)),prose);
+  }
+});
