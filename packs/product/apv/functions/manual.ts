@@ -1,4 +1,4 @@
-import { APPLICABILITY_FIELD } from './generated/vocabulary.ts';
+import { APPLICABILITY_FIELD,labelOf } from './generated/vocabulary.ts';
 // Producer of manual entries, from either form of the CLI manual:
 // - a markdown@1 model of the converted manual: a command anchor is a paragraph that is only the bold command head and its
 //   emphasized parameters (`**demo pool add** *\<pool_name\> \[weight\]*`), or a heading written the same way. Placement:
@@ -739,7 +739,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   type OriginMeta=NonNullable<FragmentRef['applicability']>[number];
   type Origin={fragment:FragmentRef;meta:OriginMeta};
   type Scope={declaration:Conditions|null;origins:Origin[];conflict:boolean};
-  const report:NonNullable<ManualResult['applicability_report']>={overrides:[],conflicts:[]};
+  const report:NonNullable<ManualResult['applicability_report']>={counts:Object.fromEntries(APPLICABILITY_FIELD.map(field=>[field,{direct:0,inherited:0}])) as NonNullable<ManualResult['applicability_report']>['counts'],overrides:[],conflicts:[]};
   const firstBlocks=new Map<number,{raw:Record<string,unknown>;position:number}>();
   asArray(model.blocks).forEach((raw,position)=>{if(isRecord(raw)&&Number.isInteger(raw.section)&&!firstBlocks.has(raw.section as number))firstBlocks.set(raw.section as number,{raw,position});});
   const firstDescendant=new Map<number,number>();
@@ -1321,6 +1321,16 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   if (missingSection > 0) warnings.push(`有 ${missingSection} 个块指向不存在的章节，挂在手册命名空间的根下`);
   if (unwritable > 0) warnings.push(`有 ${unwritable} 个块的章节路径写不出（过长或含写不出的字符），挂在手册命名空间的根下`);
   applyScopes();
+  for(const field of APPLICABILITY_FIELD){
+    for(const entry of entries)if(entry.applicability?.[field]!==undefined){
+      if(entry.applicability.inherited?.includes(field))report.counts[field].inherited++;
+      else report.counts[field].direct++;
+    }
+    const count=report.counts[field];
+    warnings.push(`适用条件统计：${labelOf('applicability_field',field)}：直接抽取 ${count.direct} 条，继承 ${count.inherited} 条`);
+  }
+  for(const difference of report.overrides)warnings.push(`适用条件内外层不同：${labelOf('applicability_field',difference.field)}；章节 ${difference.section.join('/')}；声明与片段 ${canonicalJson({values:difference.values,fragments:difference.fragments})}`);
+  for(const difference of report.conflicts)warnings.push(`适用条件同章冲突，未裁决：${labelOf('applicability_field',difference.field)}；章节 ${difference.section.join('/')}；声明与片段 ${canonicalJson({values:difference.values,fragments:difference.fragments})}；缺少一致的来源声明；下一步：来源维护者核对这些片段，在再次同步前修订或明确保留矛盾，再重新生产`);
   return { entries, unplaced: [], warnings, applicability_report:report };
 }
 

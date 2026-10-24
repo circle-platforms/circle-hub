@@ -125,6 +125,8 @@ describe('entries from the converted manual', () => {
         ['text', '/manual/manual/基本配置/显示命令/其他说明', 'b/2/基本配置/显示命令/其他说明'],
         ['signature', '/commands/demo/pool/add', 'b/4/基本配置/显示命令/其他说明'],
         ['text', '/commands/demo/pool/add', 'b/5/基本配置/显示命令/其他说明'],
+        ['text','/manual/manual/合成适用范围：装有%20Card-A%20时','b/0/合成适用范围：装有%20Card-A%20时'],
+        ['text','/manual/manual/合成适用范围：装有%20Card-A%20时/合成子节','b/0/合成适用范围：装有%20Card-A%20时/合成子节'],
       ],
     );
     // K02 R[3]: a signature is a definition, the text under a command a behaviour; the finer form is data.
@@ -200,13 +202,15 @@ describe('entries from the converted manual', () => {
         ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/0/基本配置/显示命令/其他说明'],
         ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/1/基本配置/显示命令/其他说明'],
         ['behaviour', '/manual/manual/基本配置/显示命令/其他说明', 'b/2/基本配置/显示命令/其他说明'],
+        ['behaviour','/manual/manual/合成适用范围：装有%20Card-A%20时','b/0/合成适用范围：装有%20Card-A%20时'],
+        ['behaviour','/manual/manual/合成适用范围：装有%20Card-A%20时/合成子节','b/0/合成适用范围：装有%20Card-A%20时/合成子节'],
       ],
     );
     // "**demo broken** *\<name*" is written as a signature but its brackets do not close: it hangs at its section,
     // marked signature_rejected, with a warning.
     const rejected = hung.find((entry) => entry.fragments[0].selector === 'b/1/基本配置/显示命令/其他说明');
     assert.equal(rejected?.data.signature_rejected, true);
-    assert.deepEqual(fromMarkdown.warnings, ['有 1 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余、首词不是已知命令或斜杠头），这些段落及其后的块不归到前一条命令，挂在所在章节节点']);
+    assert.deepEqual(fromMarkdown.warnings.filter(warning=>!warning.startsWith('适用条件')), ['有 1 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余、首词不是已知命令或斜杠头），这些段落及其后的块不归到前一条命令，挂在所在章节节点']);
   });
 
   it('gives fragments the markdown@1 document locates, with the same text', () => {
@@ -214,6 +218,7 @@ describe('entries from the converted manual', () => {
     for (const entry of fromMarkdown.entries) {
       // A shared table entry cites one fragment per line (the range picks the line out of the block's text).
       const located = entry.fragments
+        .filter((fragment,index)=>index===0||!fragment.applicability)
         .map((fragment) => {
           const text = md.locate(fragment.selector)?.text ?? '';
           const range = (fragment as { range?: [number, number] }).range;
@@ -1265,6 +1270,6 @@ describe('applicability from explicit conditions', () => {
   });
 
   it('leaves applicability null when nothing declares a condition', () => {
-    assert.ok(fromMarkdown.entries.every((entry) => entry.applicability === null));
+    assert.ok(produceManualEntries(markdown('# Plain\n\n普通说明。')).entries.every((entry) => entry.applicability === null));
   });
 });

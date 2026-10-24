@@ -265,7 +265,7 @@ export type ManualOptions = {
 export type Unplaced = { fragment: FragmentRef; section: string; kind: EntryKind; text: string };
 
 export interface ApplicabilityDifference {field:import('./generated/vocabulary.ts').ApplicabilityField;section:string[];values:Applicability[];fragments:FragmentRef[]}
-export interface ManualApplicabilityReport {overrides:ApplicabilityDifference[];conflicts:ApplicabilityDifference[]}
+export interface ManualApplicabilityReport {counts:Record<import('./generated/vocabulary.ts').ApplicabilityField,{direct:number;inherited:number}>;overrides:ApplicabilityDifference[];conflicts:ApplicabilityDifference[]}
 export type ManualResult = { entries: ProducedEntry[]; unplaced: Unplaced[]; warnings: string[]; applicability_report?:ManualApplicabilityReport };
 
 export type ReleaseInput = MarkdownModel | { model: MarkdownModel };
