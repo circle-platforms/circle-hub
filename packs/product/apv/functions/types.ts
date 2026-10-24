@@ -248,6 +248,7 @@ export type ManualInput = MarkdownModel | ManualCatalog | { model: MarkdownModel
  * (K01 R[1]: builds whose trees place the manual's signatures the same way share its subtree).
  */
 export type ManualOptions = {
+  known_builds?:readonly string[];
   /** Deployment closed sets. Omission is the empty set used only by direct examples. */
   models?: readonly string[];
   platforms?: readonly string[];

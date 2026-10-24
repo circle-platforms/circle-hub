@@ -73,7 +73,7 @@ export function manual(input: unknown): ProducerOutput {
   const warnings: string[] = [];
   try {
     const params=paramsOf(input);
-    const conditionOptions={models:params.models as string[]|undefined,platforms:params.platforms as string[]|undefined,components:params.components as string[]|undefined,licenses:params.licenses as string[]|undefined,deployment_forms:params.deployment_forms as string[]|undefined};
+    const conditionOptions={known_builds:isRecord(input)&&Array.isArray(input.known_builds)?input.known_builds.filter((v):v is string=>typeof v==='string'):[],models:params.models as string[]|undefined,platforms:params.platforms as string[]|undefined,components:params.components as string[]|undefined,licenses:params.licenses as string[]|undefined,deployment_forms:params.deployment_forms as string[]|undefined};
     const heads = Array.isArray(paramsOf(input).heads) ? (paramsOf(input).heads as unknown[]).filter((h): h is string => typeof h === 'string') : null;
     // The command catalog of the build is built once, when a manual is actually read.
     let catalog: CommandCatalog | null | undefined;
@@ -118,7 +118,8 @@ export function manual(input: unknown): ProducerOutput {
     }
     return { entries, unplaced, warnings };
   } catch (error) {
-    if(error instanceof ApplicabilitySourceError)throw error;
+    if(error instanceof ApplicabilitySourceError)return {entries:[],warnings:[],incomplete:{missing:error.message,next_action:error.next_action}};
+    
     return { entries, unplaced, warnings: [...warnings, internalError(error)] };
   }
 }
@@ -131,9 +132,9 @@ export function releaseNotes(input: unknown): ProducerOutput {
     const build = buildName(input);
     if(slot.parser==='json@1'){
       const out=produceReleaseEntries(slot.model,build);
-      return {entries:out.entries,warnings:out.warnings,grammar:{id:'apv-release-notes@2',source:'product:apv/README.md#release-notes',complete:out.complete===true}};
+      return {entries:out.entries,warnings:out.warnings,...(out.complete===true?{}:{incomplete:{missing:out.warnings.join('；'),next_action:'发布页或缺陷系统维护者补完整 release-notes@2 字段后重读并重产'}}),grammar:{id:'apv-release-notes@2',source:'product:apv/README.md#release-notes',complete:out.complete===true}};
     }
-    return {entries:[],warnings:['缺 release-notes@2 结构化发布状态；下一步发布页或缺陷系统维护者补原始 JSON status 字段，重读并重产；不从 HTML/Markdown 补 fixed/known'],grammar:{id:'apv-release-notes@2',source:'product:apv/README.md#release-notes',complete:false}};
+    return {entries:[],incomplete:{missing:'缺原始 release-notes@2 JSON status 字段',next_action:'发布页或缺陷系统维护者补原始结构状态后重读并重产'},warnings:['缺 release-notes@2 结构化发布状态；下一步发布页或缺陷系统维护者补原始 JSON status 字段，重读并重产；不从 HTML/Markdown 补 fixed/known'],grammar:{id:'apv-release-notes@2',source:'product:apv/README.md#release-notes',complete:false}};
   } catch (error) {
     return empty(internalError(error));
   }

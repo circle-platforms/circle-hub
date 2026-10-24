@@ -46,6 +46,55 @@
         "additionalProperties": false
       }
     },
+    "applicability": {
+      "description": "Published applicability-domain declarations; values come from the root variable snapshot",
+      "type": "object",
+      "properties": {
+        "grammar": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+        },
+        "closed_sets": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "models",
+              "platforms",
+              "components",
+              "licenses",
+              "deployment_forms"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "build_validator": {
+          "type": "object",
+          "properties": {
+            "module": {
+              "type": "string",
+              "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+            },
+            "export": {
+              "type": "string",
+              "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+            }
+          },
+          "required": [
+            "module"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "grammar",
+        "closed_sets"
+      ],
+      "additionalProperties": false
+    },
     "names": {
       "minItems": 1,
       "type": "array",

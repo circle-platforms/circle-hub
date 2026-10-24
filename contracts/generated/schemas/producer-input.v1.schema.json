@@ -2,6 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "known_builds": {
+      "description": "Immutable product build-name inventory supplied by the Hub, never a client or environment variable",
+      "maxItems": 50000,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
     "build": {
       "type": "object",
       "properties": {

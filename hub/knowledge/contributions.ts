@@ -1,3 +1,4 @@
+import {admitApplicability} from './applicability-claims.ts';
 // K03: deterministic admission beside the tree. The caller supplies the run boundary's scoped resolver;
 // it never supplies an evidence grade, provenance or an applicability declaration.
 import {readPackDirectory} from '../runs/api.ts';
@@ -67,6 +68,7 @@ function scanPublicText(texts: readonly string[]): void {
 function identityOf(prepared: PreparedContribution): string {
   return digestOf({product:prepared.product,root:prepared.root,path:prepared.path,kind:prepared.kind,statement:prepared.statement,
       source:{reference:prepared.source.reference,quote:prepared.source.quote},
+      ...(prepared.applicability_claim===undefined?{}:{applicability_claim:prepared.applicability_claim}),
       ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});
 }
 
@@ -120,7 +122,7 @@ export class ContributionLayer {
 
   async prepare(reader: Principal, raw: unknown, scope: ContributionScope): Promise<PreparedContribution> {
     const checked = ContributionInput.safeParse(raw);
-    if (!checked.success) return fail('回注结构不合格：只收产出种类、陈述、根、路径、原文引文和关系；不得自报来源类型、依据等级或适用条件；按 start_run 的槽位 schema 修正后重交');
+    if (!checked.success) return fail('回注结构不合格：只收产出种类、陈述、根、路径、原文引文和关系；适用条件主张只收生成结构；不得自报来源类型、依据等级或改写原条目条件；按 start_run 的槽位 schema 修正后重交');
     const input = checked.data;
     const cacheScope = scope;
     const additional = scope.additionalRoots?.find(lock => lock.root === input.root);
@@ -245,8 +247,9 @@ export class ContributionLayer {
         return fail('原条目的生产器未允许 bot 提议归位；仅接受声明 judgment_allowed 的生产器所产出的条目');
     }
 
+    const applicabilityClaim=input.kind==='applicability_claim'?await admitApplicability(this.#context,this.#reading,composition,input,source,originals,custodian,reader):undefined;
     const relation = input.relation === undefined ? undefined : { kind: input.relation.kind, other: await quote(input.relation.other) };
-    scanPublicText([input.statement, source.quote, scope.model ?? '', scope.session ?? '', ...(relation === undefined ? [] : [relation.other.quote])]);
+    scanPublicText([input.statement, source.quote, scope.model ?? '', scope.session ?? '', ...(relation === undefined ? [] : [relation.other.quote]),...(applicabilityClaim===undefined?[]:[JSON.stringify(applicabilityClaim)])]);
     if(relation!==undefined&&(source.reference===relation.other.reference||(source.fragment===relation.other.fragment&&(quoteMatches(source.quote,relation.other.quote)||quoteMatches(relation.other.quote,source.quote)))))return refuse("core.contribution.self_relation", '关系双方指向同一片段或重叠引文，缺少两个独立的原文端点');
     if (!fragments.has(input.path)) fragments.set(input.path, (async () => {
       const fragment = await this.#reading.treeReader({composition:composition.record}).read(input.root, input.path, null, { user: reader.id, role: reader.role });
@@ -256,6 +259,7 @@ export class ContributionLayer {
     if (fragment === null) return fail('被归位节点此刻不可读，须恢复节点读取后重交', 'SOURCE_UNAVAILABLE');
     return { layer: 'contribution', product: scope.product, root: input.root, path: input.path,
       cited_fragment: fragment, kind: input.kind, statement: input.statement, source,
+      ...(applicabilityClaim===undefined?{}:{applicability_claim:applicabilityClaim}),
       ...(relation === undefined ? {} : { relation }), submitted_by: reader.id,
       // Semantic integration is attributed to Circle, not promoted into a Hub observation by a matching quote.
       basis_rank: 'judgment', applicability: null };
@@ -319,7 +323,7 @@ export class ContributionLayer {
   }
 
   #withheld(record:string,body:KnowledgeContributionBody):KnowledgeContributionView {
-    const {statement:_statement,source,relation,...metadata}=body;const {quote:_quote,...safeSource}=source;
+    const {statement:_statement,source,relation,applicability_claim:_applicabilityClaim,...metadata}=body;const {quote:_quote,...safeSource}=source;
     const safeOther=relation===undefined?undefined:(({quote:_quote,...rest})=>rest)(relation.other);
     return {record,contribution:WithheldContributionBody.parse({...metadata,source:safeSource,...(relation===undefined?{}:{relation:{kind:relation.kind,other:safeOther}})}),status:'credential_unreadable',
       note:`${labelOf('validity_status','credential_unreadable')}；缺少当前可供模型读取的原件，须由管理员核查扫描结论；确属误报才受理后重读，真凭据须清理并重新采集；不要转述陈述或引文`};

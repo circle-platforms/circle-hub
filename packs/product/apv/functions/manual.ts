@@ -1,3 +1,4 @@
+import {createHash as applicabilityHash} from 'node:crypto';
 import { APPLICABILITY_FIELD,labelOf,type ApplicabilityField } from './generated/vocabulary.ts';
 // R4: source markup/AST identifies candidate boundaries, never command identity.
 // apv-manual-signature@2 (README#command-grammar) requires an exact machine column role
@@ -6,10 +7,10 @@ import { APPLICABILITY_FIELD,labelOf,type ApplicabilityField } from './generated
 // No tree => citable section text and a concrete recovery, never synthetic command paths.
 // Free prose, emphasis, CJK/Latin shape, numeric tokens, prompts and longest prefixes do
 // not establish commands. JSON is a direct-call transition input with the same tree binding.
-// Applicability extraction belongs to its separate task; this module's R4 changes concern commands.
+// Applicability below accepts only explicit versioned JSON scopes; model judgments stay in the contribution layer.
 import type { EntryKind, FragmentRef, ManualCatalog, ManualOptions, ManualResult, MarkdownModel, ProducedEntry, Unplaced } from './types.ts';
 import { type CommandCatalog, resolvePhrase } from './cases-commands.ts';
-import { PAGE_PLATFORMS, PRODUCT_LINE } from './naming.ts';
+import { PAGE_PLATFORMS, PRODUCT_LINE,parseBuildName } from './naming.ts';
 import { canonicalJson, asArray, asString, asStrings, compareText, guarded, internalError, isRecord, pathText, squeeze, stripNul, utf8Offsets } from './util.ts';
 
 const MARKDOWN = 'markdown@1';
@@ -302,13 +303,13 @@ function authoredConditionBlock(raw:Record<string,unknown>):Record<string,unknow
   }
   return isRecord(parsed)&&parsed.schema===CONDITION_SCHEMA?parsed:null;
 }
-function authoredConditions(input:Record<string,unknown>,vocabulary:ClosedSets):Conditions {
+function authoredConditions(input:Record<string,unknown>,vocabulary:ClosedSets,knownBuilds:ReadonlySet<string>):Conditions {
   const out:Conditions={};
   const invalid=(field:string):never=>{throw new ApplicabilitySourceError('适用条件结构违规：'+field+'；按 '+CONDITION_SCHEMA+' 的字段和部署闭集精确声明后重产');};
   const keys=(value:Record<string,unknown>,allowed:readonly string[])=>{for(const key of Object.keys(value))if(!allowed.includes(key))invalid(key);};
   const list=(value:unknown,field:ListField):string[]|undefined=>{
     if(!Array.isArray(value)||!value.length||value.some(item=>typeof item!=='string'))return invalid(field);
-    if(!vocabulary[field].size)return undefined;
+    if(!vocabulary[field].size)return invalid(field+' 的部署闭集为空，需管理员明确允许值或作者修正声明');
     if(value.some(item=>!vocabulary[field].has(item as string)))return invalid(field);
     return [...new Set(value as string[])].sort(compareText);
   };
@@ -319,7 +320,7 @@ function authoredConditions(input:Record<string,unknown>,vocabulary:ClosedSets):
   };
   for(const field of Object.keys(input)){
     if(!(APPLICABILITY_FIELD as readonly string[]).includes(field))return invalid(field);
-    const value=input[field];if(value===null)continue;
+    const value=input[field];if(value===null)return invalid(field+' 的 null 不是无条件声明');
     if(field==='components'){
       if(!isRecord(value))return invalid(field);keys(value,['with','without']);if(!Object.keys(value).length)return invalid(field);
       const withValues=value.with===undefined?undefined:list(value.with,'components'),withoutValues=value.without===undefined?undefined:list(value.without,'components');
@@ -332,7 +333,8 @@ function authoredConditions(input:Record<string,unknown>,vocabulary:ClosedSets):
       if(minimum&&maximum&&(minimum.bytes>maximum.bytes||minimum.bytes===maximum.bytes&&(!minimum.inclusive||!maximum.inclusive)))return invalid(field);
       out.memory={...(minimum?{minimum}:{}),...(maximum?{maximum}:{}),raw:value.raw};
     }else if(field==='builds'){
-      return invalid('builds：缺少锁定知识库已知构建列表，下一步同步构建所在列表页并提供该列表后重新生产');
+      if(!Array.isArray(value)||!value.length||value.some(name=>typeof name!=='string'||parseBuildName(name).line===null||!knownBuilds.has(name)))return invalid('builds：必须符合已声明构建名语法且逐项存在于冻结已知构建清单；下一步同步相应构建列表后重产');
+      out.builds=[...value] as string[];
     }else{
       const values=list(value,field as ListField);if(values)(out as Record<string,unknown>)[field]=values;
     }
@@ -348,6 +350,7 @@ function toApplicability(conditions: Conditions): ProducedEntry['applicability']
 function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, options: ManualOptions, warnings: string[]): ManualResult {
   const entries: ProducedEntry[] = [];
   const vocabulary=closedVocabulary(options);
+  const criteriaDigest=applicabilityHash('sha256').update(canonicalJson({grammar:CONDITION_SCHEMA,closed_sets:Object.fromEntries(Object.entries(vocabulary).map(([field,values])=>[field,[...values].sort(compareText)])),known_builds:[...new Set(options.known_builds??[])].sort(compareText)})).digest('hex');
   const entryContexts=new Map<ProducedEntry,{section:number;text:string;heading?:boolean}>();
   const name = typeof options.name === 'string' && options.name !== '' ? options.name : DEFAULT_MANUAL_NAME;
   const catalog = options.catalog ?? null;
@@ -414,7 +417,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     const candidates=sections.map((_,index)=>index).filter(index=>JSON.stringify(sectionOrigin(index))===JSON.stringify(scope.section));
     if(candidates.length!==1)throw new ApplicabilitySourceError('适用条件声明的章节路径不存在或不唯一；按源解析器给出的路径修复后重产');
     if(!isRecord(authored.conditions)||!Object.keys(authored.conditions).length)throw new ApplicabilitySourceError('适用条件 conditions 须显式声明字段；修复声明后重产');
-    const index=candidates[0]!,values=authoredConditions(authored.conditions,vocabulary),local=locals.get(index)??new Map<Field,Scope>();
+    const index=candidates[0]!,values=authoredConditions(authored.conditions,vocabulary,new Set(options.known_builds??[])),local=locals.get(index)??new Map<Field,Scope>();
     for(const field of APPLICABILITY_FIELD){
       if(!Object.hasOwn(authored.conditions,field))continue;
       const fragment:FragmentRef={parser:parserOf(options),selector:raw.selector};
@@ -426,7 +429,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     }
     locals.set(index,local);
   }
-  const scopes=new Map<number,Map<Field,Scope>>([[0,new Map()]]);
+  const scopes=new Map<number,Map<Field,Scope>>([[0,new Map(locals.get(0)??[])]]);
   const scopeOf=(index:number):Map<Field,Scope>=>{
     const chain:number[]=[],seen=new Set<number>();let at=index;
     while(at>0&&at<sections.length&&!scopes.has(at)){
@@ -465,6 +468,10 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       }
       if(inherited.length)effective.inherited=inherited;
       entry.applicability=toApplicability(effective);
+      const fields=APPLICABILITY_FIELD.filter(field=>scopeOf(context.section).has(field));
+      const sectionPath=sectionSegments(context.section);
+      entry.data.section_path=sectionPath;
+      entry.data.applicability_state={schema:'applicability-state@1',grammar:CONDITION_SCHEMA,declaration_status:sectionPath===null?null:fields.length?'declared':'undeclared',judgment_status:'unjudged',declared_fields:fields,conflicted_fields:fields.filter(field=>scopeOf(context.section).get(field)?.conflict===true),criteria_digest:criteriaDigest};
     }
   };
 

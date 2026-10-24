@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "apv",
-  "version": "1.5.17",
+  "version": "1.5.18",
   "kind": "product",
   "title": "APV / NSAE（产品包）",
   "description": "APV 与 NSAE 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册、修复缺陷和用例索引的知识生产器",
   "files": [
     {
       "path": "functions/adoc/deployment.ts",
-      "sha256": "4c264d7b15a449c68d39b50e042ab4d81340701ad47c58c0cbc88e5d34c987c6",
-      "size": 10748
+      "sha256": "87ba727883f6d185fc394a578d739d71b394716a55169bc28e07079586c45c56",
+      "size": 10876
     },
     {
       "path": "functions/adoc/engine.ts",
@@ -18,8 +18,8 @@
     },
     {
       "path": "functions/adoc/entries.ts",
-      "sha256": "3c01403e1b44691676a38213d5474e3e2f96ec22d4fdeec65a280e183bbe0f41",
-      "size": 8987
+      "sha256": "67aeee373f8d724b862a9568da2c56427be62b78d2e19f3c673744f7d94392dc",
+      "size": 9421
     },
     {
       "path": "functions/adoc/families.ts",
@@ -148,18 +148,18 @@
     },
     {
       "path": "functions/manual.ts",
-      "sha256": "c61e8aa39bc11f4ca98ea265956075fd5389153fb54ccb0cd3354d5158f32d6f",
-      "size": 53893
+      "sha256": "69e467bb3d9baa65e6edc24bc692d314a82f0b68d1ad70ddad916231ca48c41d",
+      "size": 55237
     },
     {
       "path": "functions/naming.ts",
-      "sha256": "84e995b348ca0b19d8236d83a5b21dcb7198dc9ed53c18dc86ea67e01562b886",
-      "size": 8514
+      "sha256": "b32f0806ccb5f14436d8f18d38a4be4a67b284e98b01e307ba9fabb66de43e13",
+      "size": 9012
     },
     {
       "path": "functions/producers.ts",
-      "sha256": "32a4798c4df0af81af4b40015a313e250a29095afb6455c88b1f85d5210cff10",
-      "size": 9319
+      "sha256": "2fdf1f260f3ea94b20dd09d6227bd93de0973171e109c695f5836194db577729",
+      "size": 9869
     },
     {
       "path": "functions/release-notes.ts",
@@ -198,8 +198,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "f68dc166e197730ce041143387fc549681356309a61a44e2c3d55e6cbc9885a5",
-      "size": 15422
+      "sha256": "98b9e1e1f22fc93d89874d5a05044556aa27d74e52d04ecc98ab2ebed90a7c16",
+      "size": 15457
     },
     {
       "path": "functions/util.ts",
@@ -208,8 +208,8 @@
     },
     {
       "path": "product.json",
-      "sha256": "b7af78e47904e6d58842ee87228a9de8e2622d5b409ca3620541f5c4a6f2f676",
-      "size": 10119
+      "sha256": "d06175721b2d580ee3a3162867851e92723cd193b702abbd178601c251c7b9eb",
+      "size": 10925
     },
     {
       "path": "tables/resource-tags.json",
