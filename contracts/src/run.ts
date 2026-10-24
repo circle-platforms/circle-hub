@@ -1,3 +1,4 @@
+import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
 import {AcceptedCriterionRef,CriterionNotice} from './criterion.ts';
 // Run (W06), item projection (W01), source binding (P02) and the summaries start_run and list_task_packs return.
 import { WorkflowOutputs } from './contributions.ts';
@@ -130,6 +131,8 @@ export const InputDefault = z.strictObject({
 export type InputDefault = z.infer<typeof InputDefault>;
 
 export const RunSummary = z.strictObject({
+  feeding_offset:FeedingOffsetSchema.optional().describe('Append-only feeding horizon frozen with the root; missing on a historical run remains unknown'),
+  feeding_objects:z.array(Sha256).optional().describe('Objects actually consumed by this run'),
   criterion_changes:z.array(CriterionNotice).optional(),
   run: RunId,
   pack: z.string(),
@@ -211,6 +214,7 @@ export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
     .optional()
     .describe('the frozen lease rows of the workflow\'s declared prefix at start_run (every holder\'s rows, no tokens), `mine` marking the rows held by this run\'s lineage (D04 R[0])'),
 }).superRefine((r, ctx) => {
+  if(r.feeding_offset&&(r.feeding_offset.run!==r.run||r.feeding_offset.root!==(r.root??null)))ctx.addIssue({code:'custom',path:['feeding_offset'],message:'feeding horizon belongs to the same run and locked root'});
   if (r.host === 'hub') {
     if(r.trigger==='standing_obligation'){
       if(r.runner!==undefined)ctx.addIssue({code:'custom',path:['runner'],message:'a standing obligation keeps its legacy configurer identity'});

@@ -98,6 +98,7 @@ export interface WorkflowStore {
 // ---------------------------------------------------------------- external systems (provided by connectors)
 
 export interface ExternalReadContext {
+  feeding_offset?: import('../contracts/src/feeding.ts').FeedingOffset;
   /** Private diagnostics for the calling service; never part of read content. */
   adminNote?:(reason:string)=>void;
   /** Ordinary-variable decisions frozen for this caller; never persisted as run parameters. */
@@ -259,6 +260,7 @@ export interface RootInfo<B extends KnownBuild | null = KnownBuild> {
 }
 
 export interface NodesQuery {
+  feeding_offset?: import('../contracts/src/feeding.ts').FeedingOffset;
   root: string;
   composition?: string | null;
   /** Node paths as returned by earlier calls, `/` for the root. */
@@ -302,6 +304,8 @@ export interface EntryDiff {
 }
 
 export interface KnowledgePort {
+  feeding?:import('./knowledge/feeding.ts').FeedingLayer;
+  seedlingRoot?(product:string,line:string):Promise<RootInfo|null>;
   /** Current product-wide root; absent on older ports. */
   unversionedRoot?(product: string): Promise<(RootInfo<null> & { source_count: number }) | null>;
   /** Builds the knowledge base knows for a product, any name family, newest first. */

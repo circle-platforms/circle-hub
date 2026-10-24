@@ -56,11 +56,11 @@ export function readAuthority(contract:Record<string,unknown>,entry:Record<strin
   effects[id]={id,source:row.source,roles:effectRoles as string[],budget:Number(row.budget),commands:commands as CommandIdentity[],allowed_literals:allowed_literals as string[],command_roles:bindings as Effect['command_roles']};
  }
  const raw=entry.typed_authority;if(!ground(String(entry.f),raw.source)||!isRecord(raw.parameters)||!Array.isArray(raw.effects)||!raw.effects.length||raw.effects.some(id=>typeof id!=='string'||!effects[id]))return null;
- const source=raw.source;
+ const source=raw.source,parameterMap=raw.parameters;
  const selected=(raw.effects as string[]).map(id=>effects[id]);const parameters:Authority['parameters']={};
- const exempt=new Set(unsupplied),counted=names.filter(name=>!exempt.has(name)),declared=Object.keys(raw.parameters);
- if(declared.filter(name=>!exempt.has(name)).length!==counted.length||counted.some(name=>!Object.hasOwn(raw.parameters,name))||declared.some(name=>!names.includes(name)))return null;
- for(const name of declared){const p=raw.parameters[name];if(!isRecord(p)||typeof p.type!=='string'||!types[p.type]||typeof p.role!=='string'||!roles[p.role]||!selected.some(e=>e.roles.includes(p.role as string)))return null;parameters[name]={type:types[p.type],role:p.role};}
+ const exempt=new Set(unsupplied),counted=names.filter(name=>!exempt.has(name)),declared=Object.keys(parameterMap);
+ if(declared.filter(name=>!exempt.has(name)).length!==counted.length||counted.some(name=>!Object.hasOwn(parameterMap,name))||declared.some(name=>!names.includes(name)))return null;
+ for(const name of declared){const p=parameterMap[name];if(!isRecord(p)||typeof p.type!=='string'||!types[p.type]||typeof p.role!=='string'||!roles[p.role]||!selected.some(e=>e.roles.includes(p.role as string)))return null;parameters[name]={type:types[p.type],role:p.role};}
  return {source,parameters,roles,effects:selected};
 }
 export function valueProblem(type:ValueType,value:unknown):string|null {

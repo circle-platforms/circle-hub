@@ -114,3 +114,12 @@ Hub 之外读到的（模型在 Circle 里自己看的）不触发；只有上�
 3. Hub：喂入层存储与读到即喂投影、核验管线、冻结序号、视图改造。
 4. 包：knowledge-contribution 承接回注；apv 包函数转喂入投影（声明已去，函数在）。
 5. 客户端：Circle 提议格式与"必须回"清单。
+
+## Hub 接线与读取边界
+
+- 写入由 `Knowledge.feeding` 提供：`observeSource`、`upload`、`prepare` / `appendPrepared`、`retract`；模型提议复用回注槽的可选 `feeding` 字段，不新增模型调用。`admit` 先核验整份数组，再在同一事务追加。
+- 五类对象、绑定、使用与撤回均放在 `claim@1` 的 `statement.data.feeding`，保留 B01 根据、依据等级、实际操作者和原始来源记录身份。规范内容另存对象库。冻结序号取记录库追加顺序（允许空洞），与根一起写入运行、上下文和结果锁；序号不写进规范对象，不进根摘要。
+- 视图读取走 `FeedingReader.cut(product, offset, principal)`，原件权限逐条核对；`null` 只表示无运行的当前视图。旧运行缺冻结序号时给缺失事实和另开运行的出口，不回填零或最新序号。旧每构建根仍走旧视图。
+- 产品包声明 `feeding.project`、`normalize_line`、`verify_command`、`classifications` 回调；Hub 不解析产品正文。工作流可以声明 `feeding.require_version`、分类闭集及 `declared_line_parameter`。运行目标只记使用；只有最后这个显式参数才记人的版本绑定。
+- JSON / KityMinder 解析器未提供可证明的原始字节范围，因此喂入引文另支持 `{reference: src 引用（含解析器与选择器）, text: 逐字片段}`。已有可证明字节跨度的引文格式继续支持；不猜跨度，不做文字折叠。
+- 实际读取清单通过工具结果的 `feeding_objects` 返回，原件喂入缺上下文或格式失败通过 `feeding_pending` 给缺失事实和下一步。原件保留原权限。管理员调用 `retract` 追加撤回；对象、运行、条目分别核对存在性，原始记录不删不改。账号停用或存在已吊销令牌的回注只登记核对待办，不自动裁决。

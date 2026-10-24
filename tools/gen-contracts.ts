@@ -414,11 +414,12 @@ const SHARED_PRIMITIVES: Readonly<Record<string,string>> = {
   'contract:common/ItemId':'Common.ItemId',
   'contract:reference/ReferenceUri':'Reference.ReferenceUri',
   'contract:reference/Ground':'Reference.Ground',
+  'contract:reference/SrcUri':"Reference.referenceUriOf('src')",
   'contract:reference/RecUri':"Reference.referenceUriOf('rec')",
   'contract:reference/TreePath':'Reference.TreePath',
   'contract:tables/CatalogParamType':'Tables.CatalogParamType',
 };
-export function renderSharedInterfaces(input: unknown): string | undefined {
+export function renderSharedInterfaces(input: unknown, leaf?:'FeedingOffset'): string | undefined {
   if(!isRecord(input)||!isRecord(input.formatProposals)||input.formatProposals.sharedInterfaces===undefined)return undefined;
   const spec=input.formatProposals.sharedInterfaces;
   const fail=(at:string,message:string):never=>{throw new ContractsError([`contracts/model.json: sharedInterfaces ${at}: ${message}`]);};
@@ -428,7 +429,7 @@ export function renderSharedInterfaces(input: unknown): string | undefined {
   const names=new Set<string>();const ids=new Set<string>();
   const reserved=new Set(['Common','Reference','Tables','Product','V','SharedInterfaceSchemas','z']);
   const bindings=new Set(reserved);
-  const out=[HEADER,"import { z } from 'zod';","import * as V from './vocabulary.ts';","import * as Common from '../src/common.ts';","import * as Reference from '../src/reference.ts';","import * as Tables from '../src/tables.ts';","import * as Product from '../src/product.ts';",''];
+  const out=leaf?[HEADER,"import { z } from 'zod';","import * as Common from '../src/common.ts';",'']:[HEADER,"import { z } from 'zod';","import * as V from './vocabulary.ts';","import * as Common from '../src/common.ts';","import * as Reference from '../src/reference.ts';","import * as Tables from '../src/tables.ts';","import * as Product from '../src/product.ts';",''];
   const entries:Array<[string,string]>=[];
   const compile=(raw:unknown,at:string,depth=0):string=>{
     if(depth>32||!isRecord(raw))return fail(at,'needs a shape object within depth 32');
@@ -496,7 +497,7 @@ export function renderSharedInterfaces(input: unknown): string | undefined {
     if(typeof id!=='string'||!SCHEMA_ID.test(id)||ids.has(id))return fail(at,'id must be a unique name@major');
     if(!isText(meaning))return fail(at,'meaning must be text');
     const code=compile(value.schema,at+'/schema');
-    names.add(name);bindings.add(name);bindings.add(name+'Schema');ids.add(id);entries.push([id,name]);
+    names.add(name);bindings.add(name);bindings.add(name+'Schema');ids.add(id);if(leaf&&name!==leaf)continue;entries.push([id,name]);
     out.push(`export const ${name}Schema = ${code}.meta({ title: ${q(id)}, description: ${q(meaning as string)} });`);
     out.push(`export type ${name} = z.infer<typeof ${name}Schema>;`,'');
   }
@@ -649,7 +650,7 @@ export async function generate(root: string = REPO_ROOT): Promise<Record<string,
     'protocol.ts': renderProtocol(model as Model, codes as Codes),
   };
   const shared = renderSharedInterfaces(model);
-  if (shared !== undefined) files['shared-interfaces.ts'] = shared;
+  if (shared !== undefined) {files['shared-interfaces.ts'] = shared;files['feeding-offset.ts']=renderSharedInterfaces(model,'FeedingOffset')!;}
   const { contracts, exporters, sharedSchemas } = await loadContracts(root, files);
   const clashes = exportClashes(exporters);
   if (clashes.length > 0) throw new ContractsError(clashes);
@@ -825,6 +826,7 @@ export async function main(args: string[], root: string = REPO_ROOT): Promise<nu
     packFiles = packVocabularyFiles(root);
     for (const [target,source] of Object.entries({
       'packs/workflow/template-gap/tables/command-identity.schema.json':'schemas/command-identity.v1.schema.json',
+      'packs/workflow/knowledge-contribution/tables/knowledge-structure.json':'schemas/knowledge-structure.v1.schema.json',
       'packs/workflow/case-compile/tables/command-identity.schema.json':'schemas/command-identity.v1.schema.json',
       'packs/workflow/case-compile/tables/declared-type.schema.json':'schemas/declared-parameter-type.v1.schema.json',
       'packs/workflow/case-compile/tables/declared-role.schema.json':'schemas/declared-parameter-role.v1.schema.json',

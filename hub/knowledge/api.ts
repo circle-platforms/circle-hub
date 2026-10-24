@@ -75,3 +75,6 @@ export {completeKnowledgeView} from './complete-view.ts';
 
 export {scheduleSync} from './sync-schedule.ts';
 export {productVariableProblems,variableUsesOfRoot} from './variables.ts';
+
+export {FeedingLayer} from './feeding.ts';
+export type {FeedingScope,FeedingReceipt,FeedingView} from './feeding.ts';

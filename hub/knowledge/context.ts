@@ -14,7 +14,7 @@ export interface KnowledgeRecords {
   store: RecordStore;
   artifacts: Artifacts;
   pointers: Pointers;
-  principals: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'>>;
+  principals: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'|'tokens'>>;
   /** Content-addressed bytes: the stored outputs of producer calls (memoized batches) and the bytes of computed views. */
   objects: Pick<ObjectStore, 'put' | 'get'>;
 }
@@ -110,11 +110,12 @@ export class WriteQueue {
 export interface KnowledgeContext {
   knownBuildInventory?:ReadonlyArray<{name:string;record:string}>;
   /** Reads the feeding layer beside seedlings (kb-feeding); absent when no feeding records exist yet (nothing fed). */
-  feeding?:import('./feeding-types.ts').FeedingReader;
+  feedingReader?:import('./feeding-types.ts').FeedingReader;
   /** Whether the generic additional-root scope was explicitly declared, beyond automatic unversioned discovery. */
   additionalScopeRootsDeclared?: boolean;
   additionalScopeRoots?: (product:string)=>Promise<readonly {root:string;composition:string}[]>;
   credentialAcceptance?:import('./credential-policy.ts').CredentialAcceptanceOptions;
+  feeding?:import('./feeding.ts').FeedingLayer;
   records: KnowledgeRecords;
   store: KnowledgeStore;
   parsers: ParserRegistry;

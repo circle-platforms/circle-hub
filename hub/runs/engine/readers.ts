@@ -62,7 +62,7 @@ export function recordReader(store: RecordStore, contributions?: Pick<Contributi
     async read(digest, reader) {
       const record = await store.get(digest);
       if (record === null) return null;
-      if (record.kind === 'claim' && isKnowledgeContributionSchema(record.schema)) {
+      if (record.kind === 'claim' && (isKnowledgeContributionSchema(record.schema)||record.schema==='claim@1'&&isObject(record.body)&&isObject(record.body.statement)&&isObject(record.body.statement.data)&&record.body.statement.data.feeding!==undefined)) {
         if ((await contributions?.read(digest, principalOf(reader))) == null) return null;
       } else if (reader.role !== 'admin') {
         const run = runOfRecord(record);

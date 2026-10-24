@@ -194,7 +194,7 @@ export async function bindExpected(
         miss('no enabled resource reads this external object type');
         continue;
       }
-      const read = await ctx.deps.external.read(wanted.external, { principal: user, run: runId, variables, purpose: '期望来源',adminNote:detail=>ctx.log({traceId,run:runId,what:`expected source ${wanted.external}`,detail}), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) });
+      const read = await ctx.deps.external.read(wanted.external, { principal: user, run: runId, variables, purpose: '期望来源',feeding_offset:context.feeding_offset,adminNote:detail=>ctx.log({traceId,run:runId,what:`expected source ${wanted.external}`,detail}), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) });
       if (!read.ok) {
         if(read.inputError?.code==='SOURCE_READ_FAILED'){out.warnings.push({code:'SOURCE_READ_FAILED',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
         if(read.inputError?.code==='SOURCE_READ_LIMIT'){out.warnings.push({code:'SOURCE_READ_LIMIT',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
@@ -224,6 +224,7 @@ export async function bindExpected(
           // A meta artifact that is not JSON gives no label.
         }
       }
+      await ctx.deps.knowledge.feeding?.observeSource(user,chosen.artifact.body.sha256,{composition,product:context.product,root:context.root,run:runId,line:context.line,sourceRecord:chosen.artifact.digest,metaSource:meta?.artifact.body.sha256,requested:wanted.external});
       const reference = `src:${chosen.artifact.body.sha256}`;
       if (out.sources.some((s) => s.reference === reference)) continue;
       out.sources.push({ reference, role: wanted.role, external: withRevision(read.id, read.revision), media_type: chosen.artifact.body.media_type,...(read.coverage?{coverage:read.coverage}:{}), label: read.absent ? `系统 ${read.absent.system} 里没有 ${read.absent.object}（读于 ${read.absent.observed_at}）` : title ?? wanted.reason });

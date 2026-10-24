@@ -345,6 +345,7 @@ export const ProductDeclaration = z
     links: z.array(LinkDeclaration).max(32).optional(),
     catalogs: z.array(CatalogDeclaration),
     producers: z.array(Producer),
+    feeding: z.strictObject({project:PackFunctionRef,normalize_line:PackFunctionRef.optional(),verify_command:PackFunctionRef.optional(),classifications:PackFunctionRef.optional()}).optional().describe('Native-source projection and declared grammar callbacks for feeding; no Hub business parser'),
   })
   .superRefine((p, ctx) => {
     const declared = new Set<string>();

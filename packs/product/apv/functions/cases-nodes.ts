@@ -33,6 +33,8 @@ export type CaseNode = {
   steps: number;
   /** Step and expected-result text, kept for the same deterministic command scan as titles. */
   bodyTexts: string[];
+  stepTexts?:string[];
+  expectedTexts?:string[];
   autoid: string | null;
   /** Named by the tagged rule (else by the marked rule only). */
   tagged: boolean;
@@ -156,6 +158,7 @@ export function caseNodes(model: unknown): CaseScan {
         hasExpected: false,
         steps: 0,
         bodyTexts: [],
+        stepTexts:[],expectedTexts:[],
         autoid: autoid === null || isBlank(autoid) ? null : autoid,
         tagged: isTagged(visit.data),
       });
@@ -166,10 +169,10 @@ export function caseNodes(model: unknown): CaseScan {
       if (visit.leaf && visit.data.priority === CASE_RULE.preconditionPriority) continue;
       state.bodyTexts.push(visit.text);
       if (parentStep === -1 && !visit.leaf) {
-        state.steps += 1;
+        state.steps += 1;state.stepTexts!.push(visit.text);
         stepOf[v] = state.steps;
       } else if (visit.leaf) {
-        state.expectedCount += 1;
+        state.expectedCount += 1;state.expectedTexts!.push(visit.text);
         if (!isBlank(visit.text)) {
           state.hasExpected = true;
         }

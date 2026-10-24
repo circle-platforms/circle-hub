@@ -279,6 +279,27 @@
       ],
       "additionalProperties": false
     },
+    "feeding": {
+      "type": "object",
+      "properties": {
+        "require_version": {
+          "type": "boolean"
+        },
+        "classifications": {
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "declared_line_parameter": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        }
+      },
+      "additionalProperties": false
+    },
     "contribution": {
       "description": "a dedicated knowledge-contribution run; slot holds the artifact and requirement names its item-level fact verification",
       "type": "object",
