@@ -368,7 +368,8 @@ catalogs, grounds and provenance.
     bound and the entry cap only guards an injected bigger one.
     An unplaced entry is cited at the root, and only its own reference reads it back (`tree:<root>/@<digest>`): get_nodes
     lists the entries hung on nodes, so no walk of the tree enumerates them while `total_keys` and `total_entries` count
-    them — a consumer that needs every key behind a truncated index reads the facets view of the same scan.
+    them — a consumer that needs every key of a truncated index follows the view's own `next` continuation and
+    cross-checks the counts against the facets view of the same scan.
     When any entries of the kind are unplaced, a note says how many
     (`未归位条目 N 个，标在根下`), including entries that carry no value of the key; `total_entries` stays the entries that carry a
     value. The value `__proto__` is not listed as a key (a JSON reader that builds plain objects would take it for the

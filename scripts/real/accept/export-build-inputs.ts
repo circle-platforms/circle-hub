@@ -12,6 +12,8 @@ const hex = /^[a-f0-9]{64}$/;
 const KEY_FIELD = 'document';
 /** The value the index counts in total_keys but never lists as a key (a JSON reader would take it for the prototype). */
 const PROTO_KEY = '__proto__';
+/** Most pages of one view an export follows: a page holds thousands of entries, so a real build needs a handful. */
+const MAX_PAGES = 1000;
 const object = (v: any): v is Record<string, any> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const hash = (v: Uint8Array) => createHash('sha256').update(v).digest('hex');
 export class ExportError extends Error {
@@ -48,7 +50,8 @@ function viewOf(value: any): any {
   if (!object(value) || value.schema !== 'index-view@1' || value.kind !== 'case' || value.key !== 'document' ||
       !object(value.build) || !hex.test(value.build.root) || !object(value.keys) || !object(value.entries) ||
       !['total_keys', 'total_entries', 'skipped'].every(k => Number.isSafeInteger(value[k]) && value[k] >= 0) ||
-      typeof value.truncated !== 'boolean' || !Array.isArray(value.cut_keys) || !Array.isArray(value.notes))
+      typeof value.truncated !== 'boolean' || !Array.isArray(value.cut_keys) || !Array.isArray(value.notes) ||
+      !(value.next === undefined || value.next === null || typeof value.next === 'string'))
     fail('合式的文档用例索引', '核对 Hub 与脚本版本后重新导出');
   for (const [key, entries] of Object.entries(value.keys)) {
     if (!key || /[\r\n:]/.test(key) || !Array.isArray(entries) || entries.some(id => !hex.test(id) || !object(value.entries[id])))
@@ -69,6 +72,7 @@ function facetViewOf(value: any): any {
       !object(value.build) || !hex.test(value.build.root) || !Array.isArray(value.rows) ||
       !Number.isSafeInteger(value.total) || value.total < 0 || typeof value.truncated !== 'boolean' ||
       !Number.isSafeInteger(value.skipped) || value.skipped < 0 || !Array.isArray(value.notes) ||
+      !(value.next === undefined || value.next === null || typeof value.next === 'string') ||
       !object(value.totals) || !object(value.totals.empty) ||
       !Number.isSafeInteger(value.totals.empty[KEY_FIELD]) || value.totals.empty[KEY_FIELD] < 0)
     fail('合式的文档用例分面', '核对 Hub 与脚本版本后重新导出');
@@ -84,6 +88,12 @@ function keyText(value: unknown): string | null {
   if (typeof value === 'string') return value;
   if (typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) return JSON.stringify(value);
   return fail('可映射成索引键的分面取值', '分面取值不是字符串、有限数字或布尔；核对 Hub 的分面视图版本后重新导出');
+}
+/** The continuation id a view names for its next page, or null on the last page (a malformed one is a Hub/script mismatch). */
+function nextOf(view: any): string | null {
+  if (view.next === undefined || view.next === null) return null;
+  if (typeof view.next === 'string' && view.next !== '') return view.next;
+  return fail('合式的续页标识', '视图的 next 不是空的续读标识；核对 Hub 与脚本版本后重新导出');
 }
 interface Original { external: string; sha: string; size: number; at: string }
 function originals(text: string): Original[] {
@@ -125,57 +135,113 @@ export async function exportBuild(options: Options, deps: Deps): Promise<string[
     sameSnapshot(read, view, '全部索引分片');
     return view;
   };
-  let documents = Object.keys(initial.keys).sort();
-  const pages: any[] = [];
-  if (!initial.truncated) pages.push(initial);
-  else {
-    // The index has no key cursor, and a tree walk cannot enumerate what the production left unplaced at the root:
-    // get_nodes lists the entries hung on nodes, while an unplaced entry is readable only by its own reference — yet the
-    // index counts it in total_keys and total_entries. The facets view of the same scan counts the same entries and lists
-    // every distinct value, placed and unplaced alike, so it is the complete key list; each key is then fetched by only=.
-    const facetRead = await deps.facets(`knowledge:facets:${encodeURIComponent(options.product)}:${encodeURIComponent(options.build)}?kind=case&by=${KEY_FIELD}`);
-    const facet = facetViewOf(facetRead.view);
-    sameSnapshot(facetRead, facet, '文档分面');
-    const found = new Set<string>(documents);
-    let values = 0;
-    for (const row of facet.rows) {
+  // ---- the key list: page the index by its own continuation id, then cross-check it against the facets view
+  const pages: any[] = [initial];
+  const keys = new Set<string>(Object.keys(initial.keys));
+  const pagedListed = new Set<string>(Object.keys(initial.entries));
+  const followed = new Set<string>();
+  /** Continuation reads the Hub refused: a page whose entries have unaccepted credential hits is not served by `after`. */
+  let refused = 0;
+  let next = nextOf(initial);
+  while (next !== null) {
+    if (followed.has(next)) fail('可推进的索引续页', '索引重复给出同一个续页标识；核对 Hub 与脚本版本后重新导出');
+    followed.add(next);
+    if (pages.length >= MAX_PAGES) fail(`可读完的索引分页（不超过 ${MAX_PAGES} 页）`, '索引分页过多；核对视图字节预算和构建规模后重新导出');
+    let read: ViewRead;
+    try { read = await deps.index(next); } catch (error) {
+      if (!(error instanceof ExportError)) throw error;
+      refused++; // The facets view below still enumerates every key; a stopped page is reported, never guessed away.
+      break;
+    }
+    const page = locked(read);
+    if (page.total_keys !== initial.total_keys || page.total_entries !== initial.total_entries)
+      fail('每页一致的索引总数', '续页的 total_keys 或 total_entries 与首页不同；换空目录重新导出同一构建');
+    pages.push(page);
+    for (const key of Object.keys(page.keys)) keys.add(key);
+    for (const digest of Object.keys(page.entries)) pagedListed.add(digest);
+    next = nextOf(page);
+  }
+
+  // The facets view of the same scan counts the same entries — placed, unplaced at the root and product-wide alike — and
+  // lists every distinct value, so its rows and totals cross-check the paged key list. It pages by its own continuation.
+  const facetId = `knowledge:facets:${encodeURIComponent(options.product)}:${encodeURIComponent(options.build)}?kind=case&by=${KEY_FIELD}`;
+  const facetKeys = new Set<string>();
+  const followedFacets = new Set<string>();
+  let facetRows = 0, facetRefused = 0, facetPages = 1, facetTotal = 0, facetEmpty = 0, facetTruncated = false;
+  const addRows = (view: any) => {
+    for (const row of view.rows) {
       if (!object(row) || !object(row.values) || !Object.hasOwn(row.values, KEY_FIELD) || !Number.isSafeInteger(row.count) || row.count < 1)
         fail('合式的分面行', '核对 Hub 的分面视图版本后重新导出');
       const key = keyText(row.values[KEY_FIELD]);
       if (key === null) continue; // The null group: the entries that carry no value of the key. The index has no key for them.
-      values++;
+      facetRows++;
       if (key === '') fail('可导出的文档键', '有一个文档键是空字符串，only= 表达不了空取值；请管理员核对来源里 document 为空的用例条目，改正后重新生产并导出');
-      if (key === PROTO_KEY) fail('可列出的文档键', `有一个文档键是 ${PROTO_KEY}，索引视图把它计入 total_keys 却不作为键列出；请管理员核对来源里该 document 取值的条目，改正后重新生产并导出`);
-      found.add(key);
+      if (key === PROTO_KEY) fail('可列出的文档键', `有一个文档键是 ${PROTO_KEY}，索引视图不为它列出任何键；请管理员核对来源里该 document 取值的条目，改正后重新生产并导出`);
+      facetKeys.add(key);
     }
-    documents = [...found].sort();
-    const carriers = facet.total - facet.totals.empty[KEY_FIELD];
-    if (documents.length !== initial.total_keys)
-      fail(`与索引 total_keys 一致的完整文档键（索引 ${initial.total_keys} 个，分面非空取值 ${values} 行，两边合计 ${documents.length} 个，分面截断 ${facet.truncated ? '是' : '否'}）`,
-        '按分面视图自己的说明补齐少的取值：行被行数或字节预算截断、取值文字有凭据扫描命中、条目组合数超过上限都会少列；处理后重新导出。未归位条目的键分面照常列出，重新生产不会补上这个差');
-    if (carriers !== initial.total_entries)
-      fail(`两个视图一致的用例条目总数（索引 total_entries ${initial.total_entries}，分面 total ${facet.total} 减无文档键 ${facet.totals.empty[KEY_FIELD]} 为 ${carriers}）`,
-        '核对两个视图读的是不是同一快照，以及来源里有没有 document 是混着空的列表的条目（索引按元素计键，分面把该条目同时计入空组）；改正来源后重新生产并导出');
-    if (!documents.length) fail('可补取的索引键', '核对索引截断原因并修复来源后重新导出');
-    for (const document of documents) {
-      const page = locked(await deps.index(`${base}&only=${encodeURIComponent(document)}`));
-      const listed = Object.keys(page.entries).length;
-      if (!Object.hasOwn(page.keys, document) || Object.keys(page.keys).length !== 1)
-        fail('该文档键下列出的条目', '这个文档的条目一条也没有列出（多半是它们的文字有凭据扫描命中而被排除）；请管理员受理这些命中或修复来源文字，重新生产后导出');
-      // A single listed key with no per-key cut can only be truncated by entries the scan withheld: they stay in the
-      // totals and leave every listing, so the shard's own totals name exactly how many are missing.
-      if (page.truncated && page.total_entries === listed)
-        fail('可解释的分片截断', '这个单文档分片标了截断，却没有条目差额可以解释；核对 Hub 与脚本版本后重新导出');
-      pages.push(page);
+  };
+  const facetRead = await deps.facets(facetId);
+  const facet = facetViewOf(facetRead.view);
+  sameSnapshot(facetRead, facet, '文档分面');
+  addRows(facet);
+  facetTotal = facet.total; facetEmpty = facet.totals.empty[KEY_FIELD]; facetTruncated = facet.truncated;
+  let facetNext = nextOf(facet);
+  while (facetNext !== null) {
+    if (followedFacets.has(facetNext)) fail('可推进的分面续页', '分面视图重复给出同一个续页标识；核对 Hub 与脚本版本后重新导出');
+    followedFacets.add(facetNext);
+    if (facetPages >= MAX_PAGES) fail(`可读完的分面分页（不超过 ${MAX_PAGES} 页）`, '分面分页过多；核对视图字节预算和构建规模后重新导出');
+    let read: ViewRead;
+    try { read = await deps.facets(facetNext); } catch (error) {
+      if (!(error instanceof ExportError)) throw error;
+      facetRefused++;
+      break;
     }
+    const page = facetViewOf(read.view);
+    sameSnapshot(read, page, '文档分面');
+    if (page.total !== facetTotal || page.totals.empty[KEY_FIELD] !== facetEmpty)
+      fail('每页一致的分面总数', '分面续页的 total 或空组计数与首页不同；换空目录重新导出同一构建');
+    facetPages++;
+    addRows(page);
+    facetTruncated = facetTruncated || page.truncated;
+    facetNext = nextOf(page);
   }
-  const entries = new Set(pages.flatMap(page => Object.keys(page.entries)));
+
+  const documents = [...new Set([...keys, ...facetKeys])].sort();
+  const carriers = facetTotal - facetEmpty;
+  if (documents.length !== initial.total_keys)
+    fail(`与索引 total_keys 一致的完整文档键（索引 ${initial.total_keys} 个，分页列出 ${keys.size} 个，分面非空取值 ${facetRows} 行，合计 ${documents.length} 个，读不出的续页 ${refused + facetRefused} 次）`,
+      '按两个视图自己的说明补齐：分面行被行数或字节预算截断、取值文字有凭据扫描命中、续页读不出都会少列；处理后重新导出。未归位条目和产品级根的条目两个视图照常计入，重新生产不会补上这个差');
+  if (carriers !== initial.total_entries)
+    fail(`两个视图一致的用例条目总数（索引 total_entries ${initial.total_entries}，分面 total ${facetTotal} 减无文档键 ${facetEmpty} 为 ${carriers}）`,
+      '核对两个视图读的是不是同一快照，以及来源里有没有 document 是混着空的列表的条目（索引按元素计键，分面把该条目同时计入空组）；改正来源后重新生产并导出');
+  if (documents.length === 0 && (refused > 0 || facetRefused > 0 || pages.length > 1 || facetPages > 1 || initial.truncated || facetTruncated))
+    // A locked product-wide root may legitimately be empty, but only an answer that declares itself complete and empty
+    // proves it: a refused continuation, a second page, a truncated view or a note is never that declaration.
+    fail('确认完整且为空的文档键',
+      `索引读了 ${pages.length} 页、分面读了 ${facetPages} 页，读不出的续页 ${refused + facetRefused} 次，截断 ${initial.truncated || facetTruncated ? '是' : '否'}；空答复不等于空根。下一步：管理员受理这些页上的凭据命中或修复来源后重新导出，不能把读不全当作没有条目`);
+
+  // ---- the saved views: the one complete page when the first already is one, else one only= shard per document
+  const shards: any[] = [];
+  if (pages.length === 1 && !initial.truncated) shards.push(initial);
+  else for (const document of documents) {
+    const page = locked(await deps.index(`${base}&only=${encodeURIComponent(document)}`));
+    const listed = Object.keys(page.entries).length;
+    if (!Object.hasOwn(page.keys, document) || Object.keys(page.keys).length !== 1)
+      fail('该文档键下列出的条目', '这个文档的条目一条也没有列出（多半是它们的文字有凭据扫描命中而被排除）；请管理员受理这些命中或修复来源文字，重新生产后导出');
+    // A single listed key can only be truncated by entries the scan withheld: they stay in the totals and leave every
+    // listing, so the shard's own totals name exactly how many are missing.
+    if (page.truncated && page.total_entries === listed)
+      fail('可解释的分片截断', '这个单文档分片标了截断，却没有条目差额可以解释；核对 Hub 与脚本版本后重新导出');
+    shards.push(page);
+  }
+  const entries = new Set(shards.flatMap(page => Object.keys(page.entries)));
   /** Entries the Hub counted and withheld from every listing (their own text has credential scan hits). */
-  const withheld = pages.reduce((sum, page) => sum + Math.max(0, page.total_entries - Object.keys(page.entries).length), 0);
-  if (documents.length !== initial.total_keys || entries.size + withheld !== initial.total_entries)
-    fail(`与总数一致的全部索引条目（文档 ${documents.length}/${initial.total_keys}，条目 ${entries.size}${withheld === 0 ? '' : ` 加扫描排除 ${withheld}`}/${initial.total_entries}）`,
+  const withheld = shards.reduce((sum, page) => sum + Math.max(0, page.total_entries - Object.keys(page.entries).length), 0);
+  const lost = [...pagedListed].filter(digest => !entries.has(digest)).length;
+  if (documents.length !== initial.total_keys || entries.size + withheld !== initial.total_entries || lost > 0)
+    fail(`与总数一致的全部索引条目（文档 ${documents.length}/${initial.total_keys}，条目 ${entries.size}${withheld === 0 ? '' : ` 加扫描排除 ${withheld}`}/${initial.total_entries}，分页列出而分片没给的 ${lost} 条）`,
       '核对文档字段和索引完整性；差额若来自凭据扫描排除，请管理员受理这些命中或修复来源文字，重新生产后导出');
-  pages.forEach((page, i) => save(`index-${i + 1}.json`, Buffer.from(JSON.stringify(page, null, 2) + '\n')));
+  shards.forEach((page, i) => save(`index-${i + 1}.json`, Buffer.from(JSON.stringify(page, null, 2) + '\n')));
   let missing = 0;
   const maps: string[] = [];
   const obtain = async (row: Original, name: string) => {
@@ -213,7 +279,9 @@ export async function exportBuild(options: Options, deps: Deps): Promise<string[
   if (trees.length >= 500 || matches.length !== 1) missing++;
   else await obtain(matches[0], 'command-tree.xml');
   if (missing) fail(`原件缺失或不唯一 ${missing} 份`, '管理员按构建列出的文档清单补读原件，核对命令树路径及原件列表上限；换空目录重新导出');
-  return [`索引 ${pages.length} 份；文档 ${documents.length} 份；用例 ${entries.size} 条${withheld === 0 ? '' : `（另有 ${withheld} 条被凭据扫描排除，没有进输入）`}；命令树 1 份`, ...summaries];
+  const lines = [`索引 ${shards.length} 份；文档 ${documents.length} 份${documents.length === 0 && facetEmpty > 0 ? `（有 ${facetEmpty} 条用例没有文档键）` : ''}；用例 ${entries.size} 条${withheld === 0 ? '' : `（另有 ${withheld} 条被凭据扫描排除，没有进输入）`}；命令树 1 份`];
+  if (refused + facetRefused > 0) lines.push(`读不出的续页 ${refused + facetRefused} 次，文档键由分面视图补齐；下一页读不出通常是该页条目有未受理的凭据命中，管理员受理后可整页续读`);
+  return [...lines, ...summaries];
 }
 
 export type CliRunner = (args: string[], env: NodeJS.ProcessEnv) => Promise<{ status: number | null; stdout: string }>;
@@ -234,7 +302,10 @@ export function createDeps(options: Options, runner?: CliRunner): Deps {
   async function cli(args: string[]): Promise<string> {
     const env = { ...process.env, CIRCLE_HUB_TOKEN: options.token };
     const result = runner ? await runner(['bin/circle-hub', ...args], env) : spawnSync(process.execPath, ['bin/circle-hub', ...args], { cwd: REPO, env, encoding: 'utf8', maxBuffer: 128 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
-    if (result.status !== 0) fail('成功的管理员原件命令', '在部署主机核对 CLI 的数据库配置和管理员令牌，再重新导出');
+    if (result.status !== 0) {
+      if (args[0] === 'knowledge') fail('成功的管理员视图读取', '核对产品、构建、管理员令牌和权限；若构建在导出中重新生产或同步过，快照已移动，换空目录重新导出');
+      fail('成功的管理员原件命令', '在部署主机核对 CLI 的数据库配置和管理员令牌，再重新导出');
+    }
     return result.stdout;
   }
 }
