@@ -69,15 +69,19 @@ export function extractStatementCaseIds(text: string, bug: string): string[] {
 
 /** Current item rendering is id | label | summary, followed by optional metadata.
  * Labels may contain separators; the producer emits `缺陷 id：title` or a bare fallback label. */
-function itemRow(line: string): { bug: string; summary: string } | null {
+function itemRow(line: string): { bug: string; system: string | null; summary: string } | null {
   const parts = line.trim().replace(/^- /, '').split(' | ');
-  if (!line.trim().startsWith('- ') || !/^\d+$/.test(parts[0] ?? '')) return null;
+  if (!line.trim().startsWith('- ')) return null;
+  const identity=(parts[0] ?? '').split(':');
+  if(identity.length>2 || !/^\d+$/.test(identity.at(-1) ?? ''))return null;
+  let system:string|null=null;try{system=identity.length===2?decodeURIComponent(identity[0]):null;}catch{return null;}
   while (parts.at(-1)?.startsWith('位置 ') || parts.at(-1)?.startsWith('可沿用 ')) parts.pop();
   if (parts.length < 3) return null;
-  const bug = parts.shift()!;
+  parts.shift();
+  const bug = identity.at(-1)!;
   const summary = parts.pop()!;
   const labelId = /^缺陷 (\d+)(?:：|$)/.exec(parts.join(' | '))?.[1];
-  return labelId === bug ? { bug, summary } : null;
+  return labelId === bug ? { bug, system, summary } : null;
 }
 
 export default function scenario(gold: TraceGold): Scenario {
@@ -120,7 +124,8 @@ export default function scenario(gold: TraceGold): Scenario {
 
       for (const [index, defect] of gold.defects.entries()) {
         const label = `#${index + 1} ${createHash('sha256').update(defect.bug).digest('hex').slice(0, 12)}`;
-        const matchingLines = rows.filter((row) => row.bug === defect.bug).map((row) => row.summary);
+        const system=defect.system ?? (defect.systems?.length===1?defect.systems[0]:undefined);
+        const matchingLines = rows.filter((row) => row.bug === defect.bug && (system===undefined || system==='unknown' || row.system===system)).map((row) => row.summary);
 
         if (matchingLines.length === 0) {
           checks.push({
