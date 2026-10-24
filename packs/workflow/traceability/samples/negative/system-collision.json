@@ -7,9 +7,10 @@
     "items": [
       {
         "id": "bugzilla:71061",
-        "location": "src:d517b27a1779026e5eaccd1e7d164dc95afda624e4b88e518d4b826f16144853/json@1/p/entries/236f6c9be03f32c4ca2854a69d0f6b97090b535a5f0669c5c42da40c7e5078d3",
+        "location": "src:241de52b521dcd8744512cf804733708a5fc3d07d8639088e1ac980e976ba31c/json@1/p/entries/236f6c9be03f32c4ca2854a69d0f6b97090b535a5f0669c5c42da40c7e5078d3",
         "fields": {
           "bug": "71061",
+          "declaration_status": "declared",
           "identity": "bugzilla:71061",
           "collision_systems": [
             "bugzilla",
@@ -51,9 +52,10 @@
       },
       {
         "id": "plm:71061",
-        "location": "src:d517b27a1779026e5eaccd1e7d164dc95afda624e4b88e518d4b826f16144853/json@1/p/entries/3a877997b6b1cb8d3e6561b37a953c93355d6492c54f93d7b5a18838d2171ec6",
+        "location": "src:241de52b521dcd8744512cf804733708a5fc3d07d8639088e1ac980e976ba31c/json@1/p/entries/3a877997b6b1cb8d3e6561b37a953c93355d6492c54f93d7b5a18838d2171ec6",
         "fields": {
           "bug": "71061",
+          "declaration_status": "declared",
           "identity": "plm:71061",
           "collision_systems": [
             "bugzilla",
@@ -112,7 +114,7 @@
           ],
           "views": {
             "defects": {
-              "source": "src:d517b27a1779026e5eaccd1e7d164dc95afda624e4b88e518d4b826f16144853",
+              "source": "src:241de52b521dcd8744512cf804733708a5fc3d07d8639088e1ac980e976ba31c",
               "skipped": 0,
               "truncated": false,
               "total_keys": 1,

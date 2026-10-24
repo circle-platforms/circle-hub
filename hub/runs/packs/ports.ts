@@ -7,6 +7,7 @@ import type { Principal } from '../../records/api.ts';
 import type { ActiveProduct, PackRegistry } from './registry.ts';
 import type { PackVersionInfo, WorkflowDeclarations } from './types.ts';
 import { parsePackRef } from './versions.ts';
+import { dispatchCountOf, repetitionSummary } from '../engine/repetition.ts';
 
 /**
  * Product lines a workflow binds (W03 R[5]): the one its product.id names, else every active product pack whose catalogs
@@ -41,6 +42,16 @@ export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclara
     inputs: declarations.workflow.inputs.map((i) => ({ slot: i.slot, role: i.role, description: i.description, accepts: [...i.accepts], required: i.required, many: i.many, ...(i.default_from_predecessor?{default_from_predecessor:{...i.default_from_predecessor}}:{}), ...(i.from_runs?{from_runs:{...i.from_runs}}:{}), ...(i.index_default?{index_default:structuredClone(i.index_default)}:{}) })),
     parameters: declarations.workflow.parameters.map((p) => ({ name: p.name, description: p.description, required: p.required, ...(p.schema !== undefined ? { schema: p.schema } : {}) })),
     requirements: declarations.requirements.requirements.map((r) => ({
+      // V07 R[5]: the policy in force, from the same projection start_run freezes into the run record.
+      repetition: repetitionSummary({
+        workClass: declarations.workflow.work_class,
+        layers: r.layers,
+        declared: r.repetition,
+        dispatchCount: dispatchCountOf(declarations.requirements.effects ?? [], r.key),
+        fresh_context: r.repetition?.fresh_context,
+        baseline_first: r.repetition?.baseline_first,
+        window_seconds: r.repetition?.window_seconds,
+      }),
       key: r.key,
       name: r.name,
       description: r.description,
@@ -114,6 +125,7 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       manifest: structuredClone(info.manifest),
       workflow: d.workflow,
       requirements: d.requirements.requirements,
+      effects: d.requirements.effects ?? [],
       checks: d.checks.checks,
       slots: d.slots,
       knowledge: d.knowledge,

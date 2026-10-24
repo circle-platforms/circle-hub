@@ -1084,6 +1084,101 @@
                                   "target_side",
                                   "unattributed"
                                 ]
+                              },
+                              "rounds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "round": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "terminal": {
+                                      "type": "string",
+                                      "enum": [
+                                        "pass",
+                                        "fail",
+                                        "no_verdict",
+                                        "not_run",
+                                        "incomplete"
+                                      ]
+                                    },
+                                    "code": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "meets": {
+                                      "description": "null when the round has no judgment",
+                                      "type": [
+                                        "boolean",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "round",
+                                    "terminal",
+                                    "meets"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "distribution": {
+                                "type": "object",
+                                "properties": {
+                                  "count": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 9007199254740991,
+                                    "description": "the frozen round count, whether or not every round ran"
+                                  },
+                                  "by_terminal": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string",
+                                      "enum": [
+                                        "pass",
+                                        "fail",
+                                        "no_verdict",
+                                        "not_run",
+                                        "incomplete"
+                                      ]
+                                    },
+                                    "additionalProperties": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "required": [
+                                      "pass",
+                                      "fail",
+                                      "no_verdict",
+                                      "not_run",
+                                      "incomplete"
+                                    ]
+                                  },
+                                  "early_stop": {
+                                    "description": "rounds not run because the policy stopped at the first pass",
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "count",
+                                  "by_terminal"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "intermittent": {
+                                "type": "boolean"
+                              },
+                              "observation": {
+                                "description": "display rule 16: the observed distribution in one sentence",
+                                "type": "string",
+                                "minLength": 1
                               }
                             },
                             "required": [
@@ -2440,6 +2535,101 @@
                                   "target_side",
                                   "unattributed"
                                 ]
+                              },
+                              "rounds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "round": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "terminal": {
+                                      "type": "string",
+                                      "enum": [
+                                        "pass",
+                                        "fail",
+                                        "no_verdict",
+                                        "not_run",
+                                        "incomplete"
+                                      ]
+                                    },
+                                    "code": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "meets": {
+                                      "description": "null when the round has no judgment",
+                                      "type": [
+                                        "boolean",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "round",
+                                    "terminal",
+                                    "meets"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "distribution": {
+                                "type": "object",
+                                "properties": {
+                                  "count": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 9007199254740991,
+                                    "description": "the frozen round count, whether or not every round ran"
+                                  },
+                                  "by_terminal": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string",
+                                      "enum": [
+                                        "pass",
+                                        "fail",
+                                        "no_verdict",
+                                        "not_run",
+                                        "incomplete"
+                                      ]
+                                    },
+                                    "additionalProperties": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "required": [
+                                      "pass",
+                                      "fail",
+                                      "no_verdict",
+                                      "not_run",
+                                      "incomplete"
+                                    ]
+                                  },
+                                  "early_stop": {
+                                    "description": "rounds not run because the policy stopped at the first pass",
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "count",
+                                  "by_terminal"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "intermittent": {
+                                "type": "boolean"
+                              },
+                              "observation": {
+                                "description": "display rule 16: the observed distribution in one sentence",
+                                "type": "string",
+                                "minLength": 1
                               }
                             },
                             "required": [
@@ -3809,6 +3999,101 @@
                                   "target_side",
                                   "unattributed"
                                 ]
+                              },
+                              "rounds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "round": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "terminal": {
+                                      "type": "string",
+                                      "enum": [
+                                        "pass",
+                                        "fail",
+                                        "no_verdict",
+                                        "not_run",
+                                        "incomplete"
+                                      ]
+                                    },
+                                    "code": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "meets": {
+                                      "description": "null when the round has no judgment",
+                                      "type": [
+                                        "boolean",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "round",
+                                    "terminal",
+                                    "meets"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "distribution": {
+                                "type": "object",
+                                "properties": {
+                                  "count": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 9007199254740991,
+                                    "description": "the frozen round count, whether or not every round ran"
+                                  },
+                                  "by_terminal": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string",
+                                      "enum": [
+                                        "pass",
+                                        "fail",
+                                        "no_verdict",
+                                        "not_run",
+                                        "incomplete"
+                                      ]
+                                    },
+                                    "additionalProperties": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "required": [
+                                      "pass",
+                                      "fail",
+                                      "no_verdict",
+                                      "not_run",
+                                      "incomplete"
+                                    ]
+                                  },
+                                  "early_stop": {
+                                    "description": "rounds not run because the policy stopped at the first pass",
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "count",
+                                  "by_terminal"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "intermittent": {
+                                "type": "boolean"
+                              },
+                              "observation": {
+                                "description": "display rule 16: the observed distribution in one sentence",
+                                "type": "string",
+                                "minLength": 1
                               }
                             },
                             "required": [
@@ -5178,6 +5463,101 @@
                                   "target_side",
                                   "unattributed"
                                 ]
+                              },
+                              "rounds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "round": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "terminal": {
+                                      "type": "string",
+                                      "enum": [
+                                        "pass",
+                                        "fail",
+                                        "no_verdict",
+                                        "not_run",
+                                        "incomplete"
+                                      ]
+                                    },
+                                    "code": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "meets": {
+                                      "description": "null when the round has no judgment",
+                                      "type": [
+                                        "boolean",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "round",
+                                    "terminal",
+                                    "meets"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "distribution": {
+                                "type": "object",
+                                "properties": {
+                                  "count": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 9007199254740991,
+                                    "description": "the frozen round count, whether or not every round ran"
+                                  },
+                                  "by_terminal": {
+                                    "type": "object",
+                                    "propertyNames": {
+                                      "type": "string",
+                                      "enum": [
+                                        "pass",
+                                        "fail",
+                                        "no_verdict",
+                                        "not_run",
+                                        "incomplete"
+                                      ]
+                                    },
+                                    "additionalProperties": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "required": [
+                                      "pass",
+                                      "fail",
+                                      "no_verdict",
+                                      "not_run",
+                                      "incomplete"
+                                    ]
+                                  },
+                                  "early_stop": {
+                                    "description": "rounds not run because the policy stopped at the first pass",
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "count",
+                                  "by_terminal"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "intermittent": {
+                                "type": "boolean"
+                              },
+                              "observation": {
+                                "description": "display rule 16: the observed distribution in one sentence",
+                                "type": "string",
+                                "minLength": 1
                               }
                             },
                             "required": [

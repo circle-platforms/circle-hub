@@ -127,6 +127,11 @@ Sync plan
 - An opted-in page also lists its newest build per version line, name family and platform, released or not (a Beta build
   under test: `released_at` null, so an `includeUnreleased` sync can produce its root when the page links its command
   tree; without a tree link the build is listed by name only, as the page states).
+- A build named by the pack-declared variable `APV_PINNED_BUILDS` (`${var:APV_PINNED_BUILDS}`, D01 R[12]; synthetic
+  default `[]`) is listed as a build of its own tree on the read opted-in page it appears on, released or not, carrying
+  the command-tree source the page declares for it. The equality with an entry's build name is exact: no transformation
+  of any kind, not even case folding; no keywords, prefixes or patterns. A pinned name the read pages do not list is
+  reported in the plan note item by item, never guessed.
 - `syncBuilds` produces each base build that is released or the base of a released alias, has a command tree and is not
   in `existingRoots`; it lists every resolved alias (`{ alias, base, released, platform }`, `released` null for an
   unreleased alias) for the knowledge package to record, even when the base root exists, and why other released builds
@@ -1030,3 +1035,9 @@ APV_MODELS、APV_PLATFORMS 与已有 APV_COMPONENTS、APV_LICENSES、APV_DEPLOYM
 读取分开给 declaration_status 与 judgment_status。没有结构声明为 undeclared，没有已核主张为 unjudged，条件值 null 不代表无条件适用；旧条目声明出处未核时明确缺出处，不强填确定状态。分页或保留来源尚未核读完时判断状态保持未知，按 next/回注引用续读或由管理员恢复来源。相互冲突的作者字段和模型值都保留，不能挑有利值合并。主张只用于其受理时的相同组成与校验准则；上下文改变后按新组成重跑回注。
 
 缺原包、闭集或保真范围时走具名管理员请求并带期限；结构声明报错保留 missing/next_action，不以空结果冒充完整生产。旧根和记录不改写；旧关键词规则受影响的适用字段需用新包重产新根、新模型运行并按原件和前驱保留血缘。本次续接未运行验证、测量或真实模型。
+
+## 发布状态的局部缺口（1.6.2）
+
+缺 release-notes@2 原始 status 不再作为整个构建的 producer incomplete。结构身份可核对的缺陷保留原文引用，status:null、declaration_status:undeclared，并带 missing/next_action；缺身份另记 identity_declaration_status:undeclared，不能从正文数字、标题、标记或文件名猜编号和 fixed/known。HTML 仅从解析后的明确 tracker URL 结构取身份，不从锚文本猜状态。
+
+命令树、手册等独立来源仍照常成根；未声明条目不被追溯状态过滤静默删掉，依赖“已修复”的判断保持未知并请求来源维护者补结构状态后重产。缺陷转用例单列 fixed_status 要求项，其他检查继续独立核对。历史根不改写，本版验证只使用合成 JSON/HTML、临时 PostgreSQL 和脚本化模型，不重跑真实同步。

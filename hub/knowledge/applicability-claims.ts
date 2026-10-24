@@ -36,7 +36,7 @@ export async function admitApplicability(context:KnowledgeContext,reading:TreeRe
 
  const criterion=applicabilityCriterion(snapshot,inventory)!;if(marker&&typeof marker.criteria_digest==='string'&&criterion!==marker.criteria_digest)return missing('条目的条件校验准则与冻结变量/构建上下文不一致');
  const checked=Applicability.safeParse({[claim.field]:claim.value});if(!checked.success||checked.data[claim.field]===undefined)return invalid('value 不是该字段的合法结构');
- const value=checked.data[claim.field];
+ const value=checked.data[claim.field]!;
  const declarations:string[]=[];
  if(claim.field==='memory'){
   const m=checked.data.memory!;if(m.minimum&&m.maximum&&(BigInt(m.minimum.bytes)+(m.minimum.inclusive?0n:1n)>BigInt(m.maximum.bytes)-(m.maximum.inclusive?0n:1n)))return invalid('内存边界声明为空或相互矛盾');

@@ -87,7 +87,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   }
 
   const rows = buildMatrix(defects, cases, parameters.statuses);
-  if (rows.some((row) => row.bug === '')) {
+  if (rows.some((row) => row.bug === ''&&row.identity_declaration_status!=='undeclared')) {
     return refusal('invalid_id', '缺陷索引里有空编号，不能作为条目编号', '检查缺陷索引的来源（release notes 生产器），空编号的条目需要先修正', warnings);
   }
   if (rows.length === 0) {

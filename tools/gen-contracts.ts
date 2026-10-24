@@ -1,3 +1,4 @@
+import {contributionSlots} from './slot-schema.ts';
 // Generates everything that must not be written by hand from the cause model:
 //   contracts/generated/vocabulary.ts   the one set of enumerations, with Chinese labels and zod enums
 //   contracts/generated/protocol.ts     protocol and core violation codes, reference forms, record kinds, pack file names
@@ -80,7 +81,8 @@ export const PACK_VOCABULARY_TARGETS: Readonly<Record<string, PackVocabularyTarg
   'packs/product/apv/functions/generated/vocabulary.ts': { axes: ['applicability_field','declaration_status','judgment_status','type_declaration_status','command_parse_status','reason','release_status'], labels: true, resourceTags: true },
   'packs/workflow/case-review/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
   'packs/workflow/template-gap/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
-  'packs/workflow/defect-to-case/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
+  'packs/workflow/defect-to-case/functions/generated/vocabulary.ts': {axes:['declaration_status','release_status'],labels:true,resourceTags:true},
+  'packs/workflow/traceability/functions/generated/vocabulary.ts': {axes:['declaration_status','release_status'],labels:true},
   'packs/workflow/maintenance-sweep/functions/generated/vocabulary.ts': { axes: ['entry_kind', 'change_kind'] },
   'packs/workflow/regression-scope/functions/generated/vocabulary.ts': { axes: ['entry_kind', 'change_kind'] },
   'packs/workflow/case-review-report/functions/generated/vocabulary.ts': { axes: ['requirement_status', 'reason', 'static_terminal', 'dynamic_terminal', 'unsatisfied_reason', 'layer'], labels: true },
@@ -834,9 +836,9 @@ export async function main(args: string[], root: string = REPO_ROOT): Promise<nu
     return 2;
   }
   if(files['schemas/contribution-input.v1.schema.json']){
-    const schema=JSON.parse(files['schemas/contribution-input.v1.schema.json']);const properties={...schema.properties};delete properties.kind;delete properties.statement;
+    const schema=JSON.parse(files['schemas/contribution-input.v1.schema.json']);
     const model=JSON.parse(readFileSync(join(root,'contracts/model.json'),'utf8'));const kinds=model.vocabulary.find((axis:{axis:string})=>axis.axis==='document_output_kind').values;
-    packFiles['packs/workflow/knowledge-contribution/slots.schema.json']=JSON.stringify({schema:'slots@1',item:{contribution:{min:1,max:1,codes:kinds.map((value:{code:string;label:string})=>({code:value.code,label:value.label})),data:{type:'object',additionalProperties:false,required:['root','path','source'],properties}}},run:{}},null,2)+'\n';
+    packFiles['packs/workflow/knowledge-contribution/slots.schema.json']=JSON.stringify(contributionSlots(schema,kinds),null,2)+'\n';
   }
   const count = Object.keys(files).length + Object.keys(packFiles).length;
   if (args.includes('--check')) {

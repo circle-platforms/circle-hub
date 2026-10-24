@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "traceability",
-  "version": "1.0.7",
+  "version": "1.0.9",
   "kind": "workflow",
   "title": "追溯矩阵",
   "description": "构建的缺陷到用例的追溯矩阵：release notes 列出的缺陷条目和瘦身（fields=document,node,title）的用例索引，每个缺陷有没有已索引的用例携带它的编号；没有已索引用例的记未知（用例索引按构造不完整，不等于没有），从不记为不通过；不绑定产品线（输入的外部标识写明产品和构建）；只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -18,18 +18,23 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "f48cc4b0fafc1eecc763e8686aa4ff089ad155ed31f24caa10b97a20194eb7de",
-      "size": 13462
+      "sha256": "e45ec6f922f84f7f8517c95f88c27c7b5670d6f6d6ccc64b857bb7681eb25e0d",
+      "size": 13835
     },
     {
       "path": "functions/counts.ts",
-      "sha256": "54fce747e1568789c8a47839d00b2a0135d8bd9e2e3d412d447925310a81a083",
-      "size": 6814
+      "sha256": "6ae6dcc05a8ec24e4982442b83bda4a5965a99b3b4947b0f8b32bf5a39d73d60",
+      "size": 7211
     },
     {
       "path": "functions/expected.ts",
       "sha256": "aaed9b61736d0a4d769ddb3ecbf8b3cca8216f9febbc2b64c1c93f1a05c6376e",
       "size": 2261
+    },
+    {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "81d451a3db47240d97a482dc4b4a0ce4d2729e8a8575fdae322e260779cabc85",
+      "size": 1407
     },
     {
       "path": "functions/ids.ts",
@@ -38,13 +43,13 @@
     },
     {
       "path": "functions/matrix.ts",
-      "sha256": "6a909bd8a89bf45c2cb55ad92004a260e18ac4bc208987c985b71af2bb566b72",
-      "size": 7331
+      "sha256": "bc82cfdf6c939f45195d86c0b7d0c53c3f61e7dffaea0ea92e5292a8572468d3",
+      "size": 8574
     },
     {
       "path": "functions/params.ts",
-      "sha256": "92b032cf3da31ef42e29bed580088f0d6fb13a41aa5ffa9fc95a936f230156a0",
-      "size": 1074
+      "sha256": "3092ba330a389febb14fd6421377ada223692d13e50aef948847011676cf230c",
+      "size": 1119
     },
     {
       "path": "functions/plm-status.ts",
@@ -53,8 +58,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "272f79f2e58e016bab5cf224c51acb1e2203017302110c0fe4a20dc9842bd9d0",
-      "size": 8285
+      "sha256": "06a4304db2a8f7c6360c7b04496b9980f5165eeb44b19ade341aa4d8c44440eb",
+      "size": 8333
     },
     {
       "path": "functions/subject.ts",
@@ -68,8 +73,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "00642d4068866708930874e4fcd7ef71f1fa218fd3af7436dc9db299502e9be2",
-      "size": 4120
+      "sha256": "deaf5eb44cf74034a538648eba961be71a5b793ae09e6462ae7d6b7911bdd002",
+      "size": 4325
     },
     {
       "path": "functions/views.ts",
@@ -83,33 +88,33 @@
     },
     {
       "path": "samples/negative/count-mismatch.json",
-      "sha256": "c622ac793613a9d23a2491515d98011014ecf4af9bae47d08026da11aa7a6a41",
-      "size": 2881
+      "sha256": "317a8a451f587f61b0b009ca568941a8ead03b5111bdf0a9a0dac014b46297e3",
+      "size": 2925
     },
     {
       "path": "samples/negative/join-mismatch.json",
-      "sha256": "ee6b777328d5de32769e96c2c377cf2084cc421c45df88d680ac8f6772103ac5",
-      "size": 2974
+      "sha256": "402abed139eebe22ac973ad93dd5959184e89e0ef70bc7a7ab4205b5390ea492",
+      "size": 3018
     },
     {
       "path": "samples/negative/status-conflict.json",
-      "sha256": "f9cff4a65dfbce34e821a2510876b8b18e60ae40b54e3e48929f136a4da3409a",
-      "size": 4189
+      "sha256": "40f37276f857da947806d1804fe7fbe8bd925db79e7086f41c459f59f887b3f0",
+      "size": 4277
     },
     {
       "path": "samples/negative/system-collision.json",
-      "sha256": "558e0f6090441a53f3cfb57135d8828259f147e7f5fbc044830a13728c40a52f",
-      "size": 5447
+      "sha256": "ffd62099ae7c3692b19d4794d7235562f741126a2e0c5ad8acab29944ab738a9",
+      "size": 5535
     },
     {
       "path": "samples/positive/counts-consistent.json",
-      "sha256": "341f7612ace565076d7543e8c21fcde60c9bda032ae2fff8c077d7c9e762e7b3",
-      "size": 3696
+      "sha256": "3a05f5b26e2bb6213883d88d1bbe4c35135043e895057b96edb4f16a62111ff6",
+      "size": 3784
     },
     {
       "path": "samples/positive/traced-with-cases.json",
-      "sha256": "ae4f98e14e97e17273a533aeee23f10eb152a9aeb5f0535071e2157a000645be",
-      "size": 4768
+      "sha256": "0f84ccec1642c1bdb9572dbfc33b35c58e77226057dbbb8dd5b92895c975f47d",
+      "size": 4856
     },
     {
       "path": "slots.schema.json",
@@ -128,8 +133,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "c551f049c187400edbb2b29e465e933c0b15ba59181c4934d73d43c777df3423",
-      "size": 1907
+      "sha256": "47f096a7830f01058e89a4f583cff16ee15251b9356f7a4f6de7f1cc26c00ead",
+      "size": 2014
     }
   ]
 }

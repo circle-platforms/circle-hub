@@ -1,3 +1,4 @@
+import {fixedBugEntries} from './fixed-bugs.ts';
 import {labelOf} from './generated/vocabulary.ts';
 // The producers of the product (product@1 producers, ProducerInput -> ProducerOutput). The Hub reads each source, parses it
 // with the core parser for its media type and hands the model in by slot; the entries point back into it by parser and
@@ -14,7 +15,7 @@ import type { ProducerOutput } from '../../../../contracts/src/product.ts';
 import { commandCatalog, type CommandCatalog } from './cases-commands.ts';
 import { produceCommandEntries, bindCommandSource } from './command-tree.ts';
 import { ApplicabilitySourceError,produceManualEntries } from './manual.ts';
-import { produceReleaseEntries } from './release-notes.ts';
+import { produceReleaseEntries,undeclaredReleaseEntry,STATUS_NEXT } from './release-notes.ts';
 import type { CommandTreeParams, FragmentRef, MarkdownModel, ProducedEntry, Unplaced, XmlModel } from './types.ts';
 import { internalError, isRecord } from './util.ts';
 
@@ -124,18 +125,15 @@ export function manual(input: unknown): ProducerOutput {
   }
 }
 
-/** Defects fixed in the build: the build site's fixed-bug list (HTML) or a release note (Markdown). */
-export function releaseNotes(input: unknown): ProducerOutput {
-  try {
-    const slot = slotOf(input, 'notes');
-    if (slot === null || slot === undefined) return empty('没有修复缺陷清单');
-    const build = buildName(input);
-    if(slot.parser==='json@1'){
-      const out=produceReleaseEntries(slot.model,build);
-      return {entries:out.entries,warnings:out.warnings,...(out.complete===true?{}:{incomplete:{missing:out.warnings.join('；'),next_action:'发布页或缺陷系统维护者补完整 release-notes@2 字段后重读并重产'}}),grammar:{id:'apv-release-notes@2',source:'product:apv/README.md#release-notes',complete:out.complete===true}};
-    }
-    return {entries:[],incomplete:{missing:'缺原始 release-notes@2 JSON status 字段',next_action:'发布页或缺陷系统维护者补原始结构状态后重读并重产'},warnings:['缺 release-notes@2 结构化发布状态；下一步发布页或缺陷系统维护者补原始 JSON status 字段，重读并重产；不从 HTML/Markdown 补 fixed/known'],grammar:{id:'apv-release-notes@2',source:'product:apv/README.md#release-notes',complete:false}};
-  } catch (error) {
-    return empty(internalError(error));
-  }
+/** Missing release status is local entry metadata, never a producer-wide incomplete result. */
+export function releaseNotes(input:unknown):ProducerOutput{
+ try{
+  const slot=slotOf(input,'notes');if(!slot)return empty('没有发布说明来源');const build=buildName(input);
+  if(slot.parser==='json@1'){const out=produceReleaseEntries(slot.model,build);return {entries:out.entries,warnings:out.warnings,grammar:{id:'apv-release-notes@2',source:'product:apv/README.md#release-notes',complete:out.complete===true}};}
+  if(slot.parser==='html@1')return fixedBugEntries(slot.model,build);
+  if(slot.parser!=='markdown@1')return empty('发布说明解析器未声明；下一步：'+STATUS_NEXT);
+  const model=isRecord(slot.model)?slot.model:{},blocks=Array.isArray(model.blocks)?model.blocks:[];
+  const block=blocks.find(row=>isRecord(row)&&typeof row.selector==='string');
+  return {entries:isRecord(block)?[undeclaredReleaseEntry(build,slot.parser,block.selector as string,typeof block.text==='string'?block.text:'',null,undefined,'缺发布说明的结构化缺陷身份和状态')]:[],warnings:['缺发布说明的结构化状态；下一步：'+STATUS_NEXT]};
+ }catch(error){return empty(internalError(error));}
 }

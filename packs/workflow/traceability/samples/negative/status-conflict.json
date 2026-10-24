@@ -7,9 +7,10 @@
     "items": [
       {
         "id": "71011",
-        "location": "src:ea49397a0258fff3fd60bfac4a18a60f5c74ddb3ebbc3ee86d8be9b894c6a52d/json@1/p/entries/91b96ea26b9999ea063927296e02c6040084d8d268536c8c8ca5823e38c425ff",
+        "location": "src:2bcef6460415ef0a16ff987bce432096879288c65b21fc65fe65861c845dfee2/json@1/p/entries/91b96ea26b9999ea063927296e02c6040084d8d268536c8c8ca5823e38c425ff",
         "fields": {
           "bug": "71011",
+          "declaration_status": "declared",
           "identity": "71011",
           "ids": [
             "71011"
@@ -43,9 +44,10 @@
       },
       {
         "id": "71012",
-        "location": "src:ea49397a0258fff3fd60bfac4a18a60f5c74ddb3ebbc3ee86d8be9b894c6a52d/json@1/p/entries/9621efb62898a4f225fb75f20c32f1d55a9b7542abf7e36d594dd41085406d54",
+        "location": "src:2bcef6460415ef0a16ff987bce432096879288c65b21fc65fe65861c845dfee2/json@1/p/entries/9621efb62898a4f225fb75f20c32f1d55a9b7542abf7e36d594dd41085406d54",
         "fields": {
           "bug": "71012",
+          "declaration_status": "declared",
           "identity": "71012",
           "ids": [
             "71012"
@@ -84,7 +86,7 @@
           ],
           "views": {
             "defects": {
-              "source": "src:ea49397a0258fff3fd60bfac4a18a60f5c74ddb3ebbc3ee86d8be9b894c6a52d",
+              "source": "src:2bcef6460415ef0a16ff987bce432096879288c65b21fc65fe65861c845dfee2",
               "skipped": 0,
               "truncated": false,
               "total_keys": 2,

@@ -1,0 +1,25 @@
+{
+  "id": "quote_positive",
+  "source": "author",
+  "check": "expected_quotes",
+  "note": "合成 runtime-contract@2 声明，旧合约不能作为已核对输入",
+  "subject": {
+    "item": "doc-1:c-1",
+    "quotes": [
+      {
+        "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-e1",
+        "text": "健康检查间隔设置成功"
+      }
+    ]
+  },
+  "sources": {
+    "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-e1": "健康检查间隔设置成功"
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "doc-1:c-1",
+      "tier": "blocking"
+    }
+  ]
+}

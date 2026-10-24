@@ -7,7 +7,7 @@
     "items": [
       {
         "id": "10.6.1/SSL",
-        "location": "src:81e33a8ea3bea3612a90dbbd6d57b2971788d24959ad354796d6bf7023289187/json@1/p/rows",
+        "location": "src:1c95704007f91baff2efad4f2090c705901e1d06d972b6c10de9b703c93f8205/json@1/p/rows",
         "fields": {
           "line": "10.6.1",
           "module": "SSL",
@@ -16,7 +16,9 @@
             "cases": 3,
             "missing": 0,
             "vague": 0,
-            "negative": 0
+            "negative": 0,
+            "negative_denominator": 3,
+            "type_unclassified": 0
           },
           "quality": {
             "judged": 0,
@@ -65,7 +67,7 @@
           "build": "Rel_APV_10_6_1_57",
           "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
           "view": {
-            "source": "src:81e33a8ea3bea3612a90dbbd6d57b2971788d24959ad354796d6bf7023289187",
+            "source": "src:1c95704007f91baff2efad4f2090c705901e1d06d972b6c10de9b703c93f8205",
             "total": 100,
             "truncated": false,
             "skipped": 0,

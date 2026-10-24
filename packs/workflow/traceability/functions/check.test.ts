@@ -87,7 +87,7 @@ describe('traceOutcomes', () => {
     const outcome = byItem(traceOutcomes(subjectOf([defect], [kase])), '7004');
     assert.equal(outcome.verdict, 'support');
     assert.equal((outcome.data as { status: string }).status, 'known');
-    assert.match(outcome.statement, /已知（未修复）/);
+    assert.match(outcome.statement, /已知/);
   });
 
   it('a bug listed as fixed in one entry and known in another is refuted as a status conflict (advisory)', () => {

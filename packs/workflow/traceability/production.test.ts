@@ -103,7 +103,7 @@ describe('a production run of traceability', { skip }, () => {
       run.items.map((i) => [i.id, i.summary]),
       [
         ['71001', '已修复；2 个用例'],
-        ['71002', '已知（未修复）；1 个用例'],
+        ['71002', '已知；1 个用例'],
         ['71003', '已修复；无已索引用例（未知）'],
         ['71004', '状态矛盾（已修复、已知）；1 个用例'],
       ],
@@ -141,7 +141,7 @@ describe('a production run of traceability', { skip }, () => {
       assert.equal(requirement.claims.length, 1, id);
       const [claim] = requirement.claims;
       assert.equal(claim.statement.verdict, expected.verdict, id);
-      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.7', independence: 'judge_not_author' }, id);
+      assert.deepEqual(claim.warrant, { producer: 'function', id: 'traceability.traced@1.0.9', independence: 'judge_not_author' }, id);
       assert.equal(claim.qualifier.nature, expected.verdict === 'unknown' ? 'unknown' : 'fact', id);
       const data = claim.statement.data as unknown as MatrixRow & { case_count: number; status: string | null };
       assert.deepEqual(
@@ -180,8 +180,8 @@ describe('a production run of traceability', { skip }, () => {
     assert.deepEqual(
       run.items.map((i) => [i.id, i.summary]),
       [
-        ['71002', '已知（未修复）；1 个用例'],
-        ['71004', '已知（未修复）；1 个用例'],
+        ['71002', '已知；1 个用例'],
+        ['71004', '已知；1 个用例'],
       ],
     );
     const result = detail.production!.result;

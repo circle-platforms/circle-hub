@@ -23,6 +23,7 @@ import { scanForCredentials, sha256Hex } from '../../records/api.ts';
 import { getInterpreter, INTERPRETERS } from '../../rules/api.ts';
 import { scanTools, scanFunctions, SANDBOX_IMPORT_POLICY, type FunctionEntry, type ImportPolicy } from './imports.ts';
 import { fieldText, isRecord, pointerOf, problem, readJsonFile, shapeProblems, utf8 } from './problems.ts';
+import { dispatchCountOf, repetitionSummary } from '../engine/repetition.ts';
 import type {
   LoadedSample,
   PackDeclarations,
@@ -509,6 +510,33 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
       }
       if('policy' in row.parameters && id===row.parameters.check && check.table!==row.parameters.policy)c.add(problem('effects.policy_binding','requirements.json',`效果 ${row.id} 的参数政策表与检查 ${id} 用表不一致`,'指向编译时同一个检查与同一张表',{field:`/effects/${index}/parameters`}));
       if(!samples.some(sample=>sample.sample.check===id && sample.polarity==='positive') || !samples.some(sample=>sample.sample.check===id && sample.polarity==='negative'))c.add(problem('effects.policy_samples','requirements.json',`效果 ${row.id} 的政策检查 ${id} 缺正例或反例`,'为该检查提供正反例并在发布时运行',{field:`/effects/${index}/policy_checks`}));
+    }
+  }
+
+  // V07: the frozen repetition policy of every requirement, and the rounds its effect rows authorize. A count above the
+  // row's declared repetition refuses publication with a deterministic diagnosis (integrator decision 5, 2026-10-24);
+  // budget.count stays a pure bound on writes and never authorizes rounds.
+  if (requirements && workflow) {
+    const effects = requirements.effects ?? [];
+    for (const [index, template] of requirements.requirements.entries()) {
+      let count: number;
+      try {
+        count = repetitionSummary({ workClass: workflow.work_class, layers: template.layers, declared: template.repetition, dispatchCount: dispatchCountOf(effects, template.key) }).count;
+      } catch (error) {
+        c.add(problem('requirements.repetition', 'requirements.json', `要求项 ${template.key} 的重复策略不成立：${(error as Error).message}`, '按 V07 改正次数、聚合方式或 k（次数 1 到 10，k 只用于 k-of-n 且不大于次数）；只有声明动态层的要求项能写重复策略', { field: `/requirements/${index}/repetition` }));
+        continue;
+      }
+      if (count <= 1) continue;
+      const rows = effects.filter((effect) => effect.release.requirements.includes(template.key));
+      if (rows.length === 0) {
+        c.add(problem('effects.repetition_budget', 'requirements.json', `要求项 ${template.key} 冻结为 ${count} 轮，但没有任何效果行发布它`, '在 requirements.json 的 effects 里为它写一行并声明 repetition，或把次数降到 1', { field: `/requirements/${index}/repetition/count` }));
+        continue;
+      }
+      rows.forEach((row) => {
+        if (row.repetition === undefined || row.repetition < count) {
+          c.add(problem('effects.repetition_budget', 'requirements.json', `效果 ${row.id} 授权的轮数（${row.repetition === undefined ? '未声明' : row.repetition}）少于要求项 ${template.key} 冻结的 ${count} 轮`, '把该效果行的 repetition 提到不少于次数，或把要求项的次数调低', { field: `/effects/${effects.indexOf(row)}/repetition` }));
+        }
+      });
     }
   }
 

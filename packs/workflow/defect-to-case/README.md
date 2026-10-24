@@ -6,7 +6,7 @@
 
 | 文件 | 内容与职责 |
 | --- | --- |
-| `workflow.json` | 声明输入插槽：`defects`（主体角色，必填，多项，绑定 `plm:bug`）、`indexed_cases`（期望角色，必填，绑定收窄的 `knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令>&fields=commands,document,node,title,negative`）及 `manual`（期望角色，可选，绑定 `manual:cli:<版本线>`）；参数 `max_cases`（默认 6）与 `priority`（默认 2）；绑定命令目录 `commands@1`；映射投影函数与期望来源函数 |
+| `workflow.json` | 声明输入插槽：`defects`（主体角色，必填，多项，绑定 `plm:bug`）、`indexed_cases`（期望角色，必填，绑定收窄的 `knowledge:index:<product>:<build>?kind=case&key=commands&only=<命令>&fields=commands,document,node,title,negative,case_structure`）及 `manual`（期望角色，可选，绑定 `manual:cli:<版本线>`）；参数 `max_cases`（默认 6）与 `priority`（默认 2）；绑定命令目录 `commands@1`；映射投影函数与期望来源函数 |
 | `requirements.json` | 声明五项要求项：`cases`（用例起草，判定，条目级）、`shape`（用例结构，事实，条目级）、`commands`（命令与参数，事实，条目级）、`grounded`（期望结果依据，事实，条目级）、`not_duplicate`（用例去重，事实，条目级），以及各代码的修复重试规则（最多 2 轮） |
 | `checks.json` | 声明七项检查：`draft_shape`（结构合规）、`commands_catalog`（目录解析与参数校验）、`commands_refutation`（反向用例预期反驳校验）、`grounded_quotes`（逐字引文核对）、`grounded_sources`（来源范围核验）、`grounded_reading`（期望文字逐字核对）、`duplicate_check`（已索引用例去重检查） |
 | `slots.schema.json` | 声明条目插槽 `cases`：包含起草用例的结构模式（标题、优先级、正反向、预期反驳、前置条件、步骤与命令行、期望结果与逐字引文、标签） |
@@ -37,7 +37,7 @@
   - 不收窄时，草稿用的命令头在索引里没有任何条目就能断定不重复；收窄时命令头不在 `only` 里照旧记未知。
   - `SKILL.md` 写准：每个期望结果的 quote 必须照抄进本条用例主张顶层的 `quotes`；只写在期望结果数据里的引文会被记成「没有绑定到本次运行」的未知（核心缺口，另有任务修）。
 - **1.3.0**：
-  - 查重绑定收窄到草稿要用的命令：`indexed_cases` 的 URI 带 `only=<命令路径>` 与 `fields=commands,document,node,title,negative`；草稿的命令集合与 `only` 相交才判得出来，不相交记未知。去掉 `expected.ts` 自动绑定的不带 `fields` 的同一索引。紧凑索引按条目的 `commands` 字段算命令集合。
+  - 查重绑定收窄到草稿要用的命令：`indexed_cases` 的 URI 带 `only=<命令路径>` 与 `fields=commands,document,node,title,negative,case_structure`；草稿的命令集合与 `only` 相交才判得出来，不相交记未知。去掉 `expected.ts` 自动绑定的不带 `fields` 的同一索引。紧凑索引按条目的 `commands` 字段算命令集合。
   - 修正 README 中“裁剪后 2 至 3 MiB”的估计，写入真实规模的测量（视图 14.7 MB，预算内只放得下约 45,000 个条目中的 27,102 个）。
 - **1.2.0**：
   - `slots.schema.json` 明确 `expected` 每一项的对象模式（必填 `text` 字符串及必填 `quote` 对象，包含必填 `text` 和 `reference`）。
@@ -57,7 +57,7 @@
 1. **沙箱输入上限与字段裁剪**：
    - Hub 沙箱调用的输入上限为 8 MiB（`SANDBOX_INPUT_MAX`）。真实构建的全量用例索引视图（如 APV 构建）包含大量 AST、长 statement 和复杂元数据，整体体积达 12 至 15 MiB，直接作为输入会导致超限。
    - 只裁字段不够：一个真实构建的用例索引视图即使只带 `document,node,title` 三个字段也有 14.7 MB，视图的字节预算只放得下约 45,000 个条目中的 27,102 个（被截断，查重只能记未知）。
-   - 收窄写法：`knowledge:index:<产品>:<构建>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative`。`only` 列草稿要用的命令（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`），由模型在读完缺陷后、开始运行时写上；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其他字段也要列上。
+   - 收窄写法：`knowledge:index:<产品>:<构建>?kind=case&key=commands&only=<命令路径，逗号分隔>&fields=commands,document,node,title,negative,case_structure`。`only` 列草稿要用的命令（和索引的键同一写法；多个命令用逗号分隔，命令里的空格写成 `%20`、字面逗号写成 `%2C`），由模型在读完缺陷后、开始运行时写上；`fields` 必须带 `commands`（收窄后靠键拼不回条目的命令集合），查重要比的其他字段也要列上。
    - 判得出来的范围：草稿的命令集合 S 里至少有一个命令在 `only` 里才判得出来；S 与 `only` 不相交的草稿记为未知（说明索引没有收窄到它用的命令）。完整视图（`truncated: false`、`skipped: 0`）省略的请求键确定没有用例，不要求核心返回空数组。截断或跳过导致覆盖不全时，对每份草稿分别保留可见重复的驳回；未见重复的草稿记未知，列出缺失键或缺少的文档数量，并按实际缺口补证：跳过来源须修复并同步新根，收窄缺口须调整 only/fields，元数据形状错误交集成者修复。不传 `only` 时也不因不完整而抹掉可见重复。
 
 2. **紧凑索引与沙箱输出上限**：
@@ -100,7 +100,7 @@ npx tsc --noEmit
 - **contracts 与 hub/runs/engine**：需要可选的 `PackError.path`，仅允许 `/inputs/<declared slot>`，由引擎校验槽已声明后采用，取代当前一律定位 subject 槽的行为。当前 manual_mismatch 的协议 path 仍被核心写成 /inputs/defects；本包先以“输入槽 manual：”开头，避免用户改错输入。合约与引擎合入后，本包须返回 `/inputs/manual` 并增加端到端路径断言，不能把文本提示当作协议位置已修复。
 
 - **packs/system/plm**：缺陷 content.fix_field 必须回传资源 settings.bug_fix_field 的字段名或 null；plm-fields 1.2.0 已完成本地合成验证，仍须集成者合入、发布、更新资源并核实真实字段后才生效，本包不把分支代码视为部署可用。
-- **packs/product/apv**：若要增加按期望结果去重，需要 cases 生产器在用例索引提供期望原文及其来源；产品包字段和本包检查一起排期，当前只比较完整规范化标题。
+- **packs/product/apv**：若要增加按期望结果去重，需要 cases 生产器在用例索引提供期望原文及其来源；产品包字段和本包检查一起排期，须提供完整 case_structure，包括期望原文身份。
 - **hub/runs/engine**：显式绑定不可读外部对象时，SOURCE_UNAVAILABLE 回执尚不能指出可补取的槽与对象；客户端当前须先核实可读再绑，可选 manual 不可读时不绑定，避免无说明地终止。
 - **已做（1.5.0）**：核心视图已提供 `only` 和 `cut_keys`，本包已按字段消费；仅对缺少相应字段的老视图按 URI 和上限推断，并在说明里披露。
 
@@ -132,17 +132,11 @@ PLM 部署设置有两项。`settings.bug_fix_field` 由系统包在缺陷 `cont
 
 样例的 PLM 内容按 `{id, kind, title, fields, html_fields, fix_field}` 构造：HTML 已由系统包转成 fields 里的纯文本，html_fields 是字段名列表。`json@1/p/html_fields/fix` 不存在；引用配置为 fix 的示例用 `json@1/p/fields/fix`。字段名含 / 等路径字符时编码为一个选择器段。`reference-shape.test.ts` 通过核心 json@1 解析器定位样例引用，并重算示例内容摘要，避免只在假的字段结构上通过。
 
-## 查重标题规范化
+## 结构查重范围
 
-查重标题规范化依次执行：NFKC、小写、把空白折成一个空格、去两端空白。空白按 JavaScript 的 `\s` 定义；连续的空白不删除，而是替换成一个普通空格，不去掉标题中的标点。例：`  ＷＩＤＧＥＴ\tＡ  ` 变为 `widget a`。独立金标准按这段规则自行实现，不读取本包计算的结果。
+按 case-structure@2 声明的命令路径、类型参数、期望原件引文身份及 after 比较完整结构。标题保留原文，仅用于展示，不做大小写、全半角或空白折叠。最多 80 UTF-16 单元的展示标题不截断代理对，也不参与结构键。
 
-## 查重要求项的范围
-
-not_duplicate 的已实现判据是：相同的规范化命令头集合、相同的正反向标记、规范化标题相同，三项同时成立才报告重复。不会因为期望结果相同就报告重复，也不会因为期望结果不同就忽略同标题的重复；不承诺比较索引未给出的期望文字。重复为提示档，未见重复但索引不完整时按现有规则披露完整性缺口。
-
-待集成者排期：若要支持“期望结果相同”的独立分支，产品包须先在用例索引提供期望原文及其来源，再扩展本包并做独立核对。这是产品包和工作流的后续变更，本次未实现。
-
-复核修正：紧凑索引增加完整规范化标题的 SHA-256 比较键 title_key；最多 80 UTF-16 单元的 title 只供展示，且不截断代理对。比较不对完整标题截短，80 单元前缀不会冒充相同标题。
+相同标题不表示重复。参数值或引文身份不同的草稿结构不同；缺身份不能视作空参数或空期望，必须披露未知、缺失事实和下一步。索引作者须声明完整 case_structure，不能用期望文字猜测引文身份。
 
 复核确认：没有手册的版本线可不绑定 manual，投影冻结 manual:null 并明确警告仅修复字段可引。先按锁定构建确定版本线并核实手册可读；有手册再补绑重开。集成者需同步 gold-d2c 批跑提示（模板目前只有 defect/product/build），让客户端执行这个动作；Hub 不替客户端生成内容或选择默认版本线。
 
@@ -154,11 +148,11 @@ not_duplicate 的已实现判据是：相同的规范化命令头集合、相同
 
 ## 检查时按草稿命令收窄读取
 
-`duplicate_check.reads.narrow` 已接入核心通用接口：`slot: indexed_cases` 固定已绑定输入，`key_path: /read_keys` 从主体取键，`into: /indexed_cases` 接收新视图，`max_keys: 100`、`max_entries: 5000`、`max_bytes: 1048576` 限定读取。主体构造器按锁定命令目录解析最长命令头，去重后取键；核心不解释命令或草稿字段。引擎按已绑定视图的同一修订实际重读 `only`，字段范围不变，并把请求键、上限、返回来源、提供方清单和缺失事实写入运行的读取清单；每项检查结果指向该清单。
+`duplicate_check.reads.narrow` 已接入核心通用接口：`slot: indexed_cases` 固定已绑定输入，`key_path: /read_keys` 从主体取键，`into: /indexed_cases` 接收新视图，`max_keys: 100`、`max_entries: 5000`、`max_bytes: 1048576` 限定读取。主体构造器从完整命令身份取显式 path，去重后取键；核心不解释命令或草稿字段。引擎按已绑定视图的同一修订实际重读 `only`，字段范围不变，并把请求键、上限、返回来源、提供方清单和缺失事实写入运行的读取清单；每项检查结果指向该清单。
 
-推荐开始运行时绑定带 `fields=commands,document,node,title,negative` 的索引，不预先加 `only`，检查时按实际草稿收窄。若输入已带 `only`，它仍是本运行的范围上界，不能扩大到范围外的命令。缺键、跳过、截断或超限时没有重复只记未知，并说明缺的事实和重读或调高上限的动作；可见的重复仍驳回。完全不可读时不调用检查函数。索引修订已不可取或永久跳过文档时，应补建并绑定新修订重开运行，不把读取新根冒充旧根的完整结果。
+推荐开始运行时绑定带 `fields=commands,document,node,title,negative,case_structure` 的索引，不预先加 `only`，检查时按实际草稿收窄。若输入已带 `only`，它仍是本运行的范围上界，不能扩大到范围外的命令。缺键、跳过、截断或超限时没有重复只记未知，并说明缺的事实和重读或调高上限的动作；可见的重复仍驳回。完全不可读时不调用检查函数。索引修订已不可取或永久跳过文档时，应补建并绑定新修订重开运行，不把读取新根冒充旧根的完整结果。
 
-超限后的客户端补取动作在 SKILL 中：解析草稿命令头，读取同一锁定构建的 only/fields 索引，以新输入重开后再交草稿；旧运行不会因重交而刷新冻结输入。数据内引文的预热和分级已经实现，删除旧的必须抄到顶层才能核验的绕行说法。
+超限后的客户端补取动作在 SKILL 中：读取草稿完整命令身份的 path，读取同一锁定构建的 only/fields 索引，以新输入重开后再交草稿；旧运行不会因重交而刷新冻结输入。数据内引文的预热和分级已经实现，删除旧的必须抄到顶层才能核验的绕行说法。
 
 标签按 resource-tags@1 的精确原文闭集读取，保留 resource 原值。闭集外是提示档结构违规“未声明的标签”；大小写、全半角与同义词不相等。非法声明不进入正反向比例分母。此版本替代旧关键词规则，历史结果不改写；应以新包重产新根与新运行。本次续接按所有者指令未运行验证。
 
@@ -166,4 +160,16 @@ R7 新规则：发布状态只取 release-notes@2 JSON 的显式 product/build/d
 
 查重规则 defect-to-case.case-structure@2：原用例作者在 KityMinder case 节点 data.case_structure 声明 {schema:"case-structure@2",commands:CommandIdentity[],expected:[{after,quote:ExpectedQuoteIdentity}]}，APV 原样保留并标作者声明。草稿给稳定 id，每步 identity，每个 expected 给 identity/after 和原文 quote。命令与期望的顺序及重复次数均保留，after 为从 1 起的命令位置；参数按显式位置排序及类型化 parsed 值比较，不补默认值，raw/role/标题/标签/正反向/优先级不作键。引用按原始摘要、parser、路径、byte span 完全相等。Hub 核验草稿引文 byte span 与完整原件字节；没有原件、类型来源、结构声明或完整索引范围时保持未知，并请求补声明/原件后以新根或新运行续做。非法负向命令没有合法完整身份时，不伪造身份：交包作者补非法输入身份合约或具名人工复核。
 
-主张直接带 draft_id、requirement、rule_version、structure_key、duplicate_of 的 document/node/reference；计数只看这些字段，不读 statement。相同标题不表示结构重复。旧记录字节保留，新包重产后另留血缘；本次续接未运行验证。
+主张直接带 draft_id、requirement、rule_version、structure_key、duplicate_of 的 document/node/reference；计数只看这些字段，不读 statement。相同标题不表示结构重复。旧记录字节保留，新包重产后另留血缘；本版按所有者要求运行包测试及 acceptance 27。
+
+结构查重按 case-structure@2 的命令路径、类型参数与期望引文身份（原件、parser、路径、byte span、after）完全相等比较；标题仅展示。duplicate_found 故意使用不同标题并声明相同结构，防止退回标题启发式。缺身份返回未知，不能以同标题推断重复。
+
+| `refutation_catalog` | 冻结目录完整签名核对反向命令声明 |
+
+| `fixed_status` | 仅核对原始结构已修复状态；缺失为未知并补原件，不影响命令树和手册成根 |
+
+## 发布状态的局部缺口（1.6.15）
+
+缺 release-notes@2 原始 status 不再作为整个构建的 producer incomplete。结构身份可核对的缺陷保留原文引用，status:null、declaration_status:undeclared，并带 missing/next_action；缺身份另记 identity_declaration_status:undeclared，不能从正文数字、标题、标记或文件名猜编号和 fixed/known。HTML 仅从解析后的明确 tracker URL 结构取身份，不从锚文本猜状态。
+
+命令树、手册等独立来源仍照常成根；未声明条目不被追溯状态过滤静默删掉，依赖“已修复”的判断保持未知并请求来源维护者补结构状态后重产。缺陷转用例单列 fixed_status 要求项，其他检查继续独立核对。历史根不改写，本版验证只使用合成 JSON/HTML、临时 PostgreSQL 和脚本化模型，不重跑真实同步。

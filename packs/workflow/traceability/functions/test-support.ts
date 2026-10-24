@@ -28,7 +28,7 @@ export function defectEntry(spec: { bug: string; status?: string; statement?: st
     digest,
     kind: 'defect',
     statement,
-    data: { bug: spec.bug, status: spec.status ?? 'fixed', text: statement, build: BUILD, module: spec.module ?? 'SSL', ...(spec.system === undefined ? {} : { system: spec.system }) },
+    data: { declaration_status:'declared',bug: spec.bug, status: spec.status ?? 'fixed', text: statement, build: BUILD, module: spec.module ?? 'SSL', ...(spec.system === undefined ? {} : { system: spec.system }) },
     reference: `tree:${ROOT}/release-notes/${digest.slice(0, 12)}@${digest}`,
   };
 }

@@ -7,5 +7,5 @@ test('undeclared resource is advisory even if the legacy tags field looks valid'
 });
 test('an invalid resource cannot authorize the negative out-of-range exception through a self-reported boolean',()=>{
  const catalog=[{words:['widget','set'],reference:'tree:'+'b'.repeat(64)+'/commands/widget/set',signatures:[{id:'one',params:[{name:'n',type:'int',minimum:1,maximum:5}]}]}];
- const out=checkCommandsRefutation({subject:{slots:{cases:[{data:draft(['negative case'])}]}},catalog});assert.ok(!out.some(o=>o.verdict==='support'));assert.ok(out.some(o=>o.verdict==='unknown'&&o.missing));
+ const out=checkCommandsRefutation({subject:{slots:{cases:[{data:draft(['negative case'])}]}},catalog});assert.ok(!out.some(o=>o.verdict==='support'));assert.ok(out.some(o=>o.verdict==='refute'&&o.code==='defect-to-case.shape_invalid'));
 });

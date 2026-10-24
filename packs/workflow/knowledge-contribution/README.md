@@ -89,3 +89,7 @@ APV_MODELS、APV_PLATFORMS 与已有 APV_COMPONENTS、APV_LICENSES、APV_DEPLOYM
 读取分开给 declaration_status 与 judgment_status。没有结构声明为 undeclared，没有已核主张为 unjudged，条件值 null 不代表无条件适用；旧条目声明出处未核时明确缺出处，不强填确定状态。分页或保留来源尚未核读完时判断状态保持未知，按 next/回注引用续读或由管理员恢复来源。相互冲突的作者字段和模型值都保留，不能挑有利值合并。主张只用于其受理时的相同组成与校验准则；上下文改变后按新组成重跑回注。
 
 缺原包、闭集或保真范围时走具名管理员请求并带期限；结构声明报错保留 missing/next_action，不以空结果冒充完整生产。旧根和记录不改写；旧关键词规则受影响的适用字段需用新包重产新根、新模型运行并按原件和前驱保留血缘。本次续接未运行验证、测量或真实模型。
+
+## 可执行槽 Schema 修正（1.1.6）
+
+槽声明仅保留 Hub 可执行的结构约束，去掉 pattern、patternProperties、format。摘要、引用解析、原件身份、路径及逐字引文仍由现有受理边界核验，槽位收到字符串不表示身份已核对。case-review 的 expected_quality 继续逐字核对冻结原件与全部期望叶子；knowledge-contribution 从权威 ContributionInput Schema 生成受限槽投影，不修改权威受理合约。生成器按 Schema 结构遍历，名为 pattern 或 format 的普通字段不会被误删。case-review-verify 与 quality-board 槽声明未发现这些关键字，无须升版。

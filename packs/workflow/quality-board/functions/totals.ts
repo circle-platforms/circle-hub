@@ -6,7 +6,7 @@ import { labelOf } from './generated/vocabulary.ts';
 // itself: the totals are refuted (advisory) instead of stated.
 import { displayOf, fieldsOf, percentOf, summaryOf } from './board.ts';
 import { guarded, isRecord } from './text.ts';
-import type { CheckOutcome, GroupCounts, RunFacts } from './types.ts';
+import type { CheckOutcome, GroupCounts, GroupBoard, RunFacts } from './types.ts';
 
 const COMMANDLESS_CASES = labelOf('knowledge_count', 'commandless_cases');
 const TIER = 'advisory' as const;
@@ -37,7 +37,7 @@ export function totalsOutcome(subject: unknown): CheckOutcome {
   const { counts, facts } = read_;
   const view = facts.view;
   const items=(subject as {items:Array<{fields:unknown}>}).items;
-  const quality=items.map(item=>fieldsOf(item.fields)!.quality).reduce((a,q)=>({judged:a.judged+(q?.judged??0),unjudged:a.unjudged+(q?.unjudged??0),conflicted:a.conflicted+(q?.conflicted??0),sources:[...new Set([...a.sources,...(q?.sources??[])])]}),{judged:0,unjudged:0,conflicted:0,sources:[] as string[]});
+  const quality=items.map(item=>fieldsOf(item.fields)!.quality).reduce<NonNullable<GroupBoard['quality']>>((a,q)=>({judged:a.judged+(q?.judged??0),unjudged:a.unjudged+(q?.unjudged??0),conflicted:a.conflicted+(q?.conflicted??0),sources:[...new Set([...a.sources,...(q?.sources??[])])]}),{judged:0,unjudged:0,conflicted:0,sources:[] as string[]});
   const grounds = [view.source, ...(facts.placement ? [facts.placement.source] : []),...quality.sources];
   const data: Record<string, unknown> = {
     ...(facts.placement ? { placement: facts.placement } : {}),

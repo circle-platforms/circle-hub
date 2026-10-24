@@ -15,6 +15,7 @@
     },
     "options": {
       "include": "${var:APV_INCLUDE_PAGES}",
+      "pinned": "${var:APV_PINNED_BUILDS}",
       "exclude": [],
       "case_index": false,
       "min_line": "${var:APV_MIN_LINE}",
@@ -291,6 +292,18 @@
       "default": null
     },
     {
+      "name": "APV_PINNED_BUILDS",
+      "description": "Full build names in the build-site spelling; on a read opted-in page, an entry whose build name equals a member exactly (no transformation, not even case folding) is listed as a build of its own tree, released or not",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
+    },
+    {
       "name": "APV_INCLUDE_PAGES",
       "description": "Glob patterns over listing page names that opt platform, customer and patch pages into the sync; empty selects only the mainline pages",
       "schema": {
@@ -458,3 +471,4 @@
     "grammar": "apv-applicability@1"
   }
 }
+

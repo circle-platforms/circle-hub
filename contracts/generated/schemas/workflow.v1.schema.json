@@ -15,6 +15,15 @@
       "description": "W10 review protocol over an explicitly bound declaration submission",
       "type": "boolean"
     },
+    "work_class": {
+      "description": "V07 R[5]: the class of work this workflow does; a requirement that writes no repetition policy takes the class default, and a workflow that declares no class runs one round",
+      "type": "string",
+      "enum": [
+        "verification",
+        "reproduction",
+        "web"
+      ]
+    },
     "predecessor": {
       "description": "The service must reject start_run without an explicit predecessor; not an independent_of inference",
       "type": "string",

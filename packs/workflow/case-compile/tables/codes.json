@@ -117,6 +117,11 @@
       "code": "case-compile.workbook_invalid",
       "when": "工作簿原件、行结构、绑定身份或重算字节与已核验计划不一致",
       "fix": "按驳回指针修正计划或工作簿，在客户端用当前生成器重新生成并上传原件，以已满足计划运行为前驱开始新核验运行"
+    },
+    {
+      "code": "case-compile.expect_not_in_criterion",
+      "when": "引用的期望与本运行冻结的已受理判据声明不一致",
+      "fix": "逐字引用本运行冻结的新判据，或使用原件逐字引文"
     }
   ],
   "refusals": [

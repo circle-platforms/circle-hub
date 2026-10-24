@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "quality-board",
-  "version": "2.0.6",
+  "version": "2.0.8",
   "kind": "workflow",
   "title": "质量看板",
   "description": "构建的用例质量看板：每个（版本线、模块）分组的用例数、无期望结果占比、只有含糊期望结果占比、负面用例占比，以及合计；阈值越界是提示档的管理信号，从不是阻断；不绑定产品线（输入的外部标识写明产品和构建）；只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -30,6 +30,11 @@
       "path": "functions/generated/vocabulary.ts",
       "sha256": "7b1bc63dd7dc065ea749c7fb47636ef3ad57b56ef76226a83cb088224fb72848",
       "size": 5762
+    },
+    {
+      "path": "functions/judgments.ts",
+      "sha256": "1d5b11bf75c39e8c9c410296e4f2e68af35ac1addfe7315b2f168a4cfad782eb",
+      "size": 5044
     },
     {
       "path": "functions/project.ts",
@@ -63,8 +68,8 @@
     },
     {
       "path": "functions/totals.ts",
-      "sha256": "ed374b21fa2995aaf03f78062a335f31c5ac670f743ef6a0c80901b54f917647",
-      "size": 6387
+      "sha256": "6acade14c928fc251f625962b7b2cd7b1d81d05257a69b8d24b06f32039f3258",
+      "size": 6435
     },
     {
       "path": "functions/types.ts",
@@ -83,33 +88,33 @@
     },
     {
       "path": "samples/negative/counts-inconsistent.json",
-      "sha256": "6d03fb1a493324dc7f487c0560d47a98838df23d21aece259955c7da32406c18",
-      "size": 2170
+      "sha256": "032a47d93956eeea1806b0e44895054a8589b9f1e7c46312dd5710e073ee8368",
+      "size": 2245
     },
     {
       "path": "samples/negative/thresholds-exceeded.json",
-      "sha256": "ab75b17298025acd156aa8fd0fa83001c3205ecfc5e6d019163aab5d79553642",
-      "size": 2525
+      "sha256": "6899e423d9fc8421c66e790b7c36486170cc1dadcad4f17241ecdf30dddca75a",
+      "size": 2601
     },
     {
       "path": "samples/negative/total-undercount.json",
-      "sha256": "5316a087218df58cc1f74e4408cbfcf911bdaeab84875b9c40d50301a80d1430",
-      "size": 2152
+      "sha256": "5630dd325f22bea525c97762146a38456d42f95d8684d9b415b3aedca9584a1c",
+      "size": 2227
     },
     {
       "path": "samples/positive/board-with-metrics.json",
-      "sha256": "ddd98423d162d77db5b5717dc5d2a547a9b062a7cf442f60389c8223a603aac3",
-      "size": 2144
+      "sha256": "e3c625ac1faf3ce437230e8962a7cdef5d8ef91814fef41d357d34bf2b0d520f",
+      "size": 2218
     },
     {
       "path": "samples/positive/totals-consistent.json",
-      "sha256": "7c90f7dc58759c00adb7edd54f1cc2f3d5a997da0fd23658b6d96c6e9f8c674f",
-      "size": 3064
+      "sha256": "21381a14d3132a2ca5ce638621c6a279fd6b6de6469f4f0ac8bab080831aa5ba",
+      "size": 3215
     },
     {
       "path": "samples/positive/within-thresholds.json",
-      "sha256": "e861cf1a06d700764ce5aafcef7356718bd36533feacf16a743518d01e792562",
-      "size": 2136
+      "sha256": "ff6b2cc58ff1037b75b0cb1117bf7485f89890d28700e4974f7b3a4dfef63ea4",
+      "size": 2210
     },
     {
       "path": "slots.schema.json",
@@ -128,13 +133,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "634be9ae2b25bc7fff455cb849948c64c0443b54f7addf9a57e76634c10a2036",
-      "size": 2891
-    },
-    {
-      "path": "functions/judgments.ts",
-      "sha256": "1d5b11bf75c39e8c9c410296e4f2e68af35ac1addfe7315b2f168a4cfad782eb",
-      "size": 5044
+      "sha256": "aae5f5bfcf1b3fda620f7bc6b2ee6507fedd3f2f6eb538ac6a16e2b2ea9a9483",
+      "size": 2598
     }
   ]
 }

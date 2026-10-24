@@ -1,3 +1,4 @@
+import {packSchema} from '../../../hub/runs/engine/slots.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -50,10 +51,10 @@ test('manifest projection is deterministic and refuses malformed input with a co
   assert.equal(JSON.stringify(first),JSON.stringify(project(input as never)));
   assert.ok('error' in project({...input,inputs:[]} as never));
 });
-test('all four kinds reject forged evidence metadata; relation requires exactly two endpoints',()=>{
+test('all declared kinds reject forged evidence metadata; relation requires exactly two endpoints',()=>{
   const common={root:'1'.repeat(64),path:'/node',statement:'synthetic',source:{reference:`src:${'2'.repeat(64)}`,quote:'synthetic'}};
   for(const kind of DOCUMENT_OUTPUT_KIND){
-    const value={...common,kind,...(kind==='relation'?{relation:{kind:'contradicts',other:common.source}}:{})};
+    const value={...common,kind,...(kind==='relation'?{relation:{kind:'contradicts',other:common.source}}:{}),...(kind==='applicability_claim'?{applicability_claim:{entry:'3'.repeat(64),field:'models',value:['synthetic-model'],section:['synthetic'],evidence:{identity:{source_sha256:'2'.repeat(64),parser:'text@1',path:'l/1',span:{unit:'byte',offset:0,length:9}},text:'synthetic'}}}:{})};
     assert.ok(ContributionInput.safeParse(value).success);
     for(const key of ['applicability','provenance','basis_rank','confidence']) assert.equal(ContributionInput.safeParse({...value,[key]:'invented'}).success,false);
   }
@@ -67,4 +68,11 @@ test('admission codes have one core registry and no pack namespaced duplicate', 
   assert.equal(admission.length,10);for(const entry of admission){assert.equal(entry.interpreter,'contribution');assert.ok(entry.when&&entry.fix);}
   assert.ok(!readdirSync(new URL('./tables/',import.meta.url)).includes('codes.json'));
   assert.equal(JSON.parse(readFileSync(new URL('./pack.json',import.meta.url),'utf8')).version,VERSION);
+});
+
+test('slot data stays regex-free while authoritative contribution admission rejects malformed identities',()=>{
+ const schema=packSchema(slots().item.contribution.data);assert.ok(schema.ok);if(!schema.ok)return;
+ const value={root:'invalid-digest',path:'/node',source:{reference:'invalid-reference',quote:'synthetic'}};
+ assert.equal(schema.schema.safeParse(value).success,true);
+ assert.equal(ContributionInput.safeParse({...value,kind:'assertion',statement:'synthetic'}).success,false);
 });

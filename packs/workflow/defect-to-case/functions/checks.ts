@@ -188,7 +188,7 @@ export function checkCommandsRefutation(input:unknown):CheckOutcome[]{const raw=
  for(const draft of extractDrafts(s.slots)){const declaration=declareResourceTags(draft.resource);if(!declaration.valid){out.push({verdict:'refute',code:CODES.SHAPE_INVALID,statement:'resource 不是发布闭集的精确声明，不能开启反向例外',grounds:[],tier:'advisory',...own});continue;}if(declaration.status!=='declared'){out.push({verdict:'unknown',reason:'missing_input',missing:declaration.missing!,statement:declaration.missing!+'；下一步：'+declaration.next_action,grounds:[],tier:'blocking',...own});continue;}if(draft.expects_refutation===true&&declaration.negative!==true)out.push({verdict:'refute',code:CODES.SHAPE_INVALID,statement:'expects_refutation 要求明确的反向类型声明，按 resource 闭集及预期修正',grounds:[],tier:'blocking',...own});}
  return out.length?out:[{verdict:'support',statement:'反向声明字段已核；命令签名是否反驳由冻结目录解释器另算',grounds:[],tier:'blocking',...own}];}
 
-/** Fold whitespace as case-compile does; spelling, punctuation and case stay exact. */
+/** Preserve every code point for verbatim comparison. */
 function foldQuoteText(text: string): string {
   return text;
 }
@@ -203,6 +203,17 @@ export function checkGroundedReading(input: unknown): CheckOutcome[] {
   const outcomes: CheckOutcome[] = [];
   for (const [i, draft] of extractDrafts(subject.slots).entries()) {
     for (const [j, exp] of draft.expected.entries()) {
+      const slotPointer = `/slots/cases/${i}/data/expected/${j}/quote`;
+      const at = `第 ${i + 1} 个起草用例第 ${j + 1} 个期望结果`;
+      if (!exp.quote || !exp.quote.reference || !foldQuoteText(exp.quote.text)) {
+        outcomes.push({ verdict: 'refute', code: CODES.QUOTE_MISSING, statement: `${at}（${slotPointer}）缺少逐字引文（quote）；修正：每个期望结果自带 {"text": "<修复说明或手册里的逐字原文>", "reference": "<引用>"}`, grounds: [], tier: 'blocking', pointer: slotPointer, ...own });
+        continue;
+      }
+      const expected = foldQuoteText(exp.text);
+      if (expected === '' || !foldQuoteText(exp.quote.text).includes(expected)) {
+        outcomes.push({ verdict: 'refute', code: CODES.EXPECT_NOT_IN_QUOTE, statement: `${at}文字不是所附引文的逐字片段；修正：从这段修复说明或手册引文逐字摘取非空的期望文字，不得改写，再提交修复`, grounds: [exp.quote.reference], tier: 'blocking', pointer: `/slots/cases/${i}/data/expected/${j}/text`, ...own });
+        continue;
+      }
       const identity=expectedIdentity(exp.identity),pointer='/cases/'+i+'/expected/'+j;
       if(!identity||!Number.isSafeInteger(exp.after)||Number(exp.after)<1||Number(exp.after)>draft.steps.length){outcomes.push({verdict:'unknown',reason:'missing_input',missing:'期望引文的原件摘要、parser/路径、byte span 和 after；下一步客户端按原件补完整身份后重交',statement:'缺完整期望引用身份；下一步补原件位置与步骤绑定后重交',grounds:[],tier:'blocking',...own,pointer});continue;}
       const reference='src:'+identity.source_sha256+'/'+identity.parser+'/'+identity.path;
@@ -212,19 +223,10 @@ export function checkGroundedReading(input: unknown): CheckOutcome[] {
       const bytes=new TextEncoder().encode(text);let quote:string|null=null;try{if(identity.span.offset+identity.span.length<=bytes.byteLength)quote=new TextDecoder('utf-8',{fatal:true}).decode(bytes.slice(identity.span.offset,identity.span.offset+identity.span.length));}catch{}
       if(quote!==exp.quote.text){outcomes.push({verdict:'refute',code:CODES.QUOTE_MISSING,statement:'期望引用的 byte span 与逐字原文不一致',grounds:[reference],tier:'blocking',...own,pointer});continue;}
 
-      const slotPointer = `/slots/cases/${i}/data/expected/${j}/quote`;
-      const at = `第 ${i + 1} 个起草用例第 ${j + 1} 个期望结果`;
-      if (!exp.quote || !exp.quote.reference || !foldQuoteText(exp.quote.text)) {
-        outcomes.push({ verdict: 'refute', code: CODES.QUOTE_MISSING, statement: `${at}（${slotPointer}）缺少逐字引文（quote）；修正：每个期望结果自带 {"text": "<修复说明或手册里的逐字原文>", "reference": "<引用>"}`, grounds: [], tier: 'blocking', pointer: slotPointer, ...own });
-        continue;
-      }
-      const expected = foldQuoteText(exp.text);
-      if (expected === '' || !foldQuoteText(exp.quote.text).includes(expected)) {
-        outcomes.push({ verdict: 'refute', code: CODES.EXPECT_NOT_IN_QUOTE, statement: `${at}文字不是所附引文的逐字片段（只忽略空白差异）；修正：从这段修复说明或手册引文逐字摘取非空的期望文字，不得改写，再提交修复`, grounds: [exp.quote.reference], tier: 'blocking', pointer: `/slots/cases/${i}/data/expected/${j}/text`, ...own });
-      }
+
     }
   }
-  return outcomes.length ? outcomes : [{ verdict: 'support', statement: '所有期望结果文字均为各自引文的非空逐字片段（只忽略空白差异）', grounds: [], tier: 'blocking', ...own }];
+  return outcomes.length ? outcomes : [{ verdict: 'support', statement: '所有期望结果文字均为各自引文的非空逐字片段', grounds: [], tier: 'blocking', ...own }];
 }
 
 /** Source identity is frozen by projection, never accepted from submitted draft data. */
@@ -272,11 +274,28 @@ export function checkDuplicate(input:unknown):CheckOutcome[]{
  const entries=index.schema==='compact-case-index@1'&&isRecord(index.by_commands)?Object.values(index.by_commands).flatMap(v=>Array.isArray(v)?v:[]):isRecord(index.entries)?Object.values(index.entries):[];
  const entities=new Map<string,{document:string;node:string;reference:string;keys:Set<string>}>();let unresolved=0;
  for(const row of entries){if(!isRecord(row)){unresolved++;continue;}const d=isRecord(row.data)?row.data:row,identity=structure(d.case_structure,catalog);if(!identity||typeof d.document!=='string'||typeof d.node!=='string'||typeof row.reference!=='string'){unresolved++;continue;}const key=JSON.stringify([d.document,d.node]),entity=entities.get(key)??{document:d.document,node:d.node,reference:row.reference,keys:new Set<string>()};entity.keys.add(identity.key);entities.set(key,entity);}
- const incomplete=index.truncated===true||index.sourceTruncated===true||Number(index.skipped??index.sourceSkipped??0)>0||index.complete===false||Number(index.dropped??0)>0||Array.isArray(index.cut_keys)&&index.cut_keys.length>0||Array.isArray(index.cappedKeys)&&index.cappedKeys.length>0||Array.isArray(index.missingKeys)&&index.missingKeys.length>0;
+ const compact=buildCompactIndex(index);
+ const coverage=(paths:string[]):string[]=>{
+  const facts:string[]=[];const keys=paths.map(normalizeCommand),only=compact.only?.map(normalizeCommand);
+  if(compact.invalidMetadata)facts.push('only 或 cut_keys 字段形状无效；下一步集成者修正核心元数据');
+  if(Number(compact.sourceSkipped)>0)facts.push('缺少 '+compact.sourceSkipped+' 份文档；下一步作者补产新根并重绑');
+  if(only&&!keys.some(key=>only.includes(key)))facts.push('索引没有收窄到草稿命令 '+keys.join('、')+'；下一步按草稿命令补读 only');
+  if(compact.unplacedCommands>0)facts.push('缺 '+compact.unplacedCommands+' 个条目的 commands 字段；下一步作者补结构并重产新根');
+  if(compact.unplaced>0)facts.push('存在 '+compact.unplaced+' 个未归位条目；下一步作者补完整结构声明');
+  if(compact.dropped>0)facts.push('紧凑索引丢弃 '+compact.dropped+' 个条目；下一步包作者调整有界投影读取能力');
+  if(compact.missingKeys?.length)facts.push('缺少请求的键 '+compact.missingKeys.join('、')+'；下一步同一根重新读取这些键');
+  if(compact.cappedKeys?.length&&keys.filter(k=>!only||only.includes(k)).every(k=>compact.cappedKeys.map(normalizeCommand).includes(k)))facts.push('索引每键上限截断；下一步集成者补分页能力后同根续读');
+  if(compact.sourceTruncated)facts.push('源索引截断；下一步同根补完整范围');
+  if(!compact.complete&&!facts.length)facts.push('索引未声明完整范围；下一步补完整范围回执');
+  return facts;
+ };
  const out:CheckOutcome[]=[];
  for(const draft of drafts){const identity=draftStructure(draft as unknown as Record<string,unknown>,catalog);if(!draft.id||!identity||!catalog){out.push(missing(draft,'缺草稿 id、完整已核命令参数身份、after 或期望原件引文身份'));continue;}
   const duplicates=[...entities.values()].filter(e=>e.keys.size===1&&e.keys.has(identity.key));if(duplicates.length){for(const found of duplicates)out.push({verdict:'refute',code:CODES.DUPLICATE_CASE,statement:'按照显式结构声明，草稿 '+draft.id+' 与索引用例 '+found.document+':'+found.node+' 的规范结构身份相同',grounds:[found.reference],tier:'advisory',...own,data:{draft_id:draft.id,requirement:'not_duplicate',rule_version:DUPLICATE_CLAIM_RULE,structure_rule:STRUCTURE_RULE,structure_key:identity.key,duplicate_of:{document:found.document,node:found.node,reference:found.reference}}});continue;}
-  if(incomplete||unresolved>0||[...entities.values()].some(e=>e.keys.size>1)){out.push(missing(draft,'当前索引范围不完整或有 '+unresolved+' 个条目缺完整作者结构声明'));continue;}
+  const facts=coverage(identity.commands.map(c=>c.path));
+  if(unresolved>0)facts.push('有 '+unresolved+' 个条目缺完整作者结构声明；下一步作者补 case_structure 并重产新根');
+  if([...entities.values()].some(e=>e.keys.size>1))facts.push('同一索引实体存在冲突结构声明；下一步作者消解冲突后重产新根');
+  if(facts.length){out.push({...missing(draft,'草稿 '+draft.id+'（'+draft.title+'）：'+facts.join('；')),reason:'integrity_unproven'});continue;}
   out.push({verdict:'support',statement:'草稿 '+draft.id+' 在当前锁定索引的已声明结构范围内未见相同结构身份',grounds:[],tier:'advisory',...own,data:{draft_id:draft.id,requirement:'not_duplicate',rule_version:STRUCTURE_RULE,structure_key:identity.key,scope:{build:index.build??null,only:index.only??null,entries:entities.size}}});
  }
  return out.length?out:[{verdict:'unknown',reason:'missing_input',missing:'本次起草用例；下一步补草稿或由运行者明确处置后续做',statement:'缺本次起草用例，下一步补草稿或明确处置',grounds:[],tier:'advisory',...own}];

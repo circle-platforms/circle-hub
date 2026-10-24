@@ -1,3 +1,4 @@
+import {addressInput} from '../testing/typed-fixtures.ts';
 // Bed facts and the address check: every literal address resolves to a device interface address or an allocated one;
 // a blind address (a DUT interface on a segment without a trigger device) is never a listen or virtual address; a
 // backend is a server address; off-bed addresses are refused. Addresses stay inside 192.0.2.0/24 and 2001:db8::/32.
@@ -69,40 +70,22 @@ describe('台架事实', () => {
 });
 
 
-describe('literal address verification for runtime plans', () => {
-  for (const address of ['192.0.2.10', '192.0.2.74', '192.0.2.90']) it(`own interface or server address is allowed: ${address}`, () => {
-    const data = goodData(); data.steps[0].args = [`widget address ${address}`];
-    assert.equal(checkAddresses(subjectOf(data))[0].verdict, 'support');
-  });
-  for (const address of ['192.0.2.1', '192.0.2.80', '192.0.2.130']) it(`other bed interfaces are allowed by decision 35: ${address}`, () => {
-    const data = goodData(); data.steps[0].args = [`widget address ${address}`];
-    assert.equal(checkAddresses(subjectOf(data))[0].verdict, 'support');
-  });
-  it('off-bed addresses and unowned leases cannot be used', () => {
-    const data = goodData(); data.steps[0].args = ['widget address 192.0.2.200'];
-    assert.equal(checkAddresses(subjectOf(data))[0].code, 'case-compile.address_off_bed');
-    data.steps[0].args = ['widget address 192.0.2.20'];
-    const row = { key: 'bed/bed-a/ip/192.0.2.20', until: '2026-10-23T10:00:00.000Z', mine: true };
-    assert.equal(checkAddresses(subjectOf(data, { leases: [row] }))[0].verdict, 'support');
-    assert.equal(checkAddresses(subjectOf(data, { leases: [{ ...row, mine: false }] }))[0].code, 'case-compile.address_off_bed');
-  });
-  it('replacement targets are on bed and the mapping is one-to-one', () => {
-    const data = goodData(); data.replacements = [{ case: '192.0.2.200', bed: '192.0.2.90' }, { case: '192.0.2.201', bed: '192.0.2.90' }];
-    assert.equal(checkAddresses(subjectOf(data))[0].code, 'case-compile.replacement_invalid');
-    data.replacements = [{ case: '192.0.2.200', bed: '192.0.2.250' }]; data.expects[0].quote.text = '原文 192.0.2.200 健康检查间隔设置成功';
-    assert.equal(checkAddresses(subjectOf(data))[0].code, 'case-compile.address_off_bed');
-  });
-  it('a declared replacement must already be applied to plan text', () => {
-    const data = goodData(); data.replacements = [{ case: '192.0.2.10', bed: '192.0.2.90' }]; data.expects[0].quote.text = '原地址 192.0.2.10 健康检查间隔设置成功'; data.steps[0].args = ['widget address 192.0.2.10'];
-    assert.equal(checkAddresses(subjectOf(data))[0].code, 'case-compile.replacement_missing');
-  });
-  it('an unknown bed is refused', () => { const data = goodData(); data.bucket = 'absent'; assert.equal(checkAddresses(subjectOf(data))[0].code, 'case-compile.bed_unknown'); });
+describe('declared address positions in runtime-contract@2', () => {
+ for(const address of ['192.0.2.10','192.0.2.74','192.0.2.90','192.0.2.1','192.0.2.80','192.0.2.130'])it('allows frozen bed interface '+address,()=>assert.equal(checkAddresses(addressInput(address))[0].verdict,'support'));
+ it('off-bed addresses need a live lease owned by this lineage',()=>{
+  assert.equal(checkAddresses(addressInput('192.0.2.200'))[0].code,'case-compile.address_off_bed');
+  const lease={key:'bed/bed-a/ip/192.0.2.20',until:'2026-10-23T10:00:00.000Z',mine:true};
+  assert.equal(checkAddresses(addressInput('192.0.2.20',{leases:[lease]}))[0].verdict,'support');
+  assert.equal(checkAddresses(addressInput('192.0.2.20',{leases:[{...lease,mine:false}]}))[0].code,'case-compile.address_off_bed');
+ });
+ it('replacements must be bijective and targets must belong to the bed',()=>{
+  const duplicate=addressInput('192.0.2.90',{source:'192.0.2.200',replacements:[{case:'192.0.2.200',bed:'192.0.2.90'},{case:'192.0.2.200',bed:'192.0.2.90'}]});assert.ok(checkAddresses(duplicate).some(v=>v.code==='case-compile.replacement_invalid'));
+  assert.ok(checkAddresses(addressInput('192.0.2.250',{source:'192.0.2.200',replacements:[{case:'192.0.2.200',bed:'192.0.2.250'}]})).some(v=>v.code==='case-compile.address_off_bed'));
+ });
+ it('an unchanged declared source is not treated as its replacement',()=>assert.ok(checkAddresses(addressInput('192.0.2.10',{replacements:[{case:'192.0.2.10',bed:'192.0.2.90'}]})).some(v=>v.code==='case-compile.replacement_missing')));
+ it('an unknown bed is refused',()=>{const input=addressInput('192.0.2.10');(input.subject.data as ReturnType<typeof goodData>).bucket='absent';assert.equal(checkAddresses(input)[0].code,'case-compile.bed_unknown');});
 });
-
-it('literal addresses in invalid extra arguments are still examined', () => {
-  const data = goodData(); data.steps[0].args.push('192.0.2.250', '192.0.2.251');
-  assert.ok(checkAddresses(subjectOf(data)).some((v) => v.code === 'case-compile.address_off_bed'));
-});
+it('extra undeclared arguments are shape violations, never inferred address positions',()=>{const data=goodData();data.steps[0].args.push('192.0.2.250');const out=checkAddresses(subjectOf(data));assert.ok(out.some(v=>v.code==='case-compile.method_forbidden'));assert.ok(!out.some(v=>v.code==='case-compile.address_off_bed'));});
 
 it('lineage addresses held without expiry remain allocated while another user cannot use them',()=>{
   const bed=bedsOf()[0];const now='2036-10-24T08:00:00.000Z';

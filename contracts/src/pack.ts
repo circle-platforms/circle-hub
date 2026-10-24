@@ -7,6 +7,7 @@ import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
 import {FrozenCriterion} from './criterion.ts';
 import {
+  AggregationSchema,
   EffectClassSchema,
   EffectTriggerSchema,
   AcceptedProducerSchema,
@@ -18,6 +19,7 @@ import {
   LeaseOpSchema,
   PackKindSchema,
   SAMPLE_SOURCE,
+  WorkClassSchema,
   SampleSourceSchema,
   SourceRoleSchema,
   TargetSchema,
@@ -148,6 +150,28 @@ export const ExpectedOutcome = z.strictObject({
 });
 export type ExpectedOutcome = z.infer<typeof ExpectedOutcome>;
 
+/**
+ * V07 repetition policy of one requirement: how many rounds the dynamic layer runs and how they aggregate. Only a
+ * requirement that declares a dynamic layer repeats (a static check runs once); `k` belongs to k-of-n alone. A round
+ * count over 10 is refused here and by the engine's pure policy.
+ */
+export const Repetition = z
+  .strictObject({
+    count: z.number().int().min(1).max(10).describe('frozen rounds of the dynamic layer; 1 to 10'),
+    aggregation: AggregationSchema,
+    k: z.number().int().min(1).max(10).optional().describe('k-of-n only: at least this many rounds must meet the expectation'),
+    fresh_context: z.boolean().optional().describe('every round takes a new gateway lease and session, never the previous round\u2019s'),
+    baseline_first: z.boolean().optional().describe('prove the environment and probe every device read-only before each round (P07 R[1])'),
+    window_seconds: z.number().int().min(1).max(86400).optional().describe('time window from the first round; a round started outside it is not dispatched and stays in the denominator'),
+  })
+  .superRefine((r, ctx) => {
+    if (r.aggregation === 'k_of_n') {
+      if (r.k === undefined) ctx.addIssue({ code: 'custom', path: ['k'], message: 'k-of-n 要写 k' });
+      else if (r.k > r.count) ctx.addIssue({ code: 'custom', path: ['k'], message: 'k 不能大于重复次数' });
+    } else if (r.k !== undefined) ctx.addIssue({ code: 'custom', path: ['k'], message: '只有 k-of-n 写 k' });
+  });
+export type Repetition = z.infer<typeof Repetition>;
+
 export const RequirementTemplate = z
   .strictObject({
     key: Key,
@@ -167,8 +191,12 @@ export const RequirementTemplate = z
     error_handling: z.array(ErrorHandlingRow),
     requires_discrimination: z.boolean().optional(),
     run_table: z.boolean().optional().describe('whether submissions may add checks using inline tables (W04)'),
+    repetition: Repetition.optional().describe('V07: the rounds of the dynamic layer and how they aggregate; absent means the work class default, or one round without a class'),
   })
   .superRefine((r, ctx) => {
+    if (r.repetition !== undefined && !r.layers.includes('dynamic')) {
+      ctx.addIssue({ code: 'custom', path: ['repetition'], message: '静态检查不重复：只有声明动态层的要求项能写重复策略' });
+    }
     if(r.independence_by_account&&r.independent_of!=='predecessor')ctx.addIssue({code:'custom',path:['independence_by_account'],message:'account independence requires independent_of predecessor'});
     if ((r.accepted_producer === 'independent_judgment') !== (r.independent_of !== undefined)) {
       ctx.addIssue({ code: 'custom', path: ['independent_of'], message: 'an independent judgment names what it is independent of, and only one does' });
@@ -193,6 +221,7 @@ export const AllowedEffect=z.strictObject({
  ]),
  release:z.strictObject({requirements:z.array(z.string().min(1)).min(1),artifact:z.string().min(1)}),
  trigger:EffectTriggerSchema,
+ repetition:z.number().int().min(1).max(10).optional().describe('V07 R[5]: how many rounds this effect row dispatches; written, it is the count. budget.count stays a pure upper bound on writes and never doubles as a round count'),
  budget:z.strictObject({count:z.number().int().min(1).max(1000000),duration_ms:z.union([z.number().int().min(1).max(86400000000),z.strictObject({executor_max_run_ms:z.literal(true)})])}),
  deadline_ms:z.number().int().min(1).max(31536000000),optional:z.boolean(),
  policy_checks:z.array(z.string().min(1)).min(1).max(100),
@@ -518,6 +547,7 @@ export const WorkflowFile = z
     schema: z.literal('workflow@1'),
     predecessor_access:z.literal('view').optional().describe('Read-only predecessor visibility; never grants mutation or lineage lease rights'),
     criterion_review:z.boolean().optional().describe('W10 review protocol over an explicitly bound declaration submission'),
+    work_class: WorkClassSchema.optional().describe('V07 R[5]: the class of work this workflow does; a requirement that writes no repetition policy takes the class default, and a workflow that declares no class runs one round'),
     predecessor:z.literal('required').optional().describe('The service must reject start_run without an explicit predecessor; not an independent_of inference'),
     inputs: z.array(WorkflowInput).min(1),
     parameters: z.array(WorkflowParameter),

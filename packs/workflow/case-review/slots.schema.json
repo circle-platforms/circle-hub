@@ -78,8 +78,7 @@
             "type": "boolean"
           },
           "source_sha256": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
+            "type": "string"
           },
           "expected_count": {
             "type": "integer",

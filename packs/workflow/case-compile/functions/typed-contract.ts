@@ -1,5 +1,5 @@
 // runtime-contract@2 declarations are policy inputs, never inferences from names or prose.
-import {fromJSONSchema} from 'zod';
+import {schema} from './schema.ts';
 import TYPE from '../tables/declared-type.schema.json' with {type:'json'};
 import ROLE from '../tables/declared-role.schema.json' with {type:'json'};
 import ADDRESS from '../tables/typed-address.schema.json' with {type:'json'};
@@ -7,7 +7,6 @@ import IDENTITY from '../tables/command-identity.schema.json' with {type:'json'}
 import type {CommandIdentity,DeclaredParameterType} from '../../../../contracts/generated/shared-interfaces.ts';
 import {isRecord} from './text.ts';
 import {addressKey} from './manifest.ts';
-const schema=(v:unknown)=>fromJSONSchema(v as Parameters<typeof fromJSONSchema>[0]);
 const Type=schema(TYPE),Role=schema(ROLE),Address=schema(ADDRESS),Identity=schema(IDENTITY);
 export interface ValueType {declaration:DeclaredParameterType;address_kind?:string;values?:string[];literal?:string;minimum?:number;maximum?:number;minLength?:number;maxLength?:number}
 export interface RoleDeclaration {source:string;bed_member?:boolean}
@@ -52,14 +51,16 @@ export function readAuthority(contract:Record<string,unknown>,entry:Record<strin
  const effects:Record<string,Effect>={};for(const [id,row]of Object.entries(contract.effects)){if(!isRecord(row)||!ground(id,row.source)||!Array.isArray(row.roles)||row.roles.some(r=>typeof r!=='string'||!roles[r])||!Number.isSafeInteger(row.budget)||Number(row.budget)<0)return null;
   const commands=Array.isArray(row.commands)?row.commands.map(identityOf):[];if(commands.some(i=>i===null))return null;
   const allowed_literals=row.allowed_literals??[];if(!Array.isArray(allowed_literals)||allowed_literals.some(v=>typeof v!=='string'))return null;
-  const bindings=row.command_roles??[];if(!Array.isArray(bindings)||bindings.some(v=>!isRecord(v)||!ground(id,v.signature)||!Number.isSafeInteger(v.position)||Number(v.position)<0||typeof v.role!=='string'||!(row.roles as readonly string[]).includes(v.role)))return null;
-  effects[id]={id,source:row.source,roles:row.roles as string[],budget:Number(row.budget),commands:commands as CommandIdentity[],allowed_literals:allowed_literals as string[],command_roles:bindings as Effect['command_roles']};
+  const effectRoles=row.roles;
+  const bindings=row.command_roles??[];if(!Array.isArray(bindings)||bindings.some(v=>!isRecord(v)||!ground(id,v.signature)||!Number.isSafeInteger(v.position)||Number(v.position)<0||typeof v.role!=='string'||!effectRoles.includes(v.role)))return null;
+  effects[id]={id,source:row.source,roles:effectRoles as string[],budget:Number(row.budget),commands:commands as CommandIdentity[],allowed_literals:allowed_literals as string[],command_roles:bindings as Effect['command_roles']};
  }
  const raw=entry.typed_authority;if(!ground(String(entry.f),raw.source)||!isRecord(raw.parameters)||!Array.isArray(raw.effects)||!raw.effects.length||raw.effects.some(id=>typeof id!=='string'||!effects[id]))return null;
+ const source=raw.source;
  const selected=(raw.effects as string[]).map(id=>effects[id]);const parameters:Authority['parameters']={};
  if(Object.keys(raw.parameters).length!==names.length)return null;
  for(const name of names){const p=raw.parameters[name];if(!isRecord(p)||typeof p.type!=='string'||!types[p.type]||typeof p.role!=='string'||!roles[p.role]||!selected.some(e=>e.roles.includes(p.role as string)))return null;parameters[name]={type:types[p.type],role:p.role};}
- return {source:raw.source,parameters,roles,effects:selected};
+ return {source,parameters,roles,effects:selected};
 }
 export function valueProblem(type:ValueType,value:unknown):string|null {
  const t=type.declaration.catalog_type;if(!t)return '类型未声明';

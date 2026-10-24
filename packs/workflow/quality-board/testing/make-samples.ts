@@ -32,6 +32,7 @@ async function main(): Promise<void> {
     facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: true }, 1),
     facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 17),
   ]);
+  const wf=within.items[0].fields as GroupBoard;wf.quality={judged:19,unjudged:1,conflicted:0,sources:[]};wf.counts.vague=0;wf.ratios.vague={num:0,den:19};wf.display.vague=0;
   await write('positive', 'board-with-metrics', {
     id: 'board_with_metrics',
     source: 'author',

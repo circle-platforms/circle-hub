@@ -71,9 +71,9 @@ it('duplicate subject derives distinct longest catalog heads for engine narrowed
   const input = makeItemInput([makeGoodDraft()]);
   input.catalog = [{ words: ['widget'] }, { words: ['widget', 'health', 'interval'] }];
   const subject = duplicateSubject(input) as { read_keys: string[] };
-  assert.deepEqual(subject.read_keys, ['widget health interval']);
+  assert.deepEqual(subject.read_keys, ['/commands/widget/health/interval']);
 });
 it('duplicate subject never guesses an unresolved command head', () => {
-  const input = makeItemInput([makeGoodDraft()]); input.catalog = [];
+  const draft=makeGoodDraft();draft.steps=[{command:'unresolved'}];const input = makeItemInput([draft]); input.catalog = [];
   assert.deepEqual((duplicateSubject(input) as { read_keys: string[] }).read_keys, []);
 });

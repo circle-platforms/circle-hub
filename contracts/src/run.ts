@@ -4,6 +4,7 @@ import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
 import {
   AcceptedProducerSchema,
+  AggregationSchema,
   DoneRuleSchema,
   ExecutionHostSchema,
   LayerSchema,
@@ -63,6 +64,19 @@ export const RequirementSummary = z.strictObject({
   repair_rounds: z.number().int().nonnegative(),
   rules: z.array(z.string().min(1)).describe('locked rule@version identities that judge this requirement'),
   run_interpreters: z.array(Versioned).describe('ledger-permitted interpreters for inline runtime tables; empty when disabled'),
+  repetition: z
+    .strictObject({
+      count: z.number().int().min(1).max(10),
+      aggregation: AggregationSchema,
+      k: z.number().int().min(1).max(10).optional(),
+      basis: z.enum(['explicit', 'work_class', 'single_round']).describe('explicit: a field was written; work_class: the pack\u2019s class default; single_round: no class, or a static-only requirement'),
+      declared: z.strictObject({ count: z.boolean(), aggregation: z.boolean(), k: z.boolean() }).describe('which parts the pack wrote itself'),
+      fresh_context: z.boolean().optional(),
+      baseline_first: z.boolean().optional(),
+      window_seconds: z.number().int().min(1).max(86400).optional(),
+    })
+    .optional()
+    .describe('V07: the repetition policy in force for this requirement, frozen with the run; absent on records stored before the field existed'),
 });
 export type RequirementSummary = z.infer<typeof RequirementSummary>;
 

@@ -1,3 +1,4 @@
+import {makeGoodDraft,makeDuplicateDraft,expectedFor,FIX_REF,BUG_RAW} from './testing/fixtures.ts';
 // End to end test of defect-to-case pack through the real engine.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -28,16 +29,23 @@ after(async () => {
 
 describe('defect-to-case end to end run', { skip }, () => {
   it('reads the draft head at the bound revision during checking and cites its read manifest', async () => {
+    const index=structuredClone(SYNTHETIC_INDEX_VIEW);
+    Object.values(index.entries)[0].data.case_structure={schema:'case-structure@2',commands:makeDuplicateDraft().steps.map(step=>step.identity),expected:[{after:1,quote:expectedFor('健康检查间隔设置成功',FIX_REF).identity}]};
+    hub.external.put('knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&fields=commands,document,node,title,negative,case_structure',{bytes:Buffer.from(JSON.stringify(index)),mediaType:'application/json'});
+    for(const key of hub.external.objects.keys())if(key.startsWith('knowledge:index:'))hub.external.put(key,{bytes:Buffer.from(JSON.stringify(index)),mediaType:'application/json'});
     const started = await hub.service.startRun(hub.alice, {
       pack: 'defect-to-case', product: 'apv', build: 'Rel_APV_10_6_1_57',
-      inputs: { defects: [{ external: 'plm:bug:74001' }], indexed_cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&fields=commands,document,node,title,negative' } },
+      inputs: { defects: [{ external: 'plm:bug:74001' }], indexed_cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&fields=commands,document,node,title,negative,case_structure' } },
     }, call());
     assert.equal(started.call_result, 'ok', JSON.stringify(started.errors));
     const run = started.run!;
     const bug = run.sources.find(source => source.slot === 'defects')!;
     const quote = { reference: `${bug.reference}/json@1/p/fields/fix`, text: '健康检查间隔设置成功' };
-    const title = Object.values(SYNTHETIC_INDEX_VIEW.entries)[0].data.title as string;
-    const answer = await hub.service.submitResult(hub.alice, { run: run.run, model: 'synthetic-model', items: [{ item: '74001', handling: 'handled', slots: { cases: [{ text: title, quotes: [quote], data: { title, priority: 2, negative: false, expects_refutation: false, preconditions: [], steps: [{ command: 'show health detail' }], expected: [{ text: quote.text, quote }], tags: ['Functional'] } }] } }] }, call());
+    const draft=makeDuplicateDraft();
+    // The expected identity is an author declaration, while quote text is checked separately against the bound fix.
+    draft.expected=[expectedFor(quote.text,FIX_REF)];
+    const title=draft.title;
+    const answer = await hub.service.submitResult(hub.alice, { run: run.run, model: 'synthetic-model', items: [{ item: '74001', handling: 'handled', slots: { cases: [{ text: title, quotes: [quote], data: draft }] } }] }, call());
     assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
     const result = answer.result as ValidationResult;
     const claims = Object.values(result.partitions).flat().flatMap(item => item.requirements).filter(requirement => requirement.requirement === 'not_duplicate').flatMap(requirement => requirement.claims);
@@ -45,7 +53,7 @@ describe('defect-to-case end to end run', { skip }, () => {
     assert.ok(claim, JSON.stringify(claims)); assert.match(claim.statement.data?.read_manifest as string, /^rec:[a-f0-9]{64}$/);
     const bound = run.sources.find(source => source.slot === 'indexed_cases')!;
     assert.ok(bound.external?.endsWith(`@${SYNTHETIC_INDEX_VIEW.build.root}`));
-    assert.ok(hub.external.reads.includes(`knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&fields=commands,document,node,title,negative&only=show%20health%20detail@${SYNTHETIC_INDEX_VIEW.build.root}`));
+    assert.ok(hub.external.reads.includes(`knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&fields=commands,document,node,title,negative,case_structure&only=%2Fcommands%2Fshow%2Fhealth%2Fdetail@${SYNTHETIC_INDEX_VIEW.build.root}`));
   });
 
   it('runs full repair round: first rejected with fixes, second accepted, skipped defect honest', async () => {
@@ -63,7 +71,7 @@ describe('defect-to-case end to end run', { skip }, () => {
             { external: 'plm:bug:71010' },
           ],
           indexed_cases: {
-            external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative',
+            external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative,case_structure',
           },
         },
       },
@@ -195,13 +203,13 @@ describe('defect-to-case end to end run', { skip }, () => {
   it('blocks a paraphrased expectation and consumes a repair round when it is resubmitted', async () => {
     const started = await hub.service.startRun(hub.alice, {
       pack: 'defect-to-case', product: 'apv', build: 'Rel_APV_10_6_1_57',
-      inputs: { manual: { external: 'manual:cli:10.6.1' }, defects: [{ external: 'plm:bug:74001' }], indexed_cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative' } },
+      inputs: { manual: { external: 'manual:cli:10.6.1' }, defects: [{ external: 'plm:bug:74001' }], indexed_cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative,case_structure' } },
     }, call());
     assert.equal(started.call_result, 'ok', JSON.stringify(started.errors));
     const run = started.run!;
     const source = run.sources.find((s) => s.slot === 'defects')!;
     const quote = { reference: `${source.reference}/json@1/p/fields/fix`, text: '健康检查间隔设置成功' };
-    const submit = (text: string) => hub.service.submitResult(hub.alice, { run: run.run, model: 'synthetic-model', items: [{ item: '74001', handling: 'handled', slots: { cases: [{ text: '合成回归', quotes: [quote], data: { title: '合成回归', priority: 2, negative: false, expects_refutation: false, steps: [{ command: 'widget health interval 60' }], expected: [{ text, quote }], tags: ['Functional'] } }] } }] }, call());
+    const submit = (text: string) => hub.service.submitResult(hub.alice, { run: run.run, model: 'synthetic-model', items: [{ item: '74001', handling: 'handled', slots: { cases: [{ text: '合成回归', quotes: [quote], data: { ...makeGoodDraft({ref:FIX_REF}), title:'合成回归',expected:[{...expectedFor(quote.text,FIX_REF),text}] } }] } }] }, call());
     const first = await submit('健康检查间隔保存成功');
     assert.equal(first.call_result, 'ok', JSON.stringify(first.errors));
     const result = first.result as ValidationResult;
@@ -223,7 +231,7 @@ describe('defect-to-case end to end run', { skip }, () => {
   it('rejects a valid quote from the wrong defect field and accepts the explicitly bound manual', async () => {
     const started = await hub.service.startRun(hub.alice, {
       pack: 'defect-to-case', product: 'apv', build: 'Rel_APV_10_6_1_57',
-      inputs: { manual: { external: 'manual:cli:10.6.1' }, defects: [{ external: 'plm:bug:74001' }], indexed_cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative' } },
+      inputs: { manual: { external: 'manual:cli:10.6.1' }, defects: [{ external: 'plm:bug:74001' }], indexed_cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative,case_structure' } },
     }, call());
     assert.equal(started.call_result, 'ok', JSON.stringify(started.errors));
     const run = started.run!;
@@ -248,7 +256,7 @@ describe('defect-to-case end to end run', { skip }, () => {
           manual: { external: 'manual:cli:10.6.1' },
           defects: [{ external: 'plm:bug:74001' }],
           indexed_cases: {
-            external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative',
+            external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=commands&only=show%20health%20detail&fields=commands,document,node,title,negative,case_structure',
           },
         },
       },

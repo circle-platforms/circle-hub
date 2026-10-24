@@ -2,7 +2,7 @@
   "id": "tags_variant",
   "source": "author",
   "check": "tags",
-  "note": "两个用例写 Functional，一个写 function",
+  "note": "R2：保留原始变体 Functional、function；它们均不等于闭集原文 functional，逐条反驳为提示档结构违规，不能按大小写或同义词归一化后支持",
   "subject": {
     "subjects": [
       {
@@ -23,20 +23,57 @@
         "tags": [
           "Functional"
         ],
+        "resource": [
+          "Functional"
+        ],
+        "resourcePresent": true,
+        "tagDeclaration": {
+          "table": {
+            "id": "team-resource-tags",
+            "version": "1",
+            "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b"
+          },
+          "status": "undeclared",
+          "valid": false,
+          "present": true,
+          "raw": [
+            "Functional"
+          ],
+          "ids": [],
+          "types": [],
+          "negative": null,
+          "issues": [
+            {
+              "index": 0,
+              "raw": "Functional",
+              "allowed": [
+                "functional",
+                "configuration",
+                "integration",
+                "compatibility",
+                "negative",
+                "stress",
+                "R2ADD",
+                "20260301ADD",
+                "release-label"
+              ]
+            }
+          ],
+          "missing": "缺少有效的作者测试类型声明：resource 必须只含发布闭集的精确标签，且至少包含一项测试类型",
+          "next_action": "作者从发布闭集选择精确原文修改 resource 后重新核验；确需其他标签时由包作者发布扩展闭集的新版本"
+        },
         "tagCount": 1,
-        "categories": [
-          "Functional"
-        ],
-        "categoryTags": [
-          "Functional"
-        ],
+        "categories": [],
+        "categoryTags": [],
         "tagVariants": [],
-        "otherTags": [],
+        "otherTags": [
+          "Functional"
+        ],
         "expected": [
           "显示的探测间隔与设置一致"
         ],
         "expectedCount": 1,
-        "negative": false
+        "negative": null
       },
       {
         "kind": "case",
@@ -56,20 +93,57 @@
         "tags": [
           "Functional"
         ],
+        "resource": [
+          "Functional"
+        ],
+        "resourcePresent": true,
+        "tagDeclaration": {
+          "table": {
+            "id": "team-resource-tags",
+            "version": "1",
+            "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b"
+          },
+          "status": "undeclared",
+          "valid": false,
+          "present": true,
+          "raw": [
+            "Functional"
+          ],
+          "ids": [],
+          "types": [],
+          "negative": null,
+          "issues": [
+            {
+              "index": 0,
+              "raw": "Functional",
+              "allowed": [
+                "functional",
+                "configuration",
+                "integration",
+                "compatibility",
+                "negative",
+                "stress",
+                "R2ADD",
+                "20260301ADD",
+                "release-label"
+              ]
+            }
+          ],
+          "missing": "缺少有效的作者测试类型声明：resource 必须只含发布闭集的精确标签，且至少包含一项测试类型",
+          "next_action": "作者从发布闭集选择精确原文修改 resource 后重新核验；确需其他标签时由包作者发布扩展闭集的新版本"
+        },
         "tagCount": 1,
-        "categories": [
-          "Functional"
-        ],
-        "categoryTags": [
-          "Functional"
-        ],
+        "categories": [],
+        "categoryTags": [],
         "tagVariants": [],
-        "otherTags": [],
+        "otherTags": [
+          "Functional"
+        ],
         "expected": [
           "显示的探测间隔与设置一致"
         ],
         "expectedCount": 1,
-        "negative": false
+        "negative": null
       },
       {
         "kind": "case",
@@ -89,37 +163,70 @@
         "tags": [
           "function"
         ],
-        "tagCount": 1,
-        "categories": [
-          "Functional"
-        ],
-        "categoryTags": [
+        "resource": [
           "function"
         ],
-        "tagVariants": [
-          {
-            "tag": "function",
-            "usual": "Functional",
-            "category": "Functional"
-          }
+        "resourcePresent": true,
+        "tagDeclaration": {
+          "table": {
+            "id": "team-resource-tags",
+            "version": "1",
+            "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b"
+          },
+          "status": "undeclared",
+          "valid": false,
+          "present": true,
+          "raw": [
+            "function"
+          ],
+          "ids": [],
+          "types": [],
+          "negative": null,
+          "issues": [
+            {
+              "index": 0,
+              "raw": "function",
+              "allowed": [
+                "functional",
+                "configuration",
+                "integration",
+                "compatibility",
+                "negative",
+                "stress",
+                "R2ADD",
+                "20260301ADD",
+                "release-label"
+              ]
+            }
+          ],
+          "missing": "缺少有效的作者测试类型声明：resource 必须只含发布闭集的精确标签，且至少包含一项测试类型",
+          "next_action": "作者从发布闭集选择精确原文修改 resource 后重新核验；确需其他标签时由包作者发布扩展闭集的新版本"
+        },
+        "tagCount": 1,
+        "categories": [],
+        "categoryTags": [],
+        "tagVariants": [],
+        "otherTags": [
+          "function"
         ],
-        "otherTags": [],
         "expected": [
           "显示的探测间隔与设置一致"
         ],
         "expectedCount": 1,
-        "negative": false
+        "negative": null
       }
     ]
   },
   "expect": [
     {
-      "verdict": "support",
+      "verdict": "refute",
+      "code": "case-review.tag_variant",
       "item": "sample:c1",
       "tier": "advisory"
     },
     {
-      "verdict": "support",
+      "verdict": "refute",
+      "code": "case-review.tag_variant",
       "item": "sample:c2",
       "tier": "advisory"
     },

@@ -116,8 +116,12 @@ test('registered label snapshots expose generated labels guards and labelOf with
     for(const value of [undefined,null,1,{},'synthetic-invalid'])assert.equal(generated['is'+type](value),false);
   }
   model.vocabulary.find((v:any)=>v.axis==='reason').values[0].label='合成标签变更';writeFileSync(join(root,'contracts/model.json'),JSON.stringify(model));
-  const changed=packVocabularyFiles(root);assert.notEqual(changed[path],files[path]);assert.equal(drift(root,{},changed).length,1);
-  for(const file of Object.keys(files).filter(v=>v!==path))assert.equal(changed[file],files[file]);
+  const changed=packVocabularyFiles(root);
+  const affected=Object.keys(PACK_VOCABULARY_TARGETS).filter(file=>PACK_VOCABULARY_TARGETS[file].axes.includes('reason')).sort();
+  assert.ok(affected.includes(path));
+  assert.deepEqual(Object.keys(files).filter(file=>changed[file]!==files[file]).sort(),affected);
+  const drifted=drift(root,{},changed).map(line=>line.replace(/^out of date: /,'').replace(/ \(first difference at line \d+\)$/,'')).sort();
+  assert.deepEqual(drifted,affected);
   assert.deepEqual(changed,packVocabularyFiles(root));
 });
 

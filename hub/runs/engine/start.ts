@@ -36,6 +36,7 @@ import { issuesOf, packSchema, schemaProblems, slotSchemaOf } from './slots.ts';
 import { actionsOf, keyOwner, putAction, putResult, putRun, resultFor, runByClientKey, runById, runRecordDigest } from './store.ts';
 import { resolveTarget } from './target.ts';
 import { repairRounds } from './terminals.ts';
+import { dispatchCountOf, repetitionSummary } from './repetition.ts';
 import { clipPointer, isObject, pointerOf, receivedDigest, sessionOf } from './util.ts';
 
 export type StartRunAnswer = Untraced<z.infer<typeof StartRunOutput>>;
@@ -78,8 +79,10 @@ export function isProduction(workflow: LoadedWorkflow): boolean {
   return workflow.requirements.every((r) => r.accepted_producer === 'fact');
 }
 
-export function requirementSummary(t: RequirementTemplate, ledger?: import('../../../contracts/src/pack.ts').LedgerFile | null, checks: readonly import('../../../contracts/src/pack.ts').CheckEntry[] = [], pack = ''): RequirementSummary {
-  return { ...(t.independence_by_account?{independence_by_account:true}:{}), key: t.key, name: t.name, description: t.description, layers: t.layers, done_rule: t.done_rule, accepted_producer: t.accepted_producer, rules: t.checks.flatMap(id=>{const c=checks.find(check=>check.id===id);return c ? [c.interpreter ?? `${pack.split('@')[0]}.${c.id}@${pack.split('@')[1]}`] : [];}), run_interpreters: t.run_table ? (ledger?.shapes.filter(row=>row.requirement===t.key).map(row=>row.interpreter) ?? []) : [], repair_rounds: repairRounds(t), ...(t.observation?{observation:t.observation}:{}) };
+/** The frozen summary of one requirement; `repetition` carries V07's policy in force, from the same projection the pack
+ * listing uses, so a listing and a frozen run cannot disagree. */
+export function requirementSummary(t: RequirementTemplate, ledger?: import('../../../contracts/src/pack.ts').LedgerFile | null, checks: readonly import('../../../contracts/src/pack.ts').CheckEntry[] = [], pack = '', repetition?: { workClass?: import('../../../contracts/generated/vocabulary.ts').WorkClass; effects?: readonly import('../../../contracts/src/pack.ts').AllowedEffect[] }): RequirementSummary {
+  return { ...(t.independence_by_account?{independence_by_account:true}:{}), repetition: repetitionSummary({ workClass: repetition?.workClass, layers: t.layers, declared: t.repetition, dispatchCount: dispatchCountOf(repetition?.effects ?? [], t.key), fresh_context: t.repetition?.fresh_context, baseline_first: t.repetition?.baseline_first, window_seconds: t.repetition?.window_seconds }), key: t.key, name: t.name, description: t.description, layers: t.layers, done_rule: t.done_rule, accepted_producer: t.accepted_producer, rules: t.checks.flatMap(id=>{const c=checks.find(check=>check.id===id);return c ? [c.interpreter ?? `${pack.split('@')[0]}.${c.id}@${pack.split('@')[1]}`] : [];}), run_interpreters: t.run_table ? (ledger?.shapes.filter(row=>row.requirement===t.key).map(row=>row.interpreter) ?? []) : [], repair_rounds: repairRounds(t), ...(t.observation?{observation:t.observation}:{}) };
 }
 
 /** The summary part of a run record, as start_run returns it (the frozen context extras — groups, builds — stay out). */
@@ -92,13 +95,13 @@ export class MissingRulingSummaryError extends RecordsError {
 export function hasRulingSummary(record:RunRecord):record is RunRecordView {
   return record.requirements.every(row=>row.rules!==undefined && row.run_interpreters!==undefined);
 }
-export function summaryOf(record: RunRecord, workflow?:Pick<LoadedWorkflow,'pack'|'requirements'|'checks'|'ledger'>): RunSummary {
+export function summaryOf(record: RunRecord, workflow?:Pick<LoadedWorkflow,'pack'|'requirements'|'checks'|'ledger'> & { workflow?: Pick<import('../../../contracts/src/pack.ts').WorkflowFile,'work_class'>; effects?: LoadedWorkflow['effects'] }): RunSummary {
   const {accepted_criteria:_ac,criterion_requests:_cr,criterion_review:_cv,predecessor_access:_pa, runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, lease_registrations: _lr, ...summary } = record;
   const requirements=record.requirements.map(row=>{
     if(row.rules!==undefined && row.run_interpreters!==undefined)return row;
     const template=workflow?.requirements.find(t=>t.key===row.key);
     if(!workflow || !template || workflow.pack.digest!==record.pack_digest || `${workflow.pack.id}@${workflow.pack.version}`!==record.pack)throw new MissingRulingSummaryError(record,row.key);
-    const ruling=requirementSummary(template,workflow.ledger,workflow.checks,`${workflow.pack.id}@${workflow.pack.version}`);
+    const ruling=requirementSummary(template,workflow.ledger,workflow.checks,`${workflow.pack.id}@${workflow.pack.version}`,{workClass:workflow.workflow?.work_class,effects:workflow.effects ?? []});
     return {...row,rules:ruling.rules,run_interpreters:ruling.run_interpreters};
   });
   return RunSummary.parse({...summary,requirements});
@@ -620,7 +623,7 @@ async function startFresh(
     ...(target.unversionedRoot ? { unversioned_root: target.unversionedRoot.root } : {}),
     sources: [...bound.map((b) => b.binding), ...expected.sources],
     ...(defaulted.defaults.length?{input_defaults:defaulted.defaults}:{}),
-    requirements: workflow.requirements.map(t=>requirementSummary(t,workflow.ledger,workflow.checks,`${workflow.pack.id}@${workflow.pack.version}`)),
+    requirements: workflow.requirements.map(t=>requirementSummary(t,workflow.ledger,workflow.checks,`${workflow.pack.id}@${workflow.pack.version}`,{workClass:workflow.workflow.work_class,effects:workflow.effects ?? []})),
     items,
     ...(slots !== undefined ? { slots } : {}),
     ...(workflow.workflow.outputs===undefined?{}:{outputs:workflow.workflow.outputs}),
