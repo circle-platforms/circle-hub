@@ -10,6 +10,7 @@ export interface BoundaryFailure {ok:false;clause:number;code:ProtocolCode;messa
 export interface BoundaryContext {
  effects:readonly AllowedEffect[];write:Pick<WriteDeclaration,'effect_class'|'signing'|'retry_safety'>;trigger:EffectTrigger;
  parameters:Record<string,unknown>;started_at:string;now:()=>Date;duration_ms:number;
+ parameterPrerequisite?:(row?:AllowedEffect)=>Promise<void>;
  parameterPolicy:(row:AllowedEffect)=>Promise<boolean>;
  release:(row:AllowedEffect)=>Promise<VerifiedInput>;
  budget:(row:AllowedEffect)=>Promise<{count:number;duration_ms:number}>;
@@ -24,10 +25,15 @@ export function deny(clause:number,code:ProtocolCode,message:string,row?:Allowed
 export function durationBudget(row:AllowedEffect,maximum:number):number {return typeof row.budget.duration_ms==='number'?row.budget.duration_ms:maximum;}
 export async function checkEffectBoundary(ctx:BoundaryContext):Promise<{ok:true;row:AllowedEffect;input:VerifiedInput;checked:number}|BoundaryFailure>{
  const candidates=ctx.effects.filter(row=>row.resource_kind==='executor'&&row.action==='submit'&&row.effect_class===ctx.write.effect_class&&row.trigger===ctx.trigger);
- if(!candidates.length || ctx.write.signing==='own_credential'&&ctx.trigger!=='runner_session')return deny(1,'EFFECT_NOT_ALLOWED','本运行没有允许该动作、实例效果类和真实触发方式的效果行');
- const matches:AllowedEffect[]=[];
- for(const row of candidates){let match=false;try{if('values' in row.parameters){const values=row.parameters.values;const keys=Object.keys(ctx.parameters).sort();match=canonicalize(keys)===canonicalize(Object.keys(values).sort())&&keys.every(key=>values[key].some(value=>canonicalize(value)===canonicalize(ctx.parameters[key])));}else match=await ctx.parameterPolicy(row);}catch{}if(match)matches.push(row);}
- if(matches.length!==1)return deny(2,'EFFECT_PARAMETER_OUT_OF_RANGE',matches.length?'参数同时匹配多行；请包负责人消除范围重叠后开新修订':'参数未落在唯一的允许范围；请按该行范围重新核验');
+ const hint=candidates.length===1?candidates[0]:ctx.effects.length===1?ctx.effects[0]:undefined;
+ if(!candidates.length || ctx.write.signing==='own_credential'&&ctx.trigger!=='runner_session')return deny(1,'EFFECT_NOT_ALLOWED','本运行没有允许该动作、实例效果类和真实触发方式的效果行',hint);
+ const unavailable=(error:unknown,row?:AllowedEffect):BoundaryFailure=>error instanceof EffectBoundaryError?error.failure:({...deny(2,'PACK_POLICY_DENIED',`参数政策检查 ${row&&'policy'in row.parameters?row.parameters.check:row?.id??'未定行'} 无法重核；未取得参数范围结论，请 Hub 管理员恢复冻结提交的读取和该检查后重核，未提交`,row),fix:'请 Hub 管理员恢复冻结提交的读取和参数政策检查，再重核同一参数对象；未取得范围结论前不提交'});
+ try{await ctx.parameterPrerequisite?.(hint);}catch(error){return unavailable(error,hint);}
+ const matches:AllowedEffect[]=[],failed:Array<{row:AllowedEffect;error:unknown}>=[];
+ for(const row of candidates){let match=false;try{if('values' in row.parameters){const values=row.parameters.values;const keys=Object.keys(ctx.parameters).sort();match=canonicalize(keys)===canonicalize(Object.keys(values).sort())&&keys.every(key=>values[key].some(value=>canonicalize(value)===canonicalize(ctx.parameters[key])));}else match=await ctx.parameterPolicy(row);}catch(error){failed.push({row,error});}if(match)matches.push(row);}
+ if(matches.length>1)return deny(2,'EFFECT_PARAMETER_OUT_OF_RANGE','参数同时匹配多行；请包负责人消除范围重叠后开新修订',hint);
+ if(failed.length)return unavailable(failed[0].error,failed[0].row);
+ if(!matches.length)return deny(2,'EFFECT_PARAMETER_OUT_OF_RANGE','参数未落在唯一的允许范围；请按该行范围重新核验',hint);
  const row=matches[0];let input:VerifiedInput;
  try{input=await ctx.release(row);}catch{return deny(3,'EFFECT_RELEASE_UNMET','缺少该行要求的有效核验事实或绑定产物；请重新核验',row);}
  let consumed;try{consumed=await ctx.budget(row);}catch{return deny(4,'EFFECT_BUDGET_EXHAUSTED','无法回读该效果行的意图预算；请管理员恢复原意图记录后重核',row);}
@@ -41,3 +47,6 @@ export async function checkEffectBoundary(ctx:BoundaryContext):Promise<{ok:true;
  try{if(!await ctx.audience())return deny(9,'AUDIENCE_VISIBILITY_EXCEEDED','所引内容不能覆盖声明的目标受众；请收窄受众或取得有效分享',row);}catch{return deny(9,'AUDIENCE_VISIBILITY_EXCEEDED','缺少完整受众与引用可见性事实；请管理员补齐映射后重新核验',row);}
  return {ok:true,row,input,checked:9};
 }
+
+/** Only controlled public reasons cross into a durable boundary refusal. Unexpected exceptions stay private. */
+export class EffectBoundaryError extends Error {readonly failure:BoundaryFailure;constructor(failure:BoundaryFailure){super(failure.message);this.failure=failure;}}

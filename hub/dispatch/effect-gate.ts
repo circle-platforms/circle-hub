@@ -7,7 +7,7 @@ import type {WorkflowStore,EffectCheckReplay,RunDetail} from '../ports.ts';
 import {at,type ExecutorDefinition} from './definition.ts';
 import {verifyInput,type VerificationPort,type VerifiedInput} from './proof.ts';
 import {boundaryPolicy,policyAllows} from './policy.ts';
-import {checkEffectBoundary,deny,durationBudget,type BoundaryContext} from './boundary.ts';
+import {checkEffectBoundary,deny,durationBudget,EffectBoundaryError,type BoundaryContext} from './boundary.ts';
 const equal=(a:unknown,b:unknown)=>a!==undefined&&b!==undefined&&canonicalize(a)===canonicalize(b);
 export function effectParameters(input:VerifiedInput):Record<string,unknown>{return {target:input.target,manifest_sha256:input.manifest_sha256,build:input.build,sha256:input.sha256,items:input.items,generator:input.generator};}
 export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationPort;workflows:Pick<WorkflowStore,'byDigest'>;recheck?:EffectCheckReplay;by:Principal;run:string;executor:string;definition:ExecutorDefinition;resolved_digest:string;now:()=>Date}){
@@ -24,16 +24,26 @@ export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationP
    if(!o.recheck||!detail.latest)throw new Error('缺少冻结提交的检查重核接口；请恢复接口后重核');
    return o.recheck({run:o.run,submission:detail.latest.result.submission,checks});
  };
- const supports=async(checks:readonly string[],parameter=false)=>{
+ const supports=async(checks:readonly string[])=>{
    const outcomes=await replay(checks);
-   return checks.every(id=>Array.isArray(outcomes[id])&&outcomes[id].length>0&&outcomes[id].every(outcome=>outcome.verdict==='support'&&(!parameter||equal(at(outcome.data,'/parameters'),parameters))));
+   return checks.every(id=>Array.isArray(outcomes[id])&&outcomes[id].length>0&&outcomes[id].every(outcome=>outcome.verdict==='support'));
  };
  const budget=async(row:AllowedEffect,tx?:Transaction)=>{
    const intents=await o.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.effect_row',values:[`${o.run}:${row.id}`]},tx);
    return {count:intents.length,duration_ms:intents.reduce((sum,intent)=>sum+Number(intent.body.detail.effect_duration_ms),0)};
  };
  const context:Omit<BoundaryContext,'lease'|'content'|'audience'>={effects,parameters,write:d.calls.submit.write??{effect_class:'job',retry_safety:'unsafe',signing:'service_on_behalf'},trigger:'hub_template',started_at:detail.run.started_at,now:o.now,duration_ms:d.max_run_ms,
-   parameterPolicy:row=>'policy'in row.parameters?supports([row.parameters.check],true):Promise.resolve(false),
+   parameterPrerequisite:async row=>{
+     if(!detail.latest||detail.latest.result.acceptance!=='accepted'||Object.keys(parameters).length!==6)throw new EffectBoundaryError(deny(3,'EFFECT_RELEASE_UNMET','缺少已受理核验事实及其完整派发参数；先完成该运行的产物核验，再派发同一份已核验字节',row));
+   },
+   parameterPolicy:async row=>{
+     if(!('policy'in row.parameters))return false;
+     const id=row.parameters.check;
+     if(!o.recheck)throw new EffectBoundaryError({...deny(2,'PACK_POLICY_DENIED',`参数政策检查 ${id} 缺少冻结提交重核接口；未取得参数范围结论，请 Hub 管理员恢复接口后重核，未提交`,row),fix:'请 Hub 管理员恢复冻结提交的检查重核接口，再重核该参数政策；不修改已核验的参数'});
+     const outcomes=(await replay([id]))?.[id];
+     if(!Array.isArray(outcomes)||!outcomes.length||outcomes.some(outcome=>outcome.verdict==='unknown'))throw new EffectBoundaryError({...deny(2,'PACK_POLICY_DENIED',`参数政策检查 ${id} 缺少完整的范围判定事实；未取得参数范围结论，请检查负责人补齐冻结来源并重新核验，未提交`,row),fix:'请检查负责人补齐该政策检查的冻结来源、支持或驳回结论，再重核同一参数对象'});
+     return outcomes.every(outcome=>outcome.verdict==='support'&&equal(at(outcome.data,'/parameters'),parameters));
+   },
    release:async row=>{
      const input=await verifyInput(o.by,o.run,d,o.records,o.runs,o.workflows,o.now());
      if(!equal(parameters,effectParameters(input))||row.release.artifact!==d.proof.requirement)throw new Error('效果行产物与核验事实不一致');
@@ -58,4 +68,4 @@ export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationP
    }
  };
 }
-export class EffectBoundaryError extends Error {readonly failure:import('./boundary.ts').BoundaryFailure;constructor(failure:import('./boundary.ts').BoundaryFailure){super(failure.message);this.failure=failure;}}
+export {EffectBoundaryError} from './boundary.ts';
