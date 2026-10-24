@@ -1,3 +1,4 @@
+import {addAdocSources} from './adoc/deployment.ts';
 // The sync plan of the product (product@1 sync.plan, SyncPlanInput -> SyncPlanOutput). Each round the Hub hands back every
 // page read so far; the plan is recomputed from them: index -> hub pages -> listing pages (depth 2, dead links tolerated,
 // pages of both name families; platform, customer and patch pages only when an `include` pattern opts them in), then the
@@ -175,6 +176,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
         released_at: released.iso,
         sources,
       });
+      addAdocSources(builds[builds.length-1],input.options,read,want,notes);
     };
     for (const build of chosen.values()) {
       const base = bases.get(build.name) ?? resolveBase(build, byName, [])?.name ?? build.name;

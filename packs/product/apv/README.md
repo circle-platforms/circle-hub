@@ -631,10 +631,10 @@ accepted.
 - What a family records about its attribute set is only what this producer was given: whether the parameter named the
   family (`attributes.declared` — an explicit empty set is declared, and a synthetic set is as declared as a real one), the
   set it ran with (`attributes.values`, which the composition record also carries) and a note saying which set was used.
-  The producer claims no origin it cannot know: where an attribute set came from is the Hub's record, `param_sources` of
+  The producer claims no origin it cannot know: where an attribute set came from is the Hub's record, `variables` of
   apv-deployment-conventions step one, which this task only reads. Until that record exists, "this family's attribute set
   is not configured" is not written here; a family the parameter names no key for produces with the pack default (all
-  unset, like today's markdown), its note says exactly that and names the `param_sources` step as the way to tell a
+  unset, like today's markdown), its note says exactly that and names the `variables` step as the way to tell a
   configured set from an unconfigured one, and nothing is recorded as unknown. The real attribute names and values are
   deployment data: the integrator collects them read-only from the source and overrides the parameter through that
   mechanism.
@@ -798,12 +798,7 @@ pack and reviews a mind map against the root it produced.
 
 ## Needs from other packages
 
-- **integrator (adoc)**: the adoc producer is not wired into `product.json` yet (no slot for a group of chapter files, and
-  decision 35's `attributes.<family>` parameter keys wait for apv-deployment-conventions step one), so
-  `catalogOnAdocLine`/`catalogRefusal` have no production caller yet and two checks stop at this package: that a family's
-  failure leaves the old knowledge root where it is, asserted here only as "no partial result is returned", needs a
-  knowledge sync to be seen on a root; and "this family's attribute set is not configured" can only be written from
-  `param_sources`, which this producer must not guess. Both are follow-ups for the wiring step.
+- **adoc 接线已完成**：每族有独立的手册生产器与变量引用。同步先读根目录固定修订号，再用 `svn:directory-at` 按该修订号递归列子目录，绑定完整目录清单和全部章文件。每族属性的来历由 Hub 组成记录的 `variables` 写；生产器只接收解析后的属性。原件缺失、不同修订号、摘要不符、非 UTF-8 或展开失败均不能换成空手册，合成同步测试已核对失败时旧根不动。
 - **K1 (adoc)**: `produceManualEntries` reads an anchor from any block whose kind is `paragraph` and whose text parses, and
   its model has no way to say "this block is part of a larger block the author wrote, so it is no standalone signature".
   The mapping works around that with a kind of its own (`paragraph_part`) for the parts of a split paragraph; a flag on the
