@@ -21,7 +21,7 @@ import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, isLeaseOp, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError, type HubConfig } from '../config/index.ts';
 import { ConnectorError, type AddResourceInput, type LoginStatus, type UpdateResourceInput } from '../connectors/api.ts';
-import { KnowledgeError, formatSyncReport, knowledgeSync, parseKnowledgeSyncArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
+import { KnowledgeError, createKnowledgeReader, formatSyncReport, knowledgeSync, parseKnowledgeSyncArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
 import { DocsError } from './docs.ts';
 import type { ProductHandle } from '../ports.ts';
 import { productionShareKey, RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
@@ -53,12 +53,12 @@ export const PACK_USAGE =
 export const RESOURCE_USAGE = 'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <系统包>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = NAMED_SECRET_USAGE;
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
-export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--limit <条数>] | export <sha256> --out <文件>';
+export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--suffix <外部标识的后缀>] [--limit <条数>] | export <sha256> --out <文件>';
 export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --reason <理由> | register <前缀> --owner <用户> --reason <理由> | unregister <前缀> --reason <理由>';
 export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-users) [--reason <理由>] | production <任务包> [--reason <理由>] | list [--object <对象>]';
 export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <任务包>';
 export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
-export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | roots <产品> | diff <根A> <根B>';
+export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] --out <文件>';
 export const INIT_ADMIN_USAGE = 'init-admin <名字>   建第一位管理员，令牌存进钥匙串（账户 operator-token），不显示';
 export const OPERATOR_TOKEN_USAGE =
   'operator-token set   从标准输入读一个启用中的管理员的令牌，存进钥匙串（账户 operator-token）；钥匙串项丢失时用，已有的项不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进钥匙串，不显示；已有的项不覆盖';
@@ -708,6 +708,36 @@ async function productOf(hub: AssembledHub, viewer: Principal, name: string): Pr
 
 async function knowledgeCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
+  if (sub === 'view') {
+    const { values, positionals } = parse(rest, { out: { type: 'string' }, only: { type: 'string' } }, 1);
+    if (!values.out) throw new UsageError('knowledge view 要用 --out 指定新文件');
+    const viewer = await session.viewer(undefined);
+    if (viewer.role !== 'admin') throw new CliError('只有管理员能导出知识视图');
+    const target = resolve(values.out);
+    if (await lstat(target).then(() => true, () => false)) throw new CliError('输出文件已存在', '换一个新文件');
+    let external = positionals[0];
+    if (values.only !== undefined) {
+      if (!values.only || /[&?#]/.test(values.only) || /[?&]only=/.test(external)) throw new UsageError('--only 要给非空取值列表，不能同时写在引用里；特殊字符按 URI 百分号编码');
+      external += `${external.includes('?') ? '&' : '?'}only=${values.only.replaceAll(' ', '%20')}`;
+    }
+    const hub = await session.hub();
+    const result = await createKnowledgeReader(hub.knowledge).read(external, { principal: viewer, run: null, purpose: 'administrator view export' });
+    if (!result.ok) throw new CliError(result.reason, '核对产品、构建和视图参数后重试');
+    const artifact = result.artifacts.find(a => a.name === 'original');
+    const kit = await session.records();
+    const bytes = artifact ? await kit.artifacts.trustedBytes(artifact.artifact.body.sha256) : null;
+    if (bytes === null) throw new CliError('知识视图字节缺失', '修复原件存储后重新导出');
+    await writeFile(target, bytes, { flag: 'wx', mode: 0o600 });
+    const view = JSON.parse(Buffer.from(bytes).toString('utf8')) as Record<string, unknown>;
+    const counts = (value: unknown): unknown => {
+      if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+      return Object.fromEntries(Object.entries(value).filter(([key]) => /^[a-z][a-z0-9_]*$/.test(key)).map(([key, entry]) => [key, counts(entry)]).filter(([, entry]) => entry !== undefined));
+    };
+    session.out(`已导出 ${artifact!.artifact.body.sha256}：${bytes.length} 字节，权限 0600`);
+    session.out(`totals：${view.totals == null ? '未提供' : JSON.stringify(counts(view.totals))}；截断：${typeof view.truncated === 'boolean' ? (view.truncated ? '是' : '否') : '未提供'}；跳过：${typeof view.skipped === 'number' ? view.skipped : '未提供'}`);
+    return 0;
+  }
   if (sub === 'sync') {
     let parsed: KnowledgeSyncArgs;
     try {
@@ -989,7 +1019,7 @@ async function sourceCommand(session: Session, args: readonly string[]): Promise
 async function originalCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'list') {
-    const { values } = parse(rest, { external: { type: 'string' }, limit: { type: 'string' }, as: { type: 'string' } }, 0);
+    const { values } = parse(rest, { external: { type: 'string' }, suffix: { type: 'string' }, limit: { type: 'string' }, as: { type: 'string' } }, 0);
     const viewer = await session.viewer(values.as);
     if (viewer.role !== 'admin') throw new CliError('只有管理员能列出原件');
     const limit = values.limit === undefined ? 100 : Number(values.limit);
@@ -1005,6 +1035,7 @@ async function originalCommand(session: Session, args: readonly string[]): Promi
         if (!('read' in body.origin)) continue;
         const object = body.origin.read.object;
         if (values.external !== undefined && !object.startsWith(values.external)) continue;
+        if (values.suffix !== undefined && !object.endsWith(values.suffix)) continue;
         // One line per external id: the newest read of the same object decides the digest shown.
         if (seen.has(object)) continue;
         seen.add(object);

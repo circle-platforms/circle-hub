@@ -786,6 +786,9 @@ describe('original', () => {
       const filtered = await expectOk(admin, ['original', 'list', '--external', 'agile:']);
       assert.equal(filtered.out.length, 1);
       assert.ok(filtered.out[0].startsWith(`agile:page:release-100@1\t${shaOne}`), filtered.text);
+      const suffix = await expectOk(admin, ['original', 'list', '--suffix', '.xml@1', '--limit', '1']);
+      assert.equal(suffix.out.length, 1);
+      assert.ok(suffix.out[0].startsWith(`build:file:tree-100.xml@1\t${shaTwo}`), suffix.text);
       const limited = await expectOk(admin, ['original', 'list', '--limit', '1']);
       assert.equal(limited.out.length, 1);
       for (const line of [...all.out, ...filtered.out]) {
