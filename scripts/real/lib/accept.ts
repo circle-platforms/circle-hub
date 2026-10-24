@@ -44,11 +44,16 @@ export function parseLog(text: string): LoggedTurn[] {
 /** The text of every tool result the model was shown, in order. */
 export const resultTexts = (turns: readonly LoggedTurn[]): string[] => turns.flatMap((t) => t.toolResults.map((r) => r.text));
 
-/** Only a serialized structured claim can establish a verdict. Rendered prose is incomplete evidence. */
-export function claimVerdict(input: string): string | null {
-  try {
-    const row = JSON.parse(input);
-    const statement = row?.statement;
-    return statement && typeof statement === 'object' && VERDICT.includes(statement.verdict) ? statement.verdict : null;
-  } catch { return null; }
+/** Only serialized structured fields can establish a verdict; rendered prose is incomplete evidence. */
+export function claimOutcome(input:string):{verdict:string;reason?:string;missing?:string;exit?:unknown}|null {
+ try {const row=JSON.parse(input);const statement=row?.statement;
+  if(!statement||typeof statement!=='object'||!VERDICT.includes(statement.verdict))return null;
+  return {verdict:statement.verdict,...(typeof statement.reason==='string'?{reason:statement.reason}:{}),...(typeof statement.missing==='string'?{missing:statement.missing}:{}),...(statement.exit===undefined?{}:{exit:statement.exit})};
+ }catch{return null;}
+}
+export function claimVerdict(input:string):string|null{return claimOutcome(input)?.verdict??null;}
+export function unknownDetail(input:string):string {
+ const outcome=claimOutcome(input);
+ if(!outcome||outcome.verdict!=='unknown')return '缺少结构化未知判定字段，答案不完整；下一步读取运行结果的 verdict、reason、missing、exit 后重跑';
+ return outcome.reason&&outcome.missing&&outcome.exit!==undefined ? '原因：'+outcome.reason+'；缺失事实：'+outcome.missing+'；下一步：'+JSON.stringify(outcome.exit) : '未知判定缺少 reason、missing 或 exit，答案不完整；下一步补读结构化运行结果后重跑';
 }

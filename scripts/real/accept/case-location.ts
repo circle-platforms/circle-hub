@@ -367,7 +367,7 @@ export default function scenario(gold: LocationGold, detailsOut?: string): Scena
         const prefix = `第 ${i + 1} 份文档：`;
         const owned = ownLocationText(lines, doc.document);
         const claims = ownClaimTexts(lines, doc.document, 'location');
-        const fact = claims.length === 1 && /，支持$/.test(claims[0]);
+        const fact = claims.length === 1 && claimVerdict(claims[0])==='support';
         add(prefix + '定位结论是事实', fact, '本份支持主张 1 条', fact ? '支持主张 1 条' : '支持主张 0 条；下一步：重读本份 location 主张，按私有详情中的 Hub 原因核对产品名称和目录树输入，再单独重跑');
         audits.push({ document: doc.document, requirement: 'location', statement: claims.length === 1 ? claims[0] : null, next_action: fact ? '' : 'Hub 原因：' + (claims[0] ?? '缺本份 location 主张') + '；据此核对原件产品名称及目录树，重读完整主张或修正输入后重跑本份文档' });
         add(prefix + '定位数据可用', owned !== null, '本份数据 1 份', owned === null ? '本份数据 0 份；下一步：翻页读取本份 location 主张；仍缺则重跑本份文档' : '本份数据 1 份');
