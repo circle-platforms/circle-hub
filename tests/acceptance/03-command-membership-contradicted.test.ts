@@ -61,9 +61,13 @@ describe('scenario 3: command membership contradicted', () => {
     assert.equal(error.requirement, 'findings');
     assert.equal(error.rounds_left, 2, '2 repair rounds remaining');
 
-    // Item result: delivered, with findings requirement layer showing violation
+    // The known violation remains; requirements explicitly depending on its repair must wait (task item 7).
     const itemRes = itemResult(result, item0.id);
-    assert.equal(itemRes.partition, 'delivered');
+    assert.equal(itemRes.partition,'incomplete');
+    const waiting=itemRes.item.requirements.flatMap(requirement=>requirement.layers).filter(layer=>layer.reason==='awaiting_step');
+    assert.ok(waiting.length>0,'explicit dependent requirements wait for the findings repair');
+    assert.ok(waiting.every(layer=>layer.missing?.includes('findings')&&layer.missing.includes('/items/')&&layer.exit?.action==='request'));
+
     const findingsReq = requirementOf(result, item0.id, 'findings');
     const staticLayer = findingsReq.layers.find((l) => l.layer === 'static');
     assert.ok(staticLayer);
