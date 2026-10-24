@@ -15,6 +15,8 @@ export interface RuntimeEntry { object: string; method: string; dispatch: string
  */
 export interface PinnedIdentity { identity: string; bytes: string | null }
 export interface RuntimeContract { runtimeVersion: string; digest: string; pinned: PinnedIdentity; objects: string[]; enabled: RuntimeEntry[] }
+const sourceDocuments = new WeakMap<RuntimeContract, Record<string, unknown>>();
+export function sourceDocument(contract: RuntimeContract): Record<string, unknown> | null { return sourceDocuments.get(contract) ?? null; }
 export type ParsedRuntimeContract = { ok: true; contract: RuntimeContract } | { ok: false; problems: Problem[] };
 const SHA = /^[a-f0-9]{64}$/;
 const pointer = (value: string): string => value.replaceAll('~', '~0').replaceAll('/', '~1');
@@ -163,5 +165,8 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
     }
   }
   if (expected && (expected.digest !== pinned.identity || expected.runtimeVersion !== runtime.minimum_version)) issue('/runtime', '合约身份与运行环境配置的期望值不一致');
-  return problems.length ? { ok: false, problems } : { ok: true, contract: { digest, runtimeVersion: String(runtime.minimum_version), pinned, objects: [...objects.keys()], enabled } };
+  if (problems.length) return { ok: false, problems };
+  const contract: RuntimeContract = { digest, runtimeVersion: String(runtime.minimum_version), pinned, objects: [...objects.keys()], enabled };
+  sourceDocuments.set(contract, value);
+  return { ok: true, contract };
 }

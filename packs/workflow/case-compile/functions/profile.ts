@@ -2,9 +2,10 @@
 import DISPATCH from '../tables/dispatch-roles.json' with {type:'json'};
 import FORMAT from '../tables/runtime-profile-format.json' with { type: 'json' };
 import { isRecord } from './text.ts';
-import { runtimeMethod, type RuntimeContract, type Problem } from './runtime-contract.ts';
+import { runtimeMethod, sourceDocument, type RuntimeContract, type RuntimeEntry, type Problem } from './runtime-contract.ts';
+import { readAuthority } from './typed-contract.ts';
 import type { ManifestBed } from './manifest.ts';
-export interface AllowedCall { reviewed?:boolean; object: string; method: string; parameters: Record<string, string> }
+export interface AllowedCall { reviewed?:boolean; object: string; method: string; parameters: Record<string, string>; unsupplied?: string[] }
 export interface RuntimeProfile {
   synthetic: boolean;
   max_wait_seconds: number | null;
@@ -22,6 +23,13 @@ export interface RuntimeProfile {
 export type ParsedProfile = { ok: true; profile: RuntimeProfile } | { ok: false; problems: Problem[] };
 export const oneLine = (value: unknown): value is string => typeof value === 'string' && value !== '' && value.trim() === value && !/[\r\n\v\f\u0085\u2028\u2029]/.test(value) && !value.startsWith('=');
 export function allowedCall(profile: RuntimeProfile, object: string, method: string): AllowedCall | null { return profile.allowed.find((v) => v.object === object && v.method === method) ?? null; }
+function neverSupplied(raw: Record<string, unknown>, method: RuntimeEntry | null, listed: Record<string, unknown>): { names: string[]; problem: string | null } {
+  if (raw.unsupplied === undefined) return { names: [], problem: null };
+  const names = raw.unsupplied;
+  if (!Array.isArray(names) || names.some((name) => typeof name !== 'string') || new Set(names).size !== names.length) return { names: [], problem: 'unsupplied 必须是无重复参数名列表' };
+  if (names.some((name) => { const param = method?.parameters.find((item) => item.name === name); return !param || param.required || Object.hasOwn(listed, name); })) return { names: [], problem: 'unsupplied 含必需、签名外或已定角色的参数' };
+  return { names: names as string[], problem: null };
+}
 export function parseProfile(value: unknown, contract: RuntimeContract, beds: readonly ManifestBed[]): ParsedProfile {
   const problems: Problem[] = [];
   const issue = (pointer: string, message: string) => problems.push({ pointer, message, fix: '管理员按 runtime-profile@1 形状核对配置、启用合约及台架清单，重新发布后开始新运行' });
@@ -76,6 +84,14 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     const method = runtimeMethod(contract, String(raw.object), String(raw.method));
     if (!method) issue(at, '允许组合不在合约启用集合里');
     const declared=DISPATCH.dispatches.find(v=>v.dispatch===method?.dispatch);
+    const listed=isRecord(raw.parameters)?raw.parameters:{};
+    const omitted=neverSupplied(raw,method??null,listed);
+    if(omitted.problem)issue(`${at}/unsupplied`,omitted.problem);
+    else if(method&&omitted.names.length){
+      const document=sourceDocument(contract);
+      const rawEntry=document&&Array.isArray(document.entries)?document.entries.find(item=>isRecord(item)&&item.e===method.object&&item.f===method.method):null;
+      if(isRecord(rawEntry)&&document)method.authority=readAuthority(document,rawEntry,method.parameters.map(param=>param.name),omitted.names);
+    }
     const roleIssue=(pointer:string)=>problems.push({pointer,message:declared?.roles.length?'该派发方式不支持配置的参数角色；不能冒充其他角色':declared?.missing??'派发方式缺少可核验角色声明',fix:declared?.roles.length?'集成者按派发角色声明表修正配置或保持未开，重新发布后新开运行':declared?.next??'按包格式表补齐派发角色及检查，另写一页后重新发布'});
     if(method&&!method.authority&&(declared?.requires_method_review||method.parameters.length===0)&&raw[FORMAT.method_review_field]!==true)problems.push({pointer:at+'/'+FORMAT.method_review_field,message:declared?.requires_method_review?declared.missing!:'零参数方法内部动作没有被参数角色和拒绝表核验',fix:declared?.requires_method_review?declared.next!:'集成者逐个只读审阅后在 allowed 项显式写 reviewed:true 决定开；否则保持未开，重新发布后新开运行'});
     if(!method?.authority&&(!declared||!declared.roles.length))roleIssue(at);
@@ -92,7 +108,7 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
       if (role === 'host_shell' && !hosts.some((v) => v.object === raw.object && v.method === raw.method)) issue(pat, '主机 shell 参数没有匹配的主机方法');
       if (typeof role === 'string') parameters[name] = role;
     }
-    allowed.push({ object: String(raw.object), method: String(raw.method), parameters, ...(raw[FORMAT.method_review_field]===true?{reviewed:true}:{}) });
+    allowed.push({ object: String(raw.object), method: String(raw.method), parameters, ...(raw[FORMAT.method_review_field]===true?{reviewed:true}:{}), ...(omitted.names.length?{unsupplied:omitted.names}:{}) });
   }
   const assertions = allowed.filter((v) => Object.values(v.parameters).some((role) => role === 'literal_assertion'));
   if (assertions.length !== 1) issue('/allowed', '必须配置唯一的字面断言组合，供生成器从 expects 产生断言');
