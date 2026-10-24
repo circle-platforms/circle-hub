@@ -542,8 +542,11 @@ export class FakeRuns implements RunsService {
             return { call_result: 'error', errors: [UNAVAILABLE] };
           }
           sources.push({ reference: binding.reference, role: 'subject', slot });
-        } else {
+        } else if ('external' in binding) {
           sources.push({ reference: `src:${sha(binding.external)}`, role: 'subject', slot, external: binding.external });
+        } else {
+          this.#note(context, `input run ${binding.run} is absent or not readable`);
+          return { call_result: 'error', errors: [UNAVAILABLE] };
         }
       }
     }

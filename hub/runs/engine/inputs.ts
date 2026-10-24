@@ -246,7 +246,10 @@ export async function bindInputs(
     }
     for (const [k, binding] of list.entries()) {
       const path = Array.isArray(given) ? `/inputs/${slot.slot}/${k}` : `/inputs/${slot.slot}`;
-      const read = 'reference' in binding ? await readReference(slot, path, binding.reference) : await readExternal(slot, path, binding.external);
+      let read: Read | null;
+      if ('reference' in binding) read = await readReference(slot, path, binding.reference);
+      else if ('external' in binding) read = await readExternal(slot, path, binding.external);
+      else { schemaError(path, '输入只能是上传得到的 src: 引用、Hub 记录引用 rec: 或外部对象'); continue; }
       if (read === null) continue;
       let refusal: ProtocolError | null = null;
       const parsed = recognize(ctx.parsers, read.bytes, read.mediaType, {}, (error) => {
