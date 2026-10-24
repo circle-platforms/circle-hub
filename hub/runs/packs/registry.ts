@@ -713,7 +713,7 @@ class Registry implements PackRegistry {
             const previous=await this.variableDeclarations(tx);
             for(const variable of product.variables??[]){
               const claims=previous.filter(p=>p.product.variables?.some(v=>v.name===variable.name));
-              if(claims.some(c=>c.pack!==manifest.id) || !(await this.#options.variableNameAvailable?.(variable.name,tx))) return refuse([problem('variables.unavailable','product.json','名字不可用','换一个变量名字')],report);
+              if(claims.some(c=>c.pack!==manifest.id) || (claims.length===0 && !(await this.#options.variableNameAvailable?.(variable.name,tx)))) return refuse([problem('variables.unavailable','product.json','名字不可用','换一个变量名字')],report);
               if(claims.some(c=>c.product.variables?.some(v=>v.name===variable.name && canonicalize(v.schema)!==canonicalize(variable.schema)))) return refuse([problem('variables.schema_changed','product.json',`变量 ${variable.name} 的模式和已发布版本不同`,'模式要改请换一个变量名字')],report);
             }
           }

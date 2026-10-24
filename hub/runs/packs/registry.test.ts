@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { AccessError, ConflictError, WHOLE_HUB } from '../../records/api.ts';
+import { AccessError, ConflictError, WHOLE_HUB, canonicalBytes, newId } from '../../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { PACK_VERSION_SCHEMA } from './registry.ts';
 import { editJson, productPack, systemPack, withFiles, workflowPack } from './testing/builder.ts';
@@ -412,4 +412,25 @@ test('an absent deployment-name port reports the missing assembly fact and its r
  const source=editJson<Json>(productPack(),'product.json',p=>{p.variables=[{name:'DEMO_PORT_CHECK',description:'Synthetic',schema:{type:'integer'},default:1}];p.producers[0].params={n:'${var:DEMO_PORT_CHECK}'};});
  const outcome=await bed.attempt(bed.alice,source);assert.equal(outcome.ok,false);
  if(!outcome.ok){assert.match(outcome.problems[0].message,/端口/);assert.match(outcome.problems[0].fix,/装配.*重新发布/);}
+});
+
+
+test('an owning pack can publish after deployment starts using its variable while schema changes still refuse',async t=>{
+ const bed=await testbed(t);
+ const {productVariableNameAvailable}=await import('../../server/variables.ts');
+ const registry=bed.second({variableNameAvailable:(name,tx)=>productVariableNameAvailable(bed.kit,name,tx)});
+ const source=(version:string,schema:unknown={type:'string'},fallback:unknown='synthetic')=>editJson<Json>(productPack({id:'demo-owner',version}),'product.json',p=>{
+   p.variables=[{name:'DEMO_OWNER_NAME',description:'Synthetic setting',schema,default:fallback}];
+   p.producers[0].params={option:'${var:DEMO_OWNER_NAME}'};
+ });
+ const publish=async(version:string,schema?:unknown,fallback?:unknown)=>registry.publish(bed.alice,(await bed.write(source(version,schema,fallback))).dir);
+ assert.equal((await publish('1.0.0')).ok,true);
+ const id=newId('res');
+ const object=await bed.kit.objects.put(canonicalBytes({schema:'resource@1',id,system_pack:'demo-system@1.0.0',system_pack_digest:'b'.repeat(64),enabled:true,origins:{api:'https://service.example.invalid'},allow_plaintext:[],credentials:{},credential_digests:{},settings:{option:'${var:DEMO_OWNER_NAME}'}}),'application/json');
+ await bed.kit.authorizations.configureResource(bed.admin,id,object.sha256,'合成部署引用');
+ assert.equal(await bed.kit.store.withTransaction(tx=>productVariableNameAvailable(bed.kit,'DEMO_OWNER_NAME',tx)),false);
+ const next=await publish('1.1.0',undefined,'synthetic changed');
+ assert.equal(next.ok,true,JSON.stringify(!next.ok&&next.problems));
+ const changed=await publish('1.2.0',{type:'integer'},1);
+ assert.equal(changed.ok,false);if(!changed.ok)assert.equal(changed.problems[0].rule,'variables.schema_changed');
 });
