@@ -399,3 +399,5 @@ and completed resources are disclosed immediately. No connector implementation i
 Import reports empty values separately from missing keys. Either refuses the entire import, explicitly says no
 credentials were written, and points to correcting the named keys and repeating --dry-run. Target errors reuse the
 resource-list and credential-name hints of secret set.
+
+产品包的变量归属核对由装配注入 `productVariableNameAvailable`，在发布事务已持有名字锁时检查密钥历史和部署定义引用，冲突只回“名字不可用”。`var set` 通过包登记公开接口核对所属包所有版本的固定模式和引用处输入上限，其他尚未设置的变量仅用合成默认值辅助大小检查，不设置它们，不让真实同步使用默认值。并发发布或其他引用变量改变时拒绝本次写入并要求重跑。`var list` 包含未设置和不合声明的行，设置了无人使用的名字只作说明。

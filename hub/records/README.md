@@ -541,3 +541,5 @@ Secret withdrawal deletes only entries named by grant decisions preceding its re
 短密钥的理由检查先排除每种写法的完整值，再检查长度至少 8 的连续片段；`--short` 的脱敏提示不豁免完整值检查。拒绝不写决定或密钥条目，也不引用原始理由。
 
 Ordinary JSON token screening checks both object keys and values recursively, including objects inside arrays. A key meeting the strict token rule requires the same explicit `--not-secret` confirmation; refusal never quotes that key.
+
+`authorizations.grant(by, input, tx?)` 可以加入调用方事务，许可核对不变；事务回滚时决定一起回滚。产品包声明变量时，在同一事务取名字锁、核对归属并写发布决定。

@@ -5,6 +5,8 @@
 // unchanged build is skipped), resumable (every production or failure is a generate action; a rerun skips what is done),
 // bounded (concurrency, per-build bytes, rounds and reads) and reported per build.
 import { z } from 'zod';
+import {resolveProductVariables,sameVariableUses,productionVariableUses} from './variables.ts';
+import type {VariableUse} from '../../contracts/src/variables.ts';
 import { BuildInfo, SyncPlanOutput, expandTemplate } from '../../contracts/src/product.ts';
 import type { SyncPlanInput } from '../../contracts/src/product.ts';
 import type { ProductHandle } from '../ports.ts';
@@ -12,7 +14,7 @@ import { canonicalize, newId, sha256Hex, type ActionBody, type Principal } from 
 import { SANDBOX_ERRORS, SandboxError, callPackFunction } from '../rules/api.ts';
 import type { Builds, LineReconciliation } from './builds.ts';
 import { mapLimited } from './concurrency.ts';
-import { requireAdmin, type KnowledgeContext } from './context.ts';
+import { DEFAULT_SANDBOX, requireAdmin, type KnowledgeContext } from './context.ts';
 import { compareText, cutText } from './digest.ts';
 import { describeError } from './errors.ts';
 import { PLACEMENT_CHAIN } from './calibration.ts';
@@ -72,6 +74,7 @@ export interface SyncBuildReport {
 }
 
 export interface SyncReport {
+  variables?: Array<{name:string;version:number|null;default:boolean}>;
   sync: string;
   product: string;
   pack: string;
@@ -152,10 +155,16 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
     report.error = '产品包没有声明 sync，无法同步';
     return finish();
   }
-  const loader = new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers }, by, 'knowledge sync');
+  const resolved=await resolveProductVariables(product,context.records.variables,by,dryRun,{plan:{...DEFAULT_SANDBOX.plan,...context.sandbox.plan},producer:{...DEFAULT_SANDBOX.producer,...context.sandbox.producer}});
+  if('problems' in resolved){report.error=resolved.problems.join('；');return finish();}
+  product=resolved.product;
+  report.variables=resolved.versions;
+  const declarationResolved=product.product.sync!;
+  const variableUses=resolved.uses;
+  const loader = new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers,variables:resolved.snapshot }, by, 'knowledge sync');
 
   // ---------------------------------------------------------------- plan rounds
-  const planOptions: Record<string, unknown> = { ...(declaration.options ?? {}), ...(options.options ?? {}) };
+  const planOptions: Record<string, unknown> = { ...(declarationResolved.options ?? {}), ...(options.options ?? {}) };
   if (options.lines !== undefined) planOptions.lines = [...options.lines];
   const values: Record<string, string> = { product: productId };
   if (options.lines !== undefined && options.lines.length === 1) values.line = options.lines[0];
@@ -190,7 +199,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
     const known = (await builds.known(productId)).map((b) => ({ name: b.name, base: b.base, root: b.root }));
     const input: SyncPlanInput = { round, options: planOptions, read, known };
     const planned = await runPlan(context, product, input);
-    if (!dryRun) planAction = await writePlanAction(context, { sync, product: productId, round, fresh: fresh.length, pages: Object.keys(read), output: planned.ok ? planned.value : null, reason: planned.ok ? null : planned.reason, startedAt, read });
+    if (!dryRun) planAction = await writePlanAction(context, { sync, product: productId, round, fresh: fresh.length, pages: Object.keys(read), output: planned.ok ? planned.value : null, reason: planned.ok ? null : planned.reason, startedAt, read, variables:variableUses.filter(v=>v.at.includes('#/sync/options/')) });
     if (!planned.ok) {
       report.error = planned.reason;
       return finish();
@@ -282,6 +291,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
         build.name,
         await processOwnTree(context, product, build, {
           sync,
+          variables:variableUses,
           loader,
           by,
           dryRun,
@@ -300,7 +310,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
   report.builds.sort((a, b) => compareText(a.line, b.line) || compareText(a.name, b.name));
 
   if (output.scope !== undefined) {
-    const result = await processOwnTree(context, product, null, { sync, loader, by, dryRun, recheck: options.recheck === true, signal: options.signal, maxAgeSeconds: options.maxAgeSeconds, readConcurrency: options.readConcurrency }, output.scope);
+    const result = await processOwnTree(context, product, null, { variables:variableUses, sync, loader, by, dryRun, recheck: options.recheck === true, signal: options.signal, maxAgeSeconds: options.maxAgeSeconds, readConcurrency: options.readConcurrency }, output.scope);
     const { name: _n, family: _f, line: _l, base: _b, ...scopeReport } = result;
     report.scope = scopeReport;
     if (!dryRun && result.root !== null && result.composition !== null) {
@@ -327,9 +337,10 @@ async function processOwnTree(
   context: KnowledgeContext,
   product: ProductHandle,
   build: BuildInfo | null,
-  options: { sync: string; loader: SourceLoader; by: Principal; dryRun: boolean; recheck: boolean; signal?: AbortSignal; maxAgeSeconds?: number; readConcurrency?: number },
+  options: { variables:VariableUse[]; sync: string; loader: SourceLoader; by: Principal; dryRun: boolean; recheck: boolean; signal?: AbortSignal; maxAgeSeconds?: number; readConcurrency?: number },
   scope?: BuildInfo['sources']
 ): Promise<SyncBuildReport> {
+  options={...options,variables:productionVariableUses(product,build===null,options.variables)};
   const productId = product.product.id;
   const base = build === null ? { name: '不分版本', family: '', line: '', base: '' } : { name: build.name, family: build.family, line: build.line, base: build.base };
   const info = build === null ? null : infoOf(build);
@@ -361,6 +372,21 @@ async function processOwnTree(
       const threshold = model === null ? null : await context.calibration.threshold(PLACEMENT_CHAIN, model);
       if (recorded.failed > 0) changed = `上次有 ${recorded.failed} 个片段的归位判断失败`;
       else if (recorded.model !== model || recorded.threshold !== threshold) changed = '归位的模型或本链的校准变了';
+    }
+    if(changed===null){
+      const composition=existing.detail.composition ? await context.store.composition(existing.detail.composition) : null;
+      if(!sameVariableUses(composition?.variables??[],options.variables)){
+        const before=new Map((composition?.variables??[]).map(v=>[v.name,v.decision]));
+        const notes:string[]=[];
+        for(const use of options.variables){
+          if(before.get(use.name)===use.decision)continue;
+          const history=await context.records.variables?.history(options.by,'var',use.name)??[];
+          const from=history.find(v=>v.decision.digest===before.get(use.name))?.version;
+          const to=history.find(v=>v.decision.digest===use.decision)?.version;
+          notes.push(`变量 ${use.name} 从第 ${from??'未记录'} 版变为第 ${to??'未记录'} 版`);
+        }
+        changed=[...new Set(notes)].join('；')||'变量引用变了';
+      }
     }
     if (changed === null) {
       // The same external sources as then (read, or optional and missing), and the same lists.
@@ -436,6 +462,7 @@ async function processOwnTree(
     scope,
     by: options.by,
     sync: options.sync,
+    variables: options.variables,
     loader: options.loader,
     signal: options.signal,
     ...(options.maxAgeSeconds === undefined ? {} : { maxAgeSeconds: options.maxAgeSeconds }),
@@ -512,7 +539,7 @@ async function runPlan(context: KnowledgeContext, product: ProductHandle, input:
 /** The parse action of one plan round: the pages read so far as inputs, what the plan answered. */
 async function writePlanAction(
   context: KnowledgeContext,
-  input: { sync: string; product: string; round: number; fresh: number; pages: string[]; output: PlanAnswer | null; reason: string | null; startedAt: string; read: Record<string, SyncRead> },
+  input: { sync: string; product: string; round: number; fresh: number; pages: string[]; output: PlanAnswer | null; reason: string | null; startedAt: string; read: Record<string, SyncRead>; variables:VariableUse[] },
 ): Promise<string> {
   const body: ActionBody = {
     action: ACTION.parse,
@@ -528,6 +555,7 @@ async function writePlanAction(
     acceptance: null,
     codes: [],
     detail: {
+      variables:input.variables,
       sync: input.sync,
       product: input.product,
       round: input.round,

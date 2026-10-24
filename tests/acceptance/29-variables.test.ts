@@ -1,9 +1,11 @@
+import {createServer} from 'node:http';
+import {createTestHub} from '../../hub/server/testing-real.ts';
 // Scenario 29: real Hub, temporary PostgreSQL, published deterministic fixture, loopback-only endpoints.
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { before, after, test } from 'node:test';
+import { before, after, describe, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { RECORD_KINDS } from '../../contracts/generated/protocol.ts';
 import { createHash } from 'node:crypto';
@@ -16,6 +18,7 @@ import { startEndpoint } from '../../hub/dispatch/testing/server.ts';
 import { AGILE_ACCOUNT, ROOTS, DOCUMENTS } from '../fixtures/agile/index.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import type { McpClient } from './support/mcp.ts';
+describe('deployment variables',()=>{
 const PACK = 'demo-variables-proof', PASSWORD = 'Demo!PortalPassword42', WRONG = 'Demo!WrongPassword43', AUTH = 'Demo!ExecutionAuth42';
 let pg: TemporaryPostgres, bed: Bed, client: McpClient, directory: string;
 const output: string[] = [];
@@ -225,4 +228,52 @@ test('ordinary users cannot read variable records or use administrator commands,
     await walk(k.dataDir);
     if (!k.config.logDir.startsWith(k.dataDir + '/'))
         await walk(k.config.logDir);
+});
+
+});
+
+
+test('product variable acceptance covers publication, sync, composition and administrator commands',async t=>{
+ const postgres=await startPostgres();
+ const scratch=await mkdtemp(join(tmpdir(),'circle-hub-product-vars-'));
+ const server=createServer((_request,response)=>{response.setHeader('content-type','application/json');response.end(JSON.stringify({text:'Synthetic source'}));});
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const address=server.address();assert.ok(address&&typeof address!=='string');
+ const hub=await createTestHub({postgres,repositoryPacks:false,stubs:false,requireOsIsolation:false});
+ t.after(async()=>{await hub.close();await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));await postgres.stop();await rm(scratch,{recursive:true,force:true});});
+ const lines:string[]=[];
+ const session:VariableCommandSession={ctx:{io:{cwd:scratch}},options:{},admin:async()=>hub.admin.principal,records:async()=>hub.records,hub:async()=>hub.hub,out:line=>lines.push(line),err:line=>lines.push(line)};
+ const system=await writePack(scratch,{id:'demo-vars-source',version:'1.0.0',kind:'system',title:'合成来源',description:'回环合成只读来源',files:{
+  'system.json':{json:{schema:'system@1',title:'Synthetic source',roles:[{name:'api'}],auth:{kind:'none'},routes:[{id:'item',role:'api',method:'GET',path:'/items/{id}',response:'json',max_bytes:1048576,read:true}],reads:[{name:'item',external:'demo-vars:item',request:{route:'item',params:{id:'{id}'}},project:{module:'functions/project.ts'}}]}},
+  'functions/project.ts':'export default function(){return {artifacts:[],warnings:[]};}',
+ }});
+ await hub.publishPack(system);
+ await hub.addResource({system_pack:'demo-vars-source@1.0.0',name:'合成变量来源',environment:'test',origins:{api:`http://127.0.0.1:${address.port}`},allow_plaintext:[`http://127.0.0.1:${address.port}`]});
+ const declaration={schema:'product@1',id:'demo-vars-product',title:'合成变量产品',names:['SyntheticVariableProduct'],catalogs:[],
+  variables:[{name:'DEMO_PRODUCT_LABEL',description:'Synthetic label',schema:{type:'string'},default:'Synthetic default'},{name:'DEMO_PRODUCT_ITEMS',description:'Synthetic words',schema:{type:'array',items:{type:'string'}},default:['fallback']}],
+  sync:{start:['demo-vars:item:1'],plan:{module:'functions/plan.ts'},options:{label:'${var:DEMO_PRODUCT_LABEL}'}},
+  producers:[{id:'words',title:'合成词',function:{module:'functions/produce.ts'},inputs:{page:{source:'page'}},params:{words:'${var:DEMO_PRODUCT_ITEMS}'}}],
+ };
+ const files={'product.json':{json:declaration},'functions/plan.ts':`export default function(input:any){return {fetch:[],done:true,note:input.options.label,builds:[{name:'Demo_10_6',family:'SyntheticVariableProduct',line:'10.6',base:'Demo_10_6',platform:null,built_at:null,released_at:'2026-01-01T00:00:00.000Z',sources:{page:'demo-vars:item:1'}}]};}`,
+ 'functions/produce.ts':`export default function(input:any){return {entries:[{kind:'definition',path:'/words',statement:input.params.words.join(' '),data:{words:input.params.words},fragments:[{slot:'page',parser:'json@1',selector:'p/text'}],applicability:null}],warnings:[]};}`};
+ const source=await writePack(scratch,{id:'demo-vars-product',version:'1.0.0',kind:'product',title:'合成变量产品',description:'合成声明',files});
+ await hub.publishPack(source);
+ const refused=await hub.knowledgeSync('demo-vars-product');assert.match(refused.error??'',/DEMO_PRODUCT_LABEL.*var set/);assert.equal(refused.plan.reads,0);
+ lines.length=0;await variableCommand(session,['list']);assert.match(lines.join('\n'),/DEMO_PRODUCT_ITEMS.*没设置/);
+ const dry=await hub.knowledgeSync('demo-vars-product',{dryRun:true});assert.equal(dry.error,null);assert.ok(dry.variables?.every(v=>v.default));assert.equal(dry.plan.note,'Synthetic default');
+ const setVar=async(name:string,value:unknown)=>{await writeFile(join(scratch,'value.json'),JSON.stringify(value));await variableCommand(session,['set',name,'--file','value.json','--reason','合成变量验收']);};
+ await setVar('DEMO_PRODUCT_LABEL','Synthetic configured');await setVar('DEMO_PRODUCT_ITEMS',['synthetic','configured']);
+ const sync=await hub.knowledgeSync('demo-vars-product');assert.equal(sync.error,null);assert.equal(sync.plan.note,'Synthetic configured');assert.equal(sync.counts.produced,1,JSON.stringify(sync.builds));
+ const built=sync.builds.find(b=>b.composition)!;
+ const composition=await hub.hub.knowledge.store.composition(built.composition!);assert.equal(composition?.variables?.length,2);
+ assert.deepEqual((await hub.hub.knowledge.store.entry(composition!.composition[0].entry))?.data.words,['synthetic','configured']);
+ lines.length=0;await variableCommand(session,['list','--root',built.root!]);assert.match(lines.join('\n'),/DEMO_PRODUCT_LABEL.*第 1 版/);assert.match(lines.join('\n'),/DEMO_PRODUCT_ITEMS.*第 1 版/);
+ await setVar('DEMO_PRODUCT_LABEL','Synthetic changed');
+ const changed=await hub.knowledgeSync('demo-vars-product');assert.equal(changed.counts.produced,1);assert.equal(changed.builds[0].root,built.root);assert.equal(changed.builds[0].calls?.made,0);
+ lines.length=0;await variableCommand(session,['list','--root',built.root!]);assert.ok(lines.some(line=>line.includes('DEMO_PRODUCT_LABEL')&&line.includes('第 1 版')));assert.ok(lines.some(line=>line.includes('DEMO_PRODUCT_LABEL')&&line.includes('第 2 版')));assert.ok(lines.every(line=>line.includes('组成 ')));
+ const second=await writePack(scratch,{id:'demo-vars-other',version:'1.0.0',kind:'product',title:'另一个合成产品',description:'撞名合成反例',files:{...files,'product.json':{json:{...declaration,id:'demo-vars-other',names:['OtherSyntheticVariableProduct']}}}});
+ const collision=await hub.hub.registry.publish(hub.admin.principal,second);assert.equal(collision.ok,false);if(!collision.ok)assert.equal(collision.problems[0].message,'名字不可用');
+ await hub.records.variables.setVariable(hub.admin.principal,'DEMO_UNUSED_VALUE',1,'合成无使用者');
+ await hub.records.variables.setVariable(hub.admin.principal,'DEMO_PRODUCT_ITEMS',1,'合成旧值不合模式');
+ lines.length=0;await variableCommand(session,['list']);assert.match(lines.join('\n'),/DEMO_UNUSED_VALUE.*设置了，没有使用者/);assert.match(lines.join('\n'),/DEMO_PRODUCT_ITEMS.*不合.*demo-vars-product/);
 });
