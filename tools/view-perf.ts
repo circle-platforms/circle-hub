@@ -18,7 +18,10 @@ import { createKnowledge } from '../hub/knowledge/service.ts';
 import { createKnowledgeReader } from '../hub/knowledge/api.ts';
 import { FakePacks, FakeExternal, makeWorld, startPostgres, mindMap, casesProducer, DEFAULT_PRODUCERS, catalogXml } from '../hub/knowledge/test-support.ts';
 
-type Input = { config: Parameters<typeof openRecords>[0]; keyPath: string; product: ProductHandle; principal: Principal; build: string; directory: string; allocationProfile?: boolean;pressure?:boolean };
+// Production and the cold read share one clock. produced_at and a clarification deadline are fixed-width, so a live clock keeps the byte length and changes the digest.
+const FROZEN = '2026-01-06T00:00:00.000Z';
+const frozenNow = (): Date => new Date(FROZEN);
+type Input = { config: Parameters<typeof openRecords>[0]; keyPath: string; product: ProductHandle; principal: Principal; build: string; directory: string; now: string; allocationProfile?: boolean;pressure?:boolean };
 export type ViewPerfResult = { wallMs: number; maxRSSKiB: number; bytes: number; sha256: string; queries: number; sql: Record<string, { count: number; ms: number ;}>; phases: Record<string, number>; truncated: boolean; totalEntries: number; totalKeys: number; listed: number; totals: unknown ;};
 // Accepted cold-reader peak, including imports and consumer decoding, plus the integrator's 15% regression allowance.
 export const VIEW_PERF_RSS_LIMIT_KIB = Math.ceil(494_448 * 1.15);
@@ -39,7 +42,7 @@ export async function benchmarkView(directory: string, options: { profile?: bool
   if(options.pressure&&options.budget)throw new TypeError('diagnostic collection runs cannot establish budget acceptance');
   await mkdir(directory, { recursive: true });
   const postgres = await startPostgres();
-  const w = await makeWorld(postgres, { pack: { functions: { 'cases.ts': syntheticProducer }, declaration: { catalogs: [], producers: [...(options.unplaced?DEFAULT_PRODUCERS:[]),casesProducer({ batch: 30,params:{unplaced:options.unplaced===true} })] } } });
+  const w = await makeWorld(postgres, { now: frozenNow, pack: { functions: { 'cases.ts': syntheticProducer }, declaration: { catalogs: [], producers: [...(options.unplaced?DEFAULT_PRODUCERS:[]),casesProducer({ batch: 30,params:{unplaced:options.unplaced===true} })] } } });
   try {
     const documents: string[] = [];
     for (let d = 0; d < 1800; d++) {
@@ -51,7 +54,7 @@ export async function benchmarkView(directory: string, options: { profile?: bool
     const produced = await w.knowledge.produceTree({ product: w.product, build: { name: build, family: 'ACME', line: '10.6', base: build, platform: null, built_at: null, released_at: null, sources: { cases: documents,...(options.unplaced?{tree:'site:tree:synthetic'}:{}) }, root: null } });
     assert.equal(produced.ok, true, produced.reason ?? '');
     assert.deepEqual([produced.entries+produced.unplaced, produced.nodes], [49_000+(options.unplaced?6097:0), 6100]);
-    const input: Input = { config: { ...w.kit.config, database: w.kit.database }, keyPath: w.kit.keyProvider.path, product: w.product, principal: w.user, build, directory,pressure:options.pressure };
+    const input: Input = { config: { ...w.kit.config, database: w.kit.database }, keyPath: w.kit.keyProvider.path, product: w.product, principal: w.user, build, directory, now: FROZEN, pressure:options.pressure };
     const invoke = (runInput: Input) => new Promise<ViewPerfResult>((res, rej) => {
       const child = fork(fileURLToPath(import.meta.url), ['--worker'], { execArgv: options.profile ? ['--cpu-prof', `--cpu-prof-dir=${runInput.directory}`, '--heap-prof', `--heap-prof-dir=${runInput.directory}`] : [], stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
       let answer: ViewPerfResult | undefined;
@@ -84,9 +87,10 @@ async function worker(input: Input): Promise<void> {
   const pressure=input.pressure?new SyncInspector():null;pressure?.connect();let collectedHeap=process.memoryUsage().heapUsed;
   let gcCalls=0,gcMs=0;
   const checkPressure=()=>{if(!pressure||process.memoryUsage().heapUsed<collectedHeap+16*1024*1024)return;const start=performance.now();pressure.post('HeapProfiler.collectGarbage');gcCalls++;gcMs+=performance.now()-start;collectedHeap=process.memoryUsage().heapUsed;};
-  const kit = await openRecords(input.config, { migrate: false, keyProvider: new FileKeyProvider(input.keyPath),onCredentialScan:pressure?checkPressure:undefined });
+  const now = () => new Date(input.now);
+  const kit = await openRecords(input.config, { migrate: false, keyProvider: new FileKeyProvider(input.keyPath), now, onCredentialScan:pressure?checkPressure:undefined });
   const packs = new FakePacks(); packs.add(input.product); packs.readers.set(input.principal.id, new Set([input.product.id]));
-  const knowledge = createKnowledge({ records: kit, packs, external: new FakeExternal(kit), parsers: createDefaultRegistry() });
+  const knowledge = createKnowledge({ records: kit, packs, external: new FakeExternal(kit), parsers: createDefaultRegistry(), clock: now });
   const sql: ViewPerfResult['sql'] = {}; let queries = 0;
   const original = pg.Client.prototype.query;
   pg.Client.prototype.query = function (this: pg.Client, ...args: unknown[]) {
