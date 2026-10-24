@@ -83,6 +83,7 @@ function accepts(param:CatalogParam,value:string):boolean {
   }
 }
 function signatureMatches(signature:CatalogSignature,tokens:readonly Token[],allowUnchecked=false):boolean {
+  if(!allowUnchecked && signature.params.some(param=>param.type===undefined))return false;
   const memo=new Map<string,boolean>();
   const walk=(p:number,t:number):boolean=>{
     const key=p+':'+t;if(memo.has(key))return memo.get(key)!;

@@ -61,7 +61,7 @@ function solve(signature: CatalogSignature, overload: number, args: readonly str
   };
   const cost = (i: number, j: number): number => {
     if (j === n) return i === m ? 0 : Number.POSITIVE_INFINITY;
-    if (i === m) return optionalFrom[j] ? params.slice(j).filter(param=>param.default!==undefined&&param.unchecked_constraints?.length).length/(n+1) : Number.POSITIVE_INFINITY;
+    if (i === m) return optionalFrom[j] ? params.slice(j).filter(param=>(param.type===undefined||param.default!==undefined)&&param.unchecked_constraints?.length).length/(n+1) : Number.POSITIVE_INFINITY;
     const key = i * (n + 1) + j;
     const known = memo.get(key);
     if (known !== undefined) return known;
@@ -95,7 +95,7 @@ function solve(signature: CatalogSignature, overload: number, args: readonly str
       for(const constraint of p.unchecked_constraints??[])unchecked.push({param:p.name,position:i+1,constraint});
       i += 1;
     } else {
-      if(p.default!==undefined)for(const constraint of p.unchecked_constraints??[])unchecked.push({param:p.name,position:j+1,constraint});
+      if(p.type===undefined||p.default!==undefined)for(const constraint of p.unchecked_constraints??[])unchecked.push({param:p.name,position:j+1,constraint});
       bindings.push({ param: p.name, omitted: true, ...(p.default !== undefined ? { default: p.default } : {}) });
     }
   }
