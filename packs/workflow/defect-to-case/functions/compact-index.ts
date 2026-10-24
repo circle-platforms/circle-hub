@@ -48,7 +48,7 @@ export function isCompactIndex(value: unknown): value is CompactCaseIndex {
 }
 
 export function normalizeText(text: string): string {
-  return text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+  return text;
 }
 
 export const titleKey = (text: string): string => createHash('sha256').update(normalizeText(text)).digest('hex');

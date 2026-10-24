@@ -512,6 +512,11 @@
         "groups"
       ],
       "additionalProperties": false
+    },
+    "catalog": {
+      "description": "locked catalog entries for an item-key narrowed read subject builder",
+      "type": "array",
+      "items": {}
     }
   },
   "required": [

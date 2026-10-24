@@ -17,15 +17,16 @@ export function statusText(statuses: readonly string[]): string {
   return statuses.length === 1 ? (STATUS_TEXT[statuses[0]] ?? statuses[0]) : '状态未知';
 }
 
-/** The collision note when the defect entries name more than one system: the matrix joins by the number alone. */
+/** A definite collision note for separate identities in two named defect systems. */
 export function systemNote(systems: readonly string[]): string {
-  return systems.length > 1 ? `；系统 ${systems.join('、')}（两个系统的缺陷号可能撞号）` : '';
+  return systems.length > 1 ? `；系统 ${systems.join('、')} 已确认同号撞号` : '';
 }
 
 /** The item summary: the status and the number of cases; an untraced defect says unknown, never a failure. */
-export function summaryOf(row: Pick<MatrixRow, 'statuses' | 'cases' | 'systems'>): string {
-  const traced = row.cases.length > 0 ? `${row.cases.length} 个用例` : '无已索引用例（未知）';
-  return clip(`${statusText(row.statuses)}；${traced}${systemNote(row.systems)}`, 200);
+export function summaryOf(row: Pick<MatrixRow, 'statuses' | 'cases' | 'systems' | 'collision_systems' | 'ambiguous_cases'>): string {
+  const ambiguous=row.ambiguous_cases?.length ?? 0;
+  const traced = (row.collision_systems?.length ?? 0)>1 ? `${row.cases.length} 个已明确系统用例；当前视图有 ${ambiguous} 个用例未带系统` : ambiguous>0 ? `当前视图有 ${ambiguous} 个同号用例系统待补（未知）` : row.cases.length > 0 ? `${row.cases.length} 个用例` : '无已索引用例（未知）';
+  return clip(`${statusText(row.statuses)}；${traced}${systemNote(row.collision_systems ?? row.systems)}`, 200);
 }
 
 /** A case entry as the matrix lists it: the case's node id (data.node, what the cases producer writes), else data.case,
@@ -36,11 +37,11 @@ function caseRefOf(digest: string, entry: ViewEntry): CaseRef {
   const title = typeof data.title === 'string' && data.title !== '' ? data.title : entry.statement;
   const document = typeof data.document === 'string' && data.document !== '' ? data.document : null;
   const defects = [...new Set(strings(data.defects))].sort(compareText);
-  return { case: id, title, document, reference: entry.reference, defects, entry: digest };
+  return { case: id, title, document, reference: entry.reference, defects, entry: digest, ...(typeof data.system==='string'&&data.system!==''&&data.system!=='unknown'?{system:data.system}:{}) };
 }
 
 /**
- * The matrix: one row per normalised bug id the defects view lists with a selected status. The statuses filter applies to
+ * The matrix: one row per system and normalised bug id the defects view lists with a selected status. The statuses filter applies to
  * the defect entries; a bug whose entries are all filtered out is no item at all. Case entries missing from the view's
  * entries record (warned about at the reading) simply take no part.
  */
@@ -57,7 +58,7 @@ export function buildMatrix(defects: IndexViewData, cases: IndexViewData, status
     }
   }
   // The defects, grouped by the normalised id: one bug may be written with leading zeros in one entry and plain in another.
-  const groups = new Map<string, { ids: Set<string>; entries: Map<string, ViewEntry> }>();
+  const groups = new Map<string, { bug:string; system:string|null; ids: Set<string>; entries: Map<string, ViewEntry> }>();
   for (const [raw, digests] of Object.entries(defects.keys)) {
     const norm = normalizeId(raw);
     for (const digest of digests) {
@@ -65,25 +66,39 @@ export function buildMatrix(defects: IndexViewData, cases: IndexViewData, status
       if (entry === undefined) continue;
       const status = entry.data.status;
       if (typeof status !== 'string' || !statuses.includes(status)) continue;
-      let group = groups.get(norm);
-      if (group === undefined) groups.set(norm, (group = { ids: new Set(), entries: new Map() }));
+      const system=typeof entry.data.system==='string'&&entry.data.system!==''&&entry.data.system!=='unknown'?entry.data.system:null;
+      const key=JSON.stringify([system,norm]);
+      let group=groups.get(key);
+      if(group===undefined)groups.set(key,(group={bug:norm,system,ids:new Set(),entries:new Map()}));
       group.ids.add(raw);
       group.entries.set(digest, entry);
     }
   }
   const rows: MatrixRow[] = [];
-  for (const [bug, group] of groups) {
+  const byNumber=new Map<string,Array<typeof groups extends Map<string,infer G>?G:never>>();
+  for(const group of groups.values())byNumber.set(group.bug,[...(byNumber.get(group.bug)??[]),group]);
+  for (const group of groups.values()) {
+    const bug=group.bug, peers=byNumber.get(bug)!;
+    const collisionSystems=[...new Set(peers.flatMap(g=>g.system===null?[]:[g.system]))].sort(compareText);
+    const ambiguous:CaseRef[]=[];
     const entries = [...group.entries.entries()].sort(([a], [b]) => compareText(a, b));
     const statusList = [...new Set(entries.map(([, entry]) => entry.data.status as string))].sort(compareText);
     const systemList = [...new Set(entries.map(([, entry]) => entry.data.system).filter((system): system is string => typeof system === 'string' && system !== ''))].sort(compareText);
     const bucket = byBug.get(bug);
     const caseRefs: CaseRef[] = [];
     if (bucket !== undefined) {
-      for (const [digest, entry] of bucket) caseRefs.push(caseRefOf(digest, entry));
+      for (const [digest, entry] of bucket){
+        const kase=caseRefOf(digest,entry);
+        if(kase.system ? kase.system===group.system : peers.length===1)caseRefs.push(kase);
+        else if(!kase.system)ambiguous.push(kase);
+      }
       caseRefs.sort((a, b) => compareText(a.case, b.case) || compareText(a.document ?? '', b.document ?? '') || compareText(a.reference, b.reference));
     }
     rows.push({
       bug,
+      identity:group.system===null?bug:encodeURIComponent(group.system)+':'+bug,
+      ...(collisionSystems.length>1?{collision_systems:collisionSystems,collision_references:peers.flatMap(g=>[...g.entries.values()].map(e=>e.reference)).sort(compareText)}:{}),
+      ...(ambiguous.length?{ambiguous_cases:ambiguous.sort((a,b)=>compareText(a.reference,b.reference))}:{}),
       ids: [...group.ids].sort(compareText),
       statuses: statusList,
       conflict: statusList.length > 1,
@@ -94,6 +109,6 @@ export function buildMatrix(defects: IndexViewData, cases: IndexViewData, status
       systems: systemList,
     });
   }
-  rows.sort((a, b) => compareText(a.bug, b.bug));
+  rows.sort((a, b) => compareText(a.bug,b.bug)||compareText(a.identity??'',b.identity??''));
   return rows;
 }

@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "case-review",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "kind": "workflow",
   "title": "测试脑图评审（初评）",
   "description": "按团队的评审方法（test-list-review）初评一份测试脑图：Hub 判定字面问题、命令与目录、引文与位置，模型写七类评审发现和 P0-P7 等级；结论由复核任务包 case-review-verify 独立复核",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "f9d7284ac8d4cce07f3609907920392df7d3d60e05a8810468cf52511325aa91",
-      "size": 11449
+      "sha256": "0753251e32aefb42062f0cbf9bb7ecd65b2f9961922b7c24ee5032585be36ce9",
+      "size": 11948
     },
     {
       "path": "checks.json",
-      "sha256": "527c27201db62afb4ba18183b8eda64fbf62d3cf587992d94ffa6e283e22e7a3",
-      "size": 3115
+      "sha256": "8072488bec59468bf8a24925971c56e9d4dbdbeccf95d497c2c3448336a609cf",
+      "size": 3707
     },
     {
       "path": "examples/start-run.json",
@@ -33,8 +33,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "0b6ee19e7e569ac3be57c034407ec66f16e5f88672fde8c8dfaafe6fb04a5b44",
-      "size": 8485
+      "sha256": "31a1534df60a37a1176aa16ed97caed13078db0247669960ef1185bbb6b61828",
+      "size": 10677
     },
     {
       "path": "functions/common.ts",
@@ -73,8 +73,8 @@
     },
     {
       "path": "functions/subjects.ts",
-      "sha256": "904bb959100618930d7087123fd333743b805cdd71340747620fe8a2eeb84eef",
-      "size": 3885
+      "sha256": "ec212f7032b4ba0aa09638b3ab2700e4ce763f16780a8fe9a6f3a851b77d74cc",
+      "size": 3874
     },
     {
       "path": "functions/tags.ts",
@@ -98,8 +98,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "d78c0d83af0074abad7baa7db2aee1816f69ea79e20ff8656bbc1dd4e3e64124",
-      "size": 3542
+      "sha256": "f111af9b1e56126e924b60e06c8ba6c9bee2924de92eba58a3c9ea0335ee8acb",
+      "size": 4047
     },
     {
       "path": "samples/negative/cited_negative_case.json",
@@ -115,6 +115,11 @@
       "path": "samples/negative/claims_contradicted.json",
       "sha256": "915242d7722dc915dc97d294e72676ffabc57b65539a2bbdd6a17604f6d4535e",
       "size": 1533
+    },
+    {
+      "path": "samples/negative/negative_command_missing.json",
+      "sha256": "e5804f97be5d35511077fad67974df2bc2430ca1ecdb99b3999c2172cf15803f",
+      "size": 1495
     },
     {
       "path": "samples/negative/node_ids_shared.json",
@@ -182,6 +187,11 @@
       "size": 1620
     },
     {
+      "path": "samples/positive/negative_command_present.json",
+      "sha256": "ff539d9eb13d9263d953f65def2db22f641781663918667cbbe006bc10346d71",
+      "size": 1518
+    },
+    {
       "path": "samples/positive/node_ids_unique.json",
       "sha256": "c71888c99d5482cdb934eb3caee8cbd988e5c3bdc930eb7309f05b1c2da2a52d",
       "size": 2214
@@ -228,13 +238,13 @@
     },
     {
       "path": "tables/cited-commands.json",
-      "sha256": "c8fdf064dce3b390766bf36e0a8110b0718e0553ec0b945c736e397119485834",
-      "size": 1552
+      "sha256": "43b92d0d5f164dd24180fd438d4ec9cb533edcf5d65ce1af1176a5a3019c86fb",
+      "size": 1673
     },
     {
       "path": "tables/codes.json",
-      "sha256": "e81b5bd6c074e58d017545e711556c07fc363f8eb3588ff9825bfc7ace025c25",
-      "size": 12370
+      "sha256": "b7d62e644499414f2e78d795db8fe592b03268f84c91a8568e8ef7ab83dd0eac",
+      "size": 12561
     },
     {
       "path": "tables/command-claims.json",

@@ -354,6 +354,14 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
       if (tier === 'blocking' && !hasBasis(check, table)) {
         c.add(problem('checks.blocking_without_basis', 'checks.json', `检查 ${check.id} 是${tierText('blocking')}，却没有写明所依据的验收合同条款`, `在 checks.json（或解释器的表）里写 basis，或者改成${tierText('advisory')}（C05 R[1]）`, at('tier')));
       }
+      if (check.reads?.narrow !== undefined) {
+        const narrow = check.reads.narrow;
+        const slot = workflow?.inputs.find(input => input.slot === narrow.slot);
+        if (check.applies !== 'item' || !slot || !slot.accepts.includes('knowledge:index') ||
+          !check.reads.roles.includes(slot.role) || (check.reads.types !== undefined && !check.reads.types.includes('knowledge:index'))) {
+          c.add(problem('checks.narrow_binding', 'checks.json', `检查 ${check.id} 的收窄读取必须是条目检查，且 reads.narrow.slot 必须声明接受 knowledge:index 的输入，读取角色和类型须覆盖该输入`, '改为条目检查，并声明同一索引输入槽位、读取角色和 knowledge:index 类型', at('reads/narrow')));
+        }
+      }
       if (check.reads?.max_bytes !== undefined && check.reads.max_bytes > MAX_CHECK_READ_BYTES) {
         c.add(
           problem(
