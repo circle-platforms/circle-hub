@@ -841,6 +841,9 @@ The ordinary checks and error-table budget still apply to the original run. Each
 request at its submission record and JSON pointer, with the original run's submission deadline. Resubmission of the same
 item and canonical criterion appends a superseding answer; it never edits the earlier request or result.
 
+A view-predecessor workflow cannot declare `default_from_predecessor`; publication requires an explicit binding rather
+than a defaulted predecessor result.
+
 The criterion-review workflow explicitly binds that submission, and its optional expected-role evidence slot binds the
 original fragments under the reviewer's own current rights. The account owner confirms acceptance or rejection; the Hub
 verifies identity, exact quotes, source family and the satisfied independent requirement. Author accounts are runner, or

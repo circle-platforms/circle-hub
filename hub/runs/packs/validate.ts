@@ -253,7 +253,7 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
   const ledger = c.files.has('ledger.json') ? c.parse('ledger.shape', 'ledger.json', LedgerFile, 'ledger@1') : null;
   if(workflow?.predecessor_access==='view'&&requirements){
     if(!requirements.requirements.length||requirements.requirements.some(row=>row.independent_of!=='predecessor'))c.add(problem('workflow.predecessor_access','workflow.json','只读前驱要求每个要求项都独立于前驱','所有要求项声明 independent_of: predecessor，或移除 predecessor_access',{field:'/predecessor_access'}));
-    if(workflow.inputs.some(row=>Object.hasOwn(row,'default')||Object.hasOwn(row,'default_source')))c.add(problem('workflow.predecessor_default','workflow.json','只读复核前驱不能缺省绑定已受理结果','显式绑定声明提交的 rec:，不要绑定前驱结果',{field:'/inputs'}));
+    if(workflow.inputs.some(row=>row.default_from_predecessor!==undefined))c.add(problem('workflow.predecessor_default','workflow.json','只读复核前驱不能缺省绑定已受理结果','显式绑定声明提交的 rec:，不要绑定前驱结果',{field:'/inputs'}));
   }
   if(workflow?.criterion_review&&requirements&&(workflow.predecessor_access!=='view'||requirements.requirements.length!==1||requirements.requirements.some(row=>!row.independence_by_account)))c.add(problem('workflow.criterion_review','workflow.json','判据复核需要只读前驱和一个按账号独立的要求项','声明 predecessor_access: view 和 independence_by_account: true',{field:'/criterion_review'}));
   if (requirements) {
