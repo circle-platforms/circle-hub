@@ -3,7 +3,7 @@
 // system pack), takes the documents of the roots titled with a product name (both name families: APV and NSAE are one
 // product), locates each one with locate.ts and lists, in the sources of every build that has its own command tree:
 // - `case_documents`: the agile:case ids of the documents whose version line is not later than the build's line and not
-//   earlier than the option `min_line` (default 10.4.2), ordered by document id (numbers by value). The order only has to be
+//   earlier than the option `min_line` (explicit null means no floor), ordered by document id (numbers by value). The order only has to be
 //   stable: an unchanged tree gives the same list, so the Hub keeps the build's root (its list digest is unchanged). A
 //   changed list re-runs every batch of that build: the Hub keys a stored producer call by the whole build, list included.
 //   Over the role's limit the documents of the oldest lines (earliest release-train date) are left out first;
@@ -13,7 +13,7 @@
 // ids. While the tree is not read, cannot be read or is incomplete (a configured root not read, a root title unknown), the
 // builds that would list documents are not listed at all (sync.ts): a root produced now would lose every case it had.
 // Which line is not later than a build's line is the earliest release-train date of that line in the tree (YYYY/M in the
-// train label), not the numeric order of the dotted line. Brief section 8: 10.4.5 and 10.4.6 are newer lines than 10.5.
+// train label), not numeric order of version components.
 // A line with no dated train is listed only for a build of that same line. min_line is the same date floor when the tree
 // dates that line; a line with no date is not dropped as earlier than min_line.
 import { AGILE_ID, CASE_DOCUMENTS_ROLE, CASE_PREFIX, CASE_TREE_ID, CASE_TREE_ROLE, DEFAULT_MIN_LINE } from './cases-rules.ts';

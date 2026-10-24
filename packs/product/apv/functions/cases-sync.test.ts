@@ -30,7 +30,7 @@ const ON = caseIndexOptions({ case_index: true });
 describe('options', () => {
   it('the case index is on only when the declaration says so; min_line is a version line', () => {
     assert.deepEqual(caseIndexOptions({}), { on: false, minLine: DEFAULT_MIN_LINE, notes: [] });
-    assert.deepEqual(caseIndexOptions({ case_index: true, min_line: '10.5.0' }), { on: true, minLine: '10.5', notes: [] });
+    assert.deepEqual(caseIndexOptions({ case_index: true, min_line: '10.6.150' }), { on: true, minLine: '10.6.150', notes: [] });
     const bad = caseIndexOptions({ case_index: 'yes', min_line: 'latest' });
     assert.equal(bad.on, false);
     assert.equal(bad.minLine, DEFAULT_MIN_LINE);
@@ -66,13 +66,13 @@ describe('the documents of the agile tree', () => {
 
   it('a build lists the documents of its line and the earlier ones from min_line on, new ones last', () => {
     if (tree.status !== 'ready') return;
-    for (const line of ['10.4.2', '10.6.4', '10.5', '10.6.1', '10.6.2', '10.7', '10.4.1', '9.9']) {
+    for (const line of ['10.6.142', '10.6.4', '10.6.150', '10.6.1', '10.6.2', '10.7', '10.6.141', '9.9']) {
       assert.deepEqual(caseDocumentsFor(tree.documents, line).ids, listedFor(corpus, line).map((id) => `agile:case:${id}`), line);
     }
     // A build line the tree never dates has no train month, so it lists only documents of that same line.
     assert.deepEqual(caseDocumentsFor(tree.documents, '10.7.1').ids, []);
-    const later = caseTree({ [CASE_TREE_ID]: treeRead(treeContent(corpus)) }, caseIndexOptions({ case_index: true, min_line: '10.5' }));
-    if (later.status === 'ready') assert.deepEqual(caseDocumentsFor(later.documents, '10.6.1').ids, listedFor(corpus, '10.6.1', '10.5').map((id) => `agile:case:${id}`));
+    const later = caseTree({ [CASE_TREE_ID]: treeRead(treeContent(corpus)) }, caseIndexOptions({ case_index: true, min_line: '10.6.150' }));
+    if (later.status === 'ready') assert.deepEqual(caseDocumentsFor(later.documents, '10.6.1').ids, listedFor(corpus, '10.6.1', '10.6.150').map((id) => `agile:case:${id}`));
     // A document added later has a larger id: the list it joins keeps every id before it where it was.
     const grown = structuredClone(corpus);
     const add = (nodes: Corpus['trees'][string]): boolean => {
@@ -222,11 +222,11 @@ describe('the sync plan with the case index', () => {
 
   it('orders lines by the release-train date, not by the dotted number', () => {
     const documents = [
-      { id: '1', line: '10.5', at: '2024-01-01' },
+      { id: '1', line: '10.6.150', at: '2024-01-01' },
       { id: '2', line: '10.6.4', at: '2026-06-01' },
     ];
     assert.deepEqual(caseDocumentsFor(documents, '10.6.4').ids, ['agile:case:1', 'agile:case:2']);
-    assert.deepEqual(caseDocumentsFor(documents, '10.5').ids, ['agile:case:1']);
+    assert.deepEqual(caseDocumentsFor(documents, '10.6.150').ids, ['agile:case:1']);
   });
 
   it('is total on hostile input with the case index on', () => {

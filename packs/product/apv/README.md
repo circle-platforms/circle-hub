@@ -8,7 +8,7 @@ live only here. Other packages use `api.ts` (types, named functions, and `FUNCTI
 
 | File | Content |
 | --- | --- |
-| `product.json` | `product@1` (pack version 1.3.0): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.4.2`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional, `tree` <- role `tree` for signature placement; the Hub computes relation diagnostics; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
+| `product.json` | `product@1` (pack version 1.3.0): names `[APV, NSAE]`; `sync` (start `buildsite:listing:index`, plan `functions/sync.ts`, options `case_index: true`, `min_line: 10.6.142`, 6 rounds, 300 reads); `select_build` `functions/select.ts`; catalog `commands@1` (entry kind `definition`, producer `command-tree`, complete, case-insensitive; no catalog over case entries); producers `command-tree` (slot `tree` <- source role `tree`), `manual` (slots `cli` <- `manual:cli:{line}` and `app` <- `manual:app:{line}`, both optional, `tree` <- role `tree` for signature placement; the Hub computes relation diagnostics; `placement: judgment_allowed`), `release-notes` (slot `notes` <- source role `fixed_bugs`, optional), `cases` (list slot `documents` <- role `case_documents`, many, batch 40, optional; `tree` <- role `tree`; `folders` <- role `case_tree`, optional) |
 | `functions/sync.ts` | the plan (SyncPlanInput -> SyncPlanOutput): every round recomputed from the pages read so far, index -> hub pages -> listing pages (depth 2, dead links tolerated, both name families, platform and customer pages only when `include` opts them in), then the builds; with `case_index`, `agile:tree:roots` and every own-tree build's case documents (`cases-sync.ts`) |
 | `functions/cases.ts` and `cases-*.ts` | the case index: the producer `cases` (`cases.ts`), case nodes (`cases-nodes.ts`), the command catalog, phrase extraction and resolution (`cases-commands.ts`), the sync plan's part (`cases-sync.ts`), shared pack data (`cases-rules.ts`) |
 | `functions/select.ts` | the build choice (SelectBuildInput -> SelectBuildOutput) over `select-build.ts`: the latest released build of the line across both families on the main platform, the other candidates as alternatives |
@@ -106,8 +106,8 @@ Selection (K01 R[10], W03 R[0], W06 F[6])
   date, build time, APV before NSAE, build number, name; the first one whose root can be determined is chosen, better-ranked
   ones without a root are named in a note and stay in `alternatives`. When none has a root the best one is returned with
   `base` null. The result does not depend on the order of the candidates, duplicate names included.
-- `base`: an APV name is its own base; an NSAE name with its own command tree is its own base (the newest lines 10.4.5,
-  10.4.6: their trees equal the APV twin's, so the content-addressed roots coincide); an NSAE name without a tree follows
+- `base`: an APV name is its own base; an NSAE name with its own command tree is its own base (the newest lines 10.6.145,
+  10.6.146: their trees equal the APV twin's, so the content-addressed roots coincide); an NSAE name without a tree follows
   its `based on` chain to the first APV build or NSAE build with a tree. Cycles, missing bases, a base of another family
   and an NSAE build with neither tree nor base give `base` null with a note. The base is never guessed from equal numbers.
 - `basis` is the provenance type: `declared` or `projected`.
@@ -258,7 +258,7 @@ Sync (`cases-sync.ts`, called by `sync.ts` when the sync option `case_index` is 
   (no versions) is read too; its documents have no line and are counted. Other roots of the resource are counted, not read.
 - Each document is located with `locate.ts` (its ancestors from the root title down, as the mind-map meta has them). A
   build whose own command tree is listed (`tree`) gets `case_documents`: the `agile:mindmap:<id>` of the documents with a
-  line not later than the build's and not earlier than `min_line` (default 10.4.2, a dotted line; another value is noted
+  line not later than the build's and not earlier than `min_line` (default 10.6.142, a dotted line; another value is noted
   and replaced), at most 20,000 (product@1 `MAX_LIST_SOURCES`; more are noted, not listed), ordered by id (numbers by
   value): new documents come last, so the Hub's consecutive batches of an earlier list stay where they were. It also gets
   `case_tree: agile:tree:roots`. Aliases (no tree of their own) list nothing. Ids the agile pack cannot read (outside
@@ -734,8 +734,8 @@ accepted.
   reported in `skipped` and do not drop the command tree. The required-list share stays 0.5. The gate lives in
   hub/knowledge/produce.ts; hub/knowledge/lists.ts does not decide it.
 - Case index: which line is not later than a build's line is the earliest release-train month of that line in the agile
-  tree (`YYYY/M` in the train label), not the numeric order of the dotted line. Brief section 8: 10.4.5 and 10.4.6 are
-  newer lines than 10.5. A line with no dated train is listed only on a build of that same line. `min_line` is the same
+  tree (`YYYY/M` in the train label), not the numeric order of the dotted line. Brief section 8: 10.6.145 and 10.6.146 are
+  newer lines than 10.6.150. A line with no dated train is listed only on a build of that same line. `min_line` is the same
   date floor when the tree dates that line. `compareLines` still sorts build names for display, and it is the comparison
   used only while the tree is unread (there is no train date then) to decide which builds wait. The synthetic corpus uses
   the dotted labels of that scenario so the default `min_line` is exercised; in that corpus the train months follow the
@@ -779,7 +779,7 @@ reasons, each build's list equal to the truth for the dated lines and another `m
 ids before it, pending, failed and incomplete trees, the plan reading the tree once in round 1 without an extra round,
 own-tree builds listing their documents and aliases nothing, no build while the tree is unreadable or incomplete, lines
 ordered by release-train date, a line no build covers, hostile input), `cases.test.ts` (every entry of a 10.6.1 and a
-10.4.6 build equal to the truth in the Hub's own batches (`listBatches`), the later tree, counts by reason and at most 20
+10.6.146 build equal to the truth in the Hub's own batches (`listBatches`), the later tree, counts by reason and at most 20
 examples; another document id changes only the key, a renamed tree label changes nothing, reversed cases change nothing,
 a document twice or listed twice doubles nothing, a document alone gives its entries of the batch; a short batch keeps
 every document that carries `external` and does not guess the rest; a case with no command and a case with no command

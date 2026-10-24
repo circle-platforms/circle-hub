@@ -57,7 +57,7 @@ describe('version lines', () => {
     assert.equal(lineKey('10.6.0'), '10.6');
     assert.equal(lineKey('010.6'), '10.6');
     assert.equal(lineKey(' 10.6.1 '), '10.6.1');
-    assert.equal(lineKey('10.0.0'), '10.0');
+    assert.equal(lineKey('10.6.100'), '10.6.100');
     assert.ok(sameLine('10.6', '10.6.0'));
     assert.ok(!sameLine('10.6.1', '10.6'));
     assert.ok(!sameLine(null, '10.6'));
@@ -89,7 +89,7 @@ describe('listing page names', () => {
       ],
       ['rel_other_3_9', { family: 'other', line: '3.9', platform: null, kind: 'mainline', tokens: ['rel', 'other', '3', '9'] }],
     ];
-    for (const [name, expected] of cases) assert.deepEqual(parsePageName(name), expected, name);
+    for (const [name, expected] of cases) assert.deepEqual(parsePageName(name,['tls13']), expected, name);
   });
 
   it('rejects names that are not listing pages of a version', () => {
