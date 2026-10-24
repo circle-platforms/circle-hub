@@ -85,7 +85,7 @@ export function parseBuildName(name: string): BuildNameParts {
  * 10.6, 10.6.0 and 010.6 name one line. Text that is not a dotted number is only trimmed and lower-cased.
  */
 export function lineKey(line: string): string {
-  const text = line.trim().toLowerCase();
+  const text = line;
   if (!/^[0-9]{1,9}(?:\.[0-9]{1,9}){0,5}$/.test(text)) return text;
   const parts = text.split('.').map(digits);
   while (parts.length > 2 && parts[parts.length - 1] === '0') parts.pop();
