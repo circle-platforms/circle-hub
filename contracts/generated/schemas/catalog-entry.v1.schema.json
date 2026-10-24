@@ -46,6 +46,53 @@
                   ],
                   "description": "string: any word (minLength/maxLength); int: decimal integer (minimum/maximum); enum: one of values; ipv4, ipv6: address; mask: dotted IPv4 netmask; port: 0-65535 (minimum/maximum narrow it); keyword: the literal keyword; hostname: bounded ASCII DNS labels (single-label and trailing-dot names allowed, no URL/IP coercion); ip_or_hostname: IPv4, IPv6 or that hostname according to the bound catalog contract"
                 },
+                "unchecked_constraints": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "no_check",
+                          "check_error",
+                          "timeout",
+                          "missing_input",
+                          "declared_skip",
+                          "not_covered",
+                          "awaiting_step",
+                          "output_failed",
+                          "repair_exhausted",
+                          "budget_exhausted",
+                          "integrity_unproven"
+                        ]
+                      },
+                      "missing": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "next_action": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      },
+                      "source_value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "reason",
+                      "missing",
+                      "next_action"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "address_role": {
                   "description": "Role identifier from the bound published runtime/bed contract, not an inferred core role",
                   "type": "string",

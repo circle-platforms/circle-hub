@@ -844,6 +844,109 @@ K2 closureA2：回注公开正文保留会话标识；准备阶段扫描提交�
 
 合入模型第 10 版和最新 K1 时保留了链接读取与回注覆盖层两条通路：get_nodes 同时能展示两类数据；树引用继续计算撤回、片段变化及矛盾条件，并保留按组成的未归位索引、权限筛选和页级链接说明。既有 composition/build 透传不改变运行目标判定。link_match 在第 10 版词表之后追加为第 65 个轴，来源记录仍保留在 K05。
 
+View-scope task 7: sync source-load failures retain the core parser identity, safe ParseError message, original-byte
+offset and constructor-defined recovery instruction. Raw parser-library detail and source text are not copied into
+the sync report. No supporting parser is distinguished from a registered parser rejecting invalid bytes.
+
+View-scope task 8: case-only ambiguous build spellings are returned as explicit candidates to an authorized product
+reader rather than guessed or called absent. Empty declared catalogs retain completeness. After root permission
+checks, invalid/mismatched/out-of-range node cursors give REFERENCE_UNRESOLVED with a restart-from-first-page fix;
+unreadable roots remain neutral. Listing parser failures carry a determined failure field and do not become plan builds.
+
+计划可用 sync-plan-output@1 的可选 failed_builds 把来源、原始构建资料、注册原因码和修复动作交给核心。
+同步把它记为失败 generate 动作和无根构建（已有成功构建及其根不被替换）；store.buildFailures 可按产品、
+构建和根查询，未产根使用 root:null。失败计入同步计数，dryRun 不写记录。原因码在产品计划构造处确定。
+
+读树条目的有效性同时列出 unevaluated：缺读者组成/当前根、原件核验事实或声明的目标适用事实时，
+不能给 valid。原件按锁定的来源记录重新核验档位，确定的撤回或凭据不可读照实列出；未能评估的条件
+带缺失事实、补取动作、具名管理员、请求引用和期限，核对请求去重存成动作。负面条件仍优先于
+not_evaluated，只有适用检查全已评估且没有失效事实才给 valid。没有 expiry 字段的树条目不虚构到期条件。
+
+归位提议沿用 placement_proposal 回注通道。准入从锁定组成的原条目/片段找到生产器，按组成记的包版本和
+摘要读取已发布的 product.json，所有相关生产器都须声明 judgment_allowed；不得用新版本的允许去改旧
+组成的权限。目标路径存在和引文逐字核验沿用 K2，未归位条目在根下的引用也可核验；Hub 不调用模型、
+不把提议改成自己的事实或直接修改根。
+
+视图分页：index、facets、impact 接受 after，next 给带根修订的完整续读 id。游标绑定查询、组成、根；
+同一索引键也可跨页，不再永久只留 2000 条。页内的 totals 是整个范围的计数，不可逐页相加。
+分面组合超过计算上限、单项超过页预算、JSON 原型保留键无法安全交付时整份拒绝，并给出减少 by、
+fields 或 only 的具体办法。运行输入经 completeKnowledgeView 续读所有页，校验修订、查询范围和前进；
+即使输入带 after 也从首页读全；超过 16 MiB 或仍有未交付内容时要求收窄，绝不绑定尾页或截断页。整份合并也有公开结构上限；同一键
+超过绑定上限时须换用本次条目所需的具体索引字段和取值。源码与测试只用合成资源。
+
+生产器恢复：超时失败不进入跨生产的失败记忆；旧的未带确定原因码的失败记忆也不复用。
+被隔离的超时记 reason_code:timeout、retry:true。单份文档超过批次字节预算时独立调用；沙箱硬输入上限
+仍生效，不为它放宽。每次同步重读所有上次跳过来源，成功输出仍可复用；同步不复用失败输出。
+单文档生产器错误登记 producer_error 修复请求，交具名管理员联系该版本包作者核对和发布修正。
+
+根和答复仍保留有界摘要；生产动作的 problem_chunks 保留全部 skipped、refused、warnings，分块是
+按内容寻址的管理员原件，含源文件记录引用、字节摘要和行数。重试从完整分块取来源，兼容旧记录时
+若旧摘要没有列全，就重读该列表而不猜漏掉的是哪些文档。分块缺失或摘要不符明确拒绝并要求恢复。
+
+同步恢复：连接器失败只透传已有的 read-manifest 摘要，知识侧验证该清单再用固定码和 HTTP 状态，
+不匹配错误文字。确定的 404 保存为带来源观察的失败生产动作和无根构建；同一包、输入、列表不变时
+保留失败结论，列表变化后自动重查。403 给具名管理员请求，联系构建站负责人开放访问。可选来源缺失
+在组成警告及生产动作 missing 的 conclusion/observation 留下确定事实。buildFailures 可查无根失败动作。
+
+缺基础构建的别名把 required_builds 放回计划 options，再跑一轮计划；仍缺时登记具名核对请求，不声称
+使用一个不存在的根。计划受轮数/读数限制时把已读原件引用、待取页和所需基础构建保存为检查点；
+下次同包与同选项接着取，不从首页反复耗尽预算。检查点不把旧观察说成新读取。
+
+Knowledge.scheduleSync 是显式启用的进程内周期接口：同产品同步仍串行，周期结束再排下一次，stop
+取消以后不再启动；意外失败登记管理员修复请求。这里只实现和验证接口，没有配置真实部署或定时器。
+
+凭据处理使用 KnowledgeOptions.credentialAcceptance：autoAcceptSources 逐项指定 systemPack 和生产器 slot，
+默认空名单；deadlineHours 默认 72。系统包身份取自已验证的 read-manifest，不能按外部标识前缀猜。
+仅共享、Hub 原件且原请求档位明确为 model_readable 的普通命中可按名单自动受理；明确 retain_only
+（包括真实凭据回显）、个人来源、缺来源身份的观察均不自动接受。接受后重读连接器，让原投影自己完成，
+不把被拦住的原始响应冒充派生内容。管理员撤回不会被自动策略覆盖。
+
+records.artifacts.scanFindings 为管理员分页返回检测类与位置，绝不返回值。acceptFindings 的 detectors
+选择是增量接受；只在完整扫描的全部检测类均有有效决定时解除扫描造成的保留。默认旧调用仍不接受
+截断摘要；完整维护扫描另有 100000 命中的硬界限，超出时要求拆分/转换来源，不放行。派生覆盖也用
+完整扫描，超过旧展示上限的合法覆盖不再被人为丢掉；明确要求保留的档位始终保留。
+
+未受理来源登记给具名管理员的有期限请求；到期追加核对请求，不等同接受。同步开始及来源复核会推进
+到期处理，已核验有效的接受会关闭对应请求。视图最后一步仍被保留时，答复给被排除引用、完整分块
+清单及管理员请求和动作；完整清单没有只留前十条。实际部署名单及 variables 接线由集成者配置，本任务
+没有读取或修改任何在用的配置、凭据或系统。
+
+视图 scope 声明主组成、额外组成、各来源的用途（生产器/槽位）、每个组成未纳入的来源、在额外根
+覆盖的来源、确定略去与待核对来源、缺失可选来源及未归位数；影响视图另有两侧未归位用例数。
+来源观察完整存成每块至多 2000 行、通常不超过 512 KiB 的不可变原件，公开链接用字节摘要，不用读者专属记录摘要；资料多
+不会只留前几条。scope.complete 只说范围元数据已枚举，不代表未列出的企业资料都已覆盖。
+
+KnowledgeOptions.additionalScopeRoots(product) 返回 {root, composition} 数组，逐项核验属于该产品。
+额外根只供这一步核对“是否确实略去”；把其中条目合到视图由 kb-unversioned 接线。本接口未配置且
+有待归属来源时 omitted_documents 为 null，来源进 pending_documents，并登记具名管理员请求，不能
+把缺配置解释成确定略去。没有候选的当前根仍可声明自身的确定范围，不声称全系统穷尽。
+
+视图按命名构建锁定组成和缓存键；根摘要相同但未归位内容不同的两份组成不再串用。来源清单与页内
+条目用同一组成，防止索引来自一个构建、范围声明却来自另一个构建。
+
+已合入 kb-unversioned：默认 additionalScopeRoots 从产品不分版本指针取得组成；运行读取沿已锁定快照，不用当前指针替换旧根。显式额外根回调仍核对产品与组成。
+第 10 条已接入合并后的 catalog-entry@1：地址角色只由显式资料提供，主机名类型由目录核验；未知参数约束保留在签名中，检查输出在顶层 missing 说明事实，exit 由 Hub 按原因补。未打标签用例仍明确“正负向和测试类型未声明”。
+
+第 10 条续接：本次合入 hub-redesign 的 be27627f（含 d2236556）。目录未核对约束由通用签名字段保留，
+不会在 catalogData 边界丢掉；未知结果的 missing 位于顶层，未预填 exit。参数定位与修复说明不作为目录
+语法差异，生产警告保留完整 XML 参数路径，参数元数据用相对重载片段的路径，避免元素移位制造变更。
+
+Placement permission uses the validated declaration of the exact producing product
+version and digest. Historical versions without a matching current handle are read
+through the public manifest-verifying pack reader. Non-product handles, absent or
+corrupt files and invalid declarations produce positioned admission refusals; an
+unverified edited extraction never grants permission.
+
+Review closure: impact credential exclusions are counted across the entire scan on
+every page; a final page cannot hide exclusions from an earlier offset. Complete
+bindings reject duplicate placement paths, including duplicates within a page.
+Automatic source acceptance uses the configured administrator (the public sync
+administrator requirement is unchanged). A failed acceptance/verification attempt
+writes `knowledge.credential.acceptance-failed` evidence and links it to the named
+administrator request, without copying exception text or credential values. An
+unrecognized historical reason stays explicitly unrecognized, with a registered
+awaiting-step reason and automatic retry/reproduction as its next action.
+
 
 ### Product-wide production
 
@@ -940,6 +1043,8 @@ Needs：依赖按实际交给函数的完整参数记录，不推断函数内部
 
 `var list --root` 接受同步回执里的根节点摘要，也兼容组成记录摘要。同内容根可以对应不同的变量决定；按根查时列出全部组成记录，每行带组成摘要，不拿当前值代替历史版本。
 
+合入 1d399f68 的 read-absence 通道时，保留视图的第二根/组成快照与完整续读绑定，同时保留读取端确定码、重试、私有诊断及失败 manifest。源加载把连接器成功返回的 SOURCE_ABSENT 当作缺席观察而非正文：核对清单的调用人、外部对象、完成状态和支持应答，只有相符的 HTTP 或声明缺席根据才进入来源结论；清单缺失、对象或主体不符、支持键缺失、403 等都不形成缺席事实。失败清单通道不变，404 的无根记录与列表变化后的重查继续生效。节点游标在权限核对后给 /cursor 与从首页重读的修正，无权者仍中性。
+
 Applicability now also records explicit components (with/without), numeric memory bounds in bytes with endpoint flags
 and raw source spelling, licenses and deployment forms. Lists sort and deduplicate before hashing. Existing entries
 without these fields keep their digest. `inherited` stores generated applicability_field codes only; selectors and
@@ -975,3 +1080,7 @@ and request source/producer repair followed by automatic resync and a new run.
 They never infer that no entries exist from a source that did not produce.
 
 适用条件出处的 `superseded: true` 表示已被内层作用域取代，仅保留来历；读时不参与字段显示和 `contradicted` 打标。原值、章节路径和原片段仍完整保存在组成记录中。
+
+合入主线 48592b83 时，视图页保留 unversioned 的独立来源和总数，也保留 after/next、only、scope 完整清单与凭据档位约束。索引与分面在两份固定组成上合并枚举；影响视图在变化路径之后分页交付不分版本附着条目，运行完整绑定同时校验两根范围。范围清单沿同一锁定组成生成，不因续读期间的同步而换到新根。生产超时、完整问题分块、失败构建及恢复检查点与不分版本同步并存；适用条件冲突和未核对条件都保留。
+普通构建的额外根仍只参与来源归属核对，不冒充不分版本范围。自动发现不分版本根与显式声明通用额外范围分开记录；无可用不分版本根且通用范围未声明时，待核对来源和具名请求保留，不把它改成确定略去。
+独立命令 gold 同步保留 paths（标题/祖先）、steps（直接步骤）测量，并另存 placement_paths（标题、祖先与该用例正文的并集）；前置叶节点和嵌套用例正文不串入外层。命令索引和回归范围比较优先使用这份完整集合，仍兼容未带新字段的旧测量输入。索引只给首个规范归位引用，不证明列举了全部树挂载；比较器核对完整 data.commands、该引用的根与首路径，以及不分版本来源标记；独立脚本不导入 Hub 或包函数。

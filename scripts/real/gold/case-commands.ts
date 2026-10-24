@@ -5,7 +5,8 @@ import { caseNodesOf, parseMindMap } from './cases.ts';
 import { parseTree } from './command-diff.ts';
 
 export interface Match { path: string; abbreviated: boolean; via_no: boolean; words: number }
-export interface CaseCommands { key: string; document: string; node: string; comparable: boolean; paths: Match[]; steps: Match[] }
+// paths and steps retain the original title/ancestor and direct-operation measurements; placement_paths adds the admitted body scope.
+export interface CaseCommands { key: string; document: string; node: string; comparable: boolean; paths: Match[]; steps: Match[]; placement_paths?: Match[] }
 export interface CommandsGold { schema: 'case-commands-gold@1'; tree_sha256: string; documents: string[]; document_cases: Record<string, number>; cases: CaseCommands[]; totals: { cases: number; comparable: number; excluded: number; unplaced: number; step_placed: number } }
 interface Trie { children: Map<string, Trie>; prefixes: Map<string, string | null>; path?: string }
 const trie = (): Trie => ({ children: new Map(), prefixes: new Map() });
@@ -155,9 +156,19 @@ export function caseCommandsGold(xml: string, maps: readonly { document: string;
     const counts = new Map<string, number>();
     for (const node of nodes) counts.set(node.id, (counts.get(node.id) ?? 0) + 1);
     for (const node of nodes) {
+      const body:string[]=[];
+      const pending=[...node.children].reverse();
+      while(pending.length){
+        const index=pending.pop()!;
+        if(caseIndices.has(index))continue;
+        const child=map.nodes[index];
+        if(child.children.length===0&&child.priority===3)continue;
+        body.push(child.text);
+        pending.push(...[...child.children].reverse());
+      }
       const steps = node.children.filter((index) => !caseIndices.has(index) && map.nodes[index].children.length > 0).map((index) => map.nodes[index].text);
       cases.push({ key: `${document}:${node.id}`, document, node: node.id, comparable: comparableNode(node.id) && counts.get(node.id) === 1,
-        paths: union([...node.ancestors, node.text]), steps: union(steps) });
+        paths: union([...node.ancestors, node.text]), steps: union(steps), placement_paths: union([...node.ancestors,node.text,...body]) });
     }
   }
   cases.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);

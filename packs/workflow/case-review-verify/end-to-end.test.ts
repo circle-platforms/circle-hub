@@ -176,8 +176,13 @@ describe('the draft review (case-review) and its independent verification (case-
     const catalog = requirement(result, negative.id, 'catalog');
     assert.equal(catalog.status, 'satisfied');
     assert.deepEqual(catalog.layers.find((l) => l.layer === 'static'), { layer: 'static', terminal: 'violation', code: 'core.catalog.param_out_of_range', tier: 'advisory' });
-    // A valid command line of a normal case: the catalog supports it.
-    assert.equal(requirement(result, probe.id, 'catalog').status, 'satisfied');
+    // The non-interval source constraint remains unchecked, including on an otherwise valid command.
+    const probeCatalog=requirement(result,probe.id,'catalog');
+    assert.equal(probeCatalog.status,'pending');
+    const unchecked=probeCatalog.layers.find(layer=>layer.layer==='static')!;
+    assert.equal(unchecked.terminal,'unchecked');assert.equal(unchecked.reason,'missing_input');
+    assert.match(unchecked.missing!,/这种 limit 写法的含义/);assert.ok(unchecked.exit);
+    assert.ok(probeCatalog.claims.some(claim=>claim.statement.verdict==='unknown'&&claim.statement.text.includes('包作者在 README 声明这种 limit 写法的含义后重产')));
     // The statement that an existing command does not exist: a violation routed to repair, not a whole rejection.
     const contradicted = answer.errors.find((e) => e.code === 'core.catalog.membership_contradicted');
     assert.ok(contradicted && contradicted.item === interval.id && contradicted.requirement === 'findings' && (contradicted.rounds_left ?? 0) >= 1, JSON.stringify(answer.errors));

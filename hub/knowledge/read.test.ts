@@ -97,8 +97,8 @@ describe('get_nodes', () => {
 
     // Once read permission is established, cursor diagnostics are explicit.
     const first = await w.knowledge.getNodes({ root: w.root, paths: ['/'], depth: 6 }, w.user);
-    await assert.rejects(w.knowledge.getNodes({ root: w.root, paths: ['/commands'], depth: 6, cursor: first?.next }, w.user), /游标/);
-    await assert.rejects(w.knowledge.getNodes({ root: w.root, paths: ['/'], depth: 6, cursor: 'not a cursor' }, w.user), /游标/);
+    await assert.rejects(w.knowledge.getNodes({ root: w.root, paths: ['/commands'], depth: 6, cursor: first?.next }, w.user), /游标.*首页/);
+    await assert.rejects(w.knowledge.getNodes({ root: w.root, paths: ['/'], depth: 6, cursor: 'not a cursor' }, w.user), /游标.*首页/);
     assert.equal(await w.knowledge.getNodes({ root: w.root, paths:['/'], depth:6, cursor: 'not a cursor' }, w.outsider), null);
     await assert.rejects(w.knowledge.getNodes({ root: w.root, paths: ['/'], depth: 7 }, w.user), /depth/);
     await assert.rejects(w.knowledge.getNodes({ root: w.root, paths: ['commands'], depth: 1 }, w.user), /路径/);

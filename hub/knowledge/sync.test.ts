@@ -177,7 +177,7 @@ describe('knowledge sync', () => {
     assert.deepEqual(outcomes(first), {
       Rel_ACME_1_2_15: 'failed',
       Rel_ACME_1_2_16: 'skipped',
-      Rel_ZETA_1_2_7: 'skipped',
+      Rel_ZETA_1_2_7: 'failed',
       Rel_ACME_1_3_20: 'failed',
       Rel_ZETA_1_3_20: 'produced',
     });

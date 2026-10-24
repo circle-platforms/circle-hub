@@ -193,7 +193,7 @@ automatic actions. Dates are validated structurally, never against wall time whe
 entry points: the latter returns `{result, notices}` with paths and “出口未写” / “缺失事实未写”, without backfilling either
 field in the record. Consumers must switch history rendering to this reader; no historical records are rewritten here.
 The new conditional requirements are also emitted in JSON Schema, not only Zod refinements. The generator's full-snapshot
-symlink test now sizes its capture buffer from the actual serialized expected snapshot; no production or timeout limit is
+symlink test writes the full snapshot to a temporary file for exact comparison and sizes its unexpected-output capture buffer from the serialized expected snapshot; no production or timeout limit is
 changed. hub-unknown-exits must derive actions/create requests, preserve gaps, and use the strict writer after binding exits.
 
 ### Table absence and empty aggregates (task item 6)
@@ -273,6 +273,15 @@ branch does not rewrite it. Besides the explicitly approved label/source note it
 The strict check-outcome boundary intentionally rejects a new unknown without top-level missing; engines/pack producers that
 still emit the old form must migrate in the dependent tasks. Only history uses the permissive stored-result reader. No
 runtime scheduler, re-evaluation loop, B07 persistence, deadline worker, real read or deployment is claimed by this task.
+
+### Unchecked source constraints in catalogs
+
+`CatalogParam.unchecked_constraints` preserves each uninterpreted source constraint's path, reason, missing fact,
+next_action and optional source_value. It does not invent a generic restriction from an unknown source grammar.
+After known parameter checks, a matching but unchecked signature yields unknown with top-level missing; exit stays
+optional for Hub binding. An independently complete matching overload wins, omitted optional arguments without a
+source default do not require a value constraint, and known native type violations remain independently refutable.
+The parameter's diagnostic locator and recovery wording are excluded from catalog syntax comparisons.
 
 History rendering is connected through `readStoredValidationResult` and `StoredPartitionItem`: `get_nodes` retains
 counts, requirement states, problem lists and item blocks for legacy omissions. Missing recovery fields are disclosed as

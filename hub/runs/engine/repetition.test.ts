@@ -131,6 +131,8 @@ test('V07 R[0] a missing judgment takes the weakest round, names it, and exits b
   assert.deepEqual(absent.missingRounds, [1, 2]);
   assert.equal(absent.distribution.byTerminal.not_run, 0);
   assert.equal(absent.distribution.byTerminal.incomplete, 1);
+  // A pass beside an observed incomplete stays open on that incomplete round.
+  assert.equal(aggregate([pass(1), gap(2, 'incomplete')], all(2)).terminal, 'incomplete');
   const none = aggregate([], all(1));
   assert.equal(none.outcome, 'undecided');
   assert.notEqual(none.outcome, 'meets');
@@ -341,6 +343,8 @@ test('counts, aggregations and rounds outside the generated vocabulary are rejec
   assert.throws(() => aggregate([pass(1)], { count: 1, aggregation: 'all', k: 1 }), /只有 k-of-n/);
   assert.throws(() => aggregate([pass(1)], { count: 2, aggregation: 'k_of_n' }), /k-of-n/);
   assert.throws(() => aggregate([pass(1)], { count: 2, aggregation: 'k_of_n', k: 3 }), /k-of-n/);
+  assert.throws(() => aggregate([pass(1)], { count: 2, aggregation: 'k_of_n', k: 0 }), /k-of-n/);
+  assert.equal(aggregate([pass(1)], { count: 2, aggregation: 'k_of_n', k: 1 }).outcome, 'meets');
   assert.throws(() => effectiveRepetition({ dispatchCount: 0 }), /重复次数/);
   assert.throws(() => effectiveRepetition({ workClass: 'desktop' as WorkClass }), /工作类/);
   assert.throws(() => aggregate([pass(1), pass(1)], all(2)), /轮次重复/);

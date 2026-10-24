@@ -171,11 +171,11 @@ describe('list slots in batches', () => {
     assert.match(reasons[ids[1]], /凭据扫描有命中/);
     assert.match(reasons[ids[2]], /生产器 cases 处理这份源文件时失败：.*包内函数抛出了错误/);
     assert.match(reasons[ids[3]], /生产器 cases 处理这份源文件时失败/);
-    assert.match(reasons[ids[4]], /不能用任何核心解析器解析/);
+    assert.match(reasons[ids[4]], /被 json@1 拒绝.*不是有效的 JSON/);
     assert.equal(result.entries, 4 + 10, 'the cases of d1, d6, d7, d8 and d9');
     assert.ok(result.calls.made > 4, 'failing batches were split to find the document');
     const recorded = await detail(w, result.action);
-    assert.deepEqual(recorded.lists[0].skipped.map((s) => s.retry), [true, false, false, true], 'a document the producer fails on is not tried again by itself');
+    assert.deepEqual(recorded.lists[0].skipped.map((s) => s.retry), [true, true, true, true], 'every skipped document remains eligible for the next sync');
 
     // A fragment naming a digest outside its batch is refused like any fragment that does not verify (K02 R[0]).
     const foreign = await world(t, [DEFAULT_PRODUCERS[0], casesProducer({ batch: 3, params: { foreign: 'f'.repeat(64) } })]);
@@ -196,7 +196,7 @@ describe('list slots in batches', () => {
     assert.match(result.reason ?? '', /空的一批也失败.*生产器本身的问题/);
   });
 
-  test('a batch is handed in calls within the byte cap; a single document over the cap is skipped', async (t) => {
+  test('a batch is handed in calls within the byte cap and an oversized document is tried alone', async (t) => {
     const tree = Buffer.byteLength(catalogXml(BASE_CATALOG), 'utf8');
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer({ batch: 3 })], { knowledge: { limits: { maxBuildBytes: tree + 2000 } } });
     const ids = documents(w, 1, 3);
@@ -204,9 +204,8 @@ describe('list slots in batches', () => {
     w.external.set(ids[1], { bytes: big, mediaType: JSON_TYPE });
     const result = await w.knowledge.produceTree({ product: w.product, build: build('Rel_ACME_1_2_15', ids) });
     assert.equal(result.ok, true, result.reason ?? '');
-    assert.equal(result.skippedCount, 1);
-    assert.equal(result.skipped[0].external, ids[1]);
-    assert.match(result.skipped[0].reason, /字节/);
+    assert.equal(result.skippedCount, 0);
+    assert.equal(result.entries, 4 + 5, 'all three documents were handed to the producer');
   });
 });
 

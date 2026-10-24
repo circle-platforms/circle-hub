@@ -440,7 +440,8 @@ test('administrator knowledge view and original export operate against the synth
   const gold=caseCommandsGold(readFileSync(join(options.out,'command-tree.xml'),'utf8'),maps);
   assert.ok(gold.cases.length>0);
   const views=readdirSync(options.out).filter(n=>n.startsWith('index-')).map(n=>JSON.parse(readFileSync(join(options.out,n),'utf8')));
-  assert.equal(compareCommandIndex(gold,views).verdict,'相等');
+  const comparison=compareCommandIndex(gold,views);
+  assert.equal(comparison.verdict,'相等',JSON.stringify(comparison));
 
   assert.ok(!lines.join('\n').includes(options.token));assert.ok(!lines.join('\n').includes(options.build));
   const viewCommand=commands.find(c=>c.name==='knowledge')!;

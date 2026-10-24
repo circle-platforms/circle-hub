@@ -144,6 +144,15 @@ export class Builds {
     return { named, last: current };
   }
 
+  /** Original spellings matching a folded name, never an arbitrary winner of an ambiguous spelling. */
+  async candidates(product: string, name: string): Promise<BuildInfo[]> {
+    const records = await this.#store.buildsNamed(product, name.trim());
+    const latest = new Map<string, BuildInfo>();
+    for (const record of records) latest.set(record.body.build.name, withoutLists(record.body.build));
+    const exact = latest.get(name.trim());
+    return exact ? [exact] : [...latest.values()].sort((a,b) => compareText(a.name,b.name));
+  }
+
   /** The record a build name names (exact, else the one spelling that folds to it), aliases not followed; null when unknown. */
   async named(product: string, name: string): Promise<BuildInfo | null> {
     return (await this.#chain(product, name))?.named ?? null;
