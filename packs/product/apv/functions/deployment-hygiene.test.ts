@@ -16,3 +16,13 @@ test('deployment instructions name every variable and distinguish unset, null an
  assert.match(readme,/发布以后、启用以前/);assert.match(readme,/circle-hub var set.*--file/);
  assert.match(readme,/未设置.*读任何页之前/);assert.match(readme,/显式 null.*Markdown/);assert.match(readme,/字符串模板.*旧根/);
 });
+
+test('the case-index documentation matches the null and invalid-floor contract',()=>{
+ const readme=readFileSync(new URL('../README.md',import.meta.url),'utf8');
+ const section=readme.split('Sync (`cases-sync.ts`')[1]?.split('## The adoc producer')[0];assert.ok(section);
+ assert.ok(section.includes('`min_line` (default null'));
+ assert.match(section,/explicit null imposes no lower bound/);
+ assert.match(section,/only a dotted version line supplies a floor/);
+ assert.match(section,/other values withhold case-bearing builds/);
+ assert.doesNotMatch(section,/another value is noted\s+and replaced/);
+});

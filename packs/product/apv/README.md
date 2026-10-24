@@ -258,8 +258,8 @@ Sync (`cases-sync.ts`, called by `sync.ts` when the sync option `case_index` is 
   (no versions) is read too; its documents have no line and are counted. Other roots of the resource are counted, not read.
 - Each document is located with `locate.ts` (its ancestors from the root title down, as the mind-map meta has them). A
   build whose own command tree is listed (`tree`) gets `case_documents`: the `agile:mindmap:<id>` of the documents with a
-  line not later than the build's and not earlier than `min_line` (default 10.6.142, a dotted line; another value is noted
-  and replaced), at most 20,000 (product@1 `MAX_LIST_SOURCES`; more are noted, not listed), ordered by id (numbers by
+  line not later than the build's and not earlier than `min_line` (default null; explicit null imposes no lower bound; only a dotted version line supplies a floor;
+  other values withhold case-bearing builds for this sync and name `circle-hub var set APV_MIN_LINE --file`), at most 20,000 (product@1 `MAX_LIST_SOURCES`; more are noted, not listed), ordered by id (numbers by
   value): new documents come last, so the Hub's consecutive batches of an earlier list stay where they were. It also gets
   `case_tree: agile:tree:roots`. Aliases (no tree of their own) list nothing. Ids the agile pack cannot read (outside
   `[0-9A-Za-z_-]{1,64}`) are not listed. The plan note counts the documents read, listed, and not listed by reason: no
