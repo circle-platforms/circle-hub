@@ -23,7 +23,7 @@ export type TextCommands={paths:string[];phrases:number;unresolved:number;identi
 export function textCommands(catalog:CommandCatalog,texts:readonly string[]):{results:TextCommands[];warnings:string[]} {
   const results=texts.map(text=>{
     const lines=commandLines(text);const paths=new Set<string>();const identities:import('../../../../contracts/generated/shared-interfaces.ts').CommandIdentity[]=[];const states:ReturnType<typeof parseCommandState>[]=[];let unresolved=0,phrases=0;
-    for(const line of lines){if(!line.text.length)continue;const state=parseCommandState(catalog,line.text);states.push(state);if(state.status!=='not_command')phrases++;const path=state.path;if(state.status==='parameters_unchecked')unresolved++;if(path!==null){const identity=commandIdentity(catalog,line.text);if(identity){paths.add(identity.path);identities.push(identity);}else unresolved++;}}
+    for(const line of lines){if(!line.text.length)continue;const state=parseCommandState(catalog,line.text);states.push(state);if(state.status!=='not_command')phrases++;const path=state.path;if(state.status==='parameters_unchecked')unresolved++;if(path!==null){const identity=commandIdentity(catalog,line.text);if(identity){paths.add(identity.path);identities.push(identity);}else {unresolved++;state.status='parameters_unchecked';state.path=null;state.missing='缺少冻结树摘要或唯一完整的命令身份';state.exit={next_action:'包作者绑定冻结树并补唯一完整签名后重产',audience:'包作者',due:'下一次生产之前'};}}}
     return {paths:[...paths].sort((a,b)=>a<b?-1:a>b?1:0),phrases,unresolved,states,identities};
   });
   return {results,warnings:[]};

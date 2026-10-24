@@ -93,7 +93,7 @@ function signatureMatches(signature:CatalogSignature,tokens:readonly Token[],all
   return walk(0,0);
 }
 /** Ambiguous complete parses cannot establish one identity. Arguments never start another command. */
-export type CommandParse={status:CommandParseStatus;path:string|null};
+export type CommandParse={status:CommandParseStatus;path:string|null;missing?:string;exit?:{next_action:string;audience:string;due:string}};
 export function parseCommandState(grammar:CommandGrammar,text:string):CommandParse {
   const tokens=commandTokens(text);if(!tokens?.length)return {status:'not_command',path:null};
   let current=grammar.root;const found=new Set<string>();const unchecked=new Set<string>();
@@ -105,7 +105,7 @@ export function parseCommandState(grammar:CommandGrammar,text:string):CommandPar
   }
   const sole=found.size===1?[...found][0]:null;
   if(sole!==null&&[...unchecked].every(path=>path===sole))return {status:'parsed',path:sole};
-  return unchecked.size>0||found.size>1?{status:'parameters_unchecked',path:null}:{status:'not_command',path:null};
+  return unchecked.size>0||found.size>1?{status:'parameters_unchecked',path:null,missing:'命令树中该参数的结构化类型或唯一完整签名尚未声明，涉及路径：'+[...unchecked,...found].join('、'),exit:{next_action:'包作者或命令树维护者补结构化类型与唯一完整签名后重产',audience:'包作者',due:'下一次生产之前'}}:{status:'not_command',path:null};
 }
 export function parseCommand(grammar:CommandGrammar,text:string):string|null{return parseCommandState(grammar,text).path;}
 export function commandLines(text:string):Array<{text:string;start:number;end:number}> {
