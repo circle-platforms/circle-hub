@@ -56,7 +56,7 @@ list and release notes `defect`; the finer form stays in
 | `ids.ts` | `idsFromTitle` | document title → `{ stories, bugs, plm, unclassified }` |
 | `cases.ts` | `cases` (product.json) | ProducerInput (documents batch, tree, folders) → ProducerOutput: one `case` entry per (case, resolved command) |
 | `cases-nodes.ts` | `caseNodes` | kityminder@1 model → the case nodes with title, labels above, tags, priority, expected count, steps, vague, autoid |
-| `cases-commands.ts` | `commandCatalog`, `textCommands`, `resolvePhrase` | xml@1 command tree → catalog; texts → the catalog paths their phrases resolve to |
+| `cases-commands.ts` | `commandCatalog`, `textCommands`, `resolvePhrase` | xml@1 command tree → catalog; a text → the catalog paths of its whole command statements |
 | `cases-sync.ts` | `caseTree`, `caseDocumentsFor`, `caseIndexOptions` | the read agile tree → the located documents; a build line → its `case_documents` |
 | `adoc/index.ts` | `compileAdoc` | `{ main, revision, files, attributes? }` of one manual group on one SVN revision → `{ ok: true, composition, model, report }` (the expanded intermediate model) or `{ ok: false, error }` for the whole group |
 | `adoc/k1-model.ts` | `toK1Model`, `citationFor` | the expanded model, its composition and the family's manual name → the markdown@1-shaped model K1's `produceManualEntries` reads, each block with its own citation, plus the report lines and the blocks that could not be cited |
@@ -283,21 +283,13 @@ Producer `cases` (`cases.ts`, entry kind `case`; the product pack declares no ca
   case, group priority, holds tagged or case-priority nodes); an untagged node outside every case with the case priority,
   children and none of those below is a case too; a node either rule names is one case. Inside a case, leaves are expected
   results (precondition-priority leaves not), children with children are steps, a case below a case is its own.
-- **Commands** (`cases-commands.ts`): the catalog is the build's command tree read with `produceCommandEntries` (the
-  command-tree producer's own function, so case paths are definition paths). The phrases of the case title and of every
-  label above the case (the mind map's root text included) are found with `commands.ts` `extractCommands`, all distinct
-  texts of a call in one scan (joined by a line no phrase crosses; equal to scanning each alone, tested). A phrase resolves
-  to the longest run of its leading words that is a catalog command, case-insensitive; a word may be a unique prefix of the
-  command word at its place (two letters at least, and at least three when the word is written in capitals, so `AD` and
-  `SH` are acronyms); a command reached through an abbreviation needs two words (an abbreviation alone is no command);
-  the words after a resolved command are arguments unless another command of two words or more starts there. The heads
-  handed to extractCommands include the unique prefixes of first words (not English short words) so that an abbreviated
-  first word is found at all; a `no` phrase the catalog lacks resolves to the command it undoes when that exists. Before
-  extraction each text is folded one unit for one: full-width letters and digits to ASCII, Unicode spaces and zero-width
-  characters to a space, vertical breaks to a line end. Full NFKC is not applied: it would turn full-width punctuation
-  (，：) into ASCII marks that no longer end a phrase. A list number glued to a command (`1.widget`, `2）show`) is blanked
-  out first. A two-letter lower-case prefix still abbreviates an inner word (`de` before `detail`); that is the same rule
-  as `sh` and `end`, and the table locks it. The table is `tests/fixtures/case-index/table.ts`.
+- **Commands** (`cases-commands.ts`): the catalog is the build's command tree. Each distinct text of a call (the case
+  title, every label above the case, and the case body) is read as newline-delimited statements. A statement is one
+  command only when its words are exactly the locked tree's words, in order and in the tree's spelling, and the tokens
+  that follow satisfy that command's declared argument list (`type`, `limit`, `length`, `optional`). Quotes delimit an
+  argument literal. A statement that matches two commands, or that is not a complete command, is not a command: no
+  abbreviation, no unique prefix, no case folding, no leading `no` that undoes another command, and no command lifted
+  out of a sentence. The table is `tests/fixtures/case-index/table.ts`.
 - **Entries**: ONE entry per resolved command, at the command's path, and, when no command resolves, ONE entry with
   `path: null` (the contract's unplaced form; brief 6a.4). The statement is `caseStatement`: every data field, several
   lines, so the entry digest covers what `data` says (K02 R[4]). Data is
@@ -720,10 +712,9 @@ accepted.
 - The functions were also run, outside the repository, on the read-only samples of 2026-10-21 (the index and a listing
   page, a command tree, the CLI manual and its catalog, agile titles and labels); nothing from them is in Git. The case
   index functions were not run on real documents yet (the integrator's `scripts/real/`).
-- Case index: only the title and the labels above a case are scanned for commands (as asked), not its steps or expected
-  results. A case with no resolvable command is still an entry, with an empty path. Abbreviations are unique prefixes of
-  command words (two letters, three when written in capitals); a CLI that accepts other short forms is not covered. A
-  phrase whose first word is no catalog word (`health interval ...` without its context word) is not found.
+- Case index: a case with no resolvable command is still an entry, with an empty path. A command is a whole statement of
+  the locked tree, exact words and declared arguments. An abbreviation or a prefix is not a command, and a statement
+  whose first word is not a catalog word is not a command.
 - Case index: facet and index views count entries hung on the tree and the unplaced rows of the root. An entry with an
   empty path stays under the root, marked unplaced, and is cited there (`tree:<root>/@<digest>`). An entry counts once;
   one that also hangs on a command keeps that path. The facet total includes the unplaced entries and says how many; the
@@ -770,7 +761,7 @@ npx tsc --noEmit
 Case index tests (fixtures in `tests/fixtures/case-index`: the hand-written command table, two invented command trees whose
 difference is known, a synthetic agile platform with the product's two roots and another product's root, 300 mind maps and
 the truth of every document and case, built while the corpus is built): `cases-commands.test.ts` (every table row against
-both trees, abbreviation, `no` and list-number rules, one scan equal to scans of each text, linear on long hostile text),
+both trees, whole-statement grammar, one scan equal to scans of each text, linear on long hostile text),
 `cases-nodes.test.ts` (every case of the corpus with its contents; parity with the case-review projection under the marked
 rule on the review, template, untagged, outline and tiny maps, the 3,000-node map and every corpus document; cycles,
 shared children, invalid indices, depth), `cases-rules.test.ts` (negative tags equal to case-review's on 2,000 spellings,
