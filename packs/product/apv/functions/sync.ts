@@ -149,7 +149,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
       if (best === undefined || newestFirst(build, best) < 0) newest.set(key, build);
     }
     for (const build of newest.values()) chosen.set(build.name, build);
-    // Builds pinned by name (${var:APV_PINNED_BUILDS}): on a read opted-in page, an entry whose build name equals a
+    // Builds pinned by name (the pack passes the declared variable APV_PINNED_BUILDS through sync.options.pinned): on a read opted-in page, an entry whose build name equals a
     // member exactly (no transformation of any kind, not even case folding) is chosen as a build of its own tree,
     // released or not. A pinned name the read pages do not list is reported in the note, never guessed.
     const pinnedSet = new Set(options.pinned);

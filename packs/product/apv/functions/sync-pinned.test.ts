@@ -1,4 +1,4 @@
-// Pinned builds of opted-in pages (the apv-pinned-builds task): a build named by ${var:APV_PINNED_BUILDS} (a full
+// Pinned builds of opted-in pages (the apv-pinned-builds task): a build named by the pack-declared variable APV_PINNED_BUILDS (a full
 // build-site name) is listed as a build of its own tree on the read opted-in page it appears on, released or not,
 // carrying the command-tree source the page declares for it; a pinned name the read pages do not list is reported in
 // the note, never guessed. Equality is exact: no transformation of any kind, not even case folding, no keywords,
