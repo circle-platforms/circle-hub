@@ -102,6 +102,12 @@ export function projectItems(input: unknown): unknown {
     summary: `${found.steps.length} 步；${found.expected.length + found.steps.reduce((n, step) => n + step.expected.length, 0)} 个期望结果${found.negative ? '；反向用例' : ''}`,
     location: { slot: 'subject', source: sha256, parser: 'kityminder@1', selector: found.selector ?? '' },
     fields: {
+      command_identities:(()=>{const source=slotOf(inputs,'case_index'),context=isRecord(params.context)?params.context:{};const view=source?.model;
+        if(source?.parser!=='json@1'||!isRecord(view)||view.schema!=='index-view@1'||view.kind!=='case'||!isRecord(view.build)||view.build.root!==context.root||!isRecord(view.entries))return undefined;
+        const rows=Object.values(view.entries).filter(row=>isRecord(row)&&isRecord(row.data)&&row.data.document===documentId&&row.data.node===found.id);
+        if(!rows.length||rows.some(row=>!isRecord(row)||!isRecord(row.data)||!Array.isArray(row.data.command_identities)))return undefined;
+        return [...new Map(rows.flatMap(row=>(row as {data:{command_identities:unknown[]}}).data.command_identities).map(identity=>[JSON.stringify(identity),identity])).values()];
+      })(),
       title: found.title,
       tags: found.tags,
       priority: found.priority,

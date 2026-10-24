@@ -1,4 +1,4 @@
-import { typedAuthorityGaps, authorityRecovery } from './typed-authority.ts';
+import { typedAuthorityGaps, authorityRecovery, typedAddressUses } from './typed-authority.ts';
 // Verify authored plans against original runner identities, runtime profile, manifest, and frozen lineage addresses.
 import { quoteMatches } from './quote.ts';
 import { encodeG, GSyntaxError } from './g-syntax.ts';
@@ -10,14 +10,15 @@ import { parseManifest, addressKey, type ManifestBed } from './manifest.ts';
 import { readAddress, type LeaseRow } from './bed.ts';
 import { readSlots, type PlanSlots } from './slots.ts';
 import { bindArguments, hasShellDynamicSyntax, hasBalancedCommandText, hasSingleLineValue } from './binding.ts';
-import { literalAddresses, replacedQuote, deniedCommand, isHostLiteral, hasNoncanonicalDottedQuad, hasAmbiguousIpv4 } from './addresses.ts';
-interface CheckSubject { item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[]; problems: Array<{ document: string; pointer: string; message: string }> }
+import {identityOf} from './typed-contract.ts';
+import { replacedQuote } from './addresses.ts';
+interface CheckSubject { command_identities?:unknown; item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[]; problems: Array<{ document: string; pointer: string; message: string }> }
 function subjectOf(input: unknown): CheckSubject {
   const raw = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const contract = parseRuntimeContract(raw.contract); const manifest = parseManifest(raw.manifest);
   const profile = contract.ok && manifest.ok ? parseProfile(raw.profile, contract.contract, manifest.beds) : null;
   const problems = [...(!contract.ok ? contract.problems.map((v) => ({ document: 'contract', pointer: v.pointer, message: v.message })) : []), ...(!manifest.ok ? manifest.problems.map((v) => ({ document: 'inventory', pointer: v.pointer, message: v.message })) : []), ...(profile && !profile.ok ? profile.problems.map((v) => ({ document: 'profile', pointer: v.pointer, message: v.message })) : [])];
-  return { problems, case_texts: Array.isArray(raw.case_texts) ? raw.case_texts.filter((v): v is string => typeof v === 'string') : [], item: typeof raw.item === 'string' ? raw.item : '', location: typeof raw.location === 'string' ? raw.location : null, data: raw.data, contract: contract.ok ? contract.contract : null, profile: profile?.ok ? profile.profile : null, beds: manifest.ok ? manifest.beds : [], leases: Array.isArray(raw.leases) ? raw.leases as LeaseRow[] : [], now: typeof raw.now === 'string' ? raw.now : new Date(0).toISOString() };
+  return { command_identities:raw.command_identities,problems, case_texts: Array.isArray(raw.case_texts) ? raw.case_texts.filter((v): v is string => typeof v === 'string') : [], item: typeof raw.item === 'string' ? raw.item : '', location: typeof raw.location === 'string' ? raw.location : null, data: raw.data, contract: contract.ok ? contract.contract : null, profile: profile?.ok ? profile.profile : null, beds: manifest.ok ? manifest.beds : [], leases: Array.isArray(raw.leases) ? raw.leases as LeaseRow[] : [], now: typeof raw.now === 'string' ? raw.now : new Date(0).toISOString() };
 }
 const TIER = 'blocking' as const;
 function support(s: CheckSubject, statement: string, data?: Record<string, unknown>): Outcome { return { verdict: 'support', statement: statement + markers(s.profile?.synthetic === true, s.contract ?? undefined), grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, ...(data ? { data } : {}) }; }
@@ -33,9 +34,10 @@ function slotsOf(s: CheckSubject): { slots: PlanSlots; errors: null } | { slots:
   return read.ok ? { slots: read.slots, errors: null } : { slots: null, errors: read.problems.map((v) => refute(s, v.pointer.includes('/quote') ? 'expect_without_source' : 'slots_invalid', `槽位 ${v.pointer}：${v.message}；按 slots.schema.json 的形状修正`, `/data${v.pointer}`)) };
 }
 function typedPrerequisites(s: CheckSubject, slots: PlanSlots): Outcome[] | null {
-  const gaps = typedAuthorityGaps(s.contract!, s.profile!, slots);
+  const gaps = typedAuthorityGaps(s.contract!, s.profile!, slots,s.command_identities);
   if (!gaps.length) return null;
   const missing = authorityRecovery(gaps);
+  if(gaps.some(g=>g.verdict==='refute'))return [refute(s,'method_forbidden',missing,'/data',{problems:gaps})];
   return [{ verdict: 'unknown', reason: 'missing_input', missing, statement: missing, grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, data: { problems: gaps } }];
 }
 export function checkContractShape(input: unknown): Outcome[] {
@@ -58,9 +60,7 @@ export function checkContractShape(input: unknown): Outcome[] {
       if ((role === 'device_cli' || role === 'host_shell') && typeof v.value !== 'string') { out.push(refute(s, 'param_value', '命令角色必须是单行文字', v.pointer)); continue; }
       if (role === 'wait' && (v.pointer.includes('/keywords/') && Object.values(allowed.parameters).every((role) => role === 'wait') || !/^[0-9]+$/.test(String(v.value)) || !Number.isSafeInteger(Number(v.value)) || Number(v.value) < 1 || s.profile!.max_wait_seconds === null || Number(v.value) > s.profile!.max_wait_seconds)) out.push(refute(s, 'wait_value', '等待值必须是配置上限内的正整数 ASCII 秒数；改为明确时长', v.pointer));
       if ((role === 'device_cli' || role === 'host_shell') && !hasBalancedCommandText(String(v.value)) && !bound.problems.some((problem) => problem.code === 'param_value' && problem.pointer === v.pointer)) out.push(refute(s, 'param_value', '声明为命令的值须符合原文 POSIX 子集：引号成对且不能以反斜杠结尾；不正规化字形', v.pointer));
-      if (role === 'device_cli' && deniedCommand(String(v.value), s.profile!.denied.device)) out.push(refute(s, 'device_command_denied', `第 ${i + 1} 步命中发布配置的设备命令拒绝表`, v.pointer));
-      if (role === 'host_shell' && hasShellDynamicSyntax(String(v.value))) out.push(refute(s, 'host_shell_dynamic', '主机命令含有扩展、分隔或重定向语法，无法按文字拒绝表完整核对；改为单一的显式命令', v.pointer));
-      if (role === 'host_shell' && deniedCommand(String(v.value), s.profile!.denied.host)) out.push(refute(s, 'host_command_denied', `第 ${i + 1} 步命中发布配置的主机命令拒绝表`, v.pointer));
+      if (role === 'host_shell' && hasShellDynamicSyntax(String(v.value))) out.push(refute(s, 'host_shell_dynamic', '主机命令含有扩展、分隔或重定向语法，不符合声明的静态 POSIX 子集语法；改为单一的显式命令', v.pointer));
     }
     if(out.length===beforeStep)try { encodeG(step,gOptions(step.object,step.method,s.contract!,s.profile!)); } catch(error) { if(error instanceof GSyntaxError)out.push(refute(s,'param_value',`G 写法 ${error.rule}：${error.message}；修正该步骤后自动重核`,at+'/G')); else throw error; }
   }
@@ -72,43 +72,27 @@ export function checkAddresses(input: unknown): Outcome[] {
   const unverified = typedPrerequisites(s, read.slots); if (unverified) return unverified;
   const slots = read.slots; const bed = s.beds.find((v) => v.name === slots.bucket);
   if (!bed || bed.name !== s.profile!.bed) return [refute(s, 'bed_unknown', 'bucket 必须是运行环境配置选定的清单台架', '/data/bucket')];
-  const out: Outcome[] = []; let count = 0;
-  const sourceAddresses = new Set([...s.case_texts, ...slots.expects.map((v) => v.quote.text)].flatMap((text) => literalAddresses(text).map((v) => v.key).filter((key): key is string => key !== null)));
-  const from = new Set<string>(); const to = new Set<string>();
-  for (const [i, replacement] of slots.replacements.entries()) {
-    const source = addressKey(replacement.case); const target = addressKey(replacement.bed);
-    if (!source || !target || from.has(source) || to.has(target)) out.push(refute(s, 'replacement_invalid', '替换表必须是一一对应的字面地址映射，按地址数值比较', `/data/replacements/${i}`));
-    if (source && !sourceAddresses.has(source)) out.push(refute(s, 'replacement_invalid', '替换源没有出现在原用例文字或期望引文中，不能披露为已核验映射', `/data/replacements/${i}/case`));
-    if (source && target && source !== target && slots.replacements.some((other, j) => j !== i && addressKey(other.case) === target)) out.push(refute(s, 'replacement_invalid', '替换表不能形成链或环；目标不能成为另一条替换源', `/data/replacements/${i}`));
-    if (source) from.add(source); if (target) to.add(target);
-    if (readAddress(bed, s.leases, s.now, replacement.bed).kind === 'off_bed') out.push(refute(s, 'address_off_bed', '替换后的地址不在本台架或本血缘分配集合里', `/data/replacements/${i}/bed`));
+  const out:Outcome[]=[];
+  const uses=typedAddressUses(s.contract!,s.profile!,slots);
+  const sourceIdentities=Array.isArray(s.command_identities)?s.command_identities:[];
+  const sourceValues=new Set(sourceIdentities.flatMap(raw=>{const i=identityOf(raw);return i?i.parameters.flatMap(p=>p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')?[addressKey(p.parsed.value.value)]:[]):[];}));
+  const from=new Set<string>(),to=new Set<string>();
+  for(const [i,replacement]of slots.replacements.entries()){
+    const source=addressKey(replacement.case),target=addressKey(replacement.bed),at='/data/replacements/'+i;
+    if(!source||!target||from.has(source)||to.has(target)||source.split(':')[0]!==target.split(':')[0])out.push(refute(s,'replacement_invalid','替换必须是同一声明地址族的一一对应数值映射',at));
+    if(source&&!sourceValues.has(source))return [{verdict:'unknown',reason:'missing_input',missing:'替换来源的冻结类型化参数身份；下一步由用例生产器补 data.command_identities 并重开运行',statement:'不能把原文中外形像地址的文字作为替换依据；缺冻结类型化参数身份，下一步补源声明后重跑',grounds:[],tier:TIER,item:s.item}];
+    if(source&&target&&source!==target&&slots.replacements.some((other,j)=>j!==i&&addressKey(other.case)===target))out.push(refute(s,'replacement_invalid','替换映射不能形成链或环',at));
+    if(source)from.add(source);if(target)to.add(target);
+    if(readAddress(bed,s.leases,s.now,replacement.bed).kind==='off_bed')out.push(refute(s,'address_off_bed','替换目标不在冻结台架或本血缘租约集合',at));
   }
-  const examine = (value: string, pointer: string, device: string | null, role?: string): void => {
-    if (hasNoncanonicalDottedQuad(value) || role === 'host_shell' && hasAmbiguousIpv4(value)) out.push(refute(s, 'address_notation', '命令含非标准或有歧义的 IPv4 数字记法；地址写规范四段点分，非地址选项改用更小单位的整数或明确等待步骤', pointer));
-    for (const address of literalAddresses(value)) {
-      if (!isHostLiteral(address, value, bed)) continue;
-      count++;
-      if (slots.replacements.some((v) => addressKey(v.case) === address.key && addressKey(v.bed) !== address.key)) { out.push(refute(s, 'replacement_missing', '步骤或期望文字仍有原用例地址；按 replacements 改成最终文字，Hub 不改写步骤', pointer)); continue; }
-      const found = readAddress(bed, s.leases, s.now, address.text);
-      if (found.kind === 'off_bed') { out.push(refute(s, 'address_off_bed', `字面地址 ${address.text} 不在本台架或本血缘分配集合里`, pointer)); continue; }
-
-      // Decision 35 permits every interface of this bed, including other devices, plus lineage allocations.
-    }
-  };
-  for (const [i, step] of slots.steps.entries()) {
-    const method = runtimeMethod(s.contract!, step.object, step.method); const allowed = allowedCall(s.profile!, step.object, step.method) ?? { object: step.object, method: step.method, parameters: Object.create(null) as Record<string, string> };
-    if(method&&!allowedCall(s.profile!,step.object,step.method))out.push(refute(s,'method_not_allowed','该启用组合当前未开；换用配置已开放的组合',`/data/steps/${i}`,{unassigned_parameters:method.parameters.map(p=>p.name)}));
-    const bound = method ? bindArguments(method, step, `/data/steps/${i}`).values : [];
-    for (const v of bound) if (allowedCall(s.profile!,step.object,step.method) && !Object.hasOwn(allowed.parameters, v.name) && !method?.parameters.some((p) => p.name === v.name && p.redacted)) out.push(refute(s, 'param_unassigned', `参数 ${v.name} 没有角色，地址用途无法核对；去掉该参数或换用配置已开放的组合，集成者补角色后才能新开运行`, v.pointer));
-    const seat = s.profile!.seats.find((v) => v.object === step.object);
-    const values = [...step.args.map((value, k) => ({ value, pointer: `/data/steps/${i}/args/${k}` })), ...Object.entries(step.keywords).map(([name, value]) => ({ value, pointer: `/data/steps/${i}/keywords/${name.replaceAll('~', '~0').replaceAll('/', '~1')}` }))];
-    for (const v of values) {
-      const parameter = bound.find((b) => b.pointer === v.pointer);
-      examine(String(v.value), v.pointer, parameter && allowed?.parameters[parameter.name] === 'device_cli' ? seat?.device ?? null : null, parameter ? allowed?.parameters[parameter.name] : undefined);
-    }
+  for(const use of uses){
+    if(use.kind!=='ipv4'&&use.kind!=='ipv6')continue;
+    if(typeof use.bed_member!=='boolean')return [{verdict:'unknown',reason:'missing_input',missing:'地址参数的合约闭集角色及 bed_member 用途；下一步合约发布管理员补字段并重新绑定',statement:'地址用途未声明，当前阻止派发；下一步由合约发布管理员补角色用途后重开运行',grounds:[],tier:TIER,item:s.item}];
+    if(!use.bed_member)continue;
+    const value=String(use.value);if(slots.replacements.some(r=>addressKey(r.case)===addressKey(value)&&addressKey(r.case)!==addressKey(r.bed)))out.push(refute(s,'replacement_missing','声明地址位置仍保留替换前的值',use.pointer));
+    if(readAddress(bed,s.leases,s.now,value).kind==='off_bed')out.push(refute(s,'address_off_bed','声明为台架成员的地址不在冻结台架或本血缘租约集合',use.pointer));
   }
-  slots.expects.forEach((v, i) => examine(v.text, `/data/expects/${i}/text`, null));
-  return out.length ? out : [support(s, `${count} 个字面地址都对得上台架 ${bed.name}；替换表 ${slots.replacements.length} 项已按最终文字核对`, { replacements: slots.replacements })];
+  return out.length?out:[support(s,uses.length+' 个声明地址/掩码/前缀位置已按类型、用途和冻结范围核对；普通文字不扫描',{typed_positions:uses,replacements:slots.replacements})];
 }
 export function checkExpectedSources(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
@@ -119,9 +103,15 @@ export function checkExpectedSources(input: unknown): Outcome[] {
   for (const [i, expect] of slots.expects.entries()) {
     const pointer = `/data/expects/${i}`;
     if (!hasSingleLineValue(expect.text)) out.push(refute(s, 'expect_value', '断言必须是单行、无首尾空白、无等号前缀、无占位符的有效原文；从引文选择可写片段', `${pointer}/text`));
-    if (!quoteMatches(replacedQuote(expect.quote.text, slots.replacements), expect.text)) out.push(refute(s, 'expect_not_in_quote', '期望文字不符合地址替换后引文的逐字规则（只忽略引文规则允许的空白差异）；从替换后引文选择片段并自动重核', `${pointer}/text`));
+    if (!quoteMatches(replacedQuote(expect.quote.text, slots.replacements), expect.text)) out.push(refute(s, 'expect_not_in_quote', '期望必须逐字来自原引文；普通断言文字不做地址扫描或隐式替换，请保留原文或先补结构化断言合约', `${pointer}/text`));
     const step = slots.steps[expect.after - 1]; const allowed = step ? allowedCall(s.profile!, step.object, step.method) : null;
     if (!allowed || !Object.values(allowed.parameters).some((role) => role === 'device_cli' || role === 'host_shell')) out.push(refute(s, 'expect_after', 'after 必须指向设备命令行或主机 shell 步骤，不能指向等待或断言步骤', `${pointer}/after`));
   }
   return out.length ? out : [support(s, `${slots.expects.length} 个期望结果都有逐字来源，文字出自替换后引文且判断的步骤合式`, { replacements: slots.replacements })];
+}
+
+/** commands_known accepts only frozen CommandIdentity evidence, never a text phrase lookup. */
+export function checkCommandsKnown(input:unknown):Outcome[]{
+ const s=subjectOf(input),missing=prerequisites(s);if(missing)return missing;const read=slotsOf(s);if(read.errors)return read.errors;
+ const gaps=typedPrerequisites(s,read.slots);return gaps??[support(s,'所有设备命令均有冻结用例身份、完整参数及合约效果授权',{command_identities:read.slots.command_identities??[]})];
 }

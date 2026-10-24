@@ -17,7 +17,7 @@ export interface RuntimeProfile {
   seats: Array<{ object: string; device: string; ordinal: number }>;
   hosts: Array<{ object: string; method: string; device: string }>;
   allowed: AllowedCall[];
-  denied: { device: string[]; host: string[] };
+  denied?: { device: string[]; host: string[] };
 }
 export type ParsedProfile = { ok: true; profile: RuntimeProfile } | { ok: false; problems: Problem[] };
 export const oneLine = (value: unknown): value is string => typeof value === 'string' && value !== '' && value.trim() === value && !/[\r\n\v\f\u0085\u2028\u2029]/.test(value) && !value.startsWith('=');
@@ -77,17 +77,17 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     if (!method) issue(at, '允许组合不在合约启用集合里');
     const declared=DISPATCH.dispatches.find(v=>v.dispatch===method?.dispatch);
     const roleIssue=(pointer:string)=>problems.push({pointer,message:declared?.roles.length?'该派发方式不支持配置的参数角色；不能冒充其他角色':declared?.missing??'派发方式缺少可核验角色声明',fix:declared?.roles.length?'集成者按派发角色声明表修正配置或保持未开，重新发布后新开运行':declared?.next??'按包格式表补齐派发角色及检查，另写一页后重新发布'});
-    if(method&&(declared?.requires_method_review||method.parameters.length===0)&&raw[FORMAT.method_review_field]!==true)problems.push({pointer:at+'/'+FORMAT.method_review_field,message:declared?.requires_method_review?declared.missing!:'零参数方法内部动作没有被参数角色和拒绝表核验',fix:declared?.requires_method_review?declared.next!:'集成者逐个只读审阅后在 allowed 项显式写 reviewed:true 决定开；否则保持未开，重新发布后新开运行'});
-    if(!declared||!declared.roles.length)roleIssue(at);
+    if(method&&!method.authority&&(declared?.requires_method_review||method.parameters.length===0)&&raw[FORMAT.method_review_field]!==true)problems.push({pointer:at+'/'+FORMAT.method_review_field,message:declared?.requires_method_review?declared.missing!:'零参数方法内部动作没有被参数角色和拒绝表核验',fix:declared?.requires_method_review?declared.next!:'集成者逐个只读审阅后在 allowed 项显式写 reviewed:true 决定开；否则保持未开，重新发布后新开运行'});
+    if(!method?.authority&&(!declared||!declared.roles.length))roleIssue(at);
     const pair = JSON.stringify([raw.object, raw.method]); if (pairs.has(pair)) issue(at, '允许组合重复'); pairs.add(pair);
     if (!isRecord(raw.parameters)) issue(`${at}/parameters`, '没有参数角色映射对象');
     const parameters = Object.create(null) as Record<string, string>;
     for (const [name, role] of Object.entries(isRecord(raw.parameters) ? raw.parameters : {})) {
       const pat = `${at}/parameters/${name.replaceAll('~', '~0').replaceAll('/', '~1')}`;
       const param = method?.parameters.find((v) => v.name === name);
-      if(typeof role==='string'&&!declared?.roles.some(candidate=>candidate===role))roleIssue(pat);
+      if(typeof role==='string'&&!method?.authority&&!declared?.roles.some(candidate=>candidate===role))roleIssue(pat);
       if (!param || param.redacted) issue(pat, '参数不在签名里或是脱敏凭据参数');
-      if (typeof role !== 'string' || !FORMAT.parameter_roles.includes(role)) issue(pat, '不认识的参数角色');
+      if (typeof role !== 'string' || (!FORMAT.parameter_roles.includes(role)&&!method?.authority?.roles[role])) issue(pat, '不认识的参数角色');
       if (role === 'device_cli' && !seats.some((v) => v.object === raw.object)) issue(pat, '设备命令参数没有匹配的座位');
       if (role === 'host_shell' && !hosts.some((v) => v.object === raw.object && v.method === raw.method)) issue(pat, '主机 shell 参数没有匹配的主机方法');
       if (typeof role === 'string') parameters[name] = role;
@@ -111,7 +111,6 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   }
   const hasWait = allowed.some((call) => Object.values(call.parameters).some((role) => role === 'wait'));
   if (hasWait && (!Number.isSafeInteger(value.max_wait_seconds) || (value.max_wait_seconds as number) < 1)) issue('/max_wait_seconds', '等待角色必须配置明确的正整数秒数上限');
-  const denied = isRecord(value.denied) ? value.denied : {};
-  for (const key of ['device', 'host']) if (!Array.isArray(denied[key]) || (denied[key] as unknown[]).some((v) => !oneLine(v))) issue(`/denied/${key}`, '拒绝表必须是单行非空文字列表（没有条目写 []）');
-  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, max_wait_seconds: hasWait ? value.max_wait_seconds as number : null, runtimeVersion: contract.runtimeVersion, digest: contract.digest, bed: String(value.bed), device_count: value.device_count as number, fold_newlines, workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed, denied: denied as unknown as RuntimeProfile['denied'] } };
+  if(value.denied!==undefined)issue('/denied','拒绝词表已退役；删除该字段，按 runtime-contract@2 的闭集角色、完整命令与效果授权重发');
+  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, max_wait_seconds: hasWait ? value.max_wait_seconds as number : null, runtimeVersion: contract.runtimeVersion, digest: contract.digest, bed: String(value.bed), device_count: value.device_count as number, fold_newlines, workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed } };
 }

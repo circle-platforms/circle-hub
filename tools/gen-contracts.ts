@@ -819,6 +819,10 @@ export async function main(args: string[], root: string = REPO_ROOT): Promise<nu
     packFiles = packVocabularyFiles(root);
     for (const [target,source] of Object.entries({
       'packs/workflow/template-gap/tables/command-identity.schema.json':'schemas/command-identity.v1.schema.json',
+      'packs/workflow/case-compile/tables/command-identity.schema.json':'schemas/command-identity.v1.schema.json',
+      'packs/workflow/case-compile/tables/declared-type.schema.json':'schemas/declared-parameter-type.v1.schema.json',
+      'packs/workflow/case-compile/tables/declared-role.schema.json':'schemas/declared-parameter-role.v1.schema.json',
+      'packs/workflow/case-compile/tables/typed-address.schema.json':'schemas/typed-address-value.v1.schema.json',
       'packs/workflow/template-gap/tables/category-judgment.schema.json':'schemas/category-judgment.v1.schema.json',
     })) if(files[source]!==undefined)packFiles[target]=files[source];
   } catch (error) {
