@@ -159,7 +159,7 @@ function typeLabel(param: CatalogParam): string {
   return param.type ?? labelOf('type_declaration_status','undeclared');
 }
 
-type SourceParam = { name: string; alternatives: CatalogParam[]; optional: boolean; default?: string; description?: string; label: string };
+type SourceParam = { nativeType:string; selector:string; name: string; alternatives: CatalogParam[]; optional: boolean; default?: string; description?: string; label: string };
 
 type TypeCounters = { unknown: Map<string, number>; diagnostics:ProducerDiagnostic[] };
 
@@ -208,7 +208,7 @@ function argumentParam(arg: XmlNode, position: number, where: string, warnings: 
     if (description !== '') param.description = description;
   }
   const label = `<${name}:${params.map(typeLabel).join('/')}${defaultValue === undefined ? '' : `=${JSON.stringify(defaultValue)}`}>`;
-  const out: SourceParam = { name, alternatives: params, optional, label: optional ? `[${label}]` : label };
+  const out: SourceParam = { nativeType:arg.attributes.type??'',selector:parameterPath,name, alternatives: params, optional, label: optional ? `[${label}]` : label };
   if (defaultValue !== undefined) out.default = defaultValue;
   if (description !== '') out.description = description;
   return out;
@@ -239,7 +239,7 @@ function expand(params: SourceParam[], id: string, where: string, warnings: stri
   return lists.map((list, j) => ({ id: `${id}.${j + 1}`, params: list }));
 }
 
-type Overload = { item: XmlNode; selector: string; argumentLists: Array<Array<{node:XmlNode;path:string}>> };
+type Overload = { item: XmlNode; selector: string; argumentSelectors:string[]; argumentLists: Array<Array<{node:XmlNode;path:string}>> };
 type Frame = { node: XmlNode; steps: string[]; words: string[] };
 
 export function produceCommandEntries(model: XmlModel, params: CommandTreeParams = {}): CommandTreeResult {
@@ -291,13 +291,14 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
           continue;
         }
         const argumentLists: Overload['argumentLists'] = [];
+        const argumentSelectors:string[]=[];
         for (const { node: part,step:partStep } of elementChildren(node)) {
-          if (part.name === 'arguments') argumentLists.push(elementChildren(part).filter(({ node: arg }) => arg.name === 'arg').map(({ node: arg,step:argStep }) => ({node:arg,path:`${selector}/${partStep}/${argStep}`})));
+          if (part.name === 'arguments') {argumentSelectors.push(`${selector}/${partStep}`);argumentLists.push(elementChildren(part).filter(({ node: arg }) => arg.name === 'arg').map(({ node: arg,step:argStep }) => ({node:arg,path:`${selector}/${partStep}/${argStep}`})));}
         }
-        if (argumentLists.length === 0) argumentLists.push([]);
+        if (argumentLists.length === 0) {argumentLists.push([]);argumentSelectors.push(selector);}
         const key = words.join(' ');
         const slot = byPath.get(key) ?? { words, overloads: [] };
-        slot.overloads.push({ item: node, selector, argumentLists });
+        slot.overloads.push({ item: node, selector, argumentLists, argumentSelectors });
         byPath.set(key, slot);
         continue;
       }
@@ -342,13 +343,14 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
         continue;
       }
       const signatures: CatalogSignature[] = [];
+      const signature_declarations:Record<string,{selector:string;parameters:Array<{name:string;selector:string}>}>={};
       const lines: string[] = [];
       const fragments: FragmentRef[] = [];
       const summaries = new Set<string>();
       for (const overload of overloads) {
         const summary = attribute(overload.item, 'help_string');
         if (summary !== '') summaries.add(summary);
-        for (const args of overload.argumentLists) {
+        for (const [argumentIndex,args] of overload.argumentLists.entries()) {
           fragments.push({ parser: PARSER, selector: overload.selector });
           if (args.length > MAX_PARAMS) return invalid('参数数量超过完整解析限额',overload.selector,'arguments');
           const sourceParams = args.slice(0, MAX_PARAMS).map((arg, index) => argumentParam(arg.node, index + 1, where, warnings, counters, declared,arg.path));
@@ -357,13 +359,14 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
           const expanded = expand(complete, String(fragments.length), where, warnings);
           if (expanded.length === 0) return invalid('联合类型展开超过完整解析限额',overload.selector,'arguments');
           signatures.push(...expanded);
+          for(const signature of expanded)signature_declarations[signature.id!]={selector:overload.argumentSelectors[argumentIndex],parameters:complete.map(param=>({name:param.nativeType,selector:param.selector}))};
           lines.push([where, ...complete.map((param) => param.label)].join(' '));
           if (summary !== '') lines.push(`  ${summary}`);
           for (const param of complete){if (param.description !== undefined) lines.push(`  ${param.name}: ${param.description}`);for(const gap of param.alternatives[0].unchecked_constraints??[])lines.push(`  ${param.name} 约束未核对：${gap.path}；缺失事实：${gap.missing}；下一步：${gap.next_action}`);}
         }
       }
       if (signatures.length === 0) continue;
-      const data: CommandEntryData = { words, signatures };
+      const data: CommandEntryData = { words, signatures, signature_declarations };
       if (summaries.size > 0) data.summary = [...summaries].join('\n');
       entries.push({ kind: KIND, path, statement: lines.join('\n'), data, fragments, applicability: null });
     }

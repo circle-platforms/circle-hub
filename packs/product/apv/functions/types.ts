@@ -203,7 +203,7 @@ export type ProducedEntry = {
 };
 
 /** Data of a command entry: the catalog-entry@1 fields except the tree reference, which the knowledge package adds. */
-export type CommandEntryData = { words: string[]; signatures: CatalogSignature[]; summary?: string };
+export type CommandEntryData = { signature_declarations?:Record<string,{selector:string;parameters:Array<{name:string;selector:string}>}>; words: string[]; signatures: CatalogSignature[]; summary?: string };
 
 /**
  * A declared argument type authorized by the versioned apv-command-argument-types@1 schema: argument `position` (1-based) of the

@@ -8,7 +8,7 @@ import type { CatalogParam, CatalogSignature } from '../../../../contracts/src/t
 import type { CommandsResult } from './types.ts';
 import { guarded, isRecord } from './util.ts';
 
-export type CommandDefinition = { path: string; words: readonly string[]; signatures: readonly CatalogSignature[] };
+export type CommandDefinition = { declarations?:Record<string,{selector:string;parameters:Array<{name:string;selector:string}>}>; path: string; words: readonly string[]; signatures: readonly CatalogSignature[] };
 export type GrammarNode = { children: Map<string, GrammarNode>; path: string | null; signatures?: readonly CatalogSignature[] };
 export type CommandGrammar = { root: GrammarNode; size: number; heads: string[]; definitions?:readonly CommandDefinition[]; tree_root?:string };
 const node = (): GrammarNode => ({children:new Map(),path:null,signatures:[]});
@@ -138,7 +138,8 @@ export function commandIdentity(grammar:CommandGrammar,text:string):import('../.
   if(definition.path!==state.path||!definition.words.every((word,i)=>tokens[i]?.value===word))continue;
   const args=tokens.slice(definition.words.length);
   for(const signature of definition.signatures){
-   if(!signature.reference||!signatureMatches(signature,args))continue;
+   const declaration=definition.declarations?.[signature.id??''];
+   if(!signature.reference||!declaration||declaration.parameters.length!==signature.params.length||declaration.parameters.some(param=>!param.name)||!signatureMatches(signature,args))continue;
    const bind=(p:number,t:number):Array<{position:number;raw:string;value:string}>|null=>{
     if(p===signature.params.length)return t===args.length?[]:null;
     const param=signature.params[p];
@@ -148,10 +149,11 @@ export function commandIdentity(grammar:CommandGrammar,text:string):import('../.
    const bound=bind(0,0);if(!bound)continue;
    const parameters=bound.map(({position,raw,value})=>{const param=signature.params[position];
     const parsed:import('../../../../contracts/generated/shared-interfaces.ts').ParsedParameterValue=param.type==='int'||param.type==='port'?{kind:'int',value:Number(value)}:param.type==='ipv4'||param.type==='ipv6'||param.type==='mask'?{kind:'address',value:{kind:param.type,value}}:{kind:'text',value};
-    return {position,name:param.name,raw,type:{name:param.type!,catalog_type:param.type!,declaration:signature.reference!,grammar:'apv-command-tree@2'},parsed};
+    return {position,name:param.name,raw,type:{name:declaration.parameters[position].name,catalog_type:param.type!,declaration:`src:${grammar.tree_root}#xml@1:${declaration.parameters[position].selector}`,grammar:'apv-command-tree@2'},parsed};
    });
    identities.push({tree_root:grammar.tree_root,path:definition.path,signature:signature.reference,parameters});
   }
  }
- return identities.length===1?identities[0]:null;
+ const unique=[...new Map(identities.map(identity=>[JSON.stringify(identity),identity])).values()];
+ return unique.length===1?unique[0]:null;
 }
