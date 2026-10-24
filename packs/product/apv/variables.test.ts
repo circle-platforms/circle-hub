@@ -28,3 +28,11 @@ test('the three declared empty-default closed sets must be explicitly set before
   assert.deepEqual(frozen.map(row=>row.name).sort(),variables.map(row=>row.name).sort());
   assert.ok(frozen.every(row=>/^[a-f0-9]{64}$/.test(row.decision)));
 });
+
+test('new closed-set declarations stay compact without reformatting the existing product declaration',()=>{
+  const lines=readFileSync(new URL('./product.json',import.meta.url),'utf8').split('\n');
+  for(const name of ['APV_COMPONENTS','APV_LICENSES','APV_DEPLOYMENT_FORMS']){
+    const line=lines.find(row=>row.includes('"name": "'+name+'"'))!;
+    assert.ok(line.includes('"schema":')&&line.includes('"default": []'),name);
+  }
+});
