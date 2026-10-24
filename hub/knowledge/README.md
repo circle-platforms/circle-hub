@@ -852,3 +852,9 @@ K2 closureA2：回注公开正文保留会话标识；准备阶段扫描提交�
 Needs：依赖按实际交给函数的完整参数记录，不推断函数内部的名称族分支。要精确到只重产某个族，由产品包在对应接线任务中拆出只引用该族变量的独立产出范围。试运行保留读取审计，以及这个依赖边界，均经集成者确认（2026-10-24）。
 
 `var list --root` 接受同步回执里的根节点摘要，也兼容组成记录摘要。同内容根可以对应不同的变量决定；按根查时列出全部组成记录，每行带组成摘要，不拿当前值代替历史版本。
+
+Applicability now also records explicit components (with/without), numeric memory bounds in bytes with endpoint flags
+and raw source spelling, licenses and deployment forms. Lists sort and deduplicate before hashing. Existing entries
+without these fields keep their digest. `inherited` stores generated applicability_field codes only; selectors and
+section paths remain composition provenance. Display labels use labelOf, and these four new target prerequisites state
+“目标前提，未核对：缺目标上的<字段>观察；下一步：在目标上观察”; source declarations do not certify a target observation.

@@ -211,7 +211,7 @@ describe('display and placement questions', () => {
   test('applicability text says 未声明 for undeclared conditions (K02 R[2])', () => {
     assert.equal(applicabilityText(null), '未声明');
     assert.equal(applicabilityText({}), '未限定');
-    assert.equal(applicabilityText({ builds: ['b1', 'b2'], platforms: ['p'] }), '构建 b1、b2；平台 p');
+    assert.equal(applicabilityText({ builds: ['b1', 'b2'], platforms: ['p'] }), '起止构建 b1、b2；平台 p');
   });
 
   test('the placement note reads 归类判断：Jev@<exact version>，p=…，只影响位置 (K04 R[5])', () => {

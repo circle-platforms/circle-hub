@@ -5,7 +5,7 @@
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import { z } from 'zod';
 import { VariableDeclaration, referencesIn, VariableInputError } from './variables.ts';
-import { EntryKindSchema, LINK_MATCH, LinkMatchSchema, PlacementSchema, type Placement } from '../generated/vocabulary.ts';
+import { ApplicabilityFieldSchema, EntryKindSchema, LINK_MATCH, LinkMatchSchema, PlacementSchema, type Placement } from '../generated/vocabulary.ts';
 import { IsoTime, Sha256, Versioned } from './common.ts';
 import { ExternalObjectId, TreePath } from './reference.ts';
 
@@ -237,10 +237,16 @@ export const FragmentRef = z.strictObject({
 export type FragmentRef = z.infer<typeof FragmentRef>;
 
 /** Conditions the producer read from the source structure; null on an entry means undeclared (K02 F[6]). */
+const MemoryBound=z.strictObject({bytes:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),inclusive:z.boolean()});
 export const Applicability = z.strictObject({
   builds: z.array(z.string()).optional(),
   platforms: z.array(z.string()).optional(),
   models: z.array(z.string()).optional(),
+  components:z.strictObject({with:z.array(z.string().min(1)).min(1).optional(),without:z.array(z.string().min(1)).min(1).optional()}).refine(value=>value.with!==undefined||value.without!==undefined,'declare components with or without').optional(),
+  memory:z.strictObject({minimum:MemoryBound.optional(),maximum:MemoryBound.optional(),raw:z.string().regex(/\S/,'preserve the explicit memory notation')}).refine(value=>value.minimum!==undefined||value.maximum!==undefined,'declare a numeric memory bound').optional(),
+  licenses:z.array(z.string().min(1)).optional(),
+  deployment_forms:z.array(z.string().min(1)).optional(),
+  inherited:z.array(ApplicabilityFieldSchema).optional().describe('Inherited field codes only; source positions belong to composition provenance'),
 });
 export type Applicability = z.infer<typeof Applicability>;
 
