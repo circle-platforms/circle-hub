@@ -409,8 +409,8 @@ export class KnowledgeViews {
     return summary===null ? {} : {unversioned_entries:summary.totals.entries,unversioned_documents:summary.totals.documents};
   }
 
-  #scopeNote(summary: UnversionedView | null): string {
-    return summary===null ? '这条产品线还没有不分版本的根；下一步：同步这条产品线' : `不分版本的根 ${summary.root}：构建未声明；${summary.totals.entries} 个条目，${summary.totals.documents} 份文档`;
+  #scopeNote(summary: UnversionedView | null, scopeLocked = false): string {
+    return summary===null ? (scopeLocked ? '本次锁定范围没有不分版本的根；下一步：以同样输入新开运行，非运行读取请从首页重读当前范围（需要时先同步这条产品线）' : '这条产品线还没有不分版本的根；下一步：同步这条产品线') : `不分版本的根 ${summary.root}：构建未声明；${summary.totals.entries} 个条目，${summary.totals.documents} 份文档`;
   }
 
   async #content(row: ReadRow | null, digest: string): Promise<EntryContent | null> {
@@ -424,7 +424,7 @@ export class KnowledgeViews {
    * one only itself. With `catalog` only the catalog's members count as changes, read per root and compared by syntax:
    * a path whose members differ only in the descriptive fields or the overload order is not a change, counted in the notes.
    */
-  async impact(product: string, from: At, to: At, changed: readonly EntryKind[], attached: readonly EntryKind[], attachedFields: readonly string[] | null = null, catalog: string | null = null, exclude: ReadonlySet<string> = new Set(), scopeRoot?: ScopeRoot | null): Promise<ImpactView> {
+  async impact(product: string, from: At, to: At, changed: readonly EntryKind[], attached: readonly EntryKind[], attachedFields: readonly string[] | null = null, catalog: string | null = null, exclude: ReadonlySet<string> = new Set(), scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null): Promise<ImpactView> {
     const scope = await this.#scopeView(product,scopeRoot === undefined ? await this.#scope(product) : scopeRoot);
     const summary = await this.#scopeSummary(scope,attached);
     let membersFrom: ReadonlyMap<string, string> | null = null;
@@ -618,7 +618,7 @@ export class KnowledgeViews {
         totals: { ...this.#scopeCounts(summary), changed_paths: changedPaths, attached_from: attachedFrom, attached_to: attachedTo },
         truncated: scopeTruncated || count < changedPaths || excludedEntries.size > 0,
         skipped: { from: skippedCount(fromComposition) + skippedCount(scope), to: skippedCount(toComposition) + skippedCount(scope) },
-        notes: [...await notesOf(count), this.#scopeNote(summary)],
+        notes: [...await notesOf(count), this.#scopeNote(summary,scopeLocked)],
       };
     };
     // Sized exactly above; a later-root citation can lengthen a reference, so the answer is checked once more as a whole.
@@ -639,7 +639,7 @@ export class KnowledgeViews {
    * exactly. `exclude` names rows left out (by the canonical JSON of their values) because their values have credential
    * scan hits.
    */
-  async facets(product: string, at: At, kind: EntryKind, by: readonly string[], exclude: ReadonlySet<string> = new Set(), scopeRoot?: ScopeRoot | null): Promise<FacetView> {
+  async facets(product: string, at: At, kind: EntryKind, by: readonly string[], exclude: ReadonlySet<string> = new Set(), scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null): Promise<FacetView> {
     const composition = await this.#buildView(product,at);
     const scope = await this.#scopeView(product,scopeRoot === undefined ? await this.#scope(product) : scopeRoot);
     const summary = await this.#scopeSummary(scope,[kind]);
@@ -716,7 +716,7 @@ export class KnowledgeViews {
       totals: { empty, ...this.#scopeCounts(summary) },
       truncated: rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0,
       skipped: skippedCount(composition) + skippedCount(scope),
-      notes: [...notes,this.#scopeNote(summary)],
+      notes: [...notes,this.#scopeNote(summary,scopeLocked)],
     };
     return conforming(FacetView, view, 'facet-view@1');
   }
@@ -728,7 +728,7 @@ export class KnowledgeViews {
    * the held entries fit the byte budget; a listed entry not held is read in a second scan. `exclude` names entries left
    * out because their text has credential scan hits.
    */
-  async index(product: string, at: At, kind: EntryKind, key: string, only: readonly string[] | null, fields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set(), scopeRoot?: ScopeRoot | null): Promise<IndexView> {
+  async index(product: string, at: At, kind: EntryKind, key: string, only: readonly string[] | null, fields: readonly string[] | null = null, exclude: ReadonlySet<string> = new Set(), scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null): Promise<IndexView> {
     // With fields, entries carry only those data fields and an empty statement; the identity (entry digest) and the
     // reference are unchanged. The truncation accounting uses the slimmed size: the fields decide what an entry costs.
     const slim = (content: EntryContent): EntryContent => {
@@ -830,7 +830,7 @@ export class KnowledgeViews {
       if (excluded.size > 0) out.push(credentialNote([...excluded.values()]));
       const skipped = skippedNote(at, composition);
       if (skipped !== null) out.push(skipped);
-      out.push(this.#scopeNote(summary));
+      out.push(this.#scopeNote(summary,scopeLocked));
       return out;
     };
     const build = (count: number): IndexView => {
@@ -885,6 +885,7 @@ export class KnowledgeViews {
   async #readLinks(bare:string,request:Extract<ViewRequest,{type:'links'}>,context:ExternalReadContext,startedAt:string):Promise<ExternalRead>{
     const handle=await this.#packs.productById(request.product)??await this.#packs.productByName(request.product);
     if(!handle||!await this.#reading.mayReadProducts(context.principal,[handle.product.id]))return {ok:false,id:bare,reason:'产品不存在或不可读'};
+    const scopeLocked=Boolean(context.run)||request.cursor!==null;
     let scopeRoot=await this.#scope(handle.product.id,context);
     let pageCursor=request.cursor, cursorComposition:string|undefined, savedScopeCut:number|undefined;
     if(pageCursor!==null){
@@ -957,11 +958,11 @@ export class KnowledgeViews {
     }
     if(savedScopeCut!==undefined&&savedScopeCut!==cut)throw new LinkRefusal('分页游标的不分版本截断计数与根和预算不符；请从首页重新读取');
     if(summary)summary.totals.cut_entries=cut;
-    const reserve=canonicalBytes({unversioned:summary,entries,notes:[this.#scopeNote(summary)]}).byteLength;
+    const reserve=canonicalBytes({unversioned:summary,entries,notes:[this.#scopeNote(summary,scopeLocked)]}).byteLength;
     const view=await this.#relations.page(new CompositionView(this.#context.store,composition,body),{prefix:request.prefix,target:request.target,rule:request.rule,cursor:pageCursor,limit:request.limit,maxBytes:Math.max(0,this.#context.limits.maxViewBytes-reserve),...(named?{build:request.build}:{})});
     if(view.next!==null)view.next=Buffer.from(canonicalize({c:composition,scope:scopeRoot,cursor:view.next,scope_cut:cut})).toString('base64url');
     view.unversioned=summary;
-    view.notes.push(this.#scopeNote(summary));
+    view.notes.push(this.#scopeNote(summary,scopeLocked));
     if(scope){
       view.entries=firstPage?entries:{};
       if(cut>0){view.truncated=true;view.notes.push(`不分版本条目只在首页交付；有 ${cut} 条被字节预算截断，按 get_nodes 从根 ${scope.body.root} 分页读取剩余条目`);}
@@ -1017,7 +1018,7 @@ export class KnowledgeViews {
       if (typeof to === 'string') return { ok: false, id: bare, reason: to };
       roots = [from.root, to.root];
       key = canonicalize({ type: request.type, product, from, to, changed: request.changed, attached: request.attached, attached_fields: request.attached_fields, catalog: request.catalog });
-      compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, request.catalog, exclude, scopeRoot);
+      compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, request.catalog, exclude, scopeRoot, Boolean(context.run));
       title = `版本差 ${from.build} → ${to.build}（${product}）`;
     } else {
       const at = await resolve(request.build);
@@ -1025,11 +1026,11 @@ export class KnowledgeViews {
       roots = [at.root];
       if (request.type === 'facets') {
         key = canonicalize({ type: request.type, product, at, kind: request.kind, by: request.by });
-        compute = (exclude) => this.facets(product, at, request.kind, request.by, exclude, scopeRoot);
+        compute = (exclude) => this.facets(product, at, request.kind, request.by, exclude, scopeRoot, Boolean(context.run));
         title = `${labelOf('entry_kind', request.kind)}按 ${request.by.join('、')} 计数（${at.build}）`;
       } else {
         key = canonicalize({ type: request.type, product, at, kind: request.kind, key: request.key, only: request.only, fields: request.fields });
-        compute = (exclude) => this.index(product, at, request.kind, request.key, request.only, request.fields, exclude, scopeRoot);
+        compute = (exclude) => this.index(product, at, request.kind, request.key, request.only, request.fields, exclude, scopeRoot, Boolean(context.run));
         title = `${labelOf('entry_kind', request.kind)}按 ${request.key} 索引（${at.build}）`;
       }
     }

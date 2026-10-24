@@ -952,3 +952,8 @@ sent only on the first page; cursors retain the original cut count and snapshot.
 `totals.unversioned_entries_cut` mirrors it when link totals exist. Both count entries
 omitted by that first-page detail budget, independently of total scope membership.
 The note directs readers to get_nodes on the scope root for omitted details.
+
+An absent scope in a run/read snapshot is described as absence from that locked
+range, with a new-run or restart-from-first-page action. It does not claim that the
+product currently has no pointer, and no mutable current-pointer lookup is added to
+the immutable answer. Unbound current reads retain the product-level sync advice.
