@@ -47,6 +47,8 @@ export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclara
       layers: [...r.layers],
       done_rule: r.done_rule,
       accepted_producer: r.accepted_producer,
+      rules: r.checks.flatMap(id=>{const c=declarations.checks.checks.find(check=>check.id===id);return c ? [c.interpreter ?? `${info.id}.${c.id}@${info.version}`] : [];}),
+      run_interpreters: r.run_table ? (declarations.ledger?.shapes.filter(row=>row.requirement===r.key).map(row=>row.interpreter) ?? []) : [],
       // The most rounds any repair row of the requirement allows (W02 F[7]); 0 without repair rows.
       repair_rounds: Math.max(0, ...r.error_handling.map((row) => row.max_rounds ?? 0)),
     })),
@@ -115,6 +117,7 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       checks: d.checks.checks,
       slots: d.slots,
       knowledge: d.knowledge,
+      ledger: d.ledger,
       instructions: d.instructions,
       instructionsDigest: d.instructionsDigest,
       readJson: opened.readJson,

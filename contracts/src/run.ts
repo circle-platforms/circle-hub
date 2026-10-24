@@ -58,6 +58,8 @@ export const RequirementSummary = z.strictObject({
   accepted_producer: AcceptedProducerSchema,
   observation:Versioned.optional().describe('The declared P07 observation contract for the dynamic layer'),
   repair_rounds: z.number().int().nonnegative(),
+  rules: z.array(z.string().min(1)).describe('locked rule@version identities that judge this requirement'),
+  run_interpreters: z.array(Versioned).describe('ledger-permitted interpreters for inline runtime tables; empty when disabled'),
 });
 export type RequirementSummary = z.infer<typeof RequirementSummary>;
 
@@ -133,7 +135,12 @@ const PersistedLeaseContextRow=LeaseContextRow.partial({since:true,run:true,jobs
   if(known!==0&&known!==3||known===0&&row.holder!==undefined)ctx.addIssue({code:'custom',message:'lease snapshot has either all current facts or the historical key/until/mine shape'});
 });
 
+// Historical records keep their original bytes; only public summaries require ruling metadata.
+const PersistedRequirementSummary=RequirementSummary.partial({rules:true,run_interpreters:true}).superRefine((row,ctx)=>{
+  if((row.rules===undefined)!==(row.run_interpreters===undefined))ctx.addIssue({code:'custom',message:'ruling fields are either both present or both absent on a historical row'});
+});
 export const RunRecord = RunSummary.extend({
+  requirements:z.array(PersistedRequirementSummary),
   runner: UserId.optional().describe('the user the run is executed for; absent only when the Hub itself executes a standing obligation'),
   host: ExecutionHostSchema,
   trigger: TriggerSchema,
@@ -188,3 +195,5 @@ export const RunRecord = RunSummary.extend({
 /** Strict new-write shape; the base RunRecord remains a historical reader. */
 export const NewRunRecord=RunRecord.safeExtend({submission_due:IsoTime}).refine(value=>Date.parse(value.submission_due)>Date.parse(value.started_at),{path:['submission_due'],message:'the submission deadline is later than run creation'});
 export type RunRecord = z.infer<typeof RunRecord>;
+/** Derived read view: historical originals stay unchanged. */
+export type RunRecordView = RunRecord & {requirements:RequirementSummary[]};

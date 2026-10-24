@@ -14,10 +14,10 @@ import { NatureSchema, VerdictSchema, isSourceRole, type SourceRole } from '../.
 import { Ground } from '../../../contracts/src/reference.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { ContextBuild, RequirementTemplate, RunContext, ProjectionOutput } from '../../../contracts/src/pack.ts';
-import { RunRecord, RunSummary, type RequirementSummary } from '../../../contracts/src/run.ts';
+import { RunRecord, RunSummary, type RequirementSummary, type RunRecordView } from '../../../contracts/src/run.ts';
 import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools.ts';
 import { partitionCountsOf, type PartitionCounts, type ValidationResult } from '../../../contracts/src/validation.ts';
-import { CanonicalizationError, LimitError, scanForCredentials, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
+import { CanonicalizationError, RecordsError, LimitError, scanForCredentials, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -76,14 +76,30 @@ export function isProduction(workflow: LoadedWorkflow): boolean {
   return workflow.requirements.every((r) => r.accepted_producer === 'fact');
 }
 
-export function requirementSummary(t: RequirementTemplate): RequirementSummary {
-  return { key: t.key, name: t.name, description: t.description, layers: t.layers, done_rule: t.done_rule, accepted_producer: t.accepted_producer, repair_rounds: repairRounds(t), ...(t.observation?{observation:t.observation}:{}) };
+export function requirementSummary(t: RequirementTemplate, ledger?: import('../../../contracts/src/pack.ts').LedgerFile | null, checks: readonly import('../../../contracts/src/pack.ts').CheckEntry[] = [], pack = ''): RequirementSummary {
+  return { key: t.key, name: t.name, description: t.description, layers: t.layers, done_rule: t.done_rule, accepted_producer: t.accepted_producer, rules: t.checks.flatMap(id=>{const c=checks.find(check=>check.id===id);return c ? [c.interpreter ?? `${pack.split('@')[0]}.${c.id}@${pack.split('@')[1]}`] : [];}), run_interpreters: t.run_table ? (ledger?.shapes.filter(row=>row.requirement===t.key).map(row=>row.interpreter) ?? []) : [], repair_rounds: repairRounds(t), ...(t.observation?{observation:t.observation}:{}) };
 }
 
 /** The summary part of a run record, as start_run returns it (the frozen context extras — groups, builds — stay out). */
-export function summaryOf(record: RunRecord): RunSummary {
+export class MissingRulingSummaryError extends RecordsError {
+  constructor(record:RunRecord,requirement:string){
+    super(`旧运行的要求项 ${requirement} 缺少锁定任务包的判定声明`,{code:'SOURCE_UNAVAILABLE',fix:'请管理员从备份恢复该运行锁定的任务包原件，再重新读取或复用运行',detail:{pack_digest:record.pack_digest,requirement}});
+    this.name='MissingRulingSummaryError';
+  }
+}
+export function hasRulingSummary(record:RunRecord):record is RunRecordView {
+  return record.requirements.every(row=>row.rules!==undefined && row.run_interpreters!==undefined);
+}
+export function summaryOf(record: RunRecord, workflow?:Pick<LoadedWorkflow,'pack'|'requirements'|'checks'|'ledger'>): RunSummary {
   const { runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, lease_registrations: _lr, ...summary } = record;
-  return RunSummary.parse(summary);
+  const requirements=record.requirements.map(row=>{
+    if(row.rules!==undefined && row.run_interpreters!==undefined)return row;
+    const template=workflow?.requirements.find(t=>t.key===row.key);
+    if(!workflow || !template || workflow.pack.digest!==record.pack_digest || `${workflow.pack.id}@${workflow.pack.version}`!==record.pack)throw new MissingRulingSummaryError(record,row.key);
+    const ruling=requirementSummary(template,workflow.ledger,workflow.checks,`${workflow.pack.id}@${workflow.pack.version}`);
+    return {...row,rules:ruling.rules,run_interpreters:ruling.run_interpreters};
+  });
+  return RunSummary.parse({...summary,requirements});
 }
 
 const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -241,8 +257,8 @@ export function refused(errors: ProtocolError[]): StartRunDetail {
 const MAX_WARNINGS = 100;
 
 /** The ok answer of a run: its summary and, for a production run, the result the Hub computed (StartRunOutput.result). */
-function okAnswer(record: RunRecord, production: ProductionResult | null): StartRunAnswer {
-  return { call_result: 'ok', errors: [], run: summaryOf(record), ...(production !== null ? { result: { reference: production.reference, counts: production.counts } } : {}) };
+function okAnswer(record: RunRecord, production: ProductionResult | null, workflow?:LoadedWorkflow): StartRunAnswer {
+  return { call_result: 'ok', errors: [], run: summaryOf(record,workflow), ...(production !== null ? { result: { reference: production.reference, counts: production.counts } } : {}) };
 }
 
 /** Why a client key cannot be an index value of the records (no NUL, at most 1000 UTF-8 bytes with its owner), or null. */
@@ -363,11 +379,12 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
           throw new Refusal([protocolError('IDEMPOTENCY_MISMATCH', `客户端键 ${key} 已经用于内容不同的 start_run（运行 ${existing.body.run}）`, { path: '/client_key' })]);
         }
         const production = await productionOf(ctx, existing);
-        return { answer: okAnswer(existing.body, production), production, runRecord: existing.digest, ...(await gapsOf(ctx, existing.body)) };
+        return { answer: okAnswer(existing.body, production, hasRulingSummary(existing.body)?undefined:(await ctx.deps.workflows.byDigest(existing.body.pack_digest))??undefined), production, runRecord: existing.digest, ...(await gapsOf(ctx, existing.body)) };
       }
       return fresh();
     });
   } catch (error) {
+    if(error instanceof MissingRulingSummaryError)return refused([protocolError('SOURCE_UNAVAILABLE',error.message,{path:'/pack',fix:error.fix!})]);
     if (!(error instanceof Refusal)) throw error;
     if (error.adminNote !== null) ctx.log({ traceId: call.traceId, run: null, what: 'start_run', detail: error.adminNote });
     return refused(error.errors);
@@ -590,7 +607,7 @@ async function startFresh(
     ...(target.root !== null ? { root: target.root.root } : {}),
     ...(target.unversionedRoot ? { unversioned_root: target.unversionedRoot.root } : {}),
     sources: [...bound.map((b) => b.binding), ...expected.sources],
-    requirements: workflow.requirements.map(requirementSummary),
+    requirements: workflow.requirements.map(t=>requirementSummary(t,workflow.ledger,workflow.checks,`${workflow.pack.id}@${workflow.pack.version}`)),
     items,
     ...(slots !== undefined ? { slots } : {}),
     ...(workflow.workflow.outputs===undefined?{}:{outputs:workflow.workflow.outputs}),
