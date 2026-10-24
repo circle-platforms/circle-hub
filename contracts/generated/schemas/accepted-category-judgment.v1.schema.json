@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "claim": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "category_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "quote": {
+          "type": "object",
+          "properties": {
+            "identity": {
+              "type": "object",
+              "properties": {
+                "source_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "parser": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 8192
+                },
+                "span": {
+                  "type": "object",
+                  "properties": {
+                    "unit": {
+                      "type": "string",
+                      "const": "byte"
+                    },
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "length": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "unit",
+                    "offset",
+                    "length"
+                  ],
+                  "additionalProperties": false,
+                  "title": "source-span@1",
+                  "description": "Zero-based offset and positive length in the original source bytes; the end is exclusive. Hub checks the span against the retained source, not against normalized text."
+                }
+              },
+              "required": [
+                "source_sha256",
+                "parser",
+                "path",
+                "span"
+              ],
+              "additionalProperties": false,
+              "title": "expected-quote-identity@1",
+              "description": "Immutable identity of an expected quotation: original source digest, parser@major, exact selector and raw byte span. No width, whitespace or synonym folding."
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1048576
+            }
+          },
+          "required": [
+            "identity",
+            "text"
+          ],
+          "additionalProperties": false,
+          "title": "quote-evidence@1",
+          "description": "Verbatim quote paired with its original-byte identity; presence and item ownership are checked at the Hub boundary."
+        },
+        "producer": {
+          "type": "object",
+          "properties": {
+            "model_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "model_family_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "configuration_reference": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+              "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+            }
+          },
+          "required": [
+            "model_id",
+            "model_family_id"
+          ],
+          "additionalProperties": false,
+          "title": "model-identity@1",
+          "description": "Explicit client-declared exact model and family identities, separate from the observed session id; not inferred from model-name words."
+        }
+      },
+      "required": [
+        "item",
+        "category_id",
+        "quote",
+        "producer"
+      ],
+      "additionalProperties": false,
+      "title": "category-judgment@1",
+      "description": "A submitted model category claim with verbatim evidence inside the same case. Category id is checked against the locked pack declaration; quote existence is not semantic truth."
+    },
+    "accepted_result": {
+      "type": "string",
+      "maxLength": 8192,
+      "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+    }
+  },
+  "required": [
+    "claim",
+    "accepted_result"
+  ],
+  "additionalProperties": false,
+  "title": "accepted-category-judgment@1",
+  "description": "A category claim linked to its accepted validation result. Hub resolves acceptance and exact claim/item identity; a caller-supplied reference alone does not establish acceptance."
+}

@@ -30,6 +30,7 @@ type Model = {
     recordKinds: string[];
     packFiles: { path: string; content: string; elements: string[] }[];
     displayOrder: string[];
+    sharedInterfaces?: unknown;
   };
 };
 type Codes = { codes: { code: string; interpreter: string; when: string; fix: string }[] };
@@ -261,6 +262,7 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
     });
     for (const d of duplicates(seen)) p.push(`${C}: code ${d} appears twice`);
   }
+  try { renderSharedInterfaces(model); } catch (error) { p.push(...(error instanceof ContractsError ? error.problems : [(error as Error).message])); }
   return p;
 }
 
@@ -338,6 +340,106 @@ function renderProtocol(model: Model, codes: Codes): string {
   return out.join('\n');
 }
 
+/**
+ * The model-shape@1 JSON Schema subset is a structural language, not executable source.
+ * References resolve only to earlier definitions, generated vocabularies or this finite primitive binding set.
+ */
+const SHARED_PRIMITIVES: Readonly<Record<string,string>> = {
+  'contract:common/Sha256':'Common.Sha256',
+  'contract:common/Versioned':'Common.Versioned',
+  'contract:common/ItemId':'Common.ItemId',
+  'contract:reference/ReferenceUri':'Reference.ReferenceUri',
+  'contract:reference/Ground':'Reference.Ground',
+  'contract:reference/RecUri':"Reference.referenceUriOf('rec')",
+  'contract:reference/TreePath':'Reference.TreePath',
+  'contract:tables/CatalogParamType':'Tables.CatalogParamType',
+};
+export function renderSharedInterfaces(input: unknown): string | undefined {
+  if(!isRecord(input)||!isRecord(input.formatProposals)||input.formatProposals.sharedInterfaces===undefined)return undefined;
+  const spec=input.formatProposals.sharedInterfaces;
+  const fail=(at:string,message:string):never=>{throw new ContractsError([`contracts/model.json: sharedInterfaces ${at}: ${message}`]);};
+  if(!isRecord(spec)||spec.module!=='shared-interfaces.ts'||!Array.isArray(spec.definitions)||!spec.definitions.length)fail('','needs module shared-interfaces.ts and nonempty definitions');
+  const source=spec as Record<string,unknown> & {definitions:unknown[]};
+  const axes=new Map(list(input.vocabulary).filter(isRecord).map(a=>[a.axis,a]));
+  const names=new Set<string>();const ids=new Set<string>();
+  const reserved=new Set(['Common','Reference','Tables','V','SharedInterfaceSchemas','z']);
+  const bindings=new Set(reserved);
+  const out=[HEADER,"import { z } from 'zod';","import * as V from './vocabulary.ts';","import * as Common from '../src/common.ts';","import * as Reference from '../src/reference.ts';","import * as Tables from '../src/tables.ts';",''];
+  const entries:Array<[string,string]>=[];
+  const compile=(raw:unknown,at:string,depth=0):string=>{
+    if(depth>32||!isRecord(raw))return fail(at,'needs a shape object within depth 32');
+    const shape=raw as Record<string,unknown>;
+    const allowed=new Set(['$ref','const','anyOf','type','properties','required','additionalProperties','items','minItems','maxItems','minLength','maxLength','minimum','maximum','format','description']);
+    for(const k of Object.keys(shape))if(!allowed.has(k))fail(at,`unsupported schema keyword ${k}`);
+    const exactKeys=(keys:string[])=>{for(const k of Object.keys(shape))if(k!=='description'&&!keys.includes(k))fail(at,`keyword ${k} does not apply to this shape`);};
+    const integerOption=(key:string,min:number):number|undefined=>{const v=shape[key];if(v===undefined)return undefined;if(!Number.isSafeInteger(v)||(v as number)<min)return fail(at+'/'+key,'needs a bounded safe integer');return v as number;};
+    const next=(v:unknown,key:string)=>compile(v,at+'/'+key,depth+1);
+    let code:string;
+    if(Object.hasOwn(shape,'$ref')){
+      exactKeys(['$ref']);const r=shape.$ref;if(typeof r!=='string')return fail(at,'$ref must be text');
+      if(r.startsWith('#/$defs/')){const name=r.slice(8);if(!names.has(name))return fail(at,`unknown, forward or cyclic reference ${r}`);code=name+'Schema';}
+      else if(r.startsWith('vocabulary:')){
+        const [axisName,value,...rest]=r.slice(11).split('/');const axis=axes.get(axisName);
+        if(!axis||rest.length)return fail(at,`unknown vocabulary reference ${r}`);
+        const values=list(axis.values).filter(isRecord);
+        if(value!==undefined&&!values.some(v=>v.code===value))return fail(at,`unknown vocabulary value ${r}`);
+        code='V.'+pascal(axisName)+'Schema'+(value===undefined?'':`.extract([${q(value)}])`);
+      }else if(Object.hasOwn(SHARED_PRIMITIVES,r))code=SHARED_PRIMITIVES[r];
+      else return fail(at,`unknown contract reference ${r}`);
+    }else if(Object.hasOwn(shape,'const')){
+      exactKeys(['const']);const v=shape.const;if(typeof v!=='string'&&typeof v!=='boolean'&&!(typeof v==='number'&&Number.isFinite(v))&&v!==null)return fail(at,'const must be a scalar');
+      code='z.literal('+JSON.stringify(v)+')';
+    }else if(Object.hasOwn(shape,'anyOf')){
+      exactKeys(['anyOf']);if(!Array.isArray(shape.anyOf)||shape.anyOf.length<2||shape.anyOf.length>64)return fail(at,'anyOf needs 2..64 branches');
+      code='z.union(['+shape.anyOf.map((v,i)=>next(v,'anyOf/'+i)).join(', ')+'])';
+    }else if(shape.type==='object'){
+      exactKeys(['type','properties','required','additionalProperties']);
+      if(!isRecord(shape.properties)||shape.additionalProperties!==false||!Array.isArray(shape.required))return fail(at,'objects need properties, required and additionalProperties false');
+      const properties=shape.properties;const required=new Set(shape.required);
+      if(required.size!==shape.required.length||shape.required.some(k=>typeof k!=='string'||!Object.hasOwn(properties,k)))return fail(at,'required must contain unique declared property names');
+      const fields=Object.entries(properties).map(([name,v])=>{
+        if(['__proto__','prototype','constructor'].includes(name))return fail(at,'unsafe property name');
+        return q(name)+': '+next(v,'properties/'+name)+(required.has(name)?'':'.optional()');
+      });code='z.strictObject({ '+fields.join(', ')+' })';
+    }else if(shape.type==='array'){
+      exactKeys(['type','items','minItems','maxItems']);
+      const lo=integerOption('minItems',0),hi=integerOption('maxItems',0);if(lo!==undefined&&hi!==undefined&&lo>hi)return fail(at,'minItems exceeds maxItems');
+      code='z.array('+next(shape.items,'items')+')'+(lo===undefined?'':`.min(${lo})`)+(hi===undefined?'':`.max(${hi})`);
+    }else if(shape.type==='string'){
+      exactKeys(['type','minLength','maxLength','format']);
+      if(shape.format!==undefined&&shape.format!=='ipv4'&&shape.format!=='ipv6')return fail(at,'only declared IPv4/IPv6 formats are supported');
+      const lo=integerOption('minLength',0),hi=integerOption('maxLength',0);if(lo!==undefined&&hi!==undefined&&lo>hi)return fail(at,'minLength exceeds maxLength');
+      code=shape.format===undefined?'z.string()':`z.${shape.format}()`;
+      if(hi!==undefined)code+=`.max(${hi}, { abort: true })`;if(lo!==undefined)code+=`.min(${lo})`;
+    }else if(shape.type==='integer'||shape.type==='number'){
+      exactKeys(['type','minimum','maximum']);
+      const lo=shape.minimum,hi=shape.maximum;
+      for(const v of [lo,hi])if(v!==undefined&&(typeof v!=='number'||!Number.isFinite(v)||shape.type==='integer'&&!Number.isSafeInteger(v)))return fail(at,'invalid numeric bound');
+      if(lo!==undefined&&hi!==undefined&&(lo as number)>(hi as number))return fail(at,'minimum exceeds maximum');
+      code='z.number()'+(shape.type==='integer'?'.int()':'')+(lo===undefined?'':`.min(${lo})`)+(hi===undefined?'':`.max(${hi})`);
+    }else if(shape.type==='boolean'){
+      exactKeys(['type']);code='z.boolean()';
+    }else return fail(at,'unsupported or missing shape type');
+    if(shape.description!==undefined){if(!isText(shape.description))return fail(at,'description must be text');code+=`.describe(${q(shape.description as string)})`;}
+    return code;
+  };
+  for(const [index,value] of source.definitions.entries()){
+    const at='definitions/'+index;
+    if(!isRecord(value))return fail(at,'needs a definition');
+    for(const k of Object.keys(value))if(!['name','id','meaning','schema'].includes(k))return fail(at,`unknown definition member ${k}`);
+    const {name,id,meaning}=value;
+    if(typeof name!=='string'||!/^[A-Z][A-Za-z0-9]*$/.test(name)||bindings.has(name)||bindings.has(name+'Schema'))return fail(at,'name must be a unique PascalCase identifier');
+    if(typeof id!=='string'||!SCHEMA_ID.test(id)||ids.has(id))return fail(at,'id must be a unique name@major');
+    if(!isText(meaning))return fail(at,'meaning must be text');
+    const code=compile(value.schema,at+'/schema');
+    names.add(name);bindings.add(name);bindings.add(name+'Schema');ids.add(id);entries.push([id,name]);
+    out.push(`export const ${name}Schema = ${code}.meta({ title: ${q(id)}, description: ${q(meaning as string)} });`);
+    out.push(`export type ${name} = z.infer<typeof ${name}Schema>;`,'');
+  }
+  out.push('export const SharedInterfaceSchemas = {',...entries.map(([id,name])=>`  ${q(id)}: ${name}Schema,`),'} as const;','');
+  return out.join('\n');
+}
+
 /** A module index.ts re-exports with `export *`: its runtime exports and the type names it declares. */
 type Exporter = { file: string; values: Record<string, unknown>; types: Set<string> };
 
@@ -350,7 +452,7 @@ const STAR_EXPORT = /^export \* from '(\.{1,2}\/[^']+)';$/gm;
  * Imports contracts/src with the given generated modules served from memory instead of from disk. Every call loads a
  * fresh module graph (each module URL carries a tag of this call), so a second call sees changed sources.
  */
-async function loadContracts(root: string, generated: Record<string, string>): Promise<{ contracts: Contracts; exporters: Exporter[] }> {
+async function loadContracts(root: string, generated: Record<string, string>): Promise<{ contracts: Contracts; exporters: Exporter[]; sharedSchemas: Record<string,z.ZodType> }> {
   const tag = `gen-contracts=${++loads}`;
   const tagged = (url: string): string => `${plain(url)}?${tag}`;
   const contractsUrl = `${pathToFileURL(join(root, 'contracts')).href}/`;
@@ -383,7 +485,10 @@ async function loadContracts(root: string, generated: Record<string, string>): P
       const values = (await import(tagged(url))) as Record<string, unknown>;
       exporters.push({ file: relative(root, fileURLToPath(url)).split('\\').join('/'), values, types: new Set([...source.matchAll(TYPE_DECLARATION)].map((m) => m[1])) });
     }
-    return { contracts, exporters };
+    const shared = generated['shared-interfaces.ts'] === undefined ? undefined : await import(tagged(pathToFileURL(join(root, GENERATED_DIR, 'shared-interfaces.ts')).href));
+    const sharedSchemas = shared?.SharedInterfaceSchemas ?? {};
+    for (const id of Object.keys(sharedSchemas)) if (id in contracts.SCHEMA_REGISTRY) throw new ContractsError([`shared interface schema ${id} clashes with the record registry`]);
+    return { contracts, exporters, sharedSchemas };
   } catch (error) {
     throw new ContractsError([`contracts/src/index.ts failed to load with the regenerated vocabulary and protocol: ${(error as Error).message}`]);
   } finally {
@@ -479,10 +584,16 @@ export async function generate(root: string = REPO_ROOT): Promise<Record<string,
     'vocabulary.ts': renderVocabulary(model as Model),
     'protocol.ts': renderProtocol(model as Model, codes as Codes),
   };
-  const { contracts, exporters } = await loadContracts(root, files);
+  const shared = renderSharedInterfaces(model);
+  if (shared !== undefined) files['shared-interfaces.ts'] = shared;
+  const { contracts, exporters, sharedSchemas } = await loadContracts(root, files);
   const clashes = exportClashes(exporters);
   if (clashes.length > 0) throw new ContractsError(clashes);
   Object.assign(files, renderToolsAndSchemas(contracts));
+  for (const [id, schema] of Object.entries(sharedSchemas)) {
+    const match = SCHEMA_ID.exec(id)!;
+    files[`schemas/${match[1]}.v${match[2]}.schema.json`] = `${JSON.stringify(z.toJSONSchema(schema, { target: 'draft-2020-12', io: 'output', unrepresentable: 'throw' }), null, 2)}\n`;
+  }
   return files;
 }
 

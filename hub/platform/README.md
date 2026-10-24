@@ -447,3 +447,27 @@ in the database and `resource list` still works without the vault key. The platf
 the server assembly's synthetic file-key and temporary-keychain tests cover reimport and a fresh login.
 
 Before starting after a backup restore, inspect `secret list` and the latest setting time of every named secret. If its issuer rotated or revoked it after that restore point, run `secret set --name <NAME> --reason <note>` or `secret unset --name <NAME> --reason <note>` before starting. Replacing the vault key does not restore encrypted entries; a registered version with no entry remains unavailable until a new named import.
+
+### Restricted synthetic deployment evidence
+
+The deployment evidence tests use temporary data roots and private PostgreSQL sockets. The new distinct-root restore
+case in `backup-live.test.ts` compares complete table digests and object, vault and config bytes/modes, then appends to
+the destination to prove the source is independent. `deploy-system.test.ts` already injects a failing HTTP health check;
+the pre-deploy database snapshot and the previous `current` release are restored, including removal of the failed
+migration's mark. Its launchctl and npm boundaries are simulated.
+
+The `synthetic keychain loss` case in `../server/assemble/cli-admin.test.ts` uses an in-memory security protocol and a
+real temporary platform-managed database. It loses both items, runs service stop, `key init --set-aside-vault`,
+`operator-token reissue` and `secret import`, verifies a fresh connector login, and starts the actual Hub on a temporary
+loopback port with health 200. This recreates named credentials under a new key; it does not decrypt the archived vault
+or recover the lost original key. `rehearse.test.ts` also exercises the rehearsal with a synthetic security executable
+and in-memory items. No installed security tool is executed by either new case.
+
+For a run that must not reach host state, preload `testing/synthetic-only.ts`. It rejects host security/launchctl calls,
+port 7420 and common filesystem access to the default persistent data root, host keychains and LaunchAgents. It also
+suppresses user libpq password/service configuration for platform subprocesses. This is a test tripwire, not an OS
+sandbox; the isolated fixtures and the explicit omission of real-keychain cases remain necessary. Keep the existing
+real temporary-keychain integration tests, but do not count them as passed when they are omitted under this policy.
+
+The launchd plist tests prove RunAtLoad/KeepAlive declarations and simulated service commands, not a machine reboot.
+Actual reboot recovery requires an operator observation. This branch records no new observation of a persistent service.
