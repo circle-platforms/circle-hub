@@ -25,7 +25,7 @@ export async function latestSubmittedResult(store:RecordStore,predecessor:Stored
 }
 
 export async function defaultPredecessorInputs(ctx:EngineContext,workflow:LoadedWorkflow,predecessor:StoredRecord<RunRecord>|null,inputs:Record<string,InputBinding|InputBinding[]>):Promise<{inputs:Record<string,InputBinding|InputBinding[]>;defaults:InputDefault[]}>{
-  const needed=workflow.workflow.inputs.filter(slot=>slot.role==='artifact_under_verification'&&slot.default_from_predecessor!==undefined&&inputs[slot.slot]===undefined);
+  const needed=workflow.workflow.inputs.filter(slot=>slot.role==='artifact_under_verification'&&slot.default_from_predecessor!==undefined&&!Object.hasOwn(inputs,slot.slot));
   if(predecessor===null||needed.length===0)return{inputs,defaults:[]};
   for(const slot of needed){
     const expected=slot.default_from_predecessor!.pack;
@@ -33,10 +33,9 @@ export async function defaultPredecessorInputs(ctx:EngineContext,workflow:Loaded
   }
   const result=await latestSubmittedResult(ctx.deps.records.store,predecessor);
   if(result===null)throw new Refusal(needed.map(slot=>protocolError('SUBMISSION_SCHEMA_VIOLATION',`输入槽 ${slot.slot} 缺少前驱 ${predecessor.body.run} 的已受理提交验证结果`,{path:'/inputs/'+slot.slot,fix:'先让前驱运行按回执改正并重新提交，被受理后再开始复核；也可在此槽显式给出待核对的结果引用'})));
-  const reference=recReference(result.digest),bound={...inputs};
-  const defaults=needed.map(slot=>{
-    const binding={reference};bound[slot.slot]=slot.many?[binding]:binding;
-    return{slot:slot.slot,predecessor:predecessor.body.run,reference};
-  });
+  const reference=recReference(result.digest);
+  const bindings=needed.map(slot=>[slot.slot,slot.many?[{reference}]:{reference}] as const);
+  const bound=Object.fromEntries<InputBinding|InputBinding[]>([...Object.entries(inputs),...bindings]);
+  const defaults=needed.map(slot=>({slot:slot.slot,predecessor:predecessor.body.run,reference}));
   return{inputs:bound,defaults};
 }

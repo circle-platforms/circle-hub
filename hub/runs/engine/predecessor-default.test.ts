@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {after,before,test} from 'node:test';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {WorkflowFile} from '../../../contracts/src/pack.ts';
@@ -16,12 +16,18 @@ import {standardDocument,toyMap} from './testing/mindmap.ts';
 import {putAction,putResult,runById} from './store.ts';
 let pg:TemporaryPostgres;const skip=await sandboxSkip();
 before(async()=>{pg=await startPostgres();});after(async()=>{await pg?.stop();});
-async function setup(options:{declared?:boolean;many?:boolean}={}){
+async function setup(options:{declared?:boolean;many?:boolean;slot?:string}={}){
   const h=await openRetryHarness(pg),dir=await mkdtemp(join(tmpdir(),'hub-default-'));
   const spec=verifyPack();spec.version='1.0.1';
   const workflow=(spec.files['workflow.json'] as {json:WorkflowFile}).json;
   if(options.declared!==false)workflow.inputs[0].default_from_predecessor={pack:'toy-review'};
   if(options.many)workflow.inputs[0].many=true;
+  if(options.slot){
+    workflow.inputs[0].slot=options.slot;
+    const source=await readFile(new URL('./testing/functions/verify/project.ts',import.meta.url),'utf8');
+    assert.ok(source.includes("i.slot === 'draft'"));
+    spec.files['functions/project.ts']=source.replace("i.slot === 'draft'",'i.slot === '+JSON.stringify(options.slot));
+  }
   await h.workflows.add(await writePack(dir,spec));
   const map=await h.upload(h.alice,toyMap(standardDocument()));
   const start=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}},h.call('draft-session'));
@@ -142,5 +148,20 @@ test('an opted-in required slot without a predecessor names both available bindi
     assert.equal(answer.call_result,'error');
     const error=answer.errors.find(e=>e.path==='/inputs/draft');assert.ok(error);
     assert.ok(error.fix?.includes('predecessor')&&error.fix.includes('rec:'),'request the missing predecessor or explicit record, not an unrelated upload');
+  }finally{await w.close();}
+});
+
+test('an inherited object property never counts as an explicit input binding',{skip},async()=>{
+  const w=await setup({slot:'constructor'});try{
+    const result=await w.submit();
+    assert.equal(Object.hasOwn(w.input.inputs,'constructor'),false);
+    const answer=await w.h.service.startRun(w.h.alice,w.input,w.h.call('verifier-session'));
+    assert.equal(answer.call_result,'ok',JSON.stringify(answer.errors));
+    assert.equal(answer.run!.sources.find(s=>s.slot==='constructor')!.reference,'rec:'+result.record);
+    assert.equal(answer.run!.input_defaults![0].slot,'constructor');
+    assert.equal(Object.hasOwn(w.input.inputs,'constructor'),false,'the original arguments stay untouched');
+    const explicit=await w.h.service.startRun(w.h.alice,{...w.input,inputs:{...w.input.inputs,constructor:{reference:'rec:'+result.record}}},w.h.call('explicit-verifier'));
+    assert.equal(explicit.call_result,'ok',JSON.stringify(explicit.errors));
+    assert.equal(explicit.run!.input_defaults,undefined);
   }finally{await w.close();}
 });
