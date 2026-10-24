@@ -1,3 +1,4 @@
+import {CheckReadBudget} from './read-budget.ts';
 import {replacedCriteria,frozenCriteria} from './criterion-changes.ts';
 import {authorAccountsOf} from './lineage.ts';
 import {accountIndependenceOf,authorAccount} from './independence.ts';
@@ -19,7 +20,7 @@ import { publishCheckMarks } from '../packs/marks.ts';
 import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, callPackFunctionBatch, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
-import { receivedDigest } from './util.ts';
+import { mapLimited, receivedDigest } from './util.ts';
 import { getInterpreter } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, sourceCoverage, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
@@ -329,9 +330,12 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   // ---- the catalogs the checks consult, by catalog id
   const views = new Map<string, CatalogView | null>();
   for (const check of workflow.checks) {
-    if (check.catalog === undefined || views.has(check.catalog)) continue;
+    if (check.catalog === undefined || check.catalog_select || views.has(check.catalog)) continue;
     views.set(check.catalog, run.root !== undefined ? await ctx.deps.knowledge.catalog(run.root, check.catalog) : null);
   }
+  const selectedViews=new Map<string,Promise<CatalogView|null>>();
+  const selectionMissing=new Map<string,string>();
+  const selectionKey=(check:CheckEntry,item:string)=>JSON.stringify([item,check.catalog,check.catalog_select]);
   const requirementsOf = new Map<string, RequirementTemplate[]>();
   for (const t of templates) for (const id of t.checks) requirementsOf.set(id, [...(requirementsOf.get(id) ?? []), t]);
 
@@ -369,6 +373,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   }
 
   if(ctx.deps.knowledge.feeding&&resolveCtx.sources){const original=resolveCtx.sources;resolveCtx.sources={async read(sha,reader){const value=await original.read(sha,reader);if(value?.bytes&&value.readTier==='model_readable'){const captures=run.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha&&binding.artifact;});for(const capture of captures.length?captures:[undefined]){const meta=capture?.meta_artifact?await ctx.deps.records.store.get<any>(capture.meta_artifact):null;await ctx.deps.knowledge.feeding!.observeSourceBounded(principalOf(reader),sha,{sourceRecord:capture?.artifact,readManifest:capture?.read_manifest,metaRecord:capture?.meta_artifact,metaSource:meta?.kind==='source_artifact'?meta.body.sha256:undefined,composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version});}}return value;}};}
+  const readBudget=new CheckReadBudget();
+  const readReference=(reference:string,ref:Parameters<typeof resolveReference>[0])=>readBudget.read(reference,()=>resolveReference(ref,resolveCtx));
   const boundSourceCache = new Map<string, Promise<{ resolved: boolean; text: string | null; byteLength?: number; reason?: ReadFailureReason }>>();
 
   const resolveBoundSource = (reference: string) => {
@@ -377,7 +383,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       pending = (async () => {
         try {
           const parsed = parseReference(reference);
-          const result = await retryRead(() => resolveReference(parsed, resolveCtx), result => result.resolved ? null
+          const result = await retryRead(() => readReference(reference,parsed), result => result.resolved ? null
             : { reason: result.reason ?? (result.code === 'REFERENCE_UNRESOLVED' ? 'REFERENCE_UNRESOLVED' : 'SOURCE_UNAVAILABLE'), retry: result.reason !== undefined || result.code === 'SOURCE_UNAVAILABLE' }, attempt => {
               if (attempt.retry || attempt.attempt > 1) retryAttempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt, {reference}));
             });
@@ -390,6 +396,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
           const byteLength = Buffer.byteLength(result.text, 'utf8');
           return { resolved: true, text: result.text, byteLength };
         } catch (error) {
+          if(error instanceof HubReadFailure)throw error;
           onError(error, 'bound source');
           return { resolved: false, text: null, reason: 'check_error' as const };
         }
@@ -488,10 +495,11 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         if (scopeProblem(ref, scope) !== null) return { why: 'not_bound' };
         let result: Awaited<ReturnType<typeof resolveReference>>;
         try {
-          result = await retryRead(() => resolveReference(ref, resolveCtx), value => !value.resolved
+          result = await retryRead(() => readReference(reference,ref), value => !value.resolved
             && value.reason !== undefined ? {reason:value.reason,retry:true} : null,
             attempt => { if(attempt.retry || attempt.attempt > 1) retryAttempts.push(attemptEvidence('read',ENGINE_COMPONENT,attempt,{reference})); });
         } catch(error) {
+          if(error instanceof HubReadFailure)throw error;
           onError(error,'graded fragment');
           throw new HubReadFailure(reference,'check_error',retryAttempts);
         }
@@ -507,6 +515,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   /** Every reference-like string in the slot records (an interpreter's table may point at any of them). */
   const collectQuotedReferences = (value: unknown): void => {
     if (typeof value === 'string' && value.length <= MAX_REFERENCE_LENGTH && /^(?:src|tree|entry|rec):/.test(value)) {
+      readBudget.reserve(value);
       quotedReferences.add(value);
     } else if (Array.isArray(value)) {
       for (const item of value) collectQuotedReferences(item);
@@ -527,7 +536,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   /** Warm every quoted reference of an item's slot record before its checks run (once per reference per evaluation). */
   const warmQuoted = async (value: unknown, capBytes: number, texts: ReadonlyMap<string, string>): Promise<void> => {
     collectQuotedReferences(value);
-    await Promise.all([...quotedReferences].map(async (reference) => {
+    await mapLimited([...quotedReferences],4,async (reference) => {
       if (texts.has(reference) || warmed.has(reference) || warmedWhy.has(reference)) return;
       const graded = await gradeFragment(reference, capBytes);
       if (graded.text !== undefined) warmed.set(reference, graded.text);
@@ -535,7 +544,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         warmedWhy.set(reference, graded.why);
         if(graded.unread) warmedUnread.set(reference,graded.unread);
       }
-    }));
+    });
   };
 
   const callCheck = async (check: CheckEntry, subject: unknown, texts: ReadonlyMap<string, string>, item?: string): Promise<CheckOutcome[]> => {
@@ -550,7 +559,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         return [tableFailure(check)];
       }
     }
-    const view = check.catalog !== undefined ? (views.get(check.catalog) ?? undefined) : undefined;
+    const view = check.catalog_select&&item ? (await selectedViews.get(selectionKey(check,item))??undefined) : check.catalog !== undefined ? (views.get(check.catalog) ?? undefined) : undefined;
     const { boundSources, unreadSources } = await readBoundSources(check);
     let readReceipt: string | undefined;
     if (check.reads?.narrow !== undefined) {
@@ -701,9 +710,21 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const perItem = used.filter((c) => c.applies === 'item');
   const eligible = (check: CheckEntry, id: string): boolean => !deniedArtifact(check,id) && !(artifactCheck(check) && missingItemArtifact(id))
     && !(judgmentOnly(check) && (handlingOf(id) !== 'handled' || exclude.has(id) || submission === null));
-  const builderInput = (it: ItemProjection, check: CheckEntry) => {
+  const builderInput = async (it: ItemProjection, check: CheckEntry) => {
     const slots = exclude.has(it.id) ? null : checkedSlotsOf(it.id); const ev = evidenceOf(it.id);
-    return { applies: 'item', item: subjectItem(it), slots, evidence: slots === null ? [] : ev.evidence, context, ...(check.catalog ? { catalog: views.get(check.catalog)?.entries() ?? [],catalog_complete:views.get(check.catalog)?.complete??false } : {}) };
+    const raw={applies:'item',item:subjectItem(it),slots,evidence:slots===null?[]:ev.evidence,context};
+    let view=check.catalog?views.get(check.catalog):null;
+    if(check.catalog_select&&check.catalog){
+      const key=selectionKey(check,it.id);
+      let pending=selectedViews.get(key);
+      if(!pending){pending=(async()=>{
+        const selection=(await callPackFunction({packDir:workflow.pack.directory,...check.catalog_select!},raw,ctx.deps.sandboxLimits,sandboxFor('catalog_select',check.catalog_select!.module,it.id))).output;
+        if(!isObject(selection)||typeof selection.base!=='string'||!Array.isArray(selection.lines)||selection.lines.length>128||selection.lines.some(line=>typeof line!=='string'||Buffer.byteLength(line)>8192))throw new RangeError('目录选择必须声明路径和至多 128 条完整命令，每条至多 8192 字节；拆分计划后重核');
+        return run.root?ctx.deps.knowledge.catalog(run.root,check.catalog!,selection as {base:string;lines:string[]}):null;
+      })().catch(error=>{onError(error,'catalog selection');selectionMissing.set(key,error instanceof RangeError?error.message:'缺锁定目录的所选路径；管理员修复目录读取后原样重交，不用整棵目录代替');return null;});selectedViews.set(key,pending);}
+      view=await pending;
+    }
+    return {...raw,...(check.catalog?{catalog:view?.entries()??[],catalog_complete:view?.complete??false,...(selectionMissing.has(selectionKey(check,it.id))?{catalog_missing:selectionMissing.get(selectionKey(check,it.id))}:{})}:{})};
   };
   const runtimeAdmission: RuntimeAdmission[] = [];
   const admittedChecks = new Map<string,RuntimeAdmission>();
@@ -715,7 +736,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     for (const sample of declared.samples) {
       const item = items.find(it=>it.id===sample.item);
       if (!item) continue; // The submission boundary refuses nonexistent sample items.
-      const itemInput=builderInput(item, checks.get(`@runtime.${index}`)!);
+      const itemInput=await builderInput(item, checks.get(`@runtime.${index}`)!);
       const subject={item:item.id,label:item.label,location:item.location,fields:item.fields,slots:itemInput.slots,evidence:itemInput.evidence};
       const texts=evidenceOf(item.id).texts;
       await warmQuoted([subject,declared.table],MAX_CHECK_READ_BYTES,texts);
@@ -755,7 +776,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     const identity = JSON.stringify([target.module, target.export ?? 'default']);
     const group = builders.get(identity) ?? { target, entries: new Map<string, unknown>() }; builders.set(identity, group);
     for (const it of items) if (eligible(check, it.id)) {
-      const value = builderInput(it, check); group.entries.set(subjectKey(target, JSON.stringify(value)), value);
+      const value = await builderInput(it, check); group.entries.set(subjectKey(target, JSON.stringify(value)), value);
     }
   }
   for (const group of builders.values()) {
@@ -777,7 +798,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       for (const check of perItem) {
         if (!eligible(check, it.id)) continue;
         try {
-          const itemInput = builderInput(it, check);
+          const itemInput = await builderInput(it, check);
           const built = await buildSubject(itemSubjects, check, itemInput, () => ({
             item: it.id, label: it.label, location: it.location, fields: it.fields,
             slots: itemInput.slots, evidence: itemInput.evidence,

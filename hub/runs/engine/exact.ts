@@ -112,7 +112,8 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
   if (run.predecessor !== undefined) for (const result of await readScope(`run:${run.predecessor}`, () => resultsOf(store, run.predecessor!))) if (!records.has(result.digest)) records.set(result.digest, null);
   const catalogs: CatalogView[] = [];
   if (run.root !== undefined) {
-    const ids = new Set<string>([...workflow.workflow.product.catalogs, ...workflow.checks.flatMap((c) => (c.catalog ? [c.catalog] : []))]);
+    const selective=new Set(workflow.checks.filter(c=>c.catalog_select).map(c=>c.catalog));
+    const ids = new Set<string>([...workflow.workflow.product.catalogs.filter(id=>!selective.has(id)), ...workflow.checks.flatMap((c) => (c.catalog&&!c.catalog_select ? [c.catalog] : []))]);
     for (const id of ids) {
       const view = await readScope(`tree:${run.root}/${id}`, () => ctx.deps.knowledge.catalog(run.root!, id));
       if (view !== null) catalogs.push(view);

@@ -1,3 +1,4 @@
+import {commandTokens} from '../../../../contracts/generated/command-grammar.ts';
 import {catalogFor} from './command-catalog.ts';
 import {COMMAND_IDENTITIES} from '../functions/test-support.ts';
 // Test harness of the case-compile pack against the real Hub parts: a fake external reader serving the synthetic
@@ -53,6 +54,7 @@ const CATALOG_SPEC = {
 };
 
 export class FakeKnowledge implements KnowledgePort {
+  fullCatalogReads=0;selectedCatalogReads=0;treeReads:string[]=[];
   readonly #catalogView: CatalogView = createCatalogView(catalogFor(COMMAND_IDENTITIES,ROOT).entries,{reference:`tree:${ROOT}/commands`,complete:true,caseSensitive:true});
 
   async builds(product: string, filter?: { line?: string; released?: boolean }): Promise<KnownBuild[]> {
@@ -70,11 +72,13 @@ export class FakeKnowledge implements KnowledgePort {
   async rootInfo(root: string): Promise<RootInfo[]> {
     return root === ROOT ? [this.info()] : [];
   }
-  async catalog(root: string, id: string): Promise<CatalogView | null> {
-    return root === ROOT && id === 'commands@1' ? this.#catalogView : null;
+  async catalog(root: string, id: string,selection?:{base:string;lines:string[]}): Promise<CatalogView | null> {
+    if(root!==ROOT||id!=='commands@1')return null;
+    if(selection)this.selectedCatalogReads++;else this.fullCatalogReads++;
+    return selection?createCatalogView(this.#catalogView.entries().filter(entry=>selection.lines.some(line=>{const tokens=commandTokens(line);return tokens&&entry.words.every((word,index)=>tokens[index]?.value===word&&!tokens[index].quoted);})),{reference:`tree:${ROOT}/commands`,complete:true,caseSensitive:true}):this.#catalogView;
   }
   treeReader(): TreeReader {
-    return { read: () => null, readEntry: () => null };
+    return { read: (root,path,entry) => {this.treeReads.push(root+path+'@'+entry);return null;}, readEntry: () => null };
   }
   async getNodes(): Promise<NodesPage | null> {
     return null;
@@ -142,6 +146,7 @@ export interface Hub {
   kit: TestRecordsKit;
   registry: PackRegistry;
   service: RunsEngine;
+  knowledge:FakeKnowledge;
   external: FakeExternal;
   admin: Principal;
   alice: Principal;
@@ -177,11 +182,12 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
 
     const external = new FakeExternal(kit.artifacts);
     const logs: AdminLogEntry[] = [];
+    const knowledge=new FakeKnowledge();
     const service = createRunsService({
       records: kit,
       workflows: createWorkflowStore(registry),
       packs: createPacksPort(registry),
-      knowledge: new FakeKnowledge(),
+      knowledge,
       external,
       leases: new LeaseService(new Database(createPool(kit.database, 2)), { now: async () => now() }),
       // This private synthetic database has no dispatch service or jobs.
@@ -194,6 +200,7 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
       kit,
       registry,
       service,
+      knowledge,
       external,
       admin,
       alice,

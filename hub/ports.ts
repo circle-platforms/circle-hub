@@ -319,7 +319,7 @@ export interface KnowledgePort {
   /** Every composition record of a root digest (equal content from different builds shares one root). */
   rootInfo(root: string): Promise<RootInfo<KnownBuild | null>[]>;
   /** The closed catalog declared by the product pack, built from the entries of the root; null when the root has none of that id. */
-  catalog(root: string, catalogId: string): Promise<CatalogView | null>;
+  catalog(root: string, catalogId: string, selection?: {base:string;lines:string[]}): Promise<CatalogView | null>;
   /**
    * Reads nodes and entries for reference resolution; permission is enforced inside. `lock.composition` binds the reader to the
    * composition a run locked (RootInfo.composition): grounds and premises come from it alone.

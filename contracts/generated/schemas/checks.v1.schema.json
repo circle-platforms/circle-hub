@@ -77,6 +77,24 @@
             "type": "string",
             "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
           },
+          "catalog_select": {
+            "description": "derives {base, lines} from frozen item inputs before any catalog is read; only exact grammar paths along those token sequences are fetched",
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+              },
+              "export": {
+                "type": "string",
+                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+              }
+            },
+            "required": [
+              "module"
+            ],
+            "additionalProperties": false
+          },
           "judges": {
             "type": "string",
             "enum": [
