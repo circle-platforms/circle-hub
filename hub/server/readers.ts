@@ -3,6 +3,7 @@ import { isKnowledgeContributionSchema } from '../../contracts/src/contributions
 import type { ContributionLayer } from '../knowledge/api.ts';
 // The readers hub/refs resolves references with, built on the records kit for one caller (B02 R[3], R02). Absent and
 // forbidden are the same null everywhere; the real reason goes to the admin note through `note`.
+import { canSeeRun } from '../runs/engine/api.ts';
 import type { RunsService } from '../ports.ts';
 import { IntegrityError } from '../records/api.ts';
 import type { Principal, RecordKind, RecordsKit, SourceArtifact, StoredRecord } from '../records/api.ts';
@@ -19,8 +20,8 @@ export function sourceReaderFor(
   note: (reason: string) => void = () => {},
 ): SourceReader {
   return {
-    async read(sha256): Promise<SourceRead | null> {
-      const source = await records.artifacts.source(principal, sha256, { consumer });
+    async read(sha256, reader): Promise<SourceRead | null> {
+      const source = await records.artifacts.source(principal, sha256, { consumer }) ?? (reader?.run ? await records.artifacts.sourceForRun(principal,sha256,reader.run,{consumer}) : null);
       if (source === null) {
         note(`source ${sha256} is absent or not readable by ${principal.id}`);
         return null;
@@ -67,7 +68,11 @@ export function recordReaderFor(records: RecordsKit, runs: RunsService, principa
     if (record.kind === 'source_artifact') return records.artifacts.canRead(principal, record as SourceArtifact);
     if (account.role === 'admin') return true;
     const run = runOfRecord(record.kind, record.body, record.schema);
-    return run !== null && (await runs.getRun(principal, run)) !== null;
+    if (run === null) return false;
+    const detail = await runs.getRun(account, run);
+    if (detail === null) return false;
+    if(!canSeeRun(account,detail.run)&&(record.kind==='request'||record.kind==='claim'&&record.schema==='hypothesis-set@1'))return false;
+    return canSeeRun(account, detail.run) || record.kind !== 'validation_result' || isObject(record.body) && record.body.acceptance === 'accepted';
   };
   return {
     async read(digest): Promise<RecordRead | null> {

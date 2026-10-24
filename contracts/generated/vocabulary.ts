@@ -70,6 +70,7 @@ export const AXES = {
   link_match: { label: '链接匹配方式', owner: 'K05', values: [{ code: 'exact', label: '精确匹配' }, { code: 'longest_prefix', label: '最长前缀匹配' }] },
   variable_kind: { label: '变量种类', owner: 'D01', values: [{ code: 'var', label: '普通变量' }, { code: 'secret', label: '密钥' }] },
   digest_rule: { label: '摘要规则', owner: 'D01', values: [{ code: 'plain', label: '原样' }, { code: 'sha512_base64', label: 'Base64(SHA-512)' }] },
+  share_audience: { label: '受众', owner: 'B04', values: [{ code: 'user', label: '用户' }, { code: 'pack_users', label: '能用这个包的用户' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -677,6 +678,15 @@ export function isDigestRule(value: unknown): value is DigestRule {
   return (DIGEST_RULE as readonly unknown[]).includes(value);
 }
 
+/** 受众 (B04) */
+export const SHARE_AUDIENCE = ['user', 'pack_users'] as const;
+export type ShareAudience = (typeof SHARE_AUDIENCE)[number];
+export const SHARE_AUDIENCE_LABEL = { 'user': '用户', 'pack_users': '能用这个包的用户' } as const satisfies { readonly [K in ShareAudience]: string };
+export const ShareAudienceSchema = z.enum(SHARE_AUDIENCE);
+export function isShareAudience(value: unknown): value is ShareAudience {
+  return (SHARE_AUDIENCE as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   nature: Nature;
   basis_rank: BasisRank;
@@ -745,6 +755,7 @@ export interface AxisValues {
   link_match: LinkMatch;
   variable_kind: VariableKind;
   digest_rule: DigestRule;
+  share_audience: ShareAudience;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -815,6 +826,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   link_match: LINK_MATCH_LABEL,
   variable_kind: VARIABLE_KIND_LABEL,
   digest_rule: DIGEST_RULE_LABEL,
+  share_audience: SHARE_AUDIENCE_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

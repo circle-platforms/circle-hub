@@ -759,3 +759,28 @@ prerequisite and the exact bound byte identities. The successor verification, no
 A same-owner, same-pack successor stops replaying old submissions but never discards a trusted host-recovery gap. Maintenance appends a named administrator request and a system-input projection immediately, preserving the old result bytes and the actual retry count. A later trusted parent-success validation in that run or a same-pack successor answers the host-repair request; creating a successor alone never does. Unanswered requests keep their run open even after supersession.
 
 Maintenance compares every unanswered request deadline with its clock. Expiry appends a separate named administrator clarification that cites the original request, with a new finite deadline; repeated passes reuse that escalation. An expired escalation advances in the same way. Originals are immutable, and actual original answers propagate through escalation references. Run listings expose overdue_requests separately, including superseded runs with unanswered requests; the console shows their original deadlines in a separate table.
+
+## Shared read access
+
+`canSeeRun` remains the synchronous owner/administrator capability used by submissions and predecessor checks.
+`canViewRun` adds only the current sharing decisions and assignment checks. Production policies evaluate the frozen
+requirements, include Hub-side runs, and never include judgment workflows. Shared readers receive the original run,
+including runner, session and client key; accepted validation results and run-scoped submission/action records remain
+citable by their exact record digests. Rejected validation bodies, administrator notes and call logs are not shared.
+
+Run lists filter visible records before paging, ordered by start time with run identity as the stable tie breaker.
+Cursors bind the reader, package filter and last ordering key; hidden records cannot create visible empty pages.
+Sharing confers no submission, lease lineage, repair round or client-key ownership. The model's conditional read-only
+predecessor exception requires a workflow declaration that the present format does not yet expose; this task keeps the
+existing predecessor guard, as specified by its task page, and introduces no such declaration.
+
+Shared previews use the same run-bound generated-source accessor for fragment resolution and quotation candidates.
+A shared run never grants knowledge-tree permission: live catalogs are omitted from a preview when its reader cannot
+read the product, and tree references still pass the ordinary tree reader. Connector originals retain their own ACLs.
+
+Shared run-detail receipts use only the action codes and their registered descriptions for rejected validations. Instance
+messages, fixes, paths and requirement pointers from those validation bodies do not enter the shared aggregate view.
+Owners and administrators retain the full diagnostics. The underlying submissions, actions, results and run record are
+never rewritten or redacted under their original digests.
+
+The sharing/unknown-exit merge keeps visibility filtering before stable pagination, alongside unanswered and overdue requests. System-input deliveries remain independent of user-submission receipt lookup. Sharing grants accepted validation bodies and the run/submission/action records declared by B04; run-bound request and hypothesis-set records remain owner/administrator-only in both record readers, matching the request listing policy. Management delivery stays current without changing historical technical results.

@@ -22,6 +22,14 @@ test('an internal failure leaves an interrupted action and startup maintenance r
   const detail=(await h.service.getRun(h.alice,run.run))!;
   assert.equal(detail.submissions[0].acceptance,null);
   assert.equal(detail.submissions[0].errors[0].message,'未校验（中断）');
+  await h.kit.authorizations.share(h.admin,run.run,[h.bob.id]);
+  const shared=(await h.service.getRun(h.bob,run.run))!;
+  assert.equal(shared.submissions[0].acceptance,null);
+  assert.ok(shared.submissions[0].errors.length>0);
+  for(const error of shared.submissions[0].errors)assert.deepEqual(Object.keys(error).sort(),['code','message']);
+  assert.ok(!JSON.stringify(shared.submissions[0]).includes('synthetic internal interruption detail'));
+  assert.ok(!JSON.stringify(shared.submissions[0].errors).includes('自动重验'),'the runner-only repair hint is not a shared diagnostic');
+  await h.kit.authorizations.unshare(h.admin,run.run,h.bob.id);
   await h.service.maintain();
   assert.equal((await h.service.getRun(h.alice,run.run))!.latest?.result.acceptance,'accepted');
   const actions=await actionsOf(h.kit.store,run.run);

@@ -7,7 +7,7 @@ import {openTestRecords,type TestRecordsKit} from '../../testing/records.ts';
 import {startPostgres,type TemporaryPostgres} from '../../testing/postgres.ts';
 import {createRequestService} from '../../requests/api.ts';
 import {recordReaderFor} from '../../server/readers.ts';
-import {recordReader,identityOf,canSeeRun} from './readers.ts';
+import {recordReader,identityOf,canSeeRun,canViewRun} from './readers.ts';
 import {putRun} from './store.ts';
 let pg:TemporaryPostgres,kit:TestRecordsKit;
 before(async()=>{pg=await startPostgres();kit=await openTestRecords({postgres:pg});});
@@ -33,5 +33,17 @@ test('request references inherit run visibility in both readers without broadeni
   assert.equal(await recordReaderFor(kit,runs,bob).read(question.digest,identityOf(bob,run.run)),null);
   assert.equal(await recordReaderFor(kit,runs,bob).read(hypothesis.digest,identityOf(bob,run.run)),null);
   assert.equal(await recordReader(kit.store).read(question.digest,identityOf(bob,run.run)),null);
+  await kit.authorizations.share(admin,run.run,[bob.id]);
+  const sharedRuns={getRun:async(by:typeof bob,id:string)=>id===run.run&&await canViewRun(by,run,kit.store)?{run,submissions:[],latest:null,production:null}:null} as unknown as RunsService;
+  const accepted=await kit.store.put({kind:'validation_result',schema:'validation@1',provenance:'projected',body:{run:run.run,acceptance:'accepted'}});
+  const refused=await kit.store.put({kind:'validation_result',schema:'validation@1',provenance:'projected',body:{run:run.run,acceptance:'not_accepted',errors:[{message:'合成私有诊断'}]}});
+  for(const reader of [recordReaderFor(kit,sharedRuns,bob),recordReader(kit.store)]){
+    assert.ok(await reader.read(stored.digest,identityOf(bob,run.run)));
+    assert.ok(await reader.read(accepted.digest,identityOf(bob,run.run)));
+    assert.equal(await reader.read(refused.digest,identityOf(bob,run.run)),null);
+    assert.equal(await reader.read(question.digest,identityOf(bob,run.run)),null,'sharing does not grant request authority');
+    assert.equal(await reader.read(hypothesis.digest,identityOf(bob,run.run)),null,'sharing does not grant hypothesis-set visibility');
+    assert.equal(await reader.read(pack.digest,identityOf(bob,run.run)),null);
+  }
   assert.ok(await recordReaderFor(kit,runs,admin).read(question.digest,identityOf(admin,run.run)));
 });

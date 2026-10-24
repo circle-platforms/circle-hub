@@ -8,7 +8,7 @@ import {openTestRecords,type TestRecordsKit} from '../../testing/records.ts';
 import {startPostgres,type TemporaryPostgres} from '../../testing/postgres.ts';
 import {createEngineContext} from './deps.ts';
 import {putRun,putAction,putResult,putSubmission,resultFor,latestAccepted} from './store.ts';
-import {getRun} from './queries.ts';
+import {getRun,getResult,listRuns} from './queries.ts';
 let pg:TemporaryPostgres,kit:TestRecordsKit;
 before(async()=>{pg=await startPostgres();kit=await openTestRecords({postgres:pg});});
 after(async()=>{await kit?.close();await pg?.stop();});
@@ -29,4 +29,13 @@ test('system delivery inputs are reproducible and never alias a received user su
   const detail=(await getRun(ctx,admin,run.run))!;
   assert.equal(detail.submissions[0].acceptance,null,'an interrupted malformed user submission is not the system delivery');
   assert.equal(detail.submissions[0].result,null);
+  const bob=await kit.principals.createUser(admin,'合成分享读者');
+  await kit.authorizations.share(admin,run.run,[bob.id]);
+  const shared=(await getRun(ctx,bob,run.run))!;
+  assert.equal(shared.latest!.record,saved.digest);
+  assert.equal(shared.submissions[0].result,null,'a shared system delivery also never aliases a user receipt');
+  assert.deepEqual(shared.requests,[]);
+  assert.equal((await getResult(ctx,bob,run.run))!.record,saved.digest);
+  assert.equal((await listRuns(ctx,bob,{limit:1})).items[0].run,run.run);
+
 });
