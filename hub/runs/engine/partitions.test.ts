@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { PARTITION, REASON, STATIC_TERMINAL, type Partition, type Reason } from '../../../contracts/generated/vocabulary.ts';
 import { Partitions, partitionCountsOf, type ItemResult, type LayerResult, type RequirementResult } from '../../../contracts/src/validation.ts';
 import { PartitionInvariantError, assertCovering, partitionItems, type PartitionInput } from './partitions.ts';
+import { bindRecovery } from './recovery.ts';
 import { dynamicLayer } from './terminals.ts';
 
 /** Deterministic generator (mulberry32), so a failing case is reproducible from its seed. */
@@ -18,12 +19,14 @@ function seeded(seed: number) {
   return { int: (max: number) => Math.floor(next() * max), chance: (p: number) => next() < p, pick: <T>(xs: readonly T[]): T => xs[Math.floor(next() * xs.length)] };
 }
 
+const recovery = { now: new Date('2026-01-01T00:00:00Z'), runner: 'usr_' + '1'.repeat(26), owner: 'usr_' + '2'.repeat(26), admin: 'usr_' + '3'.repeat(26) };
+const bind = (layer: LayerResult): LayerResult => bindRecovery(layer, [], recovery);
 const LOCATION = `src:${'a'.repeat(64)}/kityminder@1/n/x`;
 
 function layer(terminal: (typeof STATIC_TERMINAL)[number], reason: Reason): LayerResult {
   if (terminal === 'pass' || terminal === 'judgment') return { layer: 'static', terminal };
   if (terminal === 'violation') return { layer: 'static', terminal, code: 'core.structure.required_empty' };
-  return { layer: 'static', terminal, reason };
+  return bind({ layer: 'static', terminal, reason });
 }
 
 function requirementResult(key: string, layers: LayerResult[]): RequirementResult {
@@ -109,7 +112,7 @@ test('property: for random runs the partitions are disjoint, cover the item set 
       ids.push(id);
       const requirements = keys.map((k) => {
         const layers: LayerResult[] = [layer(rand.pick(STATIC_TERMINAL), rand.pick(REASON))];
-        if (rand.chance(0.2)) layers.push(dynamicLayer());
+        if (rand.chance(0.2)) layers.push(bind(dynamicLayer()));
         return requirementResult(k, layers);
       });
       inputs.push(input(id, requirements, { required, notCovered: rand.chance(0.1), rejection: rand.chance(0.15) ? 'pack.reject_me' : null }));
@@ -145,8 +148,8 @@ test('V05 R[3] by hand: each case written from the rule, not from the code', () 
   const judgment = layer('judgment', 'no_check');
   const unchecked = (reason: Reason) => layer('unchecked', reason);
   const incomplete = (reason: Reason) => layer('incomplete', reason);
-  const notRun: LayerResult = dynamicLayer();
-  const dynamicIncomplete: LayerResult = { layer: 'dynamic', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' };
+  const notRun: LayerResult = bind(dynamicLayer());
+  const dynamicIncomplete: LayerResult = bind({ layer: 'dynamic', terminal: 'incomplete', reason: 'not_covered', attribution: 'producer_error' });
   type Case = [name: string, requirements: [key: string, layers: LayerResult[]][], extra: Partial<PartitionInput>, expected: [Partition, string | null]];
   const required = new Set(['r1', 'r2']);
   const cases: Case[] = [

@@ -363,7 +363,7 @@ describe('range@1 numbers', () => {
     assert.deepEqual(verdicts(runOn('range@1', threshold('sum', { maximum: 9007199254740992 }), { v: ['9007199254740992', '1'] })), [['refute', 'core.range.out_of_bounds']]);
     assert.deepEqual(verdicts(runOn('range@1', threshold('min', { minimum: 1 }), { v: ['3', 1, '0.5'] })), [['refute', 'core.range.out_of_bounds']]);
     assert.deepEqual(verdicts(runOn('range@1', threshold('max', { maximum: 3 }), { v: ['3', 1, '0.5'] })), [['support', null]]);
-    assert.deepEqual(verdicts(runOn('range@1', threshold('min', { minimum: 1 }), { v: [] })), [['unknown', 'missing_input']]);
+    assert.deepEqual(verdicts(runOn('range@1', threshold('min', { minimum: 1 }), { v: [] })), [['refute', 'core.range.out_of_bounds']]);
     assert.deepEqual(verdicts(runOn('range@1', threshold('sum', { maximum: 3 }), { v: ['x'] })), [['unknown', 'check_error']]);
   });
 });

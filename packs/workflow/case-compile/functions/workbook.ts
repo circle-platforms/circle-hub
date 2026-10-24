@@ -105,7 +105,7 @@ function generationFields(value: unknown): GenerationFields | null {
 export default function check(input: unknown): Outcome[] {
   const s = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const item = typeof s.item === 'string' ? s.item : undefined;
-  const unknown = (reason: NonNullable<Outcome['reason']>, statement: string): Outcome[] => [{ verdict: 'unknown', reason, statement, grounds: [], tier: 'blocking', ...(item ? { item } : {}) }];
+  const unknown = (reason: NonNullable<Outcome['reason']>, statement: string): Outcome[] => [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (statement), reason, statement, grounds: [], tier: 'blocking', ...(item ? { item } : {}) }];
   if (!s.workbook) {
     const identity = parseRuntimeContract(s.contract);
     const basis = identity.ok && isRecord(s.profile) && typeof s.profile.synthetic === 'boolean' ? markers(s.profile.synthetic, identity.contract) : '（不证明在真实设备上跑得通）';

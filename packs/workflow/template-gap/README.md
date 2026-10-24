@@ -1,4 +1,4 @@
-# template-gap 1.1.2: document categories and command coverage
+# template-gap 1.1.3: document categories and command coverage
 
 This workflow is a production run: both requirements are facts, computed and stored at start_run. It fills no item
 slot, generates no cases and calls no model. The documents are the judged subject. Both checks are static,

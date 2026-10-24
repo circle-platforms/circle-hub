@@ -11,6 +11,7 @@ import { after, before, describe, test } from 'node:test';
 import { McpError } from '@modelcontextprotocol/sdk/types.js';
 import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
+import { SubmitResultOutput } from '../../contracts/src/tools.ts';
 import { SERVER_INSTRUCTIONS, TOOLS } from '../../contracts/src/tools.ts';
 import { canonicalize, sha256Hex, type CallLogInput } from '../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
@@ -430,6 +431,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     const accepted = await client.call('submit_result', submission);
     assert.equal(accepted.isError, false, 'an accepted submission with unknown and incomplete items is not an error');
     assert.equal(accepted.structuredContent.acceptance, 'accepted');
+    SubmitResultOutput.parse(accepted.structuredContent);
     assert.deepEqual(accepted.structuredContent.counts, { delivered: 2, rejected: 0, quarantined: 0, incomplete: 1, unknown: 1 });
     assert.equal(accepted.content[0].text?.split('\n')[0], '回执：已受理；分区：已交付 2，已拒收 0，已隔离 0，未完成 1（模型声明跳过 1）；未知 1');
     const repeat = await client.call('submit_result', submission);

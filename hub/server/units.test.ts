@@ -154,14 +154,14 @@ test('claims are shown in DISPLAY_ORDER; unknown terminals have their own symbol
   assert.match(fields[1][1], /参数超出范围，反驳，core\.catalog\.param_out_of_range/);
   assert.equal(fields[2][1], '事实，观察上的规则');
   for (const terminal of STATIC_TERMINAL) {
-    const layer = LayerResult.parse({ layer: 'static', terminal, ...(terminal === 'violation' ? { code: 'x' } : {}), ...(['unchecked', 'incomplete'].includes(terminal) ? { reason: 'no_check' } : {}) });
+    const layer = LayerResult.parse({ layer: 'static', terminal, ...(terminal === 'violation' ? { code: 'x' } : {}), ...(['unchecked', 'incomplete'].includes(terminal) ? { reason: 'no_check', missing: '合成检查的判定结果', exit: { action: 'reevaluate', audience: { hub: true }, due: '2026-01-01T00:00:00Z' } } : {}) });
     const symbol = terminalSymbol(layer);
     if (isUnknownTerminal(layer)) assert.equal(symbol, SYMBOL.unknown, terminal);
     else assert.notEqual(symbol, SYMBOL.unknown, terminal);
     assert.match(terminalText(layer), /^.\s静态：/);
   }
   for (const terminal of DYNAMIC_TERMINAL) {
-    const layer = LayerResult.parse({ layer: 'dynamic', terminal, ...(terminal === 'fail' ? { code: 'x' } : {}), ...(['no_verdict', 'not_run', 'incomplete'].includes(terminal) ? { reason: 'no_check' } : {}) });
+    const layer = LayerResult.parse({ layer: 'dynamic', terminal, ...(terminal === 'fail' ? { code: 'x' } : {}), ...(['no_verdict', 'not_run', 'incomplete'].includes(terminal) ? { reason: 'no_check', missing: '合成检查的判定结果', exit: { action: 'reevaluate', audience: { hub: true }, due: '2026-01-01T00:00:00Z' } } : {}) });
     const symbol = terminalSymbol(layer);
     if (isUnknownTerminal(layer)) assert.equal(symbol, SYMBOL.unknown, terminal);
     else assert.ok(symbol !== SYMBOL.unknown, terminal);
@@ -287,4 +287,11 @@ test('the Hub\'s own knowledge views are external object types to bind but no ex
   assert.ok(readsOutside('knowledge-base:document'), 'only the system named knowledge is the Hub\'s');
   assert.ok(!readsOutside('application/json'));
   assert.equal(KNOWLEDGE_VIEW_SYSTEM, VIEW_SYSTEM, 'the server names the views\' system as hub/knowledge does');
+});
+
+test('historical transitional layers disclose unwritten exits without mutating the result', () => {
+  const legacy = { layer: 'static', terminal: 'unchecked', reason: 'missing_input' } as const;
+  const before = JSON.stringify(legacy);
+  assert.match(terminalText(legacy), /出口未写/);
+  assert.equal(JSON.stringify(legacy), before);
 });

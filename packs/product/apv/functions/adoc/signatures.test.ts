@@ -5,6 +5,9 @@
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { relationFacts } from '../../../../../hub/knowledge/api.ts';
+import { ProductDeclaration } from '../../../../../contracts/src/product.ts';
+import declaration from '../../product.json' with { type: 'json' };
 import { compileAdoc } from './index.ts';
 import { toK1Model } from './k1-model.ts';
 import { produceManualEntries } from '../manual.ts';
@@ -486,12 +489,26 @@ test('an example takes no part in judgment: its literal is no drift candidate, a
   assert.ok(produced.ok, JSON.stringify(produced));
   const examples = produced.entries.filter((entry) => entry.data.reference_only === true);
   assert.equal(examples.length, 1, JSON.stringify(produced.entries.map((entry) => [entry.statement, entry.data])));
-  assert.deepEqual(examples[0]!.data.command_literals, ['demo ghost add']);
-  // The example's literal is not a drift candidate of the manual; the same-shaped literal in real prose is.
-  const drift = produced.warnings.filter((warning) => warning.includes('解析不到，是漂移候选'));
-  assert.equal(drift.length, 1, produced.warnings.join('；'));
-  assert.ok(drift[0]!.includes('demo ghost show'), drift[0]);
-  assert.ok(!drift[0]!.includes('demo ghost add'), `an example takes no part in judgment: ${drift[0]}`);
+  const rules = ProductDeclaration.parse(declaration).links!;
+  const definition = Object.assign(new Set(['definition']), { producersByKind: new Map([['definition', new Set(['command-tree'])]]) });
+  const nodes = new Map<string, Set<string>>([
+    ['/commands', new Set()], ['/commands/demo', new Set()], ['/commands/demo/probe', definition],
+  ]);
+  const sources = produced.entries.map((entry, index) => ({
+    path: entry.path ?? '/', unplaced: entry.path === null, entry: createHash('sha256').update(String(index)).digest('hex'), producers: ['manual'],
+    content: { kind: entry.kind, statement: String(entry.statement), data: entry.data, applicability: entry.applicability ?? null },
+  }));
+  const facts = relationFacts('a'.repeat(64), rules, nodes, sources);
+  assert.deepEqual(facts.drift.map(row => row.literal), ['demo ghost show']);
+  assert.ok(!facts.links.some(row => row.literal === 'demo ghost add'));
+  // Matching targets must not turn an example into a link either.
+  nodes.set('/commands/demo/ghost', new Set()); nodes.set('/commands/demo/ghost/add', definition);
+  const withExampleTarget = relationFacts('a'.repeat(64), rules, nodes, sources);
+  assert.ok(!withExampleTarget.links.some(row => row.literal === 'demo ghost add'));
+  assert.deepEqual(withExampleTarget.drift.map(row => row.literal), ['demo ghost show']);
+  assert.equal(Object.hasOwn(examples[0]!.data, 'command_literals'), false);
+  assert.equal(Object.hasOwn(examples[0]!.data, 'signature_literals'), false);
+  assert.deepEqual(examples[0]!.data.reference, { command_literals: ['demo ghost add'] });
   // The mark and what a consumer still has to do are said out loud.
   assert.ok(
     produced.warnings.some((warning) => warning.includes('data.reference_only') && warning.includes('分流')),

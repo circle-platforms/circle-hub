@@ -63,8 +63,8 @@ circle-hub pack retire <pack@version> | activate <product pack> | deactivate <pr
 circle-hub resource add <system pack> --name <n> --environment test|shared|production --origin <role>=<url> ...
                     [--allow-plaintext <role>] ... [--setting <key>=<JSON or text>] ...
 circle-hub resource list [--as] | disable <res> | enable <res> | reset-login <res>
-circle-hub secret set <resource> <credential>         # value from stdin only
-circle-hub secret list [--as]                         # names only
+circle-hub secret set --name <NAME> --reason <note>   # one line per name, stdin only
+circle-hub secret list                              # administrator metadata only
 circle-hub doc put <name> <file> | list | show <name> # named documents (C4): put is admin-only; non-admins get the missing answer
 circle-hub knowledge sync --product <name or id> [--line <line>] [--dry-run] [--recheck] [--include-unreleased]
 circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
@@ -84,7 +84,7 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   when they read it, so it never reaches a child process. No token, an unknown or revoked one, or one of a non-admin is
   refused (exit 1) before anything is read or written, and the fix named works without that token (`operator-token
   reissue` for a lost or dead item, never `token issue`, which needs it); `secret set` never asks for a value then.
-- **Read-only commands** (`pack list`, `resource list`, `secret list`, `knowledge roots|diff`, and the server core's
+- **Read-only commands** (`pack list`, `resource list`, `knowledge roots|diff`, and the server core's
   `logs export` and `run show` through `operatorViewer`) act as the account of the operator token when there is one (a
   user's `pack list` shows the user's packs); `--as` is then allowed only when it names that same account. Without a token
   they act as `--as` or the only enabled admin.
@@ -114,43 +114,21 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
 - **Cutting off one's own token.** `token revoke` of the operator token's own token and `user disable` of its own account
   are carried out (revocation must stay possible for a leak); afterwards the command says on stderr that the operator token
   no longer works and how to get a new one (`operator-token reissue`, after deleting the dead item).
-- **Secrets**: `secret set` reads from stdin only (a terminal reads without echo: special keys such as arrows, function keys and the
-  bracketed-paste markers are not text, backspace deletes, Ctrl-U clears, a terminal that closes first refuses; a pipe or
-  file is read whole, one trailing line break removed). The resource and the credential are checked before a value is
-  asked for (`ResourceAdmin.describe`: the credential names and digest rules, never a value). A credential is stored by
-  `ResourceAdmin.setCredential`, which keeps a `sha512_base64` credential (the agile portal's password) as
-  Base64(SHA-512(value)) only; the output names the rule, never the value.
-  `secret list` prints entry names and what they are, never a value, a length or a digest.
-  The plan's “secrets import” is implemented as `secret import` (no plural alias):
-  `secret import --env-file <file> --key <KEY>=<resource>/<credential>… [--basic <USER_KEY>:<PASSWORD_KEY>=<resource>/<credential>] [--dry-run]`.
-  It requires an admin token and, except for dry run, a usable vault key before opening the file. All resource/credential
-  targets and duplicate targets are checked first. The reader accepts only a plain UTF-8 file up to 64 KiB, rejects NUL
-  and duplicate requested active keys, ignores comments/section markers and retains only named keys. Errors disclose no
-  path or line content. Each key is reported only as found/absent and length; a missing or empty key prevents every write.
-  Basic combines the two named values into the whole authorization header (a colon in the username is refused).
-  Before opening the file it requires the bound system declaration to name that credential as a plain, raw static
-  Authorization header; hashed passwords, login usernames and bearer-prefixed headers are refused. A synthetic
-  static-header pack and loopback stub verify the actual Authorization header on a successful read.
-  Dry run only checks; real writes use `setCredentials` once per resource to invalidate its login once after all its
-  credentials are stored. Resources are independent writes: each completed resource is reported immediately, so a later
-  resource failure cannot hide an earlier write. Neither raw values, fragments nor digests of values appear in output.
+- **Named deployment values**: only the current operator administrator may use `var` or `secret`, including read-only listings. `var set <NAME> [--file <file>] [--text] [--not-secret] --reason <note>` reads bounded UTF-8 JSON, or an explicit text value; it never guesses the type. Lists hide values; `var show <NAME> --value` first warns that the value remains in terminal history. A credential-like name belongs to `secret`; a credential-like ordinary value needs explicit `--not-secret`, recorded in its reason. Immutable history cannot be erased: rotate at the issuer if a secret was mistakenly persisted as ordinary data.
+
+- **Secrets**: `secret set --name <NAME>… --reason <note>` first lists the registered consumers, then reads each value without echo. A pipe supplies exactly one line per name. A name has one kind permanently; each secret setting creates a new vault entry and an atomic configuration decision. Short values require `--short <NAME>` and an explicit warning. Digest storage is explicit with `--digest <NAME>=sha512_base64`; a consumer that needs the raw value prevents digest-only storage. Never pass a value in argv or in the reason. `secret list` and `secret show --name <NAME> [--history]` show only names, versions, lengths, digest rules and consumers, never values or their hashes.
+  `secret import --env-file <file> --key <KEY>=<NAME>… [--basic <USER_KEY>:<PASSWORD_KEY>=<NAME>] [--digest <NAME>=sha512_base64] [--short <NAME>] --reason <note> [--dry-run]` checks the administrator, consumers and digest compatibility before opening the file; a real import also checks the vault key first. The reader retains only named active keys from a plain UTF-8 file up to 64 KiB. Missing/empty keys prevent the batch. Basic is accepted only when every consumer's bound profile declares a raw, plain Authorization header. Current and historical ordinary values and deployment definitions are checked for raw or reversible exposures, including Basic password components and declared digest credentials; an exposed value must be rotated at its issuer. The whole batch writes all vault entries before committing all decisions together; dry run writes nothing. Output contains only requested key names, found/absent status, lengths and version metadata. Old resource/credential positional syntax refuses with the migration command. Every successful setting or withdrawal reminds the operator to revoke the old value at its issuer: removing Hub's entry does not remove it from backups.
 
 - **Irrecoverable key loss**: stop the service, then run `circle-hub key init --set-aside-vault`.
   It takes the platform lock, refuses a loaded service, a busy configured port or a present key, moves only `vault/`
   to a unique `set-aside/<timestamp>-key-loss/vault`, recreates the empty vault with mode 0700 and initializes the key.
   The database and objects stay in place. Run `circle-hub operator-token reissue` only if that item was lost too,
-  then `secret import` to reimport the named credentials, then start the service. A new key cannot open old entries.
+  then inspect `secret list` (registered versions whose entries were lost), use the named `secret import` form to reimport, then start the service. Before starting after a backup restore, inspect each current secret setting time; values rotated or revoked at the issuer since the restore point must be set or withdrawn again. A new key cannot open old entries.
   Plain `key init` refuses a nonempty vault before touching the keychain. `resource list` remains available without
   the master key; commands needing secrets refuse before opening the environment file. Synthetic tests use temporary
   file keys and explicitly targeted temporary keychain files; they verify logins before loss and after reimport.
-- **Login state.** `secret set <res> <credential>` and `resource reset-login <res>` remove the resource's session entry in
-  the vault (`connector.<res>.session`). A running Hub reads that entry again before a read that needs the credential (and
-  when its login status is shown; hub/connectors, "Between processes"): a stop or a cool-down it holds ends then and it
-  logs in once with the stored credential; a usable token it holds stays in use until its next login, which takes the new
-  value. No restart; both commands say so. `resource list`'s login column is labelled as the vault's state
-  (`密钥库里的登录状态：…`), read fresh by the command; it needs the vault key, which the listing reads once (without it the
-  column says why for every resource and the listing still exits 0).
-- **Changing a resource** (`resource update <resource> [--system-pack <pack>] [--name] [--environment] [--origin role=url]… [--allow-plaintext role]… [--setting k=v]…`): an item that is given replaces the whole item (all origins, all plaintext declarations, all settings); `--system-pack manual-store` rebinds the resource to the latest published version of that system pack (a published version never takes effect on its own: reads check the digest the definition binds). Credentials are not touched; set again those the new version declares.
+- **Login state.** Named secret decisions participate in the session binding. `secret set --name <NAME>` changes the binding, so the next read logs in with the new version without a restart. `resource reset-login <res>` changes the shared credential-version stop epoch and removes that resource's session; all consumers of those versions can make another attempt. In-flight operations finish using the versions they captured.
+- **Changing a resource:** `--credential <item>=<NAME>` sets an explicit reference, migrating a legacy entry atomically with the new definition. A destination change requires a new enrollment through `secret set`. Settings update by key: `--setting k=text` always stores text, `--setting-json k=JSON` parses JSON, `--setting-var k=NAME` creates a whole-value reference, and `--unset-setting k` removes a key. `resource show <res>` is metadata only; `--values` explicitly prints literal settings. Origins and plaintext declarations still replace their complete maps/lists. Pack versions take effect only through an update.
 - **Read-only connector smoke**: `resource read <resource> <read-name> <key>` needs the operator's admin token and
   vault key because the read saves originals and its manifest. It calls `executeRead` with purpose `管理员冒烟读取`.
   Output contains only the bound system pack/read name, completion or failure code, each artifact's declared name,

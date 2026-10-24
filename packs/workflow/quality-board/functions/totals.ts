@@ -29,7 +29,7 @@ function read(subject: unknown): { counts: GroupCounts; facts: RunFacts } | null
 export function totalsOutcome(subject: unknown): CheckOutcome {
   const read_ = read(subject);
   if (read_ === null || read_.counts.cases === 0) {
-    return { verdict: 'unknown', reason: 'check_error', statement: '合计检查的被判对象里没有条目或没有视图事实（任务包缺陷）', grounds: [], tier: TIER };
+    return { verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('合计检查的被判对象里没有条目或没有视图事实（任务包缺陷）'), reason: 'check_error', statement: '合计检查的被判对象里没有条目或没有视图事实（任务包缺陷）', grounds: [], tier: TIER };
   }
   const { counts, facts } = read_;
   const view = facts.view;
@@ -84,6 +84,6 @@ export function totalsOutcome(subject: unknown): CheckOutcome {
 export default function totalsCheck(input: unknown): unknown {
   return guarded<unknown>(
     () => [totalsOutcome(isRecord(input) ? input.subject : undefined)],
-    (message) => [{ verdict: 'unknown', reason: 'check_error', statement: `合计检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
+    (message) => [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`合计检查出错（任务包缺陷）：${message}`), reason: 'check_error', statement: `合计检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
   );
 }

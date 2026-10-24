@@ -16,6 +16,12 @@ Circle's earlier Git history is kept as well. The licenses and notices of each h
 
 External products, project names, source links, trademarks and method descriptions in the research documents keep their own ownership. Linking to a public repository or studying how it works confers no trademark right and does not bring that product into this project's license.
 
+## Asciidoctor.js
+
+Asciidoctor.js (`@asciidoctor/core`) version `4.1.1`, as recorded in `core.mjs`, is bundled in `packs/product/apv/functions/adoc/vendor/` for the APV pack's AsciiDoc producer. The engine is in `core.mjs`, with the adapter's type declarations in `core.d.mts`.
+
+The engine is used under the MIT License. Its complete license and copyright notice are kept in [LICENSE.txt](packs/product/apv/functions/adoc/vendor/LICENSE.txt); the root license does not replace them.
+
 ## Dependencies and the actual artifacts
 
 The root package's current direct dependencies are `@modelcontextprotocol/sdk@1.32.1`, `pg@8.23.1`, `zod@4.6.5`, `exceljs@4.4.0`, `fflate@0.8.3`, `read-excel-file@9.3.12` and `parse5@8.0.1`, each used under the MIT license of its published package, `saxes@5.0.1` under its ISC license, and `typescript@5.9.3` under the Apache License 2.0. Development dependencies are `embedded-postgres@18.4.0-beta.17` (MIT) and type declarations (MIT). The actual PostgreSQL binaries and their upstream components follow their own licenses, which the wrapper's MIT license does not replace.

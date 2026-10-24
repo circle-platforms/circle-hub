@@ -525,3 +525,19 @@ Every accepted fallback is disclosed through `recordIntegrityNotes()` in the pub
 `RecordStore.lock(key, tx)` 为调用方给定事务持有业务键锁，提交或回滚释放；它不新开事务，不改历史。键先加 record-store.business 类型前缀再取 PostgreSQL 哈希，采用独立具名常量 BUSINESS_LOCK_SPACE，与记录库其他 advisory 锁命名空间均不同；lock-namespaces.test.ts 静态检查全部调用点的具名常量和值互不冲突。多键调用方必须排序取锁。本次合并同时保留唯一业务键与事务锁接口；回注去重继续使用事务锁，是否改用唯一业务键由集成者另定，不改写已有迁移。
 
 唯一业务键锁使用独立的 `UNIQUE_KEY_LOCK_SPACE`，与来源去重和普通业务事务锁的命名空间均不同；合并保留三种用途，不让它们互相占用同一个锁空间。
+
+## Named deployment versions
+
+`RecordsKit.variables` persists `variable@1` and metadata-only `secret@1` objects through ordinary append-only resource-configuration decisions (`var:<name>` / `secret:<name>`). Every write requires the current administrator and a scanned, nonempty reason. Both kinds share the sorted `variable-name:<name>` transaction locks; a name retains its kind after withdrawal. Ordinary canonical same-values reuse the version; every secret setting makes a fresh random vault entry and decision. Batch settings commit all decisions in one transaction; transport reads select the current decisions together and refresh the whole batch once if any vault entry has disappeared.
+
+The snapshot for ordinary variables is one verified database query. Values are loaded by those immutable decisions when used, so later settings cannot alter an existing snapshot. Cross-object validation joins the caller's transaction through `configureResourceInTransaction`; validators must use that transaction and avoid opening a second database connection while holding name locks.
+
+Secret bytes never enter these objects, records or their hashes. Current and previous vault versions remain available across one rotation; older entries and unbound entries older than an hour are collected on the next setting. `Vault.stat` exposes only the entry write time, without decryption or a master-key read. Revocation removes every entry for that name. Missing bytes, length mismatches and consumer/address changes refuse before transport, with the setting command as the next action. Listing and history remain administrator-only. If a secret was mistakenly persisted as an ordinary variable, the only remedy is to rotate it at its issuer; immutable history cannot be erased.
+
+Synthetic regressions include fifty concurrent writers, cross-kind races, coherent two-secret reads, rotation and exact consumer binding, orphan age, missing/altered vault entries and caller-transaction rollback. No schema migration or deployed history is changed.
+
+Secret withdrawal deletes only entries named by grant decisions preceding its revocation. A concurrently prepared or later committed version is not removed. A post-commit cleanup failure explicitly reports that revocation is effective and instructs the administrator to repair storage and repeat the withdrawal. Reversible spellings can be requested from `secretForms(value, {hashes:false})`; general reason redaction also includes digest spellings.
+
+短密钥的理由检查先排除每种写法的完整值，再检查长度至少 8 的连续片段；`--short` 的脱敏提示不豁免完整值检查。拒绝不写决定或密钥条目，也不引用原始理由。
+
+Ordinary JSON token screening checks both object keys and values recursively, including objects inside arrays. A key meeting the strict token rule requires the same explicit `--not-secret` confirmation; refusal never quotes that key.

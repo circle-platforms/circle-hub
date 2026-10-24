@@ -1,3 +1,4 @@
+import {addSyntheticExecutor} from './credentials.ts';
 import { after } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { openTestRecords } from '../../testing/records.ts';
@@ -60,7 +61,7 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
   },undefined,{},options.serverVersion);
   const registry = new ExecutorRegistry(kit);
   const d = { ...definition(endpoint.endpoint),allowed_tools:[...definition(endpoint.endpoint).allowed_tools,'inspect_bound_seat'],refused_tools:['synthetic_admin_reset'],probes:{...probes,call:{...probes.call,tool:'inspect_bound_seat'}}, manifest_sha256: manifest.body.sha256, submit_timeout_ms: options.timeout ?? 300000 };
-  const executor = await registry.add(admin, d, 'synthetic-secret');
+  const executor = await addSyntheticExecutor(kit,registry,admin,d,'synthetic-secret');
   const claim = { requirement: 'workbook_verified', statement: { verdict: 'support', text: '合成核验', data: { plan_run: plan, sha256: payload.body.sha256, autoids: ['synthetic-case'], bed: { id: 'synthetic-bed', manifest_sha256: options.mode === 'manifest' ? 'f'.repeat(64) : manifest.body.sha256 }, build: 'synthetic-build', generator: 'synthetic-workflow@1.0.0' } }, qualifier: { nature: 'fact' }, warrant: { producer: 'function', id: 'synthetic.verify@1' }, validity: { status: 'valid' } };
   const detail = { run: { run, predecessor: plan, pack: options.mode === 'wrong-package' ? 'other-workflow@1.0.0' : 'synthetic-workflow@1.0.0', pack_digest: sha256Hex('synthetic-pack'), runner: owner.id, items: [{ id: 'synthetic-item' }], sources: [{ reference: `src:${payload.body.sha256}`, slot: 'synthetic-artifact', role: 'artifact_under_verification' }, { reference: `src:${manifest.body.sha256}`, slot: 'synthetic-manifest', role: 'expected' }], requirements: [], started_at: now().toISOString() }, submissions: [], latest: { record: sha256Hex('synthetic-validation'), result: { run, acceptance: 'accepted', errors: [], partitions: { delivered: [{ item: 'synthetic-item', requirements: [{ requirement: 'workbook_verified', status: options.mode === 'requirement' ? 'pending' : 'satisfied', claims: [claim] }] }], rejected: [], incomplete: [], quarantined: [] }, cross_item: [] } } } as unknown as RunDetail;
   const workflows = { byDigest: async () => ({ pack: { id: 'synthetic-workflow', version: '1.0.0', digest: detail.run.pack_digest }, requirements: [{ key: 'workbook_verified', required: true, target: 'item', accepted_producer: 'fact' }] } as unknown as LoadedWorkflow) } satisfies Pick<WorkflowStore, 'byDigest'>;

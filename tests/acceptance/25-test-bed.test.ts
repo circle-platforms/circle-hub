@@ -7,6 +7,7 @@
 // duplicate address refuses the whole call with its pointer; a user the pack is not assigned to gets the neutral
 // SOURCE_UNAVAILABLE. Synthetic addresses only (192.0.2.0/24).
 import assert from 'node:assert/strict';
+import {addSyntheticExecutor} from '../../hub/dispatch/testing/credentials.ts';
 import { after, before, describe, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { INDEX } from '../../hub/runs/engine/store.ts';
@@ -318,7 +319,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const sha=(await bed.hub.hub.docs.show('ownership-topology'))!.sha256;
     const raw=definition('http://127.0.0.1:1/mcp');
     const {probes}=await import('../../hub/dispatch/testing/probes.ts');
-    const d=ExecutorDefinition.parse({...raw,probes,refused_tools:['synthetic_admin_reset'],allowed_tools:[...raw.allowed_tools,'inspect_seat'],target:'owned',resources:[key],manifest_sha256:sha});
+    const d=ExecutorDefinition.parse({...raw,credential:'${secret:DEMO_OWNERSHIP_AUTH}',probes,refused_tools:['synthetic_admin_reset'],allowed_tools:[...raw.allowed_tools,'inspect_seat'],target:'owned',resources:[key],manifest_sha256:sha});
     assert.deepEqual(registrationMissing(d),[]);
     const verification=newId('run');const plan=newId('run');const digest=sha256Hex('synthetic ownership workflow');
     const fact={requirement:'workbook_verified',statement:{verdict:'support',text:'合成核验事实',data:{plan_run:plan,sha256:payload.body.sha256,autoids:['synthetic-case'],bed:{id:'owned',manifest_sha256:sha},build:'synthetic-10.6',generator:'synthetic-workflow@1.0.0'}},qualifier:{nature:'fact'},warrant:{producer:'function',id:'synthetic.verify@1'},validity:{status:'valid'}};
@@ -328,7 +329,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const proof=await verifyInput(admin.principal,verification,d,bed.hub.records,runs,workflows,new Date());
     assert.ok(proof.ancestors.includes(booking));assert.equal(proof.user,b.user.id);
     const dispatcher=new DispatchService({records:bed.hub.records,leases:bed.hub.leases,runs,workflows});
-    const executor=await dispatcher.registry.add(admin.principal,d,'synthetic-ownership-key');
+    const executor=await addSyntheticExecutor(bed.hub.records,dispatcher.registry,admin.principal,d,'synthetic-ownership-key');
     const reason='  合成主人要求收回  ';
     runId(await call(ca,{action:'force_release',bed:'owned',reason}));
     const after=(await bed.hub.leases.holderSnapshot([key]))[0]!;

@@ -14,7 +14,7 @@ import type { ContextBuild, RequirementTemplate, RunContext, ProjectionOutput } 
 import { RunRecord, RunSummary, type RequirementSummary } from '../../../contracts/src/run.ts';
 import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools.ts';
 import { partitionCountsOf, type PartitionCounts, type ValidationResult } from '../../../contracts/src/validation.ts';
-import { CanonicalizationError, LimitError, canonicalize, newId, type Principal, type StoredRecord } from '../../records/api.ts';
+import { CanonicalizationError, LimitError, scanForCredentials, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -327,6 +327,10 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
   const at = ctx.now();
   // Nothing is read for arguments the records could not hold (a lone surrogate, nesting past the canonical limit).
   const plain = receivedDigest(raw);
+  // Scan before schema diagnostics can quote an unknown field name. This never resolves reference-looking text.
+  let scanText:string|undefined;
+  try {scanText=JSON.stringify(raw);}catch{/* Non-JSON values follow the canonical-domain refusal below. */}
+  if(scanText!==undefined&&scanForCredentials(Buffer.from(scanText,'utf8')).findings.length)return refused([protocolError('SUBMISSION_SCHEMA_VIOLATION','start_run 不受理含凭据的参数',{fix:'参数里不能有凭据；移除凭据后重试'})]);
   if (!plain.canonical) {
     return refused([
       protocolError('SUBMISSION_SCHEMA_VIOLATION', '参数里有规范 JSON 表示不了的值（孤立的代理字符，或嵌套超过 1000 层）', {
@@ -339,9 +343,10 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
   if (!parsed.success) return refused(issuesOf(parsed.error, ''));
   const input = parsed.data;
   try {
+    const variables=await ctx.deps.records.variables.snapshot();
     const owner = mode.host === 'hub' ? keyOwner({ configurer: user.id }) : user.id;
     const requestDigest = receivedDigest(input).digest;
-    const fresh = (): Promise<StartRunDetail> => authorizedStart(ctx, user, input, call, mode, at, requestDigest);
+    const fresh = (): Promise<StartRunDetail> => authorizedStart(ctx, user, input, call, mode, at, requestDigest,variables);
     if (input.client_key === undefined) return await fresh();
     const key = input.client_key;
     const problem = clientKeyProblem(owner, key);
@@ -374,6 +379,7 @@ async function authorizedStart(
   mode: StartMode,
   at: Date,
   requestDigest: string,
+  variables: VariableSnapshot,
 ): Promise<StartRunDetail> {
   const workflow = await ctx.deps.workflows.forUser(user, input.pack);
   if (workflow === null || workflow.pack.kind !== 'workflow') throw unavailable('/pack', `pack ${input.pack} is unknown, not assigned to ${user.id}, withdrawn or not a workflow pack`);
@@ -396,7 +402,7 @@ async function authorizedStart(
       `pack ${workflow.pack.id}@${workflow.pack.version} declares schemas the engine cannot enforce: ${unsafe.join('; ')}`,
     );
   }
-  return startFresh(ctx, user, input, call, mode, workflow, at, requestDigest);
+  return startFresh(ctx, user, input, call, mode, workflow, at, requestDigest,variables);
 }
 
 /**
@@ -444,6 +450,7 @@ async function startFresh(
   workflow: LoadedWorkflow,
   at: Date,
   requestDigest: string,
+  variables: VariableSnapshot,
 ): Promise<StartRunDetail> {
   const { store, artifacts } = ctx.deps.records;
   const startedAt = at.toISOString();
@@ -458,7 +465,7 @@ async function startFresh(
   const runId = newId('run', at.getTime());
   const selectedBuild=target.buildName===null?undefined:(await ctx.deps.knowledge.builds(target.product!.product.id)).find(build=>build.name.normalize('NFC').toLowerCase()===target.buildName!.normalize('NFC').toLowerCase())?.name??target.buildName;
 
-  const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null);
+  const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null);
   // The projection runs before any group exists; the expected sources and the checks see the frozen groups. The builds of
   // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
   const builds = await contextBuilds(ctx, workflow, target.product?.product.id ?? null);
@@ -487,7 +494,7 @@ async function startFresh(
     ...(leaseRows !== null ? { leases: { now: startedAt, registrations: leaseView!.registrations, entries: leaseRows.map((row) => ({ ...row, mine: leaseLineageHolders.has(row.key) })) } } : {}),
   };
   const projection = await projectItems(ctx, user, workflow, bound, parameters, context, call.traceId);
-  const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null,selectedBuild,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null);
+  const expected = await bindExpected(ctx, user, workflow, bound, projection.projected, parameters, { ...context, groups: projection.groups }, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null);
   // The leases are granted after the projection asked for them and before anything is stored; every failure from here
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
   let grantedLeases: Array<LeaseDone> = [];

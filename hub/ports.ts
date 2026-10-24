@@ -51,6 +51,8 @@ export interface PacksPort {
  * functions are read from `pack.directory` (tables by the engine, functions by the sandbox).
  */
 export interface LoadedWorkflow {
+  /** Owner of this publication, for package repair exits; absent only on legacy test ports. */
+  owner?: string;
   pack: PackHandle;
   manifest: PackManifest;
   workflow: WorkflowFile;
@@ -88,6 +90,8 @@ export interface WorkflowStore {
 // ---------------------------------------------------------------- external systems (provided by connectors)
 
 export interface ExternalReadContext {
+  /** Ordinary-variable decisions frozen for this caller; never persisted as run parameters. */
+  variables?: ReadonlyMap<string,string>;
   /** Whose credential and visibility the read uses: the user of a run, or an admin for a standing sync. */
   principal: Principal;
   run?: string | null;

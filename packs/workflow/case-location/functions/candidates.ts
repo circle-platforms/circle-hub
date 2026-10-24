@@ -74,7 +74,7 @@ function candidateLine(answer: { line: string | null; version: string | null; ve
 function candidatesOutcome(item: string, grounds: string[], pointer: string, line: string | null, builds: ContextBuild[]): CheckOutcome {
   if (line === null) {
     return {
-      verdict: 'unknown',
+      verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('定位没有给出版本线（目录树没有版本层），定不出构建候选'),
       reason: 'missing_input',
       statement: '定位没有给出版本线（目录树没有版本层），定不出构建候选',
       grounds,
@@ -87,7 +87,7 @@ function candidatesOutcome(item: string, grounds: string[], pointer: string, lin
   const ofLine = orderCandidates(builds.filter((b) => lineKey(b.line) === lineKey(line)).map(candidateOf));
   if (ofLine.length === 0) {
     return {
-      verdict: 'unknown',
+      verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`版本线 ${line} 在知识库里没有已知构建（知识库只收录构建站列出的构建），定不出构建候选`),
       reason: 'missing_input',
       statement: `版本线 ${line} 在知识库里没有已知构建（知识库只收录构建站列出的构建），定不出构建候选`,
       grounds,
@@ -189,7 +189,7 @@ function writtenOutcome(item: string, grounds: string[], pointer: string, name: 
     };
   }
   return {
-    verdict: 'unknown',
+    verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`知识库不认识写出的构建名 ${name}（知识库只收录构建站列出的构建；不认识不等于写错）`),
     reason: 'missing_input',
     statement: `知识库不认识写出的构建名 ${name}（知识库只收录构建站列出的构建；不认识不等于写错）`,
     grounds,
@@ -233,7 +233,7 @@ export function candidatesOutcomes(subject: unknown): CheckOutcome[] {
         }
       } else if (located === null && answer.version_values.length > 0) {
         out.push({
-          verdict: 'unknown',
+          verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('版本层没有版本线节点，定不出构建候选；下一步由整理敏捷平台目录的人在版本层写上版本线节点。'),
           reason: 'missing_input',
           statement: '版本层没有版本线节点，定不出构建候选；下一步由整理敏捷平台目录的人在版本层写上版本线节点。',
           grounds,
@@ -247,10 +247,10 @@ export function candidatesOutcomes(subject: unknown): CheckOutcome[] {
       const writtenCandidates = conflictLines === null ? candidates : orderCandidates(builds.filter(build => conflictLines.some(line => lineKey(line) === lineKey(build.line))).map(candidateOf));
       for (const name of answer.build_names) out.push(writtenOutcome(id, grounds, pointer, name, conflictLines === null ? located : null, builds, writtenCandidates, conflictLines));
     } catch (error) {
-      out.push({ verdict: 'unknown', reason: 'check_error', statement: `构建候选检查出错（任务包缺陷）：${internalError(error)}`, grounds, tier: TIER, item: id, pointer });
+      out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`构建候选检查出错（任务包缺陷）：${internalError(error)}`), reason: 'check_error', statement: `构建候选检查出错（任务包缺陷）：${internalError(error)}`, grounds, tier: TIER, item: id, pointer });
     }
   }
-  if (out.length === 0) out.push({ verdict: 'unknown', reason: 'check_error', statement: '构建候选检查的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER });
+  if (out.length === 0) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('构建候选检查的被判对象里没有条目（子对象构建函数没有给出 items）'), reason: 'check_error', statement: '构建候选检查的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER });
   return out;
 }
 
@@ -258,6 +258,6 @@ export function candidatesOutcomes(subject: unknown): CheckOutcome[] {
 export default function candidatesCheck(input: unknown): unknown {
   return guarded<unknown>(
     () => candidatesOutcomes(isRecord(input) ? input.subject : undefined),
-    (message) => [{ verdict: 'unknown', reason: 'check_error', statement: `构建候选检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
+    (message) => [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`构建候选检查出错（任务包缺陷）：${message}`), reason: 'check_error', statement: `构建候选检查出错（任务包缺陷）：${message}`, grounds: [], tier: TIER }],
   );
 }

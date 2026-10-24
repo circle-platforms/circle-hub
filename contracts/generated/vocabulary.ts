@@ -68,6 +68,8 @@ export const AXES = {
   exit_action: { label: '出口动作', owner: 'A06', values: [{ code: 'reread', label: '重读' }, { code: 'reconcile', label: '核对' }, { code: 'observe', label: '观察' }, { code: 'request', label: '发请求' }, { code: 'rerun', label: '新修订重跑' }, { code: 'reevaluate', label: '重评' }] },
   work_class: { label: '工作类', owner: 'V07', values: [{ code: 'verification', label: '验证' }, { code: 'reproduction', label: '复现' }, { code: 'web', label: 'Web' }] },
   link_match: { label: '链接匹配方式', owner: 'K05', values: [{ code: 'exact', label: '精确匹配' }, { code: 'longest_prefix', label: '最长前缀匹配' }] },
+  variable_kind: { label: '变量种类', owner: 'D01', values: [{ code: 'var', label: '普通变量' }, { code: 'secret', label: '密钥' }] },
+  digest_rule: { label: '摘要规则', owner: 'D01', values: [{ code: 'plain', label: '原样' }, { code: 'sha512_base64', label: 'Base64(SHA-512)' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -657,6 +659,24 @@ export function isLinkMatch(value: unknown): value is LinkMatch {
   return (LINK_MATCH as readonly unknown[]).includes(value);
 }
 
+/** 变量种类 (D01) */
+export const VARIABLE_KIND = ['var', 'secret'] as const;
+export type VariableKind = (typeof VARIABLE_KIND)[number];
+export const VARIABLE_KIND_LABEL = { 'var': '普通变量', 'secret': '密钥' } as const satisfies { readonly [K in VariableKind]: string };
+export const VariableKindSchema = z.enum(VARIABLE_KIND);
+export function isVariableKind(value: unknown): value is VariableKind {
+  return (VARIABLE_KIND as readonly unknown[]).includes(value);
+}
+
+/** 摘要规则 (D01) */
+export const DIGEST_RULE = ['plain', 'sha512_base64'] as const;
+export type DigestRule = (typeof DIGEST_RULE)[number];
+export const DIGEST_RULE_LABEL = { 'plain': '原样', 'sha512_base64': 'Base64(SHA-512)' } as const satisfies { readonly [K in DigestRule]: string };
+export const DigestRuleSchema = z.enum(DIGEST_RULE);
+export function isDigestRule(value: unknown): value is DigestRule {
+  return (DIGEST_RULE as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   nature: Nature;
   basis_rank: BasisRank;
@@ -723,6 +743,8 @@ export interface AxisValues {
   exit_action: ExitAction;
   work_class: WorkClass;
   link_match: LinkMatch;
+  variable_kind: VariableKind;
+  digest_rule: DigestRule;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -791,6 +813,8 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   exit_action: EXIT_ACTION_LABEL,
   work_class: WORK_CLASS_LABEL,
   link_match: LINK_MATCH_LABEL,
+  variable_kind: VARIABLE_KIND_LABEL,
+  digest_rule: DIGEST_RULE_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

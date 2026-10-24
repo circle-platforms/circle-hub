@@ -10,7 +10,7 @@
 // mode) are written here, not in the model vocabulary (measure comes from the model vocabulary): see hub/rules/README.md,
 // "Needs from other packages".
 import { z } from 'zod';
-import { CheckTierSchema, DynamicTerminalSchema, MeasureSchema, ReasonSchema, VerdictSchema } from '../generated/vocabulary.ts';
+import { CheckTierSchema, MeasureSchema, ReasonSchema, VerdictSchema } from '../generated/vocabulary.ts';
 import {MissingFact,UnknownExit,recoveryCondition} from './validation.ts';
 import { ReferenceUri } from './reference.ts';
 
@@ -335,7 +335,7 @@ export const RangeCheck = z
     z.strictObject({
       values: JsonPath,
       threshold: z
-        .strictObject({ measure: MeasureSchema.describe('Aggregate of the selected values'), ...Bounds, empty:DynamicTerminalSchema.extract(['fail','pass']).optional().meta({default:'fail'}).describe('Only min/max on an empty set: pass or fail, omission means fail; count and sum keep their defined numeric zero') })
+        .strictObject({ measure: MeasureSchema.describe('Aggregate of the selected values'), ...Bounds, empty:VerdictSchema.extract(['refute','support']).optional().meta({default:'refute'}).describe('Only min/max on an empty set: support or refute, omission means refute; count and sum keep their defined numeric zero') })
         .superRefine((value,ctx)=>{if(value.empty!==undefined&&value.measure!=='min'&&value.measure!=='max')ctx.addIssue({code:'custom',path:['empty'],message:'empty is declared only for min and max'});})
         .describe('The aggregate of all selected values must lie in the bounds'),
     }),

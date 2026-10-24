@@ -204,13 +204,13 @@ function resultOf(list: ItemProjection[], options: { claims?: number; claimText?
         reason: 'not_covered',
         requirements: [
           { requirement: 'structure', layers: [{ layer: 'static', terminal: 'pass' }], status: 'satisfied', claims: [fact(item.id, 'structure', '结构完整')] },
-          ...(options.production ? [] : [{ requirement: 'findings', layers: [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'author_input' }], status: 'pending', claims: [] } satisfies RequirementResult]),
+          ...(options.production ? [] : [{ requirement: 'findings', layers: [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', missing: '未覆盖条目的合成产物；下一步：合成运行者补交后重核', exit: { action: 'request' as const, request_kind: 'repair' as const, audience: { user: 'usr_' + '1'.repeat(26) }, due: '2026-01-04T00:00:00.000Z' }, attribution: 'author_input' }], status: 'pending', claims: [] } satisfies RequirementResult]),
         ],
       });
     } else if (i % 10 === 7) {
       partitions.delivered.push({
         ...base,
-        requirements: [{ requirement: 'structure', layers: [{ layer: 'static', terminal: 'unchecked', reason: 'check_error', attribution: 'producer_error' }], status: 'pending', claims: [] }, ...judged],
+        requirements: [{ requirement: 'structure', layers: [{ layer: 'static', terminal: 'unchecked', reason: 'check_error', missing: '合成结构检查的可用判定结果；下一步：修复合成检查后重核', exit: { action: 'request' as const, request_kind: 'repair' as const, audience: { user: 'usr_' + '1'.repeat(26) }, due: '2026-01-04T00:00:00.000Z' }, attribution: 'producer_error' }], status: 'pending', claims: [] }, ...judged],
       });
     } else if (i % 23 === 5) {
       partitions.rejected.push({
@@ -741,7 +741,7 @@ describe('submit_result text', () => {
       label: it.label,
       location: it.location,
       reason: 'not_covered',
-      requirements: [{ requirement: 'findings', layers: [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', attribution: 'author_input' }], status: 'pending', claims: [] }],
+      requirements: [{ requirement: 'findings', layers: [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', missing: '未覆盖条目的合成产物；下一步：合成运行者补交后重核', exit: { action: 'request' as const, request_kind: 'repair' as const, audience: { user: 'usr_' + '1'.repeat(26) }, due: '2026-01-04T00:00:00.000Z' }, attribution: 'author_input' }], status: 'pending', claims: [] }],
     }));
     const verdict: Claim = {
       requirement: 'final',

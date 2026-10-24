@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "2.3.5",
+  "version": "2.3.6",
   "kind": "workflow",
   "title": "用例编译",
   "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、拒绝表、台架与血缘地址、地址替换及逐字期望。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
@@ -73,8 +73,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "7909ed1f6fbec39491818bcbcaed6ac043aa9dfc805a8c5912b893ceb153652c",
-      "size": 14946
+      "sha256": "ec161e89669b4936246585368f6fa2b0dc542f5f6367e3990bc75fc3e0bd8d98",
+      "size": 15294
     },
     {
       "path": "functions/g-syntax.ts",
@@ -128,13 +128,13 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "7e6e86171576cba2ad13f951535dcc5f3532e02333ea7e3e4f82d76edb08654a",
-      "size": 2637
+      "sha256": "1e3e5c1af6485f6488c2cd02c2feae1e037925b25d7f1975453266fe4fd981cf",
+      "size": 2657
     },
     {
       "path": "functions/workbook.ts",
-      "sha256": "7ffc5cf4fdb2959ef6caf9a722fb1cb1b69c508ea16f20317fb17be18d543c25",
-      "size": 16859
+      "sha256": "3824ae4aab90e5cf543eee0ddf4d1f5941a45478760550beee999087fc95ac84",
+      "size": 16925
     },
     {
       "path": "functions/xlsx-model.ts",
@@ -383,7 +383,7 @@
     },
     {
       "path": "samples/negative/workbook-bytes.json",
-      "sha256": "b5b44554ea8ffa9e24569cbc8288acaf57c702552967d6c684c01e7bb4ba8e9f",
+      "sha256": "1bbb54958b45ed839dd2ed383dfe0350ccda3475bb9c0366f4a5c6131047fcd2",
       "size": 29477
     },
     {
@@ -618,7 +618,7 @@
     },
     {
       "path": "samples/positive/workbook-bytes.json",
-      "sha256": "3c5e3da01d6c28a4fe624fb8efe3740a623d72117fd358a8f64a6a9ceea02299",
+      "sha256": "a2e593389188efd211063197134ab995bd1224544abb0fbf7983835100dbb645",
       "size": 29431
     },
     {
@@ -658,7 +658,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "dcb51237be3c9cc4c70319a016239e43c5d5caba6c73cffb0311712986d23a18",
+      "sha256": "593074999cd40f439fa96d45386ed375e66b644d2d095955943e961c6f908720",
       "size": 555
     },
     {

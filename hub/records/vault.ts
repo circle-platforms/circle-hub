@@ -139,6 +139,11 @@ export class FileVault implements Vault {
     }
   }
 
+  async stat(name: string): Promise<{ written_at: string } | null> {
+    try { const info = await stat(this.#path(name)); return info.isFile() ? { written_at: info.mtime.toISOString() } : null; }
+    catch (error) { if (errno(error) === 'ENOENT') return null; throw error; }
+  }
+
   async list(): Promise<string[]> {
     let names: string[];
     try {

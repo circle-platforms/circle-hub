@@ -441,7 +441,9 @@ the account the vault master key may not use).
 Stop the service. Prefer restoring the original keychain items: a new key cannot decrypt the existing vault.
 If the original master key cannot be recovered, run `circle-hub key init --set-aside-vault` after stopping the service. It takes the platform lock, refuses a loaded service, an occupied configured port or an existing key, moves only `vault/` to a unique `set-aside/<timestamp>-key-loss/vault`, recreates an empty 0700 vault and initializes the key. The database and objects stay in place and old sealed files remain in the archive. Then run
 `circle-hub operator-token reissue` (only when the operator token item is also missing), then
-`circle-hub secret import --env-file <file> --key <KEY>=<resource>/<credential>…` to reimport the named credentials,
+`circle-hub secret import --env-file <file> --key <KEY>=<NAME>… --reason <note>` to reimport the named credentials,
 and start the service. Without `--set-aside-vault`, `key init` refuses a nonempty vault before any keychain operation. Resource definitions remain
 in the database and `resource list` still works without the vault key. The platform rehearsal covers keys and backup;
 the server assembly's synthetic file-key and temporary-keychain tests cover reimport and a fresh login.
+
+Before starting after a backup restore, inspect `secret list` and the latest setting time of every named secret. If its issuer rotated or revoked it after that restore point, run `secret set --name <NAME> --reason <note>` or `secret unset --name <NAME> --reason <note>` before starting. Replacing the vault key does not restore encrypted entries; a registered version with no entry remains unavailable until a new named import.
