@@ -12,7 +12,7 @@ import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protoco
 import {referencesIn} from '../../contracts/src/variables.ts';
 import { variableCommand, namedSecretCommand, VAR_USAGE, NAMED_SECRET_USAGE } from './variables.ts';
 import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE } from './cli-job.ts';
-import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, open, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { LeaseService } from '../leases/service.ts';
 import { createPool, Database } from '../records/db.ts';
 import { tmpdir } from 'node:os';
@@ -706,6 +706,19 @@ async function productOf(hub: AssembledHub, viewer: Principal, name: string): Pr
   return product;
 }
 
+/** Own the newly created file before writing, so cleanup never removes a competing writer's file. */
+export async function writeKnowledgeViewFile(target: string, bytes: Uint8Array, openTarget = async () => open(target, 'wx', 0o600)): Promise<void> {
+  let file: Awaited<ReturnType<typeof openTarget>>;
+  try { file = await openTarget(); }
+  catch { throw new CliError('无法创建知识视图文件', '检查目录权限并换一个不存在的文件名后重试'); }
+  try { await file.writeFile(bytes); await file.close(); }
+  catch {
+    await file.close().catch(() => {});
+    const removed = await rm(target).then(() => true, () => false);
+    throw new CliError('知识视图文件写入失败', removed ? '半截文件已删除；检查磁盘空间和目录权限后重试' : '检查并删除本次创建的半截文件，恢复磁盘空间和目录权限后重试');
+  }
+}
+
 async function knowledgeCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'view') {
@@ -727,7 +740,7 @@ async function knowledgeCommand(session: Session, args: readonly string[]): Prom
     const kit = await session.records();
     const bytes = artifact ? await kit.artifacts.trustedBytes(artifact.artifact.body.sha256) : null;
     if (bytes === null) throw new CliError('知识视图字节缺失', '修复原件存储后重新导出');
-    await writeFile(target, bytes, { flag: 'wx', mode: 0o600 });
+    await writeKnowledgeViewFile(target, bytes);
     const view = JSON.parse(Buffer.from(bytes).toString('utf8')) as Record<string, unknown>;
     const counts = (value: unknown): unknown => {
       if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
