@@ -292,7 +292,13 @@ export const TreeRootBody = z.strictObject({
   kinds: z.record(EntryKindSchema, z.number().int().nonnegative()).optional().describe('composition rows per entry kind'),
   warnings: z.array(z.string()).max(MAX_KEPT_PROBLEMS),
   warnings_count: z.number().int().nonnegative(),
+  empty_scope: z.strictObject({
+    complete: z.literal(true),
+    sources: z.array(z.strictObject({producer:z.string().min(1),label:z.string().min(1).max(80),listed:referenceUriOf('src'),completion:referenceUriOf('src'),total:z.number().int().nonnegative(),selected:z.literal(0)})).min(1),
+  }).optional().describe('An empty product-wide root with independently checked complete inventories and zero selections; absent on legacy or nonempty roots'),
   produced_at: IsoTime,
+}).superRefine((body,context)=>{
+  if(body.empty_scope&&(body.build!==null||body.version!==null||body.counts.entries!==0||body.counts.unplaced!==0||body.counts.nodes!==1))context.addIssue({code:'custom',path:['empty_scope'],message:'Complete empty-scope evidence requires an empty product-wide root'});
 });
 export type TreeRootBody = z.infer<typeof TreeRootBody>;
 

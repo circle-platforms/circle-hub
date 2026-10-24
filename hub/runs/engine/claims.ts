@@ -116,6 +116,7 @@ function worstResolution(resolutions: readonly ValueResolution[]): ValueResoluti
 }
 
 export interface FactClaimInput {
+  runtime?: {admitted:boolean;admission:string;run:string;table:string;submission:string};
   coverage?:Coverage;
   item?: string;
   requirement?: string;
@@ -144,9 +145,10 @@ export function factClaim(input: FactClaimInput): Claim {
   const o = input.outcome;
   const known = o.verdict !== 'unknown';
   const basis: BasisRank = input.overClaims ? 'rule_over_claims' : 'rule_over_observation';
-  const conditional = known && input.overClaims;
+  const conditional = known && (input.overClaims || input.runtime?.admitted === false);
+  const unestablished = input.runtime !== undefined ? !input.runtime.admitted : input.discrimination;
   // Vocabulary order (QUALIFIER_MARK), deduplicated: the marks the run adds and the check's own sample marks.
-  const marks = unique<QualifierMark>([...(conditional ? ['conditional_on_judgment' as const] : []), ...(input.discrimination ? ['discrimination_not_established' as const] : []), ...(input.sampleMarks ?? []),...(input.coverage?.complete===false?['partial' as const]:[])]).sort(
+  const marks = unique<QualifierMark>([...(conditional ? ['conditional_on_judgment' as const] : []), ...(unestablished ? ['discrimination_not_established' as const] : []), ...(input.sampleMarks ?? []),...(input.coverage?.complete===false?['partial' as const]:[])]).sort(
     (a, b) => QUALIFIER_MARK.indexOf(a) - QUALIFIER_MARK.indexOf(b),
   );
   const claim: Claim = {
@@ -158,7 +160,7 @@ export function factClaim(input: FactClaimInput): Claim {
       verdict: o.verdict,
       ...(o.code !== undefined ? { code: o.code } : {}),
       ...(o.reason !== undefined ? { reason: o.reason } : {}),
-      ...(o.data !== undefined ? { data: o.data } : {}),
+      ...(input.runtime ? {data:{...o.data,admission:input.runtime.admission}} : o.data !== undefined ? { data: o.data } : {}),
     },
     qualifier: {
       nature: known ? 'fact' : 'unknown',
@@ -167,11 +169,11 @@ export function factClaim(input: FactClaimInput): Claim {
       source_role: input.judges,
       marks,
       ...(input.coverage?{coverage:input.coverage}:{}),
-      ...(input.discrimination ? { discriminating_power: 'not_established' as const } : {}),
+      ...(input.runtime?.admitted ? {discriminating_power:'established' as const} : unestablished ? {discriminating_power:'not_established' as const} : {}),
     },
-    grounds: groundsOnly(o.grounds),
+    grounds: groundsOnly([...o.grounds,...(input.runtime?.admitted?[input.runtime.admission]:[])]),
     warrant: { producer: 'function', id: input.rule, independence: 'judge_not_author' },
-    validity: { status: 'valid', bound: unique(input.bound).sort(), premises: conditional ? unique(input.premises ?? []) : [] },
+    validity: { status: 'valid', bound: unique([...input.bound,...(input.runtime ? [input.runtime.run,input.runtime.table,input.runtime.submission] : [])]).sort(), premises: conditional ? unique(input.premises ?? []) : [] },
   };
   return Claim.parse(claim);
 }

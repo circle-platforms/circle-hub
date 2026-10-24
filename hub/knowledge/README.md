@@ -366,7 +366,11 @@ catalogs, grounds and provenance.
     accounting uses the slimmed size, and the answer records the fields it carries (`fields`) and says so in a note, so a
     big index fits the byte budget. MAX_INDEX_ENTRIES is 200,000 since `fields` exists: the byte budget is the effective
     bound and the entry cap only guards an injected bigger one.
-    An unplaced entry is cited at the root. When any entries of the kind are unplaced, a note says how many
+    An unplaced entry is cited at the root, and only its own reference reads it back (`tree:<root>/@<digest>`): get_nodes
+    lists the entries hung on nodes, so no walk of the tree enumerates them while `total_keys` and `total_entries` count
+    them — a consumer that needs every key of a truncated index follows the view's own `next` continuation and
+    cross-checks the counts against the facets view of the same scan.
+    When any entries of the kind are unplaced, a note says how many
     (`未挂到树上位置的条目 N 个，标在根下`), including entries that carry no value of the key; `total_entries` stays the entries that carry a
     value. The value `__proto__` is not listed as a key (a JSON reader that builds plain objects would take it for the
     prototype; noted, counted in `total_keys`); the content of an entry is held during the scan only while the held
@@ -1109,3 +1113,9 @@ They never infer that no entries exist from a source that did not produce.
 独立命令 gold 同步保留 paths（标题/祖先）、steps（直接步骤）测量，并另存 placement_paths（标题、祖先与该用例正文的并集）；前置叶节点和嵌套用例正文不串入外层。命令索引和回归范围比较优先使用这份完整集合，仍兼容未带新字段的旧测量输入。索引只给首个规范归位引用，不证明列举了全部树挂载；比较器核对完整 data.commands、该引用的根与首路径，以及不分版本来源标记；独立脚本不导入 Hub 或包函数。
 
 本次合并同时保留视图的 scope/next、锁定组成与按页偏移的截断判断，以及按内容身份去重的 entry_counts。计数在过滤明细和分页之前完成，任一所选根已有位置就计为 placed；续页和完整绑定保留同一计数。命令归属空组仍由 commandless_cases 单独计量，不与 tree_unplaced_entries 混用。
+
+## Complete empty product-wide roots
+
+An empty result remains a refusal for builds. For a product-wide root only, every active producer must return a complete zero-selection inventory proof. `ProducerOutput.inventory` labels each list and cites two fragments of the same bound JSON source: `listed` must locate an array and `complete` must locate JSON true. The Hub checks these source references, derives the total from the array length, checks the actual batch is empty and selected is zero, and also requires zero refused entries, zero skipped sources and no failed optional reads. Missing evidence, source failures, a producer exception, refused entries or an incomplete list still refuse production and leave the pointer unchanged. No placeholder knowledge entry is generated.
+
+The optional `tree_root@1.empty_scope` stores complete=true and each producer label, checked list/completion references, total and selected=0. Thus a complete empty root differs from a product that has never synced. It is content-addressed and can replace a formerly populated second root by the existing compare-and-set path. Production and unchanged-sync reports render the frozen labels and zero counts as “不分版本的根为空（清单完整，…）”. Authorized node reads return an empty page and that definite coverage note, with no unknown; root-reference reads retain the same note. Compositions keep the proof even when an empty node digest is shared with a root carrying unplaced entries; callers can pin the composition.

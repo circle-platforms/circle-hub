@@ -132,3 +132,32 @@ export async function sqlState(session: SqlSession, statement: string): Promise<
     await session.query('ROLLBACK');
   }
 }
+
+/** In-memory security protocol; no command can fall through to the host keychain. */
+export function syntheticKeychain(file: string, security = '/usr/bin/security') {
+  const items = new Map<string, string>();
+  const keyOf = (args: readonly string[]) => `${args[args.indexOf('-s') + 1]}/${args[args.indexOf('-a') + 1]}`;
+  const recorder = recordingRunner((call) => {
+    if (call.command !== security) throw new Error('synthetic keychain received another executable');
+    const input = call.options.input ?? '';
+    if (!(call.args.at(-1) === file || (call.args[0] === '-i' && input.endsWith(`"${file}"\n`)))) throw new Error('synthetic keychain requires its isolated target');
+    const action = call.args[0];
+    if (action === '-i') {
+      const match = /^add-generic-password -s (\S+) -a (\S+) -w ([0-9a-f]{64}) /.exec(input);
+      if (!match) throw new Error('unsupported synthetic keychain input');
+      const name = `${match[1]}/${match[2]}`;
+      if (items.has(name)) return exit(45, 'item already exists');
+      items.set(name, match[3]);
+      return ok();
+    }
+    if (action === 'find-generic-password') {
+      const value = items.get(keyOf(call.args));
+      return value === undefined ? exit(44, 'item not found') : ok(call.args.includes('-w') ? value + '\n' : 'synthetic keychain item\n');
+    }
+    if (action === 'delete-generic-password') return items.delete(keyOf(call.args)) ? ok() : exit(44, 'item not found');
+    if (action === 'delete-keychain') { items.clear(); return ok(); }
+    if (['create-keychain', 'unlock-keychain', 'set-keychain-settings'].includes(action)) return ok();
+    throw new Error('unsupported synthetic keychain action');
+  }, { real: false });
+  return { items, ...recorder };
+}

@@ -6,7 +6,7 @@ import type { Turn, Reply } from '../scripted-model.ts';
 import type { Check } from '../lib/report.ts';
 import { lengthBounded, pathSetMatches, runStarted } from './checks.ts';
 import { contentHeader } from './content-header.ts';
-import { labelOf } from '../../../contracts/generated/vocabulary.ts';
+import { labelOf, type ChangeKind } from '../../../contracts/generated/vocabulary.ts';
 
 export interface ScopeCaseGold {
   /** The item id as the Hub writes it (document:node). */
@@ -25,7 +25,7 @@ export interface ScopeGold {
   /** removed paths of gold/command-diff.ts (not part of the scope). */
   removed: string[];
   /** The gold's change kind per path (added/modified/removed): the Hub's answer states each one. */
-  kinds?: Array<{ path: string; kind: 'added' | 'modified' | 'removed' }>;
+  kinds?: Array<{ path: string; kind: ChangeKind }>;
   /** The cases the gold expects in the scope, each on a changed path. */
   inScope: ScopeCaseGold[];
   /** Item ids the gold expects outside the scope (cases off every changed path). */
@@ -65,15 +65,21 @@ export default function scenario(gold: ScopeGold): Scenario {
         actual: text.includes(id) ? '出现了' : '没有出现',
         ok: !text.includes(id),
       }));
-      // The scope never lists removed paths (they hold no later-build case), so a removed kind is not
-      // checked against the answer text — the path-set check above already proves it is absent.
-      const kindChecks = (gold.kinds ?? []).filter((k) => k.kind !== 'removed').map((k) => ({
-        area,
-        name: `路径 ${k.path} 的变更种类是 ${k.kind}`,
-        expected: `回答里 ${k.path} 标为 ${k.kind}`,
-        actual: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text) ? `${k.kind}` : '不是',
-        ok: new RegExp(`${k.path}[^\\n]{0,40}${k.kind}`).test(text),
-      }));
+      // The full diff table includes removed rows marked outside the regression scope.
+      // Check every supplied kind while keeping removed paths out of the changed-path set above.
+      const kindChecks = (gold.kinds ?? []).map((k) => {
+        const label = labelOf('change_kind', k.kind);
+        const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // The label must immediately follow this complete path, not a neighboring table row.
+        const matches = new RegExp(`${escape(k.path)}(?:[ \\t]+|[ \\t]*[（(][ \\t]*)${escape(label)}(?=[\\s）)；;，,。:：]|$)`).test(text);
+        return {
+          area,
+          name: `路径 ${k.path} 的变更种类是 ${label}`,
+          expected: `回答里 ${k.path} 标为 ${label}`,
+          actual: matches ? label : '不是',
+          ok: matches,
+        };
+      });
       return [facetCountCheck(area, gold.caseCommandsUnplaced, turns), runStarted(area, answerTurns), ...changedChecks, ...kindChecks, ...caseChecks, ...outChecks, lengthBounded(area, turns)];
     },
   };

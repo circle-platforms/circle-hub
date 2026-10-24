@@ -286,6 +286,12 @@ export const Unplaced = z.strictObject({ fragment: FragmentRef, section: z.strin
 export type Unplaced = z.infer<typeof Unplaced>;
 
 export const ProducerOutput = z.strictObject({
+  inventory: z.array(z.strictObject({
+    label: z.string().min(1).max(80),
+    listed: FragmentRef.pick({slot:true,source:true,parser:true,selector:true}).describe('JSON array of the complete source inventory'),
+    complete: FragmentRef.pick({slot:true,source:true,parser:true,selector:true}).describe('JSON true declaring the inventory complete'),
+    selected: z.number().int().nonnegative(),
+  })).max(32).optional().describe('Evidence for a complete zero selection; the Hub verifies fragments and counts before admitting an empty product-wide root'),
   entries: z.array(ProducedEntry),
   unplaced: z.array(Unplaced).optional(),
   warnings: z.array(z.string()),

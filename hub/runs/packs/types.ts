@@ -4,6 +4,7 @@ import type { CheckTier, PackKind, QualifierMark } from '../../../contracts/gene
 import type {
   ChecksFile,
   KnowledgeFile,
+  LedgerFile,
   PackManifest,
   PackSample,
   RequirementsFile,
@@ -91,6 +92,7 @@ export interface WorkflowDeclarations {
   checks: ChecksFile;
   slots: SlotsFile;
   knowledge: KnowledgeFile | null;
+  ledger?: LedgerFile | null;
   /** SKILL.md as text. */
   instructions: string;
   /** SHA-256 of the SKILL.md bytes. */

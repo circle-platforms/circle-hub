@@ -52,7 +52,7 @@ describe('regression-scope scenario', () => {
     assert.deepEqual(scenario.respond({ ...turn(2), toolResults: turnsOf('运行 run_synthetic')[2].toolResults }), [{ text: '对比完成。' }]);
   });
   test('holds on a Hub-shaped answer and fails on a wrong path set or a stray case', () => {
-    const good = '运行 run_1 完成：变更路径 /commands/demo/pool/add（modified）、/commands/demo/show（modified）；未覆盖 /commands/demo/show。条目 9001:c-1 放在 /commands/demo/pool/add 上。';
+    const good = '运行 run_1 完成：变更路径 /commands/demo/pool/add（修改）、/commands/demo/show（修改）；命令差 /commands/demo/pool/delete（删除，不进范围）；未覆盖 /commands/demo/show。条目 9001:c-1 放在 /commands/demo/pool/add 上。';
     assert.ok(allOk(scenario, turnsOf(good)), JSON.stringify(scenario.check(turnsOf(good))));
     const stray = good.replace('/commands/demo/show。', '/commands/demo/other。');
     assert.ok(!allOk(scenario, turnsOf(stray)));
