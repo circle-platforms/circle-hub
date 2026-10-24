@@ -190,7 +190,7 @@ export function parsePageName(name: string, mainlineWords: readonly string[] = [
   }
   let kind: PageKind;
   if (tail.length === 1 && /^patch[0-9]+(?:\.[0-9]+)?$/.test(tail[0])) kind = 'patch';
-  else if (extra.length === 0 && tail.every((token) => mainlineWords.includes(token))) kind = platform === null ? 'mainline' : 'platform';
+  else if (extra.length === 0 && tail.length === 0) kind = platform === null ? 'mainline' : 'platform';
   else if (tail.length === 2 && tail[0] === 'customer' && /^[A-Za-z0-9]+$/.test(tail[1])) kind = 'customer';
   else return null;
   return { family, line, platform, kind, tokens };

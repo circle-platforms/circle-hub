@@ -187,6 +187,7 @@ function filesOf(name: string, links: Link[], warnings: string[]): BuildFiles {
     const ref: FileRef = { name: file, href: link.href };
     if (file !== '' && !file.includes(name)) warnings.push(`构建 ${name} 的链接 ${file} 不含构建名，仍按位置归到该构建`);
     const kind = file === '' ? null : fileKind(file);
+    if (kind === null) warnings.push(`构建 ${name} 的资产角色未核对：${file} 不符合 apv-assets@1 整名语法；下一步由包作者补资产语法或作者声明角色后重读，保留原链接`);
     if (kind === 'image' && files.image === null) {
       const image: ImageRef = { ...ref, ...imageDetails(link.text) };
       files.image = image;
