@@ -818,7 +818,7 @@ entry edits. Ordinary-field declarations and their counts keep their existing be
 | `rule_withdrawn` 规则已撤回 | 组成行的 `decided_by`（决定该条目的包 id@version）；读时查包端口，下架即标。一次读里同版本的查询有缓存 | 有数据，已算 |
 | `cited_fragment_changed` 被引片段已变 | **所引根 X 与读者根 Y 比**（K03 R[5]）：X ≠ Y，且 Y 里同一路径的条目摘要与 X 里的不同、或 Y 里没有这个路径，才标，并写出 X 和 Y 两个根（`cited_root`、`reader_root`）。读者根：运行里 = 读者的锁（锁定组成）所属的根；**运行外（K01 R[6]）= 这条产品线的当前根指针**（指针已移到别的根时同样标，并注明主张在所引根上仍成立）；**同一个根永远不会变**（根按内容寻址）；当前指针也取不到（这条产品线@构建还没有根）时不标，照实不算 | 有数据，已算 |
 | `expired` 已过期 | 记录主张 `validity.expires_at`，解析时按解析上下文注入的时钟（没有才用墙钟）重读（B01 R[3]）；树条目自身无过期字段，不算 | 记录主张有数据，已算；树条目无来源 |
-| `contradicted` 出现矛盾主张 | `claim` 记录带 `relation: 'contradicts'`，见下；**只算读者本人可见的关系**（本人的候选关系 + Hub 确定性规则产出的关系），别人的私有候选关系不给另一个读者打标（K05 R[4]，管理员也不例外） | 合成关系记录已算；候选层的提议通道由另一终端在建 |
+| `contradicted` 出现矛盾主张 | `claim` 记录带 `relation: 'contradicts'`，见下；**只算读者本人可见的关系**（本人的候选关系 + Hub 确定性规则产出的关系），别人的私有候选关系不给另一个读者打标（K05 R[4]，管理员也不例外）；也包括组成记录 `applicability_sources` 标记的适用条件冲突，含义是「来源声明互相矛盾」：凡可读这个根的人都能看到这些组成出处，只有 claim 关系受上述读者可见范围限制；这一来源不补造 claim，也不写入 `validity.contradictions` 关系列表 | 合成关系记录与组成出处已算；候选层的提议通道由另一终端在建 |
 | `grounds_withdrawn` 根据已撤回 | 无撤回记录通道 | 无数据来源，先不算 |
 | `premise_failed` 前提失效 | 前提的认证状态没有机器可读记录 | 无数据来源，先不算 |
 
