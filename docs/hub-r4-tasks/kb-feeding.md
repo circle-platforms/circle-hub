@@ -24,8 +24,8 @@
 - **出处字段**：`source = { system: 'agile', document: <文档号>, element: <节点号>, revision: <平台修订>, bytes: <原件对象摘要> }`；一份文档多来源就多条 `source`，身份不变。
 - **程序读到即填的字段**（全部来自 apv 包结构化解析，逐字段）：
   - `autoid`、`priority`、`resources` ← 敏捷平台 meta + 脑图 JSON 节点 data（cases.ts `elementDocument` / 脑图解析）。
-  - `steps[].text`、`expects[].text` ← 脑图叶子原文（逐字，不整理）。
-  - `commands` ← 步骤文本按**锁定树苗的命令目录**精确解析出的 `CommandIdentity` 列表（cases-commands.ts `resolvePhrase`；解析不出的步骤不猜，计入 `unparsed_steps` 计数）。
+  - `steps[].text`、`expects[].text` ← `cases.ts.caseBody` 共用读取两种布局：步骤子分支＋期望叶子，或用例节点正文分行＋期望叶子。编号、`[check]`、空白和原措辞保留，不另写喂入专用提取规则。
+  - `commands` ← `cases-commands.ts.stepCommands` 共用完整命令行和类型核验，按**锁定树苗的命令目录**生成 `CommandIdentity`。解析不出的步骤不猜、不擦除编号或标记，计入 `unparsed_steps`；上级标签、标题布局的纯标题和期望中的命令不补成操作命令。
   - `document_lines` ← 敏捷目录版本层（documents.ts `documentLines`）。
 - **Circle 可经回注提出的字段**（每个都带逐字引文 `quote = {source 对象摘要 + 选择器}`）：`classification`（闭集：功能/反向/升级/…）、`manual_link`（用例↔手册章节提议，见关联规则）、`relations`（same_subject / contradicts / covers）、`applicability`（逐字段，APV_COMPONENTS 等闭集）、`correction`（对步骤/期望原文的更正建议，不改原件）。
 - **关联规则**：用例↔命令：`steps` 里的命令串与树苗 `/commands/<词…>` 路径**完全相等**（CommandIdentity 相等）→ 程序建（结构），核验只查锁定根里路径仍可解析。用例↔手册章节：**只经核验的提议**——Circle 提 `manual_link`，Hub 核引文在手册原件逐字存在、章节路径在锁定树苗 `/manual/*` 下可解析；核不过整条拒。程序不建章节关联。
