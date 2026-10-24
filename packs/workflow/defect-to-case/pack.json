@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.6.11",
+  "version": "1.6.12",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "1e8c581ba8659d86c5a5c254c08b58623b51dfd480ac6e445df808f621c769a8",
-      "size": 9773
+      "sha256": "444686da1c963dd65348289b015036163423c5017f17031f6667e9f84515e56e",
+      "size": 10296
     },
     {
       "path": "checks.json",
-      "sha256": "907301bba7fb6242bd8d01a49fb809bf30473d1e44ab586da80b73cbabb80fc5",
-      "size": 4859
+      "sha256": "d86593e232c32eb6193b6f7ca5cb40b5f07425fd201f8573c25938c78b9315fa",
+      "size": 4919
     },
     {
       "path": "examples/start-run.json",
@@ -32,9 +32,14 @@
       "size": 1473
     },
     {
+      "path": "functions/case-identity.ts",
+      "sha256": "3bc483dfc66d4008e03ebf9fd134cee56a3899e429b529205335345df8c859ad",
+      "size": 6046
+    },
+    {
       "path": "functions/checks.ts",
-      "sha256": "e0d132c31415d60d30667c579b19506767b664c92177896396a5e2e6b8bc3126",
-      "size": 19894
+      "sha256": "e97ae2fa790047253830e721ca9149de0b1ac2e677b50b3f655a8392add1dd70",
+      "size": 20619
     },
     {
       "path": "functions/command-head.ts",
@@ -48,8 +53,8 @@
     },
     {
       "path": "functions/expected.ts",
-      "sha256": "b0256aaabd072912739a0719e9b8b51f37a99f6d3443407a9e104fedbbefef5c",
-      "size": 1745
+      "sha256": "2636dd6fb2bdc791f9eafbb5f296a8c3aae00e48c11a9c275d9fd014c06fc57b",
+      "size": 1936
     },
     {
       "path": "functions/generated/vocabulary.ts",
@@ -58,8 +63,8 @@
     },
     {
       "path": "functions/projection.ts",
-      "sha256": "15efa9b3b03c318648d9c68970298e1637bba365941011dc104fa223add341b9",
-      "size": 7534
+      "sha256": "2ec72faad32e68f385f2c21b3377e6ee1ab594f342e8fb81ebc53a113775e2ed",
+      "size": 8343
     },
     {
       "path": "functions/subjects.ts",
@@ -73,8 +78,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "f59a4727fc50c84fa592d9c706434389587a73825b725bd75d8b082b9eedfb30",
-      "size": 5483
+      "sha256": "aa0e3d5e5e2f0529e6c9eb209ce21eb34a76751aa5c6633f4c96b3ffa532aead",
+      "size": 5664
     },
     {
       "path": "samples/negative/commands_out_of_range.json",
@@ -152,31 +157,6 @@
       "size": 2823
     },
     {
-      "path": "tables/commands.json",
-      "sha256": "f5b53b3e3ba1f56d0ff839c6a77d41dda8f6760ba6c04339a3b6a6b04ba3448c",
-      "size": 879
-    },
-    {
-      "path": "tables/quotes.json",
-      "sha256": "4fe1adbaf6f8130add45c2146a6bb152736cc1163ba8e6c092e86f4f388b6d0d",
-      "size": 764
-    },
-    {
-      "path": "tables/resource-tags.json",
-      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
-      "size": 1400
-    },
-    {
-      "path": "workflow.json",
-      "sha256": "d75597bf9f828704724a5c8516f17ea5c1e3fc2bd9897f906c611b2c23c613f3",
-      "size": 2298
-    },
-    {
-      "path": "functions/case-identity.ts",
-      "sha256": "3bc483dfc66d4008e03ebf9fd134cee56a3899e429b529205335345df8c859ad",
-      "size": 6046
-    },
-    {
       "path": "tables/case-structure-rules.json",
       "sha256": "da99f41bf7a230650b1158c3248075d8d220ecceecb66f95c7c755e1f3157a55",
       "size": 544
@@ -187,14 +167,34 @@
       "size": 16758
     },
     {
+      "path": "tables/commands.json",
+      "sha256": "f5b53b3e3ba1f56d0ff839c6a77d41dda8f6760ba6c04339a3b6a6b04ba3448c",
+      "size": 879
+    },
+    {
       "path": "tables/expected-quote-identity.schema.json",
       "sha256": "4d44ebbf967e38b9ad5f35e3615d6f53396c00dd41defd5007e40dc95a7836b5",
       "size": 1461
     },
     {
+      "path": "tables/quotes.json",
+      "sha256": "4fe1adbaf6f8130add45c2146a6bb152736cc1163ba8e6c092e86f4f388b6d0d",
+      "size": 764
+    },
+    {
       "path": "tables/refutation-commands.json",
       "sha256": "c732449a161c9213404a19366890d0c0cb2cf6bc395e1be1bce19980824d8a88",
       "size": 555
+    },
+    {
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "d75597bf9f828704724a5c8516f17ea5c1e3fc2bd9897f906c611b2c23c613f3",
+      "size": 2298
     }
   ]
 }

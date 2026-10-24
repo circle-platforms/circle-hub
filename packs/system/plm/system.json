@@ -191,7 +191,7 @@
     {
       "name": "bug",
       "external": "plm:bug",
-      "description": "一个缺陷：标题、状态、修复说明等字段（HTML 字段转成纯文本）；资源设置 settings.bug_fix_field 为非空字符串时，content.fix_field 原样回传字段名，否则为 null，不猜默认字段、不检查该记录是否含此字段",
+      "description": "一个缺陷：标题、状态、修复说明等字段（HTML 字段转成纯文本）；资源设置 settings.bug_fix_field 为非空字符串时，content.fix_field 原样回传字段名，否则为 null，不猜默认字段、不检查该记录是否含此字段。settings.bug_fix_actions 为 JSON 字符串数组时，content.fix_notes 只收 action 与数组成员完全相等且 comment 非空的动作，按原顺序，comment 原文不改（HTML 转纯文本）；没配置或不是该数组时 fix_notes 为 null，说明写缺少设置 settings.bug_fix_actions",
       "plan": {
         "module": "functions/plm.ts",
         "export": "detailPlan"

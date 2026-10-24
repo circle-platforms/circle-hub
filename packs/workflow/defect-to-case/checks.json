@@ -69,7 +69,7 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "要求项 grounded：引文只许本条缺陷由 settings.bug_fix_field 声明的修复字段，或 manual 输入绑定的同版本线手册，按冻结原件身份核验"
+      "basis": "要求项 grounded：引文只许本条缺陷由 settings.bug_fix_field 声明的修复字段，或 settings.bug_fix_actions 收进 fix_notes 的 comment，或 manual 输入绑定的同版本线手册，按冻结原件身份核验"
     },
     {
       "id": "grounded_reading",
