@@ -957,3 +957,10 @@ An absent scope in a run/read snapshot is described as absence from that locked
 range, with a new-run or restart-from-first-page action. It does not claim that the
 product currently has no pointer, and no mutable current-pointer lookup is added to
 the immutable answer. Unbound current reads retain the product-level sync advice.
+
+View skipped counters include both the build composition and its selected scope.
+For impact, the shared scope count contributes to each side; the two counters are
+not disjoint source totals. Scope notes name the root, skipped count and producers
+actually retained in the bounded summary, disclose absent legacy producer detail,
+and request source/producer repair followed by automatic resync and a new run.
+They never infer that no entries exist from a source that did not produce.

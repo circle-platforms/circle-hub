@@ -352,7 +352,7 @@
         "to"
       ],
       "additionalProperties": false,
-      "description": "listed sources the producers could not use, per root (unreadable, unparsable, over the byte cap): what they would have given is unknown, not absent, so a pack must not read the absence of an entry as a fact when this is not zero"
+      "description": "listed sources the producers could not use per side: the build root on that side plus the shared locked product-wide root; the shared count intentionally contributes to both sides; the produced entries do not cover these sources"
     },
     "notes": {
       "type": "array",

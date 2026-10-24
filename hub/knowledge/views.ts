@@ -409,8 +409,17 @@ export class KnowledgeViews {
     return summary===null ? {} : {unversioned_entries:summary.totals.entries,unversioned_documents:summary.totals.documents};
   }
 
-  #scopeNote(summary: UnversionedView | null, scopeLocked = false): string {
-    return summary===null ? (scopeLocked ? '本次锁定范围没有不分版本的根；下一步：以同样输入新开运行，非运行读取请从首页重读当前范围（需要时先同步这条产品线）' : '这条产品线还没有不分版本的根；下一步：同步这条产品线') : `不分版本的根 ${summary.root}：构建未声明；${summary.totals.entries} 个条目，${summary.totals.documents} 份文档`;
+  #scopeNote(summary: UnversionedView | null, scopeLocked = false, scope?: CompositionView | null): string {
+    if(summary===null)return scopeLocked
+      ? '本次锁定范围没有不分版本的根；下一步：以同样输入新开运行，非运行读取请从首页重读当前范围（需要时先同步这条产品线）'
+      : '这条产品线还没有不分版本的根；下一步：同步这条产品线';
+    let note=`不分版本的根 ${summary.root}：构建未声明；${summary.totals.entries} 个条目，${summary.totals.documents} 份文档`;
+    if(summary.skipped_sources>0){
+      const producers=[...new Set((scope?.body.skipped??[]).map(row=>row.producer))].sort(compareText);
+      const detail=producers.length?`摘要中记录的生产器：${producers.join('、')}`:'旧组成未记录生产器明细，请按该组成的生产动作读取完整问题记录';
+      note+=`；不分版本的根有 ${summary.skipped_sources} 份列出的来源未使用（${detail}）；缺少这些来源经核验的入根产出，不能据此当作没有条目。下一步：管理员恢复读取条件或修正资料/生产器，下轮同步自动重读重产，完成后以新运行核验`;
+    }
+    return note;
   }
 
   async #content(row: ReadRow | null, digest: string): Promise<EntryContent | null> {
@@ -618,7 +627,7 @@ export class KnowledgeViews {
         totals: { ...this.#scopeCounts(summary), changed_paths: changedPaths, attached_from: attachedFrom, attached_to: attachedTo },
         truncated: scopeTruncated || count < changedPaths || excludedEntries.size > 0,
         skipped: { from: skippedCount(fromComposition) + skippedCount(scope), to: skippedCount(toComposition) + skippedCount(scope) },
-        notes: [...await notesOf(count), this.#scopeNote(summary,scopeLocked)],
+        notes: [...await notesOf(count), this.#scopeNote(summary,scopeLocked,scope)],
       };
     };
     // Sized exactly above; a later-root citation can lengthen a reference, so the answer is checked once more as a whole.
@@ -716,7 +725,7 @@ export class KnowledgeViews {
       totals: { empty, ...this.#scopeCounts(summary) },
       truncated: rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0,
       skipped: skippedCount(composition) + skippedCount(scope),
-      notes: [...notes,this.#scopeNote(summary,scopeLocked)],
+      notes: [...notes,this.#scopeNote(summary,scopeLocked,scope)],
     };
     return conforming(FacetView, view, 'facet-view@1');
   }
@@ -830,7 +839,7 @@ export class KnowledgeViews {
       if (excluded.size > 0) out.push(credentialNote([...excluded.values()]));
       const skipped = skippedNote(at, composition);
       if (skipped !== null) out.push(skipped);
-      out.push(this.#scopeNote(summary,scopeLocked));
+      out.push(this.#scopeNote(summary,scopeLocked,scope));
       return out;
     };
     const build = (count: number): IndexView => {
@@ -958,11 +967,11 @@ export class KnowledgeViews {
     }
     if(savedScopeCut!==undefined&&savedScopeCut!==cut)throw new LinkRefusal('分页游标的不分版本截断计数与根和预算不符；请从首页重新读取');
     if(summary)summary.totals.cut_entries=cut;
-    const reserve=canonicalBytes({unversioned:summary,entries,notes:[this.#scopeNote(summary,scopeLocked)]}).byteLength;
+    const reserve=canonicalBytes({unversioned:summary,entries,notes:[this.#scopeNote(summary,scopeLocked,scope)]}).byteLength;
     const view=await this.#relations.page(new CompositionView(this.#context.store,composition,body),{prefix:request.prefix,target:request.target,rule:request.rule,cursor:pageCursor,limit:request.limit,maxBytes:Math.max(0,this.#context.limits.maxViewBytes-reserve),...(named?{build:request.build}:{})});
     if(view.next!==null)view.next=Buffer.from(canonicalize({c:composition,scope:scopeRoot,cursor:view.next,scope_cut:cut})).toString('base64url');
     view.unversioned=summary;
-    view.notes.push(this.#scopeNote(summary,scopeLocked));
+    view.notes.push(this.#scopeNote(summary,scopeLocked,scope));
     if(scope){
       view.entries=firstPage?entries:{};
       if(cut>0){view.truncated=true;view.notes.push(`不分版本条目只在首页交付；有 ${cut} 条被字节预算截断，按 get_nodes 从根 ${scope.body.root} 分页读取剩余条目`);}

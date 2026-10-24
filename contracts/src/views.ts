@@ -93,7 +93,7 @@ export const ImpactView = z.strictObject({
   truncated: z.boolean().describe('true when a limit cut the lists; totals still count everything'),
   skipped: z
     .strictObject({ from: z.number().int().nonnegative(), to: z.number().int().nonnegative() })
-    .describe('listed sources the producers could not use, per root (unreadable, unparsable, over the byte cap): what they would have given is unknown, not absent, so a pack must not read the absence of an entry as a fact when this is not zero'),
+    .describe('listed sources the producers could not use per side: the build root on that side plus the shared locked product-wide root; the shared count intentionally contributes to both sides; the produced entries do not cover these sources'),
   notes: z.array(z.string()).describe('what the reader could not say, in Chinese: a root without entries of the attached kind, a cut list'),
 });
 export type ImpactView = z.infer<typeof ImpactView>;
@@ -122,7 +122,7 @@ export const FacetView = z.strictObject({
     empty: z.record(DataFieldName, z.number().int().nonnegative()).describe('Entries in the null group of each by field, once per entry per field; includes rows omitted by every truncation limit; zero is explicit'),
   }),
   truncated: z.boolean(),
-  skipped: z.number().int().nonnegative().describe('listed sources the producers could not use in this root: the counts do not cover what they would have given'),
+  skipped: z.number().int().nonnegative().describe('listed sources the producers could not use across the build root and its locked product-wide root together: the counts do not cover their possible entries'),
   notes: z.array(z.string()),
 }).superRefine((view, ctx) => {
   for (const field of view.by) {
@@ -161,7 +161,7 @@ export const IndexView = z.strictObject({
   total_keys: z.number().int().nonnegative(),
   total_entries: z.number().int().nonnegative(),
   truncated: z.boolean(),
-  skipped: z.number().int().nonnegative().describe('listed sources the producers could not use in this root: an absent key is unknown, not proof of absence, when this is not zero'),
+  skipped: z.number().int().nonnegative().describe('listed sources the producers could not use across the build root and its locked product-wide root together: the absence of a key does not prove absence from these sources'),
   notes: z.array(z.string()),
 });
 export type IndexView = z.infer<typeof IndexView>;
