@@ -549,3 +549,18 @@ Secret withdrawal deletes only entries named by grant decisions preceding its re
 Ordinary JSON token screening checks both object keys and values recursively, including objects inside arrays. A key meeting the strict token rule requires the same explicit `--not-secret` confirmation; refusal never quotes that key.
 
 `authorizations.grant(by, input, tx?)` 可以加入调用方事务，许可核对不变；事务回滚时决定一起回滚。产品包声明变量时，在同一事务取名字锁、核对归属并写发布决定。
+
+## Sharing audiences and objects (B04, decision 35 item 22)
+
+`share` retains the user-array API and also accepts `{kind: 'pack_users', pack}`. User decisions use the user id as
+`subject`; a pack audience uses `pack_users:<pack>` and one record. New decisions carry generated `share_audience`;
+legacy shares without it are user decisions only. The newest decision of each permission/subject/object wins, including
+withdrawals. `shares(admin, object?)` lists only currently active decisions. Pack membership is re-read through the latest
+assignment when an object is read, so unassignment revokes the audience immediately without rewriting the share.
+
+A run share uses its immutable run id as the object. The policy object `production:<pack>` binds
+`{pack, accepted_producer: 'fact'}` by canonical content digest and applies only to frozen fact-only requirements of that
+pack, including future and Hub-side runs. A pack audience of a run must name that run's pack. Records expose a read-only
+sharing query for consumers that have a record store; it grants no decision capability. Sharing grants viewing, never
+submission or lineage continuation; it never overrides connector-source visibility, credential holding or knowledge-tree
+permissions. No package-specific policy is built into these keys.

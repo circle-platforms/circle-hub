@@ -10,6 +10,7 @@ import type {
   ProducerKind,
   ProvenanceType,
   ReadTier,
+  ShareAudience,
 } from '../../contracts/generated/vocabulary.ts';
 import type { RecordKind } from '../../contracts/generated/protocol.ts';
 import type { HubConfig } from '../config/index.ts';
@@ -29,6 +30,7 @@ export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, M
 export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, CREDENTIAL_DETECTORS } from './scan.ts';
 export { textPreview, stripNul } from './text.ts';
 export { maskedForDisplay, FileKeyProvider } from './vault.ts';
+export { sharedWith, runIsSharedWith, productionShareKey, productionShareBinding } from './authorizations.ts';
 export { WHOLE_HUB, RECORD_SCHEMAS, artifactShareKey, scanAcceptanceKey } from './constants.ts';
 
 // ---------------------------------------------------------------- identity
@@ -481,7 +483,12 @@ export async function checkVaultKey(vault: Pick<Vault, 'get'>): Promise<void> {
 // ---------------------------------------------------------------- authorizations (B04)
 
 /** Body of an `authorization@1` record. The latest record per (permission, subject, object) wins. */
+export type PackShareAudience = { kind: Extract<ShareAudience, 'pack_users'>; pack: string };
+export type ShareAudienceInput = string[] | PackShareAudience;
+
 export interface AuthorizationBody {
+  /** Absent on legacy user shares; pack audience subjects are pack_users:<pack>. */
+  share_audience?: ShareAudience;
   permission: PermissionKind;
   /** Usually a user id; WHOLE_HUB for a resource configuration. */
   subject: string;
@@ -502,6 +509,7 @@ export interface AuthorizationBody {
 export type AuthorizationRecord = StoredRecord<AuthorizationBody>;
 
 export interface AuthorizationInput {
+  shareAudience?: ShareAudience;
   permission: PermissionKind;
   subject: string;
   object: string;
@@ -538,8 +546,11 @@ export interface Authorizations {
   /** Latest active decisions in one verified query; missing/revoked/expired entries are absent. */
   resourceConfigs(resourceIds: readonly string[]): Promise<Map<string, AuthorizationRecord>>;
   /** One share record per audience member. `object` is the key a reader check uses, for example `src:<sha256>` or a run id. */
-  share(by: Principal, object: string, audience: string[], note?: string | null): Promise<AuthorizationRecord[]>;
-  unshare(by: Principal, object: string, userId: string, note?: string | null): Promise<AuthorizationRecord>;
+  share(by: Principal, object: string, audience: ShareAudienceInput, note?: string | null): Promise<AuthorizationRecord[]>;
+  unshare(by: Principal, object: string, userId: string | PackShareAudience, note?: string | null): Promise<AuthorizationRecord>;
+
+  /** Current active shares; only an enabled administrator can list them. */
+  shares(by: Principal, object?: string): Promise<AuthorizationRecord[]>;
 
   packsFor(userId: string): Promise<string[]>;
   canUse(userId: string, packId: string): Promise<boolean>;
