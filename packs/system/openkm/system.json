@@ -103,7 +103,7 @@
     {
       "name": "spec-search",
       "external": "openkm:spec-search",
-      "description": "按功能词检索规格书：文件名包含的检索词越多越靠前，读出最好的五个",
+      "description": "列出规格书目录（spec_folders，默认 [spec]）的成员：关键词检索已退役（所有者裁定 U19/U20，2026-10-24），不按文件名打分、不选文件、不读文件，检索词只作披露；派生内容给出成员路径、缺的事实和下一步（用 openkm:file:<路径> 显式读取，或由模型带逐字引文提出候选并经 Hub 核验）",
       "plan": {
         "module": "functions/webdav.ts",
         "export": "searchPlan"
@@ -117,7 +117,7 @@
     {
       "name": "qa-search",
       "external": "openkm:qa-search",
-      "description": "按功能词检索测试策略文档：读法同规格书检索，目录取资源设置 qa_folder（默认 qa）；只作线索",
+      "description": "列出测试策略目录（qa_folder，默认 qa）的成员，读法同规格书检索：关键词检索已退役，不选也不读文件，检索词只作披露；只作线索",
       "plan": {
         "module": "functions/webdav.ts",
         "export": "searchPlan"

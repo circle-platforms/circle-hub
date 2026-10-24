@@ -12,6 +12,8 @@ export interface AstNode {
 }
 export interface EngineReader {
   cursor: { lineno: number }; processLine(line: string): Promise<string | undefined>;
+  /** The engine's own flag: a delimited block was still open when the source ended. Null before any read. */
+  unterminated?: boolean | null;
 }
 export interface EngineDocument extends AstNode {
   parse(): Promise<EngineDocument>; findBy(selector?: Record<string, unknown>): AstNode[];

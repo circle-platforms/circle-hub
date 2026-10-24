@@ -323,6 +323,12 @@ refusal. It registers no knowledge producer, changes no sync plan and does not r
 `catalog.json`. Step two maps that intermediate model onto K1's document model and runs it once per name family; the
 placement code in `manual.ts` is not changed by it.
 
+A whole-group refusal reads the engine's own structured observations only: a message severity of `ERROR` or `FATAL`, or the
+reader's `unterminated` flag for a delimited block the source never closed (`apv.adoc.engine_parse`). The words of a
+message are quoted back to the author as evidence and name no cause, so a warning whose text happens to say “unterminated
+… block” refuses nothing on its own (owner rule 2026-10-24, sweep A80). `report.engine_messages` keeps every message with
+its severity as before.
+
 ### Input and composition identity
 
 The input is `{main, revision, files, attributes?}`, where `files` maps a relative path to `{text, revision, sha256}`:

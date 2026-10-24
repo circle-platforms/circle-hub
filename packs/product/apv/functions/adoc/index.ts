@@ -60,6 +60,28 @@ function hasOwnText(node: AstNode, raw: string): boolean {
   return raw !== '' || node.context === 'image';
 }
 
+/** The engine's own structured observations of one parse: the severity of every message it logged (the engine's closed
+ * set of severities) and the reader's flag for a delimited block the source never closed. */
+export interface EngineObservations {
+  messages: ReadonlyArray<{ severity: string; text: string }>;
+  unterminated?: boolean | null;
+}
+
+/**
+ * Why a whole group has no output, or null when the engine reported no structural error. Only the engine's own fields
+ * decide: a message severity of ERROR or FATAL, or the reader's unterminated flag. The words of a message are quoted back
+ * to the author as evidence; they never name a cause (owner rule 2026-10-24, sweep A80).
+ */
+export function engineStructuralFailure(observed: EngineObservations): string | null {
+  const fatal = observed.messages.filter((m) => m.severity === 'ERROR' || m.severity === 'FATAL');
+  if (fatal.length > 0) {
+    const severities = [...new Set(fatal.map((m) => m.severity))].join('/');
+    return `引擎按 severity ${severities} 报告结构错误，整组没有产出：` + fatal.map((m) => m.text).join('；').slice(0, 1000);
+  }
+  if (observed.unterminated === true) return '引擎的结构化标记 reader.unterminated 报告有未闭合的定界块，整组没有产出';
+  return null;
+}
+
 async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Promise<AdocResult> {
   try {
     for (const [key, value] of Object.entries(overrides)) if (!Object.hasOwn(LIMITS, key) || !Number.isSafeInteger(value) || value < 1 || value > LIMITS[key as keyof Limits]) fail('invalid_budget', '测试预算只能收紧，不能提高生产策略上限');
@@ -86,7 +108,8 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
     };
     await doc.parse();
     report.engine_messages = logger.messages.map(({ severity, text }) => ({ severity, text }));
-    if (logger.messages.some((m) => m.severity === 'ERROR' || m.severity === 'FATAL' || /\bunterminated \S+ block\b/i.test(m.text))) fail('engine_parse', '引擎报告结构错误，整组没有产出：' + logger.messages.map((m) => m.text).join('；').slice(0, 1000));
+    const structural = engineStructuralFailure({ messages: logger.messages, unterminated: reader.unterminated });
+    if (structural !== null) fail('engine_parse', structural);
     const excluded = new Set<number>(), controls = new Set<number>();
     for (const branch of expanded.branches) {
       if (branch.retained === undefined) fail('conditional_context', '条件指令所在上下文没有被引擎求值，不能猜测分支', expanded.lines[branch.start].file, expanded.lines[branch.start].line);
@@ -148,7 +171,8 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
       blocks.push(block);
     }
     report.engine_messages = logger.messages.map(({ severity, text }) => ({ severity, text }));
-    if (logger.messages.some((m) => m.severity === 'ERROR' || m.severity === 'FATAL' || /\bunterminated \S+ block\b/i.test(m.text))) fail('engine_parse', '引擎报告结构错误，整组没有产出：' + logger.messages.map((m) => m.text).join('；').slice(0, 1000));
+    const afterWalk = engineStructuralFailure({ messages: logger.messages, unterminated: reader.unterminated });
+    if (afterWalk !== null) fail('engine_parse', afterWalk);
     const identity = { schema: 'apv-adoc-composition@1' as const, main: input.main, revision: input.revision, files: Object.entries(input.files).map(([file, value]) => ({ file, sha256: value.sha256 })), attributes: input.attributes ?? {}, engine: ENGINE, policy: POLICY, limits };
     const composition: Composition = { ...identity, sha256: sha256(canonical(identity)) };
     return { ok: true, composition, model: { schema: 'apv-adoc-expanded@1', expanded_text: text, line_map: expanded.lines.map(({ file, line }) => ({ file, line })), blocks }, report };

@@ -18,9 +18,11 @@
 // - agile:case:<document id>: the document alone, for the case index: the case-data request only, no nested read. Content:
 //   the KityMinder JSON with one more wrapper member, `agile: {id}` (kityminder@1 keeps wrapper members in model.meta), so
 //   that the document says which agile document it is wherever the Hub hands it on; the original answer; meta {id}.
-// - agile:search:<terms joined by +>[+!<document id>...]: the documents of the configured roots whose titles contain the most
-//   terms (the best five), with an outline of the best three, leaving out the documents a `!` part names (the reviewed
-//   document itself); a hint for similar test lists, never a ground for product behaviour. Incomplete when a root was not read.
+// - agile:search:<terms joined by +>[+!<document id>...]: the documents of the configured roots as a listing (id, title,
+//   folders above it, root), leaving out the documents a `!` part names by their exact id. Keyword retrieval is retired
+//   (owner ruling U19/U20, 2026-10-24): titles are not scored, no document is chosen by a term and none is read here; the
+//   terms are disclosed as unused. The listing is a hint for what exists, never a ground for product behaviour, and never
+//   a basis of recall. Incomplete when a root was not read.
 // Mindmap/search use one aggregate nested tree read and at most one refresh, independent of configured-root count.
 import { createHash } from 'node:crypto';
 
@@ -39,10 +41,8 @@ export const MAX_ROOTS = 10;
 /** Documents one search key may leave out. */
 const MAX_EXCLUDED = 8;
 const MAX_DEPTH = 64;
-const SEARCH_LIMIT = 5;
-const OUTLINE_LIMIT = 3;
-const OUTLINE_LINES = 150;
-const OUTLINE_DEPTH = 5;
+/** Documents one search listing names; the rest are counted and the tree read is named as the next step. */
+const SEARCH_LISTING_LIMIT = 200;
 const MAX_TERMS = 16;
 const ID = /^[0-9A-Za-z_-]{1,64}$/;
 
@@ -550,98 +550,66 @@ export function termsOf(key: string): string[] {
   return searchKeyOf(key).terms;
 }
 
-/** Case-insensitive containment; an ASCII term counts only where no ASCII letter touches it. */
-export function containsTerm(text: string, term: string): boolean {
-  const haystack = text.toLowerCase();
-  const needle = term.toLowerCase();
-  if (!/^[A-Za-z0-9]+$/.test(term)) return haystack.includes(needle);
-  for (let at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1)) {
-    if (!/[A-Za-z]/.test(haystack[at - 1] ?? '') && !/[A-Za-z]/.test(haystack[at + needle.length] ?? '')) return true;
-  }
-  return false;
-}
-
-export type Ranked = Located & { matched: string[] };
-
 /**
- * The documents whose titles contain the most terms, best first (ties by root order, then document order); at most five.
- * Documents named in `exclude` (the reviewed document itself) are left out.
+ * The documents a search lists: every document of the configured roots in tree order, minus the documents the key names
+ * with a `!` part (an exact document id), at most SEARCH_LISTING_LIMIT of them. No title is scored and no document is
+ * chosen by a term (owner ruling U19/U20, 2026-10-24).
  */
-export function rankDocuments(reads: Record<string, Nested>, roots: readonly string[], terms: readonly string[], exclude: readonly string[] = []): Ranked[] {
-  const scored: Array<Ranked & { order: number }> = [];
-  let order = 0;
-  for (const doc of locatedDocuments(reads,roots)) {
-    if(exclude.includes(doc.id))continue;
-    const matched=doc.title===null?[]:terms.filter(term=>containsTerm(doc.title as string,term));
-    if(matched.length)scored.push({...doc,matched,order:order++});
+export function listedDocuments(reads: Record<string, Nested>, roots: readonly string[], exclude: readonly string[] = []): Located[] {
+  const out: Located[] = [];
+  for (const doc of locatedDocuments(reads, roots)) {
+    if (exclude.includes(doc.id)) continue;
+    out.push(doc);
+    if (out.length >= SEARCH_LISTING_LIMIT) break;
   }
-
-  return scored
-    .sort((a, b) => b.matched.length - a.matched.length || a.order - b.order)
-    .slice(0, SEARCH_LIMIT)
-    .map(({ order: _order, ...doc }) => doc);
+  return out;
 }
 
 export function searchPlan(input: unknown): PlanOutput {
-  const { round, key, settings, reads } = partsOf(input);
+  const { round, settings } = partsOf(input);
   const roots = readRootsOf(settings).read;
-  const { terms, exclude } = searchKeyOf(key);
-  if (terms.length === 0 || roots.length === 0) return { requests: [], done: true };
-  // The first root listing page is the answer as received; the result is derived from the cached trees and the outlines.
+  if (roots.length === 0) return { requests: [], done: true };
+  // The first root listing page is the answer as received; the listing is derived from the cached trees.
   if (round === 1) return { requests: [{ key: 'listing', route: 'roots', body: { page: 1 } }], reads: [{external:treeId(ROOTS_KEY)}], done: false, original: 'listing' };
-  const best = rankDocuments(reads, roots, terms, exclude).slice(0, OUTLINE_LIMIT);
-  return { requests: best.map((doc, k) => ({ key: `case-${k + 1}`, route: 'case-data', body: { id: bodyId(doc.id) } })), done: true };
-}
-
-/** Node texts of a KityMinder document (inner JSON as text or object), indented by depth, at most OUTLINE_LINES. */
-export function outlineOf(data: unknown): string[] {
-  let doc: unknown = data;
-  for (let k = 0; k < 2 && typeof doc === 'string'; k++) {
-    try {
-      doc = JSON.parse(doc);
-    } catch {
-      return [];
-    }
-  }
-  const root = isRecord(doc) && isRecord(doc.root) ? doc.root : null;
-  if (root === null) return [];
-  const lines: string[] = [];
-  type Frame = { node: unknown; depth: number };
-  const stack: Frame[] = [{ node: root, depth: 0 }];
-  while (stack.length > 0 && lines.length < OUTLINE_LINES) {
-    const { node, depth } = stack.pop() as Frame;
-    if (!isRecord(node)) continue;
-    const data = isRecord(node.data) ? node.data : {};
-    const text = typeof data.text === 'string' ? data.text.replace(/\s+/g, ' ').trim() : '';
-    if (text !== '') lines.push(`${'  '.repeat(depth)}${text.slice(0, 200)}`);
-    if (depth >= OUTLINE_DEPTH) continue;
-    const children = Array.isArray(node.children) ? node.children : [];
-    for (let k = children.length - 1; k >= 0; k--) stack.push({ node: children[k], depth: depth + 1 });
-  }
-  return lines;
+  // No document is requested for its title: a search reads no case data. A document is read by its declared id
+  // (agile:mindmap:<id> or agile:case:<id>), or a model proposes one with a verbatim quote the Hub verifies.
+  return { requests: [], done: true };
 }
 
 export function searchProject(input: unknown): unknown {
-  const { key, settings, responses, reads } = partsOf(input);
+  const { key, settings, reads } = partsOf(input);
   const { terms, exclude } = searchKeyOf(key);
-  const ranked = rankDocuments(reads, readRootsOf(settings).read, terms, exclude);
-  const outlines = ranked.slice(0, OUTLINE_LIMIT).flatMap((doc, k) => {
-    const response = responses[`case-${k + 1}`];
-    return response?.ok === true ? [{ id: doc.id, title: doc.title, lines: outlineOf(dataOf(response)) }] : [];
-  });
-  // Roots whose trees were not read were not searched: the result is incomplete, never "no similar list".
+  const roots = readRootsOf(settings).read;
+  const documents = listedDocuments(reads, roots, exclude);
+  const total = locatedDocuments(reads, roots).filter((doc) => !exclude.includes(doc.id)).length;
+  const cut = total > documents.length;
+  // Roots whose trees were not read were not listed: the result is incomplete, never "no such document".
   const unread = unreadRoots(reads, settings);
-  const note = unread.length > 0 ? `${unreadNote(unread, settings)}，这些根没有检索${ranked.length === 0 ? '；读到的根里没有标题包含这些词的文档' : ''}` : ranked.length === 0 ? '配置的根里没有标题包含这些词的文档' : null;
+  const note = [
+    '关键词检索已退役（所有者裁定 U19/U20，2026-10-24）：本读法不按标题打分选文档，也不读任何文档正文；检索词只作披露，不作输入或查全依据。',
+    '缺的事实：这次要判断的来源身份。下一步：作者用 agile:mindmap:<文档编号> 或 agile:case:<文档编号> 按下面列出的编号显式读取，或由模型带逐字引文提出候选并经 Hub 核验。',
+    ...(unread.length > 0 ? [`${unreadNote(unread, settings)}，这些根没有列出`] : []),
+    ...(cut ? [`文档超过 ${SEARCH_LISTING_LIMIT} 份，其余没有列出；下一步用 agile:tree:<根> 读法取完整清单`] : []),
+  ].join('');
   return {
     artifacts: [
       {
         name: 'content',
         media_type: 'application/json',
-        json: { terms, documents: ranked.map((doc) => ({ id: doc.id, title: doc.title, ancestors: doc.ancestors, matched: doc.matched })), outlines, ...(exclude.length > 0 ? { excluded: exclude } : {}), ...(unread.length > 0 ? { unread } : {}) },
+        json: {
+          terms,
+          terms_used: false,
+          documents: documents.map((doc) => ({ id: doc.id, title: doc.title, ancestors: doc.ancestors, root: doc.root })),
+          listed: documents.length,
+          total,
+          ...(exclude.length > 0 ? { excluded: exclude } : {}),
+          ...(unread.length > 0 ? { unread } : {}),
+          ...(cut ? { cut: true } : {}),
+        },
       },
-      { name: 'meta', media_type: 'application/json', json: { title: `相似的测试清单：${terms.join('、')}`, terms, documents: ranked.length, ...(unread.length > 0 ? { unread: unread.length } : {}) } },
+      { name: 'meta', media_type: 'application/json', json: { title: `配置的根里的文档清单（检索词只作披露）：${terms.join('、')}`, terms, terms_used: false, documents: documents.length, selection: 'retired', ...(unread.length > 0 ? { unread: unread.length } : {}) } },
     ],
     ...(unread.length > 0 ? { complete: false } : {}),
-    ...(note !== null ? { note } : {}),
+    note,
   };
 }
