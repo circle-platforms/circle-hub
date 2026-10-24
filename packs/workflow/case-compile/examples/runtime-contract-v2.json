@@ -73,7 +73,7 @@
       },
       "minimum_runtime": "synthetic-runtime-v2",
       "typed_authority": {
-        "source": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/effects/effect_0",
+        "source": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/effects/effect_0",
         "parameters": {
           "line": {
             "type": "text",
@@ -121,7 +121,7 @@
       },
       "minimum_runtime": "synthetic-runtime-v2",
       "typed_authority": {
-        "source": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/effects/effect_1",
+        "source": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/effects/effect_1",
         "parameters": {
           "command": {
             "type": "text",
@@ -165,7 +165,7 @@
       },
       "minimum_runtime": "synthetic-runtime-v2",
       "typed_authority": {
-        "source": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/effects/effect_2",
+        "source": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/effects/effect_2",
         "parameters": {
           "expected": {
             "type": "text",
@@ -209,7 +209,7 @@
       },
       "minimum_runtime": "synthetic-runtime-v2",
       "typed_authority": {
-        "source": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/effects/effect_3",
+        "source": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/effects/effect_3",
         "parameters": {
           "seconds": {
             "type": "seconds",
@@ -337,7 +337,7 @@
       "declaration": {
         "name": "text",
         "catalog_type": "string",
-        "declaration": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/types/text",
+        "declaration": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/types/text",
         "grammar": "runtime-contract@2"
       }
     },
@@ -345,7 +345,7 @@
       "declaration": {
         "name": "seconds",
         "catalog_type": "int",
-        "declaration": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/types/seconds",
+        "declaration": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/types/seconds",
         "grammar": "runtime-contract@2"
       },
       "minimum": 1,
@@ -354,29 +354,29 @@
   },
   "roles": {
     "device_cli": {
-      "source": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/roles/device_cli",
+      "source": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/roles/device_cli",
       "bed_member": false
     },
     "host_shell": {
-      "source": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/roles/host_shell",
+      "source": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/roles/host_shell",
       "bed_member": false
     },
     "literal_assertion": {
-      "source": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/roles/literal_assertion",
+      "source": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/roles/literal_assertion",
       "bed_member": false
     },
     "wait": {
-      "source": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/roles/wait",
+      "source": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/roles/wait",
       "bed_member": false
     },
     "credential": {
-      "source": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/roles/credential",
+      "source": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/roles/credential",
       "bed_member": false
     }
   },
   "effects": {
     "effect_0": {
-      "source": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/effects/effect_0",
+      "source": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/effects/effect_0",
       "roles": [
         "device_cli",
         "credential"
@@ -386,7 +386,7 @@
         {
           "tree_root": "64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7",
           "path": "/commands/widget/health/interval",
-          "signature": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7#xml@1:x/commands/item/arguments",
+          "signature": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments",
           "parameters": [
             {
               "position": 0,
@@ -395,7 +395,7 @@
               "type": {
                 "name": "U16",
                 "catalog_type": "int",
-                "declaration": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7#xml@1:x/commands/item/arguments/arg",
+                "declaration": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments/arg",
                 "grammar": "apv-command-tree@2"
               },
               "parsed": {
@@ -410,7 +410,7 @@
       "command_roles": []
     },
     "effect_1": {
-      "source": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/effects/effect_1",
+      "source": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/effects/effect_1",
       "roles": [
         "host_shell",
         "credential"
@@ -423,7 +423,7 @@
       "command_roles": []
     },
     "effect_2": {
-      "source": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/effects/effect_2",
+      "source": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/effects/effect_2",
       "roles": [
         "literal_assertion",
         "credential"
@@ -434,7 +434,7 @@
       "command_roles": []
     },
     "effect_3": {
-      "source": "src:9da84fa60d49566ac0352fcacf3977142be9b7da8c46f5c843e9dbad008f547b#json@1:p/effects/effect_3",
+      "source": "src:786752a4d8c54da85c42174fcb37c8299a13989ae7fa0dee98e9a6eedd29a03c/json@1/p/effects/effect_3",
       "roles": [
         "wait",
         "credential"
@@ -445,5 +445,5 @@
       "command_roles": []
     }
   },
-  "contract_sha256": "97d953eca6d675d9af61b01b0aa8525178e31fded50eeaf4c8887bb09cdc1d5b"
+  "contract_sha256": "88902eb21818e85c5ece4d3ce174bcc6f75b627af62eeca095407c3fbef7fc0d"
 }

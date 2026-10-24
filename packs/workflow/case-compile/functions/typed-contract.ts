@@ -17,7 +17,7 @@ const ground=(name:string,value:unknown):value is string=>Role.safeParse({name,d
 export function identityOf(value:unknown):CommandIdentity|null {
  const read=Identity.safeParse(value);if(!read.success)return null;
  const identity=read.data as CommandIdentity;
- const root=identity.signature.startsWith('src:')?identity.signature.slice(4).split('#')[0]:identity.signature.startsWith('tree:')?identity.signature.slice(5).split('/')[0]:null;
+ const root=identity.signature.startsWith('src:')?identity.signature.slice(4).split('/')[0]:identity.signature.startsWith('tree:')?identity.signature.slice(5).split('/')[0]:null;
  if(root!==identity.tree_root||new Set(identity.parameters.map(p=>p.position)).size!==identity.parameters.length)return null;
  for(const p of identity.parameters){const decoded=argumentValue(p.raw);if(decoded===null)return null;const parsed=p.parsed;
   if(parsed.kind==='address'){if(String(parsed.value.value)!==decoded)return null;}
