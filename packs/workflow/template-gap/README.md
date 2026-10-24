@@ -1,9 +1,29 @@
-# template-gap 1.1.3: document categories and command coverage
+# template-gap 1.2.0: document categories and command coverage
 
 This workflow is a production run: both requirements are facts, computed and stored at start_run. It fills no item
 slot, generates no cases and calls no model. The documents are the judged subject. Both checks are static,
 bookkeeping and advisory: a missing category is a factual gap, not an instruction to change the source in the Hub.
 Model elements: W01/W02, C04/C05, K02, T01/T02; decision 35 item 19.
+
+## R1 migration preparation
+
+Owner ruling R1 (2026-10-24) supersedes the legacy text-category behavior described below. That behavior is still wired
+in this preparation commit and is not a compliant replacement for category judgments. The affected requirements are
+`coverage` and `command_coverage`; historical results remain unchanged. Do not treat the preparation as a completed R1 migration.
+
+`functions/category-evidence.ts` checks only a quotation's exact text and ownership in the parsed document. Its input node
+index must already have been resolved against the bound original. The nearest case boundary must equal the claimed case;
+ancestor, sibling and nested-case quotations are rejected even when they contain identical text. Case boundaries come
+from `casesOf`, not from text matching. The batch verifier builds ownership once per document. No case folding, Unicode
+normalization or whitespace normalization is applied. This is a mechanical citation check, never a category judgment,
+and it is not yet connected to projection or validation.
+
+Needs: the integrator's M1 model/generated-contract commit supplies the category declaration and judgment shapes and
+unclassified representation. After merging that commit, this task will connect explicit categories and accepted per-case
+judgments, remove the legacy matcher/table rules, and block missing-category claims while classification is incomplete.
+R2 (`kw-tags-exact`) and R4 (`kw-command-grammar`) consume the same contracts; this task will use those contracts directly,
+without inventing a parallel schema or waiting for either implementation branch. The next action belongs to this task's
+implementer after the integrator announces the model commit. New versions and runs replace no historical record.
 
 ## Inputs and the locked scope
 
