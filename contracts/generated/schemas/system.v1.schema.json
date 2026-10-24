@@ -601,6 +601,17 @@
             ],
             "additionalProperties": false
           },
+          "absent_codes": {
+            "description": "Projection error codes that explicitly mean this whole object is absent; valid only with fully readable supporting responses",
+            "minItems": 1,
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
           "max_requests": {
             "type": "integer",
             "minimum": 1,

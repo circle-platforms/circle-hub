@@ -179,7 +179,7 @@ describe('影响视图按目录比（catalog=commands@1）', () => {
     assert.deepEqual(view.changed_kinds, ['definition'], 'changed 不写时取目录的成员种类');
     assert.deepEqual(view.changes, []);
     assert.deepEqual(view.totals, { changed_paths: 0, attached_from: 0, attached_to: 0 });
-    assert.deepEqual(view.notes, []);
+    assert.deepEqual(view.notes, ['这条产品线还没有不分版本的根；下一步：同步这条产品线']);
     // 不按目录时，手册的两处差异是两处“修改”。
     const plain = ImpactView.parse(await f.json(await f.read(plainId)));
     assert.deepEqual(
@@ -205,7 +205,7 @@ describe('影响视图按目录比（catalog=commands@1）', () => {
     const view = ImpactView.parse(await f.json(await f.read(impactId())));
     assert.deepEqual(view.changes, []);
     assert.equal(view.totals.changed_paths, 0);
-    assert.deepEqual(view.notes, ['2 个路径的目录成员只有说明性内容（参数说明、条目摘要）或签名顺序的差异，不算变更']);
+    assert.deepEqual(view.notes, ['2 个路径的目录成员只有说明性内容（参数说明、条目摘要）或签名顺序的差异，不算变更', '这条产品线还没有不分版本的根；下一步：同步这条产品线']);
   });
 
   test('改默认值、加可选参数、改取值范围算修改', async (t) => {
@@ -227,7 +227,7 @@ describe('影响视图按目录比（catalog=commands@1）', () => {
     ]);
     assert.notEqual(def(f.digests.a, 'system reboot'), def(f.digests.b, 'system reboot'));
     assert.equal(view.totals.changed_paths, 2);
-    assert.deepEqual(view.notes, []);
+    assert.deepEqual(view.notes, ['这条产品线还没有不分版本的根；下一步：同步这条产品线']);
     // before、after 仍是条目摘要，引用照旧能解析。
     assert.equal(view.entries[def(f.digests.a, 'system reboot')].reference, `tree:${f.roots.a}/commands/system/reboot@${def(f.digests.a, 'system reboot')}`);
     assert.equal(view.entries[def(f.digests.b, 'net ping')].reference, `tree:${f.roots.b}/commands/net/ping@${def(f.digests.b, 'net ping')}`);
@@ -241,7 +241,7 @@ describe('影响视图按目录比（catalog=commands@1）', () => {
     });
     const view = ImpactView.parse(await f.json(await f.read(impactId())));
     assert.deepEqual(view.changes, [{ path: '/commands/net/trace', change: 'removed', before: [f.digests.a.get('net trace') as string], after: [] }]);
-    assert.deepEqual(view.notes, []);
+    assert.deepEqual(view.notes, ['这条产品线还没有不分版本的根；下一步：同步这条产品线']);
     // 不按目录时，手册还在那条路径上，于是被算成“修改”而不是“删除”。
     const plain = ImpactView.parse(await f.json(await f.read(plainId)));
     assert.deepEqual(
@@ -259,7 +259,7 @@ describe('影响视图按目录比（catalog=commands@1）', () => {
     });
     const view = ImpactView.parse(await f.json(await f.read(impactId())));
     assert.deepEqual(view.changes, []);
-    assert.deepEqual(view.notes, ['1 个路径的目录成员只有说明性内容（参数说明、条目摘要）或签名顺序的差异，不算变更']);
+    assert.deepEqual(view.notes, ['1 个路径的目录成员只有说明性内容（参数说明、条目摘要）或签名顺序的差异，不算变更', '这条产品线还没有不分版本的根；下一步：同步这条产品线']);
   });
 
   test('同一版本线：手册相同，按目录比和不按目录比给出同一组路径', async (t) => {

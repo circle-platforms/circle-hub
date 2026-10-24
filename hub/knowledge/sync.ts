@@ -5,7 +5,7 @@
 // unchanged build is skipped), resumable (every production or failure is a generate action; a rerun skips what is done),
 // bounded (concurrency, per-build bytes, rounds and reads) and reported per build.
 import { z } from 'zod';
-import {resolveProductVariables,sameVariableUses} from './variables.ts';
+import {resolveProductVariables,sameVariableUses,productionVariableUses} from './variables.ts';
 import type {VariableUse} from '../../contracts/src/variables.ts';
 import { BuildInfo, SyncPlanOutput, expandTemplate } from '../../contracts/src/product.ts';
 import type { SyncPlanInput } from '../../contracts/src/product.ts';
@@ -21,7 +21,7 @@ import { PLACEMENT_CHAIN } from './calibration.ts';
 import { ListLoader, uniqueList } from './lists.ts';
 import { infoOf, plannedSources, produceTree } from './produce.ts';
 import { SourceLoader } from './sources.ts';
-import { ACTION, COMPONENTS, INDEX, buildProblem, fold, listRoles, recordedOf, withoutLists } from './store.ts';
+import { ACTION, COMPONENTS, INDEX, buildProblem, fold, listRoles, recordedOf, withoutLists, pointerName } from './store.ts';
 
 export const DEFAULT_MAX_ROUNDS = 6;
 export const DEFAULT_MAX_READS = 300;
@@ -91,6 +91,7 @@ export interface SyncReport {
     limits: { rounds: boolean; reads: boolean; max_rounds: number; max_reads: number };
   };
   builds: SyncBuildReport[];
+  scope?: Omit<SyncBuildReport, 'name' | 'family' | 'line' | 'base'>;
   pointers: LineReconciliation[];
   counts: { produced: number; registered: number; skipped: number; failed: number };
   warnings: string[];
@@ -102,6 +103,7 @@ type SyncRead = SyncPlanInput['read'][string];
 
 /** A plan answer as checked: its builds that are build-info@1, and those that are not (failed builds of the report). */
 interface PlanAnswer {
+  scope?: BuildInfo['sources'];
   fetch: string[];
   builds: BuildInfo[];
   invalid: Array<{ index: number; raw: unknown; reason: string }>;
@@ -110,7 +112,7 @@ interface PlanAnswer {
 }
 
 /** The envelope of sync-plan-output@1 with the builds unchecked: one build that is not build-info@1 fails only itself. */
-const PlanEnvelope = z.strictObject({ fetch: SyncPlanOutput.shape.fetch, builds: z.array(z.unknown()), done: z.boolean(), note: z.string().optional() });
+const PlanEnvelope = z.strictObject({ scope: SyncPlanOutput.shape.scope, fetch: SyncPlanOutput.shape.fetch, builds: z.array(z.unknown()), done: z.boolean(), note: z.string().optional() });
 
 async function pool<T>(items: readonly T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
   let next = 0;
@@ -147,6 +149,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
   const finish = (): SyncReport => {
     report.ended_at = context.now().toISOString();
     for (const build of report.builds) report.counts[build.outcome]++;
+    if (report.scope) report.counts[report.scope.outcome]++;
     return report;
   };  if (declaration === undefined) {
     report.error = '产品包没有声明 sync，无法同步';
@@ -306,6 +309,31 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
   for (const build of own) report.builds.push(results.get(build.name) as SyncBuildReport);
   report.builds.sort((a, b) => compareText(a.line, b.line) || compareText(a.name, b.name));
 
+  if (output.scope !== undefined) {
+    if(options.signal?.aborted) {
+      report.scope={outcome:'failed',reason:'同步被中止，不分版本范围没有处理；下一步：重新同步这条产品线',root:null,composition:null};
+    } else try {
+      const observed=dryRun?null:await context.records.pointers.get(pointerName(productId,null));
+      const result = await processOwnTree(context, product, null, { variables:variableUses, sync, loader, by, dryRun, recheck: options.recheck === true, signal: options.signal, maxAgeSeconds: options.maxAgeSeconds, readConcurrency: options.readConcurrency }, output.scope);
+      const { name: _n, family: _f, line: _l, base: _b, ...scopeReport } = result;
+      report.scope = scopeReport;
+      if (!dryRun && result.root !== null && result.composition !== null) {
+        const pointerRow={line:null,from:observed?.target??null,to:result.root,build:null};
+        try {
+          const production=(await context.store.productionsOfRoot(result.root)).find(row=>row.detail.product===productId&&row.detail.build===null&&row.detail.composition===result.composition);
+          if(!production)throw new Error('缺少与不分版本组成对应的成功生产动作');
+          const moved=await builds.moveRoot(productId,null,observed?.target??null,result.root,production.record.digest,{by,composition:result.composition,expected_action:observed?.action??null});
+          const current=!moved.moved&&moved.current?.target===result.root?await context.store.pointerMove(moved.current.action):null;
+          report.pointers.push({...pointerRow,moved:moved.moved,reason:moved.moved?'已移动不分版本的当前根':moved.reason+(current?.composition===result.composition?'':'；下一步：重新同步这条产品线')});
+        } catch(error) {
+          report.pointers.push({...pointerRow,moved:false,reason:`移动不分版本当前根时出错：${describeError(error)}；下一步：管理员恢复指针和对应生产动作后重新同步这条产品线`});
+        }
+      }
+    } catch(error) {
+      report.scope={outcome:'failed',reason:`处理不分版本范围时出错：${describeError(error)}；下一步：管理员恢复来源或存储后重新同步这条产品线`,root:null,composition:null};
+    }
+  }
+
   // ---------------------------------------------------------------- current roots
   if (!dryRun) {
     for (const line of [...touchedLines].sort(compareText)) {
@@ -322,15 +350,17 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
 async function processOwnTree(
   context: KnowledgeContext,
   product: ProductHandle,
-  build: BuildInfo,
+  build: BuildInfo | null,
   options: { variables:VariableUse[]; sync: string; loader: SourceLoader; by: Principal; dryRun: boolean; recheck: boolean; signal?: AbortSignal; maxAgeSeconds?: number; readConcurrency?: number },
+  scope?: BuildInfo['sources']
 ): Promise<SyncBuildReport> {
+  options={...options,variables:productionVariableUses(product,build===null,options.variables)};
   const productId = product.product.id;
-  const base = { name: build.name, family: build.family, line: build.line, base: build.base };
-  const info = infoOf(build);
-  const existing = await context.store.latestProduction(productId, build.name);
+  const base = build === null ? { name: '不分版本', family: '', line: '', base: '' } : { name: build.name, family: build.family, line: build.line, base: build.base };
+  const info = build === null ? null : infoOf(build);
+  const existing = await context.store.latestProduction(productId, build?.name ?? null);
   const keyOf = (s: { producer: string; slot: string; external: string | null }): string => `${s.producer}\u0000${s.slot}\u0000${s.external ?? ''}`;
-  const planned = plannedSources(product, info);
+  const planned = plannedSources(product, info, scope);
   const plannedKeys = planned.filter((s) => !s.many).map(keyOf).sort(compareText);
   const plannedLists = planned
     .filter((s) => s.many)
@@ -346,10 +376,10 @@ async function processOwnTree(
     else if (existing.record.body.component !== COMPONENTS.produce) changed = `Hub 的生产组件变了（${existing.record.body.component} → ${COMPONENTS.produce}）`;
     // The listing changed (released since, other line or platform, other sources): the composition records the build as listed.
     else if (
-      canonicalize(withoutLists(existing.detail.build)) !== canonicalize(withoutLists(info)) ||
-      canonicalize(listRoles(existing.detail.build)) !== canonicalize(listRoles(info))
+      canonicalize(existing.detail.build === null ? null : withoutLists(existing.detail.build)) !== canonicalize(info === null ? null : withoutLists(info)) ||
+      canonicalize(existing.detail.build === null ? [] : listRoles(existing.detail.build)) !== canonicalize(info === null ? [] : listRoles(info))
     ) changed = '构建信息变了';
-    else if (canonicalize(existing.detail.build) !== canonicalize(recordedOf(info).build)) changed = '来源列表变了';
+    else if (canonicalize(existing.detail.build) !== canonicalize(info === null ? null : recordedOf(info).build)) changed = '来源列表变了';
     else if (recorded !== null && recorded.spans > 0) {
       // Spans placed by the typed-judgment model depend on the model and the chain's calibration; a judge failure is retried.
       const model = context.placer.model;
@@ -442,7 +472,8 @@ async function processOwnTree(
   }
   const produced = await produceTree(context, {
     product,
-    build: { ...info, root: existing?.detail.root ?? null },
+    build: info === null ? null : { ...info, root: existing?.detail.root ?? null },
+    scope,
     by: options.by,
     sync: options.sync,
     variables: options.variables,
@@ -516,7 +547,7 @@ async function runPlan(context: KnowledgeContext, product: ProductHandle, input:
     if (build.success) builds.push(build.data);
     else invalid.push({ index, raw, reason: `计划给出的第 ${index + 1} 个构建不符合 build-info@1：${issueText(build.error)}` });
   });
-  return { ok: true, value: { fetch: parsed.data.fetch, builds, invalid, done: parsed.data.done, ...(parsed.data.note === undefined ? {} : { note: parsed.data.note }) } };
+  return { ok: true, value: { ...(parsed.data.scope === undefined ? {} : { scope: parsed.data.scope }), fetch: parsed.data.fetch, builds, invalid, done: parsed.data.done, ...(parsed.data.note === undefined ? {} : { note: parsed.data.note }) } };
 }
 
 /** The parse action of one plan round: the pages read so far as inputs, what the plan answered. */

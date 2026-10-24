@@ -84,3 +84,5 @@ c3 #4：有权启动本任务包的有效读者看到确定的标识超长错误
 Closure B2: storiesProject retains the entire batch when status or stage is not a scalar. It emits fields_nonscalar,
 separate from fields_absent and explicit null; the workflow counts these observed fields outside the scalar-status groups.
 A regression feeds this actual projection into story-traceability instead of manufacturing the marker in a fixture.
+
+缺席观察：读取声明的 `absent_codes` 包含 `plm.absent`。仅在原始应答已保存、根据全部可读且无其他读取故障时，Hub 将该码转为带系统、对象、读取时刻和应答键的 SOURCE_ABSENT；原件照存，检查读取独立的规范 JSON 观察。401/403、未读完或凭据保留不作缺席。

@@ -188,6 +188,12 @@ describe('SVN reads over loopback with temporary PostgreSQL and the real sandbox
     assert.deepEqual(server.requests.slice(0, 2).map((r) => [r.method, r.headers.depth]), [['PROPFIND', '0'], ['PROPFIND', '1']]);
     assert.ok(server.requests.every((r) => r.headers.authorization === authorization));
   });
+  test('the pinned directory entry point lists the requested version with one network request',async()=>{
+    const before=server.requests.length;
+    const result=await read(`svn:directory-at:17/${encodeURIComponent(dir)}`);
+    assert.ok(result.ok,JSON.stringify(result));assert.equal(result.revision,'17');
+    assert.deepEqual(server.requests.slice(before).map(r=>[r.method,r.path,r.headers.depth]),[['PROPFIND',base,'1']]);
+  });
   test('missing repository_path refuses all reads without network requests', async () => {
     await kit.connectors.admin.updateResource(kit.admin, resource, { unset_settings: ['repository_path'] });
     const count = server.requests.length;
@@ -247,4 +253,23 @@ describe('SVN reads over loopback with temporary PostgreSQL and the real sandbox
     assert.equal((await kit.connectors.admin.loginStatus(kit.admin, resource))?.stopped, true);
     assert.ok(!JSON.stringify([first, second, kit.log]).includes(refusedValue));
   });
+});
+
+test('a child directory read uses only the explicitly pinned version root and never asks for current revision',async()=>{
+ const api=await import('./api.ts');
+ assert.equal(typeof api.directoryAtPlan,'function');
+ const pinned={settings,external:{key:'17/'+encodeURIComponent(dir)},responses:{list:response(listing()),revision:response(multi(row(`${prefix}/${dir}/`,'18')))}};
+ assert.deepEqual(api.directoryAtPlan(pinned),{requests:[{key:'list',route:'list',params:{rev:'17',dir}}],original:'list',done:true});
+ const out=api.directoryAtProject(pinned) as any;
+ assert.equal(out.revision,'17');assert.equal(out.artifacts[0].json.revision,'17');
+ assert.ok(out.artifacts[0].json.members.filter((m:any)=>!m.directory).every((m:any)=>m.external.startsWith('svn:file:17/')));
+});
+test('pinned directory reads refuse excessive depth and member counts without truncation',async()=>{
+ const api=await import('./api.ts');assert.equal(typeof api.directoryAtPlan,'function');
+ const deep={settings,external:{key:'17/'+encodeURIComponent(Array(34).fill('synthetic').join('/'))}};
+ assert.deepEqual(api.directoryAtPlan(deep),{requests:[],done:true});
+ assert.equal((api.directoryAtProject(deep) as any).error.code,'svn.directory_budget');
+ const many=multi(row(base),...Array.from({length:513},(_,i)=>row(base+'synthetic-'+i+'.adoc','16',false)));
+ const out=api.directoryAtProject({settings,external:{key:'17/'+encodeURIComponent(dir)},responses:{list:response(many)}}) as any;
+ assert.equal(out.error.code,'svn.directory_budget');assert.equal(out.artifacts,undefined);
 });

@@ -11,7 +11,7 @@ import { createDefaultRegistry, type ParserRegistry } from '../refs/api.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort, ResourceCatalogPort, ResourceListing } from '../ports.ts';
 import { canonicalBytes, sha256Hex, type Principal, type RecordsKit } from '../records/api.ts';
 import type { ReadDeclaration } from '../../contracts/src/resources.ts';
-import { ConnectorError, asConnectorError } from './errors.ts';
+import { CONNECTOR_ERRORS, ConnectorError, asConnectorError } from './errors.ts';
 import { HttpSource, type ConnectorLog, type FetchLike } from './http.ts';
 import { LoginManager, StaticCredential, type LoginStatus } from './login.ts';
 import { ProfileCache, type LoadedProfile } from './profiles.ts';
@@ -27,6 +27,7 @@ export interface ConnectorsOptions {
   packs: PacksPort;
   /** Injectable for tests; default the global fetch. */
   fetch?: FetchLike;
+  readRetrySleep?:(ms:number)=>Promise<void>;
   now?: () => Date;
   /** Admin log sink. Every string it receives has been redacted. */
   log?: ConnectorLog;
@@ -105,8 +106,8 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
   const loginOptions = { cooldownMs: 30 * 60_000, expiryMarginMs: 60_000, ...options.login };
 
   const registry = new ResourceRegistry({
-    objects: records.objects,
     store: records.store,
+    objects: records.objects,
     variables: records.variables,
     authorizations: records.authorizations,
     principals: records.principals,
@@ -267,7 +268,11 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       let loaded;
       try {
         loaded = await loadBound(state);
-      } catch {
+      } catch(error) {
+        const failed=asConnectorError(error,'PACK_UNAVAILABLE');
+        const reason=redactor.text(`资源 ${state.resource.id} 的绑定不可读：${failed.code}：${failed.message}；缺少原包的核验结果，请管理员恢复原包或重新配置`);
+        event('resource_binding_failed',{resource:state.resource.id,code:failed.code,reason});
+        context?.adminNote?.(reason);
         continue;
       }
       const read = loaded.profile.reads.find((r) => r.external === type);
@@ -286,6 +291,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     redactor,
     now,
     log: options.log,
+    readRetrySleep:options.readRetrySleep,
     nestedCacheMs: options.nestedCacheMs,
     nestedCacheBytes: options.nestedCacheBytes,
   });
@@ -300,12 +306,20 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
   }
 
   const reader: ExternalReaderPort = {
-    async accepts(id: string): Promise<boolean> {
+    async accepts(id: string,context?:ExternalReadContext): Promise<boolean> {
       try {
         const type = typeof id === 'string' ? externalRoutingType(id) : null;
         if (type === null) return false;
         registry.invalidate();
-        for(const state of await registry.states()) if(state.enabled) {try {if((await loadBound(state)).profile.reads.some(r=>r.external===type)) return true;}catch {}}
+        for(const state of await registry.states()) if(state.enabled) {
+          try {if((await loadBound(state)).profile.reads.some(r=>r.external===type))return true;}
+          catch(error){
+            const failed=asConnectorError(error,'PACK_UNAVAILABLE');
+            const reason=redactor.text(`资源 ${state.resource.id} 的绑定不可读：${failed.code}：${failed.message}；缺少原包的核验结果，请管理员恢复原包或重新配置`);
+            event('resource_binding_failed',{resource:state.resource.id,code:failed.code,reason});
+            context?.adminNote?.(reason);
+          }
+        }
         return false;
       } catch (error) {
         event('accepts_failed', { reason: asConnectorError(error, 'RESOURCE_UNAVAILABLE').message });
@@ -335,8 +349,31 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         }
         const [{ runtime, read }] = candidates;
         const outcome = await engine.top(runtime, read, subject, context);
-        if (!outcome.ok) return { ok: false, id: subject.id, reason: `${outcome.code}：${outcome.reason}` };
-        return { ok: true, id: subject.id, revision: outcome.revision, artifacts: outcome.artifacts, manifest: outcome.manifest };
+        if(!outcome.ok && outcome.disclosable===true && !outcome.retry) {
+          const fixes:Partial<Record<typeof outcome.code,string>>={
+            ROUTE_REFUSED:'缺少符合路由声明的读取请求；由系统包负责人修复规划，按允许路由重读',
+            ORIGIN_REFUSED:'规划链接不在允许的同源范围；由资源管理员核对地址声明或系统包负责人修复规划后重读',
+            PLAINTEXT_REFUSED:'本地传输策略拒绝经明文发送凭据；由资源管理员核对 HTTPS 与地址声明后重读',
+            SOURCE_HTTP_STATUS:'来源明确以非成功 HTTP 状态作答；由资源管理员核对路由、参数与系统状态后重读',
+            SOURCE_ENVELOPE_ERROR:'来源在应答信封中明确报错；由资源管理员核对参数与系统状态后重读',
+            STORE_FAILED:'缺少已保存并可回读的来源原件；由 Hub 管理员修复对象存储，必要时从备份恢复后重读',
+            SOURCE_MALFORMED:'缺少符合声明格式的应答；由资源管理员核对应答格式与路由声明，修复后重读',
+            PROJECTION_FAILED:'缺少符合投影契约的出件；由系统包负责人核对投影输入、输出与回读，修复后重读',
+            PLAN_INVALID:'缺少符合契约的完整读取计划；由系统包负责人核对规划函数与路由，修复后重读',
+            FUNCTION_FAILED:'缺少包函数的成功出件；由系统包负责人修复函数后重读',
+            SOURCE_ABSENT:'未读到要求的锁定修订；由资源管理员核对对象修订后重读，需要改修订时开始新运行',
+          };
+          const fix=fixes[outcome.code];
+          if(fix)return {ok:false,id:subject.id,reason:`${outcome.code}：${outcome.reason}`,inputError:{code:'SOURCE_READ_FAILED',message:outcome.code==='SOURCE_ABSENT'?'未读到要求的锁定修订':outcome.code==='SOURCE_HTTP_STATUS'?(outcome.message??CONNECTOR_ERRORS[outcome.code]):CONNECTOR_ERRORS[outcome.code],fix}};
+        }
+        if(!outcome.ok && outcome.disclosable===true && (outcome.code==='READ_LIMIT' || outcome.code==='RESPONSE_TOO_LARGE'))return {ok:false,id:subject.id,reason:`${outcome.code}：${outcome.reason}`,inputError:{code:'SOURCE_READ_LIMIT',message:outcome.reason,fix:'由资源管理员调整声明或缩小读取范围后重新完整读取'}};
+        if(!outcome.ok && outcome.disclosable===true && outcome.redirect) {
+          const observation=outcome.redirect;
+          const message=`来源明确给出 HTTP ${observation.status} 重定向，Location：${observation.location??(observation.location_redacted?'不可安全回显，请管理员核对原来源响应':'来源没有给出')}；本次没有跟随该地址`;
+          return {ok:false,id:subject.id,reason:`${outcome.code}：${outcome.reason}`,redirect:observation,inputError:{code:'SOURCE_REDIRECT_REFUSED',message,fix:'由资源管理员核对来源给出的 Location 与路由声明，修复配置后按原对象重读'}};
+        }
+        if (!outcome.ok) return { ok: false, id: subject.id, reason: `${outcome.code}：${outcome.reason}`,...(outcome.disclosable!==false && outcome.retry?{retry:outcome.retry}:{}) };
+        return { ok: true, id: subject.id, revision: outcome.revision, artifacts: outcome.artifacts, manifest: outcome.manifest,coverage:outcome.coverage,...(outcome.absent?{absent:outcome.absent}:{}) };
       } catch (error) {
         const failure = asConnectorError(error, 'STORE_FAILED');
         event('read_failed',{reason:failure.message});
@@ -345,12 +382,28 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     },
   };
 
+  async function resourceList(by:Principal):Promise<ResourceListing[]> {
+    const rows=await registry.list(by);
+    const user=await records.principals.get(by.id);
+    if(user?.role!=='admin' || user.disabled)return rows;
+    for(const row of rows) {
+      const state=await registry.get(row.id);
+      if(!state)continue;
+      try {await loadBound(state);}
+      catch(error) {
+        const failed=asConnectorError(error,'PACK_UNAVAILABLE');
+        row.binding_error={code:failed.code,message:redactor.text(failed.message),fix:'缺少绑定原包的核验结果；请管理员恢复原包或重新配置该资源'};
+      }
+    }
+    return rows;
+  }
+
   const catalog: ResourceCatalogPort = {
     async list(user: Principal): Promise<ResourceListing[]> {
       try {
         const viewer = typeof user?.id === 'string' ? await records.principals.get(user.id) : null;
         if (viewer === null || viewer.disabled || viewer.role !== 'admin') return [];
-        return await registry.list(viewer);
+        return await resourceList(viewer);
       } catch {
         return [];
       }
@@ -365,7 +418,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       engine.clearCache();
       return record;
     },
-    listResources: (by) => registry.list(by),
+    listResources: (by) => resourceList(by),
     describe: (by, id) => registry.describe(by, id),
     disable: async (by, id, note) => {
       await registry.disable(by, id, note);

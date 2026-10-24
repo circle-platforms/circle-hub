@@ -12,7 +12,7 @@ import {
   TriggerSchema,
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
-import { Versioned, IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
+import { Coverage, Versioned, IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
 import { ContextBuild, LeaseContextRow, LeaseRegistrationRow } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
@@ -25,6 +25,7 @@ export type InputBinding = z.infer<typeof InputBinding>;
 
 /** A source bound to the run (P02), with the role it plays (A03). Inputs carry their slot; sources the pack bound itself carry none. */
 export const SourceBinding = z.strictObject({
+  coverage:Coverage.optional().describe('Observed coverage of the external read frozen with these bytes; absent on legacy bindings'),
   reference: ReferenceUri.describe('the bound bytes or fragment; read it with get_nodes'),
   role: SourceRoleSchema,
   slot: z.string().optional().describe('input slot the source came in through'),
@@ -103,6 +104,7 @@ export const RunSummary = z.strictObject({
   target_basis: z
     .array(Claim)
     .describe('how product, version and build were fixed: one claim each; provenance declared when the caller gave the value, projected when the pack rule chose it, observed when a target echoed it; grounds cite what the choice read'),
+  unversioned_root: Sha256.optional().describe('product-wide knowledge root locked for this run'),
   root: Sha256.optional().describe('knowledge root locked for this run'),
   sources: z.array(SourceBinding).describe('every source bound to the run besides the knowledge root: inputs and the expected sources the pack bound'),
   requirements: z.array(RequirementSummary),

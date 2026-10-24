@@ -10,7 +10,7 @@ import type { TestRecordsKit } from '../testing/records.ts';
 import type { CallLogInput, CallLogLine, Principal } from './api.ts';
 import { argumentDigest } from './calllog.ts';
 import { canonicalize } from './canonical.ts';
-import { digestOf, recordDigest } from './digest.ts';
+import { digestOf, recordDigest, sha256Hex } from './digest.ts';
 import { IntegrityError, RecordsError } from './errors.ts';
 import { newId } from './ids.ts';
 
@@ -42,6 +42,8 @@ async function people(kit: TestRecordsKit): Promise<{ admin: Principal; alice: P
   const p = (user: { id: string; name: string; role: 'user' | 'admin' }): Principal => ({ id: user.id, name: user.name, role: user.role });
   return { admin: p(admin), alice: p(alice), bob: p(bob) };
 }
+
+const fileLine=(line:CallLogLine)=>{const {admin_note,admin_reasons,...publicLine}=line;return publicLine;};
 
 async function fileLines(kit: TestRecordsKit, day: string): Promise<CallLogLine[]> {
   const text = await readFile(join(kit.dataDir, 'logs', `calls-${day}.jsonl`), 'utf8');
@@ -97,7 +99,7 @@ test('one line per call: a call_log record, a typed row and a JSONL line, with o
   await kit.callLog.append({ ...input, at: '2026-10-22T00:00:00.000Z', traceId: trace(2), spanId: span(2), callResult: 'ok', acceptance: 'accepted', errorCode: null });
   const logDir = join(kit.dataDir, 'logs');
   assert.deepEqual((await readdir(logDir)).sort(), ['calls-2026-10-21.jsonl', 'calls-2026-10-22.jsonl']);
-  assert.deepEqual(await fileLines(kit, '2026-10-21'), [line]);
+  assert.deepEqual(await fileLines(kit, '2026-10-21'), [fileLine(line)]);
   assert.equal((await stat(join(logDir, 'calls-2026-10-21.jsonl'))).mode & 0o777, 0o600);
   assert.equal((await stat(logDir)).mode & 0o777, 0o700);
   // The argument content appears nowhere: not in the tables, not in the files.
@@ -162,8 +164,10 @@ test('the real reason is kept outside the record: no digest a user sees covers t
   assert.equal(JSON.stringify((await query(kit, 'SELECT * FROM records')).rows).includes('没有分配'), false);
   assert.equal(JSON.stringify((await query(kit, 'SELECT * FROM call_logs')).rows).includes('没有分配'), false);
   assert.deepEqual((await query(kit, 'SELECT note FROM call_notes')).rows, [{ note }]);
-  // The admin's file keeps the note with the line.
-  assert.equal((await fileLines(kit, '2026-10-21')).find((line) => line.trace_id === trace(11))?.admin_note, note);
+  // Private summaries stay in the database even for legacy callers supplying only adminNote.
+  const file=await fileLines(kit,'2026-10-21');
+  assert.ok(file.every(line=>!('admin_note' in line)&&!('admin_reasons' in line)));
+  assert.ok(!JSON.stringify(file).includes(note));
   assert.deepEqual(await kit.callLog.query(alice, { userId: bob.id }), { items: [], next: null });
   assert.deepEqual((await kit.callLog.query(admin, { userId: bob.id })).items.map((line) => line.trace_id), [trace(12)]);
   assert.deepEqual((await kit.callLog.query(admin, { tool: 'get_nodes', newestFirst: false })).items.map((line) => line.trace_id), [trace(11), trace(12)]);
@@ -214,13 +218,13 @@ test('a file write that fails is completed by retrying with the same span id, an
   assert.equal((await kit.callLog.query(admin)).items.length, 1);
   await rm(join(logDir, `calls-${day}.jsonl`), { recursive: true });
   const retried = await kit.callLog.append(call);
-  assert.deepEqual(await fileLines(kit, day), [retried]);
+  assert.deepEqual(await fileLines(kit, day), [fileLine(retried)]);
   await kit.callLog.append(call);
   assert.equal((await fileLines(kit, day)).length, 1);
   // A crash between the commit and the write: lines missing from the file, one of them cut half way.
   const second = await kit.callLog.append({ ...call, at: `${day}T09:00:01.000Z`, spanId: span(51), adminNote: null });
   const third = await kit.callLog.append({ ...call, at: `${day}T09:00:02.000Z`, spanId: span(52), adminNote: null });
-  await writeFile(join(logDir, `calls-${day}.jsonl`), `${JSON.stringify(retried)}\n${JSON.stringify(second).slice(0, 40)}`, { mode: 0o600 });
+  await writeFile(join(logDir, `calls-${day}.jsonl`), `${JSON.stringify(fileLine(retried))}\n${JSON.stringify(fileLine(second)).slice(0, 40)}`, { mode: 0o600 });
   assert.equal(await kit.callLog.repairFiles({ from: `${day}T00:00:00.000Z`, to: '2026-10-22T00:00:00.000Z' }), 2);
   const repaired = await fileLines(kit, day).catch(() => null);
   assert.equal(repaired, null, 'the cut line stays as it was and is not valid JSON');
@@ -233,7 +237,7 @@ test('a file write that fails is completed by retrying with the same span id, an
     }
   });
   assert.deepEqual(parsed.map((line) => line.digest), [retried.digest, second.digest, third.digest]);
-  assert.equal(parsed[0].admin_note, '首因');
+  assert.equal(parsed[0].admin_note, undefined);
   assert.equal(await kit.callLog.repairFiles({ from: `${day}T00:00:00.000Z`, to: '2026-10-22T00:00:00.000Z' }), 0);
 });
 
@@ -284,4 +288,29 @@ test('inputs are validated; odd session headers are kept only as a digest; any a
   assert.equal(argumentDigest(undefined).digest, digestOf(null));
   assert.match(argumentDigest({ big: 1n }).digest, /^[0-9a-f]{64}$/);
   assert.equal(argumentDigest({ lone: String.fromCharCode(0xd800) }).size > 0, true);
+});
+
+test('full administrator reasons are separate immutable rows outside records and JSONL',async t=>{
+ const kit=await openTestRecords({postgres});t.after(()=>kit.close());const {admin,alice}=await people(kit);
+ const reasons=['第一条合成原因'+ '甲'.repeat(2500)+'FIRST-TAIL','第二条合成原因'+ '乙'.repeat(2500)+'SECOND-TAIL'];
+ const input={at:'2026-10-21T08:00:01.000Z',sessionId:null,runId:null,traceId:trace(71),spanId:span(71),userId:alice.id,tool:'get_nodes',arguments:{},callResult:'error' as const,errorCode:'SOURCE_RETRYABLE',durationMs:1,adminNote:'合成摘要',adminReasons:reasons};
+ const line=await kit.callLog.append(input);await kit.callLog.append(input);
+ const adminLine=(await kit.callLog.query(admin,{userId:alice.id})).items.find(row=>row.digest===line.digest)!;
+ assert.deepEqual(adminLine.admin_reasons,reasons);
+ const stored=(await query(kit,'SELECT ordinal, note FROM call_reasons ORDER BY ordinal')).rows;assert.deepEqual(stored,reasons.map((note,ordinal)=>({ordinal,note})));
+ const own=(await kit.callLog.query(alice,{})).items.find(row=>row.digest===line.digest)!;assert.equal('admin_reasons' in own,false);
+ const bytes=await readFile(join(kit.dataDir,'logs','calls-2026-10-21.jsonl'),'utf8');assert.ok(!bytes.includes('FIRST-TAIL')&&!bytes.includes('SECOND-TAIL'));assert.ok(!bytes.includes('admin_reasons'));
+ await rm(join(kit.dataDir,'logs','calls-2026-10-21.jsonl'));await kit.callLog.repairFiles({from:'2026-10-21T00:00:00.000Z',to:'2026-10-22T00:00:00.000Z'});
+ const repaired=await readFile(join(kit.dataDir,'logs','calls-2026-10-21.jsonl'),'utf8');assert.ok(!repaired.includes('FIRST-TAIL')&&!repaired.includes('admin_reasons'));
+ assert.ok(!JSON.stringify((await kit.store.get(line.digest))!.body).includes('合成原因'));
+ await assert.rejects(query(kit,"UPDATE call_reasons SET note='changed'"));await assert.rejects(query(kit,'DELETE FROM call_reasons'));
+});
+test('administrator reasons never turn credential matches into stored text or fingerprints',async t=>{
+ const kit=await openTestRecords({postgres});t.after(()=>kit.close());const {admin,alice}=await people(kit);
+ const secret='LogSyntheticCredential987654',reason='password = '+secret;
+ const line=await kit.callLog.append({traceId:trace(72),spanId:span(72),userId:alice.id,sessionId:null,runId:null,tool:'get_nodes',arguments:{},callResult:'error',durationMs:1,adminNote:reason,adminReasons:['可记录的合成原因',reason]});
+ const visible=(await kit.callLog.query(admin,{userId:alice.id})).items.find(item=>item.digest===line.digest)!;
+ assert.equal(visible.admin_reasons![0],'可记录的合成原因');assert.match(visible.admin_reasons![1],/触发凭据扫描/);
+ for(const table of ['records','call_logs','call_notes','call_reasons']){const text=JSON.stringify((await query(kit,`SELECT * FROM ${table}`)).rows);assert.ok(!text.includes(secret));assert.ok(!text.includes(sha256Hex(secret)));}
+ const files=await readdir(join(kit.dataDir,'logs'));for(const name of files)assert.ok(!(await readFile(join(kit.dataDir,'logs',name),'utf8')).includes(secret));
 });

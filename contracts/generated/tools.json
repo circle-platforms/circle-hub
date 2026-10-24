@@ -1124,6 +1124,11 @@
               },
               "description": "how product, version and build were fixed: one claim each; provenance declared when the caller gave the value, projected when the pack rule chose it, observed when a target echoed it; grounds cite what the choice read"
             },
+            "unversioned_root": {
+              "description": "product-wide knowledge root locked for this run",
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
             "root": {
               "description": "knowledge root locked for this run",
               "type": "string",
@@ -1134,6 +1139,33 @@
               "items": {
                 "type": "object",
                 "properties": {
+                  "coverage": {
+                    "description": "Observed coverage of the external read frozen with these bytes; absent on legacy bindings",
+                    "type": "object",
+                    "properties": {
+                      "complete": {
+                        "type": "boolean"
+                      },
+                      "examined": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "note": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "complete",
+                      "examined"
+                    ],
+                    "additionalProperties": false
+                  },
                   "reference": {
                     "type": "string",
                     "maxLength": 8192,
@@ -9112,6 +9144,11 @@
                   "description": "pack id@version"
                 },
                 "pack_digest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "unversioned_root": {
+                  "description": "product-wide knowledge root locked for this run",
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
                 },

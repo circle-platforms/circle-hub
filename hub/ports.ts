@@ -1,3 +1,5 @@
+import type {ProtocolCode} from '../contracts/generated/protocol.ts';
+import type {SourceAbsent} from '../contracts/src/resources.ts';
 // Interfaces between packages that are built at the same time. A package that provides a port exports a factory returning it
 // from its api.ts; a package that needs one takes it as an argument and imports nothing else of the provider. Tests use fakes.
 // A port answers only what its consumers need; whatever else a provider offers stays in the provider's own api.ts.
@@ -90,6 +92,8 @@ export interface WorkflowStore {
 // ---------------------------------------------------------------- external systems (provided by connectors)
 
 export interface ExternalReadContext {
+  /** Private diagnostics for the calling service; never part of read content. */
+  adminNote?:(reason:string)=>void;
   /** Ordinary-variable decisions frozen for this caller; never persisted as run parameters. */
   variables?: ReadonlyMap<string,string>;
   /** Whose credential and visibility the read uses: the user of a run, or an admin for a standing sync. */
@@ -99,6 +103,8 @@ export interface ExternalReadContext {
   purpose: string;
   /** Composition already selected by the caller; it is never replaced with a newer production. */
   composition?: string | null;
+  /** Product-wide snapshot selected before the run is persisted; null explicitly means none. */
+  unversioned?: {root:string;composition:string} | null;
   /** Canonical name of the build selected by the run; absent on legacy callers. */
   build?:string;
 }
@@ -117,15 +123,19 @@ export interface ExternalArtifact {
  * SHA-256 before anything interprets it) and the others are artifacts derived from it by the system pack's projection. When a
  * `content` artifact exists it is what a consumer parses; otherwise the original is. A failure is never an exception: `reason`
  * is for the admin log; inputError is a deterministic caller-input problem safe for an authorized reader,
- * while other failures show the neutral SOURCE_UNAVAILABLE.
+ * while read exhaustion carries retry metadata and permission failures remain neutral.
  */
+export interface ExternalRedirect {status:number;location:string|null;observed_at:string;location_redacted?:true}
+
+export interface ExternalReadRetry {code:string;at:string;attempts:number}
+
 export type ExternalRead =
-  | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string }
-  | { ok: false; id: string; reason: string; inputError?: { message: string; fix: string } };
+  | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string; coverage?:Coverage;absent?:SourceAbsent }
+  | { ok: false; id: string; reason: string; retry?:ExternalReadRetry; redirect?:ExternalRedirect; inputError?: { code?:ProtocolCode; message: string; fix: string } };
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */
-  accepts(id: string): Promise<boolean>;
+  accepts(id: string, context?:ExternalReadContext): Promise<boolean>;
   read(id: string, context: ExternalReadContext): Promise<ExternalRead>;
 }
 
@@ -200,6 +210,8 @@ export interface PackCatalogPort {
 }
 
 export interface ResourceListing {
+  /** A broken bound profile, admins only; absence is never silently treated as disabled. */
+  binding_error?:{code:string;message:string;fix:string};
   id: string;
   system_pack: string;
   name: string;
@@ -218,13 +230,14 @@ export interface ResourceCatalogPort {
 
 // ---------------------------------------------------------------- knowledge (provided by knowledge)
 
-export interface RootInfo {
+export interface RootInfo<B extends KnownBuild | null = KnownBuild> {
   /** Root node digest: what a run locks and what tree references name. Equal content gives equal roots. */
   root: string;
   /** Digest of the tree_root record that composed it (the build it was produced for and what every entry rests on). */
   composition: string;
   product: string;
-  build: KnownBuild;
+  build: B;
+  source_count?: number;
   produced_at: string;
 }
 
@@ -272,6 +285,8 @@ export interface EntryDiff {
 }
 
 export interface KnowledgePort {
+  /** Current product-wide root; absent on older ports. */
+  unversionedRoot?(product: string): Promise<(RootInfo<null> & { source_count: number }) | null>;
   /** Builds the knowledge base knows for a product, any name family, newest first. */
   builds(product: string, filter?: { line?: string; released?: boolean }): Promise<KnownBuild[]>;
   /** Any build name, of any family, to the build record whose tree it uses (aliases resolved). Null when unknown. */
@@ -281,14 +296,14 @@ export interface KnowledgePort {
   /** The root a build name of any family resolves to. This is what a run locks. */
   rootOfBuild(product: string, name: string): Promise<RootInfo | null>;
   /** Every composition record of a root digest (equal content from different builds shares one root). */
-  rootInfo(root: string): Promise<RootInfo[]>;
+  rootInfo(root: string): Promise<RootInfo<KnownBuild | null>[]>;
   /** The closed catalog declared by the product pack, built from the entries of the root; null when the root has none of that id. */
   catalog(root: string, catalogId: string): Promise<CatalogView | null>;
   /**
    * Reads nodes and entries for reference resolution; permission is enforced inside. `lock.composition` binds the reader to the
    * composition a run locked (RootInfo.composition): grounds and premises come from it alone.
    */
-  treeReader(lock?: { composition?: string | null } | null): TreeReader;
+  treeReader(lock?: { composition?: string | null; compositions?: string[] } | null): TreeReader;
   /** Absent and forbidden give the same null (D05 R[3]). */
   getNodes(query: NodesQuery, reader: Principal): Promise<NodesPage | null>;
   diffRoots(from: string, to: string): Promise<RootDiff | null>;

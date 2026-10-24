@@ -814,6 +814,8 @@ function startText(v: StartOut, context: TextContext): string {
   const target = [r.product && `产品 ${headClip.field(r.product, CLIP.name, '产品名的超出部分')}`, r.version && `版本 ${headClip.field(r.version, CLIP.name, '版本名的超出部分')}`, r.build && `构建 ${headClip.field(r.build, CLIP.name, '构建名的超出部分')}`].filter(Boolean);
   if (target.length > 0) head.push(target.join('，'));
   head.push(r.root !== undefined ? `锁定的知识根 ${r.root}` : '知识根：没有锁定');
+  if (r.unversioned_root !== undefined) head.push(`不分版本的知识根 ${r.unversioned_root}（构建未声明）`);
+  else if (r.product !== undefined) head.push('这条产品线还没有不分版本的根；下一步：同步这条产品线');
   if (r.predecessor !== undefined) head.push(`前驱运行 ${r.predecessor}`);
   blocks.push({ priority: 0, head, omitted: headClip.omitted });
   if (full !== null && layout !== null && production !== null) {
@@ -944,6 +946,7 @@ function sourceEntry(s: SourceBinding, run: string): Entry {
     s.external && `外部对象 ${clip.field(s.external, CLIP.name, '外部对象编号的超出部分')}`,
     s.media_type && clip.field(s.media_type, CLIP.name, '媒体类型的超出部分'),
     s.label && clip.field(s.label, CLIP.name, '来源名称的超出部分'),
+    s.coverage?.complete===false && `读取覆盖 ${clip.field(coverageText(s.coverage)??'',CLIP.message,'读取覆盖说明的超出部分')}`,
   ].filter(Boolean);
   return clip.entry(`- ${labelOf('source_role', s.role)} ${s.reference}${parts.length > 0 ? `（${parts.join('，')}）` : ''}`);
 }
@@ -1253,12 +1256,42 @@ function pieceEnd(text: string, from: number, room: number): number {
   return end;
 }
 
+/** Page the disclosed structure itself, never manufacture source byte ranges from a summary. */
+function structurePage(c:Content,trace:string,context:TextContext):string {
+  const {parser,summary,...rest}=c.structure!;
+  const fields=isRecord(summary)?summary:summary===undefined?{}:{summary};
+  const lines=Object.entries({...fields,...rest}).map(([key,value])=>`  ${oneLine(key)} ${valueText(value)}`);
+  const head=[`内容 ${c.reference}：${labelOf('read_tier',c.read_tier)}`,...(c.sha256?[`sha256 ${c.sha256}`]:[]),...(c.note?[oneLine(c.note)]:[]),...(typeof parser==='string'?[`解析器 ${oneLine(parser)} 认出了这份文件`]:[]),'结构摘要：'];
+  const tail=[traceLine(trace)];
+  if(!lines.length)return fit([{priority:0,head:[...head,'（空）']}],{tail}).text;
+  const at=context.cursor?cursorPosition(c.reference,context.cursor):null;
+  const valid=at && lines[at.line] && at.offset<lines[at.line].length;
+  const start=valid?at:{line:0,offset:0};
+  if(context.cursor && !valid)head.push('cursor 不对应本页结构的有效位置，下面从第一页显示');
+  const way=(line:number,offset=0):string=>context.paging===true
+    ? `下一页：${callText('get_nodes',{reference:c.reference,cursor:pageCursor(c.reference,line,offset)})}`
+    : '缺少结构续读入口；请管理员提供可公开的结构摘录，再用 get_nodes 按摘录引用读取';
+  const room=TEXT_BUDGET-sizeOf(head)-sizeOf(tail)-1500;
+  const end=pieceEnd(lines[start.line],start.offset,room);
+  let entries:Entry[],more:(shown:number)=>string;
+  if(end<lines[start.line].length) {
+    const next=way(start.line,end);
+    entries=[{lines:[lines[start.line].slice(start.offset,end)],omitted:[{what:'本行及后续结构摘要',more:next}]}];
+    more=()=>next;
+  } else {
+    entries=[lines[start.line].slice(start.offset),...lines.slice(start.line+1)];
+    more=shown=>way(start.line+shown,shown===0?start.offset:0);
+  }
+  return fit([{priority:0,head},{priority:1,entries,unit:'结构摘要',measure:'行',first:start.line+1,more}],{tail,fallback:way(start.line,start.offset)}).text;
+}
+
 /**
  * The content a reference points at, one page at a time within the budget: whole lines, and a line longer than the room
  * of a page in pieces. The way to the rest is a page cursor when the server pages; otherwise a byte range or text@1 lines of
  * a source, a pointer to the next part of a record, or the console page.
  */
 function contentText(c: Content, trace: string, context: TextContext): string {
+  if(c.text===undefined && c.structure!==undefined)return structurePage(c,trace,context);
   const tail = [traceLine(trace)];
   const head = [`内容 ${c.reference}：${labelOf('read_tier', c.read_tier)}`];
   if (c.sha256 !== undefined) head.push(`sha256 ${c.sha256}`);
