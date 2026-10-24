@@ -146,9 +146,8 @@ describe('the draft review (case-review) and its independent verification (case-
     // No fact about the case comes from a line the case does not write: the normal case has nothing to check, and the
     // negative case's expected refutation is neither met nor faked by another case's valid line.
     const normalCatalog = requirement(answer.result!, normal.id, 'catalog');
-    assert.equal(normalCatalog.status,'pending');
-    assert.equal(normalCatalog.layers[0].reason,'awaiting_step');assert.ok(normalCatalog.layers[0].missing?.includes('findings'));
-    assert.ok(normalCatalog.layers[0].exit,'the explicit repair premise keeps its named exit');
+    assert.equal(normalCatalog.status,'satisfied');
+    assert.equal(normalCatalog.layers[0].terminal,'pass','a settled fact is not rewritten by another requirement repair');
     assert.notEqual(normalCatalog.layers[0].code, 'core.catalog.param_out_of_range');
     const negativeCatalog = requirement(answer.result!, negative.id, 'catalog');
     assert.notEqual(negativeCatalog.status, 'satisfied');

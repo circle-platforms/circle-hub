@@ -394,17 +394,20 @@ export function itemCell(requirements: readonly RequirementResult[]): ItemCell {
 
 /** Explicit premise paths only: a dependency is never inferred from prose or a shared word. */
 export function waitForRepairs(results: RequirementResult[], repairs: Array<{requirement:string;pointer:string;exit:UnknownExit}>): void {
-  const boundary=(premise:string,pointer:string)=>premise===pointer||premise.startsWith(pointer+'/')||pointer.startsWith(premise+'/');
+  const boundary=(premise:string,pointer:string)=>premise===pointer||premise.startsWith(pointer+'/');
   for(const result of results){
     const waits=repairs.filter(repair=>repair.requirement!==result.requirement&&result.claims.some(claim=>claim.validity.premises.some(p=>p.startsWith('/')&&boundary(p,repair.pointer))));
     if(!waits.length)continue;
+    let changed=false;
     result.layers=result.layers.map(layer=>{
+      if(!isUnsettled(layer))return layer;
+      changed=true;
       const waiting=waits.map(repair=>`等待要求项 ${repair.requirement} 的修复（${repair.pointer}）`).join('；');
       const unknown=layer.layer==='static'?layer.terminal==='unchecked':layer.terminal==='no_verdict'||layer.terminal==='not_run';
       const gaps=[...(layer.gaps??[]),...(unknown&&layer.reason&&layer.missing&&layer.exit?[{reason:layer.reason,missing:layer.missing,exit:layer.exit}]:[])];
       const original=layer.reason?`原原因 ${labelOf('reason',layer.reason)}：${layer.missing??''}；`:layer.code?`原判定 ${layer.code}；`:'';
       return {...layer,terminal:'incomplete' as const,reason:'awaiting_step' as const,missing:original+waiting,exit:waits[0].exit,attribution:'transient' as const,...(gaps.length?{gaps}:{})};
     });
-    result.status='pending';delete result.unsatisfied_reason;
+    if(changed&&result.status!=='unsatisfied'){result.status='pending';delete result.unsatisfied_reason;}
   }
 }
