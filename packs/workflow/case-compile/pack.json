@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.0.1",
+  "version": "2.4.2",
   "kind": "workflow",
   "title": "用例编译",
   "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、拒绝表、台架与血缘地址、地址替换及逐字期望。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
@@ -38,8 +38,8 @@
     },
     {
       "path": "examples/runtime-contract-v2.json",
-      "sha256": "ec45daa5e3270f8b0651d10c715a6646b0a70faa416181c2de32912719b0c0a0",
-      "size": 12629
+      "sha256": "9dadfc9a5e8f84593027cafc1d4bc85a4f4efa481b2f529b5243f8f35c695f3e",
+      "size": 12822
     },
     {
       "path": "examples/runtime-contract.json",
@@ -48,7 +48,7 @@
     },
     {
       "path": "examples/runtime-profile-v2.json",
-      "sha256": "c87e39c99862cdc639646b24e562b0edf42242ab10250e9380ccf387288a1275",
+      "sha256": "0c9b41cb6495ed138f36589eb05782c0eedd99b549e8be8f9e85dfecf58987ee",
       "size": 1679
     },
     {
@@ -83,8 +83,8 @@
     },
     {
       "path": "functions/binding.ts",
-      "sha256": "ed8197415bdbfd7bf5c97d5a09ba38b20031124876a64da59f9c178bcd8e5173",
-      "size": 4631
+      "sha256": "6302214163a6b20cfdf34e8a6cff7be3f9278e549b151c6ae946d7c03fcc96d7",
+      "size": 4828
     },
     {
       "path": "functions/canonical-json.ts",
@@ -98,8 +98,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "650dda5c26e05ef7d83c77ec50d60d6c884ac511ccbd92b5fe0eabe9b1a0b9ec",
-      "size": 14480
+      "sha256": "820ac617d4ef3d17416f6b7c0d30adb54cf20afae8913d93fcb7439524eee2ea",
+      "size": 14489
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -113,8 +113,8 @@
     },
     {
       "path": "functions/generate.ts",
-      "sha256": "60ea6a8a6e42e034ac14a1d2d87075000223b18ae83600d08f844f992f85e260",
-      "size": 12219
+      "sha256": "d658944ff2ac73a1dc354093c4724f3050d3b8b58ad1dce4dc72cf2dafa89c83",
+      "size": 12521
     },
     {
       "path": "functions/manifest.ts",
@@ -123,13 +123,13 @@
     },
     {
       "path": "functions/profile.ts",
-      "sha256": "db0ad86b385f2965de6d7b6de52fa2c6f0aa45bcd968c4cbfd3c6f1960593022",
-      "size": 12336
+      "sha256": "e425208111927fd88b2d97b3bd2f154b7bc4550002644a8e2d8976f06a527cd4",
+      "size": 12689
     },
     {
       "path": "functions/project.ts",
-      "sha256": "58552a03a0cfee0939487930e36f2d7556d2bb2fe2ca9870edc2e16324295733",
-      "size": 11378
+      "sha256": "122051f1de96728952da4904421230e243d0072ef0869237ac9f85054e0a7d36",
+      "size": 11387
     },
     {
       "path": "functions/quote-width.ts",
@@ -143,8 +143,8 @@
     },
     {
       "path": "functions/runtime-contract.ts",
-      "sha256": "ef1d6449b1174b98b8ab0760f2af1b8caf38733ff5cea146c40586da56c06090",
-      "size": 11096
+      "sha256": "09d2c9c2a01f6b8188c433d3f78650d0a09449f5c1888b935b94ab3f90e01cfe",
+      "size": 14547
     },
     {
       "path": "functions/slots.ts",
@@ -158,13 +158,13 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "1e3e5c1af6485f6488c2cd02c2feae1e037925b25d7f1975453266fe4fd981cf",
-      "size": 2657
+      "sha256": "58880666136579c4b69533d0099125646d2588feeb9a08780c3f2d5593b8e451",
+      "size": 2738
     },
     {
       "path": "functions/typed-authority.ts",
-      "sha256": "bb53a5a627cea3acd290f6dcb744031ef92f82b6114a1b69ff618d91d004a403",
-      "size": 8390
+      "sha256": "47ce3c9a83c9fac67ec61984d737f6e8a291a448e99652403d62fa5cf913d76d",
+      "size": 8498
     },
     {
       "path": "functions/typed-contract.ts",
@@ -708,8 +708,8 @@
     },
     {
       "path": "tables/dispatch-roles.json",
-      "sha256": "e7c3e644275005d0260c1ec345f5e613c1a3939b17fcf35395de483db814ffe0",
-      "size": 2468
+      "sha256": "f790a46e2145dc016734fe6e2014fd62581d788ae3cbb257c5df1a636982ed9a",
+      "size": 2495
     },
     {
       "path": "tables/quotes.json",
@@ -723,8 +723,8 @@
     },
     {
       "path": "tables/runtime-profile-format.json",
-      "sha256": "6073073932b8fa2c3478bcc7b63b1cd9e286f994a8f95408d88e14eec8b99282",
-      "size": 473
+      "sha256": "5f8da985d2e0fd53daed38c63534a379a7e398414c30c4e230f47cbf3903cfb3",
+      "size": 814
     },
     {
       "path": "tables/typed-address.schema.json",
@@ -733,7 +733,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "8e50127eb9f04680929465bc51bf8d4b6be32b418245bc40ee27c5911de8b0b1",
+      "sha256": "336785a75be467dfdfd81eec70a20990907f14eaf068c568ca3a34ca235903bf",
       "size": 555
     },
     {
@@ -743,8 +743,8 @@
     },
     {
       "path": "tools/generate-workbook.ts",
-      "sha256": "07f931ad72709c64605c0e8fefbb956c66c8e440bfe8c6ff3817277f75cafa3e",
-      "size": 9038
+      "sha256": "4a50234a9c44178e5b8f584c989beda957af630cca33f9eadd5ff7ae2c93f6bd",
+      "size": 9047
     },
     {
       "path": "tools/normalize-mindmap.ts",

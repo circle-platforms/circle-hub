@@ -22,7 +22,7 @@ export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimePr
   if(!entry||!allowed){note(at,'方法不在合约与发布配置的共同允许集合','refute');continue;}
   const a=entry.authority;if(!a){note(entry.sourcePointer??at,'缺 runtime-contract@2 的类型、角色闭集、效果表和来源引用；旧合约一律未核对');continue;}
   effectUse(a,at);
-  const bound=bindArguments(entry,step,at);for(const problem of bound.problems)note(problem.pointer,problem.message,'refute');
+  const bound=bindArguments(entry,step,at,new Set(Object.entries(allowed.parameters).filter(([,role])=>role==='executor_return').map(([name])=>name)));for(const problem of bound.problems)note(problem.pointer,problem.message,'refute');
   for(const v of bound.values){const p=a.parameters[v.name];if(!p){note(v.pointer,`参数 ${v.name} 的原合约类型与角色未声明`);continue;}if(allowed.parameters[v.name]!==p.role){note(v.pointer,`参数 ${v.name} 的配置角色不等于合约闭集声明`,'refute');continue;}
    const kind=p.type.address_kind??p.type.declaration.catalog_type;if((kind==='ipv4'||kind==='ipv6')&&typeof a.roles[p.role]?.bed_member!=='boolean')note(v.pointer,'地址角色缺 bed_member 用途声明');
    const problem=valueProblem(p.type,v.value);if(problem)note(v.pointer,problem,'refute');

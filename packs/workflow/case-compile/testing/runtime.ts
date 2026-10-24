@@ -22,5 +22,5 @@ export function profileDocument(contract = runtimeDocument()) {
     { object: 'widget-host', method: 'shell', parameters: { command: 'host_shell' },reviewed:true },
     { object: 'widget-check', method: 'literal', parameters: { expected: 'literal_assertion' },reviewed:true },
     { object: 'widget-clock', method: 'pause', parameters: { seconds: 'wait' },reviewed:true },
-  ], denied: { device: ['system cycle', 'system erase'], host: ['reboot', 'shutdown', 'poweroff', 'halt', 'init 0', 'init 6', 'mkfs', 'dd', 'rm -rf /'] } };
+  ] };
 }

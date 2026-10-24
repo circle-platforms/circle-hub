@@ -120,7 +120,7 @@ export function projectItems(input: unknown): unknown {
       marked_only: extraction.markedOnly,
     },
   }));
-  const message = `文档 ${documentId} 选出 ${items.length} 个用例（${extraction.ruleSummary}）。配置声明决定核对依据：${profileRead.profile.synthetic ? '按合成合约核对' : '按发布的运行器合约核对'}，身份 ${contractRead.contract.digest.slice(0, 12)}；不证明在真实设备上跑得通。`;
+  const message = `文档 ${documentId} 选出 ${items.length} 个用例（${extraction.ruleSummary}）。配置声明决定核对依据：${profileRead.profile.synthetic ? '按合成合约核对' : '按发布的运行器合约核对'}，身份 ${contractRead.contract.pinned.identity.slice(0, 12)}；不证明在真实设备上跑得通。`;
   return {
     items,
     groups: [

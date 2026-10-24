@@ -33,7 +33,7 @@ export function generateWorkbook(input: GenerationInput): Uint8Array {
   if (gaps.length) reject('/contract', authorityRecovery(gaps));
   if (input.generator !== undefined && input.generator !== GENERATOR) reject('/generator', '生成器版本与当前包版本不符');
   if (!input.plan_run || !input.plan_run.startsWith('run_') || /[\r\n]/.test(input.plan_run) || !input.build || /[\r\n]/.test(input.build)) reject('/context', '缺少已满足的计划运行号或锁定构建');
-  if (contract.digest !== profile.digest || contract.runtimeVersion !== profile.runtimeVersion) reject('/identity', '合约身份与配置不符');
+  if (contract.pinned.identity !== profile.digest || contract.runtimeVersion !== profile.runtimeVersion) reject('/identity', '合约身份与配置不符');
   if (slots.bucket !== profile.bed || typeof fields.autoid !== 'string' || !new RegExp(profile.workbook.autoid_pattern, 'u').test(fields.autoid)) reject('/fields/autoid', '台架或 autoid 与已核验输入不符');
   if (typeof fields.title !== 'string' || !fields.title || !Array.isArray(fields.steps) || fields.steps.some((v) => typeof v.text !== 'string')) reject('/fields', '缺少条目标题或步骤原文');
   const assertions = profile.allowed.filter((v) => Object.values(v.parameters).some((role) => role === 'literal_assertion'));
@@ -41,9 +41,9 @@ export function generateWorkbook(input: GenerationInput): Uint8Array {
   if (!slots.expects.length) reject('/expects', '至少一条溯源期望才可生成');
   const assertionSeat = profile.seats.find((v) => v.object === assertions[0].object);
   if (assertionSeat && assertionSeat.ordinal >= profile.device_count) reject('/profile/seats', '断言对象的座位超出预检设备数');
-  const identity: Array<string | number> = [profile.workbook.identity_marker, contract.runtimeVersion, contract.digest, '', ''];
+  const identity: Array<string | number> = [profile.workbook.identity_marker, contract.runtimeVersion, contract.pinned.identity, '', ''];
   identity[FORMAT.identity_generator_column - 1] = GENERATOR;
-  identity[FORMAT.identity_recipe_column - 1] = createHash('sha256').update(canonicalJson({ slots, fields: { command_identities:fields.command_identities??null,autoid: fields.autoid, title: fields.title, priority: fields.priority ?? null, steps: fields.steps.map((v) => ({ text: v.text })) }, contract: { runtimeVersion: contract.runtimeVersion, digest: contract.digest }, profile, plan_run: input.plan_run, build: input.build, generator: GENERATOR }), 'utf8').digest('hex');
+  identity[FORMAT.identity_recipe_column - 1] = createHash('sha256').update(canonicalJson({ slots, fields: { command_identities:fields.command_identities??null,autoid: fields.autoid, title: fields.title, priority: fields.priority ?? null, steps: fields.steps.map((v) => ({ text: v.text })) }, contract: { runtimeVersion: contract.runtimeVersion, digest: contract.pinned.identity }, profile, plan_run: input.plan_run, build: input.build, generator: GENERATOR }), 'utf8').digest('hex');
   const rows: Array<Array<string | number>> = [
     identity,
     [...profile.workbook.header],
@@ -54,9 +54,10 @@ export function generateWorkbook(input: GenerationInput): Uint8Array {
     if (!method) reject(`/steps/${i}`, '步骤必须是合约启用的调用');
     if (!allowed) reject(`/steps/${i}`, '启用调用缺少参数角色配置，请先在配置里给参数定角色');
     if (Object.values(allowed!.parameters).some((v) => v === 'literal_assertion')) reject(`/steps/${i}`, '断言只写进 expects，不能直接写在 steps');
-    const bound = bindArguments(method!, step, `/steps/${i}`); if (bound.problems.length) reject(bound.problems[0].pointer, bound.problems[0].message);
+    const bound = bindArguments(method!, step, `/steps/${i}`, new Set(Object.entries(allowed!.parameters).filter(([, role]) => role === 'executor_return').map(([name]) => name))); if (bound.problems.length) reject(bound.problems[0].pointer, bound.problems[0].message);
     for (const value of bound.values) {
       if (!Object.hasOwn(allowed!.parameters, value.name)) reject(value.pointer, '参数没有角色，请在配置里给它定角色');
+      if (allowed!.parameters[value.name] === 'executor_return') reject(value.pointer, '该参数由执行器提供上一步的返回，模型不能填写');
       if (allowed!.parameters[value.name] === 'wait' && (!/^[0-9]+$/.test(String(value.value)) || Number(value.value) < 1 || profile.max_wait_seconds === null || Number(value.value) > profile.max_wait_seconds || value.pointer.includes('/keywords/') && Object.values(allowed!.parameters).every((role) => role === 'wait'))) reject(value.pointer, '等待必须是配置上限内的正整数位置参数');
     }
     const seat = profile.seats.find((v) => v.object === step.object);

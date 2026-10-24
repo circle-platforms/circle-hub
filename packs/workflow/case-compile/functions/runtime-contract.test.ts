@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
-import { contractCanonical, runtimeDigest, parseRuntimeContract, runtimeMethod } from './runtime-contract.ts';
+import { contractCanonical, runtimeDigest, parseRuntimeContract, runtimeMethod, stripAdditions } from './runtime-contract.ts';
 import { runtimeDocument, signRuntime } from '../testing/runtime.ts';
 test('canonical bytes match the runner sorted compact UTF-8 algorithm independently', () => {
   const expected = '{"a":"文字","z":[1,true,null]}';
@@ -43,4 +43,61 @@ test('all fixed authorities and signed receipt sources are format values', () =>
 test('unpaired surrogate values refuse identity while ordinary astral text remains valid UTF-8', () => {
   assert.throws(() => runtimeDigest({ value: '\ud800' }));
   const raw = runtimeDocument(); (raw.atlas_snapshot as Record<string, unknown>).caption = '合成 😀'; assert.equal(parseRuntimeContract(signRuntime(raw)).ok, true);
+});
+
+// ---- real-contract shape (the case-compile-real-contract task): object names in `e`, @2 carries the pinned original ----
+function eKeyedDocument() {
+  const raw = runtimeDocument();
+  raw.objects = raw.objects.map((object: { name: string; status: string }) => ({ e: object.name, status: object.status })) as unknown as typeof raw.objects;
+  return signRuntime(raw);
+}
+test('object names in the key e are read; name stays accepted; both present and equal is fine', () => {
+  const read = parseRuntimeContract(eKeyedDocument(), { digest: eKeyedDocument().contract_sha256, runtimeVersion: 'synthetic-runtime-v2' });
+  assert.equal(read.ok, true, JSON.stringify(read)); if (!read.ok) return;
+  assert.deepEqual(read.contract.objects, ['widget-seat', 'widget-host', 'widget-check', 'widget-clock', 'widget-disabled']);
+  const both = eKeyedDocument(); (both.objects[0] as unknown as Record<string, unknown>).name = 'widget-seat';
+  assert.equal(parseRuntimeContract(signRuntime(both)).ok, true);
+});
+test('an object writing both e and name with different values is refused whole-document', () => {
+  const raw = eKeyedDocument(); (raw.objects[0] as unknown as Record<string, unknown>).name = 'another-seat';
+  const read = parseRuntimeContract(signRuntime(raw));
+  assert.equal(read.ok, false); if (!read.ok) assert.ok(read.problems.some((p) => p.pointer === '/objects/0/e'));
+});
+/** A @2 document built on an original: additions on top, the original declared by identity and byte digest. */
+function v2Document(original: ReturnType<typeof runtimeDocument>) {
+  const originalBytes = Buffer.from(contractCanonical(original), 'utf8');
+  const originalIdentity = runtimeDigest(original);
+  const bytes = createHash('sha256').update(originalBytes).digest('hex');
+  const base: Record<string, unknown> = { ...original, schema: 'runtime-contract@2' };
+  base.entries = (base.entries as Array<Record<string, unknown>>).map((entry) => ({ ...entry, typed_authority: { source: 'fixture:synthetic' } }));
+  const withAdditions = { ...base, types: { fixture: true }, roles: {}, effects: {} };
+  return { document: signRuntime({ ...withAdditions, original: { contract_sha256: originalIdentity, sha256: bytes } }), originalIdentity, bytes, canonical: contractCanonical(original) };
+}
+test('a runtime-contract@2 document declares the pinned original: stripping the additions recovers it and the pinned identity is the original one', () => {
+  const original = runtimeDocument(); const v2 = v2Document(original);
+  const read = parseRuntimeContract(v2.document);
+  assert.equal(read.ok, true, JSON.stringify(read)); if (!read.ok) return;
+  assert.equal(read.contract.pinned.identity, v2.originalIdentity, '钉住的身份是原合约的规范身份，不是 @2 重算的摘要');
+  assert.notEqual(read.contract.digest, v2.originalIdentity);
+  assert.equal(read.contract.pinned.bytes, v2.bytes);
+  // Removing the additions recovers the original contract exactly: same canonical bytes, same identity.
+  const recovered = stripAdditions(v2.document as Record<string, unknown>)!;
+  assert.equal(contractCanonical(recovered), v2.canonical, '去掉增补后逐字节恢复原合约的规范形式');
+  assert.equal(runtimeDigest(recovered), v2.originalIdentity);
+});
+test('the expected identity of a @2 document is the pinned original, not the recomputed @2 digest', () => {
+  const v2 = v2Document(runtimeDocument());
+  const good = parseRuntimeContract(v2.document, { digest: v2.originalIdentity, runtimeVersion: 'synthetic-runtime-v2' });
+  assert.equal(good.ok, true, JSON.stringify(good));
+  const wrong = parseRuntimeContract(v2.document, { digest: (v2.document as { contract_sha256: string }).contract_sha256, runtimeVersion: 'synthetic-runtime-v2' });
+  assert.equal(wrong.ok, false);
+});
+for (const [name, mutate] of Object.entries({
+  missing: (v: any) => { delete v.original; },
+  shape: (v: any) => { v.original = { contract_sha256: 'not-a-digest' }; },
+  wrongIdentity: (v: any) => { v.original.contract_sha256 = 'b'.repeat(64); },
+})) test(`a @2 document without a verifiable original declaration is refused: ${name}`, () => {
+  const v2 = v2Document(runtimeDocument()); mutate(v2.document);
+  const read = parseRuntimeContract(signRuntime(v2.document));
+  assert.equal(read.ok, false); if (!read.ok) assert.ok(read.problems.some((p) => p.pointer.startsWith('/original') || p.pointer === '/contract_sha256'));
 });
