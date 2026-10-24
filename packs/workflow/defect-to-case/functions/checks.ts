@@ -16,6 +16,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** Identity of a duplicate-case claim: item, requirement, code and the indexed case reference. Statement text is not part of it. */
+export const DUPLICATE_CLAIM_RULE = 'defect-to-case.duplicate_claim_identity@1';
+
+export function duplicateClaimCountKey(outcome: CheckOutcome): string | null {
+  if (outcome.code !== CODES.DUPLICATE_CASE || typeof outcome.item !== 'string' || outcome.item === '') return null;
+  const data = outcome.data;
+  if (!isRecord(data) || data.requirement !== 'not_duplicate' || data.rule_version !== DUPLICATE_CLAIM_RULE) return null;
+  const duplicate = data.duplicate_of;
+  if (!isRecord(duplicate) || typeof duplicate.reference !== 'string' || duplicate.reference === '') return null;
+  return `${outcome.item}\u0000not_duplicate\u0000${outcome.code}\u0000${duplicate.reference}`;
+}
+
+/** How many duplicate-case claims share an identity. Rewording the statement does not change the count. */
+export function countDuplicateClaims(outcomes: readonly CheckOutcome[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const outcome of outcomes) {
+    const key = duplicateClaimCountKey(outcome);
+    if (key === null) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
 const CATEGORY_MAP: Record<string, CanonicalCategory> = {
   functional: 'Functional',
   function: 'Functional',
@@ -569,6 +592,8 @@ export function checkDuplicate(input: unknown): CheckOutcome[] {
           tier: 'advisory',
           ...own,
           data: {
+            requirement: 'not_duplicate',
+            rule_version: DUPLICATE_CLAIM_RULE,
             duplicate_of: {
               document: doc,
               node,

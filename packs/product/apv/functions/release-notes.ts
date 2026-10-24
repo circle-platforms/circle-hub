@@ -1,18 +1,20 @@
 // Producer of release note entries from a converted release note (markdown@1 model): the title and the opening blocks
-// give product, version, build and release date; the sections 已修复问题 (fixed) and 遗留问题 (known) hold module
-// subheadings and items (list items, table rows, paragraphs) that cite bug ids. Every item is a defect entry (K02 R[3]);
-// `data.status` says fixed or known. `data.bug` is the bug id when one was read (an index key; not `bugId`). Entries are
-// not placed in the tree by code (path null): the module is their literal
-// hint for the typed-judgment model; the build is their applicability.
+// give product, version, build and release date. A defect entry exists only where a section or block declares
+// `status` as exactly `fixed` or `known` (closed values already stored on `data.status`; not a vocabulary axis).
+// Heading words are not a status. A child heading under that section is the module. Table columns are the integer
+// indexes declared on the block (`bug`, `module`, `text`, `sequence`); header words do not choose a column, and a
+// headerless first cell is not a bug id. A declared bug cell is an id only when the whole cell is the 2–9 digit token
+// from ids.ts (`normalizeId`). List and paragraph text still passes through `idsFromTitle` for a bug marker.
+// Every item under a declared status is a defect entry (K02 R[3]). `data.bug` is the id when one was read (an index
+// key; not `bugId`). Entries are not placed in the tree by code (path null): the module is their literal hint for the
+// typed-judgment model; the build is their applicability.
 import type { Family, FragmentRef, MarkdownModel, ProducedEntry, ReleaseResult } from './types.ts';
-import { idsFromTitle } from './ids.ts';
+import { idsFromTitle, normalizeId } from './ids.ts';
 import { familyOf } from './naming.ts';
 import { asString, decodeEntities, guarded, internalError, isRecord, pad2, squeeze, stripNul, utf8Offsets, validDate } from './util.ts';
 
 const PARSER = 'markdown@1';
-// Tested before FIX: a negated "fixed" (未修复问题, Unfixed Issues) names known issues, never fixes.
-const KNOWN = /(?:未|尚未|没有|未能)(?:修复|解决)|遗留问题|已知问题|\b(?:not\s+fixed|unfixed|unresolved)\b|\bknown\s+(?:issues|problems)\b|\bopen\s+issues\b|\boutstanding\s+issues\b/i;
-const FIX = /已修复(?:的)?问题|修复(?:的)?问题|问题修复|已解决(?:的)?问题|\bfixed\s+(?:issues|bugs|problems)\b|\bbug\s*fixes\b|\bresolved\s+issues\b/i;
+const STATUS_MISSING = '缺的事实：发布页没有声明 status（只能是 fixed 或 known）。下一步：发布页作者在重新生产前，在章节或块上写入 status。';
 const NUMBERING = /^\s*(?:[0-9]+(?:\.[0-9]+)*[.．、)）]?|[一二三四五六七八九十]+[、.．]|[(（][0-9一二三四五六七八九十]+[)）])\s*/;
 const BUILD = /(?:[A-Za-z][A-Za-z0-9]{0,31}[-_])?(?:Rel|Beta)[_.](?:APV|NSAE)[A-Za-z0-9_.-]*/i;
 const PRODUCT = /(?<![A-Za-z])(APV|NSAE)(?![A-Za-z])/i;
@@ -20,13 +22,12 @@ const VERSION_LABEL = /(?:版本号?|version)\s*[:：|]?\s*v?([0-9]{1,2}(?:\.[0-
 const VERSION = /(?<![0-9.])v?([0-9]{1,2}(?:\.[0-9]{1,3}){1,5})(?![0-9.])/i;
 const DATE_LABEL = /(?:发布日期|发布时间|release\s*date|日期)\s*[:：|]?\s*([0-9]{4}\s*[-/.年]\s*[0-9]{1,2}\s*[-/.月]\s*[0-9]{1,2}\s*日?)/i;
 const DATE = /(?<![0-9])([0-9]{4}\s*[-/.年]\s*[0-9]{1,2}\s*[-/.月]\s*[0-9]{1,2}\s*日?)(?![0-9])/;
-const ID_HEADER = /bug|缺陷|问题单|问题编号|^id$|^编号$/i;
-const MODULE_HEADER = /模块|module|组件|component/i;
-const SEQUENCE_HEADER = /^(?:序号|no\.?|#)$/i;
 const MAX_HTML_TABLE = 1_000_000;
 
-type Section = { level: number; title: string; parent: number | null; line: number };
-type Block = { kind: string; section: number; text: string; selector: string; line: number };
+type Status = 'fixed' | 'known';
+type ColumnMap = { bug?: number; module?: number; text?: number; sequence?: number };
+type Section = { level: number; title: string; parent: number | null; line: number; status: Status | null };
+type Block = { kind: string; section: number; text: string; selector: string; line: number; status: Status | null; columns: ColumnMap | null };
 type Item = { text: string; start: number; end: number; bugId?: string; module?: string };
 
 function isoDate(text: string): string | null {
@@ -156,28 +157,54 @@ function htmlRows(text: string): Row[] {
   return rows;
 }
 
-/** Items of a table: one per data row; the id, module and text columns are found from the header. */
-function tableItems(rows: Row[]): Item[] {
-  const header = rows.find((row) => row.header) ?? null;
-  const names = header?.cells ?? [];
-  const idColumn = names.findIndex((name) => ID_HEADER.test(name));
-  const moduleColumn = names.findIndex((name) => MODULE_HEADER.test(name));
-  const skip = new Set(names.map((name, k) => (SEQUENCE_HEADER.test(name) ? k : -1)).filter((k) => k >= 0));
+function declaredStatus(value: unknown): Status | null {
+  return value === 'fixed' || value === 'known' ? value : null;
+}
+
+/** Integer indexes under the exact keys `bug`, `module`, `text` and `sequence`. Any other key is ignored. */
+function declaredColumns(value: unknown): ColumnMap | null {
+  if (!isRecord(value)) return null;
+  const out: ColumnMap = {};
+  for (const key of ['bug', 'module', 'text', 'sequence'] as const) {
+    const index = value[key];
+    if (typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < 64) out[key] = index;
+  }
+  return out.bug === undefined && out.module === undefined && out.text === undefined && out.sequence === undefined ? null : out;
+}
+
+/**
+ * A declared bug cell is an id only when the whole cell is the digit token ids.ts accepts for a bug (2–9 digits,
+ * `normalizeId`). Digits inside a longer cell are not an id.
+ */
+function bugCell(cell: string | undefined): string | undefined {
+  if (cell === undefined || !/^[0-9]{2,9}$/.test(cell)) return undefined;
+  return normalizeId(cell) ?? undefined;
+}
+
+/** Items of a table: one per data row. Columns come only from the declared index map. */
+function tableItems(rows: Row[], columns: ColumnMap | null): Item[] {
   const items: Item[] = [];
   for (const row of rows) {
     if (row.header) continue;
-    const textCells = row.cells.filter((_, k) => k !== idColumn && k !== moduleColumn && !skip.has(k) && row.cells[k] !== '');
-    let bugId: string | undefined;
-    if (idColumn >= 0) bugId = /[0-9]{2,9}/.exec(row.cells[idColumn] ?? '')?.[0];
-    else if (header === null && /^[0-9]{3,9}$/.test(row.cells[0] ?? '')) {
-      bugId = row.cells[0];
-      textCells.shift();
+    if (columns === null) {
+      const text = squeeze(row.cells.filter((cell) => cell !== '').join(' '));
+      if (text === '') continue;
+      items.push({ text, start: row.start, end: row.end });
+      continue;
     }
-    const text = squeeze(textCells.join(' '));
+    const bugId = columns.bug === undefined ? undefined : bugCell(row.cells[columns.bug]);
+    const moduleCell = columns.module === undefined ? undefined : (row.cells[columns.module] ?? '');
+    const skip = new Set<number>();
+    if (columns.bug !== undefined) skip.add(columns.bug);
+    if (columns.module !== undefined) skip.add(columns.module);
+    if (columns.sequence !== undefined) skip.add(columns.sequence);
+    const text = columns.text !== undefined
+      ? squeeze(row.cells[columns.text] ?? '')
+      : squeeze(row.cells.filter((cell, k) => !skip.has(k) && cell !== '').join(' '));
     if (text === '' && bugId === undefined) continue;
     const item: Item = { text, start: row.start, end: row.end };
     if (bugId !== undefined) item.bugId = bugId;
-    if (moduleColumn >= 0 && (row.cells[moduleColumn] ?? '') !== '') item.module = row.cells[moduleColumn];
+    if (moduleCell !== undefined && moduleCell !== '') item.module = moduleCell;
     items.push(item);
   }
   return items;
@@ -209,10 +236,10 @@ function listItems(text: string): Item[] {
 
 function itemsOf(block: Block, warnings: { skipped: number }): Item[] {
   if (block.kind === 'list') return listItems(block.text);
-  if (block.kind === 'table') return tableItems(tableRows(block.text));
+  if (block.kind === 'table') return tableItems(tableRows(block.text), block.columns);
   if (block.kind === 'html_block') {
     const rows = htmlRows(block.text);
-    if (rows.length > 0) return tableItems(rows);
+    if (rows.length > 0) return tableItems(rows, block.columns);
   }
   if (block.kind === 'paragraph') {
     const text = squeeze(block.text);
@@ -242,21 +269,29 @@ export function produceReleaseEntries(model: MarkdownModel): ReleaseResult {
             title: stripNul(asString(value.title) ?? ''),
             parent: Number.isInteger(value.parent) ? (value.parent as number) : null,
             line: Number.isInteger(value.line) ? (value.line as number) : 0,
+            status: declaredStatus(value.status),
           }
-        : { level: 0, title: '', parent: null, line: 0 },
+        : { level: 0, title: '', parent: null, line: 0, status: null },
     );
     const blocks: Block[] = [];
     let invalid = 0;
     for (const value of model.blocks as unknown[]) {
       if (isRecord(value) && typeof value.kind === 'string' && Number.isInteger(value.section) && typeof value.text === 'string' && typeof value.selector === 'string') {
-        blocks.push({ kind: value.kind, section: value.section as number, text: value.text, selector: value.selector, line: Number.isInteger(value.line) ? (value.line as number) : 0 });
+        blocks.push({
+          kind: value.kind,
+          section: value.section as number,
+          text: value.text,
+          selector: value.selector,
+          line: Number.isInteger(value.line) ? (value.line as number) : 0,
+          status: declaredStatus(value.status),
+          columns: declaredColumns(value.columns),
+        });
       } else invalid++;
     }
     if (invalid > 0) warnings.push(`有 ${invalid} 个块格式不对，已跳过`);
 
-    // The issue section above a section (fixed or known), and the module heading (its child on the way down).
-    type Status = 'fixed' | 'known';
-    const kindOf = new Map<number, { status: Status; module: string | null; at: number }>();
+    // The nearest declared status above a section, and the module heading (its child on the way down).
+    const kindOf = new Map<number, { status: Status; module: string | null; at: number } | null>();
     const resolve = (index: number): { status: Status; module: string | null; at: number } | null => {
       const chain: number[] = [];
       const visited = new Set<number>();
@@ -264,22 +299,22 @@ export function produceReleaseEntries(model: MarkdownModel): ReleaseResult {
         visited.add(at);
         chain.push(at);
       }
-      for (let k = chain.length - 1; k >= 0; k--) {
-        const title = sections[chain[k]].title;
-        const status: Status | null = KNOWN.test(title) ? 'known' : FIX.test(title) ? 'fixed' : null;
-        if (status !== null) return { status, module: k > 0 ? cleanTitle(sections[chain[k - 1]].title) || null : null, at: chain[k] };
-      }
-      return null;
+      const statusAt = chain.findIndex((at) => sections[at].status !== null);
+      if (statusAt < 0) return null;
+      const status = sections[chain[statusAt]].status;
+      if (status === null) return null;
+      const module = statusAt > 0 ? cleanTitle(sections[chain[statusAt - 1]].title) || null : null;
+      return { status, module, at: chain[statusAt] };
     };
-    for (const block of blocks) if (!kindOf.has(block.section)) kindOf.set(block.section, resolve(block.section) ?? { status: 'fixed', module: null, at: -1 });
+    for (const block of blocks) if (!kindOf.has(block.section)) kindOf.set(block.section, resolve(block.section));
 
-    // Header: the first heading and the blocks before the first fix or known-issue section.
+    // Header: the first heading and the blocks before the first section or block that declares a status.
     const firstHeading = sections.findIndex((section, index) => index > 0 && section.level >= 1);
     const title = firstHeading > 0 ? cleanTitle(sections[firstHeading].title) : '';
     const header: string[] = [];
     for (const block of blocks) {
       const found = kindOf.get(block.section);
-      if (found !== undefined && found.at >= 0) break;
+      if ((found !== undefined && found !== null) || block.status !== null) break;
       if (header.length < 50) header.push(block.text);
     }
     const headerText = header.join('\n');
@@ -299,23 +334,25 @@ export function produceReleaseEntries(model: MarkdownModel): ReleaseResult {
     let sectionsFound = 0;
     const seenSections = new Set<number>();
     for (const block of blocks) {
-      const found = kindOf.get(block.section);
-      if (found === undefined || found.at < 0) continue;
-      if (!seenSections.has(found.at)) {
-        seenSections.add(found.at);
+      const found = kindOf.get(block.section) ?? null;
+      const status = block.status ?? (found === null ? null : found.status);
+      if (status === null) continue;
+      const at = found === null ? block.section : found.at;
+      if (!seenSections.has(at)) {
+        seenSections.add(at);
         sectionsFound++;
       }
       let offsets: Uint32Array | null = null;
       for (const item of itemsOf(block, counters)) {
         const text = squeeze(stripNul(item.text));
-        const module = item.module ?? found.module;
+        const module = item.module ?? (found === null ? null : found.module);
         const bugId = item.bugId ?? bugIdOf(text);
         const fragment: FragmentRef = { parser: PARSER, selector: block.selector };
         if (item.start > 0 || item.end < block.text.length) {
           offsets ??= utf8Offsets(block.text);
           fragment.range = [offsets[item.start], offsets[item.end]];
         }
-        const data: { [key: string]: unknown } = { status: found.status, module, text, build: out.build };
+        const data: { [key: string]: unknown } = { status, module, text, build: out.build };
         if (bugId !== undefined) data.bug = bugId;
         out.entries.push({
           kind: 'defect',
@@ -327,7 +364,7 @@ export function produceReleaseEntries(model: MarkdownModel): ReleaseResult {
         } satisfies ProducedEntry);
       }
     }
-    if (sectionsFound === 0) warnings.push('没有找到“已修复问题”或“遗留问题”章节');
+    if (sectionsFound === 0) warnings.push(STATUS_MISSING);
     if (counters.skipped > 0) warnings.push(`问题章节里有 ${counters.skipped} 个块不是列表、表格或段落，已跳过`);
     return out;
   } catch (error) {

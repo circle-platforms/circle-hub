@@ -222,12 +222,16 @@ Producers (K02, K04, C07)
   a worked example: a text entry (`example: true`) at the longest known head, else unplaced; never a synthetic path. A
   number with no known head before it stays a command word. Value domains and worked examples become text entries at the
   matching head, else `unplaced`.
-- Release notes: sections whose heading names fixed issues (已修复问题, 修复的问题, 问题修复, 已解决问题, Fixed Issues,
-  Bug Fixes, Resolved Issues) or known issues (遗留问题, 已知问题, Known Issues, Open Issues); a negated heading (未修复,
-  尚未修复, 没有修复, 未能修复, 未解决, not fixed, unfixed, unresolved) is known issues, tested first; English names only as
-  whole words. The module is the child heading or a module column; items are list items, table rows (pipe, grid, HTML) or
-  paragraphs; the bug id comes from an id column, a bug marker or a leading number and is stored as `data.bug` (the same
-  id a case lists in `data.defects`). `data.status` is `fixed` or `known`. The names `bug`, `status` and `defects` are
+- Release notes: a section or a block is a defect list only when it declares `status` as exactly `fixed` or `known`.
+  The value is inherited from the nearest ancestor section that declares it. A heading's words are not a status, and a
+  value other than those two is not a status. With no declaration the producer emits no defect entry and names the
+  missing fact and the next step (the release-page author writes `status` before the next production). The module is
+  the child heading under that section, or the cell at a declared `columns.module` index. Items are list items, table
+  rows (pipe, grid, HTML) or paragraphs. A bug id is the whole cell at a declared `columns.bug` index when that cell
+  is the 2–9 digit token from `ids.ts` (`normalizeId`), or a bug marker `idsFromTitle` still reads in list and
+  paragraph text. Header words do not choose a column, and a headerless first cell is not a bug id. `columns.text`
+  and `columns.sequence` are the other declared indexes. The id is stored as `data.bug` (the same id a case lists in
+  `data.defects`). `data.status` is the declared `fixed` or `known`. The names `bug`, `status` and `defects` are
   legal index keys; `bugId` is not, because a data field name is a lower-case word. `path` is null (the module is the hint
   for placement), so these defect entries stay unplaced under the root (K01 R[4]). `knowledge:facets` and
   `knowledge:index` count them with the entries hung on the tree, once each, and cite an unplaced entry at the root
@@ -965,3 +969,5 @@ ROOT 的三种情形：
 两个名称族均有合成输入覆盖，没有改 include、AST 或源读取。
 
 合并 view-scope 与主线后为 1.4.3：保留部署变量、按名称族 adoc、适用条件闭集，以及构建时间失败诊断和未打标签说明；按合并后的原字节重签。
+
+1.4.4 起，发布说明的 `fixed` / `known` 只认章节或块上声明的 `status`，表的缺陷号、模块、正文和序号只认块上声明的列号。标题和表头文字不再决定状态或列。没有 `status` 时不产出缺陷条目，并写明缺的事实和下一步。清单和段落里的缺陷号仍经 `idsFromTitle` 读取，这一处不在本版范围内。

@@ -15,12 +15,13 @@
 | `tables/` | 检查表定义：`commands.json`（`catalog@1` 解释器表）与 `quotes.json`（`quote@1` 解释器表） |
 | `samples/` | 14 个样例（`pack-sample@1`，positive 与 negative 各 7 个），覆盖所有 7 项检查 |
 | `examples/` | 合成示例：`start-run.json`、`submission.json` 与 `submit-result.json` |
-| `pack.json` | 任务包清单（`defect-to-case@1.6.4`，由 packaging.ts / pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
+| `pack.json` | 任务包清单（`defect-to-case@1.6.6`，由 packaging.ts / pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
 
 非任务包发布文件：`api.ts`（外部包与工具接口）、`pack-files.ts`（打包与签名工具）、`README.md`、测试文件（`*.test.ts`）与测试辅助目录（`testing/`）。
 
 ## 版本说明
 
+- **1.6.6**：重复主张的计数身份是条目 `item`、要求项 `not_duplicate`、代码 `defect-to-case.duplicate_case` 和 `data.duplicate_of.reference`，规则版本 `defect-to-case.duplicate_claim_identity@1`。主张 statement 的措辞不参与计数。是否判重仍是既有的命令头集合、正反向和规范化标题；命令路径、参数和期望引文身份的结构键尚未接入。
 - **1.6.0**：期望文字必须是其引文的非空逐字片段，只折叠空白；改写为阻断违规 `defect-to-case.expect_not_in_quote`，计入最多两轮修复。引文来源受配置修复字段和可选同版本线手册限制；样例采用 PLM 真实字段结构；公开标题规范化规则，查重要求项只承诺实际执行的标题比较。
 - **1.5.3**：逐份草稿报告；已见重复照样驳回。仅将依赖不全覆盖的“没有重复”记为带补取出口的未知，保留跳过文档的数量。
 - **1.5.2**：视图未截断、未跳过时，没返回的请求键确定没有用例。
