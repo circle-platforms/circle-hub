@@ -51,10 +51,10 @@ function newestFirst(a: Build, b: Build): number {
   return compareNullable(b.built, a.built) || compareDotted(b.number, a.number) || compareText(a.name, b.name);
 }
 
-function optionsOf(value: unknown): { include: string[]; exclude: string[]; mainline_page_words:string[]; lines: Set<string> | null } {
+function optionsOf(value: unknown): { include: string[]; exclude: string[]; mainline_page_words:string[]; lines: Set<string> | null; pinned: string[] } {
   const options = isRecord(value) ? value : {};
   const lines = Array.isArray(options.lines) ? new Set(asStrings(options.lines).map(lineKey)) : null;
-  return { include: asStrings(options.include), exclude: asStrings(options.exclude), mainline_page_words:asStrings(options.mainline_page_words), lines };
+  return { include: asStrings(options.include), exclude: asStrings(options.exclude), mainline_page_words:asStrings(options.mainline_page_words), lines, pinned: asStrings(options.pinned) };
 }
 
 export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
@@ -149,6 +149,19 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
       if (best === undefined || newestFirst(build, best) < 0) newest.set(key, build);
     }
     for (const build of newest.values()) chosen.set(build.name, build);
+    // Builds pinned by name (${var:APV_PINNED_BUILDS}): on a read opted-in page, an entry whose build name equals a
+    // member exactly (no transformation of any kind, not even case folding) is chosen as a build of its own tree,
+    // released or not. A pinned name the read pages do not list is reported in the note, never guessed.
+    const pinnedSet = new Set(options.pinned);
+    const pinnedFound = new Set<string>();
+    if (pinnedSet.size > 0) {
+      for (const build of ofProduct) {
+        if (!pinnedSet.has(build.name) || chosen.has(build.name)) continue;
+        if (pageOf.get(build.name)?.kind === 'mainline') continue;
+        chosen.set(build.name, build);
+        pinnedFound.add(build.name);
+      }
+    }
     // The base of every chosen alias.
     const bases = new Map<string, string>();
     for (const build of [...chosen.values()]) {
@@ -250,6 +263,10 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
     if (cases !== null) summary.push(caseNote(cases, caseIndex, { ...listedCases, withheld: withheld.size, uncovered, scoped:scoped.scope!==undefined }));
     if (failed.length > 0) summary.push(`读不出的列表页：${failed.slice(0, 8).join('、')}${failed.length > 8 ? ' 等' : ''}`);
     if (partialDates > 0) summary.push(`${partialDates} 个发布日期只写到月份，记为当月 1 日`);
+    if (pinnedSet.size > 0) {
+      const absent = options.pinned.filter((name) => !pinnedFound.has(name) && !chosen.has(name));
+      if (absent.length > 0) summary.push(absent.map((name) => `点名的构建 ${name} 在选入页里没有`).join('；'));
+    }
     if (options.lines !== null) summary.push(`只列版本线 ${[...options.lines].join('、')}`);
     if (notes.length > 0) summary.push(notes.slice(0, 3).join('；'));
     const note = summary.join('；');

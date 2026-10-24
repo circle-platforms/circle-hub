@@ -127,6 +127,11 @@ Sync plan
 - An opted-in page also lists its newest build per version line, name family and platform, released or not (a Beta build
   under test: `released_at` null, so an `includeUnreleased` sync can produce its root when the page links its command
   tree; without a tree link the build is listed by name only, as the page states).
+- A build named by the pack-declared variable `APV_PINNED_BUILDS` (`${var:APV_PINNED_BUILDS}`, D01 R[12]; synthetic
+  default `[]`) is listed as a build of its own tree on the read opted-in page it appears on, released or not, carrying
+  the command-tree source the page declares for it. The equality with an entry's build name is exact: no transformation
+  of any kind, not even case folding; no keywords, prefixes or patterns. A pinned name the read pages do not list is
+  reported in the plan note item by item, never guessed.
 - `syncBuilds` produces each base build that is released or the base of a released alias, has a command tree and is not
   in `existingRoots`; it lists every resolved alias (`{ alias, base, released, platform }`, `released` null for an
   unreleased alias) for the knowledge package to record, even when the base root exists, and why other released builds
