@@ -27,20 +27,24 @@ export const MAX_CASE_DOCUMENTS = 20000;
 export const NOTE_EXAMPLES = 3;
 const DOTTED = /^[0-9]{1,3}(?:\.[0-9]{1,3}){1,3}$/;
 
-export type CaseIndexOptions = { on: boolean; minLine: string | null; notes: string[] };
+export type CaseIndexOptions = { on: boolean; minLine: string | null; notes: string[]; invalidMinLine?: true };
 
 /** The case index options of the sync declaration (as the caller overrode them). */
 export function caseIndexOptions(options: unknown): CaseIndexOptions {
   const record = isRecord(options) ? options : {};
   const notes: string[] = [];
   let minLine: string | null = DEFAULT_MIN_LINE;
+  let invalidMinLine = false;
   if (Object.hasOwn(record, 'min_line')) {
     const value = typeof record.min_line === 'string' ? record.min_line.trim() : '';
     if(record.min_line===null)minLine=null;
     else if (DOTTED.test(value)) minLine = lineKey(value);
-    else notes.push('同步选项 min_line 应是版本线（例如 10.6.2）或 null；本次不设下限，修正选项后重跑');
+    else {
+      invalidMinLine=true;
+      notes.push('同步选项 min_line 应是点分版本线或显式 null；未套用下限。下一步 circle-hub var set APV_MIN_LINE --file <JSON文件> --reason <理由>，修正后重跑同步');
+    }
   }
-  return { on: record.case_index === true, minLine: minLine===null?null:lineKey(minLine), notes };
+  return { on: record.case_index === true, minLine: minLine===null?null:lineKey(minLine), notes, ...(invalidMinLine?{invalidMinLine:true as const}:{}) };
 }
 
 /** A located document. `at` is the release-train month (YYYY-MM-01) when the train label carries one. */
@@ -124,6 +128,7 @@ const byId = (a: CaseDocument, b: CaseDocument): number => {
 
 /** The documents of the read tree that can be listed, or why there are none to list yet. */
 export function caseTree(read: Record<string, unknown>, options: CaseIndexOptions, names: readonly string[] = PRODUCT_LINE.names): CaseTree {
+  if(options.invalidMinLine)return {status:'failed',reason:options.notes[0]};
   if (!Object.hasOwn(read, CASE_TREE_ID)) return { status: 'pending' };
   const entry = read[CASE_TREE_ID];
   if (!isRecord(entry) || entry.ok !== true) {
@@ -266,6 +271,7 @@ export function caseNote(tree: CaseTree, options: CaseIndexOptions, extra: { lis
   if (tree.status === 'pending') return '用例文档：敏捷平台的用例树还没有读';
   if (tree.status === 'failed') {
     const withheld = extra.withheld ?? 0;
+    if(options.invalidMinLine)return `用例文档：${tree.reason}；这次不列 ${withheld} 个会列出用例文档的构建，旧根不动`;
     return `用例文档：敏捷平台的用例树（${CASE_TREE_ID}）${tree.reason}，这次不列 ${withheld} 个会列出用例文档的构建（版本线 ${options.minLine===null?'不设下限':options.minLine+' 起'}有自己命令树的构建），免得产出缺少用例的根；不需要用例索引时把同步选项 case_index 设为 false`;
   }
   const c = tree.counts;

@@ -213,7 +213,9 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
       `${plan.pages.length} 个列表页`,
       `列出 ${kept.length} 个构建（${kept.filter((b) => b.released_at !== null).length} 个已发布，${kept.filter((b) => Object.keys(b.sources).length === 0 && b.base === b.name).length} 个只有名字）`,
     ];
-    if (withheld.size > 0) summary.push(`找到的 ${withheld.size} 个构建没有列出：用例树读不出来，这次不列构建，免得产出缺少用例的根`);
+    if (withheld.size > 0) summary.push(caseIndex.invalidMinLine
+      ? `找到的 ${withheld.size} 个构建没有列出：min_line 无效，未套用下限，这次不列会带用例文档的构建，旧根不动`
+      : `找到的 ${withheld.size} 个构建没有列出：用例树读不出来，这次不列构建，免得产出缺少用例的根`);
     if (cases !== null) summary.push(caseNote(cases, caseIndex, { ...listedCases, withheld: withheld.size, uncovered }));
     if (failed.length > 0) summary.push(`读不出的列表页：${failed.slice(0, 8).join('、')}${failed.length > 8 ? ' 等' : ''}`);
     if (partialDates > 0) summary.push(`${partialDates} 个发布日期只写到月份，记为当月 1 日`);

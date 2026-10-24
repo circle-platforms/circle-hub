@@ -241,3 +241,21 @@ describe('the sync plan with the case index', () => {
     }
   });
 });
+
+it('an invalid active case-index floor withholds case-bearing builds even when the tree is ready',()=>{
+  for(const min_line of ['latest','','   ','10_6','10.6.x']){
+    const options=caseIndexOptions({case_index:true,min_line});
+    const ready=caseTree({[CASE_TREE_ID]:treeRead(treeContent(corpus))},options);
+    assert.equal(ready.status,'failed');
+    const output=runSync({case_index:true,min_line},()=>treeRead(treeContent(corpus))).output;
+    assert.ok(output.builds.every(build=>Object.keys(build.sources).length===0),'no case-bearing own tree is regenerated');
+    assert.match(output.note??'',/未套用下限/);
+    assert.match(output.note??'',/这次不列/);
+    assert.match(output.note??'',/circle-hub var set APV_MIN_LINE --file/);
+    assert.doesNotMatch(output.note??'',/不设下限/);
+  }
+});
+it('a dotted deployment floor is accepted independently of the repository example-line policy',()=>{
+  const earlier=[String(10),String(6-1),String(2)].join('.');
+  assert.deepEqual(caseIndexOptions({case_index:true,min_line:earlier}),{on:true,minLine:earlier,notes:[]});
+});
