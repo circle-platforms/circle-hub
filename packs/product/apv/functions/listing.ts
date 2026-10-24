@@ -159,12 +159,24 @@ function basename(href: string): string {
 
 type FileKind = 'commandTree' | 'bugsFixed' | 'mib' | 'image';
 
+/**
+ * apv-assets@1 (declared grammar; origin: the listing page's own file naming as documented in this pack's README —
+ * `command_tree-<build>.xml`, `Bugs_Fixed_with_<build>.html`, `<prefix>-MIB[_<language>]-<build>.txt|mib|my` and
+ * `<prefix>-<build>.<image extension>`, with `<build>` a complete build name in the product's own naming grammar —
+ * declared for the owner's R6 rule 2026-10-24). A role is read from a whole file name; nothing is recognised by a
+ * substring, a word or an extension alone, and a name the grammar does not read keeps its link and is reported as an
+ * unchecked role. A variant build's entry is named after its own image file, which the same image form covers.
+ */
+const ASSET_BUILD = '(?:Rel|Beta)[_.][A-Za-z][A-Za-z0-9]{0,31}(?:-[A-Za-z0-9]{1,16}){0,6}[_.][0-9]{1,9}(?:[_.][0-9]{1,9}){1,15}';
+const ASSET_FORMS: ReadonlyArray<[FileKind, RegExp]> = [
+  ['commandTree', new RegExp(`^command_tree-${ASSET_BUILD}\\.xml$`)],
+  ['bugsFixed', new RegExp(`^Bugs_Fixed_with_${ASSET_BUILD}\\.html?$`)],
+  ['mib', new RegExp(`^[A-Za-z0-9]+-MIB(?:_[A-Za-z0-9]+)?-${ASSET_BUILD}\\.(?:txt|mib|my)$`)],
+  ['image', new RegExp(`^[A-Za-z0-9]+-${ASSET_BUILD}\\.(?:array|click|img|iso|qcow2|ova|bin|tgz|tar\\.gz)$`)],
+];
+
 function fileKind(name: string): FileKind | null {
-  // apv-assets@1: complete filenames, never substrings. Origin and extensions are declared in README.
-  if (/^Rel_(?:APV|NSAE)_[0-9]+(?:_[0-9]+){2,15}_command-tree\.xml$/.test(name)) return 'commandTree';
-  if (/^Rel_(?:APV|NSAE)_[0-9]+(?:_[0-9]+){2,15}_bugs-fixed\.json$/.test(name)) return 'bugsFixed';
-  if (/^Rel_(?:APV|NSAE)_[0-9]+(?:_[0-9]+){2,15}_mib\.(?:txt|mib|my)$/.test(name)) return 'mib';
-  if (/^Rel_(?:APV|NSAE)_[0-9]+(?:_[0-9]+){2,15}\.(?:array|click|img|iso|qcow2|ova|bin|tgz|tar\.gz)$/.test(name)) return 'image';
+  for (const [kind, form] of ASSET_FORMS) if (form.test(name)) return kind;
   return null;
 }
 
