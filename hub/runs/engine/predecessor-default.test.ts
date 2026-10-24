@@ -18,7 +18,7 @@ import {createKeyedLock} from './util.ts';
 import {requirementSummary} from './start.ts';
 let pg:TemporaryPostgres;const skip=await sandboxSkip();
 before(async()=>{pg=await startPostgres();});after(async()=>{await pg?.stop();});
-async function setup(options:{declared?:boolean;many?:boolean;slot?:string;runtimeTable?:boolean}={}){
+async function setup(options:{declared?:boolean;many?:boolean;slot?:string;runtimeTable?:boolean;copyMap?:boolean;fromRuns?:boolean}={}){
   const h=await openRetryHarness(pg),dir=await mkdtemp(join(tmpdir(),'hub-default-'));
   const spec=verifyPack();spec.version='1.0.1';
   const workflow=(spec.files['workflow.json'] as {json:WorkflowFile}).json;
@@ -28,6 +28,8 @@ async function setup(options:{declared?:boolean;many?:boolean;slot?:string;runti
     spec.files['ledger.json']={json:{schema:'ledger@1',shapes:[{requirement:requirement.key,interpreter:'range@1',ruled_in:spec.version}]}};
   }
   if(options.declared!==false)workflow.inputs[0].default_from_predecessor={pack:'toy-review'};
+  if(options.copyMap){const map=workflow.inputs.find(slot=>slot.slot==='map');assert.ok(map);map.default_from_predecessor={pack:'toy-review',slot:'map'};}
+  if(options.fromRuns)workflow.inputs.push({slot:'checks',role:'expected',description:'合成运行结果',accepts:['application/json'],required:true,many:true,from_runs:{pack:'toy-review'}});
   if(options.many)workflow.inputs[0].many=true;
   if(options.slot){
     workflow.inputs[0].slot=options.slot;
@@ -179,6 +181,48 @@ test('an inherited object property never counts as an explicit input binding',{s
   }finally{await w.close();}
 });
 
+test('a named predecessor input is copied when absent and refused when it differs',{skip},async()=>{
+  const w=await setup({copyMap:true});try{
+    await w.submit();
+    const answer=await w.h.service.startRun(w.h.alice,{...w.input,inputs:{}},w.h.call('verifier-session'));
+    assert.equal(answer.call_result,'ok',JSON.stringify(answer.errors));
+    const copied=answer.run!.input_defaults!.find(row=>row.slot==='map');
+    assert.deepEqual(copied,{slot:'map',predecessor:w.draft.run,reference:w.map,kind:'input'});
+    assert.equal(answer.run!.sources.find(source=>source.slot==='map')!.reference,w.map);
+    const text=toolText('start_run',{...answer,trace:w.h.call().traceId});
+    assert.ok(text.includes(`map 按前驱 ${w.draft.run} 冻结的输入 ${w.map} 绑定`),text);
+    const mismatch=await w.h.service.startRun(w.h.alice,{...w.input,inputs:{map:{reference:'src:'+'ab'.repeat(32)}}},w.h.call('other-verifier'));
+    assert.equal(mismatch.call_result,'error');
+    assert.match(mismatch.errors.map(error=>`${error.message} ${error.fix??''}`).join('\n'),/不一致/);
+    const same=await w.h.service.startRun(w.h.alice,w.input,w.h.call('same-verifier'));
+    assert.equal(same.call_result,'ok',JSON.stringify(same.errors));
+    assert.equal(same.run!.input_defaults!.some(row=>row.slot==='map'),false);
+  }finally{await w.close();}
+});
+test('a run id resolves to that run’s accepted result and an omitted slot follows the lineage',{skip},async()=>{
+  const w=await setup({fromRuns:true,declared:false});try{
+    const result=await w.submit();
+    const draft={reference:'rec:'+result.record};
+    const lineage=await w.h.service.startRun(w.h.alice,{...w.input,inputs:{map:{reference:w.map},draft}},w.h.call('verifier-session'));
+    assert.equal(lineage.call_result,'ok',JSON.stringify(lineage.errors));
+    assert.deepEqual(lineage.run!.input_defaults,[{slot:'checks',predecessor:w.draft.run,reference:draft.reference}]);
+    const text=toolText('start_run',{...lineage,trace:w.h.call().traceId});
+    assert.ok(text.includes(`checks 按前驱 ${w.draft.run} 的已受理结果 ${draft.reference} 绑定`),text);
+    const absent=await w.h.service.startRun(w.h.alice,{...w.input,inputs:{map:{reference:w.map},draft,checks:[{run:'run_01m5h9zm2nhzbz2hrfjfb6azta'}]}},w.h.call('missing-run'));
+    assert.equal(absent.call_result,'error');
+    assert.match(absent.errors.map(error=>error.message).join('\n'),/不存在或当前用户不可见/);
+    const open=await w.h.service.startRun(w.h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:w.map}}},w.h.call('draft-session'));
+    assert.equal(open.call_result,'ok',JSON.stringify(open.errors));
+    const unaccepted=await w.h.service.startRun(w.h.alice,{...w.input,inputs:{map:{reference:w.map},draft,checks:[{run:open.run!.run}]}},w.h.call('unaccepted-run'));
+    assert.equal(unaccepted.call_result,'error');
+    assert.match(unaccepted.errors.map(error=>`${error.message} ${error.fix??''}`).join('\n'),/没有已受理提交/);
+    const other=await w.h.service.startRun(w.h.alice,{pack:'toy-locate',inputs:{map:{reference:w.map}}},w.h.call('other-session'));
+    assert.equal(other.call_result,'ok',JSON.stringify(other.errors));
+    const wrong=await w.h.service.startRun(w.h.alice,{...w.input,inputs:{map:{reference:w.map},draft,checks:[{run:other.run!.run}]}},w.h.call('wrong-pack'));
+    assert.equal(wrong.call_result,'error');
+    assert.match(wrong.errors.map(error=>`${error.message} ${error.fix??''}`).join('\n'),/toy-locate/);
+  }finally{await w.close();}
+});
 test('predecessor selection holds the submission key across every result page',async()=>{
   const {latestSubmittedResult}=await import('./predecessor-defaults.ts');
   const {runRecord}=await import('../../../contracts/src/fixtures.ts');

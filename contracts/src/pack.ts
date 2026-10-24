@@ -464,8 +464,13 @@ export type SlotsFile = z.infer<typeof SlotsFile>;
 
 // ---------------------------------------------------------------- workflow.json (W03)
 
-/** An explicit slot-level default source, including the workflow whose submitted result is accepted. */
-export const PredecessorInputDefault = z.strictObject({pack:PackId});
+/** An explicit slot-level default source. Without `slot`, the predecessor’s latest accepted submitted validation record. With `slot`, that frozen input of the predecessor run. */
+export const PredecessorInputDefault = z.strictObject({
+  pack:PackId,
+  slot:Key.optional().describe('Copy this frozen input of the predecessor run. An explicit value must be the same object'),
+});
+/** A slot whose values may be run ids. The Hub binds each run’s latest accepted submitted validation record. */
+export const RunResultSource = z.strictObject({pack:PackId});
 const IndexFieldName = z.string().regex(/^[a-z][a-z0-9_]{0,40}$/);
 /** How the Hub fills a missing only= on a knowledge index. Values come from structured records, never from a word list. */
 export const IndexBindingDefault = z.strictObject({
@@ -483,13 +488,16 @@ export const WorkflowInput = z.strictObject({
   accepts: z.array(z.string().min(1)).min(1).describe('media types, or external object types written system:type'),
   required: z.boolean(),
   many: z.boolean(),
-  default_from_predecessor: PredecessorInputDefault.optional().describe('When this artifact slot is absent and predecessor is supplied, bind its latest accepted submitted validation record from this workflow id; explicit inputs always win'),
+  default_from_predecessor: PredecessorInputDefault.optional().describe('When predecessor is supplied and this slot is absent: without slot, bind that workflow’s latest accepted submitted validation record; with slot, copy that frozen input. An explicit value for a named slot must be the same object'),
+  from_runs: RunResultSource.optional().describe('Bindings may be run ids of this workflow. The Hub replaces each run id with that run’s latest accepted submitted validation record. An omitted required slot walks the predecessor lineage for runs of this workflow'),
   index_default: IndexBindingDefault.optional().describe('When a knowledge index omits only or fields, the Hub fills them from only_from and fields. An only or fields the caller already wrote stays'),
 }).superRefine((slot,ctx)=>{
-  if(slot.default_from_predecessor!==undefined){
-    if(slot.role!=='artifact_under_verification')ctx.addIssue({code:'custom',path:['default_from_predecessor'],message:'only an artifact-under-verification input can default from its predecessor'});
+  if(slot.default_from_predecessor!==undefined&&slot.from_runs!==undefined)ctx.addIssue({code:'custom',path:['from_runs'],message:'a slot defaults from a predecessor input or from run ids, not both'});
+  if(slot.default_from_predecessor!==undefined&&slot.default_from_predecessor.slot===undefined){
+    if(slot.role!=='artifact_under_verification')ctx.addIssue({code:'custom',path:['default_from_predecessor'],message:'only an artifact-under-verification input can default from its predecessor result'});
     if(!slot.accepts.some(type=>type.toLowerCase()==='application/json'))ctx.addIssue({code:'custom',path:['accepts'],message:'a predecessor validation record requires application/json'});
   }
+  if(slot.from_runs!==undefined&&!slot.accepts.some(type=>type.toLowerCase()==='application/json'))ctx.addIssue({code:'custom',path:['accepts'],message:'an accepted validation record requires application/json'});
   if(slot.index_default===undefined)return;
   if(!slot.accepts.includes('knowledge:index'))ctx.addIssue({code:'custom',path:['index_default'],message:'index_default applies to a knowledge:index input'});
   if(new Set(slot.index_default.fields).size!==slot.index_default.fields.length)ctx.addIssue({code:'custom',path:['index_default','fields'],message:'fields names a field once'});

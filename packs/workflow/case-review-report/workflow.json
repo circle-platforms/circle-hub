@@ -4,7 +4,8 @@
     {
       "slot": "verifications",
       "role": "expected",
-      "description": "各块复核运行的验证结果：每块一次复核 submit_result 回执里的 rec:<摘要>（Hub 记录，不带 # 指针）；每块一条，至少一条",
+      "description": "各块复核运行：可以写复核运行编号，或省略并由 Hub 按 predecessor 血缘里的 case-review-verify 运行绑定。Hub 把该运行的已受理结果解析成 rec: 并在回答里写明。运行不存在、没有已受理提交、或不是 case-review-verify 时拒绝并给修正说明。仍可直接写复核 submit_result 回执里的 rec:<摘要>（不带 # 指针）",
+      "from_runs": { "pack": "case-review-verify" },
       "accepts": [
         "application/json"
       ],
