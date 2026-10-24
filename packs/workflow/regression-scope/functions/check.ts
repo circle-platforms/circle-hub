@@ -145,7 +145,10 @@ function inScope(subject: unknown): Outcome[] {
       data: { reasons },
     });
   }
-  if (out.length === 0 && note === null) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('回归范围的检查里没有用例'), reason: 'check_error', statement: '回归范围的检查里没有用例', grounds: [], tier: TIER });
+  if (out.length === 0) {
+    if (note === null) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('回归范围的检查里没有用例'), reason: 'check_error', statement: '回归范围的检查里没有用例', grounds: [], tier: TIER });
+    else out.push({ verdict: 'support', statement: '投影给出的回归范围里没有用例：两个构建之间没有纳入范围的用例，回归范围是空的。', grounds: [], tier: TIER });
+  }
   return out;
 }
 

@@ -172,7 +172,7 @@ export function projection(input: unknown): ProjectionOutput {
     draftLevel = { reference: recReference(record, base, ['cross_item', k]), rank: stringOr(statement.rank), text: clip(stringOr(statement.text, '') ?? '', MAX_TEXT).text };
     break;
   }
-  if (draftLevel === null) warnings.note({ code: `${PACK}.draft_level_missing`, message: '初评的验证结果里没有等级（跨条目主张 level）；结论和等级的一致性无法核对', data: { record } });
+  if (draftLevel === null || !draftLevel.rank?.trim()) return failure('draft_level_missing','初评的验证结果缺少等级（跨条目主张 level 的 rank）；本次不能开始复核','先让初评方补等级和理由并重交初评；用新的受理结果重开复核，保留当前初评记录引用作定位');
 
   const rawParams = isRecord(input.parameters) ? input.parameters : {};
   const hasTaggedChildOrP2 = new Uint8Array(model.nodes.length);

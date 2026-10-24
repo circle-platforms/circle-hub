@@ -1,0 +1,48 @@
+{
+  "id": "negative_source",
+  "source": "author",
+  "check": "review_form",
+  "note": "无关来源不得替代",
+  "subject": {
+    "id": "criterion-0",
+    "label": "合成声明",
+    "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/json@1/p/body/criterion_changes/0",
+    "fields": {
+      "criterion": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "grounds": [
+        {
+          "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "quote": "依据"
+        }
+      ]
+    },
+    "slots": {
+      "review": [
+        {
+          "text": "账号确认",
+          "code": "accept",
+          "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/json@1/p/body/criterion_changes/0",
+          "data": {
+            "reason": "合成复核理由"
+          },
+          "quotes": [
+            {
+              "reference": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "text": "依据"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "sources": {
+    "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "依据"
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "criterion-review.form",
+      "tier": "blocking"
+    }
+  ]
+}

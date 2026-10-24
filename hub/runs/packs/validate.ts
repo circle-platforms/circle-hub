@@ -8,6 +8,7 @@ import { ERROR_HANDLING, isCheckTier, labelOf, TARGET, VERDICT, type CheckTier, 
 import {
   ChecksFile,
   KnowledgeFile,
+  LedgerFile,
   MAX_CHECK_READ_BYTES,
   PackSample,
   REQUIRED_FILES,
@@ -44,6 +45,7 @@ const KNOWLEDGE = 'knowledge.json';
 const DECLARATION_KIND: ReadonlyMap<string, PackKind> = new Map([
   ...Object.entries(REQUIRED_FILES).flatMap(([kind, files]) => files.filter((f) => f !== SKILL).map((f) => [f, kind as PackKind] as const)),
   [KNOWLEDGE, 'workflow'],
+  ['ledger.json', 'workflow'],
 ]);
 /** The two sample folders, by polarity. */
 const SAMPLE_FOLDERS: Readonly<Record<SamplePolarity, string>> = { positive: 'samples/positive/', negative: 'samples/negative/' };
@@ -248,6 +250,26 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
   const knowledgePresent = c.files.has(KNOWLEDGE);
   const knowledge = knowledgePresent ? c.parse('knowledge.shape', KNOWLEDGE, KnowledgeFile, 'knowledge@1') : null;
 
+  const ledger = c.files.has('ledger.json') ? c.parse('ledger.shape', 'ledger.json', LedgerFile, 'ledger@1') : null;
+  if(workflow?.predecessor_access==='view'&&requirements){
+    if(!requirements.requirements.length||requirements.requirements.some(row=>row.independent_of!=='predecessor'))c.add(problem('workflow.predecessor_access','workflow.json','只读前驱要求每个要求项都独立于前驱','所有要求项声明 independent_of: predecessor，或移除 predecessor_access',{field:'/predecessor_access'}));
+    if(workflow.inputs.some(row=>row.default_from_predecessor!==undefined))c.add(problem('workflow.predecessor_default','workflow.json','只读复核前驱不能缺省绑定已受理结果','显式绑定声明提交的 rec:，不要绑定前驱结果',{field:'/inputs'}));
+  }
+  if(workflow?.criterion_review&&requirements&&(workflow.predecessor_access!=='view'||requirements.requirements.length!==1||requirements.requirements.some(row=>!row.independence_by_account)))c.add(problem('workflow.criterion_review','workflow.json','判据复核需要只读前驱和一个按账号独立的要求项','声明 predecessor_access: view 和 independence_by_account: true',{field:'/criterion_review'}));
+  if (requirements) {
+    for (const [i, row] of (ledger?.shapes ?? []).entries()) {
+      const requirement = requirements.requirements.find(r => r.key === row.requirement);
+      const field = `/shapes/${i}`;
+      if (!requirement) c.add(problem('ledger.requirement', 'ledger.json', `要求项 ${row.requirement} 没有声明`, '改成 requirements.json 中的要求项', {field:field+'/requirement'}));
+      else if (!requirement.run_table) c.add(problem('ledger.run_table', 'ledger.json', `要求项 ${row.requirement} 不接受运行内的表`, '先在该要求项声明 run_table: true', {field:field+'/requirement'}));
+      if (!getInterpreter(row.interpreter)) c.add(problem('ledger.interpreter', 'ledger.json', `解释器 ${row.interpreter} 没有安装`, '使用已安装的核心解释器', {field:field+'/interpreter'}));
+      if (ledger!.shapes.findIndex(r => r.requirement === row.requirement && r.interpreter === row.interpreter) !== i) c.add(problem('ledger.duplicate', 'ledger.json', '同一判定形状重复裁定', '删除重复的形状', {field}));
+    }
+    requirements.requirements.forEach((r,i) => {
+      if (r.run_table && !ledger?.shapes.some(shape=>shape.requirement===r.key)) c.warn(problem('ledger.unruled','requirements.json',`要求项 ${r.key} 的台账为空，带来的表都会是未裁定`, '由包作者在下一版 ledger.json 裁定允许的解释器', {field:`/requirements/${i}/run_table`}));
+    });
+  }
+
   let instructions: string | null = null;
   const skill = c.files.get(SKILL);
   if (skill !== undefined) {
@@ -331,6 +353,14 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
       const tier = effectiveTier(check, table);
       if (tier === 'blocking' && !hasBasis(check, table)) {
         c.add(problem('checks.blocking_without_basis', 'checks.json', `检查 ${check.id} 是${tierText('blocking')}，却没有写明所依据的验收合同条款`, `在 checks.json（或解释器的表）里写 basis，或者改成${tierText('advisory')}（C05 R[1]）`, at('tier')));
+      }
+      if (check.reads?.narrow !== undefined) {
+        const narrow = check.reads.narrow;
+        const slot = workflow?.inputs.find(input => input.slot === narrow.slot);
+        if (check.applies !== 'item' || !slot || !slot.accepts.includes('knowledge:index') ||
+          !check.reads.roles.includes(slot.role) || (check.reads.types !== undefined && !check.reads.types.includes('knowledge:index'))) {
+          c.add(problem('checks.narrow_binding', 'checks.json', `检查 ${check.id} 的收窄读取必须是条目检查，且 reads.narrow.slot 必须声明接受 knowledge:index 的输入，读取角色和类型须覆盖该输入`, '改为条目检查，并声明同一索引输入槽位、读取角色和 knowledge:index 类型', at('reads/narrow')));
+        }
       }
       if (check.reads?.max_bytes !== undefined && check.reads.max_bytes > MAX_CHECK_READ_BYTES) {
         c.add(
@@ -502,6 +532,7 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
     checks,
     slots,
     knowledge,
+    ...(ledger ? {ledger} : {}),
     instructions,
     instructionsDigest: sha256Hex(c.files.get(SKILL) as Uint8Array),
   };

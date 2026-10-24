@@ -3,7 +3,7 @@ import {after,before,test} from 'node:test';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import type {WorkflowFile} from '../../../contracts/src/pack.ts';
+import type {RequirementsFile,WorkflowFile} from '../../../contracts/src/pack.ts';
 import {accepted as fixture} from '../../../contracts/src/fixtures.ts';
 import {ValidationResult} from '../../../contracts/src/validation.ts';
 import {digestOf} from '../../records/api.ts';
@@ -15,12 +15,18 @@ import {verifyPack,writePack} from './testing/packs.ts';
 import {standardDocument,toyMap} from './testing/mindmap.ts';
 import {putAction,putResult,runById} from './store.ts';
 import {createKeyedLock} from './util.ts';
+import {requirementSummary} from './start.ts';
 let pg:TemporaryPostgres;const skip=await sandboxSkip();
 before(async()=>{pg=await startPostgres();});after(async()=>{await pg?.stop();});
-async function setup(options:{declared?:boolean;many?:boolean;slot?:string}={}){
+async function setup(options:{declared?:boolean;many?:boolean;slot?:string;runtimeTable?:boolean}={}){
   const h=await openRetryHarness(pg),dir=await mkdtemp(join(tmpdir(),'hub-default-'));
   const spec=verifyPack();spec.version='1.0.1';
   const workflow=(spec.files['workflow.json'] as {json:WorkflowFile}).json;
+  if(options.runtimeTable){
+    const requirement=(spec.files['requirements.json'] as {json:RequirementsFile}).json.requirements[0];
+    requirement.run_table=true;
+    spec.files['ledger.json']={json:{schema:'ledger@1',shapes:[{requirement:requirement.key,interpreter:'range@1',ruled_in:spec.version}]}};
+  }
   if(options.declared!==false)workflow.inputs[0].default_from_predecessor={pack:'toy-review'};
   if(options.many)workflow.inputs[0].many=true;
   if(options.slot){
@@ -42,7 +48,7 @@ async function setup(options:{declared?:boolean;many?:boolean;slot?:string}={}){
   return{h,dir,map,draft,body,submit,input,close:async()=>{await h.close();await rm(dir,{recursive:true,force:true});}};
 }
 test('an opted-in missing slot freezes the latest accepted submitted result despite newer refusals and system deliveries',{skip},async()=>{
-  const w=await setup();try{
+  const w=await setup({runtimeTable:true});try{
     await w.submit();const expected=await w.submit('合成更新等级');
     const refused=await w.h.service.submitResult(w.h.alice,{run:w.draft.run,model:'synthetic-drafter',items:[{item:'absent-item',handling:'skipped',reason:'合成反例'}]},w.h.call('draft-session'));
     assert.equal(refused.acceptance,'not_accepted');
@@ -55,6 +61,10 @@ test('an opted-in missing slot freezes the latest accepted submitted result desp
     assert.equal(answer.call_result,'ok',JSON.stringify(answer.errors));const run=answer.run!;
     const defaults=[{slot:'draft',predecessor:w.draft.run,reference:'rec:'+expected.record}];
     assert.deepEqual(run.input_defaults,defaults);
+    const locked=(await w.h.workflows.byDigest(run.pack_digest))!;
+    assert.deepEqual(run.requirements,locked.requirements.map(template=>requirementSummary(template,locked.ledger,locked.checks,run.pack)));
+    assert.deepEqual(run.requirements[0].run_interpreters,['range@1']);
+    assert.ok(run.requirements[0].rules.length>0);
     assert.equal(run.sources.find(s=>s.slot==='draft')!.reference,'rec:'+expected.record);
     assert.deepEqual((await w.h.service.getRun(w.h.alice,run.run))!.run.input_defaults,defaults);
     const text=toolText('start_run',{...answer,trace:w.h.call().traceId});
@@ -62,6 +72,7 @@ test('an opted-in missing slot freezes the latest accepted submitted result desp
     const later=await w.submit('合成后续记录');assert.notEqual(later.record,expected.record);
     const repeated=await w.h.service.startRun(w.h.alice,args,w.h.call('verifier-session'));
     assert.equal(repeated.run!.run,run.run);assert.deepEqual(repeated.run!.input_defaults,defaults,'client-key replay retains the original selection');
+    assert.deepEqual(repeated.run!.requirements,run.requirements,'replay preserves ruling metadata alongside the frozen input selection');
     assert.ok(!Object.hasOwn(args.inputs,'draft'),'defaulting never mutates the received arguments');
   }finally{await w.close();}
 });

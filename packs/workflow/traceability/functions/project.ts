@@ -93,8 +93,8 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   if (rows.length === 0) {
     return refusal(
       'no_defects',
-      `构建 ${defects.build} 的缺陷索引里没有状态为 ${parameters.statuses.map((s) => (s === 'fixed' ? '已修复' : '已知')).join('、')} 的缺陷条目`,
-      '确认构建名和 statuses 参数；这个构建的 release notes 可能还没有入知识库',
+      `构建 ${defects.build}：` + (defects.skipped > 0 ? `视图列出来源但 ${defects.skipped} 份未读；原因记录：${defects.notes.join('；') || '视图未提供逐份原因'}` : defects.missing > 0 ? `缺陷视图列出的 ${defects.missing} 个条目没有内容` : defects.truncated ? '缺陷视图被截断，当前部分没有所选状态' : defects.total_entries === 0 ? '当前缺陷视图未列出发布说明缺陷条目' : `已读 ${Object.keys(defects.entries).length} 条缺陷，所选状态 ${parameters.statuses.join('、')} 为 0 条`),
+      defects.skipped > 0 || defects.missing > 0 || defects.truncated ? '请集成者按视图原有原因补齐来源或条目内容并重新生成视图；缺逐份原因时补取生产记录' : '核对当前构建、所选 statuses 和发布说明生产记录；不把当前视图的空集推断为外部原件缺席',
       warnings,
     );
   }
@@ -110,7 +110,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
 
   const source = defects.digest;
   const items: ProjectedItem[] = rows.map((row) => ({
-    id: row.bug,
+    id: row.identity ?? row.bug,
     label: shown(row.statement) || `缺陷 ${row.bug}`,
     summary: summaryOf(row),
     location: { slot: SLOT_DEFECTS, source, parser: PARSER, selector: `p/entries/${row.digests[0]}` },

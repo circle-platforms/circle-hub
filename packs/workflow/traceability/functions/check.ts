@@ -55,9 +55,11 @@ function dataOf(fields: MatrixRow, info: DefectSystemInfo): Record<string, unkno
     conflict: fields.conflict,
     statement: fields.statement,
     systems: fields.systems,
+    ambiguous_cases:fields.ambiguous_cases ?? [],
     defect_system_status: info.status,
     defect_system_unknown_reason: info.unknownReason,
     closed: info.isClosed,
+    ...(info.unconnectedSystem ? { defect_system_unread: { system: info.unconnectedSystem, reason: 'system_not_connected' } } : {}),
     case_count: fields.cases.length,
     cases: fields.cases.map((c) => ({ case: c.case, title: c.title, document: c.document, reference: c.reference })),
   };
@@ -69,7 +71,7 @@ function untracedStatement(bug: string, statuses: readonly string[], info: Defec
   let statement = `缺陷 ${bug}（发布说明：${statusText(statuses)}；${sysText}）：没有已索引的用例标出缺陷 ${bug}。用例索引按构造不完整：没有列出不等于没有`;
   if (facts.skipped > 0) statement += `；索引有 ${facts.skipped} 份列出的来源没有读取`;
   if (facts.truncated) statement += '；用例索引视图被截断，只列出前一部分';
-  return clip(statement, MAX_STATEMENT_LENGTH);
+  return clip(statement, MAX_STATEMENT_LENGTH - 100) + '；下一步：请集成者补齐来源、完整范围和缺席观察后重跑';
 }
 
 const MAX_STATEMENT_CASES = 5;
@@ -129,6 +131,12 @@ function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: 
       data: { bug: fields.bug, offending: offending.map((c) => c.case) },
     };
   }
+  if ((fields.collision_systems?.length ?? 0) > 1) return {
+    verdict: 'refute', code: 'traceability.id_collision',
+    statement: `缺陷 ${fields.bug} 在系统 ${fields.collision_systems!.join('、')} 已确认撞号；按系统分别列项，${fields.ambiguous_cases?.length ?? 0} 个用例在当前视图中未带系统，不强行连接，请补取用例的系统来源后重跑`,
+    grounds: [...new Set([...grounds, ...(fields.collision_references ?? [])])], tier: TIER, item: item.id, pointer,
+    data: { ...dataOf(fields, info), collision_systems: fields.collision_systems, ambiguous_cases: fields.ambiguous_cases ?? [] },
+  };
   const sysText = defectSystemText(info);
   if (fields.conflict) {
     return {
@@ -143,6 +151,23 @@ function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: 
     };
   }
   if (fields.cases.length > 0) {
+    const ambiguous = fields.ambiguous_cases ?? [];
+    if (ambiguous.length > 0) {
+      // Connected cases stay in the data, but a same-number case without a system field is not evidence for either
+      // system: the conclusion stays unknown, naming the missing fact and the next step.
+      const statement = `缺陷 ${fields.bug}（${sysText}）追溯到 ${fields.cases.length} 个已明确系统的用例；另有 ${ambiguous.length} 个同号用例未带系统，不能归入任何系统。缺少这些用例的系统来源事实；下一步由集成者按用例引用补取系统来源后重跑，不把未带系统的用例当作已有连接。`;
+      return {
+        verdict: 'unknown',
+        missing: '尚未取得本检查所需的事实：' + (statement),
+        reason: 'missing_input',
+        statement,
+        grounds,
+        tier: TIER,
+        item: item.id,
+        pointer,
+        data: dataOf(fields, info),
+      };
+    }
     return {
       verdict: 'support',
       statement: tracedStatement(fields, info),
@@ -156,7 +181,7 @@ function outcomeOf(item: Item, at: number, fields: MatrixRow, facts: { skipped: 
   return {
     verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (untracedStatement(fields.bug, fields.statuses, info, facts)),
     reason: 'missing_input',
-    statement: untracedStatement(fields.bug, fields.statuses, info, facts),
+    statement: fields.ambiguous_cases?.length ? `缺陷 ${fields.bug} 在当前视图有 ${fields.ambiguous_cases.length} 个同号用例的系统归属待补；请集成者补取用例系统来源，在本次追溯重跑前明确归属，不能按无追溯或任一系统处理` : untracedStatement(fields.bug, fields.statuses, info, facts),
     grounds: [...fields.references],
     tier: TIER,
     item: item.id,

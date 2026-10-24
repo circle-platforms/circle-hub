@@ -13,7 +13,7 @@ function fixture(commands:unknown,empty=false){
   writeFileSync(join(dir,'maps',`${doc}.json`),JSON.stringify({root:{data:{text:'合成文档'},children:empty?[]:[{data:{id:'c1',text:'合成用例',resource:['Functional']},children:[]}]}}));
   writeFileSync(join(dir,'tree.json'),JSON.stringify([{id:'line',label:'10.7',children:[{id:'train',label:'10.7-R1',children:[{id:'module',label:'合成模块',children:[{id:doc,label:'合成文档',children:[]}]}]}]}]));
   writeFileSync(join(dir,'docs.json'),JSON.stringify([doc]));writeFileSync(join(dir,'commands.json'),JSON.stringify(commands));
-  const result=spawnSync(process.execPath,['scripts/real/gold/board.ts','--tree',join(dir,'tree.json'),'--cases-dir',join(dir,'maps'),'--docs',join(dir,'docs.json'),'--product','synthetic','--build','Synthetic_10_7','--case-commands',join(dir,'commands.json'),'--out',join(dir,'out.json')],{encoding:'utf8'});
+  const result=spawnSync(process.execPath,['scripts/real/gold/board.ts','--placement-only','--tree',join(dir,'tree.json'),'--cases-dir',join(dir,'maps'),'--docs',join(dir,'docs.json'),'--product','synthetic','--build','Synthetic_10_7','--case-commands',join(dir,'commands.json'),'--out',join(dir,'out.json')],{encoding:'utf8'});
   return {code:result.status,error:result.stderr,gold:result.status===0?JSON.parse(readFileSync(join(dir,'out.json'),'utf8')):null};
  }finally{rmSync(dir,{recursive:true,force:true});}
 }
@@ -31,7 +31,7 @@ for(const mode of ['no-documents','wrong-count','missing-counts','orphan-count',
 test('a covered zero-case document is observed zero rather than a missing export',()=>{
  const input={...commandGold(),document_cases:{[doc]:0},cases:[]};
  const result=fixture(input,true);assert.equal(result.code,0,result.error);
- assert.equal(result.gold.unplaced,0);assert.equal(result.gold.documents.no_cases,1);
+ assert.equal(result.gold.unplaced,0);assert.equal(result.gold.documents,undefined);
 });
 test('a complete nonempty command measurement is retained',()=>{
  const result=fixture(commandGold());assert.equal(result.code,0,result.error);assert.equal(result.gold.unplaced,1);

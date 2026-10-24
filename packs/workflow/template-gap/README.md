@@ -108,3 +108,18 @@ uses synthetic originals and scripted claims only. This version is signed locall
 5. Real deployment counts and legacy annotations belong to the integrator's authorized read/re-production run.
 6. An unavailable exact byte view is a concrete interface gap; do not accept normalized offsets or endlessly retry it.
 7. Expanded producer scan inputs require their full revision identity before acceptance by this consumer.
+
+1. **已定（决定 35 第 19 项）**：24 个类别全部必选，另按命令核验 9 个类别。
+2. A tagged priority-1 node: a group while it holds cases (now, case-review), always a group, or always a case (the brief)?
+3. Number copies of a shared id and id-less cases by their content instead of document order, in both packs?
+4. Name an upload by something its order does not change (its root id, or a digest of an order-free form)?
+5. `* → unknown` (the brief) or no row (this pack)? Decided on 2026-10-22 (Decision 6): the engine unifies `unknown` routing to keep refutations as `violation` with attribution `unattributed` (记未知保留反驳，归责待定). With or without the row, a gap is a violation and status is unsatisfied.
+6. **Count untagged cases by default**: decided by the owner on 2026-10-22 (docs/hub-r4-tasks/union-case-rule.md). The default
+   case_rule is unified to marked across all packs (template-gap, case-review, case-review-verify), counting untagged candidate
+   nodes as cases with `tags: []`; `tagged` remains available as a restrictive parameter.
+7. Is 20 evidence ids per category enough for the console?
+
+Deletion-only stale rows are disclosed as orphaned keys, excluded from current command membership and never treated as missing facts.
+Command skips on orphan-only commands refuse; skips on unmatched current revisions remain visible as pending_skips until sync and rerun.
+
+标签按 resource-tags@1 的精确原文闭集读取，保留 resource 原值。闭集外是提示档结构违规“未声明的标签”；大小写、全半角与同义词不相等。非法声明不进入正反向比例分母。此版本替代旧关键词规则，历史结果不改写；应以新包重产新根与新运行。本次续接按所有者指令未运行验证。

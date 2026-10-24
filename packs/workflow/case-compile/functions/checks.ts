@@ -24,7 +24,8 @@ function refute(s: CheckSubject, code: string, statement: string, pointer: strin
 function prerequisites(s: CheckSubject): Outcome[] | null {
   if (s.contract && s.profile) return null;
   const details = s.problems.map((v) => `${v.document}${v.pointer}：${v.message}`);
-  return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`冻结输入无法重算；缺少可核验的 ${[...new Set(s.problems.map((v) => v.document))].join('、')}。下一步由客户端请求管理员按这些文档和指针修复并重新绑定，开始新运行。${details.slice(0, 5).join('；')}；不证明在真实设备上跑得通。`), reason: 'check_error', statement: `冻结输入无法重算；缺少可核验的 ${[...new Set(s.problems.map((v) => v.document))].join('、')}。下一步由客户端请求管理员按这些文档和指针修复并重新绑定，开始新运行。${details.slice(0, 5).join('；')}；不证明在真实设备上跑得通。`, grounds: [], tier: TIER, item: s.item, data: { problems: s.problems } }];
+  const statement = `这一条在等某一步：冻结输入无法重算，缺少可核验的 ${[...new Set(s.problems.map((v) => v.document))].join('、')}；等管理员按这些文档和指针修复并重新绑定后，开始新运行重算。${details.slice(0, 5).join('；')}；在等的那一步完成之前不证明在真实设备上跑得通。`;
+  return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (statement), reason: 'missing_input', statement, grounds: [], tier: TIER, item: s.item, data: { problems: s.problems, waiting_for: { step: '管理员按这些文档和指针修复并重新绑定，开始新运行', documents: [...new Set(s.problems.map((v) => v.document))] } } }];
 }
 function slotsOf(s: CheckSubject): { slots: PlanSlots; errors: null } | { slots: null; errors: Outcome[] } {
   const read = readSlots(s.data);

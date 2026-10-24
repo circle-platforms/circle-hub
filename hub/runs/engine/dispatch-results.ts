@@ -75,7 +75,7 @@ export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,resul
       }
       const expectation=expectationFor(template,run.items.find(i=>i.id===item.item)?.fields??{});
       const staticRefutes=requirement.claims.filter(c=>c.statement.verdict==='refute');
-      const status=requirementStatus({layers:requirement.layers,hasProducer:!((terminal==='pass'||terminal==='fail')&&template.accepted_producer==='fact'&&rows.some(r=>!r.accepted_as_fact)),expectation,expectedRefutation:staticRefutes.length>0&&staticRefutes.every(c=>c.statement.code!==undefined&&expectation.codes.includes(c.statement.code)),independence:requirement.unsatisfied_reason==='independence_unknown'?'unknown':null,acceptsDeclared:template.accepts_declared_independence===true});
+      const status=requirementStatus({producer:template.accepted_producer,layers:requirement.layers,hasProducer:!((terminal==='pass'||terminal==='fail')&&template.accepted_producer==='fact'&&rows.some(r=>!r.accepted_as_fact)),expectation,expectedRefutation:staticRefutes.length>0&&staticRefutes.every(c=>c.statement.code!==undefined&&expectation.codes.includes(c.statement.code)),independence:requirement.unsatisfied_reason==='independence_unknown'?'unknown':null,acceptsDeclared:template.accepts_declared_independence===true});
       delete requirement.unsatisfied_reason;Object.assign(requirement,status);
       if(abandonDisposed){requirement.status='unsatisfied';requirement.unsatisfied_reason='abandoned';}
     }

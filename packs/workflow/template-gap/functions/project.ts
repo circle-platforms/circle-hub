@@ -13,6 +13,7 @@ import type { CaseIndex } from './index.ts';
 import { compareText, readCaseIndex } from './index.ts';
 import TEMPLATE_TABLE from '../tables/template-v3.json' with { type: 'json' };
 import { CASE_LIMITS, casesOf, idSelector, type DocumentCases } from './cases.ts';
+import {declareResourceTags,RESOURCE_TAG_TABLE} from './generated/vocabulary.ts';
 import { PACK, failure, guarded, isRecord, warningSink } from './common.ts';
 import { categoryFacts, MAX_EVIDENCE, readTemplate, type Template } from './template.ts';
 import { clip, collapseWhitespace, isBlank, isWhiteSpace, textOf, utf8Length } from './text.ts';
@@ -312,6 +313,10 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
       classification_status: classifications.get(document.id)!.unclassified.length ? 'unclassified' : 'classified',
       unclassified: classifications.get(document.id)!.unclassified,
       scope_complete: !warnings.list().some(w => w.document === document.id && ['template-gap.model_malformed', 'template-gap.depth_limit'].includes(w.code)),
+
+      case_resources:document.cases.cases.map(c=>({case:c.id,present:c.resource!==undefined,resource:c.resource??null})),
+      tag_table:RESOURCE_TAG_TABLE,
+      tag_undeclared_cases:document.cases.cases.filter(c=>declareResourceTags(c.resource).status==='undeclared').length,
       command_coverage: commandCoverage(template, document.id, memberships.get(document.id)!, caseIndex, commandSkips(document.id), document.uploaded, lock, caseRule, revisions.get(document.id)),
       missing: classifications.get(document.id)!.unclassified.length || warnings.list().some(w => w.document === document.id && ['template-gap.model_malformed','template-gap.depth_limit'].includes(w.code)) ? [] : categories.filter((category) => category.required && !category.present && !skippedIds.has(category.id)).map((category) => category.id),
       skipped,

@@ -4,6 +4,7 @@ import { labelOf } from '../../contracts/generated/vocabulary.ts';
 // of cases only (not a change of definitions), truncation, alias builds and product names, permission refusal, malformed
 // ids, roots without the kind, the revision, determinism (byte-identical answers) and what the run engine reads.
 import assert from 'node:assert/strict';
+import pg from 'pg';
 import { after, before, describe, test } from 'node:test';
 import { FacetView, ImpactView, IndexView } from '../../contracts/src/views.ts';
 import type { KnownBuild } from '../../contracts/src/product.ts';
@@ -493,6 +494,9 @@ export default function many(input: any): unknown {
     assert.equal(produced.ok, true, produced.reason ?? '');
     assert.equal(produced.unplaced, 60_000);
     const root = produced.root as string;
+    let queries=0;
+    const rawQuery=pg.Client.prototype.query;
+    t.mock.method(pg.Client.prototype,'query',function(this:pg.Client,...args:unknown[]){queries++;return Reflect.apply(rawQuery,this,args);});
     const facetStarted = performance.now();
     const facets = FacetView.parse(await readJson(w, `knowledge:facets:acme:${A}?kind=defect&by=status`));
     const facetMs = performance.now() - facetStarted;
@@ -515,6 +519,7 @@ export default function many(input: any): unknown {
     const cited = index.entries[index.keys.fixed[0]];
     assert.equal(cited.reference, `tree:${root}/@${cited.entry}`);
     assert.ok(index.notes.includes(labelOf('knowledge_count', 'tree_unplaced_entries') + ' 60000 个，标在根下'));
+    assert.ok(queries<1500,`two 60000-entry views used ${queries} queries; entries must be batched`);
     assert.ok(indexMs < 8_000, `index took ${indexMs.toFixed(0)} ms`);
   });
 

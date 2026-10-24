@@ -4,7 +4,7 @@
     {
       "slot": "facets",
       "role": "subject",
-      "description": "构建的用例计数视图：knowledge:facets:<产品>:<构建>?kind=case&by=line,module,has_expected,vague_expected,negative（可以加 priority 等字段；构建名写任一名称族的写法都可以）；可加同根标签视图 by=line,module,tags",
+      "description": "构建的用例计数视图 by=line,module,has_expected,vague_expected,negative,test_type_status；可选同根标签视图 by=line,module,tags,resource_empty,tag_valid；必须由新包按精确 resource 声明重产",
       "accepts": [
         "knowledge:facets"
       ],

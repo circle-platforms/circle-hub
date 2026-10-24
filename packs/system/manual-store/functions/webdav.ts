@@ -7,7 +7,7 @@
 // - <type>:cli:<line>           the CLI manual of a version line: the subfolder of settings.cli_folder (default cli) whose
 //                               name ends in the line's numbers (rel_x_10_7_1 is line 10.7.1), file settings.cli_file
 // - <type>:app:<line>           the same for the application manual (settings.app_folder, settings.app_file)
-// - <type>:spec-search:<terms>  terms joined by +: settings.spec_folder (default spec) listed once, every file name scored by
+// - <type>:spec-search:<terms>  terms joined by +: settings.spec_folders (default [spec]) listed once each, every file name scored by
 //                               the number of terms it contains, the best five with at least one term read; the derived
 //                               content (Markdown) lists the files read and then holds each file's text
 // - <type>:qa-search:<terms>    the same over the test strategy documents (settings.qa_folder, default qa)
@@ -354,13 +354,77 @@ export function rankFiles(model: unknown, terms: readonly string[], entries: rea
 
 const searchOf = (type: string): { folder: Setting; title: string } => SEARCHES[type] ?? SEARCHES['spec-search'];
 
+const LEGACY_SPEC = '旧设置 spec_folder 已并入 spec_folders，下一步资源管理员改用 spec_folders';
+/** One normalized list for both listing and search; legacy settings add one member, never a second read path. */
+export function specFolders(settings: Record<string, unknown>,searchDefault=false): { folders: string[]; warnings: string[] } {
+  const given = settings.spec_folders;
+  if (given !== undefined && (!Array.isArray(given) || given.some(v => typeof v !== 'string'))) throw new TypeError('spec_folders 需要目录列表；下一步资源管理员修正设置后重读');
+  const values: unknown[] = given === undefined ? [] : [...given as string[]];
+  const warnings: string[] = [];
+  if (settings.spec_folder !== undefined) { values.push(settings.spec_folder); warnings.push(LEGACY_SPEC); }
+  if (given === undefined && settings.spec_folder === undefined) {
+    if(!searchDefault)throw new TypeError('规格目录设置 spec_folders 未声明；下一步资源管理员配置目录列表后重读');
+    values.push(DEFAULTS.spec_folder);
+  }
+  const folders = values.map(value => {
+    if (typeof value !== 'string') throw new TypeError('spec_folders 含无效目录；下一步资源管理员修正设置后重读');
+    const path = value.replace(/^\/+|\/+$/g, '');
+    if (path.length > 255 || !path.split('/').every(s => SEGMENT.test(s))) throw new TypeError('spec_folders 含无效目录；下一步资源管理员修正设置后重读');
+    return path;
+  });
+  const unique=[...new Set(folders)];
+  if(unique.length===0)throw new TypeError('spec_folders 没有可读取的目录清单原件；下一步资源管理员至少配置一个目录（可以是空目录）后重读');
+  if (unique.length > 32) throw new TypeError('spec_folders 超过 32 个目录；下一步包作者提高读请求上限并发布后重读');
+  return { folders: unique, warnings };
+}
+const listKey = (folders: readonly string[], at: number): string => folders.length === 1 ? 'list' : `list-${at}`;
+export function specListPlan(input: unknown): PlanOutput {
+  const {settings} = partsOf(input); const {folders} = specFolders(settings);
+  return {requests: folders.map((dir, at) => ({key: listKey(folders, at), route: 'list', params: {dir}})), done: true};
+}
+export function specListProject(input: unknown): unknown {
+  const {settings,responses} = partsOf(input); const {folders,warnings} = specFolders(settings);
+  const files: Array<{name:string;path:string;title?:string}> = []; const unread: string[] = [];
+  const directories:Array<{name:string;path:string}>=[];
+  folders.forEach((folder, at) => {
+    const response = responses[listKey(folders, at)];
+    if (!response?.ok || !isRecord(response.model) || !isRecord(response.model.root)) { unread.push(folder); warnings.push(`${folder}/ 目录读不到；下一步资源管理员核对读权限和目录后重读`); return; }
+    const listing = membersOf(response.model); const warning = skippedWarning(folder,listing.skipped);
+    directories.push(...listing.members.filter(entry=>entry.collection).sort(byName).map(entry=>({name:entry.name,path:`${folder}/${entry.name}`})));
+    if (warning) warnings.push(warning);
+    const titles=new Map<string,string>();
+    const walk=(element:XmlElement,depth=0):void=>{
+      if(depth>32)return;
+      if(localName(element.name)==='response'){
+        let href:string|undefined,title:string|undefined;
+        const fields=(node:XmlElement,level=0):void=>{if(level>32)return;const name=localName(node.name);if(name==='href')href=textOf(node).trim();if(name==='displayname')title=textOf(node).trim();for(const child of node.children)if(typeof child!=='string')fields(child,level+1);};
+        fields(element);if(href&&title)titles.set(trimmed(pathOf(href)),title);
+      }else for(const child of element.children)if(typeof child!=='string')walk(child,depth+1);
+    };
+    walk(response.model.root as XmlElement);
+    files.push(...listing.members.filter(e=>!e.collection).sort(byName).map(e=>({name:e.name,path:`${folder}/${e.name}`,...(titles.has(e.path)?{title:titles.get(e.path)}:{})})));
+  });
+  return {artifacts:[{name:'content',media_type:'application/json',json:{folders,files,directories,unread,complete:unread.length===0}}],warnings,...(unread.length?{complete:false}:{})};
+}
+
+function searchFolders(type: string, settings: Record<string,unknown>): {folders:string[];warnings:string[]} {
+  return type === 'spec-search' || !SEARCHES[type] ? specFolders(settings,true) : {folders:[setting(settings,searchOf(type).folder)],warnings:[]};
+}
+function searchCandidates(type:string,key:string,settings:Record<string,unknown>,responses:Record<string,Response>) {
+  const {folders,warnings} = searchFolders(type,settings);
+  const listings = folders.map((folder,at)=>({folder,...membersOf(responses[listKey(folders,at)]?.model)}));
+  const entries = listings.flatMap(list=>list.members.map(e=>({...e,folder:list.folder})));
+  const ranked = rankFiles(null,termsOf(key),entries).map(file=>({...file,folder:(file as Scored & {folder:string}).folder}));
+  return {folders,warnings,listings,ranked};
+}
+
 /** Plan of <type>:spec-search:<terms> and <type>:qa-search:<terms>: the folder listed once, then the best files read by their paths. */
 export function searchPlan(input: unknown): PlanOutput {
   const { round, type, key, settings, responses } = partsOf(input);
-  const folder = setting(settings, searchOf(type).folder);
-  if (round === 1) return { requests: [{ key: 'list', route: 'list', params: { dir: folder } }], done: false };
-  const ranked = rankFiles(responses.list?.model, termsOf(key));
-  return { requests: ranked.map((file, k) => ({ key: `file-${k + 1}`, route: 'file', params: { path: `${folder}/${file.name}` } })), done: true, original: 'list' };
+  const {folders} = searchFolders(type,settings);
+  if (round === 1) return {requests:folders.map((dir,at)=>({key:listKey(folders,at),route:'list',params:{dir}})),done:folders.length===0};
+  const {ranked} = searchCandidates(type,key,settings,responses);
+  return { requests: ranked.map((file, k) => ({ key: `file-${k + 1}`, route: 'file', params: { path: `${file.folder}/${file.name}` } })), done: true, ...(folders.length?{original:listKey(folders,0)}:{}) };
 }
 
 /** Projection of a search: a Markdown listing of the files read (an empty listing when none matched), then each file's text. */
@@ -368,9 +432,9 @@ export function searchProject(input: unknown): unknown {
   const { type, key, settings, responses } = partsOf(input);
   const search = searchOf(type);
   const terms = termsOf(key);
-  const folder = setting(settings, search.folder);
-  const listing = membersOf(responses.list?.model);
-  const ranked = rankFiles(responses.list?.model, terms, listing.members);
+  const {folders,warnings,listings,ranked} = searchCandidates(type,key,settings,responses);
+  const folder = folders.join('、');
+  const listing = {skipped:listings.flatMap(list=>list.skipped)};
   // Listed files the search did not read although their names hold a term: the search did not cover the folder.
   const missed = listing.skipped.filter((s) => terms.some((term) => containsTerm(s.name, term)));
   const read = ranked.map((file, k) => ({ file, response: responses[`file-${k + 1}`] }));
@@ -402,6 +466,6 @@ export function searchProject(input: unknown): unknown {
     ],
     ...(missed.length > 0 ? { complete: false } : {}),
     ...(ok.length === 0 ? { note: '没有找到匹配的文件，派生内容是空清单' } : missed.length > 0 ? { note: `有 ${missed.length} 个包含检索词的文件在列表里、但链接不能读，检索不完整` } : {}),
-    ...(warning !== null ? { warnings: [warning] } : {}),
+    ...((warnings.length || warning !== null) ? { warnings: [...warnings,...(warning?[warning]:[])] } : {}),
   };
 }

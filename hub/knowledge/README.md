@@ -366,7 +366,11 @@ catalogs, grounds and provenance.
     accounting uses the slimmed size, and the answer records the fields it carries (`fields`) and says so in a note, so a
     big index fits the byte budget. MAX_INDEX_ENTRIES is 200,000 since `fields` exists: the byte budget is the effective
     bound and the entry cap only guards an injected bigger one.
-    An unplaced entry is cited at the root. When any entries of the kind are unplaced, a note says how many
+    An unplaced entry is cited at the root, and only its own reference reads it back (`tree:<root>/@<digest>`): get_nodes
+    lists the entries hung on nodes, so no walk of the tree enumerates them while `total_keys` and `total_entries` count
+    them — a consumer that needs every key of a truncated index follows the view's own `next` continuation and
+    cross-checks the counts against the facets view of the same scan.
+    When any entries of the kind are unplaced, a note says how many
     (`未挂到树上位置的条目 N 个，标在根下`), including entries that carry no value of the key; `total_entries` stays the entries that carry a
     value. The value `__proto__` is not listed as a key (a JSON reader that builds plain objects would take it for the
     prototype; noted, counted in `total_keys`); the content of an entry is held during the scan only while the held
@@ -1078,6 +1082,16 @@ They never infer that no entries exist from a source that did not produce.
 
 适用条件出处的 `superseded: true` 表示已被内层作用域取代，仅保留来历；读时不参与字段显示和 `contradicted` 打标。原值、章节路径和原片段仍完整保存在组成记录中。
 
+### 视图性能：hub-view-perf
+
+集成者已接收本次性能改进：冷读 4.586 → 1.133 s，归位峰值 RSS 697,728 → 494,448 KiB。RSS 回归护栏为实测值加 15%（568,616 KiB），单次墙钟使用宽松上限，查询次数单独钉住；降至修前三分之一保留为后续优化目标。合成根的归位与未归位路径分开取证；后者原来逐条查条目并填充全局条目缓存。当前批量扫描不填充该缓存，普通单条读取的缓存同时按逻辑权重限额；权重不是 Node 进程 RSS 的保证。规范条目哈希仍使用同一 `entryCanonical` 配方，批量读取只复用本次调用的编码器。
+
+分块行读取继续核对记录摘要，再按原行合约校验；单次操作的已校验事实由本存储签发的不可伪造句柄持有，不缓存权限或来源受理决定。视图的字节预算、每键上限、跳过与凭据遗漏规则不变；大答复交接缓冲区所有权后放弃内存缓存别名。具体测量、历史预算失败与后续事项见[任务页](../../docs/hub-r4-tasks/hub-view-perf.md)，不把合成验证当成持久部署或真实业务证明。
+
+长驻观察补充：根、分块、目录、关联图、答复等读取负载缓存只在一次异步读取中复用，finally 主动释放；晚到回调不能重新填充，并发读取独立。节点、目录和树引用入口同样建立读取范围。小型写入内容键 memo 不存根负载。对象释放回归已通过，但不等同于物理 RSS 峰值或持久部署验证。
+
+运行引擎的解析文档缓存同样按 start/submit/preview/maintenance 调用拥有并在 finally 终止释放；维护合成补测读取 3 份冻结的大视图原件，3 份解析文档读后未保留。峰值 RSS 和操作结束后的强引用是分别量测的两件事。
+
 ## 同步报告与视图的条目计数
 
 同步报告的 `entry_counts` 和分面/索引视图 `totals.entry_counts` 使用同一个口径：
@@ -1109,3 +1123,9 @@ They never infer that no entries exist from a source that did not produce.
 独立命令 gold 同步保留 paths（标题/祖先）、steps（直接步骤）测量，并另存 placement_paths（标题、祖先与该用例正文的并集）；前置叶节点和嵌套用例正文不串入外层。命令索引和回归范围比较优先使用这份完整集合，仍兼容未带新字段的旧测量输入。索引只给首个规范归位引用，不证明列举了全部树挂载；比较器核对完整 data.commands、该引用的根与首路径，以及不分版本来源标记；独立脚本不导入 Hub 或包函数。
 
 本次合并同时保留视图的 scope/next、锁定组成与按页偏移的截断判断，以及按内容身份去重的 entry_counts。计数在过滤明细和分页之前完成，任一所选根已有位置就计为 placed；续页和完整绑定保留同一计数。命令归属空组仍由 commandless_cases 单独计量，不与 tree_unplaced_entries 混用。
+
+## Complete empty product-wide roots
+
+An empty result remains a refusal for builds. For a product-wide root only, every active producer must return a complete zero-selection inventory proof. `ProducerOutput.inventory` labels each list and cites two fragments of the same bound JSON source: `listed` must locate an array and `complete` must locate JSON true. The Hub checks these source references, derives the total from the array length, checks the actual batch is empty and selected is zero, and also requires zero refused entries, zero skipped sources and no failed optional reads. Missing evidence, source failures, a producer exception, refused entries or an incomplete list still refuse production and leave the pointer unchanged. No placeholder knowledge entry is generated.
+
+The optional `tree_root@1.empty_scope` stores complete=true and each producer label, checked list/completion references, total and selected=0. Thus a complete empty root differs from a product that has never synced. It is content-addressed and can replace a formerly populated second root by the existing compare-and-set path. Production and unchanged-sync reports render the frozen labels and zero counts as “不分版本的根为空（清单完整，…）”. Authorized node reads return an empty page and that definite coverage note, with no unknown; root-reference reads retain the same note. Compositions keep the proof even when an empty node digest is shared with a root carrying unplaced entries; callers can pin the composition.

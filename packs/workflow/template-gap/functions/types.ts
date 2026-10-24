@@ -1,4 +1,6 @@
 import type { CommandIdentity } from '../../../../contracts/generated/shared-interfaces.ts';
+
+import type {TestTypeId,ResourceTagDeclaration} from './generated/vocabulary.ts';
 // Types of the template-gap functions. Type-only imports: they are erased at run time, so the functions stay self-contained
 // inside the pack (the sandbox admits only modules inside the pack); the contract types keep the outputs in their shapes.
 import type { ClassificationStatus } from '../../../../contracts/generated/vocabulary.ts';
@@ -8,7 +10,7 @@ import type { ItemSubjectInput, PackError, PackFailure, PackWarning, ProjectedIt
 export type { ItemSubjectInput, PackError, PackFailure, PackWarning, ProjectedItem, ProjectionInput };
 
 /** The canonical test types of the team template; every tag spelling maps to one of them or to null. */
-export type CanonicalTag = 'Functional' | 'Configuration' | 'Integration' | 'Compatibility' | 'Negative' | 'Stress';
+export type CanonicalTag = TestTypeId;
 
 /** One case of a document as the template matching reads it (the fields case-review projects that the template searches). */
 export type CaseRecord = {
@@ -25,6 +27,10 @@ export type CaseRecord = {
   tags: string[];
   /** AuthoredCategoryFields.category_ids read unchanged from the original node. */
   category_ids?: unknown;
+
+  resource?: unknown;
+  resourcePresent?: boolean;
+  tagDeclaration?: ResourceTagDeclaration;
   /** Texts of the children that have children of their own. */
   steps: string[];
   /** Every leaf below the case that is not a precondition, in document order. */
@@ -73,6 +79,10 @@ export type DocumentFields = {
   classifications: ClassifiedCase[];
   unclassified: string[];
   scope_complete: boolean;
+
+  case_resources?: Array<{case:string;present:boolean;resource:unknown}>;
+  tag_table?: ResourceTagDeclaration['table'];
+  tag_undeclared_cases?: number;
   command_coverage?: CommandCoverage;
   /** Ids of the required categories (in template v3: every category) no case shows and no skip names, in template order. */
   missing: string[];

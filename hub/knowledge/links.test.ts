@@ -19,6 +19,7 @@ import { LinksView } from '../../contracts/src/views.ts';
 import { createKnowledgeReader } from './api.ts';
 import { resolveLiteral,LinkReading } from './links.ts';
 import {Lru} from './store.ts';
+import {withReadCache} from './read-cache.ts';
 import { catalogXml,extraProducer,makeWorld,startPostgres,type World } from './test-support.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import type { ExternalReadContext } from '../ports.ts';
@@ -267,8 +268,11 @@ test('a node page builds relations once even when full relation facts cannot ent
   const page=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms'],depth:2},f.w.admin);assert.ok(page);assert.ok(page.nodes.length>2);
   assert.equal(calls,1);assert.equal(page.nodes.find(node=>node.path==='/terms/alpha')?.backlinks?.total,1);
   rejectCompact=false;
-  await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms'],depth:2},f.w.admin);assert.equal(calls,2);
-  await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms'],depth:2},f.w.admin);assert.equal(calls,2,'the compact per-target cache is reusable without retaining full literals');
+  await withReadCache(async()=>{
+    await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms'],depth:2},f.w.admin);assert.equal(calls,2);
+    await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms'],depth:2},f.w.admin);assert.equal(calls,2,'the compact per-target cache is reusable within this read');
+  });
+  await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms'],depth:2},f.w.admin);assert.equal(calls,3,'a completed read releases its compact per-target cache');
 });
 test('a missing unrelated relation node preserves the requested definitions and gives a positioned repair action',async t=>{
   const f=await fixture(t),root=await f.w.knowledge.store.node(f.first.root!);assert.ok(root);
@@ -358,8 +362,11 @@ test('root entry reads skip unrelated unplaced parts and reuse a composition mem
   assert.ok(await reader.read(f.first.root!,'/',root.entries[0],{user:f.w.admin.id,role:'admin'}));assert.equal(reads,0);
   const comp=await f.w.knowledge.store.composition(f.first.composition!);assert.ok(comp?.parts?.unplaced);assert.ok(comp.parts.unplaced.length>=2);
   const body=await part('tree_root-unplaced@1',comp.parts.unplaced[0].record);assert.ok(body);const entry=body.rows[0].entry;
-  const first=await reader.read(f.first.root!,'/',entry,{user:f.w.admin.id,role:'admin'});assert.ok(first);assert.ok(reads>0);
-  reads=0;const again=await reader.read(f.first.root!,'/',entry,{user:f.w.admin.id,role:'admin'});assert.ok(again);assert.deepEqual(again,first);assert.equal(reads,0);
+  await withReadCache(async()=>{
+    const first=await reader.read(f.first.root!,'/',entry,{user:f.w.admin.id,role:'admin'});assert.ok(first);assert.ok(reads>0);
+    reads=0;const again=await reader.read(f.first.root!,'/',entry,{user:f.w.admin.id,role:'admin'});assert.ok(again);assert.deepEqual(again,first);assert.equal(reads,0);
+  });
+  reads=0;assert.ok(await reader.read(f.first.root!,'/',entry,{user:f.w.admin.id,role:'admin'}));assert.ok(reads>0,'membership payloads are released after the enclosing read');
 });
 
 test('link request refusals keep their reason and bare id while genuine failures remain view errors',async t=>{

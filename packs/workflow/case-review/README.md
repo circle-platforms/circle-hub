@@ -62,7 +62,7 @@ line is `unquoted`: a statement of the model, which no catalog table reads and `
 engine decision 9) never becomes a fact about the case, and another case's line never meets or fakes a negative case's
 expectation. A statement that contradicts the catalog is the model's error: `command_claims` judges the artifact under
 verification and the findings requirement sends it back for repair. A negative case whose findings quote no command line of
-its own gives `phrases` missing, not empty, so the catalog requirement stays unknown (the invalid input was not cited)
+its own falls back to the case's own lines; negative_commands reports a missing-command advisory refutation when no line starts with a catalog head
 instead of failing the expectation.
 
 `findingSources` refutes a finding without a location (`case-review.location_missing`), one without a verbatim quotation
@@ -341,7 +341,7 @@ manifest with `node packs/workflow/case-review/api.ts sign`.
 
 ## Limits
 
-- A negative case whose findings quote no command line of its own leaves the catalog requirement unknown (pending), by design.
+- A negative case with no cited line uses its own text lines. If none starts with a catalog command head, negative_commands reports an advisory refutation; it does not accept the missing command as unknown.
 - A cited command line counts as the case's own only when it occurs in one line of the case (a step written over two nodes is
   two lines); shorthand the model expands is the model's statement and goes back for repair.
 - A finding can only say that a command exists or not, or quote a command line; a command named in the text of a finding is
@@ -459,3 +459,12 @@ CHANGE_KIND 的值与标签随包快照生成，两包不再手抄标签；固�
 按终稿包说明逐页读取并原样贴出 review_tables，再写简短评审意见、等级理由和证据缺口，不逐条转录发现或另写建议。
 
 评审最后一步照终稿包的容量协议：放不下整表时依据冻结字符边界标明部分、已贴范围，并给权威运行页与完整记录，不能静默截断。
+
+本包的跳过不是完成：handling=skipped 必须附 reason，列入待续做清单，按回执继续本条目或以当前运行为前驱续做；不能因跳过而省略发现、处置、结论或等级。缺判定时按修正说明补齐并重交；初评缺等级、报告缺块或有未交付条目时先修复所列块或条目，再用新回执重开后续运行。
+
+标签按 resource-tags@1 的精确原文闭集读取，保留 resource 原值。闭集外是提示档结构违规“未声明的标签”；大小写、全半角与同义词不相等。非法声明不进入正反向比例分母。此版本替代旧关键词规则，历史结果不改写；应以新包重产新根与新运行。本次续接按所有者指令未运行验证。
+
+
+## R4 的命令引用边界（1.1.0）
+
+所有者 2026-10-24 严格规则：finding 的命令引用必须与本用例的一条完整原文行逐字符相等；不做 NFKC、大小写/空白折叠，不从提示符、中文说明或标点中裁短。这里只证明引用在用例中，命令及参数是否成立仍由锁定构建的 typed catalog 核验。原 1.0.9 的 command_not_in_case/命令目录判据属于旧规则范围；旧运行不改写，新包的新运行另保留血缘。未涉及的类别、含糊期望等由各整改任务负责。

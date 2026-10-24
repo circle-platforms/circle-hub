@@ -33,6 +33,8 @@ interface DetailRow {
   path: string;
   change: string;
   fields: ParsedField[];
+  /** Definition digests the view named but did not carry: the comparison of that path is a missing fact. */
+  missing?: string[];
 }
 
 interface Outcome {
@@ -88,7 +90,8 @@ function detailRowsOf(subject: unknown): DetailRow[] {
   const out: DetailRow[] = [];
   for (const raw of note.details) {
     if (!isRecord(raw) || typeof raw.path !== 'string' || typeof raw.change !== 'string') continue;
-    out.push({ path: raw.path, change: raw.change, fields: fieldsOf(raw.fields) ?? [] });
+    const missing = Array.isArray(raw.missing) ? raw.missing.filter((digest): digest is string => typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest)) : [];
+    out.push({ path: raw.path, change: raw.change, fields: fieldsOf(raw.fields) ?? [], ...(missing.length > 0 ? { missing } : {}) });
   }
   return out;
 }
@@ -233,15 +236,22 @@ function commandExists(subject: unknown): Outcome[] {
   const note = noteOf(subject);
   if (note !== null) {
     const skipped = typeof note.skipped_from === 'number' && note.skipped_from > 0 ? note.skipped_from : 0;
-    const base = '索引没有收录的用例，这里不作结论。缺少索引外或未归位用例的命令归属事实；下一步由客户端提取一页供人工查看，或由集成者安排归位提议，不能把未读范围当成没有。';
-    const statement = skipped > 0 ? `较早构建的索引缺少 ${skipped} 份列出的文档，没有维护项并不能证明没有过期的用例。${base}` : base;
-    out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (statement), reason: 'missing_input', statement, grounds: [], tier: 'blocking' });
+    // Only skipped documents are an unknown (the view says which sources it could not use); a fully read scope with
+    // no maintenance items is a deterministic empty support, never an unconditional unknown.
+    if (skipped > 0) {
+      const viewNotes = Array.isArray(note.view_notes) ? note.view_notes.filter((row): row is string => typeof row === 'string') : [];
+      const statement = `较早构建的索引缺少 ${skipped} 份列出的文档，没有维护项并不能证明没有过期的用例${viewNotes.length > 0 ? `（${viewNotes.join('；')}）` : ''}。缺少这些文档里用例的命令归属事实；下一步由集成者按视图说明补齐来源、重新同步知识库后重跑巡检，不能把未读范围当成没有。`;
+      out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (statement), reason: 'missing_input', statement, grounds: [], tier: 'blocking' });
+    }
     if (note.truncated === true) {
       const total = typeof note.changed_paths === 'number' ? String(note.changed_paths) : '未知';
       out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`影响视图被截断，列出的路径不是全部（变更路径共 ${total} 条），完整性无法证明。`), reason: 'integrity_unproven', statement: `影响视图被截断，列出的路径不是全部（变更路径共 ${total} 条），完整性无法证明。`, grounds: [], tier: 'blocking' });
     }
   }
-  if (out.length === 0 && note === null) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('维护巡检的检查里没有用例'), reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'blocking' });
+  if (out.length === 0) {
+    if (note === null) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('维护巡检的检查里没有用例'), reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'blocking' });
+    else out.push({ verdict: 'support', statement: '已读来源里没有需要维护的用例，巡检范围是空的。', grounds: [], tier: 'blocking' });
+  }
   return out;
 }
 
@@ -288,6 +298,15 @@ function diffSummaries(subject: unknown): Outcome[] {
   }
   // A truncated view: the head says the whole count and that only the listed part follows; completeness stays unknown.
   const cut = note?.truncated === true && typeof note?.changed_paths === 'number' && note.changed_paths > total ? note.changed_paths : null;
+  // Detail rows name the definition digests the view did not carry: those paths are a missing fact, disclosed here.
+  const missingByPath = new Map<string, number>();
+  if (note !== null && Array.isArray(note.details)) {
+    for (const raw of note.details) {
+      if (!isRecord(raw) || typeof raw.path !== 'string' || !Array.isArray(raw.missing)) continue;
+      const count = raw.missing.filter((digest): digest is string => typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest)).length;
+      if (count > 0) missingByPath.set(raw.path, count);
+    }
+  }
   const headOf = (part: number, parts: number): string => {
     const which = parts > 1 ? `第 ${part} 部分，共 ${parts} 部分；` : '';
     if (cut === null) return `命令差共 ${total} 条（${which}路径、变更种类、前一构建用例数）：`;
@@ -295,7 +314,9 @@ function diffSummaries(subject: unknown): Outcome[] {
   };
   const lines = rows.slice(0, MAX_DIFF_ROWS).map((row) => {
     const label = (CHANGE_KIND as readonly string[]).includes(row.change) ? CHANGE_LABEL[row.change as ChangeKind] : row.change;
-    return `- ${row.path} ${label} ${row.cases} 条${row.change === 'added' ? '（不进范围）' : ''}`;
+    const missing = missingByPath.get(row.path) ?? 0;
+    const noteText = missing > 0 ? `（有 ${missing} 个点名的定义条目视图未带出，无从比较）` : '';
+    return `- ${row.path} ${label} ${row.cases} 条${row.change === 'added' ? '（不进范围）' : ''}${noteText}`;
   });
   const listed = lines.length;
   if (total > MAX_DIFF_ROWS) lines.push(`- 另有 ${total - MAX_DIFF_ROWS} 条，完整的表在运行级详情里`);
@@ -341,17 +362,37 @@ function commandUnchanged(subject: unknown): Outcome[] {
       continue;
     }
     const diffs = reasons.filter((reason) => changed(reason, details));
+    // A named definition the view did not carry is a missing fact, never evidence of agreement: without the entry's
+    // content the two sides cannot be compared, so the item is an unknown with the next step, and a fabricated
+    // "/ null → null" difference is never written.
+    const missingRows = modified.filter((reason) => reason.detail < details.length && (details[reason.detail].missing?.length ?? 0) > 0);
     if (diffs.length > 0) {
       const paths = diffs.map((reason) => details[reason.detail].path).join('、');
       const diffText = formatDiffsText(diffs, details);
+      const missingNote = missingRows.length > 0 ? `（另有 ${missingRows.reduce((sum, reason) => sum + (details[reason.detail].missing?.length ?? 0), 0)} 个点名的定义条目视图未带出，差异可能不止这些）` : '';
       out.push({
         verdict: 'refute',
         code: CHANGED,
-        statement: `用例 ${item.id}（${title}）所在命令的定义有变更（${paths}）。${diffText}`,
+        statement: `用例 ${item.id}（${title}）所在命令的定义有变更（${paths}）。${diffText}${missingNote}`,
         grounds,
         tier: 'advisory',
         item: item.id,
         data: { reasons },
+      });
+      continue;
+    }
+    if (missingRows.length > 0) {
+      const digests = [...new Set(missingRows.flatMap((reason) => details[reason.detail].missing ?? []))];
+      const statement = `影响视图没有带出用例 ${item.id} 所在命令定义的条目（${digests.map((digest) => digest.slice(0, 12)).join('、')}），两边是否一致无从核对`;
+      out.push({
+        verdict: 'unknown',
+        missing: '尚未取得本检查所需的事实：' + statement + '；下一步：不带 attached_fields 瘦身重读影响视图或提高视图上限，补全该条目后重跑巡检',
+        reason: 'missing_input',
+        statement,
+        grounds,
+        tier: 'advisory',
+        item: item.id,
+        data: { reasons, missing: digests },
       });
       continue;
     }
@@ -364,7 +405,10 @@ function commandUnchanged(subject: unknown): Outcome[] {
       data: { reasons },
     });
   }
-  if (out.length === 0 && noteOf(subject) === null) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('维护巡检的检查里没有用例'), reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'advisory' });
+  if (out.length === 0) {
+    if (noteOf(subject) === null) out.push({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('维护巡检的检查里没有用例'), reason: 'check_error', statement: '维护巡检的检查里没有用例', grounds: [], tier: 'advisory' });
+    else out.push({ verdict: 'support', statement: '已读来源里没有需要维护的用例，巡检范围是空的。', grounds: [], tier: 'advisory' });
+  }
   return out;
 }
 

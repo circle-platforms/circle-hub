@@ -174,3 +174,10 @@ describe('projectItems', () => {
     assert.ok(PROJECT_LIMITS.outputBytes <= 5 * 1024 * 1024);
   });
 });
+
+  it('no_defects refusal identifies observed view facts without guessing a missing release note',()=>{
+    for(const [view,pattern] of [[{skipped:2},/列出.*2.*未读/],[{total_entries:0,total_keys:0},/视图.*未列出/]] as const){
+      const out=project([],[],{defectsView:view});
+      assert.ok('error' in out);if('error' in out){assert.match(out.error.message,pattern);assert.doesNotMatch(out.error.fix,/可能/);}
+    }
+  });

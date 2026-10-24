@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "template-gap",
-  "version": "1.2.0",
+  "version": "1.2.6",
   "kind": "workflow",
   "title": "模板缺口检查",
   "description": "文档级核验模板 v3 全部 24 类，并从锁定构建的用例索引核验每个已解析命令的 9 类覆盖；缺输入写明补齐动作、对象和期限",
@@ -13,8 +13,8 @@
     },
     {
       "path": "checks.json",
-      "sha256": "2a17a59899db0c0b173c6cda4c30d62a13712b26abe82d123a05ad29cd6d0cee",
-      "size": 891
+      "sha256": "e95de111e983cb201b9bccacb3c288267840e42b380fff2e6a04b493ad01e068",
+      "size": 1173
     },
     {
       "path": "examples/command_partial_shortfall.json",
@@ -48,33 +48,13 @@
     },
     {
       "path": "functions/cases.ts",
-      "sha256": "01810db3ee3301238f172303b99bac4cc935d084407d353ef97b2949e27a917a",
-      "size": 15611
-    },
-    {
-      "path": "functions/category-evidence.ts",
-      "sha256": "0eab9886519f0e32b6b4c32684881bb208d06acaf596b9a75d1a0c35eedf47b6",
-      "size": 1694
-    },
-    {
-      "path": "functions/classification-subject.ts",
-      "sha256": "964ea50982894e71caca5b4c823c742ae851b706447bf65d0c6598eff1a65765",
-      "size": 763
-    },
-    {
-      "path": "functions/classification.ts",
-      "sha256": "e3289b0502beb05ed16b6e4134a90ca050e681389103092e726b48e60390da38",
-      "size": 4508
+      "sha256": "07dab98b7fda787ae83a2fd1598d925fa9a06660df302c0d635a94bb03849c16",
+      "size": 15668
     },
     {
       "path": "functions/command-check.ts",
       "sha256": "9e49d6eb4f86e9beca16b70c5d3d22f0e38879e7de7711928a88904b23b3a452",
       "size": 11696
-    },
-    {
-      "path": "functions/command-identity.ts",
-      "sha256": "adfe5ef491d935e1a58073425e6a320da13351f3e2abeb7cf9eebd837aa2679c",
-      "size": 1463
     },
     {
       "path": "functions/command-subject.ts",
@@ -83,8 +63,8 @@
     },
     {
       "path": "functions/commands.ts",
-      "sha256": "c17ea69435273ff2b0c1c41c33db83a20b9873fe3cf3d9713cffc43ab5ae162a",
-      "size": 6561
+      "sha256": "74577030530c956b19f71dd56bf2aec8ab27698f98a87b44b560759a104c0bcc",
+      "size": 6666
     },
     {
       "path": "functions/common.ts",
@@ -92,9 +72,9 @@
       "size": 2088
     },
     {
-      "path": "functions/coverage-check.ts",
-      "sha256": "bad587dd6f74fff79595dcf3a301e474d83606470146b26506d3c836b321a4ec",
-      "size": 4657
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "2645a7b984a70645f5fb187bdb284c96022e123a614dc279fd6f18a36c263cac",
+      "size": 4642
     },
     {
       "path": "functions/index.ts",
@@ -103,13 +83,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "3cb76ac5dbfb27bf02de0157144a34ebf2639931ebb295df345cefe2fd3ba9e4",
-      "size": 25138
-    },
-    {
-      "path": "functions/source-quotes.ts",
-      "sha256": "10a599074f78f740ebfe2e74069e07ab49870a943a49024665891d64988c3352",
-      "size": 5690
+      "sha256": "82f527837d10d3e94a7550cb1bca57fe7dbb47a3012ba0c39d0aefa17054bf27",
+      "size": 25860
     },
     {
       "path": "functions/subject.ts",
@@ -118,8 +93,8 @@
     },
     {
       "path": "functions/tags.ts",
-      "sha256": "82dfb9366c99160a958ca86bb720dae03b5c69d2020faa644ec72952e779f8ce",
-      "size": 3754
+      "sha256": "a70f8733b39e395bb6c6490d579aab7d0029d3da11fcd6487e21aba5415c9972",
+      "size": 826
     },
     {
       "path": "functions/template.ts",
@@ -133,13 +108,13 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "16097ed4cb5e44b36d0c04d9697e76bffabdb65e59f9266ff90e9fc7d2181f19",
-      "size": 6284
+      "sha256": "8d096194abb9ac737967680d94becd62dd488eeb33cad8b5e00963ca9ed6ab42",
+      "size": 6539
     },
     {
       "path": "requirements.json",
-      "sha256": "c625bed034e0b849ffc52f425e8344ba08b8e5dfacfa31352b3f7639986493a9",
-      "size": 1249
+      "sha256": "c69a55f46082b6f898266567c93b3e85c9979f813a0be8d0621aec078bb6b342",
+      "size": 1713
     },
     {
       "path": "samples/negative/command_absent.json",
@@ -208,23 +183,18 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "ac868df35d594304ce4b8e0f05d1ad9b4b8e6fae55fd719c2b0eb1a1b28f1b88",
-      "size": 6000
-    },
-    {
-      "path": "tables/category-judgment.schema.json",
-      "sha256": "0720e737e7168eff6981e1bbed72c369ae6b19ad4faac4f1dbce22f52ae1fc5f",
-      "size": 5152
+      "sha256": "68f359498e5a4a12986b14a219135556b6e5a3d84ef8af98c7840a0eb56607c2",
+      "size": 4445
     },
     {
       "path": "tables/codes.json",
-      "sha256": "51de86328abcd2900f0f7ece6be94f42e2a96d20322bd145c0000abdc5499c2d",
-      "size": 7476
+      "sha256": "383e826a65a3178e3ef2277b6ab5ab104f3e74b6216f16e3abf90a43bc0ccffc",
+      "size": 7747
     },
     {
-      "path": "tables/command-identity.schema.json",
-      "sha256": "24090e3bcc14380932929414d8036405601275e5a85ff6a35f69c9e4d80afa91",
-      "size": 16758
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
     },
     {
       "path": "tables/template-v3-coverage.json",
@@ -238,8 +208,48 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "dbf151806515cfcc339ec06601e6ce1a201d853519059bc124667f37b8550aa4",
-      "size": 24073
+      "sha256": "2307fa967e2335884835f925b9614aa609f9fd34c85e64ea10fbf31bdeee614a",
+      "size": 18300
+    },
+    {
+      "path": "functions/category-evidence.ts",
+      "sha256": "0eab9886519f0e32b6b4c32684881bb208d06acaf596b9a75d1a0c35eedf47b6",
+      "size": 1694
+    },
+    {
+      "path": "functions/classification-subject.ts",
+      "sha256": "964ea50982894e71caca5b4c823c742ae851b706447bf65d0c6598eff1a65765",
+      "size": 763
+    },
+    {
+      "path": "functions/classification.ts",
+      "sha256": "e3289b0502beb05ed16b6e4134a90ca050e681389103092e726b48e60390da38",
+      "size": 4508
+    },
+    {
+      "path": "functions/command-identity.ts",
+      "sha256": "7c4e9c28fae401b31ebfdcbe9492fa94a5e670499dbc4c0df02d5005604ba445",
+      "size": 1896
+    },
+    {
+      "path": "functions/coverage-check.ts",
+      "sha256": "bad587dd6f74fff79595dcf3a301e474d83606470146b26506d3c836b321a4ec",
+      "size": 4657
+    },
+    {
+      "path": "functions/source-quotes.ts",
+      "sha256": "10a599074f78f740ebfe2e74069e07ab49870a943a49024665891d64988c3352",
+      "size": 5690
+    },
+    {
+      "path": "tables/category-judgment.schema.json",
+      "sha256": "0720e737e7168eff6981e1bbed72c369ae6b19ad4faac4f1dbce22f52ae1fc5f",
+      "size": 5152
+    },
+    {
+      "path": "tables/command-identity.schema.json",
+      "sha256": "24090e3bcc14380932929414d8036405601275e5a85ff6a35f69c9e4d80afa91",
+      "size": 16758
     }
   ]
 }

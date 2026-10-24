@@ -52,16 +52,20 @@ export function expectedSources(input: unknown): { sources: Source[]; warnings: 
       for (const id of ids) bind(`plm:${kind}:${id}`, `条目 ${item.id} 的${whereOf(answer.id_sources, id, null)}里的编号 ${displayId(answer, id, null)} 没有标明类型，按调用方声明的编号范围（参数 id_ranges）读作${KIND[kind]}`);
     }
     for (const id of answer.unclassified) {
-      if (!answer.ranged.requirements.includes(id) && !answer.ranged.defects.includes(id) && !unread.includes(id)) {
-        unread.push(id); unreadOriginals.set(id, displayId(answer, id, null));
-      }
+      if (answer.ranged.requirements.includes(id) || answer.ranged.defects.includes(id) || unread.includes(id)) continue;
+      // An unmarked id whose kind nothing decides is read both ways: stories and bugs are separate numberings, and the
+      // record that exists decides the kind (owner's rule 10-24: read both, the existing one decides; a guess would show
+      // a false evidence gap for the kind that does not exist, or bind an unrelated record of the other numbering).
+      bind(`plm:story:${id}`, `条目 ${item.id} 的${whereOf(answer.id_sources, id, null)}里的编号 ${displayId(answer, id, null)} 没有标明类型，需求与缺陷分别读取（不存在的那个读不到，不会绑上无关记录）`);
+      bind(`plm:bug:${id}`, `条目 ${item.id} 的${whereOf(answer.id_sources, id, null)}里的编号 ${displayId(answer, id, null)} 没有标明类型，需求与缺陷分别读取（不存在的那个读不到，不会绑上无关记录）`);
+      unread.push(id); unreadOriginals.set(id, displayId(answer, id, null));
     }
   }
   if (unread.length > 0) {
     const named = unread.slice(0, MAX_NAMED);
     warnings.push({
       code: `${PACK}.id_kind_unknown`,
-      message: `${unread.length} 个编号没有标明是需求还是缺陷（${named.slice(0, 5).map(id => unreadOriginals.get(id) ?? id).join('、')}${unread.length > 5 ? ' 等' : ''}），没有读取缺陷系统；参数 id_ranges 给出缺陷系统的编号范围可以分开`,
+      message: `${unread.length} 个编号没有标明是需求还是缺陷（${named.slice(0, 5).map(id => unreadOriginals.get(id) ?? id).join('、')}${unread.length > 5 ? ' 等' : ''}），需求与缺陷分别读取，存在的那一个决定种类；参数 id_ranges 给出编号范围时按声明读作一种`,
       data: { ids: named, count: unread.length },
     });
   }

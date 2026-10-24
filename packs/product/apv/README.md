@@ -965,3 +965,43 @@ ROOT 的三种情形：
 两个名称族均有合成输入覆盖，没有改 include、AST 或源读取。
 
 合并 view-scope 与主线后为 1.4.3：保留部署变量、按名称族 adoc、适用条件闭集，以及构建时间失败诊断和未打标签说明；按合并后的原字节重签。
+
+
+## Command grammar
+
+关键词整改 R4（所有者 2026-10-24；模型 C07 R[7–8]、W05；模型前置 1cb6562d）。本包声明支持的命令树输入为 `apv-command-tree@2`，出处是本节和随本包发布的 `functions/command-tree.ts`。这是版本化的产品语法声明，不是声称所有历史原件都符合；不符合的原件须补证或修订，不容错当作完整目录。
+
+- 容器是未经修复的 `xml@1`：根 `commands`，`scope` 重置菜单路径，`menu[name]` 与 `item[name]` 给出完整词；`item/arguments/arg` 给出按位置排列的重载参数。任何 `irregular` 或 NUL 修复拒绝。XML 属性已经解码，不再二次实体解码。
+- 词以 ASCII SP/HT 分隔，字符及大小写完全相等；命令行以 CR/LF 分隔，节点之间不拼词。单/双引号只界定参数值，允许转义同一引号或反斜杠，不允许换行或 NUL 藏在引号中。散文、编号、提示符、全角写法不擦除、不折叠，不扫描最长匹配。`no`/`clear` 只有树中存在完整路径才成立。参数中的另一条命令只是参数。
+- 类型只按原始 `type` 精确字段和本包的 `ARGUMENT_TYPES` 定义：STRING/XSTRING 为字符串；U16/U32 为对应无符号范围；DOTTEDIP 为 IPv4；IPADDR 为 IPv4/IPv6；IPMASK 为连续点分掩码或 0–128 前缀；HOSTNAME/IP_OR_HOSTNAME 为 contracts 的对应显式类型。help 只保留说明，不能改变类型。所有重载完整消费所有参数；展开或数量上限不转 STRING，给缺口与重产出口。
+- `optional` 精确值为 `YES` 或 `NO`，省略按本语法的 `NO`；空串、大小写变体、yes/y/true/1 等不是别名。未知值是结构违规，不能默认必填。未声明或没有定义的 type 保留原参数位置，不填占位类型；状态取生成的 `type_declaration_status.undeclared`、`command_parse_status.parameters_unchecked`，补证约束交通用检查返回现有 unknown/missing_input。
+- 类型覆盖只按精确 schema=`apv-command-argument-types@1`、origin=`product:apv/README.md#command-grammar` 的发布声明中的原样 command + position；字段不做 trim、大小写或同义归并，不能从 help 推。没有这种来源授权不得做覆盖。limit 只解释本语法声明的完整含端点 `[low - high]`，以及 STRING 上完整 `{value|value}` 的精确成员集（不许空项、重复、嵌套或隐式转义）；未声明约束语法保留未核对，不判已满足。
+- 直接 commands 函数必须收到完整 definitions（words/signatures）；旧 heads 单独不足以证明命令。标题、祖先、步骤及期望用同一个完整解析器，结果路径去重并稳定排序。
+
+手册结构语法为 `apv-manual-signature@2`：完整单行 `**head** *<required> [optional]*` 是候选结构；只有全部精确 head/variant 及参数位置和 optional 结构对上锁定树才产生命令定义。格式本身不证明命令。表的签名列必须是精确机器列标识 `command_signature@2`，不能凭“命令/Command”等自然语言表头或连接词猜列角色。普通代码块每行完整过树后可产生 canonical 命令引用，并保留原始 command_lines；散文强调/引号不抽命令。JSON 过渡输入目前只直接调用可达：head_tokens 是精确身份，params.required 必须是显式布尔；数字或非英文不使签名变示例，例子不找最长前缀。没有锁定树时只保留章节原文和补树出口。AsciiDoc AST 只映射候选结构，语言、粗体和单词外形不能决定命令身份。
+
+新 APV 包 1.5.0 接续基线 1.4.3。旧包生产的根和运行保留，不改原字节；受影响字段为命令定义的 signatures、用例 commands/归位路径、手册 signature_literals/command_literals 及相应回归/巡检计数。旧结果须附生成词表的 `legacy_keyword_rules` 限定；这不是删改原结果。新规则须另产根和运行，并引用旧生产记录的血缘；真实重产和旧结果限定的管理员操作由集成者另行安排，本次仅合成验证，不执行真实迁移。1.5.0 的组成按新包摘要及 grammar 身份区分。
+
+## Product-wide specifications
+
+`spec_index: true` reads `manual:spec-list:configured`. Only files whose filename or WebDAV display title contains a declared product name (NFKC, case-insensitive, ASCII letter boundaries) enter `scope.spec_documents`; other members are counted as 不属于这条产品线 and remain addressable at their original reference. Missing/incomplete directory observations withhold the whole scope so an existing root cannot lose its specifications.
+
+The `specifications` producer runs only with `unversioned: true`. Supported Markdown sections use the existing K1 producer, under `/spec/<resource-relative document path encoded as one segment>/<section path>`, without a command tree. It retains source literals and K02 applicability extraction/inheritance; `data.document_lines` preserves the written version tokens for information only and declares no build. `displayname` is the listing title when WebDAV supplies it; no title is guessed from a filename. Sources in other formats refuse with a conversion/reproduction action.
+
+## Product-wide case documents (step 2)
+
+The complete agile tree now retains every readable no-line identity, beyond the three examples named in a note. After the complete build listing is read, documents covered by no selected build with its own command tree enter `scope.unversioned_case_documents`, together with `case_tree`. A missing or failed build index/listing is not evidence of no coverage: the product-wide root is withheld until those sources are repaired and sync runs again. A failed specification listing or case tree also withholds the scope; existing pointers remain. Earlier-than-min_line documents, unreadable identifiers and empty folders remain excluded under the previous rules and are counted separately. Notes put scope/exclusion counts before detail that can be clipped.
+
+The `unversioned-cases` declaration has `unversioned: true`, binds documents and folders but no command tree, and sets `command_phrases: true`. This opt-in records lower-case ASCII command-shaped spans from the original title and ancestor labels, preserving spelling and spacing; these are lexical candidates, never resolved command claims. Existing case data and canonical statements are otherwise unchanged. Without this parameter, the build producer emits identical entry bytes (a frozen synthetic digest is tested). With no tree, entries stay unplaced and source-citable in the composition. The actual scope sync is tested for both cases and specifications, including unchanged root and composition on repetition.
+
+Needs: matching these preserved phrases against a reader version root requires a separately authorized kb-links declaration/consumer; this step does not claim command coverage from unresolved phrases. `product/` and `qa/` are not added to specification folders; the integrator supplies any later deployment list.
+
+This step raises APV from 1.4.2 to 1.4.3, manual-store from 1.0.3 to 1.0.4 and OpenKM from 1.0.2 to 1.0.3, and re-signs all three manifests.
+
+两条支线各自把 APV 记为 1.4.3 而内容不同（view-scope 一侧的构建时间失败诊断与未打标签说明，这一侧的产品级规格与未覆盖用例），合并后 APV 升为 1.4.4，按合并后的原字节重签（`node packs/product/apv/api.ts sign`）；manual-store 1.0.4 与 OpenKM 1.0.3 两侧不冲突，取较新的一版。
+
+Complete zero selections emit source inventory proofs: specifications cite the bound directory files/complete fields; uncovered cases cite the bound tree documents/complete fields. The core independently verifies both before accepting an empty product-wide root. The composition stores each observed list total and selected=0; sync and reads say “不分版本的根为空（清单完整，规格 0 份、未覆盖用例 0 份）”. An empty selection can clear previously populated scope content; unread/incomplete inventories cannot do so. Specification filenames are percent-encoded when made into external references and decoded for document metadata, so an authored @ never becomes revision syntax.
+
+标签按 resource-tags@1 的精确原文闭集读取，保留 resource 原值。闭集外是提示档结构违规“未声明的标签”；大小写、全半角与同义词不相等。非法声明不进入正反向比例分母。此版本替代旧关键词规则，历史结果不改写；应以新包重产新根与新运行。本次续接按所有者指令未运行验证。
+
+command_identities 绑定实际输入 XML 命令树的内容根摘要 tree_root 与 src:...#xml@1:... 签名原件；参数保留零基位置、结构化类型来源和解析值。data.commands 仅取这些完整身份的路径；没有输入树摘要、类型或唯一完整签名时不产身份，旧根须补类型后重产。标题、祖先或正文只按完整行作为候选，语法外不提取短语。本次续接未运行验证。
