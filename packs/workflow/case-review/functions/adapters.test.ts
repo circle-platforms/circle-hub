@@ -210,64 +210,58 @@ describe('expected sources (ExpectedSourcesInput -> ExpectedSourcesOutput)', () 
   const review = parseFixture('review-150.km.json').model;
   const run = (meta: Record<string, unknown> | null, parameters: Record<string, unknown> = {}, names = context.names) =>
     expected({ inputs: [bound(review, { meta })], parameters, context: { ...context, names }, items: [] });
+  const externalsOf = (out: unknown): string[] => {
+    assert.ok(ExpectedSourcesOutput.safeParse(out).success, JSON.stringify(out).slice(0, 400));
+    assert.ok('sources' in (out as object));
+    return (out as { sources: Array<{ external: string }> }).sources.map((s) => s.external);
+  };
 
-  it('binds the stories and bugs named in the title and the folders above the document, a spec search and a history hint', () => {
-    const out = run({ id: '880001', title: '需求20931-示例网关支持 Widget 健康检查', ancestors: ['Gadget', '030：示例项目', '060：1.0', 'bug 57001 回归'] });
-    assert.ok(ExpectedSourcesOutput.safeParse(out).success);
-    assert.ok('sources' in out);
-    const externals = out.sources.map((s) => s.external);
-    assert.ok(externals.includes('plm:story:20931'), externals.join(' '));
-    assert.ok(externals.includes('plm:bug:57001'), externals.join(' '));
-    const spec = out.sources.find((s) => s.external.startsWith('manual:spec-search:'));
-    assert.ok(spec !== undefined && spec.role === 'expected');
-    const hint = out.sources.find((s) => s.external.startsWith(HISTORY_SEARCH));
-    assert.ok(hint !== undefined && hint.role === 'hint', 'similar test lists are hints');
-    const terms = spec.external.slice('manual:spec-search:'.length);
-    assert.equal(hint.external, `${HISTORY_SEARCH}${terms}+!880001`, 'the reviewed document is left out of its own similar lists');
-    const strategy = out.sources.find((s) => s.external.startsWith(STRATEGY_SEARCH));
-    assert.ok(strategy !== undefined && strategy.role === 'hint', 'test strategy documents are hints (evidence group d)');
-    assert.equal(strategy.external, `${STRATEGY_SEARCH}${terms}`);
-    for (const s of out.sources) assert.match(s.reason, /\p{Script=Han}/u);
-    // The product's names are not search terms.
-    assert.ok(!/widget|gadget/i.test(spec.external), spec.external);
+  it('binds the identifiers the author declared in a whole field of the title or of a folder label', () => {
+    const out = run({ id: '880001', title: 'story:20931', ancestors: ['Gadget', '030：示例项目', '060：1.0', 'bug:57001'] });
+    const externals = externalsOf(out);
+    assert.deepEqual(externals, ['plm:story:20931', 'plm:bug:57001']);
+    for (const s of (out as { sources: Array<{ reason: string; role: string }> }).sources) {
+      assert.match(s.reason, /\p{Script=Han}/u);
+      assert.equal(s.role, 'expected');
+    }
+    assert.deepEqual((out as { warnings: unknown[] }).warnings, []);
   });
 
-  it('excludes the target from its history hint only when it is an agile document', () => {
-    const upload = expected({ inputs: [bound(review, { external: null, meta: { title: '需求20931-示例网关支持 Widget 健康检查' } })], parameters: {}, context, items: [] });
-    assert.ok('sources' in upload);
-    const hint = upload.sources.find((s) => s.external.startsWith(HISTORY_SEARCH));
-    assert.ok(hint !== undefined && !hint.external.includes('+!'), hint?.external);
+  it('binds no retrieval source: keyword search selects no candidate, whatever the switches say', () => {
+    // U19/U20 (owner, 2026-10-24): keyword retrieval is forbidden even for candidate sources, so no spec search, no test
+    // strategy search and no similar-list hint is bound, and the switches that used to turn them off decide nothing.
+    for (const parameters of [{}, { history_search: true, spec_search: true, strategy_search: true }, { spec_search: true, max_terms: 2 }]) {
+      const out = run({ id: '880001', title: '需求20931-示例网关支持 Widget 健康检查', ancestors: ['Gadget', '030：示例项目', '060：1.0', 'bug 57001 回归'] }, parameters);
+      const externals = externalsOf(out);
+      assert.deepEqual(externals.filter((id) => !id.startsWith('plm:')), [], JSON.stringify(parameters));
+      assert.ok(!externals.some((id) => id.startsWith('manual:spec-search:')), 'no spec search');
+      assert.ok(!externals.some((id) => id.startsWith(STRATEGY_SEARCH)), 'no test strategy search');
+      assert.ok(!externals.some((id) => id.startsWith(HISTORY_SEARCH)), 'no similar-list hint');
+      // Prose names no identifier either, so nothing at all is bound and the author's exit is named.
+      assert.deepEqual(externals, []);
+      const warnings = (out as { warnings: Array<{ code: string; message: string }> }).warnings;
+      assert.deepEqual(warnings.map((w) => w.code), ['case-review.id_kind_unknown']);
+      assert.match(warnings[0].message, /下一步作者用参数 stories、bugs 声明来源/);
+      assert.match(warnings[0].message, /逐字引文/);
+    }
   });
 
-  it('says that an unmarked id is read as both kinds and one of them may be unrelated', () => {
-    const out = run({ title: '31057-示例网关' });
-    assert.ok('sources' in out);
-    const both = out.sources.filter((s) => s.external === 'plm:story:31057' || s.external === 'plm:bug:31057');
-    assert.equal(both.length, 2);
-    for (const s of both) assert.match(s.reason, /无关/);
-    assert.ok(out.warnings.some((w) => w.code === 'case-review.id_kind_unknown' && /无关/.test(w.message) && /stories/.test(w.message)));
-  });
-
-  it('reads the folders under the name folders too, and the root text when there is no title', () => {
-    const out = run({ folders: ['bug 57001 回归'] });
-    assert.ok('sources' in out && out.sources.some((s) => s.external === 'plm:bug:57001'));
-  });
-
-  it('follows the workflow parameters: explicit ids, no hint, no spec search, no strategy search', () => {
+  it('follows the workflow parameters: explicit identifiers, checked, and nothing else', () => {
     const out = run({ title: '需求20931-示例' }, { stories: ['31000'], bugs: [41000], history_search: false, spec_search: false, strategy_search: false });
-    assert.ok('sources' in out);
-    assert.deepEqual(out.sources.map((s) => s.external), ['plm:story:31000', 'plm:bug:41000']);
-    const strategyOnly = run({ title: '需求20931-示例' }, { history_search: false, spec_search: false });
-    assert.ok('sources' in strategyOnly && strategyOnly.sources.some((s) => s.external.startsWith(STRATEGY_SEARCH)), 'the strategy search has its own switch');
+    assert.deepEqual(externalsOf(out), ['plm:story:31000', 'plm:bug:41000']);
+    const invalid = run({ title: '需求20931-示例' }, { stories: ['x1', '31000'] });
+    assert.deepEqual(externalsOf(invalid), ['plm:story:31000']);
+    assert.deepEqual((invalid as { warnings: Array<{ code: string }> }).warnings.map((w) => w.code), ['case-review.parameter_ignored']);
   });
 
   it('binds nothing without a subject and refuses what is not an input, with workflow names in its texts', () => {
     assert.deepEqual(expected({ inputs: [], parameters: {}, context, items: [] }), { sources: [], warnings: [] });
     const refused = expectedFn(null) as Refusal;
     assert.equal(refused.error.code, 'case-review.invalid_input');
-    const out = expectedFn({ inputs: [bound(review, { meta: { title: '31057-示例' } })], parameters: { bare_ids: 'both' }, context, items: [] }) as { warnings: Array<{ code: string; message: string }> };
+    const out = expectedFn({ inputs: [bound(review, { meta: { title: '31057-示例' } })], parameters: { bare_ids: 'both' }, context, items: [] }) as { sources: Array<{ external: string }>; warnings: Array<{ code: string; message: string }> };
+    assert.deepEqual(out.sources, [], 'an unmarked number in prose is not a declared identifier');
     const unknownKind = out.warnings.find((w) => w.code === 'case-review.id_kind_unknown');
-    assert.ok(unknownKind !== undefined && /id_ranges/.test(unknownKind.message) && !/idRanges/.test(unknownKind.message));
+    assert.ok(unknownKind !== undefined && /stories/.test(unknownKind.message) && /逐字引文/.test(unknownKind.message), JSON.stringify(out.warnings));
   });
 });
 

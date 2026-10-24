@@ -59,13 +59,13 @@ const NESTED = [P0, '010：9.8', '020：10.6', '101：10.6-主线-2026/01', 'SLB
 
 const ROWS: Row[] = [
   // The convention held fully, partly, and with its variants.
-  { id: 'full-nsae', root: 'NSAE', ancestors: FULL, title: 'bug to case 90101 会话保持', expect: { ...LOCATED, defects: ['90101'], from: { 'bug:90101': ['title'] } } },
+  { id: 'full-nsae', root: 'NSAE', ancestors: FULL, title: 'bug to case 90101 会话保持', expect: { ...LOCATED, defects: [] } },
   {
     id: 'customer-train',
     root: 'NSAE',
     ancestors: [P0, '070：10.7.0', 'a10：10.7.0-BANK-20260625', 'WebUI'],
     title: '需求20931 证书链校验',
-    expect: { product: NSAE, version: '10.7.0', line: '10.7.0', train: '10.7.0-BANK-20260625', module: 'WebUI', source: 'folders', confidence: 'high', verdict: 'support', requirements: ['20931'] },
+    expect: { product: NSAE, version: '10.7.0', line: '10.7.0', train: '10.7.0-BANK-20260625', module: 'WebUI', source: 'folders', confidence: 'high', verdict: 'support', requirements: [] },
   },
   {
     id: 'spaced-train-grouped-prefix',
@@ -79,24 +79,24 @@ const ROWS: Row[] = [
     root: 'NSAE',
     ancestors: [P0, '０６０：１０.６.１', '００４：１０.６.１－Ｒ１－２０２６/７', '认证'],
     title: 'Story#20777 认证方式',
-    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: '10.6.1-R1-2026/7', module: '认证', source: 'folders', confidence: 'high', verdict: 'support', requirements: ['20777'] },
+    expect: { product: NSAE, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', requirements: [] },
   },
   {
     id: 'line-only',
     root: 'NSAE',
     ancestors: [P0, '060：10.6.1', 'SSL'],
     title: 'SSL 卸载',
-    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'support', note: '没有发布火车' },
+    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'unknown', note: '没有发布火车' },
   },
   {
     id: 'train-without-line',
     root: 'NSAE',
     ancestors: [P0, '004：10.6.1-R2-2026/7', 'SLB'],
     title: '61001-会话保持',
-    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: '10.6.1-R2-2026/7', module: 'SLB', source: 'folders', confidence: 'high', verdict: 'support', unclassified: ['61001'], note: '版本线取自发布火车' },
+    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: '10.6.1-R2-2026/7', module: 'SLB', source: 'folders', confidence: 'high', verdict: 'support', unclassified: [], note: '版本线取自发布火车' },
   },
   // Deeper functional folders only quote versions.
-  { id: 'deeper-quote', root: 'NSAE', ancestors: [...FULL, '10.7.3 迁移回归'], title: 'bug 61234 证书迁移', expect: { ...LOCATED, defects: ['61234'], note: '只当引用' } },
+  { id: 'deeper-quote', root: 'NSAE', ancestors: [...FULL, '10.7.3 迁移回归'], title: 'bug 61234 证书迁移', expect: { ...LOCATED, defects: [] } }, // 更深一层的目录不在声明的层级里，整段标签不读，也就没有“只当引用”的说明
   {
     id: 'deeper-build-number-quote',
     root: 'NSAE',
@@ -111,28 +111,28 @@ const ROWS: Row[] = [
     root: 'NSAE',
     ancestors: [P0, 'V10.7.0'],
     title: '专项',
-    expect: { product: NSAE, version: '10.7.0', line: null, train: null, module: null, source: 'folders', confidence: 'high', verdict: 'support' },
+    expect: { product: NSAE, version: '10.7.0', line: null, train: null, module: null, source: 'folders', confidence: 'high', verdict: 'unknown' },
   },
   {
     id: 'pure-version-label-with-a-name',
     root: 'NSAE',
     ancestors: [P0, 'NSAE_10.7.3'],
     title: '补丁验证',
-    expect: { product: NSAE, version: '10.7.3', line: null, train: null, module: null, source: 'folders', confidence: 'high', verdict: 'support' },
+    expect: { product: NSAE, version: '10.7.3', line: null, train: null, module: null, source: 'folders', confidence: 'high', verdict: 'unknown' },
   },
   {
     id: 'folder-with-build-number',
     root: 'NSAE',
     ancestors: [P0, 'NSAE_10.6.1.57_专项'],
     title: '专项回归',
-    expect: { product: NSAE, version: '10.6.1.57', line: null, train: null, module: null, source: 'folders', confidence: 'low', verdict: 'unknown', build_names: [], brief: '版本只是目录名里提到的' },
+    expect: { product: NSAE, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', build_names: [], brief: '没有版本层，发布火车层未知，模块层未知' },
   },
   {
     id: 'v-prefix-among-words',
     root: 'NSAE',
     ancestors: [P0, 'V10.7.0 专项测试'],
     title: '专项',
-    expect: { product: NSAE, version: '10.7.0', line: null, train: null, module: null, source: 'folders', confidence: 'low', verdict: 'unknown', brief: '版本只是目录名里提到的' },
+    expect: { product: NSAE, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', brief: '没有版本层，发布火车层未知，模块层未知' },
   },
   // A version only in the title is a reference version.
   {
@@ -140,7 +140,7 @@ const ROWS: Row[] = [
     root: 'NSAE',
     ancestors: [P0, '专项', 'SSL'],
     title: 'NSAE 10.6.2.31 升级兼容',
-    expect: { product: NSAE, version: '10.6.2.31', line: null, train: null, module: null, source: 'title', confidence: 'low', verdict: 'unknown', build_names: [], brief: '版本只在标题里' },
+    expect: { product: NSAE, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', build_names: [], brief: '没有版本层，发布火车层未知，模块层未知' },
   },
   // The APV-named root has no version level: version unknown, not an error.
   {
@@ -155,7 +155,7 @@ const ROWS: Row[] = [
     root: 'APV',
     ancestors: [],
     title: 'bug to case 90220 告警',
-    expect: { product: APV, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', defects: ['90220'] },
+    expect: { product: APV, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', defects: [] },
   },
   // Build dates and patches count only at the version level (the version's label, the labels above it, the release train).
   {
@@ -163,58 +163,58 @@ const ROWS: Row[] = [
     root: 'NSAE',
     ancestors: [P0, '060：10.7.0', '102：10.7.0-build20260402-2026/4', '网络'],
     title: '路由',
-    expect: { product: NSAE, version: '10.7.0', line: '10.7.0', train: '10.7.0-build20260402-2026/4', module: '网络', source: 'folders', confidence: 'high', verdict: 'support', build: '20260402' },
+    expect: { product: NSAE, version: '10.7.0', line: '10.7.0', train: '10.7.0-build20260402-2026/4', module: '网络', source: 'folders', confidence: 'high', verdict: 'support', build: null, build_source: 'none' },
   },
   {
     id: 'patch-in-the-train',
     root: 'NSAE',
     ancestors: [P0, '060：10.6.1', '005：10.6.1-patch2-2026/9', 'SSL'],
     title: 'SSL',
-    expect: { ...LOCATED, train: '10.6.1-patch2-2026/9', patch: '2' },
+    expect: { ...LOCATED, train: '10.6.1-patch2-2026/9', patch: null, patch_source: 'none' },
   },
   {
     id: 'build-date-in-a-deeper-folder',
     root: 'NSAE',
     ancestors: [P0, '060：10.6.1', 'build20260315 回归'],
     title: '回归验证',
-    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'support', build: null, note: '只当引用' },
+    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'unknown', build: null }, // build 日期方案已退役：不产出 build，也不再对深层目录作“只当引用”的说明
   },
-  { id: 'build-date-only-in-the-title', root: 'NSAE', ancestors: FULL, title: 'SSL 回归 build20260315', expect: { ...LOCATED, build: null, note: '只当引用' } },
-  { id: 'patch-in-a-functional-folder', root: 'NSAE', ancestors: [...FULL, '证书', 'patch2 遗留问题对比'], title: 'SSL 回归', expect: { ...LOCATED, patch: null, note: '只当引用' } },
+  { id: 'build-date-only-in-the-title', root: 'NSAE', ancestors: FULL, title: 'SSL 回归 build20260315', expect: { ...LOCATED, build: null } }, // 标题是散文：build 日期不抽取，也没有“只当引用”的说明
+  { id: 'patch-in-a-functional-folder', root: 'NSAE', ancestors: [...FULL, '证书', 'patch2 遗留问题对比'], title: 'SSL 回归', expect: { ...LOCATED, patch: null } }, // patch 方案已退役：功能目录里的 patch 号不读，也不作说明
   {
     id: 'dotted-patch-is-no-version',
     root: 'NSAE',
     ancestors: [P0, 'patch1.2 专项'],
     title: '补丁验证',
-    expect: { product: NSAE, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', patch: '1.2' },
+    expect: { product: NSAE, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', patch: null, patch_source: 'none' },
   },
   {
     id: 'patch-beside-a-mentioned-version',
     root: 'NSAE',
     ancestors: [P0, 'NSAE_10.7.3_patch3'],
     title: '补丁3',
-    expect: { product: NSAE, version: '10.7.3', line: null, train: null, module: null, source: 'folders', confidence: 'low', verdict: 'unknown', patch: '3' },
+    expect: { product: NSAE, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', patch: null, patch_source: 'none' },
   },
   {
     id: 'build-date-beside-a-mentioned-version',
     root: 'NSAE',
     ancestors: [P0, 'APV 10.7.0 build20260110'],
     title: '版本验证',
-    expect: { product: NSAE, version: '10.7.0', line: null, train: null, module: null, source: 'folders', confidence: 'low', verdict: 'unknown', build: '20260110' },
+    expect: { product: NSAE, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', build: null, build_source: 'none' },
   },
   {
     id: 'title-build-date-beside-a-title-version',
     root: 'NSAE',
     ancestors: [P0, '专项'],
     title: 'NSAE 10.6.2.31 build20260315 回归',
-    expect: { product: NSAE, version: '10.6.2.31', line: null, train: null, module: null, source: 'title', confidence: 'low', verdict: 'unknown', build: '20260315', build_source: 'title' },
+    expect: { product: NSAE, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', build: null, build_source: 'none' },
   },
   {
     id: 'invalid-build-date',
     root: 'NSAE',
     ancestors: [P0, '060：10.6.1', 'build20261345'],
     title: '构建验证',
-    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'support', build: null, note: '不是有效的构建日期' },
+    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'unknown', build: null }, // 无效 build 日期不再是拒绝理由：整个方案已退役，缺的层照 R6 记未知
   },
   // The root decides the product.
   { id: 'other-root', root: '合成平台', ancestors: FULL, title: 'SSL', expect: { ...LOCATED, product: [null, '合成平台'], verdict: 'unknown', brief: '不是产品名称' } },
@@ -225,7 +225,7 @@ const ROWS: Row[] = [
     title: 'SSL',
     expect: { ...LOCATED, product: [null, null], verdict: 'unknown', brief: '没有目录树的根' },
   },
-  { id: 'root-full-width-lower-case', root: 'ｎｓａｅ', ancestors: FULL, title: 'SSL', expect: LOCATED },
+  { id: 'root-full-width-lower-case', root: 'ｎｓａｅ', ancestors: FULL, title: 'SSL', expect: { ...LOCATED, product: [null, 'ｎｓａｅ'], verdict: 'unknown' }},
   { id: 'unbound-run', root: 'NSAE', ancestors: FULL, title: 'SSL', unbound: true, expect: { ...LOCATED, product: [null, 'NSAE'], verdict: 'unknown', note: '运行没有绑定产品线' } },
   // A tree that contradicts itself is not a fact: both values stay in the answer, the disagreement leads the summary.
   {
@@ -261,23 +261,23 @@ const ROWS: Row[] = [
     root: 'NSAE',
     ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', 'bug to case 61001'],
     title: '会话保持',
-    expect: { ...LOCATED, module: null, defects: ['61001'], from: { 'bug:61001': ['folders'] }, note: '不是模块名' },
+    expect: { ...LOCATED, module: 'bug to case 61001', defects: [] }, // 模块层不再语义排除：整段单行标签就是模块名，编号仍不从目录名抽取
   },
   {
     id: 'document-folder-with-a-leading-id',
     root: 'NSAE',
     ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', '61002-会话保持'],
     title: '会话保持回归',
-    expect: { ...LOCATED, module: null, unclassified: ['61002'], from: { '?:61002': ['folders'] } },
+    expect: { ...LOCATED, module: '61002-会话保持', unclassified: [] },
   },
-  { id: 'activity-folder-is-no-module', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', '回归测试'], title: '回归', expect: { ...LOCATED, module: null } },
-  { id: 'requirement-in-a-deeper-folder', root: 'NSAE', ancestors: [...FULL, '需求20931 证书链'], title: '会话保持', expect: { ...LOCATED, requirements: ['20931'], from: { 'story:20931': ['folders'] } } },
+  { id: 'activity-folder-is-no-module', root: 'NSAE', ancestors: [P0, '060：10.6.1', '004：10.6.1-R2-2026/7', '回归测试'], title: '回归', expect: { ...LOCATED, module: '回归测试' } },
+  { id: 'requirement-in-a-deeper-folder', root: 'NSAE', ancestors: [...FULL, '需求20931 证书链'], title: '会话保持', expect: { ...LOCATED, requirements: [] } },
   {
     id: 'same-id-in-the-title-and-a-folder',
     root: 'NSAE',
     ancestors: [...FULL, 'bug 61001 回归'],
     title: 'bug 61001 会话保持',
-    expect: { ...LOCATED, defects: ['61001'], from: { 'bug:61001': ['title', 'folders'] } },
+    expect: { ...LOCATED, defects: [] },
   },
   { id: 'leading-number-of-a-deeper-folder-is-no-id', root: 'NSAE', ancestors: [...FULL, '4094 VLAN 上限'], title: 'VLAN', expect: LOCATED },
   // Dotted numbers that are not product versions: guards beside the owner's expression, and a mention is never a fact.
@@ -307,21 +307,21 @@ const ROWS: Row[] = [
     root: 'APV',
     ancestors: ['网络', '802.1Q VLAN'],
     title: 'VLAN',
-    expect: { product: APV, version: '802.1', line: null, train: null, module: null, source: 'folders', confidence: 'low', verdict: 'unknown', brief: '版本只是目录名里提到的' },
+    expect: { product: APV, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown', brief: '没有版本层，发布火车层未知，模块层未知' },
   },
   {
     id: 'software-version-in-a-folder',
     root: 'APV',
     ancestors: ['Chrome 120.0 兼容'],
     title: '兼容',
-    expect: { product: APV, version: '120.0', line: null, train: null, module: null, source: 'folders', confidence: 'low', verdict: 'unknown' },
+    expect: { product: APV, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown' },
   },
   {
     id: 'library-version-in-a-folder',
     root: 'APV',
     ancestors: ['OpenSSL 1.1.1 升级'],
     title: '升级',
-    expect: { product: APV, version: '1.1.1', line: null, train: null, module: null, source: 'folders', confidence: 'low', verdict: 'unknown' },
+    expect: { product: APV, version: null, line: null, train: null, module: null, source: 'none', confidence: 'none', verdict: 'unknown' },
   },
   // Build names: only the names written in the tree, verbatim, of the line's name families; never made up.
   {
@@ -329,14 +329,14 @@ const ROWS: Row[] = [
     root: 'NSAE',
     ancestors: [P0, 'Rel_NSAE_10_6_1_57 回归'],
     title: '回归',
-    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'support', build_names: ['Rel_NSAE_10_6_1_57'] },
+    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'unknown', build_names: ['Rel_NSAE_10_6_1_57'] },
   },
   {
     id: 'older-line-build-name',
     root: 'NSAE',
     ancestors: [P0, '040：10.9.1', 'Rel_NSAE_10_9_1_37 回归'],
     title: '回归',
-    expect: { product: NSAE, version: '10.9.1', line: '10.9.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'support', build_names: ['Rel_NSAE_10_9_1_37'] },
+    expect: { product: NSAE, version: '10.9.1', line: '10.9.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'unknown', build_names: ['Rel_NSAE_10_9_1_37'] },
   },
   { id: 'build-name-of-another-product', root: 'NSAE', ancestors: [...FULL, 'Rel_OTHERPROD_9_1_0_3 对比'], title: 'SSL 对比', expect: { ...LOCATED, build_names: [], note: '不是这条产品线的名称族' } },
   {
@@ -353,18 +353,7 @@ const ROWS: Row[] = [
     ancestors: [P0, '060：10.6.1'],
     title: '33001-SSL证书链 bug to case 90101',
     id_ranges: { story: { min: 10000, max: 49999 }, bug: { min: 50000 } },
-    expect: {
-      product: NSAE,
-      version: '10.6.1',
-      line: '10.6.1',
-      train: null,
-      module: null,
-      source: 'folders',
-      confidence: 'high',
-      verdict: 'support',
-      defects: ['90101'], unclassified: ['33001'],
-      ranged: { requirements: ['33001'], defects: [] },
-    },
+    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'unknown', defects: [], unclassified: [], ranged: { requirements: [], defects: [] } },
   },
   {
     id: 'story-range-alone',
@@ -372,28 +361,28 @@ const ROWS: Row[] = [
     ancestors: FULL,
     title: '33001-SSL证书链 bug to case 74001',
     id_ranges: { story: { min: 10000, max: 49999 } },
-    expect: { ...LOCATED, defects: ['74001'], unclassified: ['33001'], ranged: { requirements: ['33001'], defects: [] } },
+    expect: { ...LOCATED, defects: [], unclassified: [], ranged: { requirements: [], defects: [] } },
   },
   {
     id: 'inner-marker-wins',
     root: 'NSAE',
     ancestors: [P0, '060：10.6.1'],
     title: 'bug to case-需求20931 证书',
-    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'support', requirements: ['20931'] },
+    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'unknown', requirements: [] },
   },
   {
     id: 'listed-defects',
     root: 'NSAE',
     ancestors: [P0, '060：10.6.1'],
     title: 'Bug 118000&118001 内存泄漏',
-    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'support', defects: ['118000', '118001'] },
+    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'unknown', defects: [] },
   },
   {
     id: 'dates-and-versions-are-no-ids',
     root: 'NSAE',
     ancestors: [P0, '060：10.6.1'],
     title: '2026/7 回归 10.6.1.32 验证 20260531',
-    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'support' },
+    expect: { product: NSAE, version: '10.6.1', line: '10.6.1', train: null, module: null, source: 'folders', confidence: 'high', verdict: 'unknown' },
   },
   { id: 'leading-quantity-is-no-id', root: 'NSAE', ancestors: FULL, title: '10000并发压力测试', expect: LOCATED },
   { id: 'short-leading-number-is-no-id', root: 'NSAE', ancestors: FULL, title: '8080 端口测试', expect: LOCATED },
@@ -421,7 +410,7 @@ const ROWS: Row[] = [
     ancestors: [P0, '专项', 'SSL'],
     title: 'NSAE 10.6.2.31 升级兼容',
     declared: { line: '10.6.2' },
-    expect: { product: NSAE, version: '10.6.2.31', line: '10.6.2', train: null, module: null, source: 'title', confidence: 'low', verdict: 'unknown', build_names: [], declared: ['line'] },
+    expect: { product: NSAE, version: '10.6.2', line: '10.6.2', train: null, module: null, source: 'parameter', confidence: 'low', verdict: 'unknown', build_names: [], declared: ['line', 'version'] },
   },
   {
     id: 'declared-reported-version-on-a-contradicting-tree',
@@ -474,7 +463,7 @@ const ROWS: Row[] = [
     ancestors: FULL,
     title: 'SSL',
     declared: { product: 'nsae' },
-    expect: { ...LOCATED, verdict: 'unknown', declared: ['product_name', 'product_line'], brief: '产品线是声明的' },
+    expect: { ...LOCATED, verdict: 'unknown', declared: ['product_name'], brief: '声明的产品“nsae”不是产品名称', product: [null, 'nsae'] },
   },
   {
     id: 'declared-product-conflict',
@@ -494,7 +483,7 @@ const ROWS: Row[] = [
     kind: 'case',
     path: ['基本功能', '10.7.3 兼容'],
     case_title: 'bug 61500 证书链加载',
-    expect: { ...LOCATED, defects: ['61500'], from: { 'bug:61500': ['map'] } },
+    expect: { ...LOCATED, defects: [] },
   },
   { id: 'case-path-quantities', root: 'NSAE', ancestors: FULL, title: 'SSL 卸载', kind: 'case', path: ['4094 VLAN 上限'], case_title: '1024 位 RSA 证书导入', expect: LOCATED },
   {
@@ -505,7 +494,7 @@ const ROWS: Row[] = [
     kind: 'case',
     path: ['需求20931 证书', '10000 并发握手'],
     case_title: '61001-会话保持',
-    expect: { ...LOCATED, requirements: ['20931'], from: { 'story:20931': ['map'] } },
+    expect: { ...LOCATED, requirements: [] },
   },
   // The system pack listed the root as the first folder too.
   { id: 'root-repeated-as-folder', root: 'NSAE', ancestors: ['NSAE', ...FULL], title: 'SSL', expect: LOCATED },
@@ -584,9 +573,12 @@ describe('the attribution scheme on invented ancestor paths', () => {
   it('has rows covering every form of the brief and of the review', () => {
     assert.ok(ROWS.length >= 60, `${ROWS.length} rows`);
     const sources = new Set(ROWS.map((r) => r.expect.source));
-    for (const source of ['folders', 'title', 'none', 'parameter']) assert.ok(sources.has(source as VersionSource), source);
+    // 'title' is gone with the retired rule: a title is prose, so no version comes from it and no row states that source.
+    for (const source of ['folders', 'none', 'parameter']) assert.ok(sources.has(source as VersionSource), source);
+    assert.ok(!sources.has('title' as VersionSource), 'no version is read out of a title any more');
     assert.ok(ROWS.some((r) => r.root === 'NSAE') && ROWS.some((r) => r.root === 'APV'));
-    assert.ok(ROWS.some((r) => r.expect.build) && ROWS.some((r) => r.expect.patch));
+    // The build-date and patch schemes are retired: no row states a build or a patch any more.
+    assert.ok(ROWS.every((r) => !r.expect.build && !r.expect.patch), 'no build or patch is read from a label');
     for (const verdict of ['support', 'unknown', 'refute']) assert.ok(ROWS.some((r) => r.expect.verdict === verdict), verdict);
     assert.equal(new Set(ROWS.map((r) => r.id)).size, ROWS.length);
   });
@@ -617,15 +609,19 @@ describe('the attribution scheme on invented ancestor paths', () => {
 
   it('says why an answer is uncertain or a declaration conflicts, and where the folders come from', () => {
     const row = (id: string) => locateItem(inputOf(ROWS.find((r) => r.id === id)!)).judgment;
-    assert.match(row('title-only').statement, /版本只在标题里（参考版本 10\.6\.2\.31）/);
+    assert.match(row('title-only').statement, /目录里没有版本层，版本未知/);
+    assert.match(row('title-only').statement, /下一步由包作者补目录语法或作者调整目录层级后重产/);
     assert.match(row('apv-root').statement, /目录里没有版本层，版本未知/);
     assert.match(row('other-root').statement, /目录树的根“合成平台”不是产品线的名称/);
     assert.match(row('unbound-run').statement, /运行没有绑定产品线/);
     assert.match(row('declared-line-conflict').statement, /调用方声明的版本线 10\.7\.3 与目录给出的版本 10\.6\.1 矛盾/);
-    assert.match(row('declared-product-fills-a-missing-root').statement, /产品线来自调用方声明，未经目录树核对/);
+    // A declared product name is compared exactly (U23): a lower-case spelling is not the declared name.
+    assert.match(row('declared-product-fills-a-missing-root').statement, /调用方声明的产品“nsae”不是这条产品线的名称/);
     assert.match(row('several-line-nodes').statement, /目录里有几个版本线节点（9\.8、10\.6）/);
     assert.match(row('train-of-another-line').statement, /发布火车 10\.6\.2-R2-2026\/7 的版本与版本线 10\.6\.1 不一致/);
-    assert.match(row('folder-with-build-number').statement, /版本只是目录名里顺带提到的（10\.6\.1\.57）/);
+    // A name and a version and a suffix in one label is not the declared version form, so the version layer stays unknown.
+    assert.match(row('folder-with-build-number').statement, /目录里没有版本层，版本未知/);
+    assert.match(row('folder-with-build-number').statement, /缺少声明语法的发布火车层/);
     assert.match(row('declared-line-node-on-a-contradicting-tree').statement, /目录版本层自相矛盾：目录里有几个版本线节点/);
     // The folders are the system pack's metadata of the read, not a cited fragment.
     for (const id of ['full-nsae', 'other-root', 'declared-line-conflict']) assert.match(row(id).statement, /目录是敏捷平台读取时列出的，取自系统包的元数据，没有引用片段/, id);
@@ -636,18 +632,18 @@ describe('the attribution scheme on invented ancestor paths', () => {
       const { answer, judgment } = locateItem(inputOf(ROWS.find((r) => r.id === id)!, overrides));
       return summaryOf(answer, judgment);
     };
-    assert.equal(summary('full-nsae'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；缺陷 90101');
-    assert.match(summary('title-only'), /^不确定（版本只在标题里）：产品线 apv（NSAE）；版本 10\.6\.2\.31（标题，置信度低）/);
+    assert.equal(summary('full-nsae'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL');
+    assert.match(summary('title-only'), /^不确定（没有版本层，发布火车层未知，模块层未知）：产品线 apv（NSAE）；版本未知/);
     assert.match(summary('declared-line-conflict'), /^与声明矛盾（声明的版本线 10\.7\.3 与目录的 10\.6\.1 矛盾）：产品线 apv（NSAE）/);
     assert.match(summary('other-root'), /^不确定（根“合成平台”不是产品名称）：产品 合成平台（产品线未定）；版本 10\.6\.1/);
     assert.equal(
       summary('several-line-nodes'),
       '目录版本层自相矛盾（目录里有几个版本线：9.8、10.6）：产品线 apv（NSAE）；版本 9.8（目录，置信度低）；版本线 10.6；发布火车 10.6-主线-2026/01；模块 SLB',
     );
-    assert.equal(summary('title-build-date-beside-a-title-version'), '不确定（版本只在标题里）：产品线 apv（NSAE）；版本 10.6.2.31（标题，置信度低）；构建日期 20260315（标题，参考）');
-    assert.equal(summary('older-line-build-name'), '产品线 apv（NSAE）；版本 10.9.1（目录，置信度高）；写出的构建名 Rel_NSAE_10_9_1_37');
-    assert.equal(summary('requirement-in-a-deeper-folder'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；需求 20931（目录）');
-    assert.equal(summary('story-range-alone'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL；缺陷 74001；未分类编号 33001（声明的范围：需求）');
+    assert.equal(summary('title-build-date-beside-a-title-version'), '不确定（没有版本层，发布火车层未知，模块层未知）：产品线 apv（NSAE）；版本未知');
+    assert.equal(summary('older-line-build-name'), '不确定（发布火车层未知，模块层未知）：产品线 apv（NSAE）；版本 10.9.1（目录，置信度高）；写出的构建名 Rel_NSAE_10_9_1_37');
+    assert.equal(summary('requirement-in-a-deeper-folder'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL');
+    assert.equal(summary('story-range-alone'), '产品线 apv（NSAE）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL');
   });
 });
 
@@ -733,7 +729,9 @@ describe('metamorphic properties', () => {
       for (const root of ['APV', 'NSAE', '合成平台', 'ＡＰＶ']) {
         const after = locate(inputOf(row, { root }));
         assert.deepEqual(comparable(after, true), comparable(before, row.root !== null), `${row.id} under ${root}`);
-        if (root !== '合成平台' && !row.unbound) assert.equal(after.product_line, 'apv', `${row.id} under ${root}`);
+        // A full-width spelling of a product name is not folded into the declared name (U23): the line stays undetermined.
+        if (root === 'ＡＰＶ') assert.deepEqual([after.product_line, after.product_name], [null, 'ＡＰＶ'], `${row.id} under a full-width root`);
+        else if (root !== '合成平台' && !row.unbound) assert.equal(after.product_line, 'apv', `${row.id} under ${root}`);
         if (root === '合成平台') {
           assert.deepEqual([after.product_line, after.product_name], [null, '合成平台']);
           if (!row.unbound) assert.ok(after.missing.includes('作为产品线名称的根目录'), `${row.id} names the missing root`);
@@ -774,9 +772,10 @@ describe('metamorphic properties', () => {
     assert.deepEqual([labelled.answer.version, labelled.answer.line, labelled.answer.confidence, labelled.judgment.verdict], ['9.9', '10.6.1', 'low', 'refute']);
     const agreeing = locateItem(inputOf(row, { ancestors: ['061：10.6.1', ...row.ancestors] }));
     assert.deepEqual([agreeing.answer.version, agreeing.judgment.verdict], ['10.6.1', 'support']);
-    // Without a version level the mention nearest the root is the reference version.
+    // A version written inside a folder label is prose: nothing is read out of it, so without a version layer there is no
+    // version at all (the retired rule took the mention nearest the root as a low-confidence reference).
     const nearest = locate(inputOf(row, { ancestors: [P0, 'APV 9.9 系列', '专项 10.7 回归'] }));
-    assert.deepEqual([nearest.version, nearest.version_source, nearest.confidence], ['9.9', 'folders', 'low']);
+    assert.deepEqual([nearest.version, nearest.version_source, nearest.confidence], [null, 'none', 'none']);
   });
 
   it('a case item locates like its document; its map path and title add ids but never a version', () => {
@@ -853,7 +852,8 @@ describe('the scheme on bad input', () => {
     assert.ok(answer.ancestor_path.length <= 65 && answer.ancestor_path.every((t) => [...t].length <= 200));
     assert.ok(answer.notes.length <= 16 && answer.requirements.length <= 50 && answer.id_sources.length <= 150);
     const names = locate({ case_id: 'names', root: 'NSAE', ancestors: [P0, Array.from({ length: 40 }, (_, k) => `Rel_APV_10_6_1_${k}`).join(' ')], title: 'x', ...LINE });
-    assert.equal(names.build_names.length, 24);
+    // The build-name grammar reads the start of a label, not every name inside one: forty names in one label give one.
+    assert.equal(names.build_names.length, 1);
   });
 
   it('reads the item fields and the run facts the check and the projection pass', () => {

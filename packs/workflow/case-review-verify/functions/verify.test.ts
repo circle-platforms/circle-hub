@@ -197,18 +197,23 @@ describe('projection of the draft result onto the target', () => {
 });
 
 describe('expected sources of the verification', () => {
-  it('bind the evidence of the target again: ids of the title and folders, the spec search, the strategy and history hints', () => {
+  it('bind the evidence of the target again: only the identifiers its author declared, and no retrieval source', () => {
     const out = expected({ inputs: [target(), draft(record(draftResult()))], parameters: { history_search: true }, context, items: [] });
     assert.ok(ExpectedSourcesOutput.safeParse(out).success);
     assert.ok('sources' in out);
     const externals = out.sources.map((s) => `${s.role} ${s.external}`);
-    assert.ok(externals.includes('expected plm:story:20931'));
-    assert.ok(externals.includes('expected plm:bug:57001'));
-    const spec = externals.find((e) => e.startsWith('expected manual:spec-search:'));
-    assert.ok(spec !== undefined);
-    const terms = spec.slice('expected manual:spec-search:'.length);
-    assert.ok(externals.includes(`hint manual:qa-search:${terms}`), 'evidence group d: the test strategy documents, a hint');
-    assert.ok(externals.includes(`hint agile:search:${terms}+!880001`), 'the target is left out of its own similar test lists');
+    // U19/U20 (owner, 2026-10-24): keyword retrieval selects no candidate source, so no spec search, no test strategy
+    // search and no similar-list hint is bound whatever the switches say; and apv-id-fields@1 reads an identifier only
+    // from a whole declared field, so a number written inside the target's title or a folder label binds nothing.
+    assert.deepEqual(externals.filter((entry) => !entry.includes('plm:')), [], externals.join(' '));
+    assert.ok(!externals.some((entry) => entry.includes('manual:spec-search:') || entry.includes('manual:qa-search:') || entry.includes('agile:search:')), externals.join(' '));
+    assert.ok(!externals.includes('expected plm:story:20931'), externals.join(' '));
+    assert.ok(!externals.includes('expected plm:bug:57001'), externals.join(' '));
+    const declaredTarget = { ...target(), meta: { title: 'story:20931', ancestors: ['Widget', 'bug:57001'] } };
+    const declared = expected({ inputs: [declaredTarget, draft(record(draftResult()))], parameters: {}, context, items: [] });
+    assert.ok('sources' in declared);
+    assert.ok(declared.sources.some((s) => s.external === 'plm:story:20931' && s.role === 'expected'), JSON.stringify(declared.sources));
+    assert.ok(declared.sources.some((s) => s.external === 'plm:bug:57001' && s.role === 'expected'), JSON.stringify(declared.sources));
     const without = expected({ inputs: [target(), draft(record(draftResult()))], parameters: { history_search: false, strategy_search: false }, context, items: [] });
     assert.ok('sources' in without && without.sources.every((s) => s.role === 'expected'));
     assert.equal((expectedFn(null) as { error: { code: string } }).error.code, 'case-review-verify.invalid_input');

@@ -71,7 +71,7 @@ describe('planSync', () => {
     assert.match(reasons.apv_10_x_patch, /读不出/);
     assert.match(reasons.apv_10_6_3, /超过两层/);
     assert.match(reasons.rel_apv_10_6_2_hg_k, /平台分支页默认不选/);
-    assert.match(reasons.rel_apv_10_6_2_BrandOS, /客户或功能分支页默认不选/);
+    assert.match(reasons.rel_apv_10_6_2_BrandOS, /名称不符合列表页命名/);
     assert.match(reasons.rel_other_10_6_2, /不属于本产品的名称族/);
     assert.match(reasons.demostack_10_6_2_special, /名称不符合列表页命名/);
     assert.ok(plan.warnings.some((warning) => warning.includes('2 个重复的页面链接')), plan.warnings.join('\n'));
@@ -84,8 +84,8 @@ describe('planSync', () => {
     const plan = planSync({ index });
     const reasons = Object.fromEntries(plan.skipped.map((skip) => [skip.page, skip.reason]));
     assert.match(reasons.rel_apv_10_6_1_hg_uos, /平台分支页默认不选/);
-    assert.match(reasons.rel_apv_10_6_1_examplebank_poc, /客户或功能分支页默认不选/);
-    assert.match(reasons.rel_apv_10_6_new_feature_2026, /客户或功能分支页默认不选/);
+    assert.match(reasons.rel_apv_10_6_1_examplebank_poc, /名称不符合列表页命名/);
+    assert.match(reasons.rel_apv_10_6_new_feature_2026, /名称不符合列表页命名/);
     assert.match(reasons.rel_apv_10_6_0_100_1_1_examplebank_patch, /补丁页默认不选/);
     assert.match(reasons.rel_other_3_9, /不属于本产品的名称族/);
     assert.match(reasons.apv10_6_docker, /名称不符合列表页命名/);
@@ -94,10 +94,18 @@ describe('planSync', () => {
     assert.ok(!plan.pages.concat(plan.skipped as never[]).some((entry) => (entry as { page: string }).page === 'rel_apv_10_7_9'));
   });
 
-  it('opts platform and customer pages in by pattern and out by exclusion', () => {
-    const plan = planSync({ index, options: { include: ['*_hg_k', 'REL_NSAE_*_FT_*', 'rel_apv_10_6_1_?xamplebank_*'], exclude: ['*demoqualifier', 'rel_apv_9_*'] } });
+  it('opts declared platform pages in by pattern and out by exclusion, and never admits an undeclared name', () => {
+    // `demoqualifier` is a declared mainline word here, so that page is a listing page and the exclusion applies to it;
+    // an exclusion never reaches a name the grammar does not declare (classification comes first).
+    const plan = planSync({ index, options: { mainline_page_words: ['demoqualifier'], include: ['*_hg_k', 'REL_NSAE_*_FT_*', 'rel_apv_10_6_1_?xamplebank_*'], exclude: ['*demoqualifier', 'rel_apv_9_*'] } });
     const pages = plan.pages.map((page) => page.page);
-    for (const page of ['rel_apv_hg_k_10_6_1_2_ipv6_hg_k', 'rel_nsae_10_6_1_ft_kylinv10', 'rel_apv_10_6_1_examplebank_poc']) assert.ok(pages.includes(page), page);
+    assert.ok(pages.includes('rel_nsae_10_6_1_ft_kylinv10'), 'a declared platform page is opted in by its pattern');
+    // A glob is an opt-in among declared page forms, not a way to read a name the grammar does not declare: these tails
+    // are neither a declared mainline word, a whole `patch` token nor `customer_<identifier>`.
+    for (const page of ['rel_apv_10_6_1_examplebank_poc', 'rel_apv_hg_k_10_6_1_2_ipv6_hg_k']) {
+      assert.ok(!pages.includes(page), page);
+      assert.equal(plan.skipped.find((skip) => skip.page === page)?.reason, '名称不符合列表页命名', page);
+    }
     assert.ok(!pages.includes('rel_apv_10_6_demoqualifier') && !pages.includes('rel_apv_9_2'));
     const ft = plan.pages.find((page) => page.page === 'rel_nsae_10_6_1_ft_kylinv10');
     assert.deepEqual(ft, { page: 'rel_nsae_10_6_1_ft_kylinv10', href: 'http://192.0.2.10/builds/rel_nsae_10_6_1_ft_kylinv10.html', from: null, family: 'NSAE', line: '10.6.1', platform: 'ft-kylinv10', kind: 'platform' });

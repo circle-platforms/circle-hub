@@ -1,6 +1,6 @@
 import type {ProducerOutput} from '../../../../contracts/src/product.ts';
 import {produceManualEntries} from './manual.ts';
-import {documentLines} from './documents.ts';
+import {documentLines, documentNameOf} from './documents.ts';
 import {PRODUCT_LINE} from './naming.ts';
 import {isRecord} from './util.ts';
 import type {MarkdownModel} from './types.ts';
@@ -36,7 +36,7 @@ export function specifications(input:unknown):ProducerOutput {
   const out=produceManualEntries(document.model as MarkdownModel,null,{...params,name:path,noTree:true});
   warnings.push(...out.warnings);
   if(out.warnings.some(w=>w.startsWith('内部错误')))throw new TypeError('规格章节生产未完成；下一步修复源章节后重产');
-  for(const entry of out.entries)entries.push({...entry,path:entry.path?.replace(/^\/manual\//,'/spec/')??null,data:{...entry.data,document_lines:documentLines(path+' '+title)},fragments:entry.fragments.map(fragment=>({...fragment,slot:'documents',source:document.sha256 as string}))});
+  for(const entry of out.entries)entries.push({...entry,path:entry.path?.replace(/^\/manual\//,'/spec/')??null,data:{...entry.data,document_lines:documentLines(documentNameOf(path))},fragments:entry.fragments.map(fragment=>({...fragment,slot:'documents',source:document.sha256 as string}))});
  }
  return {entries,warnings,...(documents.length===0&&catalog?{inventory:[{label:'规格',listed:{slot:'catalog',parser:'json@1',selector:'p/files'},complete:{slot:'catalog',parser:'json@1',selector:'p/complete'},selected:0}]}:{})};
 }

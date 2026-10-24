@@ -113,11 +113,7 @@ function add(counter: Counted, id: unknown): void {
 /** A root titled with one of the product's names (NFKC, case-insensitive; the name alone or followed by a non-word mark). */
 export function isProductRoot(title: unknown, names: readonly string[] = PRODUCT_LINE.names): boolean {
   if (typeof title !== 'string') return false;
-  const text = title.normalize('NFKC').trim().toLowerCase();
-  return names.some((name) => {
-    const key = name.normalize('NFKC').toLowerCase();
-    return text === key || (text.startsWith(key) && !/[a-z0-9]/.test(text[key.length]));
-  });
+  return names.some(name => title === name);
 }
 
 const numeric = (s: string): boolean => /^[0-9]+$/.test(s);
