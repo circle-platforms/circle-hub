@@ -27,6 +27,7 @@ function output(s: JobCommandSession, state: JobStatus): void {
   for(const request of state.requests ?? [])s.out(`待终结请求 ${request.id}；问题摘要 ${request.question_sha256 ?? '历史未记录'}；期限 ${request.deadline ?? '历史未记录'}`);
   if(state.marks?.length)s.out(`效果标记：${state.marks.map(mark=>labelOf('effect_mark',mark)).join('、')}`);
   if(state.disposition)s.out(`处置：${labelOf('disposition',state.disposition)}；决定人 ${state.decided_by ?? '未记录'}；时间 ${state.decided_at ?? '未记录'}`);
+  if(state.unprobed_devices?.length)s.out(`未探测（非派发目标）：${state.unprobed_devices.map(device=>`清单第 ${device.index + 1} 台（类型 ${device.type ?? '清单未声明'}）`).join('、')}；只按清单身份参与拓扑与地址绑定，不派发命令`);
   for(const condition of state.failed_conditions ?? [])s.out(`未满足条件：${JSON.stringify(condition.pointer)}；运算 ${condition.operator}`);
   for(const check of state.failed_checks ?? [])s.out(`未满足核对：步骤 ${JSON.stringify(check.step)}${check.seat!==undefined?`；座位 ${JSON.stringify(check.seat)}`:''}${check.check!==undefined?`；检查 ${JSON.stringify(check.check)}`:''}；缺事实：${check.missing_fact}；下一步：${check.next_action}`);
   if (state.reason) s.out(`说明：${state.reason}`);
