@@ -67,6 +67,8 @@ export { KnowledgeError } from './errors.ts';
 
 export type { KnowledgeCliCommand, KnowledgeCliContext, KnowledgeSyncArgs } from './cli.ts';
 export { KNOWLEDGE_SYNC_USAGE, formatSyncReport, knowledgeCliCommand, knowledgeSync, parseKnowledgeSyncArgs } from './cli.ts';
+export type { KnowledgeSeedArgs, SeedReport, SeedRoleName } from './seed.ts';
+export { KNOWLEDGE_SEED_USAGE, formatSeedReport, knowledgeSeed, parseKnowledgeSeedArgs, seedRoles } from './seed.ts';
 
 export { LinkReading, relationFacts, resolveLiteral } from './links.ts';
 export type { RelationFacts, RelationNodes, LiteralSource, LinkRequest } from './links.ts';

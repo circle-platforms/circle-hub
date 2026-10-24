@@ -139,13 +139,17 @@ export async function produceSeedling(context: KnowledgeContext, knowledge: Know
     return fail(production.reason ?? '生产没有产出根', build.name, production, parent);
   }
 
-  // The three fixed sources, exactly as the production used them.
+  // The three fixed sources, exactly as the production used them. A manual revision the caller did not name is the
+  // revision the composition recorded for that slot (an SVN read); the command tree stays null.
   const origin: SeedlingSource[] = [];
+  const composed = await context.store.composition(production.composition);
   for (const role of ROLES) {
     const ref = input.roles[role];
     const row = production.sources.find((source: ProduceResult['sources'][number]) => source.producer === ref.producer && source.slot === ref.slot);
     if (row === undefined) return fail(`生产没有用 ${ref.producer}.${ref.slot}，不能当树苗来源 ${role}`, build.name, production, parent);
-    const revision = role === 'cli-manual' ? (input.revisions?.cli ?? null) : role === 'app-manual' ? (input.revisions?.app ?? null) : null;
+    const given = role === 'cli-manual' ? (input.revisions?.cli ?? null) : role === 'app-manual' ? (input.revisions?.app ?? null) : null;
+    const recorded = composed?.sources.find((source) => source.producer === ref.producer && source.slot === ref.slot)?.revision ?? null;
+    const revision = role === 'command-tree' ? null : (given ?? recorded);
     origin.push({ role, producer: row.producer, slot: row.slot, external: row.external, sha256: row.sha256, revision });
   }
   origin.sort((a, b) => a.role.localeCompare(b.role));

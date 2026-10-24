@@ -67,11 +67,12 @@ circle-hub secret set --name <NAME> --reason <note>   # one line per name, stdin
 circle-hub secret list                              # administrator metadata only
 circle-hub doc put <name> <file> | list | show <name> # named documents (C4): put is admin-only; non-admins get the missing answer
 circle-hub knowledge sync --product <name or id> [--line <line>] [--dry-run] [--recheck] [--include-unreleased]
+circle-hub knowledge seed --product <product> --line <line> [--build <build>] --basis <one line> [--dry-run]
 circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
 ```
 
 - **Operator token.** Every command that changes state (all of the above except the listings, `roots` and `diff`; a
-  `knowledge sync`, dry runs included, because its reads store source artifacts) acts as the account of the operator
+  `knowledge sync` or `knowledge seed`, dry runs included, because their reads store source artifacts) acts as the account of the operator
   token. The normal path is the keychain item `init-admin` writes: account `operator-token` under the deployment's keychain
   service, which is resolved as hub/platform resolves the vault master key's (`deploymentKeychainService`: the deployment
   settings of `CIRCLE_HUB_DATA_DIR` when that data root has them, a disagreeing `CIRCLE_HUB_KEYCHAIN_SERVICE` refused as the
@@ -148,6 +149,7 @@ circle-hub knowledge roots <product> [--as] | diff <rootA> <rootB> [--as]
   `pack publish <dir> --stage` publishes a copy of exactly the files `pack.json` lists (a listed path must be a plain file inside `<dir>`; the publish check still verifies every digest), so a pack's source directory may keep its tests and README beside it. Without `--stage` an extra file is a publish problem (`manifest.unlisted_file`).
   is refused with that fix. A refusal lists every problem (rule, file, field or line, message, fix) on stderr.
 - **knowledge sync** uses hub/knowledge's parser, sync and report text and exits 1 when the sync or any build failed.
+  **knowledge seed** reads the three sources the product pack declares, calls `produceSeedling`, and exits 1 when a source or the seedling failed. A missing source names itself and the next command.
   `roots` lists the builds of a line (both name families, aliases with their base,
   a build that is its own base as `自身为基础构建`) with their roots and each line's current root; `diff` prints the added,
   removed and modified paths of two roots. A non-admin reads only lines a pack assigned to them binds (absent and forbidden
