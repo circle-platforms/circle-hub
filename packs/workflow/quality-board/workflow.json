@@ -4,7 +4,7 @@
     {
       "slot": "facets",
       "role": "subject",
-      "description": "结构计数视图 by=line,module,has_expected,negative（旧 vague_expected 字段若在视图中也被忽略）；可加同根标签视图",
+      "description": "结构计数视图 by=line,module,has_expected,negative,test_type_status；同根标签视图可选；旧 vague_expected 语义布尔不作为判断依据",
       "accepts": [
         "knowledge:facets"
       ],

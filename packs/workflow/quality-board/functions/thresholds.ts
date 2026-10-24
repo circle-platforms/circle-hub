@@ -83,12 +83,12 @@ export function thresholdOutcomes(subject: unknown): CheckOutcome[] {
         if(noJudgment||unresolvedNegative)continue;
         out.push({
           verdict: 'support',
-          statement: `阈值内：无期望结果 ${percentOf(fields.counts.missing, fields.counts.cases)} ≤ 上限 ${(thresholds.max_missing_ratio * 100).toFixed(1)}%；含糊期望 ${percentOf(fields.counts.vague, fields.ratios.vague.den)} ≤ 上限 ${(thresholds.max_vague_ratio * 100).toFixed(1)}%；负面用例 ${percentOf(fields.counts.negative, fields.counts.negative_denominator!)} ≥ 下限 ${(thresholds.min_negative_ratio * 100).toFixed(1)}%`,
+          statement: `阈值内：无期望结果 ${percentOf(fields.counts.missing, fields.counts.cases)} ≤ 上限 ${(thresholds.max_missing_ratio * 100).toFixed(1)}%；含糊期望 ${percentOf(fields.counts.vague, fields.ratios.vague.den)}（已判断分母 ${fields.ratios.vague.den} 个） ≤ 上限 ${(thresholds.max_vague_ratio * 100).toFixed(1)}%；负面用例 ${percentOf(fields.counts.negative, fields.counts.negative_denominator!)} ≥ 下限 ${(thresholds.min_negative_ratio * 100).toFixed(1)}%`,
           grounds,
           tier: TIER,
           item: id,
           pointer,
-          data: { line: fields.line, module: fields.module, negative_denominator:fields.counts.negative_denominator,type_unclassified:fields.counts.type_unclassified,thresholds: { ...thresholds } },
+          data: { quality:fields.quality,vague_ratio:fields.ratios.vague,line: fields.line, module: fields.module, negative_denominator:fields.counts.negative_denominator,type_unclassified:fields.counts.type_unclassified,thresholds: { ...thresholds } },
         });
         continue;
       }
