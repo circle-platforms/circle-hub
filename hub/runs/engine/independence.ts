@@ -60,8 +60,16 @@ export function independenceOf(current: ProducerOrigin, author: AuthorOrigin | n
 }
 
 /** The warrant's independence value for a finding. */
-export function warrantIndependence(finding: IndependenceFinding): Independence {
-  if (finding === 'independent') return 'model_family_declared';
+export function warrantIndependence(finding: IndependenceFinding,byAccount=false): Independence {
+  if (finding === 'independent') return byAccount?'human_non_author':'model_family_declared';
   if (finding === 'not_independent') return 'not_independent';
   return 'unknown';
+}
+
+/** W10 account identity, including Hub-side configured runs and delegated executions. */
+export function authorAccount(run:Pick<import('../../../contracts/src/run.ts').RunRecord,'runner'|'configurer'>):string|null{return run.runner??run.configurer??null;}
+export interface AccountAuthors {accounts:ReadonlySet<string>;complete:boolean}
+export function accountIndependenceOf(account:string,author:AccountAuthors|null):IndependenceFinding{
+ if(author?.accounts.has(account))return 'not_independent';
+ return author?.complete&&author.accounts.size>0&&account.length>0?'independent':'unknown';
 }

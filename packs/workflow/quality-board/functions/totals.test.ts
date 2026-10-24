@@ -1,3 +1,4 @@
+import { labelOf } from './generated/vocabulary.ts';
 // The totals check: run-level facts over the whole view (cases, missing, vague, negative) and the caveat that the board
 // describes the indexed cases, not the whole suite. A view that declares itself complete but whose rows cannot hold its
 // stated total contradicts itself: the totals are refuted (advisory) instead of stated.
@@ -33,7 +34,7 @@ describe('totalsOutcome', () => {
     assert.deepEqual(data.ratios.missing, { num: 2, den: 20 });
     assert.match(outcome.statement, /合计：用例 20 个/);
     assert.match(outcome.statement, /无期望结果 2 个（10\.0%）/);
-    assert.match(outcome.statement, /没有解析出命令的用例是未归位条目/);
+    assert.ok(outcome.statement.includes(labelOf('knowledge_count', 'commandless_cases')));
     assert.match(outcome.statement, /计入合计/);
     assert.match(outcome.statement, /不是整套测试/);
     const groups = projected.groups as Array<{ view: { source: string }; placement: { source: string } }>;

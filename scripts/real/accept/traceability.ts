@@ -67,6 +67,19 @@ export function extractStatementCaseIds(text: string, bug: string): string[] {
   return caseIds;
 }
 
+/** Current item rendering is id | label | summary, followed by optional metadata.
+ * Labels may contain separators; the producer emits `缺陷 id：title` or a bare fallback label. */
+function itemRow(line: string): { bug: string; summary: string } | null {
+  const parts = line.trim().replace(/^- /, '').split(' | ');
+  if (!line.trim().startsWith('- ') || !/^\d+$/.test(parts[0] ?? '')) return null;
+  while (parts.at(-1)?.startsWith('位置 ') || parts.at(-1)?.startsWith('可沿用 ')) parts.pop();
+  if (parts.length < 3) return null;
+  const bug = parts.shift()!;
+  const summary = parts.pop()!;
+  const labelId = /^缺陷 (\d+)(?:：|$)/.exec(parts.join(' | '))?.[1];
+  return labelId === bug ? { bug, summary } : null;
+}
+
 export default function scenario(gold: TraceGold): Scenario {
   const area = '追溯矩阵';
   const pack = 'traceability';
@@ -102,14 +115,12 @@ export default function scenario(gold: TraceGold): Scenario {
       const note=(reason:string,n=1)=>pending.set(reason,(pending.get(reason)??0)+n);
       const text = resultTexts(turns).join('\n');
       const lines = text.split(/\r?\n/);
+      const rows = lines.map(itemRow).filter((row) => row !== null);
       const checks: Check[] = [runStarted(area, turns)];
 
       for (const [index, defect] of gold.defects.entries()) {
         const label = `#${index + 1} ${createHash('sha256').update(defect.bug).digest('hex').slice(0, 12)}`;
-        const system=defect.system ?? (defect.systems?.length===1?defect.systems[0]:undefined);
-        const identity=system && system!=='unknown'?encodeURIComponent(system)+':'+defect.bug:defect.bug;
-        const linePrefix = `- ${identity} |`;
-        const matchingLines = lines.filter((line) => line.trim().startsWith(linePrefix));
+        const matchingLines = rows.filter((row) => row.bug === defect.bug).map((row) => row.summary);
 
         if (matchingLines.length === 0) {
           checks.push({
@@ -133,7 +144,7 @@ export default function scenario(gold: TraceGold): Scenario {
             ok: false,
           });
         } else {
-          const countMatch = matchingLines.map((l) => /(\d+)\s*个用例/.exec(l)).find(Boolean);
+          const countMatch = matchingLines.map((l) => /(?:^|[；;])\s*(\d+)\s*个用例(?=[；;]|$)/.exec(l)).find(Boolean);
           const reportedCount = countMatch ? Number.parseInt(countMatch[1], 10) : null;
           const countOk = reportedCount === defect.cases.length;
 

@@ -1,3 +1,4 @@
+import {criterionNotices} from './criterion-changes.ts';
 import { isReason,labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { abandonDecision } from './management.ts';
 import { requestsOf } from './requests.ts';
@@ -5,10 +6,11 @@ import { requestsOf } from './requests.ts';
 // Absent and forbidden give the same null or empty page. Phase and counts are derived, never stored.
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { Submission } from '../../../contracts/src/submission.ts';
-import type { RunRecord } from '../../../contracts/src/run.ts';
+import type { RunRecord, RunRecordView } from '../../../contracts/src/run.ts';
+import {hasRulingSummary,summaryOf} from './start.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
-import { RecordsError, type Page, type Principal, type StoredRecord } from '../../records/api.ts';
-import type { RunDetail, RunSubmissionView, RunListing } from '../../ports.ts';
+import { RecordsError, type RecordStore, type Page, type Principal, type StoredRecord } from '../../records/api.ts';
+import type { RunDetail, RunSubmissionView, RunListing, LoadedWorkflow } from '../../ports.ts';
 import type { EngineContext } from './deps.ts';
 import { canSeeRun, canViewRun } from './readers.ts';
 import { actionOfSubmission, isVerbatimObject, latestAccepted, listRunRecords, resultFor, resultsOf, runById, submissionsOf, INDEX, keyOwner } from './store.ts';
@@ -23,6 +25,14 @@ export interface StoredResult {
 async function visibleRun(ctx: EngineContext, user: Principal, run: string): Promise<StoredRecord<RunRecord> | null> {
   const stored = await runById(ctx.deps.records.store, run);
   return stored !== null && await canViewRun(user, stored.body, ctx.deps.records.store) ? stored : null;
+}
+
+async function withRulingSummary(ctx:EngineContext,record:RunRecord,packages=new Map<string,Promise<LoadedWorkflow|null>>()):Promise<RunRecordView>{
+  if(hasRulingSummary(record))return record;
+  let loading=packages.get(record.pack_digest);
+  if(!loading){loading=ctx.deps.workflows.byDigest(record.pack_digest);packages.set(record.pack_digest,loading);}
+  const workflow=await loading;
+  return {...record,requirements:summaryOf(record,workflow??undefined).requirements};
 }
 
 export async function getRun(ctx: EngineContext, user: Principal, run: string): Promise<RunDetail | null> {
@@ -55,7 +65,8 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
   const selected=management?managementResult:technicalLatest;
   const latest=selected!==null&&(!owner&&selected.body.acceptance!=='accepted')?null:selected;
   const production = results.filter(result => result.body.submission === stored.digest&&result.body.system_input===undefined).at(-1);
-  return { run: stored.body,submissions,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
+  const notices=await criterionNotices(ctx,stored.body);
+  return { run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
     production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
 
@@ -87,7 +98,8 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
   const order = (a: RunRecord,b: RunRecord): number => compare(b.started_at,a.started_at) || compare(b.run,a.run);
   rows.sort(order);
   const following = after === null ? rows : rows.filter(row => row.started_at < after!.at || row.started_at === after!.at && row.run < after!.id);
-  const items = following.slice(0,limit);
+  const packages=new Map<string,Promise<LoadedWorkflow|null>>();
+  const items = await Promise.all(following.slice(0,limit).map(record=>withRulingSummary(ctx,record,packages)));
   const last = items.at(-1);
   const next = following.length > limit && last ? Buffer.from(JSON.stringify({reader:user.id,pack,at:last.started_at,id:last.run})).toString('base64url') : null;
   let requests=(await requestsOf(ctx,user)).filter(r=>r.answered_by===null);
@@ -127,4 +139,31 @@ async function hasSuccessor(ctx:EngineContext,run:RunRecord):Promise<boolean>{
 /** Shared refusal summaries contain registered descriptions only, never instance diagnostics. */
 function publicReceiptErrors(codes:readonly string[]){
   return codes.map(code=>({code,message:Object.hasOwn(PROTOCOL_CODES,code)?PROTOCOL_CODES[code as keyof typeof PROTOCOL_CODES].when:Object.hasOwn(CORE_VIOLATION_CODES,code)?CORE_VIOLATION_CODES[code as keyof typeof CORE_VIOLATION_CODES].when:isReason(code)?labelOf('reason',code):''}));
+}
+
+/** W04 R[2]: the administrator's inventory, across locked versions; tables never leave storage. */
+export async function unruledShapes(store: RecordStore, user: Principal, pack: string): Promise<Array<{requirement:string;interpreter:string;count:number;latest_run:string}>> {
+  if (user.role !== 'admin') throw new RecordsError('只有管理员可查看未裁定的形状', {code:'SOURCE_UNAVAILABLE'});
+  const rows = new Map<string,{requirement:string;interpreter:string;count:number;latest_run:string}>();
+  const seen = new Set<string>();
+  let cursor: string | null = null;
+  do {
+    const page:Page<StoredRecord<ValidationResult>>=await store.list<ValidationResult>({kind:'validation_result',limit:500,cursor});
+    for (const record of page.items) {
+      const result=record.body;
+      if (result.locks.pack.split('@')[0] !== pack) continue;
+      for (const claim of result.cross_item) {
+        const data=claim.statement.data;
+        if (!claim.qualifier.marks.includes('decision_shape_unruled') || typeof data?.requirement!=='string' || typeof data.interpreter!=='string') continue;
+        const key=JSON.stringify([data.requirement,data.interpreter]);
+        const occurrence=JSON.stringify([result.run,result.submission,key]);
+        if(seen.has(occurrence))continue;
+        seen.add(occurrence);
+        const row=rows.get(key)??{requirement:data.requirement,interpreter:data.interpreter,count:0,latest_run:result.run};
+        row.count++;row.latest_run=result.run;rows.set(key,row);
+      }
+    }
+    cursor=page.next;
+  } while(cursor!==null);
+  return [...rows.values()].sort((a,b)=>a.requirement.localeCompare(b.requirement)||a.interpreter.localeCompare(b.interpreter));
 }

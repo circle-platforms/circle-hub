@@ -1,3 +1,4 @@
+import { syntheticKeychain, recordingRunner, socketPort, freePort, captureIo } from '../../platform/test-support.ts';
 import type {Environment} from '../../../contracts/generated/vocabulary.ts';
 import {secretNameOf} from '../../../contracts/src/variables.ts';
 import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../connectors/testing/credentials.ts';
@@ -18,11 +19,11 @@ import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { DEFAULT_LIMITS, type HubConfig } from '../../config/index.ts';
 import { agileFixture, passwordDigest, startAgileStub, startBuildSiteStub, startStub, type AgileStub, type StubServer } from '../../connectors/testing/api.ts';
-import { keychainKeyProvider, keychainStore, runCommand, OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type KeyProvider, type CommandRunner } from '../../platform/api.ts';
+import { keychainKeyProvider, keychainStore, runPlatformCommand, createContext, postgresFor, runCommand, OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type KeyProvider, type CommandRunner } from '../../platform/api.ts';
 import { openRecords, type SourceArtifactBody, type RecordKind, type RecordsKit, type User } from '../../records/index.ts';
 import { osIsolationAvailable } from '../../rules/api.ts';
 import { withFiles, writePack } from '../../runs/api.ts';
-import type { AssemblyModule, CliContext } from '../api.ts';
+import type { AssemblyModule, CliContext, ListenInfo } from '../api.ts';
 import { adminCommands, type AdminCommandOptions } from '../cli-admin.ts';
 import { CliError } from '../errors.ts';
 import { loadServerConfig } from '../main.ts';
@@ -1440,14 +1441,17 @@ describe('secret import', () => {
 
 
 describe('reimport after key loss', () => {
-  for (const keychain of [false, true]) test(keychain ? 'temporary keychain loss requires reissue and a fresh vault before reimport' : 'file key loss requires a fresh vault before reimport', { skip: keychain && !temporaryKeychainAvailable ? 'skipped: /usr/bin/security is unavailable (requires macOS)' : false }, async () => {
+  for (const keychain of [false, 'synthetic', true] as const) test(keychain === 'synthetic' ? 'synthetic keychain loss recovers through platform reset and secret import without host tools' : keychain ? 'temporary keychain loss requires reissue and a fresh vault before reimport' : 'file key loss requires a fresh vault before reimport', { skip: keychain === true && !temporaryKeychainAvailable ? 'skipped: /usr/bin/security is unavailable (requires macOS)' : false }, async () => {
     const directory = await mkdtemp(join(harness.scratch, 'key-loss-'));
     const file = join(directory, 'synthetic.keychain-db');
     const service = `circle-hub-synthetic-${randomBytes(12).toString('hex')}`;
+    const simulated = keychain === 'synthetic' ? syntheticKeychain(file) : null;
+    let resetWithPlatform: (() => Promise<void>) | undefined;
+    let stopPlatform: (() => Promise<void>) | undefined;
     const runner: CommandRunner = async (command, args, options) => {
       assert.equal(command, '/usr/bin/security');
       assert.ok(args.at(-1) === file || (args[0] === '-i' && (options?.input ?? '').trimEnd().endsWith(`"${file}"`)), 'no default keychain');
-      return runCommand(command, args, options);
+      return simulated ? simulated.runner(command, args, options) : runCommand(command, args, options);
     };
     const master = keychainStore({ service, keychain: file, runner, item: VAULT_KEY_ITEM, account: 'vault-master-key' });
     const operator = keychainStore({ service, keychain: file, runner, item: OPERATOR_TOKEN_ITEM, account: 'operator-token' });
@@ -1458,7 +1462,45 @@ describe('reimport after key loss', () => {
         await master.init();
       }
       const provider = () => keychainKeyProvider({ service, keychain: file, runner });
-      const admin = await setup(keychain ? { deployment: { key: false }, keyProvider: provider, store: () => keychainOperatorTokens({ service, keychain: file, runner }) } : {});
+      const admin = await setup(keychain ? { deployment: { key: false, ...(simulated ? { migrate: false } : {}) }, ...(simulated ? { initAdmin: false } : {}), keyProvider: provider, store: () => keychainOperatorTokens({ service, keychain: file, runner }) } : {});
+      if (simulated) {
+        const port = await freePort(), databasePort = socketPort();
+        const env = { CIRCLE_HUB_DATA_DIR: admin.deployment.dataDir, CIRCLE_HUB_PORT: String(port), CIRCLE_HUB_DATABASE_PORT: String(databasePort), CIRCLE_HUB_KEYCHAIN_SERVICE: service };
+        const host = recordingRunner(call => {
+          if (call.command === '/usr/bin/security') return simulated.runner(call.command, call.args, call.options);
+          if (call.command === '/bin/launchctl') {
+            assert.equal(call.args[0], 'print');
+            return { code: 113, stdout: '', stderr: 'synthetic service stopped' };
+          }
+          return undefined;
+        });
+        const overrides = { runner: host.runner, home: directory, launchAgentsDir: join(directory, 'agents'), keychain: file };
+        const context = createContext(env, overrides);
+        stopPlatform = async () => { await postgresFor(context).stop(); };
+        const platformRun = async (argv: string[]) => {
+          const captured = captureIo(env, directory);
+          assert.equal(await runPlatformCommand(argv, captured.io, overrides), 0, captured.err.join('\n'));
+          admin.deployment.printed.push(...captured.out, ...captured.err);
+          return captured;
+        };
+        await platformRun(['init', '--environment', 'test', '--port', String(port)]);
+        Object.assign(admin.deployment.env, env, {
+          CIRCLE_HUB_DATABASE_SOCKET_DIR: join(admin.deployment.dataDir, 'run'),
+          CIRCLE_HUB_DATABASE_NAME: context.database.name,
+          CIRCLE_HUB_DATABASE_USER: context.database.role,
+        });
+        const migrated = await admin.deployment.run(['serve', '--migrate-only'], { keyProvider: provider, ownerRole: context.user });
+        assert.equal(migrated.code, 0, migrated.text);
+        await expectOk(admin, ['init-admin', '根管理员']);
+        resetWithPlatform = async () => {
+          await platformRun(['service', 'stop']);
+          const captured = await platformRun(['key', 'init', '--set-aside-vault']);
+          assert.ok(captured.out.some(line => line.includes('原文件保留')));
+          assert.ok((await readdir(join(admin.deployment.dataDir, 'set-aside'))).some(name => name.endsWith('-key-loss')));
+          assert.deepEqual(await readdir(join(admin.deployment.dataDir, 'vault')), []);
+          assert.equal((await master.status()).present, true);
+        };
+      }
       const id = await importResource(admin);
       const env = await importFile(admin, `PORTAL_USER=reader\nPORTAL_PASSWORD=${PASSWORD}\nUNUSED=SyntheticUnusedValue79`);
       secrets.add('reader'); secrets.add('SyntheticUnusedValue79');
@@ -1477,22 +1519,51 @@ describe('reimport after key loss', () => {
         await master.delete(); await operator.delete();
         const refused = await admin.run(await importArgs(admin,join(directory,'not-readable'),id));
         assert.equal(refused.code, 1); assert.match(refused.text, /operator-token reissue/);
+        if (simulated) await resetWithPlatform!();
         await expectOk(admin, ['operator-token', 'reissue']);
         const store = keychainOperatorTokens({ service, keychain: file, runner }); secrets.add((await store.read())!);
       } else await rm(admin.deployment.key.path);
-      const refused = await admin.run(await importArgs(admin,join(directory,'not-readable'),id));
-      assert.equal(refused.code, 1); assert.match(refused.text, /主密钥不可用/); assert.match(refused.text, /set-aside/); assert.doesNotMatch(refused.text, /环境文件/);
-      for(const step of ['operator-token reissue','secret import','最后起服务']) assert.ok(refused.text.includes(step),step);
-      assert.ok(refused.text.indexOf('operator-token reissue') < refused.text.indexOf('secret import'), refused.text);
-      assert.ok(refused.text.indexOf('secret import') < refused.text.indexOf('最后起服务'), refused.text);
-      assert.equal((await admin.run(['resource', 'list'])).code, 0);
-      const aside = join(admin.deployment.dataDir, 'set-aside'); await mkdir(aside, { mode: 0o700 });
-      await rename(join(admin.deployment.dataDir, 'vault'), join(aside, 'synthetic-key-loss'));
-      if (keychain) await master.init(); else await admin.deployment.key.initKey();
+      if (!simulated) {
+        const refused = await admin.run(await importArgs(admin,join(directory,'not-readable'),id));
+        assert.equal(refused.code, 1); assert.match(refused.text, /主密钥不可用/); assert.match(refused.text, /set-aside/); assert.doesNotMatch(refused.text, /环境文件/);
+        for(const step of ['operator-token reissue','secret import','最后起服务']) assert.ok(refused.text.includes(step),step);
+        assert.ok(refused.text.indexOf('operator-token reissue') < refused.text.indexOf('secret import'), refused.text);
+        assert.ok(refused.text.indexOf('secret import') < refused.text.indexOf('最后起服务'), refused.text);
+        assert.equal((await admin.run(['resource', 'list'])).code, 0);
+        const aside = join(admin.deployment.dataDir, 'set-aside');
+        await mkdir(aside, { mode: 0o700 });
+        await rename(join(admin.deployment.dataDir, 'vault'), join(aside, 'synthetic-key-loss'));
+        if (keychain) await master.init(); else await admin.deployment.key.initKey();
+      }
       await expectOk(admin, await importArgs(admin,env,id));
       assert.equal(await withKit(admin, (kit) => storedNamed(kit,id,'password')), passwordDigest(PASSWORD));
       await read(); assert.equal(agile.logins, loginsBefore + 2);
+      if (simulated) {
+        let listening: ListenInfo | undefined;
+        let stop = () => {};
+        const stopped = new Promise<void>(resolve => { stop = resolve; });
+        const serving = admin.deployment.run(['serve'], {
+          keyProvider: provider,
+          operatorTokens: () => keychainOperatorTokens({ service, keychain: file, runner }),
+          assembly: async () => ({ assemble: createAssembly({ requireOsIsolation }) }),
+          stopSignal: () => stopped,
+          onListening: info => { listening = info; },
+        });
+        try {
+          for (let i = 0; i < 400 && !listening; i++) await new Promise(resolve => setTimeout(resolve, 25));
+          assert.ok(listening, 'recovered Hub actually listens');
+          assert.equal(listening.host, '127.0.0.1');
+          const response = await fetch(listening.url + '/healthz');
+          assert.equal(response.status, 200);
+          assert.equal((await response.json() as { status: string }).status, 'ok');
+        } finally {
+          stop();
+          const result = await serving;
+          assert.equal(result.code, 0, result.text);
+        }
+      }
     } finally {
+      await stopPlatform?.();
       if (keychain) await runner('/usr/bin/security', ['delete-keychain', file]);
       await rm(file, { force: true });
     }
@@ -1729,4 +1800,20 @@ test('administrator sharing commands cover users package audiences policy listin
   assert.equal(await kit.authorizations.isSharedWith(reader.id,productionShareKey(REVIEW_PACK)),false);
   for(const args of [['share','list'],['share','run',run,'--pack-users'],['unshare','run',run,'--pack-users'],['share','production',REVIEW_PACK],['unshare','production',REVIEW_PACK]]) assert.equal((await admin.run(args,{[OPERATOR_TOKEN_VARIABLE]:token})).code,1);
   const missing = await admin.run(['share','run','run_'+'1'.repeat(26),'--pack-users']); assert.equal(missing.code,1); assert.match(missing.text,/对你不可用/);
+});
+
+test('pack shapes lists only unruled identities and refuses nonadministrators',async()=>{
+ const admin=await setup();
+ assert.deepEqual((await expectOk(admin,['pack','shapes','synthetic'])).out,['没有未裁定的形状']);
+ const kit=await admin.kit();
+ try {
+  const fixtures=await import('../../../contracts/src/fixtures.ts');
+  await kit.store.put({kind:'validation_result',schema:'validation@1',provenance:'projected',body:{...fixtures.accepted,locks:{pack:'synthetic@10.6.0',pack_digest:fixtures.H},cross_item:[{...fixtures.judgment,qualifier:{...fixtures.judgment.qualifier,marks:['decision_shape_unruled']},statement:{text:'合成形状',data:{requirement:'r',interpreter:'future@1'}}}]}});
+ } finally {await kit.close();}
+ const listed=await expectOk(admin,['pack','shapes','synthetic']);
+ assert.match(listed.text,/r\tfuture@1\t1\trun_/);
+ assert.doesNotMatch(listed.text,/合成形状/);
+ const token=await userWithToken(admin,'普通读者');
+ const denied=await admin.run(['pack','shapes','synthetic'],{[OPERATOR_TOKEN_VARIABLE]:token});
+ assert.equal(denied.code,1);assert.match(denied.text,/管理员/);
 });

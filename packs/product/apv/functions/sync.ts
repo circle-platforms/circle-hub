@@ -1,4 +1,5 @@
 import {addAdocSources} from './adoc/deployment.ts';
+import {specificationScope} from './specifications.ts';
 // The sync plan of the product (product@1 sync.plan, SyncPlanInput -> SyncPlanOutput). Each round the Hub hands back every
 // page read so far; the plan is recomputed from them: index -> hub pages -> listing pages (depth 2, dead links tolerated,
 // pages of both name families; platform, customer and patch pages only when an `include` pattern opts them in), then the
@@ -17,7 +18,7 @@ import {addAdocSources} from './adoc/deployment.ts';
 import type { BuildInfo, SyncPlanInput, SyncPlanOutput } from '../../../../contracts/src/product.ts';
 import { hasCommandTree } from './builds.ts';
 import { CASE_TREE_ID } from './cases-rules.ts';
-import { caseDocumentsFor, caseIndexOptions, caseNote, caseSources, caseTree, uncoveredDocuments, type CaseTree } from './cases-sync.ts';
+import { caseDocumentsFor, caseIndexOptions, caseNote, caseSources, caseTree, uncoveredDocuments, unversionedCaseSources, type CaseTree } from './cases-sync.ts';
 import { parseListing } from './listing.ts';
 import { compareLines, lineKey } from './naming.ts';
 import { indexBuilds, resolveBase } from './select-build.ts';
@@ -61,10 +62,19 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
     const read = (isRecord(input) && isRecord(input.read) ? input.read : {}) as Record<string, Read>;
     const options = optionsOf(isRecord(input) ? input.options : undefined);
     const caseIndex = caseIndexOptions(isRecord(input) ? input.options : undefined);
+    const specifications = isRecord(input.options) && input.options.spec_index === true ? specificationScope(read) : null;
+    const cases: CaseTree | null = caseIndex.on ? caseTree(read, caseIndex) : null;
+    const scopeFor=(lines:string[]):{scope?:SyncPlanOutput['scope'];note:string}=>{
+      if(specifications&&!specifications.sources||cases&&cases.status!=='ready')return {note:'不分版本来源尚未完整读取，旧根不动；下一步补齐规格清单和用例树后重跑同步'};
+      const scoped=cases?.status==='ready'?unversionedCaseSources(cases,lines):null;
+      return {...(specifications||scoped?{scope:{...specifications?.sources,...(scoped?{unversioned_case_documents:scoped.ids,case_tree:CASE_TREE_ID}:{})}}:{}),note:scoped?`用例文档进不分版本：没有版本线 ${scoped.noLine} 份，没有覆盖构建 ${scoped.uncovered} 份；仍未列出 ${scoped.excluded} 份（早于下限或编号读不了）；空目录 ${cases?.status==='ready'?cases.counts.emptyFolders.count:0} 个`:''};
+    };
     const index = htmlOf(read[INDEX_ID]);
     if (index === null) {
       const reason = read[INDEX_ID]?.reason;
-      return { fetch: [], builds: [], done: true, note: `索引页读不出（${typeof reason === 'string' ? reason.slice(0, 200) : '没有读到'}），没有列出构建` };
+      const fetch=[...specifications?.fetch??[],...(cases?.status==='pending'?[CASE_TREE_ID]:[])];
+      const scoped=cases?{note:'缺少完整构建索引，不移动不分版本的根；下一步补齐构建索引后重跑同步'}:scopeFor([]);
+      return {fetch,builds:[],done:fetch.length===0,...(scoped.scope?{scope:scoped.scope}:{}),note:[specifications?.note,scoped.note,`索引页读不出（${typeof reason === 'string' ? reason.slice(0, 200) : '没有读到'}），没有列出构建`].filter(Boolean).join('；')};
     }
     const walk = { include: options.include, exclude: options.exclude, mainline_page_words:options.mainline_page_words };
     const first = planSync({ index, options: walk });
@@ -76,7 +86,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
     };
     for (const hub of plan.hubs) want(listingId(hub.page));
     for (const page of plan.pages) want(listingId(page.page));
-    const cases: CaseTree | null = caseIndex.on ? caseTree(read, caseIndex) : null;
+    for (const id of specifications?.fetch??[]) want(id);
     if (cases?.status === 'pending') want(CASE_TREE_ID);
     const lineCache = new Map<string, boolean>();
     const listedCases = { listed: 0, cut: 0 };
@@ -216,8 +226,11 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
     // A build that would list case documents is not listed without them: a root produced now would lose the cases it has.
     const kept = withheld.size === 0 ? builds : builds.filter((build) => !withheld.has(build.name));
     const uncovered = cases?.status === 'ready' ? uncoveredDocuments(cases.documents, caseLines) : [];
+    const scoped=cases&&(failed.length||fetch.length)?{note:'缺少完整构建列表，不移动不分版本的根；下一步补齐构建列表后重跑同步'}:scopeFor(caseLines);
 
     const summary = [
+      ...(specifications?[specifications.note]:[]),
+      ...(scoped.note?[scoped.note]:[]),
       `读了 ${Object.keys(read).length} 个页面`,
       `${plan.pages.length} 个列表页`,
       `列出 ${kept.length} 个构建（${kept.filter((b) => b.released_at !== null).length} 个已发布，${kept.filter((b) => Object.keys(b.sources).length === 0 && b.base === b.name).length} 个只有名字）`,
@@ -225,13 +238,13 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
     if (withheld.size > 0) summary.push(caseIndex.invalidMinLine
       ? `找到的 ${withheld.size} 个构建没有列出：min_line 无效，未套用下限，这次不列会带用例文档的构建，旧根不动`
       : `找到的 ${withheld.size} 个构建没有列出：用例树读不出来，这次不列构建，免得产出缺少用例的根`);
-    if (cases !== null) summary.push(caseNote(cases, caseIndex, { ...listedCases, withheld: withheld.size, uncovered }));
+    if (cases !== null) summary.push(caseNote(cases, caseIndex, { ...listedCases, withheld: withheld.size, uncovered, scoped:scoped.scope!==undefined }));
     if (failed.length > 0) summary.push(`读不出的列表页：${failed.slice(0, 8).join('、')}${failed.length > 8 ? ' 等' : ''}`);
     if (partialDates > 0) summary.push(`${partialDates} 个发布日期只写到月份，记为当月 1 日`);
     if (options.lines !== null) summary.push(`只列版本线 ${[...options.lines].join('、')}`);
     if (notes.length > 0) summary.push(notes.slice(0, 3).join('；'));
     const note = summary.join('；');
-    return { fetch, builds: kept, ...(failedBuilds.length ? {failed_builds:failedBuilds} : {}), done: fetch.length === 0, note: note.length > MAX_NOTE ? `${note.slice(0, MAX_NOTE)}…` : note };
+    return { fetch, builds: kept, ...(failedBuilds.length ? {failed_builds:failedBuilds} : {}), done: fetch.length === 0, ...(scoped.scope?{scope:scoped.scope}:{}), note: note.length > MAX_NOTE ? `${note.slice(0, MAX_NOTE)}…` : note };
   } catch (error) {
     return { fetch: [], builds: [], done: true, note: internalError(error) };
   }

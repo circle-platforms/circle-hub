@@ -41,7 +41,7 @@ test('--vocab prints axes, lists every axis without names and suggests close nam
   assert.match(one.out, /^ {2}delivered\t已交付$/m);
   const all = show('--vocab');
   assert.equal(all.status, 0);
-  assert.equal(all.out.split('\n').length, 71);
+  assert.equal(all.out.split('\n').length, 77);
   const wrong = show('--vocab', 'partitions');
   assert.equal(wrong.status, 1);
   assert.match(wrong.err, /no axis partitions; did you mean partition/);

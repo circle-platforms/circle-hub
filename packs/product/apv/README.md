@@ -965,3 +965,23 @@ ROOT 的三种情形：
 两个名称族均有合成输入覆盖，没有改 include、AST 或源读取。
 
 合并 view-scope 与主线后为 1.4.3：保留部署变量、按名称族 adoc、适用条件闭集，以及构建时间失败诊断和未打标签说明；按合并后的原字节重签。
+
+## Product-wide specifications
+
+`spec_index: true` reads `manual:spec-list:configured`. Only files whose filename or WebDAV display title contains a declared product name (NFKC, case-insensitive, ASCII letter boundaries) enter `scope.spec_documents`; other members are counted as 不属于这条产品线 and remain addressable at their original reference. Missing/incomplete directory observations withhold the whole scope so an existing root cannot lose its specifications.
+
+The `specifications` producer runs only with `unversioned: true`. Supported Markdown sections use the existing K1 producer, under `/spec/<resource-relative document path encoded as one segment>/<section path>`, without a command tree. It retains source literals and K02 applicability extraction/inheritance; `data.document_lines` preserves the written version tokens for information only and declares no build. `displayname` is the listing title when WebDAV supplies it; no title is guessed from a filename. Sources in other formats refuse with a conversion/reproduction action.
+
+## Product-wide case documents (step 2)
+
+The complete agile tree now retains every readable no-line identity, beyond the three examples named in a note. After the complete build listing is read, documents covered by no selected build with its own command tree enter `scope.unversioned_case_documents`, together with `case_tree`. A missing or failed build index/listing is not evidence of no coverage: the product-wide root is withheld until those sources are repaired and sync runs again. A failed specification listing or case tree also withholds the scope; existing pointers remain. Earlier-than-min_line documents, unreadable identifiers and empty folders remain excluded under the previous rules and are counted separately. Notes put scope/exclusion counts before detail that can be clipped.
+
+The `unversioned-cases` declaration has `unversioned: true`, binds documents and folders but no command tree, and sets `command_phrases: true`. This opt-in records lower-case ASCII command-shaped spans from the original title and ancestor labels, preserving spelling and spacing; these are lexical candidates, never resolved command claims. Existing case data and canonical statements are otherwise unchanged. Without this parameter, the build producer emits identical entry bytes (a frozen synthetic digest is tested). With no tree, entries stay unplaced and source-citable in the composition. The actual scope sync is tested for both cases and specifications, including unchanged root and composition on repetition.
+
+Needs: matching these preserved phrases against a reader version root requires a separately authorized kb-links declaration/consumer; this step does not claim command coverage from unresolved phrases. `product/` and `qa/` are not added to specification folders; the integrator supplies any later deployment list.
+
+This step raises APV from 1.4.2 to 1.4.3, manual-store from 1.0.3 to 1.0.4 and OpenKM from 1.0.2 to 1.0.3, and re-signs all three manifests.
+
+两条支线各自把 APV 记为 1.4.3 而内容不同（view-scope 一侧的构建时间失败诊断与未打标签说明，这一侧的产品级规格与未覆盖用例），合并后 APV 升为 1.4.4，按合并后的原字节重签（`node packs/product/apv/api.ts sign`）；manual-store 1.0.4 与 OpenKM 1.0.3 两侧不冲突，取较新的一版。
+
+Complete zero selections emit source inventory proofs: specifications cite the bound directory files/complete fields; uncovered cases cite the bound tree documents/complete fields. The core independently verifies both before accepting an empty product-wide root. The composition stores each observed list total and selected=0; sync and reads say “不分版本的根为空（清单完整，规格 0 份、未覆盖用例 0 份）”. An empty selection can clear previously populated scope content; unread/incomplete inventories cannot do so. Specification filenames are percent-encoded when made into external references and decoded for document metadata, so an authored @ never becomes revision syntax.

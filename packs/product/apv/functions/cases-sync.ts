@@ -8,7 +8,7 @@
 //   changed list re-runs every batch of that build: the Hub keys a stored producer call by the whole build, list included.
 //   Over the role's limit the documents of the oldest lines (earliest release-train date) are left out first;
 // - `case_tree`: agile:tree:roots, where the case producer finds each document's title and folders.
-// A build whose list is empty gets neither role. Documents without a located line, before min_line, with an id the agile
+// A build whose list is empty gets neither role. Documents without a located line join the product-wide scope; uncovered located documents do too. Documents before min_line, with an id the agile
 // pack cannot read, and leaves no folder lists (empty folders) are not listed; the note counts them by reason with example
 // ids. While the tree is not read, cannot be read or is incomplete (a configured root not read, a root title unknown), the
 // builds that would list documents are not listed at all (sync.ts): a root produced now would lose every case it had.
@@ -102,7 +102,7 @@ export type CaseCounts = {
 export type CaseTree =
   | { status: 'pending' }
   | { status: 'failed'; reason: string }
-  | { status: 'ready'; documents: CaseDocument[]; counts: CaseCounts };
+  | { status: 'ready'; documents: CaseDocument[]; unlocated: string[]; counts: CaseCounts };
 
 const counted = (): Counted => ({ count: 0, examples: [] });
 function add(counter: Counted, id: unknown): void {
@@ -169,6 +169,7 @@ export function caseTree(read: Record<string, unknown>, options: CaseIndexOption
     repeated,
   };
   const found: CaseDocument[] = [];
+  const unlocated: string[] = [];
   const seen = new Set<string>();
   for (const doc of model.documents as unknown[]) {
     if (!isRecord(doc) || typeof doc.root !== 'string') continue;
@@ -195,6 +196,7 @@ export function caseTree(read: Record<string, unknown>, options: CaseIndexOption
     const located = locateFromAncestors(ancestors);
     if (located.line === null) {
       add(counts.noLine, doc.id);
+      unlocated.push(doc.id);
       continue;
     }
     const line = lineKey(located.line);
@@ -213,7 +215,16 @@ export function caseTree(read: Record<string, unknown>, options: CaseIndexOption
     documents.push(doc);
   }
   documents.sort(byId);
-  return { status: 'ready', documents, counts };
+  return { status: 'ready', documents, unlocated, counts };
+}
+
+/** Sources no selected build covers; all readable identities are retained, not just the note's examples. */
+export function unversionedCaseSources(tree:Extract<CaseTree,{status:'ready'}>,buildLines:readonly string[]):{ids:string[];noLine:number;uncovered:number;excluded:number} {
+  const ranks=lineRanks(tree.documents);
+  const uncovered=tree.documents.filter(doc=>!buildLines.some(line=>lineNotAfter(doc.line,line,ranks)));
+  const ids=[...new Set([...tree.unlocated,...uncovered.map(doc=>doc.id)])].sort((a,b)=>compareDigits(a,b)||compareText(a,b)).map(id=>CASE_PREFIX+id);
+  if(ids.length>MAX_CASE_DOCUMENTS)throw new RangeError(`不分版本的用例清单超过 ${MAX_CASE_DOCUMENTS} 份；下一步拆分产品来源范围后重跑，不提交截断清单`);
+  return {ids,noLine:tree.unlocated.length,uncovered:uncovered.length,excluded:tree.counts.beforeMinLine.count+tree.counts.badId.count};
 }
 
 /**
@@ -267,7 +278,7 @@ export function uncoveredDocuments(documents: readonly CaseDocument[], buildLine
 const named = (counter: Counted): string => (counter.examples.length === 0 ? '' : `，例如 ${counter.examples.join('、')}`);
 
 /** The plan note's part on the case documents (Chinese). */
-export function caseNote(tree: CaseTree, options: CaseIndexOptions, extra: { listed: number; cut: number; withheld?: number; uncovered?: ReadonlyArray<{ line: string } & Counted> }): string {
+export function caseNote(tree: CaseTree, options: CaseIndexOptions, extra: { listed: number; cut: number; withheld?: number; uncovered?: ReadonlyArray<{ line: string } & Counted>; scoped?:boolean }): string {
   if (tree.status === 'pending') return '用例文档：敏捷平台的用例树还没有读';
   if (tree.status === 'failed') {
     const withheld = extra.withheld ?? 0;
@@ -280,10 +291,10 @@ export function caseNote(tree: CaseTree, options: CaseIndexOptions, extra: { lis
   ];
   const uncovered = extra.uncovered ?? [];
   const unlisted = [
-    c.noLine.count > 0 ? `上级目录里没有版本线 ${c.noLine.count} 份${named(c.noLine)}` : '',
+    !extra.scoped && c.noLine.count > 0 ? `上级目录里没有版本线 ${c.noLine.count} 份${named(c.noLine)}` : '',
     c.beforeMinLine.count > 0 ? `早于 ${options.minLine} 的 ${c.beforeMinLine.count} 份${named(c.beforeMinLine)}` : '',
     c.badId.count > 0 ? `编号读不了 ${c.badId.count} 份${named(c.badId)}` : '',
-    ...uncovered.map((u) => `版本线 ${u.line} 没有列出的构建 ${u.count} 份${named(u)}`),
+    ...(!extra.scoped?uncovered.map((u) => `版本线 ${u.line} 没有列出的构建 ${u.count} 份${named(u)}`):[]),
   ].filter((p) => p !== '');
   if (unlisted.length > 0) parts.push(`没有列出：${unlisted.join('；')}`);
   if (c.emptyFolders.count > 0) parts.push(`空目录 ${c.emptyFolders.count} 个（没有被上级目录列为文档的叶子${named(c.emptyFolders)}），不算文档`);

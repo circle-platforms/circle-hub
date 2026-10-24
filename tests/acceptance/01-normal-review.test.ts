@@ -82,7 +82,10 @@ describe('scenario 1: a normal review', () => {
     assert.deepEqual(run.target_basis.map(claim=>claim.statement.data?.field),['product','version','build','unversioned_root']);
     const scopeBasis=run.target_basis[3];
     assert.equal(scopeBasis.qualifier.nature,'fact');assert.equal(scopeBasis.qualifier.provenance,'projected');
-    assert.equal(scopeBasis.statement.data?.root,null);assert.match(scopeBasis.statement.text,/这条产品线还没有不分版本的根/);assert.match(scopeBasis.statement.text,/同步这条产品线/);
+    const scope=bed.syncs.two!.scope;assert.ok(scope?.root);assert.ok(scope.composition);
+    assert.equal(run.unversioned_root,scope.root);assert.equal(scopeBasis.statement.data?.root,scope.root);assert.equal(scopeBasis.statement.data?.composition,scope.composition);
+    assert.equal(scopeBasis.statement.text,'产品线不分版本的当前根');
+    assert.ok(scope.reason.includes('不分版本的根为空（清单完整，规格 0 份、未覆盖用例 0 份）'));
     // Sources: the subject, the linked story and bug (expected), the spec search (expected), test strategy and history (hints).
     const roles = run.sources.map((s) => [(s.external ?? '').split('@')[0].split(':').slice(0, 2).join(':'), s.role]);
     assert.deepEqual(roles.filter(([k]) => k === 'agile:mindmap'), [['agile:mindmap', 'subject']]);

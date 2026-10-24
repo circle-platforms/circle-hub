@@ -1,3 +1,4 @@
+import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
 import {defaultPredecessorInputs} from './predecessor-defaults.ts';
 import { PublishableRequirementsFile } from '../../../contracts/src/pack.ts';
 import { recordResultRequests, putRequest, answerSuccessorRequests } from './requests.ts';
@@ -15,10 +16,10 @@ import { NatureSchema, VerdictSchema, isSourceRole, type SourceRole } from '../.
 import { Ground } from '../../../contracts/src/reference.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { ContextBuild, RequirementTemplate, RunContext, ProjectionOutput } from '../../../contracts/src/pack.ts';
-import { RunRecord, RunSummary, type RequirementSummary } from '../../../contracts/src/run.ts';
+import { RunRecord, RunSummary, type RequirementSummary, type RunRecordView } from '../../../contracts/src/run.ts';
 import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools.ts';
 import { partitionCountsOf, type PartitionCounts, type ValidationResult } from '../../../contracts/src/validation.ts';
-import { CanonicalizationError, LimitError, scanForCredentials, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
+import { CanonicalizationError, RecordsError, LimitError, scanForCredentials, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -29,7 +30,7 @@ import { buildScope, createResolver } from './exact.ts';
 import { bindInputs } from './inputs.ts';
 import { foreignArtifacts, packIdOf } from './lineage.ts';
 import { bindExpected, projectItems } from './projection.ts';
-import { canSeeRun, identityOf, recordReader, runOfRecord, sourceReader } from './readers.ts';
+import { canSeeRun, canViewRun, identityOf, recordReader, runOfRecord, sourceReader } from './readers.ts';
 import { reuseOffers } from './reuse.ts';
 import { issuesOf, packSchema, schemaProblems, slotSchemaOf } from './slots.ts';
 import { actionsOf, keyOwner, putAction, putResult, putRun, resultFor, runByClientKey, runById, runRecordDigest } from './store.ts';
@@ -77,14 +78,30 @@ export function isProduction(workflow: LoadedWorkflow): boolean {
   return workflow.requirements.every((r) => r.accepted_producer === 'fact');
 }
 
-export function requirementSummary(t: RequirementTemplate): RequirementSummary {
-  return { key: t.key, name: t.name, description: t.description, layers: t.layers, done_rule: t.done_rule, accepted_producer: t.accepted_producer, repair_rounds: repairRounds(t), ...(t.observation?{observation:t.observation}:{}) };
+export function requirementSummary(t: RequirementTemplate, ledger?: import('../../../contracts/src/pack.ts').LedgerFile | null, checks: readonly import('../../../contracts/src/pack.ts').CheckEntry[] = [], pack = ''): RequirementSummary {
+  return { ...(t.independence_by_account?{independence_by_account:true}:{}), key: t.key, name: t.name, description: t.description, layers: t.layers, done_rule: t.done_rule, accepted_producer: t.accepted_producer, rules: t.checks.flatMap(id=>{const c=checks.find(check=>check.id===id);return c ? [c.interpreter ?? `${pack.split('@')[0]}.${c.id}@${pack.split('@')[1]}`] : [];}), run_interpreters: t.run_table ? (ledger?.shapes.filter(row=>row.requirement===t.key).map(row=>row.interpreter) ?? []) : [], repair_rounds: repairRounds(t), ...(t.observation?{observation:t.observation}:{}) };
 }
 
 /** The summary part of a run record, as start_run returns it (the frozen context extras — groups, builds — stay out). */
-export function summaryOf(record: RunRecord): RunSummary {
-  const { runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, lease_registrations: _lr, ...summary } = record;
-  return RunSummary.parse(summary);
+export class MissingRulingSummaryError extends RecordsError {
+  constructor(record:RunRecord,requirement:string){
+    super(`旧运行的要求项 ${requirement} 缺少锁定任务包的判定声明`,{code:'SOURCE_UNAVAILABLE',fix:'请管理员从备份恢复该运行锁定的任务包原件，再重新读取或复用运行',detail:{pack_digest:record.pack_digest,requirement}});
+    this.name='MissingRulingSummaryError';
+  }
+}
+export function hasRulingSummary(record:RunRecord):record is RunRecordView {
+  return record.requirements.every(row=>row.rules!==undefined && row.run_interpreters!==undefined);
+}
+export function summaryOf(record: RunRecord, workflow?:Pick<LoadedWorkflow,'pack'|'requirements'|'checks'|'ledger'>): RunSummary {
+  const {accepted_criteria:_ac,criterion_requests:_cr,criterion_review:_cv,predecessor_access:_pa, runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, lease_registrations: _lr, ...summary } = record;
+  const requirements=record.requirements.map(row=>{
+    if(row.rules!==undefined && row.run_interpreters!==undefined)return row;
+    const template=workflow?.requirements.find(t=>t.key===row.key);
+    if(!workflow || !template || workflow.pack.digest!==record.pack_digest || `${workflow.pack.id}@${workflow.pack.version}`!==record.pack)throw new MissingRulingSummaryError(record,row.key);
+    const ruling=requirementSummary(template,workflow.ledger,workflow.checks,`${workflow.pack.id}@${workflow.pack.version}`);
+    return {...row,rules:ruling.rules,run_interpreters:ruling.run_interpreters};
+  });
+  return RunSummary.parse({...summary,requirements});
 }
 
 const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -134,7 +151,7 @@ async function lineageOf(ctx: EngineContext, runId: string, predecessor: string 
   for (let depth = 0; depth < 20 && at !== undefined; depth++) {
     lineage.add(at);
     const record = await runById(ctx.deps.records.store, at);
-    at = record?.body.predecessor;
+    at = record?.body.predecessor_access==='view'?undefined:record?.body.predecessor;
   }
   return lineage;
 }
@@ -242,8 +259,8 @@ export function refused(errors: ProtocolError[]): StartRunDetail {
 const MAX_WARNINGS = 100;
 
 /** The ok answer of a run: its summary and, for a production run, the result the Hub computed (StartRunOutput.result). */
-function okAnswer(record: RunRecord, production: ProductionResult | null): StartRunAnswer {
-  return { call_result: 'ok', errors: [], run: summaryOf(record), ...(production !== null ? { result: { reference: production.reference, counts: production.counts } } : {}) };
+function okAnswer(record: RunRecord, production: ProductionResult | null, workflow?:LoadedWorkflow): StartRunAnswer {
+  return { call_result: 'ok', errors: [], run: summaryOf(record,workflow), ...(production !== null ? { result: { reference: production.reference, counts: production.counts } } : {}) };
 }
 
 /** Why a client key cannot be an index value of the records (no NUL, at most 1000 UTF-8 bytes with its owner), or null. */
@@ -364,11 +381,14 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
           throw new Refusal([protocolError('IDEMPOTENCY_MISMATCH', `客户端键 ${key} 已经用于内容不同的 start_run（运行 ${existing.body.run}）`, { path: '/client_key' })]);
         }
         const production = await productionOf(ctx, existing);
-        return { answer: okAnswer(existing.body, production), production, runRecord: existing.digest, ...(await gapsOf(ctx, existing.body)) };
+        const answer=okAnswer(existing.body, production, hasRulingSummary(existing.body)?undefined:(await ctx.deps.workflows.byDigest(existing.body.pack_digest))??undefined),notices=await criterionNotices(ctx,existing.body);
+        if(notices.length)answer.run!.criterion_changes=notices;
+        return {answer,production,runRecord:existing.digest,...await gapsOf(ctx,existing.body)};
       }
       return fresh();
     });
   } catch (error) {
+    if(error instanceof MissingRulingSummaryError)return refused([protocolError('SOURCE_UNAVAILABLE',error.message,{path:'/pack',fix:error.fix!})]);
     if (!(error instanceof Refusal)) throw error;
     if (error.adminNote !== null) ctx.log({ traceId: call.traceId, run: null, what: 'start_run', detail: error.adminNote });
     return refused(error.errors);
@@ -465,9 +485,9 @@ async function startFresh(
   let predecessor: StoredRecord<RunRecord> | null = null;
   if (input.predecessor !== undefined) {
     predecessor = await runById(store, input.predecessor);
-    if (predecessor === null || !canSeeRun(user, predecessor.body)) throw unavailable('/predecessor', `predecessor ${input.predecessor} is unknown or not visible to ${user.id}`);
+    if (predecessor === null || !(workflow.workflow.predecessor_access==='view'?await canViewRun(user,predecessor.body,store):canSeeRun(user, predecessor.body))) throw unavailable('/predecessor', `predecessor ${input.predecessor} is unknown or not visible to ${user.id}`);
   }
-  if (workflow.requirements.some(t => t.independent_of !== undefined)) {
+  if (workflow.requirements.some(t => t.independent_of !== undefined&&!t.independence_by_account)) {
     if (sessionOf(call) === null) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '独立复核运行缺少本会话的 id，运行没有开始', {path:'',fix:'在请求头 Circle-Session-Id 里带上本会话的 id（1 到 200 个可打印 ASCII 字符），原样再开始'})]);
     if (predecessor !== null) {
       const author = await authorOriginOf(ctx, {...predecessor.body, pack: `${workflow.pack.id}@${workflow.pack.version}`, predecessor: predecessor.body.run, sources: []});
@@ -505,6 +525,8 @@ async function startFresh(
   const bound = await bindInputs(ctx, user, workflow, input.inputs, runId, call.traceId, target.root?.composition ?? null,selectedBuild,variables,target.unversionedRoot ? {root:target.unversionedRoot.root,composition:target.unversionedRoot.composition} : null);
   // The projection runs before any group exists; the expected sources and the checks see the frozen groups. The builds of
   // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
+  const criterionReview=await prepareCriterionReview(ctx,user,workflow,bound,predecessor?.body??null);
+  const criterionSnapshot=workflow.workflow.predecessor_access==='view'?{refs:[],requests:[],criteria:[],notices:[]}:await freezeCriteria(ctx,predecessor?.body??null,workflow.pack.id,startedAt);
   const builds = await contextBuilds(ctx, workflow, target.product?.product.id ?? null);
   // The lease view is taken BEFORE the projection runs, so the projection sees real rows, none of them this run's own
   // acquisitions. Rows this run's lineage already holds (the holder run sits in the predecessor chain, same user; D04
@@ -514,12 +536,14 @@ async function startFresh(
   const leaseView = await contextLeases(ctx, workflow, user);
   const leaseRows = leaseView?.entries ?? null;
   let leaseLineageHolders = new Set<string>();
-  if (leaseRows !== null && leaseRows.length > 0 && predecessor !== null && ctx.deps.leases !== undefined) {
+  if (leaseRows !== null && leaseRows.length > 0 && predecessor !== null && workflow.workflow.predecessor_access!=='view' && ctx.deps.leases !== undefined) {
     const lineage = await lineageOf(ctx, runId, predecessor.body.run);
     const holders = await ctx.deps.leases.holders(leaseRows.map((row) => row.key));
     leaseLineageHolders = new Set(holders.filter((row) => row.user === user.id && lineage.has(row.run)).map((row) => row.key));
   }
   const context: RunContext = {
+    ...(criterionSnapshot.criteria.length?{accepted_criteria:criterionSnapshot.criteria}:{}),
+    ...(criterionReview?{criterion_review:criterionReview.context}:{}),
     product: target.product?.product.id ?? null,
     names: target.product?.product.names ?? [],
     line: target.line,
@@ -536,12 +560,12 @@ async function startFresh(
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
   let grantedLeases: Array<LeaseDone> = [];
   try {
-    grantedLeases = await grantLeases(ctx, user, workflow, projection.leaseRequests, runId, predecessor?.body.run);
+    grantedLeases = await grantLeases(ctx, user, workflow, projection.leaseRequests, runId, workflow.workflow.predecessor_access==='view'?undefined:predecessor?.body.run);
   let items = projection.items;
   const packId = workflow.pack.id;
   const previous = predecessor;
   const handover = previous !== null && bound.some((b) => b.record !== null && b.record.run === previous.body.run);
-  if (previous !== null && !handover && packIdOf(previous.body.pack) === packId) {
+  if (previous !== null && workflow.workflow.predecessor_access!=='view' && !handover && packIdOf(previous.body.pack) === packId) {
     const shaOf = (reference: string): string | null => /^src:([0-9a-f]{64})$/.exec(reference)?.[1] ?? null;
     const boundShas = new Set<string>([...bound.map((b) => b.sha256), ...expected.sources.map((s) => shaOf(s.reference)).filter((s): s is string => s !== null)]);
     const boundRecords = new Set(bound.flatMap((b) => (b.record !== null ? [b.record.digest] : [])));
@@ -566,7 +590,7 @@ async function startFresh(
       items,
     );
     items = items.map((it) => {
-      const reuse = offers.get(it.id);
+      const reuse = criterionSnapshot.criteria.some(change=>change.item===it.id)?undefined:offers.get(it.id);
       return reuse === undefined ? it : { ...it, reuse };
     });
   }
@@ -583,6 +607,8 @@ async function startFresh(
   const effectRegistry=await ctx.deps.effectRegistry?.snapshot(variables);
   const record: RunRecord = RunRecord.parse({
     ...(effectRegistry??{}),
+    ...(criterionSnapshot.refs.length?{accepted_criteria:criterionSnapshot.refs}:{}),
+    ...(criterionSnapshot.requests.length?{criterion_requests:criterionSnapshot.requests}:{}),
     run: runId,
     pack: `${workflow.pack.id}@${workflow.pack.version}`,
     pack_digest: workflow.pack.digest,
@@ -594,13 +620,15 @@ async function startFresh(
     ...(target.unversionedRoot ? { unversioned_root: target.unversionedRoot.root } : {}),
     sources: [...bound.map((b) => b.binding), ...expected.sources],
     ...(defaulted.defaults.length?{input_defaults:defaulted.defaults}:{}),
-    requirements: workflow.requirements.map(requirementSummary),
+    requirements: workflow.requirements.map(t=>requirementSummary(t,workflow.ledger,workflow.checks,`${workflow.pack.id}@${workflow.pack.version}`)),
     items,
     ...(slots !== undefined ? { slots } : {}),
     ...(workflow.workflow.outputs===undefined?{}:{outputs:workflow.workflow.outputs}),
     instructions: workflow.instructions,
     instructions_digest: workflow.instructionsDigest,
     ...(predecessor !== null ? { predecessor: predecessor.body.run } : {}),
+    ...(workflow.workflow.predecessor_access==='view'?{predecessor_access:'view' as const}:{}),
+    ...(criterionReview?{criterion_review:criterionReview.marker}:{}),
     ...(session !== null ? { session } : {}),
     started_at: startedAt,
     submission_due: input.submission_due ?? new Date(at.getTime()+86400000).toISOString(),
@@ -656,7 +684,7 @@ async function startFresh(
   const result = production === null ? null : await keepProduction(ctx, stored, production, call);
   if(predecessor!==null)await answerSuccessorRequests(ctx,predecessor.body,stored);
   return {
-    answer: okAnswer(record, result),
+    answer: {...okAnswer(record, result),run:{...summaryOf(record),...(criterionSnapshot.notices.length?{criterion_changes:criterionSnapshot.notices}:{})}},
     production: result,
     runRecord: stored.digest,
     unavailable: expected.unavailable.map(({ external, role }) => ({ external, role })),
