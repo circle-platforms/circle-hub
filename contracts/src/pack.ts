@@ -6,6 +6,8 @@
 import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
 import {
+  EffectClassSchema,
+  EffectTriggerSchema,
   AcceptedProducerSchema,
   CheckTierSchema,
   DoneRuleSchema,
@@ -177,12 +179,36 @@ export const RequirementTemplate = z
   });
 export type RequirementTemplate = z.infer<typeof RequirementTemplate>;
 
+/** W03 public operation parameters; gateway field names stay in the executor deployment definition. */
+export const AllowedEffect=z.strictObject({
+ id:z.string().regex(/^[a-z][a-z0-9_]{0,99}$/),resource_kind:z.literal('executor'),action:z.literal('submit'),
+ effect_class:EffectClassSchema.extract(['job']),
+ parameters:z.union([
+  z.strictObject({values:z.record(z.string().min(1),z.array(z.unknown()).min(1).max(1000))}),
+  z.strictObject({policy:z.string().regex(/^policies\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.json$/),check:z.string().regex(/^[a-z][a-z0-9_]{0,99}$/)}),
+ ]),
+ release:z.strictObject({requirements:z.array(z.string().min(1)).min(1),artifact:z.string().min(1)}),
+ trigger:EffectTriggerSchema,
+ budget:z.strictObject({count:z.number().int().min(1).max(1000000),duration_ms:z.union([z.number().int().min(1).max(86400000000),z.strictObject({executor_max_run_ms:z.literal(true)})])}),
+ deadline_ms:z.number().int().min(1).max(31536000000),optional:z.boolean(),
+ policy_checks:z.array(z.string().min(1)).min(1).max(100),
+}).superRefine((row,ctx)=>{
+ if(row.effect_class!=='job')ctx.addIssue({code:'custom',path:['effect_class'],message:'an executor row only allows a job effect'});
+});
+export type AllowedEffect=z.infer<typeof AllowedEffect>;
+
 export const RequirementsFile = z
   .strictObject({
     schema: z.literal('requirements@1'),
     requirements: z.array(RequirementTemplate).min(1),
+    effects:z.array(AllowedEffect).max(100).optional(),
   })
   .superRefine((f, ctx) => {
+    f.effects?.forEach((row,index)=>{
+      if(f.effects!.findIndex(other=>other.id===row.id)!==index)ctx.addIssue({code:'custom',path:['effects',index,'id'],message:'effect row identities are unique'});
+      for(const key of row.release.requirements)if(!f.requirements.some(requirement=>requirement.key===key))ctx.addIssue({code:'custom',path:['effects',index,'release','requirements'],message:'release requirement is not declared'});
+      if(!f.requirements.some(requirement=>requirement.key===row.release.artifact))ctx.addIssue({code:'custom',path:['effects',index,'release','artifact'],message:'artifact fact requirement is not declared'});
+    });
     f.requirements.forEach((r, i) => {
       if (f.requirements.findIndex((x) => x.key === r.key) !== i) ctx.addIssue({ code: 'custom', path: ['requirements', i, 'key'], message: `requirement ${r.key} is declared twice` });
     });
@@ -415,6 +441,8 @@ export type SlotsFile = z.infer<typeof SlotsFile>;
 
 // ---------------------------------------------------------------- workflow.json (W03)
 
+/** An explicit slot-level default source, including the workflow whose submitted result is accepted. */
+export const PredecessorInputDefault = z.strictObject({pack:PackId});
 export const WorkflowInput = z.strictObject({
   slot: Key,
   role: SourceRoleSchema,
@@ -422,6 +450,11 @@ export const WorkflowInput = z.strictObject({
   accepts: z.array(z.string().min(1)).min(1).describe('media types, or external object types written system:type'),
   required: z.boolean(),
   many: z.boolean(),
+  default_from_predecessor: PredecessorInputDefault.optional().describe('When this artifact slot is absent and predecessor is supplied, bind its latest accepted submitted validation record from this workflow id; explicit inputs always win'),
+}).superRefine((slot,ctx)=>{
+  if(slot.default_from_predecessor===undefined)return;
+  if(slot.role!=='artifact_under_verification')ctx.addIssue({code:'custom',path:['default_from_predecessor'],message:'only an artifact-under-verification input can default from its predecessor'});
+  if(!slot.accepts.some(type=>type.toLowerCase()==='application/json'))ctx.addIssue({code:'custom',path:['accepts'],message:'a predecessor validation record requires application/json'});
 });
 export type WorkflowInput = z.infer<typeof WorkflowInput>;
 

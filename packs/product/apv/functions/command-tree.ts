@@ -3,7 +3,7 @@
 // default_value]. One entry per full command (menu words + item name) at /commands/<words>, a definition (K02 R[3]); the
 // argument lists of one path are the overloads of that entry. Argument types map onto the generic catalog parameter types
 // of hub/rules.
-import type { CatalogParam, CatalogParamType, CatalogSignature } from '../../../../contracts/src/tables.ts';
+import type { CatalogParam, CatalogParamType, CatalogSignature, CatalogUncheckedConstraint } from '../../../../contracts/src/tables.ts';
 import type { CommandEntryData, CommandTreeParams, CommandTreeResult, EntryKind, FragmentRef, ProducedEntry, XmlModel } from './types.ts';
 import { asArray, decodeEntities, guarded, internalError, isRecord, pathText, selectorText, squeeze } from './util.ts';
 
@@ -13,6 +13,8 @@ type Alternative = { type: CatalogParamType; minimum?: number; maximum?: number 
 export const ARGUMENT_TYPES: Readonly<{ [type: string]: readonly Alternative[] }> = {
   STRING: [{ type: 'string' }],
   XSTRING: [{ type: 'string' }],
+  HOSTNAME: [{ type: 'hostname' }],
+  IP_OR_HOSTNAME: [{ type: 'ip_or_hostname' }],
   U16: [{ type: 'int', minimum: 0, maximum: 65535 }],
   U32: [{ type: 'int', minimum: 0, maximum: 4294967295 }],
   // An address of either family (the help texts of these arguments describe IPv4 and IPv6 forms).
@@ -24,7 +26,7 @@ export const ARGUMENT_TYPES: Readonly<{ [type: string]: readonly Alternative[] }
 
 /**
  * Help texts that say an argument of a type takes more than the type's value set (pack data); such an argument is read as
- * a string. Origin: the help texts of the 66 DOTTEDIP arguments of the command tree sampled on 2026-10-21: the 10 that take
+ * a string unless the explicit hostname forms can be represented by the catalog. Origin: the help texts of the 66 DOTTEDIP arguments of the command tree sampled on 2026-10-21: the 10 that take
  * a host name, a URL, a parameter list or an empty value say so with "or ...", "hostname" or "URL"; the other 56 name an
  * IPv4 address only. IPADDR and IPMASK help texts use "or" for their IPv4 and IPv6 forms, which the unions cover.
  */
@@ -34,20 +36,22 @@ export const OTHER_FORMS: Readonly<{ [type: string]: readonly RegExp[] }> = {
 
 const KIND: EntryKind = 'definition';
 
-type Declared = Map<string, { type: string; row: number; command: string; position: number; used: boolean }>;
+type Declared = Map<string, { type?: string; address_role?:string; row: number; command: string; position: number; used: boolean }>;
 
 /** The declared argument types of the producer parameters, by command words and position; malformed rows are warned. */
 function declaredTypes(value: unknown, warnings: string[]): Declared {
   const out: Declared = new Map();
   asArray(value).forEach((item, k) => {
     const row = k + 1;
-    if (!isRecord(item) || typeof item.command !== 'string' || squeeze(item.command) === '' || !Number.isSafeInteger(item.position) || (item.position as number) < 1 || typeof item.type !== 'string') {
+    if (!isRecord(item) || typeof item.command !== 'string' || squeeze(item.command) === '' || !Number.isSafeInteger(item.position) || (item.position as number) < 1 || (typeof item.type!=='string'&&typeof item.address_role!=='string')) {
       warnings.push(`第 ${row} 条声明的参数类型格式不对（要 command、position、type、origin），已忽略`);
       return;
     }
-    const type = item.type.trim().toUpperCase();
-    if (!Object.hasOwn(ARGUMENT_TYPES, type)) {
-      warnings.push(`第 ${row} 条声明的参数类型 ${item.type.slice(0, 40)} 不在类型表里，已忽略`);
+    const type = typeof item.type==='string'?item.type.trim().toUpperCase():undefined;
+    const role=typeof item.address_role==='string'?item.address_role.trim():undefined;
+    if(!type&&!role){warnings.push(`第 ${row} 条声明没有参数类型或有效地址角色，已忽略`);return;}
+    if (type!==undefined&&!Object.hasOwn(ARGUMENT_TYPES, type)) {
+      warnings.push(`第 ${row} 条声明的参数类型 ${String(item.type).slice(0, 40)} 不在类型表里，已忽略`);
       return;
     }
     if (typeof item.origin !== 'string' || item.origin.trim() === '') {
@@ -56,7 +60,7 @@ function declaredTypes(value: unknown, warnings: string[]): Declared {
     }
     const command = squeeze(item.command).toLowerCase();
     const key = `${command}\u0000${item.position}`;
-    if (!out.has(key)) out.set(key, { type, row, command, position: item.position as number, used: false });
+    if (!out.has(key)) out.set(key, { ...(type?{type}:{}),...(role?{address_role:role}:{}), row, command, position: item.position as number, used: false });
   });
   return out;
 }
@@ -100,26 +104,13 @@ function attribute(node: XmlNode, name: string): string {
   return squeeze(decodeEntities(node.attributes[name] ?? ''));
 }
 
-export type Limit =
-  | { kind: 'range'; low: number; high: number }
-  | { kind: 'values'; values: string[] }
-  | { kind: 'number'; value: number }
-  | { kind: 'unknown'; text: string };
-
-/** Ranges `[a - b]` (also `a-b`, `a~b`, `a..b`, `a to b`), enumerations `{a|b}`, `a|b`, `a,b`, or one number. */
-export function parseLimit(text: string): Limit | null {
-  const value = squeeze(text);
-  if (value === '') return null;
-  const range = /^[[(]?\s*(-?[0-9]{1,15})\s*(?:-|~|\.\.|to)\s*(-?[0-9]{1,15})\s*[\])]?$/i.exec(value);
-  if (range) {
-    const low = Number(range[1]);
-    const high = Number(range[2]);
-    return Number.isSafeInteger(low) && Number.isSafeInteger(high) && low <= high ? { kind: 'range', low, high } : { kind: 'unknown', text: value };
-  }
-  if (/^[0-9]{1,15}$/.test(value) && Number.isSafeInteger(Number(value))) return { kind: 'number', value: Number(value) };
-  const list = /^[[{(]?\s*([^\s|,{}()[\]]+(?:\s*[|,]\s*[^\s|,{}()[\]]+)+)\s*[\]})]?$/.exec(value);
-  if (list) return { kind: 'values', values: list[1].split(/\s*[|,]\s*/) };
-  return { kind: 'unknown', text: value };
+export type Limit = {kind:'range';low:number;high:number}|{kind:'unknown';text:string};
+/** Only the documented inclusive bracket form is interpreted; other spellings retain a recovery diagnostic. */
+export function parseLimit(text:string):Limit|null{
+  const value=squeeze(text);if(value==='')return null;
+  const match=/^\[\s*(-?[0-9]{1,15})\s*-\s*(-?[0-9]{1,15})\s*\]$/.exec(value);
+  if(match){const low=Number(match[1]),high=Number(match[2]);if(Number.isSafeInteger(low)&&Number.isSafeInteger(high)&&low<=high)return {kind:'range',low,high};}
+  return {kind:'unknown',text:value};
 }
 
 function optionalFlag(text: string, where: string, warnings: string[]): boolean {
@@ -137,66 +128,27 @@ function defaultOf(text: string): string | undefined {
   return quoted ? quoted[1] : value;
 }
 
-/** Applies a limit or length attribute to the alternatives of one argument. */
-function applyLimit(params: CatalogParam[], found: Limit | null, attributeName: 'limit' | 'length', where: string, warnings: string[]): void {
-  if (found === null) return;
-  const ignored = (param: CatalogParam): void => {
-    warnings.push(`${where} 是 ${param.type} 类型，${attributeName}=${describeLimit(found)} 不适用，已忽略`);
+/** Unknown source syntax stays independently unchecked, not a guessed generic constraint. */
+function applyLimit(params:CatalogParam[],raw:string,attributeName:'limit'|'length',path:string,warnings:string[]):void{
+  const parsed=parseLimit(raw);if(parsed===null)return;
+  let warned=false;
+  const unchecked=(param:CatalogParam)=>{
+    const relative='.'+path.slice(path.lastIndexOf('/arguments'));
+    const gap:CatalogUncheckedConstraint={path:`${relative}/@${attributeName}`,reason:'missing_input',missing:'这种 limit 写法的含义',next_action:'包作者在 README 声明这种 limit 写法的含义后重产',source_value:raw};
+    (param.unchecked_constraints??=[]).push(gap);
+    if(!warned){warnings.push(`${path}/@${attributeName}（参数内路径 ${gap.path}）的 limit 写法不认识（${attributeName}=${JSON.stringify(raw)}），这条约束未核对；缺失事实：${gap.missing}；下一步：${gap.next_action}`);warned=true;}
   };
-  for (const param of params) {
-    if (found.kind === 'unknown') {
-      warnings.push(`${where} 的 ${attributeName}=${found.text.slice(0, 40)} 认不出，已忽略`);
-      return;
+  for(const param of params){
+    if(attributeName!=='limit'||parsed.kind!=='range'){unchecked(param);continue;}
+    if(param.type==='string'||param.type==='hostname'||param.type==='ip_or_hostname'){
+      if(parsed.low<0){unchecked(param);continue;}param.minLength=parsed.low;param.maxLength=parsed.high;continue;
     }
-    if (found.kind === 'values') {
-      if (param.type !== 'string' && param.type !== 'int') {
-        ignored(param);
-        continue;
-      }
-      param.type = 'enum';
-      param.values = [...found.values];
-      delete param.minimum;
-      delete param.maximum;
-      delete param.minLength;
-      delete param.maxLength;
-      continue;
+    if(param.type==='int'||param.type==='port'){
+      const low=Math.max(parsed.low,param.minimum??parsed.low),high=Math.min(parsed.high,param.maximum??parsed.high);
+      if(low>high){unchecked(param);continue;}param.minimum=low;param.maximum=high;continue;
     }
-    if (param.type === 'string') {
-      const [low, high] = found.kind === 'range' ? [found.low, found.high] : [0, found.value];
-      if (low < 0 || (found.kind === 'number' && attributeName === 'limit')) {
-        if (found.kind === 'number') warnings.push(`${where} 的 limit=${found.value} 只有一个数，含义不明，已忽略`);
-        else warnings.push(`${where} 的长度范围有负数，已忽略`);
-        continue;
-      }
-      if (found.kind === 'range') param.minLength = low;
-      param.maxLength = high;
-      continue;
-    }
-    if (param.type === 'int' && attributeName === 'limit' && found.kind === 'range') {
-      const min = Math.max(found.low, param.minimum ?? found.low);
-      const max = Math.min(found.high, param.maximum ?? found.high);
-      if (min > max) {
-        warnings.push(`${where} 的 limit [${found.low} - ${found.high}] 与类型范围不相交，保留类型范围`);
-        continue;
-      }
-      if (found.low < (param.minimum ?? found.low) || found.high > (param.maximum ?? found.high)) warnings.push(`${where} 的 limit 超出类型范围，按类型收窄`);
-      param.minimum = min;
-      param.maximum = max;
-      continue;
-    }
-    if (param.type === 'int' && found.kind === 'number') {
-      warnings.push(`${where} 的 ${attributeName}=${found.value} 只有一个数，含义不明，已忽略`);
-      continue;
-    }
-    ignored(param);
+    unchecked(param);
   }
-}
-
-function describeLimit(limit: Limit): string {
-  if (limit.kind === 'range') return `[${limit.low} - ${limit.high}]`;
-  if (limit.kind === 'values') return limit.values.join('|');
-  if (limit.kind === 'number') return String(limit.value);
-  return limit.text;
 }
 
 /** Type text of one alternative in a statement: string 1..40, int 0..65535, {tcp|udp}, ipv4. */
@@ -214,7 +166,7 @@ type SourceParam = { name: string; alternatives: CatalogParam[]; optional: boole
 type TypeCounters = { unknown: Map<string, number>; otherForms: Map<string, number> };
 
 /** One argument: its catalog alternatives (several for a union type) and its text in the statement. */
-function argumentParam(arg: XmlNode, position: number, where: string, warnings: string[], counters: TypeCounters, declared: Declared): SourceParam {
+function argumentParam(arg: XmlNode, position: number, where: string, warnings: string[], counters: TypeCounters, declared: Declared,parameterPath:string): SourceParam {
   const argName = attribute(arg, 'name');
   const name = argName === '' ? `arg${position}` : argName.replace(/\s+/g, '_');
   const at = `${where} 参数 ${name}`;
@@ -223,8 +175,9 @@ function argumentParam(arg: XmlNode, position: number, where: string, warnings: 
   const declaration = declared.get(`${where.toLowerCase()}\u0000${position}`);
   if (declaration !== undefined) {
     declaration.used = true;
-    typeName = declaration.type;
-  } else if (Object.hasOwn(OTHER_FORMS, typeName) && OTHER_FORMS[typeName].some((pattern) => pattern.test(description))) {
+    if(declaration.type!==undefined)typeName = declaration.type;
+  }
+  if (declaration?.type===undefined && !/\bhost[ -]*names?\b/i.test(description) && Object.hasOwn(OTHER_FORMS, typeName) && OTHER_FORMS[typeName].some((pattern) => pattern.test(description))) {
     counters.otherForms.set(typeName, (counters.otherForms.get(typeName) ?? 0) + 1);
     typeName = 'STRING';
   }
@@ -234,16 +187,23 @@ function argumentParam(arg: XmlNode, position: number, where: string, warnings: 
     const key = typeName === '' ? '（空）' : typeName.slice(0, 40);
     counters.unknown.set(key, (counters.unknown.get(key) ?? 0) + 1);
   }
+  if(declaration?.type===undefined&&(typeName==='DOTTEDIP'||typeName==='IPADDR')&&/\bhost[ -]*names?\b/i.test(description)){
+    if(/\burls?\b|\blist\b|\bempty\b/i.test(description)){
+      alternatives=[{type:'string'}];counters.otherForms.set(typeName,(counters.otherForms.get(typeName)??0)+1);
+    }else if(!/\bip(?:v[46])?\b|\baddress(?:es)?\b/i.test(description))alternatives=[{type:'hostname'}];
+    else alternatives=typeName==='DOTTEDIP'?[{type:'ipv4'},{type:'hostname'}]:[{type:'ip_or_hostname'}];
+  }
   const optional = optionalFlag(attribute(arg, 'optional'), at, warnings);
   const defaultValue = defaultOf(arg.attributes.default_value ?? '');
   const params: CatalogParam[] = alternatives.map((alternative) => {
     const param: CatalogParam = { name, type: alternative.type };
+    const role=declaration?.address_role??attribute(arg,'address_role');if(role)param.address_role=role;
     if (alternative.minimum !== undefined) param.minimum = alternative.minimum;
     if (alternative.maximum !== undefined) param.maximum = alternative.maximum;
     return param;
   });
-  applyLimit(params, parseLimit(arg.attributes.limit ?? ''), 'limit', at, warnings);
-  applyLimit(params, parseLimit(arg.attributes.length ?? ''), 'length', at, warnings);
+  applyLimit(params,arg.attributes.limit??'','limit',parameterPath,warnings);
+  applyLimit(params,arg.attributes.length??'','length',parameterPath,warnings);
   for (const param of params) {
     if (optional) param.optional = true;
     if (defaultValue !== undefined) param.default = defaultValue;
@@ -261,6 +221,8 @@ function asStringParam(param: SourceParam): CatalogParam {
   if (param.optional) out.optional = true;
   if (param.default !== undefined) out.default = param.default;
   if (param.description !== undefined) out.description = param.description;
+  const role=param.alternatives[0]?.address_role;if(role)out.address_role=role;
+  const gaps=param.alternatives.flatMap(alternative=>alternative.unchecked_constraints??[]);if(gaps.length)out.unchecked_constraints=[...new Map(gaps.map(gap=>[gap.path,gap])).values()];
   return out;
 }
 
@@ -286,7 +248,7 @@ function expand(params: SourceParam[], id: string, where: string, warnings: stri
   return lists.map((list, j) => ({ id: `${id}.${j + 1}`, params: list }));
 }
 
-type Overload = { item: XmlNode; selector: string; argumentLists: XmlNode[][] };
+type Overload = { item: XmlNode; selector: string; argumentLists: Array<Array<{node:XmlNode;path:string}>> };
 type Frame = { node: XmlNode; steps: string[]; words: string[] };
 
 export function produceCommandEntries(model: XmlModel, params: CommandTreeParams = {}): CommandTreeResult {
@@ -320,9 +282,9 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
           badSelector++;
           continue;
         }
-        const argumentLists: XmlNode[][] = [];
-        for (const { node: part } of elementChildren(node)) {
-          if (part.name === 'arguments') argumentLists.push(elementChildren(part).filter(({ node: arg }) => arg.name === 'arg').map(({ node: arg }) => arg));
+        const argumentLists: Overload['argumentLists'] = [];
+        for (const { node: part,step:partStep } of elementChildren(node)) {
+          if (part.name === 'arguments') argumentLists.push(elementChildren(part).filter(({ node: arg }) => arg.name === 'arg').map(({ node: arg,step:argStep }) => ({node:arg,path:`${selector}/${partStep}/${argStep}`})));
         }
         if (argumentLists.length === 0) argumentLists.push([]);
         const key = words.join(' ');
@@ -378,11 +340,11 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
         for (const args of overload.argumentLists) {
           fragments.push({ parser: PARSER, selector: overload.selector });
           if (args.length > MAX_PARAMS) warnings.push(`${where} 的参数超过 ${MAX_PARAMS} 个，只取前 ${MAX_PARAMS} 个`);
-          const sourceParams = args.slice(0, MAX_PARAMS).map((arg, index) => argumentParam(arg, index + 1, where, warnings, counters, declared));
+          const sourceParams = args.slice(0, MAX_PARAMS).map((arg, index) => argumentParam(arg.node, index + 1, where, warnings, counters, declared,arg.path));
           signatures.push(...expand(sourceParams, String(fragments.length), where, warnings));
           lines.push([where, ...sourceParams.map((param) => param.label)].join(' '));
           if (summary !== '') lines.push(`  ${summary}`);
-          for (const param of sourceParams) if (param.description !== undefined) lines.push(`  ${param.name}: ${param.description}`);
+          for (const param of sourceParams){if (param.description !== undefined) lines.push(`  ${param.name}: ${param.description}`);for(const gap of param.alternatives[0].unchecked_constraints??[])lines.push(`  ${param.name} 约束未核对：${gap.path}；缺失事实：${gap.missing}；下一步：${gap.next_action}`);}
         }
       }
       const data: CommandEntryData = { words, signatures };

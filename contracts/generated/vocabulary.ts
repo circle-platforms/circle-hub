@@ -3,6 +3,8 @@
 import { z } from 'zod';
 
 export const AXES = {
+  effect_trigger: { label: '触发方式', owner: 'W03', values: [{ code: 'runner_session', label: '由运行者会话经效果写入发起' }, { code: 'hub_template', label: '放行条件满足后由 Hub 按模板派发' }] },
+  write_interaction: { label: '交互方式', owner: 'D03', values: [{ code: 'submit_then_read', label: '提交一次，再读状态和结果' }] },
   nature: { label: '性质', owner: 'B01', values: [{ code: 'fact', label: '事实' }, { code: 'judgment', label: '判断' }, { code: 'unknown', label: '未知' }] },
   basis_rank: { label: '依据等级', owner: 'A02', values: [{ code: 'rule_over_observation', label: '观察上的规则' }, { code: 'rule_over_claims', label: '主张上的规则' }, { code: 'judgment', label: '判断' }, { code: 'relay', label: '转述' }] },
   provenance_type: { label: '来源类型', owner: 'A01', values: [{ code: 'observed', label: '观察' }, { code: 'projected', label: '投影' }, { code: 'declared', label: '声明' }, { code: 'candidate', label: '候选' }] },
@@ -76,6 +78,24 @@ export const AXES = {
 } as const;
 
 export type AxisName = keyof typeof AXES;
+
+/** 触发方式 (W03) */
+export const EFFECT_TRIGGER = ['runner_session', 'hub_template'] as const;
+export type EffectTrigger = (typeof EFFECT_TRIGGER)[number];
+export const EFFECT_TRIGGER_LABEL = { 'runner_session': '由运行者会话经效果写入发起', 'hub_template': '放行条件满足后由 Hub 按模板派发' } as const satisfies { readonly [K in EffectTrigger]: string };
+export const EffectTriggerSchema = z.enum(EFFECT_TRIGGER);
+export function isEffectTrigger(value: unknown): value is EffectTrigger {
+  return (EFFECT_TRIGGER as readonly unknown[]).includes(value);
+}
+
+/** 交互方式 (D03) */
+export const WRITE_INTERACTION = ['submit_then_read'] as const;
+export type WriteInteraction = (typeof WRITE_INTERACTION)[number];
+export const WRITE_INTERACTION_LABEL = { 'submit_then_read': '提交一次，再读状态和结果' } as const satisfies { readonly [K in WriteInteraction]: string };
+export const WriteInteractionSchema = z.enum(WRITE_INTERACTION);
+export function isWriteInteraction(value: unknown): value is WriteInteraction {
+  return (WRITE_INTERACTION as readonly unknown[]).includes(value);
+}
 
 /** 性质 (B01) */
 export const NATURE = ['fact', 'judgment', 'unknown'] as const;
@@ -708,6 +728,8 @@ export function isKnowledgeCount(value: unknown): value is KnowledgeCount {
 }
 
 export interface AxisValues {
+  effect_trigger: EffectTrigger;
+  write_interaction: WriteInteraction;
   nature: Nature;
   basis_rank: BasisRank;
   provenance_type: ProvenanceType;
@@ -781,6 +803,8 @@ export interface AxisValues {
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
+  effect_trigger: EFFECT_TRIGGER_LABEL,
+  write_interaction: WRITE_INTERACTION_LABEL,
   nature: NATURE_LABEL,
   basis_rank: BASIS_RANK_LABEL,
   provenance_type: PROVENANCE_TYPE_LABEL,

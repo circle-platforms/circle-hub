@@ -12,8 +12,8 @@ test('position counts match report summaries while the board counts commandless 
  const w=await countWorld(postgres,{commandlessOverlap:true});t.after(()=>w.close());
  const report=await w.knowledge.syncProduct(w.product);const build=report.builds[0];assert.equal(build.outcome,'produced',build.reason);
  const at={build:build.name,root:build.root!,composition:build.composition!};
- const counts=await w.knowledge.views.facets(w.product.id,at,'case',['line','module','has_expected','vague_expected','negative'],new Set(),null);
- const commands=await w.knowledge.views.facets(w.product.id,at,'case',['commands'],new Set(),null);
+ const counts=await w.knowledge.views.facets(w.product.id,at,'case',['line','module','has_expected','vague_expected','negative'],new Set(), null, undefined, null);
+ const commands=await w.knowledge.views.facets(w.product.id,at,'case',['commands'],new Set(), null, undefined, null);
  assert.deepEqual(commands.totals.entry_counts,build.entry_counts);
  assert.equal(commands.totals.entry_counts?.unplaced,3);
  assert.equal(commands.totals.empty.commands,4,'the placed overlap still has no command; the board business rule stays unchanged');

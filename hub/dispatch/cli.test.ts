@@ -17,6 +17,7 @@ test('executor registration never reads stdin and accepts named credential refer
   const file = join(c.kit.dataDir, 'executor.json'); await writeFile(file, JSON.stringify({...definition(c.endpoint.endpoint),credential:'${secret:DEMO_AUTH}'}));
   assert.equal(await executorCommand(s, ['add', file]), 0);
   assert.equal(await executorCommand(s, ['list']), 0);
+  assert.match(s.lines.join('\n'),/写声明未写/);
   assert.ok(!s.lines.join('\n').includes(c.endpoint.endpoint)); assert.ok(!s.lines.join('\n').includes('synthetic-second-key'));
   assert.ok(adminCommands().some(c => c.name === 'executor')); assert.ok(adminCommands().some(c => c.name === 'job'));
 });
@@ -52,7 +53,7 @@ test('invalid or misplaced flags never echo argument values and commands close o
   let closed = 0; c.service.options.close = async () => { closed++; };
   const source = c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as any;
   source.plan_run = 'different';
-  await assert.rejects(jobCommand(s, ['dispatch', '--run', c.run, '--executor', c.executor.id]));
+  assert.equal(await jobCommand(s, ['dispatch', '--run', c.run, '--executor', c.executor.id]),1);
   assert.equal(closed, 1);
 });
 
@@ -88,8 +89,8 @@ test('numeric audit ids require an explicit flag and unsafe integers are rejecte
 test('conformance CLI exports evidence without printing deployment data or submitting a dispatch intent', async t => {
   const { setupJournal } = await import('./testing/journal.ts'); const c = await setupJournal({uncertified:true}); t.after(()=>c.close()); const s = session(c);
   const save = join(c.kit.dataDir,'conformance');
-  assert.equal(await jobCommand(s,['conformance','--executor',c.executor.id,'--save',save]),0);
-  assert.equal((await readdir(save)).length,5);
+  assert.equal(await jobCommand(s,['conformance','--executor',c.executor.id,'--save',save]),1);
+  assert.equal((await readdir(save)).length,2);
   assert.doesNotMatch(s.lines.join('\n'),/synthetic-secret|synthetic-bed|synthetic-remote|127\.0\.0\.1/);
   assert.ok(s.lines.some(line=>line.includes('结果引用 src:')));
 });

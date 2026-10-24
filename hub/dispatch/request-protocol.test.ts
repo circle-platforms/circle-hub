@@ -19,12 +19,11 @@ test('certified pre-device refusals permit a new numbered attempt but device-rea
     const c = await setup({ mode: 'reject', alter: (name, value) => name === 'send_blob' ? { ...value, phase: 'admission', touched: reached } : value }); t.after(() => c.close());
     const proof = await c.kit.artifacts.ingest({ bytes: new TextEncoder().encode('synthetic request journal certification'), mediaType: 'text/plain', origin: { upload: { session: 'synthetic' } }, author: { user: c.admin.id }, provenanceType: 'declared', visibility: { readers: [c.admin.id], admins: true, packs: [], shareable: false } });
     await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, premises: { request_journal: { version: '1', evidence: [`src:${proof.body.sha256}`] } }, receipt: { ...c.executor.definition.receipt, stage: '/phase', reached_device: '/touched', stages: { admission: 'target_rejected' } } });
+    await c.freezeExecutor();
     const result = await c.service.dispatch(c.admin, c.run, c.executor.id);
     assert.equal(result.outcome, reached ? 'unknown' : 'target_rejected');
     assert.equal(result.frozen, reached);
     if (!reached) {
-      const current=await c.registry.get(c.executor.id);
-      await c.registry.update(c.admin,c.executor.id,{...current!.definition,poll_ms:current!.definition.poll_ms+1});
       const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
       const intents = await c.kit.store.findMany({ kind: 'action', key: 'dispatch.lineage', values: [c.run] });
       assert.ok(next.job !== result.job);
@@ -57,12 +56,12 @@ test('absence proves nonexecution only beyond the deadline and within certified 
   }
 });
 
-test('conformance collects four harmless request journal observations in one lease', async t => {
+test('conformance collects only read-only request journal evidence in one lease', async t => {
   const { setupJournal } = await import('./testing/journal.ts'); const c = await setupJournal({uncertified:true}); t.after(()=>c.close());
   const result = await c.service.conformance(c.admin,c.executor.id);
   const events = await c.service.journal.events(result.job);
-  assert.equal(events.at(-1)!.body.detail.conformance_verified,true);
-  assert.deepEqual(c.calls,['open_slot','lookup_blob','send_blob','send_blob','lookup_blob','close_slot']);
+  assert.equal(events.at(-1)!.body.detail.conformance_verified,false);
+  assert.deepEqual(c.calls,['open_slot','lookup_blob','close_slot']);
   assert.equal(events.some(e=>e.body.detail.phase==='intent'),false);
   assert.ok(result.result);
 });

@@ -31,3 +31,14 @@ test('definitions reject external plaintext, unlisted calls, invalid mapping val
     { ...definition('http://127.0.0.1:1/mcp'), status: { pointer: '/state', map: { fake: { effect_outcome: 'invented' } } } },
   ]) await assert.rejects(addSyntheticExecutor(kit,registry,admin,input,'synthetic-secret'));
 });
+
+test('write declarations preserve source positions and restrict executors to job effects',async()=>{
+ const {ExecutorDefinition,ExecutorSource}=await import('../../contracts/src/resources.ts');
+ const raw=definition('http://127.0.0.1:1/mcp');
+ const write={interaction:'submit_then_read',effect_class:'job',retry_safety:'same_key_safe',signing:'service_on_behalf',reversible:false,target_key:{$value:'resources'},audience:null,evidence:{call:raw.calls.result.tool,pointer:raw.result.sha256},refusal:{stage:'/stage',reached_device:'/reached'},writes_hub_records:true};
+ const value={...raw,receipt:{...raw.receipt,stage:'/stage',reached_device:'/reached'},calls:{...raw.calls,submit:{...raw.calls.submit,write}}};
+ assert.ok(ExecutorDefinition.safeParse(value).success);assert.ok(ExecutorSource.safeParse(value).success);
+ for(const patch of [{effect_class:'sync_write'},{audience:'outside-space'},{writes_hub_records:false},{evidence:{call:'wrong',pointer:'/digest'}}])assert.equal(ExecutorDefinition.safeParse({...value,calls:{...value.calls,submit:{...value.calls.submit,write:{...write,...patch}}}}).success,false);
+ assert.equal(ExecutorSource.safeParse({...value,environment:'${var:DEMO_ENV}'}).success,false);
+ assert.equal(ExecutorSource.safeParse({...value,calls:{...value.calls,submit:{...value.calls.submit,write:{...write,target_key:'${var:DEMO_TARGET}'}}}}).success,false);
+});

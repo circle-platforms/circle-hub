@@ -73,3 +73,5 @@ export type {
 } from './resolve.ts';
 
 export { canonicalJson, recordDigest } from './canonical-json.ts';
+
+export {readContainerMembers} from './container.ts';

@@ -26,12 +26,15 @@ for(const declared of [false,true])test(`a ${declared?'cross-origin':'undeclared
  const location=declared?'http://192.0.2.2/else':'/else';
  const w=await world(t,declared?{redirects:{same_origin:true,max_hops:1}}:{},()=>new Response('',{status:302,headers:{location}}),i=>({requests:i.round===1?[{key:'one',route:'read',params:{key:'one'}}]:[],done:true}));
  const result=await w.external();assert.ok(!result.ok && result.inputError?.code==='SOURCE_REDIRECT_REFUSED',JSON.stringify(result));if(result.ok)return;
+ assert.match(result.manifest??'',/^[0-9a-f]{64}$/);
+ const manifest=ReadManifest.parse((await w.kit.records.store.get(result.manifest!))!.body);assert.equal(manifest.requests[0].status,302);assert.equal(manifest.result,'error');
  assert.equal(result.redirect?.location,location);assert.match(result.inputError!.message,/302/);assert.match(result.inputError!.fix,/资源管理员/);assert.equal(w.paths.length,1);
 });
 test('declared pagination cannot silently complete beyond its page bound',async t=>{
  const w=await world(t,{pagination:{max_pages:2}},()=>new Response('{}'),i=>({requests:[{key:'p'+i.round,route:'read',params:{key:'p'+i.round}}],done:i.round===3}));
  const result=await w.read();assert.ok(!result.ok && result.code==='READ_LIMIT',JSON.stringify(result));assert.equal(w.paths.length,2);
  const external=await w.external();assert.ok(!external.ok && external.inputError?.code==='SOURCE_READ_LIMIT');
+ assert.match(external.manifest??'',/^[0-9a-f]{64}$/);const manifest=ReadManifest.parse((await w.kit.records.store.get(external.manifest!))!.body);assert.equal(manifest.error_code,'READ_LIMIT');assert.equal(manifest.requests.length,2);
 });
 test('redirect hop bounds and the allow list prevent another fetch',async t=>{
  const w=await world(t,{redirects:{same_origin:true,max_hops:1}},()=>new Response('',{status:302,headers:{location:'/two'}}),i=>i.round===1?{requests:[{key:'one',route:'read',params:{key:'one'}}],done:false}:{requests:[{key:i.round===2?'two':'three',route:'read',href:'/two',against:i.round===2?'one':'two'}],original:'three',done:i.round===3});

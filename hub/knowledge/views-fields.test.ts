@@ -199,7 +199,7 @@ describe('the fields parameter of the index view', () => {
       catalogs: [],
     };
     const composition = new CompositionView(store as never, 'rcd_00000000000000000000000000', body as never);
-    const views = new KnowledgeViews({ limits: { maxViewBytes: 96 * 1024 * 1024 } } as never, {} as never, { compositionOf: async () => composition } as never);
+    const views = new KnowledgeViews({ limits: { maxViewBytes: 96 * 1024 * 1024 } } as never, {rootOfBuild:async()=>null} as never, { compositionOf: async () => composition, compositionsOf:async()=>[composition] } as never);
     const slim = await views.index('acme', { build: A, root }, 'case', 'defects', null, ['document', 'node', 'title']);
     assert.equal(slim.truncated, false, slim.notes.join('\n'));
     assert.deepEqual([slim.total_keys, slim.total_entries], [150_000, 150_000]);

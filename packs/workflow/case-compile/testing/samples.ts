@@ -78,8 +78,10 @@ export function writeSamples(): void {
   }
   const bytes = Buffer.from(generateWorkbook(generationFixture()));
   save('positive', 'workbook-bytes', 'workbook_verified', workbookCheckInput(bytes).subject);
+  save('positive','dispatch-policy','dispatch_policy',workbookCheckInput(bytes).subject);
   bytes[10] ^= 1;
   save('negative', 'workbook-bytes', 'workbook_verified', workbookCheckInput(bytes).subject, 'case-compile.workbook_invalid');
+  save('negative','dispatch-policy','dispatch_policy',workbookCheckInput(bytes).subject,'case-compile.workbook_invalid');
   for (const polarity of ['positive', 'negative']) save(polarity, 'quote-mismatch', 'expected_quotes', { item: 'doc-1:c-1', quotes: [{ reference: QUOTE.reference, text: polarity === 'positive' ? QUOTE.text : '不存在的引文' }] }, polarity === 'negative' ? 'QUOTE_MISMATCH' : undefined, { sources: { [QUOTE.reference]: QUOTE.text } });
 }
 if (process.argv[1]?.endsWith('/testing/samples.ts')) writeSamples();

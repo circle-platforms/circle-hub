@@ -22,6 +22,8 @@ import { TreePath, referenceUriOf } from './reference.ts';
 /** Most changed paths and most attached entries one answer holds; beyond it the answer says it is cut and how. */
 export const MAX_IMPACT_PATHS = 20000;
 export const MAX_IMPACT_ENTRIES = 200000;
+/** Structural bound for a complete binding; page producers retain their smaller page limits. */
+export const MAX_INDEX_ENTRIES = 200000;
 
 /** A data field name an entry carries at the top level of its data. */
 export const DataFieldName = z.string().regex(/^[a-z][a-z0-9_]{0,40}$/);
@@ -72,9 +74,27 @@ export const Placement = z.strictObject({
 });
 export type Placement = z.infer<typeof Placement>;
 
+/** Complete document lists live in immutable, independently readable chunks. */
+export const ScopeRoot=z.strictObject({root:Sha256,composition:Sha256,build:z.string().nullable()});
+export const ScopedDocument=z.strictObject({external:z.string().nullable(),sha256:Sha256.optional(),at:z.array(Sha256).optional(),uses:z.array(z.strictObject({producer:z.string(),slot:z.string()})).optional(),producer:z.string().optional(),slot:z.string().optional(),reason:ReasonSchema.optional(),explanation:z.string().optional(),observation:z.string().optional(),next_action:z.string().optional()});
+export type ScopedDocument=z.infer<typeof ScopedDocument>;
+export const ScopeCollection=z.strictObject({total:z.number().int().nonnegative().describe('source observations; versions of one external id are distinguished by composition and byte digest'),parts:z.array(z.strictObject({reference:z.string(),sha256:Sha256,rows:z.number().int().positive()}))});
+export const KnowledgeViewScope=z.strictObject({
+  note:z.string().optional().describe('Explicit extent of the document observations, not a claim about every enterprise document'),
+  roots:z.array(ScopeRoot),additional_roots:z.array(ScopeRoot),additional_roots_declared:z.boolean(),
+  complete:z.boolean().describe('document membership and omissions are fully enumerated; omitted inputs are outside the computed data'),
+  not_in_roots:ScopeCollection.optional().describe('Per-composition source exclusions, even when another declared root covers the same document'),
+  listed_documents:ScopeCollection,elsewhere_documents:ScopeCollection,omitted_documents:ScopeCollection.nullable(),pending_documents:ScopeCollection,missing_optional_sources:ScopeCollection,
+  unplaced_entries:z.number().int().nonnegative(),unplaced_cases:z.strictObject({from:z.number().int().nonnegative(),to:z.number().int().nonnegative()}).optional(),
+  request:z.strictObject({reference:z.string(),audience_user:z.string(),deadline:z.string(),action:z.string()}).optional(),
+});
+export type KnowledgeViewScope=z.infer<typeof KnowledgeViewScope>;
+
 export const ImpactView = z.strictObject({
   unversioned: UnversionedView.nullable().optional(),
   schema: z.literal('impact-view@1'),
+  scope:KnowledgeViewScope.optional(),
+  next: z.string().nullable().optional().describe('Continuation for the same immutable scope; null on the last page'),
   product: z.string().min(1),
   from: z.strictObject({ build: z.string().min(1), root: Sha256 }),
   to: z.strictObject({ build: z.string().min(1), root: Sha256 }),
@@ -87,8 +107,8 @@ export const ImpactView = z.strictObject({
   catalog: Versioned.optional().describe(
     'the request filtered the changes to the members of this catalog, read per root from the declaration of the product and compared by syntax (catalog-entry@1 without the descriptive fields, references and signature ids); absent: no catalog, every entry of the changed kinds counts',
   ),
-  changes: z.array(PathChange).max(MAX_IMPACT_PATHS),
-  placements: z.array(Placement).max(MAX_IMPACT_PATHS).describe('only nodes that hold at least one attached entry'),
+  changes: z.array(PathChange).max(MAX_IMPACT_ENTRIES),
+  placements: z.array(Placement).max(MAX_IMPACT_ENTRIES).describe('only nodes that hold at least one attached entry'),
   entries: z
     .record(Sha256, ViewEntry)
     .describe('every entry named above by digest, once; the references in it are those of the later root, or of the earlier one for an entry that exists only there'),
@@ -116,13 +136,15 @@ const FacetValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 export const FacetView = z.strictObject({
   unversioned: UnversionedView.nullable().optional(),
   schema: z.literal('facet-view@1'),
+  scope:KnowledgeViewScope.optional(),
+  next: z.string().nullable().optional().describe('Continuation for the same immutable scope; null on the last page'),
   product: z.string().min(1),
   build: z.strictObject({ build: z.string().min(1), root: Sha256 }),
   kind: EntryKindSchema.describe('the kind of the entries counted'),
   by: z.array(DataFieldName).min(1).max(6).describe('data fields of the entries; a field that holds a list counts the entry once per element, a missing field is null'),
   rows: z
     .array(z.strictObject({ values: z.record(DataFieldName, FacetValue), count: z.number().int().positive(), unversioned_count: z.number().int().nonnegative().optional(), unversioned_root: Sha256.optional() }))
-    .max(MAX_FACET_ROWS)
+    .max(MAX_INDEX_ENTRIES)
     .describe('one row per distinct combination, sorted by the values in code-unit order'),
   total: z.number().int().nonnegative().describe('entries of the kind in the root, whatever the fields'),
   totals: z.strictObject({
@@ -152,17 +174,18 @@ export type FacetView = z.infer<typeof FacetView>;
  * bound — an entry costs hundreds of bytes, so a full view never gets near this cap; it stays only as a sanity bound when a
  * deployment raises the byte budget (a slim fields view of a big build lists well over 100,000).
  */
-export const MAX_INDEX_ENTRIES = 200000;
 export const MAX_INDEX_PER_KEY = 2000;
 
 export const IndexView = z.strictObject({
   unversioned: UnversionedView.nullable().optional(),
   schema: z.literal('index-view@1'),
+  scope:KnowledgeViewScope.optional(),
+  next: z.string().nullable().optional().describe('Continuation for the same immutable scope; null on the last page'),
   product: z.string().min(1),
   build: z.strictObject({ build: z.string().min(1), root: Sha256 }),
   kind: EntryKindSchema,
   key: DataFieldName.describe('the data field indexed; a list field is indexed by each of its elements'),
-  keys: z.record(z.string(), z.array(Sha256).max(MAX_INDEX_PER_KEY)).describe('field value -> digests of the entries that carry it, sorted'),
+  keys: z.record(z.string(), z.array(Sha256).max(MAX_INDEX_ENTRIES)).describe('field value -> sorted entry digests; one emitted page has at most MAX_INDEX_PER_KEY per key, complete run bindings may collate pages'),
   entries: z.record(Sha256, ViewEntry).describe('those entries, once'),
   fields: z.array(DataFieldName).optional().describe('the request asked for only these data fields per entry: each entry carries them and an empty statement; absent means full entries'),
   only: z.array(z.string()).optional().describe('the requested index values, deduplicated and sorted in UTF-16 code-unit order; absent when the request has no only parameter'),

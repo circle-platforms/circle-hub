@@ -62,18 +62,20 @@ describe('command entries from the command tree', () => {
       { name: 'arg3', type: 'int', minimum: 0, maximum: 65535, description: 'Member port' },
       { name: 'arg4', type: 'int', minimum: 1, maximum: 100, optional: true, default: '10', description: 'Weight (1 to 100, default 10)' },
     ]);
-    assert.deepEqual(data('/commands/demo/pool/mode').signatures[0].params[1], {
+    const {unchecked_constraints:modeGaps,...mode}=data('/commands/demo/pool/mode').signatures[0].params[1];
+    assert.equal(modeGaps?.[0].missing,'这种 limit 写法的含义');
+    assert.deepEqual(mode, {
       name: 'mode',
-      type: 'enum',
-      values: ['rr', 'lc', 'hash'],
+      type: 'string',
       optional: true,
       default: 'rr',
       description: 'Balancing mode',
     });
-    assert.deepEqual(data('/commands/demo/pool/description').signatures[0].params[1], {
+    const {unchecked_constraints:lengthGaps,...description}=data('/commands/demo/pool/description').signatures[0].params[1];
+    assert.equal(lengthGaps?.[0].source_value,'64');
+    assert.deepEqual(description, {
       name: 'arg2',
       type: 'string',
-      maxLength: 64,
       optional: true,
       default: '',
       description: 'Description, ie cn=pool,dc=example,dc=invalid',
@@ -113,16 +115,16 @@ describe('command entries from the command tree', () => {
         '  arg2: Member address or host name',
       ].join('\n'),
     );
-    assert.equal(entry('/commands/demo/pool/mode').statement.split('\n')[0], 'demo pool mode <arg1:string> [<mode:{rr|lc|hash}="rr">]');
+    assert.equal(entry('/commands/demo/pool/mode').statement.split('\n')[0], 'demo pool mode <arg1:string> [<mode:string="rr">]');
     assert.equal(entry('/commands/show/demo/status').statement, 'show demo status\n  Show the demo status\nshow demo status [<arg1:string="all">]\n  Show the demo status\n  arg1: Pool name (every pool when left out)');
   });
 
   it('tolerates stray quotes and attributes and reports what it could not read', () => {
     assert.equal(data('/commands/demo/pool/description').summary, 'Type "text" to describe the pool');
-    assert.deepEqual(result.warnings, [
+    assert.equal(result.warnings.filter(warning=>warning.includes('limit 写法不认识')).length,3);
+    assert.deepEqual(result.warnings.filter(warning=>!warning.includes('limit 写法不认识')), [
       '有 1 个菜单或命令没有 name，已跳过（菜单连同其下的命令）',
       'demo acl mesh 的联合类型参数太多，有 1 个按字符串处理',
-      'demo log 参数 arg1 的 limit=[10 - 1] 认不出，已忽略',
       'demo log 参数 arg2 的 optional 取值 maybe 认不出，按必填处理',
       '参数类型 MACADDR 不在类型表里（1 处），按字符串处理',
     ]);
@@ -175,7 +177,7 @@ describe('command entries from the command tree', () => {
         ['support', null],
         ['support', null],
         ['refute', 'core.catalog.param_type_mismatch'],
-        ['refute', 'core.catalog.param_type_mismatch'],
+        ['unknown', null],
       ],
     );
   });
@@ -197,8 +199,10 @@ describe('address arguments that take other forms', () => {
       ),
     );
     const [signature] = (produced.entries[0].data as CommandEntryData).signatures;
-    assert.deepEqual(signature.params.map((param) => param.type), ['ipv4', 'string', 'string', 'string', 'string']);
-    assert.ok(produced.warnings.includes('有 4 个 DOTTEDIP 参数的说明写了地址以外的写法（主机名、URL 等），按字符串处理'), produced.warnings.join('\n'));
+    assert.deepEqual((produced.entries[0].data as CommandEntryData).signatures.map((signature:any)=>signature.params.map((param:any)=>param.type)),[
+      ['ipv4','ipv4','string','ipv4','string'],['ipv4','ipv4','string','hostname','string'],['ipv4','hostname','string','ipv4','string'],['ipv4','hostname','string','hostname','string'],
+    ]);
+    assert.ok(produced.warnings.includes('有 2 个 DOTTEDIP 参数的说明写了地址以外的写法（主机名、URL 等），按字符串处理'), produced.warnings.join('\n'));
   });
 
   it('takes declared argument types from the producer parameters, with their origin', () => {
@@ -236,14 +240,14 @@ describe('address arguments that take other forms', () => {
 });
 
 describe('limits and encodings', () => {
-  it('parses ranges, enumerations and single numbers', () => {
+  it('parses only inclusive bracket ranges and reports every other nonempty spelling', () => {
     assert.deepEqual(parseLimit('[1 - 40]'), { kind: 'range', low: 1, high: 40 });
-    assert.deepEqual(parseLimit(' 0~8640 '), { kind: 'range', low: 0, high: 8640 });
-    assert.deepEqual(parseLimit('(-1 .. 10)'), { kind: 'range', low: -1, high: 10 });
+    assert.deepEqual(parseLimit('64'), {kind:'unknown',text:'64'});
+    assert.deepEqual(parseLimit('(-1 .. 10)'), {kind:'unknown',text:'(-1 .. 10)'});
     assert.deepEqual(parseLimit('[10 - 1]'), { kind: 'unknown', text: '[10 - 1]' });
-    assert.deepEqual(parseLimit('{tcp|udp}'), { kind: 'values', values: ['tcp', 'udp'] });
-    assert.deepEqual(parseLimit('on, off'), { kind: 'values', values: ['on', 'off'] });
-    assert.deepEqual(parseLimit('64'), { kind: 'number', value: 64 });
+    assert.deepEqual(parseLimit('{tcp|udp}'), {kind:'unknown',text:'{tcp|udp}'});
+    assert.deepEqual(parseLimit('on, off'), {kind:'unknown',text:'on, off'});
+    assert.deepEqual(parseLimit('64'), {kind:'unknown',text:'64'});
     assert.deepEqual(parseLimit('[1 - 99999999999999999999]'), { kind: 'unknown', text: '[1 - 99999999999999999999]' });
     assert.equal(parseLimit(''), null);
     assert.deepEqual(parseLimit('free text'), { kind: 'unknown', text: 'free text' });

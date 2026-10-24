@@ -24,7 +24,9 @@ test('per-seat version and complete address sets are checked in the dispatch lea
     const manifest=await c.kit.artifacts.ingest({bytes:canonicalBytes({id:'synthetic-bed',devices:[1,2].map(n=>({interfaces:[{address:`192.0.2.${n}/24`}]}))}),mediaType:'application/json',origin:{upload:{session:'synthetic'}},author:{user:c.owner.id},provenanceType:'declared',visibility:{readers:[c.owner.id],admins:true,packs:[],shareable:false}});
     c.detail.run.sources=c.detail.run.sources.map(s=>s.slot==='synthetic-manifest'?{...s,reference:`src:${manifest.body.sha256}`}:s);
     (c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as any).bed.manifest_sha256=manifest.body.sha256;
+    c.effectDocument.effects[0].parameters.values.manifest_sha256=[manifest.body.sha256];
     await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,manifest_sha256:manifest.body.sha256,allowed_tools:[...c.executor.definition.allowed_tools,'inspect_seat'],probes});
+    await c.freezeExecutor();
     if(mismatch.includes('alias')) {
       c.detail.run.product='synthetic-product';c.detail.run.root='a'.repeat(64);
       const base={name:'synthetic-build',base:'synthetic-build',root:(mismatch==='historical-alias'?'b':'a').repeat(64),family:'synthetic',line:'10.6',platform:null,built_at:null,released_at:null,sources:{}};
@@ -43,7 +45,9 @@ test('per-seat version and complete address sets are checked in the dispatch lea
 test('persistent probe refusals retry reads three times and never submit',async t=>{
   const c=await setup({extraTools:['inspect_seat'],alter:(name,value)=>name==='inspect_seat'?{ok:false,error:'synthetic bed busy',phase:'occupied',touched:false}:value});t.after(()=>c.close());
   await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,allowed_tools:[...c.executor.definition.allowed_tools,'inspect_seat'],probes});
+    await c.freezeExecutor();
   await c.registry.update(c.admin,c.executor.id,{...(await c.registry.get(c.executor.id))!.definition,read_retry_when:[{pointer:'/phase',equals:'occupied'},{pointer:'/touched',equals:false}]});
+    await c.freezeExecutor();
   // A manifest with no addresses would not reach the transport; version probes still establish retry counts.
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(state.outcome,'not_dispatched');assert.equal(state.frozen,false);
@@ -54,6 +58,7 @@ test('persistent probe refusals retry reads three times and never submit',async 
 test('an explicit probe refusal does not cause repeated device login attempts',async t=>{
   const c=await setup({extraTools:['inspect_seat'],alter:(name,value)=>name==='inspect_seat'?{ok:false,error:'synthetic authentication refusal',phase:'denied',touched:false}:value});t.after(()=>c.close());
   await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,allowed_tools:[...c.executor.definition.allowed_tools,'inspect_seat'],probes});
+    await c.freezeExecutor();
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.filter(n=>n==='inspect_seat').length,1);
   assert.equal(c.calls.filter(n=>n==='send_blob').length,0);

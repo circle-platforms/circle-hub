@@ -269,3 +269,25 @@ describe('listing context, encodings and odd models', () => {
     assert.ok(ms < 2000, `took ${ms} ms`);
   });
 });
+
+it('reads time before a slash date and records an unrecognized timestamp as a failed build',()=>{
+ const source=html('<p>Rel_APV_10_6_1_7 (build on 09:30:11 2026/07/02):</p><p>Rel_APV_10_6_1_8 (build on not-a-time):</p>');
+ const parsed=parseListing(source);
+ assert.equal(parsed.builds[0].built,'2026-07-02T09:30:11');
+ assert.match(parsed.builds[1].failure??'',/构建时间.*修正/);
+});
+
+it('passes a failed timestamp through the plan with its source, original material and a fixed code',async()=>{
+ const {planBuilds}=await import('./sync.ts');
+ const {INDEX_ID,listingId}=await import('./sources.ts');
+ const page=(model:ReturnType<typeof html>)=>({ok:true,media_type:'text/html',parser:'html@1',model,reason:null});
+ const out=planBuilds({round:2,options:{lines:['10.6.1']},known:[],read:{
+  [INDEX_ID]:page(html('<a href="rel_apv_10_6_1.html">mainline</a>')),
+  [listingId('rel_apv_10_6_1')]:page(html('<p>Rel_APV_10_6_1_8 (build on not-a-time):</p>')),
+ }});
+ assert.equal(out.builds.length,0);
+ assert.equal(out.failed_builds?.length,1);
+ assert.equal(out.failed_builds[0].reason,'SOURCE_UNPARSEABLE');
+ assert.equal(out.failed_builds[0].source,listingId('rel_apv_10_6_1'));
+ assert.match(String(out.failed_builds[0].raw.built_raw),/not-a-time/);
+});

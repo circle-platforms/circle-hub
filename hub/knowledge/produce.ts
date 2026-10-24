@@ -1,5 +1,6 @@
 import { countEntryPositions } from './counts.ts';
 import type { KnowledgeEntryCounts } from '../../contracts/src/views.ts';
+import {knowledgeSourceLoader} from './credential-policy.ts';
 import {resolveProductVariables,productionVariableUses} from './variables.ts';
 import type {VariableUse} from '../../contracts/src/variables.ts';
 // Producing the root of one build (K01, K02, K04): read each declared source through the external reader in an admin
@@ -40,6 +41,9 @@ import { splitRows } from './composition.ts';
 import { chunks, mapLimited } from './concurrency.ts';
 import { requireAdmin, type KnowledgeContext } from './context.ts';
 import { canonicalSize, compareText, cutText, entryContentOf, entryDigest, type EntryContent } from './digest.ts';
+import {emptyProblemChunks,keepProblemRows,type ProblemChunks} from './problem-journal.ts';
+import {requestKnowledgeFact} from './requests.ts';
+import type {Reason} from '../../contracts/generated/vocabulary.ts';
 import { describeError } from './errors.ts';
 import {
   DEFAULT_BATCH,
@@ -57,7 +61,7 @@ import {
   type ListState,
 } from './lists.ts';
 import { MAX_DESCRIPTION, type PlacementChild, type PlacementOutcome, type PlacementSpan } from './placement.ts';
-import { SourceLoader, type ParsedSource } from './sources.ts';
+import { SourceLoader, type ParsedSource, type SourceObservation } from './sources.ts';
 import {
   ACTION,
   COMPONENTS,
@@ -99,6 +103,9 @@ export interface ProduceInput {
   /** List sources read at the same time (default the limit listReadConcurrency, 4). */
   readConcurrency?: number;
   signal?: AbortSignal;
+  listingDigest?:string;
+  retrySkipped?:boolean;
+  refreshSources?:ReadonlySet<string>;
 }
 
 export interface ProduceResult {
@@ -126,6 +133,7 @@ export interface ProduceResult {
   /** Listed sources the production could not use (first 200), and how many there were. */
   skipped: SkippedSource[];
   skippedCount: number;
+  sourceFailures?:SourceObservation[];
   /** Producer calls made in the sandbox and calls answered from stored outputs (memoized batches). */
   calls: { made: number; reused: number };
   /** List sources used again from a stored load, and list sources read through the port. */
@@ -241,6 +249,13 @@ interface Verified {
 
 /** Problems of one production: refusals, warnings and skipped sources, the first ones kept and all counted. */
 class Problems {
+  chunks:ProblemChunks=emptyProblemChunks();
+  allWarnings:string[]=[];
+  allRefused:RefusedEntry[]=[];
+  allSkipped:Array<SkippedSource&{retry?:boolean;reason_code?:Reason}>=[];
+  async persist(context:KnowledgeContext,inputs:string[]):Promise<void>{
+    this.chunks={warnings:await keepProblemRows(context,this.allWarnings,inputs),refused:await keepProblemRows(context,this.allRefused,inputs),skipped:await keepProblemRows(context,this.allSkipped,inputs)};
+  }
   refused: RefusedEntry[] = [];
   refusedCount = 0;
   /** Refusals per producer and declared kind, all of them. */
@@ -253,6 +268,7 @@ class Problems {
   skippedOf = new Map<string, number>();
 
   warn(text: string): void {
+    this.allWarnings.push(text);
     this.warningsCount++;
     if (this.warnings.length < MAX_KEPT_PROBLEMS) this.warnings.push(cutText(text, MAX_PROBLEM_TEXT));
   }
@@ -270,15 +286,17 @@ class Problems {
   }
 
   keep(item: RefusedEntry): void {
+    this.allRefused.push(item);
     if (this.refused.length < MAX_KEPT_PROBLEMS) {
       this.refused.push({ ...item, kind: cutText(item.kind, 200), path: item.path === null ? null : cutText(item.path, MAX_PROBLEM_TEXT), reason: cutText(item.reason, MAX_PROBLEM_TEXT) });
     }
   }
 
-  skip(item: SkippedSource): void {
+  skip(item: SkippedSource&{retry?:boolean;reason_code?:Reason}): void {
+    this.allSkipped.push(item);
     this.skippedCount++;
     this.skippedOf.set(item.producer, (this.skippedOf.get(item.producer) ?? 0) + 1);
-    if (this.skipped.length < MAX_KEPT_PROBLEMS) this.skipped.push({ ...item, reason: cutText(item.reason, MAX_PROBLEM_TEXT) });
+    if (this.skipped.length < MAX_KEPT_PROBLEMS) this.skipped.push({ producer:item.producer, slot:item.slot, external:item.external, reason: cutText(item.reason, MAX_PROBLEM_TEXT) });
   }
 }
 
@@ -320,7 +338,7 @@ function verifyOutput(context: KnowledgeContext, producer: string, output: Produ
   const refuse = (item: RefusedEntry): void => {
     out.refusedCount++;
     out.refusedKinds.set(item.kind, (out.refusedKinds.get(item.kind) ?? 0) + 1);
-    if (out.refused.length < MAX_KEPT_PROBLEMS) out.refused.push(item);
+    out.refused.push(item);
   };
   const collect = (
     entry: { kind: string; statement: string; data: Record<string, unknown>; applicability: EntryContent['applicability'] },
@@ -436,6 +454,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   const problems = new Problems();
   const usedSources: ProduceDetail['sources'] = [];
   const missing: ProduceDetail['missing'] = [];
+  const sourceFailures:SourceObservation[]=[];
   const lists: ListDetail[] = [];
   const totals: CallTotals = { made: 0, reused: 0, timeouts: 0, warnings: [] };
   let listLoader: ListLoader | null = null;
@@ -457,6 +476,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     refusedCount: problems.refusedCount,
     skipped: problems.skipped,
     skippedCount: problems.skippedCount,
+    sourceFailures,
     calls: { made: totals.made, reused: totals.reused },
     loads: { reused: listLoader?.reused ?? 0, read: listLoader?.read ?? 0 },
     parts: 0,
@@ -468,7 +488,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     const resolved=await resolveProductVariables(product,context.records.variables,by,false,{plan:context.sandbox.plan,producer:context.sandbox.producer});
     if('problems' in resolved)return result({reason:resolved.problems.join('；')});
     product=resolved.product;
-    input={...input,product,variables:resolved.uses,loader:input.loader??new SourceLoader({external:context.external,artifacts:context.records.artifacts,parsers:context.parsers,variables:resolved.snapshot},by,'knowledge production')};
+    input={...input,product,variables:resolved.uses,loader:input.loader??knowledgeSourceLoader(context,by,'knowledge production',resolved.snapshot)};
   }
   input={...input,variables:productionVariableUses(product,build===null,input.variables??[])};
   product = { ...product, product: { ...product.product, producers: product.product.producers.filter(p => (p.unversioned === true) === (build === null)) } };
@@ -489,6 +509,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     if (listsKept) return;
     listsKept = true;
     await keepLists(context, recorded.lists, problems);
+    await problems.persist(context,usedSources.map(source=>`src:${source.sha256}`));
   };
   // What every producer receives: the build as listed, without a root (the root is what this production makes; the previous
   // root would make a producer's output, and so this root, depend on what was produced before, K01 R[1]).
@@ -500,7 +521,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     await keep();
     const action = await writeProduceAction(
       context,
-      { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: null, composition: null, sources: usedSources, missing, lists, calls: totals, placement: null, reason: text },
+      { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: null, composition: null, sources: usedSources, missing, lists, listing_digest:input.listingDigest, source_failures:sourceFailures, problem_chunks:problems.chunks, calls: totals, placement: null, reason: text },
       null,
     );
     return result({ reason: text, action });
@@ -514,11 +535,12 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
 
   if (build !== null && build.base !== build.name) return fail(`构建 ${build?.name ?? '不分版本'} 是 ${build.base} 的别名，没有自己的树`);
   if (product.product.producers.length === 0) return fail(input.product.product.producers.length === 0 ? '产品包没有声明生产器' : build === null ? '产品包没有为不分版本范围声明生产器；请产品包作者声明 unversioned 生产器后重试同步' : '产品包没有为构建范围声明生产器；请产品包作者声明构建生产器后重试同步');
-  const loader = input.loader ?? new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers }, by, 'knowledge sync');
+  const loader = input.loader ?? knowledgeSourceLoader(context,by,'knowledge sync');
   const cap = context.limits.maxBuildBytes;
   listLoader = new ListLoader(context, loader, {
     maxAgeSeconds: input.maxAgeSeconds ?? context.limits.listMaxAgeSeconds,
     concurrency: input.readConcurrency ?? context.limits.listReadConcurrency,
+    refresh:input.refreshSources,
   });
 
   const planned = plannedSources(product, info, input.scope);
@@ -552,12 +574,16 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     }
     let loaded = parsed.get(source.external);
     if (loaded === undefined) {
-      const read = await loader.read(source.external);
+      const read = await loader.read(source.external,source.slot);
       if (!read.ok) {
+        if(read.observation){
+          sourceFailures.push(read.observation);
+          if(read.observation.code==='SOURCE_FORBIDDEN')await requestKnowledgeFact(context,{kind:'repair',subject:source.external,missing:'构建站明确拒绝访问（SOURCE_FORBIDDEN）',action:'联系此构建站负责人开放这个读取对象，再重新同步',inputs:[`rec:${read.observation.manifest}`]});
+        }
         if (source.optional) {
           problems.warn(`${source.producer}.${source.slot}：${source.external} ${read.reason}（可选，跳过）`);
           slots.set(source.slot, null);
-          missing.push({ producer: source.producer, slot: source.slot, external: source.external });
+          missing.push({ producer: source.producer, slot: source.slot, external: source.external, ...(read.observation?{observation:read.observation,conclusion:`可选来源读取确定失败：${read.observation.code}，HTTP ${read.observation.status}，${read.observation.at}`}:{}) });
           continue;
         }
         return fail(`${source.producer}.${source.slot}：${source.external} ${read.reason}`);
@@ -566,7 +592,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
       if (bytes + size > cap) {
         return fail(`构建的来源合计超过每个构建 ${cap} 字节的上限：已读 ${bytes} 字节，源文件 ${read.artifact.body.sha256}（${source.external}）还有 ${size} 字节`);
       }
-      const readable = await loader.readable(read, cap - bytes);
+      const readable = await loader.readable(read, cap - bytes,{slot:source.slot});
       if (!readable.ok) return fail(readable.reason);
       const parse = loader.parse(readable.value);
       if (!parse.ok) return fail(parse.reason);
@@ -642,6 +668,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
       problems,
       decidedBy,
       paths: pathCache,
+      retrySkipped:input.retrySkipped,
       signal: input.signal,
     });
     if (!outcome.ok) return fail(outcome.reason);
@@ -875,7 +902,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
         action: async (record, tx) => {
           const action = await writeProduceAction(
             context,
-            { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: root.digest, composition: record, sources: usedSources, missing, lists, calls: totals, placement, reason: null },
+            { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: root.digest, composition: record, sources: usedSources, missing, lists, listing_digest:input.listingDigest, source_failures:sourceFailures, problem_chunks:problems.chunks, calls: totals, placement, reason: null },
             tx,
           );
           // A build produced without a build record (not by a sync) gets one, so that builds are known from their records alone.
@@ -924,6 +951,7 @@ interface ListInput {
   problems: Problems;
   decidedBy: string;
   paths: PathCache;
+  retrySkipped?:boolean;
   signal?: AbortSignal;
 }
 
@@ -966,9 +994,9 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
   if (repeats > 0) problems.warn(`${producer.id}.${list.slot}：列表里有 ${repeats} 个重复的外部对象，各只读一次`);
   const batches = listBatches(ids, list.batch);
   const state: ListState = { succeeded: false, isolationCalls: 0, isolationBudget: context.limits.isolationCallsPerBatch * (batches.length + ISOLATION_BASE_BATCHES), failure: null };
-  const ctx: ListCallContext = { context, product: input.product, producer, build: input.build, buildDigest: input.buildDigest, slots: input.slots, list: list.slot, totals: input.totals, state };
+  const ctx: ListCallContext = { context, product: input.product, producer, build: input.build, buildDigest: input.buildDigest, slots: input.slots, list: list.slot, totals: input.totals, state, retryFailures:input.retrySkipped };
   const probe = emptyProbe(ctx);
-  type Skip = { external: string; reason: string; retry: boolean; cause: SkipCause };
+  type Skip = { external: string; reason: string; retry: boolean; reason_code?:Reason; cause: SkipCause };
   const skippedHere: Array<Omit<Skip, 'cause'>> = [];
   const causes = new Map<SkipCause, number>();
   let skippedCount = 0;
@@ -977,8 +1005,8 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
     skippedCount++;
     causes.set(item.cause, (causes.get(item.cause) ?? 0) + 1);
     if (item.cause === 'producer') failedAlone++;
-    if (skippedHere.length < MAX_KEPT_SKIPPED_IDS) skippedHere.push({ external: item.external, reason: cutText(item.reason, MAX_PROBLEM_TEXT), retry: item.retry });
-    problems.skip({ producer: producer.id, slot: list.slot, external: item.external, reason: item.reason });
+    if (skippedHere.length < MAX_KEPT_SKIPPED_IDS) skippedHere.push({ external: item.external, reason: cutText(item.reason, MAX_PROBLEM_TEXT), retry: item.retry, ...(item.reason_code?{reason_code:item.reason_code}:{}) });
+    problems.skip({ producer: producer.id, slot: list.slot, external: item.external, reason: item.reason, retry:item.retry, reason_code:item.reason_code });
   };
   const stop = (reason: string): { ok: false; reason: string } => {
     state.failure ??= reason;
@@ -996,7 +1024,7 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
     // The digest of every object read, by position: the one loaded when a stored read had to be read again.
     const readAt: Array<string | undefined> = [];
     // Records and sizes first: no bytes are fetched before the batch is cut into calls within the cap.
-    const peeks = await Promise.all(batch.externals.map((external) => input.listLoader.peek(external)));
+    const peeks = await Promise.all(batch.externals.map((external) => input.listLoader.peek(external,{slot:list.slot})));
     const calls: Array<Array<Extract<ElementPeek, { ok: true }>>> = [];
     let current: Array<Extract<ElementPeek, { ok: true }>> = [];
     let bytes = 0;
@@ -1008,8 +1036,8 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
       const body = peek.load.artifact.body;
       readAt[i] = body.sha256;
       if (body.size > cap) {
-        skipped.push({ external: peek.external, reason: `源文件 ${body.sha256}（${peek.external}）有 ${body.size} 字节，超过一次调用的上限 ${cap} 字节`, retry: false, cause: 'size', position: i });
-        return;
+        if(current.length>0)calls.push(current);current=[];bytes=0;
+        calls.push([peek]);return;
       }
       if (current.length > 0 && bytes + body.size > cap) {
         calls.push(current);
@@ -1029,7 +1057,7 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
     for (const call of calls) {
       if (state.failure !== null) return { ok: false, reason: state.failure };
       // Only this call's documents are held: at most `cap` bytes of them per batch at a time.
-      const loads = await Promise.all(call.map((peek) => input.listLoader.materialize(peek, cap)));
+      const loads = await Promise.all(call.map((peek) => input.listLoader.materialize(peek,Math.max(cap,Math.min(peek.load.artifact.body.size,context.sandbox.producer.inputBytes??128*1024*1024)),list.slot)));
       const elements: ParsedSource[] = [];
       loads.forEach((load, k) => {
         const at = position.get(call[k].external) as number;
@@ -1046,7 +1074,7 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
         const failed = new Set(called.failed.map((f) => f.element));
         failedHere += failed.size;
         // Producing again fails on these the same way while the pack and the document stay as they are: no retry.
-        for (const item of called.failed) skipped.push({ external: item.element.external, reason: item.reason, retry: false, cause: 'producer', position: position.get(item.element.external) as number });
+        for (const item of called.failed) skipped.push({ external: item.element.external, reason: item.reason, retry: true, reason_code:item.reason_code, cause: 'producer', position: position.get(item.element.external) as number });
         // Verified now, while the call's documents are parsed; each call cites only its own elements.
         for (const { elements: own, output } of called.outputs) {
           const byDigest = new Map<string, ParsedSource>();
@@ -1077,7 +1105,10 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
     rows.push(...batch.rows);
     pairs.push(...batch.pairs);
     read.push(...batch.read);
-    for (const item of batch.skipped) skip(item);
+    for (const item of batch.skipped) {
+      skip(item);
+      if(item.cause==='producer')await requestKnowledgeFact(context,{kind:'repair',attribution:'producer_error',reason:item.reason_code??'check_error',subject:`${input.product.id}@${input.product.version}/${producer.id}`,missing:`生产器处理单份来源失败（producer_error；${item.reason_code??'check_error'}）：${item.external}`,action:'联系该版本包作者核对这份来源，修复生产器并发布新版本后重新同步',inputs:[]});
+    }
   }
   // A document is blamed only when the producer is shown to work on documents in this production.
   if (failedAlone > 0 && !state.succeeded) {
@@ -1260,7 +1291,6 @@ function rootCatalogs(
       skippers.push(producer);
     }
     const reasons: string[] = [];
-    if (rows.length === 0) reasons.push(`没有${catalog.producer === undefined ? '' : `生产器 ${catalog.producer} 的`} ${catalog.entry_kind} 种类的条目`);
     if (invalid > 0) reasons.push(`${invalid} 个条目没有可用的目录数据`);
     if (lost > 0) reasons.push(`${lost} 个条目没能挂树`);
     if (refusedHere > 0) reasons.push(`${refusedHere} 个条目没有通过核对`);
@@ -1295,7 +1325,8 @@ export function catalogCanon(data: Record<string, unknown>): string | null {
   const signatures = parsed.signatures.map((signature) => ({
     params: signature.params.map((param) => {
       const { description: _dropped, ...rest } = param;
-      return rest;
+      // Diagnostic paths and recovery prose identify observations; they do not change a parameter's syntax.
+      return {...rest,...(rest.unchecked_constraints?{unchecked_constraints:rest.unchecked_constraints.map(({path:_path,next_action:_action,...constraint})=>constraint).sort((a,b)=>compareText(canonicalize(a),canonicalize(b)))}:{})};
     }),
   }));
   signatures.sort((a, b) => compareText(canonicalize(a), canonicalize(b)));
@@ -1317,6 +1348,9 @@ interface ProduceActionInput {
   calls: { made: number; reused: number };
   placement: ProduceDetail['placement'];
   reason: string | null;
+  problem_chunks?:ProblemChunks;
+  listing_digest?:string;
+  source_failures?:SourceObservation[];
 }
 
 /** The generate action of one production (completed) or of its failure (error), indexed for the build and the root. */
@@ -1334,6 +1368,9 @@ export async function writeProduceAction(context: KnowledgeContext, input: Produ
     calls: { made: input.calls.made, reused: input.calls.reused },
     placement: input.placement,
     reason: input.reason,
+    ...(input.listing_digest?{listing_digest:input.listing_digest}:{}),
+    ...(input.source_failures?.length?{source_failures:input.source_failures}:{}),
+    ...(input.problem_chunks?{problem_chunks:input.problem_chunks}:{}),
   };
   const body: ActionBody = {
     action: ACTION.generate,
@@ -1345,7 +1382,7 @@ export async function writeProduceAction(context: KnowledgeContext, input: Produ
     started_at: input.startedAt,
     ended_at: context.now().toISOString(),
     result: input.root === null ? 'error' : 'completed',
-    error_code: null,
+    error_code: input.source_failures?.some(source=>source.code==='SOURCE_ABSENT')?'SOURCE_ABSENT':input.source_failures?.some(source=>source.code==='SOURCE_FORBIDDEN')?'SOURCE_UNAVAILABLE':null,
     acceptance: null,
     codes: [],
     detail: detail as unknown as Record<string, unknown>,
@@ -1353,7 +1390,8 @@ export async function writeProduceAction(context: KnowledgeContext, input: Produ
   const index = [
     { key: input.build === null ? INDEX.produceScope : INDEX.produce, value: input.build === null ? input.product : buildKey(input.product, input.build.name) },
     { key: INDEX.produceProduct, value: input.product },
-    ...(input.root === null ? [] : [{ key: INDEX.produceRoot, value: input.root }]),
+    ...(input.root===null?[{key:INDEX.buildFailure,value:input.product},...(input.build===null?[]:[{key:INDEX.buildFailureName,value:buildKey(input.product,input.build.name)}]),{key:INDEX.buildFailureRoot,value:`${input.product}/none`}]:[]),
+    ...(input.root === null ? [] : [{ key: INDEX.produceRoot, value: input.root },...(input.composition?[{key:'knowledge.produce.composition',value:input.composition}]:[])]),
     ...(input.sync === null ? [] : [{ key: INDEX.sync, value: input.sync }]),
   ];
   const record = await context.store.putAction(body, index, tx ?? undefined);

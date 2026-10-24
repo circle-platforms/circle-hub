@@ -1,3 +1,4 @@
+import {defaultPredecessorInputs} from './predecessor-defaults.ts';
 import { PublishableRequirementsFile } from '../../../contracts/src/pack.ts';
 import { recordResultRequests, putRequest, answerSuccessorRequests } from './requests.ts';
 import { authorOriginOf } from './lineage.ts';
@@ -22,7 +23,7 @@ import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError, unavailable } from './errors.ts';
-import { evaluate, type Evaluation } from './evaluate.ts';
+import { productionEvaluationInput, evaluate, type Evaluation } from './evaluate.ts';
 import { factClaim, sourceCoverage, rootDigest, strongestRole } from './claims.ts';
 import { buildScope, createResolver } from './exact.ts';
 import { bindInputs } from './inputs.ts';
@@ -476,6 +477,8 @@ async function startFresh(
   if(input.submission_due!==undefined&&Date.parse(input.submission_due)<=at.getTime())throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','提交期限必须晚于开始时刻',{path:'/submission_due',fix:'给出未来的 submission_due 后重新开始'})]);
   if(workflow.workflow.predecessor==='required'&&!input.predecessor)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','任务包要求显式前驱运行',{path:'/predecessor',fix:'在 predecessor 中给出前驱运行后重新开始'})]);
   const parameters = checkParameters(workflow, input.parameters ?? {});
+  const defaulted=await defaultPredecessorInputs(ctx,workflow,predecessor,input.inputs);
+  input={...input,inputs:defaulted.inputs};
   if (predecessor !== null) await checkLineage(ctx, user, workflow, input, predecessor.body);
   const target = await resolveTarget(ctx, user, workflow, input, startedAt, call.traceId);
   if(workflow.knowledge?.requires.length){
@@ -577,7 +580,9 @@ async function startFresh(
   const slots = slotSchemaOf(workflow);
   const hub = mode.host === 'hub';
   const session = sessionOf(call);
+  const effectRegistry=await ctx.deps.effectRegistry?.snapshot(variables);
   const record: RunRecord = RunRecord.parse({
+    ...(effectRegistry??{}),
     run: runId,
     pack: `${workflow.pack.id}@${workflow.pack.version}`,
     pack_digest: workflow.pack.digest,
@@ -588,6 +593,7 @@ async function startFresh(
     ...(target.root !== null ? { root: target.root.root } : {}),
     ...(target.unversionedRoot ? { unversioned_root: target.unversionedRoot.root } : {}),
     sources: [...bound.map((b) => b.binding), ...expected.sources],
+    ...(defaulted.defaults.length?{input_defaults:defaulted.defaults}:{}),
     requirements: workflow.requirements.map(requirementSummary),
     items,
     ...(slots !== undefined ? { slots } : {}),
@@ -672,18 +678,7 @@ async function startFresh(
 /** The evaluation of a production run, made before its run record is stored (the result names the record's digest). */
 async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest: string, workflow: LoadedWorkflow, traceId: string, user: Principal): Promise<{ evaluation: Evaluation; startedAt: string }> {
   const startedAt = ctx.now().toISOString();
-  const evaluation = await evaluate(ctx, {
-    run,
-    workflow,
-    submission: null,
-    submissionDigest: runDigest,
-    exact: null,
-    carried: new Map(),
-    roundsUsed: new Map(),
-    origin: null,
-    author: null,
-    traceId,
-  });
+  const evaluation = await evaluate(ctx, productionEvaluationInput(run, workflow, runDigest, traceId));
   const notes = (run.groups ?? []).map((group, i) => ({group, i})).filter(({group}) => group.nature === 'fact' && group.verdict === 'support');
   if (notes.length === 0) return {evaluation, startedAt};
   const noteSchema = z.strictObject({

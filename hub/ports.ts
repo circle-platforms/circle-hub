@@ -134,7 +134,7 @@ export interface ExternalReadRetry {code:string;at:string;attempts:number}
 
 export type ExternalRead =
   | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string; coverage?:Coverage;absent?:SourceAbsent }
-  | { ok: false; id: string; reason: string; retry?:ExternalReadRetry; redirect?:ExternalRedirect; inputError?: { code?:ProtocolCode; message: string; fix: string } };
+  | { ok: false; id: string; reason: string; manifest?:string|null; retry?:ExternalReadRetry; redirect?:ExternalRedirect; inputError?: { code?:ProtocolCode; message: string; fix: string } };
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */
@@ -327,4 +327,14 @@ export interface KnowledgePort {
    * diffRoots it takes no reader: callers check the reader first.
    */
   diffEntries(from: string, to: string, options: { kinds: readonly EntryKind[]; limit?: number }): Promise<EntryDiff | null>;
+}
+
+/** Internal effect-boundary metadata, frozen with the same ordinary-variable snapshot as start_run. */
+export interface EffectRegistryPort {
+ snapshot(variables:import('./records/api.ts').VariableSnapshot):Promise<{policy:string;executors:string}>;
+}
+
+/** Pure re-evaluation of named frozen-package checks; it cannot store submissions or spend repair rounds. */
+export interface EffectCheckReplay {
+ (input:{run:string;submission:string;checks:readonly string[]}):Promise<Record<string,import('../contracts/src/tables.ts').CheckOutcome[]>>;
 }
