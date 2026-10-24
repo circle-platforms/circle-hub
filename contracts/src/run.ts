@@ -14,7 +14,7 @@ import {
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
 import { Coverage, Versioned, IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
-import { ContextBuild, LeaseContextRow, LeaseRegistrationRow, PredecessorInputDefault } from './pack.ts';
+import { ContextBuild, IndexBindingDefault, LeaseContextRow, LeaseRegistrationRow, PredecessorInputDefault } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
 /** One input given to start_run: bytes already uploaded, or an external object the Hub reads (read-only) with the pack's system adapter. Exactly one key. */
@@ -73,6 +73,7 @@ export const InputSlotSummary = z.strictObject({
   required: z.boolean(),
   many: z.boolean(),
   default_from_predecessor: PredecessorInputDefault.optional(),
+  index_default: IndexBindingDefault.optional(),
 });
 export type InputSlotSummary = z.infer<typeof InputSlotSummary>;
 

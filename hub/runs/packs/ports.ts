@@ -38,7 +38,7 @@ export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclara
     title: info.title,
     description: info.description,
     products: names,
-    inputs: declarations.workflow.inputs.map((i) => ({ slot: i.slot, role: i.role, description: i.description, accepts: [...i.accepts], required: i.required, many: i.many, ...(i.default_from_predecessor?{default_from_predecessor:{...i.default_from_predecessor}}:{}) })),
+    inputs: declarations.workflow.inputs.map((i) => ({ slot: i.slot, role: i.role, description: i.description, accepts: [...i.accepts], required: i.required, many: i.many, ...(i.default_from_predecessor?{default_from_predecessor:{...i.default_from_predecessor}}:{}), ...(i.index_default?{index_default:structuredClone(i.index_default)}:{}) })),
     parameters: declarations.workflow.parameters.map((p) => ({ name: p.name, description: p.description, required: p.required, ...(p.schema !== undefined ? { schema: p.schema } : {}) })),
     requirements: declarations.requirements.requirements.map((r) => ({
       key: r.key,

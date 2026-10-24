@@ -94,7 +94,8 @@ export class FakeKnowledgeViews implements ExternalReaderPort {
   }
   async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
     this.reads.push(id);
-    const view = this.views.get(id);
+    const bare = id.replace(/&only=[^&]*/, '');
+    const view = this.views.get(id) ?? (bare === id ? undefined : this.views.get(bare));
     if (view === undefined) return { ok: false, id, reason: `synthetic knowledge reader answered “not found” for ${id}` };
     const visibility = { readers: [context.principal.id], admins: true, packs: [], shareable: false };
     const ingest = (bytes: Uint8Array, name: string) =>

@@ -39,7 +39,7 @@ describe('the pack files', () => {
       workflow.inputs.map((i) => ({ ...i, description: undefined })),
       [
         { slot: 'defects', role: 'subject', description: undefined, accepts: ['knowledge:index'], required: true, many: false },
-        { slot: 'cases', role: 'expected', description: undefined, accepts: ['knowledge:index'], required: true, many: false },
+        { slot: 'cases', role: 'expected', description: undefined, accepts: ['knowledge:index'], required: true, many: false, index_default: {only_from: {source: 'build_defects'}, fields: ['document', 'node', 'title', 'system', 'case', 'defects']} },
       ],
     );
     assert.deepEqual(workflow.product, { catalogs: [] });

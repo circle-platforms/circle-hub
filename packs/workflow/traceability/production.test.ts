@@ -63,6 +63,7 @@ before(async () => {
   if (skip) return;
   hub = await openHub(postgres);
   hub.views.put(DEFECTS_ID, indexViewOf('defect', 'bug', DEFECTS));
+  hub.views.put(`${DEFECTS_ID}&fields=bug`, indexViewOf('defect', 'bug', DEFECTS));
   // The cases view is served slim, as the reader answers the pack's fields=document,node,title request.
   hub.views.put(CASES_ID, indexViewOf('case', 'defects', CASES, {}, ['document', 'node', 'title']));
 });
@@ -96,7 +97,7 @@ describe('a production run of traceability', { skip }, () => {
     );
     assert.deepEqual(
       run.sources.map((s) => s.external),
-      [`${DEFECTS_ID}@${ROOT}`, `${CASES_ID}@${ROOT}`],
+      [`${DEFECTS_ID}@${ROOT}`, `${CASES_ID}&only=71001,71002,71003,71004@${ROOT}`],
     );
     assert.deepEqual(
       run.items.map((i) => [i.id, i.summary]),

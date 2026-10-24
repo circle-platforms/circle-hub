@@ -1,4 +1,5 @@
 import {completeKnowledgeView} from '../../knowledge/api.ts';
+import {defectIndexKeys,mergeIndexBindings,narrowIndexId} from './index-default.ts';
 // Binding the start_run inputs to the workflow's input slots (W02 F[8], P02, A03): a reference the caller may read (an
 // upload_file result, or a Hub record reference, B03 R[4]) or an external object read through its system pack as the
 // caller. Each source is parsed with the core parser for its media type; required slots must be given and the media type or
@@ -166,7 +167,16 @@ export async function bindInputs(
       return null;
     }
     const readContext={ principal: user, run: runId, variables, purpose: `运行输入 ${slot.slot}`,adminNote:(reason:string)=>notes.push(`${path}: ${reason}`), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) };
-    const read = id.startsWith('knowledge:') ? await completeKnowledgeView(id,readContext,ctx.deps.external,{artifacts,store}) : await ctx.deps.external.read(id,readContext);
+    const records = {artifacts,store};
+    let requestId = id;
+    let merged: Awaited<ReturnType<typeof mergeIndexBindings>> | null = null;
+    if(id.startsWith('knowledge:') && slot.index_default !== undefined){
+      const scoped = await narrowIndexId(slot,id,inputs,defectId => defectIndexKeys(defectId,readContext,ctx.deps.external,records));
+      if(!scoped.ok){schemaError(path,scoped.message,scoped.fix);return null;}
+      if(scoped.ids.length === 1)requestId = scoped.ids[0];
+      else merged = await mergeIndexBindings(scoped.ids,scoped.label,readContext,ctx.deps.external,records);
+    }
+    const read = merged ?? (requestId.startsWith('knowledge:') ? await completeKnowledgeView(requestId,readContext,ctx.deps.external,records) : await ctx.deps.external.read(requestId,readContext));
     if (!read.ok) {
       if (read.inputError !== undefined) {
         if(read.inputError.code)errors.push(protocolError(read.inputError.code,read.inputError.message,{path,fix:read.inputError.fix}));

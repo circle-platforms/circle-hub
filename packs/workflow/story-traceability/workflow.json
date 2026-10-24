@@ -24,7 +24,11 @@
     {
       "slot": "cases",
       "role": "expected",
-      "description": "knowledge:index:<product>:<build>?kind=case&key=stories&fields=document,node,title",
+      "description": "knowledge:index:<product>:<build>?kind=case&key=stories。Hub adds only= from story ids already bound on the stories input, and fields=document,node,stories,title when fields is absent. Do not ask for a second list of numbers.",
+      "index_default": {
+        "only_from": {"source": "input_ids", "slot": "stories"},
+        "fields": ["document", "node", "stories", "title"]
+      },
       "accepts": [
         "knowledge:index"
       ],
