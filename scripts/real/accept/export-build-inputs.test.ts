@@ -11,6 +11,8 @@ import { openBed } from '../../../tests/acceptance/support/hub.ts';
 import { agileOptions } from '../../../tests/fixtures/agile/index.ts';
 import { productSite, twoNameProduct } from '../../../tests/acceptance/support/env.ts';
 import { startPostgres } from '../../../hub/testing/postgres.ts';
+import { memoryOperatorTokens } from '../../../hub/server/assemble/operator-token.ts';
+import { CliError } from '../../../hub/server/errors.ts';
 import { adminCommands } from '../../../hub/server/cli-admin.ts';
 import type { CliContext } from '../../../hub/server/api.ts';
 
@@ -156,6 +158,20 @@ test('administrator knowledge view and original export operate against the synth
   await assert.rejects(viewCommand.run(['view','knowledge:index:synthetic-private-original:synthetic-build?kind=case&key=document','--out',join(dir,'missing.json')],context(options.token,[])),(e:any)=>!!e.hint&&!e.message.includes('synthetic-private-original'));
   await assert.rejects(viewCommand.run(['view',external+'&only=x','--only','y','--out',join(dir,'duplicate.json')],context(options.token,[])),/不能同时/);
 
+  const secondAdmin=await bed.hub.createUser('合成第二管理员','admin');
+  const choose=commands.find(c=>c.name==='knowledge')!;
+  const noToken=context('',[]);noToken.io.env={};
+  noToken.actingAdmin=async as=>{if(as===undefined)throw new CliError('有多位管理员，要用 --as 指明', '加 --as 后重试');assert.equal(as,secondAdmin.principal.id);return secondAdmin.principal;};
+  const noTokenCommand=adminCommands({tokens:()=>memoryOperatorTokens()}).find(c=>c.name==='knowledge')!;
+  await assert.rejects(noTokenCommand.run(['view',external,'--out',join(dir,'ambiguous.json')],noToken),/多位管理员/);
+  await noTokenCommand.run(['view',external,'--as',secondAdmin.principal.id,'--out',join(dir,'selected.json')],noToken);
+  assert.ok(readFileSync(join(dir,'selected.json')).length);
+  const brokenTokenStore=memoryOperatorTokens();brokenTokenStore.read=async()=>{throw new Error('synthetic-private-original http://192.0.2.12/internal');};
+  const warnings:string[]=[];noToken.io.stderr=line=>warnings.push(line);
+  await adminCommands({tokens:()=>brokenTokenStore}).find(c=>c.name==='knowledge')!.run(['view',external,'--as',secondAdmin.principal.id,'--out',join(dir,'token-read-fallback.json')],noToken);
+  assert.deepEqual(warnings,[],'view export never relays token-store exception messages');
+
+  await assert.rejects(choose.run(['view',external,'--as',secondAdmin.principal.id,'--out',join(dir,'other.json')],context(options.token,[])),/不能|不一致|只能/);
   // The added read command is administrator-only even if a caller can read the product through MCP.
   const reader=await bed.user('合成非管理员',[]);
   await assert.rejects(commands.find(c=>c.name==='knowledge')!.run(['view',`knowledge:index:${options.product}:${options.build}?kind=case&key=document`,'--out',join(dir,'denied.json')],context(reader.token,[])),/管理员/);

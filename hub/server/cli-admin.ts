@@ -58,7 +58,7 @@ export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --
 export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-users) [--reason <理由>] | production <任务包> [--reason <理由>] | list [--object <对象>]';
 export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <任务包>';
 export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
-export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] --out <文件>';
+export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
 export const INIT_ADMIN_USAGE = 'init-admin <名字>   建第一位管理员，令牌存进钥匙串（账户 operator-token），不显示';
 export const OPERATOR_TOKEN_USAGE =
   'operator-token set   从标准输入读一个启用中的管理员的令牌，存进钥匙串（账户 operator-token）；钥匙串项丢失时用，已有的项不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进钥匙串，不显示；已有的项不覆盖';
@@ -241,7 +241,7 @@ class Session {
    * `--as` allowed only when it names that account; without a token `--as` or the only enabled admin. A keychain item
    * that cannot be read (a locked keychain) is said on stderr and the command reads as if there were none.
    */
-  async viewer(as: string | undefined): Promise<Principal> {
+  async viewer(as: string | undefined, quietTokenRead = false): Promise<Principal> {
     let token = this.envToken;
     let source = `${OPERATOR_TOKEN_VARIABLE} 的令牌`;
     let hint: string | null = null;
@@ -252,7 +252,7 @@ class Session {
       try {
         token = await store.read();
       } catch (error) {
-        this.err(`注意：读不出${source}（${messageOf(error)}）；这个只读命令按${as === undefined ? '唯一启用的管理员' : ` --as ${as} `}读取`);
+        if (!quietTokenRead) this.err(`注意：读不出${source}（${messageOf(error)}）；这个只读命令按${as === undefined ? '唯一启用的管理员' : ` --as ${as} `}读取`);
         return this.ctx.actingAdmin(as);
       }
     }
@@ -730,9 +730,9 @@ export async function writeKnowledgeViewFile(target: string, bytes: Uint8Array, 
 async function knowledgeCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'view') {
-    const { values, positionals } = parse(rest, { out: { type: 'string' }, only: { type: 'string' } }, 1);
+    const { values, positionals } = parse(rest, { out: { type: 'string' }, only: { type: 'string' }, as: { type: 'string' } }, 1);
     if (!values.out) throw new UsageError('knowledge view 要用 --out 指定新文件');
-    const viewer = await session.viewer(undefined).catch(error => {
+    const viewer = await session.viewer(values.as, true).catch(error => {
       if (error instanceof CliError || error instanceof UsageError) throw error;
       throw new CliError('无法核对知识视图读取账号', '检查管理员身份及记录库连接后重试；原始异常不输出到终端');
     });

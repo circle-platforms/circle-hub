@@ -11,7 +11,7 @@ node scripts/real/accept/export-build-inputs.ts \
 
 令牌文件按 `hub-call.ts` 的方式以 UTF-8 读取并去掉首尾空白；令牌不进入命令行、输出或证据文件。管理员 CLI 使用 `bin/circle-hub`，仅给该子进程设置 `CIRCLE_HUB_TOKEN`。它使用部署主机的现有数据库配置；`--url` 只指定同一个 Hub 的 MCP 地址，默认与 `hub-call.ts` 相同。不要把 URL 指向另一套部署。
 
-读取路线：新增的通用只读命令 `circle-hub knowledge view <knowledge外部标识> [--only <取值列表>] --out <新文件>` 调用现有知识视图读取器，保留它的 JSON 字节。单独的 --only 使用与引用查询参数相同的逗号分隔、URI 百分号编码写法，不能与引用内的 only 重复。屏幕仅输出字节数、SHA-256、totals 数字计数和截断/跳过情况。它只允许启用中的管理员，不加 MCP 工具，不借用业务包创建运行，也不生产知识。普通 `knowledge sync` 没有被调用。视图读取会保留现有的读取凭据和派生记录。
+读取路线：新增的通用只读命令 `circle-hub knowledge view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <新文件>` 调用现有知识视图读取器，保留它的 JSON 字节。单独的 --only 使用与引用查询参数相同的逗号分隔、URI 百分号编码写法，不能与引用内的 only 重复。屏幕仅输出字节数、SHA-256、totals 数字计数和截断/跳过情况。无令牌且启用管理员不唯一时可用 --as 选择管理员；有令牌时 --as 必须与令牌账号一致。它只允许启用中的管理员，不加 MCP 工具，不借用业务包创建运行，也不生产知识。普通 `knowledge sync` 没有被调用。视图读取会保留现有的读取凭据和派生记录。
 
 导出索引是 `knowledge:index:<产品>:<构建>?kind=case&key=document&fields=commands,document,node`。完整视图保存为 `index-1.json`；超过视图字节预算时，脚本通过 MCP `get_nodes` 逐页遍历锁定的构建根及无版本根，发现完整文档键，再逐文档用 `only=` 补取，保存为 `index-*.json`。所有分片必须保持同一产品、构建根、无版本根和总条目数。单文档超过索引单键上限、来源未读、扫描排除或快照漂移均拒绝，不把截断的发现视图混进可供比较的索引文件。
 
