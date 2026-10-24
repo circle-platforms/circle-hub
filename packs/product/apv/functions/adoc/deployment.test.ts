@@ -69,3 +69,12 @@ test('recursive traversal refuses excessive depth and total entries rather than 
  notes.length=0;addAdocSources(structuredClone(build),options,{[rootId]:{ok:true,parser:'json@1',model:many}},()=>{},notes);
  assert.ok(notes.some(n=>n.includes('上限')&&n.includes('不截断')));
 });
+
+test('an invalid configured root stays a production refusal instead of becoming an empty successful plan',async()=>{
+ const configured={adoc:{APV:{root:'../synthetic/{line}',main:'book.adoc'},NSAE:{root:null,main:'book.adoc'}}};
+ const original=structuredClone(build),notes:string[]=[];
+ assert.doesNotThrow(()=>addAdocSources(original,configured,{},()=>assert.fail('invalid roots send no read request'),notes));
+ assert.ok(notes.some(note=>note.includes('APV_ADOC_ROOT')&&note.includes('下一步')));
+ const value=input();value.params.root=configured.adoc.APV.root;
+ await assert.rejects(familyManual(value),e=>e instanceof ManualSourceError&&e.code==='apv.adoc.invalid_root');
+});

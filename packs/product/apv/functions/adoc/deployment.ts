@@ -73,9 +73,9 @@ export function addAdocSources(build:BuildInfo,options:Record<string,unknown>,re
  const settings=isRecord(options.adoc)?options.adoc:{};
  for(const family of PRODUCT_LINE.names){
   const config=isRecord(settings[family])?settings[family]:{};
-  const root=directoryOf(config.root??null,build.line);if(root===null)continue;
-  build.sources[adocRole(family,'meta')]=rootId(root);build.sources[adocRole(family,'files')]=[];
   try{
+   const root=directoryOf(config.root??null,build.line);if(root===null)continue;
+   build.sources[adocRole(family,'meta')]=rootId(root);build.sources[adocRole(family,'files')]=[];
    const tree=treeOf(root,id=>{
     const page=read[id];if(page===undefined)return undefined;
     if(!page.ok||page.parser!=='json@1')return stop('directory_unreadable',`名称族 ${family} 的目录清单读不出`,`请管理员核对 SVN 资源和 ${family}_ADOC_ROOT，保留旧根，重跑同步`);
@@ -83,7 +83,7 @@ export function addAdocSources(build:BuildInfo,options:Record<string,unknown>,re
    });
    tree.pending.forEach(want);
    build.sources[adocRole(family,'files')]=[...tree.directories.keys()].filter(id=>id!==rootId(root)).concat([...tree.files.values()].map(m=>m.external!));
-  }catch(error){if(!(error instanceof ManualSourceError))throw error;notes.push(`${family}：${error.message}，旧根不动`);}
+  }catch(error){if(!(error instanceof ManualSourceError))throw error;notes.push(`${family}_ADOC_ROOT / ${family}_ADOC_MAIN：${error.message}，旧根不动`);}
  }
 }
 
