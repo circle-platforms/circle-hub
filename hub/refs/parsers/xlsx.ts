@@ -28,7 +28,7 @@ const CP437 = 'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒ
 type MemberLocation = { ordinal: number; offset: number };
 const archiveLocations = new WeakMap<Map<string, Buffer>, Map<string, MemberLocation>>();
 /** Internal ZIP decoder for this parser and its synthetic tests. Never extracts to disk or follows a path. */
-export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
+export function readXlsxArchive(input: Uint8Array, options: {rejectOpaqueMetadata?:boolean} = {}): Map<string, Buffer> {
   if (!(input instanceof Uint8Array))
     throw new TypeError('bytes must be a Uint8Array');
   let memberOffset: number | null = null;
@@ -52,6 +52,7 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
     }
   if (end < 0)
     syntax('ZIP 结束记录缺失或字节不是 ZIP');
+  if(options.rejectOpaqueMetadata&&bytes.readUInt16LE(end+20)!==0)forbidden('外发容器不接受 ZIP 归档注释；移除非成员内容后重新核验');
   const disk = bytes.readUInt16LE(end + 4);
   const centralDisk = bytes.readUInt16LE(end + 6);
   if (disk !== 0 || centralDisk !== 0)
@@ -61,6 +62,7 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
   let directoryAt = bytes.readUInt32LE(end + 16);
   let directoryEnd = end;
   const hasZip64 = end >= 20 && bytes.readUInt32LE(end - 20) === 0x07064b50;
+  if(options.rejectOpaqueMetadata&&hasZip64)forbidden('外发容器不接受 ZIP64 扩展区域；转换为无扩展容器后重新核验');
   if (hasZip64) {
     if (bytes.readUInt32LE(end - 16) !== 0 || bytes.readUInt32LE(end - 4) !== 1)
       forbidden('不接受分卷 ZIP64');
@@ -156,6 +158,7 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
     const nameLength = bytes.readUInt16LE(position + 28);
     const extra = bytes.readUInt16LE(position + 30);
     const comment = bytes.readUInt16LE(position + 32);
+    if(options.rejectOpaqueMetadata&&(extra!==0||comment!==0))forbidden('外发容器不接受 ZIP 成员扩展字段或注释；移除非成员内容后重新核验');
     fits(position, 46 + nameLength + extra + comment, directoryEnd);
     const entry: Entry = { ordinal: i + 1, name: '', nameBytes: bytes.subarray(position + 46, position + 46 + nameLength), version: bytes.readUInt16LE(position + 6), flags: bytes.readUInt16LE(position + 8), method: bytes.readUInt16LE(position + 10), crc: bytes.readUInt32LE(position + 16), compressed: bytes.readUInt32LE(position + 20), size: bytes.readUInt32LE(position + 24), at: bytes.readUInt32LE(position + 42) };
     flagsOk(entry.flags);
@@ -231,6 +234,7 @@ export function readXlsxArchive(input: Uint8Array): Map<string, Buffer> {
       syntax('ZIP 本地头签名不对');
     const nameLength = bytes.readUInt16LE(at + 26);
     const extra = bytes.readUInt16LE(at + 28);
+    if(options.rejectOpaqueMetadata&&extra!==0)forbidden('外发容器不接受 ZIP 本地扩展字段；移除非成员内容后重新核验');
     flagsOk(bytes.readUInt16LE(at + 6));
     fits(at + 30, nameLength + extra + entry.compressed, directoryAt);
     const localFields = extras(at + 30 + nameLength, extra);
