@@ -1236,7 +1236,9 @@
                                     "not_realtime",
                                     "partial",
                                     "intermittent",
-                                    "decision_shape_unruled"
+                                    "decision_shape_unruled",
+                                    "legacy_keyword_rules",
+                                    "possible_credentials"
                                   ]
                                 }
                               },
@@ -2547,7 +2549,9 @@
                                     "not_realtime",
                                     "partial",
                                     "intermittent",
-                                    "decision_shape_unruled"
+                                    "decision_shape_unruled",
+                                    "legacy_keyword_rules",
+                                    "possible_credentials"
                                   ]
                                 }
                               },
@@ -3871,7 +3875,9 @@
                                     "not_realtime",
                                     "partial",
                                     "intermittent",
-                                    "decision_shape_unruled"
+                                    "decision_shape_unruled",
+                                    "legacy_keyword_rules",
+                                    "possible_credentials"
                                   ]
                                 }
                               },
@@ -5195,7 +5201,9 @@
                                     "not_realtime",
                                     "partial",
                                     "intermittent",
-                                    "decision_shape_unruled"
+                                    "decision_shape_unruled",
+                                    "legacy_keyword_rules",
+                                    "possible_credentials"
                                   ]
                                 }
                               },
@@ -5569,7 +5577,9 @@
                     "not_realtime",
                     "partial",
                     "intermittent",
-                    "decision_shape_unruled"
+                    "decision_shape_unruled",
+                    "legacy_keyword_rules",
+                    "possible_credentials"
                   ]
                 }
               },
