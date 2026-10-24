@@ -29,8 +29,7 @@ of the whole view and the thresholds as advisory signals.
   `quality-board.negative_share` when the group's share exceeds its maximum or falls below its minimum; equal to the
   threshold is not a violation. Defaults 0.05, 0.05, 0.02; the parameters move them.
 - **totals** (run level): the totals over the whole view as a fact, and the note that the board describes the indexed
-  cases, not the whole suite — every case of an indexed document has an entry (a case whose commands resolve nowhere is an
-  unplaced entry, counted), and only sources not read stay outside. When the view states skipped sources, the note names
+  cases, not the whole suite — every case of an indexed document has an entry (a case without command ownership is counted, whether or not it has a tree position), and only sources not read stay outside. When the view states skipped sources, the note names
   the count; when the view is truncated, the totals cover the listed part and say so.
 
 ## Decisions
@@ -40,7 +39,7 @@ of the whole view and the thresholds as advisory signals.
   `vague_expected` true; the negative share is `negative` true over all cases. No others are invented.
 - **Unplaced cases (1.1.0)**: `placement` is mandatory and reads `by=commands`, on the same product and root as
   the count view. Only the `commands: null` row is counted, once; non-null command rows can repeat a case and are not
-  summed. The count is disclosed in totals (`N 个用例没有解析出命令`), without a threshold or a new requirement.
+  summed. The count is disclosed in totals (`未归位（没有命令归属的用例） N 个`), without a threshold or a new requirement.
   An absent null row in a complete view means zero. If the view is truncated and has no null row, projection refuses:
   the missing fact is the unplaced count; the fix asks for a complete same-root view and identifies the current
   knowledge interface's inability to page/filter facets. It does not finish as an unknown result.
@@ -145,3 +144,15 @@ Gold closure C: board location independently follows the public APV module rule:
 normalization, but a resulting module name is at most 40 characters and cannot contain four consecutive digits.
 Version and activity labels, and marked identifiers, remain excluded. The 40/41 boundary, prefixed labels and numeric
 control examples are covered without importing the product implementation into the gold.
+
+## Count terminology (1.1.2)
+
+The board keeps its `commands: null` business rule: “未归位（没有命令归属的用例）”
+counts cases without command ownership. Knowledge root reports and view summaries instead use
+“未挂到树上位置的条目” for content without a tree position. These are different properties
+and need not be equal: a case mounted on a tree node can still have no command ownership.
+Neither rule, thresholds nor null-group handling changes. Both labels come from the model's
+`knowledge_count` axis through generated `functions/generated/vocabulary.ts`; the generator
+registers this pack and `--check` locks that snapshot. For example, the same synthetic view
+has five distinct case contents, two with a tree position and three without, while four lack
+command ownership. The board still reports four.

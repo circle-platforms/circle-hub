@@ -392,3 +392,14 @@ test('a correct one-group board with the location column passes the scenario gro
   assert.ok(group !== undefined, JSON.stringify(checks.map((c) => c.name)));
   assert.ok(group.ok, JSON.stringify(group));
 });
+
+test('board count checks recognize the generated command-ownership label and still reject a different count', async () => {
+  const { labelOf } = await import('../../../contracts/generated/vocabulary.ts');
+  const scenario = qualityBoard({ product: 'synthetic', build: 'Rel_DEMO_10_6_1_1', types: true, unplaced: 4 });
+  for (const count of [3, 4]) {
+    const checks = scenario.check(turnsOf(`运行 run_5 完成。\n合计：用例 5 个；${labelOf('knowledge_count', 'commandless_cases')} ${count} 个，计入合计。`));
+    const check = checks.find(c => c.name.includes('未归位用例数'));
+    assert.ok(check);
+    assert.equal(check.ok, count === 4, JSON.stringify(check));
+  }
+});

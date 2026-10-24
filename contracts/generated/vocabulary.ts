@@ -79,6 +79,7 @@ export const AXES = {
   type_declaration_status: { label: '类型声明状态', owner: 'C07', values: [{ code: 'declared', label: '类型已声明' }, { code: 'undeclared', label: '类型未声明' }] },
   command_parse_status: { label: '命令解析状态', owner: 'C07', values: [{ code: 'parsed', label: '命令已解析' }, { code: 'not_command', label: '不是命令' }, { code: 'parameters_unchecked', label: '参数未核' }] },
   declaration_status: { label: '结构声明状态', owner: 'K02', values: [{ code: 'declared', label: '已声明' }, { code: 'undeclared', label: '未声明' }] },
+  knowledge_count: { label: '知识计数口径', owner: 'K05', values: [{ code: 'tree_unplaced_entries', label: '未挂到树上位置的条目' }, { code: 'commandless_cases', label: '未归位（没有命令归属的用例）' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -767,6 +768,15 @@ export function isDeclarationStatus(value: unknown): value is DeclarationStatus 
   return (DECLARATION_STATUS as readonly unknown[]).includes(value);
 }
 
+/** 知识计数口径 (K05) */
+export const KNOWLEDGE_COUNT = ['tree_unplaced_entries', 'commandless_cases'] as const;
+export type KnowledgeCount = (typeof KNOWLEDGE_COUNT)[number];
+export const KNOWLEDGE_COUNT_LABEL = { 'tree_unplaced_entries': '未挂到树上位置的条目', 'commandless_cases': '未归位（没有命令归属的用例）' } as const satisfies { readonly [K in KnowledgeCount]: string };
+export const KnowledgeCountSchema = z.enum(KNOWLEDGE_COUNT);
+export function isKnowledgeCount(value: unknown): value is KnowledgeCount {
+  return (KNOWLEDGE_COUNT as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -844,6 +854,7 @@ export interface AxisValues {
   type_declaration_status: TypeDeclarationStatus;
   command_parse_status: CommandParseStatus;
   declaration_status: DeclarationStatus;
+  knowledge_count: KnowledgeCount;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -923,6 +934,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   type_declaration_status: TYPE_DECLARATION_STATUS_LABEL,
   command_parse_status: COMMAND_PARSE_STATUS_LABEL,
   declaration_status: DECLARATION_STATUS_LABEL,
+  knowledge_count: KNOWLEDGE_COUNT_LABEL,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

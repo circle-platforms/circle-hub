@@ -1,9 +1,11 @@
+import { labelOf } from './generated/vocabulary.ts';
 // Reading a bound input as the facet view the board needs: facet-view@1, kind case, by covering line, module, has_expected,
 // vague_expected, negative (the caller may add more, e.g. priority). The model is authoritative; the external id is not
 // re-parsed. A view that is not this one, or is malformed, is a refusal the caller can fix.
 import { isRecord, strings } from './text.ts';
 import type { BoundInput, FacetRow, FacetViewData, Scalar } from './types.ts';
 
+const COMMANDLESS_CASES = labelOf('knowledge_count', 'commandless_cases');
 const HEX = /^[0-9a-f]{64}$/;
 
 /** The by fields the board's metrics are defined over. */
@@ -16,7 +18,7 @@ const isScalar = (value: unknown): value is Scalar =>
   value === null || typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value));
 
 export function readFacetView(input: BoundInput, slot: string, requiredBy: readonly string[] = REQUIRED_BY): ViewRead {
-  const fix = `在输入槽 ${slot} 绑定 knowledge:facets:<产品>:<构建>?kind=case&by=${requiredBy.join(',')}，计数、标签和未归位视图必须同产品同知识根；facets 只收一个计数视图和可选的一个标签视图`;
+  const fix = `在输入槽 ${slot} 绑定 knowledge:facets:<产品>:<构建>?kind=case&by=${requiredBy.join(',')}，计数、标签和${COMMANDLESS_CASES}视图必须同产品同知识根；facets 只收一个计数视图和可选的一个标签视图`;
 
   const failure = (message: string): ViewFailure => ({ ok: false, code: 'wrong_view', message, fix });
   const model: unknown = isRecord(input) ? input.model : undefined;
