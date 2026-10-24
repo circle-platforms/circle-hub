@@ -172,7 +172,7 @@ export interface RunDetail {
   production: { record: string; result: ValidationResult } | null;
 }
 
-export interface RunListing extends Page<RunRecord> {requests?:RunRequestView[];open_runs?:string[]}
+export interface RunListing extends Page<RunRecord> {requests?:RunRequestView[];overdue_requests?:RunRequestView[];open_runs?:string[]}
 
 export interface RunsService {
   abandonRun?(user:Principal,run:string,request:string,reason:string):Promise<{record:string;result:ValidationResult;decision:string;created:boolean;current:boolean}>;

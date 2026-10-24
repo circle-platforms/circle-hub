@@ -69,9 +69,10 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
   const items=page.items.map(r=>r.body).filter(r=>canSeeRun(user,r));
   let requests=(await requestsOf(ctx,user)).filter(r=>r.answered_by===null);
   if(query.pack){const matches=[] as typeof requests;for(const request of requests){const linked=request.run?await runById(ctx.deps.records.store,request.run):null;const pack=linked?.body.pack??(request.pack_digest?(await ctx.deps.workflows.byDigest(request.pack_digest))?.pack.id:null);if(pack?.split('@')[0]===query.pack)matches.push(request);}requests=matches;}
+  const overdue_requests=requests.filter(request=>Date.parse(request.due)<=ctx.now().getTime());
   const open_runs:string[]=[];
   for(const run of items){const superseded=await hasSuccessor(ctx,run);if((superseded||await abandonDecision(ctx,run.run))&&!requests.some(r=>r.run===run.run))continue;const latest=await latestAccepted(ctx.deps.records.store,run.run);if(!latest||requests.some(r=>r.run===run.run)||latest.body.partitions.incomplete.length||latest.body.partitions.quarantined.length||latest.body.errors.some(e=>(e.rounds_left??0)>0))open_runs.push(run.run);}
-  return {items,next:page.next,...(requests.length?{requests}:{}),...(open_runs.length?{open_runs}:{})};
+  return {items,next:page.next,...(overdue_requests.length?{overdue_requests}:{}),...(requests.length?{requests}:{}),...(open_runs.length?{open_runs}:{})};
 }
 
 /** One validation result of a run: of a submission by its digest as received, or the latest accepted one. */

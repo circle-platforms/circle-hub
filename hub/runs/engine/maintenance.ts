@@ -27,6 +27,7 @@ export async function maintainRuns(ctx:EngineContext):Promise<void>{
   }while(cursor!==null);
   await repairedPackRequests(ctx);
   await acceptedSourceRequests(ctx);
+  await escalateOverdueRequests(ctx);
 }
 /** A committed human choice is never repeated; only its deterministic delivery projection is retried. */
 async function recoverManagement(ctx:EngineContext,stored:StoredRecord<RunRecord>,decision:StoredRecord<import('../../records/api.ts').ActionBody>):Promise<void>{
@@ -305,4 +306,25 @@ async function recoverParent(ctx:EngineContext,stored:StoredRecord<RunRecord>):P
     projected.errors.push({code:'check_error',message:question.body.missing,path:'',fix:'请求 rec:'+question.digest+'：'+question.body.next_action});
     await putResult(store,projected,ctx.now().toISOString());
   });
+}
+
+/** Keep original deadlines immutable; each expired unanswered request advances to a named administrator. */
+async function escalateOverdueRequests(ctx:EngineContext):Promise<void>{
+  const requests=await requestRecords(ctx),byId=new Map(requests.map(request=>[request.record,request]));
+  const answerOf=(request:(typeof requests)[number],seen=new Set<string>()):string|null=>{
+    if(request.answered_by)return request.answered_by;
+    if(seen.has(request.record))return null;
+    seen.add(request.record);
+    const parent=byId.get(request.source);
+    return parent?answerOf(parent,seen):null;
+  };
+  for(const request of requests){
+    if(request.answered_by!==null)continue;
+    const answer=answerOf(request);
+    if(answer){await answerRequest(ctx,request.record,answer);continue;}
+    if(Date.parse(request.due)>ctx.now().getTime())continue;
+    const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
+    if(!admin)throw new Error('到期请求升级缺少具名管理员');
+    await putRequest(ctx,{...(request.run?{run:request.run}:{}),...(request.pack_digest?{pack_digest:request.pack_digest}:{}),kind:'clarification',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:request.record,code:'awaiting_step',missing:'请求 rec:'+request.record+' 到期仍未作答，缺少该请求所列事实或处置',next_action:'管理员核对原请求 rec:'+request.record+' 的缺失事实、原受众和下一步，按其真实作答入口推进；只有原请求的实际回答才能关闭升级请求，不修改原期限或原记录'});
+  }
 }
