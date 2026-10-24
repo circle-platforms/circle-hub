@@ -43,6 +43,20 @@ for (const keys of [undefined, [], ['a', 'b', 'c', 'd'], ['a', 1]]) {
     assert.equal(port.calls.length, 0); assert.ok(result.unread.length); assert.equal((result.subject as any).lookup, null);
   });
 }
+test('a complete narrowed view may omit a requested key that has no entries', async () => {
+  const response = view({ keys: {}, entries: {}, only: ['alpha beta'], total_keys: 0, total_entries: 0, cut_keys: [] });
+  const result = await narrowSubjectRead(narrow, { lookup_keys: ['alpha beta'] }, 4096, io(response));
+  assert.deepEqual(result.unread, []);
+  assert.deepEqual((result.subject as { lookup: { keys: object } }).lookup.keys, {});
+});
+test('rebind replaces a disjoint bound only with the subject keys on the same revision', async () => {
+  const response = view({ keys: {}, entries: {}, only: ['alpha beta'], total_keys: 0, total_entries: 0, cut_keys: [] });
+  const port = io(response, { boundText: JSON.stringify(view({ only: ['user'], keys: {}, entries: {}, total_keys: 0, total_entries: 0 })) });
+  const result = await narrowSubjectRead({ ...narrow, rebind: true }, { lookup_keys: ['alpha beta'] }, 4096, port);
+  assert.equal(port.calls.length, 1);
+  assert.match(port.calls[0], /only=alpha%20beta@/);
+  assert.deepEqual(result.unread, []);
+});
 test('cannot widen an already restricted view or trust an unavailable/oversized read', async () => {
   for (const patch of [
     { boundText: JSON.stringify(view({ only: ['other'] })) },

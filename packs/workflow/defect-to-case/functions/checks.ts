@@ -1,5 +1,6 @@
 import {draftStructure,structure,expectedIdentity,STRUCTURE_RULE} from './case-identity.ts';
 import { commandHeadOf } from './command-head.ts';
+import { parseSrcReference, quoteIdentity } from './quote-identity.ts';
 // Pack check functions for defect-to-case.
 import type { CatalogEntry, CheckOutcome } from '../../../../contracts/src/tables.ts';
 import type { IndexView } from '../../../../contracts/src/views.ts';
@@ -9,7 +10,7 @@ import {
   isCompactIndex,
   normalizeCommand,
 } from './compact-index.ts';
-import { extractDrafts } from './subjects.ts';
+import { commandReadKeys, extractDrafts } from './subjects.ts';
 import {declaredResourceTag,declareResourceTags} from './generated/vocabulary.ts';
 import { CANONICAL_CATEGORIES, CODES, type CanonicalCategory, type DraftCase } from './types.ts';
 
@@ -214,14 +215,18 @@ export function checkGroundedReading(input: unknown): CheckOutcome[] {
         outcomes.push({ verdict: 'refute', code: CODES.EXPECT_NOT_IN_QUOTE, statement: `${at}文字不是所附引文的逐字片段；修正：从这段修复说明或手册引文逐字摘取非空的期望文字，不得改写，再提交修复`, grounds: [exp.quote.reference], tier: 'blocking', pointer: `/slots/cases/${i}/data/expected/${j}/text`, ...own });
         continue;
       }
-      const identity=expectedIdentity(exp.identity),pointer='/cases/'+i+'/expected/'+j;
-      if(!identity||!Number.isSafeInteger(exp.after)||Number(exp.after)<1||Number(exp.after)>draft.steps.length){outcomes.push({verdict:'unknown',reason:'missing_input',missing:'期望引文的原件摘要、parser/路径、byte span 和 after；下一步客户端按原件补完整身份后重交',statement:'缺完整期望引用身份；下一步补原件位置与步骤绑定后重交',grounds:[],tier:'blocking',...own,pointer});continue;}
-      const reference='src:'+identity.source_sha256+'/'+identity.parser+'/'+identity.path;
-      if(exp.quote?.reference!==reference){outcomes.push({verdict:'refute',code:CODES.QUOTE_MISSING,statement:'quote.reference 与结构身份的原件、parser 或路径不一致',grounds:[],tier:'blocking',...own,pointer});continue;}
-      const sources=isRecord(record.sources)?record.sources:{},text=sources['src:'+identity.source_sha256];
+      const pointer='/cases/'+i+'/expected/'+j;
+      const sources=isRecord(record.sources)?record.sources:{};
+      const derived=quoteIdentity(exp.quote.reference,exp.quote.text,sources);
+      const supplied=expectedIdentity(exp.identity);
+      const identity='identity' in derived?derived.identity:supplied;
+      if(!identity){const missing='missing' in derived?derived.missing:'缺完整期望引用身份';outcomes.push({verdict:'unknown',reason:'missing_input',missing:missing+'；下一步绑定同一原件后重核',statement:missing+'；下一步绑定同一原件后重核',grounds:[exp.quote.reference],tier:'blocking',...own,pointer});continue;}
+      const parsed=parseSrcReference(exp.quote.reference);
+      if(!('identity' in derived)&&(!parsed||parsed.sha256!==identity.source_sha256||parsed.parser!==identity.parser||parsed.selector!==identity.path)){outcomes.push({verdict:'refute',code:CODES.QUOTE_MISSING,statement:'quote.reference 与结构身份的原件、parser 或路径不一致',grounds:[],tier:'blocking',...own,pointer});continue;}
+      const text=sources['src:'+identity.source_sha256];
       if(typeof text!=='string'){outcomes.push({verdict:'unknown',reason:'missing_input',missing:'原件 src:'+identity.source_sha256+' 的可读 UTF-8 字节；下一步绑定同一原件并补读，过大时由包作者调整有界 reads 后以新版本续做',statement:'缺完整原件字节，无法核对 byte span；下一步补读后重核',grounds:[],tier:'blocking',...own,pointer});continue;}
       const bytes=new TextEncoder().encode(text);let quote:string|null=null;try{if(identity.span.offset+identity.span.length<=bytes.byteLength)quote=new TextDecoder('utf-8',{fatal:true}).decode(bytes.slice(identity.span.offset,identity.span.offset+identity.span.length));}catch{}
-      if(quote!==exp.quote.text){outcomes.push({verdict:'refute',code:CODES.QUOTE_MISSING,statement:'期望引用的 byte span 与逐字原文不一致',grounds:[reference],tier:'blocking',...own,pointer});continue;}
+      if(quote!==exp.quote.text){outcomes.push({verdict:'refute',code:CODES.QUOTE_MISSING,statement:'期望引用的 byte span 与逐字原文不一致',grounds:[exp.quote.reference],tier:'blocking',...own,pointer});continue;}
 
 
     }
@@ -290,7 +295,8 @@ export function checkDuplicate(input:unknown):CheckOutcome[]{
   return facts;
  };
  const out:CheckOutcome[]=[];
- for(const draft of drafts){const identity=draftStructure(draft as unknown as Record<string,unknown>,catalog);if(!draft.id||!identity||!catalog){out.push(missing(draft,'缺草稿 id、完整已核命令参数身份、after 或期望原件引文身份'));continue;}
+ for(const draft of drafts){const identity=draftStructure(draft as unknown as Record<string,unknown>,catalog);const paths=identity?identity.commands.map(command=>command.path):commandReadKeys(draft.steps,catalog);if(!draft.id||!catalog||paths.length===0){out.push(missing(draft,'缺草稿 id 或已解析的命令路径'));continue;}
+  if(!identity){const facts=coverage(paths);const commands=new Set(Object.keys(compact.by_commands).flatMap(key=>key.split(';')));if(facts.length){out.push({...missing(draft,'草稿 '+draft.id+'（'+draft.title+'）：'+facts.join('；')),reason:'integrity_unproven'});continue;}if(unresolved>0||paths.some(path=>commands.has(normalizeCommand(path)))){out.push(missing(draft,'草稿 '+draft.id+' 的命令在索引中有同命令用例或未解析条目，缺完整结构身份，无法比较'));continue;}out.push({verdict:'support',statement:'草稿 '+draft.id+' 的命令在当前锁定索引范围内没有重复',grounds:[],tier:'advisory',...own,data:{draft_id:draft.id,requirement:'not_duplicate',rule_version:STRUCTURE_RULE,structure_key:null,scope:{build:index.build??null,only:index.only??null,entries:0}}});continue;}
   const duplicates=[...entities.values()].filter(e=>e.keys.size===1&&e.keys.has(identity.key));if(duplicates.length){for(const found of duplicates)out.push({verdict:'refute',code:CODES.DUPLICATE_CASE,statement:'按照显式结构声明，草稿 '+draft.id+' 与索引用例 '+found.document+':'+found.node+' 的规范结构身份相同',grounds:[found.reference],tier:'advisory',...own,data:{draft_id:draft.id,requirement:'not_duplicate',rule_version:DUPLICATE_CLAIM_RULE,structure_rule:STRUCTURE_RULE,structure_key:identity.key,duplicate_of:{document:found.document,node:found.node,reference:found.reference}}});continue;}
   const facts=coverage(identity.commands.map(c=>c.path));
   if(unresolved>0)facts.push('有 '+unresolved+' 个条目缺完整作者结构声明；下一步作者补 case_structure 并重产新根');

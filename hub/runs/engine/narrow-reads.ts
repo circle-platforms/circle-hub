@@ -57,7 +57,7 @@ export async function narrowSubjectRead(declaration: NarrowCheckRead, subject: u
   const match = /^(knowledge:index:.+)@([a-f0-9]{64})$/.exec(io.binding.external ?? '');
   if (!bound || !match || match[2] !== bound.build.root)
     return gap('已绑定索引的可读内容或固定修订依据缺失', '重读已绑定索引并在同一修订重新核验');
-  if (bound.only && result.keys.some(key => !bound.only!.includes(key)))
+  if (bound.only && declaration.rebind !== true && result.keys.some(key => !bound.only!.includes(key)))
     return gap('主体请求键超出已绑定视图范围', '绑定覆盖这些键的来源视图后重新核验');
   const [base, query] = match[1].split('?');
   if (!query) return gap('已绑定索引缺少查询声明', '重新绑定有效索引视图后重读');
@@ -80,8 +80,11 @@ export async function narrowSubjectRead(declaration: NarrowCheckRead, subject: u
   const bounded = { ...view, entries: Object.fromEntries(Object.entries(view.entries).filter(([sha]) => kept.has(sha))), keys: Object.fromEntries(Object.entries(view.keys).map(([key, values]) => [key, values.filter(sha => kept.has(sha))])), truncated: view.truncated || hashes.length > declaration.max_entries };
   result.subject = inject(subject, declaration.into, bounded);
   result.text = JSON.stringify(bounded);
+  const listed = Array.isArray(view.only) ? view.only : null;
+  const sameOnly = listed !== null && listed.length === result.keys.length && result.keys.every(key => listed.includes(key));
+  const omissionMeansEmpty = sameOnly && view.truncated !== true && view.skipped === 0 && !view.cut_keys?.some(key => result.keys.includes(key));
   const missing = result.keys.filter(key => !Object.hasOwn(view.keys, key));
-  if (missing.length) gap(`收窄索引缺少请求键 ${missing.join('、')} 对应的完整事实`, '重读缺失键；若仍缺失，补建这些键的索引后重新核验');
+  if (missing.length && !omissionMeansEmpty) gap(`收窄索引缺少请求键 ${missing.join('、')} 对应的完整事实`, '重读缺失键；若仍缺失，补建这些键的索引后重新核验');
   if (view.truncated || view.skipped > 0 || view.cut_keys?.some(key => result.keys.includes(key)) || hashes.some(sha => !Object.hasOwn(view.entries, sha)) || hashes.length > declaration.max_entries)
     gap('收窄索引存在截断、跳过或缺少条目，尚无完整覆盖事实', '重读同一修订；调高视图或 max_entries 上限，补齐跳过条目后重新核验', 'budget_exhausted');
   return result;

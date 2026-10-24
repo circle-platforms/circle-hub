@@ -77,3 +77,12 @@ it('duplicate subject never guesses an unresolved command head', () => {
   const draft=makeGoodDraft();draft.steps=[{command:'unresolved'}];const input = makeItemInput([draft]); input.catalog = [];
   assert.deepEqual((duplicateSubject(input) as { read_keys: string[] }).read_keys, []);
 });
+it('duplicate subject reads the catalog command path and ignores a model read_keys declaration', () => {
+  const draft = makeGoodDraft();
+  draft.steps = [{ command: 'widget health interval 60' }];
+  (draft as { read_keys?: string[] }).read_keys = ['user'];
+  const input = makeItemInput([draft]);
+  const root = 'b'.repeat(64);
+  input.catalog = [{ words: ['widget'] }, { words: ['widget', 'health', 'interval'], reference: `tree:${root}/commands/widget/health/interval` }];
+  assert.deepEqual((duplicateSubject(input) as { read_keys: string[] }).read_keys, ['/commands/widget/health/interval']);
+});

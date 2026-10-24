@@ -1,7 +1,7 @@
 import {declareResourceTags} from './generated/vocabulary.ts';
 import type { CatalogEntry } from '../../../../contracts/src/tables.ts';
 import { commandIdentity } from './case-identity.ts';
-import { commandHeadOf } from './command-head.ts';
+import { commandPathOf } from './command-head.ts';
 // Subject builders for defect-to-case checks.
 import type { DraftCase, DraftExpected, DraftStep } from './types.ts';
 
@@ -114,6 +114,17 @@ export function quoteSubject(input: unknown): unknown {
   };
 }
 
+/** Dedup read keys. Catalog resolution wins; a declared CommandIdentity is only the fallback. The model does not declare them. */
+export function commandReadKeys(steps: ReadonlyArray<{ command: string; identity?: unknown }>, catalog: unknown): string[] {
+  const entries = Array.isArray(catalog) ? catalog as Array<{ words?: unknown; reference?: unknown }> : [];
+  return [...new Set(steps.flatMap(step => {
+    const fromCatalog = commandPathOf(step.command, entries);
+    if (fromCatalog) return [fromCatalog];
+    const identity = commandIdentity(step.identity);
+    return identity ? [identity.path] : [];
+  }))].sort();
+}
+
 export function duplicateSubject(input: unknown): unknown {
   const record = isRecord(input) ? input : {};
   const itemId = extractItemId(record);
@@ -135,7 +146,7 @@ export function duplicateSubject(input: unknown): unknown {
     drafts,
     // New declarations receive the locked catalog and let the engine inject a fresh narrowed view.
     indexed_cases: Array.isArray(record.catalog) ? null : indexedCases,
-    read_keys:[...new Set(drafts.flatMap(draft=>draft.steps.flatMap(step=>{const i=commandIdentity(step.identity);return i?[i.path]:[]})))].sort(),
+    read_keys: commandReadKeys(drafts.flatMap(draft => draft.steps), record.catalog),
   };
 }
 

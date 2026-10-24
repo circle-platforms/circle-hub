@@ -169,6 +169,10 @@
                     "type": "integer",
                     "exclusiveMinimum": 0,
                     "maximum": 10000
+                  },
+                  "rebind": {
+                    "description": "replace the bound only with the subject keys on the same revision; the subject derives the keys and the model does not supply them",
+                    "type": "boolean"
                   }
                 },
                 "required": [
