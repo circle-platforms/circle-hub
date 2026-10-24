@@ -564,3 +564,10 @@ pack, including future and Hub-side runs. A pack audience of a run must name tha
 sharing query for consumers that have a record store; it grants no decision capability. Sharing grants viewing, never
 submission or lineage continuation; it never overrides connector-source visibility, credential holding or knowledge-tree
 permissions. No package-specific policy is built into these keys.
+
+`artifacts.sourceForRun(viewer, sha, run, {consumer})` is a read-only capability for generated evidence. It reads and
+validates the immutable run, checks owner/admin or current sharing access, and requires an exact `src:` digest in its
+frozen source bindings. Only an anonymous Hub-generated artifact record can decide this read. Uploads and connector
+originals gain no visibility from a run share. The ordinary scanner/acceptance and consumer-tier calculation is reused;
+there is no trusted-bytes fallback and no source ACL rewrite. Missing/corrupt stored bytes retain the ordinary integrity
+error. A source reference without the authorized run continues to use the reader's original source visibility.

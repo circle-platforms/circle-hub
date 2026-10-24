@@ -5,6 +5,8 @@
 // the Hub read or made, never what a person supplied. Readers get bytes only through source(), which applies the read tier
 // (B02 F[5]): retain_only bytes are never handed out, function_bytes_only bytes only to functions. Every read re-reads the
 // account, and a share covers the one record it names (B04 R[3]).
+import { RunRecord } from '../../contracts/src/run.ts';
+import { runIsSharedWith } from './authorizations.ts';
 import { PackId, RunId, UserId, Versioned } from '../../contracts/src/common.ts';
 import { ExternalObjectId } from '../../contracts/src/reference.ts';
 import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
@@ -339,6 +341,30 @@ export class RecordArtifacts implements Artifacts {
     const viewer = await this.#viewer(principal);
     const choice = viewer === null ? null : await this.#choose(viewer, sha256, record);
     if (choice === null) return null;
+    return this.#sourceChoice(choice, consumer);
+  }
+
+  async sourceForRun(principal: Principal, sha256: string, run: string, options: {consumer?: ProducerKind} = {}): Promise<ArtifactSource | null> {
+    const consumer = options.consumer ?? MODEL;
+    if (!isProducerKind(consumer)) throw new TypeError('consumer must be a producer kind');
+    if (!RunId.safeParse(run).success || !isSha256(sha256)) return null;
+    const viewer = await this.#viewer(principal);
+    if (viewer === null) return null;
+    const record = (await this.#store.find({kind:'run',key:'runs.id',value:run,limit:1})).items[0];
+    if (!record || record.schema !== 'run@1') return null;
+    const parsed = RunRecord.safeParse(record.body);
+    if (!parsed.success || parsed.data.run !== run) return null;
+    const snapshot = parsed.data;
+    const visible = viewer.role === ADMIN || snapshot.host !== 'hub' && snapshot.runner === viewer.id || await runIsSharedWith(this.#store,viewer.id,snapshot,this.#options.now());
+    if (!visible || !snapshot.sources.some(binding => /^src:([0-9a-f]{64})(?:\/|$)/.exec(binding.reference)?.[1] === sha256)) return null;
+    const all = await this.records(sha256);
+    const generated = [...all].reverse().find(artifact => 'generated' in artifact.body.origin && artifact.body.author.user === null);
+    if (!generated) return null;
+    return this.#sourceChoice(await this.#effectiveChoice(generated,all),consumer);
+  }
+
+  async #sourceChoice(choice: Choice, consumer: ProducerKind): Promise<ArtifactSource> {
+    const sha256 = choice.artifact.body.sha256;
     const body = choice.artifact.body;
     const given = choice.tier === MODEL_READABLE || (choice.tier === FUNCTION_BYTES_ONLY && consumer === FUNCTION);
     const base = { ...(choice.acceptance === undefined ? {} : {acceptance:choice.acceptance}), artifact: choice.artifact, sha256: body.sha256, size: body.size, mediaType: body.media_type, readTier: choice.tier };
@@ -504,6 +530,10 @@ export class RecordArtifacts implements Artifacts {
     const all = await this.records(sha256);
     const chosen = record === null ? await this.#deciding(viewer, all) : await this.#pinned(viewer, all, record);
     if (chosen === null) return null;
+    return this.#effectiveChoice(chosen, all);
+  }
+
+  async #effectiveChoice(chosen: SourceArtifact, all: readonly SourceArtifact[]): Promise<Choice> {
     const hits = newestHits(all);
     let acceptance: EffectiveScanAcceptance | null = null;
     let tier = chosen.body.read_tier;

@@ -34,7 +34,7 @@ export function principalOf(reader: ReaderIdentity): Principal {
 export function sourceReader(artifacts: Artifacts, consumer: ProducerKind): SourceReader {
   return {
     async read(sha256, reader) {
-      const source = await artifacts.source(principalOf(reader), sha256, { consumer });
+      const source = await artifacts.source(principalOf(reader), sha256, { consumer }) ?? (reader.run ? await artifacts.sourceForRun(principalOf(reader),sha256,reader.run,{consumer}) : null);
       if (source === null || consumer === 'model' && source.bytes === null && source.readTier !== 'retain_only') return null;
       return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
     },

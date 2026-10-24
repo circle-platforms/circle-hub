@@ -614,3 +614,7 @@ Cursors bind the reader, package filter and last ordering key; hidden records ca
 Sharing confers no submission, lease lineage, repair round or client-key ownership. The model's conditional read-only
 predecessor exception requires a workflow declaration that the present format does not yet expose; this task keeps the
 existing predecessor guard, as specified by its task page, and introduces no such declaration.
+
+Shared previews use the same run-bound generated-source accessor for fragment resolution and quotation candidates.
+A shared run never grants knowledge-tree permission: live catalogs are omitted from a preview when its reader cannot
+read the product, and tree references still pass the ordinary tree reader. Connector originals retain their own ACLs.

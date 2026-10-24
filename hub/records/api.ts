@@ -417,6 +417,8 @@ export interface Artifacts {
    * a record of these bytes or the reader may not read it; the credential rule applies to it all the same.
    */
   source(principal: Principal, sha256: string, options?: { consumer?: ProducerKind; record?: string }): Promise<ArtifactSource | null>;
+  /** Generated, run-bound evidence only; verifies run visibility and current read tier without changing source ACLs. */
+  sourceForRun(principal: Principal, sha256: string, run: string, options?: { consumer?: ProducerKind }): Promise<ArtifactSource | null>;
   /**
    * Verified bytes whatever the read tier, for trusted maintenance only: backup verification and re-scanning with a newer
    * scanner. Never for pack functions, parsers, projections or anything whose output can reach a model or a reader.
