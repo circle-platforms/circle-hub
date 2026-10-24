@@ -942,3 +942,9 @@ ROOT 的三种情形：
 首轮复核合并主线的名称族部署接线后，包升至 1.4.2 并重签。`familyManual` 从解析后的 params
 把 components、licenses、deployment_forms 透传给条目适配器，Markdown 和 adoc 两路使用同一组部署闭集；
 两个名称族均有合成输入覆盖，没有改 include、AST 或源读取。
+
+## Product-wide specifications
+
+`spec_index: true` reads `manual:spec-list:configured`. Only files whose filename or WebDAV display title contains a declared product name (NFKC, case-insensitive, ASCII letter boundaries) enter `scope.spec_documents`; other members are counted as 不属于这条产品线 and remain addressable at their original reference. Missing/incomplete directory observations withhold the whole scope so an existing root cannot lose its specifications.
+
+The `specifications` producer runs only with `unversioned: true`. Supported Markdown sections use the existing K1 producer, under `/spec/<resource-relative document path encoded as one segment>/<section path>`, without a command tree. It retains source literals and K02 applicability extraction/inheritance; `data.document_lines` preserves the written version tokens for information only and declares no build. `displayname` is the listing title when WebDAV supplies it; no title is guessed from a filename. Sources in other formats refuse with a conversion/reproduction action.

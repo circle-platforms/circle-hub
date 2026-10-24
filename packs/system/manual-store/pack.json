@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "functions/webdav.ts",
-      "sha256": "50e7d62bec27b7fd1011dd4be17e0e1d3fc49cb1928fdc317e5563d2c9a039eb",
-      "size": 26300
+      "sha256": "1a609a360df94af117747f45ef886058b1cbd938fd6eef5d765e3ffc7c1a8843",
+      "size": 27105
     },
     {
       "path": "system.json",

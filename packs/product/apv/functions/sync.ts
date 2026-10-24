@@ -1,4 +1,5 @@
 import {addAdocSources} from './adoc/deployment.ts';
+import {specificationScope} from './specifications.ts';
 // The sync plan of the product (product@1 sync.plan, SyncPlanInput -> SyncPlanOutput). Each round the Hub hands back every
 // page read so far; the plan is recomputed from them: index -> hub pages -> listing pages (depth 2, dead links tolerated,
 // pages of both name families; platform, customer and patch pages only when an `include` pattern opts them in), then the
@@ -61,10 +62,11 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
     const read = (isRecord(input) && isRecord(input.read) ? input.read : {}) as Record<string, Read>;
     const options = optionsOf(isRecord(input) ? input.options : undefined);
     const caseIndex = caseIndexOptions(isRecord(input) ? input.options : undefined);
+    const specifications = isRecord(input.options) && input.options.spec_index === true ? specificationScope(read) : null;
     const index = htmlOf(read[INDEX_ID]);
     if (index === null) {
       const reason = read[INDEX_ID]?.reason;
-      return { fetch: [], builds: [], done: true, note: `索引页读不出（${typeof reason === 'string' ? reason.slice(0, 200) : '没有读到'}），没有列出构建` };
+      return { fetch: specifications?.fetch??[], builds: [], done: !specifications?.fetch.length, ...(specifications?.sources?{scope:specifications.sources}:{}), note: [specifications?.note,`索引页读不出（${typeof reason === 'string' ? reason.slice(0, 200) : '没有读到'}），没有列出构建`].filter(Boolean).join('；') };
     }
     const walk = { include: options.include, exclude: options.exclude, mainline_page_words:options.mainline_page_words };
     const first = planSync({ index, options: walk });
@@ -76,6 +78,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
     };
     for (const hub of plan.hubs) want(listingId(hub.page));
     for (const page of plan.pages) want(listingId(page.page));
+    for (const id of specifications?.fetch??[]) want(id);
     const cases: CaseTree | null = caseIndex.on ? caseTree(read, caseIndex) : null;
     if (cases?.status === 'pending') want(CASE_TREE_ID);
     const lineCache = new Map<string, boolean>();
@@ -209,6 +212,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
     const uncovered = cases?.status === 'ready' ? uncoveredDocuments(cases.documents, caseLines) : [];
 
     const summary = [
+      ...(specifications?[specifications.note]:[]),
       `读了 ${Object.keys(read).length} 个页面`,
       `${plan.pages.length} 个列表页`,
       `列出 ${kept.length} 个构建（${kept.filter((b) => b.released_at !== null).length} 个已发布，${kept.filter((b) => Object.keys(b.sources).length === 0 && b.base === b.name).length} 个只有名字）`,
@@ -222,7 +226,7 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
     if (options.lines !== null) summary.push(`只列版本线 ${[...options.lines].join('、')}`);
     if (notes.length > 0) summary.push(notes.slice(0, 3).join('；'));
     const note = summary.join('；');
-    return { fetch, builds: kept, done: fetch.length === 0, note: note.length > MAX_NOTE ? `${note.slice(0, MAX_NOTE)}…` : note };
+    return { fetch, builds: kept, done: fetch.length === 0, ...(specifications?.sources?{scope:specifications.sources}:{}), note: note.length > MAX_NOTE ? `${note.slice(0, MAX_NOTE)}…` : note };
   } catch (error) {
     return { fetch: [], builds: [], done: true, note: internalError(error) };
   }

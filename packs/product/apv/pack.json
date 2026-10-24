@@ -182,14 +182,19 @@
       "size": 2672
     },
     {
+      "path": "functions/specifications.ts",
+      "sha256": "80094f79da8613ecd2899f8588a505de712a8ae8f729ba6ffb9f7e1a321ff3aa",
+      "size": 4065
+    },
+    {
       "path": "functions/sync-plan.ts",
       "sha256": "50eafdccb7c7efccfc46b77b6765a667d112c139feb7a9b2620b3849231b1092",
       "size": 12632
     },
     {
       "path": "functions/sync.ts",
-      "sha256": "bf687288d4e90a447ddd3d79402bef235ccfc570a87741f904d0fa7d2aecf427",
-      "size": 14391
+      "sha256": "45795368c24e44630f030b62a9bab0e8ebfd8c03349531002702270ae0d63ab6",
+      "size": 14907
     },
     {
       "path": "functions/types.ts",
@@ -203,8 +208,8 @@
     },
     {
       "path": "product.json",
-      "sha256": "e85590c5bf87b9fd77bf8f6af1633ed9ce504b7ea121ebe7ade7bad456da931e",
-      "size": 8232
+      "sha256": "39a7485f22bbb18940e3a2ba520437a2f75b9b3df6ebc3d53714b6f51a2d824a",
+      "size": 9189
     }
   ]
 }

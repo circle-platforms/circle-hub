@@ -28,7 +28,8 @@
           "root": "${var:NSAE_ADOC_ROOT}",
           "main": "${var:NSAE_ADOC_MAIN}"
         }
-      }
+      },
+      "spec_index": true
     },
     "max_rounds": 10,
     "max_reads": 300
@@ -221,6 +222,32 @@
           "optional": true
         }
       }
+    },
+    {
+      "id": "specifications",
+      "title": "产品线不分版本的规格章节",
+      "unversioned": true,
+      "function": {
+        "module": "functions/specifications.ts",
+        "export": "specifications"
+      },
+      "inputs": {
+        "documents": {
+          "source": "spec_documents",
+          "many": true,
+          "batch": 20,
+          "optional": true
+        },
+        "catalog": {
+          "source": "spec_catalog",
+          "optional": true
+        }
+      },
+      "params": {
+        "components": "${var:APV_COMPONENTS}",
+        "licenses": "${var:APV_LICENSES}",
+        "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}"
+      }
     }
   ],
   "variables": [
@@ -315,8 +342,41 @@
       },
       "default": {}
     },
-    {"name": "APV_COMPONENTS", "description": "APV_COMPONENTS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
-    {"name": "APV_LICENSES", "description": "APV_LICENSES：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
-    {"name": "APV_DEPLOYMENT_FORMS", "description": "APV_DEPLOYMENT_FORMS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []}
+    {
+      "name": "APV_COMPONENTS",
+      "description": "APV_COMPONENTS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
+    },
+    {
+      "name": "APV_LICENSES",
+      "description": "APV_LICENSES：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
+    },
+    {
+      "name": "APV_DEPLOYMENT_FORMS",
+      "description": "APV_DEPLOYMENT_FORMS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
+    }
   ]
 }

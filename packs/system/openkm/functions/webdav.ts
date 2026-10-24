@@ -379,13 +379,23 @@ export function specListPlan(input: unknown): PlanOutput {
 }
 export function specListProject(input: unknown): unknown {
   const {settings,responses} = partsOf(input); const {folders,warnings} = specFolders(settings);
-  const files: Array<{name:string;path:string}> = []; const unread: string[] = [];
+  const files: Array<{name:string;path:string;title?:string}> = []; const unread: string[] = [];
   folders.forEach((folder, at) => {
     const response = responses[listKey(folders, at)];
     if (!response?.ok || !isRecord(response.model) || !isRecord(response.model.root)) { unread.push(folder); warnings.push(`${folder}/ 目录读不到；下一步资源管理员核对读权限和目录后重读`); return; }
     const listing = membersOf(response.model); const warning = skippedWarning(folder,listing.skipped);
     if (warning) warnings.push(warning);
-    files.push(...listing.members.filter(e=>!e.collection).sort(byName).map(e=>({name:e.name,path:`${folder}/${e.name}`})));
+    const titles=new Map<string,string>();
+    const walk=(element:XmlElement,depth=0):void=>{
+      if(depth>32)return;
+      if(localName(element.name)==='response'){
+        let href:string|undefined,title:string|undefined;
+        const fields=(node:XmlElement,level=0):void=>{if(level>32)return;const name=localName(node.name);if(name==='href')href=textOf(node).trim();if(name==='displayname')title=textOf(node).trim();for(const child of node.children)if(typeof child!=='string')fields(child,level+1);};
+        fields(element);if(href&&title)titles.set(trimmed(pathOf(href)),title);
+      }else for(const child of element.children)if(typeof child!=='string')walk(child,depth+1);
+    };
+    walk(response.model.root as XmlElement);
+    files.push(...listing.members.filter(e=>!e.collection).sort(byName).map(e=>({name:e.name,path:`${folder}/${e.name}`,...(titles.has(e.path)?{title:titles.get(e.path)}:{})})));
   });
   return {artifacts:[{name:'content',media_type:'application/json',json:{folders,files,unread,complete:unread.length===0}}],warnings,...(unread.length?{complete:false}:{})};
 }
