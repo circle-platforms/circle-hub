@@ -153,8 +153,8 @@ describe('the staged pack', { skip: (await osIsolationAvailable()) ? false : 'no
     assert.deepEqual(
       report.checks.map((c) => [c.check, c.tier, c.positive, c.negative, c.marks]),
       [
-        ['locate', 'advisory', 3, 4, ['author_samples_only']],
-        ['candidates', 'advisory', 1, 1, ['author_samples_only']],
+        ['locate', 'advisory', 2, 4, ['author_samples_only']],
+        ['candidates', 'advisory', 2, 1, ['author_samples_only']],
       ],
     );
   });

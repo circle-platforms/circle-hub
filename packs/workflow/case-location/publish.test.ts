@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { createPackRegistry, signPack, temporaryDirectory, type PackRegistry } from '../../../hub/runs/api.ts';
 import type { Principal } from '../../../hub/records/api.ts';
+import { IDENTITY } from './pack-files.ts';
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../hub/testing/records.ts';
@@ -50,8 +51,11 @@ describe('publishing the case-location pack', { skip }, () => {
     assert.deepEqual(
       report.checks.map((c) => [c.check, c.positive, c.negative, c.marks]),
       [
-        ['locate', 3, 4, ['author_samples_only']],
-        ['candidates', 1, 1, ['author_samples_only']],
+        // The build-name folder document is unknown under apv-directory@1 (no train or module layer), and an unknown is
+        // neither a positive nor a negative sample: that scenario is an unknown inside negative/trees-that-are-no-facts.
+        // The candidates check gained a positive sample for names written inside prose, which the grammar does not read.
+        ['locate', 2, 4, ['author_samples_only']],
+        ['candidates', 2, 1, ['author_samples_only']],
       ],
     );
     assert.deepEqual(
