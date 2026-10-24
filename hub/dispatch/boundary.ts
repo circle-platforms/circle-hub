@@ -22,6 +22,10 @@ export interface BoundaryContext {
  until?:4;
 }
 export function deny(clause:number,code:ProtocolCode,message:string,row?:AllowedEffect):BoundaryFailure{return {ok:false,clause,code,message,fix:PROTOCOL_CODES[code].fix,...(row?{row:row.id,requirements:row.release.requirements}:{})};}
+/** A preflight result is not a release grant for writing or retransmitting. */
+export function incompleteEffectBoundary(result:{checked:number;row:AllowedEffect}):BoundaryFailure {
+ return {...deny(3,'EFFECT_RELEASE_UNMET',`缺少完整九款效果放行核对事实，当前仅核到 ${result.checked} 款；不得据此写意图或重发`,result.row),fix:'请 Hub 管理员修复完整边界入口后重核九款；已有投递只读对账，不重交'};
+}
 export function durationBudget(row:AllowedEffect,maximum:number):number {return typeof row.budget.duration_ms==='number'?row.budget.duration_ms:maximum;}
 export async function checkEffectBoundary(ctx:BoundaryContext):Promise<{ok:true;row:AllowedEffect;input:VerifiedInput;checked:number}|BoundaryFailure>{
  const candidates=ctx.effects.filter(row=>row.resource_kind==='executor'&&row.action==='submit'&&row.effect_class===ctx.write.effect_class&&row.trigger===ctx.trigger);
