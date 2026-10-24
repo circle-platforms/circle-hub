@@ -217,6 +217,51 @@
           "run_table": {
             "description": "whether submissions may add checks using inline tables (W04)",
             "type": "boolean"
+          },
+          "repetition": {
+            "description": "V07: the rounds of the dynamic layer and how they aggregate; absent means the work class default, or one round without a class",
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10,
+                "description": "frozen rounds of the dynamic layer; 1 to 10"
+              },
+              "aggregation": {
+                "type": "string",
+                "enum": [
+                  "first_pass",
+                  "k_of_n",
+                  "all"
+                ]
+              },
+              "k": {
+                "description": "k-of-n only: at least this many rounds must meet the expectation",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "fresh_context": {
+                "description": "every round takes a new gateway lease and session, never the previous round’s",
+                "type": "boolean"
+              },
+              "baseline_first": {
+                "description": "prove the environment and probe every device read-only before each round (P07 R[1])",
+                "type": "boolean"
+              },
+              "window_seconds": {
+                "description": "time window from the first round; a round started outside it is not dispatched and stays in the denominator",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 86400
+              }
+            },
+            "required": [
+              "count",
+              "aggregation"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -330,6 +375,12 @@
               "runner_session",
               "hub_template"
             ]
+          },
+          "repetition": {
+            "description": "V07 R[5]: how many rounds this effect row dispatches; written, it is the count. budget.count stays a pure upper bound on writes and never doubles as a round count",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
           },
           "budget": {
             "type": "object",

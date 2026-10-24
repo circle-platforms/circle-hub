@@ -59,6 +59,8 @@ export interface LoadedWorkflow {
   manifest: PackManifest;
   workflow: WorkflowFile;
   requirements: RequirementsFile['requirements'];
+  /** The declared effect rows (V07 R[5]): the rounds a dispatch row writes decide the repetition in force. */
+  effects?: RequirementsFile['effects'];
   checks: ChecksFile['checks'];
   slots: SlotsFile;
   knowledge: KnowledgeFile | null;

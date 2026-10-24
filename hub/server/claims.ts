@@ -90,9 +90,13 @@ export function terminalSymbol(layer: LayerTerminal): string {
   return SYMBOL[terminalKind(layer)];
 }
 
-/** The label of a layer's terminal state. */
-export function terminalLabel(layer: LayerTerminal): string {
-  return layer.layer === 'static' ? labelOf('static_terminal', layer.terminal) : labelOf('dynamic_terminal', layer.terminal);
+/**
+ * The label of a layer's terminal state. A dynamic layer that carries its rounds also shows the observed distribution
+ * beside the label (V07 R[3], display rule 16): “通过（3/3 次未见失败）”, “不通过（间歇：3 次里 1 次失败（第 2 次））”.
+ */
+export function terminalLabel(layer: LayerTerminal & { observation?: string }): string {
+  const label = layer.layer === 'static' ? labelOf('static_terminal', layer.terminal) : labelOf('dynamic_terminal', layer.terminal);
+  return layer.layer === 'dynamic' && typeof layer.observation === 'string' && layer.observation !== '' ? `${label}（${layer.observation}）` : label;
 }
 
 /** One layer's cell of an item (hub/runs itemCell, V03 R[3]): the conjunction's terminal and the counts of non-pass values. */

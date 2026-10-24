@@ -10,7 +10,9 @@ import type { RunJob } from '../../dispatch/api.ts';
 import { parseReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
-import { bindRecovery, expectationFor, requirementStatus } from './terminals.ts';
+import { bindRecovery, expectationFor, meets, requirementStatus } from './terminals.ts';
+import { aggregate, INTERMITTENT_MARK, repetitionSummary, type RoundOutcome } from './repetition.ts';
+import type { DynamicTerminal } from '../../../contracts/generated/vocabulary.ts';
 
 const Row=z.object({item:z.string(),dynamic_terminal:DynamicTerminalSchema,qualifier:z.object({nature:NatureSchema.extract(['judgment','unknown']),marks:z.array(QualifierMarkSchema)}),accepted_as_fact:z.literal(false),missing_facts:z.array(z.string()).optional(),code:z.string().optional()});
 const Projection=z.object({job:z.string(),sha256:z.string(),rows:z.array(Row)});
@@ -75,6 +77,27 @@ export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,resul
       }
       const expectation=expectationFor(template,run.items.find(i=>i.id===item.item)?.fields??{});
       const staticRefutes=requirement.claims.filter(c=>c.statement.verdict==='refute');
+      // V07 R[0]-R[3]: every job of this item is one round, in journal order, and the policy frozen with the run
+      // aggregates them. A round without a judgment keeps the weakest terminal and stays in the denominator. The count
+      // comes from the frozen summary, so a run stored before the field existed aggregates its one round as 1/1.
+      const frozenPolicy=run.requirements.find(row=>row.key===requirement.requirement)?.repetition;
+      const policy=frozenPolicy??repetitionSummary({layers:template.layers,declared:template.repetition});
+      const roundRefutation=staticRefutes.length>0&&staticRefutes.every(c=>c.statement.code!==undefined&&expectation.codes.includes(c.statement.code));
+      const rounds:RoundOutcome[]=relevant.map((job,at)=>{
+        const row=(reports.get(job.job)?.rows??[]).find(r=>r.item===item.item);
+        const terminal:DynamicTerminal=row?.dynamic_terminal??(job.status.outcome==='not_dispatched'||job.status.outcome==='proven_not_executed'||job.status.outcome==='target_rejected'?'not_run':'no_verdict');
+        const settled=terminal==='pass'||terminal==='fail';
+        const roundLayer={layer:'dynamic' as const,terminal,...(row?.code?{code:row.code}:{})};
+        return {round:at+1,terminal,...(row?.code?{code:row.code}:{}),...(settled?{meets:meets(roundLayer,expectation,roundRefutation,template.accepted_producer)}:{})};
+      });
+      const rolled=aggregate(rounds,{count:policy.count,aggregation:policy.aggregation,...(policy.k===undefined?{}:{k:policy.k})});
+      requirement.layers=requirement.layers.map(layer=>{
+        if(layer.layer!=='dynamic')return layer;
+        const enriched={...layer,terminal:rolled.terminal,...(rolled.code===undefined?{}:{code:rolled.code}),rounds:rolled.distribution.rounds,distribution:{count:rolled.distribution.count,by_terminal:rolled.distribution.byTerminal},...(rolled.marks.includes(INTERMITTENT_MARK)?{intermittent:true}:{}),observation:rolled.text};
+        // The aggregate's missing fact is used only where the recovery binding did not already write a richer one.
+        if(rolled.missing!==undefined&&enriched.missing===undefined)enriched.missing=rolled.missing;
+        return enriched;
+      });
       const status=requirementStatus({producer:template.accepted_producer,layers:requirement.layers,hasProducer:!((terminal==='pass'||terminal==='fail')&&template.accepted_producer==='fact'&&rows.some(r=>!r.accepted_as_fact)),expectation,expectedRefutation:staticRefutes.length>0&&staticRefutes.every(c=>c.statement.code!==undefined&&expectation.codes.includes(c.statement.code)),independence:requirement.unsatisfied_reason==='independence_unknown'?'unknown':null,acceptsDeclared:template.accepts_declared_independence===true});
       delete requirement.unsatisfied_reason;Object.assign(requirement,status);
       if(abandonDisposed){requirement.status='unsatisfied';requirement.unsatisfied_reason='abandoned';}

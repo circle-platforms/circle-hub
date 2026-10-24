@@ -263,6 +263,47 @@ function observationText(distribution: ObservationDistribution, intermittent: bo
  * and marks a decided mix intermittent. k-of-n uses the threshold. First pass meets on the first meeting round and
  * keeps the earlier miss. An aggregate that cannot be decided takes the weakest open round and names the rounds to re-run.
  */
+/** The frozen repetition part of a requirement summary: the policy in force, where it came from, and what each round needs. */
+export interface RepetitionSummaryShape {
+  count: number;
+  aggregation: Aggregation;
+  k?: number;
+  basis: RepetitionBasis;
+  declared: { count: boolean; aggregation: boolean; k: boolean };
+  fresh_context?: boolean;
+  baseline_first?: boolean;
+  window_seconds?: number;
+}
+
+/**
+ * The one projection both summaries use (`packSummary` in the packs package and `requirementSummary` at start_run), so a
+ * pack listing and a frozen run cannot disagree about the policy in force (V07 R[5]).
+ */
+export function repetitionSummary(
+  input: RepetitionRequest & { fresh_context?: boolean; baseline_first?: boolean; window_seconds?: number },
+): RepetitionSummaryShape {
+  const policy = effectiveRepetition(input);
+  return {
+    count: policy.count,
+    aggregation: policy.aggregation,
+    ...(policy.k === undefined ? {} : { k: policy.k }),
+    basis: policy.basis,
+    declared: { count: policy.explicit.count, aggregation: policy.explicit.aggregation, k: policy.explicit.k },
+    ...(input.fresh_context === undefined ? {} : { fresh_context: input.fresh_context }),
+    ...(input.baseline_first === undefined ? {} : { baseline_first: input.baseline_first }),
+    ...(input.window_seconds === undefined ? {} : { window_seconds: input.window_seconds }),
+  };
+}
+
+/**
+ * The rounds a dispatch row authorizes for one requirement: the smallest count written on the effect rows that release it
+ * (V07 R[5]: what the dispatch row writes wins), or undefined when no row writes one.
+ */
+export function dispatchCountOf(effects: ReadonlyArray<{ release: { requirements: readonly string[] }; repetition?: number }>, requirement: string): number | undefined {
+  const written = effects.filter((effect) => effect.release.requirements.includes(requirement) && effect.repetition !== undefined).map((effect) => effect.repetition as number);
+  return written.length > 0 ? Math.min(...written) : undefined;
+}
+
 export function aggregate(rounds: readonly RoundOutcome[], policy: RepetitionPolicy): RepetitionSummary {
   const frozen = assertPolicy(policy);
   const sorted = assertRounds(rounds, frozen.count);
