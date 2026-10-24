@@ -30,10 +30,19 @@ node scripts/real/convert/runtime-profile.ts <填写后的配置> <清单> <合�
 检查先证明全部启用组合恰好落在 allowed 或 unopened 一边，不重不漏、无禁用组合；allowed 的每个可能传入的参数都有包表角色，显式永不传入的可选参数按 unsupplied 核对，再调用包的配置解析器核身份及形状。额外核对座位序号小于预检设备数。只说明已启用组合的覆盖情况，不以草稿代替部署事实核对；拒绝命令文本由集成者填写，不在脚本预设。
 
 ```
-node scripts/real/convert/auto-cases.ts <脑图原件> --out <暂存目录> [--case-rule marked] [--profile <运行环境配置>]
+node scripts/real/convert/auto-cases.ts <脑图原件> --out <暂存目录> [--case-rule marked] [--profile <运行环境配置>] [--autoids <逗号分隔的编号>]
 ```
 
-先调用包公开的 normalizeMindmap，再用核心 KityMinder 解析后直接调用包的 extractCases，case_rule 默认 marked，也可显式 tagged，必须与计划运行一致。只选 auto 文字恰好为 YES 的五个，保留文档次序；不是五个则报实际数量并停止。缺失、重复或不精确的 autoid 拒绝。输出 auto-cases.json 含规则、编号列表及规整前后摘要，标准输出仅个数、变换条数和摘要。集成者先只读确认脑图是否已有平台文档号，再按任务页绑定；本脚本不猜文档号、不上传。
+先调用包公开的 normalizeMindmap，再用核心 KityMinder 解析后直接调用包的 extractCases，case_rule 默认 marked，也可显式 tagged，必须与计划运行一致。不给 `--autoids` 时，只选 auto 文字恰好为 YES 的五个，保留文档次序；不是五个则报实际数量并停止。给了 `--autoids` 就只选这些编号：每个都必须在 auto 正好为 YES 的集合里、与原件文字精确相等、互不重复，数量必须是 5；输出仍按文档次序，不按参数里的次序，并在 auto-cases.json 记下「选择来源：集成者显式列出」。缺失、重复或不精确的 autoid 拒绝。输出 auto-cases.json 含规则、编号列表及规整前后摘要，标准输出仅个数、变换条数和摘要。集成者先只读确认脑图是否已有平台文档号，再按任务页绑定；本脚本不猜文档号、不上传。
+
+输入必须是 KityMinder JSON，或本工具两种规整能还原成它的原件（文件头两个 U+FFFF、单元素数组包装）。敏捷平台的原始应答信封 `{code,msg,data}` 不能解包：解包 data 不在这两种变换里。Hub 的敏捷平台系统包对 `agile:mindmap` 另存了 content 制品，那才是内层 KityMinder JSON。应当喂 content 制品，不要喂 original。`circle-hub original list` 只列出读取时收到的 original，导不出 content 这个名字。先让资源读出制品摘要，再按摘要导出：
+
+```
+circle-hub resource read <资源> mindmap <文档键>
+circle-hub original export <产物 content 那一行的摘要> --out <仓库外文件>
+```
+
+`resource read` 的屏幕行是 `产物 content <摘要> <字节数> 字节`。把导出的文件交给本命令。不要把 original 的摘要交给 `original export`。
 
 探测只由执行器定义声明，不放进 runtime-profile。6a125df0 的 profile probes 扩展及旧草稿脚本已撤回，case-compile 的同版本字节回到工作簿分支的基线。执行器定义的 version/interfaces 两项形状由 dispatch-gateway 分支确定；它合并以后再接 probes.ts，当前没有猜造兼容形状或跳过测试。
 
