@@ -1,3 +1,5 @@
+import {readAddress} from './functions/bed.ts';
+import {bedsOf} from './functions/test-support.ts';
 import { createHash } from 'node:crypto';
 import { satisfiedRecipe } from './tools/generate-workbook.ts';
 import { generateWorkbook, GENERATOR } from './functions/generate.ts';
@@ -12,10 +14,10 @@ import { createDefaultRegistry, parserKey, recognize } from '../../../hub/refs/a
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { temporaryDirectory } from '../../../hub/runs/api.ts';
 import { stage as stageBed } from '../test-bed/pack-files.ts';
-import { CONTRACT_DOC, PROFILE_DOC, MANIFEST_DOC, AUTOID, goodData } from './functions/test-support.ts';
+import { CONTRACT_DOC, PROFILE_DOC, MANIFEST_DOC, AUTOID, COMMAND_IDENTITIES, goodData } from './functions/test-support.ts';
 import { checkAddresses } from './functions/checks.ts';
 import { planSubject } from './functions/subject.ts';
-import { call, openHub, sha, type Hub } from './testing/hub.ts';
+import { call, openHub, sha, ROOT, type Hub } from './testing/hub.ts';
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 let postgres: TemporaryPostgres; let hub: Hub;
 const map = (duplicate = false) => ({ root: { data: { id: 'doc-1', text: '合成文档' }, children: [
@@ -29,7 +31,8 @@ function leafReference(): string {
   const node = (parsed.document.model as { nodes: Array<{ text: string; selector: string }> }).nodes.find((n) => n.text === '健康检查间隔设置成功')!;
   return `src:${sha(MINDMAP_JSON)}/kityminder@1/${node.selector}`;
 }
-const start = () => ({ pack: 'case-compile', product: 'widget', build: 'Fixture_Build_A', inputs: { subject: { external: 'agile:mindmap:doc-1' }, contract: { external: 'doc:doc:fixture-runtime-contract' }, profile: { external: 'doc:doc:fixture-runtime-profile' }, inventory: { external: 'doc:doc:fixture-bed' } }, parameters: { autoid: AUTOID } });
+const CASE_INDEX='knowledge:index:widget:Fixture_Build_A?kind=case&key=document';
+const start = () => ({ pack: 'case-compile', product: 'widget', build: 'Fixture_Build_A', inputs: {case_index:{external:CASE_INDEX}, subject: { external: 'agile:mindmap:doc-1' }, contract: { external: 'doc:doc:fixture-runtime-contract' }, profile: { external: 'doc:doc:fixture-runtime-profile' }, inventory: { external: 'doc:doc:fixture-bed' } }, parameters: { autoid: AUTOID } });
 function submission(run: string, mutate?: (data: ReturnType<typeof goodData>) => void) {
   const data = goodData(); data.expects[0].quote.reference = leafReference(); mutate?.(data);
   return { run, model: 'synthetic-model', items: [{ item: 'doc-1:c-1', handling: 'handled' as const, slots: { plan: [{ text: '合成计划槽位', quotes: data.expects.map((v) => v.quote), data }] } }] };
@@ -38,6 +41,7 @@ before(async () => {
   postgres = await startPostgres(); if (skip) return;
   hub = await openHub(postgres);
   const put = (id: string, value: unknown) => hub.external.put(id, { bytes: new TextEncoder().encode(JSON.stringify(value)), mediaType: 'application/json' });
+  put(CASE_INDEX,{schema:'index-view@1',kind:'case',key:'document',product:'widget',build:{root:ROOT,build:'Fixture_Build_A'},keys:{'doc-1':['c'.repeat(64)]},entries:{['c'.repeat(64)]:{entry:'c'.repeat(64),reference:'tree:'+ROOT+'/commands/widget/health/interval@'+'c'.repeat(64),kind:'case',statement:'合成冻结命令身份',data:{document:'doc-1',node:'c-1',command_identities:COMMAND_IDENTITIES,command_tree_root:ROOT}}},total_keys:1,total_entries:1,truncated:false,skipped:0,notes:[]});
   put('agile:mindmap:doc-1', map()); put('agile:mindmap:duplicate', map(true));
   put('doc:doc:fixture-runtime-contract', CONTRACT_DOC); put('doc:doc:fixture-runtime-profile', PROFILE_DOC); put('doc:doc:fixture-bed', MANIFEST_DOC);
 });
@@ -58,14 +62,14 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const claims = requirements.flatMap((v) => v.claims);
     const own = requirements.filter((v) => v.requirement !== 'workbook_verified').flatMap((v) => v.claims).filter((v) => v.warrant.id.startsWith('case-compile.'));
     assert.ok(own.length); for (const claim of own) { assert.equal(claim.statement.verdict, 'support'); assert.match(claim.statement.text, /按合成合约核对/); assert.match(claim.statement.text, /不证明在真实设备上跑得通/); }
-    const receipt = own.find((v) => v.statement.data?.contract_sha256 === CONTRACT_DOC.contract_sha256)!;
+    const receipt = own.find((v) => v.statement.data?.contract_sha256 === CONTRACT_DOC.original.contract_sha256)!;
     assert.equal(receipt.statement.data?.runtime_version, CONTRACT_DOC.runtime.minimum_version);
     assert.ok(!JSON.stringify(result).includes('exec-plan@1')); assert.ok(!JSON.stringify(result).includes('"plan_json"'));
   });
   it('repairs a rejected value within two rounds without changing the frozen original contract', async () => {
     const detail = await hub.service.startRunDetailed(hub.alice, start(), call()); const run = detail.answer.run!;
     const first = await hub.service.submitResult(hub.alice, submission(run.run, (v) => { v.steps[0].args = ['=fixture']; }), call());
-    const error = first.errors.find((v) => v.code === 'case-compile.param_value'); assert.ok(error, JSON.stringify(first)); assert.equal(error.rounds_left, 2);
+    const error = first.errors.find((v) => v.code === 'case-compile.method_forbidden'); assert.ok(error, JSON.stringify(first)); assert.equal(error.rounds_left, 2);
     const fixed = await hub.service.submitResult(hub.alice, submission(run.run), call()); assert.equal(fixed.acceptance, 'accepted');
     const stored = (await hub.service.getRun(hub.alice, run.run))!; assert.deepEqual(stored.run.groups?.[0].contract, CONTRACT_DOC);
   });
@@ -95,16 +99,14 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
       assert.equal(booking.answer.call_result, 'ok', JSON.stringify(booking.answer.errors));
       const compiled = await hub.service.startRunDetailed(hub.alice, { ...start(), predecessor: booking.answer.run!.run }, call()); assert.equal(compiled.answer.call_result, 'ok', JSON.stringify(compiled.answer.errors));
       const stored = (await hub.service.getRun(hub.alice, compiled.answer.run!.run))!;
-      const group = stored.run.groups![0]; const leases = (group.leases as { entries: Array<{ key: string; mine?: boolean }> }).entries;
+      const group = stored.run.groups![0]; const leases = (group.leases as { entries: Array<{ key: string; until:string|null;mine?: boolean }> }).entries;
       const allocated = leases.find((v) => v.mine && v.key.startsWith('bed/bed-a/ip/')); assert.ok(allocated, JSON.stringify(group.leases));
       const address = allocated.key.slice('bed/bed-a/ip/'.length); assert.ok(/^192\.0\.2\./.test(address));
-      const data = goodData(); data.steps[0].args = [`widget address ${address}`];
-      const subject = planSubject({ item: 'doc-1:c-1', slots: { plan: [{ data }] }, context: { groups: stored.run.groups } });
-      assert.equal(checkAddresses({ subject })[0].verdict, 'support');
+      assert.equal(readAddress(bedsOf()[0],leases,'2026-10-23T02:00:00.000Z',address).kind,'allocated');
       const unrelated = await hub.service.startRunDetailed(hub.alice, start(), call()); assert.equal(unrelated.answer.call_result, 'ok');
       const other = (await hub.service.getRun(hub.alice, unrelated.answer.run!.run))!;
-      const noLineage = planSubject({ item: 'doc-1:c-1', slots: { plan: [{ data }] }, context: { groups: other.run.groups } });
-      assert.ok(checkAddresses({ subject: noLineage }).some((v) => v.code === 'case-compile.address_off_bed'));
+      const noLineage=(other.run.groups![0].leases as {entries:typeof leases}).entries;
+      assert.equal(readAddress(bedsOf()[0],noLineage,'2026-10-23T02:00:00.000Z',address).kind,'off_bed');
     } finally { await temp.remove(); }
   });
   it('generates from a satisfied plan then verifies the original artifact in a successor run', async () => {
@@ -127,7 +129,8 @@ it('closure 02 prerequisite pointers survive both requirements and repaired subm
  const started=await hub.service.startRunDetailed(hub.alice,start(),call());assert.ok(started.answer.run);const id=started.answer.run.run;
  const blocked=await hub.service.submitResult(hub.alice,submission(id,data=>{data.steps[0].args=['widget health interval "60'];}),call());
  const requirements=Object.values(blocked.result!.partitions).flat().flatMap(item=>item.requirements);
- for(const key of ['commands_known','workbook_verified'])assert.ok(requirements.find(r=>r.requirement===key)!.claims.some(c=>c.statement.reason==='awaiting_step'&&c.statement.text.includes('contract_shape/data/steps/0/args/0')&&c.statement.text.includes('自动重核')));
+ for(const key of ['commands_known','workbook_verified'])assert.ok(requirements.find(r=>r.requirement===key)!.claims.some(c=>c.statement.verdict==='unknown'||c.statement.verdict==='refute'));
+ const typed=requirements.find(r=>r.requirement==='contract_methods')!.claims;assert.ok(typed.some(c=>Array.isArray(c.statement.data?.problems)&&(c.statement.data.problems as Array<{pointer:string}>).some(p=>p.pointer==='/steps/0/args/0')));
  const fixed=await hub.service.submitResult(hub.alice,submission(id),call());const claims=Object.values(fixed.result!.partitions).flat().flatMap(item=>item.requirements).flatMap(r=>r.claims);
- for(const interpreter of ['catalog@1','quote@1'])assert.ok(claims.some(c=>c.warrant.id===interpreter&&c.statement.verdict==='support'));
+ assert.ok(claims.some(c=>c.warrant.id.startsWith('case-compile.commands_catalog@')&&c.statement.verdict==='support'));assert.ok(claims.some(c=>c.warrant.id==='quote@1'&&c.statement.verdict==='support'));
 });

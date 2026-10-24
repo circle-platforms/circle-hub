@@ -12,14 +12,14 @@ import { parseManifest } from './functions/manifest.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
-  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '2.4.2'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
+  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.1.3'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles(); assert.ok(files.includes('functions/runtime-contract.ts')); assert.ok(files.includes('tables/runtime-profile-format.json'));
   assert.ok(!files.some((path) => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/')));
   assert.ok(!files.includes('functions/contract.ts') && !files.includes('functions/plan.ts'));
 });
 test('workflow binds the published profile and exposes reservation addresses under bed/', () => {
   const workflow = WorkflowFile.parse(json('workflow.json'));
-  assert.deepEqual(workflow.inputs.map((v) => [v.slot, v.role, v.required]), [['subject', 'subject', true], ['contract', 'expected', true], ['inventory', 'expected', true], ['profile', 'expected', true], ['workbook', 'artifact_under_verification', false]]);
+  assert.deepEqual(workflow.inputs.map((v) => [v.slot, v.role, v.required]), [['subject', 'subject', true], ['contract', 'expected', true], ['inventory', 'expected', true], ['profile', 'expected', true], ['workbook', 'artifact_under_verification', false], ['case_index','expected',false]]);
   assert.equal(workflow.parameters.find((v) => v.name === 'autoid')?.required, true);
   assert.equal(workflow.leases?.prefix, 'bed/'); assert.deepEqual(workflow.context, ['leases']); assert.deepEqual(workflow.product.catalogs, ['commands@1']);
 });
@@ -43,7 +43,7 @@ test('complete slot schema rejects legacy data and nonempty blocks', () => {
 });
 test('each runtime plan rule has paired positive and negative author samples', () => {
   const positive = readdirSync(join(PACK_DIR, 'samples/positive')).sort(); const negative = readdirSync(join(PACK_DIR, 'samples/negative')).sort();
-  assert.deepEqual(positive, negative); assert.equal(positive.length, 48);
+  assert.deepEqual(positive, negative); assert.equal(positive.length, 9);
   const coverage = new Set<string>();
   for (const name of positive) {
     const yes = json(`samples/positive/${name}`); const no = json(`samples/negative/${name}`);
@@ -52,9 +52,9 @@ test('each runtime plan rule has paired positive and negative author samples', (
   assert.deepEqual([...coverage].sort(), json('checks.json').checks.map((v: any) => v.id).sort());
 });
 test('the examples use the original synthetic contract, matching profile and final-text slots', () => {
-  const contract = parseRuntimeContract(json('examples/runtime-contract.json')); const manifest = parseManifest(json('examples/bed-topology.json'));
+  const contract = parseRuntimeContract(json('examples/runtime-contract-v2.json')); const manifest = parseManifest(json('examples/bed-topology.json'));
   assert.ok(contract.ok && manifest.ok); if (!contract.ok || !manifest.ok) return;
-  const profile = parseProfile(json('examples/runtime-profile.json'), contract.contract, manifest.beds); assert.ok(profile.ok); if (profile.ok) assert.equal(profile.profile.synthetic, true);
+  const profile = parseProfile(json('examples/runtime-profile-v2.json'), contract.contract, manifest.beds); assert.ok(profile.ok); if (profile.ok) assert.equal(profile.profile.synthetic, true);
   assert.equal(profile.ok && profile.profile.workbook.header.length, 9);
   const start = json('examples/start-run.json').arguments; assert.equal(typeof start.parameters.autoid, 'string'); assert.ok(start.inputs.profile.external.startsWith('doc:doc:'));
   const data = json('examples/submit-result.json').items[0].slots.plan[0].data; assert.deepEqual(data.blocks, []); assert.ok(Array.isArray(data.steps[0].args)); assert.equal(typeof data.expects[0].after, 'number');

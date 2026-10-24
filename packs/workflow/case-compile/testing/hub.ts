@@ -105,7 +105,7 @@ export class FakeExternal implements ExternalReaderPort {
     this.objects.set(id, object);
   }
   async accepts(id: string): Promise<boolean> {
-    return id.startsWith('agile:mindmap:') || id.startsWith('doc:doc:');
+    return id.startsWith('agile:mindmap:') || id.startsWith('doc:doc:') || id.startsWith('knowledge:index:');
   }
   async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
     this.reads.push(id);

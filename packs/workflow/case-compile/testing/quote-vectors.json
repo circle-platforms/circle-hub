@@ -1,6 +1,6 @@
 {
-  "description": "Shared test vectors for verbatim quotation matching (T04 R[1]). hub/rules (quote@1, quoteMatches in text.ts) and hub/refs (quoteMatches in quote.ts) must both pass every vector; each package reads this file in its tests and cross-check their independent implementations.",
-  "rule": "Interior whitespace adjacent to any Unicode East_Asian_Width W/F code point is removed; every other run of Unicode White_Space (U+0009-U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000-U+200A, U+2028, U+2029, U+202F, U+205F, U+3000) collapses to one space and both ends are trimmed, in the fragment and in the quote; then the quote must be a non-empty substring of the fragment. Case, punctuation, character width and Unicode normalization form stay significant.",
+  "description": "Synthetic strict verbatim quote vectors for the R5 consumer; display folding is tested separately.",
+  "rule": "A nonempty well-formed quote must occur byte-for-byte as text, without whitespace, width, case or normalization changes.",
   "signature": "quoteMatches(fragmentText, quote) -> boolean",
   "vectors": [
     {
@@ -31,13 +31,13 @@
       "note": "runs of spaces and a line break against single spaces",
       "fragment": "show  version\nall",
       "quote": "show version all",
-      "match": true
+      "match": false
     },
     {
       "note": "leading and trailing white space in the quote",
       "fragment": "show version",
       "quote": "  show version \n",
-      "match": true
+      "match": false
     },
     {
       "note": "leading and trailing white space in the fragment",
@@ -49,31 +49,31 @@
       "note": "tab and CRLF",
       "fragment": "a\tb\r\nc",
       "quote": "a b c",
-      "match": true
+      "match": false
     },
     {
       "note": "vertical tab is white space",
       "fragment": "a\u000bb",
       "quote": "a b",
-      "match": true
+      "match": false
     },
     {
       "note": "a line break inside Chinese text matches one space",
       "fragment": "页面跳转到\n首页",
       "quote": "页面跳转到 首页",
-      "match": true
+      "match": false
     },
     {
       "note": "Chinese line breaks are removed beside wide characters",
       "fragment": "页面跳转到\n首页",
       "quote": "页面跳转到首页",
-      "match": true
+      "match": false
     },
     {
       "note": "an extra space beside a wide character is removed",
       "fragment": "页面跳转到首页",
       "quote": "页面跳转到 首页",
-      "match": true
+      "match": false
     },
     {
       "note": "case stays significant",
@@ -90,7 +90,7 @@
     {
       "note": "normalization form stays significant (composed against decomposed)",
       "fragment": "café",
-      "quote": "cafe\u0301",
+      "quote": "café",
       "match": false
     },
     {
@@ -119,49 +119,49 @@
     },
     {
       "note": "ideographic space U+3000 is white space",
-      "fragment": "a\u3000b",
+      "fragment": "a　b",
       "quote": "a b",
-      "match": true
+      "match": false
     },
     {
       "note": "no-break space U+00A0 is white space",
-      "fragment": "a\u00a0b",
+      "fragment": "a b",
       "quote": "a b",
-      "match": true
+      "match": false
     },
     {
       "note": "next line U+0085 is white space",
-      "fragment": "a\u0085b",
+      "fragment": "ab",
       "quote": "a b",
-      "match": true
+      "match": false
     },
     {
       "note": "line separator U+2028 is white space",
-      "fragment": "a\u2028b",
+      "fragment": "a b",
       "quote": "a b",
-      "match": true
+      "match": false
     },
     {
       "note": "narrow no-break space U+202F is white space",
-      "fragment": "a\u202fb",
+      "fragment": "a b",
       "quote": "a b",
-      "match": true
+      "match": false
     },
     {
       "note": "byte order mark U+FEFF is not white space",
-      "fragment": "a\ufeffb",
+      "fragment": "a﻿b",
       "quote": "a b",
       "match": false
     },
     {
       "note": "zero width space U+200B is not white space",
-      "fragment": "a\u200bb",
+      "fragment": "a​b",
       "quote": "a b",
       "match": false
     },
     {
       "note": "Mongolian vowel separator U+180E is not white space",
-      "fragment": "a\u180eb",
+      "fragment": "a᠎b",
       "quote": "a b",
       "match": false
     },

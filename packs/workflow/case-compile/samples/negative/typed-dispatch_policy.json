@@ -11,6 +11,30 @@
       "widget health interval 60"
     ],
     "data": {
+      "command_identities": [
+        {
+          "tree_root": "64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7",
+          "path": "/commands/widget/health/interval",
+          "signature": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments",
+          "parameters": [
+            {
+              "position": 0,
+              "name": "seconds",
+              "raw": "60",
+              "type": {
+                "name": "U16",
+                "catalog_type": "int",
+                "declaration": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments/arg",
+                "grammar": "apv-command-tree@2"
+              },
+              "parsed": {
+                "kind": "int",
+                "value": 60
+              }
+            }
+          ]
+        }
+      ],
       "bucket": "bed-a",
       "blocks": [],
       "replacements": [],
@@ -48,30 +72,6 @@
             "text": "健康检查间隔设置成功"
           },
           "after": 1
-        }
-      ],
-      "command_identities": [
-        {
-          "tree_root": "64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7",
-          "path": "/commands/widget/health/interval",
-          "signature": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments",
-          "parameters": [
-            {
-              "position": 0,
-              "name": "seconds",
-              "raw": "60",
-              "type": {
-                "name": "U16",
-                "catalog_type": "int",
-                "declaration": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments/arg",
-                "grammar": "apv-command-tree@2"
-              },
-              "parsed": {
-                "kind": "int",
-                "value": 60
-              }
-            }
-          ]
         }
       ]
     },
@@ -764,7 +764,7 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@3.1.0"
+      "generator": "case-compile@3.1.3"
     },
     "manifest_sha256": "5bc9f5ab333dde710f9023c6db1f99411f3e254f61b4e44b11340ce362b1fcd7",
     "workbook": {
@@ -863,14 +863,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@3.1.0",
+                    "text": "case-compile@3.1.3",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "be203cc70ee0e3ea0e72fd826de2376795fd2c885a3f62e733115c328554464e",
+                    "text": "a5b0586ada1e207ae2f74012401b84ab724d8c966638e320e5eee994bf4c922d",
                     "formula": false,
                     "style": null
                   }

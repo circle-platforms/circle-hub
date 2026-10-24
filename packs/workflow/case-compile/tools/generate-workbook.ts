@@ -55,7 +55,7 @@ export function satisfiedRecipe(input: { run: unknown; result: unknown; submissi
   const fields = record(item.fields, '缺少条目字段');
   if (typeof fields.autoid !== 'string' || typeof fields.title !== 'string' || !Array.isArray(fields.steps) || fields.steps.some((v) => !isRecord(v) || typeof v.text !== 'string') || fields.priority !== null && typeof fields.priority !== 'string') throw new Error('条目字段没有原始文字 autoid、标题、优先级或步骤');
   if (typeof run.build !== 'string' || !run.build) throw new Error('计划运行没有锁定构建');
-  return { slots: plan.slots, fields: { autoid: fields.autoid, title: fields.title, priority: fields.priority, steps: fields.steps as Array<{ text: string }> }, contract: contract.contract, profile: profile.profile, plan_run: run.run, build: run.build, generator: GENERATOR };
+  return { slots: plan.slots, fields: { command_identities:fields.command_identities,autoid: fields.autoid, title: fields.title, priority: fields.priority, steps: fields.steps as Array<{ text: string }> }, contract: contract.contract, profile: profile.profile, plan_run: run.run, build: run.build, generator: GENERATOR };
 }
 export async function main(argv: string[]): Promise<number> {
   try {

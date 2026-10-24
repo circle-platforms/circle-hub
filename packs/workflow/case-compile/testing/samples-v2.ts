@@ -1,3 +1,4 @@
+import {addressInput,signTypedRuntime} from './typed-fixtures.ts';
 // Synthetic runtime-contract@2 author samples; legacy samples remain byte-for-byte under testing/legacy-samples.
 import {readFileSync,writeFileSync,readdirSync,mkdirSync,renameSync,unlinkSync} from 'node:fs';
 import {join} from 'node:path';
@@ -23,6 +24,9 @@ for(const check of ['contract_shape','bed_addresses','commands_catalog','expecte
  else bad.data.steps[0].method='undeclared-method';
  save('negative','typed-'+check,check,bad,code);
 }
+save('positive','typed-address-member','bed_addresses',addressInput('192.0.2.10').subject);
+save('negative','typed-address-member','bed_addresses',addressInput('192.0.2.250').subject,'case-compile.address_off_bed');
+const budget=subject();save('positive','typed-effect-budget','contract_shape',budget);budget.contract.effects.effect_0.budget=0;budget.contract=signTypedRuntime(budget.contract);save('negative','typed-effect-budget','contract_shape',budget,'case-compile.method_forbidden');
 for(const polarity of ['positive','negative'])save(polarity,'quote','expected_quotes',{item:'doc-1:c-1',quotes:[{reference:QUOTE.reference,text:polarity==='positive'?QUOTE.text:'合成捏造引文'}]},polarity==='negative'?'QUOTE_MISMATCH':undefined,{sources:{[QUOTE.reference]:QUOTE.text}});
 const base=subject(),c=parseRuntimeContract(contract),m=parseManifest(MANIFEST_DOC);if(!c.ok||!m.ok)throw Error('invalid typed examples');const p=parseProfile(profile,c.contract,m.beds);if(!p.ok)throw Error('invalid typed profile');
 const fields={autoid:AUTOID,title:'合成用例',priority:'2',steps:[{text:'原始配置步骤'}],command_identities:identities};
