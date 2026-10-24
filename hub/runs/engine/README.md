@@ -859,3 +859,12 @@ snapshot statuses; the original run page also shows the current safe answers to 
 
 This is the generic first stage. The case-compile consumer update waits for the integrator's hub-pack-findings merge and
 separate second-stage notification. Synthetic checks prove these boundaries, not a real human confirmation or device run.
+
+### Needs for the second stage
+
+The first stage hands the frozen new text and its declaration/review references to checks. It does not promote submission
+records to grounds: B01 still permits claim, validation result, action and effect records. The integrator must decide the
+reference boundary for a consumer that quotes the accepted new text itself. The proposed allowance is limited to the exact
+accepted declaration's `/new` fragment in the run that froze it, with current reader permissions and the review digest
+bound; it has not been implemented or presumed authorized. This does not block checks from comparing the already-frozen
+text through RunContext. The case-compile second stage remains deferred.
