@@ -58,7 +58,7 @@ export function dispositions(input: unknown): CheckOutcome[] {
   const subject = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const item = typeof subject.item === 'string' ? subject.item : undefined;
   const own = item !== undefined ? { item } : {};
-  if (!isRecord(subject.slots)) return [{ verdict: 'unknown', reason: 'missing_input', statement: '这个条目没有提交槽位记录，处置无从核对', grounds: [], tier: TIER, ...own }];
+  if (!isRecord(subject.slots)) return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('这个条目没有提交槽位记录，处置无从核对'), reason: 'missing_input', statement: '这个条目没有提交槽位记录，处置无从核对', grounds: [], tier: TIER, ...own }];
   const claims = records(subject.slots[SLOT]);
   const draft = draftFindings(subject.fields);
   const out: CheckOutcome[] = [];
@@ -117,7 +117,7 @@ export function verdict(input: unknown): CheckOutcome[] {
   const anchor = typeof (handled[0] ?? items[0])?.id === 'string' ? ((handled[0] ?? items[0]).id as string) : undefined;
   const own = anchor !== undefined ? { item: anchor } : {};
   const finalIndex = cross.findIndex((c) => (VERDICTS as readonly unknown[]).includes(c.code));
-  if (finalIndex < 0) return [{ verdict: 'unknown', reason: 'missing_input', statement: '提交里没有结论（cross_item 里码为 PASS、PARTIAL 或 FAIL 的一条）', grounds: [], tier: TIER, ...own }];
+  if (finalIndex < 0) return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('提交里没有结论（cross_item 里码为 PASS、PARTIAL 或 FAIL 的一条）'), reason: 'missing_input', statement: '提交里没有结论（cross_item 里码为 PASS、PARTIAL 或 FAIL 的一条）', grounds: [], tier: TIER, ...own }];
   const final = cross[finalIndex];
   const pointer = `/cross_item/${finalIndex}`;
   const claims = handled.flatMap((it) => records((it.slots as Record<string, unknown>)[SLOT]).map((claim) => ({ claim, item: it })));
@@ -160,7 +160,7 @@ export function verdict(input: unknown): CheckOutcome[] {
       add(CODES.passWithoutEvidence, '结论 PASS，但复核方没有一段自己从被复核脑图里逐字引用的原文：位置和根据只是引用，照抄初评的引文也不算；PASS 至少要有一段自己核对过的被复核对象的引文');
     }
     if (levelChanged === null && out.length === 0) {
-      return [{ verdict: 'unknown', reason: 'missing_input', statement: '初评没有等级（或结论没有等级），PASS 是否改了等级无法核对', grounds: [], tier: TIER, ...own, pointer, data }];
+      return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('初评没有等级（或结论没有等级），PASS 是否改了等级无法核对'), reason: 'missing_input', statement: '初评没有等级（或结论没有等级），PASS 是否改了等级无法核对', grounds: [], tier: TIER, ...own, pointer, data }];
     }
   } else if (final.code === 'FAIL') {
     const major = refuted.filter(({ claim, item }) => {
@@ -171,7 +171,7 @@ export function verdict(input: unknown): CheckOutcome[] {
     if (major.length === 0) add(CODES.failWithoutRefutation, '结论 FAIL，但没有推翻初评定为严重或主要的发现：FAIL 要有初评的重大事实错误（误判、位置错误、产品语义颠倒）；推翻的只是次要发现时结论应为 PARTIAL');
   } else if (final.code === 'PARTIAL') {
     if (fresh.length === 0 && corrected.length === 0 && levelChanged !== true) {
-      if (levelChanged === null) return [{ verdict: 'unknown', reason: 'missing_input', statement: '结论 PARTIAL 没有新发现，也没有推翻或修正初评发现，初评没有等级（或结论没有等级），是否改了等级无法核对', grounds: [], tier: TIER, ...own, pointer, data }];
+      if (levelChanged === null) return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('结论 PARTIAL 没有新发现，也没有推翻或修正初评发现，初评没有等级（或结论没有等级），是否改了等级无法核对'), reason: 'missing_input', statement: '结论 PARTIAL 没有新发现，也没有推翻或修正初评发现，初评没有等级（或结论没有等级），是否改了等级无法核对', grounds: [], tier: TIER, ...own, pointer, data }];
       add(CODES.partialWithoutChange, '结论 PARTIAL，但没有新发现，没有推翻或修正初评发现，等级也没有改：PARTIAL 要有其中之一；初评基本正确、没有补充时应为 PASS');
     }
   }
@@ -185,7 +185,7 @@ export function suggestionTargets(input:unknown):CheckOutcome[] {
   const anchor=items.find(item=>isRecord(item.slots)),own=typeof anchor?.id==='string'?{item:anchor.id}:{};
   const suggestions=records(subject.cross_item).flatMap((claim,index)=>claim.code==='suggestion'?[{claim,index}]:[]);
   if(suggestions.length===0)return [{verdict:'support',statement:'没有改进建议，无需补充落点',grounds:[],tier:TIER,...own}];
-  if(!anchor)return [{verdict:'unknown',reason:'missing_input',statement:'改进建议没有可挂接的已处理条目；下一步：先完成至少一个用例的复核，再重新提交建议',grounds:[],tier:TIER,data:{fix:'先把一个用例按 handled 提交复核，再重新提交建议'}}];
+  if(!anchor)return [{verdict:'unknown', missing: '尚未取得本检查所需的事实：' + ('改进建议没有可挂接的已处理条目；下一步：先完成至少一个用例的复核，再重新提交建议'),reason:'missing_input',statement:'改进建议没有可挂接的已处理条目；下一步：先完成至少一个用例的复核，再重新提交建议',grounds:[],tier:TIER,data:{fix:'先把一个用例按 handled 提交复核，再重新提交建议'}}];
   const digest=targetDigest(items),out:CheckOutcome[]=[];
   for(const {claim,index} of suggestions){
     const pointer='/cross_item/'+index,grounds=Array.isArray(claim.grounds)?claim.grounds:[];
@@ -203,7 +203,7 @@ function totally(run: (input: unknown) => CheckOutcome[], name: string): (input:
     try {
       return run(input);
     } catch {
-      return [{ verdict: 'unknown', reason: 'check_error', statement: `检查 ${name} 内部出错（任务包的缺陷）`, grounds: [], tier: TIER }];
+      return [{ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`检查 ${name} 内部出错（任务包的缺陷）`), reason: 'check_error', statement: `检查 ${name} 内部出错（任务包的缺陷）`, grounds: [], tier: TIER }];
     }
   };
 }

@@ -209,10 +209,10 @@ describe('runCheck with a pack function', () => {
     const outcome = (fields: string) => `export default () => [{ ${fields}, statement: '结果', grounds: [], tier: 'advisory' }];`;
     const dir = pack({
       'abstain.ts': outcome("verdict: 'abstain'"),
-      'skip.ts': outcome("verdict: 'unknown', reason: 'declared_skip'"),
-      'nocheck.ts': outcome("verdict: 'unknown', reason: 'no_check'"),
-      'integrity.ts': outcome("verdict: 'unknown', reason: 'integrity_unproven'"),
-      'output.ts': outcome("verdict: 'unknown', reason: 'output_failed'"),
+      'skip.ts': outcome("verdict: 'unknown', missing: '合成检查所需事实', reason: 'declared_skip'"),
+      'nocheck.ts': outcome("verdict: 'unknown', missing: '合成检查所需事实', reason: 'no_check'"),
+      'integrity.ts': outcome("verdict: 'unknown', missing: '合成检查所需事实', reason: 'integrity_unproven'"),
+      'output.ts': outcome("verdict: 'unknown', missing: '合成检查所需事实', reason: 'output_failed'"),
     });
     for (const module of ['abstain.ts', 'skip.ts', 'nocheck.ts']) {
       const [o] = await runCheck({ function: { module }, tier: 'advisory' }, { subject: {}, context: { pack: 'synthetic-review' }, packDir: dir, sandbox: sandbox() });
@@ -267,7 +267,7 @@ describe('runCheck with a pack function', () => {
     const dir = pack({
       'checks/unread.ts': [
         'export default function (input: { unread_sources?: { reference: string; reason: string; external?: string; slot?: string }[] }) {',
-        "  return [{ verdict: 'unknown', reason: 'missing_input', statement: '缺来源', grounds: [], tier: 'advisory', data: { unread: input.unread_sources ?? [] } }];",
+        "  return [{ verdict: 'unknown', missing: '合成检查所需事实', reason: 'missing_input', statement: '缺来源', grounds: [], tier: 'advisory', data: { unread: input.unread_sources ?? [] } }];",
         '}',
       ].join('\n'),
     });

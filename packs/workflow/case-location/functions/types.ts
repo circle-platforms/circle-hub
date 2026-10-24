@@ -108,7 +108,7 @@ export type LocateAnswer = {
  */
 export type Judgment =
   | { verdict: Extract<Verdict, 'support'>; statement: string; brief: string }
-  | { verdict: Extract<Verdict, 'unknown'>; reason: Extract<Reason, 'missing_input' | 'check_error'>; statement: string; brief: string }
+  | { verdict: Extract<Verdict, 'unknown'>; reason: Extract<Reason, 'missing_input' | 'check_error'>; missing?: string; statement: string; brief: string }
   | { verdict: Extract<Verdict, 'refute'>; code: string; statement: string; brief: string };
 
 /** A mind-map document as the projection reads it from its bound input. */

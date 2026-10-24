@@ -1,3 +1,4 @@
+import { CheckOutcome } from '../../../../contracts/src/tables.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import project from './project.ts';
@@ -59,6 +60,8 @@ test('acquire has no duration and never allocates an address held without expiry
 test('missing frozen input remains transitional with a missing fact and a bounded action',()=>{
   const outcome=bedOutcomes({})[0]!;
   assert.equal(outcome.verdict,'unknown');
+  CheckOutcome.parse(outcome);
+  assert.match(outcome.missing!, /冻结.*清单/);
   assert.ok(outcome.data?.missing_fact);
   const next=outcome.data?.next_action as Record<string,unknown>;
   for(const field of ['action','object','owner','deadline'])assert.ok(next[field]);
