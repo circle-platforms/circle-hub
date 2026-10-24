@@ -1,3 +1,5 @@
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
+import type { KnowledgeEntryCounts } from '../../contracts/src/views.ts';
 // The knowledge sync (W09 standing obligation, executed by the Hub): run the product pack's sync declaration (read the start
 // pages, parse them, ask the plan function which pages to read next, until it is done or a limit is hit, which is reported),
 // store every planned build of every name family, produce the root of every own-tree build that is missing or whose sources
@@ -52,6 +54,8 @@ export interface SyncOptions {
 export type BuildOutcome = 'produced' | 'skipped' | 'failed' | 'registered';
 
 export interface SyncBuildReport {
+  /** Distinct content identities for this root only; unlike the legacy raw composition row fields. */
+  entry_counts?: KnowledgeEntryCounts;
   name: string;
   family: string;
   line: string;
@@ -487,16 +491,17 @@ async function processOwnTree(
   const skipped = produced.skippedCount > 0 ? `；跳过 ${produced.skippedCount} 份列出的来源（见组成记录）` : '';
   const calls = produced.calls.reused > 0 ? `；生产器调用 ${produced.calls.made} 次，复用 ${produced.calls.reused} 次` : '';
   const placementSkippedEntries = Object.entries(produced.placementSkipped ?? {}).filter(([, count]) => count > 0);
-  const unplacedNote = produced.unplaced > 0 ? `；${produced.unplaced} 个条目未归位，留在根下` : '';
+  const unplacedNote = produced.entryCounts.unplaced > 0 ? `；${labelOf('knowledge_count', 'tree_unplaced_entries')} ${produced.entryCounts.unplaced} 个，留在根下` : '';
   const same = existing !== null && existing.detail.root === produced.root ? '（内容与上次相同）' : '';
   const cause = existing === null ? '' : `；重新产出：${changed ?? '来源变了'}`;
   return {
     ...base,
     outcome: 'produced',
-    reason: `产出根，${produced.nodes} 个节点（新写 ${produced.created} 个）、${produced.entries} 个条目${same}${note}${skipped}${calls}${unplacedNote}${cause}`,
+    reason: `产出根，${produced.nodes} 个节点（新写 ${produced.created} 个）、条目共 ${produced.entryCounts.total} 个（按内容去重；已挂到树上位置 ${produced.entryCounts.placed} 个）；树上挂载 ${produced.entries} 处（按路径与内容）${same}${note}${skipped}${calls}${unplacedNote}${cause}`,
     root: produced.root,
     composition: produced.composition,
     refused: produced.refusedCount,
+    entry_counts: produced.entryCounts,
     unplaced: produced.unplaced,
     skipped: produced.skippedCount,
     calls: produced.calls,

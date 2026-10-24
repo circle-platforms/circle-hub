@@ -26,6 +26,14 @@ export const MAX_IMPACT_ENTRIES = 200000;
 /** A data field name an entry carries at the top level of its data. */
 export const DataFieldName = z.string().regex(/^[a-z][a-z0-9_]{0,40}$/);
 
+/** Distinct content identities in the selected root scope; a placed identity is not counted as unplaced. */
+export const KnowledgeEntryCounts = z.strictObject({
+  total:z.number().int().nonnegative(),
+  placed:z.number().int().nonnegative(),
+  unplaced:z.number().int().nonnegative(),
+}).refine(counts=>counts.total===counts.placed+counts.unplaced,{message:'条目总数必须等于有树上位置与没有树上位置的条目数之和'});
+export type KnowledgeEntryCounts = z.infer<typeof KnowledgeEntryCounts>;
+
 /** Product-wide provenance and complete counts, independent of detail truncation. */
 export const UnversionedView = z.strictObject({
   root: Sha256, composition: Sha256, build: z.null(),
@@ -119,12 +127,14 @@ export const FacetView = z.strictObject({
   total: z.number().int().nonnegative().describe('entries of the kind in the root, whatever the fields'),
   totals: z.strictObject({
     ...ScopeCounts,
+    entry_counts:KnowledgeEntryCounts.optional().describe('Content-deduplicated entries of the selected kind across the locked scope, before detail truncation or exclusions; independent of null command fields'),
     empty: z.record(DataFieldName, z.number().int().nonnegative()).describe('Entries in the null group of each by field, once per entry per field; includes rows omitted by every truncation limit; zero is explicit'),
   }),
   truncated: z.boolean(),
   skipped: z.number().int().nonnegative().describe('listed sources the producers could not use across the build root and its locked product-wide root together: the counts do not cover their possible entries'),
   notes: z.array(z.string()),
 }).superRefine((view, ctx) => {
+  if(view.totals.entry_counts&&view.totals.entry_counts.total!==view.total)ctx.addIssue({code:'custom',path:['totals','entry_counts','total'],message:'条目汇总与分面视图 total 不一致'});
   for (const field of view.by) {
     if (!Object.hasOwn(view.totals.empty, field)) ctx.addIssue({code:'custom',path:['totals','empty',field],message:'every by field has an explicit empty count'});
   }
@@ -157,7 +167,7 @@ export const IndexView = z.strictObject({
   fields: z.array(DataFieldName).optional().describe('the request asked for only these data fields per entry: each entry carries them and an empty statement; absent means full entries'),
   only: z.array(z.string()).optional().describe('the requested index values, deduplicated and sorted in UTF-16 code-unit order; absent when the request has no only parameter'),
   cut_keys: z.array(z.string()).optional().describe('listed keys whose entries were cut by MAX_INDEX_PER_KEY, sorted in UTF-16 code-unit order; generated views always include an empty array when none were cut; keys omitted entirely by the byte or entry budget are not included'),
-  totals: z.strictObject(ScopeCounts).optional(),
+  totals: z.strictObject({...ScopeCounts,entry_counts:KnowledgeEntryCounts.optional().describe('All distinct entries of the requested kind, even without the indexed key or outside only; the carrier total remains total_entries')}).optional(),
   total_keys: z.number().int().nonnegative(),
   total_entries: z.number().int().nonnegative(),
   truncated: z.boolean(),

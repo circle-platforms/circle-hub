@@ -393,10 +393,11 @@ export class KnowledgeViews {
     return new CompositionView(this.#context.store,at.composition,body);
   }
 
-  async #scopeSummary(scope: CompositionView | null, kinds: readonly string[], include: (row: KindEntry) => boolean = () => true): Promise<UnversionedView | null> {
+  async #scopeSummary(scope: CompositionView | null, kinds: readonly string[], include: (row: KindEntry) => boolean = () => true, observe?: (row: KindEntry) => void): Promise<UnversionedView | null> {
     if (scope === null) return null;
     const entries=new Set<string>(), documents=new Set<string>();
     for (const kind of kinds) for await(const row of entriesOfKind(scope,kind)) {
+      observe?.(row);
       if(!include(row))continue;
       entries.add(row.entry);
       const document=row.content.data.document;
@@ -651,7 +652,11 @@ export class KnowledgeViews {
   async facets(product: string, at: At, kind: EntryKind, by: readonly string[], exclude: ReadonlySet<string> = new Set(), scopeRoot?: ScopeRoot | null, scopeLocked = scopeRoot === null): Promise<FacetView> {
     const composition = await this.#buildView(product,at);
     const scope = await this.#scopeView(product,scopeRoot === undefined ? await this.#scope(product) : scopeRoot);
-    const summary = await this.#scopeSummary(scope,[kind]);
+    // The existing scope scan records positions without changing the build-preferred reference carrier.
+    const scopePlaced = composition !== null && scope !== null ? new Set<string>() : null;
+    const summary = await this.#scopeSummary(scope, [kind], undefined, scopePlaced === null ? undefined : row => {
+      if (!row.unplaced) scopePlaced.add(row.entry);
+    });
     const seen = new Set<string>();
     const counts = new Map<string, { values: FacetValue[]; count: number; unversioned: number }>();
     const empty = Object.fromEntries(by.map(field => [field, 0]));
@@ -663,7 +668,7 @@ export class KnowledgeViews {
     if (composition !== null || scope !== null) {
       for await (const row of scopedEntries(composition, scope, kind)) {
         seen.add(row.entry);
-        if (row.unplaced) unplacedCount++;
+        if (row.unplaced && !scopePlaced?.has(row.entry)) unplacedCount++;
         const lists = by.map((field) => facetValues(row.content.data, field, odd));
         // Count membership of each null group before collecting combinations or applying any row limit.
         lists.forEach((values, i) => { if (values.includes(null)) empty[by[i]]++; });
@@ -703,9 +708,10 @@ export class KnowledgeViews {
       rows.push(row);
       bytes += size;
     }
+    const entryCounts = { total: seen.size, placed: seen.size - unplacedCount, unplaced: unplacedCount };
     const notes: string[] = [];
     if (seen.size === 0) notes.push(`构建 ${at.build} 的根里没有${labelOf('entry_kind', kind)}种类的条目`);
-    if (unplacedCount > 0) notes.push(`未归位条目 ${unplacedCount} 个，标在根下，计入合计`);
+    if (unplacedCount > 0) notes.push(`${labelOf('knowledge_count', 'tree_unplaced_entries')} ${unplacedCount} 个，标在根下，计入合计`);
     if (rows.length < all.length) notes.push(`取值组合有 ${all.length} 种，只列出按取值排序的前 ${rows.length} 种（上限 ${MAX_FACET_ROWS} 行、约 ${this.#context.limits.maxViewBytes} 字节）`);
     if (unlisted > 0) notes.push(`取值组合超过 ${limit} 种以后出现的新组合没有收集：${unlisted} 个条目有组合没有计入任何一行（total 里计入），列出的行是先遇到的组合`);
     if (cut > 0) notes.push(`${cut} 个条目的列表字段组合超过 ${MAX_FACET_COMBINATIONS} 种，没有计入任何一行（total 里计入）`);
@@ -722,7 +728,7 @@ export class KnowledgeViews {
       by: [...by],
       rows,
       total: seen.size,
-      totals: { empty, ...this.#scopeCounts(summary) },
+      totals: { empty, entry_counts: entryCounts, ...this.#scopeCounts(summary) },
       truncated: rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0,
       skipped: skippedCount(composition) + skippedCount(scope),
       notes: [...notes,this.#scopeNote(summary,scopeLocked,scope)],
@@ -749,7 +755,11 @@ export class KnowledgeViews {
     const composition = await this.#buildView(product,at);
     const scope = await this.#scopeView(product,scopeRoot === undefined ? await this.#scope(product) : scopeRoot);
     const onlySet = only === null ? null : new Set(only);
-    const summary = await this.#scopeSummary(scope,[kind],row=>indexKeys(row.content.data,key).some(value=>onlySet===null||onlySet.has(value)));
+    // Position membership is collected before the index-key filter; the count covers every entry of the kind.
+    const scopePlaced = composition !== null && scope !== null ? new Set<string>() : null;
+    const summary = await this.#scopeSummary(scope, [kind], row => indexKeys(row.content.data, key).some(value => onlySet === null || onlySet.has(value)), scopePlaced === null ? undefined : row => {
+      if (!row.unplaced) scopePlaced.add(row.entry);
+    });
     const budget = this.#budget;
     const seen = new Set<string>();
     const keys = new Map<string, string[]>();
@@ -764,7 +774,7 @@ export class KnowledgeViews {
       for await (const row of scopedEntries(composition, scope, kind)) {
         seen.add(row.entry);
         ofKind++;
-        if (row.unplaced) unplacedCount++;
+        if (row.unplaced && !scopePlaced?.has(row.entry)) unplacedCount++;
         const values = indexKeys(row.content.data, key).filter((value) => onlySet === null || onlySet.has(value));
         if (values.length === 0) continue;
         const entryBytes = memberBytes(row.entry, viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned));
@@ -781,6 +791,7 @@ export class KnowledgeViews {
         }
       }
     }
+    const entryCounts = { total: seen.size, placed: seen.size - unplacedCount, unplaced: unplacedCount };
     interface Kept {
       value: string;
       listed: string[];
@@ -834,7 +845,7 @@ export class KnowledgeViews {
       if (fields !== null) out.push(`条目只带字段 ${fields.join('、')}（fields 参数），陈述为空`);
       const stop = count < kept.length ? kept[count].value : stoppedAt;
       if (stop !== null) out.push(`取值按顺序列到 ${cutText(stop, 80)} 之前为止（上限 ${MAX_INDEX_ENTRIES} 个条目、约 ${this.#context.limits.maxViewBytes} 字节）`);
-      if (unplacedCount > 0) out.push(`未归位条目 ${unplacedCount} 个，标在根下`);
+      if (unplacedCount > 0) out.push(`${labelOf('knowledge_count', 'tree_unplaced_entries')} ${unplacedCount} 个，标在根下`);
       if (proto > 0) out.push(`取值 ${PROTO_KEY} 不能作为这个视图的键（读成 JSON 对象时会被当作原型），带它的 ${proto} 个条目没有按它列出`);
       if (excluded.size > 0) out.push(credentialNote([...excluded.values()]));
       const skipped = skippedNote(at, composition);
@@ -851,7 +862,7 @@ export class KnowledgeViews {
       return {
         schema: 'index-view@1',
         unversioned: summary,
-        totals: this.#scopeCounts(summary),
+        totals: { ...this.#scopeCounts(summary), entry_counts: entryCounts },
         product,
         build: {build:at.build,root:at.root},
         kind,

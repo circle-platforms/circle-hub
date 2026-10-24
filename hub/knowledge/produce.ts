@@ -1,3 +1,5 @@
+import { countEntryPositions } from './counts.ts';
+import type { KnowledgeEntryCounts } from '../../contracts/src/views.ts';
 import {resolveProductVariables,productionVariableUses} from './variables.ts';
 import type {VariableUse} from '../../contracts/src/variables.ts';
 // Producing the root of one build (K01, K02, K04): read each declared source through the external reader in an admin
@@ -113,7 +115,10 @@ export interface ProduceResult {
   nodes: number;
   /** Node records written by this production; the rest were shared with earlier roots. */
   created: number;
+  /** Legacy placed (path, content) rows, excluding unplaced rows. */
   entries: number;
+  /** Authoritative identity summary for reports and views; does not change stored composition rows. */
+  entryCounts: KnowledgeEntryCounts;
   placedByModel: number;
   unplaced: number;
   refused: RefusedEntry[];
@@ -445,6 +450,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     nodes: 0,
     created: 0,
     entries: 0,
+    entryCounts: { total: 0, placed: 0, unplaced: 0 },
     placedByModel: 0,
     unplaced: 0,
     refused: problems.refused,
@@ -701,7 +707,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
 
   // Composition rows: one per (path, entry), producers and fragments merged in order, the basis over every slot.
   const rows = new Map<string, Map<string, { row: CompositionRow; producers: Set<string>; slots: Set<string> }>>();
-  /** Estimated bytes of an entry in a row (statement, data, fragments), for the size of parts. */
+  /** Placed identities only: byte estimates for row parts, also reused as the report’s placed identity index. */
   const entryBytes = new Map<string, number>();
   const addRow = (path: string, entry: Collected, placed: PlacementOutcome | undefined): void => {
     let atPath = rows.get(path);
@@ -895,6 +901,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     nodes: nodes.length,
     created: written.created,
     entries: composition.length,
+    entryCounts: countEntryPositions(entryBytes, lost),
     placedByModel: written.body.counts.placed_by_model,
     unplaced: unplacedRows.length,
     parts: written.parts,

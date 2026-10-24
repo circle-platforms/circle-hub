@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "quality-board",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "kind": "workflow",
   "title": "质量看板",
   "description": "构建的用例质量看板：每个（版本线、模块）分组的用例数、无期望结果占比、只有含糊期望结果占比、负面用例占比，以及合计；阈值越界是提示档的管理信号，从不是阻断；不绑定产品线（输入的外部标识写明产品和构建）；只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "40cc0ff6940699956647a6083bec698325406a259a264d9c32b45aed89a757d1",
-      "size": 3736
+      "sha256": "c8cde500649518a6dcdf9debdcfbddbe6c872f31ec19bbcee96cf7c5f25e8b26",
+      "size": 3779
     },
     {
       "path": "checks.json",
@@ -27,9 +27,14 @@
       "size": 1928
     },
     {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "849f1731e8670684974257538a3db2aaffac039c43d58f12cbac1c77052754e1",
+      "size": 979
+    },
+    {
       "path": "functions/project.ts",
-      "sha256": "cba882efd8e500ca48d6dbeb2c2302d5289f1bf401a62264332ffe0d096af657",
-      "size": 8406
+      "sha256": "e830420f842f1d67971278a4ead3e5be862a3163992a1bc266633180b0115642",
+      "size": 8595
     },
     {
       "path": "functions/subject.ts",
@@ -58,8 +63,8 @@
     },
     {
       "path": "functions/totals.ts",
-      "sha256": "12b87f741c88e725dc23b0a9b340fa517767b1197e89a58b1efc23d1d0d7c934",
-      "size": 5604
+      "sha256": "9059433f2e1e1e3f9e46221cb5c922fa32dbde9e129e00b30a8359c3b62a0741",
+      "size": 5690
     },
     {
       "path": "functions/types.ts",
@@ -68,8 +73,8 @@
     },
     {
       "path": "functions/views.ts",
-      "sha256": "f784513d9abf97e16c6c895270fda2003ca1467c7bd439b0b6be814b48c5c0a1",
-      "size": 4642
+      "sha256": "ba7f3dbb5f89d75ba872fcd9136bbea79e048f4dc523c543553e6cf74577430c",
+      "size": 4781
     },
     {
       "path": "requirements.json",
