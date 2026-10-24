@@ -1,47 +1,33 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { test } from 'node:test';
-import { checkDuplicate } from './functions/checks.ts';
-import { SYNTHETIC_CATALOG, SYNTHETIC_INDEX_VIEW, makeGoodDraft } from './testing/fixtures.ts';
-
-function check(title: string, expected: string) {
-  const view = structuredClone(SYNTHETIC_INDEX_VIEW);
-  const candidate = Object.values(view.entries)[0];
-  candidate.data.title = '合成 Widget 标题';
-  candidate.data.expected_texts = ['合成期望'];
-  const draft = makeGoodDraft();
-  draft.title = title; draft.steps = [{ command: 'show health detail' }]; draft.expected = [{ text: expected }];
-  return checkDuplicate({ subject: { item: 'synthetic-defect', drafts: [draft], indexed_cases: view }, catalog: SYNTHETIC_CATALOG });
-}
-test('dedup contract promises normalized titles rather than expected-text comparison', () => {
-  const requirements = JSON.parse(readFileSync(new URL('./requirements.json', import.meta.url), 'utf8'));
-  const requirement = requirements.requirements.find((r: { key: string }) => r.key === 'not_duplicate');
-  assert.match(requirement.description, /标题逐字相同/);
-  assert.doesNotMatch(requirement.description, /或规范化期望结果相同/);
-  const skill = readFileSync(new URL('./SKILL.md', import.meta.url), 'utf8');
-  assert.doesNotMatch(skill, /标题或期望结果相同/);
+import {readFileSync} from 'node:fs';
+import {test} from 'node:test';
+import {checkDuplicate} from './functions/checks.ts';
+import {SYNTHETIC_CATALOG,SYNTHETIC_INDEX_VIEW,makeDuplicateDraft,makeGoodDraft} from './testing/fixtures.ts';
+import {nativeStep} from './testing/structure.ts';
+function check(draft=makeDuplicateDraft(),view=structuredClone(SYNTHETIC_INDEX_VIEW)){return checkDuplicate({subject:{item:'synthetic',drafts:[draft],indexed_cases:view},catalog:SYNTHETIC_CATALOG})[0];}
+test('published duplicate requirement names structure and excludes titles',()=>{
+ const requirement=JSON.parse(readFileSync(new URL('./requirements.json',import.meta.url),'utf8')).requirements.find((r:{key:string})=>r.key==='not_duplicate');
+ assert.match(requirement.description,/case-structure@2/);assert.match(requirement.description,/标题不参与/);
 });
-test('identical expectations with different titles are not duplicates', () => {
-  assert.equal(check('另一个合成标题', '合成期望')[0].verdict, 'support');
+test('different titles with identical declared structures refute',()=>{const draft=makeDuplicateDraft();draft.title='不同的标题';assert.equal(check(draft).verdict,'refute');});
+test('identical titles with different parameter values do not duplicate',()=>{
+ const view=structuredClone(SYNTHETIC_INDEX_VIEW),draft=makeGoodDraft(),entry=Object.values(view.entries)[0];
+ draft.title=entry.data.title as string;
+ entry.data.case_structure={schema:'case-structure@2',commands:[nativeStep('widget health interval 30').identity],expected:draft.expected.map(e=>({after:e.after,quote:e.identity}))};
+ assert.equal(check(draft,view).verdict,'support');
 });
-test('a folded variant of a title is not a duplicate: only the verbatim title counts (10-24 rule)', () => {
-  const result = check('  合成\tＷＩＤＧＥＴ\u00A0标题 ', '另一段期望');
-  assert.equal(result[0].verdict, 'support');
-  const exact = check('合成 Widget 标题', '另一段期望');
-  assert.equal(exact[0].verdict, 'refute'); assert.equal(exact[0].code, 'defect-to-case.duplicate_case');
+for(const field of ['source_sha256','parser','path','offset','length','after'])test('quote identity includes '+field,()=>{
+ const draft=makeDuplicateDraft();const expected=draft.expected[0],identity=expected.identity!;
+ if(field==='after'){draft.steps.push(nativeStep('show health'));expected.after=2;}
+ else if(field==='offset'||field==='length')identity.span[field]++;
+ else if(field==='source_sha256')identity.source_sha256='e'.repeat(64);
+ else if(field==='parser')identity.parser='text@2';else identity.path='l/2';
+ assert.equal(check(draft).verdict,'support');
 });
-
-test('the requirement names command heads and every incompleteness class rather than promising success from skipped alone', () => {
-  const requirements = JSON.parse(readFileSync(new URL('./requirements.json', import.meta.url), 'utf8'));
-  const description = requirements.requirements.find((r: { key: string }) => r.key === 'not_duplicate').description;
-  for (const phrase of ['命令头', '最长', '缺键', '截断', '条目不带命令', '解析不出']) assert.ok(description.includes(phrase), phrase);
-  assert.ok(!description.includes('未发现重复时若索引未跳过文档则通过'));
+test('missing command or quote identity remains unknown even with identical titles',()=>{
+ for(const missing of ['command','quote']){const draft=makeDuplicateDraft();if(missing==='command')delete draft.steps[0].identity;else delete draft.expected[0].identity;const out=check(draft);assert.equal(out.verdict,'unknown');assert.match(out.missing!,/下一步/);}
 });
-test('different parameter values with the same head set, negative flag and title still meet the implemented criterion', () => {
-  for (const value of [30, 60]) {
-    const view = structuredClone(SYNTHETIC_INDEX_VIEW);
-    const candidate = Object.values(view.entries)[0]; candidate.data.commands = ['widget health interval'];
-    const draft = makeGoodDraft(); draft.title = candidate.data.title as string; draft.steps = [{ command: `widget health interval ${value}` }];
-    assert.equal(checkDuplicate({ subject: { item: 'synthetic', drafts: [draft], indexed_cases: view }, catalog: SYNTHETIC_CATALOG })[0].verdict, 'refute');
-  }
+test('raw spelling of a typed integer is not part of the parsed parameter key',()=>{
+ const draft=makeGoodDraft(),view=structuredClone(SYNTHETIC_INDEX_VIEW);Object.values(view.entries)[0].data.case_structure={schema:'case-structure@2',commands:draft.steps.map(s=>s.identity),expected:draft.expected.map(e=>({after:e.after,quote:e.identity}))};
+ draft.steps[0].identity!.parameters[0].raw='060';assert.equal(check(draft,view).verdict,'refute');
 });

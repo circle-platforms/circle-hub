@@ -7,6 +7,7 @@
     "item": "74001",
     "drafts": [
       {
+        "id": "draft-good",
         "title": "查看健康检查状态",
         "priority": 2,
         "negative": false,
@@ -16,16 +17,40 @@
         ],
         "steps": [
           {
-            "command": "show health"
+            "command": "show health",
+            "identity": {
+              "tree_root": "5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154",
+              "path": "/commands/show/health",
+              "signature": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/1/params",
+              "parameters": []
+            }
           }
         ],
         "expected": [
           {
-            "text": "显示健康"
+            "text": "显示健康",
+            "after": 1,
+            "identity": {
+              "source_sha256": "81784c076c4dd97428db28ea955a32ad22d2fd51420c411847fb78bae2b947af",
+              "parser": "text@1",
+              "path": "l/3",
+              "span": {
+                "unit": "byte",
+                "offset": 50,
+                "length": 30
+              }
+            },
+            "quote": {
+              "reference": "src:81784c076c4dd97428db28ea955a32ad22d2fd51420c411847fb78bae2b947af/text@1/l/3",
+              "text": "健康检查状态显示正常"
+            }
           }
         ],
         "tags": [
-          "Functional"
+          "functional"
+        ],
+        "resource": [
+          "functional"
         ]
       }
     ],
@@ -39,7 +64,7 @@
       "kind": "case",
       "key": "commands",
       "keys": {
-        "show health detail": [
+        "/commands/show/health/detail": [
           "2222222222222222222222222222222222222222222222222222222222222222"
         ]
       },
@@ -48,14 +73,40 @@
           "entry": "2222222222222222222222222222222222222222222222222222222222222222",
           "kind": "case",
           "statement": "doc_101:node_5 | 健康检查详细信息查看",
-          "reference": "tree:1111111111111111111111111111111111111111111111111111111111111111/commands/show/health@2222222222222222222222222222222222222222222222222222222222222222",
+          "reference": "tree:1111111111111111111111111111111111111111111111111111111111111111/commands/show/health/detail@2222222222222222222222222222222222222222222222222222222222222222",
           "data": {
+            "case_structure": {
+              "schema": "case-structure@2",
+              "commands": [
+                {
+                  "tree_root": "5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154",
+                  "path": "/commands/show/health/detail",
+                  "signature": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/2/params",
+                  "parameters": []
+                }
+              ],
+              "expected": [
+                {
+                  "after": 1,
+                  "quote": {
+                    "source_sha256": "81784c076c4dd97428db28ea955a32ad22d2fd51420c411847fb78bae2b947af",
+                    "parser": "text@1",
+                    "path": "l/3",
+                    "span": {
+                      "unit": "byte",
+                      "offset": 50,
+                      "length": 30
+                    }
+                  }
+                }
+              ]
+            },
             "document": "doc_101",
             "node": "node_5",
             "title": "健康检查详细信息查看",
             "negative": false,
             "commands": [
-              "show health detail"
+              "/commands/show/health/detail"
             ],
             "expected_texts": [
               "健康检查状态显示正常"
@@ -73,48 +124,75 @@
   "catalog": {
     "root": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "complete": true,
+    "caseSensitive": true,
     "entries": [
       {
         "head": "widget health interval",
+        "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands/widget/health/interval",
         "signatures": [
-          [
-            {
-              "name": "seconds",
-              "type": "int",
-              "minimum": 1,
-              "maximum": 300
-            }
-          ]
-        ],
-        "summary": "设置健康检查间隔"
+          {
+            "id": "native-0",
+            "reference": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/0/params",
+            "params": [
+              {
+                "name": "seconds",
+                "type": "int",
+                "minimum": 1,
+                "maximum": 300,
+                "native_type": {
+                  "name": "int",
+                  "declaration": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/0/params/0",
+                  "grammar": "synthetic-catalog@1"
+                }
+              }
+            ]
+          }
+        ]
       },
       {
         "head": "show health",
+        "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands/show/health",
         "signatures": [
-          []
-        ],
-        "summary": "查看健康检查状态"
+          {
+            "id": "native-1",
+            "reference": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/1/params",
+            "params": []
+          }
+        ]
       },
       {
         "head": "show health detail",
+        "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands/show/health/detail",
         "signatures": [
-          []
-        ],
-        "summary": "查看健康检查详细信息"
+          {
+            "id": "native-2",
+            "reference": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/2/params",
+            "params": []
+          }
+        ]
       },
       {
         "head": "service http port",
+        "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands/service/http/port",
         "signatures": [
-          [
-            {
-              "name": "port",
-              "type": "port",
-              "minimum": 1,
-              "maximum": 65535
-            }
-          ]
-        ],
-        "summary": "设置HTTP服务端口"
+          {
+            "id": "native-3",
+            "reference": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/3/params",
+            "params": [
+              {
+                "name": "port",
+                "type": "port",
+                "minimum": 1,
+                "maximum": 65535,
+                "native_type": {
+                  "name": "port",
+                  "declaration": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/3/params/0",
+                  "grammar": "synthetic-catalog@1"
+                }
+              }
+            ]
+          }
+        ]
       }
     ]
   },

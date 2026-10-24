@@ -1,3 +1,5 @@
+import {createHash} from 'node:crypto';
+import {STRUCTURAL_CATALOG_SPEC,nativeStep,nativeExpected,indexedStructure} from './structure.ts';
 // Synthetic fixtures for defect-to-case workflow tests.
 import type { CatalogEntry } from '../../../../contracts/src/tables.ts';
 import type { IndexView } from '../../../../contracts/src/views.ts';
@@ -24,32 +26,7 @@ export const SYNTHETIC_BUG_71010_UNCHECKABLE = {
 
 export const MANUAL_PASSAGE = '配置命令行 service http port <1-65535>。期望结果：服务端口修改成功，HTTP服务正常监听。';
 
-export const SYNTHETIC_CATALOG_SPEC: CatalogSpec = {
-  root: ROOT_DIGEST,
-  complete: true,
-  entries: [
-    {
-      head: 'widget health interval',
-      signatures: [[{ name: 'seconds', type: 'int', minimum: 1, maximum: 300 }]],
-      summary: '设置健康检查间隔',
-    },
-    {
-      head: 'show health',
-      signatures: [[]],
-      summary: '查看健康检查状态',
-    },
-    {
-      head: 'show health detail',
-      signatures: [[]],
-      summary: '查看健康检查详细信息',
-    },
-    {
-      head: 'service http port',
-      signatures: [[{ name: 'port', type: 'port', minimum: 1, maximum: 65535 }]],
-      summary: '设置HTTP服务端口',
-    },
-  ],
-};
+export const SYNTHETIC_CATALOG_SPEC:CatalogSpec=STRUCTURAL_CATALOG_SPEC;
 
 export const SYNTHETIC_CATALOG: CatalogEntry[] = buildCatalog(SYNTHETIC_CATALOG_SPEC).entries();
 
@@ -60,20 +37,21 @@ export const SYNTHETIC_INDEX_VIEW: IndexView = {
   kind: 'case',
   key: 'commands',
   keys: {
-    'show health detail': ['2222222222222222222222222222222222222222222222222222222222222222'],
+    '/commands/show/health/detail': ['2222222222222222222222222222222222222222222222222222222222222222'],
   },
   entries: {
     '2222222222222222222222222222222222222222222222222222222222222222': {
       entry: '2222222222222222222222222222222222222222222222222222222222222222',
       kind: 'case',
       statement: 'doc_101:node_5 | 健康检查详细信息查看',
-      reference: `tree:${'1'.repeat(64)}/commands/show/health@${'2'.repeat(64)}`,
+      reference: `tree:${'1'.repeat(64)}/commands/show/health/detail@${'2'.repeat(64)}`,
       data: {
+        case_structure:structuredClone(indexedStructure),
         document: 'doc_101',
         node: 'node_5',
         title: '健康检查详细信息查看',
         negative: false,
-        commands: ['show health detail'],
+        commands: ['/commands/show/health/detail'],
         expected_texts: ['健康检查状态显示正常'],
       },
     },
@@ -97,95 +75,15 @@ export const INCOMPLETE_INDEX_VIEW: IndexView = {
   notes: ['3 listed sources went unused'],
 };
 
-export function makeGoodDraft(options: { ref?: string } = {}): DraftCase {
-  const ref = options.ref ?? 'src:fix_sha';
-  return {
-    title: 'SLB健康检查间隔配置正向测试',
-    priority: 2,
-    negative: false,
-    expects_refutation: false,
-    preconditions: ['SLB服务正常运行'],
-    steps: [{ command: 'widget health interval 60', note: '设置间隔为60秒' }],
-    expected: [
-      {
-        text: '健康检查间隔设置成功',
-        quote: {
-          reference: ref,
-          text: '健康检查间隔设置成功',
-        },
-      },
-    ],
-    tags: ['Functional'],
-  };
-}
-
-export const goodDraft = (overrides: Partial<DraftCase> = {}): DraftCase => ({ ...makeGoodDraft(), ...overrides });
-
-export function makeNegativeExpectedRefutationDraft(options: { ref?: string } = {}): DraftCase {
-  const ref = options.ref ?? 'src:fix_sha';
-  return {
-    title: 'SLB健康检查间隔超界反向测试',
-    priority: 2,
-    negative: true,
-    expects_refutation: true,
-    preconditions: ['SLB服务正常运行'],
-    steps: [{ command: 'widget health interval 99999', note: '设置超界数值99999' }],
-    expected: [
-      {
-        text: '系统运行正常',
-        quote: {
-          reference: ref,
-          text: '系统运行正常',
-        },
-      },
-    ],
-    tags: ['Negative'],
-  };
-}
-
-export function makeNegativeUnexpectedAcceptDraft(options: { ref?: string } = {}): DraftCase {
-  const ref = options.ref ?? 'src:fix_sha';
-  return {
-    title: '反向声明但命令合法的错误起草',
-    priority: 2,
-    negative: true,
-    expects_refutation: true,
-    preconditions: ['SLB服务正常运行'],
-    steps: [{ command: 'widget health interval 60', note: '合法命令' }],
-    expected: [
-      {
-        text: '系统运行正常',
-        quote: {
-          reference: ref,
-          text: '系统运行正常',
-        },
-      },
-    ],
-    tags: ['Negative'],
-  };
-}
-
-export function makeDuplicateDraft(options: { ref?: string } = {}): DraftCase {
-  const ref = options.ref ?? 'src:fix_sha';
-  return {
-    title: '健康检查详细信息查看',
-    priority: 2,
-    negative: false,
-    expects_refutation: false,
-    preconditions: [],
-    steps: [{ command: 'show health detail', note: '查看详细信息' }],
-    expected: [
-      {
-        text: '系统运行正常',
-        quote: {
-          reference: ref,
-          text: '系统运行正常',
-        },
-      },
-    ],
-    tags: ['Functional'],
-  };
-}
+export const BUG_RAW=JSON.stringify(SYNTHETIC_BUG_74001);
+export const BUG_SHA=createHash('sha256').update(BUG_RAW).digest('hex');
+export const FIX_REF='src:'+BUG_SHA+'/json@1/p/fields/fix';
+export function expectedFor(text:string,ref?:string){const fallback=nativeExpected(text);if(ref===FIX_REF&&BUG_RAW.includes(fallback.quote.text)){const quote=fallback.quote.text,at=BUG_RAW.indexOf(quote);return {...fallback,identity:{source_sha256:BUG_SHA,parser:'json@1',path:'p/fields/fix',span:{unit:'byte' as const,offset:Buffer.byteLength(BUG_RAW.slice(0,at)),length:Buffer.byteLength(quote)}},quote:{reference:ref,text:quote}};}return {...fallback,quote:{...fallback.quote,...(ref?{reference:ref}:{})}};}
+export function makeGoodDraft(options:{ref?:string}={}):DraftCase{return {id:'draft-good',title:'SLB健康检查间隔配置正向测试',priority:2,negative:false,expects_refutation:false,preconditions:['SLB服务正常运行'],steps:[nativeStep('widget health interval 60')],expected:[expectedFor('健康检查间隔设置成功',options.ref)],tags:['functional'],resource:['functional']};}
+export const goodDraft=(overrides:Partial<DraftCase>={}):DraftCase=>({...makeGoodDraft(),...(overrides.negative===true?{resource:['negative'],tags:['negative']}:{}),...overrides});
+export function makeNegativeExpectedRefutationDraft(options:{ref?:string}={}):DraftCase{return goodDraft({id:'draft-negative',title:'SLB健康检查间隔超界反向测试',negative:true,expects_refutation:true,steps:[{command:'widget health interval 99999'}],expected:[expectedFor('系统运行正常',options.ref)]});}
+export function makeNegativeUnexpectedAcceptDraft(options:{ref?:string}={}):DraftCase{return goodDraft({id:'draft-negative-valid',negative:true,expects_refutation:true,expected:[expectedFor('系统运行正常',options.ref)]});}
+export function makeDuplicateDraft(options:{ref?:string}={}):DraftCase{return goodDraft({id:'draft-duplicate',title:'健康检查详细信息查看',steps:[nativeStep('show health detail')],expected:[expectedFor('健康检查状态显示正常',options.ref)]});}
 
 /** A version-line manual bound before projection, matching the real input contract. */
 export const SYNTHETIC_BOUND_MANUAL = {

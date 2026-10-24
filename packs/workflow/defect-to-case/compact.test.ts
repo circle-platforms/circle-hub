@@ -1,3 +1,4 @@
+import {nativeStep,indexedStructure} from './testing/structure.ts';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { BoundInput, RunContext } from '../../../contracts/src/pack.ts';
@@ -126,6 +127,7 @@ describe('compact case index and deduplication at real scale', () => {
       title: '健康检查保留项',
       reference: 'tree:1111111111111111111111111111111111111111111111111111111111111111/commands/show/health@2222',
       negative: false,
+      case_structure: {...indexedStructure,commands:[nativeStep('show health').identity],expected:makeGoodDraft().expected.map(e=>({after:e.after,quote:e.identity}))},
     };
 
     const truncatedIndex = {
@@ -142,7 +144,7 @@ describe('compact case index and deduplication at real scale', () => {
 
     // Case A: Draft resolves to a head that is not in the truncated index -> must return unknown stating dropped count
     const nonMatchingDraft = makeGoodDraft();
-    nonMatchingDraft.steps = [{ command: 'widget health interval 60' }];
+    nonMatchingDraft.steps = [nativeStep('widget health interval 60')];
     nonMatchingDraft.title = '全然不同的用例';
 
     const unknownOutcome = checkDuplicate({
@@ -161,7 +163,7 @@ describe('compact case index and deduplication at real scale', () => {
 
     // Case B: Draft DOES match a retained entry -> must still return refute (advisory duplicate)
     const duplicateDraft = makeGoodDraft();
-    duplicateDraft.steps = [{ command: 'show health' }];
+    duplicateDraft.steps = [nativeStep('show health')];
     duplicateDraft.title = '健康检查保留项';
     duplicateDraft.negative = false;
 
@@ -175,7 +177,7 @@ describe('compact case index and deduplication at real scale', () => {
     assert.equal(refuteOutcome[0].verdict, 'refute');
     assert.equal(refuteOutcome[0].code, 'defect-to-case.duplicate_case');
     assert.equal(refuteOutcome[0].tier, 'advisory');
-    assert.ok(refuteOutcome[0].statement.includes('健康检查保留项'));
+    assert.ok(refuteOutcome[0].statement.includes('node_10'));
   });
 
   it('counts cases without commands as unplaced and excludes them from deduplication', () => {
@@ -265,7 +267,7 @@ describe('compact case index and deduplication at real scale', () => {
 
     // A draft matching the unplaced case must NOT be refuted because unplaced cases do not participate in deduplication
     const draftMatchingUnplaced = makeGoodDraft();
-    draftMatchingUnplaced.steps = [{ command: 'widget health interval 60' }];
+    draftMatchingUnplaced.steps = [nativeStep('widget health interval 60')];
     draftMatchingUnplaced.title = '无命令的未归位用例';
 
     const outcome = checkDuplicate({

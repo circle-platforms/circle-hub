@@ -4,7 +4,7 @@
     {
       "slot": "facets",
       "role": "subject",
-      "description": "结构计数视图 by=line,module,has_expected,negative,test_type_status；同根标签视图可选；旧 vague_expected 语义布尔不作为判断依据",
+      "description": "结构计数视图 by=line,module,has_expected,negative,test_type_status；同根标签视图可选；旧 vague_expected 语义布尔不作为判断依据；可选同根标签视图 by=line,module,tags,resource_empty,tag_valid，须由精确 resource 声明重产",
       "accepts": [
         "knowledge:facets"
       ],
@@ -39,16 +39,6 @@
         "application/json"
       ],
       "required": false,
-      "many": true
-    },
-    {
-      "slot": "facets",
-      "role": "subject",
-      "description": "构建的用例计数视图 by=line,module,has_expected,vague_expected,negative,test_type_status；可选同根标签视图 by=line,module,tags,resource_empty,tag_valid；必须由新包按精确 resource 声明重产",
-      "accepts": [
-        "knowledge:facets"
-      ],
-      "required": true,
       "many": true
     }
   ],

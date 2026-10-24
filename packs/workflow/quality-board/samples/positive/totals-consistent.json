@@ -7,7 +7,7 @@
     "items": [
       {
         "id": "10.6.1/HA",
-        "location": "src:f99997db9e6dfa3d6df6ff49fea4c79264cf8feabc5af99001c73498d369881a/json@1/p/rows",
+        "location": "src:73df5bfd3032e45db3934e3ef7c3fadb2e04ae83b11ed86142f0e62a40ba6556/json@1/p/rows",
         "fields": {
           "line": "10.6.1",
           "module": "HA",
@@ -16,7 +16,9 @@
             "cases": 20,
             "missing": 0,
             "vague": 0,
-            "negative": 0
+            "negative": 0,
+            "negative_denominator": 20,
+            "type_unclassified": 0
           },
           "quality": {
             "judged": 0,
@@ -47,7 +49,7 @@
       },
       {
         "id": "10.6.1/SSL",
-        "location": "src:f99997db9e6dfa3d6df6ff49fea4c79264cf8feabc5af99001c73498d369881a/json@1/p/rows",
+        "location": "src:73df5bfd3032e45db3934e3ef7c3fadb2e04ae83b11ed86142f0e62a40ba6556/json@1/p/rows",
         "fields": {
           "line": "10.6.1",
           "module": "SSL",
@@ -56,7 +58,9 @@
             "cases": 3,
             "missing": 2,
             "vague": 0,
-            "negative": 2
+            "negative": 2,
+            "negative_denominator": 3,
+            "type_unclassified": 0
           },
           "quality": {
             "judged": 0,
@@ -105,7 +109,7 @@
           "build": "Rel_APV_10_6_1_57",
           "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
           "view": {
-            "source": "src:f99997db9e6dfa3d6df6ff49fea4c79264cf8feabc5af99001c73498d369881a",
+            "source": "src:73df5bfd3032e45db3934e3ef7c3fadb2e04ae83b11ed86142f0e62a40ba6556",
             "total": 23,
             "truncated": false,
             "skipped": 0,

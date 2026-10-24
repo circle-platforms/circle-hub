@@ -1,3 +1,5 @@
+import {QUOTE_BYTES,QUOTE_SOURCE} from './testing/structure.ts';
+import {checkCommandsRefutation} from './testing/checks.ts';
 // Hand-built defects and drafts test covering all required failure and pass modes.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -13,7 +15,6 @@ import {
   makeNegativeUnexpectedAcceptDraft,
 } from './testing/fixtures.ts';
 import {
-  checkCommandsRefutation,
   checkDraftShape,
   checkDuplicate,
   checkGroundedReading,
@@ -30,14 +31,14 @@ function makeInput(subject: unknown, sources: Record<string, string> = {}): Pack
       pack: 'defect-to-case',
       sets: {},
     },
-    sources,
+    sources: { ['src:'+QUOTE_SOURCE]:QUOTE_BYTES,...sources },
     catalog: SYNTHETIC_CATALOG,
   };
 }
 
 describe('hand-built drafts and checks coverage', () => {
   it('1. accepts a good draft across all checks', () => {
-    const good = makeGoodDraft({ ref: 'src:fix_ref' });
+    const good = makeGoodDraft();
     const shapeOutcomes = checkDraftShape(makeInput({ item: '74001', slots: { cases: [{ text: good.title, data: good }] } }));
     assert.equal(shapeOutcomes[0].verdict, 'support');
 
@@ -56,12 +57,12 @@ describe('hand-built drafts and checks coverage', () => {
     const unknownCmd = { ...makeGoodDraft(), steps: [{ command: 'invalid_head_cmd 123' }] };
     const out1 = checkCommandsRefutation(makeInput({ item: '74001', slots: { cases: [{ text: unknownCmd.title, data: unknownCmd }] } }));
     assert.equal(out1[0].verdict, 'refute');
-    assert.equal(out1[0].code, CODES.UNEXPECTED_REFUTATION);
+    assert.equal(out1[0].code, 'core.catalog.membership_contradicted');
 
     const outOfRange = { ...makeGoodDraft(), steps: [{ command: 'widget health interval 99999' }] };
     const out2 = checkCommandsRefutation(makeInput({ item: '74001', slots: { cases: [{ text: outOfRange.title, data: outOfRange }] } }));
     assert.equal(out2[0].verdict, 'refute');
-    assert.equal(out2[0].code, CODES.UNEXPECTED_REFUTATION);
+    assert.equal(out2[0].code, 'core.catalog.membership_contradicted');
   });
 
   it('3. refuses an expected result with no quotation, quote at case level, or quote missing reference', () => {
@@ -170,7 +171,7 @@ describe('hand-built drafts and checks coverage', () => {
     const negUnexpectedAccept = makeNegativeUnexpectedAcceptDraft();
     const out2 = checkCommandsRefutation(makeInput({ item: '74001', slots: { cases: [{ text: negUnexpectedAccept.title, data: negUnexpectedAccept }] } }));
     assert.equal(out2[0].verdict, 'refute');
-    assert.equal(out2[0].code, CODES.NEGATIVE_ACCEPTED);
+    assert.equal(out2[0].code, 'core.catalog.membership_contradicted');
 
     // Negative draft with expects_refutation: false on out-of-range command -> refuted (unexpected_refutation)
     const negWithoutExpect = {
@@ -182,7 +183,7 @@ describe('hand-built drafts and checks coverage', () => {
     };
     const out3 = checkCommandsRefutation(makeInput({ item: '74001', slots: { cases: [{ text: negWithoutExpect.title, data: negWithoutExpect }] } }));
     assert.equal(out3[0].verdict, 'refute');
-    assert.equal(out3[0].code, CODES.UNEXPECTED_REFUTATION);
+    assert.equal(out3[0].code, 'core.catalog.membership_contradicted');
   });
 
   it('7. duplicate of an indexed case and incomplete index behavior', () => {

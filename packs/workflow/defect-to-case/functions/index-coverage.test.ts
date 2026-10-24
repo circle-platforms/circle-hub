@@ -1,3 +1,4 @@
+import {makeDuplicateDraft} from '../testing/fixtures.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createKnowledgeReader } from '../../../../hub/knowledge/api.ts';
@@ -28,6 +29,9 @@ test('real complete index omits empty requested keys without losing decidability
   const compact = buildCompactIndex(view);
   assert.deepEqual(compact.missingKeys, []);
   assert.equal(compact.complete, true);
-  const result = checkDuplicate({ subject: { indexed_cases: compact, drafts: [{ title: '合成用例', steps: [{ command: 'system reboot' }] }] }, catalog: [{ words: ['system', 'reboot'], params: [] }] });
+  const draft=makeDuplicateDraft(),signature='src:'+'b'.repeat(64)+'/xml@1/x/system/reboot';
+  draft.steps=[{command:'system reboot',identity:{tree_root:'b'.repeat(64),path:'/commands/system/reboot',signature,parameters:[]}}];
+  const catalog=[{words:['system','reboot'],reference:'tree:'+'a'.repeat(64)+'/commands/system/reboot',signatures:[{id:'reboot',reference:signature,params:[]}]}];
+  const result = checkDuplicate({subject:{indexed_cases:compact,drafts:[draft]},catalog});
   assert.equal(result[0].verdict, 'support');
 });
