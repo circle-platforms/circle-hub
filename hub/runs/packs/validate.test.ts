@@ -493,3 +493,25 @@ test('product variable declarations accept a referenced synthetic default and re
   await refused(withFiles(systemPack(),{'SKILL.md':'Use ${var:DEMO_OPTIONS}'}),'variables.reference');
   await refused(withFiles(workflowPack(),{'SKILL.md':'Use ${var:DEMO_OPTIONS}'}),'variables.reference');
 });
+
+const variableProduct = () => editJson<Json>(productPack(), 'product.json', p => {
+  p.variables=[{name:'DEMO_OPTIONS',description:'Synthetic options',schema:{type:'array',items:{type:'string'}},default:[]}];
+  p.producers[0].params={options:'${var:DEMO_OPTIONS}'};
+});
+
+test('variable declaration diagnostics explain repeated names in Chinese',async()=>{
+ const p=await refused(editJson<Json>(variableProduct(),'product.json',p=>{p.variables.push(p.variables[0]);}),'product.shape');
+ assert.match(p.message,/变量名字重复/);
+});
+test('variable declaration diagnostics explain reference property names in Chinese',async()=>{
+ const p=await refused(editJson<Json>(variableProduct(),'product.json',p=>{p.producers[0].params['${var:DEMO_OPTIONS}']='synthetic';}),'product.shape');
+ assert.match(p.message,/引用不能作为属性名/);
+});
+test('variable declaration diagnostics explain allowed reference positions in Chinese',async()=>{
+ const p=await refused(editJson<Json>(variableProduct(),'product.json',p=>{p.title='${var:DEMO_OPTIONS}';}),'product.shape');
+ assert.match(p.message,/只能在 sync.options 或生产器 params 里引用已声明的普通变量/);
+});
+test('variable declaration diagnostics explain unused declarations in Chinese',async()=>{
+ const p=await refused(editJson<Json>(variableProduct(),'product.json',p=>{delete p.producers[0].params;}),'product.shape');
+ assert.match(p.message,/DEMO_OPTIONS.*声明了却没有引用/);
+});

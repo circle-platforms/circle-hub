@@ -300,13 +300,13 @@ export const ProductDeclaration = z
   .superRefine((p, ctx) => {
     const declared = new Set<string>();
     for (const [i, variable] of (p.variables ?? []).entries()) {
-      if (declared.has(variable.name)) ctx.addIssue({code:'custom',path:['variables',i,'name'],message:'variable name is repeated'});
+      if (declared.has(variable.name)) ctx.addIssue({code:'custom',path:['variables',i,'name'],message:`变量名字重复：${variable.name}`});
       declared.add(variable.name);
     }
     const checkKeys = (value:unknown):void => {
       if(!value || typeof value!=='object')return;
       for(const [key,child] of Object.entries(value)){
-        if(/\$\{(?:var|secret):/i.test(key))ctx.addIssue({code:'custom',path:[],message:'variable references are values, not property names'});
+        if(/\$\{(?:var|secret):/i.test(key))ctx.addIssue({code:'custom',path:[],message:'变量引用必须占满一个值，引用不能作为属性名'});
         checkKeys(child);
       }
     };
@@ -315,14 +315,14 @@ export const ProductDeclaration = z
     try {
       for (const ref of referencesIn(p)) {
         const allowed = ref.at.startsWith('/sync/options/') || /^\/producers\/[0-9]+\/params\//.test(ref.at);
-        if (ref.kind !== 'var' || !allowed || !declared.has(ref.name)) ctx.addIssue({code:'custom',path:[],message:`${ref.at}: only declared ordinary variables in sync.options or producer params`});
+        if (ref.kind !== 'var' || !allowed || !declared.has(ref.name)) ctx.addIssue({code:'custom',path:[],message:`${ref.at}：只能在 sync.options 或生产器 params 里引用已声明的普通变量`});
         used.add(ref.name);
       }
     } catch (error) {
       if (!(error instanceof VariableInputError)) throw error;
       ctx.addIssue({code:'custom',path:[],message:error.message});
     }
-    for (const name of declared) if (!used.has(name)) ctx.addIssue({code:'custom',path:['variables'],message:`${name}: declared but not referenced`});
+    for (const name of declared) if (!used.has(name)) ctx.addIssue({code:'custom',path:['variables'],message:`变量 ${name} 声明了却没有引用`});
     const lower = new Set<string>();
     p.names.forEach((n, i) => {
       const k = n.normalize('NFC').toLowerCase();
