@@ -90,7 +90,7 @@ export type SchemeMatch = { kind: SchemeKind; value: string; start: number; end:
 /** A label part the scheme read but could not use: an invalid build date or patch number (kept for the notes). */
 export type SchemeReject = { kind: 'build' | 'patch'; text: string };
 
-const BUILD_DATE = /build[\s_-]*([0-9]{8})(?![0-9])/giu;
+const BUILD_DATE = /build[\s_-]*([0-9]{8})$/gu;
 const PATCH_RUN = /patch[\s_-]*([0-9][0-9.]*)/giu;
 const PATCH_NUMBER = /^[0-9]{1,3}(?:\.[0-9]{1,3})?$/;
 const VERSION = /(?<![0-9.])v?([0-9]{1,3}(?:\.[0-9]{1,3}){1,3})(?![0-9]|\.[0-9])/giu;
@@ -149,14 +149,14 @@ export function sameLine(a: string, b: string): boolean {
 export const FAMILY_NAME = /^[A-Za-z][A-Za-z0-9]{0,31}$/;
 
 /** `Rel|Beta <sep> family[-PLATFORM] <sep> n <sep> n ...` with `<sep>` either `_` or `.` throughout (the product's names). */
-const BUILD_NAME = /(?<![A-Za-z0-9])(Rel|Beta)([_.])([A-Za-z][A-Za-z0-9]{0,31})((?:-[A-Za-z0-9]{1,16}){0,6})\2([0-9]{1,9}(?:\2[0-9]{1,9}){1,15})(?![0-9])/giu;
+const BUILD_NAME = /^(Rel|Beta)([_.])([A-Za-z][A-Za-z0-9]{0,31})((?:-[A-Za-z0-9]{1,16}){0,6})\2([0-9]{1,9}(?:\2[0-9]{1,9}){1,15})(?![0-9])/giu;
 
 export type BuildName = { name: string; kind: string; separator: string; family: string; platform: string; numbers: string };
 
 /** Build names written in a text, in text order. */
 export function buildNames(text: string): BuildName[] {
   const out: BuildName[] = [];
-  for (const m of nfkc(text).matchAll(BUILD_NAME)) out.push({ name: m[0], kind: m[1], separator: m[2], family: m[3], platform: m[4], numbers: m[5] });
+  for (const m of text.matchAll(BUILD_NAME)) out.push({ name: m[0], kind: m[1], separator: m[2], family: m[3], platform: m[4], numbers: m[5] });
   return out;
 }
 
@@ -167,12 +167,12 @@ export function buildNames(text: string): BuildName[] {
  * knowledge base resolves names and aliases; a pack check does not see it.
  */
 export function writtenBuilds(texts: readonly string[], names: readonly string[], max: number): { names: string[]; foreign: string[] } {
-  const families = names.filter((name) => FAMILY_NAME.test(name)).map(fold);
+  const families = names.filter((name) => FAMILY_NAME.test(name));
   const own: string[] = [];
   const foreign: string[] = [];
   for (const text of texts) {
     for (const b of buildNames(text)) {
-      const list = families.includes(fold(b.family)) ? own : foreign;
+      const list = families.includes(b.family) ? own : foreign;
       if (list.length < max && !list.includes(b.name)) list.push(b.name);
     }
   }

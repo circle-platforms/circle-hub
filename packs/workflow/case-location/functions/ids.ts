@@ -7,7 +7,7 @@ function fields(text:string): Array<{kind:'bug'|'story'|null;id:string}> {
 
 export function normalizeId(raw:string):string|null{return /^[1-9][0-9]{0,11}$/.test(raw)?raw:null;}
 export function markedIds(text:string,_fromBugToCase?:(id:string)=>void):FoundId[]{return fields(text);}
-export function leadingIds(_text:string):FoundId[]{return [];}
-export function extractIds(text:string,_options:{leading?:boolean}={}):FoundId[]{return fields(text);}
+export function leadingIds(text:string):FoundId[]{return /^[1-9][0-9]{0,11}(?:,[1-9][0-9]{0,11})*$/.test(text)?text.split(',').map(id=>({kind:null,id})):[];}
+export function extractIds(text:string,_options:{leading?:boolean}={}):FoundId[]{return [...fields(text),...(_options.leading===false?[]:leadingIds(text))];}
 export function hasIds(text:string):boolean{return fields(text).length>0;}
 export function bugToCaseIds(_text:string):string[]{return [];}

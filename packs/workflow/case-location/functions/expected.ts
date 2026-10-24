@@ -54,6 +54,7 @@ export function expectedSources(input: unknown): { sources: Source[]; warnings: 
     for (const id of answer.unclassified) {
       if (!answer.ranged.requirements.includes(id) && !answer.ranged.defects.includes(id) && !unread.includes(id)) {
         unread.push(id); unreadOriginals.set(id, displayId(answer, id, null));
+        for (const kind of ['story','bug'] as const) bind(`plm:${kind}:${id}`,`条目 ${item.id} 显式编号字段 ${id} 未声明类型；两种分别读取，以存在观察核对，不强行归类`);
       }
     }
   }
@@ -61,7 +62,7 @@ export function expectedSources(input: unknown): { sources: Source[]; warnings: 
     const named = unread.slice(0, MAX_NAMED);
     warnings.push({
       code: `${PACK}.id_kind_unknown`,
-      message: `${unread.length} 个编号没有标明是需求还是缺陷（${named.slice(0, 5).map(id => unreadOriginals.get(id) ?? id).join('、')}${unread.length > 5 ? ' 等' : ''}），没有读取缺陷系统；参数 id_ranges 给出缺陷系统的编号范围可以分开`,
+      message: `${unread.length} 个编号没有标明是需求还是缺陷（${named.slice(0, 5).map(id => unreadOriginals.get(id) ?? id).join('、')}${unread.length > 5 ? ' 等' : ''}），需求和缺陷分别读取；两种都存在时保留来源歧义，请作者补类型，缺席观察只排除对应种类`,
       data: { ids: named, count: unread.length },
     });
   }
