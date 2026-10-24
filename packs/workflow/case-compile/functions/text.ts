@@ -42,7 +42,7 @@ export interface Outcome {
 /** The two markers every conclusion of this pack carries (task page A.5): never "可以运行". */
 export function markers(synthetic: boolean, identity?: { runtimeVersion: string; digest: string }): string {
   const basis = synthetic ? '按合成合约核对' : '按发布的运行器合约核对';
-  const who = identity ? `；运行时 ${identity.runtimeVersion}；身份 ${identity.digest.slice(0, 12)}` : '';
+  const who = identity ? `；运行时 ${identity.runtimeVersion}；身份 ${(identity as { pinned?: { identity: string } }).pinned?.identity.slice(0, 12) ?? identity.digest.slice(0, 12)}` : '';
   return `（${basis}${who}；不证明在真实设备上跑得通）`;
 }
 

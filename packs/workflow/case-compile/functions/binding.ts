@@ -3,7 +3,7 @@ import type { RuntimeEntry } from './runtime-contract.ts';
 import type { PlanStep, KeywordValue } from './slots.ts';
 export interface BoundValue { name: string; value: KeywordValue; pointer: string }
 export interface BindProblem { code: string; pointer: string; message: string }
-export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string): { values: BoundValue[]; problems: BindProblem[] } {
+export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string, executorProvided: ReadonlySet<string> = new Set()): { values: BoundValue[]; problems: BindProblem[] } {
   const values: BoundValue[] = []; const problems: BindProblem[] = [];
   const issue = (code: string, pointer: string, message: string) => problems.push({ code, pointer, message });
   const supplied = step.args.length + Object.keys(step.keywords).length;
@@ -24,7 +24,8 @@ export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string):
     else values.push({ name, value, pointer });
   }
   for (const param of method.parameters) {
-    if (supplied > 0 && param.required && !values.some((v) => v.name === param.name) && !Object.hasOwn(step.keywords, param.name)) issue('param_arity', at, `缺必填参数 ${param.name}`);
+    // A required parameter the executor supplies (the previous step's return) is not the plan's to provide.
+    if (supplied > 0 && param.required && !executorProvided.has(param.name) && !values.some((v) => v.name === param.name) && !Object.hasOwn(step.keywords, param.name)) issue('param_arity', at, `缺必填参数 ${param.name}`);
     if (param.redacted) for (const value of values.filter((v) => v.name === param.name)) issue('param_sensitive', value.pointer, '脱敏凭据参数不许出现在计划里');
   }
   for (const v of values) {

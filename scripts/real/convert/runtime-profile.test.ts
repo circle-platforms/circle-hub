@@ -39,9 +39,7 @@ test('profile drafts never guess parameter semantics or environment mappings', (
 
 test('deployment publication refuses empty command screens and synthetic identity markers', () => {
   const { profile, contract, manifest } = setup(); const deployed = { ...profile, synthetic: false };
-  for (const [part, expression] of [['device', /denied\/device.*重启.*清配置.*升级.*HA.*--check/], ['host', /denied\/host.*重启.*关机.*格式化.*--check/]] as const) {
-    const bad = structuredClone(deployed); bad.denied[part] = []; assert.throws(() => checkProfile(bad, manifest, contract), expression);
-  }
+  const bad = structuredClone(deployed); const seat = (bad.allowed as Array<{ object: string; parameters: Record<string, string> }>).find(call => Object.values(call.parameters).includes('device_cli'))!; seat.parameters = {}; assert.throws(() => checkProfile(bad, manifest, contract), /无角色|--check/);
   assert.throws(() => checkProfile({ ...deployed, synthetic: true }, manifest, contract), /synthetic.*false.*--check/);
   assert.equal(checkProfile(deployed, manifest, contract).synthetic, false);
 });

@@ -48,7 +48,7 @@ export function satisfiedRecipe(input: { run: unknown; result: unknown; submissi
   const contract = parseRuntimeContract(jsonBytes(input.contract,'contract')); const inventory = parseManifest(jsonBytes(input.inventory,'inventory'));
   if (!contract.ok || !inventory.ok) throw new Error('绑定合约或台架清单无法重算');
   const profile = parseProfile(jsonBytes(input.profile,'profile'), contract.contract, inventory.beds); if (!profile.ok) throw new Error('绑定运行环境配置不合式');
-  const identity = itemResult.requirements.filter((v) => isRecord(v) && v.requirement === 'contract_methods').flatMap((v) => isRecord(v) && Array.isArray(v.claims) ? v.claims : []).find((v) => isRecord(v) && isRecord(v.statement) && v.statement.verdict === 'support' && isRecord(v.statement.data) && v.statement.data.runtime_version === contract.contract.runtimeVersion && v.statement.data.contract_sha256 === contract.contract.digest);
+  const identity = itemResult.requirements.filter((v) => isRecord(v) && v.requirement === 'contract_methods').flatMap((v) => isRecord(v) && Array.isArray(v.claims) ? v.claims : []).find((v) => isRecord(v) && isRecord(v.statement) && v.statement.verdict === 'support' && isRecord(v.statement.data) && v.statement.data.runtime_version === contract.contract.runtimeVersion && v.statement.data.contract_sha256 === contract.contract.pinned.identity);
   if (!identity) throw new Error('缺少与绑定合约匹配的支持身份回执');
   const slots = record(submitted.slots, '缺少 plan 槽'); if (!Array.isArray(slots.plan) || slots.plan.length !== 1) throw new Error('plan 槽不是唯一提交');
   const claim = record(slots.plan[0], 'plan 主张无效'); const plan = readSlots(claim.data); if (!plan.ok) throw new Error('计划槽位不符合已发布的完整形状');

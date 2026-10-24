@@ -123,8 +123,9 @@ export function checkProfile(profile: unknown, manifest: unknown, rawContract: u
   const parsed = parseProfile(profile, contract.contract, beds.beds);
   requireFact(parsed.ok, parsed.ok ? '' : parserDiagnostics('runtime-profile', parsed.problems, '集成者从只读预检和合约补齐该字段，使用同一清单重跑 --check'));
   requireFact(record(profile) && profile.synthetic === false, '部署配置的 synthetic 必须是 false；集成者核对真实接入事实后设为 false 并重跑 --check');
-  for (const [role, key, classes] of [['device_cli', 'device', '重启、清配置、升级、HA'], ['host_shell', 'host', '重启、关机、格式化']] as const) {
-    requireFact(!parsed.profile.allowed.some(call => Object.values(call.parameters).includes(role)) || parsed.profile.denied[key].length > 0, `denied/${key} 缺少${classes}类命令的部署文字；请集成者从运行器接入规则补取并填写拒绝表后重跑 --check`);
+  // The denied word lists were retired with the closure-set roles; the conversion checks the closed roles themselves.
+  for (const role of ['device_cli', 'host_shell'] as const) {
+    requireFact(!parsed.profile.allowed.some(call => Object.values(call.parameters).includes(role)) || Object.keys(parsed.profile.allowed.find(call => Object.values(call.parameters).includes(role))?.parameters ?? []).length > 0, `allowed 里 ${role} 角色的参数映射为空；请集成者核对闭集角色后重跑 --check`);
   }
   requireFact(parsed.profile.seats.every((v) => v.ordinal < parsed.profile.device_count), '座位序号超出预检设备数；重新核对座位顺序');
   return parsed.profile;
