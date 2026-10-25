@@ -109,6 +109,11 @@ export interface ProduceInput {
   refreshSources?:ReadonlySet<string>;
   /** Run only these producer ids of the pack (the seedling production names its three); undefined runs all of the scope. */
   producers?: readonly string[];
+  /**
+   * Source roles to merge onto the build for this production only (a seedling directory the stored build does not keep).
+   * Present means every list of this production is one call: the complete group, not a batch cut.
+   */
+  sources?: BuildInfo['sources'];
   /** The build names the sync's plan listed (the frozen known-build inventory the producers hash); a production
    *  without a plan freezes the build it is producing alone. Never accumulated from the records store (K01 R[1]). */
   planBuilds?: readonly string[];
@@ -466,7 +471,8 @@ async function keepLists(context: KnowledgeContext, lists: readonly ListedIds[],
 export async function produceTree(context: KnowledgeContext, input: ProduceInput): Promise<ProduceResult> {
   const startedAt = context.now().toISOString();
   let { product } = input;
-  const build = input.build;
+  const build = input.build !== null && input.sources !== undefined ? { ...input.build, sources: { ...input.build.sources, ...input.sources } } : input.build;
+  const wholeList = input.sources !== undefined;
   const by = await requireAdmin(context, input.by, '生产知识树');
   const pack = { id: product.id, version: product.version, digest: product.digest };
   const decidedBy = `${product.id}@${product.version}`;
@@ -706,7 +712,8 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
       build: handed,
       buildDigest: handedDigest,
       slots,
-      list,
+      list: wholeList && list.list !== null ? { ...list, batch: Math.max(list.list.length, 1) } : list,
+      whole: wholeList,
       cap,
       loader,
       listLoader,
@@ -997,6 +1004,8 @@ interface ListInput {
   buildDigest: string;
   slots: ReadonlyMap<string, ParsedSource | null>;
   list: PlannedSource;
+  /** The list is one call. A missing element fails the production; the call is not cut by batch size or byte cap. */
+  whole?: boolean;
   cap: number;
   loader: SourceLoader;
   listLoader: ListLoader;
@@ -1078,6 +1087,13 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
     const readAt: Array<string | undefined> = [];
     // Records and sizes first: no bytes are fetched before the batch is cut into calls within the cap.
     const peeks = await Promise.all(batch.externals.map((external) => input.listLoader.peek(external,{slot:list.slot})));
+    if (input.whole) {
+      for (const peek of peeks) {
+        if (!peek.ok) return { ok: false, reason: `${producer.id}.${list.slot}：${peek.external} ${peek.reason}` };
+      }
+      const total = peeks.reduce((sum, peek) => sum + (peek.ok ? peek.load.artifact.body.size : 0), 0);
+      if (total > cap) return { ok: false, reason: `${producer.id}.${list.slot}：完整目录 ${peeks.length} 份共 ${total} 字节，超过每个构建 ${cap} 字节的上限，不拆批` };
+    }
     const calls: Array<Array<Extract<ElementPeek, { ok: true }>>> = [];
     let current: Array<Extract<ElementPeek, { ok: true }>> = [];
     let bytes = 0;
@@ -1112,6 +1128,13 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
       // Only this call's documents are held: at most `cap` bytes of them per batch at a time.
       const loads = await Promise.all(call.map((peek) => input.listLoader.materialize(peek,Math.max(cap,Math.min(peek.load.artifact.body.size,context.sandbox.producer.inputBytes??128*1024*1024)),list.slot)));
       const elements: ParsedSource[] = [];
+      if (input.whole) {
+        const failed = loads.find((load) => !load.ok);
+        if (failed !== undefined && !failed.ok) {
+          const at = loads.indexOf(failed);
+          return { ok: false, reason: `${producer.id}.${list.slot}：${call[at].external} ${failed.reason}` };
+        }
+      }
       loads.forEach((load, k) => {
         const at = position.get(call[k].external) as number;
         if (load.ok) {
