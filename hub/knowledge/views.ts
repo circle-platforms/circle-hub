@@ -1267,16 +1267,6 @@ export class KnowledgeViews {
     let key: string;
     let compute: (exclude: ReadonlySet<string>) => Promise<ImpactView | FacetView | IndexView>;
     let title: string;
-    const feeding: FeedingNotes | null = await (async () => {
-      const reader = this.#context.feedingReader;
-      if (reader === undefined) return null;
-      const handle = await this.#packs.productById(product) ?? await this.#packs.productByName(product);
-      if (handle === null) return null;
-      if(reader===this.#context.feeding){const at=await resolveOnce(request.type==='impact'?request.to:request.build);if(typeof at==='string'||!await seedlingOfRoot(this.#context,product,at.root))return null;}
-      const offset = context.feeding_offset?.offset??(context.run === undefined || context.run === null ? null : await reader.frozenOffset(context.run));
-      if(context.run&&offset===null)throw new KnowledgeError('旧运行缺少冻结的喂入序号；另开运行以冻结树苗和喂入层，不能用最新序号冒充历史',{code:'REFERENCE_UNRESOLVED'});
-      return { context, cut: await reader.cut(handle.product.id, offset,context.principal) };
-    })();
     if (request.type === 'impact') {
       const from = await resolveOnce(request.from);
       if (typeof from === 'string') return { ok: false, id: bare, reason: from };
@@ -1300,6 +1290,16 @@ export class KnowledgeViews {
         title = `${labelOf('entry_kind', request.kind)}按 ${request.key} 索引（${at.build}）`;
       }
     }
+    const feeding: FeedingNotes | null = await (async () => {
+      const reader = this.#context.feedingReader;
+      if (reader === undefined) return null;
+      const handle = await this.#packs.productById(product) ?? await this.#packs.productByName(product);
+      if (handle === null) return null;
+      if(reader===this.#context.feeding){const at=await resolveOnce(request.type==='impact'?request.to:request.build);if(typeof at==='string'||!await seedlingOfRoot(this.#context,product,at.root))return null;}
+      const offset = context.feeding_offset?.offset??(context.run === undefined || context.run === null ? null : await reader.frozenOffset(context.run));
+      if(context.run&&offset===null)throw new KnowledgeError('旧运行缺少冻结的喂入序号；另开运行以冻结树苗和喂入层，不能用最新序号冒充历史',{code:'REFERENCE_UNRESOLVED'});
+      return { context, cut: await reader.cut(handle.product.id, offset,context.principal) };
+    })();
     key = canonicalize({request:key,scope:scopeRoot});
     const revision = scopeRoot === null ? roots.join('..') : request.type === 'impact' ? [roots[0],sha256Hex(canonicalize({root:roots[1],scope:scopeRoot}))].join('..') : sha256Hex(canonicalize({root:roots[0],scope:scopeRoot}));
     if (request.revision !== null && request.revision !== revision) return { ok: false, id: bare, reason: `要求修订 ${cutText(request.revision, 140)}，现在是 ${revision}` };
