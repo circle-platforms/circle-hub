@@ -15,12 +15,13 @@ import {Redactor} from '../connectors/api.ts';
 import {resolveExecutor} from './source.ts';
 import { ExecutorRegistry, ExecutorAccessError, ExecutorCredentialError, lockExecutorConfiguration, containsSecret } from './executors.ts';
 import { Journal, digestOfValue, eventOf, receiptOf, openRequests, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
-import { RpcClient, CapabilityPolicyError, InvocationDefinitionError, SubmissionNotSentError, object, type Exchange } from './transport.ts';
+import { RpcClient, CapabilityPolicyError, InvocationDefinitionError, SubmissionNotSentError, ToolReplyError, object, type Exchange } from './transport.ts';
 import type { BuildKnowledge } from './probes.ts';
 import {requestIdentity,sameRequestIdentity} from './request-identity.ts';
 import {PrecheckFactError,precheckFailure} from './precheck-failure.ts';
 import { canRetryRead } from './read-policy.ts';
 import { dynamicDisposition, DISPATCH_QUALIFICATIONS } from './dynamic.ts';
+import { againstBaseline, againstStored, bedLimits, bedName, cleanupSteps, missingProbeFact, parseReply, residueFact, unknownSteps, unrestoredFact, type BedRead, type BedReport, type Canonical } from './bed-state.ts';
 import { bytesKey, earlyStopSentence, repeats, roundAllowed, roundMeets, roundOf, roundPolicy, type RoundPolicy } from './rounds.ts';
 import { expectationFor } from '../runs/engine/terminals.ts';
 import { verifyInput, inspectInput, lockedBuildBase, InputVerificationError, type VerificationPort } from './proof.ts';
@@ -286,6 +287,7 @@ export class DispatchService {
       if (!await this.extraPrechecks(binding, d, session, context, false)) throw new Error('附加只读核对未满足；未提交，请重新核对缓存来源');
       const deviceIdentity = await this.probeSeats(binding,d,session,context);
       if (!deviceIdentity) throw new Error('逐座位只读探测不符；见受限探测原件中的座位及 version/interfaces 核对');
+      await this.gateBed(binding, d, session, context);
       const latest = await this.registry.get(executor);
       if (!latest?.definition.enabled || latest.digest !== registered.digest || latest.resolved_digest !== registered.resolved_digest) throw new PrecheckFactError('执行器配置已变；未提交，请按当前配置重新核验','用当前配置重新核验后再派发；没有提交');
       await this.registry.admin(by);
@@ -818,6 +820,98 @@ export class DispatchService {
     const { assessProbes } = await import('./probes.ts');
     return assessProbes(this.options.records,this.options.knowledge,binding,d,client,context,this.journal,this.sleep);
   }
+  private async frozenValue(binding: JobBinding, d: ExecutorDefinition, pointer: string): Promise<unknown> {
+    if (!d.manifest_sha256) return undefined;
+    const owner = await this.options.records.principals.get(binding.user);
+    if (!owner || owner.disabled) return undefined;
+    let source;
+    try { source = await this.options.records.artifacts.source(owner, d.manifest_sha256, { consumer: 'function' }); } catch { return undefined; }
+    if (!source?.bytes || sha256Hex(source.bytes) !== d.manifest_sha256) return undefined;
+    try { return at(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(source.bytes)), pointer); } catch { return undefined; }
+  }
+  private async readBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>, when: 'pre' | 'post'): Promise<BedRead[]> {
+    const spec = d.bed_state;
+    if (!spec) return [];
+    const reads: BedRead[] = [];
+    for (const item of spec.items) {
+      try {
+        const response = await client.declaredRead(item.call, context, `bed.${when}.${item.id}`);
+        const canonical = parseReply(item, response.value);
+        reads.push(canonical ? { id: item.id, ok: true, canonical, source: response.source } : { id: item.id, ok: false, source: response.source });
+      } catch (error) {
+        reads.push({ id: item.id, ok: false, source: error instanceof ToolReplyError ? error.source : null });
+      }
+    }
+    return reads;
+  }
+  private async noteBed(binding: JobBinding, when: 'pre' | 'post', bed: string, reads: readonly BedRead[], differences: BedReport['differences']): Promise<Record<string, Canonical>> {
+    const canonical = Object.fromEntries(reads.flatMap(read => read.ok ? [[read.id, read.canonical] as const] : []));
+    const sources = reads.flatMap(read => read.source ? [read.source] : []);
+    await this.journal.append(binding, 'bed_snapshot', 'read', 'completed', { when, bed, canonical, differences, sources }, sources);
+    return canonical;
+  }
+  private async openBedHold(bed: string): Promise<{ pre: Record<string, Canonical> } | null> {
+    const rows = await this.options.records.store.findMany<ActionBody>({ kind: 'action', key: 'dispatch.phase', values: ['bed_hold'] });
+    const mine = rows.filter(row => row.body.detail.bed === bed).sort((left, right) => left.created_at < right.created_at ? -1 : left.created_at > right.created_at ? 1 : 0);
+    const last = mine.at(-1);
+    const pre = last?.body.detail.pre;
+    if (!last || last.body.detail.state !== 'open' || !pre || typeof pre !== 'object' || Array.isArray(pre)) return null;
+    return { pre: pre as Record<string, Canonical> };
+  }
+  /** Pre-dispatch bed gate. A residue, an open recovery diff, or a missing probe refuses before any intent. */
+  private async gateBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<void> {
+    const spec = d.bed_state;
+    if (!spec) return;
+    const bed = await this.frozenValue(binding, d, spec.bed);
+    const name = bedName(bed);
+    if (!name) throw new PrecheckFactError('冻结清单里没有声明的台架对象或台架名', '管理员核对床面指针和已发布的台架清单，补齐台架名后再派发；尚未提交');
+    const reads = await this.readBed(binding, d, client, context, 'pre');
+    const missing = reads.filter(read => !read.ok).map(read => read.id);
+    if (missing.length) {
+      await this.noteBed(binding, 'pre', name, reads, []);
+      throw new PrecheckFactError(missingProbeFact(missing), unknownSteps(spec.items, missing));
+    }
+    const hold = await this.openBedHold(name);
+    if (hold) {
+      const outstanding = againstStored(spec.items, hold.pre, reads);
+      if (outstanding === null) {
+        await this.noteBed(binding, 'pre', name, reads, []);
+        throw new PrecheckFactError(missingProbeFact(spec.items.map(item => item.id)), unknownSteps(spec.items, spec.items.map(item => item.id)));
+      }
+      if (outstanding.length) {
+        await this.noteBed(binding, 'pre', name, reads, outstanding);
+        throw new PrecheckFactError(unrestoredFact(outstanding), cleanupSteps(spec.items, outstanding.map(diff => diff.item)));
+      }
+      await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: name, state: 'clear', pre: hold.pre });
+    }
+    const diffs = againstBaseline(spec.items, bed, reads);
+    if (diffs === null) {
+      await this.noteBed(binding, 'pre', name, reads, []);
+      throw new PrecheckFactError(missingProbeFact(spec.items.map(item => item.id)), unknownSteps(spec.items, spec.items.map(item => item.id)));
+    }
+    await this.noteBed(binding, 'pre', name, reads, diffs);
+    if (diffs.length) throw new PrecheckFactError(residueFact(diffs), cleanupSteps(spec.items, diffs.map(diff => diff.item)));
+  }
+  /** Post-terminal snapshot. Pass/fail stays as reported; only the shared-bed limit moves. */
+  private async finishBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<BedReport | null> {
+    const spec = d.bed_state;
+    if (!spec) return null;
+    const events = await this.journal.events(binding.job);
+    const pre = [...events].reverse().find(event => event.body.detail.phase === 'bed_snapshot' && event.body.detail.when === 'pre' && event.body.detail.differences instanceof Array && (event.body.detail.differences as unknown[]).length === 0);
+    const stored = pre?.body.detail.canonical;
+    const name = typeof pre?.body.detail.bed === 'string' ? pre.body.detail.bed : null;
+    const prior = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored as Record<string, Canonical> : null;
+    const reads = await this.readBed(binding, d, client, context, 'post');
+    const sources = { pre: pre?.body.inputs ?? [], post: reads.flatMap(read => read.source ? [read.source] : []) };
+    const missing = !name || !prior || reads.some(read => !read.ok);
+    const diffs = !missing && prior && name ? againstStored(spec.items, prior, reads) : null;
+    const recovery: BedReport['recovery'] = missing || diffs === null ? 'unknown' : diffs.length ? 'unrestored' : 'restored';
+    const differences = diffs ?? [];
+    if (name) await this.noteBed(binding, 'post', name, reads, differences);
+    if (name && prior && recovery !== 'restored') await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: name, state: 'open', reason: recovery, pre: prior, differences });
+    const ids = recovery === 'unknown' ? spec.items.map(item => item.id) : differences.map(diff => diff.item);
+    return { bed: name ?? '', pre: 'passed', recovery, differences, originals: sources, limits: bedLimits(recovery), next_action: recovery === 'restored' ? null : recovery === 'unknown' ? unknownSteps(spec.items, ids) : cleanupSteps(spec.items, ids) };
+  }
   private async extraPrechecks(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>, collectAll: boolean): Promise<boolean> {
     let verified = true;
     for (const [index, check] of d.precheck_reads.entries()) {
@@ -951,10 +1045,13 @@ export class DispatchService {
       ...(d.result.sessions && object(at(row,d.result.sessions)) ? Object.values(at(row,d.result.sessions) as Record<string,unknown>).filter((v):v is string=>typeof v==='string') : []),
     ]) : [];
     const sideEffects = d.side_effects.map(declaration=>declaration.marker ? {message:declaration.message,marker_present:savedLogs.some(log=>log.includes(declaration.marker!)),text:savedLogs.some(log=>log.includes(declaration.marker!))?'本次日志里有这一项的标记':'本次日志里没有这一项的标记',reference:response.source,complete,scope:'只核对本次已保存字节中的标记，不推断动作是否发生'} : {message:declaration.message,text:'运行器会这样做（执行器定义声明，Hub 看不见）',provenance:'declared',definition_sha256:digestOfValue(d)});
+    const bed = options?.seal === false ? null : await this.finishBed(binding, d, client, context);
+    if (bed) for (const row of projected) row.limits = [...row.limits, ...bed.limits];
     if (options?.round !== undefined) await this.noteObservedRound(by,binding,d,options.round,projected,complete,pending,!!options.execution);
     if (options?.seal === false&&!pending) return this.status(by, binding.job);
     const roundList = this.roundList(await this.journal.events(binding.job));
-    const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected,...(pending?{report_pending:true}:{}), ...(roundList.length ? { rounds: roundList } : {}), ownership:ownershipObservation, side_effects:sideEffects, executor_declarations: { provenance: 'declared', definition_sha256: digestOfValue(d), operation_definition_sha256:binding.executor_digest, limitations: d.limitations }, lease_drift:options?.execution?(options.execution.drift??null):drift,lease_interrupted:options?.execution?(options.execution.lease_interrupted??null):leaseInterrupted, qualifier_marks:[...DISPATCH_QUALIFICATIONS,...(input.judgments?.length?['conditional_on_judgment' as const]:[])],limits:[...DISPATCH_QUALIFICATIONS,...(input.judgments?.length?['conditional_on_judgment' as const]:[])].map(mark=>labelOf('qualifier_mark',mark)),...(input.judgments?.length?{judgment_premises:input.judgments}:{}) }), mediaType: 'application/json',
+    const vocabularyLimits=[...DISPATCH_QUALIFICATIONS,...(input.judgments?.length?['conditional_on_judgment' as const]:[])].map(mark=>labelOf('qualifier_mark',mark));
+    const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected,...(pending?{report_pending:true}:{}), ...(roundList.length ? { rounds: roundList } : {}), ownership:ownershipObservation, side_effects:sideEffects, executor_declarations: { provenance: 'declared', definition_sha256: digestOfValue(d), operation_definition_sha256:binding.executor_digest, limitations: d.limitations }, lease_drift:options?.execution?(options.execution.drift??null):drift,lease_interrupted:options?.execution?(options.execution.lease_interrupted??null):leaseInterrupted, qualifier_marks:[...DISPATCH_QUALIFICATIONS,...(input.judgments?.length?['conditional_on_judgment' as const]:[])],limits:[...vocabularyLimits, ...(bed?.limits ?? [])],...(bed?{bed_state:bed}:{}),...(input.judgments?.length?{judgment_premises:input.judgments}:{}) }), mediaType: 'application/json',
       origin: { generated: { generator: 'dispatch@1', inputs: [response.source, `src:${input.sha256}`] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false } });
     await this.journal.append(binding, 'result', 'read_back', 'completed', {reference:`src:${artifact.body.sha256}`,items:projected.length,no_verdict:projected.filter(row=>row.dynamic_terminal==='no_verdict').length,report_pending:pending,execution_integrity:options?.execution??{intent:intent.digest,continuity:!drift&&!leaseInterrupted,drift,lease_interrupted:leaseInterrupted}}, [response.source]);
     if(!options?.execution)await this.release(binding,client,remoteLease);
@@ -1051,7 +1148,9 @@ export class DispatchService {
     const early = notes.filter(event => event.body.detail.early_stop === true);
     const passed = notes.find(event => event.body.detail.meets === true);
     const sentence = early.length > 0 && passed ? earlyStopSentence(Number(passed.body.detail.round), early.length) : undefined;
-    const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected,...(input.judgments?.length?{judgment_premises:input.judgments}:{}), ...(rounds.length ? { rounds } : {}) }), mediaType: 'application/json',
+    const intent = eventOf(events, 'intent');
+    const bed = intent ? await this.finishBed(binding, d, client, { ...this.context(binding), request_id: intent.body.detail.request_id, not_after: intent.body.detail.not_after, lease_id: remote.id, lease_token: remote.token }) : null;
+    const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected,...(input.judgments?.length?{judgment_premises:input.judgments}:{}), ...(rounds.length ? { rounds } : {}), ...(bed ? { bed_state: bed } : {}) }), mediaType: 'application/json',
       origin: { generated: { generator: 'dispatch@1', inputs: [`src:${input.sha256}`] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false } });
     await this.journal.append(binding, 'result', 'read_back', 'completed', { reference: `src:${artifact.body.sha256}`, items: Array.isArray(projected) ? projected.length : 0 });
     await this.release(binding, client, remote);

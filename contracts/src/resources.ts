@@ -936,6 +936,30 @@ const extraction = z.strictObject({command:z.string().min(1).max(10000),pattern:
  * topology and the address bindings, is not probed and is not dispatched to. Absent: every listed device is a target.
  */
 const dispatchTargets = z.strictObject({ type_field: pointer.refine(p => p !== '', { message: '派发目标的类型字段需要设备内的指针' }), types: z.array(z.string().min(1).max(200)).min(1).max(50) });
+const namedPointer = pointer.refine(p => p !== '', { message: '床面快照的解析指针不能是整份根' });
+const bedFields = z.array(z.strictObject({ name: z.string().min(1).max(80), pointer: namedPointer })).min(1).max(16);
+/** Read-only show snapshots. Parsers name structure; nothing here is matched by wording. */
+const bedState = z.strictObject({
+  bed: namedPointer,
+  items: z.array(z.strictObject({
+    id: z.string().min(1).max(80),
+    call,
+    output: namedPointer,
+    parser: z.discriminatedUnion('kind', [
+      z.strictObject({ kind: z.literal('address_table'), rows: namedPointer, address: namedPointer, manifest_devices: namedPointer, manifest_lists: z.array(namedPointer).min(1).max(4) }),
+      z.strictObject({ kind: z.literal('config_list'), rows: namedPointer, identity: namedPointer, fields: bedFields, manifest_rows: namedPointer, manifest_identity: namedPointer, manifest_fields: bedFields }),
+    ]),
+    cleanup: z.strictObject({ actor: z.string().min(1).max(200), command: z.string().min(1).max(500) }),
+  })).min(1).max(20),
+}).superRefine((state, ctx) => {
+  if (new Set(state.items.map(item => item.id)).size !== state.items.length) ctx.addIssue({ code: 'custom', message: '床面快照项名称不得重复' });
+  for (const item of state.items) {
+    if (item.parser.kind !== 'config_list') continue;
+    const names = item.parser.fields.map(field => field.name);
+    const manifest = item.parser.manifest_fields.map(field => field.name);
+    if (new Set(names).size !== names.length || names.join('\0') !== manifest.join('\0')) ctx.addIssue({ code: 'custom', message: '配置快照的字段名必须与清单字段名一一对应且不重复' });
+  }
+});
 const probes = z.strictObject({devices:pointer.optional(),dispatch_targets:dispatchTargets.optional(),command_pattern:z.string().min(1).max(2000).refine(p=>p.startsWith('^') && p.endsWith('$') && compiled(p)),call,output:pointer,seats:z.array(z.strictObject({seat:z.string().min(1).max(200),index:z.number().int().min(0),manifest:z.strictObject({device:pointer,addresses:pointer,address:pointer}),version:extraction,interfaces:extraction})).min(1).max(100)}).superRefine((p,ctx)=>{
   const match = new RegExp(p.command_pattern);
   if (new Set(p.seats.map(s=>s.seat)).size !== p.seats.length || new Set(p.seats.map(s=>s.index)).size !== p.seats.length) ctx.addIssue({code:'custom',message:'探测座位名称和序号不得重复'});
@@ -968,6 +992,7 @@ const base = z.strictObject({
   status: z.strictObject({ pointer, exit_code: pointer.optional(), map: z.record(z.string(), state) }),
   result: z.strictObject({ ownership:z.strictObject({pointer,value:z.string().min(1).max(200),reason:pointer}).optional(), request_id:pointer.optional(), log_stale:pointer.optional().describe('relative to one result.items entry'), closing_marker:z.string().min(1).max(2000).optional(), log:pointer.optional().describe('relative to one result.items entry'), sessions:pointer.optional().describe('optional per-item evidence; successful cases may omit sessions; never a prerequisite for a device verdict'), id: pointer, sha256: pointer, submitted_at: pointer, submitted_at_scale_ms: z.number().positive().optional(), items: pointer.describe('response-root pointer to the item array'), item_id: pointer.describe('pointer relative to one item, not the response root'), item_outcome: pointer.describe('pointer relative to one item, not the response root; its exact scalar must be declared in result.map'), complete: pointer, map: z.record(z.string(), DynamicTerminalSchema) }),
   probes: probes.optional(),
+  bed_state: bedState.optional(),
   side_effects: z.array(z.strictObject({message:z.string().min(1).max(2000),marker:z.string().min(1).max(2000).optional()})).max(100).default([]),
   read_retry_when: conditions,
   conditions,
@@ -991,18 +1016,20 @@ const definition=base.superRefine((d, ctx) => {
   if (u.username || u.password || u.search || u.hash || (u.protocol !== 'https:' && !(u.protocol === 'http:' && loopback))) ctx.addIssue({ code: 'custom', message: '端点必须固定为 HTTPS，明文只允许回环，地址不带凭据、查询或片段' });
   if (u.protocol === 'https:') try { new X509Certificate(d.ca); } catch { ctx.addIssue({ code: 'custom', message: 'HTTPS 需要固定 CA 证书' }); }
   if (new Set(d.resources).size !== d.resources.length || new Set(d.allowed_tools).size !== d.allowed_tools.length) ctx.addIssue({ code: 'custom', message: '资源键和允许工具不得重复' });
-  for (const c of [...Object.values(d.calls), ...d.precheck_reads, ...(d.probes ? [d.probes.call] : [])]) if (!d.allowed_tools.includes(c.tool)) ctx.addIssue({ code: 'custom', message: '生命周期调用不在允许工具清单内' });
+  const bedCalls = d.bed_state?.items.map(item => item.call) ?? [];
+  for (const c of [...Object.values(d.calls), ...d.precheck_reads, ...(d.probes ? [d.probes.call] : []), ...bedCalls]) if (!d.allowed_tools.includes(c.tool)) ctx.addIssue({ code: 'custom', message: '生命周期调用不在允许工具清单内' });
   if (d.refused_tools.some(name=>d.allowed_tools.includes(name))) ctx.addIssue({code:'custom',message:'同一工具不能既被允许又被拒绝'});
   { // Every dispatch carries its durable request/sequence identity, including unsafe legacy executors.
     if (['request_id','dispatch_sequence','sequence_scope'].some(name=>countBindings(d.calls.submit.arguments,name)!==1)) ctx.addIssue({code:'custom',message:'请求协议必须各绑定一次请求身份、派发序号与执行器序号流；绝对截止不由目标判定'});
   }
   if (d.reconciliation && (!d.calls.query || !d.receipt.request_id || countBindings(d.calls.query.arguments,'request_id') !== 1)) ctx.addIssue({code:'custom',message:'查账必须绑定原请求身份并登记回执身份指针'});
   if (d.probes && ['command','seat_index','lease_id'].some(key=>countBindings(d.probes!.call.arguments,key)!==1))ctx.addIssue({code:'custom',message:'座位探测必须各绑定一次命令、座位序号和本次租约身份'});
-  if(Object.entries(d.calls).some(([role,c])=>role!=='submit' && c?.tool===d.calls.submit.tool) || d.precheck_reads.some(c=>c.tool===d.calls.submit.tool) || d.probes?.call.tool===d.calls.submit.tool)ctx.addIssue({code:'custom',message:'提交工具不能同时作为租约、读取或探测工具'});
+  if (d.bed_state?.items.some(item => countBindings(item.call.arguments, 'lease_id') !== 1)) ctx.addIssue({ code: 'custom', message: '床面快照必须且只能绑定一次本次租约身份' });
+  if(Object.entries(d.calls).some(([role,c])=>role!=='submit' && c?.tool===d.calls.submit.tool) || d.precheck_reads.some(c=>c.tool===d.calls.submit.tool) || d.probes?.call.tool===d.calls.submit.tool || d.bed_state?.items.some(item => item.call.tool === d.calls.submit.tool))ctx.addIssue({code:'custom',message:'提交工具不能同时作为租约、读取或探测工具'});
   const payload = at(d.calls.submit.arguments, d.payload_argument);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).length !== 1 || (payload as Record<string, unknown>).$value !== 'payload_base64' || countPayloadBindings(d.calls.submit.arguments) !== 1) ctx.addIssue({ code: 'custom', message: '提交内容参数必须且只能绑定一次已核验字节' });
   for (const [role, c] of Object.entries(d.calls)) if (role !== 'submit' && countPayloadBindings(c.arguments)) ctx.addIssue({ code: 'custom', message: '非提交角色不能携带工作内容字节' });
-  if ([...d.precheck_reads,...(d.probes ? [d.probes.call] : [])].some(c => countPayloadBindings(c.arguments))) ctx.addIssue({ code: 'custom', message: '只读核对不能携带工作内容字节' });
+  if ([...d.precheck_reads,...(d.probes ? [d.probes.call] : []), ...(d.bed_state?.items.map(item => item.call) ?? [])].some(c => countPayloadBindings(c.arguments))) ctx.addIssue({ code: 'custom', message: '只读核对不能携带工作内容字节' });
 });
 function at(value: unknown, pointer: string): unknown {
   if (pointer === '') return value;

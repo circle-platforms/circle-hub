@@ -22,6 +22,7 @@ const beds: ManifestBed[] = [
     ],
     services: [],
     reserved: [],
+    baseline: [],
   },
   {
     name: 'bed-b',
@@ -31,6 +32,7 @@ const beds: ManifestBed[] = [
     ],
     services: [],
     reserved: [],
+    baseline: [],
   },
 ];
 
@@ -124,7 +126,7 @@ describe('matchNeed with a build requirement', () => {
 describe('matchNeed ordering', () => {
   it('free and matching first (fewer spare devices among them), then earliest free time, then by name', () => {
     const all: ManifestBed[] = [
-      { name: 'bed-c', devices: [beds[0].devices[0], beds[0].devices[2]], services: [], reserved: [] },
+      { name: 'bed-c', devices: [beds[0].devices[0], beds[0].devices[2]], services: [], reserved: [], baseline: [] },
       ...beds,
     ];
     const leases = { 'bed/bed-b/lb0': { until: '2026-10-22T09:00:00.000Z' } };
