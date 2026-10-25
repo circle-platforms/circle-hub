@@ -112,10 +112,9 @@ export function parseLimit(text:string):Limit|null{
 }
 
 /** apv-command-tree@2 in README: absent/NO is required, YES is optional; exact case, no aliases. */
-function optionalFlag(text: string | undefined, where: string, warnings: string[]): boolean | null {
+function optionalFlag(text: string | undefined): boolean | null {
   if (text === 'YES') return true;
   if (text === undefined || text === 'NO') return false;
-  warnings.push(`${where} 的 optional 不符合 apv-command-tree@2（仅 YES/NO，或字段省略）；结构违规，下一步：命令树维护者在下次生产前修订字段后重产`);
   return null;
 }
 
@@ -167,7 +166,6 @@ type TypeCounters = { unknown: Map<string, number>; diagnostics:ProducerDiagnost
 function argumentParam(arg: XmlNode, position: number, where: string, warnings: string[], counters: TypeCounters, declared: Declared,parameterPath:string): SourceParam | null {
   const argName = attribute(arg, 'name');
   const name = argName === '' ? `arg${position}` : argName.replace(/\s+/g, '_');
-  const at = `${where} 参数 ${name}`;
   const description = attribute(arg, 'help_string');
   let typeName = arg.attributes.type ?? '';
   const declaration = declared.get(`${where}\u0000${position}`);
@@ -176,7 +174,7 @@ function argumentParam(arg: XmlNode, position: number, where: string, warnings: 
     if(declaration.type!==undefined)typeName = declaration.type;
   }
   const declaredType = Object.hasOwn(ARGUMENT_TYPES,typeName);
-  const optional = optionalFlag(arg.attributes.optional, at, warnings);
+  const optional = optionalFlag(arg.attributes.optional);
   if (optional === null) {
     counters.diagnostics.push({command:where.split(' '),path:parameterPath+'/@optional',attribute:'optional',position,type_declaration_status:declaredType?'declared':'undeclared',command_parse_status:'parameters_unchecked',syntax_valid:false,reason:'missing_input',missing:'apv-command-tree@2 的精确 optional 字段',next_action:'修订结构字段后重产',audience:'命令树维护者',due:'下一次生产之前',source_value:arg.attributes.optional});
     return null;
@@ -370,6 +368,10 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
       if (summaries.size > 0) data.summary = [...summaries].join('\n');
       entries.push({ kind: KIND, path, statement: lines.join('\n'), data, fragments, applicability: null });
     }
+    // Aggregate by the parsed attribute, never by matching warning prose. Retain every
+    // positional diagnostic, while keeping repeated invalid fields out of capped warnings.
+    const invalidOptional = diagnostics.filter(diagnostic => diagnostic.attribute === 'optional');
+    if (invalidOptional.length > 0) warnings.push(`optional 不符合 apv-command-tree@2（仅 YES/NO，或字段省略；同类 ${invalidOptional.length} 处）；结构违规，下一步：命令树维护者在下次生产前修订字段后重产`);
     for (const [type, count] of counters.unknown) warnings.push(`参数类型 ${type} 不在类型表里（${count} 处），类型未声明、参数未核对；下一步：命令树维护者或包作者在下一次生产前补结构化类型声明后重产`);
     for (const item of declared.values()) {
       if (!item.used) warnings.push(`第 ${item.row} 条声明的参数类型（${item.command} 第 ${item.position} 个参数）在命令树里没有这个参数，未用上`);
