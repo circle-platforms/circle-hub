@@ -13,8 +13,8 @@
     },
     {
       "path": "functions/adoc/deployment.ts",
-      "sha256": "ed3006ee8be90edd3e6648814e9f133e208ec1d535a6d614885ebfc604586f7d",
-      "size": 11932
+      "sha256": "4281bfe17f81b45f76dea06122993c3c887bc08d8240ae0e1dd1d295b6f86795",
+      "size": 7173
     },
     {
       "path": "functions/adoc/engine.ts",
@@ -70,6 +70,11 @@
       "path": "functions/adoc/text.ts",
       "sha256": "b8b1a802ccf42483959db593027fa7fa3e7cee9291a5bd3e187717e8d669326e",
       "size": 10277
+    },
+    {
+      "path": "functions/adoc/tree.ts",
+      "sha256": "34ea475b21a1c10cc1e2e68cdeb246dac67a3c5c7839af5a206842dc10312902",
+      "size": 5379
     },
     {
       "path": "functions/adoc/types.ts",

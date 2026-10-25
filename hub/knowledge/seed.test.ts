@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { ProductDeclaration, type Producer } from '../../contracts/src/product.ts';
 import { SeedlingBody } from '../../contracts/src/knowledge.ts';
+import { canonicalize } from '../records/api.ts';
 import { manifestDigest } from '../runs/api.ts';
 import { createConnectors, type Connectors } from '../connectors/api.ts';
 import type { ResourceCatalogPort } from '../ports.ts';
@@ -253,4 +254,160 @@ test('a locked per-build root hangs on the current seedling of its version line'
   assert.equal(data.seedling_attachment?.line, LINE);
   assert.ok(view.claim.validity.bound.includes(newer.composition));
   assert.ok(view.claim.validity.bound.includes(newer.root));
+});
+
+const BOOK = '192.0.2.32 book page';
+const APP_PAGE = '192.0.2.33 app page';
+const MARKDOWN_CLI = '192.0.2.31 markdown page';
+const MARKDOWN_APP = '192.0.2.34 markdown app';
+const DIR = 'synthetic/10.8';
+const META_ID = `svn:directory:${encodeURIComponent(DIR)}`;
+const fileId = (name: string): string => `svn:file:17/${encodeURIComponent(`${DIR}/${name}`)}`;
+const BOOK_ID = fileId('book.adoc');
+const APP_ID_ADOC = fileId('app.adoc');
+
+const DIRECTORY_MANUAL = `
+export default function produce(input: any): unknown {
+  if (input.params.root === null) {
+    const entries: any[] = [];
+    for (const book of ['cli', 'app']) {
+      const slot = input.slots[book];
+      if (!slot || !Array.isArray(slot.model?.blocks)) continue;
+      for (const block of slot.model.blocks) {
+        if (block.kind !== 'paragraph' || block.selector === null) continue;
+        entries.push({ kind: 'definition', path: '/manual/' + book + '/page', statement: block.text, data: {}, fragments: [{ slot: book, parser: 'markdown@1', selector: block.selector }], applicability: null });
+      }
+    }
+    return { entries, warnings: [] };
+  }
+  if (!input.batch || input.batch.of !== 1) throw new Error('split batch');
+  const meta = input.slots.meta;
+  if (!meta || meta.parser !== 'json@1' || !Array.isArray(meta.model?.members)) throw new Error('missing meta');
+  const files = input.lists?.files ?? [];
+  const expected = meta.model.members.filter((member: any) => member.directory !== true).map((member: any) => member.external);
+  const given = files.map((file: any) => file.external);
+  if (expected.length !== given.length || expected.some((id: string) => !given.includes(id)) || given.some((id: string) => !expected.includes(id))) throw new Error('incomplete group');
+  return {
+    entries: files.map((file: any, index: number) => ({
+      kind: 'definition', path: '/manual/files/n' + String(index), statement: file.model.raw_utf8, data: {},
+      fragments: [{ slot: 'files', source: file.sha256, parser: 'text@1', selector: 'l/1' }], applicability: null,
+    })),
+    warnings: [],
+  };
+}
+`;
+
+function davRow(href: string, revision = '17', directory = true, size = '12'): string {
+  return `<D:response xmlns:D="DAV:"><D:href>${href}</D:href><D:propstat><D:prop><D:resourcetype>${directory ? '<D:collection/>' : ''}</D:resourcetype><D:version-name>${revision}</D:version-name>${directory ? '' : `<D:getcontentlength>${size}</D:getcontentlength>`}</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>`;
+}
+function davMulti(...rows: string[]): string {
+  return `<D:multistatus xmlns:D="DAV:">${rows.join('')}</D:multistatus>`;
+}
+
+async function statementsOf(w: World, composition: string): Promise<string[]> {
+  const body = await w.knowledge.store.composition(composition);
+  const entries = await w.knowledge.store.entries((body?.composition ?? []).map((row) => row.entry));
+  return [...entries.values()].map((entry) => entry.statement);
+}
+
+async function directoryWorld(t: { after: (fn: () => Promise<void> | void) => void }, options: { root: string | null; missing?: string }): Promise<Loop & { resources: ResourceCatalogPort }> {
+  const pg = await startPostgres();
+  t.after(() => pg.stop());
+  const build = { name: BUILD, base: BUILD, family: 'APV', line: LINE, platform: 'zx-u', built_at: '2026-10-01T00:00:00.000Z', released_at: '2026-10-02T00:00:00.000Z', sources: { tree: 'site:tree:10_8' } };
+  const w = await makeWorld(pg, { pack: { id: 'apv', names: ['APV'], functions: { 'manuals.ts': DIRECTORY_MANUAL, 'plan.ts': STATIC_PLAN_SOURCE }, declaration: {
+    names: ['APV'], catalogs: [{ id: 'commands@1', entry_kind: 'definition', producer: 'command-tree', complete: true, case_sensitive: false }],
+    sync: { ...DEFAULT_SYNC, options: { builds: [build] } },
+    variables: [{ name: 'APV_ADOC_ROOT', description: 'Synthetic directory template', schema: { type: ['string', 'null'] }, default: null }],
+    producers: [
+      { id: 'command-tree', title: '命令树', function: { module: 'functions/commands.ts' }, inputs: { tree: { source: 'tree' } } },
+      { id: 'manual-apv', title: 'APV 手册', function: { module: 'functions/manuals.ts' }, params: { family: 'APV', root: '${var:APV_ADOC_ROOT}' }, inputs: {
+        tree: { source: 'tree' },
+        cli: { external: 'manual:cli:{line}', optional: true },
+        app: { external: 'manual:app:{line}', optional: true },
+        meta: { source: 'adoc_apv_meta', optional: true },
+        files: { source: 'adoc_apv_files', many: true, batch: 1, optional: true },
+      } },
+    ],
+  } } });
+  t.after(() => w.close());
+  w.external.set('site:tree:10_8', { bytes: TREE, mediaType: 'application/xml' });
+  w.external.set('manual:cli:10.8', { bytes: `${MARKDOWN_CLI}\n`, mediaType: 'text/markdown' });
+  w.external.set('manual:app:10.8', { bytes: `${MARKDOWN_APP}\n`, mediaType: 'text/markdown' });
+  await w.kit.variables.setVariable(w.admin, 'APV_ADOC_ROOT', options.root, '合成目录');
+  const authorization = `Basic ${randomBytes(24).toString('base64')}`;
+  const prefix = '/repository';
+  const base = `${prefix}/!svn/rvr/17/${DIR}/`;
+  const listing = davMulti(davRow(base), davRow(`${base}app.adoc`, '16', false, String(Buffer.byteLength(APP_PAGE))), davRow(`${base}book.adoc`, '16', false, String(Buffer.byteLength(BOOK))));
+  const server = await startStub((request) => {
+    if (request.headers.authorization !== authorization) return text('Unauthorized', 'text/plain', 401);
+    const path = decodeURIComponent(request.path);
+    if (request.method === 'PROPFIND' && path === `${prefix}/${DIR}/`) return text(davMulti(davRow(path)), 'application/xml', 207);
+    if (request.method === 'PROPFIND' && path === base) return text(listing, 'application/xml', 207);
+    if (request.method === 'GET' && path === `${prefix}/!svn/rvr/17/${DIR}/book.adoc`) return text(BOOK, 'text/plain');
+    if (request.method === 'GET' && path === `${prefix}/!svn/rvr/17/${DIR}/app.adoc`) return options.missing === 'app.adoc' ? text('Absent', 'text/plain', 404) : text(APP_PAGE, 'text/plain');
+    return text('Absent', 'text/plain', 404);
+  });
+  t.after(() => server.close());
+  const root = await mkdtemp(join(tmpdir(), 'circle-hub-seed-adoc-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const directory = await stagePack(PACK_DIR, join(root, 'svn'));
+  const manifest = await readManifest(directory);
+  const svnPacks = fakePacks([{ id: manifest.id, version: manifest.version, kind: manifest.kind, digest: manifestDigest(manifest), directory }]);
+  const connectors: Connectors = createConnectors({
+    records: w.kit, packs: svnPacks, sandbox: { requireOsIsolation: await sandboxIsolation() }, parsers: createDefaultRegistry(), resourceCacheMs: 0,
+  });
+  const original = w.external.read.bind(w.external);
+  w.external.read = (id, readContext) => id.startsWith('svn:') ? connectors.reader.read(id, readContext) : original(id, readContext);
+  const resource = (await addSyntheticResource(w.kit, svnPacks, connectors, w.admin, { system_pack: 'svn', name: '合成仓库', environment: 'test', origins: { svn: `${server.origin}${prefix}` }, allow_plaintext: [server.origin], settings: { repository_path: prefix } })).id;
+  await setSyntheticCredential(w.kit, connectors, w.admin, resource, 'authorization', authorization);
+  const synced = await w.knowledge.syncProduct(w.product, { by: w.admin });
+  assert.equal(synced.error, null, synced.error ?? undefined);
+  return { w, server, authorization, resources: connectors.catalog, close: async () => {} };
+}
+
+test('an adoc root seeds one revision of the whole directory and a second run is the same bytes', { timeout: 120000 }, async (t) => {
+  const loop = await directoryWorld(t, { root: 'synthetic/{line}' });
+  const args = ['--product', 'APV', '--line', LINE, '--build', BUILD, '--basis', '育合成目录'];
+  const first = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs(args), loop.resources);
+  assert.equal(first.ok, true, formatSeedReport(first));
+  assert.equal(first.pointer?.moved, true);
+  const again = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs(args), loop.resources);
+  assert.equal(again.ok, true, formatSeedReport(again));
+  assert.equal(again.root, first.root);
+  const firstNode = await loop.w.knowledge.store.node(first.root!);
+  const againNode = await loop.w.knowledge.store.node(again.root!);
+  assert.deepEqual(Buffer.from(canonicalize(firstNode)), Buffer.from(canonicalize(againNode)));
+  const texts = await statementsOf(loop.w, first.composition!);
+  assert.deepEqual(texts.filter((statement) => statement === BOOK || statement === APP_PAGE).sort(), [BOOK, APP_PAGE].sort());
+  assert.equal(texts.includes(MARKDOWN_CLI), false);
+  assert.equal(texts.includes(MARKDOWN_APP), false);
+  assert.deepEqual(first.composition_revisions.map((source) => source.external).sort(), [APP_ID_ADOC, BOOK_ID, META_ID].sort());
+  assert.deepEqual(first.composition_revisions.map((source) => source.revision), first.composition_revisions.map(() => '17'));
+  assert.equal(formatSeedReport(first).includes(loop.authorization), false);
+  assert.equal(formatSeedReport(first).includes('127.0.0.1'), false);
+  assert.equal(formatSeedReport(first).includes('http:'), false);
+});
+
+test('a directory whose file is absent is refused and the seedling pointer stays', { timeout: 120000 }, async (t) => {
+  const loop = await directoryWorld(t, { root: 'synthetic/{line}', missing: 'app.adoc' });
+  const seeded = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs(['--product', 'APV', '--line', LINE, '--build', BUILD, '--basis', '缺一页']), loop.resources);
+  assert.equal(seeded.ok, false, formatSeedReport(seeded));
+  assert.equal(seeded.root, null);
+  assert.equal(seeded.pointer, null);
+  assert.equal(seeded.missing.some((item) => item.detail.includes(APP_ID_ADOC) && item.next.startsWith('circle-hub knowledge seed ')), true, formatSeedReport(seeded));
+  assert.equal(await loop.w.kit.pointers.get(seedlingName(loop.w.product.id, LINE)), null);
+});
+
+test('a null adoc root still seeds the markdown manuals', { timeout: 120000 }, async (t) => {
+  const loop = await directoryWorld(t, { root: null });
+  const before = loop.server.requests.length;
+  const seeded = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs(['--product', 'APV', '--line', LINE, '--build', BUILD, '--basis', '空目录仍用手册']), loop.resources);
+  assert.equal(seeded.ok, true, formatSeedReport(seeded));
+  assert.deepEqual(loop.server.requests.slice(before).filter((request) => request.method === 'PROPFIND'), []);
+  assert.deepEqual(seeded.composition_revisions, []);
+  const texts = await statementsOf(loop.w, seeded.composition!);
+  assert.equal(texts.includes(MARKDOWN_CLI), true, JSON.stringify(texts));
+  assert.equal(texts.includes(MARKDOWN_APP), true);
+  assert.equal(texts.includes(BOOK), false);
+  assert.equal(texts.includes(APP_PAGE), false);
 });

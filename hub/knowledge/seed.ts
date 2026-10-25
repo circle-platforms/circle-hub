@@ -1,7 +1,8 @@
 // `circle-hub knowledge seed`: the administrator command that calls produceSeedling. The three sources are the ones the
 // product pack already declares (a command-tree input, a CLI manual, an APP manual). The command tree is the named
-// build's, else the newest released build of the line. The two manuals are the pack's external templates, read through
-// the enabled system-pack resource; an SVN read's revision is what the seedling record and the composition keep.
+// build's, else the newest released build of the line. A manual whose producer declares a meta input or a list input
+// reads that SVN directory, at one revision and without a batch cut, when its root parameter is set; a null root keeps
+// the external manual templates. An SVN read's revision is what the seedling record and the composition keep.
 // A missing source is reported as itself, with the next command, and does not produce a partial tree.
 import { expandTemplate, type KnownBuild, type Producer, type ProducerSource, type ProductDeclaration } from '../../contracts/src/product.ts';
 import type { PacksPort, ProductHandle, ResourceCatalogPort } from '../ports.ts';
@@ -9,8 +10,11 @@ import { EXTERNAL_ARTIFACT } from '../ports.ts';
 import type { Principal } from '../records/api.ts';
 import { KnowledgeError, describeError } from './errors.ts';
 import type { Knowledge } from './service.ts';
-import type { KnowledgeContext } from './context.ts';
+import { DEFAULT_SANDBOX, type KnowledgeContext } from './context.ts';
+import { knowledgeSourceLoader } from './credential-policy.ts';
+import { bindDirectorySources, declaredDirectory } from './directory-sources.ts';
 import { produceSeedling, seedlingName, type SeedlingResult } from './seedling.ts';
+import { resolveProductVariables } from './variables.ts';
 
 export const KNOWLEDGE_SEED_USAGE = 'knowledge seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run]';
 
@@ -281,7 +285,18 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
     if ('detail' in found) report.missing.push(gap(role, found.detail, found.next));
     else resolved.set(role, { binding, external: found.external });
   }
-  if (resources && [...resolved.values()].some((row) => row.external.startsWith('svn:'))) {
+  const manualBinding = bindings['cli-manual'];
+  const manualProducer = manualBinding === undefined ? undefined : product.product.producers.find((producer) => producer.id === manualBinding.producer);
+  const directory = manualProducer === undefined ? null : declaredDirectory(manualProducer);
+  let directoryRoot: unknown;
+  if (directory === 'several' && manualBinding) report.missing.push(gap('cli-manual', `生产器 ${manualBinding.producer} 有多份列表来源`, PACK_ONE));
+  else if (directory && manualProducer) {
+    const resolvedProduct = await resolveProductVariables(product, context.records.variables, by, args.dryRun, { plan: { ...DEFAULT_SANDBOX.plan, ...context.sandbox.plan }, producer: { ...DEFAULT_SANDBOX.producer, ...context.sandbox.producer } });
+    if ('problems' in resolvedProduct) report.missing.push(gap('cli-manual', resolvedProduct.problems.join('；'), againCommand(shown, args.line)));
+    else directoryRoot = resolvedProduct.product.product.producers.find((producer) => producer.id === manualProducer.id)?.params?.root;
+  }
+  const directoryIsSvn = typeof directoryRoot === 'string';
+  if (resources && (directoryIsSvn || [...resolved.values()].some((row) => row.external.startsWith('svn:')))) {
     const listed = await resources.list(by);
     const enabled = listed.some((row) => row.enabled && systemId(row.system_pack) === 'svn');
     if (!enabled) {
@@ -292,6 +307,7 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
           resolved.delete(role);
         }
       }
+      if (directoryIsSvn) report.missing.push(gap('cli-manual', '没有启用的 svn 系统包资源', resourceCommand()));
     }
   }
 
@@ -322,6 +338,16 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
     if (role === 'cli-manual' && read.revision) revisions.cli = read.revision;
     if (role === 'app-manual' && read.revision) revisions.app = read.revision;
   }
+  let overlay: Record<string, string | string[]> | null = null;
+  const svnBlocked = report.missing.some((item) => item.detail === '没有启用的 svn 系统包资源');
+  if (directory && directory !== 'several' && manualProducer && typeof directoryRoot === 'string' && !svnBlocked) {
+    const bound = await bindDirectorySources({
+      producer: manualProducer, line: build.line, root: directoryRoot,
+      loader: knowledgeSourceLoader(context, by, 'knowledge seed'), maxBytes: context.limits.maxBuildBytes, next: againCommand(shown, args.line),
+    });
+    if (!bound.ok) report.missing.push(gap('cli-manual', publicText(bound.detail), bound.next));
+    else overlay = bound.sources;
+  }
   if (report.missing.length > 0) return report;
   if (args.dryRun) {
     report.ok = true;
@@ -335,7 +361,7 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
     'cli-manual': { producer: resolved.get('cli-manual')!.binding.producer, slot: resolved.get('cli-manual')!.binding.slot },
     'app-manual': { producer: resolved.get('app-manual')!.binding.producer, slot: resolved.get('app-manual')!.binding.slot },
   };
-  const result = await produceSeedling(context, knowledge, product, { line: args.line, build: build.name, by, basis: args.basis, roles, revisions: { cli: revisions.cli ?? null, app: revisions.app ?? null } });
+  const result = await produceSeedling(context, knowledge, product, { line: args.line, build: build.name, by, basis: args.basis, roles, revisions: { cli: revisions.cli ?? null, app: revisions.app ?? null }, ...(overlay ? { sources: overlay } : {}) });
   return await finish(context, report, result, before?.target ?? null);
 }
 
