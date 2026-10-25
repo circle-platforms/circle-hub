@@ -1,3 +1,5 @@
+import {authorTexts} from './command-policy.ts';
+import {commandLines} from './generated/command-grammar.ts';
 import {selectedExpectedNodes} from './expected-nodes.ts';
 import {planCommands,deviceCommandLines} from './plan-commands.ts';
 // Frozen raw inputs are revalidated on every check. This pack only verifies the authored plan slots.
@@ -68,7 +70,7 @@ export function planSubject(input: unknown): PlanSubject {
   const leases = isRecord(frozen.leases) ? frozen.leases : {};
   const item = isRecord(raw.item) ? raw.item : {};
   const id = typeof raw.item === 'string' ? raw.item : typeof item.id === 'string' ? item.id : '';
-  return { expected_nodes:selectedExpectedNodes(isRecord(item.fields)?item.fields.expected_nodes:undefined,planDataOf(raw)),command_catalog:Array.isArray(raw.catalog)&&typeof context.root==='string'?{root:context.root,complete:raw.catalog_complete===true,entries:raw.catalog,...(typeof raw.catalog_missing==='string'?{missing:raw.catalog_missing}:{})}:undefined,command_identities:isRecord(item.fields)?item.fields.command_identities:undefined,case_texts: authoredCaseTexts(item.fields), item: id, location: typeof raw.location === 'string' ? raw.location : typeof item.location === 'string' ? item.location : null, data: planDataOf(raw), contract: frozen.contract, profile: frozen.profile, manifest: frozen.manifest, leases: Array.isArray(leases.entries) ? leases.entries as LeaseRow[] : [], now: typeof leases.now === 'string' ? leases.now : new Date(0).toISOString(), criteria: criteriaOf(context, id) };
+  return { expected_nodes:selectedExpectedNodes(isRecord(item.fields)?item.fields.expected_nodes:undefined,planDataOf(raw)),command_catalog:Array.isArray(raw.catalog)&&typeof context.root==='string'?{root:context.root,complete:raw.catalog_complete===true,entries:raw.catalog,...(context.command_policy!==undefined?{policy:context.command_policy}:{}),...(typeof raw.catalog_missing==='string'?{missing:raw.catalog_missing}:{})}:undefined,command_identities:isRecord(item.fields)?item.fields.command_identities:undefined,case_texts: authoredCaseTexts(item.fields), item: id, location: typeof raw.location === 'string' ? raw.location : typeof item.location === 'string' ? item.location : null, data: planDataOf(raw), contract: frozen.contract, profile: frozen.profile, manifest: frozen.manifest, leases: Array.isArray(leases.entries) ? leases.entries as LeaseRow[] : [], now: typeof leases.now === 'string' ? leases.now : new Date(0).toISOString(), criteria: criteriaOf(context, id) };
 }
 export function commandSubject(input:unknown):unknown{return planSubject(input);}
 export function quoteSubject(input: unknown): unknown {
@@ -86,13 +88,7 @@ export function quoteSubject(input: unknown): unknown {
 }
 
 /** Authored source text is distinct from the model's final step values. */
-export function authoredCaseTexts(value: unknown): string[] {
-  const fields = isRecord(value) ? value : {}; const out: string[] = [];
-  if (typeof fields.title === 'string') out.push(fields.title);
-  if (Array.isArray(fields.expected)) for (const v of fields.expected) if (typeof v === 'string') out.push(v);
-  if (Array.isArray(fields.steps)) for (const step of fields.steps) if (isRecord(step)) { if (typeof step.text === 'string') out.push(step.text); if (Array.isArray(step.expected)) for (const v of step.expected) if (typeof v === 'string') out.push(v); }
-  return out;
-}
+export function authoredCaseTexts(value: unknown): string[] {return authorTexts(value);}
 
 /** Workbook input is frozen by projection; only original metadata and current submitted slots are joined here. */
 export function workbookSubject(input: unknown): unknown {
@@ -107,5 +103,7 @@ export function workbookSubject(input: unknown): unknown {
 export function selectCommandCatalog(input:unknown):unknown{
  const subject=planSubject(input),contract=parseRuntimeContract(subject.contract),manifest=parseManifest(subject.manifest),slots=readSlots(subject.data);
  const profile=contract.ok&&manifest.ok?parseProfile(subject.profile,contract.contract,manifest.beds):null;
- return {base:'/commands',lines:contract.ok&&profile?.ok&&slots.ok?deviceCommandLines(contract.contract,profile.profile,slots.slots).map(value=>value.line):[]};
+ const lines=contract.ok&&profile?.ok&&slots.ok?deviceCommandLines(contract.contract,profile.profile,slots.slots).map(value=>value.line):[];
+ const raw=isRecord(input)?input:{},context=isRecord(raw.context)?raw.context:{};
+ return {base:'/commands',lines:[...new Set([...lines,...subject.case_texts.flatMap(text=>commandLines(text).map(line=>line.text))])]};
 }

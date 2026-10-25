@@ -1,3 +1,4 @@
+import {CommandPolicy} from './product.ts';
 import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
 import {AcceptedCriterionRef,CriterionNotice} from './criterion.ts';
 // Run (W06), item projection (W01), source binding (P02) and the summaries start_run and list_task_packs return.
@@ -181,6 +182,7 @@ const PersistedRequirementSummary=RequirementSummary.partial({rules:true,run_int
   if((row.rules===undefined)!==(row.run_interpreters===undefined))ctx.addIssue({code:'custom',message:'ruling fields are either both present or both absent on a historical row'});
 });
 export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
+  command_policy:CommandPolicy.optional(),
   accepted_criteria:z.array(AcceptedCriterionRef).optional(),
   criterion_requests:z.array(Sha256).optional(),
   criterion_review:z.strictObject({submission:Sha256,requests:z.array(Sha256)}).optional(),

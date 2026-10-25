@@ -1,3 +1,4 @@
+import {commandPolicyForRoot} from './command-policy.ts';
 import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
 import {defaultPredecessorInputs} from './predecessor-defaults.ts';
 import { PublishableRequirementsFile } from '../../../contracts/src/pack.ts';
@@ -96,7 +97,7 @@ export function hasRulingSummary(record:RunRecord):record is RunRecordView {
   return record.requirements.every(row=>row.rules!==undefined && row.run_interpreters!==undefined);
 }
 export function summaryOf(record: RunRecord, workflow?:Pick<LoadedWorkflow,'pack'|'requirements'|'checks'|'ledger'> & { workflow?: Pick<import('../../../contracts/src/pack.ts').WorkflowFile,'work_class'>; effects?: LoadedWorkflow['effects'] }): RunSummary {
-  const {accepted_criteria:_ac,criterion_requests:_cr,criterion_review:_cv,predecessor_access:_pa, runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, lease_registrations: _lr, ...summary } = record;
+  const {command_policy:_commandPolicy,accepted_criteria:_ac,criterion_requests:_cr,criterion_review:_cv,predecessor_access:_pa, runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, lease_registrations: _lr, ...summary } = record;
   const requirements=record.requirements.map(row=>{
     if(row.rules!==undefined && row.run_interpreters!==undefined)return row;
     const template=workflow?.requirements.find(t=>t.key===row.key);
@@ -611,7 +612,9 @@ async function startFresh(
   const hub = mode.host === 'hub';
   const session = sessionOf(call);
   const effectRegistry=await ctx.deps.effectRegistry?.snapshot(variables);
+  const frozenCommandPolicy=await commandPolicyForRoot(ctx.deps.records.store,target.root);
   const record: RunRecord = RunRecord.parse({
+    ...(frozenCommandPolicy?{command_policy:frozenCommandPolicy}:{}),
     ...(effectRegistry??{}),
     ...(criterionSnapshot.refs.length?{accepted_criteria:criterionSnapshot.refs}:{}),
     ...(criterionSnapshot.requests.length?{criterion_requests:criterionSnapshot.requests}:{}),

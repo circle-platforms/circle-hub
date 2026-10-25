@@ -10,6 +10,15 @@ import { ApplicabilityFieldSchema, EntryKindSchema, LINK_MATCH, LinkMatchSchema,
 import { IsoTime, Sha256, Versioned } from './common.ts';
 import { ExternalObjectId, TreePath } from './reference.ts';
 
+/** Product-authored command structure; no word/prose classification or mutable runtime lookup. */
+const CommandPrefix=TreePath.refine(path=>path==='/commands'||path.startsWith('/commands/'),'a locked command-tree prefix');
+export const CommandPolicy=z.strictObject({
+ schema:z.literal('command-policy@1'),
+ read_only:z.array(CommandPrefix).max(64),
+ inverse_rules:z.array(z.strictObject({source_prefix:CommandPrefix,inverse_prefix:CommandPrefix,leading_parameters:z.number().int().min(0).max(128).optional().describe('When absent, require a unique inverse formed by a leading parameter count accepted by the locked inverse signature')})).max(64),
+});
+export type CommandPolicy=z.infer<typeof CommandPolicy>;
+
 /** Product line id, for example the id of its product pack. */
 export const ProductId = z.string().regex(/^[a-z][a-z0-9-]{1,40}$/, 'lowercase letters, digits and hyphens');
 export type ProductId = z.infer<typeof ProductId>;
@@ -347,6 +356,7 @@ export const ProductDeclaration = z
     links: z.array(LinkDeclaration).max(32).optional(),
     catalogs: z.array(CatalogDeclaration),
     producers: z.array(Producer),
+    command_policy: CommandPolicy.optional(),
     feeding: z.strictObject({project:PackFunctionRef,normalize_line:PackFunctionRef.optional(),verify_command:PackFunctionRef.optional(),classifications:PackFunctionRef.optional()}).optional().describe('Native-source projection and declared grammar callbacks for feeding; no Hub business parser'),
   })
   .superRefine((p, ctx) => {
@@ -409,6 +419,7 @@ export const schemas: Record<string, z.ZodType> = {
   'sync-plan-output@1': SyncPlanOutput,
   'select-build-input@1': SelectBuildInput,
   'select-build-output@1': SelectBuildOutput,
+  'command-policy@1': CommandPolicy,
   'producer-input@1': ProducerInput,
   'producer-output@1': ProducerOutput,
 };

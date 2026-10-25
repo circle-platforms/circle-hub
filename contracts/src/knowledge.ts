@@ -15,7 +15,7 @@ import { KNOWLEDGE_CONTRIBUTION_SCHEMA, KnowledgeContributionBody } from './cont
 import { z } from 'zod';
 import { EntryKindSchema, NodeLevelSchema, ProvenanceTypeSchema, ReadTierSchema, type NodeLevel } from '../generated/vocabulary.ts';
 import { IsoTime, PackId, PackVersion, Sha256, UserId, Versioned } from './common.ts';
-import { Applicability, ApplicabilityOrigin, BuildInfo, CatalogDeclaration, LinkDeclaration, MAX_LIST_SOURCES, PackFunctionRef, ProductId } from './product.ts';
+import { CommandPolicy, Applicability, ApplicabilityOrigin, BuildInfo, CatalogDeclaration, LinkDeclaration, MAX_LIST_SOURCES, PackFunctionRef, ProductId } from './product.ts';
 import { ExternalObjectId, TreePath, referenceUriOf } from './reference.ts';
 
 // ---------------------------------------------------------------- levels and bases
@@ -262,6 +262,7 @@ export type TreeRootSourcesPart = z.infer<typeof TreeRootSourcesPart>;
  * the producing product pack, every source with its basis and decider, and per entry the fragments that provide it.
  */
 export const TreeRootBody = z.strictObject({
+  command_policy:CommandPolicy.optional(),
   known_builds:z.array(z.strictObject({name:z.string().min(1),record:Sha256})).max(50000).optional(),
   applicability_context:z.strictObject({grammar:Versioned,closed_sets:z.partialRecord(ApplicabilityFieldSchema,z.array(z.string()))}).optional(),
   variables:z.array(VariableUse).optional(),

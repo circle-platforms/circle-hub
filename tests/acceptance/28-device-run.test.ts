@@ -74,7 +74,8 @@ async function release(booked: string) {
 function submission(run: string, index: number, bad = false) {
   const data = goodData(); data.steps[0].args = bad ? 'synthetic-invalid' as unknown as string[] : [line];
   // Second authored case also exercises another enabled, role-resolvable method.
-  if (index === 1) data.steps.push({ object: 'widget-seat', method: 'inspect', args: ['relay endpoint add 192.0.2.130 80'], keywords: {} });
+  if (index === 1) {data.steps.push({ object: 'widget-seat', method: 'inspect', args: ['relay endpoint add 192.0.2.130 80'], keywords: {} });data.steps.push({object:'widget-seat',method:'configure',args:['no relay endpoint add 192.0.2.130 80'],keywords:{},cleanup:true});}
+  data.steps.push({object:'widget-seat',method:'configure',args:['no widget health interval pool-a'],keywords:{},cleanup:true});
   data.expects[0].text = expected;
   data.expects[0].quote = { reference: `src:${sha256Hex(original)}/kityminder@1/${model.nodes.find(n => n.selector === `n/expected-${index}`)!.selector}`, text: expected };
   return { run, model: 'synthetic-scripted-model', items: [{ item: itemIds.get(run)!, handling: 'handled', slots: { plan: [{ text: '合成计划', quotes: [data.expects[0].quote], data }] } }] };
@@ -140,7 +141,11 @@ before(async () => {
   if (skip) return;
   postgres = await startPostgres(); staged = await mkdtemp(join(tmpdir(), 'synthetic-device-packs-'));
   const site = await productSite(); const product = await twoNameProduct();
-  const hub = await createTestHub({ postgres, repositoryPacks: ['apv', 'build-site', 'test-bed'], packs: [await stage(join(staged, 'case-compile'))], buildSite: site.site(), requireOsIsolation: true });
+  // This synthetic deployment declares reversible native commands; inverse arities come from this locked tree.
+  const files=site.site();const treeKey=`${site.SITE_BASE}/command_tree-${site.RELEASED}.xml`;
+  const inverse='<menu name="no"><menu name="widget"><menu name="health"><item name="interval"><arguments><arg name="pool" type="STRING"/></arguments></item></menu></menu><menu name="relay"><menu name="endpoint"><item name="add"><arguments><arg name="address" type="IPADDR"/><arg name="port" type="U16"/></arguments></item></menu></menu></menu>';
+  const xml=Buffer.from(files[treeKey].body).toString('latin1');files[treeKey]={...files[treeKey],body:Buffer.from(xml.replace('</scope>',inverse+'</scope>'),'latin1')};
+  const hub = await createTestHub({ postgres, repositoryPacks: ['apv', 'build-site', 'test-bed'], packs: [await stage(join(staged, 'case-compile'))], buildSite: files, requireOsIsolation: true });
   const resource = await hub.addResource({ system_pack: 'build-site', name: '合成构建站', environment: 'test', origins: { 'build-site': `${hub.stubs!.buildSite.origin}${site.SITE_BASE}` }, settings: { index_page: 'index.html' } });
   assert.ok(resource.id);
   for(const active of await hub.hub.registry.activeProducts())for(const variable of active.product.variables??[])await hub.records.variables.setVariable(hub.admin.principal,variable.name,variable.default,'合成台架验收显式部署设置');
@@ -149,14 +154,15 @@ before(async () => {
   // carrying identities of the unrelated package unit fixture into a different product root.
   const root = synced.builds.find(build => build.name === site.RELEASED)?.root;
   assert.ok(root);
-  const catalog = await hub.hub.knowledge.catalog(root, 'commands@1', {base:'/commands',lines:[line,'relay endpoint add 192.0.2.130 80']});
+  const catalog = await hub.hub.knowledge.catalog(root, 'commands@1', {base:'/commands',lines:[line,'relay endpoint add 192.0.2.130 80','no widget health interval pool-a','no relay endpoint add 192.0.2.130 80']});
   assert.ok(catalog);
   const grammar = compileGrammar(catalog.entries().map(e=>({path:'/commands/'+e.words.map(encodeURIComponent).join('/'),words:e.words,signatures:e.signatures})));
-  const commands = [line,'relay endpoint add 192.0.2.130 80'].map(text=>{const identity=commandIdentity(grammar,text);assert.ok(identity, text);return identity;});
-  CONTRACT_DOC.effects.effect_0.commands = commands;
+  const commands = [line,'relay endpoint add 192.0.2.130 80','no widget health interval pool-a','no relay endpoint add 192.0.2.130 80'].map(text=>{const identity=commandIdentity(grammar,text);assert.ok(identity, text);return identity;});
+  delete CONTRACT_DOC.effects.effect_0.commands;
+  CONTRACT_DOC.effects.effect_0.command_scope=['/commands/widget','/commands/no/widget','/commands/relay','/commands/no/relay'];
   CONTRACT_DOC.roles.bed_address = {source:BASE_CONTRACT.effects.effect_0.source,bed_member:true};
   CONTRACT_DOC.effects.effect_0.roles.push('bed_address');
-  CONTRACT_DOC.effects.effect_0.command_roles = [{signature:commands[1].signature,position:0,role:'bed_address'}];
+  CONTRACT_DOC.effects.effect_0.command_roles = [1,3].map(index=>({signature:commands[index].signature,position:0,role:'bed_address'}));
   CONTRACT_DOC.contract_sha256 = runtimeDigest(CONTRACT_DOC);
   bed = { hub, product, site, reviewer: await hub.createUser('合成运行用户') };
   await bed.hub.assignPack(bed.reviewer.principal, 'test-bed'); await bed.hub.assignPack(bed.reviewer.principal, 'case-compile');

@@ -61,7 +61,7 @@ const typedSubject = (data: unknown, declarations: unknown[]): { subject: unknow
 });
 
 const group = () => ({ kind: 'case-compile', contract: TYPED_CONTRACT, profile: TYPED_PROFILE, manifest: MANIFEST_DOC, leases: { now: '2026-10-23T02:00:00.000Z', entries: [] } });
-const context = (criteria: unknown[]) => ({root:'f'.repeat(64), groups: [group()], accepted_criteria: criteria });
+const context = (criteria: unknown[]) => ({command_policy:catalogFor(TYPED_IDENTITIES).policy,root:'f'.repeat(64), groups: [group()], accepted_criteria: criteria });
 
 test('the typed fixture reaches the expectation rule before any criterion is declared', () => {
   const outcome = checkExpectedSources(typedSubject(typedData(), []))[0];

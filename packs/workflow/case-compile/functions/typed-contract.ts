@@ -1,3 +1,4 @@
+import {pathSegments} from './command-policy.ts';
 // runtime-contract@2 declarations are policy inputs, never inferences from names or prose.
 import {schema} from './schema.ts';
 import TYPE from '../tables/declared-type.schema.json' with {type:'json'};
@@ -10,7 +11,7 @@ import {addressKey} from './manifest.ts';
 const Type=schema(TYPE),Role=schema(ROLE),Address=schema(ADDRESS),Identity=schema(IDENTITY);
 export interface ValueType {declaration:DeclaredParameterType;address_kind?:string;values?:string[];literal?:string;minimum?:number;maximum?:number;minLength?:number;maxLength?:number}
 export interface RoleDeclaration {source:string;bed_member?:boolean}
-export interface Effect {id:string;source:string;roles:string[];budget:number;commands:CommandIdentity[];allowed_literals:string[];command_roles:Array<{signature:string;position:number;role:string}>}
+export interface Effect {id:string;source:string;roles:string[];budget:number;commands?:CommandIdentity[];command_scope?:string[];allowed_literals:string[];command_roles:Array<{signature:string;position:number;role:string}>}
 export interface Authority {source:string;parameters:Record<string,{type:ValueType;role:string}>;roles:Record<string,RoleDeclaration>;effects:Effect[]}
 const ground=(name:string,value:unknown):value is string=>Role.safeParse({name,declaration:value}).success;
 export function identityOf(value:unknown):CommandIdentity|null {
@@ -49,11 +50,13 @@ export function readAuthority(contract:Record<string,unknown>,entry:Record<strin
   types[id]={...row,declaration:d} as unknown as ValueType;
  }
  const effects:Record<string,Effect>={};for(const [id,row]of Object.entries(contract.effects)){if(!isRecord(row)||!ground(id,row.source)||!Array.isArray(row.roles)||row.roles.some(r=>typeof r!=='string'||!roles[r])||!Number.isSafeInteger(row.budget)||Number(row.budget)<0)return null;
-  const commands=Array.isArray(row.commands)?row.commands.map(identityOf):[];if(commands.some(i=>i===null))return null;
+  if(row.commands!==undefined&&!Array.isArray(row.commands))return null;
+  const commands=Array.isArray(row.commands)?row.commands.map(identityOf):undefined;if(commands?.some(i=>i===null))return null;
+  const command_scope=row.command_scope;if(command_scope!==undefined&&(!Array.isArray(command_scope)||command_scope.some(path=>!pathSegments(path))||new Set(command_scope).size!==command_scope.length))return null;
   const allowed_literals=row.allowed_literals??[];if(!Array.isArray(allowed_literals)||allowed_literals.some(v=>typeof v!=='string'))return null;
   const effectRoles=row.roles;
   const bindings=row.command_roles??[];if(!Array.isArray(bindings)||bindings.some(v=>!isRecord(v)||!ground(id,v.signature)||!Number.isSafeInteger(v.position)||Number(v.position)<0||typeof v.role!=='string'||!effectRoles.includes(v.role)))return null;
-  effects[id]={id,source:row.source,roles:effectRoles as string[],budget:Number(row.budget),commands:commands as CommandIdentity[],allowed_literals:allowed_literals as string[],command_roles:bindings as Effect['command_roles']};
+  effects[id]={id,source:row.source,roles:effectRoles as string[],budget:Number(row.budget),...(commands!==undefined?{commands:commands as CommandIdentity[]}:{}),...(command_scope!==undefined?{command_scope:command_scope as string[]}:{}),allowed_literals:allowed_literals as string[],command_roles:bindings as Effect['command_roles']};
  }
  const raw=entry.typed_authority;if(!ground(String(entry.f),raw.source)||!isRecord(raw.parameters)||!Array.isArray(raw.effects)||!raw.effects.length||raw.effects.some(id=>typeof id!=='string'||!effects[id]))return null;
  const source=raw.source,parameterMap=raw.parameters;

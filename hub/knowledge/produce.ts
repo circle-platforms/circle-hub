@@ -937,6 +937,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
         parts: parted ? { composition, unplaced: unplacedRows, sources: listRows, entryBytes } : null,
         body: (parts) => ({
           variables:input.variables??[],
+          ...(product.product.command_policy?{command_policy:product.product.command_policy}:{}),
           known_builds:[...(context.knownBuildInventory??[])],
           ...(product.product.applicability?{applicability_context:{grammar:product.product.applicability.grammar,closed_sets:applicabilityClosedSets}}:{}),
           product: lineProduct,

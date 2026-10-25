@@ -31,7 +31,7 @@ import {
 } from '../generated/vocabulary.ts';
 import { PACK_FILE_PATHS } from '../generated/protocol.ts';
 import { ItemId, IsoTime, JsonPointer, PackId, PackVersion, Sha256, Versioned } from './common.ts';
-import { FragmentRef, PackFunctionRef } from './product.ts';
+import { CommandPolicy, FragmentRef, PackFunctionRef } from './product.ts';
 import { ExternalObjectId, Ground, ReferenceUri, referenceUriOf } from './reference.ts';
 import { ExternalType } from './resources.ts';
 
@@ -299,6 +299,7 @@ export const LeaseContextRow = z.strictObject({
 export const LeaseRegistrationRow = z.strictObject({prefix:z.string().min(1),mine:z.boolean(),
   owner:z.strictObject({user:z.string().min(1),name:z.string().min(1)}).optional()});
 export const RunContext = z.strictObject({
+  command_policy:CommandPolicy.optional(),
   feeding_offset:FeedingOffsetSchema.optional(),
   accepted_criteria:z.array(FrozenCriterion).optional(),
   criterion_review:z.strictObject({submission:z.string(),declarations:z.array(z.strictObject({pointer:z.string(),request:z.string()}))}).optional(),

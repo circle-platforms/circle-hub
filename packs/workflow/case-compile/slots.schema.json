@@ -64,6 +64,10 @@
                       }
                     ]
                   }
+                },
+                "cleanup": {
+                  "type": "boolean",
+                  "description": "true 将步骤标为末尾清理段；按产品声明逆序执行对应逆操作，不能从文字猜测"
                 }
               }
             }

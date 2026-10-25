@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "kind": "workflow",
   "title": "用例编译",
   "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、类型化参数与效果授权、台架与血缘地址、地址替换及逐字期望（期望也可逐字取自本次运行冻结的已受理判据声明，其引文在本次边界上重核）。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "4fdd8640c2ec3bbfe6c0ba1377d9cfc354cc75f5beb83b029e45d2ed0b0dc831",
-      "size": 11735
+      "sha256": "9a1ce4e1945515af2c5e639d4aa98099500e73a64dbdfb08c058c21785c25d52",
+      "size": 12747
     },
     {
       "path": "checks.json",
@@ -35,6 +35,11 @@
       "path": "examples/command-tree-v2.xml",
       "sha256": "64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7",
       "size": 138
+    },
+    {
+      "path": "examples/runtime-contract-scope.json",
+      "sha256": "f1614e424506c778de07b9ef2e9e21616b7d9a9c07efaebebda90e742daaed61",
+      "size": 12073
     },
     {
       "path": "examples/runtime-contract-v2.json",
@@ -63,8 +68,8 @@
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "6a7ff32c6094979a2709800a41e01085bec8564c21be114dcf66c724be1d24cf",
-      "size": 3082
+      "sha256": "5d4bad8d037a29b41415d8e2e0253ac9044bad0dd08ec2b6125af84bd2fbd31e",
+      "size": 3152
     },
     {
       "path": "examples/typed-authority-source.json",
@@ -98,8 +103,18 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "1ab0e0b720d6607a80fb3c69a04ad6e41b18e63b04aefb0a2d45a848382f0f32",
-      "size": 19924
+      "sha256": "b74cc3aea36c4bbac3b486213b85660f2a1740dea63066ac81e37a425b467ea6",
+      "size": 20280
+    },
+    {
+      "path": "functions/command-obligations.ts",
+      "sha256": "546720f5d57e31e53c2a6f6a9c7235dc1238b7a5b89f66a8148a1db6c0b5b50d",
+      "size": 7377
+    },
+    {
+      "path": "functions/command-policy.ts",
+      "sha256": "ef5694790e3e6779ac40e7bb5e9ae7fb2370f1a0bea73e20f193e358efa5edaa",
+      "size": 2244
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -118,8 +133,8 @@
     },
     {
       "path": "functions/generate.ts",
-      "sha256": "277f580a04eafaefe3eac369e6e5a1e4c2c54066b507eca76043c16e84eca876",
-      "size": 12886
+      "sha256": "1927ddd9debeadcdeabbdd4179a9c012c08a9a52b250aebae0a16c82e880334c",
+      "size": 13184
     },
     {
       "path": "functions/generated/command-grammar.ts",
@@ -138,18 +153,18 @@
     },
     {
       "path": "functions/plan-commands.ts",
-      "sha256": "168d7fba9f540420c1210fd7bbba1c386178944493f426c0df1bd7ea7819db3a",
-      "size": 5705
+      "sha256": "e30d8b095dbb3642ab3d85f149901257571cd10d0914261c83cce0c590736b17",
+      "size": 6012
     },
     {
       "path": "functions/profile.ts",
-      "sha256": "05910182de0a1446bb1aad179555c91316cb4f10a1ebec139298305a7b04bf14",
-      "size": 14221
+      "sha256": "0812cb5e6c0232d2dc8b3ff05521942a5f435dd8b171d730987472c4b62b6dae",
+      "size": 15608
     },
     {
       "path": "functions/project.ts",
-      "sha256": "7bbeaba2c5c31344fe117f8c29489d7cbefa8b570eb52d918bf8a9be84e5284e",
-      "size": 11722
+      "sha256": "01e94b28c9e89c5b01f9fe748fc3d74aa9c9af1af1c07020153c934992114f43",
+      "size": 11793
     },
     {
       "path": "functions/quote-width.ts",
@@ -163,8 +178,8 @@
     },
     {
       "path": "functions/runtime-contract.ts",
-      "sha256": "32ab0e834e53ddcf8cdade940840bed151d1c9fbfde27a2a685632b7d9c6ed02",
-      "size": 14855
+      "sha256": "c20338e85534d2c80b1efd8b6953fd324e3a24e316de40dbe7c14ff28d8bbb0f",
+      "size": 14882
     },
     {
       "path": "functions/schema.ts",
@@ -173,13 +188,13 @@
     },
     {
       "path": "functions/slots.ts",
-      "sha256": "c53449332e7bebd2157c3e6d788955ce886dd18e78152f723ab2786e366bb423",
-      "size": 5590
+      "sha256": "e2cdba30d2dcb276e972f99ded70ec014879176187644e54e95060481ed2e738",
+      "size": 5801
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "5a3ed4242b4a81faedc953c635287190f4959695bd13bc321dfa4b3a02267e44",
-      "size": 9419
+      "sha256": "ea254962804838c9012ac511d4ff0747ac55523bcc329862021d477f017f863e",
+      "size": 9312
     },
     {
       "path": "functions/text.ts",
@@ -188,13 +203,13 @@
     },
     {
       "path": "functions/typed-authority.ts",
-      "sha256": "ccdade5ef1460b26288489b9afb7a64b386a85bb0de8e6a07a434bc8f2e1807f",
-      "size": 8580
+      "sha256": "a72d24a505fa57dd30a91013a9a97d68e58033a5b0a9cf71a7159c508f99216d",
+      "size": 9930
     },
     {
       "path": "functions/typed-contract.ts",
-      "sha256": "15f3ce134ff3443880dd238bf0ae7c205b2af18a4d56bd8ab005e9396d171daa",
-      "size": 9844
+      "sha256": "3f6bf8de78f566d0ca35573741e592c6b3e42b0f95609791550518bdc45c85f7",
+      "size": 10321
     },
     {
       "path": "functions/workbook.ts",
@@ -218,8 +233,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "c855d9d1093aa707dc9a62d2b257fff8233c2adec8a3eeadcb99ac3a7f9a3496",
-      "size": 10606
+      "sha256": "75e0437d58d4d351e16107823341dc3253d2d456a6988c731c217925fce98765",
+      "size": 10996
     },
     {
       "path": "samples/negative/quote.json",
@@ -228,48 +243,68 @@
     },
     {
       "path": "samples/negative/typed-address-member.json",
-      "sha256": "6ec4e39c3cf83385914e1a1754932afb225a334428a5a6e4a42c176f1f854bc5",
-      "size": 25926
+      "sha256": "82644d17eb39df2f798d8ec9d4dfa7e8f32840b1f9fd041812d397ec741f6776",
+      "size": 26110
     },
     {
       "path": "samples/negative/typed-bed_addresses.json",
-      "sha256": "1486c21f9a42962f59bafc4eec9569b6d16043e4d4c7bbc02dac474d9c13d4e0",
-      "size": 22351
+      "sha256": "a936ecb6e14cf4dd6ddc34e440a35fd5d6443452e7135d6efddf68e7dfac3f60",
+      "size": 22535
     },
     {
       "path": "samples/negative/typed-commands_catalog.json",
-      "sha256": "7002825b017911200db03b518fcf76e0536baa56d722cde829b85aca66b842f6",
-      "size": 22365
+      "sha256": "757d07c5b2291c5a6aa337388995c61cf54c572a6b503d9fcc9c98b64d2a8b5c",
+      "size": 22549
     },
     {
       "path": "samples/negative/typed-contract_shape.json",
-      "sha256": "55903a07db41d721502433325fc062f17a835f19256d944495fa92fe2bd1e634",
-      "size": 22361
+      "sha256": "4b9dceff7ef5086aa20c4b67f00e18aa8af2bd467084cf76fca2a7417510f271",
+      "size": 22545
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "55f97b0b2f88061c9b17ba0cb805bd3991ac11d9651af2ea19d1b67158b60df7",
-      "size": 39267
+      "sha256": "098fe3d6ebdc06a0ec70075a26f027f8a5f3a6e7a9d93eaa7c960258d16a64f9",
+      "size": 39651
     },
     {
       "path": "samples/negative/typed-effect-budget.json",
-      "sha256": "91ef591d48a90d6cd1a4fa26df3549c6d105f762b333a9a7281119c1995456c2",
-      "size": 22351
+      "sha256": "21f55379d1191aea9bd35829ef2eb2e353ea21388987cd62ce35e553bf106828",
+      "size": 22535
     },
     {
       "path": "samples/negative/typed-expected_sources.json",
-      "sha256": "c217950d13f213aa095091244743e3e286bfe5138600ee36824584fc521904be",
-      "size": 22348
+      "sha256": "6c5c853d772a777d6a0046dea311b72212be6e9fb694ed056fa84a2e2c3507df",
+      "size": 22532
     },
     {
       "path": "samples/negative/typed-model-expected.json",
-      "sha256": "b8c83fd146a5ccbdbd00d7adc7dafe73103e34030a556ce5d8bc8adec5486330",
-      "size": 22729
+      "sha256": "d2c45d639c87d841933f52ec45cd3747af7c754ae8206eb520614398254ae467",
+      "size": 22913
+    },
+    {
+      "path": "samples/negative/typed-scope-authorized.json",
+      "sha256": "6cf57f137e65d1bf4e1829ad049c409f6d0d8178b0a1738743f8a315cfaa444e",
+      "size": 23702
+    },
+    {
+      "path": "samples/negative/typed-scope-bed-capacity.json",
+      "sha256": "6d896389c45133ca47956f960c0b503d3f75b0f48697e23d3784071fc82c7272",
+      "size": 23903
+    },
+    {
+      "path": "samples/negative/typed-scope-deleted-occurrence.json",
+      "sha256": "75bac72e67bf43723bdd5bbd844af6a26ae62d23ef8ee0e6b854865e1d5eb587",
+      "size": 23980
+    },
+    {
+      "path": "samples/negative/typed-scope-missing-cleanup.json",
+      "sha256": "0a3ca891d59e1380ef2798f5b990132a4d23a5f82b7102c2dbed3bf3c04db80e",
+      "size": 23704
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "f11194aecfa7a8813017b8f7fbfec5b237d7088815a4a727a2d5ab873b756fda",
-      "size": 39271
+      "sha256": "be8b0b00f038237a3d898caed16424745d77f48d7821a96c1f93d19d1817fa43",
+      "size": 39655
     },
     {
       "path": "samples/positive/quote.json",
@@ -278,53 +313,73 @@
     },
     {
       "path": "samples/positive/typed-address-member.json",
-      "sha256": "9847adebaf96da4af60ed6e2bf22a08573c958868b206246dbd91fadd7384bac",
-      "size": 25878
+      "sha256": "5e86ea355146893b47f4adf51b8007c09ea7addd6f8c479f329d29a0f421db68",
+      "size": 26062
     },
     {
       "path": "samples/positive/typed-bed_addresses.json",
-      "sha256": "e7b7e05d96207e1ff3fc2ee5ab441267ead91fd9d076e65ca68492347a5c3eb6",
-      "size": 22305
+      "sha256": "58a486e16dab5c1f431a3f2b38958f9279cac4066ca383f00b2b498403ce1bb7",
+      "size": 22489
     },
     {
       "path": "samples/positive/typed-commands_catalog.json",
-      "sha256": "207c361132bb3e30bf3c53d71f4ffee629561222c93cfcf3d489a8f7f97e133e",
-      "size": 22311
+      "sha256": "682097594368b922c9cf7636db690a6936bc9ce3e21ba497eaf3cad18084b256",
+      "size": 22495
     },
     {
       "path": "samples/positive/typed-contract_shape.json",
-      "sha256": "7ab3735c7ec1968a59c535a19dc2b663eb4b0a2eba32d6363e2958fc50e002ca",
-      "size": 22307
+      "sha256": "92b6ee8ff3c71bbbf849e9a9e2764d6b9999d78e5c4ee1c3f82e5d9cd9d38d91",
+      "size": 22491
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "ce850079ada3a24900fe2484dba12c1dd2967dba71fa1617ed61fc09a007ebe1",
-      "size": 39221
+      "sha256": "9d16a10e8d506ba38993fd7c901f156c5e31d8a6f0ef97449d0118efd80d62e1",
+      "size": 39605
     },
     {
       "path": "samples/positive/typed-effect-budget.json",
-      "sha256": "95e6d54bf2cec592290c1c199c0372d78bd833890a790fa0c67bd82580b0f632",
-      "size": 22306
+      "sha256": "c46c9dd168a61f0e7cee0494af00d2ff0584de822f5bd4f3b107dd701fb9e169",
+      "size": 22490
     },
     {
       "path": "samples/positive/typed-expected_sources.json",
-      "sha256": "ede7d3bde3ea7e630842d5553b2136d7606bd18f6e2bc972116be76a49c31099",
-      "size": 22311
+      "sha256": "51eb09d03f566efc8e6431368516fe769f159c41fdd6cd5ec71ead2332a81192",
+      "size": 22495
     },
     {
       "path": "samples/positive/typed-model-expected.json",
-      "sha256": "6da76c743e4b230e11ccf76a6ace72e6fed5456e3f19bddd2abdb83faaeaad40",
-      "size": 22669
+      "sha256": "9b32f5d3c3b6dc3f18f1a32e2e12184ec27fb3a4c65fd330790586ef201be6e0",
+      "size": 22853
+    },
+    {
+      "path": "samples/positive/typed-scope-authorized.json",
+      "sha256": "ae4ffe840d94a02f964b9f9de6b40946e72a58cd226df3ed1f6b9dcea7034df6",
+      "size": 23862
+    },
+    {
+      "path": "samples/positive/typed-scope-bed-capacity.json",
+      "sha256": "0259481d4527a997e8d09c0623756867bf612d9908c4038b47f9c0eb5b472e87",
+      "size": 23862
+    },
+    {
+      "path": "samples/positive/typed-scope-deleted-occurrence.json",
+      "sha256": "12f8edb3029aac85fec0db5cc2f8115168913769bb2106d84140de1539eddad7",
+      "size": 24325
+    },
+    {
+      "path": "samples/positive/typed-scope-missing-cleanup.json",
+      "sha256": "503cb9019097e75036265766b2f9d7c56db1c2f9bb406e644e35bb198ef91149",
+      "size": 23867
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "d303e46c8be691405cc37856df0e4db8c989db2f1633c239f3cda82880f9fd4f",
-      "size": 39225
+      "sha256": "01435bce0dbbb0aa7d60701cdf10dc174648f69741116f943b02f09ab5187cc9",
+      "size": 39609
     },
     {
       "path": "slots.schema.json",
-      "sha256": "8925973dc0b6c18020aa24dfe932fcb84c35ac4864fb4d7e9e684be7d60303e7",
-      "size": 4555
+      "sha256": "a53fe5de37192b6d4fa8a803e7f0a239cda089750dc5c945ec30c688b6033811",
+      "size": 4780
     },
     {
       "path": "tables/codes.json",
@@ -378,7 +433,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "f8aa2ce3ae7693096d7e51d62ca834f14c9f2cbe2e87715201cc4805bae6da58",
+      "sha256": "8ea51fad63cfcfcf777435eeac8f5ef7b29f78a39a177cc41eb563ef4cff2db9",
       "size": 555
     },
     {

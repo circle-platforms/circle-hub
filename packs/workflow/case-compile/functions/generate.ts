@@ -1,3 +1,4 @@
+import {authorTexts} from './command-policy.ts';
 import {selectedExpectedNodes} from './expected-nodes.ts';
 import { typedAuthorityGaps, authorityRecovery } from './typed-authority.ts';
 // Client deterministic generator, also called solely for byte recomputation by the Hub verifier. Node built-ins only.
@@ -30,11 +31,12 @@ function escape(text: string, at: string, xstring = true): string {
 export function generateWorkbook(input: GenerationInput): Uint8Array {
   const read = readSlots(input.slots); if (!read.ok) reject('/slots', read.problems[0].pointer + ' ' + read.problems[0].message);
   const slots = read.ok ? read.slots : input.slots; const { fields, contract, profile } = input;
-  const gaps = typedAuthorityGaps(contract, profile, slots,fields.command_identities,fields.command_catalog);
+  const gaps = typedAuthorityGaps(contract, profile, slots,fields.command_identities,fields.command_catalog,authorTexts(fields));
   if (gaps.length) reject('/contract', authorityRecovery(gaps));
   if (input.generator !== undefined && input.generator !== GENERATOR) reject('/generator', '生成器版本与当前包版本不符');
   if (!input.plan_run || !input.plan_run.startsWith('run_') || /[\r\n]/.test(input.plan_run) || !input.build || /[\r\n]/.test(input.build)) reject('/context', '缺少已满足的计划运行号或锁定构建');
   if (contract.pinned.identity !== profile.digest || contract.runtimeVersion !== profile.runtimeVersion) reject('/identity', '合约身份与配置不符');
+  if(profile.seats.some(seat=>!Number.isSafeInteger(seat.ordinal)||seat.ordinal<0||seat.ordinal>=profile.device_count))reject('/profile/seats','框架取不到那台设备，整卷不跑：对象序号超出冻结预检容量');
   if (slots.bucket !== profile.bed || typeof fields.autoid !== 'string' || !new RegExp(profile.workbook.autoid_pattern, 'u').test(fields.autoid)) reject('/fields/autoid', '台架或 autoid 与已核验输入不符');
   if (typeof fields.title !== 'string' || !fields.title || !Array.isArray(fields.steps) || fields.steps.some((v) => typeof v.text !== 'string')) reject('/fields', '缺少条目标题或步骤原文');
   const assertions = profile.allowed.filter((v) => Object.values(v.parameters).some((role) => role === 'literal_assertion'));

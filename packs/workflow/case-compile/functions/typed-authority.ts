@@ -1,3 +1,5 @@
+import {commandObligations,definitionKey} from './command-obligations.ts';
+import {within} from './command-policy.ts';
 import {planCommands} from './plan-commands.ts';
 // One authority boundary is shared by checks, generation, workbook verification and dispatch.
 import { runtimeMethod, type RuntimeContract } from './runtime-contract.ts';
@@ -8,14 +10,14 @@ import {identityOf,identityKey,valueProblem,type Authority,type ValueType} from 
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 import {addressKey} from './manifest.ts';
-export interface AuthorityGap { document: string; pointer: string; message: string; verdict?:Verdict }
+export interface AuthorityGap { document: string; pointer: string; message: string; verdict?:Verdict;obligation?:Record<string,unknown> }
 export function replacedIdentity(identity:CommandIdentity,slots:PlanSlots):CommandIdentity {
  const out=structuredClone(identity);for(const p of out.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const original=p.parsed.value.value;const replacement=slots.replacements.find(r=>addressKey(r.case)===addressKey(original));if(replacement){p.parsed.value.value=replacement.bed;p.raw=replacement.bed;}}return out;
 }
-export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimeProfile, slots: PlanSlots, known?:unknown,catalog?:unknown): AuthorityGap[] {
+export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimeProfile, slots: PlanSlots, known?:unknown,catalog?:unknown,caseTexts:readonly string[]=[]): AuthorityGap[] {
  const gaps:AuthorityGap[]=[];const note=(pointer:string,message:string,verdict:Verdict='unknown')=>gaps.push({document:'contract',pointer,message,verdict});
  const resolution=planCommands(contract,profile,slots,catalog);gaps.push(...resolution.problems);const knownIds=Array.isArray(known)?known.map(identityOf):known===undefined?[]:null;
- const keys=new Set((knownIds??[]).filter((i):i is CommandIdentity=>i!==null).map(i=>identityKey(replacedIdentity(i,slots))));
+ const keys=new Set((knownIds??[]).filter((i):i is CommandIdentity=>i!==null).map(i=>definitionKey(replacedIdentity(i,slots))));
  const usage=new Map<string,{budget:number;count:number}>();
  const effectUse=(a:Authority,at:string)=>{for(const e of a.effects){const row=usage.get(e.id)??{budget:e.budget,count:0};row.count++;row.budget=Math.min(row.budget,e.budget);usage.set(e.id,row);if(row.count>row.budget)note(at,`效果 ${e.id} 的计划调用 ${row.count} 次超过声明预算 ${row.budget} 次`,'refute');}};
  for(const [index,step]of slots.steps.entries()){
@@ -33,16 +35,18 @@ export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimePr
     if(knownIds===null||knownIds.some(i=>i===null)){note(v.pointer,'用例声明身份结构未核对；修正 case_index 的明确声明后重核');continue;}
     const parsed=resolution.byLine.get(String(v.value));const matches=parsed?[parsed]:[];
     if(matches.length!==1)continue;
-    const identity=matches[0];if(knownIds.length&&!keys.has(identityKey(identity)))note(v.pointer,'计划命令与用例明确声明的命令身份不一致（已核显式类型化替换）','refute');
-    if(!a.effects.some(e=>e.commands.some(i=>identityKey(replacedIdentity(i,slots))===identityKey(identity))))note(v.pointer,'完整命令身份不在合约效果允许集合','refute');
+    const identity=matches[0];if(step.cleanup!==true&&knownIds.length&&!keys.has(definitionKey(identity)))note(v.pointer,'计划命令与用例明确声明的命令身份不一致（已核显式类型化替换）','refute');
+    if(!a.effects.some(e=>(e.command_scope!==undefined||e.commands!==undefined)&&(e.command_scope===undefined||e.command_scope.some(prefix=>within(identity.path,prefix)))&&(e.commands===undefined||e.commands.some(i=>identityKey(replacedIdentity(i,slots))===identityKey(identity)))))note(v.pointer,'完整命令身份不在合约声明范围与逐条允许集合的交集','refute');
     for(const parameter of identity.parameters)if(parameter.parsed.kind==='address'&&(parameter.parsed.value.kind==='ipv4'||parameter.parsed.value.kind==='ipv6')){const role=commandRole(a,identity,parameter.position,parameter.role?.name);if(!role||typeof a.roles[role]?.bed_member!=='boolean')note(v.pointer,`命令参数位置 ${parameter.position} 缺合约闭集角色及 bed_member 用途声明`);}
    }
   }
  }
  const assertion=profile.allowed.find(call=>Object.values(call.parameters).includes('literal_assertion'));
  if(assertion){const entry=runtimeMethod(contract,assertion.object,assertion.method),a=entry?.authority;const name=Object.keys(assertion.parameters).find(n=>assertion.parameters[n]==='literal_assertion');if(!a||!name||!a.parameters[name])note(entry?.sourcePointer??'/entries','字面断言方法缺 runtime-contract@2 的类型、角色和效果授权');else for(const [i,expect]of slots.expects.entries()){effectUse(a,`/expects/${i}`);if(a.parameters[name].role!=='literal_assertion')note(`/expects/${i}`,'断言角色不等于原合约声明','refute');const problem=valueProblem(a.parameters[name].type,expect.text);if(problem)note(`/expects/${i}/text`,problem,'refute');}}
+ gaps.push(...commandObligations((awaitOperations(contract,profile,slots)),slots,catalog,caseTexts));
  return gaps;
 }
+function awaitOperations(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots){return slots.steps.flatMap((step,index)=>{const entry=runtimeMethod(contract,step.object,step.method),allowed=profile.allowed.find(call=>call.object===step.object&&call.method===step.method);if(!entry||!allowed)return [];return bindArguments(entry,step,`/steps/${index}`).values.filter(value=>allowed.parameters[value.name]==='device_cli'&&typeof value.value==='string').map(value=>({line:String(value.value),pointer:value.pointer,object:step.object,cleanup:step.cleanup===true}));});}
 function commandRole(a:Authority,i:CommandIdentity,position:number,native?:string):string|null {
  const declared=a.effects.flatMap(e=>e.command_roles.filter(b=>b.signature===i.signature&&b.position===position).map(b=>b.role));
  if(native&&a.roles[native]&&a.effects.some(e=>e.roles.includes(native)))declared.push(native);
@@ -56,4 +60,7 @@ export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile
  const assertion=profile.allowed.find(call=>Object.values(call.parameters).includes('literal_assertion'));if(assertion){const a=runtimeMethod(contract,assertion.object,assertion.method)?.authority,name=Object.keys(assertion.parameters).find(n=>assertion.parameters[n]==='literal_assertion');if(a&&name&&a.parameters[name])slots.expects.forEach((e,i)=>put(a.parameters[name].type,e.text,a,a.parameters[name].role,`/data/expects/${i}/text`));}
  return uses;
 }
-export const authorityRecovery = (gaps: readonly AuthorityGap[]): string => `缺少原合约的类型与效果事实或不符合显式授权：${gaps.map(gap => `${gap.document}${gap.pointer}：${gap.message}`).join('；')}。下一步：当前运行者请求合约发布管理员补全 runtime-contract@2、发布匹配配置与冻结命令身份，重新绑定原件开新运行；不得编辑冻结 profile 绕过。Hub 为缺失事实绑定具名受众与期限；当前不生成或派发工作簿。`;
+export const authorityRecovery = (gaps: readonly AuthorityGap[]): string => {
+ const repair=gaps.some(gap=>gap.verdict==='refute')?'当前运行者按指针和未完成义务补齐作者命令、合法参数及逆序清理，再重新核验；不得改冻结授权绕过':'当前运行者按指针请求产品包、合约或台架发布管理员补齐相应事实；产品命令规则更新后重新育苗并开新运行';
+ return `缺少原合约的类型与效果事实或不符合显式授权：${gaps.map(gap => `${gap.document}${gap.pointer}：${gap.message}`).join('；')}。下一步：${repair}；原合约按 runtime-contract@2 核对。不得编辑冻结 profile 绕过。Hub 为缺失事实绑定具名受众与期限；当前不生成或派发工作簿。`;
+};

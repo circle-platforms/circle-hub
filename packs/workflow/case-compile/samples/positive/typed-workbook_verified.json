@@ -5,6 +5,14 @@
   "note": "合成 runtime-contract@2 声明，旧合约不能作为已核对输入",
   "subject": {
     "command_catalog": {
+      "policy": {
+        "schema": "command-policy@1",
+        "read_only": [
+          "/commands/widget",
+          "/commands/show"
+        ],
+        "inverse_rules": []
+      },
       "root": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
       "complete": true,
       "entries": [
@@ -736,6 +744,14 @@
     "now": "2026-10-23T02:00:00.000Z",
     "fields": {
       "command_catalog": {
+        "policy": {
+          "schema": "command-policy@1",
+          "read_only": [
+            "/commands/widget",
+            "/commands/show"
+          ],
+          "inverse_rules": []
+        },
         "root": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "complete": true,
         "entries": [
@@ -805,7 +821,7 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@3.4.0"
+      "generator": "case-compile@3.4.1"
     },
     "manifest_sha256": "5bc9f5ab333dde710f9023c6db1f99411f3e254f61b4e44b11340ce362b1fcd7",
     "workbook": {
@@ -904,14 +920,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@3.4.0",
+                    "text": "case-compile@3.4.1",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "c87f0abffd662aea2bbe9ba6efd1ab5fcb937df8b696f7f18f9db0d16863fb86",
+                    "text": "3e86c322cadde24ad5306a829688dcffaa65f9735c871a0cdd7415469ba44ad1",
                     "formula": false,
                     "style": null
                   }
@@ -1245,7 +1261,7 @@
           }
         ]
       },
-      "sha256": "5c5dd97c7bb0f7bf501e18919e5b110e6bd1c59ff6ad7b0a7000e10bb92989b3"
+      "sha256": "032238a891b9f66dbfeeeed0326289c6ce22fa0ba233329395928ef3da560cac"
     }
   },
   "expect": [

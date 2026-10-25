@@ -37,3 +37,5 @@ const generation={plan_run:'run_00000000000000000000000000',build:'Fixture_Build
 const bytes=generateWorkbook({slots:base.data,fields,contract:c.contract,profile:p.profile,...generation});
 const workbook={...base,fields,generation,manifest_sha256:hash(JSON.stringify(MANIFEST_DOC)),workbook:{model:coreModel(bytes),sha256:hash(bytes)}};
 for(const check of ['workbook_verified','dispatch_policy']){save('positive','typed-'+check,check,workbook);const bad=structuredClone(workbook);bad.workbook.sha256='f'.repeat(64);save('negative','typed-'+check,check,bad,'case-compile.workbook_invalid');}
+
+await import('./authority-samples.ts');
