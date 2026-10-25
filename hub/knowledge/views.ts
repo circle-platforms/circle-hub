@@ -1257,6 +1257,12 @@ export class KnowledgeViews {
       pins.set(`${at.root}\0${at.build}`,new CompositionView(this.#context.store,at.composition,body));
       return at;
     };
+    const resolved=new Map<string,ReturnType<typeof resolve>>();
+    const resolveOnce=(name:string):ReturnType<typeof resolve>=>{
+      let pending=resolved.get(name);
+      if(pending===undefined){pending=resolve(name);resolved.set(name,pending);}
+      return pending;
+    };
     let roots: string[];
     let key: string;
     let compute: (exclude: ReadonlySet<string>) => Promise<ImpactView | FacetView | IndexView>;
@@ -1266,22 +1272,22 @@ export class KnowledgeViews {
       if (reader === undefined) return null;
       const handle = await this.#packs.productById(product) ?? await this.#packs.productByName(product);
       if (handle === null) return null;
-      if(reader===this.#context.feeding){const at=await resolve(request.type==='impact'?request.to:request.build);if(typeof at==='string'||!await seedlingOfRoot(this.#context,product,at.root))return null;}
+      if(reader===this.#context.feeding){const at=await resolveOnce(request.type==='impact'?request.to:request.build);if(typeof at==='string'||!await seedlingOfRoot(this.#context,product,at.root))return null;}
       const offset = context.feeding_offset?.offset??(context.run === undefined || context.run === null ? null : await reader.frozenOffset(context.run));
       if(context.run&&offset===null)throw new KnowledgeError('旧运行缺少冻结的喂入序号；另开运行以冻结树苗和喂入层，不能用最新序号冒充历史',{code:'REFERENCE_UNRESOLVED'});
       return { context, cut: await reader.cut(handle.product.id, offset,context.principal) };
     })();
     if (request.type === 'impact') {
-      const from = await resolve(request.from);
+      const from = await resolveOnce(request.from);
       if (typeof from === 'string') return { ok: false, id: bare, reason: from };
-      const to = await resolve(request.to);
+      const to = await resolveOnce(request.to);
       if (typeof to === 'string') return { ok: false, id: bare, reason: to };
       roots = [from.root, to.root];
       key = canonicalize({ type: request.type, product, from, to, changed: request.changed, attached: request.attached, attached_fields: request.attached_fields, catalog: request.catalog, after:request.after??null });
       compute = (exclude) => this.impact(product, from, to, request.changed, request.attached, request.attached_fields, request.catalog, exclude, request.after??null,{from:pins.get(`${from.root}\0${from.build}`)!,to:pins.get(`${to.root}\0${to.build}`)!,reserve},scopeRoot,Boolean(context.run),feeding);
       title = `版本差 ${from.build} → ${to.build}（${product}）`;
     } else {
-      const at = await resolve(request.build);
+      const at = await resolveOnce(request.build);
       if (typeof at === 'string') return { ok: false, id: bare, reason: at };
       roots = [at.root];
       if (request.type === 'facets') {
