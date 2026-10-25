@@ -1,5 +1,5 @@
 // Reading and parsing the sources of a sync or a production: through the ExternalReaderPort in an admin context, then the
-// stored bytes through the tier-aware Artifacts.source (never trustedBytes), then the core parser for the media type (the
+// stored bytes through the tier-aware Artifacts.source (never trustedBytes), then the explicitly declared core parser (or media recognition when undeclared; the
 // Hub parses, not the pack). Only model-readable text read with a shared credential enters the tree: a credential hit
 // (retain_only), function-only bytes, bytes the scanner could not inspect and personal-credential reads are refused with a
 // Chinese reason naming the digest (B02 R[3], R[4]; records README, Needs).
@@ -13,6 +13,7 @@ import { describeError } from './errors.ts';
 import { Lru } from './store.ts';
 
 const MODEL_READABLE: ReadTier = 'model_readable';
+const documentKey=(source:ReadableSource,parser:string)=>JSON.stringify([source.sha256,parser,source.mediaType]);
 const RETAIN_ONLY: ReadTier = 'retain_only';
 
 /** One external read: the artifact a consumer parses (`content` when the system pack derived one, else the original). */
@@ -38,6 +39,8 @@ export interface ParsedSource extends ReadableSource {
   /** parser@version that parsed it. */
   parser: string;
   document: ParsedDocument;
+  /** Only an explicit source declaration can override media recognition; keep the discrepancy in the report. */
+  parseNote?: string;
 }
 
 export type Loaded<T> = { ok: true; value: T } | { ok: false; reason: string; sha256: string | null };
@@ -71,7 +74,7 @@ export class SourceLoader {
   readonly #reads = new Map<string, Promise<ExternalLoad>>();
   readonly #readWrites=new Map<string,Promise<void>>();
   readonly #credentialReads=new Map<string,Promise<ExternalLoad>>();
-  /** Parsed documents by digest and parser; bytes behind a digest never change. A few large documents at most. */
+  /** Parsed documents by digest, parser and media/charset options; source bytes never change. A few large documents at most. */
   readonly #documents = new Lru<string, ParsedDocument>(4);
   /** Which parser recognised the bytes of a digest and media type. */
   readonly #recognized = new Lru<string, string>(64);
@@ -213,10 +216,27 @@ export class SourceLoader {
     };
   }
 
-  /** Parses with the first core parser for the media type that accepts the bytes (a source shared by builds is parsed once). */
-  parse(source: ReadableSource): Loaded<ParsedSource> {
+  /** Uses the explicit source parser without fallback, otherwise the existing media recognizer. */
+  parse(source: ReadableSource, declaredParser?: string): Loaded<ParsedSource> {
+    if (declaredParser !== undefined) {
+      const parser=this.#deps.parsers.get(declaredParser);
+      if (!parser) return {ok:false,sha256:source.sha256,reason:`源文件 ${source.sha256}（${source.external}）来源声明的解析器 ${declaredParser} 未登记；请包作者修正声明或管理员登记解析器后重产`};
+      const key=documentKey(source,declaredParser);
+      try {
+        let document=this.#documents.get(key);
+        if (!document) {document=parser.parse(source.bytes,{mediaType:source.mediaType});this.#documents.set(key,document);}
+        const inferred=this.#deps.parsers.forMediaType(source.mediaType)[0];
+        const origin=source.artifact?.body?.origin;
+        const mediaLabel=origin&&'generated' in origin?'派生件媒体类型':'服务器媒体类型';
+        const parseNote=!inferred || parserKey(inferred)!==declaredParser ? `源文件 ${source.sha256}（${source.external}）：${mediaLabel} ${source.mediaType}，按来源声明以 ${declaredParser} 解析` : undefined;
+        return {ok:true,value:{...source,parser:declaredParser,document,...(parseNote?{parseNote}:{})}};
+      } catch(error) {
+        const reason=error instanceof ParseError ? `${error.message}${error.offset===null?'':`（字节 ${error.offset}）`}；${error.fix}` : describeError(error);
+        return {ok:false,sha256:source.sha256,reason:`源文件 ${source.sha256}（${source.external}）被来源声明的 ${declaredParser} 拒绝：${reason}；请修正来源或显式声明后重产`};
+      }
+    }
     const known = this.#recognized.get(`${source.sha256}\u0000${source.mediaType}`);
-    const cached = known === undefined ? undefined : this.#documents.get(`${source.sha256}\u0000${known}`);
+    const cached = known === undefined ? undefined : this.#documents.get(documentKey(source,known!));
     if (known !== undefined && cached !== undefined) return { ok: true, value: { ...source, parser: known, document: cached } };
     let found: ReturnType<typeof recognize>;
     let rejected: ParseError | undefined;
@@ -231,7 +251,7 @@ export class SourceLoader {
         : `源文件 ${source.sha256}（${source.external}）被 ${rejected.parser} 拒绝：${rejected.message}${rejected.offset === null ? '' : `（字节 ${rejected.offset}）`}；${rejected.fix}` };
     }
     const parser = parserKey(found.parser);
-    this.#documents.set(`${source.sha256}\u0000${parser}`, found.document);
+    this.#documents.set(documentKey(source,parser), found.document);
     this.#recognized.set(`${source.sha256}\u0000${source.mediaType}`, parser);
     return { ok: true, value: { ...source, parser, document: found.document } };
   }
@@ -241,7 +261,7 @@ export class SourceLoader {
    * the slot); null when the parser is not registered or does not accept the bytes.
    */
   documentWith(source: ReadableSource, parser: string): ParsedDocument | null {
-    const key = `${source.sha256}\u0000${parser}`;
+    const key = documentKey(source,parser);
     const cached = this.#documents.get(key);
     if (cached !== undefined) return cached;
     const found = this.#deps.parsers.get(parser);

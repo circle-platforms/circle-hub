@@ -1115,3 +1115,9 @@ systems have not been read or validated; the integrator supplies the actual bran
 ## apv-trunk-red 收尾
 
 决定 60 的正文提及、结构命令和声明块条件已统一到生产、链接与合成集成测试。表格按原有单元格结构切分后逐项核对锁定树；Markdown 围栏不再当作命令；示例的提及归入 `reference`，不参与链接。原 adoc 记录中的闭集变量格式失败已修复。APV `1.7.23`：全包 632/632、类型检查通过，另链接及产品契约 45/45、生成物 131 文件一致。原因和旧期望的更正依据见[任务页](../../../docs/hub-r4-tasks/apv-trunk-red.md)。
+
+## adoc 文件组的解析声明
+
+`adoc_apv_files`、`adoc_nsae_files` 的成员在产品输入声明中固定 `parser: text@1`。SVN 返回 `application/octet-stream` 时，Hub 按此声明解析并保留 text@1 的 NUL 计数；原件与读取清单仍记服务器原始媒体类型，生产报告注明差异。不按 `.adoc` 扩展名猜测，也不将通用 SVN 文件路由强制为文本。未声明来源继续按媒体类型选择解析器；声明无效时拒绝，不自动回退。APV 版本 1.7.24，变更说明见[任务页](../../../docs/hub-r4-tasks/adoc-declared-text.md)。
+
+文件组原有的子目录清单是辅助成员，也按 text@1 读取。只有父清单的结构字段明确指定该目录身份时，包才对其完整 UTF-8 JSON 原件做结构读取与摘要核对；正文不参与格式判断。子目录缺失、错误 JSON 或摘要不符仍拒绝整组，旧根不动。

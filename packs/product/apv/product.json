@@ -148,6 +148,7 @@
         },
         "files": {
           "source": "adoc_nsae_files",
+          "parser": "text@1",
           "many": true,
           "batch": 200,
           "optional": true
@@ -206,6 +207,7 @@
         },
         "files": {
           "source": "adoc_apv_files",
+          "parser": "text@1",
           "many": true,
           "batch": 200,
           "optional": true

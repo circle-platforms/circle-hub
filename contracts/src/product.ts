@@ -183,10 +183,11 @@ export const ProducerSource = z.union([
   z.strictObject({
     source: z.string().min(1),
     optional: z.boolean().optional(),
+    parser: Versioned.optional().describe('Explicit core parser for this source or every member of this list; the observed server media type remains unchanged'),
     many: z.boolean().optional().describe('the role holds a list of external objects; the function is called once per batch of them and its outputs are concatenated, so an entry must not depend on another batch'),
     batch: z.number().int().min(1).max(200).optional().describe('objects per call for a list role, default 50'),
   }),
-  z.strictObject({ external: ExternalTemplate, optional: z.boolean().optional() }),
+  z.strictObject({ external: ExternalTemplate, optional: z.boolean().optional(), parser: Versioned.optional().describe('Explicit core parser; retain the observed server media type') }),
 ]);
 export type ProducerSource = z.infer<typeof ProducerSource>;
 

@@ -370,6 +370,11 @@
                     "optional": {
                       "type": "boolean"
                     },
+                    "parser": {
+                      "description": "Explicit core parser for this source or every member of this list; the observed server media type remains unchanged",
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                    },
                     "many": {
                       "description": "the role holds a list of external objects; the function is called once per batch of them and its outputs are concatenated, so an entry must not depend on another batch",
                       "type": "boolean"
@@ -394,6 +399,11 @@
                     },
                     "optional": {
                       "type": "boolean"
+                    },
+                    "parser": {
+                      "description": "Explicit core parser; retain the observed server media type",
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
                     }
                   },
                   "required": [

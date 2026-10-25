@@ -50,7 +50,16 @@ export async function familyManual(input:ProducerInput):Promise<ProducerOutput>{
  if(byId.size!==given.length)return stop('duplicate_file','文件组重复绑定同一个来源');
  const declared=mainsOf(input.params.main,input.params.app_main);
  if(declared===null)return stop('missing_main','CLI 与 APP 都要给出主文件相对路径');
- const walk=booksOf(root,declared,id=>id===rootId(root)?meta.model:byId.get(id)?.model);
+ // A file group also carries fixed-revision directory projections. The walker asks for
+ // their exact identities from parent directory fields; never classify an adoc body as JSON.
+ const walk=booksOf(root,declared,id=>{
+  if(id===rootId(root))return meta.model;
+  const slot=byId.get(id);if(!slot)return undefined;
+  if(slot.parser==='json@1')return slot.model; // Existing direct-call inputs already parsed by the core.
+  if(slot.parser!=='text@1'||!isRecord(slot.model)||typeof slot.model.raw_utf8!=='string')return stop('directory_unreadable','固定修订号的子目录清单缺少完整 UTF-8 原件结构');
+  if(sha256(slot.model.raw_utf8)!==slot.sha256)return stop('source_digest','子目录清单的原件字节摘要与绑定槽位不符');
+  try{return JSON.parse(slot.model.raw_utf8);}catch{return stop('directory_unreadable','固定修订号的子目录清单不是完整 JSON 结构');}
+ });
  if(walk.pending.length)return stop('incomplete_group','缺少固定修订号的子目录清单，不读取不完整文件组');
  const expected=new Set(walk.groups.flatMap(group=>listedSources(group.directory,group.tree)));
  if(expected.size!==given.length||given.some(slot=>!slot.external||!expected.has(slot.external)))return stop('incomplete_group','需要每本书目录里的全部 adoc 和子目录清单，不能拆批、漏文件或混入其他目录');

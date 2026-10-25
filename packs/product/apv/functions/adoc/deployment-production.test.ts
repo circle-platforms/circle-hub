@@ -27,12 +27,12 @@ test('changing one family reuses the other production and a failed complete grou
  const root='synthetic/10.8.1',revision='17';const rootId='svn:directory:'+encodeURIComponent(root);
  const childId='svn:directory-at:17/'+encodeURIComponent(root+'/chapters');
  const id=(name:string)=>'svn:file:17/'+encodeURIComponent(root+'/'+name);
- const texts={'app.adoc':'= Synthetic APP\n\n== Application\n\n{brand} APP content.\n','book.adoc':'= Synthetic\n\ninclude::chapters/body.adoc[]\n','chapters/body.adoc':'== Section\n\n{brand} family content.\n'};
+ const texts={'app.adoc':'= Synthetic APP\n\n== Application\n\n{brand} APP content.\n','book.adoc':'= Synthetic\n\ninclude::chapters/body.adoc[]\n','chapters/body.adoc':'== Section\n\n{brand} family\0 content.\n'};
  const member=(name:string)=>({name,directory:false,external:id(name),revision:'16',size:Buffer.byteLength(texts[name as keyof typeof texts])});
  const meta={directory:root,revision,members:[member('book.adoc'),member('app.adoc'),{name:'chapters',directory:true,revision:'16',external:null,size:null}]};
  const child={directory:root+'/chapters',revision,members:[{...member('chapters/body.adoc'),name:'body.adoc'}]};
  external.set(rootId,{bytes:JSON.stringify(meta),mediaType:'application/json'});external.set(childId,{bytes:JSON.stringify(child),mediaType:'application/json'});
- for(const [name,text] of Object.entries(texts))external.set(id(name),{bytes:text,mediaType:'text/plain'});
+ for(const [name,text] of Object.entries(texts))external.set(id(name),{bytes:text,mediaType:name==='chapters/body.adoc'?'application/octet-stream':'text/plain'});
  external.set('site:tree:demo',{bytes:'<commands><scope type="global"><item name="demo" help_string="Synthetic"/></scope></commands>',mediaType:'application/xml'});
  for(const declaration of product.product.variables??[])await records.variables.setVariable(admin,declaration.name,declaration.default,'合成默认值的显式部署设置');
  for(const family of ['APV','NSAE']){
@@ -46,6 +46,8 @@ test('changing one family reuses the other production and a failed complete grou
  const sync=()=>knowledge.syncProduct(product,{options:{build},maxAgeSeconds:0,recheck:true});
  const first=await sync();assert.equal(first.counts.produced,1,JSON.stringify(first.builds));
  const a=await knowledge.store.composition(first.builds[0].composition!);assert.ok(a);
+ const chapter=a.sources.find(source=>source.external===id('chapters/body.adoc'))!;
+ assert.equal(chapter.media_type,'application/octet-stream');assert.equal(chapter.parser,'text@1');
  const nsae=a.composition.filter(row=>row.producers.includes('manual-nsae')).map(row=>row.entry);assert.ok(nsae.length);
  assert.ok(a.variables?.some(v=>v.name==='APV_ADOC_ATTRIBUTES_APV'));assert.ok(a.variables?.some(v=>v.name==='APV_ADOC_ATTRIBUTES_NSAE'));
  await records.variables.setVariable(admin,'APV_ADOC_ATTRIBUTES_APV',{brand:'Gamma'},'只改一族');
