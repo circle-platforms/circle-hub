@@ -37,7 +37,7 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
     assert.ok(!JSON.stringify(answer).includes('SyntheticPrivateReadFailure'));
     if (mode === 'absence') {
       assert.equal(answer.acceptance, 'not_accepted'); assert.equal(answer.errors[0].code, 'REFERENCE_UNRESOLVED');
-      assert.equal(reads, 2, 'target and grounds cache entries each read once; permanent absence is not retried'); assert.ok(!(await actions())[0].body.detail.hub_error); return;
+      assert.equal(reads, 4, 'target and grounds cache entries each take one direct and one run-scoped read; permanent absence is not retried'); assert.ok(!(await actions())[0].body.detail.hub_error); return;
     }
     assert.equal(reads, mode === 'recover' ? 4 : 3, 'groundability uses a separate cache entry after recovery');
     if (mode === 'recover') {

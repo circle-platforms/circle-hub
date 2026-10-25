@@ -79,11 +79,11 @@ describe('the endpoint producer', () => {
   const build = { name: 'lumen-2.1.0-b7', family: FAMILY, line: '2.1', base: 'lumen-2.1.0-b7', platform: null, built_at: null, released_at: null, sources: {}, root: null };
   const input = (spec: unknown) => ({ build, slots: { spec }, params: {} });
 
-  it('gives one definition per endpoint at /endpoints/<METHOD>/<segments> with typed positional parameters', () => {
+  it('defines only structurally complete endpoints and reports an incomplete parameter grammar', () => {
     const out = produceEndpoints(input({ sha256: 'a'.repeat(64), media_type: 'text/markdown', parser: 'markdown@1', model }));
     assert.ok(ProducerOutput.safeParse(out).success);
-    assert.deepEqual(out.warnings, []);
-    assert.deepEqual(out.entries.map((e) => e.path), ['/endpoints/GET/v1/pools', '/endpoints/POST/v1/pools', '/endpoints/DELETE/v1/pools/{id}', '/endpoints/GET/v1/health']);
+    assert.deepEqual(out.warnings, ['GET /v1/health：缺显式参数表（零参数也须声明空表）；下一步由来源作者补完整参数结构后重产']);
+    assert.deepEqual(out.entries.map((e) => e.path), ['/endpoints/GET/v1/pools', '/endpoints/POST/v1/pools', '/endpoints/DELETE/v1/pools/{id}']);
     const pools = out.entries[0].data;
     assert.deepEqual(pools.words, ['GET', '/v1/pools']);
     assert.deepEqual(pools.signatures, [{ id: '1', params: [{ name: 'limit', type: 'int', optional: true, minimum: 1, maximum: 100 }] }]);

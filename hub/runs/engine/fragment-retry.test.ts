@@ -24,7 +24,8 @@ for(const mode of ['recover','exhaust','retain','missing'])test(`data-only fragm
     };
     const submission={run:run.run,model:'synthetic-model',items:[{item:run.items[0].id,handling:'handled',slots:{findings:[{text:'合成引文',code:'edge_case_gap',rank:'major',quotes:[{reference:run.items[0].location,text:run.items[0].label}],data:{expected_quote:{reference:ref,text:'分区编号 1 到 8'}}}]}}],cross_item:[{nature:'judgment',statement:'一般',grounds:[],code:'draft_level',rank:'P4'}]};
     const answer=await h.service.submitResult(h.alice,submission,h.call());
-    assert.equal(reads,mode==='recover'||mode==='exhaust'?3:1);
+    // Missing sources take one direct and one run-scoped read; retain-only metadata needs no second read.
+    assert.equal(reads,mode==='recover'||mode==='exhaust'?3:mode==='missing'?2:1);
     assert.ok(!JSON.stringify(answer).includes('SyntheticFragmentReadFailure'));
     if(mode==='exhaust'){
       assert.equal(answer.result,undefined);assert.equal(answer.acceptance,'not_accepted');assert.match(answer.errors[0].fix??'',/管理员/);

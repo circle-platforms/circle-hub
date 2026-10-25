@@ -141,7 +141,7 @@ export class ContributionLayer {
       const node=await this.#reading.nodeAt(input.root,pathSegments(input.path));if(!node)return fail('归位路径在锁定树苗中不存在');
       const fragment=await this.#reading.treeReader({composition:scope.composition}).read(input.root,input.path,null,{user:reader.id,role:reader.role});if(!fragment)return fail('归位节点当前不可读');
       scanPublicText([input.statement,JSON.stringify(value),scope.model??'',scope.session??'']);
-      return {layer:'contribution',product:scope.product,root:input.root,path:input.path,cited_fragment:sha256Hex(fragment.text),kind:input.kind,statement:input.statement,source:{...input.source,fragment:sha256Hex(input.source.quote),provenance:value.schema==='fed-note@1'?'declared':original.artifact.body.provenance_type as 'observed'|'projected',records:[original.artifact.digest],sources:[ref.sha256]},feeding:value as KnowledgeContributionBody['feeding'],submitted_by:reader.id,basis_rank:'judgment',applicability:null};
+      return {layer:'contribution',product:scope.product,root:input.root,path:input.path,cited_fragment:sha256Hex(fragment.text),kind:input.kind,statement:input.statement,source:{...input.source,fragment:sha256Hex(input.source.quote),provenance:value.schema==='fed-note@1'?'declared':original.artifact.body.provenance_type as Extract<ProvenanceType, 'observed' | 'projected' | 'declared'>,records:[original.artifact.digest],sources:[ref.sha256]},feeding:value as KnowledgeContributionBody['feeding'],submitted_by:reader.id,basis_rank:'judgment',applicability:null};
     }
     const {composition, compositions, originals, lineage, custodian, fragments} = await this.#preparation(scope, reader, cacheScope);
     let segments:string[];
