@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.4.2",
+  "version": "3.4.3",
   "kind": "workflow",
   "title": "用例编译",
   "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、类型化参数与效果授权、台架与血缘地址、地址替换及逐字期望（期望也可逐字取自本次运行冻结的已受理判据声明，其引文在本次边界上重核）。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
@@ -108,8 +108,8 @@
     },
     {
       "path": "functions/command-obligations.ts",
-      "sha256": "546720f5d57e31e53c2a6f6a9c7235dc1238b7a5b89f66a8148a1db6c0b5b50d",
-      "size": 7377
+      "sha256": "2f9d1e33424f0949afebe7846bfd2b4da1bf54fbff2af48209557f36e1ffd84b",
+      "size": 7470
     },
     {
       "path": "functions/command-policy.ts",
@@ -263,7 +263,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "6876e3b554485b11f63c16d63a504ee6f3c5d8569e0b2e3dac56838e9aed11c6",
+      "sha256": "2a20e493c4d3b11a44a128b6bd82ae84304a02ea2929ad4dee492bd6f1aa2d38",
       "size": 39651
     },
     {
@@ -303,7 +303,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "e17a50d9d42f30c94a13648ee58a540379ac2d0847232dc2742be66022149ad6",
+      "sha256": "fee5ec90c029898d1e0ce9ef328778c14f25e976dbdb5cd8313e4238feed4d35",
       "size": 39655
     },
     {
@@ -333,7 +333,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "2013c9d657636fa75f3eeb444e78ea349fc51a1231eb4190276bd9206d8bda8b",
+      "sha256": "23b0c906436cef369b19b76ab8cb3a40323b03546f04f5a43b8953b442d6576e",
       "size": 39605
     },
     {
@@ -373,7 +373,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "971c0f39ebd80bd6575259c8daa098bd696b1a916db016ab1dc7dcaf2821e979",
+      "sha256": "5364b0406035f3bf9c06c120007b11cbc2639470f3a4fa72773d5fc24f68cc0d",
       "size": 39609
     },
     {
@@ -433,7 +433,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "51321e5986b2aa91ff1dd3ac54f5a1938d855f4521e2007a1807ee9cd0e5c9d4",
+      "sha256": "32c8376bfe2277ccf0ab7de981090f205ed6294a3318b61d930e56674c93227f",
       "size": 555
     },
     {
