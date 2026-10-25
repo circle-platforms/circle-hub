@@ -144,9 +144,12 @@ async function nodeDigest(root: string, names: string[]): Promise<string | null>
 
 describe('production with the real manual producer', () => {
   test('the same sources give the same root twice; an unrelated tree command leaves the manual subtree untouched', async () => {
-    const first = await knowledge.produceTree({ product, build: build('Rel_APV_10_6_1_8', 'site:tree:a'), by: admin });
+    // The frozen known-build inventory is the plan's build list (K01: a declared input, never accumulated records);
+    // a production outside a sync freezes the build it is producing alone.
+    const PLAN = ['Rel_APV_10_6_1_8', 'Rel_APV_10_6_1_9'];
+    const first = await knowledge.produceTree({ product, build: build('Rel_APV_10_6_1_8', 'site:tree:a'), planBuilds: PLAN, by: admin });
     assert.ok(first.ok, first.reason ?? '');
-    const again = await knowledge.produceTree({ product, build: build('Rel_APV_10_6_1_8', 'site:tree:a'), by: admin });
+    const again = await knowledge.produceTree({ product, build: build('Rel_APV_10_6_1_8', 'site:tree:a'), planBuilds: PLAN, by: admin });
     assert.ok(again.ok, again.reason ?? '');
     assert.equal(again.root, first.root, 'byte-identical reproduction (K01)');
     assert.ok((await nodeDigest(first.root as string, ['manual', 'cli'])) !== null, 'the manual namespace hangs in the root');
@@ -156,7 +159,7 @@ describe('production with the real manual producer', () => {
     const warning = JSON.stringify(again);
     assert.ok(!warning.includes('内部错误'), warning);
 
-    const second = await knowledge.produceTree({ product, build: build('Rel_APV_10_6_1_9', 'site:tree:b'), by: admin });
+    const second = await knowledge.produceTree({ product, build: build('Rel_APV_10_6_1_9', 'site:tree:b'), planBuilds: PLAN, by: admin });
     assert.ok(second.ok, second.reason ?? '');
     assert.notEqual(second.root, first.root);
     assert.equal(
