@@ -10,7 +10,7 @@ import { fixtureText } from '../fixtures/mindmaps/index.ts';
 import { openConsole, type ConsoleClient } from './support/console.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import { type McpClient } from './support/mcp.ts';
-import { draft, oracleCases, requirementOf, resultOf, startReview } from './support/review.ts';
+import { draft, oracleCases, refutationCodes, requirementOf, resultOf, startReview } from './support/review.ts';
 
 let postgres: TemporaryPostgres;
 let bed: Bed;
@@ -32,7 +32,7 @@ after(async () => {
 describe('scenario 20: injected defects benchmark verification', () => {
   let untouchedRef: string;
   let untouchedRun: RunSummary;
-  const untouchedViolations = new Set<string>();
+  const untouchedViolations = new Map<string,string[]>();
 
   test('upload untouched fixture and record baseline literal violations', async () => {
     const untouchedMap = JSON.parse(fixtureText('review-150.km.json')) as MindMap;
@@ -57,10 +57,10 @@ describe('scenario 20: injected defects benchmark verification', () => {
       const req = requirementOf(result, item.id, 'literal');
       const staticLayer = req.layers.find((l) => l.layer === 'static')!;
       if (staticLayer.terminal === 'violation') {
-        untouchedViolations.add(item.id);
+        untouchedViolations.set(item.id,refutationCodes(result,item.id,'literal'));
       }
     }
-    // Baseline fixture has 24 documented violations (twins, bad priority, tag variants)
+    // Baseline variants are advisory violations under R2; later injection compares individual codes.
     assert.ok(untouchedViolations.size > 0);
   });
 
@@ -109,7 +109,7 @@ describe('scenario 20: injected defects benchmark verification', () => {
     for (const item of mutatedRun.items) {
       const req = requirementOf(result, item.id, 'literal');
       const staticLayer = req.layers.find((l) => l.layer === 'static')!;
-      if (staticLayer.terminal === 'violation' && !untouchedViolations.has(item.id)) {
+      if (staticLayer.terminal === 'violation' && refutationCodes(result,item.id,'literal').some(code=>!(untouchedViolations.get(item.id)??[]).includes(code))) {
         newlyFlaggedItems.add(item.id);
       }
     }
@@ -144,7 +144,7 @@ describe('scenario 20: injected defects benchmark verification', () => {
     assert.match(page.body, new RegExp(mutatedRun.run));
   });
 
-  test('document-level defect remove_negative removes all 9 negative cases', async () => {
+  test('document-level defect remove_negative removes only the exact declared negative cases', async () => {
     const rawMap = JSON.parse(fixtureText('review-150.km.json')) as MindMap;
     const documentId = String(rawMap.root?.data?.id ?? 'document');
 
@@ -166,13 +166,13 @@ describe('scenario 20: injected defects benchmark verification', () => {
       inputs: { subject: { reference: mutatedRef } },
     });
 
-    // 9 negative cases were removed (out of 10): the mutated document holds 9 cases fewer than the untouched one
-    // (counted by the same oracle under the marked rule), with 1 remaining bracketed [Negative] case.
+    // R2: only exact negative declarations are negative; variants remain as structural repair evidence.
+    const declaredNegatives=oracleCases(rawMap).filter(item=>item.tags.includes('negative')).length;
     assert.equal(mutatedRun.items.length, oracleCases(injectResult.map).length);
-    assert.equal(mutatedRun.items.length, untouchedRun.items.length - 9);
+    assert.equal(mutatedRun.items.length, untouchedRun.items.length - declaredNegatives);
 
     const remainingNegatives = mutatedRun.items.filter((item) => item.fields.negative === true);
-    assert.equal(remainingNegatives.length, 1);
+    assert.equal(remainingNegatives.length, 0);
   });
 
   test('two_expected defect behavior: case-review structure.json allows multiple expected results', async () => {
@@ -206,9 +206,9 @@ describe('scenario 20: injected defects benchmark verification', () => {
 
     const result = resultOf(answer);
     const req = requirementOf(result, item.id, 'literal');
-    const staticLayer = req.layers.find((l) => l.layer === 'static')!;
     // Note: tables/structure.json declares minItems: 1 without maxItems ("条数不限"),
     // so two_expected is accepted by case-review structure check.
-    assert.equal(staticLayer.terminal, 'pass');
+    // This operation changes expected cardinality, not the retained advisory tag violations.
+    assert.deepEqual(refutationCodes(result,item.id,'literal'),untouchedViolations.get(item.id)??[]);
   });
 });

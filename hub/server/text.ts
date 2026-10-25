@@ -1522,6 +1522,19 @@ const RENDERERS: Record<string, (value: never, context: TextContext) => string> 
   submit_result: submitText,
 };
 
+/** Feeding disclosure participates in the same answer budget, including the fallback renderer. */
+export function feedingText(text:string,value:unknown):string {
+  const v=recordsOf(value),more='完整喂入清单和未知见本次回答的 structuredContent；运行详情见控制台运行页';
+  const rows:string[]=[];
+  if(Array.isArray(v.feeding_pending))for(const pending of v.feeding_pending){const p=recordsOf(pending);rows.push('喂入未知：'+String(p.missing)+'；下一步：'+String(p.next_action));}
+  if('feeding_objects'in v)rows.push('喂入清单：'+JSON.stringify(v.feeding_objects)+('feeding_offset'in v?'；冻结序号：'+JSON.stringify(v.feeding_offset):'；缺冻结序号：旧运行需另开运行'));
+  if(!rows.length)return text;
+  // Fit disclosures first so that even a large feeding receipt cannot consume the whole answer.
+  const disclosure=fit([{priority:0,entries:rows,unit:'喂入说明',measure:'条',more:()=>more}],{budget:6000,fallback:more}).text;
+  const lines=text.split('\n'),tail=lines.splice(-2),trace=tail.pop();
+  return fit([{priority:0,entries:lines,unit:'回答原文',measure:'行',more:()=>more}],{tail:[...tail,disclosure,...(trace?[trace]:[])],fallback:more}).text;
+}
+
 /** The plain text of a validated tool answer, at most TEXT_BUDGET characters, ending with the trace line. */
 export function toolText(tool: string, value: unknown, context: TextContext = {}): string {
   const render = RENDERERS[tool] as ((value: unknown, context: TextContext) => string) | undefined;

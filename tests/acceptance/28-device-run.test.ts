@@ -11,7 +11,9 @@ import { ExecutorDefinition, type JobStatus } from '../../hub/dispatch/api.ts';
 import { definition } from '../../hub/dispatch/testing/definition.ts';
 import { startEndpoint } from '../../hub/dispatch/testing/server.ts';
 import { CONTRACT_DOC as BASE_CONTRACT, PROFILE_DOC as BASE_PROFILE, MANIFEST_DOC as BASE_MANIFEST, goodData } from '../../packs/workflow/case-compile/functions/test-support.ts';
-import { signRuntime, entry } from '../../packs/workflow/case-compile/testing/runtime.ts';
+import { runtimeDigest, stripAdditions, contractCanonical } from '../../packs/workflow/case-compile/functions/runtime-contract.ts';
+import {compileGrammar, commandIdentity} from '../../packs/workflow/case-compile/functions/generated/command-grammar.ts';
+import { entry } from '../../packs/workflow/case-compile/testing/runtime.ts';
 import { satisfiedRecipe } from '../../packs/workflow/case-compile/tools/generate-workbook.ts';
 import { generateWorkbook } from '../../packs/workflow/case-compile/functions/generate.ts';
 import { reportLines, batchQualifications } from '../../scripts/real/accept/device-run.ts';
@@ -27,10 +29,17 @@ import { connect, type McpClient } from './support/mcp.ts';
 import type { StartRunOutput, SubmitResultOutput } from '../../contracts/src/tools.ts';
 import type { z } from 'zod';
 
-const CONTRACT_DOC = signRuntime({ ...BASE_CONTRACT, entries: [...BASE_CONTRACT.entries, entry('widget-seat', 'inspect', [{ name: 'query', kind: 'positional_only', required: true, default: null }])] });
+const inspectEntry = { ...entry('widget-seat', 'inspect', [{ name: 'query', kind: 'positional_only', required: true, default: null }]),
+  typed_authority: { source: BASE_CONTRACT.effects.effect_0.source, parameters: {query:{type:'text',role:'device_cli'}}, effects:['effect_0'] } };
+const CONTRACT_DOC = { ...structuredClone(BASE_CONTRACT), entries: [...structuredClone(BASE_CONTRACT.entries), inspectEntry] };
+// R5: extensions change the original runner identity, not just the @2 declaration digest.
+const recovered = stripAdditions(CONTRACT_DOC)!;
+recovered.contract_sha256 = runtimeDigest(recovered);
+CONTRACT_DOC.original = {contract_sha256:String(recovered.contract_sha256),sha256:sha256Hex(Buffer.from(contractCanonical(recovered)))};
+CONTRACT_DOC.contract_sha256 = runtimeDigest(CONTRACT_DOC);
 // Keep both address families in the single interface list used by declared per-device probes.
 const MANIFEST_DOC={...BASE_MANIFEST,beds:BASE_MANIFEST.beds.map(bed=>({...bed,devices:bed.devices.map(device=>({...device,interfaces:[...device.ipv4,...device.ipv6]}))}))};
-const PROFILE_DOC = { ...BASE_PROFILE, device_count:MANIFEST_DOC.beds[0].devices.length, runtime: { ...BASE_PROFILE.runtime, contract_sha256: CONTRACT_DOC.contract_sha256 }, allowed: [...BASE_PROFILE.allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' }, reviewed: true }] };
+const PROFILE_DOC = { ...BASE_PROFILE, device_count:MANIFEST_DOC.beds[0].devices.length, runtime: { ...BASE_PROFILE.runtime, contract_sha256: CONTRACT_DOC.original.contract_sha256 }, allowed: [...BASE_PROFILE.allowed, { object: 'widget-seat', method: 'inspect', parameters: { query: 'device_cli' }, reviewed: true }] };
 const skip = await osIsolationAvailable() ? false : 'sandbox-exec absent: real isolated pack execution unavailable';
 const ids = ['990000000000000041', '990000000000000042'];
 const line = 'widget health interval pool-a 60';
@@ -136,6 +145,19 @@ before(async () => {
   assert.ok(resource.id);
   for(const active of await hub.hub.registry.activeProducts())for(const variable of active.product.variables??[])await hub.records.variables.setVariable(hub.admin.principal,variable.name,variable.default,'合成台架验收显式部署设置');
   const synced = await hub.knowledgeSync(product.line, { options: { case_index: false } }); assert.equal(synced.error, null, JSON.stringify(synced));
+  // Provision this synthetic deployment's exact effect closure from its locked tree, rather than
+  // carrying identities of the unrelated package unit fixture into a different product root.
+  const root = synced.builds.find(build => build.name === site.RELEASED)?.root;
+  assert.ok(root);
+  const catalog = await hub.hub.knowledge.catalog(root, 'commands@1', {base:'/commands',lines:[line,'relay endpoint add 192.0.2.130 80']});
+  assert.ok(catalog);
+  const grammar = compileGrammar(catalog.entries().map(e=>({path:'/commands/'+e.words.map(encodeURIComponent).join('/'),words:e.words,signatures:e.signatures})));
+  const commands = [line,'relay endpoint add 192.0.2.130 80'].map(text=>{const identity=commandIdentity(grammar,text);assert.ok(identity, text);return identity;});
+  CONTRACT_DOC.effects.effect_0.commands = commands;
+  CONTRACT_DOC.roles.bed_address = {source:BASE_CONTRACT.effects.effect_0.source,bed_member:true};
+  CONTRACT_DOC.effects.effect_0.roles.push('bed_address');
+  CONTRACT_DOC.effects.effect_0.command_roles = [{signature:commands[1].signature,position:0,role:'bed_address'}];
+  CONTRACT_DOC.contract_sha256 = runtimeDigest(CONTRACT_DOC);
   bed = { hub, product, site, reviewer: await hub.createUser('合成运行用户') };
   await bed.hub.assignPack(bed.reviewer.principal, 'test-bed'); await bed.hub.assignPack(bed.reviewer.principal, 'case-compile');
   client = await connect(bed.hub, bed.reviewer.token);
@@ -208,7 +230,8 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
   });
   test('a parseable but altered workbook fails semantic verification and cannot dispatch', async () => {
     const booked = await booking(); const p = await plan(booked); const changed = structuredClone(p.recipe);
-    changed.slots.steps[0].args = [line.replace('60', '59')]; p.payload = Buffer.from(generateWorkbook(changed));
+    // Change an observable expectation within the existing quote; the command receipt stays valid.
+    changed.slots.expects[0].text = expected.slice(0, -2); p.payload = Buffer.from(generateWorkbook(changed));
     const v = await verify(p); const before = submissions;
     assert.ok(v.result?.result);
     const rows = Object.values(v.result.result.partitions).flat();

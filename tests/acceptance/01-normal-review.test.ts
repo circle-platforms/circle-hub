@@ -47,12 +47,12 @@ describe('scenario 1: a normal review', () => {
     assert.deepEqual(listed.out.packs.map((p) => p.id).sort(), Object.values(WORKFLOW).sort());
     assert.ok(listed.out.packs.every((p) => p.kind === 'workflow'));
     const review = listed.out.packs.find((p) => p.id === WORKFLOW.review)!;
-    assert.deepEqual(review.requirements.map((r) => r.key), ['literal', 'catalog', 'findings', 'level']);
+    assert.deepEqual(review.requirements.map((r) => r.key), ['literal', 'catalog', 'findings', 'expected_quality', 'level']);
     assert.deepEqual(new Set(review.products), new Set([...bed.product.names, ...bed.second.names]), 'the pack binds no fixed line: every name of every line that provides its catalog');
   });
 
   test('start_run on the agile mind map freezes the items, requirements, locked root and the expected sources', async () => {
-    run = await startReview(client, { product: bed.product.names[1], version: bed.site.LINE, inputs: { subject: { external: `agile:mindmap:${DOCUMENTS.review}` } } });
+    run = await startReview(client, { product: bed.product.names[1], version: bed.site.LINE, parameters: { stories: ['31057'], bugs: ['31057'] }, inputs: { subject: { external: `agile:mindmap:${DOCUMENTS.review}` } } });
     // Items: exactly the cases of the tagged rule, in document order, with their identities.
     const expectedIds = cases.map((c) => c.nodeId);
     const shared = sharedIds(cases);
@@ -71,6 +71,7 @@ describe('scenario 1: a normal review', () => {
       ['literal', ['static'], 'fact'],
       ['catalog', ['static'], 'fact'],
       ['findings', ['static'], 'judgment'],
+      ['expected_quality', ['static'], 'judgment'],
       ['level', ['static'], 'judgment'],
     ]);
     // The second name of the line locks the root the sync produced for the base build (aliasing).
@@ -82,16 +83,20 @@ describe('scenario 1: a normal review', () => {
     assert.deepEqual(run.target_basis.map(claim=>claim.statement.data?.field),['product','version','build','unversioned_root']);
     const scopeBasis=run.target_basis[3];
     assert.equal(scopeBasis.qualifier.nature,'fact');assert.equal(scopeBasis.qualifier.provenance,'projected');
-    const scope=bed.syncs.two!.scope;assert.ok(scope?.root);assert.ok(scope.composition);
-    assert.equal(run.unversioned_root,scope.root);assert.equal(scopeBasis.statement.data?.root,scope.root);assert.equal(scopeBasis.statement.data?.composition,scope.composition);
-    assert.equal(scopeBasis.statement.text,'产品线不分版本的当前根');
-    assert.ok(scope.reason.includes('不分版本的根为空（清单完整，规格 0 份、未覆盖用例 0 份）'));
-    // Sources: the subject, the linked story and bug (expected), the spec search (expected), test strategy and history (hints).
+    // Feeding replaced implicit per-build case indexing. No unversioned source declaration
+    // is configured in this bed; absence is disclosed rather than inventing an empty closed root.
+    assert.equal(bed.syncs.two!.scope,undefined);
+    assert.equal(run.unversioned_root,undefined);
+    assert.equal(scopeBasis.statement.data?.root,null);
+    assert.equal(scopeBasis.statement.data?.composition,null);
+    assert.equal(scopeBasis.statement.text,'这条产品线还没有不分版本的根；下一步：同步这条产品线');
+    // Sources: the subject and explicitly declared story/bug; prose creates no search identities.
     const roles = run.sources.map((s) => [(s.external ?? '').split('@')[0].split(':').slice(0, 2).join(':'), s.role]);
     assert.deepEqual(roles.filter(([k]) => k === 'agile:mindmap'), [['agile:mindmap', 'subject']]);
     assert.deepEqual(roles.filter(([k]) => k.startsWith('plm:')).sort(), [['plm:bug', 'expected'], ['plm:story', 'expected']]);
-    assert.deepEqual(roles.filter(([k]) => k === 'manual:spec-search'), [['manual:spec-search', 'expected']]);
-    assert.deepEqual(roles.filter(([k]) => k === 'manual:qa-search' || k === 'agile:search').map(([, r]) => r), ['hint', 'hint']);
+    // R6: prose feature words do not create source identities or searches.
+    assert.deepEqual(roles.filter(([k]) => k === 'manual:spec-search'), []);
+    assert.deepEqual(roles.filter(([k]) => k === 'manual:qa-search' || k === 'agile:search').map(([, r]) => r), []);
     assert.ok(run.instructions.length > 0 && /^[0-9a-f]{64}$/.test(run.instructions_digest));
     // The default rule is 标签或标记 (marked): the frozen document group (in the stored run record; the start_run
     // answer itself carries no groups) says so, with how many cases the marker alone found — the independent oracle
@@ -126,7 +131,10 @@ describe('scenario 1: a normal review', () => {
     const counts = answer.out.counts!;
     assert.equal(counts.delivered, run.items.length);
     for (const { item } of itemsOf(result)) {
-      assert.deepEqual(item.requirements.map((r) => r.requirement), ['literal', 'catalog', 'findings']);
+      assert.deepEqual(item.requirements.map((r) => r.requirement), ['literal', 'catalog', 'findings', 'expected_quality']);
+      const quality=item.requirements.find(requirement=>requirement.requirement==='expected_quality')!;
+      assert.equal(quality.status,'pending','an omitted optional semantic judgment stays unjudged');
+      assert.ok(quality.claims.every(claim=>claim.warrant.producer!=='model'),'an empty slot invents no model judgment');
       for (const r of item.requirements) {
         assert.deepEqual(r.layers.map((l) => l.layer), ['static'], 'no dynamic entry: not applicable');
         // V03 F[2]: the status follows from the terminal (no expected-outcome override applies to a normal case).
@@ -161,8 +169,11 @@ describe('scenario 1: a normal review', () => {
     assert.equal(shared.length, 2);
     for (const c of shared) assert.ok(refutationCodes(result, idOf(c), 'literal').includes('core.structure.duplicate_key'));
     // A case without any literal defect and with the document's usual tag spelling passes.
-    const clean = cases.find((c) => c.tags.length === 1 && c.tags[0] === 'Configuration' && c.expected.length === 1 && c.priority === 2 && !twins.includes(c))!;
+    const clean = cases.find((c) => c.tags.length === 1 && c.tags[0] === 'configuration' && c.expected.length === 1 && c.priority === 2 && !twins.includes(c))!;
     assert.deepEqual(staticLayer(result, idOf(clean), 'literal'), { layer: 'static', terminal: 'pass' });
+    const undeclaredNegative=cases.find(c=>c.tags.includes('Negative'))!;
+    assert.equal(run.items[cases.indexOf(undeclaredNegative)].fields.negative,null);
+    assert.ok(refutationCodes(result,idOf(undeclaredNegative),'literal').includes('case-review.tag_variant'));
     // No finding cites a command here. The review now reads the negative case's own literal lines instead.
     // The active site fixture declares interval/retries/probe, endpoint add and show health only.
     // Weight and pool add/delete are absent from that catalog; they cannot provide a verifiable command here.
@@ -178,7 +189,7 @@ describe('scenario 1: a normal review', () => {
       ['池名称超过 32 个字符', 'case-review.negative_command_missing'],
     ]);
     const negatives = run.items.filter((i) => i.fields.negative === true);
-    assert.equal(negatives.length, cases.filter((c) => c.tags.some((t) => /^\[?(negative|负向)\]?$/i.test(String(t)))).length);
+    assert.equal(negatives.length, cases.filter((c) => c.tags.includes('negative')).length);
     for (const n of negatives) {
       const code = negativeCodes.get(n.label);
       assert.ok(code, `negative fixture expectation missing for ${n.label}`);
