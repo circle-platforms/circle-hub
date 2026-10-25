@@ -81,6 +81,7 @@ export const PACK_VOCABULARY_TARGETS: Readonly<Record<string, PackVocabularyTarg
   'packs/workflow/quality-board/functions/generated/vocabulary.ts': { axes: ['knowledge_count','declaration_status','judgment_status'], labels: true, resourceTags: true },
   'packs/product/apv/functions/generated/vocabulary.ts': { axes: ['applicability_field','declaration_status','judgment_status','type_declaration_status','command_parse_status','reason','release_status'], labels: true, resourceTags: true },
   'packs/workflow/case-review/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
+  'packs/workflow/case-review-verify/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
   'packs/workflow/template-gap/functions/generated/vocabulary.ts': {axes:['declaration_status'],labels:true,resourceTags:true},
   'packs/workflow/defect-to-case/functions/generated/vocabulary.ts': {axes:['declaration_status','release_status'],labels:true,resourceTags:true},
   'packs/workflow/traceability/functions/generated/vocabulary.ts': {axes:['declaration_status','release_status'],labels:true},

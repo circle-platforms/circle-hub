@@ -11,6 +11,7 @@ import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { ActionBody } from '../records/api.ts';
 import { createDefaultRegistry, resolveReference } from '../refs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
+import { Builds } from './builds.ts';
 import { memoKey } from './lists.ts';
 import { INDEX, MemoDetail, SCHEMAS } from './store.ts';
 import { BASE_CATALOG, DEFAULT_PRODUCERS, casesProducer, catalogXml, makeWorld, mindMap, startPostgres, type World } from './test-support.ts';
@@ -38,11 +39,14 @@ function build(name: string, cases: string[]): KnownBuild {
 }
 
 async function world(t: { after: (fn: () => Promise<void>) => void }, producers: unknown[], options: Parameters<typeof makeWorld>[1] = {}): Promise<World> {
-  const w = await makeWorld(postgres, { ...options, pack: { declaration: { producers } } });
+  const w = await makeWorld(postgres, { ...options, pack: { ...(options?.pack??{}), declaration: { ...(options?.pack?.declaration??{}), producers } } });
   t.after(() => w.close());
   w.external.set('site:tree:Rel_ACME_1_2_15', { bytes: catalogXml(BASE_CATALOG), mediaType: XML });
   w.external.set('site:tree:Rel_ACME_1_2_16', { bytes: catalogXml(BASE_CATALOG), mediaType: XML });
   w.external.set('site:tree:Rel_ACME_1_2_17', { bytes: catalogXml({ ...BASE_CATALOG, net: [...BASE_CATALOG.net, { name: 'arp', params: [] }] }), mediaType: XML });
+  // A cache comparison freezes the same declared build inventory on both calls, as sync does.
+  const builds=new Builds(w.knowledge.__context);
+  for(const name of ['Rel_ACME_1_2_15','Rel_ACME_1_2_16','Rel_ACME_1_2_17'])await builds.record('acme',{id:w.product.id,version:w.product.version,digest:w.product.digest},build(name,[]),null,null);
   return w;
 }
 
@@ -205,10 +209,17 @@ describe('a large composition in parts', () => {
 
     const root = one.root as string;
     const reader = (w: World, role: PermissionRole = 'user') => ({ user: w.user.id, role });
+    // The one layout-dependent field is applicability_context.composition: a contribution is admitted against the
+    // record that actually holds the entry, and the inline and parted records are different compositions of the same
+    // tree. Everything else in the answers must be layout-independent.
+    const strip = (page: NonNullable<Awaited<ReturnType<World['knowledge']['getNodes']>>>) => ({...page,nodes:page.nodes.map(node=>({...node,entries:node.entries.map(entry=>({...entry,...(entry.applicability_context?{applicability_context:{...entry.applicability_context,composition:'<record>'}}:{})}))}))});
     for (const path of ['/commands/system/reboot', '/commands/net/ping', '/']) {
       const x = await inline.knowledge.getNodes({ root, paths: [path], depth: 1 }, inline.user);
       const y = await parted.knowledge.getNodes({ root, paths: [path], depth: 1 }, parted.user);
-      assert.deepEqual(y, x, path);
+      assert.ok(x !== null && y !== null, path);
+      assert.deepEqual(strip(y), strip(x), path);
+      for(const [page,composition] of [[x,one.composition],[y,split.composition]] as const)
+        for(const node of page.nodes)for(const entry of node.entries){assert.ok(entry.applicability_context,'fresh entries retain their admission context');assert.equal(entry.applicability_context.composition,composition,'admission cites the actual layout record');}
     }
     const node = (await parted.knowledge.getNodes({ root, paths: ['/commands/system/reboot'], depth: 0 }, parted.user))?.nodes[0];
     const kase = node?.entries.find((e) => e.kind === 'case');
@@ -246,4 +257,17 @@ describe('a large composition in parts', () => {
     const [x, y] = [await body(w, first.composition), await body(w, second.composition)];
     assert.deepEqual(y.parts, x.parts);
   });
+});
+
+test('a current build remains in the producer inventory and a changed inventory invalidates memoized output',async t=>{
+ const functionSource=`export default input=>({entries:(input.lists.cases??[]).flatMap(doc=>doc.model.nodes.filter(node=>Array.isArray(node.data.resource)).map(node=>({kind:'case',path:'/commands/system/reboot',statement:node.text,data:{known_builds:input.known_builds},fragments:[{slot:'cases',source:doc.sha256,parser:'kityminder@1',selector:node.selector}],applicability:null}))),warnings:[]});`;
+ const w=await world(t,[DEFAULT_PRODUCERS[0],casesProducer({batch:2})],{pack:{functions:{'cases.ts':functionSource}}});
+ const ids=documents(w,1),current=build('Rel_ACME_1_2_15',ids);
+ const first=await w.knowledge.produceTree({product:w.product,build:current});assert.equal(first.ok,true,first.reason??'');
+ const read=await w.knowledge.getNodes({root:first.root!,paths:['/commands/system/reboot'],depth:0},w.admin);
+ const entry=read?.nodes.flatMap(node=>node.entries).find(entry=>entry.kind==='case');assert.ok(entry);
+ assert.ok((entry.data?.known_builds as string[]).includes(current.name),'a registered self declaration is never removed from authority');
+ const again=await w.knowledge.produceTree({product:w.product,build:current});assert.equal(again.calls.reused,1);
+ await new Builds(w.knowledge.__context).record('acme',{id:w.product.id,version:w.product.version,digest:w.product.digest},build('Rel_ACME_10_8_1_901',[]),null,null);
+ const changed=await w.knowledge.produceTree({product:w.product,build:current});assert.equal(changed.ok,true,changed.reason??'');assert.equal(changed.calls.reused,0);assert.notEqual(changed.root,again.root);
 });

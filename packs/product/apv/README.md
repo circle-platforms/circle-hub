@@ -1051,3 +1051,5 @@ APV_MODELS、APV_PLATFORMS 与已有 APV_COMPONENTS、APV_LICENSES、APV_DEPLOYM
 缺 release-notes@2 原始 status 不再作为整个构建的 producer incomplete。结构身份可核对的缺陷保留原文引用，status:null、declaration_status:undeclared，并带 missing/next_action；缺身份另记 identity_declaration_status:undeclared，不能从正文数字、标题、标记或文件名猜编号和 fixed/known。HTML 仅从解析后的明确 tracker URL 结构取身份，不从锚文本猜状态。
 
 命令树、手册等独立来源仍照常成根；未声明条目不被追溯状态过滤静默删掉，依赖“已修复”的判断保持未知并请求来源维护者补结构状态后重产。缺陷转用例单列 fixed_status 要求项，其他检查继续独立核对。历史根不改写，本版验证只使用合成 JSON/HTML、临时 PostgreSQL 和脚本化模型，不重跑真实同步。
+
+同步修复：设备显示别名在本轮构建保留集合确定后生成；被不完整结构元数据阻挡的基础构建不留下悬空别名。保留的未发布构建仍声明设备别名，以支持显式 includeUnreleased 同步。闭集命名语法保持原样，不从正文猜别名。

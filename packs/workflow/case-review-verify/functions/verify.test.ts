@@ -413,8 +413,12 @@ describe('the pack', () => {
   const here = (name: string) => readFileSync(new URL(`./${name}`, import.meta.url), 'utf8');
   const draftPack = (name: string) => readFileSync(new URL(`../../case-review/functions/${name}`, import.meta.url), 'utf8');
 
-  it('carries exact copies of the draft pack\'s modules (common.ts differs only in the pack name)', () => {
-    for (const name of ['text.ts', 'types.ts', 'expected-sources.ts']) assert.equal(here(name), draftPack(name), `${name}: copy it from packs/workflow/case-review/functions`);
+  it('carries exact shared definitions with explicit draft type-owner and pack-name bindings', () => {
+    for (const name of ['text.ts', 'types.ts', 'expected-sources.ts', 'generated/vocabulary.ts']) {
+      // Template types belong to the draft module; type-only references are erased in the sandbox.
+      const expected=name==='types.ts'?draftPack(name).replaceAll("import('./template-coverage.ts')","import('../../case-review/functions/template-coverage.ts')"):draftPack(name);
+      assert.equal(here(name),expected,`${name}: synchronize the shared draft definitions`);
+    }
     assert.equal(here('common.ts'), draftPack('common.ts').replace("export const PACK = 'case-review';", "export const PACK = 'case-review-verify';"));
   });
 

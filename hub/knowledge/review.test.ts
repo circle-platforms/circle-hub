@@ -16,6 +16,7 @@ import { createDefaultRegistry } from '../refs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { createKnowledge, createKnowledgeReader } from './api.ts';
 import { parseViewId } from './views.ts';
+import { Builds } from './builds.ts';
 import { INDEX, ProduceDetail } from './store.ts';
 import {
   BASE_CATALOG,
@@ -148,6 +149,7 @@ describe('documents the producer fails on (findings: callBatch blame, the empty 
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer({ batch: 4 })]);
     const ids = documents(w, 1, 4);
     hostile(w, ids[1], 'd2');
+    await new Builds(w.knowledge.__context).record('acme',{id:w.product.id,version:w.product.version,digest:w.product.digest},build(A,ids),null,null);
     const first = await w.knowledge.produceTree({ product: w.product, build: build(A, ids) });
     assert.equal(first.ok, true, first.reason ?? '');
     assert.deepEqual(first.skipped.map((s) => s.external), [ids[1]]);
@@ -282,6 +284,9 @@ describe('the memo key covers what the function receives (finding: build and bat
     const producers = [DEFAULT_PRODUCERS[0], { id: 'cases', title: '用例', function: { module: 'functions/reading.ts' }, inputs: { cases: { source: 'cases', many: true } } }];
     const w = await world(t, producers, { pack: { functions: { 'reading.ts': READING } } });
     const ids = documents(w, 1, 2);
+    const inventory=new Builds(w.knowledge.__context);
+    await inventory.record('acme',{id:w.product.id,version:w.product.version,digest:w.product.digest},build(A,ids),null,null);
+    await inventory.record('acme',{id:w.product.id,version:w.product.version,digest:w.product.digest},build(C,ids,{line:'1.3'}),null,null);
     const first = await w.knowledge.produceTree({ product: w.product, build: build(A, ids) });
     assert.equal(first.ok, true, first.reason ?? '');
     const other = await w.knowledge.produceTree({ product: w.product, build: build(C, ids, { line: '1.3' }) });
@@ -296,6 +301,9 @@ describe('the memo key covers what the function receives (finding: build and bat
     }
     // Produced alone, in a database without stored outputs, the build has the same root.
     const fresh = await world(t, producers, { pack: { functions: { 'reading.ts': READING } } });
+    const freshInventory=new Builds(fresh.knowledge.__context);
+    await freshInventory.record('acme',{id:fresh.product.id,version:fresh.product.version,digest:fresh.product.digest},build(A,[]),null,null);
+    await freshInventory.record('acme',{id:fresh.product.id,version:fresh.product.version,digest:fresh.product.digest},build(C,[],{line:'1.3'}),null,null);
     const alone = await fresh.knowledge.produceTree({ product: fresh.product, build: build(C, documents(fresh, 1, 2), { line: '1.3' }) });
     assert.equal(alone.root, other.root);
     // A producer gets no root: producing the same build again over a previous root gives the same calls and root.

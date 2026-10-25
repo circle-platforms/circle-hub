@@ -55,3 +55,18 @@ describe('a build with its own tree lists its device display spelling as a verif
     assert.ok((chosen.alternatives ?? []).every((name) => name !== 'Beta.APV.10.8.0.901'), JSON.stringify(chosen.alternatives));
   });
 });
+
+describe('device aliases follow the retained build set',()=>{
+ it('does not leave a device alias when the base is withheld for missing structural case metadata',()=>{
+  const output=runSync(PAGES,{case_index:true,min_line:'10.8'});
+  assert.ok(output.builds.every(build=>build.base!=='Beta_APV_10_8_0_901'),'neither withheld base nor its alias is offered');
+  assert.match(output.note??'',/没有列出|不列构建/);
+ });
+ it('keeps an unpublished own-tree alias for a caller that explicitly synchronizes unpublished builds',()=>{
+  const name='Beta_APV_10_8_0_902';
+  const body=`${name} (build on 2026-10-23 10:00:00 ): </br><BLOCKQUOTE><A href=/builds/command_tree-${name}.xml>tree</A></BLOCKQUOTE>`;
+  const output=runSync({rel_apv_10_8:body},{});
+  const base=output.builds.find(build=>build.name===name),alias=output.builds.find(build=>build.name===name.replaceAll('_','.'));
+  assert.ok(base&&alias);assert.equal(base.released_at,null);assert.equal(alias.released_at,null);assert.equal(alias.base,name);assert.deepEqual(alias.sources,{});
+ });
+});
