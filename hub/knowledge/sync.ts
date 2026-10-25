@@ -29,6 +29,7 @@ import {loadSyncCheckpoint,saveSyncCheckpoint,syncCheckpointKey} from './sync-ch
 import {requestKnowledgeFact} from './requests.ts';
 import {KnowledgeStore,buildKey} from './store.ts';
 import {readProblemRows} from './problem-journal.ts';
+import { readPage } from './page.ts';
 import { SourceLoader } from './sources.ts';
 import { ACTION, COMPONENTS, INDEX, buildProblem, fold, listRoles, recordedOf, withoutLists, pointerName } from './store.ts';
 
@@ -590,18 +591,6 @@ async function processOwnTree(
     calls: produced.calls,
     ...(placementSkippedEntries.length > 0 ? { placement_skipped: Object.fromEntries(placementSkippedEntries) } : {}),
   };
-}
-
-/** One page of the plan: read, checked like any source, parsed with the core parser for its media type. */
-async function readPage(loader: SourceLoader, id: string, maxBytes: number): Promise<SyncRead> {
-  const load = await loader.read(id);
-  if (!load.ok) return { ok: false, media_type: null, parser: null, model: null, reason: load.reason };
-  const mediaType = load.artifact.body.media_type;
-  const readable = await loader.readable(load, maxBytes);
-  if (!readable.ok) return { ok: false, media_type: mediaType, parser: null, model: null, reason: readable.reason };
-  const parsed = loader.parse(readable.value);
-  if (!parsed.ok) return { ok: false, media_type: mediaType, parser: null, model: null, reason: parsed.reason };
-  return { ok: true, media_type: mediaType, parser: parsed.value.parser, model: parsed.value.document.model, reason: null };
 }
 
 type PlanRun = { ok: true; value: PlanAnswer } | { ok: false; reason: string };

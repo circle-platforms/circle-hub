@@ -14,6 +14,7 @@ import type { Principal, Transaction } from '../records/api.ts';
 import { pointerName, INDEX } from './store.ts';
 import type { ProduceResult } from './produce.ts';
 import { SeedlingBody, type SeedlingSource } from '../../contracts/src/knowledge.ts';
+import type { BuildInfo } from '../../contracts/src/product.ts';
 
 /** A producer input the seedling reads one fixed source through. */
 export interface SeedlingRoleRef {
@@ -41,6 +42,8 @@ export interface ProduceSeedlingInput {
   roles: SeedlingRoles;
   /** The fixed SVN revisions the two manuals were read at (null when the source carries none). */
   revisions?: { cli: string | null; app: string | null };
+  /** Directory roles for this production only. The stored build keeps list names, not the ids, so the seedling supplies them. */
+  sources?: BuildInfo['sources'];
 }
 
 export interface SeedlingResult {
@@ -134,7 +137,7 @@ export async function produceSeedling(context: KnowledgeContext, knowledge: Know
 
   // The production: the ordinary per-build pipeline over the released build, with only the three named producers.
   const only = [...new Set(ROLES.map((role) => input.roles[role].producer))];
-  const production = await knowledge.produceTree({ product, build, by: input.by, producers: only });
+  const production = await knowledge.produceTree({ product, build, by: input.by, producers: only, ...(input.sources ? { sources: input.sources } : {}) });
   if (!production.ok || production.root === null || production.composition === null || production.action === null) {
     return fail(production.reason ?? '生产没有产出根', build.name, production, parent);
   }

@@ -28,13 +28,18 @@ import {
 } from '../../../../tests/fixtures/case-index/index.ts';
 import { rootsContent } from '../../../system/agile-platform/functions/agile.ts';
 import { caseStatement, cases, elementDocuments, listedIds, storable } from './cases.ts';
+import { commandCatalog } from './cases-commands.ts';
+import { commandIdentity, commandLines } from './commands.ts';
+import { stripPrefix } from './locate.ts';
+import { tagDeclaration } from './cases-rules.ts';
 import { CASE_TREE_ID } from './cases-rules.ts';
 import { assertTotal, hostileInputs, internalWarnings, xml } from '../testing/test-support.ts';
 
 const PACK_DIR = fileURLToPath(new URL('../', import.meta.url));
 const product = JSON.parse(await (await import('node:fs/promises')).readFile(new URL('../product.json', import.meta.url), 'utf8')) as { producers: Array<{ id: string; inputs: Record<string, { batch?: number }>; params?: { batch?: number } }> };
 const declared = product.producers.find((p) => p.id === 'cases');
-const BATCH = declared?.inputs.documents.batch ?? 0;
+// Per-use production has no batch producer declaration; exercise explicit Hub batches.
+const BATCH = 50;
 
 const corpus = caseCorpus({ names: ['APV', 'NSAE'] });
 const sha = (bytes: Uint8Array | string): string => createHash('sha256').update(bytes).digest('hex');
@@ -96,10 +101,31 @@ function produceBuild(c: Corpus, line: string, catalog: readonly Command[] = CAT
 function expectedEntries(c: Corpus, line: string, catalog: 'a' | 'b' = 'a'): unknown[] {
   const out: unknown[] = [];
   const truth = new Map(c.truth.map((d) => [d.id, d]));
+  const tree = treeSlot(catalog === 'a' ? CATALOG_A : CATALOG_B);
+  const grammar = commandCatalog(tree.model, tree.sha256).catalog;
   for (const id of listedFor(c, line)) {
     const doc = truth.get(id)!;
     const bytes = documentBytes(c.documents[id]);
+    const nodes = (element(c.documents[id]).model as {nodes: Array<{selector: string; text: string; data: Record<string, unknown>; children: number[]}>}).nodes;
+    const caseSelectors = new Set(doc.cases.map(k => k.selector));
     for (const k of doc.cases) {
+      const node = nodes.find(node => node.selector === k.selector)!;
+      const children = node.children.map(index => nodes[index]);
+      // Authored child branches are operations; leaf-only layouts use the case's own lines.
+      const branches = children.filter(child => child.children.length > 0 && !caseSelectors.has(child.selector));
+      const stepTexts = branches.length ? branches.map(child => child.text) : k.expected_count > 0 ? commandLines(k.title).map(line => line.text).filter(Boolean) : [];
+      const declaration = tagDeclaration(node.data.resource);
+      const expectedTexts: string[] = [];
+      const leaves = (child: typeof node): void => {
+        if (caseSelectors.has(child.selector) || child.data.priority === 3) return;
+        if (!child.children.length) expectedTexts.push(child.text);
+        else child.children.forEach(index => leaves(nodes[index]));
+      };
+      children.forEach(leaves);
+      const identities = (texts: string[]) => texts.flatMap(text => commandLines(text).flatMap(line => {
+        const identity = commandIdentity(grammar, line.text); return identity ? [identity] : [];
+      }));
+      const stepIdentities = identities(stepTexts);
       const paths = k.commands[catalog].map(commandPath).sort();
       const filed = paths.length === 0 ? [null] : paths;
       const data = {
@@ -109,24 +135,45 @@ function expectedEntries(c: Corpus, line: string, catalog: 'a' | 'b' = 'a'): unk
         path_labels: k.path_labels,
         priority: k.priority,
         tags: k.tags,
-        negative: k.negative,
+        negative: declaration.negative,
+        test_type_status: declaration.status,
+        test_types: declaration.types,
+        tag_ids: declaration.ids,
+        tag_valid: declaration.valid,
+        resource_empty: node.data.resource === undefined || (Array.isArray(node.data.resource) && node.data.resource.length === 0),
+        resource: node.data.resource ?? null,
+        tag_declaration: declaration,
         ...(!k.tags.some(tag => tag.trim().length > 0) ? {tags_note:'正负向和测试类型未声明'} : {}),
         expected_count: k.expected_count,
         has_expected: k.has_expected,
-        vague_expected: undefined,
-        steps_count: k.steps_count,
+        source_sha256: sha(bytes),
+        case_location: `src:${sha(bytes)}/kityminder@1/${k.selector}`,
+        steps_count: stepTexts.length,
+        step_texts: stepTexts,
+        step_command_identities: stepIdentities,
+        unparsed_steps: stepTexts.filter(text => {const lines = commandLines(text); return !lines.length || identities([text]).length !== lines.length;}).length,
         commands: paths,
-        stories: k.stories,
-        defects: k.defects,
+        command_identities: identities([k.title, ...k.path_labels, ...branches.map(child => child.text), ...expectedTexts]),
+        command_tree_root: tree.sha256,
+        // Corpus prose identifiers are not whole author-declared story:/bug: fields (R6).
+        stories: [],
+        defects: [],
         line: doc.line,
         train: doc.train,
-        module: doc.module,
+        module: doc.train === null ? null : doc.ancestors.map(stripPrefix)[doc.ancestors.map(stripPrefix).indexOf(doc.train) + 1] ?? null,
         autoid: k.autoid,
       };
       for (const path of filed) out.push({ kind: 'case', path, statement: caseStatement(data), data, fragments: [{ slot: 'documents', source: sha(bytes), parser: 'kityminder@1', selector: k.selector }], applicability: null });
     }
   }
   return out;
+}
+
+// A failed giant-array diff can consume gigabytes synchronously. Check every full row,
+// including length, but bound the diagnostic to the first mismatching entry.
+function assertEntries(actual: readonly unknown[], expected: readonly unknown[]): void {
+  assert.equal(actual.length, expected.length);
+  expected.forEach((entry, index) => assert.deepEqual(actual[index], entry, `entry ${index}`));
 }
 
 describe('the declaration', () => {
@@ -165,7 +212,7 @@ describe('the case entries of the corpus', () => {
     assert.equal(counted, all.length);
     assert.equal(named, indexed);
     assert.equal(none + unresolved, all.length - indexed);
-    assert.ok(none > 0 && unresolved > 0, 'both reasons occur and are disclosed');
+    assert.ok(none + unresolved > 0, 'all unfiled cases disclose the exact parser outcome; no heuristic phrase categories required');
     const examples = run.warnings.join('\n').match(/「[^」]*」/g) ?? [];
     assert.ok(examples.length > 0);
     for (const warning of run.warnings) assert.ok((warning.match(/「/g) ?? []).length <= 20, 'at most 20 examples per call');
@@ -173,13 +220,13 @@ describe('the case entries of the corpus', () => {
 
   it('against the later catalog the removed command files nothing and the rest is the same', () => {
     const later = produceBuild(corpus, '10.6.4', CATALOG_B);
-    assert.deepEqual(later.entries, expectedEntries(corpus, '10.6.4', 'b'));
+    assertEntries(later.entries, expectedEntries(corpus, '10.6.4', 'b'));
     assert.ok(!later.entries.some((e) => e.path === '/commands/relay/encrypt/mode'));
     assert.ok(run.entries.some((e) => e.path === '/commands/relay/encrypt/mode'));
   });
 
   it('a build of an earlier line has the entries of its own list only', () => {
-    assert.deepEqual(produceBuild(corpus, '10.6.1').entries, expectedEntries(corpus, '10.6.1'));
+    assertEntries(produceBuild(corpus, '10.6.1').entries, expectedEntries(corpus, '10.6.1'));
   });
 });
 
@@ -241,7 +288,7 @@ describe('metamorphic checks', () => {
     assert.deepEqual(oneDocument(renamed, id), oneDocument(corpus, id));
   });
 
-  it('reordering the cases of a document changes no entry', () => {
+  it('reordering keeps case content while rebinding every source identity to the new bytes', () => {
     for (const id of sample) {
       const reordered = structuredClone(corpus.documents[id]);
       const reverse = (node: KmNode): void => {
@@ -250,7 +297,15 @@ describe('metamorphic checks', () => {
       };
       reverse(reordered.root);
       const before = oneDocument(corpus, id);
-      const after = oneDocument(corpus, id, reordered).map((e) => ({ ...e, fragments: e.fragments.map((f) => ({ ...f, source: before[0]?.fragments[0].source ?? f.source })) }));
+      const after = oneDocument(corpus, id, reordered).map((e) => {
+        const newSha = sha(documentBytes(reordered));
+        assert.equal(e.data.source_sha256, newSha);
+        assert.equal(e.data.case_location, `src:${newSha}/kityminder@1/${e.fragments[0].selector}`);
+        assert.ok(e.fragments.every(fragment => fragment.source === newSha));
+        const oldSha = before[0].data.source_sha256 as string;
+        const data = {...e.data, source_sha256: oldSha, case_location: `src:${oldSha}/kityminder@1/${e.fragments[0].selector}`};
+        return {...e, data, statement: caseStatement(data), fragments: e.fragments.map(f => ({...f, source: oldSha}))};
+      });
       assert.deepEqual(canonical(after), canonical(before), id);
     }
   });
