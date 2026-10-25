@@ -1,3 +1,4 @@
+import {STRICT_MANUAL_XML} from '../testing/strict-command-fixture.ts';
 import {familyManual} from './adoc/deployment.ts';
 // The product@1 entry points of product.json: the sync plan over rounds of pages, the build choice, the three producers,
 // checked against the contract shapes (contracts/src/product.ts) and run unchanged in the Hub sandbox.
@@ -18,6 +19,8 @@ import { INDEX_ID, fileId, fileKey, listingId } from './sources.ts';
 import syncPlan, { isoTime, planBuilds } from './sync.ts';
 import { readFileSync } from 'node:fs';
 
+// Use word commands for this adapter fixture; punctuation-reference serialization has its own tests.
+const ADAPTER_XML = STRICT_MANUAL_XML.replace('<item name="?">', '<item name="question">');
 const PACK_DIR = fileURLToPath(new URL('../', import.meta.url));
 const product = ProductDeclaration.parse(JSON.parse(readFileSync(new URL('../product.json', import.meta.url), 'utf8')));
 
@@ -233,7 +236,10 @@ const slot = (parser: string, model: unknown) => ({ sha256: 'b'.repeat(64), medi
 
 describe('the producers', () => {
   it('command tree: definitions at /commands/<words> with typed overloads', () => {
-    const out = commandTree({ build: knownBuild, slots: { tree: slot('xml@1', xml(fixtureBytes('command-tree.xml'))) }, params: {} });
+    const out = commandTree({ build: knownBuild, slots: { tree: slot('xml@1', xml(ADAPTER_XML)) }, params: {} });
+    const recovered = commandTree({build: knownBuild, slots: {tree: slot('xml@1', xml(fixtureBytes('command-tree.xml')))}, params: {}});
+    assert.deepEqual(recovered.entries, []);
+    assert.ok(recovered.warnings.some(warning => warning.includes('缺完整权威 XML') && warning.includes('下一步')));
     assert.ok(ProducerOutput.safeParse(out).success, JSON.stringify(ProducerOutput.safeParse(out).error?.issues.slice(0, 2)));
     assert.ok(out.entries.length > 5 && out.entries.every((e) => e.kind === 'definition' && e.path?.startsWith('/commands/')));
     assert.deepEqual(commandTree({ build: knownBuild, slots: { tree: null }, params: {} }), { entries: [], warnings: ['没有命令树'] });
@@ -242,7 +248,7 @@ describe('the producers', () => {
 
   it('manual: signatures are definitions, the text behaviours, every fragment names its slot', () => {
     const model = markdown(fixtureBytes('manual.md'));
-    const out = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null }, params: {} });
+    const out = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null, tree: slot('xml@1', xml(ADAPTER_XML)) }, params: {} });
     assert.ok(ProducerOutput.safeParse(out).success);
     assert.ok(out.entries.some((e) => e.kind === 'definition') && out.entries.some((e) => e.kind === 'behaviour'));
     for (const entry of out.entries) assert.equal(entry.kind, entry.data.form === 'signature' ? 'definition' : 'behaviour');
@@ -253,21 +259,21 @@ describe('the producers', () => {
 
   it('manual: hangs signatures at /commands only when the command exists, and records the literals as written', () => {
     const model = markdown(fixtureBytes('manual.md'));
-    const tree = slot('xml@1', xml(fixtureBytes('command-tree.xml')));
+    const tree = slot('xml@1', xml(ADAPTER_XML));
     const out = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null, tree }, params: {} });
-    // Only commands the tree has keep their /commands paths; the others hang at their section node.
-    assert.ok(!out.entries.some((e) => e.path === '/commands/demo/probe' || e.path === '/commands/enable' || e.path === '/commands/?'));
-    const probe = out.entries.find((e) => e.data.form === 'signature' && typeof e.statement === 'string' && e.statement.startsWith('demo probe'));
-    assert.equal(probe?.path, '/manual/cli/基本配置');
-    // Literals are recorded as written, never resolved to a path at production time.
-    const example = out.entries.find((e) => e.fragments[0].selector === 'b/13/基本配置');
-    assert.deepEqual(example?.data.command_literals, ['demo route static 192.0.2.0 255.255.255.0 192.0.2.1 permanent']);
-    const mention = out.entries.find((e) => e.fragments[0].selector === 'b/1/引言');
-    assert.deepEqual(mention?.data.command_literals, ['demo pool mode']);
-    const note = out.entries.find((e) => e.fragments[0].selector === 'b/7/基本配置');
-    assert.deepEqual(note?.data.command_literals, ['demo pool create']);
-    const facts=manualRelations(out,commandCatalog(xml(fixtureBytes('command-tree.xml'))).catalog);
-    assert.deepEqual([...new Set(facts.drift.map(group=>group.literal))].sort(),['?', 'demo broken', 'demo pool create', 'demo probe', 'enable']);
+    // These are explicitly declared complete signatures, including probe and enable.
+    const probe = out.entries.find(e => e.data.form === 'signature' && e.data.signature === 'demo probe <name> {tcp|udp} [<port>][<timeout>]');
+    assert.equal(probe?.path, '/commands/demo/probe');
+    assert.ok(out.entries.some(e => e.path === '/commands/enable' && e.data.form === 'signature'));
+    // Preserve raw mentions in their source blocks; prose is not a command declaration (R4).
+    const example = out.entries.find(e => e.fragments[0].selector === 'b/13/基本配置');
+    assert.equal(example?.statement, 'Box(config)#demo route static 192.0.2.0 255.255.255.0 192.0.2.1 permanent');
+    const mention = out.entries.find(e => e.fragments[0].selector === 'b/1/引言');
+    assert.equal(mention?.statement, '调度算法见 `demo pool mode` 命令。');
+    const note = out.entries.find(e => e.fragments[0].selector === 'b/7/基本配置');
+    assert.ok(note?.statement.includes('demo pool create'));
+    const facts = manualRelations(out, commandCatalog(xml(ADAPTER_XML)).catalog);
+    assert.deepEqual(facts.drift, [], 'broken signatures and prose mentions cannot establish drift');
     assert.ok(!out.warnings.some((warning) => warning.includes('漂移')));
     // Without the tree slot no unchecked command path is created.
     const without = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null }, params: {} });
@@ -327,25 +333,25 @@ describe('the declared functions in the Hub sandbox', { skip: (await osIsolation
   }
 });
 
-  it('aggregates many command-tree warnings so the manual drift text stays in the kept list (closure finding 10)', () => {
+  it('aggregates command-tree warnings and keeps an invalid catalog unknown rather than declaring drift', () => {
     const args = Array.from({ length: 210 }, (_, i) => `<arg name="arg${i}" optional="maybe" help_string="h"/>`).join('');
     const treeXml = `<commands><scope type="global"><menu name="demo"><item name="probe" help_string="p"><arguments>${args}</arguments></item></menu></scope></commands>`;
     const slots = { tree: slot('xml@1', xml(treeXml)), cli: slot('markdown@1', markdown('**demo gone** *\\<x\\>*\n\n说明。\n')) };
     const out = manual({ build: knownBuild, slots: { ...slots, app: null }, params: {} });
     const drift=manualRelations(out,commandCatalog(xml(treeXml)).catalog).drift;
-    assert.deepEqual(drift.map(group=>group.literal),['demo gone']);
-    const perArg = out.warnings.filter((w) => w.includes('optional 取值'));
-    assert.ok(perArg.length <= 3, `per-argument warnings must aggregate: ${perArg.length}`);
-    assert.ok(perArg.length === 0 || perArg.some((w) => w.includes('同类')), out.warnings.slice(0, 5).join('\n'));
-    // The aggregation lives in the commandTree producer itself, keyed on the note KIND: distinct unreadable values
-    // fold too, so the drift warning never lands past the capped list (closure c3 item 8).
+    assert.deepEqual(drift, [], 'an invalid optional declaration is not an authoritative absence');
+    assert.ok(out.entries.every(entry => entry.data.form !== 'signature' && !entry.path?.startsWith('/commands/')));
+    const oneInvalid = xml('<commands><scope type="global"><menu name="demo"><item name="probe"><arguments><arg name="arg0" optional="maybe"/></arguments></item></menu></scope></commands>');
+    const singleManual = manual({build: knownBuild, slots: {...slots, tree: slot('xml@1', oneInvalid), app: null}, params: {}});
+    assert.deepEqual(out.warnings, singleManual.warnings, 'manual diagnostics do not grow with repeated invalid fields');
     const treeOut = commandTree({ build: knownBuild, params: {}, slots: { tree: slot('xml@1', xml(treeXml)) } });
-    const treePerArg = treeOut.warnings.filter((w) => w.includes('optional 取值'));
-    assert.equal(treePerArg.length, 1, JSON.stringify(treeOut.warnings));
-    assert.ok(treePerArg[0]!.includes('同类 210 处'), treePerArg[0]);
+    assert.equal(treeOut.diagnostics?.filter(diagnostic => diagnostic.attribute === 'optional').length, 210);
+    assert.ok(treeOut.diagnostics?.every(diagnostic => diagnostic.command_parse_status === 'parameters_unchecked' && diagnostic.next_action.length > 0));
+    assert.ok(treeOut.warnings.length <= 2, 'one structural summary plus one actionable warning');
+    assert.ok(treeOut.warnings.some(warning => warning.includes('同类 210 处')));
     const distinctXml = `<commands><scope type="global"><menu name="demo"><item name="probe" help_string="p"><arguments>${Array.from({ length: 210 }, (_, i) => `<arg name="arg${i}" optional="maybe${i}" help_string="h"/>`).join('')}</arguments></item></menu></scope></commands>`;
     const distinctOut = commandTree({ build: knownBuild, params: {}, slots: { tree: slot('xml@1', xml(distinctXml)) } });
-    const distinctPerArg = distinctOut.warnings.filter((w) => w.includes('optional 取值'));
-    assert.equal(distinctPerArg.length, 1, JSON.stringify(distinctOut.warnings.slice(0, 3)));
-    assert.ok(distinctPerArg[0]!.includes('同类 210 处'), distinctPerArg[0]);
+    assert.equal(distinctOut.diagnostics?.filter(diagnostic => diagnostic.attribute === 'optional').length, 210);
+    assert.ok(distinctOut.warnings.length <= 2, 'distinct invalid values still share the same structural attribute');
+    assert.ok(distinctOut.warnings.some(warning => warning.includes('同类 210 处')));
   });

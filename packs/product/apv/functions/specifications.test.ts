@@ -4,16 +4,21 @@ import {markdownParser} from '../../../../hub/refs/api.ts';
 import {planBuilds} from './sync.ts';
 import * as specs from './specifications.ts';
 
-test('specs keep chapter paths literals and applicability without a build',()=>{
+test('specs preserve chapter text and leave command identity and prose applicability undeclared without a locked tree',()=>{
  const source='# Synthetic section\n\n需要 Permit-A 许可。\n\n## Child\n\n执行 `demo pool add`。';
  const parsed=markdownParser.parse(Buffer.from(source));
  const input={slots:{},lists:{documents:[{external:'manual:file:spec/APV-10_7.md',parser:'markdown@1',model:parsed.model,sha256:'a'.repeat(64)}]},params:{licenses:['Permit-A']}};
  const first=specs.specifications(input);
  assert.ok(first.entries.length>0);assert.ok(first.entries.every(e=>e.path?.startsWith('/spec/')));
- assert.ok(first.entries.some(e=>(JSON.stringify(e.data.command_literals)??'').includes('demo pool add')));
+ assert.equal(first.entries.find(e=>e.statement==='执行 `demo pool add`。')?.data.command_literals, undefined);
+ assert.ok(first.warnings.some(warning=>warning.includes('缺锁定构建命令树') && warning.includes('下一步')));
  assert.ok(first.entries.every(e=>JSON.stringify(e.data.document_lines).includes('10.7')));
  assert.ok(first.entries.every(e=>!JSON.stringify(e.applicability).includes('build')));
- assert.deepEqual(first.entries.find(e=>e.statement==='执行 `demo pool add`。')?.applicability?.licenses,['Permit-A']);
+ const child=first.entries.find(e=>e.statement==='执行 `demo pool add`。');
+ assert.ok(child);assert.equal(child.applicability,null);
+ assert.equal((child.data.applicability_state as {declaration_status:string}).declaration_status,'undeclared');
+ assert.equal((child.data.applicability_state as {judgment_status:string}).judgment_status,'unjudged');
+ assert.ok(first.entries.some(e=>e.statement==='需要 Permit-A 许可。'));
  assert.deepEqual(specs.specifications(input),first);
 });
 test('the plan scopes only the declared product names and discloses unrelated documents',()=>{
