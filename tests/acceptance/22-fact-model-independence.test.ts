@@ -11,7 +11,7 @@ import { oracleCases } from './support/review.ts';
 import { openConsole, type ConsoleClient } from './support/console.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import { type McpClient } from './support/mcp.ts';
-import { DRAFTER, OTHER_MODEL, draft, finding, level, requirementOf, resultOf, startReview } from './support/review.ts';
+import { DRAFTER, OTHER_MODEL, OTHER_IDENTITY, draft, finding, level, requirementOf, resultOf, startReview } from './support/review.ts';
 
 let postgres: TemporaryPostgres;
 let bed: Bed;
@@ -100,7 +100,7 @@ describe('scenario 22: fact-requirement model independence', () => {
       ],
     ]);
 
-    const subB = draft(runB, findingsMap, { model: OTHER_MODEL, cross: [level('P2')] });
+    const subB = draft(runB, findingsMap, { model: OTHER_MODEL, model_identity:OTHER_IDENTITY, cross: [level('P2')] });
 
     const answerB = await client.call('submit_result', subB);
     assert.equal(answerB.isError, false, answerB.text);

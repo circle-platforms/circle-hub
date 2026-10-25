@@ -977,7 +977,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
                 requirement: t.key,
                 pointer,
                 ...statementOf(claim),
-                model: submission.model,
+                model: input.origin?.model??submission.model,
                 ...(t.independent_of !== undefined ? { independence: warrantIndependence(independence,t.independence_by_account===true) } : {}),
                 marks: [...marksFor(t), ...writtenAlone],
                 sourceRole: strongestRole(ce.roles),
@@ -996,7 +996,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
           const value=valueAt(entry.entry.handling==='handled'?entry.entry.slots:null,source);
           if(isObject(value)&&typeof value.text==='string'){
             const pointer=pointerOf('items',entry.index,'slots')+source;
-            claims.push(judgmentClaim({item:it.id,requirement:t.key,pointer,text:value.text,data:{...value,judgment_source:{submission:input.submissionDigest,pointer,...(input.submissionRecord?{record:'rec:'+input.submissionRecord}:{})},model:submission.model},model:submission.model,marks:['conditional_on_judgment'],sourceRole:check.judges,grounds:o.outcome.grounds,resolutions:[],bound:[...baseBound,input.submissionDigest],premises:[pointer]}));
+            claims.push(judgmentClaim({item:it.id,requirement:t.key,pointer,text:value.text,data:{...value,judgment_source:{submission:input.submissionDigest,pointer,...(input.submissionRecord?{record:'rec:'+input.submissionRecord}:{})},model:submission.model},model:input.origin?.model??submission.model,marks:['conditional_on_judgment'],sourceRole:check.judges,grounds:o.outcome.grounds,resolutions:[],bound:[...baseBound,input.submissionDigest],premises:[pointer]}));
           }
         }
         const overClaims = o.judges === 'artifact_under_verification'||(o.outcome.judgment_sources?.length??0)>0;
@@ -1143,7 +1143,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
           ...(entry.code !== undefined ? { code: entry.code } : {}),
           ...(entry.rank !== undefined ? { rank: entry.rank } : {}),
           ...(entry.nature === 'fact' ? { data: { declared_nature: 'fact' } } : {}),
-          model: submission.model,
+          model: input.origin?.model??submission.model,
           ...(independence !== null ? { independence: warrantIndependence(independence,template?.independence_by_account===true) } : {}),
           marks: [...(entry.nature === 'fact' ? (['unverified_submission'] as const) : []), ...(template ? marksFor(template) : [])],
           sourceRole: strongestRole(ce.roles),

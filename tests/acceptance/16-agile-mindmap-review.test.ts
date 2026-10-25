@@ -37,6 +37,8 @@ describe('scenario 16: whole review of ~150-node agile mind map with linked expe
     run = await startReview(client, {
       product: bed.product.names[0],
       version: bed.site.LINE,
+      // R6: sources are author declarations, never inferred from numbered prose titles.
+      parameters: { stories: ['31057'], bugs: ['31057'] },
       inputs: { subject: { external: `agile:mindmap:${DOCUMENTS.review}` } },
     });
 
@@ -45,7 +47,7 @@ describe('scenario 16: whole review of ~150-node agile mind map with linked expe
     assert.equal(run.items.length, oracleCases(document).length, 'the ~150-node mind map yields the oracle\'s case count under the marked rule');
     assert.equal(oracleCases(document).length - oracleCases(document, { rule: 'tagged' }).length, 3, '3 cases are recognized by the marker only');
 
-    // 2. Bound sources: subject plus expected sources (linked story and bug from PLM, spec from manual)
+    // 2. Bound sources: subject plus explicitly declared story and bug from PLM
     const subject = run.sources.find((s) => s.role === 'subject');
     assert.ok(subject && subject.external?.startsWith(`agile:mindmap:${DOCUMENTS.review}`));
 
@@ -121,6 +123,8 @@ describe('scenario 16: whole review of ~150-node agile mind map with linked expe
       pack: 'case-review',
       product: bed.product.names[0],
       version: bed.site.LINE,
+      // R6: sources are author declarations, never inferred from numbered prose titles.
+      parameters: { stories: ['31057'], bugs: ['31057'] },
       inputs: { subject: { reference: uploadRef } },
     });
     assert.equal(startAnswer.isError, false, startAnswer.text);

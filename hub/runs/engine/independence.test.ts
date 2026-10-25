@@ -1,3 +1,5 @@
+import {submissionOrigin} from './independence.ts';
+import {Submission} from '../../../contracts/src/submission.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { accountIndependenceOf, authorAccount, declaredFamily, independenceGap, independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
@@ -93,4 +95,14 @@ test('W10 independence stays an account the Hub can verify: a declared family ne
   assert.equal(authorAccount(authorRun), 'synthetic-author');
   assert.equal(authorAccount({ runner: null, configurer: 'synthetic-configurer' } as never), 'synthetic-configurer', 'a delegated execution keeps its configuring account as the author');
   assert.equal(accountIndependenceOf(authorAccount(authorRun) ?? '', authors), 'not_independent');
+});
+
+test('submission identity is explicit and legacy display names never supply a family',()=>{
+ const legacy={run:'run_0'+ 'a'.repeat(25),model:'synthetic display',items:[]};
+ assert.equal(Submission.safeParse(legacy).success,true);
+ assert.deepEqual(submissionOrigin(legacy,['s']),{sessions:['s'],model:'synthetic display',family:null});
+ const modern={...legacy,model_identity:{model_id:'synthetic-id',model_family_id:'synthetic-family'}};
+ assert.equal(Submission.safeParse(modern).success,true);
+ assert.deepEqual(submissionOrigin(modern,['s']),{sessions:['s'],model:'synthetic-id',family:'synthetic-family'});
+ for(const model_identity of [{model_id:'synthetic-id'},{model_id:'synthetic-id',model_family_id:''},{model_id:'synthetic-id',model_family_id:'synthetic-family',extra:true}])assert.equal(Submission.safeParse({...legacy,model_identity}).success,false);
 });

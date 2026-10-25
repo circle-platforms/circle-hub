@@ -21,7 +21,7 @@ const DRAFT_MODEL = 'aster-7 temperature=0';
 const VERIFIER = 'birch-2';
 const TITLES: Record<string, string> = { [ITEM.c1]: '设置 3 区浇灌 15 分钟', [ITEM.c2]: '查看分区状态', [ITEM.c3]: '设置 9 区应报错', [ITEM.c4]: '没有期望结果的用例' };
 
-async function startDraft(harness: Harness): Promise<{ draft: RunSummary; handover: string }> {
+async function startDraft(harness: Harness, model_identity?:{model_id:string;model_family_id:string}): Promise<{ draft: RunSummary; handover: string }> {
   const started = await harness.service.startRun(harness.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: map } } }, harness.call('sess-draft'));
   const run = started.run!;
   const at = run.items[0].location;
@@ -30,6 +30,7 @@ async function startDraft(harness: Harness): Promise<{ draft: RunSummary; handov
     {
       run: run.run,
       model: DRAFT_MODEL,
+      ...(model_identity?{model_identity}:{}),
       items: IDS.map((id) =>
         id === ITEM.c1
           ? { item: id, handling: 'handled', slots: { findings: [{ text: '缺少 0 分钟的边界用例', code: 'edge_case_gap', rank: 'major', location: at, quotes: [{ reference: at, text: TITLES[id] }] }] } }
@@ -384,4 +385,37 @@ test('a handover from outside the predecessor lineage is refused before anything
   assert.equal(h.external.reads.length, reads, 'nothing was read for the refused starts');
   // the verification of the draft with its own lineage starts
   assert.equal((await h.service.startRun(h.alice, { pack: 'toy-verify', product: 'Meadow', version: '3.2', inputs: { draft: { reference: lineage.handover }, map: { reference: map } }, predecessor: lineage.run.run }, h.call('sess-f-v'))).call_result, 'ok');
+});
+
+for(const sameFamily of [false,true])test(`explicit model identities survive storage and handover with exact family comparison: ${sameFamily}`,{skip},async t=>{
+ const local=await openHarness(postgres);t.after(()=>local.close());
+ await local.upload(local.alice,toyMap(standardDocument()));
+ const authored=await startDraft(local,{model_id:'synthetic-model-draft',model_family_id:'synthetic-family-a'});
+ const run=await verification('synthetic-verifier-session',local,authored.handover,authored.draft);
+ const submitted={...verdicts(run,'shared display name'),model_identity:{model_id:'synthetic-model-verify',model_family_id:sameFamily?'synthetic-family-a':'synthetic-family-b'}};
+ const answer=await local.service.submitResult(local.alice,submitted,local.call('synthetic-verifier-session'));
+ assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
+ const requirement=verificationOf(answer.result!,ITEM.c1);
+ assert.equal(requirement.status,sameFamily?'unsatisfied':'satisfied');
+ const judgment=requirement.claims.find(claim=>claim.warrant.producer==='model')!;
+ assert.equal(judgment.warrant.id,'synthetic-model-verify');
+ assert.equal(judgment.warrant.independence,sameFamily?'not_independent':'model_family_declared');
+});
+
+test('a later declaration cannot backfill an older author submission even when its model id is identical',{skip},async t=>{
+ const local=await openHarness(postgres);t.after(()=>local.close());
+ await local.upload(local.alice,toyMap(standardDocument()));
+ const authored=await startDraft(local);
+ const {submissionsOf}=await import('./store.ts');
+ const [legacy]=await submissionsOf(local.kit.store,authored.draft.run);assert.ok(legacy);
+ const original=JSON.stringify(legacy.body);
+ const modern={...(legacy.body as Record<string,unknown>),model_identity:{model_id:DRAFT_MODEL,model_family_id:'synthetic-family-a'}};
+ const accepted=await local.service.submitResult(local.alice,modern,local.call('sess-draft'));assert.equal(accepted.acceptance,'accepted');
+ const result=await local.service.getResult(local.alice,authored.draft.run);assert.ok(result);
+ const run=await verification('synthetic-modern-verifier',local,'rec:'+result.record,authored.draft);
+ const answer=await local.service.submitResult(local.alice,{...verdicts(run,VERIFIER),model_identity:{model_id:'synthetic-verifier',model_family_id:'synthetic-family-b'}},local.call('synthetic-modern-verifier'));
+ assert.equal(answer.acceptance,'accepted');
+ const requirement=verificationOf(answer.result!,ITEM.c1);assert.equal(requirement.unsatisfied_reason,'independence_unknown');
+ assert.equal(requirement.claims.find(claim=>claim.warrant.producer==='model')!.warrant.independence,'unknown');
+ assert.equal(JSON.stringify((await local.kit.store.get(legacy.digest))!.body),original,'the legacy author record is immutable');
 });

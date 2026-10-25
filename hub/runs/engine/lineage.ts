@@ -1,3 +1,4 @@
+import {ModelIdentitySchema} from '../../../contracts/generated/shared-interfaces.ts';
 import {authorAccount,type AccountAuthors} from './independence.ts';
 // The author of the work a run judges (A04; case-review method step 5: the drafter can never sign the conclusion). A run that is
 // independent of its predecessor judges the work of its lineage, not its own earlier revisions. When the predecessor chain
@@ -12,7 +13,7 @@ import { parseReference, type Reference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import type { AuthorOrigin } from './independence.ts';
 import { runOfRecord } from './readers.ts';
-import { actionsOf, runById } from './store.ts';
+import { actionsOf, runById, submissionByDigest } from './store.ts';
 import { isObject } from './util.ts';
 
 /** Longest predecessor chain the engine follows; a longer chain is cut, a cycle ends the walk. */
@@ -88,6 +89,16 @@ export async function authorOriginOf(ctx: EngineContext, run: RunRecord): Promis
   for (const r of await judgedRunsOf(store, run)) runs.set(r.run, r);
   const sessions = new Set<string>();
   const models = new Set<string>();
+  const families = new Set<string>(),identifiedModels=new Set<string>();
+  let declarationsComplete=true;
+  const producer=(value:unknown):boolean=>{
+    if(!isObject(value))return false;
+    const identity=ModelIdentitySchema.safeParse(value.model_identity);
+    if(identity.success){models.add(identity.data.model_id);identifiedModels.add(identity.data.model_id);families.add(identity.data.model_family_id);return true;}
+    declarationsComplete=false;
+    if(typeof value.model==='string')models.add(value.model);
+    return false;
+  };
   let complete = true;
   const missingSessions: string[] = [];
   for (const source of run.sources) {
@@ -108,7 +119,7 @@ export async function authorOriginOf(ctx: EngineContext, run: RunRecord): Promis
       complete = false;
       continue;
     }
-    if (record.kind === 'submission' && isObject(record.body) && typeof record.body.model === 'string') models.add(record.body.model);
+    if (record.kind === 'submission') producer(record.body);
     modelWarrants(record.body, models);
     const owner = runOfRecord(record);
     const chain = owner === null ? [] : await lineageOf(store, owner);
@@ -129,12 +140,14 @@ export async function authorOriginOf(ctx: EngineContext, run: RunRecord): Promis
       const accepted = body.acceptance === 'accepted';
       if (typeof body.detail.session === 'string') sessions.add(body.detail.session);
       else if (accepted) { complete = false; missingSessions.push(`已受理提交 ${String(body.detail.submission)}（运行 ${r.run}，原运行者 ${r.runner??r.configurer??'记录未给出'}）`); }
-      if (typeof body.detail.model === 'string') models.add(body.detail.model);
-      else if (accepted) complete = false;
+      const original=typeof body.detail.submission==='string'?await submissionByDigest(store,r.run,body.detail.submission):null;
+      if(original!==null)producer(original.body);
+      else if(typeof body.detail.model==='string'){models.add(body.detail.model);declarationsComplete=false;}
+      else if(accepted)complete=false;
     }
   }
   if (models.size === 0) complete = false;
-  return { sessions, models, complete, missingSessions };
+  return { sessions, models, families, familiesComplete:declarationsComplete&&models.size>0&&[...models].every(model=>identifiedModels.has(model)), complete, missingSessions };
 }
 
 /** A Hub record bound as artifact under verification whose run lies outside the predecessor's lineage. */

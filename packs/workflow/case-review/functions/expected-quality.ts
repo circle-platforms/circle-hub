@@ -10,6 +10,7 @@ export function expectedQuality(input:unknown):CheckOutcome[]{
  if(at<0||!expected.length||fields.expectedCount!==expected.length||selectors.length!==expected.length||expected.some(v=>typeof v!=='string'||v===''))return [{verdict:'unknown',reason:'missing_input',missing:'完整的期望叶子文字和位置；下一步由客户端补读当前脑图的全部期望叶子，再提交判断',statement:'期望质量未判断：缺完整期望叶子及位置；下一步补读当前脑图后重交',grounds:[],tier:'blocking',...own}];
  const base=location.slice(0,at)+'/kityminder@1/';const expectedRefs=selectors.map(v=>base+v);
  const claims=Array.isArray(slots.expected_quality)?slots.expected_quality:[];
+ if(claims.length===0)return [{verdict:'unknown',reason:'missing_input',missing:'本用例全部期望的模型质量判断；下一步由运行者补交 expected_quality 主张和全部期望叶子的逐字引文',statement:'期望质量未判断；下一步补交模型判断及逐字引文',grounds:[],tier:'blocking',...own}];
  if(claims.length!==1||!isRecord(claims[0]))return bad('每个用例提交恰好一条期望质量判断，并逐字引用全部期望叶子');
  const c=claims[0],data=isRecord(c.data)?c.data:{},quotes=Array.isArray(c.quotes)?c.quotes:[];
  if(c.code!=='expected_quality'||data.schema!=='expected-quality@1'||typeof data.vague!=='boolean'||data.source_sha256!==location.slice(4,at)||data.expected_count!==expected.length||!Array.isArray(data.expected_references)||JSON.stringify(data.expected_references)!==JSON.stringify(expectedRefs)||quotes.length!==expected.length)return bad('期望质量槽位的原件、条目期望数或引用身份不一致；按本用例全部期望叶子修正');

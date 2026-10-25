@@ -16,11 +16,15 @@ export type SlotClaim = Record<string, unknown>;
 
 export const sha256 = (text: string | Uint8Array): string => createHash('sha256').update(text).digest('hex');
 
-/** Declared models of two families: the Hub compares the words of the names, these share none (engine decision 19). */
+/** Display names and separately declared identities of scripted clients; no family is inferred from a name. */
 export const DRAFTER = 'alpha-drafter 1.0 (scripted, temperature 0)';
 export const VERIFIER = 'omega-checker 2.0 (scripted, temperature 0)';
-/** A third family, for a second independent submission. */
+/** A third explicitly declared synthetic family, for a second independent submission. */
 export const OTHER_MODEL = 'kappa-reader 3.1 (scripted)';
+
+export const DRAFTER_IDENTITY={model_id:'synthetic-drafter',model_family_id:'synthetic-family-alpha'};
+export const VERIFIER_IDENTITY={model_id:'synthetic-checker',model_family_id:'synthetic-family-omega'};
+export const OTHER_IDENTITY={model_id:'synthetic-reader',model_family_id:'synthetic-family-kappa'};
 
 export function runOf(answer: Answer<Outputs['start_run']>): RunSummary {
   assert.equal(answer.isError, false, `start_run was refused: ${answer.text.slice(0, 1500)}`);
@@ -103,7 +107,7 @@ export function level(rank = 'P4', grounds: string[] = []): Record<string, unkno
 }
 
 /** A scripted drafting model: every item handled, the given findings where named, an empty list elsewhere. */
-export function draft(run: RunSummary, findings: Map<string, SlotClaim[]> = new Map(), options: { model?: string; context?: boolean; cross?: unknown[]; skip?: Map<string, string>; omit?: Set<string> } = {}) {
+export function draft(run: RunSummary, findings: Map<string, SlotClaim[]> = new Map(), options: { model?: string; model_identity?: typeof DRAFTER_IDENTITY; context?: boolean; cross?: unknown[]; skip?: Map<string, string>; omit?: Set<string> } = {}) {
   const items = run.items
     .filter((i) => !(options.omit?.has(i.id) ?? false))
     .map((i) => {
@@ -113,10 +117,11 @@ export function draft(run: RunSummary, findings: Map<string, SlotClaim[]> = new 
         item: i.id,
         handling: 'handled',
         ...(options.context === false ? {} : { context: sha256(`context of ${i.id} ${i.digest ?? ''}`) }),
-        slots: { findings: findings.get(i.id) ?? [] },
+        // R3: this optional judgment is explicitly undeclared, never inferred from prose.
+        slots: { findings: findings.get(i.id) ?? [], expected_quality: [] },
       };
     });
-  return { run: run.run, model: options.model ?? DRAFTER, items, cross_item: options.cross ?? [level()] };
+  return { run: run.run, model: options.model ?? DRAFTER, model_identity:options.model_identity??DRAFTER_IDENTITY, items, cross_item: options.cross ?? [level()] };
 }
 
 export async function startReview(client: McpClient, input: Record<string, unknown>): Promise<RunSummary> {

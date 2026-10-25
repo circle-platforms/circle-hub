@@ -364,6 +364,12 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
 
   if(!dryRun&&!options.signal?.aborted)for(const row of report.builds){
     if(row.base===row.name||row.outcome==='failed')continue;
+    const base=planned.get(row.base),alias=planned.get(row.name);
+    // An unpublished alias and its deliberately excluded base have no production obligation.
+    // A published alias still requires its base, and actual production failures remain failures.
+    if(options.includeUnreleased!==true&&base?.released_at===null&&alias?.released_at===null&&!releasedAliasBases.has(row.base)){
+      row.reason=`别名的基础构建 ${row.base} 未发布，本次不产出根`;continue;
+    }
     const root=await builds.rootOfBuild(productId,row.name);
     if(root===null){
       row.outcome='failed';row.reason=`基础构建 ${row.base} 没有形成可用根；已登记核对请求，修复来源或计划后重新同步`;
