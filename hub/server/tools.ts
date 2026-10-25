@@ -32,7 +32,7 @@ import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxE
 import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
-import { fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
+import { feedingText, fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
 import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
@@ -583,8 +583,7 @@ export async function callTool(deps: ServerDeps, call: ToolCall, name: string, a
     call.context.adminNote(`the text of the ${name} answer could not be laid out: ${describeError(error)}`);
     text = fallbackText(name, value, context);
   }
-  if('feeding_pending'in value&&Array.isArray(value.feeding_pending))for(const pending of value.feeding_pending as Array<{missing:string;next_action:string}>)text+='\n喂入未知：'+pending.missing+'；下一步：'+pending.next_action;
-  if('feeding_objects'in value)text+='\n喂入清单：'+JSON.stringify(value.feeding_objects)+('feeding_offset'in value?'；冻结序号：'+JSON.stringify(value.feeding_offset):'；缺冻结序号：旧运行需另开运行');
+  text=feedingText(text,value);
   // D05 R[0], display rule 11: content is plain text, the JSON is structuredContent; no second block repeats it.
   return {
     content: [{ type: 'text', text }],

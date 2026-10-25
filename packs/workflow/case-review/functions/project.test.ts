@@ -168,25 +168,18 @@ describe('projection of the review fixture (default: caseRule marked)', () => {
   });
 
   it('marks negative cases by the canonical tag and keeps the tags as written', () => {
+    // 反向只认闭集精确原文 negative。Negative、负向不再折成反向，标签原文仍保留。
     assert.deepEqual(
       items.filter((item) => item.fields.negative).map((item) => item.fields.title),
       [
-        'widget health interval pool1 61',
         'widget health retries pool1 0',
-        'widget health interval pool1 61',
-        'WebUI 输入间隔 0 时提示错误',
-        'relay endpoint weight 192.0.2.21 101',
         'relay endpoint weight 192.0.2.22 abc',
-        '后端端口不可达时探测超时',
-        '探测类型输入 udp 被拒绝',
         '删除不存在的池',
-        '池名称超过 32 个字符',
       ],
     );
-    assert.ok(items.filter((item) => item.fields.tags.length > 0).every((item) => item.fields.negative !== null), 'every tagged case has a known negative flag');
-    assert.equal(items.filter((item) => item.fields.negative === null).length, 3, 'untagged cases have unknown negative flag');
+    assert.ok(items.filter((item) => item.fields.negative === true).every((item) => item.fields.tags.includes('negative')));
     assert.deepEqual(one(items, '健康检查摘除后端后按剩余后端的权重分配').fields.tags, ['Integration', '20260301ADD']);
-    assert.deepEqual(one(items, '探测间隔为 1 秒时每秒探测一次').fields.tagsNormalized, ['Functional']);
+    assert.deepEqual(one(items, '探测间隔为 1 秒时每秒探测一次').fields.tagsNormalized, []);
   });
 
   it('keeps priority and degree as written: a typo stays visible, a missing priority is null, degree "null" is null', () => {
@@ -581,7 +574,8 @@ describe('identity, location and hostile structure', () => {
     assert.equal(fields.expected.length, LIMITS.maxList);
     assert.equal(fields.expectedCount, 300);
     assert.equal(fields.tags.length, LIMITS.maxList);
-    assert.equal(fields.negative, false);
+    // T0 这类标签不在闭集里，负向未声明，是 null，不是 false。
+    assert.equal(fields.negative, null);
     assert.ok(out.items[0].label.length <= LIMITS.maxLabel);
     const codes = out.warnings.map((warning) => warning.code);
     for (const code of ['case-review.text_clipped', 'case-review.list_clipped', 'case-review.tag_not_text']) assert.ok(codes.includes(code), code);

@@ -12,18 +12,21 @@ test('README retains numbered deviations and unresolved cross-package needs', ()
 test('README distinguishes implemented claim marks and record links from remaining typed contracts', () => {
   const text = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
   assert.doesNotMatch(text, /engine does not put the mark|asserts it as a `todo`|context\.record` is null|today's answer does not/);
-  assert.ok(text.includes('437cbad5') && text.includes('3086bf44'));
+  // 主张已经接到受理记录的谱系上。旧提交号不再写在 README 里。
+  assert.match(text, /linked to the accepted validation record through the\nnormal result\/slot lineage/);
   assert.match(text, /StartRunOutput/); assert.match(text, /PackError/);
 });
 test('README describes exact header comparison and the matched current command universe', () => {
   const text = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
   assert.doesNotMatch(text, /Every node text is normalized|each command present in its admitted index/);
-  assert.match(text, /Node texts are compared exactly as read/);
-  assert.match(text, /For each command named by a matched current case/);
+  // 现行规则比的是当前修订的标题和 path_labels，对不上的用例不能沿用旧归属。
+  assert.match(text, /Headers and ordered path_labels\nmust equal the current case revision exactly/);
+  assert.match(text, /changed or unmatched cases cannot contribute stale memberships/);
 });
 test('extending producer scan inputs requires a complete per-case revision contract first', () => {
   const text = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
   assert.doesNotMatch(text, /steps\/expected results without\s+changing this consumer/);
-  assert.match(text, /per-case revision/);
-  assert.match(text, /step edit.*unmatched/);
+  // 扩大扫描范围的步骤修改，要先有完整的逐用例修订合约。对不上的用例是另一句，不能贡献旧归属。
+  assert.match(text, /A step edit that expands the producer's scan scope requires a complete\nper-case revision contract first/);
+  assert.match(text, /changed or unmatched cases cannot contribute stale memberships/);
 });

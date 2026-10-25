@@ -28,6 +28,15 @@ function subjectOf(rows: Parameters<typeof facetViewOf>[0], options: { parameter
 
 const byId = (outcomes: CheckOutcome[], id: string): CheckOutcome[] => outcomes.filter((o) => o.item === id);
 
+/** 含糊阈值的分母是已受理期望质量判断，不是分面 vague_expected。比较测试在投影后写入这个分母，否则零分母会把比较短路成 unknown。 */
+function judged(fields: Record<string, unknown>, vague = 0): void {
+  const counts = fields.counts as { cases: number; vague: number };
+  const ratios = fields.ratios as { vague: { num: number; den: number } };
+  counts.vague = vague;
+  ratios.vague = { num: vague, den: counts.cases };
+  fields.quality = { judged: counts.cases, unjudged: 0, conflicted: 0, sources: [] };
+}
+
 describe('boardOutcomes', () => {
   it('always supports with the metrics as claim data (advisory)', () => {
     const subject = subjectOf([
@@ -38,9 +47,10 @@ describe('boardOutcomes', () => {
     assert.equal(outcomes.length, 1);
     const [outcome] = outcomes;
     assert.deepEqual([outcome.verdict, outcome.tier, outcome.item, outcome.pointer], ['support', 'advisory', '10.6.1/SSL', '/items/0/fields']);
-    assert.equal(outcome.statement, '用例 25 个；无期望结果 2 个（8.0%）；含糊期望 0 个（0.0%）；负面用例 2 个（8.0%）');
+    // 没有期望质量判断时，含糊数保持 0，并写明未判断和有效声明分母。
+    assert.equal(outcome.statement, '用例 25 个；无期望结果 2 个（8.0%）；含糊期望 0 个（未判断，已判断 0 个）；未判断 25 个；负面用例 2 个（8.0%；有效声明分母 25；类型未声明 0）');
     const data = outcome.data as { counts: { cases: number; missing: number }; ratios: { missing: { num: number; den: number } }; display: { missing: number } };
-    assert.deepEqual(data.counts, { cases: 25, missing: 2, vague: 0, negative: 2 });
+    assert.deepEqual(data.counts, { cases: 25, missing: 2, vague: 0, negative: 2, negative_denominator: 25, type_unclassified: 0 });
     assert.deepEqual(data.ratios.missing, { num: 2, den: 25 });
     assert.equal(data.display.missing, 0.08);
     assert.deepEqual(outcome.grounds, [subject.items[0].location]);
@@ -85,7 +95,7 @@ describe('thresholdOutcomes', () => {
       facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: true, negative: false }, 1),
       facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: true }, 1),
       facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 17),
-    ]);
+    ], { edit: (fields) => judged(fields, 1) });
     const outcomes = thresholdOutcomes(subject);
     assert.deepEqual(
       outcomes.map((o) => [o.verdict, o.tier]),
@@ -96,13 +106,13 @@ describe('thresholdOutcomes', () => {
 
   it('equal to the threshold is not a violation; one case more is', () => {
     // 20 cases, 1 missing = 5.0% = the default maximum: no violation.
-    const at = thresholdOutcomes(subjectOf([facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: true }, 1), facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 19)]));
+    const at = thresholdOutcomes(subjectOf([facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: true }, 1), facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 19)], { edit: (fields) => judged(fields) }));
     assert.deepEqual(
       at.map((o) => o.verdict),
       ['support'],
     );
     // 25 cases, 2 missing = 8.0% > 5.0%: a missing_expected violation.
-    const over = thresholdOutcomes(subjectOf([facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: true }, 2), facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 23)]));
+    const over = thresholdOutcomes(subjectOf([facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: true }, 2), facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: false }, 23)], { edit: (fields) => judged(fields) }));
     assert.deepEqual(
       over.map((o) => [o.verdict, o.code ?? null]),
       [['refute', 'quality-board.missing_expected']],
@@ -115,13 +125,13 @@ describe('thresholdOutcomes', () => {
 
   it('the negative share below its minimum is a violation; exactly at it is not', () => {
     // 50 cases, 1 negative = 2.0% = the default minimum: no violation.
-    const at = thresholdOutcomes(subjectOf([facetRow({ line: '10.6.1', module: 'HA', has_expected: true, vague_expected: false, negative: true }, 1), facetRow({ line: '10.6.1', module: 'HA', has_expected: true, vague_expected: false, negative: false }, 49)]));
+    const at = thresholdOutcomes(subjectOf([facetRow({ line: '10.6.1', module: 'HA', has_expected: true, vague_expected: false, negative: true }, 1), facetRow({ line: '10.6.1', module: 'HA', has_expected: true, vague_expected: false, negative: false }, 49)], { edit: (fields) => judged(fields) }));
     assert.deepEqual(
       at.map((o) => o.verdict),
       ['support'],
     );
     // 50 cases, none negative = 0.0% < 2.0%.
-    const under = thresholdOutcomes(subjectOf([facetRow({ line: '10.6.1', module: 'HA', has_expected: true, vague_expected: false, negative: false }, 50)]));
+    const under = thresholdOutcomes(subjectOf([facetRow({ line: '10.6.1', module: 'HA', has_expected: true, vague_expected: false, negative: false }, 50)], { edit: (fields) => judged(fields) }));
     assert.deepEqual(
       under.map((o) => [o.verdict, o.code ?? null]),
       [['refute', 'quality-board.negative_share']],
@@ -135,7 +145,7 @@ describe('thresholdOutcomes', () => {
       facetRow({ line: '10.6.1', module: 'WebUI', has_expected: false, vague_expected: false, negative: false }, 4),
       facetRow({ line: '10.6.1', module: 'WebUI', has_expected: true, vague_expected: true, negative: false }, 3),
       facetRow({ line: '10.6.1', module: 'WebUI', has_expected: true, vague_expected: false, negative: false }, 3),
-    ]);
+    ], { edit: (fields) => judged(fields, 3) });
     const outcomes = thresholdOutcomes(subject);
     assert.deepEqual(
       outcomes.map((o) => o.code),
@@ -146,12 +156,12 @@ describe('thresholdOutcomes', () => {
 
   it('the parameters move the thresholds', () => {
     const rows = [facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: false }, 1), facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: false, negative: true }, 19)];
-    const loose = thresholdOutcomes(subjectOf(rows, { parameters: { max_missing_ratio: 0.1, min_negative_ratio: 0.01 } }));
+    const loose = thresholdOutcomes(subjectOf(rows, { parameters: { max_missing_ratio: 0.1, min_negative_ratio: 0.01 }, edit: (fields) => judged(fields) }));
     assert.deepEqual(
       loose.map((o) => o.verdict),
       ['support'],
     );
-    const strict = thresholdOutcomes(subjectOf(rows, { parameters: { max_missing_ratio: 0.04 } }));
+    const strict = thresholdOutcomes(subjectOf(rows, { parameters: { max_missing_ratio: 0.04 }, edit: (fields) => judged(fields) }));
     assert.deepEqual(
       strict.map((o) => o.code ?? null),
       ['quality-board.missing_expected'],

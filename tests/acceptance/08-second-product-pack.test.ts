@@ -65,7 +65,7 @@ describe('scenario 8: second product pack reviews with same workflow pack', () =
     for (const item of run.items) {
       const res = itemResult(result, item.id);
       assert.equal(res.partition, 'delivered');
-      assert.deepEqual(res.item.requirements.map((r) => r.requirement), ['literal', 'catalog', 'findings']);
+      assert.deepEqual(res.item.requirements.map((r) => r.requirement), ['literal', 'catalog', 'findings', 'expected_quality']);
     }
 
     // Real effects: stored validation result record in database

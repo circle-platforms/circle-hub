@@ -95,7 +95,7 @@ describe('scenario 10: item reuse and carry-over', () => {
           item: c2.id,
           handling: 'handled',
           context: sha256(`context of ${c2.id}`),
-          slots: { findings: [] },
+          slots: { findings: [], expected_quality: [] },
         },
       ],
       cross_item: [level('P3')],

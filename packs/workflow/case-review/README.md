@@ -483,3 +483,5 @@ R3：含糊期望不再由词表或生产器布尔决定。case-review 逐用例
 槽声明仅保留 Hub 可执行的结构约束，去掉 pattern、patternProperties、format。摘要、引用解析、原件身份、路径及逐字引文仍由现有受理边界核验，槽位收到字符串不表示身份已核对。case-review 的 expected_quality 继续逐字核对冻结原件与全部期望叶子；knowledge-contribution 从权威 ContributionInput Schema 生成受限槽投影，不修改权威受理合约。生成器按 Schema 结构遍历，名为 pattern 或 format 的普通字段不会被误删。case-review-verify 与 quality-board 槽声明未发现这些关键字，无须升版。
 
 期望来源（U19/U20 与 apv-id-fields@1，所有者 2026-10-24）：只绑定作者显式声明的身份——运行参数 `stories`/`bugs`，或标题/上级目录里整段的 `bug:<编号列表>`、`story:<编号列表>` 字段；散文里的编号、标记词、错拼、补零、全角一律不读。关键词检索连候选来源也禁止：不再产出 `manual:spec-search`、`manual:qa-search` 或 `agile:search` 之类的检索读法，检索结果不作输入也不作查全依据。没有声明编号时不绑定来源，并写明缺的事实与下一步（作者补参数或字段，或由模型提交逐字引文经 Hub 核验）。
+
+R3 补充（验收恢复）：空的可选 expected_quality 槽位表示尚未判断，保持未知并给补交判断及全部叶子逐字引文的出口；沿用旧槽位也执行同一规则。缺判断不冒充肯定判断，也不当成伪造引文反驳。非空主张仍完整核原件、数量、位置和逐字引文。

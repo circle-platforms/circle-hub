@@ -120,9 +120,11 @@ export function ownClaimTexts(lines: readonly string[], document: string, requir
 
 /** Parses the displayed candidates of a single candidate statement, preserving their order. */
 export function parseReportedCandidates(text: string): ParsedCandidate[] {
-  const match = /版本线\s+\S+\s+的构建候选\s+\d+\s+个/.exec(text);
+  // 判定只认结构化字段。候选名单在 statement.text 里，正则仍按原文逐项核对，不从散文“支持”二字推断。
+  const prose = statedText(text);
+  const match = /版本线\s+\S+\s+的构建候选\s+\d+\s+个/.exec(prose);
   if (!match) return [];
-  const statement = text.slice(match.index).split(/；(?:性质与依据等级|限定|担保|根据|有效条件|解析状态)：/)[0].replace(/，(?:支持|未知|反驳).*$/, '');
+  const statement = prose.slice(match.index).split(/；(?:性质与依据等级|限定|担保|根据|有效条件|解析状态)：/)[0].replace(/，(?:支持|未知|反驳).*$/, '');
   const colon = statement.indexOf('：');
   if (colon < 0) return [];
   const out: ParsedCandidate[] = [];
@@ -241,9 +243,17 @@ function extractIdsFromSnippet(snippet: string, marker: string): string[] {
 }
 
 /** No whole-answer fallback: a missing item remains missing even if another item has identical values. */
+function statedText(input: string): string {
+  try {
+    const row = JSON.parse(input) as { statement?: { text?: unknown } };
+    if (typeof row?.statement?.text === 'string') return row.statement.text;
+  } catch { /* 散文主张没有结构化 text */ }
+  return input;
+}
+
 export function ownLocationText(lines: readonly string[], document: string): string | null {
   const claims = ownClaimTexts(lines, document, 'location');
-  if (claims.length === 1) return claims[0];
+  if (claims.length === 1) return statedText(claims[0]);
   if (claims.length > 1) return null;
   const pattern = new RegExp('^\\s*-?\\s*(?:doc:)?' + escaped(document) + '\\s*\\|');
   let itemTable = false; const rows: string[] = [];
