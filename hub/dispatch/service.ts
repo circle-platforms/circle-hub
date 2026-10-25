@@ -1,3 +1,5 @@
+import {releaseDigest,releaseFailure,type ReleaseCheck} from './release-diagnostics.ts';
+import type {AdminLogEntry} from '../runs/api.ts';
 import {RETRY_RULES} from './retry-policy.ts';
 import {prepareEffectGate,EffectBoundaryError} from './effect-gate.ts';
 import {checkEffectBoundary,incompleteEffectBoundary,deny,type BoundaryFailure} from './boundary.ts';
@@ -19,7 +21,7 @@ import { canRetryRead } from './read-policy.ts';
 import { dynamicDisposition, DISPATCH_QUALIFICATIONS } from './dynamic.ts';
 import { bytesKey, earlyStopSentence, repeats, roundAllowed, roundMeets, roundOf, roundPolicy, type RoundPolicy } from './rounds.ts';
 import { expectationFor } from '../runs/engine/terminals.ts';
-import { verifyInput, lockedBuildBase, InputVerificationError, type VerificationPort } from './proof.ts';
+import { verifyInput, inspectInput, lockedBuildBase, InputVerificationError, type VerificationPort } from './proof.ts';
 /** Only validated generated outcomes can prove a submission retry is safe. */
 function retrySafeOutcome(value:unknown):boolean {
   if(!isEffectOutcome(value))return false;
@@ -27,6 +29,7 @@ function retrySafeOutcome(value:unknown):boolean {
   return outcome==='target_rejected'||outcome==='proven_not_executed';
 }
 export interface DispatchOptions {
+  adminLog?:(entry:AdminLogEntry)=>void;
   recheckChecks?:import('../ports.ts').EffectCheckReplay;
   redactor?:Redactor;
   knowledge?: BuildKnowledge;
@@ -35,7 +38,7 @@ export interface DispatchOptions {
   /** Test seam: called before a later round is opened. Production leaves it unset. */
   beforeRound?: (round: number) => Promise<void>;
 }
-export interface JobStatus { unprobed_devices?:Array<{index:number;type:string|null}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
+export interface JobStatus { admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
 interface Heartbeat {stop:()=>Promise<void>;held:()=>boolean;lastConfirmedAt:()=>number|null;}
 interface LeaseClock {at:number;mono:number;ttl:number;}
 interface RemoteLease { id: unknown; token: unknown; ttl: number; }
@@ -88,11 +91,33 @@ export class DispatchService {
     // Manifest devices that are not declared dispatch targets: listed by manifest position and declared type, never probed
     // and never dispatched to (P07 R[1], C07 R[4]).
     const unprobed=[...events].reverse().find(e=>Array.isArray(e.body.detail.unprobed_non_targets))?.body.detail.unprobed_non_targets as Array<{index:number;type:string|null}>|undefined;
+    let adminRelease:ReleaseCheck[]|undefined,adminReleaseMissing=false;
+    const note=end?.body.detail.admin_release_sha256;
+    if(typeof note==='string'){try{const bytes=await this.options.records.objects.get(note);if(!bytes||sha256Hex(bytes)!==note)throw new Error('missing');adminRelease=JSON.parse(new TextDecoder().decode(bytes)).checks;}catch{adminReleaseMissing=true;}}
+    if(end?.body.detail.admin_release_missing===true)adminReleaseMissing=true;
     const rounds=events.filter(e=>e.body.detail.phase==='round' && typeof e.body.detail.round==='number' && typeof e.body.detail.terminal==='string').map(e=>({round:Number(e.body.detail.round),terminal:e.body.detail.terminal as DynamicTerminal,...(typeof e.body.detail.reason==='string'?{reason:e.body.detail.reason as Reason}:{})})).sort((a,b)=>a.round-b.round);
-    return { job,...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}), phase: String(events.at(-1)!.body.detail.phase),
+    return { job,...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}), phase: String(events.at(-1)!.body.detail.phase),
       outcome: riskDisposed ? 'unknown' : end?.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false ? 'not_dispatched' : end && retrySafeOutcome(end.body.detail.outcome) ? end.body.detail.outcome as EffectOutcome : unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
       frozen: unknown || missingReceipt, ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length, ...(gap||missingFact ? { missing_fact:[missingFact,gap?.missing_fact].filter(Boolean).join('；') } : {}),
       ...(gap?{next_action:String(gap.next_action)}:riskDisposed ? {next_action:'处置已完成，原效果保留未知；后续作业须重新核验与授权，不得将原请求当作未执行重交'} : unknown || missingReceipt ? { next_action: typeof uncertainty?.body.detail.next_action==='string'?uncertainty.body.detail.next_action:`circle-hub job resume ${job}；只读原请求，不重交` } : typeof end?.body.detail.next_action === 'string' ? { next_action: end.body.detail.next_action } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
+  }
+  /** Read-only clause-3 diagnosis: no connector session, policy replay, reservation or journal write. */
+  async explainRelease(by:Principal,run:string,executor:string){
+    await this.registry.admin(by);const registered=await this.registry.get(executor);
+    if(!registered)throw new Error('执行器对你不可用；先用 executor list 核对编号');
+    const d=registered.definition;
+    try{
+      const gate=await prepareEffectGate({records:this.options.records,runs:this.options.runs,workflows:this.options.workflows,by,run,executor,definition:d,resolved_digest:registered.resolved_digest,now:this.now});
+      const rows=[];
+      for(const row of gate.context.effects){
+        const applicable=row.resource_kind==='executor'&&row.action==='submit'&&row.effect_class===gate.context.write.effect_class&&row.trigger===gate.context.trigger;
+        const report=await gate.inspectRelease(row);rows.push({row_sha256:releaseDigest(row.id),applicable,checks:report.checks});
+      }
+      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:registered.definition.enabled&&rows.some(row=>row.applicable&&row.checks.every(check=>check.satisfied===true)),checks:[{condition:'executor.enabled',label:'执行器已启用',satisfied:d.enabled,fields:[]} as ReleaseCheck,...(!rows.length?[{condition:'release.rows',label:'冻结包声明了效果行',satisfied:false,fields:[]} as ReleaseCheck]:[])],rows};
+    }catch(error){
+      const proof=await inspectInput(by,run,d,this.options.records,this.options.runs,this.options.workflows,this.now());
+      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:false,checks:[...proof.checks,...releaseFailure(error)],rows:[]};
+    }
   }
   async list(by:Principal,executor:string):Promise<JobStatus[]> {
     await this.registry.admin(by);const current=await this.registry.get(executor);
@@ -394,10 +419,23 @@ export class DispatchService {
     } finally { await stop(); }
   }
   private async boundaryRefused(by:Principal,binding:JobBinding,failure:BoundaryFailure):Promise<JobStatus>{
+    let adminReleaseSha:string|undefined,adminReleaseMissing=false;
+    if(failure.admin_checks?.length){
+      for(const check of failure.admin_checks.filter(check=>check.satisfied!==true)){
+        const rows=check.fields.length?check.fields.map(field=>({...check,fields:[field]})):[check];
+        for(const row of rows)try{this.options.adminLog?.({traceId:null,run:binding.input?.run??binding.run??null,what:'effect release '+binding.job,detail:JSON.stringify(row)});}catch{/* Logging does not authorize or change a refusal. */}
+      }
+      try{
+        const bytes=canonicalBytes({checks:failure.admin_checks});
+        const source=await this.options.records.artifacts.ingest({bytes,mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[]}},author:{user:null},provenanceType:'projected',visibility:{readers:[],admins:true,packs:[],shareable:false}});
+        adminReleaseSha=source.body.sha256;
+      }catch{adminReleaseMissing=true;}
+    }
     if(!(await this.journal.events(binding.job)).length)await this.journal.append(binding,'reservation','dispatch','completed',{binding,read_only:true});
-    await this.journal.append(binding,'boundary_refused','dispatch','error',{done:true,outcome:'not_dispatched',submit_invoked:false,boundary_clause:failure.clause,effect_row:failure.row??null,requirements:failure.requirements??[],public_reason:failure.message,missing_fact:failure.message,next_action:failure.fix},[],undefined,undefined,failure.code);
+    await this.journal.append(binding,'boundary_refused','dispatch','error',{done:true,outcome:'not_dispatched',submit_invoked:false,boundary_clause:failure.clause,effect_row:failure.row??null,requirements:failure.requirements??[],public_reason:failure.message,missing_fact:failure.message,next_action:failure.fix,...(adminReleaseSha?{admin_release_sha256:adminReleaseSha}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{})},[],undefined,undefined,failure.code);
     return this.status(by,binding.job);
   }
+
   async resume(by: Principal, job: string): Promise<JobStatus> {
     await this.registry.admin(by);
     const binding = { ...await this.journal.binding(job), acting_by: by.id }; const events = await this.journal.events(job);

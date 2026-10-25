@@ -9,7 +9,7 @@ import { sha256Hex, VariableError, type Principal, type RecordsKit } from '../re
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { UsageError } from './errors.ts';
 export const EXECUTOR_USAGE = 'add <定义文件> | update <执行器> <定义文件> | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
-export const JOB_USAGE = 'list --executor <执行器> | conformance --executor <执行器> [--save <目录>] | precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
+export const JOB_USAGE = 'list --executor <执行器> | conformance --executor <执行器> [--save <目录>] | precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | explain-release --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
 export interface JobCommandSession {
   ctx: { io: { cwd: string } };
   options: { readSecret?: (label: string) => Promise<string> };
@@ -31,6 +31,8 @@ function output(s: JobCommandSession, state: JobStatus): void {
   if(state.unprobed_devices?.length)s.out(`未探测（非派发目标）：${state.unprobed_devices.map(device=>`清单第 ${device.index + 1} 台（类型 ${device.type ?? '清单未声明'}）`).join('、')}；只按清单身份参与拓扑与地址绑定，不派发命令`);
   for(const condition of state.failed_conditions ?? [])s.out(`未满足条件：${JSON.stringify(condition.pointer)}；运算 ${condition.operator}`);
   for(const check of state.failed_checks ?? [])s.out(`未满足核对：步骤 ${JSON.stringify(check.step)}${check.seat!==undefined?`；座位 ${JSON.stringify(check.seat)}`:''}${check.check!==undefined?`；检查 ${JSON.stringify(check.check)}`:''}；缺事实：${check.missing_fact}；下一步：${check.next_action}`);
+  if(state.admin_release)for(const check of state.admin_release.filter(check=>check.satisfied!==true))s.out('管理员放行说明：'+JSON.stringify(check));
+  if(state.admin_release_missing)s.out('管理员放行说明：诊断记录未能保存或读取，请查看管理员日志');
   if (state.reason) s.out(`说明：${state.reason}`);
   if (state.missing_fact) s.out(`缺事实：${state.missing_fact}`);
   if (state.result) s.out(`结果引用 ${state.result}`);
@@ -117,12 +119,19 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
     'keep-unknown': { type: 'boolean' }, 'mark-failed': { type: 'boolean' }, reason: { type: 'string' }, 'accept-possible-duplicate-effects': { type: 'boolean' }, 'numeric-id': { type: 'boolean' },
   } }); } catch { throw new UsageError('命令参数写法无效；密钥只从标准输入读取'); }
   const { positionals, values } = parsed;
-  const flags: Record<string, Record<string, boolean>> = { list: {executor:true}, conformance: { executor: true, save: true }, precheck: { executor: true, booking: true, save: true }, dispatch: { run: true, executor: true }, status: {}, resume: {}, dispose: { reconcile: true, 'keep-unknown': true, 'mark-failed': true, reason: true, 'accept-possible-duplicate-effects': true, 'numeric-id': true } };
+  const flags: Record<string, Record<string, boolean>> = { list: {executor:true}, conformance: { executor: true, save: true }, precheck: { executor: true, booking: true, save: true }, dispatch: { run: true, executor: true }, 'explain-release':{run:true,executor:true}, status: {}, resume: {}, dispose: { reconcile: true, 'keep-unknown': true, 'mark-failed': true, reason: true, 'accept-possible-duplicate-effects': true, 'numeric-id': true } };
   if (!sub || !Object.hasOwn(flags, sub) || Object.keys(values).some(key => !Object.hasOwn(flags[sub], key))) throw new UsageError('该子命令不能使用这些参数');
-  const by = await s.admin(); const dispatch = await service(s, sub !== 'status' && sub !== 'list');
+  const by = await s.admin(); const dispatch = await service(s, sub !== 'status' && sub !== 'list' && sub !== 'explain-release');
   try {
   if(sub==='list' && values.executor && positionals.length===0) {
     const jobs=await dispatch.list(by,values.executor);for(const state of jobs)output(s,state);s.out(`未结束作业 ${jobs.length}`);return 0;
+  }
+  if(sub==='explain-release'&&values.run&&values.executor&&positionals.length===0){
+    const report=await dispatch.explainRelease(by,values.run,values.executor);
+    s.out('只读诊断范围：第 3 款放行条件；派发时仍须完整重核九款');
+    for(const check of report.checks)s.out(JSON.stringify(check));
+    for(const row of report.rows){s.out(JSON.stringify({row_sha256:row.row_sha256,applicable:row.applicable}));for(const check of row.checks)s.out(JSON.stringify(check));}
+    s.out(`放行条件满足 ${Number(report.satisfied)}`);return report.satisfied?0:1;
   }
   if (sub === 'conformance' && values.executor && positionals.length === 0) {
     const state = await dispatch.conformance(by,values.executor); output(s,state);

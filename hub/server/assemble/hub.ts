@@ -199,7 +199,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   };
   const engine=createRunsService(engineDeps);
   const runs = withCallNotes(engine, notes);
-  dispatch = leases ? new DispatchService({ records, leases, runs, workflows,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
+  dispatch = leases ? new DispatchService({ records, leases, runs, workflows,adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
     config,
