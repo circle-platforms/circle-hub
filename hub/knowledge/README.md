@@ -1134,3 +1134,7 @@ The optional `tree_root@1.empty_scope` stores complete=true and each producer la
 同步别名的最终成根检查区分结构化发布状态：未发布别名及本次刻意排除的未发布基础构建不承担成根义务，保持跳过。已发布别名仍强制育出基础根，生产失败仍登记失败与修复出口。
 
 缓存测试冻结 known_builds 清单后比较同一输入的复用；当前构建也是已登记清单的一员，不能为提高缓存命中率从生产器输入中删除。清单变化仍导致重算。分片布局测试只排除 entry.applicability_context.composition 的布局身份差异，并逐条核对该字段等于实际组成记录，其他输出必须完全一致。
+
+## Catalog constraint integration fixtures
+
+`catalog-constraints.test.ts` calls APV's public `commandTreeProducer` with the parsed original and its SHA-256. The internal `produceCommandEntries` result also carries pack-only `declarations`; that map is not a `producer-output@1` field and must never be copied directly into a Hub producer fixture. Strict output validation, unchecked source constraints, undeclared native types and incomplete grammar evidence remain asserted. See [fix-catalog-constraints](../../docs/hub-r4-tasks/fix-catalog-constraints.md).
