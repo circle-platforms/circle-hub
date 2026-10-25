@@ -60,7 +60,7 @@ export type ElementLoad = { ok: true; value: ParsedSource; reused: boolean } | {
  * Loads list sources for one production (or one sync) in two steps. `peek` reads the object (a stored read younger than
  * max_age_seconds is used again, otherwise the object is read through the port and the read is recorded) and gives its
  * record and size without fetching its bytes; `materialize` fetches the bytes through Artifacts.source, applies every check
- * (visibility, read tier, scan) and parses them with the core parser for the media type. At most `concurrency` of either run
+ * (visibility, read tier, scan) and parses them with the explicit source parser, or the media recognizer when undeclared. At most `concurrency` of either run
  * at a time.
  */
 export class ListLoader {
@@ -100,9 +100,9 @@ export class ListLoader {
    * The bytes of a peeked element, checked and parsed. A stored read that no longer passes a check now (the record became
    * unreadable after withdrawal or its policy changed) is read again through the port. Never rejects.
    */
-  materialize(peek: Extract<ElementPeek, { ok: true }>, maxBytes: number,slot?:string): Promise<ElementLoad> {
+  materialize(peek: Extract<ElementPeek, { ok: true }>, maxBytes: number,slot?:string,parser?:string): Promise<ElementLoad> {
     return this.#gate.run(async () => {
-      const first = await this.#check(peek.load, maxBytes,slot);
+      const first = await this.#check(peek.load, maxBytes,slot,parser);
       if (first.ok) {
         if (peek.reused) this.reused++;
         return { ok: true, value: first.value, reused: peek.reused };
@@ -110,7 +110,7 @@ export class ListLoader {
       if (!peek.reused) return { ok: false, reason: first.reason };
       const again = await this.#fresh(peek.external,slot);
       if (!again.ok) return { ok: false, reason: again.reason };
-      const second = await this.#check(again.load, maxBytes,slot);
+      const second = await this.#check(again.load, maxBytes,slot,parser);
       return second.ok ? { ok: true, value: second.value, reused: false } : { ok: false, reason: second.reason };
     });
   }
@@ -122,11 +122,11 @@ export class ListLoader {
     return this.materialize(peek, maxBytes);
   }
 
-  async #check(load: Extract<ExternalLoad, { ok: true }>, maxBytes: number,slot?:string): Promise<Loaded<ParsedSource>> {
+  async #check(load: Extract<ExternalLoad, { ok: true }>, maxBytes: number,slot?:string,parser?:string): Promise<Loaded<ParsedSource>> {
     try {
       const readable = await this.#loader.readable(load, maxBytes,{slot});
       if (!readable.ok) return readable;
-      return this.#loader.parse(readable.value);
+      return this.#loader.parse(readable.value,parser);
     } catch (error) {
       return { ok: false, sha256: load.artifact.body.sha256, reason: `${load.id}：读取或核对时出错（${describeError(error)}）` };
     }

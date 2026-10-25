@@ -158,6 +158,7 @@ export interface ProduceResult {
 
 /** A source a producer reads, with the basis that decides it belongs to the version. */
 export interface PlannedSource {
+  parser?: string;
   producer: string;
   slot: string;
   /** The external object of a single slot; null for a list slot or when no id could be formed. */
@@ -181,17 +182,19 @@ export function plannedSources(product: ProductHandle, build: BuildInfo | null, 
   for (const producer of product.product.producers.filter(p => (p.unversioned === true) === (build === null))) {
     for (const [slot, source] of Object.entries(producer.inputs)) {
       const optional = source.optional === true;
+      const parseDeclaration = source.parser === undefined ? {} : {parser:source.parser};
       if ('source' in source) {
         const held = Object.hasOwn(build?.sources ?? scope, source.source) ? (build?.sources ?? scope)[source.source] : null;
         const basis: CompositionBasis = build !== null && build.released_at !== null ? 'release_record' : 'declared';
         if (source.many === true) {
           // A role holding one id is a list of one.
           const list = held === null ? null : typeof held === 'string' ? [held] : [...held];
-          out.push({ producer: producer.id, slot, external: null, list, many: true, batch: source.batch ?? DEFAULT_BATCH, optional, basis, problem: list === null ? `构建 ${build?.name ?? '不分版本'} 没有 ${source.source} 来源` : null });
+          out.push({ ...parseDeclaration,producer: producer.id, slot, external: null, list, many: true, batch: source.batch ?? DEFAULT_BATCH, optional, basis, problem: list === null ? `构建 ${build?.name ?? '不分版本'} 没有 ${source.source} 来源` : null });
           continue;
         }
         const external = typeof held === 'string' ? held : null;
         out.push({
+          ...parseDeclaration,
           producer: producer.id,
           slot,
           external,
@@ -203,7 +206,7 @@ export function plannedSources(product: ProductHandle, build: BuildInfo | null, 
           problem: external === null ? (held === null ? `构建 ${build?.name ?? '不分版本'} 没有 ${source.source} 来源` : `构建 ${build?.name ?? '不分版本'} 的 ${source.source} 来源是一个列表，生产器的这个输入没有声明 many`) : null,
         });
       } else {
-        const base = { producer: producer.id, slot, list: null, many: false, batch: 0, optional, basis: 'declared' as const };
+        const base = { ...parseDeclaration,producer: producer.id, slot, list: null, many: false, batch: 0, optional, basis: 'declared' as const };
         try {
           out.push({ ...base, external: expandTemplate(source.external, values), problem: null });
         } catch (error) {
@@ -598,6 +601,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
 
   // Single sources: read, check and parse every declared one once.
   const parsed = new Map<string, ParsedSource>();
+  const charged = new Set<string>();
   const slotsOf = new Map<string, Map<string, ParsedSource | null>>();
   const sourceRows: RootSource[] = [];
   const listRows: RootSource[] = [];
@@ -619,7 +623,8 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
       }
       return fail(`${source.producer}.${source.slot}：${source.problem}`);
     }
-    let loaded = parsed.get(source.external);
+    const parseKey=JSON.stringify([source.external,source.parser??null]);
+    let loaded = parsed.get(parseKey);
     if (loaded === undefined) {
       const read = await loader.read(source.external,source.slot);
       if (!read.ok) {
@@ -636,17 +641,20 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
         return fail(`${source.producer}.${source.slot}：${source.external} ${read.reason}`);
       }
       const size = read.artifact.body.size;
-      if (bytes + size > cap) {
+      const charge=charged.has(source.external)?0:size;
+      if (bytes + charge > cap) {
         return fail(`构建的来源合计超过每个构建 ${cap} 字节的上限：已读 ${bytes} 字节，源文件 ${read.artifact.body.sha256}（${source.external}）还有 ${size} 字节`);
       }
-      const readable = await loader.readable(read, cap - bytes,{slot:source.slot});
+      const readable = await loader.readable(read, charged.has(source.external)?cap:cap - bytes,{slot:source.slot});
       if (!readable.ok) return fail(readable.reason);
-      const parse = loader.parse(readable.value);
+      const parse = loader.parse(readable.value,source.parser);
       if (!parse.ok) return fail(parse.reason);
       loaded = parse.value;
-      bytes += loaded.size;
-      parsed.set(source.external, loaded);
+      bytes += charge;
+      charged.add(source.external);
+      parsed.set(parseKey, loaded);
     }
+    if(loaded.parseNote)problems.warn(`${source.producer}.${source.slot}：${loaded.parseNote}`);
     slots.set(source.slot, loaded);
     usedSources.push({ producer: source.producer, slot: source.slot, external: source.external, sha256: loaded.sha256 });
     sourceRows.push(sourceRowOf(source.producer, source.slot, loaded, source.basis, decidedBy));
@@ -1126,7 +1134,7 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
     for (const call of calls) {
       if (state.failure !== null) return { ok: false, reason: state.failure };
       // Only this call's documents are held: at most `cap` bytes of them per batch at a time.
-      const loads = await Promise.all(call.map((peek) => input.listLoader.materialize(peek,Math.max(cap,Math.min(peek.load.artifact.body.size,context.sandbox.producer.inputBytes??128*1024*1024)),list.slot)));
+      const loads = await Promise.all(call.map((peek) => input.listLoader.materialize(peek,Math.max(cap,Math.min(peek.load.artifact.body.size,context.sandbox.producer.inputBytes??128*1024*1024)),list.slot,list.parser)));
       const elements: ParsedSource[] = [];
       if (input.whole) {
         const failed = loads.find((load) => !load.ok);
@@ -1138,6 +1146,7 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
       loads.forEach((load, k) => {
         const at = position.get(call[k].external) as number;
         if (load.ok) {
+          if(load.value.parseNote)problems.warn(`${producer.id}.${list.slot}：${load.value.parseNote}`);
           elements.push(load.value);
           readAt[at] = load.value.sha256;
         } else skipped.push({ external: call[k].external, reason: load.reason, retry: true, cause: 'check', position: at });

@@ -1138,3 +1138,7 @@ The optional `tree_root@1.empty_scope` stores complete=true and each producer la
 ## Catalog constraint integration fixtures
 
 `catalog-constraints.test.ts` calls APV's public `commandTreeProducer` with the parsed original and its SHA-256. The internal `produceCommandEntries` result also carries pack-only `declarations`; that map is not a `producer-output@1` field and must never be copied directly into a Hub producer fixture. Strict output validation, unchecked source constraints, undeclared native types and incomplete grammar evidence remain asserted. See [fix-catalog-constraints](../../docs/hub-r4-tasks/fix-catalog-constraints.md).
+
+## Explicit source parsers
+
+`ProducerSource.parser` pins a registered core parser for a single source or every member of a list. The product pack owns that source interpretation; a system pack retains its observed Content-Type. SourceLoader executes the exact declaration without recognition fallback, while undeclared sources keep media recognition. Original artifacts, read manifests, composition rows and producer slots retain the observed media type; mismatch notes identify the declared parser in the production report. Parse caches include source digest, parser and media/charset options, and declaration-specific slot caches cannot grant recognition to an undeclared binary source. Read tiers, credential checks and size budgets still apply.
