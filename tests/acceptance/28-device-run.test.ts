@@ -74,7 +74,8 @@ async function release(booked: string) {
 function submission(run: string, index: number, bad = false) {
   const data = goodData(); data.steps[0].args = bad ? 'synthetic-invalid' as unknown as string[] : [line];
   // Second authored case also exercises another enabled, role-resolvable method.
-  if (index === 1) {data.steps.push({ object: 'widget-seat', method: 'inspect', args: ['relay endpoint add 192.0.2.130 80'], keywords: {} });data.steps.push({object:'widget-seat',method:'configure',args:['no relay endpoint add 192.0.2.130 80'],keywords:{},cleanup:true});}
+  // dut0's 192.0.2.74/26 shares its segment with client0, so the address is reachable at compile time.
+  if (index === 1) {data.steps.push({ object: 'widget-seat', method: 'inspect', args: ['relay endpoint add 192.0.2.74 80'], keywords: {} });data.steps.push({object:'widget-seat',method:'configure',args:['no relay endpoint add 192.0.2.74 80'],keywords:{},cleanup:true});}
   data.steps.push({object:'widget-seat',method:'configure',args:['no widget health interval pool-a'],keywords:{},cleanup:true});
   data.expects[0].text = expected;
   data.expects[0].quote = { reference: `src:${sha256Hex(original)}/kityminder@1/${model.nodes.find(n => n.selector === `n/expected-${index}`)!.selector}`, text: expected };
@@ -154,10 +155,10 @@ before(async () => {
   // carrying identities of the unrelated package unit fixture into a different product root.
   const root = synced.builds.find(build => build.name === site.RELEASED)?.root;
   assert.ok(root);
-  const catalog = await hub.hub.knowledge.catalog(root, 'commands@1', {base:'/commands',lines:[line,'relay endpoint add 192.0.2.130 80','no widget health interval pool-a','no relay endpoint add 192.0.2.130 80']});
+  const catalog = await hub.hub.knowledge.catalog(root, 'commands@1', {base:'/commands',lines:[line,'relay endpoint add 192.0.2.74 80','no widget health interval pool-a','no relay endpoint add 192.0.2.74 80']});
   assert.ok(catalog);
   const grammar = compileGrammar(catalog.entries().map(e=>({path:'/commands/'+e.words.map(encodeURIComponent).join('/'),words:e.words,signatures:e.signatures})));
-  const commands = [line,'relay endpoint add 192.0.2.130 80','no widget health interval pool-a','no relay endpoint add 192.0.2.130 80'].map(text=>{const identity=commandIdentity(grammar,text);assert.ok(identity, text);return identity;});
+  const commands = [line,'relay endpoint add 192.0.2.74 80','no widget health interval pool-a','no relay endpoint add 192.0.2.74 80'].map(text=>{const identity=commandIdentity(grammar,text);assert.ok(identity, text);return identity;});
   delete CONTRACT_DOC.effects.effect_0.commands;
   CONTRACT_DOC.effects.effect_0.command_scope=['/commands/widget','/commands/no/widget','/commands/relay','/commands/no/relay'];
   CONTRACT_DOC.roles.bed_address = {source:BASE_CONTRACT.effects.effect_0.source,bed_member:true};
