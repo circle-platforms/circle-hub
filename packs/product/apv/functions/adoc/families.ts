@@ -50,7 +50,7 @@ export async function compileFamilies(rawInput: unknown, names: readonly string[
   const input = rawInput as FamilyInput;
   const unknown = Object.keys(input.familyAttributes ?? {}).filter((key) => !names.includes(key));
   if (unknown.length > 0) {
-    return { ok: false, error: { code: 'apv.adoc.family_not_a_name', message: `属性集的键必须是产品的名称族：${unknown.join('、')} 不是`, next_action: '用 product.json names 里的名称族作键，重新给属性集后重跑' } };
+    return { ok: false, error: { code: 'apv.adoc.family_not_a_name', message: `属性集的键不在本次 names 编译范围内：${unknown.join('、')}`, next_action: '按 product.json names 选择本次编译范围，只传相应名称族的属性集后重跑；不借用另一族属性' } };
   }
   const files = { ...input.families };
   const families: Record<string, FamilyResult> = {};

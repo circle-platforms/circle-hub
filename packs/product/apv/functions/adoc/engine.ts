@@ -19,7 +19,7 @@ export async function engineSession<T>(work: () => Promise<T>): Promise<T> {
 export async function document(text: string, main: string, attributes: Record<string, unknown>, parse = true): Promise<{ doc: EngineDocument; logger: MemoryLogger }> {
   if (getVersion() !== ENGINE.version) fail('engine_version', '引擎版本与组成策略不符');
   const logger = LoggerManager.getLogger() as MemoryLogger;
-  const doc = await load(text, { safe: 'secure', sourcemap: true, parse, doctype: 'book', attributes: { ...attributes, reproducible: '', docfile: main } });
+  const doc = await load(text, { safe: 'secure', sourcemap: true, parse, attributes: { ...attributes, webfonts:false, reproducible: '', docfile: main } });
   return { doc, logger };
 }
 /** The current engine attribute state, including body assignments restored through the public playback API. */
@@ -42,4 +42,29 @@ export async function conditionValue(directive: string, main: string, attributes
   const source = `${match[1]}::${match[2]}[]\n\n${marker}\n\nendif::${match[2]}[]`;
   const { doc } = await document(source, main, attributes);
   return doc.findBy({ context: 'paragraph' }).some((block) => block.getSource?.() === marker);
+}
+
+interface DroppedCell {sourceLocation?:{lineno:number}}
+interface TableContext {_columnVisits:number;_currentRow:DroppedCell[];logger:MemoryLogger;closeTable():void}
+let tableContext:TableContext|null=null;
+/** Observe the pinned engine's actual discarded cell objects; never classify an ERROR by its message words. */
+export async function parseDocument(doc:EngineDocument,logger:MemoryLogger):Promise<{recoverable:Set<object>;drops:Array<{cells:number;line:number}>}>{
+ if(tableContext===null){
+  const saved=LoggerManager.getLogger();LoggerManager.setLogger(new MemoryLogger());
+  try{const probe=await load('[cols="1"]\n|===\n|schema probe\n|===\n',{safe:'secure',sourcemap:true});
+   const table=probe.findBy({context:'table'})[0] as unknown as {constructor:{ParserContext:{prototype:TableContext}}};
+   tableContext=table.constructor.ParserContext.prototype;
+  }finally{LoggerManager.setLogger(saved);}
+ }
+ const proto=tableContext,original=proto.closeTable,recoverable=new Set<object>(),drops:Array<{cells:number;line:number}>=[];
+ proto.closeTable=function(){
+  const own=this.logger===logger&&this._columnVisits>0&&this._currentRow.length>0;
+  const cells=own?[...this._currentRow]:[],before=logger.messages.length;
+  original.call(this);
+  const emitted=logger.messages.slice(before);
+  if(own&&emitted.length===1&&emitted[0].severity==='ERROR'&&cells.every(cell=>Number.isSafeInteger(cell.sourceLocation?.lineno??emitted[0].sourceLocation?.lineno))){
+   recoverable.add(emitted[0]);const counts=new Map<number,number>();for(const cell of cells){const line=(cell.sourceLocation?.lineno??emitted[0].sourceLocation!.lineno);counts.set(line,(counts.get(line)??0)+1);}for(const [line,cells]of counts)drops.push({line,cells});
+  }
+ };
+ try{await doc.parse();return {recoverable,drops};}finally{proto.closeTable=original;}
 }

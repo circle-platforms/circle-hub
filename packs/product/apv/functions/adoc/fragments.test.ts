@@ -161,20 +161,21 @@ test('every row of a command table cites its own source line, not the header lin
   const produced = produceAdocEntries(mapped, { name: 'cli-apv', slot: 'manual' });
   assert.ok(produced.ok, JSON.stringify(produced));
   const digest = sha(COMMAND_FILES['commands.adoc']!);
-  const signatures = produced.entries.filter((entry) => entry.data.form === 'signature');
+  assert.deepEqual(produced.entries.filter(entry=>entry.data.form==='signature'),[]);
+  const signatures = produced.entries.filter((entry) => entry.data.form === 'table_row'&&entry.statement.includes('成员'));
   assert.deepEqual(
     signatures.map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.source, entry.fragments[0]!.selector]),
     [
-      ['demo pool add <name>', '/commands/demo/pool/add', digest, 'l/6'],
-      ['demo pool del <name>', '/commands/demo/pool/del', digest, 'l/7'],
+      ['| **demo pool add** *<name>* | 添加成员 |', '/manual/cli-apv/配置命令', digest, 'l/6'],
+      ['| **demo pool del** *<name>* | 删除成员 |', '/manual/cli-apv/配置命令', digest, 'l/7'],
     ],
     JSON.stringify(signatures.map((entry) => [entry.statement, entry.fragments])),
   );
   // The row's own text cites the same line, and no entry cites a byte range inside a mapped table text.
   const described = produced.entries.filter((entry) => String(entry.statement).includes('成员'));
   assert.deepEqual(described.map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]), [
-    ['添加成员', '/commands/demo/pool/add', 'l/6'],
-    ['删除成员', '/commands/demo/pool/del', 'l/7'],
+    ['| **demo pool add** *<name>* | 添加成员 |', '/manual/cli-apv/配置命令', 'l/6'],
+    ['| **demo pool del** *<name>* | 删除成员 |', '/manual/cli-apv/配置命令', 'l/7'],
   ]);
   checkFragments(produced.entries, COMMAND_FILES);
 });
@@ -197,7 +198,7 @@ test('a table row whose cells were not verified is reported and does not borrow 
   assert.ok(produced.entries.every((entry) => !String(entry.statement).includes('删除成员')));
   assert.ok(produced.warnings.some((warning) => warning.includes('回核不到原文行')), produced.warnings.join('；'));
   // What stays is cited on its own line: the surviving row does not move onto the dropped row's line or the header's.
-  const kept = produced.entries.filter((entry) => entry.data.form === 'signature');
-  assert.deepEqual(kept.map((entry) => [String(entry.statement), entry.fragments[0]!.selector]), [['demo pool add <name>', 'l/6']]);
+  const kept = produced.entries.filter((entry) => entry.data.form === 'table_row'&&entry.statement.includes('添加成员'));
+  assert.deepEqual(kept.map((entry) => [String(entry.statement), entry.fragments[0]!.selector]), [['| **demo pool add** *<name>* | 添加成员 |', 'l/6']]);
   checkFragments(produced.entries, COMMAND_FILES);
 });

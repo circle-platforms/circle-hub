@@ -1,6 +1,7 @@
+import {inlineContent,observeInline,cleanInline} from './inline.ts';
 // Stage one: a deterministic expansion/AST adapter. No knowledge registration, signatures, roots, network or storage writes.
 import type { AstNode } from './vendor/core.mjs';
-import { document, conditionValue, engineSession } from './engine.ts';
+import { document, conditionValue, engineSession, parseDocument } from './engine.ts';
 import { AdocFailure, canonical, ENGINE, fail, initialReport, LIMITS, POLICY, sha256, sourceLines, validate } from './input.ts';
 import { expandIncludes } from './includes.ts';
 import { verifyOrigin } from './origins.ts';
@@ -51,7 +52,7 @@ const RENDERED_CHILDREN = /<(?:div|p|table|ul|ol|dl|pre|h[1-6]|li|td|th)\b/i;
  */
 async function inlineOutput(node: AstNode): Promise<string> {
   if (!INLINE_CONTEXTS.has(node.context) || typeof node.getContent !== 'function') return '';
-  const value = await node.getContent();
+  const value = cleanInline(node,await node.getContent());
   return typeof value === 'string' && !RENDERED_CHILDREN.test(value) ? value : '';
 }
 
@@ -83,6 +84,7 @@ export function engineStructuralFailure(observed: EngineObservations): string | 
 }
 
 async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Promise<AdocResult> {
+  let restoreInline=()=>{};
   try {
     for (const [key, value] of Object.entries(overrides)) if (!Object.hasOwn(LIMITS, key) || !Number.isSafeInteger(value) || value < 1 || value > LIMITS[key as keyof Limits]) fail('invalid_budget', '测试预算只能收紧，不能提高生产策略上限');
     const limits = { ...LIMITS, ...overrides };
@@ -106,9 +108,11 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
       }
       return processLine(line);
     };
-    await doc.parse();
+    restoreInline=observeInline(doc,'hub-'+sha256(text+'\0'+canonical(input.attributes??{})));
+    const parsed=await parseDocument(doc,logger);
+    report.dropped_table_cells=parsed.drops.map(drop=>{const source=expanded.lines[drop.line-1];if(!source)fail('engine_parse','引擎丢格位置不在原件行映射中');return {file:source.file,line:source.line,cells:drop.cells};});
     report.engine_messages = logger.messages.map(({ severity, text }) => ({ severity, text }));
-    const structural = engineStructuralFailure({ messages: logger.messages, unterminated: reader.unterminated });
+    const structural = engineStructuralFailure({ messages: logger.messages.filter(message=>!parsed.recoverable.has(message)), unterminated: reader.unterminated });
     if (structural !== null) fail('engine_parse', structural);
     const excluded = new Set<number>(), controls = new Set<number>();
     for (const branch of expanded.branches) {
@@ -130,12 +134,12 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
       if (node.context === 'document' || node.context === 'table_cell') continue;
       doc.playbackAttributes(node.attributes);
       const parentPath = node.parent ? paths.get(node.parent) ?? [] : [];
-      const title = typeof node.title === 'string' ? doc.subAttributes(node.title) : null;
+      const title = typeof node.title === 'string' ? doc.subAttributes(cleanInline(node,node.title)) : null;
       const level = typeof node.level === 'number' ? node.level : parentPath.at(-1)?.level ?? 0;
       const path = node.context === 'section' ? [...parentPath, { level, title: title ?? '', id: node.getId() ?? null, at: blocks.length }] : parentPath;
       paths.set(node, path);
       const at = blocks.length;
-      const raw = rawOf(node, expanded.lines);
+      const raw = cleanInline(node,rawOf(node, expanded.lines));
       const verify = { originals, expand: (text: string): string => doc.subAttributes(text) };
       const verified = verifyOrigin(raw, node.context, node.sourceLocation?.lineno, expanded.lines, visible, input, verify);
       // An example is what the author declared: the `====` block, or a block whose role or style says example. Its own
@@ -146,9 +150,10 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
       const heading = (node.context === 'section' || node.context === 'floating_title') && verified.origins.length === 1
         ? doc.subAttributes(verified.origins[0]!.verbatim.replace(HEADING_MARKER, ''))
         : null;
+      const inline=await inlineContent(node);
       const block: Block = {
         kind: node.context, level, title, id: node.getId() ?? null, role: node.getRole() ?? null, path, raw, heading,
-        expanded: node.subAttributes(raw), converted: await inlineOutput(node),
+        expanded: node.subAttributes(raw), converted: inline.converted||await inlineOutput(node), inline:inline.inline,
         origin: verified.origins.length === 1 ? verified.origins[0] : null, origins: verified.origins,
         reportedLine: node.sourceLocation?.lineno ?? null, unverifiedReason: verified.origins.length > 0 ? '' : verified.reason, listAt, example,
       };
@@ -159,19 +164,26 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
       if (verified.chosenAmong > 1) noteDisambiguated({ block: at, kind: node.context, reported_line: node.sourceLocation?.lineno ?? null, candidates: verified.chosenAmong });
       if (node.rows) {
         block.rows = {};
-        for (const part of ['head', 'body', 'foot'] as const) block.rows[part] = node.rows[part].map((row) => row.map((cell) => {
-          const raw = cell.text ?? '';
+        for (const part of ['head', 'body', 'foot'] as const){
+          block.rows[part]=[];
+          for(const row of node.rows[part]){
+            const cells:NonNullable<Block['rows']>[string][number]=[];
+            for(const cell of row){
+          const raw = cleanInline(cell,cell.text??'');
           const source = verifyOrigin(raw, 'table_cell', cell.sourceLocation?.lineno, expanded.lines, visible, input, verify);
           if (!source.origins.length) noteUnverified({ block: at, kind: 'table_cell', reported_line: cell.sourceLocation?.lineno ?? null, reason: source.reason, next_action: '已自动回读候选行但不能逐字唯一核对；本单元格不生成引用，修复定位器后重跑' });
           else if (source.chosenAmong > 1) noteDisambiguated({ block: at, kind: 'table_cell', reported_line: cell.sourceLocation?.lineno ?? null, candidates: source.chosenAmong });
-          return { raw, expanded: cell.subAttributes(raw), origins: source.origins, reportedLine: cell.sourceLocation?.lineno ?? null };
-        }));
+          cells.push({ raw, expanded: cell.subAttributes(raw), origins: source.origins, reportedLine: cell.sourceLocation?.lineno ?? null,inline:(await inlineContent(cell)).inline });
+            }
+            block.rows[part].push(cells);
+          }
+        }
       }
       indexOf.set(node, at);
       blocks.push(block);
     }
     report.engine_messages = logger.messages.map(({ severity, text }) => ({ severity, text }));
-    const afterWalk = engineStructuralFailure({ messages: logger.messages, unterminated: reader.unterminated });
+    const afterWalk = engineStructuralFailure({ messages: logger.messages.filter(message=>!parsed.recoverable.has(message)), unterminated: reader.unterminated });
     if (afterWalk !== null) fail('engine_parse', afterWalk);
     const identity = { schema: 'apv-adoc-composition@1' as const, main: input.main, revision: input.revision, files: Object.entries(input.files).map(([file, value]) => ({ file, sha256: value.sha256 })), attributes: input.attributes ?? {}, engine: ENGINE, policy: POLICY, limits };
     const composition: Composition = { ...identity, sha256: sha256(canonical(identity)) };
@@ -179,7 +191,7 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
   } catch (error) {
     if (error instanceof AdocFailure) return { ok: false, error: { code: `apv.adoc.${error.code}`, message: error.message, next_action: '补齐或修正指出的原始事实，按同一修订号重新取得整组文件后重跑；失败结果不能替换旧知识根', ...(error.file ? { file: error.file } : {}), ...(error.line ? { line: error.line } : {}) } };
     return { ok: false, error: { code: 'apv.adoc.engine_error', message: '引擎无法完成整组展开，未返回部分模型', next_action: '检查输入语法和引擎沙箱错误，修复后按同一修订号重跑；不得应用部分结果' } };
-  }
+  } finally {restoreInline();}
 }
 export async function compileAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Promise<AdocResult> {
   return engineSession(() => runAdoc(rawInput, overrides));

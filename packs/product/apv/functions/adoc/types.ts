@@ -16,6 +16,7 @@ export interface Block {
   /** The engine's own inline output of this block's content ('' for the contexts that have none): markup converted,
    * attribute references substituted, character references and typographic replacements as the engine renders them. */
   converted: string;
+  inline?:import('./inline.ts').InlineNode[];
   /** The line the engine reported for this block: a candidate only, `origins` is what was verified against the original. */
   reportedLine: number | null;
   /** Why this block has no verified origin ('' when it has one, or has no text of its own to verify). */
@@ -28,7 +29,7 @@ export interface Block {
   /** True when this block is an example, or sits inside one: an author-declared example is reference only and never a
    * command rule (task item 6), so the mapping keeps K1 from anchoring it. */
   example: boolean;
-  rows?: Record<string, Array<Array<{ raw: string; expanded: string; origins: VerifiedRange[]; reportedLine: number | null }>>>;
+  rows?: Record<string, Array<Array<{ raw: string; expanded: string; origins: VerifiedRange[]; reportedLine: number | null;inline?:import('./inline.ts').InlineNode[] }>>>;
 }
 export interface SourceRange { file: string; from: number; to: number; lines: number }
 export interface Condition {
@@ -44,6 +45,7 @@ export interface Report {
   disambiguated_count: number; disambiguated_examples_truncated: boolean;
   disambiguated: Array<{ block: number; kind: string; reported_line: number | null; candidates: number }>;
   remapped: Array<{ block: number; reported_line: number; verified_line: number }>;
+  dropped_table_cells?:Array<{file:string;line:number;cells:number}>;
   engine_messages: Array<{ severity: string; text: string }>;
   invalid_headings: Array<{ file: string; line: number; text: string }>;
 }

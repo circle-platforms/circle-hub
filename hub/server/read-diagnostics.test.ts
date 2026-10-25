@@ -11,7 +11,7 @@ async function call(deps:unknown,args:Record<string,unknown>){
  return (await callTool(deps as ServerDeps,{principal:{id:'usr_01hzzzzzzzzzzzzzzzzzzzzzza',name:'synthetic',role:'user'},context:{traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:null,adminNote:()=>{}},state:{method:'tools/call',tool:'get_nodes',args,started:0,runId:null,callResult:null,acceptance:null,errorCode:null,notes:[]}},'get_nodes',args)).structuredContent as {errors:ProtocolError[]};
 }
 test('an authorized run without a root gets a correction instead of a neutral denial',async()=>{
- const answer=await call({runs:{getRun:async()=>({run:{target_basis:[]}})}},{run:'run_01hzzzzzzzzzzzzzzzzzzzzzza'});
+ const answer=await call({knowledge:{},runs:{getRun:async()=>({run:{target_basis:[]}})}},{run:'run_01hzzzzzzzzzzzzzzzzzzzzzza'});
  assert.equal(answer.errors[0].code,'SUBMISSION_SCHEMA_VIOLATION');assert.equal(answer.errors[0].path,'/run');assert.match(answer.errors[0].message,/没有锁定知识根/);
 });
 test('authorized knowledge diagnostics reach the caller at their argument path; no permission stays neutral',async()=>{

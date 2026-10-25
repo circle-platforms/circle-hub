@@ -23,11 +23,13 @@
       "adoc": {
         "APV": {
           "root": "${var:APV_ADOC_ROOT}",
-          "main": "${var:APV_ADOC_MAIN}"
+          "main": "${var:APV_ADOC_MAIN}",
+          "app_main": "${var:APV_ADOC_APP_MAIN}"
         },
         "NSAE": {
           "root": "${var:NSAE_ADOC_ROOT}",
-          "main": "${var:NSAE_ADOC_MAIN}"
+          "main": "${var:NSAE_ADOC_MAIN}",
+          "app_main": "${var:NSAE_ADOC_APP_MAIN}"
         }
       },
       "spec_index": false
@@ -162,7 +164,20 @@
         "platforms": "${var:APV_PLATFORMS}",
         "components": "${var:APV_COMPONENTS}",
         "licenses": "${var:APV_LICENSES}",
-        "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}"
+        "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}",
+        "app_main": "${var:NSAE_ADOC_APP_MAIN}",
+        "signature_structure": {
+          "schema": "apv-adoc-signature-structure@1",
+          "block": "paragraph",
+          "inline": [
+            "strong",
+            "optional whitespace + emphasis"
+          ],
+          "command_word_grammar": "locked-tree-path-and-ascii-drift-slot@1",
+          "variants": "bounded {a|b} groups",
+          "parameter_authority": "locked command-tree declarations",
+          "other_blocks": "chapter content"
+        }
       },
       "placement": "judgment_allowed"
     },
@@ -207,7 +222,20 @@
         "platforms": "${var:APV_PLATFORMS}",
         "components": "${var:APV_COMPONENTS}",
         "licenses": "${var:APV_LICENSES}",
-        "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}"
+        "deployment_forms": "${var:APV_DEPLOYMENT_FORMS}",
+        "app_main": "${var:APV_ADOC_APP_MAIN}",
+        "signature_structure": {
+          "schema": "apv-adoc-signature-structure@1",
+          "block": "paragraph",
+          "inline": [
+            "strong",
+            "optional whitespace + emphasis"
+          ],
+          "command_word_grammar": "locked-tree-path-and-ascii-drift-slot@1",
+          "variants": "bounded {a|b} groups",
+          "parameter_authority": "locked command-tree declarations",
+          "other_blocks": "chapter content"
+        }
       },
       "placement": "judgment_allowed"
     },
@@ -302,7 +330,7 @@
     },
     {
       "name": "APV_ADOC_ROOT",
-      "description": "SVN directory template with {line}; explicit null selects Markdown",
+      "description": "SVN directory template with original {line} or naming-derived {line_dir}; explicit null selects Markdown",
       "schema": {
         "type": [
           "string",
@@ -313,7 +341,7 @@
     },
     {
       "name": "APV_ADOC_MAIN",
-      "description": "Main adoc file relative to the configured family directory",
+      "description": "CLI main adoc file relative to the configured family directory",
       "schema": {
         "type": "string",
         "minLength": 1
@@ -336,7 +364,7 @@
     },
     {
       "name": "NSAE_ADOC_ROOT",
-      "description": "SVN directory template with {line}; explicit null selects Markdown",
+      "description": "SVN directory template with original {line} or naming-derived {line_dir}; explicit null selects Markdown",
       "schema": {
         "type": [
           "string",
@@ -347,7 +375,7 @@
     },
     {
       "name": "NSAE_ADOC_MAIN",
-      "description": "Main adoc file relative to the configured family directory",
+      "description": "CLI main adoc file relative to the configured family directory",
       "schema": {
         "type": "string",
         "minLength": 1
@@ -427,6 +455,24 @@
         }
       },
       "default": []
+    },
+    {
+      "name": "APV_ADOC_APP_MAIN",
+      "description": "APP main adoc file relative to the family directory, compiled with the same family attributes as CLI",
+      "schema": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": "app.adoc"
+    },
+    {
+      "name": "NSAE_ADOC_APP_MAIN",
+      "description": "APP main adoc file relative to the family directory, compiled with the same family attributes as CLI",
+      "schema": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": "app.adoc"
     }
   ],
   "applicability": {

@@ -510,13 +510,15 @@ sandbox: 12 chapters of 1200 short paragraphs each with an attribute reference a
 paragraphs, 358 ms in one warm host process, 19575674 bytes of output JSON. Both runs stay far inside the producer
 profile; neither is an SLA.
 
-The tests run with `node --test --test-concurrency=1 "packs/product/apv/functions/adoc/*.test.ts"`. A cold process gives
+The tests run with `node --test --test-concurrency=2 "packs/product/apv/functions/adoc/*.test.ts"`; concurrency is capped at 2 on this host. A cold process gives
 the same bytes under a different Date and Math.random, and the same sandbox still refuses the network, file writes and
 child processes. Where the environment gives no OS network isolation the sandbox evidence is skipped explicitly instead of
 being weakened into a pass. Every check so far uses synthetic originals: no real manual and no knowledge root has been
 accepted.
 
-### Step two: the K1 document model, explicit signatures and the name families
+### Step two history: the K1 document model and name families
+
+The signature-admission details in this historical subsection are superseded by **Current adoc source structure** below. Chapter/citation mapping remains in use; mapped Markdown never admits a current adoc definition.
 
 - `k1-model.ts` maps the expanded model to the markdown@1 shape: the `=` levels become sections (a `[discrete]` heading is
   a block, not a section; a `=======` line is reported by step one and stays an ordinary block), blocks carry their section
@@ -817,11 +819,10 @@ pack and reviews a mind map against the root it produced.
 ## Needs from other packages
 
 - **adoc 接线已完成**：每族有独立的手册生产器与变量引用。同步先读根目录固定修订号，再用 `svn:directory-at` 按该修订号递归列子目录，绑定完整目录清单和全部章文件。每族属性的来历由 Hub 组成记录的 `variables` 写；生产器只接收解析后的属性。原件缺失、不同修订号、摘要不符、非 UTF-8 或展开失败均不能换成空手册，合成同步测试已核对失败时旧根不动。
-- **K1 (adoc)**: `produceManualEntries` reads an anchor from any block whose kind is `paragraph` and whose text parses, and
-  its model has no way to say "this block is part of a larger block the author wrote, so it is no standalone signature".
-  The mapping works around that with a kind of its own (`paragraph_part`) for the parts of a split paragraph; a flag on the
-  block, or an option that switches anchor reading off for parts, would be the clean interface. This package does not
-  change K1's files.
+- **K1 (adoc)**: chapter text, applicability and verified citations still reuse K1. Definition admission is now separate:
+  the engine paragraph/inline tree is checked before placement, and opaque chapter/table content cannot create a K1
+  anchor. Split paragraphs do not invent signature boundaries; a recognized whole paragraph keeps all of its verified source ranges,
+  emits a definition once and never assigns a whole-paragraph mention to an uncited part; this package does not modify `manual.ts`.
 - **integrator (adoc, examples)**: the shared relation interface is verified with the real evaluator: example literals
   remain in `data.reference` and are absent from the declared top-level relation fields, while the same-shaped literal
   in real prose still yields a link or drift result. This does not depend on a consumer recognizing the reference flag.
@@ -951,10 +952,12 @@ include 展开、AST 和源读取没有改动。
 | --- | --- | --- |
 | `APV_MIN_LINE` | 字符串或 null，默认 null | 用例清单的发布火车下限；不设下限就显式设 null |
 | `APV_MAINLINE_PAGE_WORDS` | 字符串列表，默认 `[]` | 版本号后仍算主线页的附加词；真实词由集成者从源只读核对 |
-| `APV_ADOC_ROOT` | 含 `{line}` 的相对 SVN 目录模板或 null，默认 null | APV 的来源选择 |
-| `APV_ADOC_MAIN` | 字符串，合成默认 `book.adoc` | 主文件相对上述目录的路径 |
-| `NSAE_ADOC_ROOT` | 含 `{line}` 的相对 SVN 目录模板或 null，默认 null | NSAE 的来源选择 |
-| `NSAE_ADOC_MAIN` | 字符串，合成默认 `book.adoc` | 主文件相对上述目录的路径 |
+| `APV_ADOC_ROOT` | 含 `{line}` 或 `{line_dir}` 的相对 SVN 目录模板或 null，默认 null | APV 的来源选择 |
+| `APV_ADOC_MAIN` | 字符串，合成默认 `book.adoc` | CLI 主文件相对上述目录的路径 |
+| `APV_ADOC_APP_MAIN` | 字符串，合成默认 `app.adoc` | APP 主文件相对上述目录的路径 |
+| `NSAE_ADOC_ROOT` | 含 `{line}` 或 `{line_dir}` 的相对 SVN 目录模板或 null，默认 null | NSAE 的来源选择 |
+| `NSAE_ADOC_MAIN` | 字符串，合成默认 `book.adoc` | CLI 主文件相对上述目录的路径 |
+| `NSAE_ADOC_APP_MAIN` | 字符串，合成默认 `app.adoc` | APP 主文件相对上述目录的路径 |
 | `APV_ADOC_ATTRIBUTES_APV` | 属性名到字符串或布尔的对象，默认 `{}` | APV 本族属性集；空集也要显式设置 |
 | `APV_ADOC_ATTRIBUTES_NSAE` | 属性名到字符串或布尔的对象，默认 `{}` | NSAE 本族属性集；不从另一族借用 |
 
@@ -966,7 +969,7 @@ ROOT 的三种情形：
 
 同一组最多 5 层子目录、32 个目录、128 个 adoc 文件、512 个目录成员；生产器的一批容纳完整目录清单和文件（上限 200 个来源），不拆分一个文件组。超限整份拒绝，请管理员核对范围和预算后重跑，不截断。SVN 依赖 1.1.0 的 `svn:directory-at`；文本模型需保留可往返的 UTF-8 原件，包先核对字节摘要再展开，既有函数输入序列化预算照常执行。
 
-每族独立生产器只引用本族 ROOT、MAIN 和属性变量。改一族属性时，Hub 重核组成记录，输入不变的另一族生产调用复用；合成测试核对了另一族条目摘要不变。ROOT 模板改变会改变传给函数的来源清单和构建输入，按完整输入重核，不猜函数内分支。
+每族独立生产器只引用本族 ROOT、CLI MAIN、APP MAIN 和属性变量。改一族属性时，Hub 重核组成记录，输入不变的另一族生产调用复用；合成测试核对了另一族条目摘要不变。ROOT 模板改变会改变传给函数的来源清单和构建输入，按完整输入重核，不猜函数内分支。
 
 属性来源由 Hub 组成记录的 `variables` 固定；生产器不自己宣称“从部署取得”。试运行不写知识结果，读取仍留审计。合成默认值和上述测试都不构成真实手册验收，真实属性、目录、主文件和主线词由集成者核对并写部署数据。
 
@@ -1053,3 +1056,83 @@ APV_MODELS、APV_PLATFORMS 与已有 APV_COMPONENTS、APV_LICENSES、APV_DEPLOYM
 命令树、手册等独立来源仍照常成根；未声明条目不被追溯状态过滤静默删掉，依赖“已修复”的判断保持未知并请求来源维护者补结构状态后重产。缺陷转用例单列 fixed_status 要求项，其他检查继续独立核对。历史根不改写，本版验证只使用合成 JSON/HTML、临时 PostgreSQL 和脚本化模型，不重跑真实同步。
 
 同步修复：设备显示别名在本轮构建保留集合确定后生成；被不完整结构元数据阻挡的基础构建不留下悬空别名。保留的未发布构建仍声明设备别名，以支持显式 includeUnreleased 同步。闭集命名语法保持原样，不从正文猜别名。
+
+
+## Current adoc source structure
+
+Owner task `adoc-structure`: implementation scope is `functions/adoc/**`, adoc declarations/variables in
+`product.json`, this adoc documentation, related tests and the regenerated pack manifest. No vendor bytes or
+`manual.ts` are changed. All validation sources are synthetic; no real manual group or deployment is read here.
+
+`product.json` publishes `params.signature_structure` as `apv-adoc-signature-structure@1` for each family producer.
+A definition candidate is an engine block of kind `paragraph` whose inline tree contains exactly one `strong`, or
+one `strong`, an engine text whitespace node, and one `emphasis`, with no other content or nested markup. The adapter reads the
+engine's inline serialization as a tree and corroborates its strong/emphasis/code nodes using the engine converter's
+own typed inline callbacks and private per-parse identities. Observation identities are removed from every output;
+quoted-node text is attribute-expanded by the engine, while its final typography remains separately recorded as
+`rendered`. Document type follows the engine default or source declaration; no extra book-mode build flag is
+invented. Identity checks do not fold rendered punctuation back into guessed command words. Passthrough HTML cannot
+impersonate a strong node. It never recognizes a definition from
+mapped Markdown, prose words, a chapter title, code formatting, a listing role or a table header.
+
+The strong field is parsed using the command tree's lexer, with unquoted words and complete exact path comparison.
+The declared `locked-tree-path-and-ascii-drift-slot@1` distinguishes proof from missing-path diagnosis: any complete
+path explicitly declared in the locked tree is accepted, including non-Latin command words. An absent path is a drift
+candidate only when every word belongs to the source signature's ASCII slot grammar: printable ASCII characters except
+quote and group delimiters (`" ' { } [ ] < > |`); SP/HT separates words. Whole-word `{a|b}` variants
+and optional `[no]` are expanded by a bounded grammar (64 variants). Every resulting word sequence must equal a complete
+locked tree path, never a prefix. Existing paths receive definition entries with the original chapter-line citations.
+A lexically valid missing path receives a `signature_drift` record with the missing complete alternatives and a repair
+exit; known alternatives are retained independently. An unmatched field outside the declared drift-slot grammar, such as a Chinese bold heading, remains ordinary chapter
+content and creates no drift; script alone is never command evidence, and a known non-Latin path is not excluded. Missing tree authority stays unknown and requests
+rebinding, never an absence fact.
+
+The one optional emphasis field follows the bracket/name parameter grammar: `<required>` and `[optional]`, bounded
+nesting. Names are exact structured identifiers, including non-Latin names; no name-to-type heuristic or ASCII-name
+restriction is applied. Name, position and required/optional flag are compared exactly to the locked tree's structured parameter
+signatures; types and constraints must be declared there. `parameters_verified` records the mechanical result as a
+boolean. A mismatch or missing type is retained with `missing`/`next_action` and a file/line warning, not inferred from
+parameter names or descriptions. Native parameter declarations remain in `parameter_authorities`.
+
+Body strong and code spans retain the engine quoted-node text as literals in `command_mentions`, including unknown strings.
+Only exact complete path-word matches against the supplied locked tree enter `command_literals`; the existing read-time
+relation evaluator repeats the exact `/commands` match in that immutable root. Unmatched mentions never enter a drift
+field. Examples stay reference-only in `data.reference`. Table rows remain chapter content with their own verified line
+citations and inline mentions; they do not define commands merely because their text is bold.
+
+The pinned engine's incomplete-row recovery is observed at its table parser's `closeTable`, using its actual pending
+cell objects and the identity of the ERROR that call emitted. No log-message keyword or regular expression classifies
+an error. The engine keeps its own surviving rows; `report.dropped_table_cells` lists original file, line and count of
+existing cells actually dropped (not the number of missing columns). Every other ERROR/FATAL and an unterminated block
+still fails the whole group. Per-book production warnings include the canonical full report: dropped cells, original
+NUL counts, engine messages, branches and unverified origins; these facts remain visible in production records.
+
+Each family compiles CLI and APP from the same complete pinned revision and the same family attribute declaration,
+under `/manual/cli-<family>/...` and `/manual/app-<family>/...` on the same version line. `data.manual_name` also
+preserves the book identity on command definitions and shared chapter content. Both main files are required
+for configured adoc; absence of either refuses the group. The existing `<family>_ADOC_MAIN` is CLI;
+`<family>_ADOC_APP_MAIN` is the second main-file variable. Configure each family map with the single brand attribute the source generation script actually passes; the adapter
+does not infer a brand from attribute names or borrow another family map. An explicitly empty map stays empty and is
+not proof that deployment matches the source script. `overseas` is optional, and the generation policy always uses `webfonts!` (JSON `webfonts: false`). No other family's
+brand is added. Actual attribute names and file names are deployment facts supplied by the integrator, not guessed.
+
+Directory substitution is explicit: `{line}` always preserves the supplied version line literally. `{line_dir}` accepts
+one to three decimal components (at most nine digits each, including the pack naming grammar's canonical one-component line), applies the pack naming grammar `lineKey` to
+leading zeroes and trailing zero components, then pads to three components and joins them with underscores: `10.8` and `0010.008.000` become `10_8_0`, and `10.8.2` becomes `10_8_2`. No prefix search, version guessing or implicit rewrite is
+performed. Invalid or nonnumeric lines have a concrete correction exit.
+
+Validation and expectation migration: the initial adoc suite had 95 tests, 24 failing. Old listing/monospace/table
+signature assertions are retained as chapter/citation and non-definition checks under the current structure rule;
+old prose applicability examples remain undeclared rather than being classified by words. Added synthetic cases cover
+standalone signature spans, variants, raw mentions, Chinese bold headings, table recovery, separate CLI/APP books,
+family flags, directory spelling and byte-identical repeated production. Historical capacity numbers above are not
+performance evidence for this revision. Final synthetic validation: the 95 original adoc cases remain; 13 cases were added, for 108/108 passed and zero
+failed/cancelled/skipped under concurrency 2. `npm run typecheck` passes. The forward pack version is 1.7.8, after
+merging current hub-redesign before signing; its manifest and registry publish validation pass. This product declares
+zero publication samples, so that check is not a sample correctness claim.
+
+Supplementary unchanged product tests ran 43 cases: 42 passed and one existing formatting guard in
+`packs/product/apv/variables.test.ts` failed. That guard demands one-line unrelated closed-set declarations; the untouched
+base `db16a6a8` already stores those declarations across multiple lines. Their content and layout are unchanged in this
+adoc-only task. No test is deleted, skipped or relaxed for that failure. Real manuals, real deployment values and real
+systems have not been read or validated; the integrator supplies the actual brand flags and both main-file paths.

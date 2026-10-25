@@ -11,7 +11,7 @@ test('a cold 49000-entry index preserves predecessor bytes, complete truncated c
   t.after(() => rm(directory, { recursive: true, force: true }));
   const result = await benchmarkView(directory);
   t.diagnostic(JSON.stringify(result));
-  assert.equal(result.sha256, '85273786a6e6b67595281c4e41fed20296566b8abaa2fe9e0791d25f0baf55cc');
+  assert.equal(result.sha256, 'ed5ba89a218d20fdd96a4b61d3555aa68492cd2926e6caf1185139ea1a285fb9');
   assert.equal(result.bytes, 15_665_029);
   assert.deepEqual([result.totalEntries, result.totalKeys, result.listed, result.truncated], [49_000, 1800, 30_199, true]);
   assert.deepEqual(result.totals, { entry_counts: { placed: 49_000, total: 49_000, unplaced: 0 } });

@@ -33,26 +33,21 @@ const entriesOf = async (files: Record<string, string>, attributes: Record<strin
   const out = await compile(files, attributes);
   const mapped = toK1Model(out.model, out.composition, 'cli');
   assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
-  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual', catalog: catalogOf([['demo','pool','add'],['demo','pool','del'],['demo','pool','show'],['demo','pool','mode'],['demo','pool','state'],['demo','route','static'],['demo','probe']]) });
   assert.ok(produced.ok, JSON.stringify(produced));
   return produced;
 };
 
-test('a [role=signature] listing block is a signature; its params ride along', async () => {
+test('a legacy signature-role listing stays verbatim chapter content with no parameter claims', async () => {
   const result = await entriesOf({
     'book.adoc': '= Book\n\n== 命令\n\n[role=signature]\n----\n*demo pool add* _<name> [weight]_\n----\n\n该命令用于添加成员。\n',
   });
-  const signature = result.entries.find((entry) => entry.data.form === 'signature');
-  assert.ok(signature !== undefined, JSON.stringify(result.entries.map((e) => [e.data.form, e.path])));
-  assert.equal(signature.path, '/commands/demo/pool/add');
-  assert.equal(String(signature.statement), 'demo pool add <name> [weight]');
-  assert.deepEqual(
-    (signature.data.params as Array<{ name: string; required: boolean }>).map((param) => [param.name, param.required]),
-    [['name', true], ['weight', false]],
-  );
+  assert.deepEqual(result.entries.filter(entry=>entry.data.form==='signature'),[]);
+  assert.ok(result.entries.some(entry=>entry.statement==='*demo pool add* _<name> [weight]_'));
+  assert.ok(result.entries.every(entry=>entry.path?.startsWith('/manual/cli')));
 });
 
-test('every line of a signature block is read on its own, cited on its own line, and a line that reads as no signature is reported', async () => {
+test('legacy signature-role lines retain exact text and per-line citations without definitions', async () => {
   const out = await compile({
     'book.adoc': [
       '= Book',                            // 1
@@ -72,47 +67,16 @@ test('every line of a signature block is read on its own, cited on its own line,
   });
   const mapped = toK1Model(out.model, out.composition, 'cli');
   assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
-  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual', catalog: catalogOf([['demo','pool','add'],['demo','pool','del'],['demo','pool','show'],['demo','pool','mode'],['demo','pool','state'],['demo','route','static'],['demo','probe']]) });
   assert.ok(produced.ok, JSON.stringify(produced));
-  // A blank line makes no entry, and no line is wrapped in marks the source does not have.
-  assert.ok(
-    produced.entries.every((entry) => !/^\*{3,}/.test(String(entry.statement)) && String(entry.statement) !== '****'),
-    JSON.stringify(produced.entries.map((entry) => entry.statement)),
-  );
-  assert.deepEqual(
-    produced.entries.filter((entry) => entry.data.form === 'signature').map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
-    [
-      ['demo pool add <name> [weight]', '/commands/demo/pool/add', 'l/7'],
-      ['demo pool del <name>', '/commands/demo/pool/del', 'l/8'],
-      ['demo pool timeout seconds', '/commands/demo/pool/timeout/seconds', 'l/10'],
-    ],
-    JSON.stringify(produced.entries.map((entry) => [entry.data.form, entry.statement, entry.fragments])),
-  );
-  assert.deepEqual(
-    (produced.entries.find((entry) => entry.statement === 'demo pool add <name> [weight]')!.data.params as Array<{ name: string; required: boolean }>).map((param) => [param.name, param.required]),
-    [['name', true], ['weight', false]],
-    'a group is a parameter, not a variant of the command',
-  );
-  assert.equal(
-    produced.entries.some((entry) => String(entry.statement) === 'demo pool del <name> [weight]'),
-    false,
-    'the second line is read on its own and does not inherit the first line’s parameter',
-  );
-  assert.deepEqual((produced.entries.find((entry) => entry.statement === 'demo pool del <name>')!.data.variants ?? null), null, 'no variants are invented for a plain line');
-  // The line that reads as no signature stays the text it is, on its own line, and is reported with file, line, reason.
-  assert.deepEqual(
-    mapped.unparsed.map((one) => ({ file: one.file, line: one.line, text: one.text, reason: one.reason !== '', next_action: one.next_action !== '' })),
-    [{ file: 'book.adoc', line: 11, text: '配置成员池。', reason: true, next_action: true }],
-    JSON.stringify(mapped.unparsed),
-  );
-  const kept = produced.entries.find((entry) => String(entry.statement) === '配置成员池。');
-  assert.ok(kept !== undefined, JSON.stringify(produced.entries.map((entry) => entry.statement)));
-  assert.equal(kept.data.form, 'text');
-  assert.equal(kept.fragments[0]!.selector, 'l/11');
-  assert.ok(produced.warnings.some((warning) => warning.includes('读不成命令签名') && warning.includes('book.adoc:11')), produced.warnings.join('；'));
+  assert.deepEqual(produced.entries.filter(entry=>entry.data.form==='signature'),[]);
+  assert.deepEqual(produced.entries.map(entry=>[entry.statement,entry.fragments[0]!.selector]),[
+    ['demo pool add <name> [weight]','l/7'],['*demo pool del* _<name>_','l/8'],['demo pool timeout seconds','l/10'],['配置成员池。','l/11'],
+  ]);
+  assert.deepEqual(mapped.unparsed,[],'a listing is not a signature candidate');
 });
 
-test('an AsciiDoc signature paragraph is a signature, in bold and italic or as one monospace line', async () => {
+test('strong and emphasis paragraphs define exact tree paths while monospace and headings stay references', async () => {
   const result = await entriesOf({
     'book.adoc': [
       '= Book',                                  // 1
@@ -123,7 +87,7 @@ test('an AsciiDoc signature paragraph is a signature, in bold and italic or as o
       '',                                        // 6
       '该命令用于配置路由。',                        // 7
       '',                                        // 8
-      '*demo pool add* _<name>_ _[interval]_',   // 9
+      '*demo pool add* _<name> [interval]_',   // 9
       '',                                        // 10
       '`demo pool show <name>`',                 // 11
       '',                                        // 12
@@ -150,9 +114,7 @@ test('an AsciiDoc signature paragraph is a signature, in bold and italic or as o
     signatures.map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]).sort(),
     [
       ['demo pool add <name> [interval]', '/commands/demo/pool/add', 'l/9'],
-      ['demo pool del <name>', '/commands/demo/pool/del', 'l/13'],
-      ['demo pool show <name>', '/commands/demo/pool/show', 'l/11'],
-      ['demo route static <net>', '/commands/demo/route/static', 'l/5'],
+      ['demo route static \\<net\\>', '/commands/demo/route/static', 'l/5'],
     ],
     JSON.stringify(signatures.map((entry) => [entry.statement, entry.path, entry.fragments])),
   );
@@ -213,7 +175,7 @@ test('an example is reference only: its paragraphs, tables and signature blocks 
   }
 });
 
-test('command-table rows are signatures under a header that names commands; value rows are not (K1 rules apply)', async () => {
+test('command and value tables stay cited chapter rows while a standalone signature paragraph defines its path', async () => {
   const result = await entriesOf({
     'book.adoc': [
       '= Book',
@@ -227,7 +189,7 @@ test('command-table rows are signatures under a header that names commands; valu
       '| *demo route static* _<net>_ | 静态路由',
       '|===',
       '',
-      '**demo pool state** *\\<value\\>*',
+      '*demo pool state* _<value>_',
       '',
       '[cols="1,2",options="header"]',
       '|===',
@@ -239,10 +201,10 @@ test('command-table rows are signatures under a header that names commands; valu
     ].join('\n'),
   });
   const signatures = result.entries.filter((entry) => entry.data.form === 'signature').map((entry) => entry.statement);
-  assert.deepEqual([...signatures].sort(), ['demo pool add <name>', 'demo pool state <value>', 'demo route static <net>'], JSON.stringify(signatures));
+  assert.deepEqual([...signatures].sort(), ['demo pool state <value>'], JSON.stringify(signatures));
   assert.ok(!signatures.some((s) => s === 'enable' || s === 'disable'), 'value rows never become signatures');
   const enableRow = result.entries.find((entry) => String(entry.statement).includes('启用'));
-  assert.ok(enableRow !== undefined && enableRow.path === '/commands/demo/pool/state', 'the value rows stay with their command');
+  assert.ok(enableRow !== undefined && enableRow.path?.startsWith('/manual/cli'), 'table rows retain their chapter citation and never invent command ownership');
 });
 
 test('a signature block that verifies on no source line is reported and cites nothing', async () => {
@@ -274,7 +236,7 @@ test('a signature block that verifies on no source line is reported and cites no
     [{ kind: 'listing', file: 'book.adoc', line: 8, reason: true, next_action: true }],
     JSON.stringify(mapped.uncited),
   );
-  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual', catalog: catalogOf([['demo','pool','add'],['demo','pool','del'],['demo','pool','show'],['demo','pool','mode'],['demo','pool','state'],['demo','route','static'],['demo','probe']]) });
   assert.ok(produced.ok, JSON.stringify(produced));
   assert.deepEqual(produced.entries.filter((entry) => entry.data.form === 'signature'), [], 'no signature is invented for an uncited block');
   // The paragraph that holds the same words is cited on its own lines, and K1 counts no malformed block.
@@ -304,7 +266,7 @@ test('a line with an adoc source refuses the transitional catalog by a typed rea
   assert.equal(catalogRefusal().message.includes('这一版本线'), true, 'without a family the line is named');
 });
 
-test('a signature line keeps the characters of its command words: only paired marks at token edges go', async () => {
+test('listing and table words preserve underscores, plus signs and escaping without invented command paths', async () => {
   const result = await entriesOf({
     'book.adoc': [
       '= Book',                                    // 1
@@ -328,23 +290,11 @@ test('a signature line keeps the characters of its command words: only paired ma
       '',                                          // 19
     ].join('\n'),
   });
-  const signatures = result.entries.filter((entry) => entry.data.form === 'signature');
-  assert.deepEqual(
-    signatures.map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
-    [
-      ['demo set max_conn <count>', '/commands/demo/set/max_conn', 'l/7'],
-      ['demo health_check add <name>', '/commands/demo/health_check/add', 'l/8'],
-      ['demo cipher add aes128+sha <name>', '/commands/demo/cipher/add/aes128+sha', 'l/9'],
-      ['demo pool del <name>', '/commands/demo/pool/del', 'l/10'],
-      ['demo pool add <name>', '/commands/demo/pool/add', 'l/11'],
-      ['demo health_check show <name>', '/commands/demo/health_check/show', 'l/17'],
-    ],
-    JSON.stringify(signatures.map((entry) => [entry.statement, entry.path, entry.data.words])),
-  );
-  // The same command read from a signature block and from a command table row lands on the same node.
-  const words = signatures.map((entry) => (entry.data.words as string[]).join(' '));
-  assert.ok(words.includes('demo health_check add') && words.includes('demo health_check show'), JSON.stringify(words));
-  assert.ok(!words.some((word) => word.includes('healthcheck') || word.includes('maxconn') || word.includes('aes128sha')), JSON.stringify(words));
+  assert.deepEqual(result.entries.filter(entry=>entry.data.form==='signature'),[]);
+  for(const [text,line] of [['demo set max_conn <count>','l/7'],['demo health_check add <name>','l/8'],['demo cipher add aes128+sha <name>','l/9'],['*demo pool del* _<name>_','l/10'],['**demo pool add** *\\<name\\>*','l/11']]){
+    assert.ok(result.entries.some(entry=>entry.statement===text&&entry.fragments[0]!.selector===line));
+  }
+  assert.ok(result.entries.some(entry=>entry.statement.includes('demo health_check show')&&entry.fragments[0]!.selector==='l/17'));
 });
 
 test('example content is marked reference only, so a reader does not take it for a behaviour of the command before it', async () => {
@@ -378,9 +328,9 @@ test('example content is marked reference only, so a reader does not take it for
   assert.deepEqual(
     marked,
     [
-      ['**demo probe** *192.0.2.1*', '/commands/demo/probe', 'l/11'],
-      ['输出如下。', '/commands/demo/probe', 'l/13'],
-      ['demo probe <target>', '/commands/demo/probe', 'l/18'],
+      ['**demo probe** *192.0.2.1*', '/manual/cli/命令', 'l/11'],
+      ['输出如下。', '/manual/cli/命令', 'l/13'],
+      ['demo probe <target>', '/manual/cli/命令', 'l/18'],
     ],
     JSON.stringify(result.entries.map((entry) => [entry.statement, entry.data])),
   );
@@ -393,7 +343,7 @@ test('example content is marked reference only, so a reader does not take it for
   assert.ok(signature !== undefined && signature.data.reference_only === undefined, JSON.stringify(signature?.data));
 });
 
-test('a spaced literal mark is no markup: such a line reads as no signature and is reported, not turned into a command', async () => {
+test('spaced and inline marks in a listing remain exact source characters', async () => {
   const out = await compile({
     'book.adoc': [
       '= Book',                          // 1
@@ -413,37 +363,12 @@ test('a spaced literal mark is no markup: such a line reads as no signature and 
   });
   const mapped = toK1Model(out.model, out.composition, 'cli');
   assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
-  // The three spaced-mark lines are not markup, so they are not signatures: they are reported with their line and
-  // reason, and stay the text they are — the source characters are not deleted to make a command word.
-  assert.deepEqual(
-    mapped.unparsed.map((one) => [one.file, one.line, one.text, one.reason !== '']),
-    [
-      ['book.adoc', 7, 'demo + pool + add <name>', true],
-      ['book.adoc', 8, 'demo * cipher * add <name>', true],
-      ['book.adoc', 9, 'demo _ route _ add <name>', true],
-    ],
-    JSON.stringify(mapped.unparsed),
-  );
-  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
-  assert.ok(produced.ok, JSON.stringify(produced));
-  assert.deepEqual(
-    produced.entries.filter((entry) => entry.data.form === 'signature').map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
-    [
-      ['demo pool add <name>', '/commands/demo/pool/add', 'l/10'],
-      ['demo set max_conn <count>', '/commands/demo/set/max_conn', 'l/11'],
-    ],
-    JSON.stringify(produced.entries.map((entry) => [entry.data.form, entry.statement, entry.path])),
-  );
-  assert.deepEqual(
-    produced.entries.filter((entry) => entry.data.form !== 'signature').map((entry) => [String(entry.statement), entry.fragments[0]!.selector]),
-    [
-      ['demo + pool + add <name>', 'l/7'],
-      ['demo * cipher * add <name>', 'l/8'],
-      ['demo _ route _ add <name>', 'l/9'],
-    ],
-    'each line stays the words the source has, on its own line',
-  );
-  assert.ok(produced.warnings.some((warning) => warning.includes('读不成命令签名') && warning.includes('book.adoc:7')), produced.warnings.join('；'));
+  assert.deepEqual(mapped.unparsed,[],'listing content is not reclassified as a paragraph signature');
+  const produced=produceAdocEntries(mapped,{name:'cli',slot:'manual'});assert.ok(produced.ok,JSON.stringify(produced));
+  assert.deepEqual(produced.entries.filter(entry=>entry.data.form==='signature'),[]);
+  assert.deepEqual(produced.entries.map(entry=>[entry.statement,entry.fragments[0]!.selector]),[
+    ['demo + pool + add <name>','l/7'],['demo * cipher * add <name>','l/8'],['demo _ route _ add <name>','l/9'],['demo *pool* add <name>','l/10'],['demo set max_conn <count>','l/11'],
+  ]);
 });
 
 /** A synthetic command catalog of complete commands, in the shape K1's placement and drift checks read. */
@@ -453,7 +378,7 @@ const catalogOf = (commands: string[][]): CommandCatalog => {
   for (const words of commands) {
     let node = root;
     words.forEach((word, index) => {
-      const key = word.toLowerCase();
+      const key = word;
       let next = node.children.get(key);
       if (next === undefined) {
         next = { children: new Map(), path: null };
@@ -463,7 +388,7 @@ const catalogOf = (commands: string[][]): CommandCatalog => {
       node = next;
     });
   }
-  return { root, heads: [...new Set(commands.map((words) => (words[0] ?? '').toLowerCase()))], size: commands.length } as unknown as CommandCatalog;
+  return { root, heads: [...new Set(commands.map((words) => words[0] ?? ''))], size: commands.length } as unknown as CommandCatalog;
 };
 
 test('an example takes no part in judgment: its literal is no drift candidate, and the mark is disclosed', async () => {
@@ -499,16 +424,16 @@ test('an example takes no part in judgment: its literal is no drift candidate, a
     content: { kind: entry.kind, statement: String(entry.statement), data: entry.data, applicability: entry.applicability ?? null },
   }));
   const facts = relationFacts('a'.repeat(64), rules, nodes, sources);
-  assert.deepEqual(facts.drift.map(row => row.literal), ['demo ghost show']);
+  assert.deepEqual(facts.drift.map(row => row.literal), []);
   assert.ok(!facts.links.some(row => row.literal === 'demo ghost add'));
   // Matching targets must not turn an example into a link either.
   nodes.set('/commands/demo/ghost', new Set()); nodes.set('/commands/demo/ghost/add', definition);
   const withExampleTarget = relationFacts('a'.repeat(64), rules, nodes, sources);
   assert.ok(!withExampleTarget.links.some(row => row.literal === 'demo ghost add'));
-  assert.deepEqual(withExampleTarget.drift.map(row => row.literal), ['demo ghost show']);
+  assert.deepEqual(withExampleTarget.drift.map(row => row.literal), []);
   assert.equal(Object.hasOwn(examples[0]!.data, 'command_literals'), false);
   assert.equal(Object.hasOwn(examples[0]!.data, 'signature_literals'), false);
-  assert.deepEqual(examples[0]!.data.reference, { command_literals: ['demo ghost add'] });
+  assert.deepEqual(examples[0]!.data.reference, { command_mentions: ['demo ghost add'] });
   // The mark and what a consumer still has to do are said out loud.
   assert.ok(
     produced.warnings.some((warning) => warning.includes('data.reference_only') && warning.includes('分流')),
@@ -517,10 +442,11 @@ test('an example takes no part in judgment: its literal is no drift candidate, a
   // The real behaviour of the command carries no such mark.
   const real = produced.entries.find((entry) => String(entry.statement).includes('探测目标'));
   assert.ok(real !== undefined && real.data.reference_only === undefined, JSON.stringify(real?.data));
-  assert.deepEqual(real!.data.command_literals, ['demo ghost show']);
+  assert.deepEqual(real!.data.command_mentions,['demo ghost show']);
+  assert.equal(real!.data.command_literals,undefined);
 });
 
-test('an escaped closing mark is a literal character: it stays in the line and the line reads as no signature', async () => {
+test('escaped closing marks in listings stay literal and never create paragraph definitions', async () => {
   const lines = [
     '= Book',                       // 1
     '',                             // 2
@@ -540,36 +466,8 @@ test('an escaped closing mark is a literal character: it stays in the line and t
   const out = await compile({ 'book.adoc': lines.join('\n') });
   const mapped = toK1Model(out.model, out.composition, 'cli');
   assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
-  // The five escaped lines are no markup: their literal marks stay in the text, the words are no command words, and the
-  // lines are reported instead of becoming a definition of a command the source does not have.
-  assert.deepEqual(
-    mapped.unparsed.map((one) => [one.file, one.line, one.text]),
-    [
-      ['book.adoc', 7, 'demo *pool\\*_ add <name>'],
-      ['book.adoc', 8, 'demo +pool\\+_ add <name>'],
-      ['book.adoc', 9, 'demo #pool\\#_ add <name>'],
-      ['book.adoc', 10, 'demo `pool\\`_ add <name>'],
-      ['book.adoc', 11, 'demo *pool\\* add <name>'],
-    ],
-    JSON.stringify(mapped.unparsed),
-  );
-  for (const withoutCatalog of [produceAdocEntries(mapped, { name: 'cli', slot: 'manual' }), produceAdocEntries(mapped, { name: 'cli', slot: 'manual', catalog: catalogOf([['demo', 'pool_', 'add'], ['demo', 'pool', 'add']]) })]) {
-    assert.ok(withoutCatalog.ok, JSON.stringify(withoutCatalog));
-    assert.deepEqual(
-      withoutCatalog.entries.filter((entry) => entry.data.form === 'signature').map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
-      [['demo pool add <name>', '/commands/demo/pool/add', 'l/12']],
-      'the unescaped line is still a signature, and a catalog that holds the fabricated command changes nothing',
-    );
-    assert.deepEqual(
-      withoutCatalog.entries.filter((entry) => entry.data.form !== 'signature').map((entry) => [String(entry.statement), entry.fragments[0]!.selector]),
-      [
-        ['demo *pool\\*_ add <name>', 'l/7'],
-        ['demo +pool\\+_ add <name>', 'l/8'],
-        ['demo #pool\\#_ add <name>', 'l/9'],
-        ['demo `pool\\`_ add <name>', 'l/10'],
-        ['demo *pool\\* add <name>', 'l/11'],
-      ],
-      'a listing is verbatim: each line keeps the characters the source has, escapes included, on its own line',
-    );
-  }
+  assert.deepEqual(mapped.unparsed,[]);
+  const produced=produceAdocEntries(mapped,{name:'cli',slot:'manual'});assert.ok(produced.ok,JSON.stringify(produced));
+  assert.deepEqual(produced.entries.filter(entry=>entry.data.form==='signature'),[]);
+  assert.deepEqual(produced.entries.map(entry=>[entry.statement,entry.fragments[0]!.selector]),lines.slice(6,12).map((line,index)=>[line,'l/'+(7+index)]));
 });
