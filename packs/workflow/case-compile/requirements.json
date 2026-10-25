@@ -4,7 +4,7 @@
     {
       "key": "plan",
       "name": "执行计划",
-      "description": "客户端填写受限结构：台架、空 blocks、原名步骤（args 和 keywords）、带逐字引文和 after 步骤号的期望、地址替换表。Hub 只核验槽位，不生成内容；满足后由客户端脚本生成工作簿（任务 2）",
+      "description": "客户端填写受限结构：台架、空 blocks、原名步骤（args 和 keywords）、带逐字引文和 after 步骤号的期望、地址替换表。Hub 只核验槽位，不生成内容；满足后由客户端脚本生成工作簿（任务 2）。步骤自身承担前置与清理：断言要观察的记录先在前部创建；每条改配置的步骤在末尾清理段有逆序对应的逆操作（查询类不需要）；改过地址的接口在清理段恢复原地址。",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
@@ -204,7 +204,7 @@
     {
       "key": "expected_grounded",
       "name": "期望结果有逐字来源",
-      "description": "默认期望文字逐字来自引文；显式 model_judgment 的设备可观察文字由模型选择，Hub 核本用例期望节点引文、after 和取值规则，保留模型、理由并以判断为前提",
+      "description": "默认期望文字逐字来自引文；显式 model_judgment 的设备可观察文字由模型选择，Hub 核本用例期望节点引文、after 和取值规则，保留模型、理由并以判断为前提。期望优先写成可机械核对的输出（应答状态码、应答条数、表项计数、关键行存在与否）：查询类断言前必须在计划前部先建好被查记录（前置补齐），不得把查询不存在的记录当成功；作者原文的描述性期望仍以 quote 逐字保留作依据。确实无法机械化时才用 model_judgment 并在 rationale 写明原因。",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",

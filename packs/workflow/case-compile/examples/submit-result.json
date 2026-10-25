@@ -24,23 +24,39 @@
                   "object": "widget-seat",
                   "method": "configure",
                   "args": [
+                    "widget health record synth-rec-01 create"
+                  ],
+                  "keywords": {}
+                },
+                {
+                  "object": "widget-seat",
+                  "method": "configure",
+                  "args": [
                     "widget health interval 60"
                   ],
                   "keywords": {}
                 },
                 {
-                  "object": "widget-host",
-                  "method": "shell",
+                  "object": "widget-seat",
+                  "method": "configure",
                   "args": [
-                    "echo 192.0.2.90"
+                    "show health record synth-rec-01"
                   ],
                   "keywords": {}
                 },
                 {
-                  "object": "widget-clock",
-                  "method": "pause",
+                  "object": "widget-seat",
+                  "method": "configure",
                   "args": [
-                    "1"
+                    "no widget health interval"
+                  ],
+                  "keywords": {}
+                },
+                {
+                  "object": "widget-seat",
+                  "method": "configure",
+                  "args": [
+                    "no widget health record synth-rec-01"
                   ],
                   "keywords": {}
                 }
@@ -52,7 +68,17 @@
                     "reference": "src:ddc9b8bffb027f83323aa449adc5856d3d2268c100441a271c680123f990ec85/kityminder@1/n/fixture-expected",
                     "text": "健康检查间隔设置成功"
                   },
-                  "after": 1
+                  "after": 2
+                },
+                {
+                  "text": "Total entries: 1",
+                  "quote": {
+                    "reference": "src:ddc9b8bffb027f83323aa449adc5856d3d2268c100441a271c680123f990ec85/kityminder@1/n/fixture-expected-count",
+                    "text": "查询到 1 条间隔记录"
+                  },
+                  "after": 3,
+                  "basis": "model_judgment",
+                  "rationale": "原文期望“查询到 1 条间隔记录”是描述性的；前置步骤已创建 synth-rec-01 一条记录，设备 show 应答会带合计行 Total entries: 1，逐条数即可机械核对"
                 }
               ]
             }
