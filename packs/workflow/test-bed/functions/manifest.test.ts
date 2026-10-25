@@ -245,6 +245,26 @@ describe('parseManifest is total', () => {
   });
 });
 
+describe('declared baseline config', () => {
+  it('keeps an omitted baseline as an empty list and a declared one by id', () => {
+    const plain = parseManifest(valid);
+    assert.ok(plain.ok);
+    if (!plain.ok) return;
+    assert.deepEqual(plain.beds[0].baseline, []);
+    const parsed = parseManifest({ ...valid, beds: [{ ...valid.beds[0], baseline: [{ id: 'pool', values: { mode: 'off' } }, { id: 'acl', values: { state: 'empty' } }] }] });
+    assert.ok(parsed.ok, JSON.stringify(parsed.ok ? null : parsed.problems));
+    if (!parsed.ok) return;
+    assert.deepEqual(parsed.beds[0].baseline.map((entry) => entry.id), ['acl', 'pool']);
+    assert.equal(parsed.beds[0].baseline.find((entry) => entry.id === 'pool')?.values.mode, 'off');
+  });
+
+  it('rejects a baseline entry whose id or values are not the declared shape', () => {
+    const problems = problemsOf({ ...valid, beds: [{ ...valid.beds[0], baseline: [{ id: 'Pool', values: { Mode: 1 } }] }] });
+    assert.ok(problems.some((problem) => problem.pointer === '/beds/0/baseline/0/id'));
+    assert.ok(problems.some((problem) => problem.pointer === '/beds/0/baseline/0/values/Mode'));
+  });
+});
+
 describe('a device without any interface address', () => {
   it('is refused at import with a pointer at the device', () => {
     const input = { ...valid, beds: [{ ...valid.beds[0], devices: [...valid.beds[0].devices, { name: 'bare0', type: 'client', ipv4: [], ipv6: [] }] }] };

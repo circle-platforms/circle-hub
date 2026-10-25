@@ -60,11 +60,18 @@ export interface ReservedRange {
   addresses: bigint[];
 }
 
+export interface BaselineEntry {
+  id: string;
+  values: Record<string, string>;
+}
+
 export interface ManifestBed {
   name: string;
   devices: ManifestDevice[];
   services: ManifestService[];
   reserved: ReservedRange[];
+  /** Declared config the bed is supposed to hold. Absent in the document means an empty list. */
+  baseline: BaselineEntry[];
 }
 
 export interface ManifestProblem {
@@ -354,11 +361,62 @@ export function parseManifest(input: unknown): ParsedManifest {
         reserved.push({ range: entry, start: formatIp(family, start), end: formatIp(family, end), addresses });
       });
     }
+    const baseline: BaselineEntry[] = [];
+    const rawBaseline = rawBed.baseline;
+    if (rawBaseline !== undefined && rawBaseline !== null) {
+      if (!Array.isArray(rawBaseline)) {
+        problems.push({ pointer: `${bedPointer}/baseline`, message: 'baseline 必须是一个数组', fix: '把 baseline 写成数组，每项 { "id": …, "values": { … } }；没有基线配置就删掉 baseline' });
+      } else if (rawBaseline.length > 64) {
+        problems.push({ pointer: `${bedPointer}/baseline`, message: `基线配置有 ${rawBaseline.length} 项，超过上限 64`, fix: '一份台架的基线配置至多 64 项' });
+      } else {
+        const ids = new Set<string>();
+        rawBaseline.forEach((entry, entryAt): void => {
+          const at = pointer(['beds', bedAt, 'baseline', entryAt]);
+          if (!isRecord(entry)) {
+            problems.push({ pointer: at, message: '基线配置必须是一个对象', fix: '写成 { "id": "pool", "values": { "mode": "off" } }' });
+            return;
+          }
+          const id = typeof entry.id === 'string' ? entry.id : '';
+          if (!DEVICE_NAME.test(id)) {
+            problems.push({ pointer: `${at}/id`, message: `基线配置的 id ${JSON.stringify(id)} 不合规矩：小写字母开头，小写字母、数字、_ 和 -，最长 64 个字符`, fix: '用 pool 这样的 id' });
+          } else if (ids.has(id)) {
+            problems.push({ pointer: `${at}/id`, message: `基线配置 id ${id} 在台架 ${name || bedAt} 里重复`, fix: '每个 id 只写一项' });
+          } else {
+            ids.add(id);
+          }
+          const values = entry.values;
+          if (!isRecord(values)) {
+            problems.push({ pointer: `${at}/values`, message: '基线配置的 values 必须是一个对象', fix: '写成 { "mode": "off" } 这样的字符串字段' });
+            return;
+          }
+          const fields = Object.keys(values);
+          if (fields.length === 0 || fields.length > 16) {
+            problems.push({ pointer: `${at}/values`, message: `基线配置 ${id || entryAt} 要有 1 到 16 个字段，收到 ${fields.length} 个`, fix: '每个字段一个字符串值' });
+            return;
+          }
+          const parsed: Record<string, string> = {};
+          for (const field of fields) {
+            if (!/^[a-z][a-z0-9_]{0,63}$/.test(field)) {
+              problems.push({ pointer: `${at}/values/${field}`, message: `字段名 ${JSON.stringify(field)} 不合规矩：小写字母开头，小写字母、数字和 _，最长 64 个字符`, fix: '用 mode 这样的字段名' });
+              continue;
+            }
+            const value = values[field];
+            if (typeof value !== 'string' || value.length > 200) {
+              problems.push({ pointer: `${at}/values/${field}`, message: '基线字段的值必须是至多 200 个字符的字符串', fix: '把该字段写成字符串' });
+              continue;
+            }
+            parsed[field] = value;
+          }
+          if (Object.keys(parsed).length === fields.length && DEVICE_NAME.test(id)) baseline.push({ id, values: parsed });
+        });
+      }
+    }
     beds.push({
       name,
       devices: devices.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
       services,
       reserved,
+      baseline: baseline.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
     });
   });
   if (problems.length > 0) return { ok: false, problems };
