@@ -250,6 +250,8 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
   // ---------------------------------------------------------------- builds
   const planned = new Map<string, BuildInfo>();
   for (const build of output.builds) planned.set(build.name, build);
+  /** The plan's build names: the frozen known-build inventory every producer of this sync hashes (K01 R[1]). */
+  const planBuilds = [...planned.keys()].sort(compareText);
   report.plan.builds = planned.size + output.invalid.length + (output.failed_builds?.length ?? 0);
   // A build the plan gave that is not build-info@1 fails alone (README decision 12); the others go on.
   for (const bad of output.invalid) {
@@ -382,7 +384,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
       report.scope={outcome:'failed',reason:'同步被中止，不分版本范围没有处理；下一步：重新同步这条产品线',root:null,composition:null};
     } else try {
       const observed=dryRun?null:await context.records.pointers.get(pointerName(productId,null));
-      const result = await processOwnTree(context, product, null, { variables:variableUses, listingDigest, sync, loader, by, dryRun, recheck: options.recheck === true, signal: options.signal, maxAgeSeconds: options.maxAgeSeconds, readConcurrency: options.readConcurrency }, output.scope);
+      const result = await processOwnTree(context, product, null, { variables:variableUses, listingDigest, sync, loader, by, dryRun, recheck: options.recheck === true, signal: options.signal, maxAgeSeconds: options.maxAgeSeconds, readConcurrency: options.readConcurrency, planBuilds }, output.scope);
       const { name: _n, family: _f, line: _l, base: _b, ...scopeReport } = result;
       report.scope = scopeReport;
       if (!dryRun && result.root !== null && result.composition !== null) {
@@ -419,7 +421,7 @@ async function processOwnTree(
   context: KnowledgeContext,
   product: ProductHandle,
   build: BuildInfo | null,
-  options: { variables:VariableUse[]; listingDigest:string; sync: string; loader: SourceLoader; by: Principal; dryRun: boolean; recheck: boolean; signal?: AbortSignal; maxAgeSeconds?: number; readConcurrency?: number },
+  options: { variables:VariableUse[]; listingDigest:string; sync: string; loader: SourceLoader; by: Principal; dryRun: boolean; recheck: boolean; signal?: AbortSignal; maxAgeSeconds?: number; readConcurrency?: number; planBuilds?: readonly string[] },
   scope?: BuildInfo['sources']
 ): Promise<SyncBuildReport> {
   options={...options,variables:productionVariableUses(product,build===null,options.variables)};
@@ -561,6 +563,7 @@ async function processOwnTree(
     retrySkipped:true,
     refreshSources,
     variables: options.variables,
+    ...(options.planBuilds === undefined ? {} : { planBuilds: options.planBuilds }),
     loader: options.loader,
     signal: options.signal,
     ...(options.maxAgeSeconds === undefined ? {} : { maxAgeSeconds: options.maxAgeSeconds }),

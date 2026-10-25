@@ -263,11 +263,18 @@ test('a current build remains in the producer inventory and a changed inventory 
  const functionSource=`export default input=>({entries:(input.lists.cases??[]).flatMap(doc=>doc.model.nodes.filter(node=>Array.isArray(node.data.resource)).map(node=>({kind:'case',path:'/commands/system/reboot',statement:node.text,data:{known_builds:input.known_builds},fragments:[{slot:'cases',source:doc.sha256,parser:'kityminder@1',selector:node.selector}],applicability:null}))),warnings:[]});`;
  const w=await world(t,[DEFAULT_PRODUCERS[0],casesProducer({batch:2})],{pack:{functions:{'cases.ts':functionSource}}});
  const ids=documents(w,1),current=build('Rel_ACME_1_2_15',ids);
- const first=await w.knowledge.produceTree({product:w.product,build:current});assert.equal(first.ok,true,first.reason??'');
+ // The frozen known-build inventory is the production's declared plan list (K01 R[1]: same sources give the same
+ // bytes, so a build record this production writes never changes its own inputs); the self build is part of it.
+ const plan=[current.name];
+ const first=await w.knowledge.produceTree({product:w.product,build:current,planBuilds:plan});assert.equal(first.ok,true,first.reason??'');
  const read=await w.knowledge.getNodes({root:first.root!,paths:['/commands/system/reboot'],depth:0},w.admin);
  const entry=read?.nodes.flatMap(node=>node.entries).find(entry=>entry.kind==='case');assert.ok(entry);
- assert.ok((entry.data?.known_builds as string[]).includes(current.name),'a registered self declaration is never removed from authority');
- const again=await w.knowledge.produceTree({product:w.product,build:current});assert.equal(again.calls.reused,1);
+ assert.ok((entry.data?.known_builds as string[]).includes(current.name),'the produced build is part of the frozen inventory');
+ const again=await w.knowledge.produceTree({product:w.product,build:current,planBuilds:plan});assert.equal(again.calls.reused,1);
  await new Builds(w.knowledge.__context).record('acme',{id:w.product.id,version:w.product.version,digest:w.product.digest},build('Rel_ACME_10_8_1_901',[]),null,null);
- const changed=await w.knowledge.produceTree({product:w.product,build:current});assert.equal(changed.ok,true,changed.reason??'');assert.equal(changed.calls.reused,0);assert.notEqual(changed.root,again.root);
+ // A build registered outside the plan changes no declared input: the memoized output stays valid (K01). Only a
+ // changed plan (a new listed build) is a changed input and invalidates the memo.
+ const unchanged=await w.knowledge.produceTree({product:w.product,build:current,planBuilds:plan});assert.equal(unchanged.ok,true,unchanged.reason??'');assert.equal(unchanged.calls.reused,1);assert.equal(unchanged.root,again.root);
+ const nextPlan=[current.name,'Rel_ACME_10_8_1_901'];
+ const changed=await w.knowledge.produceTree({product:w.product,build:current,planBuilds:nextPlan});assert.equal(changed.ok,true,changed.reason??'');assert.equal(changed.calls.reused,0);assert.notEqual(changed.root,again.root);
 });
