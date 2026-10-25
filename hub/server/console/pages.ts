@@ -17,7 +17,7 @@ import { canSeeRun } from '../../runs/engine/api.ts';
 import { productionShareKey } from '../../records/api.ts';
 import { itemCell, isAbandonedResult } from '../../runs/api.ts';
 import type { ServerDeps } from '../api.ts';
-import { NOT_APPLICABLE, cellText, claimFields, coverageText, terminalKind, terminalText, type LayerTerminal } from '../claims.ts';
+import { NOT_APPLICABLE, cellText, statusText, claimFields, coverageText, terminalKind, terminalText, type LayerTerminal } from '../claims.ts';
 import { countsLine, countsText } from '../text.ts';
 import { code, definitions, html, link, page, pre, section, table, type Html, type PageChrome } from './html.ts';
 
@@ -127,7 +127,7 @@ function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, stri
         ...(index === 0 ? head : ['', '', '', '']),
         html`${r.requirement} ${names.get(r.requirement) ?? ''}`,
         html`${layers.map((text) => html`<div>${text}</div>`)}`,
-        `${labelOf('requirement_status', r.status)}${r.unsatisfied_reason ? `（${labelOf('unsatisfied_reason', r.unsatisfied_reason)}）` : ''}`,
+        statusText(r),
         html`${r.claims.map(claimBlock)}`,
       ]);
     }

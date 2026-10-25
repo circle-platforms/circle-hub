@@ -105,6 +105,18 @@
                 "after": {
                   "type": "integer",
                   "minimum": 1
+                },
+                "basis": {
+                  "type": "string",
+                  "description": "显式声明 model_judgment 时 text 是模型选择的设备可观察检查文字；不写时维持引文片段规则",
+                  "enum": [
+                    "model_judgment"
+                  ]
+                },
+                "rationale": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "model_judgment 的非空理由；声明是模型判断，Hub 不断言其语义正确"
                 }
               }
             }

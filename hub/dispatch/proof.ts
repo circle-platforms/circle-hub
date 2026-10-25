@@ -7,6 +7,7 @@ import { canonicalize, isSha256 } from '../records/api.ts';
 import { at, type ExecutorDefinition } from './definition.ts';
 export type VerificationPort = Pick<RunsService, 'getRun'>;
 export interface VerifiedInput {
+  judgments?:Claim[];
   product?: string; root?: string; build_base?: string;
   run: string; user: string; lineage: string; ancestors: string[]; item: string; items: string[];
   plan_run: string; sha256: string; target: string; manifest_sha256: string; build: string; generator: unknown; result: string;
@@ -90,8 +91,10 @@ export async function inspectInput(by:Principal,id:string,d:ExecutorDefinition,r
  let buildBase:string|undefined;
  try{if(detail)buildBase=lockedBuildBase(detail.run);add('run.build_basis','锁定构建依据没有冲突',detail?true:null);}
  catch{add('run.build_basis','锁定构建依据没有冲突',false,[f('run.target_basis','unique_build_base',detail?.run.target_basis,false)]);}
+ const judgments=result?.partitions.delivered.flatMap(item=>item.requirements.filter(requirement=>required.some(template=>template.key===requirement.requirement)).flatMap(requirement=>requirement.claims)).filter(claim=>claim.qualifier.nature==='judgment'&&claim.warrant.producer==='model'&&claim.statement.data?.judgment_source!==undefined)??[];
+ if(judgments.length)add('proof.judgment_premises','模型判断前提绑定到当前提交且仍有效',judgments.every(claim=>claim.validity.status==='valid'&&(!claim.validity.expires_at||Date.parse(claim.validity.expires_at)>now.getTime())&&at(claim.statement.data,'/judgment_source/submission')===result?.submission&&claim.validity.bound.includes(result!.submission)&&claim.statement.data?.model===claim.warrant.id),judgments.flatMap((claim,index)=>[f('proof.judgment_premises.'+index+'.source',result?.submission,at(claim.statement.data,'/judgment_source/submission'),at(claim.statement.data,'/judgment_source/submission')===result?.submission),f('proof.judgment_premises.'+index+'.validity.status','valid',claim.validity.status,claim.validity.status==='valid'),f('proof.judgment_premises.'+index+'.validity.expires_at','after_now_or_absent',claim.validity.expires_at,!claim.validity.expires_at||Date.parse(claim.validity.expires_at)>now.getTime()),f('proof.judgment_premises.'+index+'.validity.bound',result?.submission,claim.validity.bound,!!result&&claim.validity.bound.includes(result.submission)),f('proof.judgment_premises.'+index+'.model',claim.warrant.id,claim.statement.data?.model,claim.statement.data?.model===claim.warrant.id)]));
  if(trace.checks.some(check=>check.satisfied!==true)||!detail||!owner||!result)return {checks:trace.checks};
- return {checks:trace.checks,input:{...(buildBase?{build_base:buildBase}:{}),...(detail.run.product?{product:detail.run.product}:{}),...(detail.run.root?{root:detail.run.root}:{}),run:id,plan_run:planRun as string,user:owner.id,lineage:ancestors.at(-1)!,ancestors,item:detail.run.items[0].id,items:ids as string[],sha256:sha256 as string,target:target as string,manifest_sha256:manifest as string,build:build as string,generator,result:detail.latest!.record}};
+ return {checks:trace.checks,input:{...(judgments.length?{judgments}:{}),...(buildBase?{build_base:buildBase}:{}),...(detail.run.product?{product:detail.run.product}:{}),...(detail.run.root?{root:detail.run.root}:{}),run:id,plan_run:planRun as string,user:owner.id,lineage:ancestors.at(-1)!,ancestors,item:detail.run.items[0].id,items:ids as string[],sha256:sha256 as string,target:target as string,manifest_sha256:manifest as string,build:build as string,generator,result:detail.latest!.record}};
 }
 export async function verifyInput(by:Principal,id:string,d:ExecutorDefinition,records:RecordsKit,runs:VerificationPort,workflows:Pick<WorkflowStore,'byDigest'>,now:Date):Promise<VerifiedInput>{
  const report=await inspectInput(by,id,d,records,runs,workflows,now);

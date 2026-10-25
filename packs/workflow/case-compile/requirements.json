@@ -204,7 +204,7 @@
     {
       "key": "expected_grounded",
       "name": "期望结果有逐字来源",
-      "description": "期望文字是地址替换后逐字引文的片段；after 指向设备命令行或主机 shell，至少一条；原引文仍按原始来源逐字核对",
+      "description": "默认期望文字逐字来自引文；显式 model_judgment 的设备可观察文字由模型选择，Hub 核本用例期望节点引文、after 和取值规则，保留模型、理由并以判断为前提",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",

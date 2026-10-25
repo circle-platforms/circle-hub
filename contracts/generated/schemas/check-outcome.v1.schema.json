@@ -227,6 +227,16 @@
         "type": "string"
       },
       "additionalProperties": {}
+    },
+    "judgment_sources": {
+      "description": "Explicit pointers relative to this item slots into submitted model judgment objects with text; Hub binds model identity and records judgment premises, never treats their semantics as facts",
+      "maxItems": 128,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+        "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+      }
     }
   },
   "required": [

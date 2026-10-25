@@ -49,7 +49,7 @@ import {
   type Handling,
   type JudgedOutcome,
 } from './terminals.ts';
-import { isObject, pointerOf, tooDeep, unique } from './util.ts';
+import { isObject, pointerOf, tooDeep, unique, valueAt } from './util.ts';
 
 /** An item the submission handled by carrying the predecessor's fragment over (C08 R[4]). */
 export interface CarriedItem {
@@ -633,6 +633,11 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       },
     );
     return outcomes.map((o) => {
+      if(o.judgment_sources?.length){
+        const declaration=item?entries.get(item)?.entry:undefined;
+        const slots=declaration?.handling==='handled'?declaration.slots:null;
+        if(!submission||!item||o.judgment_sources.some(pointer=>{const value=valueAt(slots,pointer);return !isObject(value)||typeof value.text!=='string'||!value.text;}))return bounded(check,{verdict:'unknown',reason:'missing_input',missing:'缺少本条目原始提交中的模型主张节点及声明模型；下一步：包作者修正 judgment_sources 的槽位指针，运行者完整重交',statement:'无法把判断依据绑定到本条目的原始模型提交；先补原始节点再核验',grounds:[],tier:check.tier??'blocking'});
+      }
       const outcome = check.reads?.narrow && unreadSources.length && o.verdict === 'support'
         ? { ...o, verdict: 'unknown' as const, reason: 'missing_input' as const, missing: unreadSources.map(row => `${row.missing_fact}；下一步：${row.next_action}`).join('；'), statement: `读取不完整：${unreadSources.map(row => `${row.missing_fact}；下一步：${row.next_action}`).join('；')}` }
         : o;
@@ -987,7 +992,14 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       }
       for (const o of outcomes) {
         const check = checks.get(o.check)!;
-        const overClaims = o.judges === 'artifact_under_verification';
+        if(o.outcome.verdict==='support'&&submission&&entry)for(const source of new Set(o.outcome.judgment_sources??[])){
+          const value=valueAt(entry.entry.handling==='handled'?entry.entry.slots:null,source);
+          if(isObject(value)&&typeof value.text==='string'){
+            const pointer=pointerOf('items',entry.index,'slots')+source;
+            claims.push(judgmentClaim({item:it.id,requirement:t.key,pointer,text:value.text,data:{...value,judgment_source:{submission:input.submissionDigest,pointer,...(input.submissionRecord?{record:'rec:'+input.submissionRecord}:{})},model:submission.model},model:submission.model,marks:['conditional_on_judgment'],sourceRole:check.judges,grounds:o.outcome.grounds,resolutions:[],bound:[...baseBound,input.submissionDigest],premises:[pointer]}));
+          }
+        }
+        const overClaims = o.judges === 'artifact_under_verification'||(o.outcome.judgment_sources?.length??0)>0;
         claims.push(
           factClaim({
             item: it.id,
@@ -1001,7 +1013,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
             overClaims,
             discrimination: t.requires_discrimination === true,
             bound: [...baseBound,...sourcesForReads(check).flatMap(source=>{const digest=rootDigest(source.reference);return digest?[digest]:[];}), ...(it.digest !== undefined ? [it.digest] : []), ...(sourceSha !== null ? [sourceSha] : []), ...(overClaims && submission !== null ? [input.submissionDigest] : [])],
-            premises: premisesOf(o.outcome, check, it.id),
+            premises: [...premisesOf(o.outcome,check,it.id),...(entry?(o.outcome.judgment_sources??[]).map(source=>pointerOf('items',entry.index,'slots')+source):[])],
           }),
         );
       }

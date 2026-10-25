@@ -1,0 +1,9 @@
+# Model-grounded observable expectations
+
+Owner scope: case-compile expectation schema, structural source-node projection, pure checks/generation/readback, skill, version and signed samples; shared expectation_basis vocabulary and CheckOutcome judgment_sources; Hub native model-claim binding/display; dispatch propagation and synthetic tests. W10 declaration roles, old criterion validation and existing immutable sources remain unchanged.
+
+Explicit model_judgment uses a verbatim quote from the selected case's original expected node, a model-selected observable text, after and a nonempty rationale. The exact source node/ref is captured by the existing case traversal. Mechanical checks establish only source, values and step structure; semantic correctness remains a model claim. Default omission retains the old substring requirement.
+
+The native engine captures a declared judgment from an explicit pointer into that item's original submitted slots, binds the submission/model identity itself and records a judgment with conditional_on_judgment. A pack cannot supply the model identity in place of the observed submission. expected_grounded displays satisfied as judgment; byte verification remains a fact. The complete choice and node binding enter the deterministic workbook recipe. Dispatch carries valid current-submission judgment premises into device/round/report qualifications and preserves them in Hub readback. No new model calls, keyword classification or deployment is authorized.
+
+Synthetic checks cover descriptive input through accepted plan and generated/read-back workbook, unchanged defaults and W10, quote/node/rationale/value/after negatives, native model identity, source pointers, conditional device pass/fail and stale-premise refusal. Vocabulary and closed values are generated with tools/gen-contracts.ts; samples and manifests use the package generators.

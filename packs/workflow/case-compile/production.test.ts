@@ -146,6 +146,27 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const receipt = requirements.find((v) => v.requirement === 'workbook_verified')!.claims.find((v) => v.statement.data?.sha256)!;
     assert.deepEqual(receipt.statement.data, { sha256: createHash('sha256').update(bytes).digest('hex'), autoids: [AUTOID], bed: { id: 'bed-a', manifest_sha256: sha(JSON.stringify(MANIFEST_DOC)) }, build: 'Fixture_Build_A', generator: GENERATOR, plan_run: planRun.run });
   });
+  it('accepts descriptive model-grounded expectations, generates observable literals and preserves native judgment identity',async()=>{
+    const description='[check1]合成配置添加成功',observable='service enabled',document=map();const step=document.root.children[0].children[0];assert.ok('children' in step);step.children[0].data.text=description;
+    const bytes=JSON.stringify(document),external='agile:mindmap:synthetic-model-expected';hub.external.put(external,{bytes:new TextEncoder().encode(bytes),mediaType:'application/json'});
+    const parsed=recognize(createDefaultRegistry(),new TextEncoder().encode(bytes),'application/json')!;
+    const leaf=(parsed.document.model as {nodes:Array<{text:string;selector:string}>}).nodes.find(node=>node.text===description)!;
+    const args=start();delete (args.inputs as Partial<typeof args.inputs>).case_index;args.inputs.subject.external=external;
+    const first=await hub.service.startRunDetailed(hub.alice,args,call());assert.equal(first.answer.call_result,'ok',JSON.stringify(first.answer.errors));const plan=first.answer.run!;
+    const send=(run:typeof plan)=>{const value=submission(run.run,data=>{data.expects[0]={text:observable,quote:{text:description,reference:`src:${sha(bytes)}/kityminder@1/${leaf.selector}`},after:1,basis:'model_judgment',rationale:'合成运行器输出此状态行，模型据此选择观察文字；语义不由 Hub 断言'};});value.items[0].item=run.items[0].id;return value;};
+    const submitted=send(plan),answer=await hub.service.submitResult(hub.alice,submitted,call());assert.equal(answer.acceptance,'accepted',JSON.stringify(answer.errors));
+    const expected=Object.values(answer.result!.partitions).flat().flatMap(item=>item.requirements).find(row=>row.requirement==='expected_grounded')!;
+    assert.equal(expected.status,'satisfied');const model=expected.claims.find(claim=>claim.warrant.producer==='model')!;
+    assert.ok(model);assert.equal(model.warrant.id,'synthetic-model');assert.equal(model.statement.data?.basis,'model_judgment');assert.ok(model.statement.data?.rationale);assert.deepEqual(model.statement.data?.quote,submitted.items[0].slots.plan[0].data.expects[0].quote);assert.ok(model.qualifier.marks.includes('conditional_on_judgment'));assert.ok(model.validity.premises.some(pointer=>pointer.endsWith('/data/expects/0')));
+    const {statusText}=await import('../../../hub/server/claims.ts');assert.equal(statusText(expected),'满足（判断）');
+    const recipe=satisfiedRecipe({run:first.answer,result:answer,submission:submitted,contract:Buffer.from(JSON.stringify(CONTRACT_DOC)),profile:Buffer.from(JSON.stringify(PROFILE_DOC)),inventory:Buffer.from(JSON.stringify(MANIFEST_DOC))});const workbook=generateWorkbook(recipe);
+    assert.ok(Buffer.from(workbook).includes(Buffer.from(observable)));assert.ok(!Buffer.from(workbook).includes(Buffer.from(description)));
+    await hub.kit.artifacts.ingest({bytes:workbook,mediaType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',origin:{read:{object:'fixture:workbook:model-grounded'}},author:{user:null},provenanceType:'observed',visibility:{readers:[hub.alice.id],admins:true,packs:[],shareable:false}});
+    const second=await hub.service.startRunDetailed(hub.alice,{...args,predecessor:plan.run,parameters:{...args.parameters,plan_run:plan.run},inputs:{...args.inputs,workbook:{reference:'src:'+createHash('sha256').update(workbook).digest('hex')}}},call());assert.equal(second.answer.call_result,'ok',JSON.stringify(second.answer.errors));
+    const verified=await hub.service.submitResult(hub.alice,send(second.answer.run!),call());assert.equal(verified.acceptance,'accepted',JSON.stringify(verified.errors));
+    const requirements=Object.values(verified.result!.partitions).flat().flatMap(item=>item.requirements);assert.ok(requirements.every(row=>row.status==='satisfied'),JSON.stringify(requirements));
+    const proof=requirements.find(row=>row.requirement==='workbook_verified')!;assert.ok(proof.claims.some(claim=>claim.warrant.producer==='function'&&claim.statement.verdict==='support'));assert.ok(requirements.find(row=>row.requirement==='expected_grounded')!.claims.some(claim=>claim.warrant.producer==='model'&&claim.qualifier.marks.includes('conditional_on_judgment')));
+  });
   it('keeps the pack unavailable to an unassigned user', async () => { const result = await hub.service.startRunDetailed(hub.bob, start(), call()); assert.equal(result.answer.call_result, 'error'); });
 });
 it('closure 02 prerequisite pointers survive both requirements and repaired submissions resume catalog and quote checks',{skip},async()=>{

@@ -17,6 +17,7 @@ export interface CaseStep {
 }
 
 export interface ExtractedCase {
+  expected_nodes?:Array<{text:string;selector:string|null}>;
   /** Node id inside the document; the item id is <documentId>:<id>. */
   id: string;
   title: string;
@@ -88,7 +89,7 @@ export function documentIdOf(external: string | null, meta: { [key: string]: unk
 }
 
 /** Extracts the cases of one document under the rule; nodes outside any case are ignored. */
-export function extractCases(model: unknown, rule: CaseRule): Extraction {
+export function extractCases(model: unknown, rule: CaseRule, includeExpectedNodes=false): Extraction {
   const nodes = nodesOf(model);
   const cases: ExtractedCase[] = [];
   const impreciseAutoids: Extraction['impreciseAutoids'] = [];
@@ -111,19 +112,20 @@ export function extractCases(model: unknown, rule: CaseRule): Extraction {
       }
       const steps: CaseStep[] = [];
       const expected: string[] = [];
+      const expectedNodes:Array<{text:string;selector:string|null}>=[];
       for (const childIndex of node.children) {
         const child = nodes[childIndex];
         if (child === undefined) continue;
         if (child.children.length === 0) {
           const line = textOf(child);
-          if (line !== '') expected.push(line);
+          if (line !== '') {expected.push(line);expectedNodes.push({text:line,selector:child.selector});}
         } else {
           const stepExpected: string[] = [];
           for (const leafIndex of child.children) {
             const leaf = nodes[leafIndex];
             if (leaf === undefined) continue;
             const line = textOf(leaf);
-            if (line !== '') stepExpected.push(line);
+            if (line !== '') {stepExpected.push(line);expectedNodes.push({text:line,selector:leaf.selector});}
           }
           steps.push({ text: textOf(child), expected: stepExpected });
         }
@@ -134,6 +136,7 @@ export function extractCases(model: unknown, rule: CaseRule): Extraction {
         expected.length = 0;
       }
       cases.push({
+        ...(includeExpectedNodes?{expected_nodes:expectedNodes}:{}),
         id: typeof node.data.id === 'string' && node.data.id !== '' ? node.data.id : `n${index}`,
         title: textOf(node),
         tags,

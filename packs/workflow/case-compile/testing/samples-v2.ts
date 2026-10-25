@@ -25,6 +25,8 @@ for(const check of ['contract_shape','bed_addresses','commands_catalog','expecte
  else bad.data.steps[0].method='undeclared-method';
  save('negative','typed-'+check,check,bad,code);
 }
+const modeled={...subject(),expected_nodes:[{reference:QUOTE.reference,text:QUOTE.text}]};modeled.data.expects[0]={text:'service enabled',quote:{...QUOTE},after:1,basis:'model_judgment',rationale:'模型选择合成设备可观察的状态文字；Hub 只机械核验，不判断选择是否正确'};
+save('positive','typed-model-expected','expected_sources',modeled);const ungrounded=structuredClone(modeled);ungrounded.data.expects[0].quote.reference=QUOTE.reference+'/other_case';save('negative','typed-model-expected','expected_sources',ungrounded,'case-compile.expect_not_in_quote');
 save('positive','typed-address-member','bed_addresses',addressInput('192.0.2.10').subject);
 save('negative','typed-address-member','bed_addresses',addressInput('192.0.2.250').subject,'case-compile.address_off_bed');
 const budget=subject();save('positive','typed-effect-budget','contract_shape',budget);budget.contract.effects.effect_0.budget=0;budget.contract=signTypedRuntime(budget.contract);save('negative','typed-effect-budget','contract_shape',budget,'case-compile.method_forbidden');

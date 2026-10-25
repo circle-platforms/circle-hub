@@ -135,8 +135,9 @@ export function terminalText(layer: LayerResult): string {
 export const NOT_APPLICABLE = '本层不适用';
 
 /** The satisfaction status of a requirement, with the reason when it is unsatisfied. */
-export function statusText(r: Pick<RequirementResult, 'status' | 'unsatisfied_reason'>): string {
-  return `${labelOf('requirement_status', r.status)}${r.unsatisfied_reason ? `（${labelOf('unsatisfied_reason', r.unsatisfied_reason)}）` : ''}`;
+export function statusText(r: Pick<RequirementResult, 'status' | 'unsatisfied_reason'> & Partial<Pick<RequirementResult,'claims'>>): string {
+  const judged=r.status==='satisfied'&&r.claims?.some(claim=>claim.qualifier.nature==='judgment'&&claim.warrant.producer==='model'&&claim.statement.data?.judgment_source!==undefined);
+  return `${labelOf('requirement_status', r.status)}${judged?'（'+labelOf('static_terminal','judgment')+'）':''}${r.unsatisfied_reason ? `（${labelOf('unsatisfied_reason', r.unsatisfied_reason)}）` : ''}`;
 }
 
 /** One requirement of an item: every declared layer's terminal, 本层不适用 for the others (display rule 4), then the status. */

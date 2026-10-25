@@ -7234,6 +7234,17 @@
    ]
   },
   {
+   "axis": "expectation_basis",
+   "label": "期望检查文字依据",
+   "values": [
+    {
+     "code": "model_judgment",
+     "label": "模型判断"
+    }
+   ],
+   "owner": "A02"
+  },
+  {
    "axis": "provenance_type",
    "label": "来源类型",
    "owner": "A01",

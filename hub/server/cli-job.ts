@@ -24,6 +24,7 @@ async function service(s: JobCommandSession, requireKey = true): Promise<Dispatc
 }
 function output(s: JobCommandSession, state: JobStatus): void {
   s.out(`阶段 ${state.phase}；码 ${state.outcome}（${labelOf('effect_outcome', state.outcome)}）；作业摘要 ${state.job}；冻结 ${Number(state.frozen)}；动作 ${state.events}`);
+  if(state.qualifier_marks?.length)s.out('判定限定：'+state.qualifier_marks.map(mark=>labelOf('qualifier_mark',mark)).join('、'));
   for (const round of state.rounds ?? []) s.out(`第 ${round.round} 轮 ${labelOf('dynamic_terminal', round.terminal)}${round.reason ? `；${labelOf('reason', round.reason)}` : ''}`);
   for(const request of state.requests ?? [])s.out(`待终结请求 ${request.id}；问题摘要 ${request.question_sha256 ?? '历史未记录'}；期限 ${request.deadline ?? '历史未记录'}`);
   if(state.marks?.length)s.out(`效果标记：${state.marks.map(mark=>labelOf('effect_mark',mark)).join('、')}`);
