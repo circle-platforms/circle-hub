@@ -68,3 +68,53 @@ export async function parseDocument(doc:EngineDocument,logger:MemoryLogger):Prom
  };
  try{await doc.parse();return {recoverable,drops};}finally{proto.closeTable=original;}
 }
+
+interface UntilOptions {
+ terminator?:unknown;context?:unknown;cursor?:unknown;
+ skipFirstLine?:boolean;skip_first_line?:boolean;
+}
+interface RecoveryReader {
+ cursor:{lineno:number};cursorAtMark():{lineno:number};unterminated?:boolean|null;logger:unknown;
+ readLine():Promise<string|undefined>;
+ readLinesUntil(options?:UntilOptions,filter?:unknown):Promise<string[]>;
+}
+export interface UnterminatedRead {line:number;end:number;kind:string;delimiter:string}
+/** Observe the pinned reader's own termination condition and consumed cursor. No message-word classification,
+ * source repair or delimiter/section parser is introduced. The engine session serializes these temporary hooks. */
+export function observeUnterminated(doc:EngineDocument,logger:MemoryLogger):{blocks:UnterminatedRead[];restore:()=>void}{
+ const reader=doc.getReader() as unknown as RecoveryReader;
+ const owner=(name:'readLine'|'readLinesUntil'):RecoveryReader=>{
+  let proto=Object.getPrototypeOf(reader);
+  while(proto&&!Object.hasOwn(proto,name))proto=Object.getPrototypeOf(proto);
+  if(!proto||typeof proto[name]!=='function')fail('engine_parse','固定引擎缺少结构化定界读取接口');
+  return proto as RecoveryReader;
+ };
+ const lineProto=owner('readLine'),untilProto=owner('readLinesUntil');
+ const readLine=lineProto.readLine,readUntil=untilProto.readLinesUntil;
+ const history=new WeakMap<RecoveryReader,{value:string;line:number}>();
+ const frames=new WeakMap<RecoveryReader,Array<{last:unknown}>>();
+ const blocks:UnterminatedRead[]=[];
+ lineProto.readLine=async function(this:RecoveryReader){
+  const value=await readLine.call(this);
+  if(this.logger===logger){
+   if(value!==undefined)history.set(this,{value,line:this.cursor.lineno-1});
+   const frame=frames.get(this)?.at(-1);if(frame)frame.last=value;
+  }
+  return value;
+ };
+ untilProto.readLinesUntil=async function(this:RecoveryReader,options:UntilOptions={},filter?:unknown){
+  const delimiter=options.terminator;
+  const context=Object.hasOwn(options,'context')?options.context:delimiter;
+  if(this.logger!==logger||typeof delimiter!=='string'||!delimiter||typeof context!=='string'||!context)return readUntil.call(this,options,filter);
+  const previous=history.get(this);
+  const supplied=options.cursor==='at_mark'?this.cursorAtMark():options.cursor as {lineno?:number}|undefined;
+  const line=options.skipFirstLine||options.skip_first_line?this.cursor.lineno:previous?.value===delimiter?previous.line:supplied?.lineno??this.cursor.lineno;
+  const stack=frames.get(this)??[],frame={last:undefined as unknown};stack.push(frame);frames.set(this,stack);
+  try{
+   const result=await readUntil.call(this,options,filter);
+   if(this.unterminated===true&&frame.last!==delimiter)blocks.push({line,end:Math.max(line,this.cursor.lineno-1),kind:context,delimiter});
+   return result;
+  }finally{stack.pop();}
+ };
+ return {blocks,restore:()=>{lineProto.readLine=readLine;untilProto.readLinesUntil=readUntil;}};
+}
