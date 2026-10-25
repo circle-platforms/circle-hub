@@ -21,6 +21,7 @@ import {requestIdentity,sameRequestIdentity} from './request-identity.ts';
 import {PrecheckFactError,precheckFailure} from './precheck-failure.ts';
 import { canRetryRead } from './read-policy.ts';
 import { dynamicDisposition, DISPATCH_QUALIFICATIONS } from './dynamic.ts';
+import { judgeBedSurface } from '../../packs/workflow/test-bed/api.ts';
 import { againstBaseline, againstStored, bedLimits, bedName, cleanupSteps, missingProbeFact, parseReply, residueFact, unknownSteps, unrestoredFact, type BedRead, type BedReport, type Canonical } from './bed-state.ts';
 import { bytesKey, earlyStopSentence, repeats, roundAllowed, roundMeets, roundOf, roundPolicy, type RoundPolicy } from './rounds.ts';
 import { expectationFor } from '../runs/engine/terminals.ts';
@@ -837,7 +838,7 @@ export class DispatchService {
       try {
         const response = await client.declaredRead(item.call, context, `bed.${when}.${item.id}`);
         const canonical = parseReply(item, response.value);
-        reads.push(canonical ? { id: item.id, ok: true, canonical, source: response.source } : { id: item.id, ok: false, source: response.source });
+        reads.push(canonical ? { id: item.id, ok: true, canonical, value: response.value, source: response.source } : { id: item.id, ok: false, value: response.value, source: response.source });
       } catch (error) {
         reads.push({ id: item.id, ok: false, source: error instanceof ToolReplyError ? error.source : null });
       }
@@ -866,10 +867,13 @@ export class DispatchService {
     const name = bedName(bed);
     if (!name) throw new PrecheckFactError('冻结清单里没有声明的台架对象或台架名', '管理员核对床面指针和已发布的台架清单，补齐台架名后再派发；尚未提交');
     const reads = await this.readBed(binding, d, client, context, 'pre');
-    const missing = reads.filter(read => !read.ok).map(read => read.id);
-    if (missing.length) {
-      await this.noteBed(binding, 'pre', name, reads, []);
-      throw new PrecheckFactError(missingProbeFact(missing), unknownSteps(spec.items, missing));
+    const declaration = await this.frozenValue(binding, d, '/surface');
+    if (declaration === undefined) {
+      const missing = reads.filter(read => !read.ok).map(read => read.id);
+      if (missing.length) {
+        await this.noteBed(binding, 'pre', name, reads, []);
+        throw new PrecheckFactError(missingProbeFact(missing), unknownSteps(spec.items, missing));
+      }
     }
     const hold = await this.openBedHold(name);
     if (hold) {
@@ -883,6 +887,26 @@ export class DispatchService {
         throw new PrecheckFactError(unrestoredFact(outstanding), cleanupSteps(spec.items, outstanding.map(diff => diff.item)));
       }
       await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: name, state: 'clear', pre: hold.pre });
+    }
+    if (declaration !== undefined) {
+      const unread = reads.filter(read => read.value === undefined).map(read => read.id);
+      if (unread.length) {
+        await this.noteBed(binding, 'pre', name, reads, []);
+        throw new PrecheckFactError(missingProbeFact(unread), unknownSteps(spec.items, unread));
+      }
+      const judged = judgeBedSurface(declaration, bed, reads);
+      const residueDiffs = judged.ok ? judged.residues.map(residue => ({ item: residue.probe, kind: 'extra' as const, identity: residue.identity })) : [];
+      await this.noteBed(binding, 'pre', name, reads, residueDiffs);
+      if (!judged.ok) throw new PrecheckFactError(judged.missing, judged.next);
+      if (!judged.residues.length) return;
+      const probes = [...new Set(judged.residues.map(residue => residue.probe))].join('、');
+      if (judged.automatic && judged.cleanup) {
+        await this.journal.append(binding, 'bed_cleanup', 'dispatch', 'completed', { executed: false, authorization: 'required', actions: judged.cleanup });
+        const steps = judged.cleanup.map(action => `座位 ${action.seat} 的 ${action.command}（粒度 ${action.granularity}）`).join('、');
+        throw new PrecheckFactError(`床面残留可自动清理。来源探针 ${probes}`, `下一步经派发和授权执行清理：${steps}。Hub 不执行这些命令`);
+      }
+      const exit = judged.exits.map(item => `由${item.owner}对${item.object}${item.action}，期限 ${item.deadline}`).join('；');
+      throw new PrecheckFactError(`床面残留不可自动清理。来源探针 ${probes}`, exit || '下一步：为该残留类补上出口后再派发');
     }
     const diffs = againstBaseline(spec.items, bed, reads);
     if (diffs === null) {

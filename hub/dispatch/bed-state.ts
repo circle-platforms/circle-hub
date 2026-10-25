@@ -10,7 +10,7 @@ const BED_NAME = /^[a-z0-9-]{1,64}$/;
 
 export interface Difference { item: string; kind: 'extra' | 'missing' | 'changed'; identity: string; field?: string }
 export type Canonical = { kind: 'address_table'; addresses: string[] } | { kind: 'config_list'; rows: Array<{ id: string; values: Record<string, string> }> };
-export type BedRead = { id: string; ok: true; canonical: Canonical; source: string } | { id: string; ok: false; source: string | null };
+export type BedRead = { id: string; ok: true; canonical: Canonical; value?: unknown; source: string } | { id: string; ok: false; value?: unknown; source: string | null };
 export interface BedReport {
   bed: string;
   pre: 'passed';

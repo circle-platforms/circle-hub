@@ -6,7 +6,7 @@ import type { LeaseOp } from '../../../../contracts/generated/vocabulary.ts';
 // ends (RunContext.leases; no tokens, no holders), which is all matchNeed and the address allocation need.
 import { formatIp, nextFree, parseIp, parseSubnet, subnetContains, type Subnet } from './addresses.ts';
 import { isRecord } from './common.ts';
-import { bedFacts } from './facts.ts';
+import { bedFacts, declaredSurface } from './facts.ts';
 import { parseManifest, DEVICE_TYPE_LABEL, DEVICE_TYPES, type ManifestBed } from './manifest.ts';
 import { matchNeed, pickDevices, type BedMatch, type Installed, type LeaseEntry, type Need, type NeedDevice } from './match.ts';
 
@@ -163,17 +163,20 @@ export interface FactsFields {
   /** The manifest's declared installs of this bed's devices (声明，未核对); empty when none. */
   occupancy: string[];
   installed: Array<{ device: string; build: string; base: string | null }>;
+  /** Present only when this run froze a bed-surface declaration. */
+  surface?: Record<string, unknown>;
 }
 
 /** One facts conclusion per bed (the manifest's order). */
-export function factsFields(beds: ManifestBed[], frozen?: FrozenLeases): FactsFields[] {
+export function factsFields(beds: ManifestBed[], frozen?: FrozenLeases, surface?: { declaration: unknown; probes: unknown }): FactsFields[] {
   return beds.map((bed) => {
     const facts = bedFacts(bed);
     const installed = bed.devices.flatMap((device) => {
       const record = device.installed ?? null;
       return record === null ? [] : [{ device: device.name, build: record.build, base: record.base }];
     });
-    return { bed: bed.name, occupancy: frozen ? occupancyText(bed,frozen) : [], segments: facts.segments, listeners: facts.listeners, blind: facts.blind, backends: facts.backends, unknowns: facts.unknowns, installed };
+    const judged = surface ? declaredSurface(bed, surface.declaration, surface.probes) : undefined;
+    return { bed: bed.name, occupancy: frozen ? occupancyText(bed,frozen) : [], segments: facts.segments, listeners: facts.listeners, blind: facts.blind, backends: facts.backends, unknowns: facts.unknowns, installed, ...(judged ? { surface: judged } : {}) };
   });
 }
 

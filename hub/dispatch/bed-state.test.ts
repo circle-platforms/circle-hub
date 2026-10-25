@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { canonicalBytes } from '../records/api.ts';
 import { againstBaseline, bedName, parseBaseline, parseReply, type BedItem } from './bed-state.ts';
@@ -140,4 +141,68 @@ test('a missing probe is unknown, names the reread, and does not submit', async 
   assert.doesNotMatch(state.missing_fact ?? '', /不属于基线/);
   const pre = (await snaps(c, state.job)).find(detail => detail.when === 'pre');
   assert.ok(Array.isArray(pre?.sources) && (pre.sources as string[]).some(source => source.startsWith('src:')));
+});
+
+const surface = JSON.parse(readFileSync(new URL('../../packs/product/apv/tables/bed-surface.json', import.meta.url), 'utf8')) as unknown;
+const sessionItem = { ...addressItem, id: 'sessions', call: { ...addressItem.call, arguments: { ticket: { $value: 'lease_id' }, item: 'sessions' } } };
+const surfaceState = { bed: '/bed', items: [addressItem, sessionItem] };
+const headerOnly = (header: string) => ({ header: [header], rows: [], note: '残留 synthetic-clear-row' });
+
+async function bindSurface(c: Awaited<ReturnType<typeof setup>>) {
+  const stored = await c.kit.artifacts.ingest({ bytes: canonicalBytes({ id: 'synthetic-bed', devices: [1, 2].map(n => ({ interfaces: [{ address: `192.0.2.${n}/24` }] })), bed, surface }), mediaType: 'application/json', origin: { upload: { session: 'synthetic' } }, author: { user: c.owner.id }, provenanceType: 'declared', visibility: { readers: [c.owner.id], admins: true, packs: [], shareable: false } });
+  c.detail.run.sources = c.detail.run.sources.map(source => source.slot === 'synthetic-manifest' ? { ...source, reference: `src:${stored.body.sha256}` } : source);
+  (c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as { bed: { manifest_sha256: string } }).bed.manifest_sha256 = stored.body.sha256;
+  c.effectDocument.effects[0].parameters.values.manifest_sha256 = [stored.body.sha256];
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, manifest_sha256: stored.body.sha256, allowed_tools: [...c.executor.definition.allowed_tools, 'show_bed'], bed_state: surfaceState });
+  await c.freezeExecutor();
+}
+
+async function cleanupRows(c: Awaited<ReturnType<typeof setup>>, job: string) {
+  const rows = await c.kit.store.findMany<{ detail: Record<string, unknown> }>({ kind: 'action', key: 'dispatch.job', values: [job] });
+  return rows.map(row => row.body.detail).filter(detail => detail.phase === 'bed_cleanup');
+}
+
+test('an empty header is not residue and does not block dispatch', async t => {
+  const queue = [headerOnly('残留'), headerOnly('name'), headerOnly('残留'), headerOnly('name')];
+  const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
+  t.after(() => c.close());
+  await bindSurface(c);
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(state.outcome, 'effective', JSON.stringify(state));
+  assert.equal((await cleanupRows(c, state.job)).length, 0);
+  assert.equal(c.calls.includes('synthetic-clear-row'), false);
+});
+
+test('auto-cleanable residue is a dispatch action and is not executed in the hub', async t => {
+  const queue = [{ header: ['address'], rows: [{ address: '192.0.2.9/24' }], note: '空' }, headerOnly('name')];
+  const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
+  t.after(() => c.close());
+  await bindSurface(c);
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(state.outcome, 'not_dispatched');
+  assert.equal(c.calls.filter(name => name === 'send_blob').length, 0);
+  assert.equal(c.calls.includes('synthetic-clear-row'), false);
+  assert.match(state.missing_fact ?? '', /可自动清理/);
+  assert.match(state.next_action ?? '', /synthetic-clear-row/);
+  assert.match(state.next_action ?? '', /Hub 不执行这些命令/);
+  const requested = await cleanupRows(c, state.job);
+  assert.equal(requested.length, 1);
+  assert.equal(requested[0]?.executed, false);
+  assert.equal(requested[0]?.authorization, 'required');
+  assert.deepEqual(requested[0]?.actions, [{ probe: 'addresses', seat: 'synthetic-0', command: 'synthetic-clear-row', granularity: 'row', identities: ['192.0.2.9/24'] }]);
+});
+
+test('residue that needs interactive confirmation blocks dispatch and names the exit', async t => {
+  const queue = [headerOnly('address'), { header: ['name'], rows: [{ name: 'left' }], note: 'synthetic-confirm-clear' }];
+  const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
+  t.after(() => c.close());
+  await bindSurface(c);
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(state.outcome, 'not_dispatched');
+  assert.equal(c.calls.filter(name => name === 'send_blob').length, 0);
+  assert.equal(c.calls.includes('synthetic-confirm-clear'), false);
+  assert.match(state.missing_fact ?? '', /不可自动清理/);
+  assert.match(state.next_action ?? '', /合成管理员/);
+  assert.match(state.next_action ?? '', /重新派发之前/);
+  assert.equal((await cleanupRows(c, state.job)).length, 0);
 });

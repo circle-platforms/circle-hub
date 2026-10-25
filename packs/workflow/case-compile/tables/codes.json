@@ -50,8 +50,13 @@
     },
     {
       "code": "case-compile.address_off_bed",
-      "when": "字面地址或替换目标不在台架或本血缘分配中",
-      "fix": "换用清单接口地址，或先由 test-bed 分配并以前驱串联运行；用例原文的台架外地址应加入 replacements 并在槽位写替换后的最终文字"
+      "when": "字面地址或替换目标不在任何设备接口所在网段，也不是本血缘租约地址",
+      "fix": "环境不可达，整卷不跑。换用有触发设备的网段里的接口地址，或先取得本血缘租约后再编译"
+    },
+    {
+      "code": "case-compile.environment_unreachable",
+      "when": "计划地址落在没有触发设备的盲网段",
+      "fix": "环境不可达，整卷不跑。把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译"
     },
     {
       "code": "case-compile.replacement_invalid",

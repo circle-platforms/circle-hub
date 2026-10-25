@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "test-bed",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "kind": "workflow",
   "title": "设备台架",
   "description": "读管理员发布的台架清单（命名文档），按需求搜索台架（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订台架（租约键 bed/<台架>/<设备>，可带地址分配，没有时长限额，由运行持有到释放）；只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/check-bed.ts",
-      "sha256": "b7ba5c9e39c19760c7e5d2dbff77e634aaec2ffb43b47048f888584b7acd8f32",
-      "size": 13591
+      "sha256": "3aa2b1941ec758aef7fb89773f4587d35e66628a43a523049c3c5c5f7490b97e",
+      "size": 13863
     },
     {
       "path": "functions/common.ts",
@@ -63,13 +63,13 @@
     },
     {
       "path": "functions/conclude.ts",
-      "sha256": "567bb2311a3e6e82554ebab96ce11e649203a58355cd24e007361e310a52af96",
-      "size": 18435
+      "sha256": "299c5b8be6cef1fa2e963b50f481f134362150dd1641695d5b9a96cf44ee1cc1",
+      "size": 18751
     },
     {
       "path": "functions/facts.ts",
-      "sha256": "6c063fb4d7a05768a82b1724efa307ef3f9538a7f6566289217774a8c6876a91",
-      "size": 6604
+      "sha256": "493683a3234e37707e4384d1478502a1813b7ce53df0d5c637bb234bf3ededc2",
+      "size": 7373
     },
     {
       "path": "functions/manifest.ts",
@@ -88,13 +88,18 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "fec1414652817ec59f3bfa2bc1a26eeabd43d286a469673b5aea5487be4ee4a6",
-      "size": 8337
+      "sha256": "23286117ff67e497731cc17cea48626f173d4d82f1918d84942cdee161ae3f26",
+      "size": 8546
     },
     {
       "path": "functions/subject.ts",
       "sha256": "ac54432fab175861b7289e1f859446f8106d437006e16a8fec9e3a7aefeacf84",
       "size": 1827
+    },
+    {
+      "path": "functions/surface.ts",
+      "sha256": "2741b05dbac76686096313563b4daba793bf8f5d493d448f9e7419f5c1383181",
+      "size": 17181
     },
     {
       "path": "requirements.json",
@@ -185,6 +190,11 @@
       "path": "slots.schema.json",
       "sha256": "851202e03d46a4b40941830a276007f860f657166b31d30da18d0d2268567516",
       "size": 53
+    },
+    {
+      "path": "tables/bed-surface.json",
+      "sha256": "f0f162891bb8f3f1b9dbe526944dc494e6ef928a870bea37406e527ab5251468",
+      "size": 323
     },
     {
       "path": "tables/codes.json",
