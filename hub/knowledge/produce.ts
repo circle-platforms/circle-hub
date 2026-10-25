@@ -109,6 +109,9 @@ export interface ProduceInput {
   refreshSources?:ReadonlySet<string>;
   /** Run only these producer ids of the pack (the seedling production names its three); undefined runs all of the scope. */
   producers?: readonly string[];
+  /** The build names the sync's plan listed (the frozen known-build inventory the producers hash); a production
+   *  without a plan freezes the build it is producing alone. Never accumulated from the records store (K01 R[1]). */
+  planBuilds?: readonly string[];
 }
 
 export interface ProduceResult {
@@ -535,9 +538,18 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   // What every producer receives: the build as listed, without a root (the root is what this production makes; the previous
   // root would make a producer's output, and so this root, depend on what was produced before, K01 R[1]).
   const handed = info === null ? null : { ...info, root: null };
-  const buildNameInventory=new Map<string,string>();for(const row of await context.store.buildsOf(lineProduct))buildNameInventory.set(row.body.build.name,row.record.digest);
-  if(buildNameInventory.size>50000)return result({reason:'已知构建清单超过有界输入上限；下一步包维护者扩展分片清单合约后重产'});
-  context={...context,knownBuildInventory:[...buildNameInventory].sort(([a],[b])=>compareText(a,b)).map(([name,record])=>({name,record}))};
+  // The frozen known-build inventory is a declared input, never accumulated database state: producers hash it into
+  // their applicability criteria digest, so a build record this very production writes must not change it (K01 R[1],
+  // same sources give the same bytes, and two builds of one plan share their manual subtree). The sync passes the
+  // plan's build names; a production without a plan knows only the build it is producing.
+  const planNames = input.planBuilds === undefined
+    ? (info === null ? [] : [info.name])
+    : [...new Set([...input.planBuilds, ...(info === null ? [] : [info.name])])].sort(compareText);
+  if (planNames.length > 50000) return result({ reason: '已知构建清单超过有界输入上限；下一步包维护者扩展分片清单合约后重产' });
+  const ZERO = '0'.repeat(64);
+  const buildNameInventory = new Map<string, string>();
+  for (const name of planNames) buildNameInventory.set(name, ZERO);
+  context = { ...context, knownBuildInventory: [...buildNameInventory].sort(([a], [b]) => compareText(a, b)).map(([name]) => ({ name, record: ZERO })) };
   const applicabilityClosedSets:Record<string,string[]>={};
   for(const [field,name]of Object.entries(product.product.applicability?.closed_sets??{})){
     const uses=(input.variables??[]).filter(use=>use.name===name);if(!uses.length)continue;
