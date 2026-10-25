@@ -1,4 +1,3 @@
-import { facetCountCheck } from '../../../scripts/real/accept/regression-scope.ts';
 // A production run end to end: the published pack, the real run engine, and a fake reader serving hand-built impact
 // views. start_run computes and stores the validation result. The real knowledge reader waits on the cases index.
 import assert from 'node:assert/strict';
@@ -330,11 +329,16 @@ describe('the real knowledge reader', () => {
       context: { ...context, adminNote: () => {} }, state: {},
     } as unknown as Parameters<typeof callTool>[1], 'get_nodes', { reference: facetSource.reference });
     assert.equal(response.isError, false);
-    const numeric = facetCountCheck('synthetic', 1, [
-      { index: 1, tools: ['hub_get_nodes'], toolResults: [{ id: 'start', text: `- 线索 ${facetSource.reference}（输入 facets）`, isError: false }] },
-      { index: 2, tools: [], toolResults: [{ id: 'read', text: response.content[0].text, isError: false }] },
-    ]);
-    assert.equal(numeric.ok, true, JSON.stringify(numeric));
+    const content = response.structuredContent.content as { reference: string; read_tier: string; text: string };
+    assert.equal(content.reference, facetSource.reference);
+    assert.equal(content.read_tier, 'model_readable');
+    assert.equal(typeof content.text, 'string');
+    const facet = JSON.parse(content.text) as { schema: string; kind: string; by: string[]; truncated: boolean; skipped: number; rows: Array<{ values: { commands: unknown }; count: number }> };
+    assert.deepEqual([facet.schema, facet.kind, facet.by, facet.truncated, facet.skipped], ['facet-view@1', 'case', ['commands'], false, 0]);
+    assert.ok(Array.isArray(facet.rows));
+    const unplaced = facet.rows.filter((row) => row.values.commands === null);
+    assert.equal(unplaced.length, 1);
+    assert.equal(unplaced[0].count, 1);
 
     assert.match(String(storedRun.run.groups?.[0].message), /1 个用例没有解析出命令/);
     assert.ok(detail.production!.result.cross_item.every((claim) => !claim.statement.text.includes('个用例没有解析出命令')));

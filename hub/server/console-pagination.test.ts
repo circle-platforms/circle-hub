@@ -38,7 +38,7 @@ test('run log pagination uses the stored cursor and historical missing exits rem
 
 test('runs page separates overdue unanswered requests from the ordinary request list',async()=>{
   const request={record:'d'.repeat(64),run:runRecord.run,kind:'clarification',audience:runRecord.runner,due:'2026-10-22T01:00:00.000Z',missing:'合成逾期事实',next_action:'管理员核对原请求',source:'e'.repeat(64),code:'awaiting_step',answered_by:null};
-  const deps={runs:{listRuns:async()=>({items:[],next:null,overdue_requests:[request]}),listRequests:async()=>[request]}};
+  const deps={knowledge:{},runs:{listRuns:async()=>({items:[],next:null,overdue_requests:[request]}),listRequests:async()=>[request]}};
   const body=String((await runsPage(context(deps,'/console/runs'))).body);
   assert.ok(body.includes('已到期未回答的请求'));
   assert.ok(body.indexOf('合成逾期事实')<body.lastIndexOf('未回答的请求'));

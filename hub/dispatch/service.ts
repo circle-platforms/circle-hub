@@ -9,7 +9,7 @@ import {verifiedContent} from './content.ts';
 import { WHOLE_HUB, canonicalBytes, canonicalize, sha256Hex, type AuthorizationRecord, type ActionBody, type ArtifactSource, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
 import type { LeaseService, HolderSnapshot } from '../leases/api.ts';
 import type { WorkflowStore } from '../ports.ts';
-import { labelOf, type EffectOutcome, type Disposition, type EffectMark, type QualifierMark, type RequestKind, type ActionKind, type ActionResult, type LeaseOp, type EffectClass, type RetrySafety, type Signing, type DynamicTerminal, type Reason, isDisposition, isEffectOutcome } from '../../contracts/generated/vocabulary.ts';
+import { labelOf, type EffectOutcome, type Disposition, type EffectMark, type QualifierMark, type RequestKind, type ActionKind, type ActionResult, type LeaseOp, type EffectClass, type RetrySafety, type Signing, type DynamicTerminal, type Reason, isDisposition, isEffectOutcome, isDynamicTerminal } from '../../contracts/generated/vocabulary.ts';
 import { at, bind, mapped, readDeclaredTime, registrationMissing, type CallRole, type ExecutorDefinition } from './definition.ts';
 import {Redactor} from '../connectors/api.ts';
 import {resolveExecutor} from './source.ts';
@@ -1009,7 +1009,7 @@ export class DispatchService {
   private async noteObservedRound(by: Principal, binding: JobBinding, d: ExecutorDefinition, round: number, projected: Array<{ dynamic_terminal: DynamicTerminal; code?: string }>, complete: boolean,pendingReport=false,refresh=false): Promise<void> {
     const events = await this.journal.events(binding.job);
     const previous=roundRecords(events).find(event=>event.body.detail.round===round);
-    if(previous&&(!refresh||previous.body.detail.terminal==='pass'||previous.body.detail.terminal==='fail'))return;
+    if(previous&&(!refresh||!isDynamicTerminal(previous.body.detail.terminal)||previous.body.detail.terminal==='pass'||previous.body.detail.terminal==='fail'))return;
     const terminals = projected.map(row => row.dynamic_terminal);
     const terminal: DynamicTerminal = terminals.length > 0 && terminals.every(item => item === 'pass') ? 'pass' : terminals.some(item => item === 'fail') ? 'fail' : terminals.find(item => item === 'incomplete') ?? terminals.find(item => item === 'no_verdict') ?? 'no_verdict';
     const code = projected.find(row => typeof row.code === 'string')?.code;

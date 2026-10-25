@@ -75,20 +75,18 @@ describe('an empty scope is a deterministic support, not an unknown', () => {
 });
 
 describe('an uncovered path is a deterministic gap when the view scope is complete (decision: view scope)', () => {
-  it('skipped 0 and not truncated: refute (advisory) with the scope spelled out, never an unknown', () => {
+  it('skipped 0 and not truncated: unknown (advisory) with the exact missing evidence, never a refutation', () => {
     const outcomes = checkOutcomes('uncovered_changes', {
       items: [],
       note: { ...NOTE, considered: [{ path: '/commands/show', change: 'modified' }], uncovered: [{ path: '/commands/show', change: 'modified' }], skipped_to: 0, truncated: false, changed_paths: 1, include_added: true },
     });
-    const gap = outcomes.find((o) => o.code === 'regression-scope.uncovered_path');
+    const gap = outcomes.find((o) => o.verdict === 'unknown' && o.statement.includes('/commands/show'));
     assert.ok(gap, JSON.stringify(outcomes));
-    assert.equal(gap.verdict, 'refute');
+    assert.equal(gap.reason, 'missing_input');
     assert.equal(gap.tier, 'advisory');
-    assert.match(gap.statement, /\/commands\/show/);
-    assert.match(gap.statement, /没有用例覆盖/);
-    assert.match(gap.statement, /视图范围/);
-    assert.equal(gap.missing, undefined);
-    assert.equal(outcomes.some((o) => o.verdict === 'unknown' && o.statement.includes('/commands/show')), false, JSON.stringify(outcomes));
+    assert.equal(gap.statement, '变更路径 /commands/show（修改）在后一构建里没有用例。用例索引在这里没有条目，所以这不是失败。');
+    assert.equal(gap.missing, '尚未取得本检查所需的事实：变更路径 /commands/show（修改）在后一构建里没有用例。用例索引在这里没有条目，所以这不是失败。');
+    assert.equal(outcomes.some((o) => o.verdict === 'refute'), false, JSON.stringify(outcomes));
   });
 
   it('skipped sources keep the unknown with the missing fact and next step', () => {

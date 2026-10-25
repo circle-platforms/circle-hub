@@ -86,8 +86,8 @@ test('one view prepares its 3000-source graph once and budgets 200 covered entri
   const stats = {view:{queries:0,scans:0,bytes:0},read:{queries:0,scans:0,bytes:0}};
   const query = pg.Client.prototype.query;
   t.mock.method(pg.Client.prototype,'query',function(this: pg.Client,...args: unknown[]) {
-    // 66 is the measured view: source parts, two scope chunks, the answer, coverage refresh and the answer's acceptance lookup.
-    if (phase !== 'setup') { const s=stats[phase]; if (++s.queries > (phase === 'view' ? 66 : 16)) throw new Error('synthetic query budget exceeded'); }
+    // 67 is the measured view: source parts, two scope chunks, the feeding-layer lookup, the answer, coverage refresh and the answer's acceptance lookup.
+    if (phase !== 'setup') { const s=stats[phase]; if (++s.queries > (phase === 'view' ? 67 : 16)) throw new Error('synthetic query budget exceeded'); }
     return Reflect.apply(query,this,args);
   });
   counted = await openRecords({ dataDir: w.kit.config.dataDir, logDir: w.kit.config.logDir, database: w.kit.database, limits: w.kit.config.limits }, {

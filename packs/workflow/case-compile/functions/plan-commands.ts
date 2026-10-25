@@ -9,8 +9,10 @@ import type {PlanSlots} from './slots.ts';
 import {identityOf,identityKey} from './typed-contract.ts';
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
 import type {CatalogEntry} from '../../../../contracts/src/tables.ts';
+import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
+type CommandVerdict = Extract<Verdict, 'unknown' | 'refute'>;
 export interface CommandCatalog {root:string;complete:boolean;entries:CatalogEntry[];covered_lines?:string[]}
-export interface CommandProblem {document:string;pointer:string;message:string;verdict:'unknown'|'refute'}
+export interface CommandProblem {document:string;pointer:string;message:string;verdict:CommandVerdict}
 export function deviceCommandLines(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots):Array<{line:string;pointer:string}>{
  const lines:Array<{line:string;pointer:string}>=[];
  for(const [index,step]of slots.steps.entries()){const entry=runtimeMethod(contract,step.object,step.method),allowed=profile.allowed.find(call=>call.object===step.object&&call.method===step.method);if(!entry||!allowed)continue;for(const value of bindArguments(entry,step,`/steps/${index}`).values)if(allowed.parameters[value.name]==='device_cli'&&typeof value.value==='string')lines.push({line:value.value,pointer:value.pointer});}
@@ -18,7 +20,7 @@ export function deviceCommandLines(contract:RuntimeContract,profile:RuntimeProfi
 }
 export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,raw:unknown):{identities:CommandIdentity[];byLine:Map<string,CommandIdentity>;problems:CommandProblem[];catalog:CommandCatalog|null}{
  const lines=deviceCommandLines(contract,profile,slots);
- const problems:CommandProblem[]=[],byLine=new Map<string,CommandIdentity>();const note=(pointer:string,message:string,verdict:'unknown'|'refute'='unknown')=>problems.push({document:'catalog',pointer,message,verdict});
+ const problems:CommandProblem[]=[],byLine=new Map<string,CommandIdentity>();const note=(pointer:string,message:string,verdict:CommandVerdict='unknown')=>problems.push({document:'catalog',pointer,message,verdict});
  const declarations=(identities:CommandIdentity[]):void=>{ if(slots.command_identities!==undefined){if(!Array.isArray(slots.command_identities)){note('/command_identities','模型提交的可选命令身份声明不是列表','refute');return;}const declared=slots.command_identities.map(identityOf);if(declared.some(identity=>identity===null))note('/command_identities','模型提交的命令身份结构或类型化值不一致','refute');else{const supplied=new Set(declared.map(identity=>identityKey(identity!))),actual=new Set(identities.map(identityKey));if(supplied.size!==actual.size||[...actual].some(key=>!supplied.has(key)))note('/command_identities','模型提交的命令身份不等于锁定目录对计划命令的完整解析','refute');}}};
  if(!lines.length){declarations([]);return {identities:[],byLine,problems,catalog:isRecord(raw)&&typeof raw.root==='string'&&typeof raw.complete==='boolean'?{root:raw.root,complete:raw.complete,entries:[],covered_lines:[]}:null};}
  if(!isRecord(raw)||typeof raw.root!=='string'||!Array.isArray(raw.entries)||typeof raw.complete!=='boolean'){note('/command_catalog','缺 Hub 按锁定根提供的 commands 目录；不能用用例身份或模型自报身份代替完整解析');return {identities:[],byLine,problems,catalog:null};}
