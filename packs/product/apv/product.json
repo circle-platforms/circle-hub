@@ -76,6 +76,26 @@
       "target_producers": [
         "command-tree"
       ]
+    },
+    {
+      "id": "manual-mentions",
+      "field": "command_mentions",
+      "namespace": "/commands",
+      "match": "exact",
+      "entry_kind": "definition",
+      "unmatched": "mention",
+      "normalize": {
+        "lowercase": false,
+        "strip_nul": false,
+        "nfc": false
+      },
+      "source_producers": [
+        "manual-apv",
+        "manual-nsae"
+      ],
+      "target_producers": [
+        "command-tree"
+      ]
     }
   ],
   "catalogs": [

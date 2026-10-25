@@ -240,6 +240,14 @@
               "minLength": 1
             }
           },
+          "unmatched": {
+            "description": "What a literal this rule cannot match is: drift, a fact of the run (default), or mention, the author's marked text kept verbatim and linked only on complete equality (integrator decision 60, 2026-10-25: prose claims no command, so it creates no drift)",
+            "type": "string",
+            "enum": [
+              "drift",
+              "mention"
+            ]
+          },
           "normalize": {
             "type": "object",
             "properties": {
