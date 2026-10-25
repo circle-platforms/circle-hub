@@ -7,9 +7,10 @@ const admin:Principal={id:'usr_00000000000000000000000001',name:'合成管理员
 test('run dispatch reads traverse all reservation pages, retain exact bindings and never write',async()=>{
   const records={store:{find:async(query:{cursor:string|null})=>({items:query.cursor?[]:[{body:{detail:{binding:{job:'a'.repeat(64),input:{run,plan_run:plan,item:'verification',items:['case-a'],sha256:'b'.repeat(64)}}}}}],next:query.cursor?null:'second'}),findMany:async()=>Array.from({length:3},()=>({digest:'d'.repeat(64),body:{detail:{}}})),put:()=>{throw new Error('read API attempted a write');}}} as unknown as Pick<RecordsKit,'store'>;
   const seen:string[]=[];
-  const dispatch={status:async(_by:Principal,job:string)=>{seen.push(job);return{job,phase:'result',outcome:'effective' as const,frozen:false,events:3,result:`src:${'c'.repeat(64)}`};}};
+  const dispatch={status:async(_by:Principal,job:string)=>{seen.push(job);return{job,phase:'result',outcome:'effective' as const,frozen:false,events:3,result:`src:${'c'.repeat(64)}`,admin_release:[{condition:'private_condition',label:'管理员说明',satisfied:false,fields:[]}],admin_release_missing:true};}};
   const jobs=await readRunJobs(records,dispatch,admin,plan);
   assert.equal(jobs.length,1);assert.equal(jobs[0].verification_run,run);assert.deepEqual(jobs[0].items,['case-a']);
+  assert.equal(jobs[0].status.admin_release,undefined);assert.equal(jobs[0].status.admin_release_missing,undefined);
   assert.equal(jobs[0].sha256,'b'.repeat(64));assert.equal(seen.length,1);
   assert.deepEqual(await readRunJobs(records,dispatch,admin,'run_00000000000000000000000003'),[]);
 });

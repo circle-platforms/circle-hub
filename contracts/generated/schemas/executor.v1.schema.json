@@ -1107,6 +1107,7 @@
           "maxLength": 500
         },
         "log_stale": {
+          "description": "relative to one result.items entry",
           "type": "string",
           "maxLength": 500
         },
@@ -1116,10 +1117,12 @@
           "maxLength": 2000
         },
         "log": {
+          "description": "relative to one result.items entry",
           "type": "string",
           "maxLength": 500
         },
         "sessions": {
+          "description": "optional per-item evidence; successful cases may omit sessions; never a prerequisite for a device verdict",
           "type": "string",
           "maxLength": 500
         },
@@ -1141,15 +1144,18 @@
         },
         "items": {
           "type": "string",
-          "maxLength": 500
+          "maxLength": 500,
+          "description": "response-root pointer to the item array"
         },
         "item_id": {
           "type": "string",
-          "maxLength": 500
+          "maxLength": 500,
+          "description": "pointer relative to one item, not the response root"
         },
         "item_outcome": {
           "type": "string",
-          "maxLength": 500
+          "maxLength": 500,
+          "description": "pointer relative to one item, not the response root; its exact scalar must be declared in result.map"
         },
         "complete": {
           "type": "string",

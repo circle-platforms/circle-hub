@@ -4,6 +4,37 @@
   "check": "dispatch_policy",
   "note": "合成 runtime-contract@2 声明，旧合约不能作为已核对输入",
   "subject": {
+    "command_catalog": {
+      "root": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "complete": true,
+      "entries": [
+        {
+          "words": [
+            "widget",
+            "health",
+            "interval"
+          ],
+          "reference": "tree:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/commands/widget/health/interval",
+          "signatures": [
+            {
+              "id": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments",
+              "reference": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments",
+              "params": [
+                {
+                  "name": "seconds",
+                  "type": "int",
+                  "native_type": {
+                    "name": "U16",
+                    "declaration": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments/arg",
+                    "grammar": "apv-command-tree@2"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
     "item": "doc-1:c-1",
     "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-e1",
     "case_texts": [
@@ -11,30 +42,6 @@
       "widget health interval 60"
     ],
     "data": {
-      "command_identities": [
-        {
-          "tree_root": "64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7",
-          "path": "/commands/widget/health/interval",
-          "signature": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments",
-          "parameters": [
-            {
-              "position": 0,
-              "name": "seconds",
-              "raw": "60",
-              "type": {
-                "name": "U16",
-                "catalog_type": "int",
-                "declaration": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments/arg",
-                "grammar": "apv-command-tree@2"
-              },
-              "parsed": {
-                "kind": "int",
-                "value": 60
-              }
-            }
-          ]
-        }
-      ],
       "bucket": "bed-a",
       "blocks": [],
       "replacements": [],
@@ -728,6 +735,40 @@
     "criteria": [],
     "now": "2026-10-23T02:00:00.000Z",
     "fields": {
+      "command_catalog": {
+        "root": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "complete": true,
+        "entries": [
+          {
+            "words": [
+              "widget",
+              "health",
+              "interval"
+            ],
+            "reference": "tree:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/commands/widget/health/interval",
+            "signatures": [
+              {
+                "id": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments",
+                "reference": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments",
+                "params": [
+                  {
+                    "name": "seconds",
+                    "type": "int",
+                    "native_type": {
+                      "name": "U16",
+                      "declaration": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments/arg",
+                      "grammar": "apv-command-tree@2"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "covered_lines": [
+          "widget health interval 60"
+        ]
+      },
       "autoid": "990000000000000031",
       "title": "合成用例",
       "priority": "2",
@@ -764,7 +805,7 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@3.1.5"
+      "generator": "case-compile@3.3.0"
     },
     "manifest_sha256": "5bc9f5ab333dde710f9023c6db1f99411f3e254f61b4e44b11340ce362b1fcd7",
     "workbook": {
@@ -863,14 +904,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@3.1.5",
+                    "text": "case-compile@3.3.0",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "621067da6ff6913f387b39e2800a45391a285fd10d1d682485346f2a7be8b69e",
+                    "text": "b9bfa1b6b1ee75ca66c4ab1616ca78d28a57f38eb4324b31671205bed940437f",
                     "formula": false,
                     "style": null
                   }

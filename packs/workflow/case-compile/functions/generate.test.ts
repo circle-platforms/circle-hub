@@ -1,3 +1,5 @@
+import {planCommands} from './plan-commands.ts';
+import {COMMAND_CATALOG} from './test-support.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -42,7 +44,7 @@ import FORMAT from '../tables/workbook-format.json' with { type: 'json' };
 const hash = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 test('same recipe gives identical XLSX bytes; a slot change changes the artifact digest', () => {
   const recipe = generationFixture(); const first = generateWorkbook(recipe); assert.deepEqual(first, generateWorkbook(recipe));
-  const next = generationFixture(); next.slots.steps[0].args[0] = 'widget health interval 61'; assert.notEqual(hash(first), hash(generateWorkbook(next)));
+  const next = generationFixture(); next.slots.steps[0].args[0] = 'widget health interval 61';next.fields.command_catalog=planCommands(next.contract,next.profile,next.slots,COMMAND_CATALOG).catalog; assert.notEqual(hash(first), hash(generateWorkbook(next)));
 });
 test('STORE ZIP headers, CRC, offsets, timestamps, members and central directory are exact', () => {
   assert.equal(crc32(Buffer.from('123456789')), 0xcbf43926);

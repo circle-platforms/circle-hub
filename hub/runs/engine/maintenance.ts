@@ -32,13 +32,17 @@ export async function maintainRuns(ctx:EngineContext):Promise<void>{
 /** A committed human choice is never repeated; only its deterministic delivery projection is retried. */
 async function recoverManagement(ctx:EngineContext,stored:StoredRecord<RunRecord>,decision:StoredRecord<import('../../records/api.ts').ActionBody>):Promise<void>{
   const actions=await actionsOf(ctx.deps.records.store,stored.body.run);
-  const failures=actions.filter(a=>a.body.detail.management_interrupted===decision.digest).length;
+  const failures=Math.max(actions.filter(a=>a.body.detail.management_interrupted===decision.digest).length,actions.filter(a=>a.body.detail.management_recovery_started===decision.digest).length);
   const projected=await ctx.deps.records.store.find({kind:'validation_result',key:'runs.result.system_input',value:'rec:'+decision.digest,limit:1});
   if(failures>=3&&!projected.items.length){
     const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
     if(!admin)throw new Error('管理交付恢复缺少具名管理员');
     await putRequest(ctx,{run:stored.body.run,kind:'repair',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:decision.digest,code:'check_error',missing:'管理选择 rec:'+decision.digest+' 已记录，但三次自动恢复仍未形成交付投影',next_action:'管理员修复记录写入或投影故障后，核对原管理选择，用 circle-hub run abandon '+stored.body.run+' --answer-request <原处置请求摘要> --reason <原理由> 原样重试；只补交付，不重做人的选择、不改旧件'});
     return;
+  }
+  if(!projected.items.length){
+    const reservedAt=ctx.now().toISOString();
+    await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:['rec:'+decision.digest],startedAt:reservedAt,endedAt:reservedAt,acceptance:null,result:'unknown',codes:[],detail:{management_recovery_started:decision.digest,retry_attempt:failures+1,result:null}});
   }
   try{
     const result=await ctx.lock('submit:'+stored.body.run,()=>finishAbandon(ctx,stored,decision));
@@ -86,13 +90,16 @@ async function recoverRun(ctx:EngineContext,stored:StoredRecord<RunRecord>):Prom
   if(run.requirements.every(r=>r.accepted_producer==='fact')&&!await latestAccepted(ctx.deps.records.store,run.run)){
     await ctx.lock('submit:'+run.run,async()=>{
       if(await latestAccepted(ctx.deps.records.store,run.run))return;
-      const failures=(await actionsOf(ctx.deps.records.store,run.run)).filter(a=>a.body.detail.production_interrupted===true).length;
+      const history=await actionsOf(ctx.deps.records.store,run.run);
+      const failures=Math.max(history.filter(a=>a.body.detail.production_interrupted===true).length,history.filter(a=>a.body.detail.production_recovery_started===stored.digest).length);
       if(failures>=3){
         const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
         if(!admin)throw new Error('事实生产重验缺少具名管理员');
         await putRequest(ctx,{run:run.run,kind:'repair',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:stored.digest,code:'check_error',missing:'事实生产缺少完整校验结果，三次有限重验均未完成',next_action:'管理员按本运行的中断动作修复核验能力或拆分输入，再以本运行为 predecessor 重跑；不补造旧结果'});
         return;
       }
+      const reservedAt=ctx.now().toISOString();
+      await putAction(ctx.deps.records.store,{action:'validate',run:run.run,inputs:['rec:'+stored.digest],startedAt:reservedAt,endedAt:reservedAt,acceptance:null,result:'unknown',codes:[],detail:{production_recovery_started:stored.digest,retry_attempt:failures+1,result:null,fix:'恢复尝试已持久占用；即使进程终止也计入三次上限，耗尽后管理员修复并开新修订'}});
       try{await recheckProduction(ctx,stored,{id:account.id,name:account.name,role:account.role},randomBytes(16).toString('hex'));}
       catch(error){
         ctx.log({traceId:null,run:run.run,what:'production validation interrupted',detail:String(error)});
@@ -107,14 +114,17 @@ async function recoverRun(ctx:EngineContext,stored:StoredRecord<RunRecord>):Prom
     const detail=action?.body.detail;
     const independent=run.requirements.some(r=>r.accepted_producer==='independent_judgment');
     const historicalSession=detail&&typeof detail.session==='string'?detail.session:null;
-    const failures=(await actionsOf(ctx.deps.records.store,run.run)).filter(a=>a.body.detail.hub_error===true&&a.body.detail.submission===(isObject(submission.body)?receivedDigest(submission.body).digest:null)).length;
+    const history=await actionsOf(ctx.deps.records.store,run.run);
+    const failures=Math.max(history.filter(a=>a.body.detail.hub_error===true&&a.body.detail.submission===(isObject(submission.body)?receivedDigest(submission.body).digest:null)).length,history.filter(a=>a.body.detail.recovery_submission===submission.digest).length);
     if(isVerbatimObject(submission)||!isObject(submission.body)||independent&&historicalSession===null||failures>=3){
       const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
       if(!admin)throw new Error('中断重验缺少具名管理员');
-      const missing=independent&&historicalSession===null?`提交记录 ${submission.digest} 当时没有记录会话 id`:`提交记录 ${submission.digest} 的核验仍未完成`;
+      const missing=independent&&historicalSession===null?`提交记录 ${submission.digest} 当时没有记录会话 id`:`提交记录 ${submission.digest} 的核验仍未完成（自动恢复至多三次，包含进程终止前已预约的尝试）`;
       await putRequest(ctx,{run:run.run,kind:'repair',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),missing,source:submission.digest,code:'check_error',next_action:independent&&historicalSession===null?'请原提交者带 Circle-Session-Id 原样 submit_result；不能补造历史会话':'管理员修复核验故障后，请原提交者带原会话原样 submit_result'});
       continue;
     }
+    const reservedAt=ctx.now().toISOString();
+    await putAction(ctx.deps.records.store,{action:'validate',run:run.run,inputs:['rec:'+submission.digest],startedAt:reservedAt,endedAt:reservedAt,acceptance:null,result:'unknown',codes:[],detail:{recovery_submission:submission.digest,retry_attempt:failures+1,result:null,fix:'恢复尝试已持久占用；即使进程终止也计入三次上限，耗尽后管理员修复并原样重交或开新修订'}});
     await submitResult(ctx,{id:account.id,name:account.name,role:account.role},submission.body,{traceId:randomBytes(16).toString('hex'),sessionId:historicalSession});
   }
 }
@@ -278,9 +288,11 @@ async function recoverParent(ctx:EngineContext,stored:StoredRecord<RunRecord>):P
   const validator=[...actions].reverse().find(a=>a.body.component===ENGINE_COMPONENT&&a.body.action==='validate'&&a.body.detail.submission===latest.body.submission&&Array.isArray(a.body.detail.retry_attempts));
   if(!validator||!parentUnavailable(validator.body.detail.retry_attempts))return;
   const account=await ctx.deps.records.principals?.get(run.runner??run.configurer??'');if(!account||account.disabled||!canSeeRun(account,run))return;
-  const source=latest.body.submission,attempts=actions.slice(recoveredAt+1).filter(a=>a.body.detail.parent_recheck===source).length;
+  const source=latest.body.submission,attempts=Math.max(actions.slice(recoveredAt+1).filter(a=>a.body.detail.parent_recheck===source).length,actions.slice(recoveredAt+1).filter(a=>a.body.detail.parent_recheck_started===source).length);
   const by={id:account.id,name:account.name,role:account.role};
   if(attempts<3&&!superseded){
+    const reservedAt=ctx.now().toISOString();
+    await putAction(store,{action:'validate',run:run.run,inputs:['rec:'+latest.digest],startedAt:reservedAt,endedAt:reservedAt,acceptance:null,result:'unknown',codes:[],detail:{parent_recheck_started:source,retry_attempt:attempts+1,result:null}});
     if(validator.body.detail.production===true)await ctx.lock('submit:'+run.run,()=>recheckProduction(ctx,stored,by,randomBytes(16).toString('hex')));
     else{
       const original=await submissionByDigest(store,run.run,source);if(!original||!isObject(original.body)||isVerbatimObject(original))return;

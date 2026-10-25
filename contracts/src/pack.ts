@@ -358,7 +358,9 @@ export const ItemSubjectInput = z.strictObject({
   slots: z.record(z.string(), z.unknown()).nullable(),
   evidence: z.array(ResolvedEvidence),
   context: RunContext,
-  catalog: z.array(z.unknown()).optional().describe('locked catalog entries for an item-key narrowed read subject builder'),
+  catalog: z.array(z.unknown()).optional().describe('locked catalog entries declared by this check'),
+  catalog_missing:z.string().optional().describe('trusted Hub missing fact and recovery when a selected catalog cannot be read within bounds'),
+  catalog_complete:z.boolean().optional().describe('whether the locked catalog is complete for its scope'),
 });
 export type RunSubjectInput = z.infer<typeof RunSubjectInput>;
 export type ItemSubjectInput = z.infer<typeof ItemSubjectInput>;
@@ -403,6 +405,7 @@ export const CheckEntry = z
     applies: TargetSchema.describe('run: one subject for all items, built once; item: one subject per item (with its submitted slots)'),
     subject: PackFunctionRef.optional().describe('builds the subject from RunSubjectInput or ItemSubjectInput; without it the default subject of that input is used'),
     catalog: Versioned.optional().describe('the catalog of the locked root the check consults'),
+    catalog_select: PackFunctionRef.optional().describe('derives {base, lines} from frozen item inputs before any catalog is read; only exact grammar paths along those token sequences are fetched'),
     judges: SourceRoleSchema.describe('the role of what the check judges (A03): the target, an expected source or the artifact under verification'),
     tier: CheckTierSchema.optional().describe('replaces the tier of every outcome; required on publication, legacy published packs fall back to basis'),
     basis: z.string().min(1).optional().describe('the acceptance contract clause a blocking check relies on (C05 R[1])'),
@@ -411,6 +414,7 @@ export const CheckEntry = z
   })
   .superRefine((c, ctx) => {
     if ((c.interpreter === undefined) === (c.function === undefined)) ctx.addIssue({ code: 'custom', path: ['interpreter'], message: 'a check names a core interpreter or a pack function, not both and not neither' });
+    if (c.catalog_select && (!c.catalog || c.applies !== 'item')) ctx.addIssue({code:'custom',path:['catalog_select'],message:'catalog selection requires an item check and a catalog'});
     if (c.interpreter !== undefined && c.table === undefined) ctx.addIssue({ code: 'custom', path: ['table'], message: 'an interpreter check reads a table' });
   });
 export type CheckEntry = z.infer<typeof CheckEntry>;

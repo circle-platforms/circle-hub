@@ -4,6 +4,8 @@
 // non-empty `resource` tag list, its expected results are its leaf children (the team convention of the case-review pack).
 // The input document is never changed; the mutated copy and the truth come back.
 
+import {declareResourceTags} from '../../../packs/workflow/case-review/api.ts';
+
 export type NodeData = { id?: string; text?: string; priority?: unknown; resource?: unknown; [key: string]: unknown };
 export type MapNode = { data: NodeData; children?: MapNode[] };
 export type MindMap = { root: MapNode; [key: string]: unknown };
@@ -48,8 +50,7 @@ function rng(seed: number): () => number {
 }
 
 const isCase = (n: MapNode): boolean => Array.isArray(n.data?.resource) && (n.data.resource as unknown[]).length > 0;
-const tagsOf = (n: MapNode): string[] => (Array.isArray(n.data?.resource) ? (n.data.resource as unknown[]).filter((t): t is string => typeof t === 'string') : []);
-const isNegative = (n: MapNode): boolean => tagsOf(n).some((t) => /^(?:negative|negativ|负向|反向)$/i.test(t.trim()));
+const isNegative = (n: MapNode): boolean => declareResourceTags(n.data.resource).negative===true;
 
 interface Found {
   node: MapNode;

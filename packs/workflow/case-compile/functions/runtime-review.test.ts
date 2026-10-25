@@ -25,7 +25,7 @@ test('review 01 host arguments without roles and unbounded waits are rejected wi
 test('review 02 masks and prefixes have explicit types and do not require host membership',()=>{assert.equal(checkAddresses(addressInput('255.255.255.192',{kind:'mask'}))[0].verdict,'support');assert.equal(checkAddresses(addressInput('26',{kind:'ipv4_prefix'}))[0].verdict,'support');assert.equal(checkAddresses(addressInput('192.0.2.63',{bedMember:false}))[0].verdict,'support');});
 test('review 03 unpaired quotes and final backslashes produce a repairable value refutation', () => {
   for (const text of ['widget health interval "60', 'widget health interval 60\\', "widget description it's"]) {
-    const data = goodData(); data.steps[0].args = [text]; const result = checkContractShape(subjectOf(data)); assert.ok(result.every(v=>v.verdict!=='support'));assert.ok(result.some(v=>v.verdict==='unknown'&&v.missing?.includes('CommandIdentity')));
+    const data = goodData(); data.steps[0].args = [text]; const result = checkContractShape(subjectOf(data)); assert.ok(result.every(v=>v.verdict!=='support'));assert.ok(result.some(v=>v.verdict==='refute'&&v.code==='case-compile.method_forbidden'));
   }
 });
 test('review 04 address verification cannot report support for a roleless device parameter', () => {
@@ -45,7 +45,7 @@ test('review 07 dynamic shell syntax cannot bypass the host rejection boundary',
   for (const text of ['/sbin/re*boot', '/sbin/re?oot', 'r$()eboot', 'echo ready; reboot']) { const data = goodData(); data.steps[1].args = [text]; assert.ok(codes(checkContractShape(hostInput(text))).includes('case-compile.host_shell_dynamic')); }
 });
 test('review 08 rejection matching uses the same NFKC text as the command catalog', () => {
-  const data = goodData(); data.steps[0].args = ['ｓｙｓｔｅｍ　ｃｙｃｌｅ']; assert.ok(checkContractShape(subjectOf(data)).some(v=>v.verdict==='unknown'&&v.missing?.includes('CommandIdentity')));
+  const data = goodData(); data.steps[0].args = ['ｓｙｓｔｅｍ　ｃｙｃｌｅ']; assert.ok(checkContractShape(subjectOf(data)).some(v=>v.verdict==='refute'&&v.code==='case-compile.method_forbidden'));
 });
 test('review 09 noncanonical IPv4 notations cannot hide a host target', () => {
   for (const text of ['ping -c 1 3221226234', 'ping -c 1 0xc00002fa', 'ping -c 1 192.0.762', 'curl http://0300.0.02.0372/']) { const data = goodData(); data.steps[1].args = [text]; assert.equal(checkAddresses(hostInput(text))[0].verdict,'support',text); }
@@ -76,7 +76,7 @@ test('review 14 an optional-only signature still cannot encode a zero-value G ce
 });
 test('review 15 an unreplaced declared source retains a concrete replacement repair',()=>{const result=checkAddresses(addressInput('192.0.2.200',{replacements:[{case:'192.0.2.200',bed:'192.0.2.90'}]}));assert.ok(codes(result).includes('case-compile.replacement_missing'));});
 test('review 16 MAC and clock tokens never become off-bed address facts', () => {
-  for (const value of ['widget mac 00:11:22:33:44:55', 'widget clock 12:30:45']) { const data = goodData(); data.steps[0].args = [value]; assert.ok(checkAddresses(subjectOf(data)).some(v=>v.verdict==='unknown'&&v.missing?.includes('CommandIdentity'))); assert.throws(()=>literalAddresses(value)); }
+  for (const value of ['widget mac 00:11:22:33:44:55', 'widget clock 12:30:45']) { const data = goodData(); data.steps[0].args = [value]; assert.ok(checkAddresses(subjectOf(data)).some(v=>v.verdict==='refute'&&v.code==='case-compile.method_forbidden')); assert.throws(()=>literalAddresses(value)); }
   assert.equal(readAddress(bedsOf()[0], [], '2026-10-23T00:00:00.000Z', '12:30:45').kind, 'not_address');
 });
 test('review 17 assertion formula prefixes and placeholders are rejected before workbook generation', () => {

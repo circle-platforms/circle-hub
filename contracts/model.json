@@ -5043,7 +5043,7 @@
     {
      "name": "FedCase",
      "id": "fed-case@1",
-     "meaning": "Content identity hashes the canonical caseStatement projection (autoid, priority, resources, original steps and expectations). Source, root, commands, bindings and annotations do not enter identity; repeated bytes from multiple documents remain one object.",
+     "meaning": "Content identity hashes the canonical caseStatement projection (autoid, priority, resources, original steps and expectations). Source, root, commands, bindings and annotations do not enter identity; repeated bytes from multiple documents remain one object. Invalid resource values remain in raw_json and content identity; the tag field is undeclared with one advisory violation. No literal recovery or whole-document rejection.",
      "schema": {
       "type": "object",
       "properties": {
@@ -5151,7 +5151,8 @@
          "maxLength": 200
         },
         "minItems": 0,
-        "maxItems": 100
+        "maxItems": 100,
+        "description": "Unique accepted exact tag literals; undeclared fields have no accepted tags. The original parsed author field is retained in resource_declaration.raw_json and content identity."
        },
        "steps": {
         "type": "array",
@@ -5334,6 +5335,115 @@
         },
         "minItems": 0,
         "maxItems": 100
+       },
+       "resource_declaration": {
+        "type": "object",
+        "properties": {
+         "status": {
+          "$ref": "vocabulary:declaration_status"
+         },
+         "present": {
+          "type": "boolean"
+         },
+         "raw_json": {
+          "type": "string",
+          "description": "Lossless JSON encoding of the original parsed resource value; absence is distinguished by present"
+         },
+         "types": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          },
+          "maxItems": 100
+         },
+         "table": {
+          "type": "object",
+          "properties": {
+           "id": {
+            "type": "string"
+           },
+           "version": {
+            "type": "string"
+           },
+           "sha256": {
+            "$ref": "contract:common/Sha256"
+           }
+          },
+          "required": [
+           "id",
+           "version",
+           "sha256"
+          ],
+          "additionalProperties": false
+         },
+         "violations": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+           "type": "object",
+           "properties": {
+            "field": {
+             "const": "resource"
+            },
+            "tier": {
+             "$ref": "vocabulary:check_tier/advisory"
+            },
+            "allowed_values": {
+             "type": "array",
+             "items": {
+              "type": "string"
+             },
+             "maxItems": 1000
+            },
+            "statement": {
+             "type": "string"
+            },
+            "next_action": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "field",
+            "tier",
+            "allowed_values",
+            "statement",
+            "next_action"
+           ],
+           "additionalProperties": false
+          }
+         },
+         "missing": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "const": null
+           }
+          ]
+         },
+         "next_action": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "const": null
+           }
+          ]
+         }
+        },
+        "required": [
+         "status",
+         "present",
+         "raw_json",
+         "types",
+         "table",
+         "violations",
+         "missing",
+         "next_action"
+        ],
+        "additionalProperties": false
        }
       },
       "required": [
@@ -7122,6 +7232,17 @@
      "label": "转述"
     }
    ]
+  },
+  {
+   "axis": "expectation_basis",
+   "label": "期望检查文字依据",
+   "values": [
+    {
+     "code": "model_judgment",
+     "label": "模型判断"
+    }
+   ],
+   "owner": "A02"
   },
   {
    "axis": "provenance_type",

@@ -17,7 +17,7 @@ import { canSeeRun } from '../../runs/engine/api.ts';
 import { productionShareKey } from '../../records/api.ts';
 import { itemCell, isAbandonedResult } from '../../runs/api.ts';
 import type { ServerDeps } from '../api.ts';
-import { NOT_APPLICABLE, cellText, claimFields, coverageText, terminalKind, terminalText, type LayerTerminal } from '../claims.ts';
+import { NOT_APPLICABLE, cellText, statusText, claimFields, coverageText, terminalKind, terminalText, type LayerTerminal } from '../claims.ts';
 import { countsLine, countsText } from '../text.ts';
 import { code, definitions, html, link, page, pre, section, table, type Html, type PageChrome } from './html.ts';
 
@@ -88,7 +88,7 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   const requests=(await ctx.deps.runs.listRequests?.(ctx.principal)??[]).filter(r=>r.answered_by===null);
   return {
     status: 200,
-    body: page(ctx.chrome('运行'), html`${section('知识喂入待办',table(['来源','缺什么','下一步'],feedingTodos.map(row=>[code(JSON.stringify(row.source)),row.missing,row.next_action]),'没有待办'))}${filter}${table(['运行', '任务包', '产品 / 版本 / 构建', '开始时间', '运行者', '条目', '会话'], rows, '没有运行')}${next}${section('已到期未回答的请求',table(['请求','运行 / 包摘要','受众','原期限','缺什么','下一步'],(listing.overdue_requests??[]).map(r=>[code(r.record),code(r.run??r.pack_digest??''),code(r.audience),r.due,r.missing,r.next_action]),'没有已到期未回答的请求'))}${section('未回答的请求',table(['请求','运行 / 包摘要','种类','受众','期限','缺什么','下一步'],requests.map(r=>[code(r.record),code(r.run??r.pack_digest??''),labelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}`),
+    body: page(ctx.chrome('运行'), html`${section('知识喂入待办',table(['来源','缺什么','下一步','函数失败详情'],feedingTodos.map(row=>[code(JSON.stringify(row.source)),row.missing,row.next_action,row.detail?code(JSON.stringify(row.detail)): '—']),'没有待办'))}${filter}${table(['运行', '任务包', '产品 / 版本 / 构建', '开始时间', '运行者', '条目', '会话'], rows, '没有运行')}${next}${section('已到期未回答的请求',table(['请求','运行 / 包摘要','受众','原期限','缺什么','下一步'],(listing.overdue_requests??[]).map(r=>[code(r.record),code(r.run??r.pack_digest??''),code(r.audience),r.due,r.missing,r.next_action]),'没有已到期未回答的请求'))}${section('未回答的请求',table(['请求','运行 / 包摘要','种类','受众','期限','缺什么','下一步'],requests.map(r=>[code(r.record),code(r.run??r.pack_digest??''),labelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}`),
   };
 }
 
@@ -127,7 +127,7 @@ function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, stri
         ...(index === 0 ? head : ['', '', '', '']),
         html`${r.requirement} ${names.get(r.requirement) ?? ''}`,
         html`${layers.map((text) => html`<div>${text}</div>`)}`,
-        `${labelOf('requirement_status', r.status)}${r.unsatisfied_reason ? `（${labelOf('unsatisfied_reason', r.unsatisfied_reason)}）` : ''}`,
+        statusText(r),
         html`${r.claims.map(claimBlock)}`,
       ]);
     }

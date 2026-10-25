@@ -88,8 +88,8 @@
     },
     {
       "path": "functions/cases-commands.ts",
-      "sha256": "cb000acfc96357723679934a13c3fbe3a271ed1b2e6419beff02b84235c4ded9",
-      "size": 3490
+      "sha256": "da069c65e58afc372069a7157814f27ec6868515aac03a9029c17a8b37af2141",
+      "size": 4209
     },
     {
       "path": "functions/cases-nodes.ts",
@@ -108,8 +108,8 @@
     },
     {
       "path": "functions/cases.ts",
-      "sha256": "cc54a6e4b1b34dba73472cfb484547f40e139b3578ee700d7871dffaf27faa0d",
-      "size": 23100
+      "sha256": "cd0010263563f77c2b828f9674dc51690d65977483f9ebddcc6e0e00ca62300f",
+      "size": 24106
     },
     {
       "path": "functions/command-tree.ts",
@@ -118,8 +118,8 @@
     },
     {
       "path": "functions/commands.ts",
-      "sha256": "b0a7802f6bbf213c856f5a9ee2c9883ed2133b6d2cc14df0e9005f19f5231155",
-      "size": 12080
+      "sha256": "5906f64bda01e263d650c4a6fe26c592468eef0dc1a790b4520cef3e042f4658",
+      "size": 1377
     },
     {
       "path": "functions/documents.ts",
@@ -128,13 +128,18 @@
     },
     {
       "path": "functions/feeding.ts",
-      "sha256": "ca373f39241b61283cef1116286470eaa9553c215f436f7819d44f9a043e6811",
-      "size": 7866
+      "sha256": "3d937dd77a4c552306095aa34abe4800f964184cb37a211d4550bf58ab69638b",
+      "size": 8334
     },
     {
       "path": "functions/fixed-bugs.ts",
       "sha256": "1da2c71b6da21527ee4ff30210b22aaaf7342b03e2cc741f03dffab7b077b8f4",
       "size": 3261
+    },
+    {
+      "path": "functions/generated/command-grammar.ts",
+      "sha256": "257812138a3a2a2239aa03e900273bfc7aafbb9a2c44cd348bf96e24ec022d5d",
+      "size": 10574
     },
     {
       "path": "functions/generated/vocabulary.ts",

@@ -553,9 +553,17 @@
       "additionalProperties": false
     },
     "catalog": {
-      "description": "locked catalog entries for an item-key narrowed read subject builder",
+      "description": "locked catalog entries declared by this check",
       "type": "array",
       "items": {}
+    },
+    "catalog_missing": {
+      "description": "trusted Hub missing fact and recovery when a selected catalog cannot be read within bounds",
+      "type": "string"
+    },
+    "catalog_complete": {
+      "description": "whether the locked catalog is complete for its scope",
+      "type": "boolean"
     }
   },
   "required": [

@@ -1,3 +1,5 @@
+import {labelOf} from './generated/vocabulary.ts';
+import {planCommands} from './plan-commands.ts';
 import { typedAuthorityGaps, authorityRecovery, typedAddressUses } from './typed-authority.ts';
 // Verify authored plans against original runner identities, runtime profile, manifest, and frozen lineage addresses.
 import { quoteMatches } from './quote.ts';
@@ -13,13 +15,13 @@ import { bindArguments, hasShellDynamicSyntax, hasBalancedCommandText, hasSingle
 import {identityOf} from './typed-contract.ts';
 import { replacedQuote } from './addresses.ts';
 import { citedCriterion, type FrozenItemCriterion } from './subject.ts';
-interface CheckSubject { command_identities?:unknown; item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[]; problems: Array<{ document: string; pointer: string; message: string }> }
+interface CheckSubject {expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[]; problems: Array<{ document: string; pointer: string; message: string }> }
 function subjectOf(input: unknown): CheckSubject {
   const raw = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const contract = parseRuntimeContract(raw.contract); const manifest = parseManifest(raw.manifest);
   const profile = contract.ok && manifest.ok ? parseProfile(raw.profile, contract.contract, manifest.beds) : null;
   const problems = [...(!contract.ok ? contract.problems.map((v) => ({ document: 'contract', pointer: v.pointer, message: v.message })) : []), ...(!manifest.ok ? manifest.problems.map((v) => ({ document: 'inventory', pointer: v.pointer, message: v.message })) : []), ...(profile && !profile.ok ? profile.problems.map((v) => ({ document: 'profile', pointer: v.pointer, message: v.message })) : [])];
-  return { command_identities:raw.command_identities,problems, criteria: Array.isArray(raw.criteria) ? raw.criteria as FrozenItemCriterion[] : [], case_texts: Array.isArray(raw.case_texts) ? raw.case_texts.filter((v): v is string => typeof v === 'string') : [], item: typeof raw.item === 'string' ? raw.item : '', location: typeof raw.location === 'string' ? raw.location : null, data: raw.data, contract: contract.ok ? contract.contract : null, profile: profile?.ok ? profile.profile : null, beds: manifest.ok ? manifest.beds : [], leases: Array.isArray(raw.leases) ? raw.leases as LeaseRow[] : [], now: typeof raw.now === 'string' ? raw.now : new Date(0).toISOString() };
+  return { expected_nodes:raw.expected_nodes,command_catalog:raw.command_catalog,command_identities:raw.command_identities,problems, criteria: Array.isArray(raw.criteria) ? raw.criteria as FrozenItemCriterion[] : [], case_texts: Array.isArray(raw.case_texts) ? raw.case_texts.filter((v): v is string => typeof v === 'string') : [], item: typeof raw.item === 'string' ? raw.item : '', location: typeof raw.location === 'string' ? raw.location : null, data: raw.data, contract: contract.ok ? contract.contract : null, profile: profile?.ok ? profile.profile : null, beds: manifest.ok ? manifest.beds : [], leases: Array.isArray(raw.leases) ? raw.leases as LeaseRow[] : [], now: typeof raw.now === 'string' ? raw.now : new Date(0).toISOString() };
 }
 const TIER = 'blocking' as const;
 function support(s: CheckSubject, statement: string, data?: Record<string, unknown>): Outcome { return { verdict: 'support', statement: statement + markers(s.profile?.synthetic === true, s.contract ?? undefined), grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, ...(data ? { data } : {}) }; }
@@ -35,7 +37,9 @@ function slotsOf(s: CheckSubject): { slots: PlanSlots; errors: null } | { slots:
   return read.ok ? { slots: read.slots, errors: null } : { slots: null, errors: read.problems.map((v) => refute(s, v.pointer.includes('/quote') ? 'expect_without_source' : 'slots_invalid', `槽位 ${v.pointer}：${v.message}；按 slots.schema.json 的形状修正`, `/data${v.pointer}`)) };
 }
 function typedPrerequisites(s: CheckSubject, slots: PlanSlots): Outcome[] | null {
-  const gaps = typedAuthorityGaps(s.contract!, s.profile!, slots,s.command_identities);
+  // Model identity proposals belong to commands_known, not shared contract prerequisites.
+  const {command_identities:_modelDeclaration,...plan}=slots;
+  const gaps = typedAuthorityGaps(s.contract!, s.profile!, plan,s.command_identities,s.command_catalog);
   if (!gaps.length) return null;
   const missing = authorityRecovery(gaps);
   if(gaps.some(g=>g.verdict==='refute'))return [refute(s,'method_forbidden',missing,'/data',{problems:gaps})];
@@ -74,7 +78,7 @@ export function checkAddresses(input: unknown): Outcome[] {
   const slots = read.slots; const bed = s.beds.find((v) => v.name === slots.bucket);
   if (!bed || bed.name !== s.profile!.bed) return [refute(s, 'bed_unknown', 'bucket 必须是运行环境配置选定的清单台架', '/data/bucket')];
   const out:Outcome[]=[];
-  const uses=typedAddressUses(s.contract!,s.profile!,slots);
+  const uses=typedAddressUses(s.contract!,s.profile!,slots,s.command_catalog);
   const sourceIdentities=Array.isArray(s.command_identities)?s.command_identities:[];
   const sourceValues=new Set(sourceIdentities.flatMap(raw=>{const i=identityOf(raw);return i?i.parameters.flatMap(p=>p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')?[addressKey(p.parsed.value.value)]:[]):[];}));
   const from=new Set<string>(),to=new Set<string>();
@@ -104,10 +108,14 @@ export function checkExpectedSources(input: unknown): Outcome[] {
   const byCriterion: Array<{ at: number; criterion: FrozenItemCriterion }> = [];
   for (const [i, expect] of slots.expects.entries()) {
     const pointer = `/data/expects/${i}`;
-    if (!hasSingleLineValue(expect.text)) out.push(refute(s, 'expect_value', '断言必须是单行、无首尾空白、无等号前缀、无占位符的有效原文；从引文选择可写片段', `${pointer}/text`));
+    if (!hasSingleLineValue(expect.text)) out.push(refute(s, 'expect_value', '断言必须是单行、无首尾空白、无等号前缀、无占位符，并符合发布配置的取值规则', `${pointer}/text`));
     // W10 step two: an expectation may be taken from a criterion declaration the Hub froze into this run after an account
     // other than the author accepted it. Such an expectation cites the declaration by its exact rec: reference, and both
     // the quoted criterion and the expectation are compared with the frozen bytes, never with the plan's own copy.
+    if(expect.basis==='model_judgment'){
+      if(!Array.isArray(s.expected_nodes)||s.expected_nodes.some(node=>!isRecord(node)||typeof node.reference!=='string'||typeof node.text!=='string'))return [{verdict:'unknown',reason:'missing_input',missing:'缺被判对象本用例期望节点的冻结原文与引用身份；下一步：用完整脑图原件开新运行，不用其他用例、标题或步骤代替',statement:'模型判断的原始期望节点尚未绑定；补齐原件后重核',grounds:[],tier:TIER,item:s.item}];
+      if(!s.expected_nodes.some(node=>isRecord(node)&&node.reference===expect.quote.reference&&typeof node.text==='string'&&quoteMatches(node.text,expect.quote.text)))out.push(refute(s,'expect_not_in_quote','模型判断的 quote 必须逐字引用被判对象中本用例的期望节点，不能引用标题、步骤、其他用例或判据声明',`${pointer}/quote`));
+    }else {
     const criterion = citedCriterion(s.criteria, expect.quote.reference);
     if (criterion !== null) {
       if (expect.quote.text !== criterion.new) out.push(refute(s, 'expect_not_in_criterion', `引用的判据文字与冻结的已受理声明 ${criterion.declaration} 不符；照开始运行答复里的新判据逐字抄写，或改回原引文`, `${pointer}/quote/text`));
@@ -120,6 +128,7 @@ export function checkExpectedSources(input: unknown): Outcome[] {
     } else if (!quoteMatches(replacedQuote(expect.quote.text, slots.replacements), expect.text)) {
       out.push(refute(s, 'expect_not_in_quote', '期望必须逐字来自原引文；普通断言文字不做地址扫描或隐式替换，请保留原文或先补结构化断言合约', `${pointer}/text`));
     }
+    }
     const step = slots.steps[expect.after - 1]; const allowed = step ? allowedCall(s.profile!, step.object, step.method) : null;
     if (!allowed || !Object.values(allowed.parameters).some((role) => role === 'device_cli' || role === 'host_shell')) out.push(refute(s, 'expect_after', 'after 必须指向设备命令行或主机 shell 步骤，不能指向等待或断言步骤', `${pointer}/after`));
   }
@@ -128,11 +137,13 @@ export function checkExpectedSources(input: unknown): Outcome[] {
   const told = accepted.length === 0
     ? `${slots.expects.length} 个期望结果都有逐字来源，文字出自替换后引文且判断的步骤合式`
     : `${slots.expects.length} 个期望结果都有逐字来源：${slots.expects.length - byCriterion.length} 条出自替换后引文，${byCriterion.length} 条逐字取自冻结的已受理判据声明（${accepted.map((row) => `声明 ${row.declaration}，复核 ${row.review}，复核人 ${row.reviewer}，期望 ${row.expects.map((at) => at + 1).join('/')} 条`).join('；')}）；新判据的引文在本次运行边界上另行逐字核对`;
+  const judgments=slots.expects.flatMap((expect,index)=>expect.basis==='model_judgment'?[{index,...expect}]:[]);
+  if(judgments.length){const result=support(s,`${judgments.length} 条模型主张的来源引文、步骤与取值规则已核验：${labelOf('expectation_basis','model_judgment')}，${labelOf('qualifier_mark','conditional_on_judgment')}；Hub 不判断所选文字是否正确`,{model_expectations:judgments,replacements:slots.replacements,...(accepted.length?{accepted_criteria:accepted}:{})});result.grounds=[...new Set([...result.grounds,...judgments.map(expect=>expect.quote.reference)])];result.judgment_sources=judgments.map(expect=>`/plan/0/data/expects/${expect.index}`);return [result];}
   return [support(s, told, { replacements: slots.replacements, ...(accepted.length ? { accepted_criteria: accepted } : {}) })];
 }
 
-/** commands_known accepts only frozen CommandIdentity evidence, never a text phrase lookup. */
+/** commands_known resolves whole plan commands against the locked grammar, then checks typed authority. */
 export function checkCommandsKnown(input:unknown):Outcome[]{
  const s=subjectOf(input),missing=prerequisites(s);if(missing)return missing;const read=slotsOf(s);if(read.errors)return read.errors;
- const gaps=typedPrerequisites(s,read.slots);return gaps??[support(s,'所有设备命令均有冻结用例身份、完整参数及合约效果授权',{command_identities:read.slots.command_identities??[]})];
+ const gaps=typedPrerequisites(s,read.slots);if(gaps)return gaps;const resolved=s.contract&&s.profile?planCommands(s.contract,s.profile,read.slots,s.command_catalog):null;const declarations=resolved?.problems.filter(problem=>problem.pointer==='/command_identities')??[];if(declarations.length)return declarations.map(problem=>refute(s,'slots_invalid',problem.message+'；删除可选 command_identities，由 Hub 从 steps 解析；或按 Hub 回执修正声明','/data/command_identities'));return [support(s,'所有设备命令均由锁定目录完整解析，已核用例声明（如有）、类型与效果授权',{command_identities:resolved?.identities??[],command_catalog:resolved?.catalog})];
 }

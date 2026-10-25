@@ -549,6 +549,7 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
   for (const [k, check] of (checks?.checks ?? []).entries()) {
     if (check.function) entries.push(functionEntry(check.function, 'checks.json', `/checks/${k}/function`));
     if (check.subject) entries.push(functionEntry(check.subject, 'checks.json', `/checks/${k}/subject`));
+    if (check.catalog_select) entries.push(functionEntry(check.catalog_select, 'checks.json', `/checks/${k}/catalog_select`));
   }
   for (const p of await scanFunctions(c.files, entries, policy)) c.add(p);
 

@@ -1,3 +1,4 @@
+import {submissionOrigin} from './independence.ts';
 // Carry-over (C08 R[4], W07 F[1], F[6], acceptance scenario 10). start_run offers ItemProjection.reuse for an item the
 // predecessor delivered when the predecessor is an earlier revision of the same work (same pack content and root, no handover
 // of its record), its latest accepted result came from a submission (a production result holds no judgment to carry), the item
@@ -133,7 +134,7 @@ function submissionView(ctx: EngineContext, result: StoredRecord<ValidationResul
       const detail = isObject(action?.body.detail) ? action.body.detail : {};
       const run = await runById(store, result.body.run);
       const sessions = [run?.body.session ?? null, typeof detail.session === 'string' ? detail.session : null];
-      return { entries: new Map(parsedSubmission.data.items.map((e) => [e.item, e])), origin: { sessions, model: parsedSubmission.data.model } };
+      return { entries: new Map(parsedSubmission.data.items.map((e) => [e.item, e])), origin: submissionOrigin(parsedSubmission.data,sessions) };
     })();
     views.set(result.digest, view);
   }

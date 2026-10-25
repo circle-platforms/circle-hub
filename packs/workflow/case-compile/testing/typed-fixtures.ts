@@ -1,3 +1,4 @@
+import {catalogFor} from './command-catalog.ts';
 // Author declarations for synthetic tests. These helpers never infer a type or authority from submitted prose.
 import {createHash} from 'node:crypto';
 import {CONTRACT_DOC,PROFILE_DOC,goodData,subjectOf} from '../functions/test-support.ts';
@@ -25,5 +26,5 @@ export function addressInput(value:string,options:{kind?:'ipv4'|'ipv6'|'mask'|'i
  data.steps[0]={object:'widget-seat',method:'address',args:[value],keywords:{}};data.replacements=options.replacements??[];
  const signed=signTypedRuntime(contract);profile.runtime.contract_sha256=signed.original.contract_sha256;
  const input=subjectOf(data,{contractDoc:signed,profileDoc:profile,leases:options.leases as never});
- input.subject.command_identities=[addressIdentity(options.source??value,kind==='ipv6'?'ipv6':'ipv4')];return input;
+ input.subject.command_identities=[addressIdentity(options.source??value,kind==='ipv6'?'ipv6':'ipv4')];input.subject.command_catalog=catalogFor([addressIdentity(options.source??value,kind==='ipv6'?'ipv6':'ipv4')]);return input;
 }

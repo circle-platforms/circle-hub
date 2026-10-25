@@ -14,3 +14,5 @@ export {ExecutorSource,resolveExecutorValues} from './source.ts';
 
 export {freezeEffectRegistry} from './snapshot.ts';
 export {boundaryPolicy,policyAllows} from './policy.ts';
+
+export type {ReleaseCheck,ReleaseField} from './release-diagnostics.ts';

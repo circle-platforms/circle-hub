@@ -82,7 +82,7 @@ export function projectItems(input: unknown): unknown {
     if (typeof parameters.plan_run !== 'string' || !/^run_[a-z0-9]+$/.test(parameters.plan_run)) return refusal('workbook_context', '缺少已满足的计划运行号 plan_run', '从已满足提交及结果复制计划运行号，以其为 predecessor 开新运行并绑定原工作簿');
   }
   const rule: CaseRule = parameters.case_rule === 'tagged' ? 'tagged' : 'marked';
-  const extraction = extractCases(subject.model, rule);
+  const extraction = extractCases(subject.model, rule,true);
   if (extraction.impreciseAutoids.length) return refusal('autoid_imprecise', `文档有 ${extraction.impreciseAutoids.length} 个 autoid 数值超出安全范围，JSON 解析后无法保证原编号精度`, `把原文节点 ${extraction.impreciseAutoids[0].selector ?? extraction.impreciseAutoids[0].node} 的 autoid 以文本重新导出或重新上传；不能从已舍入数值猜原编号`, extraction.impreciseAutoids.map((value) => ({ code: 'case-compile.autoid_problem', message: `${value.pointer}（节点 ${value.selector ?? value.node}）：数值精度无法保证；从原件以文本重导出或请求核心无损数字解析，不复制当前数值` })));
   if (typeof parameters.autoid !== 'string' || !new RegExp(profileRead.profile.workbook.autoid_pattern, 'u').test(parameters.autoid)) return refusal('autoid_invalid', 'autoid 必须是符合配置形状的原始文字', '从用例原文复制完整 autoid 字符串，不能转为数字，改正后重新开始运行');
   const selected = extraction.cases.filter((found) => found.autoid === parameters.autoid);
@@ -103,11 +103,12 @@ export function projectItems(input: unknown): unknown {
     location: { slot: 'subject', source: sha256, parser: 'kityminder@1', selector: found.selector ?? '' },
     fields: {
       command_identities:(()=>{const source=slotOf(inputs,'case_index'),context=isRecord(params.context)?params.context:{};const view=source?.model;
-        if(source?.parser!=='json@1'||!isRecord(view)||view.schema!=='index-view@1'||view.kind!=='case'||!isRecord(view.build)||view.build.root!==context.root||!isRecord(view.entries))return undefined;
+        if(!source)return undefined;if(source.parser!=='json@1'||!isRecord(view)||view.schema!=='index-view@1'||view.kind!=='case'||!isRecord(view.build)||view.build.root!==context.root||!isRecord(view.entries))return null;
         const rows=Object.values(view.entries).filter(row=>isRecord(row)&&isRecord(row.data)&&row.data.document===documentId&&row.data.node===found.id);
-        if(!rows.length||rows.some(row=>!isRecord(row)||!isRecord(row.data)||!Array.isArray(row.data.command_identities)))return undefined;
+        if(!rows.length||rows.every(row=>isRecord(row)&&isRecord(row.data)&&!Object.hasOwn(row.data,'command_identities')))return undefined;if(rows.some(row=>!isRecord(row)||!isRecord(row.data)||!Array.isArray(row.data.command_identities)))return null;
         return [...new Map(rows.flatMap(row=>(row as {data:{command_identities:unknown[]}}).data.command_identities).map(identity=>[JSON.stringify(identity),identity])).values()];
       })(),
+      expected_nodes:found.expected_nodes?.every(node=>node.selector!==null)?found.expected_nodes.map(node=>({reference:`src:${sha256}/kityminder@1/${node.selector}`,text:node.text})):undefined,
       title: found.title,
       tags: found.tags,
       priority: found.priority,

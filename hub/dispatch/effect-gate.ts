@@ -1,3 +1,4 @@
+import {ReleaseTrace,ReleaseDiagnosticError,releaseField,type ReleaseCheck} from './release-diagnostics.ts';
 import {ExecutorRegistry} from './executors.ts';
 // Prepare P11 inputs once; the actual boundary is checked again immediately before intent.
 import {RequirementsFile,type AllowedEffect} from '../../contracts/src/pack.ts';
@@ -5,7 +6,7 @@ import type {Principal,RecordsKit,Transaction,ActionBody} from '../records/api.t
 import {canonicalize,sha256Hex} from '../records/api.ts';
 import type {WorkflowStore,EffectCheckReplay,RunDetail} from '../ports.ts';
 import {at,type ExecutorDefinition} from './definition.ts';
-import {verifyInput,type VerificationPort,type VerifiedInput} from './proof.ts';
+import {inspectInput,type VerificationPort,type VerifiedInput} from './proof.ts';
 import {boundaryPolicy,policyAllows} from './policy.ts';
 import {checkEffectBoundary,deny,durationBudget,EffectBoundaryError,type BoundaryContext} from './boundary.ts';
 const equal=(a:unknown,b:unknown)=>a!==undefined&&b!==undefined&&canonicalize(a)===canonicalize(b);
@@ -32,9 +33,31 @@ export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationP
    const intents=await o.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.effect_row',values:[`${o.run}:${row.id}`]},tx);
    return {count:intents.length,duration_ms:intents.reduce((sum,intent)=>sum+Number(intent.body.detail.effect_duration_ms),0)};
  };
+ const inspectRelease=async(row:AllowedEffect)=>{
+   const proof=await inspectInput(o.by,o.run,d,o.records,o.runs,o.workflows,o.now());
+   const trace=new ReleaseTrace();trace.checks.push(...proof.checks);
+   const derived=proof.input?effectParameters(proof.input):undefined;
+   trace.check('release.parameters.keys','派发参数字段集合与核验事实一致',derived?equal(Object.keys(parameters).sort(),Object.keys(derived).sort()):null,[releaseField('parameters.keys',derived?Object.keys(derived).sort():undefined,Object.keys(parameters).sort(),derived?equal(Object.keys(parameters).sort(),Object.keys(derived).sort()):null)]);
+   for(const name of ['target','manifest_sha256','build','sha256','items','generator'])trace.check('release.parameters.'+name,'派发参数与重新读取的核验事实一致',derived?equal(parameters[name],derived[name]):null,[releaseField('parameters.'+name,derived?.[name],parameters[name],derived?equal(parameters[name],derived[name]):null)]);
+   trace.check('release.artifact','效果行产物要求项等于执行器指定要求项',row.release.artifact===d.proof.requirement,[releaseField('row.release.artifact',d.proof.requirement,row.release.artifact,row.release.artifact===d.proof.requirement)]);
+   const latest=await trace.read('release.latest.read','当前受理结果读取完成',()=>o.runs.getRun(o.by,o.run));
+   trace.check('release.latest.available','当前受理结果存在',!!latest?.latest,[releaseField('latest','present',!!latest?.latest,!!latest?.latest)]);
+   for(const [index,key] of row.release.requirements.entries()){
+     const requirement=workflow?.requirements.find(requirement=>requirement.key===key);
+     trace.check('release.requirements.'+index+'.declared','效果行的放行要求项在冻结包中声明',!!requirement,[releaseField('row.release.requirements.'+index,key,requirement?.key,!!requirement)]);
+     if(requirement?.target==='item'){
+       const statuses=latest?.latest?.result.partitions.delivered.map(item=>{const position=item.requirements.findIndex(requirement=>requirement.requirement===key);return {position,status:item.requirements[position]?.status};});
+       trace.check('release.requirements.'+index+'.satisfied','当前交付条目的放行要求项全部满足',statuses?statuses.every(value=>value.status==='satisfied'):null,statuses?.map((value,item)=>releaseField('latest.partitions.delivered.'+item+'.requirements'+(value.position>=0?'.'+value.position+'.status':''),'satisfied',value.status,value.status==='satisfied'))??[]);
+     }else{
+       const values=latest?.latest?.result.cross_item.filter(claim=>claim.requirement===key);
+       trace.check('release.requirements.'+index+'.satisfied','当前运行级放行要求项有有效且未过期的支持主张',requirement&&values?values.length>0&&values.every(claim=>claim.statement.verdict==='support'&&claim.validity.status==='valid'&&(!claim.validity.expires_at||Date.parse(claim.validity.expires_at)>o.now().getTime())):null,values?.flatMap((claim)=>{const position=latest!.latest!.result.cross_item.indexOf(claim);return [releaseField('latest.cross_item.'+position+'.statement.verdict','support',claim.statement.verdict,claim.statement.verdict==='support'),releaseField('latest.cross_item.'+position+'.validity.status','valid',claim.validity.status,claim.validity.status==='valid'),releaseField('latest.cross_item.'+position+'.validity.expires_at','after_now_or_absent',claim.validity.expires_at,!claim.validity.expires_at||Date.parse(claim.validity.expires_at)>o.now().getTime())];})??[]);
+     }
+   }
+   return {checks:trace.checks,...(proof.input&&trace.checks.every(check=>check.satisfied===true)?{input:proof.input}:{}),latest};
+ };
  const context:Omit<BoundaryContext,'lease'|'content'|'audience'>={effects,parameters,write:d.calls.submit.write??{effect_class:'job',retry_safety:'unsafe',signing:'service_on_behalf'},trigger:'hub_template',started_at:detail.run.started_at,now:o.now,duration_ms:d.max_run_ms,
    parameterPrerequisite:async row=>{
-     if(!detail.latest||detail.latest.result.acceptance!=='accepted'||Object.keys(parameters).length!==6)throw new EffectBoundaryError(deny(3,'EFFECT_RELEASE_UNMET','缺少已受理核验事实及其完整派发参数；先完成该运行的产物核验，再派发同一份已核验字节',row));
+     if(!detail.latest||detail.latest.result.acceptance!=='accepted'||Object.keys(parameters).length!==6){const checks=row?(await inspectRelease(row)).checks:[];throw new EffectBoundaryError({...deny(3,'EFFECT_RELEASE_UNMET','缺少已受理核验事实及其完整派发参数；先完成该运行的产物核验，再派发同一份已核验字节',row),admin_checks:checks});}
    },
    parameterPolicy:async row=>{
      if(!('policy'in row.parameters))return false;
@@ -45,11 +68,10 @@ export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationP
      return outcomes.every(outcome=>outcome.verdict==='support'&&equal(at(outcome.data,'/parameters'),parameters));
    },
    release:async row=>{
-     const input=await verifyInput(o.by,o.run,d,o.records,o.runs,o.workflows,o.now());
-     if(!equal(parameters,effectParameters(input))||row.release.artifact!==d.proof.requirement)throw new Error('效果行产物与核验事实不一致');
-     const latest=await o.runs.getRun(o.by,o.run);if(!latest?.latest)throw new Error('缺少当前受理核验记录；请恢复后重核');detail.latest=latest.latest;
-     for(const key of row.release.requirements){const requirement=workflow?.requirements.find(r=>r.key===key);if(!requirement)throw new Error('效果行放行要求项不在包中');if(requirement.target==='item'){if(latest.latest.result.partitions.delivered.some(item=>item.requirements.find(r=>r.requirement===key)?.status!=='satisfied'))throw new Error('效果行要求项未满足');}else {const values=latest.latest.result.cross_item.filter(c=>c.requirement===key);if(!values.length||values.some(c=>c.statement.verdict!=='support'||c.validity.status!=='valid'||c.validity.expires_at&&Date.parse(c.validity.expires_at)<=o.now().getTime()))throw new Error('效果行运行要求项未满足');}}
-     return input;
+     const report=await inspectRelease(row);
+     if(!report.input)throw new ReleaseDiagnosticError('放行条件核对未完成',report.checks);
+     detail.latest=report.latest!.latest;
+     return report.input;
    },budget,
    global:async()=>{
      const current=await new ExecutorRegistry(o.records).get(o.executor);if(!current?.definition.enabled||current.resolved_digest!==o.resolved_digest)return false;
@@ -59,7 +81,7 @@ export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationP
      return registry[o.executor]===o.resolved_digest&&policyAllows(policy.document,{effect_class:context.write.effect_class,reversible:d.calls.submit.write?.reversible??false,environment:d.environment});
    },policies:row=>supports(row.policy_checks),
  };
- return {detail,context,
+ return {detail,context,inspectRelease,
    preflight:()=>checkEffectBoundary({...context,until:4,lease:async()=>({ok:false}),content:async()=>false,audience:async()=>false}),
    reserveBudget:async(row:AllowedEffect,tx:Transaction)=>{
      await o.records.store.lock(`dispatch.effect-budget:${o.run}:${row.id}`,tx);

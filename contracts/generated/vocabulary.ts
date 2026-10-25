@@ -7,6 +7,7 @@ export const AXES = {
   write_interaction: { label: '交互方式', owner: 'D03', values: [{ code: 'submit_then_read', label: '提交一次，再读状态和结果' }] },
   nature: { label: '性质', owner: 'B01', values: [{ code: 'fact', label: '事实' }, { code: 'judgment', label: '判断' }, { code: 'unknown', label: '未知' }] },
   basis_rank: { label: '依据等级', owner: 'A02', values: [{ code: 'rule_over_observation', label: '观察上的规则' }, { code: 'rule_over_claims', label: '主张上的规则' }, { code: 'judgment', label: '判断' }, { code: 'relay', label: '转述' }] },
+  expectation_basis: { label: '期望检查文字依据', owner: 'A02', values: [{ code: 'model_judgment', label: '模型判断' }] },
   provenance_type: { label: '来源类型', owner: 'A01', values: [{ code: 'observed', label: '观察' }, { code: 'projected', label: '投影' }, { code: 'declared', label: '声明' }, { code: 'candidate', label: '候选' }] },
   source_role: { label: '来源角色', owner: 'A03', values: [{ code: 'expected', label: '期望来源' }, { code: 'subject', label: '被判对象' }, { code: 'artifact_under_verification', label: '待判定产物' }, { code: 'reported_actual', label: '报告的实际结果' }, { code: 'republished', label: '派生' }, { code: 'hint', label: '线索' }, { code: 'request_text', label: '请求原文' }] },
   independence: { label: '独立性', owner: 'A04', values: [{ code: 'human_non_author', label: '人且非作者' }, { code: 'model_family_declared', label: '不同模型族（客户端声明）' }, { code: 'judge_not_author', label: '判断者不是作者' }, { code: 'not_independent', label: '非独立' }, { code: 'unknown', label: '未知' }] },
@@ -122,6 +123,15 @@ export const BASIS_RANK_LABEL = { 'rule_over_observation': '观察上的规则',
 export const BasisRankSchema = z.enum(BASIS_RANK);
 export function isBasisRank(value: unknown): value is BasisRank {
   return (BASIS_RANK as readonly unknown[]).includes(value);
+}
+
+/** 期望检查文字依据 (A02) */
+export const EXPECTATION_BASIS = ['model_judgment'] as const;
+export type ExpectationBasis = (typeof EXPECTATION_BASIS)[number];
+export const EXPECTATION_BASIS_LABEL = { 'model_judgment': '模型判断' } as const satisfies { readonly [K in ExpectationBasis]: string };
+export const ExpectationBasisSchema = z.enum(EXPECTATION_BASIS);
+export function isExpectationBasis(value: unknown): value is ExpectationBasis {
+  return (EXPECTATION_BASIS as readonly unknown[]).includes(value);
 }
 
 /** 来源类型 (A01) */
@@ -822,6 +832,7 @@ export interface AxisValues {
   write_interaction: WriteInteraction;
   nature: Nature;
   basis_rank: BasisRank;
+  expectation_basis: ExpectationBasis;
   provenance_type: ProvenanceType;
   source_role: SourceRole;
   independence: Independence;
@@ -906,6 +917,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   write_interaction: WRITE_INTERACTION_LABEL,
   nature: NATURE_LABEL,
   basis_rank: BASIS_RANK_LABEL,
+  expectation_basis: EXPECTATION_BASIS_LABEL,
   provenance_type: PROVENANCE_TYPE_LABEL,
   source_role: SOURCE_ROLE_LABEL,
   independence: INDEPENDENCE_LABEL,

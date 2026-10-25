@@ -19,7 +19,7 @@ export { findingSources, tagSpelling, HINT_ONLY, LOCATION_MISSING, QUOTE_MISSING
 export { projectItems } from './functions/project.ts';
 export { expectedSources, extractIds, featureTerms, specSearchId } from './functions/expected-sources.ts';
 export { templateCoverage } from './functions/template-coverage.ts';
-export { normalizeTag, CANONICAL_TAGS } from './functions/tags.ts';
+export { declareResourceTags, normalizeTag, CANONICAL_TAGS } from './functions/tags.ts';
 export { workflowNames } from './functions/common.ts';
 
 /** The functions the declarations name (workflow.json and checks.json), as the sandbox calls them. */

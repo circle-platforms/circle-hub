@@ -1,10 +1,11 @@
 // The server CLI's `knowledge sync --product <name> [--line <line>] [--dry-run] [--recheck] [--include-unreleased]`: argument
 // parsing, the run, and the Chinese report text. The server wires the subcommand and the admin principal; this module never
 // reads the environment.
-import type { PacksPort } from '../ports.ts';
+import type { PacksPort, ResourceCatalogPort } from '../ports.ts';
 import type { Principal } from '../records/api.ts';
 import { KnowledgeError } from './errors.ts';
 import type { Knowledge } from './service.ts';
+import { KNOWLEDGE_SEED_USAGE, formatSeedReport, knowledgeSeed, parseKnowledgeSeedArgs } from './seed.ts';
 import type { BuildOutcome, SyncReport } from './sync.ts';
 
 export interface KnowledgeSyncArgs {
@@ -99,13 +100,13 @@ export interface KnowledgeCliCommand {
  * The `knowledge` command for the server's registerCommands: `knowledge sync ... [--as <admin>]`. Exit codes follow the
  * server CLI: 0 when nothing failed, 1 when the sync or a build failed, 2 on a usage error. `open` builds the service.
  */
-export function knowledgeCliCommand(open: () => Promise<{ knowledge: Knowledge; packs: PacksPort }>): KnowledgeCliCommand {
+export function knowledgeCliCommand(open: () => Promise<{ knowledge: Knowledge; packs: PacksPort; resources?: ResourceCatalogPort }>): KnowledgeCliCommand {
   return {
     name: 'knowledge',
-    summary: `知识同步：${KNOWLEDGE_SYNC_USAGE} [--as <管理员>]`,
+    summary: `知识：${KNOWLEDGE_SYNC_USAGE} [--as <管理员>]；${KNOWLEDGE_SEED_USAGE} [--as <管理员>]`,
     async run(args, context) {
-      if (args[0] !== 'sync') {
-        context.io.stderr(`用法：${KNOWLEDGE_SYNC_USAGE} [--as <管理员>]`);
+      if (args[0] !== 'sync' && args[0] !== 'seed') {
+        context.io.stderr(`用法：${KNOWLEDGE_SYNC_USAGE} [--as <管理员>]\n${KNOWLEDGE_SEED_USAGE} [--as <管理员>]`);
         return 2;
       }
       const rest = [...args.slice(1)];
@@ -118,6 +119,25 @@ export function knowledgeCliCommand(open: () => Promise<{ knowledge: Knowledge; 
         if (as === undefined || as === '' || as.startsWith('--')) {
           context.io.stderr('--as 缺少取值');
           return 2;
+        }
+      }
+      if (args[0] === 'seed') {
+        let parsed;
+        try {
+          parsed = parseKnowledgeSeedArgs(rest);
+        } catch (error) {
+          context.io.stderr((error as Error).message);
+          return 2;
+        }
+        try {
+          const by = await context.actingAdmin(as);
+          const opened = await open();
+          const report = await knowledgeSeed(opened.knowledge, opened.packs, by, parsed, opened.resources);
+          for (const line of formatSeedReport(report).trimEnd().split('\n')) context.io.stdout(line);
+          return report.ok ? 0 : 1;
+        } catch (error) {
+          context.io.stderr((error as Error).message);
+          return 1;
         }
       }
       let parsed: KnowledgeSyncArgs;

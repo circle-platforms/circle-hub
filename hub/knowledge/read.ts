@@ -27,6 +27,7 @@ const FEEDING_STRUCTURE_TEXT: string | null = (() => {
   }
   return feedingStructureText;
 })();
+import {selectCatalog} from './catalog-selection.ts';
 import {emptyScopeNote} from './empty-scope.ts';
 import type { Principal } from '../records/api.ts';
 import { ReferenceSyntaxError, parseReference, pathOf, pathSegments, treeReference } from '../refs/api.ts';
@@ -718,13 +719,14 @@ export class TreeReading {
 
   // ------------------------------------------------------------ catalog
 
-  async catalog(root: string, catalogId: string): Promise<CatalogView | null> {
+  async catalog(root: string, catalogId: string, selection?:{base:string;lines:string[]}): Promise<CatalogView | null> {
     if (!SHA256.test(root)) return null;
     const productions = await this.#context.store.productionsOfRoot(root);
     for (let i = productions.length - 1; i >= 0; i--) {
       const view = await this.#view(productions[i]);
       const declaration = view?.body.catalogs.find((c) => c.id === catalogId);
       if (view === null || declaration === undefined) continue;
+      if(selection)return selectCatalog({root,selection,declaration,nodeAt:segments=>this.nodeAt(root,segments),node:digest=>this.#context.store.node(digest),rowsAt:path=>view.rowsAt(path),entries:ids=>this.#context.store.entries(ids,undefined,{cache:false})});
       const key = `${root}\u0000${catalogId}\u0000${view.record}`;
       const cached = this.#catalogs.get(key);
       if (cached !== undefined) return cached;

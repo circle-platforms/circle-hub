@@ -1,3 +1,5 @@
+import {selectedExpectedNodes} from './expected-nodes.ts';
+import {planCommands,deviceCommandLines} from './plan-commands.ts';
 // Frozen raw inputs are revalidated on every check. This pack only verifies the authored plan slots.
 import { checkContractShape } from './checks.ts';
 import { isRecord } from './text.ts';
@@ -51,7 +53,7 @@ export function citedCriterion(criteria: readonly FrozenItemCriterion[], referen
   return criteria.find((criterion) => criterion.declaration === reference) ?? null;
 }
 
-export interface PlanSubject { command_identities?:unknown; item: string; location: string | null; data: unknown; contract: unknown; profile: unknown; manifest: unknown; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[] }
+export interface PlanSubject { expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; item: string; location: string | null; data: unknown; contract: unknown; profile: unknown; manifest: unknown; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[] }
 export function planDataOf(record: Record<string, unknown>): unknown {
   const slots = isRecord(record.slots) ? record.slots : {};
   const plan = Array.isArray(slots.plan) ? slots.plan[0] : slots.plan;
@@ -66,7 +68,7 @@ export function planSubject(input: unknown): PlanSubject {
   const leases = isRecord(frozen.leases) ? frozen.leases : {};
   const item = isRecord(raw.item) ? raw.item : {};
   const id = typeof raw.item === 'string' ? raw.item : typeof item.id === 'string' ? item.id : '';
-  return { command_identities:isRecord(item.fields)?item.fields.command_identities:undefined,case_texts: authoredCaseTexts(item.fields), item: id, location: typeof raw.location === 'string' ? raw.location : typeof item.location === 'string' ? item.location : null, data: planDataOf(raw), contract: frozen.contract, profile: frozen.profile, manifest: frozen.manifest, leases: Array.isArray(leases.entries) ? leases.entries as LeaseRow[] : [], now: typeof leases.now === 'string' ? leases.now : new Date(0).toISOString(), criteria: criteriaOf(context, id) };
+  return { expected_nodes:selectedExpectedNodes(isRecord(item.fields)?item.fields.expected_nodes:undefined,planDataOf(raw)),command_catalog:Array.isArray(raw.catalog)&&typeof context.root==='string'?{root:context.root,complete:raw.catalog_complete===true,entries:raw.catalog,...(typeof raw.catalog_missing==='string'?{missing:raw.catalog_missing}:{})}:undefined,command_identities:isRecord(item.fields)?item.fields.command_identities:undefined,case_texts: authoredCaseTexts(item.fields), item: id, location: typeof raw.location === 'string' ? raw.location : typeof item.location === 'string' ? item.location : null, data: planDataOf(raw), contract: frozen.contract, profile: frozen.profile, manifest: frozen.manifest, leases: Array.isArray(leases.entries) ? leases.entries as LeaseRow[] : [], now: typeof leases.now === 'string' ? leases.now : new Date(0).toISOString(), criteria: criteriaOf(context, id) };
 }
 export function commandSubject(input:unknown):unknown{return planSubject(input);}
 export function quoteSubject(input: unknown): unknown {
@@ -97,5 +99,13 @@ export function workbookSubject(input: unknown): unknown {
   const raw = isRecord(input) ? input : {}; const context = isRecord(raw.context) ? raw.context : {};
   const groups = Array.isArray(context.groups) ? context.groups : []; const group = groups.find((v) => isRecord(v) && v.kind === 'case-compile');
   const frozen = isRecord(group) ? group : {}; const item = isRecord(raw.item) ? raw.item : {};
-  return { ...planSubject(input), fields: isRecord(item.fields) ? item.fields : {}, workbook: frozen.workbook ?? null, generation: frozen.generation ?? null, manifest_sha256: frozen.manifest_sha256 ?? null };
+  const subject=planSubject(input),contract=parseRuntimeContract(subject.contract),manifest=parseManifest(subject.manifest),slots=readSlots(subject.data);const profile=contract.ok&&manifest.ok?parseProfile(subject.profile,contract.contract,manifest.beds):null;const catalog=contract.ok&&profile?.ok&&slots.ok?planCommands(contract.contract,profile.profile,slots.slots,subject.command_catalog).catalog:null;
+  return {...subject,fields:{...(isRecord(item.fields)?item.fields:{}),expected_nodes:subject.expected_nodes,command_catalog:catalog},workbook:frozen.workbook??null,generation:frozen.generation??null,manifest_sha256:frozen.manifest_sha256??null};
+}
+
+/** Only frozen contract/profile roles choose device CLI slots; no scanning prose or author identities. */
+export function selectCommandCatalog(input:unknown):unknown{
+ const subject=planSubject(input),contract=parseRuntimeContract(subject.contract),manifest=parseManifest(subject.manifest),slots=readSlots(subject.data);
+ const profile=contract.ok&&manifest.ok?parseProfile(subject.profile,contract.contract,manifest.beds):null;
+ return {base:'/commands',lines:contract.ok&&profile?.ok&&slots.ok?deviceCommandLines(contract.contract,profile.profile,slots.slots).map(value=>value.line):[]};
 }

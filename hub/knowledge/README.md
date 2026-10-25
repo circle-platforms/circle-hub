@@ -25,7 +25,7 @@ const knowledge = createKnowledge({
   admin,                              // the admin context of standing syncs when a call names none
 });
 const report = await knowledgeSync(knowledge, packs, admin, parseKnowledgeSyncArgs(['--product', 'x', '--line', '1.2']));
-registerCommand(knowledgeCliCommand(async () => ({ knowledge, packs })));   // `circle-hub knowledge sync ...`
+registerCommand(knowledgeCliCommand(async () => ({ knowledge, packs })));   // `circle-hub knowledge sync ...` and `knowledge seed ...`
 // The run engine reads `knowledge:impact|facets|index:...` ids through the views, every other id through the connectors.
 const engineExternal = routeKnowledgeViews(createKnowledgeReader(knowledge), external);
 ```
@@ -47,7 +47,8 @@ const engineExternal = routeKnowledgeViews(createKnowledgeReader(knowledge), ext
 | `calibration.ts` | Wilson lower bound, threshold rule, calibration sets, literal masking |
 | `layers.ts`, `contributions.ts` | observation and verified contribution layers |
 | `sources.ts`, `verify.ts`, `tree.ts`, `digest.ts`, `store.ts` | reads and refusals, fragment and path checks, the in-memory tree, normalisation, digests and text cutting, record I/O with schema checks |
-| `cli.ts` | `parseKnowledgeSyncArgs`, `knowledgeSync`, `formatSyncReport`, `knowledgeCliCommand` |
+| `cli.ts` | `parseKnowledgeSyncArgs`, `knowledgeSync`, `formatSyncReport`, `knowledgeCliCommand` (`sync` and `seed`) |
+| `seed.ts` | `knowledge seed`: the three sources the product pack declares, `produceSeedling`, the Chinese report |
 | `test-support.ts` | synthetic product pack with real pack functions (a list producer over synthetic mind maps among them), fake `PacksPort` and `ExternalReaderPort`, synthetic build site, a deterministic scale corpus |
 
 ## Records
@@ -1129,3 +1130,5 @@ They never infer that no entries exist from a source that did not produce.
 An empty result remains a refusal for builds. For a product-wide root only, every active producer must return a complete zero-selection inventory proof. `ProducerOutput.inventory` labels each list and cites two fragments of the same bound JSON source: `listed` must locate an array and `complete` must locate JSON true. The Hub checks these source references, derives the total from the array length, checks the actual batch is empty and selected is zero, and also requires zero refused entries, zero skipped sources and no failed optional reads. Missing evidence, source failures, a producer exception, refused entries or an incomplete list still refuse production and leave the pointer unchanged. No placeholder knowledge entry is generated.
 
 The optional `tree_root@1.empty_scope` stores complete=true and each producer label, checked list/completion references, total and selected=0. Thus a complete empty root differs from a product that has never synced. It is content-addressed and can replace a formerly populated second root by the existing compare-and-set path. Production and unchanged-sync reports render the frozen labels and zero counts as “不分版本的根为空（清单完整，…）”. Authorized node reads return an empty page and that definite coverage note, with no unknown; root-reference reads retain the same note. Compositions keep the proof even when an empty node digest is shared with a root carrying unplaced entries; callers can pin the composition.
+
+同步别名的最终成根检查区分结构化发布状态：未发布别名及本次刻意排除的未发布基础构建不承担成根义务，保持跳过。已发布别名仍强制育出基础根，生产失败仍登记失败与修复出口。

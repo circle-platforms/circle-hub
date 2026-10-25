@@ -55,7 +55,7 @@ describe('scenario 14: knowledge sync, idempotence, incrementality, and root dif
     const rerun = await bed.hub.knowledgeSync(bed.product.line);
     assert.equal(rerun.error, null);
     assert.equal(rerun.counts.produced, 0, 'idempotent rerun produces 0 new roots');
-    assert.equal(rerun.counts.failed, 0);
+    assert.equal(rerun.counts.failed, 0, JSON.stringify(rerun));
 
     for (const build of rerun.builds) {
       if (build.name === bed.site.RELEASED) {

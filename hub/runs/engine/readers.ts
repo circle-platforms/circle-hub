@@ -37,7 +37,7 @@ export function sourceReader(artifacts: Artifacts, consumer: ProducerKind,bindin
   return {
     async read(sha256, reader) {
       const pins=[...new Set((bindings??[]).flatMap(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha256&&binding.artifact?[binding.artifact]:[];}))];
-      const source = pins.length?await artifacts.source(principalOf(reader),sha256,{consumer,record:pins[0]})??(reader.run?await artifacts.sourceForRun(principalOf(reader),sha256,reader.run,{consumer}):null):await artifacts.source(principalOf(reader), sha256, { consumer }) ?? (reader.run ? await artifacts.sourceForRun(principalOf(reader),sha256,reader.run,{consumer}) : null);
+      const source = pins.length?await artifacts.source(principalOf(reader),sha256,{consumer,record:pins[0]})??(reader.run?await artifacts.sourceForRun(principalOf(reader),sha256,reader.run,{consumer,record:pins[0]}):null):await artifacts.source(principalOf(reader), sha256, { consumer }) ?? (reader.run ? await artifacts.sourceForRun(principalOf(reader),sha256,reader.run,{consumer}) : null);
       if (source === null || consumer === 'model' && source.bytes === null && source.readTier !== 'retain_only') return null;
       return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
     },

@@ -232,7 +232,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     async seedlingRoot(product,line){const seed=await feeding.seedFor(product,line);if(!seed)return null;const info=(await builds.rootInfo(seed.root)).find(info=>info.composition===seed.composition&&info.build!==null);return info as RootInfo|null??null;},
     rootOfBuild: (product, name) => builds.rootOfBuild(product, name),
     rootInfo: (root) => builds.rootInfo(root),
-    catalog: (root, catalogId): Promise<CatalogView | null> => withReadCache(()=>reading.catalog(root, catalogId)),
+    catalog: (root, catalogId, selection): Promise<CatalogView | null> => withReadCache(()=>reading.catalog(root, catalogId, selection)),
     treeReader: (lock?: TreeLock | null): TreeReader => {
       const reader=reading.treeReader(lock??null);
       return {...reader,read:(...args)=>withReadCache(()=>reader.read(...args)),readEntry:(...args)=>withReadCache(()=>reader.readEntry(...args)),...(reader.hasRoot?{hasRoot:(...args:Parameters<NonNullable<TreeReader['hasRoot']>>)=>withReadCache(()=>reader.hasRoot!(...args))}:{})};

@@ -2,15 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { checkContractShape, checkExpectedSources } from './checks.ts';
 import { commandSubject, quoteSubject } from './subject.ts';
-import { goodData, subjectOf, CONTRACT_DOC, PROFILE_DOC, MANIFEST_DOC, COMMAND_IDENTITIES, QUOTE } from './test-support.ts';
+import { COMMAND_CATALOG,goodData, subjectOf, CONTRACT_DOC, PROFILE_DOC, MANIFEST_DOC, COMMAND_IDENTITIES, QUOTE } from './test-support.ts';
 import { replacedQuote, deniedCommand } from './addresses.ts';
 const group = () => ({ kind: 'case-compile', contract: CONTRACT_DOC, profile: PROFILE_DOC, manifest: MANIFEST_DOC, leases: { now: '2026-10-23T02:00:00.000Z', entries: [] } });
 test('catalog subject contains device command roles only, never host shell', () => {
-  const out = commandSubject({ slots: { plan: [{ data: goodData() }] }, item: {id:'doc-1:c-1',fields:{command_identities:COMMAND_IDENTITIES}}, context: { groups: [group()] } }) as { command_identities: unknown };
+  const out = commandSubject({ slots: { plan: [{ data: goodData() }] }, item: {id:'doc-1:c-1',fields:{command_identities:COMMAND_IDENTITIES}}, context: {root:COMMAND_CATALOG.root, groups: [group()] } }) as { command_identities: unknown };
   assert.deepEqual(out.command_identities, COMMAND_IDENTITIES);
 });
 test('quote subject uses original unmodified source text', () => {
-  const out = quoteSubject({ slots: { plan: [{ data: goodData() }] }, item: {id:'doc-1:c-1',fields:{command_identities:COMMAND_IDENTITIES}}, context: { groups: [group()] } }) as { quotes: unknown[] };
+  const out = quoteSubject({catalog:COMMAND_CATALOG.entries,catalog_complete:true, slots: { plan: [{ data: goodData() }] }, item: {id:'doc-1:c-1',fields:{command_identities:COMMAND_IDENTITIES}}, context: {root:COMMAND_CATALOG.root, groups: [group()] } }) as { quotes: unknown[] };
   assert.deepEqual(out.quotes, [QUOTE]);
 });
 test('grounded final expectation follows the command it judges', () => assert.equal(checkExpectedSources(subjectOf(goodData()))[0].verdict, 'support'));

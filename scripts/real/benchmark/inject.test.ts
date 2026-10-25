@@ -100,3 +100,10 @@ test('asking for more defects than there are cases reports the shortfall instead
 test('every kind is exercised by name', () => {
   assert.equal(INJECT_KINDS.length, 7);
 });
+
+test('negative removal uses exact declared resource values and preserves undeclared variants',()=>{
+ const map:MindMap={root:{data:{id:'root'},children:['negative','Negative','[negative]','负向'].map((tag,i)=>({data:{id:'c'+i,text:'合成用例',resource:[tag]},children:[{data:{id:'e'+i,text:'合成期望'}}]}))}};
+ const result=injectDefects(map,{documentId:'7',seed:1,counts:{remove_negative:1}});
+ assert.deepEqual(result.map.root.children?.map(node=>node.data.resource),[['Negative'],['[negative]'],['负向']]);
+ assert.equal(map.root.children?.length,4);
+});

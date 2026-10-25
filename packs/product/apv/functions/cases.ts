@@ -1,3 +1,4 @@
+import {commandLines} from './commands.ts';
 // The case index of the product (product@1 producer `cases`, ProducerInput -> ProducerOutput, entry kind case). Inputs:
 // `documents` (the build's case documents, agile:case ids, a list slot handed in batches), `tree` (the build's command tree:
 // the catalog the commands resolve against, built with the command-tree producer's functions) and `folders` (the agile tree
@@ -15,7 +16,7 @@
 // document of unknown identity (document, line, train and module null), never guessed from its position.
 import {labelOf} from './generated/vocabulary.ts';
 import type { ProducedEntry, ProducerOutput } from '../../../../contracts/src/product.ts';
-import { commandCatalog, textCommands, type CommandCatalog } from './cases-commands.ts';
+import { commandCatalog, textCommands, stepCommands, type CommandCatalog } from './cases-commands.ts';
 import { MAX_DEPTH, caseKeys, caseNodes, type CaseNode } from './cases-nodes.ts';
 import { AGILE_ID, CASE_DOCUMENTS_ROLE, CASE_MEMBER, CASE_PREFIX, CASE_TREE_ID, MINDMAP_PREFIX, isBlank, negativeOf, tagDeclaration } from './cases-rules.ts';
 import { idsFromTitle } from './ids.ts';
@@ -35,6 +36,15 @@ const MAX_LABELS = 32;
 const MAX_TAGS = 20;
 const MAX_TAG = 100;
 const SHA256 = /^[0-9a-f]{64}$/;
+
+/** One authored body reader for production and feeding. Child branches remain steps; when the case has only
+ * expectation leaves, its own text is the operation body. Lines use the existing exact-line command slot reader.
+ * Original numbering, check markers, whitespace and wording are retained; no command-shaped text is extracted. */
+export function caseBody(node:CaseNode):{steps:Array<{text:string}>;expects:Array<{text:string}>}{
+ const branches=node.stepTexts??[];
+ const texts=branches.length?branches:node.expectedCount>0?commandLines(node.title).map(line=>line.text).filter(text=>text.length>0):[];
+ return {steps:texts.map(text=>({text})),expects:(node.expectedTexts??[]).map(text=>({text}))};
+}
 
 // ---------------------------------------------------------------- text helpers
 
@@ -329,6 +339,7 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         ids.stories.forEach((id) => stories.add(id));
         ids.bugs.forEach((id) => defects.add(id));
       }
+      const body=caseBody(node),operations=stepCommands(catalog,body.steps);
       const declaration = tagDeclaration(node.resource);
       const data: Record<string, unknown> = {
         document: doc.document,
@@ -350,7 +361,10 @@ function produce(elements: readonly unknown[], documents: ReadonlyArray<string |
         has_expected: node.hasExpected,
         source_sha256: doc.sha256,
         case_location: `src:${doc.sha256}/${PARSER}/${node.selector}`,
-        steps_count: node.steps,
+        steps_count: body.steps.length,
+        step_texts:body.steps.map(step=>step.text),
+        step_command_identities:operations.commands,
+        unparsed_steps:operations.unparsed_steps,
         commands: paths,
         command_identities: results.flatMap(r=>r.identities??[]),
         command_tree_root: catalog.tree_root ?? null,

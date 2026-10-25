@@ -1,3 +1,4 @@
+import type {Submission} from '../../../contracts/src/submission.ts';
 // Independence (A04) of a judgment from the author of the work it judges, as far as the Hub can tell: the client session ids
 // it observed (Circle-Session-Id at start_run and at submit), the model identity each submission declares, and the accounts
 // the Hub itself keeps. The author is everyone who produced the work under verification (lineage.ts). A known shared session
@@ -21,6 +22,11 @@ export interface ProducerOrigin {
   model: string | null;
   /** The declared model family id (`model_family_id` of model-identity@1); null or absent when none was declared. */
   family?: string | null;
+}
+
+/** New declarations are structured inputs; legacy display text never supplies a family. */
+export function submissionOrigin(submission:Pick<Submission,'model'|'model_identity'>,sessions:ProducerOrigin['sessions']):ProducerOrigin {
+  return {sessions,model:submission.model_identity?.model_id??submission.model,family:submission.model_identity?.model_family_id??null};
 }
 
 /** Everyone known to have produced the work a judgment is about: their sessions and declared model identities. */

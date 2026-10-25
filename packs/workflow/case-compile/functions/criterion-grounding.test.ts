@@ -1,3 +1,4 @@
+import {catalogFor} from '../testing/command-catalog.ts';
 // W10 step two: an expectation of the compiled case may be taken from a criterion declaration the Hub froze into this run
 // after an account other than the author accepted it. Everything here is synthetic: the declaration, its review, the
 // account that accepted it, and the typed contract fixtures the pack publishes as examples.
@@ -45,7 +46,7 @@ const cited = (text: string, quoteText: string = NEW_CRITERION, reference: strin
 /** The subject of a plan under the typed contract; the declarations go through the same item filter the pack applies. */
 const typedSubject = (data: unknown, declarations: unknown[]): { subject: unknown } => ({
   subject: {
-    command_identities: TYPED_IDENTITIES,
+    command_catalog:catalogFor(TYPED_IDENTITIES),command_identities: TYPED_IDENTITIES,
     case_texts: ['健康检查间隔配置测试', 'widget health interval 60', QUOTE.text],
     item: ITEM,
     location: QUOTE.reference,
@@ -60,7 +61,7 @@ const typedSubject = (data: unknown, declarations: unknown[]): { subject: unknow
 });
 
 const group = () => ({ kind: 'case-compile', contract: TYPED_CONTRACT, profile: TYPED_PROFILE, manifest: MANIFEST_DOC, leases: { now: '2026-10-23T02:00:00.000Z', entries: [] } });
-const context = (criteria: unknown[]) => ({ groups: [group()], accepted_criteria: criteria });
+const context = (criteria: unknown[]) => ({root:'f'.repeat(64), groups: [group()], accepted_criteria: criteria });
 
 test('the typed fixture reaches the expectation rule before any criterion is declared', () => {
   const outcome = checkExpectedSources(typedSubject(typedData(), []))[0];
@@ -115,7 +116,7 @@ test('an expectation may still quote its own source beside a frozen declaration'
 
 test('this run re-verifies the declaration\'s grounds, not the declaration reference', () => {
   const quotes = (criteria: unknown[], data: PlanSlots) =>
-    (quoteSubject({ slots: { plan: [{ data }] }, item: { id: ITEM, location: TARGET, fields: { command_identities: TYPED_IDENTITIES } }, context: context(criteria) }) as { quotes: Array<{ reference: string; text: string }> }).quotes;
+    (quoteSubject({catalog:catalogFor(TYPED_IDENTITIES).entries,catalog_complete:true, slots: { plan: [{ data }] }, item: { id: ITEM, location: TARGET, fields: { command_identities: TYPED_IDENTITIES } }, context: context(criteria) }) as { quotes: Array<{ reference: string; text: string }> }).quotes;
   assert.deepEqual(quotes(frozen(), cited('页面显示 60 秒')), [{ reference: GROUNDS[0].reference, text: GROUNDS[0].quote }]);
   // Without a frozen declaration the expectation's own quote is what quote@1 reads, exactly as before.
   assert.deepEqual(quotes([], typedData()), [QUOTE]);

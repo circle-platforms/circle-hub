@@ -439,6 +439,7 @@ export const CheckOutcome = z
     item: z.string().optional().describe('Item the outcome is about, when the subject holds several'),
     pointer: JsonPointer.optional().describe('Location inside the subject'),
     data: z.record(z.string(), z.unknown()).optional().describe('Machine-readable parts of the statement'),
+    judgment_sources:z.array(JsonPointer).max(128).optional().describe('Explicit pointers relative to this item slots into submitted model judgment objects with text; Hub binds model identity and records judgment premises, never treats their semantics as facts'),
   })
   .superRefine((outcome,ctx)=>{if(outcome.verdict==='unknown'){if(outcome.missing===undefined)ctx.addIssue({code:'custom',path:['missing'],message:'an unknown check outcome names its missing fact'});if(outcome.reason===undefined)ctx.addIssue({code:'custom',path:['reason'],message:'an unknown check outcome names its reason'});}})
   .meta({ ...recoveryCondition('verdict',['unknown'],['missing','reason']), title: 'check-outcome@1', description: 'One outcome of a core interpreter or a pack check function (V01)' });

@@ -1,5 +1,6 @@
 // Submission (W07): what the client hands back. Stored exactly as received; the Hub computes every terminal state itself.
 import { z } from 'zod';
+import {ModelIdentitySchema} from '../generated/shared-interfaces.ts';
 import {MissingFact,UnknownExit} from './validation.ts';
 import { TaskOutputValue } from './contributions.ts';
 import type { ItemHandling, Nature } from '../generated/vocabulary.ts';
@@ -81,6 +82,7 @@ export const Submission = z
   .strictObject({
     run: RunId,
     model: z.string().min(1).describe('model name and exact configuration as the client declares it'),
+    model_identity: ModelIdentitySchema.optional().describe('Explicit exact model and family identity; absent on legacy submissions, whose family independence stays unknown'),
     items: z.array(ItemSubmission),
     cross_item: z.array(CrossItemSubmission).optional().describe('claims over several items; optional'),
     notes: z.string().optional(),
