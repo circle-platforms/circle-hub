@@ -6,6 +6,8 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import type { CallContext } from '../../ports.ts';
+import type { ActionBody } from '../../records/api.ts';
+import { INDEX } from './store.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { openHarness, sandboxSkip, traceId, type Harness } from './testing/harness.ts';
 import { standardDocument, toyMap } from './testing/mindmap.ts';
@@ -79,12 +81,20 @@ describe('the admin note of a call', () => {
   });
 
   test('an expected source that could not be read is named in the note of the start that bound it', { skip }, async () => {
-    const map = await h.upload(h.alice, toyMap(standardDocument()));
+    // This valid JSON fixture deliberately has 404 in its digest: a hash is not an error message.
+    const bytes = Buffer.concat([toyMap(standardDocument()), Buffer.from('\n'.repeat(16))]);
+    const map = await h.upload(h.alice, bytes);
+    assert.ok(map.includes('404'), 'the regression fixture must exercise a digest containing 404');
     const start = noted();
     const answer = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', inputs: { map: { reference: map } } }, start.context);
     assert.equal(answer.call_result, 'ok', JSON.stringify(answer.errors));
     assert.ok(start.notes.some((note) => note.startsWith('expected source toy:broken:offline: ')), JSON.stringify(start.notes));
     assert.ok(start.notes.every((note) => note.isWellFormed() && [...note].length <= 1000), 'notes are well-formed and short');
-    assert.ok(!JSON.stringify(answer).includes('404'), 'the real reason is not in the answer');
+    const reason = 'synthetic system answered 404 for toy:broken:offline';
+    assert.ok(start.notes.includes(`expected source toy:broken:offline: ${reason}`));
+    const actions = await h.kit.store.find<ActionBody>({ key: INDEX.actionRun, value: answer.run!.run, kind: 'action' });
+    const parse = actions.items.find(action => action.body.action === 'parse');
+    assert.deepEqual(parse?.body.detail.unavailable, [{ external: 'toy:broken:offline', role: 'expected', reason: '对你不可用' }]);
+    assert.ok(!JSON.stringify(answer).includes(reason), 'the complete internal reason is not in the answer');
   });
 });

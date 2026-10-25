@@ -1,4 +1,5 @@
 // Definition identities count authored operations; fully parsed values still govern authorization and cleanup.
+import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
 import {compileGrammar,commandIdentity,commandLines,commandTokens,type CommandDefinition} from './generated/command-grammar.ts';
 import {isRecord} from './text.ts';
@@ -21,7 +22,7 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
  if(!operations.length&&!sourceTexts.length)return [];
  const policy=readCommandPolicy(isRecord(raw)?raw.policy:undefined);
  const gaps:AuthorityGap[]=[];
- const note=(pointer:string,message:string,verdict:'unknown'|'refute'='refute',obligation?:Record<string,unknown>)=>gaps.push({document:'catalog',pointer,message,verdict,...(obligation?{obligation}:{})});
+ const note=(pointer:string,message:string,verdict:Extract<Verdict,'unknown'|'refute'>='refute',obligation?:Record<string,unknown>)=>gaps.push({document:'catalog',pointer,message,verdict,...(obligation?{obligation}:{})});
  if(!isRecord(raw)||typeof raw.root!=='string'||typeof raw.missing==='string'){note('/command_catalog',isRecord(raw)&&typeof raw.missing==='string'?raw.missing:'缺锁定目录，无法核对作者命令义务','unknown');return gaps;}
  const native=definitions(raw),grammar=compileGrammar(native);
  const parsed=operations.map(operation=>({...operation,identity:identityOf(commandIdentity(grammar,operation.line))}));

@@ -84,8 +84,9 @@ test('a review run: target, sources, items, slots, the frozen record and the act
   const actions = await h.kit.store.find<ActionBody>({ key: INDEX.actionRun, value: run.run, kind: 'action' });
   const parse = actions.items.find((a) => a.body.action === 'parse')!;
   assert.deepEqual(parse.body.detail.unavailable, [{ external: 'toy:broken:offline', role: 'expected', reason: '对你不可用' }]);
-  assert.ok(h.logs.some((l) => l.run === run.run && /404/.test(l.detail)));
-  assert.ok(!JSON.stringify(parse.body).includes('404'));
+  const internalReason = 'synthetic system answered 404 for toy:broken:offline';
+  assert.ok(h.logs.some((l) => l.run === run.run && l.detail === internalReason));
+  assert.ok(!JSON.stringify(parse.body).includes(internalReason), 'opaque references may contain 404; the internal reason stays private');
   // reads used the caller's principal
   assert.ok(h.external.reads.filter((r) => r.id.startsWith('toy:story')).every((r) => r.principal === h.alice.id));
 });
