@@ -535,7 +535,13 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   // What every producer receives: the build as listed, without a root (the root is what this production makes; the previous
   // root would make a producer's output, and so this root, depend on what was produced before, K01 R[1]).
   const handed = info === null ? null : { ...info, root: null };
-  const buildNameInventory=new Map<string,string>();for(const row of await context.store.buildsOf(lineProduct))buildNameInventory.set(row.body.build.name,row.record.digest);
+  // The known-build inventory is an input, so it must not depend on whether an earlier production already recorded this
+  // build (K01 R[1], the same reason the build is handed without its previous root): the build being produced is left out
+  // of its own inventory. A condition on the build itself is therefore refused with the frozen-list exit rather than
+  // accepted only on a re-run, and the same sources reproduce the same root the first time and every time after.
+  // Only a build that a listing named and a sync froze is a known build: the pack's own exit for an unknown build is
+  // "同步相应构建列表后重产", so the frozen list is what syncs recorded, not whatever a production wrote on the way past.
+  const buildNameInventory=new Map<string,string>();for(const row of await context.store.buildsOf(lineProduct)){if(row.body.sync===null||row.body.sync===undefined)continue;if(info!==null&&row.body.build.name===info.name)continue;buildNameInventory.set(row.body.build.name,row.record.digest);}
   if(buildNameInventory.size>50000)return result({reason:'已知构建清单超过有界输入上限；下一步包维护者扩展分片清单合约后重产'});
   context={...context,knownBuildInventory:[...buildNameInventory].sort(([a],[b])=>compareText(a,b)).map(([name,record])=>({name,record}))};
   const applicabilityClosedSets:Record<string,string[]>={};
