@@ -83,22 +83,24 @@ test('input key ordering does not change the composed identity or output bytes',
   assert.equal(JSON.stringify(await compileAdoc(a)), JSON.stringify(await compileAdoc(b)));
 });
 
-test('a later chapter with an unterminated block cannot yield an applicable partial group', async () => {
+test('a later unterminated chapter retains the complete engine output with a recovery report', async () => {
   const out = await compileAdoc(group({ 'book.adoc': '= Synthetic\n\ninclude::good.adoc[]\ninclude::bad.adoc[]', 'good.adoc': '== Good\n\nVerified text.\n\n', 'bad.adoc': '== Bad\n\n----\nUnterminated.' }));
-  assert.ok(!out.ok && out.error.code.endsWith('engine_parse'), JSON.stringify(out));
-  assert.equal('model' in out, false); assert.equal('composition' in out, false);
-  // The refusal names the engine's own flag, not a sentence read out of its log.
-  assert.match(out.ok ? '' : out.error.message, /reader\.unterminated/);
+  assert.ok(out.ok, JSON.stringify(out));
+  assert.ok(out.model.blocks.some(block=>block.raw==='Verified text.'));
+  assert.ok(out.model.blocks.some(block=>block.kind==='listing'&&block.raw==='Unterminated.'));
+  assert.equal(out.composition.files.length,3,'recovery never publishes only the earlier chapter');
+  assert.deepEqual(out.report.unterminated_blocks,[{file:'bad.adoc',line:3,kind:'listing',delimiter:'----',end_file:'bad.adoc',end_line:4}]);
 });
 
-test('the engine refusal reads structured severities and the reader flag, never the message text', () => {
+test('engine refusal uses structured severity while the recoverable reader flag stays observational', () => {
   // Reproduces the retired rule: the words "unterminated ... block" in a message below ERROR refused the whole group.
   const words = { messages: [{ severity: 'WARN', text: 'unterminated listing block' }] };
   assert.equal(engineStructuralFailure({ ...words, unterminated: null }), null);
   assert.equal(engineStructuralFailure({ ...words, unterminated: false }), null);
   assert.equal(engineStructuralFailure(words), null);
-  // The engine's flag is the observation that refuses the group.
-  assert.match(engineStructuralFailure({ ...words, unterminated: true })!, /未闭合的定界块/);
+  // The owner's recovery rule reports this structural flag instead of rejecting the group.
+  assert.equal(engineStructuralFailure({ ...words, unterminated: true }),null);
+  assert.ok(engineStructuralFailure({unterminated:true,messages:[{severity:'ERROR',text:'an unrelated engine error'}]})!==null);
   // A structural severity refuses whatever its text says, and the reason is the same for other words.
   for (const text of ['unterminated listing block', 'synthetic words with no structural meaning', 'JavaScript heap out of memory']) {
     const reason = engineStructuralFailure({ messages: [{ severity: 'ERROR', text }] });

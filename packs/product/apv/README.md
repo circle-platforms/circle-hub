@@ -313,8 +313,9 @@ refusal. It registers no knowledge producer, changes no sync plan and does not r
 `catalog.json`. Step two maps that intermediate model onto K1's document model and runs it once per name family; the
 placement code in `manual.ts` is not changed by it.
 
-A whole-group refusal reads the engine's own structured observations only: a message severity of `ERROR` or `FATAL`, or the
-reader's `unterminated` flag for a delimited block the source never closed (`apv.adoc.engine_parse`). The words of a
+A whole-group refusal reads the engine's own structured observations only: a message severity of `ERROR` or `FATAL`
+(`apv.adoc.engine_parse`), except the precisely observed incomplete-table-row recovery described below. The reader's
+`unterminated` flag records a recoverable missing delimiter and no longer refuses the group. The words of a
 message are quoted back to the author as evidence and name no cause, so a warning whose text happens to say “unterminated
 … block” refuses nothing on its own (owner rule 2026-10-24, sweep A80). `report.engine_messages` keeps every message with
 its severity as before.
@@ -444,8 +445,8 @@ children, each verified on its own — and it gets no invented range.
 
 Per file the report counts NUL, CRLF, LF and CR; a UTF-8 BOM is reported as 3 extra bytes and is dropped when lines are
 re-read, while the digest still covers it. A line with more equals signs than a legal heading is listed in
-`invalid_headings` and not promoted to a section; engine messages stay in the report, and an error or an unterminated
-block refuses the group.
+`invalid_headings` and not promoted to a section; engine messages stay in the report. Unrelated ERROR/FATAL messages
+still refuse the group; recovered missing delimiters are reported with their actual engine extent below.
 
 ### The third-party engine
 
@@ -1074,7 +1075,7 @@ citations and inline mentions; they do not define commands merely because their 
 The pinned engine's incomplete-row recovery is observed at its table parser's `closeTable`, using its actual pending
 cell objects and the identity of the ERROR that call emitted. No log-message keyword or regular expression classifies
 an error. The engine keeps its own surviving rows; `report.dropped_table_cells` lists original file, line and count of
-existing cells actually dropped (not the number of missing columns). Every other ERROR/FATAL and an unterminated block
+existing cells actually dropped (not the number of missing columns). Every other ERROR/FATAL
 still fails the whole group. Per-book production warnings include the canonical full report: dropped cells, original
 NUL counts, engine messages, branches and unverified origins; these facts remain visible in production records.
 
@@ -1125,3 +1126,18 @@ systems have not been read or validated; the integrator supplies the actual bran
 ## 冻结命令规则（command-policy@1）
 
 产品声明 `/commands/show` 为只读观察范围。其余命令的逆操作按声明的树路径映射：`/commands/P` 对应 `/commands/no/P`，反向映射由更具体的 `/commands/no` 规则决定。两条命令都须在锁定树完整解析；不会通过去掉 no 认定一条原本不存在的命令。前导身份参数须由逆签名唯一确定，有歧义时产品作者须补显式 leading_parameters。规则随知识组成和运行冻结；没有可核验逆操作的计划不能放行。
+
+### Unterminated delimited blocks
+
+The pinned reader recovers a missing closing delimiter by consuming the rest of its current reader (a bounded container
+or the expanded file stream). The adapter observes `readLinesUntil` with the actual terminator, engine context and
+consumed cursor; it never classifies warning prose or inserts a closing delimiter. `report.unterminated_blocks` lists
+each recovery as `{file, line, kind, delimiter, end_file, end_line}`: the opening source position and the inclusive end
+actually consumed, mapped through include expansion to original files. A recovery can cross included files. Nested
+readers are observed separately, and a closed inner block is not reported merely because another block was unclosed.
+
+Blocks and their content retain the engine's kinds and normal processing: signature-looking text swallowed by a literal
+block stays literal; example contents stay reference-only. No author intent or missing boundary is guessed. Engine
+messages and NUL/table-cell diagnostics remain visible alongside these recovery records. A missing verifiable recovery
+range or an unrelated ERROR/FATAL still refuses the group. Synthetic tests cover bounded and file-end recoveries, nested
+blocks, cross-file source positions, unchanged failure severity, restored observation hooks and byte-identical reruns.

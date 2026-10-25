@@ -1,7 +1,7 @@
 import {inlineContent,observeInline,cleanInline} from './inline.ts';
 // Stage one: a deterministic expansion/AST adapter. No knowledge registration, signatures, roots, network or storage writes.
 import type { AstNode } from './vendor/core.mjs';
-import { document, conditionValue, engineSession, parseDocument } from './engine.ts';
+import { document, conditionValue, engineSession, parseDocument, observeUnterminated } from './engine.ts';
 import { AdocFailure, canonical, ENGINE, fail, initialReport, LIMITS, POLICY, sha256, sourceLines, validate } from './input.ts';
 import { expandIncludes } from './includes.ts';
 import { verifyOrigin } from './origins.ts';
@@ -70,7 +70,7 @@ export interface EngineObservations {
 
 /**
  * Why a whole group has no output, or null when the engine reported no structural error. Only the engine's own fields
- * decide: a message severity of ERROR or FATAL, or the reader's unterminated flag. The words of a message are quoted back
+ * decide: a message severity of ERROR or FATAL. The recoverable reader flag is reported separately. The words of a message are quoted back
  * to the author as evidence; they never name a cause (owner rule 2026-10-24, sweep A80).
  */
 export function engineStructuralFailure(observed: EngineObservations): string | null {
@@ -79,12 +79,12 @@ export function engineStructuralFailure(observed: EngineObservations): string | 
     const severities = [...new Set(fatal.map((m) => m.severity))].join('/');
     return `引擎按 severity ${severities} 报告结构错误，整组没有产出：` + fatal.map((m) => m.text).join('；').slice(0, 1000);
   }
-  if (observed.unterminated === true) return '引擎的结构化标记 reader.unterminated 报告有未闭合的定界块，整组没有产出';
   return null;
 }
 
 async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Promise<AdocResult> {
   let restoreInline=()=>{};
+  let restoreReader=()=>{};
   try {
     for (const [key, value] of Object.entries(overrides)) if (!Object.hasOwn(LIMITS, key) || !Number.isSafeInteger(value) || value < 1 || value > LIMITS[key as keyof Limits]) fail('invalid_budget', '测试预算只能收紧，不能提高生产策略上限');
     const limits = { ...LIMITS, ...overrides };
@@ -109,6 +109,7 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
       return processLine(line);
     };
     restoreInline=observeInline(doc,'hub-'+sha256(text+'\0'+canonical(input.attributes??{})));
+    const recoveries=observeUnterminated(doc,logger);restoreReader=recoveries.restore;
     const parsed=await parseDocument(doc,logger);
     report.dropped_table_cells=parsed.drops.map(drop=>{const source=expanded.lines[drop.line-1];if(!source)fail('engine_parse','引擎丢格位置不在原件行映射中');return {file:source.file,line:source.line,cells:drop.cells};});
     report.engine_messages = logger.messages.map(({ severity, text }) => ({ severity, text }));
@@ -183,6 +184,12 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
       blocks.push(block);
     }
     report.engine_messages = logger.messages.map(({ severity, text }) => ({ severity, text }));
+    if(recoveries.blocks.length)report.unterminated_blocks=recoveries.blocks.map(block=>{
+      const start=expanded.lines[block.line-1],end=expanded.lines[block.end-1];
+      if(!start||!end)fail('engine_parse','引擎未闭合定界块的恢复位置不在原件行映射中');
+      return {file:start.file,line:start.line,kind:block.kind,delimiter:block.delimiter,end_file:end.file,end_line:end.line};
+    });
+    if(reader.unterminated===true&&!recoveries.blocks.length)fail('engine_parse','引擎未闭合标记缺少可核验的恢复范围；请核对固定引擎结构接口后重产');
     const afterWalk = engineStructuralFailure({ messages: logger.messages.filter(message=>!parsed.recoverable.has(message)), unterminated: reader.unterminated });
     if (afterWalk !== null) fail('engine_parse', afterWalk);
     const identity = { schema: 'apv-adoc-composition@1' as const, main: input.main, revision: input.revision, ...(input.directory ? { directory: input.directory } : {}), files: Object.entries(input.files).map(([file, value]) => ({ file, sha256: value.sha256 })), attributes: input.attributes ?? {}, engine: ENGINE, policy: POLICY, limits };
@@ -191,7 +198,7 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
   } catch (error) {
     if (error instanceof AdocFailure) return { ok: false, error: { code: `apv.adoc.${error.code}`, message: error.message, next_action: '补齐或修正指出的原始事实，按同一修订号重新取得整组文件后重跑；失败结果不能替换旧知识根', ...(error.file ? { file: error.file } : {}), ...(error.line ? { line: error.line } : {}) } };
     return { ok: false, error: { code: 'apv.adoc.engine_error', message: '引擎无法完成整组展开，未返回部分模型', next_action: '检查输入语法和引擎沙箱错误，修复后按同一修订号重跑；不得应用部分结果' } };
-  } finally {restoreInline();}
+  } finally {try{restoreInline();}finally{restoreReader();}}
 }
 export async function compileAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Promise<AdocResult> {
   return engineSession(() => runAdoc(rawInput, overrides));

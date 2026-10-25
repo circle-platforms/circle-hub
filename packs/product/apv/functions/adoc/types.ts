@@ -45,6 +45,7 @@ export interface Report {
   disambiguated_count: number; disambiguated_examples_truncated: boolean;
   disambiguated: Array<{ block: number; kind: string; reported_line: number | null; candidates: number }>;
   remapped: Array<{ block: number; reported_line: number; verified_line: number }>;
+  unterminated_blocks?:Array<{file:string;line:number;kind:string;delimiter:string;end_file:string;end_line:number}>;
   dropped_table_cells?:Array<{file:string;line:number;cells:number}>;
   engine_messages: Array<{ severity: string; text: string }>;
   invalid_headings: Array<{ file: string; line: number; text: string }>;

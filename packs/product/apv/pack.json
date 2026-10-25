@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "apv",
-  "version": "1.7.27",
+  "version": "1.7.28",
   "kind": "product",
   "title": "APV / NSAE（产品包）",
   "description": "APV 与 NSAE 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册的知识生产器（用例、缺陷、规格按 10-24 修订由 Circle 喂入，不再整批生产）",
@@ -18,8 +18,8 @@
     },
     {
       "path": "functions/adoc/engine.ts",
-      "sha256": "70f1df293209ad0bd76798d752ffe985c8b8846db05a2308d27103c087851268",
-      "size": 4786
+      "sha256": "e42c9369f8ec0ee3d6223a102bb17a8d7669cd44bac420099f508dfa89517ec6",
+      "size": 7743
     },
     {
       "path": "functions/adoc/entries.ts",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/adoc/index.ts",
-      "sha256": "57de548007a7a8ab6ee90ce4056e4627a1a70efe538e6981a0146462f97ee924",
-      "size": 15567
+      "sha256": "af408d9b3843d4874c9d00f60402c5a80c20a89fecc6a74a425c1d8e1ca31cf7",
+      "size": 16201
     },
     {
       "path": "functions/adoc/inline.ts",
@@ -78,8 +78,8 @@
     },
     {
       "path": "functions/adoc/types.ts",
-      "sha256": "75831508187e9719e54131e5e63d4e410fc6c62dc835d66e35a3d8121b6528e8",
-      "size": 4533
+      "sha256": "debf9d365f53a799a5658b75f7df7c7d4c2a5deecf509a1bad21c7d46d780076",
+      "size": 4651
     },
     {
       "path": "functions/adoc/vendor/LICENSE.txt",
