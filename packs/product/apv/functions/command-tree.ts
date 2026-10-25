@@ -7,7 +7,7 @@ import {commandTokens} from './commands.ts';
 import {labelOf} from './generated/vocabulary.ts';
 import type {ProducerDiagnostic} from '../../../../contracts/src/product.ts';
 import type { CatalogParam, CatalogParamType, CatalogSignature, CatalogUncheckedConstraint } from '../../../../contracts/src/tables.ts';
-import type { CommandEntryData, CommandTreeParams, CommandTreeResult, EntryKind, FragmentRef, ProducedEntry, SignatureDeclarations, XmlModel } from './types.ts';
+import type { CommandEntryData, CommandTreeParams, CommandTreeResult, DeclarationsByPath, EntryKind, FragmentRef, ProducedEntry, SignatureDeclarations, XmlModel } from './types.ts';
 import { asArray, decodeEntities, guarded, internalError, isRecord, pathText, selectorText, squeeze } from './util.ts';
 
 type Alternative = { type: CatalogParamType; minimum?: number; maximum?: number };
@@ -252,7 +252,10 @@ type Frame = { node: XmlNode; steps: string[]; words: string[] };
 export function produceCommandEntries(model: XmlModel, params: CommandTreeParams = {}): CommandTreeResult {
   const warnings: string[] = [];
   const diagnostics:ProducerDiagnostic[]=[];
-  const output=(entries:ProducedEntry[],notes:string[]):CommandTreeResult=>({entries,warnings:notes,diagnostics,grammar:{id:'apv-command-tree@2',source:'product:apv/README.md#command-grammar',complete:diagnostics.length===0}});
+  // Provenance of the produced signatures, keyed by entry path. It rides beside the entries in the pack's own result:
+  // neither `data` (catalog-entry@1) nor an entry (producer-output@1) may carry a key its contract does not declare.
+  const declarationsByPath:DeclarationsByPath={};
+  const output=(entries:ProducedEntry[],notes:string[]):CommandTreeResult=>({entries,declarations:declarationsByPath,warnings:notes,diagnostics,grammar:{id:'apv-command-tree@2',source:'product:apv/README.md#command-grammar',complete:diagnostics.length===0}});
   const invalid=(note:string,path='x/commands',attribute='syntax'):CommandTreeResult=>{
     diagnostics.push({command:[],path,attribute,type_declaration_status:'undeclared',command_parse_status:'parameters_unchecked',syntax_valid:false,reason:'missing_input',missing:note,next_action:'修订 apv-command-tree@2 原件或补完整语法后重产',audience:'命令树维护者或包作者',due:'下一次生产之前'});
     return output([],[...warnings,note+'；下一步：命令树维护者或包作者在下一次生产之前修订原件后重产']);
@@ -376,7 +379,8 @@ export function produceCommandEntries(model: XmlModel, params: CommandTreeParams
       // `data` stays exactly catalog-entry@1 (apv README): the provenance map rides beside it on the entry.
       const data: CommandEntryData = { words, signatures };
       if (summaries.size > 0) data.summary = [...summaries].join('\n');
-      entries.push({ kind: KIND, path, statement: lines.join('\n'), data, fragments, applicability: null, declarations });
+      declarationsByPath[path] = declarations;
+      entries.push({ kind: KIND, path, statement: lines.join('\n'), data, fragments, applicability: null });
     }
     for (const [type, count] of counters.unknown) warnings.push(`参数类型 ${type} 不在类型表里（${count} 处），类型未声明、参数未核对；下一步：命令树维护者或包作者在下一次生产前补结构化类型声明后重产`);
     for (const item of declared.values()) {
@@ -402,4 +406,4 @@ export default function commandTree(input: unknown): CommandTreeResult {
 }
 
 /** Attach immutable source declarations after the producer receives the original tree digest. */
-export function bindCommandSource(entries:ProducedEntry[],source:string):ProducedEntry[]{return entries.map(entry=>{if(!isRecord(entry.data)||!Array.isArray(entry.data.signatures)||!isRecord(entry.declarations))return entry;const declarations=entry.declarations;return {...entry,data:{...entry.data,signatures:(entry.data.signatures as CatalogSignature[]).map(signature=>{const d=declarations[signature.id??''];if(!isRecord(d)||typeof d.selector!=='string'||!Array.isArray(d.parameters))return signature;const parameters=d.parameters;return {...signature,reference:'src:'+source+'/xml@1/'+d.selector,params:signature.params.map((p,index)=>{const raw=parameters[index];return isRecord(raw)&&raw.native!==false&&typeof raw.name==='string'&&raw.name.length>0&&typeof raw.selector==='string'&&p.type!==undefined?{...p,native_type:{name:raw.name,declaration:'src:'+source+'/xml@1/'+raw.selector,grammar:'apv-command-tree@2'}}:p;})};})}};});}
+export function bindCommandSource(entries:ProducedEntry[],source:string,byPath:DeclarationsByPath={}):ProducedEntry[]{return entries.map(entry=>{const own=entry.path===null?undefined:byPath[entry.path];if(!isRecord(entry.data)||!Array.isArray(entry.data.signatures)||!isRecord(own))return entry;const declarations=own;return {...entry,data:{...entry.data,signatures:(entry.data.signatures as CatalogSignature[]).map(signature=>{const d=declarations[signature.id??''];if(!isRecord(d)||typeof d.selector!=='string'||!Array.isArray(d.parameters))return signature;const parameters=d.parameters;return {...signature,reference:'src:'+source+'/xml@1/'+d.selector,params:signature.params.map((p,index)=>{const raw=parameters[index];return isRecord(raw)&&raw.native!==false&&typeof raw.name==='string'&&raw.name.length>0&&typeof raw.selector==='string'&&p.type!==undefined?{...p,native_type:{name:raw.name,declaration:'src:'+source+'/xml@1/'+raw.selector,grammar:'apv-command-tree@2'}}:p;})};})}};});}

@@ -8,9 +8,10 @@ import { isRecord } from './util.ts';
 export type CommandCatalog = CommandGrammar;
 export function commandCatalog(model:XmlModel,source?:string):{catalog:CommandCatalog;warnings:string[]} {
   const produced=produceCommandEntries(model,{});
-  const definitions=(source?bindCommandSource(produced.entries,source):produced.entries).flatMap(entry=>{
+  const declarationsByPath=produced.declarations??{};
+  const definitions=(source?bindCommandSource(produced.entries,source,declarationsByPath):produced.entries).flatMap(entry=>{
     if(!entry.path||!isRecord(entry.data)||!Array.isArray(entry.data.words)||!Array.isArray(entry.data.signatures))return [];
-    const declarations=entry.declarations as CommandDefinition['declarations'];
+    const declarations=(entry.path===null?undefined:declarationsByPath[entry.path]) as CommandDefinition['declarations'];
     return [{path:entry.path,words:entry.data.words as string[],declarations,signatures:(entry.data.signatures as CatalogSignature[]).map(signature=>({...signature,...(source&&declarations?.[signature.id??'']?{reference:`src:${source}/xml@1/${declarations[signature.id??''].selector}`}: {})}))}];
   });
   const catalog=compileGrammar(definitions);catalog.tree_root=source;return {catalog,warnings:produced.warnings};
