@@ -25,7 +25,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['quality-board', '2.0.8', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['quality-board', '2.0.9', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/board.ts') && files.includes('samples/negative/thresholds-exceeded.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -37,6 +37,9 @@ describe('the pack files', () => {
     assert.deepEqual(workflow.inputs.map((i) => ({ ...i, description: undefined })), [
       { slot: 'facets', role: 'subject', description: undefined, accepts: ['knowledge:facets'], required: true, many: true },
       { slot: 'placement', role: 'hint', description: undefined, accepts: ['knowledge:facets'], required: true, many: false },
+      // 含糊率只认已受理评审。cases 和 reviews 是后来加上的可选输入，没有它们时全部未判断。
+      { slot: 'cases', role: 'subject', description: undefined, accepts: ['knowledge:index'], required: false, many: false },
+      { slot: 'reviews', role: 'artifact_under_verification', description: undefined, accepts: ['application/json'], required: false, many: true },
     ]);
     assert.deepEqual(workflow.product, { catalogs: [] });
     assert.deepEqual(
@@ -61,9 +64,10 @@ describe('the pack files', () => {
     assert.deepEqual(
       checks.map((c) => ({ ...c, title: undefined })),
       [
-        { id: 'board', title: undefined, function: { module: 'functions/board.ts' }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
-        { id: 'thresholds', title: undefined, function: { module: 'functions/thresholds.ts' }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
-        { id: 'totals', title: undefined, function: { module: 'functions/totals.ts' }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
+        // 三条检查核的是已受理评审主张，不是主题本身；basis 写明含糊语义不能升成事实。
+        { id: 'board', title: undefined, function: { module: 'functions/board.ts' }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'artifact_under_verification', tier: 'advisory', basis: 'R3：对受理评审主张做算术聚合，所有结论以判断为前提；不把含糊语义升级为事实' },
+        { id: 'thresholds', title: undefined, function: { module: 'functions/thresholds.ts' }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'artifact_under_verification', tier: 'advisory', basis: 'R3：对受理评审主张做算术聚合，所有结论以判断为前提；不把含糊语义升级为事实' },
+        { id: 'totals', title: undefined, function: { module: 'functions/totals.ts' }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'artifact_under_verification', tier: 'advisory', basis: 'R3：对受理评审主张做算术聚合，所有结论以判断为前提；不把含糊语义升级为事实' },
       ],
     );
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
@@ -98,8 +102,9 @@ describe('the pack files', () => {
   });
 
   it('declares every code the functions give', () => {
-    const codes = json('tables/codes.json') as { violations: Array<{ code: string }>; refusals: Array<{ code: string }>; warnings: Array<{ code: string }> };
-    const declared = new Set([...codes.violations, ...codes.refusals, ...codes.warnings].map((c) => c.code));
+    const codes = json('tables/codes.json') as { violations: Array<{ code: string }>; refusals: Array<{ code: string }>; warnings: Array<{ code: string }>; checks: Array<{ code: string }> };
+    // undeclared_tag 写在 checks 段，和 template-gap、case-review 一样，不在 violations 里。
+    const declared = new Set([...codes.violations, ...codes.refusals, ...codes.warnings, ...codes.checks].map((c) => c.code));
     const used = new Set<string>();
     const sources = ['functions/project.ts', 'functions/views.ts', 'functions/board.ts', 'functions/thresholds.ts', 'functions/totals.ts'].map(text).join('\n');
     for (const m of sources.matchAll(/refusal\('([a-z_]+)'/g)) used.add(`quality-board.${m[1]}`);

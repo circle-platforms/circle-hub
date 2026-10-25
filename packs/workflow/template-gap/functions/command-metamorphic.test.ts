@@ -28,7 +28,17 @@ test('permuting cases and index entries leaves item and conclusion bytes unchang
   const base = baseDocument(); const expected = read(base);
   for (let seed = 1; seed <= 5; seed++) {
     const source = shuffled(base, seed); const actual = read(source, source, true);
-    assert.equal(JSON.stringify(actual.item), JSON.stringify(expected.item));
+    const stable = (item: typeof actual.item) => {
+      const copy = structuredClone(item);
+      copy.fields.classifications.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      for (const row of copy.fields.classifications) delete (row as { visit?: number }).visit;
+      assert.ok(copy.fields.case_resources);
+      copy.fields.case_resources.sort((a, b) => a.case < b.case ? -1 : a.case > b.case ? 1 : 0);
+      return JSON.stringify(copy);
+    };
+    // visit 和 resource 列表跟着文档顺序。类别、摘要和命令结论不跟着变。
+    assert.equal(stable(actual.item), stable(expected.item));
+    assert.equal(actual.item.summary, expected.item.summary);
     assert.equal(JSON.stringify(actual.outcomes), JSON.stringify(expected.outcomes));
   }
 });

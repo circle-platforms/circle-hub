@@ -11,10 +11,11 @@ export function candidateStatement(list: BuildCandidateGold[]): string {
   const ordered = orderGoldCandidates(list);
   return `版本线 10.8.1 的构建候选 ${list.length} 个，其中别名 ${list.filter(c => c.name !== c.base).length} 个（别名基于它所基于的构建），按制作时间从新到旧：` + ordered.slice(0, 12).map(c => `${c.name}（${c.family}${c.base === c.name ? '' : `，基于 ${c.base}`}）${c.built ? `制作于 ${c.built.slice(0, 16).replace('T', ' ')}` : '制作时间未知'}，${c.released ? `已发布 ${c.released}` : '未发布'}`).join('；') + (list.length > 12 ? `；另有 ${list.length - 12} 个` : '');
 }
-const claim = (id: string, text: string) => `    - 位置：条目 ${id}，要求项 build_candidates，/data；陈述：${text}，支持；性质与依据等级：事实`;
+const claim = (id: string, text: string) => `    - 位置：条目 ${id}，要求项 build_candidates，/data；陈述：${JSON.stringify({ statement: { verdict: 'support', text } })}；性质与依据等级：事实`;
 const turns = (text: string): LoggedTurn[] => [{ index: 0, tools: [], toolResults: [{ id: 'synthetic', isError: false, text }] }];
 const gold = { document: '930201', line: '10.8.1', buildCandidates: candidates };
-const locationBlock = '问题与未知（条目 | 名称 | 分区 | 要求项）：\n- 930201 | 合成文档 | 未知 | other | 合成问题\n条目（1 个；编号 | 名称 | 摘要）：\n- 930201 | 合成文档 | 产品线 apv；版本 10.8.1（目录，置信度高）\n- 930201 | 合成文档 | 已交付\n  · location 用例定位：满足\n    - 位置：条目 930201，要求项 location，/data；陈述：产品线 apv；版本 10.8.1（目录，置信度高），支持；性质与依据等级：事实\n  · build_candidates 构建候选：满足';
+const locationClaim = JSON.stringify({ statement: { verdict: 'support', text: '产品线 apv；版本 10.8.1（目录，置信度高）' } });
+const locationBlock = `问题与未知（条目 | 名称 | 分区 | 要求项）：\n- 930201 | 合成文档 | 未知 | other | 合成问题\n条目（1 个；编号 | 名称 | 摘要）：\n- 930201 | 合成文档 | 产品线 apv；版本 10.8.1（目录，置信度高）\n- 930201 | 合成文档 | 已交付\n  · location 用例定位：满足\n    - 位置：条目 930201，要求项 location，/data；陈述：${locationClaim}；性质与依据等级：事实\n  · build_candidates 构建候选：满足`;
 const checks = (text: string, input = gold) => scenario(input).check(turns(`运行 run_synthetic\n${locationBlock}\n${text}`)).filter(c => /候选|名称族|别名/.test(c.name));
 
 test('two families and an alias compare every displayed field', () => {
@@ -30,7 +31,7 @@ test('candidate gold is mandatory', () => {
 for (const [name, transform] of [
   ['missing claim', () => ''],
   ['another document', (text: string) => text.replace(gold.document, '930202')],
-  ['unknown claim', (text: string) => text.replace('，支持；', '，未知；')],
+  ['unknown claim', (text: string) => text.replace('"verdict":"support"', '"verdict":"unknown","reason":"missing_input","missing":"合成构建事实","exit":{"action":"rerun"}')],
   ['wrong family', (text: string) => text.replace('（NSAE，', '（APV，')],
   ['wrong base', (text: string) => text.replace('基于 Rel_APV_10_8_1_21', '基于 Rel_APV_10_8_1_20')],
   ['wrong built time', (text: string) => text.replace('12:34', '12:35')],

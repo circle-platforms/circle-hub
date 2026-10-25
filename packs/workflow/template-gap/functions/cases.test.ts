@@ -99,15 +99,16 @@ describe('the case rule (unified default marked, tagged switch)', () => {
       ),
     );
     assert.deepEqual(records, [
-      { id: 'd1:c1', nodeId: 'c1', path: ['根'], title: '外层用例', tags: ['Function'], steps: ['步骤一'], expected: ['步骤一的期望', '更深的期望', '直接的期望'], preconditions: ['前置条件'] },
-      { id: 'd1:n1', nodeId: 'n1', path: ['根', '外层用例'], title: '内层用例', tags: ['Negative'], steps: [], expected: ['内层期望'], preconditions: ['内层前置'] },
+      { id: 'd1:c1', nodeId: 'c1', path: ['根'], title: '外层用例', tags: ['Function'], resource: ['Function'], steps: ['步骤一'], expected: ['步骤一的期望', '更深的期望', '直接的期望'], preconditions: ['前置条件'] },
+      { id: 'd1:n1', nodeId: 'n1', path: ['根', '外层用例'], title: '内层用例', tags: ['Negative'], resource: ['Negative'], steps: [], expected: ['内层期望'], preconditions: ['内层前置'] },
     ]);
   });
 
   it('keeps tags as written (text only) and reports tags that are not text', () => {
     const { cases, warnings } = casesIn(node('r', '根', {}, kase('c1', '用例', ['[Function', 7, null, { x: 1 }, true])));
-    assert.deepEqual(cases[0].tags, ['[Function', '7', 'true']);
-    assert.deepEqual(warnings.find((w) => w.code === 'template-gap.tag_not_text')?.data, { count: 2 });
+    // 标签只留原文里的字符串。数字、布尔、空值和对象都算不是文字，不再转成 "7" 或 "true"。
+    assert.deepEqual(cases[0].tags, ['[Function']);
+    assert.deepEqual(warnings.find((w) => w.code === 'template-gap.tag_not_text')?.data, { count: 4 });
   });
 });
 

@@ -49,19 +49,25 @@ async function start(input: Record<string, unknown>, user = bed?.runner, on: Bed
   return on.service.startRunDetailed(user, { pack: 'template-gap', product: LOCK.names[0], build: BUILD, ...input } as Parameters<Bed['service']['startRunDetailed']>[1], on.call());
 }
 
+/** 覆盖是判断。开始运行只投影；空的类别判断列表提交后，检查才给出结果。 */
+async function judged(detail: StartRunDetail, on: Bed = bed) {
+  const run = detail.answer.run!;
+  return on.service.submitResult(on.runner, { run: run.run, model: 'aster-7', items: run.items.map((it) => ({ item: it.id, handling: 'handled' as const, slots: { coverage: [] } })) }, on.call());
+}
+
 describe('publication', { skip }, () => {
   it('the publish check passes on the real registry; the pack is listed for the assigned user only, with the command-catalog product', async () => {
     const outcome = bed.publication;
     assert.ok(outcome.ok, JSON.stringify(!outcome.ok && outcome.problems, null, 1));
     assert.equal(outcome.created, true);
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind, outcome.version.withdrawn], ['template-gap', '1.2.0', 'workflow', false]);
-    assert.deepEqual([outcome.report.samples.total, outcome.report.samples.passed, outcome.report.unsampled], [13, 13, []]);
-    assert.deepEqual(outcome.report.checks.map((c) => [c.check, c.positive, c.negative, c.marks]), [['coverage', 2, 4, ['author_samples_only']], ['command_coverage', 2, 5, ['author_samples_only']]]);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind, outcome.version.withdrawn], ['template-gap', '1.2.11', 'workflow', false]);
+    assert.deepEqual([outcome.report.samples.total, outcome.report.samples.passed, outcome.report.unsampled], [15, 15, []]);
+    assert.deepEqual(outcome.report.checks.map((c) => [c.check, c.positive, c.negative, c.marks]), [['coverage', 2, 4, ['author_samples_only']], ['command_coverage', 2, 5, ['author_samples_only']], ['tag_declarations', 1, 1, ['author_samples_only']]]);
     const store = createWorkflowStore(bed.registry);
     const [summary] = await store.summaries(bed.runner);
-    assert.deepEqual([summary.pack, summary.kind, summary.products], ['template-gap@1.2.0', 'workflow', ['Synthetic Template', 'MEADOW']]);
+    assert.deepEqual([summary.pack, summary.kind, summary.products], ['template-gap@1.2.11', 'workflow', ['Synthetic Template', 'MEADOW']]);
     assert.deepEqual(summary.inputs.map((i) => [i.slot, i.role, i.many, i.required]), [['documents', 'subject', true, true], ['case_index', 'expected', false, false]]);
-    assert.deepEqual(summary.requirements.map((r) => [r.key, r.accepted_producer, r.layers, r.done_rule, r.repair_rounds]), [['coverage', 'fact', ['static'], 'bookkeeping', 0], ['command_coverage', 'fact', ['static'], 'bookkeeping', 0]]);
+    assert.deepEqual(summary.requirements.map((r) => [r.key, r.accepted_producer, r.layers, r.done_rule, r.repair_rounds]), [['coverage', 'judgment', ['static'], 'bookkeeping', 0], ['command_coverage', 'fact', ['static'], 'bookkeeping', 0], ['tag_declarations', 'fact', ['static'], 'bookkeeping', 0]]);
     assert.deepEqual(await store.summaries(bed.stranger), []);
   });
 
@@ -70,7 +76,8 @@ describe('publication', { skip }, () => {
       edit: async (dir) => {
         const path = join(dir, 'samples/positive/coverage-all-covered.json');
         const sample = JSON.parse(await readFile(path, 'utf8'));
-        sample.subject.covered = sample.subject.covered.filter((id: string) => id !== 'audit_log');
+        // 覆盖主体不再带 covered 列表。范围不完整时正例不能成立。
+        sample.subject.scope_complete = false;
         await writeFile(path, `${JSON.stringify(sample, null, 2)}\n`);
       },
     });
@@ -107,8 +114,12 @@ describe('a production run', { skip }, () => {
     const run = RunSummary.parse(detail.answer.run);
     assert.equal((await bed.service.listRuns(bed.runner)).items.length, before + 1);
 
-    // The run locks a catalog-bearing product/root; all requirements are facts, so there are no result slots.
-    assert.deepEqual([run.product, run.version, run.build, run.root, run.slots], [PRODUCT, '10.6', BUILD, ROOT, undefined]);
+    // 覆盖要求由判断填写，运行带着 category-judgment 槽；产品、版本、构建和根仍锁在目录产品上。
+    assert.deepEqual([run.product, run.version, run.build, run.root], [PRODUCT, '10.6', BUILD, ROOT]);
+    assert.equal(run.slots?.schema.title, 'Slot record of one item');
+    const slotProperties = run.slots?.schema.properties as { coverage?: { items?: { properties?: { data?: { title?: string } } } } } | undefined;
+    assert.equal(slotProperties?.coverage?.items?.properties?.data?.title, 'category-judgment@1');
+    assert.match(run.slots?.sha256 ?? '', /^[0-9a-f]{64}$/);
     assert.ok(run.target_basis.length > 0);
     assert.equal(run.instructions, await readFile(join(PACK_DIR, 'SKILL.md'), 'utf8'));
     assert.deepEqual(run.sources.map((s) => [s.role, s.slot, s.external ?? null]), [['subject', 'documents', null], ...removed.map((r) => ['subject', 'documents', `agile:mindmap:${r.id}@1`]), ['subject', 'documents', 'agile:mindmap:900301@1'], ['subject', 'documents', 'agile:mindmap:900302@1']]);
@@ -131,51 +142,68 @@ describe('a production run', { skip }, () => {
     assert.equal(run.items[0].location, `src:${sha256(bytesOf(base))}/kityminder@1/n/r0e2ebase001`);
     for (const it of run.items) assert.match(it.digest ?? '', /^[0-9a-f]{64}$/);
 
-    // Production is accepted without a model submission; missing indexed facts remain unknown and named in errors.
-    const production = detail.production;
-    assert.ok(production !== null);
-    const result = ValidationResult.parse(production.result);
-    assert.deepEqual([result.acceptance,result.cross_item,result.coverage],['accepted',[],{complete:true,examined:documents.length,total:documents.length}]);
-    assert.equal(result.errors.length,documents.length-1);
-    assert.ok(result.errors.every(error=>error.code==='missing_input'&&error.requirement==='command_coverage'&&error.item!==undefined&&error.rounds_left===0&&error.path!==undefined&&error.fix?.includes('请求 rec:')));
-    assert.deepEqual(production.counts, { delivered: documents.length, rejected: 0, quarantined: 0, incomplete: 0, unknown: documents.length - 1 });
-    assert.deepEqual(production.counts, partitionCountsOf(result.partitions));
-    assert.equal(production.reference, `rec:${production.record}`);
-    // StartRunOutput.result (contracts): the answer names the stored result. Filled by the engine change in progress at the
-    // time of writing; whenever the answer carries it, it is this result.
-    if (detail.answer.result !== undefined) assert.deepEqual(detail.answer.result, { reference: production.reference, counts: production.counts });
+    // 覆盖是判断，开始运行不直接产出结果；空的类别判断列表交给检查去算。
+    assert.equal(detail.production, null);
+    const submitted = await bed.service.submitResult(bed.runner, { run: run.run, model: 'aster-7', items: run.items.map((it) => ({ item: it.id, handling: 'handled', slots: { coverage: [] } })) }, bed.call());
+    assert.equal(submitted.acceptance, 'accepted', JSON.stringify(submitted.errors));
+    const result = ValidationResult.parse(submitted.result);
+    assert.deepEqual([result.acceptance, result.cross_item], ['accepted', []]);
+    assert.deepEqual(result.coverage, { complete: true, examined: documents.length, total: documents.length, note: `提交处理了 ${documents.length} 个条目，共 ${documents.length} 个` });
+    // 敏捷文档缺索引是 command_coverage 的未知；每份文档的 resource 不是闭集原文，tag_declarations 另报缺声明。上传文件不在索引里，是反驳不是缺输入。
+    const commandErrors = result.errors.filter((error) => error.requirement === 'command_coverage');
+    const tagErrors = result.errors.filter((error) => error.requirement === 'tag_declarations');
+    assert.equal(commandErrors.length, documents.length - 1);
+    assert.equal(tagErrors.length, documents.length);
+    assert.ok(commandErrors.every((error) => error.code === 'missing_input' && error.item !== undefined && error.rounds_left === 0 && error.path !== undefined && error.fix?.includes('请求 rec:')));
+    assert.ok(tagErrors.every((error) => error.code === 'missing_input' && error.item !== undefined));
+    assert.deepEqual(submitted.counts, { delivered: documents.length, rejected: 0, quarantined: 0, incomplete: 0, unknown: documents.length - 1, pending_unknown: documents.length });
+    assert.deepEqual(submitted.counts, partitionCountsOf(result.partitions));
+    assert.equal(detail.answer.result, undefined, '开始运行时还没有结果');
     const view = await bed.service.getRun(bed.runner, run.run);
-    assert.deepEqual(view?.latest, { record: production.record, result: production.result }, 'stored at start_run and readable as the run result');
-    assert.deepEqual(view?.submissions, [], 'without a submission');
+    assert.equal(view?.submissions.length, 1);
+    assert.deepEqual(view?.latest?.result, submitted.result);
 
-    const pass = (item: string): void => {
+    const warrant = ['fact', 'projected', 'function', 'template-gap.coverage@1.2.11'] as const;
+    const satisfied = (item: string): void => {
       const { partition, result: r } = requirementOf(result, item);
-      assert.deepEqual([partition, r.requirement, r.layers, r.status], ['delivered', 'coverage', [{ layer: 'static', terminal: 'pass' }], 'satisfied'], item);
+      assert.deepEqual([partition, r.requirement, r.layers, r.status], ['delivered', 'coverage', [{ layer: 'static', terminal: 'judgment' }], 'satisfied'], item);
+      const [claim] = r.claims;
+      assert.equal(claim.statement.verdict, 'support');
+      assert.deepEqual([claim.qualifier.nature, claim.qualifier.provenance, claim.warrant.producer, claim.warrant.id], warrant);
     };
-    pass(uploadId);
-    pass('900301');
-    pass('900302');
+    satisfied(uploadId);
+    satisfied('900301');
+    satisfied('900302');
     for (const r of removed) {
       const { partition, result: req } = requirementOf(result, r.id);
       assert.equal(partition, 'delivered', 'a gap is delivered content');
-      assert.deepEqual(req.layers, [{ layer: 'static', terminal: 'violation', code: 'core.coverage.shortfall', tier: 'advisory', attribution: 'author_input' }], r.category);
-      assert.deepEqual([req.status, req.unsatisfied_reason], ['unsatisfied', 'outcome_mismatch']);
       const [claim] = req.claims;
-      assert.deepEqual(claim.statement.data?.missing, [r.category], `exactly ${r.category} is missing`);
-      assert.deepEqual([claim.qualifier.nature, claim.qualifier.provenance, claim.warrant.producer, claim.warrant.id], ['fact', 'projected', 'function', 'coverage@1']);
+      assert.deepEqual([claim.qualifier.nature, claim.qualifier.provenance, claim.warrant.producer, claim.warrant.id], warrant);
       assert.ok(claim.grounds.includes(run.items.find((it) => it.id === r.id)!.location), 'the claim rests on the document');
       const item = run.items.find((it) => it.id === r.id)!;
+      if (r.category === 'functional') {
+        // 渲染把未打类别的标记用例写成 functional，删掉功能用例后这一类仍在，不算缺口。
+        assert.deepEqual([req.status, req.layers], ['satisfied', [{ layer: 'static', terminal: 'judgment' }]], r.category);
+        assert.deepEqual(item.fields.missing, []);
+        assert.match(item.summary ?? '', /24 个模板类别都已覆盖/);
+        continue;
+      }
+      assert.deepEqual(req.layers, [{ layer: 'static', terminal: 'violation', code: 'template-gap.category_shortfall', tier: 'advisory', attribution: 'author_input' }], r.category);
+      assert.deepEqual([req.status, req.unsatisfied_reason], ['unsatisfied', 'outcome_mismatch']);
+      assert.deepEqual(claim.statement.data?.missing, [r.category], `exactly ${r.category} is missing`);
       assert.deepEqual(item.fields.missing, [r.category]);
       assert.match(item.summary ?? '', new RegExp(`缺 1 个模板类别：[^；]*（${r.category}）`), 'the line the model reads names it');
     }
     const skippedClaim = requirementOf(result, '900302').result.claims[0];
-    assert.deepEqual(skippedClaim.statement.data?.skipped, [{ member: 'stress', reason }], 'the skip is listed apart');
+    assert.deepEqual(skippedClaim.statement.data?.skipped, [{ category: 'stress', reason }], 'the skip is listed apart');
     assert.deepEqual(run.items.find((it) => it.id === '900302')?.fields.skipped, [{ category: 'stress', reason }]);
   });
 
   it('claims that rest on the coverage check carry and show author_samples_only (T02 R[1])', async () => {
     const detail = await start({ inputs: { documents: [{ external: onAgile('900351', renamed(withoutCategory(baseDocument(), 'stress'), 'r0e2emark001')) }] } });
-    const [claim] = requirementOf(detail.production!.result, '900351').result.claims;
+    const answer = await judged(detail);
+    assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
+    const [claim] = requirementOf(ValidationResult.parse(answer.result), '900351').result.claims;
     assert.ok(claim.qualifier.marks.includes('author_samples_only'), JSON.stringify(claim.qualifier.marks));
   });
 
@@ -186,9 +214,26 @@ describe('a production run', { skip }, () => {
     const [a] = first.answer.run!.items;
     const [b] = again.answer.run!.items;
     assert.notEqual(a.location, b.location, 'other bytes');
-    assert.deepEqual({ ...b, location: a.location }, a);
-    const claim = (d: StartRunDetail) => d.production!.result.partitions.delivered[0].requirements[0].claims[0].statement;
-    assert.deepEqual(claim(again), claim(first));
+    const stable = (item: typeof a) => {
+      const copy = structuredClone(item);
+      const classifications = copy.fields.classifications as Array<{ id: string; visit?: number }>;
+      classifications.sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+      for (const row of classifications) delete row.visit;
+      const resources = copy.fields.case_resources as Array<{ case: string }>;
+      resources.sort((left, right) => left.case < right.case ? -1 : left.case > right.case ? 1 : 0);
+      const { digest: _digest, location: _location, ...rest } = copy;
+      return rest;
+    };
+    // visit 和 resource 跟着文档顺序。类别和摘要不跟着变。digest 覆盖这份顺序，所以两份不一样。
+    assert.equal(a.summary, b.summary);
+    assert.deepEqual(stable(b), stable(a));
+    assert.notEqual(a.digest, b.digest);
+    const claim = async (detail: StartRunDetail) => {
+      const answer = await judged(detail);
+      const statement = requirementOf(ValidationResult.parse(answer.result), '900401').result.claims[0].statement;
+      return { verdict: statement.verdict, code: statement.code, missing: statement.data?.missing };
+    };
+    assert.deepEqual(await claim(again), await claim(first));
   });
 
   it('a commentary submission is optional: accepted as a model judgment, the facts recomputed', async () => {
@@ -197,12 +242,15 @@ describe('a production run', { skip }, () => {
     const answer = await bed.service.submitResult(bed.runner, { run: run.run, model: 'aster-7', items: [], cross_item: [{ nature: 'judgment', statement: '建议补反向用例：缺反向测试', grounds: [run.items[0].location] }] }, bed.call());
     assert.ok(SubmitResultOutput.safeParse({ ...answer, trace: TRACE }).success);
     assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
-    assert.deepEqual(answer.counts, detail.production!.counts);
+    assert.equal(detail.production, null, '覆盖是判断，开始运行没有生产结果');
+    assert.deepEqual(answer.counts, partitionCountsOf(answer.result!.partitions));
     const comment = answer.result!.cross_item.find((c) => c.warrant.producer === 'model')!;
     assert.deepEqual([comment.statement.text, comment.qualifier.nature, comment.requirement], ['建议补反向用例：缺反向测试', 'judgment', undefined]);
-    assert.deepEqual(requirementOf(answer.result!, '900501').result.layers, requirementOf(detail.production!.result, '900501').result.layers);
+    // 空的 coverage 列表是“没有类别判断要报”，槽位接受它，检查仍重算同一层。
     const slots = await bed.service.submitResult(bed.runner, { run: run.run, model: 'aster-7', items: [{ item: '900501', handling: 'handled', slots: { coverage: [] } }] }, bed.call());
-    assert.deepEqual(slots.errors.map((e) => [e.code, e.path]), [['SUBMISSION_SCHEMA_VIOLATION', '/items/0/slots/coverage']], 'nothing to fill: the Hub computes the fact');
+    assert.equal(slots.acceptance, 'accepted', JSON.stringify(slots.errors));
+    // 只交评论时条目还没处理，覆盖层停在未完成。交了空的类别判断后，检查重算缺类反驳。
+    assert.deepEqual(requirementOf(slots.result!, '900501').result.layers, [{ layer: 'static', terminal: 'violation', code: 'template-gap.category_shortfall', tier: 'advisory', attribution: 'author_input' }]);
   });
 });
 
@@ -283,23 +331,25 @@ describe('a subject builder that fails', { skip }, () => {
   it('leaves the requirement unknown with a check error and the cause in the admin log, never judged as missing input', async () => {
     const failing = await openBed(postgres, {
       edit: async (dir) => {
-        const path = join(dir, 'functions/subject.ts');
+        const path = join(dir, 'functions/classification-subject.ts');
         const code = await readFile(path, 'utf8');
-        const anchor = 'export function coverageSubject(input: unknown): CoverageSubject {';
-        assert.ok(code.includes(anchor));
-        await writeFile(path, code.replace(anchor, `${anchor}\n  if (input !== undefined) throw new Error('synthetic builder failure');`));
+        const anchor = 'export function classificationSubject(input:unknown):Record<string,unknown>{';
+        assert.ok(code.includes(anchor), 'coverage 的主体模块是 classification-subject.ts');
+        await writeFile(path, code.replace(anchor, `${anchor}\n if (input !== undefined) throw new Error('synthetic builder failure');`));
       },
     });
     try {
       assert.ok(failing.publication.ok, JSON.stringify(!failing.publication.ok && failing.publication.problems));
       const ref = await failing.upload(failing.runner, bytesOf(renamed(baseDocument(), 'r0e2ebld0001')));
       const detail = await failing.service.startRunDetailed(failing.runner, { pack: 'template-gap', product: LOCK.names[0], build: BUILD, inputs: { documents: [{ reference: ref }] } }, failing.call());
-      const result = detail.production!.result;
+      const answer = await judged(detail, failing);
+      assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
+      const result = ValidationResult.parse(answer.result);
       const id = detail.answer.run!.items[0].id;
       const { result: requirement } = requirementOf(result, id);
       const [layer] = requirement.layers;
       assert.deepEqual([layer.terminal, layer.reason], ['unchecked', 'check_error'], JSON.stringify(layer));
-      assert.equal(detail.production!.counts.unknown, 1);
+      assert.ok((answer.counts?.unknown ?? 0) >= 1, '主体抛错记成未知，不记成缺输入');
       assert.ok(failing.logs.some((entry) => /coverage subject/.test(entry.what)), JSON.stringify(failing.logs.map((entry) => entry.what)));
     } finally {
       await failing.close();
@@ -321,13 +371,15 @@ describe("the brief's `* -> unknown` row (记未知保留反驳，归责待定)"
       assert.ok(literal.publication.ok, JSON.stringify(!literal.publication.ok && literal.publication.problems));
       const ref = await literal.upload(literal.runner, bytesOf(renamed(withoutCategory(baseDocument(), 'stress'), 'r0e2elit0001')));
       const detail = await literal.service.startRunDetailed(literal.runner, { pack: 'template-gap', product: LOCK.names[0], build: BUILD, inputs: { documents: [{ reference: ref }] } }, literal.call());
-      const production = detail.production!;
-      const [item] = production.result.partitions.delivered;
-      // 记未知保留反驳，归责待定：终态为 violation、码 core.coverage.shortfall、档 advisory，归责为 unattributed，状态为 unsatisfied，未知计数为 0
-      assert.deepEqual(item.requirements[0].layers, [{ layer: 'static', terminal: 'violation', code: 'core.coverage.shortfall', tier: 'advisory', attribution: 'unattributed' }]);
-      assert.equal(item.requirements[0].status, 'unsatisfied');
-      assert.equal(production.counts.unknown, 0, '记未知不改终态，未知计数为 0');
-      assert.equal(item.requirements[0].claims[0].qualifier.nature, 'fact', 'while its claim still says it is a fact');
+      const answer = await judged(detail, literal);
+      assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
+      const result = ValidationResult.parse(answer.result);
+      const { result: coverage } = requirementOf(result, detail.answer.run!.items[0].id);
+      // 记未知保留反驳：终态仍是 violation，码是现行的 category_shortfall，归责待定。缺索引的命令覆盖可以另计未知，覆盖反驳本身不进 errors。
+      assert.equal(coverage.requirement, 'coverage');
+      assert.deepEqual(coverage.layers, [{ layer: 'static', terminal: 'violation', code: 'template-gap.category_shortfall', tier: 'advisory', attribution: 'unattributed' }]);
+      assert.equal(coverage.status, 'unsatisfied');
+      assert.equal(coverage.claims[0].qualifier.nature, 'fact', 'while its claim still says it is a fact');
     } finally {
       await literal.close();
     }
@@ -354,16 +406,58 @@ it('locks the command catalog and judges both requirements over agile documents 
   assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
   assert.equal(detail.answer.run!.root, ROOT);
   assert.match(detail.answer.run!.items.find(item => item.id === ids[3])!.summary ?? '', /文档不在完整索引里.*构建.*重跑/);
-  assert.deepEqual(detail.production!.counts, { delivered: 6, rejected: 0, quarantined: 0, incomplete: 0, unknown: 1 });
-  for (const item of detail.production!.result.partitions.delivered) {
-    const command = item.requirements.find(r => r.requirement === 'command_coverage')!;
-    const coverage = item.requirements.find(r => r.requirement === 'coverage')!;
-    if (item.item === ids[0]) { assert.equal(coverage.status, 'satisfied'); assert.deepEqual(command.layers, [{ layer: 'static', terminal: 'pass' }]); }
-    else if (item.item === ids[1]) { assert.equal(coverage.status, 'unsatisfied'); assert.equal(command.layers[0]!.code, 'template-gap.command_shortfall'); }
-    else if (item.item === ids[2]) assert.equal(command.layers[0]!.code, 'template-gap.no_commands');
-    else if (item.item === ids[4]) { assert.equal(command.layers[0]!.terminal, 'unchecked'); assert.ok(command.claims.some(c => c.statement.data?.next_action)); }
-    else assert.equal(command.layers[0]!.code, 'template-gap.not_indexed');
-  }
+  const answer = await judged(detail);
+  // 六份文档的逐用例引用超过一次核验 256 个来源的预算。提交拒绝，不把没读到的部分当成通过。
+  assert.equal(answer.acceptance, 'not_accepted', JSON.stringify(answer.errors));
+  assert.equal(answer.errors[0]?.code, 'SOURCE_UNAVAILABLE');
+  assert.match(answer.errors[0]?.message ?? '', /256 个来源/);
+  const one = async (id: string, source: DocumentSpec, entries: ReturnType<typeof assignedCases>) => {
+    const view = indexView(entries, [id]);
+    const external = bindIndex(view).external!;
+    bed.agile.documents.set(external, { bytes: new TextEncoder().encode(JSON.stringify(view)), title: '合成用例索引', folders: [] });
+    const started = await start({ inputs: { documents: [{ external: onAgile(id, source) }], case_index: { external } } });
+    assert.equal(started.answer.call_result, 'ok', JSON.stringify(started.answer.errors));
+    const judgedOne = await judged(started);
+    assert.equal(judgedOne.acceptance, 'accepted', `${id} ${JSON.stringify(judgedOne.errors)}`);
+    const result = ValidationResult.parse(judgedOne.result);
+    for (const items of Object.values(result.partitions)) {
+      const found = (items as ItemResult[]).find((it) => it.item === id);
+      if (!found) continue;
+      return { command: found.requirements.find((r) => r.requirement === 'command_coverage')!, coverage: found.requirements.find((r) => r.requirement === 'coverage')! };
+    }
+    throw new Error(id);
+  };
+  const completeOne = await one('981001', complete, assignedCases(complete, '981001'));
+  assert.equal(completeOne.coverage.status, 'satisfied');
+  assert.deepEqual(completeOne.command.layers, [{ layer: 'static', terminal: 'pass' }]);
+  const shortOne = await one('981002', short, assignedCases(short, '981002'));
+  assert.equal(shortOne.coverage.status, 'unsatisfied');
+  assert.equal(shortOne.command.layers[0]!.code, 'template-gap.command_shortfall');
+  const quiet = await one('981003', noCommands, assignedCases(noCommands, '981003', () => []));
+  assert.equal(quiet.command.layers[0]!.code, 'template-gap.no_commands');
+  const missing = await one('981004', absent, []);
+  assert.equal(missing.command.layers[0]!.code, 'template-gap.not_indexed');
+  const moved = await one('981005', drift, assignedCases(before, '981005'));
+  assert.equal(moved.command.layers[0]!.terminal, 'unchecked');
+  assert.ok(moved.command.claims.some((c) => c.statement.data?.next_action));
+  const uploaded = await (async () => {
+    const id = detail.answer.run!.items.find((item) => item.id.startsWith('upload-'))!.id;
+    // only 只列敏捷平台文档。上传文件单独跑时 only 为空，所以上传不在索引里。
+    const indexed = indexView([], []);
+    const external = bindIndex(indexed).external!;
+    bed.agile.documents.set(external, { bytes: new TextEncoder().encode(JSON.stringify(indexed)), title: '合成用例索引', folders: [] });
+    const started = await start({ inputs: { documents: [{ reference: upload }], case_index: { external } } });
+    assert.equal(started.answer.call_result, 'ok', JSON.stringify(started.answer.errors));
+    const judgedOne = await judged(started);
+    assert.equal(judgedOne.acceptance, 'accepted', JSON.stringify(judgedOne.errors));
+    const result = ValidationResult.parse(judgedOne.result);
+    for (const items of Object.values(result.partitions)) {
+      const found = (items as ItemResult[]).find((it) => it.item === id);
+      if (found) return found.requirements.find((r) => r.requirement === 'command_coverage')!;
+    }
+    throw new Error(id);
+  })();
+  assert.equal(uploaded.layers[0]!.code, 'template-gap.not_indexed');
 });
 
 it('runs each paired transitional example through the real registry and engine with bounded recovery', { skip }, async () => {
@@ -375,7 +469,16 @@ it('runs each paired transitional example through the real registry and engine w
     if (index) bed.agile.documents.set(index, { bytes: new TextEncoder().encode(JSON.stringify(inputs.index)), title: '合成过渡索引', folders: [] });
     const detail = await start({ inputs: { documents: [{ external }], ...(index ? { case_index: { external: index } } : {}) } });
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
-    const command = detail.production!.result.partitions.delivered[0]!.requirements.find(r => r.requirement === 'command_coverage')!;
+    const answer = await judged(detail);
+    assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
+    const result = ValidationResult.parse(answer.result);
+    let command: ItemResult['requirements'][number] | undefined;
+    for (const items of Object.values(result.partitions)) {
+      const found = (items as ItemResult[]).find((it) => it.item === '900001');
+      command = found?.requirements.find((r) => r.requirement === 'command_coverage');
+      if (command) break;
+    }
+    if (!command) throw new Error(sample.id);
     assert.deepEqual(command.claims.map(c => c.statement.verdict), sample.expect.map(e => e.verdict), sample.id);
     for (const claim of command.claims.filter(c => c.statement.verdict === 'unknown')) {
       const data = claim.statement.data!;

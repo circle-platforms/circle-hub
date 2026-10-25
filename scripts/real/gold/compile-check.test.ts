@@ -257,7 +257,8 @@ test('command matching follows the declared case sensitivity without merging dis
 });
 test('public product declarations supply commands@1 metadata without importing functions', () => {
   const product: unknown = JSON.parse(readFileSync(new URL('../../../packs/product/apv/product.json',import.meta.url),'utf8'));
-  assert.deepEqual(commandCatalogDeclaration(product),{complete:true,case_sensitive:false});
+  // 已发布的 APV 命令目录声明 case_sensitive 为 true。这里只核对公开声明，不改产品包。
+  assert.deepEqual(commandCatalogDeclaration(product),{complete:true,case_sensitive:true});
   for (const v of [{}, {schema:'product@1',catalogs:[]}, {schema:'product@1',catalogs:[{id:'commands@1',complete:true}]}]) assert.throws(() => commandCatalogDeclaration(v));
 });
 // Pointer comparisons use synthetic exports, public subject ordering and independently chosen failures.

@@ -50,7 +50,7 @@ describe('the core tables', () => {
     );
     assert.deepEqual(
       tableFiles.filter((name) => !core.some((entry) => entry.name === name)),
-      ['codes.json', 'template-v3.json'],
+      ['codes.json', 'resource-tags.json', 'template-v3.json'],
     );
   });
 
@@ -204,14 +204,18 @@ describe('the pack functions', () => {
       const code = readFileSync(new URL(`./${name}`, import.meta.url), 'utf8')
         .split('\n')
         .filter((line) => !line.trimStart().startsWith('//') && !line.trimStart().startsWith('*') && !line.trimStart().startsWith('/**'))
-        .join('\n');
+        .join('\n')
+        // `export type X = import('./x.ts').X` 是类型查询，编译后没有运行时 import()。
+        .replace(/^export type .*import\([^)]*\).*$/gm, '');
       for (const match of code.matchAll(/^\s*import\s+(type\s+)?[^'"]*from\s+'([^']+)'/gm)) {
         if (match[1] === undefined && !(name === 'template-coverage.ts' && match[2] === '../tables/template-v3-coverage.json')) assert.match(match[2], /^\.\/(?:[a-z-]+\.ts|generated\/vocabulary\.ts)$/, `${name} imports ${match[2]} at run time`);
       }
       for (const forbidden of [/\bDate\b/, /Math\.random/, /\bprocess\b/, /\brequire\(/, /\bfetch\(/, /\bsetTimeout\b/, /\bperformance\b/, /\beval\(/, /new Function/, /\bimport\(/, /\bglobalThis\b/, /from 'node:/, /\bBuffer\b/]) {
         assert.ok(!forbidden.test(code), `${name} uses ${forbidden}`);
       }
-      if (name !== 'types.ts' && name !== 'common.ts' && name !== 'text.ts') assert.match(code, /export default function \(input: unknown\): unknown/, name);
+      const namedEntry = /export default [A-Za-z][A-Za-z0-9]*\s*;?\s*$/m.test(code) && /function [A-Za-z][A-Za-z0-9]*\(input:unknown\)/.test(code);
+      // expected-quality 用具名函数再默认导出，参数仍是 unknown。沙箱调用的是这个默认导出。
+      if (name !== 'types.ts' && name !== 'common.ts' && name !== 'text.ts') assert.ok(/export default function \(input: unknown\): unknown/.test(code) || namedEntry, name);
     }
   });
 
