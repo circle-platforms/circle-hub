@@ -578,6 +578,122 @@ test('seeding binds each book directory and does not read sibling directories', 
   assert.equal(byExternal.get(APP_FILE), digest(APP_BOOK));
 });
 
+// A real-shaped family manual producer: many files input, meta from the directory, throws its own structured error
+// (code + message + next action) when the files list does not match the meta members.
+const FAMILY_MANUAL_THROWING = `
+export default function familyManual(input) {
+  if (input.params.root === null) return { entries: [], warnings: [] };
+  // This producer always refuses the group it is handed, with its own structured error shape.
+  const e = new Error('需要目录里的全部 adoc，不能拆批、漏文件或混入其他目录；下一步：核对本族 ROOT、MAIN 和同修订号 SVN 原件后重跑同步');
+  e.code = 'apv.adoc.incomplete_group';
+  throw e;
+}
+`;
+const FAMILY_MANUAL_SUCCEEDING = `
+export default function familyManual(input) {
+  if (input.params.root === null) return { entries: [], warnings: [] };
+  const meta = input.slots.meta;
+  if (!meta || meta.parser !== 'json@1') { const e = new Error('缺少固定修订号的目录清单；下一步：核对 SVN 资源和 ADOC_ROOT 后重跑同步'); e.code = 'apv.adoc.directory_unreadable'; throw e; }
+  const given = input.lists?.files ?? [];
+  const members = (meta.model?.members ?? []).filter((m) => m.directory !== true);
+  if (given.length !== members.length) { const e = new Error('需要目录里的全部 adoc，不能拆批、漏文件或混入其他目录；下一步：核对本族 ROOT、MAIN 和同修订号 SVN 原件后重跑同步'); e.code = 'apv.adoc.incomplete_group'; throw e; }
+  return { entries: given.map((file, index) => ({ kind: 'definition', path: '/manual/files/n' + index, statement: file.model.raw_utf8, data: {}, fragments: [{ slot: 'files', source: file.sha256, parser: 'text@1', selector: 'l/1' }], applicability: null })), warnings: [] };
+}
+`;
+
+interface FamilyLoop extends Loop { files: string[]; resources: ResourceCatalogPort }
+
+/** A real-shaped world: one family producer over a declared adoc directory with a multi-batch file group (batch 2, 5 files). */
+async function familyWorld(t: { after: (fn: () => Promise<void> | void) => void }, options: { throwing: boolean }): Promise<FamilyLoop> {
+  const pg = await startPostgres();
+  t.after(() => pg.stop());
+  const build = { name: BUILD, base: BUILD, family: 'NSAE', line: LINE, platform: 'zx-u', built_at: '2026-10-01T00:00:00.000Z', released_at: '2026-10-02T00:00:00.000Z', sources: { tree: 'site:tree:10_8' } };
+  const files = ['f1.adoc', 'f2.adoc', 'f3.adoc', 'f4.adoc', 'f5.adoc'];
+  const bodies = new Map(files.map((name, i) => [name, `192.0.2.${i + 10} family file ${name}\n`]));
+  const w = await makeWorld(pg, { pack: { id: 'apv', names: ['APV', 'NSAE'], functions: { 'family-manual.ts': options.throwing ? FAMILY_MANUAL_THROWING : FAMILY_MANUAL_SUCCEEDING, 'plan.ts': STATIC_PLAN_SOURCE }, declaration: {
+    names: ['APV', 'NSAE'], catalogs: [{ id: 'commands@1', entry_kind: 'definition', producer: 'command-tree', complete: true, case_sensitive: false }],
+    sync: { ...DEFAULT_SYNC, options: { builds: [build] } },
+    variables: [{ name: 'APV_ADOC_ROOT', description: 'Synthetic directory template', schema: { type: ['string', 'null'] }, default: null }],
+    producers: [
+      { id: 'command-tree', title: '命令树', function: { module: 'functions/commands.ts' }, inputs: { tree: { source: 'tree' } } },
+      { id: 'manual-nsae', title: 'NSAE 手册', function: { module: 'functions/family-manual.ts' }, params: { family: 'NSAE', root: '\${var:APV_ADOC_ROOT}' }, inputs: {
+        tree: { source: 'tree' }, cli: { external: 'manual:cli:{line}', optional: true }, app: { external: 'manual:app:{line}', optional: true },
+        meta: { source: 'adoc_nsae_meta', optional: true }, files: { source: 'adoc_nsae_files', parser: 'text@1', many: true, batch: 2, optional: true },
+      } },
+    ],
+  } } });
+  t.after(() => w.close());
+  w.external.set('site:tree:10_8', { bytes: TREE, mediaType: 'application/xml' });
+  await w.kit.variables.setVariable(w.admin, 'APV_ADOC_ROOT', 'synthetic/{line}', '合成目录');
+  const member = (name: string) => ({ name, directory: false, external: `svn:file:17/${encodeURIComponent(`${DIR}/${name}`)}`, size: Buffer.byteLength(bodies.get(name) ?? ''), revision: '17' });
+  const metaDoc = JSON.stringify({ schema: 'svn-directory@1', identity: { path: DIR, revision: '17' }, revision: '17', members: [{ name: DIR, directory: true, external: `svn:directory:${encodeURIComponent(DIR)}`, revision: '17' }, ...files.map(member)] });
+  const authorization = `Basic ${randomBytes(24).toString('base64')}`;
+  const prefix = '/repository';
+  const base = `${prefix}/!svn/rvr/17/${DIR}/`;
+  const davRow = (href: string, rev = '17', dir = true, size = '12'): string => `<D:response xmlns:D="DAV:"><D:href>${href}</D:href><D:propstat><D:prop><D:resourcetype>${dir ? '<D:collection/>' : ''}</D:resourcetype><D:version-name>${rev}</D:version-name>${dir ? '' : `<D:getcontentlength>${size}</D:getcontentlength>`}</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>`;
+  const listing = `<D:multistatus xmlns:D="DAV:">${davRow(base)}${files.map((n) => davRow(`${base}${n}`, '17', false, String(Buffer.byteLength(bodies.get(n) ?? '')))).join('')}</D:multistatus>`;
+  const server = await startStub((request) => {
+    if (request.headers.authorization !== authorization) return text('Unauthorized', 'text/plain', 401);
+    const path = decodeURIComponent(request.path);
+    if (request.method === 'PROPFIND' && path === `${prefix}/${DIR}/`) return text(`<D:multistatus xmlns:D="DAV:">${davRow(path)}</D:multistatus>`, 'application/xml', 207);
+    if (request.method === 'PROPFIND' && path === base) return text(listing, 'application/xml', 207);
+    const m = path.match(new RegExp(`^${prefix}/!svn/rvr/17/${DIR}/(.+)$`));
+    if (request.method === 'GET' && m) {
+      const name = decodeURIComponent(m[1]);
+      if (name === '.directory.json') return text(metaDoc, 'application/json');
+      if (bodies.has(name)) return text(bodies.get(name) ?? '', 'text/plain');
+    }
+    return text('Absent', 'text/plain', 404);
+  });
+  t.after(() => server.close());
+  const root = await mkdtemp(join(tmpdir(), 'circle-hub-seed-family-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const directory = await stagePack(PACK_DIR, join(root, 'svn'));
+  const manifest = await readManifest(directory);
+  const svnPacks = fakePacks([{ id: manifest.id, version: manifest.version, kind: manifest.kind, digest: manifestDigest(manifest), directory }]);
+  const connectors: Connectors = createConnectors({ records: w.kit, packs: svnPacks, sandbox: { requireOsIsolation: await sandboxIsolation() }, parsers: createDefaultRegistry(), resourceCacheMs: 0 });
+  const original = w.external.read.bind(w.external);
+  w.external.read = (id, readContext) => id.startsWith('svn:') ? connectors.reader.read(id, readContext) : original(id, readContext);
+  const resource = (await addSyntheticResource(w.kit, svnPacks, connectors, w.admin, { system_pack: 'svn', name: '合成仓库', environment: 'test', origins: { svn: `${server.origin}${prefix}` }, allow_plaintext: [server.origin], settings: { repository_path: prefix } })).id;
+  await setSyntheticCredential(w.kit, connectors, w.admin, resource, 'authorization', authorization);
+  const synced = await w.knowledge.syncProduct(w.product, { by: w.admin });
+  assert.equal(synced.error, null, synced.error ?? undefined);
+  return { w, server, authorization, files, resources: connectors.catalog, close: async () => {} };
+}
+
+test('a multi-batch adoc file group seeds the whole family manual', { timeout: 180000 }, async (t) => {
+  const loop = await familyWorld(t, { throwing: false });
+  const args = ['--product', 'NSAE', '--line', LINE, '--build', BUILD, '--basis', '多批文件组'];
+  const dry = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs([...args, '--dry-run']), loop.resources);
+  assert.equal(dry.ok, true, formatSeedReport(dry));
+  assert.equal(dry.pointer?.moved, false);
+  assert.equal(await loop.w.kit.pointers.get(seedlingName(loop.w.product.id, LINE)), null, '试运行不移动指针');
+  const seeded = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs(args), loop.resources);
+  const text = formatSeedReport(seeded);
+  assert.equal(seeded.ok, true, text);
+  assert.equal(seeded.pointer?.moved, true);
+  const texts = await statementsOf(loop.w, seeded.composition!);
+  assert.deepEqual(texts.filter((statement) => statement.startsWith('192.0.2.')).sort(), loop.files.map((name, i) => `192.0.2.${i + 10} family file ${name}`).sort(), '五个文件都进了树苗');
+});
+
+test('a producer refusing the group surfaces its own code, message and next action, in dry run and seed alike', { timeout: 180000 }, async (t) => {
+  const loop = await familyWorld(t, { throwing: true });
+  const args = ['--product', 'NSAE', '--line', LINE, '--build', BUILD, '--basis', '生产器拒绝文件组'];
+  const dry = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs([...args, '--dry-run']), loop.resources);
+  const dryText = formatSeedReport(dry);
+  assert.equal(dry.ok, false, dryText);
+  assert.match(dryText, /生产器 manual-nsae 运行失败 \[apv\.adoc\.incomplete_group\]/);
+  assert.match(dryText, /不能拆批、漏文件或混入其他目录/);
+  assert.match(dryText, /核对本族 ROOT、MAIN 和同修订号 SVN 原件后重跑同步/);
+  assert.match(dryText, /试运行不写树苗/);
+  const seeded = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs(args), loop.resources);
+  const seededText = formatSeedReport(seeded);
+  assert.equal(seeded.ok, false, seededText);
+  assert.match(seededText, /\[apv\.adoc\.incomplete_group\]/);
+  assert.equal(seeded.root, null);
+  assert.equal(await loop.w.kit.pointers.get(seedlingName(loop.w.product.id, LINE)), null);
+});
+
 test('a missing file inside one book directory is refused and the seedling pointer stays', { timeout: 120000 }, async (t) => {
   const loop = await bookWorld(t, { missing: 'cli/chapters/body.adoc' });
   const seeded = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs(['--product', 'APV', '--line', LINE, '--build', BUILD, '--basis', '缺一章']), loop.resources);

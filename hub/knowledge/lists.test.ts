@@ -169,7 +169,7 @@ describe('list slots in batches', () => {
     const reasons = Object.fromEntries(result.skipped.map((s) => [s.external, s.reason]));
     assert.deepEqual(Object.keys(reasons), [ids[1], ids[2], ids[3], ids[4]]);
     assert.match(reasons[ids[1]], /凭据扫描有命中/);
-    assert.match(reasons[ids[2]], /生产器 cases 处理这份源文件时失败：.*包内函数抛出了错误/);
+    assert.match(reasons[ids[2]], /生产器 cases 处理这份源文件时失败：生产器 cases 运行失败（TypeError）：Cannot read properties of undefined/);
     assert.match(reasons[ids[3]], /生产器 cases 处理这份源文件时失败/);
     assert.match(reasons[ids[4]], /被 json@1 拒绝.*不是有效的 JSON/);
     assert.equal(result.entries, 4 + 10, 'the cases of d1, d6, d7, d8 and d9');

@@ -367,18 +367,29 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
     else overlay = bound.sources;
   }
   if (report.missing.length > 0) return report;
-  if (args.dryRun) {
-    report.ok = true;
-    report.pointer = { moved: false, from: null, to: null, reason: '试运行不移动当前树苗指针' };
-    return report;
-  }
-
-  const before = await context.records.pointers.get(seedlingName(productId, args.line));
   const roles = {
     'command-tree': { producer: resolved.get('command-tree')!.binding.producer, slot: resolved.get('command-tree')!.binding.slot },
     'cli-manual': { producer: resolved.get('cli-manual')!.binding.producer, slot: resolved.get('cli-manual')!.binding.slot },
     'app-manual': { producer: resolved.get('app-manual')!.binding.producer, slot: resolved.get('app-manual')!.binding.slot },
   };
+  if (args.dryRun) {
+    // The dry run runs the production itself — the same producers, the same sources, the same parsing — so a producer
+    // that throws on this group fails the dry run with its own message instead of passing until the real seed. It
+    // writes the ordinary production records (the audit stays), writes no seedling claim and moves no pointer.
+    const only = [...new Set(Object.values(roles).map((role) => role.producer))];
+    const produced = await knowledge.produceTree({ product, build, by, producers: only, ...(overlay ? { sources: overlay } : {}) });
+    if (!produced.ok || produced.root === null) {
+      report.reason = produced.reason ?? '试运行生产没有产出根';
+      return report;
+    }
+    report.root = produced.root;
+    report.composition = produced.composition;
+    report.ok = true;
+    report.pointer = { moved: false, from: null, to: null, reason: '试运行不写树苗，也不移动当前树苗指针' };
+    return report;
+  }
+
+  const before = await context.records.pointers.get(seedlingName(productId, args.line));
   const result = await produceSeedling(context, knowledge, product, { line: args.line, build: build.name, by, basis: args.basis, roles, revisions: { cli: revisions.cli ?? null, app: revisions.app ?? null }, ...(overlay ? { sources: overlay } : {}) });
   return await finish(context, report, result, before?.target ?? null);
 }

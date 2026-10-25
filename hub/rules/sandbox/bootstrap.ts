@@ -196,8 +196,10 @@ function describe(error: unknown): Record<string, Scalar> {
     }
   };
   if (typeof error === 'object' && error !== null) {
-    const e = error as { name?: unknown; message?: unknown; stack?: unknown };
-    return { name: text(() => e.name, 200), message: text(() => e.message, 2000), stack: text(() => e.stack, 4000) };
+    const e = error as { name?: unknown; message?: unknown; stack?: unknown; code?: unknown };
+    // code is the pack's own structured error code (ManualSourceError and the like): a name, not content.
+    const code = text(() => e.code, 200);
+    return { name: text(() => e.name, 200), ...(code === undefined ? {} : { code }), message: text(() => e.message, 2000), stack: text(() => e.stack, 4000) };
   }
   return { message: text(() => error, 2000) };
 }
