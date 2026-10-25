@@ -210,7 +210,7 @@ describe('builds, lines and pointers', () => {
 describe('display and placement questions', () => {
   test('applicability text says 未声明 for undeclared conditions (K02 R[2])', () => {
     assert.equal(applicabilityText(null), '未声明');
-    assert.equal(applicabilityText({}), '未限定');
+    assert.equal(applicabilityText({}), '未声明具体条件，不能据此判为无条件适用');
     assert.equal(applicabilityText({ builds: ['b1', 'b2'], platforms: ['p'] }), '起止构建 b1、b2；平台 p');
   });
 
