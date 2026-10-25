@@ -126,13 +126,13 @@ test('a round outside the window stays in the denominator as budget_exhausted', 
   assert.equal(report.rounds.length, 3);
 });
 
-test('a finished round whose result is not complete is no_verdict', { timeout: 60000 }, async t => {
+test('an ended round with a pending report pauses readback without starting another submission', { timeout: 60000 }, async t => {
   const c = await setup({ alter: (name, value) => name === 'read_blob' ? { ...value, complete: false, ownership: 'staging_directory', ownership_reason: null, rows: [{ id: 'synthetic-case', outcome: 'good', log: 'SYNTHETIC_END' }] } : value });
   t.after(() => c.close());
   install(c, policy(2, 'all'));
   await certify(c);
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.deepEqual(state.rounds?.map(round => round.terminal), ['no_verdict', 'no_verdict']);
+  assert.equal(state.report_pending,true);assert.deepEqual(state.rounds?.map(round=>round.terminal),['no_verdict']);assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
   const report = await reportOf(c, state.result!);
   assert.ok(report.rounds.every(round => round.terminal === 'no_verdict' && (round as { lost?: boolean }).lost === true));
 });
