@@ -24,21 +24,21 @@ test('production and paged reading agree on all 150 drift literals, while ordina
   for(const variable of product.variables??[])await kit.variables.setVariable(admin,variable.name,variable.default,'合成关系测试显式部署设置');
   const handle:ProductHandle={id:'apv',version:JSON.parse(readFileSync(new URL('../pack.json',import.meta.url),'utf8')).version,digest:createHash('sha256').update(readFileSync(new URL('../pack.json',import.meta.url))).digest('hex'),kind:'product',directory,product};packs.add(handle);
   const literals=Array.from({length:150},(_,i)=>`demo missing${i}`);
-  const manual=['# 合成章节','',`合法的准备提法是 \`demo pool add HostName\`。`,'',literals.map(literal=>`提到 \`${literal}\`。`).join('，')].join('\n');
-  external.set('site:tree:links',{bytes:tree,mediaType:'application/xml'});external.set('manual:cli:10.6.1',{bytes:manual,mediaType:'text/markdown'});
+  const manual=['# 合成章节','', '正文提及 `demo pool add` 与 `demo pool add HostName`。', '', '```', 'demo pool add HostName', ...literals, '```'].join('\n');
+  external.set('site:tree:links',{bytes:tree,mediaType:'application/xml'});external.set('manual:cli:10.8.1',{bytes:manual,mediaType:'text/markdown'});
   const knowledge=createKnowledge({records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,admin,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
-  const build:KnownBuild={name:'Rel_APV_10_6_1_99',family:'APV',line:'10.6.1',base:'Rel_APV_10_6_1_99',platform:null,built_at:null,released_at:null,sources:{tree:'site:tree:links'},root:null};
+  const build:KnownBuild={name:'Rel_APV_10_8_1_99',family:'APV',line:'10.8.1',base:'Rel_APV_10_8_1_99',platform:null,built_at:null,released_at:null,sources:{tree:'site:tree:links'},root:null};
   const produced=await knowledge.produceTree({product:handle,build,by:admin});assert.ok(produced.ok,produced.reason??'');
   const warning=produced.warnings.find(text=>text.startsWith('链接声明 manual-literals'));
   assert.ok(warning);assert.match(warning,/有 150 个字面/);assert.ok(!warning.includes('HostName'));
   const reader=createKnowledgeReader(knowledge),drift:string[]=[];let cursor:string|null=null,linked=0,pages=0;
   do{
-    const result=await reader.read('knowledge:links:apv:10.6.1?limit=20'+(cursor?'&cursor='+cursor:''),{principal:admin,run:null,purpose:'synthetic',composition:produced.composition});assert.ok(result.ok,result.ok?'':result.reason);
+    const result=await reader.read('knowledge:links:apv:10.8.1?limit=20'+(cursor?'&cursor='+cursor:''),{principal:admin,run:null,purpose:'synthetic',composition:produced.composition});assert.ok(result.ok,result.ok?'':result.reason);
     const bytes=await kit.objects.get(result.artifacts[0].artifact.body.sha256);assert.ok(bytes);
-    const view=LinksView.parse(JSON.parse(Buffer.from(bytes).toString('utf8')));assert.equal(view.totals?.drift_literals,150);assert.equal(view.totals?.links,1);
+    const view=LinksView.parse(JSON.parse(Buffer.from(bytes).toString('utf8')));assert.equal(view.totals?.drift_literals,150);assert.equal(view.totals?.links,2);
     drift.push(...view.drift.map(group=>group.literal));linked+=view.links.length;cursor=view.next;pages++;
   }while(cursor);
-  assert.ok(pages>1);assert.equal(linked,1);assert.deepEqual(drift.sort(),literals.sort());
+  assert.ok(pages>1);assert.equal(linked,2);assert.deepEqual(drift.sort(),literals.sort());
 });
 
 
@@ -48,9 +48,9 @@ test('declared signature matching rejects extending signatures and retains posit
   const {manualRelations}=await import('../testing/relations.ts');
   const {markdown,xml}=await import('../testing/test-support.ts');
   const catalog=commandCatalog(xml(tree)).catalog;
-  const result=produceManualEntries(markdown('**demo pool add extra** *\\<name\\>*\n\n**[no] demo pool add** *\\<name\\>*\n'),null,{catalog});
+  const result=produceManualEntries(markdown('```\ndemo pool add extra HostName\n```\n\n| command_signature@2 |\n|---|\n| **[no] demo pool add** *\\<name\\>* |\n'),null,{catalog});
   const facts=manualRelations(result,catalog);
-  assert.deepEqual(facts.drift.map(group=>group.literal),['demo pool add extra']);
+  assert.deepEqual(facts.drift.map(group=>group.literal),['demo pool add extra HostName']);
   assert.deepEqual(facts.links.map(link=>link.literal),['demo pool add']);
 });
 
@@ -61,24 +61,23 @@ test('the fixed manual fixture has identical declared production drift and paged
   const product=ProductDeclaration.parse(JSON.parse(readFileSync(new URL('../product.json',import.meta.url),'utf8')));
   for(const variable of product.variables??[])await kit.variables.setVariable(admin,variable.name,variable.default,'合成关系测试显式部署设置');
   const handle:ProductHandle={id:'apv',version:JSON.parse(readFileSync(new URL('../pack.json',import.meta.url),'utf8')).version,digest:createHash('sha256').update(readFileSync(new URL('../pack.json',import.meta.url))).digest('hex'),kind:'product',directory,product};packs.add(handle);
-  external.set('site:tree:links',{bytes:fixtureBytes('command-tree.xml'),mediaType:'application/xml'});external.set('manual:cli:10.6.1',{bytes:fixtureBytes('manual.md'),mediaType:'text/markdown'});
+  external.set('site:tree:links',{bytes:fixtureBytes('command-tree.xml'),mediaType:'application/xml'});external.set('manual:cli:10.8.1',{bytes:fixtureBytes('manual.md'),mediaType:'text/markdown'});
   const knowledge=createKnowledge({records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,admin,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
-  const build:KnownBuild={name:'Rel_APV_10_6_1_99',family:'APV',line:'10.6.1',base:'Rel_APV_10_6_1_99',platform:null,built_at:null,released_at:null,sources:{tree:'site:tree:links'},root:null};
+  const build:KnownBuild={name:'Rel_APV_10_8_1_99',family:'APV',line:'10.8.1',base:'Rel_APV_10_8_1_99',platform:null,built_at:null,released_at:null,sources:{tree:'site:tree:links'},root:null};
   const produced=await knowledge.produceTree({product:handle,build,by:admin});assert.ok(produced.ok,produced.reason??'');
   assert.deepEqual(produced.warnings.filter(warning=>warning.startsWith('链接声明 ')),[
-    '链接声明 manual-literals：有 3 个字面在此根没有可匹配目标（漂移事实）：demo broken、demo pool create、enable',
-    '链接声明 manual-signatures：有 3 个字面在此根没有可匹配目标（漂移事实）：?、demo probe、enable',
+    '链接声明 manual-literals：有 1 个字面在此根没有可匹配目标（漂移事实）：Box(config)#demo route static 192.0.2.0 255.255.255.0 192.0.2.1 permanent',
   ]);
   const reader=createKnowledgeReader(knowledge),drift:string[][]=[];let cursor:string|null=null;
   do{
-    const id='knowledge:links:apv:10.6.1?limit=3'+(cursor?'&cursor='+cursor:'');
+    const id='knowledge:links:apv:10.8.1?limit=3'+(cursor?'&cursor='+cursor:'');
     const result=await reader.read(id,{principal:admin,run:null,purpose:'synthetic',composition:produced.composition});assert.ok(result.ok,result.ok?'':result.reason);
     const bytes=await kit.objects.get(result.artifacts[0].artifact.body.sha256);assert.ok(bytes);
     const again=await reader.read(id,{principal:admin,run:null,purpose:'synthetic',composition:produced.composition});assert.ok(again.ok);assert.equal(result.artifacts[0].artifact.body.sha256,again.artifacts[0].artifact.body.sha256);
-    const view=LinksView.parse(JSON.parse(Buffer.from(bytes).toString('utf8')));assert.equal(view.totals?.drift_literals,6);
+    const view=LinksView.parse(JSON.parse(Buffer.from(bytes).toString('utf8')));assert.equal(view.totals?.drift_literals,1);
     drift.push(...view.drift.map(group=>[group.rule,group.literal]));cursor=view.next;
   }while(cursor);
-  assert.deepEqual([...new Map(drift.map(pair=>[JSON.stringify(pair),pair])).values()],[['manual-literals','demo broken'],['manual-literals','demo pool create'],['manual-literals','enable'],['manual-signatures','?'],['manual-signatures','demo probe'],['manual-signatures','enable']]);
+  assert.deepEqual([...new Map(drift.map(pair=>[JSON.stringify(pair),pair])).values()],[['manual-literals','Box(config)#demo route static 192.0.2.0 255.255.255.0 192.0.2.1 permanent']]);
 });
 
 test('an HTML tree source leaves manual literals unchecked in both production and the read view',async t=>{
@@ -88,14 +87,14 @@ test('an HTML tree source leaves manual literals unchecked in both production an
   for(const variable of product.variables??[])await kit.variables.setVariable(admin,variable.name,variable.default,'合成关系测试显式部署设置');
   const handle:ProductHandle={id:'apv',version:JSON.parse(readFileSync(new URL('../pack.json',import.meta.url),'utf8')).version,digest:createHash('sha256').update(readFileSync(new URL('../pack.json',import.meta.url))).digest('hex'),kind:'product',directory,product};packs.add(handle);
   external.set('site:tree:links',{bytes:'<html><body>synthetic unavailable tree</body></html>',mediaType:'text/html'});
-  external.set('manual:cli:10.6.1',{bytes:'**demo pool add** *<name>*\n\n参考 `demo pool create` 和 `demo probe`。\n',mediaType:'text/markdown'});
+  external.set('manual:cli:10.8.1',{bytes:'**demo pool add** *<name>*\n\n参考 `demo pool create` 和 `demo probe`。\n',mediaType:'text/markdown'});
   const knowledge=createKnowledge({records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,admin,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
-  const build:KnownBuild={name:'Rel_APV_10_6_1_99',family:'APV',line:'10.6.1',base:'Rel_APV_10_6_1_99',platform:null,built_at:null,released_at:null,sources:{tree:'site:tree:links'},root:null};
+  const build:KnownBuild={name:'Rel_APV_10_8_1_99',family:'APV',line:'10.8.1',base:'Rel_APV_10_8_1_99',platform:null,built_at:null,released_at:null,sources:{tree:'site:tree:links'},root:null};
   const produced=await knowledge.produceTree({product:handle,build,by:admin});assert.ok(produced.ok,produced.reason??'');
   assert.ok(!produced.warnings.some(warning=>warning.includes('漂移事实')),produced.warnings.join('\n'));
-  const reader=createKnowledgeReader(knowledge),result=await reader.read('knowledge:links:apv:10.6.1',{principal:admin,run:null,purpose:'synthetic',composition:produced.composition});assert.ok(result.ok,result.ok?'':result.reason);
+  const reader=createKnowledgeReader(knowledge),result=await reader.read('knowledge:links:apv:10.8.1',{principal:admin,run:null,purpose:'synthetic',composition:produced.composition});assert.ok(result.ok,result.ok?'':result.reason);
   const bytes=await kit.objects.get(result.artifacts[0].artifact.body.sha256);assert.ok(bytes);const view=LinksView.parse(JSON.parse(Buffer.from(bytes).toString('utf8')));
-  assert.deepEqual(view.drift,[]);assert.equal(view.totals?.unchecked_literals,3);assert.equal(view.rule_diagnostics?.length,2);assert.equal(view.totals?.literals,3);
+  assert.deepEqual(view.drift,[]);assert.equal(view.totals?.unchecked_literals,3);assert.equal(view.rule_diagnostics?.length,3);assert.equal(view.totals?.literals,3);
 });
 
 test('literal-link documentation names every declaration, normalizer and producer scope',()=>{

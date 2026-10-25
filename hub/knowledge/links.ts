@@ -110,7 +110,9 @@ export function relationFacts(root:string,declarations:readonly Rule[],nodes:Rel
     for(const literal of new Set(values)){
       literals++;entries.add(reference);const match=resolvers.get(rule.id)!(literal);
       if(match.target!==null)links.push({...occurrence,rule:rule.id,literal,target:match.target,remainder:match.remainder});
-      else {
+      else if(rule.unmatched!=='mention'){
+        // A mention rule links on complete equality and records nothing otherwise: the author's marked text stays a
+        // mention, and only a structural position's unmatched literal is a drift fact (integrator decision 60).
         const normalized=wordsOf(rule,literal).words.join(' '),key=canonicalize([rule.id,normalized]);
         const group=groups.get(key)??{rule:rule.id,literal:normalized,spellings:[],attempted_path:match.attempted_path,stopped_at:match.stopped_at,total:0,occurrences:[]};
         group.spellings=[...new Set([...(group.spellings??[]),literal])].sort(compareText);

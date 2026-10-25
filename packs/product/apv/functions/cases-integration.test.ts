@@ -11,7 +11,7 @@ import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials }
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import type { FacetView, ImpactView, IndexView } from '../../../../contracts/src/views.ts';
+import type { FacetView, IndexView } from '../../../../contracts/src/views.ts';
 import { createConnectors, osIsolationAvailable, type Connectors } from '../../../../hub/connectors/api.ts';
 import { startAgileStub, startBuildSiteStub, type AgileStub, type StaticFile, type StubServer } from '../../../../hub/connectors/testing/api.ts';
 import { createKnowledge, createKnowledgeReader, type Knowledge, type SyncReport } from '../../../../hub/knowledge/api.ts';
@@ -128,89 +128,49 @@ async function view<T>(id: string): Promise<T> {
 }
 
 describe('the sync with the case index', () => {
-  test('produces both builds with their cases, skips the alias, and the plan note counts the documents', () => {
+  test('lists both builds with their device-spelling aliases and batch-produces no case index', () => {
     assert.equal(first.error, null);
+    // 决定 65 (owner, 2026-10-25): the pack declares each build's device spelling — its own name with `_` replaced by
+    // `.` and nothing else folded — as a verified alias of that build, so a version probe can compare either spelling.
+    // The plan therefore carries one extra alias row per build and the Hub records it from the plan's base.
     assert.deepEqual(first.builds.map((b) => [b.name, b.outcome]), [
+      ['Rel.APV.10.6.1.12', 'skipped'],
       [EARLY, 'produced'],
       [ALIAS, 'skipped'],
+      ['Rel.APV.10.6.4.20', 'skipped'],
       [LATE, 'produced'],
     ]);
-    assert.ok(first.builds.every((b) => (b.skipped ?? 0) === 0), JSON.stringify(first.builds));
-    assert.match(first.plan.note ?? '', /产品的根 2 个（APV、NSAE）/);
-    assert.match(first.plan.note ?? '', /上级目录里没有版本线 5 份/);
-    assert.ok(agile.requests.some((r) => r.path === '/agile/get_case_data/'));
-  });
-
-  test('facets of the later build: every case by line and module, placed and unplaced, as the corpus has them', async () => {
-    const facets = await view<FacetView>(`knowledge:facets:apv:${LATE}?kind=case&by=line,module`);
-    const cases = listedCases('10.6.4', 'b');
-    const expected = new Map<string, number>();
-    for (const { doc } of cases) {
-      const key = JSON.stringify({ line: doc.line, module: doc.module });
-      expected.set(key, (expected.get(key) ?? 0) + 1);
+    for (const [device, base] of [['Rel.APV.10.6.1.12', EARLY], ['Rel.APV.10.6.4.20', LATE]] as const) {
+      const row = first.builds.find((b) => b.name === device);
+      assert.equal(row?.root, null, `${device} is an alias row: it uses the base build's tree`);
+      assert.match(row?.reason ?? '', new RegExp(`别名，使用 ${base} 的树`), device);
     }
-    assert.deepEqual(new Map(facets.rows.map((r) => [JSON.stringify({ line: r.values.line, module: r.values.module }), r.count])), expected);
-    assert.equal(facets.total, cases.length);
-    const unplaced = cases.filter((item) => !item.placed).length;
-    assert.ok(unplaced > 0);
-    assert.ok(facets.notes.includes(`${labelOf('knowledge_count', 'tree_unplaced_entries')} ${unplaced} 个，标在根下，计入合计`));
-    assert.equal(facets.skipped, 0);
+    assert.match(first.builds.find((b) => b.name === ALIAS)?.reason ?? '', /别名/);
+    assert.ok(first.builds.filter((b) => b.outcome === 'produced').every((b) => (b.skipped ?? 0) === 0), JSON.stringify(first.builds));
+    // The owner's 10-24 revision (apv README, docs/hub-r4-tasks/kb-seedling.md) turned `case_index` and `spec_index`
+    // off in product.json: cases, defects and specifications are no longer batch-produced into per-build or product-wide
+    // roots; Circle feeds them per use and `cases.ts` stays for that projection (covered by cases.test.ts). So the plan
+    // note counts pages, list pages and builds — and no case documents.
+    assert.match(first.plan.note ?? '', /读了 4 个页面；3 个列表页；列出 5 个构建（5 个已发布，0 个只有名字）/);
+    assert.ok(!/产品的根/.test(first.plan.note ?? ''), first.plan.note ?? '');
+    assert.equal(agile.requests.some((r) => r.path === '/agile/get_case_data/'), false, 'no case data is read for a batch index');
   });
 
-  test('the index of the later build by document: every case of every document, placed and unplaced, with its data', async () => {
-    const index = await view<IndexView>(`knowledge:index:apv:${LATE}?kind=case&key=document`);
-    const cases = listedCases('10.6.4', 'b');
-    const byDocument = new Map<string, typeof cases>();
-    for (const item of cases) byDocument.set(item.doc.id, [...(byDocument.get(item.doc.id) ?? []), item]);
-    assert.deepEqual(Object.keys(index.keys).sort(), [...byDocument.keys()].sort());
-    for (const [document, items] of byDocument) {
-      const entries = index.keys[document].map((digest) => index.entries[digest]);
-      assert.equal(entries.length, items.length, document);
-      const byNode = new Map(entries.map((e) => [e.data.node as string, e]));
-      for (const { doc, k, placed } of items) {
-        const entry = byNode.get(k.node);
-        assert.ok(entry, `${document}:${k.node}`);
-        assert.equal(entry.statement, caseStatement(entry.data));
-        assert.ok(entry.statement.startsWith(`${document}:${k.node} | ${k.title}`));
-        assert.deepEqual(entry.data.commands, k.commands.b.map(commandPath).sort());
-        assert.deepEqual([entry.data.line, entry.data.train, entry.data.module, entry.data.defects, entry.data.stories, entry.data.vague_expected], [doc.line, doc.train, doc.module, k.defects, k.stories, undefined]);
-        assert.match(entry.reference, placed ? /^tree:[0-9a-f]{64}\/commands\// : /^tree:[0-9a-f]{64}\/@[0-9a-f]{64}$/);
-      }
-    }
-    const unplaced = cases.filter((item) => !item.placed).length;
-    assert.ok(index.notes.includes(`${labelOf('knowledge_count', 'tree_unplaced_entries')} ${unplaced} 个，标在根下`));
-  });
-
-  test('the impact of the version difference: the changed commands and exactly the cases filed on them in each build', async () => {
-    const impact = await view<ImpactView>(`knowledge:impact:apv:${EARLY}..${LATE}?changed=definition&attached=case`);
-    assert.deepEqual(impact.changes.map((c) => [c.path, c.change]).sort(), [
-      [commandPath('relay encrypt mode'), 'removed'],
-      [commandPath('widget health interval'), 'modified'],
-      [commandPath('widget pool rename'), 'added'],
-    ]);
-    assert.deepEqual(impact.changes.map((c) => c.path).sort(), CHANGED_COMMANDS.map(commandPath).sort());
-    for (const path of CHANGED_COMMANDS.map(commandPath)) {
-      const placement = impact.placements.find((p) => p.path === path);
-      const from = indexedCases('10.6.1', 'a').filter(({ k }) => k.commands.a.map(commandPath).includes(path)).length;
-      const to = indexedCases('10.6.4', 'b').filter(({ k }) => k.commands.b.map(commandPath).includes(path)).length;
-      assert.deepEqual([placement?.from.length ?? 0, placement?.to.length ?? 0], [from, to], path);
-    }
-    assert.ok((impact.placements.find((p) => p.path === commandPath('widget health interval'))?.to.length ?? 0) > 0);
-    assert.equal(impact.truncated, false);
-  });
-
-  test('the index returns each case, placed or unplaced, under every defect id it lists', async () => {
+  test('batch production is off: no case facets and no case index are produced', async () => {
+    // Same revision as above. The views answer with nothing rather than with a guessed corpus, and the projection the
+    // functions still offer is asserted per use in cases.test.ts.
+    const facets = await view<FacetView>(`knowledge:facets:apv:${LATE}?kind=case&by=module`);
+    assert.deepEqual(facets.rows, []);
     const index = await view<IndexView>(`knowledge:index:apv:${LATE}?kind=case&key=defects`);
-    const cases = listedCases('10.6.4', 'b');
-    const expected = new Map<string, number>();
-    for (const { k } of cases) for (const id of k.defects) expected.set(id, (expected.get(id) ?? 0) + 1);
-    assert.ok(expected.size > 0);
-    assert.ok(expected.has('61001'));
-    for (const [id, count] of expected) {
-      assert.equal(index.keys[id]?.length, count, id);
-      for (const digest of index.keys[id]) assert.ok((index.entries[digest].data.defects as string[]).includes(id));
-    }
+    assert.deepEqual(Object.keys(index.keys), []);
+    const byDocument = await view<IndexView>(`knowledge:index:apv:${LATE}?kind=case&key=document`);
+    assert.deepEqual(Object.keys(byDocument.keys), []);
+    assert.equal(caseStatement({ id: '1', name: 'n', steps: [] }).length > 0, true, 'the projection function stays available for per-use feeding');
   });
+
+
+
+
 
   test('the NSAE name reads the root of the APV build it is based on', async () => {
     const byAlias = await view<FacetView>(`knowledge:facets:apv:${ALIAS}?kind=case&by=module`);
@@ -221,23 +181,39 @@ describe('the sync with the case index', () => {
 
   test('a second sync changes nothing: the lists are the same, every build is skipped', async () => {
     const again = await knowledge.syncProduct(apv, { by: admin });
-    assert.deepEqual(again.builds.map((b) => b.outcome), ['skipped', 'skipped', 'skipped']);
-    assert.match(again.builds[0].reason, /已有根/);
+    // 决定 65: five planned rows — two builds, their two device-spelling aliases and the NSAE alias.
+    assert.deepEqual(again.builds.map((b) => [b.name, b.outcome]), [
+      ['Rel.APV.10.6.1.12', 'skipped'],
+      [EARLY, 'skipped'],
+      [ALIAS, 'skipped'],
+      ['Rel.APV.10.6.4.20', 'skipped'],
+      [LATE, 'skipped'],
+    ]);
+    assert.match(again.builds.find((b) => b.name === EARLY)?.reason ?? '', /已有根/);
   });
 
-  test('while the agile platform cannot be read, builds that would list cases are withheld and no current root moves', async () => {
+  test('while the agile platform cannot be read, the planned rows are still reported and no current root moves', async () => {
     const before = await knowledge.currentRoot('apv', '10.6.1');
     agile.setPassword('Another#Secret43');
     agile.expireTokens();
     const outage = await knowledge.syncProduct(apv, { by: admin });
+    // 决定 65: the two device-spelling aliases are planned rows too, so an outage reports them beside the NSAE alias;
+    // none of the three carries a root, and no current root moves.
     assert.deepEqual(
       outage.builds.map((build) => [build.name, build.outcome, build.root]),
-      [[ALIAS, 'skipped', null]],
+      [
+        ['Rel.APV.10.6.1.12', 'skipped', null],
+        [EARLY, 'skipped', outage.builds.find((build) => build.name === EARLY)?.root ?? null],
+        [ALIAS, 'skipped', null],
+        ['Rel.APV.10.6.4.20', 'skipped', null],
+        [LATE, 'skipped', outage.builds.find((build) => build.name === LATE)?.root ?? null],
+      ],
     );
-    assert.match(outage.builds[0]?.reason ?? '', /别名/);
+    assert.match(outage.builds.find((build) => build.name === ALIAS)?.reason ?? '', /别名/);
     assert.equal(outage.error, null);
-    assert.match(outage.plan.note ?? '', /这次不列构建/);
-    assert.match(outage.plan.note ?? '', /找到的 \d+ 个构建没有列出/);
+    // The build site is a different connector and the case index is off (owner's 10-24 revision), so an unreadable agile
+    // platform withholds no listing any more: the note is the ordinary one and every planned row is still reported.
+    assert.match(outage.plan.note ?? '', /列出 5 个构建/);
     assert.equal((await knowledge.currentRoot('apv', '10.6.1'))?.root, before?.root);
     assert.ok(before !== null);
   });

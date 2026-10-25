@@ -52,7 +52,10 @@ export function commandTree(input: unknown): ProducerOutput {
       const held=groups.get(key);if(held)held.count++;else groups.set(key,{diagnostic,count:1});
     }
     const summaries=[...groups.values()].map(({diagnostic:d,count})=>`${d.attribute}：${labelOf('type_declaration_status',d.type_declaration_status)}；${labelOf('command_parse_status',d.command_parse_status)}（${count} 处）；缺失事实：${d.missing}；下一步：${d.next_action}；由 ${d.audience} 在 ${d.due} 完成`);
-    return {...out,entries:isRecord(slot)&&typeof slot.sha256==='string'?bindCommandSource(out.entries as ProducedEntry[],slot.sha256):out.entries as ProducedEntry[],warnings:[...new Set([...summaries,...out.warnings])]};
+    // The pack's own provenance never crosses the producer contract: producer-output@1 is strict, so `declarations`
+    // stays inside the pack (it feeds bindCommandSource) and only the declared fields go out.
+    const { declarations, ...produced } = out;
+    return {...produced,entries:isRecord(slot)&&typeof slot.sha256==='string'?bindCommandSource(out.entries as ProducedEntry[],slot.sha256,declarations??{}):out.entries as ProducedEntry[],warnings:[...new Set([...summaries,...out.warnings])] };
 
   } catch (error) {
     return empty(internalError(error));

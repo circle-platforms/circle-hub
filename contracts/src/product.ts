@@ -323,6 +323,7 @@ export const LinkDeclaration = z.strictObject({
   entry_kind: EntryKindSchema.optional().describe('required by longest-prefix matching; optional restriction for exact matching'),
   target_producers:z.array(z.string().min(1)).min(1).max(32).optional(),
   source_producers:z.array(z.string().min(1)).min(1).max(32).optional(),
+  unmatched: z.enum(['drift', 'mention']).optional().describe('What a literal this rule cannot match is: drift, a fact of the run (default), or mention, the author\'s marked text kept verbatim and linked only on complete equality (integrator decision 60, 2026-10-25: prose claims no command, so it creates no drift)'),
   normalize: z.strictObject({ lowercase: z.boolean().optional(), nfc: z.boolean().optional(), nfkc: z.boolean().optional(), strip_nul: z.boolean().optional() }).optional(),
 }).superRefine((value, ctx) => {
   if ((value.field===undefined)===(value.alternatives_field===undefined))ctx.addIssue({code:'custom',path:['field'],message:'declare exactly one literal field or alternative-group field'});

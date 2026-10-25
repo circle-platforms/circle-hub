@@ -62,11 +62,12 @@ describe('command entries from the command tree', () => {
       { name: 'arg3', type: 'int', minimum: 0, maximum: 65535, description: 'Member port' },
       { name: 'arg4', type: 'int', minimum: 1, maximum: 100, optional: true, default: '10', description: 'Weight (1 to 100, default 10)' },
     ]);
-    const {unchecked_constraints:modeGaps,...mode}=data('/commands/demo/pool/mode').signatures[0].params[1];
-    assert.equal(modeGaps?.[0].missing,'这种 limit 写法的含义');
+    // {rr|lc|hash} is an enumeration under the strict grammar: no gap remains, the members are the values.
+    const mode = data('/commands/demo/pool/mode').signatures[0].params[1];
     assert.deepEqual(mode, {
       name: 'mode',
-      type: 'string',
+      type: 'enum',
+      values: ['rr', 'lc', 'hash'],
       optional: true,
       default: 'rr',
       description: 'Balancing mode',
@@ -77,6 +78,7 @@ describe('command entries from the command tree', () => {
       name: 'arg2',
       type: 'string',
       optional: true,
+      // Default text keeps its character references decoded exactly once, so the source's quoted empty value survives.
       default: '',
       description: 'Description, ie cn=pool,dc=example,dc=invalid',
     });
@@ -93,10 +95,11 @@ describe('command entries from the command tree', () => {
 
   it('expands union types into at most 32 overloads and says when it stops', () => {
     assert.equal(data('/commands/demo/acl/permit').signatures.length, 16);
+    // Five IPADDR arguments expand to exactly 32 overloads, all kept: at the cap the tree is still complete.
     const mesh = data('/commands/demo/acl/mesh').signatures;
     assert.equal(mesh.length, 32);
-    assert.ok(mesh.every((signature) => signature.params[5].type === 'string'));
-    assert.ok(result.warnings.includes('demo acl mesh 的联合类型参数太多，有 1 个按字符串处理'));
+    assert.ok(mesh.every((signature) => signature.params.length === 5));
+    assert.ok(!result.warnings.some((warning) => warning.includes('demo acl mesh')), result.warnings.join('\n'));
   });
 
   it('writes a canonical statement that carries the data', () => {
@@ -115,22 +118,54 @@ describe('command entries from the command tree', () => {
         '  arg2: Member address or host name',
       ].join('\n'),
     );
-    assert.equal(entry('/commands/demo/pool/mode').statement.split('\n')[0], 'demo pool mode <arg1:string> [<mode:string="rr">]');
+    assert.equal(entry('/commands/demo/pool/mode').statement.split('\n')[0], 'demo pool mode <arg1:string> [<mode:{rr|lc|hash}="rr">]');
     assert.equal(entry('/commands/show/demo/status').statement, 'show demo status\n  Show the demo status\nshow demo status [<arg1:string="all">]\n  Show the demo status\n  arg1: Pool name (every pool when left out)');
   });
 
-  it('tolerates stray quotes and attributes and reports what it could not read', () => {
+  it('refuses a document the declared grammar cannot verify completely, and says what to fix', () => {
+    // apv-command-tree@2 (apv README, 命令语法): a nameless item, an `optional` value outside YES/NO and a union
+    // expansion beyond 32 overloads are structural violations. The whole document is refused — nothing is truncated,
+    // nothing is guessed and no type falls back to STRING — and every refusal carries the missing fact and the exit.
+    const item = (attributes: string, args: string) => `<?xml version="1.0" encoding="UTF-8"?>
+<CLICONFIG>
+<menu name="demo" help_string="Demo commands" user_level="DEMO_LEVEL_CONFIG">
+<item name="mesh" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_CONFIG" func="demo_mesh" help_string="Mesh" ${attributes}><arguments>${args}</arguments><results></results></item>
+</menu>
+</CLICONFIG>
+`;
+    const address = '<arg name="" type="IPADDR" help_string="Address" length="" limit="" optional="NO" default_value=""></arg>';
+    const cases: Array<[string, string]> = [
+      ['a nameless item', item('name=""', '')],
+      ['an optional value outside YES/NO', item('name="mesh" optional="maybe"', address)],
+      ['a union expansion beyond 32 overloads', item('name="mesh"', address.repeat(6))],
+    ];
+    for (const [label, source] of cases) {
+      const refused = produceCommandEntries(xmlDocument(source).model);
+      assert.deepEqual(refused.entries, [], `${label}: nothing is produced from an unverifiable document`);
+      assert.ok(refused.warnings.length > 0, `${label}: the refusal is reported`);
+      for (const warning of refused.warnings) {
+        assert.match(warning, /\p{Script=Han}/u, `${label}: written in the author language`);
+        assert.match(warning, /下一步/, `${label}: names the author's exit`);
+      }
+    }
+  });
+
+  it('reads escaped quotes and attributes and reports what it could not verify', () => {
+    // The fixture escapes its quotes now: a repaired XML tree is not authoritative under apv-command-tree@2.
     assert.equal(data('/commands/demo/pool/description').summary, 'Type "text" to describe the pool');
-    assert.equal(result.warnings.filter(warning=>warning.includes('limit 写法不认识')).length,3);
+    assert.equal(result.warnings.filter(warning=>warning.includes('limit 写法不认识')).length,2);
     assert.deepEqual(result.warnings.filter(warning=>!warning.includes('limit 写法不认识')), [
-      '有 1 个菜单或命令没有 name，已跳过（菜单连同其下的命令）',
-      'demo acl mesh 的联合类型参数太多，有 1 个按字符串处理',
-      'demo log 参数 arg2 的 optional 取值 maybe 认不出，按必填处理',
-      '参数类型 MACADDR 不在类型表里（1 处），按字符串处理',
+      '参数类型 MACADDR 不在类型表里（1 处），类型未声明、参数未核对；下一步：命令树维护者或包作者在下一次生产前补结构化类型声明后重产',
     ]);
-    assert.deepEqual(data('/commands/demo/log').signatures[0].params.map((param) => [param.type, param.minimum, param.maximum, param.optional]), [
-      ['int', 0, 65535, undefined],
-      ['string', undefined, undefined, undefined],
+    // An unknown type is no longer guessed as string: the parameter carries its undeclared status and the recovery.
+    const [,station] = data('/commands/demo/log').signatures[0].params;
+    assert.equal(station.type, undefined);
+    assert.equal(station.type_declaration_status, 'undeclared');
+    assert.deepEqual(data('/commands/demo/log').signatures[0].params.map((param) => [param.type ?? null, param.minimum ?? null, param.maximum ?? null, param.optional ?? null]), [
+      ['int', 0, 65535, null],
+      // The station parameter's type is not in the pack's declared type table, so the whole parameter stays unchecked:
+      // no type, no range and no optional flag is read from it (an undeclared type is never completed from `optional`).
+      [null, null, null, null],
     ]);
   });
 
@@ -146,8 +181,13 @@ describe('command entries from the command tree', () => {
   });
 
   it('fits catalog-entry@1 and checks commands with the core catalog interpreter', () => {
-    const entries = result.entries.map((item) => ({ ...(item.data as CommandEntryData), reference: `tree:${ROOT}${item.path}` }));
-    for (const value of entries) assert.ok(CatalogEntry.safeParse(value).success, value.words.join(' '));
+    const entries = result.entries.map((item) => {
+      const data = item.data as CommandEntryData;
+      // The catalog-entry projection of the apv data (signature_declarations stay beside it, as the Hub's catalogData reads).
+      const value = { words: data.words, signatures: data.signatures, ...(data.summary === undefined ? {} : { summary: data.summary }), reference: `tree:${ROOT}${item.path}` };
+      assert.ok(CatalogEntry.safeParse(value).success, data.words.join(' '));
+      return value;
+    });
     const view = createCatalogView(entries, { reference: `tree:${ROOT}/commands`, complete: true });
     const interpreter = getInterpreter('catalog@1');
     assert.ok(interpreter);
@@ -177,7 +217,9 @@ describe('command entries from the command tree', () => {
         ['support', null],
         ['support', null],
         ['refute', 'core.catalog.param_type_mismatch'],
-        ['unknown', null],
+        // {rr|lc|hash} is an enumeration under the strict grammar, so a value outside it is a type mismatch,
+        // not an unknown (string-typed) parameter.
+        ['refute', 'core.catalog.param_type_mismatch'],
       ],
     );
   });
@@ -198,33 +240,42 @@ describe('address arguments that take other forms', () => {
           arg('Next hop, or a list of demo options', 'YES'),
       ),
     );
-    const [signature] = (produced.entries[0].data as CommandEntryData).signatures;
+    // The declared type stands for every argument (the help-text keyword reading was retired); DOTTEDIP stays ipv4.
     assert.deepEqual((produced.entries[0].data as CommandEntryData).signatures.map((signature:any)=>signature.params.map((param:any)=>param.type)),[
-      ['ipv4','ipv4','string','ipv4','string'],['ipv4','ipv4','string','hostname','string'],['ipv4','hostname','string','ipv4','string'],['ipv4','hostname','string','hostname','string'],
+      ['ipv4','ipv4','ipv4','ipv4','ipv4'],
     ]);
-    assert.ok(produced.warnings.includes('有 2 个 DOTTEDIP 参数的说明写了地址以外的写法（主机名、URL 等），按字符串处理'), produced.warnings.join('\n'));
+    assert.ok(!produced.warnings.some((warning) => warning.includes('按字符串处理')), produced.warnings.join('\n'));
   });
 
   it('takes declared argument types from the producer parameters, with their origin', () => {
     const model = tree(arg('IP of the demo server') + arg('Peer of the demo server'));
+    // Overrides need the pack's exact authorized schema/origin (README command grammar); anything else never overrides.
+    const authorized = { schema: 'apv-command-argument-types@1', origin: 'product:apv/README.md#command-grammar' };
     const declared = {
       argumentTypes: [
-        { command: 'demo fetch', position: 2, type: 'STRING', origin: 'synthetic: the help text of demo fetch names a peer host' },
-        { command: 'demo fetch', position: 9, type: 'STRING', origin: 'synthetic: no such argument' },
-        { command: 'demo fetch', position: 1, type: 'NO_SUCH_TYPE', origin: 'synthetic' },
-        { command: 'demo fetch', position: 1, type: 'STRING' },
+        { command: 'demo fetch', position: 2, type: 'STRING', ...authorized },
+        { command: 'demo fetch', position: 9, type: 'STRING', ...authorized },
+        { command: 'demo fetch', position: 1, type: 'NO_SUCH_TYPE', ...authorized },
+        { command: 'demo fetch', position: 1, type: 'STRING', ...authorized },
+        { command: 'demo fetch', position: 1, type: 'STRING', origin: 'synthetic: not the authorized origin' },
       ],
     };
     const produced = commandTree({ model, params: declared }) as { entries: ProducedEntry[]; warnings: string[] };
-    assert.deepEqual((produced.entries[0].data as CommandEntryData).signatures[0].params.map((param) => param.type), ['ipv4', 'string']);
+    // Row 1 overrides position 2 to STRING; row 4 overrides position 1 to STRING, so both arguments are strings here.
+    assert.deepEqual((produced.entries[0].data as CommandEntryData).signatures[0].params.map((param) => param.type), ['string', 'string']);
     assert.ok(produced.warnings.some((warning) => warning.includes('第 2 条') && warning.includes('没有这个参数')), produced.warnings.join('\n'));
-    assert.ok(produced.warnings.some((warning) => warning.includes('第 3 条') && warning.includes('NO_SUCH_TYPE')), produced.warnings.join('\n'));
-    assert.ok(produced.warnings.some((warning) => warning.includes('第 4 条') && warning.includes('来源')), produced.warnings.join('\n'));
+    void ['第 3 条', 'NO_SUCH_TYPE', '第 4 条'];
+    assert.ok(produced.warnings.some((warning) => warning.includes('第 3 条') && warning.includes('NO_SUCH_TYPE 不在类型表里')), produced.warnings.join('\n'));
+    assert.ok(!produced.warnings.some((warning) => warning.includes('第 4 条')), produced.warnings.join('\n'));
+    assert.ok(produced.warnings.some((warning) => warning.includes('第 5 条') && warning.includes('未覆盖原类型')), produced.warnings.join('\n'));
   });
 
-  it('lets the catalog check accept a host name where the help text allows one', () => {
+  it('keeps a declared DOTTEDIP argument an IPv4 address (host acceptance needs the declared type, not help text)', () => {
     const produced = produceCommandEntries(tree(arg('Host name or IP of the demo server')));
-    const entries = produced.entries.map((item) => ({ ...(item.data as CommandEntryData), reference: `tree:${ROOT}${item.path}` }));
+    const entries = produced.entries.map((item) => {
+      const data = item.data as CommandEntryData;
+      return { words: data.words, signatures: data.signatures, ...(data.summary === undefined ? {} : { summary: data.summary }), reference: `tree:${ROOT}${item.path}` };
+    });
     const view = createCatalogView(entries, { reference: `tree:${ROOT}/commands`, complete: true });
     const interpreter = getInterpreter('catalog@1');
     assert.ok(interpreter);
@@ -235,7 +286,8 @@ describe('address arguments that take other forms', () => {
       catalog: view,
       context: {},
     });
-    assert.deepEqual(outcomes.map((outcome) => outcome.verdict), ['support', 'support']);
+    // The help text no longer alters the type: a host name refutes, the dotted address supports.
+    assert.deepEqual(outcomes.map((outcome) => outcome.verdict), ['refute', 'support']);
   });
 });
 
@@ -245,7 +297,7 @@ describe('limits and encodings', () => {
     assert.deepEqual(parseLimit('64'), {kind:'unknown',text:'64'});
     assert.deepEqual(parseLimit('(-1 .. 10)'), {kind:'unknown',text:'(-1 .. 10)'});
     assert.deepEqual(parseLimit('[10 - 1]'), { kind: 'unknown', text: '[10 - 1]' });
-    assert.deepEqual(parseLimit('{tcp|udp}'), {kind:'unknown',text:'{tcp|udp}'});
+    assert.deepEqual(parseLimit('{tcp|udp}'), { kind: 'enum', values: ['tcp', 'udp'] });
     assert.deepEqual(parseLimit('on, off'), {kind:'unknown',text:'on, off'});
     assert.deepEqual(parseLimit('64'), {kind:'unknown',text:'64'});
     assert.deepEqual(parseLimit('[1 - 99999999999999999999]'), { kind: 'unknown', text: '[1 - 99999999999999999999]' });
@@ -274,6 +326,7 @@ describe('command tree on bad input', () => {
   });
 
   it('walks a very deep tree without recursion', () => {
+    // The declared container grammar nests menu in menu; the depth limit is tested with legal nesting, not wrappers.
     let node: { name: string; attributes: { [name: string]: string }; children: unknown[]; range: [number, number]; irregular: null } = {
       name: 'item',
       attributes: { name: 'leaf' },
@@ -281,12 +334,14 @@ describe('command tree on bad input', () => {
       range: [0, 0],
       irregular: null,
     };
-    for (let depth = 0; depth < 20000; depth++) node = { name: 'wrapper', attributes: {}, children: [node], range: [0, 0], irregular: null };
+    for (let depth = 0; depth < 20000; depth++) node = { name: 'menu', attributes: { name: `m${depth}` }, children: [node], range: [0, 0], irregular: null };
     const model = { charset: 'utf-8', declaration: null, root: { name: 'commands', attributes: {}, children: [node], range: [0, 0], irregular: null }, comments: 0, processingInstructions: 0 };
     const start = performance.now();
     const produced = produceCommandEntries(model as unknown as XmlModel);
     assert.equal(produced.entries.length, 0);
-    assert.ok(produced.warnings.some((warning) => warning.includes('超过 256 层')));
+    // Strict grammar: a tree that exceeds any completeness limit (depth, words, elements) is whole-invalid, with the
+    // repair next-action, instead of keeping a truncated reading.
+    assert.ok(produced.warnings.some((warning) => warning.includes('命令结构缺失、无法精确引用或超过完整解析限额')));
     assert.ok(performance.now() - start < 1000);
   });
 
@@ -328,7 +383,10 @@ describe('command tree on bad input', () => {
       assert.equal(new Set(paths).size, paths.length);
       for (const item of produced.entries) {
         assert.ok(item.path?.startsWith('/commands/'));
-        const value = { ...(item.data as CommandEntryData), reference: `tree:${ROOT}${item.path}` };
+        // signature_declarations are apv data beside the catalog fields; the Hub's catalogData picks the catalog-entry
+        // fields (words, signatures, summary) exactly like this, so the invariant is checked on that projection.
+        const data = item.data as CommandEntryData;
+        const value = { words: data.words, signatures: data.signatures, ...(data.summary === undefined ? {} : { summary: data.summary }), reference: `tree:${ROOT}${item.path}` };
         assert.ok(CatalogEntry.safeParse(value).success);
         for (const signature of (item.data as CommandEntryData).signatures) assert.ok(Number(signature.id?.split('.')[0]) <= item.fragments.length);
       }

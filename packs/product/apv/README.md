@@ -179,60 +179,27 @@ Producers (K02, K04, C07)
   Empty attributes imply no constraint. The production warning and statement disclose the unchecked constraint;
   catalog checks return unknown with top-level missing and optional exit left to the Hub. Native type failures remain
   independently checkable. Optional values, documented defaults and overloads retain their existing source semantics.
-- Manual (markdown): the manual hangs in two namespaces. A command anchor (a paragraph that is only the bold head plus
-  emphasized parameters, `**demo pool add** *\<name\> \[weight\]*`, also several spans, or a heading written that way)
-  hangs at its command node only when the command exists in the build's command tree — /commands nodes are built by the
-  command-tree producer alone; without a tree a DIRECT CALL places by the literal unchecked, while a PRODUCTION with no tree slot or a non-xml@1 tree keeps every signature at its section node (the producer warns about the missing input; the Hub marks literals unchecked with a source-recovery action and emits no drift facts). Head groups hold
-  alternatives of one or more words (`{tcp|probe hello}`); the key is the words before the first `{}`/`[]` group (a
-  leading optional group is skipped): the nearest common node of the variants (K01 R[3]). A signature whose command is
-  missing stays a definition entry at its section node. The blocks after an anchor, up to the next anchor or heading,
-  follow the anchor's placement. Every other block hangs at its section node `/manual/<手册>/<章节路径>` (the markdown@1
-  block path; the preamble at the namespace root): no manual paragraph is left at the tree root. A paragraph written as
-  a signature that does not parse ends the command before it and hangs at its section with `data.signature_rejected`,
-  with a warning. The heading-numbering prefix is stripped before anchor parsing; a bold standalone line is never a
-  heading, and an attribute placeholder a heading does not parse stays in the title as written.
-- Command tables: a pipe table whose rows carry bold signatures is split by row, decided by the manual alone (each row
-  cites its line's byte range of the table block). A row with exactly one signature hangs at its command node when the
-  command exists in the build's tree, else at its section node (the signature entry, plus a text entry from the row's
-  other cells). A row with several commands hangs one text entry at their nearest common ancestor over ALL of them when
-  every one exists and the ancestor is at least one word deeper than /commands; a nearest common ancestor of /commands
-  itself is not a placement (real data: over half of the multi-command rows would land there) — the row stays at the
-  section node, as does any row naming a missing command. The cell rule is PER COLUMN (closure findings 2 and 19):
-  a column whose header is one of the command terms (命令、命令格式、命令名称、命令行、CLI 命令、Command、Commands、
-  Command Syntax) takes every signature-shaped run; in every other column a bold span needs parameter or group syntax
-  to be a signature — a bare bold run, one word or many, is a value, a parameter name or a term. Text before the
-  first bold run of a cell is prose: the whole cell is prose and its bold span is a mention, recorded in
-  `command_literals` only; a prose run between two bold runs ends the list (the runs before it stay signatures, the
-  rest is the row's prose), while a run of bare connectives (与/和/及/或、顿号、逗号；斜线 only in a command column)
-  continues the list. A bold span that follows another with no separator at all rides with it: an anchor may span
-  several runs (a bold keyword or parameter of the same signature). A cell whose bold head equals one of the current
-  command's parameter names, or one enumerated alternative of its variant group, is a value row: such rows keep the
-  table's remainder, and a remainder made only of value rows records no `command_literals`. The header and the rows
-  without a signature make one remainder text entry, which follows the current command, or stays at the section node;
-  a row that states its own condition
-  becomes its own entry with that condition, and the shared entry stays 未声明. Grid, multiline and simple tables are not split
-  (their rows are not single lines).
-- Literal relations (K05 R[2]): prose and code mentions are stored in `data.command_literals` and use the declared
-  longest-prefix rule. Signatures and multi-signature rows instead store `data.signature_literals`, groups of
-  `{primary, alternatives}`: the positive head and its expanded positive variants (never the leading optional no-form).
-  Both fields retain every deduplicated literal without the former 100-item cap. The Hub checks the exact primary against
-  command-tree definitions first; if present it links once and ignores alternatives, otherwise it checks every expanded
-  alternative exactly. Thus a parameter-value group after an existing head creates no false drift, while a missing
-  extending signature cannot borrow a shorter head. Entry data remains independent of the build's tree.
-  Only the manual producer supplies sources and only command-tree definitions supply targets; both sides use NFC,
-  lowercase and NUL removal. Production warnings and reading share the same composition-pinned generic evaluator.
-  Warning lists retain whole literals within 800 characters and append 等; their full counts remain exact.
-  The fixed fixture contains five distinct drifting spellings and six rule/literal groups: `enable` occurs under both
-  mention and signature rules (three groups each). No `no demo route static` or mode-value alternatives drift.
-- Applicability (K02 F[6]): explicit conditions on an entry take priority; otherwise each field inherits the nearest
-  chapter-opening declaration. A chapter opening is its title and first paragraph before any other block or child.
-  Ordinary sibling blocks and table rows never supply scope to each other. `适用于 X 平台` and `仅 X 平台支持` give `platforms`, X only
-  from the closed set of the pack's platform tokens (`PAGE_PLATFORMS`, hyphen-joined) and the Han words 虚拟/物理;
-  `适用于 X 系列/机型/型号` and `仅 X 系列/机型/型号 支持` give `models` (as written), the product's own names (APV, NSAE)
-  never being models. A coordinated list (`X、Y 平台`, `X 平台和 Y 平台`) counts only when every item is readable; vague,
-  deictic or non-set words (大多数, 部分, 所有, 该, 以下, 其他, 硬件, ...), negations (不/不再/无法/不能/并非, 仅…不支持),
-  exceptions (以外/之外/外) and partial listings are not read at all — the condition stays in the entry's text.
-  `builds` is never set on a manual entry: which builds use a manual is said by the per-build root and its composition.
+- Manual (markdown): only a complete marked signature that matches the locked command tree becomes a command
+  definition. Both word paths and all parameter positions/optional flags are checked. Missing or incomplete grammar keeps
+  source text at its section with a recovery action. A rejected signature ends the previous command's body.
+- Command tables use the explicit column role `command_signature@2`, compared exactly; other column headers do not
+  classify commands. Under `apv-manual-cell@1`, a command cell starts with a bold head and optional emphasized parameters.
+  Between signatures, top-level plain runs composed only of the declared separators 与/和/及/或、顿号、ASCII/fullwidth
+  comma or slash (and whitespace) delimit a list. Whitespace alone joins spans of one signature. Emphasis and matching
+  parameter delimiters `<…>`, `[…]`, `{…}` are parsed first; separators inside them never split. A prose prefix makes
+  the entire cell a mention; a prose tail ends the signature list. These are cell syntax, never prose classification.
+  A single signature is checked against the tree and placed at its complete path or section; multi-signature rows use
+  the exact common ancestor only if all signatures check. The row's other cells remain verbatim mentions. Current
+  parameter names and variant values are value rows, matched by exact equality. Each split row cites its own byte range;
+  remaining rows retain the header and current placement. Grid, multiline and simple tables stay whole.
+- Literal relations follow decision 60: whole code-block lines and explicit command columns claim commands; valid lines
+  use the fully parsed canonical path, unmatched structural lines are drift candidates. Prose bold/inline-code spans
+  are verbatim `command_mentions`, with `unmatched: mention`; only exact matches to locked `/commands` definitions link.
+  Unmatched mentions never establish drift. Signatures retain `signature_literals` and positive alternatives. No
+  spelling, case, NFC, prefix or synonym normalization occurs. Production and reading share one pinned evaluator.
+- Applicability is declared only by `apv-applicability@1` JSON blocks and the configured exact closed sets. Prose headings,
+  paragraphs and table cells declare nothing, including conflicts or inheritance. Missing declarations retain
+  `declaration_status=undeclared` and `judgment_status=unjudged`; model claims require quoted evidence verified by Hub.
 - Manual (catalog JSON): the `ist.manual-command-catalog` JSON keeps being read (signatures, value domains, worked
   examples) as a transition, until the adoc producer replaces it. It is reachable only through direct calls of
   `produceManualEntries` or the default export: the production's manual producer reads markdown@1 slots only, so no
@@ -912,6 +879,10 @@ The command-tree follow-up is signed as 1.3.2. Its limit policy follows the owne
 semantics to spellings absent from that evidence. Diagnostic parameters remain machine-readable through knowledge
 production and catalog matching; the next action is for the pack author to document the grammar here and reproduce.
 
+`manual-mentions` reads `command_mentions` with `exact`, `definition`, `unmatched: mention`.
+It uses the same `source_producers` (`manual-apv`, `manual-nsae`) and `target_producers` (`command-tree`);
+`lowercase`, `strip_nul` and `nfc` are all false. Unequal mentions remain mentions and never drift.
+
 ## 适用条件闭集（kb-applicability）
 
 `APV_COMPONENTS`、`APV_LICENSES`、`APV_DEPLOYMENT_FORMS` 是部署变量，三者均声明为字符串列表，
@@ -1140,3 +1111,7 @@ systems have not been read or validated; the integrator supplies the actual bran
 ### apv-red-b 测试修复记录
 
 三块生产接线测试按 R2/R4/R6 的精确结构规则更新；无锁定树、容错 XML 和正文许可都不能恢复旧推断。用例来源字节变化须重绑摘要与位置，完整条目比较逐条进行，避免失败时格式化巨型数组。命令树 optional 非法字段保留全部结构诊断，重复警告按字段汇总；见 [任务记录](../../../docs/hub-r4-tasks/apv-red-b.md)。
+
+## apv-trunk-red 收尾
+
+决定 60 的正文提及、结构命令和声明块条件已统一到生产、链接与合成集成测试。表格按原有单元格结构切分后逐项核对锁定树；Markdown 围栏不再当作命令；示例的提及归入 `reference`，不参与链接。原 adoc 记录中的闭集变量格式失败已修复。APV `1.7.23`：全包 632/632、类型检查通过，另链接及产品契约 45/45、生成物 131 文件一致。原因和旧期望的更正依据见[任务页](../../../docs/hub-r4-tasks/apv-trunk-red.md)。

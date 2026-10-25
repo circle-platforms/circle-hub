@@ -202,8 +202,18 @@ export type ProducedEntry = {
   applicability: Applicability | null;
 };
 
+/** Where a produced signature and each of its parameters came from in the source document: the XML selector of the
+ * argument list and, per parameter, its native type name and its own selector. This is the pack's own provenance and it
+ * never crosses a declared contract: it is not a key of `data` (which is exactly catalog-entry@1, strict) and not a key
+ * of a produced entry (which is exactly producer-output@1, strict). It travels in the pack's own result, keyed by the
+ * entry path, and only the pack's command grammar consumes it. */
+export type SignatureDeclarations = Record<string, { selector: string; parameters: Array<{ name: string; selector: string; native?: boolean }> }>;
+
+/** Provenance of every produced command entry, keyed by its tree path. */
+export type DeclarationsByPath = Record<string, SignatureDeclarations>;
+
 /** Data of a command entry: the catalog-entry@1 fields except the tree reference, which the knowledge package adds. */
-export type CommandEntryData = { signature_declarations?:Record<string,{selector:string;parameters:Array<{name:string;selector:string}>}>; words: string[]; signatures: CatalogSignature[]; summary?: string };
+export type CommandEntryData = { words: string[]; signatures: CatalogSignature[]; summary?: string };
 
 /**
  * A declared argument type authorized by the versioned apv-command-argument-types@1 schema: argument `position` (1-based) of the
@@ -220,7 +230,7 @@ export type CommandTreeParams = {
 };
 
 export type CommandTreeInput = XmlModel | { model: XmlModel; params?: CommandTreeParams };
-export type CommandTreeResult = { entries: ProducedEntry[]; warnings: string[]; diagnostics?:import('../../../../contracts/src/product.ts').ProducerDiagnostic[]; grammar?:import('../../../../contracts/src/product.ts').ProducerOutput['grammar'] };
+export type CommandTreeResult = { entries: ProducedEntry[]; /** Pack-internal provenance beside the contract-shaped entries; never part of an entry. */ declarations?: DeclarationsByPath; warnings: string[]; diagnostics?:import('../../../../contracts/src/product.ts').ProducerDiagnostic[]; grammar?:import('../../../../contracts/src/product.ts').ProducerOutput['grammar'] };
 
 /** The manual command catalog JSON (schema ist.manual-command-catalog). */
 export type ManualCatalog = {

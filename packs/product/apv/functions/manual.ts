@@ -231,6 +231,47 @@ export function commandLiteral(span: string, catalog: CommandCatalog | null = nu
   return catalog!==null&&resolvePhrase(catalog,span)!==null?span:null;
 }
 
+/** The closed set of marks an author puts around a span of text (apv README, K05 R[2] and the integrator's decision 60,
+ * 2026-10-25). Recognising a mark is reading the source markup's own structure — it classifies nothing: what the span
+ * means is never decided here, no word shape, first word, connective list or vocabulary is consulted, and no list grammar
+ * is built around the spans. */
+const SPAN_MARKS: ReadonlyArray<readonly [string, string]> = [['**', '**'], ['`', '`'], ['\u201c', '\u201d'], ['\u300e', '\u300f'], ['\u300c', '\u300d']];
+/** A span is bounded, so an unmatched opener costs a bounded window and the scan stays linear over hostile input. */
+const MAX_SPAN_WINDOW = 400;
+
+/**
+ * Every marked span of `text`, verbatim and in order, in one linear pass. Each distinct closer's positions are recorded
+ * once and read through a monotone cursor, so an unmatched opener costs a pointer step and not a rescan: 80 000 unmatched
+ * quotes stay linear, and nothing is repaired or guessed around an opener whose closer is missing or too far away.
+ */
+function markedSpans(text: string): string[] {
+  const positions = new Map<string, number[]>();
+  for (const [, close] of SPAN_MARKS) {
+    if (positions.has(close)) continue;
+    const found: number[] = [];
+    for (let at = 0; at < text.length; at++) if (text.startsWith(close, at)) found.push(at);
+    positions.set(close, found);
+  }
+  const cursors = new Map<string, number>();
+  const out: string[] = [];
+  let index = 0;
+  while (index < text.length) {
+    let opened: readonly [string, string] | null = null;
+    for (const mark of SPAN_MARKS) if (text.startsWith(mark[0], index)) { opened = mark; break; }
+    if (opened === null) { index++; continue; }
+    const from = index + opened[0].length;
+    const closes = positions.get(opened[1]) ?? [];
+    let cursor = cursors.get(opened[1]) ?? 0;
+    while (cursor < closes.length && closes[cursor]! < from) cursor++;
+    cursors.set(opened[1], cursor);
+    const at = cursor < closes.length ? closes[cursor]! : -1;
+    if (at < 0 || at >= from + MAX_SPAN_WINDOW || at === from) { index = from; continue; }
+    out.push(text.slice(from, at));
+    index = at + opened[1].length;
+  }
+  return out;
+}
+
 /** The catalog path of these exact words, or null when the tree has no such command (no abbreviations). */
 function existingPath(catalog: CommandCatalog, words: readonly string[]): string | null {
   let node = catalog.root;
@@ -264,7 +305,7 @@ function commonPrefix(lists: readonly string[][]): string[] {
   if (lists.length === 0) return [];
   const out: string[] = [];
   for (let k = 0; k < lists[0].length; k++) {
-    const word = lists[0][k].toLowerCase();
+    const word = lists[0][k];
     if (lists.every((list) => k < list.length && list[k] === word)) out.push(lists[0][k]);
     else break;
   }
@@ -502,18 +543,54 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
     }
     return path;
   };
-  /** Adds a prose mention without silently truncating the literal collection. */
-  const putLiteral = (entry: ProducedEntry, literal: string): void => {
-    if (literal === '') return;
-    const literals = asStrings(entry.data.command_literals);
-    if (!literals.includes(literal)) entry.data.command_literals = [...literals, literal].sort(compareText);
-  };
+  /** The canonical command words of a resolved catalog path. */
+  const canonicalWords = (path: string): string => path.split('/').slice(2).map((segment) => decodeURIComponent(segment)).join(' ');
+  /**
+   * Command literals and mentions, by the integrator's decision 60 (2026-10-25) and decision 62:
+   * - A structural position is the only place a command is claimed: a code block's whole line, and a table's command
+   *   column (the placement check owns the latter). Each is resolved completely against the locked command tree; a line
+   *   that resolves is stored as its canonical identity and links exactly, and one that does not is stored exactly as
+   *   written so the run reports it as a drift fact — the mismatch is a fact, never repaired by a guess.
+   * - A marked span in prose (bold, inline code, quotes) is stored verbatim as a mention in `command_mentions`. It is
+   *   not classified, not filtered by what it looks like and not built into a list grammar; a reader matches it exactly
+   *   against the locked root's /commands and links only on complete equality, and an unequal mention is a mention —
+   *   it is not drift.
+   * - Whether the author meant a command in prose is a semantic judgment: Circle proposes it by re-injection with a
+   *   verbatim quote and the Hub verifies the quote. The pack decides nothing here.
+   */
   const putLiterals = (entry: ProducedEntry, kind: string, text: string): void => {
-    const found = kind === 'code_block' && catalog !== null ? text.split('\n').filter(line=>resolvePhrase(catalog,line)!==null) : [];
-    if(found.length)entry.data.command_lines=found;
-    const unique = [...new Set(found.map(line=>resolvePhrase(catalog!,line)!.split('/').slice(2).map(segment=>decodeURIComponent(segment)).join(' ')))].sort(compareText);
-    if (unique.length === 0) return;
-    entry.data.command_literals = unique;
+    if (kind === 'html_block') return;
+    if (kind !== 'code_block') {
+      const mentions = new Set<string>();
+      for (const span of markedSpans(text)) if (span.trim() !== '') mentions.add(span);
+      if (mentions.size === 0) return;
+      entry.data.command_mentions = [...mentions].sort(compareText);
+      return;
+    }
+    let body = text.split('\n');
+    // markdown@1 retains raw fences in its code block. Parse their structure before claiming whole content lines;
+    // adoc's already-unwrapped code blocks do not use Markdown fence syntax.
+    if (parserOf(options) === MARKDOWN) {
+      const opener = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/.exec(body[0] ?? '');
+      if (opener && !(opener[1][0] === '`' && opener[2].includes('`'))) {
+        const closing = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(body.at(-1) ?? '');
+        const closed = body.length > 1 && closing !== null && closing[1][0] === opener[1][0] && closing[1].length >= opener[1].length;
+        body = body.slice(1, closed ? -1 : undefined);
+      }
+    }
+    const lines = body.filter((line) => line.trim() !== '');
+    if (lines.length === 0) return;
+    const resolved = catalog === null ? [] : lines.filter((line) => resolvePhrase(catalog, line) !== null);
+    if (resolved.length > 0) entry.data.command_lines = resolved;
+    const literals = new Set<string>();
+    for (const line of lines) {
+      const path = catalog === null ? null : resolvePhrase(catalog, line);
+      // Without a locked tree nothing is verifiable, so nothing is claimed: the literals stay unchecked, not drifted.
+      if (catalog === null) continue;
+      literals.add(path === null ? line : canonicalWords(path));
+    }
+    if (literals.size === 0) return;
+    entry.data.command_literals = [...literals].sort(compareText);
   };
   /**
    * A behaviour entry. `data` is placement-independent and heading-independent (K01 R[1], K02 F[1]): only `form` and
@@ -567,13 +644,48 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   const variantTailsOf = (anchor: Anchor): string[] | null => anchor.variants?.map(variant=>variant.slice(anchor.words.length).join(' '))??null;
 
   const cellAnchors = (cell: string, headerNamesCommands: boolean): Anchor[] => {
-    if (!headerNamesCommands || !cell.includes('**')) return [];
-    // The pieces of one cell: bold runs with the parameter syntax that rides with them, split ONLY at a plain
-    // connective run (与/和/及/或、顿号、逗号；斜线只在命令列). A bold span that follows another with NO separator
-    // rides with it (a bold keyword or parameter — README 151-153: an anchor may span several runs); a prose run
-    // ends the list, the bold runs before it stay signatures and the rest of the cell is the row's prose.
-    const anchor=acceptedAnchor(cell);
-    return anchor===null?[]:[anchor];
+    if (!headerNamesCommands) return [];
+    const chars = richText(cell.trim());
+    if (!chars?.length || chars[0].role !== 'bold') return [];
+    // apv-manual-cell@1: only top-level plain separator runs split signatures.
+    // Parameter delimiters and emphasis are parsed before separators; no prose vocabulary is consulted.
+    const render = (part: Rich[]): string => {
+      let text = '', role: Role = 'plain';
+      const marker = (value: Role) => value === 'bold' ? '**' : value === 'italic' ? '*' : '';
+      for (const item of part) {
+        if (item.role !== role) {text += marker(role) + marker(item.role); role = item.role;}
+        text += item.ch === '*' || item.ch === '\\' ? '\\' + item.ch : item.ch;
+      }
+      return text + marker(role);
+    };
+    const anchors: Anchor[] = [];
+    const push = (part: Rich[]) => {const anchor = parseAnchor(render(part)); if (anchor) anchors.push(anchor);};
+    let start = 0;
+    const brackets: string[] = [];
+    for (let at = 0; at < chars.length;) {
+      const item = chars[at];
+      if (item.role === 'plain' && brackets.length === 0 && item.ch.trim() !== '') {
+        let end = at;
+        while (end < chars.length && chars[end].role === 'plain') end++;
+        const run = chars.slice(at, end).map(item => item.ch).join('').trim();
+        if ([...run].every(ch => ch.trim() === '' || '与和及或、,，/／'.includes(ch))) {
+          push(chars.slice(start, at)); start = end; at = end; continue;
+        }
+        // A plain parameter group belongs to this signature; any other plain run is remaining prose.
+        if (!'<[{'.includes(item.ch)) {push(chars.slice(start, at)); return anchors;}
+      }
+      if ('<[{'.includes(item.ch)) brackets.push(item.ch);
+      else if ('>]}'.includes(item.ch)) {
+        const expected = item.ch === '>' ? '<' : item.ch === ']' ? '[' : '{';
+        if (brackets.pop() !== expected) return [];
+      }
+      at++;
+    }
+    if (brackets.length) return [];
+    push(chars.slice(start));
+    return anchors.filter(anchor => !(anchor.words.length === 1 && current !== null && (
+      current.params.some(param => param.name === anchor.words[0]) || current.variantTails?.includes(anchor.words[0])
+    )));
   };
 
   /** The rows of a pipe table, or null when the block is not one (grid, multiline and simple tables are not split). */
@@ -699,6 +811,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
           const rowEntry = textEntry({ path: placed ?? sectionPath(value, block.section), statement: row.cells.join(' | '), block: 'table', section: block.section, fragments: [rowFragment], noLiterals: true });
           rowEntry.data.signature_literals=found.map(({anchor:some})=>({primary:some.words.join(' '),alternatives:[...new Set((positiveVariantsOf(some)??[some.words]).map(words=>words.join(' ')))].sort(compareText)}));
           const signatureCells=new Set(found.map(item=>item.cell));
+          putLiterals(rowEntry, 'paragraph', row.cells.filter((_, index) => !signatureCells.has(index)).join(' '));
 
           split.push(rowEntry);
         }

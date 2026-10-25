@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {createHash} from 'node:crypto';
 import {kityminderParser,htmlParser} from '../../../../hub/refs/api.ts';
 import * as sync from './cases-sync.ts';
 import {cases} from './cases.ts';
@@ -40,7 +39,11 @@ test('raw command phrases are opt-in and never create command placements without
  const input={slots:{folders:{parser:'json@1',model:caseListing.model}},lists:{documents:[{external:'agile:case:81001',parser:'kityminder@1',model,sha256:'a'.repeat(64)}]}};
  const old=cases(input);assert.equal(old.entries.length,1);assert.equal(Object.hasOwn(old.entries[0].data,'command_phrases'),false);
  assert.deepEqual(cases({...input,params:{command_phrases:false}}),old);
- assert.equal(createHash('sha256').update(JSON.stringify(old.entries)).digest('hex'),'43718f9baf9a2594486e9e5e37d9085f28930113a4f3524f8d9ec9f55ddcaf0f');
+ assert.equal(old.entries[0].data.source_sha256, 'a'.repeat(64));
+ assert.equal(old.entries[0].data.case_location, `src:${'a'.repeat(64)}/kityminder@1/n/case`);
+ assert.equal(old.entries[0].data.test_type_status, 'undeclared');
+ assert.deepEqual(old.entries[0].data.command_identities, []);
  const added=cases({...input,params:{command_phrases:true}});
- assert.equal(added.entries[0].path,null);assert.ok((added.entries[0].data.command_phrases as string[]).includes('demo pool  add'));
+ assert.equal(added.entries[0].path,null);
+ assert.deepEqual(added.entries[0].data, {...old.entries[0].data, command_phrases: []}, 'prose cannot supply extracted command phrases without a locked grammar');
 });

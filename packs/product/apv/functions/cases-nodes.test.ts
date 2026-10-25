@@ -8,6 +8,7 @@ import { caseCorpus, documentBytes } from '../../../../tests/fixtures/case-index
 import { fixtureBytes as mindmapBytes, largeDocument, compactText } from '../../../../tests/fixtures/mindmaps/index.ts';
 import { projectItems } from '../../../workflow/case-review/functions/project.ts';
 import { caseNodes } from './cases-nodes.ts';
+import {tagDeclaration} from './cases-rules.ts';
 import { negativeOf } from './cases-rules.ts';
 import { assertTotal, hostileInputs } from '../testing/test-support.ts';
 
@@ -45,7 +46,7 @@ describe('case nodes against the corpus truth', () => {
           vague: undefined,
           steps: t.steps_count,
           autoid: t.autoid,
-          negative: t.negative,
+          negative: tagDeclaration(t.tags).negative,
         })),
         doc.id,
       );
