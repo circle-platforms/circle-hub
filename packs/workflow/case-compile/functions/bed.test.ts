@@ -71,7 +71,13 @@ describe('台架事实', () => {
 
 
 describe('declared address positions in runtime-contract@2', () => {
- for(const address of ['192.0.2.10','192.0.2.74','192.0.2.90','192.0.2.1','192.0.2.80','192.0.2.130'])it('allows frozen bed interface '+address,()=>assert.equal(checkAddresses(addressInput(address))[0].verdict,'support'));
+ for(const address of ['192.0.2.10','192.0.2.74','192.0.2.90','192.0.2.1','192.0.2.80'])it('allows frozen bed interface '+address,()=>assert.equal(checkAddresses(addressInput(address))[0].verdict,'support'));
+ it('refuses a blind-segment address before the volume runs',()=>{
+  const out=checkAddresses(addressInput('192.0.2.130'));
+  assert.equal(out[0]?.code,'case-compile.environment_unreachable');
+  assert.match(out[0]?.statement ?? '', /环境不可达，整卷不跑/);
+  assert.match(out[0]?.statement ?? '', /下一步/);
+ });
  it('off-bed addresses need a live lease owned by this lineage',()=>{
   assert.equal(checkAddresses(addressInput('192.0.2.200'))[0].code,'case-compile.address_off_bed');
   const lease={key:'bed/bed-a/ip/192.0.2.20',until:'2026-10-23T10:00:00.000Z',mine:true};

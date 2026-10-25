@@ -2,7 +2,9 @@
 // Deterministic and bounded: the facts of a bed never exceed a few thousand lines. Unknowns are written as
 // unknowns (a device without any address), never defaulted to reachable.
 import { parseSubnet, segmentUsable, subnetContains } from './addresses.ts';
+import { isRecord } from './common.ts';
 import type { InterfaceAddress, ManifestBed } from './manifest.ts';
+import { judgeBedSurface } from './surface.ts';
 
 /** One device on a segment, with the interface address it holds there. */
 export interface SegmentMember {
@@ -143,6 +145,14 @@ export function bedFacts(bed: ManifestBed): BedFacts {
     backends: backends.sort((a, b) => sortText(a.address, b.address) || sortText(a.device, b.device)),
     unknowns,
   };
+}
+
+/** Occupancy and residue of one bed, recomputed from the frozen declaration and probe observations. */
+export function declaredSurface(bed: ManifestBed, declaration: unknown, probes: unknown): Record<string, unknown> {
+  const reads = isRecord(probes) ? Object.entries(probes).map(([id, value]) => ({ id, value })) : [];
+  const judged = judgeBedSurface(declaration, bed, reads);
+  if (!judged.ok) return { occupancy: 'unknown', missing: judged.missing, next: judged.next, residues: [], automatic: false, cleanup: null, exits: [] };
+  return { occupancy: judged.occupancy, residues: judged.residues, automatic: judged.automatic, cleanup: judged.cleanup, exits: judged.exits };
 }
 
 /** Whether an address value belongs to the subnet text (same family). */

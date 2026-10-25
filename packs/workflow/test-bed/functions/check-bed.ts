@@ -56,13 +56,14 @@ function support(item: string, at: number, statement: string, location: unknown,
 }
 
 /** The frozen run context: the groups' first record carries the manifest, the parameters and the lease view. */
-function frozenOf(subject: unknown): { action: Action; need: BedNeed; bed: string | null; addresses: { segment: string; count: number } | null; booking: string | null; reason:string; devices:string[]|null; manifest: unknown; leases: FrozenLeases } | null {
+function frozenOf(subject: unknown): { action: Action; need: BedNeed; bed: string | null; addresses: { segment: string; count: number } | null; booking: string | null; reason:string; devices:string[]|null; manifest: unknown; leases: FrozenLeases; surface: { declaration: unknown; probes: unknown } | null } | null {
   const raw = isRecord(subject) && isRecord(subject.context) && Array.isArray(subject.context.groups) ? subject.context.groups[0] : undefined;
   if (!isRecord(raw) || raw.manifest === undefined) return null;
   const read = readParameters({ action: raw.action, need: raw.need, reason:raw.reason,devices:Array.isArray(raw.devices)?raw.devices:undefined, bed: raw.bed, addresses: raw.addresses, booking: raw.booking });
   if ('code' in read) return null;
   const leases = isRecord(raw.leases) && typeof raw.leases.now === 'string' && Array.isArray(raw.leases.entries) ? (raw.leases as unknown as FrozenLeases) : { now: new Date(0).toISOString(), entries: [] };
-  return { action: read.action, need: read.need, bed: read.bed, addresses: read.addresses, booking: read.booking, reason:read.reason, devices:read.devices, manifest: raw.manifest, leases };
+  const surface = raw.surface !== undefined ? { declaration: raw.surface, probes: raw.probes } : null;
+  return { action: read.action, need: read.need, bed: read.bed, addresses: read.addresses, booking: read.booking, reason:read.reason, devices:read.devices, manifest: raw.manifest, leases, surface };
 }
 
 /** Outcomes of the bed check for a subject: one per item whose fields carry an action. */
@@ -97,12 +98,13 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
         continue;
       }
       if (action === 'facts') {
-        const expected = factsFields(manifest.beds,frozen.leases).find((f) => f.bed === fields.bed);
+        const expected = factsFields(manifest.beds,frozen.leases,frozen.surface ?? undefined).find((f) => f.bed === fields.bed);
         if (expected === undefined) {
           out.push(refute(id, at, 'test-bed.facts_mismatch', `台架 ${String(fields.bed)} 不在清单里`, item.location, { bed: fields.bed }));
           continue;
         }
-        const keys = ['segments', 'listeners', 'blind', 'backends', 'unknowns', 'installed', 'occupancy'] as const;
+        const keys = ['segments', 'listeners', 'blind', 'backends', 'unknowns', 'installed', 'occupancy'];
+        if (frozen.surface || fields.surface !== undefined) keys.push('surface');
         const diff = differing(fields as Record<string, unknown>, expected as unknown as Record<string, unknown>, keys);
         if (diff.length > 0) {
           out.push(refute(id, at, 'test-bed.facts_mismatch', `台架 ${expected.bed} 的环境事实与冻结清单不符（${diff.join('、')}）`, item.location, { differing: diff }));

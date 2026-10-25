@@ -133,6 +133,11 @@
           "max_rounds": 2
         },
         {
+          "code": "case-compile.environment_unreachable",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
           "code": "case-compile.replacement_invalid",
           "action": "repair",
           "max_rounds": 2

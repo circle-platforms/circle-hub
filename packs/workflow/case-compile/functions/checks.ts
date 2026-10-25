@@ -9,7 +9,7 @@ import { isRecord, markers, type Outcome } from './text.ts';
 import { parseRuntimeContract, runtimeMethod, type RuntimeContract } from './runtime-contract.ts';
 import { parseProfile, allowedCall, type RuntimeProfile } from './profile.ts';
 import { parseManifest, addressKey, type ManifestBed } from './manifest.ts';
-import { readAddress, type LeaseRow } from './bed.ts';
+import { inBlindSegment, readAddress, type LeaseRow } from './bed.ts';
 import { readSlots, type PlanSlots } from './slots.ts';
 import { bindArguments, hasShellDynamicSyntax, hasBalancedCommandText, hasSingleLineValue } from './binding.ts';
 import {identityOf} from './typed-contract.ts';
@@ -89,14 +89,16 @@ export function checkAddresses(input: unknown): Outcome[] {
     if(source&&!sourceValues.has(source))return [{verdict:'unknown',reason:'missing_input',missing:'替换来源的冻结类型化参数身份；下一步由用例生产器补 data.command_identities 并重开运行',statement:'不能把原文中外形像地址的文字作为替换依据；缺冻结类型化参数身份，下一步补源声明后重跑',grounds:[],tier:TIER,item:s.item}];
     if(source&&target&&source!==target&&slots.replacements.some((other,j)=>j!==i&&addressKey(other.case)===target))out.push(refute(s,'replacement_invalid','替换映射不能形成链或环',at));
     if(source)from.add(source);if(target)to.add(target);
-    if(readAddress(bed,s.leases,s.now,replacement.bed).kind==='off_bed')out.push(refute(s,'address_off_bed','替换目标不在冻结台架或本血缘租约集合',at));
+    if(readAddress(bed,s.leases,s.now,replacement.bed).kind==='off_bed')out.push(refute(s,'address_off_bed','环境不可达，整卷不跑。该地址不在任何设备接口所在网段，也不是本血缘租约地址。下一步：换用有触发设备的网段里的接口地址，或先取得本血缘租约后再编译',at));
+    else if(inBlindSegment(bed,replacement.bed))out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段。下一步：把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译',at));
   }
   for(const use of uses){
     if(use.kind!=='ipv4'&&use.kind!=='ipv6')continue;
     if(typeof use.bed_member!=='boolean')return [{verdict:'unknown',reason:'missing_input',missing:'地址参数的合约闭集角色及 bed_member 用途；下一步合约发布管理员补字段并重新绑定',statement:'地址用途未声明，当前阻止派发；下一步由合约发布管理员补角色用途后重开运行',grounds:[],tier:TIER,item:s.item}];
     if(!use.bed_member)continue;
     const value=String(use.value);if(slots.replacements.some(r=>addressKey(r.case)===addressKey(value)&&addressKey(r.case)!==addressKey(r.bed)))out.push(refute(s,'replacement_missing','声明地址位置仍保留替换前的值',use.pointer));
-    if(readAddress(bed,s.leases,s.now,value).kind==='off_bed')out.push(refute(s,'address_off_bed','声明为台架成员的地址不在冻结台架或本血缘租约集合',use.pointer));
+    if(readAddress(bed,s.leases,s.now,value).kind==='off_bed')out.push(refute(s,'address_off_bed','环境不可达，整卷不跑。该地址不在任何设备接口所在网段，也不是本血缘租约地址。下一步：换用有触发设备的网段里的接口地址，或先取得本血缘租约后再编译',use.pointer));
+    else if(inBlindSegment(bed,value))out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段。下一步：把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译',use.pointer));
   }
   return out.length?out:[support(s,uses.length+' 个声明地址/掩码/前缀位置已按类型、用途和冻结范围核对；普通文字不扫描',{typed_positions:uses,replacements:slots.replacements})];
 }

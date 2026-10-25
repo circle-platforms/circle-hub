@@ -86,6 +86,7 @@ export default function project(input: unknown): Out | Failure {
   const leases = leaseRecord(frozenLeases);
   const action: Action = normalized.action;
 
+  const surface = context.surface !== undefined ? { declaration: context.surface, probes: context.probes } : undefined;
   const groups = [
     {
       action,
@@ -97,6 +98,7 @@ export default function project(input: unknown): Out | Failure {
       devices: normalized.devices,
       manifest: slot.model,
       leases: { now, entries: frozenLeases?.entries ?? [], registrations: frozenLeases?.registrations ?? [] },
+      ...(surface ? { surface: context.surface, probes: context.probes } : {}),
     },
   ];
   const warnings: Array<{ code: string; message: string }> = [];
@@ -116,7 +118,7 @@ export default function project(input: unknown): Out | Failure {
     };
   }
   if (action === 'facts') {
-    const fields = factsFields(beds, frozenLeases);
+    const fields = factsFields(beds, frozenLeases, surface);
     return {
       items: fields.map((f) => ({
         id: f.bed,

@@ -4,7 +4,7 @@
 // the devices without any interface address as unknowns. Address use in a plan is judged from these facts plus the
 // run's lineage leases (allocated addresses); every comparison is by the numeric address key, never by notation.
 import FORMAT from '../tables/runtime-profile-format.json' with { type: 'json' };
-import { addressKey, type ManifestBed } from './manifest.ts';
+import { addressKey, addressValue, type ManifestBed } from './manifest.ts';
 
 export const TRIGGER_TYPES: ReadonlySet<string> = new Set(FORMAT.trigger_types);
 
@@ -117,6 +117,33 @@ export function readAddress(bed: ManifestBed, leases: readonly LeaseRow[], now: 
   const prefix = `bed/${bed.name}/ip/`;
   const leased = leases.some((row) => row.mine === true && (row.until === null || Date.parse(row.until) > Date.parse(now)) && typeof row.key === 'string' && row.key.startsWith(prefix) && addressKey(row.key.slice(prefix.length)) === key);
   return leased ? { kind: 'allocated' } : { kind: 'off_bed' };
+}
+
+/**
+ * Whether the address falls in a device-interface subnet that has no trigger device.
+ * Compared by the numeric value and the interface prefix, not by the address text.
+ */
+export function inBlindSegment(bed: ManifestBed, address: string): boolean {
+  const v4 = addressValue('ipv4', address);
+  const v6 = v4 === null ? addressValue('ipv6', address) : null;
+  if (v4 === null && v6 === null) return false;
+  const family = v4 === null ? 'ipv6' : 'ipv4';
+  const value = (v4 ?? v6) as bigint;
+  const subnets = new Set<string>();
+  for (const device of bed.devices) {
+    for (const iface of [...device.ipv4, ...device.ipv6]) {
+      if (iface.family !== family) continue;
+      const bits = family === 'ipv4' ? 32n : 128n;
+      const host = bits - BigInt(iface.prefix);
+      if ((iface.value >> host) === (value >> host)) subnets.add(iface.subnet);
+    }
+  }
+  if (subnets.size === 0) return false;
+  for (const subnet of subnets) {
+    const triggered = bed.devices.some((device) => TRIGGER_TYPES.has(device.type) && [...device.ipv4, ...device.ipv6].some((iface) => iface.subnet === subnet));
+    if (triggered) return false;
+  }
+  return true;
 }
 
 /** Whether a blind fact names this address (a DUT interface on a segment without a trigger device), by the numeric key. */
