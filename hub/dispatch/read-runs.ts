@@ -28,7 +28,7 @@ export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick
   }while(cursor!==null);
   const out:RunJob[]=[];
   for(const [job,input] of jobs){
-    const status=await dispatch.status(by,job);
+    const {admin_release:_privateRelease,admin_release_missing:_privateMissing,...status}=await dispatch.status(by,job);
     const history=await records.store.findMany<ActionBody>({kind:'action',key:'dispatch.job',values:[job]});
     const prefix=history.slice(0,status.events);
     const choice=[...prefix].reverse().find(e=>e.body.detail.phase==='dispose'&&e.body.detail.disposition===status.disposition);
