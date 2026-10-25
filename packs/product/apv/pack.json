@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "apv",
-  "version": "1.7.23",
+  "version": "1.7.24",
   "kind": "product",
   "title": "APV / NSAE（产品包）",
   "description": "APV 与 NSAE 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册的知识生产器（用例、缺陷、规格按 10-24 修订由 Circle 喂入，不再整批生产）",
@@ -13,8 +13,8 @@
     },
     {
       "path": "functions/adoc/deployment.ts",
-      "sha256": "4281bfe17f81b45f76dea06122993c3c887bc08d8240ae0e1dd1d295b6f86795",
-      "size": 7173
+      "sha256": "aaf794ff7154ce4a704157fc0677a3783da2b46c355a1fad80001ae8f41c78d0",
+      "size": 7817
     },
     {
       "path": "functions/adoc/engine.ts",
@@ -28,8 +28,8 @@
     },
     {
       "path": "functions/adoc/families.ts",
-      "sha256": "2853d706a33d947de7cea1086cc3f690b274cdd4eac54992926969083c10fbf4",
-      "size": 5037
+      "sha256": "47ba1af2297ae314e51f929cbd2b745739125d052362103ea77680ad24ed983d",
+      "size": 5223
     },
     {
       "path": "functions/adoc/includes.ts",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/adoc/index.ts",
-      "sha256": "3e02e5924db51daf8ba1d068a0188e1d1ce133103b726e581d182e836e1d441c",
-      "size": 15507
+      "sha256": "57de548007a7a8ab6ee90ce4056e4627a1a70efe538e6981a0146462f97ee924",
+      "size": 15567
     },
     {
       "path": "functions/adoc/inline.ts",
@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/adoc/input.ts",
-      "sha256": "85e6333e29bc91825d4514e4c0674bacf5fc55d89cf8de0b6750fe69aee80721",
-      "size": 6325
+      "sha256": "2327d8bbe9ab8047fa7380a5661dc40d5ea9308051500a3557fb2e12294498d6",
+      "size": 6820
     },
     {
       "path": "functions/adoc/k1-model.ts",
@@ -73,13 +73,13 @@
     },
     {
       "path": "functions/adoc/tree.ts",
-      "sha256": "34ea475b21a1c10cc1e2e68cdeb246dac67a3c5c7839af5a206842dc10312902",
-      "size": 5379
+      "sha256": "d951c0b349305b1c37a7e9b02430b1d37d5f659d173c5ad5766e18a3a9d2b1b6",
+      "size": 9103
     },
     {
       "path": "functions/adoc/types.ts",
-      "sha256": "0b4a41e8de945de45648d1975f47beb3bb499cf31ec3a8686171dc23fe1581f8",
-      "size": 4493
+      "sha256": "75831508187e9719e54131e5e63d4e410fc6c62dc835d66e35a3d8121b6528e8",
+      "size": 4533
     },
     {
       "path": "functions/adoc/vendor/LICENSE.txt",

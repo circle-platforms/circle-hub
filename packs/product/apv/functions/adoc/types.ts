@@ -1,6 +1,6 @@
 // Intermediate package-local data only. This is not the K1 document model or a registered producer output.
 export interface SourceFile { text: string; revision: string; sha256: string }
-export interface AdocInput { main: string; revision: string; files: Record<string, SourceFile>; attributes?: Record<string, string | boolean> }
+export interface AdocInput { main: string; revision: string; directory?: string; files: Record<string, SourceFile>; attributes?: Record<string, string | boolean> }
 export interface Limits { files: number; inputBytes: number; expandedBytes: number; includeDepth: number; includes: number; lines: number; conditions: number; blocks: number }
 export interface MappedLine { file: string; line: number; text: string }
 export interface VerifiedRange { file: string; from: number; to: number; selector: string; reference: string; verbatim: string }
@@ -50,7 +50,7 @@ export interface Report {
   invalid_headings: Array<{ file: string; line: number; text: string }>;
 }
 export interface Composition {
-  schema: 'apv-adoc-composition@1'; main: string; revision: string;
+  schema: 'apv-adoc-composition@1'; main: string; revision: string; directory?: string;
   files: Array<{ file: string; sha256: string }>; attributes: Record<string, string | boolean>;
   engine: { version: string; sha256: string }; policy: string; limits: Limits; sha256: string;
 }

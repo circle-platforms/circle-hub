@@ -1,8 +1,8 @@
 // `circle-hub knowledge seed`: the administrator command that calls produceSeedling. The three sources are the ones the
 // product pack already declares (a command-tree input, a CLI manual, an APP manual). The command tree is the named
 // build's, else the newest released build of the line. A manual whose producer declares a meta input or a list input
-// reads that SVN directory, at one revision and without a batch cut, when its root parameter is set; a null root keeps
-// the external manual templates. An SVN read's revision is what the seedling record and the composition keep.
+// reads each main file's own directory, at one revision and without a batch cut, when its root parameter is set. A null
+// root keeps the external manual templates. An SVN read's revision is what the seedling record and the composition keep.
 // A missing source is reported as itself, with the next command, and does not produce a partial tree.
 import { expandTemplate, type KnownBuild, type Producer, type ProducerSource, type ProductDeclaration } from '../../contracts/src/product.ts';
 import type { PacksPort, ProductHandle, ResourceCatalogPort } from '../ports.ts';
@@ -289,11 +289,16 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
   const manualProducer = manualBinding === undefined ? undefined : product.product.producers.find((producer) => producer.id === manualBinding.producer);
   const directory = manualProducer === undefined ? null : declaredDirectory(manualProducer);
   let directoryRoot: unknown;
+  let directoryMains: { cli: unknown; app: unknown } | undefined;
   if (directory === 'several' && manualBinding) report.missing.push(gap('cli-manual', `生产器 ${manualBinding.producer} 有多份列表来源`, PACK_ONE));
   else if (directory && manualProducer) {
     const resolvedProduct = await resolveProductVariables(product, context.records.variables, by, args.dryRun, { plan: { ...DEFAULT_SANDBOX.plan, ...context.sandbox.plan }, producer: { ...DEFAULT_SANDBOX.producer, ...context.sandbox.producer } });
     if ('problems' in resolvedProduct) report.missing.push(gap('cli-manual', resolvedProduct.problems.join('；'), againCommand(shown, args.line)));
-    else directoryRoot = resolvedProduct.product.product.producers.find((producer) => producer.id === manualProducer.id)?.params?.root;
+    else {
+      const params = resolvedProduct.product.product.producers.find((producer) => producer.id === manualProducer.id)?.params;
+      directoryRoot = params?.root;
+      directoryMains = { cli: params?.main, app: params?.app_main };
+    }
   }
   const directoryIsSvn = typeof directoryRoot === 'string';
   if (resources && (directoryIsSvn || [...resolved.values()].some((row) => row.external.startsWith('svn:')))) {
@@ -342,7 +347,7 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
   const svnBlocked = report.missing.some((item) => item.detail === '没有启用的 svn 系统包资源');
   if (directory && directory !== 'several' && manualProducer && typeof directoryRoot === 'string' && !svnBlocked) {
     const bound = await bindDirectorySources({
-      producer: manualProducer, line: build.line, root: directoryRoot,
+      producer: manualProducer, line: build.line, root: directoryRoot, ...(directoryMains ? { mains: directoryMains } : {}),
       loader: knowledgeSourceLoader(context, by, 'knowledge seed'), maxBytes: context.limits.maxBuildBytes, next: againCommand(shown, args.line),
     });
     if (!bound.ok) report.missing.push(gap('cli-manual', publicText(bound.detail), bound.next));

@@ -1,7 +1,7 @@
 // The knowledge seed command and the feeding hang from a per-build root onto the line's current seedling.
 // Synthetic only: loopback SVN, platform zx-u, version lines from 10.8, addresses in 192.0.2.0/24.
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -410,4 +410,143 @@ test('a null adoc root still seeds the markdown manuals', { timeout: 120000 }, a
   assert.equal(texts.includes(MARKDOWN_APP), true);
   assert.equal(texts.includes(BOOK), false);
   assert.equal(texts.includes(APP_PAGE), false);
+});
+
+const CLI_BOOK = '192.0.2.35 cli book';
+const CLI_CHAPTER = '192.0.2.36 cli chapter';
+const APP_BOOK = '192.0.2.37 app book';
+const bookFile = (name: string): string => `svn:file:17/${encodeURIComponent(`${DIR}/${name}`)}`;
+const bookDir = (name: string): string => `svn:directory-at:17/${encodeURIComponent(`${DIR}/${name}`)}`;
+const CLI_DIR = bookDir('cli');
+const CHAPTERS_DIR = bookDir('cli/chapters');
+const APP_DIR = bookDir('app');
+const CLI_FILE = bookFile('cli/book.adoc');
+const CHAPTER_FILE = bookFile('cli/chapters/body.adoc');
+const APP_FILE = bookFile('app/app.adoc');
+
+const BOOK_DIRECTORY_MANUAL = `
+export default function produce(input: any): unknown {
+  if (!input.batch || input.batch.of !== 1) throw new Error('split batch');
+  const files = (input.lists?.files ?? []).filter((file: any) => file.parser === 'text@1');
+  return {
+    entries: files.map((file: any, index: number) => ({
+      kind: 'definition', path: '/manual/files/n' + String(index), statement: file.model.raw_utf8, data: {},
+      fragments: [{ slot: 'files', source: file.sha256, parser: 'text@1', selector: 'l/1' }], applicability: null,
+    })),
+    warnings: [],
+  };
+}
+`;
+
+async function bookWorld(t: { after: (fn: () => Promise<void> | void) => void }, options: { missing?: string } = {}): Promise<Loop & { resources: ResourceCatalogPort }> {
+  const pg = await startPostgres();
+  t.after(() => pg.stop());
+  const build = { name: BUILD, base: BUILD, family: 'APV', line: LINE, platform: 'zx-u', built_at: '2026-10-01T00:00:00.000Z', released_at: '2026-10-02T00:00:00.000Z', sources: { tree: 'site:tree:10_8' } };
+  const w = await makeWorld(pg, { pack: { id: 'apv', names: ['APV'], functions: { 'manuals.ts': BOOK_DIRECTORY_MANUAL, 'plan.ts': STATIC_PLAN_SOURCE }, declaration: {
+    names: ['APV'], catalogs: [{ id: 'commands@1', entry_kind: 'definition', producer: 'command-tree', complete: true, case_sensitive: false }],
+    sync: { ...DEFAULT_SYNC, options: { builds: [build] } },
+    variables: [
+      { name: 'APV_ADOC_ROOT', description: 'Synthetic directory template', schema: { type: ['string', 'null'] }, default: null },
+      { name: 'APV_ADOC_MAIN', description: 'Synthetic CLI main file', schema: { type: 'string', minLength: 1 }, default: 'book.adoc' },
+      { name: 'APV_ADOC_APP_MAIN', description: 'Synthetic APP main file', schema: { type: 'string', minLength: 1 }, default: 'app.adoc' },
+    ],
+    producers: [
+      { id: 'command-tree', title: '命令树', function: { module: 'functions/commands.ts' }, inputs: { tree: { source: 'tree' } } },
+      { id: 'manual-apv', title: 'APV 手册', function: { module: 'functions/manuals.ts' }, params: { family: 'APV', root: '${var:APV_ADOC_ROOT}', main: '${var:APV_ADOC_MAIN}', app_main: '${var:APV_ADOC_APP_MAIN}' }, inputs: {
+        tree: { source: 'tree' },
+        cli: { external: 'manual:cli:{line}', optional: true },
+        app: { external: 'manual:app:{line}', optional: true },
+        meta: { source: 'adoc_apv_meta', optional: true },
+        files: { source: 'adoc_apv_files', many: true, batch: 1, optional: true },
+      } },
+    ],
+  } } });
+  t.after(() => w.close());
+  w.external.set('site:tree:10_8', { bytes: TREE, mediaType: 'application/xml' });
+  w.external.set('manual:cli:10.8', { bytes: `${MARKDOWN_CLI}\n`, mediaType: 'text/markdown' });
+  w.external.set('manual:app:10.8', { bytes: `${MARKDOWN_APP}\n`, mediaType: 'text/markdown' });
+  await w.kit.variables.setVariable(w.admin, 'APV_ADOC_ROOT', 'synthetic/{line}', '合成目录');
+  await w.kit.variables.setVariable(w.admin, 'APV_ADOC_MAIN', 'cli/book.adoc', '合成 CLI 主文件');
+  await w.kit.variables.setVariable(w.admin, 'APV_ADOC_APP_MAIN', 'app/app.adoc', '合成 APP 主文件');
+  const authorization = `Basic ${randomBytes(24).toString('base64')}`;
+  const prefix = '/repository';
+  const rvr = `${prefix}/!svn/rvr/17/${DIR}`;
+  const directoryListing = (dir: string, children: string[]): string => davMulti(davRow(dir === '' ? `${rvr}/` : `${rvr}/${dir}/`), ...children);
+  const fileRow = (path: string, bytes: string): string => davRow(`${rvr}/${path}`, '16', false, String(Buffer.byteLength(bytes)));
+  const rootListing = directoryListing('', [davRow(`${rvr}/app/`, '16'), davRow(`${rvr}/cli/`, '16'), davRow(`${rvr}/notes/`, '16'), davRow(`${rvr}/pictures/`, '16'), davRow(`${rvr}/wide/`, '16')]);
+  const cliListing = directoryListing('cli', [fileRow('cli/book.adoc', CLI_BOOK), davRow(`${rvr}/cli/chapters/`, '16')]);
+  const chapterListing = directoryListing('cli/chapters', [fileRow('cli/chapters/body.adoc', CLI_CHAPTER)]);
+  const appListing = directoryListing('app', [fileRow('app/app.adoc', APP_BOOK)]);
+  const wideListing = directoryListing('wide', Array.from({ length: 129 }, (_, index) => fileRow(`wide/w${index}.adoc`, 'x')));
+  const pages: Record<string, string> = { '': rootListing, cli: cliListing, 'cli/chapters': chapterListing, app: appListing, wide: wideListing };
+  const bodies: Record<string, string> = { 'cli/book.adoc': CLI_BOOK, 'cli/chapters/body.adoc': CLI_CHAPTER, 'app/app.adoc': APP_BOOK };
+  const server = await startStub((request) => {
+    if (request.headers.authorization !== authorization) return text('Unauthorized', 'text/plain', 401);
+    const path = decodeURIComponent(request.path);
+    if (request.method === 'PROPFIND' && path === `${prefix}/${DIR}/`) return text(davMulti(davRow(path)), 'application/xml', 207);
+    if (request.method === 'PROPFIND' && path.startsWith(`${rvr}/`)) {
+      const relative = path.slice(`${rvr}/`.length).replace(/\/$/, '');
+      const listing = pages[relative];
+      return listing === undefined ? text('Absent', 'text/plain', 404) : text(listing, 'application/xml', 207);
+    }
+    if (request.method === 'GET' && path.startsWith(`${rvr}/`)) {
+      const relative = path.slice(`${rvr}/`.length);
+      if (options.missing === relative) return text('Absent', 'text/plain', 404);
+      const body = bodies[relative];
+      return body === undefined ? text('Absent', 'text/plain', 404) : text(body, 'text/plain');
+    }
+    return text('Absent', 'text/plain', 404);
+  });
+  t.after(() => server.close());
+  const home = await mkdtemp(join(tmpdir(), 'circle-hub-seed-books-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const directory = await stagePack(PACK_DIR, join(home, 'svn'));
+  const manifest = await readManifest(directory);
+  const svnPacks = fakePacks([{ id: manifest.id, version: manifest.version, kind: manifest.kind, digest: manifestDigest(manifest), directory }]);
+  const connectors: Connectors = createConnectors({
+    records: w.kit, packs: svnPacks, sandbox: { requireOsIsolation: await sandboxIsolation() }, parsers: createDefaultRegistry(), resourceCacheMs: 0,
+  });
+  const original = w.external.read.bind(w.external);
+  w.external.read = (id, readContext) => id.startsWith('svn:') ? connectors.reader.read(id, readContext) : original(id, readContext);
+  const resource = (await addSyntheticResource(w.kit, svnPacks, connectors, w.admin, { system_pack: 'svn', name: '合成仓库', environment: 'test', origins: { svn: `${server.origin}${prefix}` }, allow_plaintext: [server.origin], settings: { repository_path: prefix } })).id;
+  await setSyntheticCredential(w.kit, connectors, w.admin, resource, 'authorization', authorization);
+  const synced = await w.knowledge.syncProduct(w.product, { by: w.admin });
+  assert.equal(synced.error, null, synced.error ?? undefined);
+  return { w, server, authorization, resources: connectors.catalog, close: async () => {} };
+}
+
+test('seeding binds each book directory and does not read sibling directories', { timeout: 120000 }, async (t) => {
+  const loop = await bookWorld(t);
+  const args = ['--product', 'APV', '--line', LINE, '--build', BUILD, '--basis', '育两本书'];
+  const first = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs(args), loop.resources);
+  assert.equal(first.ok, true, formatSeedReport(first));
+  const again = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs(args), loop.resources);
+  assert.equal(again.ok, true, formatSeedReport(again));
+  assert.equal(again.root, first.root);
+  const firstNode = await loop.w.knowledge.store.node(first.root!);
+  const againNode = await loop.w.knowledge.store.node(again.root!);
+  assert.deepEqual(Buffer.from(canonicalize(firstNode)), Buffer.from(canonicalize(againNode)));
+  const propfinds = loop.server.requests.filter((request) => request.method === 'PROPFIND').map((request) => decodeURIComponent(request.path));
+  assert.deepEqual(propfinds.filter((path) => path.includes('/wide') || path.includes('/notes') || path.includes('/pictures')), []);
+  const texts = await statementsOf(loop.w, first.composition!);
+  assert.deepEqual(texts.filter((statement) => statement === CLI_BOOK || statement === CLI_CHAPTER || statement === APP_BOOK).sort(), [APP_BOOK, CLI_BOOK, CLI_CHAPTER].sort());
+  const composed = await loop.w.knowledge.store.composition(first.composition!);
+  const svn = (composed?.sources ?? []).filter((source) => source.external.startsWith('svn:'));
+  assert.deepEqual(svn.map((source) => source.external).sort(), [APP_DIR, APP_FILE, CHAPTERS_DIR, CHAPTER_FILE, CLI_DIR, CLI_FILE, META_ID].sort());
+  assert.deepEqual(svn.map((source) => source.revision), svn.map(() => '17'));
+  const digest = (bytes: string): string => createHash('sha256').update(bytes).digest('hex');
+  const byExternal = new Map(svn.map((source) => [source.external, source.sha256]));
+  assert.equal(byExternal.get(CLI_FILE), digest(CLI_BOOK));
+  assert.equal(byExternal.get(CHAPTER_FILE), digest(CLI_CHAPTER));
+  assert.equal(byExternal.get(APP_FILE), digest(APP_BOOK));
+});
+
+test('a missing file inside one book directory is refused and the seedling pointer stays', { timeout: 120000 }, async (t) => {
+  const loop = await bookWorld(t, { missing: 'cli/chapters/body.adoc' });
+  const seeded = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs(['--product', 'APV', '--line', LINE, '--build', BUILD, '--basis', '缺一章']), loop.resources);
+  assert.equal(seeded.ok, false, formatSeedReport(seeded));
+  assert.equal(seeded.root, null);
+  assert.equal(seeded.pointer, null);
+  assert.equal(seeded.missing.some((item) => item.detail.includes(CHAPTER_FILE) && item.next.startsWith('circle-hub knowledge seed ')), true, formatSeedReport(seeded));
+  assert.equal(await loop.w.kit.pointers.get(seedlingName(loop.w.product.id, LINE)), null);
 });
