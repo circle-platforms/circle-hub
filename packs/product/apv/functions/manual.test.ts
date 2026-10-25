@@ -425,7 +425,11 @@ describe('author-marked command literals', () => {
     const result = produceManualEntries(markdown('**demo pool add** *\\<name\\>*\n\n示例：\n\n    Box(config)#demo pool add p1 192.0.2.5\n    demo pool add p1 192.0.2.5\n    成员添加成功\n'),null,{catalog:STRICT_MANUAL_CATALOG});
     const [signature, , code] = result.entries;
     assert.deepEqual(signature.data.signature_literals, [{primary:'demo pool add',alternatives:['demo pool add']}]);
-    assert.deepEqual(code.data.command_literals,['demo pool add'],'only a verified canonical identity is linked');
+    // 决定 60/62 (integrator, 2026-10-25): a code block is a structural position, so every whole line is a command
+    // claim. The line the locked tree resolves is stored as its canonical identity and links exactly; the lines it
+    // cannot resolve (the prompted form and the device output) are stored exactly as written and become drift facts of
+    // the run — a mismatch is reported, never repaired by stripping a prompt or by guessing a command.
+    assert.deepEqual(code.data.command_literals,['    成员添加成功','Box(config)#demo pool add p1 192.0.2.5','demo pool add']);
     // The strict grammar strips neither the prompt nor the indentation: the line is kept exactly as written, and only
     // the whole line that resolves against the tree is recorded; the prompt line and the output line resolve to nothing.
     assert.deepEqual(code.data.command_lines,['    demo pool add p1 192.0.2.5'],'no prompt or output stripping: the bare line is kept verbatim');
@@ -445,22 +449,29 @@ describe('author-marked command literals', () => {
     assert.ok(result.entries.every((entry) => entry.data.command_literals === undefined));
   });
 
-  it('dedupes a repeated literal and retains the complete literal list', () => {
+  it('dedupes a repeated prose mention and retains the complete mention list', () => {
+    // 决定 60: a marked span in prose is stored verbatim as a mention — not classified, not filtered by its shape and
+    // not built into a list grammar — and the former 100-item cap is gone, so nothing is silently truncated.
     const mention = `${Array.from({ length: 120 }, (_, k) => `**demo c${k}**`).join('，')}，**demo c0** 再提一次。`;
     const result = produceManualEntries(markdown(`# 章\n\n${mention}\n`),null,{catalog:STRICT_MANUAL_CATALOG});
-    const literals = result.entries[0].data.command_literals as string[];
-    assert.equal(literals.length, 120);
-    assert.equal(literals[0], 'demo c0');
-    assert.equal(result.entries[0].data.command_literals_cut, undefined);
+    const mentions = result.entries[0].data.command_mentions as string[];
+    assert.equal(mentions.length, 120);
+    assert.equal(mentions[0], 'demo c0');
+    assert.equal(result.entries[0].data.command_mentions_cut, undefined);
+    assert.equal(result.entries[0].data.command_literals, undefined, 'prose claims no command');
   });
 
-  it('keeps all 150 literals for shared whole-root drift evaluation', () => {
+  it('keeps all 150 prose mentions verbatim and claims no drift for them', () => {
+    // A mention the locked tree cannot match is still only a mention (决定 60): drift is a fact about a structural
+    // position, and whether the author meant a command in prose is Circle's proposal with a verbatim quote, not the
+    // pack's judgment.
     const mention = Array.from({ length: 150 }, (_, k) => `**demo missing${k}**`).join('，');
     const catalog = commandCatalog(xml('<commands><scope type="global"><menu name="demo"><item name="present" help_string="p"><arguments></arguments></item></menu></scope></commands>')).catalog;
     const result = produceManualEntries(markdown(`# 章\n\n${mention}\n`), null, { catalog });
     const entry = result.entries[0];
-    assert.equal((entry.data.command_literals as string[]).length, 150);
-    assert.equal(entry.data.command_literals_cut, undefined);
+    assert.equal((entry.data.command_mentions as string[]).length, 150);
+    assert.equal(entry.data.command_mentions_cut, undefined);
+    assert.equal(entry.data.command_literals, undefined);
     assert.ok(!result.warnings.some(warning => warning.includes('漂移')), 'the isolated producer makes no whole-root drift claim');
   });
 });
@@ -768,7 +779,9 @@ describe('placement against the build’s command tree', () => {
   it('retains resolvable and unresolved literals without judging them in isolation', () => {
     const text = '**demo pool add** *\\<name\\>*\n\n该命令用于添加成员。\n\n**demo probe** *\\<name\\>*\n\n该命令用于探测，先执行 “demo pool create”。\n';
     const result = produceManualEntries(markdown(text), null, { catalog });
-    assert.deepEqual([...new Set(result.entries.flatMap(entry => [...((entry.data.command_literals as string[] | undefined) ?? []),...((entry.data.signature_literals as {primary:string;alternatives:string[]}[]|undefined)?.flatMap(group=>group.alternatives)??[])]))].sort(), ['demo pool add', 'demo pool create', 'demo probe']);
+    // 决定 60: the two anchors are signature literals of their own entries and the quoted prose span is a mention of
+    // its paragraph; together they retain every name the author wrote, and none of them is judged in isolation.
+    assert.deepEqual([...new Set(result.entries.flatMap(entry => [...((entry.data.command_literals as string[] | undefined) ?? []),...((entry.data.command_mentions as string[] | undefined) ?? []),...((entry.data.signature_literals as {primary:string;alternatives:string[]}[]|undefined)?.flatMap(group=>group.alternatives)??[])]))].sort(), ['demo pool add', 'demo pool create', 'demo probe']);
   });
 });
 
