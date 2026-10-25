@@ -11,6 +11,18 @@ export class Journal {
   readonly records: RecordsKit;
   readonly now: () => Date;
   constructor(records: RecordsKit, now: () => Date) { this.records = records; this.now = now; }
+  /** A durable per-executor ordinal; gaps are allowed, reuse or rollback is not. */
+  async nextDispatchSequence(binding: JobBinding): Promise<number> {
+    return this.records.store.withTransaction(async tx => {
+      await this.records.store.lock(`dispatch.ordinal:${binding.executor}`, tx);
+      const rows = await this.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.sequence.executor',values:[binding.executor]},tx);
+      const previous = rows.reduce((max,row) => Math.max(max,Number(row.body.detail.dispatch_sequence)),0);
+      const sequence = previous + 1;
+      if (!Number.isSafeInteger(sequence)) throw new Error('派发序号已耗尽；未提交，请管理员建立新执行器身份并重新核验');
+      await this.append(binding,'dispatch_ordinal','validate','completed',{dispatch_sequence:sequence},[],`dispatch.ordinal:${binding.executor}:${sequence}`,tx);
+      return sequence;
+    });
+  }
   async events(job: string,tx?:Transaction): Promise<Event[]> { return this.records.store.findMany<ActionBody>({ key: 'dispatch.job', values: [job], kind: 'action' },tx); }
   async targets(resources: readonly string[]): Promise<Event[]> { return this.records.store.findMany<ActionBody>({ key: 'dispatch.resource', values: resources.map(r => sha256Hex(r)), kind: 'action' }); }
   async blockers(executor:string,target:string,origin:string,resources:readonly string[]):Promise<string[]> {
@@ -38,7 +50,7 @@ export class Journal {
     const event=await this.records.store.put<ActionBody>({ kind: 'action', schema: 'action@1', provenance: 'observed', created_at: time,
       body: { action, run: binding.input?.run ?? binding.run ?? null, item: binding.input?.item ?? null, inputs, component: 'dispatch@1', lease: binding.fences?.length ? { lease: binding.fences[0].lease, fencing: binding.fences[0].fencing } : null, started_at: typeof detail.started_at === 'string' ? detail.started_at : time, ended_at: typeof detail.ended_at === 'string' ? detail.ended_at : time, result,
         error_code: result==='error'?errorCode:null, acceptance: phase==='intent' || phase === 'gate' && detail.allow_submit === true ? 'accepted' : null, codes: result==='error' && errorCode?[errorCode]:[], detail: { job: binding.job, initiated_by: binding.initiated_by, acting_by: binding.acting_by ?? binding.initiated_by, phase, event: newId('evt'), ...detail } },
-      index: [{ key: 'dispatch.job', value: binding.job }, { key: 'dispatch.phase', value: phase }, { key: 'dispatch.target', value: binding.target_key },{key:'dispatch.executor',value:binding.executor},...(binding.scope?[{key:'dispatch.scope.target',value:sha256Hex(binding.scope.target)},{key:'dispatch.scope.origin',value:sha256Hex(binding.scope.origin)}]:[]), ...binding.resources.map(r => ({ key: 'dispatch.resource', value: sha256Hex(r) })),
+      index: [...(phase==='dispatch_ordinal'?[{key:'dispatch.sequence.executor',value:binding.executor}]:[]),{ key: 'dispatch.job', value: binding.job }, { key: 'dispatch.phase', value: phase }, { key: 'dispatch.target', value: binding.target_key },{key:'dispatch.executor',value:binding.executor},...(binding.scope?[{key:'dispatch.scope.target',value:sha256Hex(binding.scope.target)},{key:'dispatch.scope.origin',value:sha256Hex(binding.scope.origin)}]:[]), ...binding.resources.map(r => ({ key: 'dispatch.resource', value: sha256Hex(r) })),
         ...(phase==='intent'&&typeof detail.effect_row==='string'?[{key:'dispatch.effect_row',value:`${binding.input!.run}:${detail.effect_row}`}]:[]),
         ...(binding.input ? [{ key: 'dispatch.lineage', value: binding.input.lineage }, ...(phase === 'intent' ? [{ key: 'dispatch.bytes', value: binding.input.sha256 }] : [])] : [])], ...(unique_key ? { unique_key } : {}) }, tx);
     if(event.created&&(phase==='intent'||isEffectOutcome(detail.outcome)||detail.effect_mark==='disposed')&&(binding.input||phase==='boundary_refused'))await this.effect(binding,event,tx);
@@ -56,7 +68,7 @@ export class Journal {
       const outcome=isEffectOutcome(detail.outcome)?detail.outcome:event.body.detail.phase==='intent'?'issued':previous?.body.outcome??'issued';
       const identity=values.request_identity as {subject?:unknown}|undefined;
       const body=EffectRecord.parse({schema:'effect@1',job:binding.job,run:binding.input?.run??binding.run??null,
-        intent_key:values.intent_key??null,request_id:values.request_id??null,not_after:values.not_after??null,action_digest:values.action_digest??null,
+        intent_key:values.intent_key??null,request_id:values.request_id??null,not_after:values.not_after??null,dispatch_sequence:values.dispatch_sequence??null,sequence_scope:values.sequence_scope??null,action_digest:values.action_digest??null,
         target_key:binding.target_key,covered_items:binding.input?.items??[],effect_class:write?.effect_class??'job',retry_safety:write?.retry_safety??'unsafe',signing:write?.signing??'service_on_behalf',
         content_sha256:binding.input?.sha256??null,before_state:values.before_state??{bound:false,sha256:null,reference:null},
         writing_identity:{credential:d.credential??null,on_behalf_of:binding.user,subject:identity?.subject??null},audience:null,outcome,

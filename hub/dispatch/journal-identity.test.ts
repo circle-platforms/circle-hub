@@ -16,7 +16,7 @@ test('the request identity is read under the submit lease and committed before t
   assert.equal((query.params.arguments as any).request,(submit.params.arguments as any).request);
   const snapshot=events.find(e=>e.body.detail.phase==='request_identity')!;
   assert.ok(snapshot.body.inputs.every(ref=>intent.body.inputs.includes(ref)));
-  assert.equal(state.outcome,'proven_not_executed');assert.equal(names.filter(n=>n==='send_blob').length,1);
+  assert.equal(state.outcome,'unknown');assert.equal(names.filter(n=>n==='send_blob').length,1);
 });
 
 for(const identityChange of ['epoch','subject','since','missing'] as const) {
@@ -24,7 +24,8 @@ for(const identityChange of ['epoch','subject','since','missing'] as const) {
     const c=await setupJournal({lost:true,absent:true,identityChange});t.after(()=>c.close());
     const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
     assert.equal(state.outcome,'unknown');assert.equal(state.frozen,true);
-    assert.match(state.missing_fact!,/日志|主体/);assert.match(state.next_action!,/人工核对原投递事实/);
+    if(identityChange==='since'){assert.match(state.missing_fact!,/查空不证明未执行/);assert.match(state.next_action!,/不得重交/);}
+    else {assert.match(state.missing_fact!,/日志|主体/);assert.match(state.next_action!,/人工核对原投递事实/);}
     await c.service.resume(c.admin,state.job);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
   });
 }
@@ -32,7 +33,7 @@ for(const identityChange of ['epoch','subject','since','missing'] as const) {
 test('an inconsistent retention boundary below the journal start cannot prove nonexecution',async t=>{
   const c=await setupJournal({lost:true,absent:true,floorBeforeSince:true});t.after(()=>c.close());
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(state.outcome,'unknown');assert.equal(state.frozen,true);assert.match(state.missing_fact!,/回收边界早于可靠记账起点/);
+  assert.equal(state.outcome,'unknown');assert.equal(state.frozen,true);assert.match(state.missing_fact!,/查空不证明未执行/);
 });
 
 test('the actual submit session must advertise a declared request protocol version',async t=>{

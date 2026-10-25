@@ -993,8 +993,8 @@ const definition=base.superRefine((d, ctx) => {
   if (new Set(d.resources).size !== d.resources.length || new Set(d.allowed_tools).size !== d.allowed_tools.length) ctx.addIssue({ code: 'custom', message: '资源键和允许工具不得重复' });
   for (const c of [...Object.values(d.calls), ...d.precheck_reads, ...(d.probes ? [d.probes.call] : [])]) if (!d.allowed_tools.includes(c.tool)) ctx.addIssue({ code: 'custom', message: '生命周期调用不在允许工具清单内' });
   if (d.refused_tools.some(name=>d.allowed_tools.includes(name))) ctx.addIssue({code:'custom',message:'同一工具不能既被允许又被拒绝'});
-  if (d.receipt.request_id || d.reconciliation) {
-    if (countBindings(d.calls.submit.arguments,'request_id') !== 1 || countBindings(d.calls.submit.arguments,'not_after') !== 1) ctx.addIssue({code:'custom',message:'请求协议必须各绑定一次请求身份和截止时间'});
+  { // Every dispatch carries its durable request/sequence identity, including unsafe legacy executors.
+    if (['request_id','dispatch_sequence','sequence_scope'].some(name=>countBindings(d.calls.submit.arguments,name)!==1)) ctx.addIssue({code:'custom',message:'请求协议必须各绑定一次请求身份、派发序号与执行器序号流；绝对截止不由目标判定'});
   }
   if (d.reconciliation && (!d.calls.query || !d.receipt.request_id || countBindings(d.calls.query.arguments,'request_id') !== 1)) ctx.addIssue({code:'custom',message:'查账必须绑定原请求身份并登记回执身份指针'});
   if (d.probes && ['command','seat_index','lease_id'].some(key=>countBindings(d.probes!.call.arguments,key)!==1))ctx.addIssue({code:'custom',message:'座位探测必须各绑定一次命令、座位序号和本次租约身份'});
@@ -1055,7 +1055,7 @@ export type ExecutorSource=z.infer<typeof ExecutorSource>;
 
 /** Append-only B06 snapshots; early refusals have no allocated intent or request identity. */
 export const EffectRecord=z.strictObject({
- schema:z.literal('effect@1'),job:Sha256,run:RunId.nullable(),intent_key:Sha256.nullable(),request_id:z.string().min(1).nullable(),not_after:IsoTime.nullable(),
+ schema:z.literal('effect@1'),job:Sha256,run:RunId.nullable(),intent_key:Sha256.nullable(),request_id:z.string().min(1).nullable(),not_after:IsoTime.nullable(),dispatch_sequence:z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).nullable().optional(),sequence_scope:z.string().min(1).nullable().optional(),
  action_digest:Sha256.nullable(),target_key:Sha256,covered_items:z.array(z.string().min(1)),
  effect_class:EffectClassSchema,retry_safety:RetrySafetySchema,signing:SigningSchema,
  content_sha256:Sha256.nullable(),before_state:z.strictObject({bound:z.boolean(),sha256:Sha256.nullable(),reference:z.string().nullable()}),

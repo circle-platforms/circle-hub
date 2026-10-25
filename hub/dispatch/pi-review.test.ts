@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {setupJournal} from './testing/journal.ts';
 
-test('PI03 conformance sends nothing until the target clock proves expiry with the declared margin',async t=>{
+test('PI03 conformance never uses target wall-clock order to certify a sequence protocol',async t=>{
   const c=await setupJournal({uncertified:true,clockLagMs:2000});t.after(()=>c.close());
   const state=await c.service.conformance(c.admin,c.executor.id);
   assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
   assert.equal(state.outcome,'not_dispatched');assert.equal(state.frozen,false);
-  assert.match(state.missing_fact!,/目标时刻未越过探测截止/);
-  assert.match(state.next_action!,/时钟/);
+  assert.match(state.missing_fact!,/序号回收拒收/);
+  assert.match(state.next_action!,/受限审计/);
 });
 
 for(const mode of [{admitExpired:true},{lost:true}])test('PI04 conformance never attempts an unverified write even when the target would admit or lose it',async t=>{

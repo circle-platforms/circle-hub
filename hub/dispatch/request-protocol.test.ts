@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setup } from './testing/context.ts';
 
-test('submission binds the intent request and deadline and rejects a different echoed request', async t => {
+test('submission binds the intent request and dispatch ordinal and rejects a different echoed request', async t => {
   const c = await setup({ alter: (name, value) => name === 'send_blob' ? { ...value, request: 'different' } : value }); t.after(() => c.close());
   const status = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(status.frozen, true);
@@ -10,7 +10,8 @@ test('submission binds the intent request and deadline and rejects a different e
   const intent = events.find(e => e.body.detail.phase === 'intent')!;
   const sent = c.endpoint.calls.find(e => e.params.name === 'send_blob')!.params.arguments as Record<string, unknown>;
   assert.equal(sent.request, intent.body.detail.request_id);
-  assert.equal(sent.until, intent.body.detail.not_after);
+  assert.equal(sent.dispatch_sequence, intent.body.detail.dispatch_sequence);
+  assert.equal(sent.sequence_scope, c.executor.id);assert.equal(sent.until,undefined);
   assert.ok(!events.some(e => e.body.detail.phase === 'receipt'));
 });
 
@@ -44,12 +45,12 @@ test('a lost reply is reconciled by request without resubmission or requiring ne
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
 });
 
-test('absence proves nonexecution only beyond the deadline and within certified retention coverage', async t => {
+test('absence never proves nonexecution from cross-machine time ordering', async t => {
   const { setupJournal } = await import('./testing/journal.ts');
   for (const options of [{absent:true},{absent:true,uncertified:true},{absent:true,floorAtDeadline:true},{absent:true,clockBeforeDeadline:true},{absent:true,clockAsText:true},{stopped:true},{wrongIdentity:true}]) {
     const c = await setupJournal({lost:true,...options}); t.after(()=>c.close());
     const result = await c.service.dispatch(c.admin,c.run,c.executor.id);
-    const proven = !('uncertified' in options || 'floorAtDeadline' in options || 'clockBeforeDeadline' in options || 'clockAsText' in options || 'wrongIdentity' in options);
+    const proven = 'stopped' in options;
     assert.equal(result.outcome,proven ? 'proven_not_executed' : 'unknown'); assert.equal(result.frozen,!proven);
     assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
     await c.close();
