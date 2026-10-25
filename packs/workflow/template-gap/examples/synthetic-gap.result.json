@@ -1008,6 +1008,475 @@
       "classification_status": "classified",
       "unclassified": [],
       "scope_complete": true,
+      "case_resources": [
+        {
+          "case": "upload-aebb0808aa5c:k7kd4d8qddqg",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:vpp6bkv9luc6",
+          "present": true,
+          "resource": [
+            "功能"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:vaujn95az8d8",
+          "present": true,
+          "resource": [
+            "Functional"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:rycuaqhi8w9x",
+          "present": true,
+          "resource": [
+            "[Function]"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:5jp998s5k5lh",
+          "present": true,
+          "resource": [
+            "function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:q4gngrp4drre",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:3td81tprwfs4",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:v99unez89wsx",
+          "present": false,
+          "resource": null
+        },
+        {
+          "case": "upload-aebb0808aa5c:hxg6y0nsqerm",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:4ltan31kcjqa",
+          "present": true,
+          "resource": [
+            "configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:jfhp3uwle991",
+          "present": true,
+          "resource": [
+            "配置"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:2g1g1d0vhy65",
+          "present": true,
+          "resource": [
+            "Configure"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:kbig1f2yc6q4",
+          "present": true,
+          "resource": [
+            "[configuration]"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:i2pfefpoghe8",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:lvdxvzfm1hg6",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:uu88965cspsf",
+          "present": true,
+          "resource": [
+            "集成"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:t8da3mog62t8",
+          "present": true,
+          "resource": [
+            "integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:93jureq5up99",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:nxaakfyiqtum",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:fzstcob8zis6",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:rrgj1uagx1dv",
+          "present": true,
+          "resource": [
+            "Compatibility"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:b1bl63v94rk3",
+          "present": true,
+          "resource": [
+            "兼容"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:uotmwgdkke7b",
+          "present": true,
+          "resource": [
+            "compatibility"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:i579m39pc230",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:auch71u6uxce",
+          "present": true,
+          "resource": [
+            "negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:q3r7am57ohue",
+          "present": true,
+          "resource": [
+            "负向"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:z04xch3i7ck8",
+          "present": true,
+          "resource": [
+            "[Negative]",
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:nmb6vclhv6bb",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:y6gok9s3idfh",
+          "present": true,
+          "resource": [
+            "negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:vodmb3tlqxbo",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:p8cwxc1ye2np",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:i7dd1j74o4ur",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:s2aneti8p9dd",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:0f1sd7awiefi",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:7i05at912jhi",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:gzcm7ldrqfa7",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:ofi6w1u55y47",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:58rev5vsqzyw",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:l0r4glerzq3j",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:jr493b74wl4l",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:0j9mbggwjytw",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:u2wenvki1nxw",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:fiwo7utmxxne",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:2zlrkcoz9mr4",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:gv8eovpocm23",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:1hccmdu8ssig",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:v0dyf7d8h0a5",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:01qbgqo02rm3",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:jsvykub8vild",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:lvkk0ejfn1ap",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:o6ccpg02s6ou",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:4few8h0jrcxe",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:v0mcr4ryvsai",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:ybwqxua4vqej",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:f6eulx5b954g",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:a6gosvhh50zv",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:4wlclalycny1",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:b9ckh74kaobq",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:py9uoksarpjw",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:2g0h89f0w1uf",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:9nufkipey4f4",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:wznpmaoyl6xb",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:saqa73tqfrw0",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:2i0r5yfvn3ta",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:be4tibl8k307",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:y34nt14ss7ok",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        }
+      ],
+      "tag_table": {
+        "id": "team-resource-tags",
+        "version": "1",
+        "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b"
+      },
+      "tag_undeclared_cases": 61,
       "command_coverage": {
         "case_rule": "marked",
         "rule_mismatch": false,
@@ -1116,6 +1585,31 @@
     "code": "template-gap.category_shortfall",
     "statement": "按原件声明或本次引文核验成立的模型分类，在完整用例范围内未覆盖且未声明跳过：stress",
     "data": {
+      "covered": [
+        "functional",
+        "configuration",
+        "integration",
+        "compatibility",
+        "negative",
+        "command_add",
+        "command_delete",
+        "command_modify",
+        "command_query",
+        "show_at_maximum",
+        "no_command",
+        "clear_command",
+        "operation_log",
+        "audit_log",
+        "configuration_sync",
+        "configuration_save",
+        "configuration_restore",
+        "configuration_clear",
+        "upgrade_new_to_new",
+        "upgrade_old_to_new",
+        "upgrade_new_to_old",
+        "security",
+        "database"
+      ],
       "classification_status": "classified",
       "classified": 66,
       "total": 66,
@@ -1469,31 +1963,6 @@
             "upload-aebb0808aa5c:y34nt14ss7ok"
           ]
         }
-      ],
-      "covered": [
-        "functional",
-        "configuration",
-        "integration",
-        "compatibility",
-        "negative",
-        "command_add",
-        "command_delete",
-        "command_modify",
-        "command_query",
-        "show_at_maximum",
-        "no_command",
-        "clear_command",
-        "operation_log",
-        "audit_log",
-        "configuration_sync",
-        "configuration_save",
-        "configuration_restore",
-        "configuration_clear",
-        "upgrade_new_to_new",
-        "upgrade_old_to_new",
-        "upgrade_new_to_old",
-        "security",
-        "database"
       ],
       "missing": [
         "stress"

@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { z } from 'zod';
-import { labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { ChecksFile, PackManifest, PackSample, RequirementsFile, SlotsFile, WorkflowFile } from '../../../contracts/src/pack.ts';
 import { TABLE_SCHEMAS } from '../../../contracts/src/tables.ts';
 import { callPackFunction, getInterpreter, osIsolationAvailable } from '../../../hub/rules/api.ts';
@@ -12,9 +11,13 @@ import { readPackDirectory, refusalsOf, runPublishCheck, temporaryDirectory, val
 import { PACK_DIR, isPackFile, manifestProblems, packFiles, readManifest, stagePack } from './api.ts';
 import projectDefault, { projectDocuments } from './functions/project.ts';
 import { commandOutcomes } from './functions/command-check.ts';
-import { commandSampleSubjects, commandTransitionalExamples } from './testing/command-samples.ts';
-import { bindIndex, indexView } from './testing/index.ts';
+import { coverageOutcomes } from './functions/coverage-check.ts';
+import { classificationSubject } from './functions/classification-subject.ts';
 import subjectDefault from './functions/subject.ts';
+import tagDeclarations from './functions/tag-declarations.ts';
+import { isFailure } from './functions/common.ts';
+import { commandSampleSubjects, commandTransitionalExamples } from './testing/command-samples.ts';
+import { bindIndex, indexView, LOCK } from './testing/index.ts';
 import type { PackWarning } from './functions/types.ts';
 import { EXAMPLE_INPUT, EXAMPLE_RESULT, exampleBytes, exampleResult } from './testing/examples.ts';
 import { baseDocument, outlineDocument, renamed } from './testing/mindmap.ts';
@@ -35,7 +38,7 @@ describe('the pack directory', () => {
   it('pack.json lists every pack file with its SHA-256 and size, and nothing else', async () => {
     assert.deepEqual(await manifestProblems(), []);
     const manifest = await readManifest();
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['template-gap', '1.2.0', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['template-gap', '1.2.11', 'workflow']);
     assert.deepEqual(manifest.files, await packFiles());
     for (const own of ['README.md', 'api.ts', 'pack.test.ts', 'engine.test.ts', 'testing/bed.ts', 'functions/project.test.ts']) assert.equal(isPackFile(own), false, own);
     const paths = manifest.files.map((f) => f.path);
@@ -60,11 +63,12 @@ describe('the pack directory', () => {
     assert.deepEqual(validation.pack.warnings, []);
     const report = await runPublishCheck({ pack: validation.pack, packDir: staged.path });
     assert.deepEqual(refusalsOf(report, validation.pack), []);
-    assert.deepEqual(report.samples, { total: 13, passed: 13, failed: 0, sources: { author: 13, returned_counterexample: 0, retained_delivery: 0 } });
-    assert.deepEqual(report.checks, [{ check: 'coverage', tier: 'advisory', positive: 2, negative: 4, sources: { author: 6, returned_counterexample: 0, retained_delivery: 0 }, marks: ['author_samples_only'] }, { check: 'command_coverage', tier: 'advisory', positive: 2, negative: 5, sources: { author: 7, returned_counterexample: 0, retained_delivery: 0 }, marks: ['author_samples_only'] }]);
+    // 标签声明检查多了正负各一份样例，一共 15 份，仍都是作者样例。
+    assert.deepEqual(report.samples, { total: 15, passed: 15, failed: 0, sources: { author: 15, returned_counterexample: 0, retained_delivery: 0 } });
+    assert.deepEqual(report.checks, [{ check: 'coverage', tier: 'advisory', positive: 2, negative: 4, sources: { author: 6, returned_counterexample: 0, retained_delivery: 0 }, marks: ['author_samples_only'] }, { check: 'command_coverage', tier: 'advisory', positive: 2, negative: 5, sources: { author: 7, returned_counterexample: 0, retained_delivery: 0 }, marks: ['author_samples_only'] }, { check: 'tag_declarations', tier: 'advisory', positive: 1, negative: 1, sources: { author: 2, returned_counterexample: 0, retained_delivery: 0 }, marks: ['author_samples_only'] }]);
     assert.deepEqual(report.unsampled, []);
     // Honest about the samples: all written by the author, so what the check supports is marked author_samples_only.
-    assert.deepEqual(report.warnings.map((w) => w.rule), ['publish.author_samples_only', 'publish.author_samples_only']);
+    assert.deepEqual(report.warnings.map((w) => w.rule), ['publish.author_samples_only', 'publish.author_samples_only', 'publish.author_samples_only']);
   });
 });
 
@@ -79,8 +83,9 @@ describe('the declaration files', () => {
     assert.deepEqual(workflow.parameters.map((p) => [p.name, p.required]), [['skipped', false], ['case_rule', false]]);
     assert.ok(HAN.test(workflow.parameters[0].description) && HAN.test(workflow.inputs[0].description));
     // A skip is the user's declaration, never the model's judgment; an input batch is bounded (the sandbox input, the text).
-    assert.match(workflow.parameters[0].description, /只在用户明确说某个类别不适用时写，不按模型自己的判断写/);
-    assert.match(workflow.parameters[0].description, /照原话/);
+    // 槽位说明要求跳过只认用户原话理由，并且 command 必须是完整身份对象。
+    assert.match(workflow.parameters[0].description, /仅用户明确声明的不适用类别及原话理由/);
+    assert.match(workflow.parameters[0].description, /原话理由/);
     assert.match(workflow.inputs[0].description, /一次最多约 30 份/);
   });
 
@@ -97,11 +102,13 @@ describe('the declaration files', () => {
 
   it('requirements.json: two fact requirements on every item, static layer, bookkeeping, required, judged by the coverage check', () => {
     const { requirements } = RequirementsFile.parse(json('requirements.json'));
-    assert.equal(requirements.length, 2);
+    assert.equal(requirements.length, 3);
     assert.deepEqual(requirements[1].checks, ["command_coverage"]);
     assert.deepEqual([requirements[1].target, requirements[1].accepted_producer, requirements[1].done_rule, requirements[1].layers], ["item", "fact", "bookkeeping", ["static"]]);
     const [r] = requirements;
-    assert.deepEqual([r.key, r.target, r.accepted_producer, r.layers, r.done_rule, r.required, r.checks], ['coverage', 'item', 'fact', ['static'], 'bookkeeping', true, ['coverage']]);
+    // 覆盖要求项接受的是判断，不是事实。标签声明是第三条。
+    assert.deepEqual([r.key, r.target, r.accepted_producer, r.layers, r.done_rule, r.required, r.checks], ['coverage', 'item', 'judgment', ['static'], 'bookkeeping', true, ['coverage']]);
+    assert.equal(requirements[2].key, 'tag_declarations');
     // With or without `* -> unknown`, a gap stays a violation (engine decision 6 aligns action unknown
     // to keep terminal violation with attribution unattributed). engine.test.ts tests the `* -> unknown` variant.
     assert.deepEqual(r.error_handling, []);
@@ -109,12 +116,15 @@ describe('the declaration files', () => {
 
   it('checks.json: coverage@1 over the subject built by functions/subject.ts, per item, judging the subject', () => {
     const { checks } = ChecksFile.parse(json('checks.json'));
-    assert.deepEqual(checks[0], { id: 'coverage', title: '模板类别覆盖', interpreter: 'coverage@1', table: 'tables/template-v3-coverage.json', applies: 'item', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' });
-    assert.deepEqual(checks[1], { id: 'command_coverage', title: '按命令的模板类别覆盖', function: { module: 'functions/command-check.ts' }, applies: 'item', subject: { module: 'functions/command-subject.ts' }, judges: 'subject', tier: 'advisory' });
+    assert.deepEqual(checks[0], { id: 'coverage', title: '模板类别覆盖', applies: 'item', subject: { module: 'functions/classification-subject.ts' }, judges: 'subject', tier: 'advisory', function: { module: 'functions/coverage-check.ts' }, reads: { roles: ['subject'], max_bytes: 1048576 } });
+    assert.deepEqual(checks[1], { id: 'command_coverage', title: '按命令的模板类别覆盖', function: { module: 'functions/command-check.ts' }, applies: 'item', subject: { module: 'functions/command-subject.ts' }, judges: 'subject', tier: 'advisory', reads: { roles: ['subject'], max_bytes: 1048576 } });
   });
 
   it('slots.schema.json declares nothing: the model fills no slot', () => {
-    assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
+    const slots = SlotsFile.parse(json('slots.schema.json'));
+    assert.equal(slots.schema, 'slots@1');
+    assert.deepEqual(slots.run, {});
+    assert.equal(slots.item.coverage.data?.title, 'category-judgment@1');
   });
 
   it('the coverage table is an admitted coverage@1 table, advisory, naming its origin, whose members are the template categories', () => {
@@ -133,11 +143,13 @@ describe('the declaration files', () => {
   it('samples: pack-sample@1 of the coverage check, both kinds, every one tagged with its source, subjects shaped like subject.ts builds them', () => {
     const manifest = PackManifest.parse(json('pack.json'));
     const samples = manifest.files.filter((f) => f.path.startsWith('samples/')).map((f) => ({ path: f.path, sample: PackSample.parse(json(f.path)) }));
-    assert.equal(samples.length, 13);
-    const keys = Object.keys(subjectDefault({ item: { id: 'x', location: 'src:x', fields: { document: 'x', categories: [], skipped: [] } } }) as object).sort();
+    assert.equal(samples.length, 15);
+    // 覆盖检查的主体是 classification-subject，不再是旧的 covered 列表。
+    const keys = Object.keys(classificationSubject({ item: { id: 'x', location: 'src:x', fields: {} }, context: { groups: [] }, slots: {} })).sort();
     for (const { path, sample } of samples) {
-      assert.ok(['coverage', 'command_coverage'].includes(sample.check), path);
-      assert.ok(!sample.expect.some(e => e.verdict === 'unknown'), 'current publication polarity cannot express a transitional unknown');
+      assert.ok(['coverage', 'command_coverage', 'tag_declarations'].includes(sample.check), path);
+      // 覆盖和命令样例仍不能表达过渡未知。标签负例同时给出未声明闭集的 refute 和缺类型声明的 unknown。
+      if (sample.check !== 'tag_declarations') assert.ok(!sample.expect.some(e => e.verdict === 'unknown'), `${path}: coverage and command samples still cannot express a transitional unknown`);
       assert.equal(sample.source, 'author', path);
       if (sample.check === 'coverage') assert.deepEqual(Object.keys(sample.subject as object).sort(), keys, path);
       assert.ok(sample.note !== undefined && HAN.test(sample.note), path);
@@ -146,37 +158,32 @@ describe('the declaration files', () => {
 
   it('SKILL.md: relays the result unchanged, marks commentary as model relay, binds a catalog product and names every template category', async () => {
     const skill = await readFile(join(PACK_DIR, 'SKILL.md'), 'utf8');
-    assert.ok(skill.includes(labelOf('qualifier_mark', 'model_relay')), 'the commentary mark is the vocabulary label');
-    assert.match(skill, /原样转述/);
+    assert.match(skill, /最终只转述受理回执及其限定/);
     assert.match(skill, /product 和 build/);
-    assert.match(skill, /fields=document,node,commands,title,path_labels/);
-    assert.match(skill, /默认.*marked/);
-    for (const category of TEMPLATE.categories) assert.ok(skill.includes(`${category.id} ${category.label}`), category.id);
-    assert.match(skill, /24 个类别都要覆盖/);
+    assert.match(skill, /fields=document,node,commands,command_identities,title,path_labels/);
+    assert.match(skill, /默认 case_rule=marked/);
+    for (const category of TEMPLATE.categories) assert.ok(skill.includes(category.id) && skill.includes(category.label), category.id);
+    assert.match(skill, /24 个类别的必选范围/);
     assert.ok(skill.length < 4000, 'the procedure travels in every start_run answer');
   });
 
   it('SKILL.md: a skip is the user’s call with the user’s words, and the evidence step does not depend on a reference the answer may lack', async () => {
     const skill = await readFile(join(PACK_DIR, 'SKILL.md'), 'utf8');
     const step = (n: number): string => skill.split('\n').find((line) => line.startsWith(`${n}. `)) ?? '';
-    assert.match(step(4), /只有用户明确说某个类别对某份脑图不适用并给出理由时/);
-    assert.match(step(4), /reason 照用户的原话写/);
-    assert.match(step(4), /不要按你自己的判断跳过/);
-    assert.match(step(6), /哪些类别可能不适用/, 'the model’s own view of applicability goes into the commentary');
-    // StartRunOutput names no run record (contracts) and the server text may not print one: the step says what to do then.
-    assert.match(step(3), /回答里给出了运行记录的引用/);
-    assert.match(step(3), /回答里没有运行记录的引用时，证据用例只在控制台的运行页里/);
-    assert.match(step(3), /不要拿校验结果的引用去读条目字段/);
-    assert.match(step(1), /一次最多约 30 份/);
+    assert.match(step(7), /skipped 只按用户明确声明填写/);
+    assert.match(step(7), /reason 照用户原话/);
+    assert.match(step(4), /unclassified 是还缺类别判断的用例，不是缺类别/);
+    assert.match(step(9), /最终只转述受理回执/);
   });
 });
 
 describe('codes.json', () => {
-  const codes = json('tables/codes.json') as { refusals: Array<{ code: string; when: string; fix: string }>; warnings: Array<{ code: string; when: string; fix: string }>; violations: Array<{ code: string; when: string; fix: string }> };
-  const declared = new Set([...codes.refusals, ...codes.warnings, ...codes.violations].map((entry) => entry.code));
+  const codes = json('tables/codes.json') as { refusals: Array<{ code: string; when: string; fix: string }>; warnings: Array<{ code: string; when: string; fix: string }>; violations: Array<{ code: string; when: string; fix: string }>; checks: Array<{ code: string; when: string; fix: string }> };
+  // undeclared_tag 在 checks 里，是提示档，不是违规。
+  const declared = new Set([...codes.refusals, ...codes.warnings, ...codes.violations, ...codes.checks].map((entry) => entry.code));
 
   it('declares each code once, under the pack name, in Chinese', () => {
-    const all = [...codes.refusals, ...codes.warnings, ...codes.violations];
+    const all = [...codes.refusals, ...codes.warnings, ...codes.violations, ...codes.checks];
     assert.equal(declared.size, all.length);
     for (const entry of all) {
       assert.match(entry.code, /^template-gap\.[a-z][a-z_]*$/);
@@ -207,6 +214,18 @@ describe('codes.json', () => {
     collect(projectDefault(projectionInput([model([{ data: { id: 'r', text: '根' }, children: [1, 2, 3, 4, 9] }, tagged('d'), tagged('d'), tagged(null), tagged('x'.repeat(300), { resource: ['Function', null] })])])));
     collect(projectDefault(projectionInput([model(Array.from({ length: 205 }, (_, i) => ({ data: { id: `n${i}`, text: 'x', ...(i === 1 ? { priority: 2, resource: ['Stress'] } : {}) }, children: i < 204 ? [i + 1] : [] })))])));
     for (const example of commandSampleSubjects()) collect(commandOutcomes(example.subject));
+    collect(coverageOutcomes({ skipped: [{ category: 'not-a-category', reason: '合成' }] }));
+    // 示例文档已按 category_ids 分类并缺 stress，完整范围下才是 category_shortfall。
+    const projected = projectDocuments({ inputs: [bind(exampleBytes())], parameters: {}, context: LOCK });
+    if (!isFailure(projected)) {
+      const item = projected.items[0]!;
+      collect(coverageOutcomes(classificationSubject({
+        applies: 'item',
+        item: { id: item.id, label: item.label, location: `src:x/${item.location.parser}/${item.location.selector}`, fields: item.fields },
+        slots: { coverage: [] }, evidence: [], context: { ...LOCK, groups: projected.groups },
+      })));
+    }
+    collect(tagDeclarations({ subject: { item: '1', location: 'src:x', fields: { case_resources: [{ case: 'c', present: true, resource: ['NotAType'] }] } } }));
     collect(projectDefault(projectionInput([bind(base, { external: 'agile:mindmap:900001' }), bindIndex(indexView([], ['900001']))])));
     for (const code of emitted) assert.ok(declared.has(code), `${code} is not declared in tables/codes.json`);
     for (const code of declared) assert.ok(emitted.has(code), `${code} is declared but no scenario emits it`);
@@ -214,7 +233,7 @@ describe('codes.json', () => {
 });
 
 describe('the pack functions', () => {
-  const sources = ['functions/cases.ts', 'functions/category-evidence.ts', 'functions/command-check.ts', 'functions/command-subject.ts', 'functions/commands.ts', 'functions/common.ts', 'functions/index.ts', 'functions/project.ts', 'functions/subject.ts', 'functions/tags.ts', 'functions/template.ts', 'functions/text.ts', 'functions/types.ts'];
+  const sources = ['functions/cases.ts', 'functions/category-evidence.ts', 'functions/classification-subject.ts', 'functions/classification.ts', 'functions/command-check.ts', 'functions/command-identity.ts', 'functions/command-subject.ts', 'functions/commands.ts', 'functions/common.ts', 'functions/coverage-check.ts', 'functions/generated/vocabulary.ts', 'functions/index.ts', 'functions/project.ts', 'functions/source-quotes.ts', 'functions/subject.ts', 'functions/tag-declarations.ts', 'functions/tags.ts', 'functions/template.ts', 'functions/text.ts', 'functions/types.ts'];
 
   it('are exactly the listed modules, import only the pack at run time and use no clock, randomness or I/O', async () => {
     assert.deepEqual((await readManifest()).files.map((f) => f.path).filter((p) => p.startsWith('functions/')), sources);
@@ -225,10 +244,13 @@ describe('the pack functions', () => {
         .join('\n');
       for (const match of code.matchAll(/^\s*import\s+(type\s+)?[^'"]*from\s+'([^']+)'(.*)$/gm)) {
         if (match[1] !== undefined) continue;
-        if (match[2] === '../tables/template-v3.json') assert.match(match[3], /with \{ type: 'json' \}/, name);
-        else assert.match(match[2], /^\.\/[a-z-]+\.ts$/, `${name} imports ${match[2]} at run time`);
+        // 类别判断和命令身份按包内 JSON Schema 校验；引文只许 source-quotes 用 createHash 核对原文字节。
+        if (match[2] === 'zod') assert.ok(name === 'functions/classification.ts' || name === 'functions/command-identity.ts', name);
+        else if (match[2] === 'node:crypto') assert.equal(name, 'functions/source-quotes.ts');
+        else if (/^\.\.\/tables\/[a-z0-9.-]+\.json$/.test(match[2])) assert.match(match[3], /with \{\s*type:\s*'json'\s*\}/, name);
+        else assert.match(match[2], /^\.\/(?:[a-z-]+|generated\/vocabulary)\.ts$/, `${name} imports ${match[2]} at run time`);
       }
-      for (const forbidden of [/\bDate\b/, /Math\.random/, /\bprocess\b/, /\brequire\(/, /\bfetch\(/, /\bsetTimeout\b/, /\bperformance\b/, /\beval\(/, /new Function/, /\bimport\(/, /\bglobalThis\b/, /from 'node:/, /\bBuffer\b/]) {
+      for (const forbidden of [/\bDate\b/, /Math\.random/, /\bprocess\b/, /\brequire\(/, /\bfetch\(/, /\bsetTimeout\b/, /\bperformance\b/, /\beval\(/, /new Function/, /\bimport\(/, /\bglobalThis\b/, /from 'node:(?!crypto')/, /\bBuffer\b/]) {
         assert.ok(!forbidden.test(code), `${name} uses ${forbidden}`);
       }
     }
@@ -266,10 +288,17 @@ describe('the pack functions', () => {
       const started = performance.now();
       const out = await callPackFunction({ packDir: staged.path, module: 'functions/project.ts' }, input);
       const took = performance.now() - started;
-      const [item] = (out.output as { items: Array<{ fields: { caseCount: number } }> }).items;
-      assert.equal(item.fields.caseCount, cases, name);
+      const produced = out.output as { items?: Array<{ fields: { caseCount: number } }>; error?: { code?: string } };
       assert.deepEqual(out.output, projectDefault(input), name);
       assert.ok(took < 5_000, `${name}: ${took.toFixed(0)} ms in the sandbox`);
+      if (name === 'deep') {
+        // 两万条用例带上逐条分类和 resource 后超过投影自己的 8MB 上限，函数拒绝，不把沙箱超时或内存违规当成通过。
+        assert.equal(produced.error?.code, 'template-gap.too_large', name);
+        continue;
+      }
+      if (!produced.items) assert.fail(`${name}: ${JSON.stringify(produced).slice(0, 400)}`);
+      const [item] = produced.items;
+      assert.equal(item.fields.caseCount, cases, name);
     }
   });
 });
@@ -293,5 +322,6 @@ it('records decision 35 item 19 while keeping all 24 template categories require
 it('documents the transitional-sample contract gap and the unversioned follow-up without inventing an interface', async () => {
   const readme = await readFile(join(PACK_DIR, 'README.md'), 'utf8');
   assert.match(readme, /期望过渡未知/); assert.match(readme, /合约缺口/); assert.match(readme, /kb-unversioned/);
-  for (const pair of commandTransitionalExamples()) assert.deepEqual(json(`examples/${pair.id}.json`), pair);
+  // JSON 不保留值为 undefined 的 claims；提交的样例就是 stringify 之后的形状。
+  for (const pair of commandTransitionalExamples()) assert.deepEqual(json(`examples/${pair.id}.json`), JSON.parse(JSON.stringify(pair)));
 });

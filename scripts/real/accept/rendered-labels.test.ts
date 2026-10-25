@@ -26,7 +26,10 @@ for(const [index,row] of [
 test('titled untraced row remains unknown; title does not stand in for an unknown summary',()=>{
  const gold:TraceGold={product:'synthetic',build:'Synthetic_10_7',defects:[{bug:'7402',status:'known',cases:[]}]};
  const check=(row:string)=>traceability(gold).check(turns('运行 run_synthetic\n'+row)).find(c=>c.name.includes('没有用例'))!;
- assert.equal(check('- 7402 | 缺陷 7402：合成标题 | 已知（未修复）；无已索引用例（未知）').ok,true);
+ // 标题里的未知不能代替摘要。摘要写明未知时，核对仍是未完成，不能当成确定的缺席通过。
+ const unknownRow=check('- 7402 | 缺陷 7402：合成标题 | 已知（未修复）；无已索引用例（未知）');
+ assert.equal(unknownRow.ok,false);
+ assert.match(unknownRow.actual,/追溯仍未知/);
  assert.equal(check('- 7402 | 缺陷 7402：无已索引用例（未知） | 已知（未修复）；1 个用例').ok,false);
 });
 

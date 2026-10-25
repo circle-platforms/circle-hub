@@ -16,14 +16,14 @@ const FIXTURES: MindmapFixture[] = ['review-150.km.json', 'review-150.double.jso
 type Category = { id: string; required?: boolean; group?: string };
 const theirTemplate = JSON.parse(readFileSync(new URL('../../case-review/tables/template-v3.json', import.meta.url), 'utf8')) as { categories: Category[] };
 const ourTemplate = table('template-v3.json') as { categories: Category[] };
-const withoutRequired = ({ required: _required, ...rest }: Category) => rest;
 
 describe('parity with case-review', () => {
   it('copies the categories of case-review template v3 unchanged except that every one is required', () => {
-    assert.deepEqual(ourTemplate.categories.map(withoutRequired), theirTemplate.categories.map(withoutRequired));
-    assert.ok(ourTemplate.categories.every((category) => category.required !== false), 'here: all 24 required');
+    assert.deepEqual(ourTemplate.categories, theirTemplate.categories);
+    // 类别对象不再写 required。六个测试类型的必选范围在 template-v3-coverage.json，不在类别上。
+    const theirCoverage = JSON.parse(readFileSync(new URL('../../case-review/tables/template-v3-coverage.json', import.meta.url), 'utf8')) as { required: { values: string[] } };
     assert.deepEqual(
-      theirTemplate.categories.filter((category) => category.required !== false).map((category) => category.id),
+      theirCoverage.required.values,
       theirTemplate.categories.filter((category) => category.group === 'test_type').map((category) => category.id),
       'case-review: the six test types only',
     );
@@ -48,9 +48,9 @@ describe('parity with case-review', () => {
           if (category.count <= category.evidence.length) assert.deepEqual(own.evidence, [...category.evidence].sort().slice(0, MAX_EVIDENCE), category.id);
           else for (const id of own.evidence) assert.ok(theirs.items.some((item) => item.id === id), `${category.id}: ${id}`);
         }
-        const absent = coverage.categories.filter((category) => !category.present).map((category) => category.id);
-        assert.deepEqual(mine.fields.missing, absent, 'here every absent category is missing');
-        assert.deepEqual(coverage.missing, absent.filter((id) => theirTemplate.categories.find((c) => c.id === id)?.group === 'test_type'), 'case-review: the absent test types');
+        // 未声明不算没有某类用例。两包在夹具未逐条声明类型时都不把未见类别写成缺失。
+        assert.deepEqual(mine.fields.missing, [], 'template-gap withholds absent categories while cases are unclassified');
+        assert.deepEqual(coverage.missing, [], 'case-review withholds absent test types while cases are unclassified');
       });
     }
   }

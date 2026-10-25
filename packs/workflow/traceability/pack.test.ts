@@ -25,7 +25,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['traceability', '1.0.9', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['traceability', '1.0.10', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/matrix.ts') && files.includes('samples/negative/status-conflict.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -65,7 +65,8 @@ describe('the pack files', () => {
       ],
     );
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
-    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 2000, 'a short Chinese procedure (it is in every start_run answer)');
+    // 1.0.10 的规程写明了精确指针，长于旧的 2000 字试探上限，仍是 start_run 交给模型的中文全文。
+    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 2500, 'a short Chinese procedure (it is in every start_run answer)');
   });
 
   it('declares a parameter schema the engine can enforce (no regular expressions, zod reads it)', () => {

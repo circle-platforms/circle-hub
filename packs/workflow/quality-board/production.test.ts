@@ -16,8 +16,10 @@ let postgres: TemporaryPostgres;
 let hub: Hub;
 
 const PLACEMENT_ID = `knowledge:facets:apv:${BUILD.name}?kind=case&by=commands`;
-const TAGS_ID = `knowledge:facets:apv:${BUILD.name}?kind=case&by=line,module,tags`;
-const FACETS_ID = `knowledge:facets:apv:${BUILD.name}?kind=case&by=line,module,has_expected,vague_expected,negative`;
+const TAGS_ID = `knowledge:facets:apv:${BUILD.name}?kind=case&by=line,module,tags,resource_empty,tag_valid`;
+const FACETS_BY = ['line', 'module', 'has_expected', 'negative', 'test_type_status'];
+const FACETS_ID = `knowledge:facets:apv:${BUILD.name}?kind=case&by=${FACETS_BY.join(',')}`;
+const TAGS_BY = ['line', 'module', 'tags', 'resource_empty', 'tag_valid'];
 
 // The view: SSL within the thresholds (20 cases: 1 missing, 1 vague, 1 negative — exactly at both maxima, not violations),
 // WebUI outside them (10 cases: 4 missing, 3 vague, 0 negative), and a group without a module.
@@ -44,7 +46,7 @@ before(async () => {
   postgres = await startPostgres();
   if (skip) return;
   hub = await openHub(postgres);
-  hub.views.put(FACETS_ID, facetViewOf(ROWS));
+  hub.views.put(FACETS_ID, facetViewOf(ROWS, { by: FACETS_BY }));
   hub.views.put(PLACEMENT_ID, placementFor(facetViewOf(ROWS), 2).model as Record<string, unknown>);
 });
 after(async () => {
@@ -75,18 +77,24 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual(
       run.items.map((i) => [i.id, i.summary]),
       [
-        ['10.6.1/SSL', '用例 20 个；无期望结果 1 个（5.0%）；含糊期望 1 个（5.0%）；负面用例 1 个（5.0%）'],
-        ['10.6.1/WebUI', '用例 10 个；无期望结果 4 个（40.0%）；含糊期望 3 个（30.0%）；负面用例 0 个（0.0%）'],
-        ['10.6.1/unplaced', '用例 2 个；无期望结果 0 个（0.0%）；含糊期望 0 个（0.0%）；负面用例 2 个（100.0%）'],
+        ['10.6.1/SSL', '用例 20 个；无期望结果 1 个（5.0%）；含糊期望 0 个（未判断，已判断 0 个）；未判断 20 个；负面用例 1 个（5.0%；有效声明分母 20；类型未声明 0）'],
+        ['10.6.1/WebUI', '用例 10 个；无期望结果 4 个（40.0%）；含糊期望 0 个（未判断，已判断 0 个）；未判断 10 个；负面用例 0 个（0.0%；有效声明分母 10；类型未声明 0）'],
+        ['10.6.1/unplaced', '用例 2 个；无期望结果 0 个（0.0%）；含糊期望 0 个（未判断，已判断 0 个）；未判断 2 个；负面用例 2 个（100.0%；有效声明分母 2；类型未声明 0）'],
       ],
     );
 
     const production = detail.production!;
     const result = production.result;
     assert.ok(ValidationResult.safeParse(result).success);
-    assert.deepEqual([result.acceptance, result.errors], ['accepted', []]);
-    // Advisory violations never reject: every group is delivered.
-    assert.deepEqual(production.counts, { delivered: 3, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
+    assert.equal(result.acceptance, 'accepted');
+    // 三条阈值都缺已受理期望判断，运行记下 missing_input。请求号和期限每次不同，只核对条目和要求。
+    assert.deepEqual(result.errors.map((error) => [error.code, error.requirement, error.item]), [
+      ['missing_input', 'thresholds', '10.6.1/SSL'],
+      ['missing_input', 'thresholds', '10.6.1/WebUI'],
+      ['missing_input', 'thresholds', '10.6.1/unplaced'],
+    ]);
+    // 开跑时请求还没落成未完成，两条未知里有一条仍待补。
+    assert.deepEqual(production.counts, { delivered: 3, rejected: 0, quarantined: 0, incomplete: 0, unknown: 2, pending_unknown: 1 });
     assert.deepEqual(production.counts, partitionCountsOf(result.partitions));
 
     // The answers, written down before the run.
@@ -95,18 +103,19 @@ describe('a production run of quality-board', { skip }, () => {
       ssl.requirements.map((r) => [r.requirement, r.status]),
       [
         ['board', 'satisfied'],
-        ['thresholds', 'satisfied'],
+        ['thresholds', 'pending'],
       ],
     );
     const board = ssl.requirements[0];
     assert.deepEqual(board.layers, [{ layer: 'static', terminal: 'pass' }]);
     const metrics = board.claims[0].statement.data as { counts: { cases: number; missing: number; vague: number; negative: number }; ratios: { missing: { num: number; den: number } }; display: { missing: number; negative: number } };
-    assert.deepEqual(metrics.counts, { cases: 20, missing: 1, vague: 1, negative: 1 });
+    assert.deepEqual(metrics.counts, { cases: 20, missing: 1, vague: 0, negative: 1, negative_denominator: 20, type_unclassified: 0 });
     assert.deepEqual(metrics.ratios.missing, { num: 1, den: 20 });
     assert.deepEqual([metrics.display.missing, metrics.display.negative], [0.05, 0.05]);
     assert.equal(board.claims[0].statement.verdict, 'support');
-    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@1.1.2', independence: 'judge_not_author' });
-    assert.deepEqual(ssl.requirements[1].claims.map((c) => c.statement.verdict), ['support']);
+    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@2.0.9', independence: 'judge_not_author' });
+    // 没有绑定评审时含糊分母是 0，阈值检查是 unknown，不是支持。
+    assert.deepEqual(ssl.requirements[1].claims.map((c) => c.statement.verdict), ['unknown']);
 
     const webui = located(result, '10.6.1/WebUI');
     assert.deepEqual(webui.requirements.map((r) => [r.requirement, r.status]), [
@@ -114,10 +123,17 @@ describe('a production run of quality-board', { skip }, () => {
       ['thresholds', 'unsatisfied'],
     ]);
     // One static layer per requirement; the first violation leads. All three refutations are claims of the requirement.
-    assert.deepEqual(webui.requirements[1].layers, [{ layer: 'static', terminal: 'violation', code: 'quality-board.missing_expected', tier: 'advisory', attribution: 'author_input' }]);
+    const webuiLayer = webui.requirements[1].layers[0];
+    assert.equal(webuiLayer.terminal, 'violation');
+    assert.equal(webuiLayer.code, 'quality-board.missing_expected');
+    assert.equal(webuiLayer.tier, 'advisory');
+    assert.equal(webuiLayer.attribution, 'producer_error');
+    assert.equal(webuiLayer.gaps?.[0]?.reason, 'missing_input');
+    assert.equal(webuiLayer.gaps?.[0]?.exit?.action, 'request');
     assert.deepEqual(
       webui.requirements[1].claims.map((c) => c.statement.code),
-      ['quality-board.missing_expected', 'quality-board.vague_expected', 'quality-board.negative_share'],
+      // vague_expected 不再产生含糊越界。0/10 仍低于负向下限。unknown 主张没有 code。
+      [undefined, 'quality-board.missing_expected', 'quality-board.negative_share'],
     );
 
     // The totals are a cross-item fact claim and say what the board cannot see.
@@ -126,7 +142,7 @@ describe('a production run of quality-board', { skip }, () => {
     assert.equal(totals.statement.verdict, 'support');
     assert.equal(totals.qualifier.nature, 'fact');
     const data = totals.statement.data as { cases: number; missing: number; vague: number; negative: number; view: { total: number; listed_rows: number } };
-    assert.deepEqual([data.cases, data.missing, data.vague, data.negative], [32, 5, 4, 3]);
+    assert.deepEqual([data.cases, data.missing, data.vague, data.negative], [32, 5, 0, 3]);
     assert.deepEqual([data.view.total, data.view.listed_rows], [32, 8]);
     assert.match(totals.statement.text, /合计：用例 32 个/);
     assert.match(totals.statement.text, /不是整套测试/);
@@ -138,13 +154,13 @@ describe('a production run of quality-board', { skip }, () => {
   });
 
   it('reads the optional tag view and required placement through the production engine', async () => {
+    // 覆盖只认闭集精确原文。Functional / function / Stress 不再折成类型。
     hub.views.put(TAGS_ID, facetViewOf([
-      facetRow({ line: '10.6.1', module: 'SSL', tags: 'Functional' }, 10),
-      facetRow({ line: '10.6.1', module: 'SSL', tags: 'function' }, 10),
+      facetRow({ line: '10.6.1', module: 'SSL', tags: 'functional' }, 10),
       facetRow({ line: '10.6.1', module: 'SSL', tags: null }, 10),
       facetRow({ line: '10.6.1', module: 'WebUI', tags: null }, 10),
-      facetRow({ line: '10.6.1', module: null, tags: 'Stress' }, 2),
-    ], { by: ['line', 'module', 'tags'], total: 32 }));
+      facetRow({ line: '10.6.1', module: null, tags: 'stress' }, 2),
+    ], { by: TAGS_BY, total: 32 }));
     const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'quality-board', inputs: { facets: [{ external: FACETS_ID }, { external: TAGS_ID }], placement: { external: PLACEMENT_ID } } }, call());
     assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
     const result = detail.production!.result;
@@ -165,9 +181,10 @@ describe('a production run of quality-board', { skip }, () => {
     const webui = located(result, '10.6.1/WebUI');
     assert.deepEqual(
       webui.requirements[1].claims.map((c) => c.statement.verdict),
-      ['support'],
+      ['unknown'],
     );
-    assert.deepEqual(detail.production!.counts, { delivered: 3, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
+    // 参数放宽也不制造已判断分母，阈值主张仍是 unknown。
+    assert.deepEqual(detail.production!.counts, { delivered: 3, rejected: 0, quarantined: 0, incomplete: 0, unknown: 3 });
   });
 
   it('keeps the pack from users it is not assigned to, and takes model commentary only as judgments', async () => {
@@ -183,6 +200,8 @@ describe('a production run of quality-board', { skip }, () => {
     assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
     const comment = answer.result!.cross_item.find((c) => c.warrant.producer === 'model')!;
     assert.deepEqual([comment.qualifier.nature, comment.statement.text], ['judgment', '看板与预期一致']);
-    assert.deepEqual(answer.counts, detail.production!.counts);
+    // 提交后三条阈值的具名请求已经开出，条目从待补未知改记为未完成。
+    assert.deepEqual(detail.production!.counts, { delivered: 3, rejected: 0, quarantined: 0, incomplete: 0, unknown: 2, pending_unknown: 1 });
+    assert.deepEqual(answer.counts, { delivered: 0, rejected: 0, quarantined: 0, incomplete: 3, unknown: 0 });
   });
 });

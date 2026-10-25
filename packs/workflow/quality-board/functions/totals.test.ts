@@ -30,7 +30,8 @@ describe('totalsOutcome', () => {
     assert.equal(outcome.tier, 'advisory');
     assert.equal(outcome.item, undefined);
     const data = outcome.data as { cases: number; missing: number; vague: number; negative: number; ratios: { missing: { num: number; den: number } }; view: { total: number; skipped: number; truncated: boolean } };
-    assert.deepEqual([data.cases, data.missing, data.vague, data.negative], [20, 2, 1, 2]);
+    // 那 1 条 vague_expected 不是期望质量判断，含糊数是 0。
+    assert.deepEqual([data.cases, data.missing, data.vague, data.negative], [20, 2, 0, 2]);
     assert.deepEqual(data.ratios.missing, { num: 2, den: 20 });
     assert.match(outcome.statement, /合计：用例 20 个/);
     assert.match(outcome.statement, /无期望结果 2 个（10\.0%）/);

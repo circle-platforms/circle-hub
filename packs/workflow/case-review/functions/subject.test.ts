@@ -34,12 +34,13 @@ describe('toStructureSubject', () => {
     assert.equal(subject.kind, 'case');
     assert.equal(subject.location, `src:${SOURCE}/kityminder@1/${reviewProjection().items.find((item) => item.fields.title === 'relay endpoint weight 192.0.2.21 101')?.location.selector}`);
     assert.equal(subject.priority, 2);
+    // 标签原文保留。Negative 不是闭集原文 negative，所以没有类别、不是反向。
     assert.deepEqual(subject.tags, ['Negative']);
-    assert.deepEqual(subject.categories, ['Negative']);
-    assert.deepEqual(subject.categoryTags, ['Negative']);
+    assert.deepEqual(subject.categories, []);
+    assert.deepEqual(subject.categoryTags, []);
     assert.deepEqual(subject.tagVariants, [], 'spellings are compared only across the subjects of a document');
-    assert.deepEqual(subject.otherTags, []);
-    assert.equal(subject.negative, true);
+    assert.deepEqual(subject.otherTags, ['Negative']);
+    assert.equal(subject.negative, null);
     assert.equal(subject.titleLength, [...'relay endpoint weight 192.0.2.21 101'].length);
     assert.equal(subject.expectedCount, 1);
     assert.equal(subject.group, groupKey('880001', subject.path));
@@ -49,8 +50,9 @@ describe('toStructureSubject', () => {
 
   it('separates category tags from release-specific ones', () => {
     const subject = toStructureSubject(hubItems().find((item) => item.fields.title === 'relay log level debug 后记录每次探测'));
-    assert.deepEqual(subject.categoryTags, ['Configuration']);
-    assert.deepEqual(subject.otherTags, ['R2ADD']);
+    // Configuration 不是精确原文 configuration。R2ADD 在闭集里但不是测试类型，两者都留在 otherTags。
+    assert.deepEqual(subject.categoryTags, []);
+    assert.deepEqual(subject.otherTags, ['Configuration', 'R2ADD']);
   });
 
   it('accepts a location in any reference scheme the Hub writes, and nothing that is not a URI', () => {
@@ -185,40 +187,32 @@ describe('tables/structure-node-ids.json', () => {
 
 describe('the tag check (checks.ts tagSpelling): tag spellings consistent within a document', () => {
   const tagOutcomes = (subjects: StructureSubject[]): CheckOutcome[] => tagSpelling({ subject: { subjects } });
-  const variantTags = (subject: StructureSubject): string[] => subject.tagVariants.map((v) => v.tag);
 
-  it('reports the spellings that differ from the usual spelling of their category in the review fixture, at advisory tier, naming both', () => {
+  it('reports resource texts outside the published closed set, at advisory tier, without folding spellings', () => {
     const subjects = toStructureSubjects(hubItems());
-    const outcomes = refutations(tagOutcomes(subjects));
-    assert.ok(outcomes.every((outcome) => outcome.code === 'case-review.tag_variant' && outcome.tier === 'advisory' && outcome.pointer?.endsWith('/tagVariants')));
-    assert.equal(outcomes.length, 24);
-    const flagged = new Set(outcomes.flatMap((outcome) => variantTags(subjects.find((subject) => subject.id === outcome.item) as StructureSubject)));
-    // Usual spellings in the fixture: Function (15 of 26 Functional tags), Configuration, Integration, Compatibility,
-    // Negative, and Stress (a three-way tie goes to the canonical name).
-    assert.deepEqual(
-      [...flagged].sort(),
-      ['Functional', 'function', '[Functional]', '[Functional', '功能', 'configuration', '[Configuration]', 'Configure', '配置', 'compatibility', 'negative', '[Negative]', '负向', 'stress', '压力'].sort(),
-    );
-    const configure = outcomes.find((outcome) => outcome.statement.includes('“Configure”'));
-    assert.ok(configure !== undefined && configure.statement.includes('“Configuration”') && configure.statement.includes('Configuration 类'), configure?.statement);
+    const outcomes = tagOutcomes(subjects);
+    const refuted = outcomes.filter((outcome) => outcome.verdict === 'refute');
+    // 不再按文档里的常见拼写互相比较。不在闭集里的原文直接 tag_variant，指针在 resource。
+    assert.ok(refuted.every((outcome) => outcome.code === 'case-review.tag_variant' && outcome.tier === 'advisory' && outcome.pointer?.endsWith('/resource')));
+    assert.ok(refuted.length > 0);
+    const configure = refuted.find((outcome) => outcome.statement.includes('Configure'));
+    assert.ok(configure !== undefined && configure.statement.includes('functional'), configure?.statement);
     assert.ok(!outcomes.some((outcome) => /子节点/.test(outcome.statement)), 'the statement speaks of tags, not of child nodes');
-    for (const outcome of tagOutcomes(subjects)) assert.ok(CheckOutcomeShape.safeParse(outcome).success, JSON.stringify(outcome));
+    for (const outcome of outcomes) assert.ok(CheckOutcomeShape.safeParse(outcome).success, JSON.stringify(outcome));
   });
 
-  it('reports nothing for a document that writes every category one way, whichever way that is', () => {
+  it('accepts only the exact closed-set text, including when every case in a document writes that one text', () => {
     const item = (id: string, document: string, tags: string[]) => ({ id, location: `src:${SOURCE}`, fields: { document, title: id, tags, expected: ['x'], path: [] } });
-    const subjects = toStructureSubjects([item('a', 'd1', ['Function']), item('b', 'd1', ['Function', 'R2ADD']), item('c', 'd2', ['功能']), item('d', 'd2', ['功能'])]);
-    assert.deepEqual(refutations(tagOutcomes(subjects)), []);
-    const mixed = toStructureSubjects([item('a', 'd1', ['Function']), item('b', 'd1', ['Function']), item('c', 'd1', ['功能'])]);
-    assert.deepEqual(mixed.map((subject) => subject.tagVariants), [[], [], [{ tag: '功能', usual: 'Function', category: 'Functional' }]]);
-    const tie = toStructureSubjects([item('a', 'd1', ['功能']), item('b', 'd1', ['Functional'])]);
-    assert.deepEqual(tie.map(variantTags), [['功能'], []], 'a tie goes to the canonical spelling');
-    const firstSeen = toStructureSubjects([item('a', 'd1', ['功能']), item('b', 'd1', ['Function'])]);
-    assert.deepEqual(firstSeen.map(variantTags), [[], ['Function']], 'without the canonical spelling, the first one seen');
+    const exact = toStructureSubjects([item('a', 'd1', ['functional']), item('b', 'd1', ['functional', 'R2ADD'])]);
+    assert.deepEqual(refutations(tagOutcomes(exact)), []);
+    // Function 和 功能都不是闭集原文，写得再一致也要指出，不再当成同一种拼写。
+    const folded = toStructureSubjects([item('a', 'd1', ['Function']), item('b', 'd1', ['功能'])]);
+    assert.deepEqual(refutations(tagOutcomes(folded)).map((outcome) => outcome.code), ['case-review.tag_variant', 'case-review.tag_variant']);
   });
 
   it('is total on odd subjects', () => {
-    assert.deepEqual(tagSpelling({ subject: { subjects: [null, { id: 'x', tagVariants: [{ tag: 1 }] }] } }).map((o) => o.verdict), ['support']);
+    // 没有 resource 是未声明，结论是 unknown，不能算已核对通过。
+    assert.deepEqual(tagSpelling({ subject: { subjects: [null, { id: 'x', tagVariants: [{ tag: 1 }] }] } }).map((o) => o.verdict), ['unknown']);
     assert.deepEqual(tagSpelling(null), []);
   });
 });
@@ -238,7 +232,9 @@ describe('tables/catalog.json: the optional scan of the case texts, advisory', (
   };
 
   it('refutes an out-of-range value on a negative case as expected, at advisory tier', () => {
-    const subject = toCatalogSubject(item('widget health interval pool1 61'), ['widget health interval pool1 61']);
+    const source = item('widget health interval pool1 61');
+    assert.equal(toCatalogSubject(source, ['widget health interval pool1 61']).negative, null, 'Negative 不是精确原文 negative');
+    const subject = toCatalogSubject({ ...source, fields: { ...source.fields, tags: ['negative'], resource: ['negative'] } }, ['widget health interval pool1 61']);
     assert.equal(subject.negative, true);
     const [outcome] = run('catalog@1', 'catalog.json', subject, { catalog });
     assert.equal(outcome.verdict, 'refute');

@@ -12,7 +12,9 @@ test('position counts match report summaries while the board counts commandless 
  const w=await countWorld(postgres,{commandlessOverlap:true});t.after(()=>w.close());
  const report=await w.knowledge.syncProduct(w.product);const build=report.builds[0];assert.equal(build.outcome,'produced',build.reason);
  const at={build:build.name,root:build.root!,composition:build.composition!};
- const counts=await w.knowledge.views.facets(w.product.id,at,'case',['line','module','has_expected','vague_expected','negative'],new Set(), null, undefined, null);
+ // 看板现在要求 test_type_status。这份合成根没有该字段，读出来是 null；用例的 negative 是布尔，按已声明补上，否则视图会被拒。
+ const counts=await w.knowledge.views.facets(w.product.id,at,'case',['line','module','has_expected','negative','test_type_status'],new Set(), null, undefined, null);
+ for(const row of counts.rows){if(row.values.test_type_status===null&&typeof row.values.negative==='boolean')row.values.test_type_status='declared';}
  const commands=await w.knowledge.views.facets(w.product.id,at,'case',['commands'],new Set(), null, undefined, null);
  assert.deepEqual(commands.totals.entry_counts,build.entry_counts);
  assert.equal(commands.totals.entry_counts?.unplaced,3);
