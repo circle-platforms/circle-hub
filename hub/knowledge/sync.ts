@@ -608,7 +608,11 @@ async function runPlan(context: KnowledgeContext, product: ProductHandle, input:
     );
     output = run.output;
   } catch (error) {
-    if (error instanceof SandboxError) return { ok: false, reason: `计划函数第 ${input.round} 轮运行失败：${SANDBOX_ERRORS[error.code]}` };
+    if (error instanceof SandboxError) {
+      // A thrown structured error carries its own message (code and next action included): that is the report.
+      const described = typeof error.detail.message === 'string' && error.detail.message.length > 0 ? error.detail.message : SANDBOX_ERRORS[error.code];
+      return { ok: false, reason: `计划函数第 ${input.round} 轮运行失败：${described}` };
+    }
     return { ok: false, reason: `计划函数第 ${input.round} 轮运行失败：${describeError(error)}` };
   }
   const issueText = (error: z.ZodError): string => {

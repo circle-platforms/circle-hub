@@ -342,7 +342,7 @@ describe('knowledge sync', () => {
     const throwing = await world(t, { pack: { functions: { 'plan.ts': 'export default function (input: unknown): unknown { throw new Error("broken plan"); }' } } });
     standardSite(throwing.external);
     const failed = await throwing.knowledge.syncProduct(throwing.product, { by: throwing.admin });
-    assert.match(failed.error ?? '', /计划函数第 1 轮运行失败：包内函数抛出了错误/);
+    assert.match(failed.error ?? '', /计划函数第 1 轮运行失败：broken plan/);
     assert.deepEqual(failed.builds, []);
     // A build that is not build-info@1 fails alone (a failed build of the report); an answer outside the envelope stops the sync.
     const invalid = await world(t, { pack: { functions: { 'plan.ts': 'export default function (input: unknown): unknown { return { fetch: [], builds: [{ name: "x" }], done: true }; }' } } });

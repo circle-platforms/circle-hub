@@ -50,7 +50,14 @@ export async function runProducer(context: KnowledgeContext, product: ProductHan
       const timeout = error.code === 'SANDBOX_TIMEOUT';
       const isolatable =
         timeout || error.code === 'FUNCTION_THREW' || error.code === 'SANDBOX_OUTPUT_TOO_LARGE' || (error.code === 'SANDBOX_VIOLATION' && error.detail.limit === 'memory');
-      return { ok: false, reason: `生产器 ${producer.id} 运行失败：${SANDBOX_ERRORS[error.code]}`, isolatable, timeout };
+      // A thrown structured error (the packs' ManualSourceError shape) carries its own message — code and next action
+      // included, original content never — and that text is the report; the sandbox code alone would say no more than
+      // "the pack function threw an error".
+      const described = typeof error.detail.message === 'string' && error.detail.message.length > 0 ? error.detail.message : SANDBOX_ERRORS[error.code];
+      const kind = typeof error.detail.name === 'string' && error.detail.name.length > 0 && error.detail.name !== 'Error' ? `（${error.detail.name}）` : '';
+      // The pack's own error code (apv.adoc.incomplete_group and the like) names the failure; it is an identifier, not content.
+      const code = typeof error.detail.code === 'string' && error.detail.code.length > 0 ? ` [${error.detail.code}]` : '';
+      return { ok: false, reason: `生产器 ${producer.id} 运行失败${kind}${code}：${described}`, isolatable, timeout };
     }
     // A RangeError is an input over the sandbox's size limit: a smaller batch can fit.
     return { ok: false, reason: `生产器 ${producer.id} 运行失败：${describeError(error)}`, isolatable: error instanceof RangeError, timeout: false };
