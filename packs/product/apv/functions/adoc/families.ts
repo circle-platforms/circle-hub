@@ -13,6 +13,8 @@ import type { AdocResult, Composition, ExpandedModel, Report } from './types.ts'
 export interface FamilyInput {
   main: string;
   revision: string;
+  /** SVN directory of this book. The composition records it with the revision and each file digest. */
+  directory?: string;
   families: Record<string, { text: string; revision: string; sha256: string }>;
   /** Per name family (the keys of the product's `names`): its attribute set. Absent = the pack default (empty). */
   familyAttributes: Record<string, Record<string, string | boolean>>;
@@ -58,7 +60,7 @@ export async function compileFamilies(rawInput: unknown, names: readonly string[
     const declared = input.familyAttributes?.[name];
     const given = declared !== undefined;
     const values = given ? declared : {};
-    const out = await compileAdoc({ main: input.main, revision: input.revision, files, attributes: values });
+    const out = await compileAdoc({ main: input.main, revision: input.revision, ...(input.directory ? { directory: input.directory } : {}), files, attributes: values });
     if (!out.ok) {
       // The old root stays: a group failure never replaces it with a partial result (K4 item 7).
       // The per-group failure text (including that the old root stays) is already the compile's next_action.

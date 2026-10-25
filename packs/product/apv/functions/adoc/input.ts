@@ -12,6 +12,9 @@ export class AdocFailure extends Error {
   constructor(code: string, message: string, file?: string, line?: number) { super(message); this.code = code; this.file = file; this.line = line; }
 }
 export function fail(code: string, message: string, file?: string, line?: number): never { throw new AdocFailure(code, message, file, line); }
+function bookDirectory(path: string): boolean {
+  return path.length > 0 && path.length <= 2000 && !/[\\\p{Cc}\p{Cf}?#;]/u.test(path) && path.split('/').every((part) => part !== '' && part !== '.' && part !== '..' && part.length <= 255);
+}
 export function localPath(file: string): boolean {
   return file !== '' && !/[:\\?#\p{Cc}\p{Cf}]/u.test(file) && !file.startsWith('/') && file.split('/').every((p) => p !== '' && p !== '.' && p !== '..') && file.endsWith('.adoc');
 }
@@ -35,6 +38,7 @@ export function validate(input: unknown, limits: Limits): AdocInput {
     files[name] = { text: value.text, revision: value.revision as string, sha256: value.sha256 };
   }
   if (!Object.hasOwn(files, input.main)) fail('missing_main', '主文件不在文件表里', input.main);
+  if (input.directory !== undefined && (typeof input.directory !== 'string' || !bookDirectory(input.directory))) fail('invalid_input', '书目录需要是相对 SVN 路径');
   const attributes: Record<string, string | boolean> = Object.create(null);
   if (input.attributes !== undefined && !isRecord(input.attributes)) fail('invalid_attributes', '声明属性集必须是对象');
   for (const [key, value] of Object.entries(input.attributes ?? {}).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
@@ -46,7 +50,7 @@ export function validate(input: unknown, limits: Limits): AdocInput {
     if(key.toLowerCase()==='webfonts'&&value!==false)fail('invalid_attributes','生成策略固定使用 webfonts!，不能启用 webfonts');
     attributes[key.toLowerCase()] = value as string | boolean;
   }
-  return { main: input.main, revision: input.revision, files, attributes };
+  return { main: input.main, revision: input.revision, ...(typeof input.directory === 'string' ? { directory: input.directory } : {}), files, attributes };
 }
 export function sourceLines(file: string, text: string): MappedLine[] {
   if (text === '') return [];

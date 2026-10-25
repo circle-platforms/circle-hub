@@ -1,6 +1,7 @@
-// The directory binding knowledge sync's plan and knowledge seed both use: one revision, the whole tree, no batch cut.
+// The directory binding knowledge sync's plan and knowledge seed both use: each book is its own directory,
+// one revision, the whole subtree, no batch cut.
 import type { Producer } from '../../contracts/src/product.ts';
-import { ADOC_LIMITS, ManualSourceError, directoryOf, listedSources, rootId, treeOf } from '../../packs/product/apv/functions/adoc/tree.ts';
+import { ADOC_LIMITS, ManualSourceError, booksOf, directoryOf, listedSources, mainsOf, rootId } from '../../packs/product/apv/functions/adoc/tree.ts';
 import { readSource } from './page.ts';
 import type { SourceLoader } from './sources.ts';
 
@@ -27,13 +28,14 @@ export type DirectoryBind =
   | { ok: false; slot: string; detail: string; next: string };
 
 /**
- * When `root` is a directory template, read that SVN directory at one revision and bind the producer's meta role and
- * list role to the complete tree. A null root binds nothing. A missing page fails closed and names that page.
+ * When `root` is a directory template, bind the meta role to that listing and the list role to each main file's
+ * directory. A null root binds nothing. A missing page fails closed and names that page.
  */
 export async function bindDirectorySources(input: {
   producer: Producer;
   line: string;
   root: unknown;
+  mains?: { cli: unknown; app: unknown };
   loader: SourceLoader;
   maxBytes: number;
   next: string;
@@ -64,30 +66,43 @@ export async function bindDirectorySources(input: {
     ok: false, slot, detail: `${input.producer.id}.${slot}（${role}）缺少来源 ${id}：${reason}`, next,
   });
 
-  let tree = treeOf(path, (id) => models.get(id));
+  let mains: { cli: string; app: string } | null;
   try {
-    for (let step = 0; step <= ADOC_LIMITS.directories && tree.pending.length > 0; step++) {
-      const pending = tree.pending.find((id) => !models.has(id));
+    mains = mainsOf(input.mains?.cli, input.mains?.app);
+  } catch (error) {
+    if (error instanceof ManualSourceError) return { ok: false, slot, detail: error.message, next: error.next_action };
+    throw error;
+  }
+  const readWalk = (): ReturnType<typeof booksOf> => booksOf(path, mains, (id) => models.get(id));
+  let walk = readWalk();
+  try {
+    for (let step = 0; step < ADOC_LIMITS.directories * 2 + 1 && walk.pending.length > 0; step++) {
+      const pending = walk.pending.find((id) => !models.has(id));
       if (pending === undefined) break;
       const read = await load(pending);
       if (!read.ok) return fail(pending, read.reason);
-      if (read.ok && revisions.get(pending) === null) return fail(pending, 'SVN 读取没有给出修订号');
-      tree = treeOf(path, (id) => models.get(id));
+      if (revisions.get(pending) === null) return fail(pending, 'SVN 读取没有给出修订号');
+      walk = readWalk();
     }
   } catch (error) {
     if (error instanceof ManualSourceError) return { ok: false, slot, detail: error.message, next: error.next_action };
     throw error;
   }
-  if (tree.pending.length > 0) return fail(tree.pending[0], '目录清单仍未读全');
+  if (walk.pending.length > 0 || walk.revision === '') return fail(walk.pending[0] ?? rootId(path), '目录清单仍未读全');
   const directoryRevision = revisions.get(rootId(path));
-  if (directoryRevision === undefined || directoryRevision === null || directoryRevision !== tree.revision) {
-    return fail(rootId(path), `修订号是 ${directoryRevision ?? '（无）'}，目录清单修订号是 ${tree.revision}`);
+  if (directoryRevision === undefined || directoryRevision === null || directoryRevision !== walk.revision) {
+    return fail(rootId(path), `修订号是 ${directoryRevision ?? '（无）'}，目录清单修订号是 ${walk.revision}`);
   }
-  const files = listedSources(path, tree);
+  const files: string[] = [];
+  const seen = new Set<string>();
+  for (const group of walk.groups) {
+    if (group.tree.revision !== walk.revision) return fail(rootId(group.directory), `修订号是 ${group.tree.revision}，目录修订号是 ${walk.revision}`);
+    for (const id of listedSources(group.directory, group.tree)) if (!seen.has(id)) { seen.add(id); files.push(id); }
+  }
   for (const id of files) {
     const read = await readSource(input.loader, id, input.maxBytes);
     if (!read.page.ok) return fail(id, read.page.reason ?? '读不出');
-    if (read.revision !== tree.revision) return fail(id, `修订号是 ${read.revision ?? '（无）'}，目录修订号是 ${tree.revision}`);
+    if (read.revision !== walk.revision) return fail(id, `修订号是 ${read.revision ?? '（无）'}，目录修订号是 ${walk.revision}`);
   }
   const sources: Record<string, string | string[]> = {};
   if (declared.meta) sources[declared.meta.role] = rootId(path);

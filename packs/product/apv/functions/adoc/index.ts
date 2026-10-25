@@ -185,7 +185,7 @@ async function runAdoc(rawInput: unknown, overrides: Partial<Limits> = {}): Prom
     report.engine_messages = logger.messages.map(({ severity, text }) => ({ severity, text }));
     const afterWalk = engineStructuralFailure({ messages: logger.messages.filter(message=>!parsed.recoverable.has(message)), unterminated: reader.unterminated });
     if (afterWalk !== null) fail('engine_parse', afterWalk);
-    const identity = { schema: 'apv-adoc-composition@1' as const, main: input.main, revision: input.revision, files: Object.entries(input.files).map(([file, value]) => ({ file, sha256: value.sha256 })), attributes: input.attributes ?? {}, engine: ENGINE, policy: POLICY, limits };
+    const identity = { schema: 'apv-adoc-composition@1' as const, main: input.main, revision: input.revision, ...(input.directory ? { directory: input.directory } : {}), files: Object.entries(input.files).map(([file, value]) => ({ file, sha256: value.sha256 })), attributes: input.attributes ?? {}, engine: ENGINE, policy: POLICY, limits };
     const composition: Composition = { ...identity, sha256: sha256(canonical(identity)) };
     return { ok: true, composition, model: { schema: 'apv-adoc-expanded@1', expanded_text: text, line_map: expanded.lines.map(({ file, line }) => ({ file, line })), blocks }, report };
   } catch (error) {

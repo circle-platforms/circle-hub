@@ -1,4 +1,5 @@
 // Fixed-revision SVN directory walk shared by sync's source plan and knowledge seed.
+// A name family keeps two book groups. Each group is the directory that holds that book's main file.
 import {lineKey} from '../naming.ts';
 import {isRecord} from '../util.ts';
 
@@ -36,15 +37,16 @@ function directory(value:unknown,path:string,revision?:string):Directory{
 }
 export interface DirectoryTree {root:string;revision:string;directories:Map<string,Directory>;files:Map<string,Member>;pending:string[]}
 /** Traverse only explicit fixed revision metadata. No absent directory or member is silently skipped. */
-export function treeOf(root:string,read:(id:string)=>unknown|undefined):DirectoryTree{
- const first=read(rootId(root));
- if(first===undefined)return {root,revision:'',directories:new Map(),files:new Map(),pending:[rootId(root)]};
- const firstDir=directory(first,root);
+export function treeOf(root:string,read:(id:string)=>unknown|undefined,pinned?:string):DirectoryTree{
+ const start=pinned===undefined?rootId(root):childId(pinned,root);
+ const first=read(start);
+ if(first===undefined)return {root,revision:'',directories:new Map(),files:new Map(),pending:[start]};
+ const firstDir=directory(first,root,pinned);
  const out:DirectoryTree={root,revision:firstDir.revision,directories:new Map(),files:new Map(),pending:[]};
  const queue=[{path:root,depth:0}];let entries=0;
  for(let at=0;at<queue.length;at++){
   const next=queue[at];if(next.depth>ADOC_LIMITS.depth||queue.length>ADOC_LIMITS.directories)return stop('group_budget','整组目录深度或目录数超过上限，不截断');
-  const id=next.depth===0?rootId(root):childId(out.revision,next.path);
+  const id=next.depth===0?start:childId(out.revision,next.path);
   const raw=next.depth===0?first:read(id);
   if(raw===undefined){out.pending.push(id);continue;}
   const doc=directory(raw,next.path,out.revision);out.directories.set(id,doc);
@@ -63,4 +65,69 @@ export function treeOf(root:string,read:(id:string)=>unknown|undefined):Director
 /** Child directory listings, then every file external, in walk order. The root listing itself is not in the file list. */
 export function listedSources(root:string,tree:DirectoryTree):string[]{
  return [...tree.directories.keys()].filter(id=>id!==rootId(root)).concat([...tree.files.values()].map(member=>member.external!));
+}
+
+export interface BookMain {book:'cli'|'app';file:string}
+export interface BookGroup {directory:string;relative:string;mains:BookMain[];tree:DirectoryTree}
+export interface BookWalk {revision:string;groups:BookGroup[];unread:string[];pending:string[]}
+
+/** Both main paths, or null when the caller has not named them. A named path is a relative adoc file. */
+export function mainsOf(cli:unknown,app:unknown):{cli:string;app:string}|null{
+ if(typeof cli!=='string'||typeof app!=='string')return null;
+ if(!safePath(cli)||!cli.endsWith('.adoc')||!safePath(app)||!app.endsWith('.adoc'))return stop('missing_main','MAIN 需要是主文件所在目录下的相对 adoc 路径');
+ return {cli,app};
+}
+const locate=(main:string):{dir:string;file:string}=>{const slash=main.lastIndexOf('/');return slash<0?{dir:'',file:main}:{dir:main.slice(0,slash),file:main.slice(slash+1)};};
+const remember=(pending:string[],id:string):void=>{if(!pending.includes(id))pending.push(id);};
+
+/**
+ * One group per distinct directory that contains a main file. A main file with no parent directory makes the family
+ * root that group. Sibling directories of a book are named and not opened. Each opened book uses ADOC_LIMITS on its own.
+ */
+export function booksOf(root:string,mains:{cli:string;app:string}|null,read:(id:string)=>unknown|undefined):BookWalk{
+ const parsed=mains===null?null:(['cli','app'] as const).map(book=>({book,...locate(mains[book])}));
+ if(parsed===null||parsed.some(item=>item.dir==='')){
+  const tree=treeOf(root,read);
+  const groupMains=parsed===null?[]:parsed.map(item=>({book:item.book,file:item.dir===''?item.file:`${item.dir}/${item.file}`}));
+  return {revision:tree.revision,groups:[{directory:root,relative:'',mains:groupMains,tree}],unread:[],pending:[...tree.pending]};
+ }
+ const first=read(rootId(root));
+ if(first===undefined)return {revision:'',groups:[],unread:[],pending:[rootId(root)]};
+ const rootDoc=directory(first,root);
+ const revision=rootDoc.revision;
+ const order:string[]=[];
+ for(const item of parsed)if(!order.includes(item.dir))order.push(item.dir);
+ const must=new Set<string>();
+ for(const rel of order){let acc='';for(const part of rel.split('/')){acc=acc?`${acc}/${part}`:part;must.add(acc);}}
+ const unread:string[]=[];const pending:string[]=[];const groups:BookGroup[]=[];
+ const classify=(doc:Directory,rel:string):void=>{
+  for(const member of doc.members){
+   if(!member.directory)continue;
+   const child=rel?`${rel}/${member.name}`:member.name;
+   if(!must.has(child))unread.push(member.name);
+  }
+ };
+ classify(rootDoc,'');
+ for(const rel of order){
+  const parts=rel.split('/');
+  let parent=rootDoc;let blocked=false;
+  for(let i=0;i<parts.length;i++){
+   const name=parts[i];
+   const member=parent.members.find(item=>item.name===name);
+   if(!member||!member.directory)return stop('missing_main',`${name} 不是 ${parent.directory} 里的目录，主文件不在这份清单里`);
+   const acc=parts.slice(0,i+1).join('/');
+   if(acc===rel)break;
+   const full=`${root}/${acc}`;
+   const raw=read(childId(revision,full));
+   if(raw===undefined){remember(pending,childId(revision,full));blocked=true;break;}
+   parent=directory(raw,full,revision);
+   classify(parent,acc);
+  }
+  if(blocked)continue;
+  const full=`${root}/${rel}`;
+  const tree=treeOf(full,read,revision);
+  for(const id of tree.pending)remember(pending,id);
+  groups.push({directory:full,relative:rel,mains:parsed.filter(item=>item.dir===rel).map(item=>({book:item.book,file:item.file})),tree});
+ }
+ return {revision,groups,unread,pending};
 }
