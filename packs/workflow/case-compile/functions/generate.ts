@@ -1,3 +1,4 @@
+import {selectedExpectedNodes} from './expected-nodes.ts';
 import { typedAuthorityGaps, authorityRecovery } from './typed-authority.ts';
 // Client deterministic generator, also called solely for byte recomputation by the Hub verifier. Node built-ins only.
 import { createHash } from 'node:crypto';
@@ -10,7 +11,7 @@ import { bindArguments, hasSingleLineValue } from './binding.ts';
 import { encodeG, type GOptions } from './g-syntax.ts';
 import { zipStore } from './zip-store.ts';
 export const GENERATOR = FORMAT.generator;
-export interface GenerationFields { command_catalog?:unknown;command_identities?:unknown; autoid: string; title: string; priority?: string | null; steps: Array<{ text: string }> }
+export interface GenerationFields {expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; autoid: string; title: string; priority?: string | null; steps: Array<{ text: string }> }
 export interface GenerationInput { slots: PlanSlots; fields: GenerationFields; contract: RuntimeContract; profile: RuntimeProfile; plan_run: string; build: string; generator?: string }
 export class GenerationError extends Error { readonly rule: string; readonly pointer: string; constructor(pointer: string, message: string, rule = 'generation') { super(`${pointer}：${message}`); this.name = 'GenerationError'; this.pointer = pointer; this.rule = rule; } }
 const reject = (at: string, message: string): never => { throw new GenerationError(at, message); };
@@ -43,7 +44,7 @@ export function generateWorkbook(input: GenerationInput): Uint8Array {
   if (assertionSeat && assertionSeat.ordinal >= profile.device_count) reject('/profile/seats', '断言对象的座位超出预检设备数');
   const identity: Array<string | number> = [profile.workbook.identity_marker, contract.runtimeVersion, contract.pinned.identity, '', ''];
   identity[FORMAT.identity_generator_column - 1] = GENERATOR;
-  identity[FORMAT.identity_recipe_column - 1] = createHash('sha256').update(canonicalJson({ slots, fields: { command_catalog:fields.command_catalog??null,command_identities:fields.command_identities??null,autoid: fields.autoid, title: fields.title, priority: fields.priority ?? null, steps: fields.steps.map((v) => ({ text: v.text })) }, contract: { runtimeVersion: contract.runtimeVersion, digest: contract.pinned.identity }, profile, plan_run: input.plan_run, build: input.build, generator: GENERATOR }), 'utf8').digest('hex');
+  identity[FORMAT.identity_recipe_column - 1] = createHash('sha256').update(canonicalJson({ slots, fields: { expected_nodes:selectedExpectedNodes(fields.expected_nodes,slots)??null,command_catalog:fields.command_catalog??null,command_identities:fields.command_identities??null,autoid: fields.autoid, title: fields.title, priority: fields.priority ?? null, steps: fields.steps.map((v) => ({ text: v.text })) }, contract: { runtimeVersion: contract.runtimeVersion, digest: contract.pinned.identity }, profile, plan_run: input.plan_run, build: input.build, generator: GENERATOR }), 'utf8').digest('hex');
   const rows: Array<Array<string | number>> = [
     identity,
     [...profile.workbook.header],

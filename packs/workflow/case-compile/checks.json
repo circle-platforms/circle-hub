@@ -78,7 +78,7 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "要求项 expected_grounded：每个期望结果带逐字引文（用例原文、缺陷修复说明或手册），不能是模型自己写的",
+      "basis": "expected_grounded：quote 有逐字来源；默认 text 出自引文，显式 model_judgment 只核本用例期望节点、after 与取值规则，语义选择以判断为前提",
       "catalog": "commands@1",
       "catalog_select": {
         "module": "functions/subject.ts",

@@ -177,8 +177,10 @@ describe('on a temporary copy', () => {
 
   test('invalid model content is reported problem by problem with exit status 2, nothing is written', () => {
     fresh();
+    let layerIndex=-1;
     editJson('contracts/model.json', (m) => {
-      const layer = m.vocabulary.find((a: { axis: string }) => a.axis === 'layer');
+      layerIndex=m.vocabulary.findIndex((a:{axis:string})=>a.axis==='layer');
+      const layer = m.vocabulary[layerIndex];
       layer.values.push({ ...layer.values[0] });
       layer.owner = 'Z99';
       m.formatProposals.protocolCodes.push({ code: 'bad code', when: 'when', fix: '' });
@@ -188,8 +190,8 @@ describe('on a temporary copy', () => {
     const result = run(script, [], root);
     assert.equal(result.status, 2);
     for (const expected of [
-      'vocabulary[11] (layer): code static appears twice',
-      'vocabulary[11] (layer): label 静态 appears twice',
+      `vocabulary[${layerIndex}] (layer): code static appears twice`,
+      `vocabulary[${layerIndex}] (layer): label 静态 appears twice`,
       'owner "Z99" is not an element id of the model',
       'code "bad code" must be UPPER_SNAKE_CASE',
       '(bad code): when must be Chinese text',
