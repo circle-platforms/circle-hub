@@ -1,3 +1,4 @@
+import {exactNode,parameterProblem,mentionsOf} from './structure.ts';
 // The adoc producer's step between K1's placement and the Hub's fragment contract. K1 copies a block's selector verbatim
 // into every fragment it makes and stamps its own parser key on it (markdown@1), so the mapped model hands K1 a citation
 // key of its own (`cite/<block>`, k1-model.ts) and this module turns every fragment back into the shape the Hub
@@ -75,7 +76,8 @@ export type Produced =
  */
 export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): Produced {
   let placed:ReturnType<typeof produceManualEntries>;
-  try{placed = produceManualEntries(mapped.model, options.heads ?? null, {
+  const safeModel={...mapped.model,blocks:mapped.model.blocks.map(block=>({...block,kind:block.kind==='code_block'?'code_block':'adoc_content'}))};
+  try{placed = produceManualEntries(safeModel, options.heads ?? null, {
     name: options.name,
     known_builds:options.known_builds,
     models:options.models,platforms:options.platforms,components:options.components,licenses:options.licenses,deployment_forms:options.deployment_forms,
@@ -98,6 +100,13 @@ export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): P
     };
   };
   const entries: ProducedEntry[] = [];
+  const bySelector=new Map(mapped.model.blocks.map((block,index)=>[block.selector!,{block,index}]));
+  const byBlock=new Map<object,ProducedEntry>();
+  const groups=new Map<number,typeof mapped.model.blocks>();
+  for(const block of mapped.model.blocks){if(block.sourceGroup===undefined)continue;const group=groups.get(block.sourceGroup)??[];group.push(block);groups.set(block.sourceGroup,group);}
+  const removed=new Set<ProducedEntry>(),order=new Map<ProducedEntry,[number,number]>();
+  const add=(entry:ProducedEntry,block?:object,position?:[number,number])=>{entries.push(entry);if(block)byBlock.set(block,entry);order.set(entry,position??[Number.MAX_SAFE_INTEGER,0]);};
+  const structuralWarnings:string[]=[];
   placed.entries.forEach((entry, index) => {
     const fragments: FragmentRef[] = [];
     for (const fragment of entry.fragments) {
@@ -105,20 +114,60 @@ export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): P
       if (rewritten === null) return;
       fragments.push(rewritten);
     }
+    const originalBlocks=entry.fragments.flatMap(fragment=>{const block=bySelector.get(fragment.selector)?.block;return block?[block]:[];});
+    for(const block of originalBlocks)for(const cite of block.structuralSignature||mentionsOf(block.inline).length?block.paragraphCites??[]:[]){const extra:FragmentRef={...(options.slot?{slot:options.slot}:{}),source:cite.sha256,parser:ADOC_PARSER,selector:cite.selector};if(!fragments.some(fragment=>fragment.source===extra.source&&fragment.selector===extra.selector))fragments.push(extra);}
     // An example is reference only and takes no part in judgment (task item 6). K1 places its text like any other block
     // — under the command before it, with that command's words in `data` — so the mark rides on the entry: a reader, a
     // drift count or a review can tell example content from what the manual states.
     const reference = entry.fragments.length > 0 && entry.fragments.every((fragment) => citesExample(mapped.model, fragment.selector));
-    if (!reference) { entries.push({ ...entry, fragments }); return; }
+    if (!reference) {
+      const blocks=entry.fragments.flatMap(fragment=>{const found=bySelector.get(fragment.selector)?.block;return found?[found]:[];});
+      const data:Record<string,unknown>={...entry.data,manual_name:options.name};delete data.command_literals;delete data.signature_literals;
+      const mentions=blocks.flatMap(block=>mentionsOf(block.inline));
+      if(mentions.length){data.command_mentions=mentions;const matched=mentions.filter(literal=>{const tokens=literal.split(' ');return tokens.join(' ')===literal&&exactNode(options.catalog,tokens)!==null;});if(matched.length)data.command_literals=[...new Set(matched)];}
+      const source=entry.fragments.map(fragment=>bySelector.get(fragment.selector)).find(Boolean);add({...entry,fragments,data},source?.block,source?[source.index,0]:undefined);return;
+    }
     // Link declarations read top-level literal fields. Keep the source literals as reference data, outside that input.
-    const data = { ...entry.data, reference_only: true } as Record<string, unknown>;
+    const data = { ...entry.data, manual_name:options.name, reference_only: true } as Record<string, unknown>;
     const referenceData: Record<string, unknown> = {};
     for (const field of ['command_literals', 'signature_literals']) {
       if (Object.hasOwn(data, field)) { referenceData[field] = data[field]; delete data[field]; }
     }
+    const ownBlocks=entry.fragments.flatMap(fragment=>{const block=bySelector.get(fragment.selector)?.block;return block?[block]:[];});
+    const mentions=ownBlocks.flatMap(block=>[...mentionsOf(block.inline),...(block.rowCites??[]).flatMap(row=>mentionsOf(row.inline))]);if(mentions.length)referenceData.command_mentions=mentions;
     if (Object.keys(referenceData).length > 0) data.reference = referenceData;
-    entries.push({ ...entry, fragments, data });
+    const source=entry.fragments.map(fragment=>bySelector.get(fragment.selector)).find(Boolean);add({ ...entry, fragments, data },source?.block,source?[source.index,0]:undefined);
   });
+  // K1 supplies the applicability scope; engine rows, not Markdown signatures, supply each table statement.
+  for(const block of mapped.model.blocks.filter(block=>block.kind==='table')){
+    const original=fragmentOf({selector:block.selector!},'表格');if(!original)continue;
+    const entry=byBlock.get(block);
+    if(!entry)continue;removed.add(entry);let rowIndex=0;
+    for(const row of block.rowCites??[]){
+      if(row.authored===false)continue;
+      const fragment=fragmentOf({selector:block.selector!,range:row.range},'表格行');if(!fragment)continue;
+      const statement=Buffer.from(block.text,'utf8').subarray(...row.range).toString('utf8');
+      add({...entry,statement,data:{...entry.data,form:'table_row',...(mentionsOf(row.inline).length?{command_mentions:mentionsOf(row.inline),...(mentionsOf(row.inline).filter(literal=>exactNode(options.catalog,literal.split(' '))!==null).length?{command_literals:mentionsOf(row.inline).filter(literal=>exactNode(options.catalog,literal.split(' '))!==null)}:{})}:{})},fragments:[fragment,...entry.fragments.filter(other=>other.source!==original.source||other.selector!==original.selector)]},undefined,[bySelector.get(block.selector!)!.index,rowIndex++]);
+    }
+  }
+  for(const block of mapped.model.blocks){
+    const signature=block.structuralSignature;if(!signature||block.example)continue;
+    const fragment=fragmentOf({selector:block.selector!},'结构签名');if(!fragment)continue;
+    const nodes=signature.words.map(words=>exactNode(options.catalog,words));
+    if(!options.catalog){structuralWarnings.push(`${block.cite.file}:${block.cite.selector}：缺锁定命令树；下一步绑定命令树后重产，未判漂移`);continue;}
+    const unresolved=nodes.some(node=>node===null);
+    const missing=signature.words.filter((_,index)=>nodes[index]===null&&signature.drift_slots[index]).map(words=>words.join(' '));
+    const existing=byBlock.get(block);
+    if(missing.length&&existing){existing.data={...existing.data,form:'signature_drift',signature_literals:[{primary:missing[0],alternatives:missing}],drift:{missing,next_action:'手册与命令树维护者核对这条完整定义后重产'}};structuralWarnings.push(`${block.cite.file}:${block.cite.selector}：结构签名漂移：${missing.join('、')}；下一步核对手册与锁定树后重产`);}
+    const chapter=byBlock.get(block);
+    if(chapter&&!unresolved){for(const part of block.sourceGroup===undefined?[block]:groups.get(block.sourceGroup)??[block]){const entry=byBlock.get(part);if(entry)removed.add(entry);}}
+    const inherited={...(chapter?.data??{})};delete inherited.command_literals;delete inherited.command_mentions;delete inherited.drift;
+    for(let index=0;index<nodes.length;index++){
+      const node=nodes[index];if(!node)continue;const problem=parameterProblem(signature,node.signatures);
+      if(problem)structuralWarnings.push(`${block.cite.file}:${block.cite.selector}：${signature.command}：${problem}`);
+      add({kind:'definition',path:node.path,statement:signature.command+(signature.parameters?' '+signature.parameters:''),data:{...inherited,form:'signature',words:signature.words[index],signature:signature.command,params:signature.params,parameter_authorities:node.signatures.map(row=>({reference:row.reference??null,params:row.params})),signature_literals:[{primary:signature.words[index]!.join(' '),alternatives:[signature.words[index]!.join(' ')]}],signature_structure:'apv-adoc-signature-structure@1',parameters_verified:!problem,...(problem?{missing:problem,next_action:'核对锁定命令树的参数声明和手册原件后重产'}:{})},fragments:chapter?.fragments??[fragment],applicability:chapter?.applicability??null},undefined,[bySelector.get(block.selector!)!.index,index+1]);
+    }
+  }
   const unplaced: Unplaced[] = [];
   placed.unplaced.forEach((span, index) => {
     const fragment = fragmentOf(span.fragment, `第 ${index + 1} 个未归位片段`);
@@ -136,8 +185,8 @@ export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): P
     };
   }
   // K1 only extracts literals; the shared relation evaluator performs links and drift checks from product declarations.
-  const warnings = [...mapped.warnings, ...placed.warnings];
-  const literalsOf = (entry: ProducedEntry): string[] => isRecord(entry.data.reference) ? asStrings(entry.data.reference.command_literals) : [];
+  const warnings = [...mapped.warnings, ...placed.warnings,...structuralWarnings];
+  const literalsOf = (entry: ProducedEntry): string[] => isRecord(entry.data.reference) ? asStrings(entry.data.reference.command_mentions??entry.data.reference.command_literals) : [];
   const reference = entries.filter(entry => entry.data.reference_only === true && literalsOf(entry).length > 0);
   if (reference.length > 0) {
     warnings.push(
@@ -145,5 +194,5 @@ export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): P
         '示例不参与命令关系判定：字面保留在 data.reference，不写入共用关系核验器读取的顶层字段。读时视图、评审与回归核对原文时仍要按 data.reference_only 分流参考条目；本包不改 K1。',
     );
   }
-  return { ok: true, entries, unplaced, warnings };
+  return { ok: true, entries:entries.filter(entry=>!removed.has(entry)).sort((a,b)=>order.get(a)![0]-order.get(b)![0]||order.get(a)![1]-order.get(b)![1]), unplaced, warnings };
 }

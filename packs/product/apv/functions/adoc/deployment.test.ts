@@ -1,33 +1,35 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import type {ProducerInput} from '../../../../../contracts/src/product.ts';
-import {jsonParser,textParser,markdownParser} from '../../../../../hub/refs/api.ts';
+import {jsonParser,textParser,markdownParser,xmlParser} from '../../../../../hub/refs/api.ts';
 import {sha256} from './input.ts';
-import {addAdocSources,adocRole,familyManual,ManualSourceError} from './deployment.ts';
-const root='synthetic/10.6.1';const revision='17';
+import {addAdocSources,adocRole,familyManual,ManualSourceError,directoryOf} from './deployment.ts';
+const root='synthetic/10.8.1';const revision='17';
 const rootId='svn:directory:'+encodeURIComponent(root);
 const childId='svn:directory-at:17/'+encodeURIComponent(root+'/chapters');
 const fileId=(name:string)=>'svn:file:17/'+encodeURIComponent(root+'/'+name);
-const texts={'book.adoc':'\ufeff= Synthetic\r\n\r\ninclude::chapters/body.adoc[]\r\n','chapters/body.adoc':'== Synthetic section\n\n{brand} family content.\n'};
+const texts={'app.adoc':'= Synthetic APP\n\n== Application\n\n{brand} APP content.\n','book.adoc':'\ufeff= Synthetic\r\n\r\ninclude::chapters/body.adoc[]\r\n','chapters/body.adoc':'== Synthetic section\n\n{brand} family content.\n'};
 const member=(name:string,text:string)=>({name,directory:false,external:fileId(name),revision:'16',size:Buffer.byteLength(text)});
-const metadata={directory:root,revision,members:[member('book.adoc',texts['book.adoc']),{name:'chapters',directory:true,external:null,revision:'15',size:null}]};
+const metadata={directory:root,revision,members:[member('book.adoc',texts['book.adoc']),member('app.adoc',texts['app.adoc']),{name:'chapters',directory:true,external:null,revision:'15',size:null}]};
 const child={directory:root+'/chapters',revision,members:[{...member('chapters/body.adoc',texts['chapters/body.adoc']),name:'body.adoc'}]};
 const slot=(external:string,value:unknown,media='application/json')=>{
  const bytes=Buffer.from(typeof value==='string'?value:JSON.stringify(value));
  const parser=media==='text/plain'?textParser:jsonParser;
  return {external,sha256:sha256(bytes.toString()),media_type:media,parser:media==='text/plain'?'text@1':'json@1',model:parser.parse(bytes).model};
 };
-const build={name:'Rel_APV_10_6_1_9',base:'Rel_APV_10_6_1_9',family:'APV',line:'10.6.1',platform:null,built_at:null,released_at:'2026-01-01T00:00:00.000Z',sources:{tree:'site:tree:demo'},root:null};
-const input=(family='APV',brand='Alpha'):ProducerInput=>({build,slots:{meta:slot(rootId,metadata),tree:null,cli:null,app:null},lists:{files:[slot(childId,child),...Object.entries(texts).map(([name,text])=>slot(fileId(name),text,'text/plain'))]},batch:{index:0,of:1},params:{family,root:'synthetic/{line}',main:'book.adoc',attributes:{[family]:{brand}}}});
+const build={name:'Rel_APV-ZX-U_10_8_1_901',base:'Rel_APV-ZX-U_10_8_1_901',family:'APV',line:'10.8.1',platform:'zx-u',built_at:null,released_at:'2026-01-01T00:00:00.000Z',sources:{tree:'site:tree:demo'},root:null};
+const input=(family='APV',brand='Alpha'):ProducerInput=>({build,slots:{meta:slot(rootId,metadata),tree:null,cli:null,app:null},lists:{files:[slot(childId,child),...Object.entries(texts).map(([name,text])=>slot(fileId(name),text,'text/plain'))]},batch:{index:0,of:1},params:{family,root:'synthetic/{line}',main:'book.adoc',app_main:'app.adoc',attributes:{[family]:{brand}}}});
 
 test('families expand from exact UTF-8 originals and keep distinct content and original text citations',async()=>{
  const apv=await familyManual(input());const nsae=await familyManual(input('NSAE','Beta'));
  assert.ok(apv.entries.some(e=>e.statement.includes('Alpha')));assert.ok(nsae.entries.some(e=>e.statement.includes('Beta')));
- assert.ok(apv.entries.every(e=>e.path?.startsWith('/manual/cli-apv/')));assert.ok(nsae.entries.every(e=>e.path?.startsWith('/manual/cli-nsae/')));
+ assert.deepEqual(new Set(apv.entries.map(entry=>entry.data.manual_name)),new Set(['cli-apv','app-apv']));
+ assert.deepEqual(new Set(nsae.entries.map(entry=>entry.data.manual_name)),new Set(['cli-nsae','app-nsae']));
+ assert.ok(apv.entries.every(e=>e.path?.startsWith('/manual/cli-apv/')||e.path?.startsWith('/manual/app-apv/')));assert.ok(nsae.entries.every(e=>e.path?.startsWith('/manual/cli-nsae/')||e.path?.startsWith('/manual/app-nsae/')));
  assert.ok(apv.entries.every(e=>e.fragments.every(f=>f.parser==='text@1'&&f.slot==='files'&&f.source&&f.selector.startsWith('l/'))));
 });
 test('explicit null uses Markdown; configured adoc failures never fall back to Markdown',async()=>{
- const value=input();value.params.root=null;value.slots.cli={...slot('manual:cli:10.6.1','# Synthetic\n\nMarkdown fallback.','text/plain'),parser:'markdown@1',model:markdownParser.parse(Buffer.from('# Synthetic\n\nMarkdown fallback.')).model};
+ const value=input();value.params.root=null;value.slots.cli={...slot('manual:cli:10.8.1','# Synthetic\n\nMarkdown fallback.','text/plain'),parser:'markdown@1',model:markdownParser.parse(Buffer.from('# Synthetic\n\nMarkdown fallback.')).model};
  assert.ok((await familyManual(value)).entries.some(e=>e.statement.includes('Markdown fallback')));
  value.params.root='synthetic/{line}';value.slots.meta=null;
  await assert.rejects(familyManual(value),e=>e instanceof ManualSourceError&&e.code==='apv.adoc.directory_unreadable'&&e.next_action.includes('SVN'));
@@ -48,12 +50,12 @@ test('the plan pins every descendant directory to the root revision and binds co
  read[childId]={ok:true,parser:'json@1',model:child};wanted.length=0;
  addAdocSources(first,options,read,id=>wanted.push(id),notes);
  assert.deepEqual(wanted,[]);assert.deepEqual(notes,[]);
- assert.deepEqual((first.sources as any)[adocRole('APV','files')],[childId,fileId('book.adoc'),fileId('chapters/body.adoc')]);
+ assert.deepEqual((first.sources as any)[adocRole('APV','files')],[childId,fileId('book.adoc'),fileId('app.adoc'),fileId('chapters/body.adoc')]);
  assert.equal((first.sources as any)[adocRole('APV','meta')],rootId);
 });
 
 test('adoc-enabled families refuse the transitional catalog with the concrete replacement action',async()=>{
- const value=input();value.slots.cli={...slot('manual:cli:10.6.1',{schema:'ist.manual-command-catalog'}),parser:'json@1'};
+ const value=input();value.slots.cli={...slot('manual:cli:10.8.1',{schema:'ist.manual-command-catalog'}),parser:'json@1'};
  await assert.rejects(familyManual(value),e=>e instanceof ManualSourceError&&e.code==='apv.adoc.catalog_reading_off'&&e.next_action.includes('adoc 文件表'));
 });
 test('recursive traversal refuses excessive depth and total entries rather than returning a partial group',()=>{
@@ -84,7 +86,7 @@ test('configured adoc production refuses a missing build with a concrete recover
  await assert.rejects(familyManual(value),error=>error instanceof TypeError&&error.message.includes('缺少 build')&&error.message.includes('下一步'));}
 });
 
-test('family deployment forwards all applicability closed sets with verified inherited origins',async()=>{
+test('family deployment forwards closed vocabularies without inferring applicability scopes from prose',async()=>{
  for(const family of ['APV','NSAE']){
   const value=input(family);
   const body='== Outer 装有 Card-A 时\n\n需要 Permit-A 许可。适用于 Form-A 部署形态。\n\n=== Inner\n\n普通正文。\n';
@@ -92,12 +94,33 @@ test('family deployment forwards all applicability closed sets with verified inh
   value.lists!.files=value.lists!.files!.map(part=>part.external===fileId('chapters/body.adoc')?slot(part.external,body,'text/plain'):part.external===childId?slot(childId,{...child,members:[{...child.members[0],size:Buffer.byteLength(body)}]}):part);
   const out=await familyManual(value);
   const entry=out.entries.find(row=>row.statement==='普通正文。')!;assert.ok(entry);
-  assert.deepEqual(entry.applicability?.components,{with:['Card-A']});
-  assert.deepEqual(entry.applicability?.licenses,['Permit-A']);
-  assert.deepEqual(entry.applicability?.deployment_forms,['Form-A']);
-  assert.deepEqual(new Set(entry.applicability?.inherited),new Set(['components','licenses','deployment_forms']));
-  const origins=entry.fragments.filter(fragment=>fragment.applicability?.length);
-  assert.ok(origins.length);
-  assert.ok(origins.every(fragment=>fragment.parser==='text@1'&&fragment.source===sha256(body)));
+  assert.equal(entry.applicability,null,'prose and a supplied vocabulary do not declare applicability');
+  assert.equal((entry.data.applicability_state as any).declaration_status,'undeclared');
+  assert.deepEqual(entry.fragments.map(fragment=>fragment.selector),['l/7']);
  }
+});
+
+test('line directory spelling follows declared decimal components while line preserves its original value',()=>{
+ assert.equal(directoryOf('manual/{line}/cli','10.8'),'manual/10.8/cli');
+ assert.equal(directoryOf('manual/{line_dir}/cli','10.8'),'manual/10_8_0/cli');
+ assert.equal(directoryOf('manual/{line_dir}/app','10.8.2'),'manual/10_8_2/app');
+ assert.equal(directoryOf('manual/{line_dir}','0010.008.000'),'manual/10_8_0');
+ assert.equal(directoryOf('manual/{line_dir}','10'),'manual/10_0_0');
+ assert.equal(directoryOf('manual/{line}','0010.008.000'),'manual/0010.008.000');
+ assert.throws(()=>directoryOf('manual/{line_dir}','10.8-extra'),ManualSourceError);
+});
+test('CLI and APP use the same single family flag, webfonts policy and optional overseas flag with byte-identical repeated output',async()=>{
+ const value=input();value.params.attributes={APV:{famA:true,overseas:true,webfonts:false}};
+ const xml='<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add"><arguments><arg name="pool_name" type="STRING" optional="NO"/><arg name="weight" type="U16" optional="YES"/></arguments></item></menu></menu></scope></commands>';
+ value.slots.tree={external:'site:tree:synthetic',sha256:sha256(xml),media_type:'application/xml',parser:'xml@1',model:xmlParser.parse(Buffer.from(xml)).model};
+ const sources={...texts,'book.adoc':'= CLI\n\nifdef::famA[]\nCLI family A.\n\n*demo pool add* _<pool_name> [weight]_\nendif::[]\n\nifdef::webfonts[]\nNot retained.\nendif::[]\n','app.adoc':'= APP\n\nifdef::famA[]\nAPP family A.\nendif::[]\n\nifdef::overseas[]\nAPP overseas.\nendif::[]\n'};
+ value.slots.meta=slot(rootId,{...metadata,members:metadata.members.map(member=>member.directory?member:{...member,size:Buffer.byteLength(sources[member.name as keyof typeof sources])})});
+ value.lists!.files=value.lists!.files!.map(file=>{const name=Object.keys(sources).find(name=>file.external===fileId(name));return name?slot(file.external!,sources[name as keyof typeof sources],'text/plain'):file;});
+ const first=await familyManual(value),second=await familyManual(value);assert.equal(JSON.stringify(first),JSON.stringify(second));
+ assert.ok(first.entries.some(entry=>entry.path?.startsWith('/manual/cli-apv')&&entry.statement==='CLI family A.'));
+ assert.ok(first.entries.some(entry=>entry.path?.startsWith('/manual/app-apv')&&entry.statement==='APP family A.'));
+ assert.ok(first.entries.some(entry=>entry.statement==='APP overseas.'));assert.ok(!first.entries.some(entry=>entry.statement==='Not retained.'));
+ const definition=first.entries.find(entry=>entry.kind==='definition')!;assert.ok(definition);assert.equal(definition.path,'/commands/demo/pool/add');assert.equal(definition.data.parameters_verified,true);assert.ok(JSON.stringify(definition.data.parameter_authorities).includes('src:'+sha256(xml)+'/xml@1/'));
+ const extraBrand=structuredClone(value);extraBrand.params.attributes={APV:{famA:true},NSAE:{famB:true}};await assert.rejects(familyManual(extraBrand),error=>error instanceof ManualSourceError&&error.code==='apv.adoc.family_not_a_name');
+ const incomplete=structuredClone(value);incomplete.params.app_main='missing.adoc';await assert.rejects(familyManual(incomplete),error=>error instanceof ManualSourceError&&error.code==='apv.adoc.missing_main');
 });

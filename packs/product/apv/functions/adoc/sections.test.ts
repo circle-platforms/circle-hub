@@ -109,8 +109,8 @@ test('repeated sibling titles are numbered as markdown@1 numbers them, and each 
   );
   const paths = produced.entries.map((entry) => [String(entry.statement), entry.path, entry.data.form]);
   assert.deepEqual(paths, [
-    ['demo pool add <name>', '/commands/demo/pool/add', 'signature'],
-    ['第一节的正文。', '/commands/demo/pool/add', 'text'],
+    ['**demo pool add** *<name>*', '/manual/cli/命令', 'text'],
+    ['第一节的正文。', '/manual/cli/命令', 'text'],
     ['第二节的正文。', '/manual/cli/命令[2]', 'text'],
     ['子节的正文。', '/manual/cli/命令[2]/命令', 'text'],
     ['一个以序号结尾的标题。', '/manual/cli/示例[2][1]', 'text'],
