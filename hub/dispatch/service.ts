@@ -1,5 +1,4 @@
 import {REPORT_READ_ATTEMPTS,REPORT_READ_WINDOW_MS,reportPending,reportReadDelay,trustedStatus} from './report-read.ts';
-import {rpcResponse,toolContent} from './observations.ts';
 import {releaseDigest,releaseFailure,type ReleaseCheck} from './release-diagnostics.ts';
 import type {AdminLogEntry} from '../runs/api.ts';
 import {RETRY_RULES} from './retry-policy.ts';
@@ -444,25 +443,31 @@ export class DispatchService {
     return this.status(by,binding.job);
   }
 
-  /** An old completed projection may still be missing its report. Recognize native structured facts only. */
-  private async reportReadback(by:Principal,binding:JobBinding,events:readonly Event[]):Promise<ExecutionReadback|null>{
+  /** Report absence is a native projected missing fact, not an inference from a legacy gateway spelling. */
+  private async reportReadback(_by:Principal,binding:JobBinding,events:readonly Event[]):Promise<ExecutionReadback|null>{
     const intent=eventOf(events,'intent'),result=projectedResult(events),end=eventOf(events,'complete');
-    if(!binding.input||!intent||!receiptOf(events)||!eventOf(events,'terminal')||!result||eventOf(events,'dispose'))return null;
-    if(result.body.detail.report_pending===false||end?.body.detail.outcome==='not_dispatched')return null;
+    const count=result?.body.detail.no_verdict;let incomplete=result?.body.detail.report_pending===true||typeof count==='number'&&count>0;
+    const skip=(condition:string):null=>{if(incomplete)try{this.options.adminLog?.({traceId:null,run:binding.input?.run??binding.run??null,what:'report resume skipped '+binding.job,detail:JSON.stringify({condition})});}catch{}return null;};
+    if(!binding.input)return skip('binding.input');
+    if(!intent)return skip('intent');
+    if(!receiptOf(events))return skip('receipt');
+    if(!eventOf(events,'terminal'))return skip('terminal');
+    if(!result)return skip('result.projection');
+    if(eventOf(events,'dispose'))return skip('management.disposition');
+    if(end?.body.detail.outcome==='not_dispatched')return skip('complete.outcome');
     const reference=result.body.detail.reference;
-    if(typeof reference!=='string'||!reference.startsWith('src:'))return null;
+    if(typeof reference!=='string'||!reference.startsWith('src:'))return skip('result.reference');
     const bytes=await this.options.records.objects.get(reference.slice(4));
-    if(!bytes||sha256Hex(bytes)!==reference.slice(4))return null;
-    let report:Record<string,unknown>;try{const value=JSON.parse(new TextDecoder().decode(bytes));if(!object(value))return null;report=value;}catch{return null;}
-    if(report.job!==binding.job||report.sha256!==binding.input.sha256||!Array.isArray(report.rows))return null;
-    if(result.body.detail.report_pending!==true){
-      if(!report.rows.some(row=>object(row)&&Array.isArray(row.missing_facts)&&(row.missing_facts.includes('report')||row.missing_facts.includes('complete'))))return null;
-      const original=eventOf(events,'result.response')?.body.inputs.find(ref=>ref.startsWith('src:'));if(!original)return null;
-      const raw=await this.options.records.artifacts.source(by,original.slice(4),{consumer:'function'});if(!raw?.bytes)return null;
-      try{const value=toolContent(rpcResponse(new TextDecoder('utf-8',{fatal:true}).decode(raw.bytes))),d=await this.pinned(binding);
-        if(!same(at(value,d.result.id),receiptOf(events)!.body.detail.remote_id)||at(value,d.result.sha256)!==binding.input.sha256||!reportPending(value,d,binding.input.items))return null;
-      }catch{return null;}
-    }
+    if(!bytes||sha256Hex(bytes)!==reference.slice(4))return skip('result.original_bytes');
+    let report:Record<string,unknown>;try{const value=JSON.parse(new TextDecoder().decode(bytes));if(!object(value))return skip('result.json_object');report=value;}catch{return skip('result.json_object');}
+    if(report.job!==binding.job)return skip('result.job');
+    if(report.sha256!==binding.input.sha256)return skip('result.sha256');
+    if(!Array.isArray(report.rows))return skip('result.rows');
+    const missingReport=report.rows.some(row=>object(row)&&typeof row.item==='string'&&binding.input!.items.includes(row.item)&&row.dynamic_terminal==='no_verdict'&&Array.isArray(row.missing_facts)&&(row.missing_facts.includes('report')||row.missing_facts.includes('complete')));
+    incomplete ||= missingReport;
+    // A completed transport/read may have a nonempty placeholder result. It does not establish a device verdict.
+    // Manual resume is a new authorized read, even when old raw bytes or their old readiness flags are unavailable.
+    if(result.body.detail.report_pending!==true&&!missingReport)return skip('result.missing_report');
     const saved=result.body.detail.execution_integrity;
     if(object(saved)&&saved.intent===intent.digest&&typeof saved.continuity==='boolean')return {intent:intent.digest,continuity:saved.continuity,...(typeof saved.drift==='boolean'?{drift:saved.drift}:{}),...(typeof saved.lease_interrupted==='boolean'?{lease_interrupted:saved.lease_interrupted}:{})};
     // Legacy report projections recorded these execution-window facts before normal remote lease release.
