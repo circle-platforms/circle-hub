@@ -202,6 +202,8 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
     }
 
     const builds: BuildInfo[] = [];
+    /** Builds whose device display spelling will be listed as their verified alias (filled in the loop below). */
+    const deviceAliases: Build[] = [];
     let partialDates = 0;
     const pushBuild = (build: Build, base: string, sources: Record<string, string | string[]>): void => {
       const built = isoTime(build.built);
@@ -242,18 +244,21 @@ export function planBuilds(input: SyncPlanInput): SyncPlanOutput {
         }
       }
       pushBuild(build, base, sources);
-      // The device display spelling of a build with its own tree is its verified alias (the pack's naming declaration,
-      // C07 R[9]: the one replacement _→.). Listed name-only with the build as its base, so a device version probe that
-      // compares the extracted value against the locked build and its verified aliases recognises the spelling the
-      // device displays. Nothing is read for it: it is not on any page and carries no sources of its own.
-      if (base === build.name && deviceSpelling(build.name) !== build.name) {
-        pushBuild({ ...build, name: deviceSpelling(build.name), basedOn: build.name }, build.name, {});
+      // The device display spelling (a verified alias of this build, C07 R[9]) is listed only while the build itself
+      // stays listed: a withheld build leaves the plan, and an alias whose base is gone would fail the sync instead
+      // of serving a locked root. See the alias pass after the withheld filter below.
+      if (base === build.name && deviceSpelling(build.name) !== build.name && !withheld.has(build.name)) {
+        deviceAliases.push(build);
       }
     }
     for (const build of namesOnly) pushBuild(build, namesOnlyBase.get(build.name) ?? build.name, {});
     builds.sort((a, b) => compareLines(a.line, b.line) || compareText(a.name, b.name));
     // A build that would list case documents is not listed without them: a root produced now would lose the cases it has.
     const kept = withheld.size === 0 ? builds : builds.filter((build) => !withheld.has(build.name));
+    // Only retained builds have device aliases. Unreleased builds retain their aliases too: an explicit
+    // includeUnreleased sync may produce their root. A withheld base must never leave a dangling alias.
+    for (const build of deviceAliases) kept.push({ name: deviceSpelling(build.name), family: build.family, line: lineKey(build.line as string), base: build.name, platform: build.platform, built_at: isoTime(build.built).iso, released_at: isoTime(build.released).iso, sources: {} });
+    kept.sort((a, b) => compareLines(a.line, b.line) || compareText(a.name, b.name));
     const uncovered = cases?.status === 'ready' ? uncoveredDocuments(cases.documents, caseLines) : [];
     const scoped=cases&&(failed.length||fetch.length)?{note:'缺少完整构建列表，不移动不分版本的根；下一步补齐构建列表后重跑同步'}:scopeFor(caseLines);
 

@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-review-verify",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "kind": "workflow",
   "title": "测试脑图评审（独立复核）",
   "description": "按团队的复核方法（review-verifier）独立复核 case-review 的初评：逐条处置初评发现、用七个探针找遗漏、质疑等级，给出 PASS、PARTIAL 或 FAIL 和最终等级；只能由与初评不同的会话和模型完成",
@@ -47,6 +47,11 @@
       "size": 5848
     },
     {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "2645a7b984a70645f5fb187bdb284c96022e123a614dc279fd6f18a36c263cac",
+      "size": 4642
+    },
+    {
       "path": "functions/projection.ts",
       "sha256": "30f5f6a7e74009df82ccd80dbbbabb0b92518b41b0d254bb2c0e1fc9ef018a70",
       "size": 16534
@@ -63,8 +68,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "a24272bf7147733287bd1a817eee02eb90d4b6efab94820919337853bbaa4597",
-      "size": 12902
+      "sha256": "b4aaf807f97821bb153892f96ab9c18d805bdd565b915b83384d93dd3bc7e1b0",
+      "size": 12391
     },
     {
       "path": "functions/verify.ts",
@@ -210,6 +215,11 @@
       "path": "tables/command-claims.json",
       "sha256": "7eb279fe0f5a5dce49701e90c8ec83fc64b5e64f070512d1c5ca766140187acb",
       "size": 1341
+    },
+    {
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
     },
     {
       "path": "workflow.json",

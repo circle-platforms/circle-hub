@@ -1132,3 +1132,5 @@ An empty result remains a refusal for builds. For a product-wide root only, ever
 The optional `tree_root@1.empty_scope` stores complete=true and each producer label, checked list/completion references, total and selected=0. Thus a complete empty root differs from a product that has never synced. It is content-addressed and can replace a formerly populated second root by the existing compare-and-set path. Production and unchanged-sync reports render the frozen labels and zero counts as “不分版本的根为空（清单完整，…）”. Authorized node reads return an empty page and that definite coverage note, with no unknown; root-reference reads retain the same note. Compositions keep the proof even when an empty node digest is shared with a root carrying unplaced entries; callers can pin the composition.
 
 同步别名的最终成根检查区分结构化发布状态：未发布别名及本次刻意排除的未发布基础构建不承担成根义务，保持跳过。已发布别名仍强制育出基础根，生产失败仍登记失败与修复出口。
+
+缓存测试冻结 known_builds 清单后比较同一输入的复用；当前构建也是已登记清单的一员，不能为提高缓存命中率从生产器输入中删除。清单变化仍导致重算。分片布局测试只排除 entry.applicability_context.composition 的布局身份差异，并逐条核对该字段等于实际组成记录，其他输出必须完全一致。
