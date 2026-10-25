@@ -13,7 +13,7 @@ export function definition(endpoint: string) {
       heartbeat: { tool: 'touch_slot', arguments: { ticket: { $value: 'lease_id' }, token: { $value: 'lease_token' } } },
       release: { tool: 'close_slot', arguments: { ticket: { $value: 'lease_id' }, token: { $value: 'lease_token' } } },
       precheck: { tool: 'inspect_slot', arguments: {} },
-      submit: { tool: 'send_blob', arguments: { request: { $value: 'request_id' }, until: { $value: 'not_after' }, blob: { $value: 'payload_base64' }, digest: { $value: 'sha256' }, ids: { $value: 'items' }, ticket: { $value: 'lease_id' } } },
+      submit: { tool: 'send_blob', arguments: { request: { $value: 'request_id' }, dispatch_sequence: { $value: 'dispatch_sequence' }, sequence_scope: { $value: 'sequence_scope' }, blob: { $value: 'payload_base64' }, digest: { $value: 'sha256' }, ids: { $value: 'items' }, ticket: { $value: 'lease_id' } } },
       status: { tool: 'inspect_blob', arguments: { key: { $value: 'remote_id' } } },
       result: { tool: 'read_blob', arguments: { key: { $value: 'remote_id' } } },
     },

@@ -19,7 +19,7 @@ test('keep-unknown and unconfirmed mark-failed preserve the freeze; confirmed ri
   await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id), 'unfreezing never permits resending the same bytes');
 });
 
-test('reconciliation verifies remote identity, bytes and the original delivery window before unfreezing', async t => {
+test('reconciliation verifies remote identity and bytes without comparing foreign delivery time', async t => {
   const c = await setup({ mode: 'reject' }); t.after(() => c.close());
   const first = await c.service.dispatch(c.admin, c.run, c.executor.id);
   const reconciled = await c.service.dispose(c.admin, first.job, { choice: 'reconcile', remote_id: 'synthetic-remote' });
@@ -27,13 +27,14 @@ test('reconciliation verifies remote identity, bytes and the original delivery w
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
 });
 
-test('absent audit records, wrong digest, wrong remote identity or delivery time never unfreeze', async t => {
-  for (const fault of ['absent', 'digest', 'identity', 'time']) {
-    const c = await setup({ mode: 'reject', alter: (name, value) => name !== 'read_blob' ? value : fault === 'absent' ? {} : fault === 'digest' ? { ...value, digest: 'f'.repeat(64) } : fault === 'identity' ? { ...value, key: 'another' } : { ...value, submitted: '1970-01-01T00:00:00.000Z' } });
+test('structural reconciliation faults remain frozen while foreign wall-clock skew is record only', async t => {
+  for (const fault of ['absent', 'digest', 'identity', 'time-fast', 'time-slow']) {
+    const c = await setup({ mode: 'reject', alter: (name, value) => name !== 'read_blob' ? value : fault === 'absent' ? {} : fault === 'digest' ? { ...value, digest: 'f'.repeat(64) } : fault === 'identity' ? { ...value, key: 'another' } : { ...value, submitted: new Date(Date.parse(String(value.submitted))+(fault==='time-fast'?1:-1)*7*3600000).toISOString() } });
     t.after(() => c.close());
     const first = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    await assert.rejects(c.service.dispose(c.admin, first.job, { choice: 'reconcile', remote_id: 'synthetic-remote' }));
-    assert.equal((await c.service.status(c.admin, first.job)).frozen, true);
+    if(fault==='time-fast'||fault==='time-slow'){assert.equal((await c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'})).frozen,false);}
+    else {await assert.rejects(c.service.dispose(c.admin, first.job, { choice: 'reconcile', remote_id: 'synthetic-remote' }));
+    assert.equal((await c.service.status(c.admin, first.job)).frozen, true);}
   }
 });
 

@@ -126,12 +126,14 @@ test('R10 the booking must cover submission plus the entire observation window',
   assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
 });
 
-test('R11 positive reconciliation uses only an explicitly declared clock tolerance',async t=>{
-  const c=await setup({mode:'reject',alter:(name,v)=>name==='read_blob'?{...v,submitted:'2026-10-22T23:59:59.000Z'}:v});t.after(()=>c.close());
-  const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  await assert.rejects(c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'}));
-  await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,clock_skew_ms:2000});
-  assert.equal((await c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'})).outcome,'effective');
+test('R11 positive reconciliation treats foreign timestamps as records regardless of clock tolerance',async t=>{
+  for(const tolerance of [0,2000]){
+    const c=await setup({mode:'reject',alter:(name,v)=>name==='read_blob'?{...v,submitted:'2026-10-22T23:59:59.000Z'}:v});t.after(()=>c.close());
+    const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
+    if(tolerance)await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,clock_skew_ms:tolerance});
+    assert.equal((await c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'})).outcome,'effective');
+    assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
+  }
 });
 
 test('R11 submission timeout consumes only the remaining committed window',async t=>{

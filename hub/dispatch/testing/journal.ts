@@ -1,4 +1,4 @@
-// Synthetic request journal matching the pre-admission, deadline and cached-reply behavior.
+// Synthetic request journal: issuer deadlines and sequence identity; remote wall time is recording only.
 import { setup } from './context.ts';
 import { DispatchService } from '../service.ts';
 import { sha256Hex } from '../../records/api.ts';
@@ -12,7 +12,7 @@ export async function setupJournal(options: { lost?: boolean|'once'; absent?: bo
     const id = String(args.request); const digest = sha256Hex(Buffer.from(String(args.blob),'base64'));
     const previous = rows.get(id);
     if (previous) return previous.digest === digest ? previous.reply as Record<string, unknown> : {...identity(),ok:false,phase:'admission',touched:false};
-    const expired = !options.admitExpired && Date.parse(String(args.until)) <= c.clock.ms-(options.clockLagMs??0);
+    const expired = false; // No remote deadline comparison, regardless of wall-clock skew.
     const phase=options.deadlinePrecheck?'precheck':'admission';
     const reply = {...identity(),...(options.receiptChange?{epoch:'replacement-journal'}:{}),ok:!expired,request:id,...(expired ? {phase,touched:false} : {key:'synthetic-remote',digest,ids:args.ids})};
     rows.set(id,{found:true,state:expired ? 'rejected' : 'started',request:id,digest,...(expired ? {phase,touched:false} : {key:'synthetic-remote',touched:true}),reply});
