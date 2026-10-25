@@ -2,7 +2,7 @@ import { requestRecords } from './requests.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 // Read existing dispatch observations only. No planning, dispatching or resubmission lives here.
 import { z } from 'zod';
-import { DynamicTerminalSchema, NatureSchema, QualifierMarkSchema, ReasonSchema, labelOf, type DynamicTerminal, type Reason } from '../../../contracts/generated/vocabulary.ts';
+import { DYNAMIC_TERMINAL, DynamicTerminalSchema, NatureSchema, QualifierMarkSchema, ReasonSchema, labelOf, type DynamicTerminal, type QualifierMark, type Reason } from '../../../contracts/generated/vocabulary.ts';
 import { Claim } from '../../../contracts/src/claim.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult, LayerResult } from '../../../contracts/src/validation.ts';
@@ -57,7 +57,7 @@ export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,resul
       const rows=relevant.flatMap(job=>(reports.get(job.job)?.rows??[]).filter(r=>job.verification_run===run.run||r.item===item.item));
       const allKnown=rows.length>0&&relevant.every(j=>reports.get(j.job)!==null)&&!frozen;
       const notExecuted=relevant.every(j=>j.status.outcome==='not_dispatched'||j.status.outcome==='proven_not_executed'||j.status.outcome==='target_rejected')&&!frozen;
-      const terminal=notExecuted?'not_run':allKnown&&rows.every(r=>r.dynamic_terminal==='pass')?'pass':allKnown&&rows.some(r=>r.dynamic_terminal==='fail')?'fail':'no_verdict';
+      const terminal:DynamicTerminal=notExecuted?'not_run':allKnown&&rows.every(r=>r.dynamic_terminal==='pass')?'pass':allKnown&&rows.some(r=>r.dynamic_terminal==='fail')?'fail':'no_verdict';
       const due=new Date(ctx.now().getTime()+86400000).toISOString();
       let dynamic:LayerResult;
       if(terminal==='pass'||terminal==='fail')dynamic={layer:'dynamic',terminal,...(terminal==='fail'&&rows.find(r=>r.code)?.code?{code:rows.find(r=>r.code)!.code}:{}),...(terminal==='fail'?{attribution:'unattributed' as const}:{})};
@@ -113,9 +113,11 @@ export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,resul
         return enriched as LayerResult;
       }) as typeof requirement.layers;
       if(byRound.size>0){
-        const parts=['pass','fail','no_verdict','not_run','incomplete'].flatMap(name=>{const found=rolled.distribution.byTerminal[name as DynamicTerminal];return found>0?[`${found} 次${labelOf('dynamic_terminal',name as DynamicTerminal)}`]:[];});
+        const parts=DYNAMIC_TERMINAL.flatMap(name=>{const found=rolled.distribution.byTerminal[name];return found>0?[`${found} 次${labelOf('dynamic_terminal',name)}`]:[];});
         const grounds=relevant.flatMap(job=>job.status.result?[job.status.result]:[]);
-        requirement.claims.push(Claim.parse({item:item.item,requirement:requirement.requirement,statement:{text:`目标报告：${rolled.distribution.count} 次里 ${parts.join('、')}${rolled.marks.includes(INTERMITTENT_MARK)?'（间歇）':''}`,verdict:'unknown',data:{distribution:rolled.distribution.byTerminal,count:rolled.distribution.count}},qualifier:{nature:'unknown',provenance:'projected',marks:['target_reported','report_for_dispatch','local_ops_not_excluded',...(rows.some(row=>row.qualifier.marks.includes('conditional_on_judgment'))?['conditional_on_judgment' as const]:[])]},grounds,warrant:{producer:'function',id:'dispatch@1'},validity:{status:'valid',bound:[run.pack_digest],premises:[]}}));
+        const marks:QualifierMark[]=[];
+        marks.push('target_reported','report_for_dispatch','local_ops_not_excluded',...(rows.some(row=>row.qualifier.marks.includes('conditional_on_judgment'))?['conditional_on_judgment' as const]:[]));
+        requirement.claims.push(Claim.parse({item:item.item,requirement:requirement.requirement,statement:{text:`目标报告：${rolled.distribution.count} 次里 ${parts.join('、')}${rolled.marks.includes(INTERMITTENT_MARK)?'（间歇）':''}`,verdict:'unknown',data:{distribution:rolled.distribution.byTerminal,count:rolled.distribution.count}},qualifier:{nature:'unknown',provenance:'projected',marks},grounds,warrant:{producer:'function',id:'dispatch@1'},validity:{status:'valid',bound:[run.pack_digest],premises:[]}}));
       }
       if(rolled.outcome==='misses'&&byRound.size>0)await writeHypothesis(ctx,run,item.item,requirement.requirement);
       const status=requirementStatus({producer:template.accepted_producer,layers:requirement.layers,hasProducer:!((terminal==='pass'||terminal==='fail')&&template.accepted_producer==='fact'&&rows.some(r=>!r.accepted_as_fact)),expectation,expectedRefutation:staticRefutes.length>0&&staticRefutes.every(c=>c.statement.code!==undefined&&expectation.codes.includes(c.statement.code)),independence:requirement.unsatisfied_reason==='independence_unknown'?'unknown':null,acceptsDeclared:template.accepts_declared_independence===true});

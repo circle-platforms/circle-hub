@@ -1,12 +1,12 @@
 // View-only states. Author declarations and admitted model claims remain separate and never alter entry content.
-import {APPLICABILITY_FIELD} from '../../contracts/generated/vocabulary.ts';
+import {APPLICABILITY_FIELD,isDeclarationStatus} from '../../contracts/generated/vocabulary.ts';
 import type {Applicability} from '../../contracts/src/product.ts';
 import type {ApplicabilityFields,KnowledgeContributionPageView} from '../../contracts/src/contributions.ts';
 import {canonicalize,sha256Hex} from '../records/api.ts';
 const object=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 export function applicabilityFields(data:Record<string,unknown>,value:Applicability|null):ApplicabilityFields {
  const marker=object(data.applicability_state)&&data.applicability_state.schema==='applicability-state@1'?data.applicability_state:null;
- const known=marker&&(marker.declaration_status==='declared'||marker.declaration_status==='undeclared')&&Array.isArray(marker.declared_fields)&&marker.declared_fields.every(f=>(APPLICABILITY_FIELD as readonly unknown[]).includes(f));
+ const known=marker&&isDeclarationStatus(marker.declaration_status)&&Array.isArray(marker.declared_fields)&&marker.declared_fields.every(f=>(APPLICABILITY_FIELD as readonly unknown[]).includes(f));
  return Object.fromEntries(APPLICABILITY_FIELD.map(field=>[field,{declaration_status:known?(marker!.declared_fields as string[]).includes(field)?'declared':'undeclared':null,judgment_status:'unjudged',declaration_value:known?value?.[field]??null:null,judgments:[],conflicted:Array.isArray(marker?.conflicted_fields)&&marker!.conflicted_fields.includes(field),...(known?{}:{...(value?.[field]===undefined?{}:{legacy_value:value[field]}),missing:'结构化声明出处尚未核验'}),next_action:'按需由作者补结构声明，或在 knowledge-contribution 运行提交本条目的条件主张及逐字引文'}])) as unknown as ApplicabilityFields;
 }
 const criteriaCache=new WeakMap<object,{inventory:readonly {name:string}[];value:string}>();

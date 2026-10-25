@@ -31,7 +31,7 @@
 - `hub/server/{console-pagination.test.ts,read-diagnostics.test.ts,submit-load.test.ts}`
 - `packs/product/lumen-api/functions.test.ts`
 - `packs/workflow/case-review/packs.test.ts`
-- `packs/workflow/case-compile/{functions/plan-commands.ts,functions/plan-commands.test.ts,pack.json,pack-files.ts,README.md,pack.test.ts,publish.test.ts,production.test.ts}`
+- `packs/workflow/case-compile/{functions/plan-commands.ts,functions/plan-commands.test.ts,tables/workbook-format.json,samples/**,pack.json,pack-files.ts,README.md,pack.test.ts,publish.test.ts,production.test.ts}`
 - `packs/workflow/defect-to-case/publish.test.ts`
 - `packs/workflow/maintenance-sweep/{pack.test.ts,publish.test.ts,production.test.ts,functions/check.ts,functions/check.test.ts,README.md}`
 - `packs/workflow/regression-scope/{pack.test.ts,publish.test.ts,production.test.ts,functions/check.ts,functions/check.test.ts,README.md}`
