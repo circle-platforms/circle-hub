@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "apv",
-  "version": "1.7.7",
+  "version": "1.7.8",
   "kind": "product",
   "title": "APV / NSAE（产品包）",
   "description": "APV 与 NSAE 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册的知识生产器（用例、缺陷、规格按 10-24 修订由 Circle 喂入，不再整批生产）",
@@ -13,23 +13,23 @@
     },
     {
       "path": "functions/adoc/deployment.ts",
-      "sha256": "87ba727883f6d185fc394a578d739d71b394716a55169bc28e07079586c45c56",
-      "size": 10876
+      "sha256": "ed3006ee8be90edd3e6648814e9f133e208ec1d535a6d614885ebfc604586f7d",
+      "size": 11932
     },
     {
       "path": "functions/adoc/engine.ts",
-      "sha256": "9621cb0b7201d24f11c97a0569455025858306ce96bee25727d9416d9fa44805",
-      "size": 2957
+      "sha256": "70f1df293209ad0bd76798d752ffe985c8b8846db05a2308d27103c087851268",
+      "size": 4786
     },
     {
       "path": "functions/adoc/entries.ts",
-      "sha256": "67aeee373f8d724b862a9568da2c56427be62b78d2e19f3c673744f7d94392dc",
-      "size": 9421
+      "sha256": "1a73e5ea72bcd869487b42610899de3b2f662d78ba975476e1ca725aaf3769b3",
+      "size": 16093
     },
     {
       "path": "functions/adoc/families.ts",
-      "sha256": "fc0956beb45b720abd8e3ac0f0891c90e84094bc048c3e3d97a1911a577e52bc",
-      "size": 4992
+      "sha256": "2853d706a33d947de7cea1086cc3f690b274cdd4eac54992926969083c10fbf4",
+      "size": 5037
     },
     {
       "path": "functions/adoc/includes.ts",
@@ -38,23 +38,33 @@
     },
     {
       "path": "functions/adoc/index.ts",
-      "sha256": "2ed0405f8a10dc4b63c1c0707bb0e23fbddb304a08c6ed87443c775671fc9173",
-      "size": 14525
+      "sha256": "3e02e5924db51daf8ba1d068a0188e1d1ce133103b726e581d182e836e1d441c",
+      "size": 15507
+    },
+    {
+      "path": "functions/adoc/inline.ts",
+      "sha256": "48cee839b2f0a6219499a5b59a2e817670e941f00a622b2ad09950a8fd867d65",
+      "size": 6907
     },
     {
       "path": "functions/adoc/input.ts",
-      "sha256": "d72617576e0c452988bba7b4c4798960631cccbb77f5797b769e3c2574f2a310",
-      "size": 6166
+      "sha256": "85e6333e29bc91825d4514e4c0674bacf5fc55d89cf8de0b6750fe69aee80721",
+      "size": 6325
     },
     {
       "path": "functions/adoc/k1-model.ts",
-      "sha256": "4c5a8ed1e24885b469487be9385c1c20c59695b57b32167cf297f61a6c0e0d36",
-      "size": 39337
+      "sha256": "47edd818bfe819bfc32d08d1373653856bc731295a0cd96206e6475d8b50af5b",
+      "size": 38335
     },
     {
       "path": "functions/adoc/origins.ts",
       "sha256": "7e77ddbc5a92812c383082a92ad56d453561bcc2584df37aedee84faccde3efe",
       "size": 13717
+    },
+    {
+      "path": "functions/adoc/structure.ts",
+      "sha256": "9ad905cd9bb6bab9cc5f706a6804bd6a3a884a509c8296e2c4439efcd8d35e13",
+      "size": 5624
     },
     {
       "path": "functions/adoc/text.ts",
@@ -63,8 +73,8 @@
     },
     {
       "path": "functions/adoc/types.ts",
-      "sha256": "ac6fad2ff412dceba8c315896d4929ff079cbb535e0fde074c1ece6bb60faef9",
-      "size": 4334
+      "sha256": "0b4a41e8de945de45648d1975f47beb3bb499cf31ec3a8686171dc23fe1581f8",
+      "size": 4493
     },
     {
       "path": "functions/adoc/vendor/LICENSE.txt",
@@ -223,8 +233,8 @@
     },
     {
       "path": "product.json",
-      "sha256": "9ba7dd28ad42f91f1e5b26e256adb2f181114c08a887062225657916bdd1c080",
-      "size": 11105
+      "sha256": "5df9bd53c2b7f4fdeca46913a8bd605be944091b1b8a15d5ef2d889c7648f41f",
+      "size": 12878
     },
     {
       "path": "tables/resource-tags.json",

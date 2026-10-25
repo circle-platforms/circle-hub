@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { AdocInput, Limits, MappedLine, Report, SourceFile } from './types.ts';
 
 export const ENGINE = { version: '4.1.1', sha256: '5a8785bf8dc39a216170b836bb274957f079f77e5f40b33453c988f85de9203d' } as const;
-export const POLICY = 'restricted-whole-file-includes-and-source-lines@1';
+export const POLICY = 'restricted-whole-file-includes-source-lines-and-inline-structure@2';
 export const LIMITS: Limits = { files: 128, inputBytes: 16 * 1024 * 1024, expandedBytes: 8 * 1024 * 1024, includeDepth: 16, includes: 512, lines: 250000, conditions: 1024, blocks: 250000 };
 export const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 export const canonical = (value: unknown): string => JSON.stringify(value, (_key, v: unknown) => v !== null && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v);
@@ -43,6 +43,7 @@ export function validate(input: unknown, limits: Limits): AdocInput {
     rejectClock(String(value));
     if (/[\r\n]/.test(String(value)) || /(?:include|ifdef|ifndef|ifeval|endif)::/.test(String(value))) fail('invalid_attributes', '声明属性只能是单行值，不能注入预处理指令');
     if (Object.hasOwn(attributes, key.toLowerCase())) fail('invalid_attributes', '声明属性名大小写折叠后重复');
+    if(key.toLowerCase()==='webfonts'&&value!==false)fail('invalid_attributes','生成策略固定使用 webfonts!，不能启用 webfonts');
     attributes[key.toLowerCase()] = value as string | boolean;
   }
   return { main: input.main, revision: input.revision, files, attributes };

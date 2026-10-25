@@ -9,7 +9,9 @@ import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { toK1Model, type Mapped } from './k1-model.ts';
 import { compileAdoc } from './index.ts';
-import { produceManualEntries } from '../manual.ts';
+import {produceManualEntries} from '../manual.ts';
+import {compileGrammar} from '../commands.ts';
+const catalog=compileGrammar(['add','del','mode'].map(word=>({path:'/commands/demo/pool/'+word,words:['demo','pool',word],signatures:[{params:[]}]})));
 import { ADOC_PARSER, produceAdocEntries } from './entries.ts';
 
 const compile = async (files: Record<string, string>, main = 'main.adoc', attributes: Record<string, string | boolean> = {}): Promise<Extract<Awaited<ReturnType<typeof compileAdoc>>, { ok: true }>> => {
@@ -66,7 +68,7 @@ test('discrete headings are marked and invalid ======= lines are reported, not h
   assert.equal(model.blocks.some((b: { text: string }) => b.text === '======= Seven'), true, 'the invalid line is an ordinary block');
 });
 
-test('K1 placement applies unchanged: signatures, table rows and literals from the adoc model', async () => {
+test('chapter placement and row citations survive without admitting definitions from mapped text', async () => {
   const out = await compile({
     'main.adoc': [
       '= Book',
@@ -83,16 +85,13 @@ test('K1 placement applies unchanged: signatures, table rows and literals from t
       '本节介绍 `demo pool mode` 的用法。',
     ].join('\n'),
   });
-  const model = mapped(out).model;
-  const result = produceManualEntries(model, null, { name: 'cli' });
-  const forms = result.entries.map((entry) => [entry.data.form, entry.path]);
-  assert.ok(forms.some(([form, path]) => form === 'signature' && path === '/commands/demo/pool/add'), JSON.stringify(forms));
-  assert.ok(forms.some(([form, path]) => form === 'signature' && path === '/commands/demo/route/static'), JSON.stringify(forms));
-  const mention = result.entries.find((entry) => String(entry.statement).includes('用法'));
-  assert.ok(mention !== undefined && (mention.data.command_literals as string[]).includes('demo pool mode'), 'prose literals ride along');
-  const rowText = result.entries.find((entry) => String(entry.statement).includes('添加成员'));
-  assert.ok(rowText !== undefined && rowText.path === '/commands/demo/pool/add', 'the row text follows its command');
-  assert.ok(result.entries.every((entry) => (entry.fragments[0].parser ?? '') !== '' && entry.fragments[0].selector !== ''), 'every entry cites a fragment');
+  const placed=produceAdocEntries(mapped(out),{name:'cli',catalog});assert.ok(placed.ok,JSON.stringify(placed));
+  const result=placed;
+  assert.deepEqual(result.entries.filter(entry=>entry.data.form==='signature'),[],'table markup is not paragraph structure');
+  const mention=result.entries.find(entry=>entry.statement.includes('用法'))!;assert.deepEqual(mention.data.command_mentions,['demo pool mode']);assert.deepEqual(mention.data.command_literals,['demo pool mode']);
+  const row=result.entries.find(entry=>entry.statement.includes('添加成员'))!;assert.equal(row.path,'/manual/cli/配置命令');assert.equal(row.fragments[0].selector,'l/8');
+  assert.ok(result.entries.every(entry=>entry.fragments.every(fragment=>fragment.parser==='text@1'&&fragment.selector!=='')));
+
 });
 
 test('the mapped model is stable: the same input twice gives the same bytes', async () => {
@@ -130,7 +129,7 @@ test('a description list, marked list items, an admonition and a retained single
   );
   const result = mapped(out);
   assert.ok(result.model.blocks.every((block) => typeof block.selector === 'string' && block.selector !== ''), 'every mapped block carries a citation');
-  const produced = produceAdocEntries(result, { name: 'cli' });
+  const produced = produceAdocEntries(result, { name: 'cli',catalog });
   assert.ok(produced.ok, JSON.stringify(produced));
   const placed = { entries: produced.entries, warnings: produced.warnings };
   assert.deepEqual(placed.warnings.filter(warning=>!warning.startsWith('适用条件统计：')), [], placed.warnings.join('；'));
@@ -177,7 +176,7 @@ test('a block that cannot be cited stays out of the model and is reported with f
     [{ kind: 'paragraph', file: 'main.adoc', line: 9, reason: true, next_action: true }],
     JSON.stringify(result.uncited),
   );
-  const placed = produceManualEntries(result.model, null, { name: 'cli' });
+  const placed = produceManualEntries(result.model, null, { name: 'cli',catalog });
   assert.deepEqual(placed.warnings.filter(warning=>!warning.startsWith('适用条件统计：')), [], 'K1 sees no malformed block, so it counts none');
   assert.equal(placed.entries.some((entry) => String(entry.statement).includes('第二段说明')), false);
   assert.ok(result.warnings.some((warning) => warning.includes('回核不到原文行') && warning.includes('main.adoc:9')), result.warnings.join('；'));
@@ -202,7 +201,7 @@ test('a block whose verified lines are not contiguous becomes one block per rang
   assert.deepEqual(paragraph.origins.map((origin) => origin.selector), ['l/5', 'l/7', 'l/9'], 'step one verified three ranges, not one');
   const mapped = toK1Model(out.model, out.composition, 'cli');
   assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
-  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual',catalog });
   assert.ok(produced.ok, JSON.stringify(produced));
   assert.deepEqual(
     produced.entries.map((entry) => [String(entry.statement), entry.fragments.map((fragment) => fragment.selector)]),
@@ -235,7 +234,7 @@ test('a paragraph that runs across an include boundary cites each chapter file f
   assert.deepEqual(paragraph.origins.map((origin) => `${origin.file}:${origin.selector}`), ['a.adoc:l/1', 'b.adoc:l/1']);
   const mapped = toK1Model(out.model, out.composition, 'cli');
   assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
-  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual',catalog });
   assert.ok(produced.ok, JSON.stringify(produced));
   const digests = Object.fromEntries(mapped.model.blocks.map((block) => [block.cite.file, block.cite.sha256]));
   assert.deepEqual(
@@ -264,7 +263,7 @@ test('a report names the chapter file and that file\'s own line, not the line of
   assert.notEqual(uncited.line, uncited.expanded_line, 'the two line numbers are not the same in an included chapter');
   assert.ok(mapped.warnings.some((warning) => warning.includes('ch2.adoc:3') && !warning.includes('ch2.adoc:9')), mapped.warnings.join('；'));
   // What is cited is placed, and the entries of the chapter keep their own paths.
-  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual',catalog });
   assert.ok(produced.ok, JSON.stringify(produced));
   assert.deepEqual(
     produced.entries.map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
@@ -302,7 +301,7 @@ test('a statement carries the reader spelling: a hard break is a line break, and
   );
   const mapped = toK1Model(out.model, out.composition, 'cli');
   assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
-  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual',catalog });
   assert.ok(produced.ok, JSON.stringify(produced));
   const statements = produced.entries.map((entry) => String(entry.statement));
   assert.ok(statements.includes('第一行\n第二行。'), JSON.stringify(statements));
@@ -356,7 +355,7 @@ test('a single-line comment inside a block is not content, and a comment inside 
   assert.deepEqual(listing.origins.map((origin) => origin.selector), ['l/10-11']);
   const mapped = toK1Model(out.model, out.composition, 'cli');
   assert.deepEqual(mapped.uncited, [], JSON.stringify(mapped.uncited));
-  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+  const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual',catalog });
   assert.ok(produced.ok, JSON.stringify(produced));
   assert.deepEqual(
     produced.entries.map((entry) => [String(entry.statement), entry.fragments[0]!.selector]),
@@ -382,7 +381,7 @@ test('splitting a block by its source ranges does not make a signature the autho
     const out = await compile(files, main, { 'brand-apv': true });
     const mapped = toK1Model(out.model, out.composition, 'cli');
     assert.deepEqual(mapped.uncited, [], `${label}: ${JSON.stringify(mapped.uncited)}`);
-    const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual' });
+    const produced = produceAdocEntries(mapped, { name: 'cli', slot: 'manual',catalog });
     assert.ok(produced.ok, `${label}: ${JSON.stringify(produced)}`);
     assert.deepEqual(produced.entries.filter((entry) => entry.data.form === 'signature'), [], `${label}: ${JSON.stringify(produced.entries.map((entry) => [entry.data.form, entry.statement, entry.path]))}`);
     assert.ok(produced.entries.every((entry) => String(entry.path).startsWith('/manual/cli')), `${label}: ${JSON.stringify(produced.entries.map((entry) => entry.path))}`);
@@ -398,17 +397,16 @@ test('splitting a block by its source ranges does not make a signature the autho
   }
 });
 
-test('adoc forwards closed sets and preserves field provenance on verified chapter line fragments', async () => {
+test('adoc forwards frozen closed vocabularies without turning prose into applicability declarations', async () => {
   const out = await compile({'main.adoc': '= Book\n\n== Outer 装有 Card-A 时\n\n内存至少8GB。\n\n=== Child\n\n普通正文。\n'});
   const produced = produceAdocEntries(mapped(out), {name:'cli',slot:'manual',components:['Card-A'],licenses:[],deployment_forms:[]});
   assert.ok(produced.ok, JSON.stringify(produced));
   const entry = produced.entries.find(row => row.statement === '普通正文。')!;
   assert.ok(entry);
-  assert.deepEqual(entry.applicability?.components,{with:['Card-A']});
-  assert.deepEqual(entry.applicability?.inherited,['components','memory']);
-  assert.equal(entry.fragments[0]!.selector,'l/9');
-  assert.ok(produced.warnings.some(warning=>warning.startsWith('适用条件统计：部件：')));
-  const inherited=entry.fragments.slice(1);
-  assert.deepEqual(inherited.map(row=>row.selector),['l/3','l/5']);
-  assert.ok(inherited.every(row=>row.parser==='text@1'&&row.source===out.composition.files[0]?.sha256&&row.applicability?.length));
+  assert.equal(entry.applicability,null);
+  assert.equal((entry.data.applicability_state as {declaration_status:string}).declaration_status,'undeclared');
+  assert.deepEqual(entry.fragments.map(fragment=>fragment.selector),['l/9']);
+  const changed=produceAdocEntries(mapped(out),{name:'cli',slot:'manual',components:['Card-B'],licenses:[],deployment_forms:[]});assert.ok(changed.ok);
+  const other=changed.entries.find(row=>row.statement==='普通正文。')!;
+  assert.notDeepEqual(other.data.applicability_state,entry.data.applicability_state,'the frozen closed vocabulary changes the criterion, never the prose judgment');
 });

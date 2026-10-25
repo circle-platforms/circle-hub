@@ -1,13 +1,14 @@
 // Product-owned SVN traversal and one independently memoized manual production per name family.
 import type {ProducerInput,ProducerOutput,BuildInfo} from '../../../../../contracts/src/product.ts';
-import {PRODUCT_LINE} from '../naming.ts';
+import {PRODUCT_LINE,lineKey} from '../naming.ts';
 import {manual} from '../producers.ts';
 import {commandCatalog} from '../cases-commands.ts';
 import {isRecord} from '../util.ts';
 import {compileFamilies,familyManualName} from './families.ts';
 import {toK1Model} from './k1-model.ts';
 import {produceAdocEntries,catalogOnAdocLine,catalogRefusal} from './entries.ts';
-import {sha256} from './input.ts';
+import {sha256,canonical} from './input.ts';
+import {SIGNATURE_STRUCTURE} from './structure.ts';
 
 export const ADOC_LIMITS={depth:5,directories:32,files:128,entries:512} as const;
 export const adocRole=(family:string,kind:'meta'|'files')=>'adoc_'+family.toLowerCase()+'_'+kind;
@@ -19,8 +20,10 @@ const stop=(code:string,message:string,next='核对本族 ROOT、MAIN 和同修�
 function safePath(path:string):boolean{return path.length>0&&path.length<=2000&&!/[\\\p{Cc}\p{Cf}?#;]/u.test(path)&&path.split('/').every(p=>p!==''&&p!=='.'&&p!=='..'&&p.length<=255);}
 export function directoryOf(root:unknown,line:string):string|null{
  if(root===null)return null;
- if(typeof root!=='string'||!root.includes('{line}'))return stop('invalid_root','ROOT 需要包含 {line} 的相对 SVN 目录模板，或显式 null');
- const path=root.replaceAll('{line}',line);
+ if(typeof root!=='string'||!root.includes('{line}')&&!root.includes('{line_dir}'))return stop('invalid_root','ROOT 需要包含 {line} 或 {line_dir} 的相对 SVN 目录模板，或显式 null');
+ const parts=line.split('.');if(![1,2,3].includes(parts.length)||parts.some(part=>!part.length||part.length>9||![...part].every(ch=>ch>='0'&&ch<='9')))return stop('invalid_line','版本线不符合点分十进制语法，不能猜目录名');
+ const canonical=lineKey(line).split('.');while(canonical.length<3)canonical.push('0');
+ const path=root.replaceAll('{line_dir}',canonical.join('_')).replaceAll('{line}',line);
  if(/[{}]/.test(path)||!safePath(path))return stop('invalid_root','ROOT 展开后的目录无效，不允许绝对路径或跳出目录');
  return path;
 }
@@ -104,8 +107,9 @@ export async function familyManual(input:ProducerInput):Promise<ProducerOutput>{
  const expected=new Set([...tree.files.values()].map(m=>m.external!));
  const metadataIds=[...tree.directories.keys()].filter(id=>id!==rootId(root));metadataIds.forEach(id=>expected.add(id));
  if(expected.size!==given.length||given.some(slot=>!slot.external||!expected.has(slot.external)))return stop('incomplete_group','需要完整目录树中的全部 adoc 和子目录清单，不能拆批、漏文件或混入额外文件');
- const main=input.params.main;
- if(typeof main!=='string'||!safePath(main)||!main.endsWith('.adoc')||!tree.files.has(main))return stop('missing_main','MAIN 指定的主文件不在本修订号的完整文件组里');
+ const mains={cli:input.params.main,app:input.params.app_main};
+ for(const [book,main]of Object.entries(mains))if(typeof main!=='string'||!safePath(main)||!main.endsWith('.adoc')||!tree.files.has(main))return stop('missing_main',book+' MAIN 指定的主文件不在本修订号的完整文件组里');
+ if(input.params.signature_structure!==undefined&&canonical(input.params.signature_structure)!==canonical(SIGNATURE_STRUCTURE))return stop('signature_structure','手册签名结构与包声明不一致，不能猜测签名','包作者恢复 product.json 签名结构与同版本实现的一致性，再按原件修订号重产');
  const files:Record<string,{text:string;revision:string;sha256:string}>=Object.create(null);
  for(const [name,member] of tree.files){
   const slot=byId.get(member.external!);
@@ -116,15 +120,20 @@ export async function familyManual(input:ProducerInput):Promise<ProducerOutput>{
  }
  for(const name of ['cli','app'])if(catalogOnAdocLine(input.slots[name])){const refusal=catalogRefusal(family);throw new ManualSourceError(refusal.code,refusal.message,refusal.next_action);}
  const attributes=isRecord(input.params.attributes)?input.params.attributes:{};
- const compiled=await compileFamilies({main,revision:tree.revision,families:files,familyAttributes:attributes},[family]);
- if(!compiled.ok)throw new ManualSourceError(compiled.error.code,compiled.error.message,compiled.error.next_action);
- const one=compiled.families[family];
- const mapped=toK1Model(one.model,one.composition,familyManualName(family,'cli'));
  const treeSlot=input.slots.tree;
- const catalog=treeSlot?.parser==='xml@1'?commandCatalog(treeSlot.model as Parameters<typeof commandCatalog>[0]).catalog:null;
- const placed=produceAdocEntries(mapped,{name:familyManualName(family,'cli'),slot:'files',catalog,known_builds:input.known_builds,models:input.params.models as string[]|undefined,platforms:input.params.platforms as string[]|undefined,components:input.params.components as string[]|undefined,licenses:input.params.licenses as string[]|undefined,deployment_forms:input.params.deployment_forms as string[]|undefined});
- if(!placed.ok&&placed.incomplete)return {entries:[],warnings:[],incomplete:placed.incomplete};
- if(!placed.ok)throw new ManualSourceError(placed.error.code,placed.error.message,placed.error.next_action);
- return {entries:placed.entries,unplaced:placed.unplaced,warnings:[...placed.warnings,one.attributes.note,`名称族 ${family}：同修订号原件 ${Object.keys(files).length} 份；条件分支 ${one.report.conditions.length} 处；未能核对原文 ${one.report.unverified_count} 处` ]};
+ const catalog=treeSlot?.parser==='xml@1'?commandCatalog(treeSlot.model as Parameters<typeof commandCatalog>[0],treeSlot.sha256).catalog:null;
+ const entries:ProducerOutput['entries']=[],unplaced:NonNullable<ProducerOutput['unplaced']>=[],warnings:string[]=[];
+ for(const [book,main]of Object.entries(mains)){
+  const compiled=await compileFamilies({main,revision:tree.revision,families:files,familyAttributes:attributes},[family]);
+  if(!compiled.ok)throw new ManualSourceError(compiled.error.code,compiled.error.message,compiled.error.next_action);
+  const one=compiled.families[family],name=familyManualName(family,book);
+  const mapped=toK1Model(one.model,one.composition,name);
+  const placed=produceAdocEntries(mapped,{name,slot:'files',catalog,known_builds:input.known_builds,models:input.params.models as string[]|undefined,platforms:input.params.platforms as string[]|undefined,components:input.params.components as string[]|undefined,licenses:input.params.licenses as string[]|undefined,deployment_forms:input.params.deployment_forms as string[]|undefined});
+  if(!placed.ok&&placed.incomplete)return {entries:[],warnings:[],incomplete:placed.incomplete};
+  if(!placed.ok)throw new ManualSourceError(placed.error.code,placed.error.message,placed.error.next_action);
+  entries.push(...placed.entries);unplaced.push(...placed.unplaced);
+  warnings.push(...placed.warnings.map(warning=>`${name}：${warning}`),one.attributes.note,`名称族 ${family} / ${book}：生产报告 ${canonical(one.report)}`);
+ }
+ return {entries,unplaced,warnings};
 }
 export default familyManual;

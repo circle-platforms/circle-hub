@@ -60,17 +60,17 @@ test('an inline mark in a description does not merge two rows: every engine row 
     '| **demo pool del** *<name>* | 删除成员 |',
   ]);
   assert.deepEqual(
-    entries.filter((entry) => entry.data.form === 'signature').map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
+    entries.filter((entry) => entry.data.form === 'table_row'&&entry.statement.includes('成员')).map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
     [
-      ['demo pool add <name>', '/commands/demo/pool/add', 'l/8'],
-      ['demo pool del <name>', '/commands/demo/pool/del', 'l/9'],
+      ['| **demo pool add** *<name>* | 添加 `pool` 成员 |', '/manual/cli-apv/配置命令', 'l/8'],
+      ['| **demo pool del** *<name>* | 删除成员 |', '/manual/cli-apv/配置命令', 'l/9'],
     ],
   );
   assert.deepEqual(
-    entries.filter((entry) => entry.data.form === 'text').map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
+    entries.filter((entry) => entry.data.form === 'table_row'&&entry.statement.includes('成员')).map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
     [
-      ['添加 `pool` 成员', '/commands/demo/pool/add', 'l/8'],
-      ['删除成员', '/commands/demo/pool/del', 'l/9'],
+      ['| **demo pool add** *<name>* | 添加 `pool` 成员 |', '/manual/cli-apv/配置命令', 'l/8'],
+      ['| **demo pool del** *<name>* | 删除成员 |', '/manual/cli-apv/配置命令', 'l/9'],
     ],
   );
 });
@@ -91,7 +91,7 @@ test('a table with one cell per line keeps the engine\'s rows, and a headerless 
     ].join('\n'),
   });
   assert.deepEqual(tableLines(headed.mapped), ['| 命令 | 说明 |', '| --- | --- |', '| **demo pool add** *<name>* | 添加成员 |']);
-  assert.ok(headed.entries.some((entry) => entry.data.form === 'signature' && entry.statement === 'demo pool add <name>'));
+  assert.ok(headed.entries.some((entry) => entry.data.form === 'table_row' && entry.statement.includes('**demo pool add** *<name>*')));
 
   const headerless = await mapAndPlace({
     'book.adoc': [
@@ -112,7 +112,7 @@ test('a table with one cell per line keeps the engine\'s rows, and a headerless 
   assert.equal(lines[1], '| --- | --- |');
   assert.deepEqual(lines.slice(2), ['| 命令 | 说明 |', '| **demo pool add** *<name>* | 添加成员 |'], 'no body row is promoted into the header');
   assert.ok(
-    headerless.entries.some((entry) => entry.data.form === 'signature' && entry.statement === 'demo pool add <name>' && entry.path === '/commands/demo/pool/add'),
+    headerless.entries.some((entry) => entry.data.form === 'table_row' && entry.statement.includes('**demo pool add** *<name>*') && entry.path?.startsWith('/manual/cli-apv')),
     JSON.stringify(headerless.entries.map((entry) => [entry.data.form, entry.statement])),
   );
   assert.ok(!headerless.entries.some((entry) => String(entry.statement).includes('| 命令 |\n| 说明 |')), 'no entry is fabricated out of two header cells');
@@ -220,10 +220,10 @@ test('a blank line among the rows costs nothing: the implicit header and blank l
   ]);
   assert.deepEqual(implicit.mapped.uncited, [], JSON.stringify(implicit.mapped.uncited));
   assert.deepEqual(
-    implicit.entries.filter((entry) => entry.data.form === 'signature').map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
+    implicit.entries.filter((entry) => entry.data.form === 'table_row'&&entry.statement.includes('成员')).map((entry) => [String(entry.statement), entry.path, entry.fragments[0]!.selector]),
     [
-      ['demo pool add <name>', '/commands/demo/pool/add', 'l/8'],
-      ['demo pool del <name>', '/commands/demo/pool/del', 'l/9'],
+      ['| **demo pool add** *<name>* | 添加成员 |', '/manual/cli-apv/配置命令', 'l/8'],
+      ['| **demo pool del** *<name>* | 删除成员 |', '/manual/cli-apv/配置命令', 'l/9'],
     ],
   );
 
@@ -244,10 +244,10 @@ test('a blank line among the rows costs nothing: the implicit header and blank l
   });
   assert.deepEqual(spaced.mapped.uncited, [], JSON.stringify(spaced.mapped.uncited));
   assert.deepEqual(
-    spaced.entries.filter((entry) => entry.data.form === 'signature').map((entry) => [String(entry.statement), entry.fragments[0]!.selector]),
+    spaced.entries.filter((entry) => entry.data.form === 'table_row'&&entry.statement.includes('成员')).map((entry) => [String(entry.statement), entry.fragments[0]!.selector]),
     [
-      ['demo pool add <name>', 'l/6'],
-      ['demo pool del <name>', 'l/8'],
+      ['| **demo pool add** *<name>* | 添加成员 |', 'l/6'],
+      ['| **demo pool del** *<name>* | 删除成员 |', 'l/8'],
     ],
   );
 
@@ -277,7 +277,7 @@ test('a blank line among the rows costs nothing: the implicit header and blank l
     '| --- | --- |',
     '| **demo pool add** *<name>* | 添加成员 |',
   ]);
-  const signature = perLine.entries.find((entry) => entry.data.form === 'signature');
+  const signature = perLine.entries.find((entry) => entry.data.form === 'table_row'&&entry.statement.includes('添加成员'));
   assert.ok(signature !== undefined, JSON.stringify(perLine.entries.map((entry) => entry.statement)));
   assert.equal(signature.fragments[0]!.selector, 'l/9-11', 'the row cites the lines its own cells were verified on');
 });
@@ -336,8 +336,8 @@ test('a table that cannot be cited says which of the two it is, not one reason f
   const produced = produceAdocEntries(second, { name: 'cli-apv', slot: 'manual' });
   assert.ok(produced.ok, JSON.stringify(produced));
   assert.deepEqual(
-    produced.entries.filter((entry) => entry.data.form === 'signature').map((entry) => [String(entry.statement), entry.fragments[0]!.selector]),
-    [['demo pool add <name>', 'l/8']],
+    produced.entries.filter((entry) => entry.data.form === 'table_row'&&entry.statement.includes('成员')).map((entry) => [String(entry.statement), entry.fragments[0]!.selector]),
+    [['| **demo pool add** *<name>* | 添加成员 |', 'l/8']],
     'the row that still cites its own line stays',
   );
 });

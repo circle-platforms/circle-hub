@@ -1,3 +1,5 @@
+import {signatureOf} from './structure.ts';
+import type {InlineNode} from './inline.ts';
 // The adoc-to-K1 mapping (task kb-adoc item 4): the expanded model becomes the markdown@1 shape — sections from the
 // `=` levels of the source (a `[discrete]` heading is a block, not a section; `=======` lines are reported upstream
 // and stay ordinary blocks), blocks with kind/section/text/path, and every block cites the text@1 line selector of
@@ -10,7 +12,7 @@
 // field K1 copies into its fragments is a key of this model, which entries.ts turns into the fragment the Hub verifies.
 import type { Block, Composition, ExpandedModel, Section, VerifiedRange } from './types.ts';
 import type { MarkdownBlock, MarkdownSection } from '../../../../../hub/refs/api.ts';
-import { decodeReferences, dropPairedMarks, inlineMarkdown, plainConverted, plainText, signatureWords, squeeze } from './text.ts';
+import { decodeReferences, dropPairedMarks, inlineMarkdown, plainConverted, plainText, squeeze } from './text.ts';
 import { selectorText, utf8Offsets } from '../util.ts';
 import { parseAnchor } from '../manual.ts';
 
@@ -53,6 +55,8 @@ export function citesExample(model: AdocModel, selector: string): boolean {
 
 /** One row of a mapped table: the byte range K1 computes inside the block's text, and the row's own citation. */
 export interface RowCite {
+  authored?:boolean;
+  inline?:InlineNode[];
   range: [number, number];
   cite: Citation;
 }
@@ -66,6 +70,10 @@ export interface RowCite {
  */
 export interface AdocBlock extends MarkdownBlock {
   cite: Citation;
+  inline?:InlineNode[];
+  structuralSignature?:ReturnType<typeof signatureOf>;
+  sourceGroup?:number;
+  paragraphCites?:Citation[];
   rowCites?: RowCite[];
   /** True for example content: reference only, so the producer marks the entries it warrants (task item 6). */
   example: boolean;
@@ -163,6 +171,7 @@ function groupsBalanced(text: string): boolean {
 /** One signature line read: the spelling K1 reads, or why the line is no signature. */
 export type SignatureLine = { spelling: string; problem: null } | { spelling: null; problem: string };
 
+// Compatibility formatter only; adoc production never calls this helper to admit a definition.
 export function readSignatureLine(plain: string): SignatureLine {
   const text = squeeze(plain);
   if (text === '' || /[\r\n]/.test(text)) return { spelling: null, problem: '这一行没有文字' };
@@ -199,14 +208,6 @@ function lineCitations(block: Block, digestOf: (file: string) => string, count: 
     for (let at = 0; at < lines; at++) out.push({ file: origin.file, sha256: digestOf(origin.file), selector: `l/${origin.from + at}` });
   }
   return out.length === count ? out : null;
-}
-
-/** A paragraph that is one monospace line: the engine's single code span, or the source's own `+…+` spelling of it. */
-function monospaceLine(block: Block): string | null {
-  const span = /^<code>([\s\S]*)<\/code>$/.exec(block.converted.trim());
-  if (span !== null) return inlineMarkdown(span[1] as string);
-  const marked = /^\+([\s\S]*)\+$/.exec(squeeze(block.expanded));
-  return marked === null ? null : marked[1] as string;
 }
 
 /** One cell's text in the mapped table: the engine's own inline output in K1's spelling, kept on one row line. */
@@ -303,7 +304,7 @@ function tableOf(block: Block, digestOf: (file: string) => string, blank: (file:
     // cell's words, so citing them would cite a line that does not hold what the entry says.
     // The line the report names: the cell that cites nothing when there is one, else the row's first cell.
     const offending = row.find((cell) => cell.raw.trim() !== '' && cell.origins.length === 0) ?? row.find((cell) => cell.reportedLine !== null);
-    return { index, cells: row.map(cellText), cite: missingCell(row) ? null : mergedCitation(origins, digestOf, blank), firstLine: offending?.reportedLine ?? null };
+    return { index, inline:row.flatMap(cell=>cell.inline??[]),cells: row.map(cellText), cite: missingCell(row) ? null : mergedCitation(origins, digestOf, blank), firstLine: offending?.reportedLine ?? null };
   });
   const dropped = rows.filter((row) => row.cite === null).map((row) => ({ index: row.index, reason: rowReason(engineRows[row.index]!), line: row.firstLine }));
   const header = block.rows.head.length > 0 ? rows[0]! : null;
@@ -324,6 +325,7 @@ function tableOf(block: Block, digestOf: (file: string) => string, blank: (file:
   if (headerCite === null) return { ...none('表格给不出表头行的来源范围'), dropped };
   const lines = [headerLine, rowOf(Array.from({ length: cells }, () => '---')), ...body.map((row) => rowOf(row.cells))];
   const cites: Array<Citation | null> = [headerCite, null, ...body.map((row) => row.cite)];
+  const inlineRows=[cited?header!.inline:[],[],...body.map(row=>row.inline)];
   const text = lines.join('\n');
   // The byte ranges of the lines of this text, as K1's lineRanges computes them: [start of the line, offset of its
   // line break or of the end of the text].
@@ -334,7 +336,7 @@ function tableOf(block: Block, digestOf: (file: string) => string, blank: (file:
   for (let i = 0; i <= text.length; i++) {
     if (i === text.length || text.charCodeAt(i) === 0x0a) {
       const one = cites[line];
-      if (one !== null && one !== undefined) rowCites.push({ range: [offsets[start], offsets[i]], cite: one });
+      if (one !== null && one !== undefined) rowCites.push({ range: [offsets[start], offsets[i]], cite: one,inline:inlineRows[line],authored:line!==0||cited });
       start = i + 1;
       line++;
     }
@@ -383,16 +385,6 @@ function textOf(block: Block): string {
   // own source line, or the attribute-expanded source text where the engine keeps no conversion.
   if (block.kind === 'list_item') return inlineMarkdown(block.raw).trim();
   if (block.kind === 'listing' || block.kind === 'literal') return block.raw;
-  if (block.kind === 'paragraph') {
-    // A whole-line monospace paragraph is a signature line the author marked as such (task item 6): the engine's code
-    // span, or the source's `+…+` spelling, which the engine renders as plain text. A line that reads as no signature
-    // stays the code span it is.
-    const monospace = monospaceLine(block);
-    if (monospace !== null) {
-      const signature = signatureSpelling(monospace);
-      if (signature !== null) return signature;
-    }
-  }
   return inlineMarkdown(block.converted !== '' ? block.converted : block.expanded);
 }
 
@@ -447,6 +439,8 @@ export interface Mapped {
 export function toK1Model(model: ExpandedModel, composition: Composition, manualName: string): Mapped {
   const sections: AdocSection[] = [{ level: 0, title: '', key: '', ordinal: 1, parent: null, children: [], blocks: [], line: 0, end: 0, selector: null, attributes: null, cite: null }];
   const blocks: AdocBlock[] = [];
+  const sourceGroups=new Map(model.blocks.map((block,index)=>[block,index]));
+  const emitted=new Set<Block>();
   // A section is keyed by the node the engine gave for it (the index of its own block), never by its title text: two
   // sections with the same title are two sections, and `IPv4/IPv6` is not the parent of `IPv4` and `IPv6`.
   const headings = new Map<number, Block>();
@@ -531,8 +525,11 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     const index = sections[section]!.blocks.length;
     const [from, to] = linesOf(cite.selector);
     sections[section]!.blocks.push(blocks.length);
+    const first=!emitted.has(block);emitted.add(block);
     blocks.push({
-      kind,
+      kind,sourceGroup:sourceGroups.get(block),
+      inline:first?block.inline:[],structuralSignature:!first||block.example?null:signatureOf(block),
+      ...(first&&block.origins.length>1?{paragraphCites:block.origins.map(citationOf)}:{}),
       section,
       index,
       line: from - 1,
@@ -557,35 +554,11 @@ export function toK1Model(model: ExpandedModel, composition: Composition, manual
     const block = model.blocks[at]!;
     if (block.kind === 'section') continue;
     if (block.kind === 'listing' && block.role === 'signature' && !block.example) {
-      // The explicit signature structure: every line is read on its own, by the explicit rule, and cited on its own
-      // source line. A blank line carries nothing. A line the rule does not read stays the ordinary text it is and is
-      // reported with its file, line and reason: no line is emitted with bold marks this mapping invented.
-      const lines = block.raw.split('\n');
-      const cites = lineCitations(block, digestOf, lines.length);
-      if (cites === null) {
-        uncited.push(uncitedOf(model, block, block.origins.length === 0 ? '' : 'signature 块的行与已核对的原文行对不上，不能逐行发引用'));
-        continue;
-      }
-      const expanded = block.expanded.split('\n');
-      for (let index = 0; index < lines.length; index++) {
-        const source = expanded[index] ?? (lines[index] as string);
-        if (squeeze(source) === '') continue;
-        const read = readSignatureLine(signatureWords(source));
-        const cite = cites[index] as Citation;
-        if (read.spelling !== null) {
-          emit(block, 'paragraph', read.spelling, cite);
-          continue;
-        }
-        const [line] = linesOf(cite.selector);
-        unparsed.push({
-          file: cite.file,
-          line,
-          text: source,
-          reason: read.problem,
-          next_action: '签名行应写成命令词后跟参数组（<必选>、[可选] 或 {a|b}）；核对这一行的括号与命令词，修好源后按同一修订号重跑',
-        });
-        emit(block, 'paragraph', source, cite);
-      }
+      // A listing is verbatim source, even with a legacy signature role. Only engine paragraph/inline
+      // structure admits definitions. Preserve each source line and citation without synthesizing marks.
+      const lines=block.raw.split('\n'),cites=lineCitations(block,digestOf,lines.length);
+      if(cites===null){uncited.push(uncitedOf(model,block,block.unverifiedReason||'listing 的原文行与引用数量不一致'));continue;}
+      for(let index=0;index<lines.length;index++)if(lines[index]!=='')emit(block,'code_block',lines[index]!,cites[index]!);
       continue;
     }
     const table = block.rows === undefined ? null : tableOf(block, digestOf, blankLine);
