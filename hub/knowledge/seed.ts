@@ -73,6 +73,8 @@ export interface SeedReport {
   composition_revisions: Array<{ producer: string; slot: string; external: string; revision: string | null }>;
   pointer: { moved: boolean; from: string | null; to: string | null; reason: string } | null;
   missing: SeedGap[];
+  /** Non-blocking facts of the seed (an optional source not read while its declared directory root covers the role). */
+  notes: string[];
   reason: string | null;
 }
 
@@ -222,7 +224,7 @@ function publicText(text: string): string {
 function blank(product: ProductHandle, line: string, dryRun: boolean): SeedReport {
   return {
     ok: false, product: product.product.id, pack: `${product.id}@${product.version}`, line, build: null, dry_run: dryRun,
-    root: null, seedling: null, composition: null, sources: [], composition_revisions: [], pointer: null, missing: [], reason: null,
+    root: null, seedling: null, composition: null, sources: [], composition_revisions: [], pointer: null, missing: [], notes: [], reason: null,
   };
 }
 
@@ -324,10 +326,21 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
     try {
       read = await context.external.read(row.external, { principal: by, run: null, purpose: 'knowledge seed' });
     } catch (error) {
+      // A declared adoc directory root covers the manual role: the markdown input is optional in the pack, so an
+      // unreadable markdown source is a reported fact, never a blocked seed. Without a root the markdown is the only
+      // manual and its failure stays a gap.
+      if (typeof directoryRoot === 'string' && (role === 'cli-manual' || role === 'app-manual')) {
+        report.notes.push(`可选来源 ${row.external} 未读到（${publicText(describeError(error))}）；手册按已声明的 adoc 根 ${directoryRoot} 生产`);
+        continue;
+      }
       report.missing.push(gap(role, `读取 ${row.external} 失败：${publicText(describeError(error))}`, againCommand(shown, args.line)));
       continue;
     }
     if (!read.ok) {
+      if (typeof directoryRoot === 'string' && (role === 'cli-manual' || role === 'app-manual')) {
+        report.notes.push(`可选来源 ${row.external} 未读到（${publicText(read.reason)}）；手册按已声明的 adoc 根 ${directoryRoot} 生产`);
+        continue;
+      }
       report.missing.push(gap(role, `读取 ${row.external} 失败：${publicText(read.reason)}`, againCommand(shown, args.line)));
       continue;
     }
@@ -432,6 +445,7 @@ export function formatSeedReport(report: SeedReport): string {
     lines.push(`缺 ${missing.label}（${missing.role}）：${missing.detail}`);
     lines.push(`下一步：${missing.next}`);
   }
+  for (const note of report.notes) lines.push(`说明：${note}`);
   if (report.reason !== null && !report.missing.some((missing) => missing.detail === report.reason)) lines.push(`失败：${report.reason}`);
   return `${lines.join('\n')}\n`;
 }

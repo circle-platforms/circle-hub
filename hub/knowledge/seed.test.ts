@@ -310,7 +310,7 @@ async function statementsOf(w: World, composition: string): Promise<string[]> {
   return [...entries.values()].map((entry) => entry.statement);
 }
 
-async function directoryWorld(t: { after: (fn: () => Promise<void> | void) => void }, options: { root: string | null; missing?: string }): Promise<Loop & { resources: ResourceCatalogPort }> {
+async function directoryWorld(t: { after: (fn: () => Promise<void> | void) => void }, options: { root: string | null; missing?: string; declaredParser?: string; octet?: boolean; markdownMissing?: boolean }): Promise<Loop & { resources: ResourceCatalogPort }> {
   const pg = await startPostgres();
   t.after(() => pg.stop());
   const build = { name: BUILD, base: BUILD, family: 'APV', line: LINE, platform: 'zx-u', built_at: '2026-10-01T00:00:00.000Z', released_at: '2026-10-02T00:00:00.000Z', sources: { tree: 'site:tree:10_8' } };
@@ -325,14 +325,16 @@ async function directoryWorld(t: { after: (fn: () => Promise<void> | void) => vo
         cli: { external: 'manual:cli:{line}', optional: true },
         app: { external: 'manual:app:{line}', optional: true },
         meta: { source: 'adoc_apv_meta', optional: true },
-        files: { source: 'adoc_apv_files', many: true, batch: 1, optional: true },
+        files: { source: 'adoc_apv_files', many: true, batch: 1, optional: true, ...(options.declaredParser === undefined ? {} : { parser: options.declaredParser }) },
       } },
     ],
   } } });
   t.after(() => w.close());
   w.external.set('site:tree:10_8', { bytes: TREE, mediaType: 'application/xml' });
-  w.external.set('manual:cli:10.8', { bytes: `${MARKDOWN_CLI}\n`, mediaType: 'text/markdown' });
-  w.external.set('manual:app:10.8', { bytes: `${MARKDOWN_APP}\n`, mediaType: 'text/markdown' });
+  if (options.markdownMissing !== true) {
+    w.external.set('manual:cli:10.8', { bytes: `${MARKDOWN_CLI}\n`, mediaType: 'text/markdown' });
+    w.external.set('manual:app:10.8', { bytes: `${MARKDOWN_APP}\n`, mediaType: 'text/markdown' });
+  }
   await w.kit.variables.setVariable(w.admin, 'APV_ADOC_ROOT', options.root, '合成目录');
   const authorization = `Basic ${randomBytes(24).toString('base64')}`;
   const prefix = '/repository';
@@ -343,8 +345,9 @@ async function directoryWorld(t: { after: (fn: () => Promise<void> | void) => vo
     const path = decodeURIComponent(request.path);
     if (request.method === 'PROPFIND' && path === `${prefix}/${DIR}/`) return text(davMulti(davRow(path)), 'application/xml', 207);
     if (request.method === 'PROPFIND' && path === base) return text(listing, 'application/xml', 207);
-    if (request.method === 'GET' && path === `${prefix}/!svn/rvr/17/${DIR}/book.adoc`) return text(BOOK, 'text/plain');
-    if (request.method === 'GET' && path === `${prefix}/!svn/rvr/17/${DIR}/app.adoc`) return options.missing === 'app.adoc' ? text('Absent', 'text/plain', 404) : text(APP_PAGE, 'text/plain');
+    const adocType = options.octet === true ? 'application/octet-stream' : 'text/plain';
+    if (request.method === 'GET' && path === `${prefix}/!svn/rvr/17/${DIR}/book.adoc`) return text(BOOK, adocType);
+    if (request.method === 'GET' && path === `${prefix}/!svn/rvr/17/${DIR}/app.adoc`) return options.missing === 'app.adoc' ? text('Absent', 'text/plain', 404) : text(APP_PAGE, adocType);
     return text('Absent', 'text/plain', 404);
   });
   t.after(() => server.close());
@@ -386,6 +389,40 @@ test('an adoc root seeds one revision of the whole directory and a second run is
   assert.equal(formatSeedReport(first).includes(loop.authorization), false);
   assert.equal(formatSeedReport(first).includes('127.0.0.1'), false);
   assert.equal(formatSeedReport(first).includes('http:'), false);
+});
+
+test('a server labelling the adoc files octet-stream still seeds when the producer declares text@1', { timeout: 120000 }, async (t) => {
+  const loop = await directoryWorld(t, { root: 'synthetic/{line}', declaredParser: 'text@1', octet: true });
+  const seeded = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs(['--product', 'APV', '--line', LINE, '--build', BUILD, '--basis', '按声明的解析器育目录']), loop.resources);
+  const text = formatSeedReport(seeded);
+  assert.equal(seeded.ok, true, text);
+  assert.equal(seeded.pointer?.moved, true);
+  const texts = await statementsOf(loop.w, seeded.composition!);
+  assert.deepEqual(texts.filter((statement) => statement === BOOK || statement === APP_PAGE).sort(), [BOOK, APP_PAGE].sort());
+});
+
+test('with an adoc root configured an unreachable markdown manual is reported, not blocking', { timeout: 120000 }, async (t) => {
+  const loop = await directoryWorld(t, { root: 'synthetic/{line}', markdownMissing: true });
+  const seeded = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs(['--product', 'APV', '--line', LINE, '--build', BUILD, '--basis', 'adoc 根已配置，markdown 可选']), loop.resources);
+  const text = formatSeedReport(seeded);
+  assert.equal(seeded.ok, true, text);
+  assert.equal(seeded.missing.length, 0, text);
+  assert.deepEqual(seeded.notes.filter((note) => note.includes('manual:cli:10.8') || note.includes('manual:app:10.8')).length, 2, text);
+  assert.match(text, /可选来源 manual:cli:10.8 未读到/);
+  assert.match(text, /手册按已声明的 adoc 根 synthetic\/\{line\} 生产/);
+  const texts = await statementsOf(loop.w, seeded.composition!);
+  assert.deepEqual(texts.filter((statement) => statement === BOOK || statement === APP_PAGE).sort(), [BOOK, APP_PAGE].sort());
+  assert.equal(texts.includes(MARKDOWN_CLI), false);
+});
+
+test('without an adoc root an unreachable markdown manual still fails the seed', { timeout: 120000 }, async (t) => {
+  const loop = await directoryWorld(t, { root: null, markdownMissing: true });
+  const seeded = await knowledgeSeed(loop.w.knowledge, loop.w.packs, loop.w.admin, parseKnowledgeSeedArgs(['--product', 'APV', '--line', LINE, '--build', BUILD, '--basis', '没有 adoc 根时 markdown 是唯一手册']), loop.resources);
+  const text = formatSeedReport(seeded);
+  assert.equal(seeded.ok, false, text);
+  assert.ok(seeded.missing.some((item) => item.role === 'cli-manual' && item.detail.includes('manual:cli:10.8')), text);
+  assert.equal(seeded.root, null);
+  assert.equal(await loop.w.kit.pointers.get(seedlingName(loop.w.product.id, LINE)), null);
 });
 
 test('a directory whose file is absent is refused and the seedling pointer stays', { timeout: 120000 }, async (t) => {

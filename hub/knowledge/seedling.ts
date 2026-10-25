@@ -149,7 +149,16 @@ export async function produceSeedling(context: KnowledgeContext, knowledge: Know
   for (const role of ROLES) {
     const ref = input.roles[role];
     const row = production.sources.find((source: ProduceResult['sources'][number]) => source.producer === ref.producer && source.slot === ref.slot);
-    if (row === undefined) return fail(`生产没有用 ${ref.producer}.${ref.slot}，不能当树苗来源 ${role}`, build.name, production, parent);
+    // A manual role the caller resolved through the declared adoc directory is covered by that overlay even when the
+    // production did not read the (optional) markdown input: the directory group is the manual of record.
+    const producerOfRole = declared.get(ref.producer);
+    const coveredByDirectory = row === undefined
+      && (role === 'cli-manual' || role === 'app-manual')
+      && producerOfRole !== undefined
+      && (producerOfRole.inputs[ref.slot]?.optional === true)
+      && Object.values(input.sources ?? {}).some((value) => typeof value === 'string' || Array.isArray(value));
+    if (row === undefined && !coveredByDirectory) return fail(`生产没有用 ${ref.producer}.${ref.slot}，不能当树苗来源 ${role}`, build.name, production, parent);
+    if (row === undefined) continue;
     const given = role === 'cli-manual' ? (input.revisions?.cli ?? null) : role === 'app-manual' ? (input.revisions?.app ?? null) : null;
     const recorded = composed?.sources.find((source) => source.producer === ref.producer && source.slot === ref.slot)?.revision ?? null;
     const revision = role === 'command-tree' ? null : (given ?? recorded);
