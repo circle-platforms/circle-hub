@@ -1,5 +1,5 @@
 import {commandTokens} from '../../../../contracts/generated/command-grammar.ts';
-import {catalogFor} from './command-catalog.ts';
+import {catalogFor,SYNTHETIC_COMMAND_POLICY} from './command-catalog.ts';
 import {COMMAND_IDENTITIES} from '../functions/test-support.ts';
 // Test harness of the case-compile pack against the real Hub parts: a fake external reader serving the synthetic
 // case document (agile:mindmap) and the two named documents (doc:doc), a fake knowledge port answering the command
@@ -90,7 +90,7 @@ export class FakeKnowledge implements KnowledgePort {
     return null;
   }
   private info(): RootInfo {
-    return { root: ROOT, composition: sha('composition of Fixture_Build_A'), product: 'widget', build: BUILD, produced_at: '2026-09-03T00:00:00.000Z' };
+    return { command_policy:structuredClone(SYNTHETIC_COMMAND_POLICY),root: ROOT, composition: sha('composition of Fixture_Build_A'), product: 'widget', build: BUILD, produced_at: '2026-09-03T00:00:00.000Z' };
   }
 }
 

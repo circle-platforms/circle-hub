@@ -50,7 +50,8 @@
                   "args": [
                     "no widget health interval"
                   ],
-                  "keywords": {}
+                  "keywords": {},
+                  "cleanup": true
                 },
                 {
                   "object": "widget-seat",
@@ -58,7 +59,8 @@
                   "args": [
                     "no widget health record synth-rec-01"
                   ],
-                  "keywords": {}
+                  "keywords": {},
+                  "cleanup": true
                 }
               ],
               "expects": [

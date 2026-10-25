@@ -70,7 +70,7 @@ export function projectItems(input: unknown): unknown {
   const profileSlot = slotOf(inputs, 'profile');
   if (!profileSlot || profileSlot.model == null) return refusal('no_profile', '没有运行环境配置', '在 inputs.profile 绑定发布的 runtime-profile@1 命名文档');
   const profileRead = parseProfile(profileSlot.model, contractRead.contract, manifestRead.beds);
-  if (!profileRead.ok) return refusal('profile_invalid', `运行环境配置有 ${profileRead.problems.length} 个问题，整份拒绝`, `${profileRead.problems[0].pointer}：${profileRead.problems[0].fix}`, problemWarnings('case-compile.profile_problem', profileRead.problems));
+  if (!profileRead.ok) return refusal('profile_invalid', profileRead.problems.find(problem=>problem.capacityExceeded)?.message??`运行环境配置有 ${profileRead.problems.length} 个问题，整份拒绝`, `${profileRead.problems[0].pointer}：${profileRead.problems[0].fix}`, problemWarnings('case-compile.profile_problem', profileRead.problems));
   const parameters = isRecord(params.parameters) ? params.parameters : {};
   if (parameters.case_rule !== undefined && parameters.case_rule !== 'tagged' && parameters.case_rule !== 'marked') {
     return refusal('invalid_parameter', `case_rule 的取值 ${String(parameters.case_rule)} 无效`, 'case_rule 写 tagged 或 marked（默认 marked）');

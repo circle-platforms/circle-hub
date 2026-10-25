@@ -188,3 +188,13 @@ samples are not evidence of completed remediation and this work-in-progress tree
 显式模型期望（3.3.0）：expects 可写 `{text, quote, after, basis:"model_judgment", rationale}`。basis 来自生成合约 expectation_basis 闭集，rationale 必须非空。quote 的引用必须完全等于本次被判对象中该用例期望节点的冻结引用，其文字逐字来自该节点；标题、步骤、其他用例、外部来源和判据 rec: 均不能代替。期望节点身份由现有用例结构解析在投影时固定，不按词语或标记猜类别。text 由模型选择设备可观察的检查文字，仍须满足单行、profile/原合约取值规则和 after 指向设备或主机步骤；Hub 不判断选择是否正确。省略 basis 时仍执行原来的引文片段规则，W10 的 expected 来源和独立复核规则不变。
 
 Hub 按检查声明的 judgment_sources，从本条目原始提交的精确槽位指针记录模型主张，绑定真实提交声明的模型、提交摘要及记录；basis、rationale、quote、text、after 一并保留。机械核验仍是事实，模型选择单独记判断，expected_grounded 显示“满足（判断）”，并标“以判断为前提”。工作簿字节逐行回读保持机械事实；生成配方摘要绑定完整期望形状及冻结期望节点。派发冻结相关必需项中的模型前提，设备 PASS/FAIL、各轮和回注结果继承限定及原判断；旧或无效前提不能被静默丢弃成无限定放行。Hub 不调用模型。
+
+## 声明范围、逆操作与作者命令义务
+
+`runtime-contract@2.effects[id].command_scope` 是锁定命令树路径前缀的闭集，例如 `/commands/demo/pool` 与 `/commands/no/demo/pool`。按完整路径段匹配；`pool` 不覆盖 `poolish`。`commands` 可以省略；同时声明时与范围取交集，显式空数组仍是不允许。没有两种声明时设备 CLI 不获授权。所有命令先由原有锁定语法完整解析为唯一 CommandIdentity，参数类型、原始角色、地址用途、bed_member 和预算继续逐项核对。见 `examples/runtime-contract-scope.json`。
+
+产品包的 `command_policy` 随知识组成冻结，再随运行传入检查；不是模型槽位，也不读取后来换版的产品声明。`read_only` 只取声明的路径范围；其余设备命令须有规则映射的逆操作。规则映射 source_prefix 到 inverse_prefix，保留剩余路径与前导参数；`leading_parameters` 可明确给出数量，省略时须由已完整解析的逆签名唯一确定。缺规则或有歧义时保持未知并请求产品作者补声明。清理是 steps 的末尾连续段，显式 `cleanup:true`，同设备按主段改动的逆序对应；逆操作本身也必须通过锁定树、合约范围、类型和角色核验。目录只取计划实际命令与冻结作者片段的路径，不展开整个 `/commands`；逆路径存在性由计划中完整解析的清理命令证明。
+
+作者片段按原有完整行语法解析，不截散文。出现次数按定义身份（来源根、完整路径、签名引用）计，不把参数值当成必须保留的文字；计划仍须独立核参数。可以改参数，不可以删命令：同一定义的执行次数至少等于作者次数，清理段不充数，缺失次数写入阻断结果的 `data.obligations` 并随结果留存。工作簿生成、独立核验、派发前检查共用这些边界。
+
+容量来自冻结 profile 的显式 ordinal 与台架同类型设备计数，不读对象名中的数字。设备座位还不超过冻结的预检设备数；主机映射若声明 ordinal，也按其类型计数核对。越界时投影整份拒绝，写明“框架取不到那台设备，整卷不跑”，没有部分工作簿。旧根缺产品规则时设备计划保持未知，需升级产品包并重新育苗，不能从命令文字猜只读/修改。

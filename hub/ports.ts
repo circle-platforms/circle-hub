@@ -249,6 +249,8 @@ export interface ResourceCatalogPort {
 // ---------------------------------------------------------------- knowledge (provided by knowledge)
 
 export interface RootInfo<B extends KnownBuild | null = KnownBuild> {
+  /** Product command rules attested by this exact locked composition, when supplied by a knowledge backend. */
+  command_policy?: import('../contracts/src/product.ts').CommandPolicy;
   /** Root node digest: what a run locks and what tree references name. Equal content gives equal roots. */
   root: string;
   /** Digest of the tree_root record that composed it (the build it was produced for and what every entry rests on). */

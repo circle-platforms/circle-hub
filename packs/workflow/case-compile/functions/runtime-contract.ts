@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import FORMAT from '../tables/runtime-contract-format.json' with { type: 'json' };
 import {readAuthority,type Authority} from './typed-contract.ts';
 import { isRecord } from './text.ts';
-export interface Problem { pointer: string; message: string; fix: string }
+export interface Problem { capacityExceeded?:boolean; pointer: string; message: string; fix: string }
 export interface RuntimeParameter { name: string; kind: string; required: boolean; redacted: boolean }
 /** The legacy reader verifies signatures only; unknown/raw metadata never becomes typed authority. */
 export interface RuntimeEntry { object: string; method: string; dispatch: string; parameters: RuntimeParameter[]; sourcePointer?: string; authority?: Authority | null }

@@ -16,7 +16,7 @@ export interface RuntimeProfile {
   fold_newlines: Array<{ object: string; method: string }>;
   workbook: { sheet: string; header: string[]; identity_marker: string; range_name: string; closing_row: string[]; autoid_pattern: string };
   seats: Array<{ object: string; device: string; ordinal: number }>;
-  hosts: Array<{ object: string; method: string; device: string }>;
+  hosts: Array<{ object: string; method: string; device: string; ordinal?:number }>;
   allowed: AllowedCall[];
   denied?: { device: string[]; host: string[] };
 }
@@ -61,6 +61,9 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     if (typeof raw.object !== 'string' || !contract.objects.includes(raw.object) || objects.has(raw.object)) issue(`${at}/object`, '座位对象不存在或重复');
     if (typeof raw.device !== 'string' || !bed?.devices.some((d) => d.name === raw.device && d.type === 'load-balancer') || devices.has(raw.device)) issue(`${at}/device`, '座位设备不是台架里的被测设备或重复');
     if (!Number.isSafeInteger(raw.ordinal) || (raw.ordinal as number) < 0 || ordinals.has(raw.ordinal as number)) issue(`${at}/ordinal`, '网关序号不是非负整数或重复');
+    const type=bed?.devices.find(device=>device.name===raw.device)?.type;
+    const capacity=Math.min(bed?.devices.filter(device=>device.type===(type??'load-balancer')).length??0,Number(value.device_count));
+    if(bed&&Number.isSafeInteger(value.device_count)&&Number(value.device_count)>0&&Number.isSafeInteger(raw.ordinal)&&Number(raw.ordinal)>=capacity)problems.push({pointer:`${at}/ordinal`,message:`框架取不到那台设备，整卷不跑：对象 ${String(raw.object)} 的零基序号 ${String(raw.ordinal)} 超出 ${type??'load-balancer'} 容量 ${capacity}`,fix:'按冻结台架清单与预检设备数量修正对象映射后整卷重编译',capacityExceeded:true});
     objects.add(String(raw.object)); devices.add(String(raw.device)); ordinals.add(raw.ordinal as number);
     seats.push({ object: String(raw.object), device: String(raw.device), ordinal: raw.ordinal as number });
   }
@@ -73,7 +76,12 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     if (typeof raw.object !== 'string' || typeof raw.method !== 'string' || !runtimeMethod(contract, raw.object, raw.method)) issue(at, '主机方法不是合约启用组合');
     const pair = JSON.stringify([raw.object, raw.method]); if (hostPairs.has(pair)) issue(at, '主机方法重复'); hostPairs.add(pair);
     if (typeof raw.device !== 'string' || !bed?.devices.some((d) => d.name === raw.device && d.type !== 'load-balancer' && d.type !== 'console')) issue(`${at}/device`, '主机方法没有指向台架的测试主机');
-    hosts.push({ object: String(raw.object), method: String(raw.method), device: String(raw.device) });
+    const device=bed?.devices.find(device=>device.name===raw.device);
+    if(raw.ordinal!==undefined){
+      if(!Number.isSafeInteger(raw.ordinal)||Number(raw.ordinal)<0)issue(at+'/ordinal','对象序号必须是显式安全非负整数');
+      else if(device&&Number(raw.ordinal)>=bed!.devices.filter(member=>member.type===device.type).length)problems.push({pointer:at+'/ordinal',message:`框架取不到那台设备，整卷不跑：对象 ${String(raw.object)} 的零基序号 ${raw.ordinal} 超出 ${device.type} 容量`,fix:'按冻结台架同类型设备数量修正序号后整卷重编译',capacityExceeded:true});
+    }
+    hosts.push({ object: String(raw.object), method: String(raw.method), device: String(raw.device),...(typeof raw.ordinal==='number'?{ordinal:raw.ordinal}:{}) });
   }
   const allowed: AllowedCall[] = [];
   const pairs = new Set<string>();

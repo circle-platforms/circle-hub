@@ -5,6 +5,14 @@
   "note": "合成 runtime-contract@2 声明，旧合约不能作为已核对输入",
   "subject": {
     "command_catalog": {
+      "policy": {
+        "schema": "command-policy@1",
+        "read_only": [
+          "/commands/widget",
+          "/commands/show"
+        ],
+        "inverse_rules": []
+      },
       "root": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
       "complete": true,
       "entries": [

@@ -1121,3 +1121,7 @@ systems have not been read or validated; the integrator supplies the actual bran
 `adoc_apv_files`、`adoc_nsae_files` 的成员在产品输入声明中固定 `parser: text@1`。SVN 返回 `application/octet-stream` 时，Hub 按此声明解析并保留 text@1 的 NUL 计数；原件与读取清单仍记服务器原始媒体类型，生产报告注明差异。不按 `.adoc` 扩展名猜测，也不将通用 SVN 文件路由强制为文本。未声明来源继续按媒体类型选择解析器；声明无效时拒绝，不自动回退。APV 版本 1.7.25（发布版本补正），变更说明见[任务页](../../../docs/hub-r4-tasks/adoc-declared-text.md)。
 
 文件组原有的子目录清单是辅助成员，也按 text@1 读取。只有父清单的结构字段明确指定该目录身份时，包才对其完整 UTF-8 JSON 原件做结构读取与摘要核对；正文不参与格式判断。子目录缺失、错误 JSON 或摘要不符仍拒绝整组，旧根不动。
+
+## 冻结命令规则（command-policy@1）
+
+产品声明 `/commands/show` 为只读观察范围。其余命令的逆操作按声明的树路径映射：`/commands/P` 对应 `/commands/no/P`，反向映射由更具体的 `/commands/no` 规则决定。两条命令都须在锁定树完整解析；不会通过去掉 no 认定一条原本不存在的命令。前导身份参数须由逆签名唯一确定，有歧义时产品作者须补显式 leading_parameters。规则随知识组成和运行冻结；没有可核验逆操作的计划不能放行。

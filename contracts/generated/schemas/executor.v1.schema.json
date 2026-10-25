@@ -1359,6 +1359,221 @@
       ],
       "additionalProperties": false
     },
+    "bed_state": {
+      "type": "object",
+      "properties": {
+        "bed": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "items": {
+          "minItems": 1,
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "call": {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "arguments": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "timeout_ms": {
+                    "default": 30000,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 600000
+                  }
+                },
+                "required": [
+                  "tool",
+                  "arguments",
+                  "timeout_ms"
+                ],
+                "additionalProperties": false
+              },
+              "output": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "parser": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "address_table"
+                      },
+                      "rows": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "address": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "manifest_devices": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "manifest_lists": {
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "rows",
+                      "address",
+                      "manifest_devices",
+                      "manifest_lists"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "config_list"
+                      },
+                      "rows": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "identity": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "fields": {
+                        "minItems": 1,
+                        "maxItems": 16,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 80
+                            },
+                            "pointer": {
+                              "type": "string",
+                              "maxLength": 500
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "pointer"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "manifest_rows": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "manifest_identity": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "manifest_fields": {
+                        "minItems": 1,
+                        "maxItems": 16,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 80
+                            },
+                            "pointer": {
+                              "type": "string",
+                              "maxLength": 500
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "pointer"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "rows",
+                      "identity",
+                      "fields",
+                      "manifest_rows",
+                      "manifest_identity",
+                      "manifest_fields"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "cleanup": {
+                "type": "object",
+                "properties": {
+                  "actor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "command": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "actor",
+                  "command"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "call",
+              "output",
+              "parser",
+              "cleanup"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "bed",
+        "items"
+      ],
+      "additionalProperties": false
+    },
     "side_effects": {
       "default": [],
       "maxItems": 100,

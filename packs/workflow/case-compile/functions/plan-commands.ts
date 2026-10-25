@@ -11,7 +11,7 @@ import type {CommandIdentity} from '../../../../contracts/generated/shared-inter
 import type {CatalogEntry} from '../../../../contracts/src/tables.ts';
 import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 type CommandVerdict = Extract<Verdict, 'unknown' | 'refute'>;
-export interface CommandCatalog {root:string;complete:boolean;entries:CatalogEntry[];covered_lines?:string[]}
+export interface CommandCatalog {policy?:unknown;authority_entries?:CatalogEntry[];root:string;complete:boolean;entries:CatalogEntry[];covered_lines?:string[]}
 export interface CommandProblem {document:string;pointer:string;message:string;verdict:CommandVerdict}
 export function deviceCommandLines(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots):Array<{line:string;pointer:string}>{
  const lines:Array<{line:string;pointer:string}>=[];
@@ -20,9 +20,10 @@ export function deviceCommandLines(contract:RuntimeContract,profile:RuntimeProfi
 }
 export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,raw:unknown):{identities:CommandIdentity[];byLine:Map<string,CommandIdentity>;problems:CommandProblem[];catalog:CommandCatalog|null}{
  const lines=deviceCommandLines(contract,profile,slots);
+ const evidence=isRecord(raw)?{...(raw.policy!==undefined?{policy:raw.policy}:{}),...(Array.isArray(raw.authority_entries)?{authority_entries:raw.authority_entries}:Array.isArray(raw.entries)?{authority_entries:raw.entries}:{})}:{};
  const problems:CommandProblem[]=[],byLine=new Map<string,CommandIdentity>();const note=(pointer:string,message:string,verdict:CommandVerdict='unknown')=>problems.push({document:'catalog',pointer,message,verdict});
  const declarations=(identities:CommandIdentity[]):void=>{ if(slots.command_identities!==undefined){if(!Array.isArray(slots.command_identities)){note('/command_identities','模型提交的可选命令身份声明不是列表','refute');return;}const declared=slots.command_identities.map(identityOf);if(declared.some(identity=>identity===null))note('/command_identities','模型提交的命令身份结构或类型化值不一致','refute');else{const supplied=new Set(declared.map(identity=>identityKey(identity!))),actual=new Set(identities.map(identityKey));if(supplied.size!==actual.size||[...actual].some(key=>!supplied.has(key)))note('/command_identities','模型提交的命令身份不等于锁定目录对计划命令的完整解析','refute');}}};
- if(!lines.length){declarations([]);return {identities:[],byLine,problems,catalog:isRecord(raw)&&typeof raw.root==='string'&&typeof raw.complete==='boolean'?{root:raw.root,complete:raw.complete,entries:[],covered_lines:[]}:null};}
+ if(!lines.length){declarations([]);return {identities:[],byLine,problems,catalog:isRecord(raw)&&typeof raw.root==='string'&&typeof raw.complete==='boolean'?{root:raw.root,complete:raw.complete,entries:[],covered_lines:[],...evidence}:null};}
  if(!isRecord(raw)||typeof raw.root!=='string'||!Array.isArray(raw.entries)||typeof raw.complete!=='boolean'){note('/command_catalog','缺 Hub 按锁定根提供的 commands 目录；不能用用例身份或模型自报身份代替完整解析');return {identities:[],byLine,problems,catalog:null};}
  if(typeof raw.missing==='string'){note('/command_catalog',raw.missing);return {identities:[],byLine,problems,catalog:null};}
  const catalog=raw as unknown as CommandCatalog;const definitions:CommandDefinition[]=[],candidates=new Set<CatalogEntry>();
@@ -37,5 +38,5 @@ export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slo
  }
  const identities=[...new Map([...byLine.values()].map(identity=>[identityKey(identity),identity])).values()];
  declarations(identities);
- return {identities,byLine,problems,catalog:{root:catalog.root,complete:catalog.complete,entries:[...candidates],covered_lines:[...new Set(lines.map(value=>value.line))]}};
+ return {identities,byLine,problems,catalog:{root:catalog.root,complete:catalog.complete,entries:[...candidates],...evidence,covered_lines:[...new Set(lines.map(value=>value.line))]}};
 }
