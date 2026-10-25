@@ -14,18 +14,22 @@ export class Journal {
   async events(job: string,tx?:Transaction): Promise<Event[]> { return this.records.store.findMany<ActionBody>({ key: 'dispatch.job', values: [job], kind: 'action' },tx); }
   async targets(resources: readonly string[]): Promise<Event[]> { return this.records.store.findMany<ActionBody>({ key: 'dispatch.resource', values: resources.map(r => sha256Hex(r)), kind: 'action' }); }
   async blockers(executor:string,target:string,origin:string,resources:readonly string[]):Promise<string[]> {
-    // One linear batch also covers old reservations lacking scope indexes; never rewrite their records.
-    const events=await this.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.phase',values:['reservation','complete','unknown','dispose','receipt','reconciled','rejection']});
-    const jobs=new Map<string,Event[]>();
-    for(const event of events){const job=String(event.body.detail.job);const list=jobs.get(job)??[];list.push(event);jobs.set(job,list);}
-    const blocked:string[]=[];
-    for(const [job,history] of jobs) {
-      const reservation=history.find(e=>e.body.detail.phase==='reservation');
-      const b=reservation?.body.detail.binding as JobBinding|undefined;
-      if(!b || reservation?.body.detail.read_only===true || isDone(history) && !isFrozen(history))continue;
-      let matches=b.executor===executor || b.resources.some(key=>resources.includes(key)) || (b.scope?.target ?? b.input?.target)===target || b.scope?.origin===origin;
-      if(!matches && !b.scope){const bytes=await this.records.objects.get(b.executor_digest);if(!bytes)matches=true;else{const d=JSON.parse(new TextDecoder().decode(bytes));matches=d.target===target || new URL(d.endpoint).origin===origin;}}
-      if(matches)blocked.push(job);
+    // Discover legacy reservations too, then inspect complete histories in bounded batches. A phase allow-list
+    // drops terminal/refreeze/answer records and cannot establish whether a physical reservation still owns anything.
+    const reservations=await this.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.phase',values:['reservation']});
+    const candidates=new Map<string,JobBinding>();
+    for(const reservation of reservations){const b=reservation.body.detail.binding as JobBinding|undefined;
+      if(!b||candidates.has(b.job))continue;
+      let matches=b.executor===executor||b.resources.some(key=>resources.includes(key))||(b.scope?.target??b.input?.target)===target||b.scope?.origin===origin;
+      if(!matches&&!b.scope){const bytes=await this.records.objects.get(b.executor_digest);if(!bytes)matches=true;else{const d=JSON.parse(new TextDecoder().decode(bytes));matches=d.target===target||new URL(d.endpoint).origin===origin;}}
+      if(matches)candidates.set(b.job,b);
+    }
+    const blocked:string[]=[],jobs=[...candidates.keys()];
+    for(let offset=0;offset<jobs.length;offset+=128){
+      const batch=jobs.slice(offset,offset+128),events=await this.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.job',values:batch});
+      const histories=new Map<string,Event[]>();
+      for(const event of events){const job=String(event.body.detail.job),history=histories.get(job)??[];history.push(event);histories.set(job,history);}
+      for(const job of batch)if(holdsPhysicalTarget(histories.get(job)??[]))blocked.push(job);
     }
     return blocked;
   }
@@ -87,6 +91,22 @@ export function openRequests(events:readonly Event[]):Event[] {
   return [...pending.values()];
 }
 export function isFrozen(events:readonly Event[]):boolean{return openRequests(events).length>0;}
+/** Terminal no-send evidence frees occupancy; active reservations and unresolved effects remain exclusive. */
+export function holdsPhysicalTarget(events:readonly Event[]):boolean{
+ if(isFrozen(events))return true;
+ const lastIntent=events.findLastIndex(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent');
+ const reservation=events.find(event=>event.body.detail.phase==='reservation');
+ if(reservation?.body.detail.read_only===true&&lastIntent<0)return false;
+ const terminal=events.findLastIndex(event=>event.body.detail.done===true);
+ if(terminal<0||lastIntent>terminal)return true;
+ const end=events[terminal].body.detail;
+ // A confirmed disposition releases the reservation without asserting that its old effect never happened.
+ if(end.effect_mark==='disposed'&&end.disposition==='mark_failed'&&end.risk_confirmed===true&&end.unfreeze===true)return false;
+ if(events.slice(terminal+1).some(event=>event.body.detail.outcome==='unknown'))return true;
+ if(!isEffectOutcome(end.outcome)||end.outcome==='unknown'||end.outcome==='issued')return true;
+ if(end.outcome==='not_dispatched')return !(end.submit_invoked===false||end.phase==='boundary_refused'||lastIntent<0);
+ return false;
+}
 export const isDone = (events: readonly Event[]) => events.some(e => e.body.detail.done === true);
 export const eventOf = (events: readonly Event[], phase: string) => [...events].reverse().find(e => e.body.detail.phase === phase);
 export const digestOfValue = (value: unknown) => sha256Hex(canonicalBytes(value));
