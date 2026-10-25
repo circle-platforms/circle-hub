@@ -8,6 +8,8 @@ import type { SourceLoader } from './sources.ts';
 export interface DirectorySlot {
   slot: string;
   role: string;
+  /** The parser the producer declared for the directory's file group (text@1 for adoc), applied to every file read. */
+  parser: string | null;
 }
 
 /** A manual producer's directory inputs. `several` when it declares more than one list. Null when it declares neither. */
@@ -18,8 +20,8 @@ export function declaredDirectory(producer: Producer): { meta: DirectorySlot | n
   if (many.length === 0 && meta.length === 0) return null;
   if (many.length > 1) return 'several';
   return {
-    meta: meta.length === 1 ? { slot: meta[0][0], role: meta[0][1].source } : null,
-    many: many.length === 1 ? { slot: many[0][0], role: many[0][1].source } : null,
+    meta: meta.length === 1 ? { slot: meta[0][0], role: meta[0][1].source, parser: meta[0][1].parser ?? null } : null,
+    many: many.length === 1 ? { slot: many[0][0], role: many[0][1].source, parser: many[0][1].parser ?? null } : null,
   };
 }
 
@@ -55,6 +57,11 @@ export async function bindDirectorySources(input: {
 
   const models = new Map<string, unknown>();
   const revisions = new Map<string, string | null>();
+  // Each file of the group parses with the producer's declared parser for that group (the same single entry the sync
+  // loader uses): a server labelling an adoc `application/octet-stream` still reads, and a changed declaration re-parses
+  // because the document cache keys on the parser, never reusing an older recognizer pick for the same bytes. The
+  // directory listings themselves keep the media recognizer: they are the connector's own XML/JSON documents.
+  const fileParser = declared.many?.parser ?? null;
   const load = async (id: string): Promise<{ ok: true } | { ok: false; reason: string }> => {
     const read = await readSource(input.loader, id, input.maxBytes);
     revisions.set(id, read.revision);
@@ -100,7 +107,7 @@ export async function bindDirectorySources(input: {
     for (const id of listedSources(group.directory, group.tree)) if (!seen.has(id)) { seen.add(id); files.push(id); }
   }
   for (const id of files) {
-    const read = await readSource(input.loader, id, input.maxBytes);
+    const read = await readSource(input.loader, id, input.maxBytes, fileParser ?? undefined);
     if (!read.page.ok) return fail(id, read.page.reason ?? '读不出');
     if (read.revision !== walk.revision) return fail(id, `修订号是 ${read.revision ?? '（无）'}，目录修订号是 ${walk.revision}`);
   }
