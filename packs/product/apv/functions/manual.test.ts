@@ -869,7 +869,9 @@ describe('command tables split by row', () => {
       ],
     );
     const rest = result.entries[2];
-    assert.deepEqual(rest.data.command_literals, ['demo pool create'], 'the mention is recorded as a literal');
+    // 决定 60: a marked span in a prose cell is a mention stored verbatim, not a command claim and not a signature.
+    assert.deepEqual(rest.data.command_mentions, ['demo pool create'], 'the mention is recorded verbatim');
+    assert.equal(rest.data.command_literals, undefined, 'a prose cell claims no command, so it can create no drift');
   });
 
   it('cites the row lines of the table block, locatable by the parser', () => {
