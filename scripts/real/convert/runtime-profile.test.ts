@@ -55,7 +55,10 @@ test('unmodified contracts allow an optional redacted credential without assigni
   assert.ok(!Object.hasOwn(draft.allowed.find(v => v.method === 'configure')!.parameters, 'auth_token'));
   assert.ok(draft.unopened.some((v: any) => v.method === 'credential'));
   const supplied = goodData(); supplied.steps[0].keywords.auth_token = 'synthetic-value';
-  assert.ok(checkContractShape(subjectOf(supplied, { contractDoc: contract, profileDoc: profile })).some(outcome => outcome.code === 'case-compile.param_sensitive'));
+  // 这份测试合约还不是 runtime-contract@2。形状检查先报未核对，不会把旧合约上的凭据值判成 param_sensitive。
+  const held = checkContractShape(subjectOf(supplied, { contractDoc: contract, profileDoc: profile }));
+  assert.ok(held.some(outcome => outcome.verdict === 'unknown' && outcome.statement.includes('runtime-contract@2')));
+  assert.ok(!held.some(outcome => outcome.code === 'case-compile.param_sensitive'));
   assert.throws(() => checkProfile({ ...profile, allowed: [...profile.allowed, { object: 'widget-seat', method: 'credential', parameters: {} }], unopened: [] }, MANIFEST_DOC, contract));
 });
 test('optional ordinary parameters require either a role or an explicit never-supplied declaration', () => {
@@ -66,7 +69,10 @@ test('optional ordinary parameters require either a role or an explicit never-su
   const allowed = profile.allowed.map(v => v.method === 'shell' ? { ...v, unsupplied: ['label'] } : v);
   assert.doesNotThrow(() => checkCoverage({ ...profile, allowed }, parsed.contract));
   const supplied = goodData(); supplied.steps[1].keywords.label = 'synthetic-value';
-  assert.ok(checkContractShape(subjectOf(supplied, { contractDoc: contract, profileDoc: { ...profile, allowed } })).some(outcome => outcome.code === 'case-compile.param_unassigned'));
+  // 同上：旧合约未核对，到不了 param_unassigned。角色缺口仍由上面的 checkCoverage 拒绝。
+  const held = checkContractShape(subjectOf(supplied, { contractDoc: contract, profileDoc: { ...profile, allowed } }));
+  assert.ok(held.some(outcome => outcome.verdict === 'unknown' && outcome.statement.includes('runtime-contract@2')));
+  assert.ok(!held.some(outcome => outcome.code === 'case-compile.param_unassigned'));
   for (const unsupplied of [['command'], ['absent'], ['label', 'label']]) assert.throws(() => checkCoverage({ ...profile, allowed: profile.allowed.map(v => v.method === 'shell' ? { ...v, unsupplied } : v) }, parsed.contract));
 });
 

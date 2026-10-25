@@ -339,6 +339,7 @@ describe('traceability scenario checks', () => {
     const fullResultText = [
       '陈述：缺陷 160001（发布说明：已修复；缺陷系统：closed）：12 个已索引用例追溯：24110:n00000000001 标题1；24110:n00000000002 标题2；24110:n00000000003 标题3；24110:n00000000004 标题4；24110:n00000000005 标题5；另有 7 个，支持；性质与依据等级：事实结论，事实等级 1；根据：tree:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/@条目',
       '跨条目：缺陷 1 个：已追溯 1 个，未追溯 0 个；其中已关闭缺陷 1 个：已追溯 1 个，未追溯 0 个，支持，traceability.counts',
+      JSON.stringify({ statement: { verdict: 'support', text: '合成追溯主张' } }),
     ].join('\n');
 
     const turns = turnsOf([startRunText, fullResultText]);

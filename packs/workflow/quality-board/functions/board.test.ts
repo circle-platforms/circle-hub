@@ -1,8 +1,9 @@
 // The board grouping and metrics: one group per (line, module) of the facet view (module null is the group 'unplaced'),
-// rows that split a group by the other fields summed. The metrics are exactly the definitions of the owner's real-sample
-// measurement: missing = has_expected false; vague = has_expected true and vague_expected true; negative share = negative
-// true over all cases. Ratios are exact fractions {num, den}, rounded only for display. Then an independent computation on
-// a random corpus of 100,000 synthetic cases.
+// rows that split a group by the other fields summed. Missing is has_expected false. Vague is not read from the facet
+// flag vague_expected: that flag is not an expectation judgment, so the vague ratio stays 0/0 until judgments are
+// applied. Negative counts only when test_type_status is declared and negative is boolean; otherwise the row is
+// type_unclassified and stays out of the negative denominator. Ratios are exact fractions {num, den}, rounded only for
+// display. Then an independent computation on a random corpus of 100,000 synthetic cases.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { displayOf, groupBoard, percentOf } from './board.ts';
@@ -29,12 +30,13 @@ describe('groupBoard', () => {
     const groups = groupBoard(view);
     assert.equal(groups.length, 2);
     const ssl = groups.find((g) => g.id === '10.6.1/SSL')!;
-    assert.deepEqual(ssl.counts, { cases: 13, missing: 3, vague: 1, negative: 2 });
-    assert.deepEqual(ssl.ratios, { missing: { num: 3, den: 13 }, vague: { num: 1, den: 13 }, negative: { num: 2, den: 13 } });
+    // 含糊期望不从 vague_expected 累加；这 13 条都是已声明的布尔负向，所以负向分母等于用例数。
+    assert.deepEqual(ssl.counts, { cases: 13, missing: 3, vague: 0, negative: 2, negative_denominator: 13, type_unclassified: 0 });
+    assert.deepEqual(ssl.ratios, { missing: { num: 3, den: 13 }, vague: { num: 0, den: 0 }, negative: { num: 2, den: 13 } });
     assert.deepEqual(ssl.line, '10.6.1');
     assert.deepEqual(ssl.module, 'SSL');
     const ha = groups.find((g) => g.id === '10.6.1/HA')!;
-    assert.deepEqual(ha.counts, { cases: 4, missing: 0, vague: 0, negative: 4 });
+    assert.deepEqual(ha.counts, { cases: 4, missing: 0, vague: 0, negative: 4, negative_denominator: 4, type_unclassified: 0 });
   });
 
   it('a null module is the group unplaced, and a null line groups under unplaced too', () => {
@@ -59,17 +61,19 @@ describe('groupBoard', () => {
         facetRow({ line: '10.6.1', module: 'SSL', priority: 'P2', has_expected: false, vague_expected: false, negative: false }, 3),
         facetRow({ line: '10.6.1', module: 'SSL', priority: 'P1', has_expected: true, vague_expected: true, negative: true }, 1),
       ],
-      { by: ['line', 'module', 'priority', 'has_expected', 'vague_expected', 'negative'] },
+      // by 最多 6 个，且必须含 test_type_status。vague_expected 已不是必填字段，让位给 priority。
+      { by: ['line', 'module', 'priority', 'has_expected', 'negative', 'test_type_status'] },
     );
     const [group] = groupBoard(withPriority);
     assert.equal(group.id, '10.6.1/SSL');
-    assert.deepEqual(group.counts, { cases: 6, missing: 5, vague: 1, negative: 1 });
+    assert.deepEqual(group.counts, { cases: 6, missing: 5, vague: 0, negative: 1, negative_denominator: 6, type_unclassified: 0 });
   });
 
   it('a field that is neither true nor false counts toward cases but neither missing, vague nor negative', () => {
-    const view = viewOf([facetRow({ line: '10.6.1', module: 'SSL', has_expected: null, vague_expected: false, negative: 'yes' }, 4)]);
+    // 未声明必须配 negative null。字符串 'yes' 与声明状态不一致，视图会拒，不能拿来当未分类。
+    const view = viewOf([facetRow({ line: '10.6.1', module: 'SSL', has_expected: null, vague_expected: false, negative: null }, 4)]);
     const [group] = groupBoard(view);
-    assert.deepEqual(group.counts, { cases: 4, missing: 0, vague: 0, negative: 0 });
+    assert.deepEqual(group.counts, { cases: 4, missing: 0, vague: 0, negative: 0, negative_denominator: 0, type_unclassified: 4 });
   });
 
   it('rounds only for display: the fractions stay exact, the display numbers four decimals, the percents one', () => {
@@ -116,14 +120,17 @@ describe('groupBoard', () => {
     assert.equal(view.total, 100000);
     const groups = groupBoard(view);
     // The independent computation: plain loops over the corpus, grouped by (line, module).
-    const expected = new Map<string, { cases: number; missing: number; vague: number; negative: number }>();
+    const expected = new Map<string, { cases: number; missing: number; vague: number; negative: number; negative_denominator: number; type_unclassified: number }>();
     for (const entry of corpus) {
       const key = `${entry.line ?? 'unplaced'}/${entry.module ?? 'unplaced'}`;
-      const held = expected.get(key) ?? { cases: 0, missing: 0, vague: 0, negative: 0 };
+      const held = expected.get(key) ?? { cases: 0, missing: 0, vague: 0, negative: 0, negative_denominator: 0, type_unclassified: 0 };
       held.cases++;
       if (entry.has_expected === false) held.missing++;
-      if (entry.has_expected === true && entry.vague_expected === true) held.vague++;
-      if (entry.negative === true) held.negative++;
+      // 独立对照与看板同一条规则：vague_expected 不计入含糊数。
+      if (typeof entry.negative === 'boolean') {
+        held.negative_denominator++;
+        if (entry.negative === true) held.negative++;
+      } else held.type_unclassified++;
       expected.set(key, held);
     }
     assert.equal(groups.length, expected.size);

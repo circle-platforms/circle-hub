@@ -64,8 +64,9 @@ describe('pack functions in the Hub sandbox', { skip: available ? false : 'no OS
     assert.deepEqual(
       thresholdOutcomes.map((o) => [o.item, o.verdict, o.code ?? null]),
       [
-        ['10.6.1/SSL', 'support', null],
-        ['10.6.1/unplaced', 'refute', 'quality-board.vague_expected'],
+        // 没有期望质量判断时含糊阈值是 unknown，不再把 vague_expected 当成越界。未归位 0/2 仍低于负向下限。
+        ['10.6.1/SSL', 'unknown', null],
+        ['10.6.1/unplaced', 'unknown', null],
         ['10.6.1/unplaced', 'refute', 'quality-board.negative_share'],
       ],
     );

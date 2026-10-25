@@ -51,7 +51,9 @@ describe('the synthetic document', () => {
     assert.deepEqual(CATEGORIES.slice(0, 6), [...TEST_TYPES]);
     for (const id of CATEGORIES) {
       const left = goldOf(withoutCategory(doc, id), DOC);
-      assert.deepEqual(CATEGORIES.filter((c) => (left.byCategory.get(c) ?? []).length === 0), [id], `removing every case of ${id} leaves the others shown`);
+      // 无标签的标记节点单独声明了 functional。删掉 functional 用例之后，这一类还在。
+      const gone = id === 'functional' ? [] : [id];
+      assert.deepEqual(CATEGORIES.filter((c) => (left.byCategory.get(c) ?? []).length === 0), gone, `removing every case of ${id} leaves the others shown`);
     }
   });
 });
@@ -68,7 +70,8 @@ describe('projectDocuments', () => {
     assert.equal(item.label, '小部件探测 测试用例', 'the label is the listed title with white space collapsed');
     assert.equal(item.fields.title, ' 小部件探测  测试用例 ', 'the title field keeps the title as listed');
     assert.deepEqual(item.fields.path, ['示例产品', '030：示例测试项目', '101：2.1.0', '模块']);
-    assert.deepEqual(Object.keys(item.fields), ['document', 'title', 'path', 'caseCount', 'untagged', 'case_rule', 'marked_only', 'data', 'categories', 'command_coverage', 'missing', 'skipped']);
+    // 分类状态、resource 原文和标签表是后来写进条目的，和类别计数分开。
+    assert.deepEqual(Object.keys(item.fields), ['document', 'title', 'path', 'caseCount', 'untagged', 'case_rule', 'marked_only', 'data', 'categories', 'classifications', 'classification_status', 'unclassified', 'scope_complete', 'case_resources', 'tag_table', 'tag_undeclared_cases', 'command_coverage', 'missing', 'skipped']);
     assert.deepEqual(item.fields.skipped, []);
     assertGold(item.fields, doc, 'base');
     assert.deepEqual(out.warnings.map((warning) => warning.code), ['template-gap.tagged_group']);
@@ -111,16 +114,29 @@ describe('projectDocuments', () => {
         const gone = report(without);
         assertGold(gone.fields, without, `without ${category}`);
         const fact = gone.fields.categories.find((c) => c.id === category)!;
-        assert.deepEqual([fact.present, fact.count, fact.evidence], [false, 0, []]);
-        assert.deepEqual(gone.fields.missing, [category], 'exactly that category is missing, whatever its group');
-        assert.match(gone.summary, new RegExp(`缺 1 个模板类别：${TEMPLATE.categories.find((c) => c.id === category)!.label}（${category}）`));
+        if (category === 'functional') {
+          // 无标签标记节点的 category_ids 仍是 functional，删光功能用例也不会让它消失。
+          assert.deepEqual([fact.present, fact.count, fact.evidence], [true, 1, [`${DOC}:v99unez89wsx`]]);
+          assert.ok(!gone.fields.missing.includes('functional'));
+          assert.match(gone.summary, /24 个模板类别都已覆盖/);
+        } else {
+          assert.deepEqual([fact.present, fact.count, fact.evidence], [false, 0, []]);
+          assert.deepEqual(gone.fields.missing, [category], 'exactly that category is missing, whatever its group');
+          assert.match(gone.summary, new RegExp(`缺 1 个模板类别：${TEMPLATE.categories.find((c) => c.id === category)!.label}（${category}）`));
+        }
         const witness = witnessCase(category);
         const restored = withCase(without, '其他', witness);
         const back = report(restored);
         assertGold(back.fields, restored, `${category} restored`);
         const again = back.fields.categories.find((c) => c.id === category)!;
-        assert.deepEqual([again.present, again.count, again.evidence], [true, 1, [`${DOC}:${witness.id}`]]);
-        assert.deepEqual(back.fields.missing, []);
+        if (category === 'functional') {
+          assert.equal(again.present, true);
+          assert.ok(again.evidence.includes(`${DOC}:${witness.id}`));
+          assert.ok(!back.fields.missing.includes('functional'));
+        } else {
+          assert.deepEqual([again.present, again.count, again.evidence], [true, 1, [`${DOC}:${witness.id}`]]);
+          assert.deepEqual(back.fields.missing, []);
+        }
       });
     }
 
@@ -130,26 +146,32 @@ describe('projectDocuments', () => {
       for (const seed of [1, 2, 3, 42, 2026]) {
         const order = shuffled(base, seed);
         assert.notDeepEqual(bytesOf(order), bytesOf(base), `seed ${seed} changes the order`);
-        assert.deepEqual(report(order), expected, `seed ${seed}`);
+        // 分类和 resource 按文档顺序走，visit 会变。类别计数、缺失和摘要不随顺序变。
+        assert.equal(report(order).summary, expected.summary, `seed ${seed}`);
+        assert.deepEqual(report(order).fields.categories, expected.fields.categories, `seed ${seed}`);
+        assert.deepEqual(report(order).fields.missing, expected.fields.missing, `seed ${seed}`);
       }
       const gap = withoutCategory(withoutCategory(base, 'negative'), 'configuration_sync');
-      assert.deepEqual(report(shuffled(gap, 9)), report(gap), 'a document with gaps too');
+      const gapReport = report(gap);
+      const gapShuffled = report(shuffled(gap, 9));
+      assert.equal(gapShuffled.summary, gapReport.summary, 'a document with gaps too');
+      assert.deepEqual(gapShuffled.fields.missing, gapReport.fields.missing);
     });
 
     it('limits (README deviations 6 and 7): numbered copies follow the document order and uploads their bytes; presence, counts and summaries do not', () => {
       const km = (...cases: unknown[]) => new TextEncoder().encode(JSON.stringify({ root: { data: { id: 'r', text: '根' }, children: cases }, template: 'right', theme: 'classic', version: '1.4.43' }));
-      const kase = (id: string | null, text: string, tag: string) => ({ data: { ...(id === null ? {} : { id }), text, priority: 2, resource: [tag] }, children: [{ data: { id: `${id ?? text}e`, text: '期望' }, children: [] }] });
-      // Two cases share an id: the copies are numbered in document order, so reordering moves the numbers between them.
-      const a = kase('dup', '老->新 升级', 'Compatibility');
-      const b = kase('dup', 'query pool', 'Function');
+      const kase = (id: string | null, text: string, category: string) => ({ data: { ...(id === null ? {} : { id }), text, priority: 2, category_ids: [category] }, children: [{ data: { id: `${id ?? text}e`, text: '期望' }, children: [] }] });
+      // 类别只认 category_ids。两个同号用例按文档顺序编号，对调之后编号跟着走。
+      const a = kase('dup', '老->新 升级', 'upgrade_old_to_new');
+      const b = kase('dup', 'query pool', 'command_query');
       const first = itemOf(km(a, b), { external: external() });
       const second = itemOf(km(b, a), { external: external() });
       const evidence = (item: DocumentItem, id: string) => item.fields.categories.find((c) => c.id === id)!.evidence;
       assert.deepEqual([evidence(first, 'upgrade_old_to_new'), evidence(first, 'command_query')], [[`${DOC}:dup#1`], [`${DOC}:dup#2`]]);
       assert.deepEqual([evidence(second, 'upgrade_old_to_new'), evidence(second, 'command_query')], [[`${DOC}:dup#2`], [`${DOC}:dup#1`]]);
       // Without ids: numbered by node position.
-      const third = itemOf(km(kase(null, '老->新 升级', 'Compatibility'), kase('x1', '其他', 'Function')), { external: external() });
-      const fourth = itemOf(km(kase('x1', '其他', 'Function'), kase(null, '老->新 升级', 'Compatibility')), { external: external() });
+      const third = itemOf(km(kase(null, '老->新 升级', 'compatibility'), kase('x1', '其他', 'functional')), { external: external() });
+      const fourth = itemOf(km(kase('x1', '其他', 'functional'), kase(null, '老->新 升级', 'compatibility')), { external: external() });
       assert.notDeepEqual(evidence(third, 'compatibility'), evidence(fourth, 'compatibility'));
       for (const [x, y] of [[first, second], [third, fourth]]) {
         assert.deepEqual(x.fields.categories.map((c) => [c.id, c.present, c.count]), y.fields.categories.map((c) => [c.id, c.present, c.count]));
@@ -284,25 +306,23 @@ describe('projectDocuments', () => {
           version: '1.4.43',
         }),
       );
-    const worst = itemOf(km(12_345, 6_789), { external: external() });
-    assert.deepEqual(worst.fields.missing, CATEGORIES);
-    assert.ok(worst.summary.length <= LIMITS.maxSummary, `${worst.summary.length} characters`);
-    assert.ok(worst.summary.startsWith('用例 19134 个；按命令：未计算，缺 case_index；缺 24 个模板类别（只列编号）：functional、configuration、'), worst.summary);
-    for (const id of CATEGORIES) assert.ok(worst.summary.includes(id), id);
-    assert.ok(worst.summary.endsWith('模板类别出现 0/24 个；用例规则：标签或标记；其中 6789 个只靠标记识别（没有标签）'), worst.summary);
-
-    const worstTagged = itemOf(km(12_345, 6_789), { external: external() }, { case_rule: 'tagged' });
-    assert.ok(worstTagged.summary.startsWith('用例 12345 个；按命令：规则不一致，用默认 marked 重跑；缺 24 个模板类别（只列编号）：functional、configuration、'), worstTagged.summary);
-    assert.ok(worstTagged.summary.length <= LIMITS.maxSummary);
-    assert.match(worstTagged.summary, /用例规则：只认标签/);
-    assert.match(worstTagged.summary, /(?:未计入未标签 6789 个|另有 6789 个没有标签、写法像用例的节点没有计入)/);
-    for (const id of CATEGORIES) assert.ok(worstTagged.summary.includes(id), id);
-    // Skips and missing categories together are at most the 24 categories: still every one named.
+    // 一万多条未分类用例的分类清单超过输出上限。缺类别的说法要等分类完成，不能靠把文档放大来列出。
+    const huge = projectDocuments(projectionInput([bind(km(12_345, 6_789), { external: external() })]));
+    assert.ok('error' in huge && huge.error.code === 'template-gap.too_large');
+    const one = itemOf(km(1, 0), { external: external() });
+    assert.equal(one.fields.classification_status, 'unclassified');
+    assert.deepEqual(one.fields.missing, []);
+    assert.match(one.summary, /未分类用例 1 个/);
+    assert.ok(!one.summary.includes('缺 24 个模板类别'));
+    const classified = new TextEncoder().encode(JSON.stringify({ root: { data: { id: 'r', text: '根' }, children: [{ data: { id: 'c0', text: '第 0 条', priority: 2, category_ids: ['functional'] }, children: [{ data: { id: 'c0e', text: '符合预期' }, children: [] }] }] }, template: 'right', theme: 'classic', version: '1.4.43' }));
+    const named = itemOf(classified, { external: external() });
+    const absent = CATEGORIES.filter((id) => id !== 'functional');
+    assert.deepEqual(named.fields.missing, absent);
+    assert.ok(named.summary.length <= LIMITS.maxSummary, `${named.summary.length} characters`);
+    for (const id of absent) assert.ok(named.summary.includes(id), id);
     const skipped = CATEGORIES.slice(0, 9).map((category) => ({ category, reason: '用户说不适用' }));
-    const mixed = itemOf(km(12_345, 6_789), { external: external() }, { skipped });
-    assert.deepEqual(mixed.fields.missing, CATEGORIES.slice(9));
-    assert.ok(mixed.summary.length <= LIMITS.maxSummary);
-    for (const id of CATEGORIES.slice(9)) assert.ok(mixed.summary.includes(id), id);
+    const mixed = itemOf(classified, { external: external() }, { skipped });
+    assert.deepEqual(mixed.fields.missing, absent.filter((id) => !skipped.some((skip) => skip.category === id)));
     assert.match(mixed.summary, /参数 skipped 声明跳过 9 个：functional、configuration、integration、compatibility、negative、stress 等/);
   });
 });
@@ -393,7 +413,8 @@ describe('totality', () => {
     assert.ok(!('error' in shared));
     assert.equal(shared.items[0].fields.caseCount, 1);
     assert.ok(shared.warnings.some((w) => w.code === 'template-gap.tag_not_text'));
-    assert.equal(shared.items[0].fields.categories.find((c) => c.id === 'command_add')?.count, 1);
+    // 标题里的命令文字不再当成类别。这条用例没有 category_ids，command_add 计数是 0。
+    assert.equal(shared.items[0].fields.categories.find((c) => c.id === 'command_add')?.count, 0);
   });
 
   it('is deterministic', () => {

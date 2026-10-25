@@ -583,7 +583,8 @@ test('administrator knowledge view and original export operate against the synth
   const product=await twoNameProduct(),site=await productSite();
   const match=/_(\d+)_(\d+)_(\d+)_/.exec(site.RELEASED)!;
   const agile=JSON.parse(JSON.stringify(agileOptions()).replaceAll('ORBIT',product.names[0]).replaceAll('COMET',product.names[1]).replaceAll('7.1',match.slice(1).join('.')));
-  const bed=await openBed({postgres,syncOneName:false,agile});t.after(()=>bed.close());
+  // 喂入改造拿掉了构建根上的 cases 生产器。case_index 仍打开，用来确认文档读到了、只是不再写成 kind=case 条目。
+  const bed=await openBed({postgres,syncOneName:false,syncTwoName:{options:{case_index:true}},agile});t.after(()=>bed.close());
   const dir=mkdtempSync(join(tmpdir(),'export-bed-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
   const kit=bed.hub.records,db=kit.database;
   const runsBefore=await kit.store.list({kind:'run',limit:1});
@@ -603,24 +604,24 @@ test('administrator knowledge view and original export operate against the synth
     return {status,stdout:stdout.join('\n')};
   };
   const deps=createDeps(options,runner);
-  // Force the byte-cap branch on this small synthetic build; the facets read and the shards use the real administrator CLI.
-  const readIndex=deps.index;let first=true;
-  deps.index=async external=>{const read=await readIndex(external);if(first){first=false;read.view.truncated=true;}return read;};
   const lines=await exportBuild(options,deps);
   assert.ok(readdirSync(options.out).some(n=>n.startsWith('index-')));
-  assert.ok(readFileSync(join(options.out,'maps.txt'),'utf8').trim());
+  assert.equal(readFileSync(join(options.out,'maps.txt'),'utf8'),'');
   assert.ok(readFileSync(join(options.out,'command-tree.xml')).length);
-  const maps=readFileSync(join(options.out,'maps.txt'),'utf8').trim().split('\n').map(line=>{const at=line.lastIndexOf(':');return {document:line.slice(at+1),map:JSON.parse(readFileSync(line.slice(0,at),'utf8'))};});
-  const gold=caseCommandsGold(readFileSync(join(options.out,'command-tree.xml'),'utf8'),maps);
-  assert.ok(gold.cases.length>0);
+  const gold=caseCommandsGold(readFileSync(join(options.out,'command-tree.xml'),'utf8'),[]);
+  assert.equal(gold.cases.length,0);
   const views=readdirSync(options.out).filter(n=>n.startsWith('index-')).map(n=>JSON.parse(readFileSync(join(options.out,n),'utf8')));
+  assert.equal(views.length,1);
+  assert.equal(views[0].total_keys,0);
+  assert.equal(views[0].truncated,false);
   const comparison=compareCommandIndex(gold,views);
   assert.equal(comparison.verdict,'相等',JSON.stringify(comparison));
+  assert.match(lines[0],/索引 1 份；文档 0 份；用例 0 条；命令树 1 份/);
 
   assert.ok(!lines.join('\n').includes(options.token));assert.ok(!lines.join('\n').includes(options.build));
   const viewCommand=commands.find(c=>c.name==='knowledge')!;
   const external=`knowledge:index:${options.product}:${options.build}?kind=case&key=document`;
-  const document=Object.keys(views[0].keys)[0];
+  const document='synthetic-document';
   const output=join(dir,'view.json'),summary:string[]=[];
   await viewCommand.run(['view',external,'--only',encodeURIComponent(document),'--out',output],context(options.token,summary));
   const written=readFileSync(output),view=JSON.parse(written.toString('utf8'));

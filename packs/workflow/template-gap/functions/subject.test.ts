@@ -5,6 +5,7 @@ import { baseDocument, withoutCategory } from '../testing/mindmap.ts';
 import { CONTEXT, bind, itemOf, projectionInput, table } from '../testing/support.ts';
 import { projectDocuments } from './project.ts';
 import subjectDefault, { coverageSubject } from './subject.ts';
+import coverageCheck from './coverage-check.ts';
 import type { DocumentItem } from './types.ts';
 
 const COVERAGE = table('template-v3-coverage.json') as { required: { values: string[] } };
@@ -53,16 +54,20 @@ describe('coverageSubject', () => {
     for (const [n, variant] of variants.entries()) {
       for (const skipped of [[], [{ category: 'negative', reason: '不需要反向' }, { category: 'show_at_maximum', reason: '没有规格上限' }]]) {
         const item = itemOf(variant, { external: 'agile:mindmap:900001' }, { skipped });
-        const [outcome] = await judge(coverageSubject(builderInput(item)));
-        assert.equal(outcome.verdict, item.fields.missing.length === 0 ? 'support' : 'refute', `variant ${n}`);
-        assert.deepEqual(outcome.data?.missing, item.fields.missing, `variant ${n}`);
+        const bound = bind(variant, { external: 'agile:mindmap:900001' });
+        const [outcome] = coverageCheck({ subject: { item: item.id, document: item.fields.document, location: LOCATION, case_rule: item.fields.case_rule, scope_complete: item.fields.scope_complete, skipped, source: { sha256: bound.sha256, model: bound.model } } });
+        // 还有未分类用例时不判缺类别，检查是未知。分类完成才按 missing 支持或反驳。
+        const want = item.fields.classification_status !== 'classified' || item.fields.scope_complete !== true ? 'unknown' : item.fields.missing.length === 0 ? 'support' : 'refute';
+        assert.equal(outcome.verdict, want, `variant ${n}`);
+        if (want === 'refute') assert.deepEqual(outcome.data?.missing, item.fields.missing, `variant ${n}`);
       }
     }
     // With every case below it gone, the tagged group node (priority 1, tag Function) is a case itself (case-review's rule,
     // README deviation 5), so only Functional is shown (along with the untagged candidate case which shows no category).
     const last = projectDocuments(projectionInput([bind(withoutCategory(doc, 'compatibility'))]));
     assert.ok(!('error' in last));
-    assert.deepEqual([last.items[0].fields.caseCount, last.items[0].fields.missing], [2, CATEGORIES.filter((id) => id !== 'functional')]);
+    // 剩下的节点没有 category_ids，整份未分类，missing 是空的，不把其余 23 类记成缺口。
+    assert.deepEqual([last.items[0].fields.caseCount, last.items[0].fields.missing], [2, []]);
   });
 
   it('leaves the covered list absent when the item has no category list, so the check is unknown (missing input), not a judgment of nothing', async () => {

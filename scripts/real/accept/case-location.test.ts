@@ -18,7 +18,8 @@ const builds = (line = '10.8.1'): BuildCandidateGold[] => {
 };
 const doc = (fields: Partial<DocumentLocationGold> = {}): DocumentLocationGold => ({ document: '930801', product: 'apv', line: '10.8.1', train: '10.8.1-R9', module: '合成模块甲', buildCandidates: builds(fields.line), ...fields });
 const statement = (list: BuildCandidateGold[], line: string): string => `版本线 ${line} 的构建候选 ${list.length} 个，其中别名 ${list.filter(c => c.name !== c.base).length} 个（别名基于它所基于的构建），按制作时间从新到旧：` + orderGoldCandidates(list).slice(0, 12).map(c => `${c.name}（${c.family}${c.name !== c.base ? `，基于 ${c.base}` : ''}）${c.built ? `制作于 ${c.built.slice(0, 16).replaceAll('T', ' ')}` : '制作时间未知'}，${c.released ? `已发布 ${c.released}` : '未发布'}`).join('；') + (list.length > 12 ? `；另有 ${list.length - 12} 个` : '');
-const position = (id: string, requirement: string, said: string) => `    - 位置：条目 ${id}，要求项 ${requirement}，/data；陈述：${said}，支持；性质与依据等级：事实`;
+// 现行核对只认 JSON 里的 statement.verdict。候选原文放在 statement.text，判定不再靠句尾的“支持”。
+const position = (id: string, requirement: string, said: string) => `    - 位置：条目 ${id}，要求项 ${requirement}，/data；陈述：${JSON.stringify({ statement: { verdict: 'support', text: said } })}；性质与依据等级：事实`;
 const row = (d: DocumentLocationGold) => `- ${d.document} | 合成标题 | 产品线 apv；版本 ${d.line}（目录，置信度高）${d.train ? `；发布火车 ${d.train}` : ''}${d.module ? `；模块 ${d.module}` : ''}${d.stories?.length ? `；需求 ${d.stories.join('、')}` : ''}${d.bugs?.length ? `；缺陷 ${d.bugs.join('、')}` : ''}${d.unclassified?.length ? `；未分类编号 ${d.unclassified.join('、')}` : ''}`;
 const answer = (d: DocumentLocationGold) => `问题与未知（条目 | 名称 | 分区 | 要求项）：\n- ${d.document} | 合成标题 | 未知 | other | 合成问题\n条目（1 个；编号 | 名称 | 摘要）：\n${row(d)}\n- ${d.document} | 合成标题 | 已交付\n  · location 用例定位：满足\n${position(d.document, 'location', row(d).split(' | ').slice(2).join(' | '))}\n  · build_candidates 构建候选：满足\n${position(d.document, 'build_candidates', statement(Array.isArray(d.buildCandidates) ? d.buildCandidates : d.buildCandidates!.candidates, d.line))}`;
 const turnsOf = (text: string): LoggedTurn[] => [{ index: 0, tools: [], toolResults: [{ id: 'synthetic', text, isError: false }] }];
@@ -47,7 +48,7 @@ describe('candidate comparison', () => {
     assert.ok(!allOk(doc(), answer(doc()).replaceAll('12:30', '12:31')));
   });
   test('fails when candidate set is missing one candidate', () => assert.ok(!allOk(doc(), answer(doc()).replace(/；Rel_NSAE[^；\n]+/, ''))));
-  test('fails when candidate set has an extra candidate', () => assert.ok(!allOk(doc(), answer(doc()).replaceAll('，支持；性质', '；Rel_APV_10_8_1_99（APV）制作时间未知，未发布，支持；性质'))));
+  test('fails when candidate set has an extra candidate', () => assert.ok(!allOk(doc(), answer(doc()).replace('未发布"}', '未发布；Rel_APV_10_8_1_99（APV）制作时间未知，未发布"}'))));
   test('fails when alias does not bring out its base build', () => assert.ok(!allOk(doc(), answer(doc()).replaceAll('，基于 Rel_APV_10_8_1_41', ''))));
   test('fails when written build classification does not match gold', () => {
     const d = doc({ buildCandidates: { candidates: builds(), written: [{ name: builds()[0].name, classification: 'known' }] } });
@@ -167,7 +168,7 @@ test('location review 1: real problem rows and result item blocks do not hide th
 test('location review 3: unknown location values cannot pass as facts and private reasons remain private', t => {
   const directory = mkdtempSync(join(tmpdir(), 'location-fact-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
   const d = doc({ product: undefined });
-  const text = answer(d).replace(position(d.document, 'location', row(d).split(' | ').slice(2).join(' | ')), position(d.document, 'location', '定位不确定：根 private-root 不是产品名称；已知：' + row(d).split(' | ').slice(2).join(' | ')).replace('，支持；性质', '，未知；性质'));
+  const text = answer(d).replace(position(d.document, 'location', row(d).split(' | ').slice(2).join(' | ')), position(d.document, 'location', '定位不确定：根 private-root 不是产品名称；已知：' + row(d).split(' | ').slice(2).join(' | ')).replace('"verdict":"support"', '"verdict":"unknown","reason":"missing_input","missing":"产品名称","exit":{"action":"rerun"}'));
   const rows = caseLocation(d, directory).check(turnsOf('运行 run_synthetic\n' + text));
   assert.ok(rows.some(c => c.name.includes('定位结论是事实') && !c.ok));
   assert.ok(!JSON.stringify(rows).includes('private-root'));
@@ -178,7 +179,7 @@ test('location review 3: unknown location values cannot pass as facts and privat
 });
 
 test('pack findings never accepts an unknown build-candidate claim whose values happen to match',()=>{
- const d=doc(),said=answer(d).replace(position(d.document,'build_candidates',statement(builds(),d.line)),position(d.document,'build_candidates',statement(builds(),d.line)).replace('，支持；性质','，未知；性质'));
+ const d=doc(),said=answer(d).replace(position(d.document,'build_candidates',statement(builds(),d.line)),position(d.document,'build_candidates',statement(builds(),d.line)).replace('"verdict":"support"','"verdict":"unknown","reason":"missing_input","missing":"构建候选","exit":{"action":"rerun"}'));
  const scenario=caseLocation(d);const rows=scenario.check(turnsOf('运行 run_synthetic\n'+said));assert.ok(rows.some(row=>!row.ok&&row.name.includes('构建候选结论')&&row.actual.includes('未知')));
  assert.ok(scenario.countLines?.some(line=>line.includes('原因')&&line.includes('下一步')));
  scenario.check(turnsOf('运行 run_synthetic\n'+answer(d)));assert.deepEqual(scenario.countLines,[]);
