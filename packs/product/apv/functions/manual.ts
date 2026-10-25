@@ -305,7 +305,7 @@ function commonPrefix(lists: readonly string[][]): string[] {
   if (lists.length === 0) return [];
   const out: string[] = [];
   for (let k = 0; k < lists[0].length; k++) {
-    const word = lists[0][k].toLowerCase();
+    const word = lists[0][k];
     if (lists.every((list) => k < list.length && list[k] === word)) out.push(lists[0][k]);
     else break;
   }
@@ -567,7 +567,18 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
       entry.data.command_mentions = [...mentions].sort(compareText);
       return;
     }
-    const lines = text.split('\n').filter((line) => line.trim() !== '');
+    let body = text.split('\n');
+    // markdown@1 retains raw fences in its code block. Parse their structure before claiming whole content lines;
+    // adoc's already-unwrapped code blocks do not use Markdown fence syntax.
+    if (parserOf(options) === MARKDOWN) {
+      const opener = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/.exec(body[0] ?? '');
+      if (opener && !(opener[1][0] === '`' && opener[2].includes('`'))) {
+        const closing = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(body.at(-1) ?? '');
+        const closed = body.length > 1 && closing !== null && closing[1][0] === opener[1][0] && closing[1].length >= opener[1].length;
+        body = body.slice(1, closed ? -1 : undefined);
+      }
+    }
+    const lines = body.filter((line) => line.trim() !== '');
     if (lines.length === 0) return;
     const resolved = catalog === null ? [] : lines.filter((line) => resolvePhrase(catalog, line) !== null);
     if (resolved.length > 0) entry.data.command_lines = resolved;
@@ -633,13 +644,48 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
   const variantTailsOf = (anchor: Anchor): string[] | null => anchor.variants?.map(variant=>variant.slice(anchor.words.length).join(' '))??null;
 
   const cellAnchors = (cell: string, headerNamesCommands: boolean): Anchor[] => {
-    if (!headerNamesCommands || !cell.includes('**')) return [];
-    // The pieces of one cell: bold runs with the parameter syntax that rides with them, split ONLY at a plain
-    // connective run (与/和/及/或、顿号、逗号；斜线只在命令列). A bold span that follows another with NO separator
-    // rides with it (a bold keyword or parameter — README 151-153: an anchor may span several runs); a prose run
-    // ends the list, the bold runs before it stay signatures and the rest of the cell is the row's prose.
-    const anchor=acceptedAnchor(cell);
-    return anchor===null?[]:[anchor];
+    if (!headerNamesCommands) return [];
+    const chars = richText(cell.trim());
+    if (!chars?.length || chars[0].role !== 'bold') return [];
+    // apv-manual-cell@1: only top-level plain separator runs split signatures.
+    // Parameter delimiters and emphasis are parsed before separators; no prose vocabulary is consulted.
+    const render = (part: Rich[]): string => {
+      let text = '', role: Role = 'plain';
+      const marker = (value: Role) => value === 'bold' ? '**' : value === 'italic' ? '*' : '';
+      for (const item of part) {
+        if (item.role !== role) {text += marker(role) + marker(item.role); role = item.role;}
+        text += item.ch === '*' || item.ch === '\\' ? '\\' + item.ch : item.ch;
+      }
+      return text + marker(role);
+    };
+    const anchors: Anchor[] = [];
+    const push = (part: Rich[]) => {const anchor = parseAnchor(render(part)); if (anchor) anchors.push(anchor);};
+    let start = 0;
+    const brackets: string[] = [];
+    for (let at = 0; at < chars.length;) {
+      const item = chars[at];
+      if (item.role === 'plain' && brackets.length === 0 && item.ch.trim() !== '') {
+        let end = at;
+        while (end < chars.length && chars[end].role === 'plain') end++;
+        const run = chars.slice(at, end).map(item => item.ch).join('').trim();
+        if ([...run].every(ch => ch.trim() === '' || '与和及或、,，/／'.includes(ch))) {
+          push(chars.slice(start, at)); start = end; at = end; continue;
+        }
+        // A plain parameter group belongs to this signature; any other plain run is remaining prose.
+        if (!'<[{'.includes(item.ch)) {push(chars.slice(start, at)); return anchors;}
+      }
+      if ('<[{'.includes(item.ch)) brackets.push(item.ch);
+      else if ('>]}'.includes(item.ch)) {
+        const expected = item.ch === '>' ? '<' : item.ch === ']' ? '[' : '{';
+        if (brackets.pop() !== expected) return [];
+      }
+      at++;
+    }
+    if (brackets.length) return [];
+    push(chars.slice(start));
+    return anchors.filter(anchor => !(anchor.words.length === 1 && current !== null && (
+      current.params.some(param => param.name === anchor.words[0]) || current.variantTails?.includes(anchor.words[0])
+    )));
   };
 
   /** The rows of a pipe table, or null when the block is not one (grid, multiline and simple tables are not split). */
@@ -765,6 +811,7 @@ function fromMarkdown(model: MarkdownModel, heads: ReadonlySet<string> | null, o
           const rowEntry = textEntry({ path: placed ?? sectionPath(value, block.section), statement: row.cells.join(' | '), block: 'table', section: block.section, fragments: [rowFragment], noLiterals: true });
           rowEntry.data.signature_literals=found.map(({anchor:some})=>({primary:some.words.join(' '),alternatives:[...new Set((positiveVariantsOf(some)??[some.words]).map(words=>words.join(' ')))].sort(compareText)}));
           const signatureCells=new Set(found.map(item=>item.cell));
+          putLiterals(rowEntry, 'paragraph', row.cells.filter((_, index) => !signatureCells.has(index)).join(' '));
 
           split.push(rowEntry);
         }

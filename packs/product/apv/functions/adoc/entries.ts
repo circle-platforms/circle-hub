@@ -130,7 +130,7 @@ export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): P
     // Link declarations read top-level literal fields. Keep the source literals as reference data, outside that input.
     const data = { ...entry.data, manual_name:options.name, reference_only: true } as Record<string, unknown>;
     const referenceData: Record<string, unknown> = {};
-    for (const field of ['command_literals', 'signature_literals']) {
+    for (const field of ['command_literals', 'signature_literals', 'command_mentions']) {
       if (Object.hasOwn(data, field)) { referenceData[field] = data[field]; delete data[field]; }
     }
     const ownBlocks=entry.fragments.flatMap(fragment=>{const block=bySelector.get(fragment.selector)?.block;return block?[block]:[];});

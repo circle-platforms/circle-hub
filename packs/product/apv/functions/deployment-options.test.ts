@@ -20,8 +20,8 @@ test('an explicit null floor and omitted synthetic floor impose no lower line bo
  assert.deepEqual(caseIndexOptions({case_index:true,min_line:'10.6.2'}),{on:true,minLine:'10.6.2',notes:[]});
 });
 test('only supplied page words extend the mainline grammar and the sync plan uses them',()=>{
- const name='rel_apv_10_6_demoqualifier';
- assert.equal(parsePageName(name)?.kind,'customer');
+ const name='rel_apv_10_8_demoqualifier';
+ assert.equal(parsePageName(name),null, 'an undeclared page suffix has no inferred customer classification');
  assert.equal(parsePageName(name,['demoqualifier'])?.kind,'mainline');
  const index=html(`<a href="${name}.html">Synthetic listing</a>`);
  assert.equal(planSync({index}).pages.length,0);

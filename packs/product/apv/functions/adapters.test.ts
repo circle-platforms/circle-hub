@@ -238,8 +238,10 @@ describe('the producers', () => {
   it('command tree: definitions at /commands/<words> with typed overloads', () => {
     const out = commandTree({ build: knownBuild, slots: { tree: slot('xml@1', xml(ADAPTER_XML)) }, params: {} });
     const recovered = commandTree({build: knownBuild, slots: {tree: slot('xml@1', xml(fixtureBytes('command-tree.xml')))}, params: {}});
-    assert.deepEqual(recovered.entries, []);
-    assert.ok(recovered.warnings.some(warning => warning.includes('缺完整权威 XML') && warning.includes('下一步')));
+    assert.ok(recovered.entries.length > 5, 'the repaired synthetic XML is authoritative again');
+    const malformed = commandTree({build: knownBuild, slots: {tree: slot('xml@1', xml('<commands><item name="demo" help_string="a "bad" description"/></commands>'))}, params: {}});
+    assert.deepEqual(malformed.entries, []);
+    assert.ok(malformed.warnings.some(warning => warning.includes('缺完整权威 XML') && warning.includes('下一步')));
     assert.ok(ProducerOutput.safeParse(out).success, JSON.stringify(ProducerOutput.safeParse(out).error?.issues.slice(0, 2)));
     assert.ok(out.entries.length > 5 && out.entries.every((e) => e.kind === 'definition' && e.path?.startsWith('/commands/')));
     assert.deepEqual(commandTree({ build: knownBuild, slots: { tree: null }, params: {} }), { entries: [], warnings: ['没有命令树'] });
@@ -273,7 +275,7 @@ describe('the producers', () => {
     const note = out.entries.find(e => e.fragments[0].selector === 'b/7/基本配置');
     assert.ok(note?.statement.includes('demo pool create'));
     const facts = manualRelations(out, commandCatalog(xml(ADAPTER_XML)).catalog);
-    assert.deepEqual(facts.drift, [], 'broken signatures and prose mentions cannot establish drift');
+    assert.deepEqual(facts.drift.map(group => group.literal), ['Box(config)#demo route static 192.0.2.0 255.255.255.0 192.0.2.1 permanent'], 'only the whole unparsed structural example line drifts; no prompt stripping or prose extraction');
     assert.ok(!out.warnings.some((warning) => warning.includes('漂移')));
     // Without the tree slot no unchecked command path is created.
     const without = manual({ build: knownBuild, slots: { cli: slot('markdown@1', model), app: null }, params: {} });
