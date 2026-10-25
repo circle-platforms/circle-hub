@@ -1118,6 +1118,6 @@ systems have not been read or validated; the integrator supplies the actual bran
 
 ## adoc 文件组的解析声明
 
-`adoc_apv_files`、`adoc_nsae_files` 的成员在产品输入声明中固定 `parser: text@1`。SVN 返回 `application/octet-stream` 时，Hub 按此声明解析并保留 text@1 的 NUL 计数；原件与读取清单仍记服务器原始媒体类型，生产报告注明差异。不按 `.adoc` 扩展名猜测，也不将通用 SVN 文件路由强制为文本。未声明来源继续按媒体类型选择解析器；声明无效时拒绝，不自动回退。APV 版本 1.7.24，变更说明见[任务页](../../../docs/hub-r4-tasks/adoc-declared-text.md)。
+`adoc_apv_files`、`adoc_nsae_files` 的成员在产品输入声明中固定 `parser: text@1`。SVN 返回 `application/octet-stream` 时，Hub 按此声明解析并保留 text@1 的 NUL 计数；原件与读取清单仍记服务器原始媒体类型，生产报告注明差异。不按 `.adoc` 扩展名猜测，也不将通用 SVN 文件路由强制为文本。未声明来源继续按媒体类型选择解析器；声明无效时拒绝，不自动回退。APV 版本 1.7.25（发布版本补正），变更说明见[任务页](../../../docs/hub-r4-tasks/adoc-declared-text.md)。
 
 文件组原有的子目录清单是辅助成员，也按 text@1 读取。只有父清单的结构字段明确指定该目录身份时，包才对其完整 UTF-8 JSON 原件做结构读取与摘要核对；正文不参与格式判断。子目录缺失、错误 JSON 或摘要不符仍拒绝整组，旧根不动。
