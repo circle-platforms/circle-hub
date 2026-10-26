@@ -283,6 +283,7 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
       await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
       await bindLegacyParser({registry:hub.registry,records},admin.principal,'xml@1',skill.id+'@'+skill.version);
     }
+    await hub.deps.parsers.refresh?.();
     const published: PackVersionInfo[] = [];
     const repository = options.repositoryPacks ?? true;
     const directories = [
