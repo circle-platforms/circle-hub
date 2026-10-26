@@ -62,6 +62,19 @@ test('an unrepresentable Retry-After is a definite malformed reply, not an immed
   const result=await w.read();assert.equal(result.ok,false);if(result.ok)return;assert.equal(result.code,'SOURCE_MALFORMED');assert.equal(w.calls(),1);assert.ok(result.manifest);
 });
 
+test('an unreachable read names the missing fact and the next step, and the caller text has no host',async t=>{
+  const w=await world(t,()=>{throw new Error('connect ECONNREFUSED 192.0.2.1:9');});
+  const result=await w.external();
+  assert.equal(result.ok,false);if(result.ok)return;
+  assert.equal(result.retry?.code,'SOURCE_UNREACHABLE');
+  assert.equal(result.inputError?.code,'SOURCE_RETRYABLE');
+  assert.match(result.inputError?.message??'',/连不上来源/);
+  assert.equal(result.inputError?.fix,'稍后用同样参数重新开始；仍失败请管理员核对资源地址与网络');
+  assert.match(result.reason,/circle-hub resource show /);
+  const shown=`${result.inputError?.message??''} ${result.inputError?.fix??''}`;
+  assert.equal(shown.includes('192.0.2.1'),false);
+  assert.equal(shown.includes('ECONNREFUSED'),false);
+});
 test('the external reader preserves the retry code and next eligible time',async t=>{
   const w=await world(t,()=>new Response('{}',{status:503}));const result=await w.external();
   assert.equal(result.ok,false);if(result.ok)return;assert.equal(result.retry?.code,'SOURCE_HTTP_STATUS');assert.equal(result.retry?.attempts,3);assert.ok(Date.parse(result.retry!.at)>w.now());

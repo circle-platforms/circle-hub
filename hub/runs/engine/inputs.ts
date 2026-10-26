@@ -183,14 +183,18 @@ export async function bindInputs(
     }
     const read = merged ?? (requestId.startsWith('knowledge:') ? await completeKnowledgeView(requestId,readContext,ctx.deps.external,records) : await ctx.deps.external.read(requestId,readContext));
     if (!read.ok) {
-      if (read.inputError !== undefined) {
-        if(read.inputError.code)errors.push(protocolError(read.inputError.code,read.inputError.message,{path,fix:read.inputError.fix}));
-        else schemaError(path, read.inputError.message, read.inputError.fix);
+      if(read.retry) {
+        const step = read.inputError?.fix;
+        const message = step === undefined
+          ? `缺少输入 ${id} 的读取结果；下一次重读时间 ${read.retry.at}，按原输入重读`
+          : `${read.inputError?.message ?? `缺少输入 ${id} 的读取结果`}；下一次重读时间 ${read.retry.at}，${step}`;
+        errors.push(protocolError('SOURCE_RETRYABLE', message, {path, ...(step === undefined ? {} : {fix: step})}));
         notes.push(`${path}: ${read.reason}`);
         return null;
       }
-      if(read.retry) {
-        errors.push(protocolError('SOURCE_RETRYABLE',`缺少输入 ${id} 的读取结果；下一次重读时间 ${read.retry.at}，按原输入重读`,{path}));
+      if (read.inputError !== undefined) {
+        if(read.inputError.code)errors.push(protocolError(read.inputError.code,read.inputError.message,{path,fix:read.inputError.fix}));
+        else schemaError(path, read.inputError.message, read.inputError.fix);
         notes.push(`${path}: ${read.reason}`);
         return null;
       }
