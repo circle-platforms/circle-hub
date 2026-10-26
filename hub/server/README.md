@@ -279,6 +279,7 @@ circle-hub user create <name> [--role <permission_role>]              # no admin
 circle-hub user list | user disable <user> | user enable <user>
 circle-hub token issue <user> [--label <l>] [--raw] | token revoke <tok_…> | token list [<user>]
 circle-hub logs export [--from <time>] [--to <time>] [--user <u>] [--tool <t>] [--run <r>] [--out <file>] [--as <account>]
+circle-hub run list [--pack <id>] [--user <user>] [--state 受理|未受理|进行中] [--since <ISO time>] [--unknown] [--limit <N>] [--cursor <cursor>] [--json] [--as <admin>]
 circle-hub run show <run> [--json] [--as <account>]                   # the assembly module's assembleCommand
 circle-hub <platform command>                                         # init, db, key, service, backup, restore, deploy, rollback, rehearse, status
 circle-hub pack|resource|secret|knowledge|init-admin|operator-token … # registered by the assembly module
@@ -295,7 +296,16 @@ token: a lost or dead item is replaced by `operator-token reissue` (assembly REA
 or `user disable` cuts off the very token the command acted with, the command says so on stderr with the way back.
 **Read-only built-ins** that read as an account (`logs export`, `run show`) follow the assembly's listings
 (`operatorViewer`): they read as the operator token's account when there is one (`--as` must then name it) and take it
-out of the environment; without a token as `--as <name or id>`, or the only enabled admin. `user list` and `token list`
+out of the environment; without a token as `--as <name or id>`, or the only enabled admin. `run list` is also read-only,
+but only an administrator may run it: a non-admin token is refused before any run is read. It lists stored runs through
+the existing run and validation-result indexes (no new storage) and does not print submission bodies, quotes or
+credentials. Each line is the run id, `pack@version`, the initiating user (the runner, or 未声明 when the run has none),
+the start time, the verification state of the newest validation result (受理, 未受理, or 进行中 when there is no result),
+terminal counts per requirement, and the unknown count. Those counts come from the newest accepted result; without one
+they are 无 and 0. `--limit` defaults to 50 and stops at 500. Rows are newest first. When more rows match, the text ends
+with the next-page cursor and `--json` returns it as `next`; the command does not drop the rest quietly. `--pack` is the
+pack id (`@version` is ignored). `--user` is a name or id. `--since` is an ISO time on `started_at`. `--unknown` keeps
+rows whose unknown count is at least 1. `--cursor` continues the same filters. `user list` and `token list`
 show every account. A token is printed exactly once, when it is issued (or bootstrapped); `token issue --raw` prints the
 token and a newline on stdout and nothing else there (the confirmation goes to stderr), so `TOKEN=$(circle-hub token issue
 alice --raw)` captures it without it reaching a log; listings never show token values. `logs export` writes the viewer's
@@ -303,7 +313,7 @@ view as JSON Lines (an admin's: every call with its admin note; a user's: their 
 new file with mode 0600 (never overwritten). `run show` builds its dependencies with the assembly module's
 `assembleCommand` (no vault master key, no sandbox probe, its log lines on the CLI's stderr), never serve's `assemble`; a
 module without it refuses with `AssemblyMissingError`. Stored text the built-ins print (item ids and labels from users'
-documents, build and pack names, user names, token labels) passes `terminalSafe`, and their JSON (`run show --json`, `logs
+documents, build and pack names, user names, token labels) passes `terminalSafe`, and their JSON (`run show --json`, `run list --json`, `logs
 export`) `jsonSafe`, which writes the DEL, C1, line-separator and bidirectional characters JSON.stringify leaves raw as
 `\u` escapes (the same JSON values). `registerCommand(command)` (or `registerCommands(register)` of the assembly module)
 adds commands; built-in and platform names cannot be replaced. Exit codes: 0 ok, 1 failure, 2 usage (platform status
