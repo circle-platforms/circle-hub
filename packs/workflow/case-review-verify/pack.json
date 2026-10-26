@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-review-verify",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "kind": "workflow",
   "title": "测试脑图评审（独立复核）",
   "description": "按团队的复核方法（review-verifier）独立复核 case-review 的初评：逐条处置初评发现、用七个探针找遗漏、质疑等级，给出 PASS、PARTIAL 或 FAIL 和最终等级；只能由与初评不同的会话和模型完成",

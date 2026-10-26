@@ -5,6 +5,11 @@ map with the team's method (the earlier skill `test-list-review`), the Hub judge
 conclusion is left to the independent verification pack `case-review-verify`. Model elements T01 T02 W02 W03 W05 C03-C08 K01
 K04. Everything product-specific comes from the product pack the run binds (names, catalogs); this pack names no product.
 
+## 1.1.26
+
+- Reissue the A1 type-only import and the merged manifest as a new immutable version. The review rules are unchanged from
+  1.1.25.
+
 ## 1.1.25
 
 - Quotation is exact contiguous text, including every whitespace character. The core model already required this; the

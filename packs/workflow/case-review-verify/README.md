@@ -7,6 +7,11 @@ draft's lineage (`predecessor` = the draft run); its input is the draft's valida
 reference (`rec:`), so the receiver inherits the items and references, not the judgments, and re-checks on its own boundary.
 Model elements A04 (independence), W02 W03 W05, C05 (checks with samples), T02.
 
+## 1.1.11
+
+- Reissue the A1 type-only import and the merged manifest as a new immutable version. The verification rules are unchanged
+  from 1.1.10.
+
 ## 1.1.10
 
 - `workflow.json` now declares `predecessor: "required"`; a verifier cannot start without an accepted draft predecessor.
