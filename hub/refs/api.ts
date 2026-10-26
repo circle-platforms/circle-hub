@@ -47,8 +47,7 @@ export {
 } from './parser.ts';
 export type { ByteRange, Fragment, JsonObject, JsonValue, ListOptions, ParsedDocument, ParseLimits, ParseOptions, Parser, ParserRegistry } from './parser.ts';
 
-export { createDefaultRegistry, defaultParsers, htmlParser, jsonParser, markdownParser, textParser, xmlParser } from './parsers/index.ts';
-export type { XmlElement, XmlModel } from './parsers/xml.ts';
+export { createDefaultRegistry, defaultParsers, htmlParser, jsonParser, markdownParser, textParser } from './parsers/index.ts';
 export type { HtmlBlock, HtmlLink, HtmlModel, HtmlRun, HtmlWrapper } from './parsers/html.ts';
 export type { MarkdownBlock, MarkdownModel, MarkdownSection } from './parsers/markdown.ts';
 export type { TextModel } from './parsers/text.ts';

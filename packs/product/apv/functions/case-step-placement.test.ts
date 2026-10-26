@@ -1,8 +1,7 @@
-import {kityminderParser} from "../../../../hub/testing/parsers.ts";
+import {kityminderParser, xmlParser} from "../../../../hub/testing/parsers.ts";
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createHash} from 'node:crypto';
-import {xmlParser} from "../../../../hub/refs/api.ts";
 import {cases} from './cases.ts';
 const sha=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex');
 test('commands in steps and expected results use the title command resolver',()=>{

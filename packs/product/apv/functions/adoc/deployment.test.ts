@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import type {ProducerInput} from '../../../../../contracts/src/product.ts';
-import {jsonParser,textParser,markdownParser,xmlParser} from '../../../../../hub/refs/api.ts';
+import {jsonParser,textParser,markdownParser} from '../../../../../hub/refs/api.ts';
+import {xmlParser} from '../../../../../hub/testing/parsers.ts';
 import {sha256} from './input.ts';
 import {addAdocSources,adocRole,familyManual,ManualSourceError,directoryOf} from './deployment.ts';
 const root='synthetic/10.8.1';const revision='17';
