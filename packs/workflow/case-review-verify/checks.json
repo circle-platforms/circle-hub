@@ -50,6 +50,22 @@
       "judges": "artifact_under_verification",
       "tier": "blocking",
       "basis": "决定 35：建议在终稿视图里对应原始用例或测试子项；每条写补、因为、期望三段，至少一个根据指向被复核脑图节点；问题挂在第一个已处理条目，按原 cross_item 指针返回修复"
+    },
+    {
+      "id": "review_scope",
+      "title": "保留初评的整份识别范围",
+      "function": {
+        "module": "functions/verify.ts",
+        "export": "reviewScopeCheck"
+      },
+      "applies": "run",
+      "subject": {
+        "module": "functions/review-scope.ts",
+        "export": "reviewScopeSubject"
+      },
+      "judges": "subject",
+      "tier": "blocking",
+      "basis": "复核只接受初评函数事实中的完整识别范围，并随 final 的 Hub 支持事实保存；缺快照不得声称整份覆盖"
     }
   ]
 }

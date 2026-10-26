@@ -1,7 +1,7 @@
 {
   "schema": "quote@1",
   "origin": "决定：case-review 工作流包 findings 要求项的逐字引用（docs/hub-r4-architecture.md 第 6 节）；被判对象是一个条目的提交（item、slots）",
-  "description": "审查发现里的每段引用都要逐字出现在它的引用所指的片段里（只忽略空白差异）",
+  "description": "审查发现里的每段引用都要逐字出现在它的引用所指的片段里；全部空白、大小写、标点、字符宽度和 Unicode 规范化形式都不能改",
   "tier": "blocking",
   "basis": "要求项 findings：引用逐字出现在被判对象和期望来源里",
   "item": "/item",

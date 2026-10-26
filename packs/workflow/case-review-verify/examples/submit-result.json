@@ -44,12 +44,12 @@
   "cross_item": [
     {
       "nature": "judgment",
-      "statement": "结论理由：初评基本正确，但遗漏了反向用例，补充了一条新发现；对初评等级的质疑：初评 P4 合适",
+      "statement": "结论理由：初评基本正确，但遗漏了反向用例，补充了一条新发现；对初评等级的质疑：初评 P2 合适",
       "grounds": [
         "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6"
       ],
       "code": "PARTIAL",
-      "rank": "P4"
+      "rank": "P2"
     },
     {
       "nature": "judgment",

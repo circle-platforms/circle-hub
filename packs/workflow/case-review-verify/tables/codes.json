@@ -42,6 +42,16 @@
       "code": "case-review-verify.draft_level_missing",
       "when": "初评缺少等级",
       "fix": "初评补等级并重交后再开复核"
+    },
+    {
+      "code": "case-review-verify.draft_scope_missing",
+      "when": "初评没有唯一、有效且由 Hub 函数核验的整份识别范围",
+      "fix": "用当前初评包重新初评并取得受理结果，再以它为前驱独立复核；不要由模型补写覆盖清单"
+    },
+    {
+      "code": "case-review-verify.draft_scope_mismatch",
+      "when": "初评条目、源文件或本次识别参数与冻结范围不一致",
+      "fix": "继承初评的识别参数和原始条目；需要改变规则时按新规则重新初评整份目标"
     }
   ],
   "warnings": [
@@ -101,6 +111,26 @@
       "code": "case-review-verify.pass_with_refuted",
       "when": "检查 verdict：结论 PASS 却推翻了初评发现",
       "fix": "结论改为 FAIL 或 PARTIAL"
+    },
+    {
+      "code": "case-review-verify.pass_with_partial",
+      "when": "检查 verdict：结论 PASS 却有部分正确、需要修正的初评发现",
+      "fix": "需要修正即 PARTIAL；保留 partial 处置并把结论改为 PARTIAL"
+    },
+    {
+      "code": "case-review-verify.severity_missing",
+      "when": "仍成立、部分修正或新增的发现缺少有效的严重程度",
+      "fix": "为这些发现写 critical、major 或 minor，再核最终等级"
+    },
+    {
+      "code": "case-review-verify.level_severity_mismatch",
+      "when": "最终仍成立、部分修正或新增发现的最重严重度与最终 P 等级区间不一致",
+      "fix": "按最重发现把等级改到允许区间：critical 为 P6–P7，major 为 P3–P5，minor 为 P0–P2；被推翻项不再决定等级"
+    },
+    {
+      "code": "case-review-verify.scope_conflict",
+      "when": "同一次复核有多份初评识别范围，不能确定唯一覆盖清单",
+      "fix": "用当前初评和复核重新产生唯一范围快照；不要由模型选择或拼接"
     },
     {
       "code": "case-review-verify.pass_with_new_finding",

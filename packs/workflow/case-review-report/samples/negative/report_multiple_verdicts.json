@@ -1,0 +1,41 @@
+{
+  "id": "report_multiple_verdicts",
+  "source": "author",
+  "check": "report",
+  "note": "终稿不能同时给两个结论，即使其中一个与整体一致",
+  "subject": {
+    "items": [
+      {
+        "id": "report",
+        "label": "评审终稿",
+        "fields": {
+          "overall": {
+            "verdict": "PARTIAL",
+            "level": "P5"
+          }
+        }
+      }
+    ],
+    "cross_item": [
+      {
+        "nature": "judgment",
+        "statement": "与整体一致的结论",
+        "code": "PARTIAL",
+        "rank": "P5"
+      },
+      {
+        "nature": "judgment",
+        "statement": "多余的另一个结论",
+        "code": "PASS",
+        "rank": "P5"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review-report.multiple_verdicts",
+      "tier": "blocking"
+    }
+  ]
+}

@@ -3,13 +3,16 @@
 // record { kind, schema, provenance, created_at, body }, or the validation result itself). The items are the draft's items,
 // located in the target by the selectors of their draft locations; the target must be the very source the draft judged
 // (same digest). Each item carries its draft findings in fields.draft_findings (with the rec: reference of each claim, the
-// reference a disposition names in data.finding) and the draft level in fields.draft_level; the groups carry the draft level
-// ({ kind: draft_level }) and the draft ({ kind: draft }), frozen with the run. The receiver inherits the items and the
-// references, not the judgments: the checks of this pack re-run on its own boundary.
+// reference a disposition names in data.finding) and the draft level in fields.draft_level. The groups carry the draft level
+// ({ kind: draft_level }), the draft ({ kind: draft }) and the initial Hub function fact's complete scope
+// ({ kind: case_review_scope }): source, document, effective recognition parameters, expected items and selected slice items.
+// Missing scope or changed recognition is refused, not inferred from the remaining nodes. The receiver inherits items and
+// references, not judgments: this pack re-checks on its own boundary.
 import type {Attribution} from '../../../../contracts/generated/vocabulary.ts';
 import type { BoundInput, ProjectedItem, ProjectionOutput } from '../../../../contracts/src/pack.ts';
 import { failure, guarded, isRecord, warningSink, PACK } from './common.ts';
 import { clip, collapseWhitespace } from './text.ts';
+import { readReviewScope, REVIEW_SCOPE_GROUP, type ReviewScope } from './review-scope.ts';
 import type { KityMinderModel, PackError, Warning } from './types.ts';
 
 const SOURCE_ERROR='author_input' satisfies Attribution;
@@ -174,55 +177,31 @@ export function projection(input: unknown): ProjectionOutput {
   }
   if (draftLevel === null || !draftLevel.rank?.trim()) return failure('draft_level_missing','初评的验证结果缺少等级（跨条目主张 level 的 rank）；本次不能开始复核','先让初评方补等级和理由并重交初评；用新的受理结果重开复核，保留当前初评记录引用作定位');
 
+  const scopeFacts = cross.filter(claim => isRecord(claim) && claim.requirement === LEVEL && isRecord(claim.qualifier) && claim.qualifier.nature === 'fact' && isRecord(claim.warrant) && claim.warrant.producer === 'function' && isRecord(claim.statement) && claim.statement.verdict === 'support' && isRecord(claim.statement.data) && Object.hasOwn(claim.statement.data, 'review_scope'));
+  if (scopeFacts.length !== 1) return failure('draft_scope_missing', '初评没有唯一由 Hub 核验的完整用例识别范围，不能开始独立复核', '用当前版本重新初评并取得受理结果，再以新结果为前驱独立复核；不要由模型补写覆盖清单');
+  const scopeFact = scopeFacts[0];
+  const scope = readReviewScope(isRecord(scopeFact.statement) && isRecord(scopeFact.statement.data) ? scopeFact.statement.data.review_scope : null);
+  if (scope === null) return failure('draft_scope_missing', '初评的完整用例识别范围结构无效，不能开始独立复核', '用当前版本重新初评；若范围仍不可读，请包维护人修复投影和范围核验，不要手工补写');
+  if (scope.source !== target.sha256) return failure('target_mismatch', '初评冻结的识别范围属于另一份源文件', `把 target 绑定为 src:${scope.source}，或按当前 target 重新初评`);
+  const expectedById = new Map(scope.expected.map(entry => [entry.item, entry.location]));
+  const actualSelected = new Set(items.map(item => item.id));
+  const selectionDiffers = actualSelected.size !== scope.selected.length || scope.selected.some(item => !actualSelected.has(item)) || items.some(item => expectedById.get(item.id) !== `src:${item.sha}/kityminder@1/${item.selector}`);
+  if (selectionDiffers) return failure('draft_scope_mismatch', '初评交付条目与冻结的本块范围或整份预期条目不匹配', '用当前初评投影产生的受理结果重开复核，不手工编辑条目、识别参数或覆盖清单');
   const rawParams = isRecord(input.parameters) ? input.parameters : {};
-  const hasTaggedChildOrP2 = new Uint8Array(model.nodes.length);
-  for (let k = model.nodes.length - 1; k >= 0; k--) {
-    const n = model.nodes[k];
-    const data = n.data as Record<string, unknown> | undefined;
-    const tagged = Array.isArray(data?.resource) && data.resource.length > 0;
-    const p2 = data?.priority === 2;
-    if (n.parent !== null && (hasTaggedChildOrP2[k] === 1 || tagged || p2)) {
-      hasTaggedChildOrP2[n.parent] = 1;
-    }
+  for (const [name, value] of Object.entries(scope.parameters)) {
+    if (Object.hasOwn(rawParams, name) && rawParams[name] !== value) return failure('draft_scope_mismatch', `参数 ${name} 与初评冻结的识别规则不一致`, `把 ${name} 改为 ${String(value)}，或不写以继承初评；若确需改变识别规则，按新规则重新初评并覆盖全部条目`);
   }
-  const isCandidateNode = (k: number): boolean => {
-    const n = model.nodes[k];
-    const data = n.data as Record<string, unknown> | undefined;
-    const tagged = Array.isArray(data?.resource) && data.resource.length > 0;
-    if (tagged) return false;
-    const hasChildren = Array.isArray(n.children) && n.children.length > 0;
-    return data?.priority === 2 && hasChildren && hasTaggedChildOrP2[k] === 0;
-  };
   const isItemUntagged = (item: DraftItem): boolean => {
     const k = bySelector.get(item.selector);
     if (k === undefined) return false;
     const data = model.nodes[k].data as Record<string, unknown> | undefined;
     return !Array.isArray(data?.resource) || data.resource.length === 0;
   };
-  const hasUntaggedInDraft = items.some(isItemUntagged);
-  let modelHasOmittedCandidate = false;
-  const draftSelectors = new Set(items.map((i) => i.selector));
-  for (let k = 0; k < model.nodes.length; k++) {
-    if (isCandidateNode(k) && !draftSelectors.has(model.nodes[k].selector)) {
-      modelHasOmittedCandidate = true;
-      break;
-    }
-  }
-
-  const caseRule: 'marked' | 'tagged' =
-    typeof rawParams.case_rule === 'string'
-      ? rawParams.case_rule === 'tagged' ? 'tagged' : 'marked'
-      : hasUntaggedInDraft
-        ? 'marked'
-        : modelHasOmittedCandidate
-          ? 'tagged'
-          : 'marked';
-
+  const caseRule = scope.parameters.case_rule;
   const filteredItems = caseRule === 'tagged' ? items.filter((item) => !isItemUntagged(item)) : items;
   const marked_only = caseRule === 'marked' ? filteredItems.filter(isItemUntagged).length : 0;
   const ruleSummary = `用例规则：${caseRule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${marked_only} 个只靠标记识别（没有标签）`;
 
-  // Items in document order of the target.
   filteredItems.sort((a, b) => (bySelector.get(a.selector) ?? 0) - (bySelector.get(b.selector) ?? 0));
   const out: ProjectedItem[] = filteredItems.map((item) => {
     const k = bySelector.get(item.selector) as number;
@@ -248,7 +227,8 @@ export function projection(input: unknown): ProjectionOutput {
     };
   });
   const groups: Record<string, unknown>[] = [
-    { kind: 'draft_level', ...(draftLevel !== null ? draftLevel : { reference: null, rank: null, text: '' }) },
+    { kind: 'draft_level', ...draftLevel },
+    { kind: REVIEW_SCOPE_GROUP, data: { review_scope: scope satisfies ReviewScope } },
     {
       kind: 'draft',
       record,

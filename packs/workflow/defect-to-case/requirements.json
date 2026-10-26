@@ -94,7 +94,7 @@
     {
       "key": "grounded",
       "name": "期望结果依据",
-      "description": "每个期望结果带有逐字引文，引自本条缺陷修复说明（PLM 资源 settings.bug_fix_field 经 content.fix_field 给出的字段，src: 原件的 json@1/p/fields/<字段>；或 settings.bug_fix_actions 收进 content.fix_notes 的某条 comment，src: 原件的 json@1/p/fix_notes/<序号>/comment）或 manual 槽绑定的同版本线手册 src: 片段；两处修复说明都没有才拒绝并点名设置；tree:/rec: 须改引对应原件的 src: 片段；引用未解析、缺少引文或引文不符为违规；期望结果文字必须是各自引文的非空逐字片段（只忽略空白差异），改写为阻断违规，退回修复，最多两轮",
+      "description": "每个期望结果带有逐字引文，引自本条缺陷修复说明（PLM 资源 settings.bug_fix_field 经 content.fix_field 给出的字段，src: 原件的 json@1/p/fields/<字段>；或 settings.bug_fix_actions 收进 content.fix_notes 的某条 comment，src: 原件的 json@1/p/fix_notes/<序号>/comment）或 manual 槽绑定的同版本线手册 src: 片段；两处修复说明都没有才拒绝并点名设置；tree:/rec: 须改引对应原件的 src: 片段；引用未解析、缺少引文或引文不符为违规；期望结果文字必须是各自引文的非空逐字片段，全部空白、大小写、标点、字符宽度和 Unicode 规范化形式都不能改，改写为阻断违规，退回修复，最多两轮",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",

@@ -48,7 +48,7 @@ const ownQuoteOf = (item: RunSummary['items'][number]): { reference: string; tex
 };
 
 /** A PASS block keeps the draft's P3 and verifies its finding using a new quote from the target. */
-const passDraftOf = (run: RunSummary) => draft(run,new Map(run.items.map(item => [item.id,[finding(item,{text:'覆盖缺口：缺少重复执行的边界用例',rank:'minor'})]])),{cross:[level('P3')]});
+const passDraftOf = (run: RunSummary) => draft(run,new Map(run.items.map(item => [item.id,[finding(item,{text:'覆盖缺口：缺少重复执行的边界用例',rank:'major'})]])),{cross:[level('P3')]});
 
 /** The reference addresses the stored model final, not its pointer into the submitted cross_item list. */
 const finalReferenceOf = async (run: string, verdict: string, rank: string): Promise<string> => {
@@ -101,7 +101,7 @@ const verifyBlock = async (options: {
           return {
             text,
             code,
-            rank: 'minor',
+            rank: 'major',
             location: it.location,
             quotes: [options.verdict === 'PASS' ? ownQuoteOf(it) : { reference: it.location, text: it.label }],
             data: { finding: f.reference },
@@ -182,7 +182,7 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
       product: bed.product.names[0],
       version: bed.site.LINE,
       inputs: { subject: { external: `agile:mindmap:${DOCUMENTS.review}` } },
-      parameters: { slice: { from: 2, to: 2 } },
+      parameters: { slice: { from: 2, to: oracleCases(document).length } },
     });
     const probe = draftB.items[0]!;
     const submittedB = await client.call('submit_result', draft(draftB, new Map([[probe.id, [finding(probe, { text: '覆盖缺口：恢复出厂没有用例', code: 'coverage_gap', rank: 'major' })]]])));
@@ -201,6 +201,7 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
 
     const report = reportItemOf(reportRun);
     assert.deepEqual(report.fields.overall, { verdict: 'PARTIAL', level: 'P5', reference: await finalReferenceOf(blockB.run,'PARTIAL','P5') }, 'the worst of the blocks with its level');
+    assert.deepEqual(report.fields.review_coverage, { expected: oracleCases(document).length, delivered: oracleCases(document).length, overlaps: [], missing: [] }, 'both slices reconcile the complete target, not merely the supplied blocks');
     assert.match(report.summary??'',/^整体结论码 PARTIAL、等级 P5（最差那块的，照抄）；评审表/);
     assert.match(started.text, /整体结论码 PARTIAL、等级 P5（最差那块的，照抄）/);
     assert.match(started.text,/复核发现 1 条；推翻 0 条/);
@@ -223,16 +224,33 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
     assert.ok(answer.out.result!.cross_item.some(claim => claim.statement.code === 'case-review-report.verdict_mismatch' && /PARTIAL/.test(String(claim.statement.data?.fix))),'the receipt carries the computed verdict in the final check fact repair');
   });
 
+  test('a report cannot carry two verdicts or an evidence gap at another level', async () => {
+    const answer = await client.call('submit_result', {
+      run: reportRun.run,
+      model: REPORTER,
+      items: reportRun.items.map((it) => ({ item: it.id, handling: 'handled', slots: {} })),
+      cross_item: [
+        { nature: 'judgment', statement: '与整体一致的结论', grounds: [], code: 'PARTIAL', rank: 'P5' },
+        { nature: 'judgment', statement: '多余的另一个结论', grounds: [], code: 'PASS', rank: 'P5' },
+        { nature: 'judgment', statement: '缺少合成足迹；下一步：补充版本化观察', grounds: [], code: 'gap', rank: 'P4' },
+      ],
+    });
+    assert.equal(answer.isError, false, answer.text.slice(0, 500));
+    assert.equal(answer.out.acceptance, 'accepted', answer.text.slice(0, 500));
+    const refutes = await refutesOf(reportRun.run);
+    assert.ok(refutes.includes('case-review-report.multiple_verdicts'), refutes.join(', '));
+    assert.ok(refutes.includes('case-review-report.gap_level_mismatch'), refutes.join(', '));
+  });
+
   test('a single-block report needs no per-finding citation and excludes refuted findings from its table', async () => {
     // A fresh block pair with one refuted finding: block C has the finding, block D refutes it (PARTIAL).
     const draftC = await startReview(client, {
       product: bed.product.names[0],
       version: bed.site.LINE,
       inputs: { subject: { external: `agile:mindmap:${DOCUMENTS.review}` } },
-      parameters: { slice: { from: 3, to: 3 } },
     });
     const itemC = draftC.items[0]!;
-    await client.call('submit_result', draft(draftC, new Map([[itemC.id, [finding(itemC, { text: '字面问题：标题重复', code: 'literal_issue', rank: 'minor' })]]])));
+    await client.call('submit_result', draft(draftC, new Map([[itemC.id, [finding(itemC, { text: '字面问题：标题重复', code: 'literal_issue', rank: 'major' })]]])));
 
     const independentVerifier=await bed.connect(bed.reviewer,'synthetic-refutation-independent');
     const startedD = await independentVerifier.call('start_run', {
@@ -301,16 +319,16 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
   });
 
   test('two blocks retain all 44 findings in the table while a concise uncited report is accepted', async () => {
-    // Block E: 23 cases (slice 10..32), 23 findings (1 partial, 22 verified), verified PARTIAL P4
+    // Block E: 32 cases (slice 1..32); the last 23 have findings (1 partial, 22 verified), verified PARTIAL P4
     const draftE = await startReview(client, {
       product: bed.product.names[0],
       version: bed.site.LINE,
       inputs: { subject: { external: `agile:mindmap:${DOCUMENTS.review}` } },
-      parameters: { slice: { from: 10, to: 32 } },
+      parameters: { slice: { from: 1, to: 32 } },
     });
-    const findingsE = new Map(draftE.items.map((it, idx) => [
+    const findingsE = new Map(draftE.items.slice(9).map((it, idx) => [
       it.id,
-      [finding(it, { text: `覆盖缺口：边界用例未覆盖 E${idx + 1}`, code: 'coverage_gap', rank: 'minor' })],
+      [finding(it, { text: `覆盖缺口：边界用例未覆盖 E${idx + 1}`, code: 'coverage_gap', rank: 'major' })],
     ]));
     const submittedE = await client.call('submit_result', draft(draftE, findingsE));
     assert.equal(submittedE.isError, false, submittedE.text.slice(0, 400));
@@ -319,19 +337,19 @@ describe('scenario 26: the review report over blocks (steps 6 and 7 of the metho
       verdict: 'PARTIAL',
       level: 'P4',
       session: 'sess-s26-ve',
-      dispositionOf: (_ref, id) => (id === draftE.items[0]?.id ? 'partial' : 'verified'),
+      dispositionOf: (_ref, id) => (id === draftE.items[9]?.id ? 'partial' : 'verified'),
     });
 
-    // Block F: 22 cases (slice 33..54), 22 findings (1 refuted, 21 verified), verified PARTIAL P4
+    // Block F: 35 cases (slice 33..67); the first 22 have findings (1 refuted, 21 verified), verified PARTIAL P4
     const draftF = await startReview(client, {
       product: bed.product.names[0],
       version: bed.site.LINE,
       inputs: { subject: { external: `agile:mindmap:${DOCUMENTS.review}` } },
-      parameters: { slice: { from: 33, to: 54 } },
+      parameters: { slice: { from: 33, to: 67 } },
     });
-    const findingsF = new Map(draftF.items.map((it, idx) => [
+    const findingsF = new Map(draftF.items.slice(0, 22).map((it, idx) => [
       it.id,
-      [finding(it, { text: `覆盖缺口：恢复出厂未覆盖 F${idx + 1}`, code: 'coverage_gap', rank: 'minor' })],
+      [finding(it, { text: `覆盖缺口：恢复出厂未覆盖 F${idx + 1}`, code: 'coverage_gap', rank: 'major' })],
     ]));
     const submittedF = await client.call('submit_result', draft(draftF, findingsF));
     assert.equal(submittedF.isError, false, submittedF.text.slice(0, 400));
@@ -463,7 +481,7 @@ test('IPv4 subitem tables preserve original cells, dispositions, suggestions and
   assert.equal(decode(cells[1]),expected);
   assert.ok(decode(cells[4]).includes(suggestionText));
   assert.ok(actual.text.includes(longFinding));assert.match(actual.text,/子项上的建议：.*补：子项的新用例/);
-  assert.match(actual.text,/【部分正确·次要】/);assert.match(actual.text,/【新增·次要·边界用例缺口】/);
+  assert.match(actual.text,/【部分正确·主要】/);assert.match(actual.text,/【新增·次要·边界用例缺口】/);
   const counts=report.fields.review_counts as {total:{cases:number;findings:number;suggestions:number};subitems:unknown[]};
   assert.equal(counts.total.cases,cases.length);assert.equal(counts.total.findings,cases.length+1);assert.equal(counts.total.suggestions,2);assert.equal(counts.subitems.length,1);
 });

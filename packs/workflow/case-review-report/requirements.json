@@ -4,7 +4,7 @@
     {
       "key": "overall",
       "name": "整体结论与等级",
-      "description": "Hub 按各块复核结果算的整体结论，一个跨条目事实：各块取最差（FAIL 重于 PARTIAL 重于 PASS），等级取最差那块的等级；任何一块没有结论或不可读时整体记未知（缺输入），不猜；整份目标里有条目在任何一块都没交付时整体记未完成并在陈述里写出缺哪些条目。依据是各块结论的 rec: 引用",
+      "description": "Hub 按各块复核结果算的整体结论，一个跨条目事实：各块取最差（FAIL 重于 PARTIAL 重于 PASS），等级取最差那块的等级；任何一块没有结论或不可读时整体记未知（缺输入），不猜；以初评冻结、复核承接的源摘要、完整识别参数和整份预期条目对账，未进入任何块的条目也算遗漏，缺范围、重叠或遗漏时不得生成终稿",
       "target": "run",
       "required": true,
       "done_rule": "bookkeeping",
@@ -20,7 +20,7 @@
     {
       "key": "report",
       "name": "中文报告",
-      "description": "评审终稿，跨条目判断：一条结论主张，code 与 rank 照抄 Hub 算出的整体结论与等级，statement 写简短的总体意见和等级理由；不重抄表里的用例、发现和建议，不要求逐条引用发现。建议来自复核方，已在评审表中按原文列出；证据缺口可另写 code=gap。只核整体结论和等级，不重新评审。",
+      "description": "评审终稿，跨条目判断：必须恰好一条结论主张，code 与 rank 照抄 Hub 算出的整体结论与等级，statement 写简短的总体意见和等级理由；每条 code=gap 的证据缺口也须写同一整体等级。不重抄表里的用例、发现和建议，不要求逐条引用发现；不重新评审",
       "target": "run",
       "required": true,
       "done_rule": "bookkeeping",
@@ -44,6 +44,16 @@
         },
         {
           "code": "case-review-report.report_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-report.multiple_verdicts",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-report.gap_level_mismatch",
           "action": "repair",
           "max_rounds": 2
         }

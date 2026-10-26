@@ -10,6 +10,8 @@ import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
 import { PACK, isRecord } from './common.ts';
 import {declareResourceTags} from './generated/vocabulary.ts';
 import { quotableLines, quotedFromCase } from './lines.ts';
+import { levelNumber, worstSeverity } from './levels.ts';
+import { captureReviewScope } from './review-scope.ts';
 
 export const HINT_ONLY = `${PACK}.hint_only`;
 export const LOCATION_MISSING = `${PACK}.location_missing`;
@@ -125,6 +127,30 @@ export function tagSpelling(input: unknown): CheckOutcome[] {
   });
 }
 
+export function levelConsistency(input: unknown): CheckOutcome[] {
+  const subject = isRecord(input) && isRecord(input.subject) ? input.subject : {};
+  const cross = Array.isArray(subject.cross_item) ? subject.cross_item.filter(isRecord) : [];
+  const levels = cross.flatMap((claim, index) => claim.code === 'level' ? [{ claim, index }] : []);
+  if (levels.length !== 1) return [{ verdict: 'refute', code: `${PACK}.level_missing`, statement: `等级主张必须恰好一条，当前 ${levels.length} 条`, grounds: [], tier: 'blocking', pointer: '/cross_item' }];
+  const level = levels[0].claim.rank;
+  const numeric = levelNumber(level);
+  if (numeric === null) return [{ verdict: 'refute', code: `${PACK}.level_missing`, statement: '等级主张必须写 P0 到 P7 的一个等级', grounds: [], tier: 'blocking', pointer: `/cross_item/${levels[0].index}/rank` }];
+  const items = Array.isArray(subject.items) ? subject.items.filter(isRecord) : [];
+  const ranks: unknown[] = [];
+  for (const [itemIndex, item] of items.entries()) {
+    const slots = isRecord(item.slots) ? item.slots : {};
+    const findings = Array.isArray(slots.findings) ? slots.findings : [];
+    for (const finding of findings) if (isRecord(finding)) ranks.push(finding.rank);
+  }
+  const worst = worstSeverity(ranks);
+  if (worst !== null && 'invalid' in worst) return [{ verdict: 'refute', code: `${PACK}.severity_missing`, statement: '每条发现都必须有 critical、major 或 minor 的严重程度，才能核对最重发现与等级区间', grounds: [], tier: 'blocking', pointer: '/items' }];
+  const data = { level: numeric, findings: ranks.length, ...(worst !== null && !('invalid' in worst) ? worst : {}) };
+  if (worst !== null && !('invalid' in worst) && (numeric < worst.minimum || numeric > worst.maximum)) {
+    return [{ verdict: 'refute', code: `${PACK}.level_severity_mismatch`, statement: `最重发现为 ${worst.severity}，等级应在 P${worst.minimum}–P${worst.maximum}；当前为 P${numeric}。只调整到这个区间内的等级，具体等级仍由评审判断`, grounds: [], tier: 'blocking', pointer: `/cross_item/${levels[0].index}/rank`, data }];
+  }
+  return [{ verdict: 'support', statement: worst === null ? '没有发现，不据发现数量自动推定等级' : `等级 P${numeric} 与最重发现 ${worst.severity} 的允许区间一致`, grounds: [], tier: 'blocking', pointer: `/cross_item/${levels[0].index}/rank`, data }];
+}
+
 function total(run: (input: unknown) => CheckOutcome[], name: string, tier: CheckOutcome['tier']): (input: unknown) => unknown {
   return (input) => {
     try {
@@ -137,6 +163,8 @@ function total(run: (input: unknown) => CheckOutcome[], name: string, tier: Chec
 
 export const findingSourcesCheck = total(findingSources, 'findings_sources', 'blocking');
 export const tagSpellingCheck = total(tagSpelling, 'tags', 'advisory');
+export const levelConsistencyCheck = total(levelConsistency, 'level_consistency', 'blocking');
+export const reviewScopeCheck = total(input => captureReviewScope(input, PACK), 'review_scope', 'blocking');
 
 /** Without a named export: the check the subject's shape calls for. */
 export default function (input: unknown): unknown {

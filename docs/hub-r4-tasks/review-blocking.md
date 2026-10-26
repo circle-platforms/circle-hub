@@ -18,7 +18,9 @@
 - `contracts/src/tables.ts` 及生成器对应生成文件（只同步严格引文说明，不改模型）。
 - `hub/refs/**`、`hub/rules/**` 中引文匹配、解释器、文档与测试。
 - `hub/knowledge/feeding.ts`、`hub/knowledge/feeding.test.ts`：旧 `src` 范围引文的 UTF-8 字节切片及合成回归（同一严格引文契约）。
+- `hub/server/submit-load.test.ts`：新增等级与范围检查对应的调用计数；60 秒预算和原有批处理断言不变。
 - `scripts/real/gold/quote-widths.ts`、`scripts/real/gold/compile-check.ts` 中独立引文预言机及其合成测试；不运行真实脚本或系统。
+- `scripts/real/lib/inject.test.ts`、`scripts/real/accept/defect-to-case-compare.test.ts` 中旧空白折叠预期，以及 `defect-to-case/publish.test.ts` 的版本断言；只改合成验证。
 - `packs/workflow/case-review/**`、`packs/workflow/case-review-verify/**`、`packs/workflow/case-review-report/**`。
 - `packs/workflow/defect-to-case/{pack.json,requirements.json,checks.json,tables/quotes.json}`、`packs/workflow/knowledge-contribution/{pack.json,pack-files.ts,README.md}` 及其官方命令生成的文件：仅同步核心严格引文的现行说明，历史版本记录不改。
 - `tests/acceptance/**` 中评审链测试。

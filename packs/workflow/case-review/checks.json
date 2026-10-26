@@ -131,6 +131,34 @@
       "catalog": "commands@1",
       "judges": "subject",
       "tier": "advisory"
+    },
+    {
+      "id": "level_consistency",
+      "title": "最重发现与等级区间一致",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "levelConsistencyCheck"
+      },
+      "applies": "run",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "test-list-review：critical 对应 P6–P7，major 对应 P3–P5，minor 对应 P0–P2；只核最重发现允许的区间，不按发现数量自动评级"
+    },
+    {
+      "id": "review_scope",
+      "title": "冻结整份用例识别范围",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "reviewScopeCheck"
+      },
+      "applies": "run",
+      "subject": {
+        "module": "functions/review-scope.ts",
+        "export": "reviewScopeSubject"
+      },
+      "judges": "subject",
+      "tier": "blocking",
+      "basis": "评审范围由投影按源摘要、完整识别参数、整份预期条目和本块选定条目冻结，供独立复核和终稿对账"
     }
   ]
 }
