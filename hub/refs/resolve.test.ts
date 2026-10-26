@@ -81,7 +81,8 @@ describe('resolveReference: source fragments', () => {
     assert.equal(result.readTier, 'model_readable');
     assert.equal(result.mediaType, 'application/json');
     assert.equal(result.groundable, true);
-    assert.equal(verifyQuote(result, '名称超过 32 个字符'), true);
+    assert.equal(verifyQuote(result, '名称超过 32 个字符'), true);
+    assert.equal(verifyQuote(result, '名称超过 32 个字符'), false);
     assert.equal(verifyQuote(result, '名称超过 33 个字符'), false);
   });
 

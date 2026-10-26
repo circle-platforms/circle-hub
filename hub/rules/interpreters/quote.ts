@@ -1,9 +1,9 @@
-// quote@1: every quotation appears verbatim in the fragment its reference resolves to. White space differences only are
-// ignored; the rule is quoteMatches in text.ts and must agree with hub/refs (shared vectors: quote-vectors.json).
+// quote@1: every quotation is an exact contiguous substring of the decoded fragment its reference resolves to.
+// The rule is quoteMatches in text.ts and must agree with hub/refs (shared vectors: quote-vectors.json).
 import { QuoteTable, type CheckOutcome } from '../../../contracts/src/tables.ts';
 import { getAt, joinPointer, selectAll } from '../json.ts';
 import { baseFor, isReferenceUri, quoted, refuteProtocol, support, unknown } from '../outcome.ts';
-import { collapseWhitespace, quotationForm, quoteInCollapsed } from '../text.ts';
+import { collapseWhitespace, quoteMatches } from '../text.ts';
 import { defineInterpreter, pathIssues } from './define.ts';
 
 export const quoteInterpreter = defineInterpreter({
@@ -14,8 +14,6 @@ export const quoteInterpreter = defineInterpreter({
   run(table, request) {
     const base = baseFor(request.subject, table);
     const outcomes: CheckOutcome[] = [];
-    // A fragment can be megabytes and quoted many times: collapse it once per run.
-    const collapsed = new Map<string, string>();
     for (const rule of table.quotes) {
       for (const selected of selectAll(request.subject, rule.select) ?? []) {
         const text = getAt(selected.value, rule.text);
@@ -53,13 +51,7 @@ export const quoteInterpreter = defineInterpreter({
           continue;
         }
         const data = { quote: text.value, reference: ref };
-        let haystack = collapsed.get(ref);
-        if (haystack === undefined) {
-          haystack = quotationForm(fragment);
-          collapsed.set(ref, haystack);
-        }
-        // Same rule as quoteMatches(fragment, quote), with the fragment side computed once.
-        if (quoteInCollapsed(haystack, text.value)) outcomes.push(support(base, `引文 ${quoted(text.value)} 与所引片段逐字一致`, { pointer, grounds: [ref], data }));
+        if (quoteMatches(fragment, text.value)) outcomes.push(support(base, `引文 ${quoted(text.value)} 与所引片段逐字一致`, { pointer, grounds: [ref], data }));
         else {
           const why = collapseWhitespace(text.value) === '' ? '引文为空' : `所引片段里没有 ${quoted(text.value)}`;
           outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', why, { pointer, grounds: [ref], data }));

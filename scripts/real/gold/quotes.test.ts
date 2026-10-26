@@ -19,7 +19,7 @@ test('percent-encoded JSON selector segments and binding classifications are ind
 test('line selectors and UTF-8 byte ranges are checked without splitting characters',()=>{
   const b=Buffer.from('first\r\n成功 😀\r\nlast'),sha=sha256(b),o={sources:new Map([[sha,b]]),run:{sources:[]}};
   assert.equal(judgeQuote(`src:${sha}/text@1/l/2`,'成功 😀','改写',o).expectedVerbatim,false);
-  assert.equal(judgeQuote(`src:${sha}/text@1/l/1-2`,'first 成功','first',o).verdict,'support');
+  assert.equal(judgeQuote(`src:${sha}/text@1/l/1-2`,'first\n成功','first',o).verdict,'support');
   assert.equal(judgeQuote(`src:${sha}/text@1/l/2:0-6`,'成功','成功',o).verdict,'support');
   assert.equal(judgeQuote(`src:${sha}/text@1/l/2:1-6`,'成功','成功',o).verdict,'refute');
   assert.equal(judgeQuote(`src:${sha}/text@1/l/9`,'成功','成功',o).verdict,'refute');
@@ -72,29 +72,31 @@ test('missing quotes are refutations while missing expected results are shape fi
 });
 for(const terminator of ['\n','\r\n','\r'])test(`final terminator opens no extra text line ${JSON.stringify(terminator)}`,()=>{
   const bytes=Buffer.from(`alpha${terminator}beta${terminator}`),digest=sha256(bytes),inputs={sources:new Map([[digest,bytes]]),run:{sources:[]}};
-  assert.equal(judgeQuote(`src:${digest}/text@1/l/1-2`,'alpha beta','beta',inputs).verdict,'support');
-  for(const selector of ['1-3','3'])assert.equal(judgeQuote(`src:${digest}/text@1/l/${selector}`,'alpha beta','beta',inputs).verdict,'refute');
+  assert.equal(judgeQuote(`src:${digest}/text@1/l/1-2`,'alpha\nbeta','beta',inputs).verdict,'support');
+  for(const selector of ['1-3','3'])assert.equal(judgeQuote(`src:${digest}/text@1/l/${selector}`,'alpha\nbeta','beta',inputs).verdict,'refute');
 });
 
-test('decision 37 flows through fragment and manual judgments and report counts', () => {
+test('strict quotation flows through fragment and manual judgments and report counts', () => {
   const bytes = Buffer.from('返回\n成功 set 10 0'), digest = sha256(bytes);
   const inputs = { sources: new Map([[digest, bytes]]), manual: [bytes], run: { root, sources: [] } };
   for (const reference of [`src:${digest}/text@1/l/1-2`, `tree:${root}/manual`]) {
-    const finding = judgeQuote(reference, '返回成功 set 10 0', '返回成功', inputs);
+    const finding = judgeQuote(reference, '返回\n成功 set 10 0', '返回\n成功', inputs);
     assert.equal(finding.verdict, 'support');
     assert.equal(finding.expectedVerbatim, true);
+    assert.equal(judgeQuote(reference, '返回成功', '返回成功', inputs).verdict, 'refute');
     assert.equal(judgeQuote(reference, 'set 100', 'set 100', inputs).verdict, 'refute');
-    const submission = { items: [{ item: 'synthetic', slots: { cases: [{ data: { expected: [{ text: '返回成功', quote: { reference, text: '返回成功' } }] } }] } }] };
+    const submission = { items: [{ item: 'synthetic', slots: { cases: [{ data: { expected: [{ text: '返回\n成功', quote: { reference, text: '返回\n成功' } }] } }] } }] };
     const report = quotesReport(submission, {}, inputs);
     assert.equal(report.counts.support, 1); assert.equal(report.expectedVerbatim, 1); assert.equal(report.paraphrased, 0);
   }
 });
 
 for (const [fragment, quote, match] of [
-  ['A\n中文', 'A中文', true], ['中文\tA', '中文A', true], ['Ａ\nB', 'ＡB', true],
-  ['𠀀\r\nA', '𠀀A', true], ['🙂\nA', '🙂A', true],
-  ['set\t10\n0', 'set 10 0', true], ['set 10 0', 'set 100', false],
+  ['A\n中文', 'A中文', false], ['中文\tA', '中文A', false], ['Ａ\nB', 'ＡB', false],
+  ['𠀀\r\nA', '𠀀A', false], ['🙂\nA', '🙂A', false],
+  ['set\t10\n0', 'set 10 0', false], ['set 10 0', 'set 100', false],
   ['a + b', 'a+b', false], ['α β', 'αβ', false], ['ｱ A', 'ｱA', false],
-  ['a\u0085b', 'a b', true], ['中\ufeff文', '中文', false], ['中\ufeff文', '\ufeff', true],
+  ['a\u0085b', 'a b', false], ['中\ufeff文', '中文', false], ['中\ufeff文', '\ufeff', true],
+  ['A\n中文', 'A\n中文', true], ['中文\tA', '中文\tA', true], ['a\u00a0b', 'a\u00a0b', true], ['a\u3000b', 'a\u3000b', true],
   ['anything', '\u0085\u3000', false], ['🙂', '\ude42', false], ['é', 'e\u0301', false],
-] as const) test(`decision 37 literal boundary ${JSON.stringify([fragment, quote])}`, () => assert.equal(quoteMatches(fragment, quote), match));
+] as const) test(`strict literal boundary ${JSON.stringify([fragment, quote])}`, () => assert.equal(quoteMatches(fragment, quote), match));

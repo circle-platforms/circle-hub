@@ -8,17 +8,19 @@
 - 第 13 项是期望落后：包内已有 P0–P7 和严重度区间数据及文字规程，但初评 `level` 没有检查，复核也未按最终仍成立的发现核区间。补结构检查，不按数量或关键词自动评级。
 - 第 15 项是期望落后：核心已有 `predecessor: "required"` 机制，复核包未声明，导致可开出无法满足独立性的运行。
 - 第 16 项是实现回归：规程已有“需要修正即 PARTIAL”，但 PASS 分支遗漏 `partial`。
-- 第 18 项是期望落后：现有终稿只聚合回执已有块，未冻结完整识别参数和整份预期条目集，因而不能证明未进入任何块的条目没有遗漏。由初评投影冻结范围，初评与复核的函数事实传递快照，终稿比较预期、交付、重叠和遗漏；不从文本猜。
+- 第 18 项是期望落后：现有终稿只聚合回执已有块，未冻结完整识别参数和整份目标（根或显式子树）的预期条目集，因而不能证明未进入任何块的条目没有遗漏。由初评投影冻结范围，初评与复核的函数事实传递快照，终稿比较预期、交付、重叠和遗漏；不从文本猜。
 - 第 20 项是实现回归：终稿规程已要求唯一结论和 gap 同等级，但实现只核第一条 verdict，且未核 gap rank。
-- 第 14 项是迁移期望校正，不降低核心已有保证：fork 只提供新上下文，不提供独立身份；继续比较观察会话、精确 `model_id` 和显式 `model_family_id`。缺声明保持 unknown，同会话、同模型或同族不独立，不从名称推族，不声称物理或密码学身份证明。
+- 第 14 项是期望落后（旧 fork 的迁移映射），不是核心实现回归：fork 只提供新上下文，不提供独立身份；继续比较观察会话、精确 `model_id` 和显式 `model_family_id`。缺声明保持 unknown，同会话、同模型或同族不独立，不从名称推族，不声称物理或密码学身份证明。
 
 ## 可改路径
 
 - 本任务页。
 - `contracts/src/tables.ts` 及生成器对应生成文件（只同步严格引文说明，不改模型）。
 - `hub/refs/**`、`hub/rules/**` 中引文匹配、解释器、文档与测试。
+- `hub/knowledge/feeding.ts`、`hub/knowledge/feeding.test.ts`：旧 `src` 范围引文的 UTF-8 字节切片及合成回归（同一严格引文契约）。
 - `scripts/real/gold/quote-widths.ts`、`scripts/real/gold/compile-check.ts` 中独立引文预言机及其合成测试；不运行真实脚本或系统。
 - `packs/workflow/case-review/**`、`packs/workflow/case-review-verify/**`、`packs/workflow/case-review-report/**`。
+- `packs/workflow/defect-to-case/{pack.json,requirements.json,checks.json,tables/quotes.json}`、`packs/workflow/knowledge-contribution/{pack.json,pack-files.ts,README.md}` 及其官方命令生成的文件：仅同步核心严格引文的现行说明，历史版本记录不改。
 - `tests/acceptance/**` 中评审链测试。
 
 不改 `foundation/circle`、`references`、其他产品或工作包，不碰钥匙串、环境配置和真实系统。改包内文件时在同一个提交升版本并重签，提交只暂存显式路径，测试并发不超过 2。

@@ -264,7 +264,7 @@ test('a stored contradiction records its endpoints without editing the second no
   assert.match(toolText('get_nodes',{call_result:'ok',errors:[],trace:call.traceId,root:w.root,nodes:page!.nodes}),new RegExp(`关系 ${labelOf('relation_kind','contradicts')} →`));
 });
 
-test('every kind reports its own path rule, and quotes use the boundary whitespace comparator',async t=>{
+test('every kind reports its own path rule, and quotes use the strict boundary comparator',async t=>{
   const w=await setup(t);
   for(const kind of GENERIC_OUTPUTS){
     const args=w.args();args.items.find(x=>x.item===kind)!.slots.contribution[0].data.path='/absent';
@@ -273,9 +273,9 @@ test('every kind reports its own path rule, and quotes use the boundary whitespa
     const root=w.args();root.items.find(x=>x.item===kind)!.slots.contribution[0].data.root='f'.repeat(64);
     const wrong=await w.service.submitResult(w.admin,root,call);assert.ok(wrong.errors.some(e=>e.item===kind&&e.code==='REFERENCE_UNRESOLVED'&&e.message.includes('锁定的产品和根')));
   }
-  const args=w.args();args.items[0].slots.contribution[0].data.source={reference:`src:${w.original}`,quote:'show   the\n state'};
+  const args=w.args();args.items[0].slots.contribution[0].data.source={reference:`src:${w.original}`,quote:'show the state'};
   const ok=await w.service.submitResult(w.admin,args,call);assert.equal(ok.result?.contributions?.stored.length,4,JSON.stringify(ok.errors));
-  args.items[0].slots.contribution[0].data.source.quote='show   the\n staXe';const no=await w.service.submitResult(w.admin,args,call);
+  args.items[0].slots.contribution[0].data.source.quote='show  the state';const no=await w.service.submitResult(w.admin,args,call);
   assert.ok(no.errors.some(e=>e.code==='QUOTE_MISMATCH'&&e.message.includes('引文没有逐字')));
 });
 
