@@ -24,6 +24,7 @@
 - `packs/workflow/case-review/**`、`packs/workflow/case-review-verify/**`、`packs/workflow/case-review-report/**`。
 - `packs/workflow/defect-to-case/{pack.json,requirements.json,checks.json,tables/quotes.json}`、`packs/workflow/knowledge-contribution/{pack.json,pack-files.ts,README.md}` 及其官方命令生成的文件：仅同步核心严格引文的现行说明，历史版本记录不改。
 - `tests/acceptance/**` 中评审链测试。
+- 合入后的 A1 边界回归检查：`scripts/real/convert/auto-cases.ts`、`scripts/real/convert/io.test.ts`、`hub/connectors/read.ts`、`hub/connectors/read-retained-fault.test.ts`。转换脚本直接调用技能包时按其错误类型、协议码和解析器身份适配诊断，不使用核心的 `instanceof`；未知异常不吞掉。读取测试连续复跑已通过，不需要改读取实现或测试。
 
 不改 `foundation/circle`、`references`、其他产品或工作包，不碰钥匙串、环境配置和真实系统。改包内文件时在同一个提交升版本并重签，提交只暂存显式路径，测试并发不超过 2。
 
