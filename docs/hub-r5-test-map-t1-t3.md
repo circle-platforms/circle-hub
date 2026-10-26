@@ -31,7 +31,8 @@
 本节记录在梳理 T1–T3 场景断言与架构实现过程中发现的缺陷与设计缺口：
 
 ### 1. `resolve_reference` 工具参数强制要求 `run`，不支持纯知识根解析（T1-1）
-- **缺的事实**：[contracts/src/tools.ts#L194-L198](file:///Users/jiangyongze/circle-trees/r5-tests-t1t3/contracts/src/tools.ts#L194-L198) 定义 `ResolveReferenceInput` 为 `strictObject({ run: RunId, text: string, ... })`，没有类似于 `get_nodes` 的可选 `root: Sha256` 字段。
+- **状态**：已由 A6 解决（合入 c8d7a731，`run` 与 `root` 二选一）；下面保留发现时的记录。
+- **缺的事实**：`contracts/src/tools.ts` 的 `ResolveReferenceInput`（原约 194–198 行）定义 `ResolveReferenceInput` 为 `strictObject({ run: RunId, text: string, ... })`，没有类似于 `get_nodes` 的可选 `root: Sha256` 字段。
 - **影响**：`docs/hub-r5-tests.md` T1-1 规定知识问答场景“不需要任务包”，Circle 用户在纯对话会话中读取知识树节点后欲核对某条逐字引文时，因无活跃 `run` 无法直接调用 `resolve_reference`，必须额外启动一个运行（如 `source-read`）绑定根才能调用。
 - **建议归属**：**A1**（核心工具契约扩展，允许 `ResolveReferenceInput` 接受可选 `root`）或 **B3**。
 
