@@ -1,13 +1,16 @@
+import {readBlockSlots,isNormalized} from './blocks.ts';
 import {isExpectationBasis,type ExpectationBasis} from './generated/vocabulary.ts';
 // Restricted authored plan slots. This module verifies structure and never generates an execution artifact.
 import { isRecord } from './text.ts';
 export type KeywordValue = string | number;
-export interface PlanStep { cleanup?:boolean; object: string; method: string; args: string[]; keywords: Record<string, KeywordValue> }
-export interface PlanExpect {basis?:ExpectationBasis;rationale?:string; text: string; quote: { reference: string; text: string }; after: number }
+export interface PlanStep { id?:string;origin?:string;block_kind?:string;output?:boolean;save_as?:string;input_register?:string;restore_for?:number;restore_target?:{tree_root:string;path:string;leading_parameters:unknown[];bed:string;manifest_sha256:string};cleanup?:boolean; object: string; method: string; args: string[]; keywords: Record<string, KeywordValue> }
+export interface PlanExpect {id?:string;origin?:string;operator?:string;output?:string;register?:string;actual_register?:string;comparison?:string;count?:number;expectation?:string;criterion?:string;basis?:ExpectationBasis;rationale?:string; text: string; quote: { reference: string; text: string }; after: number }
 export interface Replacement { case: string; bed: string }
-export interface PlanSlots { command_identities?:unknown; bucket: string; blocks: never[]; steps: PlanStep[]; expects: PlanExpect[]; replacements: Replacement[] }
+export interface PlanSlots { command_identities?:unknown; bucket: string; blocks: Array<Record<string,any>>;block_context?:Record<string,any>;criteria?:Array<Record<string,any>>;obligations?:Array<Record<string,any>>; steps: PlanStep[]; expects: PlanExpect[]; replacements: Replacement[] }
 export interface SlotProblem { pointer: string; message: string }
 export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok: false; problems: SlotProblem[] } {
+  if(isNormalized(value))return {ok:true,slots:value};
+  if(isRecord(value)&&Array.isArray(value.blocks)&&value.blocks.length)return readBlockSlots(value);
   const problems: SlotProblem[] = [];
   const issue = (pointer: string, message: string) => problems.push({ pointer, message });
   if (!isRecord(value)) return { ok: false, problems: [{ pointer: '', message: '槽位不是对象；按 slots.schema.json 的完整形状填写' }] };

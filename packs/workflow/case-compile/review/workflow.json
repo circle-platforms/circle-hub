@@ -1,0 +1,36 @@
+{
+  "schema": "workflow@1",
+  "predecessor": "required",
+  "predecessor_access": "view",
+  "inputs": [
+    {
+      "slot": "declaration",
+      "role": "artifact_under_verification",
+      "description": "原 case-compile 提交的完整 Hub rec:，不是上传副本",
+      "accepts": [
+        "application/json"
+      ],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "evidence",
+      "role": "expected",
+      "description": "原判据逐字引用的作者原件，按当前账号读权绑定",
+      "accepts": [
+        "application/json",
+        "text/plain"
+      ],
+      "required": false,
+      "many": true
+    }
+  ],
+  "parameters": [],
+  "product": {
+    "catalogs": []
+  },
+  "subject": "declaration",
+  "projection": {
+    "module": "functions/project.ts"
+  }
+}

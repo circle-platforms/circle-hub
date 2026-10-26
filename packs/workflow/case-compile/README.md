@@ -1,4 +1,4 @@
-# case-compile 2.4.1
+# case-compile 3.7.0
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -16,13 +16,13 @@ Plan data is bucket, empty blocks, steps [{object,method,args,keywords}], expect
 
 The authoritative behavior is the integrator's task-page annex, transcribed read-only from the runner with synthetic examples. Empty G becomes the string None, so zero arguments cannot be written as an empty cell. Ordinary LF input is one unsplit positional string unless the method is explicitly in fold_newlines; folded methods trim Python whitespace, remove LF/CR and then split. Ordinary plan values remain single-line; codec tests separately cover the broader reading behavior.
 
-Outside paired single/double quotes, commas split fragments; unmatched quotes are ordinary characters. Inside a quote, backslash protects the next character from closing the quote but remains literal. Empty/space-only fragments disappear. Each fragment is trimmed with Python whitespace; matching outer quotes are removed once and the inside trimmed again. Equals is interpreted afterward: a key containing an internal ASCII space makes the fragment positional, otherwise it is a keyword. Decimal digit keywords become integers, duplicate keys overwrite; positional digits remain text. Literal assertions are unsplit original strings, including quoted text/newlines, and compare to the most recent ordinary result. All generated H/I cells are empty. Waiting is a single ASCII-digit duration.
+Outside paired single/double quotes, commas split fragments; unmatched quotes are ordinary characters. Inside a quote, backslash protects the next character from closing the quote but remains literal. Empty/space-only fragments disappear. Each fragment is trimmed with Python whitespace; matching outer quotes are removed once and the inside trimmed again. Equals is interpreted afterward: a key containing an internal ASCII space makes the fragment positional, otherwise it is a keyword. Decimal digit keywords become integers, duplicate keys overwrite; positional digits remain text. Literal assertions are unsplit original strings, including quoted text/newlines, and compare to the most recent ordinary result. Legacy flat plans leave H/I empty; block plans follow the declared register rules below. Waiting is a single ASCII-digit duration.
 
 encodeG always decodes its result and compares types and values. It names the violated rule for empty/edge-space/CR positionals, equals-to-keyword conversion, mixed quotes that require wrapping, quoted trailing backslash, non-single newline values, unknown keyword names, numeric text keywords, non-ASCII numeric keywords, out-of-range integers and invalid wait/assertion values. No Python, shell or expression evaluator is used. Fixed-seed tests roundtrip 500 supported values. Denial matching remains text matching, not a proof of arbitrary shell behavior.
 
 ## Deterministic file and independent reading
 
-The Node-built-in-only generator emits six fixed OOXML members, ZIP32 STORE with its own CRC32, fixed DOS timestamps and member order. A is inline text, C is numeric 0/2 and never initialization 1. Other values are inline strings. Row order is identity, nine-column header, description, each step with its after expectations immediately following, blank row, configured closing row. The description contains plan_run and build, never a person. Exactly one textual autoid starts the case with nonempty E. Every assertion row is generated from expects. Register and certification-request cells remain empty.
+The Node-built-in-only generator emits six fixed OOXML members, ZIP32 STORE with its own CRC32, fixed DOS timestamps and member order. A is inline text, C is numeric 0/2 and never initialization 1. Other values are inline strings. Row order is identity, nine-column header, description, each step with its after expectations immediately following, blank row, configured closing row. The description contains plan_run and build, never a person. Exactly one textual autoid starts the case with nonempty E. Every assertion row is generated from expects. Legacy register cells and all certification-request cells remain empty; block register cells are verified under the explicit runtime capability.
 
 Identity F records the generator id; G records a canonical recipe digest so a changed quote/replacement also changes bytes without copying source content. The workbook-level range points exactly to the header. Invalid XML values are refused rather than dropped; CR text is preserved. SpreadsheetML-looking _xHHHH_ sequences are refused with xstring_escape because literal inline and ST_Xstring readers disagree. The reference circle-packs 10-13 xlsx.mjs was read only for OOXML behavior: differences are STORE versus Deflate, strict fixed layout and subset, no hidden-row facility, exact identity/range, rejection of invalid characters and _xHHHH_ text, and accounted recipe metadata. No reference code or template bytes are imported.
 
@@ -202,3 +202,49 @@ Hub 按检查声明的 judgment_sources，从本条目原始提交的精确槽�
 作者片段按原有完整行语法解析，不截散文。出现次数按定义身份（来源根、完整路径、签名引用）计，不把参数值当成必须保留的文字；计划仍须独立核参数。可以改参数，不可以删命令：同一定义的执行次数至少等于作者次数，清理段不充数，缺失次数写入阻断结果的 `data.obligations` 并随结果留存。工作簿生成、独立核验、派发前检查共用这些边界。
 
 容量来自冻结 profile 的显式 ordinal 与台架同类型设备计数，不读对象名中的数字。设备座位还不超过冻结的预检设备数；主机映射若声明 ordinal，也按其类型计数核对。越界时投影整份拒绝，写明“框架取不到那台设备，整卷不跑”，没有部分工作簿。旧根缺产品规则时设备计划保持未知，需升级产品包并重新育苗，不能从命令文字猜只读/修改。
+
+## 块模型（R5 B1，先声明后实现）
+
+计划仍由客户端模型写，Hub 只核结构、授权、引文与义务。设备回显不在编译时解析：观察对象是一次调用的完整原文输出，不能从实际输出里反签期望。旧 `blocks:[] + steps + expects` 继续使用原规则；新计划用非空 blocks，steps/expects 留空，二者不能混写。唯一闭集正本是包声明 `tables/blocks-format.json`；槽位模式由本包生成器从它产生，代码不再维护另一份种类枚举。
+
+| 块种类 | 第一版 | 语义 |
+| --- | --- | --- |
+| CONFIG | 启用 | 原名调用，保留完整命令解析、参数、角色与效果授权 |
+| OBSERVE_ASSERT | 启用 | 一次声明会产原文的调用，配 1..n 条显式指向该输出的断言 |
+| OBSERVE_ONLY | 启用 | 仅观察；不能凭它履约作者期望 |
+| CAPTURE | 启用 | 将该次完整原文输出存入唯一命名寄存器 |
+| CAPTURE_COMPARE | 启用 | 引用前序两个捕获，比较 same / differs，明确第二次输出身份 |
+| EXPECT_FROM | 启用 | 新观察的期望取自前序寄存器，显式指向本次输出 |
+| SLEEP | 启用 | 已授权 wait 调用及显式秒数，不产生可断言输出 |
+| STEP | 启用 | 普通已授权调用；只有显式声明输出且合约确认的调用才是观察 |
+| RESTORE_FROM | 启用但需执行器能力 | 改动前捕获、末尾按逆序恢复；关联原配置块，不把未知捕获值伪造为静态 CommandIdentity |
+| OBSERVE_DIST | 暂缓 | 缺少已发布的区间/守恒派生规则与运行器执行声明；出口是补声明及配套合成正反例，不生成任意正则 |
+| OBSERVE_MEMBER | 暂缓 | 缺少已发布的成员关系派生与执行声明；出口同上，不能从产品回显猜成员 |
+| OBSERVE_EXIT | 暂缓 | 退出码与输出文字不是同一通道；缺受认证退出状态通道，不靠标记词猜成功。保留在统一闭集，使用时明确 unknown 与补能力出口 |
+
+每块有唯一 id，调用仍写 object/method/args/keywords，设备和主机来自冻结 profile，不用产品名或命令词猜角色。CONFIG 与 STEP 不绕过现有原始合约、范围授权、地址与作者命令计次检查。cleanup 是显式末尾段，末尾恢复不计入“最后一次业务配置”。
+
+| 断言族 | 输入与卷面终形 |
+| --- | --- |
+| found | 输入是 literal；使用正则型运行器时只写机械转义后的字面，不接收自由正则 |
+| not_found | 静态 literal 同样转义；寄存器来源必须有运行器声明的字面否定方法，否则 unknown |
+| abs_found | 原文字面搜索，不把元字符解释成正则 |
+| found_times | literal 加正整数次数；仅在合约 found_times_supported=true 时使用，G 为转义字面、H 空、I 为次数 |
+
+所有断言都有 output（块 id），不是暗指最后一行。一般断言紧跟其明确观察输出；捕获比较可由 I 指定已保存的第二次原文。H 在普通行是写寄存器，在检查点是期望来源；I 在检查点是实际值寄存器（计数检查点例外为次数），普通恢复行是原运行器声明的输入引用。模型不能自行把 G 中的寄存器名变成引用。
+
+寄存器只存原文，不裁剪、不抽字段、不读词表。CAPTURE_COMPARE 的 same 以双向字面包含构造全值相等（两条 abs_found），differs 需要声明的全值字面不等方法；不能把单向包含当相等，也不能把未知原文交给正则型 not_found。EXPECT_FROM 的 found 在构造时统一归为 abs_found，生成与回读使用同一终形声明。依据为只读参考的 `main/case_compiler/blocks.py:1760–1774` 与运行器 H/I 取值行为；不复制其实现或任何业务取值。
+
+跨步机械门：寄存器必须先捕获后引用；断言必须指向已声明会产原文的观察；最后一次业务配置不晚于最后一次观察。寄存器和块 id 不重复；等待/配置不能冒充观察。缺运行器输出/寄存器能力声明记 unknown，前向引用、指错输出等结构矛盾记 refute。
+
+恢复到捕获值要求 CAPTURE 在所关联配置之前、同一设备、清理段逆序且完整使用该寄存器。它只能经合约明确声明的 guarded restore 方法：运行器必须在发送前核验插值后完整命令的锁根语法、效果范围与参数角色。普通 cmd_config 的 `{}` 不能当作已知命令放行。现有运行器不具备该守卫时计划保留 unknown，并给执行器维护者补能力、重新发布合约/profile 的出口；不在核心增加设备语义，不默默打开真实执行器。
+
+R03：每个新断言绑定期望身份、逐字 quote 与显式类型（字面/次数/捕获关系）。描述性期望不能直接当检查文字：需要模型提出类型化判据及理由，再以独立复核的 Hub 记录接入；上传的自述 review JSON 无效。复核阶段放在本目录的独立阶段声明中，复用现有只读前驱和账号独立核验；主包同时核绑定的复核运行快照与结果，防止拿无关前驱伪造独立性。既有 W10 期望来源角色规则不变。
+
+W06：本用例全部期望节点有稳定引用身份；每条都映射到断言或显式 unmet（缺事实和下一步），遗漏是未履约，不能只核模型挑中的节点。unmet 不当作满足或可派发。W07：前置、因果边、交互应答者由模型显式声明（无此类前置也要明确空表），代码只核来源、引用图与顺序；缺声明 unknown，矛盾 refute，不通过搜索正文猜前置或应答者。
+
+新运行器能力默认关闭，checkpoint_two_argument、寄存器 H/I、捕获恢复与 found_times 必须来自完整合约的结构字段及本轮 profile 允许组合。工作簿生成和独立回读都核 E/F/G/H/I、输出指向和寄存器定义使用关系；身份配方绑定原始块计划、全部作者期望及最终展开。旧计划不被强行套进新的块语言，不因此承诺它已有块级表达能力。
+
+字面声明的结构依据：新块读取作者期望节点 data.assertion 中的 op/literal/count；原文没有这组明确声明时，不通过词语判断“是不是描述性”，而是保留 unknown，要求模型提出带引文的类型化判据并经独立复核。旧 flat 语言继续按其已发布的字面 text 规则，不宣称它已经具备块语言的判据能力。
+
+复核阶段发布目录是本目录的 review/，id=case-compile-criterion-review；先用其 api.ts stage/publish 并分配给独立复核账号。作者提交判据后共享该运行的只读视图，复核者以原声明运行为 predecessor 绑定原提交和 evidence；主包绑定该复核的真实 run 快照与 validation 结果，核实际前驱相等及账号独立标记。此阶段不会修改旧 W10 或核心角色规则。

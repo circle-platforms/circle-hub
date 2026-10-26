@@ -17,7 +17,7 @@ export interface CaseStep {
 }
 
 export interface ExtractedCase {
-  expected_nodes?:Array<{text:string;selector:string|null}>;
+  expected_nodes?:Array<{text:string;selector:string|null;declaration?:unknown}>;
   /** Node id inside the document; the item id is <documentId>:<id>. */
   id: string;
   title: string;
@@ -112,20 +112,20 @@ export function extractCases(model: unknown, rule: CaseRule, includeExpectedNode
       }
       const steps: CaseStep[] = [];
       const expected: string[] = [];
-      const expectedNodes:Array<{text:string;selector:string|null}>=[];
+      const expectedNodes:Array<{text:string;selector:string|null;declaration?:unknown}>=[];
       for (const childIndex of node.children) {
         const child = nodes[childIndex];
         if (child === undefined) continue;
         if (child.children.length === 0) {
           const line = textOf(child);
-          if (line !== '') {expected.push(line);expectedNodes.push({text:line,selector:child.selector});}
+          if (line !== '') {expected.push(line);expectedNodes.push({text:line,selector:child.selector,...(Object.hasOwn(child.data,'assertion')?{declaration:child.data.assertion}:{})});}
         } else {
           const stepExpected: string[] = [];
           for (const leafIndex of child.children) {
             const leaf = nodes[leafIndex];
             if (leaf === undefined) continue;
             const line = textOf(leaf);
-            if (line !== '') {stepExpected.push(line);expectedNodes.push({text:line,selector:leaf.selector});}
+            if (line !== '') {stepExpected.push(line);expectedNodes.push({text:line,selector:leaf.selector,...(Object.hasOwn(leaf.data,'assertion')?{declaration:leaf.data.assertion}:{})});}
           }
           steps.push({ text: textOf(child), expected: stepExpected });
         }
