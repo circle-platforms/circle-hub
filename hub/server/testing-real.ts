@@ -66,6 +66,7 @@ export interface TestHubOptions {
   mindmapSkill?: boolean;
   workbookSkill?: boolean;
   xmlSkill?: boolean;
+  htmlSkill?: boolean;
   /** Where the repository's packs are looked for; default REPOSITORY_PACKS (tests of this helper use a synthetic tree). */
   repositoryRoot?: string;
   /** More pack directories, published after the repository's in this order. */
@@ -282,6 +283,11 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
       const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/xml-format/',import.meta.url)));
       await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
       await bindLegacyParser({registry:hub.registry,records},admin.principal,'xml@1',skill.id+'@'+skill.version);
+    }
+    if(options.htmlSkill!==false){
+      const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/html-format/',import.meta.url)));
+      await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
+      await bindLegacyParser({registry:hub.registry,records},admin.principal,'html@1',skill.id+'@'+skill.version);
     }
     await hub.deps.parsers.refresh?.();
     const published: PackVersionInfo[] = [];

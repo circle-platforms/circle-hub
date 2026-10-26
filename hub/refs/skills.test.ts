@@ -13,9 +13,10 @@ import {openHarness,type Harness} from '../runs/engine/testing/harness.ts';
 import {sha256Hex} from './canonical-json.ts';
 import {newId} from '../records/api.ts';
 import {kityminderParser} from '../testing/parsers.ts';
-import {installWorkbookFixture,installXmlFixture} from '../testing/skills.ts';
+import {installHtmlFixture,installWorkbookFixture,installXmlFixture} from '../testing/skills.ts';
 import {xlsxParser} from '../../packs/skill/workbook-format/api.ts';
 import {xmlParser} from '../../packs/skill/xml-format/api.ts';
+import {htmlParser} from '../../packs/skill/html-format/api.ts';
 import ExcelJS from 'exceljs';
 import {RunRecord} from '../../contracts/src/run.ts';
 import {Submission} from '../../contracts/src/submission.ts';
@@ -273,5 +274,29 @@ test('xml-format sandbox transport preserves xml@1 vectors and enforces declared
     sources:{read:()=>({bytes:fixture,mediaType:'application/xml',size:fixture.length,readTier:'model_readable'})},
   });
   assert.ok(resolved.resolved&&verifyQuote(resolved,'IP or hostname'));
+  await assert.rejects(parseDocument(parser,fixture,{maxBytes:4}),/字节限额/);
+});
+
+test('html-format sandbox transport preserves html@1 vectors and enforces declared limits',async()=>{
+  await installHtmlFixture(bed.registry,bed.kit,bed.admin);
+  const registry=createSkillParserRegistry(options());await registry.refresh!();
+  const parser=registry.get('html@1')!;
+  assert.ok(parser);
+  const fixture=Buffer.from('<html><head><title>Test</title></head><body><h2>Heading</h2><p>Paragraph with <a href="https://192.0.2.1/item">link text</a></p></body></html>');
+  const expected=htmlParser.parse(fixture),actual=await parseDocument(parser,fixture);
+  assert.deepEqual(actual.model,expected.model);
+  assert.deepEqual(actual.summary(),expected.summary());
+  assert.deepEqual(actual.listSelectors(),expected.listSelectors());
+  for(const selector of expected.listSelectors('',{properties:true})){
+    assert.deepEqual(actual.locate(selector),expected.locate(selector),selector);
+  }
+  const source=sha256Hex(fixture),reference=`src:${source}/html@1/a/0`;
+  const frozen=await registry.freeze!([{pack:'html-format',version:'1.0.0'}]);
+  const resolved=await resolveReference(reference,{
+    parsers:frozen.parsers,
+    reader:{user:bed.bob.id,role:'user'},
+    sources:{read:()=>({bytes:fixture,mediaType:'text/html',size:fixture.length,readTier:'model_readable'})},
+  });
+  assert.ok(resolved.resolved&&verifyQuote(resolved,'link text'));
   await assert.rejects(parseDocument(parser,fixture,{maxBytes:4}),/字节限额/);
 });

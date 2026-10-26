@@ -1,4 +1,4 @@
-import {installMindmapFixture} from '../../../../hub/testing/skills.ts';
+import { installMindmapFixture, installWorkbookFixture, installXmlFixture, installHtmlFixture } from '../../../../hub/testing/skills.ts';
 import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../../../hub/connectors/testing/credentials.ts';
 // The end-to-end bed of this package (tests only, not part of a pack): the real Hub packages wired as the server wires them,
 // on a temporary PostgreSQL and loopback stubs serving synthetic data.
@@ -83,7 +83,10 @@ export async function openReviewBed(postgres: TemporaryPostgres): Promise<Review
     await kit.authorizations.grantPublishRight(admin, owner.id);
 
     const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted'), now, sandbox: { requireOsIsolation: isolation }, variableNameAvailable: (name, tx) => productVariableNameAvailable(kit, name, tx) });
-    const parsers=await installMindmapFixture(registry,kit,admin);
+    await installMindmapFixture(registry, kit, admin);
+    await installWorkbookFixture(registry, kit, admin);
+    await installXmlFixture(registry, kit, admin);
+    const parsers = await installHtmlFixture(registry, kit, admin);
     const publications: Record<string, PublishOutcome> = {};
     for (const id of [...SYSTEM_PACKS, ...PRODUCT_PACKS, ...WORKFLOW_PACKS]) {
       const staged = await stagePack(PACK_DIRECTORIES[id], join(temp.path, 'staged', id));
@@ -106,7 +109,7 @@ export async function openReviewBed(postgres: TemporaryPostgres): Promise<Review
     opened.push(store);
 
     const connectorLog: ConnectorLogEvent[] = [];
-    const connectors = createConnectors({ records: kit, packs, log: (event) => void connectorLog.push(event), sandbox: { requireOsIsolation: isolation }, resourceCacheMs: 0, now });
+    const connectors = createConnectors({ records: kit, packs, parsers, log: (event) => void connectorLog.push(event), sandbox: { requireOsIsolation: isolation }, resourceCacheMs: 0, now });
     const add = (input: Parameters<Connectors['admin']['addResource']>[1]) => addSyntheticResource(kit, packs, connectors, admin, input);
     const agileResource = await add({ system_pack: 'agile-platform', name: '合成敏捷平台', environment: 'test', origins: { 'agile-oauth': agile.origin, 'agile-api': agile.origin }, allow_plaintext: [agile.origin], settings: { roots: [ROOTS.first, ROOTS.second] } });
     const plmResource = await add({ system_pack: 'plm', name: '合成 PLM', environment: 'test', origins: { 'plm-oauth': agile.origin, 'plm-api': plm.origin }, allow_plaintext: [agile.origin, plm.origin] });
