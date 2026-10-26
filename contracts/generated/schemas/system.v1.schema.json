@@ -1,0 +1,897 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "system@1"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "roles": {
+      "minItems": 1,
+      "maxItems": 16,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,40}$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "auth": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "none"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "static_header"
+            },
+            "header": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,63}$"
+                },
+                "scheme": {
+                  "type": "string",
+                  "enum": [
+                    "raw",
+                    "bearer"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "scheme"
+              ],
+              "additionalProperties": false
+            },
+            "roles": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,40}$"
+              },
+              "description": "roles whose requests carry the header"
+            },
+            "credential": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,31}$",
+              "description": "the vault-held header value (raw) or token (bearer)"
+            }
+          },
+          "required": [
+            "kind",
+            "header",
+            "roles",
+            "credential"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "login_token"
+            },
+            "header": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,63}$"
+                },
+                "scheme": {
+                  "type": "string",
+                  "enum": [
+                    "raw",
+                    "bearer"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "scheme"
+              ],
+              "additionalProperties": false
+            },
+            "roles": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{0,40}$"
+              },
+              "description": "roles whose requests carry the token"
+            },
+            "credentials": {
+              "minItems": 1,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                  },
+                  "digest": {
+                    "type": "string",
+                    "enum": [
+                      "plain",
+                      "sha512_base64"
+                    ],
+                    "description": "what the vault keeps and the request carries: the value as given, or Base64(SHA-512(value))"
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "name",
+                  "digest"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "login": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,40}$"
+                },
+                "method": {
+                  "type": "string",
+                  "const": "POST"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "a literal path template, no parameters"
+                },
+                "body": {
+                  "description": "JSON template: a string \"{name}\" anywhere is replaced by the credential of that name"
+                },
+                "token": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                  "description": "where the token is in the answer"
+                },
+                "expiry": {
+                  "description": "where the token expiry is",
+                  "type": "object",
+                  "properties": {
+                    "pointer": {
+                      "type": "string",
+                      "maxLength": 8192,
+                      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                      "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+                    },
+                    "unit": {
+                      "type": "string",
+                      "enum": [
+                        "epoch_seconds",
+                        "epoch_millis",
+                        "iso8601"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "pointer",
+                    "unit"
+                  ],
+                  "additionalProperties": false
+                },
+                "envelope": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "maxLength": 8192,
+                      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                      "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+                    },
+                    "ok": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 40
+                          }
+                        ]
+                      }
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 8192,
+                      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                      "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                },
+                "max_bytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1048576
+                },
+                "timeout_ms": {
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 120000
+                }
+              },
+              "required": [
+                "role",
+                "method",
+                "path",
+                "body",
+                "token",
+                "envelope"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "header",
+            "roles",
+            "credentials",
+            "login"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "envelope": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "maxLength": 8192,
+          "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+          "description": "where the envelope code is"
+        },
+        "ok": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              }
+            ]
+          },
+          "description": "codes meaning success"
+        },
+        "expired": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              }
+            ]
+          },
+          "description": "codes meaning the login has expired (one login, then one repeat of the request)"
+        },
+        "message": {
+          "description": "where the error message is, for the admin log",
+          "type": "string",
+          "maxLength": 8192,
+          "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+        }
+      },
+      "required": [
+        "code",
+        "ok",
+        "expired"
+      ],
+      "additionalProperties": false
+    },
+    "routes": {
+      "minItems": 1,
+      "maxItems": 200,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          },
+          "role": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,40}$"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PROPFIND"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "path template relative to the base URL of the role: literal segments, {name}, a last {name*}, optional trailing /; a POST route has a literal path"
+          },
+          "params": {
+            "description": "a string shape per template parameter, checked on every (decoded) segment it fills; required for a {name*} of a role that carries the credential",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            }
+          },
+          "query": {
+            "description": "the query parameters (strings) as an object shape; without it no query is sent",
+            "$ref": "#/$defs/__schema0"
+          },
+          "body": {
+            "description": "the JSON body; without it no body is sent",
+            "$ref": "#/$defs/__schema0"
+          },
+          "headers": {
+            "description": "fixed request headers, for example Depth: 1",
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,63}$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[\\x20-\\x7e]{0,200}$"
+            }
+          },
+          "response": {
+            "type": "string",
+            "enum": [
+              "json",
+              "text",
+              "xml",
+              "html",
+              "bytes"
+            ]
+          },
+          "max_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 268435456,
+            "description": "a longer response is an error; it is never truncated"
+          },
+          "pagination": {
+            "description": "The planner may request further pages within this finite bound; no hidden fetch or truncated completion",
+            "type": "object",
+            "properties": {
+              "max_pages": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000
+              }
+            },
+            "required": [
+              "max_pages"
+            ],
+            "additionalProperties": false
+          },
+          "redirects": {
+            "description": "Each same-origin hop is another planned, recorded read request; never a transport auto-follow",
+            "type": "object",
+            "properties": {
+              "same_origin": {
+                "type": "boolean",
+                "const": true
+              },
+              "max_hops": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000
+              }
+            },
+            "required": [
+              "same_origin",
+              "max_hops"
+            ],
+            "additionalProperties": false
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 300000
+          },
+          "envelope": {
+            "description": "check the system envelope of a JSON answer: true, when_present or false",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "string",
+                "const": "when_present"
+              }
+            ]
+          },
+          "parse": {
+            "description": "a core parser whose model the read functions get besides the text",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "read": {
+            "type": "boolean",
+            "const": true,
+            "description": "every route is a read; a write route is never listed, so it is refused"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "method",
+          "path",
+          "response",
+          "max_bytes",
+          "read"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reads": {
+      "minItems": 1,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          },
+          "external": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*$",
+            "description": "the external object type this read serves, system:type"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "plan": {
+            "description": "ReadPlanInput -> ReadPlanOutput, called again with the responses so far, at most 5 rounds",
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+              },
+              "export": {
+                "type": "string",
+                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+              }
+            },
+            "required": [
+              "module"
+            ],
+            "additionalProperties": false
+          },
+          "request": {
+            "description": "one declared request instead of a planner",
+            "type": "object",
+            "properties": {
+              "route": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+              },
+              "params": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              },
+              "query": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              },
+              "body": {}
+            },
+            "required": [
+              "route"
+            ],
+            "additionalProperties": false
+          },
+          "project": {
+            "description": "ReadProjectionInput -> ReadProjectionOutput: derived artifacts such as content and meta",
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+              },
+              "export": {
+                "type": "string",
+                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+              }
+            },
+            "required": [
+              "module"
+            ],
+            "additionalProperties": false
+          },
+          "absent_codes": {
+            "description": "Projection error codes that explicitly mean this whole object is absent; valid only with fully readable supporting responses",
+            "minItems": 1,
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "max_requests": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "max_bytes": {
+            "description": "all responses of one read together",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1073741824
+          }
+        },
+        "required": [
+          "name",
+          "external"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "title",
+    "roles",
+    "auth",
+    "routes",
+    "reads"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "object"
+            },
+            "properties": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            "required": {
+              "maxItems": 64,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              }
+            },
+            "additionalProperties": {
+              "type": "boolean",
+              "const": false
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type",
+            "additionalProperties"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "array"
+            },
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "minItems": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "maxItems": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type",
+            "items",
+            "maxItems"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "string"
+            },
+            "minLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "maxLength": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65536
+            },
+            "pattern": {
+              "type": "string"
+            },
+            "enum": {
+              "minItems": 1,
+              "maxItems": 256,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 1000
+              }
+            },
+            "const": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type",
+            "maxLength"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "integer"
+            },
+            "minimum": {
+              "type": "number",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "maximum": {
+              "type": "number",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "enum": {
+              "minItems": 1,
+              "maxItems": 256,
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "number"
+            },
+            "minimum": {
+              "type": "number",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "maximum": {
+              "type": "number",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "boolean"
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "null"
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "anyOf": {
+              "minItems": 1,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "required": [
+            "anyOf"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

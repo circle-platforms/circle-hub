@@ -1,0 +1,47 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "board",
+      "title": "分组指标",
+      "function": {
+        "module": "functions/board.ts"
+      },
+      "applies": "run",
+      "subject": {
+        "module": "functions/subject.ts"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "advisory",
+      "basis": "R3：对受理评审主张做算术聚合，所有结论以判断为前提；不把含糊语义升级为事实"
+    },
+    {
+      "id": "thresholds",
+      "title": "阈值提示",
+      "function": {
+        "module": "functions/thresholds.ts"
+      },
+      "applies": "run",
+      "subject": {
+        "module": "functions/subject.ts"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "advisory",
+      "basis": "R3：对受理评审主张做算术聚合，所有结论以判断为前提；不把含糊语义升级为事实"
+    },
+    {
+      "id": "totals",
+      "title": "合计",
+      "function": {
+        "module": "functions/totals.ts"
+      },
+      "applies": "run",
+      "subject": {
+        "module": "functions/subject.ts"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "advisory",
+      "basis": "R3：对受理评审主张做算术聚合，所有结论以判断为前提；不把含糊语义升级为事实"
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "id": "scan_out_of_range",
+  "source": "author",
+  "check": "case_commands",
+  "note": "普通用例文字里的命令参数越界",
+  "subject": {
+    "kind": "case",
+    "id": "sample:c1",
+    "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c1",
+    "negative": false,
+    "commands": [
+      "设置池 c1 的探测间隔",
+      "health interval pool1 999",
+      "显示的探测间隔与设置一致"
+    ]
+  },
+  "catalog": {
+    "root": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "complete": true,
+    "entries": [
+      {
+        "head": "pool create",
+        "signatures": [
+          [
+            {
+              "name": "name",
+              "type": "string",
+              "maxLength": 32
+            }
+          ]
+        ]
+      },
+      {
+        "head": "health interval",
+        "signatures": [
+          [
+            {
+              "name": "pool",
+              "type": "string"
+            },
+            {
+              "name": "seconds",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 300
+            }
+          ]
+        ]
+      },
+      {
+        "head": "show pool",
+        "signatures": [
+          [],
+          [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "core.catalog.param_out_of_range",
+      "item": "sample:c1",
+      "tier": "advisory"
+    }
+  ]
+}

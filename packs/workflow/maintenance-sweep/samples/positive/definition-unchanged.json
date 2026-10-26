@@ -1,0 +1,55 @@
+{
+  "id": "definition_unchanged",
+  "source": "author",
+  "check": "command_unchanged",
+  "note": "合成样例：修改路径上没有定义差异，命令定义未变记支持",
+  "subject": {
+    "items": [
+      {
+        "id": "doc-1:n1",
+        "location": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fields": {
+          "document": "doc-1",
+          "node": "n1",
+          "priority": 1,
+          "negative": false,
+          "reasons": [
+            {
+              "change": "modified",
+              "detail": 0
+            }
+          ]
+        },
+        "label": "查看部件状态"
+      }
+    ],
+    "note": {
+      "details": [
+        {
+          "path": "/commands/show",
+          "change": "modified",
+          "fields": [],
+          "references": []
+        }
+      ],
+      "diff": [
+        {
+          "path": "/commands/show",
+          "change": "modified",
+          "cases": 1
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "support",
+      "item": "doc-1:n1",
+      "tier": "advisory"
+    }
+  ]
+}

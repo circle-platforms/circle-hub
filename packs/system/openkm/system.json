@@ -1,0 +1,146 @@
+{
+  "schema": "system@1",
+  "title": "文档库（OpenKM）",
+  "description": "文档库的只读访问（WebDAV，Basic 认证）：读法与手册库相同，类型前缀是 openkm（openkm:file、openkm:cli、openkm:app、openkm:spec-search、openkm:qa-search、openkm:spec-list）；文件按它在所列目录下的路径读，从不跟随列表里的链接。openkm:spec-list:configured 列出 spec_folders 配置目录的直接成员，不跟链接；旧 spec_folder 并入同一列表并警告。凭据只在密钥库里：资源的凭据 authorization 存完整的请求头值（Basic 加 Base64 编码的“账号:密码”），只在带这个凭据的角色的请求里发出。只有读路由，没有写路由。",
+  "roles": [
+    {
+      "name": "openkm",
+      "description": "文档库的 WebDAV 根地址（指向手册镜像所出自的那个目录）"
+    }
+  ],
+  "auth": {
+    "kind": "static_header",
+    "header": {
+      "name": "Authorization",
+      "scheme": "raw"
+    },
+    "roles": [
+      "openkm"
+    ],
+    "credential": "authorization"
+  },
+  "routes": [
+    {
+      "id": "list",
+      "role": "openkm",
+      "method": "PROPFIND",
+      "path": "/{dir*}/",
+      "params": {
+        "dir": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[^;]{1,255}$"
+        }
+      },
+      "headers": {
+        "Depth": "1"
+      },
+      "response": "xml",
+      "parse": "xml@1",
+      "max_bytes": 16777216,
+      "timeout_ms": 60000,
+      "read": true,
+      "description": "列出一个目录的直接成员（Depth 1）"
+    },
+    {
+      "id": "file",
+      "role": "openkm",
+      "method": "GET",
+      "path": "/{path*}",
+      "params": {
+        "path": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[^;]{1,255}$"
+        }
+      },
+      "response": "text",
+      "max_bytes": 33554432,
+      "timeout_ms": 120000,
+      "read": true,
+      "description": "读一个文件（Markdown 等文本）"
+    }
+  ],
+  "reads": [
+    {
+      "name": "file",
+      "external": "openkm:file",
+      "description": "按路径读一个文件",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "filePlan"
+      },
+      "max_requests": 1
+    },
+    {
+      "name": "cli",
+      "external": "openkm:cli",
+      "description": "一个版本线的 CLI 手册",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "manualPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "manualProject"
+      },
+      "max_requests": 6
+    },
+    {
+      "name": "app",
+      "external": "openkm:app",
+      "description": "一个版本线的应用手册",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "manualPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "manualProject"
+      },
+      "max_requests": 6
+    },
+    {
+      "name": "spec-search",
+      "external": "openkm:spec-search",
+      "description": "列出规格书目录（spec_folders，默认 [spec]）的成员：关键词检索已退役（所有者裁定 U19/U20，2026-10-24），不按文件名打分、不选文件、不读文件，检索词只作披露；派生内容给出成员路径、缺的事实和下一步（用 openkm:file:<路径> 显式读取，或由模型带逐字引文提出候选并经 Hub 核验）",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "searchPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "searchProject"
+      },
+      "max_requests": 37
+    },
+    {
+      "name": "qa-search",
+      "external": "openkm:qa-search",
+      "description": "列出测试策略目录（qa_folder，默认 qa）的成员，读法同规格书检索：关键词检索已退役，不选也不读文件，检索词只作披露；只作线索",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "searchPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "searchProject"
+      },
+      "max_requests": 6
+    },
+    {
+      "name": "spec-list",
+      "external": "openkm:spec-list",
+      "description": "列出 spec_folders 配置目录的直接成员（文件与子目录分开），不跟链接；旧 spec_folder 并入同一列表并警告",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "specListPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "specListProject"
+      },
+      "max_requests": 32
+    }
+  ]
+}

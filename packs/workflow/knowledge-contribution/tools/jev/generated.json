@@ -1,0 +1,79 @@
+{
+  "id": "knowledge-contribution",
+  "version": "1.2.2",
+  "model_readable": "model_readable",
+  "axes": {
+    "entry_kind": [
+      {
+        "code": "definition",
+        "label": "定义"
+      },
+      {
+        "code": "behaviour",
+        "label": "行为"
+      },
+      {
+        "code": "case",
+        "label": "用例"
+      },
+      {
+        "code": "defect",
+        "label": "缺陷"
+      },
+      {
+        "code": "observation",
+        "label": "观察"
+      }
+    ],
+    "document_output_kind": [
+      {
+        "code": "classification",
+        "label": "分类"
+      },
+      {
+        "code": "placement_proposal",
+        "label": "归位提议"
+      },
+      {
+        "code": "assertion",
+        "label": "声明"
+      },
+      {
+        "code": "relation",
+        "label": "关系"
+      },
+      {
+        "code": "applicability_claim",
+        "label": "适用条件主张"
+      }
+    ],
+    "relation_kind": [
+      {
+        "code": "same_subject",
+        "label": "说的是同一件事"
+      },
+      {
+        "code": "contradicts",
+        "label": "互相矛盾"
+      },
+      {
+        "code": "covers",
+        "label": "覆盖"
+      }
+    ],
+    "read_tier": [
+      {
+        "code": "model_readable",
+        "label": "模型可读"
+      },
+      {
+        "code": "function_bytes_only",
+        "label": "只许函数按引用读字节"
+      },
+      {
+        "code": "retain_only",
+        "label": "只保留"
+      }
+    ]
+  }
+}

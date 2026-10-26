@@ -1,0 +1,419 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "documents",
+      "role": "subject",
+      "description": "要检查的测试脑图：敏捷平台的脑图（agile:mindmap:<文档编号>）或上传的 KityMinder 导出（application/json）；可以给多份，每份是一个条目。一次最多约 30 份，文档很大（几千个节点）时更少：再多时回答太长模型读不全，或者输入超过 Hub 的上限，分几次运行",
+      "accepts": [
+        "agile:mindmap",
+        "application/json"
+      ],
+      "required": true,
+      "many": true
+    },
+    {
+      "slot": "case_index",
+      "role": "expected",
+      "description": "同一锁定构建的完整用例索引，only 精确列本次敏捷平台文档，fields=document,node,commands,command_identities,command_tree_root,title,path_labels；旧条目缺完整身份时用新生产器重产，不能以旧路径判覆盖完整",
+      "accepts": [
+        "knowledge:index"
+      ],
+      "required": false,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "skipped",
+      "description": "仅用户明确声明的不适用类别及原话理由。category 精确取模板 id；可选 document 限定本运行文档；可选 command 必须是 CommandIdentity 完整对象，只跳过该身份，不按路径字符串或文字猜测",
+      "required": false,
+      "schema": {
+        "type": "array",
+        "maxItems": 200,
+        "items": {
+          "type": "object",
+          "properties": {
+            "category": {
+              "type": "string",
+              "enum": [
+                "functional",
+                "configuration",
+                "integration",
+                "compatibility",
+                "negative",
+                "stress",
+                "command_add",
+                "command_delete",
+                "command_modify",
+                "command_query",
+                "show_at_maximum",
+                "no_command",
+                "clear_command",
+                "operation_log",
+                "audit_log",
+                "configuration_sync",
+                "configuration_save",
+                "configuration_restore",
+                "configuration_clear",
+                "upgrade_new_to_new",
+                "upgrade_old_to_new",
+                "upgrade_new_to_old",
+                "security",
+                "database"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "document": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "command": {
+              "type": "object",
+              "properties": {
+                "tree_root": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+                },
+                "signature": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                },
+                "parameters": {
+                  "minItems": 0,
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "position": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 255
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "type": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "declaration": {
+                            "type": "string",
+                            "maxLength": 8192,
+                            "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                          },
+                          "grammar": {
+                            "type": "string"
+                          },
+                          "catalog_type": {
+                            "type": "string",
+                            "enum": [
+                              "string",
+                              "int",
+                              "enum",
+                              "ipv4",
+                              "ipv6",
+                              "mask",
+                              "port",
+                              "keyword",
+                              "hostname",
+                              "ip_or_hostname"
+                            ],
+                            "description": "string: any word (minLength/maxLength); int: decimal integer (minimum/maximum); enum: one of values; ipv4, ipv6: address; mask: dotted IPv4 netmask; port: 0-65535 (minimum/maximum narrow it); keyword: the literal keyword; hostname: bounded ASCII DNS labels (single-label and trailing-dot names allowed, no URL/IP coercion); ip_or_hostname: IPv4, IPv6 or that hostname according to the bound catalog contract"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "declaration",
+                          "grammar"
+                        ],
+                        "additionalProperties": false,
+                        "title": "declared-parameter-type@1",
+                        "description": "Exact type name and declaration from the original contract/tree. Optional catalog_type reuses the existing catalog vocabulary; no help-text inference. Missing types have a separate undeclared state, not a string fallback."
+                      },
+                      "raw": {
+                        "type": "string",
+                        "minLength": 0,
+                        "maxLength": 1048576
+                      },
+                      "parsed": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "text"
+                              },
+                              "value": {
+                                "type": "string",
+                                "minLength": 0,
+                                "maxLength": 1048576
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "int"
+                              },
+                              "value": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "number"
+                              },
+                              "value": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "boolean"
+                              },
+                              "value": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "address"
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "ipv4"
+                                      },
+                                      "value": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "value"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "ipv6"
+                                      },
+                                      "value": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "value"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "mask"
+                                      },
+                                      "value": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "value"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "ipv4_prefix"
+                                      },
+                                      "value": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 32
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "value"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "ipv6_prefix"
+                                      },
+                                      "value": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 128
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "value"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                ],
+                                "title": "typed-address-value@1",
+                                "description": "A value at a declared address/mask/prefix position only. Mask contiguity, address membership, and agreement with the referenced type are boundary checks; the spelling never determines its purpose."
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ],
+                        "title": "parsed-parameter-value@1",
+                        "description": "Parsed representation selected by the referenced declared type. The boundary checks the parse against original bytes and type, not just this shape."
+                      },
+                      "role": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "declaration": {
+                            "type": "string",
+                            "maxLength": 8192,
+                            "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "declaration"
+                        ],
+                        "additionalProperties": false,
+                        "title": "declared-parameter-role@1",
+                        "description": "Exact role name and its published closed-set declaration; Hub checks membership, without name heuristics."
+                      }
+                    },
+                    "required": [
+                      "position",
+                      "name",
+                      "type",
+                      "raw",
+                      "parsed"
+                    ],
+                    "additionalProperties": false,
+                    "title": "typed-parameter@1",
+                    "description": "An explicit supplied parameter at its zero-based signature position, bound to exact type and optional role declarations; no inferred defaults. Undeclared parameters cannot be represented as verified typed values."
+                  }
+                }
+              },
+              "required": [
+                "tree_root",
+                "path",
+                "signature",
+                "parameters"
+              ],
+              "additionalProperties": false,
+              "title": "command-identity@1",
+              "description": "Complete command identity: locked command-tree root and full path, exact overload/signature reference and typed parsed supplied parameters. Hub resolves each declaration and fully consumes the command grammar; structural validity alone does not prove it is a command. Identity equality uses the canonical typed parameter projection in identityRules.command; raw text and role evidence are annotations, not duplicate-key inputs."
+            }
+          },
+          "required": [
+            "category",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "name": "case_rule",
+      "description": "哪些节点是用例：marked（默认）认带标签或带标记（没有标签、带用例优先级 2、有子节点、下面没有别的用例）的节点；tagged 限制为只认标签（resource 不为空）",
+      "required": false,
+      "schema": {
+        "enum": [
+          "tagged",
+          "marked"
+        ]
+      }
+    }
+  ],
+  "product": {
+    "catalogs": [
+      "commands@1"
+    ]
+  },
+  "subject": "documents",
+  "projection": {
+    "module": "functions/project.ts"
+  }
+}

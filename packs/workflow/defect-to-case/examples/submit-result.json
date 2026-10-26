@@ -1,0 +1,50 @@
+{
+  "run": "run_01m5h9zm2nhzbz2hrfjfb6azta",
+  "model": "synthetic-model",
+  "items": [
+    {
+      "item": "74001",
+      "handling": "handled",
+      "slots": {
+        "cases": [
+          {
+            "text": "SLB健康检查间隔配置测试",
+            "quotes": [
+              {
+                "reference": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix",
+                "text": "健康检查间隔设置成功"
+              }
+            ],
+            "data": {
+              "title": "SLB健康检查间隔配置测试",
+              "priority": 2,
+              "negative": false,
+              "expects_refutation": false,
+              "preconditions": [
+                "SLB正常运行"
+              ],
+              "steps": [
+                {
+                  "text": "执行配置健康检查间隔命令",
+                  "command": "widget health interval 60"
+                }
+              ],
+              "expected": [
+                {
+                  "text": "健康检查间隔设置成功",
+                  "quote": {
+                    "reference": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix",
+                    "text": "健康检查间隔设置成功"
+                  }
+                }
+              ],
+              "tags": [
+                "Functional"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

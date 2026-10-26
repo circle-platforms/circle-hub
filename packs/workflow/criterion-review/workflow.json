@@ -1,0 +1,47 @@
+{
+  "schema": "workflow@1",
+  "predecessor": "required",
+  "predecessor_access": "view",
+  "criterion_review": true,
+  "inputs": [
+    {
+      "slot": "declaration",
+      "role": "artifact_under_verification",
+      "description": "判断请求所指的原始提交记录，不是 validation_result",
+      "accepts": [
+        "application/json"
+      ],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "evidence",
+      "role": "expected",
+      "description": "声明所引的期望原件（src 绑定整件，rec 可选片段），引文仍用精确片段；按本账号现有权限读取",
+      "accepts": [
+        "application/json",
+        "application/vnd.ms-excel.sheet.macroEnabled.12",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/xhtml+xml",
+        "application/xml",
+        "text/csv",
+        "text/html",
+        "text/markdown",
+        "text/plain",
+        "text/tab-separated-values",
+        "text/x-markdown",
+        "text/xml"
+      ],
+      "required": false,
+      "many": true
+    }
+  ],
+  "parameters": [],
+  "product": {
+    "catalogs": []
+  },
+  "subject": "declaration",
+  "projection": {
+    "module": "functions/project.ts"
+  }
+}

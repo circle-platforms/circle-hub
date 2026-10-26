@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "rows": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "producer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "slot": {
+            "type": "string",
+            "minLength": 1
+          },
+          "external": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
+          },
+          "revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "media_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parser": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "artifact": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "digest of the source_artifact record that decided the read"
+          },
+          "read_tier": {
+            "type": "string",
+            "enum": [
+              "model_readable",
+              "function_bytes_only",
+              "retain_only"
+            ]
+          },
+          "basis": {
+            "type": "string",
+            "enum": [
+              "release_record",
+              "device_echo",
+              "source_structure",
+              "declared"
+            ]
+          },
+          "decided_by": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "producer",
+          "slot",
+          "external",
+          "revision",
+          "sha256",
+          "size",
+          "media_type",
+          "parser",
+          "artifact",
+          "read_tier",
+          "basis",
+          "decided_by"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "rows"
+  ],
+  "additionalProperties": false
+}

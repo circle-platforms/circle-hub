@@ -1,0 +1,296 @@
+{
+  "interpreter": "pattern@1",
+  "tables": {
+    "case": {
+      "schema": "pattern@1",
+      "origin": "合成样例：用例编号与标题的写法",
+      "language": "regexp",
+      "item": "/id",
+      "rules": [
+        {
+          "values": "$.fields.autoid",
+          "pattern": "[A-Z]{2,5}-[0-9]+",
+          "samples": {
+            "match": [
+              "AB-1",
+              "QA-2048"
+            ],
+            "reject": [
+              "ab-1",
+              "AB-",
+              "AB-1x"
+            ]
+          }
+        },
+        {
+          "values": "$.fields.title",
+          "pattern": "TODO|FIXME",
+          "mode": "search",
+          "negate": true,
+          "samples": {
+            "match": [
+              "登录成功"
+            ],
+            "reject": [
+              "TODO 补充步骤"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "positive": [
+    {
+      "name": "编号与标题都合规",
+      "table": "case",
+      "subject": {
+        "id": "doc1:n1",
+        "fields": {
+          "autoid": "TC-1024",
+          "title": "登录成功后跳转首页"
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "item": "doc1:n1",
+          "pointer": "/fields/autoid"
+        },
+        {
+          "verdict": "support",
+          "pointer": "/fields/title"
+        }
+      ]
+    },
+    {
+      "name": "没有编号字段时不核对",
+      "table": "case",
+      "subject": {
+        "id": "doc1:n2",
+        "fields": {
+          "title": "退出登录"
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "pointer": "/fields/title"
+        }
+      ]
+    },
+    {
+      "name": "不区分大小写的模式（flags i）",
+      "table": {
+        "schema": "pattern@1",
+        "origin": "合成样例：不区分大小写的编号",
+        "language": "regexp",
+        "rules": [
+          {
+            "values": "$.code",
+            "pattern": "[a-z]{2}-[0-9]+",
+            "flags": "i",
+            "samples": {
+              "match": [
+                "AB-1",
+                "ab-2"
+              ],
+              "reject": [
+                "A-1"
+              ]
+            }
+          }
+        ]
+      },
+      "subject": {
+        "code": "Qx-12"
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "pointer": "/code"
+        }
+      ]
+    },
+    {
+      "name": "全角空白和多个空白先规范化",
+      "table": {
+        "schema": "pattern@1",
+        "origin": "合成样例：先按表示规范化再匹配",
+        "language": "regexp",
+        "match": {
+          "unicode": "nfkc",
+          "whitespace": "collapse"
+        },
+        "rules": [
+          {
+            "values": "$.title",
+            "pattern": "登录 成功",
+            "samples": {
+              "match": [
+                "登录 成功"
+              ],
+              "reject": [
+                "登录成功"
+              ]
+            }
+          }
+        ]
+      },
+      "subject": {
+        "title": " 登录　　成功 "
+      },
+      "expect": [
+        {
+          "verdict": "support"
+        }
+      ]
+    },
+    {
+      "name": "表要求取值存在，取值在",
+      "table": {
+        "schema": "pattern@1",
+        "origin": "合成样例：不区分大小写的编号",
+        "language": "regexp",
+        "rules": [
+          {
+            "values": "$.code",
+            "pattern": "[a-z]{2}-[0-9]+",
+            "flags": "i",
+            "samples": {
+              "match": [
+                "AB-1",
+                "ab-2"
+              ],
+              "reject": [
+                "A-1"
+              ]
+            }
+          }
+        ],
+        "required": true
+      },
+      "subject": {
+        "code": "ab-7"
+      },
+      "expect": [
+        {
+          "verdict": "support"
+        }
+      ]
+    }
+  ],
+  "negative": [
+    {
+      "name": "编号写成小写",
+      "table": "case",
+      "subject": {
+        "id": "doc1:n1",
+        "fields": {
+          "autoid": "tc-1",
+          "title": "登录"
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.pattern.no_match",
+          "pointer": "/fields/autoid"
+        },
+        {
+          "verdict": "support"
+        }
+      ]
+    },
+    {
+      "name": "标题里有待办标记",
+      "table": "case",
+      "subject": {
+        "id": "doc1:n1",
+        "fields": {
+          "autoid": "TC-1",
+          "title": "登录 TODO 补全步骤"
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support"
+        },
+        {
+          "verdict": "refute",
+          "code": "core.pattern.no_match",
+          "data": {
+            "negate": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "不区分大小写也不匹配",
+      "table": {
+        "schema": "pattern@1",
+        "origin": "合成样例：不区分大小写的编号",
+        "language": "regexp",
+        "rules": [
+          {
+            "values": "$.code",
+            "pattern": "[a-z]{2}-[0-9]+",
+            "flags": "i",
+            "samples": {
+              "match": [
+                "AB-1",
+                "ab-2"
+              ],
+              "reject": [
+                "A-1"
+              ]
+            }
+          }
+        ]
+      },
+      "subject": {
+        "code": "Q-12"
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.pattern.no_match"
+        }
+      ]
+    },
+    {
+      "name": "规范化后仍不匹配",
+      "table": {
+        "schema": "pattern@1",
+        "origin": "合成样例：先按表示规范化再匹配",
+        "language": "regexp",
+        "match": {
+          "unicode": "nfkc",
+          "whitespace": "collapse"
+        },
+        "rules": [
+          {
+            "values": "$.title",
+            "pattern": "登录 成功",
+            "samples": {
+              "match": [
+                "登录 成功"
+              ],
+              "reject": [
+                "登录成功"
+              ]
+            }
+          }
+        ]
+      },
+      "subject": {
+        "title": "登录  失败"
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.pattern.no_match"
+        }
+      ]
+    }
+  ]
+}

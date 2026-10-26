@@ -1,0 +1,82 @@
+{
+  "id": "search_build_mismatch",
+  "source": "author",
+  "check": "bed",
+  "note": "合成反例：search 按冻结清单和租约重算；没有时长上限",
+  "subject": {
+    "items": [
+      {
+        "id": "bed-a",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/beds/0",
+        "fields": {
+          "action": "search",
+          "bed": "bed-a",
+          "devices_ok": true,
+          "missing": [],
+          "earliest_free": null,
+          "build_ok": "match",
+          "build_source": "declared",
+          "spare_devices": 0,
+          "conclusion": "被改过的搜索结论"
+        }
+      }
+    ],
+    "context": {
+      "groups": [
+        {
+          "action": "search",
+          "need": {
+            "devices": [
+              {
+                "type": "load-balancer",
+                "count": 1
+              }
+            ],
+            "build": "Rel_FAMX_10_6_1_8"
+          },
+          "bed": null,
+          "addresses": null,
+          "booking": null,
+          "reason": "",
+          "devices": null,
+          "manifest": {
+            "schema": "test-bed-manifest@1",
+            "beds": [
+              {
+                "name": "bed-a",
+                "devices": [
+                  {
+                    "name": "afamx0",
+                    "type": "load-balancer",
+                    "ipv4": [
+                      "192.0.2.10/26"
+                    ],
+                    "ipv6": [],
+                    "installed": {
+                      "build": "Rel_FAMY_10_6_1_8",
+                      "base": "Rel_FAMX_10_6_1_8"
+                    }
+                  }
+                ],
+                "services": [],
+                "reserved": []
+              }
+            ]
+          },
+          "leases": {
+            "now": "2026-10-22T02:00:00.000Z",
+            "entries": [],
+            "registrations": []
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "test-bed.search_mismatch",
+      "tier": "advisory"
+    }
+  ]
+}

@@ -1,0 +1,144 @@
+{
+  "schema": "slots@1",
+  "item": {
+    "findings": {
+      "codes": [
+        {
+          "code": "literal_issue",
+          "label": "字面问题：重复的行、空字段、错别字、字段格式不一致"
+        },
+        {
+          "code": "coverage_gap",
+          "label": "覆盖缺口：缺陷或需求引入的功能或参数没有用例测到"
+        },
+        {
+          "code": "differentiation_gap",
+          "label": "区分缺口：两个功能都只测了正向，从没有相互对照着测"
+        },
+        {
+          "code": "edge_case_gap",
+          "label": "边界用例缺口：空值、超长字符串、Unicode、大小写等"
+        },
+        {
+          "code": "negative_gap",
+          "label": "反向用例缺口：缺陷修复的错误路径没有反向用例"
+        },
+        {
+          "code": "block_structure_mismatch",
+          "label": "分块结构不符：分组标题与其中用例描述的行为不一致"
+        },
+        {
+          "code": "self_contradiction",
+          "label": "业务自相矛盾：用例之间或用例内部的业务描述互相矛盾"
+        }
+      ],
+      "ranks": [
+        {
+          "code": "critical",
+          "label": "严重（对应等级 P6-P7）"
+        },
+        {
+          "code": "major",
+          "label": "主要（对应等级 P3-P5）"
+        },
+        {
+          "code": "minor",
+          "label": "次要（对应等级 P0-P2）"
+        }
+      ],
+      "min": 0,
+      "max": 20,
+      "evidence": true
+    },
+    "expected_quality": {
+      "codes": [
+        {
+          "code": "expected_quality",
+          "label": "期望质量判断（布尔 vague 是模型主张，不是脚本事实）"
+        }
+      ],
+      "min": 0,
+      "max": 1,
+      "evidence": true,
+      "data": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "vague",
+          "source_sha256",
+          "expected_count",
+          "expected_references"
+        ],
+        "properties": {
+          "schema": {
+            "const": "expected-quality@1"
+          },
+          "vague": {
+            "type": "boolean"
+          },
+          "source_sha256": {
+            "type": "string"
+          },
+          "expected_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_references": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "run": {
+    "level": {
+      "codes": [
+        {
+          "code": "level",
+          "label": "整个被评审对象的等级"
+        }
+      ],
+      "ranks": [
+        {
+          "code": "P0",
+          "label": "P0：覆盖全部功能细节，兼容性、反向、压力、边角用例和极端场景非常丰富"
+        },
+        {
+          "code": "P1",
+          "label": "P1：覆盖全部功能细节，兼容性、反向、压力用例丰富"
+        },
+        {
+          "code": "P2",
+          "label": "P2：覆盖全部功能细节，兼容性、反向、压力用例比较丰富"
+        },
+        {
+          "code": "P3",
+          "label": "P3：覆盖全部功能细节，有一些兼容性、反向、压力用例"
+        },
+        {
+          "code": "P4",
+          "label": "P4：覆盖全部功能细节，有一些反向和压力用例，兼容性不足"
+        },
+        {
+          "code": "P5",
+          "label": "P5：覆盖全部功能，有一些反向和压力用例，功能细节的深度不够"
+        },
+        {
+          "code": "P6",
+          "label": "P6：覆盖基本功能，有反向和压力类型，功能细节覆盖不完整"
+        },
+        {
+          "code": "P7",
+          "label": "P7：没有覆盖基本功能，没有反向和压力类型"
+        }
+      ],
+      "min": 1,
+      "max": 1
+    }
+  }
+}

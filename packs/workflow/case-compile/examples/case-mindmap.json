@@ -1,0 +1,36 @@
+{
+  "root": {
+    "data": {
+      "id": "fixture-document",
+      "text": "合成文档"
+    },
+    "children": [
+      {
+        "data": {
+          "id": "fixture-case",
+          "text": "健康检查间隔配置与查询测试\nwidget health interval 60\nshow health interval",
+          "autoid": "990000000000000031",
+          "auto": "1",
+          "priority": 2,
+          "resource": [
+            "功能"
+          ]
+        },
+        "children": [
+          {
+            "data": {
+              "id": "fixture-expected",
+              "text": "健康检查间隔设置成功"
+            }
+          },
+          {
+            "data": {
+              "id": "fixture-expected-count",
+              "text": "查询到 1 条间隔记录"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

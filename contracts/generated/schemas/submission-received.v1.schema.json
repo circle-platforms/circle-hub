@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "propertyNames": {
+    "type": "string"
+  },
+  "additionalProperties": {},
+  "description": "arguments of a submit_result call exactly as received, stored when they do not parse as submission@1"
+}

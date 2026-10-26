@@ -1,0 +1,59 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "documents",
+      "role": "subject",
+      "description": "要定位的测试脑图文档：敏捷测试平台的脑图（agile:mindmap:<文档编号>）。一次最多给约 40 份（按用例定位时一份），再多时回答放不下所有条目的摘要，要照回答末尾的说明用 get_nodes 接着读，或者分几次运行",
+      "accepts": ["agile:mindmap"],
+      "required": true,
+      "many": true
+    }
+  ],
+  "parameters": [
+    {
+      "name": "product",
+      "description": "调用方声明的产品名称：没有目录树的根时用它补上，结论标为声明、未经核对；有根时只拿来核对，根给出的产品照旧，声明与根不是同一产品（根是这条产品线的名称而声明不是，或根不是这条产品线的名称而声明与根不同）就记为不通过",
+      "required": false,
+      "schema": { "type": "string", "minLength": 1, "maxLength": 100 }
+    },
+    {
+      "name": "line",
+      "description": "调用方声明的版本线，例如 10.6.1：目录里没有版本层（只有目录名里顺带提到的或标题里的参考版本）时用它补上，结论标为声明、未经核对；与目录版本层给出的版本、版本线节点或发布火车的版本矛盾时记为不通过",
+      "required": false,
+      "schema": { "type": "string", "minLength": 1, "maxLength": 40 }
+    },
+    {
+      "name": "granularity",
+      "description": "document（默认）：每份文档一个条目；case：每个用例节点（带 resource 标签的节点）一个条目",
+      "required": false,
+      "schema": { "type": "string", "enum": ["document", "case"] }
+    },
+    {
+      "name": "id_ranges",
+      "description": "缺陷系统里需求（story）和缺陷（bug）的编号范围，用来分开没有标明类型的编号：编号只落在一种类型声明的范围里时按那种类型算，只声明一种类型时只分出这种类型的编号，落在两种范围里或哪种范围都不在时不分类。按范围分出的类型是调用方的声明，结论里单独列出（ranged），按它读取缺陷系统；没有分出类型的编号不读取",
+      "required": false,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "story": {
+            "type": "object",
+            "properties": { "min": { "type": "integer", "minimum": 0 }, "max": { "type": "integer", "minimum": 0 } },
+            "additionalProperties": false
+          },
+          "bug": {
+            "type": "object",
+            "properties": { "min": { "type": "integer", "minimum": 0 }, "max": { "type": "integer", "minimum": 0 } },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  ],
+  "product": { "id": "famx", "catalogs": [] },
+  "context": ["builds"],
+  "subject": "documents",
+  "projection": { "module": "functions/project.ts" },
+  "expected_sources": { "module": "functions/expected.ts" }
+}

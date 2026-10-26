@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "interaction": {
+      "type": "string",
+      "enum": [
+        "submit_then_read"
+      ]
+    },
+    "effect_class": {
+      "type": "string",
+      "enum": [
+        "none",
+        "read",
+        "sync_write",
+        "job",
+        "notification"
+      ]
+    },
+    "retry_safety": {
+      "type": "string",
+      "enum": [
+        "same_key_safe",
+        "dedup_window",
+        "duplicate_tolerant",
+        "unsafe"
+      ]
+    },
+    "signing": {
+      "type": "string",
+      "enum": [
+        "own_credential",
+        "service_on_behalf"
+      ]
+    },
+    "reversible": {
+      "type": "boolean"
+    },
+    "target_key": {},
+    "audience": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "call": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "pointer": {
+          "type": "string",
+          "maxLength": 8192,
+          "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+          "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+        }
+      },
+      "required": [
+        "call",
+        "pointer"
+      ],
+      "additionalProperties": false
+    },
+    "before_state": {
+      "type": "object",
+      "properties": {
+        "call": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "arguments": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "timeout_ms": {
+              "default": 30000,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 600000
+            }
+          },
+          "required": [
+            "tool",
+            "arguments",
+            "timeout_ms"
+          ],
+          "additionalProperties": false
+        },
+        "pointer": {
+          "type": "string",
+          "maxLength": 8192,
+          "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+          "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+        },
+        "expected": {},
+        "conditional_write": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "call",
+        "pointer",
+        "expected",
+        "conditional_write"
+      ],
+      "additionalProperties": false
+    },
+    "refusal": {
+      "type": "object",
+      "properties": {
+        "stage": {
+          "type": "string",
+          "maxLength": 8192,
+          "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+          "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+        },
+        "reached_device": {
+          "type": "string",
+          "maxLength": 8192,
+          "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+          "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+        }
+      },
+      "required": [
+        "stage",
+        "reached_device"
+      ],
+      "additionalProperties": false
+    },
+    "writes_hub_records": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "interaction",
+    "effect_class",
+    "retry_safety",
+    "signing",
+    "reversible",
+    "target_key",
+    "audience",
+    "evidence",
+    "refusal",
+    "writes_hub_records"
+  ],
+  "additionalProperties": false
+}

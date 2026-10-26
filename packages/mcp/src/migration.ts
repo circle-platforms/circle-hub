@@ -1,2 +1,0 @@
-import type {Migration} from '../../storage/src/index.ts';
-export const mcpMigration:Migration={version:34,name:'Persist scoped MCP control receipts without replaying writes',sql:`CREATE TABLE mcp_control_receipts(tenant_id text NOT NULL,principal_id text NOT NULL,scope_id text NOT NULL,name text NOT NULL,idempotency_key text NOT NULL,args_digest text NOT NULL,result jsonb NOT NULL,evidence_id text NOT NULL UNIQUE,sha256 text NOT NULL,created_at timestamptz NOT NULL DEFAULT clock_timestamp(),PRIMARY KEY(tenant_id,principal_id,scope_id,name,idempotency_key));`};

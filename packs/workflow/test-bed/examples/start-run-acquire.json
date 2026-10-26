@@ -1,0 +1,14 @@
+{
+  "comment": "预订：指定 bed-a，租负载均衡和客户端各一台 3 小时，并从 192.0.2.64/26 网段分 2 个地址；租约键 bed/bed-a/afamx0、bed/bed-a/client0 和 bed/bed-a/ip/<分配到的地址>。另一个人同时订同一台设备会得到 LEASE_UNAVAILABLE 和最早空闲时刻。",
+  "tool": "start_run",
+  "arguments": {
+    "pack": "test-bed",
+    "inputs": { "inventory": { "external": "doc:doc:bed-topology" } },
+    "parameters": {
+      "action": "acquire",
+      "bed": "bed-a",
+      "need": { "devices": [{ "type": "load-balancer", "count": 1 }, { "type": "client", "count": 1 }], "hours": 3 },
+      "addresses": { "segment": "192.0.2.64/26", "count": 2 }
+    }
+  }
+}

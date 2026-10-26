@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import { after, before, test } from 'node:test';
+import { KNOWLEDGE_CONTRIBUTION_SCHEMA, KnowledgeContributionBody } from '../../contracts/src/contributions.ts';
+import { makeWorld } from '../knowledge/test-support.ts';
+import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
+import { recordReaderFor } from './readers.ts';
+import { FakeRuns, FakeWorkflows } from './fakes.ts';
+import { createDefaultRegistry } from '../refs/api.ts';
+import type { ServerDeps } from './api.ts';
+import { callTool } from './tools.ts';
+
+let postgres:TemporaryPostgres;
+before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
+test('contribution rec reads use the product reader rule before the administrator and run branches',async t=>{
+  const w=await makeWorld(postgres);t.after(()=>w.close());
+  const original=await w.kit.artifacts.ingest({bytes:new TextEncoder().encode('original'),mediaType:'text/plain',origin:{read:{object:'site:document:original'}},author:{user:null},provenanceType:'observed',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false}});
+  const body=KnowledgeContributionBody.parse({layer:'contribution',product:'acme',root:'1'.repeat(64),path:'/node',cited_fragment:'2'.repeat(64),kind:'assertion',statement:'合成回注',source:{reference:`src:${original.body.sha256}`,quote:'original',fragment:'4'.repeat(64),provenance:'observed',records:[original.digest],sources:[original.body.sha256]},submitted_by:w.user.id,session:'observed-session',submitted_at:'2026-10-23T08:00:00.000Z',model:'synthetic-integration@1',basis_rank:'judgment',applicability:null});
+  const record=await w.kit.store.put({kind:'claim',schema:KNOWLEDGE_CONTRIBUTION_SCHEMA,provenance:'declared',body});
+  const runs=new FakeRuns(w.kit,new FakeWorkflows(w.kit,[]),()=>new Date());
+  const read=(reader:typeof w.user,layer=w.knowledge.layers.contributions)=>recordReaderFor(w.kit,runs,reader,()=>{},layer).read(record.digest,{user:reader.id,role:reader.role});
+  const found=await read(w.user);assert.deepEqual(found?.body,body);
+  assert.equal(await read(w.outsider),null);
+  w.packs.readers.set(w.outsider.id,new Set(['acme']));
+  assert.equal(await w.kit.artifacts.source(w.outsider,original.body.sha256),null);
+  assert.equal(await read(w.outsider),null,'product readership never opens the original quote');
+  const previous=w.packs.readableProducts.bind(w.packs);
+  w.packs.readableProducts=async reader=>reader.id===w.admin.id?new Set():previous(reader);
+  assert.equal(await read(w.admin),null,'admin cannot bypass a denied product');
+  assert.equal(await recordReaderFor(w.kit,runs,w.admin).read(record.digest,{user:w.admin.id,role:w.admin.role}),null,'missing layer wiring is closed even for admin');
+  assert.deepEqual({source:(found!.body as typeof body).source,submitter:(found!.body as typeof body).submitted_by,time:(found!.body as typeof body).submitted_at,basis:(found!.body as typeof body).basis_rank},{source:body.source,submitter:w.user.id,time:body.submitted_at,basis:'judgment'});
+  await w.kit.principals.setDisabled(w.admin,w.user.id,true);
+  assert.equal(await read(w.user),null);
+});
+
+test('get_nodes gives an independent held marker while rec record bytes remain immutable',async t=>{
+  const w=await makeWorld(postgres);t.after(()=>w.close());
+  const original=await w.kit.artifacts.ingest({bytes:new TextEncoder().encode(["origin","al htt","ps://d","emo:sy","ntheti","c-secr","et@192",".0.2.8","/path"].join('')),mediaType:'text/plain',origin:{read:{object:'site:document:held'}},author:{user:null},provenanceType:'observed',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false}});
+  await w.kit.artifacts.acceptFindings(w.admin,original.body.sha256,'合成受理');
+  const body=KnowledgeContributionBody.parse({layer:'contribution',product:'acme',root:'1'.repeat(64),path:'/node',cited_fragment:'2'.repeat(64),kind:'assertion',statement:'不得从受限回注透露的陈述',source:{reference:`src:${original.body.sha256}`,quote:'original',fragment:'3'.repeat(64),provenance:'observed',records:[original.digest],sources:[original.body.sha256]},submitted_by:w.user.id,session:null,submitted_at:'2026-10-23T08:00:00.000Z',model:'synthetic-model',basis_rank:'judgment',applicability:null});
+  const record=await w.kit.store.put({kind:'claim',schema:KNOWLEDGE_CONTRIBUTION_SCHEMA,provenance:'declared',body});
+  await w.kit.artifacts.revokeFindings(w.admin,original.body.sha256,'合成撤回');
+  const runs=new FakeRuns(w.kit,new FakeWorkflows(w.kit,[]),()=>new Date());
+  const deps={records:w.kit,runs,knowledge:w.knowledge,parsers:createDefaultRegistry()} as unknown as ServerDeps;
+  const answer=await callTool(deps,{principal:w.user,context:{traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:null,adminNote:()=>{}},state:{method:'tools/call',tool:'get_nodes',args:{},started:0,runId:null,callResult:null,acceptance:null,errorCode:null,notes:[]}},'get_nodes',{reference:`rec:${record.digest}`});
+  const content=answer.structuredContent.content as {read_tier:string;readable:boolean;structure:{status:string}};
+  assert.equal(content.readable,false);assert.equal(content.read_tier,'retain_only');assert.equal(content.structure.status,'credential_unreadable');
+  assert.match(answer.content[0].text,/含凭据，原文不可读/);assert.ok(!JSON.stringify(answer).includes(body.statement));
+  assert.equal(await w.knowledge.layers.contributions.read(record.digest,w.user),null);
+  assert.deepEqual((await w.kit.store.get(record.digest))!.body,body);
+  w.packs.readers.set(w.outsider.id,new Set(['acme']));assert.equal(await w.knowledge.layers.contributions.readView(record.digest,w.outsider),null);
+});

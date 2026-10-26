@@ -1,0 +1,13 @@
+{
+  "schema": "case-compile.dispatch-policy@1",
+  "basis": "W03 F[0]、C06 R[2]：仅派发本运行独立回读并逐字节重算通过的单用例工作簿，通用参数绑定支持事实，不接受部署工具名或字段",
+  "parameters": {
+    "target": "/bed/id",
+    "manifest_sha256": "/bed/manifest_sha256",
+    "build": "/build",
+    "sha256": "/sha256",
+    "items": "/autoids",
+    "generator": "/generator"
+  },
+  "max_items": 1
+}

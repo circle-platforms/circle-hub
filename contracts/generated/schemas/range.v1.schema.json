@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "range@1"
+    },
+    "origin": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The source file (a reference) or the decision that produced this table (C04 R[0]); a table without it is code"
+    },
+    "description": {
+      "description": "What the table checks, in the pack language",
+      "type": "string"
+    },
+    "tier": {
+      "description": "Tier of the outcomes (C05 R[1]); default blocking when a basis is given, else advisory. Blocking needs a basis",
+      "type": "string",
+      "enum": [
+        "blocking",
+        "advisory"
+      ]
+    },
+    "basis": {
+      "description": "The acceptance contract clause a blocking check relies on (C05 R[1])",
+      "type": "string",
+      "minLength": 1
+    },
+    "item": {
+      "description": "Pointer to the item identity in the subject (or in each node); copied into outcomes",
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "location": {
+      "description": "Pointer to the reference URI of the item in the judged source; becomes a ground of the outcomes",
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "checks": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "values": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^\\$(?:\\.(?:\\*|[A-Za-z_\\u0080-￿][A-Za-z0-9_\\u0080-￿]*)|\\[(?:\\*|-?(?:0|[1-9][0-9]*)|'(?:[^'\\\\]|\\\\.)*'|\"(?:[^\"\\\\]|\\\\.)*\")\\])*$",
+                "description": "RFC 9535 JSONPath selecting values of the subject; only member names, indexes and wildcards are allowed"
+              },
+              "range": {
+                "type": "object",
+                "properties": {
+                  "minimum": {
+                    "type": "number"
+                  },
+                  "maximum": {
+                    "type": "number"
+                  },
+                  "exclusiveMinimum": {
+                    "type": "number"
+                  },
+                  "exclusiveMaximum": {
+                    "type": "number"
+                  },
+                  "integer": {
+                    "description": "The value must be an integer",
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Every selected value must lie in the bounds"
+              }
+            },
+            "required": [
+              "values",
+              "range"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "values": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^\\$(?:\\.(?:\\*|[A-Za-z_\\u0080-￿][A-Za-z0-9_\\u0080-￿]*)|\\[(?:\\*|-?(?:0|[1-9][0-9]*)|'(?:[^'\\\\]|\\\\.)*'|\"(?:[^\"\\\\]|\\\\.)*\")\\])*$",
+                "description": "RFC 9535 JSONPath selecting values of the subject; only member names, indexes and wildcards are allowed"
+              },
+              "prefix": {
+                "type": "object",
+                "properties": {
+                  "values": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "Allowed prefixes"
+                  },
+                  "separator": {
+                    "description": "Compare whole segments split at this separator, for example \".\"",
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "values"
+                ],
+                "additionalProperties": false,
+                "description": "Every selected value must start with one of the prefixes"
+              }
+            },
+            "required": [
+              "values",
+              "prefix"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "values": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^\\$(?:\\.(?:\\*|[A-Za-z_\\u0080-￿][A-Za-z0-9_\\u0080-￿]*)|\\[(?:\\*|-?(?:0|[1-9][0-9]*)|'(?:[^'\\\\]|\\\\.)*'|\"(?:[^\"\\\\]|\\\\.)*\")\\])*$",
+                "description": "RFC 9535 JSONPath selecting values of the subject; only member names, indexes and wildcards are allowed"
+              },
+              "threshold": {
+                "type": "object",
+                "properties": {
+                  "measure": {
+                    "type": "string",
+                    "enum": [
+                      "count",
+                      "sum",
+                      "min",
+                      "max"
+                    ],
+                    "description": "Aggregate of the selected values"
+                  },
+                  "minimum": {
+                    "type": "number"
+                  },
+                  "maximum": {
+                    "type": "number"
+                  },
+                  "exclusiveMinimum": {
+                    "type": "number"
+                  },
+                  "exclusiveMaximum": {
+                    "type": "number"
+                  },
+                  "empty": {
+                    "default": "refute",
+                    "description": "Only min/max on an empty set: support or refute, omission means refute; count and sum keep their defined numeric zero",
+                    "type": "string",
+                    "enum": [
+                      "refute",
+                      "support"
+                    ]
+                  }
+                },
+                "required": [
+                  "measure"
+                ],
+                "additionalProperties": false,
+                "description": "The aggregate of all selected values must lie in the bounds"
+              }
+            },
+            "required": [
+              "values",
+              "threshold"
+            ],
+            "additionalProperties": false
+          }
+        ],
+        "description": "One range, prefix or threshold check"
+      }
+    },
+    "match": {
+      "description": "Normalization of strings before prefix comparison",
+      "type": "object",
+      "properties": {
+        "unicode": {
+          "description": "Unicode normalization form applied first; default nfc",
+          "type": "string",
+          "enum": [
+            "none",
+            "nfc",
+            "nfkc"
+          ]
+        },
+        "case": {
+          "description": "insensitive compares lower-cased values; default sensitive",
+          "type": "string",
+          "enum": [
+            "sensitive",
+            "insensitive"
+          ]
+        },
+        "whitespace": {
+          "description": "trim removes leading and trailing whitespace, collapse also turns every inner whitespace run into one space; default trim",
+          "type": "string",
+          "enum": [
+            "exact",
+            "trim",
+            "collapse"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "required": {
+      "description": "A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema",
+    "origin",
+    "checks"
+  ],
+  "additionalProperties": false,
+  "title": "range@1",
+  "description": "Range table: numeric ranges, prefixes and thresholds. Numbers are JSON numbers (by their shortest decimal text) or decimal strings, compared exactly. Code: core.range.out_of_bounds"
+}

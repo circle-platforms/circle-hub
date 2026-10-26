@@ -1,0 +1,27 @@
+{
+  "id": "case_item",
+  "source": "author",
+  "check": "locate",
+  "note": "合成样例：按用例定位，用例在脑图里的路径提到别的版本也不改变版本；脑图路径和用例标题里只读前面有标明类型的词的编号",
+  "subject": {
+    "items": [
+      {
+        "id": "24003:24003n2",
+        "location": "src:43d345cf0022af76b8f9bcdbf77b0d84bc03556106a600fbbb35086089262e49/kityminder@1/n/24003n2",
+        "fields": {
+          "kind": "case",
+          "document": "24003",
+          "node": "24003n2",
+          "source": "agile:mindmap:24003@1",
+          "root": "FAMY",
+          "ancestors": ["030：FAMX/FAMY测试项目", "060：10.6.1", "004：10.6.1-R2-2026/7", "SSL"],
+          "title": "SSL 卸载",
+          "path": ["基本功能", "10.7.3 兼容"],
+          "case_title": "bug 61500 证书链加载"
+        }
+      }
+    ],
+    "context": { "product": "famx", "names": ["FAMX", "FAMY"], "parameters": { "granularity": "case" } }
+  },
+  "expect": [{ "verdict": "support", "item": "24003:24003n2", "tier": "advisory" }]
+}

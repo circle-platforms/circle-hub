@@ -40,7 +40,7 @@ function fixture(t: { after(fn: () => void): void }) {
   };
   for (const [name, prefix] of [
     ['circle', 'foundation/circle'],
-    ['infosec-platform', 'references/platform/snapshot'],
+    ['legacydemo-platform', 'references/platform/snapshot'],
   ]) {
     manifest.sources[name] = {
       repository: 'synthetic fixture',
@@ -79,7 +79,9 @@ test('the actual archive reconstructs both complete source Git trees', () => {
   const result = verifyReferenceArchive(root);
   assert.equal(result.files, 714);
   assert.equal(result.sources.circle.files, 287);
-  assert.equal(result.sources['infosec-platform'].files, 427);
+  const archived = Object.entries(result.sources).filter(([name]) => name !== 'circle');
+  assert.equal(archived.length, 1);
+  assert.equal(archived[0][1].files, 427);
 });
 test('Git independently confirms tree ordering, Unicode paths and CRLF bytes', (t) => {
   const f = fixture(t);
@@ -139,4 +141,14 @@ test('a symlink cannot replace the approved archive root', (t) => {
     () => verifyReferenceArchive(f.root, f.manifest),
     /ordinary directory/,
   );
+});
+
+test('archive source ids come from structural declarations without changing byte or placement checks', (t) => {
+  const f = fixture(t);
+  f.manifest.sources['synthetic-archive'] = f.manifest.sources['legacydemo-platform'];
+  delete f.manifest.sources['legacydemo-platform'];
+  for (const file of f.manifest.files) if (file.source === 'legacydemo-platform') file.source = 'synthetic-archive';
+  assert.equal(verifyReferenceArchive(f.root, f.manifest).sources['synthetic-archive'].files, 3);
+  f.manifest.files.find(file => file.source === 'synthetic-archive')!.destination = 'foundation/circle/node.ts';
+  assert.throws(() => verifyReferenceArchive(f.root, f.manifest), /invalid or duplicate source placement/);
 });

@@ -1,0 +1,75 @@
+{
+  "id": "traced_refute",
+  "source": "author",
+  "check": "traced",
+  "note": "合成完整性样例",
+  "subject": {
+    "items": [
+      {
+        "id": "21",
+        "label": "需求 21 合成需求",
+        "summary": "1 个用例；需求范围依据：声明",
+        "location": {
+          "slot": "stories",
+          "source": "2f068929f0640f85885d11a9446f2872f8a0e805b49f4a1e881477648dc81f11",
+          "parser": "json@1",
+          "selector": "p/stories/0"
+        },
+        "fields": {
+          "id": "21",
+          "title": "合成需求",
+          "status": "synthetic",
+          "stage": null,
+          "fields_absent": [],
+          "plm_returned": true,
+          "plm_responded": true,
+          "cases": [
+            {
+              "case": "c1",
+              "title": "用例 c1",
+              "document": "24001",
+              "reference": "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/cases/8ba4c888fc1a@8ba4c888fc1afb81e7325d25d2d2d2188adbb032475f32d83751de87e3e32f5e",
+              "stories": [
+                "22"
+              ]
+            }
+          ],
+          "references": [
+            "src:2f068929f0640f85885d11a9446f2872f8a0e805b49f4a1e881477648dc81f11/json@1/p/stories/0"
+          ],
+          "build": "Rel_FAMX_10_6_1_57",
+          "scope": "declared"
+        }
+      }
+    ],
+    "context": {
+      "groups": [
+        {
+          "product": "famx",
+          "build": "Rel_FAMX_10_6_1_57",
+          "root": "67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591",
+          "scope": "declared",
+          "view": {
+            "source": "src:0ed6028f89377d795017343e132cc5163c1d0718e70112665a84680b92c9bd94",
+            "truncated": false,
+            "skipped": 0,
+            "missing": 0,
+            "cut_keys": [],
+            "only": null,
+            "total_keys": 1,
+            "total_entries": 1,
+            "listed_keys": 1,
+            "listed_entries": 1
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "story-traceability.join_mismatch",
+      "tier": "advisory"
+    }
+  ]
+}

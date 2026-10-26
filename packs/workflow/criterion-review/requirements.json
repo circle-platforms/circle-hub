@@ -1,0 +1,23 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "review",
+      "name": "独立账号复核",
+      "description": "由作者以外的账号确认接受或不接受，每条附理由和期望来源引文",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "independent_judgment",
+      "independent_of": "predecessor",
+      "independence_by_account": true,
+      "checks": [
+        "review_form"
+      ],
+      "error_handling": []
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "schema": "test-bed-manifest@1",
+  "beds": [
+    {
+      "name": "bed-a",
+      "devices": [
+        {
+          "name": "dut0",
+          "type": "load-balancer",
+          "product": "widget",
+          "ipv4": [
+            "192.0.2.10/26",
+            "192.0.2.74/26"
+          ],
+          "ipv6": [
+            "2001:db8:1::10/64"
+          ]
+        },
+        {
+          "name": "dut1",
+          "type": "load-balancer",
+          "product": "widget",
+          "ipv4": [
+            "192.0.2.130/26"
+          ],
+          "ipv6": []
+        },
+        {
+          "name": "router0",
+          "type": "router",
+          "product": null,
+          "ipv4": [
+            "192.0.2.1/26"
+          ],
+          "ipv6": [
+            "2001:db8:1::1/64"
+          ]
+        },
+        {
+          "name": "client0",
+          "type": "client",
+          "product": null,
+          "ipv4": [
+            "192.0.2.80/26"
+          ],
+          "ipv6": []
+        },
+        {
+          "name": "server0",
+          "type": "server",
+          "product": null,
+          "ipv4": [
+            "192.0.2.90/26"
+          ],
+          "ipv6": []
+        },
+        {
+          "name": "console0",
+          "type": "console",
+          "product": null,
+          "ipv4": [
+            "192.0.2.140/26"
+          ],
+          "ipv6": []
+        }
+      ],
+      "services": [
+        {
+          "host": "server0",
+          "ip": "192.0.2.90",
+          "proto": "tcp",
+          "port": 80
+        }
+      ],
+      "reserved": []
+    }
+  ]
+}

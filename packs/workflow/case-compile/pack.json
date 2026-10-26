@@ -1,0 +1,460 @@
+{
+  "schema": "pack@1",
+  "id": "case-compile",
+  "version": "3.4.6",
+  "kind": "workflow",
+  "title": "用例编译",
+  "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、类型化参数与效果授权、台架与血缘地址、地址替换及逐字期望（期望也可逐字取自本次运行冻结的已受理判据声明，其引文在本次边界上重核）。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "9a1ce4e1945515af2c5e639d4aa98099500e73a64dbdfb08c058c21785c25d52",
+      "size": 12747
+    },
+    {
+      "path": "checks.json",
+      "sha256": "53f76e3ace9b16b9b6eb42a11c15bec8a19ec9ba064b30c7ca60fc4dae934909",
+      "size": 5042
+    },
+    {
+      "path": "examples/bed-topology.json",
+      "sha256": "92e1a5e496f2730bd3dcb6efe161d7f4ad97db36e64d64cd4b911a547bd567c6",
+      "size": 1677
+    },
+    {
+      "path": "examples/case-mindmap.json",
+      "sha256": "f568a541a64f7f5250b3cbfc7ef446dfa4f5232cfa36f41e978652f033733942",
+      "size": 806
+    },
+    {
+      "path": "examples/command-identities-v2.json",
+      "sha256": "99c653b5685878e53be331f35209241e322eda8d94184125d4efaf1f3ea691d8",
+      "size": 793
+    },
+    {
+      "path": "examples/command-tree-v2.xml",
+      "sha256": "64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7",
+      "size": 138
+    },
+    {
+      "path": "examples/runtime-contract-scope.json",
+      "sha256": "f1614e424506c778de07b9ef2e9e21616b7d9a9c07efaebebda90e742daaed61",
+      "size": 12073
+    },
+    {
+      "path": "examples/runtime-contract-v2.json",
+      "sha256": "98b8864e7ea2b7ee89804347b476dc61761127ed427c7bf4f14925af23a5e00c",
+      "size": 12823
+    },
+    {
+      "path": "examples/runtime-contract.json",
+      "sha256": "3eb25ff451e9e3149a33e37de223bdcc0f55d4f9119548724fb0c9ea9d08967b",
+      "size": 7617
+    },
+    {
+      "path": "examples/runtime-profile-v2.json",
+      "sha256": "0c9b41cb6495ed138f36589eb05782c0eedd99b549e8be8f9e85dfecf58987ee",
+      "size": 1679
+    },
+    {
+      "path": "examples/runtime-profile.json",
+      "sha256": "0c9b41cb6495ed138f36589eb05782c0eedd99b549e8be8f9e85dfecf58987ee",
+      "size": 1679
+    },
+    {
+      "path": "examples/start-run.json",
+      "sha256": "d0fe76cbe89e619b6ff6da4410f7231820a2cedb5904f832941472c92a6fdd06",
+      "size": 645
+    },
+    {
+      "path": "examples/submit-result.json",
+      "sha256": "5d4bad8d037a29b41415d8e2e0253ac9044bad0dd08ec2b6125af84bd2fbd31e",
+      "size": 3152
+    },
+    {
+      "path": "examples/typed-authority-source.json",
+      "sha256": "1d57f5c23f5b80c1ba6235c46ee65d0f38e82da2290beaf23b5656d27f2dcd41",
+      "size": 2293
+    },
+    {
+      "path": "functions/addresses.ts",
+      "sha256": "6f937ae65ecc6a4d195e7e3f2c21949789701872a44da23d91978a8d7aa099f2",
+      "size": 2468
+    },
+    {
+      "path": "functions/bed.ts",
+      "sha256": "8091daf5d89250d222b21774f77300fc63490b2f100c7d207ba7544df1a252ce",
+      "size": 8684
+    },
+    {
+      "path": "functions/binding.ts",
+      "sha256": "6302214163a6b20cfdf34e8a6cff7be3f9278e549b151c6ae946d7c03fcc96d7",
+      "size": 4828
+    },
+    {
+      "path": "functions/canonical-json.ts",
+      "sha256": "1205f7e664f147172a57cb55e31f4f38f85f935f47a8bfdd0e62b5fa8d913d16",
+      "size": 958
+    },
+    {
+      "path": "functions/cases.ts",
+      "sha256": "0ce02dcc8a3f818a77f60828a507632bf4f2546c85270c6757b27b0df2533e49",
+      "size": 6902
+    },
+    {
+      "path": "functions/checks.ts",
+      "sha256": "10debd7aa62412e66fab275837dfbd30804b874ecdbc1fc122048b0fd859fda2",
+      "size": 21324
+    },
+    {
+      "path": "functions/command-obligations.ts",
+      "sha256": "135abda57c8f2a35dffa6a53200bd778a25a189c544ea526aaf55f5478a2c0f9",
+      "size": 11570
+    },
+    {
+      "path": "functions/command-policy.ts",
+      "sha256": "b5d17c63418628078725f7fb7a4467f5f273c6f43792f25a6190b5ef4d96e3e9",
+      "size": 2959
+    },
+    {
+      "path": "functions/dispatch-policy.ts",
+      "sha256": "a830af0cd8d3189427e0f6897999aa195227c0476dced57f7512bdda448f33c0",
+      "size": 1535
+    },
+    {
+      "path": "functions/expected-nodes.ts",
+      "sha256": "5a06d543e708d0770d0912d6f541aa8605dd764d54b863990c8773ec433b716e",
+      "size": 772
+    },
+    {
+      "path": "functions/g-syntax.ts",
+      "sha256": "cdfb1c16f1fc2e2673f9243dbdc558028ebfdb8afa17523cf65e1d2f596aa1ba",
+      "size": 6326
+    },
+    {
+      "path": "functions/generate.ts",
+      "sha256": "1927ddd9debeadcdeabbdd4179a9c012c08a9a52b250aebae0a16c82e880334c",
+      "size": 13184
+    },
+    {
+      "path": "functions/generated/command-grammar.ts",
+      "sha256": "257812138a3a2a2239aa03e900273bfc7aafbb9a2c44cd348bf96e24ec022d5d",
+      "size": 10574
+    },
+    {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "f60c98ceb6234db4936bdd8406c965574c8c9bdbc6d52f76e817f62e7e3629e0",
+      "size": 2527
+    },
+    {
+      "path": "functions/manifest.ts",
+      "sha256": "759f8ee74fe08c227d9c91be549f19895af7b8b449deb2cb4a284fd7e64fc2bd",
+      "size": 16132
+    },
+    {
+      "path": "functions/plan-commands.ts",
+      "sha256": "e30d8b095dbb3642ab3d85f149901257571cd10d0914261c83cce0c590736b17",
+      "size": 6012
+    },
+    {
+      "path": "functions/profile.ts",
+      "sha256": "00b922ecab5d723ef72a858d0d2825ffe80c28fe0352f74763aab2a0c456aa2b",
+      "size": 16316
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "01e94b28c9e89c5b01f9fe748fc3d74aa9c9af1af1c07020153c934992114f43",
+      "size": 11793
+    },
+    {
+      "path": "functions/quote-width.ts",
+      "sha256": "614774cd365ceb799a87a9c13e513ba0c44d75c30c5829b4a1c474bb404d4a99",
+      "size": 4781
+    },
+    {
+      "path": "functions/quote.ts",
+      "sha256": "f0db53eeeacf6367575671171ce5efd19afc0b811e58b53ff3b21078adc3735e",
+      "size": 870
+    },
+    {
+      "path": "functions/runtime-contract.ts",
+      "sha256": "c20338e85534d2c80b1efd8b6953fd324e3a24e316de40dbe7c14ff28d8bbb0f",
+      "size": 14882
+    },
+    {
+      "path": "functions/schema.ts",
+      "sha256": "6452ee8887b2b3e06d10019eac74de003b41666a86f3ef4b07a3b859fe98b8d7",
+      "size": 2977
+    },
+    {
+      "path": "functions/slots.ts",
+      "sha256": "e2cdba30d2dcb276e972f99ded70ec014879176187644e54e95060481ed2e738",
+      "size": 5801
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "ea254962804838c9012ac511d4ff0747ac55523bcc329862021d477f017f863e",
+      "size": 9312
+    },
+    {
+      "path": "functions/text.ts",
+      "sha256": "652c19e30234a189984aa37d5a717f615c6c4a5487068844d64e34f5ee8656ee",
+      "size": 2768
+    },
+    {
+      "path": "functions/typed-authority.ts",
+      "sha256": "a72d24a505fa57dd30a91013a9a97d68e58033a5b0a9cf71a7159c508f99216d",
+      "size": 9930
+    },
+    {
+      "path": "functions/typed-contract.ts",
+      "sha256": "3f6bf8de78f566d0ca35573741e592c6b3e42b0f95609791550518bdc45c85f7",
+      "size": 10321
+    },
+    {
+      "path": "functions/workbook.ts",
+      "sha256": "07cfbb68a5458e0052690ed9c77476e9a6bf7b7f0c6aa4a23b899ecb213bb489",
+      "size": 17631
+    },
+    {
+      "path": "functions/xlsx-model.ts",
+      "sha256": "814e83be1b42f8b0314c068b17d96b7f78ddbaf2e1d22bc42576f0e8d74a290b",
+      "size": 2358
+    },
+    {
+      "path": "functions/zip-store.ts",
+      "sha256": "613fcb81036e6991ab907de8193a5a91d7a601fdfe839d981e2d2a437dda4e96",
+      "size": 2351
+    },
+    {
+      "path": "policies/dispatch.json",
+      "sha256": "0ea8a7f2873c5e0cb3662ecf1bdba7550daf9ca8c6c47c0edcc1497adba6bfae",
+      "size": 446
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "2506db9244bf3c61fe939ab5a224f0517b340c5ab05916c6f12be917e5b7a611",
+      "size": 11131
+    },
+    {
+      "path": "samples/negative/quote.json",
+      "sha256": "fcf3219a25127de4b35f26fc90aa77e0e02ecb982fc2bcbd374036413513e5af",
+      "size": 694
+    },
+    {
+      "path": "samples/negative/typed-address-member.json",
+      "sha256": "79134bc24a2d89455a44d9bbc979f1111dfe9db3c3534d2d5ecdd695fe0ee455",
+      "size": 26112
+    },
+    {
+      "path": "samples/negative/typed-bed_addresses.json",
+      "sha256": "8ca42b09107d0008c40f31772afd4be10083e8096157f85bec4f4991925e7f6c",
+      "size": 22538
+    },
+    {
+      "path": "samples/negative/typed-commands_catalog.json",
+      "sha256": "08c54930da7fa678393c43d8863489137eca841d624b965a4ddf4c69ca77da21",
+      "size": 22552
+    },
+    {
+      "path": "samples/negative/typed-contract_shape.json",
+      "sha256": "9ccebe4624d36f7d77bab6ddb2ff3618615620e1edf8e138dcc578b670bf4a88",
+      "size": 22548
+    },
+    {
+      "path": "samples/negative/typed-dispatch_policy.json",
+      "sha256": "f45079d156523c3d6e5bd4a0230a52161cf60a162a6a4b22ad6e75628d808b34",
+      "size": 39656
+    },
+    {
+      "path": "samples/negative/typed-effect-budget.json",
+      "sha256": "5138a836f8454a9c708175165baaf15d118a5719f789fc28a743112f2c3553ac",
+      "size": 22538
+    },
+    {
+      "path": "samples/negative/typed-expected_sources.json",
+      "sha256": "f3e750ddf9bd0137fbd80ba969299e650e128c1226f420a4cd6e3964c8027b25",
+      "size": 22535
+    },
+    {
+      "path": "samples/negative/typed-model-expected.json",
+      "sha256": "1e549feb596d533959d4a26cf3dda0acd8da06b32d7ef1ac2330e9bea3ca325f",
+      "size": 22916
+    },
+    {
+      "path": "samples/negative/typed-scope-authorized.json",
+      "sha256": "6049afbf7dc8bb9029a31442f6b35a23f3b9a44ef4f90822dc3b8666f8d76913",
+      "size": 23708
+    },
+    {
+      "path": "samples/negative/typed-scope-bed-capacity.json",
+      "sha256": "c27fc39e0b7bef073943a7fbef7b468c5f373698debb0ca8d362fa2145f479c0",
+      "size": 23909
+    },
+    {
+      "path": "samples/negative/typed-scope-deleted-occurrence.json",
+      "sha256": "aba4caf7bce71341844df5ab36eedac7441c9ae02f2babede355d3206084df15",
+      "size": 23986
+    },
+    {
+      "path": "samples/negative/typed-scope-missing-cleanup.json",
+      "sha256": "b6c10bdadb6000382e4fbc9e90c58b9c29510f1f58d4e22b0c58cb2e649d5333",
+      "size": 23710
+    },
+    {
+      "path": "samples/negative/typed-workbook_verified.json",
+      "sha256": "fe17909b219b1376bd2dfa10bd82ecfa746db6a9cd26df6c1d043b7876882674",
+      "size": 39660
+    },
+    {
+      "path": "samples/positive/quote.json",
+      "sha256": "f35036bc228aa259d4ffb314fe80eee4efd67580efe4958bf06c4d7a98f45ea4",
+      "size": 675
+    },
+    {
+      "path": "samples/positive/typed-address-member.json",
+      "sha256": "3e3457388a3feae2c66807cc80ba4d4516343aa39edca36d6da1369cc515699b",
+      "size": 26064
+    },
+    {
+      "path": "samples/positive/typed-bed_addresses.json",
+      "sha256": "8c08432f9a3541d8164a2b9d0daf273d01a953967c8bab2addeac948c3c61932",
+      "size": 22492
+    },
+    {
+      "path": "samples/positive/typed-commands_catalog.json",
+      "sha256": "b985c09addc6009644a756f48086f037f9c698dba2402e6782f7014285825294",
+      "size": 22498
+    },
+    {
+      "path": "samples/positive/typed-contract_shape.json",
+      "sha256": "fd0aaa411635e28b02cec000a8212fdc8a87dbddbed1f1fee670ce122ad1013e",
+      "size": 22494
+    },
+    {
+      "path": "samples/positive/typed-dispatch_policy.json",
+      "sha256": "f13c162869e678eb462cf43293916cd918073243901f24280f4e40994aa52d07",
+      "size": 39610
+    },
+    {
+      "path": "samples/positive/typed-effect-budget.json",
+      "sha256": "7e197ef7132ecf4389adeb80692e8f95d7183746d7a8bd31865b6d62c0d8ed01",
+      "size": 22493
+    },
+    {
+      "path": "samples/positive/typed-expected_sources.json",
+      "sha256": "e049fd58b36a2c7fa7ddc7cb9b342c93016a6a40ed48cdc2977a48ac6e412790",
+      "size": 22498
+    },
+    {
+      "path": "samples/positive/typed-model-expected.json",
+      "sha256": "b753d96213cba078834ec0ef3c96cd8e033f378e1f6575ada16c835303dfe67e",
+      "size": 22856
+    },
+    {
+      "path": "samples/positive/typed-scope-authorized.json",
+      "sha256": "b0fc9485e3a6e08699c5bfc0aed405698aa85475995692fec50fa0c4b828b94a",
+      "size": 23868
+    },
+    {
+      "path": "samples/positive/typed-scope-bed-capacity.json",
+      "sha256": "cd6a1969b34e24db29b8d66c72d4cb4200fdff50753e282910f78d8c525b2dbb",
+      "size": 23868
+    },
+    {
+      "path": "samples/positive/typed-scope-deleted-occurrence.json",
+      "sha256": "2c38f5a4c84ac484b20b0cd827ae97e8d8f878c59d03e4997d5f6743adf78343",
+      "size": 24331
+    },
+    {
+      "path": "samples/positive/typed-scope-missing-cleanup.json",
+      "sha256": "a07fad86f37ccf72b03a415414541f951a81e525b2c8934e9eb959627c437240",
+      "size": 23873
+    },
+    {
+      "path": "samples/positive/typed-workbook_verified.json",
+      "sha256": "7d6e47b558e4f731277bb02a9776e745e157c05808b94581b6fe3637234b1d9f",
+      "size": 39614
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "a53fe5de37192b6d4fa8a803e7f0a239cda089750dc5c945ec30c688b6033811",
+      "size": 4780
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "00c00a9c4b5ee1d49749cb1b5f563a8a071c41154aec0a2d05e0b78ecf0465f5",
+      "size": 9816
+    },
+    {
+      "path": "tables/command-identity.schema.json",
+      "sha256": "24090e3bcc14380932929414d8036405601275e5a85ff6a35f69c9e4d80afa91",
+      "size": 16758
+    },
+    {
+      "path": "tables/commands.json",
+      "sha256": "0726a6fa7b799a842c1da4bc472c8f1a8e254e41894d60f6b9109cef63974bb8",
+      "size": 833
+    },
+    {
+      "path": "tables/declared-role.schema.json",
+      "sha256": "d16d38c9841ecdadba751ea46416912d602d082e5395063c67549f378e8c7902",
+      "size": 1996
+    },
+    {
+      "path": "tables/declared-type.schema.json",
+      "sha256": "50c1cf08456d3903086026070132011514392bb1c1cf26ab56f790f13149b488",
+      "size": 2918
+    },
+    {
+      "path": "tables/dispatch-roles.json",
+      "sha256": "f790a46e2145dc016734fe6e2014fd62581d788ae3cbb257c5df1a636982ed9a",
+      "size": 2495
+    },
+    {
+      "path": "tables/quotes.json",
+      "sha256": "784e2a5cb5e252bdb5f7785509ec9111e93a235f2dfcec27a5948ffaa9650581",
+      "size": 655
+    },
+    {
+      "path": "tables/runtime-contract-format.json",
+      "sha256": "f43c47b60100e2f836a59c65c83b8fee07aa0ea303bb18c0a7d523007b4c2a92",
+      "size": 812
+    },
+    {
+      "path": "tables/runtime-profile-format.json",
+      "sha256": "cd710592cb23f24dd059aee9b6e5b9de1bd5229570a72f59e474f35c08b65f65",
+      "size": 1053
+    },
+    {
+      "path": "tables/typed-address.schema.json",
+      "sha256": "06a209354465e59b0cd34cb388b4597340438341d135970f13b46f22d32f0698",
+      "size": 2740
+    },
+    {
+      "path": "tables/workbook-format.json",
+      "sha256": "9412902e3884bb30113322d38007238fc7984f2d1bd7c796c8f5aa68158de0de",
+      "size": 555
+    },
+    {
+      "path": "tools/files.ts",
+      "sha256": "f05bbebbebdb20543fa85317ab7849bdf2dae3b2df833021fce6bd66d407012e",
+      "size": 2110
+    },
+    {
+      "path": "tools/generate-workbook.ts",
+      "sha256": "e2118188a90ecc09d9ddbc012c52bb7554db945d8a320847d2272a3a7452c9ff",
+      "size": 10034
+    },
+    {
+      "path": "tools/normalize-mindmap.ts",
+      "sha256": "70541cd76c79688bab10f996066ddaad44ba93222cbde26ae93522d8434830cf",
+      "size": 2634
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "c56052cf97ad1e6b631cd8137896aa8725afd7446882c8c9f19537051af08821",
+      "size": 3706
+    }
+  ]
+}

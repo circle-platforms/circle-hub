@@ -1,19 +1,21 @@
 # circle-server 第二阶段简报（修订 2）：资产先行，再到云执行
 
+> **历史文档**（2026-10-21 标注）：本文是已退役的任务与审批服务器第二阶段的简报，已被 [Hub r4 简报](hub-r4-brief.md)取代，只作记录保留，不是现行指令。
+
 2026-10-12。这一版取代 `docs/server-s2-brief.md` 里「bug 闭环」的范围和验收。方案页面是私有的 claude.ai 页面，你打不开，本文件是它的可执行摘要。分支继续用 `server-s2`；已提交的通用对象和关联存储（ed537f1）、核心守卫（2fcf0e3）、PLM 只读契约记录（7376cf2）继续有效。Circle 仓库由 Claude 负责，你不要改。
 
 ## 1. 目标
 
-第一阶段的整体目标：把 InfoTest 已有的能力（产品问答、用例编译、用例评审）通过 Circle 和 circle-server 接起来，以知识库为核心。顺序如下：
+第一阶段的整体目标：把 SyntheticReference 已有的能力（产品问答、用例编译、用例评审）通过 Circle 和 circle-server 接起来，以知识库为核心。顺序如下：
 
-1. 先把 InfoTest 的对接做成 server 的**资产**。
+1. 先把 SyntheticReference 的对接做成 server 的**资产**。
 2. 再让 Circle 通过工具目录**发现**这些资产。
 3. 然后由 Claude 在 Circle 里用这些工具开发完整的脑图编译技能。
 4. 最后把它**推到 server 上**，作为技能包登记，由 server 上无界面的 Circle 执行，也就是云执行。
 
 本简报覆盖 server 侧的第 1、2、4 步。
 
-所有东西都按通用组件做，不写死任何产品线。APV 是第一个**产品线包**：它由配置、知识映射和技能包组成，不是核心代码。用户提出的琐碎知识，例如「禅道缺陷的 bugzillaID 能对上构建站点的修复清单」，作为带证据的声明进知识库，不做成专门功能。
+所有东西都按通用组件做，不写死任何产品线。FAMX 是第一个**产品线包**：它由配置、知识映射和技能包组成，不是核心代码。用户提出的琐碎知识，例如「禅道缺陷的 bugzillaID 能对上构建站点的修复清单」，作为带证据的声明进知识库，不做成专门功能。
 
 ## 2. 授权和边界
 
@@ -21,20 +23,20 @@
 
 - 本机 TypeScript 实现，依赖写精确版本。
 - 本机启动 PostgreSQL、server 和 worker。
-- 只读参考 InfoTest（`../InfoTest_Engine`）。
+- 只读参考 SyntheticReference（`../synthetic-reference-engine`）。
 
 工作区里的 parse5、saxes 两项依赖准备可以采用。
 
 不允许，或仍需先问用户：
 
-- 运行、import 或复制 InfoTest 代码（ADR 0001：用 TypeScript 重写，只迁需求、行为、数据和验收样本）。
+- 运行、import 或复制 SyntheticReference 代码（ADR 0001：用 TypeScript 重写，只迁需求、行为、数据和验收样本）。
 - 连接真实系统。开发和验收一律用合成桩；真实系统的冒烟由用户或 Claude 在运行时配置后进行。
 - 调用付费模型；改动自动化环境；push、PR 和部署。
 
 仓库是公开的：
 
 - 提交里不能出现内网地址、凭据、真实业务数据或本机绝对路径。
-- InfoTest 的知识数据和封存用例是真实数据，只能放在本机的 server 数据目录里，不进仓库。
+- SyntheticReference 的知识数据和封存用例是真实数据，只能放在本机的 server 数据目录里，不进仓库。
 
 ## 3. 四个通用组件
 
@@ -61,9 +63,9 @@ server 持有的每样东西都是资产：
 
 ### 3.2 连接器 SDK v1 和四个通用连接器包（全部只读）
 
-| 连接器 | 要做到 | InfoTest 参考 |
+| 连接器 | 要做到 | SyntheticReference 参考 |
 |---|---|---|
-| 文档服务（WebDAV） | 列目录、取文件，按 etag 或修改时间加大小做增量，原件记 SHA-256；转换作为可替换的方法挂接 | `main/kms/webdav_sync.py`、`main/apv_doc_sync.py`、`kms/manual_catalog_store.py` |
+| 文档服务（WebDAV） | 列目录、取文件，按 etag 或修改时间加大小做增量，原件记 SHA-256；转换作为可替换的方法挂接 | `main/kms/webdav_sync.py`、`main/famx_doc_sync.py`、`kms/manual_catalog_store.py` |
 | 构建站点 | 首页 → 版本线页 → 构建（名称、构建时间、发布日期）→ 命令树 XML、修复清单；命令树解析成「构建有哪些命令和参数」 | `main/sync/command_tree_sync.py`、`scripts/maintenance/build_vendor_stdlib.py` |
 | 禅道 PLM 查询 | 按进度记录里的只读契约 | 已登记 |
 | 自动化环境 | 经跳板机只读查看：环境资源列表、拓扑、设备状态。命令白名单，不执行任何改动；自动化框架镜像只读同步 | `main/sync/framework_sync.py`、`knowledge/data/auto_env` 的结构 |
@@ -81,7 +83,7 @@ server 持有的每样东西都是资产：
 
 按 `references/platform/snapshot/docs/knowledge-v1.md` 的六种记录实现最小可用版本：来源修订、证据、实体、声明、评估、知识快照。在已有对象和关联存储上扩展。
 
-- **检索**：先做精确、前缀、目录和全文（PostgreSQL 全文）。InfoTest 实际也没用向量检索。
+- **检索**：先做精确、前缀、目录和全文（PostgreSQL 全文）。SyntheticReference 实际也没用向量检索。
 - **声明的收集接口**：用户或技能提交带证据的声明，状态从候选开始；审核以后进入新快照。
 - **footprint 这类模型生成的事实**：只能作为候选声明导入。
 
@@ -90,7 +92,7 @@ server 持有的每样东西都是资产：
 - 产品知识来自连接器同步的文档、命令树、缺陷与构建记录；由程序抽取，钉住来源修订，以来源为准，权限跟随来源系统，检索优先。
 - 沉淀知识来自用户明确允许共享的 Circle 会话片段、技能/bot 运行和评审决定里的纠正与发现。定时整理技能包用脚本模型抽取事实、做法、纠正，去重并引用原始片段和工具返回；先为个人候选，经产品来源复核或人工审核后才可提升到团队知识。不覆盖产品知识，冲突单独记录并显示。
 
-InfoTest 的 session-checkpoint、memory-consolidator、kb_memory_search 仅只读参考行为，不执行、不复制代码或配置，也不读取真实会话用于开发验收。
+SyntheticReference 的 session-checkpoint、memory-consolidator、kb_memory_search 仅只读参考行为，不执行、不复制代码或配置，也不读取真实会话用于开发验收。
 
 ### 3.4 工具目录、技能包和执行引擎
 
@@ -119,7 +121,7 @@ InfoTest 的 session-checkpoint、memory-consolidator、kb_memory_search 仅只�
 - 定时触发验收用上述整理技能包（脚本模型），只处理用户授予共享许可的合成片段，并保留个人候选/团队提升和去重边界。
 
 **第一阶段的脑图编译**
-- 从核心移出，改为 APV 产品线包里的方法或技能包。
+- 从核心移出，改为 FAMX 产品线包里的方法或技能包。
 - `lbx-healthcheck` 撤下。它验证的机制改用中性的合成设备操作继续测。
 
 ## 4. 验收

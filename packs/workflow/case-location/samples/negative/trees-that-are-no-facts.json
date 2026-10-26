@@ -1,0 +1,174 @@
+{
+  "id": "trees_that_are_no_facts",
+  "source": "author",
+  "check": "locate",
+  "note": "合成样例：调用方声明产品 FAMY。根“合成平台”的文档与声明矛盾，记不通过；目录自相矛盾的（发布火车属于别的版本线、有几个版本线节点）确定记冲突；版本只是目录名里顺带提到的（FAMY_10.9.1.37_专项、802.1Q VLAN）都记未知（缺输入），不当事实；按约定写的旧版本线目录和其中原样写出的构建名记支持；按约定写的旧版本线目录（040：10.9.1）加一个构建名目录，缺声明语法的发布火车层与模块层，按 R6 记未知（缺的事实：famx-directory@1 的火车层与模块层身份；下一步：包作者补目录语法或作者调整目录层级后重产），不进已定位分组",
+  "subject": {
+    "items": [
+      {
+        "id": "24101",
+        "location": "src:c27e9ab49d6a077c873430bdaaa195ee80ee37ac6c24001dd9d401c45e7f723f/kityminder@1/n/24101n0",
+        "fields": {
+          "kind": "document",
+          "document": "24101",
+          "node": null,
+          "source": "agile:mindmap:24101@1",
+          "root": "合成平台",
+          "ancestors": [
+            "030：FAMX/FAMY测试项目",
+            "060：10.6.1",
+            "004：10.6.1-R2-2026/7",
+            "SSL"
+          ],
+          "title": "SSL 卸载",
+          "path": [],
+          "case_title": null
+        }
+      },
+      {
+        "id": "24102",
+        "location": "src:f93c14e4dc6cb24d087107dc9fd036eb2ed181c5640770fbbd3b7162d164770c/kityminder@1/n/24102n0",
+        "fields": {
+          "kind": "document",
+          "document": "24102",
+          "node": null,
+          "source": "agile:mindmap:24102@1",
+          "root": "FAMY",
+          "ancestors": [
+            "030：FAMX/FAMY测试项目",
+            "060：10.6.1",
+            "004：10.6.2-R2-2026/7",
+            "SLB"
+          ],
+          "title": "负载均衡",
+          "path": [],
+          "case_title": null
+        }
+      },
+      {
+        "id": "24103",
+        "location": "src:5e8146b7a665e21709a5658ce0906996fb93289a74839377cbd58b882ee42da8/kityminder@1/n/24103n0",
+        "fields": {
+          "kind": "document",
+          "document": "24103",
+          "node": null,
+          "source": "agile:mindmap:24103@1",
+          "root": "FAMY",
+          "ancestors": [
+            "030：FAMX/FAMY测试项目",
+            "010：9.8",
+            "020：10.6",
+            "101：10.6-主线-2026/01",
+            "SLB"
+          ],
+          "title": "负载均衡",
+          "path": [],
+          "case_title": null
+        }
+      },
+      {
+        "id": "24104",
+        "location": "src:f8253d2bdf0443a700575a6b48a3e8fdcaa9c10fee884da483fba4fe2eb8bf94/kityminder@1/n/24104n0",
+        "fields": {
+          "kind": "document",
+          "document": "24104",
+          "node": null,
+          "source": "agile:mindmap:24104@1",
+          "root": "FAMY",
+          "ancestors": [
+            "030：FAMX/FAMY测试项目",
+            "FAMY_10.9.1.37_专项"
+          ],
+          "title": "专项回归",
+          "path": [],
+          "case_title": null
+        }
+      },
+      {
+        "id": "24105",
+        "location": "src:c3d1fc74057a5755a580a25ddd63e4be02bb41f6cc8817d9a5ba57024e61ec7b/kityminder@1/n/24105n0",
+        "fields": {
+          "kind": "document",
+          "document": "24105",
+          "node": null,
+          "source": "agile:mindmap:24105@1",
+          "root": "FAMY",
+          "ancestors": [
+            "网络",
+            "802.1Q VLAN"
+          ],
+          "title": "VLAN",
+          "path": [],
+          "case_title": null
+        }
+      },
+      {
+        "id": "24106",
+        "location": "src:06599ae52053d3a4d515b9ce2c64378164e0eca33e432ea0cb012ca39d4fe6e6/kityminder@1/n/24106n0",
+        "fields": {
+          "kind": "document",
+          "document": "24106",
+          "node": null,
+          "source": "agile:mindmap:24106@1",
+          "root": "FAMY",
+          "ancestors": [
+            "030：FAMX/FAMY测试项目",
+            "040：10.9.1",
+            "Rel_FAMY_10_9_1_37 回归"
+          ],
+          "title": "回归",
+          "path": [],
+          "case_title": null
+        }
+      }
+    ],
+    "context": {
+      "product": "famx",
+      "names": [
+        "FAMX",
+        "FAMY"
+      ],
+      "parameters": {
+        "product": "FAMY"
+      }
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-location.declaration_conflict",
+      "item": "24101",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "refute",
+      "code": "case-location.version_conflict",
+      "item": "24102",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "refute",
+      "code": "case-location.version_conflict",
+      "item": "24103",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "unknown",
+      "reason": "missing_input",
+      "item": "24104",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "unknown",
+      "reason": "missing_input",
+      "item": "24105",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "unknown",
+      "reason": "missing_input",
+      "item": "24106",
+      "tier": "advisory"
+    }
+  ]
+}

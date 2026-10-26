@@ -1,5 +1,7 @@
 # Permission policy export
 
+> **Superseded** (2026-10-21): `hub-permission/1`, the scope role presets and the per-harness permission exports were retired with the old server. There are now two permission roles, user and administrator, which govern only the use and publishing of task packs; tool categories follow the MCP annotations. See R01 and D06 in the [generic model](generic-model.md). Kept as a record only.
+
 This is item 4 of harness neutrality. Permission policy is not a second editable Asset. `hub-permission/1` is the neutral JSON computed from the role presets on a scope and from Tool annotations. An adapter only reads it and writes one harness's configuration. Changing a role or an annotation produces a new export. The export approves nothing.
 
 Runtime permission stays the first step of the Enforcement chain: whether this identity may execute in this scope. allow / ask / deny in a harness is the same person allowing, asking again, or refusing inside a local session. It is not an Independent reviewer, not a Change set, and not a Binding. A Record does not say hub approved.

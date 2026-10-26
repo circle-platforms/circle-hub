@@ -1,0 +1,97 @@
+{
+  "id": "acquire_mismatch",
+  "source": "author",
+  "check": "bed",
+  "note": "合成反例：acquire 按冻结清单和租约重算；没有时长上限",
+  "subject": {
+    "items": [
+      {
+        "id": "bed-a",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/beds/0",
+        "fields": {
+          "action": "acquire",
+          "bed": "bed-a",
+          "devices": [
+            "afamx0",
+            "client0"
+          ],
+          "addresses": [],
+          "keys": [],
+          "conclusion": "预订 bed-a，设备 afamx0、client0，不限时长，用完由运行释放"
+        }
+      }
+    ],
+    "context": {
+      "groups": [
+        {
+          "action": "acquire",
+          "need": {
+            "devices": [
+              {
+                "type": "load-balancer",
+                "count": 1
+              },
+              {
+                "type": "client",
+                "count": 1
+              }
+            ]
+          },
+          "bed": "bed-a",
+          "addresses": null,
+          "booking": null,
+          "reason": "",
+          "devices": null,
+          "manifest": {
+            "schema": "test-bed-manifest@1",
+            "beds": [
+              {
+                "name": "bed-a",
+                "devices": [
+                  {
+                    "name": "afamx0",
+                    "type": "load-balancer",
+                    "ipv4": [
+                      "192.0.2.10/26"
+                    ],
+                    "ipv6": []
+                  },
+                  {
+                    "name": "client0",
+                    "type": "client",
+                    "ipv4": [
+                      "192.0.2.74/26"
+                    ],
+                    "ipv6": []
+                  }
+                ],
+                "services": [],
+                "reserved": []
+              }
+            ]
+          },
+          "leases": {
+            "now": "2026-10-22T02:00:00.000Z",
+            "entries": [],
+            "registrations": []
+          },
+          "lease_requests": [
+            {
+              "keys": [
+                "bed/bed-a/afamx0",
+                "bed/bed-a/client0"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "test-bed.acquire_mismatch",
+      "tier": "advisory"
+    }
+  ]
+}

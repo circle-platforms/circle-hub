@@ -1,0 +1,53 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "verifications",
+      "role": "expected",
+      "description": "各块复核运行：可以写复核运行编号，或省略并由 Hub 按 predecessor 血缘里的 case-review-verify 运行绑定。Hub 把该运行的已受理结果解析成 rec: 并在回答里写明。运行不存在、没有已受理提交、或不是 case-review-verify 时拒绝并给修正说明。仍可直接写复核 submit_result 回执里的 rec:<摘要>（不带 # 指针）",
+      "from_runs": { "pack": "case-review-verify" },
+      "accepts": [
+        "application/json"
+      ],
+      "required": true,
+      "many": true
+    },
+    {
+      "slot": "target",
+      "role": "subject",
+      "description": "各块评审的同一份测试脑图，按条目位置核对源摘要并逐字排出评审表",
+      "accepts": [
+        "agile:mindmap",
+        "application/json"
+      ],
+      "required": true,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "precondition_priority",
+      "description": "用例里前置条件叶子的优先级标记，默认 3；null 关闭这条规则",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    }
+  ],
+  "product": {
+    "catalogs": []
+  },
+  "subject": "target",
+  "projection": {
+    "module": "functions/projection.ts"
+  }
+}

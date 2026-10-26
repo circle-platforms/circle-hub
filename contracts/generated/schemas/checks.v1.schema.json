@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "checks@1"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "interpreter": {
+            "description": "a core interpreter such as structure@1",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "function": {
+            "description": "a pack function with the PackCheckInput of hub/rules",
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+              },
+              "export": {
+                "type": "string",
+                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+              }
+            },
+            "required": [
+              "module"
+            ],
+            "additionalProperties": false
+          },
+          "table": {
+            "description": "the table the interpreter reads, under tables/ or policies/",
+            "type": "string"
+          },
+          "applies": {
+            "type": "string",
+            "enum": [
+              "item",
+              "run"
+            ],
+            "description": "run: one subject for all items, built once; item: one subject per item (with its submitted slots)"
+          },
+          "subject": {
+            "description": "builds the subject from RunSubjectInput or ItemSubjectInput; without it the default subject of that input is used",
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+              },
+              "export": {
+                "type": "string",
+                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+              }
+            },
+            "required": [
+              "module"
+            ],
+            "additionalProperties": false
+          },
+          "catalog": {
+            "description": "the catalog of the locked root the check consults",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "catalog_select": {
+            "description": "derives {base, lines} from frozen item inputs before any catalog is read; only exact grammar paths along those token sequences are fetched",
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+              },
+              "export": {
+                "type": "string",
+                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+              }
+            },
+            "required": [
+              "module"
+            ],
+            "additionalProperties": false
+          },
+          "judges": {
+            "type": "string",
+            "enum": [
+              "expected",
+              "subject",
+              "artifact_under_verification",
+              "reported_actual",
+              "republished",
+              "hint",
+              "request_text"
+            ],
+            "description": "the role of what the check judges (A03): the target, an expected source or the artifact under verification"
+          },
+          "tier": {
+            "description": "replaces the tier of every outcome; required on publication, legacy published packs fall back to basis",
+            "type": "string",
+            "enum": [
+              "blocking",
+              "advisory"
+            ]
+          },
+          "basis": {
+            "description": "the acceptance contract clause a blocking check relies on (C05 R[1])",
+            "type": "string",
+            "minLength": 1
+          },
+          "limits": {
+            "description": "Per-check work limits within sandbox capacity; omission inherits service defaults, never an effect budget",
+            "type": "object",
+            "properties": {
+              "timeoutMs": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 120000
+              },
+              "memoryMb": {
+                "type": "integer",
+                "minimum": 32,
+                "maximum": 4096
+              },
+              "outputBytes": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 67108864
+              },
+              "logBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1048576
+              },
+              "inputBytes": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 134217728
+              }
+            },
+            "additionalProperties": false
+          },
+          "reads": {
+            "description": "bound sources of these roles are read into sources for this check",
+            "type": "object",
+            "properties": {
+              "narrow": {
+                "description": "item-key narrowed read of one bound index view, replacing whole-source reads for this check",
+                "type": "object",
+                "properties": {
+                  "slot": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "description": "exact bound input slot containing a knowledge:index view"
+                  },
+                  "key_path": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 512,
+                    "description": "JSON pointer into the built subject selecting an array of string index keys"
+                  },
+                  "into": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 512,
+                    "description": "JSON pointer receiving the narrowed index view in the built subject"
+                  },
+                  "max_keys": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000
+                  },
+                  "max_entries": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 10000
+                  },
+                  "rebind": {
+                    "description": "replace the bound only with the subject keys on the same revision; the subject derives the keys and the model does not supply them",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "slot",
+                  "key_path",
+                  "into",
+                  "max_keys",
+                  "max_entries"
+                ],
+                "additionalProperties": false
+              },
+              "roles": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "expected",
+                    "subject",
+                    "artifact_under_verification",
+                    "reported_actual",
+                    "republished",
+                    "hint",
+                    "request_text"
+                  ]
+                },
+                "description": "source roles whose bound sources are read into sources for this check"
+              },
+              "types": {
+                "description": "external object types system:type whose bound sources are read; when set, sources without external identity are not read",
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*$"
+                }
+              },
+              "max_bytes": {
+                "description": "most bytes read per bound source; at most 1 MiB (default 1 MiB)",
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "roles"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "applies",
+          "judges"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "checks"
+  ],
+  "additionalProperties": false
+}

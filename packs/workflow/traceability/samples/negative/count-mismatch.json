@@ -1,0 +1,92 @@
+{
+  "id": "count_mismatch",
+  "source": "author",
+  "check": "counts",
+  "note": "合成样例：缺陷索引声明未截断，却列出 1 个键而声明共 7 个，视图自相矛盾，计数记不通过（提示档）而不是照写",
+  "subject": {
+    "items": [
+      {
+        "id": "71041",
+        "location": "src:401d606c6d6c87aab8e4c2f212c0e30511460f01f885fa41e2e7c722db5682ff/json@1/p/entries/ee44b50a8787023e113bf315c3c6101bbca63c057f98e526054630c1363f0890",
+        "fields": {
+          "bug": "71041",
+          "declaration_status": "declared",
+          "identity": "71041",
+          "ids": [
+            "71041"
+          ],
+          "statuses": [
+            "fixed"
+          ],
+          "conflict": false,
+          "statement": "缺陷 71041 的合成摘要",
+          "references": [
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/ee44b50a8787@ee44b50a8787023e113bf315c3c6101bbca63c057f98e526054630c1363f0890"
+          ],
+          "digests": [
+            "ee44b50a8787023e113bf315c3c6101bbca63c057f98e526054630c1363f0890"
+          ],
+          "cases": [
+            {
+              "case": "C-141",
+              "title": "追溯到的用例",
+              "document": "24001",
+              "reference": "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/cases/b78e9a8a1728@b78e9a8a1728c9344f1e937c56abe1a2c9cf7152aac5ad4e284e8482388a12b0",
+              "defects": [],
+              "entry": "b78e9a8a1728c9344f1e937c56abe1a2c9cf7152aac5ad4e284e8482388a12b0"
+            }
+          ],
+          "systems": []
+        }
+      }
+    ],
+    "context": {
+      "product": "famx",
+      "names": [
+        "FAMX",
+        "FAMY"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "product": "famx",
+          "build": "Rel_FAMX_10_6_1_57",
+          "root": "67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591",
+          "statuses": [
+            "fixed",
+            "known"
+          ],
+          "views": {
+            "defects": {
+              "source": "src:401d606c6d6c87aab8e4c2f212c0e30511460f01f885fa41e2e7c722db5682ff",
+              "skipped": 0,
+              "truncated": false,
+              "total_keys": 7,
+              "total_entries": 1,
+              "listed_keys": 1,
+              "listed_entries": 1,
+              "missing": 0
+            },
+            "cases": {
+              "source": "src:f6b82c7b436bd1bbee0a4f12a71132378dca53941da952dd2fabea1ab8cb1289",
+              "skipped": 0,
+              "truncated": false,
+              "total_keys": 1,
+              "total_entries": 1,
+              "listed_keys": 1,
+              "listed_entries": 1,
+              "missing": 0
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "traceability.count_mismatch",
+      "tier": "advisory"
+    }
+  ]
+}

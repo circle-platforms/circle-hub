@@ -1,0 +1,88 @@
+{
+  "schema": "runtime-profile@1",
+  "synthetic": true,
+  "runtime": {
+    "minimum_version": "synthetic-runtime-v2",
+    "contract_sha256": "99d9621bc6c882fb1d7104e7b22c1122b27ab1128069860736a8f19719d7a6cb"
+  },
+  "bed": "bed-a",
+  "workbook": {
+    "sheet": "FixtureSheet",
+    "header": [
+      "FixtureId",
+      "FixturePriority",
+      "FixtureType",
+      "FixtureDescription",
+      "FixtureObject",
+      "FixtureMethod",
+      "FixtureData",
+      "FixtureOutput",
+      "FixtureInput"
+    ],
+    "identity_marker": "FixtureIdentity",
+    "range_name": "FixtureRange",
+    "closing_row": [
+      "FixtureEnd",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "autoid_pattern": "^\\d{18}$"
+  },
+  "seats": [
+    {
+      "object": "widget-seat",
+      "device": "dut0",
+      "ordinal": 0
+    }
+  ],
+  "hosts": [
+    {
+      "object": "widget-host",
+      "method": "shell",
+      "device": "client0"
+    }
+  ],
+  "allowed": [
+    {
+      "object": "widget-seat",
+      "method": "configure",
+      "parameters": {
+        "line": "device_cli"
+      },
+      "reviewed": true
+    },
+    {
+      "object": "widget-host",
+      "method": "shell",
+      "parameters": {
+        "command": "host_shell"
+      },
+      "reviewed": true
+    },
+    {
+      "object": "widget-check",
+      "method": "literal",
+      "parameters": {
+        "expected": "literal_assertion"
+      },
+      "reviewed": true
+    },
+    {
+      "object": "widget-clock",
+      "method": "pause",
+      "parameters": {
+        "seconds": "wait"
+      },
+      "reviewed": true
+    }
+  ],
+  "device_count": 2,
+  "fold_newlines": [],
+  "max_wait_seconds": 300
+}

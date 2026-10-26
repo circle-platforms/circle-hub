@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "round": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "options": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {},
+      "description": "the options of the sync declaration, as overridden by the caller"
+    },
+    "read": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "media_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parser": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "the core parser the page was parsed with (html@1 for a web page); null when not parsed"
+          },
+          "model": {
+            "description": "the parsed model of the page (the same structure the parser gives selectors into); null when not readable"
+          },
+          "reason": {
+            "description": "why not readable, for the pack to decide; the real reason stays in the admin log",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "media_type",
+          "parser",
+          "model",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "description": "every page read so far by external id, including those that failed"
+    },
+    "known": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "base": {
+            "type": "string"
+          },
+          "root": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "base",
+          "root"
+        ],
+        "additionalProperties": false
+      },
+      "description": "builds already in the knowledge base"
+    }
+  },
+  "required": [
+    "round",
+    "options",
+    "read",
+    "known"
+  ],
+  "additionalProperties": false
+}

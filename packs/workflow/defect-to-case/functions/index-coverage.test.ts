@@ -1,0 +1,37 @@
+import {makeDuplicateDraft} from '../testing/fixtures.ts';
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { createKnowledgeReader } from '../../../../hub/knowledge/api.ts';
+import { casesProducer, DEFAULT_PRODUCERS, makeWorld, mindMap, catalogXml, BASE_CATALOG, startPostgres } from '../../../../hub/knowledge/test-support.ts';
+import { buildCompactIndex } from './compact-index.ts';
+import { checkDuplicate } from './checks.ts';
+
+test('real complete index omits empty requested keys without losing decidability', async t => {
+  const pg = await startPostgres();
+  t.after(() => pg.stop());
+  const w = await makeWorld(pg, { pack: { declaration: { producers: [DEFAULT_PRODUCERS[0], casesProducer({ batch: 5 })] } } });
+  t.after(() => w.close());
+  w.external.set('site:tree:synthetic', { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
+  w.external.set('store:mindmap:empty', { bytes: mindMap({ id: 'empty', module: 'M1', line: '1.2' }, []), mediaType: 'application/json' });
+  const build = { name: 'Synthetic_1', family: 'ACME', line: '1.2', base: 'Synthetic_1', platform: null, built_at: '2026-01-02T00:00:00.000Z', released_at: null, sources: { tree: 'site:tree:synthetic', cases: ['store:mindmap:empty'] }, root: null };
+  const produced = await w.knowledge.produceTree({ product: w.product, build });
+  assert.equal(produced.ok, true);
+  const read = await createKnowledgeReader(w.knowledge).read('knowledge:index:acme:Synthetic_1?kind=case&key=commands&only=system%20reboot', { principal: w.user, run: null, purpose: '合成覆盖测试' });
+  assert.ok(read.ok);
+  const original = read.artifacts.find(a => a.name === 'original');
+  assert.ok(original);
+  const source = await w.kit.artifacts.source(w.user, original.artifact.body.sha256, { consumer: 'function' });
+  assert.ok(source?.bytes);
+  const view = JSON.parse(new TextDecoder().decode(source.bytes));
+  assert.equal(view.truncated, false);
+  assert.equal(view.skipped, 0);
+  assert.deepEqual(view.keys, {});
+  const compact = buildCompactIndex(view);
+  assert.deepEqual(compact.missingKeys, []);
+  assert.equal(compact.complete, true);
+  const draft=makeDuplicateDraft(),signature='src:'+'b'.repeat(64)+'/xml@1/x/system/reboot';
+  draft.steps=[{command:'system reboot',identity:{tree_root:'b'.repeat(64),path:'/commands/system/reboot',signature,parameters:[]}}];
+  const catalog=[{words:['system','reboot'],reference:'tree:'+'a'.repeat(64)+'/commands/system/reboot',signatures:[{id:'reboot',reference:signature,params:[]}]}];
+  const result = checkDuplicate({subject:{indexed_cases:compact,drafts:[draft]},catalog});
+  assert.equal(result[0].verdict, 'support');
+});

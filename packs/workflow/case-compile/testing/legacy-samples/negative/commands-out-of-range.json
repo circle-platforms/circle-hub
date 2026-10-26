@@ -1,0 +1,58 @@
+{
+  "id": "commands_out_of_range_negative",
+  "source": "author",
+  "check": "commands_catalog",
+  "note": "合成反例：commands-out-of-range",
+  "subject": {
+    "item": "doc-1:c-1",
+    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-e1",
+    "phrases": [
+      "widget health interval 500"
+    ],
+    "negative": false
+  },
+  "catalog": {
+    "root": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "complete": true,
+    "entries": [
+      {
+        "head": "widget health interval",
+        "signatures": [
+          [
+            {
+              "name": "seconds",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 300
+            }
+          ]
+        ],
+        "summary": "set the health check interval"
+      },
+      {
+        "head": "widget session persistence",
+        "signatures": [
+          [
+            {
+              "name": "mode",
+              "type": "enum",
+              "values": [
+                "source-address",
+                "cookie"
+              ]
+            }
+          ]
+        ],
+        "summary": "set the persistence mode"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "core.catalog.param_out_of_range",
+      "item": "doc-1:c-1",
+      "tier": "blocking"
+    }
+  ]
+}

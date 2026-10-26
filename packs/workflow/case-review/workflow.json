@@ -1,0 +1,120 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "subject",
+      "role": "subject",
+      "description": "被评审的测试脑图：敏捷平台的脑图（agile:mindmap:<文档编号>），或上传的 KityMinder 导出（application/json）；一次运行评审一份文档，用例超过 100 个时用参数 block 分块",
+      "accepts": ["agile:mindmap", "application/json"],
+      "required": true,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "stories",
+      "description": "需求编号：给出时只读这些需求（和 bugs 一起代替从标题和上级目录里找到的编号）",
+      "required": false,
+      "schema": { "type": "array", "maxItems": 50, "items": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 12 }, { "type": "integer", "minimum": 1 }] } }
+    },
+    {
+      "name": "bugs",
+      "description": "缺陷编号：给出时只读这些缺陷（和 stories 一起代替从标题和上级目录里找到的编号）",
+      "required": false,
+      "schema": { "type": "array", "maxItems": 50, "items": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 12 }, { "type": "integer", "minimum": 1 }] } }
+    },
+    {
+      "name": "id_ranges",
+      "description": "缺陷系统的编号范围 { story?: { min?, max? }, bug?: { min?, max? } }：标题里没有标明类型的编号按它分成需求或缺陷",
+      "required": false,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "story": { "type": "object", "additionalProperties": false, "properties": { "min": { "type": "integer", "minimum": 0 }, "max": { "type": "integer", "minimum": 0 } } },
+          "bug": { "type": "object", "additionalProperties": false, "properties": { "min": { "type": "integer", "minimum": 0 }, "max": { "type": "integer", "minimum": 0 } } }
+        }
+      }
+    },
+    {
+      "name": "bare_ids",
+      "description": "没有标明类型、也分不出范围的编号怎么读：both（默认，需求和缺陷都读；两种分开编号，都存在时其中一种可能与文档无关，引用前先核对记录的标题；不存在的那种记为不可用）、story、bug、skip（不读）",
+      "required": false,
+      "schema": { "enum": ["both", "story", "bug", "skip"] }
+    },
+    {
+      "name": "spec_search",
+      "description": "是否按标题里的功能词检索规格书（manual:spec-search），默认 true",
+      "required": false,
+      "schema": { "type": "boolean" }
+    },
+    {
+      "name": "history_search",
+      "description": "是否按标题里的功能词找相似功能的历史测试清单作线索（agile:search，不含被评审的这份文档；线索不作产品行为的根据），默认 true",
+      "required": false,
+      "schema": { "type": "boolean" }
+    },
+    {
+      "name": "strategy_search",
+      "description": "是否按标题里的功能词检索同类功能的测试策略文档作线索（manual:qa-search，线索不作产品行为的根据），默认 true",
+      "required": false,
+      "schema": { "type": "boolean" }
+    },
+    {
+      "name": "max_terms",
+      "description": "检索用的功能词最多几个，1 到 16，默认 8",
+      "required": false,
+      "schema": { "type": "integer", "minimum": 1, "maximum": 16 }
+    },
+    {
+      "name": "case_rule",
+      "description": "哪些节点是用例：marked（默认）认带标签或带标记（没有标签、带用例优先级、有子节点、下面没有别的用例）的节点；tagged 限制为只认标签（resource 不为空）",
+      "required": false,
+      "schema": { "enum": ["tagged", "marked"] }
+    },
+    {
+      "name": "case_priority",
+      "description": "团队模板里用例的优先级标记（case_rule=marked 用它认用例），1 到 9，默认 2",
+      "required": false,
+      "schema": { "type": "integer", "minimum": 1, "maximum": 9 }
+    },
+    {
+      "name": "group_priority",
+      "description": "分组节点的优先级标记：带这个优先级、下面有用例的带标签节点按分组处理，默认 1；null 关闭这条规则",
+      "required": false,
+      "schema": { "anyOf": [{ "type": "integer", "minimum": 1, "maximum": 9 }, { "type": "null" }] }
+    },
+    {
+      "name": "precondition_priority",
+      "description": "用例里前置条件叶子的优先级标记，默认 3；null 关闭这条规则",
+      "required": false,
+      "schema": { "anyOf": [{ "type": "integer", "minimum": 1, "maximum": 9 }, { "type": "null" }] }
+    },
+    {
+      "name": "block",
+      "description": "只评审一个子树（分块）：节点编号（data.id），或从根往下的节点文字列表；用例超过 100 个的文档必须分块（或用 slice 分段），开始运行被拒时的修正说明列出可用的分块和每块的用例数",
+      "required": false,
+      "schema": {
+        "anyOf": [
+          { "type": "string", "minLength": 1, "maxLength": 200 },
+          { "type": "array", "minItems": 1, "maxItems": 32, "items": { "type": "string", "minLength": 1, "maxLength": 400 } }
+        ]
+      }
+    },
+    {
+      "name": "slice",
+      "description": "按用例顺序只评审一段：{\"from\": 起, \"to\": 止}，从 1 数，含两端，一段至多 100 个；和 block 一起写时在那个子树里数。分组太大、没有更小的分组或用例不在分组下时用它分段，各段合起来覆盖全部用例",
+      "required": false,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from", "to"],
+        "properties": { "from": { "type": "integer", "minimum": 1 }, "to": { "type": "integer", "minimum": 1 } }
+      }
+    }
+  ],
+  "product": { "catalogs": ["commands@1"] },
+  "subject": "subject",
+  "projection": { "module": "functions/projection.ts" },
+  "expected_sources": { "module": "functions/expected.ts" }
+}

@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import{before,after,test}from'node:test';
+import{makeWorld,startPostgres}from'./test-support.ts';
+let postgres:Awaited<ReturnType<typeof startPostgres>>;
+before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
+test('build and product-wide production pin one variable snapshot and record only their own producer uses',async t=>{
+ const build={name:'Synthetic_10_6',base:'Synthetic_10_6',family:'ACME',line:'10.6',platform:null,built_at:null,released_at:'2026-10-24T00:00:00.000Z',sources:{tree:'site:tree:build'}};
+ const w=await makeWorld(postgres,{pack:{functions:{'plan.ts':`export default()=>({fetch:[],builds:[${JSON.stringify(build)}],scope:{docs:'site:tree:scope'},done:true});`,'doc.ts':`export default input=>{if(input.params.scope===('build' in input))throw Error('wrong build context');return {entries:[{kind:'case',path:input.params.scope?'/scope':'/build',statement:input.params.text,data:{document:input.params.scope?'scope':'build'},applicability:null,fragments:[{slot:'doc',parser:'xml@1',selector:'x/catalog'}]}],warnings:[]};};`},declaration:{catalogs:[],variables:[{name:'SYNTH_BUILD_TEXT',description:'Synthetic build text',schema:{type:'string'},default:'synthetic build'},{name:'SYNTH_SCOPE_TEXT',description:'Synthetic scope text',schema:{type:'string'},default:'synthetic scope'}],producers:[{id:'build_docs',title:'构建',function:{module:'functions/doc.ts'},inputs:{doc:{source:'tree'}},params:{scope:false,text:'${var:SYNTH_BUILD_TEXT}'}},{id:'scope_docs',title:'不分版本',unversioned:true,function:{module:'functions/doc.ts'},inputs:{doc:{source:'docs'}},params:{scope:true,text:'${var:SYNTH_SCOPE_TEXT}'}}]}}});t.after(()=>w.close());
+ w.external.set('site:tree:build',{bytes:'<catalog/>',mediaType:'application/xml'});w.external.set('site:tree:scope',{bytes:'<catalog/>',mediaType:'application/xml'});
+ const unset=await w.knowledge.syncProduct(w.product);assert.ok(unset.error?.includes('SYNTH_SCOPE_TEXT'));assert.equal(w.external.reads.length,0);
+ const dry=await w.knowledge.syncProduct(w.product,{dryRun:true});assert.equal(dry.error,null);assert.equal((await w.kit.store.list({kind:'tree_root',limit:100})).items.length,0);
+ await w.kit.variables.setVariable(w.admin,'SYNTH_BUILD_TEXT','build initial','合成设置');
+ const initial=await w.kit.variables.setVariable(w.admin,'SYNTH_SCOPE_TEXT','scope initial','合成设置');
+ const read=w.external.read.bind(w.external),seen:Array<ReadonlyMap<string,string>|undefined>=[];
+ w.external.read=async(id,ctx)=>{seen.push(ctx.variables);if(seen.length===1)await w.kit.variables.setVariable(w.admin,'SYNTH_SCOPE_TEXT','scope next','合成并发改变');return read(id,ctx);};
+ const first=await w.knowledge.syncProduct(w.product);assert.equal(first.error,null);assert.equal(first.scope?.outcome,'produced',JSON.stringify(first));
+ assert.ok(seen.every(snapshot=>snapshot===seen[0]&&snapshot?.get('SYNTH_SCOPE_TEXT')===initial.value.decision.digest));
+ const a=(await w.knowledge.store.composition(first.builds[0].composition!))!,b=(await w.knowledge.store.composition(first.scope.composition!))!;
+ assert.deepEqual(a.variables?.map(use=>use.name),['SYNTH_BUILD_TEXT']);assert.deepEqual(b.variables?.map(use=>use.name),['SYNTH_SCOPE_TEXT']);
+ assert.ok(b.variables?.[0].at.includes('/producers/1/params/'));
+ const second=await w.knowledge.syncProduct(w.product);assert.equal(second.builds[0].composition,first.builds[0].composition);assert.equal(second.scope?.outcome,'produced');assert.notEqual(second.scope.root,first.scope.root);
+ await w.kit.variables.setVariable(w.admin,'SYNTH_SCOPE_TEXT','scope intermediate','合成中间修订');
+ await w.kit.variables.setVariable(w.admin,'SYNTH_SCOPE_TEXT','scope next','合成恢复原值');
+ const third=await w.knowledge.syncProduct(w.product);assert.equal(third.builds[0].composition,first.builds[0].composition);assert.equal(third.scope?.root,second.scope.root);assert.notEqual(third.scope?.composition,second.scope.composition);assert.equal(third.scope?.calls?.made,0);assert.ok((third.scope?.calls?.reused??0)>0);
+});

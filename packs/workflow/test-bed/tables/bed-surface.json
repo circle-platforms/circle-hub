@@ -1,0 +1,11 @@
+{
+  "schema": "bed-surface-shape@1",
+  "document": "bed-surface@1",
+  "parser": ["row_table"],
+  "field_role": ["baseline", "residue"],
+  "baseline_from": ["interfaces", "config", "values"],
+  "empty": ["header_only"],
+  "granularity": ["row", "table"],
+  "confirm": ["none", "interactive"],
+  "channel": ["single_shot"]
+}

@@ -1,0 +1,47 @@
+import assert from 'node:assert/strict';
+import {after,before,test} from 'node:test';
+import {BASE_CATALOG,CASES_SOURCE,DEFAULT_PRODUCERS,casesProducer,catalogXml,makeWorld,mindMap,startPostgres} from './test-support.ts';
+let postgres:Awaited<ReturnType<typeof startPostgres>>;
+before(async()=>{postgres=await startPostgres();});after(async()=>{await postgres?.stop();});
+const build=(sources:Record<string,string|string[]>)=>({name:'Rel_ACME_10_6_1_71',family:'ACME',line:'10.6.1',base:'Rel_ACME_10_6_1_71',platform:null,built_at:null,released_at:null,root:null,sources});
+test('a timed-out document is retryable and its call is never remembered as a deterministic failure',async t=>{
+ const slow=CASES_SOURCE.replace("if (root.text === 'THROW') throw new Error('hostile document');", "if(root.text==='SLOW')while(true){};");
+ const w=await makeWorld(postgres,{pack:{functions:{'cases.ts':slow},declaration:{producers:[DEFAULT_PRODUCERS[0],casesProducer({batch:2})]}},knowledge:{sandbox:{producer:{timeoutMs:700},requireOsIsolation:false}}});t.after(()=>w.close());
+ w.external.set('site:tree:synthetic',{bytes:catalogXml(BASE_CATALOG),mediaType:'application/xml'});
+ const ids=['store:mindmap:slow','store:mindmap:good'];
+ ids.forEach((id,i)=>w.external.set(id,{bytes:mindMap({id:`doc${i}`,text:i===0?'SLOW':'normal'},[{id:`case${i}`,text:'[cmd: system show] synthetic'}]),mediaType:'application/json'}));
+ const first=await w.knowledge.produceTree({product:w.product,build:build({tree:'site:tree:synthetic',cases:ids})});assert.equal(first.ok,true,first.reason??'');
+ const production=await w.knowledge.store.latestProduction(w.product.product.id,first.build);
+ assert.equal(production!.detail.lists[0].skipped[0].retry,true);assert.equal((production!.detail.lists[0].skipped[0] as any).reason_code,'timeout');
+ const second=await w.knowledge.produceTree({product:w.product,build:build({tree:'site:tree:synthetic',cases:ids})});
+ assert.equal(second.ok,true,second.reason??'');assert.ok(second.calls.made>=3,'the batch and isolated timeout must run again despite identical bytes and limits');
+});
+test('one document over the batching budget is handed alone to the producer',async t=>{
+ const w=await makeWorld(postgres,{pack:{declaration:{producers:[DEFAULT_PRODUCERS[0],casesProducer({batch:2})]}},knowledge:{limits:{maxBuildBytes:4096}}});t.after(()=>w.close());
+ w.external.set('site:tree:synthetic',{bytes:catalogXml(BASE_CATALOG),mediaType:'application/xml'});
+ const id='store:mindmap:large';w.external.set(id,{bytes:mindMap({id:'doc',text:'synthetic '+ 'x'.repeat(9000)},[{id:'case',text:'[cmd: system show] synthetic'}]),mediaType:'application/json'});
+ const result=await w.knowledge.produceTree({product:w.product,build:build({tree:'site:tree:synthetic',cases:[id]})});
+ assert.equal(result.ok,true,result.reason??'');assert.equal(result.skippedCount,0);assert.ok(result.entries>4);
+});
+test('every skipped source and warning survives in content-addressed chunks',async t=>{
+ const warnings=Array.from({length:231},(_,i)=>`synthetic warning ${i}`);
+ const invalid=Array.from({length:231},(_,i)=>({kind:'synthetic_invalid_kind',path:null,statement:`synthetic refusal ${i}`,data:{},fragments:[{parser:'xml@1',selector:'x/catalog'}],applicability:null}));
+ const fn=`export default ()=>({entries:${JSON.stringify(invalid)},warnings:${JSON.stringify(warnings)}});`;
+ const w=await makeWorld(postgres,{pack:{functions:{'warnings.ts':fn,'plan.ts':'export default input=>({fetch:[],builds:input.options.builds,done:true});'},declaration:{producers:[DEFAULT_PRODUCERS[0],{id:'docs',title:'synthetic documents',function:{module:'functions/warnings.ts'},inputs:{documents:{source:'documents',many:true,optional:true}}}]}}});t.after(()=>w.close());
+ w.external.set('site:tree:synthetic',{bytes:catalogXml(BASE_CATALOG),mediaType:'application/xml'});
+ const ids=Array.from({length:221},(_,i)=>`store:mindmap:missing-${i}`);
+ const result=await w.knowledge.produceTree({product:w.product,build:build({tree:'site:tree:synthetic',documents:ids})});assert.equal(result.ok,true,result.reason??'');
+ const production=await w.knowledge.store.latestProduction(w.product.product.id,result.build),chunks=(production!.detail as any).problem_chunks;
+ assert.ok(chunks?.skipped?.length>0);const read=async(refs:any[])=>{const rows:any[]=[];for(const ref of refs){const source=await w.kit.artifacts.source(w.admin,ref.sha256,{consumer:'function',record:ref.record});assert.ok(source?.bytes);rows.push(...JSON.parse(Buffer.from(source.bytes).toString()));}return rows;};
+ assert.deepEqual(new Set((await read(chunks.skipped)).map(row=>row.external)),new Set(ids));
+ assert.equal((await read(chunks.refused)).length,result.refusedCount);assert.ok(result.refusedCount>200);
+ assert.ok((await read(chunks.warnings)).some(row=>String(row).includes('synthetic warning 230')));
+ w.external.reads.length=0;
+ w.external.set(ids.at(-1)!,{bytes:mindMap({id:'recovered',text:'synthetic'},[{id:'case',text:'synthetic'}]),mediaType:'application/json'});
+ const {root:ignored,...info}=build({tree:'site:tree:synthetic',documents:ids});
+ const again=await w.knowledge.syncProduct(w.product,{includeUnreleased:true,options:{builds:[info]}});
+ assert.equal(again.error,null);assert.equal(again.builds[0].outcome,'produced',JSON.stringify(again));
+ for(const id of ids)assert.ok(w.external.reads.includes(id),`all skipped ids must be retried, including ${id}`);
+ const fresh=await w.knowledge.store.latestProduction(w.product.product.id,result.build);
+ assert.equal(fresh!.detail.lists[0].skipped_count,220);
+});

@@ -1,0 +1,12 @@
+{
+  "comment": "搜索：两个台架都满足需求且空闲；构建要求 Rel_FAMX_10_6_1_8 与清单的装机声明比较——bed-a 精确同名，bed-b 的 FAMY 名按其声明的 base 算同一构建，结论都写“构建一致（Rel_FAMX_10_6_1_8，声明，未核对）”。管理员先 circle-hub doc put bed-topology examples/bed-topology.json，用户再 start_run。",
+  "tool": "start_run",
+  "arguments": {
+    "pack": "test-bed",
+    "inputs": { "inventory": { "external": "doc:doc:bed-topology" } },
+    "parameters": {
+      "action": "search",
+      "need": { "devices": [{ "type": "load-balancer", "count": 1 }, { "type": "client", "count": 1 }], "build": "Rel_FAMX_10_6_1_8", "hours": 2 }
+    }
+  }
+}

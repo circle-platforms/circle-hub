@@ -1,0 +1,115 @@
+{
+  "schema": "compile-contract@1",
+  "synthetic": true,
+  "objects": [
+    {
+      "name": "dut",
+      "methods": [
+        {
+          "name": "cli",
+          "params": [
+            {
+              "name": "line",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "command": true
+            }
+          ]
+        },
+        {
+          "name": "save",
+          "params": []
+        },
+        {
+          "name": "reboot",
+          "params": []
+        },
+        {
+          "name": "listen",
+          "params": [
+            {
+              "name": "address",
+              "type": "ipv4",
+              "address": "listen"
+            },
+            {
+              "name": "port",
+              "type": "port"
+            }
+          ]
+        },
+        {
+          "name": "listen6",
+          "params": [
+            {
+              "name": "address",
+              "type": "ipv6",
+              "address": "listen"
+            }
+          ]
+        },
+        {
+          "name": "vip",
+          "params": [
+            {
+              "name": "address",
+              "type": "ipv4",
+              "address": "virtual"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "client",
+      "methods": [
+        {
+          "name": "request",
+          "params": [
+            {
+              "name": "target",
+              "type": "ipv4",
+              "address": "target"
+            },
+            {
+              "name": "count",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 1000,
+              "optional": true,
+              "default": "1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "server",
+      "methods": [
+        {
+          "name": "respond",
+          "params": [
+            {
+              "name": "backend",
+              "type": "ipv4",
+              "address": "backend"
+            },
+            {
+              "name": "status",
+              "type": "int",
+              "minimum": 100,
+              "maximum": 599
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "forbidden": [
+    {
+      "object": "dut",
+      "method": "reboot"
+    }
+  ]
+}

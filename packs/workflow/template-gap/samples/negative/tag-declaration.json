@@ -1,0 +1,34 @@
+{
+  "id": "tag_declaration_negative",
+  "source": "author",
+  "check": "tag_declarations",
+  "note": "闭集原文完全相等，大小写不同属于未声明",
+  "subject": {
+    "item": "synthetic-document",
+    "fields": {
+      "case_resources": [
+        {
+          "case": "synthetic-case",
+          "present": true,
+          "resource": [
+            "Functional"
+          ]
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "template-gap.undeclared_tag",
+      "item": "synthetic-document",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "unknown",
+      "reason": "missing_input",
+      "item": "synthetic-document",
+      "tier": "advisory"
+    }
+  ]
+}

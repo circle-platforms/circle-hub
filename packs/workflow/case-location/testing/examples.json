@@ -1,0 +1,517 @@
+{
+  "schema": "case-location.examples@1",
+  "note": "合成示例，测试用，不是任务包文件：还没有核对过的真实运行可以取例（T01 F[11]）。输入按真实目录约定编写，结论按定位规则手写，不是函数生成的；pack.test.ts 核对 functions/locate.ts 给出同样的结论（notes 是说明，不核对）",
+  "examples": [
+    {
+      "id": "full_convention",
+      "note": "FAMY 根下按约定写的目录：版本线、发布火车、模块齐全，标题里有标明类型的需求编号",
+      "input": {
+        "case_id": "24001",
+        "kind": "document",
+        "root": "FAMY",
+        "ancestors": [
+          "030：FAMX/FAMY测试项目",
+          "060：10.6.1",
+          "004：10.6.1-R2-2026/7",
+          "SSL"
+        ],
+        "title": "需求20931 证书链校验",
+        "source": "agile:mindmap:24001@1",
+        "names": [
+          "FAMX",
+          "FAMY"
+        ],
+        "product": "famx",
+        "declared": {
+          "product": null,
+          "line": null
+        },
+        "id_ranges": null
+      },
+      "verdict": "support",
+      "summary": "产品线 famx（FAMY）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL",
+      "answer": {
+        "case_id": "24001",
+        "product_line": "famx",
+        "product_name": "FAMY",
+        "version": "10.6.1",
+        "build": null,
+        "patch": null,
+        "line": "10.6.1",
+        "train": "10.6.1-R2-2026/7",
+        "module": "SSL",
+        "ancestor_path": [
+          "FAMY",
+          "030：FAMX/FAMY测试项目",
+          "060：10.6.1",
+          "004：10.6.1-R2-2026/7",
+          "SSL"
+        ],
+        "version_source": "folders",
+        "confidence": "high",
+        "build_source": "none",
+        "patch_source": "none",
+        "source": "agile:mindmap:24001@1",
+        "build_names": [],
+        "requirements": [],
+        "defects": [],
+        "unclassified": [],
+        "id_sources": [],
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
+        "declared": [],
+        "conflicts": [],
+        "version_values": [
+          {
+            "version": "10.6.1",
+            "level": 2,
+            "label": "060：10.6.1"
+          },
+          {
+            "version": "10.6.1",
+            "level": 3,
+            "label": "004：10.6.1-R2-2026/7"
+          }
+        ],
+        "missing": []
+      }
+    },
+    {
+      "id": "famx_root_without_versions",
+      "note": "FAMX 根下没有版本层：版本未知，不是错误；“bug to case”后面的编号没有标明类型",
+      "input": {
+        "case_id": "24004",
+        "kind": "document",
+        "root": "FAMX",
+        "ancestors": [
+          "通用用例",
+          "基础功能"
+        ],
+        "title": "bug to case 90220 告警",
+        "source": "agile:mindmap:24004@1",
+        "names": [
+          "FAMX",
+          "FAMY"
+        ],
+        "product": "famx",
+        "declared": {
+          "product": null,
+          "line": null
+        },
+        "id_ranges": null
+      },
+      "verdict": "unknown",
+      "summary": "不确定（没有版本层，发布火车层未知，模块层未知）：产品线 famx（FAMX）；版本未知",
+      "answer": {
+        "case_id": "24004",
+        "product_line": "famx",
+        "product_name": "FAMX",
+        "version": null,
+        "build": null,
+        "patch": null,
+        "line": null,
+        "train": null,
+        "module": null,
+        "ancestor_path": [
+          "FAMX",
+          "通用用例",
+          "基础功能"
+        ],
+        "version_source": "none",
+        "confidence": "none",
+        "build_source": "none",
+        "patch_source": "none",
+        "source": "agile:mindmap:24004@1",
+        "build_names": [],
+        "requirements": [],
+        "defects": [],
+        "unclassified": [],
+        "id_sources": [],
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
+        "declared": [],
+        "conflicts": [],
+        "version_values": [],
+        "missing": [
+          "目录里的版本层",
+          "famx-directory@1 的发布火车层身份",
+          "famx-directory@1 的模块层身份"
+        ]
+      }
+    },
+    {
+      "id": "title_reference_version",
+      "note": "合成样例：版本只写在标题散文里。标题不是声明的目录层，famx-directory@1 只读整段标签，所以版本层、发布火车层和模块层都未知（缺的事实：目录里的版本层身份；下一步：包作者补语法或作者改目录名），不从标题里捞版本",
+      "input": {
+        "case_id": "24005",
+        "kind": "document",
+        "root": "FAMY",
+        "ancestors": [
+          "030：FAMX/FAMY测试项目",
+          "专项"
+        ],
+        "title": "FAMY 10.6.2.31 升级兼容",
+        "source": "agile:mindmap:24005@1",
+        "names": [
+          "FAMX",
+          "FAMY"
+        ],
+        "product": "famx",
+        "declared": {
+          "product": null,
+          "line": null
+        },
+        "id_ranges": null
+      },
+      "verdict": "unknown",
+      "summary": "不确定（没有版本层，发布火车层未知，模块层未知）：产品线 famx（FAMY）；版本未知",
+      "answer": {
+        "case_id": "24005",
+        "product_line": "famx",
+        "product_name": "FAMY",
+        "version": null,
+        "build": null,
+        "patch": null,
+        "line": null,
+        "train": null,
+        "module": null,
+        "ancestor_path": [
+          "FAMY",
+          "030：FAMX/FAMY测试项目",
+          "专项"
+        ],
+        "version_source": "none",
+        "confidence": "none",
+        "build_source": "none",
+        "patch_source": "none",
+        "source": "agile:mindmap:24005@1",
+        "build_names": [],
+        "requirements": [],
+        "defects": [],
+        "unclassified": [],
+        "id_sources": [],
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
+        "declared": [],
+        "conflicts": [],
+        "version_values": [],
+        "missing": [
+          "目录里的版本层",
+          "famx-directory@1 的发布火车层身份",
+          "famx-directory@1 的模块层身份"
+        ]
+      }
+    },
+    {
+      "id": "train_of_another_line",
+      "note": "发布火车的版本与它上面的版本线节点对不上：目录树自相矛盾，记未知，两个值都留在结论里",
+      "input": {
+        "case_id": "24006",
+        "kind": "document",
+        "root": "FAMY",
+        "ancestors": [
+          "030：FAMX/FAMY测试项目",
+          "060：10.6.1",
+          "004：10.6.2-R2-2026/7",
+          "SLB"
+        ],
+        "title": "bug to case 74001 会话保持",
+        "source": "agile:mindmap:24006@1",
+        "names": [
+          "FAMX",
+          "FAMY"
+        ],
+        "product": "famx",
+        "declared": {
+          "product": null,
+          "line": null
+        },
+        "id_ranges": null
+      },
+      "verdict": "refute",
+      "summary": "目录版本层自相矛盾（发布火车与版本线不一致）：产品线 famx（FAMY）；版本 10.6.1（目录，置信度低）；发布火车 10.6.2-R2-2026/7；模块 SLB",
+      "answer": {
+        "case_id": "24006",
+        "product_line": "famx",
+        "product_name": "FAMY",
+        "version": "10.6.1",
+        "build": null,
+        "patch": null,
+        "line": "10.6.1",
+        "train": "10.6.2-R2-2026/7",
+        "module": "SLB",
+        "ancestor_path": [
+          "FAMY",
+          "030：FAMX/FAMY测试项目",
+          "060：10.6.1",
+          "004：10.6.2-R2-2026/7",
+          "SLB"
+        ],
+        "version_source": "folders",
+        "confidence": "low",
+        "build_source": "none",
+        "patch_source": "none",
+        "source": "agile:mindmap:24006@1",
+        "build_names": [],
+        "requirements": [],
+        "defects": [],
+        "unclassified": [],
+        "id_sources": [],
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
+        "declared": [],
+        "conflicts": [],
+        "version_values": [
+          {
+            "version": "10.6.1",
+            "level": 2,
+            "label": "060：10.6.1"
+          },
+          {
+            "version": "10.6.2",
+            "level": 3,
+            "label": "004：10.6.2-R2-2026/7"
+          }
+        ],
+        "missing": []
+      }
+    },
+    {
+      "id": "declared_line_conflict",
+      "note": "调用方声明的版本线与目录给出的版本矛盾：不通过，结论按目录树给出",
+      "input": {
+        "case_id": "24001",
+        "kind": "document",
+        "root": "FAMY",
+        "ancestors": [
+          "030：FAMX/FAMY测试项目",
+          "060：10.6.1",
+          "004：10.6.1-R2-2026/7",
+          "SSL"
+        ],
+        "title": "需求20931 证书链校验",
+        "source": "agile:mindmap:24001@1",
+        "names": [
+          "FAMX",
+          "FAMY"
+        ],
+        "product": "famx",
+        "declared": {
+          "product": null,
+          "line": "10.7.3"
+        },
+        "id_ranges": null
+      },
+      "verdict": "refute",
+      "summary": "与声明矛盾（声明的版本线 10.7.3 与目录的 10.6.1 矛盾）：产品线 famx（FAMY）；版本 10.6.1（目录，置信度高）；发布火车 10.6.1-R2-2026/7；模块 SSL",
+      "answer": {
+        "case_id": "24001",
+        "product_line": "famx",
+        "product_name": "FAMY",
+        "version": "10.6.1",
+        "build": null,
+        "patch": null,
+        "line": "10.6.1",
+        "train": "10.6.1-R2-2026/7",
+        "module": "SSL",
+        "ancestor_path": [
+          "FAMY",
+          "030：FAMX/FAMY测试项目",
+          "060：10.6.1",
+          "004：10.6.1-R2-2026/7",
+          "SSL"
+        ],
+        "version_source": "folders",
+        "confidence": "high",
+        "build_source": "none",
+        "patch_source": "none",
+        "source": "agile:mindmap:24001@1",
+        "build_names": [],
+        "requirements": [],
+        "defects": [],
+        "unclassified": [],
+        "id_sources": [],
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
+        "declared": [],
+        "conflicts": [
+          {
+            "field": "line",
+            "declared": "10.7.3",
+            "tree": "10.6.1"
+          }
+        ],
+        "version_values": [
+          {
+            "version": "10.6.1",
+            "level": 2,
+            "label": "060：10.6.1"
+          },
+          {
+            "version": "10.6.1",
+            "level": 3,
+            "label": "004：10.6.1-R2-2026/7"
+          }
+        ],
+        "missing": []
+      }
+    },
+    {
+      "id": "build_folder_consistent",
+      "note": "构建名目录按声明语法给出版本；发布火车层与模块层读不出时整条记未知，并点名缺的层身份（R6），不进已定位分组",
+      "input": {
+        "case_id": "24401",
+        "kind": "document",
+        "root": "FAMY",
+        "ancestors": [
+          "Rel_FAMY_10_9_1_37 回归"
+        ],
+        "title": "合成构建目录",
+        "source": "agile:mindmap:24401@1",
+        "names": [
+          "FAMX",
+          "FAMY"
+        ],
+        "product": "famx",
+        "declared": {
+          "product": null,
+          "line": null
+        },
+        "id_ranges": null
+      },
+      "verdict": "unknown",
+      "summary": "不确定（发布火车层未知，模块层未知）：产品线 famx（FAMY）；版本 10.9.1（目录，置信度高）；写出的构建名 Rel_FAMY_10_9_1_37",
+      "answer": {
+        "case_id": "24401",
+        "product_line": "famx",
+        "product_name": "FAMY",
+        "version": "10.9.1",
+        "build": null,
+        "patch": null,
+        "line": "10.9.1",
+        "train": null,
+        "module": null,
+        "ancestor_path": [
+          "FAMY",
+          "Rel_FAMY_10_9_1_37 回归"
+        ],
+        "version_source": "folders",
+        "confidence": "high",
+        "build_source": "none",
+        "patch_source": "none",
+        "source": "agile:mindmap:24401@1",
+        "build_names": [
+          "Rel_FAMY_10_9_1_37"
+        ],
+        "requirements": [],
+        "defects": [],
+        "unclassified": [],
+        "id_sources": [],
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
+        "declared": [],
+        "conflicts": [],
+        "version_values": [
+          {
+            "version": "10.9.1",
+            "level": 1,
+            "label": "Rel_FAMY_10_9_1_37 回归"
+          }
+        ],
+        "missing": [
+          "famx-directory@1 的发布火车层身份",
+          "famx-directory@1 的模块层身份"
+        ]
+      }
+    },
+    {
+      "id": "build_folder_conflict",
+      "note": "构建名目录提供版本；版本层冲突保留所有版本",
+      "input": {
+        "case_id": "24402",
+        "kind": "document",
+        "root": "FAMY",
+        "ancestors": [
+          "Rel_FAMY_10_9_1_37 回归",
+          "060：10.8.1"
+        ],
+        "title": "合成构建目录",
+        "source": "agile:mindmap:24402@1",
+        "names": [
+          "FAMX",
+          "FAMY"
+        ],
+        "product": "famx",
+        "declared": {
+          "product": null,
+          "line": null
+        },
+        "id_ranges": null
+      },
+      "verdict": "refute",
+      "summary": "目录版本层自相矛盾（目录里的版本不一致：10.9.1、10.8.1）：产品线 famx（FAMY）；版本 10.9.1（目录，置信度低）；版本线 10.8.1；写出的构建名 Rel_FAMY_10_9_1_37",
+      "answer": {
+        "case_id": "24402",
+        "product_line": "famx",
+        "product_name": "FAMY",
+        "version": "10.9.1",
+        "build": null,
+        "patch": null,
+        "line": "10.8.1",
+        "train": null,
+        "module": null,
+        "ancestor_path": [
+          "FAMY",
+          "Rel_FAMY_10_9_1_37 回归",
+          "060：10.8.1"
+        ],
+        "version_source": "folders",
+        "confidence": "low",
+        "build_source": "none",
+        "patch_source": "none",
+        "source": "agile:mindmap:24402@1",
+        "build_names": [
+          "Rel_FAMY_10_9_1_37"
+        ],
+        "requirements": [],
+        "defects": [],
+        "unclassified": [],
+        "id_sources": [],
+        "ranged": {
+          "requirements": [],
+          "defects": []
+        },
+        "declared": [],
+        "conflicts": [],
+        "version_values": [
+          {
+            "version": "10.9.1",
+            "level": 1,
+            "label": "Rel_FAMY_10_9_1_37 回归"
+          },
+          {
+            "version": "10.8.1",
+            "level": 2,
+            "label": "060：10.8.1"
+          }
+        ],
+        "missing": [
+          "famx-directory@1 的发布火车层身份",
+          "famx-directory@1 的模块层身份"
+        ]
+      }
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 # 第一阶段构建记录
 
+> **历史文档**（2026-10-21 标注）：本文是已退役服务器第一阶段的进度记录，所记的通过只对当时的代码成立，只作记录保留。现行进度见 [Hub r4 进度](hub-r4-progress.md)。
+
 2026-10-12。基线 `d839935`；隔离目录 `../circle-server-s1`，分支 `server-s1`。授权与八幕要求固定在 [brief](server-build-brief.md)。Circle、foundation 和 references 不参与修改。检查只使用脚本模型、合成资源和临时 PostgreSQL。
 
 ## 授权固定

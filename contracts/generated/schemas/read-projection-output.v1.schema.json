@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "description": "the revision of the object, when the system has one",
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifacts": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+              },
+              "media_type": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 200
+              },
+              "text": {
+                "description": "stored as UTF-8",
+                "type": "string"
+              },
+              "json": {
+                "description": "stored as RFC 8785 canonical JSON"
+              },
+              "response": {
+                "description": "names a stored response itself instead of new bytes",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+              }
+            },
+            "required": [
+              "name",
+              "media_type"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "absent": {
+          "description": "A determinate authorized absence; the service binds its originals and never turns permission denial into this observation",
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "const": "SOURCE_ABSENT"
+            },
+            "system": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{1,40}$"
+            },
+            "object": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
+            },
+            "observed_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "responses": {
+              "description": "Stored response keys that support the observation; the service verifies them against the current read",
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+              }
+            }
+          },
+          "required": [
+            "code",
+            "system",
+            "object",
+            "observed_at"
+          ],
+          "additionalProperties": false
+        },
+        "complete": {
+          "description": "false when the projection saw that the read did not cover the object; it never makes coverage complete",
+          "type": "boolean"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "warnings": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "required": [
+        "artifacts"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "absent"
+            ],
+            "properties": {
+              "absent": {}
+            }
+          },
+          "then": {
+            "properties": {
+              "artifacts": {
+                "type": "array",
+                "maxItems": 0
+              },
+              "complete": {
+                "const": true
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

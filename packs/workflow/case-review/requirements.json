@@ -1,0 +1,142 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "literal",
+      "name": "字面问题",
+      "description": "每个用例：标题、优先级、标签和期望结果不为空且取值合法；同一路径下没有内容完全相同的用例；用例节点有自己的编号；同一文档里同一类别的标签写法一致。Hub 按表直接判定，模型不填",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "structure",
+        "node_ids",
+        "tags"
+      ],
+      "error_handling": []
+    },
+    {
+      "key": "catalog",
+      "name": "命令与目录",
+      "description": "审查发现引用的命令按锁定构建的命令目录核对：照用例原样引用、用例里确实有的命令行参数合法（用例里没有的命令行是模型的陈述，不算用例的事实，由 findings 退回修复），说命令存在或不存在的陈述与目录一致；反向用例引用的非法命令行预期被反驳。Hub 按目录直接判定，模型不填",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "cited_commands",
+        "command_claims",
+        "negative_commands"
+      ],
+      "expected": {
+        "overrides": [
+          {
+            "when": {
+              "pointer": "/negative",
+              "equals": true
+            },
+            "outcome": "refute",
+            "codes": [
+              "core.catalog.param_out_of_range",
+              "core.catalog.param_type_mismatch",
+              "core.catalog.arity_mismatch"
+            ]
+          }
+        ]
+      },
+      "error_handling": []
+    },
+    {
+      "key": "findings",
+      "name": "评审发现",
+      "description": "每个用例的评审发现：码是七类问题之一（字面问题、覆盖缺口、区分缺口、边界用例缺口、反向用例缺口、分块结构不符、业务自相矛盾），严重程度是严重、主要、次要之一；每条写位置、说明和至少一段逐字引文；不写 present 的命令行照用例原样整条引用；产品行为只以需求、缺陷、产品文档、手册和命令目录为根据，不以历史测试清单和测试策略为根据；没有发现写空列表",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "judgment",
+      "checks": [
+        "findings_quotes",
+        "command_claims",
+        "findings_sources"
+      ],
+      "error_handling": [
+        {
+          "code": "core.catalog.membership_contradicted",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review.hint_only",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review.location_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review.quote_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review.command_not_in_case",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "QUOTE_MISMATCH",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    },
+    {
+      "key": "expected_quality",
+      "name": "期望质量判断",
+      "description": "模型逐用例判断全部期望是否含糊，以 data.vague 声明并逐字引用每个期望叶子；Hub 只核原件、数量、对应位置与逐字引文。没有判断保持未判断，不当明确或含糊。可后补此项，不改变已有评审要求。",
+      "target": "item",
+      "required": false,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "judgment",
+      "checks": [
+        "expected_quality_evidence"
+      ],
+      "error_handling": [
+        {
+          "code": "case-review.quote_missing",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    },
+    {
+      "key": "level",
+      "name": "等级",
+      "description": "整个被评审对象（一份文档或一个分块）的等级，P0 到 P7 选一个，写成一条跨条目主张（码 level）：陈述里写理由和证据缺口（没有读到或读不到的证据组），grounds 引用所依据的来源",
+      "target": "run",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "judgment",
+      "checks": [],
+      "error_handling": []
+    }
+  ]
+}

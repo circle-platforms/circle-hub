@@ -1,0 +1,287 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "round": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "external": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 8192,
+          "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$",
+          "description": "system:type:key as requested, without revision"
+        },
+        "system": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string",
+          "description": "the part after system:type:"
+        },
+        "revision": {
+          "description": "the revision asked for, or null",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "system",
+        "type",
+        "key",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "args": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "settings": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "responses": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "2xx, a valid body of the declared kind, for an envelope route an ok code, and readable by functions"
+          },
+          "route": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          },
+          "path": {
+            "type": "string",
+            "description": "the requested path relative to the base URL of the route role, as sent"
+          },
+          "query": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "media_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "digest of the stored response body"
+          },
+          "etag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "location": {
+            "description": "Observed Location, only when safe to disclose; a redirect is followed only by a separately planned request",
+            "type": "string",
+            "maxLength": 4096
+          },
+          "location_redacted": {
+            "type": "boolean",
+            "const": true
+          },
+          "json": {
+            "description": "the parsed answer of a json route"
+          },
+          "text": {
+            "description": "the decoded answer of a text, xml or html route (or of a json route that did not parse)",
+            "type": "string"
+          },
+          "model": {
+            "description": "the model of the core parser the route names"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "retry_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "attempts": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "route",
+          "path",
+          "query",
+          "status",
+          "media_type",
+          "size",
+          "sha256",
+          "etag",
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "description": "every response so far by request key, failures included"
+    },
+    "reads": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "coverage": {
+            "type": "object",
+            "properties": {
+              "complete": {
+                "type": "boolean"
+              },
+              "examined": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "note": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "complete",
+              "examined"
+            ],
+            "additionalProperties": false
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cached": {
+            "type": "boolean"
+          },
+          "content": {
+            "description": "the parsed content artifact (JSON) or its text; the original when there is no content artifact; null on failure"
+          },
+          "meta": {
+            "description": "the parsed meta artifact, or null"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "revision",
+          "cached",
+          "content",
+          "meta",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "description": "every nested read so far by external id"
+    }
+  },
+  "required": [
+    "round",
+    "external",
+    "args",
+    "settings",
+    "responses",
+    "reads"
+  ],
+  "additionalProperties": false
+}

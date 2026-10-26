@@ -4,15 +4,27 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](docs/hub-r4-brief.md). Nothing below has been released.
+
 ### Removed
 
-- **Breaking: the `CIRCLE_SERVER_*` configuration fallback is gone; circle-server is no longer supported anywhere.** circle-hub reads only `CIRCLE_HUB_*`. The server, supervisor, worker, `circle-hub` CLI and the development and PostgreSQL scripts now refuse to start while any `CIRCLE_SERVER_*` variable is set, even an empty one or one beside its `CIRCLE_HUB_*` replacement. They exit with status 1 and a `HubEnvironmentError` that names each variable and its replacement and never prints a value. The `hub.environment.deprecated` notice is gone with the fallback. A deployment still configured with `CIRCLE_SERVER_*` names will not start after upgrading. To migrate, rename each variable by replacing the `CIRCLE_SERVER_` prefix with `CIRCLE_HUB_` (for example `CIRCLE_SERVER_DATABASE_CONFIG` becomes `CIRCLE_HUB_DATABASE_CONFIG`), remove the old names from the environment, service definitions and env files, then start the new version. Values, configuration file formats, routes and the database are unchanged.
+- **Breaking: the task-and-approval server is retired.** The `/v1` HTTP API, the supervisor, the worker, the admin CLI, the development stack, the connectors, the harness adapters, the packs and their tests were removed ahead of the redesign. Nothing in the redesign reads their routes, migrations, database or configuration, so a 0.2.0 deployment cannot be upgraded in place, and the hub extension in released Circle versions, which calls the `/v1` API, does not work with the redesigned Hub. The removed code stays readable in Git (the v0.2.0 tag and commit ca66002). The history of the earlier temporary deployment is recorded as lost and is not migrated.
+- **Breaking: the `CIRCLE_SERVER_*` configuration fallback is gone; circle-server is no longer supported anywhere.** circle-hub reads only `CIRCLE_HUB_*`. From 2026-10-16 the retired server and its scripts refused to start while any `CIRCLE_SERVER_*` variable was set, even an empty one or one beside its `CIRCLE_HUB_*` replacement, and named each variable and its replacement without printing a value; the redesigned Hub keeps this rule (planned). The `hub.environment.deprecated` notice is gone with the fallback.
+
+### Added
+
+- The generic model (`contracts/model.json`, version 5), the error-code registry (`contracts/codes.json`) and the contracts generated from them in `contracts/generated`: vocabulary, protocol codes, JSON Schemas and the six MCP tools. `npm run gen:contracts` regenerates them, `npm run verify:contracts` checks them, and `tools/show-element.ts` prints model elements.
+- The milestone 1 architecture brief, human brief and progress record under `docs/`. The earlier briefs, progress records and handoffs are marked historical and the old design pages superseded; none was deleted.
+
+### Changed
+
+- The `Hub checks` workflow now runs type checking, the contracts check, unit tests, acceptance on a temporary PostgreSQL, the reference archive check and the docs checks (`.github/checks`) on Ubuntu. Each test job lists its counts and every skipped test in the job summary and fails when no test ran, so the acceptance job fails until the acceptance suite exists. Tests that need macOS or libpq (the pack sandbox's network denial, the keychain, the launchd check, backup, restore and deploy) skip there, so CI is no evidence for those paths.
 
 ## 0.2.0 - 2026-10-15
 
 ### Removed
 
-- Retired the built-in `apv-case-execute` capability and the `cases.verify`, `cases.execute` and `cases.observe` worker path. New execution uses independently approved modules through `module-execute`; old native tasks are never rebound to a new implementation.
+- Retired the built-in `famx-case-execute` capability and the `cases.verify`, `cases.execute` and `cases.observe` worker path. New execution uses independently approved modules through `module-execute`; old native tasks are never rebound to a new implementation.
 
 ### Changed
 

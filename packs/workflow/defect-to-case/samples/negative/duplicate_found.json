@@ -1,0 +1,207 @@
+{
+  "id": "duplicate_found",
+  "source": "author",
+  "check": "duplicate_check",
+  "note": "标题不同，但完整命令参数和期望引文身份相同，按结构反驳",
+  "subject": {
+    "item": "74001",
+    "drafts": [
+      {
+        "id": "draft-good",
+        "title": "标题不同仍是同一结构",
+        "priority": 2,
+        "negative": false,
+        "expects_refutation": false,
+        "preconditions": [
+          "SLB服务正常运行"
+        ],
+        "steps": [
+          {
+            "command": "show health detail",
+            "identity": {
+              "tree_root": "5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154",
+              "path": "/commands/show/health/detail",
+              "signature": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/2/params",
+              "parameters": []
+            }
+          }
+        ],
+        "expected": [
+          {
+            "text": "健康检查状态显示正常",
+            "after": 1,
+            "identity": {
+              "source_sha256": "81784c076c4dd97428db28ea955a32ad22d2fd51420c411847fb78bae2b947af",
+              "parser": "text@1",
+              "path": "l/3",
+              "span": {
+                "unit": "byte",
+                "offset": 50,
+                "length": 30
+              }
+            },
+            "quote": {
+              "reference": "src:81784c076c4dd97428db28ea955a32ad22d2fd51420c411847fb78bae2b947af/text@1/l/3",
+              "text": "健康检查状态显示正常"
+            }
+          }
+        ],
+        "tags": [
+          "functional"
+        ],
+        "resource": [
+          "functional"
+        ]
+      }
+    ],
+    "indexed_cases": {
+      "schema": "index-view@1",
+      "product": "famx",
+      "build": {
+        "build": "Rel_FAMX_10_6_1_57",
+        "root": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "kind": "case",
+      "key": "commands",
+      "keys": {
+        "/commands/show/health/detail": [
+          "2222222222222222222222222222222222222222222222222222222222222222"
+        ]
+      },
+      "entries": {
+        "2222222222222222222222222222222222222222222222222222222222222222": {
+          "entry": "2222222222222222222222222222222222222222222222222222222222222222",
+          "kind": "case",
+          "statement": "doc_101:node_5 | 健康检查详细信息查看",
+          "reference": "tree:1111111111111111111111111111111111111111111111111111111111111111/commands/show/health/detail@2222222222222222222222222222222222222222222222222222222222222222",
+          "data": {
+            "case_structure": {
+              "schema": "case-structure@2",
+              "commands": [
+                {
+                  "tree_root": "5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154",
+                  "path": "/commands/show/health/detail",
+                  "signature": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/2/params",
+                  "parameters": []
+                }
+              ],
+              "expected": [
+                {
+                  "after": 1,
+                  "quote": {
+                    "source_sha256": "81784c076c4dd97428db28ea955a32ad22d2fd51420c411847fb78bae2b947af",
+                    "parser": "text@1",
+                    "path": "l/3",
+                    "span": {
+                      "unit": "byte",
+                      "offset": 50,
+                      "length": 30
+                    }
+                  }
+                }
+              ]
+            },
+            "document": "doc_101",
+            "node": "node_5",
+            "title": "健康检查详细信息查看",
+            "negative": false,
+            "commands": [
+              "/commands/show/health/detail"
+            ],
+            "expected_texts": [
+              "健康检查状态显示正常"
+            ]
+          }
+        }
+      },
+      "total_keys": 1,
+      "total_entries": 1,
+      "truncated": false,
+      "skipped": 0,
+      "notes": []
+    }
+  },
+  "catalog": {
+    "root": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "complete": true,
+    "caseSensitive": true,
+    "entries": [
+      {
+        "head": "widget health interval",
+        "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands/widget/health/interval",
+        "signatures": [
+          {
+            "id": "native-0",
+            "reference": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/0/params",
+            "params": [
+              {
+                "name": "seconds",
+                "type": "int",
+                "minimum": 1,
+                "maximum": 300,
+                "native_type": {
+                  "name": "int",
+                  "declaration": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/0/params/0",
+                  "grammar": "synthetic-catalog@1"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "head": "show health",
+        "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands/show/health",
+        "signatures": [
+          {
+            "id": "native-1",
+            "reference": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/1/params",
+            "params": []
+          }
+        ]
+      },
+      {
+        "head": "show health detail",
+        "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands/show/health/detail",
+        "signatures": [
+          {
+            "id": "native-2",
+            "reference": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/2/params",
+            "params": []
+          }
+        ]
+      },
+      {
+        "head": "service http port",
+        "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands/service/http/port",
+        "signatures": [
+          {
+            "id": "native-3",
+            "reference": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/3/params",
+            "params": [
+              {
+                "name": "port",
+                "type": "port",
+                "minimum": 1,
+                "maximum": 65535,
+                "native_type": {
+                  "name": "port",
+                  "declaration": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/3/params/0",
+                  "grammar": "synthetic-catalog@1"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "defect-to-case.duplicate_case",
+      "item": "74001",
+      "tier": "advisory"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "id": "expected_quality_changed",
+  "source": "author",
+  "check": "expected_quality_evidence",
+  "note": "引文不是原件逐字文本",
+  "subject": {
+    "item": "sample:c1",
+    "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c1",
+    "fields": {
+      "expected": [
+        "合成期望"
+      ],
+      "expectedCount": 1,
+      "expectedSelectors": [
+        "n/e1"
+      ]
+    },
+    "slots": {
+      "expected_quality": [
+        {
+          "code": "expected_quality",
+          "text": "脚本化模型主张",
+          "quotes": [
+            {
+              "reference": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/e1",
+              "text": "改写引文"
+            }
+          ],
+          "data": {
+            "schema": "expected-quality@1",
+            "vague": false,
+            "source_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "expected_count": 1,
+            "expected_references": [
+              "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/e1"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "sources": {
+    "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/e1": "合成期望"
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review.quote_missing",
+      "item": "sample:c1",
+      "tier": "blocking"
+    }
+  ]
+}

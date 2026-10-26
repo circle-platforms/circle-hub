@@ -1,0 +1,108 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "target",
+      "role": "subject",
+      "description": "初评评审的同一份测试脑图：可以不写，给了 predecessor 时由 Hub 按前驱运行冻结的评审对象绑定，回答会写明绑定来历；显式给出时必须与前驱冻结的是同一对象（agile:mindmap:<文档编号> 或 src:<摘要>），不一致会拒绝并说明",
+      "default_from_predecessor": { "pack": "case-review", "slot": "subject" },
+      "accepts": ["agile:mindmap", "application/json"],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "draft",
+      "role": "artifact_under_verification",
+      "description": "初评运行的已受理验证结果：可以不写，给了 predecessor 时由 Hub 按前驱的已受理结果绑定；显式给值仍用初评 submit_result 回执里的 rec:<摘要>（Hub 记录，不带 # 指针）",
+      "default_from_predecessor": { "pack": "case-review" },
+      "accepts": ["application/json"],
+      "required": true,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "stories",
+      "description": "需求编号：和初评运行用的一样（不写时从脑图标题和上级目录里找）",
+      "required": false,
+      "schema": { "type": "array", "maxItems": 50, "items": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 12 }, { "type": "integer", "minimum": 1 }] } }
+    },
+    {
+      "name": "bugs",
+      "description": "缺陷编号：和初评运行用的一样（不写时从脑图标题和上级目录里找）",
+      "required": false,
+      "schema": { "type": "array", "maxItems": 50, "items": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 12 }, { "type": "integer", "minimum": 1 }] } }
+    },
+    {
+      "name": "id_ranges",
+      "description": "缺陷系统的编号范围 { story?: { min?, max? }, bug?: { min?, max? } }，和初评运行用的一样",
+      "required": false,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "story": { "type": "object", "additionalProperties": false, "properties": { "min": { "type": "integer", "minimum": 0 }, "max": { "type": "integer", "minimum": 0 } } },
+          "bug": { "type": "object", "additionalProperties": false, "properties": { "min": { "type": "integer", "minimum": 0 }, "max": { "type": "integer", "minimum": 0 } } }
+        }
+      }
+    },
+    {
+      "name": "bare_ids",
+      "description": "没有标明类型的编号怎么读：both（默认，需求和缺陷都读；两种分开编号，都存在时其中一种可能与文档无关，引用前先核对记录的标题）、story、bug、skip，和初评运行用的一样",
+      "required": false,
+      "schema": { "enum": ["both", "story", "bug", "skip"] }
+    },
+    {
+      "name": "spec_search",
+      "description": "是否按标题里的功能词检索规格书，默认 true",
+      "required": false,
+      "schema": { "type": "boolean" }
+    },
+    {
+      "name": "history_search",
+      "description": "是否按标题里的功能词找相似功能的历史测试清单作线索，默认 true",
+      "required": false,
+      "schema": { "type": "boolean" }
+    },
+    {
+      "name": "strategy_search",
+      "description": "是否按标题里的功能词检索同类功能的测试策略文档作线索（manual:qa-search），默认 true",
+      "required": false,
+      "schema": { "type": "boolean" }
+    },
+    {
+      "name": "max_terms",
+      "description": "检索用的功能词最多几个，1 到 16，默认 8",
+      "required": false,
+      "schema": { "type": "integer", "minimum": 1, "maximum": 16 }
+    },
+    {
+      "name": "case_rule",
+      "description": "哪些节点是用例：marked（默认）认带标签或带标记（没有标签、带用例优先级、有子节点、下面没有别的用例）的节点；tagged 限制为只认标签（resource 不为空）；不写时按初评运行用的规则",
+      "required": false,
+      "schema": { "enum": ["tagged", "marked"] }
+    },
+    {
+      "name": "case_priority",
+      "description": "团队模板里用例的优先级标记，1 到 9，默认 2；和初评运行用的一样",
+      "required": false,
+      "schema": { "type": "integer", "minimum": 1, "maximum": 9 }
+    },
+    {
+      "name": "group_priority",
+      "description": "分组节点的优先级标记，默认 1；null 关闭这条规则；和初评运行用的一样",
+      "required": false,
+      "schema": { "anyOf": [{ "type": "integer", "minimum": 1, "maximum": 9 }, { "type": "null" }] }
+    },
+    {
+      "name": "precondition_priority",
+      "description": "用例里前置条件叶子的优先级标记，默认 3；null 关闭这条规则；和初评运行用的一样",
+      "required": false,
+      "schema": { "anyOf": [{ "type": "integer", "minimum": 1, "maximum": 9 }, { "type": "null" }] }
+    }
+  ],
+  "product": { "catalogs": ["commands@1"] },
+  "subject": "target",
+  "projection": { "module": "functions/projection.ts" },
+  "expected_sources": { "module": "functions/expected.ts" }
+}

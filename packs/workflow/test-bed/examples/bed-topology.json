@@ -1,0 +1,26 @@
+{
+  "schema": "test-bed-manifest@1",
+  "beds": [
+    {
+      "name": "bed-a",
+      "devices": [
+        { "name": "afamx0", "type": "load-balancer", "product": "famx", "ipv4": ["192.0.2.10/26", "192.0.2.74/26"], "ipv6": ["2001:db8:1::10/64"], "installed": { "build": "Rel_FAMX_10_6_1_8" } },
+        { "name": "router0", "type": "router", "ipv4": ["192.0.2.1/26"], "ipv6": [] },
+        { "name": "client0", "type": "client", "ipv4": ["192.0.2.80/26"], "ipv6": [] },
+        { "name": "server0", "type": "server", "ipv4": ["192.0.2.90/26"], "ipv6": [] },
+        { "name": "console0", "type": "console", "ipv4": ["192.0.2.140/26"], "ipv6": [] }
+      ],
+      "services": [{ "host": "server0", "ip": "192.0.2.90", "proto": "tcp", "port": 80 }],
+      "reserved": ["192.0.2.1-192.0.2.9", "192.0.2.65-192.0.2.69"]
+    },
+    {
+      "name": "bed-b",
+      "devices": [
+        { "name": "afamx1", "type": "load-balancer", "product": "famy", "ipv4": ["192.0.2.130/26", "192.0.2.194/26"], "ipv6": [], "installed": { "build": "Rel_FAMY_10_6_1_8", "base": "Rel_FAMX_10_6_1_8" } },
+        { "name": "client1", "type": "client", "ipv4": ["192.0.2.150/26"], "ipv6": [] }
+      ],
+      "services": [],
+      "reserved": []
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "pack": "case-review-report@2.0.0",
+  "inputs": {
+    "verifications": [
+      {
+        "reference": "rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      {
+        "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "target": {
+      "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "parameters": {},
+  "notes": "每次评审最后一步，单块也要运行；target 与各块条目位置的源摘要相同。报告条目为序号 0，用 get_nodes 逐页读 review_tables 原文。"
+}

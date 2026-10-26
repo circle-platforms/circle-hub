@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^rcd_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "claim",
+        "source_artifact",
+        "authorization",
+        "action",
+        "effect",
+        "request",
+        "call_log",
+        "run",
+        "submission",
+        "validation_result",
+        "pack_version",
+        "tree_node",
+        "tree_root",
+        "root_pointer"
+      ]
+    },
+    "schema": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*@(?:0|[1-9][0-9]*)$",
+      "description": "name@major of the body shape, a key of SCHEMA_REGISTRY, for example validation@1"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the RFC 8785 canonical JSON of {kind, schema, provenance, created_at, body}"
+    },
+    "provenance": {
+      "type": "string",
+      "enum": [
+        "observed",
+        "projected",
+        "declared",
+        "candidate"
+      ],
+      "description": "provenance type (A01) of the recorded content"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "body": {}
+  },
+  "required": [
+    "id",
+    "kind",
+    "schema",
+    "digest",
+    "provenance",
+    "created_at",
+    "body"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,128 @@
+{
+  "id": "refutation_valid",
+  "source": "author",
+  "check": "commands_refutation",
+  "note": "反向用例声明预期被反驳且命令确实被目录反驳",
+  "subject": {
+    "item": "74001",
+    "slots": {
+      "cases": [
+        {
+          "text": "反向测试：健康检查间隔超出范围反驳",
+          "data": {
+            "id": "draft-good",
+            "title": "健康检查间隔超出范围反驳",
+            "priority": 2,
+            "negative": true,
+            "expects_refutation": true,
+            "preconditions": [
+              "SLB服务正常运行"
+            ],
+            "steps": [
+              {
+                "text": "设置超出范围的间隔",
+                "command": "widget health interval 999"
+              }
+            ],
+            "expected": [
+              {
+                "text": "提示取值超出范围",
+                "quote": {
+                  "reference": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix",
+                  "text": "健康检查间隔设置成功"
+                }
+              }
+            ],
+            "tags": [
+              "negative"
+            ],
+            "resource": [
+              "negative"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "catalog": {
+    "root": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "complete": true,
+    "caseSensitive": true,
+    "entries": [
+      {
+        "head": "widget health interval",
+        "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands/widget/health/interval",
+        "signatures": [
+          {
+            "id": "native-0",
+            "reference": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/0/params",
+            "params": [
+              {
+                "name": "seconds",
+                "type": "int",
+                "minimum": 1,
+                "maximum": 300,
+                "native_type": {
+                  "name": "int",
+                  "declaration": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/0/params/0",
+                  "grammar": "synthetic-catalog@1"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "head": "show health",
+        "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands/show/health",
+        "signatures": [
+          {
+            "id": "native-1",
+            "reference": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/1/params",
+            "params": []
+          }
+        ]
+      },
+      {
+        "head": "show health detail",
+        "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands/show/health/detail",
+        "signatures": [
+          {
+            "id": "native-2",
+            "reference": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/2/params",
+            "params": []
+          }
+        ]
+      },
+      {
+        "head": "service http port",
+        "reference": "tree:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands/service/http/port",
+        "signatures": [
+          {
+            "id": "native-3",
+            "reference": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/3/params",
+            "params": [
+              {
+                "name": "port",
+                "type": "port",
+                "minimum": 1,
+                "maximum": 65535,
+                "native_type": {
+                  "name": "port",
+                  "declaration": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/3/params/0",
+                  "grammar": "synthetic-catalog@1"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "74001"
+    }
+  ]
+}

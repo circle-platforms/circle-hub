@@ -1,0 +1,539 @@
+{
+  "id": "multiline_value_negative",
+  "source": "author",
+  "check": "contract_shape",
+  "note": "合成反例：multiline-value",
+  "subject": {
+    "case_texts": [
+      "健康检查间隔配置测试",
+      "widget health interval 60",
+      "健康检查间隔设置成功"
+    ],
+    "item": "doc-1:c-1",
+    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-e1",
+    "data": {
+      "bucket": "bed-a",
+      "blocks": [],
+      "replacements": [],
+      "steps": [
+        {
+          "object": "widget-seat",
+          "method": "configure",
+          "args": [
+            "widget health\ninterval 60"
+          ],
+          "keywords": {}
+        },
+        {
+          "object": "widget-host",
+          "method": "shell",
+          "args": [
+            "echo 192.0.2.90"
+          ],
+          "keywords": {}
+        },
+        {
+          "object": "widget-clock",
+          "method": "pause",
+          "args": [
+            "1"
+          ],
+          "keywords": {}
+        }
+      ],
+      "expects": [
+        {
+          "text": "健康检查间隔设置成功",
+          "quote": {
+            "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-e1",
+            "text": "健康检查间隔设置成功"
+          },
+          "after": 1
+        }
+      ]
+    },
+    "contract": {
+      "schema": "ist.excel.function-contract",
+      "complete": true,
+      "runtime": {
+        "minimum_version": "synthetic-runtime-v2",
+        "runner_source": "fixture/runtime.py",
+        "runner_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "found_times_supported": false
+      },
+      "source_hashes": {
+        "fixture/runtime.py": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "objects": [
+        {
+          "name": "widget-seat",
+          "status": "enabled"
+        },
+        {
+          "name": "widget-host",
+          "status": "enabled"
+        },
+        {
+          "name": "widget-check",
+          "status": "enabled"
+        },
+        {
+          "name": "widget-clock",
+          "status": "enabled"
+        },
+        {
+          "name": "widget-disabled",
+          "status": "disabled"
+        }
+      ],
+      "entries": [
+        {
+          "e": "widget-seat",
+          "f": "configure",
+          "python_symbol": "fixture.configure",
+          "signature": {
+            "parameters": [
+              {
+                "name": "line",
+                "kind": "positional_only",
+                "required": true,
+                "default": null
+              },
+              {
+                "name": "auth_token",
+                "kind": "positional_or_keyword",
+                "required": false,
+                "default": "<redacted>"
+              }
+            ],
+            "required": [
+              "line"
+            ],
+            "optional": [
+              "auth_token"
+            ],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "direct_method_call",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2"
+        },
+        {
+          "e": "widget-host",
+          "f": "shell",
+          "python_symbol": "fixture.shell",
+          "signature": {
+            "parameters": [
+              {
+                "name": "command",
+                "kind": "positional_or_keyword",
+                "required": true,
+                "default": null
+              }
+            ],
+            "required": [
+              "command"
+            ],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "direct_method_call",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2"
+        },
+        {
+          "e": "widget-check",
+          "f": "literal",
+          "python_symbol": "fixture.literal",
+          "signature": {
+            "parameters": [
+              {
+                "name": "expected",
+                "kind": "positional_or_keyword",
+                "required": true,
+                "default": null
+              }
+            ],
+            "required": [
+              "expected"
+            ],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "direct_method_call",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2"
+        },
+        {
+          "e": "widget-clock",
+          "f": "pause",
+          "python_symbol": "fixture.pause",
+          "signature": {
+            "parameters": [
+              {
+                "name": "seconds",
+                "kind": "positional_or_keyword",
+                "required": true,
+                "default": null
+              }
+            ],
+            "required": [
+              "seconds"
+            ],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "direct_method_call",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2"
+        },
+        {
+          "e": "widget-disabled",
+          "f": "cycle",
+          "python_symbol": "fixture.cycle",
+          "signature": {
+            "parameters": [],
+            "required": [],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "direct_method_call",
+          "status": "disabled",
+          "reason": "synthetic unavailable object",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2"
+        },
+        {
+          "e": "widget-seat",
+          "f": "hidden",
+          "python_symbol": "fixture.hidden",
+          "signature": {
+            "parameters": [],
+            "required": [],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "direct_method_call",
+          "status": "internal",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2"
+        },
+        {
+          "e": "widget-seat",
+          "f": "candidate",
+          "python_symbol": "fixture.candidate",
+          "signature": {
+            "parameters": [],
+            "required": [],
+            "optional": [],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "direct_method_call",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2",
+          "certification_candidate": true
+        },
+        {
+          "e": "widget-seat",
+          "f": "credential",
+          "python_symbol": "fixture.credential",
+          "signature": {
+            "parameters": [
+              {
+                "name": "password",
+                "kind": "positional_or_keyword",
+                "required": false,
+                "default": "<redacted>"
+              }
+            ],
+            "required": [],
+            "optional": [
+              "password"
+            ],
+            "text": "(fixture)"
+          },
+          "g_syntax": "synthetic argument description",
+          "h_semantics": "synthetic empty output",
+          "i_semantics": "synthetic empty input",
+          "dispatch": "direct_method_call",
+          "status": "enabled",
+          "reason": "",
+          "status_authority": "project_policy:excel-authoring-v1",
+          "source": {
+            "path": "fixture/runtime.py",
+            "line": 1
+          },
+          "minimum_runtime": "synthetic-runtime-v2"
+        }
+      ],
+      "execute_actions": [],
+      "atlas_snapshot": {
+        "fixture": true
+      },
+      "certification": {
+        "schema": "ist.excel.capability-certification-set",
+        "receipt_count": 0
+      },
+      "contract_sha256": "99d9621bc6c882fb1d7104e7b22c1122b27ab1128069860736a8f19719d7a6cb"
+    },
+    "profile": {
+      "schema": "runtime-profile@1",
+      "synthetic": true,
+      "max_wait_seconds": 300,
+      "runtime": {
+        "minimum_version": "synthetic-runtime-v2",
+        "contract_sha256": "99d9621bc6c882fb1d7104e7b22c1122b27ab1128069860736a8f19719d7a6cb"
+      },
+      "bed": "bed-a",
+      "device_count": 2,
+      "fold_newlines": [],
+      "workbook": {
+        "sheet": "FixtureSheet",
+        "header": [
+          "FixtureId",
+          "FixturePriority",
+          "FixtureType",
+          "FixtureDescription",
+          "FixtureObject",
+          "FixtureMethod",
+          "FixtureData",
+          "FixtureOutput",
+          "FixtureInput"
+        ],
+        "identity_marker": "FixtureIdentity",
+        "range_name": "FixtureRange",
+        "closing_row": [
+          "FixtureEnd",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "autoid_pattern": "^\\d{18}$"
+      },
+      "seats": [
+        {
+          "object": "widget-seat",
+          "device": "dut0",
+          "ordinal": 0
+        }
+      ],
+      "hosts": [
+        {
+          "object": "widget-host",
+          "method": "shell",
+          "device": "client0"
+        }
+      ],
+      "allowed": [
+        {
+          "object": "widget-seat",
+          "method": "configure",
+          "parameters": {
+            "line": "device_cli"
+          },
+          "reviewed": true
+        },
+        {
+          "object": "widget-host",
+          "method": "shell",
+          "parameters": {
+            "command": "host_shell"
+          },
+          "reviewed": true
+        },
+        {
+          "object": "widget-check",
+          "method": "literal",
+          "parameters": {
+            "expected": "literal_assertion"
+          },
+          "reviewed": true
+        },
+        {
+          "object": "widget-clock",
+          "method": "pause",
+          "parameters": {
+            "seconds": "wait"
+          },
+          "reviewed": true
+        }
+      ],
+      "denied": {
+        "device": [
+          "system cycle",
+          "system erase"
+        ],
+        "host": [
+          "reboot",
+          "shutdown",
+          "poweroff",
+          "halt",
+          "init 0",
+          "init 6",
+          "mkfs",
+          "dd",
+          "rm -rf /"
+        ]
+      }
+    },
+    "manifest": {
+      "schema": "test-bed-manifest@1",
+      "beds": [
+        {
+          "name": "bed-a",
+          "devices": [
+            {
+              "name": "dut0",
+              "type": "load-balancer",
+              "product": "widget",
+              "ipv4": [
+                "192.0.2.10/26",
+                "192.0.2.74/26"
+              ],
+              "ipv6": [
+                "2001:db8:1::10/64"
+              ]
+            },
+            {
+              "name": "dut1",
+              "type": "load-balancer",
+              "product": "widget",
+              "ipv4": [
+                "192.0.2.130/26"
+              ],
+              "ipv6": []
+            },
+            {
+              "name": "router0",
+              "type": "router",
+              "product": null,
+              "ipv4": [
+                "192.0.2.1/26"
+              ],
+              "ipv6": [
+                "2001:db8:1::1/64"
+              ]
+            },
+            {
+              "name": "client0",
+              "type": "client",
+              "product": null,
+              "ipv4": [
+                "192.0.2.80/26"
+              ],
+              "ipv6": []
+            },
+            {
+              "name": "server0",
+              "type": "server",
+              "product": null,
+              "ipv4": [
+                "192.0.2.90/26"
+              ],
+              "ipv6": []
+            },
+            {
+              "name": "console0",
+              "type": "console",
+              "product": null,
+              "ipv4": [
+                "192.0.2.140/26"
+              ],
+              "ipv6": []
+            }
+          ],
+          "services": [
+            {
+              "host": "server0",
+              "ip": "192.0.2.90",
+              "proto": "tcp",
+              "port": 80
+            },
+            {
+              "host": "client0",
+              "ip": "192.0.2.80",
+              "proto": "tcp",
+              "port": 9000
+            }
+          ],
+          "reserved": []
+        }
+      ]
+    },
+    "leases": [],
+    "now": "2026-10-23T02:00:00.000Z"
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-compile.param_value",
+      "item": "doc-1:c-1",
+      "tier": "blocking"
+    }
+  ]
+}

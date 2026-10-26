@@ -1,0 +1,61 @@
+{
+  "id": "declared_product_conflict",
+  "source": "author",
+  "check": "locate",
+  "note": "合成样例：调用方声明产品“合成平台”。根是 FAMY 的文档已经定出产品线 famx，声明与它矛盾，记不通过；根就是“合成平台”的文档与声明一致，但它不是这条产品线的名称，产品线定不出，记未知；没有根的文档由声明补上产品名称，产品线仍定不出，记未知",
+  "subject": {
+    "items": [
+      {
+        "id": "24001",
+        "location": "src:ed06a92702e94c6c8f89eeaaea6c638f80b8dbeb7796bdbea4e57283c3cd5143/kityminder@1/n/24001n0",
+        "fields": {
+          "kind": "document",
+          "document": "24001",
+          "node": null,
+          "source": "agile:mindmap:24001@1",
+          "root": "FAMY",
+          "ancestors": ["030：FAMX/FAMY测试项目", "060：10.6.1", "004：10.6.1-R2-2026/7", "SSL"],
+          "title": "需求20931 证书链校验",
+          "path": [],
+          "case_title": null
+        }
+      },
+      {
+        "id": "24002",
+        "location": "src:09dde087550e1a541c64592c4ebd359b1f09b7ec8abf1a521fcbb5ecfe2b6d6f/kityminder@1/n/24002n0",
+        "fields": {
+          "kind": "document",
+          "document": "24002",
+          "node": null,
+          "source": "agile:mindmap:24002@1",
+          "root": "合成平台",
+          "ancestors": ["060：10.6.1", "004：10.6.1-R2-2026/7", "SSL"],
+          "title": "SSL 卸载",
+          "path": [],
+          "case_title": null
+        }
+      },
+      {
+        "id": "24006",
+        "location": "src:5b1fb3cb3b0a3e5e9f4f1d6b0dbd0f1e0d6e2f5a4c3b2a190807060504030201/kityminder@1/n/24006n0",
+        "fields": {
+          "kind": "document",
+          "document": "24006",
+          "node": null,
+          "source": "agile:mindmap:24006@1",
+          "root": null,
+          "ancestors": ["060：10.6.1", "004：10.6.1-R2-2026/7", "SLB"],
+          "title": "会话保持",
+          "path": [],
+          "case_title": null
+        }
+      }
+    ],
+    "context": { "product": "famx", "names": ["FAMX", "FAMY"], "parameters": { "product": "合成平台" } }
+  },
+  "expect": [
+    { "verdict": "refute", "code": "case-location.declaration_conflict", "item": "24001", "tier": "advisory" },
+    { "verdict": "unknown", "reason": "missing_input", "item": "24002", "tier": "advisory" },
+    { "verdict": "unknown", "reason": "missing_input", "item": "24006", "tier": "advisory" }
+  ]
+}

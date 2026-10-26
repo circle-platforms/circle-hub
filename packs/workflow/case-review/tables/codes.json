@@ -1,0 +1,268 @@
+{
+  "schema": "case-review.codes@1",
+  "origin": "决定：case-review 工作流包的包内码（docs/hub-r4-architecture.md 第 5 节：包码写在包名下，发布任务包时登记）；发现码、严重程度和等级取自同一文档第 6 节的评审方法（不另加评审维度、发现名称或等级）；函数的输出只用这里列出的码",
+  "description": "refusals：函数拒绝整个输入时的码（error.code）；checks：包内检查函数给出的反驳码（要求项的错误处理表按它们送回修复）；warnings：不影响结果的提示（warnings[].code）；findings：findings 要求项的发现码，就是复核时查找遗漏的七类问题（槽位里写不带包名的码，Hub 记成陈述时原样保留）；ranks：每条发现的严重程度和它对应的等级段；levels：level 要求项对整个被判对象的等级排序 P0-P7",
+  "refusals": [
+    {
+      "code": "case-review.invalid_input",
+      "when": "输入的形状不符合函数约定（含 documentId 带冒号、空白或控制字符）",
+      "fix": "按任务包 README 里写的输入格式传入"
+    },
+    {
+      "code": "case-review.no_case",
+      "when": "文档里没有用例节点（默认认带标签或带标记的节点，caseRule=tagged 时只认标签），整批不受理；文档里有没有标签、但写法像用例的节点时，消息里给出个数",
+      "fix": "caseRule=tagged 时去掉该参数（或设为 marked）重新开始运行；否则把没有用例的文档从输入里去掉"
+    },
+    {
+      "code": "case-review.too_large",
+      "when": "投影结果超过这次调用的输出上限（limits.outputBytes，默认 8 MiB）；运行里只计这一块（block、slice）的投影结果",
+      "fix": "用更小的分块或分段开始运行（参数 block、slice），或者请管理员调高投影函数的输出上限"
+    },
+    {
+      "code": "case-review.template_invalid",
+      "when": "模板表没有通过准入：形状不封闭、缺少 origin、类别不合法或没有判定条件",
+      "fix": "传入任务包里的 tables/template-v3.json，或按 case-review.template@1 改正模板表"
+    },
+    {
+      "code": "case-review.block_not_found",
+      "when": "参数 block 指定的子树在脑图里找不到（节点编号或从根往下的节点文字列表都对不上）",
+      "fix": "block 写一个节点编号（data.id），或从根往下的节点文字列表；修正说明列出可用的分块"
+    },
+    {
+      "code": "case-review.block_ambiguous",
+      "when": "参数 block 写的节点文字列表在脑图里对应多处",
+      "fix": "改用修正说明列出的其中一处的节点编号"
+    },
+    {
+      "code": "case-review.too_many_cases",
+      "when": "文档（或指定的子树）的用例超过一次运行最多 100 个条目",
+      "fix": "按修正说明分块，每块单独开始一次评审运行：参数 block（按分组，优先）或 slice（按用例顺序分段，每段至多 100 个，总能覆盖全部用例）；各块独立初评、独立复核，整体结论取各块中最差的"
+    },
+    {
+      "code": "case-review.slice_invalid",
+      "when": "参数 slice 不是 {\"from\": 起, \"to\": 止}、起止颠倒、一段超过 100 个用例，或从最后一个用例之后开始",
+      "fix": "slice 写 {\"from\": 起, \"to\": 止}，1 ≤ 起 ≤ 止，一段至多 100 个，起点不超过这一块的用例数"
+    },
+    {
+      "code": "case-review.internal_error",
+      "when": "任务包函数内部出错",
+      "fix": "这是任务包的缺陷，请把输入交给任务包维护人"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "case-review.untagged_cases",
+      "when": "文档里有没有标签、带用例优先级、有子节点、下面没有别的用例的节点（团队模板的用例写法）：默认当没有标签的用例投影，caseRule=tagged 时没有投影；data 给出个数和前 20 个节点的定位",
+      "fix": "默认已将这些节点当没有标签的用例投影；若要排除它们可设运行参数 caseRule=tagged；或者在脑图里给用例打上标签"
+    },
+    {
+      "code": "case-review.tagged_group",
+      "when": "一个带标签的节点有分组的优先级（1），下面还有用例；它按分组处理，不算用例",
+      "fix": "去掉分组节点上的标签"
+    },
+    {
+      "code": "case-review.nested_case",
+      "when": "一个用例在另一个用例下面；它按单独的用例投影，不算外层用例的期望结果",
+      "fix": "把内层用例移到分组节点下，或去掉它的标签"
+    },
+    {
+      "code": "case-review.node_id_duplicate",
+      "when": "几个用例共用一个节点编号 data.id；每个副本按位置定位，编为带序号的包内编号（编号#1、编号#2 …），列在 unnumbered 里，跨修订不对应",
+      "fix": "给每个用例节点各自的编号（重新复制节点通常会生成新编号）"
+    },
+    {
+      "code": "case-review.node_id_missing",
+      "when": "用例节点没有编号；条目按位置编号，列在 unnumbered 里，跨修订不对应",
+      "fix": "在脑图工具里重新保存，让每个节点都有编号"
+    },
+    {
+      "code": "case-review.node_id_unusable",
+      "when": "节点编号过长，写不进条目编号；条目按位置编号，列在 unnumbered 里，跨修订不对应",
+      "fix": "改用简短的节点编号"
+    },
+    {
+      "code": "case-review.model_malformed",
+      "when": "解析结果的结构异常（节点不是对象、子节点下标无效或节点被引用多次），异常处没有投影",
+      "fix": "用 kityminder@1 重新解析原始文件后再传入"
+    },
+    {
+      "code": "case-review.depth_limit",
+      "when": "文档超过投影的层数上限，更深的子树没有投影",
+      "fix": "把过深的分支拆成单独的文档"
+    },
+    {
+      "code": "case-review.text_clipped",
+      "when": "节点文字超过长度上限，条目字段里已截断（引用仍按原文核对）",
+      "fix": "把过长的说明移到备注或附件里"
+    },
+    {
+      "code": "case-review.list_clipped",
+      "when": "一个用例的标签、期望结果、步骤或前置条件超过条数上限，字段里只列出前面的；计数仍按全部",
+      "fix": "把过大的用例拆开"
+    },
+    {
+      "code": "case-review.tag_not_text",
+      "when": "标签列表里有不是文字的项，已忽略",
+      "fix": "标签只写文字"
+    },
+    {
+      "code": "case-review.parameter_ignored",
+      "when": "运行参数的取值无效，按默认值处理",
+      "fix": "按任务包 README 改正参数"
+    },
+    {
+      "code": "case-review.document_skipped",
+      "when": "一份文档缺少编号或标题，没有读取它的期望来源",
+      "fix": "给文档编号和标题"
+    },
+    {
+      "code": "case-review.id_kind_unknown",
+      "when": "标题或目录里的编号没有标明是需求还是缺陷，产品包也没有给出编号范围；按 bareIds 两种都读取（默认）或不读取",
+      "fix": "由产品包给出缺陷系统的编号范围（参数 idRanges），或在参数 stories、bugs 里直接给出编号"
+    },
+    {
+      "code": "case-review.warnings_clipped",
+      "when": "逐个节点的警告太多，只列出前 100 条（按文档的汇总警告不受这个上限影响）；data.codes 按码给出没有列出的条数",
+      "fix": "先处理已列出的警告"
+    }
+  ],
+  "checks": [
+    {
+      "code": "case-review.location_missing",
+      "when": "检查 findings_sources：一条评审发现没有写位置（location）",
+      "fix": "给这条发现写 location：它落在被评审脑图的哪个节点（用例、分组或文档节点的 src: 引用）"
+    },
+    {
+      "code": "case-review.quote_missing",
+      "when": "检查 findings_sources：一条评审发现没有逐字引文（只有 grounds 或什么都没有）",
+      "fix": "给这条发现写 quotes：至少一段逐字引文，引被评审脑图，或需求、缺陷、产品文档、手册里的原文"
+    },
+    {
+      "code": "case-review.hint_only",
+      "when": "检查 findings_sources：一条评审发现的根据和引文全都来自线索（历史测试清单、测试策略），没有产品方面的根据",
+      "fix": "改为引用被评审的脑图，或需求、缺陷、产品文档、手册、命令目录里的原文；线索只能帮助判断该覆盖什么"
+    },
+    {
+      "code": "case-review.command_not_in_case",
+      "when": "检查 findings_sources：一条评审发现不写 present 引用的命令行不在这个用例的文字里（整条比对，只忽略空白、全半角和大小写；删了或加了参数也算不在）",
+      "fix": "照用例原样整条引用那条命令行；说某个命令存在或不存在时写 present: true 或 false"
+    },
+    {
+      "code": "case-review.tag_variant",
+      "when": "resource 含未声明的标签或形状违规；精确原文闭集为 functional、configuration、integration、compatibility、negative、stress 及表中明确声明的其他标签",
+      "fix": "作者从 tables/resource-tags.json 选择精确原文修正 resource 后重核；不按相似文字推荐值"
+    },
+    {
+      "code": "case-review.negative_command_missing",
+      "when": "反向用例自身没有可核验的目录命令行",
+      "fix": "修正原用例命令行后重开评审"
+    }
+  ],
+  "findings": [
+    {
+      "code": "literal_issue",
+      "label": "字面问题",
+      "when": "重复的行、空字段、错别字、字段格式不一致"
+    },
+    {
+      "code": "coverage_gap",
+      "label": "覆盖缺口",
+      "when": "缺陷或需求引入的功能或参数没有用例测到"
+    },
+    {
+      "code": "differentiation_gap",
+      "label": "区分缺口",
+      "when": "两个功能都只测了正向，从没有相互对照着测"
+    },
+    {
+      "code": "edge_case_gap",
+      "label": "边界用例缺口",
+      "when": "缺少空值、超长字符串、Unicode、大小写等边界用例"
+    },
+    {
+      "code": "negative_gap",
+      "label": "反向用例缺口",
+      "when": "缺陷修复的错误路径没有反向用例覆盖"
+    },
+    {
+      "code": "block_structure_mismatch",
+      "label": "分块结构不符",
+      "when": "章节（分组）标题与其中用例描述的行为不一致"
+    },
+    {
+      "code": "self_contradiction",
+      "label": "业务自相矛盾",
+      "when": "用例之间或用例内部对业务行为的描述互相矛盾"
+    }
+  ],
+  "ranks": [
+    {
+      "rank": "critical",
+      "label": "严重",
+      "levels": [
+        "P6",
+        "P7"
+      ]
+    },
+    {
+      "rank": "major",
+      "label": "主要",
+      "levels": [
+        "P3",
+        "P4",
+        "P5"
+      ]
+    },
+    {
+      "rank": "minor",
+      "label": "次要",
+      "levels": [
+        "P0",
+        "P1",
+        "P2"
+      ]
+    }
+  ],
+  "levels": [
+    {
+      "level": "P0",
+      "label": "P0",
+      "when": "覆盖全部功能细节，兼容性、反向、压力、边角用例和极端场景非常丰富"
+    },
+    {
+      "level": "P1",
+      "label": "P1",
+      "when": "覆盖全部功能细节，兼容性、反向、压力用例丰富"
+    },
+    {
+      "level": "P2",
+      "label": "P2",
+      "when": "覆盖全部功能细节，兼容性、反向、压力用例比较丰富"
+    },
+    {
+      "level": "P3",
+      "label": "P3",
+      "when": "覆盖全部功能细节，有一些兼容性、反向、压力用例"
+    },
+    {
+      "level": "P4",
+      "label": "P4",
+      "when": "覆盖全部功能细节，有一些反向和压力用例，兼容性不足"
+    },
+    {
+      "level": "P5",
+      "label": "P5",
+      "when": "覆盖全部功能，有一些反向和压力用例，功能细节的深度不够"
+    },
+    {
+      "level": "P6",
+      "label": "P6",
+      "when": "覆盖基本功能，有反向和压力类型，功能细节覆盖不完整"
+    },
+    {
+      "level": "P7",
+      "label": "P7",
+      "when": "没有覆盖基本功能，没有反向和压力类型"
+    }
+  ]
+}

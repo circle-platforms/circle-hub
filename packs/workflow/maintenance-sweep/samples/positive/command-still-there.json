@@ -1,0 +1,35 @@
+{
+  "id": "command_still_there",
+  "source": "author",
+  "check": "command_exists",
+  "note": "合成样例：原因不是删除，命令仍在记支持",
+  "subject": {
+    "items": [
+      {
+        "id": "doc-1:n1",
+        "location": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fields": {
+          "document": "doc-1",
+          "node": "n1",
+          "priority": 1,
+          "negative": false,
+          "reasons": [
+            {
+              "change": "modified",
+              "detail": 0
+            }
+          ]
+        },
+        "label": "查看部件状态"
+      }
+    ],
+    "note": null
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "doc-1:n1",
+      "tier": "blocking"
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "id": "cited_negative_case",
+  "source": "author",
+  "check": "cited_commands",
+  "note": "反向用例引用的非法命令行：预期的反驳，提示档",
+  "subject": {
+    "item": "sample:n1",
+    "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/n1",
+    "negative": true,
+    "claims": [],
+    "phrases": [
+      "health interval pool1 0"
+    ],
+    "unquoted": []
+  },
+  "catalog": {
+    "root": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "complete": true,
+    "entries": [
+      {
+        "head": "pool create",
+        "signatures": [
+          [
+            {
+              "name": "name",
+              "type": "string",
+              "maxLength": 32
+            }
+          ]
+        ]
+      },
+      {
+        "head": "health interval",
+        "signatures": [
+          [
+            {
+              "name": "pool",
+              "type": "string"
+            },
+            {
+              "name": "seconds",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 300
+            }
+          ]
+        ]
+      },
+      {
+        "head": "show pool",
+        "signatures": [
+          [],
+          [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "core.catalog.param_out_of_range",
+      "item": "sample:n1",
+      "tier": "advisory"
+    }
+  ]
+}

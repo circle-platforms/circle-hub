@@ -1,0 +1,37 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "in_scope",
+      "name": "回归范围内的用例",
+      "description": "后一构建里放在新增或修改路径上的用例各记一条支持。一条用例放在多条变更路径上时合并为一条，数据里带上全部原因。范围不是缺陷，合式的视图不产生不通过",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "in_scope"
+      ],
+      "error_handling": []
+    },
+    {
+      "key": "uncovered_changes",
+      "name": "没有用例的变更路径",
+      "description": "纳入范围的新增或修改路径上，后一构建没有用例时记未知（缺输入），作为跨条目结论，不是失败：用例索引本来就不完整。后一构建有跳过的文档时，结论里写明缺少的份数。运行级先给一条事实的跨条目结论：按路径列出整个命令差（变更种类、后一构建用例数；删除路径注明不进范围），依据是影响视图；未归位计数来自必填线索槽，仅在运行说明和客户端回答中披露，不作为支持或反驳主张",
+      "target": "run",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "uncovered_changes"
+      ],
+      "error_handling": []
+    }
+  ]
+}

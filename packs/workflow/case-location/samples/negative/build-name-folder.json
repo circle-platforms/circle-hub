@@ -1,0 +1,44 @@
+{
+  "id": "build_folder_conflict",
+  "source": "author",
+  "check": "locate",
+  "note": "合成构建名目录按约定给版本，矛盾版本确定冲突",
+  "subject": {
+    "items": [
+      {
+        "id": "24402",
+        "location": "src:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/kityminder@1/n/24402n0",
+        "fields": {
+          "kind": "document",
+          "document": "24402",
+          "node": null,
+          "source": "agile:mindmap:24402@1",
+          "root": "FAMY",
+          "ancestors": [
+            "Rel_FAMY_10_9_1_37 回归",
+            "060：10.8.1"
+          ],
+          "title": "合成构建目录",
+          "path": [],
+          "case_title": null
+        }
+      }
+    ],
+    "context": {
+      "product": "famx",
+      "names": [
+        "FAMX",
+        "FAMY"
+      ],
+      "parameters": {}
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "item": "24402",
+      "tier": "advisory",
+      "code": "case-location.version_conflict"
+    }
+  ]
+}

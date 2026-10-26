@@ -1,0 +1,9 @@
+{
+  "default_entry_kinds": [
+    "definition",
+    "behaviour"
+  ],
+  "opt_in_src": "src",
+  "max_instructions_chars": 2000,
+  "max_description_chars": 160
+}

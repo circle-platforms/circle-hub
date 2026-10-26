@@ -1,0 +1,2945 @@
+{
+  "schema": "template-gap.transitional-example@1",
+  "id": "command_unmatched",
+  "note": "成对的合成脑图、索引输入、过渡未知及补齐后的确定结果；当前样例合约不接受期望未知，模型修订后迁入 samples/",
+  "inputs": {
+    "document": {
+      "root": {
+        "data": {
+          "id": "transition-command_unmatched",
+          "created": 1782784800000,
+          "text": "合成按命令覆盖场景"
+        },
+        "children": [
+          {
+            "data": {
+              "id": "transition-group",
+              "created": 0,
+              "text": "其他",
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "z7k38gpgg63g",
+                  "created": 1782871200000,
+                  "text": "widget pool add pool9",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "command_add"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "nmge791mywmv",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "4hhm2b6e172d",
+                  "created": 1782871200000,
+                  "text": "widget pool delete pool9",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "command_delete"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "qsbflccnevc4",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "ayuawv1pp4yi",
+                  "created": 1782871200000,
+                  "text": "widget pool edit pool9",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "command_modify"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "iy4dq5rou7ai",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "ey1g1gojbl51",
+                  "created": 1782871200000,
+                  "text": "query widget pool9",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "command_query"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "0lbby31pf7og",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "dqxos0o6t78n",
+                  "created": 1782871200000,
+                  "text": "满配时的探测列表",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "show_at_maximum"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "yp2jlccttujy",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "i7z0nc2lzban",
+                  "created": 1782871200000,
+                  "text": "no widget pool9",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "no_command"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "ifn4z168ebyu",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "2n02yzyizcnr",
+                  "created": 1782871200000,
+                  "text": "clear widget pool9",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "clear_command"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "5worj0zlyy6i",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "2ic28fwyw87e",
+                  "created": 1782871200000,
+                  "text": "检查操作日志",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "operation_log"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "qxr4qqgc0klj",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "asb68jqldcrv",
+                  "created": 1782871200000,
+                  "text": "检查审计日志",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "audit_log"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "wlpqdpownmgs",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "kum6qt856j5p",
+                  "created": 1782871200000,
+                  "text": "检查审计日志",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "audit_log"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "o4orsftsebxp",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "template": "right",
+      "theme": "classic",
+      "version": "1.4.43"
+    },
+    "index": {
+      "schema": "index-view@1",
+      "product": "synthetic-template",
+      "build": {
+        "build": "Rel_MEADOW_10_6_8_1",
+        "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
+      },
+      "kind": "case",
+      "key": "document",
+      "keys": {
+        "900001": [
+          "0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2",
+          "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80",
+          "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287",
+          "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234",
+          "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210",
+          "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf",
+          "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60",
+          "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f",
+          "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4"
+        ]
+      },
+      "entries": {
+        "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234": {
+          "entry": "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "z7k38gpgg63g",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "widget pool add pool9",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234"
+        },
+        "0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2": {
+          "entry": "0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "4hhm2b6e172d",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "widget pool delete pool9",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2"
+        },
+        "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80": {
+          "entry": "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "ayuawv1pp4yi",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "widget pool edit pool9",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80"
+        },
+        "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f": {
+          "entry": "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "ey1g1gojbl51",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "query widget pool9",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f"
+        },
+        "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4": {
+          "entry": "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "dqxos0o6t78n",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "满配时的探测列表",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4"
+        },
+        "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf": {
+          "entry": "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "i7z0nc2lzban",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "no widget pool9",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf"
+        },
+        "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60": {
+          "entry": "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "2n02yzyizcnr",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "clear widget pool9",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60"
+        },
+        "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210": {
+          "entry": "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "2ic28fwyw87e",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "检查操作日志",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210"
+        },
+        "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287": {
+          "entry": "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "asb68jqldcrv",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "检查审计日志",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287"
+        }
+      },
+      "fields": [
+        "document",
+        "node",
+        "commands",
+        "command_identities",
+        "title",
+        "path_labels"
+      ],
+      "only": [
+        "900001"
+      ],
+      "cut_keys": [],
+      "total_keys": 1,
+      "total_entries": 9,
+      "truncated": false,
+      "skipped": 0,
+      "notes": []
+    }
+  },
+  "restored_inputs": {
+    "document": {
+      "root": {
+        "data": {
+          "id": "transition-command_unmatched",
+          "created": 1782784800000,
+          "text": "合成按命令覆盖场景"
+        },
+        "children": [
+          {
+            "data": {
+              "id": "transition-group",
+              "created": 0,
+              "text": "其他",
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "z7k38gpgg63g",
+                  "created": 1782871200000,
+                  "text": "widget pool add pool9",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "command_add"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "nmge791mywmv",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "4hhm2b6e172d",
+                  "created": 1782871200000,
+                  "text": "widget pool delete pool9",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "command_delete"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "qsbflccnevc4",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "ayuawv1pp4yi",
+                  "created": 1782871200000,
+                  "text": "widget pool edit pool9",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "command_modify"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "iy4dq5rou7ai",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "ey1g1gojbl51",
+                  "created": 1782871200000,
+                  "text": "query widget pool9",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "command_query"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "0lbby31pf7og",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "dqxos0o6t78n",
+                  "created": 1782871200000,
+                  "text": "满配时的探测列表",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "show_at_maximum"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "yp2jlccttujy",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "i7z0nc2lzban",
+                  "created": 1782871200000,
+                  "text": "no widget pool9",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "no_command"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "ifn4z168ebyu",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "2n02yzyizcnr",
+                  "created": 1782871200000,
+                  "text": "clear widget pool9",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "clear_command"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "5worj0zlyy6i",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "2ic28fwyw87e",
+                  "created": 1782871200000,
+                  "text": "检查操作日志",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "operation_log"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "qxr4qqgc0klj",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "asb68jqldcrv",
+                  "created": 1782871200000,
+                  "text": "检查审计日志",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "audit_log"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "wlpqdpownmgs",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "kum6qt856j5p",
+                  "created": 1782871200000,
+                  "text": "检查审计日志",
+                  "priority": 2,
+                  "resource": [
+                    "Function"
+                  ],
+                  "category_ids": [
+                    "functional",
+                    "audit_log"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "o4orsftsebxp",
+                      "created": 1782871261000,
+                      "text": "符合预期"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "template": "right",
+      "theme": "classic",
+      "version": "1.4.43"
+    },
+    "index": {
+      "schema": "index-view@1",
+      "product": "synthetic-template",
+      "build": {
+        "build": "Rel_MEADOW_10_6_8_1",
+        "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
+      },
+      "kind": "case",
+      "key": "document",
+      "keys": {
+        "900001": [
+          "0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2",
+          "3403a48a35db77582585a263d183510df33800a019dd9203b041e9ceebd6fc4d",
+          "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80",
+          "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287",
+          "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234",
+          "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210",
+          "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf",
+          "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60",
+          "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f",
+          "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4"
+        ]
+      },
+      "entries": {
+        "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234": {
+          "entry": "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "z7k38gpgg63g",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "widget pool add pool9",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234"
+        },
+        "0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2": {
+          "entry": "0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "4hhm2b6e172d",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "widget pool delete pool9",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2"
+        },
+        "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80": {
+          "entry": "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "ayuawv1pp4yi",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "widget pool edit pool9",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80"
+        },
+        "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f": {
+          "entry": "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "ey1g1gojbl51",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "query widget pool9",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f"
+        },
+        "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4": {
+          "entry": "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "dqxos0o6t78n",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "满配时的探测列表",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4"
+        },
+        "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf": {
+          "entry": "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "i7z0nc2lzban",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "no widget pool9",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf"
+        },
+        "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60": {
+          "entry": "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "2n02yzyizcnr",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "clear widget pool9",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60"
+        },
+        "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210": {
+          "entry": "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "2ic28fwyw87e",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "检查操作日志",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210"
+        },
+        "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287": {
+          "entry": "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "asb68jqldcrv",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "检查审计日志",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287"
+        },
+        "3403a48a35db77582585a263d183510df33800a019dd9203b041e9ceebd6fc4d": {
+          "entry": "3403a48a35db77582585a263d183510df33800a019dd9203b041e9ceebd6fc4d",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "kum6qt856j5p",
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "title": "检查审计日志",
+            "path_labels": [
+              "合成按命令覆盖场景",
+              "其他"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@3403a48a35db77582585a263d183510df33800a019dd9203b041e9ceebd6fc4d"
+        }
+      },
+      "fields": [
+        "document",
+        "node",
+        "commands",
+        "command_identities",
+        "title",
+        "path_labels"
+      ],
+      "only": [
+        "900001"
+      ],
+      "cut_keys": [],
+      "total_keys": 1,
+      "total_entries": 10,
+      "truncated": false,
+      "skipped": 0,
+      "notes": []
+    }
+  },
+  "pending": {
+    "id": "command_unmatched",
+    "source": "author",
+    "check": "command_coverage",
+    "note": "脑图多了未收录用例：保留已知支持并追加文档缺输入；同步收录后为完整正例",
+    "subject": {
+      "source": {
+        "sha256": "510e8de4a9214a81ff93e245d97068e350ac54e69410e1ae9afe6a8b84846f1b",
+        "model": {
+          "doubleEncoded": false,
+          "meta": {
+            "template": "right",
+            "theme": "classic",
+            "version": "1.4.43"
+          },
+          "nodes": [
+            {
+              "id": "transition-command_unmatched",
+              "text": "合成按命令覆盖场景",
+              "data": {
+                "id": "transition-command_unmatched",
+                "created": 1782784800000,
+                "text": "合成按命令覆盖场景"
+              },
+              "children": [
+                1
+              ],
+              "parent": null,
+              "depth": 0,
+              "selector": "n/transition-command_unmatched",
+              "extra": null
+            },
+            {
+              "id": "transition-group",
+              "text": "其他",
+              "data": {
+                "id": "transition-group",
+                "created": 0,
+                "text": "其他",
+                "priority": 1
+              },
+              "children": [
+                2,
+                4,
+                6,
+                8,
+                10,
+                12,
+                14,
+                16,
+                18,
+                20
+              ],
+              "parent": 0,
+              "depth": 1,
+              "selector": "n/transition-group",
+              "extra": null
+            },
+            {
+              "id": "z7k38gpgg63g",
+              "text": "widget pool add pool9",
+              "data": {
+                "id": "z7k38gpgg63g",
+                "created": 1782871200000,
+                "text": "widget pool add pool9",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "command_add"
+                ]
+              },
+              "children": [
+                3
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/z7k38gpgg63g",
+              "extra": null
+            },
+            {
+              "id": "nmge791mywmv",
+              "text": "符合预期",
+              "data": {
+                "id": "nmge791mywmv",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 2,
+              "depth": 3,
+              "selector": "n/nmge791mywmv",
+              "extra": null
+            },
+            {
+              "id": "4hhm2b6e172d",
+              "text": "widget pool delete pool9",
+              "data": {
+                "id": "4hhm2b6e172d",
+                "created": 1782871200000,
+                "text": "widget pool delete pool9",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "command_delete"
+                ]
+              },
+              "children": [
+                5
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/4hhm2b6e172d",
+              "extra": null
+            },
+            {
+              "id": "qsbflccnevc4",
+              "text": "符合预期",
+              "data": {
+                "id": "qsbflccnevc4",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 4,
+              "depth": 3,
+              "selector": "n/qsbflccnevc4",
+              "extra": null
+            },
+            {
+              "id": "ayuawv1pp4yi",
+              "text": "widget pool edit pool9",
+              "data": {
+                "id": "ayuawv1pp4yi",
+                "created": 1782871200000,
+                "text": "widget pool edit pool9",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "command_modify"
+                ]
+              },
+              "children": [
+                7
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/ayuawv1pp4yi",
+              "extra": null
+            },
+            {
+              "id": "iy4dq5rou7ai",
+              "text": "符合预期",
+              "data": {
+                "id": "iy4dq5rou7ai",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 6,
+              "depth": 3,
+              "selector": "n/iy4dq5rou7ai",
+              "extra": null
+            },
+            {
+              "id": "ey1g1gojbl51",
+              "text": "query widget pool9",
+              "data": {
+                "id": "ey1g1gojbl51",
+                "created": 1782871200000,
+                "text": "query widget pool9",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "command_query"
+                ]
+              },
+              "children": [
+                9
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/ey1g1gojbl51",
+              "extra": null
+            },
+            {
+              "id": "0lbby31pf7og",
+              "text": "符合预期",
+              "data": {
+                "id": "0lbby31pf7og",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 8,
+              "depth": 3,
+              "selector": "n/0lbby31pf7og",
+              "extra": null
+            },
+            {
+              "id": "dqxos0o6t78n",
+              "text": "满配时的探测列表",
+              "data": {
+                "id": "dqxos0o6t78n",
+                "created": 1782871200000,
+                "text": "满配时的探测列表",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "show_at_maximum"
+                ]
+              },
+              "children": [
+                11
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/dqxos0o6t78n",
+              "extra": null
+            },
+            {
+              "id": "yp2jlccttujy",
+              "text": "符合预期",
+              "data": {
+                "id": "yp2jlccttujy",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 10,
+              "depth": 3,
+              "selector": "n/yp2jlccttujy",
+              "extra": null
+            },
+            {
+              "id": "i7z0nc2lzban",
+              "text": "no widget pool9",
+              "data": {
+                "id": "i7z0nc2lzban",
+                "created": 1782871200000,
+                "text": "no widget pool9",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "no_command"
+                ]
+              },
+              "children": [
+                13
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/i7z0nc2lzban",
+              "extra": null
+            },
+            {
+              "id": "ifn4z168ebyu",
+              "text": "符合预期",
+              "data": {
+                "id": "ifn4z168ebyu",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 12,
+              "depth": 3,
+              "selector": "n/ifn4z168ebyu",
+              "extra": null
+            },
+            {
+              "id": "2n02yzyizcnr",
+              "text": "clear widget pool9",
+              "data": {
+                "id": "2n02yzyizcnr",
+                "created": 1782871200000,
+                "text": "clear widget pool9",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "clear_command"
+                ]
+              },
+              "children": [
+                15
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/2n02yzyizcnr",
+              "extra": null
+            },
+            {
+              "id": "5worj0zlyy6i",
+              "text": "符合预期",
+              "data": {
+                "id": "5worj0zlyy6i",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 14,
+              "depth": 3,
+              "selector": "n/5worj0zlyy6i",
+              "extra": null
+            },
+            {
+              "id": "2ic28fwyw87e",
+              "text": "检查操作日志",
+              "data": {
+                "id": "2ic28fwyw87e",
+                "created": 1782871200000,
+                "text": "检查操作日志",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "operation_log"
+                ]
+              },
+              "children": [
+                17
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/2ic28fwyw87e",
+              "extra": null
+            },
+            {
+              "id": "qxr4qqgc0klj",
+              "text": "符合预期",
+              "data": {
+                "id": "qxr4qqgc0klj",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 16,
+              "depth": 3,
+              "selector": "n/qxr4qqgc0klj",
+              "extra": null
+            },
+            {
+              "id": "asb68jqldcrv",
+              "text": "检查审计日志",
+              "data": {
+                "id": "asb68jqldcrv",
+                "created": 1782871200000,
+                "text": "检查审计日志",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "audit_log"
+                ]
+              },
+              "children": [
+                19
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/asb68jqldcrv",
+              "extra": null
+            },
+            {
+              "id": "wlpqdpownmgs",
+              "text": "符合预期",
+              "data": {
+                "id": "wlpqdpownmgs",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 18,
+              "depth": 3,
+              "selector": "n/wlpqdpownmgs",
+              "extra": null
+            },
+            {
+              "id": "kum6qt856j5p",
+              "text": "检查审计日志",
+              "data": {
+                "id": "kum6qt856j5p",
+                "created": 1782871200000,
+                "text": "检查审计日志",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "audit_log"
+                ]
+              },
+              "children": [
+                21
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/kum6qt856j5p",
+              "extra": null
+            },
+            {
+              "id": "o4orsftsebxp",
+              "text": "符合预期",
+              "data": {
+                "id": "o4orsftsebxp",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 20,
+              "depth": 3,
+              "selector": "n/o4orsftsebxp",
+              "extra": null
+            }
+          ],
+          "duplicateIds": [],
+          "missingIds": 0,
+          "nulRemoved": 0,
+          "surrogatesReplaced": 0
+        }
+      },
+      "scope_complete": true,
+      "item": "900001",
+      "location": "src:510e8de4a9214a81ff93e245d97068e350ac54e69410e1ae9afe6a8b84846f1b/kityminder@1/n/transition-command_unmatched",
+      "document": "900001",
+      "uploaded": false,
+      "case_rule": "marked",
+      "cases": [
+        {
+          "id": "900001:2ic28fwyw87e",
+          "visit": 16,
+          "categories": [
+            "functional",
+            "operation_log"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:2n02yzyizcnr",
+          "visit": 14,
+          "categories": [
+            "functional",
+            "clear_command"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:4hhm2b6e172d",
+          "visit": 4,
+          "categories": [
+            "functional",
+            "command_delete"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:asb68jqldcrv",
+          "visit": 18,
+          "categories": [
+            "functional",
+            "audit_log"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:ayuawv1pp4yi",
+          "visit": 6,
+          "categories": [
+            "functional",
+            "command_modify"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:dqxos0o6t78n",
+          "visit": 10,
+          "categories": [
+            "functional",
+            "show_at_maximum"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:ey1g1gojbl51",
+          "visit": 8,
+          "categories": [
+            "functional",
+            "command_query"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:i7z0nc2lzban",
+          "visit": 12,
+          "categories": [
+            "functional",
+            "no_command"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:kum6qt856j5p",
+          "visit": 20,
+          "categories": [
+            "functional",
+            "audit_log"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:z7k38gpgg63g",
+          "visit": 2,
+          "categories": [
+            "functional",
+            "command_add"
+          ],
+          "status": "classified"
+        }
+      ],
+      "nodes": {
+        "texts": [
+          "合成按命令覆盖场景",
+          "其他",
+          "widget pool add pool9",
+          "",
+          "widget pool delete pool9",
+          "",
+          "widget pool edit pool9",
+          "",
+          "query widget pool9",
+          "",
+          "满配时的探测列表",
+          "",
+          "no widget pool9",
+          "",
+          "clear widget pool9",
+          "",
+          "检查操作日志",
+          "",
+          "检查审计日志",
+          "",
+          "检查审计日志",
+          ""
+        ],
+        "parents": [
+          -1,
+          0,
+          1,
+          2,
+          1,
+          4,
+          1,
+          6,
+          1,
+          8,
+          1,
+          10,
+          1,
+          12,
+          1,
+          14,
+          1,
+          16,
+          1,
+          18,
+          1,
+          20
+        ]
+      },
+      "case_count": 10,
+      "skipped": [],
+      "index": {
+        "schema": "index-view@1",
+        "product": "synthetic-template",
+        "build": {
+          "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+          "build": "Rel_MEADOW_10_6_8_1"
+        },
+        "kind": "case",
+        "key": "document",
+        "only": [
+          "900001"
+        ],
+        "fields": [
+          "document",
+          "node",
+          "commands",
+          "title",
+          "path_labels"
+        ],
+        "keys": {
+          "900001": [
+            "0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2",
+            "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80",
+            "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287",
+            "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234",
+            "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210",
+            "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf",
+            "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60",
+            "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f",
+            "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4"
+          ]
+        },
+        "entries": {
+          "0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2": {
+            "entry": "0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2",
+            "data": {
+              "document": "900001",
+              "node": "4hhm2b6e172d",
+              "title": "widget pool delete pool9",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80": {
+            "entry": "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80",
+            "data": {
+              "document": "900001",
+              "node": "ayuawv1pp4yi",
+              "title": "widget pool edit pool9",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287": {
+            "entry": "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287",
+            "data": {
+              "document": "900001",
+              "node": "asb68jqldcrv",
+              "title": "检查审计日志",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234": {
+            "entry": "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234",
+            "data": {
+              "document": "900001",
+              "node": "z7k38gpgg63g",
+              "title": "widget pool add pool9",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210": {
+            "entry": "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210",
+            "data": {
+              "document": "900001",
+              "node": "2ic28fwyw87e",
+              "title": "检查操作日志",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf": {
+            "entry": "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf",
+            "data": {
+              "document": "900001",
+              "node": "i7z0nc2lzban",
+              "title": "no widget pool9",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60": {
+            "entry": "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60",
+            "data": {
+              "document": "900001",
+              "node": "2n02yzyizcnr",
+              "title": "clear widget pool9",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f": {
+            "entry": "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f",
+            "data": {
+              "document": "900001",
+              "node": "ey1g1gojbl51",
+              "title": "query widget pool9",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4": {
+            "entry": "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4",
+            "data": {
+              "document": "900001",
+              "node": "dqxos0o6t78n",
+              "title": "满配时的探测列表",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          }
+        },
+        "cut_keys": [],
+        "truncated": false,
+        "skipped": 0,
+        "total_keys": 1,
+        "total_entries": 9,
+        "notes": []
+      },
+      "index_reference": "src:6868250d46376684b6c3a2b5b7738d264132af23b6098062ccf8f9c4930e955b",
+      "scope": [
+        "900001"
+      ],
+      "lock": {
+        "product": "synthetic-template",
+        "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+        "build": "Rel_MEADOW_10_6_8_1"
+      }
+    },
+    "expect": [
+      {
+        "verdict": "support",
+        "item": "900001",
+        "tier": "advisory"
+      },
+      {
+        "verdict": "unknown",
+        "reason": "missing_input",
+        "item": "900001",
+        "tier": "advisory"
+      }
+    ]
+  },
+  "restored": {
+    "id": "command_unmatched_restored",
+    "source": "author",
+    "check": "command_coverage",
+    "note": "脑图多了未收录用例：保留已知支持并追加文档缺输入；同步收录后为完整正例",
+    "subject": {
+      "source": {
+        "sha256": "510e8de4a9214a81ff93e245d97068e350ac54e69410e1ae9afe6a8b84846f1b",
+        "model": {
+          "doubleEncoded": false,
+          "meta": {
+            "template": "right",
+            "theme": "classic",
+            "version": "1.4.43"
+          },
+          "nodes": [
+            {
+              "id": "transition-command_unmatched",
+              "text": "合成按命令覆盖场景",
+              "data": {
+                "id": "transition-command_unmatched",
+                "created": 1782784800000,
+                "text": "合成按命令覆盖场景"
+              },
+              "children": [
+                1
+              ],
+              "parent": null,
+              "depth": 0,
+              "selector": "n/transition-command_unmatched",
+              "extra": null
+            },
+            {
+              "id": "transition-group",
+              "text": "其他",
+              "data": {
+                "id": "transition-group",
+                "created": 0,
+                "text": "其他",
+                "priority": 1
+              },
+              "children": [
+                2,
+                4,
+                6,
+                8,
+                10,
+                12,
+                14,
+                16,
+                18,
+                20
+              ],
+              "parent": 0,
+              "depth": 1,
+              "selector": "n/transition-group",
+              "extra": null
+            },
+            {
+              "id": "z7k38gpgg63g",
+              "text": "widget pool add pool9",
+              "data": {
+                "id": "z7k38gpgg63g",
+                "created": 1782871200000,
+                "text": "widget pool add pool9",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "command_add"
+                ]
+              },
+              "children": [
+                3
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/z7k38gpgg63g",
+              "extra": null
+            },
+            {
+              "id": "nmge791mywmv",
+              "text": "符合预期",
+              "data": {
+                "id": "nmge791mywmv",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 2,
+              "depth": 3,
+              "selector": "n/nmge791mywmv",
+              "extra": null
+            },
+            {
+              "id": "4hhm2b6e172d",
+              "text": "widget pool delete pool9",
+              "data": {
+                "id": "4hhm2b6e172d",
+                "created": 1782871200000,
+                "text": "widget pool delete pool9",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "command_delete"
+                ]
+              },
+              "children": [
+                5
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/4hhm2b6e172d",
+              "extra": null
+            },
+            {
+              "id": "qsbflccnevc4",
+              "text": "符合预期",
+              "data": {
+                "id": "qsbflccnevc4",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 4,
+              "depth": 3,
+              "selector": "n/qsbflccnevc4",
+              "extra": null
+            },
+            {
+              "id": "ayuawv1pp4yi",
+              "text": "widget pool edit pool9",
+              "data": {
+                "id": "ayuawv1pp4yi",
+                "created": 1782871200000,
+                "text": "widget pool edit pool9",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "command_modify"
+                ]
+              },
+              "children": [
+                7
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/ayuawv1pp4yi",
+              "extra": null
+            },
+            {
+              "id": "iy4dq5rou7ai",
+              "text": "符合预期",
+              "data": {
+                "id": "iy4dq5rou7ai",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 6,
+              "depth": 3,
+              "selector": "n/iy4dq5rou7ai",
+              "extra": null
+            },
+            {
+              "id": "ey1g1gojbl51",
+              "text": "query widget pool9",
+              "data": {
+                "id": "ey1g1gojbl51",
+                "created": 1782871200000,
+                "text": "query widget pool9",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "command_query"
+                ]
+              },
+              "children": [
+                9
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/ey1g1gojbl51",
+              "extra": null
+            },
+            {
+              "id": "0lbby31pf7og",
+              "text": "符合预期",
+              "data": {
+                "id": "0lbby31pf7og",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 8,
+              "depth": 3,
+              "selector": "n/0lbby31pf7og",
+              "extra": null
+            },
+            {
+              "id": "dqxos0o6t78n",
+              "text": "满配时的探测列表",
+              "data": {
+                "id": "dqxos0o6t78n",
+                "created": 1782871200000,
+                "text": "满配时的探测列表",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "show_at_maximum"
+                ]
+              },
+              "children": [
+                11
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/dqxos0o6t78n",
+              "extra": null
+            },
+            {
+              "id": "yp2jlccttujy",
+              "text": "符合预期",
+              "data": {
+                "id": "yp2jlccttujy",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 10,
+              "depth": 3,
+              "selector": "n/yp2jlccttujy",
+              "extra": null
+            },
+            {
+              "id": "i7z0nc2lzban",
+              "text": "no widget pool9",
+              "data": {
+                "id": "i7z0nc2lzban",
+                "created": 1782871200000,
+                "text": "no widget pool9",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "no_command"
+                ]
+              },
+              "children": [
+                13
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/i7z0nc2lzban",
+              "extra": null
+            },
+            {
+              "id": "ifn4z168ebyu",
+              "text": "符合预期",
+              "data": {
+                "id": "ifn4z168ebyu",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 12,
+              "depth": 3,
+              "selector": "n/ifn4z168ebyu",
+              "extra": null
+            },
+            {
+              "id": "2n02yzyizcnr",
+              "text": "clear widget pool9",
+              "data": {
+                "id": "2n02yzyizcnr",
+                "created": 1782871200000,
+                "text": "clear widget pool9",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "clear_command"
+                ]
+              },
+              "children": [
+                15
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/2n02yzyizcnr",
+              "extra": null
+            },
+            {
+              "id": "5worj0zlyy6i",
+              "text": "符合预期",
+              "data": {
+                "id": "5worj0zlyy6i",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 14,
+              "depth": 3,
+              "selector": "n/5worj0zlyy6i",
+              "extra": null
+            },
+            {
+              "id": "2ic28fwyw87e",
+              "text": "检查操作日志",
+              "data": {
+                "id": "2ic28fwyw87e",
+                "created": 1782871200000,
+                "text": "检查操作日志",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "operation_log"
+                ]
+              },
+              "children": [
+                17
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/2ic28fwyw87e",
+              "extra": null
+            },
+            {
+              "id": "qxr4qqgc0klj",
+              "text": "符合预期",
+              "data": {
+                "id": "qxr4qqgc0klj",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 16,
+              "depth": 3,
+              "selector": "n/qxr4qqgc0klj",
+              "extra": null
+            },
+            {
+              "id": "asb68jqldcrv",
+              "text": "检查审计日志",
+              "data": {
+                "id": "asb68jqldcrv",
+                "created": 1782871200000,
+                "text": "检查审计日志",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "audit_log"
+                ]
+              },
+              "children": [
+                19
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/asb68jqldcrv",
+              "extra": null
+            },
+            {
+              "id": "wlpqdpownmgs",
+              "text": "符合预期",
+              "data": {
+                "id": "wlpqdpownmgs",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 18,
+              "depth": 3,
+              "selector": "n/wlpqdpownmgs",
+              "extra": null
+            },
+            {
+              "id": "kum6qt856j5p",
+              "text": "检查审计日志",
+              "data": {
+                "id": "kum6qt856j5p",
+                "created": 1782871200000,
+                "text": "检查审计日志",
+                "priority": 2,
+                "resource": [
+                  "Function"
+                ],
+                "category_ids": [
+                  "functional",
+                  "audit_log"
+                ]
+              },
+              "children": [
+                21
+              ],
+              "parent": 1,
+              "depth": 2,
+              "selector": "n/kum6qt856j5p",
+              "extra": null
+            },
+            {
+              "id": "o4orsftsebxp",
+              "text": "符合预期",
+              "data": {
+                "id": "o4orsftsebxp",
+                "created": 1782871261000,
+                "text": "符合预期"
+              },
+              "children": [],
+              "parent": 20,
+              "depth": 3,
+              "selector": "n/o4orsftsebxp",
+              "extra": null
+            }
+          ],
+          "duplicateIds": [],
+          "missingIds": 0,
+          "nulRemoved": 0,
+          "surrogatesReplaced": 0
+        }
+      },
+      "scope_complete": true,
+      "item": "900001",
+      "location": "src:510e8de4a9214a81ff93e245d97068e350ac54e69410e1ae9afe6a8b84846f1b/kityminder@1/n/transition-command_unmatched",
+      "document": "900001",
+      "uploaded": false,
+      "case_rule": "marked",
+      "cases": [
+        {
+          "id": "900001:2ic28fwyw87e",
+          "visit": 16,
+          "categories": [
+            "functional",
+            "operation_log"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:2n02yzyizcnr",
+          "visit": 14,
+          "categories": [
+            "functional",
+            "clear_command"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:4hhm2b6e172d",
+          "visit": 4,
+          "categories": [
+            "functional",
+            "command_delete"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:asb68jqldcrv",
+          "visit": 18,
+          "categories": [
+            "functional",
+            "audit_log"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:ayuawv1pp4yi",
+          "visit": 6,
+          "categories": [
+            "functional",
+            "command_modify"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:dqxos0o6t78n",
+          "visit": 10,
+          "categories": [
+            "functional",
+            "show_at_maximum"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:ey1g1gojbl51",
+          "visit": 8,
+          "categories": [
+            "functional",
+            "command_query"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:i7z0nc2lzban",
+          "visit": 12,
+          "categories": [
+            "functional",
+            "no_command"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:kum6qt856j5p",
+          "visit": 20,
+          "categories": [
+            "functional",
+            "audit_log"
+          ],
+          "status": "classified"
+        },
+        {
+          "id": "900001:z7k38gpgg63g",
+          "visit": 2,
+          "categories": [
+            "functional",
+            "command_add"
+          ],
+          "status": "classified"
+        }
+      ],
+      "nodes": {
+        "texts": [
+          "合成按命令覆盖场景",
+          "其他",
+          "widget pool add pool9",
+          "",
+          "widget pool delete pool9",
+          "",
+          "widget pool edit pool9",
+          "",
+          "query widget pool9",
+          "",
+          "满配时的探测列表",
+          "",
+          "no widget pool9",
+          "",
+          "clear widget pool9",
+          "",
+          "检查操作日志",
+          "",
+          "检查审计日志",
+          "",
+          "检查审计日志",
+          ""
+        ],
+        "parents": [
+          -1,
+          0,
+          1,
+          2,
+          1,
+          4,
+          1,
+          6,
+          1,
+          8,
+          1,
+          10,
+          1,
+          12,
+          1,
+          14,
+          1,
+          16,
+          1,
+          18,
+          1,
+          20
+        ]
+      },
+      "case_count": 10,
+      "skipped": [],
+      "index": {
+        "schema": "index-view@1",
+        "product": "synthetic-template",
+        "build": {
+          "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+          "build": "Rel_MEADOW_10_6_8_1"
+        },
+        "kind": "case",
+        "key": "document",
+        "only": [
+          "900001"
+        ],
+        "fields": [
+          "document",
+          "node",
+          "commands",
+          "title",
+          "path_labels"
+        ],
+        "keys": {
+          "900001": [
+            "0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2",
+            "3403a48a35db77582585a263d183510df33800a019dd9203b041e9ceebd6fc4d",
+            "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80",
+            "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287",
+            "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234",
+            "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210",
+            "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf",
+            "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60",
+            "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f",
+            "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4"
+          ]
+        },
+        "entries": {
+          "0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2": {
+            "entry": "0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@0210d90767dec334d776da4e93c6f1133770d4b4a22611e88c2719d0ac14aec2",
+            "data": {
+              "document": "900001",
+              "node": "4hhm2b6e172d",
+              "title": "widget pool delete pool9",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "3403a48a35db77582585a263d183510df33800a019dd9203b041e9ceebd6fc4d": {
+            "entry": "3403a48a35db77582585a263d183510df33800a019dd9203b041e9ceebd6fc4d",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@3403a48a35db77582585a263d183510df33800a019dd9203b041e9ceebd6fc4d",
+            "data": {
+              "document": "900001",
+              "node": "kum6qt856j5p",
+              "title": "检查审计日志",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80": {
+            "entry": "71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@71be1a7d0707c3056a242556ba68a0275c90f5ab0f734c876960e5ec042e1a80",
+            "data": {
+              "document": "900001",
+              "node": "ayuawv1pp4yi",
+              "title": "widget pool edit pool9",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287": {
+            "entry": "97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@97b10f3c1e167222bd1fecc129e451b7ff59cff72c50b31a4bbc9581235ec287",
+            "data": {
+              "document": "900001",
+              "node": "asb68jqldcrv",
+              "title": "检查审计日志",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234": {
+            "entry": "9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@9d65d2b8ae84f57c0f355d31c085c18d72381ffa6a5afc4a80dcd0d9e802e234",
+            "data": {
+              "document": "900001",
+              "node": "z7k38gpgg63g",
+              "title": "widget pool add pool9",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210": {
+            "entry": "a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@a57dd139df7717e49e37d3da9c826d14d16473c9a0cebb511e036813af6c6210",
+            "data": {
+              "document": "900001",
+              "node": "2ic28fwyw87e",
+              "title": "检查操作日志",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf": {
+            "entry": "a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@a5b8a241a9d1d75c2d36668a3235d95f1e896e009a906b02aaded8a833e387cf",
+            "data": {
+              "document": "900001",
+              "node": "i7z0nc2lzban",
+              "title": "no widget pool9",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60": {
+            "entry": "c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c451373ee7d9786073c3799433dd6aaa614b22265b53db5486570c8d37b3be60",
+            "data": {
+              "document": "900001",
+              "node": "2n02yzyizcnr",
+              "title": "clear widget pool9",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f": {
+            "entry": "c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c6ea2e8ae02bcd8668b3d39319ba22b751362cf85a4728309fb1eab72fed185f",
+            "data": {
+              "document": "900001",
+              "node": "ey1g1gojbl51",
+              "title": "query widget pool9",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          },
+          "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4": {
+            "entry": "e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4",
+            "kind": "case",
+            "statement": "",
+            "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@e2f5240623d5699bb45dae03c100d2b8ad45ee9ff90f316346e49382a0ad80d4",
+            "data": {
+              "document": "900001",
+              "node": "dqxos0o6t78n",
+              "title": "满配时的探测列表",
+              "path_labels": [
+                "合成按命令覆盖场景",
+                "其他"
+              ],
+              "commands": [
+                "/CLI/widget/probe"
+              ],
+              "command_identities": [
+                {
+                  "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                  "path": "/CLI/widget/probe",
+                  "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                  "parameters": []
+                }
+              ]
+            }
+          }
+        },
+        "cut_keys": [],
+        "truncated": false,
+        "skipped": 0,
+        "total_keys": 1,
+        "total_entries": 10,
+        "notes": []
+      },
+      "index_reference": "src:55dfc58926b3e40ed245fc20554bc2df11a2d9645853c8433e254a7038dbf26e",
+      "scope": [
+        "900001"
+      ],
+      "lock": {
+        "product": "synthetic-template",
+        "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+        "build": "Rel_MEADOW_10_6_8_1"
+      }
+    },
+    "expect": [
+      {
+        "verdict": "support",
+        "item": "900001",
+        "tier": "advisory"
+      }
+    ]
+  }
+}

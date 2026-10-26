@@ -1,0 +1,155 @@
+{
+  "id": "system_collision",
+  "source": "author",
+  "check": "traced",
+  "note": "Two named systems share a number; an unqualified case is not attributed to either",
+  "subject": {
+    "items": [
+      {
+        "id": "bugzilla:71061",
+        "location": "src:241de52b521dcd8744512cf804733708a5fc3d07d8639088e1ac980e976ba31c/json@1/p/entries/236f6c9be03f32c4ca2854a69d0f6b97090b535a5f0669c5c42da40c7e5078d3",
+        "fields": {
+          "bug": "71061",
+          "declaration_status": "declared",
+          "identity": "bugzilla:71061",
+          "collision_systems": [
+            "bugzilla",
+            "plm"
+          ],
+          "collision_references": [
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/236f6c9be03f@236f6c9be03f32c4ca2854a69d0f6b97090b535a5f0669c5c42da40c7e5078d3",
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/3a877997b6b1@3a877997b6b1cb8d3e6561b37a953c93355d6492c54f93d7b5a18838d2171ec6"
+          ],
+          "ambiguous_cases": [
+            {
+              "case": "C-ambiguous",
+              "title": "用例 C-ambiguous",
+              "document": "24001",
+              "reference": "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/cases/f977e18236ed@f977e18236edba9f16c51d6a46dce996ab0b1c2d9cc22929fdcef953cceae72b",
+              "defects": [],
+              "entry": "f977e18236edba9f16c51d6a46dce996ab0b1c2d9cc22929fdcef953cceae72b"
+            }
+          ],
+          "ids": [
+            "71061"
+          ],
+          "statuses": [
+            "fixed"
+          ],
+          "conflict": false,
+          "statement": "缺陷 71061 的合成摘要",
+          "references": [
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/236f6c9be03f@236f6c9be03f32c4ca2854a69d0f6b97090b535a5f0669c5c42da40c7e5078d3"
+          ],
+          "digests": [
+            "236f6c9be03f32c4ca2854a69d0f6b97090b535a5f0669c5c42da40c7e5078d3"
+          ],
+          "cases": [],
+          "systems": [
+            "bugzilla"
+          ]
+        }
+      },
+      {
+        "id": "plm:71061",
+        "location": "src:241de52b521dcd8744512cf804733708a5fc3d07d8639088e1ac980e976ba31c/json@1/p/entries/3a877997b6b1cb8d3e6561b37a953c93355d6492c54f93d7b5a18838d2171ec6",
+        "fields": {
+          "bug": "71061",
+          "declaration_status": "declared",
+          "identity": "plm:71061",
+          "collision_systems": [
+            "bugzilla",
+            "plm"
+          ],
+          "collision_references": [
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/236f6c9be03f@236f6c9be03f32c4ca2854a69d0f6b97090b535a5f0669c5c42da40c7e5078d3",
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/3a877997b6b1@3a877997b6b1cb8d3e6561b37a953c93355d6492c54f93d7b5a18838d2171ec6"
+          ],
+          "ambiguous_cases": [
+            {
+              "case": "C-ambiguous",
+              "title": "用例 C-ambiguous",
+              "document": "24001",
+              "reference": "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/cases/f977e18236ed@f977e18236edba9f16c51d6a46dce996ab0b1c2d9cc22929fdcef953cceae72b",
+              "defects": [],
+              "entry": "f977e18236edba9f16c51d6a46dce996ab0b1c2d9cc22929fdcef953cceae72b"
+            }
+          ],
+          "ids": [
+            "71061"
+          ],
+          "statuses": [
+            "fixed"
+          ],
+          "conflict": false,
+          "statement": "缺陷 71061 的合成摘要",
+          "references": [
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/3a877997b6b1@3a877997b6b1cb8d3e6561b37a953c93355d6492c54f93d7b5a18838d2171ec6"
+          ],
+          "digests": [
+            "3a877997b6b1cb8d3e6561b37a953c93355d6492c54f93d7b5a18838d2171ec6"
+          ],
+          "cases": [],
+          "systems": [
+            "plm"
+          ]
+        }
+      }
+    ],
+    "context": {
+      "product": "famx",
+      "names": [
+        "FAMX",
+        "FAMY"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "product": "famx",
+          "build": "Rel_FAMX_10_6_1_57",
+          "root": "67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591",
+          "statuses": [
+            "fixed",
+            "known"
+          ],
+          "views": {
+            "defects": {
+              "source": "src:241de52b521dcd8744512cf804733708a5fc3d07d8639088e1ac980e976ba31c",
+              "skipped": 0,
+              "truncated": false,
+              "total_keys": 1,
+              "total_entries": 2,
+              "listed_keys": 1,
+              "listed_entries": 2,
+              "missing": 0
+            },
+            "cases": {
+              "source": "src:0e0514f8e7bad8d7ec78d00f21cd78b43ebafbc9dad73344493a1eefd1f6be66",
+              "skipped": 0,
+              "truncated": false,
+              "total_keys": 1,
+              "total_entries": 1,
+              "listed_keys": 1,
+              "listed_entries": 1,
+              "missing": 0
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "traceability.id_collision",
+      "item": "bugzilla:71061",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "refute",
+      "code": "traceability.id_collision",
+      "item": "plm:71061",
+      "tier": "advisory"
+    }
+  ]
+}

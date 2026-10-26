@@ -1,0 +1,84 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "facets",
+      "role": "subject",
+      "description": "结构计数视图 by=line,module,has_expected,negative,test_type_status；同根标签视图可选；旧 vague_expected 语义布尔不作为判断依据；可选同根标签视图 by=line,module,tags,resource_empty,tag_valid，须由精确 resource 声明重产",
+      "accepts": [
+        "knowledge:facets"
+      ],
+      "required": true,
+      "many": true
+    },
+    {
+      "slot": "placement",
+      "role": "hint",
+      "description": "同产品同知识根的未归位计数：knowledge:facets:<产品>:<构建>?kind=case&by=commands；只披露不作判据",
+      "accepts": [
+        "knowledge:facets"
+      ],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "cases",
+      "role": "subject",
+      "description": "同根用例索引 knowledge:index:<产品>:<构建>?kind=case&key=case_location，供评审原件与用例身份关联；无此索引时所有用例未判断",
+      "accepts": [
+        "knowledge:index"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "reviews",
+      "role": "artifact_under_verification",
+      "description": "显式声明的已受理 case-review 结果 rec: 引用，可绑定多个分块；不接受上传 JSON 冒充受理结果。仅同根、同原件的期望质量主张参与计数",
+      "accepts": [
+        "application/json"
+      ],
+      "required": false,
+      "many": true
+    }
+  ],
+  "parameters": [
+    {
+      "name": "max_missing_ratio",
+      "description": "无期望结果的用例占比上限（默认 0.05）：分组超过它记提示档的不通过；等于不算超过",
+      "required": false,
+      "schema": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    {
+      "name": "max_vague_ratio",
+      "description": "只有含糊期望结果的用例占比上限（默认 0.05）：分组超过它记提示档的不通过；等于不算超过",
+      "required": false,
+      "schema": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    {
+      "name": "min_negative_ratio",
+      "description": "负面用例占比下限（默认 0.02）：分组低于它记提示档的不通过；等于不算低于",
+      "required": false,
+      "schema": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    }
+  ],
+  "product": {
+    "catalogs": []
+  },
+  "subject": "facets",
+  "projection": {
+    "module": "functions/project.ts"
+  }
+}

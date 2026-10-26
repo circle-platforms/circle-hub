@@ -1,0 +1,358 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "plan",
+      "name": "执行计划",
+      "description": "客户端填写受限结构：台架、空 blocks、原名步骤（args 和 keywords）、带逐字引文和 after 步骤号的期望、地址替换表。Hub 只核验槽位，不生成内容；满足后由客户端脚本生成工作簿（任务 2）。步骤自身承担前置与清理：断言要观察的记录先在前部创建；每条改配置的步骤在末尾清理段有逆序对应的逆操作（查询类不需要）；改过地址的接口在清理段恢复原地址。 清理段使用 cleanup:true 显式标记并位于 steps 末尾；对象 ordinal 超过冻结同类型设备容量时整卷拒绝。",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "judgment",
+      "checks": [],
+      "error_handling": []
+    },
+    {
+      "key": "contract_methods",
+      "name": "步骤调用符合合约",
+      "description": "设计 bac0083e：allowed 是启用组合中已开放的子集，每个参数都须有四种角色之一及对应核验；未开的组合换用已开放组合。缺角色的扩展由集成者另开页补角色和检查、重新发布后新运行；模型不能编辑冻结配置；派发方式必须有包内 dispatch-roles 声明，且每个已配置角色均受支持；没有角色可覆盖的组合保持未开，不能将动作字符串冒充 shell。",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "contract_shape"
+      ],
+      "error_handling": [
+        {
+          "code": "case-compile.slots_invalid",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.method_forbidden",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.param_arity",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.param_keyword",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.param_sensitive",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.param_value",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.device_command_denied",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.host_command_denied",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.expect_without_source",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.assertion_in_steps",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.param_unassigned",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.wait_value",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.host_shell_dynamic",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.method_not_allowed",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    },
+    {
+      "key": "bed_addresses",
+      "name": "字面地址对得上台架",
+      "description": "决定 35：每个主机字面地址属于本台架任一设备接口或本血缘分配地址；设备命令可以出现本台架其他设备的地址。台架外原地址只能经有原文出处的一一对应 replacements 换入，槽位写最终文字，不由 Hub 改写",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "bed_addresses"
+      ],
+      "error_handling": [
+        {
+          "code": "case-compile.slots_invalid",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.bed_unknown",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.address_off_bed",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.environment_unreachable",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.replacement_invalid",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.replacement_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.expect_without_source",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.param_unassigned",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.address_notation",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.method_not_allowed",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    },
+    {
+      "key": "commands_known",
+      "name": "命令在目标构建的命令目录里",
+      "description": "执行计划里的命令行在目标构建的命令目录（commands@1）里存在，参数类型和取值在范围内（catalog@1 解释器核对） 完整解析后的身份须在合约 command_scope 与可选 commands 的交集中；作者命令按定义身份计次数，可以改参数，不可以删命令，缺失次数留作义务；改配置命令必须有同设备、逆序的声明清理操作。",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "commands_catalog"
+      ],
+      "error_handling": [
+        {
+          "code": "core.catalog.not_member",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.arity_mismatch",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.param_out_of_range",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.param_type_mismatch",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    },
+    {
+      "key": "expected_grounded",
+      "name": "期望结果有逐字来源",
+      "description": "默认期望文字逐字来自引文；显式 model_judgment 的设备可观察文字由模型选择，Hub 核本用例期望节点引文、after 和取值规则，保留模型、理由并以判断为前提。期望优先写成可机械核对的输出（应答状态码、应答条数、表项计数、关键行存在与否）：查询类断言前必须在计划前部先建好被查记录（前置补齐），不得把查询不存在的记录当成功；作者原文的描述性期望仍以 quote 逐字保留作依据。确实无法机械化时才用 model_judgment 并在 rationale 写明原因。",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "expected_sources",
+        "expected_quotes"
+      ],
+      "error_handling": [
+        {
+          "code": "case-compile.slots_invalid",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.expect_without_source",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.expect_not_in_quote",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.expect_after",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "QUOTE_MISMATCH",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "REFERENCE_UNRESOLVED",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.expect_value",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.expect_not_in_criterion",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    },
+    {
+      "key": "workbook_verified",
+      "name": "工作簿原字节核验",
+      "description": "客户端工作簿由独立读取器解释，符合运行器布局、原合约和本轮配置，再从槽位重算字节与绑定原件摘要相同才支持；缺少文件时自动转客户端生成并开始后继核验运行",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "workbook_verified",
+        "commands_catalog",
+        "expected_quotes",
+        "dispatch_policy"
+      ],
+      "error_handling": [
+        {
+          "code": "case-compile.workbook_invalid",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.not_member",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.arity_mismatch",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.param_out_of_range",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.param_type_mismatch",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "QUOTE_MISMATCH",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "REFERENCE_UNRESOLVED",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    }
+  ],
+  "effects": [
+    {
+      "id": "submit_verified_workbook",
+      "resource_kind": "executor",
+      "action": "submit",
+      "effect_class": "job",
+      "parameters": {
+        "policy": "policies/dispatch.json",
+        "check": "dispatch_policy"
+      },
+      "release": {
+        "requirements": [
+          "plan",
+          "contract_methods",
+          "bed_addresses",
+          "commands_known",
+          "expected_grounded",
+          "workbook_verified"
+        ],
+        "artifact": "workbook_verified"
+      },
+      "trigger": "hub_template",
+      "budget": {
+        "count": 1,
+        "duration_ms": {
+          "executor_max_run_ms": true
+        }
+      },
+      "deadline_ms": 86400000,
+      "optional": false,
+      "policy_checks": [
+        "dispatch_policy"
+      ]
+    }
+  ]
+}

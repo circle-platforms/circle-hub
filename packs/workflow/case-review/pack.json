@@ -1,0 +1,315 @@
+{
+  "schema": "pack@1",
+  "id": "case-review",
+  "version": "1.1.24",
+  "kind": "workflow",
+  "title": "测试脑图评审（初评）",
+  "description": "按团队的评审方法（test-list-review）初评一份测试脑图：Hub 判定字面问题、命令与目录、引文与位置，模型写七类评审发现和 P0-P7 等级；结论由复核任务包 case-review-verify 独立复核",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "ae3efea745fde9de6f2f939975cf8548faf719991b453d3b1eb2593992fc33ce",
+      "size": 12807
+    },
+    {
+      "path": "checks.json",
+      "sha256": "afc5bde3f02a7b7e41df7ca1282c70e33558c2323d5152d233e3708a3d867ecf",
+      "size": 4132
+    },
+    {
+      "path": "examples/start-run.json",
+      "sha256": "55f3233e460718ed07ea93942f075a4b7efbdf351e3028a3173ca6e1b5ba1638",
+      "size": 556
+    },
+    {
+      "path": "examples/submission.json",
+      "sha256": "1078c35072fecfbdc17a2f640e90be8b0eee6230d0ae969949ae7bc2ea3807af",
+      "size": 1788
+    },
+    {
+      "path": "examples/submit-result.json",
+      "sha256": "1139e527f69a0b0df33acc6006aa405ca1b9bc0199b3bec5f33bdf66ee7c099d",
+      "size": 1434
+    },
+    {
+      "path": "functions/checks.ts",
+      "sha256": "f0dc86b51c2cb6d274b5024b4af6207a0310cd5d8f80a93ce7bcd351e147937d",
+      "size": 10754
+    },
+    {
+      "path": "functions/common.ts",
+      "sha256": "d5101160a09a43ffa0c4c02a69cd45bd76d166aa428500e404d59b9f902a49b0",
+      "size": 4131
+    },
+    {
+      "path": "functions/expected-quality.ts",
+      "sha256": "716ee19d96ab6e1e69543aa27cb896aab25dc3ab0ce14c625e2fc79873800a34",
+      "size": 3444
+    },
+    {
+      "path": "functions/expected-sources.ts",
+      "sha256": "40d3d20e420c8272bc4a4db2d87b78172036228994e2f30550e7684753e0151b",
+      "size": 13451
+    },
+    {
+      "path": "functions/expected.ts",
+      "sha256": "76c3bc9b788faaadc2c0499a45463680d1a51fe47ca3873d8caca43cdaa28246",
+      "size": 5836
+    },
+    {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "2645a7b984a70645f5fb187bdb284c96022e123a614dc279fd6f18a36c263cac",
+      "size": 4642
+    },
+    {
+      "path": "functions/lines.ts",
+      "sha256": "23e60be80031d29d4892b4ffaf8b111a3418a90a189ce96bfafae7387b36f48d",
+      "size": 2865
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "e9eaac8a49ed8c250d234463cb926466d6fe56c1add35e6d3230c7d98275c897",
+      "size": 27685
+    },
+    {
+      "path": "functions/projection.ts",
+      "sha256": "f9b6c9b30e82f7053f45a3695a80eea3db3dd3337a67abc15f8d481fd5a97500",
+      "size": 20778
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "8fa9207fa246910a793fc4be8ba0bf1ea9f92fc8f1a847b9bc6c1542112d6ad9",
+      "size": 6322
+    },
+    {
+      "path": "functions/subjects.ts",
+      "sha256": "ec212f7032b4ba0aa09638b3ab2700e4ce763f16780a8fe9a6f3a851b77d74cc",
+      "size": 3874
+    },
+    {
+      "path": "functions/tags.ts",
+      "sha256": "178e954ef4d0918b5b6597248da3c2a25c2a2f1761d25179ef8fa503a03f8e60",
+      "size": 1686
+    },
+    {
+      "path": "functions/template-coverage.ts",
+      "sha256": "3cb4fbaf1b0996d1b64bc3c0398503d2c51a47435518e85172df9e04549eccdf",
+      "size": 5549
+    },
+    {
+      "path": "functions/text.ts",
+      "sha256": "99a536dad7da8552b82a759abfc78f7308b06796aabc1818e23fb99aab61ab13",
+      "size": 6150
+    },
+    {
+      "path": "functions/types.ts",
+      "sha256": "800558cf66086af6af1dbcf4edff315484f3b6d6ad02dcf3c322278a11babb83",
+      "size": 12339
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "cc72ecfa3207eae62b130fbe3e5d422733052437c232fba5f344806cb6a68286",
+      "size": 4805
+    },
+    {
+      "path": "samples/negative/cited_negative_case.json",
+      "sha256": "98bf21157dc5c14fcd9db16c7df274467f3031a7ce21a0d45a034261a45f8456",
+      "size": 1514
+    },
+    {
+      "path": "samples/negative/cited_out_of_range.json",
+      "sha256": "eff0e03f4d0ef39748bb1568575284246b9a906a2753b6cb4422549c3e1d0105",
+      "size": 1525
+    },
+    {
+      "path": "samples/negative/claims_contradicted.json",
+      "sha256": "915242d7722dc915dc97d294e72676ffabc57b65539a2bbdd6a17604f6d4535e",
+      "size": 1533
+    },
+    {
+      "path": "samples/negative/expected_quality_changed.json",
+      "sha256": "3ff4d1208523fd9a0ce9ae71dba4ea9bd6c90aa824056a594642f5eeea2b2733",
+      "size": 1494
+    },
+    {
+      "path": "samples/negative/negative_command_missing.json",
+      "sha256": "e5804f97be5d35511077fad67974df2bc2430ca1ecdb99b3999c2172cf15803f",
+      "size": 1495
+    },
+    {
+      "path": "samples/negative/node_ids_shared.json",
+      "sha256": "24a02128bb93f5c72583fa4e8f654280f8f0f69c74e9f2ccf369a2fee7c7954a",
+      "size": 3686
+    },
+    {
+      "path": "samples/negative/quotes_changed.json",
+      "sha256": "9d075aacdfa877773a3a6e640a5d1f00f6213646a7aaa1c6a5c9575c6b148fab",
+      "size": 1782
+    },
+    {
+      "path": "samples/negative/scan_out_of_range.json",
+      "sha256": "ff55e5d9ce4e7b3f971ecca23fc270c79ac88e16b106167b37cb85fec9927acf",
+      "size": 1555
+    },
+    {
+      "path": "samples/negative/sources_cited_line_variant.json",
+      "sha256": "8499db8bcc2a7ff988ff6399b373e0f3ad2a2e357f5de6601dce272224f6d933",
+      "size": 2358
+    },
+    {
+      "path": "samples/negative/sources_command_not_in_case.json",
+      "sha256": "8b0222de959e6e06f5693be346d1c4f2a9910c6616ae12fd1d1841fca2145ce3",
+      "size": 2502
+    },
+    {
+      "path": "samples/negative/sources_hint_only.json",
+      "sha256": "7f0749ef06cf5a2306f0c8adcf468dff671500726aea09a44cc3c7f0859aff54",
+      "size": 2755
+    },
+    {
+      "path": "samples/negative/sources_quote_missing.json",
+      "sha256": "070aedab84c3ac3574767cd90b0f991fb1c716dabdc0e312571f4ed020f3481e",
+      "size": 1866
+    },
+    {
+      "path": "samples/negative/structure_defects.json",
+      "sha256": "0a84bf492642d678e082894457cdaceea7027e786ca2b0de2b88b6139e4e94c2",
+      "size": 5390
+    },
+    {
+      "path": "samples/negative/structure_priority.json",
+      "sha256": "456a5713e1d21eefc375b1a3544cca4ed9ba7e9220216f8d7ba566357d3d7aab",
+      "size": 3644
+    },
+    {
+      "path": "samples/negative/tags_variant.json",
+      "sha256": "9d104adb4dda6f22415b0dc72925b8b4b009cb4dcc9e088ece92dcf656c3e845",
+      "size": 7248
+    },
+    {
+      "path": "samples/positive/cited_none.json",
+      "sha256": "ec3f2f49feb339b8da6cf056195a5cf72203376ab492b1500151bbf3098fa658",
+      "size": 1392
+    },
+    {
+      "path": "samples/positive/cited_not_in_case.json",
+      "sha256": "a5f9644d1c7d4ad1f192ff5266471f71f00544b63a9f9b84a64d95e990baa103",
+      "size": 1546
+    },
+    {
+      "path": "samples/positive/cited_valid.json",
+      "sha256": "e7ceff9cbc6dc21eac866289c63a473dc9c6bc66433148f498fcbab917f17044",
+      "size": 1455
+    },
+    {
+      "path": "samples/positive/claims_agree.json",
+      "sha256": "9371ba92c42566b1045bf968c7c0af6ce0f8d2efac825aac57f5ad1453d2f096",
+      "size": 1620
+    },
+    {
+      "path": "samples/positive/expected_quality_exact.json",
+      "sha256": "daa49b6147d090653480a432b562fc9e67a8021f097f7372cde5c10a6be7f543",
+      "size": 1459
+    },
+    {
+      "path": "samples/positive/negative_command_present.json",
+      "sha256": "ff539d9eb13d9263d953f65def2db22f641781663918667cbbe006bc10346d71",
+      "size": 1518
+    },
+    {
+      "path": "samples/positive/node_ids_unique.json",
+      "sha256": "8198d0ac51a60a93aa33e8e92af3ec21dd5efc0ab6b656ec9f00c960a5cc363c",
+      "size": 3586
+    },
+    {
+      "path": "samples/positive/quotes_verbatim.json",
+      "sha256": "6517aa54b17ed1e1ff81a09cc3944f19027112b2153f1950bac06d3b1d4f74ba",
+      "size": 1749
+    },
+    {
+      "path": "samples/positive/scan_valid.json",
+      "sha256": "57eb329fc992e977328ba1cf2bbded8f8ba914dd07c36e50579723e917782a95",
+      "size": 1517
+    },
+    {
+      "path": "samples/positive/sources_cited_line.json",
+      "sha256": "e6f3c0abf2e6592c2e443e1606dc6ef8d8e067c2eed8704f8318a77479b16f6d",
+      "size": 2418
+    },
+    {
+      "path": "samples/positive/sources_product.json",
+      "sha256": "abfe37afcfbb33198288bc46d2d12e5029824eeb13723c8a8cc252d1e201158e",
+      "size": 2203
+    },
+    {
+      "path": "samples/positive/structure_clean.json",
+      "sha256": "029d0561ca47ec04b1608be906323fde166fd91f12d5c9decec0a51977014145",
+      "size": 3541
+    },
+    {
+      "path": "samples/positive/tags_consistent.json",
+      "sha256": "c6cdbad7383ca27a02abfe600e67f22826169cf8eada9461e56720963a73504a",
+      "size": 3588
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "56cde8283ee8674a8d450079b11e64a91c76900ecffc9b1195fa73d5d5870491",
+      "size": 3961
+    },
+    {
+      "path": "tables/catalog.json",
+      "sha256": "6d8c86283195a355e1694ecc12b66aa7d54600608b581750f77aaedcceee4a97",
+      "size": 1335
+    },
+    {
+      "path": "tables/cited-commands.json",
+      "sha256": "43b92d0d5f164dd24180fd438d4ec9cb533edcf5d65ce1af1176a5a3019c86fb",
+      "size": 1673
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "50e9d4d5c0d3e717e4600df19a5ecf06f21a2f1320938f2df31a297222e1253e",
+      "size": 12244
+    },
+    {
+      "path": "tables/command-claims.json",
+      "sha256": "a4ba69d4443fec5b6bf3ba7bc3a1c36d1c6bf21ad3b8fd1e96a0c338aaa82d87",
+      "size": 1300
+    },
+    {
+      "path": "tables/findings-quotes.json",
+      "sha256": "17812479ae6fbb944b571f407333c1a0956970f0cb7f4842cb5866c4d12449bf",
+      "size": 571
+    },
+    {
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
+    },
+    {
+      "path": "tables/structure-node-ids.json",
+      "sha256": "f8de2dd3f8eef465a695584c53483f13f3658add5bcda617faa98751ee1201f5",
+      "size": 841
+    },
+    {
+      "path": "tables/structure.json",
+      "sha256": "73c92a112724c0baae690f4fd2a8ea0f8f9a4347b4a3d7df00fb8e62cf50d27c",
+      "size": 1633
+    },
+    {
+      "path": "tables/template-v3-coverage.json",
+      "sha256": "1978a8d80e80623e9e80085202810c7905aeb4bc75370e59a17655d620e63484",
+      "size": 901
+    },
+    {
+      "path": "tables/template-v3.json",
+      "sha256": "14d6e7ea0fded942bf4aa6fb9d9a84a22ad5ea33bd918e8b410d2a2c6c4c2d74",
+      "size": 4820
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "ce5d1815ed859e774b5ef15e427426da5cf7754806255c61dcc830487a53b33d",
+      "size": 5953
+    }
+  ]
+}

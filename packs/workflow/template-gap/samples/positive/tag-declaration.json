@@ -1,0 +1,27 @@
+{
+  "id": "tag_declaration_positive",
+  "source": "author",
+  "check": "tag_declarations",
+  "note": "闭集原文完全相等，大小写不同属于未声明",
+  "subject": {
+    "item": "synthetic-document",
+    "fields": {
+      "case_resources": [
+        {
+          "case": "synthetic-case",
+          "present": true,
+          "resource": [
+            "functional"
+          ]
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "synthetic-document",
+      "tier": "advisory"
+    }
+  ]
+}

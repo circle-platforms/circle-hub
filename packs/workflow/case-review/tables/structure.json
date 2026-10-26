@@ -1,0 +1,23 @@
+{
+  "schema": "structure@1",
+  "origin": "决定：case-review 工作流包 literal 要求项的字面检查（docs/hub-r4-architecture.md 第 6 节：重复的行、空字段、错别字、字段格式不一致）；被判对象由 functions/subjects.ts 的 structureSubject 产出（{ subjects }，运行的全部条目）",
+  "description": "每个用例：标题不为空；优先级是 1 到 3 的整数；至少一个不为空的标签；至少一个期望结果，而且都不为空（带步骤的用例每步各有期望结果，条数不限）；同一文档同一路径下没有内容完全相同的用例（标题、步骤、期望结果和前置条件都相同才算重复，只是标题相同不算）",
+  "tier": "blocking",
+  "basis": "要求项 literal：用例的字面问题（空字段、写错的取值、重复的用例）作为作者输入的问题交付，不拒收",
+  "nodes": "$.subjects[*]",
+  "item": "/id",
+  "location": "/location",
+  "rules": [
+    {
+      "fields": [
+        { "path": "/title", "required": true, "type": "string" },
+        { "path": "/priority", "required": true, "type": "integer", "minimum": 1, "maximum": 3 },
+        { "path": "/tags", "required": true, "type": "array", "minItems": 1, "items": { "required": true, "type": "string" } },
+        { "path": "/expected", "required": true, "type": "array", "minItems": 1, "items": { "required": true, "type": "string" } }
+      ],
+      "unique": [
+        { "key": ["/title", "/content"], "within": "group", "group": ["/group"], "match": { "unicode": "nfkc", "case": "insensitive", "whitespace": "collapse" } }
+      ]
+    }
+  ]
+}

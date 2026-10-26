@@ -1,0 +1,610 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "product@1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "variables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "schema": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "default": {}
+        },
+        "required": [
+          "name",
+          "description",
+          "schema",
+          "default"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "applicability": {
+      "description": "Published applicability-domain declarations; values come from the root variable snapshot",
+      "type": "object",
+      "properties": {
+        "grammar": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+        },
+        "closed_sets": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "models",
+              "platforms",
+              "components",
+              "licenses",
+              "deployment_forms"
+            ]
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "build_validator": {
+          "type": "object",
+          "properties": {
+            "module": {
+              "type": "string",
+              "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+            },
+            "export": {
+              "type": "string",
+              "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+            }
+          },
+          "required": [
+            "module"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "grammar",
+        "closed_sets"
+      ],
+      "additionalProperties": false
+    },
+    "names": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "every name of the product; each resolves to this line"
+    },
+    "sync": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "pages read first, for example the index page of a build site"
+        },
+        "plan": {
+          "type": "object",
+          "properties": {
+            "module": {
+              "type": "string",
+              "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+            },
+            "export": {
+              "type": "string",
+              "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+            }
+          },
+          "required": [
+            "module"
+          ],
+          "additionalProperties": false,
+          "description": "SyncPlanInput -> SyncPlanOutput; walks the pages and lists the builds worth knowing"
+        },
+        "options": {
+          "description": "defaults handed to the plan function, for example whether platform or customer branches are included",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "max_rounds": {
+          "description": "rounds of the plan function, default 6",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "max_reads": {
+          "description": "pages read in one sync, default 300",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000
+        }
+      },
+      "required": [
+        "start",
+        "plan"
+      ],
+      "additionalProperties": false
+    },
+    "select_build": {
+      "description": "SelectBuildInput -> SelectBuildOutput; without it the newest released build of the line is chosen",
+      "type": "object",
+      "properties": {
+        "module": {
+          "type": "string",
+          "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+        },
+        "export": {
+          "type": "string",
+          "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+        }
+      },
+      "required": [
+        "module"
+      ],
+      "additionalProperties": false
+    },
+    "links": {
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,40}$"
+          },
+          "field": {
+            "description": "Data field holding ordinary literals; mutually exclusive with alternatives_field",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,40}$"
+          },
+          "alternatives_field": {
+            "description": "Data field holding groups {primary: string, alternatives: nonempty string[]}; exact primary definition wins, otherwise each alternative is matched exactly",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,40}$"
+          },
+          "namespace": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+            "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+          },
+          "match": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "longest_prefix"
+            ]
+          },
+          "entry_kind": {
+            "description": "required by longest-prefix matching; optional restriction for exact matching",
+            "type": "string",
+            "enum": [
+              "definition",
+              "behaviour",
+              "case",
+              "defect",
+              "observation"
+            ]
+          },
+          "target_producers": {
+            "minItems": 1,
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "source_producers": {
+            "minItems": 1,
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "unmatched": {
+            "description": "What a literal this rule cannot match is: drift, a fact of the run (default), or mention, the author's marked text kept verbatim and linked only on complete equality (integrator decision 60, 2026-10-25: prose claims no command, so it creates no drift)",
+            "type": "string",
+            "enum": [
+              "drift",
+              "mention"
+            ]
+          },
+          "normalize": {
+            "type": "object",
+            "properties": {
+              "lowercase": {
+                "type": "boolean"
+              },
+              "nfc": {
+                "type": "boolean"
+              },
+              "nfkc": {
+                "type": "boolean"
+              },
+              "strip_nul": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "namespace",
+          "match"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "catalogs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$",
+            "description": "catalog@major, the name workflow packs require"
+          },
+          "entry_kind": {
+            "type": "string",
+            "enum": [
+              "definition",
+              "behaviour",
+              "case",
+              "defect",
+              "observation"
+            ],
+            "description": "kind of the knowledge entries that are its members"
+          },
+          "producer": {
+            "description": "only entries this producer of the pack produced are members; every producer of the kind when absent",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "declared complete for the scope of the root (C07 R[0]); only then is absence a fact rather than unknown"
+          },
+          "case_sensitive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "entry_kind",
+          "complete",
+          "case_sensitive"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "producers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "unversioned": {
+            "description": "only produce the product-wide root; absent or false produces build roots",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "function": {
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+              },
+              "export": {
+                "type": "string",
+                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+              }
+            },
+            "required": [
+              "module"
+            ],
+            "additionalProperties": false
+          },
+          "inputs": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "parser": {
+                      "description": "Explicit core parser for this source or every member of this list; the observed server media type remains unchanged",
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                    },
+                    "many": {
+                      "description": "the role holds a list of external objects; the function is called once per batch of them and its outputs are concatenated, so an entry must not depend on another batch",
+                      "type": "boolean"
+                    },
+                    "batch": {
+                      "description": "objects per call for a list role, default 50",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 200
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "external": {
+                      "type": "string"
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "parser": {
+                      "description": "Explicit core parser; retain the observed server media type",
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                    }
+                  },
+                  "required": [
+                    "external"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "description": "slot name -> where it is read from, for every build whose root is produced"
+          },
+          "params": {
+            "description": "fixed parameters handed to the function",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "placement": {
+            "description": "whether this producer's path-less entries may be handed to the bot for placement: code_only (default) keeps them unplaced at the root; judgment_allowed means the Hub offers them to the bot for placement proposals and verifies each proposal with deterministic rules (the path exists, quotes are verbatim from the original, nothing beyond what the producer declared). The Hub calls no model and never places entries itself; the bot flow is not implemented yet",
+            "type": "string",
+            "enum": [
+              "code_only",
+              "judgment_allowed"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "function",
+          "inputs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "command_policy": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "command-policy@1"
+        },
+        "read_only": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+            "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+          }
+        },
+        "inverse_rules": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source_prefix": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+              },
+              "inverse_prefix": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+              },
+              "leading_parameters": {
+                "description": "When absent, require a unique inverse formed by a leading parameter count accepted by the locked inverse signature",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 128
+              }
+            },
+            "required": [
+              "source_prefix",
+              "inverse_prefix"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "inverse_alternatives": {
+          "description": "Pairs of enum alternative values of one signature that are each other's inverse (on/off, enable/disable); decided on the locked tree's declared enum structure, never on free text",
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              {
+                "type": "string",
+                "pattern": "\\S"
+              }
+            ],
+            "items": false,
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "read_only",
+        "inverse_rules"
+      ],
+      "additionalProperties": false
+    },
+    "feeding": {
+      "description": "Native-source projection and declared grammar callbacks for feeding; no Hub business parser",
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "object",
+          "properties": {
+            "module": {
+              "type": "string",
+              "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+            },
+            "export": {
+              "type": "string",
+              "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+            }
+          },
+          "required": [
+            "module"
+          ],
+          "additionalProperties": false
+        },
+        "normalize_line": {
+          "type": "object",
+          "properties": {
+            "module": {
+              "type": "string",
+              "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+            },
+            "export": {
+              "type": "string",
+              "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+            }
+          },
+          "required": [
+            "module"
+          ],
+          "additionalProperties": false
+        },
+        "verify_command": {
+          "type": "object",
+          "properties": {
+            "module": {
+              "type": "string",
+              "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+            },
+            "export": {
+              "type": "string",
+              "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+            }
+          },
+          "required": [
+            "module"
+          ],
+          "additionalProperties": false
+        },
+        "classifications": {
+          "type": "object",
+          "properties": {
+            "module": {
+              "type": "string",
+              "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+            },
+            "export": {
+              "type": "string",
+              "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+            }
+          },
+          "required": [
+            "module"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "title",
+    "names",
+    "catalogs",
+    "producers"
+  ],
+  "additionalProperties": false
+}

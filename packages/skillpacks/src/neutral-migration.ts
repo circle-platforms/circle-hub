@@ -1,3 +1,0 @@
-import type {Migration} from '../../storage/src/index.ts';
-export const neutralMigration:Migration={version:33,name:'Retain neutral manifests beside original skill bytes',sql:`ALTER TABLE skill_packages ADD COLUMN neutral_manifest jsonb;`};
-export const compatibilityMigration:Migration={version:35,name:'Separate observed harness compatibility from frozen manifests',sql:`CREATE TABLE harness_compatibility(asset_id text NOT NULL REFERENCES assets,version text NOT NULL,harness text NOT NULL,runtime_commit text NOT NULL,evidence_id text NOT NULL,task_id text NOT NULL REFERENCES tasks,created_at timestamptz NOT NULL DEFAULT clock_timestamp(),PRIMARY KEY(asset_id,version,harness,runtime_commit));`};

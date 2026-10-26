@@ -8,8 +8,21 @@
     "allowImportingTsExtensions": true,
     "erasableSyntaxOnly": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "packs/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
-  "exclude": ["foundation", "references", "node_modules"]
+  "include": [
+    "contracts/**/*.ts",
+    "hub/**/*.ts",
+    "packs/**/*.ts",
+    "tests/**/*.ts",
+    "tools/**/*.ts",
+    "scripts/**/*.ts"
+  ],
+  "exclude": [
+    "foundation",
+    "references",
+    "node_modules"
+  ]
 }

@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "concurrency": {
+      "description": "Optional lower in-flight limit for this plan; the resource limit still applies",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "requests": {
+      "maxItems": 1000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+          },
+          "route": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+          },
+          "params": {
+            "description": "fills the path template; a {name*} value may contain /",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          "path": {
+            "description": "a path relative to the base URL, as a response path gives it",
+            "type": "string",
+            "maxLength": 4096
+          },
+          "href": {
+            "description": "a link as found in a response, resolved against the response named by against (default the base URL)",
+            "type": "string",
+            "maxLength": 4096
+          },
+          "against": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+          },
+          "query": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          },
+          "body": {}
+        },
+        "required": [
+          "key",
+          "route"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reads": {
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "external": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
+          },
+          "refresh": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "external"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "done": {
+      "type": "boolean",
+      "description": "true: execute these requests and reads, then stop; false: call the planner again with their answers"
+    },
+    "original": {
+      "description": "the response that is the object as received; default the first request of round 1",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+    }
+  },
+  "required": [
+    "requests",
+    "done"
+  ],
+  "additionalProperties": false
+}

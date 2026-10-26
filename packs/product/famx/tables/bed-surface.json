@@ -1,0 +1,47 @@
+{
+  "schema": "bed-surface@1",
+  "probes": [
+    {
+      "id": "addresses",
+      "seat": "synthetic-0",
+      "parser": "row_table",
+      "fields": [
+        { "name": "address", "pointer": "/address", "role": "residue", "from": "interfaces" }
+      ],
+      "empty": { "kind": "header_only", "header": "/header", "rows": "/rows" },
+      "cleanups": [
+        {
+          "residue": "address",
+          "command": "synthetic-clear-row",
+          "granularity": "row",
+          "confirm": "none",
+          "channel": "single_shot"
+        }
+      ]
+    },
+    {
+      "id": "sessions",
+      "seat": "synthetic-0",
+      "parser": "row_table",
+      "fields": [
+        { "name": "name", "pointer": "/name", "role": "residue", "from": "values", "values": [] }
+      ],
+      "empty": { "kind": "header_only", "header": "/header", "rows": "/rows" },
+      "cleanups": [
+        {
+          "residue": "name",
+          "command": "synthetic-confirm-clear",
+          "granularity": "table",
+          "confirm": "interactive",
+          "channel": "single_shot",
+          "exit": {
+            "action": "在座位上确认后执行声明的清理命令",
+            "object": "探针 sessions",
+            "owner": "合成管理员",
+            "deadline": "重新派发之前"
+          }
+        }
+      ]
+    }
+  ]
+}

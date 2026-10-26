@@ -1,1 +1,29 @@
-../apps/server/src/cli.ts
+#!/usr/bin/env node
+// circle-hub command. Refuses retired CIRCLE_SERVER_* names first (hub/config/guard.ts, or the platform's equivalent
+// guard when that package is absent), then runs the server CLI (hub/server/cli.ts) when this checkout has one,
+// otherwise the platform commands alone. Both CLIs export main(argv) and return the exit code; a CLI module without
+// main is an error, never a silent success.
+import { existsSync } from 'node:fs';
+
+const local = (path) => new URL(`../${path}`, import.meta.url);
+try {
+  if (existsSync(local('hub/config/guard.ts'))) await import(local('hub/config/guard.ts').href);
+  else (await import(local('hub/platform/environment.ts').href)).assertHubEnvironment(process.env);
+} catch (error) {
+  process.stderr.write(`错误：${error.message}\n${error.hint ? `处理：${error.hint}\n` : ''}`);
+  process.exit(1);
+}
+// On the machine that hosts a deployment an operator command needs no exported variables: the deployment settings give the
+// CIRCLE_HUB_* values the service has, for every name the shell has not set (hub/platform/operator-env.ts).
+if (existsSync(local('hub/platform/operator-env.ts'))) {
+  const { operatorEnvironment } = await import(local('hub/platform/operator-env.ts').href);
+  for (const [variable, value] of Object.entries(await operatorEnvironment(process.env))) process.env[variable] ??= value;
+}
+const name = existsSync(local('hub/server/cli.ts')) ? 'hub/server/cli.ts' : 'hub/platform/cli.ts';
+const cli = await import(local(name).href);
+if (typeof cli.main !== 'function') {
+  process.stderr.write(`错误：${name} 没有导出 main(argv)，什么也没有执行\n处理：检查这个发布是否完整\n`);
+  process.exit(1);
+}
+const code = await cli.main(process.argv.slice(2));
+process.exitCode = Number.isInteger(code) ? code : 1;

@@ -1,0 +1,123 @@
+{
+  "id": "dispositions_broken",
+  "source": "author",
+  "check": "dispositions",
+  "note": "一条处置指向别的条目的发现、另一条没有引文、新发现没有写探针；一条初评发现没有处置",
+  "subject": {
+    "item": "sample:c1",
+    "label": "设置池 c1 的探测间隔",
+    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+    "fields": {
+      "nodeId": "c1",
+      "path": [
+        "示例文档",
+        "池管理"
+      ],
+      "title": "设置池 c1 的探测间隔",
+      "draft_partition": "delivered",
+      "draft_findings": [
+        {
+          "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/0/requirements/2/claims/0",
+          "code": "coverage_gap",
+          "rank": "major",
+          "text": "初评的发现",
+          "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+          "quotes": [
+            {
+              "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+              "text": "设置探测间隔"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/0/requirements/2/claims/1",
+          "code": "literal_issue",
+          "rank": "minor",
+          "text": "初评的发现",
+          "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+          "quotes": [
+            {
+              "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+              "text": "设置探测间隔"
+            }
+          ],
+          "commands": []
+        }
+      ],
+      "draft_level": {
+        "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/cross_item/3",
+        "rank": "P3",
+        "text": "等级理由：覆盖全部功能细节，有一些反向用例"
+      }
+    },
+    "slots": {
+      "verification": [
+        {
+          "text": "复核方的处置",
+          "code": "refuted",
+          "rank": "major",
+          "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+          "quotes": [
+            {
+              "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1e",
+              "text": "显示的探测间隔与设置一致"
+            }
+          ],
+          "data": {
+            "finding": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/1/requirements/2/claims/0"
+          }
+        },
+        {
+          "text": "复核方的处置",
+          "code": "verified",
+          "rank": "major",
+          "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+          "quotes": [],
+          "data": {
+            "finding": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/0/requirements/2/claims/0"
+          }
+        },
+        {
+          "text": "初评遗漏：缺少探测间隔为 0 的反向用例",
+          "code": "new_finding",
+          "rank": "minor",
+          "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+          "quotes": [
+            {
+              "reference": "src:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/markdown@1/s/interval",
+              "text": "取值范围 1-300 秒"
+            }
+          ],
+          "data": {
+            "probe": "missing"
+          }
+        }
+      ]
+    },
+    "evidence": []
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review-verify.finding_unknown",
+      "item": "sample:c1",
+      "tier": "blocking"
+    },
+    {
+      "verdict": "refute",
+      "code": "case-review-verify.quote_missing",
+      "item": "sample:c1"
+    },
+    {
+      "verdict": "refute",
+      "code": "case-review-verify.probe_missing",
+      "item": "sample:c1"
+    },
+    {
+      "verdict": "refute",
+      "code": "case-review-verify.disposition_missing",
+      "item": "sample:c1"
+    }
+  ]
+}

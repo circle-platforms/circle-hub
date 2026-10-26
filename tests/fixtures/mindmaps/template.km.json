@@ -1,0 +1,683 @@
+{
+  "root": {
+    "data": {
+      "id": "xscicnbc6gkh",
+      "created": 1767576600000,
+      "text": "测试用例模板（示例）"
+    },
+    "children": [
+      {
+        "data": {
+          "id": "nh8x0jkgeqfy",
+          "created": 1767576661000,
+          "text": "CLI 命令"
+        },
+        "children": [
+          {
+            "data": {
+              "id": "9aqh11jpqzme",
+              "created": 1767576722000,
+              "text": "增删改查"
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "8hxw526vtgxt",
+                  "created": 1767576783000,
+                  "text": "命令 A",
+                  "priority": 1
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "y3idmplmwlwz",
+                      "created": 1767576844000,
+                      "text": "添加一条配置",
+                      "priority": 2,
+                      "resource": [
+                        "Configuration"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "5nvj9scrov2y",
+                          "created": 1767576905000,
+                          "text": "添加成功"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "j3b6l0rydeq9",
+                      "created": 1767576966000,
+                      "text": "删除一条配置",
+                      "priority": 2,
+                      "resource": [
+                        "Configuration"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "rvzg28zizi0o",
+                          "created": 1767577027000,
+                          "text": "删除成功"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "82a9krlcd9cc",
+                      "created": 1767577088000,
+                      "text": "修改一条配置",
+                      "priority": 2,
+                      "resource": [
+                        "Configuration"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "9chrnj4x1v3n",
+                          "created": 1767577149000,
+                          "text": "修改成功"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "vwrjmjfefsr5",
+                      "created": 1767577210000,
+                      "text": "查看配置",
+                      "priority": 2,
+                      "resource": [
+                        "Configuration"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "gross7e52j5m",
+                          "created": 1767577271000,
+                          "text": "显示与配置一致"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "r6vkur0uo9vo",
+                      "created": 1767577332000,
+                      "text": "最大配置下执行 show",
+                      "priority": 2,
+                      "resource": [
+                        "Configuration"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "ld29wmzxsydp",
+                          "created": 1767577393000,
+                          "text": "全部显示，无卡顿"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "ejmzvcys6nkq",
+                      "created": 1767577454000,
+                      "text": "修改配置写入操作日志",
+                      "priority": 2,
+                      "resource": [
+                        "Functional"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "z177qkxvj99c",
+                          "created": 1767577515000,
+                          "text": "操作日志有记录"
+                        },
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "data": {
+                      "id": "nk6wfozuws2w",
+                      "created": 1767577576000,
+                      "text": "修改配置写入审计日志",
+                      "priority": 2,
+                      "resource": [
+                        "Functional"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "df8cfi0sx2wm",
+                          "created": 1767577637000,
+                          "text": "审计日志有记录"
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "1k6xwo33alip",
+                  "created": 1767577698000,
+                  "text": "no",
+                  "priority": 1
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "n5j2ci0din4a",
+                      "created": 1767577759000,
+                      "text": "用 no 命令去掉配置",
+                      "priority": 2,
+                      "resource": [
+                        "Configuration"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "zbaz0il670po",
+                          "created": 1767577820000,
+                          "text": "配置被去掉"
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "ehttjkkytt6f",
+                  "created": 1767577881000,
+                  "text": "clear",
+                  "priority": 1
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "nnm548xmwpgd",
+                      "created": 1767577942000,
+                      "text": "用 clear 命令清空统计",
+                      "priority": 2,
+                      "resource": [
+                        "Configuration"
+                      ]
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "8ek368h5okys",
+                          "created": 1767578003000,
+                          "text": "统计清零"
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "r66h74efbm63",
+              "created": 1767578064000,
+              "text": "配置同步",
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "fhbybh4q2x22",
+                  "created": 1767578125000,
+                  "text": "配置同步到对端设备",
+                  "priority": 2,
+                  "resource": [
+                    "Integration"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "4u2ptzv4bkt0",
+                      "created": 1767578186000,
+                      "text": "备机配置一致"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "e086421led0m",
+              "created": 1767578247000,
+              "text": "配置保存",
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "bj6ff18oavwz",
+                  "created": 1767578308000,
+                  "text": "保存配置后重启",
+                  "priority": 2,
+                  "resource": [
+                    "Configuration"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "hmnntsprxbe7",
+                      "created": 1767578369000,
+                      "text": "配置保留"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "2kaup5u6xvoz",
+              "created": 1767578430000,
+              "text": "配置恢复",
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "l83fv8s56ku6",
+                  "created": 1767578491000,
+                  "text": "从文件恢复配置",
+                  "priority": 2,
+                  "resource": [
+                    "Configuration"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "wgz0sf5qk8rl",
+                      "created": 1767578552000,
+                      "text": "配置生效"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "ztrtf1gcd6ex",
+              "created": 1767578613000,
+              "text": "配置清除",
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "ephb3l5fnyhz",
+                  "created": 1767578674000,
+                  "text": "清除配置后回到默认值",
+                  "priority": 2,
+                  "resource": [
+                    "Configuration"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "kzayo6e7wte8",
+                      "created": 1767578735000,
+                      "text": "取值为默认值"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "ovk0mhyrxyvw",
+              "created": 1767578796000,
+              "text": "升级",
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "pes4sezkb0s2",
+                  "created": 1767578857000,
+                  "text": "新版本之间升级",
+                  "priority": 2,
+                  "degree": 1,
+                  "resource": [
+                    "Compatibility"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "w52z2rt8nsw1",
+                      "created": 1767578918000,
+                      "text": "新版本已用满新功能的配置",
+                      "priority": 3
+                    },
+                    "children": []
+                  },
+                  {
+                    "data": {
+                      "id": "vawvud15h8fx",
+                      "created": 1767578979000,
+                      "text": "执行升级",
+                      "degree": null
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "jefcignl3uzt",
+                          "created": 1767579040000,
+                          "text": "升级成功，配置不丢失"
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "2zbib770bng7",
+                  "created": 1767579101000,
+                  "text": "旧版本升级到新版本",
+                  "priority": 2,
+                  "degree": 2,
+                  "resource": [
+                    "Compatibility"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "d759mns1nupr",
+                      "created": 1767579162000,
+                      "text": "无",
+                      "priority": 3
+                    },
+                    "children": []
+                  },
+                  {
+                    "data": {
+                      "id": "cjoiu8en7fbh",
+                      "created": 1767579223000,
+                      "text": "执行升级",
+                      "degree": null
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "zwwiircgjf2p",
+                          "created": 1767579284000,
+                          "text": "升级成功，命令改动后的配置自动转换"
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "xkux9npdr6b0",
+                  "created": 1767579345000,
+                  "text": "新版本降级到旧版本",
+                  "priority": 2,
+                  "degree": 3,
+                  "resource": [
+                    "Compatibility"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "lijtraszaoc8",
+                      "created": 1767579406000,
+                      "text": "新版本已用满新功能的配置",
+                      "priority": 3
+                    },
+                    "children": []
+                  },
+                  {
+                    "data": {
+                      "id": "8f269odlaigd",
+                      "created": 1767579467000,
+                      "text": "执行降级",
+                      "degree": null
+                    },
+                    "children": [
+                      {
+                        "data": {
+                          "id": "k1js79zq7jwd",
+                          "created": 1767579528000,
+                          "text": "新功能的配置丢失，其他配置不受影响"
+                        },
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "a7hb5v1p0leg",
+              "created": 1767579589000,
+              "text": "安全测试",
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "yitjdik0sn6c",
+                  "created": 1767579650000,
+                  "text": "非法输入不导致异常",
+                  "priority": 2,
+                  "resource": [
+                    "Negative"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "e3l7znvy03z8",
+                      "created": 1767579711000,
+                      "text": "提示输入非法"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "data": {
+              "id": "lc9us73xnrpc",
+              "created": 1767579772000,
+              "text": "数据库",
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "5yhe8jjzxb22",
+                  "created": 1767579833000,
+                  "text": "数据表记录与配置一致",
+                  "priority": 2,
+                  "resource": [
+                    "Configuration"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "u9yb58tq0etm",
+                      "created": 1767579894000,
+                      "text": "字段内容与配置一致"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "kjyv4qlq0gdt",
+          "created": 1767579955000,
+          "text": "类别 A"
+        },
+        "children": [
+          {
+            "data": {
+              "id": "tc1h0sx6432t",
+              "created": 1767580016000,
+              "text": "子类别 A-1",
+              "priority": 1
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "5mxpqqexft2p",
+                  "created": 1767580077000,
+                  "text": "功能用例 1",
+                  "priority": 2,
+                  "resource": [
+                    "Functional"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "ubt0u2m23ekg",
+                      "created": 1767580138000,
+                      "text": "结果符合规格"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "pfmumq4a3ncr",
+                  "created": 1767580199000,
+                  "text": "反向用例 1",
+                  "priority": 2,
+                  "resource": [
+                    "Negative"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "s4j6rlqx5y1v",
+                      "created": 1767580260000,
+                      "text": "给出明确的错误提示"
+                    },
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "data": {
+                  "id": "eedam0tkcyc4",
+                  "created": 1767580321000,
+                  "text": "压力用例 1",
+                  "priority": 2,
+                  "resource": [
+                    "Stress"
+                  ]
+                },
+                "children": [
+                  {
+                    "data": {
+                      "id": "ugtmq2s70ui6",
+                      "created": 1767580382000,
+                      "text": "设备正常"
+                    },
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "data": {
+          "id": "whr00m1n2z5s",
+          "created": 1767580443000,
+          "text": "与功能 X 联合使用",
+          "priority": 1
+        },
+        "children": [
+          {
+            "data": {
+              "id": "tjxrty0ll5l5",
+              "created": 1767580504000,
+              "text": "功能 X 与本功能同时开启",
+              "priority": 2,
+              "resource": [
+                "Integration"
+              ]
+            },
+            "children": [
+              {
+                "data": {
+                  "id": "lm1j87xqahw8",
+                  "created": 1767580565000,
+                  "text": "两个功能都正常"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "template": "right",
+  "theme": "classic",
+  "version": "1.4.43"
+}

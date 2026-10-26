@@ -1,0 +1,144 @@
+{
+  "schema": "system@1",
+  "title": "手册库",
+  "description": "手册库的只读访问（WebDAV，匿名、明文 HTTP）：目录用 PROPFIND Depth 1 列出（目录地址带结尾的斜杠），文件按它在所列目录下的路径用 GET 读，从不跟随列表里的链接（指向别的来源或目录以外的条目跳过并在警告里列出）。读法：manual:file:<路径>；manual:cli:<版本线> 与 manual:app:<版本线>（手册目录下名称以版本线数字结尾的子目录里的手册文件，目录和文件名取资源设置，默认 cli、cli_cn/cli_cn.md、app、app_cn/app_cn.md）；manual:spec-search:<检索词，用 + 连接>（规格书目录只列一次，列出目录成员；关键词检索已退役，不按文件名打分、不选文件、不读文件，检索词只作披露）；manual:qa-search:<检索词>（同样列出测试策略目录的成员，目录默认 qa）；manual:spec-list:configured（列出 spec_folders 配置目录的直接成员，不跟链接；旧 spec_folder 并入同一列表并警告）。只有读路由，没有写路由。",
+  "roles": [
+    {
+      "name": "manual-store",
+      "description": "手册库的根地址；目录、文件都在它下面"
+    }
+  ],
+  "auth": {
+    "kind": "none"
+  },
+  "routes": [
+    {
+      "id": "list",
+      "role": "manual-store",
+      "method": "PROPFIND",
+      "path": "/{dir*}/",
+      "params": {
+        "dir": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[^;]{1,255}$"
+        }
+      },
+      "headers": {
+        "Depth": "1"
+      },
+      "response": "xml",
+      "parse": "xml@1",
+      "max_bytes": 16777216,
+      "timeout_ms": 60000,
+      "read": true,
+      "description": "列出一个目录的直接成员（Depth 1）"
+    },
+    {
+      "id": "file",
+      "role": "manual-store",
+      "method": "GET",
+      "path": "/{path*}",
+      "params": {
+        "path": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[^;]{1,255}$"
+        }
+      },
+      "response": "text",
+      "max_bytes": 33554432,
+      "timeout_ms": 120000,
+      "read": true,
+      "description": "读一个文件（Markdown 等文本）"
+    }
+  ],
+  "reads": [
+    {
+      "name": "file",
+      "external": "manual:file",
+      "description": "按路径读一个文件",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "filePlan"
+      },
+      "max_requests": 1
+    },
+    {
+      "name": "cli",
+      "external": "manual:cli",
+      "description": "一个版本线的 CLI 手册",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "manualPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "manualProject"
+      },
+      "absent_codes": [
+        "manual.not_found"
+      ],
+      "max_requests": 6
+    },
+    {
+      "name": "app",
+      "external": "manual:app",
+      "description": "一个版本线的应用手册",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "manualPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "manualProject"
+      },
+      "absent_codes": [
+        "manual.not_found"
+      ],
+      "max_requests": 6
+    },
+    {
+      "name": "spec-search",
+      "external": "manual:spec-search",
+      "description": "列出规格书目录（spec_folders，默认 [spec]）的成员：关键词检索已退役（所有者裁定 U19/U20，2026-10-24），不按文件名打分、不选文件、不读文件，检索词只作披露；派生内容给出成员路径、缺的事实和下一步（用 manual:file:<路径> 显式读取，或由模型带逐字引文提出候选并经 Hub 核验）",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "searchPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "searchProject"
+      },
+      "max_requests": 37
+    },
+    {
+      "name": "qa-search",
+      "external": "manual:qa-search",
+      "description": "列出测试策略目录（qa_folder，默认 qa）的成员，读法同规格书检索：关键词检索已退役，不选也不读文件，检索词只作披露；只作线索",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "searchPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "searchProject"
+      },
+      "max_requests": 6
+    },
+    {
+      "name": "spec-list",
+      "external": "manual:spec-list",
+      "description": "列出 spec_folders 配置目录的直接成员（文件与子目录分开），不跟链接；旧 spec_folder 并入同一列表并警告",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "specListPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "specListProject"
+      },
+      "max_requests": 32
+    }
+  ]
+}

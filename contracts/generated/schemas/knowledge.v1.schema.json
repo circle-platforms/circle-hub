@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "knowledge@1"
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "catalog": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "needs the catalog declared complete for the scope of the root, so that absence is a fact"
+          }
+        },
+        "required": [
+          "catalog",
+          "complete"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "requires"
+  ],
+  "additionalProperties": false
+}

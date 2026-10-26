@@ -1,0 +1,29 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "location",
+      "name": "用例定位",
+      "description": "按目录树的约定给出产品线、版本（来源和置信度）、版本线、发布火车、模块、目录和标题里原样写出的构建名，以及标题、版本层以下的目录和脑图里关联的需求和缺陷；目录版本层自相矛盾的记不通过（提示档），保留每个版本值和原始目录标签；其余定不准的记未知（缺输入），写明缺什么和下一步；构建名目录提供版本，引用版本不作版本层；声明冲突与版本层冲突同时存在时优先报告版本层冲突",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["locate"],
+      "error_handling": []
+    },
+    {
+      "key": "build_candidates",
+      "name": "构建候选",
+      "description": "定位到的版本线下两个名称族的已知构建（别名解析到它所依据的构建），按发布从新到旧；定位没有给出版本线、或这条线在知识库里没有已知构建时记未知（缺输入），从不记为通过或不通过。目录和标题里写出的构建名逐个对照知识库：属于这条线（或是候选的别名基础）记支持；属于另一条线记不通过（提示档，写明属于哪条线）；知识库不认识的记未知（知识库只收录构建站列出的构建），从不记为不通过",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["candidates"],
+      "error_handling": []
+    }
+  ]
+}

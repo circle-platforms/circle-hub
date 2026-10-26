@@ -1,0 +1,31 @@
+{
+  "note": "示例（合成）：一个条目的评审发现、一个沿用上次运行的条目和整份的等级；src: 引用取 start_run 回答里条目的位置和来源，引文必须逐字，命令行照用例原样整条引用；context 是这个条目读过的上下文的 SHA-256；reuse 只用于 start_run 标出“可沿用”的条目",
+  "submit_result": {
+    "run": "<运行编号>",
+    "model": "<模型名称和配置>",
+    "items": [
+      {
+        "item": "<文档编号>:<节点编号>",
+        "handling": "handled",
+        "context": "<这个条目读过的上下文的 SHA-256，64 位十六进制>",
+        "slots": {
+          "findings": [
+            {
+              "text": "只测了一个越界值 61，缺少 0 和超长字符串的边界用例",
+              "code": "edge_case_gap",
+              "rank": "minor",
+              "location": "src:<被评审脑图的摘要>/kityminder@1/n/<节点编号>",
+              "quotes": [{ "reference": "src:<被评审脑图的摘要>/kityminder@1/n/<节点编号>", "text": "<用例里的原文>" }],
+              "commands": [{ "command": "<用例里那条带非法输入的命令行，整条照抄>" }]
+            }
+          ]
+        }
+      },
+      { "item": "<另一个条目>", "handling": "handled", "context": "<SHA-256>", "slots": { "findings": [] } },
+      { "item": "<start_run 标出可沿用的条目>", "handling": "handled", "reuse": "rec:<start_run 给出的可沿用引用>" }
+    ],
+    "cross_item": [
+      { "nature": "judgment", "statement": "等级理由：覆盖了全部功能，有一些反向用例，兼容性不足；证据缺口：命令的已验证测试事实（足迹）还没有", "grounds": ["src:<需求的摘要>"], "code": "level", "rank": "P4" }
+    ]
+  }
+}

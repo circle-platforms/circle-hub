@@ -1,0 +1,505 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "effect@1"
+    },
+    "job": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "run": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "intent_key": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "request_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "not_after": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "dispatch_sequence": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sequence_scope": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "action_digest": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "target_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "covered_items": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "effect_class": {
+      "type": "string",
+      "enum": [
+        "none",
+        "read",
+        "sync_write",
+        "job",
+        "notification"
+      ]
+    },
+    "retry_safety": {
+      "type": "string",
+      "enum": [
+        "same_key_safe",
+        "dedup_window",
+        "duplicate_tolerant",
+        "unsafe"
+      ]
+    },
+    "signing": {
+      "type": "string",
+      "enum": [
+        "own_credential",
+        "service_on_behalf"
+      ]
+    },
+    "content_sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "before_state": {
+      "type": "object",
+      "properties": {
+        "bound": {
+          "type": "boolean"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reference": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "bound",
+        "sha256",
+        "reference"
+      ],
+      "additionalProperties": false
+    },
+    "writing_identity": {
+      "type": "object",
+      "properties": {
+        "credential": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\$\\{secret:[A-Z][A-Z0-9_]{0,63}\\}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "on_behalf_of": {
+          "type": "string",
+          "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        "subject": {}
+      },
+      "required": [
+        "credential",
+        "on_behalf_of",
+        "subject"
+      ],
+      "additionalProperties": false
+    },
+    "audience": {
+      "type": "null"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "issued",
+        "effective",
+        "read_back_consistent",
+        "read_back_mismatch",
+        "target_rejected",
+        "not_dispatched",
+        "proven_not_executed",
+        "unknown"
+      ]
+    },
+    "marks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "disposed",
+          "compensated",
+          "possible_duplicate"
+        ]
+      }
+    },
+    "previous": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "boundary": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "clause": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9
+            },
+            "code": {
+              "type": "string",
+              "enum": [
+                "SUBMISSION_SCHEMA_VIOLATION",
+                "REFERENCE_UNRESOLVED",
+                "REFERENCE_AMBIGUOUS",
+                "QUOTE_MISMATCH",
+                "SOURCE_UNPARSEABLE",
+                "SOURCE_UNAVAILABLE",
+                "IDEMPOTENCY_MISMATCH",
+                "IDENTITY_UNMAPPED",
+                "RUN_SUPERSEDED",
+                "RUN_ABANDONED",
+                "CREDENTIAL_IN_UPLOAD",
+                "LEASE_UNAVAILABLE",
+                "LEASE_EXPIRED",
+                "FENCING_STALE",
+                "SOURCE_RETRYABLE",
+                "SOURCE_INTEGRITY_UNPROVEN",
+                "SOURCE_READ_FAILED",
+                "SOURCE_READ_LIMIT",
+                "SOURCE_REDIRECT_REFUSED",
+                "SOURCE_ABSENT",
+                "EFFECT_NOT_ALLOWED",
+                "EFFECT_PARAMETER_OUT_OF_RANGE",
+                "EFFECT_RELEASE_UNMET",
+                "EFFECT_UNKNOWN_DISPOSED",
+                "EFFECT_BUDGET_EXHAUSTED",
+                "BOUNDARY_POLICY_DENIED",
+                "PACK_POLICY_DENIED",
+                "EFFECT_CONTENT_UNVERIFIED",
+                "AUDIENCE_VISIBILITY_EXCEEDED"
+              ]
+            },
+            "row": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "clause",
+            "code",
+            "row"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "missing": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "exit": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "reread",
+            "reconcile",
+            "observe",
+            "request",
+            "rerun",
+            "reevaluate"
+          ]
+        },
+        "request_kind": {
+          "type": "string",
+          "enum": [
+            "clarification",
+            "repair",
+            "disposition",
+            "judgment"
+          ]
+        },
+        "audience": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "hub": {
+                  "type": "boolean",
+                  "const": true
+                }
+              },
+              "required": [
+                "hub"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "user": {
+                  "type": "string",
+                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                }
+              },
+              "required": [
+                "user"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "external": {
+                  "type": "object",
+                  "properties": {
+                    "mapping": {
+                      "type": "string",
+                      "maxLength": 8192,
+                      "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                    },
+                    "identity": {
+                      "type": "string",
+                      "pattern": "\\S",
+                      "description": "External account identity bound by the referenced mapping"
+                    }
+                  },
+                  "required": [
+                    "mapping",
+                    "identity"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "external"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "due": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+          "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+        }
+      },
+      "required": [
+        "action",
+        "audience",
+        "due"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "request"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          "then": {
+            "properties": {
+              "request_kind": {},
+              "audience": {
+                "type": "object",
+                "not": {
+                  "required": [
+                    "hub"
+                  ],
+                  "properties": {
+                    "hub": {}
+                  }
+                }
+              }
+            },
+            "required": [
+              "request_kind"
+            ]
+          },
+          "else": {
+            "properties": {
+              "audience": {
+                "type": "object",
+                "properties": {
+                  "hub": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "hub"
+                ]
+              }
+            },
+            "not": {
+              "required": [
+                "request_kind"
+              ],
+              "properties": {
+                "request_kind": {}
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "job",
+    "run",
+    "intent_key",
+    "request_id",
+    "not_after",
+    "action_digest",
+    "target_key",
+    "covered_items",
+    "effect_class",
+    "retry_safety",
+    "signing",
+    "content_sha256",
+    "before_state",
+    "writing_identity",
+    "audience",
+    "outcome",
+    "marks",
+    "previous",
+    "boundary"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "enum": [
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "missing": {},
+          "exit": {}
+        },
+        "required": [
+          "missing",
+          "exit"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "review_form",
+      "title": "确认形状与期望来源",
+      "function": {
+        "module": "functions/check.ts"
+      },
+      "reads": {
+        "roles": [
+          "expected"
+        ]
+      },
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "W10：账号主人作内容判断，Hub 只核形状、逐字引用及来源角色"
+    }
+  ]
+}

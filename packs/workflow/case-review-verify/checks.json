@@ -1,0 +1,55 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "dispositions",
+      "title": "每条初评发现恰好一条处置",
+      "function": {
+        "module": "functions/verify.ts",
+        "export": "dispositionsCheck"
+      },
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 verification：初评的每条发现恰好一条处置（证实、推翻或部分正确），处置写明它的引用；每条陈述带位置和逐字引文（docs/hub-r4-architecture.md 第 6 节）"
+    },
+    {
+      "id": "command_claims",
+      "title": "复核方说命令存在与否的陈述",
+      "interpreter": "catalog@1",
+      "table": "tables/command-claims.json",
+      "applies": "item",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "claimSubject"
+      },
+      "catalog": "commands@1",
+      "judges": "artifact_under_verification",
+      "tier": "blocking"
+    },
+    {
+      "id": "verdict",
+      "title": "结论与处置一致",
+      "function": {
+        "module": "functions/verify.ts",
+        "export": "verdictCheck"
+      },
+      "applies": "run",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 final：PASS 不能有被推翻的发现、新发现、改动的等级或没有处置的初评发现，并且要有复核方自己从被复核对象里逐字引用的原文；FAIL 要推翻初评定为严重或主要的发现；PARTIAL 要有新发现、被推翻或修正的初评发现，或者等级调整（docs/hub-r4-architecture.md 第 6 节、第 9 节场景 15）"
+    },
+    {
+      "id": "suggestion_targets",
+      "title": "建议的目标节点和三段式",
+      "function": {
+        "module": "functions/verify.ts",
+        "export": "suggestionTargetsCheck"
+      },
+      "applies": "run",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "决定 35：建议在终稿视图里对应原始用例或测试子项；每条写补、因为、期望三段，至少一个根据指向被复核脑图节点；问题挂在第一个已处理条目，按原 cross_item 指针返回修复"
+    }
+  ]
+}

@@ -1,30 +1,37 @@
 ---
 permalink: /design/en/
-nav_order: 3
+nav_order: 6
 ---
 
 # circle-hub design
 
-This folder contains current design specifications and explicitly marked research proposals. [Truth-Docked Architecture: Foundations, Conditional Claims, and a Product Research Framework](truth-docked-architecture.md) was revised on 2026-10-19 as a research proposal and mathematical audit, separating established theory, conditional proofs, unproved assumptions, and candidate architecture. It does not replace current object, approval, execution, or client contracts. Implementation progress is in the [phase record](../../README.md#阶段记录). These pages translate the [Chinese originals](../README.md); where they differ, the Chinese text is authoritative.
+The design authority is the generic model in [contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json); the [generic model](generic-model.md) page summarises it, and where the two differ the model wins. The "Current" table holds the summary, the checklist and a research proposal. The "Superseded" table holds design pages from the time of the old server; each one says at the top what replaced it, and they are kept as records only. These pages translate the [Chinese originals](../README.md); where they differ, the Chinese text is authoritative. Implementation progress is in the [Hub r4 progress](../../hub-r4-progress.md).
+
+## Current
 
 | Document | What it answers |
 |---|---|
-| **[Truth-Docked Architecture: Foundations, Conditional Claims, and a Product Research Framework](truth-docked-architecture.md)** | **Research proposal: foundations for knowledge, action, semantic preservation, and checking; conditional state-coverage and finite-search claims with proofs and counterexamples; open obligations and a candidate product framework, not an end-to-end reliability proof** |
-| [Object standard and data flow](object-standard.md) | Which five parts make up the four objects; how one piece of work passes through A C E B D; how a new capability fills in the adaptation sheet |
-| [Terms and states](vocabulary.md) | The fixed Chinese–English terms; state enumerations and colors; the handling and display rules at scale |
-| [Levels and elements](levels-and-elements.md) | The entry is a session; five levels, deeper one by one; which diagram, table, description, and buttons each level uses; twelve action words |
-| [Approvals and the enforcement chain](approvals-and-enforcement.md) | Approval only on a Change set; a run goes through the Enforcement chain, and the only results are pass / error / unknown; the platform is not an approver |
-| [Roles and scope](roles.md) | Administrator / member / guest granted by scope; the two-person rule; a sole administrator's own decision; machine identity |
-| [Integration with Circle](circle-integration.md) | hub extends Circle's menu instead of opening another section; the sync model; what is not visible with only Circle installed |
-| [Product-line pack exemplar](product-line-pack.md) | The deliverables for bringing one product line in: directory layout, adaptation sheet, acceptance checklist, with a synthetic product line as the sample |
-| [Execution flow migration into product-line packs](execution-flow-packs.md) | The boundary between pure product transitions and the generic execution driver; leases, refusals, unknown outcomes, and isolation between terminal state and interpretation |
-| [Harness primitive specification](harness-primitives.md) | The primitives by which hub governs any harness: the governed / not-governed list, the neutral list, the import and export adapter for each harness, the generic transport with hub itself as an MCP server, and where the primitives sit in the four objects and five elements |
-| [Permission policy export](permission-export.md) | The fourth harness-neutral item: hub-permission/1 computed from the scope role presets and the Tool annotations; a mapping table and sample configuration for Claude Code, Codex CLI, OpenCode, Gemini CLI and Cursor; what cannot be expressed, stated as such |
-| [Harness format survey](harness-formats.md) | The on-disk formats of Skill / Command / Agent / Instruction / Hook / MCP server in Claude Code, Codex CLI, OpenCode, Gemini CLI and Cursor: paths, fields, what maps onto the neutral manifests and what does not, each with its source; the basis for the adapters and knownCompatible |
+| **[Generic model](generic-model.md)** | **73 elements in 11 groups, three invariants, the vocabulary, the seven kernel names, and what milestone 1 uses** |
+| [Object standard: the five-element checklist](object-standard.md) | The four objects are the four homes; the five elements are a design checklist and a record-page layout, not storage partitions |
+| [Truth-Docked Architecture: Foundations, Conditional Claims, and a Product Research Framework](truth-docked-architecture.md) | Research proposal and mathematical audit: foundations, conditional claims and counterexamples, open obligations; not a description of an implementation |
 
-The rules from the two handoff documents (client-api-handoff, case-execution-handoff) have been merged into the documents above; the passage-by-passage mapping is in [handoff-map.md](handoff-map.md) (for trimming the handoffs into change records, not itself a design specification).
+## Superseded
 
-Two principles run through all of the documents, from earlier decisions: determined content is given to the script, and the rest is given to the model to judge and disclosed in full (ADR 0024); local cancel, remote stop, and task delivery are recorded separately (ADR 0025).
+| Document | What it answered | Where to look now |
+|---|---|---|
+| [Approvals and the enforcement chain](approvals-and-enforcement.md) | Change-set approvals, the enforcement chain, the error-code catalogue | Authorization records B04, publish check T02, boundary validation T03, the two mandatory boundaries P11 |
+| [Roles and scope](roles.md) | Administrator / member / guest by scope, the two-person rule | Permission role R01 (user, administrator), visibility R02 |
+| [Terms and states](vocabulary.md) | The old terms, state enumerations and colours | The model's vocabulary (generated into `contracts/generated/vocabulary.ts`) |
+| [Levels and elements](levels-and-elements.md) | Five levels of interface in Circle | No Hub-specific interface in Circle; a read-only console (runs, knowledge, packs, system administration) |
+| [Integration with Circle](circle-integration.md) | hub extending Circle's menus | Circle connects as an ordinary MCP client (D06) |
+| [Product-line pack exemplar](product-line-pack.md) | The `product-line/1` pack | Task pack T01, publish record and publish check T02 |
+| [Execution flows in product-line packs](execution-flow-packs.md) | Execution flows and `module-execute` | Effect writes, leases and executors (B06, D04, the write declarations of D03, the executor part of D07) are implemented by `hub/dispatch`; the read part of D03 and the resource part of D07 are implemented by the connectors package, and MCP annotations follow D03 |
+| [Harness primitive specification](harness-primitives.md) | The neutral `hub-*/1` manifests and adapters | Six MCP tools (D06) and task packs (T01) |
+| [Permission policy export](permission-export.md) | `hub-permission/1` | R01; tool categories follow the MCP annotations (D03, D06) |
+| [Harness format survey](harness-formats.md) | On-disk formats of five harnesses (surveyed 2026-10-13) | No longer needed: the Hub does not import or export harness primitives |
+| [Handoff-to-design map](handoff-map.md) | Where the two handoffs went in the design | Both handoffs are now historical records |
+
+Two earlier principles still hold: determined content is given to scripts, and the rest is given to the model to judge and disclosed in full ([ADR 0024](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/decisions/0024-truth-and-disclosure-principle.md)); local cancel, remote stop and task delivery are recorded separately ([ADR 0025](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/decisions/0025-complete-product-task-delivery.md)).
 
 ## License
 
@@ -34,4 +41,4 @@ Copyright (c) 2026 qingshanfeihu. Anyone who quotes, reuses, adapts or builds on
 
 > Based on the Circle Hub design specifications by qingshanfeihu, <https://github.com/circle-platforms/circle-hub/tree/main/docs/design>, licensed under CC BY 4.0.
 
-The license covers the specifications as texts and drawings. It grants no right to the Circle or Circle Hub names, the Circle logo or the application icons; see [NOTICE](../../../NOTICE). The rest of `docs/` and the code are under the [Apache License 2.0](../../../LICENSE).
+The license covers the specifications as texts and drawings. It grants no right to the Circle or Circle Hub names, the Circle logo or the application icons; see [NOTICE](https://github.com/circle-platforms/circle-hub/blob/main/NOTICE). The rest of `docs/` and the code are under the [Apache License 2.0](https://github.com/circle-platforms/circle-hub/blob/main/LICENSE).

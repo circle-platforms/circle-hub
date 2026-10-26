@@ -1,0 +1,53 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "coverage",
+      "name": "模板类别覆盖",
+      "description": "逐用例类别来自原件 category_ids 的精确闭集声明，或客户端提交带原件逐字引文的 CategoryJudgment；Hub 只核身份、引用与集合运算。未分类用例需要补判断，不算缺类别；完整范围全部分类后才判未覆盖且未跳过的类别缺失",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "judgment",
+      "checks": [
+        "coverage"
+      ],
+      "error_handling": []
+    },
+    {
+      "key": "command_coverage",
+      "name": "按命令的模板类别覆盖",
+      "description": "每份文档按锁定用例索引的命令路径核验模板 command 组的 9 个类别；已知命令结论照给，缺索引、来源不全或用例未匹配时写明缺失事实和同步后重跑动作",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "command_coverage"
+      ],
+      "error_handling": []
+    },
+    {
+      "key": "tag_declarations",
+      "name": "标签闭集声明",
+      "description": "逐用例核对作者 resource 精确原文；未声明标签为提示档结构违规，缺类型给补声明出口",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "tag_declarations"
+      ],
+      "error_handling": []
+    }
+  ]
+}

@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "structure@1"
+    },
+    "origin": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The source file (a reference) or the decision that produced this table (C04 R[0]); a table without it is code"
+    },
+    "description": {
+      "description": "What the table checks, in the pack language",
+      "type": "string"
+    },
+    "tier": {
+      "description": "Tier of the outcomes (C05 R[1]); default blocking when a basis is given, else advisory. Blocking needs a basis",
+      "type": "string",
+      "enum": [
+        "blocking",
+        "advisory"
+      ]
+    },
+    "basis": {
+      "description": "The acceptance contract clause a blocking check relies on (C05 R[1])",
+      "type": "string",
+      "minLength": 1
+    },
+    "item": {
+      "description": "Pointer to the item identity in the subject (or in each node); copied into outcomes",
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "location": {
+      "description": "Pointer to the reference URI of the item in the judged source; becomes a ground of the outcomes",
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "nodes": {
+      "description": "The nodes the rules apply to; default $ (the subject is one node); $[*] for an array of items",
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^\\$(?:\\.(?:\\*|[A-Za-z_\\u0080-￿][A-Za-z0-9_\\u0080-￿]*)|\\[(?:\\*|-?(?:0|[1-9][0-9]*)|'(?:[^'\\\\]|\\\\.)*'|\"(?:[^\"\\\\]|\\\\.)*\")\\])*$"
+    },
+    "kind": {
+      "description": "Pointer to the node kind inside a node",
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "children": {
+      "description": "Pointer to the child array inside a node; children are visited recursively",
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "rules": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kinds": {
+            "description": "Node kinds the rule applies to (values at the `kind` pointer); absent means every node",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                  "description": "Location of the field relative to the node"
+                },
+                "required": {
+                  "description": "A missing field, null, a string that is empty after trimming or an empty array is core.structure.required_empty",
+                  "type": "boolean"
+                },
+                "type": {
+                  "description": "Required JSON type; a value of another type is core.structure.type_mismatch",
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "integer",
+                    "number",
+                    "boolean",
+                    "array",
+                    "object",
+                    "null"
+                  ]
+                },
+                "minimum": {
+                  "description": "Inclusive lower bound of a number; violations are core.structure.type_mismatch",
+                  "type": "number"
+                },
+                "maximum": {
+                  "description": "Inclusive upper bound of a number; violations are core.structure.type_mismatch",
+                  "type": "number"
+                },
+                "minLength": {
+                  "description": "Minimum string length in code points",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "maxLength": {
+                  "description": "Maximum string length in code points",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "minItems": {
+                  "description": "Minimum array length; violations are core.structure.cardinality",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "maxItems": {
+                  "description": "Maximum array length; violations are core.structure.cardinality",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "items": {
+                  "description": "Constraints on every element of an array field",
+                  "type": "object",
+                  "properties": {
+                    "required": {
+                      "description": "Every element must be non-empty (core.structure.required_empty)",
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "description": "Required JSON type; a value of another type is core.structure.type_mismatch",
+                      "type": "string",
+                      "enum": [
+                        "string",
+                        "integer",
+                        "number",
+                        "boolean",
+                        "array",
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "minimum": {
+                      "description": "Inclusive lower bound of a number; violations are core.structure.type_mismatch",
+                      "type": "number"
+                    },
+                    "maximum": {
+                      "description": "Inclusive upper bound of a number; violations are core.structure.type_mismatch",
+                      "type": "number"
+                    },
+                    "minLength": {
+                      "description": "Minimum string length in code points",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "maxLength": {
+                      "description": "Maximum string length in code points",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false,
+              "description": "Constraints on one field of a node"
+            }
+          },
+          "children": {
+            "description": "Bounds on the number of children; violations are core.structure.cardinality",
+            "type": "object",
+            "properties": {
+              "min": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "max": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "kinds": {
+                "description": "Count only children of these kinds",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "unique": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                    "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+                  },
+                  "description": "Fields that together form the key; nodes with an equal key are core.structure.duplicate_key"
+                },
+                "within": {
+                  "description": "all: among every selected node of the rule; siblings: among children of one parent; group: among nodes with equal `group` fields. Default all",
+                  "type": "string",
+                  "enum": [
+                    "all",
+                    "siblings",
+                    "group"
+                  ]
+                },
+                "group": {
+                  "description": "Fields that define the groups when within is group",
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                    "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+                  }
+                },
+                "match": {
+                  "type": "object",
+                  "properties": {
+                    "unicode": {
+                      "description": "Unicode normalization form applied first; default nfc",
+                      "type": "string",
+                      "enum": [
+                        "none",
+                        "nfc",
+                        "nfkc"
+                      ]
+                    },
+                    "case": {
+                      "description": "insensitive compares lower-cased values; default sensitive",
+                      "type": "string",
+                      "enum": [
+                        "sensitive",
+                        "insensitive"
+                      ]
+                    },
+                    "whitespace": {
+                      "description": "trim removes leading and trailing whitespace, collapse also turns every inner whitespace run into one space; default trim",
+                      "type": "string",
+                      "enum": [
+                        "exact",
+                        "trim",
+                        "collapse"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "How values are normalized before matching (C04 R[2]); every table that compares text declares it"
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "additionalProperties": false,
+              "description": "A uniqueness key"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "description": "Rules for nodes of some kinds"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "origin",
+    "rules"
+  ],
+  "additionalProperties": false,
+  "title": "structure@1",
+  "description": "Structure table: required fields, uniqueness keys, child cardinality bounds, value types and numeric ranges, rules per node kind. Codes: core.structure.*"
+}

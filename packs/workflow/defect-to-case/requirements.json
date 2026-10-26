@@ -1,0 +1,171 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "cases",
+      "name": "用例起草",
+      "description": "模型从每个缺陷起草回归用例（标题、优先级、正反向、预期反驳、前置条件、步骤与命令行、期望结果与原文引文、标签）；无法起草的缺陷声明跳过并写明理由；每个缺陷至少起草 1 个用例，至多 max_cases 个（默认 6）",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "judgment",
+      "checks": [],
+      "error_handling": []
+    },
+    {
+      "key": "shape",
+      "name": "用例结构",
+      "description": "起草用例符合团队用例结构：标题非空且不超过 200 字符；至少一个带命令行的步骤；至少一个期望结果；优先级属于 1 到 3；标签属于团队模板类别；同一次提交无重复用例（规范化标题和步骤）；反向用例标记 negative 为 true",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "draft_shape"
+      ],
+      "error_handling": [
+        {
+          "code": "defect-to-case.shape_invalid",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "defect-to-case.duplicate_draft",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    },
+    {
+      "key": "commands",
+      "name": "命令与参数",
+      "description": "起草用例步骤中的每条命令在锁定构建的目录中解析，参数类型、取值范围和枚举合法；expects_refutation 与 negative 均为 true 的用例预期被目录反驳（参数越界为用例设计点），若目录接受则违规；expects_refutation 为 false 的用例若被目录反驳则违规",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "commands_catalog",
+        "commands_refutation",
+        "refutation_catalog"
+      ],
+      "error_handling": [
+        {
+          "code": "core.catalog.not_member",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.param_out_of_range",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.param_type_mismatch",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.arity_mismatch",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "defect-to-case.negative_accepted",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "defect-to-case.unexpected_refutation",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    },
+    {
+      "key": "grounded",
+      "name": "期望结果依据",
+      "description": "每个期望结果带有逐字引文，引自本条缺陷修复说明（PLM 资源 settings.bug_fix_field 经 content.fix_field 给出的字段，src: 原件的 json@1/p/fields/<字段>；或 settings.bug_fix_actions 收进 content.fix_notes 的某条 comment，src: 原件的 json@1/p/fix_notes/<序号>/comment）或 manual 槽绑定的同版本线手册 src: 片段；两处修复说明都没有才拒绝并点名设置；tree:/rec: 须改引对应原件的 src: 片段；引用未解析、缺少引文或引文不符为违规；期望结果文字必须是各自引文的非空逐字片段（只忽略空白差异），改写为阻断违规，退回修复，最多两轮",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "grounded_quotes",
+        "grounded_sources",
+        "grounded_reading"
+      ],
+      "error_handling": [
+        {
+          "code": "QUOTE_MISMATCH",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "REFERENCE_UNRESOLVED",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "defect-to-case.quote_source_forbidden",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "defect-to-case.quote_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "defect-to-case.expect_not_in_quote",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    },
+    {
+      "key": "not_duplicate",
+      "name": "用例去重",
+      "description": "按 case-structure@2 比较命令路径、类型参数、期望原件引文身份与 after 的完整规范结构；标题不参与。缺键、截断、条目不带命令或完整结构声明、解析不出身份时未知，说明缺失事实及下一步。",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "duplicate_check"
+      ],
+      "error_handling": []
+    },
+    {
+      "key": "fixed_status",
+      "name": "已修复状态",
+      "description": "原始结构 status 为 fixed 才支持已修复；未声明为未知并请求来源维护者补字段，不从修复说明文字推断",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "fixed_status"
+      ],
+      "error_handling": []
+    }
+  ]
+}

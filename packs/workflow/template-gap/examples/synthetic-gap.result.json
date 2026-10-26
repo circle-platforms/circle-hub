@@ -1,0 +1,1992 @@
+{
+  "note": "合成示例：一份没有压力测试用例的脑图（内容是编的），作为上传文件开始运行时 Hub 给出的条目和覆盖检查的结果；条目编号按上传文件的 SHA-256 前 12 位",
+  "input": "examples/synthetic-gap.km.json",
+  "sha256": "aebb0808aa5c2f597202f43c9833b0711605d12311c88afddb34ac6c9255d783",
+  "item": {
+    "id": "upload-aebb0808aa5c",
+    "label": "小部件探测测试用例（示例）",
+    "summary": "用例 66 个；按命令：上传文件不在索引里；缺 1 个模板类别：压力测试（stress）；模板类别出现 23/24 个；用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）",
+    "location": {
+      "parser": "kityminder@1",
+      "selector": "n/r0example001"
+    },
+    "fields": {
+      "document": "upload-aebb0808aa5c",
+      "title": "小部件探测测试用例（示例）",
+      "path": [],
+      "caseCount": 66,
+      "untagged": 0,
+      "case_rule": "marked",
+      "marked_only": 1,
+      "data": {
+        "case_rule": "marked",
+        "marked_only": 1
+      },
+      "categories": [
+        {
+          "id": "functional",
+          "label": "功能测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 20,
+          "evidence": [
+            "upload-aebb0808aa5c:0j9mbggwjytw",
+            "upload-aebb0808aa5c:2zlrkcoz9mr4",
+            "upload-aebb0808aa5c:3td81tprwfs4",
+            "upload-aebb0808aa5c:4wlclalycny1",
+            "upload-aebb0808aa5c:5jp998s5k5lh",
+            "upload-aebb0808aa5c:7i05at912jhi",
+            "upload-aebb0808aa5c:gv8eovpocm23",
+            "upload-aebb0808aa5c:gzcm7ldrqfa7",
+            "upload-aebb0808aa5c:i7dd1j74o4ur",
+            "upload-aebb0808aa5c:jr493b74wl4l",
+            "upload-aebb0808aa5c:k7kd4d8qddqg",
+            "upload-aebb0808aa5c:ofi6w1u55y47",
+            "upload-aebb0808aa5c:q4gngrp4drre",
+            "upload-aebb0808aa5c:rycuaqhi8w9x",
+            "upload-aebb0808aa5c:s2aneti8p9dd",
+            "upload-aebb0808aa5c:u2wenvki1nxw",
+            "upload-aebb0808aa5c:v99unez89wsx",
+            "upload-aebb0808aa5c:vaujn95az8d8",
+            "upload-aebb0808aa5c:vpp6bkv9luc6",
+            "upload-aebb0808aa5c:ybwqxua4vqej"
+          ]
+        },
+        {
+          "id": "configuration",
+          "label": "配置测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 19,
+          "evidence": [
+            "upload-aebb0808aa5c:01qbgqo02rm3",
+            "upload-aebb0808aa5c:0f1sd7awiefi",
+            "upload-aebb0808aa5c:1hccmdu8ssig",
+            "upload-aebb0808aa5c:2g1g1d0vhy65",
+            "upload-aebb0808aa5c:4few8h0jrcxe",
+            "upload-aebb0808aa5c:4ltan31kcjqa",
+            "upload-aebb0808aa5c:b9ckh74kaobq",
+            "upload-aebb0808aa5c:be4tibl8k307",
+            "upload-aebb0808aa5c:hxg6y0nsqerm",
+            "upload-aebb0808aa5c:i2pfefpoghe8",
+            "upload-aebb0808aa5c:jfhp3uwle991",
+            "upload-aebb0808aa5c:jsvykub8vild",
+            "upload-aebb0808aa5c:kbig1f2yc6q4",
+            "upload-aebb0808aa5c:lvkk0ejfn1ap",
+            "upload-aebb0808aa5c:o6ccpg02s6ou",
+            "upload-aebb0808aa5c:saqa73tqfrw0",
+            "upload-aebb0808aa5c:v0dyf7d8h0a5",
+            "upload-aebb0808aa5c:v0mcr4ryvsai",
+            "upload-aebb0808aa5c:z04xch3i7ck8"
+          ]
+        },
+        {
+          "id": "integration",
+          "label": "集成测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 9,
+          "evidence": [
+            "upload-aebb0808aa5c:2g0h89f0w1uf",
+            "upload-aebb0808aa5c:93jureq5up99",
+            "upload-aebb0808aa5c:9nufkipey4f4",
+            "upload-aebb0808aa5c:fzstcob8zis6",
+            "upload-aebb0808aa5c:l0r4glerzq3j",
+            "upload-aebb0808aa5c:lvdxvzfm1hg6",
+            "upload-aebb0808aa5c:nxaakfyiqtum",
+            "upload-aebb0808aa5c:t8da3mog62t8",
+            "upload-aebb0808aa5c:uu88965cspsf"
+          ]
+        },
+        {
+          "id": "compatibility",
+          "label": "兼容性测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:b1bl63v94rk3",
+            "upload-aebb0808aa5c:rrgj1uagx1dv",
+            "upload-aebb0808aa5c:uotmwgdkke7b"
+          ]
+        },
+        {
+          "id": "negative",
+          "label": "反向测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 16,
+          "evidence": [
+            "upload-aebb0808aa5c:2i0r5yfvn3ta",
+            "upload-aebb0808aa5c:58rev5vsqzyw",
+            "upload-aebb0808aa5c:a6gosvhh50zv",
+            "upload-aebb0808aa5c:auch71u6uxce",
+            "upload-aebb0808aa5c:f6eulx5b954g",
+            "upload-aebb0808aa5c:fiwo7utmxxne",
+            "upload-aebb0808aa5c:i579m39pc230",
+            "upload-aebb0808aa5c:nmb6vclhv6bb",
+            "upload-aebb0808aa5c:p8cwxc1ye2np",
+            "upload-aebb0808aa5c:py9uoksarpjw",
+            "upload-aebb0808aa5c:q3r7am57ohue",
+            "upload-aebb0808aa5c:vodmb3tlqxbo",
+            "upload-aebb0808aa5c:wznpmaoyl6xb",
+            "upload-aebb0808aa5c:y34nt14ss7ok",
+            "upload-aebb0808aa5c:y6gok9s3idfh",
+            "upload-aebb0808aa5c:z04xch3i7ck8"
+          ]
+        },
+        {
+          "id": "stress",
+          "label": "压力测试",
+          "group": "test_type",
+          "required": true,
+          "present": false,
+          "count": 0,
+          "evidence": []
+        },
+        {
+          "id": "command_add",
+          "label": "命令的添加",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:i2pfefpoghe8",
+            "upload-aebb0808aa5c:rycuaqhi8w9x",
+            "upload-aebb0808aa5c:ybwqxua4vqej"
+          ]
+        },
+        {
+          "id": "command_delete",
+          "label": "命令的删除",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:f6eulx5b954g",
+            "upload-aebb0808aa5c:i2pfefpoghe8",
+            "upload-aebb0808aa5c:kbig1f2yc6q4"
+          ]
+        },
+        {
+          "id": "command_modify",
+          "label": "命令的修改",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:0f1sd7awiefi",
+            "upload-aebb0808aa5c:2g1g1d0vhy65"
+          ]
+        },
+        {
+          "id": "command_query",
+          "label": "命令的查询",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:5jp998s5k5lh",
+            "upload-aebb0808aa5c:7i05at912jhi",
+            "upload-aebb0808aa5c:93jureq5up99"
+          ]
+        },
+        {
+          "id": "show_at_maximum",
+          "label": "最大配置下的 show",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 1,
+          "evidence": [
+            "upload-aebb0808aa5c:ybwqxua4vqej"
+          ]
+        },
+        {
+          "id": "no_command",
+          "label": "no 命令",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:a6gosvhh50zv",
+            "upload-aebb0808aa5c:gzcm7ldrqfa7",
+            "upload-aebb0808aa5c:i7dd1j74o4ur"
+          ]
+        },
+        {
+          "id": "clear_command",
+          "label": "clear 命令",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 1,
+          "evidence": [
+            "upload-aebb0808aa5c:s2aneti8p9dd"
+          ]
+        },
+        {
+          "id": "operation_log",
+          "label": "操作日志",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:4wlclalycny1",
+            "upload-aebb0808aa5c:58rev5vsqzyw",
+            "upload-aebb0808aa5c:ofi6w1u55y47"
+          ]
+        },
+        {
+          "id": "audit_log",
+          "label": "审计日志",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:58rev5vsqzyw",
+            "upload-aebb0808aa5c:b9ckh74kaobq",
+            "upload-aebb0808aa5c:ofi6w1u55y47"
+          ]
+        },
+        {
+          "id": "configuration_sync",
+          "label": "配置同步",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:l0r4glerzq3j",
+            "upload-aebb0808aa5c:py9uoksarpjw"
+          ]
+        },
+        {
+          "id": "configuration_save",
+          "label": "配置保存",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:2g0h89f0w1uf",
+            "upload-aebb0808aa5c:jr493b74wl4l"
+          ]
+        },
+        {
+          "id": "configuration_restore",
+          "label": "配置恢复",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:0j9mbggwjytw",
+            "upload-aebb0808aa5c:9nufkipey4f4"
+          ]
+        },
+        {
+          "id": "configuration_clear",
+          "label": "配置清除",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:u2wenvki1nxw",
+            "upload-aebb0808aa5c:wznpmaoyl6xb"
+          ]
+        },
+        {
+          "id": "upgrade_new_to_new",
+          "label": "升级兼容：新版本之间",
+          "group": "upgrade",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:b1bl63v94rk3",
+            "upload-aebb0808aa5c:saqa73tqfrw0"
+          ]
+        },
+        {
+          "id": "upgrade_old_to_new",
+          "label": "升级兼容：老版本到新版本",
+          "group": "upgrade",
+          "required": true,
+          "present": true,
+          "count": 1,
+          "evidence": [
+            "upload-aebb0808aa5c:rrgj1uagx1dv"
+          ]
+        },
+        {
+          "id": "upgrade_new_to_old",
+          "label": "升级兼容：新版本到老版本",
+          "group": "upgrade",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:2i0r5yfvn3ta",
+            "upload-aebb0808aa5c:uotmwgdkke7b"
+          ]
+        },
+        {
+          "id": "security",
+          "label": "安全",
+          "group": "other",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:be4tibl8k307",
+            "upload-aebb0808aa5c:fiwo7utmxxne"
+          ]
+        },
+        {
+          "id": "database",
+          "label": "数据库",
+          "group": "other",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:2zlrkcoz9mr4",
+            "upload-aebb0808aa5c:y34nt14ss7ok"
+          ]
+        }
+      ],
+      "classifications": [
+        {
+          "id": "upload-aebb0808aa5c:k7kd4d8qddqg",
+          "visit": 2,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:vpp6bkv9luc6",
+          "visit": 4,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:vaujn95az8d8",
+          "visit": 7,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:rycuaqhi8w9x",
+          "visit": 11,
+          "categories": [
+            "functional",
+            "command_add"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:5jp998s5k5lh",
+          "visit": 13,
+          "categories": [
+            "functional",
+            "command_query"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:q4gngrp4drre",
+          "visit": 15,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:3td81tprwfs4",
+          "visit": 18,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:v99unez89wsx",
+          "visit": 21,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:hxg6y0nsqerm",
+          "visit": 24,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:4ltan31kcjqa",
+          "visit": 26,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:jfhp3uwle991",
+          "visit": 28,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:2g1g1d0vhy65",
+          "visit": 30,
+          "categories": [
+            "configuration",
+            "command_modify"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:kbig1f2yc6q4",
+          "visit": 32,
+          "categories": [
+            "configuration",
+            "command_delete"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:i2pfefpoghe8",
+          "visit": 34,
+          "categories": [
+            "configuration",
+            "command_delete",
+            "command_add"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:lvdxvzfm1hg6",
+          "visit": 38,
+          "categories": [
+            "integration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:uu88965cspsf",
+          "visit": 40,
+          "categories": [
+            "integration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:t8da3mog62t8",
+          "visit": 42,
+          "categories": [
+            "integration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:93jureq5up99",
+          "visit": 45,
+          "categories": [
+            "integration",
+            "command_query"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:nxaakfyiqtum",
+          "visit": 47,
+          "categories": [
+            "integration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:fzstcob8zis6",
+          "visit": 51,
+          "categories": [
+            "integration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:rrgj1uagx1dv",
+          "visit": 54,
+          "categories": [
+            "compatibility",
+            "upgrade_old_to_new"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:b1bl63v94rk3",
+          "visit": 56,
+          "categories": [
+            "compatibility",
+            "upgrade_new_to_new"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:uotmwgdkke7b",
+          "visit": 58,
+          "categories": [
+            "compatibility",
+            "upgrade_new_to_old"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:i579m39pc230",
+          "visit": 61,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:auch71u6uxce",
+          "visit": 63,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:q3r7am57ohue",
+          "visit": 65,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:z04xch3i7ck8",
+          "visit": 67,
+          "categories": [
+            "negative",
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:nmb6vclhv6bb",
+          "visit": 69,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:y6gok9s3idfh",
+          "visit": 72,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:vodmb3tlqxbo",
+          "visit": 75,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:p8cwxc1ye2np",
+          "visit": 77,
+          "categories": [
+            "negative"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:i7dd1j74o4ur",
+          "visit": 81,
+          "categories": [
+            "functional",
+            "no_command"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:s2aneti8p9dd",
+          "visit": 83,
+          "categories": [
+            "functional",
+            "clear_command"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:0f1sd7awiefi",
+          "visit": 85,
+          "categories": [
+            "configuration",
+            "command_modify"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:7i05at912jhi",
+          "visit": 87,
+          "categories": [
+            "functional",
+            "command_query"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:gzcm7ldrqfa7",
+          "visit": 90,
+          "categories": [
+            "functional",
+            "no_command"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:ofi6w1u55y47",
+          "visit": 93,
+          "categories": [
+            "functional",
+            "operation_log",
+            "audit_log"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:58rev5vsqzyw",
+          "visit": 95,
+          "categories": [
+            "negative",
+            "operation_log",
+            "audit_log"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:l0r4glerzq3j",
+          "visit": 98,
+          "categories": [
+            "integration",
+            "configuration_sync"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:jr493b74wl4l",
+          "visit": 100,
+          "categories": [
+            "functional",
+            "configuration_save"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:0j9mbggwjytw",
+          "visit": 102,
+          "categories": [
+            "functional",
+            "configuration_restore"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:u2wenvki1nxw",
+          "visit": 104,
+          "categories": [
+            "functional",
+            "configuration_clear"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:fiwo7utmxxne",
+          "visit": 107,
+          "categories": [
+            "negative",
+            "security"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:2zlrkcoz9mr4",
+          "visit": 109,
+          "categories": [
+            "functional",
+            "database"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:gv8eovpocm23",
+          "visit": 111,
+          "categories": [
+            "functional"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:1hccmdu8ssig",
+          "visit": 114,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:v0dyf7d8h0a5",
+          "visit": 117,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:01qbgqo02rm3",
+          "visit": 120,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:jsvykub8vild",
+          "visit": 123,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:lvkk0ejfn1ap",
+          "visit": 126,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:o6ccpg02s6ou",
+          "visit": 129,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:4few8h0jrcxe",
+          "visit": 132,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:v0mcr4ryvsai",
+          "visit": 135,
+          "categories": [
+            "configuration"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:ybwqxua4vqej",
+          "visit": 139,
+          "categories": [
+            "functional",
+            "show_at_maximum",
+            "command_add"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:f6eulx5b954g",
+          "visit": 141,
+          "categories": [
+            "negative",
+            "command_delete"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:a6gosvhh50zv",
+          "visit": 143,
+          "categories": [
+            "negative",
+            "no_command"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:4wlclalycny1",
+          "visit": 145,
+          "categories": [
+            "functional",
+            "operation_log"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:b9ckh74kaobq",
+          "visit": 147,
+          "categories": [
+            "configuration",
+            "audit_log"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:py9uoksarpjw",
+          "visit": 149,
+          "categories": [
+            "negative",
+            "configuration_sync"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:2g0h89f0w1uf",
+          "visit": 151,
+          "categories": [
+            "integration",
+            "configuration_save"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:9nufkipey4f4",
+          "visit": 153,
+          "categories": [
+            "integration",
+            "configuration_restore"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:wznpmaoyl6xb",
+          "visit": 155,
+          "categories": [
+            "negative",
+            "configuration_clear"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:saqa73tqfrw0",
+          "visit": 157,
+          "categories": [
+            "configuration",
+            "upgrade_new_to_new"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:2i0r5yfvn3ta",
+          "visit": 159,
+          "categories": [
+            "negative",
+            "upgrade_new_to_old"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:be4tibl8k307",
+          "visit": 161,
+          "categories": [
+            "configuration",
+            "security"
+          ],
+          "status": "classified",
+          "judgments": []
+        },
+        {
+          "id": "upload-aebb0808aa5c:y34nt14ss7ok",
+          "visit": 163,
+          "categories": [
+            "negative",
+            "database"
+          ],
+          "status": "classified",
+          "judgments": []
+        }
+      ],
+      "classification_status": "classified",
+      "unclassified": [],
+      "scope_complete": true,
+      "case_resources": [
+        {
+          "case": "upload-aebb0808aa5c:k7kd4d8qddqg",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:vpp6bkv9luc6",
+          "present": true,
+          "resource": [
+            "功能"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:vaujn95az8d8",
+          "present": true,
+          "resource": [
+            "Functional"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:rycuaqhi8w9x",
+          "present": true,
+          "resource": [
+            "[Function]"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:5jp998s5k5lh",
+          "present": true,
+          "resource": [
+            "function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:q4gngrp4drre",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:3td81tprwfs4",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:v99unez89wsx",
+          "present": false,
+          "resource": null
+        },
+        {
+          "case": "upload-aebb0808aa5c:hxg6y0nsqerm",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:4ltan31kcjqa",
+          "present": true,
+          "resource": [
+            "configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:jfhp3uwle991",
+          "present": true,
+          "resource": [
+            "配置"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:2g1g1d0vhy65",
+          "present": true,
+          "resource": [
+            "Configure"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:kbig1f2yc6q4",
+          "present": true,
+          "resource": [
+            "[configuration]"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:i2pfefpoghe8",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:lvdxvzfm1hg6",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:uu88965cspsf",
+          "present": true,
+          "resource": [
+            "集成"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:t8da3mog62t8",
+          "present": true,
+          "resource": [
+            "integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:93jureq5up99",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:nxaakfyiqtum",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:fzstcob8zis6",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:rrgj1uagx1dv",
+          "present": true,
+          "resource": [
+            "Compatibility"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:b1bl63v94rk3",
+          "present": true,
+          "resource": [
+            "兼容"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:uotmwgdkke7b",
+          "present": true,
+          "resource": [
+            "compatibility"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:i579m39pc230",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:auch71u6uxce",
+          "present": true,
+          "resource": [
+            "negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:q3r7am57ohue",
+          "present": true,
+          "resource": [
+            "负向"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:z04xch3i7ck8",
+          "present": true,
+          "resource": [
+            "[Negative]",
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:nmb6vclhv6bb",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:y6gok9s3idfh",
+          "present": true,
+          "resource": [
+            "negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:vodmb3tlqxbo",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:p8cwxc1ye2np",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:i7dd1j74o4ur",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:s2aneti8p9dd",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:0f1sd7awiefi",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:7i05at912jhi",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:gzcm7ldrqfa7",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:ofi6w1u55y47",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:58rev5vsqzyw",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:l0r4glerzq3j",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:jr493b74wl4l",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:0j9mbggwjytw",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:u2wenvki1nxw",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:fiwo7utmxxne",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:2zlrkcoz9mr4",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:gv8eovpocm23",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:1hccmdu8ssig",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:v0dyf7d8h0a5",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:01qbgqo02rm3",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:jsvykub8vild",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:lvkk0ejfn1ap",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:o6ccpg02s6ou",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:4few8h0jrcxe",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:v0mcr4ryvsai",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:ybwqxua4vqej",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:f6eulx5b954g",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:a6gosvhh50zv",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:4wlclalycny1",
+          "present": true,
+          "resource": [
+            "Function"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:b9ckh74kaobq",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:py9uoksarpjw",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:2g0h89f0w1uf",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:9nufkipey4f4",
+          "present": true,
+          "resource": [
+            "Integration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:wznpmaoyl6xb",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:saqa73tqfrw0",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:2i0r5yfvn3ta",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:be4tibl8k307",
+          "present": true,
+          "resource": [
+            "Configuration"
+          ]
+        },
+        {
+          "case": "upload-aebb0808aa5c:y34nt14ss7ok",
+          "present": true,
+          "resource": [
+            "Negative"
+          ]
+        }
+      ],
+      "tag_table": {
+        "id": "team-resource-tags",
+        "version": "1",
+        "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b"
+      },
+      "tag_undeclared_cases": 61,
+      "command_coverage": {
+        "case_rule": "marked",
+        "rule_mismatch": false,
+        "bound": false,
+        "uploaded": true,
+        "documentIndexed": false,
+        "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+        "build": "Rel_MEADOW_10_6_8_1",
+        "caseCount": 66,
+        "matchedCases": 0,
+        "unmatched": [
+          "upload-aebb0808aa5c:01qbgqo02rm3",
+          "upload-aebb0808aa5c:0f1sd7awiefi",
+          "upload-aebb0808aa5c:0j9mbggwjytw",
+          "upload-aebb0808aa5c:1hccmdu8ssig",
+          "upload-aebb0808aa5c:2g0h89f0w1uf",
+          "upload-aebb0808aa5c:2g1g1d0vhy65",
+          "upload-aebb0808aa5c:2i0r5yfvn3ta",
+          "upload-aebb0808aa5c:2zlrkcoz9mr4",
+          "upload-aebb0808aa5c:3td81tprwfs4",
+          "upload-aebb0808aa5c:4few8h0jrcxe",
+          "upload-aebb0808aa5c:4ltan31kcjqa",
+          "upload-aebb0808aa5c:4wlclalycny1",
+          "upload-aebb0808aa5c:58rev5vsqzyw",
+          "upload-aebb0808aa5c:5jp998s5k5lh",
+          "upload-aebb0808aa5c:7i05at912jhi",
+          "upload-aebb0808aa5c:93jureq5up99",
+          "upload-aebb0808aa5c:9nufkipey4f4",
+          "upload-aebb0808aa5c:a6gosvhh50zv",
+          "upload-aebb0808aa5c:auch71u6uxce",
+          "upload-aebb0808aa5c:b1bl63v94rk3",
+          "upload-aebb0808aa5c:b9ckh74kaobq",
+          "upload-aebb0808aa5c:be4tibl8k307",
+          "upload-aebb0808aa5c:f6eulx5b954g",
+          "upload-aebb0808aa5c:fiwo7utmxxne",
+          "upload-aebb0808aa5c:fzstcob8zis6",
+          "upload-aebb0808aa5c:gv8eovpocm23",
+          "upload-aebb0808aa5c:gzcm7ldrqfa7",
+          "upload-aebb0808aa5c:hxg6y0nsqerm",
+          "upload-aebb0808aa5c:i2pfefpoghe8",
+          "upload-aebb0808aa5c:i579m39pc230",
+          "upload-aebb0808aa5c:i7dd1j74o4ur",
+          "upload-aebb0808aa5c:jfhp3uwle991",
+          "upload-aebb0808aa5c:jr493b74wl4l",
+          "upload-aebb0808aa5c:jsvykub8vild",
+          "upload-aebb0808aa5c:k7kd4d8qddqg",
+          "upload-aebb0808aa5c:kbig1f2yc6q4",
+          "upload-aebb0808aa5c:l0r4glerzq3j",
+          "upload-aebb0808aa5c:lvdxvzfm1hg6",
+          "upload-aebb0808aa5c:lvkk0ejfn1ap",
+          "upload-aebb0808aa5c:nmb6vclhv6bb",
+          "upload-aebb0808aa5c:nxaakfyiqtum",
+          "upload-aebb0808aa5c:o6ccpg02s6ou",
+          "upload-aebb0808aa5c:ofi6w1u55y47",
+          "upload-aebb0808aa5c:p8cwxc1ye2np",
+          "upload-aebb0808aa5c:py9uoksarpjw",
+          "upload-aebb0808aa5c:q3r7am57ohue",
+          "upload-aebb0808aa5c:q4gngrp4drre",
+          "upload-aebb0808aa5c:rrgj1uagx1dv",
+          "upload-aebb0808aa5c:rycuaqhi8w9x",
+          "upload-aebb0808aa5c:s2aneti8p9dd",
+          "upload-aebb0808aa5c:saqa73tqfrw0",
+          "upload-aebb0808aa5c:t8da3mog62t8",
+          "upload-aebb0808aa5c:u2wenvki1nxw",
+          "upload-aebb0808aa5c:uotmwgdkke7b",
+          "upload-aebb0808aa5c:uu88965cspsf",
+          "upload-aebb0808aa5c:v0dyf7d8h0a5",
+          "upload-aebb0808aa5c:v0mcr4ryvsai",
+          "upload-aebb0808aa5c:v99unez89wsx",
+          "upload-aebb0808aa5c:vaujn95az8d8",
+          "upload-aebb0808aa5c:vodmb3tlqxbo",
+          "upload-aebb0808aa5c:vpp6bkv9luc6",
+          "upload-aebb0808aa5c:wznpmaoyl6xb",
+          "upload-aebb0808aa5c:y34nt14ss7ok",
+          "upload-aebb0808aa5c:y6gok9s3idfh",
+          "upload-aebb0808aa5c:ybwqxua4vqej",
+          "upload-aebb0808aa5c:z04xch3i7ck8"
+        ],
+        "orphaned": [],
+        "pending_commands": [],
+        "pending_identities": [],
+        "pending_skips": [],
+        "commandlessCases": 0,
+        "truncated": false,
+        "skippedSources": 0,
+        "cutKeys": [],
+        "unplacedRoot": null,
+        "notes": [],
+        "missing_identities": [],
+        "unclassified": [],
+        "commands": []
+      },
+      "missing": [
+        "stress"
+      ],
+      "skipped": []
+    }
+  },
+  "outcome": {
+    "tier": "advisory",
+    "grounds": [
+      "src:aebb0808aa5c2f597202f43c9833b0711605d12311c88afddb34ac6c9255d783/kityminder@1/n/r0example001"
+    ],
+    "item": "upload-aebb0808aa5c",
+    "verdict": "refute",
+    "code": "template-gap.category_shortfall",
+    "statement": "按原件声明或本次引文核验成立的模型分类，在完整用例范围内未覆盖且未声明跳过：stress",
+    "data": {
+      "covered": [
+        "functional",
+        "configuration",
+        "integration",
+        "compatibility",
+        "negative",
+        "command_add",
+        "command_delete",
+        "command_modify",
+        "command_query",
+        "show_at_maximum",
+        "no_command",
+        "clear_command",
+        "operation_log",
+        "audit_log",
+        "configuration_sync",
+        "configuration_save",
+        "configuration_restore",
+        "configuration_clear",
+        "upgrade_new_to_new",
+        "upgrade_old_to_new",
+        "upgrade_new_to_old",
+        "security",
+        "database"
+      ],
+      "classification_status": "classified",
+      "classified": 66,
+      "total": 66,
+      "unclassified": [],
+      "judgments": [],
+      "skipped": [],
+      "qualifier_marks": [],
+      "categories": [
+        {
+          "id": "functional",
+          "label": "功能测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 20,
+          "evidence": [
+            "upload-aebb0808aa5c:0j9mbggwjytw",
+            "upload-aebb0808aa5c:2zlrkcoz9mr4",
+            "upload-aebb0808aa5c:3td81tprwfs4",
+            "upload-aebb0808aa5c:4wlclalycny1",
+            "upload-aebb0808aa5c:5jp998s5k5lh",
+            "upload-aebb0808aa5c:7i05at912jhi",
+            "upload-aebb0808aa5c:gv8eovpocm23",
+            "upload-aebb0808aa5c:gzcm7ldrqfa7",
+            "upload-aebb0808aa5c:i7dd1j74o4ur",
+            "upload-aebb0808aa5c:jr493b74wl4l",
+            "upload-aebb0808aa5c:k7kd4d8qddqg",
+            "upload-aebb0808aa5c:ofi6w1u55y47",
+            "upload-aebb0808aa5c:q4gngrp4drre",
+            "upload-aebb0808aa5c:rycuaqhi8w9x",
+            "upload-aebb0808aa5c:s2aneti8p9dd",
+            "upload-aebb0808aa5c:u2wenvki1nxw",
+            "upload-aebb0808aa5c:v99unez89wsx",
+            "upload-aebb0808aa5c:vaujn95az8d8",
+            "upload-aebb0808aa5c:vpp6bkv9luc6",
+            "upload-aebb0808aa5c:ybwqxua4vqej"
+          ]
+        },
+        {
+          "id": "configuration",
+          "label": "配置测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 19,
+          "evidence": [
+            "upload-aebb0808aa5c:01qbgqo02rm3",
+            "upload-aebb0808aa5c:0f1sd7awiefi",
+            "upload-aebb0808aa5c:1hccmdu8ssig",
+            "upload-aebb0808aa5c:2g1g1d0vhy65",
+            "upload-aebb0808aa5c:4few8h0jrcxe",
+            "upload-aebb0808aa5c:4ltan31kcjqa",
+            "upload-aebb0808aa5c:b9ckh74kaobq",
+            "upload-aebb0808aa5c:be4tibl8k307",
+            "upload-aebb0808aa5c:hxg6y0nsqerm",
+            "upload-aebb0808aa5c:i2pfefpoghe8",
+            "upload-aebb0808aa5c:jfhp3uwle991",
+            "upload-aebb0808aa5c:jsvykub8vild",
+            "upload-aebb0808aa5c:kbig1f2yc6q4",
+            "upload-aebb0808aa5c:lvkk0ejfn1ap",
+            "upload-aebb0808aa5c:o6ccpg02s6ou",
+            "upload-aebb0808aa5c:saqa73tqfrw0",
+            "upload-aebb0808aa5c:v0dyf7d8h0a5",
+            "upload-aebb0808aa5c:v0mcr4ryvsai",
+            "upload-aebb0808aa5c:z04xch3i7ck8"
+          ]
+        },
+        {
+          "id": "integration",
+          "label": "集成测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 9,
+          "evidence": [
+            "upload-aebb0808aa5c:2g0h89f0w1uf",
+            "upload-aebb0808aa5c:93jureq5up99",
+            "upload-aebb0808aa5c:9nufkipey4f4",
+            "upload-aebb0808aa5c:fzstcob8zis6",
+            "upload-aebb0808aa5c:l0r4glerzq3j",
+            "upload-aebb0808aa5c:lvdxvzfm1hg6",
+            "upload-aebb0808aa5c:nxaakfyiqtum",
+            "upload-aebb0808aa5c:t8da3mog62t8",
+            "upload-aebb0808aa5c:uu88965cspsf"
+          ]
+        },
+        {
+          "id": "compatibility",
+          "label": "兼容性测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:b1bl63v94rk3",
+            "upload-aebb0808aa5c:rrgj1uagx1dv",
+            "upload-aebb0808aa5c:uotmwgdkke7b"
+          ]
+        },
+        {
+          "id": "negative",
+          "label": "反向测试",
+          "group": "test_type",
+          "required": true,
+          "present": true,
+          "count": 16,
+          "evidence": [
+            "upload-aebb0808aa5c:2i0r5yfvn3ta",
+            "upload-aebb0808aa5c:58rev5vsqzyw",
+            "upload-aebb0808aa5c:a6gosvhh50zv",
+            "upload-aebb0808aa5c:auch71u6uxce",
+            "upload-aebb0808aa5c:f6eulx5b954g",
+            "upload-aebb0808aa5c:fiwo7utmxxne",
+            "upload-aebb0808aa5c:i579m39pc230",
+            "upload-aebb0808aa5c:nmb6vclhv6bb",
+            "upload-aebb0808aa5c:p8cwxc1ye2np",
+            "upload-aebb0808aa5c:py9uoksarpjw",
+            "upload-aebb0808aa5c:q3r7am57ohue",
+            "upload-aebb0808aa5c:vodmb3tlqxbo",
+            "upload-aebb0808aa5c:wznpmaoyl6xb",
+            "upload-aebb0808aa5c:y34nt14ss7ok",
+            "upload-aebb0808aa5c:y6gok9s3idfh",
+            "upload-aebb0808aa5c:z04xch3i7ck8"
+          ]
+        },
+        {
+          "id": "stress",
+          "label": "压力测试",
+          "group": "test_type",
+          "required": true,
+          "present": false,
+          "count": 0,
+          "evidence": []
+        },
+        {
+          "id": "command_add",
+          "label": "命令的添加",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:i2pfefpoghe8",
+            "upload-aebb0808aa5c:rycuaqhi8w9x",
+            "upload-aebb0808aa5c:ybwqxua4vqej"
+          ]
+        },
+        {
+          "id": "command_delete",
+          "label": "命令的删除",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:f6eulx5b954g",
+            "upload-aebb0808aa5c:i2pfefpoghe8",
+            "upload-aebb0808aa5c:kbig1f2yc6q4"
+          ]
+        },
+        {
+          "id": "command_modify",
+          "label": "命令的修改",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:0f1sd7awiefi",
+            "upload-aebb0808aa5c:2g1g1d0vhy65"
+          ]
+        },
+        {
+          "id": "command_query",
+          "label": "命令的查询",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:5jp998s5k5lh",
+            "upload-aebb0808aa5c:7i05at912jhi",
+            "upload-aebb0808aa5c:93jureq5up99"
+          ]
+        },
+        {
+          "id": "show_at_maximum",
+          "label": "最大配置下的 show",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 1,
+          "evidence": [
+            "upload-aebb0808aa5c:ybwqxua4vqej"
+          ]
+        },
+        {
+          "id": "no_command",
+          "label": "no 命令",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:a6gosvhh50zv",
+            "upload-aebb0808aa5c:gzcm7ldrqfa7",
+            "upload-aebb0808aa5c:i7dd1j74o4ur"
+          ]
+        },
+        {
+          "id": "clear_command",
+          "label": "clear 命令",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 1,
+          "evidence": [
+            "upload-aebb0808aa5c:s2aneti8p9dd"
+          ]
+        },
+        {
+          "id": "operation_log",
+          "label": "操作日志",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:4wlclalycny1",
+            "upload-aebb0808aa5c:58rev5vsqzyw",
+            "upload-aebb0808aa5c:ofi6w1u55y47"
+          ]
+        },
+        {
+          "id": "audit_log",
+          "label": "审计日志",
+          "group": "command",
+          "required": true,
+          "present": true,
+          "count": 3,
+          "evidence": [
+            "upload-aebb0808aa5c:58rev5vsqzyw",
+            "upload-aebb0808aa5c:b9ckh74kaobq",
+            "upload-aebb0808aa5c:ofi6w1u55y47"
+          ]
+        },
+        {
+          "id": "configuration_sync",
+          "label": "配置同步",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:l0r4glerzq3j",
+            "upload-aebb0808aa5c:py9uoksarpjw"
+          ]
+        },
+        {
+          "id": "configuration_save",
+          "label": "配置保存",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:2g0h89f0w1uf",
+            "upload-aebb0808aa5c:jr493b74wl4l"
+          ]
+        },
+        {
+          "id": "configuration_restore",
+          "label": "配置恢复",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:0j9mbggwjytw",
+            "upload-aebb0808aa5c:9nufkipey4f4"
+          ]
+        },
+        {
+          "id": "configuration_clear",
+          "label": "配置清除",
+          "group": "configuration",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:u2wenvki1nxw",
+            "upload-aebb0808aa5c:wznpmaoyl6xb"
+          ]
+        },
+        {
+          "id": "upgrade_new_to_new",
+          "label": "升级兼容：新版本之间",
+          "group": "upgrade",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:b1bl63v94rk3",
+            "upload-aebb0808aa5c:saqa73tqfrw0"
+          ]
+        },
+        {
+          "id": "upgrade_old_to_new",
+          "label": "升级兼容：老版本到新版本",
+          "group": "upgrade",
+          "required": true,
+          "present": true,
+          "count": 1,
+          "evidence": [
+            "upload-aebb0808aa5c:rrgj1uagx1dv"
+          ]
+        },
+        {
+          "id": "upgrade_new_to_old",
+          "label": "升级兼容：新版本到老版本",
+          "group": "upgrade",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:2i0r5yfvn3ta",
+            "upload-aebb0808aa5c:uotmwgdkke7b"
+          ]
+        },
+        {
+          "id": "security",
+          "label": "安全",
+          "group": "other",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:be4tibl8k307",
+            "upload-aebb0808aa5c:fiwo7utmxxne"
+          ]
+        },
+        {
+          "id": "database",
+          "label": "数据库",
+          "group": "other",
+          "required": true,
+          "present": true,
+          "count": 2,
+          "evidence": [
+            "upload-aebb0808aa5c:2zlrkcoz9mr4",
+            "upload-aebb0808aa5c:y34nt14ss7ok"
+          ]
+        }
+      ],
+      "missing": [
+        "stress"
+      ]
+    }
+  },
+  "command_outcomes": [
+    {
+      "tier": "advisory",
+      "item": "upload-aebb0808aa5c",
+      "grounds": [
+        "src:aebb0808aa5c2f597202f43c9833b0711605d12311c88afddb34ac6c9255d783/kityminder@1/n/r0example001",
+        "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/"
+      ],
+      "verdict": "refute",
+      "code": "template-gap.not_indexed",
+      "statement": "上传文件 upload-aebb0808aa5c 不在用例索引里；根 3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c，构建 Rel_MEADOW_10_6_8_1。下一步：用敏捷平台的文档编号重跑",
+      "data": {
+        "document": "upload-aebb0808aa5c",
+        "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+        "build": "Rel_MEADOW_10_6_8_1",
+        "scope": "document",
+        "next_action": "用敏捷平台的文档编号重跑"
+      }
+    }
+  ]
+}

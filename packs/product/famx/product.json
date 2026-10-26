@@ -1,0 +1,479 @@
+{
+  "schema": "product@1",
+  "id": "famx",
+  "title": "FAMX / FAMY",
+  "names": [
+    "FAMX",
+    "FAMY"
+  ],
+  "sync": {
+    "start": [
+      "buildsite:listing:index"
+    ],
+    "plan": {
+      "module": "functions/sync.ts"
+    },
+    "options": {
+      "include": "${var:FAMX_INCLUDE_PAGES}",
+      "pinned": "${var:FAMX_PINNED_BUILDS}",
+      "exclude": [],
+      "case_index": false,
+      "min_line": "${var:FAMX_MIN_LINE}",
+      "mainline_page_words": "${var:FAMX_MAINLINE_PAGE_WORDS}",
+      "adoc": {
+        "FAMX": {
+          "root": "${var:FAMX_ADOC_ROOT}",
+          "main": "${var:FAMX_ADOC_MAIN}",
+          "app_main": "${var:FAMX_ADOC_APP_MAIN}"
+        },
+        "FAMY": {
+          "root": "${var:FAMY_ADOC_ROOT}",
+          "main": "${var:FAMY_ADOC_MAIN}",
+          "app_main": "${var:FAMY_ADOC_APP_MAIN}"
+        }
+      },
+      "spec_index": false
+    },
+    "max_rounds": 10,
+    "max_reads": 300
+  },
+  "select_build": {
+    "module": "functions/select.ts"
+  },
+  "links": [
+    {
+      "id": "manual-literals",
+      "field": "command_literals",
+      "namespace": "/commands",
+      "match": "exact",
+      "entry_kind": "definition",
+      "normalize": {
+        "lowercase": false,
+        "strip_nul": false,
+        "nfc": false
+      },
+      "source_producers": [
+        "manual-famx",
+        "manual-famy"
+      ],
+      "target_producers": [
+        "command-tree"
+      ]
+    },
+    {
+      "id": "manual-signatures",
+      "alternatives_field": "signature_literals",
+      "namespace": "/commands",
+      "match": "exact",
+      "entry_kind": "definition",
+      "normalize": {
+        "lowercase": false,
+        "strip_nul": false,
+        "nfc": false
+      },
+      "source_producers": [
+        "manual-famx",
+        "manual-famy"
+      ],
+      "target_producers": [
+        "command-tree"
+      ]
+    },
+    {
+      "id": "manual-mentions",
+      "field": "command_mentions",
+      "namespace": "/commands",
+      "match": "exact",
+      "entry_kind": "definition",
+      "unmatched": "mention",
+      "normalize": {
+        "lowercase": false,
+        "strip_nul": false,
+        "nfc": false
+      },
+      "source_producers": [
+        "manual-famx",
+        "manual-famy"
+      ],
+      "target_producers": [
+        "command-tree"
+      ]
+    }
+  ],
+  "command_policy": {"schema": "command-policy@1", "read_only": ["/commands/show"], "inverse_rules": [{"source_prefix": "/commands/no", "inverse_prefix": "/commands"}, {"source_prefix": "/commands", "inverse_prefix": "/commands/no"}], "inverse_alternatives": [["on", "off"], ["enable", "disable"]]},
+  "catalogs": [
+    {
+      "id": "commands@1",
+      "entry_kind": "definition",
+      "producer": "command-tree",
+      "complete": true,
+      "case_sensitive": true
+    }
+  ],
+  "producers": [
+    {
+      "id": "command-tree",
+      "title": "命令树（构建自带的 command_tree XML）",
+      "function": {
+        "module": "functions/producers.ts",
+        "export": "commandTree"
+      },
+      "inputs": {
+        "tree": {
+          "source": "tree"
+        }
+      }
+    },
+    {
+      "id": "manual-famy",
+      "title": "FAMY 手册（独立属性与产出范围）",
+      "function": {
+        "module": "functions/adoc/deployment.ts",
+        "export": "familyManual"
+      },
+      "inputs": {
+        "cli": {
+          "external": "manual:cli:{line}",
+          "optional": true
+        },
+        "app": {
+          "external": "manual:app:{line}",
+          "optional": true
+        },
+        "tree": {
+          "source": "tree"
+        },
+        "meta": {
+          "source": "adoc_famy_meta",
+          "optional": true
+        },
+        "files": {
+          "source": "adoc_famy_files",
+          "parser": "text@1",
+          "many": true,
+          "batch": 200,
+          "optional": true
+        }
+      },
+      "params": {
+        "family": "FAMY",
+        "root": "${var:FAMY_ADOC_ROOT}",
+        "main": "${var:FAMY_ADOC_MAIN}",
+        "attributes": {
+          "FAMY": "${var:FAMX_ADOC_ATTRIBUTES_FAMY}"
+        },
+        "models": "${var:FAMX_MODELS}",
+        "platforms": "${var:FAMX_PLATFORMS}",
+        "components": "${var:FAMX_COMPONENTS}",
+        "licenses": "${var:FAMX_LICENSES}",
+        "deployment_forms": "${var:FAMX_DEPLOYMENT_FORMS}",
+        "app_main": "${var:FAMY_ADOC_APP_MAIN}",
+        "signature_structure": {
+          "schema": "famx-adoc-signature-structure@1",
+          "block": "paragraph",
+          "inline": [
+            "strong",
+            "optional whitespace + emphasis"
+          ],
+          "command_word_grammar": "locked-tree-path-and-ascii-drift-slot@1",
+          "variants": "bounded {a|b} groups",
+          "parameter_authority": "locked command-tree declarations",
+          "other_blocks": "chapter content"
+        }
+      },
+      "placement": "judgment_allowed"
+    },
+    {
+      "id": "manual-famx",
+      "title": "FAMX 手册（独立属性与产出范围）",
+      "function": {
+        "module": "functions/adoc/deployment.ts",
+        "export": "familyManual"
+      },
+      "inputs": {
+        "cli": {
+          "external": "manual:cli:{line}",
+          "optional": true
+        },
+        "app": {
+          "external": "manual:app:{line}",
+          "optional": true
+        },
+        "tree": {
+          "source": "tree"
+        },
+        "meta": {
+          "source": "adoc_famx_meta",
+          "optional": true
+        },
+        "files": {
+          "source": "adoc_famx_files",
+          "parser": "text@1",
+          "many": true,
+          "batch": 200,
+          "optional": true
+        }
+      },
+      "params": {
+        "family": "FAMX",
+        "root": "${var:FAMX_ADOC_ROOT}",
+        "main": "${var:FAMX_ADOC_MAIN}",
+        "attributes": {
+          "FAMX": "${var:FAMX_ADOC_ATTRIBUTES_FAMX}"
+        },
+        "models": "${var:FAMX_MODELS}",
+        "platforms": "${var:FAMX_PLATFORMS}",
+        "components": "${var:FAMX_COMPONENTS}",
+        "licenses": "${var:FAMX_LICENSES}",
+        "deployment_forms": "${var:FAMX_DEPLOYMENT_FORMS}",
+        "app_main": "${var:FAMX_ADOC_APP_MAIN}",
+        "signature_structure": {
+          "schema": "famx-adoc-signature-structure@1",
+          "block": "paragraph",
+          "inline": [
+            "strong",
+            "optional whitespace + emphasis"
+          ],
+          "command_word_grammar": "locked-tree-path-and-ascii-drift-slot@1",
+          "variants": "bounded {a|b} groups",
+          "parameter_authority": "locked command-tree declarations",
+          "other_blocks": "chapter content"
+        }
+      },
+      "placement": "judgment_allowed"
+    },
+    {
+      "id": "release-notes",
+      "title": "修复的缺陷（构建的修复缺陷清单）",
+      "function": {
+        "module": "functions/producers.ts",
+        "export": "releaseNotes"
+      },
+      "inputs": {
+        "notes": {
+          "source": "fixed_bugs",
+          "optional": true
+        }
+      }
+    },
+    {
+      "id": "specifications",
+      "title": "产品线不分版本的规格章节",
+      "unversioned": true,
+      "function": {
+        "module": "functions/specifications.ts",
+        "export": "specifications"
+      },
+      "inputs": {
+        "documents": {
+          "source": "spec_documents",
+          "many": true,
+          "batch": 20,
+          "optional": true
+        },
+        "catalog": {
+          "source": "spec_catalog",
+          "optional": true
+        }
+      },
+      "params": {
+        "components": "${var:FAMX_COMPONENTS}",
+        "licenses": "${var:FAMX_LICENSES}",
+        "deployment_forms": "${var:FAMX_DEPLOYMENT_FORMS}"
+      }
+    }
+  ],
+  "variables": [
+    {
+      "name": "FAMX_MIN_LINE",
+      "description": "Minimum release-train line for case indexing; null imposes no floor",
+      "schema": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "default": null
+    },
+    {
+      "name": "FAMX_PINNED_BUILDS",
+      "description": "Full build names in the build-site spelling; on a read opted-in page, an entry whose build name equals a member exactly (no transformation, not even case folding) is listed as a build of its own tree, released or not",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
+    },
+    {
+      "name": "FAMX_INCLUDE_PAGES",
+      "description": "Glob patterns over listing page names that opt platform, customer and patch pages into the sync; empty selects only the mainline pages",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
+    },
+    {
+      "name": "FAMX_MAINLINE_PAGE_WORDS",
+      "description": "Additional literal tokens permitted after a mainline page version",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
+    },
+    {
+      "name": "FAMX_ADOC_ROOT",
+      "description": "SVN directory template with original {line} or naming-derived {line_dir}; explicit null selects Markdown",
+      "schema": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "default": null
+    },
+    {
+      "name": "FAMX_ADOC_MAIN",
+      "description": "CLI main adoc file relative to the configured family directory",
+      "schema": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": "book.adoc"
+    },
+    {
+      "name": "FAMX_ADOC_ATTRIBUTES_FAMX",
+      "description": "Explicit attribute set for this family; empty is an explicit set",
+      "schema": {
+        "type": "object",
+        "additionalProperties": {
+          "type": [
+            "string",
+            "boolean"
+          ]
+        }
+      },
+      "default": {}
+    },
+    {
+      "name": "FAMY_ADOC_ROOT",
+      "description": "SVN directory template with original {line} or naming-derived {line_dir}; explicit null selects Markdown",
+      "schema": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "default": null
+    },
+    {
+      "name": "FAMY_ADOC_MAIN",
+      "description": "CLI main adoc file relative to the configured family directory",
+      "schema": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": "book.adoc"
+    },
+    {
+      "name": "FAMX_ADOC_ATTRIBUTES_FAMY",
+      "description": "Explicit attribute set for this family; empty is an explicit set",
+      "schema": {
+        "type": "object",
+        "additionalProperties": {
+          "type": [
+            "string",
+            "boolean"
+          ]
+        }
+      },
+      "default": {}
+    },
+    {"name": "FAMX_COMPONENTS", "description": "FAMX_COMPONENTS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
+    {"name": "FAMX_LICENSES", "description": "FAMX_LICENSES：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
+    {"name": "FAMX_DEPLOYMENT_FORMS", "description": "FAMX_DEPLOYMENT_FORMS：适用条件的部署闭集；只填手册中明写的名称，空集须显式设置 []", "schema": {"type": "array", "items": {"type": "string", "minLength": 1}}, "default": []},
+    {
+      "name": "FAMX_MODELS",
+      "description": "Exact model identities permitted in structured applicability declarations; no synonym mapping",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
+    },
+    {
+      "name": "FAMX_PLATFORMS",
+      "description": "Exact platform identities permitted in structured applicability declarations; no synonym mapping",
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "default": []
+    },
+    {
+      "name": "FAMX_ADOC_APP_MAIN",
+      "description": "APP main adoc file relative to the family directory, compiled with the same family attributes as CLI",
+      "schema": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": "app.adoc"
+    },
+    {
+      "name": "FAMY_ADOC_APP_MAIN",
+      "description": "APP main adoc file relative to the family directory, compiled with the same family attributes as CLI",
+      "schema": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": "app.adoc"
+    }
+  ],
+  "applicability": {
+    "closed_sets": {
+      "models": "FAMX_MODELS",
+      "platforms": "FAMX_PLATFORMS",
+      "components": "FAMX_COMPONENTS",
+      "licenses": "FAMX_LICENSES",
+      "deployment_forms": "FAMX_DEPLOYMENT_FORMS"
+    },
+    "build_validator": {
+      "module": "functions/naming.ts",
+      "export": "validateBuildNames"
+    },
+    "grammar": "famx-applicability@1"
+  },
+  "feeding": {
+    "project": {
+      "module": "functions/feeding.ts"
+    },
+    "normalize_line": {
+      "module": "functions/feeding.ts",
+      "export": "normalizeLine"
+    },
+    "verify_command": {
+      "module": "functions/feeding.ts",
+      "export": "verifyCommand"
+    },
+    "classifications": {
+      "module": "functions/feeding.ts",
+      "export": "classificationValues"
+    }
+  }
+}

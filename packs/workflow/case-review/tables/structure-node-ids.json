@@ -1,0 +1,15 @@
+{
+  "schema": "structure@1",
+  "origin": "模型 W01 R[2]：被判对象的编号重复或为空不算投影违规，编号问题交结构检查判定；被判对象由 functions/subjects.ts 的 structureSubject 产出（{ subjects }，运行的全部条目）",
+  "description": "每个用例节点有自己的编号（data.id），同一文档的用例里不重复；没有编号或编号重复的用例用包内编号（投影结果的 unnumbered），跨修订无法对应",
+  "tier": "advisory",
+  "nodes": "$.subjects[*]",
+  "item": "/id",
+  "location": "/location",
+  "rules": [
+    {
+      "fields": [{ "path": "/nodeId", "required": true, "type": "string" }],
+      "unique": [{ "key": ["/nodeId"], "within": "group", "group": ["/document"], "match": { "unicode": "none", "case": "sensitive", "whitespace": "exact" } }]
+    }
+  ]
+}

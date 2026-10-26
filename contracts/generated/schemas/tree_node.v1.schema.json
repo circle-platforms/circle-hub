@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "the decoded path segment of the node in its parent; empty for the root"
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "0 for a node without children, else 1 + the largest height of its children"
+    },
+    "level": {
+      "type": "string",
+      "enum": [
+        "trunk",
+        "branch",
+        "leaf"
+      ]
+    },
+    "children": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "name",
+          "digest"
+        ],
+        "additionalProperties": false
+      },
+      "description": "sorted by name (UTF-16 code units), names unique"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "description": "digests of the entries hung on this node, sorted, unique"
+    }
+  },
+  "required": [
+    "name",
+    "height",
+    "level",
+    "children",
+    "entries"
+  ],
+  "additionalProperties": false
+}

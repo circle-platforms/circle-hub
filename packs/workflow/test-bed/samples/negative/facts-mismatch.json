@@ -1,0 +1,135 @@
+{
+  "id": "facts_mismatch",
+  "source": "author",
+  "check": "bed",
+  "note": "合成反例：facts 按冻结清单和租约重算；没有时长上限",
+  "subject": {
+    "items": [
+      {
+        "id": "bed-a",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/beds/0",
+        "fields": {
+          "action": "facts",
+          "bed": "missing",
+          "occupancy": [
+            "未登记",
+            "afamx0：Hub 记录里空闲（未排除本地操作）",
+            "router0：Hub 记录里空闲（未排除本地操作）"
+          ],
+          "segments": [
+            {
+              "subnet": "192.0.2.0/26",
+              "family": 4,
+              "members": [
+                {
+                  "device": "afamx0",
+                  "type": "load-balancer",
+                  "address": "192.0.2.10"
+                },
+                {
+                  "device": "router0",
+                  "type": "router",
+                  "address": "192.0.2.1"
+                }
+              ],
+              "usable": 62,
+              "free": 60
+            },
+            {
+              "subnet": "192.0.2.64/26",
+              "family": 4,
+              "members": [
+                {
+                  "device": "afamx0",
+                  "type": "load-balancer",
+                  "address": "192.0.2.74"
+                }
+              ],
+              "usable": 62,
+              "free": 61
+            }
+          ],
+          "listeners": [
+            {
+              "device": "afamx0",
+              "address": "192.0.2.10",
+              "subnet": "192.0.2.0/26",
+              "triggers": [
+                {
+                  "device": "router0",
+                  "address": "192.0.2.1"
+                }
+              ]
+            }
+          ],
+          "blind": [
+            {
+              "device": "afamx0",
+              "address": "192.0.2.74",
+              "subnet": "192.0.2.64/26"
+            }
+          ],
+          "backends": [],
+          "unknowns": [],
+          "installed": []
+        }
+      }
+    ],
+    "context": {
+      "groups": [
+        {
+          "action": "facts",
+          "need": {
+            "devices": []
+          },
+          "bed": null,
+          "addresses": null,
+          "booking": null,
+          "reason": "",
+          "devices": null,
+          "manifest": {
+            "schema": "test-bed-manifest@1",
+            "beds": [
+              {
+                "name": "bed-a",
+                "devices": [
+                  {
+                    "name": "afamx0",
+                    "type": "load-balancer",
+                    "ipv4": [
+                      "192.0.2.10/26",
+                      "192.0.2.74/26"
+                    ],
+                    "ipv6": []
+                  },
+                  {
+                    "name": "router0",
+                    "type": "router",
+                    "ipv4": [
+                      "192.0.2.1/26"
+                    ],
+                    "ipv6": []
+                  }
+                ],
+                "services": [],
+                "reserved": []
+              }
+            ]
+          },
+          "leases": {
+            "now": "2026-10-22T02:00:00.000Z",
+            "entries": [],
+            "registrations": []
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "test-bed.facts_mismatch",
+      "tier": "advisory"
+    }
+  ]
+}

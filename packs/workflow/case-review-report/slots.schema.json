@@ -1,0 +1,62 @@
+{
+  "schema": "slots@1",
+  "item": {},
+  "run": {
+    "report": {
+      "codes": [
+        {
+          "code": "PASS",
+          "label": "整体 PASS：各块里最差的也是 PASS"
+        },
+        {
+          "code": "PARTIAL",
+          "label": "整体 PARTIAL：至少一块 PARTIAL"
+        },
+        {
+          "code": "FAIL",
+          "label": "整体 FAIL：至少一块 FAIL"
+        },
+        {
+          "code": "gap",
+          "label": "证据缺口：陈述写缺什么证据"
+        }
+      ],
+      "ranks": [
+        {
+          "code": "P0",
+          "label": "P0"
+        },
+        {
+          "code": "P1",
+          "label": "P1"
+        },
+        {
+          "code": "P2",
+          "label": "P2"
+        },
+        {
+          "code": "P3",
+          "label": "P3"
+        },
+        {
+          "code": "P4",
+          "label": "P4"
+        },
+        {
+          "code": "P5",
+          "label": "P5"
+        },
+        {
+          "code": "P6",
+          "label": "P6"
+        },
+        {
+          "code": "P7",
+          "label": "P7"
+        }
+      ],
+      "min": 1,
+      "max": 60
+    }
+  }
+}

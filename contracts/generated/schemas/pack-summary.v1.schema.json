@@ -1,0 +1,374 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pack": {
+      "type": "string",
+      "description": "id@version"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "product",
+        "workflow",
+        "system"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "products": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "every name of the product line the pack is bound to; all of them name one line"
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "slot": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "expected",
+              "subject",
+              "artifact_under_verification",
+              "reported_actual",
+              "republished",
+              "hint",
+              "request_text"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "accepts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "media types, or external object types written system:type"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "many": {
+            "type": "boolean"
+          },
+          "default_from_predecessor": {
+            "type": "object",
+            "properties": {
+              "pack": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              },
+              "slot": {
+                "description": "Copy this frozen input of the predecessor run. An explicit value must be the same object",
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              }
+            },
+            "required": [
+              "pack"
+            ],
+            "additionalProperties": false
+          },
+          "from_runs": {
+            "type": "object",
+            "properties": {
+              "pack": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              }
+            },
+            "required": [
+              "pack"
+            ],
+            "additionalProperties": false
+          },
+          "index_default": {
+            "type": "object",
+            "properties": {
+              "only_from": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "const": "build_defects"
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Index keys of this build’s kind=defect&key=bug view, the fixed-bug and release-page entries already on the knowledge root"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "const": "input_ids"
+                      },
+                      "slot": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]*$"
+                      }
+                    },
+                    "required": [
+                      "source",
+                      "slot"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Identifiers already present on another input slot’s external ids; an empty slot adds nothing"
+                  }
+                ]
+              },
+              "fields": {
+                "minItems": 1,
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,40}$"
+                }
+              }
+            },
+            "required": [
+              "only_from",
+              "fields"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "slot",
+          "role",
+          "description",
+          "accepts",
+          "required",
+          "many"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "parameters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "schema": {
+            "description": "JSON Schema 2020-12 of the value, as the pack declares it; absent when the pack declares none",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "required"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "independence_by_account": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "static",
+                "dynamic"
+              ]
+            },
+            "description": "the judgment layers this requirement is judged on; other layers are not applicable"
+          },
+          "done_rule": {
+            "type": "string",
+            "enum": [
+              "bookkeeping",
+              "gating"
+            ]
+          },
+          "accepted_producer": {
+            "type": "string",
+            "enum": [
+              "fact",
+              "judgment",
+              "independent_judgment"
+            ]
+          },
+          "observation": {
+            "description": "The declared P07 observation contract for the dynamic layer",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "repair_rounds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "locked rule@version identities that judge this requirement"
+          },
+          "run_interpreters": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+            },
+            "description": "ledger-permitted interpreters for inline runtime tables; empty when disabled"
+          },
+          "repetition": {
+            "description": "V07: the repetition policy in force for this requirement, frozen with the run; absent on records stored before the field existed",
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "aggregation": {
+                "type": "string",
+                "enum": [
+                  "first_pass",
+                  "k_of_n",
+                  "all"
+                ]
+              },
+              "k": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "basis": {
+                "type": "string",
+                "enum": [
+                  "explicit",
+                  "work_class",
+                  "single_round"
+                ],
+                "description": "explicit: a field was written; work_class: the pack’s class default; single_round: no class, or a static-only requirement"
+              },
+              "declared": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "boolean"
+                  },
+                  "aggregation": {
+                    "type": "boolean"
+                  },
+                  "k": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "count",
+                  "aggregation",
+                  "k"
+                ],
+                "additionalProperties": false,
+                "description": "which parts the pack wrote itself"
+              },
+              "fresh_context": {
+                "type": "boolean"
+              },
+              "baseline_first": {
+                "type": "boolean"
+              },
+              "window_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 86400
+              }
+            },
+            "required": [
+              "count",
+              "aggregation",
+              "basis",
+              "declared"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "description",
+          "layers",
+          "done_rule",
+          "accepted_producer",
+          "repair_rounds",
+          "rules",
+          "run_interpreters"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "pack",
+    "id",
+    "version",
+    "kind",
+    "title",
+    "description",
+    "products",
+    "inputs",
+    "parameters",
+    "requirements"
+  ],
+  "additionalProperties": false
+}

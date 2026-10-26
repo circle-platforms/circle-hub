@@ -1,0 +1,101 @@
+{
+  "identity": {
+    "adoc_sha256": {
+      "Chapter1.adoc": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Chapter2.adoc": "0000000000000000000000000000000000000000000000000000000000000002"
+    },
+    "generator": "synthetic/1.0.0",
+    "manual": "cli_cn",
+    "md_sha256": "0000000000000000000000000000000000000000000000000000000000000003",
+    "schema": "ist.manual-command-catalog"
+  },
+  "schema": "ist.manual-command-catalog",
+  "signatures": [
+    {
+      "head_tokens": ["help"],
+      "head_variants": [],
+      "ordered_tokens": [{ "kind": "keyword", "text": "help" }],
+      "params": [],
+      "signature_verbatim": "**help**",
+      "src": "Chapter1.adoc:10"
+    },
+    {
+      "head_tokens": ["demo", "pool", "add"],
+      "head_variants": [],
+      "ordered_tokens": [
+        { "kind": "keyword", "text": "demo pool add" },
+        { "kind": "param", "name": "pool_name" },
+        { "kind": "param", "name": "member_ip" },
+        { "kind": "param", "name": "weight" }
+      ],
+      "params": [
+        { "name": "pool_name", "required": true },
+        { "name": "member_ip", "required": true },
+        { "name": "weight", "required": false }
+      ],
+      "signature_verbatim": "**demo pool add** *\\<pool_name\\> \\<member_ip\\> \\[weight\\]*",
+      "src": "Chapter2.adoc:20"
+    },
+    {
+      "head_tokens": ["demo", "mode"],
+      "head_variants": [["demo", "mode", "on"], ["demo", "mode", "off"]],
+      "ordered_tokens": [{ "kind": "keyword", "text": "demo mode {on|off}" }],
+      "params": [],
+      "signature_verbatim": "**demo mode {on\\|off}**",
+      "src": "Chapter2.adoc:31"
+    },
+    {
+      "head_tokens": [],
+      "params": [],
+      "signature_verbatim": "**broken**",
+      "src": "Chapter2.adoc:40"
+    },
+    {
+      "head_tokens": ["demo", "route", "static"],
+      "params": [{ "name": "network", "required": true }, { "name": "gateway" }, { "required": true }],
+      "signature_verbatim": "**demo route static** *\\<network\\> \\<gateway\\>*",
+      "src": "Chapter2.adoc:52"
+    }
+  ],
+  "value_domains": [
+    {
+      "desc": "该参数指定成员池的名称。",
+      "enums": [],
+      "head": "demo pool add",
+      "param": "pool_name",
+      "src": "Chapter2.adoc:20"
+    },
+    {
+      "desc": "可选。该参数指定调度算法，取值必须为： rr：轮询。 lc：最少连接。 默认值为“rr”。",
+      "enums": ["rr", "lc"],
+      "head": "demo mode",
+      "param": "mode",
+      "src": "Chapter2.adoc:31"
+    },
+    {
+      "desc": "该参数属于一个手册里没有签名的命令。",
+      "enums": [],
+      "head": "demo unknown",
+      "param": "name",
+      "src": "Chapter2.adoc:60"
+    }
+  ],
+  "worked_examples": [
+    {
+      "lines": ["Box(config)#demo pool add p1 192.0.2.5 20", "", "Box(config)#demo pool add p1 192.0.2.6"],
+      "src": "Chapter2.adoc:25"
+    },
+    {
+      "lines": ["Box>help"],
+      "src": "Chapter1.adoc:12"
+    },
+    {
+      "lines": ["Box#reboot now", "System is going down"],
+      "src": "Chapter2.adoc:70"
+    },
+    {
+      "lines": ["", "   "],
+      "src": "Chapter2.adoc:71"
+    }
+  ]
+}

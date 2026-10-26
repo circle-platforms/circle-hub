@@ -1,0 +1,14 @@
+{
+  "comment": "续期：booking 写预订那次运行的编号，predecessor 写同一个编号（预订类租约按血缘持有，Hub 核对持有运行在前驱链里且是同一用户）；要操作的键从冻结的租约视图里取 mine 为真的，不用手列。延长 3 小时，单次 1 到 8 小时，累计上限 24 小时由 Hub 判，超过得到 LEASE_TTL。血缘里没有未过期的租约行时如实拒绝“你没有持有这个预订”。",
+  "tool": "start_run",
+  "arguments": {
+    "pack": "test-bed",
+    "inputs": { "inventory": { "external": "doc:doc:bed-topology" } },
+    "predecessor": "run_0123456789abcdef",
+    "parameters": {
+      "action": "extend",
+      "booking": "run_0123456789abcdef",
+      "hours": 3
+    }
+  }
+}

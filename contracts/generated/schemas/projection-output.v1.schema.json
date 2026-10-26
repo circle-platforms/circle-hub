@@ -1,0 +1,547 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "label": {
+                "type": "string"
+              },
+              "summary": {
+                "description": "one short line the model reads about the item next to its id and label (a tool result is read as text and must stay small); the full fields remain in the structured answer",
+                "type": "string"
+              },
+              "location": {
+                "type": "object",
+                "properties": {
+                  "slot": {
+                    "description": "which input slot; required when the producer has more than one",
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]*$"
+                  },
+                  "source": {
+                    "description": "digest of the source inside a list slot (ProducerSlot.sha256); required for a list slot",
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "parser": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                  },
+                  "selector": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "applicability": {
+                    "description": "Field-specific source provenance, excluded from entry content",
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "enum": [
+                            "models",
+                            "platforms",
+                            "builds",
+                            "components",
+                            "memory",
+                            "licenses",
+                            "deployment_forms"
+                          ]
+                        },
+                        "section": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "declaration": {
+                          "type": "object",
+                          "properties": {
+                            "builds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "platforms": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "models": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "components": {
+                              "type": "object",
+                              "properties": {
+                                "with": {
+                                  "minItems": 1,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "without": {
+                                  "minItems": 1,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                }
+                              },
+                              "additionalProperties": false
+                            },
+                            "memory": {
+                              "type": "object",
+                              "properties": {
+                                "minimum": {
+                                  "type": "object",
+                                  "properties": {
+                                    "bytes": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "inclusive": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "bytes",
+                                    "inclusive"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "maximum": {
+                                  "type": "object",
+                                  "properties": {
+                                    "bytes": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "maximum": 9007199254740991
+                                    },
+                                    "inclusive": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "bytes",
+                                    "inclusive"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "raw": {
+                                  "type": "string",
+                                  "pattern": "\\S"
+                                }
+                              },
+                              "required": [
+                                "raw"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "licenses": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "deployment_forms": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "inherited": {
+                              "description": "Inherited field codes only; source positions belong to composition provenance",
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "models",
+                                  "platforms",
+                                  "builds",
+                                  "components",
+                                  "memory",
+                                  "licenses",
+                                  "deployment_forms"
+                                ]
+                              }
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "conflict": {
+                          "type": "boolean"
+                        },
+                        "superseded": {
+                          "description": "An inner scope replaced this declaration; retained as provenance only",
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "section",
+                        "declaration"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "range": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 2,
+                    "maxItems": 2
+                  }
+                },
+                "required": [
+                  "parser",
+                  "selector"
+                ],
+                "additionalProperties": false
+              },
+              "fields": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "location",
+              "fields"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string"
+              },
+              "document": {
+                "type": "string"
+              },
+              "item": {
+                "type": "string"
+              },
+              "node": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "lease_requests": {
+          "description": "the lease operations the run asks the Hub to perform before it is stored (extend and release checks run first; a failing acquire later compensates the ones already granted); keys must sit under the workflow's declared prefix and the TTL under its cap",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "acquire"
+                    ]
+                  },
+                  "keys": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "ttl_seconds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "keys"
+                ],
+                "additionalProperties": false,
+                "description": "acquire (the default): every key free (or taken over from expired/released rows), all or nothing"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "extend"
+                    ]
+                  },
+                  "keys": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "ttl_seconds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "op",
+                  "keys",
+                  "ttl_seconds"
+                ],
+                "additionalProperties": false,
+                "description": "extend: the lineage-held leases of these keys grow by ttl_seconds from now, inside the cumulative cap"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "register"
+                    ]
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "op",
+                  "prefix"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "unregister"
+                    ]
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "op",
+                  "prefix",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "force_release"
+                    ]
+                  },
+                  "keys": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "op",
+                  "keys",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "release"
+                    ]
+                  },
+                  "keys": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "op",
+                  "keys"
+                ],
+                "additionalProperties": false,
+                "description": "release: the lineage-held leases of these keys end now (not undone when the run later fails)"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "items",
+        "warnings"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "message": {
+              "type": "string"
+            },
+            "fix": {
+              "type": "string"
+            },
+            "documents": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "fix"
+          ],
+          "additionalProperties": false
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string"
+              },
+              "document": {
+                "type": "string"
+              },
+              "item": {
+                "type": "string"
+              },
+              "node": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "error",
+        "warnings"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

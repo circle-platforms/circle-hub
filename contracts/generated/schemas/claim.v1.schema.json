@@ -1,0 +1,343 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "item": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "requirement": {
+      "type": "string"
+    },
+    "pointer": {
+      "description": "where the claim comes from: a JSON Pointer into the submission, or into the checked subject",
+      "type": "string",
+      "maxLength": 8192,
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "statement": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "support",
+            "refute",
+            "unknown",
+            "abstain"
+          ]
+        },
+        "code": {
+          "description": "violation code or finding code",
+          "type": "string"
+        },
+        "reason": {
+          "description": "why the verdict is unknown: check error, timeout, missing input (V01 R[2])",
+          "type": "string",
+          "enum": [
+            "no_check",
+            "check_error",
+            "timeout",
+            "missing_input",
+            "declared_skip",
+            "not_covered",
+            "awaiting_step",
+            "output_failed",
+            "repair_exhausted",
+            "budget_exhausted",
+            "integrity_unproven"
+          ]
+        },
+        "rank": {
+          "description": "ranking level from the closed set the pack declares; for sorting and display only (V02)",
+          "type": "string"
+        },
+        "data": {
+          "description": "machine-readable parts of the statement",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "qualifier": {
+      "type": "object",
+      "properties": {
+        "nature": {
+          "type": "string",
+          "enum": [
+            "fact",
+            "judgment",
+            "unknown"
+          ]
+        },
+        "provenance": {
+          "type": "string",
+          "enum": [
+            "observed",
+            "projected",
+            "declared",
+            "candidate"
+          ]
+        },
+        "basis_rank": {
+          "type": "string",
+          "enum": [
+            "rule_over_observation",
+            "rule_over_claims",
+            "judgment",
+            "relay"
+          ]
+        },
+        "source_role": {
+          "type": "string",
+          "enum": [
+            "expected",
+            "subject",
+            "artifact_under_verification",
+            "reported_actual",
+            "republished",
+            "hint",
+            "request_text"
+          ]
+        },
+        "marks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "target_reported",
+              "report_for_dispatch",
+              "local_ops_not_excluded",
+              "human_intervention",
+              "discrimination_not_established",
+              "semantics_unasserted",
+              "unverified_submission",
+              "client_preview",
+              "model_relay",
+              "no_reuse",
+              "author_samples_only",
+              "conditional_on_judgment",
+              "independence_declared",
+              "not_realtime",
+              "partial",
+              "intermittent",
+              "decision_shape_unruled",
+              "legacy_keyword_rules",
+              "possible_credentials"
+            ]
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "complete": {
+              "type": "boolean"
+            },
+            "examined": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "note": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "complete",
+            "examined"
+          ],
+          "additionalProperties": false
+        },
+        "collected_at": {
+          "description": "time bound: when the observation the claim rests on was collected; it holds only for that moment (A05)",
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "control": {
+          "type": "string",
+          "enum": [
+            "automatic",
+            "human_takeover"
+          ]
+        },
+        "discriminating_power": {
+          "type": "string",
+          "enum": [
+            "established",
+            "not_established"
+          ]
+        }
+      },
+      "required": [
+        "nature",
+        "provenance",
+        "marks"
+      ],
+      "additionalProperties": false
+    },
+    "grounds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 8192,
+        "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+        "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+      },
+      "description": "references the claim rests on; a knowledge entry is cited by its tree address (B01 R[5])"
+    },
+    "warrant": {
+      "type": "object",
+      "properties": {
+        "producer": {
+          "type": "string",
+          "enum": [
+            "function",
+            "model",
+            "human"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "independence": {
+          "type": "string",
+          "enum": [
+            "human_non_author",
+            "model_family_declared",
+            "judge_not_author",
+            "not_independent",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "producer",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "resolution": {
+      "type": "string",
+      "enum": [
+        "resolved",
+        "ambiguous",
+        "unresolved"
+      ]
+    },
+    "resolutions": {
+      "description": "each exact value of the statement with what it resolved to (W08, T04 R[1])",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pointer": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+            "description": "where the value stands, as a JSON Pointer into the submission"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the exact value or quotation as the model wrote it"
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "ambiguous",
+              "unresolved"
+            ]
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+              "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+            },
+            "description": "what it resolved to: one or more when resolved, the candidates when ambiguous, none when unresolved"
+          }
+        },
+        "required": [
+          "pointer",
+          "text",
+          "resolution",
+          "references"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "validity": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "valid",
+            "rule_withdrawn",
+            "grounds_withdrawn",
+            "cited_fragment_changed",
+            "credential_unreadable",
+            "premise_failed",
+            "expired",
+            "contradicted",
+            "not_evaluated"
+          ]
+        },
+        "bound": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "description": "digests the claim depends on; a change in any of them voids it"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "premises": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "status",
+        "bound",
+        "premises"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "statement",
+    "qualifier",
+    "grounds",
+    "warrant",
+    "validity"
+  ],
+  "additionalProperties": false
+}

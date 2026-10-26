@@ -1,8 +1,10 @@
 # Circle 客户端接口交接：普通用户读取与脑图编译
 
+> **历史文档**（2026-10-21 标注）：本文描述已退役服务器的 `/v1` 客户端接口和 Circle hub 扩展协议，这些路由在现行代码里已不存在，只作记录保留。现行工具面见 [Hub r4 架构](hub-r4-architecture.md)和[通用模型](design/generic-model.md)。
+
 ## 0.2.0 当前边界：原生执行退役
 
-`GET /v1/packs` 不再登记 `apv-case-execute`，新提交明确返回 `UNSUPPORTED_VERSION`，不兼容转发到 `module-execute`。新的执行显式提交产品模块 flow 与已批准 pin；历史任务保留旧 capability、版本、输入修订、结果和制品引用，不改绑。migration 20 字节保留，新增 migration 44 令旧回执表只读。下文原生执行章节是早期版本交接记录，不再代表可新建入口。
+`GET /v1/packs` 不再登记 `famx-case-execute`，新提交明确返回 `UNSUPPORTED_VERSION`，不兼容转发到 `module-execute`。新的执行显式提交产品模块 flow 与已批准 pin；历史任务保留旧 capability、版本、输入修订、结果和制品引用，不改绑。migration 20 字节保留，新增 migration 44 令旧回执表只读。下文原生执行章节是早期版本交接记录，不再代表可新建入口。
 
 Circle 新扩展为 `hub`、`/hub`、`hub_*` 固定工具与 `hub_tool_*` 动态工具，不保留旧扩展/命令别名。RPC 验收固定为用户确认的 Circle 1.7.0 fd8524a，只验收 hub 协议；打包客户端另绑定 Circle 1.7.3 / ae0b0d5，包含刷新视图时序、可信工作区冷启动初始化、有界视图投影与初始化关闭保护；不替换实际 RPC 验收 pin。正式发布与本机安装状态以 Circle 的 Release 和本机验收回执为准。
 
@@ -10,7 +12,7 @@ Circle 新扩展为 `hub`、`/hub`、`hub_*` 固定工具与 `hub_tool_*` 动态
 
 2026-10-14：维护者报告全量 **623/623**，A3 轮已在 `be9c6c0` 合并；这是维护者观察，不是 CI 结论。真实试验栈仍为 `e1ca68d`，未因本轮升级。
 
-2026-10-12 的首阶段记录：第一阶段实现位于隔离工作树 `../circle-server-s1`，分支 `server-s1`；第二阶段增补在 `../circle-server-s2` 的 `server-s2` 分支。Circle 和连接插件由 Claude 负责；本分支只提供 server/worker。共享协议原件是 `packages/contracts/src/index.ts`：`CLIENT_ROUTES`、请求/回应 schema、`TaskListQuery`、`TaskView`、`ApprovalView`、`TaskResult`、`EventPage` 和标准操作。编译包的描述及专用协议在 `packs/apv/contracts.ts`，HTTP 形状保持兼容。API 版本 `1.0.0`，能力包与映射规则版本 `1.0.0`，Excel 契约为 `Excel 输出契约 V1`。
+2026-10-12 的首阶段记录：第一阶段实现位于隔离工作树 `../circle-server-s1`，分支 `server-s1`；第二阶段增补在 `../circle-server-s2` 的 `server-s2` 分支。Circle 和连接插件由 Claude 负责；本分支只提供 server/worker。共享协议原件是 `packages/contracts/src/index.ts`：`CLIENT_ROUTES`、请求/回应 schema、`TaskListQuery`、`TaskView`、`ApprovalView`、`TaskResult`、`EventPage` 和标准操作。编译包的描述及专用协议在 `packs/famx/contracts.ts`，HTTP 形状保持兼容。API 版本 `1.0.0`，能力包与映射规则版本 `1.0.0`，Excel 契约为 `Excel 输出契约 V1`。
 
 Hub 名称与配置已统一，下文运行示例使用新名。旧阶段记录、来源 schema、已存在工作树名保留历史原文，不表示需要改文件系统目录。
 
@@ -181,7 +183,7 @@ Claude 的真实 Otty/Circle 观察已由用户提供并登记在进度第 4 节
 `POST /v1/tools/{name}/call` body 为 `{"args":{...},"idempotencyKey":"<每次逻辑调用的稳定键，8–200 字符>"}`。读工具返回 200：
 
 ```json
-{"result":{"build":"Rel_PHOTON_10_5_0_101","commands":[]},
+{"result":{"build":"Rel_PHOTON_10_6_0_101","commands":[]},
  "evidence":[{"evidenceId":"knr_...","sha256":"<64位 SHA-256>"}]}
 ```
 
@@ -235,7 +237,7 @@ nextPage=null 表示已到匹配结果末尾，hasMore 明确标识分页，不�
 
 修复链接识别 show_bug.cgi?id=... 为 bugzilla、index.php?m=bug&f=view&id=... 为 zentao，**只读清单、不跟随缺陷链接**。两种同号不能互相匹配：zentao 用缺陷 id，bugzilla 用镜像 bugzillaID/legacyIssueId。普通响应带 issue={system,id}，all/earliestFormal 保留平台；coverage.buildRefs/readRefs 带完整身份，缺失变体也带 buildId/platform。SDK fixed.result/fixedIds 继续只表示 bugzilla 编号，新增 issues/fixedIssues 表示带体系编号；知识中 fixed-identifiers 保留旧含义，fixed-issues 保存两类。新版 source-projection/3 重读时替换该源旧脚本投影的正式成员，历史声明和 SHA 原件保留。
 
-文档 list/get/section 的 path/file，以及 search.path，都是站点绝对路径，采用 list 返回的值；服务根未必是 `/`，须在运行时 root 配置实际 WebDAV 根，不能假定 `/` 支持 PROPFIND。search 优先使用显式 path；只有 version 时按产品线 `connectorOptions.documents.documents.versionDirectoryTemplate` 定位，APV 声明 `cli/rel_apv_{version}/`，点分版本用 versionSeparator 转成目录形式。没有目录模板的旧包保留 version 路径过滤。
+文档 list/get/section 的 path/file，以及 search.path，都是站点绝对路径，采用 list 返回的值；服务根未必是 `/`，须在运行时 root 配置实际 WebDAV 根，不能假定 `/` 支持 PROPFIND。search 优先使用显式 path；只有 version 时按产品线 `connectorOptions.documents.documents.versionDirectoryTemplate` 定位，FAMX 声明 `cli/rel_famx_{version}/`，点分版本用 versionSeparator 转成目录形式。没有目录模板的旧包保留 version 路径过滤。
 
 list 默认 page=1/limit=20，limit 为 1–100，nextPage=null 才到目录末尾。目录路径自动补尾斜杠，再发 PROPFIND，避免目录 301；省略 path 使用 profile.root。传 `/` 而已登记根是子目录时返回 INVALID_PAYLOAD 和 details.root。PROPFIND 405 返回可读的路径错误；其他非 207 回应说明预期的 WebDAV 状态，不把错误页面当目录。
 
@@ -245,7 +247,7 @@ search 对选定目录做有界递归（PROPFIND Depth:1），默认深度 3、6
 
 审批默认有效一天，由 CIRCLE_HUB_APPROVAL_TTL_MS 配置（1000–2592000000 毫秒）；审批 pending input 使用同一到期时间。普通澄清仍由 CIRCLE_HUB_INPUT_TTL_MS 控制，默认五分钟。延长审批时间不解除修订、目标身份、动作摘要、当前目录/权限以及 D 出口复核。
 
-早期上机接入记录：`apv-case-execute` 用既有 submit/approvals/events/result 执行 APV 单表工作簿，输入可带 sourceRevisionId 或 artifactId、gatewayAssetId、commandSourceAssetId、build/buildId。当时服务端两次核对命令、投递需另一人批准，网关访问 / 刷新令牌用个人引用；修订 3 的当前执行声明和凭据模式见[执行链](design/approvals-and-enforcement.md#生产设备要两人规则怎么办)与[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。本段保留当时接入字段，原件、逐步结果与检查点证据按 SHA 存 B。配置、输入边界、恢复与权限详见 [执行交接](case-execution-handoff.md)。Circle `circle_server_submit` 可附加 input，上传源的 id/SHA 由客户端填；同步返回落工作区是 Circle 的职责，server 不写客户端目录。
+早期上机接入记录：`famx-case-execute` 用既有 submit/approvals/events/result 执行 FAMX 单表工作簿，输入可带 sourceRevisionId 或 artifactId、gatewayAssetId、commandSourceAssetId、build/buildId。当时服务端两次核对命令、投递需另一人批准，网关访问 / 刷新令牌用个人引用；修订 3 的当前执行声明和凭据模式见[执行链](design/approvals-and-enforcement.md#生产设备要两人规则怎么办)与[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。本段保留当时接入字段，原件、逐步结果与检查点证据按 SHA 存 B。配置、输入边界、恢复与权限详见 [执行交接](case-execution-handoff.md)。Circle `circle_server_submit` 可附加 input，上传源的 id/SHA 由客户端填；同步返回落工作区是 Circle 的职责，server 不写客户端目录。
 
 版本列表与同步只取首页/版本页元数据，**不下载任何 XML/修复清单**。命令 XML 在对应构建首次被命令工具用到时获取，内容按 SHA 持久缓存，索引绑定调用身份/资产修订/来源与构建段落修订，不跨个人凭据复用；元数据变化重新取。修复清单只有 fixed_releases 查询才按指定候选取，结果声明 coverage.completeSite=false，不把候选中的最早发布冒充全站最早。运行时 profile 可配置 requestConcurrency（1–8，默认 2）与 requestIntervalMs（构建工具默认 200）；相同连接器调用的请求同时受并发与开始间隔限制。
 
@@ -259,7 +261,7 @@ search 对选定目录做有界递归（PROPFIND Depth:1），默认深度 3、6
 
 索引批量发布与当前权限过滤沿上述 B 设计实现；源 head 的 generation 用来区分再次观察到旧字节，旧快照成员在升级时回填保留。
 
-`npm run dev:stack` 一次启动临时 PostgreSQL、server、两个 worker 和合成来源，并登记/独立批准/启用上述五个工具资产。终端打印 server 地址、developer 与 approver 的临时登录方式；developer 登录后立即可取非空工具目录。默认合成版本线为 10.5，正式构建 `Rel_PHOTON_10_5_0_101` / `Rel_PHOTON_10_5_0_109`，前者有 `feature.enable`，后者缺失；两者都有几十条 service 命令。Ctrl+C 也关闭合成来源并删除 scratch。
+`npm run dev:stack` 一次启动临时 PostgreSQL、server、两个 worker 和合成来源，并登记/独立批准/启用上述五个工具资产。终端打印 server 地址、developer 与 approver 的临时登录方式；developer 登录后立即可取非空工具目录。默认合成版本线为 10.6，正式构建 `Rel_PHOTON_10_6_0_101` / `Rel_PHOTON_10_6_0_109`，前者有 `feature.enable`，后者缺失；两者都有几十条 service 命令。Ctrl+C 也关闭合成来源并删除 scratch。
 
 ## 第二阶段：技能包约定与 RPC 边界
 
@@ -294,7 +296,7 @@ Circle 运行边界由用户确认改为正式 CLI RPC；当前固定 Git 提交
   "declaration": {"reads": ["registered-source"], "writes": [], "credentials": []},
   "configuration": {
     "schema": "external-source-artifact/1",
-    "metadata": {"packageId": "apv", "buildName": "<预期构建名>", "platform": "<平台>", "versionLine": "<可选版本线>"},
+    "metadata": {"packageId": "famx", "buildName": "<预期构建名>", "platform": "<平台>", "versionLine": "<可选版本线>"},
     "files": [
       {"path": "commands.xml", "role": "command-tree", "mediaType": "application/xml", "sourceRevisionId": "<XML 上传响应的 id>", "sha256": "<XML 上传响应的 SHA-256>"},
       {"path": "functions.json", "role": "function-contract", "mediaType": "application/json", "sourceRevisionId": "<JSON 上传响应的 id>", "sha256": "<JSON 上传响应的 SHA-256>"}
@@ -304,13 +306,13 @@ Circle 运行边界由用户确认改为正式 CLI RPC；当前固定 Git 提交
 }
 ```
 
-metadata 是消费者的声明数据，不参与平台的产品派发；packageId/buildName/platform/versionLine 在通用层均不解释。APV 模块使用 buildName 作为待 env_prepare 核对的预期构建。平台只校验来源权限、字节 SHA、路径、修订及只读声明，格式和语义由消费模块校验。上传原件先成为 product/SourceRevision（sourceType=external-artifact），响应 files 包含实际 size/sha256/sourceRecordId；绑定工具读取得到 Evidence，命令结构再异步入库，可用索引任务/事件观察进度。文件内自报摘要或 certification 不替代上传原字节 SHA 和独立批准。
+metadata 是消费者的声明数据，不参与平台的产品派发；packageId/buildName/platform/versionLine 在通用层均不解释。FAMX 模块使用 buildName 作为待 env_prepare 核对的预期构建。平台只校验来源权限、字节 SHA、路径、修订及只读声明，格式和语义由消费模块校验。上传原件先成为 product/SourceRevision（sourceType=external-artifact），响应 files 包含实际 size/sha256/sourceRecordId；绑定工具读取得到 Evidence，命令结构再异步入库，可用索引任务/事件观察进度。文件内自报摘要或 certification 不替代上传原字节 SHA 和独立批准。
 
 登记返回完整资产，初始 lifecycle=draft、顶层 sourceArtifactId=null。草稿作为待批定义，自动对同 tenant、同授权 scope 且有 assets.approve 的审批人可见；登记者不必知道或列出审批人。审批人可用 `GET /v1/assets?lifecycle=draft&kind=knowledge-source&limit=20`（kind 可省略）发现，再 GET 资产或旧 source-artifacts 查询定义，只需 assets.approve。另一人用 `POST /v1/assets/{assetId}/lifecycle` `{version,sha256,state:"approved"}` 批准后，该响应直接返回可用 sourceArtifactId（sar_ 前缀），无需额外激活；所有者或原本 readers 可从 GET 资产继续读取。相同 assetId/version/原件/声明重提复用资产，变内容必须新版本；更新要带首次响应的 assetId。来源 id 绑定资产版本、metadata 和全部文件摘要，旧 id 不自动换成新字节。configuration 里的生成字段只读；提交时使用上述原件引用形状，不复制返回里的 size/sourceRecordId/sourceArtifactId 作为客户端生成字段。
 
 AssetListQuery/CLIENT_ROUTES.assets 增加 lifecycle（draft/approved/running/disabled）过滤，与 kind、scope、权限一起先过滤再计数/分页。审批可见性只覆盖当前草稿的定义和摘要，不把审批人加进 readers，不授予原件/知识内容、凭据、工具或运行权限；credential-reference 保持私有，审批完成/停用后不再借待批规则可见。需要长期共享资料时仍由所有者明确声明 readers 并以新修订批准。审批出口在锁定当前资产后重新检查权限，仍拒自批、旧 version/sha256、跨 tenant/scope。技能登记审批沿用任务接口，个人工具/技能运行/bot 结果的可见性不变。
 
-命令树工具的 build 直接填 sar_ id。也可调用 `buildsite.versions`，args={sourceArtifactId:<sar_ id>}，返回一条精简构建，其 buildId 即该 sar_ id；name 来自 buildName，platform 来自声明，formal=false/releasedOn=null，不能据文件名或上传者声明推成正式发布。分页和过滤沿用 versions 契约，此调用读取本地固定原件，不遍历站点。APV 执行 input={commandSourceAssetId:<来源 assetId>,build:<sar_ id>,...}，函数契约与树 SHA 共同进入审批和投递前检查。实际床构建仍由 env_prepare 确认。
+命令树工具的 build 直接填 sar_ id。也可调用 `buildsite.versions`，args={sourceArtifactId:<sar_ id>}，返回一条精简构建，其 buildId 即该 sar_ id；name 来自 buildName，platform 来自声明，formal=false/releasedOn=null，不能据文件名或上传者声明推成正式发布。分页和过滤沿用 versions 契约，此调用读取本地固定原件，不遍历站点。FAMX 执行 input={commandSourceAssetId:<来源 assetId>,build:<sar_ id>,...}，函数契约与树 SHA 共同进入审批和投递前检查。实际床构建仍由 env_prepare 确认。
 
 上传来源的 command_tree/command_heads/command_param/command_check 也返回顶层 result.build 与 result.buildId，两者均为实际绑定的 sar_ id，供 gate 直接核对该回执的来源身份。source 块继续带 sourceArtifactId、assetId/assetVersion、commandTreeSha256、buildName、association=operator-declared、origin=uploaded-artifact、live=false。metadata.buildName 只是用户声明的预期构建名，不替代顶层稳定 id；不把其他未知 metadata 字段当成 buildName，也不据上传原件证明床构建。
 
@@ -374,7 +376,7 @@ runs 新增 admitted / failed、trigger 与 error 投影；taskId=null 的受理
 
 ## 产品线安装与工具别名
 
-启动时 `CIRCLE_HUB_PRODUCT_LINES` 可指向仓库外的安装 JSON：`{"schemaVersion":"installed-product-lines/1","productLines":["apv/product-line.json","meridian/product-line.json"]}`。清单路径相对安装文件解析；未设置时使用 packs/installed-product-lines.json，默认客户端工具名保持兼容。早期 product-line/1 安装清单记录为 connectorPackages / toolAliases / skills / methods / knowledgeMappings，修订 3 的可执行模块已改为 tools / hooks / resources / flows；包 id、版本、重复声明和安全相对路径在启动前校验。格式及边界见 [packs/README.md](../packs/README.md)。
+启动时 `CIRCLE_HUB_PRODUCT_LINES` 可指向仓库外的安装 JSON：`{"schemaVersion":"installed-product-lines/1","productLines":["famx/product-line.json","meridian/product-line.json"]}`。清单路径相对安装文件解析；未设置时使用 packs/installed-product-lines.json，默认客户端工具名保持兼容。早期 product-line/1 安装清单记录为 connectorPackages / toolAliases / skills / methods / knowledgeMappings，修订 3 的可执行模块已改为 tools / hooks / resources / flows；包 id、版本、重复声明和安全相对路径在启动前校验。格式及边界见 [packs/README.md](../packs/README.md)。
 
 新连接器资产可在 configuration 带 `productLineId`，由该产品线清单选择工具前缀。例如 `{"packageId":"documents","productLineId":"meridian","runtimeProfileRef":"<运行时引用>"}` 自动登记 meridian_docs 工具。可选 alias 仍覆盖实例前缀，同一 tenant 内工具名称冲突仍拒绝。省略 productLineId 时沿用第一个声明该连接器的清单前缀；公共 knowledge 工具独立保留。移除产品线并重启后，该产品线明确绑定的工具从目录隐藏；恢复安装后可继续使用原已批准绑定。ETag 和普通调用权限规则不变。
 
@@ -410,7 +412,7 @@ GET /v1/runtime-profiles 需 admin，返回当前运行配置的 {profileType:"c
 
 ## 修订 3：Skill、Tool、MCP server 与 Hook 的执行绑定
 
-运行仍使用既有 submit/status/events/result/input 接口。默认资源不会产生审批请求或 execution-submission；成员以上按当前范围角色、来源 readers、资源策略、已批准的 Tool 实现/产品线模块、running 资源和 runtime-profile 依赖进入执行链。`apv-case-execute` 的 input 可带 `methodAssetId`，值为批准后的 product-line 模块资产 id；模块须声明对应 flow。来源保持 commandSourceAssetId/build/sourceArtifactId 的既有绑定。既有内置兼容实现也要有 scope 内明确批准的 knowledge-source 定义，configuration 为 `{schema:"hub-tool-implementation/1",capabilityPackId,flowVersion,implementationSha256}`；这不是新的资产 kind。
+运行仍使用既有 submit/status/events/result/input 接口。默认资源不会产生审批请求或 execution-submission；成员以上按当前范围角色、来源 readers、资源策略、已批准的 Tool 实现/产品线模块、running 资源和 runtime-profile 依赖进入执行链。`famx-case-execute` 的 input 可带 `methodAssetId`，值为批准后的 product-line 模块资产 id；模块须声明对应 flow。来源保持 commandSourceAssetId/build/sourceArtifactId 的既有绑定。既有内置兼容实现也要有 scope 内明确批准的 knowledge-source 定义，configuration 为 `{schema:"hub-tool-implementation/1",capabilityPackId,flowVersion,implementationSha256}`；这不是新的资产 kind。
 
 执行变更新增 execution-submission 草稿与 changesets.apply 请求，冻结 inputRevisionId / 输入摘要 / 方法、资源、来源版本 / 原件和工作簿 SHA；对应操作一次消费沿[生产设备两人规则](design/approvals-and-enforcement.md#生产设备要两人规则怎么办)。默认运行不新增审批概念。
 
@@ -438,7 +440,7 @@ Skill、Tool 和 Hook 使用同一主机隔离边界。当前 Mac adapter 用 sa
 
 早期运行器曾把模型凭据放入单次 home；后续模型代理已替代该方式，当前密钥边界见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。终态 / 失效注入副本由维护器清理，永久静态凭据留到轮换 / 吊销；开发角色仍只作初次种子。
 
-主机策略只能取 binding.resource.declaration 的已批准原声明：allowedTestHosts 为显式集合，hostCommandPolicies[host].allowPrefixes 为可选缩小策略；运行文件中的同名字段不作治理授权。三个 verify 挂点均带资源 assetId/version/sha256/declaration。当前固定的 APV 1.2.2 / ba06eed 的 host-policy Hook 按新版四字段 subject 执行，闭集未声明、主机不在床、命令含模板、前缀不符分别给固定事实码；主机名与策略键比较不区分大小写，事实仍保留输入拼写。
+主机策略只能取 binding.resource.declaration 的已批准原声明：allowedTestHosts 为显式集合，hostCommandPolicies[host].allowPrefixes 为可选缩小策略；运行文件中的同名字段不作治理授权。三个 verify 挂点均带资源 assetId/version/sha256/declaration。当前固定的 FAMX 1.2.2 / ba06eed 的 host-policy Hook 按新版四字段 subject 执行，闭集未声明、主机不在床、命令含模板、前缀不符分别给固定事实码；主机名与策略键比较不区分大小写，事实仍保留输入拼写。
 
 ## 读取超时与大原件回报
 
@@ -452,7 +454,7 @@ docs.search 已完成文件后发生读取超时时，返回已观测 hits、nex
 
 凭据 provider 的角色下限已并入[角色登记与资格披露](design/roles.md#角色登记与资格披露)；Hook binding / subject 形状和主机策略依据已并入[Hook 契约](design/harness-primitives.md#hook)。主机解析只记录字面行及 functionStatus。
 
-Tool/Hook 子进程带 256MiB V8 堆上限，Hook 以最多 200 个 subject 的批次执行，每批十秒，保持顺序和首次 block 停止。APV 验收默认冻结 circle-packs 提交 ba06eeda83d27031fc1a452e43b24300d654da9e（APV 1.2.2，22 个文件，模块 digest faa9e79d03a97fa1e5142a2f169cecc2caef7f52f7d714f9aac53226164c347d）。清单与文件均用该提交的原字节核 SHA，不跟随独立仓库工作区变化；包内 Node TAP 收尾断言实际 pass=tests 且 fail/skip/cancel=0，不把数量写成闸门。本次产品线包 **31/31**、hub Hook 专项 **3/3**；同提交四个技能模块（case-review 0.1.3、defect-claims 0.1.0、mindmap-compile 0.3.0、product-qa 0.1.3）的全部五个测试文件冻结后纯合成单测实际 **57/57**，catalog 工具另 **4/4**，合计 **61/61**，均无跳过。这与该提交 README/CI 的 tools 与 skills 合并入口一致，61 并非技能本身的数量。数字只描述这份冻结原件的验证，不是自动安装/批准或真实设备与模型验收。
+Tool/Hook 子进程带 256MiB V8 堆上限，Hook 以最多 200 个 subject 的批次执行，每批十秒，保持顺序和首次 block 停止。FAMX 验收默认冻结 circle-packs 提交 ba06eeda83d27031fc1a452e43b24300d654da9e（FAMX 1.2.2，22 个文件，模块 digest faa9e79d03a97fa1e5142a2f169cecc2caef7f52f7d714f9aac53226164c347d）。清单与文件均用该提交的原字节核 SHA，不跟随独立仓库工作区变化；包内 Node TAP 收尾断言实际 pass=tests 且 fail/skip/cancel=0，不把数量写成闸门。本次产品线包 **31/31**、hub Hook 专项 **3/3**；同提交四个技能模块（case-review 0.1.3、defect-claims 0.1.0、mindmap-compile 0.3.0、product-qa 0.1.3）的全部五个测试文件冻结后纯合成单测实际 **57/57**，catalog 工具另 **4/4**，合计 **61/61**，均无跳过。这与该提交 README/CI 的 tools 与 skills 合并入口一致，61 并非技能本身的数量。数字只描述这份冻结原件的验证，不是自动安装/批准或真实设备与模型验收。
 
 后续运行器加入可信 loopback 模型代理，Circle settings / credentials 只存本次代理端点与 nonce；当前密钥 / 掩码 / 失败边界见[凭据与资源](design/approvals-and-enforcement.md#凭据与资源)。下段保留代理部署参数与观察字段；--yolo 不替代平台执行链。
 
@@ -508,11 +510,11 @@ dev:stack 的 admin restart --graceful 现在请求 server 换进程后逐个排
 
 已安装并为产品线声明的 provider Tool，缺别名时使用产品线默认 prefix、包 prefix，最后以 packageId（连字符改下划线）作 prefix；显式实例 alias 优先。没有安装/声明的产品线仍不获得 provider。名称冲突按现有 tenant 唯一规则拒绝，不让缺 alias 静默隐藏工具。
 
-apv-case-execute 现为 **1.1.1**，flowVersion 仍 apv-case-execute/1。实现摘要变化后须用 GET /v1/packs 当前 version/flow/implementationSha256 重新登记并独立批准 hub-tool-implementation/1；旧任务的 methodAssetId 不自动改写。产品线模块资产仍按自身冻结 SHA/flow 解析，本笔未改变其字节或批准状态。成功终态的 gateway-results 原件与 result.result 也带 remoteLeaseReleased，释放失败为 false，不覆盖整案原结论。拒绝带 task_id/dispatched:true、已提交后的 status 错误均保留 unknown 且不释放潜在活动租约。
+famx-case-execute 现为 **1.1.1**，flowVersion 仍 famx-case-execute/1。实现摘要变化后须用 GET /v1/packs 当前 version/flow/implementationSha256 重新登记并独立批准 hub-tool-implementation/1；旧任务的 methodAssetId 不自动改写。产品线模块资产仍按自身冻结 SHA/flow 解析，本笔未改变其字节或批准状态。成功终态的 gateway-results 原件与 result.result 也带 remoteLeaseReleased，释放失败为 false，不覆盖整案原结论。拒绝带 task_id/dispatched:true、已提交后的 status 错误均保留 unknown 且不释放潜在活动租约。
 
 设备日志归属与派发前拒绝的完整说明同步在 [执行交接](case-execution-handoff.md)：有序设备 IP 来自 env_prepare.conf.device_ips，或已有租约内按需读的 bed_topology.topology.applies_to.device_ssh_ips；原样入 B。解析按设备推进游标，每条已匹配命令有自己的 logSpan；拿不到唯一映射，设备步 unknown/unmapped=device_map_unavailable，主机步和检查点各按自身证据处理。设备归属接口 {environment,topology} 留给产品包解析 Tool 后续接管，尚未把这段旧兼容解析迁入独立产品包。
 
-1.1.1 的来源口径更正：现网部署版没有前述两个有序字段，真实回退用 topology.devices。全部负载均衡设备名须为 APV<index>，索引集合与 env_prepare.device_count 精确一致；日志 IP 必须唯一落在对应设备 ipv4 的 CIDR 地址集合里。否则 device_map_unavailable，绝不据任意主机名或命令文本猜 APV_n。source 标 gateway.bed_topology.devices；三种候选优先级是 conf.device_ips、applies_to.device_ssh_ips、devices 名字规则，前两个只在实际返回时适用。排空无截止时间，claim 在途时仍可能完成一笔新领操作；不强杀的边界也已补入执行交接。
+1.1.1 的来源口径更正：现网部署版没有前述两个有序字段，真实回退用 topology.devices。全部负载均衡设备名须为 FAMX<index>，索引集合与 env_prepare.device_count 精确一致；日志 IP 必须唯一落在对应设备 ipv4 的 CIDR 地址集合里。否则 device_map_unavailable，绝不据任意主机名或命令文本猜 FAMX_n。source 标 gateway.bed_topology.devices；三种候选优先级是 conf.device_ips、applies_to.device_ssh_ips、devices 名字规则，前两个只在实际返回时适用。排空无截止时间，claim 在途时仍可能完成一笔新领操作；不强杀的边界也已补入执行交接。
 
 工作查询与通知补项：GET /v1/tasks?view=page 增加 queue=awaitingMyApproval|awaitingMyInput|submittedByMe|assignedToMe|exceptions；exceptions 可加 exception=unknown|expired|superseded|failed。GET /v1/queues 接受同一分面及 kind/capabilityPackId，使用同一任务授权/私有范围/run 委托/分面与队列条件，计数发生在限制之前。过期但仍 open 的审批按 expired 分类，不再待批。exceptions.groups 分开给任务四类、workerOffline、botAdmissionFailed；后两类是各自记录查询，分面不适用时 omittedGroups 明示，不能当作全平台确为零。
 
@@ -544,7 +546,7 @@ bot runs 仍仅 bot 所有者可读；产品线与 lifecycle 取被运行资产�
 
 task/admin events 的权限、窗口校验与取页也在同一只读快照内；裁剪并发时返回该次校验的完整可见页或明确 CURSOR_EXPIRED，长轮询逐次重核，不返回静默缺失的空页。bot.admission-failed 的通知原因读取 payload.reason.code；完整运行错误仍从 bot runs 的 error 或任务 result.error 获取。
 
-复核补充：床 conf.device_names 的自定义名称会让第三来源的 APV<index> 规则失效；日志 IP 只能定位到拓扑设备，任意名字不能推断工作簿索引。cexg 0.3.1 的计划接口是 env_prepare.conf.device_ips，实际出现后使用第一来源，因而不受改名影响；hub 不根据版本号假定字段已出现。共享地址日志不归属、不消费设备游标。
+复核补充：床 conf.device_names 的自定义名称会让第三来源的 FAMX<index> 规则失效；日志 IP 只能定位到拓扑设备，任意名字不能推断工作簿索引。cexg 0.3.1 的计划接口是 env_prepare.conf.device_ips，实际出现后使用第一来源，因而不受改名影响；hub 不根据版本号假定字段已出现。共享地址日志不归属、不消费设备游标。
 
 客户端恢复契约：通知补读页首次 cursor=0 也返回 replayWindow.minCursor；大于零表示窗口之前已有事件被裁剪，这次响应不代表完整历史。task/admin events 仍只返回 events/after，不带 replayWindow；过窗依据 CURSOR_EXPIRED 的 details.minCursor。随后通知从 cursor=0、事件从 after=0 重拉保留窗口，按 seq 去重，并从 GET /v1/tasks?view=page（遍历当前状态页）及 /v1/tasks/{id}/approvals 补窗口外的任务/审批当前事实；历史正文仍需持久 B 原件/产物，不从当前状态反推过去发生顺序。SSE 的 cursor.expired 使用同一恢复过程。
 
@@ -619,24 +621,24 @@ provider 沿既有 connector-instance 与批准 execution runtime-profile，conf
 - 历史事实只沿原 worker / fence / inputRevision 核冻结资源定义 SHA、已持久 request / input / byteHashes 和 B 终态原件，不读端点 / 秘密或新执行许可。停用 source / resource 不再阻止未知写及时冻结，也不丢终态释放 / 解释事实；新派发和独立 reconcile 仍走 live 授权。
 - worker 报告顶层 error / output.resultError 及其 details 规范为 F 错误码，未知 INTERNAL_ERROR；output.result 全树 opaque，嵌套业务 error / resultError 也保原值，inline / pointer 回读一致。完整 API JSON body 以 canonicalJson UTF-8 留 B（不含认证头）；其字节 SHA 与契约解析后、投影前 reportHash 是不同转换口径，同 hash 幂等 / 异 hash 拒绝。
 
-本轮只用 Meridian 与另一份合成模块，未执行 APV 新 flow。原生 apv-case-execute **1.1.1** 的文件 / 摘要 / 旧 task 绑定保持；APV 新 Tool / flow、部署切换和退役由独立 circle-packs 与维护者接续。历史合成验收及维护者外部观察见进度，不据此推定真实设备、模型或任意 MCP 服务兼容性。
+本轮只用 Meridian 与另一份合成模块，未执行 FAMX 新 flow。原生 famx-case-execute **1.1.1** 的文件 / 摘要 / 旧 task 绑定保持；FAMX 新 Tool / flow、部署切换和退役由独立 circle-packs 与维护者接续。历史合成验收及维护者外部观察见进度，不据此推定真实设备、模型或任意 MCP 服务兼容性。
 
-### APV 外部模块接入验收（C 前置）
+### FAMX 外部模块接入验收（C 前置）
 
 从任意 Hub 检出的仓库根目录运行以下单文件验收；依赖使用该 Hub 工作树的锁定版本，不在产品包仓库运行安装脚本：
 
 ```sh
-CIRCLE_HUB_APV_MODULE_ACCEPTANCE=1 \
+CIRCLE_HUB_FAMX_MODULE_ACCEPTANCE=1 \
 CIRCLE_PACKS_CATALOG=../circle-packs/modules.json \
-CIRCLE_PACKS_REF=apv-execution-flow \
-node --test --test-concurrency=1 tests/acceptance/a3-apv-module-flow-synthetic-provider-protocol.test.ts
+CIRCLE_PACKS_REF=famx-execution-flow \
+node --test --test-concurrency=1 tests/acceptance/a3-famx-module-flow-synthetic-provider-protocol.test.ts
 ```
 
-catalog 路径按实际独立包检出位置在运行时提供。REF 可为本地分支或提交，优先于 CIRCLE_PACKS_COMMIT；均未指定时沿已有验收 pin。入口将 ref 解析一次为 Git commit，按该提交核对完整模块清单、文件 SHA 和 digest，要求 products/apv 为 1.3.0。它不 checkout 或改产品包工作树。未设置启用开关时明确 skip，跳过不计通过；显式启用后的目录、ref、清单、版本或模块 ABI 错误为失败。
+catalog 路径按实际独立包检出位置在运行时提供。REF 可为本地分支或提交，优先于 CIRCLE_PACKS_COMMIT；均未指定时沿已有验收 pin。入口将 ref 解析一次为 Git commit，按该提交核对完整模块清单、文件 SHA 和 digest，要求 products/famx 为 1.3.0。它不 checkout 或改产品包工作树。未设置启用开关时明确 skip，跳过不计通过；显式启用后的目录、ref、清单、版本或模块 ABI 错误为失败。
 
 初次冻结 1.3.0 的 `702d039` 时，v2 描述的 id 仍指旧 flow，显式开启在静态接法校验报红。后续冻结 `5cdbc2b` 后已通过真实临时 PostgreSQL 完成原件上传、模块安装与独立变更集批准、派发、终态、纯 Tool 解析和交付：case_submit 一次，原件只经 xlsx_b64 的 byteArgs、字节 SHA 一致，设备和主机步骤 observed、两个检查点 passed、unmapped 为空。该冻结提交验收为 **1 fail / 0 skip**，因为包未发 verify.workbook；device / host Hook 的真实处理器回执及 B 字节 SHA 已核对。保留三个 verify 挂点完整性断言，不以 delivered 冒充整条验收通过。默认单项 skip 保持普通全套可运行，跳过不计通过。
 
-分支随后前进到 `6a8cb799125a749e69ba4b6f32de8ee1a92437ab`，验收按该 SHA 冻结 APV 1.3.0（digest `54c681c1e8380cad5509c7dbf18774052b432d0b903c59ebaeb6748239a2df48`），完整 **1/1 通过，无 skip**。三个 verify 挂点的实际处理器决定与 B 证据 SHA、56,413 字节原件的 byteArgs / SHA、单次 case_submit、逐步 / 两个检查点和 unmapped 全部原断言通过；旧 `5cdbc2b` 红记录保持。此结果仅属于下面的 synthetic provider protocol，不能代替严格 cexg 验收或批准现网切换。
+分支随后前进到 `6a8cb799125a749e69ba4b6f32de8ee1a92437ab`，验收按该 SHA 冻结 FAMX 1.3.0（digest `54c681c1e8380cad5509c7dbf18774052b432d0b903c59ebaeb6748239a2df48`），完整 **1/1 通过，无 skip**。三个 verify 挂点的实际处理器决定与 B 证据 SHA、56,413 字节原件的 byteArgs / SHA、单次 case_submit、逐步 / 两个检查点和 unmapped 全部原断言通过；旧 `5cdbc2b` 红记录保持。此结果仅属于下面的 synthetic provider protocol，不能代替严格 cexg 验收或批准现网切换。
 
 二轮复核发现上述路径仍携带流程外预生成的 workbookBook / 命令投影，不能证明正式 flow 自行读取全部原件。夹具现改为只提供本场景的 build、冻结 pins 和四个 B 受控槽：workbook、command-tree、command-check、function-contract；不提供 book、命令清单、client、tree 或 present。command-check 为 `{result:{build,buildId,sourceSha256,ruleVersion,commands:[...]},evidence:[]}`，由独立合成树经确定性 commandCheck 计算，sourceSha256 对应树原字节，未伪造 evd；正式产品依原件算 Hook 布尔，不能自造命中。
 
@@ -653,7 +655,7 @@ catalog 路径按实际独立包检出位置在运行时提供。REF 可为本�
 ```sh
 CIRCLE_HUB_CEXG_PROTOCOL_ACCEPTANCE=1 \
 CIRCLE_PACKS_CATALOG=../circle-packs/modules.json \
-CIRCLE_PACKS_REF=apv-execution-flow \
+CIRCLE_PACKS_REF=famx-execution-flow \
 node --test --test-concurrency=1 tests/acceptance/c-cexg-protocol.test.ts
 ```
 

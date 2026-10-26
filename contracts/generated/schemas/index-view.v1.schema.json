@@ -1,0 +1,688 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "unversioned": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "root": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "composition": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "build": {
+              "type": "null"
+            },
+            "skipped_sources": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "totals": {
+              "type": "object",
+              "properties": {
+                "entries": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "documents": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "cut_entries": {
+                  "description": "product-wide entries omitted by the links first-page payload budget; repeated unchanged on later pages",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "entries",
+                "documents"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "root",
+            "composition",
+            "build",
+            "skipped_sources",
+            "totals"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schema": {
+      "type": "string",
+      "const": "index-view@1"
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "note": {
+          "description": "Explicit extent of the document observations, not a claim about every enterprise document",
+          "type": "string"
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "composition": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "build": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "root",
+              "composition",
+              "build"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "additional_roots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "root": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "composition": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "build": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "root",
+              "composition",
+              "build"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "additional_roots_declared": {
+          "type": "boolean"
+        },
+        "complete": {
+          "type": "boolean",
+          "description": "document membership and omissions are fully enumerated; omitted inputs are outside the computed data"
+        },
+        "not_in_roots": {
+          "description": "Per-composition source exclusions, even when another declared root covers the same document",
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "source observations; versions of one external id are distinguished by composition and byte digest"
+            },
+            "parts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "rows": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "reference",
+                  "sha256",
+                  "rows"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "total",
+            "parts"
+          ],
+          "additionalProperties": false
+        },
+        "listed_documents": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "source observations; versions of one external id are distinguished by composition and byte digest"
+            },
+            "parts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "rows": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "reference",
+                  "sha256",
+                  "rows"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "total",
+            "parts"
+          ],
+          "additionalProperties": false
+        },
+        "elsewhere_documents": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "source observations; versions of one external id are distinguished by composition and byte digest"
+            },
+            "parts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "rows": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "reference",
+                  "sha256",
+                  "rows"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "total",
+            "parts"
+          ],
+          "additionalProperties": false
+        },
+        "omitted_documents": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "total": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "source observations; versions of one external id are distinguished by composition and byte digest"
+                },
+                "parts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "reference": {
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "rows": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "reference",
+                      "sha256",
+                      "rows"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "total",
+                "parts"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pending_documents": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "source observations; versions of one external id are distinguished by composition and byte digest"
+            },
+            "parts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "rows": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "reference",
+                  "sha256",
+                  "rows"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "total",
+            "parts"
+          ],
+          "additionalProperties": false
+        },
+        "missing_optional_sources": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "description": "source observations; versions of one external id are distinguished by composition and byte digest"
+            },
+            "parts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "rows": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "reference",
+                  "sha256",
+                  "rows"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "total",
+            "parts"
+          ],
+          "additionalProperties": false
+        },
+        "unplaced_entries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unplaced_cases": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "to": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false
+        },
+        "request": {
+          "type": "object",
+          "properties": {
+            "reference": {
+              "type": "string"
+            },
+            "audience_user": {
+              "type": "string"
+            },
+            "deadline": {
+              "type": "string"
+            },
+            "action": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "reference",
+            "audience_user",
+            "deadline",
+            "action"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "roots",
+        "additional_roots",
+        "additional_roots_declared",
+        "complete",
+        "listed_documents",
+        "elsewhere_documents",
+        "omitted_documents",
+        "pending_documents",
+        "missing_optional_sources",
+        "unplaced_entries"
+      ],
+      "additionalProperties": false
+    },
+    "next": {
+      "description": "Continuation for the same immutable scope; null on the last page",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "product": {
+      "type": "string",
+      "minLength": 1
+    },
+    "build": {
+      "type": "object",
+      "properties": {
+        "build": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "build",
+        "root"
+      ],
+      "additionalProperties": false
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "definition",
+        "behaviour",
+        "case",
+        "defect",
+        "observation"
+      ]
+    },
+    "key": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,40}$",
+      "description": "the data field indexed; a list field is indexed by each of its elements"
+    },
+    "keys": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "maxItems": 200000,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "description": "field value -> sorted entry digests; one emitted page has at most MAX_INDEX_PER_KEY per key, complete run bindings may collate pages"
+    },
+    "entries": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "root": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "build": {
+            "type": "null"
+          },
+          "entry": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "definition",
+              "behaviour",
+              "case",
+              "defect",
+              "observation"
+            ]
+          },
+          "statement": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?)$",
+            "description": "tree:<root><path>@<entry>, citable as a ground"
+          }
+        },
+        "required": [
+          "entry",
+          "kind",
+          "statement",
+          "data",
+          "reference"
+        ],
+        "additionalProperties": false
+      },
+      "description": "those entries, once"
+    },
+    "fields": {
+      "description": "the request asked for only these data fields per entry: each entry carries them and an empty statement; absent means full entries",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,40}$"
+      }
+    },
+    "only": {
+      "description": "the requested index values, deduplicated and sorted in UTF-16 code-unit order; absent when the request has no only parameter",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cut_keys": {
+      "description": "listed keys whose entries were cut by MAX_INDEX_PER_KEY, sorted in UTF-16 code-unit order; generated views always include an empty array when none were cut; keys omitted entirely by the byte or entry budget are not included",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "totals": {
+      "type": "object",
+      "properties": {
+        "unversioned_entries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unversioned_documents": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "entry_counts": {
+          "description": "All distinct entries of the requested kind, even without the indexed key or outside only; the carrier total remains total_entries",
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "placed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "unplaced": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "total",
+            "placed",
+            "unplaced"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "total_keys": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "total_entries": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "skipped": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "listed sources the producers could not use across the build root and its locked product-wide root together: the absence of a key does not prove absence from these sources"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "product",
+    "build",
+    "kind",
+    "key",
+    "keys",
+    "entries",
+    "total_keys",
+    "total_entries",
+    "truncated",
+    "skipped",
+    "notes"
+  ],
+  "additionalProperties": false
+}

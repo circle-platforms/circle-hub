@@ -12,17 +12,23 @@ Circle's earlier Git history is kept as well. The licenses and notices of each h
 
 ## The platform references
 
-`references/platform/snapshot` comes from infosec-platform commit `4ab6c5ea593eb1b1d71bed92374b3a013ba61ad9`. The project's own content in it is covered by the root license. The `private` flags, the old package metadata without a declared license and the historical scope records in the originals stay as they are, as evidence of provenance; the current grant is what this page and the root LICENSE say.
+`references/platform/snapshot` comes from legacydemo-platform commit `4ab6c5ea593eb1b1d71bed92374b3a013ba61ad9`. The project's own content in it is covered by the root license. The `private` flags, the old package metadata without a declared license and the historical scope records in the originals stay as they are, as evidence of provenance; the current grant is what this page and the root LICENSE say.
 
 External products, project names, source links, trademarks and method descriptions in the research documents keep their own ownership. Linking to a public repository or studying how it works confers no trademark right and does not bring that product into this project's license.
 
+## Asciidoctor.js
+
+Asciidoctor.js (`@asciidoctor/core`) version `4.1.1`, as recorded in `core.mjs`, is bundled in `packs/product/famx/functions/adoc/vendor/` for the FAMX pack's AsciiDoc producer. The engine is in `core.mjs`, with the adapter's type declarations in `core.d.mts`.
+
+The engine is used under the MIT License. Its complete license and copyright notice are kept in [LICENSE.txt](packs/product/famx/functions/adoc/vendor/LICENSE.txt); the root license does not replace them.
+
 ## Dependencies and the actual artifacts
 
-The root package's current direct runtime dependencies are `pg@8.23.1`, `zod@4.6.5`, `exceljs@4.4.0`, `fflate@0.8.3`, `read-excel-file@9.3.12`, `parse5@8.0.1` and `saxes@5.0.1`, each used under the MIT license of its published package. Development dependencies include `embedded-postgres@18.4.0-beta.17` (MIT), type declarations (MIT) and TypeScript 5.9.3 (Apache-2.0). The actual PostgreSQL binaries and their upstream components follow their own licenses, which the wrapper's MIT license does not replace.
+The root package's current direct dependencies are `@modelcontextprotocol/sdk@1.32.1`, `pg@8.23.1`, `zod@4.6.5`, `exceljs@4.4.0`, `fflate@0.8.3`, `read-excel-file@9.3.12` and `parse5@8.0.1`, each used under the MIT license of its published package, `saxes@5.0.1` under its ISC license, and `typescript@5.9.3` under the Apache License 2.0. Development dependencies are `embedded-postgres@18.4.0-beta.17` (MIT) and type declarations (MIT). The actual PostgreSQL binaries and their upstream components follow their own licenses, which the wrapper's MIT license does not replace.
 
 Exact versions, download integrity and transitive dependencies are in the root `package-lock.json`. ExcelJS's uuid dependency is pinned by an override to `11.1.1`, which supports the same CommonJS v4 API and fixes the out-of-bounds advisory that npm audit reported; the lockfile currently has no reported vulnerability. A composition check describes the dependencies of this moment and promises nothing about future advisories. No `node_modules` and no server artifact is included.
 
-The historical lockfiles of the shared baseline and of the reference packages still record their original dependencies; they are not used by the new server's build entry points.
+The historical lockfiles of the shared baseline and of the reference packages still record their original dependencies; they are not used by the Hub's entry points.
 
 When adopting a module, check the dependencies actually used, and ship the corresponding licenses and notices with the artifact. Special cases in the current lockfiles are jszip's license choice, pako's MIT/Zlib, lightningcss's MPL-2.0 and caniuse-lite's CC-BY-4.0. None of them can be turned into the project's license.
 

@@ -1,0 +1,880 @@
+{
+  "interpreter": "catalog@1",
+  "tables": {
+    "commands": {
+      "schema": "catalog@1",
+      "origin": "合成样例：用例里出现的命令按锁定构建的命令目录核对",
+      "catalog": "commands",
+      "commands": [
+        "$.fields.commands"
+      ],
+      "item": "/id",
+      "location": "/location",
+      "negative": {
+        "flag": "/fields/negative",
+        "expect": [
+          "core.catalog.param_out_of_range",
+          "core.catalog.param_type_mismatch"
+        ],
+        "tier": "advisory"
+      },
+      "basis": "合成样例的验收条款：用例里的命令解析到锁定构建的目录条目，参数符合声明的类型和范围"
+    },
+    "claims": {
+      "schema": "catalog@1",
+      "origin": "合成样例：审查发现里关于命令是否存在的陈述",
+      "basis": "合成样例的验收条款：关于命令是否存在的陈述与目录一致",
+      "catalog": "commands",
+      "item": "/id",
+      "claims": {
+        "select": "$.claims[*]",
+        "command": "/command",
+        "present": "/present"
+      }
+    },
+    "unquoted": {
+      "schema": "catalog@1",
+      "origin": "合成样例：用例里出现的命令按锁定构建的命令目录核对",
+      "catalog": "commands",
+      "commands": [
+        "$.fields.commands"
+      ],
+      "item": "/id",
+      "location": "/location",
+      "basis": "合成样例的验收条款：用例里的命令解析到锁定构建的目录条目，参数符合声明的类型和范围",
+      "quotes": false
+    },
+    "required": {
+      "schema": "catalog@1",
+      "origin": "合成样例：用例里出现的命令按锁定构建的命令目录核对",
+      "catalog": "commands",
+      "commands": [
+        "$.fields.commands"
+      ],
+      "item": "/id",
+      "location": "/location",
+      "basis": "合成样例的验收条款：用例里的命令解析到锁定构建的目录条目，参数符合声明的类型和范围",
+      "required": true
+    }
+  },
+  "catalog": {
+    "root": "2222222222222222222222222222222222222222222222222222222222222222",
+    "entries": [
+      {
+        "head": "lab pool add",
+        "signatures": [
+          [
+            {
+              "name": "name",
+              "type": "string",
+              "maxLength": 32
+            },
+            {
+              "name": "address",
+              "type": "ipv4"
+            },
+            {
+              "name": "port",
+              "type": "port",
+              "minimum": 1
+            },
+            {
+              "name": "weight",
+              "type": "int",
+              "minimum": 1,
+              "maximum": 100,
+              "optional": true,
+              "default": "1"
+            }
+          ]
+        ]
+      },
+      {
+        "head": "lab pool remove",
+        "signatures": [
+          [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ]
+        ]
+      },
+      {
+        "head": "lab route add",
+        "signatures": [
+          [
+            {
+              "name": "destination",
+              "type": "ipv4"
+            },
+            {
+              "name": "mask",
+              "type": "mask"
+            },
+            {
+              "name": "gateway",
+              "type": "ipv4"
+            }
+          ],
+          [
+            {
+              "name": "destination6",
+              "type": "ipv6"
+            },
+            {
+              "name": "prefix",
+              "type": "int",
+              "minimum": 0,
+              "maximum": 128
+            },
+            {
+              "name": "gateway6",
+              "type": "ipv6"
+            }
+          ]
+        ]
+      },
+      {
+        "head": "lab show build"
+      },
+      {
+        "head": "lab mode set",
+        "signatures": [
+          [
+            {
+              "name": "mode",
+              "type": "enum",
+              "values": [
+                "fast",
+                "safe"
+              ]
+            }
+          ]
+        ]
+      },
+      {
+        "head": "lab cert load",
+        "signatures": [
+          [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "force",
+              "type": "keyword",
+              "optional": true
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "positive": [
+    {
+      "name": "命令都与签名一致（含重载、大小写、可选参数、关键字、引号）",
+      "table": "commands",
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "lab pool add web1 192.0.2.10 8080",
+            "lab pool add web2 192.0.2.11 80 50",
+            "lab route add 192.0.2.0 255.255.255.0 192.0.2.1",
+            "lab route add 2001:db8:: 32 2001:db8::1",
+            "lab show build",
+            "LAB MODE SET Fast",
+            "lab cert load c1 force",
+            "lab cert load 'my cert'"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "item": "doc1:n7",
+          "pointer": "/fields/commands/0",
+          "tier": "blocking",
+          "data": {
+            "head": "lab pool add",
+            "overload": 1
+          }
+        },
+        {
+          "verdict": "support",
+          "pointer": "/fields/commands/1"
+        },
+        {
+          "verdict": "support",
+          "data": {
+            "head": "lab route add",
+            "overload": 1
+          }
+        },
+        {
+          "verdict": "support",
+          "data": {
+            "head": "lab route add",
+            "overload": 2
+          }
+        },
+        {
+          "verdict": "support",
+          "data": {
+            "head": "lab show build"
+          }
+        },
+        {
+          "verdict": "support",
+          "data": {
+            "head": "lab mode set"
+          }
+        },
+        {
+          "verdict": "support",
+          "data": {
+            "head": "lab cert load"
+          }
+        },
+        {
+          "verdict": "support",
+          "data": {
+            "command": "lab cert load my cert"
+          }
+        }
+      ]
+    },
+    {
+      "name": "头解析不出的短语不在核对范围内",
+      "table": "commands",
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "点击登录按钮",
+            "ping 192.0.2.1"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "data": {
+            "checked": 0,
+            "skipped": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "目录里有、陈述也说有",
+      "table": {
+        "schema": "catalog@1",
+        "origin": "合成样例：用例里出现的命令按锁定构建的命令目录核对",
+        "catalog": "commands",
+        "item": "/id",
+        "location": "/location",
+        "negative": {
+          "flag": "/fields/negative",
+          "expect": [
+            "core.catalog.param_out_of_range",
+            "core.catalog.param_type_mismatch"
+          ],
+          "tier": "advisory"
+        },
+        "claims": {
+          "select": "$.slots.findings[*].catalog[*]",
+          "command": "/command",
+          "present": "/present"
+        }
+      },
+      "subject": {
+        "id": "doc1:n7",
+        "slots": {
+          "findings": [
+            {
+              "catalog": [
+                {
+                  "command": "lab pool add",
+                  "present": true
+                },
+                {
+                  "command": "lab pool purge",
+                  "present": false
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "pointer": "/slots/findings/0/catalog/0",
+          "data": {
+            "in_catalog": true
+          }
+        },
+        {
+          "verdict": "support",
+          "pointer": "/slots/findings/0/catalog/1",
+          "data": {
+            "in_catalog": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "陈述带参数：参数符合某个签名才算存在，命令后面多出的词不符合签名就算不存在",
+      "table": "claims",
+      "subject": {
+        "id": "doc1:n7",
+        "claims": [
+          {
+            "command": "lab pool add web1 192.0.2.10 80",
+            "present": true
+          },
+          {
+            "command": "lab show build now",
+            "present": false
+          },
+          {
+            "command": "lab pool",
+            "present": true
+          },
+          {
+            "command": "lab pool add web1 192.0.2.10 70000",
+            "present": false
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "pointer": "/claims/0",
+          "data": {
+            "in_catalog": true,
+            "head": "lab pool add"
+          }
+        },
+        {
+          "verdict": "support",
+          "pointer": "/claims/1",
+          "data": {
+            "in_catalog": false,
+            "head": "lab show build"
+          }
+        },
+        {
+          "verdict": "support",
+          "pointer": "/claims/2",
+          "data": {
+            "in_catalog": true
+          }
+        },
+        {
+          "verdict": "support",
+          "pointer": "/claims/3",
+          "data": {
+            "in_catalog": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "不按引号分词：引号是参数的一部分",
+      "table": "unquoted",
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "lab pool remove \"web1\""
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "data": {
+            "command": "lab pool remove \"web1\""
+          }
+        }
+      ]
+    },
+    {
+      "name": "目录区分大小写，表声明比较时不区分",
+      "table": {
+        "schema": "catalog@1",
+        "origin": "合成样例：用例里出现的命令按锁定构建的命令目录核对",
+        "catalog": "commands",
+        "commands": [
+          "$.fields.commands"
+        ],
+        "item": "/id",
+        "location": "/location",
+        "basis": "合成样例的验收条款：用例里的命令解析到锁定构建的目录条目，参数符合声明的类型和范围",
+        "scope": "all",
+        "match": {
+          "case": "insensitive"
+        }
+      },
+      "catalog": {
+        "root": "2222222222222222222222222222222222222222222222222222222222222222",
+        "caseSensitive": true,
+        "entries": [
+          {
+            "head": "lab show build"
+          }
+        ]
+      },
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "LAB Show Build"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "data": {
+            "head": "lab show build"
+          }
+        }
+      ]
+    },
+    {
+      "name": "表要求命令字段存在，字段在",
+      "table": "required",
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "lab show build"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "tier": "blocking"
+        }
+      ]
+    }
+  ],
+  "negative": [
+    {
+      "name": "端口超出范围",
+      "table": "commands",
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "lab pool add web1 192.0.2.10 70000"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.catalog.param_out_of_range",
+          "tier": "blocking",
+          "pointer": "/fields/commands/0"
+        }
+      ]
+    },
+    {
+      "name": "反向用例：端口超出范围是期望的反驳，按提示档显示",
+      "table": "commands",
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": true,
+          "commands": [
+            "lab pool add web1 192.0.2.10 70000"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.catalog.param_out_of_range",
+          "tier": "advisory",
+          "data": {
+            "negative_case": true,
+            "expected": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "地址类型不对",
+      "table": "commands",
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "lab pool add web1 not-an-ip 80"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.catalog.param_type_mismatch"
+        }
+      ]
+    },
+    {
+      "name": "参数个数不符",
+      "table": "commands",
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "lab pool add web1",
+            "lab show build now"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.catalog.arity_mismatch",
+          "data": {
+            "arguments": 1
+          }
+        },
+        {
+          "verdict": "refute",
+          "code": "core.catalog.arity_mismatch",
+          "data": {
+            "arguments": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "枚举取值不在声明里",
+      "table": "commands",
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "lab mode set turbo"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.catalog.param_type_mismatch"
+        }
+      ]
+    },
+    {
+      "name": "掩码不连续，按最接近的重载报告",
+      "table": "commands",
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "lab route add 192.0.2.0 255.0.255.0 192.0.2.1"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.catalog.param_type_mismatch",
+          "data": {
+            "overload": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "名称超长、权重为 0",
+      "table": "commands",
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "lab pool add xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx 192.0.2.10 80",
+            "lab pool add web1 192.0.2.10 80 0"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.catalog.param_out_of_range"
+        },
+        {
+          "verdict": "refute",
+          "code": "core.catalog.param_out_of_range"
+        }
+      ]
+    },
+    {
+      "name": "首词在目录里、整条命令不在（first_word）",
+      "table": {
+        "schema": "catalog@1",
+        "origin": "合成样例：用例里出现的命令按锁定构建的命令目录核对",
+        "catalog": "commands",
+        "commands": [
+          "$.fields.commands"
+        ],
+        "item": "/id",
+        "location": "/location",
+        "negative": {
+          "flag": "/fields/negative",
+          "expect": [
+            "core.catalog.param_out_of_range",
+            "core.catalog.param_type_mismatch"
+          ],
+          "tier": "advisory"
+        },
+        "scope": "first_word"
+      },
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "lab pool ad web1 192.0.2.10 80",
+            "点击登录按钮"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.catalog.not_member",
+          "data": {
+            "command": "lab pool ad web1 192.0.2.10 80"
+          }
+        }
+      ]
+    },
+    {
+      "name": "每条都必须在目录里（all）",
+      "table": {
+        "schema": "catalog@1",
+        "origin": "合成样例：用例里出现的命令按锁定构建的命令目录核对",
+        "catalog": "commands",
+        "commands": [
+          "$.fields.commands"
+        ],
+        "item": "/id",
+        "location": "/location",
+        "negative": {
+          "flag": "/fields/negative",
+          "expect": [
+            "core.catalog.param_out_of_range",
+            "core.catalog.param_type_mismatch"
+          ],
+          "tier": "advisory"
+        },
+        "scope": "all"
+      },
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "frobnicate now"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.catalog.not_member"
+        }
+      ]
+    },
+    {
+      "name": "陈述与目录相反",
+      "table": {
+        "schema": "catalog@1",
+        "origin": "合成样例：用例里出现的命令按锁定构建的命令目录核对",
+        "catalog": "commands",
+        "item": "/id",
+        "location": "/location",
+        "negative": {
+          "flag": "/fields/negative",
+          "expect": [
+            "core.catalog.param_out_of_range",
+            "core.catalog.param_type_mismatch"
+          ],
+          "tier": "advisory"
+        },
+        "claims": {
+          "select": "$.slots.findings[*].catalog[*]",
+          "command": "/command",
+          "present": "/present"
+        }
+      },
+      "subject": {
+        "id": "doc1:n7",
+        "slots": {
+          "findings": [
+            {
+              "catalog": [
+                {
+                  "command": "lab pool add",
+                  "present": false
+                },
+                {
+                  "command": "lab pool purge",
+                  "present": true
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.catalog.membership_contradicted",
+          "data": {
+            "claims_present": false,
+            "in_catalog": true
+          }
+        },
+        {
+          "verdict": "refute",
+          "code": "core.catalog.membership_contradicted",
+          "data": {
+            "claims_present": true,
+            "in_catalog": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "陈述带参数，与目录相反",
+      "table": "claims",
+      "subject": {
+        "id": "doc1:n7",
+        "claims": [
+          {
+            "command": "lab show build now",
+            "present": true
+          },
+          {
+            "command": "lab pool add web1 192.0.2.10 80",
+            "present": false
+          }
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.catalog.membership_contradicted",
+          "data": {
+            "claims_present": true,
+            "in_catalog": false
+          }
+        },
+        {
+          "verdict": "refute",
+          "code": "core.catalog.membership_contradicted",
+          "data": {
+            "claims_present": false,
+            "in_catalog": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "不按引号分词时，引号里的两个词是两个参数",
+      "table": "unquoted",
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "lab cert load 'my cert'"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.catalog.param_type_mismatch"
+        }
+      ]
+    },
+    {
+      "name": "目录区分大小写，大小写不同就不是成员",
+      "table": {
+        "schema": "catalog@1",
+        "origin": "合成样例：用例里出现的命令按锁定构建的命令目录核对",
+        "catalog": "commands",
+        "commands": [
+          "$.fields.commands"
+        ],
+        "item": "/id",
+        "location": "/location",
+        "basis": "合成样例的验收条款：用例里的命令解析到锁定构建的目录条目，参数符合声明的类型和范围",
+        "scope": "all"
+      },
+      "catalog": {
+        "root": "2222222222222222222222222222222222222222222222222222222222222222",
+        "caseSensitive": true,
+        "entries": [
+          {
+            "head": "lab show build"
+          }
+        ]
+      },
+      "subject": {
+        "id": "doc1:n7",
+        "location": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n7",
+        "fields": {
+          "negative": false,
+          "commands": [
+            "LAB Show Build"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.catalog.not_member"
+        }
+      ]
+    }
+  ]
+}

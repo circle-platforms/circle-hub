@@ -1,0 +1,17 @@
+{
+  "synthetic": true,
+  "note": "合成示例，不是一次已核对的运行。已删除的命令是阻断；定义有差异是提示，按字段给出两边的值。只改行为说明不是维护项。",
+  "compare": ["Rel_W_1_0_1", "Rel_W_1_0_2"],
+  "removed": {
+    "id": "doc-1:n1",
+    "code": "maintenance-sweep.case.command_removed",
+    "tier": "blocking",
+    "fix": "按替代命令改写这条用例，或者停用它"
+  },
+  "changed": {
+    "id": "doc-3:n1",
+    "code": "maintenance-sweep.case.command_changed",
+    "tier": "advisory",
+    "fields": [{ "command": "/commands/show", "path": "/args/0/type", "before": "string", "after": "integer" }]
+  }
+}

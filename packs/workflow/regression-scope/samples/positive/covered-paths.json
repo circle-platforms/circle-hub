@@ -1,0 +1,79 @@
+{
+  "id": "covered_paths",
+  "source": "author",
+  "check": "uncovered_changes",
+  "note": "合成样例：列出的变更路径都有范围内的用例，未覆盖列表为空",
+  "subject": {
+    "items": [
+      {
+        "id": "doc-1:n1",
+        "location": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fields": {
+          "document": "doc-1",
+          "node": "n1",
+          "title": "查看部件状态",
+          "priority": 1,
+          "negative": false,
+          "reasons": [
+            {
+              "path": "/commands/show",
+              "change": "modified",
+              "before": [
+                {
+                  "entry": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "kind": "definition",
+                  "reference": "tree:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/commands/show@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                }
+              ],
+              "after": [
+                {
+                  "entry": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                  "kind": "definition",
+                  "reference": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                }
+              ],
+              "case": {
+                "entry": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "reference": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "note": {
+      "considered": [
+        {
+          "path": "/commands/show",
+          "change": "modified"
+        }
+      ],
+      "uncovered": [],
+      "skipped_to": 0,
+      "truncated": false,
+      "changed_paths": 1,
+      "include_added": true,
+      "details": [
+        {
+          "path": "/commands/show",
+          "change": "modified",
+          "definition_change": "modified",
+          "conclusion": "命令定义有变更",
+          "differences": [],
+          "references": [],
+          "cases": 1
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "support",
+      "tier": "advisory"
+    }
+  ]
+}

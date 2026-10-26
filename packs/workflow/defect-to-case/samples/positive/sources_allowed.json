@@ -1,0 +1,27 @@
+{
+  "id": "sources_allowed",
+  "source": "author",
+  "check": "grounded_sources",
+  "note": "只引用本条缺陷的配置修复字段",
+  "subject": {
+    "item": "74001",
+    "allowed_quote_sources": {
+      "defect": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "manual": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "fix_field": "fix"
+    },
+    "quotes": [
+      {
+        "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/json@1/p/fields/fix",
+        "text": "合成修复说明"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "74001",
+      "tier": "blocking"
+    }
+  ]
+}

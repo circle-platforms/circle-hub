@@ -1,0 +1,154 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "draft_shape",
+      "title": "起草用例结构合规",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkDraftShape"
+      },
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 shape：起草用例符合团队用例结构（非空标题至多200字、至少一步带命令行、至少一个期望结果、优先级1到3、标签属于团队模板类别、同次提交无重复用例、反向用例标记 negative）"
+    },
+    {
+      "id": "commands_catalog",
+      "title": "用例命令目录解析与参数校验",
+      "interpreter": "catalog@1",
+      "table": "tables/commands.json",
+      "applies": "item",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "commandSubject"
+      },
+      "catalog": "commands@1",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 commands：起草用例的命令行在锁定构建的命令目录中解析，参数类型、取值范围和枚举合法"
+    },
+    {
+      "id": "commands_refutation",
+      "title": "反向用例预期反驳校验",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkCommandsRefutation"
+      },
+      "applies": "item",
+      "catalog": "commands@1",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 commands：expects_refutation 与 negative 均为 true 的用例必须被目录反驳，被目录接受则违规；expects_refutation 为 false 的用例被目录反驳则违规"
+    },
+    {
+      "id": "grounded_quotes",
+      "title": "期望结果逐字引文核对",
+      "interpreter": "quote@1",
+      "table": "tables/quotes.json",
+      "applies": "item",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "quoteSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 grounded：每个期望结果带有逐字引文，引文必须逐字出现在缺陷修复说明或手册中"
+    },
+    {
+      "id": "grounded_sources",
+      "title": "引文来源范围核验",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkQuoteSources"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "quoteSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 grounded：引文只许本条缺陷由 settings.bug_fix_field 声明的修复字段，或 settings.bug_fix_actions 收进 fix_notes 的 comment，或 manual 输入绑定的同版本线手册，按冻结原件身份核验"
+    },
+    {
+      "id": "grounded_reading",
+      "title": "期望结果文字逐字核对",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkGroundedReading"
+      },
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 grounded：期望文字必须是自身引文的非空逐字片段，只忽略空白差异，不许改写",
+      "reads": {
+        "roles": [
+          "subject",
+          "expected"
+        ],
+        "max_bytes": 1048576
+      }
+    },
+    {
+      "id": "duplicate_check",
+      "title": "已索引用例去重检查",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkDuplicate"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "duplicateSubject"
+      },
+      "catalog": "commands@1",
+      "reads": {
+        "roles": [
+          "expected"
+        ],
+        "types": [
+          "knowledge:index"
+        ],
+        "max_bytes": 1048576,
+        "narrow": {
+          "slot": "indexed_cases",
+          "key_path": "/read_keys",
+          "into": "/indexed_cases",
+          "max_keys": 100,
+          "max_entries": 5000,
+          "rebind": true
+        }
+      },
+      "judges": "artifact_under_verification",
+      "tier": "advisory",
+      "basis": "R7：只比较作者声明的完整命令身份、规范类型参数与期望引文身份，保留次序/重复/after；缺结构或范围事实为未知并补证"
+    },
+    {
+      "id": "refutation_catalog",
+      "title": "完整签名的预期成员关系",
+      "interpreter": "catalog@1",
+      "table": "tables/refutation-commands.json",
+      "applies": "item",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "refutationSubject"
+      },
+      "catalog": "commands@1",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "R4/R7：只按冻结树完整签名核对显式成员主张，反向例外只来自精确类型声明"
+    },
+    {
+      "id": "fixed_status",
+      "title": "原始已修复状态",
+      "function": {
+        "module": "functions/fixed-status.ts"
+      },
+      "applies": "item",
+      "judges": "subject",
+      "tier": "advisory",
+      "basis": "R7：仅原始结构状态支持已修复判断，未声明状态不阻止其他来源成根"
+    }
+  ]
+}

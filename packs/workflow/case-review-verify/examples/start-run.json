@@ -1,0 +1,11 @@
+{
+  "note": "示例（合成）：复核初评；target 和初评的 subject 是同一份脑图，draft 是初评回执里验证结果的引用，predecessor 是初评运行；用与初评不同的会话和模型",
+  "start_run": {
+    "pack": "case-review-verify",
+    "product": "<产品名称>",
+    "version": "<版本线>",
+    "build": "<初评运行的构建>",
+    "inputs": { "target": { "external": "agile:mindmap:<文档编号>" }, "draft": { "reference": "rec:<初评验证结果的摘要>" } },
+    "predecessor": "<初评运行编号>"
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "structure",
+      "title": "用例的字面问题",
+      "interpreter": "structure@1",
+      "table": "tables/structure.json",
+      "applies": "run",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "structureSubject"
+      },
+      "judges": "subject",
+      "tier": "blocking"
+    },
+    {
+      "id": "node_ids",
+      "title": "用例节点的编号",
+      "interpreter": "structure@1",
+      "table": "tables/structure-node-ids.json",
+      "applies": "run",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "structureSubject"
+      },
+      "judges": "subject",
+      "tier": "advisory"
+    },
+    {
+      "id": "tags",
+      "title": "标签写法一致",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "tagSpelling"
+      },
+      "applies": "run",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "structureSubject"
+      },
+      "judges": "subject",
+      "tier": "advisory"
+    },
+    {
+      "id": "cited_commands",
+      "title": "发现引用的用例命令行",
+      "interpreter": "catalog@1",
+      "table": "tables/cited-commands.json",
+      "applies": "item",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "commandSubject"
+      },
+      "catalog": "commands@1",
+      "judges": "subject",
+      "tier": "blocking"
+    },
+    {
+      "id": "command_claims",
+      "title": "命令存在与否的陈述",
+      "interpreter": "catalog@1",
+      "table": "tables/command-claims.json",
+      "applies": "item",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "commandSubject"
+      },
+      "catalog": "commands@1",
+      "judges": "artifact_under_verification",
+      "tier": "blocking"
+    },
+    {
+      "id": "findings_quotes",
+      "title": "发现的引文逐字一致",
+      "interpreter": "quote@1",
+      "table": "tables/findings-quotes.json",
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking"
+    },
+    {
+      "id": "findings_sources",
+      "title": "发现有位置和逐字引文、引用的命令行出自用例、不只靠线索",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "findingSources"
+      },
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 findings：每条发现写明它在被评审脑图里的位置，带至少一段逐字引文（docs/hub-r4-architecture.md 第 6 节：每条主张带位置和引文）；不写 present 的命令行照用例原样引用；产品行为只以被评审对象、需求、缺陷、产品文档、手册和命令目录为根据，历史测试清单和测试策略只是线索（A03 R[6]）"
+    },
+    {
+      "id": "case_commands",
+      "title": "（可选，默认关闭）用例文字里的命令",
+      "interpreter": "catalog@1",
+      "table": "tables/catalog.json",
+      "applies": "item",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "scanSubject"
+      },
+      "catalog": "commands@1",
+      "judges": "subject",
+      "tier": "advisory"
+    },
+    {
+      "id": "expected_quality_evidence",
+      "title": "期望质量的完整逐字证据",
+      "function": {
+        "module": "functions/expected-quality.ts"
+      },
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "R3：语义由模型主张；原件、用例所属全部期望叶子及逐字引文由 Hub 核验，不使用含糊短语表"
+    },
+    {
+      "id": "negative_commands",
+      "title": "反向用例自身有命令行",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "negativeCommands"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subjects.ts",
+        "export": "commandSubject"
+      },
+      "catalog": "commands@1",
+      "judges": "subject",
+      "tier": "advisory"
+    }
+  ]
+}

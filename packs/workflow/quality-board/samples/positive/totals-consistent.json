@@ -1,0 +1,128 @@
+{
+  "id": "totals_consistent",
+  "source": "author",
+  "check": "totals",
+  "note": "合成样例：合计覆盖整个视图（用例 23 个：无期望 2、含糊期望 1、负面 1），并写明看板只覆盖用例索引收录的用例",
+  "subject": {
+    "items": [
+      {
+        "id": "10.6.1/HA",
+        "location": "src:73df5bfd3032e45db3934e3ef7c3fadb2e04ae83b11ed86142f0e62a40ba6556/json@1/p/rows",
+        "fields": {
+          "line": "10.6.1",
+          "module": "HA",
+          "id": "10.6.1/HA",
+          "counts": {
+            "cases": 20,
+            "missing": 0,
+            "vague": 0,
+            "negative": 0,
+            "negative_denominator": 20,
+            "type_unclassified": 0
+          },
+          "quality": {
+            "judged": 0,
+            "unjudged": 20,
+            "conflicted": 0,
+            "sources": []
+          },
+          "ratios": {
+            "missing": {
+              "num": 0,
+              "den": 20
+            },
+            "vague": {
+              "num": 0,
+              "den": 0
+            },
+            "negative": {
+              "num": 0,
+              "den": 20
+            }
+          },
+          "display": {
+            "missing": 0,
+            "vague": null,
+            "negative": 0
+          }
+        }
+      },
+      {
+        "id": "10.6.1/SSL",
+        "location": "src:73df5bfd3032e45db3934e3ef7c3fadb2e04ae83b11ed86142f0e62a40ba6556/json@1/p/rows",
+        "fields": {
+          "line": "10.6.1",
+          "module": "SSL",
+          "id": "10.6.1/SSL",
+          "counts": {
+            "cases": 3,
+            "missing": 2,
+            "vague": 0,
+            "negative": 2,
+            "negative_denominator": 3,
+            "type_unclassified": 0
+          },
+          "quality": {
+            "judged": 0,
+            "unjudged": 3,
+            "conflicted": 0,
+            "sources": []
+          },
+          "ratios": {
+            "missing": {
+              "num": 2,
+              "den": 3
+            },
+            "vague": {
+              "num": 0,
+              "den": 0
+            },
+            "negative": {
+              "num": 2,
+              "den": 3
+            }
+          },
+          "display": {
+            "missing": 0.6667,
+            "vague": null,
+            "negative": 0.6667
+          }
+        }
+      }
+    ],
+    "context": {
+      "product": "famx",
+      "names": [
+        "FAMX",
+        "FAMY"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "placement": {
+            "unplaced": 0,
+            "source": "src:cbceba8cd5dd42fc33ef46c12bb3fda6692c7cf33a99771ed3e853782c09aab2",
+            "skipped": 0,
+            "truncated": false
+          },
+          "product": "famx",
+          "build": "Rel_FAMX_10_6_1_57",
+          "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
+          "view": {
+            "source": "src:73df5bfd3032e45db3934e3ef7c3fadb2e04ae83b11ed86142f0e62a40ba6556",
+            "total": 23,
+            "truncated": false,
+            "skipped": 0,
+            "listed_rows": 3
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "advisory"
+    }
+  ]
+}

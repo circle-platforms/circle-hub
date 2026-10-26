@@ -1,0 +1,65 @@
+{
+  "id": "quotes_verbatim",
+  "source": "author",
+  "check": "findings_quotes",
+  "note": "引文逐字出现在所引片段里",
+  "subject": {
+    "item": "sample:c1",
+    "label": "设置池 c1 的探测间隔",
+    "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c1",
+    "fields": {
+      "document": "sample",
+      "nodeId": "c1",
+      "path": [
+        "示例文档",
+        "池管理"
+      ],
+      "title": "设置池 c1 的探测间隔",
+      "priority": 2,
+      "degree": null,
+      "tags": [
+        "functional"
+      ],
+      "tagsNormalized": [
+        "functional"
+      ],
+      "expected": [
+        "显示的探测间隔与设置一致"
+      ],
+      "expectedCount": 1,
+      "steps": [],
+      "preconditions": [],
+      "autoid": null,
+      "automated": false,
+      "negative": false,
+      "hasNote": false,
+      "nested": false
+    },
+    "slots": {
+      "findings": [
+        {
+          "text": "缺少探测间隔为最大值 300 的用例",
+          "code": "edge_case_gap",
+          "rank": "minor",
+          "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c1",
+          "quotes": [
+            {
+              "reference": "src:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/markdown@1/s/interval",
+              "text": "取值范围 1-300 秒"
+            }
+          ]
+        }
+      ]
+    },
+    "evidence": []
+  },
+  "sources": {
+    "src:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/markdown@1/s/interval": "探测间隔的取值范围 1-300 秒，默认 5 秒。"
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "sample:c1"
+    }
+  ]
+}

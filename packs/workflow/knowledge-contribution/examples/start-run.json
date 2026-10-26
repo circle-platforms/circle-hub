@@ -1,0 +1,10 @@
+{
+  "pack": "knowledge-contribution",
+  "product": "Example",
+  "build": "example-1",
+  "inputs": {
+    "subject": {
+      "reference": "src:1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  }
+}

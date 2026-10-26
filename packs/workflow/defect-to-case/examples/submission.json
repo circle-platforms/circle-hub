@@ -1,0 +1,54 @@
+{
+  "note": "示例（合成）：一个缺陷起草回归测试用例、一个缺陷因底层优化无行为变化声明跳过；引文来自缺陷修复说明或手册片段，命令行须在锁定构建命令目录中可解析",
+  "submit_result": {
+    "run": "<运行编号>",
+    "model": "<模型名称和配置>",
+    "items": [
+      {
+        "item": "<缺陷编号1>",
+        "handling": "handled",
+        "slots": {
+          "cases": [
+            {
+              "text": "健康检查间隔配置回归测试",
+              "quotes": [
+                {
+                  "reference": "src:<缺陷原件摘要>/json@1/p/fields/<content.fix_field 的选择器编码>",
+                  "text": "健康检查间隔设置成功"
+                }
+              ],
+              "data": {
+                "title": "配置健康检查间隔为 60 秒",
+                "priority": 2,
+                "negative": false,
+                "expects_refutation": false,
+                "preconditions": ["SLB服务正常运行"],
+                "steps": [
+                  {
+                    "text": "执行配置健康检查间隔命令",
+                    "command": "widget health interval 60"
+                  }
+                ],
+                "expected": [
+                  {
+                    "text": "健康检查间隔设置成功",
+                    "quote": {
+                      "reference": "src:<缺陷原件摘要>/json@1/p/fields/<content.fix_field 的选择器编码>",
+                      "text": "健康检查间隔设置成功"
+                    }
+                  }
+                ],
+                "tags": ["Functional"]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "item": "<缺陷编号2>",
+        "handling": "skipped",
+        "reason": "底层代码重构优化，无外部可测命令行或行为变化"
+      }
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+# Make plan command identities an optional model declaration
+
+Scope: case-compile slots, plan command checking, client instructions, synthetic fixtures/tests, package version and signed manifest.
+
+The slot schema already omitted command_identities from required, but the client skill still told the model to submit it and the slot reader rejected malformed native identity values before any independent checks. Remove that stale instruction and move model declaration semantics to commands_known. Derive authoritative identities exclusively from complete device CLI steps and the locked selected grammar. If a model supplies a declaration, validate it and compare the complete identity set; absent, extra, malformed or mismatched declared identities refute that requirement with an option to delete the declaration. No model declaration is needed by contract_shape, address or expectation prerequisites. Source case identity declarations remain a separate consistency constraint.
+
+Default plans and author samples omit model identities. The synthetic Hub integration omits both the case index and model identities, verifies the plan, generates a workbook from the accepted native grammar receipt and verifies its original bytes in a successor run with every requirement satisfied. Additional tests cover malformed/empty/extra/mismatched declarations, valid declarations and a host-only plan. This proves synthetic behavior only.

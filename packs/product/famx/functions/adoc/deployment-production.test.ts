@@ -1,0 +1,60 @@
+// Real Hub knowledge transactions and sandbox functions; all source bytes and variables are synthetic.
+import assert from 'node:assert/strict';
+import {after,before,test} from 'node:test';
+import {cp,mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';import {join} from 'node:path';
+import {ProductDeclaration,type BuildInfo} from '../../../../../contracts/src/product.ts';
+import {createKnowledge} from '../../../../../hub/knowledge/api.ts';
+import {FakeExternal,FakePacks} from '../../../../../hub/knowledge/test-support.ts';
+import {createDefaultRegistry} from '../../../../../hub/refs/api.ts';
+import {sha256Hex} from '../../../../../hub/records/api.ts';
+import {startPostgres,type TemporaryPostgres} from '../../../../../hub/testing/postgres.ts';
+import {openTestRecords} from '../../../../../hub/testing/records.ts';
+import {addAdocSources} from './deployment.ts';
+let postgres:TemporaryPostgres;before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
+
+test('changing one family reuses the other production and a failed complete group leaves the old root',async t=>{
+ const records=await openTestRecords({postgres});const dir=await mkdtemp(join(tmpdir(),'famx-adoc-production-'));
+ t.after(async()=>{await records.close();await rm(dir,{recursive:true,force:true});});
+ const admin=(await records.principals.bootstrapAdmin('合成管理员')).user;
+ await cp(new URL('../',import.meta.url),join(dir,'functions'),{recursive:true,filter:source=>!source.endsWith('.test.ts')});
+ await writeFile(join(dir,'functions','synthetic-plan.ts'),'export default function(input:any){return {fetch:[],builds:[input.options.build],done:true};}');
+ const raw=JSON.parse(await readFile(new URL('../../product.json',import.meta.url),'utf8'));
+ raw.sync={start:['site:page:index'],plan:{module:'functions/synthetic-plan.ts'},options:raw.sync.options};
+ await writeFile(join(dir,'product.json'),JSON.stringify(raw));
+ const product={id:'famx',version:'1.0.0',digest:sha256Hex(JSON.stringify(raw)),directory:dir,kind:'product' as const,product:ProductDeclaration.parse(raw)};
+ const packs=new FakePacks();packs.add(product);const external=new FakeExternal(records);external.set('site:page:index',{bytes:'<html></html>',mediaType:'text/html'});
+ const root='synthetic/10.8.1',revision='17';const rootId='svn:directory:'+encodeURIComponent(root);
+ const childId='svn:directory-at:17/'+encodeURIComponent(root+'/chapters');
+ const id=(name:string)=>'svn:file:17/'+encodeURIComponent(root+'/'+name);
+ const texts={'app.adoc':'= Synthetic APP\n\n== Application\n\n{brand} APP content.\n','book.adoc':'= Synthetic\n\ninclude::chapters/body.adoc[]\n','chapters/body.adoc':'== Section\n\n{brand} family\0 content.\n'};
+ const member=(name:string)=>({name,directory:false,external:id(name),revision:'16',size:Buffer.byteLength(texts[name as keyof typeof texts])});
+ const meta={directory:root,revision,members:[member('book.adoc'),member('app.adoc'),{name:'chapters',directory:true,revision:'16',external:null,size:null}]};
+ const child={directory:root+'/chapters',revision,members:[{...member('chapters/body.adoc'),name:'body.adoc'}]};
+ external.set(rootId,{bytes:JSON.stringify(meta),mediaType:'application/json'});external.set(childId,{bytes:JSON.stringify(child),mediaType:'application/json'});
+ for(const [name,text] of Object.entries(texts))external.set(id(name),{bytes:text,mediaType:name==='chapters/body.adoc'?'application/octet-stream':'text/plain'});
+ external.set('site:tree:demo',{bytes:'<commands><scope type="global"><item name="demo" help_string="Synthetic"/></scope></commands>',mediaType:'application/xml'});
+ for(const declaration of product.product.variables??[])await records.variables.setVariable(admin,declaration.name,declaration.default,'合成默认值的显式部署设置');
+ for(const family of ['FAMX','FAMY']){
+  await records.variables.setVariable(admin,family+'_ADOC_ROOT','synthetic/{line}','合成源目录');
+  await records.variables.setVariable(admin,'FAMX_ADOC_ATTRIBUTES_'+family,{brand:family==='FAMX'?'Alpha':'Beta'},'合成族属性');
+ }
+ const build:BuildInfo={name:'Rel_FAMX-ZX-U_10_8_1_901',base:'Rel_FAMX-ZX-U_10_8_1_901',family:'FAMX',line:'10.8.1',platform:'zx-u',built_at:null,released_at:'2026-01-01T00:00:00.000Z',sources:{tree:'site:tree:demo'}};
+ const read:any={[rootId]:{ok:true,parser:'json@1',model:meta},[childId]:{ok:true,parser:'json@1',model:child}};
+ addAdocSources(build,{adoc:{FAMX:{root:'synthetic/{line}'},FAMY:{root:'synthetic/{line}'}}},read,()=>assert.fail('complete metadata'),[]);
+ const knowledge=createKnowledge({records,parsers:createDefaultRegistry(),packs,external,admin,sandbox:{requireOsIsolation:false}});
+ const sync=()=>knowledge.syncProduct(product,{options:{build},maxAgeSeconds:0,recheck:true});
+ const first=await sync();assert.equal(first.counts.produced,1,JSON.stringify(first.builds));
+ const a=await knowledge.store.composition(first.builds[0].composition!);assert.ok(a);
+ const chapter=a.sources.find(source=>source.external===id('chapters/body.adoc'))!;
+ assert.equal(chapter.media_type,'application/octet-stream');assert.equal(chapter.parser,'text@1');
+ const famy=a.composition.filter(row=>row.producers.includes('manual-famy')).map(row=>row.entry);assert.ok(famy.length);
+ assert.ok(a.variables?.some(v=>v.name==='FAMX_ADOC_ATTRIBUTES_FAMX'));assert.ok(a.variables?.some(v=>v.name==='FAMX_ADOC_ATTRIBUTES_FAMY'));
+ await records.variables.setVariable(admin,'FAMX_ADOC_ATTRIBUTES_FAMX',{brand:'Gamma'},'只改一族');
+ const changed=await sync();assert.equal(changed.counts.produced,1,JSON.stringify(changed.builds));assert.equal(changed.builds[0].calls?.made,1,JSON.stringify(changed.builds));
+ const b=await knowledge.store.composition(changed.builds[0].composition!);assert.deepEqual(b!.composition.filter(row=>row.producers.includes('manual-famy')).map(row=>row.entry),famy);
+ const locked=await knowledge.currentRoot('famx','10.8.1');assert.ok(locked);
+ external.set(id('chapters/body.adoc'),{fail:'Synthetic unreadable chapter'});
+ await records.variables.setVariable(admin,'FAMX_ADOC_ATTRIBUTES_FAMX',{brand:'Delta'},'触发整组重新核对');
+ const failed=await sync();assert.equal(failed.counts.failed,1,JSON.stringify(failed.builds));assert.equal((await knowledge.currentRoot('famx','10.8.1'))?.root,locked.root);
+});

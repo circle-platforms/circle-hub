@@ -1,0 +1,87 @@
+{
+  "id": "shape_invalid",
+  "source": "author",
+  "check": "draft_shape",
+  "note": "起草用例缺少标题、步骤和期望结果且优先级越界",
+  "subject": {
+    "item": "74001",
+    "slots": {
+      "cases": [
+        {
+          "text": "",
+          "data": {
+            "id": "draft-good",
+            "title": "",
+            "priority": 2,
+            "negative": false,
+            "expects_refutation": false,
+            "preconditions": [
+              "SLB服务正常运行"
+            ],
+            "steps": [
+              {
+                "command": "widget health interval 60",
+                "identity": {
+                  "tree_root": "5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154",
+                  "path": "/commands/widget/health/interval",
+                  "signature": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/0/params",
+                  "parameters": [
+                    {
+                      "position": 0,
+                      "name": "seconds",
+                      "raw": "60",
+                      "type": {
+                        "name": "int",
+                        "catalog_type": "int",
+                        "declaration": "src:5aa8d6c932963f9ed596beb89da68967005376ec08f3b945654df03736b65154/json@1/p/entries/0/params/0",
+                        "grammar": "synthetic-catalog@1"
+                      },
+                      "parsed": {
+                        "kind": "int",
+                        "value": 60
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "expected": [
+              {
+                "text": "健康检查间隔设置成功",
+                "after": 1,
+                "identity": {
+                  "source_sha256": "81784c076c4dd97428db28ea955a32ad22d2fd51420c411847fb78bae2b947af",
+                  "parser": "text@1",
+                  "path": "l/1",
+                  "span": {
+                    "unit": "byte",
+                    "offset": 0,
+                    "length": 30
+                  }
+                },
+                "quote": {
+                  "reference": "src:81784c076c4dd97428db28ea955a32ad22d2fd51420c411847fb78bae2b947af/text@1/l/1",
+                  "text": "健康检查间隔设置成功"
+                }
+              }
+            ],
+            "tags": [
+              "functional"
+            ],
+            "resource": [
+              "functional"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "defect-to-case.shape_invalid",
+      "item": "74001",
+      "tier": "blocking"
+    }
+  ]
+}

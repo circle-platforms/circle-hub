@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "product": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}$"
+    },
+    "build": {
+      "type": "string",
+      "minLength": 1
+    },
+    "device": {
+      "type": "string",
+      "minLength": 1
+    },
+    "collected_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "echo": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "digest of the stored echo source"
+    },
+    "declared_by": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the pack id@version that declares the echo a product observation"
+    }
+  },
+  "required": [
+    "product",
+    "build",
+    "device",
+    "collected_at",
+    "echo",
+    "declared_by"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {ProducerOutput} from '../../../../contracts/src/product.ts';
+import {produceReleaseEntries} from './release-notes.ts';
+import {releaseNotes} from './producers.ts';
+const build='Rel_FAMX_10_8_9_42_main_zx-u';
+const notes=(defects:unknown[],extra={})=>({schema:'release-notes@2',complete:true,product:'FAMX',build,defects,...extra});
+test('only exact declared JSON statuses establish fixed or known',()=>{const out=produceReleaseEntries(notes([{bug:'SYN-1',status:'fixed',text:'合成一'},{bug:'SYN-2',status:'known',text:'合成二'}]),build);assert.equal(out.complete,true);assert.deepEqual(out.entries.map(row=>[row.data.status,row.data.declaration_status]),[['fixed','declared'],['known','declared']]);});
+for(const value of [undefined,null,'Fixed','已修复'])test('missing or invalid status '+String(value)+' stays an undeclared entry',()=>{const out=produceReleaseEntries(notes([{bug:'SYN-1',status:value,text:'fixed 已修复 known 都只是原文'}]),build);assert.equal(out.complete,true);assert.equal(out.entries[0].data.declaration_status,'undeclared');assert.equal(out.entries[0].data.status,null);assert.ok(out.entries[0].data.missing);assert.ok(out.entries[0].data.next_action);});
+test('missing identity and incomplete scope are explicit local gaps',()=>{const out=produceReleaseEntries(notes([{text:'没有身份'}],{complete:false}),build);assert.equal(out.complete,false);assert.equal(out.entries[0].data.bug,null);assert.equal(out.entries[0].data.identity_declaration_status,'undeclared');assert.ok(out.entries.every(row=>row.data.declaration_status==='undeclared'));});
+test('wrong build never establishes a status for the frozen build',()=>{const out=produceReleaseEntries(notes([{bug:'SYN-1',status:'fixed',text:'合成'}],{build:'Rel_FAMX_10_8_9_43_main_zx-u'}),build);assert.equal(out.entries[0].data.status,null);assert.match(String(out.entries[0].data.missing),/build/);});
+test('producer-wide incomplete is not emitted for a status gap',()=>{for(const model of [notes([{bug:'SYN-1',text:'合成'}]),notes([{text:'合成'}],{complete:false}),{}]){const out=releaseNotes({build:{name:build},slots:{notes:{parser:'json@1',model}}});assert.ok(ProducerOutput.safeParse(out).success,JSON.stringify(out));assert.equal(out.incomplete,undefined);assert.ok(out.entries.length>0);}});
