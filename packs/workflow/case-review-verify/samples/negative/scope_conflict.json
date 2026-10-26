@@ -1,0 +1,17 @@
+{
+  "id": "scope_conflict",
+  "source": "author",
+  "check": "review_scope",
+  "note": "同次复核有两份识别范围不能任选一份",
+  "subject": {
+    "scope": null,
+    "conflict": true
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review-verify.scope_conflict",
+      "tier": "blocking"
+    }
+  ]
+}

@@ -13,7 +13,7 @@ import {pathSegments} from '../refs/api.ts';
 import {Claim,type Claim as ClaimBody} from '../../contracts/src/claim.ts';
 import {KnowledgeStructureSchema,FeedingRetractionSchema,type FeedingRetraction,type VersionBinding,type FeedingOffset} from '../../contracts/src/feeding.ts';
 import type {FeedingQuote as QuoteEvidence} from '../../contracts/generated/shared-interfaces.ts';
-import {parseReference,parserKey,parseDocument,recognizeAsync} from '../refs/api.ts';
+import {parseReference,parserKey,parseDocument,recognizeAsync,sliceUtf8} from '../refs/api.ts';
 import {parseExternal} from '../connectors/api.ts';
 import {canonicalize,sha256Hex,scanForCredentials,type Principal,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
 import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabulary.ts';
@@ -97,7 +97,7 @@ export class FeedingLayer {
   const ref=this.quoteRef(quote),source=await this.context.records.artifacts.source(principal,ref.sha,{consumer:'model'});if(!source?.bytes||source.readTier!=='model_readable')fail('引文原件不存在或当前不可读');
   const parser=this.context.parsers.get(ref.parser);if(!parser)fail('引文解析器版本不存在');const fragment=(await parseDocument(parser,source.bytes)).locate(ref.selector);if(!fragment)fail('引文选择器不能解析');
   if(ref.span){const range=fragment.byteRange??(ref.parser==='json@1'&&ref.selector==='p'?[0,source.bytes.byteLength]:null);if(!range)fail('该解析器没有原始范围；改用生成的 source+selector 逐字引用，不得猜 byte span');const end=ref.span.offset+ref.span.length;if(ref.span.offset<range[0]||end>range[1])fail('引文跨度不在原始片段中');let text:string;try{text=new TextDecoder('utf-8',{fatal:true}).decode(source.bytes.slice(ref.span.offset,end));}catch{fail('引文不是完整 UTF-8 字节');}if(text!==quote.text)fail('引文不是原件逐字内容');}
-  else {const text=ref.range?fragment.text.slice(ref.range[0],ref.range[1]):fragment.text;if(!text.includes(quote.text))fail('引文不是选择器原文的逐字片段');}
+  else {const text=ref.range?sliceUtf8(fragment.text,ref.range[0],ref.range[1]):fragment.text;if(text===null||!text.includes(quote.text))fail('引文不是选择器原文的逐字片段');}
  }
 
  private feedingLimits(){return {...this.context.sandbox.producer,timeoutMs:Math.min(this.context.sandbox.producer.timeoutMs??FEEDING_CALL_MS,FEEDING_CALL_MS)};}

@@ -31,3 +31,9 @@ test('uploads remain uploader/admin-only even with identical public bytes; uploa
 });
 
 test('a current pointer naming a content root selects its own line record when two lines share tree bytes',async t=>{const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const root=await seed(w,'10.8');await seed(w,'10.9');for(const line of ['10.8','10.9']){const old=await w.kit.pointers.get(seedlingName(w.product.id,line));assert.ok(old);await w.kit.pointers.move({name:old.name,expected:old.target,next:root.root,by:w.admin,run:null,component:'synthetic.feeding@1'});}assert.equal((await w.knowledge.feeding!.seedFor(w.product.id,'10.8'))!.line,'10.8');assert.equal((await w.knowledge.feeding!.seedFor(w.product.id,'10.9'))!.line,'10.9');});
+
+test('legacy src ranges slice quotation fragments at UTF-8 byte boundaries',async t=>{const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;const a=await source(w,'SYN-R',{status:'open',affected_lines:[],description:'甲open'});const reference=`src:${a.body.sha256}/json@1/p/fields/description`;
+ await layer.quote(w.user,{reference:reference+':3-7',text:'open'});
+ await assert.rejects(()=>layer.quote(w.user,{reference:reference+':1-5',text:'open'}),/逐字/);
+ await assert.rejects(()=>layer.quote(w.user,{reference:reference+':2-7',text:'open'}),/逐字/);
+});

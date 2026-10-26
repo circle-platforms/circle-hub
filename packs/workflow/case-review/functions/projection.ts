@@ -7,10 +7,12 @@
 // blocks and the slices that reach every case. Every item carries a summary line of at most 200 characters (path, tags,
 // priority, expected result; the label is the case title), because a model reads items as id, label and summary only.
 // The whole document is projected without the sandbox's output limit and only the run's part is bounded by it, so a block
-// of a document whose whole projection would be too large still projects.
+// of a document whose whole projection would be too large still projects. A scope group freezes the effective recognition
+// parameters and every expected item of the root or explicit block, plus this slice's selected ids, for later reconciliation.
 import type { BoundInput, ProjectedItem, ProjectionOutput } from '../../../../contracts/src/pack.ts';
 import { failure, guarded, isRecord, withWorkflowNames } from './common.ts';
-import { LIMITS, projectItems } from './project.ts';
+import { LIMITS, projectItems, resolvedCaseParameters } from './project.ts';
+import { createReviewScope, REVIEW_SCOPE_GROUP } from './review-scope.ts';
 import { clip, collapseWhitespace, utf8Length } from './text.ts';
 import type { CaseItem, GroupEntry, KityMinderModel, MindMapNode, PackError, Warning } from './types.ts';
 
@@ -268,7 +270,8 @@ export function projection(input: unknown): ProjectionOutput {
   if (selected.length > MAX_ITEMS) {
     return failure('too_many_cases', `${where}有 ${inBlock.length} 个用例，超过一次运行最多 ${MAX_ITEMS} 个条目`, tooManyFix(model, projected.groups, inBlock.map(nodeOf), top), warnings, [documentId]);
   }
-  const caseRule = (own.caseRule === 'tagged' ? 'tagged' : 'marked') as 'tagged' | 'marked';
+  const recognition = resolvedCaseParameters(own);
+  const caseRule = recognition.caseRule;
   const marked_only = caseRule === 'marked' ? selected.filter((item) => item.fields.tags.length === 0).length : 0;
   const ruleSummary = `用例规则：${caseRule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${marked_only} 个只靠标记识别（没有标签）`;
   const items: ProjectedItem[] = selected.map((item) => ({
@@ -299,6 +302,13 @@ export function projection(input: unknown): ProjectionOutput {
     ...(top !== 0 ? { block: { selector: model.nodes[top].selector, label: collapseWhitespace(model.nodes[top].text), value: JSON.parse(blockValue(model, top)) as unknown } } : {}),
     ...(slice !== null ? { slice: { from: slice.from, to: slice.from + selected.length - 1, of: inBlock.length } } : {}),
   });
+  groups.push({ kind: REVIEW_SCOPE_GROUP, data: { review_scope: createReviewScope({
+    source: subject.sha256,
+    document: documentId,
+    parameters: { case_rule: caseRule, case_priority: recognition.casePriority, group_priority: recognition.groupPriority, precondition_priority: recognition.preconditionPriority },
+    expected: inBlock.map(item => ({ item: item.id, location: `src:${subject.sha256}/${item.location.parser}/${item.location.selector}` })),
+    selected: selected.map(item => item.id),
+  }) } });
   const unnumbered = projected.unnumbered.filter((id) => selected.some((item) => item.id === id));
   if (unnumbered.length > 0) groups.push({ kind: 'unnumbered', items: unnumbered });
   const output = { items, groups, warnings };

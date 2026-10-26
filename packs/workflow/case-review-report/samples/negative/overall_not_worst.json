@@ -69,6 +69,11 @@
       "verdict": "refute",
       "code": "case-review-report.verdict_mismatch",
       "tier": "blocking"
+    },
+    {
+      "verdict": "refute",
+      "code": "case-review-report.level_mismatch",
+      "tier": "blocking"
     }
   ]
 }

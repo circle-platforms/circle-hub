@@ -12,8 +12,8 @@ describe('quoteMatches', () => {
   const matching: Array<[string, string]> = [
     ['NBSP', '超时时间设为 0 时'],
     ['tabs', '超时时间设为\t0\t\t时'],
-    ['CRLF across lines', '配置被拒绝。 提示：'],
-    ['LF instead of CRLF', '配置被拒绝。\n提示：'],
+    ['CRLF across lines', '配置被拒绝。\r\n提示：'],
+    ['LF across lines', '配置被拒绝。\n提示：'],
     ['ideographic space', '超时时间设为　0　时'],
     ['runs of spaces', '超时时间设为    0   时'],
     ['leading and trailing white space', '  \n\t参数超出范围 1-3600　 '],
@@ -21,7 +21,7 @@ describe('quoteMatches', () => {
     ['line separator and NEL', '超时时间设为 0\u0085时'],
   ];
   for (const [name, quote] of matching) {
-    it(`matches with ${name}`, () => assert.ok(quoteMatches(FRAGMENT, quote)));
+    it(`matches exact ${name}`, () => assert.ok(quoteMatches(quote, quote)));
   }
 
   const different: Array<[string, string]> = [
@@ -40,6 +40,28 @@ describe('quoteMatches', () => {
   for (const [name, quote] of different) {
     it(`does not match with ${name}`, () => assert.equal(quoteMatches(FRAGMENT, quote), false));
   }
+
+  it('rejects whitespace substitutions, including deletion beside W/F characters', () => {
+    for (const [fragment, quote] of [
+      ['页面\r\n跳转', '页面跳转'],
+      ['页面\r\n跳转', '页面 跳转'],
+      ['中 \n A', '中A'],
+      ['Ａ \n B', 'ＡB'],
+      ['a b', 'a  b'],
+      ['a\tb', 'a b'],
+      ['a\u00a0b', 'a b'],
+      ['a\u3000b', 'a b'],
+      ['abc', ' abc'],
+      ['abc', 'abc '],
+    ]) assert.equal(quoteMatches(fragment, quote), false, JSON.stringify([fragment, quote]));
+  });
+
+  it('rejects whitespace-only quotes even when the fragment contains them', () => {
+    for (const quote of [' ', '\t\r\n', '\u00a0', '\u3000', '\u0085\u2028\u2029']) {
+      assert.equal(quoteMatches(`中${quote}文`, quote), false, JSON.stringify(quote));
+      assert.equal(locateQuote(`中${quote}文`, quote), null, JSON.stringify(quote));
+    }
+  });
 
   it('keeps Unicode normalization forms significant', () => {
     assert.equal(quoteMatches('café', 'café'), false);
@@ -91,8 +113,7 @@ describe('the refs-side verbatim matcher names its invariants', () => {
   });
 });
 
-// The matcher reads every white-space run as one space without building a collapsed copy; it must agree with the
-// definition: both sides collapsed and trimmed, then contained.
+// The streaming matcher must agree with raw substring search and pin the exact original bytes.
 describe('the matcher against the definition', () => {
   const ALPHABET = ['a', 'b', ' ', '  ', '\t', '\n', '\r\n', '　', ' ', '中', '文', '😀', '​', 'ab', 'a b'];
   const randomText = (r: ReturnType<typeof seeded>, max: number): string => Array.from({ length: r.int(max) }, () => r.pick(ALPHABET)).join('');
@@ -101,18 +122,16 @@ describe('the matcher against the definition', () => {
     for (let i = 0; i < 4000; i++) {
       const fragment = randomText(r, 24);
       const quote = r.chance(0.5) ? randomText(r, 6) : fragment.slice(r.int(fragment.length + 1), r.int(fragment.length + 1) + 1 + r.int(8));
-      const q = collapseWhitespace(quote);
       // A slice may cut a surrogate pair: such a quotation is not text and never matches.
-      const expected = quote.isWellFormed() && q !== '' && collapseWhitespace(fragment).includes(q);
+      const expected = quote.isWellFormed() && /[^\p{White_Space}]/u.test(quote) && fragment.includes(quote);
       assert.equal(quoteMatches(fragment, quote), expected, JSON.stringify([fragment, quote]));
       const location = locateQuote(fragment, quote);
       assert.equal(location !== null, expected);
       if (location === null) continue;
       const slice = sliceUtf8(fragment, location.from, location.to);
-      assert.ok(slice !== null && collapseWhitespace(slice) === q, JSON.stringify([fragment, quote, slice]));
+      assert.equal(slice, quote, JSON.stringify([fragment, quote, slice]));
       let count = 0;
-      const collapsed = collapseWhitespace(fragment);
-      for (let at = collapsed.indexOf(q); at >= 0; at = collapsed.indexOf(q, at + 1)) count++;
+      for (let at = fragment.indexOf(quote); at >= 0; at = fragment.indexOf(quote, at + 1)) count++;
       assert.equal(location.occurrences, count);
     }
   });
@@ -120,7 +139,7 @@ describe('the matcher against the definition', () => {
 
 describe('locateQuote', () => {
   it('maps the match back to UTF-8 byte offsets of the original text', () => {
-    const location = locateQuote(FRAGMENT, '配置被拒绝。 提示：参数');
+    const location = locateQuote(FRAGMENT, '配置被拒绝。\r\n提示：参数');
     assert.ok(location);
     const slice = sliceUtf8(FRAGMENT, location.from, location.to);
     assert.equal(slice, '配置被拒绝。\r\n提示：参数');
@@ -130,7 +149,7 @@ describe('locateQuote', () => {
   it('counts occurrences and takes the first', () => {
     const text = 'a b a  b a\tb';
     const location = locateQuote(text, 'a b');
-    assert.deepEqual(location, { from: 0, to: 3, occurrences: 3 });
+    assert.deepEqual(location, { from: 0, to: 3, occurrences: 1 });
   });
 
   it('returns null when absent or empty', () => {
@@ -140,9 +159,25 @@ describe('locateQuote', () => {
 
   it('handles astral characters', () => {
     const text = '前😀 后　😀';
-    const location = locateQuote(text, '😀 后 😀');
+    const location = locateQuote(text, '😀 后　😀');
     assert.ok(location);
     assert.equal(sliceUtf8(text, location.from, location.to), '😀 后　😀');
+  });
+
+  it('pins the exact submitted UTF-8 bytes and counts only identical occurrences', () => {
+    const quote = '😀\t中\r\n\u00a0\u3000后';
+    const text = `前${quote}；${quote}`;
+    const from = utf8('前').length;
+    const to = from + utf8(quote).length;
+    assert.deepEqual(locateQuote(text, quote), { from, to, occurrences: 2 });
+    assert.equal(locateQuote(text, quote.replace('\t', ' ')), null);
+    assert.equal(Buffer.from(text).subarray(from, to).toString('utf8'), quote);
+    assert.equal(sliceUtf8(text, from, to), quote);
+    const found = findQuote([{ reference: `src:${'a'.repeat(64)}/text@1/l/1`, text }], quote);
+    assert.equal(found.resolution, 'resolved');
+    assert.deepEqual(found.matches[0].location, { from, to, occurrences: 2 });
+    assert.ok(found.matches[0].ranged.endsWith(`:${from}-${to}`));
+    assert.equal(sliceUtf8(text, from, to), quote);
   });
 });
 
@@ -224,12 +259,17 @@ describe('findQuote: every occurrence belongs to the innermost fragment around i
     assert.deepEqual(result.matches.map((m) => m.location.occurrences), [1, 1]);
   });
 
-  it('pins an occurrence across two blocks on the section, apart from the one inside a block', () => {
-    const result = search(markdownParser, '# S\n\nalpha X Y beta X\n\nY gamma\n', 'X Y');
-    assert.equal(result.resolution, 'ambiguous');
-    assert.deepEqual(result.matches.map((m) => selectorIn(m.reference)), ['h/S', 'b/0/S']);
-    assert.deepEqual(pinned(result), ['X\n\nY', 'X Y']);
-    assert.equal(search(markdownParser, '# S\n\nalpha X Y beta\n\ngamma\n', 'X Y').resolution, 'resolved');
+  it('pins exact occurrences across two blocks and inside a block without equating their whitespace', () => {
+    const source = '# S\n\nalpha X Y beta X\n\nY gamma\n';
+    const across = search(markdownParser, source, 'X\n\nY');
+    assert.equal(across.resolution, 'resolved');
+    assert.deepEqual(across.matches.map((m) => selectorIn(m.reference)), ['h/S']);
+    assert.deepEqual(pinned(across), ['X\n\nY']);
+    const inside = search(markdownParser, source, 'X Y');
+    assert.equal(inside.resolution, 'resolved');
+    assert.deepEqual(inside.matches.map((m) => selectorIn(m.reference)), ['b/0/S']);
+    assert.deepEqual(pinned(inside), ['X Y']);
+    assert.equal(search(markdownParser, source, 'X\nY').resolution, 'unresolved');
   });
 
   it('separates an element text from the same text in a child element', () => {
@@ -276,24 +316,25 @@ describe('findQuote: every occurrence belongs to the innermost fragment around i
     assert.ok(document.listSelectors().includes('p/story'), 'listSelectors still lists the containers');
   });
 
-  it('resolves a quotation across a line break or a block boundary to the range around it', () => {
-    const text = search(textParser, 'The session timeout is applied after the\nlast packet of the flow is seen.\n', 'applied after the last packet');
+  it('resolves an exact quotation across a line break or a block boundary to the range around it', () => {
+    const text = search(textParser, 'The session timeout is applied after the\nlast packet of the flow is seen.\n', 'applied after the\nlast packet');
     assert.equal(text.resolution, 'resolved');
     assert.equal(selectorIn(text.matches[0].reference), 'l/1-2');
     assert.deepEqual(pinned(text), ['applied after the\nlast packet']);
     assert.equal(selectorIn(search(textParser, 'one line\nlast packet here\n', 'last packet').matches[0].reference), 'l/2', 'a quotation inside one line stays on it');
-    const html = search(htmlParser, '<p>applied after the</p><p>last packet</p>', 'applied after the last packet');
+    const html = search(htmlParser, '<p>applied after the</p><p>last packet</p>', 'applied after the\nlast packet');
     assert.equal(html.resolution, 'resolved');
     assert.equal(selectorIn(html.matches[0].reference), 'b/0-1');
     assert.equal(htmlParser.parse(utf8('<p>applied after the</p><p>last packet</p>')).locate('b/0-1')!.text, 'applied after the\nlast packet');
   });
 
-  it('says what the white-space rule is when nothing is found, and refuses half characters', () => {
+  it('states the exact whitespace rule when nothing is found, and refuses half characters', () => {
     const missing = search(markdownParser, 'set 10 0\n', 'set 100');
     assert.equal(missing.resolution, 'unresolved');
-    assert.match(missing.diagnostics[0], /东亚宽字符或全角字符/);
+    assert.match(missing.diagnostics[0], /空白.*完全相同/);
     assert.doesNotMatch(missing.diagnostics[0], /空白差异不影响核对/);
-    assert.equal(search(markdownParser, '会话保持超时\n时间默认为 300 秒。\n', '会话保持超时 时间').resolution, 'resolved');
+    assert.equal(search(markdownParser, '会话保持超时\n时间默认为 300 秒。\n', '会话保持超时\n时间').resolution, 'resolved');
+    assert.equal(search(markdownParser, '会话保持超时\n时间默认为 300 秒。\n', '会话保持超时 时间').resolution, 'unresolved');
     const half = findQuote([{ reference: `src:${'a'.repeat(64)}/text@1/l/1`, text: 'ok 😀 ok' }], '\ude00');
     assert.equal(half.resolution, 'unresolved');
     assert.match(half.diagnostics[0], /代理字符/);
@@ -310,7 +351,7 @@ describe('findQuote: every occurrence belongs to the innermost fragment around i
       for (const quote of quotes) {
         const result = search(parser, fixture(name), quote, { properties });
         assert.ok(result.total > 0, `${name}: ${quote}`);
-        for (const text of pinned(result)) assert.equal(collapseWhitespace(text), collapseWhitespace(quote), `${name}: ${quote}`);
+        for (const text of pinned(result)) assert.equal(text, quote, `${name}: ${quote}`);
       }
     }
   });
@@ -363,15 +404,19 @@ describe('findQuote and candidatesFrom stay linear in the document', () => {
   });
 });
 
-describe('East Asian quotation whitespace', () => {
-  it('drops a run when either adjacent code point is wide or fullwidth and keeps Latin boundaries', () => {
+describe('strict quotation whitespace', () => {
+  it('never deletes or folds a run beside wide, fullwidth, or Latin characters', () => {
     for (const [text, quote] of [['页面\r\n跳转', '页面跳转'], ['中\nA', '中A'], ['A\n中', 'A中'], ['Ａ \n B', 'ＡB'], ['𠀀\nA', '𠀀A'], ['🙂\nA', '🙂A']]) {
-      assert.ok(quoteMatches(text, quote)); assert.ok(locateQuote(text, quote));
+      assert.equal(quoteMatches(text, quote), false);
+      assert.equal(locateQuote(text, quote), null);
+      assert.ok(quoteMatches(text, text));
     }
     for (const [text, quote] of [['set 10 0', 'set 100'], ['a b', 'ab'], ['a + b', 'a+b'], ['α β', 'αβ'], ['ｱ A', 'ｱA']]) assert.equal(quoteMatches(text, quote), false);
-    const source = '前中\r\nA后'; const location = locateQuote(source, '中A')!;
+    const source = '前中\r\nA后';
+    assert.equal(locateQuote(source, '中A'), null);
+    const location = locateQuote(source, '中\r\nA')!;
     assert.equal(sliceUtf8(source, location.from, location.to), '中\r\nA');
     const failed = findQuote([{ reference: `src:${'a'.repeat(64)}/text@1/l/1`, text: 'set 10 0' }], 'set 100');
-    assert.match(failed.diagnostics.join(''), /东亚|全角/);
+    assert.match(failed.diagnostics.join(''), /空白.*完全相同/);
   });
 });

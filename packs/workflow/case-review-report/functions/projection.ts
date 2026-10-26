@@ -2,14 +2,16 @@
 // `verifications` (many), the rec: references of the verification runs' results (json@1: a validation result per block),
 // and the required `target`, the same mind map every block reviewed (only to check the blocks sit on one source).
 //
-// The items are the blocks' delivered entries merged per item: an item delivered in one block and unfinished in another
-// counts as delivered (that block wins); an item delivered in two blocks is a hard refusal (the run may not start).
-// The run item is the overall: the worst verdict of the blocks (FAIL > PARTIAL > PASS), the worst level among tied verdicts, then the smallest record reference on a tie; a missing final names the block and the required next action. The report exposes the blocks'
-// findings as a deterministic table; final prose only declares the computed verdict and level.
+// Each block must carry the initial Hub function fact's complete scope. Expected, delivered, overlapping and missing items
+// are reconciled across that frozen root-or-subtree scope; an expected item absent from every input block is still missing.
+// An item delivered in two blocks or two identities delivered at one source node is a hard refusal. The run item is the
+// overall: worst verdict, worst tied level, then smallest record reference on a tie; missing finals or scope refuse startup.
+// The report exposes the blocks' findings as a deterministic table; final prose only declares the computed verdict and level.
 import type { Independence } from '../../../../contracts/generated/vocabulary.ts';
 import type { ProjectedItem, ProjectionOutput } from '../../../../contracts/src/pack.ts';
 import { failure, guarded, isRecord } from './common.ts';
-import {reviewTables,type TableModel} from './tables.ts';
+import {reviewTables,targetNodeIndexes,type TableModel} from './tables.ts';
+import {readReviewScope,type ReviewScope} from './review-scope.ts';
 import { labelOf, isRequirementStatus, isUnsatisfiedReason, isReason, isStaticTerminal, isDynamicTerminal, type StaticTerminal, type DynamicTerminal } from './generated/vocabulary.ts';
 import labels from '../tables/labels.json' with {type:'json'};
 
@@ -41,26 +43,28 @@ function resultOf(model: unknown, meta: Record<string, unknown>): { result: Reco
 }
 
 /** The final claim of one block's verification result: only the one the Hub itself supported, with its real reference. */
-export function finalOf(result: Record<string, unknown>, record: string): { verdict: Verdict; level: string | null; reference: string } | null {
+export function finalOf(result: Record<string, unknown>, record: string): { verdict: Verdict; level: string | null; reference: string; scope: ReviewScope | null } | null {
   const stored = Array.isArray(result.cross_item) ? result.cross_item : [];
   const cross = stored.filter(isRecord);
-  // The Hub's own verdict on the block's final: the fact claims of the `final` requirement. A refuted or unknown one
-  // makes the block's conclusion unknown; only the claim the Hub gave a support fact to counts, at its pointer.
   const hub = cross.filter((c) => c.requirement === 'final' && isRecord(c.statement) && typeof c.statement.verdict === 'string');
   if (hub.some((c) => (c.statement as { verdict: string }).verdict !== 'support')) return null;
-  const support = hub.find((c) => (c.statement as { verdict: string }).verdict === 'support');
+  const support = hub.find((c) => (c.statement as { verdict: string }).verdict === 'support' && typeof c.pointer === 'string');
   const pointer = isRecord(support) && typeof support.pointer === 'string' ? support.pointer : null;
   if (pointer === null) return null;
-  // The model's final claim carries the same pointer itself (the submission's cross_item index); the Hub's facts may
-  // sit before it in the stored list, so match by pointer, never by position. Its code and rank sit inside `statement`.
   const claim = cross.find((c) => c.pointer === pointer && isRecord(c.statement) && typeof c.statement.code === 'string' && Object.hasOwn(VERDICT_ORDER,c.statement.code));
   if (claim === undefined || !isRecord(claim.statement)) return null;
   const statement = claim.statement as { code: Verdict; rank?: unknown };
+  const scopes = hub.flatMap(c => {
+    if (!isRecord(c.warrant) || c.warrant.producer !== 'function' || !isRecord(c.statement) || !isRecord(c.statement.data) || !Object.hasOwn(c.statement.data, 'review_scope')) return [];
+    const scope = readReviewScope(c.statement.data.review_scope);
+    return scope === null ? [] : [scope];
+  });
+  const scope = scopes.length === 1 ? scopes[0] : null;
   return {
     verdict: statement.code,
     level: typeof statement.rank === 'string' && statement.rank.trim()!=='' ? statement.rank : null,
-    // pointer joins the submitted claim to its Hub fact; a rec: pointer addresses the stored result instead.
     reference: `rec:${record}#/cross_item/${stored.indexOf(claim)}`,
+    scope,
   };
 }
 
@@ -200,7 +204,15 @@ export default function project(input: unknown): unknown {
     if(priority!==null&&(!Number.isInteger(priority)||Number(priority)<1||Number(priority)>9))return failure('invalid_input','precondition_priority 应为 1 到 9 的整数或 null','改正参数后重新开始终稿运行');
 
     // Per-item delivery, merged over the blocks: delivered wins over anything not delivered; delivered twice is a refusal.
+    const targetIndexes=targetNodeIndexes(target.model as unknown as TableModel),sourcePrefix='src:'+source+'/kityminder@1/';
+    const locationKey=(location:string):string=>{
+      if(!location.startsWith(sourcePrefix))return location;
+      const selector=location.slice(sourcePrefix.length).replace(/:\d+-\d+$/,'').replace(/\/@[^/]+$/,'');
+      const index=targetIndexes.get(selector);
+      return index===undefined?location:'node:'+String(index);
+    };
     const deliveredIn = new Map<string, string[]>();
+    const deliveredLocations = new Map<string, Array<{ item: string; block: number }>>();
     const unfinishedIds: Array<{ item: string; block: number }> = [];
     for (let b = 0; b < blocks.length; b++) {
       for (const entry of entriesOf(blocks[b].result)) {
@@ -208,6 +220,9 @@ export default function project(input: unknown): unknown {
           const list = deliveredIn.get(entry.item) ?? [];
           list.push(String(b));
           deliveredIn.set(entry.item, list);
+          const key=locationKey(entry.location),owners = deliveredLocations.get(key) ?? [];
+          owners.push({ item: entry.item, block: b });
+          deliveredLocations.set(key, owners);
         } else {
           // 分区只有 delivered、rejected、quarantined、incomplete：不是 delivered 的都算没交付。
           unfinishedIds.push({ item: entry.item, block: b });
@@ -217,6 +232,11 @@ export default function project(input: unknown): unknown {
     const overlaps = [...deliveredIn.entries()].filter(([, blocks]) => new Set(blocks).size > 1).map(([item]) => item);
     if (overlaps.length > 0) {
       return failure('overlap', `同一条目在多块里都已交付：${overlaps.slice(0, 20).join('、')}${overlaps.length > 20 ? ' 等' : ''}；重叠的块不能合成一份终稿`, '退回重叠的块重新分块（一个条目只能由一块交付），再合成终稿');
+    }
+    const locationOverlaps = [...deliveredLocations.values()].filter(owners => new Set(owners.map(owner => owner.block)).size > 1);
+    if (locationOverlaps.length > 0) {
+      const owners = locationOverlaps.flat().map(owner => `${owner.item}（第 ${owner.block + 1} 块）`);
+      return failure('overlap', `同一源位置被不同条目交付：${owners.join('、')}；重叠的块不能合成一份终稿`, '按源位置重新分块并复核，一个节点只能由一块交付后再合成终稿');
     }
 
     // The overall: worst verdict, worst tied level, then smallest tied record reference; unknown if a final is missing.
@@ -264,9 +284,28 @@ export default function project(input: unknown): unknown {
     }
 
     const unfinishedAnywhere = unfinishedIds.filter((u) => !deliveredIn.has(u.item));
-    const missing=[...new Set(unfinishedAnywhere.map(u=>u.item))];
-    // 有缺漏条目时整体记未知（覆盖不完整），列出缺漏条目，不给结论码。
+    let missing=[...new Set(unfinishedAnywhere.map(u=>u.item))];
     const missingBlocks=finals.flatMap((final,index)=>final===null||final.level===null?[index+1]:[]);
+    const missingScopeBlocks=finals.flatMap((final,index)=>final!==null&&final.scope===null?[index+1]:[]);
+    if(missingScopeBlocks.length)return failure('scope_missing',`第 ${missingScopeBlocks.join('、')} 块没有 Hub 支持的完整用例识别范围，不能证明整份覆盖`,'用当前初评和复核版本重做这些块，使每块保留初评冻结的识别参数与整份预期条目，再开始终稿');
+    let coverageScope:ReviewScope|null=null;
+    if(missingBlocks.length===0){
+      const scopes=finals.map(final=>final!.scope!);
+      coverageScope=scopes[0];
+      const identity=(scope:ReviewScope)=>JSON.stringify({source:scope.source,document:scope.document,parameters:scope.parameters,expected:scope.expected});
+      const expectedIdentity=identity(coverageScope);
+      if(scopes.some(scope=>scope.source!==source||identity(scope)!==expectedIdentity))return failure('scope_mismatch','各块的源摘要、对象身份、完整识别参数或预期条目集合不一致','所有块使用同一份目标和同一套 case_rule、case_priority、group_priority、precondition_priority；需要改规则时按新规则重新初评并复核整份目标');
+      if(params.precondition_priority!==undefined&&params.precondition_priority!==coverageScope.parameters.precondition_priority)return failure('scope_mismatch','终稿的 precondition_priority 与初评冻结的识别规则不一致','省略该参数以继承初评，或改为冻结值；需要改规则时重新初评并复核整份目标');
+      const expectedById=new Map(coverageScope.expected.map(entry=>[entry.item,entry.location]));
+      for(const block of blocks)for(const entry of entriesOf(block.result)){
+        if(entry.partition!=='delivered')continue;
+        const expectedLocation=expectedById.get(entry.item);
+        if(expectedLocation===undefined)return failure('scope_mismatch',`交付条目 ${entry.item} 不在初评冻结的整份预期集合中`,'按当前目标和识别参数重新初评、复核，不能用回执外的条目替代预期条目');
+        if(expectedLocation!==entry.location)return failure('scope_mismatch',`交付条目 ${entry.item} 的位置与初评冻结的位置不一致`,'按原目标位置和条目身份重新复核，不能把另一节点的结果并到这个条目');
+      }
+      missing=coverageScope.expected.filter(entry=>!deliveredIn.has(entry.item)).map(entry=>entry.item);
+    }
+    const tablePriority=coverageScope===null?priority:coverageScope.parameters.precondition_priority;
     const missingSourceFacts=blocks.flatMap((block,index)=>entriesOf(block.result).filter(entry=>entry.partition==='delivered').flatMap(entry=>{
       const raw=(isRecord(block.result.partitions)?block.result.partitions:{}).delivered;
       const item=Array.isArray(raw)?raw.find(value=>isRecord(value)&&value.item===entry.item):undefined;
@@ -274,12 +313,12 @@ export default function project(input: unknown): unknown {
         isRecord(claim)&&isRecord(claim.qualifier)&&claim.qualifier.nature==='fact'&&isRecord(claim.warrant)&&claim.warrant.producer==='function'&&isRecord(claim.statement)&&claim.statement.verdict==='support'&&isRecord(claim.statement.data)&&Array.isArray(claim.statement.data.source_facts)));
       return kept?[]:[{block:index+1,item:entry.item,legacy:legacySnapshot(block.result)}];
     }));
-    if(missingBlocks.length || missing.length) return failure('incomplete_blocks',`第 ${missingBlocks.join('、') || '已列出'} 块缺少判定或等级；未交付条目 ${missing.join('、') || '无'}`,'先完成这些块和条目的复核并重交；读取新的受理回执后再开始终稿');
+    if(missingBlocks.length || missing.length) return failure('incomplete_blocks',`第 ${missingBlocks.join('、') || '无'} 块缺少判定或等级；预期 ${coverageScope?.expected.length??'未知'} 条，已交付 ${deliveredIn.size} 条，重叠 ${overlaps.length} 条，遗漏 ${missing.length} 条；遗漏条目 ${missing.slice(0,20).join('、') || '无'}`,'先完成初评与独立复核并重交，按冻结的整份预期清单补齐未进入任何块和未交付的条目，再用新回执重开终稿；不能只看已有输入块');
     const sourceGapFix = '下一步：' + [
       missingSourceFacts.some(gap=>gap.legacy) ? '旧版块用具备初评快照的新版独立复核后重开终稿' : '',
       missingSourceFacts.some(gap=>!gap.legacy) ? '按当前块原回执补齐处置核对支持事实，修复并重交复核，再用新回执重开终稿' : '',
     ].filter(Boolean).join('；');
-    const complete=missing.length===0&&missingBlocks.length===0&&missingSourceFacts.length===0&&verdict!==null;
+    const complete=coverageScope!==null&&missing.length===0&&missingBlocks.length===0&&missingSourceFacts.length===0&&verdict!==null;
     const reportSummary=missing.length>0
       ? '覆盖不完整：'+missing.length+' 个条目任何一块都没交付（'+missing.slice(0,10).join('、')+'）；下一步：把缺的条目重新初评、复核后，再开终稿运行'
       : missingBlocks.length>0
@@ -287,9 +326,9 @@ export default function project(input: unknown): unknown {
         : missingSourceFacts.length>0
           ? sourceGapFix+'；缺初评 Hub 核对快照：'+missingSourceFacts.slice(0,3).map(gap=>gap.block+' 块条目 '+gap.item.slice(0,50)).join('、')+(missingSourceFacts.length>3?' 等共 '+missingSourceFacts.length+' 项':'')
           : '整体结论码 '+verdict+'、等级 '+level+'（最差那块的，照抄）';
-    const rendered=complete?reviewTables({model:target.model as unknown as TableModel,digest:source,blocks,overall:{verdict:verdict!,level},preconditionPriority:priority as number|null}):null;
+    const rendered=complete?reviewTables({model:target.model as unknown as TableModel,digest:source,blocks,overall:{verdict:verdict!,level},preconditionPriority:tablePriority as number|null}):null;
     if(rendered&&'error'in rendered)return rendered;
-    const full=rendered?reviewTables({model:target.model as unknown as TableModel,digest:source,blocks,overall:{verdict:verdict!,level},preconditionPriority:priority as number|null,foldEmpty:false}):null;
+    const full=rendered?reviewTables({model:target.model as unknown as TableModel,digest:source,blocks,overall:{verdict:verdict!,level},preconditionPriority:tablePriority as number|null,foldEmpty:false}):null;
     if(full&&'error'in full)return full;
     const reportItem: ProjectedItem = {
       id: 'report',
@@ -303,6 +342,7 @@ export default function project(input: unknown): unknown {
         missing_items:missing,
         missing_blocks:missingBlocks,
         missing_source_facts:missingSourceFacts,
+        ...(coverageScope?{review_coverage:{expected:coverageScope.expected.length,delivered:deliveredIn.size,overlaps,missing}}:{}),
         ...(missingSourceFacts.length?{source_gap_fix:sourceGapFix}:{}),
       },
     };

@@ -55,15 +55,19 @@ export function caseText(model:TableModel,index:number,cases:ReadonlySet<number>
   return out;
 }
 
-export type TableResult = {markdown:string;counts:ReviewCounts} | ReturnType<typeof failure>;
-export function reviewTables(input:TableInput):TableResult {
-  const {model,digest}=input,bySelector=new Map<string,number>();
-  if(model.nodes.length===0)return failure('target_invalid','目标脑图没有根节点','重新绑定可读的同一份目标脑图后开始终稿');
-  const positional:string[]=[];
+export function targetNodeIndexes(model:TableModel):ReadonlyMap<string,number> {
+  const bySelector=new Map<string,number>(),positional:string[]=[];
   for(const [index,node] of model.nodes.entries()){
     positional[index]=node.parent===null?'i':positional[node.parent]+'/'+model.nodes[node.parent].children.indexOf(index);
     bySelector.set(node.selector,index);bySelector.set(positional[index],index);
   }
+  return bySelector;
+}
+
+export type TableResult = {markdown:string;counts:ReviewCounts} | ReturnType<typeof failure>;
+export function reviewTables(input:TableInput):TableResult {
+  const {model,digest}=input,bySelector=targetNodeIndexes(model);
+  if(model.nodes.length===0)return failure('target_invalid','目标脑图没有根节点','重新绑定可读的同一份目标脑图后开始终稿');
   const nodeOf=(reference:unknown):number|null=>{
     if(typeof reference!=='string'||!reference.startsWith('src:'+digest+'/kityminder@1/'))return null;
     const selector=reference.slice(('src:'+digest+'/kityminder@1/').length).replace(/:\d+-\d+$/,'').replace(/\/@[^/]+$/,'');

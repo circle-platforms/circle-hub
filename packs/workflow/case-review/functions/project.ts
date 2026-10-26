@@ -41,7 +41,7 @@ export const LIMITS = {
   outputBytes: 8 * 1024 * 1024,
 } as const;
 
-type Parameters = { caseRule: CaseRule; casePriority: number; groupPriority: number | null; preconditionPriority: number | null };
+export type Parameters = { caseRule: CaseRule; casePriority: number; groupPriority: number | null; preconditionPriority: number | null };
 
 const DEFAULTS: Parameters = { caseRule: 'marked', casePriority: 2, groupPriority: 1, preconditionPriority: 3 };
 const CASE_RULES = ['tagged', 'marked'] as const satisfies readonly CaseRule[];
@@ -75,6 +75,10 @@ function readParameters(raw: unknown, warnings: WarningSink): Parameters {
     else ignored(name, '应为 1 到 9 的整数或 null', String(DEFAULTS[name]));
   }
   return out;
+}
+
+export function resolvedCaseParameters(raw: unknown): Parameters {
+  return readParameters(raw, warningSink());
 }
 
 /**

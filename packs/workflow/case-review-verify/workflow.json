@@ -1,5 +1,6 @@
 {
   "schema": "workflow@1",
+  "predecessor": "required",
   "inputs": [
     {
       "slot": "target",

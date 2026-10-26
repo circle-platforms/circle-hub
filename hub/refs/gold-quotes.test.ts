@@ -8,13 +8,13 @@ import { checkVerbatimQuote } from '../../scripts/real/gold/compile-check.ts';
 const REFERENCE = `src:${'a'.repeat(64)}/text@1/l/1`;
 const shared = JSON.parse(readFileSync(new URL('../rules/quote-vectors.json', import.meta.url), 'utf8')) as { vectors: { note: string; fragment: string; quote: string; match: boolean }[] };
 const additional = [
-  { note: 'Chinese hard wrap', fragment: '超时\r\n时间', quote: '超时时间', match: true },
-  { note: 'wide left and Latin right', fragment: '中文\nvalue', quote: '中文value', match: true },
-  { note: 'Latin left and wide right', fragment: 'value\t中文', quote: 'value中文', match: true },
-  { note: 'fullwidth letter', fragment: 'Ａ \n B', quote: 'ＡB', match: true },
-  { note: 'supplementary wide code point', fragment: '𠀀\nA', quote: '𠀀A', match: true },
-  { note: 'wide emoji', fragment: '🙂\nA', quote: '🙂A', match: true },
-  { note: 'Latin whitespace collapse', fragment: 'set\t10\r\n0', quote: 'set 10 0', match: true },
+  { note: 'exact Chinese hard wrap', fragment: '超时\r\n时间', quote: '超时\r\n时间', match: true },
+  { note: 'wide left and Latin right cannot delete newline', fragment: '中文\nvalue', quote: '中文value', match: false },
+  { note: 'Latin left and wide right cannot delete tab', fragment: 'value\t中文', quote: 'value中文', match: false },
+  { note: 'fullwidth letter cannot delete adjacent whitespace', fragment: 'Ａ \n B', quote: 'ＡB', match: false },
+  { note: 'supplementary wide code point cannot delete adjacent newline', fragment: '𠀀\nA', quote: '𠀀A', match: false },
+  { note: 'wide emoji cannot delete adjacent newline', fragment: '🙂\nA', quote: '🙂A', match: false },
+  { note: 'Latin whitespace does not collapse', fragment: 'set\t10\r\n0', quote: 'set 10 0', match: false },
   { note: 'Latin boundary cannot disappear', fragment: 'set 10 0', quote: 'set 100', match: false },
   { note: 'Latin boundary cannot appear', fragment: 'set100', quote: 'set 100', match: false },
   { note: 'punctuation boundaries stay', fragment: 'a + b', quote: 'a+b', match: false },
@@ -22,7 +22,8 @@ const additional = [
   { note: 'halfwidth stays narrow', fragment: 'ｱ A', quote: 'ｱA', match: false },
   { note: 'BOM format character can be literal quoted text', fragment: '中\ufeff文', quote: '\ufeff', match: true },
   { note: 'format characters are not whitespace', fragment: '中\ufeff文', quote: '中文', match: false },
-  { note: 'NEL is Unicode whitespace', fragment: 'a\u0085b', quote: 'a b', match: true },
+  { note: 'NEL is not an ASCII space', fragment: 'a\u0085b', quote: 'a b', match: false },
+  { note: 'exact NEL matches', fragment: 'a\u0085b', quote: 'a\u0085b', match: true },
   { note: 'half a surrogate is never a quote', fragment: '🙂', quote: '\ude42', match: false },
   { note: 'all whitespace is empty', fragment: 'anything', quote: '\u0085\u3000', match: false },
 ];
@@ -41,9 +42,12 @@ test('independent gold and Hub agree on a deterministic synthetic Unicode corpus
     let cp = seed % 0x110000; if (cp >= 0xd800 && cp <= 0xdfff) cp = 0x41;
     const char = String.fromCodePoint(cp);
     const fragment = i % 2 ? `A\n${char}B` : `A${char}\r\nB`;
+    const sources = new Map([[REFERENCE, fragment]]);
+    assert.equal(checkVerbatimQuote(sources, REFERENCE, fragment).verdict, 'pass', `exact U+${cp.toString(16)}`);
+    assert.equal(quoteMatches(fragment, fragment), true, `exact U+${cp.toString(16)}`);
     const quote = `A${char}B`;
-    const verdict = checkVerbatimQuote(new Map([[REFERENCE, fragment]]), REFERENCE, quote).verdict;
-    assert.equal(verdict === 'pass', quoteMatches(fragment, quote), `U+${cp.toString(16)}`);
+    assert.equal(checkVerbatimQuote(sources, REFERENCE, quote).verdict, 'fail', `deleted whitespace U+${cp.toString(16)}`);
+    assert.equal(quoteMatches(fragment, quote), false, `deleted whitespace U+${cp.toString(16)}`);
   }
 });
 

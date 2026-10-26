@@ -1,0 +1,99 @@
+{
+  "id": "level_minor_band_mismatch",
+  "source": "author",
+  "check": "level_consistency",
+  "note": "最重发现 minor 时 P4 越出允许区间",
+  "subject": {
+    "items": [
+      {
+        "id": "sample:c1",
+        "label": "设置池 c1 的探测间隔",
+        "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c1",
+        "fields": {
+          "document": "sample",
+          "nodeId": "c1",
+          "path": [
+            "示例文档",
+            "池管理"
+          ],
+          "title": "设置池 c1 的探测间隔",
+          "priority": 2,
+          "degree": null,
+          "tags": [
+            "functional"
+          ],
+          "tagsNormalized": [
+            "functional"
+          ],
+          "expected": [
+            "显示的探测间隔与设置一致"
+          ],
+          "expectedCount": 1,
+          "steps": [],
+          "preconditions": [],
+          "autoid": null,
+          "automated": false,
+          "negative": false,
+          "hasNote": false,
+          "nested": false
+        },
+        "slots": {
+          "findings": [
+            {
+              "rank": "minor"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sample:c2",
+        "label": "设置池 c2 的探测间隔为最大值",
+        "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c2",
+        "fields": {
+          "document": "sample",
+          "nodeId": "c2",
+          "path": [
+            "示例文档",
+            "池管理"
+          ],
+          "title": "设置池 c2 的探测间隔为最大值",
+          "priority": 2,
+          "degree": null,
+          "tags": [
+            "functional"
+          ],
+          "tagsNormalized": [
+            "functional"
+          ],
+          "expected": [
+            "探测间隔显示为 300"
+          ],
+          "expectedCount": 1,
+          "steps": [],
+          "preconditions": [],
+          "autoid": null,
+          "automated": false,
+          "negative": false,
+          "hasNote": false,
+          "nested": false
+        },
+        "slots": {
+          "findings": []
+        }
+      }
+    ],
+    "cross_item": [
+      {
+        "code": "level",
+        "rank": "P4"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review.level_severity_mismatch",
+      "tier": "blocking"
+    }
+  ]
+}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { quoteInterpreter } from './interpreters/quote.ts';
-import { collapseWhitespace, quotationForm, quoteInCollapsed, quoteMatches } from './text.ts';
+import { collapseWhitespace, quoteMatches } from './text.ts';
 
 interface Vector {
   note: string;
@@ -21,7 +21,6 @@ describe('shared quotation vectors', () => {
   for (const v of vectors) {
     it(`${v.match ? 'matches' : 'does not match'}: ${v.note}`, () => {
       assert.equal(quoteMatches(v.fragment, v.quote), v.match);
-      assert.equal(quoteInCollapsed(quotationForm(v.fragment), v.quote), v.match);
     });
   }
 
@@ -30,11 +29,10 @@ describe('shared quotation vectors', () => {
     assert.equal(quoteMatches('设置 3 区浇灌 15 分钟', '设置 3 区浇灌 15 分钟'), true);
     assert.equal(quoteMatches('Show Version', 'show version'), false, 'case stays significant (M12)');
     assert.equal(quoteMatches('Show Version', 'SHOW VERSION'), false, 'case stays significant in the fragment too (M12)');
-    assert.equal(quoteInCollapsed(quotationForm('Show Version'), 'show version'), false, 'M12 through the collapsed path the interpreter takes');
     assert.equal(quoteMatches('abc', ''), false, 'an empty quote never matches (M17)');
     assert.equal(quoteMatches('', ''), false, 'an empty quote never matches an empty fragment (M17)');
-    assert.equal(quoteInCollapsed(quotationForm('abc'), ''), false, 'M17 through the collapsed path the interpreter takes');
-    assert.equal(quoteInCollapsed(quotationForm('abc'), ' \n\t'), false, 'a quote of white space only never matches (M17)');
+    assert.equal(quoteMatches('abc', ' \n\t'), false, 'a quote of white space only never matches (M17)');
+    assert.equal(quoteMatches('\u00a0\u3000', '\u00a0\u3000'), false, 'even an exact whitespace-only fragment is not a quotation (M17)');
   });
 
   it('quote@1 decides every vector the same way', () => {
@@ -74,28 +72,34 @@ describe('shared quotation vectors', () => {
   });
 });
 
-it('quotation whitespace uses East Asian width while ordinary table normalization keeps spaces', () => {
+it('quotation whitespace is exact while ordinary table normalization still collapses', () => {
   assert.equal(collapseWhitespace('中 \n A'), '中 A');
-  assert.equal(quoteMatches('中 \n A', '中A'), true);
-  assert.equal(quoteInCollapsed(quotationForm('中 \n A'), '中A'), true);
-  assert.equal(quoteInCollapsed(quotationForm('set 10 0'), 'set 100'), false);
+  for (const whitespace of ['\t', '\n', '\r\n', '\u00a0', '\u3000']) {
+    assert.equal(quoteMatches(`中${whitespace}文`, `中${whitespace}文`), true, JSON.stringify(whitespace));
+    assert.equal(quoteMatches(`中${whitespace}文`, '中文'), false, JSON.stringify(whitespace));
+    assert.equal(quoteMatches(`中${whitespace}文`, '中 文'), false, JSON.stringify(whitespace));
+  }
+  assert.equal(quoteMatches('中 \n A', '中A'), false);
+  assert.equal(quoteMatches('Ａ \n B', 'ＡB'), false);
+  assert.equal(quoteMatches('set 10 0', 'set 100'), false);
+  for (const quote of ['', ' ', '\t\r\n', '\u00a0\u3000']) assert.equal(quoteMatches(quote, quote), false, JSON.stringify(quote));
 });
 
-it('quotation normalization has no runtime dependency on refs', async () => {
+it('quotation matching has no runtime dependency on refs', async () => {
   const { default: ts } = await import('typescript');
   const source = readFileSync(new URL('./text.ts', import.meta.url), 'utf8');
   const ast = ts.createSourceFile('text.ts', source, ts.ScriptTarget.Latest, true);
   for (const statement of ast.statements) if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text.includes('refs/')) assert.ok(statement.importClause?.isTypeOnly, 'rules may import only refs types');
 });
 
-it('records the stale quote contract wording as an integrator regeneration need', () => {
+it('documents the strict quotation contract in both package READMEs', () => {
   const refs = readFileSync(new URL('../refs/README.md', import.meta.url), 'utf8');
   const rules = readFileSync(new URL('./README.md', import.meta.url), 'utf8');
-  assert.match(refs, /QuoteTable[^\n]*description/); assert.match(refs, /quote\.v1\.schema\.json/);
-  assert.match(rules, /stale[^\n]*contract/i);
+  assert.match(refs, /exact contiguous substring/);
+  assert.match(rules, /exact contiguous substring/);
 });
 
-it('normalizes a shared MiB fragment once across many quotations', () => {
+it('checks a shared MiB fragment across many quotations', () => {
   const fragment = 'alpha beta\n'.repeat(Math.ceil((1 << 20) / 11)).slice(0, 1 << 20);
   const reference = `src:${'a'.repeat(64)}/text@1/l/1`;
   const subject = { quotes: Array.from({ length: 100 }, (_, i) => ({ text: `absent${i}`, reference })) };

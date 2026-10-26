@@ -77,5 +77,5 @@
   ],
   "additionalProperties": false,
   "title": "quote@1",
-  "description": "Quotation table: every quotation must appear verbatim in the fragment its reference resolves to. Only white space differences are ignored: every run of Unicode White_Space collapses to one space and both ends are trimmed; case, punctuation, character width and normalization form stay significant, and an empty quotation never matches. A mismatch refutes with QUOTE_MISMATCH"
+  "description": "Quotation table: every quotation must be an exact contiguous substring of the decoded fragment its reference resolves to. Case, punctuation, character width, Unicode normalization form and every whitespace character stay significant; no folding, trimming or normalization is applied. Empty and whitespace-only quotations never match. A mismatch refutes with QUOTE_MISMATCH"
 }

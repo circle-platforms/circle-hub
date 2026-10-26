@@ -155,12 +155,12 @@ of tags with 500 attributes each takes about 2 s; every hostile input in the tes
 
 ## Quotations (T04 R[1])
 
-`quoteMatches(fragmentText, quote)` uses decision 37: a Unicode White_Space run adjacent to a W/F code point is
-removed; other interior runs count as one space and both ends are trimmed. The normalized quote must be a non-empty
-verbatim substring. Case, punctuation, character width, zero-width characters and Unicode normalization form stay
-significant. An unpaired surrogate never matches half a character. The same contextual function serves normalization
-and the streaming KMP matcher, without a collapsed copy per candidate. The 29 shared vectors run on both refs and
-rules; `locateQuote` maps matches back to UTF-8 byte offsets in the original unmodified fragment text.
+`quoteMatches(fragmentText, quote)` requires an exact contiguous substring of the decoded fragment text. Case,
+punctuation, character width, zero-width characters, Unicode normalization form and every whitespace character stay
+significant; there is no trimming, folding or normalization. Empty and whitespace-only quotes never match, and an
+unpaired surrogate never matches half a character. KMP searches the original text directly without a normalized copy.
+The 36 shared vectors run on both refs and rules; `locateQuote` maps matches to the exact UTF-8 bytes of the submitted
+quote in the original unmodified fragment text.
 
 `findQuote(candidates, quote)` returns the resolution (`resolved`, `ambiguous`, `unresolved`, from the vocabulary) over
 candidate fragments. Every occurrence belongs to the innermost candidate around it, and the places are the candidates
@@ -290,44 +290,43 @@ templates, repeated body tags, foster parenting, misnested formatting, deep wrap
 headings, invalid UTF-8 with offsets, NUL and control characters, unpaired surrogates, 1500 random or corrupted inputs
 per parser that must either parse or raise a ParseError); every public API (parse, listSelectors, locate on every
 selector, candidatesFrom, findQuote, resolveReference) under a time bound on hostile input that parses; selector length
-and total limits; quotation cases (NBSP, tabs, CRLF, U+3000 match; case, punctuation, width and normalization
-differences do not; the shared hub/rules vectors; 4000 random cases against the definition; places and pins in nested
-fragments, links, mind-map fields, JSON values, cross-line and cross-block quotations); resolution with fake readers
-(tiers, retain-only probing, indistinguishable unavailability with the internal reason, visible and invisible tree
-roots, digest re-verification, ranges, unwritable canonical selectors, cache); canonical JSON refusals.
+and total limits; quotation cases (exact NBSP, tabs, CRLF and U+3000 match; whitespace substitutions, case,
+punctuation, width and normalization differences do not; the shared hub/rules vectors; 4000 random cases against the
+definition; places and exact pins in nested fragments, links, mind-map fields, JSON values, cross-line and cross-block
+quotations); resolution with fake readers (tiers, retain-only probing, indistinguishable unavailability with the
+internal reason, visible and invisible tree roots, digest re-verification, ranges, unwritable canonical selectors,
+cache); canonical JSON refusals.
 
-## Quotation whitespace (decision 37)
+## Strict quotation whitespace
 
-A run of Unicode White_Space is removed when either adjacent code point has East_Asian_Width W or F. Other interior
-runs collapse to one ASCII space; leading/trailing whitespace is trimmed. Case, punctuation, character width and
-normalization form remain significant: `set 10 0` differs from `set 100`, while `超时\n时间` matches `超时时间`.
-Classification is the frozen [Unicode 17.0.0 W/F data](https://www.unicode.org/Public/17.0.0/ucd/EastAsianWidth.txt)
-in quote-whitespace.ts, including supplementary characters and wide emoji; ambiguous-width and halfwidth characters
-are not treated as W/F. The Unicode license is included in unicode-license.txt.
+Every whitespace character is significant. A tab, line break, NBSP or ideographic space matches only the same character
+sequence; no whitespace run is deleted, collapsed or trimmed, including beside a wide or fullwidth character. Thus
+`set 10 0` differs from `set 100`, and `超时\n时间` differs from both `超时时间` and `超时 时间`. Empty and
+whitespace-only quotes never match, even when the fragment contains exactly that whitespace.
 
-One contextual function decides whitespace for normalization and streaming search. Matching, occurrence counts,
-byte-range pinning and the not-found diagnostic use that rule; ranges still point into the unmodified fragment.
-Rules independently implements the same quotation rule and reads the shared vectors; ordinary rules table matching retains its original whitespace
-normalization. Shared vectors test both direct quotation checks and the cached collapsed-fragment path.
+Matching, occurrence counts, byte-range pinning and the not-found diagnostic use this rule. Ranges point into the
+unmodified fragment and slice out exactly the submitted quote. Rules independently implements the same quotation rule
+and reads the shared vectors; ordinary rules table matching retains its original whitespace normalization.
 
 ## Independent gold quotation alignment
 
-`compile-check.ts` checkVerbatimQuote now independently implements decision 37. It uses a local regular-expression
-classifier derived directly from Unicode 17.0.0 W/F source data (`scripts/real/gold/quote-widths.ts`, with source digest and Unicode license), with no Hub or pack imports.
-Its ordinary collapseWhitespace utility remains unchanged for the separate expected-text containment contract.
-Missing exported source bytes still produce the existing unknown receipt; this change does not make unavailable evidence pass.
+`compile-check.ts` checkVerbatimQuote and expected-text containment independently use exact contiguous substring
+matching from `scripts/real/gold/quote-widths.ts`, with no Hub or pack imports. Empty, whitespace-only and ill-formed
+quotes are rejected. Missing exported source bytes still produce the existing unknown receipt; unavailable evidence
+never passes.
 
 The conformance harness lives in `hub/refs/gold-quotes.test.ts`: only that test imports both implementations. It reads
-the same 29 synthetic rules vectors, adds Chinese hard-wrap, mixed-width, Latin-boundary and Unicode edge cases, and
-compares a deterministic 5000-case synthetic Unicode corpus. Gold expected verdicts in the named vectors are literal
-booleans, not computed from Hub output. A production dependency-closure test rejects imports of Hub or pack modules.
+the same 36 synthetic rules vectors, adds exact and mismatched whitespace, character-boundary and Unicode edge cases,
+and compares a deterministic 5000-case synthetic Unicode corpus. Gold expected verdicts in the named vectors are
+literal booleans, not computed from Hub output. A production dependency-closure test rejects imports of Hub or pack
+modules.
 
 Read-only audit of the 120 local branch heads (committed snapshots, excluding uncommitted work; 39 distinct production
 file versions below scripts/real/gold before this follow-up), plus quotation-related scripts/real call sites:
 
 | Snapshot | Implementation / caller | Current rule and integration action |
 | --- | --- | --- |
-| Current branch | `scripts/real/gold/compile-check.ts`: compileCheck expected-text containment (`case-compile.expect_not_in_quote`); corresponding `packs/workflow/case-compile/functions/checks.ts`: foldText/checkExpectedSources | Still uses ordinary whitespace collapse for the separate package check. A hard wrap can pass the generic source-quotation check and fail this containment check. Arrange package-contract and independent gold alignment together; this follow-up changes checkVerbatimQuote only. |
+| Current branch | `scripts/real/gold/compile-check.ts`: checkVerbatimQuote and compileCheck expected-text containment (`case-compile.expect_not_in_quote`) | Both use exact contiguous matching without whitespace normalization. Pack-specific changes are outside this core task. |
 | `gold-d2c` at `49e5f13c` | `scripts/real/gold/quotes.ts`: quoteMatches; judgeQuote/quotesReport; called by `scripts/real/accept/defect-to-case-compare.ts` and its batch driver | Unicode White_Space collapses to one space; Chinese hard wraps still differ. After merge, independently align it with decision 37 and run the shared vectors. |
 | `gold-review` at `e41dafd6`, `gold-catalog` at `c50ecb72` | `scripts/real/lib/inject.ts`: noWhiteSpace and the contradict_manual quotation precondition | Deletes all whitespace, including Latin word boundaries. This is an injection guard, not a gold verdict; after merge, have its owner align the guard where it promises a verbatim quotation. |
 | Other local branch snapshots carrying `scripts/real/gold/compile-check.ts` | checkVerbatimQuote and compileCheck expected-text containment | Same old generic checkVerbatimQuote implementation, not an additional independent rule. Preserve this branch's generic quotation fix when merging; no other branch was edited. |
@@ -343,11 +342,6 @@ or worktree was changed and no real-system script was run; only synthetic tests 
 
 - **model / integrator**: align T03 DEF with the owner-approved upload boundary: credential scan plus definite parsing
   refusals for declared/recognized-extension media types; sniffing alone is advisory and cannot refuse storage.
-
-- **contracts / rules owner**: update the QuoteTable description in contracts/src/tables.ts to decision 37: remove
-  W/F-adjacent whitespace, collapse other interior runs and trim ends. Regenerate
-  contracts/generated/schemas/quote.v1.schema.json (currently the same stale description) and run gen-contracts --check.
-  These contract files are outside this task's paths; no contract edit is claimed here.
 
 - **runs**: reject an oversized aggregate bound input before sandbox serialization, naming the input slot(s), measured
   byte budget and cap, with a split/reduce action. Do not report it as a pack-author function defect. The per-model XLSX
@@ -478,10 +472,10 @@ character or a platform Big5 expansion shares one original sequence. No Unicode 
 The [Encoding Standard](https://encoding.spec.whatwg.org/) documents the decoder API and sequence layouts; legacy
 character mappings follow the installed Node/ICU decoder, including its Big5 special-pair mapping.
 
-Scope disclosure for decision 37: the owner explicitly authorized rules/text.ts, quote.test.ts and its conformance
-fixtures beyond the original quote-vectors-only task path; the rules README update was separately approved. The first
-runtime refs import violated `rules -> refs(types)` and is now removed. This review adds rules-local W/F data; no
-production quotation implementation imports the other. Shared vectors are the independent agreement check.
+Scope disclosure for strict quotation correction: the owner authorized rules/text.ts, quote.test.ts and its conformance
+fixtures beyond the original quote-vectors-only task path; the rules README update was separately approved. No
+production quotation implementation imports the other, and neither consults East Asian width data. Shared vectors are
+the independent agreement check.
 
 HTML encoding refusals label the declaration source (media-type charset or meta) at the throw site. Unsupported source labels stay in ParseError.detail only and are never interpolated into caller messages.
 

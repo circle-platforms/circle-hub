@@ -69,5 +69,6 @@ test('scenario 19 under load completes ten 67-item MCP submissions within the ex
   assert.ok(Math.max(...completed) < 60_000, 'submission phase must stay inside the existing MCP timeout');
   // negative_commands adds a second item-check batch and expected_quality_evidence a third; all three command checks still share one commandSubject build.
   assert.ok(parserLaunches<=10*3,`format parsing must stay per document, not per item: ${parserLaunches}`);
-  assert.equal(launches, 10 * 6, 'two run calls, one shared item-builder batch and three item-check batches per submission');
+  // level_consistency and review_scope add one run check each, and reviewScopeSubject adds one run-subject build, so the six existing calls become nine.
+  assert.equal(launches, 10 * 9, 'the existing six calls plus level_consistency and the reviewScopeSubject/reviewScopeCheck pair per submission');
 });

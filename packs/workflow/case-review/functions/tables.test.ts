@@ -11,7 +11,8 @@ import tagsFn from './tags.ts';
 import templateCoverageFn from './template-coverage.ts';
 import projectionFn from './projection.ts';
 import expectedFn from './expected.ts';
-import { negativeCommands, findingSources, tagSpelling } from './checks.ts';
+import { negativeCommands, findingSources, tagSpelling, levelConsistency } from './checks.ts';
+import { captureReviewScope, createReviewScope, REVIEW_SCOPE_GROUP, reviewScopeSubject } from './review-scope.ts';
 import { toStructureSubjects } from './subject.ts';
 import { parseFixture, parseLarge, parseText, table } from '../testing/test-support.ts';
 import type { Failure, Warning } from './types.ts';
@@ -184,10 +185,16 @@ describe('codes.json', () => {
     collect(projectionFn({ ...bound(twins), parameters: { block: ['组'] } }));
     collect(expectedFn(null));
     const tagged = (id: string, tags: string[]) => ({ id, location: 'src:x', fields: { document: 'd', title: id, tags, expected: ['e'], path: [] } });
+    const scope = createReviewScope({ source: 'a'.repeat(64), document: 'd', parameters: { case_rule: 'marked', case_priority: 2, group_priority: 1, precondition_priority: 3 }, expected: [{ item: 'd:c', location: `src:${'a'.repeat(64)}/kityminder@1/n/c` }], selected: ['d:c'] });
+    const scopeGroup = { kind: REVIEW_SCOPE_GROUP, data: { review_scope: scope } };
     for (const outcome of [
       ...negativeCommands({subject:{item:'i',negative:true,phrases:[]},catalog:[]}),
       ...findingSources({ subject: { item: 'i', slots: { findings: [{ text: 't', quotes: [{ reference: 'src:x', text: 'q' }], commands: [{ command: 'widget x 1' }] }, { text: 'u' }] }, evidence: [{ reference: 'src:x', resolved: true, role: 'hint' }] } }),
       ...tagSpelling({ subject: { subjects: toStructureSubjects([tagged('a', ['Functional']), tagged('b', ['Functional']), tagged('c', ['功能'])]) } }),
+      ...levelConsistency({ subject: { items: [], cross_item: [] } }),
+      ...levelConsistency({ subject: { items: [{ id: 'd:c', slots: { findings: [{ rank: 'minor' }] } }], cross_item: [{ code: 'level', rank: 'P4' }] } }),
+      ...levelConsistency({ subject: { items: [{ id: 'd:c', slots: { findings: [{}] } }], cross_item: [{ code: 'level', rank: 'P2' }] } }),
+      ...captureReviewScope({ subject: reviewScopeSubject({ applies: 'run', items: [], context: { groups: [scopeGroup, scopeGroup] } }) }, 'case-review'),
     ]) {
       if (outcome.code !== undefined) emitted.add(outcome.code);
     }
@@ -215,7 +222,7 @@ describe('the pack functions', () => {
       }
       const namedEntry = /export default [A-Za-z][A-Za-z0-9]*\s*;?\s*$/m.test(code) && /function [A-Za-z][A-Za-z0-9]*\(input:unknown\)/.test(code);
       // expected-quality 用具名函数再默认导出，参数仍是 unknown。沙箱调用的是这个默认导出。
-      if (name !== 'types.ts' && name !== 'common.ts' && name !== 'text.ts') assert.ok(/export default function \(input: unknown\): unknown/.test(code) || namedEntry, name);
+      if (!['types.ts', 'common.ts', 'text.ts', 'levels.ts', 'review-scope.ts'].includes(name)) assert.ok(/export default function \(input: unknown\): unknown/.test(code) || namedEntry, name);
     }
   });
 
