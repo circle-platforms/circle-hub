@@ -1,9 +1,10 @@
-import {createTestParserRegistry as createDefaultRegistry} from '../../testing/parsers.ts';
+import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
 // Synthetic ZIP/XML vectors are generated here; an existing independent writer supplies one interoperability check.
 import assert from 'node:assert/strict';
 import { crc32, deflateRawSync } from 'node:zlib';
 import { test } from 'node:test';
-import { ParseError, ParseLimitError } from '../parser.ts';
+import { ParseError, ParseLimitError } from './format.ts';
+import { originalCore } from '../testing/baseline.ts';
 import { readXlsxArchive, XLSX_MODEL_BYTE_LIMIT, XLSX_ZIP_LIMITS } from './xlsx.ts';
 
 type Member = { name: string; text?: string; bytes?: Buffer; method?: number; flags?: number; size?: number; crc?: number; extra?: Buffer; localExtra?: Buffer; nameBytes?: Buffer; attributes?: number; descriptor?: boolean | 12 | 16 | 20 | 24; zip64?: boolean; compressed?: Buffer };
@@ -112,7 +113,27 @@ function workbook(options: { book?: string; sheet?: string; shared?: string; ext
   ]);
 }
 // Kept here to exercise the module directly without extending refs/api.ts beyond this task's paths.
-import { xlsxParser } from './xlsx.ts';
+import { xlsxParser as implementation } from './xlsx.ts';
+const original = await originalCore();
+const xlsxParser = {
+  ...implementation,
+  parse(...args: Parameters<typeof implementation.parse>) {
+    let expected: ReturnType<typeof original.parser.parse> | undefined, oldError: unknown;
+    try { expected = original.parser.parse(...args); } catch (error) { oldError = error; }
+    let actual;
+    try { actual = implementation.parse(...args); }
+    catch (error) {
+      assert.ok(oldError instanceof Error, "original should also throw");
+      assert.equal((error as Error).name, (oldError as Error).name);
+      assert.equal((error as Error).message, (oldError as Error).message);
+      throw error;
+    }
+    assert.ok(expected, "pre-migration core must accept every migrated vector");
+    assert.equal(JSON.stringify(actual.model), JSON.stringify(expected.model));
+    assert.equal(JSON.stringify(actual.summary()), JSON.stringify(expected.summary()));
+    return actual;
+  }
+};
 const parseWorkbook = (options: Parameters<typeof workbook>[0] = {}) => xlsxParser.parse(workbook(options));
 const badWorkbook = (options: Parameters<typeof workbook>[0], reason: RegExp) => assert.throws(() => parseWorkbook(options), (e: unknown) => e instanceof ParseError && e.parser === 'xlsx@1' && reason.test(e.message));
 
@@ -249,8 +270,8 @@ test('xlsx@1 accepts Strict namespaces and refuses a worksheet with a foreign na
 });
 
 test('the registered XLSX parser is selected by upload extension, while non-ZIP bytes are never recognized', async () => {
-  const { recognize } = await import('../api.ts');
-  const { mediaTypeFor, structureOf } = await import('../../server/upload.ts');
+  const { recognize } = await import('../../../../hub/refs/api.ts');
+  const { mediaTypeFor, structureOf } = await import('../../../../hub/server/upload.ts');
   const registry = createDefaultRegistry(); const bytes = workbook();
   const mediaType = mediaTypeFor(bytes, undefined, 'synthetic.XLSX');
   assert.equal(mediaType, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -383,7 +404,7 @@ test('ZIP failures disclose a specific rule and safe member location without nam
 
 test('refs documents the installed caller diagnostic handoff', async () => {
   const { readFile } = await import('node:fs/promises');
-  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  const readme = await readFile(new URL('../../../../hub/refs/README.md', import.meta.url), 'utf8');
   assert.match(readme, /Upload checks an explicitly given media type/);
   assert.match(readme, /SOURCE_UNPARSEABLE/);
 });
@@ -405,7 +426,7 @@ test('canonical XLSX selectors prefer escaped names and fall back for ambiguous 
 
 test('refs records the retained resolve test scope deviation', async () => {
   const { readFile } = await import('node:fs/promises');
-  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  const readme = await readFile(new URL('../../../../hub/refs/README.md', import.meta.url), 'utf8');
   assert.match(readme, /resolve\.test\.ts[^\n]*outside[^\n]*allowed paths/);
   assert.match(readme, /xlsx@999[^\n]*unregistered/);
 });

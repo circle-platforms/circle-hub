@@ -13,6 +13,9 @@ import {openHarness,type Harness} from '../runs/engine/testing/harness.ts';
 import {sha256Hex} from './canonical-json.ts';
 import {newId} from '../records/api.ts';
 import {kityminderParser} from '../testing/parsers.ts';
+import {installWorkbookFixture} from '../testing/skills.ts';
+import {xlsxParser} from '../../packs/skill/workbook-format/api.ts';
+import ExcelJS from 'exceljs';
 import {RunRecord} from '../../contracts/src/run.ts';
 import {Submission} from '../../contracts/src/submission.ts';
 
@@ -218,4 +221,32 @@ test('a failed bulk binding rolls back the declaration and every per-run append'
  await assert.rejects(bindLegacyParser({registry:isolated.registry,records:{...isolated.kit,store}},isolated.admin,'kityminder@1','mindmap-format@1.0.0'),/synthetic append failure/);
  assert.equal((await isolated.kit.store.find({kind:'action',key:'refs.legacy-parser',value:'kityminder@1',limit:10})).items.length,0);
  for(const run of runs){assert.deepEqual((await isolated.kit.store.get(run.digest))?.body,run.body);assert.equal((await isolated.kit.store.find({kind:'action',key:'runs.skills',value:run.body.run,limit:10})).items.length,0);}
+});
+
+test('workbook-format sandbox transport preserves xlsx@1 vectors and enforces declared limits',async()=>{
+  await installWorkbookFixture(bed.registry,bed.kit,bed.admin);
+  const registry=createSkillParserRegistry(options());await registry.refresh!();
+  const parser=registry.get('xlsx@1')!;
+  assert.ok(parser);
+  const book=new ExcelJS.Workbook();
+  const sheet=book.addWorksheet('工作表一');
+  sheet.addRow(['标题','数量']);
+  sheet.addRow(['合成用例',42]);
+  const fixture=Buffer.from(await book.xlsx.writeBuffer());
+  const expected=xlsxParser.parse(fixture),actual=await parseDocument(parser,fixture);
+  assert.deepEqual(actual.model,expected.model);
+  assert.deepEqual(actual.summary(),expected.summary());
+  assert.deepEqual(actual.listSelectors(),expected.listSelectors());
+  for(const selector of expected.listSelectors('',{properties:true})){
+    assert.deepEqual(actual.locate(selector),expected.locate(selector),selector);
+  }
+  const source=sha256Hex(fixture),reference=`src:${source}/xlsx@1/c/工作表一/A2`;
+  const frozen=await registry.freeze!([{pack:'workbook-format',version:'1.0.0'}]);
+  const resolved=await resolveReference(reference,{
+    parsers:frozen.parsers,
+    reader:{user:bed.bob.id,role:'user'},
+    sources:{read:()=>({bytes:fixture,mediaType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',size:fixture.length,readTier:'model_readable'})},
+  });
+  assert.ok(resolved.resolved&&verifyQuote(resolved,'合成用例'));
+  await assert.rejects(parseDocument(parser,fixture,{maxBytes:4}),/字节限额/);
 });

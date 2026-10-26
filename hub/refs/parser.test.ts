@@ -19,12 +19,13 @@ import { fixture, utf8 } from './test-support.ts';
 describe('parser registry', () => {
   const registry = createDefaultRegistry();
 
-  it('registers the six core parsers by id@version', () => {
+  it('registers the five core parsers by id@version', () => {
     assert.deepEqual(
       registry.list().map((parser) => `${parser.id}@${parser.version}`),
-      ['xml@1', 'html@1', 'markdown@1', 'json@1', 'text@1', 'xlsx@1'],
+      ['xml@1', 'html@1', 'markdown@1', 'json@1', 'text@1'],
     );
     assert.equal(registry.get('kityminder@1'), undefined);
+    assert.equal(registry.get('xlsx@1'), undefined);
     assert.equal(registry.get('kityminder'), undefined);
     assert.equal(registry.get('kityminder@2'), undefined);
   });
@@ -43,7 +44,7 @@ describe('parser registry', () => {
     const bad = { ...textParser, id: 'Bad Name' } as Parser;
     assert.throws(() => createParserRegistry([bad]));
     assert.throws(() => createParserRegistry([{ ...textParser, version: -1 } as Parser]));
-    assert.equal(createParserRegistry(defaultParsers()).list().length, 6);
+    assert.equal(createParserRegistry(defaultParsers()).list().length, 5);
   });
 
   it('recognizes a file with the first parser that accepts it', () => {
