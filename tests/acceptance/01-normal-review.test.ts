@@ -145,7 +145,12 @@ describe('scenario 1: a normal review', () => {
       }
     }
     // The level is a cross-item claim of the run-level requirement, listed apart.
-    assert.deepEqual(result.cross_item.map((c) => [c.requirement, c.statement.code, c.statement.rank, c.qualifier.nature]), [['level', 'level', 'P4', 'judgment']]);
+    // A4 #13 adds two mechanical facts before the original level judgment.
+    assert.deepEqual(result.cross_item.map((c) => [c.requirement, c.statement.code, c.statement.rank, c.qualifier.nature]), [
+      ['level', undefined, undefined, 'fact'],
+      ['level', undefined, undefined, 'fact'],
+      ['level', 'level', 'P4', 'judgment'],
+    ]);
   });
 
   test('the Hub\'s literal facts are the fixture\'s documented defects', () => {

@@ -11,7 +11,7 @@ import { oracleCases } from './support/review.ts';
 import { openConsole, type ConsoleClient } from './support/console.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import { type McpClient } from './support/mcp.ts';
-import { DRAFTER, OTHER_MODEL, OTHER_IDENTITY, draft, finding, level, requirementOf, resultOf, startReview } from './support/review.ts';
+import { DRAFTER, DRAFTER_IDENTITY, OTHER_MODEL, OTHER_IDENTITY, draft, finding, level, requirementOf, resultOf, startReview } from './support/review.ts';
 
 let postgres: TemporaryPostgres;
 let bed: Bed;
@@ -31,6 +31,15 @@ after(async () => {
 });
 
 const document = JSON.parse(fixtureText('review-150.km.json'));
+
+function originalJudgmentView(result: ReturnType<typeof resultOf>): ReturnType<typeof resultOf> {
+  // A4 #13 adds two mechanical facts; expect them separately while retaining the original model-judgment fixture view.
+  assert.deepEqual(result.cross_item.filter((c) => c.qualifier.nature === 'fact').map((c) => [c.requirement, c.statement.code, c.statement.rank, c.qualifier.nature]), [
+    ['level', undefined, undefined, 'fact'],
+    ['level', undefined, undefined, 'fact'],
+  ]);
+  return { ...result, cross_item: result.cross_item.filter((c) => c.qualifier.nature === 'judgment') };
+}
 
 describe('scenario 22: fact-requirement model independence', () => {
   let runA: RunSummary;
@@ -64,12 +73,12 @@ describe('scenario 22: fact-requirement model independence', () => {
   });
 
   test('Model A submits minimal clean draft (no findings, P4 level)', async () => {
-    const subA = draft(runA, new Map(), { model: DRAFTER, cross: [level('P4')] });
+    const subA = draft(runA, new Map(), { model: DRAFTER, model_identity: DRAFTER_IDENTITY, cross: [level('P4')] });
 
     const answerA = await client.call('submit_result', subA);
     assert.equal(answerA.isError, false, answerA.text);
     assert.equal(answerA.out.acceptance, 'accepted');
-    resultA = resultOf(answerA);
+    resultA = originalJudgmentView(resultOf(answerA));
     assert.equal(resultA.run, runA.run);
   });
 
@@ -94,7 +103,7 @@ describe('scenario 22: fact-requirement model independence', () => {
           finding(probe, {
             text: '发现 2：自相矛盾的协议配置',
             code: 'self_contradiction',
-            rank: 'major',
+            rank: 'minor',
           }),
         ],
       ],
@@ -105,7 +114,7 @@ describe('scenario 22: fact-requirement model independence', () => {
     const answerB = await client.call('submit_result', subB);
     assert.equal(answerB.isError, false, answerB.text);
     assert.equal(answerB.out.acceptance, 'accepted');
-    resultB = resultOf(answerB);
+    resultB = originalJudgmentView(resultOf(answerB));
     assert.equal(resultB.run, runB.run);
   });
 
