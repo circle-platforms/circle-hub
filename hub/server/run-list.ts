@@ -1,7 +1,7 @@
 // Admin inventory of runs already stored. It reads the run and validation-result indexes and derives
 // status, terminal counts and the unknown count. It does not write, and it never returns submission
 // bodies, quotes or credentials.
-import { labelOf, PARTITION } from '../../contracts/generated/vocabulary.ts';
+import { labelOf, PARTITION, type Layer, type StaticTerminal, type DynamicTerminal } from '../../contracts/generated/vocabulary.ts';
 import type { ValidationResult } from '../../contracts/src/validation.ts';
 import { partitionCountsOf } from '../../contracts/src/validation.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
@@ -55,8 +55,8 @@ interface Cursor {
   id: string;
 }
 
-function terminalLabel(layer: 'static' | 'dynamic', terminal: string): string {
-  return layer === 'static' ? labelOf('static_terminal', terminal as 'pass') : labelOf('dynamic_terminal', terminal as 'pass');
+function terminalLabel(layer: Layer, terminal: StaticTerminal | DynamicTerminal): string {
+  return layer === 'static' ? labelOf('static_terminal', terminal as StaticTerminal) : labelOf('dynamic_terminal', terminal as DynamicTerminal);
 }
 
 /** Layer terminals of the newest accepted result, counted per requirement. Empty when that result has no partitions. */
