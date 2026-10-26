@@ -1,7 +1,8 @@
-// Typed errors of the connectors. The codes are internal to the Hub, like the sandbox codes: a caller of a read only ever sees
-// SOURCE_UNAVAILABLE; the code and the Chinese message go to the admin log. Each read error belongs to one of the three
-// layers of D01 R[5]: transport (HTTP, network, limits, refusals before I/O), envelope (codes inside a 200 answer, login) or
-// plugin (the system pack's functions and the declared answer format).
+// Typed errors of the connectors. The codes stay internal: a caller of a read sees the fixed exit of hub/connectors/read-exit.ts
+// (the missing fact and the next step), never the host, token or response body. The code and the Chinese diagnostic go to the
+// admin log together with that exit's command. A retained envelope or a disabled reader is not given that caller text.
+// Each read error belongs to one of the three layers of D01 R[5]: transport (HTTP, network, limits, refusals before I/O),
+// envelope (codes inside a 200 answer, login) or plugin (the system pack's functions and the declared answer format).
 
 /** D01 R[5]: transport, envelope, plugin. Not a vocabulary axis yet (see the README). */
 export type ErrorLayer = 'transport' | 'envelope' | 'plugin';

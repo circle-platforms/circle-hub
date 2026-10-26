@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { canonicalBytes } from '../records/api.ts';
@@ -611,6 +612,19 @@ test('post-run match restores bed and post-run mismatch leaves bed unrestored wi
     assert.equal(report.bed_state.recovery, 'restored');
     assert.deepEqual(report.bed_state.differences, []);
     assert.deepEqual(report.bed_state.limits, []);
+    const shots = await snaps(c, state.job);
+    const capture = (when: string) => {
+      const detail = shots.find(shot => shot.when === when);
+      const reads = detail?.reads as Array<{ id: string; reference?: string }> | undefined;
+      return reads?.find(read => read.id === 'raw_probe')?.reference;
+    };
+    const preRef = capture('pre');
+    const postRef = capture('post');
+    assert.ok(preRef?.startsWith('art:') && postRef?.startsWith('art:'));
+    const preBytes = await c.kit.objects.get(preRef!.slice(4));
+    const postBytes = await c.kit.objects.get(postRef!.slice(4));
+    assert.ok(preBytes && postBytes);
+    assert.equal(createHash('sha256').update(preBytes).digest('hex'), createHash('sha256').update(postBytes).digest('hex'));
   }
 
   // Case B: Post mismatch -> unrestored with line diffs, blocks subsequent dispatch
