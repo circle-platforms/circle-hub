@@ -1,5 +1,6 @@
 // Caller-visible exit for a failed source read, keyed only by the connector error code.
-// The caller (Circle) hears the missing fact and the next step. The administrator hears a concrete command.
+// Transport failures tell Circle the missing fact and the next step. Credential and identity failures do not:
+// the caller stays on the neutral unavailable answer, and the command stays in the admin reason.
 // Neither text is chosen by matching the failure message. Hosts, tokens and response bodies stay out of the caller text.
 import { secretNameOf } from '../../contracts/src/variables.ts';
 import { CONNECTOR_ERRORS, type ConnectorErrorCode } from './errors.ts';
@@ -24,8 +25,9 @@ export interface ReadExit {
 }
 
 const RETRY_FIX = '稍后用同样参数重新开始；仍失败请管理员核对资源地址与网络';
-const CREDENTIAL_FIX = '请管理员重新设置凭据或重置登录后，用同样参数重新开始';
 const SHOW_FIX = '请管理员核对资源地址与网络后，用同样参数重新开始';
+/** Credential and identity failures stay SOURCE_UNAVAILABLE for the caller. The command is admin-only. */
+const hidden = (admin: AdminExitKind): ReadExit => ({ caller: null, admin });
 
 const caller = (protocol: ReadExitProtocol, message: string, fix: string): CallerExit => ({ protocol, message, fix });
 
@@ -39,15 +41,15 @@ export const READ_EXITS: Record<ConnectorErrorCode, ReadExit> = {
   SOURCE_TIMEOUT: { caller: caller('SOURCE_RETRYABLE', CONNECTOR_ERRORS.SOURCE_TIMEOUT, RETRY_FIX), admin: 'show' },
   SOURCE_UNREACHABLE: { caller: caller('SOURCE_RETRYABLE', CONNECTOR_ERRORS.SOURCE_UNREACHABLE, RETRY_FIX), admin: 'show' },
   SOURCE_ABSENT: { caller: caller('SOURCE_READ_FAILED', '未读到要求的锁定修订', '未读到要求的锁定修订；由资源管理员核对对象修订后重读，需要改修订时开始新运行'), admin: 'show' },
-  SOURCE_FORBIDDEN: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.SOURCE_FORBIDDEN, '请管理员核对此资源的身份与授权后，用同样参数重新开始'), admin: 'show' },
+  SOURCE_FORBIDDEN: hidden('show'),
   SOURCE_HTTP_STATUS: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.SOURCE_HTTP_STATUS, '来源明确以非成功 HTTP 状态作答；由资源管理员核对路由、参数与系统状态后重读'), admin: 'show' },
-  SOURCE_LOGIN_EXPIRED: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.SOURCE_LOGIN_EXPIRED, CREDENTIAL_FIX), admin: 'reset-login' },
+  SOURCE_LOGIN_EXPIRED: hidden('reset-login'),
   SOURCE_ENVELOPE_ERROR: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.SOURCE_ENVELOPE_ERROR, '来源在应答信封中明确报错；由资源管理员核对参数与系统状态后重读'), admin: 'show' },
   SOURCE_MALFORMED: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.SOURCE_MALFORMED, '缺少符合声明格式的应答；由资源管理员核对应答格式与路由声明，修复后重读'), admin: 'show' },
-  SOURCE_CREDENTIAL: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.SOURCE_CREDENTIAL, '请管理员核对受理与读取档位后重读'), admin: 'show' },
-  LOGIN_FAILED: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.LOGIN_FAILED, CREDENTIAL_FIX), admin: 'reset-login' },
-  CREDENTIAL_REFUSED: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.CREDENTIAL_REFUSED, CREDENTIAL_FIX), admin: 'reset-login' },
-  CREDENTIAL_MISSING: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.CREDENTIAL_MISSING, CREDENTIAL_FIX), admin: 'reset-login' },
+  SOURCE_CREDENTIAL: hidden('show'),
+  LOGIN_FAILED: hidden('reset-login'),
+  CREDENTIAL_REFUSED: hidden('reset-login'),
+  CREDENTIAL_MISSING: hidden('reset-login'),
   PLAN_INVALID: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.PLAN_INVALID, '缺少符合契约的完整读取计划；由系统包负责人核对规划函数与路由，修复后重读'), admin: 'show' },
   PROJECTION_FAILED: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.PROJECTION_FAILED, '缺少符合投影契约的出件；由系统包负责人核对投影输入、输出与回读，修复后重读'), admin: 'show' },
   FUNCTION_FAILED: { caller: caller('SOURCE_READ_FAILED', CONNECTOR_ERRORS.FUNCTION_FAILED, '缺少包函数的成功出件；由系统包负责人修复函数后重读'), admin: 'show' },
@@ -66,7 +68,8 @@ export function readExit(code: ConnectorErrorCode): ReadExit {
   return READ_EXITS[code];
 }
 
-export function secretNamesOf(credentials: Readonly<Record<string, string>>): string[] {
+export function secretNamesOf(credentials: Readonly<Record<string, string>> | null | undefined): string[] {
+  if (credentials == null) return [];
   return [...new Set(Object.values(credentials).map(secretNameOf).filter((name): name is string => name !== null))].sort();
 }
 

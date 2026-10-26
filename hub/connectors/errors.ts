@@ -1,6 +1,6 @@
-// Typed errors of the connectors. The codes stay internal: a caller of a read sees the fixed exit of hub/connectors/read-exit.ts
-// (the missing fact and the next step), never the host, token or response body. The code and the Chinese diagnostic go to the
-// admin log together with that exit's command. A retained envelope or a disabled reader is not given that caller text.
+// Typed errors of the connectors. Transport failures the caller may see use the fixed exit of hub/connectors/read-exit.ts.
+// Credential and identity failures stay "unavailable" for the caller; the code, the Chinese diagnostic and the command go to
+// the admin log. A retained envelope keeps disclosable false. Hosts, tokens and response bodies stay out of caller text.
 // Each read error belongs to one of the three layers of D01 R[5]: transport (HTTP, network, limits, refusals before I/O),
 // envelope (codes inside a 200 answer, login) or plugin (the system pack's functions and the declared answer format).
 
