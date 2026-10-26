@@ -18,7 +18,7 @@
     "test:references": "node --test tools/verify-reference-archive.test.ts",
     "gen:contracts": "node tools/gen-contracts.ts",
     "verify:contracts": "node tools/gen-contracts.ts --check",
-    "test:unit": "node --test \"contracts/**/*.test.ts\" \"hub/**/*.test.ts\" \"packs/**/*.test.ts\" \"scripts/**/*.test.ts\" \"tools/gen-contracts*.test.ts\"",
+    "test:unit": "node --test --test-concurrency=2 \"contracts/**/*.test.ts\" \"hub/**/*.test.ts\" \"packs/**/*.test.ts\" \"scripts/**/*.test.ts\" \"tools/gen-contracts*.test.ts\"",
     "test:acceptance": "node --test --test-concurrency=1 \"tests/acceptance/*.test.ts\"",
     "test:docs": "node --test \".github/checks/*.test.ts\"",
     "test": "npm run verify:contracts && npm run test:unit && npm run test:docs && npm run test:acceptance && npm run test:references",
