@@ -9190,14 +9190,20 @@
   {
     "name": "resolve_reference",
     "title": "Resolve a value to a reference",
-    "description": "Preview how an exact value or quotation resolves against the sources bound to a run. The result is a preview and not evidence.",
+    "description": "Preview how an exact value or quotation resolves against the sources bound to a run (using run) or against a standalone knowledge root (using root). When run is given, resolves against run-bound sources, catalog commands and records. When root is given, resolves tree: addresses and constituent src: grounds without starting a run. Exactly one of run or root must be provided. The result is a preview and not evidence.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
         "run": {
+          "description": "Use the sources bound to this run",
           "type": "string",
           "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        "root": {
+          "description": "Knowledge root digest; resolves tree: and constituent src: grounds without a run",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         },
         "text": {
           "type": "string",
@@ -9210,7 +9216,6 @@
         }
       },
       "required": [
-        "run",
         "text"
       ],
       "additionalProperties": false
