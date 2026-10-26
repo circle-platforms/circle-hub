@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "test-bed",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "kind": "workflow",
   "title": "设备台架",
   "description": "读管理员发布的台架清单（命名文档），按需求搜索台架（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订台架（租约键 bed/<台架>/<设备>，可带地址分配，没有时长限额，由运行持有到释放）；只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -98,8 +98,8 @@
     },
     {
       "path": "functions/surface.ts",
-      "sha256": "5b235da24bc5b75e0cdc474ad0584ae1b4bf116a904d042299d9d66799f3f914",
-      "size": 24387
+      "sha256": "b38eca77d94620c2f5d83c59dc2e2caf4e06c61c50d6e781ae844437ec5d8709",
+      "size": 25074
     },
     {
       "path": "requirements.json",
