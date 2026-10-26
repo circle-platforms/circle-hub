@@ -39,10 +39,14 @@ jobs:
       - run: npm ci
       - run: npm run verify:contracts
 
-  unit:
-    name: Unit tests
+  unit_parts:
+    name: Unit tests / ${{ matrix.suite }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [regular, parser-bounds]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -52,10 +56,20 @@ jobs:
       - run: npm ci
       - name: Run the unit tests
         shell: bash
-        run: npm run test:unit 2>&1 | tee "$RUNNER_TEMP/unit.log"
+        run: npm run test:unit -- ${{ matrix.suite }} 2>&1 | tee "$RUNNER_TEMP/unit.log"
       - name: Count what ran and what was skipped
         if: ${{ !cancelled() }}
-        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/unit.log" 'Unit tests'
+        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/unit.log" 'Unit tests / ${{ matrix.suite }}'
+
+  unit:
+    name: Unit tests
+    needs: unit_parts
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every unit partition to pass
+        run: test '${{ needs.unit_parts.result }}' = 'success'
 
   acceptance:
     name: Acceptance on a temporary PostgreSQL

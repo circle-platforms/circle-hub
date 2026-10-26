@@ -17,7 +17,7 @@ function steps(job: string): string[] {
 
 describe('test jobs count what ran', () => {
   for (const [job, command, log] of [
-    ['unit', 'npm run test:unit', 'unit'],
+    ['unit_parts', 'npm run test:unit -- ${{ matrix.suite }}', 'unit'],
     ['acceptance', 'npm run test:acceptance', 'acceptance'],
     ['docs', 'node --test ".github/checks/*.test.ts"', 'docs'],
   ] as const) {
@@ -42,4 +42,12 @@ describe('test jobs count what ran', () => {
   it('no job reaches a secret', () => {
     assert.doesNotMatch(WORKFLOW, /secrets\./);
   });
+});
+
+it('the stable unit status requires both complete partitions, with no continue-on-error',()=>{
+ assert.ok(WORKFLOW.includes('suite: [regular, parser-bounds]'));
+ assert.ok(WORKFLOW.includes('needs: unit_parts'));
+ assert.ok(WORKFLOW.includes("run: test '${{ needs.unit_parts.result }}' = 'success'"));
+ assert.ok(WORKFLOW.includes('if: ${{ always() }}'));
+ assert.doesNotMatch(WORKFLOW,/continue-on-error/);
 });
