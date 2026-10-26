@@ -1,3 +1,4 @@
+import {osIsolationAvailable} from '../rules/api.ts';
 import assert from 'node:assert/strict';
 import{before,after,test}from'node:test';
 import{makeWorld,startPostgres,catalogXml,BASE_CATALOG,DEFAULT_PRODUCERS,DEFAULT_SYNC}from'./test-support.ts';
@@ -27,7 +28,7 @@ test('an aborted product-wide scope does not consult production storage',async t
  const controller=new AbortController();controller.abort();const report=await w.knowledge.syncProduct(w.product,{signal:controller.signal});assert.equal(report.scope?.outcome,'failed');assert.match(report.scope?.reason??'',/中止/);assert.equal(calls,0);
 });
 test('concurrent product-wide producers use their own cause and cannot overwrite a later pointer',async t=>{
- const w=await world(t),other=createKnowledge({records:w.kit,parsers:createDefaultRegistry(),packs:w.packs,external:w.external,admin:w.admin});
+ const w=await world(t),other=createKnowledge({sandbox:{requireOsIsolation:await osIsolationAvailable()},records:w.kit,parsers:createDefaultRegistry(),packs:w.packs,external:w.external,admin:w.admin});
  let start!:()=>void;const ready=new Promise<void>(resolve=>{start=resolve;});
  const rival=ready.then(()=>other.syncProduct(w.product,{recheck:true}));
  const move=w.kit.pointers.move.bind(w.kit.pointers);let injected=false;

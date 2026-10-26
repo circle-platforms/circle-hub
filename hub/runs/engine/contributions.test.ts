@@ -1,3 +1,4 @@
+import {osIsolationAvailable} from '../../rules/api.ts';
 // Synthetic end-to-end contribution runs: real knowledge, records, resolver and pack sandbox.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -107,7 +108,7 @@ async function setup(t: {after(fn:()=>Promise<void>):void}, options: {ordinary?:
     // Per-task outputs coexist with document contributions, but must never enter the knowledge layer.
     pack.workflow = {...pack.workflow,product:{id:w.product.product.id,catalogs:[]},outputs:{tasks:TASK_OUTPUT_KIND.map(kind=>({id:kind,kind}))}};
   }
-  const service = createRunsService({records:w.kit,packs:w.packs,knowledge:w.knowledge,external:w.external,workflows,parsers:createDefaultRegistry()});
+  const service = createRunsService({sandbox:{requireOsIsolation:await osIsolationAvailable()},records:w.kit,packs:w.packs,knowledge:w.knowledge,external:w.external,workflows,parsers:createDefaultRegistry()});
   const manifest = await w.kit.artifacts.ingest({bytes:new TextEncoder().encode(JSON.stringify({items:GENERIC_OUTPUTS.map(kind=>({id:kind,title:kind}))})),mediaType:'application/json',origin:{upload:{session:'integration-session',message:null}},author:{user:w.admin.id},visibility:{readers:[w.admin.id],admins:true,packs:[],shareable:false},provenanceType:'declared'});
   const started = await service.startRun(w.admin,{pack:'knowledge-contribution',product:'Acme',build:b.name,inputs:{subject:{reference:`src:${manifest.body.sha256}`},originals:{reference:`src:${original}`}}},call);
   assert.equal(started.call_result,'ok',JSON.stringify(started.errors));

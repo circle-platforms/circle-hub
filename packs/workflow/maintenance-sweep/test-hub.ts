@@ -1,3 +1,4 @@
+import {osIsolationAvailable} from '../../../hub/rules/api.ts';
 import type { PermissionRole } from '../../../contracts/generated/vocabulary.ts';
 // Test harness against the real Hub parts (not part of the pack): a records kit in a temporary PostgreSQL, the real pack
 // registry and run engine, and a fake external reader that serves synthetic impact views. The pack binds no product line.
@@ -126,14 +127,14 @@ export async function openHub(postgres: TemporaryPostgres, options: OpenHubOptio
       bob = (await kit.principals.createUser(admin, '乙')) as { id: string; name: string; role: 'user' };
       await kit.authorizations.grantPublishRight(admin, alice.id);
     }
-    const registry = createPackRegistry({ records: kit, extractDir: join(root, 'extracted'), now });
+    const registry = createPackRegistry({sandbox:{requireOsIsolation:await osIsolationAvailable()}, records: kit, extractDir: join(root, 'extracted'), now });
     const publisher = kitOf !== null ? admin : alice;
     const published = await registry.publish(publisher, await stage(join(root, 'maintenance-sweep')));
     if (!published.ok) throw new Error(`maintenance-sweep was not published: ${JSON.stringify(published.problems, null, 1)}`);
     await registry.assign(admin, alice.id, 'maintenance-sweep');
     const external = new FakeExternal(kit.artifacts);
     const logs: AdminLogEntry[] = [];
-    const service = createRunsService({
+    const service = createRunsService({sandbox:{requireOsIsolation:await osIsolationAvailable()},
       records: kit,
       workflows: createWorkflowStore(registry),
       packs: createPacksPort(registry),

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Limits, Principal } from '../../../records/api.ts';
 import type { CallContext, LoadedWorkflow } from '../../../ports.ts';
-import { osIsolationAvailable, type SandboxLimits } from '../../../rules/api.ts';
+import { osIsolationAvailable, type SandboxLimits, type SandboxOptions } from '../../../rules/api.ts';
 import type { TemporaryPostgres } from '../../../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../testing/records.ts';
 import { createRunsService, type AdminLogEntry, type RunsEngine } from '../api.ts';
@@ -24,6 +24,7 @@ export interface HarnessOptions {
   dataQuotes?: boolean;
   verifyAcceptsDeclared?: boolean;
   sandboxLimits?: Partial<SandboxLimits>;
+  sandbox?: SandboxOptions;
   clientKeyWindowMs?: number;
   /** Limits of the records kit (a small maxRecordBytes shows what does not fit in one record). */
   limits?: Partial<Limits>;
@@ -99,6 +100,7 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
     const logs: AdminLogEntry[] = [];
     const leases = options.leases === true ? new LeaseService(new Database(createPool(kit.database, 2)), { now: async () => now() }) : null;
     const service = createRunsService({
+      sandbox: options.sandbox ?? { requireOsIsolation: await osIsolationAvailable() },
       records: kit,
       workflows,
       packs,

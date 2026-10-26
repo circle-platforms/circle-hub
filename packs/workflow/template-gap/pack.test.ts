@@ -61,7 +61,7 @@ describe('the pack directory', () => {
     const validation = await validatePack(read.pack);
     assert.ok(validation.ok, JSON.stringify(!validation.ok && validation.problems, null, 1));
     assert.deepEqual(validation.pack.warnings, []);
-    const report = await runPublishCheck({ pack: validation.pack, packDir: staged.path });
+    const report = await runPublishCheck({ pack: validation.pack, packDir: staged.path, sandbox: { requireOsIsolation: await osIsolationAvailable() } });
     assert.deepEqual(refusalsOf(report, validation.pack), []);
     // 标签声明检查多了正负各一份样例，一共 15 份，仍都是作者样例。
     assert.deepEqual(report.samples, { total: 15, passed: 15, failed: 0, sources: { author: 15, returned_counterexample: 0, retained_delivery: 0 } });
