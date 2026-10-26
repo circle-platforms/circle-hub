@@ -13,10 +13,10 @@ const bed = {
   devices: [{ name: 'node0', type: 'router', ipv4: ['192.0.2.1/24', '192.0.2.2/24'], ipv6: [] }],
   baseline: [],
 };
-const emptyAddress = { header: ['残留'], rows: [], note: 'synthetic-clear-row' };
-const emptySession = { header: ['name'], rows: [], note: '无配置' };
-const dirtyAddress = { header: ['address'], rows: [{ address: '192.0.2.9/24' }], note: '空' };
-const dirtySession = { header: ['name'], rows: [{ name: 'left' }], note: 'synthetic-confirm-clear' };
+const emptyAddress = { output: 'Interface       IP Address        Status\n', note: 'synthetic-clear-row' };
+const emptySession = { output: 'Session-ID      Source                  Destination\n', note: '无配置' };
+const dirtyAddress = { output: 'Interface       IP Address        Status\neth0            192.0.2.9/24      Up\n', note: '空' };
+const dirtySession = { output: 'Session-ID      Source                  Destination\nleft            192.0.2.1               192.0.2.2\n', note: 'synthetic-confirm-clear' };
 
 describe('bed surface declaration', () => {
   it('parses the product declaration and rejects an interactive cleanup with no exit', () => {

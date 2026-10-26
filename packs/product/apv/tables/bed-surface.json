@@ -4,11 +4,19 @@
     {
       "id": "addresses",
       "seat": "synthetic-0",
-      "parser": "row_table",
+      "parser": "text_table",
+      "header": "Interface       IP Address        Status",
       "fields": [
-        { "name": "address", "pointer": "/address", "role": "residue", "from": "interfaces" }
+        {
+          "name": "address",
+          "start": 16,
+          "end": 34,
+          "cidr": true,
+          "role": "residue",
+          "from": "interfaces"
+        }
       ],
-      "empty": { "kind": "header_only", "header": "/header", "rows": "/rows" },
+      "empty": { "kind": "header_only" },
       "cleanups": [
         {
           "residue": "address",
@@ -22,11 +30,19 @@
     {
       "id": "sessions",
       "seat": "synthetic-0",
-      "parser": "row_table",
+      "parser": "text_table",
+      "header": "Session-ID      Source                  Destination",
       "fields": [
-        { "name": "name", "pointer": "/name", "role": "residue", "from": "values", "values": [] }
+        {
+          "name": "name",
+          "start": 0,
+          "end": 16,
+          "role": "residue",
+          "from": "values",
+          "values": []
+        }
       ],
-      "empty": { "kind": "header_only", "header": "/header", "rows": "/rows" },
+      "empty": { "kind": "header_only" },
       "cleanups": [
         {
           "residue": "name",
