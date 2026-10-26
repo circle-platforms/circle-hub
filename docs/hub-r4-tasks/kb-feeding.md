@@ -58,6 +58,10 @@
 - **程序填**：只有采集事实（谁、哪次运行、时刻）；不解析内容、不抽关键词。
 - **Circle 回注**（带引文）：`classification`（闭集 = 对象种类加工单、纪要，其余记未分类——决定 62 集成者七项）、逐字引文的段落声明、关系提议。
 
+## 1.6 操作记录（fed-observation@1 / fed-procedure@1 / fed-pitfall@1）
+
+决定 73。这三类经回注槽进入，产出种类是 assertion，结构化内容在 `feeding`。身份只取规范化后的陈述和引文。根据是出处 `client_captured` 的上传原件；版本只取运行锁定的构建或台架结构里的在装构建，模型自报的版本拒收，取不到就记未声明。引文逐字出自该原件。产品读者可读，矛盾只打标，管理员可追加撤回。等级为声明，不进入核验、评分、放行当证据。R[4]、R[5] 对这一类不适用。`basis_rank` 现有四档没有标签「声明」，存储字段因此仍用既有的 `judgment`，证据排除靠记录种类和主张性质，不靠新造一个码。
+
 ## 2. 版本绑定（version-binding@1）
 
 一条绑定是一条主张（B01 形状）：
@@ -97,6 +101,7 @@
 | start_run 绑定的期望来源读取（检查声明 `reads`，6a36255） | 用例（cases.ts / cases-commands.ts / locate.ts）、缺陷（fixed-bugs.ts）按读到即填 |
 | get_nodes 按引用读原件 | 同上 + documents.ts（目录行 → 绑定候选） |
 | upload_file | 自由文本（fed-note@1，声明级可见性） |
+| Circle 工具后钩子上传（出处 client_captured） | 操作记录（fed-observation@1、fed-procedure@1、fed-pitfall@1；等级声明，产品读者可读，不作核验、评分、放行的证据） |
 | 同步里的构建清单（含 APV_PINNED_BUILDS 点名构建） | fed-build@1（sync.ts 已有投影，转喂入层） |
 
 Hub 之外读到的（模型在 Circle 里自己看的）不触发；只有上传才算用到。

@@ -40,7 +40,7 @@ export const quoteInterpreter = defineInterpreter({
             }));
           }
           else if (why === 'not_bound') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的源文件不是这次运行的输入，请改引本运行已绑定的输入（src:<摘要> 或 tree:<锁定根>/<路径>@<条目>）`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
-          else if (why === 'not_groundable') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', '这类记录不能作根据（B01 R[4]），请改引结果、动作或效果记录', { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
+          else if (why === 'not_groundable') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', request.sources?.rule?.(ref) ?? '这类记录不能作根据（B01 R[4]），请改引结果、动作或效果记录', { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'entry_unaddressed') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', '知识条目不能单独作根据（B01 R[5]），请改写为 tree:<根>/<路径>@<条目>', { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'malformed') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', '引用写法不对，请使用 src:<摘要>、tree:<根>/<路径>@<条目> 或 rec:<记录>#/<字段>', { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'no_fragment') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的片段不存在`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
