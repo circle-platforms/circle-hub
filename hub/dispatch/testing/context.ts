@@ -17,7 +17,7 @@ import {probes} from './probes.ts';
 let cluster:Promise<TemporaryPostgres>|undefined;
 after(async()=>{if(cluster)await cluster.then(pg=>pg.stop()).catch(()=>{});});
 
-export async function setup(options: { mode?: string; alter?: (name: string, value: Record<string, unknown>) => Record<string, unknown>; onSubmit?: () => Promise<void>; timeout?: number; ttl?: number; extraTools?: string[]; serverVersion?:()=>string; delay?: Record<string,number> } = {}) {
+export async function setup(options: { mode?: string; alter?: (name: string, value: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>; onSubmit?: () => Promise<void>; timeout?: number; ttl?: number; extraTools?: string[]; serverVersion?:()=>string; delay?: Record<string,number> } = {}) {
   const clock = { ms: Date.parse('2026-10-23T00:00:00.000Z') };
   const now = () => new Date(clock.ms);
   const kit = await openTestRecords({ now, postgres: await (cluster ??= startPostgres()) });

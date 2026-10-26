@@ -132,6 +132,7 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
     s.out('只读诊断范围：第 3 款放行条件；派发时仍须完整重核九款');
     for(const check of report.checks)s.out(JSON.stringify(check));
     for(const row of report.rows){s.out(JSON.stringify({row_sha256:row.row_sha256,applicable:row.applicable}));for(const check of row.checks)s.out(JSON.stringify(check));}
+    for(const gap of report.no_verdict)s.out(`无判定前提 ${gap.premise}；缺事实：${gap.missing_fact}；下一步：${gap.next_action}`);
     s.out(`放行条件满足 ${Number(report.satisfied)}`);return report.satisfied?0:1;
   }
   if (sub === 'conformance' && values.executor && positionals.length === 0) {

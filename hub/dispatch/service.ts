@@ -20,7 +20,7 @@ import type { BuildKnowledge } from './probes.ts';
 import {requestIdentity,sameRequestIdentity} from './request-identity.ts';
 import {PrecheckFactError,precheckFailure} from './precheck-failure.ts';
 import { canRetryRead } from './read-policy.ts';
-import { dynamicDisposition, DISPATCH_QUALIFICATIONS } from './dynamic.ts';
+import { dynamicDisposition, DISPATCH_QUALIFICATIONS, missingOwnershipCertification, ownershipUnmet, unmetPremises } from './dynamic.ts';
 import { judgeBedSurface } from '../../packs/workflow/test-bed/api.ts';
 import {
   againstBaseline,
@@ -140,6 +140,7 @@ export class DispatchService {
     await this.registry.admin(by);const registered=await this.registry.get(executor);
     if(!registered)throw new Error('执行器对你不可用；先用 executor list 核对编号');
     const d=registered.definition;
+    const no_verdict=missingOwnershipCertification(d);
     try{
       const gate=await prepareEffectGate({records:this.options.records,runs:this.options.runs,workflows:this.options.workflows,by,run,executor,definition:d,resolved_digest:registered.resolved_digest,now:this.now});
       const rows=[];
@@ -147,10 +148,10 @@ export class DispatchService {
         const applicable=row.resource_kind==='executor'&&row.action==='submit'&&row.effect_class===gate.context.write.effect_class&&row.trigger===gate.context.trigger;
         const report=await gate.inspectRelease(row);rows.push({row_sha256:releaseDigest(row.id),applicable,checks:report.checks});
       }
-      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:registered.definition.enabled&&rows.some(row=>row.applicable&&row.checks.every(check=>check.satisfied===true)),checks:[{condition:'executor.enabled',label:'执行器已启用',satisfied:d.enabled,fields:[]} as ReleaseCheck,...(!rows.length?[{condition:'release.rows',label:'冻结包声明了效果行',satisfied:false,fields:[]} as ReleaseCheck]:[])],rows};
+      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:registered.definition.enabled&&rows.some(row=>row.applicable&&row.checks.every(check=>check.satisfied===true)),checks:[{condition:'executor.enabled',label:'执行器已启用',satisfied:d.enabled,fields:[]} as ReleaseCheck,...(!rows.length?[{condition:'release.rows',label:'冻结包声明了效果行',satisfied:false,fields:[]} as ReleaseCheck]:[])],rows,no_verdict};
     }catch(error){
       const proof=await inspectInput(by,run,d,this.options.records,this.options.runs,this.options.workflows,this.now());
-      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:false,checks:[...proof.checks,...releaseFailure(error)],rows:[]};
+      return {run_sha256:releaseDigest(run),executor_sha256:releaseDigest(executor),satisfied:false,checks:[...proof.checks,...releaseFailure(error)],rows:[],no_verdict};
     }
   }
   async list(by:Principal,executor:string):Promise<JobStatus[]> {
@@ -1423,6 +1424,8 @@ export class DispatchService {
     if (!options?.execution&&!drift && !this.sameFences(fences, finalHolders)) {
       drift = true; await this.journal.append(binding, 'fencing', 'validate', 'completed', { drift: true,missing_fact:'同一 Hub 租约连续性未证明',next_action:'复用前重新证明基线；当前只读原作业，不重交',expired:finalHolders.some(row=>row.expires_at!==null && Date.parse(row.expires_at)<=this.now().getTime()), note: '结果读取期间租约到期或围栏改变，不能声称保持同一租约' });
     }
+    // Post probes need the remote lease. Heartbeats keep it alive; stopping or releasing first makes later probes fail.
+    const bed = options?.seal === false && !pending ? null : await this.finishBed(binding, d, client, context);
     await stopHeartbeat();
     const leaseInterrupted=options?.execution?(options.execution.lease_interrupted??false):(await this.journal.events(binding.job)).some(e=>e.body.detail.lease_interrupted===true);
     const ownershipCertified = await this.certified(binding,d,client,'result_ownership');
@@ -1440,14 +1443,15 @@ export class DispatchService {
       if(!resolution.check.resolved)try{this.options.adminLog?.({traceId:null,run:binding.input?.run??binding.run??null,what:'result interpretation '+binding.job,detail:JSON.stringify(resolution.check)});}catch{}
       const log = d.result.log ? at(row,d.result.log) : undefined;
       const disposition = dynamicDisposition(reported,{owned:ownership,request:!!d.result.request_id && at(response.value,d.result.request_id) === intent.body.detail.request_id,remote:same(at(response.value,d.result.id),remoteId),digest:at(response.value,d.result.sha256) === input.sha256,complete:complete && Array.isArray(rows) && rows.length === input.items.length,unique:resolution.matches === 1,closed:!!d.result.closing_marker && typeof log === 'string' && log.includes(d.result.closing_marker),device:intent.body.detail.device_identity_proven === true && intent.body.detail.device_lease_digest === digestOfValue([remoteLease.id,remoteLease.token]),continuity:options?.execution?.continuity??(!drift&&!leaseInterrupted)},input.judgments?.length?['conditional_on_judgment']:[]);
-      return {item:id,reported_terminal:reported,...disposition,report_check:resolution.check,...(input.judgments?.length?{judgment_premises:input.judgments}:{}),...(disposition.dynamic_terminal==='no_verdict'?(!resolution.check.resolved?{missing_fact:resolution.check.missing_fact!,next_action:resolution.check.next_action!}:!ownership?ownershipFailure:{missing_fact:'动态完整性事实尚不齐全；见 missing_facts 和下一步'}):{}),limits:disposition.qualifier.marks.map(mark=>labelOf('qualifier_mark',mark))};
+      const gaps=disposition.dynamic_terminal==='no_verdict'?unmetPremises(disposition.missing_facts,ownershipUnmet(ownershipObservation,ownershipFailure)):[];
+      const named=gaps.length?{missing_fact:gaps.map(gap=>gap.missing_fact).join('；'),next_action:gaps.map(gap=>gap.next_action).join('；')}:{missing_fact:'动态完整性事实尚不齐全；见 missing_facts 和下一步',next_action:'管理员按 unmet_premises 补齐所列前提；本结果保留无判定，不重交'};
+      return {item:id,reported_terminal:reported,...disposition,report_check:resolution.check,...(input.judgments?.length?{judgment_premises:input.judgments}:{}),...(disposition.dynamic_terminal==='no_verdict'?{unmet_premises:gaps,...(!resolution.check.resolved?{missing_fact:resolution.check.missing_fact!,next_action:resolution.check.next_action!}:!ownership?ownershipFailure:named)}:{}),limits:disposition.qualifier.marks.map(mark=>labelOf('qualifier_mark',mark))};
     });
     const savedLogs = Array.isArray(rows) ? rows.flatMap(row=>[
       ...(d.result.log && typeof at(row,d.result.log)==='string' ? [String(at(row,d.result.log))] : []),
       ...(d.result.sessions && object(at(row,d.result.sessions)) ? Object.values(at(row,d.result.sessions) as Record<string,unknown>).filter((v):v is string=>typeof v==='string') : []),
     ]) : [];
     const sideEffects = d.side_effects.map(declaration=>declaration.marker ? {message:declaration.message,marker_present:savedLogs.some(log=>log.includes(declaration.marker!)),text:savedLogs.some(log=>log.includes(declaration.marker!))?'本次日志里有这一项的标记':'本次日志里没有这一项的标记',reference:response.source,complete,scope:'只核对本次已保存字节中的标记，不推断动作是否发生'} : {message:declaration.message,text:'运行器会这样做（执行器定义声明，Hub 看不见）',provenance:'declared',definition_sha256:digestOfValue(d)});
-    const bed = options?.seal === false ? null : await this.finishBed(binding, d, client, context);
     if (bed) for (const row of projected) row.limits = [...row.limits, ...bed.limits];
     if (options?.round !== undefined) await this.noteObservedRound(by,binding,d,options.round,projected,complete,pending,!!options.execution);
     if (options?.seal === false&&!pending) return this.status(by, binding.job);
@@ -1540,8 +1544,10 @@ export class DispatchService {
   }
 
   private async sealRounds(by: Principal, binding: JobBinding, d: ExecutorDefinition, client: RpcClient, remote: RemoteLease, stop: () => Promise<void>): Promise<JobStatus> {
-    await stop();
     const events = await this.journal.events(binding.job);
+    const intent = eventOf(events, 'intent');
+    const bed = intent ? await this.finishBed(binding, d, client, { ...this.context(binding), request_id: intent.body.detail.request_id, not_after: intent.body.detail.not_after, lease_id: remote.id, lease_token: remote.token }) : null;
+    await stop();
     const notes = roundRecords(events);
     const carried = [...notes].reverse().find(event => Array.isArray(event.body.detail.rows));
     const input = binding.input!;
@@ -1550,8 +1556,6 @@ export class DispatchService {
     const early = notes.filter(event => event.body.detail.early_stop === true);
     const passed = notes.find(event => event.body.detail.meets === true);
     const sentence = early.length > 0 && passed ? earlyStopSentence(Number(passed.body.detail.round), early.length) : undefined;
-    const intent = eventOf(events, 'intent');
-    const bed = intent ? await this.finishBed(binding, d, client, { ...this.context(binding), request_id: intent.body.detail.request_id, not_after: intent.body.detail.not_after, lease_id: remote.id, lease_token: remote.token }) : null;
     const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected,...(input.judgments?.length?{judgment_premises:input.judgments}:{}), ...(rounds.length ? { rounds } : {}), ...(bed ? { bed_state: bed } : {}) }), mediaType: 'application/json',
       origin: { generated: { generator: 'dispatch@1', inputs: [`src:${input.sha256}`] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false } });
     await this.journal.append(binding, 'result', 'read_back', 'completed', { reference: `src:${artifact.body.sha256}`, items: Array.isArray(projected) ? projected.length : 0 });
