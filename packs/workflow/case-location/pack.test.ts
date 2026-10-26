@@ -69,7 +69,7 @@ describe('the pack files', () => {
       { id: 'candidates', title: '构建候选与写出名核对', function: { module: 'functions/candidates.ts' }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' },
     ]);
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
-    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 2000, 'a short Chinese procedure (it is in every start_run answer)');
+    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 3100, 'a short Chinese procedure (it is in every start_run answer)');
   });
 
   it('declares parameter schemas the engine can enforce (no regular expressions, zod reads them)', () => {

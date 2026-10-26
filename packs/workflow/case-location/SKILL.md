@@ -2,6 +2,22 @@
 
 Hub 按目录树直接算出每份测试脑图（或每个用例）在哪里：产品线、版本、版本线、发布火车、模块、目录和标题里写出的构建名，以及关联的需求和缺陷。不需要你提交结果。
 
+## 知识视图标识
+
+写法是 `knowledge:<视图>:<产品>:<构建>[?参数]`，四段用冒号，参数在问号后。产品按登记的大小写照抄。下面用合成产品 ORBIT、构建 Rel_ORBIT_7_1_0_30，不要写成 orbit，也不要换成别的分隔符。
+
+- facets：`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。必填 kind、by。
+- index：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。必填 kind、key。
+- impact：`knowledge:impact:ORBIT:Rel_ORBIT_7_1_0_29..Rel_ORBIT_7_1_0_30?changed=definition&attached=case`。构建段写成 `<起始>..<目标>`；changed、attached、catalog 可以不写。
+- links：`knowledge:links:ORBIT:Rel_ORBIT_7_1_0_30`。没有必填参数，prefix 默认 /。
+
+三种写错：
+（1）分隔符用了 @。错 `knowledge:facets@ORBIT@Rel_ORBIT_7_1_0_30?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（2）缺构建。错 `knowledge:facets:ORBIT?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（3）参数不全。错 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?key=commands`。对 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。
+
+本包开始运行绑的是敏捷脑图，不绑知识视图。要写知识视图时照上面四条抄。
+
 1. 开始运行：pack 写 case-location；inputs.documents 写要定位的脑图，例如 `[{"external": "agile:mindmap:<文档编号>"}]`。产品线已由任务包绑定，start_run 不用写 product。要对照某个构建时，build 和 version 写在 start_run 顶层，与 pack、inputs 并列，不写进 parameters。一次最多约 40 份（按用例定位时一份）；回答放不下全部条目时，末尾的说明写明略去了哪些条目、用 get_nodes 怎么读（调用和翻页方式），照它读完再转述。
 2. 结果在开始运行时就算好了：每个条目的摘要就是它的定位结论，完整结论在 result.reference 指向的校验结果里，用 get_nodes 读取。运行的“版本依据”是锁定的知识根，不是文档所在的版本。
 3. 原样转述每个条目的结论和置信度，不补全、不猜测：版本的来源（目录、标题、参数）和置信度（高、低）照写；标“参考”的构建日期和 patch 只是参考；“目录版本层自相矛盾”是确定的冲突（提示档），保留每个版本和目录原文，转述整理目录或用 line 声明的下一步；优先报告版本层冲突，说明声明与哪些值一致。“不确定”的条目照说明转述缺的事实和下一步；“与声明矛盾”的条目以目录树给出的结论为准，并说明哪个声明与目录树矛盾。目录是敏捷平台读取时列出的，不是引用的片段。

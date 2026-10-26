@@ -15,6 +15,22 @@
 
 在 `start_run` 成功后，Hub 绑定输入缺陷及相关证据来源：
 0. **开始运行前核实可选手册**：先用锁定构建确定版本线，读取确认手册可用后，inputs.manual 绑定 `{"external":"manual:cli:<运行版本线>"}`，必须与运行版本线一致。没有可用手册就不绑定，只能引用修复说明字段或 fix_notes 里的 comment；不要绑定一个不可读对象导致无说明地结束。收到 manual_missing 后自动核实，能补取时补绑重开运行。自动期望来源不再替你绑定手册。
+## 知识视图标识
+
+写法是 `knowledge:<视图>:<产品>:<构建>[?参数]`，四段用冒号，参数在问号后。产品按登记的大小写照抄。下面用合成产品 ORBIT、构建 Rel_ORBIT_7_1_0_30，不要写成 orbit，也不要换成别的分隔符。
+
+- facets：`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。必填 kind、by。
+- index：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。必填 kind、key。
+- impact：`knowledge:impact:ORBIT:Rel_ORBIT_7_1_0_29..Rel_ORBIT_7_1_0_30?changed=definition&attached=case`。构建段写成 `<起始>..<目标>`；changed、attached、catalog 可以不写。
+- links：`knowledge:links:ORBIT:Rel_ORBIT_7_1_0_30`。没有必填参数，prefix 默认 /。
+
+三种写错：
+（1）分隔符用了 @。错 `knowledge:facets@ORBIT@Rel_ORBIT_7_1_0_30?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（2）缺构建。错 `knowledge:facets:ORBIT?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（3）参数不全。错 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?key=commands`。对 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。
+
+本包的索引用这条：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands&fields=commands,document,node,title,negative,case_structure`。
+
 1. **缺陷记录**（被判对象与期望来源）：读取现象描述与修复说明。修复说明有两处，都来自缺陷 content，不要向用户索取原文，也不要猜字段名或动作码：content.fix_field 非空时引用 `json@1/p/fields/<fix_field>` 的字段原文（字段名由 PLM 资源 settings.bug_fix_field 配置）；或者引用 content.fix_notes 里某条 comment 的原文，路径是 `json@1/p/fix_notes/<该条在数组中的序号>/comment`（动作码由 settings.bug_fix_actions 声明，包已按动作码收好）。两处都没有时运行会拒绝并点名缺的设置，把该说明交给集成者，不要改问用户要修复文字。分析缺陷根因、修复逻辑、涉及的 CLI 命令与期望行为。
 2. **手册与命令目录**（期望来源）：在锁定构建的知识根中查验命令签名、参数类型与取值范围。不熟悉的命令先在命令目录或手册中核实。
 3. **已索引用例**：查验锁定构建已覆盖的用例，避免重复设计。
