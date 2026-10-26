@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ParseEncodingError, ParseLimitError, htmlParser, type HtmlBlock, type HtmlModel } from '../api.ts';
-import { fixture, latin1, timed, utf8 } from '../test-support.ts';
+import { ParseEncodingError, ParseLimitError } from './format.ts';
+import { htmlParser, type HtmlBlock, type HtmlModel } from './html.ts';
+import { fixture, latin1, timed, utf8 } from '../../../../hub/refs/test-support.ts';
 
 const bytes = fixture('listing.html');
 const listing = htmlParser.parse(bytes);

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { RECORD_KINDS } from '../../contracts/generated/protocol.ts';
 import { SandboxError, callPackFunction } from '../rules/api.ts';
-import {htmlParser} from "../refs/api.ts";
+import {htmlParser} from "../testing/parsers.ts";
 import type { ExternalRead, ExternalReadContext } from '../ports.ts';
 import type { Page, SourceArtifact, StoredRecord } from '../records/api.ts';
 import { sha256Hex } from '../records/api.ts';

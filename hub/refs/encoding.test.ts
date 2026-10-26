@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ParseEncodingError, ParseForbiddenError, htmlParser, textParser } from './api.ts';
-import { xmlParser } from '../testing/parsers.ts';
+import { ParseEncodingError, ParseForbiddenError, textParser } from './api.ts';
+import { htmlParser, xmlParser } from '../testing/parsers.ts';
 
 function utf16(text: string, big: boolean): Buffer {
   const body = Buffer.from(text, 'utf16le'); if (big) body.swap16();
