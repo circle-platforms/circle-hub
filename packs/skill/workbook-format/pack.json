@@ -1,0 +1,55 @@
+{
+  "schema": "pack@1",
+  "id": "workbook-format",
+  "version": "1.0.0",
+  "kind": "skill",
+  "title": "工作簿格式",
+  "description": "按原件结构读取 XLSX 工作簿，不承担工作角色判断",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "a6939050bcba23f9e0c16ea679b0458d7fdc1024f7290868b6292c6b1bddf48d",
+      "size": 278
+    },
+    {
+      "path": "functions/format.ts",
+      "sha256": "6301b0027baa598be00f3e103648aaa151407787ed6c932db0a6e70f723b780f",
+      "size": 9644
+    },
+    {
+      "path": "functions/generated/protocol.ts",
+      "sha256": "c834495644e47d2da4a567dbc1f586021c139b8d90dcba447cf9ff723f6233af",
+      "size": 6074
+    },
+    {
+      "path": "functions/parse.ts",
+      "sha256": "d6a30a787159224efec9e0089a4048344135896155be3323fdd3ee43aacd46f1",
+      "size": 2641
+    },
+    {
+      "path": "functions/selectors.ts",
+      "sha256": "4eb68ce5a3893c8fb3d32d146da71180960b9c8b515353132a9520893db05b32",
+      "size": 7836
+    },
+    {
+      "path": "functions/text-decoding.ts",
+      "sha256": "5bb193d6d6f3a492c7230e47bac0df76e2c22b9c310e382bc97ad4241a6076b8",
+      "size": 12517
+    },
+    {
+      "path": "functions/xlsx.ts",
+      "sha256": "9f31e909adecd5ea2a7e23443a7bd22c511d07eb268e9bf8535e347f69ec8d65",
+      "size": 43283
+    },
+    {
+      "path": "functions/xml.ts",
+      "sha256": "aeb4438d3ac3b22d305ecf0cc0d6ef0b9353baa3531b3f99c7651137bb90dbe4",
+      "size": 34383
+    },
+    {
+      "path": "skill.json",
+      "sha256": "a22edce96b118f3d4539004cc1bd44799c298f041e14dca34146aeb59512b1bf",
+      "size": 580
+    }
+  ]
+}

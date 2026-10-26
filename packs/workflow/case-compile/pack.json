@@ -1,11 +1,14 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.7.0",
+  "version": "3.7.1",
   "kind": "workflow",
   "dependencies": [
     {
       "pack": "mindmap-format"
+    },
+    {
+      "pack": "workbook-format"
     }
   ],
   "title": "用例编译",
@@ -338,7 +341,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "a3e9492c26de94cd21b1eed140ac3081e44ea423ceb0573487555322b16c13ec",
+      "sha256": "45c56c02c36a2b426112832b4200ae54b81bd984d9ac3150780c12b5e91558d3",
       "size": 39651
     },
     {
@@ -378,7 +381,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "414b1fbcff27d7525ef2d5b6356e67f0385b671f55b12303769d46c74b572268",
+      "sha256": "b9a8bdddd55ca7affd1effa620dc3d3181ba9319746db1d5733ae6afbdf3d9f7",
       "size": 39655
     },
     {
@@ -453,7 +456,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "0c5ac3471d13cbae2f1fa3a34616a6008f2c571e9d5e01a71aae4e2dc9f6d9ce",
+      "sha256": "d71e49ed7410fa32a1f00734f7af40fa4d267dc53ec580094678355a3c10a719",
       "size": 39605
     },
     {
@@ -493,7 +496,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "264ea1c1edf6fe4bb650c15ecc7a6b03e949e779c63800b45c7a5f45ec9869b0",
+      "sha256": "2dc2c965bc2b7c63f0ba8803a585f23b5169fa0d69045be1a647223a139c0a47",
       "size": 39609
     },
     {
@@ -563,7 +566,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "c0a5b5c62cecd4dd4e60978de9a2c814d856ab2f07e25a89ce9a30dd0e62549b",
+      "sha256": "6c05bcd0a8c479a9eec6121f2b4f253f3bc1e6e4eb0fb9005bab1dd9133b5c36",
       "size": 555
     },
     {

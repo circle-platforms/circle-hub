@@ -12,6 +12,7 @@ import {criterionReviewed} from '../functions/block-expected.ts';
 import {checkExpectedSources} from '../functions/checks.ts';
 import {generateWorkbook} from '../functions/generate.ts';
 import {readWorkbook} from '../functions/workbook.ts';
+import {satisfiedRecipe} from '../tools/generate-workbook.ts';
 import {coreModel} from '../testing/workbook-model.ts';
 import {createCatalogView} from '../../../../hub/rules/api.ts';
 import {fileURLToPath} from 'node:url';
@@ -51,11 +52,12 @@ test('a real independent review binds the original declaration and grounds a blo
   const resultRecord=(await hub.kit.store.find({kind:'validation_result',key:INDEX.resultRun,value:run.run,newestFirst:true})).items[0];
   const revised=await hub.service.startRunDetailed(hub.alice,{pack:'case-compile',product:'widget',build:'Fixture_Build_A',predecessor:author.run,inputs:{subject:{external:'agile:mindmap:block-review'},contract:{external:'doc:doc:block-contract'},profile:{external:'doc:doc:block-profile'},inventory:{external:'doc:doc:block-inventory'},criteria_review:{reference:'rec:'+resultRecord.digest},criteria_review_run:{reference:'rec:'+snapshot.digest}},parameters:{autoid:'SYN-BLOCK-1'}},call());
   assert.equal(revised.answer.call_result,'ok',JSON.stringify(revised.answer.errors));
-  const checked=await hub.service.submitResult(hub.alice,{run:revised.answer.run!.run,model:'synthetic-author',items:[{item:revised.answer.run!.items[0].id,handling:'handled',slots:{plan:[{text:'合成块计划',quotes:[a.quote],data:raw}]}}]},call());assert.equal(checked.acceptance,'accepted',JSON.stringify(checked.errors));
+  const sent={run:revised.answer.run!.run,model:'synthetic-author',items:[{item:revised.answer.run!.items[0].id,handling:'handled' as const,slots:{plan:[{text:'合成块计划',quotes:[a.quote],data:raw}]}}]};
+  const checked=await hub.service.submitResult(hub.alice,sent,call());assert.equal(checked.acceptance,'accepted',JSON.stringify(checked.errors));
   const requirements=Object.values(checked.result!.partitions).flat().flatMap(item=>item.requirements);for(const requirement of requirements.filter(row=>row.requirement!=='workbook_verified'))assert.equal(requirement.status,'satisfied',JSON.stringify(requirement));
   const subject=f.subject(raw,{command_catalog:catalog,expected_nodes:[{reference:location,text:EXPECTED}],criteria_review:evidence}).subject;
   assert.equal(checkExpectedSources({subject} as any)[0].verdict,'support');
-  const recipe={slots:raw,contract:f.contract,profile:f.profile,fields:{...f.fields,expected_nodes:subject.expected_nodes,criteria_review:evidence},plan_run:author.run,build:'SYN_ORBIT_10_8_1'};
+  const recipe=satisfiedRecipe({run:revised.answer,result:checked,submission:sent,contract:Buffer.from(JSON.stringify(f.contractDoc)),profile:Buffer.from(JSON.stringify(f.profileDoc)),inventory:Buffer.from(JSON.stringify(f.inventory))});
   const bytes=generateWorkbook(recipe);assert.ok(readWorkbook(coreModel(bytes),recipe).ok);assert.deepEqual(generateWorkbook(recipe),bytes);
  }finally{await hub?.close();await temp.remove();await postgres.stop();}
 });
