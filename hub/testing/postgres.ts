@@ -63,6 +63,17 @@ function killAll(): void {
 }
 
 const TERMINATING_SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP'] as const;
+let handlingSignal = false;
+
+async function stopAllOnSignal(): Promise<void> {
+  await Promise.allSettled([...running].map(async (instance) => {
+    await stopChild(instance.child);
+    await rm(instance.root, { recursive: true, force: true, maxRetries: 3 });
+    running.delete(instance);
+  }));
+  // Retry only unfinished cleanup, after the bounded child shutdowns have settled.
+  killAll();
+}
 
 function installExitHook(): void {
   if (exitHookInstalled) return;
@@ -73,9 +84,13 @@ function installExitHook(): void {
   process.on('exit', killAll);
   for (const signal of TERMINATING_SIGNALS) {
     process.once(signal, () => {
-      killAll();
-      // Re-raise with the default action, unless the process has its own handler for this signal.
-      if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);
+      if (handlingSignal) return;
+      handlingSignal = true;
+      // A signal handler can wait: stop the postmaster and its children before removing their data directory.
+      // Deleting it immediately races the final filesystem writes on Linux.
+      void stopAllOnSignal().finally(() => {
+        if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);
+      });
     });
   }
 }
