@@ -47,6 +47,27 @@
         ],
         "additionalProperties": false
       }
+    },
+    "inverse_alternatives": {
+      "description": "Pairs of enum alternative values of one signature that are each other's inverse (on/off, enable/disable); decided on the locked tree's declared enum structure, never on free text",
+      "maxItems": 64,
+      "type": "array",
+      "items": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        ],
+        "items": false,
+        "minItems": 2,
+        "maxItems": 2
+      }
     }
   },
   "required": [

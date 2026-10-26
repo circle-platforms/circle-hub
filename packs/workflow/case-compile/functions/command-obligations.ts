@@ -38,12 +38,42 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
  const modifies=(identity:CommandIdentity)=>!policy.read_only.some(prefix=>within(identity.path,prefix));
  const configured=main.filter(operation=>modifies(operation.identity!)).reverse();
  const actual=cleanup.filter(operation=>modifies(operation.identity!));
+ // A signature whose enum alternatives the product declared as inverse pairs (on/off and the like): the inverse of a
+ // value is the paired value of the SAME signature — decided on the locked tree's declared enum members, never by
+ // matching free text. Each configured operation may carry at most one such parameter; anything else keeps the
+ // prefix rules.
+ const alternativeInverse=(identity:CommandIdentity):CommandIdentity|null=>{
+  const pairs=policy.inverse_alternatives??[];
+  if(!pairs.length)return null;
+  const entry=native.find(definition=>definition.path===identity.path);
+  if(!entry)return null;
+  let found:CommandIdentity|null=null;
+  for(const parameter of identity.parameters){
+   const alternatives=entry.signatures.flatMap(signature=>signature.params).find(param=>param.type==='enum'&&Array.isArray(param.values)&&param.values.includes(parameter.raw));
+   if(!alternatives||!Array.isArray(alternatives.values))continue;
+   const pair=pairs.find(([a,b])=>(a===parameter.raw||b===parameter.raw)&&(alternatives.values as string[]).includes(a)&&(alternatives.values as string[]).includes(b));
+   if(!pair)continue;
+   const swapped=pair[1]===parameter.raw?pair[0]:pair[1];
+   if(!(alternatives.values as string[]).includes(swapped))continue;
+   const words=identity.path.split('/').slice(2).map(decodeURIComponent);
+   const line=[...words,...identity.parameters.map(other=>other===parameter?swapped:other.raw)].join(' ');
+   const inverse=identityOf(commandIdentity(grammar,line));
+   if(inverse&&inverse.path===identity.path&&inverse.signature===identity.signature&&found!==null&&identityKey(found)!==identityKey(inverse))return null; // ambiguous: two invertible parameters
+   if(inverse&&inverse.path===identity.path&&inverse.signature===identity.signature)found=inverse;
+  }
+  return found;
+ };
  configured.forEach((operation,index)=>{
   const identity=operation.identity!;
+  const received=actual[index];
+  const alternative=alternativeInverse(identity);
+  if(alternative!==null){
+   if(!received||received.object!==operation.object||identityKey(received.identity!)!==identityKey(alternative))note(operation.pointer,`配置命令 ${identity.path} 缺同设备、逆序的清理操作（声明的枚举互逆：${commandLine(alternative)}）`,'refute',{cleanup_for:operation.pointer,inverse:alternative,missing_count:1});
+   return;
+  }
   const matches=policy.inverse_rules.filter(rule=>within(identity.path,rule.source_prefix)).sort((a,b)=>pathSegments(b.source_prefix)!.length-pathSegments(a.source_prefix)!.length);
   const rule=matches[0];if(!rule||matches[1]&&rule.source_prefix===matches[1].source_prefix){note(operation.pointer,`配置命令 ${identity.path} 缺唯一的产品逆操作规则；下一步由产品包作者补声明后重核`,'unknown');return;}
   const path='/'+[...pathSegments(rule.inverse_prefix)!,...pathSegments(identity.path)!.slice(pathSegments(rule.source_prefix)!.length)].join('/');
-  const received=actual[index];
   if(!received||received.object!==operation.object||received.identity!.path!==path){note(operation.pointer,`配置命令 ${identity.path} 缺同设备、逆序的清理操作 ${path}（清理命令必须由锁定树完整解析）`,'refute',{cleanup_for:operation.pointer,inverse_path:path,missing_count:1});return;}
   const parameters=[...identity.parameters].sort((a,b)=>a.position-b.position);
   const counts=rule.leading_parameters!==undefined?[rule.leading_parameters]:[...new Set(native.filter(definition=>definition.path===path).flatMap(definition=>definition.signatures.flatMap(signature=>Array.from({length:Math.min(signature.params.length,parameters.length)+1},(_,count)=>count))))];

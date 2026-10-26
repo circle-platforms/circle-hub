@@ -1125,7 +1125,9 @@ systems have not been read or validated; the integrator supplies the actual bran
 
 ## 冻结命令规则（command-policy@1）
 
-产品声明 `/commands/show` 为只读观察范围。其余命令的逆操作按声明的树路径映射：`/commands/P` 对应 `/commands/no/P`，反向映射由更具体的 `/commands/no` 规则决定。两条命令都须在锁定树完整解析；不会通过去掉 no 认定一条原本不存在的命令。前导身份参数须由逆签名唯一确定，有歧义时产品作者须补显式 leading_parameters。规则随知识组成和运行冻结；没有可核验逆操作的计划不能放行。
+产品声明 `/commands/show` 为只读观察范围。其余命令的逆操作按声明的树路径映射：`/commands/P` 对应 `/commands/no/P`，反向映射由更具体的 `/commands/no` 规则决定。两条命令都须在锁定树完整解析；不会通过去掉 no 认定一条原本不存在的命令。前导身份参数须由逆签名唯一确定，有歧义时产品作者须补显式 leading_parameters。
+
+开关命令的第二种互逆：`inverse_alternatives` 声明成对互逆的枚举备选（本包声明 `on/off` 与 `enable/disable`）。判定只看锁定树声明的枚举结构——同一签名的枚举参数，其取值与配对成员都在命令树声明的取值闭集里，逆操作就是同一签名换配对值（`demo feature on` 的清理是 `demo feature off`）；不按自由文本或关键词猜。一条命令带两个可互逆参数时按歧义拒绝。没有声明的备选对仍拒绝。规则随知识组成和运行冻结；没有可核验逆操作的计划不能放行。
 
 ### Unterminated delimited blocks
 
