@@ -1,0 +1,23 @@
+{
+  "schema": "skill@1",
+  "parsers": [
+    {
+      "parser": "xlsx@1",
+      "media_types": [
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel.sheet.macroEnabled.12"
+      ],
+      "limits": {
+        "maxBytes": 16777216,
+        "maxDepth": 100,
+        "maxNodes": 1000000,
+        "maxAttributes": 1024
+      },
+      "function": {
+        "module": "functions/parse.ts",
+        "export": "default"
+      },
+      "migration_test": "workbook-format migration equivalence across repository documents"
+    }
+  ]
+}
