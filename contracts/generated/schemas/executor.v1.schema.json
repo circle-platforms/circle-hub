@@ -1378,6 +1378,11 @@
                 "minLength": 1,
                 "maxLength": 80
               },
+              "seat": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
               "call": {
                 "type": "object",
                 "properties": {
@@ -1408,8 +1413,29 @@
                 "additionalProperties": false
               },
               "output": {
+                "default": "/output",
                 "type": "string",
                 "maxLength": 500
+              },
+              "lead": {
+                "default": [],
+                "maxItems": 16,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
+              },
+              "trail": {
+                "default": [],
+                "maxItems": 16,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
               },
               "parser": {
                 "oneOf": [
@@ -1425,6 +1451,10 @@
                         "maxLength": 500
                       },
                       "address": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "manifest_device": {
                         "type": "string",
                         "maxLength": 500
                       },
@@ -1446,7 +1476,6 @@
                       "kind",
                       "rows",
                       "address",
-                      "manifest_devices",
                       "manifest_lists"
                     ],
                     "additionalProperties": false
@@ -1490,6 +1519,10 @@
                           "additionalProperties": false
                         }
                       },
+                      "snapshot_only": {
+                        "default": false,
+                        "type": "boolean"
+                      },
                       "manifest_rows": {
                         "type": "string",
                         "maxLength": 500
@@ -1528,9 +1561,154 @@
                       "rows",
                       "identity",
                       "fields",
-                      "manifest_rows",
-                      "manifest_identity",
-                      "manifest_fields"
+                      "snapshot_only"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "text_table"
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "header": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "columns": {
+                        "default": [],
+                        "maxItems": 16,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 80
+                            },
+                            "start": {
+                              "default": 0,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "end": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cidr": {
+                              "default": false,
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "start",
+                            "cidr"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "address": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "identity": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "fields": {
+                        "minItems": 1,
+                        "maxItems": 16,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 80
+                            },
+                            "pointer": {
+                              "type": "string",
+                              "maxLength": 500
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "pointer"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "snapshot_only": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "manifest_device": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "manifest_devices": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "manifest_lists": {
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      "manifest_rows": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "manifest_identity": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "manifest_fields": {
+                        "minItems": 1,
+                        "maxItems": 16,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 80
+                            },
+                            "pointer": {
+                              "type": "string",
+                              "maxLength": 500
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "pointer"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "columns",
+                      "snapshot_only"
                     ],
                     "additionalProperties": false
                   }
@@ -1561,7 +1739,8 @@
               "id",
               "call",
               "output",
-              "parser",
+              "lead",
+              "trail",
               "cleanup"
             ],
             "additionalProperties": false
@@ -1569,7 +1748,6 @@
         }
       },
       "required": [
-        "bed",
         "items"
       ],
       "additionalProperties": false
