@@ -16,6 +16,7 @@ export const CommandPolicy=z.strictObject({
  schema:z.literal('command-policy@1'),
  read_only:z.array(CommandPrefix).max(64),
  inverse_rules:z.array(z.strictObject({source_prefix:CommandPrefix,inverse_prefix:CommandPrefix,leading_parameters:z.number().int().min(0).max(128).optional().describe('When absent, require a unique inverse formed by a leading parameter count accepted by the locked inverse signature')})).max(64),
+ inverse_alternatives:z.array(z.tuple([z.string().regex(/\S/),z.string().regex(/\S/)])).max(64).optional().describe('Pairs of enum alternative values of one signature that are each other\'s inverse (on/off, enable/disable); decided on the locked tree\'s declared enum structure, never on free text'),
 });
 export type CommandPolicy=z.infer<typeof CommandPolicy>;
 

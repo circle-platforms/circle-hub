@@ -100,7 +100,7 @@
       ]
     }
   ],
-  "command_policy": {"schema": "command-policy@1", "read_only": ["/commands/show"], "inverse_rules": [{"source_prefix": "/commands/no", "inverse_prefix": "/commands"}, {"source_prefix": "/commands", "inverse_prefix": "/commands/no"}]},
+  "command_policy": {"schema": "command-policy@1", "read_only": ["/commands/show"], "inverse_rules": [{"source_prefix": "/commands/no", "inverse_prefix": "/commands"}, {"source_prefix": "/commands", "inverse_prefix": "/commands/no"}], "inverse_alternatives": [["on", "off"], ["enable", "disable"]]},
   "catalogs": [
     {
       "id": "commands@1",

@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.4.4",
+  "version": "3.4.5",
   "kind": "workflow",
   "title": "用例编译",
   "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、类型化参数与效果授权、台架与血缘地址、地址替换及逐字期望（期望也可逐字取自本次运行冻结的已受理判据声明，其引文在本次边界上重核）。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
@@ -108,13 +108,13 @@
     },
     {
       "path": "functions/command-obligations.ts",
-      "sha256": "2f9d1e33424f0949afebe7846bfd2b4da1bf54fbff2af48209557f36e1ffd84b",
-      "size": 7470
+      "sha256": "ffad41b134b303903fb703567fa4382cdd1df4e159594de33b38311053788a30",
+      "size": 10706
     },
     {
       "path": "functions/command-policy.ts",
-      "sha256": "ef5694790e3e6779ac40e7bb5e9ae7fb2370f1a0bea73e20f193e358efa5edaa",
-      "size": 2244
+      "sha256": "b5d17c63418628078725f7fb7a4467f5f273c6f43792f25a6190b5ef4d96e3e9",
+      "size": 2959
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -263,7 +263,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "11b437ca2213741c1b601fed0cf6f07f63bc5b9ee365cc6f9dc9a4c1f5e68582",
+      "sha256": "52bf6e4ef4749b41a44f9cb53917722cc0e7e446d957906bc10833e71f7a89be",
       "size": 39656
     },
     {
@@ -303,7 +303,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "3296934e9e198a61bdf586c3f19027b44ee7b78d0d902cf9d7ecfe3a59d50053",
+      "sha256": "a3d03acaf1e848938e62fdf9934e93add98a2595c4728f5d34408e15dd82e365",
       "size": 39660
     },
     {
@@ -333,7 +333,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "6f744c67f2450ba003132a8b6999a120de0e084e4046fe6c33c3a21e3b121c4d",
+      "sha256": "ab17a1c4fda0fae85cd2242e6baec06842d05ce239c99db1c48870411124176c",
       "size": 39610
     },
     {
@@ -373,7 +373,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "1abb549aed2bc443bbbcd497b3e1baf14575103259f77c02446893e66aad7fc0",
+      "sha256": "e40863dd74f04cff3470a71e087ef083c44e88d7e054a0db746d8ec094b84b2d",
       "size": 39614
     },
     {
@@ -433,7 +433,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "570db2a37ddcf3ea2753022bd4bdf5035d03b45c9ff901886f7bbff993227f63",
+      "sha256": "ddfd5ae790487e4ecd31df46ea1c2b271a9fb82b110f65354316a0882491baa9",
       "size": 555
     },
     {

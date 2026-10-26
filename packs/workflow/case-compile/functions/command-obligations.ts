@@ -38,12 +38,47 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
  const modifies=(identity:CommandIdentity)=>!policy.read_only.some(prefix=>within(identity.path,prefix));
  const configured=main.filter(operation=>modifies(operation.identity!)).reverse();
  const actual=cleanup.filter(operation=>modifies(operation.identity!));
+ // A signature whose enum alternatives the product declared as inverse pairs (on/off and the like): the inverse of a
+ // value is the paired value of the SAME signature — decided on the locked tree's declared enum members, never by
+ // matching free text. Multiple inverse positions or a non-unique target stay unknown; only an absent enum rule
+ // falls back to the declared prefix rules.
+ const alternativeInverses=(identity:CommandIdentity,received:CommandIdentity|undefined):{identities:CommandIdentity[];ambiguous:boolean}=>{
+  const pairs=policy.inverse_alternatives??[];
+  if(!pairs.length)return {identities:[],ambiguous:false};
+  const signatures=native.filter(definition=>definition.path===identity.path).flatMap(definition=>definition.signatures).filter(signature=>signature.reference===identity.signature);
+  if(!signatures.length||signatures.some(signature=>JSON.stringify(signature.params)!==JSON.stringify(signatures[0].params)))return {identities:[],ambiguous:true};
+  const inverses=new Map<string,CommandIdentity>();let unrepresentable=false;
+  for(const parameter of identity.parameters){
+   const declared=signatures[0].params[parameter.position];
+   if(declared?.type!=='enum'||!Array.isArray(declared.values)||parameter.parsed.kind!=='text')continue;
+   const value=parameter.parsed.value;
+   const pair=pairs.find(([a,b])=>(a===value||b===value)&&declared.values!.includes(a)&&declared.values!.includes(b));
+   if(!pair)continue;
+   const swapped=pair[0]===value?pair[1]:pair[0];
+   const supplied=received?.parameters.find(p=>p.position===parameter.position);
+   const tokens=commandTokens(swapped);
+   const quoted='\"'+swapped.replaceAll('\\','\\\\').replaceAll('\"','\\\"')+'\"';
+   const raw=supplied?.parsed.kind==='text'&&supplied.parsed.value===swapped?supplied.raw:tokens?.length===1&&tokens[0].value===swapped?swapped:quoted;
+   const words=identity.path.split('/').slice(2).map(decodeURIComponent);
+   const line=[...words,...identity.parameters.map(other=>{if(other===parameter)return raw;const same=received?.parameters.find(p=>p.position===other.position&&JSON.stringify(p.parsed)===JSON.stringify(other.parsed));return same?.raw??other.raw;})].join(' ');
+   const inverse=identityOf(commandIdentity(grammar,line));
+   if(inverse&&inverse.path===identity.path&&inverse.signature===identity.signature)inverses.set(identityKey(inverse),inverse);else unrepresentable=true;
+  }
+  return {identities:[...inverses.values()],ambiguous:unrepresentable||inverses.size>1};
+ };
  configured.forEach((operation,index)=>{
   const identity=operation.identity!;
+  const received=actual[index];
+  const alternatives=alternativeInverses(identity,received?.identity??undefined);
+  if(alternatives.ambiguous){note(operation.pointer,'声明的枚举互逆不能在同一签名中得到唯一完整身份；下一步由产品包作者修正互逆声明或命令树后重核','unknown');return;}
+  const alternative=alternatives.identities[0];
+  if(alternative!==undefined){
+   if(!received||received.object!==operation.object||identityKey(received.identity!)!==identityKey(alternative))note(operation.pointer,`配置命令 ${identity.path} 缺同设备、逆序的清理操作（声明的枚举互逆：${commandLine(alternative)}）`,'refute',{cleanup_for:operation.pointer,inverse:alternative,missing_count:1});
+   return;
+  }
   const matches=policy.inverse_rules.filter(rule=>within(identity.path,rule.source_prefix)).sort((a,b)=>pathSegments(b.source_prefix)!.length-pathSegments(a.source_prefix)!.length);
   const rule=matches[0];if(!rule||matches[1]&&rule.source_prefix===matches[1].source_prefix){note(operation.pointer,`配置命令 ${identity.path} 缺唯一的产品逆操作规则；下一步由产品包作者补声明后重核`,'unknown');return;}
   const path='/'+[...pathSegments(rule.inverse_prefix)!,...pathSegments(identity.path)!.slice(pathSegments(rule.source_prefix)!.length)].join('/');
-  const received=actual[index];
   if(!received||received.object!==operation.object||received.identity!.path!==path){note(operation.pointer,`配置命令 ${identity.path} 缺同设备、逆序的清理操作 ${path}（清理命令必须由锁定树完整解析）`,'refute',{cleanup_for:operation.pointer,inverse_path:path,missing_count:1});return;}
   const parameters=[...identity.parameters].sort((a,b)=>a.position-b.position);
   const counts=rule.leading_parameters!==undefined?[rule.leading_parameters]:[...new Set(native.filter(definition=>definition.path===path).flatMap(definition=>definition.signatures.flatMap(signature=>Array.from({length:Math.min(signature.params.length,parameters.length)+1},(_,count)=>count))))];

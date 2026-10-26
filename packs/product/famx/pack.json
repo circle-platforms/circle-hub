@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "famx",
-  "version": "1.7.29",
+  "version": "1.7.30",
   "kind": "product",
   "title": "FAMX / FAMY（产品包）",
   "description": "FAMX 与 FAMY 是同一个产品的两个名字：构建站同步（两族名字、每个版本线）、敏捷平台用例文档的清单、选构建规则、命令目录与命令树、手册的知识生产器（用例、缺陷、规格按 10-24 修订由 Circle 喂入，不再整批生产）",
@@ -238,8 +238,8 @@
     },
     {
       "path": "product.json",
-      "sha256": "379250b4a7476d4ec66596dae96aceea789b478ad775ab1e50c0e215a5abf250",
-      "size": 13433
+      "sha256": "130f1800c40e5e1fe9719856fe1202a52bbb500cac643e3295cf2a73ffa0666c",
+      "size": 13497
     },
     {
       "path": "tables/bed-surface.json",

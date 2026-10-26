@@ -1143,3 +1143,12 @@ block stays literal; example contents stay reference-only. No author intent or m
 messages and NUL/table-cell diagnostics remain visible alongside these recovery records. A missing verifiable recovery
 range or an unrelated ERROR/FATAL still refuses the group. Synthetic tests cover bounded and file-end recoveries, nested
 blocks, cross-file source positions, unchanged failure severity, restored observation hooks and byte-identical reruns.
+
+### Declared inverse enum alternatives
+
+`command_policy.inverse_alternatives` declares exact pairs such as on/off and enable/disable. A pair applies only
+to an enum at its parameter position in the command's matched signature, with both values in that enum's closed set.
+The paired command must fully parse back to the same signature. Other parameter values, device identity and reverse
+cleanup order stay fixed; valid quoting is read through the existing command grammar. Conflicting pair declarations,
+multiple invertible parameters or a non-unique paired target remain unknown with an author repair action. They cannot
+fall through to a guessed prefix inverse. Ordinary declared prefix rules remain available when no enum rule applies.
