@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { canonicalBytes } from '../records/api.ts';
-import { againstBaseline, bedName, parseBaseline, parseReply, captureText, lineDiff, type BedItem } from './bed-state.ts';
+import { againstBaseline, bedName, parseBaseline, parseReply, captureText, lineDiff, toCIDR, type BedItem } from './bed-state.ts';
 import { ExecutorDefinition } from './definition.ts';
 import { definition } from './testing/definition.ts';
 import { setup } from './testing/context.ts';
@@ -34,6 +34,16 @@ const bed = { name: 'bed-a', devices: [{ ipv4: ['192.0.2.1/24', '192.0.2.2/24'],
 const cleanAddress = { rows: [{ address: '192.0.2.2/24' }, { address: '192.0.2.1/24' }], note: '残留 synthetic-clear-addresses' };
 const cleanConfig = { rows: [{ id: 'pool', mode: 'off', comment: '未恢复' }] };
 const dirtyAddress = { rows: [{ address: '192.0.2.1/24' }, { address: '192.0.2.2/24' }, { address: '192.0.2.9/24' }] };
+
+test('an IPv6 address and a prefix length normalize like a slash prefix, and IPv4 masks stay put', () => {
+  assert.equal(toCIDR('2001:db8::70 64'), toCIDR('2001:db8::70/64'));
+  assert.equal(toCIDR('2001:db8::70 64'), '2001:db8::70/64');
+  assert.equal(toCIDR('2001:db8::70 129'), null);
+  assert.equal(toCIDR('2001:db8::70 6a'), null);
+  assert.equal(toCIDR('192.0.2.1 64'), null);
+  assert.equal(toCIDR('192.0.2.1/24'), '192.0.2.1/24');
+  assert.equal(toCIDR('192.0.2.1 255.255.255.0'), '192.0.2.1/24');
+});
 
 test('snapshot comparison uses the declared parser and ignores neighbouring text', () => {
   const addresses = parseReply(addressItem as BedItem, cleanAddress);

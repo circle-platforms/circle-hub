@@ -186,8 +186,26 @@ export function toCIDR(value: string): string | null {
         }
       }
     }
+    if (family === 6) {
+      const bits = prefixBits(mask, 128);
+      if (bits === null) return null;
+      return interfaceKey(`${ip}/${bits}`);
+    }
   }
   return null;
+}
+
+/** Decimal prefix length 0..max, or null. Two tokens only; this does not interpret the rest of a line. */
+function prefixBits(text: string, max: number): number | null {
+  if (text.length < 1 || text.length > 3) return null;
+  let bits = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 48 || code > 57) return null;
+    bits = bits * 10 + (code - 48);
+  }
+  if (bits > max) return null;
+  return bits;
 }
 
 function addressSet(rows: unknown, address: string): string[] | null {
