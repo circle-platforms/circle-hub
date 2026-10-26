@@ -24,6 +24,8 @@ export interface SourceView {
   /** Generated fragment grade: permanent scope/syntax/groundability/selector/size defects refute;
    * retain_only and unavailable preserve the missing fact and recovery step. Absent on a plain view. */
   why?(reference: string): FragmentRead;
+  /** A named rule when the fragment is refused as evidence, such as a declaration-grade operation record. */
+  rule?(reference: string): string | undefined;
   /** Structured registered read reason and recovery facts, independent of legacy rendering grades. */
   unread?(reference: string): FragmentReadFailure | undefined;
 }
