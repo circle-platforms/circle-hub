@@ -851,6 +851,8 @@ export async function main(args: string[], root: string = REPO_ROOT): Promise<nu
   const protocolContent=HEADER+'export const PROTOCOL_CODES = '+JSON.stringify(Object.fromEntries(skillProtocolModel.formatProposals.protocolCodes.map(code=>[code.code,{when:code.when,fix:code.fix}])),null,2)+' as const;\nexport type ProtocolCode = keyof typeof PROTOCOL_CODES;\n';
   packFiles['packs/skill/mindmap-format/functions/generated/protocol.ts']=protocolContent;
   packFiles['packs/skill/workbook-format/functions/generated/protocol.ts']=protocolContent;
+  packFiles['packs/skill/xml-format/functions/generated/protocol.ts']=protocolContent;
+  packFiles['packs/skill/html-format/functions/generated/protocol.ts']=protocolContent;
   if(files['command-grammar.ts'])for(const pack of ['packs/product/apv','packs/workflow/case-compile'])packFiles[pack+'/functions/generated/command-grammar.ts']=files['command-grammar.ts'].replaceAll("from '../src/tables.ts'","from '../../../../../contracts/src/tables.ts'").replaceAll("from './vocabulary.ts'","from '../../../../../contracts/generated/vocabulary.ts'").replaceAll("import('./shared-interfaces.ts')","import('../../../../../contracts/generated/shared-interfaces.ts')");
   if(files['schemas/contribution-input.v1.schema.json']){
     const schema=JSON.parse(files['schemas/contribution-input.v1.schema.json']);

@@ -335,3 +335,33 @@ export function decodeXmlText(bytes: Uint8Array, mediaType: string | undefined):
   const charset = detectXmlCharset(bytes, mediaType);
   return decodeEncoding('xml@1', bytes, charset).text;
 }
+
+function metaCharset(bytes: Uint8Array): string | null {
+  const head = Buffer.from(bytes.buffer, bytes.byteOffset, Math.min(1024, bytes.byteLength)).toString('latin1');
+  const match = /<meta\b[^>]*?\bcharset[ \t\n\f\r]*=[ \t\n\f\r]*["']?[ \t\n\f\r]*([A-Za-z0-9._:-]+)/i.exec(head);
+  return match ? match[1].toLowerCase() : null;
+}
+
+/** The decoded text of HTML bytes, by the same charset rules as html@1 (the whole-file text of an HTML source). */
+export function decodeHtmlText(bytes: Uint8Array, mediaType: string | undefined): string {
+  const marker = bomCharset(bytes);
+  if (marker) return decodeEncoding('html@1', bytes, marker).text;
+  const parameter = mediaTypeCharset(mediaType);
+  let label = parameter ?? metaCharset(bytes) ?? (isUtf8(bytes) ? 'utf-8' : 'windows-1252');
+  if (parameter === null && label.startsWith('utf-16')) label = 'utf-8';
+  if (isUtf8Label(label)) {
+    return decodeUtf8('html@1', bytes).text;
+  }
+  if (isWindows1252Label(label)) {
+    return decodeSingleByte('html@1', bytes, 'windows-1252').text;
+  }
+  const legacy = legacyCharset(label);
+  if (legacy) return decodeEncoding('html@1', bytes, legacy).text;
+  let decoder: TextDecoder;
+  try {
+    decoder = new TextDecoder(label);
+  } catch {
+    throw new ParseEncodingError('html@1', parameter === null ? 'HTML <meta> 声明了不支持的字符编码' : 'HTML 媒体类型 charset 声明了不支持的字符编码', null, label);
+  }
+  return decoder.decode(bytes);
+}

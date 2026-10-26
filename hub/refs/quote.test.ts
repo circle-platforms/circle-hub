@@ -1,9 +1,9 @@
-import { kityminderParser, xmlParser } from '../testing/parsers.ts';
+import { htmlParser, kityminderParser, xmlParser } from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import {
-  candidatesFrom, collapseWhitespace, findQuote, htmlParser, jsonParser, locateQuote, markdownParser, quoteMatches, sliceUtf8, textParser, type Parser, type QuoteCandidate, type QuoteSearch } from './api.ts';
+  candidatesFrom, collapseWhitespace, findQuote, jsonParser, locateQuote, markdownParser, quoteMatches, sliceUtf8, textParser, type Parser, type QuoteCandidate, type QuoteSearch } from './api.ts';
 import { fixture, seeded, sha256, timed, utf8 } from './test-support.ts';
 
 const FRAGMENT = '超时时间设为 0 时，配置被拒绝。\r\n提示：参数超出范围 1-3600（Timeout）。';

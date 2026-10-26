@@ -93,7 +93,7 @@ before(async () => {
   packs = createPacksPort(registry);
   agile = await startAgileStub(caseIndexAgileOptions(corpus));
   buildSite = await startBuildSiteStub(site());
-  connectors = createConnectors({ records: kit, packs, log: () => undefined, sandbox: { requireOsIsolation: isolation }, resourceCacheMs: 0, now });
+  connectors = createConnectors({ records: kit, packs, parsers: createDefaultRegistry(), log: () => undefined, sandbox: { requireOsIsolation: isolation }, resourceCacheMs: 0, now });
   const resource = await addSyntheticResource(kit, packs, connectors, admin, {
     system_pack: 'agile-platform',
     name: '合成敏捷平台',
