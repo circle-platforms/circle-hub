@@ -2,6 +2,25 @@
 
 Hub 按两个构建的影响视图直接算出回归范围：后一构建里，放在新增或修改路径上的用例。不需要你提交结果。范围不是缺陷，没有不通过。
 
+## 知识视图标识
+
+写法是 `knowledge:<视图>:<产品>:<构建>[?参数]`，四段用冒号，参数在问号后。产品按登记的大小写照抄。下面用合成产品 ORBIT、构建 Rel_ORBIT_7_1_0_30，不要写成 orbit，也不要换成别的分隔符。
+
+- facets：`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。必填 kind、by。
+- index：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。必填 kind、key。
+- impact：`knowledge:impact:ORBIT:Rel_ORBIT_7_1_0_29..Rel_ORBIT_7_1_0_30?changed=definition&attached=case`。构建段写成 `<起始>..<目标>`；changed、attached、catalog 可以不写。
+- links：`knowledge:links:ORBIT:Rel_ORBIT_7_1_0_30`。没有必填参数，prefix 默认 /。
+
+三种写错：
+（1）分隔符用了 @。错 `knowledge:facets@ORBIT@Rel_ORBIT_7_1_0_30?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（2）缺构建。错 `knowledge:facets:ORBIT?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（3）参数不全。错 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?key=commands`。对 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。
+
+本包照抄（目标构建 Rel_ORBIT_7_1_0_30，起始构建 Rel_ORBIT_7_1_0_29）：
+`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`
+`knowledge:impact:ORBIT:Rel_ORBIT_7_1_0_29..Rel_ORBIT_7_1_0_30?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1`
+`knowledge:impact:ORBIT:Rel_ORBIT_7_1_0_29..Rel_ORBIT_7_1_0_30?changed=behaviour`
+
 1. 开始运行时必须在 inputs.facets 绑定 `{"external":"knowledge:facets:<产品>:<目标构建>?kind=case&by=commands"}`，与 impact 的目标根相同。分面截断会拒绝启动：自动读取该视图 notes 和根引用，将原因报告当前用户供集成者定位预算或来源排除问题；同一根重复读取不会完整，不自动重试。待修复或不会截断的汇总接口可用、取得完整输入后继续启动。开始运行：pack 写 regression-scope；inputs.impact 绑定一个影响视图，例如 `{"external":"knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1"}`（必须带 changed=definition：范围只按命令定义的变化算；catalog=commands@1 把变更限定到命令目录的成员按语法比，手册说明的改动不算；附着的用例条目只带这五个字段，大版本差也放得下）。视图没写目录时结论里会有一句提示：只按种类比，可能混进其他生产器的条目。要看手册说明的变化，另在 inputs.behaviour 绑同一对构建的 `changed=behaviour` 视图：它只作线索写在结论里，不进范围。这个任务包不绑定产品线：不要写 product、version、build（顶层和 parameters 都不要）。
 2. 结果在开始运行时就算好了。每个条目是一条范围内的用例，摘要给出优先级、文档、变更的命令数和第一条原因的结论（新增命令、删除命令、命令定义有变更或仅说明文字有变更——手册里已有说明的新命令不会再被写成“修改”）。完整结论在 result.reference 指向的校验结果里，用 get_nodes 按这个 rec: 引用读取。条目多时照回答末尾的说明翻页。
 3. 原样转述每条结论，不补全、不猜测。范围内的用例是支持（事实）。变更路径上没有用例的，记为未知（缺输入），写在跨条目结论里，不是失败：用例索引本来就不完整。后一构建的索引缺少列出的文档时，照结论里的句数转述，未覆盖的路径可能是用例没有被读到。

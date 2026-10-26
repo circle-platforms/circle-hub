@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-location",
-  "version": "1.4.10",
+  "version": "1.4.11",
   "kind": "workflow",
   "dependencies": [
     {
@@ -13,8 +13,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "194368959e609ef9ded0b81e7e6e1e8ce7f48464ec9a0ff2f84512355a9b15e2",
-      "size": 4825
+      "sha256": "158d85d06215198cfa57a8b3b5d56bfe761f45dfa878cdf6fe5790cdbe769658",
+      "size": 6183
     },
     {
       "path": "checks.json",
