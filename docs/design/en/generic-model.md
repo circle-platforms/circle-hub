@@ -67,7 +67,7 @@ Every vocabulary axis is a closed set (list them all with `node tools/show-eleme
 |---|---|
 | `nature` | `fact`, `judgment`, `unknown` |
 | `basis_rank` | `rule_over_observation` > `rule_over_claims` > `judgment` > `relay` |
-| `provenance_type` | `observed`, `projected`, `declared`, `candidate` |
+| `provenance_type` | `observed`, `projected`, `declared`, `candidate`, `client_captured` |
 | `static_terminal` | `pass`, `violation`, `judgment`, `unchecked`, `incomplete` |
 | `dynamic_terminal` | `pass`, `fail`, `no_verdict`, `not_run`, `incomplete` |
 | `requirement_status` | `satisfied`, `unsatisfied`, `pending` |
