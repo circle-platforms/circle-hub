@@ -46,22 +46,39 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
   const pairs=policy.inverse_alternatives??[];
   if(!pairs.length)return null;
   const entry=native.find(definition=>definition.path===identity.path);
-  if(!entry)return null;
-  let found:CommandIdentity|null=null;
-  for(const parameter of identity.parameters){
-   const alternatives=entry.signatures.flatMap(signature=>signature.params).find(param=>param.type==='enum'&&Array.isArray(param.values)&&param.values.includes(parameter.raw));
-   if(!alternatives||!Array.isArray(alternatives.values))continue;
-   const pair=pairs.find(([a,b])=>(a===parameter.raw||b===parameter.raw)&&(alternatives.values as string[]).includes(a)&&(alternatives.values as string[]).includes(b));
-   if(!pair)continue;
-   const swapped=pair[1]===parameter.raw?pair[0]:pair[1];
-   if(!(alternatives.values as string[]).includes(swapped))continue;
-   const words=identity.path.split('/').slice(2).map(decodeURIComponent);
-   const line=[...words,...identity.parameters.map(other=>other===parameter?swapped:other.raw)].join(' ');
-   const inverse=identityOf(commandIdentity(grammar,line));
-   if(inverse&&inverse.path===identity.path&&inverse.signature===identity.signature&&found!==null&&identityKey(found)!==identityKey(inverse))return null; // ambiguous: two invertible parameters
-   if(inverse&&inverse.path===identity.path&&inverse.signature===identity.signature)found=inverse;
+  if(entry){
+   // Same-signature enum alternatives (demo feature on/off as one parameter): the inverse swaps the paired value.
+   let found:CommandIdentity|null=null;
+   for(const parameter of identity.parameters){
+    const alternatives=entry.signatures.flatMap(signature=>signature.params).find(param=>param.type==='enum'&&Array.isArray(param.values)&&param.values.includes(parameter.raw));
+    if(!alternatives||!Array.isArray(alternatives.values))continue;
+    const pair=pairs.find(([a,b])=>(a===parameter.raw||b===parameter.raw)&&(alternatives.values as string[]).includes(a)&&(alternatives.values as string[]).includes(b));
+    if(!pair)continue;
+    const swapped=pair[1]===parameter.raw?pair[0]:pair[1];
+    if(!(alternatives.values as string[]).includes(swapped))continue;
+    const words=identity.path.split('/').slice(2).map(decodeURIComponent);
+    const line=[...words,...identity.parameters.map(other=>other===parameter?swapped:other.raw)].join(' ');
+    const inverse=identityOf(commandIdentity(grammar,line));
+    if(inverse&&inverse.path===identity.path&&inverse.signature===identity.signature&&found!==null&&identityKey(found)!==identityKey(inverse))return null; // ambiguous: two invertible parameters
+    if(inverse&&inverse.path===identity.path&&inverse.signature===identity.signature)found=inverse;
+   }
+   if(found!==null)return found;
   }
-  return found;
+  // Sibling leaf paths (demo feature on and demo feature off as two leaves of one parent): the leaf's last segment is
+  // a declared pair member and the sibling leaf of the paired member exists on the locked tree; the inverse is that
+  // sibling with the same bound parameters. No word lists or text matching — exact last-segment equality only.
+  const segments=identity.path.split('/');
+  const leaf=decodeURIComponent(segments.at(-1)!);
+  const pair=pairs.find(([a,b])=>a===leaf||b===leaf);
+  if(!pair)return null;
+  const sibling=pair[1]===leaf?pair[0]:pair[1];
+  const parent=segments.slice(0,-1).join('/');
+  const siblingPath=parent+'/'+encodeURIComponent(sibling);
+  if(!native.some(definition=>definition.path===siblingPath))return null;
+  const words=siblingPath.split('/').slice(2).map(decodeURIComponent);
+  const line=[...words,...identity.parameters.map(parameter=>parameter.raw)].join(' ');
+  const inverse=identityOf(commandIdentity(grammar,line));
+  return inverse&&inverse.path===siblingPath?inverse:null;
  };
  configured.forEach((operation,index)=>{
   const identity=operation.identity!;

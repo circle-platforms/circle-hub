@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.5.0",
+  "version": "3.6.0",
   "kind": "workflow",
   "title": "用例编译",
   "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、类型化参数与效果授权、台架与血缘地址、地址替换及逐字期望（期望也可逐字取自本次运行冻结的已受理判据声明，其引文在本次边界上重核）。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
@@ -83,8 +83,8 @@
     },
     {
       "path": "functions/bed.ts",
-      "sha256": "33827abc7db58c1c8b42f4b2b99904787e84d232e3d8abdf384bacfe2258646c",
-      "size": 8140
+      "sha256": "61b6a60f6f2bc73d6243d033e1c46cb11a47d9b88bd1cb088aaa446e8d649784",
+      "size": 8751
     },
     {
       "path": "functions/binding.ts",
@@ -103,13 +103,13 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "a8d9cd8dc68c2b0cc64324f9736aad87c149d6f36860f0559307f4c8cdfd3910",
-      "size": 21217
+      "sha256": "10debd7aa62412e66fab275837dfbd30804b874ecdbc1fc122048b0fd859fda2",
+      "size": 21324
     },
     {
       "path": "functions/command-obligations.ts",
-      "sha256": "c9f487a8c432efeac7167ac1afe847625a3a3810f203896410cd386882814f0e",
-      "size": 9725
+      "sha256": "909337deca26f69109639d973462d7cba05ff9a50b229c1c5292bd563b59419d",
+      "size": 10891
     },
     {
       "path": "functions/command-policy.ts",
@@ -158,8 +158,8 @@
     },
     {
       "path": "functions/profile.ts",
-      "sha256": "0812cb5e6c0232d2dc8b3ff05521942a5f435dd8b171d730987472c4b62b6dae",
-      "size": 15608
+      "sha256": "7dc5715324243ecc25c12a176475ed6e59fcdf14a791ffff79eaf029b3ef8349",
+      "size": 16279
     },
     {
       "path": "functions/project.ts",
@@ -263,7 +263,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "cbf26bc7263a4026634cbf26e81d23a3c03ab19c9281e9287c31c9d7eb521ce0",
+      "sha256": "b39dff710727d3efa62f5a0bd145a49becde6daad74226af704007f4a11f6663",
       "size": 39651
     },
     {
@@ -303,7 +303,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "30703c6aaf74190b9b3292638accbd9bdc1b72f45a98822195224ca3c1e7f685",
+      "sha256": "f2e85e72f41def22a79b4bb5a03f426028e12e6811604f343c033be82f59cfbb",
       "size": 39655
     },
     {
@@ -333,7 +333,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "f0ff6d189a12f0e6c35d7f0155b22d8a4e790cf3311351f9e6483247d38c5ecc",
+      "sha256": "39ad51e3ea1b2b901b057b595772d603e4137d2b67adbed1ac3d1b87d03b2c08",
       "size": 39605
     },
     {
@@ -373,7 +373,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "483acf5e75176724a366251ef8769654e4c156feaed1d68765757969c61f858e",
+      "sha256": "8dd768e852ad66552a0425f067cb5c388b8ca3db0af6c14322073f4a2b910a05",
       "size": 39609
     },
     {
@@ -423,8 +423,8 @@
     },
     {
       "path": "tables/runtime-profile-format.json",
-      "sha256": "5f8da985d2e0fd53daed38c63534a379a7e398414c30c4e230f47cbf3903cfb3",
-      "size": 814
+      "sha256": "91c0b960bab6bde5fd2b2dee3e69f0954ff95f97c6f9b358cbe97a22776f4b5d",
+      "size": 1178
     },
     {
       "path": "tables/typed-address.schema.json",
@@ -433,7 +433,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "15a4d49bbecc6e7f79194b836bf5dc82f695697d71c5f7533a87cb6e8ff17bb6",
+      "sha256": "37cf935eb3a2c0be48b24e98f822fe38c03985cb4f5e5dfc33fe6df591ce86c8",
       "size": 555
     },
     {

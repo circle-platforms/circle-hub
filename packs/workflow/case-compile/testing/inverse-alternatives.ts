@@ -10,13 +10,19 @@ export const policy = {
   schema: 'command-policy@1',
   read_only: ['/commands/show'],
   inverse_rules: [{ source_prefix: '/commands/demo/pool', inverse_prefix: '/commands/no/demo/pool', leading_parameters: 1 }],
-  inverse_alternatives: [['on', 'off']],
+  inverse_alternatives: [['on', 'off'], ['enable', 'disable']],
 };
 const specs = [
   { words: ['demo', 'pool', 'add'], types: ['string', 'int'] },
   { words: ['no', 'demo', 'pool', 'add'], types: ['string'] },
   { words: ['demo', 'feature'], types: [] },
   { words: ['demo', 'mode'], types: [] },
+  { words: ['demo', 'switch', 'on'], types: [] },
+  { words: ['demo', 'switch', 'off'], types: [] },
+  { words: ['demo', 'relay', 'enable'], types: [] },
+  { words: ['demo', 'relay', 'disable'], types: [] },
+  { words: ['demo', 'lamp', 'bright'], types: [] },
+  { words: ['demo', 'lamp', 'dim'], types: [] },
 ];
 export const entries = specs.map((spec, index) => ({
   words: spec.words,
@@ -40,7 +46,7 @@ export function fixture(lines: Array<string | { line: string; cleanup: true }>, 
   data.expects = [];
   const contract = structuredClone(CONTRACT_DOC);
   delete contract.effects.effect_0.commands;
-  contract.effects.effect_0.command_scope = ['/commands/demo/pool', '/commands/no/demo/pool', '/commands/demo/feature', '/commands/demo/mode', '/commands/show'];
+  contract.effects.effect_0.command_scope = ['/commands/demo/pool', '/commands/no/demo/pool', '/commands/demo/feature', '/commands/demo/mode', '/commands/demo/switch', '/commands/demo/relay', '/commands/demo/lamp', '/commands/show'];
   contract.effects.effect_0.budget = 1000;
   contract.contract_sha256 = runtimeDigest(contract);
   const input = subjectOf(data, { contractDoc: contract, caseTexts: [] });

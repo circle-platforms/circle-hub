@@ -22,7 +22,8 @@
   ],
   "trigger_types": [
     "router",
-    "client"
+    "client",
+    "server"
   ],
   "method_review_field": "reviewed",
   "parameter_role_basis": {
@@ -31,5 +32,6 @@
     "host_shell": "主机 shell 文字",
     "literal_assertion": "字面期望",
     "wait": "等待秒数"
-  }
+  },
+  "trigger_types_basis": "触发能力的设备类型闭集：台架清单里这些类型的设备在其所在网段能做触发（执行器在这些设备上有可用的主机 shell 座位）；server 默认在闭集里。部署可用 runtime-profile@1 的 trigger_types 字段按台架实际座位收窄（仍须是清单设备类型的子集）"
 }
