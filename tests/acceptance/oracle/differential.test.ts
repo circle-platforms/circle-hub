@@ -217,8 +217,8 @@ interface Plan {
   roundsUsed: number;
   chargedRounds?:Record<string,number>;
   items: ItemPlan[];
-  judge: { session: string; model: string };
-  author: { session: string; model: string } | null;
+  judge: { session: string; model: string; model_identity?: { model_id: string; model_family_id: string } };
+  author: { session: string; model: string; model_identity?: { model_id: string; model_family_id: string } } | null;
   /** Protocol codes of a submission the boundary does not accept. Empty when it should be accepted. */
   defects: ProtocolCode[];
 }
@@ -328,7 +328,7 @@ function submissionOf(run: RunSummary, plan: Plan): Record<string, unknown> {
     }
     items.push({ item: item.id, handling: 'handled', slots });
   }
-  return { run: run.run, model: plan.judge.model, items };
+  return { run: run.run, model: plan.judge.model, ...(plan.judge.model_identity === undefined ? {} : { model_identity: plan.judge.model_identity }), items };
 }
 
 async function start(items: { id: string; negative: boolean;outcomes?:Record<string,Outcome[]> }[], predecessor?: string, session = 'sess-start', map?: string, packId = 'oracle'): Promise<RunSummary> {
@@ -529,13 +529,13 @@ test('fresh admission refuses the legacy oracle declarations before any fixture 
 
 test('random submissions and the revised fixed branches agree with the independent reference', { skip, timeout: 300_000 }, async () => {
   const run = await start(ITEMS);
-  const judge = { session: 'sess-judge', model: 'beta@2' };
+  const judge = { session: 'sess-judge', model: 'beta@2', model_identity: { model_id: 'synthetic-oracle-beta', model_family_id: 'synthetic-oracle-family-beta' } };
   // Each randomized comparison starts from its own frozen run and explicitly zero charged counters.
   const plans = Array.from({ length: 48 }, (_, index) => randomPlan(SEED + index, 0, ITEMS, judge, null));
   for (const plan of plans) await agree(plan,await start(plan.items));
 
   // Independence against a predecessor whose accepted submission names the author.
-  const author = { session: 'sess-author', model: 'alpha@1' };
+  const author = { session: 'sess-author', model: 'alpha@1', model_identity: { model_id: 'synthetic-oracle-alpha', model_family_id: 'synthetic-oracle-family-alpha' } };
   const baseItems = ITEMS.map((item) => ({ ...item, handling: 'handled' as const, outcomes: Object.fromEntries(SPECS.filter((spec) => spec.check !== undefined).map((spec) => [spec.key, [{ verdict: 'support' as const }]])) }));
   // The author run is another pack. A predecessor of the same pack is pinned below: the engine does not treat it as the author.
   const predecessor = await start(ITEMS, undefined, author.session, undefined, 'oracle-draft');
@@ -543,9 +543,9 @@ test('random submissions and the revised fixed branches agree with the independe
   const continued = await start(ITEMS, predecessor.run, judge.session);
   await agree({ seed: SEED + 101, roundsUsed: 0, items: baseItems, judge, author, defects: [] }, continued);
   const sameSession = await start(ITEMS, predecessor.run, 'sess-held');
-  await agree({ seed: SEED + 102, roundsUsed: 0, items: baseItems, judge: { session: author.session, model: 'beta@2' }, author, defects: [] }, sameSession);
+  await agree({ seed: SEED + 102, roundsUsed: 0, items: baseItems, judge: { ...judge, session: author.session }, author, defects: [] }, sameSession);
   const sameModel = await start(ITEMS, predecessor.run, 'sess-other');
-  await agree({ seed: SEED + 103, roundsUsed: 0, items: baseItems, judge: { session: 'sess-other', model: author.model }, author, defects: [] }, sameModel);
+  await agree({ seed: SEED + 103, roundsUsed: 0, items: baseItems, judge: { ...judge, session: 'sess-other', model: author.model, model_identity: author.model_identity }, author, defects: [] }, sameModel);
 
   // A duplicate item is a schema violation: the submission is not accepted and produces no partitions (T03 R[3], V05 R[5]).
   const duplicated = await harness.service.submitResult(
@@ -583,7 +583,7 @@ test('random submissions and the revised fixed branches agree with the independe
   // A later submission of the same body from the author's session. Both sides leave the independent judgment unsatisfied
   // (A04). Seed 20261127.
   const laterSeed = SEED + 105;
-  const laterJudge = { session: author.session, model: 'beta@2' };
+  const laterJudge = { ...judge, session: author.session };
   const laterPlan: Plan = { seed: laterSeed, roundsUsed: 0, items: sameItems, judge: laterJudge, author, defects: [] };
   const laterEngine = await acceptedView(laterPlan, continued);
   const laterWant = referenceOf(laterPlan);
