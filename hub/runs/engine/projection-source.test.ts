@@ -87,7 +87,7 @@ before(async () => {
 });
 after(async () => {
   await h?.close();
-  await rm(packRoot, { recursive: true, force: true });
+  if (packRoot !== undefined) await rm(packRoot, { recursive: true, force: true });
   await postgres?.stop();
 });
 

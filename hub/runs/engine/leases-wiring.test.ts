@@ -122,7 +122,7 @@ function leasesPack(
 
 before(async () => {
   postgres = await startPostgres();
-  if (skip) return;
+  // Later functional cases are not OS-isolation tests and still need their synthetic harness.
   h = await openHarness(postgres, { leases: true, leaseJobs: async keys => keys.filter(key=>key===["meadow","/visib","ility/","k"].join('')||key==='meadow/force/pending/k').map(key=>({key,job:'synthetic-running'})) });
   leases = h.leases!;
   map = await h.upload(h.alice, toyMap(standardDocument()));
