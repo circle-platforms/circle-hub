@@ -43,3 +43,16 @@ system inventory, personal profile, environment file or credential store is acce
 The integration source snapshot passed: typecheck, 132 generated files, unit 7622 passed / 1 skipped / 0 failed,
 docs 223 passed, acceptance 109 passed and reference tests 7 passed. Public-tree validation is recorded separately
 in the pull request after anonymization and regeneration. A skipped test is not counted as a pass.
+
+## Follow-up integrity correction
+
+Opaque distribution metadata is not a business label. The first public preparation accidentally replaced character
+substrings inside dependency SRI values; clean CI installation correctly refused those bytes. Restore the published
+lockfile metadata without changing dependency declarations, and verify it with a fresh `npm ci`. Never rewrite
+dependency integrity values, content identities or signatures to remove coincidental identifier-shaped substrings.
+Resolve those scanner candidates against their declared structural fields and authoritative bytes. No integrity
+check is disabled or bypassed.
+
+A previously unmerged synthetic seeding diagnostic is retained with tests for success, producer refusal and cleanup
+failures. Its HTTP server, temporary database and directories are released on all acquired-resource exit paths;
+this adds no production source parser or real-system access.
