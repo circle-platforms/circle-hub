@@ -16,3 +16,13 @@ export {freezeEffectRegistry} from './snapshot.ts';
 export {boundaryPolicy,policyAllows} from './policy.ts';
 
 export type {ReleaseCheck,ReleaseField} from './release-diagnostics.ts';
+
+export {
+  captureText,
+  lineDiff,
+  type BedBaselineRecord,
+  unregisteredBaselineFact,
+  unregisteredBaselineNext,
+  residueCaptureFact,
+  residueCaptureNext,
+} from './bed-state.ts';

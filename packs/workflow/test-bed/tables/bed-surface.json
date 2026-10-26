@@ -1,7 +1,7 @@
 {
   "schema": "bed-surface-shape@1",
   "document": "bed-surface@1",
-  "parser": ["row_table"],
+  "parser": ["row_table", "text_table"],
   "field_role": ["baseline", "residue"],
   "baseline_from": ["interfaces", "config", "values"],
   "empty": ["header_only"],

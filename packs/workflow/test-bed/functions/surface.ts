@@ -28,7 +28,10 @@ export interface SurfaceCleanup {
 
 export interface SurfaceField {
   name: string;
-  pointer: string;
+  pointer?: string;
+  start?: number;
+  end?: number;
+  cidr?: boolean;
   role: 'baseline' | 'residue';
   from: 'interfaces' | 'config' | 'values';
   values: string[];
@@ -37,9 +40,13 @@ export interface SurfaceField {
 export interface SurfaceProbe {
   id: string;
   seat: string;
-  parser: 'row_table';
+  parser: 'row_table' | 'text_table';
+  output?: string;
+  header?: string;
+  manifest_device?: string;
+  snapshot_only?: boolean;
   fields: SurfaceField[];
-  empty: { kind: 'header_only'; header: string; rows: string };
+  empty: { kind: 'header_only'; header?: string; rows?: string };
   cleanups: SurfaceCleanup[];
 }
 
@@ -117,17 +124,27 @@ function parseExit(value: unknown, pointer: string, problems: Array<{ pointer: s
   return action && object && owner && deadline ? { action, object, owner, deadline } : null;
 }
 
-function parseField(value: unknown, pointer: string, problems: Array<{ pointer: string; message: string }>): SurfaceField | null {
+function parseField(value: unknown, pointer: string, parserKind: SurfaceProbe['parser'], problems: Array<{ pointer: string; message: string }>): SurfaceField | null {
   if (!isRecord(value)) {
     problems.push(problem(pointer, '字段必须是对象'));
     return null;
   }
   const name = text(value.name, 64);
   const path = text(value.pointer, 200);
+  const start = typeof value.start === 'number' && Number.isInteger(value.start) && value.start >= 0 ? value.start : (value.start === undefined ? 0 : null);
+  const end = typeof value.end === 'number' && Number.isInteger(value.end) && value.end >= 0 ? value.end : (value.end === undefined ? undefined : null);
+  const cidr = typeof value.cidr === 'boolean' ? value.cidr : (value.cidr === undefined ? false : null);
   const role = oneOf<SurfaceField['role']>(value.role, SHAPE.field_role);
   const from = oneOf<SurfaceField['from']>(value.from, SHAPE.baseline_from);
   if (!name || !FIELD.test(name)) problems.push(problem(`${pointer}/name`, '字段名须为小写标识'));
-  if (!path || !POINTER.test(path)) problems.push(problem(`${pointer}/pointer`, '字段指针须是行内 JSON 指针'));
+  if (parserKind === 'row_table') {
+    if (!path || !POINTER.test(path)) problems.push(problem(`${pointer}/pointer`, '字段指针须是行内 JSON 指针'));
+  } else {
+    if (path !== null && path !== undefined && !POINTER.test(path)) problems.push(problem(`${pointer}/pointer`, '字段指针须是行内 JSON 指针'));
+    if (start === null) problems.push(problem(`${pointer}/start`, '起始列须是非负整数'));
+    if (end === null) problems.push(problem(`${pointer}/end`, '结束列须是非负整数'));
+    if (cidr === null) problems.push(problem(`${pointer}/cidr`, 'cidr 须是布尔值'));
+  }
   if (!role) problems.push(problem(`${pointer}/role`, `字段角色须是 ${SHAPE.field_role.join('、')}`));
   if (!from) problems.push(problem(`${pointer}/from`, `基线来源须是 ${SHAPE.baseline_from.join('、')}`));
   let values: string[] = [];
@@ -136,7 +153,17 @@ function parseField(value: unknown, pointer: string, problems: Array<{ pointer: 
       problems.push(problem(`${pointer}/values`, 'values 来源要给出至多 32 个短字符串，空数组表示没有任何基线值'));
     } else values = [...value.values];
   } else if (value.values !== undefined) problems.push(problem(`${pointer}/values`, '只有 values 来源才写 values'));
-  return name && path && role && from && FIELD.test(name) && POINTER.test(path) ? { name, pointer: path, role, from, values } : null;
+  if (!name || !FIELD.test(name) || !role || !from) return null;
+  if (parserKind === 'row_table' && (!path || !POINTER.test(path))) return null;
+  if (parserKind === 'text_table' && (start === null || end === null || cidr === null)) return null;
+  return {
+    name,
+    ...(path ? { pointer: path } : {}),
+    ...(parserKind === 'text_table' ? { start: typeof start === 'number' ? start : 0, ...(typeof end === 'number' ? { end } : {}), ...(cidr ? { cidr: true } : {}) } : {}),
+    role,
+    from,
+    values,
+  };
 }
 
 function parseCleanup(value: unknown, pointer: string, residueNames: ReadonlySet<string>, problems: Array<{ pointer: string; message: string }>): SurfaceCleanup | null {
@@ -186,7 +213,7 @@ export function parseBedSurface(input: unknown): { ok: true; declaration: Surfac
     const fields: SurfaceField[] = [];
     if (!Array.isArray(raw.fields) || raw.fields.length < 1 || raw.fields.length > 16) problems.push(problem(`${pointer}/fields`, '字段须是 1 到 16 项'));
     else for (const [fieldAt, field] of raw.fields.entries()) {
-      const parsed = parseField(field, `${pointer}/fields/${fieldAt}`, problems);
+      const parsed = parseField(field, `${pointer}/fields/${fieldAt}`, parser ?? 'row_table', problems);
       if (parsed) fields.push(parsed);
     }
     if (new Set(fields.map((field) => field.name)).size !== fields.length) problems.push(problem(`${pointer}/fields`, '字段名不得重复'));
@@ -194,11 +221,13 @@ export function parseBedSurface(input: unknown): { ok: true; declaration: Surfac
     if (residueNames.size === 0) problems.push(problem(`${pointer}/fields`, '至少有一个残留字段'));
     let empty: SurfaceProbe['empty'] | null = null;
     if (!isRecord(raw.empty) || oneOf(raw.empty.kind, SHAPE.empty) !== 'header_only') problems.push(problem(`${pointer}/empty`, '空表判据须是 header_only'));
-    else {
+    else if (parser === 'row_table') {
       const header = text(raw.empty.header, 200);
       const rows = text(raw.empty.rows, 200);
       if (!header || !rows || !POINTER.test(header) || !POINTER.test(rows) || header === rows) problems.push(problem(`${pointer}/empty`, 'header_only 要给出不同的表头指针和行指针'));
       else empty = { kind: 'header_only', header, rows };
+    } else {
+      empty = { kind: 'header_only', ...(raw.empty.header ? { header: String(raw.empty.header) } : {}) };
     }
     const cleanups: SurfaceCleanup[] = [];
     if (!Array.isArray(raw.cleanups)) problems.push(problem(`${pointer}/cleanups`, '清理引用必须是数组'));
@@ -207,7 +236,24 @@ export function parseBedSurface(input: unknown): { ok: true; declaration: Surfac
       if (parsed) cleanups.push(parsed);
     }
     for (const name of residueNames) if (cleanups.filter((cleanup) => cleanup.residue === name).length !== 1) problems.push(problem(`${pointer}/cleanups`, `残留字段 ${name} 要有且只有一条清理引用`));
-    if (id && seat && parser && empty && ID.test(id) && fields.length) probes.push({ id, seat, parser, fields, empty, cleanups });
+    const probeHeader = text(raw.header, 500) ?? undefined;
+    const probeOutput = text(raw.output, 200) ?? undefined;
+    const probeManifestDevice = text(raw.manifest_device, 200) ?? undefined;
+    const probeSnapshotOnly = typeof raw.snapshot_only === 'boolean' ? raw.snapshot_only : undefined;
+    if (id && seat && parser && empty && ID.test(id) && fields.length) {
+      probes.push({
+        id,
+        seat,
+        parser,
+        ...(probeHeader !== undefined ? { header: probeHeader } : {}),
+        ...(probeOutput !== undefined ? { output: probeOutput } : {}),
+        ...(probeManifestDevice !== undefined ? { manifest_device: probeManifestDevice } : {}),
+        ...(probeSnapshotOnly !== undefined ? { snapshot_only: probeSnapshotOnly } : {}),
+        fields,
+        empty,
+        cleanups,
+      });
+    }
   }
   return problems.length ? { ok: false, problems } : { ok: true, declaration: { schema: 'bed-surface@1', probes } };
 }
@@ -222,14 +268,45 @@ function addressTexts(entry: unknown): string[] {
   return [];
 }
 
+function toCIDR(value: string): string | null {
+  const trimmed = value.trim();
+  const slash = trimmed.lastIndexOf('/');
+  if (slash > 0) {
+    const ip = trimmed.slice(0, slash).trim();
+    const prefix = trimmed.slice(slash + 1);
+    if (/^\d+$/.test(prefix)) return `${ip}/${prefix}`;
+  }
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 2) {
+    const [ip, mask] = parts;
+    const maskOctets = mask.split('.').map(Number);
+    if (maskOctets.length === 4 && maskOctets.every((o) => !Number.isNaN(o) && o >= 0 && o <= 255)) {
+      const bits = maskOctets.map((o) => o.toString(2).padStart(8, '0')).join('');
+      if (/^1*0*$/.test(bits)) {
+        const prefix = bits.indexOf('0') === -1 ? 32 : bits.indexOf('0');
+        return `${ip}/${prefix}`;
+      }
+    }
+  }
+  return null;
+}
+
 /** Baseline strings for one field, taken from the frozen bed by the field's declared source. */
-export function baselineOf(field: SurfaceField, bed: unknown): string[] | null {
+export function baselineOf(field: SurfaceField, bed: unknown, manifestDevice?: string): string[] | null {
   if (field.from === 'values') return [...field.values].sort();
   if (!isRecord(bed)) return null;
   if (field.from === 'interfaces') {
-    if (!Array.isArray(bed.devices)) return null;
+    let devices: unknown[];
+    if (manifestDevice) {
+      const dev = at(bed, manifestDevice);
+      if (!dev || typeof dev !== 'object' || Array.isArray(dev)) return null;
+      devices = [dev];
+    } else {
+      if (!Array.isArray(bed.devices)) return null;
+      devices = bed.devices;
+    }
     const found: string[] = [];
-    for (const device of bed.devices) {
+    for (const device of devices) {
       if (!isRecord(device)) return null;
       for (const key of ['ipv4', 'ipv6']) {
         const list = device[key];
@@ -252,13 +329,15 @@ export function baselineOf(field: SurfaceField, bed: unknown): string[] | null {
 }
 
 function headerOnly(probe: SurfaceProbe, value: unknown): boolean {
-  const header = at(value, probe.empty.header);
-  const rows = at(value, probe.empty.rows);
+  if (probe.parser === 'text_table') return false;
+  const header = at(value, probe.empty.header ?? '');
+  const rows = at(value, probe.empty.rows ?? '');
   return Array.isArray(header) && header.length > 0 && header.length <= 16 && header.every((cell) => typeof cell === 'string' && cell.length > 0 && cell.length <= 80) && Array.isArray(rows) && rows.length === 0;
 }
 
 function rowsOf(probe: SurfaceProbe, value: unknown): unknown[] | null {
-  const rows = at(value, probe.empty.rows);
+  if (probe.parser === 'text_table') return null;
+  const rows = at(value, probe.empty.rows ?? '');
   if (!Array.isArray(rows) || rows.length > 64) return null;
   return rows;
 }
@@ -277,19 +356,80 @@ export function judgeBedSurface(declaration: unknown, bed: unknown, reads: reado
   for (const probe of parsed.declaration.probes) {
     const read = reads.find((item) => item.id === probe.id);
     if (!read || read.value === undefined) return { ok: false, missing: `床面探针缺失：${probe.id}`, next: `下一步：在座位 ${probe.seat} 重读探针 ${probe.id} 后再派发` };
+    if (probe.parser === 'text_table') {
+      const raw = isRecord(read.value) ? (at(read.value, probe.output ?? '/output') ?? at(read.value, '/text')) : (typeof read.value === 'string' ? read.value : null);
+      if (typeof raw !== 'string') return { ok: false, missing: `探针 ${probe.id} 没有按声明解析出文本`, next: `下一步：在座位 ${probe.seat} 重读探针 ${probe.id} 后再派发` };
+      const lines = raw.split(/\r?\n/).map((l) => l.trimEnd());
+      const declaredHeader = probe.header ?? (probe.empty.header && !probe.empty.header.startsWith('/') ? probe.empty.header : undefined);
+      let dataLines: string[];
+      if (declaredHeader !== undefined) {
+        const headerIdx = lines.findIndex((l) => l === declaredHeader);
+        if (headerIdx === -1) {
+          return { ok: false, missing: `探针 ${probe.id} 没有按声明找到表头`, next: `下一步：在座位 ${probe.seat} 重读探针 ${probe.id}，按声明的表头解析后再派发` };
+        }
+        dataLines = lines.slice(headerIdx + 1).filter((l) => l.trim().length > 0);
+      } else {
+        dataLines = lines.filter((l) => l.trim().length > 0);
+      }
+      if (dataLines.length === 0 || probe.snapshot_only) {
+        continue;
+      }
+      const sets = new Map<string, Set<string>>();
+      for (const field of probe.fields) {
+        const baseline = baselineOf(field, bed, probe.manifest_device);
+        if (!baseline) return { ok: false, missing: `探针 ${probe.id} 的字段 ${field.name} 缺少冻结基线`, next: '下一步：核对冻结台架的接口或基线配置后再派发' };
+        sets.set(field.name, new Set(baseline));
+      }
+      const byField = new Map<string, string[]>();
+      for (const line of dataLines) {
+        for (const field of probe.fields) {
+          let value: string;
+          if (field.start !== undefined) {
+            value = line.length > field.start ? (field.end !== undefined ? line.slice(field.start, field.end).trim() : line.slice(field.start).trim()) : '';
+          } else if (probe.fields.length === 1) {
+            value = line.trim();
+          } else {
+            value = line.trim();
+          }
+          if (field.cidr) {
+            const cidr = toCIDR(value);
+            value = cidr ?? value;
+          }
+          if (typeof value !== 'string' || value.length === 0 || value.length > TEXT) return { ok: false, missing: `探针 ${probe.id} 的字段 ${field.name} 没有解析成字符串`, next: `下一步：在座位 ${probe.seat} 重读探针 ${probe.id} 后再派发` };
+          if (field.role !== 'residue') continue;
+          const allowed = sets.get(field.name);
+          if (allowed?.has(value)) continue;
+          const held = byField.get(field.name) ?? [];
+          held.push(value);
+          byField.set(field.name, held);
+        }
+      }
+      for (const [field, identities] of byField) {
+        const unique = [...new Set(identities)].sort();
+        for (const identity of unique) residues.push({ probe: probe.id, field, identity });
+        const cleanup = probe.cleanups.find((item) => item.residue === field);
+        if (!cleanup || !cleanup.automatic) {
+          if (cleanup?.exit) blocked.push(cleanup.exit);
+          else blocked.push({ action: '为该残留类补一条可执行的清理引用', object: `探针 ${probe.id} 的字段 ${field}`, owner: '声明维护者', deadline: '重新派发之前' });
+          continue;
+        }
+        actions.push({ probe: probe.id, seat: probe.seat, command: cleanup.command, granularity: cleanup.granularity, identities: unique });
+      }
+      continue;
+    }
     if (headerOnly(probe, read.value)) continue;
     const rows = rowsOf(probe, read.value);
     if (!rows || rows.length === 0 || rows.some((row) => !isRecord(row))) return { ok: false, missing: `探针 ${probe.id} 没有按声明解析出表`, next: `下一步：在座位 ${probe.seat} 重读探针 ${probe.id}，按声明的表头和行指针解析后再派发` };
     const sets = new Map<string, Set<string>>();
     for (const field of probe.fields) {
-      const baseline = baselineOf(field, bed);
+      const baseline = baselineOf(field, bed, probe.manifest_device);
       if (!baseline) return { ok: false, missing: `探针 ${probe.id} 的字段 ${field.name} 缺少冻结基线`, next: '下一步：核对冻结台架的接口或基线配置后再派发' };
       sets.set(field.name, new Set(baseline));
     }
     const byField = new Map<string, string[]>();
     for (const row of rows) {
       for (const field of probe.fields) {
-        const value = at(row, field.pointer);
+        const value = at(row, field.pointer ?? '');
         if (typeof value !== 'string' || value.length === 0 || value.length > TEXT) return { ok: false, missing: `探针 ${probe.id} 的字段 ${field.name} 没有解析成字符串`, next: `下一步：在座位 ${probe.seat} 重读探针 ${probe.id} 后再派发` };
         if (field.role !== 'residue') continue;
         const allowed = sets.get(field.name);

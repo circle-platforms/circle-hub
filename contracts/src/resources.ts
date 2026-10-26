@@ -938,26 +938,96 @@ const extraction = z.strictObject({command:z.string().min(1).max(10000),pattern:
 const dispatchTargets = z.strictObject({ type_field: pointer.refine(p => p !== '', { message: '派发目标的类型字段需要设备内的指针' }), types: z.array(z.string().min(1).max(200)).min(1).max(50) });
 const namedPointer = pointer.refine(p => p !== '', { message: '床面快照的解析指针不能是整份根' });
 const bedFields = z.array(z.strictObject({ name: z.string().min(1).max(80), pointer: namedPointer })).min(1).max(16);
+const textTableColumn = z.strictObject({
+  name: z.string().min(1).max(80),
+  start: z.number().int().min(0).default(0),
+  end: z.number().int().min(0).optional(),
+  cidr: z.boolean().default(false),
+});
 /** Read-only show snapshots. Parsers name structure; nothing here is matched by wording. */
 const bedState = z.strictObject({
-  bed: namedPointer,
+  bed: namedPointer.optional(),
   items: z.array(z.strictObject({
     id: z.string().min(1).max(80),
+    seat: z.string().min(1).max(80).optional(),
     call,
-    output: namedPointer,
+    output: namedPointer.default('/output'),
+    lead: z.array(z.string().min(1).max(500)).max(16).default([]),
+    trail: z.array(z.string().min(1).max(500)).max(16).default([]),
     parser: z.discriminatedUnion('kind', [
-      z.strictObject({ kind: z.literal('address_table'), rows: namedPointer, address: namedPointer, manifest_devices: namedPointer, manifest_lists: z.array(namedPointer).min(1).max(4) }),
-      z.strictObject({ kind: z.literal('config_list'), rows: namedPointer, identity: namedPointer, fields: bedFields, manifest_rows: namedPointer, manifest_identity: namedPointer, manifest_fields: bedFields }),
-    ]),
+      z.strictObject({
+        kind: z.literal('address_table'),
+        rows: namedPointer,
+        address: namedPointer,
+        manifest_device: namedPointer.optional(),
+        manifest_devices: namedPointer.optional(),
+        manifest_lists: z.array(namedPointer).min(1).max(4),
+      }),
+      z.strictObject({
+        kind: z.literal('config_list'),
+        rows: namedPointer,
+        identity: namedPointer,
+        fields: bedFields,
+        snapshot_only: z.boolean().default(false),
+        manifest_rows: namedPointer.optional(),
+        manifest_identity: namedPointer.optional(),
+        manifest_fields: bedFields.optional(),
+      }),
+      z.strictObject({
+        kind: z.literal('text_table'),
+        text: namedPointer.optional(),
+        header: z.string().min(1).max(500).optional(),
+        columns: z.array(textTableColumn).max(16).default([]),
+        address: z.string().min(1).max(80).optional(),
+        identity: z.string().min(1).max(80).optional(),
+        fields: bedFields.optional(),
+        snapshot_only: z.boolean().default(false),
+        manifest_device: namedPointer.optional(),
+        manifest_devices: namedPointer.optional(),
+        manifest_lists: z.array(namedPointer).min(1).max(4).optional(),
+        manifest_rows: namedPointer.optional(),
+        manifest_identity: namedPointer.optional(),
+        manifest_fields: bedFields.optional(),
+      }),
+    ]).optional(),
     cleanup: z.strictObject({ actor: z.string().min(1).max(200), command: z.string().min(1).max(500) }),
   })).min(1).max(20),
 }).superRefine((state, ctx) => {
   if (new Set(state.items.map(item => item.id)).size !== state.items.length) ctx.addIssue({ code: 'custom', message: '床面快照项名称不得重复' });
   for (const item of state.items) {
-    if (item.parser.kind !== 'config_list') continue;
-    const names = item.parser.fields.map(field => field.name);
-    const manifest = item.parser.manifest_fields.map(field => field.name);
-    if (new Set(names).size !== names.length || names.join('\0') !== manifest.join('\0')) ctx.addIssue({ code: 'custom', message: '配置快照的字段名必须与清单字段名一一对应且不重复' });
+    if (item.parser) {
+      if (item.parser.kind === 'address_table') {
+        if (!item.parser.manifest_device && !item.parser.manifest_devices) {
+          ctx.addIssue({ code: 'custom', message: '地址表快照必须声明 manifest_device 或 manifest_devices' });
+        }
+      }
+      if (item.parser.kind === 'config_list') {
+        if (!item.parser.snapshot_only) {
+          if (!item.parser.manifest_rows || !item.parser.manifest_identity || !item.parser.manifest_fields) {
+            ctx.addIssue({ code: 'custom', message: '未声明 snapshot_only 的配置快照必须声明 manifest_rows、manifest_identity 和 manifest_fields' });
+          } else {
+            const names = item.parser.fields.map(field => field.name);
+            const manifest = item.parser.manifest_fields.map(field => field.name);
+            if (new Set(names).size !== names.length || names.join('\0') !== manifest.join('\0')) {
+              ctx.addIssue({ code: 'custom', message: '配置快照的字段名必须与清单字段名一一对应且不重复' });
+            }
+          }
+        }
+      }
+      if (item.parser.kind === 'text_table') {
+        const colNames = item.parser.columns.map(c => c.name);
+        if (new Set(colNames).size !== colNames.length) {
+          ctx.addIssue({ code: 'custom', message: '文本表格的列名不得重复' });
+        }
+        if (item.parser.fields && item.parser.manifest_fields && !item.parser.snapshot_only) {
+          const names = item.parser.fields.map(field => field.name);
+          const manifest = item.parser.manifest_fields.map(field => field.name);
+          if (new Set(names).size !== names.length || names.join('\0') !== manifest.join('\0')) {
+            ctx.addIssue({ code: 'custom', message: '配置快照的字段名必须与清单字段名一一对应且不重复' });
+          }
+        }
+      }
+    }
   }
 });
 const probes = z.strictObject({devices:pointer.optional(),dispatch_targets:dispatchTargets.optional(),command_pattern:z.string().min(1).max(2000).refine(p=>p.startsWith('^') && p.endsWith('$') && compiled(p)),call,output:pointer,seats:z.array(z.strictObject({seat:z.string().min(1).max(200),index:z.number().int().min(0),manifest:z.strictObject({device:pointer,addresses:pointer,address:pointer}),version:extraction,interfaces:extraction})).min(1).max(100)}).superRefine((p,ctx)=>{

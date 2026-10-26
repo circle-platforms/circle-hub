@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { executorCommand, jobCommand } from '../server/cli-job.ts';
+import { executorCommand, jobCommand, bedCommand } from '../server/cli-job.ts';
 import { adminCommands } from '../server/cli-admin.ts';
 import { setup } from './testing/context.ts';
 import { definition } from './testing/definition.ts';
@@ -19,7 +19,7 @@ test('executor registration never reads stdin and accepts named credential refer
   assert.equal(await executorCommand(s, ['list']), 0);
   assert.match(s.lines.join('\n'),/写声明未写/);
   assert.ok(!s.lines.join('\n').includes(c.endpoint.endpoint)); assert.ok(!s.lines.join('\n').includes('synthetic-second-key'));
-  assert.ok(adminCommands().some(c => c.name === 'executor')); assert.ok(adminCommands().some(c => c.name === 'job'));
+  assert.ok(adminCommands().some(c => c.name === 'executor')); assert.ok(adminCommands().some(c => c.name === 'job')); assert.ok(adminCommands().some(c => c.name === 'bed'));
 });
 
 test('precheck exports only to scratch files, dispatch prints a result reference and status is read-only', async t => {
@@ -105,4 +105,51 @@ test('precheck exports every seat response with its operation and selector witho
   const seats=meta.observations.filter((o:any)=>o.operation?.startsWith('probe.'));
   assert.equal(seats.length,4);assert.ok(seats.every((o:any)=>o.pointer==='/output' && /^[a-f0-9]{64}$/.test(o.original_sha256)));
   assert.doesNotMatch(s.lines.join('\n'),/192\.0\.2\.1|synthetic-build|synthetic-secret/);
+});
+
+test('bed baseline CLI records baseline via probe, lists registered baselines and shows baseline content', async t => {
+  const rawProbe = {
+    id: 'cli_probe',
+    call: { tool: 'show_bed', arguments: { ticket: { $value: 'lease_id' }, item: 'cli' }, timeout_ms: 30000 },
+    output: '/output',
+    lead: ['show interfaces'],
+    trail: ['DEVICE#'],
+    cleanup: { actor: '合成管理员', command: 'synthetic-cleanup-probe' },
+  };
+  const c = await setup({
+    extraTools: ['show_bed'],
+    alter: (name, value) => name === 'show_bed' ? { output: 'show interfaces\neth0  192.0.2.1/24\nDEVICE#' } : value,
+  });
+  t.after(() => c.close());
+  await c.registry.update(c.admin, c.executor.id, {
+    ...c.executor.definition,
+    allowed_tools: [...c.executor.definition.allowed_tools, 'show_bed'],
+    bed_state: { bed: '/bed', items: [rawProbe] },
+  });
+  const s = session(c);
+
+  // Invalid arguments
+  await assert.rejects(bedCommand(s, ['invalid']), /bed 的子命令/);
+  await assert.rejects(bedCommand(s, ['baseline', 'record', c.executor.id]), /用法/);
+  await assert.rejects(bedCommand(s, ['baseline', 'show', c.executor.id]), /用法/);
+
+  // Record baseline
+  assert.equal(await bedCommand(s, ['baseline', 'record', c.executor.id, '--probe', 'cli_probe', '--reason', '干净基线']), 0);
+  assert.match(s.lines.join('\n'), /已登记基线：执行器/);
+  assert.match(s.lines.join('\n'), /探针 cli_probe/);
+  assert.match(s.lines.join('\n'), /理由 干净基线/);
+
+  // List baselines
+  s.lines.length = 0;
+  assert.equal(await bedCommand(s, ['baseline', 'list', c.executor.id]), 0);
+  assert.match(s.lines.join('\n'), /cli_probe/);
+  assert.match(s.lines.join('\n'), /登记基线 1 条/);
+
+  // Show baseline
+  s.lines.length = 0;
+  assert.equal(await bedCommand(s, ['baseline', 'show', c.executor.id, '--probe', 'cli_probe']), 0);
+  assert.match(s.lines.join('\n'), /eth0  192.0.2.1\/24/);
+  // Trailing prompt and leading command stripped
+  assert.ok(!s.lines.join('\n').includes('show interfaces'));
+  assert.ok(!s.lines.join('\n').includes('DEVICE#'));
 });

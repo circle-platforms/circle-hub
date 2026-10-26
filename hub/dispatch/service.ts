@@ -22,7 +22,31 @@ import {PrecheckFactError,precheckFailure} from './precheck-failure.ts';
 import { canRetryRead } from './read-policy.ts';
 import { dynamicDisposition, DISPATCH_QUALIFICATIONS } from './dynamic.ts';
 import { judgeBedSurface } from '../../packs/workflow/test-bed/api.ts';
-import { againstBaseline, againstStored, bedLimits, bedName, cleanupSteps, missingProbeFact, parseReply, residueFact, unknownSteps, unrestoredFact, type BedRead, type BedReport, type Canonical } from './bed-state.ts';
+import {
+  againstBaseline,
+  againstStored,
+  bedLimits,
+  bedName,
+  cleanupSteps,
+  missingProbeFact,
+  parseReply,
+  residueFact,
+  undeclaredBaselineFact,
+  undeclaredBaselineNext,
+  unknownSteps,
+  unrestoredFact,
+  captureText,
+  lineDiff,
+  unregisteredBaselineFact,
+  unregisteredBaselineNext,
+  residueCaptureFact,
+  residueCaptureNext,
+  type BedBaselineRecord,
+  type BedRead,
+  type BedReport,
+  type Canonical,
+  type Difference,
+} from './bed-state.ts';
 import { bytesKey, earlyStopSentence, repeats, roundAllowed, roundMeets, roundOf, roundPolicy, type RoundPolicy } from './rounds.ts';
 import { expectationFor } from '../runs/engine/terminals.ts';
 import { verifyInput, inspectInput, lockedBuildBase, InputVerificationError, type VerificationPort } from './proof.ts';
@@ -830,6 +854,201 @@ export class DispatchService {
     if (!source?.bytes || sha256Hex(source.bytes) !== d.manifest_sha256) return undefined;
     try { return at(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(source.bytes)), pointer); } catch { return undefined; }
   }
+  async recordBaseline(by: Principal, executor: string, probeId: string, reason?: string | null): Promise<BedBaselineRecord> {
+    await this.registry.admin(by);
+    const registered = await this.registry.get(executor);
+    if (!registered?.definition.enabled) throw new Error('执行器不可用或已禁用');
+    const d = registered.definition;
+    const spec = d.bed_state;
+    if (!spec) throw new Error('执行器未声明 bed_state');
+    const item = spec.items.find(i => i.id === probeId);
+    if (!item) throw new Error(`执行器未声明探针 ${probeId}`);
+
+    const binding: JobBinding = {
+      job: newJob(),
+      initiated_by: by.id,
+      executor,
+      executor_digest: registered.resolved_digest,
+      executor_source_digest: registered.digest,
+      variables: registered.variables,
+      scope: { target: d.target, origin: new URL(d.endpoint).origin },
+      target_key: digestOfValue([...d.resources].sort()),
+      input: null,
+      user: by.id,
+      resources: [],
+      context: { ...d.precheck_context, target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) },
+    };
+    await this.assertNoSecrets(binding);
+    const material = await this.secret(binding, d);
+    if (material === null) throw new Error('执行器凭据不可用');
+    const client = this.session(binding, d, material);
+    let lease: RemoteLease | undefined;
+    let stop = async () => {};
+    try {
+      await client.connect();
+      lease = await this.acquire(binding, d, client, this.context(binding));
+      stop = this.heartbeat(binding, d, client, lease).stop;
+      const context = { ...this.context(binding), lease_id: lease.id, lease_token: lease.token };
+      const response = await client.declaredRead(item.call, context, `bed.baseline.${item.id}`);
+      const raw = at(response.value, item.output ?? '/output');
+      if (typeof raw !== 'string') throw new Error(`探针 ${probeId} 未返回文本内容（指针 ${item.output ?? '/output'}）`);
+      const text = captureText(raw, item.lead, item.trail);
+      const sha256 = sha256Hex(new TextEncoder().encode(text));
+      const artifact = await this.options.records.artifacts.ingest({
+        bytes: new TextEncoder().encode(text),
+        mediaType: 'text/plain',
+        origin: { upload: { session: 'bed-baseline' } },
+        author: { user: by.id },
+        provenanceType: 'observed',
+        visibility: { readers: [by.id], admins: true, packs: [], shareable: false },
+      });
+      const reference = `art:${artifact.body.sha256}`;
+      const now = this.now().toISOString();
+      const recordBody: BedBaselineRecord = {
+        executor,
+        probe: probeId,
+        sha256,
+        reference,
+        text,
+        recorded_by: by.id,
+        created_at: now,
+        reason: reason ?? null,
+      };
+      await this.options.records.store.put<ActionBody>({
+        kind: 'action',
+        schema: 'action@1',
+        provenance: 'observed',
+        created_at: now,
+        body: {
+          action: 'validate',
+          run: null,
+          item: null,
+          inputs: [reference, response.source],
+          component: 'dispatch@1',
+          lease: null,
+          started_at: now,
+          ended_at: now,
+          result: 'completed',
+          error_code: null,
+          acceptance: null,
+          codes: [],
+          detail: {
+            phase: 'bed_baseline',
+            ...recordBody,
+          },
+        },
+        index: [
+          { key: 'bed.baseline', value: `${executor}:${probeId}` },
+          { key: 'bed.baseline.executor', value: executor },
+          { key: 'dispatch.phase', value: 'bed_baseline' },
+        ],
+      });
+      return recordBody;
+    } finally {
+      await stop();
+      if (lease) await this.release(binding, client, lease);
+    }
+  }
+
+  async setBaseline(by: Principal, executor: string, probeId: string, text: string, reason?: string | null): Promise<BedBaselineRecord> {
+    await this.registry.admin(by);
+    const artifact = await this.options.records.artifacts.ingest({
+      bytes: new TextEncoder().encode(text),
+      mediaType: 'text/plain',
+      origin: { upload: { session: 'bed-baseline' } },
+      author: { user: by.id },
+      provenanceType: 'observed',
+      visibility: { readers: [by.id], admins: true, packs: [], shareable: false },
+    });
+    const sha256 = sha256Hex(new TextEncoder().encode(text));
+    const reference = `art:${artifact.body.sha256}`;
+    const now = this.now().toISOString();
+    const recordBody: BedBaselineRecord = {
+      executor,
+      probe: probeId,
+      sha256,
+      reference,
+      text,
+      recorded_by: by.id,
+      created_at: now,
+      reason: reason ?? null,
+    };
+    await this.options.records.store.put<ActionBody>({
+      kind: 'action',
+      schema: 'action@1',
+      provenance: 'observed',
+      created_at: now,
+      body: {
+        action: 'validate',
+        run: null,
+        item: null,
+        inputs: [reference],
+        component: 'dispatch@1',
+        lease: null,
+        started_at: now,
+        ended_at: now,
+        result: 'completed',
+        error_code: null,
+        acceptance: null,
+        codes: [],
+        detail: {
+          phase: 'bed_baseline',
+          ...recordBody,
+        },
+      },
+      index: [
+        { key: 'bed.baseline', value: `${executor}:${probeId}` },
+        { key: 'bed.baseline.executor', value: executor },
+        { key: 'dispatch.phase', value: 'bed_baseline' },
+      ],
+    });
+    return recordBody;
+  }
+
+  async getBaseline(executor: string, probeId: string): Promise<BedBaselineRecord | null> {
+    const rows = await this.options.records.store.findMany<ActionBody>({
+      kind: 'action',
+      key: 'bed.baseline',
+      values: [`${executor}:${probeId}`],
+    });
+    const last = rows.at(-1);
+    if (!last || last.body.detail.phase !== 'bed_baseline') return null;
+    return last.body.detail as unknown as BedBaselineRecord;
+  }
+
+  async listBaselines(by: Principal, executor?: string): Promise<BedBaselineRecord[]> {
+    await this.registry.admin(by);
+    let rows: Array<{ body: ActionBody; created_at?: string }>;
+    if (executor) {
+      rows = await this.options.records.store.findMany<ActionBody>({
+        kind: 'action',
+        key: 'bed.baseline.executor',
+        values: [executor],
+      });
+    } else {
+      rows = await this.options.records.store.findMany<ActionBody>({
+        kind: 'action',
+        key: 'dispatch.phase',
+        values: ['bed_baseline'],
+      });
+    }
+    const map = new Map<string, BedBaselineRecord>();
+    for (const row of rows) {
+      if (row.body.detail.phase === 'bed_baseline') {
+        const record = row.body.detail as unknown as BedBaselineRecord;
+        map.set(`${record.executor}:${record.probe}`, record);
+      }
+    }
+    return [...map.values()].sort((a, b) => (a.executor === b.executor ? a.probe.localeCompare(b.probe) : a.executor.localeCompare(b.executor)));
+  }
+
+  async showBaseline(by: Principal, executor: string, probeId: string): Promise<BedBaselineRecord> {
+    await this.registry.admin(by);
+    const baseline = await this.getBaseline(executor, probeId);
+    if (!baseline) throw new Error(`未找到执行器 ${executor} 探针 ${probeId} 的登记基线`);
+    return baseline;
+  }
+
   private async readBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>, when: 'pre' | 'post'): Promise<BedRead[]> {
     const spec = d.bed_state;
     if (!spec) return [];
@@ -837,8 +1056,46 @@ export class DispatchService {
     for (const item of spec.items) {
       try {
         const response = await client.declaredRead(item.call, context, `bed.${when}.${item.id}`);
-        const canonical = parseReply(item, response.value);
-        reads.push(canonical ? { id: item.id, ok: true, canonical, value: response.value, source: response.source } : { id: item.id, ok: false, value: response.value, source: response.source });
+        const raw = at(response.value, item.output ?? '/output') ?? at(response.value, '/output');
+        const text = typeof raw === 'string' ? captureText(raw, item.lead, item.trail) : undefined;
+        let sha256: string | undefined;
+        let reference: string | undefined;
+        if (text !== undefined) {
+          const textBytes = new TextEncoder().encode(text);
+          sha256 = sha256Hex(textBytes);
+          const artifact = await this.options.records.artifacts.ingest({
+            bytes: textBytes,
+            mediaType: 'text/plain',
+            origin: { upload: { session: `bed-${when}` } },
+            author: { user: binding.user },
+            provenanceType: 'observed',
+            visibility: { readers: [binding.user], admins: true, packs: [], shareable: false },
+          });
+          reference = `art:${artifact.body.sha256}`;
+        }
+        const canonical = item.parser ? parseReply(item, response.value) : undefined;
+        if (text !== undefined) {
+          reads.push({
+            id: item.id,
+            ok: true,
+            text,
+            sha256,
+            reference,
+            canonical: canonical ?? { kind: 'address_table', addresses: [] },
+            value: response.value,
+            source: response.source,
+          });
+        } else if (canonical !== null && canonical !== undefined) {
+          reads.push({
+            id: item.id,
+            ok: true,
+            canonical,
+            value: response.value,
+            source: response.source,
+          });
+        } else {
+          reads.push({ id: item.id, ok: false, value: response.value, source: response.source });
+        }
       } catch (error) {
         reads.push({ id: item.id, ok: false, source: error instanceof ToolReplyError ? error.source : null });
       }
@@ -848,55 +1105,148 @@ export class DispatchService {
   private async noteBed(binding: JobBinding, when: 'pre' | 'post', bed: string, reads: readonly BedRead[], differences: BedReport['differences']): Promise<Record<string, Canonical>> {
     const canonical = Object.fromEntries(reads.flatMap(read => read.ok ? [[read.id, read.canonical] as const] : []));
     const sources = reads.flatMap(read => read.source ? [read.source] : []);
-    await this.journal.append(binding, 'bed_snapshot', 'read', 'completed', { when, bed, canonical, differences, sources }, sources);
+    await this.journal.append(binding, 'bed_snapshot', 'read', 'completed', { when, bed, canonical, differences, sources, reads }, sources);
     return canonical;
   }
-  private async openBedHold(bed: string): Promise<{ pre: Record<string, Canonical> } | null> {
+  private async openBedHold(bed: string): Promise<{ pre: Record<string, Canonical>; pre_reads?: BedRead[] } | null> {
     const rows = await this.options.records.store.findMany<ActionBody>({ kind: 'action', key: 'dispatch.phase', values: ['bed_hold'] });
     const mine = rows.filter(row => row.body.detail.bed === bed).sort((left, right) => left.created_at < right.created_at ? -1 : left.created_at > right.created_at ? 1 : 0);
     const last = mine.at(-1);
     const pre = last?.body.detail.pre;
     if (!last || last.body.detail.state !== 'open' || !pre || typeof pre !== 'object' || Array.isArray(pre)) return null;
-    return { pre: pre as Record<string, Canonical> };
+    return { pre: pre as Record<string, Canonical>, pre_reads: last.body.detail.pre_reads as BedRead[] | undefined };
   }
   /** Pre-dispatch bed gate. A residue, an open recovery diff, or a missing probe refuses before any intent. */
   private async gateBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<void> {
     const spec = d.bed_state;
     if (!spec) return;
-    const bed = await this.frozenValue(binding, d, spec.bed);
-    const name = bedName(bed);
-    if (!name) throw new PrecheckFactError('冻结清单里没有声明的台架对象或台架名', '管理员核对床面指针和已发布的台架清单，补齐台架名后再派发；尚未提交');
+    const bed = spec.bed ? await this.frozenValue(binding, d, spec.bed) : undefined;
+    const name = spec.bed ? bedName(bed) : binding.executor;
+    if (spec.bed && !name) throw new PrecheckFactError('冻结清单里没有声明的台架对象或台架名', '管理员核对床面指针和已发布的台架清单，补齐台架名后再派发；尚未提交');
+    const bedNameOrExecutor = name ?? binding.executor;
     const reads = await this.readBed(binding, d, client, context, 'pre');
+
     const declaration = await this.frozenValue(binding, d, '/surface');
+
+    // Missing probe check (when not using surface judgment)
     if (declaration === undefined) {
       const missing = reads.filter(read => !read.ok).map(read => read.id);
       if (missing.length) {
-        await this.noteBed(binding, 'pre', name, reads, []);
+        await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
         throw new PrecheckFactError(missingProbeFact(missing), unknownSteps(spec.items, missing));
       }
     }
-    const hold = await this.openBedHold(name);
+
+    // Open bed hold check
+    const hold = await this.openBedHold(bedNameOrExecutor);
     if (hold) {
-      const outstanding = againstStored(spec.items, hold.pre, reads);
+      let outstanding: Difference[] | null = null;
+      if (hold.pre_reads && hold.pre_reads.some(r => r.ok && 'text' in r && typeof r.text === 'string')) {
+        outstanding = [];
+        for (const item of spec.items) {
+          const preRead = hold.pre_reads.find(r => r.id === item.id);
+          const currentRead = reads.find(r => r.id === item.id);
+          if (!preRead || !preRead.ok || !currentRead || !currentRead.ok || !('text' in preRead) || !('text' in currentRead) || preRead.text === undefined || currentRead.text === undefined) {
+            outstanding = null;
+            break;
+          }
+          if (preRead.text !== currentRead.text) {
+            const diffLines = lineDiff(preRead.text, currentRead.text);
+            outstanding.push({
+              item: item.id,
+              kind: 'changed',
+              identity: item.id,
+              diff_lines: diffLines,
+              pre_sha256: preRead.sha256,
+              post_sha256: currentRead.sha256,
+            });
+          }
+        }
+      } else {
+        outstanding = againstStored(spec.items, hold.pre, reads);
+      }
       if (outstanding === null) {
-        await this.noteBed(binding, 'pre', name, reads, []);
+        await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
         throw new PrecheckFactError(missingProbeFact(spec.items.map(item => item.id)), unknownSteps(spec.items, spec.items.map(item => item.id)));
       }
       if (outstanding.length) {
-        await this.noteBed(binding, 'pre', name, reads, outstanding);
+        await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, outstanding);
         throw new PrecheckFactError(unrestoredFact(outstanding), cleanupSteps(spec.items, outstanding.map(diff => diff.item)));
       }
-      await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: name, state: 'clear', pre: hold.pre });
+      await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: bedNameOrExecutor, state: 'clear', pre: hold.pre });
+    }
+
+    // Baseline residue check
+    const itemBaselines = await Promise.all(spec.items.map(async item => ({
+      item,
+      baseline: await this.getBaseline(binding.executor, item.id),
+      read: reads.find(r => r.id === item.id),
+    })));
+
+    const anyRegistered = itemBaselines.some(ib => ib.baseline !== null);
+    const anyWithoutParser = spec.items.some(item => !item.parser);
+
+    if (anyRegistered || anyWithoutParser) {
+      const unregistered = itemBaselines.filter(ib => !ib.baseline).map(ib => ib.item.id);
+      if (unregistered.length) {
+        await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
+        throw new PrecheckFactError(
+          unregisteredBaselineFact(unregistered),
+          unregisteredBaselineNext(binding.executor, unregistered)
+        );
+      }
+
+      const captureDiffs: Difference[] = [];
+      for (const ib of itemBaselines) {
+        const text = ib.read?.ok && 'text' in ib.read && typeof ib.read.text === 'string' ? ib.read.text : undefined;
+        if (text === undefined || text !== ib.baseline!.text) {
+          const diffLines = text !== undefined ? lineDiff(ib.baseline!.text, text) : ['无法读取当前回显原文'];
+          captureDiffs.push({
+            item: ib.item.id,
+            kind: 'changed',
+            identity: ib.item.id,
+            diff_lines: diffLines,
+            pre_sha256: ib.baseline!.sha256,
+            post_sha256: ib.read?.ok && 'sha256' in ib.read ? (ib.read.sha256 as string) : undefined,
+          });
+        }
+      }
+
+      await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, captureDiffs);
+      if (captureDiffs.length) {
+        throw new PrecheckFactError(
+          residueCaptureFact(captureDiffs),
+          residueCaptureNext(spec.items, captureDiffs, binding.executor)
+        );
+      }
+      return;
+    }
+
+    // Fallback: legacy parser check for tests declaring parser and no registered baseline
+    if (declaration === undefined) {
+      const undeclared = spec.items.filter(item => {
+        if (!item.parser) return true;
+        if (item.parser.kind === 'address_table') return false;
+        if (item.parser.kind === 'text_table' && (item.parser.address || item.parser.manifest_lists || item.parser.manifest_device || item.parser.manifest_devices || item.parser.columns.some(c => c.cidr))) return false;
+        const snapshotOnly = 'snapshot_only' in item.parser && item.parser.snapshot_only;
+        if (snapshotOnly) return false;
+        const manifestRows = 'manifest_rows' in item.parser && item.parser.manifest_rows ? at(bed, item.parser.manifest_rows) : undefined;
+        return !Array.isArray(manifestRows);
+      });
+      if (undeclared.length) {
+        await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
+        throw new PrecheckFactError(undeclaredBaselineFact(undeclared.map(item => item.id)), undeclaredBaselineNext(spec.items, undeclared.map(item => item.id)));
+      }
     }
     if (declaration !== undefined) {
       const unread = reads.filter(read => read.value === undefined).map(read => read.id);
       if (unread.length) {
-        await this.noteBed(binding, 'pre', name, reads, []);
+        await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
         throw new PrecheckFactError(missingProbeFact(unread), unknownSteps(spec.items, unread));
       }
       const judged = judgeBedSurface(declaration, bed, reads);
       const residueDiffs = judged.ok ? judged.residues.map(residue => ({ item: residue.probe, kind: 'extra' as const, identity: residue.identity })) : [];
-      await this.noteBed(binding, 'pre', name, reads, residueDiffs);
+      await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, residueDiffs);
       if (!judged.ok) throw new PrecheckFactError(judged.missing, judged.next);
       if (!judged.residues.length) return;
       const probes = [...new Set(judged.residues.map(residue => residue.probe))].join('、');
@@ -910,10 +1260,10 @@ export class DispatchService {
     }
     const diffs = againstBaseline(spec.items, bed, reads);
     if (diffs === null) {
-      await this.noteBed(binding, 'pre', name, reads, []);
+      await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
       throw new PrecheckFactError(missingProbeFact(spec.items.map(item => item.id)), unknownSteps(spec.items, spec.items.map(item => item.id)));
     }
-    await this.noteBed(binding, 'pre', name, reads, diffs);
+    await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, diffs);
     if (diffs.length) throw new PrecheckFactError(residueFact(diffs), cleanupSteps(spec.items, diffs.map(diff => diff.item)));
   }
   /** Post-terminal snapshot. Pass/fail stays as reported; only the shared-bed limit moves. */
@@ -925,14 +1275,42 @@ export class DispatchService {
     const stored = pre?.body.detail.canonical;
     const name = typeof pre?.body.detail.bed === 'string' ? pre.body.detail.bed : null;
     const prior = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored as Record<string, Canonical> : null;
+    const preReads = pre?.body.detail.reads as BedRead[] | undefined;
     const reads = await this.readBed(binding, d, client, context, 'post');
     const sources = { pre: pre?.body.inputs ?? [], post: reads.flatMap(read => read.source ? [read.source] : []) };
-    const missing = !name || !prior || reads.some(read => !read.ok);
-    const diffs = !missing && prior && name ? againstStored(spec.items, prior, reads) : null;
+    const missing = !name || reads.some(read => !read.ok);
+    let diffs: Difference[] | null = null;
+    if (!missing && name) {
+      const hasTextCaptures = reads.some(r => r.ok && 'text' in r && typeof r.text === 'string');
+      if (hasTextCaptures && preReads) {
+        diffs = [];
+        for (const item of spec.items) {
+          const preRead = preReads.find(r => r.id === item.id);
+          const postRead = reads.find(r => r.id === item.id);
+          if (!preRead || !preRead.ok || !postRead || !postRead.ok || !('text' in preRead) || !('text' in postRead) || preRead.text === undefined || postRead.text === undefined) {
+            diffs = null;
+            break;
+          }
+          if (preRead.text !== postRead.text) {
+            const diffLines = lineDiff(preRead.text, postRead.text);
+            diffs.push({
+              item: item.id,
+              kind: 'changed',
+              identity: item.id,
+              diff_lines: diffLines,
+              pre_sha256: preRead.sha256,
+              post_sha256: postRead.sha256,
+            });
+          }
+        }
+      } else if (prior) {
+        diffs = againstStored(spec.items, prior, reads);
+      }
+    }
     const recovery: BedReport['recovery'] = missing || diffs === null ? 'unknown' : diffs.length ? 'unrestored' : 'restored';
     const differences = diffs ?? [];
     if (name) await this.noteBed(binding, 'post', name, reads, differences);
-    if (name && prior && recovery !== 'restored') await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: name, state: 'open', reason: recovery, pre: prior, differences });
+    if (name && recovery !== 'restored') await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: name, state: 'open', reason: recovery, pre: prior, differences, pre_reads: preReads });
     const ids = recovery === 'unknown' ? spec.items.map(item => item.id) : differences.map(diff => diff.item);
     return { bed: name ?? '', pre: 'passed', recovery, differences, originals: sources, limits: bedLimits(recovery), next_action: recovery === 'restored' ? null : recovery === 'unknown' ? unknownSteps(spec.items, ids) : cleanupSteps(spec.items, ids) };
   }

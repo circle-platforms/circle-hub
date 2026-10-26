@@ -161,3 +161,57 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
   throw new UsageError(`job 的子命令：${JOB_USAGE}`);
   } finally { await dispatch.close(); }
 }
+
+export const BED_USAGE = 'baseline record <执行器> --probe <id> [--reason <说明>] | baseline list [<执行器>] | baseline show <执行器> --probe <id>';
+
+export async function bedCommand(s: JobCommandSession, args: readonly string[]): Promise<number> {
+  const [group, sub, ...rest] = args;
+  if (group !== 'baseline') throw new UsageError(`bed 的子命令：${BED_USAGE}`);
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      strict: true,
+      options: {
+        probe: { type: 'string' },
+        reason: { type: 'string' },
+      },
+    });
+  } catch {
+    throw new UsageError('命令参数写法无效');
+  }
+  const { positionals, values } = parsed;
+  const by = await s.admin();
+  const dispatch = await service(s, sub === 'record');
+  try {
+    if (sub === 'record') {
+      if (positionals.length !== 1 || !values.probe) throw new UsageError(`bed baseline record 用法：baseline record <执行器> --probe <id> [--reason <说明>]`);
+      const executor = positionals[0];
+      const result = await dispatch.recordBaseline(by, executor, values.probe, values.reason);
+      s.out(`已登记基线：执行器 ${result.executor}；探针 ${result.probe}；原件摘要 ${result.sha256}；引用 ${result.reference}${result.reason ? `；理由 ${result.reason}` : ''}`);
+      return 0;
+    }
+    if (sub === 'list') {
+      if (positionals.length > 1) throw new UsageError(`bed baseline list 用法：baseline list [<执行器>]`);
+      const executor = positionals[0];
+      const records = await dispatch.listBaselines(by, executor);
+      for (const item of records) {
+        s.out(`执行器 ${item.executor}；探针 ${item.probe}；原件摘要 ${item.sha256}；引用 ${item.reference}；登记人 ${item.recorded_by}；登记时间 ${item.created_at}${item.reason ? `；理由 ${item.reason}` : ''}`);
+      }
+      s.out(`登记基线 ${records.length} 条`);
+      return 0;
+    }
+    if (sub === 'show') {
+      if (positionals.length !== 1 || !values.probe) throw new UsageError(`bed baseline show 用法：baseline show <执行器> --probe <id>`);
+      const executor = positionals[0];
+      const item = await dispatch.showBaseline(by, executor, values.probe);
+      s.out(`执行器 ${item.executor}；探针 ${item.probe}；原件摘要 ${item.sha256}；引用 ${item.reference}；登记人 ${item.recorded_by}；登记时间 ${item.created_at}${item.reason ? `；理由 ${item.reason}` : ''}`);
+      s.out(item.text);
+      return 0;
+    }
+    throw new UsageError(`bed 的子命令：${BED_USAGE}`);
+  } finally {
+    await dispatch.close();
+  }
+}
