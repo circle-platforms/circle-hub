@@ -1,0 +1,85 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "defect",
+      "role": "subject",
+      "description": "缺陷详情：PLM 查询服务的缺陷记录（plm:bug:<编号>）",
+      "accepts": [
+        "plm:bug"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "story",
+      "role": "subject",
+      "description": "需求详情：PLM 查询服务的需求记录（plm:story:<编号>）",
+      "accepts": [
+        "plm:story"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "build",
+      "role": "subject",
+      "description": "构建列表：PLM 查询服务的一个产品的构建列表（plm:builds:<产品编号> 或 plm:builds:<产品名>）",
+      "accepts": [
+        "plm:builds"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "mindmap",
+      "role": "subject",
+      "description": "脑图文档：敏捷测试平台的脑图文档（agile:mindmap:<文档编号>）",
+      "accepts": [
+        "agile:mindmap"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "build_page",
+      "role": "subject",
+      "description": "构建页：构建站的页面（buildsite:listing:<页面名>）或命令树文件（buildsite:file:<链接>）",
+      "accepts": [
+        "buildsite:listing",
+        "buildsite:file"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "manual_file",
+      "role": "subject",
+      "description": "手册文件：手册库或文档库按路径读取的一个文件（manual:file:<路径> 或 openkm:file:<路径>）",
+      "accepts": [
+        "manual:file",
+        "openkm:file"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "svn_file",
+      "role": "subject",
+      "description": "SVN 文件：SVN 只读仓库按修订号和路径读取的文件（svn:file:<修订号>/<路径>）",
+      "accepts": [
+        "svn:file"
+      ],
+      "required": false,
+      "many": false
+    }
+  ],
+  "parameters": [],
+  "product": {
+    "catalogs": []
+  },
+  "subject": "defect",
+  "projection": {
+    "module": "functions/project.ts"
+  }
+}

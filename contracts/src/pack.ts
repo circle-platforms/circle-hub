@@ -234,7 +234,7 @@ export type AllowedEffect=z.infer<typeof AllowedEffect>;
 export const RequirementsFile = z
   .strictObject({
     schema: z.literal('requirements@1'),
-    requirements: z.array(RequirementTemplate).min(1),
+    requirements: z.array(RequirementTemplate),
     effects:z.array(AllowedEffect).max(100).optional(),
   })
   .superRefine((f, ctx) => {
