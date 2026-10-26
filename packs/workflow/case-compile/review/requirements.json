@@ -1,0 +1,23 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "review",
+      "name": "类型化判据独立复核",
+      "description": "判断判据是否忠实覆盖作者期望；代码只核结构、引文和账号独立性",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "independent_judgment",
+      "independent_of": "predecessor",
+      "independence_by_account": true,
+      "checks": [
+        "review_form"
+      ],
+      "error_handling": []
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "review_form",
+      "title": "原判据及期望引文核对",
+      "function": {
+        "module": "functions/check.ts"
+      },
+      "reads": {
+        "roles": [
+          "expected"
+        ]
+      },
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "声明全字段与逐字来源；语义由独立复核者判断"
+    }
+  ]
+}

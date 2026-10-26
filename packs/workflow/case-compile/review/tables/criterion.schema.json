@@ -1,0 +1,80 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expectation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "quote": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "reference",
+        "text"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "minLength": 1,
+      "enum": [
+        "literal",
+        "count",
+        "capture_relation"
+      ]
+    },
+    "operator": {
+      "type": "string",
+      "minLength": 1,
+      "enum": [
+        "found",
+        "not_found",
+        "abs_found",
+        "found_times"
+      ]
+    },
+    "literal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "relation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope_root": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "id",
+    "expectation",
+    "quote",
+    "kind",
+    "operator",
+    "rationale",
+    "scope_root"
+  ]
+}

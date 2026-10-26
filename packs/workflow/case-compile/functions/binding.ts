@@ -30,7 +30,7 @@ export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string, 
   }
   for (const v of values) {
     if (typeof v.value === 'number') { if (!Number.isSafeInteger(v.value) || v.value < 0) issue('param_value', v.pointer, '整数关键字必须是安全非负整数'); }
-    else if (!hasSingleLineValue(v.value)) issue('param_value', v.pointer, '参数值必须是有效单行原文，首尾无空白、不以 = 开头、没有 {} 或 {0}');
+    else if (!(step.restore_for!==undefined&&step.input_register!==undefined&&v.pointer===at+'/args/0'&&v.value==='{}')&&!hasSingleLineValue(v.value)) issue('param_value', v.pointer, '参数值必须是有效单行原文，首尾无空白、不以 = 开头、没有 {} 或 {0}');
   }
   return { values, problems };
 }

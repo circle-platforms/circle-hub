@@ -1,3 +1,5 @@
+import {checkBlockExpected} from './block-expected.ts';
+import {blockMeta,blockPointer,withoutModelIdentities} from './blocks.ts';
 import {labelOf} from './generated/vocabulary.ts';
 import {planCommands} from './plan-commands.ts';
 import { typedAuthorityGaps, authorityRecovery, typedAddressUses } from './typed-authority.ts';
@@ -15,13 +17,13 @@ import { bindArguments, hasShellDynamicSyntax, hasBalancedCommandText, hasSingle
 import {identityOf} from './typed-contract.ts';
 import { replacedQuote } from './addresses.ts';
 import { citedCriterion, type FrozenItemCriterion } from './subject.ts';
-interface CheckSubject {expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[]; problems: Array<{ capacityExceeded?:boolean; document: string; pointer: string; message: string }> }
+interface CheckSubject {bed_services?:unknown;manifest_sha256?:string;criteria_review?:unknown;expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; item: string; location: string | null; data: unknown; contract: RuntimeContract | null; profile: RuntimeProfile | null; beds: ManifestBed[]; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[]; problems: Array<{ capacityExceeded?:boolean; document: string; pointer: string; message: string }> }
 function subjectOf(input: unknown): CheckSubject {
   const raw = isRecord(input) && isRecord(input.subject) ? input.subject : {};
   const contract = parseRuntimeContract(raw.contract); const manifest = parseManifest(raw.manifest);
   const profile = contract.ok && manifest.ok ? parseProfile(raw.profile, contract.contract, manifest.beds) : null;
   const problems = [...(!contract.ok ? contract.problems.map((v) => ({ document: 'contract', pointer: v.pointer, message: v.message })) : []), ...(!manifest.ok ? manifest.problems.map((v) => ({ document: 'inventory', pointer: v.pointer, message: v.message })) : []), ...(profile && !profile.ok ? profile.problems.map((v) => ({ document: 'profile', pointer: v.pointer, message: v.message,...(v.capacityExceeded?{capacityExceeded:true}:{}) })) : [])];
-  return { expected_nodes:raw.expected_nodes,command_catalog:raw.command_catalog,command_identities:raw.command_identities,problems, criteria: Array.isArray(raw.criteria) ? raw.criteria as FrozenItemCriterion[] : [], case_texts: Array.isArray(raw.case_texts) ? raw.case_texts.filter((v): v is string => typeof v === 'string') : [], item: typeof raw.item === 'string' ? raw.item : '', location: typeof raw.location === 'string' ? raw.location : null, data: raw.data, contract: contract.ok ? contract.contract : null, profile: profile?.ok ? profile.profile : null, beds: manifest.ok ? manifest.beds : [], leases: Array.isArray(raw.leases) ? raw.leases as LeaseRow[] : [], now: typeof raw.now === 'string' ? raw.now : new Date(0).toISOString() };
+  return {bed_services:raw.bed_services,manifest_sha256:typeof raw.manifest_sha256==='string'?raw.manifest_sha256:undefined,criteria_review:raw.criteria_review, expected_nodes:raw.expected_nodes,command_catalog:raw.command_catalog,command_identities:raw.command_identities,problems, criteria: Array.isArray(raw.criteria) ? raw.criteria as FrozenItemCriterion[] : [], case_texts: Array.isArray(raw.case_texts) ? raw.case_texts.filter((v): v is string => typeof v === 'string') : [], item: typeof raw.item === 'string' ? raw.item : '', location: typeof raw.location === 'string' ? raw.location : null, data: raw.data, contract: contract.ok ? contract.contract : null, profile: profile?.ok ? profile.profile : null, beds: manifest.ok ? manifest.beds : [], leases: Array.isArray(raw.leases) ? raw.leases as LeaseRow[] : [], now: typeof raw.now === 'string' ? raw.now : new Date(0).toISOString() };
 }
 const TIER = 'blocking' as const;
 function support(s: CheckSubject, statement: string, data?: Record<string, unknown>): Outcome { return { verdict: 'support', statement: statement + markers(s.profile?.synthetic === true, s.contract ?? undefined), grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, ...(data ? { data } : {}) }; }
@@ -39,8 +41,8 @@ function slotsOf(s: CheckSubject): { slots: PlanSlots; errors: null } | { slots:
 }
 function typedPrerequisites(s: CheckSubject, slots: PlanSlots): Outcome[] | null {
   // Model identity proposals belong to commands_known, not shared contract prerequisites.
-  const {command_identities:_modelDeclaration,...plan}=slots;
-  const gaps = typedAuthorityGaps(s.contract!, s.profile!, plan,s.command_identities,s.command_catalog,s.case_texts);
+  const plan=withoutModelIdentities(slots);
+  const gaps = typedAuthorityGaps(s.contract!, s.profile!, plan,s.command_identities,s.command_catalog,s.case_texts,s.manifest_sha256,s.bed_services);
   if (!gaps.length) return null;
   const missing = authorityRecovery(gaps);
   if(gaps.some(g=>g.verdict==='refute'))return [refute(s,'method_forbidden',missing,'/data',{problems:gaps,obligations:gaps.flatMap(gap=>gap.obligation?[gap.obligation]:[])})];
@@ -108,6 +110,7 @@ export function checkExpectedSources(input: unknown): Outcome[] {
   const read = slotsOf(s); if (read.errors) return read.errors;
   const unverified = typedPrerequisites(s, read.slots); if (unverified) return unverified;
   const slots = read.slots; const out: Outcome[] = [];
+  if(blockMeta(slots))return checkBlockExpected(slots,s.expected_nodes,s.criteria_review,isRecord(s.command_catalog)?s.command_catalog.root:undefined,s.item);
   if (!slots.expects.length) return [refute(s, 'expect_without_source', '至少一条期望结果必须带逐字来源并指明它判断的步骤', '/data/expects')];
   const byCriterion: Array<{ at: number; criterion: FrozenItemCriterion }> = [];
   for (const [i, expect] of slots.expects.entries()) {

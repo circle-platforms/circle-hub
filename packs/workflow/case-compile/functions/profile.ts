@@ -7,6 +7,7 @@ import { readAuthority } from './typed-contract.ts';
 import type { ManifestBed } from './manifest.ts';
 export interface AllowedCall { reviewed?:boolean; object: string; method: string; parameters: Record<string, string>; unsupplied?: string[] }
 export interface RuntimeProfile {
+  block_model?:boolean;
   synthetic: boolean;
   max_wait_seconds: number | null;
   runtimeVersion: string;
@@ -124,14 +125,17 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
     }
     allowed.push({ object: String(raw.object), method: String(raw.method), parameters, ...(raw[FORMAT.method_review_field]===true?{reviewed:true}:{}), ...(omitted.names.length?{unsupplied:omitted.names}:{}) });
   }
+  if(value.block_model!==undefined&&typeof value.block_model!=='boolean')issue('/block_model','block_model 必须是显式布尔声明');
   const assertions = allowed.filter((v) => Object.values(v.parameters).some((role) => role === 'literal_assertion'));
-  if (assertions.length !== 1) issue('/allowed', '必须配置唯一的字面断言组合，供生成器从 expects 产生断言');
+  const document=sourceDocument(contract),runnerRuntime=isRecord(document?.runtime)?document.runtime:{},block=isRecord(runnerRuntime.block_model)?runnerRuntime.block_model:{},defaultCall=isRecord(block.default_assertion)?block.default_assertion:{};
+  const defaults=value.block_model===true?assertions.filter(call=>call.object===defaultCall.object&&call.method===defaultCall.method):assertions;
+  if (defaults.length !== 1) issue('/allowed', '必须配置唯一的字面断言组合，供生成器从 expects 产生断言');
   for (const call of assertions) {
     const names = Object.keys(call.parameters).filter((name) => call.parameters[name] === 'literal_assertion');
     const method = runtimeMethod(contract, call.object, call.method);
     // A required parameter filled by the executor (the previous step's return, e.g. the `result` of the two-argument
     // checkpoints) is not the model's to write: only such parameters may be required besides the expectation.
-    if (names.length !== 1 || method?.parameters.some((p) => p.required && p.name !== names[0] && call.parameters[p.name] !== 'executor_return')) issue('/allowed', '字面断言只能有一个期望参数，其他必填参数只能是由执行器提供上一步返回的参数');
+    if (names.length !== 1 || method?.parameters.some((p) => p.required && p.name !== names[0] && call.parameters[p.name] !== 'executor_return'&&!(value.block_model===true&&call.parameters[p.name]==='checkpoint_count'))) issue('/allowed', '字面断言只能有一个期望参数，其他必填参数只能是由执行器提供上一步返回的参数');
   }
   const fold_newlines: RuntimeProfile['fold_newlines'] = [];
   if (value.fold_newlines !== undefined && !Array.isArray(value.fold_newlines)) issue('/fold_newlines', '折叠换行名单必须是对象和方法组合列表');
@@ -144,5 +148,5 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   const hasWait = allowed.some((call) => Object.values(call.parameters).some((role) => role === 'wait'));
   if (hasWait && (!Number.isSafeInteger(value.max_wait_seconds) || (value.max_wait_seconds as number) < 1)) issue('/max_wait_seconds', '等待角色必须配置明确的正整数秒数上限');
   if(value.denied!==undefined)issue('/denied','拒绝词表已退役；删除该字段，按 runtime-contract@2 的闭集角色、完整命令与效果授权重发');
-  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, max_wait_seconds: hasWait ? value.max_wait_seconds as number : null, runtimeVersion: contract.runtimeVersion, digest: contract.pinned.identity, bed: String(value.bed), device_count: value.device_count as number, fold_newlines, workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed, ...(Array.isArray(value.trigger_types) ? { trigger_types: value.trigger_types as string[] } : {}) } };
+  return problems.length ? { ok: false, problems } : { ok: true, profile: { ...(value.block_model!==undefined?{block_model:value.block_model===true}:{}),synthetic: value.synthetic === true, max_wait_seconds: hasWait ? value.max_wait_seconds as number : null, runtimeVersion: contract.runtimeVersion, digest: contract.pinned.identity, bed: String(value.bed), device_count: value.device_count as number, fold_newlines, workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed, ...(Array.isArray(value.trigger_types) ? { trigger_types: value.trigger_types as string[] } : {}) } };
 }
