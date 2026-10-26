@@ -1,6 +1,8 @@
 # 第一阶段参考采用清单
 
-来源均固定在 infosec-platform `4ab6c5ea593eb1b1d71bed92374b3a013ba61ad9`，只读。以下是行为参考，新的生产目录没有 import 或执行原件。来源字节继续由 reference archive 检查独立验证。
+> **历史文档**（2026-10-21 标注）：本文是已退役的任务与审批服务器第一阶段的参考采用清单，所列的新模块已随旧服务器删除，只作记录保留。现行范围见 [Hub r4 简报](hub-r4-brief.md)。
+
+来源均固定在 legacydemo-platform `4ab6c5ea593eb1b1d71bed92374b3a013ba61ad9`，只读。以下是行为参考，新的生产目录没有 import 或执行原件。来源字节继续由 reference archive 检查独立验证。
 
 | 源文件（references/platform/snapshot 下） | 采用行为与修改 | 新模块与全部调用方 | 新验收 |
 |---|---|---|---|

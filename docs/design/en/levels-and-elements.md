@@ -1,5 +1,7 @@
 # Levels and elements
 
+> **Superseded** (2026-10-21): the five levels of interface in Circle, the Work queue and the Registry were retired with the old server. Circle shows no Hub-specific interface; the Hub's console is four read-only pages (planned), and a record page is laid out by the five elements, see the [object standard](object-standard.md). Kept as a record only.
+
 Design hub's entry first, then go deeper level by level; each level fixes which diagram, table, description, and buttons it uses, and existing work only fills content into it. Taken from the shared practice of the Claude Code desktop and the Codex desktop, without copying their surface: the session is the entry, the left column is the work list, things that need a person appear as inline cards and aggregate in the left column, Evidence sits in the side column, and the actions are few and fixed.
 
 ## Five levels, deeper one by one

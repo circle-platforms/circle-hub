@@ -1,0 +1,27 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "traced",
+      "title": "缺陷追溯判定",
+      "function": { "module": "functions/check.ts" },
+      "table": "tables/closed-statuses.json",
+      "reads": { "roles": ["expected"], "types": ["plm:bugs"] },
+      "applies": "run",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "subject",
+      "tier": "advisory"
+    },
+    {
+      "id": "counts",
+      "title": "追溯统计",
+      "function": { "module": "functions/counts.ts" },
+      "table": "tables/closed-statuses.json",
+      "reads": { "roles": ["expected"], "types": ["plm:bugs"] },
+      "applies": "run",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "subject",
+      "tier": "advisory"
+    }
+  ]
+}

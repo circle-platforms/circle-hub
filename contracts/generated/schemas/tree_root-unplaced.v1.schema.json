@@ -1,0 +1,310 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "rows": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "entry": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "definition",
+              "behaviour",
+              "case",
+              "defect",
+              "observation"
+            ]
+          },
+          "producers": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]*$"
+            },
+            "description": "the producers of the product pack that gave the entry, sorted; a catalog limited to one producer takes only its entries"
+          },
+          "section": {
+            "type": "string"
+          },
+          "fragments": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
+            },
+            "description": "every source piece with this content, in the order the producers gave them"
+          },
+          "applicability_sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "models",
+                    "platforms",
+                    "builds",
+                    "components",
+                    "memory",
+                    "licenses",
+                    "deployment_forms"
+                  ]
+                },
+                "section": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "declaration": {
+                  "type": "object",
+                  "properties": {
+                    "builds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "platforms": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "components": {
+                      "type": "object",
+                      "properties": {
+                        "with": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "without": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "memory": {
+                      "type": "object",
+                      "properties": {
+                        "minimum": {
+                          "type": "object",
+                          "properties": {
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inclusive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "bytes",
+                            "inclusive"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maximum": {
+                          "type": "object",
+                          "properties": {
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inclusive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "bytes",
+                            "inclusive"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "raw": {
+                          "type": "string",
+                          "pattern": "\\S"
+                        }
+                      },
+                      "required": [
+                        "raw"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "licenses": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "deployment_forms": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "inherited": {
+                      "description": "Inherited field codes only; source positions belong to composition provenance",
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "models",
+                          "platforms",
+                          "builds",
+                          "components",
+                          "memory",
+                          "licenses",
+                          "deployment_forms"
+                        ]
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "conflict": {
+                  "type": "boolean"
+                },
+                "superseded": {
+                  "description": "An inner scope replaced this declaration; retained as provenance only",
+                  "type": "boolean"
+                },
+                "fragment": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
+                }
+              },
+              "required": [
+                "field",
+                "section",
+                "declaration",
+                "fragment"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "basis": {
+            "type": "string",
+            "enum": [
+              "release_record",
+              "device_echo",
+              "source_structure",
+              "declared"
+            ]
+          },
+          "decided_by": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stopped_at": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+            "description": "the node where placement stopped (/ when it never descended)"
+          },
+          "candidate": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                    "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+                  },
+                  "model": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "p": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "calibrated": {
+                    "type": "boolean",
+                    "description": "false: the chain has no calibrated threshold, the answer is only a candidate"
+                  }
+                },
+                "required": [
+                  "path",
+                  "model",
+                  "p",
+                  "calibrated"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "the model's answer kept as a candidate, when it named a child"
+          },
+          "judgments": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "note": {
+            "type": "string",
+            "description": "why it stopped, in Chinese"
+          }
+        },
+        "required": [
+          "entry",
+          "kind",
+          "producers",
+          "section",
+          "fragments",
+          "basis",
+          "decided_by",
+          "stopped_at",
+          "candidate",
+          "judgments",
+          "note"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "rows"
+  ],
+  "additionalProperties": false
+}

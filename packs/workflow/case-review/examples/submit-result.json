@@ -1,0 +1,43 @@
+{
+  "run": "run_01m5h9zm2nhzbz2hrfjfb6azta",
+  "model": "alpha-drafter 1.0 (scripted, temperature 0)",
+  "items": [
+    {
+      "item": "900103:imyvp5mr10r6",
+      "handling": "handled",
+      "context": "c1c2c3c4c5c6c7c8c9c0c1c2c3c4c5c6c7c8c9c0c1c2c3c4c5c6c7c8c9c0c1c2",
+      "slots": {
+        "findings": [
+          {
+            "text": "只测了一个越界值 61，缺少 0 和超长字符串的边界用例",
+            "code": "edge_case_gap",
+            "rank": "minor",
+            "location": "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6",
+            "quotes": [
+              {
+                "reference": "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6",
+                "text": "widget health interval pool1 61"
+              }
+            ],
+            "commands": [
+              {
+                "command": "widget health interval pool1 61"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "cross_item": [
+    {
+      "nature": "judgment",
+      "statement": "等级理由：覆盖了基本功能，反向用例有覆盖，但兼容性用例不足；证据缺口：命令的已验证测试事实（足迹）还没有",
+      "grounds": [
+        "src:cdee268f7e7db5e216b51d257a349f9d0ca408543bd4f66dd280509ad7c1c750"
+      ],
+      "code": "level",
+      "rank": "P4"
+    }
+  ]
+}

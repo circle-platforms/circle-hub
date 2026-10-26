@@ -1,0 +1,270 @@
+{
+  "schema": "pack@1",
+  "id": "template-gap",
+  "version": "1.2.12",
+  "kind": "workflow",
+  "title": "模板缺口检查",
+  "description": "文档级核验模板 v3 全部 24 类，并从锁定构建的用例索引核验每个已解析命令的 9 类覆盖；缺输入写明补齐动作、对象和期限",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "1a2332ae1b64f08f387b2b051f6cc1a4d947e31b7de2dddf65fd983cd2cfa2da",
+      "size": 7278
+    },
+    {
+      "path": "checks.json",
+      "sha256": "e95de111e983cb201b9bccacb3c288267840e42b380fff2e6a04b493ad01e068",
+      "size": 1173
+    },
+    {
+      "path": "examples/command_partial_shortfall.json",
+      "sha256": "700150db261c354c02c94dba1f1fab1d36a8b239e4ad000959fc58a21217267b",
+      "size": 83866
+    },
+    {
+      "path": "examples/command_partial_support.json",
+      "sha256": "cfe33998e767e01889ec77cfbb0c18944f24e74a28a16f0adc2e1a1eff130987",
+      "size": 92894
+    },
+    {
+      "path": "examples/command_unbound.json",
+      "sha256": "ca6a4dad8f04656c2d46b12ec1b36a0d0d73e3e5815fec593bdd88a9444ae16c",
+      "size": 69150
+    },
+    {
+      "path": "examples/command_unmatched.json",
+      "sha256": "d0b462337c6c1b76c74b34084121418c9cdd7c9156a3027b9907d831428223e0",
+      "size": 99336
+    },
+    {
+      "path": "examples/synthetic-gap.km.json",
+      "sha256": "aebb0808aa5c2f597202f43c9833b0711605d12311c88afddb34ac6c9255d783",
+      "size": 21787
+    },
+    {
+      "path": "examples/synthetic-gap.result.json",
+      "sha256": "26c4b2aa7eb0917b92c749c5592311baf156c450a2e31877c87f5b49db655a1e",
+      "size": 55595
+    },
+    {
+      "path": "functions/cases.ts",
+      "sha256": "07dab98b7fda787ae83a2fd1598d925fa9a06660df302c0d635a94bb03849c16",
+      "size": 15668
+    },
+    {
+      "path": "functions/category-evidence.ts",
+      "sha256": "0eab9886519f0e32b6b4c32684881bb208d06acaf596b9a75d1a0c35eedf47b6",
+      "size": 1694
+    },
+    {
+      "path": "functions/classification-subject.ts",
+      "sha256": "964ea50982894e71caca5b4c823c742ae851b706447bf65d0c6598eff1a65765",
+      "size": 763
+    },
+    {
+      "path": "functions/classification.ts",
+      "sha256": "e3289b0502beb05ed16b6e4134a90ca050e681389103092e726b48e60390da38",
+      "size": 4508
+    },
+    {
+      "path": "functions/command-check.ts",
+      "sha256": "9e49d6eb4f86e9beca16b70c5d3d22f0e38879e7de7711928a88904b23b3a452",
+      "size": 11696
+    },
+    {
+      "path": "functions/command-identity.ts",
+      "sha256": "b7325730d2943dbdfd580cff8fa26147add2933a9e78ffecddad9bd4ef21ff36",
+      "size": 2136
+    },
+    {
+      "path": "functions/command-subject.ts",
+      "sha256": "9feeea6b395e4654be3f4869047fb7a636dda7d7364527c4532bddb3c962a498",
+      "size": 1409
+    },
+    {
+      "path": "functions/commands.ts",
+      "sha256": "7e9e3878141abf9574df5b96221b6ff58410196f9965f6e0673f8da3a271fceb",
+      "size": 6760
+    },
+    {
+      "path": "functions/common.ts",
+      "sha256": "0aadf0bbb5c1bc504a62ba3e57cb2c8833cea9cb50f1ec638ef35e48e8e3ce78",
+      "size": 2088
+    },
+    {
+      "path": "functions/coverage-check.ts",
+      "sha256": "0a1980a3d5f1b9ffb6be65690b55e4746e21c09b04345c83bc9c6400706018d2",
+      "size": 4810
+    },
+    {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "2645a7b984a70645f5fb187bdb284c96022e123a614dc279fd6f18a36c263cac",
+      "size": 4642
+    },
+    {
+      "path": "functions/index.ts",
+      "sha256": "44726f1ac87189fc86b6b590a8596650f07a1fc63f3ad30768a5104b638ba94b",
+      "size": 7103
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "82f527837d10d3e94a7550cb1bca57fe7dbb47a3012ba0c39d0aefa17054bf27",
+      "size": 25860
+    },
+    {
+      "path": "functions/source-quotes.ts",
+      "sha256": "10a599074f78f740ebfe2e74069e07ab49870a943a49024665891d64988c3352",
+      "size": 5690
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "87b6cea694c6a5256b085ffca8e1bc6561dc841491c582b07c8ee26de3462717",
+      "size": 1819
+    },
+    {
+      "path": "functions/tag-declarations.ts",
+      "sha256": "c34840304a43b6e0264f15fb6544162b70030feb996ac886e107059fd2182145",
+      "size": 2357
+    },
+    {
+      "path": "functions/tags.ts",
+      "sha256": "a70f8733b39e395bb6c6490d579aab7d0029d3da11fcd6487e21aba5415c9972",
+      "size": 826
+    },
+    {
+      "path": "functions/template.ts",
+      "sha256": "3f13c370bdbe0efd66b77e8c4091e01558ee3d82444e51a579c3905c5b8b556b",
+      "size": 3927
+    },
+    {
+      "path": "functions/text.ts",
+      "sha256": "3bbc1d115408ff9604b6ba4ed2ab5b2d75d9c2e409059638fb27a22962656a1b",
+      "size": 5468
+    },
+    {
+      "path": "functions/types.ts",
+      "sha256": "8d096194abb9ac737967680d94becd62dd488eeb33cad8b5e00963ca9ed6ab42",
+      "size": 6539
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "c69a55f46082b6f898266567c93b3e85c9979f813a0be8d0621aec078bb6b342",
+      "size": 1713
+    },
+    {
+      "path": "samples/negative/command_absent.json",
+      "sha256": "ad0a3246594067a861e21beb2b967fa3c87601709ffac65ae592e223dc06b311",
+      "size": 3460
+    },
+    {
+      "path": "samples/negative/command_none.json",
+      "sha256": "5310f9f5d89d83c79581485b6fedf383f0ee69a115e9fb47e2799f8e1f6c365d",
+      "size": 10254
+    },
+    {
+      "path": "samples/negative/command_rule_mismatch.json",
+      "sha256": "e45e9b310352c2415fb6114616a8128c786e001faf54eb798ca3ecaedab5c9fb",
+      "size": 13756
+    },
+    {
+      "path": "samples/negative/command_shortfall.json",
+      "sha256": "e79acda7755122db27e2a3729bf50d05a44147e8720a79b496bd933dfbd83e58",
+      "size": 13682
+    },
+    {
+      "path": "samples/negative/command_upload.json",
+      "sha256": "3b830a0288e2ba52eb37b5b541f370fa65bce3594c6160e3110341871b214632",
+      "size": 13732
+    },
+    {
+      "path": "samples/negative/coverage-blank-reason.json",
+      "sha256": "33346f85ddf4f33204fbd1e3e5f1f8f3830034fae75b31c8e4bd6b2cafe9500c",
+      "size": 21632
+    },
+    {
+      "path": "samples/negative/coverage-nothing-covered.json",
+      "sha256": "5cf15689a1f13f8ac8206af6be0eeec382ef291de83d5dfd109aef9866741c0e",
+      "size": 2160
+    },
+    {
+      "path": "samples/negative/coverage-one-missing.json",
+      "sha256": "c7f4b2848851cfdce376247abc80d34489fe38e8f4671e1af7fa92b9e063543b",
+      "size": 21563
+    },
+    {
+      "path": "samples/negative/coverage-other-category-missing.json",
+      "sha256": "dbc97459f20791d7979b211cacf42d1354b566c17282ee1b6adb2e892c953418",
+      "size": 21565
+    },
+    {
+      "path": "samples/negative/tag-declaration.json",
+      "sha256": "e97b4ea0967e9a227b399efe14d4e6c763b275e84797da7c721ba7fa29b0be2b",
+      "size": 716
+    },
+    {
+      "path": "samples/positive/command_all.json",
+      "sha256": "e93dc194778eb0e7fc05134892ebfa5f586978730c0fcb88f428ecd01c4a2711",
+      "size": 13691
+    },
+    {
+      "path": "samples/positive/command_skip.json",
+      "sha256": "87071506ebe09524e6d2648e030ea2f175888e0e8c511cd396804f4d9b61ca4b",
+      "size": 13739
+    },
+    {
+      "path": "samples/positive/coverage-all-covered.json",
+      "sha256": "a0d023812c0272b753dd107daf0402d1cf7b165176a4f479ac28015b392009b2",
+      "size": 22394
+    },
+    {
+      "path": "samples/positive/coverage-skipped-with-reason.json",
+      "sha256": "83a73a295fc01249e824be6f3703a31cf947a9924880368c980ea7cf6d6077fc",
+      "size": 21631
+    },
+    {
+      "path": "samples/positive/tag-declaration.json",
+      "sha256": "839f5bfd7b1137fdb102bc389983603783060711e920aa4d3d55b0935812e1ef",
+      "size": 537
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "68f359498e5a4a12986b14a219135556b6e5a3d84ef8af98c7840a0eb56607c2",
+      "size": 4445
+    },
+    {
+      "path": "tables/category-judgment.schema.json",
+      "sha256": "0720e737e7168eff6981e1bbed72c369ae6b19ad4faac4f1dbce22f52ae1fc5f",
+      "size": 5152
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "383e826a65a3178e3ef2277b6ab5ab104f3e74b6216f16e3abf90a43bc0ccffc",
+      "size": 7747
+    },
+    {
+      "path": "tables/command-identity.schema.json",
+      "sha256": "24090e3bcc14380932929414d8036405601275e5a85ff6a35f69c9e4d80afa91",
+      "size": 16758
+    },
+    {
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
+    },
+    {
+      "path": "tables/template-v3-coverage.json",
+      "sha256": "32c68bbba5a112ceb5c5f92bc7a0db6fe75c6d7c7638b62b3b4bb5086d7473b7",
+      "size": 1385
+    },
+    {
+      "path": "tables/template-v3.json",
+      "sha256": "6da08dd2265a630d0dec6290da52ee27c416e941ca6d1c581146f16d121cfb92",
+      "size": 4821
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "3153d6d2099ea820976f1c4ea23be4705f8e6c53b5274fe7f8e64f51471d4491",
+      "size": 18318
+    }
+  ]
+}

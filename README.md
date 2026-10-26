@@ -1,102 +1,64 @@
 <h1 align="center">circle-hub</h1>
 
-<p align="center">The team hub for Circle: shared knowledge, durable tasks, governed execution and versioned methods for agents that touch real systems.</p>
+<p align="center">A standard MCP server for verified results, task packs and a knowledge tree.</p>
 
 <p align="center">
   <a href="https://circle-platforms.github.io/circle-hub/">Docs</a> ·
-  <a href="docs/design/README.md">Design</a> ·
-  <a href="docs/compatibility.md">Compatibility</a> ·
+  <a href="docs/design/en/generic-model.md">Model</a> ·
+  <a href="docs/hub-r4-brief.md">Milestone</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
   <a href="README.zh-CN.md">中文</a>
 </p>
 
 ---
 
-The team hub for [Circle](https://github.com/circle-platforms/circle): one daemon a team runs so that everyone's Circle shares the same knowledge, tasks, execution resources and methods — and so that agents touching real systems stay inside rules a person approved.
+circle-hub is the team hub for [Circle](https://github.com/circle-platforms/circle), being rebuilt as a standard [MCP](https://modelcontextprotocol.io) server. A model works in the client; the Hub hands out the work, checks what comes back at its boundary and keeps the record. It never generates content.
 
-Circle stays a generic harness. circle-hub extends it: when a Circle signs in to a hub, its existing menus gain the hub's entries (work, skills, tools, approvals, knowledge, resources). An administrator is a Circle user with an admin role in a scope, not a separate console.
+## What the Hub is
 
-## Why a hub
+This is the design that milestone 1 is building; [Status](#status) says what exists today.
 
-Any team that lets agents work on real systems — devices, test beds, document stores, ticketing — runs into the same five problems:
+- **Task packs** say what to review and how a result is checked: requirement templates, slot schemas, checks, a procedure for the model and the pack's own deterministic functions. Product, workflow and system packs are separate, and product knowledge lives only in packs, never in the core.
+- **Verified results.** On submission the Hub resolves every exact value to a reference, checks quotations verbatim against the sources, re-runs the pack's checks in a sandbox and computes a terminal state for every item, requirement and layer. Each item lands in exactly one partition, and unknown stays unknown.
+- **A knowledge tree** per product line and version, content-addressed and built from the sources by deterministic parsers; knowledge that needs judgment stays on the client and enters through separate contribution runs, checked verbatim by the Hub, and the Hub calls no model. A run locks the root it reads.
 
-1. Knowledge lives in one person's notes instead of a shared, versioned, reviewed source.
-2. Work dies with the chat window; nothing survives a disconnect or a restart.
-3. The only human gate is a permission prompt the agent's own process shows.
-4. Credentials and endpoints end up in prompts, configs and logs.
-5. Skills are copied around with no record of what they call or who approved them.
+The contracts define six tools: `list_task_packs`, `upload_file`, `start_run`, `get_nodes`, `resolve_reference` and `submit_result`. Records are append-only and everything else is derived from them. Circle is to connect through an ordinary MCP server entry and shows no Hub-specific interface.
 
-circle-hub answers each with one of its four objects, and keeps the agent's runtime (Circle) separate from the thing that constrains it.
-
-## Four objects, one standard
-
-| Object | Owns | Examples |
-|---|---|---|
-| **B · Knowledge** | source revisions, evidence, claims, snapshots, artifacts | read-only connectors to document stores, build sites and ticket mirrors; uploaded sources with roles |
-| **C · Work** | identities, scopes, tasks, input revisions, approval requests, decisions, audit, bots | durable PostgreSQL tasks; approvals bound to an input revision, a target identity and an action digest |
-| **D · Execution** | resources, operations, leases, live output, unknown outcomes | workers that call an MCP gateway with credentials injected from a write-only vault |
-| **E · Methods** | skill packs, product-line modules, rules, flow versions | skill packs with recorded trials; deterministic rules the hub re-runs before dispatch |
-
-Every object is made of the same five parts — records, assets, an approval policy, evidence, extension points — so every registry page in Circle has the same shape and every product line plugs in the same way. Three rules hold everywhere:
-
-- **Everything pluggable is an asset**: kind · version · sha256 · declaration · configuration · lifecycle (draft → approved by an independent reviewer → running → retired).
-- **Approvals happen on change sets, never at run time.** A run goes through the enforcement chain — permission, binding, verification, lease, audit — and ends in success, a fixed error code with the facts, or an honestly disclosed unknown. The platform is never an approver.
-- **Evidence belongs to the hub.** Tool returns are stored verbatim with an evidence id; agents hold pointers; script facts and model judgments are labelled apart.
-
-The design is written up in [docs/design](docs/design/README.md) (Chinese, with an [English translation](docs/design/en/README.md)).
-
-## What works today
-
-- Authenticated HTTP API (`/v1`), PostgreSQL durable tasks with input revisions, events and cursor replay, a supervisor with graceful restart, optional native HTTPS.
-- Assets with lifecycle, write-only credential vault, independent-reviewer approvals bound to revision + target identity + action digest; superseded requests can be closed.
-- Read-only connectors (WebDAV documents, build sites, a ticket-system mirror, an environment view) with per-source rate limits, SHA-pinned originals and identity-scoped caching; a tool catalog computed per identity.
-- Knowledge records of two kinds — script-extracted product facts and reviewed conversation candidates — with immutable snapshots and asynchronous ingestion.
-- Uploaded source artifacts (files with roles and declared metadata) that, once approved, bind every command tool to a stable source id.
-- Skill packs pushed from Circle with their trial record, checked against the declared tools, approved by another person and run by a headless Circle; scheduled and event-driven bots.
-- Service clients, `/token`, RFC 7662 `/v1/introspect`, short-lived operation tokens for workers; execution against an MCP gateway with the hub re-verifying every device command before dispatch.
-- Execution flows run through `module-execute` with independently approved product modules; the former built-in `apv-case-execute` capability is retired. Historical task results remain readable.
-- Module installation from a packs repository (`modules.json`): frozen bytes, submitted as ordinary assets, never auto-approved.
-
-The acceptance suite (contracts, methods, acceptance, references) runs entirely on synthetic sources and a temporary PostgreSQL; the real-source observations are recorded separately in [docs](docs/README.md).
-
-## In progress
-
-The active brief is [docs/server-s2-brief-r3.md](docs/server-s2-brief-r3.md): roles per scope (admin / member / viewer) with a two-person rule, change sets as the single approval concept, the enforcement chain with fixed error codes and `waitingReason`, a notification stream and work queues, a static-secret credential mode for execution resources, and paged registry queries. Hub executables and configuration use only `circle-hub` and `CIRCLE_HUB_*`; a hub process that still has a pre-rename environment variable set refuses to start (see the [changelog](CHANGELOG.md)). The Circle extension uses `hub` and `/hub`; the former extension name and command are not aliases.
-
-## Quick start
-
-Node.js 24.
-
-```sh
-npm ci
-npm run dev:stack     # temporary PostgreSQL + server + worker, bound to localhost, synthetic sources only
-npm test              # contracts, methods, acceptance, references
-npm run typecheck
-```
-
-`dev:stack` prints the local address, the development sign-in and a synthetic sample; Ctrl+C removes the temporary environment. Nothing in the repository or the suite connects to a real system, and no runtime address, credential or business original belongs in Git.
-
-## Packs
-
-Skill packs and product-line packs are not part of the hub. They live in their own repositories, are versioned and SHA-pinned on their own, and are installed through the hub's own mechanism (push → trial record → independent approval). The first packs repository is [circle-packs](https://github.com/circle-platforms/circle-packs); [the product-line pack exemplar](docs/design/product-line-pack.md) shows the layout and the adaptation sheet every pack fills in, with a synthetic product line as the worked example.
+The design authority is the generic model in [contracts/model.json](contracts/model.json), summarised in [docs/design/en/generic-model.md](docs/design/en/generic-model.md).
 
 ## Status
 
-circle-hub is under development and not a supported production release: sign-in is a development login, acceptance is synthetic, and one team has used it end to end. Read [SECURITY.md](SECURITY.md) for the support scope before deploying it anywhere that matters.
+Milestone 1 is built and deployed, and nothing here is a supported release. The model, the contracts generated from it, the [architecture brief](docs/hub-r4-architecture.md), the packages under `hub/` (server, read-only console, knowledge tree, read-only connectors, dispatch), the packs and a persistent single-machine deployment listening on loopback are in place; [docs/hub-r4-progress.md](docs/hub-r4-progress.md) says which parts have landed and been reviewed, and what is still open. The task-and-approval server that came before (up to 0.2.0) is retired, and its briefs and handoffs are kept as [historical records](docs/README.md#历史记录).
+
+## Run the checks
+
+Node.js 24. The PostgreSQL server is not installed separately: tests start a temporary one from the `embedded-postgres` development dependency. Backup, restore and deploy also need `pg_dump` and `pg_restore` of the same major version (PostgreSQL 18 today): `brew install libpq`, or set `CIRCLE_HUB_LIBPQ_BIN`. Without them those tests skip, and a skip is not a pass.
+
+```sh
+npm ci
+npm run typecheck
+npm run verify:contracts   # contracts/generated matches contracts/model.json, contracts/codes.json and contracts/src
+npm run test:unit
+npm run test:acceptance    # temporary PostgreSQL, synthetic fixtures, scripted models
+npm run verify:references  # frozen archives, checked by SHA
+npm test                   # contracts check, unit, docs, acceptance and reference tests
+node --test ".github/checks/*.test.ts"   # docs checks
+```
+
+`node tools/show-element.ts B01 W06` prints model elements and `node tools/show-element.ts --vocab partition` prints a vocabulary axis. Tests and CI use only synthetic fixtures and scripted models and never reach a real system. Only the deployed Hub and the owner's own scripts read real systems, and only to read. CI runs on Ubuntu, where the tests that need macOS or libpq skip; those paths are checked by local macOS runs recorded in the progress page.
 
 ## Documentation
 
-- [Design](docs/design/README.md) ([English](docs/design/en/README.md)) — object standard, vocabulary and states, levels and elements, approvals and the enforcement chain, roles, Circle integration, product-line packs.
-- [Client API handoff](docs/client-api-handoff.md) · [Historical native execution](docs/case-execution-handoff.md) · [Resource identity](docs/resource-identity-handoff.md) · [Module installation](docs/module-installation.md) · [Admin CLI](docs/admin-cli.md)
-- [Phase records](docs/README.md) — briefs, progress and real-source observations.
-- [Compatibility matrix](docs/compatibility.md) — which Circle commit the acceptance runs against, the frozen source baseline, the extension branch, pack schemas and the release order across the three repositories.
-- [References](references/README.md) — the archived platform that preceded the hub; frozen, verified by SHA, never imported at runtime.
+- [Milestone 1 brief](docs/hub-r4-brief.md) · [architecture](docs/hub-r4-architecture.md) · [progress and decisions](docs/hub-r4-progress.md)
+- [Generic model](docs/design/en/generic-model.md) · [the five-element checklist](docs/design/en/object-standard.md) · [design index](docs/design/en/README.md) (Chinese originals in [docs/design](docs/design/README.md))
+- [Compatibility matrix](docs/compatibility.en.md): what circle, circle-hub and circle-packs expect of each other.
+- [References](references/README.md): the archived platform that preceded the hub; frozen, verified by SHA, never imported at runtime.
 
 ## Contributing and security
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md) for coding agents, and the [compatibility matrix](docs/compatibility.md) for what the three repositories expect of each other. Report security problems as described in [SECURITY.md](SECURITY.md). Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md), and [AGENTS.md](AGENTS.md) for coding agents. Report security problems as described in [SECURITY.md](SECURITY.md). Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-circle-hub is one of three repositories: [circle](https://github.com/circle-platforms/circle) is the agent, circle-hub is the hub it signs in to, and [circle-packs](https://github.com/circle-platforms/circle-packs) holds the skill packs and product-line packs installed on the hub.
+circle-hub is one of three repositories: [circle](https://github.com/circle-platforms/circle) is the agent, circle-hub is the MCP server it connects to, and [circle-packs](https://github.com/circle-platforms/circle-packs) holds the skill packs and product-line packs of the retired server.
 
 ## License
 

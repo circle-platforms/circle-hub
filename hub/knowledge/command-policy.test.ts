@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {TreeRootBody} from '../../contracts/src/knowledge.ts';
+import {makeWorld,startPostgres,catalogXml,BASE_CATALOG} from './test-support.ts';
+import {commandPolicyForRoot} from '../runs/engine/command-policy.ts';
+import {runContextOf} from '../runs/engine/evaluate.ts';
+const one={schema:'command-policy@1' as const,read_only:['/commands/demo'],inverse_rules:[]};
+test('product command rules are composition-bound and the run context retains the old snapshot after a rule update',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await makeWorld(pg,{pack:{declaration:{command_policy:one}}});t.after(()=>w.close());
+ w.external.set('site:tree:policy',{bytes:catalogXml(BASE_CATALOG),mediaType:'application/xml'});
+ const build={name:'Synthetic_zx-u_10_8_1',base:'Synthetic_zx-u_10_8_1',family:'ACME',line:'10.8',platform:'zx-u',built_at:null,released_at:null,root:null,sources:{tree:'site:tree:policy'}};
+ const first=await w.knowledge.produceTree({product:w.product,build,by:w.admin});assert.ok(first.ok,first.reason??'');
+ const info=(await w.knowledge.rootInfo(first.root!)).find(info=>info.composition===first.composition)!;assert.ok(info);
+ const frozen=await commandPolicyForRoot(w.kit.store,info);assert.deepEqual(frozen,one);
+ w.product.product.command_policy={schema:'command-policy@1',read_only:['/commands/another'],inverse_rules:[]};
+ const second=await w.knowledge.produceTree({product:w.product,build,by:w.admin});assert.ok(second.ok,second.reason??'');
+ assert.equal(first.root,second.root,'same catalog content, independent composition policy');
+ assert.notEqual(first.composition,second.composition);
+ assert.deepEqual(TreeRootBody.parse((await w.kit.store.get(first.composition!))!.body).command_policy,one);
+ assert.deepEqual(await commandPolicyForRoot(w.kit.store,info),one);
+ assert.deepEqual(runContextOf({target_basis:[],parameters:{},groups:[],command_policy:frozen} as never).command_policy,one);
+});

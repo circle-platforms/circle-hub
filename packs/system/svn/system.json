@@ -1,0 +1,140 @@
+{
+  "schema": "system@1",
+  "title": "SVN 只读仓库",
+  "description": "按目录修订号读取同批原件，凭据只在密钥库",
+  "roles": [
+    {
+      "name": "svn",
+      "description": "仓库根地址"
+    }
+  ],
+  "auth": {
+    "kind": "static_header",
+    "header": {
+      "name": "Authorization",
+      "scheme": "raw"
+    },
+    "roles": [
+      "svn"
+    ],
+    "credential": "authorization"
+  },
+  "routes": [
+    {
+      "id": "revision",
+      "role": "svn",
+      "method": "PROPFIND",
+      "path": "/{dir*}/",
+      "params": {
+        "dir": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[^;]{1,255}$"
+        }
+      },
+      "headers": {
+        "Depth": "0"
+      },
+      "response": "xml",
+      "parse": "xml@1",
+      "max_bytes": 33554432,
+      "timeout_ms": 60000,
+      "read": true,
+      "description": "读取目录修订号"
+    },
+    {
+      "id": "list",
+      "role": "svn",
+      "method": "PROPFIND",
+      "path": "/!svn/rvr/{rev}/{dir*}/",
+      "params": {
+        "rev": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[0-9]{1,200}$"
+        },
+        "dir": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[^;]{1,255}$"
+        }
+      },
+      "headers": {
+        "Depth": "1"
+      },
+      "response": "xml",
+      "parse": "xml@1",
+      "max_bytes": 33554432,
+      "timeout_ms": 60000,
+      "read": true,
+      "description": "按修订号列出目录"
+    },
+    {
+      "id": "file",
+      "role": "svn",
+      "method": "GET",
+      "path": "/!svn/rvr/{rev}/{path*}",
+      "params": {
+        "rev": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[0-9]{1,200}$"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[^;]{1,255}$"
+        }
+      },
+      "response": "text",
+      "max_bytes": 33554432,
+      "timeout_ms": 60000,
+      "read": true,
+      "description": "按修订号读取文件"
+    }
+  ],
+  "reads": [
+    {
+      "name": "directory",
+      "external": "svn:directory",
+      "description": "固定目录修订号并列出成员",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "directoryPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "directoryProject"
+      },
+      "max_requests": 2
+    },
+    {
+      "name": "file",
+      "external": "svn:file",
+      "description": "按修订号和路径读取文件",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "filePlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "fileProject"
+      },
+      "max_requests": 1
+    },
+    {
+      "name": "directory-at",
+      "external": "svn:directory-at",
+      "description": "按指定修订号列出一个子目录，不读取当前修订号",
+      "plan": {
+        "module": "functions/webdav.ts",
+        "export": "directoryAtPlan"
+      },
+      "project": {
+        "module": "functions/webdav.ts",
+        "export": "directoryAtProject"
+      },
+      "max_requests": 1
+    }
+  ]
+}

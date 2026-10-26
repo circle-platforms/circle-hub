@@ -1,0 +1,1577 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "command_policy": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "command-policy@1"
+        },
+        "read_only": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+            "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+          }
+        },
+        "inverse_rules": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source_prefix": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+              },
+              "inverse_prefix": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+              },
+              "leading_parameters": {
+                "description": "When absent, require a unique inverse formed by a leading parameter count accepted by the locked inverse signature",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 128
+              }
+            },
+            "required": [
+              "source_prefix",
+              "inverse_prefix"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "read_only",
+        "inverse_rules"
+      ],
+      "additionalProperties": false
+    },
+    "known_builds": {
+      "maxItems": 50000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "record": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "name",
+          "record"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "applicability_context": {
+      "type": "object",
+      "properties": {
+        "grammar": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+        },
+        "closed_sets": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "enum": [
+              "models",
+              "platforms",
+              "builds",
+              "components",
+              "memory",
+              "licenses",
+              "deployment_forms"
+            ]
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "grammar",
+        "closed_sets"
+      ],
+      "additionalProperties": false
+    },
+    "variables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+          },
+          "decision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "at",
+          "name",
+          "decision"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "product": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}$"
+    },
+    "version": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "line": {
+              "type": "string",
+              "minLength": 1
+            },
+            "build": {
+              "type": "string",
+              "minLength": 1
+            },
+            "family": {
+              "type": "string",
+              "minLength": 1
+            },
+            "platform": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "line",
+            "build",
+            "family",
+            "platform"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "build": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "build name exactly as listed"
+            },
+            "family": {
+              "type": "string",
+              "minLength": 1,
+              "description": "which of the product names the build carries"
+            },
+            "line": {
+              "type": "string",
+              "minLength": 1,
+              "description": "version line the pack assigns to the build, for example 10.7.6"
+            },
+            "base": {
+              "type": "string",
+              "minLength": 1,
+              "description": "the build whose tree this build uses; equals name when the build has its own tree"
+            },
+            "platform": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "platform or customer branch; null for the main platform"
+            },
+            "built_at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "released_at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "null while unreleased"
+            },
+            "sources": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "list": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$",
+                        "description": "SHA-256 of the canonical JSON array of the listed external ids, as listed: the object that holds them"
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 20000,
+                        "description": "ids listed, repeats included"
+                      }
+                    },
+                    "required": [
+                      "list",
+                      "count"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "description": "external objects by role; a role that holds a list is kept by reference"
+            }
+          },
+          "required": [
+            "name",
+            "family",
+            "line",
+            "base",
+            "platform",
+            "built_at",
+            "released_at",
+            "sources"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "the build the root was produced for, as the sync listed it (list roles by reference)"
+    },
+    "root": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "digest of the root node"
+    },
+    "producer": {
+      "type": "object",
+      "properties": {
+        "pack": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,40}$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "pack id@version"
+        },
+        "producers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "function": {
+                "type": "object",
+                "properties": {
+                  "module": {
+                    "type": "string",
+                    "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+                  },
+                  "export": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+                  }
+                },
+                "required": [
+                  "module"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "function"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "pack",
+        "version",
+        "digest",
+        "id",
+        "producers"
+      ],
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "producer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "slot": {
+            "type": "string",
+            "minLength": 1
+          },
+          "external": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
+          },
+          "revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "media_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parser": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "artifact": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "digest of the source_artifact record that decided the read"
+          },
+          "read_tier": {
+            "type": "string",
+            "enum": [
+              "model_readable",
+              "function_bytes_only",
+              "retain_only"
+            ]
+          },
+          "basis": {
+            "type": "string",
+            "enum": [
+              "release_record",
+              "device_echo",
+              "source_structure",
+              "declared"
+            ]
+          },
+          "decided_by": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "producer",
+          "slot",
+          "external",
+          "revision",
+          "sha256",
+          "size",
+          "media_type",
+          "parser",
+          "artifact",
+          "read_tier",
+          "basis",
+          "decided_by"
+        ],
+        "additionalProperties": false
+      },
+      "description": "every source; with parts, the sources of single slots only (the list sources are in parts.sources)"
+    },
+    "composition": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+            "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+          },
+          "entry": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "definition",
+              "behaviour",
+              "case",
+              "defect",
+              "observation"
+            ]
+          },
+          "producers": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]*$"
+            },
+            "description": "the producers of the product pack that gave the entry, sorted; a catalog limited to one producer takes only its entries"
+          },
+          "fragments": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
+            },
+            "description": "canonical src references in the order the producers gave them"
+          },
+          "applicability_sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "models",
+                    "platforms",
+                    "builds",
+                    "components",
+                    "memory",
+                    "licenses",
+                    "deployment_forms"
+                  ]
+                },
+                "section": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "declaration": {
+                  "type": "object",
+                  "properties": {
+                    "builds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "platforms": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "components": {
+                      "type": "object",
+                      "properties": {
+                        "with": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "without": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "memory": {
+                      "type": "object",
+                      "properties": {
+                        "minimum": {
+                          "type": "object",
+                          "properties": {
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inclusive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "bytes",
+                            "inclusive"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maximum": {
+                          "type": "object",
+                          "properties": {
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inclusive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "bytes",
+                            "inclusive"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "raw": {
+                          "type": "string",
+                          "pattern": "\\S"
+                        }
+                      },
+                      "required": [
+                        "raw"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "licenses": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "deployment_forms": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "inherited": {
+                      "description": "Inherited field codes only; source positions belong to composition provenance",
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "models",
+                          "platforms",
+                          "builds",
+                          "components",
+                          "memory",
+                          "licenses",
+                          "deployment_forms"
+                        ]
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "conflict": {
+                  "type": "boolean"
+                },
+                "superseded": {
+                  "description": "An inner scope replaced this declaration; retained as provenance only",
+                  "type": "boolean"
+                },
+                "fragment": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
+                }
+              },
+              "required": [
+                "field",
+                "section",
+                "declaration",
+                "fragment"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "basis": {
+            "type": "string",
+            "enum": [
+              "release_record",
+              "device_echo",
+              "source_structure",
+              "declared"
+            ]
+          },
+          "decided_by": {
+            "type": "string",
+            "minLength": 1,
+            "description": "who decided the source belongs to the version: the product pack id@version"
+          },
+          "placement": {
+            "description": "present when the typed-judgment model chose the position",
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string",
+                "minLength": 1,
+                "description": "exact model version"
+              },
+              "p": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "probability of the last choice that descended"
+              },
+              "threshold": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "the calibrated threshold of the chain"
+              },
+              "judgments": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "description": "classify action records, root first"
+              },
+              "note": {
+                "type": "string",
+                "description": "归类判断：Jev@<exact version>，p=…，只影响位置"
+              }
+            },
+            "required": [
+              "model",
+              "p",
+              "threshold",
+              "judgments",
+              "note"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "path",
+          "entry",
+          "kind",
+          "producers",
+          "fragments",
+          "basis",
+          "decided_by"
+        ],
+        "additionalProperties": false
+      },
+      "description": "sorted by path, then entry; empty when the rows are in parts"
+    },
+    "unplaced": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "entry": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "definition",
+              "behaviour",
+              "case",
+              "defect",
+              "observation"
+            ]
+          },
+          "producers": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]*$"
+            },
+            "description": "the producers of the product pack that gave the entry, sorted; a catalog limited to one producer takes only its entries"
+          },
+          "section": {
+            "type": "string"
+          },
+          "fragments": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
+            },
+            "description": "every source piece with this content, in the order the producers gave them"
+          },
+          "applicability_sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "models",
+                    "platforms",
+                    "builds",
+                    "components",
+                    "memory",
+                    "licenses",
+                    "deployment_forms"
+                  ]
+                },
+                "section": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "declaration": {
+                  "type": "object",
+                  "properties": {
+                    "builds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "platforms": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "components": {
+                      "type": "object",
+                      "properties": {
+                        "with": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "without": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "memory": {
+                      "type": "object",
+                      "properties": {
+                        "minimum": {
+                          "type": "object",
+                          "properties": {
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inclusive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "bytes",
+                            "inclusive"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maximum": {
+                          "type": "object",
+                          "properties": {
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inclusive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "bytes",
+                            "inclusive"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "raw": {
+                          "type": "string",
+                          "pattern": "\\S"
+                        }
+                      },
+                      "required": [
+                        "raw"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "licenses": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "deployment_forms": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "inherited": {
+                      "description": "Inherited field codes only; source positions belong to composition provenance",
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "models",
+                          "platforms",
+                          "builds",
+                          "components",
+                          "memory",
+                          "licenses",
+                          "deployment_forms"
+                        ]
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "conflict": {
+                  "type": "boolean"
+                },
+                "superseded": {
+                  "description": "An inner scope replaced this declaration; retained as provenance only",
+                  "type": "boolean"
+                },
+                "fragment": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
+                }
+              },
+              "required": [
+                "field",
+                "section",
+                "declaration",
+                "fragment"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "basis": {
+            "type": "string",
+            "enum": [
+              "release_record",
+              "device_echo",
+              "source_structure",
+              "declared"
+            ]
+          },
+          "decided_by": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stopped_at": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+            "description": "the node where placement stopped (/ when it never descended)"
+          },
+          "candidate": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                    "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+                  },
+                  "model": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "p": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "calibrated": {
+                    "type": "boolean",
+                    "description": "false: the chain has no calibrated threshold, the answer is only a candidate"
+                  }
+                },
+                "required": [
+                  "path",
+                  "model",
+                  "p",
+                  "calibrated"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "the model's answer kept as a candidate, when it named a child"
+          },
+          "judgments": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "note": {
+            "type": "string",
+            "description": "why it stopped, in Chinese"
+          }
+        },
+        "required": [
+          "entry",
+          "kind",
+          "producers",
+          "section",
+          "fragments",
+          "basis",
+          "decided_by",
+          "stopped_at",
+          "candidate",
+          "judgments",
+          "note"
+        ],
+        "additionalProperties": false
+      },
+      "description": "sorted by entry; empty when the rows are in parts"
+    },
+    "parts": {
+      "description": "a large composition keeps its rows, unplaced rows and list sources in part records, so that no record grows with the root",
+      "type": "object",
+      "properties": {
+        "composition": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "record": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "digest of the part record"
+              },
+              "rows": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "first": {
+                "type": "string",
+                "description": "sort key of the first row: the path (composition rows), the entry digest (unplaced rows) or the source digest (sources)"
+              },
+              "last": {
+                "type": "string",
+                "description": "sort key of the last row"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "definition",
+                  "behaviour",
+                  "case",
+                  "defect",
+                  "observation"
+                ],
+                "description": "the kind of every row of the part"
+              }
+            },
+            "required": [
+              "record",
+              "rows",
+              "first",
+              "last",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "description": "tree_root-rows@1 records"
+        },
+        "unplaced": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "record": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "digest of the part record"
+              },
+              "rows": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "first": {
+                "type": "string",
+                "description": "sort key of the first row: the path (composition rows), the entry digest (unplaced rows) or the source digest (sources)"
+              },
+              "last": {
+                "type": "string",
+                "description": "sort key of the last row"
+              }
+            },
+            "required": [
+              "record",
+              "rows",
+              "first",
+              "last"
+            ],
+            "additionalProperties": false
+          },
+          "description": "tree_root-unplaced@1 records"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "record": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "digest of the part record"
+              },
+              "rows": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "first": {
+                "type": "string",
+                "description": "sort key of the first row: the path (composition rows), the entry digest (unplaced rows) or the source digest (sources)"
+              },
+              "last": {
+                "type": "string",
+                "description": "sort key of the last row"
+              }
+            },
+            "required": [
+              "record",
+              "rows",
+              "first",
+              "last"
+            ],
+            "additionalProperties": false
+          },
+          "description": "tree_root-sources@1 records: the sources of list slots"
+        }
+      },
+      "required": [
+        "composition",
+        "unplaced",
+        "sources"
+      ],
+      "additionalProperties": false
+    },
+    "refused": {
+      "maxItems": 200,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "producer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "unplaced": {
+            "type": "boolean",
+            "description": "the refused item was an unplaced span rather than an entry"
+          },
+          "kind": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "the kind the producer declared, as given (cut to 200 characters; may be empty or outside entry_kind)"
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "producer",
+          "index",
+          "unplaced",
+          "kind",
+          "path",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "refused_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "skipped": {
+      "description": "listed sources the production could not use (first 200 kept)",
+      "maxItems": 200,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "producer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "slot": {
+            "type": "string",
+            "minLength": 1
+          },
+          "external": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "producer",
+          "slot",
+          "external",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "skipped_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "catalogs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$",
+            "description": "catalog@major, the name workflow packs require"
+          },
+          "entry_kind": {
+            "type": "string",
+            "enum": [
+              "definition",
+              "behaviour",
+              "case",
+              "defect",
+              "observation"
+            ],
+            "description": "kind of the knowledge entries that are its members"
+          },
+          "producer": {
+            "description": "only entries this producer of the pack produced are members; every producer of the kind when absent",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "declared complete for the scope of the root (C07 R[0]); only then is absence a fact rather than unknown"
+          },
+          "case_sensitive": {
+            "type": "boolean"
+          },
+          "declared_complete": {
+            "type": "boolean"
+          },
+          "members": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "incomplete_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "entry_kind",
+          "complete",
+          "case_sensitive",
+          "declared_complete",
+          "members",
+          "incomplete_reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "links": {
+      "description": "frozen relation declarations of this composition; absent on legacy records",
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,40}$"
+          },
+          "field": {
+            "description": "Data field holding ordinary literals; mutually exclusive with alternatives_field",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,40}$"
+          },
+          "alternatives_field": {
+            "description": "Data field holding groups {primary: string, alternatives: nonempty string[]}; exact primary definition wins, otherwise each alternative is matched exactly",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,40}$"
+          },
+          "namespace": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+            "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+          },
+          "match": {
+            "type": "string",
+            "enum": [
+              "exact",
+              "longest_prefix"
+            ]
+          },
+          "entry_kind": {
+            "description": "required by longest-prefix matching; optional restriction for exact matching",
+            "type": "string",
+            "enum": [
+              "definition",
+              "behaviour",
+              "case",
+              "defect",
+              "observation"
+            ]
+          },
+          "target_producers": {
+            "minItems": 1,
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "source_producers": {
+            "minItems": 1,
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "unmatched": {
+            "description": "What a literal this rule cannot match is: drift, a fact of the run (default), or mention, the author's marked text kept verbatim and linked only on complete equality (integrator decision 60, 2026-10-25: prose claims no command, so it creates no drift)",
+            "type": "string",
+            "enum": [
+              "drift",
+              "mention"
+            ]
+          },
+          "normalize": {
+            "type": "object",
+            "properties": {
+              "lowercase": {
+                "type": "boolean"
+              },
+              "nfc": {
+                "type": "boolean"
+              },
+              "nfkc": {
+                "type": "boolean"
+              },
+              "strip_nul": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "namespace",
+          "match"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "entries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "placed_by_model": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unplaced": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "nodes",
+        "entries",
+        "placed_by_model",
+        "unplaced"
+      ],
+      "additionalProperties": false
+    },
+    "kinds": {
+      "description": "composition rows per entry kind",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "enum": [
+          "definition",
+          "behaviour",
+          "case",
+          "defect",
+          "observation"
+        ]
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "required": [
+        "definition",
+        "behaviour",
+        "case",
+        "defect",
+        "observation"
+      ]
+    },
+    "warnings": {
+      "maxItems": 200,
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "warnings_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "empty_scope": {
+      "description": "An empty product-wide root with independently checked complete inventories and zero selections; absent on legacy or nonempty roots",
+      "type": "object",
+      "properties": {
+        "complete": {
+          "type": "boolean",
+          "const": true
+        },
+        "sources": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "producer": {
+                "type": "string",
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "listed": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
+              },
+              "completion": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "selected": {
+                "type": "number",
+                "const": 0
+              }
+            },
+            "required": [
+              "producer",
+              "label",
+              "listed",
+              "completion",
+              "total",
+              "selected"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "complete",
+        "sources"
+      ],
+      "additionalProperties": false
+    },
+    "produced_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    }
+  },
+  "required": [
+    "product",
+    "version",
+    "build",
+    "root",
+    "producer",
+    "sources",
+    "composition",
+    "unplaced",
+    "refused",
+    "refused_count",
+    "catalogs",
+    "counts",
+    "warnings",
+    "warnings_count",
+    "produced_at"
+  ],
+  "additionalProperties": false
+}

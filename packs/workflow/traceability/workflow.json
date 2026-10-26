@@ -1,0 +1,58 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "defects",
+      "role": "subject",
+      "description": "构建的缺陷索引视图：knowledge:index:<产品>:<构建>?kind=defect&key=bug。知识根里 fixed-bugs 与发布页生产的缺陷条目，一个条目一个缺陷：data.bug 是编号，data.status 仅在 declaration_status=declared 时是 fixed 或 known；未声明的缺陷仍列为未知，不被状态筛选静默剔除。不要写 only=，不要向用户索取缺陷编号；不能将其他系统的同号混成一个条目",
+      "accepts": [
+        "knowledge:index"
+      ],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "cases",
+      "role": "expected",
+      "description": "同一构建的用例索引视图：knowledge:index:<产品>:<构建>?kind=case&key=defects。不要写 only= 或 fields=，不要向用户索取缺陷编号。Hub 按该构建缺陷索引的编号自动补上 only=，并补上 fields=case,defects,document,node,system,title。构建名要和 defects 视图指向同一个知识根（任一名称族的写法都可以）",
+      "index_default": {
+        "only_from": {"source": "build_defects"},
+        "fields": ["document", "node", "title", "system", "case", "defects"]
+      },
+      "accepts": [
+        "knowledge:index"
+      ],
+      "required": true,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "statuses",
+      "description": "计入矩阵的缺陷状态：fixed（已修复）、known（已知）；不写则两个都算",
+      "required": false,
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "fixed",
+            "known"
+          ]
+        },
+        "minItems": 1,
+        "uniqueItems": true
+      }
+    }
+  ],
+  "product": {
+    "catalogs": []
+  },
+  "subject": "defects",
+  "projection": {
+    "module": "functions/project.ts"
+  },
+  "expected_sources": {
+    "module": "functions/expected.ts"
+  }
+}

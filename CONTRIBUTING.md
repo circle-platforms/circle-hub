@@ -2,47 +2,46 @@
 
 Thanks for helping. This page is what you need to make a change that can be merged. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-Read the [design](docs/design/README.md) ([English](docs/design/en/README.md)) first. It is the constraint: each of the four objects is made of the same five parts; everything that plugs in is an asset; approvals happen only on change sets; execution goes through the enforcement chain; the platform is not the approver; product content stays out of the core. A change that has to go around one of these changes the design first and the code after.
+Read the [generic model](docs/design/en/generic-model.md) ([中文](docs/design/generic-model.md)), which summarises the design authority `contracts/model.json`, and the [milestone architecture](docs/hub-r4-architecture.md) first. They are the constraint: the Hub verifies results and never generates them; facts come only from versioned rules and integrity-checked observations of the target, re-run by the Hub at its boundary; every exact value resolves to a reference; unknown stays unknown; records are append-only; enumerations and codes come only from the generated contracts; product knowledge stays in packs, out of the core. A change that has to go around one of these changes the model first and the code after.
 
 ## Before you start
 
 - **Bugs.** Open an issue with the bug report form. Say the commit, what you put in, what you expected and what you saw.
-- **Ideas and larger changes.** Open an issue first and describe the problem you want solved. A change to the object standard, the approval model or the enforcement chain is easier to agree on before the code exists than after.
+- **Ideas and larger changes.** Open an issue first and describe the problem you want solved. A change to the model, the six tools or a record shape is easier to agree on before the code exists than after.
 - **Security.** Anything that may involve a vulnerability or sensitive data follows [SECURITY.md](SECURITY.md), not a public issue.
-- **The other repositories.** Circle's client and its hub extension live in [circle](https://github.com/circle-platforms/circle); skill packs and product-line packs live in [circle-packs](https://github.com/circle-platforms/circle-packs) and follow the [product-line pack exemplar](docs/design/product-line-pack.md). What the three repositories expect of each other is in the [compatibility matrix](docs/compatibility.md).
+- **The other repositories.** Circle lives in [circle](https://github.com/circle-platforms/circle). It connects to the Hub as an ordinary MCP client and needs no Hub extension. Milestone 1 plans six generic MCP-client improvements there and the removal of Circle's existing hub extension, and changing Circle needs the owner's explicit authorization; the scope is stated once in [AGENTS.md](AGENTS.md#authorizations-and-limits). [circle-packs](https://github.com/circle-platforms/circle-packs) holds the skill packs and product-line packs of the retired server, which the redesigned Hub does not read. Milestone 1's packs live under `packs/` in this repository: the product pack, the case-review workflow packs, the system packs and a synthetic second product pack, with no hosts, credentials or real content. What the three repositories expect of each other is in the [compatibility matrix](docs/compatibility.md).
 
 ## Set up
 
-circle-hub needs Node.js 24 or newer. PostgreSQL is not installed separately: the tests and the development stack use an embedded, temporary instance.
+circle-hub needs Node.js 24 or newer. The PostgreSQL server is not installed separately: tests start a temporary one from the `embedded-postgres` development dependency. Backup, restore and deploy also need `pg_dump` and `pg_restore` of the same major version as that server (PostgreSQL 18 today): `brew install libpq`, or point `CIRCLE_HUB_LIBPQ_BIN` at a directory that has them. Without them those tests skip, and a skip is not a pass.
 
 ```bash
 git clone https://github.com/circle-platforms/circle-hub
 cd circle-hub
 npm ci
-npm run dev:stack     # temporary PostgreSQL, server and worker, bound to this machine only
 ```
 
-`dev:stack` prints the local address, the development sign-in and a synthetic sample; Ctrl+C removes the temporary environment.
+The Hub server itself is not built yet (see the [progress](docs/hub-r4-progress.md)), so there is no development stack to start.
 
 ## Test
 
 ```bash
 npm run typecheck
-npm test              # contracts, methods, acceptance, references
+npm test              # contracts check, unit, docs, acceptance and reference tests
 ```
 
-The `Hub checks` workflow runs type checking, contract tests, method tests and synthetic service acceptance in scratch Circle data directories with temporary loopback PostgreSQL. `Reference integrity` checks the frozen archives separately. The Circle RPC acceptance cases require the separately confirmed `CIRCLE_BIN` and `CIRCLE_COMMIT`; public CI does not provide that runtime, so those cases explicitly report skips rather than passes.
+`npm test` runs `verify:contracts`, `test:unit`, `test:docs`, `test:acceptance` and `test:references`; `npm run verify:references` checks the frozen archives by SHA; `node --test ".github/checks/*.test.ts"` runs the docs checks. The `Hub checks` workflow runs type checking, the contracts check, unit tests, acceptance on a temporary loopback PostgreSQL, the reference archive check and the docs checks on Ubuntu; `Reference integrity` checks the frozen archives as well. Each test job lists its counts and every skipped test in the job summary and fails when no test ran, so the acceptance job stays red until the acceptance suite exists (phase 4). What needs macOS or libpq skips on Ubuntu (the pack sandbox's network denial, the keychain, the launchd check, backup, restore and deploy): CI is no evidence for those paths, and each phase records a full local macOS run in the [progress](docs/hub-r4-progress.md).
 
 - Every behaviour change comes with a standalone sample that reproduces the original problem. Old test records and source summaries are not evidence that something works today.
-- Acceptance runs on synthetic sources, synthetic devices and the development identity only: no real system, no paid model, no real device. Read-only observations of real sources are recorded separately and never counted as passes.
-- The core guard tests scan `apps/` and `packages/` for product and system names. A connector may name a system; nothing may name a product line.
+- Tests and acceptance run on synthetic fixtures and scripted models only: no real system, no real model endpoint, no real device. Fixtures mirror the structure of real systems, never their content, and addresses use 192.0.2.0/24. Read-only observations of real systems are recorded separately and never counted as passes.
+- Core code names no product, command or customer, and writes no enumeration by hand: vocabulary values and labels come from `contracts/generated/vocabulary.ts`, and record kinds, protocol and core violation codes, reference forms and pack file paths from `contracts/generated/protocol.ts`. Product specifics live in product packs and system specifics in system packs.
 
 ## Make a change
 
-- New self-maintained code is TypeScript, with dependencies at exact versions.
+- New code is TypeScript run directly by Node 24 (erasable syntax only, imports ending in `.ts`, ESM), with exactly the dependencies in `package.json`, at exact versions; adding one is a separate decision.
 - `foundation/circle` and `references/` are frozen bytes: do not change them, and do not import them from a runtime entry point. Adopting a behaviour from them records its source, its license, what changed and a new acceptance.
-- An interface change updates `packages/contracts` and [docs/client-api-handoff.md](docs/client-api-handoff.md) in the same pull request, with the old and the new shape written down. The real RPC tests against the pinned Circle commit keep passing.
-- Documentation is written in natural Chinese, with the design also in English under `docs/design/en`; interface and code identifiers are clear English. Keep implemented behaviour, confirmed direction, proposals and unverified scope apart.
+- A contract change edits `contracts/model.json`, `contracts/codes.json` or `contracts/src` and regenerates `contracts/generated` with `npm run gen:contracts` in the same pull request; never edit the generated files by hand. Records are append-only, and an applied database migration never changes: add a new one instead.
+- Documentation is written in natural Chinese, with the design also in English under `docs/design/en`; interface and code identifiers are clear English. In the Hub itself, user-facing text is Chinese, while tool and schema descriptions for models and code comments are English. Keep implemented behaviour, confirmed direction, proposals and unverified scope apart.
 
 ## Releases
 
@@ -50,11 +49,11 @@ Add a line under `## Unreleased` in `CHANGELOG.md` with every change a user woul
 
 ## Change the docs
 
-Files in `docs/` describe what the code does today. If you change behaviour, change the page that mentions it in the same pull request. Progress goes into the phase records under `docs/`, not into the README, which stays the public face. The pages are published at <https://circle-platforms.github.io/circle-hub/> by `.github/workflows/pages.yml`.
+Files in `docs/` describe what the code does today, except the pages marked historical or superseded, which are kept as records and not updated. If you change behaviour, change the page that mentions it in the same pull request. Phase progress and the owner's decisions go into `docs/hub-r4-progress.md`, each with its source; a package's own decisions and limits go into its README; the root README stays the public face. The pages are published at <https://circle-platforms.github.io/circle-hub/> by `.github/workflows/pages.yml`, which builds `docs/` alone: link a file outside `docs/` by its absolute GitHub URL on `main`, never by a relative path. The docs checks (`.github/checks`) refuse such links, vocabulary tables that differ from the generated vocabulary, counts of the model's pending items that differ from the model, a recorded decision without a source, and local paths.
 
 ## Commit messages
 
-One short imperative sentence in English, capitalised, with no prefix and no full stop, for example `Bind an approval to the input revision and the action digest`. Put the why in the pull request. Stage explicit paths; never `git add -A`, `git add .` or `git commit -a`.
+One short imperative sentence in English, capitalised, with no prefix and no full stop, for example `Reject a submission whose quotation is not in its source`. Put the why in the pull request. Stage explicit paths; never `git add -A`, `git add .` or `git commit -a`.
 
 ## Pull requests
 

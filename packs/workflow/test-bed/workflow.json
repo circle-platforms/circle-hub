@@ -1,0 +1,110 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "inventory",
+      "role": "subject",
+      "description": "台架清单：管理员用 circle-hub doc put 发布的命名文档（doc:doc:<名字>，由 Hub 的 json@1 核心解析器解析，形状 test-bed-manifest@1）。缺省写 doc:doc:bed-topology；清单有问题时整份拒绝并指出位置",
+      "accepts": [
+        "doc:doc"
+      ],
+      "required": true,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "action",
+      "description": "search：搜索；facts：环境事实；acquire：不限时预订；release：由预订谱系释放；register：把清单台架登记到自己名下；unregister：带理由注销；force_release：主人带理由强制释放。extend 是已移除的请求，只作明确拒绝",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "enum": [
+          "search",
+          "facts",
+          "acquire",
+          "release",
+          "register",
+          "unregister",
+          "force_release",
+          "extend"
+        ]
+      }
+    },
+    {
+      "name": "need",
+      "description": "设备数量、类型与构建需求；不再接受 need.hours",
+      "required": false,
+      "schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "bed",
+      "description": "acquire 时指定台架名；不写时按 need 选最佳匹配（设备够、现在 Hub 记录里空闲、构建不冲突的第一个）",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
+    },
+    {
+      "name": "hours",
+      "description": "已移除：只用于明确拒绝旧请求并提示台架预订不限时长，用完由运行释放",
+      "required": false,
+      "schema": {}
+    },
+    {
+      "name": "booking",
+      "description": "release 必填：原预订运行号；predecessor 写同一个运行，Hub 核对同用户谱系",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    },
+    {
+      "name": "addresses",
+      "description": "acquire 时要分配的空闲地址：{ segment: <网段>，count: <个数> }。从该台架这个网段扣掉接口地址、保留段和别人占着的地址后取前 count 个，租约键 bed/<台架>/ip/<地址>，与设备的租约同一批取得、同一批释放",
+      "required": false,
+      "schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "devices",
+      "description": "force_release 可选：只释放清单里的这些设备，不写释放台架下所有当前占用的键",
+      "required": false,
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1
+      }
+    },
+    {
+      "name": "reason",
+      "description": "unregister 和 force_release 必填，照用户原话写理由",
+      "required": false,
+      "schema": {
+        "type": "string"
+      }
+    }
+  ],
+  "product": {
+    "catalogs": []
+  },
+  "context": [
+    "leases"
+  ],
+  "leases": {
+    "prefix": "bed/"
+  },
+  "subject": "inventory",
+  "projection": {
+    "module": "functions/project.ts"
+  }
+}

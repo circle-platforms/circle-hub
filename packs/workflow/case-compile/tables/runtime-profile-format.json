@@ -1,0 +1,35 @@
+{
+  "schema": "case-compile.runtime-profile-format@1",
+  "profile_schema": "runtime-profile@1",
+  "parameter_roles": [
+    "device_cli",
+    "host_shell",
+    "literal_assertion",
+    "wait",
+    "executor_return"
+  ],
+  "header_columns": 9,
+  "manifest_device_types": [
+    "load-balancer",
+    "router",
+    "client",
+    "server",
+    "console"
+  ],
+  "manifest_protocols": [
+    "tcp",
+    "udp"
+  ],
+  "trigger_types": [
+    "router",
+    "client"
+  ],
+  "method_review_field": "reviewed",
+  "parameter_role_basis": {
+    "executor_return": "由执行器提供上一步的返回（两参数检查点的 result）；模型不能填写，生成器不写",
+    "device_cli": "设备命令文字",
+    "host_shell": "主机 shell 文字",
+    "literal_assertion": "字面期望",
+    "wait": "等待秒数"
+  }
+}

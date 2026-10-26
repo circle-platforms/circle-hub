@@ -1,0 +1,913 @@
+{
+  "id": "all_categories_covered",
+  "source": "author",
+  "check": "coverage",
+  "note": "合成原件的显式类别声明；不从正文匹配，期望由删去/加回的闭集声明预先决定",
+  "subject": {
+    "item": "880001",
+    "location": "src:325e3dd8b386362768fde21a571b77eaa147e4260fcaf88e98b771f208f56a09/kityminder@1/n/r",
+    "document": "880001",
+    "source": {
+      "sha256": "325e3dd8b386362768fde21a571b77eaa147e4260fcaf88e98b771f208f56a09",
+      "model": {
+        "doubleEncoded": false,
+        "meta": {},
+        "nodes": [
+          {
+            "id": "r",
+            "text": "合成分类范围",
+            "data": {
+              "id": "r",
+              "text": "合成分类范围"
+            },
+            "children": [
+              1,
+              3,
+              5,
+              7,
+              9,
+              11,
+              13,
+              15,
+              17,
+              19,
+              21,
+              23,
+              25,
+              27,
+              29,
+              31,
+              33,
+              35,
+              37,
+              39,
+              41,
+              43,
+              45,
+              47
+            ],
+            "parent": null,
+            "depth": 0,
+            "selector": "n/r",
+            "extra": null
+          },
+          {
+            "id": "c0",
+            "text": "合成事项 0",
+            "data": {
+              "id": "c0",
+              "text": "合成事项 0",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "functional"
+              ]
+            },
+            "children": [
+              2
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c0",
+            "extra": null
+          },
+          {
+            "id": "e0",
+            "text": "合成结果",
+            "data": {
+              "id": "e0",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 1,
+            "depth": 2,
+            "selector": "n/e0",
+            "extra": null
+          },
+          {
+            "id": "c1",
+            "text": "合成事项 1",
+            "data": {
+              "id": "c1",
+              "text": "合成事项 1",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "configuration"
+              ]
+            },
+            "children": [
+              4
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c1",
+            "extra": null
+          },
+          {
+            "id": "e1",
+            "text": "合成结果",
+            "data": {
+              "id": "e1",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 3,
+            "depth": 2,
+            "selector": "n/e1",
+            "extra": null
+          },
+          {
+            "id": "c2",
+            "text": "合成事项 2",
+            "data": {
+              "id": "c2",
+              "text": "合成事项 2",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "integration"
+              ]
+            },
+            "children": [
+              6
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c2",
+            "extra": null
+          },
+          {
+            "id": "e2",
+            "text": "合成结果",
+            "data": {
+              "id": "e2",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 5,
+            "depth": 2,
+            "selector": "n/e2",
+            "extra": null
+          },
+          {
+            "id": "c3",
+            "text": "合成事项 3",
+            "data": {
+              "id": "c3",
+              "text": "合成事项 3",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "compatibility"
+              ]
+            },
+            "children": [
+              8
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c3",
+            "extra": null
+          },
+          {
+            "id": "e3",
+            "text": "合成结果",
+            "data": {
+              "id": "e3",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 7,
+            "depth": 2,
+            "selector": "n/e3",
+            "extra": null
+          },
+          {
+            "id": "c4",
+            "text": "合成事项 4",
+            "data": {
+              "id": "c4",
+              "text": "合成事项 4",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "negative"
+              ]
+            },
+            "children": [
+              10
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c4",
+            "extra": null
+          },
+          {
+            "id": "e4",
+            "text": "合成结果",
+            "data": {
+              "id": "e4",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 9,
+            "depth": 2,
+            "selector": "n/e4",
+            "extra": null
+          },
+          {
+            "id": "c5",
+            "text": "合成事项 5",
+            "data": {
+              "id": "c5",
+              "text": "合成事项 5",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "stress"
+              ]
+            },
+            "children": [
+              12
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c5",
+            "extra": null
+          },
+          {
+            "id": "e5",
+            "text": "合成结果",
+            "data": {
+              "id": "e5",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 11,
+            "depth": 2,
+            "selector": "n/e5",
+            "extra": null
+          },
+          {
+            "id": "c6",
+            "text": "合成事项 6",
+            "data": {
+              "id": "c6",
+              "text": "合成事项 6",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "command_add"
+              ]
+            },
+            "children": [
+              14
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c6",
+            "extra": null
+          },
+          {
+            "id": "e6",
+            "text": "合成结果",
+            "data": {
+              "id": "e6",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 13,
+            "depth": 2,
+            "selector": "n/e6",
+            "extra": null
+          },
+          {
+            "id": "c7",
+            "text": "合成事项 7",
+            "data": {
+              "id": "c7",
+              "text": "合成事项 7",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "command_delete"
+              ]
+            },
+            "children": [
+              16
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c7",
+            "extra": null
+          },
+          {
+            "id": "e7",
+            "text": "合成结果",
+            "data": {
+              "id": "e7",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 15,
+            "depth": 2,
+            "selector": "n/e7",
+            "extra": null
+          },
+          {
+            "id": "c8",
+            "text": "合成事项 8",
+            "data": {
+              "id": "c8",
+              "text": "合成事项 8",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "command_modify"
+              ]
+            },
+            "children": [
+              18
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c8",
+            "extra": null
+          },
+          {
+            "id": "e8",
+            "text": "合成结果",
+            "data": {
+              "id": "e8",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 17,
+            "depth": 2,
+            "selector": "n/e8",
+            "extra": null
+          },
+          {
+            "id": "c9",
+            "text": "合成事项 9",
+            "data": {
+              "id": "c9",
+              "text": "合成事项 9",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "command_query"
+              ]
+            },
+            "children": [
+              20
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c9",
+            "extra": null
+          },
+          {
+            "id": "e9",
+            "text": "合成结果",
+            "data": {
+              "id": "e9",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 19,
+            "depth": 2,
+            "selector": "n/e9",
+            "extra": null
+          },
+          {
+            "id": "c10",
+            "text": "合成事项 10",
+            "data": {
+              "id": "c10",
+              "text": "合成事项 10",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "show_at_maximum"
+              ]
+            },
+            "children": [
+              22
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c10",
+            "extra": null
+          },
+          {
+            "id": "e10",
+            "text": "合成结果",
+            "data": {
+              "id": "e10",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 21,
+            "depth": 2,
+            "selector": "n/e10",
+            "extra": null
+          },
+          {
+            "id": "c11",
+            "text": "合成事项 11",
+            "data": {
+              "id": "c11",
+              "text": "合成事项 11",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "no_command"
+              ]
+            },
+            "children": [
+              24
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c11",
+            "extra": null
+          },
+          {
+            "id": "e11",
+            "text": "合成结果",
+            "data": {
+              "id": "e11",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 23,
+            "depth": 2,
+            "selector": "n/e11",
+            "extra": null
+          },
+          {
+            "id": "c12",
+            "text": "合成事项 12",
+            "data": {
+              "id": "c12",
+              "text": "合成事项 12",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "clear_command"
+              ]
+            },
+            "children": [
+              26
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c12",
+            "extra": null
+          },
+          {
+            "id": "e12",
+            "text": "合成结果",
+            "data": {
+              "id": "e12",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 25,
+            "depth": 2,
+            "selector": "n/e12",
+            "extra": null
+          },
+          {
+            "id": "c13",
+            "text": "合成事项 13",
+            "data": {
+              "id": "c13",
+              "text": "合成事项 13",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "operation_log"
+              ]
+            },
+            "children": [
+              28
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c13",
+            "extra": null
+          },
+          {
+            "id": "e13",
+            "text": "合成结果",
+            "data": {
+              "id": "e13",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 27,
+            "depth": 2,
+            "selector": "n/e13",
+            "extra": null
+          },
+          {
+            "id": "c14",
+            "text": "合成事项 14",
+            "data": {
+              "id": "c14",
+              "text": "合成事项 14",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "audit_log"
+              ]
+            },
+            "children": [
+              30
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c14",
+            "extra": null
+          },
+          {
+            "id": "e14",
+            "text": "合成结果",
+            "data": {
+              "id": "e14",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 29,
+            "depth": 2,
+            "selector": "n/e14",
+            "extra": null
+          },
+          {
+            "id": "c15",
+            "text": "合成事项 15",
+            "data": {
+              "id": "c15",
+              "text": "合成事项 15",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "configuration_sync"
+              ]
+            },
+            "children": [
+              32
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c15",
+            "extra": null
+          },
+          {
+            "id": "e15",
+            "text": "合成结果",
+            "data": {
+              "id": "e15",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 31,
+            "depth": 2,
+            "selector": "n/e15",
+            "extra": null
+          },
+          {
+            "id": "c16",
+            "text": "合成事项 16",
+            "data": {
+              "id": "c16",
+              "text": "合成事项 16",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "configuration_save"
+              ]
+            },
+            "children": [
+              34
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c16",
+            "extra": null
+          },
+          {
+            "id": "e16",
+            "text": "合成结果",
+            "data": {
+              "id": "e16",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 33,
+            "depth": 2,
+            "selector": "n/e16",
+            "extra": null
+          },
+          {
+            "id": "c17",
+            "text": "合成事项 17",
+            "data": {
+              "id": "c17",
+              "text": "合成事项 17",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "configuration_restore"
+              ]
+            },
+            "children": [
+              36
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c17",
+            "extra": null
+          },
+          {
+            "id": "e17",
+            "text": "合成结果",
+            "data": {
+              "id": "e17",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 35,
+            "depth": 2,
+            "selector": "n/e17",
+            "extra": null
+          },
+          {
+            "id": "c18",
+            "text": "合成事项 18",
+            "data": {
+              "id": "c18",
+              "text": "合成事项 18",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "configuration_clear"
+              ]
+            },
+            "children": [
+              38
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c18",
+            "extra": null
+          },
+          {
+            "id": "e18",
+            "text": "合成结果",
+            "data": {
+              "id": "e18",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 37,
+            "depth": 2,
+            "selector": "n/e18",
+            "extra": null
+          },
+          {
+            "id": "c19",
+            "text": "合成事项 19",
+            "data": {
+              "id": "c19",
+              "text": "合成事项 19",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "upgrade_new_to_new"
+              ]
+            },
+            "children": [
+              40
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c19",
+            "extra": null
+          },
+          {
+            "id": "e19",
+            "text": "合成结果",
+            "data": {
+              "id": "e19",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 39,
+            "depth": 2,
+            "selector": "n/e19",
+            "extra": null
+          },
+          {
+            "id": "c20",
+            "text": "合成事项 20",
+            "data": {
+              "id": "c20",
+              "text": "合成事项 20",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "upgrade_old_to_new"
+              ]
+            },
+            "children": [
+              42
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c20",
+            "extra": null
+          },
+          {
+            "id": "e20",
+            "text": "合成结果",
+            "data": {
+              "id": "e20",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 41,
+            "depth": 2,
+            "selector": "n/e20",
+            "extra": null
+          },
+          {
+            "id": "c21",
+            "text": "合成事项 21",
+            "data": {
+              "id": "c21",
+              "text": "合成事项 21",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "upgrade_new_to_old"
+              ]
+            },
+            "children": [
+              44
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c21",
+            "extra": null
+          },
+          {
+            "id": "e21",
+            "text": "合成结果",
+            "data": {
+              "id": "e21",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 43,
+            "depth": 2,
+            "selector": "n/e21",
+            "extra": null
+          },
+          {
+            "id": "c22",
+            "text": "合成事项 22",
+            "data": {
+              "id": "c22",
+              "text": "合成事项 22",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "security"
+              ]
+            },
+            "children": [
+              46
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c22",
+            "extra": null
+          },
+          {
+            "id": "e22",
+            "text": "合成结果",
+            "data": {
+              "id": "e22",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 45,
+            "depth": 2,
+            "selector": "n/e22",
+            "extra": null
+          },
+          {
+            "id": "c23",
+            "text": "合成事项 23",
+            "data": {
+              "id": "c23",
+              "text": "合成事项 23",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "database"
+              ]
+            },
+            "children": [
+              48
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c23",
+            "extra": null
+          },
+          {
+            "id": "e23",
+            "text": "合成结果",
+            "data": {
+              "id": "e23",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 47,
+            "depth": 2,
+            "selector": "n/e23",
+            "extra": null
+          }
+        ],
+        "duplicateIds": [],
+        "missingIds": 0,
+        "nulRemoved": 0,
+        "surrogatesReplaced": 0
+      }
+    },
+    "case_rule": "marked",
+    "claims": [],
+    "skipped": [],
+    "scope_complete": true
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "880001",
+      "tier": "advisory"
+    }
+  ]
+}

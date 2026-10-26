@@ -1,0 +1,105 @@
+{
+  "schema": "pack@1",
+  "id": "case-review-report",
+  "version": "2.0.6",
+  "kind": "workflow",
+  "title": "评审终稿",
+  "description": "按已受理复核记录与目标原文确定性排出测试子项对照表，核对简短终稿的整体结论和等级",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "6d8522aab21751d8f22e34dc31e09bd46ec5b22990fd39ab18200d3095043d41",
+      "size": 6039
+    },
+    {
+      "path": "checks.json",
+      "sha256": "f7f1735cab3928c3f846ff3985b0f76a50a7acfa043654b1a141b2c55fab3c29",
+      "size": 925
+    },
+    {
+      "path": "examples/start-run.json",
+      "sha256": "713ece14d9633a0b839469397106a3a2fe248c1d37f0f8ab649865de764e68c5",
+      "size": 624
+    },
+    {
+      "path": "examples/submit-result.json",
+      "sha256": "a0135d0f719c3e707a2129c3290592a97f0dcde2bbc57f07b287777b477f03f2",
+      "size": 526
+    },
+    {
+      "path": "functions/checks.ts",
+      "sha256": "603fd3fc5834968ccb8cccecb9a281ffa99037f0dc2d0faef241df3216078f20",
+      "size": 4887
+    },
+    {
+      "path": "functions/common.ts",
+      "sha256": "d3606f01e59b8a2e43e96bb235cde7bc681d9567bb82cb898783e88f1e4abb8f",
+      "size": 1158
+    },
+    {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "6e6a6840515f72b28aeaf7dad219046d097000375510d476ab8323ef78df2335",
+      "size": 4163
+    },
+    {
+      "path": "functions/projection.ts",
+      "sha256": "108c28765df146c6c61d6ffb955ffd9120b25989d8ff011ad7ff62e5fabf5c7c",
+      "size": 25920
+    },
+    {
+      "path": "functions/tables.ts",
+      "sha256": "47aebdc6edf3208e746cb8e30b088e1ba64db9fa4c549ede5d030bc7c8d70c16",
+      "size": 16946
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "cbf7c954b9af92e8b78ef785ed3e0066ef214af69db0328067c9691d7d8a1a01",
+      "size": 1886
+    },
+    {
+      "path": "samples/negative/overall_not_worst.json",
+      "sha256": "b027d0c62d0ee09078199c07c34c8ffe2bd5991d76d53ca91a621aea30837c77",
+      "size": 2610
+    },
+    {
+      "path": "samples/negative/report_wrong_level.json",
+      "sha256": "27d815594ce0ee5204d245a87edbda6d7e8487ef4c7c47f5cc0c3c1c9d6f9a72",
+      "size": 2482
+    },
+    {
+      "path": "samples/negative/report_wrong_verdict.json",
+      "sha256": "06280bac7de09a6806d2958b39a4a153f1034df3210c5f42864a48d41cec6ce0",
+      "size": 2483
+    },
+    {
+      "path": "samples/positive/overall_worst.json",
+      "sha256": "ca2e9ea0e9704a7ac0326ccdc89f0873ff2482781833ef6436447138126a6a6b",
+      "size": 2557
+    },
+    {
+      "path": "samples/positive/report_agrees.json",
+      "sha256": "d2e4633ccadffb2c27aecb7a26a3e3d586b75809678dbc830413d6a48bf0f78c",
+      "size": 2496
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "560ce8b5a74a282513db3e6f8b676760e2ad64104c7c67f04cb5ec600b687b3f",
+      "size": 1140
+    },
+    {
+      "path": "tables/labels.json",
+      "sha256": "6f62e6d97b17737e0829a628437421a287bbabd3786423f5361d28ef9bc455b9",
+      "size": 6000
+    },
+    {
+      "path": "tables/labels.json.d.ts",
+      "sha256": "d8d9b282f7ca0ee89fbeca2594ca32b930c24686e27da1b518a153033c2b76c1",
+      "size": 449
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "2f2469903efd25f6416bb214334e77caa0ee9327d73acfb5806cf100d3518ca2",
+      "size": 1531
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "id": "verdict_pass_location_only",
+  "source": "author",
+  "check": "verdict",
+  "note": "PASS，处置的位置在被复核脑图里，引文却只引了规格书：位置是谁都能从条目列表抄的引用，不算复核方核对过被复核对象",
+  "subject": {
+    "items": [
+      {
+        "id": "sample:c1",
+        "label": "设置池 c1 的探测间隔",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+        "fields": {
+          "nodeId": "c1",
+          "path": [
+            "示例文档",
+            "池管理"
+          ],
+          "title": "设置池 c1 的探测间隔",
+          "draft_partition": "delivered",
+          "draft_findings": [
+            {
+              "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/0/requirements/2/claims/0",
+              "code": "coverage_gap",
+              "rank": "major",
+              "text": "初评的发现",
+              "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+              "quotes": [
+                {
+                  "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+                  "text": "设置探测间隔"
+                }
+              ],
+              "commands": []
+            }
+          ],
+          "draft_level": {
+            "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/cross_item/3",
+            "rank": "P3",
+            "text": "等级理由：覆盖全部功能细节，有一些反向用例"
+          }
+        },
+        "slots": {
+          "verification": [
+            {
+              "text": "复核方的处置",
+              "code": "verified",
+              "rank": "major",
+              "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+              "quotes": [
+                {
+                  "reference": "src:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/markdown@1/s/interval",
+                  "text": "取值范围 1-300 秒"
+                }
+              ],
+              "data": {
+                "finding": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/0/requirements/2/claims/0"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "cross_item": [
+      {
+        "nature": "judgment",
+        "statement": "结论 PASS",
+        "grounds": [
+          "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1"
+        ],
+        "code": "PASS",
+        "rank": "P3"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review-verify.pass_without_evidence",
+      "item": "sample:c1"
+    }
+  ]
+}

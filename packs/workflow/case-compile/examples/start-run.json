@@ -1,0 +1,26 @@
+{
+  "comment": "合成示例，未在真实运行器上验收；实际运行以前驱串联 test-bed 预订",
+  "tool": "start_run",
+  "arguments": {
+    "pack": "case-compile",
+    "product": "widget",
+    "build": "Fixture_Build_A",
+    "inputs": {
+      "subject": {
+        "external": "agile:mindmap:fixture-document"
+      },
+      "contract": {
+        "external": "doc:doc:fixture-runtime-contract"
+      },
+      "inventory": {
+        "external": "doc:doc:fixture-bed"
+      },
+      "profile": {
+        "external": "doc:doc:fixture-runtime-profile"
+      }
+    },
+    "parameters": {
+      "autoid": "990000000000000031"
+    }
+  }
+}

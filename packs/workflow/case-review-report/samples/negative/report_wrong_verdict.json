@@ -1,0 +1,76 @@
+{
+  "id": "report_wrong_verdict",
+  "source": "author",
+  "check": "report",
+  "note": "整体结论或等级与投影不一致",
+  "subject": {
+    "applies": "run",
+    "items": [
+      {
+        "id": "report",
+        "label": "评审终稿",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+        "fields": {
+          "blocks": 2,
+          "overall": {
+            "verdict": "PARTIAL",
+            "level": "P5"
+          },
+          "findings": [
+            {
+              "kind": "verified",
+              "reference": "rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef#/partitions/delivered/0/requirements/0/claims/0",
+              "block": 0,
+              "text": "A 证实",
+              "rank": "minor"
+            },
+            {
+              "kind": "partial",
+              "reference": "rec:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210#/partitions/delivered/0/requirements/0/claims/0",
+              "block": 1,
+              "text": "B 部分正确",
+              "rank": "major"
+            },
+            {
+              "kind": "new_finding",
+              "reference": "rec:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210#/partitions/delivered/0/requirements/0/claims/1",
+              "block": 1,
+              "text": "B 新增",
+              "rank": "minor"
+            },
+            {
+              "kind": "refuted",
+              "reference": "rec:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210#/partitions/delivered/0/requirements/0/claims/2",
+              "block": 1,
+              "text": "B 推翻",
+              "rank": "minor"
+            }
+          ]
+        }
+      }
+    ],
+    "context": {},
+    "cross_item": [
+      {
+        "nature": "judgment",
+        "statement": "终稿（中文全文略）：两块合成，发现逐条核对，B 块一条部分正确、一条新增",
+        "grounds": [],
+        "code": "PASS",
+        "rank": "P5"
+      },
+      {
+        "nature": "judgment",
+        "statement": "补：合法值域外的反向用例；因为：B 块新增发现指出边界未覆盖；期望：非法输入被拒绝并提示原因",
+        "grounds": [],
+        "code": "suggestion"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review-report.verdict_mismatch",
+      "tier": "blocking"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "schema": "catalog@1",
+  "origin": "决定：docs/hub-r4-architecture.md 第 6 节：扫描被判对象自己的文字找命令只是可选的提示检查，默认关闭（checks.json 里的 case_commands，任务包的要求项都不列它）；被判对象由 functions/subjects.ts 的 scanSubject 产出：用例的标题、步骤、期望结果和前置条件的每一行",
+  "description": "（可选，默认关闭）用例文字里的一行开头能解析到锁定构建的目录命令时，参数要符合声明的类型和范围。真实文档里的简写（如 on/off）、列表编号、上下文前缀和错别字会让 15%-70% 含命令的用例看起来不对，所以只是提示，不算 catalog 要求项。反向用例的参数越界、类型不符或个数不符是预期的反驳；没有标签的用例是否反向未知，按普通用例处理",
+  "tier": "advisory",
+  "item": "/id",
+  "location": "/location",
+  "catalog": "commands@1",
+  "commands": [
+    "$.commands"
+  ],
+  "scope": "resolved",
+  "match": {
+    "unicode": "nfkc",
+    "case": "insensitive",
+    "whitespace": "collapse"
+  },
+  "negative": {
+    "flag": "/negative",
+    "expect": [
+      "core.catalog.param_out_of_range",
+      "core.catalog.param_type_mismatch",
+      "core.catalog.arity_mismatch"
+    ],
+    "tier": "advisory"
+  }
+}

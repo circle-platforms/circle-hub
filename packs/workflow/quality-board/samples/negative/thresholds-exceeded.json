@@ -1,0 +1,100 @@
+{
+  "id": "thresholds_exceeded",
+  "source": "author",
+  "check": "thresholds",
+  "note": "合成样例：无期望结果占 40.0% 超过上限 5.0%，已判断 6 个中含糊 3 个占 50.0% 超过上限 5.0%，负面用例占 0.0% 低于下限 2.0%——一个分组三个提示档的不通过",
+  "subject": {
+    "items": [
+      {
+        "id": "10.6.1/WebUI",
+        "location": "src:3e7b711189bd81807db4efa6a494d0e0e77bcacf5c436b5164663f43ebb23778/json@1/p/rows",
+        "fields": {
+          "line": "10.6.1",
+          "module": "WebUI",
+          "id": "10.6.1/WebUI",
+          "counts": {
+            "cases": 10,
+            "missing": 4,
+            "vague": 3,
+            "negative": 0,
+            "negative_denominator": 10,
+            "type_unclassified": 0
+          },
+          "quality": {
+            "judged": 6,
+            "unjudged": 4,
+            "conflicted": 0,
+            "sources": []
+          },
+          "ratios": {
+            "missing": {
+              "num": 4,
+              "den": 10
+            },
+            "vague": {
+              "num": 3,
+              "den": 6
+            },
+            "negative": {
+              "num": 0,
+              "den": 10
+            }
+          },
+          "display": {
+            "missing": 0.4,
+            "vague": 0.5,
+            "negative": 0
+          }
+        }
+      }
+    ],
+    "context": {
+      "product": "famx",
+      "names": [
+        "FAMX",
+        "FAMY"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "placement": {
+            "unplaced": 0,
+            "source": "src:7127126a17c6f74ad21dc0bb35cf21c2a7d4e125624445e47f70ba6f5b9b78c9",
+            "skipped": 0,
+            "truncated": false
+          },
+          "product": "famx",
+          "build": "Rel_FAMX_10_6_1_57",
+          "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
+          "view": {
+            "source": "src:3e7b711189bd81807db4efa6a494d0e0e77bcacf5c436b5164663f43ebb23778",
+            "total": 10,
+            "truncated": false,
+            "skipped": 0,
+            "listed_rows": 3
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "quality-board.missing_expected",
+      "item": "10.6.1/WebUI",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "refute",
+      "code": "quality-board.vague_expected",
+      "item": "10.6.1/WebUI",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "refute",
+      "code": "quality-board.negative_share",
+      "item": "10.6.1/WebUI",
+      "tier": "advisory"
+    }
+  ]
+}

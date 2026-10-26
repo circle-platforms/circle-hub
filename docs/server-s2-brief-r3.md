@@ -1,5 +1,7 @@
 # circle-hub 第二阶段简报（修订 3）：对象标准、变更集与角色
 
+> **历史文档**（2026-10-21 标注）：本文是已退役的任务与审批服务器第二阶段的简报，已被 [Hub r4 简报](hub-r4-brief.md)取代，只作记录保留，不是现行指令。
+
 2026-10-13。这一版在修订 2 的资产、连接器、技能包之上，收口治理部分：角色与范围策略、变更集、运行不审批、通知流、静态密钥、列表即查询。方案页面是私有的 claude.ai 画布，你打不开，本文件是它的可执行摘要。分支继续用 `server-s2`。Circle 仓库由 Claude 负责，你不要改。
 
 维护者已把公开仓库改名为 circle-hub 并更新 main 的公开门面。本轮继续在 server-s2 实现，不修改 README，也不改运行时名字、环境变量或路由前缀；分支合并由维护者处理。
@@ -123,7 +125,7 @@ hub 不维护任何允许清单或黑名单；执行链第 3 步「核验」由*
 - 钩子点：`verify.deviceCommand`、`verify.hostCommand`、`verify.workbook`、`beforeDispatch`、`afterResult`。每个点传入本次运行的绑定（方法摘要、资源版本、原件 id、输入修订）和待核对象（一条命令 / 一份工作簿 / 一次结果）。
 - 处理器：产品线包里的规则模块（纯 TS，作为 product-line 模块资产装入，经变更集批准），在清单里声明挂到哪个点和顺序；按序执行，返回 `pass` 或 `{code, facts}`；任一返回错误码即停，错误码与事实原样回 Circle，审计记录规则 id 与版本。
 - 约束：处理器是 100% 可证真的脚本——不调模型、不连网、不读环境；hub 核心不认识任何规则内容，也没有缺省放行 / 缺省拒绝的分支（删除 `if(!policy)continue` 一类默认）。
-- 主机 shell 命令：主机闭集（床 conf）、命令字面量（不模板展开）、策略可缩小，这三条由 APV 产品线包里的规则实现；再加一条主机自毁模式规则（如 `rm -rf /`、`mkfs`、`dd of=/dev/`、`shutdown`、`reboot`、改口令、清空防火墙），命中报 `DESTRUCTIVE_COMMAND`。正常的 dig / curl / ping / tc 不受影响。
+- 主机 shell 命令：主机闭集（床 conf）、命令字面量（不模板展开）、策略可缩小，这三条由 FAMX 产品线包里的规则实现；再加一条主机自毁模式规则（如 `rm -rf /`、`mkfs`、`dd of=/dev/`、`shutdown`、`reboot`、改口令、清空防火墙），命中报 `DESTRUCTIVE_COMMAND`。正常的 dig / curl / ping / tc 不受影响。
 - 设备命令：现有的命令树核对与函数契约核对改成挂在 `verify.deviceCommand` 的规则，行为不变。
 - 验收：零规则时任何工作簿都能派发（证明 hub 无内建判定）；装入规则后同一工作簿按规则报错；规则版本变化后审计里的规则 id / 版本随之变化。
 
@@ -137,8 +139,8 @@ hub 只认四种原语，用 harness 自己的格式：**Skill**（Circle 的 SK
 3. `product-line/1` 清单的 `methods` 改为 `tools`（provider 实现）与 `hooks`（处理器 + 挂点 + 顺序）。
 4. 网关 `TOOL_SPECS` 与 hub `ToolView` 统一为 MCP tool + hub 标注。
 5. 登记簿与 handoff 文档按 skill / tool / MCP server / hook 分组命名。
-6. 真实样本已在 circle-packs main（ced41a6，原 b817a23 的 Node import 已由包作者去除）的 `products/apv`：`product-line.json` 的 `tools[]`（含 `imports`）与 `hooks[]`、`tools/*.ts`（纯函数）、`hooks/*.ts`（`hub-hook/1`：`handle({event, binding, subject})` → `{decision:'pass'}` | `{decision:'block', code, facts}`，与 `docs/design/harness-primitives.md` 一致；第 2 条的 `pass | {code, facts}` 按此形状实现）。hub 的装载器与钩子运行器必须原样装入它，并按挂点喂这些 subject：`verify.deviceCommand` → `{command, tree:{heads:[{command, present}]}}`；`verify.hostCommand` → `{command, host, method, kwargs}`（host 是本步目标主机名，kwargs 是框架参数）；`verify.workbook` → `{client, contract:{testEnvEnabled:[]}}`。binding.resource 在三个 verify 挂点上都带 `{assetId, version, sha256, declaration}`，declaration 是该资源资产已批准版本的声明原样（例如 allowedTestHosts、hostCommandPolicies），主机闭集与策略由产品线包的 Hook 据此判定，hub 不再在工作簿解析里拒绝主机（workbook.ts 的 shellHost 闭集检查拿掉）。Tool 实现只能 import hub 依赖集（exceljs 4.4.0、read-excel-file 9.3.12、fflate 0.8.3、zod 4.6.5、saxes 5.0.1、parse5 8.0.1）且每个 import 必须出现在 `tools[].imports`；装载时核对，声明外的 import 以固定错误码拒绝装入（`IMPORT_NOT_DECLARED`），不是运行时才发现。
-7. `packs/meridian` 扩成完整布局（至少一个带 `imports` 的 Tool 实现、每个钩子点一个处理器、resources / flows 声明），作为「第二条产品线装进去不改核心」的验收夹具；验收同时装入 circle-packs 的 `products/apv`，其 18 个测试在 hub 依赖集下通过，零规则派发 → 装入 hooks 后按规则报错的那条验收用它跑。
+6. 真实样本已在 circle-packs main（ced41a6，原 b817a23 的 Node import 已由包作者去除）的 `products/famx`：`product-line.json` 的 `tools[]`（含 `imports`）与 `hooks[]`、`tools/*.ts`（纯函数）、`hooks/*.ts`（`hub-hook/1`：`handle({event, binding, subject})` → `{decision:'pass'}` | `{decision:'block', code, facts}`，与 `docs/design/harness-primitives.md` 一致；第 2 条的 `pass | {code, facts}` 按此形状实现）。hub 的装载器与钩子运行器必须原样装入它，并按挂点喂这些 subject：`verify.deviceCommand` → `{command, tree:{heads:[{command, present}]}}`；`verify.hostCommand` → `{command, host, method, kwargs}`（host 是本步目标主机名，kwargs 是框架参数）；`verify.workbook` → `{client, contract:{testEnvEnabled:[]}}`。binding.resource 在三个 verify 挂点上都带 `{assetId, version, sha256, declaration}`，declaration 是该资源资产已批准版本的声明原样（例如 allowedTestHosts、hostCommandPolicies），主机闭集与策略由产品线包的 Hook 据此判定，hub 不再在工作簿解析里拒绝主机（workbook.ts 的 shellHost 闭集检查拿掉）。Tool 实现只能 import hub 依赖集（exceljs 4.4.0、read-excel-file 9.3.12、fflate 0.8.3、zod 4.6.5、saxes 5.0.1、parse5 8.0.1）且每个 import 必须出现在 `tools[].imports`；装载时核对，声明外的 import 以固定错误码拒绝装入（`IMPORT_NOT_DECLARED`），不是运行时才发现。
+7. `packs/meridian` 扩成完整布局（至少一个带 `imports` 的 Tool 实现、每个钩子点一个处理器、resources / flows 声明），作为「第二条产品线装进去不改核心」的验收夹具；验收同时装入 circle-packs 的 `products/famx`，其 18 个测试在 hub 依赖集下通过，零规则派发 → 装入 hooks 后按规则报错的那条验收用它跑。
 
 ## 14. harness 中立（第 13 节的扩展；§5–8 之后排 §9）
 

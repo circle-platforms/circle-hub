@@ -1,0 +1,140 @@
+{
+  "schema": "pack@1",
+  "id": "traceability",
+  "version": "1.0.11",
+  "kind": "workflow",
+  "title": "追溯矩阵",
+  "description": "构建的缺陷到用例的追溯矩阵：release notes 列出的缺陷条目和瘦身（fields=document,node,title）的用例索引，每个缺陷有没有已索引的用例携带它的编号；没有已索引用例的记未知（用例索引按构造不完整，不等于没有），从不记为不通过；不绑定产品线（输入的外部标识写明产品和构建）；只含事实要求项，开始运行时由 Hub 直接算出结果",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "58eed100aef09778f00d39ce5471c4b7dfcc3b7be8f3be7dacb27d3bd0207a13",
+      "size": 4997
+    },
+    {
+      "path": "checks.json",
+      "sha256": "be6bab5f772832af9b34eb615ff3e22b53a5c50909a790f96535059594c1f246",
+      "size": 776
+    },
+    {
+      "path": "functions/check.ts",
+      "sha256": "e45ec6f922f84f7f8517c95f88c27c7b5670d6f6d6ccc64b857bb7681eb25e0d",
+      "size": 13835
+    },
+    {
+      "path": "functions/counts.ts",
+      "sha256": "6ae6dcc05a8ec24e4982442b83bda4a5965a99b3b4947b0f8b32bf5a39d73d60",
+      "size": 7211
+    },
+    {
+      "path": "functions/expected.ts",
+      "sha256": "aaed9b61736d0a4d769ddb3ecbf8b3cca8216f9febbc2b64c1c93f1a05c6376e",
+      "size": 2261
+    },
+    {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "81d451a3db47240d97a482dc4b4a0ce4d2729e8a8575fdae322e260779cabc85",
+      "size": 1407
+    },
+    {
+      "path": "functions/ids.ts",
+      "sha256": "8b045b3f8df2191809940f69f9b9ff048727f9dcbecf29e226472af967cd9b38",
+      "size": 466
+    },
+    {
+      "path": "functions/matrix.ts",
+      "sha256": "bc82cfdf6c939f45195d86c0b7d0c53c3f61e7dffaea0ea92e5292a8572468d3",
+      "size": 8574
+    },
+    {
+      "path": "functions/params.ts",
+      "sha256": "3092ba330a389febb14fd6421377ada223692d13e50aef948847011676cf230c",
+      "size": 1119
+    },
+    {
+      "path": "functions/plm-status.ts",
+      "sha256": "7844e0775bbe8b0d189d3e75bea6415594a179c2a335d4d5888c14ef22ecb06e",
+      "size": 5338
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "06a4304db2a8f7c6360c7b04496b9980f5165eeb44b19ade341aa4d8c44440eb",
+      "size": 8333
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "26d16670c20ccc3e3c7d92734fb0ff9a8d6dc8534183b4213b3ac28c9e4cda7c",
+      "size": 1455
+    },
+    {
+      "path": "functions/text.ts",
+      "sha256": "556d1554dc3a842f18750a5fec4f88ffaaea94ba81714c9a1e793d18e481ee1c",
+      "size": 2750
+    },
+    {
+      "path": "functions/types.ts",
+      "sha256": "deaf5eb44cf74034a538648eba961be71a5b793ae09e6462ae7d6b7911bdd002",
+      "size": 4325
+    },
+    {
+      "path": "functions/views.ts",
+      "sha256": "170bd1d3440864532a5813e042a14a8cdb3b1fd57c28096bc5cd2eee19e2a1b0",
+      "size": 5129
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "8a2d45cb1d4bfc6354aa3febc6c4723fbd3ee1b071db4bd9f966b4af106edffd",
+      "size": 1490
+    },
+    {
+      "path": "samples/negative/count-mismatch.json",
+      "sha256": "868186cb627ffdac47cfc22106812848a130ca4ee4113b8852a483a2d1acbe8b",
+      "size": 2929
+    },
+    {
+      "path": "samples/negative/join-mismatch.json",
+      "sha256": "2e93a9b40c6087a784cb9ff0089cb44f411009267e1804784e65ef96de1e0076",
+      "size": 3022
+    },
+    {
+      "path": "samples/negative/status-conflict.json",
+      "sha256": "9979067d4a3647735fceb1ffd0c31bf24e019b5a032f53681eb4adff61b2f9e3",
+      "size": 4281
+    },
+    {
+      "path": "samples/negative/system-collision.json",
+      "sha256": "c99998a03cb3fb7968bf8ebd080743fe20bfc15609288438e58821e9f32cb2cf",
+      "size": 5539
+    },
+    {
+      "path": "samples/positive/counts-consistent.json",
+      "sha256": "e082d0a4c5651f2d7de5b499e03855655335fee3cb41fe6c2e7793f3aa0222ad",
+      "size": 3788
+    },
+    {
+      "path": "samples/positive/traced-with-cases.json",
+      "sha256": "89f22dc7e16aa039d4b894a566f1178cc8fa9ed9d4ba3fdfe48210e475611861",
+      "size": 4860
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "851202e03d46a4b40941830a276007f860f657166b31d30da18d0d2268567516",
+      "size": 53
+    },
+    {
+      "path": "tables/closed-statuses.json",
+      "sha256": "902d6c54013fc974ddf1b77a0ca670eb03c7e84ecdadfeef91b9b9a87e75eb4e",
+      "size": 214
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "90b67c45952a54a400950df6a9bf34c0ba5e75a9c30ca18a647929430e9149d0",
+      "size": 3735
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "47f096a7830f01058e89a4f583cff16ee15251b9356f7a4f6de7f1cc26c00ead",
+      "size": 2014
+    }
+  ]
+}

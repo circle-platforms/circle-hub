@@ -1,0 +1,9 @@
+# Retry late dispatch reports without resubmission
+
+Owner scope: generic Hub dispatch report readiness/polling, cached-terminal resume, execution-window evidence, round projections, synthetic loopback tests and dispatch documentation. No gateway business code, package/version, real data, environment or deployment change.
+
+After a declared trustworthy terminal status, retry absent/incomplete results with bounded exponential backoff (8 result reads, a 30-second monotonic read window, delay capped at 4 seconds). Per-call timeouts and transport retries share the remaining window. Readiness follows only declared complete/items/item-id/outcome fields. Unknown nonempty mappings and identity/digest mismatches retain their existing no-verdict/reconciliation meaning.
+
+Persist report_pending separately from execution completion. A resume of that state, including legacy done=true no_verdict archives, reads status/results again and appends new immutable observations and result projections. Reuse only recorded, original-intent-bound execution-window continuity facts; later normal lease release is not an execution gap. Missing/negative original facts are not upgraded, no new lease is acquired/extended/released during completed-execution readback, and no submit is called. Complete report reads clear pending status; transient read failures preserve a runnable readback exit.
+
+Do not auto-start another round to hide a missing report. A corrected late round observation is appended and the round view selects its latest observation. Tests use a loopback gateway: first report absent, second complete; bounded pending then resume; legacy completed snapshots; no repeated submit/lease calls; original result/history preserved; an actual recorded execution gap stays unknown. Existing lifecycle, identity, retry and round tests remain required.

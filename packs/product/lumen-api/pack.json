@@ -1,0 +1,35 @@
+{
+  "schema": "pack@1",
+  "id": "lumen-api",
+  "version": "1.1.2",
+  "kind": "product",
+  "title": "Lumen API（合成的 REST 接口产品）",
+  "description": "第二个合成产品，用来证明核心与产品无关：版本来自文档库里的发布清单，命令目录 commands@1 由每个构建的接口参考生成（方法、路径和带类型的参数），用同一个 case-review 工作流包评审",
+  "files": [
+    {
+      "path": "functions/common.ts",
+      "sha256": "12815610e0a538b5d0101848fa0a7191484865b0730906da607bf81b140519e6",
+      "size": 2072
+    },
+    {
+      "path": "functions/endpoints.ts",
+      "sha256": "dc9663d9f2d5e5033c9462385080dbe8b2278c852e2ed5996c097c3a7bed7362",
+      "size": 7640
+    },
+    {
+      "path": "functions/select.ts",
+      "sha256": "b463a64725297078d090ab78de84daee7c9c215430de318fe80e525089fea62c",
+      "size": 2536
+    },
+    {
+      "path": "functions/sync.ts",
+      "sha256": "5d7b90c7b2eb1486dce12171565150515fb242e0512300ced6690d5aef2b15f7",
+      "size": 2799
+    },
+    {
+      "path": "product.json",
+      "sha256": "11cd45d8dfe8f98bff31e3644155f0a19c151dfd8fa351fa7d4702c0651c7871",
+      "size": 739
+    }
+  ]
+}

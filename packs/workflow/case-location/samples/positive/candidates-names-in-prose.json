@@ -1,0 +1,112 @@
+{
+  "id": "candidates_names_in_prose",
+  "source": "author",
+  "check": "candidates",
+  "note": "合成样例（作者原题，输入未改）：两个文档把构建名写在标题散文里。构建名语法只读标签开头（声明范围，不扫正文），所以不产出“另一条版本线”或“构建站没有列出”的分类，只给出所定位版本线 10.6.1 的构建候选，记支持（提示档）。",
+  "subject": {
+    "items": [
+      {
+        "id": "24023",
+        "location": "src:0000000000000000000000000000000000000000000000000000000000024023/kityminder@1/n/24023",
+        "fields": {
+          "kind": "document",
+          "document": "24023",
+          "node": null,
+          "source": "agile:mindmap:24023@1",
+          "root": "FAMY",
+          "ancestors": [
+            "030：FAMX/FAMY测试项目",
+            "060：10.6.1",
+            "004：10.6.1-R2-2026/7",
+            "SSL"
+          ],
+          "title": "回归 Rel_FAMX_10_7_4_101 告警",
+          "path": [],
+          "case_title": null
+        }
+      },
+      {
+        "id": "24024",
+        "location": "src:0000000000000000000000000000000000000000000000000000000000024024/kityminder@1/n/24024",
+        "fields": {
+          "kind": "document",
+          "document": "24024",
+          "node": null,
+          "source": "agile:mindmap:24024@1",
+          "root": "FAMY",
+          "ancestors": [
+            "030：FAMX/FAMY测试项目",
+            "060：10.6.1",
+            "004：10.6.1-R2-2026/7",
+            "SSL"
+          ],
+          "title": "回归 Rel_FAMX_10_9_9_9 未知构建",
+          "path": [],
+          "case_title": null
+        }
+      }
+    ],
+    "context": {
+      "product": "famx",
+      "names": [
+        "FAMX",
+        "FAMY"
+      ],
+      "parameters": {},
+      "builds": [
+        {
+          "name": "Rel_FAMX_10_6_1_57",
+          "family": "FAMX",
+          "line": "10.6.1",
+          "base": "Rel_FAMX_10_6_1_57",
+          "platform": null,
+          "built_at": "2026-09-01T00:00:00.000Z",
+          "released_at": "2026-09-02T00:00:00.000Z",
+          "has_root": true
+        },
+        {
+          "name": "Rel_FAMY_10_6_1_57",
+          "family": "FAMY",
+          "line": "10.6.1",
+          "base": "Rel_FAMX_10_6_1_57",
+          "platform": null,
+          "built_at": "2026-09-01T00:00:00.000Z",
+          "released_at": "2026-09-05T00:00:00.000Z",
+          "has_root": true
+        },
+        {
+          "name": "Rel_FAMX_10_6_1_60",
+          "family": "FAMX",
+          "line": "10.6.1",
+          "base": "Rel_FAMX_10_6_1_60",
+          "platform": null,
+          "built_at": "2026-09-18T00:00:00.000Z",
+          "released_at": "2026-09-20T00:00:00.000Z",
+          "has_root": true
+        },
+        {
+          "name": "Rel_FAMX_10_7_4_101",
+          "family": "FAMX",
+          "line": "10.7.4",
+          "base": "Rel_FAMX_10_7_4_101",
+          "platform": null,
+          "built_at": "2026-05-01T00:00:00.000Z",
+          "released_at": "2026-05-02T00:00:00.000Z",
+          "has_root": true
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "24023",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "support",
+      "item": "24024",
+      "tier": "advisory"
+    }
+  ]
+}

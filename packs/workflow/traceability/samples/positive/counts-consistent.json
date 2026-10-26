@@ -1,0 +1,116 @@
+{
+  "id": "counts_consistent",
+  "source": "author",
+  "check": "counts",
+  "note": "合成样例：两个视图声明的总数与列出的内容一致，计数记支持（缺陷 2 个，已追溯 1 个，未追溯 1 个）",
+  "subject": {
+    "items": [
+      {
+        "id": "71031",
+        "location": "src:381cdfdfc6ff4dbbb732676381675b08e2cf2206ed8152babbe52d90860ab4b0/json@1/p/entries/29ac43eda96ac93e6c988cf74cf212254e0d9dee5f0d1c8538dc6291078ce1dd",
+        "fields": {
+          "bug": "71031",
+          "declaration_status": "declared",
+          "identity": "71031",
+          "ids": [
+            "71031"
+          ],
+          "statuses": [
+            "fixed"
+          ],
+          "conflict": false,
+          "statement": "缺陷 71031 的合成摘要",
+          "references": [
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/29ac43eda96a@29ac43eda96ac93e6c988cf74cf212254e0d9dee5f0d1c8538dc6291078ce1dd"
+          ],
+          "digests": [
+            "29ac43eda96ac93e6c988cf74cf212254e0d9dee5f0d1c8538dc6291078ce1dd"
+          ],
+          "cases": [
+            {
+              "case": "C-131",
+              "title": "追溯到的用例",
+              "document": "24001",
+              "reference": "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/cases/fed418ff3e27@fed418ff3e276839213f89fce201ee17fd8229dfc1b36c2a9df9dd8ae9fefc6d",
+              "defects": [],
+              "entry": "fed418ff3e276839213f89fce201ee17fd8229dfc1b36c2a9df9dd8ae9fefc6d"
+            }
+          ],
+          "systems": []
+        }
+      },
+      {
+        "id": "71032",
+        "location": "src:381cdfdfc6ff4dbbb732676381675b08e2cf2206ed8152babbe52d90860ab4b0/json@1/p/entries/1e0a07c8c7a364f354e6a350b1908def32cd19be1ca86cf279fc337e7e740ce3",
+        "fields": {
+          "bug": "71032",
+          "declaration_status": "declared",
+          "identity": "71032",
+          "ids": [
+            "71032"
+          ],
+          "statuses": [
+            "fixed"
+          ],
+          "conflict": false,
+          "statement": "缺陷 71032 的合成摘要",
+          "references": [
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/1e0a07c8c7a3@1e0a07c8c7a364f354e6a350b1908def32cd19be1ca86cf279fc337e7e740ce3"
+          ],
+          "digests": [
+            "1e0a07c8c7a364f354e6a350b1908def32cd19be1ca86cf279fc337e7e740ce3"
+          ],
+          "cases": [],
+          "systems": []
+        }
+      }
+    ],
+    "context": {
+      "product": "famx",
+      "names": [
+        "FAMX",
+        "FAMY"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "product": "famx",
+          "build": "Rel_FAMX_10_6_1_57",
+          "root": "67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591",
+          "statuses": [
+            "fixed",
+            "known"
+          ],
+          "views": {
+            "defects": {
+              "source": "src:381cdfdfc6ff4dbbb732676381675b08e2cf2206ed8152babbe52d90860ab4b0",
+              "skipped": 0,
+              "truncated": false,
+              "total_keys": 2,
+              "total_entries": 2,
+              "listed_keys": 2,
+              "listed_entries": 2,
+              "missing": 0
+            },
+            "cases": {
+              "source": "src:cf77f5c08be115e4f5c25b601e6713731d83a9f17d87a1e36f05d26121c270fa",
+              "skipped": 0,
+              "truncated": false,
+              "total_keys": 1,
+              "total_entries": 1,
+              "listed_keys": 1,
+              "listed_entries": 1,
+              "missing": 0
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "advisory"
+    }
+  ]
+}

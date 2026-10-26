@@ -1,0 +1,37 @@
+{
+  "note": "示例（合成）：一条初评发现的处置、一条新发现、结论和一条改进建议；data.finding 一字不差地写条目字段 draft_findings 里的 reference",
+  "submit_result": {
+    "run": "<复核运行编号>",
+    "model": "<与初评不同的模型>",
+    "items": [
+      {
+        "item": "<文档编号>:<节点编号>",
+        "handling": "handled",
+        "slots": {
+          "verification": [
+            {
+              "text": "位置存在，用例确实只测了一个越界值，严重程度合理",
+              "code": "verified",
+              "rank": "minor",
+              "location": "src:<被复核脑图的摘要>/kityminder@1/n/<节点编号>",
+              "quotes": [{ "reference": "src:<被复核脑图的摘要>/kityminder@1/n/<节点编号>", "text": "<用例里的原文>" }],
+              "data": { "finding": "rec:<初评验证结果的摘要>#/partitions/delivered/<n>/requirements/<k>/claims/<m>" }
+            },
+            {
+              "text": "缺少探测间隔为 0 的反向用例",
+              "code": "new_finding",
+              "rank": "minor",
+              "location": "src:<被复核脑图的摘要>/kityminder@1/n/<节点编号>",
+              "quotes": [{ "reference": "src:<需求的摘要>", "text": "<需求里的原文>" }],
+              "data": { "probe": "negative_gap" }
+            }
+          ]
+        }
+      }
+    ],
+    "cross_item": [
+      { "nature": "judgment", "statement": "结论理由：初评基本正确，遗漏了一个反向用例；对初评等级的质疑：P4 合适", "grounds": ["src:<被复核脑图的摘要>/kityminder@1/n/<节点编号>"], "code": "PARTIAL", "rank": "P4" },
+      { "nature": "judgment", "statement": "补一个探测间隔为 0 的反向用例；期望结果：提示参数超出范围", "grounds": [], "code": "suggestion", "rank": "minor" }
+    ]
+  }
+}

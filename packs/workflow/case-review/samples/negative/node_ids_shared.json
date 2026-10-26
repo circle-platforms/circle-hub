@@ -1,0 +1,144 @@
+{
+  "id": "node_ids_shared",
+  "source": "author",
+  "check": "node_ids",
+  "note": "两个用例共用一个节点编号",
+  "subject": {
+    "subjects": [
+      {
+        "kind": "case",
+        "id": "sample:c1",
+        "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c1",
+        "document": "sample",
+        "nodeId": "c1",
+        "group": "[\"sample\",\"示例文档\",\"池管理\"]",
+        "path": [
+          "示例文档",
+          "池管理"
+        ],
+        "title": "设置池 c1 的探测间隔",
+        "titleLength": 12,
+        "content": "[[],[\"显示的探测间隔与设置一致\"],[]]",
+        "priority": 2,
+        "tags": [
+          "functional"
+        ],
+        "resource": [
+          "functional"
+        ],
+        "resourcePresent": true,
+        "tagDeclaration": {
+          "table": {
+            "id": "team-resource-tags",
+            "version": "1",
+            "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b"
+          },
+          "status": "declared",
+          "valid": true,
+          "present": true,
+          "raw": [
+            "functional"
+          ],
+          "ids": [
+            "functional"
+          ],
+          "types": [
+            "functional"
+          ],
+          "negative": false,
+          "issues": [],
+          "missing": null,
+          "next_action": null
+        },
+        "tagCount": 1,
+        "categories": [
+          "functional"
+        ],
+        "categoryTags": [
+          "functional"
+        ],
+        "tagVariants": [],
+        "otherTags": [],
+        "expected": [
+          "显示的探测间隔与设置一致"
+        ],
+        "expectedCount": 1,
+        "negative": false
+      },
+      {
+        "kind": "case",
+        "id": "sample:c2",
+        "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c2",
+        "document": "sample",
+        "nodeId": "c1",
+        "group": "[\"sample\",\"示例文档\",\"池管理\"]",
+        "path": [
+          "示例文档",
+          "池管理"
+        ],
+        "title": "设置池 c2 的探测间隔",
+        "titleLength": 12,
+        "content": "[[],[\"显示的探测间隔与设置一致\"],[]]",
+        "priority": 2,
+        "tags": [
+          "functional"
+        ],
+        "resource": [
+          "functional"
+        ],
+        "resourcePresent": true,
+        "tagDeclaration": {
+          "table": {
+            "id": "team-resource-tags",
+            "version": "1",
+            "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b"
+          },
+          "status": "declared",
+          "valid": true,
+          "present": true,
+          "raw": [
+            "functional"
+          ],
+          "ids": [
+            "functional"
+          ],
+          "types": [
+            "functional"
+          ],
+          "negative": false,
+          "issues": [],
+          "missing": null,
+          "next_action": null
+        },
+        "tagCount": 1,
+        "categories": [
+          "functional"
+        ],
+        "categoryTags": [
+          "functional"
+        ],
+        "tagVariants": [],
+        "otherTags": [],
+        "expected": [
+          "显示的探测间隔与设置一致"
+        ],
+        "expectedCount": 1,
+        "negative": false
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "core.structure.duplicate_key",
+      "item": "sample:c1",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "refute",
+      "code": "core.structure.duplicate_key",
+      "item": "sample:c2",
+      "tier": "advisory"
+    }
+  ]
+}

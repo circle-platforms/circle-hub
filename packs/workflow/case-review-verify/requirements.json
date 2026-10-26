@@ -1,0 +1,151 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "verification",
+      "name": "逐条复核",
+      "description": "每个用例：初评的每条发现恰好一条处置（verified 证实、refuted 推翻、partial 部分正确），data.finding 写那条发现的引用；初评遗漏的问题写成 new_finding，data.probe 写七类问题之一；每条都有位置和逐字引文；说命令存在或不存在的陈述（commands 带 present）按锁定构建的命令目录核实。只能由与初评不同的会话和模型给出",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "independent_judgment",
+      "independent_of": "predecessor",
+      "accepts_declared_independence": true,
+      "checks": [
+        "dispositions",
+        "command_claims",
+        "verdict",
+        "suggestion_targets"
+      ],
+      "error_handling": [
+        {
+          "code": "case-review-verify.disposition_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.disposition_duplicate",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.finding_unknown",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.location_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.quote_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.probe_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.pass_with_refuted",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.pass_with_new_finding",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.pass_level_changed",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.pass_without_evidence",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.pass_with_unverified",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.fail_without_major_refutation",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.partial_without_change",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "core.catalog.membership_contradicted",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.suggestion_target_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.suggestion_incomplete",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.verdict_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.level_missing",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    },
+    {
+      "key": "suggestions",
+      "name": "改进建议",
+      "description": "每条一个模型判断（码 suggestion），按“补：<用例>；因为：<原因>；期望：<结果>”写全；grounds 至少一条指向目标脑图的用例节点或该新增用例应放入的测试子项；严重程度表示建议轻重。建议原文由终稿视图按落点排表。",
+      "target": "run",
+      "required": false,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "judgment",
+      "checks": [
+        "suggestion_targets"
+      ],
+      "error_handling": []
+    },
+    {
+      "key": "final",
+      "name": "结论与等级",
+      "description": "复核结论，一个跨条目主张：码是 PASS（初评基本正确、没有补充重要问题；每条初评发现都核对过，有复核方自己逐字引用的被复核对象原文）、PARTIAL（基本正确，但遗漏了问题、有发现被推翻或要修正，或等级偏松、偏紧）或 FAIL（有重大事实错误：初评定为严重或主要的发现被推翻，如误判、位置错误、产品语义颠倒），等级是最终等级 P0-P7；陈述里写对初评等级的质疑。只能由与初评不同的会话和模型给出",
+      "target": "run",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "independent_judgment",
+      "independent_of": "predecessor",
+      "accepts_declared_independence": true,
+      "checks": [
+        "verdict"
+      ],
+      "error_handling": []
+    }
+  ]
+}

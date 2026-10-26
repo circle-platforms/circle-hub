@@ -1,0 +1,17 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "bed",
+      "name": "台架结论",
+      "description": "search：每个满足设备数量和类型的台架一个条目，空闲状态只写“Hub 记录里空闲（未排除本地操作）”或最早空闲时刻，构建一致与否按装机记录（声明或观察照写，没有记录记未知），设备不够的台架写明缺什么；facts：每个台架一个条目，监听候选（负载均衡地址所在网段有触发设备）、盲地址（没有触发设备的网段上的地址）、后端候选、每网段空闲地址数；acquire：选定台架或按需求取最佳匹配，租约键 bed/<台架>/<设备>（要地址时加 bed/<台架>/ip/<地址>），期限不超包声明的上限，取得失败是确定的否定结果（LEASE_UNAVAILABLE 带最早空闲时刻）。结论由包按冻结的清单与租约视图复核：与冻结内容矛盾的记反驳",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["bed"],
+      "error_handling": []
+    }
+  ]
+}

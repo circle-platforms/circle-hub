@@ -1,0 +1,110 @@
+{
+  "schema": "pack@1",
+  "id": "maintenance-sweep",
+  "version": "1.8.6",
+  "kind": "workflow",
+  "title": "维护巡检",
+  "description": "按两个构建的影响视图（限定命令目录：catalog=commands@1）先按路径列出整个命令差（变更种类、前一构建用例数），再列出较早构建里需要维护的用例：命令已删除的记阻断，命令定义有差异的记提示并逐字段给出两边的值。只含事实要求项，开始运行时由 Hub 直接算出结果",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "7609e8068782697d10960604ebc282569fd864f3c7cd17f55156a9e9e181b5ec",
+      "size": 4892
+    },
+    {
+      "path": "checks.json",
+      "sha256": "d3a1b737984c6dd32cad40d00e0b63eb1d82254c68daee334531171949da378e",
+      "size": 726
+    },
+    {
+      "path": "examples/sweep.json",
+      "sha256": "60bc75f84cf4ff88396d610b0a88b57ea317d7f229cf07ad5afe4dbcbf243d46",
+      "size": 671
+    },
+    {
+      "path": "functions/check.ts",
+      "sha256": "97c53f69c09809c5b66a15510881dcebc596c03cb18f955a427662bac02b6704",
+      "size": 21180
+    },
+    {
+      "path": "functions/diff.ts",
+      "sha256": "cb635d2bc2e3a742751c3610916ae2b4501560ad4934a0889f1a1b87a9721c74",
+      "size": 3955
+    },
+    {
+      "path": "functions/facets.ts",
+      "sha256": "908b1c305211f9b50b6829ebc7808515ea7381e9ecc3ca2b20fb4956885afad8",
+      "size": 4267
+    },
+    {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "a38ac0fc827bb8824dc2c12f356b89999732fb16cc2fe2778cf76cbe1115d6d4",
+      "size": 516
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "bd7211bfd16018a9e6ab6ddd3aae9d11510bd079f0d67732efcbf250b4a20d6f",
+      "size": 8352
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "51c3da9e858bbd1f5453dd52704b6254f24289b78b1ba2dff75dbce638a042bb",
+      "size": 1068
+    },
+    {
+      "path": "functions/sweep.ts",
+      "sha256": "5326dc41afe21439c195fa94af7fbc288c4922c76e35c8e6269ccb073089f651",
+      "size": 14249
+    },
+    {
+      "path": "functions/text.ts",
+      "sha256": "1c8291a795551f3a523f82ae1fd50af7f1afd0fbdc07e492b82dd977d6e58790",
+      "size": 1392
+    },
+    {
+      "path": "functions/view.ts",
+      "sha256": "a9c53467525e928e33417fa9bc8b7ea4d6cd337be40b7e327b50f61118c9a4b3",
+      "size": 7493
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "5250dbb0959e2e01a39e8e2775359483fb60bb3fc5d583bb0aa7888838382859",
+      "size": 1401
+    },
+    {
+      "path": "samples/negative/command-changed.json",
+      "sha256": "36ae141cc3e6fa7461f5805b4396204421d0b0784a5350f351df571c1c30a86a",
+      "size": 1431
+    },
+    {
+      "path": "samples/negative/command-removed.json",
+      "sha256": "821bc9bce1a22f11d35c5781aa83798d99b94bc084f281e3d0f9ac815a9f5951",
+      "size": 1060
+    },
+    {
+      "path": "samples/positive/command-still-there.json",
+      "sha256": "0cb83819fa8196da0d13d7adf855e277b7048007717e89292b7addfc01082dd1",
+      "size": 842
+    },
+    {
+      "path": "samples/positive/definition-unchanged.json",
+      "sha256": "76246988faee701e4b6284bf77fe12bbf59f711ceca95a40053d6c5af47392a2",
+      "size": 1236
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "851202e03d46a4b40941830a276007f860f657166b31d30da18d0d2268567516",
+      "size": 53
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "c7b018f794ac0ff799801ed2d669c1de22d23e335370685b1265572e624b8f1c",
+      "size": 4588
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "b7b43b46e69b3cae8ea6f161fbce918f6b66a4da07801bcf31b453c29eaadeb8",
+      "size": 1933
+    }
+  ]
+}

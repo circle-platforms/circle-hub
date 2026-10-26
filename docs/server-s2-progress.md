@@ -1,5 +1,7 @@
 # circle-server 第二阶段进度
 
+> **历史文档**（2026-10-21 标注）：本文是已退役服务器第二阶段的进度记录，所记的通过只对当时的代码成立，只作记录保留。现行进度见 [Hub r4 进度](hub-r4-progress.md)。
+
 ## 2026-10-14：组织维护、公开 CI 与兼容说明
 
 按本次组织体检修复授权，在 main 的独立工作区补充 `Hub checks`：类型检查、契约测试、方法测试、临时回环 PostgreSQL 和合成服务验收。保留独立的参考档案完整性工作流。Circle 数据目录独立创建，不提供真实用户数据、设备或付费模型端点；固定 Circle RPC 运行时不在公开 CI 中，相关已有用例明确报告跳过，不计入已验证通过，也没有升级原验收基线。
@@ -22,7 +24,7 @@
 
 已读取 AGENTS、README、初始化/参考说明、B/C/D/E 提案、第一阶段简报与进度、第二阶段简报。第一阶段运行代码 `9ab3c8b` 的 40/40 与桌面任务/审批联验已有用户提供的独立复核；本节登记其来源，不作为第二阶段验收。
 
-第一笔提交更新 AGENTS 的公开仓库与第二阶段授权范围，并登记原简报。公开提交只允许合成样本和相对路径；InfoTest 仅可只读参考行为，不运行、不复制代码或配置值。push、开 PR、部署及范围扩张需要用户另行决定。
+第一笔提交更新 AGENTS 的公开仓库与第二阶段授权范围，并登记原简报。公开提交只允许合成样本和相对路径；SyntheticReference 仅可只读参考行为，不运行、不复制代码或配置值。push、开 PR、部署及范围扩张需要用户另行决定。
 
 实际执行 `git worktree add ../circle-server-s2 -b server-s2 server-s1`，创建成功；首笔提交 `52d61ea` 登记 AGENTS、简报和进度，`cmp` 核对简报字节一致后已删除主工作树副本。GitHub 只读查询确认 [PR #5](https://github.com/qingshanfeihu/circle-server/pull/5) 仍 OPEN、head 为 `7d54a49`，本次无需 rebase。接下来先写第 7 幕的通用核心守卫并确认旧代码失败，列出迁移边界，再建设对象/关联存储与权限过滤。尚未执行第二阶段业务验收。
 
@@ -99,7 +101,7 @@ Bugs_Fixed 页每行的 show_bug.cgi?id 链接承载历史 Bugzilla 编号。将
 
 ## 5：暂停收尾，等待知识库方向的新简报
 
-2026-10-12。用户暂停当前实施，第一个目标从 bug 闭环改为以知识库为核心，将 InfoTest 现有产品问答、用例编译、用例评审能力经 Circle 与 circle-server 接起来。新的执行方式、采用范围与验收以待提供的新简报为准；目前不继续编写禅道或构建站点桩，也不据这一方向运行/复制 InfoTest。
+2026-10-12。用户暂停当前实施，第一个目标从 bug 闭环改为以知识库为核心，将 SyntheticReference 现有产品问答、用例编译、用例评审能力经 Circle 与 circle-server 接起来。新的执行方式、采用范围与验收以待提供的新简报为准；目前不继续编写禅道或构建站点桩，也不据这一方向运行/复制 SyntheticReference。
 
 已完成并本地提交：工作树与公开仓库约束 `52d61ea`、核心迁移守卫/清单 `2fcf0e3`、只读镜像范围更新 `4c33a34`、通用对象/关联/权限/原件存储 `ed537f1`、脱敏 PLM 契约记录 `7376cf2`。最后一个运行代码切片仍是 ed537f1；对象验收 3/3 与第一阶段原 40 项通过，已知核心守卫仍失败，尚未达到第二阶段全绿。
 
@@ -123,7 +125,7 @@ Bugs_Fixed 页每行的 show_bug.cgi?id 链接承载历史 Bugzilla 编号。将
 
 平台与版本线为独立维度：构建站点的 kvm/docker/系统/芯片变体不是型号。查询指定版本线中，哪些正式构建的命令树具备功能相关命令，并结合修复清单和发布日期给出最新正式构建；命令存在与完整功能语义区分。第 6 幕输出先只用 Circle 事件流，企业微信桩延后，渠道接口保留扩展性。
 
-知识共用六种记录，增加类别与来源类型。产品知识来自连接器、程序抽取、来源修订与源权限，是检索优先项；沉淀知识来自获准共享的会话片段、技能/bot 运行与评审纠正。整理技能包定时用脚本模型抽取、去重，附原片段和工具返回；先个人候选，复核/审核后才进团队，不覆盖产品，冲突显示。第 3 幕增加候选不进正式快照、个人对他人不可见、冲突标注；第 6 幕用定时整理技能包验收。相关 InfoTest 三类机制仅只读参考；本阶段没有读取真实会话或执行旧代码。
+知识共用六种记录，增加类别与来源类型。产品知识来自连接器、程序抽取、来源修订与源权限，是检索优先项；沉淀知识来自获准共享的会话片段、技能/bot 运行与评审纠正。整理技能包定时用脚本模型抽取、去重，附原片段和工具返回；先个人候选，复核/审核后才进团队，不覆盖产品，冲突显示。第 3 幕增加候选不进正式快照、个人对他人不可见、冲突标注；第 6 幕用定时整理技能包验收。相关 SyntheticReference 三类机制仅只读参考；本阶段没有读取真实会话或执行旧代码。
 
 ## 7：资产登记与个人凭据引用（修订 2 第 1 幕）
 
@@ -152,11 +154,11 @@ Claude 复核 `9a8efd3` 后补充实际构建页结构，本轮先改桩和回�
 
 声明始终从候选开始，包括模型/footprint 内容。产品源权限与平台权限取交集，当前来源 ACL 收紧后历史证据、检索和原件下载同步不可见。沉淀来源需要显式共享许可，初始为个人候选，普通他人不可见且不进正式快照；作者显式指定审核人后才允许专门审核展开，作者不能自批。提升需要来源的团队共享许可，以及独立人工审核或与已审核产品声明的精确比对。自动比对只声明字段相等，不宣称完成语义裁决。不同值的同 subject/predicate/conditions 标为 potential-conflict，授权后才能看到对方记录；沉淀永不覆盖产品，检索产品优先。
 
-提供精确、前缀、目录与 PostgreSQL simple 全文检索；中文未切分正文另有字面片段命中，不宣称真实资料上的分词质量。命中不代表语义支持，未命中不代表不存在。合成桩的 C/D 入库仍将接工具调用链；本节的写入验收是受权知识 API，没有运行真实会话或 InfoTest 整理程序。
+提供精确、前缀、目录与 PostgreSQL simple 全文检索；中文未切分正文另有字面片段命中，不宣称真实资料上的分词质量。命中不代表语义支持，未命中不代表不存在。合成桩的 C/D 入库仍将接工具调用链；本节的写入验收是受权知识 API，没有运行真实会话或 SyntheticReference 整理程序。
 
 实际 `node --test --test-concurrency=1 tests/acceptance/r2-03-knowledge.test.ts tests/acceptance/s2-objects.test.ts` **9/9**（知识 6 + 对象 3），`npm run typecheck` 通过。中途发现 JSONB 不保留对象键序，改为在快照中保存 canonical manifest 字符串并校验其原字节；独立客户端下载验收通过。
 
-用户确认 `knowledge.claim_submit` 为 write/task，其余新增脑图知识工具为 read/sync，Circle 已支持调用前询问写工具与后台等待 task 结束。工具需求已纳入第 4 幕：构建列表、命令头/参数/确定性命令检查、手册全文/章节、查询镜像搜索/详情和候选提交。产品线包统一位于 `packs/<产品线>/`；Claude 在独立 apv-pack 分支提交 `e147364`，尚未合入或作为本分支运行验收。已通过 Otty 向 Claude 确认 headless Circle 的精确依赖入口，当前本地 Circle 1.1.1 仍为 private 且无 library exports，先继续目录步骤。
+用户确认 `knowledge.claim_submit` 为 write/task，其余新增脑图知识工具为 read/sync，Circle 已支持调用前询问写工具与后台等待 task 结束。工具需求已纳入第 4 幕：构建列表、命令头/参数/确定性命令检查、手册全文/章节、查询镜像搜索/详情和候选提交。产品线包统一位于 `packs/<产品线>/`；Claude 在独立 famx-pack 分支提交 `e147364`，尚未合入或作为本分支运行验收。已通过 Otty 向 Claude 确认 headless Circle 的精确依赖入口，当前本地 Circle 1.1.1 仍为 private 且无 library exports，先继续目录步骤。
 
 ## 10：目录与脑图知识工具（2026-10-12）
 
@@ -174,7 +176,7 @@ Claude 复核 `9a8efd3` 后补充实际构建页结构，本轮先改桩和回�
 
 ### 用户提供的第 4 幕 Otty/Circle 独立观察
 
-Claude 在另外的固定 `87efb41` 临时 worktree 起 dev:stack，用真实 Otty 的 Circle server-tools 分支登录，自动发现 **17 个工具**，没有修改本工作区。脚本模型按 APV 技能依次调用 versions（选择最新正式构建 109）、command_heads、command_param、docs.search、command_check；写出 2 个用例，109 的 feature.enable 为 missing，相应用例标不支持，缺期望的用例标需要决定。Claude 用 openpyxl 独立读出 case.xlsx。用户未提供工作簿 SHA，本节不补造；试跑记录留在原 Circle 会话，待技能包路由开放后由同会话推送。独立整套复核同为 contracts 4/4、methods 6/6、acceptance 47/48，唯一红项核心守卫。这是用户提供的客户端观察，不冒充本 agent 已复跑或真实模型/设备验收。
+Claude 在另外的固定 `87efb41` 临时 worktree 起 dev:stack，用真实 Otty 的 Circle server-tools 分支登录，自动发现 **17 个工具**，没有修改本工作区。脚本模型按 FAMX 技能依次调用 versions（选择最新正式构建 109）、command_heads、command_param、docs.search、command_check；写出 2 个用例，109 的 feature.enable 为 missing，相应用例标不支持，缺期望的用例标需要决定。Claude 用 openpyxl 独立读出 case.xlsx。用户未提供工作簿 SHA，本节不补造；试跑记录留在原 Circle 会话，待技能包路由开放后由同会话推送。独立整套复核同为 contracts 4/4、methods 6/6、acceptance 47/48，唯一红项核心守卫。这是用户提供的客户端观察，不冒充本 agent 已复跑或真实模型/设备验收。
 
 后续排队：第 5 幕告一段落后，把构建同步改为按需 XML/修复清单，按 SHA 缓存、限制并发/间隔，增加 versions 不触发 XML 下载的明确验收；不连接真实站点。当前 versions 已只读首页/版本页，SDK 首次全量 sync 仍需改造。此项不提前打断第 5 幕。
 
@@ -190,13 +192,13 @@ run token 仅授予声明工具/对应 scope/该任务及子工具任务，直�
 
 RPC prompt/turn/tool/settled 等真实事件进入 C。只在 agent_settled、进程退出、声明输出存在且原字节 SHA 匹配后交付；B 保存输入/产物/独立字节收据，机械完整性与模型回答分开。个人产物下载也核对可读任务绑定，不能只凭 scope 绕过个人结果权限。取消先 abort/关 stdin，超时 kill；已观察本地退出仍保持 unknown、冻结资源、remoteStoppingVerified:false，旧 run token 不再可用，不把本地停止当远端停止。
 
-实际 `r2-05-skillpacks.test.ts` **5/5**；完整 `npm test` contracts **4/4**、methods **6/6**、acceptance **52/53**，仍仅核心迁出守卫失败；参考另跑 **7/7**、714 原件完整，typecheck 通过。实际 CLI 入口字节 SHA 在运行收据登记；Git HEAD/版本校验不是整个编译 bundle 的发布证明。本阶段无付费模型、真实源/设备或部署，未 push。已更新交接文档为路由开放，并准备通知 Claude 从原会话推送 APV 包；APV 分支尚未合入/在 server 上重跑，auto-consolidation/bot、产品自动声明发布和核心迁出仍未完成。
+实际 `r2-05-skillpacks.test.ts` **5/5**；完整 `npm test` contracts **4/4**、methods **6/6**、acceptance **52/53**，仍仅核心迁出守卫失败；参考另跑 **7/7**、714 原件完整，typecheck 通过。实际 CLI 入口字节 SHA 在运行收据登记；Git HEAD/版本校验不是整个编译 bundle 的发布证明。本阶段无付费模型、真实源/设备或部署，未 push。已更新交接文档为路由开放，并准备通知 Claude 从原会话推送 FAMX 包；FAMX 分支尚未合入/在 server 上重跑，auto-consolidation/bot、产品自动声明发布和核心迁出仍未完成。
 
 只读查询确认 [PR #5](https://github.com/qingshanfeihu/circle-server/pull/5) 仍 OPEN，未触发 rebase。下一步按用户排队要求先改按需构建抓取，再继续第 6、7 幕。
 
 ### 第 5 幕独立复核与 Circle 版本选择
 
-用户提供 Claude 对 `7be8576` 的独立复核：contracts 4/4、methods 6/6，在单独固定 d9f8ec6 的 Circle 构建上 r2-05 **5/5**。其他工作树向前移动导致 RUNTIME_VERSION_MISMATCH，是版本门禁按预期拒绝，不是业务失败。按用户建议，真实 CLI 验收现在明确读 `CIRCLE_BIN` 和 `CIRCLE_COMMIT`，缺少时三个用例标出原因并跳过；运行器的 profile/版本门禁保持严格。实际本机指定新提交 `3f08f0ed4216c356bbbd7db49531cb3ea22caf97`（1.1.1）联合复验目录/RPC **9/9**，没有跳过。新提交包含稳定 srv_ 后缀消歧、--file 输入和 X-Scope-Id，活动交接已更新。APV 分支更新到 `e8ecbc8`，outputs 改到 out/ 并读 inputs.json；尚未合入本分支。
+用户提供 Claude 对 `7be8576` 的独立复核：contracts 4/4、methods 6/6，在单独固定 d9f8ec6 的 Circle 构建上 r2-05 **5/5**。其他工作树向前移动导致 RUNTIME_VERSION_MISMATCH，是版本门禁按预期拒绝，不是业务失败。按用户建议，真实 CLI 验收现在明确读 `CIRCLE_BIN` 和 `CIRCLE_COMMIT`，缺少时三个用例标出原因并跳过；运行器的 profile/版本门禁保持严格。实际本机指定新提交 `3f08f0ed4216c356bbbd7db49531cb3ea22caf97`（1.1.1）联合复验目录/RPC **9/9**，没有跳过。新提交包含稳定 srv_ 后缀消歧、--file 输入和 X-Scope-Id，活动交接已更新。FAMX 分支更新到 `e8ecbc8`，outputs 改到 out/ 并读 inputs.json；尚未合入本分支。
 
 ## 12：按需构建资料与 SHA 缓存
 
@@ -208,7 +210,7 @@ RPC prompt/turn/tool/settled 等真实事件进入 C。只在 agent_settled、�
 
 ### 独立复核和真实云运行观察
 
-用户提供 Claude 对 `2aa991f` 的复核：contracts 4/4、methods 6/6、acceptance 55/56，只有核心守卫失败，RPC 使用显式 cf32f7f 没有跳过。真实 Otty/Circle 在独立批准后把包变成 registered，worker 以无界面 Circle cf32f7f 执行 APV 包，15 次工具调用与本地一致，4 个产物 SHA 与本地相同（用户给出 case.xlsx 前缀 `6fcd622b`），remoteStoppingVerified=false。完整 Circle 提交只读核对为 `cf32f7f288ef1f0477d9537a138bfc6996654699`。这是用户观察，未补造完整制品 SHA。
+用户提供 Claude 对 `2aa991f` 的复核：contracts 4/4、methods 6/6、acceptance 55/56，只有核心守卫失败，RPC 使用显式 cf32f7f 没有跳过。真实 Otty/Circle 在独立批准后把包变成 registered，worker 以无界面 Circle cf32f7f 执行 FAMX 包，15 次工具调用与本地一致，4 个产物 SHA 与本地相同（用户给出 case.xlsx 前缀 `6fcd622b`），remoteStoppingVerified=false。完整 Circle 提交只读核对为 `cf32f7f288ef1f0477d9537a138bfc6996654699`。这是用户观察，未补造完整制品 SHA。
 
 用户复现缺失 fixed 链接/404 会令 releasesFor 全量失败，排在第 6 幕后补 allSettled/coverage 验收；页面不变原地替换 XML 会沿用缓存、暂无淘汰也记为现有限制，未宣称解决。
 
@@ -216,7 +218,7 @@ RPC prompt/turn/tool/settled 等真实事件进入 C。只在 agent_settled、�
 
 先写第 6 幕并确认入口失败（普通两条 0/2，实际 RPC 初始未配置而注明 skip），随后显式 cf32f7f 本机构建实现/验收。资产组合保留技能、触发、渠道与执行身份，第一版执行身份限登记者本人，权限/目录每次重查，尚未声称支持另一服务身份代理个人凭据。定时 dueAt、事件游标、task/occurrence 唯一键同事务落地；重启不丢不重，范围越权隐藏，外部 id 同内容去重/异内容拒绝。D 原件收据按 path/SHA 发 source.changed，未调用真实连接器。
 
-整理用共用包 `packs/common/skills/knowledge-consolidation`，只读参考 InfoTest 的 session-checkpoint/memory-consolidator 边界说明，未执行或复制其代码/固定章节。运行者共享许可/所有权/当前源权限由程序固定；只取已授权合成片段，未共享原件不参与。真实 Circle 的脚本模型实际加载 SKILL.md、取共享片段、运行自写 TypeScript normalize、提交有原片段/工具返回的个人候选；规则去重，不声称真实会话的语义质量。候选不进正式快照、他人不可见，团队审核与产品来源权威边界沿用第 3 幕。
+整理用共用包 `packs/common/skills/knowledge-consolidation`，只读参考 SyntheticReference 的 session-checkpoint/memory-consolidator 边界说明，未执行或复制其代码/固定章节。运行者共享许可/所有权/当前源权限由程序固定；只取已授权合成片段，未共享原件不参与。真实 Circle 的脚本模型实际加载 SKILL.md、取共享片段、运行自写 TypeScript normalize、提交有原片段/工具返回的个人候选；规则去重，不声称真实会话的语义质量。候选不进正式快照、他人不可见，团队审核与产品来源权威边界沿用第 3 幕。
 
 联验发现 z.toJSONSchema 默认输出形状把 default 参数也标为 required，Circle 拒绝省略 limit/conditions；改为 io=input，真实 RPC 省略参数后通过。渠道仅 Circle 事件、bot.output 与发布游标同事务保存，渠道注册可扩展，未做企业微信。当前声明仍未被自动提升到产品 stable，专业核心迁出待第 7 幕。
 
@@ -258,15 +260,15 @@ RPC prompt/turn/tool/settled 等真实事件进入 C。只在 agent_settled、�
 
 shared-session/skill-run/bot-run/review-correction/footprint 必须标 consolidated 且有显式共享许可；模型候选不自动变产品事实或进正式快照。单独人工审核/API 能力沿用第 3 幕。当前没有使用真实知识、会话或企业来源；源系统自身的权限观察仍以取得的来源 ACL/执行身份为准，没有实时探测真实系统撤权。
 
-实际新增入库验收 **4/4**，与原知识/目录联合 **14/14**；固定 8b2ceb6 的 SDK/按需/RPC/bot 联验 **19/19**，无 skip，typecheck/diff 检查通过。核心迁出与第二产品线仍待完成，下一步先隔离 bot 自己的 observed 事件，再迁出核心；APV 三笔已由用户明确指定 cherry-pick，保持 Claude 作者/信息，不修改其技能脚本或 SKILL.md。
+实际新增入库验收 **4/4**，与原知识/目录联合 **14/14**；固定 8b2ceb6 的 SDK/按需/RPC/bot 联验 **19/19**，无 skip，typecheck/diff 检查通过。核心迁出与第二产品线仍待完成，下一步先隔离 bot 自己的 observed 事件，再迁出核心；FAMX 三笔已由用户明确指定 cherry-pick，保持 Claude 作者/信息，不修改其技能脚本或 SKILL.md。
 
 ### 4b7866d 独立复核与规模问题
 
 用户提供 Claude 对 4b7866d 的独立复核：固定 Circle 8b2ceb6，contracts 4/4、methods 7/7、acceptance 67/68 无 skip、references 7/7，只有 S2.7 红。同时量化出同步入库的性能缺陷：2000 条命令、两个构建的四次读耗时约 9.7/19.5/18.0/11.7 秒，原 494b4a2 对照约 0.55/0.55/0.36/0.36 秒。缓存命中和仅版本页也随整个 scope 的已审声明数量增长，说明本节通过的是行为/权限验收，未达到真实规模的延迟要求。须补规模验收，改为持久异步入库、批量投影写入、增量或去抖快照发布；原件仍在同步回报留证，读取结果不等待知识发布。该修复排在核心迁出之前。
 
-## 17：APV 技能包采用与 bot observed 隔离
+## 17：FAMX 技能包采用与 bot observed 隔离
 
-按用户明确指示 cherry-pick 三笔 APV 提交，原作者、日期、提交信息和 co-author 保留：e147364 → 4fcf98c，e8ecbc8 → c6471d0，b00ce21 → 5f11c5d。包内脚本、SKILL.md、清单和合成材料字节未改，`node --test packs/apv/skills/apv-mindmap-compile/tests/compile.test.mjs` **4/4**。后续要改技能脚本/SKILL.md 时先通过 Otty 告知 Claude，由他修改和复核；第一阶段兼容方法、配置与知识映射也归 packs/apv，尚未迁出核心。
+按用户明确指示 cherry-pick 三笔 FAMX 提交，原作者、日期、提交信息和 co-author 保留：e147364 → 4fcf98c，e8ecbc8 → c6471d0，b00ce21 → 5f11c5d。包内脚本、SKILL.md、清单和合成材料字节未改，`node --test packs/famx/skills/famx-mindmap-compile/tests/compile.test.mjs` **4/4**。后续要改技能脚本/SKILL.md 时先通过 Otty 告知 Claude，由他修改和复核；第一阶段兼容方法、配置与知识映射也归 packs/famx，尚未迁出核心。
 
 先新增固定 Circle/脚本模型的动态来源回归，确认 bot 读回执立即产生第二个运行而失败（2 对 1）。随后按 C 保存的子工具任务 → parentRunTaskId → automation_runs 关系识别 bot 来源，不相信输入 trigger 或客户端声明；任何 bot 运行产生的 observed 事件不进入触发流，仍保留 SHA 原件、证据和知识观察。外部显式连接器事件与普通人工工具读取仍触发，避免自循环和多个 bot 互相放大。新增第 18 号来源索引迁移，旧迁移不改。
 
@@ -290,33 +292,33 @@ shared-session/skill-run/bot-run/review-correction/footprint 必须标 consolida
 
 ## 19：产品包注册、核心迁出与工作列表
 
-第 7 幕先增加包注册/撤下旧能力验收，与原守卫一起 **0/2**。编译专用契约、解析/写出/独立回读、服务器推进与 worker 方法迁入 packs/apv；原编译接口、固定版本、产物 key 算法与冻结八行预期保留。旧迁移 SQL 字节、版本、名称不改；第 2 号迁移按通用交付改文件名，第 5 号兼容索引归 APV 包。无能力包的旧流程 pin 通过显式兼容注册继续支持，不改历史记录。
+第 7 幕先增加包注册/撤下旧能力验收，与原守卫一起 **0/2**。编译专用契约、解析/写出/独立回读、服务器推进与 worker 方法迁入 packs/famx；原编译接口、固定版本、产物 key 算法与冻结八行预期保留。旧迁移 SQL 字节、版本、名称不改；第 2 号迁移按通用交付改文件名，第 5 号兼容索引归 FAMX 包。无能力包的旧流程 pin 通过显式兼容注册继续支持，不改历史记录。
 
 C 使用已安装能力/流程版本及交付验证注册表；D 使用声明的 claim/preflight/report 控制器，租约、fence、心跳、未知冻结和独立核对留在核心；B 的制品描述由专业包提供，不计算固定专业方法的 key。专业 checklist 判断通过注册谓词实现，模型不能满足事实项的核心门禁仍在。worker 的编译与合成操作由安装方法分派，核心入口不含具体能力或系统名。守卫没有扩充豁免、缩小扫描或拼字符串规避，15 处实际迁出后为 0。
 
-旧 LBX 健康能力从可用包和受理撤下。中性 SYNTH 资源、record-feed-a/record-feed-b 和 document-store 保留原审批、改配置、超时未知、游标/外部 id 去重、转换与标记回读机制；不再提供旧缺陷系统/文档系统命名的运行桩。InfoTest 和归档业务模块未引入；运行导入守卫扩大到 packs 的 TS/MJS。所有新自写执行代码为 TS；Claude 的 APV Node 脚本按用户授权原字节保留，产品参数/知识映射在 packs/apv/product-line.json，别名实际由包安装读取。
+旧 LBX 健康能力从可用包和受理撤下。中性 SYNTH 资源、record-feed-a/record-feed-b 和 document-store 保留原审批、改配置、超时未知、游标/外部 id 去重、转换与标记回读机制；不再提供旧缺陷系统/文档系统命名的运行桩。SyntheticReference 和归档业务模块未引入；运行导入守卫扩大到 packs 的 TS/MJS。所有新自写执行代码为 TS；Claude 的 FAMX Node 脚本按用户授权原字节保留，产品参数/知识映射在 packs/famx/product-line.json，别名实际由包安装读取。
 
-第二个虚构包 packs/meridian 使用同一文档连接器及自己的别名、技能、TS 规则，登记在第二个 scope，经独立人员审批、固定 Circle RPC/脚本模型取原件、校验 SHA、生成字面匹配报告并存入 B。跨 scope 拒绝、工具目录不带另一产品工具、agent_settled/产物回读均验收；只证明来源字面观察，不宣称完整产品语义。包内没有修改 APV 技能脚本或 SKILL.md。新注册验收初次还暴露把资产登记审批任务设为个人可见会阻止独立审核，调整登记任务为原授权范围可见；工具、索引、运行仍个人分区，实际技能包审批回归通过。
+第二个虚构包 packs/meridian 使用同一文档连接器及自己的别名、技能、TS 规则，登记在第二个 scope，经独立人员审批、固定 Circle RPC/脚本模型取原件、校验 SHA、生成字面匹配报告并存入 B。跨 scope 拒绝、工具目录不带另一产品工具、agent_settled/产物回读均验收；只证明来源字面观察，不宣称完整产品语义。包内没有修改 FAMX 技能脚本或 SKILL.md。新注册验收初次还暴露把资产登记审批任务设为个人可见会阻止独立审核，调整登记任务为原授权范围可见；工具、索引、运行仍个人分区，实际技能包审批回归通过。
 
 用户另指出内部任务挤满最近 100 条，Circle f505db0 已先在客户端隐藏工具/索引。服务端先写 **0/1** 回归（110 条内部任务挤掉工作），再增加 kind=work|tool|index、精确 capabilityPackId 和 after taskId；TaskView 数组不变，权限/类别过滤先于 limit，游标按完整创建时间/taskId，跨 scope/个人游标拒绝。新分页及原客户端读接口联合 **4/4**，交接文档已写明。
 
-本次本机实际：迁出编译与中性治理专项 **20/20**；注册/第二产品线和 RPC 联合 **7/7**，固定 8b2ceb6，无 skip；完整 `npm test` contracts **4/4**、methods **7/7**、acceptance **75/75**、references **7/7**，**无 skip**，第 7 幕守卫通过。APV 包内另 **4/4**，与 b00ce21 的技能目录字节相同。当前是修订 2 七幕合成范围全绿；真实源、正式身份刷新、模型质量、付费模型、自动化环境改动、网络开放和部署未验收/授权，缓存原地换 XML/淘汰限制继续存在。本步只本地提交，不 push/开 PR，Circle、server-s1 和运行中 Otty 栈未改。
+本次本机实际：迁出编译与中性治理专项 **20/20**；注册/第二产品线和 RPC 联合 **7/7**，固定 8b2ceb6，无 skip；完整 `npm test` contracts **4/4**、methods **7/7**、acceptance **75/75**、references **7/7**，**无 skip**，第 7 幕守卫通过。FAMX 包内另 **4/4**，与 b00ce21 的技能目录字节相同。当前是修订 2 七幕合成范围全绿；真实源、正式身份刷新、模型质量、付费模型、自动化环境改动、网络开放和部署未验收/授权，缓存原地换 XML/淘汰限制继续存在。本步只本地提交，不 push/开 PR，Circle、server-s1 和运行中 Otty 栈未改。
 
 ### 第 7 幕独立认可与客户端任务分类
 
-用户提供 Claude 对 330edae+a04f84c 的独立复核：临时工作树、固定 Circle 8b2ceb6，contracts 4/4、methods 7/7、acceptance 75/75、references 7/7、typecheck 通过，没有 skip；R2.7 两条含实际 Meridian RPC 通过。a04f84c 只移除一个空行，APV 技能目录与 5f11c5d 相同。额外用 apv/photon/xmind/plmquery/show_bug/bugs_fixed/meridian 扫描非连接器核心未发现具体名，核心只从 packs/index.ts 和 packs/worker.ts 安装入口接包。用户认可第 7 幕，并建议扩大守卫和通用安装清单。
+用户提供 Claude 对 330edae+a04f84c 的独立复核：临时工作树、固定 Circle 8b2ceb6，contracts 4/4、methods 7/7、acceptance 75/75、references 7/7、typecheck 通过，没有 skip；R2.7 两条含实际 Meridian RPC 通过。a04f84c 只移除一个空行，FAMX 技能目录与 5f11c5d 相同。额外用 famx/photon/xmind/plmquery/show_bug/bugs_fixed/meridian 扫描非连接器核心未发现具体名，核心只从 packs/index.ts 和 packs/worker.ts 安装入口接包。用户认可第 7 幕，并建议扩大守卫和通用安装清单。
 
 Claude 报告 Circle bd646a5 已把工作页改用 kind=work&limit=20，工具/索引 kind 各 limit=100 只计数，对旧 server 保留 capabilityPackId 过滤。客户端 npm run check 425 条中 423 通过、2 跳过，workbench 24/24。server a04f84c + Circle bd646a5 的最后一轮真实 Otty 联验由 Claude 控制 7420 栈，尚未提供最终结果；本轮没有操作该栈。固定 8b2ceb6 工作树保留用于服务端验收。
 
 ## 20：产品线守卫与运行时清单加载
 
-先写更宽守卫和连接器独立守卫；实际连接器守卫初次失败，指出 synthetic-readonly.ts 的 7 处 PHOTON 合成名。将整份合成源移到 packs/synthetic/readonly-sources.ts，dev:stack 与测试夹具改从这里加载，源字节和场景未改变。核心加入 apv/photon/meridian/xmind，所有 apps/packages 的产品线名均扫描，连接器/映射/方法/策略只豁免具体系统行为，不豁免产品线名。连接器另有独立扫描。
+先写更宽守卫和连接器独立守卫；实际连接器守卫初次失败，指出 synthetic-readonly.ts 的 7 处 PHOTON 合成名。将整份合成源移到 packs/synthetic/readonly-sources.ts，dev:stack 与测试夹具改从这里加载，源字节和场景未改变。核心加入 famx/photon/meridian/xmind，所有 apps/packages 的产品线名均扫描，连接器/映射/方法/策略只豁免具体系统行为，不豁免产品线名。连接器另有独立扫描。
 
-再写运行时第三产品线和无效声明验收，实际 **0/2**：清单未生效导致两个文档实例使用同前缀冲突，通用加载器也尚不存在。随后按 installed-product-lines/1 文件逐个读取 product-line/1，不再从 index.ts 写死 APV 清单或别名。清单文件从 CIRCLE_SERVER_PRODUCT_LINES 选择，缺省使用 packs 的版本化安装列表；支持原来的字符串 connectorPackages 和 Meridian 的 packageId/alias 对象。未知包、重复产品线/连接器、冲突声明、非法相对文件路径或 schema 版本拒绝启动，错误不回显配置原文或本机路径。
+再写运行时第三产品线和无效声明验收，实际 **0/2**：清单未生效导致两个文档实例使用同前缀冲突，通用加载器也尚不存在。随后按 installed-product-lines/1 文件逐个读取 product-line/1，不再从 index.ts 写死 FAMX 清单或别名。清单文件从 CIRCLE_SERVER_PRODUCT_LINES 选择，缺省使用 packs 的版本化安装列表；支持原来的字符串 connectorPackages 和 Meridian 的 packageId/alias 对象。未知包、重复产品线/连接器、冲突声明、非法相对文件路径或 schema 版本拒绝启动，错误不回显配置原文或本机路径。
 
 连接器资产可用 configuration.productLineId 选清单默认前缀，显式 alias 继续作为实例别名；名称唯一、当前权限、个人凭据、ETag、worker 受理/证据路径保持。移除产品线后明确绑定的工具隐藏；省略 productLineId 的旧资产使用已安装通用连接器，默认名称兼容。清单不会自动导入可执行文件或绕过技能审批，历史迁移和既有编译实现继续安装。新产品线复用已有连接器和受治理技能运行器，仅增加清单、文件与运行配置即可。接口及配置写入 client-api-handoff 和 packs/README。
 
-新增守卫/安装专项 **4/4**、typecheck 通过；第三条虚构产品线实际读原件并留 SHA 证据，移除后调用拒绝、恢复后绑定可见，跨实例冲突门禁保留，空安装列表只保留公共知识工具。原 Meridian RPC 验收改为只带 productLineId，由服务器加载其别名。完整固定 Circle 回归 contracts **4/4**、methods **7/7**、acceptance **78/78**、references **7/7**，**无 skip**；规模四次读 p95 **164ms**。APV 技能目录与 5f11c5d 字节相同、包内 4/4，references 验证 714 原件，typecheck/diff 检查通过。本轮只本地提交，不 push。
+新增守卫/安装专项 **4/4**、typecheck 通过；第三条虚构产品线实际读原件并留 SHA 证据，移除后调用拒绝、恢复后绑定可见，跨实例冲突门禁保留，空安装列表只保留公共知识工具。原 Meridian RPC 验收改为只带 productLineId，由服务器加载其别名。完整固定 Circle 回归 contracts **4/4**、methods **7/7**、acceptance **78/78**、references **7/7**，**无 skip**；规模四次读 p95 **164ms**。FAMX 技能目录与 5f11c5d 字节相同、包内 4/4，references 验证 714 原件，typecheck/diff 检查通过。本轮只本地提交，不 push。
 
 ### 真实构建站点冒烟发现的下一步阻塞
 
@@ -328,17 +330,17 @@ Claude 报告以 a04f84c 连接器和其控制的 7420 栈新资产做过只读�
 
 先写五条同形合成验收，实际 **0/5**：汇总遍历得到 0 个构建而应为 8；混合 font/纯文本只读 2 条而应为 4；两条不同路径的 group 都被读成 group；修复清单没有编号体系；产品选项还不能注册。这些仅用临时 HTTP 夹具与 PostgreSQL，构建名、编号、日期、内容全是虚构，没有访问企业源。
 
-通用 catalog 支持首页/汇总/列表遍历、同源路径、循环去重和深度/页数上限。APV 的列表前缀与变体映射归 packs/apv/product-line.json，连接器只使用配置；未知变体保留源后缀。只读版本工具留首页、汇总、列表证据，不下 XML 或修复页。构建按标题文本紧随 BLOCKQUOTE 解析，font 不作门槛；支持 .array/.click 与变体前缀、大小/SHA。buildId 包含名称和平台，同名变体各自保留；旧构建名有歧义则明确拒绝，可按 buildId 或 platform 选择。XML/修复清单仍只对选定构建按需取，CAS/个人缓存与并发/间隔限制沿用。
+通用 catalog 支持首页/汇总/列表遍历、同源路径、循环去重和深度/页数上限。FAMX 的列表前缀与变体映射归 packs/famx/product-line.json，连接器只使用配置；未知变体保留源后缀。只读版本工具留首页、汇总、列表证据，不下 XML 或修复页。构建按标题文本紧随 BLOCKQUOTE 解析，font 不作门槛；支持 .array/.click 与变体前缀、大小/SHA。buildId 包含名称和平台，同名变体各自保留；旧构建名有歧义则明确拒绝，可按 buildId 或 platform 选择。XML/修复清单仍只对选定构建按需取，CAS/个人缓存与并发/间隔限制沿用。
 
-命令由所有祖先 menu 加 item 拼接，scope/menuPath 原样保留。heads/param/check 和异步产品抽取共用同一解析；parserVersion 为 menu-path/2，专业匹配规则仍最长八词。参数、缺失与违规继续确定性核对，不用手册填补缺失。旧合成 XML 的完整命令名去掉冗余包裹 menu，既有命令预期保持；新增多级真实形状夹具独立证明路径，未改 APV 技能脚本。
+命令由所有祖先 menu 加 item 拼接，scope/menuPath 原样保留。heads/param/check 和异步产品抽取共用同一解析；parserVersion 为 menu-path/2，专业匹配规则仍最长八词。参数、缺失与违规继续确定性核对，不用手册填补缺失。旧合成 XML 的完整命令名去掉冗余包裹 menu，既有命令预期保持；新增多级真实形状夹具独立证明路径，未改 FAMX 技能脚本。
 
 修复清单同时读直接禅道链接和历史 Bugzilla 链接，不跟随这些链接。带 system/id 的编号分别关联原缺陷 id 或 bugzillaID，数字相同不能混用。fixed_releases 新增 issueSystem/issueId，旧 legacyIssueId 默认历史体系兼容；SDK 旧字符串 fixedIds 仍只表示历史体系，新增 fixedIssues。正式/Beta/未知、多个发布与部分缺失 coverage 保留，平台身份进入覆盖引用。产品修复知识新增 fixed-issues，原 fixed-identifiers 旧义保留。
 
 发现修复投影版本后、同 SHA 重读会把旧叶子声明和新全路径声明同时留在 stable。新增旧版投影种子回归，先确认为 **1 条旧成员残留而失败**，再将已完成源投影作为整组原子替换：仅重新索引的来源替换旧脚本成员，缓存命中来源和人工声明保留；历史 Claim/原件不改。构建投影升级 source-projection/2，同源重读触发新版本索引；尚未重读的历史来源不补造修复结果。
 
-专项首次收尾 **26/26**；再加入同 SHA 投影替换回归后，知识/规模/结构专项 **12/12**，p95 **170ms**、索引中版本读 **204/146/146/122ms**。typecheck 通过，APV 技能目录字节未改。固定 8b2ceb6 的完整回归正在运行，真实站点仍待 Claude 复测，不把合成通过当成真实来源通过。本轮不 push、不改 Circle/7420。
+专项首次收尾 **26/26**；再加入同 SHA 投影替换回归后，知识/规模/结构专项 **12/12**，p95 **170ms**、索引中版本读 **204/146/146/122ms**。typecheck 通过，FAMX 技能目录字节未改。固定 8b2ceb6 的完整回归正在运行，真实站点仍待 Claude 复测，不把合成通过当成真实来源通过。本轮不 push、不改 Circle/7420。
 
-收尾完整回归：固定 Circle 8b2ceb6，contracts **4/4**、methods **7/7**、acceptance **83/83**、references **7/7**，**无 skip**；实际 RPC、脑图接口、审批/中断/连接器、bot、守卫均通过。整套规模 p95 **167ms**、索引中版本读 **210/142/121/152ms**。verify:references **714** 原件，typecheck/diff 检查通过，APV 包内另 **4/4**、技能目录仍与 5f11c5d 相同。本代理只读确认 PR #5 仍 OPEN，无需改基线；主工作树 clean。本笔只在 server-s2 本地提交，更新交接并通过 Otty 告知 Claude 可复测，未访问真实来源。真实复测结果与非合成的业务正确性继续待确认。
+收尾完整回归：固定 Circle 8b2ceb6，contracts **4/4**、methods **7/7**、acceptance **83/83**、references **7/7**，**无 skip**；实际 RPC、脑图接口、审批/中断/连接器、bot、守卫均通过。整套规模 p95 **167ms**、索引中版本读 **210/142/121/152ms**。verify:references **714** 原件，typecheck/diff 检查通过，FAMX 包内另 **4/4**、技能目录仍与 5f11c5d 相同。本代理只读确认 PR #5 仍 OPEN，无需改基线；主工作树 clean。本笔只在 server-s2 本地提交，更新交接并通过 Otty 告知 Claude 可复测，未访问真实来源。真实复测结果与非合成的业务正确性继续待确认。
 
 ### 7dae089 独立复核与第二轮真实只读观察
 
@@ -352,35 +354,35 @@ Claude 另报告匿名 WebDAV PROPFIND 207，不需要账号：list 根目录约
 
 先加 A/C/D/E 三条连接器验收和 B 方法验收，四条新增实际 **0/4**（另两条原方法通过）：重建抛 conflicting page segments，单构建被另一线 404 拖垮，连字符变体少一条，重载导致任意 prefix 失败。再加两条版本目录/WebDAV 验收，实际 **0/2**：目录搜索零命中，产品文档选项尚不支持。所有夹具为同形虚构数据、临时 HTTP/PostgreSQL，不含真实源内容。
 
-重建按有效时间取唯一最新条，旧段落及 SHA/时间留在 superseded；相同或缺失时间的冲突标 current=false/coverage.conflicts，不选一个冒充最新。source/listing/catalog 都局部返回，页面读取失败进入 coverage.missing；其余构建、版本线照常可用。SDK 直接取 XML/清单也核对冲突，另补先失败后通过的调用回归；release allSettled 仍保留其他匹配。带连字符名称、nodebug click 和无命令树元数据保留，commandTreeAvailable 明确。平台映射忽略大小写，APV 词表增加所报告的新后缀；未知值保留规范化来源标签，不推测其芯片/系统含义。
+重建按有效时间取唯一最新条，旧段落及 SHA/时间留在 superseded；相同或缺失时间的冲突标 current=false/coverage.conflicts，不选一个冒充最新。source/listing/catalog 都局部返回，页面读取失败进入 coverage.missing；其余构建、版本线照常可用。SDK 直接取 XML/清单也核对冲突，另补先失败后通过的调用回归；release allSettled 仍保留其他匹配。带连字符名称、nodebug click 和无命令树元数据保留，commandTreeAvailable 明确。平台映射忽略大小写，FAMX 词表增加所报告的新后缀；未知值保留规范化来源标签，不推测其芯片/系统含义。
 
-同头按 scope/完整参数签名去重，heads 唯一列出；param 返回完整 signatures，单签名旧 parameters 保留，多签名为空并标 overloaded。check 独立评估每条签名，任一完整通过才无违规；matchedSignatures/signatureChecks 留下依据，不混拼参数。command-tree 升级 1.1.0，构建投影升级 source-projection/3；知识里一组命令签名只一条声明，历史版本仍留原件/旧结论。实际 worker/API 与稳定检索覆盖重载，不只测方法函数。通过 Otty 提前告知 Claude 检查 APV 包的 signatures 适配；本代理未改脚本或 SKILL.md。
+同头按 scope/完整参数签名去重，heads 唯一列出；param 返回完整 signatures，单签名旧 parameters 保留，多签名为空并标 overloaded。check 独立评估每条签名，任一完整通过才无违规；matchedSignatures/signatureChecks 留下依据，不混拼参数。command-tree 升级 1.1.0，构建投影升级 source-projection/3；知识里一组命令签名只一条声明，历史版本仍留原件/旧结论。实际 worker/API 与稳定检索覆盖重载，不只测方法函数。通过 Otty 提前告知 Claude 检查 FAMX 包的 signatures 适配；本代理未改脚本或 SKILL.md。
 
 版本列表建立私有持久定位：身份/资产修订/凭据/来源/策略绑定的 buildId 或名称 → 列表页与平台。已知构建只重读相关页，更新当前段落，再取按 SHA 缓存的选定 XML/清单；冷调用先发现一次。元数据索引加原子文件写入和并发锁，worker 重启仍定位；不拿缓存代替当前源权限和段落核对。原件投影可以仅靠保留的列表页，不再要求每次带全站首页；未引入同步知识扫描。
 
-docs.search 新增 path，产品包声明版本目录模板；APV 的 cli/版本目录约定留在包中。按选定目录有界递归，默认深度 3、文件 100、目录 64、原件 4 MiB、命中 100；超限明确 RESULT_TOO_LARGE，不截断或伪造无命中。先扫目录，文件超限不下载正文；get/search 原件按当前目录 etag 复用，无稳定标识才重取。返回行号/片段/SHA、coverage 和 skipped，原件进 B 后仍异步进入产品全文检索。越权调用拒绝、许可沿用当前资产/源身份；站点绝对路径约定已写交接。
+docs.search 新增 path，产品包声明版本目录模板；FAMX 的 cli/版本目录约定留在包中。按选定目录有界递归，默认深度 3、文件 100、目录 64、原件 4 MiB、命中 100；超限明确 RESULT_TOO_LARGE，不截断或伪造无命中。先扫目录，文件超限不下载正文；get/search 原件按当前目录 etag 复用，无稳定标识才重取。返回行号/片段/SHA、coverage 和 skipped，原件进 B 后仍异步进入产品全文检索。越权调用拒绝、许可沿用当前资产/源身份；站点绝对路径约定已写交接。
 
 专项知识/规模/构建/WebDAV/守卫 **19/19**，规模 p95 **164ms**、索引中版本读 **196/145/148/151ms**；目录/工具联合此前 **6/6**，方法重载 **3/3**，typecheck/diff 检查通过。完整固定 Circle 8b2ceb6 回归正在运行，真实站点和 WebDAV 待 Claude 同一套只读复测；只在 server-s2 本地提交，不 push，不动 7420 或 Circle。
 
-收尾实际完整 `npm test`：固定 8b2ceb6，contracts **4/4**、methods **8/8**、acceptance **88/88**、references **7/7**，**无 skip**。整套规模 p95 **164ms**、索引中版本读 **239/134/135/177ms**。typecheck/diff 检查通过，verify:references **714**，APV 包内另 **4/4**且技能目录仍与 5f11c5d 字节相同。通过 Otty 已向 Claude 的唯一窗口发送 signatures/doc.search 交接预告，实际修改的仅产品配置/通用代码/合成夹具。PR #5 只读确认仍 OPEN。本笔只本地提交，接下来由 Claude 复测真实构建站点/WebDAV；PLM 不做未授权探测。缓存暂无淘汰、列表段落不变而 XML 原地替换的限制仍在，不把回归数字当成真实站点已通过。
+收尾实际完整 `npm test`：固定 8b2ceb6，contracts **4/4**、methods **8/8**、acceptance **88/88**、references **7/7**，**无 skip**。整套规模 p95 **164ms**、索引中版本读 **239/134/135/177ms**。typecheck/diff 检查通过，verify:references **714**，FAMX 包内另 **4/4**且技能目录仍与 5f11c5d 字节相同。通过 Otty 已向 Claude 的唯一窗口发送 signatures/doc.search 交接预告，实际修改的仅产品配置/通用代码/合成夹具。PR #5 只读确认仍 OPEN。本笔只本地提交，接下来由 Claude 复测真实构建站点/WebDAV；PLM 不做未授权探测。缓存暂无淘汰、列表段落不变而 XML 原地替换的限制仍在，不把回归数字当成真实站点已通过。
 
-## 23：第三轮真实只读观察与 APV 技能适配采用
+## 23：第三轮真实只读观察与 FAMX 技能适配采用
 
-用户提供 Claude 对 f36613a 的独立复核：临时工作树、固定 Circle 8b2ceb6，contracts **4/4**、methods **8/8**、acceptance **88/88**、typecheck 通过、无 skip。其控制的 7420 栈以 productLineId=apv 做第三轮真实只读冒烟，报告基本通过；本代理没有访问真实来源。
+用户提供 Claude 对 f36613a 的独立复核：临时工作树、固定 Circle 8b2ceb6，contracts **4/4**、methods **8/8**、acceptance **88/88**、typecheck 通过、无 skip。其控制的 7420 栈以 productLineId=famx 做第三轮真实只读冒烟，报告基本通过；本代理没有访问真实来源。
 
 八条版本线均可列出，冷遍历 **9.9s**、**4521** 个构建，superseded **9**、conflicts **1**；冲突仅影响一条线，complete=false，其余正常。无 versionLine 的选定 XML 冷取 **605ms**、缓存读 **143ms**；一个命令前缀列出 **36** 个头，重载有 **2** 个签名，TYPE_MISMATCH/ARGUMENT_COUNT/OUT_OF_RANGE 与逐签名原因符合观察。按直接缺陷编号查修复约 **347ms**，published 且 earliestFormalCertain=true。文档 version 定位到包声明的 CLI 目录，查到 **92** 个命中，无 version 明确 RESULT_TOO_LARGE；异步入库约 **2s** 后可全文查命令声明。此处只保存结构、聚合及延迟，不写真实构建名、编号、地址、域名或原文。
 
-按用户明确授权 cherry-pick APV 分支 **eb10d12 → 42977fd**，原作者、作者日期、提交正文与 Claude co-author 保留。仅 SKILL.md 变化：默认绑定主平台上 current 不为 false 且有命令树的最新正式构建；后续用 buildId、报告保留构建名；重载读 signatures；手册搜索用 version，缺少手册可继续并披露。整个技能目录与 eb10d12 字节相同，脚本和测试未由本代理修改。Claude 报告合成栈上这版完成试跑、推送、批准和 server 运行，case.xlsx SHA 仍以 **6fcd622b** 开头；只记录用户给出的前缀，不补造完整 SHA。
+按用户明确授权 cherry-pick FAMX 分支 **eb10d12 → 42977fd**，原作者、作者日期、提交正文与 Claude co-author 保留。仅 SKILL.md 变化：默认绑定主平台上 current 不为 false 且有命令树的最新正式构建；后续用 buildId、报告保留构建名；重载读 signatures；手册搜索用 version，缺少手册可继续并披露。整个技能目录与 eb10d12 字节相同，脚本和测试未由本代理修改。Claude 报告合成栈上这版完成试跑、推送、批准和 server 运行，case.xlsx SHA 仍以 **6fcd622b** 开头；只记录用户给出的前缀，不补造完整 SHA。
 
-本次实际只验证适用范围：APV 包内 **4/4**、两条核心/连接器守卫 **2/2**，无 skip，diff 检查通过。没有重新运行未变的整套代码，也没有把用户观察冒充本代理的真实复跑。PR #5 只读确认仍 OPEN；本步只在 server-s2 本地提交，不 push、不改 Circle 或运行中的 7420 栈。
+本次实际只验证适用范围：FAMX 包内 **4/4**、两条核心/连接器守卫 **2/2**，无 skip，diff 检查通过。没有重新运行未变的整套代码，也没有把用户观察冒充本代理的真实复跑。PR #5 只读确认仍 OPEN；本步只在 server-s2 本地提交，不 push、不改 Circle 或运行中的 7420 栈。
 
 两条非阻塞观察保留：部分后缀可能是功能分支或平台/架构，当前统一作为 platform 标签，不能据名称认定其类型；后续清单可增加 platform/branch/unknown 的变体类别，经确认后填写。同名多平台只传构建名时失败是明确选择要求，交接已有说明。PLM 等用户本人提供并注册运行时 token 后由 Claude 测试，本代理不取得 token 或探测真实服务。另已核对普通身份的缺失/无权限仍统一 SOURCE_FORBIDDEN，只有 sources.diagnose 才暴露 SOURCE_ABSENT；技能中的缺手册披露应同时尊重这条已确认隐藏规则，已通过 Otty 提醒维护者，不改其原件。
 
 ### 缺手册错误隐藏规则的技能说明修正
 
-Claude 确认原文会让模型从错误码推断手册不存在，并在 apv-pack 提交 9931f20，仅改 SKILL.md 一行。按用户新授权 cherry-pick **9931f20 → 6b1eae8**，保留原作者、日期、完整正文与 co-author；整个技能目录与 9931f20 字节相同。手册搜索失败只表示本次运行未取得手册，继续编译并披露“未取得手册”，不得从 SOURCE_FORBIDDEN/SOURCE_ABSENT 推断不存在或具体权限原因，手册仍只解释显示方式，不决定命令和预期。
+Claude 确认原文会让模型从错误码推断手册不存在，并在 famx-pack 提交 9931f20，仅改 SKILL.md 一行。按用户新授权 cherry-pick **9931f20 → 6b1eae8**，保留原作者、日期、完整正文与 co-author；整个技能目录与 9931f20 字节相同。手册搜索失败只表示本次运行未取得手册，继续编译并披露“未取得手册”，不得从 SOURCE_FORBIDDEN/SOURCE_ABSENT 推断不存在或具体权限原因，手册仍只解释显示方式，不决定命令和预期。
 
-本次 APV 包内 **4/4**、核心/连接器守卫 **2/2**、无 skip，diff 检查通过；脚本及核心代码未改，未重复未变的全套测试。用户认可变体分类只记待确认，本步不增加猜测的分类。本地提交，不 push，不修改 Circle/7420，未取得凭据或连接真实源。
+本次 FAMX 包内 **4/4**、核心/连接器守卫 **2/2**、无 skip，diff 检查通过；脚本及核心代码未改，未重复未变的全套测试。用户认可变体分类只记待确认，本步不增加猜测的分类。本地提交，不 push，不修改 Circle/7420，未取得凭据或连接真实源。
 
 ## 24：版本列表输出与开发会话续期
 
@@ -394,13 +396,13 @@ Claude 确认原文会让模型从错误码推断手册不存在，并在 apv-pa
 
 通过 Otty 告知 Claude 负责客户端边界。用户报告 Circle server-tools **2035247** 只改扩展/测试，npm run check **428** 中 **426** 通过、**2** 跳过；新增临近到期无交互续期、旧 server 404/405 只尝试一次、过期工具和任务轮询只提示不弹框。接口已按其 Bearer/空 JSON/登录同形响应约定实现。待 server 本地提交后由 Claude 更新其控制的 7420、重开演示 Circle；本代理不操作栈，也不把客户端报告算成本机验收。
 
-实际固定 Circle 8b2ceb6 的分页、开发会话、慢速 RPC 和结构专项 **16/16**，无 skip；typecheck 通过。完整回归正在收尾，APV 包内 **4/4**、引用验证 **714** 原件；技能目录未修改。交接已更新，后续仍只本地提交，不 push，等待用户侧部署后再编译。
+实际固定 Circle 8b2ceb6 的分页、开发会话、慢速 RPC 和结构专项 **16/16**，无 skip；typecheck 通过。完整回归正在收尾，FAMX 包内 **4/4**、引用验证 **714** 原件；技能目录未修改。交接已更新，后续仍只本地提交，不 push，等待用户侧部署后再编译。
 
-本次完整收尾：固定 8b2ceb6 的 contracts **4/4**、methods **8/8**、acceptance **94/94**、references **7/7**，**无 skip**；typecheck/diff 检查通过，引用 **714**、APV 包内另 **4/4**。整套规模 p95 **164ms**、索引中版本读 **227/142/127/143ms**。技能目录仍与 9931f20 相同，无框架/Circle 源码或真实连接器改动。只读确认 PR #5 仍 OPEN，工作保持 server-s2。本地提交后通过 Otty 告知 Claude 接口就绪，由其部署演示栈及重开客户端；本代理不 push、不操作 7420，不把尚未重新联验的演示说成已恢复。
+本次完整收尾：固定 8b2ceb6 的 contracts **4/4**、methods **8/8**、acceptance **94/94**、references **7/7**，**无 skip**；typecheck/diff 检查通过，引用 **714**、FAMX 包内另 **4/4**。整套规模 p95 **164ms**、索引中版本读 **227/142/127/143ms**。技能目录仍与 9931f20 相同，无框架/Circle 源码或真实连接器改动。只读确认 PR #5 仍 OPEN，工作保持 server-s2。本地提交后通过 Otty 告知 Claude 接口就绪，由其部署演示栈及重开客户端；本代理不 push、不操作 7420，不把尚未重新联验的演示说成已恢复。
 
 ## 25：上机授权与读侧故障修复
 
-用户新增授权 APV 执行工作簿经既有 MCP 网关提交测试床、本机部署，并要求在投递前由 server 重读所有设备命令、对绑定构建独立 command_check；客户端/技能包回执不得放行。真实投递等用户上传，既有网关、设备初始化和环境改造不在实现范围内。地址、个人访问/刷新令牌和 CA 配置全部只在运行时提供。server-s1/主工作树/Circle/InfoTest/归档未改，本步不 push。
+用户新增授权 FAMX 执行工作簿经既有 MCP 网关提交测试床、本机部署，并要求在投递前由 server 重读所有设备命令、对绑定构建独立 command_check；客户端/技能包回执不得放行。真实投递等用户上传，既有网关、设备初始化和环境改造不在实现范围内。地址、个人访问/刷新令牌和 CA 配置全部只在运行时提供。server-s1/主工作树/Circle/SyntheticReference/归档未改，本步不 push。
 
 Claude 提供脱敏诊断：镜像 keyword 仅客户端过滤，无源筛选时取全表约 49 MiB/11.9 万条，首字节约 11.3 秒、总 13 秒；带 product/status 时约 1.7 MiB/0.9 秒。文档 `/` 的 PROPFIND 是 405，登记的 WebDAV 根正常，spec 有千级平铺文件。网关本身在线，但上游 introspect 不可达，任何调用均 503；这是环境阻塞，不能靠换用户令牌修复。仅记录结构与聚合，不保存真实原件、内部地址或日志。
 
@@ -420,7 +422,7 @@ Circle **68c6405** 已让 circle_server_submit 支持附加执行 input，源 id
 
 ## 26：执行能力、服务端命令证明和令牌恢复
 
-先写工作簿/结果、刷新/传输和执行故事验收：缺模块及未安装能力均实际失败；随后实现 packs/apv/execution，通用 MCP/私有 HTTP 与凭据锁在 packages。C 受理/幂等、审批、事件、B 原件/制品和 D 租约/fence 复用。工作簿要求单表隐藏标记与九列，从 SHA 原件独立读取显式 APV_n/Segn_tmp 命令，初始化也核对；临时变量和无法确定展开的 opaque 方法不放行。原 APV 技能目录未改，与 9931f20 保持一致。
+先写工作簿/结果、刷新/传输和执行故事验收：缺模块及未安装能力均实际失败；随后实现 packs/famx/execution，通用 MCP/私有 HTTP 与凭据锁在 packages。C 受理/幂等、审批、事件、B 原件/制品和 D 租约/fence 复用。工作簿要求单表隐藏标记与九列，从 SHA 原件独立读取显式 FAMX_n/Segn_tmp 命令，初始化也核对；临时变量和无法确定展开的 opaque 方法不放行。原 FAMX 技能目录未改，与 9931f20 保持一致。
 
 cases.verify 的 worker 只取已授权来源，server 从保留的列表/XML 字节独立重定位构建、解析完整头/重载、再跑 command_check。不存在的命令或参数违规在网关调用前失败，客户端回执字段拒绝。证明 JSON 作为 B artifact，可在批准前下载；批准绑定修订、测试床配置/CA身份、构建/tree SHA、证明摘要及 artifact 引用，申请人不能自批。
 
@@ -430,25 +432,25 @@ cases.verify 的 worker 只取已授权来源，server 从保留的列表/XML �
 
 结果自写 TS 从原始网关 case log 抽明确检查点帧，覆盖四个真值组合、多行模式、收尾摘要、数量/模式不符和 stale。逐命令只记唯一派发行的 observed，其他步 unknown，不继承整案 PASS；用例 fail 可交付，不混成任务失败。原始/解释结果分别 JSON artifact，模型判断为空。取消前无派发 closes pending 后 cancelled；投递后取消、lost、断线和租约过期 unknown/资源冻结，旧 fence 拒绝；独立 worker 核对绑定终态后 reconciled。新增核对尚未完工回归，旧实现把原任务误改 cancelled，修为只失败核对操作，原任务继续 unknown、资源不解冻。
 
-最终执行/凭据/资产专项 **15/15**、方法 **2/2**、只读隐藏与失败核对加强回归 **2/2**、typecheck 通过。此前固定 Circle 8b2ceb6 的两轮整套 contracts **4/4**、methods **10/10**、acceptance **112/112**、references **7/7**，无 skip；最后恢复边界变更后的整套正在复验。APV 包内 **4/4**，引用 **714**。交接写入 case-execution-handoff 和 client-api-handoff。本次只本地提交；真实上机仍待恢复网关核验、登记用户凭据并上传工作簿，结果不能冒充真实通过。
+最终执行/凭据/资产专项 **15/15**、方法 **2/2**、只读隐藏与失败核对加强回归 **2/2**、typecheck 通过。此前固定 Circle 8b2ceb6 的两轮整套 contracts **4/4**、methods **10/10**、acceptance **112/112**、references **7/7**，无 skip；最后恢复边界变更后的整套正在复验。FAMX 包内 **4/4**，引用 **714**。交接写入 case-execution-handoff 和 client-api-handoff。本次只本地提交；真实上机仍待恢复网关核验、登记用户凭据并上传工作簿，结果不能冒充真实通过。
 
-最终树整套收尾：固定 Circle 8b2ceb6，contracts **4/4**、methods **10/10**、acceptance **112/112**、references **7/7**，共 **133/133**，无 skip；实际 RPC、原脑图、admin 重启、源映射、bot、核心守卫和执行恢复均覆盖。typecheck/diff 检查通过，引用 **714**；APV 包内另 **4/4**，技能目录与 9931f20 相同。PR #5 只读确认仍 OPEN，主工作树 clean。本地提交后通过 Otty 将最终提交和执行交接交给 Claude，在其控制的 7420 复核部署；本代理不 push、不改 Circle/旧网关，不把未完成的真实投递记成通过。
+最终树整套收尾：固定 Circle 8b2ceb6，contracts **4/4**、methods **10/10**、acceptance **112/112**、references **7/7**，共 **133/133**，无 skip；实际 RPC、原脑图、admin 重启、源映射、bot、核心守卫和执行恢复均覆盖。typecheck/diff 检查通过，引用 **714**；FAMX 包内另 **4/4**，技能目录与 9931f20 相同。PR #5 只读确认仍 OPEN，主工作树 clean。本地提交后通过 Otty 将最终提交和执行交接交给 Claude，在其控制的 7420 复核部署；本代理不 push、不改 Circle/旧网关，不把未完成的真实投递记成通过。
 
 ### ea72b08 独立部署复核与 test_env 阻断更正
 
 Claude 独立报告 typecheck、contracts 4/4、methods 10/10、references 7/7、原件核验通过；acceptance 111/112，record-feed-a 的游标 10 秒超时，单跑三轮均 2/2。已由其将 7420 部署到 ea72b08，开发身份增加 cases.execute；网关 profile 变量指向仓库外尚待填写的文件。真实只读复测：不带斜杠的 spec 和版本 app 目录正常规范化，spec 1017 项；products 总 190 项、分页正常；错误产品名/无条件查询有修复提示；packs/inputSchema 能发现新执行包。只保留聚合和结构，不写真实产品 id、连接值或业务原件。
 
-用户指出过严的 test_env 拒绝使两份真实工作簿无法提交，并提供脱敏行形状及框架接口。其 F 是启用的主机方法，G 是 shell 实参，返回值供紧邻检查点；不是不透明设备函数。生命周期/未知 reboot 由客户端纠正，APV execute 的模糊分派仍须拒绝或展开。console 真实用途不能据名字猜，须以床配置角色为准。只读核对用户指定的 ../InfoTest_Engine/knowledge/framework/mirror 的 test_xlsx/env/ssh_server 源函数及 compile_ref/excel_contract，未运行、导入或复制代码/配置值。
+用户指出过严的 test_env 拒绝使两份真实工作簿无法提交，并提供脱敏行形状及框架接口。其 F 是启用的主机方法，G 是 shell 实参，返回值供紧邻检查点；不是不透明设备函数。生命周期/未知 reboot 由客户端纠正，FAMX execute 的模糊分派仍须拒绝或展开。console 真实用途不能据名字猜，须以床配置角色为准。只读核对用户指定的 ../synthetic-reference-engine/knowledge/framework/mirror 的 test_xlsx/env/ssh_server 源函数及 compile_ref/excel_contract，未运行、导入或复制代码/配置值。
 
-先写 test_env 分派验收，实际失败；再写实参/闭集规则，缺模块失败后自写 TS dialect。支持八个明确测试主机方法、引号外逗号、prompt/timeout、多行整体、H 捕获，拒绝 I 替换、未知/生命周期/禁用方法和未验证 console。APV 字面 cmd 及 kwargs 也按实际实参重新 command_check；shell 单列证明与审批摘要，不当 APV 命令头。直接主机的字面 cmd 支持，模糊 execute 拒绝。新增合成 HTTP 流量/检查点、默认闭集、运行时缩小名单、证据分离和未知方法门禁，执行/旧连接器/方言联合 **17/17**；最终实参/读取方法 **5/5**，typecheck 通过。未改 Claude 的技能包，不以来源统计冒充真实投递。
+先写 test_env 分派验收，实际失败；再写实参/闭集规则，缺模块失败后自写 TS dialect。支持八个明确测试主机方法、引号外逗号、prompt/timeout、多行整体、H 捕获，拒绝 I 替换、未知/生命周期/禁用方法和未验证 console。FAMX 字面 cmd 及 kwargs 也按实际实参重新 command_check；shell 单列证明与审批摘要，不当 FAMX 命令头。直接主机的字面 cmd 支持，模糊 execute 拒绝。新增合成 HTTP 流量/检查点、默认闭集、运行时缩小名单、证据分离和未知方法门禁，执行/旧连接器/方言联合 **17/17**；最终实参/读取方法 **5/5**，typecheck 通过。未改 Claude 的技能包，不以来源统计冒充真实投递。
 
 本机单跑也复现 record-feed-b 等待 unknown 阶段 10 秒超时，下一轮加状态诊断后未再复现；不能只认定是游标等待。按独立复核建议，仅 Act 8 的事件/阶段/游标等待扩到 30 秒，原期待值、去重数量、标记与资源核对不变，其他验收默认期限不变。保留合成超时状态/操作诊断，联合两条均通过。
 
-最终固定 Circle 8b2ceb6 的整套 contracts **4/4**、methods **13/13**、acceptance **113/113**、references **7/7**，共 **137/137**，无 skip；typecheck、diff 检查和引用 **714** 核验通过，APV 包内另 **4/4**。技能目录仍与 9931f20 字节相同，主工作树未改。本步只在 server-s2 本地提交，通知 Claude 复核并更新其控制的 7420，未 push、未操作现有栈。真实设备任务仍未提交，网关上游和用户会话待恢复；合法 test_env 接受不代表客户端未知 reboot 或模糊 APV execute 被放行。
+最终固定 Circle 8b2ceb6 的整套 contracts **4/4**、methods **13/13**、acceptance **113/113**、references **7/7**，共 **137/137**，无 skip；typecheck、diff 检查和引用 **714** 核验通过，FAMX 包内另 **4/4**。技能目录仍与 9931f20 字节相同，主工作树未改。本步只在 server-s2 本地提交，通知 Claude 复核并更新其控制的 7420，未 push、未操作现有栈。真实设备任务仍未提交，网关上游和用户会话待恢复；合法 test_env 接受不代表客户端未知 reboot 或模糊 FAMX execute 被放行。
 
 ### 延迟旧消息撤回、离线实件观察与错误定位
 
-用户确认再次送达的 test_env/reboot 建议是最早排队的旧消息，已撤回“reboot 是框架已知动作”：Env 无此方法，APV.reboot 在专业契约里 disabled，仍明确拒绝。其在 121c9cb 离线用实际单表工作簿调用读取器，四条 test_env/reboot 被拒；清空后通过，**24** 例、**268** 条设备命令、**20** 条 routera 主机命令。旧定稿双表格式被拒符合契约。这里只记录用户报告的结构及聚合，本代理未读取、修改或投递真实工作簿。
+用户确认再次送达的 test_env/reboot 建议是最早排队的旧消息，已撤回“reboot 是框架已知动作”：Env 无此方法，FAMX.reboot 在专业契约里 disabled，仍明确拒绝。其在 121c9cb 离线用实际单表工作簿调用读取器，四条 test_env/reboot 被拒；清空后通过，**24** 例、**268** 条设备命令、**20** 条 routera 主机命令。旧定稿双表格式被拒符合契约。这里只记录用户报告的结构及聚合，本代理未读取、修改或投递真实工作簿。
 
 按新建议先写四条验收：HTTP/读取器定位与运行时策略实际失败 **3/4**，默认多种字面 shell 分派已通过。补 INVALID_EXECUTION_WORKBOOK 的 row/autoid/object(E)/method(F)，继承用例头、初始化空身份，非字面格附 column；不回显命令或寄存器内容。框架实参错误同样补定位，客户端修订无须猜错误发生在哪一例。
 
@@ -456,11 +458,11 @@ Claude 独立报告 typecheck、contracts 4/4、methods 10/10、references 7/7�
 
 用户后续报告 121c9cb 独立复核完整 **137/137**、无 skip、typecheck 通过，已由其部署 7420；开发身份有 cases.execute，执行网关 profile 文件仍未填写。真实只读复测的文档规范化/千级 spec 分页、products **190** 项、查询修复提示与执行包发现正常；实际件四条 reboot 被拒且去掉后离线读取通过。没有真实投递，不把此观察算成本代理的设备验收。
 
-回答执行路由时只读核对既有网关 tools/framework 文档与源码、镜像 test_xlsx/Env 的接口，未执行、导入、采纳旧代码或连接值：网关原样冻结工作簿交给原框架；server 是闭集验证，原框架按 E/F 派发。routera 方法找床配置 env.RouterA，APV_n 按 comm.ssh_ips 的有序索引，不能从标签猜 DUT 顺序。重启步骤维持未实现，普通重启协议未提供，init_device 是清空/重建基线，不能替代“重启后保留配置”测试；未向用户推荐会重启测试主机的误写。
+回答执行路由时只读核对既有网关 tools/framework 文档与源码、镜像 test_xlsx/Env 的接口，未执行、导入、采纳旧代码或连接值：网关原样冻结工作簿交给原框架；server 是闭集验证，原框架按 E/F 派发。routera 方法找床配置 env.RouterA，FAMX_n 按 comm.ssh_ips 的有序索引，不能从标签猜 DUT 顺序。重启步骤维持未实现，普通重启协议未提供，init_device 是清空/重建基线，不能替代“重启后保留配置”测试；未向用户推荐会重启测试主机的误写。
 
 联合复验中另遇合成网关空请求导致 JSON.parse 未捕获错误。用空 GET 独立复现并先写失败验收 **0/1**；仅桩修为非 MCP POST 返回 405、坏 JSON 返回 400，避免把桩异常当真实网关故障。第一轮新验收还有误把 C 的同步 admitted 写成 accepted，已按既有契约修正期待值；实现中的受理阶段未改。完整最终树待复验。
 
-工作簿这轮最终实现的整套已实际通过：固定 Circle 8b2ceb6，contracts **4/4**、methods **15/15**、acceptance **116/116**、references **7/7**，共 **142/142**，无 skip；typecheck、引用 **714**、APV 包内另 **4/4**，技能目录保持 9931f20 原字节。期间用户新增技能推送诊断问题，以下继续处理，未把尚未通过的新验收提交。
+工作簿这轮最终实现的整套已实际通过：固定 Circle 8b2ceb6，contracts **4/4**、methods **15/15**、acceptance **116/116**、references **7/7**，共 **142/142**，无 skip；typecheck、引用 **714**、FAMX 包内另 **4/4**，技能目录保持 9931f20 原字节。期间用户新增技能推送诊断问题，以下继续处理，未把尚未通过的新验收提交。
 
 ### 技能推送目录不匹配诊断
 
@@ -470,7 +472,7 @@ Claude 独立报告 typecheck、contracts 4/4、methods 10/10、references 7/7�
 
 再先写“受理后目录撤销”的回归，实际 **0/1**：claim 拒绝的 HTTP 有 details，但操作及 task result 的失败记录只留 code/message，丢完整清单。通用 C 回报路径统一保留 ApiError.details，后台拒绝仍不启动运行；审批和运行仍核对当时的身份目录。交接已补格式，专项与最终全套正在复验，真实网关/设备仍未投递。
 
-最终联合技能/RPC 专项 **10/10**，完整最终实现 contracts **4/4**、methods **15/15**、acceptance **120/120**、references **7/7**，共 **146/146**，固定 Circle 8b2ceb6，**无 skip**。typecheck、diff 检查通过，引用 **714** 核验、APV 包内另 **4/4**；技能目录仍与 9931f20 字节相同。整套规模回归 p95 **195ms**，异步索引期间读 **226/123/141/157ms**。接口和错误清单形状兼容，未修改 Circle、旧网关、InfoTest 或归档，主工作树 clean。只在 server-s2 本地提交并经 Otty 交给 Claude 复核部署；当前已获部署确认的是 121c9cb，本笔新修改待其更新 7420，不 push，也没有真实设备验收。
+最终联合技能/RPC 专项 **10/10**，完整最终实现 contracts **4/4**、methods **15/15**、acceptance **120/120**、references **7/7**，共 **146/146**，固定 Circle 8b2ceb6，**无 skip**。typecheck、diff 检查通过，引用 **714** 核验、FAMX 包内另 **4/4**；技能目录仍与 9931f20 字节相同。整套规模回归 p95 **195ms**，异步索引期间读 **226/123/141/157ms**。接口和错误清单形状兼容，未修改 Circle、旧网关、SyntheticReference 或归档，主工作树 clean。只在 server-s2 本地提交并经 Otty 交给 Claude 复核部署；当前已获部署确认的是 121c9cb，本笔新修改待其更新 7420，不 push，也没有真实设备验收。
 
 ## 27：独立部署复核、撤回误报与通用外部来源制品
 
@@ -478,11 +480,11 @@ Claude 独立报告 typecheck、contracts 4/4、methods 10/10、references 7/7�
 
 用户也撤回 claim_submit 接口故障：实际 data.error 为 SOURCE_FORBIDDEN，提交证据与拟登记的命令原件无关，一次 SHA 为空。保留原证据校验，候选 claim 不变成可执行来源；本代理未读取这些真实任务或原件。后续必须原件上传、来源资产登记、另一人批准后绑定。只保存安全工具名和结论，不保存失败请求、业务文本或凭据。
 
-床的真实构建尚未确认，旧客户端、本机旧安装配置和上游 healthz 的声明相互不一致。它们不能建立床构建事实；执行以 env_prepare 核对为准，上传者的构建关联只是预期声明。命令原件和函数契约等待用户在新接口上传，本代理不访问真实文件、InfoTest/旧客户端配置或网关。远端签发服务为明文 HTTP，网关为 HTTPS；默认私有请求 TLS 规则保留，已向用户/Claude 提交 HTTPS 入口或限定签发端点例外的待决定项，未修改真实配置或默默降级。
+床的真实构建尚未确认，旧客户端、本机旧安装配置和上游 healthz 的声明相互不一致。它们不能建立床构建事实；执行以 env_prepare 核对为准，上传者的构建关联只是预期声明。命令原件和函数契约等待用户在新接口上传，本代理不访问真实文件、SyntheticReference/旧客户端配置或网关。远端签发服务为明文 HTTP，网关为 HTTPS；默认私有请求 TLS 规则保留，已向用户/Claude 提交 HTTPS 入口或限定签发端点例外的待决定项，未修改真实配置或默默降级。
 
 按用户通用平台方向，未提交的专用命令源草案改为通用外部来源制品：POST /v1/source-artifacts 接收任意已上传原件的 files/metadata，GET /v1/source-artifacts/{assetId} 查询；复用 knowledge-source 资产和独立生命周期审批，批准后才提供 sar_ 稳定 id。id 绑定资产版本、声明和原件 SHA，版本替换不自动选择新字节。平台仅核对权限、来源身份、字节、修订与审批，不验证格式或声明的语义。
 
-工具目录统一增加可选 sourceArtifactId，普通连接器按绑定 id 使用保留原件，任务、fence、证据和幂等机制沿用；结果标 uploaded-artifact/live=false。命令树消费者仍用既有 buildsite command_heads/param/check，build 参数可使用 sar_ id。InfoTest 函数契约解释仅在现有 APV 模块，执行绑定树/函数契约 SHA并再次独立检查；disabled/internal/absent 拒绝，既有不透明函数限制不扩大。现有目录结构、技能原件、打包/独立仓库安排不变，产品包是否另发仍由用户确认。
+工具目录统一增加可选 sourceArtifactId，普通连接器按绑定 id 使用保留原件，任务、fence、证据和幂等机制沿用；结果标 uploaded-artifact/live=false。命令树消费者仍用既有 buildsite command_heads/param/check，build 参数可使用 sar_ id。SyntheticReference 函数契约解释仅在现有 FAMX 模块，执行绑定树/函数契约 SHA并再次独立检查；disabled/internal/absent 拒绝，既有不透明函数限制不扩大。现有目录结构、技能原件、打包/独立仓库安排不变，产品包是否另发仍由用户确认。
 
 先写四条原件/独立批准/查询/上机/换版验收，草案接口实际 **0/4**；改成通用制品后加入文档连接器共享测试，首轮 **3/5**，两红分别为测试遗漏审核者读者声明和错误期待文档返回纯文本（既有接口是 base64），修正测试后 **5/5**。共享读者进一步先复现仅有读权限却被要求 knowledge.submit；改为受权读取的内部证据记录，保持其写权限不变，共享索引独立完成。typecheck 通过；后续还需更多绑定边界、真实 RPC、全套回归及通用 OAuth device/client_credentials 合成验收，本步尚未提交或部署。
 
@@ -492,9 +494,9 @@ Claude 独立报告 typecheck、contracts 4/4、methods 10/10、references 7/7�
 
 新增标准 token 续期测试先因缺模块失败，再自写通用 OAuthToken：client_credentials 无刷新令牌也可单写者重取，标准非轮换刷新可保留旧 refresh_token，未知结果停止重放，端点来自配置。再覆盖回执持久后重启恢复同一 credential id，以及连接器实际用 bearer header/到期前续期；流程/续期联合 **8/8**。既有手工 token bundle 路径兼容，新网关凭据走通用 provider；令牌未在 API、任务、审计或仓库出现。引用 RFC 只读协议，未采用旧 auth 客户端代码，也未访问真实签发方。
 
-client-api-handoff 的通用来源/凭据接口已通过 Otty 交给 Claude。case-execution-handoff 已补预期构建与真实床核对边界。当前 typecheck、引用 714、APV 包内 4/4 通过，原技能目录与 9931f20 字节相同；完整固定 Circle 最终回归正在运行。真实 HTTP 签发处置决定仍待回复，默认拒绝不变，未操作 7420、网关或设备，也未调整产品包目录/发布结构。
+client-api-handoff 的通用来源/凭据接口已通过 Otty 交给 Claude。case-execution-handoff 已补预期构建与真实床核对边界。当前 typecheck、引用 714、FAMX 包内 4/4 通过，原技能目录与 9931f20 字节相同；完整固定 Circle 最终回归正在运行。真实 HTTP 签发处置决定仍待回复，默认拒绝不变，未操作 7420、网关或设备，也未调整产品包目录/发布结构。
 
-完整最终实现已实际通过：contracts **4/4**、methods **17/17**、acceptance **133/133**、references **7/7**，共 **161/161**，固定 Circle 8b2ceb6，**无 skip**。typecheck、diff 检查与引用 **714** 通过；APV 包内另 **4/4**，原技能目录保持 9931f20 字节。源/RPC 七条和通用 OAuth 六条均在整套内通过，核心/连接器守卫通过；新源与 OAuth 特定规则未加到平台主进程，InfoTest 解释在既有产品模块。实际床构建仍未知，real HTTP issuer 未启用例外，未读取或投递真实系统。接下来只在 server-s2 本地提交，经 Otty 交给 Claude 更新其控制的 7420；不 push、不改已有产品目录。
+完整最终实现已实际通过：contracts **4/4**、methods **17/17**、acceptance **133/133**、references **7/7**，共 **161/161**，固定 Circle 8b2ceb6，**无 skip**。typecheck、diff 检查与引用 **714** 通过；FAMX 包内另 **4/4**，原技能目录保持 9931f20 字节。源/RPC 七条和通用 OAuth 六条均在整套内通过，核心/连接器守卫通过；新源与 OAuth 特定规则未加到平台主进程，SyntheticReference 解释在既有产品模块。实际床构建仍未知，real HTTP issuer 未启用例外，未读取或投递真实系统。接下来只在 server-s2 本地提交，经 Otty 交给 Claude 更新其控制的 7420；不 push、不改已有产品目录。
 
 ## 28：现有资产登记链路、原件形状与失败证据定位
 
@@ -508,7 +510,7 @@ client-api-handoff 的通用来源/凭据接口已通过 Otty 交给 Claude。ca
 
 claim 不可用证据仅增加调用者提交项的 details={field:evidence,index,evidenceId}，缺失和隐藏记录同码同文，成功仍是个人沉淀候选。新增失效 SHA、跨 scope、重复路径及伪造生成字段验收，拒绝事务不留下半份知识。另先写旧版重提不得回滚当前来源 head 的回归，实际 **0/1**；登记旧版本虽然复用资产，却先把 source head 写回旧原件。修为重复版本不更新来源 head，仍核对不可变摘要。当前来源/执行/固定 RPC 联合 **11/11**、无 skip，包含 POST /assets 原件上传到合成网关投递的完整批准链路。接下来跑最终全套；未操作 7420、真实签发方、网关或设备，明文远端签发接入决策仍待回复，目录/发布安排不变。
 
-最终验收已通过：contracts **4/4**、methods **19/19**（原整套 17 条及补充完整契约形状两条）、acceptance **137/137**、references **7/7**，共 **167/167**，固定 Circle 8b2ceb6，**无 skip**。typecheck、归档原件 **714** 核验与 diff 检查通过，APV 包内另 **4/4**；skills 与 9931f20 原字节相同。规模回归四次读取 p95 **167ms**，异步索引时读取 **228/144/120/143ms**。新登记接口和旧辅助接口共用现有批准治理；claim 失败仍在 data.error，仅新增请求证据项定位。本笔只在 server-s2 本地提交并交给 Claude 复核/部署，已获部署确认的最新 server 为 e46dd89；真实来源上传、床构建核对、网关令牌及设备执行仍由用户在环境恢复后验收，本代理未投递，也未 push。
+最终验收已通过：contracts **4/4**、methods **19/19**（原整套 17 条及补充完整契约形状两条）、acceptance **137/137**、references **7/7**，共 **167/167**，固定 Circle 8b2ceb6，**无 skip**。typecheck、归档原件 **714** 核验与 diff 检查通过，FAMX 包内另 **4/4**；skills 与 9931f20 原字节相同。规模回归四次读取 p95 **167ms**，异步索引时读取 **228/144/120/143ms**。新登记接口和旧辅助接口共用现有批准治理；claim 失败仍在 data.error，仅新增请求证据项定位。本笔只在 server-s2 本地提交并交给 Claude 复核/部署，已获部署确认的最新 server 为 e46dd89；真实来源上传、床构建核对、网关令牌及设备执行仍由用户在环境恢复后验收，本代理未投递，也未 push。
 
 ## 29：平台签发资源身份与独立模块方向
 
@@ -554,13 +556,13 @@ AssetListQuery 增 lifecycle 过滤，待批查询 GET /v1/assets?lifecycle=draf
 
 ## 32：独立模块清单、冻结安装与旧技能副本移除
 
-用户确认独立 circle-packs 的 94aab54 已推送：modules.json 使用 circle-packs/modules/1，skill-pack/product-line 分别放 skills/products，id/版本必须与目录及自身清单一致。非隐藏文件全部计入 files，digest 是按生成器排序的 `<sha256>  <path>\n` 原字节拼接摘要；清单证明字节身份，不自动批准。只读运行本平台 CLI check 核验独立仓库的 apv-mindmap-compile **0.2.5**、**13** 文件、摘要 **5fcd1dea65477decf50a89c5746cce617a0d5ba9dd5ae3bc5c2ed6fcc56fdf42**，未运行、复制或修改该仓库脚本和测试。
+用户确认独立 circle-packs 的 94aab54 已推送：modules.json 使用 circle-packs/modules/1，skill-pack/product-line 分别放 skills/products，id/版本必须与目录及自身清单一致。非隐藏文件全部计入 files，digest 是按生成器排序的 `<sha256>  <path>\n` 原字节拼接摘要；清单证明字节身份，不自动批准。只读运行本平台 CLI check 核验独立仓库的 famx-mindmap-compile **0.2.5**、**13** 文件、摘要 **5fcd1dea65477decf50a89c5746cce617a0d5ba9dd5ae3bc5c2ed6fcc56fdf42**，未运行、复制或修改该仓库脚本和测试。
 
 先写文件集/路径/摘要/清单身份及 HTTP/CLI 安装验收：缺实现时方法导入失败，HTTP **0/4**。实现通用 F 清单和路由、modules check/install、本地文件冻结与服务端复核。最初联合 **5/7** 的问题分别是测试误带顶层 manifest 和模块相对路径不能直接作 sources 的 basename，修正为保留制品相对路径、上传使用 basename 后 **7/7**。新增固定 Circle 的合成 RPC 封存运行，首次 **7/8** 暴露技能旧 localeCompare 排序与模块清单不一致；仅模块提交改用清单字符串顺序，原 skillpack 摘要保持兼容，随后 **8/8**、无 skip。
 
 POST /v1/modules/install 接收 `{module,files,trial?}`，scope 与既有技能提交规则一致；CLI 读完整非隐藏文件集，拒绝符号链接、额外/缺失文件、目录/manifest id 不一致及摘要变化。每模块最多 100 个文件、1000 个子目录、16 MiB，读取时按剩余预算限制。技能试跑必填，复用工具目录检查、approvalTaskId、独立批准和 C/RPC 运行；响应区分模块 digest 与 skillPackDigest，元数据参与既有批准摘要。相同提交复用既有包，资产停用不会因再次安装自动启用。产品线模块原件作为普通 draft knowledge-source 封存，批准不 import 代码、不启用产品线、不改运行配置。
 
-RPC 验收用独立合成模块和脚本模型：批准后改动外部源文件，运行仍读取 B 中封存脚本，产物 SHA 和内容一致；安装过程没有执行模块 tests。该验收通过后才按用户授权删除 server 内旧 packs/apv/skills，移除 product-line 清单中的旧路径。剩余第一阶段产品方法适配器和编译 API 保持兼容；新的技能版本以独立仓库为准，产品线其余目录未擅自迁移。
+RPC 验收用独立合成模块和脚本模型：批准后改动外部源文件，运行仍读取 B 中封存脚本，产物 SHA 和内容一致；安装过程没有执行模块 tests。该验收通过后才按用户授权删除 server 内旧 packs/famx/skills，移除 product-line 清单中的旧路径。剩余第一阶段产品方法适配器和编译 API 保持兼容；新的技能版本以独立仓库为准，产品线其余目录未擅自迁移。
 
 补充零字节与生命周期回归先确认失败：模块包含空文件时旧公开上传非空规则阻止封存；已经停用的技能重提被响应误标 approved。实现 B 的内部 storeOriginal 以保留清单中的空文件，公开 sources 上传仍拒空；来源制品 size 允许零，实际生命周期从当前资产取得。模块总字节预算回归亦通过。模块安装交接已写 docs/module-installation.md 和 docs/client-api-handoff.md，并经 Otty 先告知 Claude 开始客户端适配。
 
@@ -636,19 +638,19 @@ Claude 已在简报第 11 节确认冻结 execution-submission、view=page 与 r
 
 Hook 运行器按 hub-hook/1 和既定三个 subject 原形实现，五个挂点均接入，按顺序运行批准模块中的纯 TS 处理器。零处理器无产品判定；block 原 code/facts、规则 id/版本、授权行与原件 SHA 进入事件、审计和失败证据。处理器不能读取环境/网络、动态生成代码或无限运行。Tool 装载前核对直接/动态/局部 imports 与冻结集合、明确声明及精确六种依赖，Node 内建与计算式 import 拒绝为 IMPORT_NOT_DECLARED。原件不改写；Tool 字节在独立进程中执行，OS 运行隔离和静态密钥留给下一笔第 7 节。professional_permissions 撤下，Tool 增加 MCP annotations/minimumRole/approval；人的授权跟随范围角色，兼容机器和旧客户端 permission 标识。
 
-独立 circle-packs ced41a6 的 products/apv 按原字节冻结与批准，**18/18** 包内测试在 hub 依赖集下通过，实际 Tool 读取工作簿通过。先以零 Hook 派发，再批准 APV Hook 后同一本工作簿报 COMMAND_NOT_IN_TREE 且没有第二次网关提交。Meridian 扩为 Tool+imports、五个 Hook、resources/flows 的完整夹具，并由同一装载器执行。包作者在回归期间继续推进 main 后，验收改为从 Git 固定读取约定提交，避免把移动样本计数当成平台失败；未修改独立包。
+独立 circle-packs ced41a6 的 products/famx 按原字节冻结与批准，**18/18** 包内测试在 hub 依赖集下通过，实际 Tool 读取工作簿通过。先以零 Hook 派发，再批准 FAMX Hook 后同一本工作簿报 COMMAND_NOT_IN_TREE 且没有第二次网关提交。Meridian 扩为 Tool+imports、五个 Hook、resources/flows 的完整夹具，并由同一装载器执行。包作者在回归期间继续推进 main 后，验收改为从 Git 固定读取约定提交，避免把移动样本计数当成平台失败；未修改独立包。
 
 审计中本节的修复有复现验收：执行批准单次消费、终态领取阻断、修订保留私有范围、开发会话族轮换/24 小时绝对寿命/退出吊销、移除开发身份失效、异步 scrypt 与请求/用户名/并发容量、实际解压字节上限及先核权限。文档 get/section 不能越过注册根，机器服务客户端不会继承创建者未持有的读取能力。脚本产品声明记录 verified 与规则核验，不冒充人的 approve。
 
-最终用冻结工作树复核，contracts **4/4**、methods **31/31**、acceptance **189/189**、references **7/7**，共 **231/231**，固定 Circle 8b2ceb6 和 APV ced41a6，**无 skip**。typecheck、diff 和 **714** 归档核验通过。独立包的 18 条另计；没有读取业务原件、连接真实系统/网关、付费模型、改 Circle 或部署。接口与条件执行说明已交接；下一笔按用户新顺序先做第 7 节，再第 6、8、9 节。harness-adapters 和权限导出规范分别由其他作者负责，本分支不修改。
+最终用冻结工作树复核，contracts **4/4**、methods **31/31**、acceptance **189/189**、references **7/7**，共 **231/231**，固定 Circle 8b2ceb6 和 FAMX ced41a6，**无 skip**。typecheck、diff 和 **714** 归档核验通过。独立包的 18 条另计；没有读取业务原件、连接真实系统/网关、付费模型、改 Circle 或部署。接口与条件执行说明已交接；下一笔按用户新顺序先做第 7 节，再第 6、8、9 节。harness-adapters 和权限导出规范分别由其他作者负责，本分支不修改。
 
 ## 40：第 5 节独立复核与第 7 节边界补充
 
-维护者在独立工作树复核 8e212a6，固定 Circle 8b2ceb6、APV ced41a6，完整 **231/231** 与 **714** 归档核验通过；报告已就地升级演示栈、迁移 28 并轮换开发审批人口令。本代理未部署、未读取口令或业务文件。
+维护者在独立工作树复核 8e212a6，固定 Circle 8b2ceb6、FAMX ced41a6，完整 **231/231** 与 **714** 归档核验通过；报告已就地升级演示栈、迁移 28 并轮换开发审批人口令。本代理未部署、未读取口令或业务文件。
 
 代码复核指出的第 5 节缺口并入第 7 节：所有归档入口改为实际字节 boundedUnzip；主机闭集移出工作簿 parser，由批准的资源声明与产品线 Hook 核验；Hook 和 Tool 同用隔离子进程及批量命令核验；三个 subject 形状校验；权限错误不冒充审批修订过期；变更集决定记录 singleAdminMode；访客去掉 credentials.use。增加三项绑定逐项篡改、非草稿所有者、blocked 决定、最后根管理员、权限/租约/来源错误、普通资源 unknown/独立 reconcile 的验收。开发身份 role_initialized 后不覆盖治理角色是既定行为；更改身份文件不会重新授予角色，范围角色须走变更集。
 
-简报 host subject 现为 {command,host,method,kwargs}，三个 verify 的 binding.resource 带批准版本的 {assetId,version,sha256,declaration}。allowedTestHosts/hostCommandPolicies 只从批准声明读取；运行文件里的同名策略不作授权。独立 APV 样本固定为 316760a / 1.2.0 / 28 条包内测试，原字节装入，未改独立包；Meridian 五挂点同形。
+简报 host subject 现为 {command,host,method,kwargs}，三个 verify 的 binding.resource 带批准版本的 {assetId,version,sha256,declaration}。allowedTestHosts/hostCommandPolicies 只从批准声明读取；运行文件里的同名策略不作授权。独立 FAMX 样本固定为 316760a / 1.2.0 / 28 条包内测试，原字节装入，未改独立包；Meridian 五挂点同形。
 
 用户决定纯内网明文认证可作显式例外：默认仍要求 HTTPS；只有管理员登记 runtime-profile 的 allowPlaintextAuthentication:true、经独立审批人才生效；修改需新版本重批。每次调用证据与审计永久留 plaintextAuthentication:true。执行网关及外部签发方的 HTTPS 要求保持。维护者确认当前某查询镜像为非回环 HTTP，认证来自注入的个人凭据而非 profile 文件；源地址、业务内容、令牌均不记录。
 
@@ -658,11 +660,11 @@ Hook 运行器按 hub-hook/1 和既定三个 subject 原形实现，五个挂点
 
 先写静态模式、隔离和明文例外验收，旧实现均能复现缺口后实现。static-secret 只写登记/轮换，模式不可原地改变；running 的批准资源按当前角色和 readers 绑定密钥，授权成员可以通过 worker 使用共享资源，不能读其他人的凭据。网关收到 Bearer、没有签发/introspect 调用，吊销和版本/权限/fence 再核有效；资源返回授权材料时拒绝保留，不将其写入日志或 API。
 
-Mac 内核隔离限制 Skill/Tool/Hook 及后代读取文件内容、写入、网络和其他进程信息，vault、运行配置直接/符号链接读取被拒；固定 Circle 实际执行合成脚本、工具与 HTTPS/CA 组合继续通过。模型凭据 home 在退出时清理，短期注入副本及无效令牌清理；未支持的平台以 SANDBOX_UNAVAILABLE 明确失败，没有无限权降级。Hook 在同一 tool-host 子进程按批次核验，10 秒/16 MiB 返回上限，subject 校验与批准声明保持原形。新版 APV 316760a 原字节装入，**28/28** 包内测试通过；独立包里 parser 的剩余闭集已提醒包作者，本代理不改包原件。
+Mac 内核隔离限制 Skill/Tool/Hook 及后代读取文件内容、写入、网络和其他进程信息，vault、运行配置直接/符号链接读取被拒；固定 Circle 实际执行合成脚本、工具与 HTTPS/CA 组合继续通过。模型凭据 home 在退出时清理，短期注入副本及无效令牌清理；未支持的平台以 SANDBOX_UNAVAILABLE 明确失败，没有无限权降级。Hook 在同一 tool-host 子进程按批次核验，10 秒/16 MiB 返回上限，subject 校验与批准声明保持原形。新版 FAMX 316760a 原字节装入，**28/28** 包内测试通过；独立包里 parser 的剩余闭集已提醒包作者，本代理不改包原件。
 
 非回环 HTTP 认证默认拒绝。管理员登记 runtime-profile 的 allowPlaintextAuthentication:true，经独立决定才注入 worker；即使 scope 普通允许自决，该例外仍不能自批。改字段变新 draft、立即阻止依赖运行。合成验收核对无例外拒绝、有例外批准后放行、修改重批，以及 SourceRevision/Evidence/派发审计的永久 plaintextAuthentication:true 标记。当前真实查询源的例外需部署管理员单独登记/批准；本代理未更改真实配置。
 
-第 40 节列出的第 5 节复核补项与盲区均加入本笔回归。最终冻结工作树 contracts **4/4**、methods **35/35**、acceptance **201/201**、references **7/7**，共 **247/247**，固定 Circle 8b2ceb6、APV 316760a，**无 skip**；typecheck、diff、**714** 归档核验通过。独立包 28 条另计。未 push、部署、改真实网关/Circle/独立包或读取业务原件；后续提交按用户新规则附 Signed-off-by。
+第 40 节列出的第 5 节复核补项与盲区均加入本笔回归。最终冻结工作树 contracts **4/4**、methods **35/35**、acceptance **201/201**、references **7/7**，共 **247/247**，固定 Circle 8b2ceb6、FAMX 316760a，**无 skip**；typecheck、diff、**714** 归档核验通过。独立包 28 条另计。未 push、部署、改真实网关/Circle/独立包或读取业务原件；后续提交按用户新规则附 Signed-off-by。
 
 ## 42：只读失联、原件指针与回报处理的修复验收
 
@@ -674,17 +676,17 @@ worker 原件先以 SHA 存进 B，再回报 objectKey/sha256/size，C 在当前
 
 文档搜索文件读到一半超时，已读原件和命中保留，coverage.stopped 与 nextCursor 精确指向未完成文件，结果 partial；零进度/目录遍历超时给明确错误和覆盖统计。游标续页通过，没有截断或推断未读命中。工具消费者、异步知识投影及指针篡改验收通过；最终完整回归结果待冻结验证结束后补入。第 6 节通知/队列已先写验收；用户新审计要求排在本修复之后、第 6 节之前，独立包的新固定 224daa6 也在那笔核对。
 
-冻结验证完整 contracts **4/4**、methods **37/37**、acceptance **206/206**、references **7/7**，共 **254/254**，固定 Circle 8b2ceb6、APV 316760a，**无 skip**。最后按用户要求将预览替换改为剔除 NUL 并加 sanitized/编码统计，原件/存储拒绝回读专项重新 **2/2**；最终 typecheck、diff、**714** 归档核验通过。完整回归与最后的小元数据专项分别记录，未用真实设备或模型替代。仅本地签署提交，未 push、部署或改变演示栈。
+冻结验证完整 contracts **4/4**、methods **37/37**、acceptance **206/206**、references **7/7**，共 **254/254**，固定 Circle 8b2ceb6、FAMX 316760a，**无 skip**。最后按用户要求将预览替换改为剔除 NUL 并加 sanitized/编码统计，原件/存储拒绝回读专项重新 **2/2**；最终 typecheck、diff、**714** 归档核验通过。完整回归与最后的小元数据专项分别记录，未用真实设备或模型替代。仅本地签署提交，未 push、部署或改变演示栈。
 
 ## 43：独立只读复核与模型边界补项
 
 维护者报告 0b5406a 独立全量 **254/254** 通过、演示栈迁移 29 已应用，历史只读冻结为零。本代理未部署或触碰演示栈。维护者新增 NUL 小节/搜索结果、get 大件指针、effect 显式声明、迁移释放审计和写 unknown 保留、supervisor 日志、候选技能内容、网关健康与正规拓扑读取的补项；各项已先写合成验收，不将维护者的真实环境观察当成本代理的实机测试。
 
-本笔先完成审计修正：带凭据的只读 Tool 最低成员，访客仅匿名读取；非申请人资格不足为 FORBIDDEN_ACTION；主机对象全部按形状解析，闭集与函数启用交批准 Hook；五挂点 subject 与批准 resource.declaration 定形。Tool/Hook 子进程加 256MiB 堆上限、命令按 200 个 subject 分批，每批十秒，APV 固定 224daa6 / 1.2.1 原字节验收 **29/29**。
+本笔先完成审计修正：带凭据的只读 Tool 最低成员，访客仅匿名读取；非申请人资格不足为 FORBIDDEN_ACTION；主机对象全部按形状解析，闭集与函数启用交批准 Hook；五挂点 subject 与批准 resource.declaration 定形。Tool/Hook 子进程加 256MiB 堆上限、命令按 200 个 subject 分批，每批十秒，FAMX 固定 224daa6 / 1.2.1 原字节验收 **29/29**。
 
 按用户决定实现每运行一个回环临时模型代理：256 位 nonce、固定批准上游、剥凭据头、双向 16MiB、SSE 流式、只记调用元数据；失败为 MODEL_PROXY_UNAVAILABLE / MODEL_UPSTREAM_REJECTED，关闭覆盖成功、取消、超时和 unknown，没有真实 key 文件降级。真实 key 留在可信进程/保险箱，沙箱 home 只有 nonce；固定 Circle 的合成技能读取自己的 credentials.json，产物只有经掩码的 nonce，直接/符号链接读取运行配置与 vault 均失败。产物按字节脱敏后重算 SHA，记录 sanitized；事件和回答同样脱敏。
 
-第一轮加入代理元数据后，取消验收发现事件权限撤销错误覆盖本地退出观察；已修正，专项 **1/1**，unknown 与远端停止未确认保持。重新完整冻结回归 contracts **4/4**、methods **40/40**、acceptance **207/207**、references **7/7**，共 **258/258**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。最后将旧脚本模型配置的 key 封入保险箱，授权记录只存占位引用，配置摘要不改；此小改动的固定 RPC/静态模式联合验证结果另记后续行。
+第一轮加入代理元数据后，取消验收发现事件权限撤销错误覆盖本地退出观察；已修正，专项 **1/1**，unknown 与远端停止未确认保持。重新完整冻结回归 contracts **4/4**、methods **40/40**、acceptance **207/207**、references **7/7**，共 **258/258**，固定 Circle 8b2ceb6 / FAMX 224daa6，**无 skip**。最后将旧脚本模型配置的 key 封入保险箱，授权记录只存占位引用，配置摘要不改；此小改动的固定 RPC/静态模式联合验证结果另记后续行。
 
 保险箱引用小改动最终固定 Circle 联合 **9/9**（含取消、慢运行续期、静态共享与隔离）、typecheck 通过；上述完整回归与最后的小改动专项分别记录。diff 检查通过。仅本地签署提交，后续只读/网关/通知代码和验收继续留工作区，未混入本笔。
 
@@ -698,7 +700,7 @@ worker 原件先以 SHA 存进 B，再回报 objectKey/sha256/size，C 在当前
 
 补充联合 **6/6**、完整原件两条与显式 effect 契约验证通过，完整冻结回归待下一行记录。第 6 节通知验收已扩为无任务的失败 bot 也有持久、私有通知，仍留在工作区，未混入这笔。
 
-最终冻结完整 contracts **5/5**、methods **40/40**、acceptance **213/213**、references **7/7**，共 **265/265**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff 与 **714** 归档核验通过；补充联合为 **12/12**。仅本地签署提交，不 push、不部署、不改真实网关或 Circle。第 6/8 节的当前工作仍未混入本笔。
+最终冻结完整 contracts **5/5**、methods **40/40**、acceptance **213/213**、references **7/7**，共 **265/265**，固定 Circle 8b2ceb6 / FAMX 224daa6，**无 skip**。typecheck、diff 与 **714** 归档核验通过；补充联合为 **12/12**。仅本地签署提交，不 push、不部署、不改真实网关或 Circle。第 6/8 节的当前工作仍未混入本笔。
 
 ## 45：修订 3 第 6 节，持久通知与工作队列
 
@@ -706,7 +708,7 @@ worker 原件先以 SHA 存进 B，再回报 objectKey/sha256/size，C 在当前
 
 SSE 与轮询共用游标，保存已处理序号后补读；连接每轮重新认证，过期/撤权/内部错误用明确控制事件结束，背压/断线/关停会释放等待。队列按当前资格与所有权算 count、最久等待与超 SLA；任务输入/原件不为计数全量载入。assignedToMe 不推断模型文本；没有持久分派即零。原件、决定、脚本事实与未知不混为通知中的平台批准。专项 **5/5**、第 6/8 节临时联合 **7/7**、typecheck 通过；完整冻结验证待下一行。
 
-第 6 节最终冻结 contracts **5/5**、methods **40/40**、acceptance **218/218**、references **7/7**，共 **270/270**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。只本地签署提交，未 push 或部署；第 8 节查询代码和第 9 节的缺接口验收仍留工作区，未混入本节。
+第 6 节最终冻结 contracts **5/5**、methods **40/40**、acceptance **218/218**、references **7/7**，共 **270/270**，固定 Circle 8b2ceb6 / FAMX 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。只本地签署提交，未 push 或部署；第 8 节查询代码和第 9 节的缺接口验收仍留工作区，未混入本节。
 
 ## 46：修订 3 第 8 节，授权分面与稳定列表游标
 
@@ -714,7 +716,7 @@ SSE 与轮询共用游标，保存已处理序号后补读；连接每轮重新�
 
 tasks/assets/skills/change-sets/scopes/roles/service-clients/object-types/objects 使用统一 SQL 分面，工具在完整调用者目录内筛选分页；未声明的维度不推断。范围、产品线、flow、状态/生命周期、owner、年龄区间、更新时间与年龄排序都交接；注册主体与观测者的 owner 含义逐项明确。迁移 32 补资产/技能/服务客户端更新时间及触发器，不更改既有版本内容摘要。原件/凭据不会进入额外计数或游标。typecheck、专项通过，冻结完整回归待下一行。
 
-第 8 节最终冻结 contracts **5/5**、methods **40/40**、acceptance **222/222**、references **7/7**，共 **274/274**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。仅本地签署提交；维护者刚指出的模型上游批准 allowlist 修复及第 9 节 MCP 缺接口验收另留工作区，不混入本节。
+第 8 节最终冻结 contracts **5/5**、methods **40/40**、acceptance **222/222**、references **7/7**，共 **274/274**，固定 Circle 8b2ceb6 / FAMX 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。仅本地签署提交；维护者刚指出的模型上游批准 allowlist 修复及第 9 节 MCP 缺接口验收另留工作区，不混入本节。
 
 ## 47：模型上游批准绑定与独立健康检查租约
 
@@ -728,7 +730,7 @@ health 与执行共用 gateway resource 会在冻结或忙时挡住状态检查�
 
 迁移 29/30 的校验不重写。维护者指出第 30 版把已 failed/UPSTREAM_TIMEOUT 也纳入历史释放审计；第 29 版缺状态日志，不能用现态证明历史一定 unknown。已向维护者请求补偿口径：新增迁移只选当前 unknown read；历史保留并补偿说明“原状态无法证明”，不恢复失效租约。此项不依赖上游模型修复，也没有在本机/现网直接改库。
 
-模型/健康修复最终冻结 contracts **5/5**、methods **42/42**、acceptance **224/224**、references **7/7**，共 **278/278**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。只本地签署提交，未连真实模型、网关或部署；随后按维护者授权合入 main 的中立适配器/公开规范，保留其文件和作者，不改那两个分工目录。
+模型/健康修复最终冻结 contracts **5/5**、methods **42/42**、acceptance **224/224**、references **7/7**，共 **278/278**，固定 Circle 8b2ceb6 / FAMX 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。只本地签署提交，未连真实模型、网关或部署；随后按维护者授权合入 main 的中立适配器/公开规范，保留其文件和作者，不改那两个分工目录。
 
 ## 48：按授权合并公开规范与中立适配器
 
@@ -746,11 +748,11 @@ MCP 使用官方 SDK 固定 1.32.1（仅增加公开依赖，安装禁 lifecycle
 
 专项联合 **14/14**、另资源分页 **1/1**，typecheck；适配器合入后方法 **129/129**（含本笔两个方法），均无 skip。完整冻结验收待下一行。没有真实系统/模型、设备、付费调用或部署，标识继续 CIRCLE_SERVER_* 等兼容前缀，不在本笔零散改名。
 
-第 9 节首轮完整冻结 contracts **5/5**、methods **129/129**、acceptance **237/237**、references **7/7**，共 **378/378**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。最后复核将兼容性收紧为成功 Skill 装载事件（仅文件齐全的运行不能宣称兼容），重放在已解析 scope 再核权限，并给 MCP schema 错误保持 INVALID_PAYLOAD 分类。增加装载负例和参数错误不回显值两条；最终冻结回归运行中，不用首轮代替最后版本。
+第 9 节首轮完整冻结 contracts **5/5**、methods **129/129**、acceptance **237/237**、references **7/7**，共 **378/378**，固定 Circle 8b2ceb6 / FAMX 224daa6，**无 skip**。最后复核将兼容性收紧为成功 Skill 装载事件（仅文件齐全的运行不能宣称兼容），重放在已解析 scope 再核权限，并给 MCP schema 错误保持 INVALID_PAYLOAD 分类。增加装载负例和参数错误不回显值两条；最终冻结回归运行中，不用首轮代替最后版本。
 
 第 47 节的小项继续列为未完成/待决定，尤其迁移 30 历史释放分类补偿尚无维护者答复；不重写历史校验、不直接修现网库。MCP 与中立库的实现不依赖它。运行身份/前缀统一改名、适配器第四轮 warning 更新、各 harness 本地权限文件映射、Agent/Command 的 Circle 原生执行仍留各自后续范围，不将协议接入算成这些实机能力已交付。
 
-第 9 节最后版本完整冻结 contracts **5/5**、methods **129/129**、acceptance **239/239**、references **7/7**，共 **380/380**，固定 Circle 8b2ceb6 / APV 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。新增两个负例包含在此完整回归；原件投影、独立批准、固定 Circle 实际装载、工具/资源/提示/MCP 写确认及全部旧机制均通过。仅本地签署提交，未 push、PR、部署、连接真实系统或付费模型；主工作树、Circle、网关 Python、独立产品包和两处分工文件没有改动。当前 r3 第 3/4/5/7/6/8/9 各节已分别交付，明确列出的补项与历史补偿决定仍保留，不冒充全部已修。
+第 9 节最后版本完整冻结 contracts **5/5**、methods **129/129**、acceptance **239/239**、references **7/7**，共 **380/380**，固定 Circle 8b2ceb6 / FAMX 224daa6，**无 skip**。typecheck、diff、**714** 原件归档核验通过。新增两个负例包含在此完整回归；原件投影、独立批准、固定 Circle 实际装载、工具/资源/提示/MCP 写确认及全部旧机制均通过。仅本地签署提交，未 push、PR、部署、连接真实系统或付费模型；主工作树、Circle、网关 Python、独立产品包和两处分工文件没有改动。当前 r3 第 3/4/5/7/6/8/9 各节已分别交付，明确列出的补项与历史补偿决定仍保留，不冒充全部已修。
 
 ## 50：独立复核与现网反馈排期
 
@@ -764,7 +766,7 @@ MCP 使用官方 SDK 固定 1.32.1（仅增加公开依赖，安装禁 lifecycle
 
 main 的 ab12ed4 是适配器第四轮，用户允许后续再签署 merge；不自行改纯库或权限规范。私有产品包已有 1.2.2 别名/主机名大小写修正，合成验收仍固定 224daa6 / 29 条，不将现网新包代入旧冻结样本。
 
-派发前拒绝修复完整回归 contracts **5/5**、methods **129/129**、acceptance **245/245**、references **7/7**，共 **386/386**、无 skip，固定 Circle 8b2ceb6 / APV 224daa6；typecheck、diff 与 **714** 归档核验通过。只本地签署提交，未部署；worker 必须同时换到本笔代码才能保留网关拒绝事实，旧 worker 不会因只重启 server 自动升级。滚动升级机制仍是独立补项。两条 runtime 修订与中立治理的失败复现、历史补偿准备仍留工作区，未混入此笔提交。
+派发前拒绝修复完整回归 contracts **5/5**、methods **129/129**、acceptance **245/245**、references **7/7**，共 **386/386**、无 skip，固定 Circle 8b2ceb6 / FAMX 224daa6；typecheck、diff 与 **714** 归档核验通过。只本地签署提交，未部署；worker 必须同时换到本笔代码才能保留网关拒绝事实，旧 worker 不会因只重启 server 自动升级。滚动升级机制仍是独立补项。两条 runtime 修订与中立治理的失败复现、历史补偿准备仍留工作区，未混入此笔提交。
 
 ## 51：模型运行绑定批准修订
 
@@ -772,7 +774,7 @@ main 的 ab12ed4 是适配器第四轮，用户允许后续再签署 merge；不
 
 专项与既有 RPC 联合 **10/10**、无 skip（固定 Circle 8b2ceb6）：草稿/新批准不停止实际运行的 Circle，停用其冻结版本后观察到本地进程退出、unknown 且不宣称远端已停；另一次真实固定 RPC 用新批准 2.0.0 成功交付，任务/代理事件/产物运行回执均绑定 2.0.0 和同一 profileSha。未调用真实模型。完整冻结回归随后在独立只读验证工作树运行，结果另记；不把专项当成完整回归。
 
-54f0ed7 的完整冻结回归 contracts **5/5**、methods **129/129**、acceptance **248/248**、references **7/7**，共 **389/389**、无 skip，固定 Circle 8b2ceb6 / APV 224daa6。该验证工作树没有后续补项文件，不混用正在编辑的版本。
+54f0ed7 的完整冻结回归 contracts **5/5**、methods **129/129**、acceptance **248/248**、references **7/7**，共 **389/389**、无 skip，固定 Circle 8b2ceb6 / FAMX 224daa6。该验证工作树没有后续补项文件，不混用正在编辑的版本。
 
 ## 52：中立 Skill 的即时治理与 MCP 回执
 
@@ -798,9 +800,9 @@ provider 已声明产品线但没有 alias 的，回落包 prefix/packageId；�
 
 维护者独立复核 288faa5 全量 **386/386**，Grok 无高项；指出摘要变化但内置实现未升版。先写 1.1.0 负例与成功释放标记缺失、三条派发未知边界；升内置版本到 **1.1.0**，保留 flow/1 兼容，部署须管理员重新登记/独立批准当前 version/flow/implementationSha256。合成旧批准实现不能充当新版本；旧任务 methodAssetId 不自动迁移，新提交明确用新实现才执行。产品线模块 SHA 与治理状态未改，两份交接同步。
 
-成功终态也如实写 remoteLeaseReleased，失败释放写 false/leaseReleaseError；拒绝体有 task_id/dispatched:true、成功 submit 后 status 命中契约诊断都保持 unknown、不释放。维护者又提供跨设备相同命令被误判的统计（仅记数字：五例、十六步，不存真实日志/地址），先写设备归属方法复现 **0/3**。改为接收 {environment,topology} 原件，按 conf.device_ips 或 topology.applies_to.device_ssh_ips 顺序映射 APV_n；不唯一/缺失不猜。每设备独立推进日志游标，不再要求命令整例唯一。主机行维持主机归属，检查点/整案结论不替代设备步证据。
+成功终态也如实写 remoteLeaseReleased，失败释放写 false/leaseReleaseError；拒绝体有 task_id/dispatched:true、成功 submit 后 status 命中契约诊断都保持 unknown、不释放。维护者又提供跨设备相同命令被误判的统计（仅记数字：五例、十六步，不存真实日志/地址），先写设备归属方法复现 **0/3**。改为接收 {environment,topology} 原件，按 conf.device_ips 或 topology.applies_to.device_ssh_ips 顺序映射 FAMX_n；不唯一/缺失不猜。每设备独立推进日志游标，不再要求命令整例唯一。主机行维持主机归属，检查点/整案结论不替代设备步证据。
 
-合成方法与真实 worker 回报链：同命令跨两设备、同设备重复、仅缺 APV_1 命令、环境/拓扑两种映射、映射缺失/重复/冲突；专项 **21/21**、执行链联合 **41/41**，另空/null task_id 不许断言未派发方法 **1/1**，无 skip，typecheck/diff 通过。按需拓扑为已持租约内只读，原件随 gateway-results 入 B；取不到时仍可交付逐步 unknown/partial，不能标 observed。解析暂在 packs/apv，接口留给独立产品包 Tool 后续接管，未移动/修改私有产品包。完整冻结回归另跑；没有真实网关/设备投递。
+合成方法与真实 worker 回报链：同命令跨两设备、同设备重复、仅缺 FAMX_1 命令、环境/拓扑两种映射、映射缺失/重复/冲突；专项 **21/21**、执行链联合 **41/41**，另空/null task_id 不许断言未派发方法 **1/1**，无 skip，typecheck/diff 通过。按需拓扑为已持租约内只读，原件随 gateway-results 入 B；取不到时仍可交付逐步 unknown/partial，不能标 observed。解析暂在 packs/famx，接口留给独立产品包 Tool 后续接管，未移动/修改私有产品包。完整冻结回归另跑；没有真实网关/设备投递。
 
 ## 56：合入已确认的适配器第四轮
 
@@ -808,11 +810,11 @@ provider 已声明产品线但没有 alias 的，回落包 prefix/packageId；�
 
 合并后的方法 **145/145**、references **7/7**、typecheck 与 **714** 归档核验通过，无 skip。packages/harness-adapters 与 ab12ed4 字节相同，permission-export.md 未改。完整冻结验收从该 merge 单独运行，排除队列/分页未通过复现。
 
-774f65f 冻结全套 contracts **5/5**、methods **145/145**、acceptance **266/266**、references **7/7**，共 **423/423**、无 skip，固定 Circle 8b2ceb6 / APV 224daa6。队列/通知未完成补项不在该树中。
+774f65f 冻结全套 contracts **5/5**、methods **145/145**、acceptance **266/266**、references **7/7**，共 **423/423**、无 skip，固定 Circle 8b2ceb6 / FAMX 224daa6。队列/通知未完成补项不在该树中。
 
 ## 57：按现网字段纠正设备映射
 
-维护者只读核对指出：部署版 env_prepare 没有 conf.device_ips，topology 也没有 applies_to（它仅是生成器输入，不能当返回证据）。b65478e 因而无法覆盖现网映射；本笔更正该假设，不把合成两候选通过当真实协议通过。新增当前真实形状的合成方法复现：正例失败、负例通过。补第三候选 topology.devices：type=负载均衡、全部名字符合 APV<index>、索引集合恰为 0..device_count-1；日志 IP 唯一落在对应设备 ipv4/CIDR 中才归属，共享虚拟 IP 不猜。任意名字、缺/重复/越界序号或计数不符仍 unknown/device_map_unavailable。优先级保留未来 conf.device_ips、有序 applies_to、最后名字规则，实际无字段则回退。
+维护者只读核对指出：部署版 env_prepare 没有 conf.device_ips，topology 也没有 applies_to（它仅是生成器输入，不能当返回证据）。b65478e 因而无法覆盖现网映射；本笔更正该假设，不把合成两候选通过当真实协议通过。新增当前真实形状的合成方法复现：正例失败、负例通过。补第三候选 topology.devices：type=负载均衡、全部名字符合 FAMX<index>、索引集合恰为 0..device_count-1；日志 IP 唯一落在对应设备 ipv4/CIDR 中才归属，共享虚拟 IP 不猜。任意名字、缺/重复/越界序号或计数不符仍 unknown/device_map_unavailable。优先级保留未来 conf.device_ips、有序 applies_to、最后名字规则，实际无字段则回退。
 
 紧接升 **1.1.1**，不让已发出的 1.1.0 同版本不同实现摘要；两份交接同步三来源边界和 worker 排空无截止/在途 claim 仍可能完成一笔的限制。专项 **22/22**、无 skip，typecheck/diff 通过，新增真实 worker 路径返回 source=gateway.bed_topology.devices，未使用真实数据或访问网关。维护者 Grok 对迁移/worker/1.1.0 无高中项；两个迁移归因低项随后用追加修复处理，不覆盖已发迁移字节。队列/分页与通知完整性仍在工作区继续，不混入本笔。
 
@@ -840,7 +842,7 @@ defbeb2 的完整冻结回归 contracts **5/5**、methods **147/147**、acceptan
 
 abdb701 的完整验收 contracts **5/5**、methods **147/147**；acceptance **279/280**，唯一失败为旧 bot 断言读取通知 payload.error，按第 58 节精简契约应读取 reason.code。完整 bot 失败记录仍保留原 error，没有放宽治理规则。该断言已同步；新快照与通知/bot/admin 联合 **18/18**、无 skip，typecheck/diff 通过。最后版本重新全套回归，结果随后记录；不把上一轮或专项当作最后全绿。
 
-最后 **82b260d** 冻结全套 contracts **5/5**、methods **147/147**、acceptance **282/282**、references **7/7**，共 **441/441，无 skip**。typecheck、diff 与 **714** 原件归档核验通过，固定 Circle 8b2ceb6 / APV 224daa6。包含 task/admin 真实并发裁剪回归、规范通知断言及前面全部补项；工作区干净，仅随后追加这条验证记录。
+最后 **82b260d** 冻结全套 contracts **5/5**、methods **147/147**、acceptance **282/282**、references **7/7**，共 **441/441，无 skip**。typecheck、diff 与 **714** 原件归档核验通过，固定 Circle 8b2ceb6 / FAMX 224daa6。包含 task/admin 真实并发裁剪回归、规范通知断言及前面全部补项；工作区干净，仅随后追加这条验证记录。
 
 本轮提交全部签署、本地保留，未 push/PR/部署、未连真实网关/设备/资料源或付费模型，未改 Circle、网关 Python、独立产品包或分工规范。已通过 Otty 逐笔交接维护者。执行内置版为 **1.1.1**，部署者须重新登记/独立批准该实现，旧任务不自动迁移；独立产品线模块按自身冻结版本。明确未接统一分面的其它登记簿按第 58 节 handoff 的次序继续，服务标识统一改名、真实上机观察与部署归维护者后续范围，不用本机合成全绿替代这些事实。
 
@@ -858,7 +860,7 @@ abdb701 的完整验收 contracts **5/5**、methods **147/147**；acceptance **2
 
 只本地签署提交、不 push/部署，不改真实网关、Circle、产品包、历史迁移或分工目录；完整冻结回归随后跑最终版本，不将专项替代全套。
 
-最终 **f09fae9** 冻结全套 contracts **5/5**、methods **149/149**、acceptance **286/286**、references **7/7**，共 **447/447，无 skip**；typecheck、diff 与 **714** 原件归档核验通过。固定 Circle 8b2ceb6 / APV 224daa6，仅用本机脚本模型与合成资源。包含三轮稳定回放后的全套重验、共享地址不消费设备游标、锚点内升序回填的已披露限制、事件正文引用及权限/保留窗口、可配离线阈值。本轮执行实现字节未改，仍为 **1.1.1**；083cc44 与 f09fae9 已本地签署，随后仅提交这条最终验证记录，未 push 或部署。
+最终 **f09fae9** 冻结全套 contracts **5/5**、methods **149/149**、acceptance **286/286**、references **7/7**，共 **447/447，无 skip**；typecheck、diff 与 **714** 原件归档核验通过。固定 Circle 8b2ceb6 / FAMX 224daa6，仅用本机脚本模型与合成资源。包含三轮稳定回放后的全套重验、共享地址不消费设备游标、锚点内升序回填的已披露限制、事件正文引用及权限/保留窗口、可配离线阈值。本轮执行实现字节未改，仍为 **1.1.1**；083cc44 与 f09fae9 已本地签署，随后仅提交这条最终验证记录，未 push 或部署。
 
 ## 63：按客户端消费者统一事件元数据
 
@@ -872,7 +874,7 @@ abdb701 的完整验收 contracts **5/5**、methods **147/147**；acceptance **2
 
 23407a3 第二轮 contracts **6/6**、methods **150/150**，acceptance **289/290**；角色夹具和根不可继承读取已过，唯一失败是主机策略在改版后等待 failed 超过十秒。单独重跑该项 **1/1**；不把偶发时限称作已确定的产品错误。进一步纠正就绪 helper：旧注册记录也不能证明新进程已就绪，改等新子进程自己的 worker-ready/username 回执，维持十秒启动限。主机策略用例包含多次批准、排空重启与多笔验证排队，失败等待设有界三十秒，断言与权限不放宽。新就绪逻辑下主机策略连续三次 **1/1**、角色/worker/admin **14/14**，无 skip，typecheck/diff 通过；最终重新冻结验收。
 
-最终 **9fa2420** 冻结全套 contracts **6/6**、methods **150/150**、acceptance **290/290**、references **7/7**，共 **453/453，无 skip**；typecheck、diff 与 **714** 归档核验通过。固定 Circle 8b2ceb6 / APV 224daa6，只用脚本模型和合成数据库/资料源/网关。生产实现提交 **82ad8bc**，测试边界修正 **23407a3、9fa2420**，均已签署、本地保留；随后只追加这条验证记录。五条元数据/内容约束与 worker 阈值交接已写明，未 push、部署或碰 7420/真实网关/独立产品包，执行实现仍 **1.1.1**。
+最终 **9fa2420** 冻结全套 contracts **6/6**、methods **150/150**、acceptance **290/290**、references **7/7**，共 **453/453，无 skip**；typecheck、diff 与 **714** 归档核验通过。固定 Circle 8b2ceb6 / FAMX 224daa6，只用脚本模型和合成数据库/资料源/网关。生产实现提交 **82ad8bc**，测试边界修正 **23407a3、9fa2420**，均已签署、本地保留；随后只追加这条验证记录。五条元数据/内容约束与 worker 阈值交接已写明，未 push、部署或碰 7420/真实网关/独立产品包，执行实现仍 **1.1.1**。
 
 ## 64：按合并简报继续登记簿查询
 
@@ -904,11 +906,11 @@ B 三类先写旧路由 **0/4**（与 operations 三例顺序复现合计 **0/7*
 
 先写历史产品/来源 pin 验收，旧实现 **1/5**（基础来源实时 ACL 负例原本成立），随后实现内部 `{assetId,version,sha256,digest?}` 精确绑定。来源制品与产品模块读取历史 approved/running 修订，未指定版本时选择本资产最新批准修订；跨产品/原生多实现必须显式选择，旧 assetId 字符串不被称作冻结。缓存与原件读取前重核批准摘要、历史与最新批准 readers 交集及当前角色；草稿收窄 readers 不撤旧批准 pin，批准 reader 撤销、旧修订 disabled/retired 和批准失效均拒绝。pin 只适用于批准清单中的自有原件记录，basis 引用、企业原件及其它来源继续原实时 ACL；补篡改记录摘要、空 digest 和缓存回执边界。合法合成 builders 明确选各自方法，通用请求/任务提交不偷注入 selector，无 selector 歧义负例仍有效。
 
-新历史绑定六例与既有 APV/执行链/外部来源/模块/服务客户端相关六文件 **47/47**，providers 方法 **8/8**，共 **55/55，无 skip**；typecheck/diff 通过，固定 Circle 8b2ceb6、冻结产品包 ba06eed，只用合成资源和脚本模型。原生 1.1.1 及摘要依赖、HTTP 路由、数据库迁移/归档字节不改；公开 SAR 语义与旧任务不自动重绑。A2 契约待复核、A3 未实施，本步单独本地签署，全套仍由维护者跑；未 push、部署或访问 7420/真实网关/Circle/独立包工作树。
+新历史绑定六例与既有 FAMX/执行链/外部来源/模块/服务客户端相关六文件 **47/47**，providers 方法 **8/8**，共 **55/55，无 skip**；typecheck/diff 通过，固定 Circle 8b2ceb6、冻结产品包 ba06eed，只用合成资源和脚本模型。原生 1.1.1 及摘要依赖、HTTP 路由、数据库迁移/归档字节不改；公开 SAR 语义与旧任务不自动重绑。A2 契约待复核、A3 未实施，本步单独本地签署，全套仍由维护者跑；未 push、部署或访问 7420/真实网关/Circle/独立包工作树。
 
 ## 68：A2 有界 transition 内部契约
 
-仅定义 `hub-execution-transition/1` 的输入/输出 schema、六种严格动作、步骤身份与独立请求摘要，F 的 factory 不反向依赖 B/D/E。当前输入值、canonical SHA 与冻结 binding 双重相等，仍须由 C 按不可变修订提供并核验；自报一致不证明权限。依维护者提供的真实 21 案纯数字统计推导 state 256 KiB、metadata 512 KiB、output 256 KiB、受控解码字节 8 MiB 等初版预算，完整 wire 仍受现有 24/16 MiB 限制；明确请求估算与实测字节的区别、环境/结果 Tool 可见事实与原件清单。有限 JSON、累计预算、规范 base64、原件 SHA/大小与真实字节长度均有合成负例，不截断；sessions 缺样本如实记为覆盖缺口。定向合同 **6/6，无 skip**，typecheck/diff 通过，多 agent 交叉复核；只定义数据与校验函数，未注册驱动或新增 HTTP，原生执行 **1.1.1** 字节不改。A3 须待维护者复核本契约后才开始，仅 Meridian 合成流程；APV 新 Tool/flow 由独立产品包负责，旧任务不重绑。未跑全套、push、部署或访问真实系统，全套仍由维护者独立运行。
+仅定义 `hub-execution-transition/1` 的输入/输出 schema、六种严格动作、步骤身份与独立请求摘要，F 的 factory 不反向依赖 B/D/E。当前输入值、canonical SHA 与冻结 binding 双重相等，仍须由 C 按不可变修订提供并核验；自报一致不证明权限。依维护者提供的真实 21 案纯数字统计推导 state 256 KiB、metadata 512 KiB、output 256 KiB、受控解码字节 8 MiB 等初版预算，完整 wire 仍受现有 24/16 MiB 限制；明确请求估算与实测字节的区别、环境/结果 Tool 可见事实与原件清单。有限 JSON、累计预算、规范 base64、原件 SHA/大小与真实字节长度均有合成负例，不截断；sessions 缺样本如实记为覆盖缺口。定向合同 **6/6，无 skip**，typecheck/diff 通过，多 agent 交叉复核；只定义数据与校验函数，未注册驱动或新增 HTTP，原生执行 **1.1.1** 字节不改。A3 须待维护者复核本契约后才开始，仅 Meridian 合成流程；FAMX 新 Tool/flow 由独立产品包负责，旧任务不重绑。未跑全套、push、部署或访问真实系统，全套仍由维护者独立运行。
 
 ## 69：合入设计文档收敛
 
@@ -916,7 +918,7 @@ A1 **b0c3172**、A2 **da3d679** 提交后工作区干净，按维护者授权将
 
 ## 70：provider 受控字节参数
 
-维护者通过 A2，授权开始 A3 前先补派发原件引用。新增合同先复现 **6/7**，再加入 `provider.call.byteArgs` 的参数名到槽映射；普通 args 不得覆盖映射参数，超过 32 KiB 的 base64 仍拒绝。请求摘要核对引用槽并绑定原件 id/SHA/大小，支持只含引用的输入，不迫使 transition 复制正文；纯 Tool 的 byteSlots 同样绑定原件身份，步骤 key 不变。B 的上传上限与受控原件、完整 wire 的独立预算如实区分，未扩大七项预算或通道上限。定向合同 **7/7，无 skip**、typecheck/diff 通过；原生执行 **1.1.1** 一字未改。本补项单独签署，随后 A3 先写 Meridian 合成验收再实现通用驱动，APV 新产品代码仍由独立包负责。维护者对 A1 有一项全量失败正在独立定位，本地不猜原因或重跑全套；未 push、部署或访问真实系统。
+维护者通过 A2，授权开始 A3 前先补派发原件引用。新增合同先复现 **6/7**，再加入 `provider.call.byteArgs` 的参数名到槽映射；普通 args 不得覆盖映射参数，超过 32 KiB 的 base64 仍拒绝。请求摘要核对引用槽并绑定原件 id/SHA/大小，支持只含引用的输入，不迫使 transition 复制正文；纯 Tool 的 byteSlots 同样绑定原件身份，步骤 key 不变。B 的上传上限与受控原件、完整 wire 的独立预算如实区分，未扩大七项预算或通道上限。定向合同 **7/7，无 skip**、typecheck/diff 通过；原生执行 **1.1.1** 一字未改。本补项单独签署，随后 A3 先写 Meridian 合成验收再实现通用驱动，FAMX 新产品代码仍由独立包负责。维护者对 A1 有一项全量失败正在独立定位，本地不猜原因或重跑全套；未 push、部署或访问真实系统。
 
 ## 71：A3 通用执行驱动与 Meridian 合成流程
 
@@ -924,7 +926,7 @@ A1 **b0c3172**、A2 **da3d679** 提交后工作区干净，按维护者授权将
 
 初次 33 条定向 **20 通过、13 失败，无 skip**，无 PostgreSQL 连接终止；按失败记录修复协议 shape 不一致、回报与运行器的锁序、同 Store 多 Execution 实例的过期处理、缺意图写与只读失败分类、核对失败误释放、核对子操作替换逻辑原操作及证据 / release 投影，未归为负载假红或放宽时限。status 可证终态先独立存 B/D，结果读取失败和六种解释缺口只影响交付，不冻结、不重派；大件 / NUL 原件以 canonical JSON 字节入 B，事件 / 回报只带绑定操作和 stage 的 SHA 指针。beforeDispatch 在实际出口强制核验，afterResult 回执与最终候选摘要一致，产品不能省略或换正文。预算补项另先复现部分入队干扰，再以已登记步骤加新增唯一步骤整批预检，超限不留下半批写；有在途操作时不因预算中止它。
 
-最终主体 **33/33**、Hook / 原子预算 **3/3**，共 **36** 个不同集成用例；原生 APV **12/12**、资源身份 **6/6**、网关 **4/4**、拒绝路径 **11/11**，旧消费者 **33/33**；合同 **7/7** 与纯边界方法 **12/12**，合计本轮定向 **88 项通过，无 skip**。预算最后补项后只重跑直接相关三例，不重跑无关主体或全套；最后 typecheck / diff 检查通过。两份完全合成模块以不同 Tool / 回报形状交替运行，工作簿字节参数、故障 / unknown / 独立核对、旧 fence、重复回报、修订 / 权限、全部五挂点、原件回读 SHA 及取消均有断言。原生 `packs/apv/execution` **1.1.1** 全目录与实现摘要保持不变，旧任务未迁移，harness-adapters / permission-export / 历史迁移字节未改。A3 单独本地签署，不 push、不部署、不访问 7420 / 真实网关 / 设备 / 模型；B 的 APV 新产品代码与 C/D 切换、退役仍交维护者协调，完整独立验收由维护者运行。
+最终主体 **33/33**、Hook / 原子预算 **3/3**，共 **36** 个不同集成用例；原生 FAMX **12/12**、资源身份 **6/6**、网关 **4/4**、拒绝路径 **11/11**，旧消费者 **33/33**；合同 **7/7** 与纯边界方法 **12/12**，合计本轮定向 **88 项通过，无 skip**。预算最后补项后只重跑直接相关三例，不重跑无关主体或全套；最后 typecheck / diff 检查通过。两份完全合成模块以不同 Tool / 回报形状交替运行，工作簿字节参数、故障 / unknown / 独立核对、旧 fence、重复回报、修订 / 权限、全部五挂点、原件回读 SHA 及取消均有断言。原生 `packs/famx/execution` **1.1.1** 全目录与实现摘要保持不变，旧任务未迁移，harness-adapters / permission-export / 历史迁移字节未改。A3 单独本地签署，不 push、不部署、不访问 7420 / 真实网关 / 设备 / 模型；B 的 FAMX 新产品代码与 C/D 切换、退役仍交维护者协调，完整独立验收由维护者运行。
 
 ## 72：A3 复核修复与通用错误登记
 
@@ -1012,13 +1014,13 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 
 合入全部修复后，仅本轮 11 个相关集成文件在主树串行使用临时 PostgreSQL，**38/38**；九个相关合同 / 方法文件 **25/25**，共 **63 个不同验收通过、无 skip / 取消**，最终 typecheck / diff 通过。上述是定向组合核验，不能称全套；维护者负责独立全量。停用、坏回报、迟到回报、解释失败与终态证据按各项边界分别断言，未放宽时限或断言；三 agent 并行实现 / 交叉复核，PostgreSQL 始终单 runner，避免相互清理造成假红。
 
-工作树仅本地签署，未 push / 部署 / 接触验证栈、真实网关 / 设备 / 模型、Circle 或独立产品包。原生 packs/apv/execution **1.1.1**、harness-adapters、permission-export、foundation / references 相对本轮 f4e294f 基线零差异。B 的 APV 新 Tool / flow、C/D 切换与退役继续留给维护者协调，不由本轮通用驱动修复自行授权。
+工作树仅本地签署，未 push / 部署 / 接触验证栈、真实网关 / 设备 / 模型、Circle 或独立产品包。原生 packs/famx/execution **1.1.1**、harness-adapters、permission-export、foundation / references 相对本轮 f4e294f 基线零差异。B 的 FAMX 新 Tool / flow、C/D 切换与退役继续留给维护者协调，不由本轮通用驱动修复自行授权。
 
 ## 87：执行交接裁为变更记录
 
-维护者独立复核 **49f8f98** 全量 **623/623、无 skip**（contracts 17、methods 212、acceptance 387、references 7，tsc 通过），A3 合入 main 为 **be9c6c0** 并已推送，server-s2 快进至同一基线。完整结果是维护者外部复核，公开 CI 尚未纳入本轮结论；验证栈继续 **e1ca68d**，本轮不升级。APV 新 Tool / flow 的 B 阶段由 Circle 在独立 circle-packs 实施。
+维护者独立复核 **49f8f98** 全量 **623/623、无 skip**（contracts 17、methods 212、acceptance 387、references 7，tsc 通过），A3 合入 main 为 **be9c6c0** 并已推送，server-s2 快进至同一基线。完整结果是维护者外部复核，公开 CI 尚未纳入本轮结论；验证栈继续 **e1ca68d**，本轮不升级。FAMX 新 Tool / flow 的 B 阶段由 Circle 在独立 circle-packs 实施。
 
-按 handoff-map 裁剪 case-execution-handoff：通用授权、变更集、核验、unknown、凭据与设备结果判定改为设计章节指向；保留原生 **1.1.1** / flow 版本、方法升版运维、提交教程、完整旧运行配置、APV 表标记 / 方法 / 检查点 / 主机名闭集与参数策略、console / reboot 的原阶段限制及三种设备映射来源。旧网关不可达、无有序 IP 和签发方误判明确标成阶段史，后续 cexg 0.3.1 的实际字段只归维护者观察，不冒称部署了 A3。
+按 handoff-map 裁剪 case-execution-handoff：通用授权、变更集、核验、unknown、凭据与设备结果判定改为设计章节指向；保留原生 **1.1.1** / flow 版本、方法升版运维、提交教程、完整旧运行配置、FAMX 表标记 / 方法 / 检查点 / 主机名闭集与参数策略、console / reboot 的原阶段限制及三种设备映射来源。旧网关不可达、无有序 IP 和签发方误判明确标成阶段史，后续 cexg 0.3.1 的实际字段只归维护者观察，不冒称部署了 A3。
 
 两 agent 只读交叉核对产品契约保留，**18** 个本地链接与锚点检查通过，diff / 敏感字面检查通过；仅文档与进度签署，不跑代码测试 / PostgreSQL，不改代码、设计规范或独立包，不 push / 部署。客户端 handoff 的裁剪和顶层未知键说明随后单独提交。
 
@@ -1030,9 +1032,9 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 
 主树两文档 **63 + 18 = 81** 个本地链接 / 锚点通过，代码围栏成对，diff 检查通过。对照表自身原有“状态、事件和交付”带顿号的坏锚点未在本轮改写，新增指向均有效。只签署客户端文档和进度，不运行代码测试 / PostgreSQL，不改变代码、设计规范、README、验证栈或独立产品包；两份 handoff 分笔提交，无 push / 部署。
 
-## 89：APV 外部模块接入验收门禁
+## 89：FAMX 外部模块接入验收门禁
 
-新增单文件 a3-apv-module-flow 验收与纯合成 provider / 原件夹具。默认开关未设时 **1 skip / 0 pass**，不读取外部 catalog、不启动 PostgreSQL；显式开启读取 CIRCLE_PACKS_CATALOG，CIRCLE_PACKS_REF 优先于既有 CIRCLE_PACKS_COMMIT / pin，只解析一次 commit，再按 Git 原字节核完整非隐藏文件集、SHA 与模块 digest，要求 products/apv **1.3.0**。坏目录 / ref / 清单 / ABI 明确失败，不变成 skip；未改写包 transition 或安装字节来放行。handoff 写入一条可在 Hub 仓库根运行的命令。
+新增单文件 a3-famx-module-flow 验收与纯合成 provider / 原件夹具。默认开关未设时 **1 skip / 0 pass**，不读取外部 catalog、不启动 PostgreSQL；显式开启读取 CIRCLE_PACKS_CATALOG，CIRCLE_PACKS_REF 优先于既有 CIRCLE_PACKS_COMMIT / pin，只解析一次 commit，再按 Git 原字节核完整非隐藏文件集、SHA 与模块 digest，要求 products/famx **1.3.0**。坏目录 / ref / 清单 / ABI 明确失败，不变成 skip；未改写包 transition 或安装字节来放行。handoff 写入一条可在 Hub 仓库根运行的命令。
 
 初次只读 **702d039** 在旧 flow id 报红，尚无数据库执行。维护者更新 ref 后冻结 **5cdbc2b**，真实临时 PostgreSQL 已完成来源与模块安装、Bob 独立变更集批准、准备 / 派发 / 终态 / 纯 Tool 解析 / 交付；主树定向 **1 fail / 0 skip**，明确缺 verify.workbook。此前的原件 SHA、byteArgs、单次 case_submit、设备 / 主机步骤与两个检查点、unmapped 空列表、device / host Hook 非空处理器决定及 B 字节 SHA 断言均成立，未把 delivered 或部分通过称完整验收绿。三类 verify 与全部结果断言保持，整改归独立包；工作簿投影由冻结模块 Tool 读取合成原字节产生，不借原生解析器。
 
@@ -1056,13 +1058,13 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 
 按维护者决定，中英执行流设计新增 C 待办，逐项记录只读 TOOL_SPECS 的结构：env_prepare / bed_topology 必需 lease_id/token；case_submit 必需 xlsx_b64 与租约、module 可选；case_status / case_results 只收 task_id，additionalProperties=false；TTL 为 expires_in_s。正常提交和完成结果没有 state / request_hash / input_sha256 / byte_hashes，case_status 仍有 state，完成结果 channel=ready；不把完成结果分支扩大成所有回执都无 state。
 
-未来驱动必须补逐工具租约注入映射、注入后完整 schema 或允许声明的注入字段、提交字节参数 / module 的批准 policy 映射、各工具真实 state 或 channel/rc 终态映射、冻结原件 sha256 与批准方法用例身份 case_ids 的核验。声明外参数和现网不存在的三 hash 不能充当兼容方案；映射属于通用 policy，不在 Hub 写 APV 分支。租约内 prepare 观察与 beforeDispatch 证据时序、已证 D 终态和结果渠道失败的区分仍按前次方向，afterResult 仍产品显式核验。
+未来驱动必须补逐工具租约注入映射、注入后完整 schema 或允许声明的注入字段、提交字节参数 / module 的批准 policy 映射、各工具真实 state 或 channel/rc 终态映射、冻结原件 sha256 与批准方法用例身份 case_ids 的核验。声明外参数和现网不存在的三 hash 不能充当兼容方案；映射属于通用 policy，不在 Hub 写 FAMX 分支。租约内 prepare 观察与 beforeDispatch 证据时序、已证 D 终态和结果渠道失败的区分仍按前次方向，afterResult 仍产品显式核验。
 
 本轮只写清单，不定未来 JSON/schema 或实现。两份设计 **25** 本地链接 / 锚点与已有 frame / 动作 F 解析均通过，diff 检查通过；本机网关源码仅作只读形状参考，不运行 / 导入 / 复制其实现或配置。A3 合成协议与严格目标的证明范围分开，不 push / 部署 / 改驱动、网关、独立包或原生字节。
 
 ## 93：严格 cexg 协议目标验收
 
-新增 c-cexg-protocol 单文件：纯协议叶验证 required / unknown 参数、真实租约身份、仅 task_id 的观察参数及不扩写的原始成功字段；主目标复用同一外部 APV v2 flow 的原件、模块安装 / Bob 独立批准与通用流程提交。provider 的 TS 数据按只读 TOOL_SPECS 形状自写，不导入 / 执行 Python 或复制实现 / 配置；凭据随机生成，地址仅本机运行时端口及文档示例值。原始 submit/results 不补 state 或三 hash，status 保留 state；release、lease_status、build_checked 和 MCP isError 均按协议分开。
+新增 c-cexg-protocol 单文件：纯协议叶验证 required / unknown 参数、真实租约身份、仅 task_id 的观察参数及不扩写的原始成功字段；主目标复用同一外部 FAMX v2 flow 的原件、模块安装 / Bob 独立批准与通用流程提交。provider 的 TS 数据按只读 TOOL_SPECS 形状自写，不导入 / 执行 Python 或复制实现 / 配置；凭据随机生成，地址仅本机运行时端口及文档示例值。原始 submit/results 不补 state 或三 hash，status 保留 state；release、lease_status、build_checked 和 MCP isError 均按协议分开。
 
 默认严格文件 **1 pass / 1 skip**，与第一条合成入口同跑为 **1 pass / 2 skip / 0 fail**，skip 不计兼容通过。显式冻结 **5cdbc2b**，独立树与主树均 **1 pass / 1 fail / 0 skip**：真实临时 PostgreSQL 完成原件 / 资源 / 运行 profile / 模块登记和另一身份批准，主目标在 C.validateBatch:env_prepare 缺租约而 failed / INVALID_PAYLOAD，RPC 0、case_submit 0、write intent 0。主断言要求 delivered，不把准确拒绝改为 PASS；后续提交 / 观察 / 原始证明关系尚未到达。该红点与 A3 合成链漏 verify.workbook 分开披露。
 
@@ -1070,9 +1072,9 @@ H1 期限 **4e84ba0**、H2 拒绝来源 **8cf4998**、M3 终态后结果与补�
 
 ## 94：外部模块修复后的合成协议验收
 
-维护者通知只读 ref 更新为 5cdbc2b；实际核对时已进一步前进到 **6a8cb799125a749e69ba4b6f32de8ee1a92437ab**，静态确认 workbook Hook 改为始终追加并计入等待数量。不能拿旧 SHA 的红套到新原件，遂按完整新 SHA 冻结 APV **1.3.0** / digest **54c681c1e8380cad5509c7dbf18774052b432d0b903c59ebaeb6748239a2df48**，只运行第一条 synthetic-provider-protocol 验收。
+维护者通知只读 ref 更新为 5cdbc2b；实际核对时已进一步前进到 **6a8cb799125a749e69ba4b6f32de8ee1a92437ab**，静态确认 workbook Hook 改为始终追加并计入等待数量。不能拿旧 SHA 的红套到新原件，遂按完整新 SHA 冻结 FAMX **1.3.0** / digest **54c681c1e8380cad5509c7dbf18774052b432d0b903c59ebaeb6748239a2df48**，只运行第一条 synthetic-provider-protocol 验收。
 
-实际 **1/1 通过、无 skip / fail**，11.50 秒：原件上传、完整模块登记 / 独立批准、准备、派发、终态、纯 Tool 解析和交付全部到达；56,413 字节工作簿仅 byteArgs，原件 SHA 一致，case_submit 1 次，设备 / 主机 observed、检查点 2 passed、unmapped 0。三类 verify Hook 均为已批准的非空处理器决定，B 回读 SHA 全部原断言通过；无原生 APV 操作，未删断言或改包 / 夹具。记录更新只改 handoff 与进度，测试本身字节不变。
+实际 **1/1 通过、无 skip / fail**，11.50 秒：原件上传、完整模块登记 / 独立批准、准备、派发、终态、纯 Tool 解析和交付全部到达；56,413 字节工作簿仅 byteArgs，原件 SHA 一致，case_submit 1 次，设备 / 主机 observed、检查点 2 passed、unmapped 0。三类 verify Hook 均为已批准的非空处理器决定，B 回读 SHA 全部原断言通过；无原生 FAMX 操作，未删断言或改包 / 夹具。记录更新只改 handoff 与进度，测试本身字节不变。
 
 此绿只证明 A3 合成协议的模块接法，不证明 cexg 现网兼容。严格 C 的驱动缺口未实施，本轮不重复其旧红，不跑全套 / 真实网关 / 设备 / 模型；PG 单 runner 且已清理，只读外部 ref 不 checkout / 改写。生产代码、原生 1.1.1 与部署不变，记录仅本地签署、不 push。
 
@@ -1100,19 +1102,19 @@ English: `lease.argumentsByTool` is an optional closed per-Tool map. Each entry 
 
 C 拒绝产品实参 / byteArgs 遮蔽租约字段，只延后注入字段的 required 与字段约束，保留普通实参类型、未知键与对象大小检查；实际取得租约后、意图前与每次 RPC 前均完整校验原 schema。部分校验遇顶层组合 / 跨字段 schema 如 anyOf、if / then、dependentRequired 时以 SOURCE_NOT_APPROVED 失败封闭，不填假 token 或删远端 required。providerBinding 拒绝未声明 Tool、acquire 自注入、目标重名及普通 / 字节参数映射冲突。声明需要租约的 read 自动临时 acquire / heartbeat / read / release，并重核全链最低角色；read 的失败仍无设备副作用，不改 unknown / fence / pin 规则。
 
-实际新专项 **4/4 纯 + 2/2 PG = 6/6、无 skip**：必需 submit 注入字段通过、重命名读字段正确、task-only status / results 无额外租约参数、临时读 / 写各释放一次；缺少 release 的管理员资格时 RPC 0 / submit 0。既有协议边界纯测试 **12/12**，合计本轮定向 **18/18**；typecheck / diff-check 通过。PG 单 runner 已清理并释放。不改原生 APV1.1.1、产品包、真实网关 / 设备 / 模型，不跑全套、push 或部署。严格 cexg 的 legacy 回执与后续 prepare / 参数映射仍待后项，不把这笔绿扩大为现网兼容。
+实际新专项 **4/4 纯 + 2/2 PG = 6/6、无 skip**：必需 submit 注入字段通过、重命名读字段正确、task-only status / results 无额外租约参数、临时读 / 写各释放一次；缺少 release 的管理员资格时 RPC 0 / submit 0。既有协议边界纯测试 **12/12**，合计本轮定向 **18/18**；typecheck / diff-check 通过。PG 单 runner 已清理并释放。不改原生 aFAMX1.1.1、产品包、真实网关 / 设备 / 模型，不跑全套、push 或部署。严格 cexg 的 legacy 回执与后续 prepare / 参数映射仍待后项，不把这笔绿扩大为现网兼容。
 
 ## 98：C2 提交参数与受控原件映射
 
 批准的 receiptPolicy.toolArguments 只从整份冻结 FlowSubmission 的安全路径或有限 literal 派生普通参数；byteArguments 一对一把 action.byteArgs 逻辑参数映到实际 wire 名称。C 入队、D 调用、byteBindings / 回执哈希与撤权后的历史身份核对使用同一映射链，原动作 requestHash 和原件引用保持冻结。普通映射不能覆盖产品 args、原件或租约权限，不读 profile / 环境 / 密钥；未声明工具、非有限 JSON、原型字段、超长字符串、字节遗漏或重复全部拒绝。submit 的 module 可以来自批准 literal，status / results 仍只传批准 taskIdArgument 与各自租约映射。
 
-先复现旧契约拒新字段及真实 worker 缺 wire 参数的红，再实现。新增纯映射 **4/4**、真实 executeFlowStep 的 64 KiB 原件 / wire 参数 / module / task-only 观察 **1/1**、真实 PostgreSQL+worker 整链 **1/1**；历史回执 / 提交后拒绝 / 协议角色相关 **6/6**，均无 skip。第二项目标共 **12/12**，typecheck / diff 通过。原生 1.1.1 与 packs/apv 零改动；严格外部包链尚待阶段回执与准备观察，不称现网通过。只本地签署，不跑全套、不 push / 部署 / 接真实环境。
+先复现旧契约拒新字段及真实 worker 缺 wire 参数的红，再实现。新增纯映射 **4/4**、真实 executeFlowStep 的 64 KiB 原件 / wire 参数 / module / task-only 观察 **1/1**、真实 PostgreSQL+worker 整链 **1/1**；历史回执 / 提交后拒绝 / 协议角色相关 **6/6**，均无 skip。第二项目标共 **12/12**，typecheck / diff 通过。原生 1.1.1 与 packs/famx 零改动；严格外部包链尚待阶段回执与准备观察，不称现网通过。只本地签署，不跑全套、不 push / 部署 / 接真实环境。
 
 ## 99：C3 分阶段回执与批准原件身份投影
 
 新增 receiptPolicy.receipts 按 submit / status / results / reconcile 声明独立 schema、remote 身份及 state/channel/rc 判别；没有新声明时完整兼容旧 echo 校验与返回形状。新模式必须具有提交原件 SHA / 身份列表、结果原件 SHA 与 identityProjection，缺关联 fail closed。C 只从本修订成功的冻结 Tool path/export/byteSlots 与 B 原件读取身份投影，核原操作 requestHash、所用受控原件及投影字节 SHA；不采用客户端 value 的 caseIds 或 SHA。追加迁移 **42** 保存 receipt_facts 于 intent 前，submit 后复制至 remote_identity；physical wire 参数、历史证明与阶段回读共用已批准映射。成功 raw 先按 SHA 留 B 再核验，提交后 schema/身份拒绝仍 unknown / 不释放；已持久 status 终态后的坏结果或拒绝只影响解释，释放与完整原件继续留存。
 
-纯机制旧实现 **1/4**，新机制补缺关联声明负例后 **5/5**；独立合成模块实际 PostgreSQL+worker 七叶 **7/7，无 skip**，分别覆盖无虚构 state/echo 的提交、status state、results channel/rc、坏提交 SHA、提交后 status 拒绝、终态后坏结果 SHA / 拒绝、渠道不完整 partial，以及拒绝客户端冒充身份投影。初次整链因夹具缺 Tool.description 被契约拒绝；补齐后发现 C 对已去正文但仍含 encoding 的 review 引用重算严格 ref-only requestHash 而 failed / 零 RPC，规范化引用形状后七叶绿，未放宽断言或时限。相关方法联合 **25/25**（含新五叶与旧回执 / 映射 / 租约消费者），typecheck / diff 通过。此为定向合成证明，严格外部产品包还须后续准备阶段，不能称真实网关或设备可用；原生 1.1.1 / packs/apv 字节未改。只本地签署，不跑全套、不 push / 部署 / 接真实系统。
+纯机制旧实现 **1/4**，新机制补缺关联声明负例后 **5/5**；独立合成模块实际 PostgreSQL+worker 七叶 **7/7，无 skip**，分别覆盖无虚构 state/echo 的提交、status state、results channel/rc、坏提交 SHA、提交后 status 拒绝、终态后坏结果 SHA / 拒绝、渠道不完整 partial，以及拒绝客户端冒充身份投影。初次整链因夹具缺 Tool.description 被契约拒绝；补齐后发现 C 对已去正文但仍含 encoding 的 review 引用重算严格 ref-only requestHash 而 failed / 零 RPC，规范化引用形状后七叶绿，未放宽断言或时限。相关方法联合 **25/25**（含新五叶与旧回执 / 映射 / 租约消费者），typecheck / diff 通过。此为定向合成证明，严格外部产品包还须后续准备阶段，不能称真实网关或设备可用；原生 1.1.1 / packs/famx 字节未改。只本地签署，不跑全套、不 push / 部署 / 接真实系统。
 
 ## 100：C4 同租约准备原件与派发前核验
 
@@ -1122,9 +1124,9 @@ C 拒绝产品实参 / byteArgs 遮蔽租约字段，只延后注入字段的 re
 
 先恢复旧实现运行新正例，实际 **0/1 红**（契约拒 prepare）；初版三叶 **3/3 绿**。合入 C3 后完整九叶首轮 **7 pass / 2 fail / 0 skip**，两失败来自测试观察代理在 server 收尾后 fetch 被拒导致夹具 teardown 未结束；仅对该代理补固定 502，未改产品断言 / 时限或生产错误处理，仅重跑两叶 **2/2 绿、无 skip**。收尾只终止已核实的测试自有 worker，未触保护进程。九叶覆盖同租约原件 / 新 Hook 证据、准备超时 / 失联、撤权后仅释放、坏参数零 RPC、伪 SHA / 参数摘要 / 旧 fence、Hook 阻断；B 回读保留原始 NUL 并重算 SHA。纯准备专项 **5/5**、typecheck / diff 通过，PG 串行已清理并释放。
 
-只在独立树本地签署；原生 APV1.1.1 / packs/apv 与独立包字节不变，不跑全套、不接真实模型 / 网关 / 设备，不 push 或部署。严格外部包的同租约准备验收由维护者随后串行运行，当前记录不把合成证明扩大为现网兼容。
+只在独立树本地签署；原生 aFAMX1.1.1 / packs/famx 与独立包字节不变，不跑全套、不接真实模型 / 网关 / 设备，不 push 或部署。严格外部包的同租约准备验收由维护者随后串行运行，当前记录不把合成证明扩大为现网兼容。
 
-第四项收尾集成前，按只读 ref 更新固定 b02122af1533286de00ffc6342c19c3bad7cff39，APV 1.3.0 / digest f186993fe20407b893b29c69462e3858653cb0b01df64c85ec17189ba5ebd86e。正式模块内解析工作簿 / 契约、消耗真实 hub.result 投影原件、由真实命令核对原件导出 present。A3 正例和三类 Hook 负例、严格协议纯叶 / 整链共 **6/6、无 skip**；strict delivered、一次 submit / intent，status/results 仅 task_id，原始 submit/results 无自造三 hash/state，已获 lease 随终态释放。该阶段还未启同租约 prepare，不能扩成第四项已证，也不证明 cexg 现网兼容。全套仍由维护者跑。
+第四项收尾集成前，按只读 ref 更新固定 b02122af1533286de00ffc6342c19c3bad7cff39，FAMX 1.3.0 / digest f186993fe20407b893b29c69462e3858653cb0b01df64c85ec17189ba5ebd86e。正式模块内解析工作簿 / 契约、消耗真实 hub.result 投影原件、由真实命令核对原件导出 present。A3 正例和三类 Hook 负例、严格协议纯叶 / 整链共 **6/6、无 skip**；strict delivered、一次 submit / intent，status/results 仅 task_id，原始 submit/results 无自造三 hash/state，已获 lease 随终态释放。该阶段还未启同租约 prepare，不能扩成第四项已证，也不证明 cexg 现网兼容。全套仍由维护者跑。
 
 C4 同租约 prepare 目标已用相同 b02122af 原件再跑严格文件 **2/2、无 skip**：实际顺序为独立 env_prepare 读租约释放，再 acquire→env_prepare→bed_topology→case_submit→task-only status/results→release。case_submit / intent 各一次；两份 prepare_ref 完整、beforeDispatch 绑定本次 preparationDigest，终态交付逐步 / 检查点、unmapped 空。原始成功体仍无补造字段，此为严格合成协议，不是现网设备验收。新旧 worker 不能混版本消费新 policy 的部署先后已写入交接。
 
@@ -1136,13 +1138,13 @@ FlowDefinition 可显式声明 historyMode=controlled；内联 observations / ex
 
 先写三个契约用例复现旧 F 不识别独立预算 / 窗口，再补关键窗口、槽冲突、活动记录与事务 ACL，纯测试 **6/6**。真实临时 PostgreSQL / worker 定向 **4/4，无 skip / fail**：21 个合成用例产生 238 Hook 与 21 其他动作，最终 264 持久步交付；300 条观察 / occurrence 的完整 B 归档 SHA 与旧交付引用通过，最终 305 步；耗尽 1024 步零新增远端调用；已有 769 步加 256 动作整批拒绝、无 write 前缀。两条 scale 实测约 147 / 167 秒，未放宽 180 秒成功预算。旧 scale baseline 曾仅超时，不能作为精确 quota 拒绝证据。旧交付引用的定向验收使用维护者的全历史 B 权限 helper，最终由维护者同项集成，不纳入本分支 helper 所有权。
 
-基 C4 重新逐函数合并后纯测试 6/6、typecheck / diff-check 通过，未重复 PG 或全套。保留 C3 阶段原件身份与 C4 同租约准备机制；原生 APV1.1.1 / packs/apv、独立包、实际网关 / 设备 / 模型与部署未动。仅本地签署，不 push。
+基 C4 重新逐函数合并后纯测试 6/6、typecheck / diff-check 通过，未重复 PG 或全套。保留 C3 阶段原件身份与 C4 同租约准备机制；原生 aFAMX1.1.1 / packs/famx、独立包、实际网关 / 设备 / 模型与部署未动。仅本地签署，不 push。
 
 第五项最终集成补齐全历史交付授权 helper：旧 terminal / unknown 及明确 C ledger / archive 原件沿相同任务修订的 B 绑定、操作 lineage、当前 ACL / SHA / 长度重核，窗口不是授权边界。新增引用机制两叶先红后 **2/2**。结构投影旧字节 / 字符串条件复现小 257 项数组、包装深度及超长键三项红；新增 helper **4/4**，真实 record / F frame 消费者旧实现 **0/3**，接线后 **3/3**，原文 SHA / B 字节不变，错误元数据显式省略并保散列。相关 F / 历史 / 投影 / 引用定向合跑 **22/22，无 skip**；不扩单批或字节上限。
 
 最后固定 b02122af 的两条外部入口文件再次 **6/6、无 skip**，包括合成正例 / 三种真实 Hook 负例与严格同租约准备、一次提交、终态、解析 / 交付。没有运行独立包脚本以外的模型或设备，也未改独立包字节。全套仍留维护者独立运行，现场切换仍由维护者负责。
 
-最终整合 Meridian 相关回归分两次定向 **3/3 + 2/2、无 skip**，覆盖正常原件交付、重启后独立核对 / 不重派、afterResult 拦截、终态后解析失败与释放失败 partial；未重跑整份旧验收或全套。原生实现摘要 / 树冻结断言通过，packs/apv、foundation、references 与 harness-adapters 相对本轮基线零改动；本轮不提交实际地址、凭据、原始业务数据或本机绝对路径。
+最终整合 Meridian 相关回归分两次定向 **3/3 + 2/2、无 skip**，覆盖正常原件交付、重启后独立核对 / 不重派、afterResult 拦截、终态后解析失败与释放失败 partial；未重跑整份旧验收或全套。原生实现摘要 / 树冻结断言通过，packs/famx、foundation、references 与 harness-adapters 相对本轮基线零改动；本轮不提交实际地址、凭据、原始业务数据或本机绝对路径。
 
 最后交叉消费者发现并稳定复现 C5 新 ledger 的 **40P01**：claim / 部分 preflight 先持 operation / flow FK，B 绑定再等 task，与 runner 的 task→flow_run 锁序相反。结果 staged 正例在零 provider RPC 时 task 已 failed、操作仍 running；不能把它归负载假红。临时本地栈与数据库诊断未进 Git，未放宽 30 秒或通过事务重试掩盖。
 
@@ -1164,7 +1166,7 @@ FlowDefinition 可显式声明 historyMode=controlled；内联 observations / ex
 
 根因是 7b 的严格 receiptPolicy 未读取资源批准的 toolArguments，包 3c46 env_prepare args={} 依赖映射注入 device_build；不带时 build_checked=false 是正确协议事实。后续 C4 的 01d53b2 已复制冻结资源映射，当前代码无需再改生产或包解析，不加假顶层字段、不强置 build_checked=true。新增严格纯回归：故意去掉该映射的旧变体 **0/1 红**、恢复后 **1/1 绿**，实际请求的构建、ready / checks.detail / build_checked 与无顶层字段分别核对。诊断优先使用原失败事实的 stage，零 submit 不再误标 delivery，并输出有限的期望 / env 实参构建元数据。
 
-在当前 Hub 固定同一 **3c46f707** / APV1.3.0 / digest **992a57b93375e7824b803b431064a931a56b579fad76cc67936a0093b4ae4b90** 只跑严格单文件 **4/4，无 skip**：两次 env_prepare 实参同 expectedBuild，先独立读、再同租约准备 / topology→一次 submit→task-only status/results→release，最终 delivered/succeeded。默认开关未开时 **3 pass / 1 skip**，skip 不计通过。typecheck / diff 通过；只补验收与进度，未改生产 / 原生 / 独立包、未跑全套、未 push / 部署或接真实系统。包侧旧提取问题不作为当前仍未修的结论。
+在当前 Hub 固定同一 **3c46f707** / aFAMX1.3.0 / digest **992a57b93375e7824b803b431064a931a56b579fad76cc67936a0093b4ae4b90** 只跑严格单文件 **4/4，无 skip**：两次 env_prepare 实参同 expectedBuild，先独立读、再同租约准备 / topology→一次 submit→task-only status/results→release，最终 delivered/succeeded。默认开关未开时 **3 pass / 1 skip**，skip 不计通过。typecheck / diff 通过；只补验收与进度，未改生产 / 原生 / 独立包、未跑全套、未 push / 部署或接真实系统。包侧旧提取问题不作为当前仍未修的结论。
 
 ## 104：C 后续 1，失败 Tool 的有界错误事实
 
@@ -1184,13 +1186,13 @@ FlowDefinition 可显式声明 historyMode=controlled；内联 observations / ex
 
 错误 / 缺失结果 SHA、结果拒绝或终态事件后整份回报失联，保留独立核过的 D 终态与已知释放事实，不冒充结果成功，也不把已证终态改 unknown。C 留 interpretationStatus=failed / 登记错误 / unmapped 与原件引用；由已批准 transition 继续提出候选、经过原 afterResult 闸再交付 partial。带这种终态解释缺口却提出 succeeded 的候选拒绝；不由 Hub 自动构造产品结果或绕 Hook。旧输入修订失联只记旧操作，迟到原 fence 补原件与释放不改已交付 partial 的候选 / phase / 原 unmapped。中英设计同步。
 
-先验收三个旧问题的真实失败，再实现。相关 PostgreSQL / worker **13/13**、纯 helper **2/2，无 skip**，含坏 SHA / 拒绝 / 缺字段、终态后失联与迟到补报、不合格 succeeded 提议拒绝；typecheck / diff 通过。原生 APV、独立包与现场零改动，只本地签署，未跑全套。
+先验收三个旧问题的真实失败，再实现。相关 PostgreSQL / worker **13/13**、纯 helper **2/2，无 skip**，含坏 SHA / 拒绝 / 缺字段、终态后失联与迟到补报、不合格 succeeded 提议拒绝；typecheck / diff 通过。原生 FAMX、独立包与现场零改动，只本地签署，未跑全套。
 
 ## 107：C 后续 4，合成流程消费完整冻结包配置
 
 夹具改为原样读取冻结资源模板的完整 receiptPolicy，不再挑参数映射后自带 echo；独立身份批准后，核已批准 / running 修订的配置 canonical 摘要相同。toolArguments / argumentsByTool / 分阶段 receipts / identityProjection 都由真实登记配置生效，投影核实际 projectWorkbook、受控 byteSlots、B 原件 SHA 与导出的用例身份。合成 submit / status / results 只提供本阶段实际字段，无假通用散列；保留一次 submit、三类 verify Hook、真实大投影后不同 Tool 消费动态槽、逐步 / 检查点 / unmapped 断言。
 
-纯回归旧 **0/2**→新 **2/2**；固定维护者给的 **3c46f707** / APV1.3.0 实际合成入口 **4/4，无 skip**，默认关闭时 **4 skip** 不计通过。typecheck / diff 通过。仅夹具、验收及中英说明，证明 synthetic provider protocol 接法，不证明真实 cexg / 设备；未改核心驱动、原生 / 独立包，不跑全套、push 或部署。
+纯回归旧 **0/2**→新 **2/2**；固定维护者给的 **3c46f707** / aFAMX1.3.0 实际合成入口 **4/4，无 skip**，默认关闭时 **4 skip** 不计通过。typecheck / diff 通过。仅夹具、验收及中英说明，证明 synthetic provider protocol 接法，不证明真实 cexg / 设备；未改核心驱动、原生 / 独立包，不跑全套、push 或部署。
 
 ## 108：C 后续 5，通用执行校验码不依赖原生导入
 
@@ -1204,7 +1206,7 @@ INVALID_EXECUTION_WORKBOOK 与 COMMAND_VALIDATION_FAILED 登记进核心 F 错�
 
 新纯词表用例旧 **0/1**→新 **1/1**；默认文件 **4 pass / 4 skip**，显式固定 **3c46f707** 严格文件 **8/8，无 skip**（四项纯、完整正常链与三项未知写），逐项核 submit 一次、未知写无 results / write lease_release、B 原回执 SHA。typecheck / diff 通过。仅验收、夹具及中英附录，通用驱动 / 原生 / 独立包零改动，不跑全套、不 push 或部署。
 
-六项按维护者顺序各一笔签署。最终集成针对交叉消费者再核：结果关联 / partial / 完整模板 / 核心码纯 **14/14**；四种普通结果读边界与终态坏 SHA 合跑 **4/4 + 1/1**，没有 skip / fail，证实新增 partial 交付闸与父缺口摘要配合，篡改关联的原报告可按 SHA 回读、仍走真实 afterResult。最终 typecheck / diff 通过；packs/apv / foundation / references / harness-adapters 相对本轮基线零差异，工作区收尾干净。只运行针对性用例，全部 PostgreSQL 串行清理，全套仍由维护者独立执行；本轮不 push、不部署、不触 7420 / 网关 / Circle / 独立包。
+六项按维护者顺序各一笔签署。最终集成针对交叉消费者再核：结果关联 / partial / 完整模板 / 核心码纯 **14/14**；四种普通结果读边界与终态坏 SHA 合跑 **4/4 + 1/1**，没有 skip / fail，证实新增 partial 交付闸与父缺口摘要配合，篡改关联的原报告可按 SHA 回读、仍走真实 afterResult。最终 typecheck / diff 通过；packs/famx / foundation / references / harness-adapters 相对本轮基线零差异，工作区收尾干净。只运行针对性用例，全部 PostgreSQL 串行清理，全套仍由维护者独立执行；本轮不 push、不部署、不触 7420 / 网关 / Circle / 独立包。
 
 ## 110：复核高项，明文例外下的独立核对清理
 
@@ -1252,7 +1254,7 @@ worker-capability-negotiation 的旧 mock 只给 UPDATE workers 返回注册行�
 
 本轮按高项→中项→三个低项→两条确定性红例，各一笔本地签署。最终集成只核交叉消费者：纯初 **18/22** 的四红是新锁集合 / 事务外入口的旧 mock 表示（清理三叶与能力一叶），精确补合法任务 / run / 资源 / lease 和 operation-name 查询后 **22/22**，原假终态、fence / 来源 / release、冻结及活能力撤销断言未改；补丁并回共享锁那一笔，仍七笔问题提交。实际 PostgreSQL 跨消费者 **7/7 + 1/1**（明文核对、已用 / 未用引用、活授权和协议受理），固定 **3c46f707** 严格准备 / submit / status / results 全链 **1/1**，无 skip / fail。
 
-最终 typecheck / diff 通过，原生 packs/apv / foundation / references / harness-adapters 相对本轮基线零差异；工作区收尾干净，全部 PostgreSQL 单进程串行清理，没有全套、真实模型或设备运行。六条上轮配套仍在前序提交，未被这些修复覆盖。不 push、不部署、不触 7420 / 网关 / Circle / 独立包；全量和合 main 留维护者独立完成。
+最终 typecheck / diff 通过，原生 packs/famx / foundation / references / harness-adapters 相对本轮基线零差异；工作区收尾干净，全部 PostgreSQL 单进程串行清理，没有全套、真实模型或设备运行。六条上轮配套仍在前序提交，未被这些修复覆盖。不 push、不部署、不触 7420 / 网关 / Circle / 独立包；全量和合 main 留维护者独立完成。
 
 ## 117：单跑复核，强制 Hook 阻断的失败回报回归
 
@@ -1268,7 +1270,7 @@ abc5af6 提前核自动协议参数，夹具把 undeclared:true 放进 additiona
 
 更新后该叶实际 **1/1，无 skip**，typecheck / diff 通过。只改一个测试叶与进度，原生 / 独立包 / 生产校验零改，PG 清理，不跑全套。维护者已确认 08-connectors 的超时单跑 **2/2**、按负载假红处理，本轮不改它的实现或断言。
 
-两项按顺序各一笔签署。最终合并针对两条原失败消费者 **2/2**、新纯边界 **2/2**，无 skip / fail，typecheck / diff 通过；原生 packs/apv / packs/meridian / foundation / references / harness-adapters 相对本轮基线零差异，树收尾干净。PG 串行清理，不跑全套、不 push / 部署、不触 7420 / 网关 / Circle / 独立包。最终 HEAD 交维护者独立全量。
+两项按顺序各一笔签署。最终合并针对两条原失败消费者 **2/2**、新纯边界 **2/2**，无 skip / fail，typecheck / diff 通过；原生 packs/famx / packs/meridian / foundation / references / harness-adapters 相对本轮基线零差异，树收尾干净。PG 串行清理，不跑全套、不 push / 部署、不触 7420 / 网关 / Circle / 独立包。最终 HEAD 交维护者独立全量。
 
 ## 119：新版产品包验收的冻结版本门
 
@@ -1288,19 +1290,19 @@ transition 的动作被 C 拒绝时，原 generic failure.code / message 保留�
 
 ## 121：XML 原件必须经模块运行时消费的验收
 
-基 60220cf，现有 apvModuleFlow 增加可选 treeOriginal='xml'。此分支上传 / 登记 / 注入仅 workbook、command-tree XML 与 function-contract 三件原件，不含 command-check；原默认 JSON 四件原件与既有负例行为保留。合成 XML 采用 Hub commandsFrom 支持的 commands→scope(configuration)→menu(service)→item(inspect)→STRING target 参数，命令头 service inspect 加 alpha 对应 apvDeviceCommand。局部 checked 返回只为旧夹具类型兼容，不上传或作为新用例的核对依据。
+基 60220cf，现有 famxModuleFlow 增加可选 treeOriginal='xml'。此分支上传 / 登记 / 注入仅 workbook、command-tree XML 与 function-contract 三件原件，不含 command-check；原默认 JSON 四件原件与既有负例行为保留。合成 XML 采用 Hub commandsFrom 支持的 commands→scope(configuration)→menu(service)→item(inspect)→STRING target 参数，命令头 service inspect 加 alpha 对应 famxDeviceCommand。局部 checked 返回只为旧夹具类型兼容，不上传或作为新用例的核对依据。
 
-新增原 opt-in 下的完整流程用例，要求实际 delivered：已批准来源与输入均无 command-check，真实 tools/command-check.ts 的 checkCommands Tool 动作使用字面命令 / identity 参数及 command-tree byteSlots，字节由现 Hub 运行时追加。断言该步骤成功观察的 heads 对 apvDeviceCommand 为 present:true、result.sourceSha256 等于上传 XML 原件；若 C 返回投影指针则按真实 B 引用回读 / 核 SHA。后续设备 Hook 消费该投影，provider 只 submit 一次，所有操作为 flow.invoke，原生文件 SHA 不变。没有直接在测试里调用产品 Tool 或使用预编回执替代运行。
+新增原 opt-in 下的完整流程用例，要求实际 delivered：已批准来源与输入均无 command-check，真实 tools/command-check.ts 的 checkCommands Tool 动作使用字面命令 / identity 参数及 command-tree byteSlots，字节由现 Hub 运行时追加。断言该步骤成功观察的 heads 对 famxDeviceCommand 为 present:true、result.sourceSha256 等于上传 XML 原件；若 C 返回投影指针则按真实 B 引用回读 / 核 SHA。后续设备 Hook 消费该投影，provider 只 submit 一次，所有操作为 flow.invoke，原生文件 SHA 不变。没有直接在测试里调用产品 Tool 或使用预编回执替代运行。
 
-本地 typecheck / diff 通过；相关版本门 / provider 纯 **5/5**，A3 默认 **5 skip / 0 fail / 0 todo**，不把 skip 称 XML 执行通过。合成 XML 按 Hub parser / commandCheck 的机械只读核对正 / 缺失命令两项通过，证明夹具结构，不证明产品签名兼容。静态读取 APV1.3.1 的冻结代码可见字面 args 与首位字节签名不符，此用例开启后应暴露缺陷；本轮未运行 opt-in / PG / 独立包，不报告实际红或绿。1.3.2 合并后的 CIRCLE_PACKS_REF=main 实际验收由维护者执行。
+本地 typecheck / diff 通过；相关版本门 / provider 纯 **5/5**，A3 默认 **5 skip / 0 fail / 0 todo**，不把 skip 称 XML 执行通过。合成 XML 按 Hub parser / commandCheck 的机械只读核对正 / 缺失命令两项通过，证明夹具结构，不证明产品签名兼容。静态读取 aFAMX1.3.1 的冻结代码可见字面 args 与首位字节签名不符，此用例开启后应暴露缺陷；本轮未运行 opt-in / PG / 独立包，不报告实际红或绿。1.3.2 合并后的 CIRCLE_PACKS_REF=main 实际验收由维护者执行。
 
 仅测试、现有夹具与本记录，一笔本地签署；运行时 / worker / F / schema / 事件 / 原生 / 归档 / 独立包零改，未 push、不触 7420 / 网关 / worker 或真实环境，全套未跑。
 
 ## 122：执行流迁移状态收尾与原生退役边界
 
-按维护者已确认的验收更新中英执行流设计：A3 通用驱动、B 独立产品包 products/apv 1.3.x 的执行流与纯 Tool、C 通用驱动协议 C1–C5 及后续配套均已完成。通用 provider 已用工作簿、命令树 XML、函数契约三件真实原件在真实床交付，包含 21 例批量；这些是维护者反馈的现场结论，本轮未重新投递或探测。维护者另已确认 packs 主干 8434c27 / products/apv 1.3.4 的合成协议验收 **5/5**（含 XML 原件叶）、严格协议验收 **8/8**。7420 当前状态按维护者确认为 **Hub c55cfa3、packs 8434c27 / products/apv 1.3.4**。
+按维护者已确认的验收更新中英执行流设计：A3 通用驱动、B 独立产品包 products/famx 1.3.x 的执行流与纯 Tool、C 通用驱动协议 C1–C5 及后续配套均已完成。通用 provider 已用工作簿、命令树 XML、函数契约三件真实原件在真实床交付，包含 21 例批量；这些是维护者反馈的现场结论，本轮未重新投递或探测。维护者另已确认 packs 主干 8434c27 / products/famx 1.3.4 的合成协议验收 **5/5**（含 XML 原件叶）、严格协议验收 **8/8**。7420 当前状态按维护者确认为 **Hub c55cfa3、packs 8434c27 / products/famx 1.3.4**。
 
-迁移六步的前四步标为已落地；第 4 步仍持续保持旧任务的 methodAssetId、实现摘要与回执绑定，不以数据库改绑冒充迁移。D 尚待维护者确认：退役原生 apv-case-execute 1.1.1 的入口与文件、升级实现版本并调整冻结兼容字符串，前提是确认没有待执行、在途、unknown 或待核对任务。本轮不核定现场是否已清空，不授权或执行退役。
+迁移六步的前四步标为已落地；第 4 步仍持续保持旧任务的 methodAssetId、实现摘要与回执绑定，不以数据库改绑冒充迁移。D 尚待维护者确认：退役原生 famx-case-execute 1.1.1 的入口与文件、升级实现版本并调整冻结兼容字符串，前提是确认没有待执行、在途、unknown 或待核对任务。本轮不核定现场是否已清空，不授权或执行退役。
 
 本笔仅三份文档，核对中英状态、迁移步骤与差异；不改代码、不跑测试或全套、不 push / 部署，不触 7420、网关、worker、Circle 或独立包。
 
@@ -1334,7 +1336,7 @@ fail() 对帧构造、归档、预算等实际 Hub ApiError 在原已投影 deta
 
 ## 127：批量重跑回执与首个发行准备
 
-按交接顺序只读回查既有批次，不重投真实床。Hub 1b4a6dc、packs d91b23d / products/apv 1.4.0 的 21 例批次已 delivered / succeeded，解析 executionStatus=completed、rc=0，设备用例结果 **13 pass / 8 fail**，unmapped=0。失败原因未在本轮核定，不把流程交付成功写成设备全绿。分页读取全部 1013 条事件：216 个设备命令核验、21 个主机命令核验、工作簿和 beforeDispatch 各 1，共下发前 **239** 个通过；afterResult 另 1 个通过。结果回执 terminal=true、remoteLeaseReleased=true，网关只读租约查询 leased=false / bed_busy=false；remoteStoppingVerified=false 原样保留，不推称远端停止保证。
+按交接顺序只读回查既有批次，不重投真实床。Hub 1b4a6dc、packs d91b23d / products/famx 1.4.0 的 21 例批次已 delivered / succeeded，解析 executionStatus=completed、rc=0，设备用例结果 **13 pass / 8 fail**，unmapped=0。失败原因未在本轮核定，不把流程交付成功写成设备全绿。分页读取全部 1013 条事件：216 个设备命令核验、21 个主机命令核验、工作簿和 beforeDispatch 各 1，共下发前 **239** 个通过；afterResult 另 1 个通过。结果回执 terminal=true、remoteLeaseReleased=true，网关只读租约查询 leased=false / bed_busy=false；remoteStoppingVerified=false 原样保留，不推称远端停止保证。
 
 从结果清单下载并逐件核 SHA，确认实际 flow-history-parse 回读产物及五件受控历史归档，归档大小 535090–562727 字节；解析结果原件 124784 字节。原件、日志、凭据、试验栈路径与业务字节均留在仓库外，本记录只记汇总。7420 的 server-live 与滚动 worker 保持 1b4a6dc，原生入口未退役；supervisor 仍用兼容配置，未为消除弃用提示重启会清理临时库的 dev-stack。
 
@@ -1344,7 +1346,7 @@ fail() 对帧构造、归档、预算等实际 Hub ApiError 在原已投影 deta
 
 ## 128：首版验证日志与数据库关闭边界
 
-8667008 远端三项 CI 通过；首次本地完整电池为 contracts 20/20、methods 294/294、acceptance 434 pass / 1 fail / 9 skip、references 7/7。旧脚本只留汇总，未保留失败项名，不追认为已知原因。独立 R3 复跑 3/3，其中冻结 APV 1.4.0 的包内 81/81。随后保留完整 TAP 的同候选复跑为 432 pass / 3 fail / 9 skip：两叶报 PostgreSQL administrator termination，另一累计历史叶在 180 秒时仍 running，已成功 299 步。
+8667008 远端三项 CI 通过；首次本地完整电池为 contracts 20/20、methods 294/294、acceptance 434 pass / 1 fail / 9 skip、references 7/7。旧脚本只留汇总，未保留失败项名，不追认为已知原因。独立 R3 复跑 3/3，其中冻结 FAMX 1.4.0 的包内 81/81。随后保留完整 TAP 的同候选复跑为 432 pass / 3 fail / 9 skip：两叶报 PostgreSQL administrator termination，另一累计历史叶在 180 秒时仍 running，已成功 299 步。
 
 pg Pool.end 的完成不等于所有 client end；测试 harness 只等前者就停止其临时数据库。新增公开 connect/end 事件的 socket 关闭屏障、有限等待与幂等清理，保留正常 pool error 的可见性，不屏蔽数据库错误。确定性关闭次序回归在旧候选失败、新实现通过；两条实际失败用例与整套的复核另列后续结果。仓库外电池脚本同时严格透传流水线退出码并保存各套件原始日志，合成 exit 17 的负例确认不会继续执行或返回假绿。
 
@@ -1364,7 +1366,7 @@ pg Pool.end 的完成不等于所有 client end；测试 harness 只等前者就
 
 电池末尾包装进程退出 1：执行期间原地更新默认 pin 改动了正在被 shell 读取的脚本文件，导致所有检查已完成后出现语法读取错误。该退出码不记为成功；逐套原始日志验证 tests/pass/fail/cancelled/skipped，单独重新执行 SHA 校验返回 0，当前脚本语法检查通过。后续执行使用不可改写的脚本副本；此操作错误与真实测试结果分开记录。
 
-Hub 首个 v0.1.0 指向 8f3b839，packs 首个 v0.1.0 指向 1f8948c，均已创建公开 GitHub Release；packs 的 Checks 和 pages 成功，本地 143/143 与 catalog 校验通过。四技能使用新 hub 工具协议并分别升为 compile 0.4.0、review / defect claims / QA 0.2.0，APV 1.4.1；工具与 flow 业务字节未变，发行不自动激活或批准模块。cexg 原有三笔已推送到 76ba7d3，不重部署。Circle v1.7.0 已在已验证的 96702fa 打 tag；正式发行工作流 38688114283 构建完整矩阵，实际发布与演示应用安装待结果，不把排队计为交付。
+Hub 首个 v0.1.0 指向 8f3b839，packs 首个 v0.1.0 指向 1f8948c，均已创建公开 GitHub Release；packs 的 Checks 和 pages 成功，本地 143/143 与 catalog 校验通过。四技能使用新 hub 工具协议并分别升为 compile 0.4.0、review / defect claims / QA 0.2.0，FAMX 1.4.1；工具与 flow 业务字节未变，发行不自动激活或批准模块。cexg 原有三笔已推送到 76ba7d3，不重部署。Circle v1.7.0 已在已验证的 96702fa 打 tag；正式发行工作流 38688114283 构建完整矩阵，实际发布与演示应用安装待结果，不把排队计为交付。
 
 ## 131：维护者授权 D 退役与无旧名扩展绑定
 
@@ -1378,7 +1380,7 @@ Circle 接口已按维护者决定改为 hub / /hub / hub_* / hub_tool_*，不�
 
 ## 132：D 全开验收、0.2.0 发行与现场历史保全
 
-冻结 main 2f9cd20、Circle fd8524a 与 packs 1f8948c，开启 APV 模块及严格 cexg 协议选装场景，使用不可改写的电池副本串行完成：typecheck 0、contracts 20/20、methods 282/282、acceptance 403/403、references 7/7，全部零 fail / skip，归档 SHA 校验成功，包装进程真实退出 0。包含 APV 1.4.1 原件实际装载的包内 81/81、五个模块/provider 场景及严格协议场景；这些是合成资源验收，不推称新的真实设备执行。此前两条数据库关闭异常消费者和长历史归档均在完整电池通过，没有屏蔽 pool error 或放宽生产预算。远端同提交 Hub checks 38688263842、Reference integrity 38688263700、pages 38688263840 全成功；Ubuntu acceptance 403 例中 259 pass / 144 host skip，methods 281 pass / 1 skip，缺隔离前提的 skip 不计为实跑通过。
+冻结 main 2f9cd20、Circle fd8524a 与 packs 1f8948c，开启 FAMX 模块及严格 cexg 协议选装场景，使用不可改写的电池副本串行完成：typecheck 0、contracts 20/20、methods 282/282、acceptance 403/403、references 7/7，全部零 fail / skip，归档 SHA 校验成功，包装进程真实退出 0。包含 FAMX 1.4.1 原件实际装载的包内 81/81、五个模块/provider 场景及严格协议场景；这些是合成资源验收，不推称新的真实设备执行。此前两条数据库关闭异常消费者和长历史归档均在完整电池通过，没有屏蔽 pool error 或放宽生产预算。远端同提交 Hub checks 38688263842、Reference integrity 38688263700、pages 38688263840 全成功；Ubuntu acceptance 403 例中 259 pass / 144 host skip，methods 281 pass / 1 skip，缺隔离前提的 skip 不计为实跑通过。
 
 v0.2.0 指向 2f9cd20 并已创建 GitHub Release。部署前确认原生 11 条、通用 8 条旧任务全终态，全站没有 accepted / running / unknown 操作或租约；先做一致性数据库备份，完整读取归档并核 SHA。7420 随后实际滚到同一提交：新 05/06 注册 flow.invoke、assets.execute、mindmaps.compile，旧 07/08 无在途后退出，原始 01/02、父 dev-stack、PG 与 supervisor 保持。旧迁移 1–43 的名字与 SHA 不改，migration 44 的旧回执只读触发器生效；能力目录移除原生入口，保留 module-execute 与编译器 1.1.0。
 
@@ -1396,7 +1398,7 @@ Circle v1.7.0 tag 96702fa 的正式发行暴露刷新视图时序回归，未产
 
 ## 134：文档 main 的完整门禁与批量原件绑定复核
 
-冻结 a0a42bb006c40d88276988fc1d71b126dbd7ad6a、Circle fd8524a 与 packs 1f8948c，再次使用独立只读电池副本，开启 APV 模块与严格 cexg 协议，真实临时 loopback PostgreSQL 串行完成：typecheck 0、contracts 20/20、methods 282/282、acceptance 403/403、references 7/7，共 712 项，全部零 fail / skip，归档校验成功，包装进程真实退出 0。acceptance 实际约 2033 秒；五个 APV 模块场景与四个严格协议场景均实际执行，原件装载的包内 81/81 另列，不重复加进 712。Hub checks 38692210974、Reference integrity 38692211126、pages 38692211121 均为该精确提交并成功；Ubuntu 的 methods 281 pass / 1 skip、acceptance 259 pass / 144 skip 与本地零 skip 分列。
+冻结 a0a42bb006c40d88276988fc1d71b126dbd7ad6a、Circle fd8524a 与 packs 1f8948c，再次使用独立只读电池副本，开启 FAMX 模块与严格 cexg 协议，真实临时 loopback PostgreSQL 串行完成：typecheck 0、contracts 20/20、methods 282/282、acceptance 403/403、references 7/7，共 712 项，全部零 fail / skip，归档校验成功，包装进程真实退出 0。acceptance 实际约 2033 秒；五个 FAMX 模块场景与四个严格协议场景均实际执行，原件装载的包内 81/81 另列，不重复加进 712。Hub checks 38692210974、Reference integrity 38692211126、pages 38692211121 均为该精确提交并成功；Ubuntu 的 methods 281 pass / 1 skip、acceptance 259 pass / 144 skip 与本地零 skip 分列。
 
 相对已发布 2f9cd20，a0a42bb 只改四份文档；apps、packages、packs、scripts、tests、tools、package.json / lock 与 tsconfig 的 Git 树投影完全相同，foundation 与 references 的 Git 树也相同。验证未修改业务源码，临时验收数据库已清理，既有现场数据库不动。
 
@@ -1428,10 +1430,10 @@ Circle v1.7.0 tag 96702fa 的正式发行暴露刷新视图时序回归，未产
 
 `packages/contracts/src/hub-environment.ts` 不再把旧前缀变量复制到新名，也不再输出 `hub.environment.deprecated`；`hubChildEnvironment` 随之删除，supervisor 与 dev-stack 直接传递已检查的环境。对仍设置的旧变量，选择启动即失败而不是静默忽略：静默忽略会让忘记改名的数据库等配置带着缺省值启动。该模块仍作为导入副作用先于任何读取配置的模块执行；server、supervisor、worker、admin / modules CLI、dev-stack 与 PostgreSQL 脚本只要环境中有旧前缀键（值为空或与新名并存也算），就以 `HubEnvironmentError` 和退出码 1 结束，错误逐个列出旧键及对应新名，不含值。
 
-方法测试改为四项：拒绝启动且不回显值；检查不改写输入、只认实际存在的键；只有新名时无输出并先于捕获环境的模块初始化；八个入口在合法新配置旁遇到旧键，都在做任何工作前退出。验收 hub-naming 改为三项，其中新增一项在真实临时 PostgreSQL 栈旁验证 server、supervisor、worker 与 admin CLI 遇到旧键拒绝启动，错误不含数据库配置、令牌或地址，原栈继续服务。编译器拒绝旧 creator 文本的测试保留；APV 模块夹具不再清除旧名键。
+方法测试改为四项：拒绝启动且不回显值；检查不改写输入、只认实际存在的键；只有新名时无输出并先于捕获环境的模块初始化；八个入口在合法新配置旁遇到旧键，都在做任何工作前退出。验收 hub-naming 改为三项，其中新增一项在真实临时 PostgreSQL 栈旁验证 server、supervisor、worker 与 admin CLI 遇到旧键拒绝启动，错误不含数据库配置、令牌或地址，原栈继续服务。编译器拒绝旧 creator 文本的测试保留；FAMX 模块夹具不再清除旧名键。
 
 文档：AGENTS、双语 README、packs/README、双语兼容性页新增 2026-10-16 条目、客户端交接表与配置说明（同时更正 0.2.0 已移除的冻结 gateway lookup 与已改写的编译器 creator 两行，并删去指向旧工作树的启动示例）、设计文档 execution-flow-packs 一句，以及 CHANGELOG Unreleased 的破坏性变更与迁移方法。旧进度、简报与 validation 证据保留原文。
 
 部署边界：仍以旧名配置的既有部署，须先改用 `CIRCLE_HUB_*` 名重新部署，才能升级到此提交之后的版本。本步没有操作任何部署、部署脚本、env 文件或进程。
 
-验证按 CI 方式运行（CIRCLE_BIN / CIRCLE_COMMIT / CIRCLE_RUNTIME_CONFIG 置空，独立临时 CIRCLE_HOME 与 CIRCLE_WORKBENCH_DATA_DIR）：typecheck 通过；contracts **20/20**、methods **283/283**、acceptance 404 项中 **379 pass / 25 skip / 0 fail**（16 项真实 Circle RPC 用例缺确认的运行时按 skip 报告，9 项 APV 模块与严格 cexg 选装场景默认 skip；skip 不计通过）、references **7/7**；verify:postgres 与 verify:references 通过。另以 packs 1f8948c 的冻结 Git 对象开启两个选装文件，实际 **13/13**，含上述 9 项及本步改动的 APV 模块夹具；16 项 Circle RPC 用例本步未运行。没有真实系统、模型、设备或付费调用。
+验证按 CI 方式运行（CIRCLE_BIN / CIRCLE_COMMIT / CIRCLE_RUNTIME_CONFIG 置空，独立临时 CIRCLE_HOME 与 CIRCLE_WORKBENCH_DATA_DIR）：typecheck 通过；contracts **20/20**、methods **283/283**、acceptance 404 项中 **379 pass / 25 skip / 0 fail**（16 项真实 Circle RPC 用例缺确认的运行时按 skip 报告，9 项 FAMX 模块与严格 cexg 选装场景默认 skip；skip 不计通过）、references **7/7**；verify:postgres 与 verify:references 通过。另以 packs 1f8948c 的冻结 Git 对象开启两个选装文件，实际 **13/13**，含上述 9 项及本步改动的 FAMX 模块夹具；16 项 Circle RPC 用例本步未运行。没有真实系统、模型、设备或付费调用。

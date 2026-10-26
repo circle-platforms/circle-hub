@@ -1,0 +1,80 @@
+{
+  "schema": "traceability.codes@1",
+  "origin": "决定：traceability 任务包按任务页 docs/hub-r4-tasks/traceability.md 声明的码",
+  "description": "任务包函数给出的拒绝码、警告码和不通过码；函数代码里的码与这里一致（pack.test.ts 核对）",
+  "violations": [
+    {
+      "code": "traceability.status_conflict",
+      "when": "同一个缺陷的条目之间状态矛盾：既列为已修复（fixed）又列为已知（known）",
+      "fix": "以缺陷系统为准；让 release notes 的来源修正矛盾"
+    },
+    {
+      "code": "traceability.join_mismatch",
+      "when": "条目的用例列表里有用例的原始缺陷编号不含这个缺陷（被判对象自相矛盾，任务包或视图的生产器有缺陷）",
+      "fix": "把运行编号交给任务包维护人"
+    },
+    {
+      "code": "traceability.count_mismatch",
+      "when": "视图声明未截断，但列出的键数或条目数与它声明的总数不一致，视图自相矛盾，计数不可信",
+      "fix": "让知识库重新生成这个构建的视图；再跑一次"
+    },
+    {
+      "code": "traceability.id_collision",
+      "label": "不同缺陷系统的编号撞号"
+    }
+  ],
+  "refusals": [
+    {
+      "code": "traceability.invalid_input",
+      "when": "投影函数的输入不是 projection-input@1，或两个输入槽没有各绑定一个视图",
+      "fix": "按 projection-input@1 传入绑定的视图"
+    },
+    {
+      "code": "traceability.wrong_view",
+      "when": "输入槽里绑定的不是这个槽要读的 index-view@1（schema、kind 或 key 不对），或视图本身不完整",
+      "fix": "defects 槽绑定 knowledge:index:<产品>:<构建>?kind=defect&key=bug，cases 槽绑定 kind=case&key=defects"
+    },
+    {
+      "code": "traceability.view_mismatch",
+      "when": "两个视图的产品不一致、不是同一个知识根，或与运行绑定的产品线不一致",
+      "fix": "用同一个产品线的同一个构建生成两个视图（构建的任一名称族的写法都可以）"
+    },
+    {
+      "code": "traceability.invalid_parameter",
+      "when": "statuses 不是 fixed 和 known 的非空不重复列表",
+      "fix": "statuses 写成 [\"fixed\"]、[\"known\"] 或两个都写；不写则两个都算"
+    },
+    {
+      "code": "traceability.invalid_id",
+      "when": "缺陷索引里有空编号，不能作为条目编号",
+      "fix": "检查缺陷索引的来源（release notes 生产器），空编号的条目需要先修正"
+    },
+    {
+      "code": "traceability.no_defects",
+      "when": "缺陷索引里没有状态被 statuses 选中的缺陷条目，没有条目可算",
+      "fix": "确认构建名和 statuses 参数；这个构建的 release notes 可能还没有入知识库"
+    },
+    {
+      "code": "traceability.too_large",
+      "when": "缺陷条目超过一次运行的上限，或投影结果超过投影函数的输出上限",
+      "fix": "按 statuses 缩小范围后分次运行；完整矩阵仍可从运行的知识根用 get_nodes 读取"
+    },
+    {
+      "code": "traceability.internal_error",
+      "when": "函数内部出错（任务包缺陷）",
+      "fix": "把输入交给任务包维护人"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "traceability.entry_missing",
+      "when": "视图里有条目摘要列在键下却没有条目内容，按“键在、内容未知”处理",
+      "fix": "让知识库重新生成这个视图"
+    },
+    {
+      "code": "traceability.view_truncated",
+      "when": "缺陷索引或用例索引视图被截断，矩阵只覆盖列出的部分",
+      "fix": "视图有上限；计数只覆盖列出的部分，结论里照写"
+    }
+  ]
+}

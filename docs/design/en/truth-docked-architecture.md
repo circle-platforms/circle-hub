@@ -1,11 +1,13 @@
 ---
 permalink: /design/en/truth-docked-architecture/
-nav_order: 1
+nav_order: 9
 ---
 
 # Truth-Docked Architecture: Foundations, Conditional Claims, and a Product Research Framework
 
 **Status: research proposal and mathematical audit, revised 2026-10-19. This document does not describe implemented capabilities or replace current object, permission, approval, execution, or client contracts.**
+
+> **Note of 2026-10-21**: the current design that section 2 refers to (the object standard's five elements, execution flows, the approval specification, the five fixed Hooks) was retired with the old server, so the sentence “B/C/D/E, current enforcement, and approved rules continue under their current specifications” no longer holds. The design authority is now the generic model ([contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json), summarised in the [generic model](generic-model.md)); this document's status as a research proposal is unchanged.
 
 This revision replaces the assertions in [the ea926d4 draft](https://github.com/circle-platforms/circle-hub/blob/ea926d47b5eb641a4b79dc9207a190e61ac60fe0/docs/design/truth-docked-architecture.md). That draft did not establish proofs for its overall guarantees of “four theorems,” supreme architectural authority, absolute truth, or perfect finite-round convergence. This revision withdraws those guarantees and their automatic supersession of existing designs. Git retains the original.
 
@@ -36,13 +38,13 @@ Every guarantee needs definitions, quantifiers, premises, a proof or counterexam
 
 This research does not depend on mischaracterizing the current design:
 
-- The [object standard](object-standard.md) and [runtime-object reference](../../../references/platform/snapshot/docs/object-boundaries-v1.md) allocate authority and responsibilities; professional algorithms and domain validation already have a methods-layer owner. Ownership boundaries and computational loops can coexist.
+- The [object standard](object-standard.md) and [runtime-object reference](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/object-boundaries-v1.md) allocate authority and responsibilities; professional algorithms and domain validation already have a methods-layer owner. Ownership boundaries and computational loops can coexist.
 - [Execution flows](execution-flow-packs.md) already have persistent state, observations, actions, and step identities. A pure transition function not directly calling a model does not imply that the system cannot call models or form loops.
-- The [Knowledge V1 reference](../../../references/platform/snapshot/docs/knowledge-v1.md) separates exact parsing from semantic judgment. semantic=not-asserted bounds a conclusion; it does not deny completed structural checks.
+- The [Knowledge V1 reference](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/knowledge-v1.md) separates exact parsing from semantic judgment. semantic=not-asserted bounds a conclusion; it does not deny completed structural checks.
 - The [approval specification](approvals-and-enforcement.md) already has execution-submission approval bound to concrete inputs and consumable by the corresponding operation. More precise impact policy is a research direction, not a consequence of an absence of execution approval.
 - The five fixed Hooks and their domain subjects are current contracts. Generalizing them requires separate contract design, compatibility work, and acceptance; this document does not remove them.
 
-B/C/D/E, current enforcement, and approved rules continue under their current specifications. A replacement requires an independently agreed scope before code and contracts change. Current behavior and implementation progress remain in the corresponding specifications and [phase records](../../README.md#阶段记录).
+B/C/D/E, current enforcement, and approved rules continue under their current specifications. A replacement requires an independently agreed scope before code and contracts change. Current behavior and implementation progress remain in the corresponding specifications and [phase records](../../index.md#历史记录).
 
 ## 3. Relevant theory and its limits
 
@@ -225,4 +227,4 @@ These references identify relevant theory and its original scope; they do not en
 
 ## License
 
-Copyright (c) 2026 qingshanfeihu. This document's text and diagrams are licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Attribute Circle Hub and qingshanfeihu, link to the source, and identify changes as the license requires. Cited research retains its authorship and licenses. See the [design index](README.md#license) and [NOTICE](../../../NOTICE).
+Copyright (c) 2026 qingshanfeihu. This document's text and diagrams are licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Attribute Circle Hub and qingshanfeihu, link to the source, and identify changes as the license requires. Cited research retains its authorship and licenses. See the [design index](README.md#license) and [NOTICE](https://github.com/circle-platforms/circle-hub/blob/main/NOTICE).

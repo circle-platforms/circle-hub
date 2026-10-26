@@ -1,0 +1,83 @@
+{
+  "id": "register_negative",
+  "source": "author",
+  "check": "bed",
+  "note": "合成反例：register 的冻结登记与占用核验",
+  "subject": {
+    "items": [
+      {
+        "id": "sample",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/beds/0",
+        "fields": {
+          "action": "register",
+          "bed": "sample",
+          "keys": [],
+          "reason": "合成用户原话",
+          "conclusion": "改过的结论"
+        }
+      }
+    ],
+    "context": {
+      "groups": [
+        {
+          "action": "register",
+          "need": {
+            "devices": []
+          },
+          "bed": "sample",
+          "addresses": null,
+          "booking": null,
+          "reason": "合成用户原话",
+          "devices": null,
+          "manifest": {
+            "schema": "test-bed-manifest@1",
+            "beds": [
+              {
+                "name": "sample",
+                "devices": [
+                  {
+                    "name": "client",
+                    "type": "client",
+                    "ipv4": [
+                      "192.0.2.10/26"
+                    ],
+                    "ipv6": []
+                  }
+                ],
+                "services": [],
+                "reserved": []
+              }
+            ]
+          },
+          "leases": {
+            "now": "2026-10-24T08:00:00.000Z",
+            "entries": [
+              {
+                "key": "bed/sample/client",
+                "until": null,
+                "run": "run_synthetic",
+                "since": "2026-10-24T08:00:00.000Z",
+                "mine": false,
+                "jobs": []
+              }
+            ],
+            "registrations": []
+          },
+          "lease_requests": [
+            {
+              "op": "register",
+              "prefix": "bed/sample/"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "test-bed.register_mismatch",
+      "tier": "advisory"
+    }
+  ]
+}

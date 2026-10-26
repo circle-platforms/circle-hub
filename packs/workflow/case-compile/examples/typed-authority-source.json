@@ -1,0 +1,101 @@
+{
+  "schema": "synthetic-runtime-authority@1",
+  "types": {
+    "text": {
+      "catalog_type": "string"
+    },
+    "seconds": {
+      "catalog_type": "int",
+      "minimum": 1,
+      "maximum": 300
+    }
+  },
+  "roles": {
+    "device_cli": {
+      "bed_member": false
+    },
+    "host_shell": {
+      "bed_member": false
+    },
+    "literal_assertion": {
+      "bed_member": false
+    },
+    "wait": {
+      "bed_member": false
+    },
+    "credential": {
+      "bed_member": false
+    }
+  },
+  "effects": {
+    "effect_0": {
+      "object": "widget-seat",
+      "method": "configure",
+      "roles": [
+        "device_cli",
+        "credential"
+      ],
+      "budget": 10,
+      "commands": [
+        {
+          "tree_root": "64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7",
+          "path": "/commands/widget/health/interval",
+          "signature": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments",
+          "parameters": [
+            {
+              "position": 0,
+              "name": "seconds",
+              "raw": "60",
+              "type": {
+                "name": "U16",
+                "catalog_type": "int",
+                "declaration": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments/arg",
+                "grammar": "famx-command-tree@2"
+              },
+              "parsed": {
+                "kind": "int",
+                "value": 60
+              }
+            }
+          ]
+        }
+      ],
+      "allowed_literals": []
+    },
+    "effect_1": {
+      "object": "widget-host",
+      "method": "shell",
+      "roles": [
+        "host_shell",
+        "credential"
+      ],
+      "budget": 10,
+      "commands": [],
+      "allowed_literals": [
+        "echo 192.0.2.90"
+      ]
+    },
+    "effect_2": {
+      "object": "widget-check",
+      "method": "literal",
+      "roles": [
+        "literal_assertion",
+        "credential"
+      ],
+      "budget": 10,
+      "commands": [],
+      "allowed_literals": []
+    },
+    "effect_3": {
+      "object": "widget-clock",
+      "method": "pause",
+      "roles": [
+        "wait",
+        "credential"
+      ],
+      "budget": 10,
+      "commands": [],
+      "allowed_literals": []
+    }
+  }
+}

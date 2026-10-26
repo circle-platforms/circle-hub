@@ -1,0 +1,149 @@
+{
+  "note": "Core violation codes: results of the Hub's core interpreters and deterministic admission checks. The historical interpreter field identifies the core emitter, including contribution admission; it does not declare an installed interpreter. Pack functions and tables register only their own pack codes. Each core code has one when/fix source here; regenerate contracts after edits.",
+  "codes": [
+    {
+      "code": "core.structure.duplicate_key",
+      "interpreter": "structure",
+      "when": "要求唯一的键在两个条目上重复",
+      "fix": "给每个条目各自的键"
+    },
+    {
+      "code": "core.structure.required_empty",
+      "interpreter": "structure",
+      "when": "必填字段缺失或为空",
+      "fix": "补全必填字段"
+    },
+    {
+      "code": "core.structure.type_mismatch",
+      "interpreter": "structure",
+      "when": "字段取值的类型或形状不对",
+      "fix": "改成声明的类型"
+    },
+    {
+      "code": "core.structure.cardinality",
+      "interpreter": "structure",
+      "when": "节点的子节点数少于或多于结构允许的数目",
+      "fix": "让子节点数落在声明的范围内"
+    },
+    {
+      "code": "core.catalog.not_member",
+      "interpreter": "catalog",
+      "when": "取值不在所锁定版本的封闭目录里",
+      "fix": "改用目录里的成员，或改用另一个版本的目录"
+    },
+    {
+      "code": "core.catalog.membership_contradicted",
+      "interpreter": "catalog",
+      "when": "陈述说某个成员不存在（或存在），目录却说相反",
+      "fix": "删除或改正这条陈述"
+    },
+    {
+      "code": "core.catalog.param_out_of_range",
+      "interpreter": "catalog",
+      "when": "参数取值超出目录声明的范围",
+      "fix": "改用范围内的值；如果是反向用例，在用例上标明"
+    },
+    {
+      "code": "core.catalog.param_type_mismatch",
+      "interpreter": "catalog",
+      "when": "参数取值不符合声明的类型",
+      "fix": "改成声明的类型"
+    },
+    {
+      "code": "core.catalog.arity_mismatch",
+      "interpreter": "catalog",
+      "when": "命令的参数个数与所有已声明的签名都不符",
+      "fix": "对上其中一个声明的签名"
+    },
+    {
+      "code": "core.membership.not_in_set",
+      "interpreter": "membership",
+      "when": "取值不在任务包声明的封闭集合里",
+      "fix": "改用声明的取值之一"
+    },
+    {
+      "code": "core.pattern.no_match",
+      "interpreter": "pattern",
+      "when": "取值不符合声明的模式",
+      "fix": "按声明的写法重写"
+    },
+    {
+      "code": "core.range.out_of_bounds",
+      "interpreter": "range",
+      "when": "数值、前缀或阈值检验不通过",
+      "fix": "让取值落在声明的界限内"
+    },
+    {
+      "code": "core.coverage.shortfall",
+      "interpreter": "coverage",
+      "when": "覆盖到的集合没有包含表要求的全部成员",
+      "fix": "补上缺的成员，或写明跳过的理由"
+    },
+    {
+      "code": "core.contribution.product_unavailable",
+      "interpreter": "contribution",
+      "when": "缺少当前产品的有效读取权限",
+      "fix": "请管理员恢复产品读取权限后用新摘要申请核验；当前本条可标为 skipped，其余条目照常提交"
+    },
+    {
+      "code": "core.contribution.signature_required",
+      "interpreter": "contribution",
+      "when": "来源是会话声明、脱敏或缺少可追溯 Hub 原件，需要负责人署名",
+      "fix": "缺少负责人署名；本版保留在 Circle，本条标为 skipped（待负责人署名），其余条目照常提交"
+    },
+    {
+      "code": "core.contribution.personal_source",
+      "interpreter": "contribution",
+      "when": "所引个人来源不能放宽为产品可见",
+      "fix": "改引锁定根中的非个人 Hub 原件；本条先标为 skipped，其余条目照常提交"
+    },
+    {
+      "code": "core.contribution.source_unavailable",
+      "interpreter": "contribution",
+      "when": "所引原文当前不具备模型可读条件",
+      "fix": "请管理员核查并恢复原文读取条件后用新摘要重交；本条也可先标为 skipped"
+    },
+    {
+      "code": "core.contribution.lineage_unproven",
+      "interpreter": "contribution",
+      "when": "来源血缘成环、过长或缺少可追溯的 Hub 原件",
+      "fix": "补齐或修复生成记录的输入与原件引用后重新生成资料；本条先标为 skipped"
+    },
+    {
+      "code": "core.contribution.source_outside_root",
+      "interpreter": "contribution",
+      "when": "所引原文不属于本次锁定根的组成快照",
+      "fix": "缺少锁定根中的原文；本条标为 skipped（来源未入锁定根），其余条目照常提交；来源入根后重新开回注运行"
+    },
+    {
+      "code": "core.contribution.source_not_original",
+      "interpreter": "contribution",
+      "when": "所引节点只有子节点名单而没有可回注的原文片段",
+      "fix": "改引 get_nodes 返回的叶节点条目或锁定根中的原文引用；本条先标为 skipped"
+    },
+    {
+      "code": "core.contribution.record_not_original",
+      "interpreter": "contribution",
+      "when": "记录转述或已有回注不能作为新的回注原文根据",
+      "fix": "改引锁定根里 get_nodes 返回的原文 tree: 引用；本条先标为 skipped"
+    },
+    {
+      "code": "core.contribution.self_relation",
+      "interpreter": "contribution",
+      "when": "关系双方是同一片段或重叠引文而非两个独立端点",
+      "fix": "改引两个不同片段的规范引用（同一文件须给出各自选择器）后重交；本条先标为 skipped"
+    },
+    {
+      "code": "core.contribution.composition_missing",
+      "interpreter": "contribution",
+      "when": "缺少与运行锁定产品和根一致的组成快照",
+      "fix": "恢复已锁定的组成记录，或重新开运行锁定现有完整快照；本条先标为 skipped"
+    },
+    {
+      "code": "core.criterion.source_role_mismatch",
+      "interpreter": "criterion",
+      "when": "判据变更声明的判据或引文不是期望来源的片段，仅拒绝该条声明",
+      "fix": "判据只能取期望来源的片段（A03 R[0]）"
+    }
+  ]
+}

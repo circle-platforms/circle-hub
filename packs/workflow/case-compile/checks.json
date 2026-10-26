@@ -1,0 +1,149 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "contract_shape",
+      "title": "步骤的（对象，方法）和参数符合合约",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkContractShape"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "planSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "核对原始运行器签名、合约启用与本轮允许的交集、显式值和命令拒绝表；不复制默认值",
+      "catalog": "commands@1",
+      "catalog_select": {
+        "module": "functions/subject.ts",
+        "export": "selectCommandCatalog"
+      }
+    },
+    {
+      "id": "bed_addresses",
+      "title": "字面地址解析为台架地址",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkAddresses"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "planSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "决定 35：本台架所有设备接口及本血缘分配地址均可出现；台架外原地址经 replacements 换入，掩码、前缀与非地址令牌不当作主机地址",
+      "catalog": "commands@1",
+      "catalog_select": {
+        "module": "functions/subject.ts",
+        "export": "selectCommandCatalog"
+      }
+    },
+    {
+      "id": "commands_catalog",
+      "title": "命令行在目标构建的命令目录里",
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "planSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "计划设备命令由锁定 /commands 完整语法逐词解析为 CommandIdentity，再核类型、角色与效果授权；用例明确声明身份时额外核一致性，缺声明不限制计划解析",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkCommandsKnown"
+      },
+      "catalog": "commands@1",
+      "catalog_select": {
+        "module": "functions/subject.ts",
+        "export": "selectCommandCatalog"
+      }
+    },
+    {
+      "id": "expected_sources",
+      "title": "期望结果带有逐字来源",
+      "function": {
+        "module": "functions/checks.ts",
+        "export": "checkExpectedSources"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "planSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "expected_grounded：quote 有逐字来源；默认 text 出自引文，显式 model_judgment 只核本用例期望节点、after 与取值规则，语义选择以判断为前提",
+      "catalog": "commands@1",
+      "catalog_select": {
+        "module": "functions/subject.ts",
+        "export": "selectCommandCatalog"
+      }
+    },
+    {
+      "id": "expected_quotes",
+      "title": "期望结果引文逐字核对",
+      "interpreter": "quote@1",
+      "table": "tables/quotes.json",
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "quoteSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "要求项 expected_grounded：每个期望结果的引文必须逐字出现在其来源里",
+      "catalog": "commands@1",
+      "catalog_select": {
+        "module": "functions/subject.ts",
+        "export": "selectCommandCatalog"
+      }
+    },
+    {
+      "id": "workbook_verified",
+      "title": "独立回读及重算工作簿原件",
+      "function": {
+        "module": "functions/workbook.ts"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "workbookSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "只认可冻结槽位、绑定身份和配置的单用例工作簿；读取与生成独立，原字节摘要须与同版生成器重算相等",
+      "catalog": "commands@1",
+      "catalog_select": {
+        "module": "functions/subject.ts",
+        "export": "selectCommandCatalog"
+      }
+    },
+    {
+      "id": "dispatch_policy",
+      "title": "派发参数绑定核验字节",
+      "function": {
+        "module": "functions/dispatch-policy.ts"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "workbookSubject"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "W03 F[0]、P11 R[3]：同一脚本与政策表在编译与写意图前重核，通用参数完全来自已重算的工作簿事实",
+      "table": "policies/dispatch.json",
+      "catalog": "commands@1",
+      "catalog_select": {
+        "module": "functions/subject.ts",
+        "export": "selectCommandCatalog"
+      }
+    }
+  ]
+}

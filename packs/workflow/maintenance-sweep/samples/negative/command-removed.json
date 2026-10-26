@@ -1,0 +1,45 @@
+{
+  "id": "command_removed",
+  "source": "author",
+  "check": "command_exists",
+  "note": "合成样例：用例放在已删除的路径上，阻断",
+  "subject": {
+    "items": [
+      {
+        "id": "doc-1:n1",
+        "location": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fields": {
+          "document": "doc-1",
+          "node": "n1",
+          "priority": 1,
+          "negative": false,
+          "reasons": [
+            {
+              "change": "removed",
+              "detail": 0
+            }
+          ]
+        },
+        "label": "查看部件状态"
+      }
+    ],
+    "note": {
+      "details": [
+        {
+          "path": "/commands/show",
+          "change": "removed",
+          "fields": [],
+          "references": []
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "maintenance-sweep.case.command_removed",
+      "item": "doc-1:n1",
+      "tier": "blocking"
+    }
+  ]
+}

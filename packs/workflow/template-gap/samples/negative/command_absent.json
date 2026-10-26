@@ -1,0 +1,161 @@
+{
+  "id": "command_absent",
+  "source": "author",
+  "check": "command_coverage",
+  "note": "完整索引没有文档；收进索引即 command_all 正例",
+  "subject": {
+    "item": "900001",
+    "document": "900001",
+    "location": "src:5a830d27fc8a18b75c35c8c230b63e0ee866834a4bc60d909e6e6a1e0877dc4a/kityminder@1/i",
+    "uploaded": false,
+    "case_rule": "marked",
+    "cases": [
+      {
+        "id": "900001:case0",
+        "visit": 1,
+        "status": "classified",
+        "categories": [
+          "command_add"
+        ]
+      },
+      {
+        "id": "900001:case1",
+        "visit": 2,
+        "status": "classified",
+        "categories": [
+          "command_delete"
+        ]
+      },
+      {
+        "id": "900001:case2",
+        "visit": 3,
+        "status": "classified",
+        "categories": [
+          "command_modify"
+        ]
+      },
+      {
+        "id": "900001:case3",
+        "visit": 4,
+        "status": "classified",
+        "categories": [
+          "command_query"
+        ]
+      },
+      {
+        "id": "900001:case4",
+        "visit": 5,
+        "status": "classified",
+        "categories": [
+          "show_at_maximum"
+        ]
+      },
+      {
+        "id": "900001:case5",
+        "visit": 6,
+        "status": "classified",
+        "categories": [
+          "no_command"
+        ]
+      },
+      {
+        "id": "900001:case6",
+        "visit": 7,
+        "status": "classified",
+        "categories": [
+          "clear_command"
+        ]
+      },
+      {
+        "id": "900001:case7",
+        "visit": 8,
+        "status": "classified",
+        "categories": [
+          "operation_log"
+        ]
+      },
+      {
+        "id": "900001:case8",
+        "visit": 9,
+        "status": "classified",
+        "categories": [
+          "audit_log"
+        ]
+      }
+    ],
+    "nodes": {
+      "texts": [
+        "合成根",
+        "合成command_add",
+        "合成command_delete",
+        "合成command_modify",
+        "合成command_query",
+        "合成show_at_maximum",
+        "合成no_command",
+        "合成clear_command",
+        "合成operation_log",
+        "合成audit_log"
+      ],
+      "parents": [
+        -1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "case_count": 9,
+    "skipped": [],
+    "index": {
+      "schema": "index-view@1",
+      "product": "synthetic-template",
+      "build": {
+        "build": "Rel_MEADOW_10_6_8_1",
+        "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
+      },
+      "kind": "case",
+      "key": "document",
+      "keys": {},
+      "entries": {},
+      "fields": [
+        "document",
+        "node",
+        "commands",
+        "command_identities",
+        "title",
+        "path_labels"
+      ],
+      "only": [
+        "900001"
+      ],
+      "cut_keys": [],
+      "total_keys": 0,
+      "total_entries": 0,
+      "truncated": false,
+      "skipped": 0,
+      "notes": []
+    },
+    "index_reference": "src:6229b4bd8b5287df1751d042ffa570fa925adf9722794b2d3c0d5877544af62f",
+    "scope": [
+      "900001"
+    ],
+    "lock": {
+      "product": "synthetic-template",
+      "build": "Rel_MEADOW_10_6_8_1",
+      "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "template-gap.not_indexed",
+      "item": "900001",
+      "tier": "advisory"
+    }
+  ]
+}

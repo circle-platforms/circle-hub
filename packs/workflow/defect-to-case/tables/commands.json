@@ -1,0 +1,20 @@
+{
+  "schema": "catalog@1",
+  "origin": "决定：defect-to-case 工作流包 commands 要求项的命令目录解析与参数校验（docs/hub-r4-architecture.md 第 6a 节；docs/hub-r4-tasks/defect-to-case.md）；被判对象由 functions/subjects.ts 的 commandSubject 产出：起草用例步骤中的命令行（phrases）",
+  "description": "起草用例步骤中的命令行在锁定构建的命令目录中解析，参数类型、取值范围和枚举合法",
+  "tier": "blocking",
+  "basis": "要求项 commands：起草用例的命令行在锁定构建的命令目录中解析，参数类型、取值范围和枚举合法",
+  "item": "/item",
+  "location": "/location",
+  "catalog": "commands@1",
+  "commands": [
+    "$.phrases[*]"
+  ],
+  "required": true,
+  "scope": "all",
+  "match": {
+    "unicode": "none",
+    "case": "sensitive",
+    "whitespace": "exact"
+  }
+}

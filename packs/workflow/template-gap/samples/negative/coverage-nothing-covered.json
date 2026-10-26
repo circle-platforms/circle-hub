@@ -1,0 +1,86 @@
+{
+  "id": "nearly_nothing_covered",
+  "source": "author",
+  "check": "coverage",
+  "note": "合成原件的显式类别声明；不从正文匹配，期望由删去/加回的闭集声明预先决定",
+  "subject": {
+    "item": "880001",
+    "location": "src:57a63f0c22dc872a7c003202e6fb38b9edcd9eb458f45919f39f09e6f71057a4/kityminder@1/n/r",
+    "document": "880001",
+    "source": {
+      "sha256": "57a63f0c22dc872a7c003202e6fb38b9edcd9eb458f45919f39f09e6f71057a4",
+      "model": {
+        "doubleEncoded": false,
+        "meta": {},
+        "nodes": [
+          {
+            "id": "r",
+            "text": "合成分类范围",
+            "data": {
+              "id": "r",
+              "text": "合成分类范围"
+            },
+            "children": [
+              1
+            ],
+            "parent": null,
+            "depth": 0,
+            "selector": "n/r",
+            "extra": null
+          },
+          {
+            "id": "c0",
+            "text": "合成事项 0",
+            "data": {
+              "id": "c0",
+              "text": "合成事项 0",
+              "priority": 2,
+              "resource": [
+                "Functional"
+              ],
+              "category_ids": [
+                "functional"
+              ]
+            },
+            "children": [
+              2
+            ],
+            "parent": 0,
+            "depth": 1,
+            "selector": "n/c0",
+            "extra": null
+          },
+          {
+            "id": "e0",
+            "text": "合成结果",
+            "data": {
+              "id": "e0",
+              "text": "合成结果"
+            },
+            "children": [],
+            "parent": 1,
+            "depth": 2,
+            "selector": "n/e0",
+            "extra": null
+          }
+        ],
+        "duplicateIds": [],
+        "missingIds": 0,
+        "nulRemoved": 0,
+        "surrogatesReplaced": 0
+      }
+    },
+    "case_rule": "marked",
+    "claims": [],
+    "skipped": [],
+    "scope_complete": true
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "template-gap.category_shortfall",
+      "item": "880001",
+      "tier": "advisory"
+    }
+  ]
+}

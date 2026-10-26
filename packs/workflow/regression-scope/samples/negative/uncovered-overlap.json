@@ -1,0 +1,67 @@
+{
+  "id": "uncovered_overlap",
+  "source": "author",
+  "check": "uncovered_changes",
+  "note": "合成样例：同一条路径既记为未覆盖，又有范围内的用例。合式投影不会这样矛盾",
+  "subject": {
+    "items": [
+      {
+        "id": "doc-1:n1",
+        "location": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fields": {
+          "document": "doc-1",
+          "node": "n1",
+          "priority": 1,
+          "negative": false,
+          "reasons": [
+            {
+              "change": "modified",
+              "detail": 0
+            }
+          ]
+        },
+        "label": "查看部件状态"
+      }
+    ],
+    "note": {
+      "considered": [
+        {
+          "path": "/commands/show",
+          "change": "modified"
+        }
+      ],
+      "uncovered": [
+        {
+          "path": "/commands/show",
+          "change": "modified"
+        }
+      ],
+      "skipped_to": 0,
+      "truncated": false,
+      "changed_paths": 1,
+      "include_added": true,
+      "details": [
+        {
+          "path": "/commands/show",
+          "change": "modified",
+          "definition_change": "modified",
+          "conclusion": "命令定义有变更",
+          "differences": [],
+          "references": [],
+          "cases": 1
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "refute",
+      "code": "regression-scope.not_uncovered",
+      "tier": "advisory"
+    }
+  ]
+}

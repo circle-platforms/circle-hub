@@ -1,0 +1,51 @@
+{
+  "id": "suggestion_empty_part",
+  "source": "author",
+  "check": "suggestion_targets",
+  "note": "建议落点和三段式的合成正反例",
+  "subject": {
+    "items": [
+      {
+        "id": "sample:c1",
+        "label": "设置池 c1 的探测间隔",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+        "fields": {
+          "nodeId": "c1",
+          "path": [
+            "示例文档",
+            "池管理"
+          ],
+          "title": "设置池 c1 的探测间隔",
+          "draft_partition": "delivered",
+          "draft_findings": [],
+          "draft_level": {
+            "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/cross_item/3",
+            "rank": "P3",
+            "text": "等级理由：覆盖全部功能细节，有一些反向用例"
+          }
+        },
+        "slots": {
+          "verification": []
+        }
+      }
+    ],
+    "cross_item": [
+      {
+        "code": "suggestion",
+        "statement": "补：；因为：边界缺口；期望：拒绝非法值",
+        "grounds": [
+          "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1"
+        ],
+        "rank": "minor"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review-verify.suggestion_incomplete",
+      "item": "sample:c1",
+      "tier": "blocking"
+    }
+  ]
+}

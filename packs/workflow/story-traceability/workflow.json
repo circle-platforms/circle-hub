@@ -1,0 +1,61 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "stories",
+      "role": "subject",
+      "description": "User supplied story ids, in batches of at most 50; ask for ids, never infer scope",
+      "accepts": [
+        "plm:stories"
+      ],
+      "required": false,
+      "many": true
+    },
+    {
+      "slot": "build",
+      "role": "expected",
+      "description": "Optional PLM build list: the selected original record name must exactly match the case-view build after NFKC and edge trimming",
+      "accepts": [
+        "plm:builds"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "cases",
+      "role": "expected",
+      "description": "knowledge:index:<product>:<build>?kind=case&key=stories。Hub adds only= from story ids already bound on the stories input, and fields=document,node,stories,title when fields is absent. Do not ask for a second list of numbers.",
+      "index_default": {
+        "only_from": {"source": "input_ids", "slot": "stories"},
+        "fields": ["document", "node", "stories", "title"]
+      },
+      "accepts": [
+        "knowledge:index"
+      ],
+      "required": true,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "build_id",
+      "description": "Explicit build record id for the optional PLM build list scope",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 15
+      }
+    }
+  ],
+  "product": {
+    "catalogs": []
+  },
+  "subject": "stories",
+  "projection": {
+    "module": "functions/project.ts"
+  },
+  "expected_sources": {
+    "module": "functions/expected.ts"
+  }
+}

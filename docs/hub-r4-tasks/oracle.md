@@ -1,0 +1,16 @@
+# 任务：判定规则的独立参照实现与差分测试
+
+写一份只从模型元素推出的判定规则参照实现，再在随机场景上和引擎比较，每个分歧都要查清是引擎的错还是参照实现读错。
+
+- 分支和工作树：`hub-oracle`，目录 `circle-hub-oracle`
+- 可以改的路径：`tests/acceptance/oracle/**`。别的路径不动；发现的引擎缺陷写进回报（附失败的种子），不要去改引擎。
+- 验证前提：先读 `AGENTS.md` 和 `docs/hub-r4-handoff.md`（规则、命令、已知问题都在那里）。提交只暂存明确的路径，`git commit -s`，一句首字母大写的英文祈使句，不加前缀和句号，空一行后写你自己的署名行；不推送、不建 PR；不碰 7420 上的持久部署、钥匙串、环境配置文件和任何真实系统；测试只用合成数据。
+- 完成后在终端里回报：提交号、测试通过/跳过/todo 的数量、没做完或拿不准的地方、发现的别处的缺陷（写清失败的场景，不要自己去改别人的路径）。
+- 独立性：写参照实现的时候**不要读** `hub/runs/engine` 和 `hub/rules`，只读模型元素和 `contracts/src`；参照实现写完以后，才可以读 `hub/runs/engine/api.ts` 和它的测试辅助，只为学会怎么驱动引擎。
+- 验证：`npx tsc --noEmit`；`node --test --test-concurrency=2 "tests/acceptance/oracle/**/*.test.ts"`。
+- 复核重点（自己做完再对照一遍）：Is the oracle really independent (written from the model elements, not from the engine)? Does the generator cover every branch of the rules (unknown outcomes, skipped, not covered, repair rounds exhausted, negative expectations, independence, no producer, partitions)? Is every disagreement explained and resolved from the model text, not by changing the oracle to match the engine?
+
+## 规格
+
+PACKAGE oracle - an independent reference implementation of the verdict rules and a differential test against the engine. Model elements: V01 V03 V04 V05 V06 W02 W07 W08 T03 (read them carefully; node tools/show-element.ts) and contracts/src/{validation,claim,submission,run,pack}.ts for the shapes. IMPORTANT: do NOT read hub/runs/engine or hub/rules while writing the oracle - derive the rules from the model elements only, so that the two implementations are independent. Write tests/acceptance/oracle/oracle.ts: a pure function expected(runDescription, submissionDescription, checkOutcomes) -> {terminals per (item, requirement, layer), requirement status and unsatisfied reason, attribution, cell projection per item, partition per item, counts, unknown count, errors summary} where the descriptions are small plain objects you define (requirements with accepted producer, layers, expected outcome and error table; items; per item handling handled, skipped or missing; per (item, requirement) the outcome list a check returned: support, refute with code and tier, unknown with a reason; repair round budget and rounds used; independence facts). Then tests/acceptance/oracle/differential.test.ts: generate thousands of random but valid scenarios with a seeded generator, drive the REAL engine for each through its public API with a fake workflow store and scripted checks (read hub/runs/engine/api.ts and its testing helpers ONLY to learn how to drive it, after the oracle is finished), and assert that the engine and the oracle agree on everything above. Every disagreement is investigated and decided from the model text: an engine bug is reported (do not fix the engine: write it in your report with the failing seed), an oracle misreading is fixed. Also add the exhaustive small cases: all combinations of {fact, judgment, independent judgment} x {handled, skipped, missing} x {pass, violation, unknown, incomplete outcome} x {with and without negative expectation} for a single item and requirement.
+Report: number of scenarios, number of disagreements by cause, the engine bugs found with seeds, and what the generator does not cover.

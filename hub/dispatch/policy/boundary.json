@@ -1,0 +1,337 @@
+{
+  "schema": "boundary-policy@1",
+  "rows": [
+    {
+      "effect_class": "none",
+      "reversible": false,
+      "environments": {
+        "test": true,
+        "shared": true,
+        "production": true
+      }
+    },
+    {
+      "effect_class": "none",
+      "reversible": true,
+      "environments": {
+        "test": true,
+        "shared": true,
+        "production": true
+      }
+    },
+    {
+      "effect_class": "read",
+      "reversible": false,
+      "environments": {
+        "test": true,
+        "shared": true,
+        "production": true
+      }
+    },
+    {
+      "effect_class": "read",
+      "reversible": true,
+      "environments": {
+        "test": true,
+        "shared": true,
+        "production": true
+      }
+    },
+    {
+      "effect_class": "sync_write",
+      "reversible": false,
+      "environments": {
+        "test": false,
+        "shared": false,
+        "production": false
+      }
+    },
+    {
+      "effect_class": "sync_write",
+      "reversible": true,
+      "environments": {
+        "test": false,
+        "shared": false,
+        "production": false
+      }
+    },
+    {
+      "effect_class": "job",
+      "reversible": false,
+      "environments": {
+        "test": true,
+        "shared": true,
+        "production": false
+      }
+    },
+    {
+      "effect_class": "job",
+      "reversible": true,
+      "environments": {
+        "test": true,
+        "shared": true,
+        "production": false
+      }
+    },
+    {
+      "effect_class": "notification",
+      "reversible": false,
+      "environments": {
+        "test": false,
+        "shared": false,
+        "production": false
+      }
+    },
+    {
+      "effect_class": "notification",
+      "reversible": true,
+      "environments": {
+        "test": false,
+        "shared": false,
+        "production": false
+      }
+    }
+  ],
+  "samples": [
+    {
+      "input": {
+        "effect_class": "none",
+        "reversible": false,
+        "environment": "test"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "none",
+        "reversible": false,
+        "environment": "shared"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "none",
+        "reversible": false,
+        "environment": "production"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "none",
+        "reversible": true,
+        "environment": "test"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "none",
+        "reversible": true,
+        "environment": "shared"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "none",
+        "reversible": true,
+        "environment": "production"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "read",
+        "reversible": false,
+        "environment": "test"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "read",
+        "reversible": false,
+        "environment": "shared"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "read",
+        "reversible": false,
+        "environment": "production"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "read",
+        "reversible": true,
+        "environment": "test"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "read",
+        "reversible": true,
+        "environment": "shared"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "read",
+        "reversible": true,
+        "environment": "production"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "sync_write",
+        "reversible": false,
+        "environment": "test"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "effect_class": "sync_write",
+        "reversible": false,
+        "environment": "shared"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "effect_class": "sync_write",
+        "reversible": false,
+        "environment": "production"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "effect_class": "sync_write",
+        "reversible": true,
+        "environment": "test"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "effect_class": "sync_write",
+        "reversible": true,
+        "environment": "shared"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "effect_class": "sync_write",
+        "reversible": true,
+        "environment": "production"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "effect_class": "job",
+        "reversible": false,
+        "environment": "test"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "job",
+        "reversible": false,
+        "environment": "shared"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "job",
+        "reversible": false,
+        "environment": "production"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "effect_class": "job",
+        "reversible": true,
+        "environment": "test"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "job",
+        "reversible": true,
+        "environment": "shared"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "effect_class": "job",
+        "reversible": true,
+        "environment": "production"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "effect_class": "notification",
+        "reversible": false,
+        "environment": "test"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "effect_class": "notification",
+        "reversible": false,
+        "environment": "shared"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "effect_class": "notification",
+        "reversible": false,
+        "environment": "production"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "effect_class": "notification",
+        "reversible": true,
+        "environment": "test"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "effect_class": "notification",
+        "reversible": true,
+        "environment": "shared"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "effect_class": "notification",
+        "reversible": true,
+        "environment": "production"
+      },
+      "expected": false
+    }
+  ]
+}

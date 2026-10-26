@@ -1,0 +1,104 @@
+{
+  "schema": "slots@1",
+  "item": {
+    "cases": {
+      "min": 0,
+      "max": 20,
+      "data": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "negative": {
+            "type": "boolean"
+          },
+          "expects_refutation": {
+            "type": "boolean"
+          },
+          "preconditions": {
+            "type": "array"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "identity": {
+                  "type": "object",
+                  "description": "不要填写。Hub 从命令目录解析 CommandIdentity，并用它的完整路径作去重读取键"
+                },
+                "note": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ]
+            }
+          },
+          "expected": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "text",
+                "quote"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "quote": {
+                  "type": "object",
+                  "required": [
+                    "text",
+                    "reference"
+                  ],
+                  "properties": {
+                    "text": {
+                      "type": "string",
+                      "description": "修复说明或手册里的逐字原文"
+                    },
+                    "reference": {
+                      "type": "string",
+                      "description": "resolve_reference 给出的 src:摘要/解析器@主版本/片段路径。不要另写 digest、sha256、span 或 byte_span；Hub 据此推出 ExpectedQuoteIdentity"
+                    }
+                  }
+                },
+                "identity": {
+                  "type": "object",
+                  "description": "不要填写。Hub 从 quote.reference 和原件字节推出 ExpectedQuoteIdentity"
+                },
+                "after": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "tags": {
+            "type": "array",
+            "description": "旧字段仅保留原文，不作为类型声明；请在 resource 写发布闭集的精确标签"
+          },
+          "resource": {
+            "type": "array"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "稳定草稿 id；按结构字段连接，不解析标题或 statement"
+          }
+        }
+      }
+    }
+  },
+  "run": {}
+}

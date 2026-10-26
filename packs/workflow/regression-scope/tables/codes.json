@@ -1,0 +1,101 @@
+{
+  "schema": "regression-scope.codes@1",
+  "origin": "决定：regression-scope 按架构简报第 6a 节第 4 项给出回归范围；合式视图只有支持和未知",
+  "description": "任务包函数给出的拒绝码、警告码，以及发布检查所要求的投影不变量不通过码。函数代码里的标签与这里一致（pack.test.ts 核对）",
+  "violations": [
+    {
+      "code": "regression-scope.not_in_scope",
+      "when": "条目的原因里有不是后一构建新增或修改的路径。合式投影不会给出这样的条目；这条码只为发布检查的反例存在",
+      "fix": "范围按影响视图重算；不要把删除路径或被排除的新增路径写进原因"
+    },
+    {
+      "code": "regression-scope.not_uncovered",
+      "when": "一条路径既被记为没有用例，又出现在范围内用例的原因里。合式投影在优先级筛选之前算出未覆盖列表，不会这样矛盾",
+      "fix": "未覆盖列表与范围内用例的路径必须不相交"
+    }
+  ],
+  "refusals": [
+    {
+      "code": "regression-scope.invalid_input",
+      "when": "投影函数的输入不是 projection-input@1",
+      "fix": "这是 Hub 的缺陷，请把输入交给维护人"
+    },
+    {
+      "code": "regression-scope.not_a_view",
+      "when": "绑定的源文件不是能解析的 impact-view@1",
+      "fix": "绑定知识库的影响视图，附着种类为用例"
+    },
+    {
+      "code": "regression-scope.no_impact",
+      "when": "输入槽 impact 里没有影响视图，或给了不止一个",
+      "fix": "只绑定一个 knowledge:impact 对象"
+    },
+    {
+      "code": "regression-scope.invalid_parameter",
+      "when": "priorities 不是有限数字的列表，或 include_added 不是布尔值",
+      "fix": "priorities 是数字列表；include_added 是布尔值"
+    },
+    {
+      "code": "regression-scope.too_large",
+      "when": "范围内用例超过一次运行的上限（4000 条）或投影结果超过输出上限（6 MiB）",
+      "fix": "用 priorities 参数收窄范围（例如先只看优先级 1 的），再按优先级分几次运行"
+    },
+    {
+      "code": "regression-scope.internal_error",
+      "when": "函数内部出错（任务包缺陷）",
+      "fix": "把输入交给任务包维护人"
+    },
+    {
+      "code": "regression-scope.changed_kinds",
+      "when": "影响视图不是按 changed=definition 要的（变更种类里不止定义）。回归范围只按命令定义的变化算（决定 11），手册行为的变化不算",
+      "fix": "视图引用写成 knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1"
+    },
+    {
+      "code": "regression-scope.behaviour_view",
+      "when": "behaviour 槽绑了不可用的影响视图：不是影响视图、changed_kinds 不是 behaviour、或不是同一对构建",
+      "fix": "behaviour 槽绑定同一对构建的 changed=behaviour 视图，或不绑定"
+    },
+    {
+      "code": "regression-scope.facets_view",
+      "when": "未绑定唯一的完整目标根用例命令分面，或分面截断、内容不合式",
+      "fix": "在 inputs.facets 绑定 knowledge:facets:<产品>:<目标构建>?kind=case&by=commands；缺完整计数时读取 notes 和根引用交当前用户供集成者定位行数、字节预算或来源排除原因；同一根不自动重试，待修复并取得完整输入后再启动"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "regression-scope.empty_scope",
+      "when": "没有纳入范围的变更路径，或变更路径上没有后一构建的用例，或优先级筛选后没有用例",
+      "fix": "无。空范围会说明原因。引擎接受空的条目集（空的校验结果照常存下）"
+    },
+    {
+      "code": "regression-scope.missing_entry",
+      "when": "变更或放置点名的摘要不在视图的条目表里",
+      "fix": "让影响视图带上它点名的条目"
+    },
+    {
+      "code": "regression-scope.no_case_kind",
+      "when": "附着种类里没有用例",
+      "fix": "读取影响视图时附着种类写上 case"
+    },
+    {
+      "code": "regression-scope.case_without_id",
+      "when": "用例条目没有文档编号或节点编号",
+      "fix": "用例数据要有 document 和 node"
+    },
+    {
+      "code": "regression-scope.case_id_too_long",
+      "when": "文档编号和节点编号拼起来超过 200 个字符",
+      "fix": "缩短编号；超长的用例不列入范围"
+    },
+    {
+      "code": "regression-scope.index_skipped",
+      "when": "后一构建有列出但没有读到的文档（skipped.to 大于 0）",
+      "fix": "无。结论里会写明缺少的份数，未覆盖不能当成完整"
+    },
+    {
+      "code": "regression-scope.truncated",
+      "when": "影响视图被截断，列出的变更路径不是全部",
+      "fix": "无。完整性记为未知"
+    }
+  ]
+}

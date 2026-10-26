@@ -1,0 +1,66 @@
+{
+  "schema": "case-compile.dispatch-roles@1",
+  "dispatches": [
+    {
+      "dispatch": "direct_method_call",
+      "roles": [
+        "device_cli",
+        "host_shell",
+        "literal_assertion",
+        "wait"
+      ],
+      "missing": "方法内部的动作未被参数角色和拒绝表核验",
+      "next": "集成者逐个只读看过方法后，在配置 allowed 项显式写 reviewed:true 决定开放；否则草稿保留待定，新发布后新开运行",
+      "requires_method_review": true,
+      "basis": "集成者只读核对运行器派发机制：getattr(E 对象, F)(*G 解析结果)；角色不能替代方法本身的审阅"
+    },
+    {
+      "dispatch": "cmd_primitive",
+      "roles": [
+        "device_cli",
+        "host_shell"
+      ],
+      "missing": null,
+      "next": null,
+      "requires_method_review": false,
+      "basis": "集成者只读核对运行器派发机制：cmd_config/cmds_config 在设备及主机上原样转发 G 文本"
+    },
+    {
+      "dispatch": "execute_registry",
+      "roles": [],
+      "missing": "这类参数不是可按现有规则核验的命令文字；G 规则和拒绝表不能覆盖其语义",
+      "next": "case-compile 为它增加角色和完整检查，另写一页；当前草稿单列为未开",
+      "requires_method_review": false,
+      "basis": "现有 G 规则和拒绝表无法核验这类动作参数，当前没有可用角色"
+    },
+    {
+      "dispatch": "checkpoint_two_argument",
+      "roles": [
+        "literal_assertion",
+        "executor_return"
+      ],
+      "missing": null,
+      "next": null,
+      "requires_method_review": false,
+      "basis": "集成者只读核对运行器派发机制：两参数检查点消费前一步返回和字面期望"
+    },
+    {
+      "dispatch": "checkpoint_v2_three_argument",
+      "roles": [],
+      "missing": "这类参数不是可按现有规则核验的命令文字；G 规则和拒绝表不能覆盖其语义",
+      "next": "case-compile 为它增加角色和完整检查，另写一页；当前草稿单列为未开",
+      "requires_method_review": false,
+      "basis": "现有 G 规则和拒绝表无法核验这类动作参数，当前没有可用角色"
+    },
+    {
+      "dispatch": "builtin_special_case",
+      "roles": [
+        "wait"
+      ],
+      "missing": null,
+      "next": null,
+      "requires_method_review": false,
+      "basis": "集成者只读核对运行器派发机制：特殊分支消费等待秒数"
+    }
+  ]
+}

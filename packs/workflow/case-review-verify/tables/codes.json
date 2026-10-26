@@ -1,0 +1,156 @@
+{
+  "schema": "case-review-verify.codes@1",
+  "origin": "决定：case-review-verify 工作流包的包内码（docs/hub-r4-architecture.md 第 5 节：包码写在包名下）；处置、结论和等级取自同一文档第 6 节的复核方法（review-verifier），不另加维度、发现名称或等级；函数的输出只用这里列出的码",
+  "description": "refusals：投影或期望来源函数拒绝整个输入时的码（error.code）；warnings：不影响结果的提示（warnings[].code）；checks：检查函数给出的反驳码（要求项 verification 的错误处理表按它们送回修复）",
+  "refusals": [
+    {
+      "code": "case-review-verify.invalid_input",
+      "when": "输入的形状不符合函数约定，或没有绑定 target、draft",
+      "fix": "target 给初评评审的同一份脑图，draft 给初评的验证结果引用"
+    },
+    {
+      "code": "case-review-verify.draft_invalid",
+      "when": "draft 绑定的不是 case-review 初评运行的验证结果（另一个任务包的结果、不是 validation@1），或其中没有脑图条目",
+      "fix": "给出初评 submit_result 回执里的验证结果引用 rec:<摘要>，不带 # 指针"
+    },
+    {
+      "code": "case-review-verify.draft_not_accepted",
+      "when": "初评的这次提交没有被接受，没有可以复核的发现和等级",
+      "fix": "先让初评方按回执改正并重新提交，复核被接受的那次提交"
+    },
+    {
+      "code": "case-review-verify.target_mismatch",
+      "when": "初评判定的源文件和 target 绑定的不是同一份（摘要不同）",
+      "fix": "把 target 设为初评判定的同一份源文件"
+    },
+    {
+      "code": "case-review-verify.draft_item_missing",
+      "when": "初评的条目在 target 里找不到对应的节点",
+      "fix": "把 target 设为初评评审的同一份脑图"
+    },
+    {
+      "code": "case-review-verify.too_many_items",
+      "when": "初评的条目超过一次运行最多 100 个",
+      "fix": "初评按子树分块后，每块单独复核"
+    },
+    {
+      "code": "case-review-verify.internal_error",
+      "when": "任务包函数内部出错",
+      "fix": "这是任务包的缺陷，请把输入交给任务包维护人"
+    },
+    {
+      "code": "case-review-verify.draft_level_missing",
+      "when": "初评缺少等级",
+      "fix": "初评补等级并重交后再开复核"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "case-review-verify.parameter_ignored",
+      "when": "运行参数的取值无效，按默认值处理",
+      "fix": "按任务包说明改正参数"
+    },
+    {
+      "code": "case-review-verify.document_skipped",
+      "when": "文档缺少编号或标题，没有读取它的期望来源",
+      "fix": "给文档编号和标题"
+    },
+    {
+      "code": "case-review-verify.id_kind_unknown",
+      "when": "标题或目录里的编号没有标明是需求还是缺陷，按 bare_ids 两种都读取（默认）或不读取；两种都存在时其中一种可能与文档无关",
+      "fix": "引用前先核对记录的标题；在参数 id_ranges 里给出编号范围，或在参数 stories、bugs 里直接给出编号"
+    },
+    {
+      "code": "case-review-verify.warnings_clipped",
+      "when": "警告太多，只列出前 100 条",
+      "fix": "先处理已列出的警告"
+    }
+  ],
+  "checks": [
+    {
+      "code": "case-review-verify.disposition_missing",
+      "when": "检查 dispositions：一条初评发现没有处置",
+      "fix": "给它写一条 verified、refuted 或 partial，data.finding 写它的引用"
+    },
+    {
+      "code": "case-review-verify.disposition_duplicate",
+      "when": "检查 dispositions：一条初评发现有不止一条处置",
+      "fix": "只保留一条处置"
+    },
+    {
+      "code": "case-review-verify.finding_unknown",
+      "when": "检查 dispositions：处置的 data.finding 不是这个条目的初评发现",
+      "fix": "写这个条目 draft_findings 里某条发现的 reference"
+    },
+    {
+      "code": "case-review-verify.location_missing",
+      "when": "检查 dispositions：一条陈述没有写位置",
+      "fix": "location 写它落在被复核脑图的哪个节点"
+    },
+    {
+      "code": "case-review-verify.quote_missing",
+      "when": "检查 dispositions：一条陈述没有逐字引文",
+      "fix": "quotes 至少引一段原文"
+    },
+    {
+      "code": "case-review-verify.probe_missing",
+      "when": "检查 dispositions：新发现没有写它属于七类问题中的哪一类",
+      "fix": "data.probe 写七类问题之一"
+    },
+    {
+      "code": "case-review-verify.pass_with_refuted",
+      "when": "检查 verdict：结论 PASS 却推翻了初评发现",
+      "fix": "结论改为 FAIL 或 PARTIAL"
+    },
+    {
+      "code": "case-review-verify.pass_with_new_finding",
+      "when": "检查 verdict：结论 PASS 却列出了新发现",
+      "fix": "结论改为 PARTIAL（或 FAIL）"
+    },
+    {
+      "code": "case-review-verify.pass_level_changed",
+      "when": "检查 verdict：结论 PASS 但最终等级与初评等级不同",
+      "fix": "结论改为 PARTIAL，或保留初评等级"
+    },
+    {
+      "code": "case-review-verify.pass_without_evidence",
+      "when": "检查 verdict：结论 PASS 但复核方没有一段自己从被复核脑图里逐字引用的原文（位置、根据和照抄初评的引文都不算）",
+      "fix": "至少独立核对一处被复核对象，把那段原文逐字写进处置的 quotes"
+    },
+    {
+      "code": "case-review-verify.pass_with_unverified",
+      "when": "检查 verdict：结论 PASS 但有初评发现没有处置（所在条目跳过了、没有提交，或者没有写处置）",
+      "fix": "逐条核对每一条初评发现，给每条写 verified、refuted 或 partial；还没核对完时不能给 PASS"
+    },
+    {
+      "code": "case-review-verify.fail_without_major_refutation",
+      "when": "检查 verdict：结论 FAIL 但没有推翻初评定为严重或主要的发现",
+      "fix": "写出被推翻的重大事实错误；推翻的只是次要发现时把结论改为 PARTIAL"
+    },
+    {
+      "code": "case-review-verify.partial_without_change",
+      "when": "检查 verdict：结论 PARTIAL 但没有新发现、没有推翻或修正初评发现，等级也没有改",
+      "fix": "写出初评遗漏的问题、推翻或修正的发现，或调整等级；初评基本正确时结论应为 PASS"
+    },
+    {
+      "code": "case-review-verify.suggestion_target_missing",
+      "when": "检查 suggestion_targets：建议没有指向被复核脑图节点的根据，只有期望来源的根据也不算",
+      "fix": "grounds 至少一条指向目标的用例或测试子项节点"
+    },
+    {
+      "code": "case-review-verify.suggestion_incomplete",
+      "when": "检查 suggestion_targets：建议没有完整的补、因为、期望三段，或一段没有内容",
+      "fix": "按“补：<用例>；因为：<原因>；期望：<结果>”写全三段"
+    },
+    {
+      "code": "case-review-verify.verdict_missing",
+      "when": "提交的复核判定或等级缺失",
+      "fix": "补齐 cross_item 的判定码和 rank 后重交；初评缺等级须先补齐初评再重开复核"
+    },
+    {
+      "code": "case-review-verify.level_missing",
+      "when": "提交的复核判定或等级缺失",
+      "fix": "补齐 cross_item 的判定码和 rank 后重交；初评缺等级须先补齐初评再重开复核"
+    }
+  ]
+}

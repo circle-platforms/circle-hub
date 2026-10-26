@@ -1,0 +1,93 @@
+{
+  "schema": "quality-board.codes@1",
+  "origin": "决定：quality-board 任务包按任务页 docs/hub-r4-tasks/quality-board.md 声明的码；任务页写的 quality.* 码不在本包命名空间下，按 Hub 的规则落在 quality-board.* 下",
+  "description": "任务包函数给出的不通过码、拒绝码和警告码；函数代码里的码与这里一致（pack.test.ts 核对）",
+  "violations": [
+    {
+      "code": "quality-board.missing_expected",
+      "when": "分组的无期望结果用例占比超过上限（max_missing_ratio，默认 0.05；等于不算超过）",
+      "fix": "给这个版本线、模块的用例补上期望结果"
+    },
+    {
+      "code": "quality-board.vague_expected",
+      "when": "分组的只有含糊期望结果的用例占比超过上限（max_vague_ratio，默认 0.05；等于不算超过）",
+      "fix": "把“成功”“正常”这类含糊期望改成可核对的期望结果"
+    },
+    {
+      "code": "quality-board.negative_share",
+      "when": "分组的负面用例占比低于下限（min_negative_ratio，默认 0.02；等于不算低于）",
+      "fix": "给这个版本线、模块补负面用例"
+    },
+    {
+      "code": "quality-board.counts_inconsistent",
+      "when": "分组的计数组不自洽（某项多于用例总数），被判对象自相矛盾，指标不可信",
+      "fix": "把运行编号交给任务包维护人"
+    },
+    {
+      "code": "quality-board.total_undercount",
+      "when": "视图声明未截断，但各行加起来的用例数少于视图声明的用例总数，视图自相矛盾",
+      "fix": "让知识库重新生成这个构建的视图；再跑一次"
+    },
+    {
+      "code": "quality-board.multi_valued",
+      "when": "视图声明未截断，但各行加起来的用例数多于视图声明的用例总数：有用例在分组字段上带了多个值，被重复计数",
+      "fix": "检查用例索引的生产器：line、module、has_expected、vague_expected、negative 都应是单值"
+    }
+  ],
+  "refusals": [
+    {
+      "code": "quality-board.invalid_input",
+      "when": "投影函数的输入不是 projection-input@1，或输入槽 facets 没有绑定一个视图",
+      "fix": "按 projection-input@1 传入绑定的视图"
+    },
+    {
+      "code": "quality-board.wrong_view",
+      "when": "输入槽里绑定的不是 facet-view@1、kind 不是 case、by 没有覆盖看板要的五个字段，或视图本身不完整",
+      "fix": "facets 槽绑定 knowledge:facets:<产品>:<构建>?kind=case&by=line,module,has_expected,vague_expected,negative"
+    },
+    {
+      "code": "quality-board.view_mismatch",
+      "when": "视图的产品与运行绑定的产品线不一致",
+      "fix": "绑定运行所绑产品线的视图"
+    },
+    {
+      "code": "quality-board.invalid_parameter",
+      "when": "阈值参数不是 0 到 1 的数",
+      "fix": "三个阈值参数都写成 0 到 1 的数；不写则用默认值"
+    },
+    {
+      "code": "quality-board.no_cases",
+      "when": "构建的根里没有用例条目，看板没有条目可算",
+      "fix": "确认这个构建的用例索引已经同步（knowledge sync），再开始运行"
+    },
+    {
+      "code": "quality-board.ambiguous_group",
+      "when": "两个（版本线、模块）分组的条目编号相同（字段值里带了 /）",
+      "fix": "修正用例索引来源里带 / 的版本线或模块值后重新同步"
+    },
+    {
+      "code": "quality-board.too_large",
+      "when": "分组数超过一次运行的上限，或投影结果超过投影函数的输出上限",
+      "fix": "把视图的 by 收紧后重试（例如按版本线分开）"
+    },
+    {
+      "code": "quality-board.internal_error",
+      "when": "函数内部出错（任务包缺陷）",
+      "fix": "把输入交给任务包维护人"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "quality-board.view_truncated",
+      "when": "计数视图被截断，看板只覆盖列出的部分",
+      "fix": "视图有上限；合计只覆盖列出的部分，结论里照写"
+    }
+  ],
+  "checks": [
+    {
+      "code": "quality-board.undeclared_tag",
+      "when": "作者 resource 含不在发布闭集中的精确原文，提示档结构违规",
+      "fix": "从发布闭集选择精确原文修正 resource 后重新核验；不猜对应值"
+    }
+  ]
+}

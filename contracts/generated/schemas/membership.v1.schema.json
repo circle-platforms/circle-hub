@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "membership@1"
+    },
+    "origin": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The source file (a reference) or the decision that produced this table (C04 R[0]); a table without it is code"
+    },
+    "description": {
+      "description": "What the table checks, in the pack language",
+      "type": "string"
+    },
+    "tier": {
+      "description": "Tier of the outcomes (C05 R[1]); default blocking when a basis is given, else advisory. Blocking needs a basis",
+      "type": "string",
+      "enum": [
+        "blocking",
+        "advisory"
+      ]
+    },
+    "basis": {
+      "description": "The acceptance contract clause a blocking check relies on (C05 R[1])",
+      "type": "string",
+      "minLength": 1
+    },
+    "item": {
+      "description": "Pointer to the item identity in the subject (or in each node); copied into outcomes",
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "location": {
+      "description": "Pointer to the reference URI of the item in the judged source; becomes a ground of the outcomes",
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "values": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 512,
+        "pattern": "^\\$(?:\\.(?:\\*|[A-Za-z_\\u0080-￿][A-Za-z0-9_\\u0080-￿]*)|\\[(?:\\*|-?(?:0|[1-9][0-9]*)|'(?:[^'\\\\]|\\\\.)*'|\"(?:[^\"\\\\]|\\\\.)*\")\\])*$",
+        "description": "RFC 9535 JSONPath selecting values of the subject; only member names, indexes and wildcards are allowed"
+      },
+      "description": "Subject locations whose values must be members (strings, or arrays of strings)"
+    },
+    "set": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "values": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The members, by value"
+            }
+          },
+          "required": [
+            "values"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "reference": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+              "description": "A bound source whose content is a JSON array of strings"
+            }
+          },
+          "required": [
+            "reference"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A closed set the pack declares (slots.schema.json), passed by the caller"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "A closed set by value, by reference or by the name of a pack-declared set"
+    },
+    "match": {
+      "type": "object",
+      "properties": {
+        "unicode": {
+          "description": "Unicode normalization form applied first; default nfc",
+          "type": "string",
+          "enum": [
+            "none",
+            "nfc",
+            "nfkc"
+          ]
+        },
+        "case": {
+          "description": "insensitive compares lower-cased values; default sensitive",
+          "type": "string",
+          "enum": [
+            "sensitive",
+            "insensitive"
+          ]
+        },
+        "whitespace": {
+          "description": "trim removes leading and trailing whitespace, collapse also turns every inner whitespace run into one space; default trim",
+          "type": "string",
+          "enum": [
+            "exact",
+            "trim",
+            "collapse"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "How values are normalized before matching (C04 R[2]); every table that compares text declares it"
+    },
+    "required": {
+      "description": "A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema",
+    "origin",
+    "values",
+    "set"
+  ],
+  "additionalProperties": false,
+  "title": "membership@1",
+  "description": "Membership table: values must belong to a closed set. Code: core.membership.not_in_set"
+}

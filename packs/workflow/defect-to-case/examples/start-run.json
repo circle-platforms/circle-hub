@@ -1,0 +1,28 @@
+{
+  "note": "示例（合成）：根据 PLM 缺陷记录起草回归测试用例；输入包括一个或多个缺陷，以及对应锁定构建的已索引用例清单（用于重复校验）",
+  "start_run": {
+    "pack": "defect-to-case",
+    "product": "<产品名称>",
+    "build": "<构建标识>",
+    "inputs": {
+      "defects": [
+        {
+          "external": "plm:bug:<缺陷编号1>"
+        },
+        {
+          "external": "plm:bug:<缺陷编号2>"
+        }
+      ],
+      "indexed_cases": {
+        "external": "knowledge:index:<产品名称>:<构建标识>?kind=case&key=commands&only=show%20health%20detail,widget%20health%20interval&fields=commands,document,node,title,negative"
+      },
+      "manual": {
+        "external": "manual:cli:<版本线>"
+      }
+    },
+    "parameters": {
+      "max_cases": 6,
+      "priority": 2
+    }
+  }
+}

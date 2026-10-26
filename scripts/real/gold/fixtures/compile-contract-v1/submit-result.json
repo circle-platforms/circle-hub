@@ -1,0 +1,112 @@
+{
+  "synthetic": true,
+  "note": "合成示例：对 examples/start-run.json 那次运行的一次完整提交（模型只按受限结构填槽：bucket、blocks、steps、expects 和 quotes；执行计划由 Hub 从槽位生成，不由模型写）",
+  "run": "run_01m5h9zh07x7amhg4bwmye5yhw",
+  "model": "synthetic-model",
+  "items": [
+    {
+      "item": "doc-1:c-1",
+      "handling": "handled",
+      "slots": {
+        "plan": [
+          {
+            "text": "健康检查间隔配置测试的执行计划槽位（4 步，1 个期望结果）",
+            "quotes": [
+              {
+                "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0",
+                "text": "健康检查间隔设置成功"
+              }
+            ],
+            "data": {
+              "bucket": "bed-a",
+              "blocks": [
+                "setup"
+              ],
+              "steps": [
+                {
+                  "object": "dut",
+                  "method": "listen",
+                  "params": {
+                    "address": "192.0.2.10",
+                    "port": 8080
+                  }
+                },
+                {
+                  "object": "dut",
+                  "method": "cli",
+                  "params": {
+                    "line": "widget health interval 60"
+                  }
+                },
+                {
+                  "object": "client",
+                  "method": "request",
+                  "params": {
+                    "target": "192.0.2.90",
+                    "count": 3
+                  }
+                },
+                {
+                  "object": "server",
+                  "method": "respond",
+                  "params": {
+                    "backend": "192.0.2.90",
+                    "status": 200
+                  }
+                }
+              ],
+              "expects": [
+                {
+                  "text": "健康检查间隔设置成功",
+                  "quote": {
+                    "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/s/c-1-s1/0",
+                    "text": "健康检查间隔设置成功"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "item": "doc-1:c-2",
+      "handling": "handled",
+      "slots": {
+        "plan": [
+          {
+            "text": "会话保持基本功能测试的执行计划槽位（1 步，1 个期望结果）",
+            "quotes": [
+              {
+                "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/kityminder@1/s/c-2-s1/0",
+                "text": "会话保持生效"
+              }
+            ],
+            "data": {
+              "bucket": "bed-a",
+              "blocks": [],
+              "steps": [
+                {
+                  "object": "dut",
+                  "method": "cli",
+                  "params": {
+                    "line": "widget session persistence cookie"
+                  }
+                }
+              ],
+              "expects": [
+                {
+                  "text": "会话保持生效",
+                  "quote": {
+                    "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/kityminder@1/s/c-2-s1/0",
+                    "text": "会话保持生效"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

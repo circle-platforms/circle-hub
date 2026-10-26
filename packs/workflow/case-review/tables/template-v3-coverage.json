@@ -1,0 +1,29 @@
+{
+  "schema": "coverage@1",
+  "origin": "决定：模板 v3 的必选范围与用户显式跳过政策；闭集精确相等，类别语义仅来自原件作者字段或本次受理的逐用例模型主张",
+  "description": "必选类别未覆盖且未由用户说明理由跳过，只有在声明范围完整且每个用例均已分类时才算缺失；未分类、未读完整与显式跳过分别披露。模型类别主张保留判断性质，集合运算不证明其语义。",
+  "tier": "advisory",
+  "required": {
+    "values": [
+      "functional",
+      "configuration",
+      "integration",
+      "compatibility",
+      "negative",
+      "stress"
+    ]
+  },
+  "covered": [
+    "$.covered[*]"
+  ],
+  "skipped": {
+    "select": "$.skipped[*]",
+    "member": "/category",
+    "reason": "/reason"
+  },
+  "match": {
+    "unicode": "none",
+    "case": "sensitive",
+    "whitespace": "exact"
+  }
+}

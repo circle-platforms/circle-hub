@@ -1,0 +1,116 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "subject",
+      "role": "subject",
+      "description": "评审过的用例文档：敏捷平台的脑图（KityMinder 导出的 application/json，kityminder@1 解析）。取用例的规则和 case-review 一样：带标签（resource）或带标记（priority）的节点是用例，case_rule 参数可限制为只认标签",
+      "accepts": [
+        "agile:mindmap",
+        "application/json"
+      ],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "contract",
+      "role": "expected",
+      "description": "运行器原格式函数合约命名文档（doc:doc），按完整原文重算身份并与 runtime-profile 的期望身份核对；不转换格式、不补参数类型或默认值",
+      "accepts": [
+        "doc:doc"
+      ],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "inventory",
+      "role": "expected",
+      "description": "台架清单命名文档（doc:doc:<名字>，json@1 解析，形状 test-bed-manifest@1，与 test-bed 包同一份）：设备、类型、接口地址、服务、保留段。缺省写 doc:doc:bed-topology；清单有问题时整份拒绝并指出位置",
+      "accepts": [
+        "doc:doc"
+      ],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "profile",
+      "role": "expected",
+      "description": "发布的 runtime-profile@1：期望运行时和合约身份、工作簿字面格式、座位和主机映射、本轮允许组合及参数角色、设备和主机拒绝表、synthetic 声明",
+      "accepts": [
+        "doc:doc"
+      ],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "workbook",
+      "role": "artifact_under_verification",
+      "description": "客户端从已满足计划生成并上传的单用例工作簿，xlsx@1 解析；缺少时只核计划，工作簿要求项保持缺输入并由客户端继续生成上传",
+      "accepts": [
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "case_index",
+      "role": "expected",
+      "description": "同一锁定根的可选用例身份声明；存在声明时与计划命令的锁定目录解析结果共同核对，作者未声明命令不阻止按目录解析计划命令",
+      "accepts": [
+        "knowledge:index"
+      ],
+      "required": false,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "case_rule",
+      "description": "取用例的规则：marked（默认）带标签或带标记都算用例；tagged 限制为只认标签（resource 不为空）",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "enum": [
+          "tagged",
+          "marked"
+        ]
+      }
+    },
+    {
+      "name": "autoid",
+      "description": "本轮只编译这个自动化编号，按原始文字匹配；找不到或重复均拒绝开始运行",
+      "required": true,
+      "schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    },
+    {
+      "name": "plan_run",
+      "description": "绑定 workbook 时必填：已满足的计划运行号，作为说明行来源；同时作 predecessor，二者一致由派发核对",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    }
+  ],
+  "product": {
+    "catalogs": [
+      "commands@1"
+    ]
+  },
+  "context": [
+    "leases"
+  ],
+  "subject": "subject",
+  "projection": {
+    "module": "functions/project.ts"
+  },
+  "leases": {
+    "prefix": "bed/",
+    "max_ttl_seconds": 3600
+  }
+}

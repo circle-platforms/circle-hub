@@ -1,0 +1,47 @@
+{
+  "id": "not_in_scope",
+  "source": "author",
+  "check": "in_scope",
+  "note": "合成样例：原因是删除路径。合式投影不会给出这样的条目；反例只为发布检查存在",
+  "subject": {
+    "items": [
+      {
+        "id": "doc-1:n1",
+        "location": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fields": {
+          "document": "doc-1",
+          "node": "n1",
+          "priority": 1,
+          "negative": false,
+          "reasons": [
+            {
+              "change": "removed",
+              "detail": 0
+            }
+          ]
+        },
+        "label": "查看部件状态"
+      }
+    ],
+    "note": {
+      "details": [
+        {
+          "path": "/commands/show",
+          "change": "modified",
+          "definition_change": "modified",
+          "conclusion": "命令定义有变更",
+          "differences": [],
+          "references": []
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "regression-scope.not_in_scope",
+      "item": "doc-1:n1",
+      "tier": "advisory"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "impact",
+      "role": "subject",
+      "description": "两个构建之间的影响视图（knowledge:impact:<产品>:<起始构建>..<目标构建>?changed=definition&attached=case&attached_fields=document,node,title,priority,negative&catalog=commands@1）。必须带 changed=definition：回归范围只按命令定义的变化算（决定 11）；catalog=commands@1 把变更限定到命令目录的成员按语法比。Hub 的读取器回答 impact-view@1，附着种类为用例，附着的用例条目只带这五个字段（瘦身，大版本差也放得下）",
+      "accepts": [
+        "knowledge:impact"
+      ],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "behaviour",
+      "role": "hint",
+      "description": "同一对构建的 changed=behaviour 视图（可选）：手册说明有变化的命令只在结论里另列一段作线索（最多 5 条，其余写“另有”），不进范围、不影响任何计数",
+      "accepts": [
+        "knowledge:impact"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "facets",
+      "role": "hint",
+      "description": "目标构建用例按命令分面的完整计数，只作未归位披露：knowledge:facets:<产品>:<目标构建>?kind=case&by=commands；截断时先补取完整视图",
+      "accepts": [
+        "knowledge:facets"
+      ],
+      "required": true,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "priorities",
+      "description": "只保留这些优先级的用例。不写则全部保留；空列表则一条都不留。优先级未给出的用例在筛选时去掉",
+      "required": false,
+      "schema": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "maxItems": 64
+      }
+    },
+    {
+      "name": "include_added",
+      "description": "是否把新增路径上的用例算进回归范围。默认 true；false 时新增路径不进入范围，也不记为未覆盖",
+      "required": false,
+      "schema": {
+        "type": "boolean"
+      }
+    }
+  ],
+  "product": {
+    "catalogs": []
+  },
+  "subject": "impact",
+  "projection": {
+    "module": "functions/project.ts"
+  }
+}

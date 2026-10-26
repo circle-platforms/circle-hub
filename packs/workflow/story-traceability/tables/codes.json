@@ -1,0 +1,30 @@
+{
+  "schema": "story-traceability.codes@1",
+  "origin": "任务页 gold-trace 第 5 条及集成者 2026-10-23 答复",
+  "violations": [
+    {
+      "code": "story-traceability.join_mismatch",
+      "when": "用例原始需求号不含被判需求",
+      "fix": "修复索引连接后重跑"
+    },
+    {
+      "code": "story-traceability.count_mismatch",
+      "when": "视图声明未截断却与总数不符",
+      "fix": "请管理员运行知识同步，完成后重跑"
+    }
+  ],
+  "refusals": [
+    {
+      "code": "story-traceability.invalid_input",
+      "when": "输入缺失、形状错误、冲突或超过预算",
+      "fix": "按回执修正输入后重跑"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "story-traceability.entry_missing",
+      "when": "索引键下缺条目正文",
+      "fix": "请管理员运行知识同步，完成后重跑"
+    }
+  ]
+}

@@ -1,0 +1,1463 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "feeding_offset": {
+      "description": "Append-only feeding horizon frozen with the root; missing on a historical run remains unknown",
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "feeding-offset@1"
+        },
+        "run": {
+          "type": "string",
+          "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        "root": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null",
+              "const": null
+            }
+          ]
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "schema",
+        "run",
+        "root",
+        "offset"
+      ],
+      "additionalProperties": false,
+      "title": "feeding-offset@1"
+    },
+    "feeding_objects": {
+      "description": "Objects actually consumed by this run",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "run": {
+      "type": "string",
+      "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "pack": {
+      "type": "string"
+    },
+    "pack_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "product": {
+      "description": "product line the run is bound to",
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "build": {
+      "type": "string"
+    },
+    "target_basis": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "requirement": {
+            "type": "string"
+          },
+          "pointer": {
+            "description": "where the claim comes from: a JSON Pointer into the submission, or into the checked subject",
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+          },
+          "statement": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "verdict": {
+                "type": "string",
+                "enum": [
+                  "support",
+                  "refute",
+                  "unknown",
+                  "abstain"
+                ]
+              },
+              "code": {
+                "description": "violation code or finding code",
+                "type": "string"
+              },
+              "reason": {
+                "description": "why the verdict is unknown: check error, timeout, missing input (V01 R[2])",
+                "type": "string",
+                "enum": [
+                  "no_check",
+                  "check_error",
+                  "timeout",
+                  "missing_input",
+                  "declared_skip",
+                  "not_covered",
+                  "awaiting_step",
+                  "output_failed",
+                  "repair_exhausted",
+                  "budget_exhausted",
+                  "integrity_unproven"
+                ]
+              },
+              "rank": {
+                "description": "ranking level from the closed set the pack declares; for sorting and display only (V02)",
+                "type": "string"
+              },
+              "data": {
+                "description": "machine-readable parts of the statement",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          "qualifier": {
+            "type": "object",
+            "properties": {
+              "nature": {
+                "type": "string",
+                "enum": [
+                  "fact",
+                  "judgment",
+                  "unknown"
+                ]
+              },
+              "provenance": {
+                "type": "string",
+                "enum": [
+                  "observed",
+                  "projected",
+                  "declared",
+                  "candidate"
+                ]
+              },
+              "basis_rank": {
+                "type": "string",
+                "enum": [
+                  "rule_over_observation",
+                  "rule_over_claims",
+                  "judgment",
+                  "relay"
+                ]
+              },
+              "source_role": {
+                "type": "string",
+                "enum": [
+                  "expected",
+                  "subject",
+                  "artifact_under_verification",
+                  "reported_actual",
+                  "republished",
+                  "hint",
+                  "request_text"
+                ]
+              },
+              "marks": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "target_reported",
+                    "report_for_dispatch",
+                    "local_ops_not_excluded",
+                    "human_intervention",
+                    "discrimination_not_established",
+                    "semantics_unasserted",
+                    "unverified_submission",
+                    "client_preview",
+                    "model_relay",
+                    "no_reuse",
+                    "author_samples_only",
+                    "conditional_on_judgment",
+                    "independence_declared",
+                    "not_realtime",
+                    "partial",
+                    "intermittent",
+                    "decision_shape_unruled",
+                    "legacy_keyword_rules",
+                    "possible_credentials"
+                  ]
+                }
+              },
+              "coverage": {
+                "type": "object",
+                "properties": {
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "examined": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "complete",
+                  "examined"
+                ],
+                "additionalProperties": false
+              },
+              "collected_at": {
+                "description": "time bound: when the observation the claim rests on was collected; it holds only for that moment (A05)",
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "control": {
+                "type": "string",
+                "enum": [
+                  "automatic",
+                  "human_takeover"
+                ]
+              },
+              "discriminating_power": {
+                "type": "string",
+                "enum": [
+                  "established",
+                  "not_established"
+                ]
+              }
+            },
+            "required": [
+              "nature",
+              "provenance",
+              "marks"
+            ],
+            "additionalProperties": false
+          },
+          "grounds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+              "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+            },
+            "description": "references the claim rests on; a knowledge entry is cited by its tree address (B01 R[5])"
+          },
+          "warrant": {
+            "type": "object",
+            "properties": {
+              "producer": {
+                "type": "string",
+                "enum": [
+                  "function",
+                  "model",
+                  "human"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "independence": {
+                "type": "string",
+                "enum": [
+                  "human_non_author",
+                  "model_family_declared",
+                  "judge_not_author",
+                  "not_independent",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "producer",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "ambiguous",
+              "unresolved"
+            ]
+          },
+          "resolutions": {
+            "description": "each exact value of the statement with what it resolved to (W08, T04 R[1])",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pointer": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                  "description": "where the value stands, as a JSON Pointer into the submission"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "the exact value or quotation as the model wrote it"
+                },
+                "resolution": {
+                  "type": "string",
+                  "enum": [
+                    "resolved",
+                    "ambiguous",
+                    "unresolved"
+                  ]
+                },
+                "references": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                    "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                  },
+                  "description": "what it resolved to: one or more when resolved, the candidates when ambiguous, none when unresolved"
+                }
+              },
+              "required": [
+                "pointer",
+                "text",
+                "resolution",
+                "references"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "validity": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "valid",
+                  "rule_withdrawn",
+                  "grounds_withdrawn",
+                  "cited_fragment_changed",
+                  "credential_unreadable",
+                  "premise_failed",
+                  "expired",
+                  "contradicted",
+                  "not_evaluated"
+                ]
+              },
+              "bound": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "description": "digests the claim depends on; a change in any of them voids it"
+              },
+              "expires_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "premises": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "status",
+              "bound",
+              "premises"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "statement",
+          "qualifier",
+          "grounds",
+          "warrant",
+          "validity"
+        ],
+        "additionalProperties": false
+      },
+      "description": "how product, version and build were fixed: one claim each; provenance declared when the caller gave the value, projected when the pack rule chose it, observed when a target echoed it; grounds cite what the choice read"
+    },
+    "unversioned_root": {
+      "description": "product-wide knowledge root locked for this run",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "root": {
+      "description": "knowledge root locked for this run",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "artifact": {
+            "description": "Exact source_artifact record returned by this read, independent of equal-byte captures",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "read_manifest": {
+            "description": "Observed read action that returned this exact capture",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "meta_artifact": {
+            "description": "Exact metadata source_artifact returned by the same read",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "coverage": {
+            "description": "Observed coverage of the external read frozen with these bytes; absent on legacy bindings",
+            "type": "object",
+            "properties": {
+              "complete": {
+                "type": "boolean"
+              },
+              "examined": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "note": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "complete",
+              "examined"
+            ],
+            "additionalProperties": false
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+            "description": "the bound bytes or fragment; read it with get_nodes"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "expected",
+              "subject",
+              "artifact_under_verification",
+              "reported_actual",
+              "republished",
+              "hint",
+              "request_text"
+            ]
+          },
+          "slot": {
+            "description": "input slot the source came in through",
+            "type": "string"
+          },
+          "external": {
+            "description": "external object identity with the revision the Hub read",
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "label": {
+            "description": "display name, for example the title of a linked record",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference",
+          "role"
+        ],
+        "additionalProperties": false
+      },
+      "description": "every source bound to the run besides the knowledge root: inputs and the expected sources the pack bound"
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "independence_by_account": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "static",
+                "dynamic"
+              ]
+            },
+            "description": "the judgment layers this requirement is judged on; other layers are not applicable"
+          },
+          "done_rule": {
+            "type": "string",
+            "enum": [
+              "bookkeeping",
+              "gating"
+            ]
+          },
+          "accepted_producer": {
+            "type": "string",
+            "enum": [
+              "fact",
+              "judgment",
+              "independent_judgment"
+            ]
+          },
+          "observation": {
+            "description": "The declared P07 observation contract for the dynamic layer",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "repair_rounds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "locked rule@version identities that judge this requirement"
+          },
+          "run_interpreters": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+            },
+            "description": "ledger-permitted interpreters for inline runtime tables; empty when disabled"
+          },
+          "repetition": {
+            "description": "V07: the repetition policy in force for this requirement, frozen with the run; absent on records stored before the field existed",
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "aggregation": {
+                "type": "string",
+                "enum": [
+                  "first_pass",
+                  "k_of_n",
+                  "all"
+                ]
+              },
+              "k": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "basis": {
+                "type": "string",
+                "enum": [
+                  "explicit",
+                  "work_class",
+                  "single_round"
+                ],
+                "description": "explicit: a field was written; work_class: the pack’s class default; single_round: no class, or a static-only requirement"
+              },
+              "declared": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "boolean"
+                  },
+                  "aggregation": {
+                    "type": "boolean"
+                  },
+                  "k": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "count",
+                  "aggregation",
+                  "k"
+                ],
+                "additionalProperties": false,
+                "description": "which parts the pack wrote itself"
+              },
+              "fresh_context": {
+                "type": "boolean"
+              },
+              "baseline_first": {
+                "type": "boolean"
+              },
+              "window_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 86400
+              }
+            },
+            "required": [
+              "count",
+              "aggregation",
+              "basis",
+              "declared"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "description",
+          "layers",
+          "done_rule",
+          "accepted_producer",
+          "repair_rounds"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "label": {
+            "type": "string"
+          },
+          "summary": {
+            "description": "one short line the model reads about the item (from the pack projection); the text of a tool result is limited, so a long list of items is shown as id, label and summary only",
+            "type": "string"
+          },
+          "location": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+            "description": "where the item sits in the judged source"
+          },
+          "fields": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "digest": {
+            "description": "item fingerprint the Hub computes from the canonical fields; unchanged across runs means the item can be carried over",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "reuse": {
+            "description": "set by the Hub when the predecessor run has an unchanged item: the Hub record reference to give back in the submission to carry it over",
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "location",
+          "fields"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "slots": {
+      "description": "the slot schema to fill for each item; absent when the pack declares no slots",
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {},
+          "description": "JSON Schema 2020-12 of the slot record of one item, from the pack file slots.schema.json, with the closed sets the pack declares (finding codes, ranks, slot kinds)"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the pack file the schema comes from"
+        }
+      },
+      "required": [
+        "schema",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "outputs": {
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ranking",
+                  "selection",
+                  "score"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "tasks"
+      ],
+      "additionalProperties": false
+    },
+    "instructions": {
+      "type": "string",
+      "description": "the pack procedure, plain text"
+    },
+    "instructions_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "predecessor": {
+      "type": "string",
+      "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "input_defaults": {
+      "description": "Hub-selected input defaults frozen at start_run; absent on explicit or historical bindings",
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "slot": {
+            "type": "string",
+            "minLength": 1
+          },
+          "predecessor": {
+            "type": "string",
+            "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+              },
+              {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
+              },
+              {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9_-]*:[^@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+(?:@[^\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]+)?$"
+              }
+            ]
+          },
+          "kind": {
+            "description": "present when the Hub copied a frozen predecessor input; absent when it bound an accepted validation record",
+            "type": "string",
+            "const": "input"
+          }
+        },
+        "required": [
+          "slot",
+          "predecessor",
+          "reference"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "session": {
+      "description": "client session id observed from the request header",
+      "type": "string"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "submission_due": {
+      "description": "Absolute submission deadline; absent only on historical runs, never inferred by readers",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "command_policy": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "command-policy@1"
+        },
+        "read_only": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+            "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+          }
+        },
+        "inverse_rules": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source_prefix": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+              },
+              "inverse_prefix": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+                "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+              },
+              "leading_parameters": {
+                "description": "When absent, require a unique inverse formed by a leading parameter count accepted by the locked inverse signature",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 128
+              }
+            },
+            "required": [
+              "source_prefix",
+              "inverse_prefix"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "read_only",
+        "inverse_rules"
+      ],
+      "additionalProperties": false
+    },
+    "accepted_criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "declaration": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+          },
+          "review": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+          },
+          "reviewer": {
+            "type": "string",
+            "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+          }
+        },
+        "required": [
+          "declaration",
+          "review",
+          "reviewer"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "criterion_requests": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "criterion_review": {
+      "type": "object",
+      "properties": {
+        "submission": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "requests": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      },
+      "required": [
+        "submission",
+        "requests"
+      ],
+      "additionalProperties": false
+    },
+    "predecessor_access": {
+      "type": "string",
+      "const": "view"
+    },
+    "runner": {
+      "description": "the user the run is executed for; absent only when the Hub itself executes a standing obligation",
+      "type": "string",
+      "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "host": {
+      "type": "string",
+      "enum": [
+        "local_circle",
+        "bot",
+        "hub"
+      ]
+    },
+    "trigger": {
+      "type": "string",
+      "enum": [
+        "session",
+        "event_or_schedule",
+        "requirement",
+        "standing_obligation"
+      ]
+    },
+    "configurer": {
+      "description": "Hub user who configured the trigger (W09 F[1]); required for event, schedule and standing obligation triggers",
+      "type": "string",
+      "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "parameters": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {},
+      "description": "parameters bound at start_run and frozen"
+    },
+    "policy": {
+      "description": "version of the global boundary policy table used",
+      "type": "string"
+    },
+    "executors": {
+      "description": "digest of the executor registry used (W06 F[7]); absent while no executor is registered",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "groups": {
+      "description": "the groups the projection function returned (structure of the judged source that is not an item), frozen with the run and handed to subject builders",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {}
+      }
+    },
+    "builds": {
+      "description": "the builds of the bound product the workflow asked for (workflow.context), frozen with the run so an evaluation after a restart sees the same list; absent when not asked or not bound to a product",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "build name exactly as listed"
+          },
+          "family": {
+            "type": "string",
+            "minLength": 1,
+            "description": "which of the product names the build carries"
+          },
+          "line": {
+            "type": "string",
+            "minLength": 1,
+            "description": "version line the pack assigns to the build"
+          },
+          "base": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the build whose tree this build uses; equals name when the build has its own tree"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "platform or customer branch; null for the main platform"
+          },
+          "built_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "released_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null while unreleased"
+          },
+          "has_root": {
+            "type": "boolean",
+            "description": "whether the knowledge base has produced the root of the build’s tree"
+          }
+        },
+        "required": [
+          "name",
+          "family",
+          "line",
+          "base",
+          "platform",
+          "built_at",
+          "released_at",
+          "has_root"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "client_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "request_digest": {
+      "description": "SHA-256 of the RFC 8785 canonical JSON of the start_run arguments the client key was bound to; the same key with other arguments is IDEMPOTENCY_MISMATCH (D05 R[4])",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "client_key_expires_at": {
+      "description": "end of the window in which repeating the client key returns this run",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "leases": {
+      "description": "the lease operations this run performed before it was stored (acquire's grant, extend's new end, release's keys with their former end); the fencing token stays in the lease table, never in the record",
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "acquire"
+              },
+              "lease": {
+                "type": "string",
+                "pattern": "^lse_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+              },
+              "keys": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "until": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "lease",
+              "keys",
+              "until"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "extend"
+              },
+              "lease": {
+                "type": "string",
+                "pattern": "^lse_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+              },
+              "keys": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "until": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "op",
+              "lease",
+              "keys",
+              "until"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "register",
+                  "unregister"
+                ]
+              },
+              "prefix": {
+                "type": "string",
+                "minLength": 1
+              },
+              "owner": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "op",
+              "prefix",
+              "owner"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "force_release"
+                ]
+              },
+              "keys": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "until": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "previous_holders": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "run": {
+                      "type": "string",
+                      "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "run"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "op",
+              "keys",
+              "reason",
+              "until",
+              "previous_holders"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "const": "release"
+              },
+              "keys": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "until": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "op",
+              "keys",
+              "until"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "lease_registrations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mine": {
+            "type": "boolean"
+          },
+          "owner": {
+            "type": "object",
+            "properties": {
+              "user": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "user",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "prefix",
+          "mine"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "lease_context": {
+      "description": "the frozen lease rows of the workflow's declared prefix at start_run (every holder's rows, no tokens), `mine` marking the rows held by this run's lineage (D04 R[0])",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mine": {
+            "type": "boolean"
+          },
+          "holder": {
+            "type": "object",
+            "properties": {
+              "user": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "user",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "jobs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "key",
+          "until",
+          "mine"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "run",
+    "pack",
+    "pack_digest",
+    "target_basis",
+    "sources",
+    "requirements",
+    "items",
+    "instructions",
+    "instructions_digest",
+    "started_at",
+    "host",
+    "trigger",
+    "parameters"
+  ],
+  "additionalProperties": false
+}

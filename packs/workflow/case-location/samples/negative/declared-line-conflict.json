@@ -1,0 +1,61 @@
+{
+  "id": "declared_line_conflict",
+  "source": "author",
+  "check": "locate",
+  "note": "合成样例：调用方声明版本线 10.7.3。目录给出 10.6.1 的文档记不通过（声明与目录树矛盾）；FAMX 根下没有版本层的文档和只有标题里参考版本的文档由声明补上版本线，仍记未知（缺输入），不记不通过",
+  "subject": {
+    "items": [
+      {
+        "id": "24001",
+        "location": "src:ed06a92702e94c6c8f89eeaaea6c638f80b8dbeb7796bdbea4e57283c3cd5143/kityminder@1/n/24001n0",
+        "fields": {
+          "kind": "document",
+          "document": "24001",
+          "node": null,
+          "source": "agile:mindmap:24001@1",
+          "root": "FAMY",
+          "ancestors": ["030：FAMX/FAMY测试项目", "060：10.6.1", "004：10.6.1-R2-2026/7", "SSL"],
+          "title": "需求20931 证书链校验",
+          "path": [],
+          "case_title": null
+        }
+      },
+      {
+        "id": "24004",
+        "location": "src:cdb7793d7f679e5cb5b07682311865fd0f2b21b24103c9e70f8ff861bf89ebc1/kityminder@1/n/24004n0",
+        "fields": {
+          "kind": "document",
+          "document": "24004",
+          "node": null,
+          "source": "agile:mindmap:24004@1",
+          "root": "FAMX",
+          "ancestors": ["通用用例", "基础功能"],
+          "title": "设备基础配置",
+          "path": [],
+          "case_title": null
+        }
+      },
+      {
+        "id": "24005",
+        "location": "src:a155cad2bda2a2323cdbbfc0dc0b5d38be6de7c20c3354ea2c7e53f1c0c4437b/kityminder@1/n/24005n0",
+        "fields": {
+          "kind": "document",
+          "document": "24005",
+          "node": null,
+          "source": "agile:mindmap:24005@1",
+          "root": "FAMY",
+          "ancestors": ["030：FAMX/FAMY测试项目", "专项"],
+          "title": "FAMY 10.6.2.31 升级兼容",
+          "path": [],
+          "case_title": null
+        }
+      }
+    ],
+    "context": { "product": "famx", "names": ["FAMX", "FAMY"], "parameters": { "line": "10.7.3" } }
+  },
+  "expect": [
+    { "verdict": "refute", "code": "case-location.declaration_conflict", "item": "24001", "tier": "advisory" },
+    { "verdict": "unknown", "reason": "missing_input", "item": "24004" },
+    { "verdict": "unknown", "reason": "missing_input", "item": "24005" }
+  ]
+}

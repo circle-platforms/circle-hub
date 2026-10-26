@@ -1,0 +1,230 @@
+{
+  "schema": "pack@1",
+  "id": "case-review-verify",
+  "version": "1.1.9",
+  "kind": "workflow",
+  "title": "测试脑图评审（独立复核）",
+  "description": "按团队的复核方法（review-verifier）独立复核 case-review 的初评：逐条处置初评发现、用七个探针找遗漏、质疑等级，给出 PASS、PARTIAL 或 FAIL 和最终等级；只能由与初评不同的会话和模型完成",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "5d6e84e2df68d2dc4fb58547d33b044ab28318165393b60547ff3358a65f8681",
+      "size": 10597
+    },
+    {
+      "path": "checks.json",
+      "sha256": "aa44e9d6c3a8fb052447a4f266207024ec7370511dcfddac2e4a35e177f03c5c",
+      "size": 2223
+    },
+    {
+      "path": "examples/start-run.json",
+      "sha256": "5f7778c2f9c120768d2a5a7204360fe245f52c6eba763018ad7f83f69b1e27e5",
+      "size": 556
+    },
+    {
+      "path": "examples/submission.json",
+      "sha256": "e14faceac0accf2d921e790180a811c269524651e89fae6211ba775df8ab1afc",
+      "size": 1904
+    },
+    {
+      "path": "examples/submit-result.json",
+      "sha256": "52b53d5ce969f960fa703b3870f919ba360a9ced7341af54b2d050dd7b05c338",
+      "size": 2389
+    },
+    {
+      "path": "functions/common.ts",
+      "sha256": "3ca32d9dddd417d2509ba6acba46b962c9ca1f21563c1745b0df06ffb6fa20db",
+      "size": 4138
+    },
+    {
+      "path": "functions/expected-sources.ts",
+      "sha256": "40d3d20e420c8272bc4a4db2d87b78172036228994e2f30550e7684753e0151b",
+      "size": 13451
+    },
+    {
+      "path": "functions/expected.ts",
+      "sha256": "d55ae0db2c796233b7993c3b4b4037c1d45aa8835c4e17c544535e7b14ef45b4",
+      "size": 5848
+    },
+    {
+      "path": "functions/generated/vocabulary.ts",
+      "sha256": "2645a7b984a70645f5fb187bdb284c96022e123a614dc279fd6f18a36c263cac",
+      "size": 4642
+    },
+    {
+      "path": "functions/projection.ts",
+      "sha256": "30f5f6a7e74009df82ccd80dbbbabb0b92518b41b0d254bb2c0e1fc9ef018a70",
+      "size": 16534
+    },
+    {
+      "path": "functions/subjects.ts",
+      "sha256": "d4649b3f0a35bbb9db52f9a0e57e1413f04c37d4db52fed89cebcd0482629f24",
+      "size": 1713
+    },
+    {
+      "path": "functions/text.ts",
+      "sha256": "99a536dad7da8552b82a759abfc78f7308b06796aabc1818e23fb99aab61ab13",
+      "size": 6150
+    },
+    {
+      "path": "functions/types.ts",
+      "sha256": "b4aaf807f97821bb153892f96ab9c18d805bdd565b915b83384d93dd3bc7e1b0",
+      "size": 12391
+    },
+    {
+      "path": "functions/verify.ts",
+      "sha256": "ffbf7cd4cbce6582a0fa1e3baa38b6253c389b4a6c8f8377c0029e7af92f1a62",
+      "size": 17469
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "32e46c4e265c96d7ea20cf3e69ad3efffc3844f3d45407e5cd874430aa69e835",
+      "size": 5068
+    },
+    {
+      "path": "samples/negative/claims_contradicted.json",
+      "sha256": "4e61f1089df901466a1826f3bbe3dd42682ce848df21bc688ddfc5ca36849ba5",
+      "size": 1531
+    },
+    {
+      "path": "samples/negative/dispositions_broken.json",
+      "sha256": "73f1896d47a435938c129d0da0eed20edea46a8507b13dcf5b1f370be5c81ca3",
+      "size": 4360
+    },
+    {
+      "path": "samples/negative/dispositions_twice.json",
+      "sha256": "a415ee867ac76ff44054b0e5e08ef380e26b3130df3d627de1e919f4c4db406f",
+      "size": 2967
+    },
+    {
+      "path": "samples/negative/suggestion_empty_part.json",
+      "sha256": "50577d13572ae336df8fd672fe08d99ed7f81381433681511d8440205d132996",
+      "size": 1455
+    },
+    {
+      "path": "samples/negative/suggestion_expected_only.json",
+      "sha256": "d3a8d97bc7fbfbf79f0d4e8ad8c7b24a09cfc84156d43887db28089c5b5e277b",
+      "size": 1478
+    },
+    {
+      "path": "samples/negative/suggestion_no_expected.json",
+      "sha256": "9b595e2fa56fc80ad1124a9b962d53edeec676b265af39c14bd9bed87f86b4dd",
+      "size": 1441
+    },
+    {
+      "path": "samples/negative/suggestion_no_target.json",
+      "sha256": "3cb1affc87b6281329170408ddfe0c13a8e94921236f5ce77146210776c06bb9",
+      "size": 1362
+    },
+    {
+      "path": "samples/negative/verdict_fail_without_refutation.json",
+      "sha256": "804d7e46ac1b11e58e00c97bcb672489f0ed378a332749e0533957e19dac93f5",
+      "size": 2765
+    },
+    {
+      "path": "samples/negative/verdict_partial_without_change.json",
+      "sha256": "4e7044307ce6fc21104f011d748b804370c8cb55f65c831fb5d6691133254632",
+      "size": 2757
+    },
+    {
+      "path": "samples/negative/verdict_pass_copied_quote.json",
+      "sha256": "95890a4e49f01eced5e901b4586f142eef535ae3e25ae41b3300a8a8693550b6",
+      "size": 2720
+    },
+    {
+      "path": "samples/negative/verdict_pass_inconsistent.json",
+      "sha256": "7aa8428ee9a32f32bdab41fc8e30e077855c4a9718739ef690b88515c0d82f54",
+      "size": 3610
+    },
+    {
+      "path": "samples/negative/verdict_pass_location_only.json",
+      "sha256": "4b6b50f7822e0b15c02b2a59cdd5cc2fdc34d5a4d94e2ddb84d5ec9cb1ab3e6f",
+      "size": 2912
+    },
+    {
+      "path": "samples/negative/verdict_pass_unverified.json",
+      "sha256": "4820641c3707bc993d90868cf6a8178519a65fbb77bbfab018d10731f27f275d",
+      "size": 4199
+    },
+    {
+      "path": "samples/negative/verdict_pass_without_evidence.json",
+      "sha256": "ffab04e9fb9dd92fedd1138b592aaba796a6d1f38935c50c62fe1adbc479c66d",
+      "size": 1454
+    },
+    {
+      "path": "samples/positive/claims_agree.json",
+      "sha256": "710efb12cdc1e4db6120aad1fddab352f9dc0df897be32c33690cf6be583372e",
+      "size": 1567
+    },
+    {
+      "path": "samples/positive/dispositions_complete.json",
+      "sha256": "f1b6e42b11d9595cb7d4f112957e596d1e940e18646189e7ac14f0fb76081205",
+      "size": 4142
+    },
+    {
+      "path": "samples/positive/dispositions_nothing.json",
+      "sha256": "309521abbcaaf8d4011d98659585ae16708f223794e77c567db8ea4b80178dd2",
+      "size": 974
+    },
+    {
+      "path": "samples/positive/suggestion_case.json",
+      "sha256": "5866590254229e9d1d9fc189e71076185b41c86ae326ae390fe9e7df30d21154",
+      "size": 1413
+    },
+    {
+      "path": "samples/positive/suggestion_none.json",
+      "sha256": "6fc9f247e446b2029ba462e87cc236b704fb9eb3a0e24a6047dd0ff262b00664",
+      "size": 1104
+    },
+    {
+      "path": "samples/positive/suggestion_subitem.json",
+      "sha256": "b27e39795481e5069e8cc23d1b5568c33ce4de514b21abed0f0894d381beb420",
+      "size": 1407
+    },
+    {
+      "path": "samples/positive/verdict_fail.json",
+      "sha256": "78c044c04240fea9bb7c7a696b9ed824605eed08506cfd0e7974824e46ecdbea",
+      "size": 2704
+    },
+    {
+      "path": "samples/positive/verdict_partial.json",
+      "sha256": "c01a644730f46f0b5f1aa6723f260649cde23a8ae95ea0232654315b8ca30a8b",
+      "size": 3246
+    },
+    {
+      "path": "samples/positive/verdict_partial_refuted_minor.json",
+      "sha256": "283667a4ddc8e8bc21e1539c8af583262a695677f968b175be25e726fd4fca7f",
+      "size": 4112
+    },
+    {
+      "path": "samples/positive/verdict_pass.json",
+      "sha256": "69fd09b2ac43e45e0399790e3c97fe2ceb4338b9f67103d45f4a88bcd2a303d8",
+      "size": 3557
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "eab1d066064210d263d6add99ac53aa9ebbdbbb495dfa045fe3e320d698fd76a",
+      "size": 4034
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "d43546b82ce7574aa34e380c58e5a01c9dd3cbfd91cec0eb8772f5cf14cf3a1b",
+      "size": 7553
+    },
+    {
+      "path": "tables/command-claims.json",
+      "sha256": "7eb279fe0f5a5dce49701e90c8ec83fc64b5e64f070512d1c5ca766140187acb",
+      "size": 1341
+    },
+    {
+      "path": "tables/resource-tags.json",
+      "sha256": "350b5281a30ba5849eb5f6ccc986204516928591df0da73454bed3cca0483b9b",
+      "size": 1400
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "14d5de324dd0b2d243b6eebaa590d45a4bdd32944cd1b04b8a74b55f45c782c1",
+      "size": 5156
+    }
+  ]
+}

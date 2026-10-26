@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "product": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}$"
+    },
+    "line": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pointer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expected": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "root": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "build": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "the build whose root the pointer now names"
+    },
+    "composition": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "digest of its tree_root record"
+    },
+    "move": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "digest of the move_root action"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "cause": {
+      "description": "the producing run id, or rec:<digest> of the producing action",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "product",
+    "line",
+    "pointer",
+    "expected",
+    "root",
+    "build",
+    "composition",
+    "move",
+    "version",
+    "cause"
+  ],
+  "additionalProperties": false
+}

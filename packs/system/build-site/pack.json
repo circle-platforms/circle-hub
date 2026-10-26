@@ -1,0 +1,20 @@
+{
+  "schema": "pack@1",
+  "id": "build-site",
+  "version": "1.0.0",
+  "kind": "system",
+  "title": "构建站（系统包）",
+  "description": "构建站的只读系统包：索引页、导航页、列表页和列表页链接的文件（命令树、修复缺陷清单）",
+  "files": [
+    {
+      "path": "functions/reads.ts",
+      "sha256": "677af2ba6929a1b722d56b1c3456ec34baa7be8f5fbb1cf56bd47d117d0c1b6d",
+      "size": 5144
+    },
+    {
+      "path": "system.json",
+      "sha256": "f0cec8460bd415c9d330d00c22e3657613cff00fc8e7de5196cf39879e6da843",
+      "size": 2463
+    }
+  ]
+}

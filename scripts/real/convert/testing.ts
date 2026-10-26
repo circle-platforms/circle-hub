@@ -1,0 +1,2 @@
+// Entirely synthetic topology reply.
+export function topology() { return { topology: { _bed: { conf: 'Bed-A' }, devices: [{ name: 'Dut0', type: '负载均衡', ipv4: ['192.0.2.10/24'], ipv6: ['2001:db8::10/64'] }, { name: 'Client0', type: '客户端', ipv4: ['192.0.2.11/24'], ipv6: [] }] }, services: [{ host: 'CLIENT0', ip: '192.0.2.11', proto: 'http', port: 80 }], observation: { unregistered_neighbours: { eth0: ['192.0.2.20', '192.0.2.21'] } } }; }

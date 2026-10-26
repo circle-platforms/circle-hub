@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "blocked": {
+      "minItems": 1,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "check": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "pointer": {
+            "type": "string",
+            "maxLength": 8192,
+            "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+            "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "check",
+          "pointer",
+          "code"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "blocked"
+  ],
+  "additionalProperties": false
+}

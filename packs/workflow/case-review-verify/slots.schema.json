@@ -1,0 +1,144 @@
+{
+  "schema": "slots@1",
+  "item": {
+    "verification": {
+      "codes": [
+        {
+          "code": "verified",
+          "label": "证实：位置存在，描述与内容相符，严重程度合理"
+        },
+        {
+          "code": "refuted",
+          "label": "推翻：位置不存在、描述与内容不符或产品语义弄反了"
+        },
+        {
+          "code": "partial",
+          "label": "部分正确：方向对，但描述、位置或严重程度要修正"
+        },
+        {
+          "code": "new_finding",
+          "label": "新发现：初评遗漏的问题（data.probe 写七类问题之一）"
+        }
+      ],
+      "ranks": [
+        {
+          "code": "critical",
+          "label": "严重（对应等级 P6-P7）"
+        },
+        {
+          "code": "major",
+          "label": "主要（对应等级 P3-P5）"
+        },
+        {
+          "code": "minor",
+          "label": "次要（对应等级 P0-P2）"
+        }
+      ],
+      "min": 0,
+      "max": 40,
+      "evidence": true,
+      "data": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "finding": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600,
+            "description": "the rec: reference of the draft finding this disposition is about (verified, refuted, partial)"
+          },
+          "probe": {
+            "enum": [
+              "literal_issue",
+              "coverage_gap",
+              "differentiation_gap",
+              "edge_case_gap",
+              "negative_gap",
+              "block_structure_mismatch",
+              "self_contradiction"
+            ],
+            "description": "kind of the verified problem, for a disposition or a new finding"
+          }
+        }
+      }
+    }
+  },
+  "run": {
+    "suggestions": {
+      "codes": [
+        {
+          "code": "suggestion",
+          "label": "改进建议：补：<用例>；因为：<原因>；期望：<结果>；根据指向目标用例或子项"
+        }
+      ],
+      "ranks": [
+        {
+          "code": "critical",
+          "label": "严重"
+        },
+        {
+          "code": "major",
+          "label": "主要"
+        },
+        {
+          "code": "minor",
+          "label": "次要"
+        }
+      ],
+      "min": 0,
+      "max": 50
+    },
+    "final": {
+      "codes": [
+        {
+          "code": "PASS",
+          "label": "PASS：初评基本正确，没有补充重要问题"
+        },
+        {
+          "code": "PARTIAL",
+          "label": "PARTIAL：基本正确，但遗漏了问题，或等级偏松、偏紧"
+        },
+        {
+          "code": "FAIL",
+          "label": "FAIL：有重大事实错误（误判、位置错误、产品语义颠倒）"
+        }
+      ],
+      "ranks": [
+        {
+          "code": "P0",
+          "label": "P0：覆盖全部功能细节，兼容性、反向、压力、边角用例和极端场景非常丰富"
+        },
+        {
+          "code": "P1",
+          "label": "P1：覆盖全部功能细节，兼容性、反向、压力用例丰富"
+        },
+        {
+          "code": "P2",
+          "label": "P2：覆盖全部功能细节，兼容性、反向、压力用例比较丰富"
+        },
+        {
+          "code": "P3",
+          "label": "P3：覆盖全部功能细节，有一些兼容性、反向、压力用例"
+        },
+        {
+          "code": "P4",
+          "label": "P4：覆盖全部功能细节，有一些反向和压力用例，兼容性不足"
+        },
+        {
+          "code": "P5",
+          "label": "P5：覆盖全部功能，有一些反向和压力用例，功能细节的深度不够"
+        },
+        {
+          "code": "P6",
+          "label": "P6：覆盖基本功能，有反向和压力类型，功能细节覆盖不完整"
+        },
+        {
+          "code": "P7",
+          "label": "P7：没有覆盖基本功能，没有反向和压力类型"
+        }
+      ],
+      "min": 1,
+      "max": 1
+    }
+  }
+}

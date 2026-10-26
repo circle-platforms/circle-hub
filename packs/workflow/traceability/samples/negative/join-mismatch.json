@@ -1,0 +1,95 @@
+{
+  "id": "join_mismatch",
+  "source": "author",
+  "check": "traced",
+  "note": "合成样例：条目冻结的用例列表里，用例的原始缺陷编号不含这个缺陷——检查不信字段，按原始编号重核，对不上记不通过（提示档）",
+  "subject": {
+    "items": [
+      {
+        "id": "71021",
+        "location": "src:2caae70ea66eceadeaeba0a5d905b61aefeec0a0e8d996f52cfebfeb02225142/json@1/p/entries/8941c75f7c208e2b4c87195e1c26c052f383b69f2ed8cc92ebe84690f999298c",
+        "fields": {
+          "bug": "71021",
+          "declaration_status": "declared",
+          "identity": "71021",
+          "ids": [
+            "71021"
+          ],
+          "statuses": [
+            "fixed"
+          ],
+          "conflict": false,
+          "statement": "缺陷 71021 的合成摘要",
+          "references": [
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/8941c75f7c20@8941c75f7c208e2b4c87195e1c26c052f383b69f2ed8cc92ebe84690f999298c"
+          ],
+          "digests": [
+            "8941c75f7c208e2b4c87195e1c26c052f383b69f2ed8cc92ebe84690f999298c"
+          ],
+          "cases": [
+            {
+              "case": "C-121",
+              "title": "编号对不上的用例",
+              "document": "24001",
+              "reference": "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/cases/1624e31d80e1@1624e31d80e1b31a90208f6e991eeb83f8f33b6e3e106557c7cea0b7abf2f28b",
+              "defects": [
+                "79999"
+              ],
+              "entry": "1624e31d80e1b31a90208f6e991eeb83f8f33b6e3e106557c7cea0b7abf2f28b"
+            }
+          ],
+          "systems": []
+        }
+      }
+    ],
+    "context": {
+      "product": "famx",
+      "names": [
+        "FAMX",
+        "FAMY"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "product": "famx",
+          "build": "Rel_FAMX_10_6_1_57",
+          "root": "67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591",
+          "statuses": [
+            "fixed",
+            "known"
+          ],
+          "views": {
+            "defects": {
+              "source": "src:2caae70ea66eceadeaeba0a5d905b61aefeec0a0e8d996f52cfebfeb02225142",
+              "skipped": 0,
+              "truncated": false,
+              "total_keys": 1,
+              "total_entries": 1,
+              "listed_keys": 1,
+              "listed_entries": 1,
+              "missing": 0
+            },
+            "cases": {
+              "source": "src:cae7992c6b586f8bc0fdcebcb8cfafec7817ed5b99fd8689e9bdc16a43e882d2",
+              "skipped": 0,
+              "truncated": false,
+              "total_keys": 1,
+              "total_entries": 1,
+              "listed_keys": 1,
+              "listed_entries": 1,
+              "missing": 0
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "traceability.join_mismatch",
+      "item": "71021",
+      "tier": "advisory"
+    }
+  ]
+}

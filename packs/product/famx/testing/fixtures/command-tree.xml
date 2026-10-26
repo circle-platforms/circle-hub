@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="ISO-8859-1"?><commands><scope type="global">
+<menu name="demo" help_string="Demo commands (synthetic)" user_level="DEMO_LEVEL_CONFIG">
+<menu name="pool" help_string="Configure demo pools" user_level="DEMO_LEVEL_CONFIG">
+<item name="add" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_CONFIG" func="demo_pool_add" help_string="Add a member to a pool"><arguments>
+<arg name="" type="STRING" help_string="Pool name" length="" limit="[1 - 32]" optional="NO" default_value=""></arg>
+<arg name="" type="IPADDR" help_string="Member address (either address family)" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="U16" help_string="Member port" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="U32" help_string="Weight (1 to 100, default 10)" length="" limit="[1 - 100]" optional="YES" default_value="10"></arg>
+</arguments><results></results></item>
+<item name="add" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_CONFIG" func="demo_pool_add_host" help_string="Add a member to a pool by host name"><arguments>
+<arg name="" type="STRING" help_string="Pool name" length="" limit="[1 - 32]" optional="NO" default_value=""></arg>
+<arg name="" type="XSTRING" help_string="Member address or host name" length="" limit="" optional="NO" default_value=""></arg>
+</arguments><results></results></item>
+<item name="mode" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_CONFIG" func="demo_pool_mode" help_string="Set the balancing mode"><arguments>
+<arg name="" type="STRING" help_string="Pool name" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="mode" type="STRING" help_string="Balancing mode" length="" limit="{rr|lc|hash}" optional="YES" default_value="&amp;quot;rr&quot;"></arg>
+</arguments><results></results></item>
+<item name="description" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_CONFIG" func="demo_pool_description" help_string="Type &quot;text&quot; to describe the pool" hidden="yes"><arguments>
+<arg name="" type="STRING" help_string="Pool name" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="STRING" help_string="Description, ie cn=pool,dc=example,dc=invalid" length="64" limit="" optional="YES" default_value="&amp;quot;&quot;"></arg>
+</arguments><results></results></item>
+</menu>
+<menu name="route" help_string="Configure demo routes" user_level="DEMO_LEVEL_CONFIG">
+<item name="static" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_CONFIG" func="demo_route_static" help_string="Add a static route"><arguments>
+<arg name="" type="DOTTEDIP" help_string="Destination network" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="IPMASK" help_string="Mask, dotted or as a prefix length" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="DOTTEDIP" help_string="Next hop" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="U32" help_string="Metric" length="" limit="[0 - 16777215]" optional="YES" default_value="0"></arg>
+</arguments><results></results></item>
+</menu>
+<menu name="acl" help_string="Configure demo filters" user_level="DEMO_LEVEL_CONFIG">
+<item name="permit" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_CONFIG" func="demo_acl_permit" help_string="Let traffic through"><arguments>
+<arg name="" type="U16" help_string="Filter number (1-999)" length="" limit="[1 - 999]" optional="NO" default_value=""></arg>
+<arg name="" type="IPADDR" help_string="From address" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="IPMASK" help_string="From mask" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="IPADDR" help_string="To address" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="IPMASK" help_string="To mask" length="" limit="" optional="NO" default_value=""></arg>
+</arguments><results></results></item>
+<item name="mesh" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_CONFIG" func="demo_acl_mesh" help_string="Let a mesh of six addresses through"><arguments>
+<arg name="" type="IPADDR" help_string="Address 1" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="IPADDR" help_string="Address 2" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="IPADDR" help_string="Address 3" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="IPADDR" help_string="Address 4" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="IPADDR" help_string="Address 5" length="" limit="" optional="NO" default_value=""></arg>
+</arguments><results></results></item>
+</menu>
+<item name="log" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_CONFIG" func="demo_log" help_string="Set the log level and the station address"><arguments>
+<arg name="" type="U16" help_string="Log level" length="" limit="[10 - 1]" optional="NO" default_value=""></arg>
+<arg name="" type="MACADDR" help_string="Station address" length="" limit="" optional="NO" default_value=""></arg>
+</arguments><results></results></item>
+</menu>
+<item name="ping" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_ENABLE" func="demo_ping" help_string="Send echo requests"><arguments>
+<arg name="" type="DOTTEDIP" help_string="Address to probe" length="" limit="" optional="NO" default_value=""></arg>
+<arg name="" type="U16" help_string="Count" length="" limit="[1 - 5000]" optional="YES" default_value="&amp;quot;5&quot;"></arg>
+</arguments><results></results></item>
+<menu name="show" help_string="Show information" user_level="DEMO_LEVEL_USER">
+<menu name="demo" help_string="Show demo information" user_level="DEMO_LEVEL_USER">
+<item name="status" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_USER" func="demo_show_status" help_string="Show the demo status"><arguments></arguments><results></results></item>
+<item name="status" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_USER" func="demo_show_pool_status" help_string="Show the demo status"><arguments>
+<arg name="" type="STRING" help_string="Pool name (every pool when left out)" length="" limit="" optional="YES" default_value="&amp;quot;all&quot;"></arg>
+</arguments><results></results></item>
+</menu>
+</menu>
+
+<menu name="clear counters" help_string="Clear counters" user_level="DEMO_LEVEL_CONFIG">
+<item name="all" lock = "DEMO_LOCK_NONE" user_level="DEMO_LEVEL_CONFIG" func="demo_clear_all" help_string="Clear every counter"><results></results></item>
+</menu>
+</scope></commands>

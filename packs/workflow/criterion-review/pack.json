@@ -1,0 +1,65 @@
+{
+  "schema": "pack@1",
+  "id": "criterion-review",
+  "version": "1.0.2",
+  "kind": "workflow",
+  "title": "判据变更声明复核",
+  "description": "非作者账号复核声明；不修改原件、不代替人判断",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "0691becdbe953b13ee19a2c84f4f9b9883a67b57bc6cb674ee1f56366b07ab87",
+      "size": 1642
+    },
+    {
+      "path": "checks.json",
+      "sha256": "4fa66652a88e51af39e7c4c0db64d433a82422cd0c22eb0a840903c51ca65ffa",
+      "size": 473
+    },
+    {
+      "path": "functions/check.ts",
+      "sha256": "a6f1ebfce8a8e739333137b3ea1a42c527ed9feb25d6e7147ebd02eca4b3b1e1",
+      "size": 2245
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "a5e20c95023544a3fed05513668346b0c68cdf8e01a54f15d5eaf952111cda9e",
+      "size": 1287
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "44fdc55190443e5bdeb66a29a8a49d83c0939a288e87bf47f02b8bf42e8c250e",
+      "size": 572
+    },
+    {
+      "path": "samples/negative/missing.json",
+      "sha256": "573207b554da54cc8ca35a7c656a5019dd7dc06bfca5b9016d34dedca1a29a8a",
+      "size": 744
+    },
+    {
+      "path": "samples/negative/source.json",
+      "sha256": "3550b0814609a3521a216e8c29a479add563d31a0378eb5f10f4efca923fc79c",
+      "size": 1348
+    },
+    {
+      "path": "samples/positive/accept.json",
+      "sha256": "d50c0e996217cdf526f34ab45039a62aa9e94cfe9e8889be4f81f46fd0e80d1e",
+      "size": 1436
+    },
+    {
+      "path": "samples/positive/reject.json",
+      "sha256": "07af19c2da340c479650286763e1029e272ba0eafe5a0e832cae4aba9d28b70b",
+      "size": 1436
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "7e0d2873b86a162a439ac878c5d7568bd925ce37ea42afe10c3882335e403e7b",
+      "size": 582
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "2c7a36c23efc11f0b0d5265a71256ca3691033be71dba4329c4fe70445ae6856",
+      "size": 1244
+    }
+  ]
+}

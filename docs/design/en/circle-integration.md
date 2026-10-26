@@ -1,5 +1,7 @@
 # Integration with Circle
 
+> **Superseded** (2026-10-21): the hub extension of Circle's menus, the `/v1` client API and the sync model were retired with the old server. Circle now connects to the Hub as an ordinary MCP server and shows no Hub-specific interface or label; run records, the knowledge tree, task packs and administration live in the Hub's read-only console (planned). See D06 in the [generic model](generic-model.md). Kept as a record only.
+
 ## hub is an enhancement of Circle, not another home page
 
 Circle is the agent you run yourself; hub is the process the team runs. The same product, two ways to run it: `circle` and `circle hub`. An administrator uses Circle too, only with a different role, and there is no second administration program; a host without graphics uses the command line that comes with hub.

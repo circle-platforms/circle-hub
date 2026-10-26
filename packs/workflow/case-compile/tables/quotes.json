@@ -1,0 +1,9 @@
+{
+  "schema": "quote@1",
+  "origin": "决定：case-compile 的期望结果必须带逐字来源（编译设计第 2 节），quote 不能是模型编造的原文；显式模型判断的检查文字由模型声明",
+  "description": "期望结果的引文（subject 的 quotes）逐字核对：text 必须逐字出现在 reference 指到的片段里；模型判断还按冻结的本用例期望节点原文逐字核对",
+  "tier": "blocking",
+  "basis": "要求项 expected_grounded：每个期望结果的引文必须逐字出现在其来源里",
+  "item": "/item",
+  "quotes": [{ "select": "$.quotes[*]", "text": "/text", "reference": "/reference" }]
+}

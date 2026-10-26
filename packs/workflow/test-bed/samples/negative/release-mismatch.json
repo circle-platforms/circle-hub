@@ -1,0 +1,118 @@
+{
+  "id": "release_mismatch",
+  "source": "author",
+  "check": "bed",
+  "note": "合成反例：release 按冻结清单和租约重算；没有时长上限",
+  "subject": {
+    "items": [
+      {
+        "id": "bed-a",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/beds/0",
+        "fields": {
+          "action": "release",
+          "booking": "run_book1",
+          "bed": "bed-a",
+          "devices": [
+            "afamx0",
+            "client0"
+          ],
+          "addresses": [
+            "192.0.2.70"
+          ],
+          "keys": [],
+          "conclusion": "释放 bed-a 的预订 run_book1，设备 afamx0、client0，地址 192.0.2.70"
+        }
+      }
+    ],
+    "context": {
+      "groups": [
+        {
+          "action": "release",
+          "need": {
+            "devices": []
+          },
+          "bed": null,
+          "addresses": null,
+          "booking": "run_book1",
+          "reason": "",
+          "devices": null,
+          "manifest": {
+            "schema": "test-bed-manifest@1",
+            "beds": [
+              {
+                "name": "bed-a",
+                "devices": [
+                  {
+                    "name": "afamx0",
+                    "type": "load-balancer",
+                    "ipv4": [
+                      "192.0.2.10/26"
+                    ],
+                    "ipv6": []
+                  },
+                  {
+                    "name": "client0",
+                    "type": "client",
+                    "ipv4": [
+                      "192.0.2.74/26"
+                    ],
+                    "ipv6": []
+                  }
+                ],
+                "services": [],
+                "reserved": []
+              }
+            ]
+          },
+          "leases": {
+            "now": "2026-10-22T02:00:00.000Z",
+            "entries": [
+              {
+                "key": "bed/bed-a/afamx0",
+                "until": "2026-10-22T05:00:00.000Z",
+                "mine": true,
+                "run": "run_sample",
+                "since": "2026-10-22T02:00:00.000Z",
+                "jobs": []
+              },
+              {
+                "key": "bed/bed-a/client0",
+                "until": "2026-10-22T05:00:00.000Z",
+                "mine": true,
+                "run": "run_sample",
+                "since": "2026-10-22T02:00:00.000Z",
+                "jobs": []
+              },
+              {
+                "key": "bed/bed-a/ip/192.0.2.70",
+                "until": "2026-10-22T05:00:00.000Z",
+                "mine": true,
+                "run": "run_sample",
+                "since": "2026-10-22T02:00:00.000Z",
+                "jobs": []
+              }
+            ],
+            "registrations": []
+          },
+          "lease_requests": [
+            {
+              "op": "release",
+              "keys": [
+                "bed/bed-a/afamx0",
+                "bed/bed-a/client0",
+                "bed/bed-a/ip/192.0.2.70"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "test-bed.release_mismatch",
+      "tier": "advisory"
+    }
+  ]
+}

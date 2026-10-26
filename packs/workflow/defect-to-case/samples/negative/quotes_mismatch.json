@@ -1,0 +1,26 @@
+{
+  "id": "quotes_mismatch",
+  "source": "author",
+  "check": "grounded_quotes",
+  "note": "期望结果引文与来源文本不符",
+  "subject": {
+    "item": "74001",
+    "quotes": [
+      {
+        "reference": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix",
+        "text": "故意捏造的不存在引文"
+      }
+    ]
+  },
+  "sources": {
+    "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix": "修复说明：修复参数范围校验，修复保存后不生效的问题。命令行配置 widget health interval <1-300>。期望结果：健康检查间隔设置成功，系统运行正常。"
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "QUOTE_MISMATCH",
+      "item": "74001",
+      "tier": "blocking"
+    }
+  ]
+}

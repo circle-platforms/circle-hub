@@ -1,5 +1,7 @@
 # circle-server 第二阶段实施简报：bug 闭环
 
+> **历史文档**（2026-10-21 标注）：本文是已退役的任务与审批服务器第二阶段的简报，已被 [Hub r4 简报](hub-r4-brief.md)取代，只作记录保留，不是现行指令。
+
 **2026-10-12：暂停执行，等待新简报。** 第一目标已改为以知识库为核心，将现有产品问答、用例编译、用例评审能力通过 Circle 和 circle-server 接起来。本文保留此前的方案和脱敏来源结构，不能据此继续禅道或构建站点桩。当前已完成与未完成项以 `server-s2-progress.md` 的暂停收尾记录为准。
 
 2026-10-12。用户和 Claude 讨论后确认了第二版方案。方案页面是私有的 claude.ai 页面，你打不开，本文件是它的可执行摘要。第一阶段在 `server-s1`（PR #5，尚未合并），本阶段从 `server-s1` 的最新提交开始。Circle 侧的命令和页面由 Claude 在 Circle 仓库完成，你不要改 Circle 仓库。
@@ -13,7 +15,7 @@
 - 在新的隔离 worktree 和分支上继续用 TypeScript 实现 server。
 - 安装依赖，版本写精确值，并提交锁文件。
 - 在本机启动 PostgreSQL、server 和 worker 进程，只用合成数据、临时目录和临时数据库。
-- 只读参考本机 InfoTest 仓库（`../InfoTest_Engine`）里的对象抓取、失败归因、缓存与命令树读取行为。
+- 只读参考本机 SyntheticReference 仓库（`../synthetic-reference-engine`）里的对象抓取、失败归因、缓存与命令树读取行为。
 
 仍需先问用户：push、开 PR、改 GitHub 设置或发布流程、任何部署。
 
@@ -21,8 +23,8 @@
 
 - 调用付费模型或真实模型，一律用脚本模型。
 - 连接真实设备或真实企业系统。后续来源与 Git、CI、OA、企业微信均只用获准合成桩；当前不编写缺陷来源桩。
-- 运行、import 或复制 InfoTest 的 Python 代码，把它变成依赖；只能读源码，用 TypeScript 重写行为。
-- 把 InfoTest 里的主机名、账号、Cookie、真实缺陷内容或配置值写进本仓库。
+- 运行、import 或复制 SyntheticReference 的 Python 代码，把它变成依赖；只能读源码，用 TypeScript 重写行为。
+- 把 SyntheticReference 里的主机名、账号、Cookie、真实缺陷内容或配置值写进本仓库。
 - 读取真实 Circle 用户数据；修改 `references/` 或 `foundation/circle` 的字节；从生产入口 import 归档模块。
 
 **仓库已经公开。** 提交里不能出现凭据、内部地址、真实业务数据、本机绝对路径或对话记录。新文档里引用本机其他仓库时用相对路径。
@@ -50,7 +52,7 @@ server 本身没有界面。查看和维护都在 Circle：终端里是 `/server
 - PLM 镜像桩含完全虚构的不同项目缺陷与受限记录，按已提供探测结构实现；未确认的权限/缺失码不猜测，空数组不当作确认不存在。
 - Git 桩：提交信息里引用缺陷编号，有合进主线的，也有只在分支上的。
 - 构建站点桩：每个产品、平台、构建的目录，版本由哪个构建发布，构建包含哪些提交。平台就是 SE 说的型号（待用户确认）。
-- 命令树 XML 桩：每个产品、平台、构建一份，元素结构参照 InfoTest 读取的命令树，内容全部虚构。用它回答某条命令在某个平台的某个构建上是否存在。
+- 命令树 XML 桩：每个产品、平台、构建一份，元素结构参照 SyntheticReference 读取的命令树，内容全部虚构。用它回答某条命令在某个平台的某个构建上是否存在。
 - OA 通讯录桩和身份映射：同一个人在缺陷来源、Git、OA 中的账号不同；PLM 调用使用本人的 SSO JWT。
 - 企业微信桩：只记录收到的通知。
 
@@ -127,7 +129,7 @@ server 本身没有界面。查看和维护都在 Circle：终端里是 `/server
 
 ## 5. PLM 只读查询与参考边界
 
-InfoTest 在 `../InfoTest_Engine`。只读源码，不运行，不复制代码和配置值。主要文件：
+SyntheticReference 在 `../synthetic-reference-engine`。只读源码，不运行，不复制代码和配置值。主要文件：
 
 - `main/ingest/_capture_session.py`：登录和会话保存。
 - `main/ingest/defect_fetch.py`：逐条抓取、失败原因、原始页面存储。
@@ -202,4 +204,4 @@ bug 列表用 product、status、severity、assignedTo、openedBy、lastEditedDa
 - 每一幕先写验收测试并确认失败，再实现。`npm run verify:references` 和 `npm run test:references` 保持通过。
 - 记下实际跑过的命令和结果，不宣称没跑过的检查。每完成一步，在 `docs/server-s2-progress.md` 更新：做了什么、跑了什么、还缺什么。
 - PR #5 如果先合并，把 `server-s2` rebase 到新的 main 上再继续。
-- 遇到需要用户决定的事就停下来问，例如要 push、要扩大范围、合成桩无法表达 InfoTest 里看到的某种真实行为。
+- 遇到需要用户决定的事就停下来问，例如要 push、要扩大范围、合成桩无法表达 SyntheticReference 里看到的某种真实行为。

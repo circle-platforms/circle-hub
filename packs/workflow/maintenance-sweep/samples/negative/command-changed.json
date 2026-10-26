@@ -1,0 +1,62 @@
+{
+  "id": "command_changed",
+  "source": "author",
+  "check": "command_unchanged",
+  "note": "合成样例：命令定义的帮助文本变了，提示，并给出两边的值",
+  "subject": {
+    "items": [
+      {
+        "id": "doc-1:n1",
+        "location": "tree:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/commands/show@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fields": {
+          "document": "doc-1",
+          "node": "n1",
+          "priority": 1,
+          "negative": false,
+          "reasons": [
+            {
+              "change": "modified",
+              "detail": 0
+            }
+          ]
+        },
+        "label": "查看部件状态"
+      }
+    ],
+    "note": {
+      "details": [
+        {
+          "path": "/commands/show",
+          "change": "modified",
+          "fields": [
+            {
+              "path": "/help",
+              "before": "旧帮助",
+              "after": "新帮助"
+            }
+          ],
+          "references": []
+        }
+      ],
+      "diff": [
+        {
+          "path": "/commands/show",
+          "change": "modified",
+          "cases": 1
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "refute",
+      "code": "maintenance-sweep.case.command_changed",
+      "item": "doc-1:n1",
+      "tier": "advisory"
+    }
+  ]
+}

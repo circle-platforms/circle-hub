@@ -1,5 +1,7 @@
 # harness 原语规范
 
+> **已被取代**（2026-10-21）：中立清单 `hub-*/1`、harness 适配器和按原语的独立审批已随旧服务器退役。现在 Hub 是标准 MCP 服务器，只有六个工具，工具注解由效果类和是否写 Hub 记录推出，分发单位是任务包；见[通用模型](generic-model.md)的 D03、D06、T01。本文只作记录保留。
+
 hub 是 harness 的 hub，而且是公开的通用平台：它治理的是**任何 harness** 都有的原语，不只是 Circle 的。Circle 是第一个也是集成最深的 harness；Claude Code、Codex、OpenCode、Pi 这类 harness 写出来的技能、钩子、代理、命令，同样要能登记进 hub、被独立审批、再装进任何一个 harness。做不到这一点，hub 就只是 Circle 的私有后端。
 
 因此规范分三层：**中立清单**（hub 存什么）、**适配器**（每个 harness 怎么导入导出）、**通用传输**（MCP，任何 harness 不装适配器也能用 hub）。

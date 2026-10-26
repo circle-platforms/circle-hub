@@ -1,0 +1,24 @@
+{
+  "schema": "case-compile.workbook-format@1",
+  "generator": "case-compile@3.4.4",
+  "members": [
+    "[Content_Types].xml",
+    "_rels/.rels",
+    "xl/workbook.xml",
+    "xl/_rels/workbook.xml.rels",
+    "xl/styles.xml",
+    "xl/worksheets/sheet1.xml"
+  ],
+  "worksheet_part": "xl/worksheets/sheet1.xml",
+  "cell_types": [
+    "inlineStr",
+    "n"
+  ],
+  "identity_generator_column": 6,
+  "statement_type": 2,
+  "max_rows": 2048,
+  "max_cell_chars": 32767,
+  "max_model_bytes": 2097152,
+  "max_workbook_bytes": 8388608,
+  "identity_recipe_column": 7
+}

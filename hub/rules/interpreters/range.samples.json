@@ -1,0 +1,462 @@
+{
+  "interpreter": "range@1",
+  "tables": {
+    "case": {
+      "schema": "range@1",
+      "origin": "合成样例：优先级、构建前缀与标签数",
+      "checks": [
+        {
+          "values": "$.fields.priority",
+          "range": {
+            "minimum": 1,
+            "maximum": 3,
+            "integer": true
+          }
+        },
+        {
+          "values": "$.build",
+          "prefix": {
+            "values": [
+              "1.2"
+            ],
+            "separator": "."
+          }
+        },
+        {
+          "values": "$.fields.tags",
+          "threshold": {
+            "measure": "count",
+            "minimum": 1,
+            "maximum": 5
+          }
+        }
+      ]
+    }
+  },
+  "positive": [
+    {
+      "name": "都在界限内",
+      "table": "case",
+      "subject": {
+        "build": "1.2.7",
+        "fields": {
+          "priority": 2,
+          "tags": [
+            "a",
+            "b"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "pointer": "/fields/priority"
+        },
+        {
+          "verdict": "support",
+          "pointer": "/build",
+          "data": {
+            "prefix": "1.2"
+          }
+        },
+        {
+          "verdict": "support",
+          "data": {
+            "measure": "count",
+            "value": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "数值写成十进制字符串",
+      "table": "case",
+      "subject": {
+        "build": "1.2",
+        "fields": {
+          "priority": "3",
+          "tags": [
+            "a"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support"
+        },
+        {
+          "verdict": "support"
+        },
+        {
+          "verdict": "support"
+        }
+      ]
+    },
+    {
+      "name": "开区间内",
+      "table": {
+        "schema": "range@1",
+        "origin": "合成样例：开区间",
+        "checks": [
+          {
+            "values": "$.ratio",
+            "range": {
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            }
+          }
+        ]
+      },
+      "subject": {
+        "ratio": "0.5"
+      },
+      "expect": [
+        {
+          "verdict": "support"
+        }
+      ]
+    },
+    {
+      "name": "总和、最小值、最大值都在界限内（十进制字符串精确相加）",
+      "table": {
+        "schema": "range@1",
+        "origin": "合成样例：权重的总和、最小值和最大值",
+        "checks": [
+          {
+            "values": "$.weights",
+            "threshold": {
+              "measure": "sum",
+              "maximum": 100
+            }
+          },
+          {
+            "values": "$.weights",
+            "threshold": {
+              "measure": "min",
+              "minimum": 1
+            }
+          },
+          {
+            "values": "$.weights",
+            "threshold": {
+              "measure": "max",
+              "maximum": 60
+            }
+          }
+        ]
+      },
+      "subject": {
+        "weights": [
+          10,
+          "20.5",
+          60
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "data": {
+            "measure": "sum",
+            "value": 90.5
+          }
+        },
+        {
+          "verdict": "support",
+          "data": {
+            "measure": "min",
+            "value": 10
+          }
+        },
+        {
+          "verdict": "support",
+          "data": {
+            "measure": "max",
+            "value": 60
+          }
+        }
+      ]
+    },
+    {
+      "name": "前缀按字符比较，表示不区分大小写",
+      "table": {
+        "schema": "range@1",
+        "origin": "合成样例：构建名前缀",
+        "match": {
+          "case": "insensitive"
+        },
+        "checks": [
+          {
+            "values": "$.build",
+            "prefix": {
+              "values": [
+                "rel_"
+              ]
+            }
+          }
+        ]
+      },
+      "subject": {
+        "build": "REL_x_1"
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "data": {
+            "prefix": "rel_"
+          }
+        }
+      ]
+    },
+    {
+      "name": "超过 2^53 的十进制字符串精确比较",
+      "table": {
+        "schema": "range@1",
+        "origin": "合成样例：大整数序号",
+        "checks": [
+          {
+            "values": "$.serial",
+            "range": {
+              "minimum": 9007199254740992,
+              "integer": true
+            }
+          }
+        ]
+      },
+      "subject": {
+        "serial": "9007199254740993"
+      },
+      "expect": [
+        {
+          "verdict": "support"
+        }
+      ]
+    }
+  ],
+  "negative": [
+    {
+      "name": "优先级 4、前缀按段不匹配、标签太多",
+      "table": "case",
+      "subject": {
+        "build": "1.20.1",
+        "fields": {
+          "priority": 4,
+          "tags": [
+            "a",
+            "b",
+            "c",
+            "d",
+            "e",
+            "f"
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.range.out_of_bounds",
+          "pointer": "/fields/priority"
+        },
+        {
+          "verdict": "refute",
+          "code": "core.range.out_of_bounds",
+          "pointer": "/build"
+        },
+        {
+          "verdict": "refute",
+          "code": "core.range.out_of_bounds",
+          "data": {
+            "value": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "优先级不是数值、不是整数",
+      "table": {
+        "schema": "range@1",
+        "origin": "合成样例：优先级、构建前缀与标签数",
+        "checks": [
+          {
+            "values": "$.fields.priority",
+            "range": {
+              "minimum": 1,
+              "maximum": 3,
+              "integer": true
+            }
+          }
+        ]
+      },
+      "subject": {
+        "fields": {
+          "priority": [
+            "高",
+            1.5
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.range.out_of_bounds",
+          "pointer": "/fields/priority/0"
+        },
+        {
+          "verdict": "refute",
+          "code": "core.range.out_of_bounds",
+          "pointer": "/fields/priority/1"
+        }
+      ]
+    },
+    {
+      "name": "开区间的两个端点都不在区间里",
+      "table": {
+        "schema": "range@1",
+        "origin": "合成样例：开区间",
+        "checks": [
+          {
+            "values": "$.ratio",
+            "range": {
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            }
+          }
+        ]
+      },
+      "subject": {
+        "ratio": [
+          0,
+          "1"
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.range.out_of_bounds",
+          "pointer": "/ratio/0"
+        },
+        {
+          "verdict": "refute",
+          "code": "core.range.out_of_bounds",
+          "pointer": "/ratio/1"
+        }
+      ]
+    },
+    {
+      "name": "总和、最小值、最大值都越界",
+      "table": {
+        "schema": "range@1",
+        "origin": "合成样例：权重的总和、最小值和最大值",
+        "checks": [
+          {
+            "values": "$.weights",
+            "threshold": {
+              "measure": "sum",
+              "maximum": 100
+            }
+          },
+          {
+            "values": "$.weights",
+            "threshold": {
+              "measure": "min",
+              "minimum": 1
+            }
+          },
+          {
+            "values": "$.weights",
+            "threshold": {
+              "measure": "max",
+              "maximum": 60
+            }
+          }
+        ]
+      },
+      "subject": {
+        "weights": [
+          0.5,
+          60.5,
+          50
+        ]
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.range.out_of_bounds",
+          "data": {
+            "measure": "sum",
+            "value": 111
+          }
+        },
+        {
+          "verdict": "refute",
+          "code": "core.range.out_of_bounds",
+          "data": {
+            "measure": "min",
+            "value": 0.5
+          }
+        },
+        {
+          "verdict": "refute",
+          "code": "core.range.out_of_bounds",
+          "data": {
+            "measure": "max",
+            "value": 60.5
+          }
+        }
+      ]
+    },
+    {
+      "name": "前缀不符",
+      "table": {
+        "schema": "range@1",
+        "origin": "合成样例：构建名前缀",
+        "match": {
+          "case": "insensitive"
+        },
+        "checks": [
+          {
+            "values": "$.build",
+            "prefix": {
+              "values": [
+                "rel_"
+              ]
+            }
+          }
+        ]
+      },
+      "subject": {
+        "build": "Beta_x"
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.range.out_of_bounds"
+        }
+      ]
+    },
+    {
+      "name": "比 2^53 大 1 也算越界",
+      "table": {
+        "schema": "range@1",
+        "origin": "合成样例：大整数序号",
+        "checks": [
+          {
+            "values": "$.serial",
+            "range": {
+              "maximum": 9007199254740992,
+              "integer": true
+            }
+          }
+        ]
+      },
+      "subject": {
+        "serial": "9007199254740993"
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "core.range.out_of_bounds"
+        }
+      ]
+    }
+  ]
+}

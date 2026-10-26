@@ -1,0 +1,88 @@
+{
+  "id": "counts_inconsistent",
+  "source": "author",
+  "check": "board",
+  "note": "合成样例：分组的无期望结果数（5）多于用例总数（3），被判对象自相矛盾，指标不可信，记不通过（提示档）",
+  "subject": {
+    "items": [
+      {
+        "id": "10.6.1/HA",
+        "location": "src:6d9a86ffa0326618976d65083dea3d83b985513c5c7cb9c66779c1d551c23dbe/json@1/p/rows",
+        "fields": {
+          "line": "10.6.1",
+          "module": "HA",
+          "id": "10.6.1/HA",
+          "counts": {
+            "cases": 3,
+            "missing": 5,
+            "vague": 0,
+            "negative": 0,
+            "negative_denominator": 3,
+            "type_unclassified": 0
+          },
+          "quality": {
+            "judged": 0,
+            "unjudged": 3,
+            "conflicted": 0,
+            "sources": []
+          },
+          "ratios": {
+            "missing": {
+              "num": 3,
+              "den": 3
+            },
+            "vague": {
+              "num": 0,
+              "den": 0
+            },
+            "negative": {
+              "num": 0,
+              "den": 3
+            }
+          },
+          "display": {
+            "missing": 1,
+            "vague": null,
+            "negative": 0
+          }
+        }
+      }
+    ],
+    "context": {
+      "product": "famx",
+      "names": [
+        "FAMX",
+        "FAMY"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "placement": {
+            "unplaced": 0,
+            "source": "src:79326eb622e1f37dc95c74a630bf181e735627fdf6236266fb6cb3b55a13c79f",
+            "skipped": 0,
+            "truncated": false
+          },
+          "product": "famx",
+          "build": "Rel_FAMX_10_6_1_57",
+          "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
+          "view": {
+            "source": "src:6d9a86ffa0326618976d65083dea3d83b985513c5c7cb9c66779c1d551c23dbe",
+            "total": 3,
+            "truncated": false,
+            "skipped": 0,
+            "listed_rows": 1
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "quality-board.counts_inconsistent",
+      "item": "10.6.1/HA",
+      "tier": "advisory"
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "id": "dispositions_complete",
+  "source": "author",
+  "check": "dispositions",
+  "note": "两条初评发现各一条处置，另有一条新发现，每条有位置和引文",
+  "subject": {
+    "item": "sample:c1",
+    "label": "设置池 c1 的探测间隔",
+    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+    "fields": {
+      "nodeId": "c1",
+      "path": [
+        "示例文档",
+        "池管理"
+      ],
+      "title": "设置池 c1 的探测间隔",
+      "draft_partition": "delivered",
+      "draft_findings": [
+        {
+          "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/0/requirements/2/claims/0",
+          "code": "coverage_gap",
+          "rank": "major",
+          "text": "初评的发现",
+          "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+          "quotes": [
+            {
+              "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+              "text": "设置探测间隔"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/0/requirements/2/claims/1",
+          "code": "literal_issue",
+          "rank": "minor",
+          "text": "初评的发现",
+          "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+          "quotes": [
+            {
+              "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+              "text": "设置探测间隔"
+            }
+          ],
+          "commands": []
+        }
+      ],
+      "draft_level": {
+        "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/cross_item/3",
+        "rank": "P3",
+        "text": "等级理由：覆盖全部功能细节，有一些反向用例"
+      }
+    },
+    "slots": {
+      "verification": [
+        {
+          "text": "复核方的处置",
+          "code": "verified",
+          "rank": "major",
+          "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+          "quotes": [
+            {
+              "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1e",
+              "text": "显示的探测间隔与设置一致"
+            }
+          ],
+          "data": {
+            "finding": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/0/requirements/2/claims/0"
+          }
+        },
+        {
+          "text": "复核方的处置",
+          "code": "partial",
+          "rank": "minor",
+          "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+          "quotes": [
+            {
+              "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1e",
+              "text": "显示的探测间隔与设置一致"
+            }
+          ],
+          "data": {
+            "finding": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/0/requirements/2/claims/1"
+          }
+        },
+        {
+          "text": "初评遗漏：缺少探测间隔为 0 的反向用例",
+          "code": "new_finding",
+          "rank": "minor",
+          "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
+          "quotes": [
+            {
+              "reference": "src:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/markdown@1/s/interval",
+              "text": "取值范围 1-300 秒"
+            }
+          ],
+          "data": {
+            "probe": "edge_case_gap"
+          }
+        }
+      ]
+    },
+    "evidence": []
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "sample:c1",
+      "tier": "blocking"
+    }
+  ]
+}

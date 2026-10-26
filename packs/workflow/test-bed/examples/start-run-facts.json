@@ -1,0 +1,9 @@
+{
+  "comment": "环境事实：bed-a 的监听候选（afamx0 两个地址所在网段都有触发设备）、bed-b 的盲地址（afamx1 的 192.0.2.194 所在网段没有触发设备）。",
+  "tool": "start_run",
+  "arguments": {
+    "pack": "test-bed",
+    "inputs": { "inventory": { "external": "doc:doc:bed-topology" } },
+    "parameters": { "action": "facts" }
+  }
+}

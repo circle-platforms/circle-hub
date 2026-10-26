@@ -1,0 +1,152 @@
+{
+  "schema": "case-review.template@2",
+  "id": "template-v3",
+  "origin": "决定：团队测试用例模板 v3 的闭集类别；类别由作者整理。集成者 R1（2026-10-24）：说明供客户端模型阅读，不是匹配规则；必选范围与跳过政策见 template-v3-coverage.json",
+  "description": "作者在原件 category_ids 中声明精确类别编号，或由客户端模型逐用例提出带原件逐字引文的类别主张；Hub 核验来源身份、闭集与引文，不从正文判断类别。未分类不等于缺少类别。",
+  "categories": [
+    {
+      "id": "functional",
+      "label": "功能测试",
+      "group": "test_type",
+      "description": "用例检验所声明功能的行为与结果。"
+    },
+    {
+      "id": "configuration",
+      "label": "配置测试",
+      "group": "test_type",
+      "description": "用例检验配置的设置和生效行为。"
+    },
+    {
+      "id": "integration",
+      "label": "集成测试",
+      "group": "test_type",
+      "description": "用例检验多个组件协作的行为。"
+    },
+    {
+      "id": "compatibility",
+      "label": "兼容性测试",
+      "group": "test_type",
+      "description": "用例检验不同环境或版本之间的兼容行为。"
+    },
+    {
+      "id": "negative",
+      "label": "反向测试",
+      "group": "test_type",
+      "description": "用例检验不合法输入或失败路径的预期行为。"
+    },
+    {
+      "id": "stress",
+      "label": "压力测试",
+      "group": "test_type",
+      "description": "用例检验负载或容量压力下的行为。"
+    },
+    {
+      "id": "command_add",
+      "label": "命令的添加",
+      "group": "command",
+      "description": "用例检验命令创建对象的行为。"
+    },
+    {
+      "id": "command_delete",
+      "label": "命令的删除",
+      "group": "command",
+      "description": "用例检验命令移除对象的行为。"
+    },
+    {
+      "id": "command_modify",
+      "label": "命令的修改",
+      "group": "command",
+      "description": "用例检验命令更改对象的行为。"
+    },
+    {
+      "id": "command_query",
+      "label": "命令的查询",
+      "group": "command",
+      "description": "用例检验命令读取对象信息的行为。"
+    },
+    {
+      "id": "show_at_maximum",
+      "label": "最大配置下的 show",
+      "group": "command",
+      "description": "用例检验配置达到所声明上限时的信息展示。"
+    },
+    {
+      "id": "no_command",
+      "label": "no 命令",
+      "group": "command",
+      "description": "用例检验模板规定的 no 命令行为。"
+    },
+    {
+      "id": "clear_command",
+      "label": "clear 命令",
+      "group": "command",
+      "description": "用例检验模板规定的 clear 命令行为。"
+    },
+    {
+      "id": "operation_log",
+      "label": "操作日志",
+      "group": "command",
+      "description": "用例检验操作日志记录的内容和行为。"
+    },
+    {
+      "id": "audit_log",
+      "label": "审计日志",
+      "group": "command",
+      "description": "用例检验审计日志记录的内容和行为。"
+    },
+    {
+      "id": "configuration_sync",
+      "label": "配置同步",
+      "group": "configuration",
+      "description": "用例检验配置在节点之间同步的行为。"
+    },
+    {
+      "id": "configuration_save",
+      "label": "配置保存",
+      "group": "configuration",
+      "description": "用例检验配置持久保存的行为。"
+    },
+    {
+      "id": "configuration_restore",
+      "label": "配置恢复",
+      "group": "configuration",
+      "description": "用例检验从保存状态恢复配置的行为。"
+    },
+    {
+      "id": "configuration_clear",
+      "label": "配置清除",
+      "group": "configuration",
+      "description": "用例检验清除配置的行为。"
+    },
+    {
+      "id": "upgrade_new_to_new",
+      "label": "升级兼容：新版本之间",
+      "group": "upgrade",
+      "description": "用例检验两个新版本之间升级的兼容行为。"
+    },
+    {
+      "id": "upgrade_old_to_new",
+      "label": "升级兼容：老版本到新版本",
+      "group": "upgrade",
+      "description": "用例检验老版本升级到新版本的兼容行为。"
+    },
+    {
+      "id": "upgrade_new_to_old",
+      "label": "升级兼容：新版本到老版本",
+      "group": "upgrade",
+      "description": "用例检验新版本回退到老版本的兼容行为。"
+    },
+    {
+      "id": "security",
+      "label": "安全",
+      "group": "other",
+      "description": "用例检验所声明的安全需求。"
+    },
+    {
+      "id": "database",
+      "label": "数据库",
+      "group": "other",
+      "description": "用例检验数据库相关的行为和结果。"
+    }
+  ]
+}

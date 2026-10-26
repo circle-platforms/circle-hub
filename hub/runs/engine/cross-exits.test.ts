@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { accepted, runRecord, ADMIN, USER } from '../../../contracts/src/fixtures.ts';
+import { ValidationResult } from '../../../contracts/src/validation.ts';
+import { Claim } from '../../../contracts/src/claim.ts';
+import { digestOf } from '../../records/api.ts';
+import type { EngineContext } from './deps.ts';
+import { recordResultRequests } from './requests.ts';
+test('run-level unknown facts have a top-level missing request and a counted receipt error',async()=>{
+  const writes:Array<{kind:string;body:Record<string,unknown>}>=[];
+  const ctx={now:()=>new Date('2026-10-24T00:00:00.000Z'),deps:{records:{store:{find:async()=>({items:[],next:null}),put:async(input:{kind:string;body:Record<string,unknown>})=>{writes.push(input);return {...input,digest:digestOf(input.body)};}},principals:{get:async(id:string)=>({id,name:'合成人',role:id===ADMIN?'admin':'user',disabled:false}),list:async()=>[{id:ADMIN,name:'合成管理员',role:'admin',disabled:false}]}},workflows:{ownerOf:async()=>ADMIN,byDigest:async()=>({requirements:[{key:'overview',error_handling:[]}]})}}} as unknown as EngineContext;
+  const result=ValidationResult.parse(accepted);
+  result.cross_item.push(Claim.parse({requirement:'overview',statement:{text:'缺少整份合成文档的完整范围',verdict:'unknown',reason:'missing_input'},qualifier:{nature:'unknown',provenance:'projected',source_role:'subject',marks:[]},grounds:[],warrant:{producer:'function',id:'synthetic@1'},validity:{status:'valid',bound:[],premises:[]}}));
+  const run={...structuredClone(runRecord),runner:USER,requirements:[...runRecord.requirements,{key:'overview',name:'整份核对',description:'合成',layers:['static'],done_rule:'bookkeeping',accepted_producer:'fact',repair_rounds: 2, rules: [], run_interpreters: []}]} as import('../../../contracts/src/run.ts').RunRecord;
+  await recordResultRequests(ctx,run,result,new Map([['overview',1]]));
+  const request=writes.find(r=>r.kind==='request'&&r.body.requirement==='overview');
+  assert.equal(request?.body.missing,'缺少整份合成文档的完整范围');
+  assert.equal(request?.body.audience,USER);
+  assert.ok(result.errors.some(e=>e.requirement==='overview'&&e.path==='/cross_item'&&e.rounds_left===1));
+});

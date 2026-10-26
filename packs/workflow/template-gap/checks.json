@@ -1,0 +1,54 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "coverage",
+      "title": "模板类别覆盖",
+      "applies": "item",
+      "subject": {
+        "module": "functions/classification-subject.ts"
+      },
+      "judges": "subject",
+      "tier": "advisory",
+      "function": {
+        "module": "functions/coverage-check.ts"
+      },
+      "reads": {
+        "roles": [
+          "subject"
+        ],
+        "max_bytes": 1048576
+      }
+    },
+    {
+      "id": "command_coverage",
+      "title": "按命令的模板类别覆盖",
+      "function": {
+        "module": "functions/command-check.ts"
+      },
+      "applies": "item",
+      "subject": {
+        "module": "functions/command-subject.ts"
+      },
+      "judges": "subject",
+      "tier": "advisory",
+      "reads": {
+        "roles": [
+          "subject"
+        ],
+        "max_bytes": 1048576
+      }
+    },
+    {
+      "id": "tag_declarations",
+      "title": "标签闭集声明",
+      "function": {
+        "module": "functions/tag-declarations.ts"
+      },
+      "table": "tables/resource-tags.json",
+      "applies": "item",
+      "judges": "subject",
+      "tier": "advisory"
+    }
+  ]
+}

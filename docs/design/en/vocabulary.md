@@ -1,5 +1,7 @@
 # Terms and states
 
+> **Superseded** (2026-10-21): the terms, state enumerations and colours on this page were replaced by the generic model's vocabulary: axes generated into `contracts/generated/vocabulary.ts`, labels only through `labelOf`, no hand-written enumerations. See the [generic model](generic-model.md#vocabulary). Kept as a record only.
+
 Terms enter the contract in F, with one-to-one Chinese–English correspondence; states are always enumerations, with fixed words and colors; lists are always queries. When the identity differs, a page changes only the counts, and does not change the structure.
 
 ## Terminology

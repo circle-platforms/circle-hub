@@ -1,0 +1,139 @@
+{
+  "id": "traced_with_cases",
+  "source": "author",
+  "check": "traced",
+  "note": "合成样例：两个缺陷各有已索引用例，数据里按用例编号排序列出（编号、标题、文档），依据是缺陷条目和用例条目的树引用",
+  "subject": {
+    "items": [
+      {
+        "id": "71001",
+        "location": "src:01c51eb283bbd94ab12e8ba739e011cde7a1db049a414d2108b2288d9187a3ba/json@1/p/entries/d21450a45f43575e862665fc74cfecb3e212edd8cdc83e56101d7eee93796230",
+        "fields": {
+          "bug": "71001",
+          "declaration_status": "declared",
+          "identity": "71001",
+          "ids": [
+            "71001"
+          ],
+          "statuses": [
+            "fixed"
+          ],
+          "conflict": false,
+          "statement": "告警阈值修改后不生效",
+          "references": [
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/d21450a45f43@d21450a45f43575e862665fc74cfecb3e212edd8cdc83e56101d7eee93796230"
+          ],
+          "digests": [
+            "d21450a45f43575e862665fc74cfecb3e212edd8cdc83e56101d7eee93796230"
+          ],
+          "cases": [
+            {
+              "case": "C-101",
+              "title": "修改告警阈值后查询生效",
+              "document": "24001",
+              "reference": "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/cases/ef7d25f61a01@ef7d25f61a01494861fa7f509a7506ebab7177079c173e6e6310e1127d04b927",
+              "defects": [],
+              "entry": "ef7d25f61a01494861fa7f509a7506ebab7177079c173e6e6310e1127d04b927"
+            },
+            {
+              "case": "C-102",
+              "title": "阈值超出范围报错",
+              "document": "24001",
+              "reference": "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/cases/1a34165aabee@1a34165aabeef4ea7acf014b7a298f5b921c686d3e5d5e039c719cbec729dfc7",
+              "defects": [],
+              "entry": "1a34165aabeef4ea7acf014b7a298f5b921c686d3e5d5e039c719cbec729dfc7"
+            }
+          ],
+          "systems": []
+        }
+      },
+      {
+        "id": "71002",
+        "location": "src:01c51eb283bbd94ab12e8ba739e011cde7a1db049a414d2108b2288d9187a3ba/json@1/p/entries/1770c0b47855b4165c9b65b9394d5045f5017f7bd8480d0afa336668de6a2d80",
+        "fields": {
+          "bug": "71002",
+          "declaration_status": "declared",
+          "identity": "71002",
+          "ids": [
+            "71002"
+          ],
+          "statuses": [
+            "known"
+          ],
+          "conflict": false,
+          "statement": "会话保持在切换后失效",
+          "references": [
+            "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/release-notes/1770c0b47855@1770c0b47855b4165c9b65b9394d5045f5017f7bd8480d0afa336668de6a2d80"
+          ],
+          "digests": [
+            "1770c0b47855b4165c9b65b9394d5045f5017f7bd8480d0afa336668de6a2d80"
+          ],
+          "cases": [
+            {
+              "case": "C-103",
+              "title": "主备切换后会话保持",
+              "document": "24001",
+              "reference": "tree:67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591/cases/600ae09cc373@600ae09cc373ab990947f9ebcf2112b74c6fb13f44071cd0d22ceb0e3d8b5280",
+              "defects": [],
+              "entry": "600ae09cc373ab990947f9ebcf2112b74c6fb13f44071cd0d22ceb0e3d8b5280"
+            }
+          ],
+          "systems": []
+        }
+      }
+    ],
+    "context": {
+      "product": "famx",
+      "names": [
+        "FAMX",
+        "FAMY"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "product": "famx",
+          "build": "Rel_FAMX_10_6_1_57",
+          "root": "67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591",
+          "statuses": [
+            "fixed",
+            "known"
+          ],
+          "views": {
+            "defects": {
+              "source": "src:01c51eb283bbd94ab12e8ba739e011cde7a1db049a414d2108b2288d9187a3ba",
+              "skipped": 0,
+              "truncated": false,
+              "total_keys": 2,
+              "total_entries": 2,
+              "listed_keys": 2,
+              "listed_entries": 2,
+              "missing": 0
+            },
+            "cases": {
+              "source": "src:6cd75ca676dec00ca5c73f782748fee1cc695c951a29d8c0fb2be14453fe9689",
+              "skipped": 0,
+              "truncated": false,
+              "total_keys": 2,
+              "total_entries": 3,
+              "listed_keys": 2,
+              "listed_entries": 3,
+              "missing": 0
+            }
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "71001",
+      "tier": "advisory"
+    },
+    {
+      "verdict": "support",
+      "item": "71002",
+      "tier": "advisory"
+    }
+  ]
+}

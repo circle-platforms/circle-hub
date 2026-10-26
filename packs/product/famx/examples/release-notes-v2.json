@@ -1,0 +1,24 @@
+{
+  "schema": "release-notes@2",
+  "complete": true,
+  "product": "FAMX",
+  "build": "Rel_FAMX_10_6_1_1",
+  "version": "10.6.1",
+  "released": "2026-10-24",
+  "defects": [
+    {
+      "bug": "61001",
+      "status": "fixed",
+      "text": "合成修复条目；标题和文字不决定状态",
+      "module": "synthetic",
+      "system": "plm"
+    },
+    {
+      "bug": "61002",
+      "status": "known",
+      "text": "合成已知条目",
+      "module": "synthetic",
+      "system": "plm"
+    }
+  ]
+}

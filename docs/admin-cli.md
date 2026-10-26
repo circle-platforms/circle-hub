@@ -1,5 +1,7 @@
 # 本机第一阶段管理命令
 
+> **历史文档**（2026-10-21 标注）：本文描述已退役服务器的管理命令和开发栈，现行代码里已不存在，只作记录保留。现行范围见 [Hub r4 简报](hub-r4-brief.md)。
+
 在隔离工作树运行 `npm run dev:stack`。它启动临时 PostgreSQL、受监管 server、`lab-east-01` / `lab-east-02` 和合成连接器资源。打印 developer 与独立 approver 的随机开发登录方式；账号 `defect-bot` / principal `prn_defectbot` 仅用于获准规则的服务身份。developer 的管理与合成操作权限在开发配置中显式授予；approver 只具备任务读取和批准权限，不具备设备操作权限。
 
 登录仍是 `POST /v1/auth/dev-login`。将 token 放在 Git 外的权限受限文件，设置 `CIRCLE_HUB_TOKEN_FILE`；或通过 `CIRCLE_HUB_TOKEN` 注入。CLI 不打印 token，不接受 principal/role 参数。`CIRCLE_HUB_URL` 为启动时打印的本机地址，`CIRCLE_HUB_SCOPE` 默认 `scp_lab`。CLI 和 worker 当前只支持该本机开发配置。

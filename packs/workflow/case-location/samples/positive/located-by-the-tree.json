@@ -1,0 +1,45 @@
+{
+  "id": "located_by_the_tree",
+  "source": "author",
+  "check": "locate",
+  "note": "合成样例：FAMY 根下按约定写的目录（版本线、发布火车、模块），和只有发布火车的目录，都定出产品线和目录里的版本",
+  "subject": {
+    "items": [
+      {
+        "id": "24001",
+        "location": "src:ed06a92702e94c6c8f89eeaaea6c638f80b8dbeb7796bdbea4e57283c3cd5143/kityminder@1/n/24001n0",
+        "fields": {
+          "kind": "document",
+          "document": "24001",
+          "node": null,
+          "source": "agile:mindmap:24001@1",
+          "root": "FAMY",
+          "ancestors": ["030：FAMX/FAMY测试项目", "060：10.6.1", "004：10.6.1-R2-2026/7", "SSL"],
+          "title": "需求20931 证书链校验",
+          "path": [],
+          "case_title": null
+        }
+      },
+      {
+        "id": "24002",
+        "location": "src:09dde087550e1a541c64592c4ebd359b1f09b7ec8abf1a521fcbb5ecfe2b6d6f/kityminder@1/n/24002n0",
+        "fields": {
+          "kind": "document",
+          "document": "24002",
+          "node": null,
+          "source": "agile:mindmap:24002@1",
+          "root": "FAMY",
+          "ancestors": ["030：FAMX/FAMY测试项目", "004：10.6.1-R2-2026/7", "SLB", "10.7.3 迁移回归"],
+          "title": "bug 61001 会话保持",
+          "path": [],
+          "case_title": null
+        }
+      }
+    ],
+    "context": { "product": "famx", "names": ["FAMX", "FAMY"], "parameters": {} }
+  },
+  "expect": [
+    { "verdict": "support", "item": "24001", "tier": "advisory" },
+    { "verdict": "support", "item": "24002", "tier": "advisory" }
+  ]
+}

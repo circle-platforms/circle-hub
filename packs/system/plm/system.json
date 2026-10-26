@@ -1,0 +1,277 @@
+{
+  "schema": "system@1",
+  "title": "PLM 查询服务",
+  "description": "PLM 查询服务的只读访问：缺陷详情（plm:bug:<编号>）、需求详情（plm:story:<编号>）、产品列表（plm:products:all）和一个产品的构建列表（plm:builds:<产品编号> 或 plm:builds:<逐族编码的名字，以 + 连接>）。读接口也用 POST，而且写接口与读接口同一个前缀，所以读路由逐条列出（方法加路径模板），写接口一条也没有列，传输层按路由清单拒绝它。登录与敏捷测试平台相同（同一个令牌可用）；信封 {code, msg, data}，code 1000 表示成功，构建列表的成功应答是不带信封的数组。",
+  "roles": [
+    {
+      "name": "plm-oauth",
+      "description": "登录接口所在的地址（只用于登录）"
+    },
+    {
+      "name": "plm-api",
+      "description": "查询服务的地址；请求头 Authorization 直接带令牌，不加前缀"
+    }
+  ],
+  "auth": {
+    "kind": "login_token",
+    "header": {
+      "name": "Authorization",
+      "scheme": "raw"
+    },
+    "roles": [
+      "plm-api"
+    ],
+    "credentials": [
+      {
+        "name": "username",
+        "digest": "plain",
+        "description": "账号"
+      },
+      {
+        "name": "password",
+        "digest": "sha512_base64",
+        "description": "密码，密钥库只保存 Base64(SHA-512(明文))"
+      }
+    ],
+    "login": {
+      "role": "plm-oauth",
+      "method": "POST",
+      "path": "/oauth/login/",
+      "body": {
+        "username": "{username}",
+        "password": "{password}"
+      },
+      "token": "/data/token",
+      "expiry": {
+        "pointer": "/data/expire",
+        "unit": "epoch_seconds"
+      },
+      "envelope": {
+        "code": "/code",
+        "ok": [
+          1000
+        ],
+        "message": "/msg"
+      },
+      "max_bytes": 65536,
+      "timeout_ms": 30000
+    }
+  },
+  "envelope": {
+    "code": "/code",
+    "ok": [
+      1000
+    ],
+    "expired": [
+      401
+    ],
+    "message": "/msg"
+  },
+  "routes": [
+    {
+      "id": "products",
+      "role": "plm-api",
+      "method": "GET",
+      "path": "/plmquery/product/all/",
+      "response": "json",
+      "envelope": true,
+      "max_bytes": 4194304,
+      "timeout_ms": 30000,
+      "read": true,
+      "description": "全部产品"
+    },
+    {
+      "id": "builds",
+      "role": "plm-api",
+      "method": "GET",
+      "path": "/plmquery/build/",
+      "query": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string",
+            "maxLength": 9,
+            "pattern": "^[0-9]{1,9}$"
+          }
+        },
+        "required": [
+          "product"
+        ],
+        "additionalProperties": false
+      },
+      "response": "json",
+      "envelope": "when_present",
+      "max_bytes": 16777216,
+      "timeout_ms": 60000,
+      "read": true,
+      "description": "一个产品的全部构建（一个数组，不分页）"
+    },
+    {
+      "id": "bug-detail",
+      "role": "plm-api",
+      "method": "POST",
+      "path": "/plmquery/bug/detail/",
+      "body": {
+        "type": "object",
+        "properties": {
+          "bug_ids": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 999999999999999
+                },
+                {
+                  "type": "string",
+                  "maxLength": 15,
+                  "pattern": "^[0-9]{1,15}$"
+                }
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "bug_ids"
+        ],
+        "additionalProperties": false
+      },
+      "response": "json",
+      "envelope": true,
+      "max_bytes": 16777216,
+      "timeout_ms": 60000,
+      "read": true,
+      "description": "缺陷详情（读接口，用 POST）"
+    },
+    {
+      "id": "story-detail",
+      "role": "plm-api",
+      "method": "POST",
+      "path": "/plmquery/story/detail/",
+      "body": {
+        "type": "object",
+        "properties": {
+          "story_ids": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 999999999999999
+                },
+                {
+                  "type": "string",
+                  "maxLength": 15,
+                  "pattern": "^[0-9]{1,15}$"
+                }
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "story_ids"
+        ],
+        "additionalProperties": false
+      },
+      "response": "json",
+      "envelope": true,
+      "max_bytes": 16777216,
+      "timeout_ms": 60000,
+      "read": true,
+      "description": "需求详情（读接口，用 POST）"
+    }
+  ],
+  "reads": [
+    {
+      "name": "bug",
+      "external": "plm:bug",
+      "description": "一个缺陷：标题、状态、修复说明等字段（HTML 字段转成纯文本）；资源设置 settings.bug_fix_field 为非空字符串时，content.fix_field 原样回传字段名，否则为 null，不猜默认字段、不检查该记录是否含此字段。settings.bug_fix_actions 为 JSON 字符串数组时，content.fix_notes 只收 action 与数组成员完全相等且 comment 非空的动作，按原顺序，comment 原文不改（HTML 转纯文本）；没配置或不是该数组时 fix_notes 为 null，说明写缺少设置 settings.bug_fix_actions",
+      "plan": {
+        "module": "functions/plm.ts",
+        "export": "detailPlan"
+      },
+      "project": {
+        "module": "functions/plm.ts",
+        "export": "detailProject"
+      },
+      "max_requests": 1,
+      "absent_codes": [
+        "plm.absent"
+      ]
+    },
+    {
+      "name": "bugs",
+      "external": "plm:bugs",
+      "description": "多个缺陷的详情列表（编号用 + 连接，至多 50 个）：每个编号的 {id, status, title}，未读到的列为未知",
+      "plan": {
+        "module": "functions/plm.ts",
+        "export": "bugsPlan"
+      },
+      "project": {
+        "module": "functions/plm.ts",
+        "export": "bugsProject"
+      },
+      "max_requests": 1
+    },
+    {
+      "name": "story",
+      "external": "plm:story",
+      "description": "一个需求：标题、阶段、需求说明等字段（HTML 字段转成纯文本）",
+      "plan": {
+        "module": "functions/plm.ts",
+        "export": "detailPlan"
+      },
+      "project": {
+        "module": "functions/plm.ts",
+        "export": "detailProject"
+      },
+      "max_requests": 1,
+      "absent_codes": [
+        "plm.absent"
+      ]
+    },
+    {
+      "name": "stories",
+      "external": "plm:stories",
+      "description": "多个需求的详情列表（编号用 + 连接，至多 50 个）：标量状态与阶段原样保留；非单个值置 null 并列入 fields_nonscalar，原值在原件；缺字段列入 fields_absent；标题保留；应答未包含的编号列入 unread",
+      "plan": {
+        "module": "functions/plm.ts",
+        "export": "storiesPlan"
+      },
+      "project": {
+        "module": "functions/plm.ts",
+        "export": "storiesProject"
+      },
+      "max_requests": 1
+    },
+    {
+      "name": "products",
+      "external": "plm:products",
+      "description": "全部产品（编号写 all）",
+      "request": {
+        "route": "products"
+      },
+      "max_requests": 1
+    },
+    {
+      "name": "builds",
+      "external": "plm:builds",
+      "description": "一个产品的构建列表：数字键直接读取；名字键将各名字分别 URI 编码后以 + 连接，产品名整串先 NFKC 再按 / 切开，各段 trim、String.prototype.toLowerCase 后精确匹配；请求的每族名字规范化后不能含 /，唯一匹配才读构建。settings.build_story_field 指定构建需求字段，不猜字段名；产品未唯一解析时 builds 为 null（未读），列出按编号去重的候选、缺口与下一步，覆盖不完整；数字键只读一次，产品编号取自读取键，没有对照产品列表核对，构建列表为空不证明产品存在",
+      "max_requests": 2,
+      "project": {
+        "module": "functions/plm.ts",
+        "export": "buildsProject"
+      },
+      "plan": {
+        "module": "functions/plm.ts",
+        "export": "buildsPlan"
+      }
+    }
+  ]
+}

@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "pattern@1"
+    },
+    "origin": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The source file (a reference) or the decision that produced this table (C04 R[0]); a table without it is code"
+    },
+    "description": {
+      "description": "What the table checks, in the pack language",
+      "type": "string"
+    },
+    "tier": {
+      "description": "Tier of the outcomes (C05 R[1]); default blocking when a basis is given, else advisory. Blocking needs a basis",
+      "type": "string",
+      "enum": [
+        "blocking",
+        "advisory"
+      ]
+    },
+    "basis": {
+      "description": "The acceptance contract clause a blocking check relies on (C05 R[1])",
+      "type": "string",
+      "minLength": 1
+    },
+    "item": {
+      "description": "Pointer to the item identity in the subject (or in each node); copied into outcomes",
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "location": {
+      "description": "Pointer to the reference URI of the item in the judged source; becomes a ground of the outcomes",
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "language": {
+      "type": "string",
+      "const": "regexp",
+      "description": "ECMAScript regular expression syntax restricted to literals, escapes, classes, the dot, anchors, groups, alternation and quantifiers (bounds at most 100); no backreferences, lookaround or named groups. Matched in linear time"
+    },
+    "rules": {
+      "minItems": 1,
+      "maxItems": 64,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "string",
+            "maxLength": 512,
+            "pattern": "^\\$(?:\\.(?:\\*|[A-Za-z_\\u0080-￿][A-Za-z0-9_\\u0080-￿]*)|\\[(?:\\*|-?(?:0|[1-9][0-9]*)|'(?:[^'\\\\]|\\\\.)*'|\"(?:[^\"\\\\]|\\\\.)*\")\\])*$",
+            "description": "Subject locations whose string values are matched"
+          },
+          "pattern": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Pattern in the declared language, at most 256 characters"
+          },
+          "flags": {
+            "description": "i: case-insensitive",
+            "type": "string",
+            "enum": [
+              "",
+              "i"
+            ]
+          },
+          "mode": {
+            "description": "full (default): the whole value must match; search: some part of it",
+            "type": "string",
+            "enum": [
+              "full",
+              "search"
+            ]
+          },
+          "negate": {
+            "description": "The value must not match",
+            "type": "boolean"
+          },
+          "samples": {
+            "type": "object",
+            "properties": {
+              "match": {
+                "minItems": 1,
+                "maxItems": 32,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "description": "Values the pattern must accept; at most 32, each at most 1000 characters"
+              },
+              "reject": {
+                "minItems": 1,
+                "maxItems": 32,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "description": "Values the pattern must refuse; at most 32, each at most 1000 characters"
+              }
+            },
+            "required": [
+              "match",
+              "reject"
+            ],
+            "additionalProperties": false,
+            "description": "Samples checked when the table is validated (C04 R[0]); their total matching work is capped"
+          }
+        },
+        "required": [
+          "values",
+          "pattern",
+          "samples"
+        ],
+        "additionalProperties": false,
+        "description": "One pattern and the values it applies to"
+      }
+    },
+    "match": {
+      "type": "object",
+      "properties": {
+        "unicode": {
+          "description": "Unicode normalization form applied first; default nfc",
+          "type": "string",
+          "enum": [
+            "none",
+            "nfc",
+            "nfkc"
+          ]
+        },
+        "case": {
+          "description": "insensitive compares lower-cased values; default sensitive",
+          "type": "string",
+          "enum": [
+            "sensitive",
+            "insensitive"
+          ]
+        },
+        "whitespace": {
+          "description": "trim removes leading and trailing whitespace, collapse also turns every inner whitespace run into one space; default trim",
+          "type": "string",
+          "enum": [
+            "exact",
+            "trim",
+            "collapse"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "How values are normalized before matching (C04 R[2]); every table that compares text declares it"
+    },
+    "required": {
+      "description": "A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema",
+    "origin",
+    "language",
+    "rules"
+  ],
+  "additionalProperties": false,
+  "title": "pattern@1",
+  "description": "Pattern table: values must (or must not) match declared patterns. Code: core.pattern.no_match"
+}

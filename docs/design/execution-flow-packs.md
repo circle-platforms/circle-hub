@@ -1,8 +1,10 @@
 # 执行流迁入产品线包
 
-本文记录已实施的执行流迁移边界。A3、B、C1–C5 及后续修复保持；0.2.0 的 D 实现移除原生 apv-case-execute 1.1.1 入口、controller / worker 与专用解析器，新执行只经 module-execute 和独立产品模块。退役前已只读确认 11 条原生任务均为终态（9 delivered / 2 failed），没有在途或 unknown；部署前须再核。migration 20 原字节保留，migration 44 将旧回执表设为只读，不改历史任务方法或输入绑定。合成验收与既有现场观察分列于[阶段进度](../server-s2-progress.md)。下文关于原生实现的协议描述保留为历史依据，不再代表可新建入口。
+> **已被取代**（2026-10-21）：本文的执行流、`module-execute` 和产品线模块已随旧服务器退役。效果写入、租约与执行器（B06、D04，D03 的写声明，D07 的执行器部分）仍在[通用模型](generic-model.md)里，第一个里程碑不实现；D03 的读部分与 D07 的资源部分由 connectors 包实现。本文只作记录保留。
 
-目标是让 `packs/apv/execution` 的产品解释和流程选择由独立仓库的 `products/apv` 拥有，同时保留 hub 对权限、批准修订、派发、租约、未知结果与证据的控制。产品包提供纯函数 Tool 和 Hook；网络、凭据、数据库与任务推进仍由 hub 执行。装入第二条产品线时不添加产品专用 controller 或 worker 分支。
+本文记录已实施的执行流迁移边界。A3、B、C1–C5 及后续修复保持；0.2.0 的 D 实现移除原生 famx-case-execute 1.1.1 入口、controller / worker 与专用解析器，新执行只经 module-execute 和独立产品模块。退役前已只读确认 11 条原生任务均为终态（9 delivered / 2 failed），没有在途或 unknown；部署前须再核。migration 20 原字节保留，migration 44 将旧回执表设为只读，不改历史任务方法或输入绑定。合成验收与既有现场观察分列于[阶段进度](../server-s2-progress.md)。下文关于原生实现的协议描述保留为历史依据，不再代表可新建入口。
+
+目标是让 `packs/famx/execution` 的产品解释和流程选择由独立仓库的 `products/famx` 拥有，同时保留 hub 对权限、批准修订、派发、租约、未知结果与证据的控制。产品包提供纯函数 Tool 和 Hook；网络、凭据、数据库与任务推进仍由 hub 执行。装入第二条产品线时不添加产品专用 controller 或 worker 分支。
 
 本设计沿用[产品线包典范](product-line-pack.md)、[harness 原语规范](harness-primitives.md)及[审批与执行链](approvals-and-enforcement.md)。不增加 REST 路由、权限类型、Hook 挂点或事件接口。
 
@@ -12,7 +14,7 @@
 
 `ProductModules.load` 从批准的来源制品取出冻结文件，核对 `product-line/1` 的 `tools[]`、`hooks[]`、`flows[]` 与 `resources[]`。`ProductModules.call` 经 `callFrozenTool` 在受限 Tool 子进程内调用声明文件的导出函数。相对 import 必须留在冻结文件集中；外部依赖必须在对应文件的 `tools[].imports` 中声明，并与 hub 支持的精确版本一致。`node:*`、hub 源码、任意依赖和计算出来的 import 均被拒绝，错误码为 `IMPORT_NOT_DECLARED`。
 
-当前装载器与 A3 通用驱动已能运行声明的完整执行流：`ToolProviders.resolve` 解析显式模块绑定，`module-execute` 读取冻结 flow，由 C 持久推进、通用 worker 执行 `flow.invoke`；products/apv 1.3.x 提供产品 transition、工作簿 / XML / 函数契约读取与结果解释纯 Tool。原生 `CaseExecution`、`cases.*` 与 `executeCases` 已退役，通用流程不依赖其产品专用 controller / worker。
+当前装载器与 A3 通用驱动已能运行声明的完整执行流：`ToolProviders.resolve` 解析显式模块绑定，`module-execute` 读取冻结 flow，由 C 持久推进、通用 worker 执行 `flow.invoke`；products/famx 1.3.x 提供产品 transition、工作簿 / XML / 函数契约读取与结果解释纯 Tool。原生 `CaseExecution`、`cases.*` 与 `executeCases` 已退役，通用流程不依赖其产品专用 controller / worker。
 
 迁移采用了产品纯函数与通用驱动器的拆分，没有把原 `controller.ts`、`worker.ts` 换目录后直接 import。它们使用的数据库、文件系统、保险箱与网络能力仍留在 hub，产品逻辑经同一个受控模块装载路径运行。
 
@@ -29,7 +31,7 @@
 | `contracts.ts` | 产品输入与输出结构、流程版本、公开能力描述 | 原语登记和受控装载；验证 effect、角色和资源声明 |
 | `migration.ts` | 不进入可执行产品模块 | 已部署迁移保持字节不变；旧表只为旧任务保留，新持久状态由通用驱动器管理 |
 
-hub 的通用驱动器不识别 APV 对象、命令树格式、Excel 标记、设备命名规则或框架日志正则。产品 Tool 不接收数据库事务、保险箱引用、访问令牌、模型密钥、可调用的原始节点地址、运行 profile 的端点或 CA 文件路径。
+hub 的通用驱动器不识别 FAMX 对象、命令树格式、Excel 标记、设备命名规则或框架日志正则。产品 Tool 不接收数据库事务、保险箱引用、访问令牌、模型密钥、可调用的原始节点地址、运行 profile 的端点或 CA 文件路径。
 
 这个边界不能破坏格式解析所需的事实。环境和日志原始证据的原字节由 hub 保管，SHA 不因脱敏投影变化；hub 按本次绑定和权限，把必要事实或受控字节输入交给环境 / 结果解析 Tool。需要建立“日志地址 → 设备序号”的关系时，投影必须保留一一对应的地址标识，不能将两边分别抹除或替换为同一个占位符。若给出授权范围内的日志字节，Tool 可读取其中的地址文本用于确定性解析，但它没有网络能力，不能将地址变成连接目标。公开返回仍按现有脱敏边界处理并保留原始证据引用。
 
@@ -38,7 +40,7 @@ hub 的通用驱动器不识别 APV 对象、命令树格式、Excel 标记、�
 沿用 `products/<line>`，在现有清单中登记执行所需的 Tool，不新建另一种模块：
 
 ```text
-products/apv/
+products/famx/
   product-line.json
   tools/
     execution-contracts.ts
@@ -54,7 +56,7 @@ products/apv/
     host-destructive.ts
     host-policy.ts
     workbook-contract.ts
-  flows/apv-case-execute.json
+  flows/famx-case-execute.json
   resources/case-gateway.json
   tests/
 ```
@@ -101,7 +103,7 @@ D 的可证终态必须先独立持久化，再交给产品 Tool 解释。远端
 
 ## 方法版本、摘要与批准修订
 
-现有原生 `apv-case-execute` 版本为 `1.1.1`，流程为 `apv-case-execute/1`。它的 `implementationSha256` 是 hub 内选定实现文件与依赖源码的摘要，不能直接等同于独立模块 digest。
+现有原生 `famx-case-execute` 版本为 `1.1.1`，流程为 `famx-case-execute/1`。它的 `implementationSha256` 是 hub 内选定实现文件与依赖源码的摘要，不能直接等同于独立模块 digest。
 
 模块迁移采用新的实现版本。模块 digest 仍按 `modules.json` 定义计算；执行实现摘要由版本化的算法从执行相关 Tool 的相对依赖闭包、所用 Hook、流程定义、入口映射及所用 hub 精确依赖版本构造。算法和文件列表本身须被冻结，不能取运行时目录最新字节。一个用于模块完整性，一个用于执行实现身份，两者同时留存，不混用；摘要算法变化也升级实现版本。
 
@@ -114,11 +116,11 @@ D 的可证终态必须先独立持久化，再交给产品 Tool 解释。远端
 ## 现网任务的迁移路径
 
 1. **已落地**：A1 历史批准修订与 A3 通用驱动已由合成产品线验收；原生 1.1.1 兼容驱动仍保留，新驱动不接管旧操作。
-2. **已落地**：包作者在独立仓库登记 products/apv 1.3.x 的执行纯 Tool / flow 并更新 `modules.json`，经既有模块安装与独立批准使用；C 通用协议负责运行绑定，配置文件存在不代表批准。
+2. **已落地**：包作者在独立仓库登记 products/famx 1.3.x 的执行纯 Tool / flow 并更新 `modules.json`，经既有模块安装与独立批准使用；C 通用协议负责运行绑定，配置文件存在不代表批准。
 3. **已落地**：新提交可显式选冻结模块方法 pin 走 generic provider；新方法摘要、流程版本或资源声明不同就重新生成输入修订及操作绑定，不复用旧 command gate、派发意图或 execution-submission。
 4. **已落地的兼容边界**：已受理、已派发、unknown 和待核对任务继续使用原 methodAssetId、原实现摘要及原回执表。历史任务和 evidence 保留原版本，不改数据库把它们“迁移成功”；需要改方法的未派发任务由申请人明确修订或重新提交。这不表示现场旧任务已清空。
 5. **退役前置，已只读确认当前集合为空，部署前复核**：移除原生兼容驱动前，维护者须确认没有待执行、在途、unknown 或待核对任务；不能由新流程 delivered 推断这些集合为空。若先停用旧实现，任务返回真实缺少实现或批准的错误，不回退到新版写设备；未知历史必须保留可读回执和独立核对能力。
-6. **维护者已授权的 D 阶段**：0.2.0 移除原生 apv-case-execute 1.1.1 入口与执行文件，兼容编译器升级到 1.1.0 并使用 circle-hub creator；停止注入退役实现的旧 gateway lookup。旧 migration 20 及后续已部署迁移不改字节；旧回执表经新增 migration 44 只读保留，新通用持久状态通过新增迁移建立，不让产品包携带可执行 SQL。
+6. **维护者已授权的 D 阶段**：0.2.0 移除原生 famx-case-execute 1.1.1 入口与执行文件，兼容编译器升级到 1.1.0 并使用 circle-hub creator；停止注入退役实现的旧 gateway lookup。旧 migration 20 及后续已部署迁移不改字节；旧回执表经新增 migration 44 只读保留，新通用持久状态通过新增迁移建立，不让产品包携带可执行 SQL。
 
 0.1.0 保留的冻结字符串在 D 中按范围收尾：旧 gateway lookup 适配移除，编译器 creator 改为 circle-hub 并提升方法版本。旧原生实现摘要只作为历史任务记录保留，不注册新实现或改数据库重绑。Hub 旧配置输入的弃用回退已于 2026-10-16 撤除，环境中仍有旧名时进程拒绝启动；单独钉住的历史 Circle RPC 验收协议与新扩展无旧名别名分别披露。
 
@@ -128,7 +130,7 @@ D 的可证终态必须先独立持久化，再交给产品 Tool 解释。远端
 
 | 阶段 | 必须证明的结果 |
 |---|---|
-| 纯 Tool 拆分 | APV 工作簿、环境、结果解释输出与冻结回归一致；没有 Node / hub import；声明外 import 装入时拒绝 |
+| 纯 Tool 拆分 | FAMX 工作簿、环境、结果解释输出与冻结回归一致；没有 Node / hub import；声明外 import 装入时拒绝 |
 | 通用驱动 | meridian 的独立 flow、状态转换 Tool、资源模板、五个 Hook 经同一模块安装与变更集运行；不新增产品分支 |
 | effect 和调用边界 | 未声明 Tool、越权资源、参数改端点、把 write 降为 read 均在派发前被拒；模块看不到任何令牌和密钥 |
 | 持久步骤 | 在每个意图/回报边界中断，重启后不重复写派发；旧 fence 迟到被拒；相同输入幂等复用 |
@@ -137,11 +139,11 @@ D 的可证终态必须先独立持久化，再交给产品 Tool 解释。远端
 | 绑定修订 | 草稿不影响新旧运行；批准新版仅供新受理；旧方法、来源或资源失效阻止新派发；旧操作不会换 parser 或方法 id |
 | 结果证据 | 双设备同命令各自匹配；一台缺命令仅该步 unknown；映射缺失、共享地址和检查点歧义保留未映射；逐案、逐步、检查点分开 |
 | 变更集 | executionIsChange 的冻结提交只消费一次；默认资源直接执行链；产品包不能自行批准或绕过 Hook |
-| 双产品交替运行 | APV 与 meridian 具有不同对象/回报形状；两份模块分别冻结、批准、停用，同一 hub 核心与合成 MCP 网关支撑两者 |
+| 双产品交替运行 | FAMX 与 meridian 具有不同对象/回报形状；两份模块分别冻结、批准、停用，同一 hub 核心与合成 MCP 网关支撑两者 |
 
-meridian 已从装载夹具扩成完整合成执行流程，与另一份合成模块覆盖准备、派发、终态、未知核对及各自的输入 / 结果格式；验收断言未借 APV 原生入口运行。同一通用驱动也已承载 products/apv 1.3.x flow，不能再把装载与执行状态概括为只有清单可加载。
+meridian 已从装载夹具扩成完整合成执行流程，与另一份合成模块覆盖准备、派发、终态、未知核对及各自的输入 / 结果格式；验收断言未借 FAMX 原生入口运行。同一通用驱动也已承载 products/famx 1.3.x flow，不能再把装载与执行状态概括为只有清单可加载。
 
-本文主体与 A2 / A3 已获复核并实施；B 的 products/apv 1.3.x 产品纯 Tool / flow 由独立包交付，C1–C5 通用协议及后续纠偏已经落地。维护者已另行确认 generic provider 的真实三原件流程和 21 案批量 delivered；本地合成验收不替代这份现场确认，详见[阶段进度](../server-s2-progress.md)。D 已获维护者授权并在 0.2.0 实现原生入口 / 文件退役及相关版本与冻结字符串收尾；历史任务不改数据库重绑，验证结果以阶段进度为准。
+本文主体与 A2 / A3 已获复核并实施；B 的 products/famx 1.3.x 产品纯 Tool / flow 由独立包交付，C1–C5 通用协议及后续纠偏已经落地。维护者已另行确认 generic provider 的真实三原件流程和 21 案批量 delivered；本地合成验收不替代这份现场确认，详见[阶段进度](../server-s2-progress.md)。D 已获维护者授权并在 0.2.0 实现原生入口 / 文件退役及相关版本与冻结字符串收尾；历史任务不改数据库重绑，验证结果以阶段进度为准。
 
 ## 附录 A2：有界 transition 内部契约
 
@@ -297,7 +299,7 @@ env_prepare 与 bed_topology 并不是 Hub 硬编码的特殊 Tool：名字、re
 
 C4 已在 receiptPolicy 增加**可选 prepare 阶段**（当前字段见文末 C4）：由批准的工具名与参数映射决定调用，worker 在同一远端租约内、submit 之前执行，Hub 持久化准备观察，再以这份观察供 beforeDispatch 核验。ProviderPolicy 已定义 prepare 列表与相应 worker 事件；精确映射和证明边界见 C4，产品不能在 args 中自行补租约权限。
 
-C4 已调整并验收同租约 prepare 的时序：准备观察独立持久化后，beforeDispatch 使用该观察重新核验，仍在提交意图与 submit 之前；旧的出口通过记录不能替代新观察。prepare 不证明已派发，也不把准备成功扩大为提交成功。原生 APV 路径的 execution.environment.observed 来自其提交前 env_prepare；网关 case_submit 内部仍可再次观察或拒绝，属于另一调用/时间点。通用 prepare 也保留独立原件与操作身份，不拿这两种既有观察冒充新增阶段的证据。真实 env_prepare/bed_topology 需要远端租约，因此前面的裸 read 示例仅说明参数形状，不能作为现有真实网关可执行路径。
+C4 已调整并验收同租约 prepare 的时序：准备观察独立持久化后，beforeDispatch 使用该观察重新核验，仍在提交意图与 submit 之前；旧的出口通过记录不能替代新观察。prepare 不证明已派发，也不把准备成功扩大为提交成功。原生 FAMX 路径的 execution.environment.observed 来自其提交前 env_prepare；网关 case_submit 内部仍可再次观察或拒绝，属于另一调用/时间点。通用 prepare 也保留独立原件与操作身份，不拿这两种既有观察冒充新增阶段的证据。真实 env_prepare/bed_topology 需要远端租约，因此前面的裸 read 示例仅说明参数形状，不能作为现有真实网关可执行路径。
 
 对于写 provider.call，worker 按绑定 receiptPolicy 自动 acquire / heartbeat / submit / status / results / release，C 持久化意图、身份、终态与释放事实。transition 不接管这套租约状态，也不把 acquired token 放进下一轮参数。取得受控结果字节后，可提出 `tool.call`，普通 args 放小型格式参数，byteSlots 引用 frame 中真实存在的槽；例如 `args:[{"format":"synthetic"}]`、`byteSlots:["payload"]` 会得到 `parse({format:"synthetic"}, bytes)` 这类位置参数调用。槽不存在、role/来源不符、SHA/大小不符，或实际 wire 超限均拒绝，不能让模型转抄 base64 绕过关口。
 
@@ -336,7 +338,7 @@ C 的后续工作须分别覆盖以下边界，而不是改弱某个合成夹具
 2. **注入与 schema 顺序**：当前 C 在租约尚未获得时按 provider inputSchema 校验产品 args；真实 case_submit 又把 lease_id/token 列为 required。受理核验须区分产品实参与已声明的 worker 注入实参，最终以实际注入后的完整参数核对批准 schema / wire；批准 schema 也必须容纳实际租约字段。不能为过关删掉远端 required 或放开 additionalProperties。
 3. **submit 参数与 module 策略**：受控 workbook 槽映射到 xlsx_b64，module 的来源、是否可省略及约束由批准 policy 决定；产品不能靠重命名普通字符串参数绕过 B 字节 / SHA 核对。此处只确认需要参数映射，不定义未来 JSON 键或 ABI。
 4. **回执与终态映射**：当前 A3 成功观察要求一个同时有 state 与三项通用 hash 的回执，现有网关正常 submit / 完成 results 不提供这些字段。后续按批准 policy 使用实际 state 或 channel/rc 观察，分别绑定各阶段身份和原件；不得向 raw 补写未返回的字段，或把 RPC 元数据当作网关已回显的证明。state/channel/rc 的路径与判定须逐工具声明；query_error、missing_after_done 等不能任意当作 done 或结果成功，已由独立 status 证明的 D 终态也不能因结果渠道失败而改写。
-5. **原生证据绑定**：现有原生 1.1.1 提交核对 sha256 与冻结工作簿、case_ids 与工作簿用例身份；随后 status 的 task_id/state=done 与 results 的 task_id/xlsx_sha256 绑定原投递，channel!=ready 仍可留下 partial。这些 sha256/case_ids 是该网关协议的映射目标；Hub 应经批准 policy 按冻结原件 SHA 与已批准方法导出的用例身份核对，不在通用驱动器内写死 APV 字段或解析 Excel。精确 predicate/schema 留给 C 实施设计。后续兼容应保留这些可证关系，不把现网没有的三项 hash 设为唯一可接受证据。这里记录现有做法，不授权更改原生字节或将框架结论扩大成每步通过。
+5. **原生证据绑定**：现有原生 1.1.1 提交核对 sha256 与冻结工作簿、case_ids 与工作簿用例身份；随后 status 的 task_id/state=done 与 results 的 task_id/xlsx_sha256 绑定原投递，channel!=ready 仍可留下 partial。这些 sha256/case_ids 是该网关协议的映射目标；Hub 应经批准 policy 按冻结原件 SHA 与已批准方法导出的用例身份核对，不在通用驱动器内写死 FAMX 字段或解析 Excel。精确 predicate/schema 留给 C 实施设计。后续兼容应保留这些可证关系，不把现网没有的三项 hash 设为唯一可接受证据。这里记录现有做法，不授权更改原生字节或将框架结论扩大成每步通过。
 
 同租约的 prepare、持久化观察与 beforeDispatch 在 submit/意图之前重核的方向见上节；当前普通 read 不取远端租约，这一缺口不能由模块裸调 env_prepare/bed_topology 规避。afterResult 仍按用户确认的显式 hook.verify 与 delivery 证据闸执行，不在本待办改为自动调用。
 
@@ -369,7 +371,7 @@ Tool 的 byteSlots 从当前 frame 中选择真实槽，按顺序追加字节参
 
 三条错误与绑定口径也按当前源码保留：
 
-- `outcome.error` 顶层 code 只能使用已登记的平台码。HOST_SET_UNDECLARED、HOST_NOT_IN_BED、COMMAND_NOT_LITERAL、HOST_COMMAND_OUTSIDE_POLICY 四个 APV Hook 规则码不是直接可用的顶层平台码；它们保留在产品 facts，再进入 error.details（例如 details.code），顶层可用已登记的 HOOK_FAILED。不要把产品 facts 伪装成另一条 Hub error/resultError 通道。
+- `outcome.error` 顶层 code 只能使用已登记的平台码。HOST_SET_UNDECLARED、HOST_NOT_IN_BED、COMMAND_NOT_LITERAL、HOST_COMMAND_OUTSIDE_POLICY 四个 FAMX Hook 规则码不是直接可用的顶层平台码；它们保留在产品 facts，再进入 error.details（例如 details.code），顶层可用已登记的 HOOK_FAILED。不要把产品 facts 伪装成另一条 Hub error/resultError 通道。
 - `receiptPolicy.inputSha256Path` 比较的是 `canonicalHash(整份 FlowSubmission)`，不是 workbook SHA。A3 合成 provider 回显 input_sha256，当前真实网关不提供这一回显；不能把 xlsx_sha256 改名或拿来替代完整输入摘要。
 - provider 拒绝时，worker 从 error.details 删除 gatewayRefusal，把原件保存在 B 的 `{schema,tool,phase,refusal}` envelope；C 回读后，小型原文在 `observation.facts.result`（内层 raw），大型表示走 facts.result.original 的引用，其 B 原文仍是 envelope，须取 refusal。state.errors 若记录原拒绝，应取这些实际字段与来源引用，不假设普通 worker 错误 details 总有原文。独立已证终态后的结果失败可以由 C 另附解释事实，但不能据此改写所有拒绝回报的形状。
 
@@ -415,7 +417,7 @@ B 的 16 MiB 上传上限不意味着每个 Tool 或受控槽都能容纳这么�
 
 方法摘要的版本化算法覆盖冻结模块 digest、flow、驱动版本与支持的精确依赖版本；模块清单已覆盖 Tool / Hook / 相对依赖的完整文件集合。批准历史 pin 与最新批准 readers 的交集继续逐次核验，草稿不改运行绑定；新受理要显式选方法，旧任务不自动升级。运行资源和 runtime-profile 也冻结实际修订，不把配置文件存在当作批准。C5 将总步骤预算独立为 1024，转换仍 256 代，单批数组仍 256；超限明确失败，不无限产生空转换。
 
-A3 的本地验收使用 macOS seatbelt、临时 PostgreSQL 和合成网关；两份合成模块交替执行以及 APV 模块的本地门禁各自只证明已测协议。维护者另行确认的真实床 generic provider、工作簿 / XML / 函数契约三原件及 21 案批量 delivered 与这些本地结论分开披露，不推为真实模型或任意 MCP 服务兼容。完整记录见[阶段进度](../server-s2-progress.md)；原生 1.1.1 的退役仍须按前述 D 前置独立确认。
+A3 的本地验收使用 macOS seatbelt、临时 PostgreSQL 和合成网关；两份合成模块交替执行以及 FAMX 模块的本地门禁各自只证明已测协议。维护者另行确认的真实床 generic provider、工作簿 / XML / 函数契约三原件及 21 案批量 delivered 与这些本地结论分开披露，不推为真实模型或任意 MCP 服务兼容。完整记录见[阶段进度](../server-s2-progress.md)；原生 1.1.1 的退役仍须按前述 D 前置独立确认。
 
 ---
 
@@ -431,7 +433,7 @@ status/results/reconcile 仍由 taskIdArgument 注入持久远端身份，并只
 
 ### C3：按阶段核验 provider 回执
 
-APV 合成模块验收把冻结包资源模板中的完整 receiptPolicy 原样登记并经另一身份批准，核批准摘要及配置的 canonical 摘要，不只复制参数或租约映射后回退 echo 协议。合成原始 submit / status / results 分别提供实际阶段的工作簿 SHA / 用例身份、状态与结果 SHA；这是合成协议接法验收，不证明真实网关或设备兼容。
+FAMX 合成模块验收把冻结包资源模板中的完整 receiptPolicy 原样登记并经另一身份批准，核批准摘要及配置的 canonical 摘要，不只复制参数或租约映射后回退 echo 协议。合成原始 submit / status / results 分别提供实际阶段的工作簿 SHA / 用例身份、状态与结果 SHA；这是合成协议接法验收，不证明真实网关或设备兼容。
 
 严格 cexg 合成状态夹具的 raw state 词表为 queued / running / done / lost；批准的 completion 将 queued / running 视为非终态，只将带有限整数 rc 的 done 视为已观察退出。lost 的形状合法，但不证明完成，核验以固定 EVIDENCE_INSUFFICIENT 停止轮询并保留未知写、原件与远端租约；done 缺 rc 或 rc=null 同样不可证。非零整数 rc 只表示 runner 退出事实，不自动生成整案或逐步通过结论。此词表属于该批准协议的测试数据，不是新增通用 uncertainValues 字段，也未改变原生路径。
 

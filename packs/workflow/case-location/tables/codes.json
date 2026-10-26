@@ -1,0 +1,145 @@
+{
+  "schema": "case-location.codes@1",
+  "origin": "决定：case-location 任务包按所有者的定位方案（架构简报第 6a 节第 3 项）和第二轮评审声明的码和取值",
+  "description": "任务包函数给出的拒绝码、警告码、不通过码，以及结论里版本、构建日期和 patch 的来源与置信度的取值；函数代码里的标签与这里一致（pack.test.ts 核对）",
+  "violations": [
+    {
+      "code": "case-location.version_conflict",
+      "when": "目录版本层里有几个互不一致的版本线，声明不消除这个冲突",
+      "fix": "请整理敏捷平台目录的人把文档放到一条版本线下，或开始运行时用参数 line 声明并标为声明"
+    },
+    {
+      "code": "case-location.declaration_conflict",
+      "when": "调用方声明的产品或版本线与目录树给出的矛盾（产品与目录树的根不是同一产品，或版本线与目录版本层的版本、版本线节点、发布火车对不上）",
+      "fix": "去掉或改正参数 product、line；结论按目录树给出"
+    },
+    {
+      "code": "case-location.build_other_line",
+      "when": "目录或标题里写出的构建名属于另一条版本线的已知构建，不是定位到的版本线的构建",
+      "fix": "核对这个文档的版本线；如果文档确实属于那条线，修正目录树"
+    },
+    {
+      "code": "case-location.build_not_listed",
+      "when": "目录或标题里写出的构建名不在构建站列出的构建里（本次运行冻结的构建清单没有它；不认识不等于写错）",
+      "fix": "核对文档里写出的构建名是否写对；构建站如果确实有这个构建，先同步知识库再重跑"
+    }
+  ],
+  "refusals": [
+    {
+      "code": "case-location.invalid_input",
+      "when": "投影函数的输入不是 projection-input@1",
+      "fix": "这是 Hub 的缺陷，请把输入交给维护人"
+    },
+    {
+      "code": "case-location.not_a_mindmap",
+      "when": "绑定的文档不是能解析的 KityMinder 脑图",
+      "fix": "只绑定测试脑图文档"
+    },
+    {
+      "code": "case-location.invalid_document_id",
+      "when": "文档编号含有字母、数字、点、下划线和连字符以外的字符，或超过 120 个字符",
+      "fix": "用敏捷测试平台的脑图编号绑定文档"
+    },
+    {
+      "code": "case-location.duplicate_document",
+      "when": "同一份文档绑定了两次",
+      "fix": "每份文档只绑定一次"
+    },
+    {
+      "code": "case-location.no_document",
+      "when": "输入槽 documents 里没有文档",
+      "fix": "给出要定位的脑图文档"
+    },
+    {
+      "code": "case-location.invalid_parameter",
+      "when": "参数的取值合乎模式却用不了：line 不是版本号，product 是空白，id_ranges 的 min 大于 max 等",
+      "fix": "按拒绝里写的规则改正后重新开始运行"
+    },
+    {
+      "code": "case-location.ambiguous_location",
+      "when": "一起绑定的几份文档里，某份文档没有一个别的文档解析不到的节点编号，条目的位置会同时指向几份文档",
+      "fix": "把这些文档分开开始运行"
+    },
+    {
+      "code": "case-location.too_large",
+      "when": "投影结果超过投影函数的输出上限",
+      "fix": "少绑定几份文档，或者按文档定位"
+    },
+    {
+      "code": "case-location.internal_error",
+      "when": "函数内部出错（任务包缺陷）",
+      "fix": "把输入交给任务包维护人"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "case-location.unbound_product",
+      "when": "运行没有绑定产品线，目录树的根对不上产品线",
+      "fix": "开始运行时用 product 写明产品名称"
+    },
+    {
+      "code": "case-location.no_tree_meta",
+      "when": "系统包没有给出文档的目录树信息或根，只能按标题定位",
+      "fix": "请管理员检查敏捷测试平台系统包的资源设置（根编号到名称的对应）"
+    },
+    {
+      "code": "case-location.no_case_nodes",
+      "when": "按用例定位时文档里没有用例节点，按整份文档定位",
+      "fix": "无；或者按文档定位"
+    },
+    {
+      "code": "case-location.id_kind_unknown",
+      "when": "关联的编号没有标明是需求还是缺陷，声明的编号范围也分不出，没有读取缺陷系统",
+      "fix": "开始运行时用参数 id_ranges 给出缺陷系统的编号范围"
+    },
+    {
+      "code": "case-location.sources_capped",
+      "when": "关联的编号对应的期望来源超过 200 个，多出的没有绑定",
+      "fix": "少绑定几份文档"
+    },
+    {
+      "code": "case-location.internal_error",
+      "when": "期望来源函数内部出错（任务包缺陷），没有绑定期望来源",
+      "fix": "把输入交给任务包维护人"
+    }
+  ],
+  "version_source": [
+    {
+      "code": "folders",
+      "label": "目录",
+      "when": "取自目录：版本层（版本线节点、发布火车、只写版本的目录）里最靠近根的；没有版本层时是目录名里顺带提到的、最靠近根的那个"
+    },
+    {
+      "code": "title",
+      "label": "标题",
+      "when": "目录里没有，标题里的只作参考"
+    },
+    {
+      "code": "parameter",
+      "label": "参数",
+      "when": "目录和标题里都没有版本，取自调用方声明的版本线（构建日期和 patch 没有这个来源）"
+    },
+    {
+      "code": "none",
+      "label": "无",
+      "when": "没有"
+    }
+  ],
+  "confidence": [
+    {
+      "code": "high",
+      "label": "高",
+      "when": "版本取自目录的版本层，版本层前后一致；这时的构建日期和 patch 也只取自版本层"
+    },
+    {
+      "code": "low",
+      "label": "低",
+      "when": "参考版本（目录名里顺带提到的、只在标题里的）、调用方声明的版本线，或自相矛盾的版本层；这时的构建日期和 patch 只作参考"
+    },
+    {
+      "code": "none",
+      "label": "无",
+      "when": "没有版本"
+    }
+  ]
+}

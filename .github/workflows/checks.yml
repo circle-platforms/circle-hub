@@ -1,5 +1,9 @@
 name: Hub checks
 
+# Synthetic fixtures and scripted models only: no job reaches a real system, a real model endpoint or a secret.
+# Ubuntu has no sandbox-exec, keychain, launchd or libpq of the embedded PostgreSQL's major version, so the tests that need
+# them skip here. The job summary lists every skip; a skip is not a pass, and those paths are checked on macOS (AGENTS.md).
+
 on:
   push:
     branches: [main]
@@ -9,17 +13,11 @@ permissions:
   contents: read
 
 jobs:
-  code:
-    name: Types, contracts and methods
+  typecheck:
+    name: Types
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    env:
-      CIRCLE_NO_MODELS_REFRESH: '1'
     steps:
-      - name: Isolate Circle data
-        run: |
-          printf 'CIRCLE_HOME=%s\n' "$(mktemp -d "$RUNNER_TEMP/circle-home.XXXXXX")" >> "$GITHUB_ENV"
-          printf 'CIRCLE_WORKBENCH_DATA_DIR=%s\n' "$(mktemp -d "$RUNNER_TEMP/circle-workbench.XXXXXX")" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
@@ -27,32 +25,86 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: npm run test:contracts
-      - run: npm run test:methods
 
-  acceptance:
-    name: Synthetic service acceptance
+  contracts:
+    name: Generated contracts match the model
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env:
-      CIRCLE_NO_MODELS_REFRESH: '1'
-      # Existing RPC cases report skips without the separately confirmed runtime.
-      # Skips are not verified passes and do not upgrade the acceptance baseline.
-      CIRCLE_BIN: ''
-      CIRCLE_COMMIT: ''
-      CIRCLE_RUNTIME_CONFIG: ''
+    timeout-minutes: 10
     steps:
-      - name: Isolate Circle data
-        run: |
-          printf 'CIRCLE_HOME=%s\n' "$(mktemp -d "$RUNNER_TEMP/circle-home.XXXXXX")" >> "$GITHUB_ENV"
-          printf 'CIRCLE_WORKBENCH_DATA_DIR=%s\n' "$(mktemp -d "$RUNNER_TEMP/circle-workbench.XXXXXX")" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - name: Verify temporary loopback PostgreSQL
-        run: npm run verify:postgres
-      - name: Test synthetic services (pinned Circle RPC cases report skips)
-        run: npm run test:acceptance
+      - run: npm run verify:contracts
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Run the unit tests
+        shell: bash
+        run: npm run test:unit 2>&1 | tee "$RUNNER_TEMP/unit.log"
+      - name: Count what ran and what was skipped
+        if: ${{ !cancelled() }}
+        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/unit.log" 'Unit tests'
+
+  acceptance:
+    name: Acceptance on a temporary PostgreSQL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      # The tests start and remove their own loopback PostgreSQL through hub/testing/postgres.ts.
+      - name: Run the acceptance tests
+        shell: bash
+        run: npm run test:acceptance 2>&1 | tee "$RUNNER_TEMP/acceptance.log"
+      # node --test succeeds when its pattern matches no file; this step fails then, so the job is red until
+      # tests/acceptance exists (phase 4), never green with nothing run.
+      - name: Count what ran and what was skipped
+        if: ${{ !cancelled() }}
+        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/acceptance.log" 'Acceptance'
+
+  docs:
+    name: Docs and CI checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit -p .github/checks
+      - name: Run the docs and CI checks
+        shell: bash
+        run: node --test ".github/checks/*.test.ts" 2>&1 | tee "$RUNNER_TEMP/docs.log"
+      - name: Count what ran and what was skipped
+        if: ${{ !cancelled() }}
+        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/docs.log" 'Docs and CI checks'
+
+  references:
+    name: Reference archive
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+      - run: npm run verify:references
+      - run: npm run test:references

@@ -1,0 +1,25 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "shape",
+      "title": "回注结构",
+      "interpreter": "structure@1",
+      "table": "tables/shape.json",
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "K03 R[4]-R[6]：原文、路径、关系只记录和不越过声明"
+    },
+    {
+      "id": "quotes",
+      "title": "回注引文",
+      "interpreter": "quote@1",
+      "table": "tables/quotes.json",
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "K03 R[6] 和 T04：引用逐字"
+    }
+  ]
+}

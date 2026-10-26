@@ -1,0 +1,87 @@
+{
+  "id": "board_with_metrics",
+  "source": "author",
+  "check": "board",
+  "note": "合成样例：一个分组的指标按定义算出（20 个用例：无期望 1、含糊期望 1、负面 1），总是记支持，指标写在结论数据里",
+  "subject": {
+    "items": [
+      {
+        "id": "10.6.1/SSL",
+        "location": "src:fbe47d299762fb4dcbdf4a1fdbc4e0c34ea3b118b43a374f18ec8cdf9ee27359/json@1/p/rows",
+        "fields": {
+          "line": "10.6.1",
+          "module": "SSL",
+          "id": "10.6.1/SSL",
+          "counts": {
+            "cases": 20,
+            "missing": 1,
+            "vague": 0,
+            "negative": 1,
+            "negative_denominator": 20,
+            "type_unclassified": 0
+          },
+          "quality": {
+            "judged": 19,
+            "unjudged": 1,
+            "conflicted": 0,
+            "sources": []
+          },
+          "ratios": {
+            "missing": {
+              "num": 1,
+              "den": 20
+            },
+            "vague": {
+              "num": 0,
+              "den": 19
+            },
+            "negative": {
+              "num": 1,
+              "den": 20
+            }
+          },
+          "display": {
+            "missing": 0.05,
+            "vague": 0,
+            "negative": 0.05
+          }
+        }
+      }
+    ],
+    "context": {
+      "product": "famx",
+      "names": [
+        "FAMX",
+        "FAMY"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "placement": {
+            "unplaced": 0,
+            "source": "src:7a4ab396679963e7ae543d748f9a235c02445f669071a3fe925980cc9f46c447",
+            "skipped": 0,
+            "truncated": false
+          },
+          "product": "famx",
+          "build": "Rel_FAMX_10_6_1_57",
+          "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
+          "view": {
+            "source": "src:fbe47d299762fb4dcbdf4a1fdbc4e0c34ea3b118b43a374f18ec8cdf9ee27359",
+            "total": 20,
+            "truncated": false,
+            "skipped": 0,
+            "listed_rows": 4
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "10.6.1/SSL",
+      "tier": "advisory"
+    }
+  ]
+}

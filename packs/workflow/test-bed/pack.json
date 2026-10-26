@@ -1,0 +1,210 @@
+{
+  "schema": "pack@1",
+  "id": "test-bed",
+  "version": "1.2.7",
+  "kind": "workflow",
+  "title": "设备台架",
+  "description": "读管理员发布的台架清单（命名文档），按需求搜索台架（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订台架（租约键 bed/<台架>/<设备>，可带地址分配，没有时长限额，由运行持有到释放）；只含事实要求项，开始运行时由 Hub 直接算出结果",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "f6449340e413c96aa8c4cc8a270123c394a661eaa3bb4ed8eacb5cd757e9ff44",
+      "size": 2518
+    },
+    {
+      "path": "checks.json",
+      "sha256": "673521d7da771093856c4bcbd21f68a0e20e8541a993fdab4cf0a4046607e6bb",
+      "size": 303
+    },
+    {
+      "path": "examples/bed-topology.json",
+      "sha256": "65b61e85e8f94afd36035cead54ef6cd29c579089aee3056ad387192af8cc45a",
+      "size": 1228
+    },
+    {
+      "path": "examples/start-run-acquire.json",
+      "sha256": "c9cfc838911c1ebcb4abcf29067b68d9d711563867bfbb2a196cf4626a538dc2",
+      "size": 707
+    },
+    {
+      "path": "examples/start-run-extend.json",
+      "sha256": "51302e9ecf40aeb171087a8be04d4d4342638905cd2e508d8b645f60088009af",
+      "size": 758
+    },
+    {
+      "path": "examples/start-run-facts.json",
+      "sha256": "59d6a05c908187b53e0a0eec646a8614fec3059431cbb62a83a15e0d8af68032",
+      "size": 374
+    },
+    {
+      "path": "examples/start-run-release.json",
+      "sha256": "73a47e8c41b43aeb1d05c926bd81cb7c63b857dd73c2870e48ae62fac877b581",
+      "size": 539
+    },
+    {
+      "path": "examples/start-run-search.json",
+      "sha256": "4390866752751097c122e37ce90caee45157c986cc3e1e565dd203e6d92ed31b",
+      "size": 725
+    },
+    {
+      "path": "functions/addresses.ts",
+      "sha256": "ecbb40c7077b1b094bcd634f2f3ffb0ec192882152b8bca474c9bb3890cf7d67",
+      "size": 10335
+    },
+    {
+      "path": "functions/check-bed.ts",
+      "sha256": "3aa2b1941ec758aef7fb89773f4587d35e66628a43a523049c3c5c5f7490b97e",
+      "size": 13863
+    },
+    {
+      "path": "functions/common.ts",
+      "sha256": "c7c0bce5f3b7852a09c54a777ed9349d01711c7dd8a6cc7b2d1cbf147ad79b46",
+      "size": 879
+    },
+    {
+      "path": "functions/conclude.ts",
+      "sha256": "299c5b8be6cef1fa2e963b50f481f134362150dd1641695d5b9a96cf44ee1cc1",
+      "size": 18751
+    },
+    {
+      "path": "functions/facts.ts",
+      "sha256": "493683a3234e37707e4384d1478502a1813b7ce53df0d5c637bb234bf3ededc2",
+      "size": 7373
+    },
+    {
+      "path": "functions/manifest.ts",
+      "sha256": "999cfbc941980287eb0cbd6907dd10d90dfaa400b6e1b2d48aac2a99e9c8b948",
+      "size": 23855
+    },
+    {
+      "path": "functions/match.ts",
+      "sha256": "1e5abade880c8f9140b81b9e7a6789787b315c917a984cf887ab9f9fc0614c5d",
+      "size": 7894
+    },
+    {
+      "path": "functions/ownership.ts",
+      "sha256": "a98463628da8c33436c16075ad90ed67ae2055f53d14d54d58612f9358ad86aa",
+      "size": 4186
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "23286117ff67e497731cc17cea48626f173d4d82f1918d84942cdee161ae3f26",
+      "size": 8546
+    },
+    {
+      "path": "functions/subject.ts",
+      "sha256": "ac54432fab175861b7289e1f859446f8106d437006e16a8fec9e3a7aefeacf84",
+      "size": 1827
+    },
+    {
+      "path": "functions/surface.ts",
+      "sha256": "2741b05dbac76686096313563b4daba793bf8f5d493d448f9e7419f5c1383181",
+      "size": 17181
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "10a330a3d969cc6f1fddade0b65754805af61103b1202462b4c01d71716c8e46",
+      "size": 1164
+    },
+    {
+      "path": "samples/negative/acquire-mismatch.json",
+      "sha256": "ddc614bcbe292ef3c9197685ae3f80b9206b5b2830544db4f8e08f652e8fd739",
+      "size": 2395
+    },
+    {
+      "path": "samples/negative/facts-mismatch.json",
+      "sha256": "d21cfcddd464c770e4032161aeae0a2f6228cd01b0f20980dc4fc92090f7221d",
+      "size": 3490
+    },
+    {
+      "path": "samples/negative/force_release-negative.json",
+      "sha256": "996859205f06fcd873ab5df9a90f5d1e15017e7ff0de37283de6a129c784d59e",
+      "size": 2321
+    },
+    {
+      "path": "samples/negative/register-negative.json",
+      "sha256": "ff474824fdac2098419ab153fe719efe6e9522416d62bdbccd08d404304c84fc",
+      "size": 2049
+    },
+    {
+      "path": "samples/negative/release-mismatch.json",
+      "sha256": "54d279ccecf0a75d73aaccc4f8d623e89c3028b1ca0ddae6ad95682aaa700e7c",
+      "size": 3185
+    },
+    {
+      "path": "samples/negative/search-build-mismatch.json",
+      "sha256": "a7e398340bfa7e002b7a6bc99a8e77448b348f573baf3367dd902ef4c6b6f09b",
+      "size": 2083
+    },
+    {
+      "path": "samples/negative/search-mismatch.json",
+      "sha256": "9a5a4cf99a2324637d8ed6b96356f54efd8afc5293965a483a0ab64bbc330ac3",
+      "size": 2148
+    },
+    {
+      "path": "samples/negative/unregister-negative.json",
+      "sha256": "3af3440e68ba0d88d8664ea8df7b3dd8e68e143cd74135184c895c2a7fd65695",
+      "size": 2222
+    },
+    {
+      "path": "samples/positive/acquire-support.json",
+      "sha256": "4f0b768ed01c2bfa6237ac46d1a53cd17ff3a35a21a8995438955fe4e85ea1b9",
+      "size": 2696
+    },
+    {
+      "path": "samples/positive/facts-support.json",
+      "sha256": "3e541b7422301638226af72d527a1b607951acbc050e6999a4fcb2a9a68d8740",
+      "size": 3766
+    },
+    {
+      "path": "samples/positive/force_release-positive.json",
+      "sha256": "35ee325ce347b94aea69d84c788336b47e5f834ce9429d4fb0586e58afe00a7f",
+      "size": 2330
+    },
+    {
+      "path": "samples/positive/register-positive.json",
+      "sha256": "5ffc079efb8615540c15754a8a71ae9fff873b389b9fb342ed7badf64c2bc1d7",
+      "size": 2017
+    },
+    {
+      "path": "samples/positive/release-support.json",
+      "sha256": "6105738946e42e3fe89db2a73dd134f6206073289c0dcd630b4c2a9ba9d1d70a",
+      "size": 3256
+    },
+    {
+      "path": "samples/positive/search-build-support.json",
+      "sha256": "4a77794123d557e2091e6b24a900c6734a2e645e3a601e9ded3f0b0124b736c1",
+      "size": 2192
+    },
+    {
+      "path": "samples/positive/search-support.json",
+      "sha256": "83b6c284af4de8214daef0466d2af550b90925d4b57ef505fae63da1910ce691",
+      "size": 1918
+    },
+    {
+      "path": "samples/positive/unregister-positive.json",
+      "sha256": "ca14abce89cd9ac5553395e67d899f42b919362136203be80afc9657a607cac6",
+      "size": 2220
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "851202e03d46a4b40941830a276007f860f657166b31d30da18d0d2268567516",
+      "size": 53
+    },
+    {
+      "path": "tables/bed-surface.json",
+      "sha256": "f0f162891bb8f3f1b9dbe526944dc494e6ef928a870bea37406e527ab5251468",
+      "size": 323
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "ac97cb3f5493b7d7ad8df119a08e5a72ebdba3d48a5564ce3ba6a992a6bfe4fb",
+      "size": 1536
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "1edc4b962dc92d8a1bcac47fdde53531fa956ac0ace5aa060ffe8e58efd5fe05",
+      "size": 3247
+    }
+  ]
+}

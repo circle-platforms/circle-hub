@@ -1,0 +1,128 @@
+{
+  "schema": "template-gap.codes@1",
+  "origin": "决定：template-gap 工作流包的包内码（docs/hub-r4-architecture.md 第 5 节：包码写在包名下）；函数的输出只用这里列出的码",
+  "description": "refusals：投影函数拒绝整个 start_run 时的码（error.code，Hub 原样交给调用方，带修正）；warnings：说明文档结构的提示（warnings[].code，Hub 只记进管理员日志和解析动作，调用方看不到；调用方要知道的写进条目字段和摘要，例如没有计入的节点数；调用方自己的参数写不进运行时整次不受理，不只记警告）",
+  "refusals": [
+    {
+      "code": "template-gap.invalid_input",
+      "when": "输入的形状不对：不是解析过的 KityMinder 脑图、文档编号读不出来或含有冒号、空白、控制字符，或者同一份文档给了两次",
+      "fix": "上传 KityMinder 导出的脑图 JSON，或者用 agile:mindmap:<文档编号> 让 Hub 读取；每份文档只给一次"
+    },
+    {
+      "code": "template-gap.skip_invalid",
+      "when": "参数 skipped 里有写不进这次运行的项：不是对象、类别不是模板里的编号、理由没有写或只有空白、document 不是文字或写的文档不在这次运行里、同一份文档的同一个类别写了两项（不写 document 的一项对所有文档生效）；整次不受理，不悄悄忽略",
+      "fix": "每一项写模板里的类别编号和用户给出的理由；document 写这次运行里的文档编号（修正里列出），或者不写；同一份文档的同一个类别只写一项"
+    },
+    {
+      "code": "template-gap.no_case",
+      "when": "有文档里没有用例节点（用例是标签不为空的节点），整批不受理；有没有标签、写法像用例的节点时消息里给出个数",
+      "fix": "给用例节点打上测试类型标签后重新开始运行，或者把没有用例的文档从输入里去掉"
+    },
+    {
+      "code": "template-gap.root_ambiguous",
+      "when": "一次运行里有几份文档时，有文档的根节点和其他文档区分不开（根节点没有只出现一次的编号，或者另一份文档里也有这个编号的节点）",
+      "fix": "把这些文档分开，每份单独开始一次运行；或者在脑图工具里另存一份，让根节点有自己的编号"
+    },
+    {
+      "code": "template-gap.too_large",
+      "when": "投影结果超过输出上限（8 MiB）；输入超过沙箱的输入上限（32 MiB）时函数不会运行，由 Hub 不受理",
+      "fix": "把文档分成几批，每批单独开始一次运行"
+    },
+    {
+      "code": "template-gap.template_invalid",
+      "when": "任务包里的模板表没有通过准入：形状不封闭、缺少 origin、类别不合法或没有判定条件",
+      "fix": "这是任务包的缺陷：按 template-gap.template@1 改正 tables/template-v3.json"
+    },
+    {
+      "code": "template-gap.internal_error",
+      "when": "任务包函数内部出错",
+      "fix": "这是任务包的缺陷，请把输入交给任务包维护人"
+    },
+    {
+      "code": "template-gap.index_invalid",
+      "when": "用例索引不是 case/document 的 index-view@1、根或产品与运行不同、only 不等于敏捷平台文档集合，或连接与完整性事实不可读",
+      "fix": "按运行锁定的构建重绑 case_index，only 精确列出这次敏捷平台文档，fields=document,node,commands,title,path_labels；上传文件不写进 only"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "template-gap.untagged_cases",
+      "when": "文档里有没有标签、带用例优先级、有子节点、下面没有别的用例的节点（团队模板的用例写法），没有计入用例；data 给出个数和前 20 个节点的定位",
+      "fix": "要计入这些用例就给它们打上测试类型标签"
+    },
+    {
+      "code": "template-gap.tagged_group",
+      "when": "文档里有带标签、优先级 1（分组的优先级）、不在别的用例里、下面有带标签或优先级 2 的节点的节点：按分组处理，它们的标签不计入任何类别（下面没有这样的节点时它算用例）；data 给出个数和前 20 个节点的定位",
+      "fix": "分组节点不要打测试类型标签，把标签打在下面的用例上；这个节点本身是用例时把它的优先级改成 2"
+    },
+    {
+      "code": "template-gap.node_id_duplicate",
+      "when": "几个用例共用一个节点编号 data.id；作为证据时每个副本编为带序号的编号（编号#1、编号#2 …），跨修订不对应",
+      "fix": "给每个用例节点各自的编号（重新复制节点通常会生成新编号）"
+    },
+    {
+      "code": "template-gap.node_id_missing",
+      "when": "用例节点没有编号；作为证据时按位置编号，跨修订不对应",
+      "fix": "在脑图工具里重新保存，让每个节点都有编号"
+    },
+    {
+      "code": "template-gap.node_id_unusable",
+      "when": "节点编号过长，写不进用例编号；作为证据时按位置编号，跨修订不对应",
+      "fix": "改用简短的节点编号"
+    },
+    {
+      "code": "template-gap.model_malformed",
+      "when": "解析结果的结构异常（节点不是对象、子节点下标无效或节点被引用多次），异常处没有读取",
+      "fix": "用 kityminder@1 重新解析原始文件后再传入"
+    },
+    {
+      "code": "template-gap.depth_limit",
+      "when": "文档超过 200 层，更深的子树没有读取",
+      "fix": "把过深的分支拆成单独的文档"
+    },
+    {
+      "code": "template-gap.tag_not_text",
+      "when": "标签列表里有不是文字的项，已忽略",
+      "fix": "标签只写文字"
+    }
+  ],
+  "violations": [
+    {
+      "code": "template-gap.command_shortfall",
+      "when": "索引完整且用例已连接，但这个命令下缺少模板 command 组的必选类别且没有声明跳过",
+      "fix": "补齐该命令缺失类别的用例，知识同步后重跑"
+    },
+    {
+      "code": "template-gap.not_indexed",
+      "when": "完整索引没有该文档，或输入是没有敏捷平台文档身份的上传文件",
+      "fix": "用包含文档的构建重跑或等知识同步收进文档；上传文件改用敏捷平台文档编号重跑"
+    },
+    {
+      "code": "template-gap.no_commands",
+      "when": "文档用例均已连接到完整索引，但所有用例都没有解析出的命令",
+      "fix": "把命令写进用例标题或上级节点，知识同步后重跑"
+    },
+    {
+      "code": "template-gap.case_rule_mismatch",
+      "when": "按命令覆盖采用默认 marked 的用例键，而运行采用 tagged，不能按索引键核验命令覆盖",
+      "fix": "用默认 case_rule 重跑：不传 case_rule 或设为 marked；不靠知识同步修复规则不一致"
+    },
+    {
+      "code": "template-gap.category_invalid",
+      "when": "类别主张的生成形状、类别闭集、原件字节身份或同用例引文归属不成立",
+      "fix": "按本运行原件修正 CategoryJudgment 后重新提交"
+    },
+    {
+      "code": "template-gap.category_shortfall",
+      "when": "声明完整的范围内每个用例均已分类，但必选类别没有覆盖且没有用户显式跳过",
+      "fix": "补齐缺少类别的用例，重读原件后开始新运行；模型分类语义仍待独立复核"
+    }
+  ],
+  "checks": [
+    {
+      "code": "template-gap.undeclared_tag",
+      "when": "作者 resource 含不在发布闭集中的精确原文，提示档结构违规",
+      "fix": "从发布闭集选择精确原文修正 resource 后重新核验；不猜对应值"
+    }
+  ]
+}

@@ -27,10 +27,6 @@ export interface SourceManifest {
   >;
   files: SourceFile[];
 }
-const locations: Record<string, string> = {
-  circle: 'foundation/circle',
-  'infosec-platform': 'references/platform/snapshot',
-};
 const owners = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G']);
 const hex = /^[a-f0-9]{40}$/;
 const digest = (bytes: Buffer) =>
@@ -117,11 +113,14 @@ export function verifyReferenceArchive(
     !Array.isArray(data.files) ||
     !data.files.length ||
     !data.sources ||
-    Object.keys(data.sources).sort().join(',') !==
-      Object.keys(locations).sort().join(',')
+    Object.keys(data.sources).length !== 2 ||
+    !Object.hasOwn(data.sources, 'circle')
   ) {
     throw Error('invalid source manifest');
   }
+  // Source ids are manifest declarations; the two archive placements and byte/tree verification stay fixed.
+  const archiveSource = Object.keys(data.sources).find(name => name !== 'circle')!;
+  const locations: Record<string, string> = { circle: 'foundation/circle', [archiveSource]: 'references/platform/snapshot' };
   const destinations = new Set<string>();
   for (const file of data.files as SourceFile[]) {
     safePath(file.sourcePath);

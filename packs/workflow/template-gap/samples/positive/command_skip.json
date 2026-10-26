@@ -1,0 +1,401 @@
+{
+  "id": "command_skip",
+  "source": "author",
+  "check": "command_coverage",
+  "note": "缺一类但用户声明跳过；与未跳过的缺类别反例配对",
+  "subject": {
+    "item": "900001",
+    "document": "900001",
+    "location": "src:5a830d27fc8a18b75c35c8c230b63e0ee866834a4bc60d909e6e6a1e0877dc4a/kityminder@1/i",
+    "uploaded": false,
+    "case_rule": "marked",
+    "cases": [
+      {
+        "id": "900001:case0",
+        "visit": 1,
+        "status": "classified",
+        "categories": []
+      },
+      {
+        "id": "900001:case1",
+        "visit": 2,
+        "status": "classified",
+        "categories": [
+          "command_delete"
+        ]
+      },
+      {
+        "id": "900001:case2",
+        "visit": 3,
+        "status": "classified",
+        "categories": [
+          "command_modify"
+        ]
+      },
+      {
+        "id": "900001:case3",
+        "visit": 4,
+        "status": "classified",
+        "categories": [
+          "command_query"
+        ]
+      },
+      {
+        "id": "900001:case4",
+        "visit": 5,
+        "status": "classified",
+        "categories": [
+          "show_at_maximum"
+        ]
+      },
+      {
+        "id": "900001:case5",
+        "visit": 6,
+        "status": "classified",
+        "categories": [
+          "no_command"
+        ]
+      },
+      {
+        "id": "900001:case6",
+        "visit": 7,
+        "status": "classified",
+        "categories": [
+          "clear_command"
+        ]
+      },
+      {
+        "id": "900001:case7",
+        "visit": 8,
+        "status": "classified",
+        "categories": [
+          "operation_log"
+        ]
+      },
+      {
+        "id": "900001:case8",
+        "visit": 9,
+        "status": "classified",
+        "categories": [
+          "audit_log"
+        ]
+      }
+    ],
+    "nodes": {
+      "texts": [
+        "合成根",
+        "合成command_add",
+        "合成command_delete",
+        "合成command_modify",
+        "合成command_query",
+        "合成show_at_maximum",
+        "合成no_command",
+        "合成clear_command",
+        "合成operation_log",
+        "合成audit_log"
+      ],
+      "parents": [
+        -1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "case_count": 9,
+    "skipped": [
+      {
+        "category": "command_add",
+        "reason": "合成用户声明不适用"
+      }
+    ],
+    "index": {
+      "schema": "index-view@1",
+      "product": "synthetic-template",
+      "build": {
+        "build": "Rel_MEADOW_10_6_8_1",
+        "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
+      },
+      "kind": "case",
+      "key": "document",
+      "keys": {
+        "900001": [
+          "2df5e718aba72c7f9b273f0d2fe0605e95331722e26c6931ffdd7b9412f209ac",
+          "3141f1cea05ac8c25bc04e0d6c29b95c693f213eac2cf19224f7fd94a0fb4b0b",
+          "55b86d9e2b9fd711388c2c3fae24fbc254b01fd3a479ff1c239972da8b2b0d06",
+          "6df6270e54e56468954707d7b0e2e32736b1bdfeea69c2379ccbeb6ed7f9f04f",
+          "c3a83f6107cc9775b7b727ce4ef835aaecab75acf0323f1442a0eb6207a91c6b",
+          "c8f6cddaf61b0266e892685215b3d5bbe9a876a50aa653a64e01edca45746284",
+          "d5b360cc301c54133db8f9c6ae9dee48eb637749f81df846072e287ad07cd29b",
+          "f97dde6958efd4ae37a6769ca856941d63e2c0ba186ccc5d9c1d6c8f0f6685c7",
+          "fde11aabf10121af36256981c6091379f17d1f171af6b615937181e456eed8ef"
+        ]
+      },
+      "entries": {
+        "6df6270e54e56468954707d7b0e2e32736b1bdfeea69c2379ccbeb6ed7f9f04f": {
+          "entry": "6df6270e54e56468954707d7b0e2e32736b1bdfeea69c2379ccbeb6ed7f9f04f",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case0",
+            "title": "合成command_add",
+            "path_labels": [
+              "合成根"
+            ],
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@6df6270e54e56468954707d7b0e2e32736b1bdfeea69c2379ccbeb6ed7f9f04f"
+        },
+        "c8f6cddaf61b0266e892685215b3d5bbe9a876a50aa653a64e01edca45746284": {
+          "entry": "c8f6cddaf61b0266e892685215b3d5bbe9a876a50aa653a64e01edca45746284",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case1",
+            "title": "合成command_delete",
+            "path_labels": [
+              "合成根"
+            ],
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c8f6cddaf61b0266e892685215b3d5bbe9a876a50aa653a64e01edca45746284"
+        },
+        "f97dde6958efd4ae37a6769ca856941d63e2c0ba186ccc5d9c1d6c8f0f6685c7": {
+          "entry": "f97dde6958efd4ae37a6769ca856941d63e2c0ba186ccc5d9c1d6c8f0f6685c7",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case2",
+            "title": "合成command_modify",
+            "path_labels": [
+              "合成根"
+            ],
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@f97dde6958efd4ae37a6769ca856941d63e2c0ba186ccc5d9c1d6c8f0f6685c7"
+        },
+        "2df5e718aba72c7f9b273f0d2fe0605e95331722e26c6931ffdd7b9412f209ac": {
+          "entry": "2df5e718aba72c7f9b273f0d2fe0605e95331722e26c6931ffdd7b9412f209ac",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case3",
+            "title": "合成command_query",
+            "path_labels": [
+              "合成根"
+            ],
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@2df5e718aba72c7f9b273f0d2fe0605e95331722e26c6931ffdd7b9412f209ac"
+        },
+        "d5b360cc301c54133db8f9c6ae9dee48eb637749f81df846072e287ad07cd29b": {
+          "entry": "d5b360cc301c54133db8f9c6ae9dee48eb637749f81df846072e287ad07cd29b",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case4",
+            "title": "合成show_at_maximum",
+            "path_labels": [
+              "合成根"
+            ],
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@d5b360cc301c54133db8f9c6ae9dee48eb637749f81df846072e287ad07cd29b"
+        },
+        "c3a83f6107cc9775b7b727ce4ef835aaecab75acf0323f1442a0eb6207a91c6b": {
+          "entry": "c3a83f6107cc9775b7b727ce4ef835aaecab75acf0323f1442a0eb6207a91c6b",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case5",
+            "title": "合成no_command",
+            "path_labels": [
+              "合成根"
+            ],
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c3a83f6107cc9775b7b727ce4ef835aaecab75acf0323f1442a0eb6207a91c6b"
+        },
+        "3141f1cea05ac8c25bc04e0d6c29b95c693f213eac2cf19224f7fd94a0fb4b0b": {
+          "entry": "3141f1cea05ac8c25bc04e0d6c29b95c693f213eac2cf19224f7fd94a0fb4b0b",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case6",
+            "title": "合成clear_command",
+            "path_labels": [
+              "合成根"
+            ],
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@3141f1cea05ac8c25bc04e0d6c29b95c693f213eac2cf19224f7fd94a0fb4b0b"
+        },
+        "55b86d9e2b9fd711388c2c3fae24fbc254b01fd3a479ff1c239972da8b2b0d06": {
+          "entry": "55b86d9e2b9fd711388c2c3fae24fbc254b01fd3a479ff1c239972da8b2b0d06",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case7",
+            "title": "合成operation_log",
+            "path_labels": [
+              "合成根"
+            ],
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@55b86d9e2b9fd711388c2c3fae24fbc254b01fd3a479ff1c239972da8b2b0d06"
+        },
+        "fde11aabf10121af36256981c6091379f17d1f171af6b615937181e456eed8ef": {
+          "entry": "fde11aabf10121af36256981c6091379f17d1f171af6b615937181e456eed8ef",
+          "kind": "case",
+          "statement": "",
+          "data": {
+            "document": "900001",
+            "node": "case8",
+            "title": "合成audit_log",
+            "path_labels": [
+              "合成根"
+            ],
+            "commands": [
+              "/CLI/widget/probe"
+            ],
+            "command_identities": [
+              {
+                "tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c",
+                "path": "/CLI/widget/probe",
+                "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
+                "parameters": []
+              }
+            ]
+          },
+          "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@fde11aabf10121af36256981c6091379f17d1f171af6b615937181e456eed8ef"
+        }
+      },
+      "fields": [
+        "document",
+        "node",
+        "commands",
+        "command_identities",
+        "title",
+        "path_labels"
+      ],
+      "only": [
+        "900001"
+      ],
+      "cut_keys": [],
+      "total_keys": 1,
+      "total_entries": 9,
+      "truncated": false,
+      "skipped": 0,
+      "notes": []
+    },
+    "index_reference": "src:6229b4bd8b5287df1751d042ffa570fa925adf9722794b2d3c0d5877544af62f",
+    "scope": [
+      "900001"
+    ],
+    "lock": {
+      "product": "synthetic-template",
+      "build": "Rel_MEADOW_10_6_8_1",
+      "root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "900001",
+      "tier": "advisory"
+    }
+  ]
+}

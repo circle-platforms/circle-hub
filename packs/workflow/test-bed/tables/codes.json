@@ -1,0 +1,56 @@
+{
+  "schema": "test-bed.codes@1",
+  "origin": "决定 35 第 13–16 项与 test-bed-ownership 任务",
+  "violations": [
+    {
+      "code": "test-bed.unknown_bed",
+      "when": "台架不在当前清单",
+      "fix": "从当前清单选择台架"
+    },
+    {
+      "code": "test-bed.already_owned",
+      "when": "已经有登记或登记前缀互相包含",
+      "fix": "请管理员核对登记"
+    },
+    {
+      "code": "test-bed.not_owner",
+      "when": "台架不是自己登记的",
+      "fix": "由主人或管理员处置"
+    },
+    {
+      "code": "test-bed.reason_required",
+      "when": "缺少用户理由",
+      "fix": "reason 照用户原话填写"
+    },
+    {
+      "code": "test-bed.duration_removed",
+      "when": "旧 hours 或 extend 请求",
+      "fix": "台架预订不限时长，用完由运行释放"
+    },
+    {
+      "code": "test-bed.no_ownership",
+      "when": "缺冻结登记表",
+      "fix": "启用登记视图后重开运行"
+    },
+    {
+      "code": "test-bed.not_occupied",
+      "when": "没有当前占用",
+      "fix": "重新搜索核对"
+    },
+    {
+      "code": "test-bed.register_mismatch",
+      "when": "结论和冻结内容不符",
+      "fix": "按冻结内容重算"
+    },
+    {
+      "code": "test-bed.unregister_mismatch",
+      "when": "结论和冻结内容不符",
+      "fix": "按冻结内容重算"
+    },
+    {
+      "code": "test-bed.force_release_mismatch",
+      "when": "结论和冻结内容不符",
+      "fix": "按冻结内容重算"
+    }
+  ]
+}

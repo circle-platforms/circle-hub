@@ -1,0 +1,496 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "fed-note@1"
+    },
+    "object": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "product": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        {
+          "type": "null",
+          "const": null
+        }
+      ]
+    },
+    "root": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null",
+          "const": null
+        }
+      ]
+    },
+    "path": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 8192,
+          "pattern": "^\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?$",
+          "description": "Knowledge tree path in canonical text, as the Hub writes it (percent escapes kept verbatim); / is the root"
+        },
+        {
+          "type": "null",
+          "const": null
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "system": {
+          "type": "string",
+          "const": "upload"
+        },
+        "bytes": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "system",
+        "bytes"
+      ],
+      "additionalProperties": false
+    },
+    "by": {
+      "type": "string",
+      "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "run": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+        },
+        {
+          "type": "null",
+          "const": null
+        }
+      ]
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "classification": {
+      "minItems": 0,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "fed-case"
+              },
+              {
+                "type": "string",
+                "const": "fed-defect"
+              },
+              {
+                "type": "string",
+                "const": "fed-spec"
+              },
+              {
+                "type": "string",
+                "const": "fed-build"
+              },
+              {
+                "type": "string",
+                "const": "fed-note"
+              },
+              {
+                "type": "string",
+                "const": "ticket"
+              },
+              {
+                "type": "string",
+                "const": "minutes"
+              },
+              {
+                "type": "string",
+                "const": "unclassified"
+              }
+            ]
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "identity": {
+                    "type": "object",
+                    "properties": {
+                      "source_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "parser": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192
+                      },
+                      "span": {
+                        "type": "object",
+                        "properties": {
+                          "unit": {
+                            "type": "string",
+                            "const": "byte"
+                          },
+                          "offset": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "length": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "unit",
+                          "offset",
+                          "length"
+                        ],
+                        "additionalProperties": false,
+                        "title": "source-span@1",
+                        "description": "Zero-based offset and positive length in the original source bytes; the end is exclusive. Hub checks the span against the retained source, not against normalized text."
+                      }
+                    },
+                    "required": [
+                      "source_sha256",
+                      "parser",
+                      "path",
+                      "span"
+                    ],
+                    "additionalProperties": false,
+                    "title": "expected-quote-identity@1",
+                    "description": "Immutable identity of an expected quotation: original source digest, parser@major, exact selector and raw byte span. No width, whitespace or synonym folding."
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1048576
+                  }
+                },
+                "required": [
+                  "identity",
+                  "text"
+                ],
+                "additionalProperties": false,
+                "title": "quote-evidence@1",
+                "description": "Verbatim quote paired with its original-byte identity; presence and item ownership are checked at the Hub boundary."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1048576
+                  }
+                },
+                "required": [
+                  "reference",
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            ],
+            "title": "feeding-quote@1",
+            "description": "Feeding uses an exact src selector quotation, as the approved page specifies. Raw-byte QuoteEvidence remains accepted when the parser can prove byte ranges. Missing byte maps are not guessed; no whitespace folding or new content parser is used."
+          }
+        },
+        "required": [
+          "value",
+          "quote"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "relations": {
+      "minItems": 0,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "same_subject",
+              "contradicts",
+              "covers"
+            ]
+          },
+          "object": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "identity": {
+                    "type": "object",
+                    "properties": {
+                      "source_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "parser": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192
+                      },
+                      "span": {
+                        "type": "object",
+                        "properties": {
+                          "unit": {
+                            "type": "string",
+                            "const": "byte"
+                          },
+                          "offset": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "length": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "unit",
+                          "offset",
+                          "length"
+                        ],
+                        "additionalProperties": false,
+                        "title": "source-span@1",
+                        "description": "Zero-based offset and positive length in the original source bytes; the end is exclusive. Hub checks the span against the retained source, not against normalized text."
+                      }
+                    },
+                    "required": [
+                      "source_sha256",
+                      "parser",
+                      "path",
+                      "span"
+                    ],
+                    "additionalProperties": false,
+                    "title": "expected-quote-identity@1",
+                    "description": "Immutable identity of an expected quotation: original source digest, parser@major, exact selector and raw byte span. No width, whitespace or synonym folding."
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1048576
+                  }
+                },
+                "required": [
+                  "identity",
+                  "text"
+                ],
+                "additionalProperties": false,
+                "title": "quote-evidence@1",
+                "description": "Verbatim quote paired with its original-byte identity; presence and item ownership are checked at the Hub boundary."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1048576
+                  }
+                },
+                "required": [
+                  "reference",
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            ],
+            "title": "feeding-quote@1",
+            "description": "Feeding uses an exact src selector quotation, as the approved page specifies. Raw-byte QuoteEvidence remains accepted when the parser can prove byte ranges. Missing byte maps are not guessed; no whitespace folding or new content parser is used."
+          }
+        },
+        "required": [
+          "kind",
+          "object",
+          "quote"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "paragraph": {
+      "minItems": 0,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1048576
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "identity": {
+                    "type": "object",
+                    "properties": {
+                      "source_sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "parser": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192
+                      },
+                      "span": {
+                        "type": "object",
+                        "properties": {
+                          "unit": {
+                            "type": "string",
+                            "const": "byte"
+                          },
+                          "offset": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "length": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "unit",
+                          "offset",
+                          "length"
+                        ],
+                        "additionalProperties": false,
+                        "title": "source-span@1",
+                        "description": "Zero-based offset and positive length in the original source bytes; the end is exclusive. Hub checks the span against the retained source, not against normalized text."
+                      }
+                    },
+                    "required": [
+                      "source_sha256",
+                      "parser",
+                      "path",
+                      "span"
+                    ],
+                    "additionalProperties": false,
+                    "title": "expected-quote-identity@1",
+                    "description": "Immutable identity of an expected quotation: original source digest, parser@major, exact selector and raw byte span. No width, whitespace or synonym folding."
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1048576
+                  }
+                },
+                "required": [
+                  "identity",
+                  "text"
+                ],
+                "additionalProperties": false,
+                "title": "quote-evidence@1",
+                "description": "Verbatim quote paired with its original-byte identity; presence and item ownership are checked at the Hub boundary."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "reference": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1048576
+                  }
+                },
+                "required": [
+                  "reference",
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            ],
+            "title": "feeding-quote@1",
+            "description": "Feeding uses an exact src selector quotation, as the approved page specifies. Raw-byte QuoteEvidence remains accepted when the parser can prove byte ranges. Missing byte maps are not guessed; no whitespace folding or new content parser is used."
+          }
+        },
+        "required": [
+          "text",
+          "quote"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "object",
+    "product",
+    "root",
+    "path",
+    "source",
+    "by",
+    "run",
+    "at"
+  ],
+  "additionalProperties": false,
+  "title": "fed-note@1",
+  "description": "Identity is exactly the uploaded source byte digest. by/run/at are collection facts outside identity; visibility remains uploader and administrators only; note bytes never establish team knowledge."
+}

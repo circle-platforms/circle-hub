@@ -1,0 +1,389 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "workflow@1"
+    },
+    "predecessor_access": {
+      "description": "Read-only predecessor visibility; never grants mutation or lineage lease rights",
+      "type": "string",
+      "const": "view"
+    },
+    "criterion_review": {
+      "description": "W10 review protocol over an explicitly bound declaration submission",
+      "type": "boolean"
+    },
+    "work_class": {
+      "description": "V07 R[5]: the class of work this workflow does; a requirement that writes no repetition policy takes the class default, and a workflow that declares no class runs one round",
+      "type": "string",
+      "enum": [
+        "verification",
+        "reproduction",
+        "web"
+      ]
+    },
+    "predecessor": {
+      "description": "The service must reject start_run without an explicit predecessor; not an independent_of inference",
+      "type": "string",
+      "const": "required"
+    },
+    "inputs": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "slot": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "expected",
+              "subject",
+              "artifact_under_verification",
+              "reported_actual",
+              "republished",
+              "hint",
+              "request_text"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "accepts": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "media types, or external object types written system:type"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "many": {
+            "type": "boolean"
+          },
+          "default_from_predecessor": {
+            "description": "When predecessor is supplied and this slot is absent: without slot, bind that workflow’s latest accepted submitted validation record; with slot, copy that frozen input. An explicit value for a named slot must be the same object",
+            "type": "object",
+            "properties": {
+              "pack": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              },
+              "slot": {
+                "description": "Copy this frozen input of the predecessor run. An explicit value must be the same object",
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              }
+            },
+            "required": [
+              "pack"
+            ],
+            "additionalProperties": false
+          },
+          "from_runs": {
+            "description": "Bindings may be run ids of this workflow. The Hub replaces each run id with that run’s latest accepted submitted validation record. An omitted required slot walks the predecessor lineage for runs of this workflow",
+            "type": "object",
+            "properties": {
+              "pack": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              }
+            },
+            "required": [
+              "pack"
+            ],
+            "additionalProperties": false
+          },
+          "index_default": {
+            "description": "When a knowledge index omits only or fields, the Hub fills them from only_from and fields. An only or fields the caller already wrote stays",
+            "type": "object",
+            "properties": {
+              "only_from": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "const": "build_defects"
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Index keys of this build’s kind=defect&key=bug view, the fixed-bug and release-page entries already on the knowledge root"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "const": "input_ids"
+                      },
+                      "slot": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]*$"
+                      }
+                    },
+                    "required": [
+                      "source",
+                      "slot"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Identifiers already present on another input slot’s external ids; an empty slot adds nothing"
+                  }
+                ]
+              },
+              "fields": {
+                "minItems": 1,
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,40}$"
+                }
+              }
+            },
+            "required": [
+              "only_from",
+              "fields"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "slot",
+          "role",
+          "description",
+          "accepts",
+          "required",
+          "many"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "parameters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "schema": {
+            "description": "JSON Schema 2020-12 of the value",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "required"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "product": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "the one product line this workflow serves; without it the line is chosen at start_run among those that declare the catalogs",
+          "type": "string"
+        },
+        "catalogs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "description": "catalogs the product must provide"
+        }
+      },
+      "required": [
+        "catalogs"
+      ],
+      "additionalProperties": false,
+      "description": "the product binding (W03 R[5]): one line, whatever the names it is known by"
+    },
+    "context": {
+      "description": "the run-context parts this workflow asks for beyond the defaults, for example builds: the knowledge base builds of the bound product, frozen with the run",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "builds",
+          "leases"
+        ]
+      }
+    },
+    "subject": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "the input slot that holds the judged source"
+    },
+    "projection": {
+      "type": "object",
+      "properties": {
+        "module": {
+          "type": "string",
+          "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+        },
+        "export": {
+          "type": "string",
+          "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+        }
+      },
+      "required": [
+        "module"
+      ],
+      "additionalProperties": false,
+      "description": "ProjectionInput -> ProjectionOutput: the items of the run (W01)"
+    },
+    "expected_sources": {
+      "description": "ExpectedSourcesInput -> ExpectedSourcesOutput: external objects to bind as expected sources",
+      "type": "object",
+      "properties": {
+        "module": {
+          "type": "string",
+          "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+        },
+        "export": {
+          "type": "string",
+          "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+        }
+      },
+      "required": [
+        "module"
+      ],
+      "additionalProperties": false
+    },
+    "feeding": {
+      "type": "object",
+      "properties": {
+        "require_version": {
+          "type": "boolean"
+        },
+        "classifications": {
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "declared_line_parameter": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "contribution": {
+      "description": "a dedicated knowledge-contribution run; slot holds the artifact and requirement names its item-level fact verification",
+      "type": "object",
+      "properties": {
+        "slot": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "requirement": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        }
+      },
+      "required": [
+        "slot",
+        "requirement"
+      ],
+      "additionalProperties": false
+    },
+    "outputs": {
+      "description": "task-specific outputs stay in ordinary run submissions",
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ranking",
+                  "selection",
+                  "score"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "tasks"
+      ],
+      "additionalProperties": false
+    },
+    "leases": {
+      "description": "the lease namespace this workflow may acquire under (the keys of its lease_requests start with the prefix)",
+      "type": "object",
+      "properties": {
+        "prefix": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\/$"
+        },
+        "max_ttl_seconds": {
+          "description": "the ceiling of one lease request's TTL and of the cumulative extension (D04 R[0])",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 2592000
+        }
+      },
+      "required": [
+        "prefix"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "inputs",
+    "parameters",
+    "product",
+    "subject",
+    "projection"
+  ],
+  "additionalProperties": false
+}

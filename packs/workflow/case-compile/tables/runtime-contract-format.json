@@ -1,0 +1,11 @@
+{
+  "schema": "case-compile.runtime-contract-format@1",
+  "contract_schema": "ist.excel.function-contract",
+  "certification_schema": "ist.excel.capability-certification-set",
+  "statuses": ["enabled", "disabled", "internal"],
+  "dispatches": ["direct_method_call", "cmd_primitive", "execute_registry", "checkpoint_two_argument", "checkpoint_v2_three_argument", "builtin_special_case"],
+  "parameter_kinds": ["positional_only", "positional_or_keyword", "var_positional", "keyword_only", "var_keyword"],
+  "status_authorities": ["project_policy:excel-authoring-v1", "mirror_ast:reachability-and-lifecycle", "mirror_ast:active-runtime-call-chain", "mirror_ast:pure-execute-action-v1", "bed_topology:network_topology.json"],
+  "receipt_authority_prefix": "device_receipt_set:",
+  "redacted_default": "<redacted>"
+}

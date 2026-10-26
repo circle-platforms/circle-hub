@@ -1,0 +1,30 @@
+{
+  "id": "negative_missing",
+  "source": "author",
+  "check": "review_form",
+  "note": "缺确认",
+  "subject": {
+    "id": "criterion-0",
+    "label": "合成声明",
+    "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/json@1/p/body/criterion_changes/0",
+    "fields": {
+      "criterion": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "grounds": [
+        {
+          "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "quote": "依据"
+        }
+      ]
+    },
+    "slots": {
+      "review": []
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "criterion-review.form",
+      "tier": "blocking"
+    }
+  ]
+}

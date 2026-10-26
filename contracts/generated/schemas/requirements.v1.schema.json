@@ -1,0 +1,462 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "requirements@1"
+    },
+    "requirements": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "type": "string",
+            "enum": [
+              "item",
+              "run"
+            ],
+            "description": "item: judged for every item; run: one judgment over the whole target (a cross-item claim)"
+          },
+          "required": {
+            "type": "boolean",
+            "description": "a gating run needs every required requirement satisfied (V06 R[2])"
+          },
+          "done_rule": {
+            "type": "string",
+            "enum": [
+              "bookkeeping",
+              "gating"
+            ]
+          },
+          "layers": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "static",
+                "dynamic"
+              ]
+            }
+          },
+          "accepted_producer": {
+            "type": "string",
+            "enum": [
+              "fact",
+              "judgment",
+              "independent_judgment"
+            ]
+          },
+          "independent_of": {
+            "description": "an independent judgment is satisfied only by another session and model than the predecessor run (A04)",
+            "type": "string",
+            "const": "predecessor"
+          },
+          "independence_by_account": {
+            "description": "A04: determine independence from authenticated non-author accounts, not client session/model declarations",
+            "type": "boolean"
+          },
+          "accepts_declared_independence": {
+            "description": "accept the independence the client declares (A04 R[4]); not accepted when absent",
+            "type": "boolean"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "description": "ids from checks.json that judge this requirement; none means no check is installed (reason no_check)"
+          },
+          "expected": {
+            "type": "object",
+            "properties": {
+              "overrides": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "when": {
+                      "type": "object",
+                      "properties": {
+                        "pointer": {
+                          "type": "string",
+                          "maxLength": 8192,
+                          "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+                          "description": "into the item fields"
+                        },
+                        "equals": {
+                          "type": [
+                            "string",
+                            "number",
+                            "boolean"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "pointer",
+                        "equals"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "refute"
+                      ]
+                    },
+                    "codes": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": "the refutation codes that meet the expectation"
+                    }
+                  },
+                  "required": [
+                    "when",
+                    "outcome",
+                    "codes"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "overrides"
+            ],
+            "additionalProperties": false
+          },
+          "observation": {
+            "description": "P07 observation contract that fills a declared dynamic fact layer; actual observations are verified by the consuming engine",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "error_handling": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "description": "A violation code or *, mutually exclusive with reason",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reason": {
+                  "description": "A generated cause selector, mutually exclusive with code",
+                  "type": "string",
+                  "enum": [
+                    "no_check",
+                    "check_error",
+                    "timeout",
+                    "missing_input",
+                    "declared_skip",
+                    "not_covered",
+                    "awaiting_step",
+                    "output_failed",
+                    "repair_exhausted",
+                    "budget_exhausted",
+                    "integrity_unproven"
+                  ]
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "repair",
+                    "reject",
+                    "request",
+                    "unknown"
+                  ]
+                },
+                "max_rounds": {
+                  "description": "repair rounds for the whole requirement; required when the action is repair",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false,
+              "not": {
+                "required": [
+                  "reason",
+                  "action"
+                ],
+                "properties": {
+                  "reason": {},
+                  "action": {
+                    "const": "reject"
+                  }
+                }
+              }
+            }
+          },
+          "requires_discrimination": {
+            "type": "boolean"
+          },
+          "run_table": {
+            "description": "whether submissions may add checks using inline tables (W04)",
+            "type": "boolean"
+          },
+          "repetition": {
+            "description": "V07: the rounds of the dynamic layer and how they aggregate; absent means the work class default, or one round without a class",
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10,
+                "description": "frozen rounds of the dynamic layer; 1 to 10"
+              },
+              "aggregation": {
+                "type": "string",
+                "enum": [
+                  "first_pass",
+                  "k_of_n",
+                  "all"
+                ]
+              },
+              "k": {
+                "description": "k-of-n only: at least this many rounds must meet the expectation",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10
+              },
+              "fresh_context": {
+                "description": "every round takes a new gateway lease and session, never the previous round’s",
+                "type": "boolean"
+              },
+              "baseline_first": {
+                "description": "prove the environment and probe every device read-only before each round (P07 R[1])",
+                "type": "boolean"
+              },
+              "window_seconds": {
+                "description": "time window from the first round; a round started outside it is not dispatched and stays in the denominator",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 86400
+              }
+            },
+            "required": [
+              "count",
+              "aggregation"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "description",
+          "target",
+          "required",
+          "done_rule",
+          "layers",
+          "accepted_producer",
+          "checks",
+          "error_handling"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "effects": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,99}$"
+          },
+          "resource_kind": {
+            "type": "string",
+            "const": "executor"
+          },
+          "action": {
+            "type": "string",
+            "const": "submit"
+          },
+          "effect_class": {
+            "type": "string",
+            "enum": [
+              "job"
+            ]
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "values": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "additionalProperties": {
+                      "minItems": 1,
+                      "maxItems": 1000,
+                      "type": "array",
+                      "items": {}
+                    }
+                  }
+                },
+                "required": [
+                  "values"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "policy": {
+                    "type": "string",
+                    "pattern": "^policies\\/(?:[a-zA-Z0-9_-]+\\/)*[a-zA-Z0-9_-]+\\.json$"
+                  },
+                  "check": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,99}$"
+                  }
+                },
+                "required": [
+                  "policy",
+                  "check"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "release": {
+            "type": "object",
+            "properties": {
+              "requirements": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "artifact": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "requirements",
+              "artifact"
+            ],
+            "additionalProperties": false
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "runner_session",
+              "hub_template"
+            ]
+          },
+          "repetition": {
+            "description": "V07 R[5]: how many rounds this effect row dispatches; written, it is the count. budget.count stays a pure upper bound on writes and never doubles as a round count",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "budget": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "duration_ms": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 86400000000
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "executor_max_run_ms": {
+                        "type": "boolean",
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "executor_max_run_ms"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "count",
+              "duration_ms"
+            ],
+            "additionalProperties": false
+          },
+          "deadline_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31536000000
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "policy_checks": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "id",
+          "resource_kind",
+          "action",
+          "effect_class",
+          "parameters",
+          "release",
+          "trigger",
+          "budget",
+          "deadline_ms",
+          "optional",
+          "policy_checks"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "requirements"
+  ],
+  "additionalProperties": false
+}

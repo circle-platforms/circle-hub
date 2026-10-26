@@ -1,0 +1,26 @@
+{
+  "command_identities": [
+    {
+      "tree_root": "64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7",
+      "path": "/commands/widget/health/interval",
+      "signature": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments",
+      "parameters": [
+        {
+          "position": 0,
+          "name": "seconds",
+          "raw": "60",
+          "type": {
+            "name": "U16",
+            "catalog_type": "int",
+            "declaration": "src:64d80f260a547487dec47f20299f2c53a409f0bce7ab6b503df90ac5a34394b7/xml@1/x/commands/item/arguments/arg",
+            "grammar": "famx-command-tree@2"
+          },
+          "parsed": {
+            "kind": "int",
+            "value": 60
+          }
+        }
+      ]
+    }
+  ]
+}

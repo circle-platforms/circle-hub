@@ -1,0 +1,29 @@
+{
+  "schema": "catalog@1",
+  "origin": "决定：case-review 工作流包 catalog 要求项（docs/hub-r4-architecture.md 第 6 节：审查发现引用的每个命令要按锁定构建的目录解析并核对参数；反向用例预期被反驳）；被判对象由 functions/subjects.ts 的 commandSubject 产出：一个条目的发现里不带 present、照用例原样引用的命令行（phrases）",
+  "description": "审查发现照用例原样引用的命令行（commands 里不写 present）：开头能解析到锁定构建的命令时，参数个数、类型和取值范围要符合它的某个签名；开头解析不到目录命令的引文（例如普通操作描述）不判。反向用例（标签是 Negative 类）引用的那条非法命令行，参数越界、类型不符或个数不符是预期的反驳，按提示档显示；反向用例的发现没有引用命令行时，从用例自己的文字行回退取 phrases；没有可核验命令行时由 negative_commands 给提示档反驳",
+  "tier": "blocking",
+  "basis": "要求项 catalog：审查发现引用的用例命令行在锁定构建的目录里解析，参数合法；反向用例引用的非法命令行预期被反驳",
+  "item": "/item",
+  "location": "/location",
+  "catalog": "commands@1",
+  "commands": [
+    "$.phrases"
+  ],
+  "required": true,
+  "scope": "resolved",
+  "match": {
+    "unicode": "nfkc",
+    "case": "insensitive",
+    "whitespace": "collapse"
+  },
+  "negative": {
+    "flag": "/negative",
+    "expect": [
+      "core.catalog.param_out_of_range",
+      "core.catalog.param_type_mismatch",
+      "core.catalog.arity_mismatch"
+    ],
+    "tier": "advisory"
+  }
+}

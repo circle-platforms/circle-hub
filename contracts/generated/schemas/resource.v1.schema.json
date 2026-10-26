@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "resource@1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^res_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "system_pack": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}@[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "the published system pack version this configuration binds; another version needs a new decision"
+    },
+    "system_pack_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "the content digest of that version when it was bound; other content is not used"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "environment": {
+      "type": "string",
+      "enum": [
+        "test",
+        "shared",
+        "production"
+      ]
+    },
+    "origins": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,40}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 2000
+      },
+      "description": "base URL of each role of the system pack"
+    },
+    "allow_plaintext": {
+      "maxItems": 16,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 300
+      },
+      "description": "origins (scheme://host[:port]) whose plain HTTP may carry credentials"
+    },
+    "credentials": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,31}$"
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,99}$"
+          },
+          {
+            "type": "string",
+            "pattern": "^\\$\\{secret:[A-Z][A-Z0-9_]{0,63}\\}$"
+          }
+        ]
+      },
+      "description": "named secret reference of each credential; legacy vault entry names are decoded only for history"
+    },
+    "credential_digests": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,31}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "enum": [
+          "plain",
+          "sha512_base64"
+        ]
+      },
+      "description": "the digest rule each credential is kept under in the vault"
+    },
+    "settings": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {},
+      "description": "non-secret deployment values handed to the read functions as input.settings"
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "concurrency": {
+          "description": "requests in flight at once, default 2",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "interval_ms": {
+          "description": "least time between two request starts, default 0",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "timeout_ms": {
+          "description": "per request unless the route says otherwise, default 30000",
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 300000
+        }
+      },
+      "additionalProperties": false
+    },
+    "created_by": {
+      "type": "string",
+      "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "system_pack",
+    "system_pack_digest",
+    "name",
+    "environment",
+    "origins",
+    "allow_plaintext",
+    "credentials",
+    "credential_digests",
+    "settings",
+    "created_by",
+    "created_at"
+  ],
+  "additionalProperties": false
+}

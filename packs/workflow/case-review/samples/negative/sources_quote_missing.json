@@ -1,0 +1,69 @@
+{
+  "id": "sources_quote_missing",
+  "source": "author",
+  "check": "findings_sources",
+  "note": "一条发现只有 grounds、没有逐字引文",
+  "subject": {
+    "item": "sample:c1",
+    "label": "设置池 c1 的探测间隔",
+    "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c1",
+    "fields": {
+      "document": "sample",
+      "nodeId": "c1",
+      "path": [
+        "示例文档",
+        "池管理"
+      ],
+      "title": "设置池 c1 的探测间隔",
+      "priority": 2,
+      "degree": null,
+      "tags": [
+        "functional"
+      ],
+      "tagsNormalized": [
+        "functional"
+      ],
+      "expected": [
+        "显示的探测间隔与设置一致"
+      ],
+      "expectedCount": 1,
+      "steps": [],
+      "preconditions": [],
+      "autoid": null,
+      "automated": false,
+      "negative": false,
+      "hasNote": false,
+      "nested": false
+    },
+    "slots": {
+      "findings": [
+        {
+          "text": "缺少探测间隔为最大值 300 的用例",
+          "code": "edge_case_gap",
+          "rank": "minor",
+          "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c1",
+          "grounds": [
+            "src:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/markdown@1/s/interval"
+          ]
+        }
+      ]
+    },
+    "evidence": [
+      {
+        "reference": "src:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/markdown@1/s/interval",
+        "resolved": true,
+        "source": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "role": "expected",
+        "text": null
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review.quote_missing",
+      "item": "sample:c1",
+      "tier": "blocking"
+    }
+  ]
+}

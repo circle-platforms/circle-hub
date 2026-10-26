@@ -1,5 +1,7 @@
 # 任务书：harness 适配器库（packages/harness-adapters）
 
+> **历史文档**（2026-10-21 标注）：本文是已删除的 harness 适配器库的任务书，只作记录保留；Hub 现在是标准 MCP 服务器，不再导入导出 harness 原语。现行范围见 [Hub r4 简报](hub-r4-brief.md)。
+
 ## 范围
 
 circle-hub 治理任何 harness 的原语（规范见 `docs/design/harness-primitives.md`，术语见 `docs/design/vocabulary.md`）。本任务做一个**纯 TypeScript 库**：把各 harness 自己格式的 Skill / Tool / MCP server / Hook / Instruction / Agent / Command 读成 hub 的中立清单（`hub-skill/1`、`hub-tool/1`、`hub-provider/1`、`hub-hook/1`、`hub-instruction/1`、`hub-agent/1`、`hub-command/1`），再从中立清单导出回该 harness 的文件。先做 Claude Code；Codex CLI 作为第二个，时间允许再做。Circle 自己的推导由 server 侧另做，不在本任务里。
@@ -8,7 +10,7 @@ circle-hub 治理任何 harness 的原语（规范见 `docs/design/harness-primi
 
 ## 位置与规则
 
-- 工作树 `~/Public/circle-hub-adapters`，分支 `harness-adapters`（基于 main）。只新建：`packages/harness-adapters/**`、`tests/methods/harness-adapters-*.test.ts`、`tests/fixtures/harness/**`、本任务书。不改其它任何文件（根 package.json 也不改：测试放在 `tests/methods/` 下即可被现有 `npm run test:methods` 跑到）。
+- 单独的工作树，分支 `harness-adapters`（基于 main）。只新建：`packages/harness-adapters/**`、`tests/methods/harness-adapters-*.test.ts`、`tests/fixtures/harness/**`、本任务书。不改其它任何文件（根 package.json 也不改：测试放在 `tests/methods/` 下即可被现有 `npm run test:methods` 跑到）。
 - Node 24，`node --test`，依赖只用仓库已有的（zod 4.6.5 可用；不新增依赖）。`npx tsc --noEmit` 必须通过。
 - 仓库 AGENTS.md 的提交规矩：显式 stage 路径；提交信息一句首字母大写的英文祈使句，无前缀无句号；不推送。每个交付物一次提交。
 - fixture 全部合成：不出现真实地址、本机绝对路径、凭据；示例地址用 example.com / 192.0.2.0/24。

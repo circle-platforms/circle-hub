@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "catalog@1"
+    },
+    "origin": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The source file (a reference) or the decision that produced this table (C04 R[0]); a table without it is code"
+    },
+    "description": {
+      "description": "What the table checks, in the pack language",
+      "type": "string"
+    },
+    "tier": {
+      "description": "Tier of the outcomes (C05 R[1]); default blocking when a basis is given, else advisory. Blocking needs a basis",
+      "type": "string",
+      "enum": [
+        "blocking",
+        "advisory"
+      ]
+    },
+    "basis": {
+      "description": "The acceptance contract clause a blocking check relies on (C05 R[1])",
+      "type": "string",
+      "minLength": 1
+    },
+    "item": {
+      "description": "Pointer to the item identity in the subject (or in each node); copied into outcomes",
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "location": {
+      "description": "Pointer to the reference URI of the item in the judged source; becomes a ground of the outcomes",
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "catalog": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Name of the catalog in the pack knowledge declaration (knowledge.json) that the caller binds"
+    },
+    "strict_signatures": {
+      "description": "Membership claims require a complete executable signature; a menu or a bare head with required arguments is not membership",
+      "type": "boolean"
+    },
+    "commands": {
+      "description": "Subject locations holding command text: a string, or an array of strings, one phrase each",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 512,
+        "pattern": "^\\$(?:\\.(?:\\*|[A-Za-z_\\u0080-￿][A-Za-z0-9_\\u0080-￿]*)|\\[(?:\\*|-?(?:0|[1-9][0-9]*)|'(?:[^'\\\\]|\\\\.)*'|\"(?:[^\"\\\\]|\\\\.)*\")\\])*$",
+        "description": "RFC 9535 JSONPath selecting values of the subject; only member names, indexes and wildcards are allowed"
+      }
+    },
+    "scope": {
+      "description": "Which phrases are checked. resolved (default): only phrases whose head resolves to an entry; first_word: phrases whose first word starts some entry, a head that does not resolve is core.catalog.not_member; all: every phrase must resolve",
+      "type": "string",
+      "enum": [
+        "resolved",
+        "first_word",
+        "all"
+      ]
+    },
+    "match": {
+      "description": "Normalization of command text before tokenizing; case applies to words, enum values and keywords",
+      "type": "object",
+      "properties": {
+        "unicode": {
+          "description": "Unicode normalization form applied first; default nfc",
+          "type": "string",
+          "enum": [
+            "none",
+            "nfc",
+            "nfkc"
+          ]
+        },
+        "case": {
+          "description": "insensitive compares lower-cased values; default sensitive",
+          "type": "string",
+          "enum": [
+            "sensitive",
+            "insensitive"
+          ]
+        },
+        "whitespace": {
+          "description": "trim removes leading and trailing whitespace, collapse also turns every inner whitespace run into one space; default trim",
+          "type": "string",
+          "enum": [
+            "exact",
+            "trim",
+            "collapse"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "quotes": {
+      "description": "Single and double quotes group words into one argument; default true",
+      "type": "boolean"
+    },
+    "required": {
+      "description": "A required missing location refutes core.structure.required_empty with data.missing, attributed to the subject provider; an optional missing location is listed in data.missing, never unknown",
+      "type": "boolean"
+    },
+    "claims": {
+      "description": "Membership statements; a statement the catalog contradicts is core.catalog.membership_contradicted. A command exists when its words are a head, a menu, or a head followed by arguments that fit one of its signatures",
+      "type": "object",
+      "properties": {
+        "select": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^\\$(?:\\.(?:\\*|[A-Za-z_\\u0080-￿][A-Za-z0-9_\\u0080-￿]*)|\\[(?:\\*|-?(?:0|[1-9][0-9]*)|'(?:[^'\\\\]|\\\\.)*'|\"(?:[^\"\\\\]|\\\\.)*\")\\])*$",
+          "description": "Statements that a command exists or does not exist; a missing location means no statements"
+        },
+        "command": {
+          "type": "string",
+          "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+          "description": "Pointer to the command text inside a statement"
+        },
+        "present": {
+          "type": "string",
+          "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+          "description": "Pointer to a boolean inside a statement: true claims the command exists, false that it does not"
+        }
+      },
+      "required": [
+        "select",
+        "command",
+        "present"
+      ],
+      "additionalProperties": false
+    },
+    "negative": {
+      "description": "Negative-case handling: the interpreter still refutes, marks the outcome and applies this tier",
+      "type": "object",
+      "properties": {
+        "flag": {
+          "type": "string",
+          "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+          "description": "Pointer to a boolean in the subject that marks a negative case"
+        },
+        "expect": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Violation codes a negative case is expected to produce; the caller compares"
+        },
+        "tier": {
+          "description": "Tier of the outcomes on a negative case, kept whatever tier the check declares; default advisory. Blocking needs a basis",
+          "type": "string",
+          "enum": [
+            "blocking",
+            "advisory"
+          ]
+        }
+      },
+      "required": [
+        "flag",
+        "expect"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "origin",
+    "catalog"
+  ],
+  "additionalProperties": false,
+  "title": "catalog@1",
+  "description": "Catalog table: which subject fields hold command text, which statements claim membership, tier and negative-case handling. Commands are matched by longest head against the bound catalog. Codes: core.catalog.*"
+}

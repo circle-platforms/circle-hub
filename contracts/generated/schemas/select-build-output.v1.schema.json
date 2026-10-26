@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "build": {
+      "type": "string",
+      "minLength": 1,
+      "description": "name of one candidate"
+    },
+    "basis": {
+      "type": "string",
+      "minLength": 1,
+      "description": "why this build, kept with the run (Chinese); the choice is projected by the pack rule, not declared by the caller"
+    },
+    "alternatives": {
+      "description": "other candidates that qualify, best first; the caller may name one instead (K01 R[10])",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "build",
+    "basis"
+  ],
+  "additionalProperties": false
+}

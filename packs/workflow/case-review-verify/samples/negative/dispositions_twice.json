@@ -1,0 +1,87 @@
+{
+  "id": "dispositions_twice",
+  "source": "author",
+  "check": "dispositions",
+  "note": "一条初评发现有两条处置，另一条处置没有位置",
+  "subject": {
+    "item": "sample:c2",
+    "label": "设置池 c2 的探测间隔",
+    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2",
+    "fields": {
+      "nodeId": "c2",
+      "path": [
+        "示例文档",
+        "池管理"
+      ],
+      "title": "设置池 c2 的探测间隔",
+      "draft_partition": "delivered",
+      "draft_findings": [
+        {
+          "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/1/requirements/2/claims/0",
+          "code": "negative_gap",
+          "rank": "critical",
+          "text": "初评的发现",
+          "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2",
+          "quotes": [
+            {
+              "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2",
+              "text": "设置探测间隔"
+            }
+          ],
+          "commands": []
+        }
+      ],
+      "draft_level": {
+        "reference": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/cross_item/3",
+        "rank": "P3",
+        "text": "等级理由：覆盖全部功能细节，有一些反向用例"
+      }
+    },
+    "slots": {
+      "verification": [
+        {
+          "text": "复核方的处置",
+          "code": "verified",
+          "rank": "major",
+          "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2",
+          "quotes": [
+            {
+              "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2e",
+              "text": "显示的探测间隔与设置一致"
+            }
+          ],
+          "data": {
+            "finding": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/1/requirements/2/claims/0"
+          }
+        },
+        {
+          "text": "复核方的处置",
+          "code": "refuted",
+          "rank": "major",
+          "quotes": [
+            {
+              "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c2e",
+              "text": "显示的探测间隔与设置一致"
+            }
+          ],
+          "data": {
+            "finding": "rec:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#/partitions/delivered/1/requirements/2/claims/0"
+          }
+        }
+      ]
+    },
+    "evidence": []
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review-verify.location_missing",
+      "item": "sample:c2"
+    },
+    {
+      "verdict": "refute",
+      "code": "case-review-verify.disposition_duplicate",
+      "item": "sample:c2"
+    }
+  ]
+}

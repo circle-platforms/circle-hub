@@ -1,0 +1,23 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "locate",
+      "title": "按目录树定位",
+      "function": { "module": "functions/check.ts" },
+      "applies": "run",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "subject",
+      "tier": "advisory"
+    },
+    {
+      "id": "candidates",
+      "title": "构建候选与写出名核对",
+      "function": { "module": "functions/candidates.ts" },
+      "applies": "run",
+      "subject": { "module": "functions/subject.ts" },
+      "judges": "subject",
+      "tier": "advisory"
+    }
+  ]
+}

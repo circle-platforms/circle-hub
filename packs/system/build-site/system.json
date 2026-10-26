@@ -1,0 +1,64 @@
+{
+  "schema": "system@1",
+  "title": "构建站",
+  "description": "构建站的只读访问（匿名、明文 HTTP、页面多为 ISO-8859-1）：索引页、导航页和列表页读作 buildsite:listing:<页面名>（index 指资源设置 index_page 里配置的索引页），列表页链接的文件读作 buildsite:file:<链接>（命令树 XML、修复缺陷清单 HTML）。只有读路由，没有写路由。",
+  "roles": [
+    { "name": "build-site", "description": "构建站上列表页所在的目录：页面读作 <基础地址>/<页面名>.html，文件按页面上的链接读（必须在基础地址之下）" }
+  ],
+  "auth": { "kind": "none" },
+  "routes": [
+    {
+      "id": "page",
+      "role": "build-site",
+      "method": "GET",
+      "path": "/{page}",
+      "params": { "page": { "type": "string", "maxLength": 200, "pattern": "^[A-Za-z0-9_.-]{1,200}$" } },
+      "response": "html",
+      "parse": "html@1",
+      "max_bytes": 16777216,
+      "timeout_ms": 60000,
+      "read": true,
+      "description": "基础地址下的一个页面（索引页、导航页或列表页）"
+    },
+    {
+      "id": "tree-file",
+      "role": "build-site",
+      "method": "GET",
+      "path": "/{tree*}",
+      "params": { "tree": { "type": "string", "maxLength": 255, "pattern": "^[^;]{1,255}$" } },
+      "response": "xml",
+      "max_bytes": 67108864,
+      "timeout_ms": 120000,
+      "read": true,
+      "description": "列表页链接的 XML 文件（命令树）"
+    },
+    {
+      "id": "page-file",
+      "role": "build-site",
+      "method": "GET",
+      "path": "/{doc*}",
+      "params": { "doc": { "type": "string", "maxLength": 255, "pattern": "^[^;]{1,255}$" } },
+      "response": "html",
+      "max_bytes": 16777216,
+      "timeout_ms": 60000,
+      "read": true,
+      "description": "列表页链接的 HTML 文件（修复缺陷清单）"
+    }
+  ],
+  "reads": [
+    {
+      "name": "listing",
+      "external": "buildsite:listing",
+      "description": "一个页面：索引页（index）、导航页或列表页，按页面名读",
+      "plan": { "module": "functions/reads.ts", "export": "listingPlan" },
+      "max_requests": 1
+    },
+    {
+      "name": "file",
+      "external": "buildsite:file",
+      "description": "列表页链接的一个文件，按链接读（.xml 读作 XML，.html 读作网页）",
+      "plan": { "module": "functions/reads.ts", "export": "filePlan" },
+      "max_requests": 1
+    }
+  ]
+}

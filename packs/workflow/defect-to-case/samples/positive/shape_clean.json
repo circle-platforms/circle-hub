@@ -1,0 +1,77 @@
+{
+  "id": "shape_clean",
+  "source": "author",
+  "check": "draft_shape",
+  "note": "起草用例结构完整、字段合法",
+  "subject": {
+    "item": "74001",
+    "label": "SLB健康检查间隔无法保存",
+    "location": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/id",
+    "fields": {
+      "id": "74001",
+      "title": "SLB健康检查间隔无法保存",
+      "status": "closed",
+      "resolution": "fixed",
+      "severity": "major",
+      "assignedTo": "synthetic-tester",
+      "steps": "进入合成页面，修改间隔后保存",
+      "fix": "修复说明：修复参数范围校验，修复保存后不生效的问题。命令行配置 widget health interval <1-300>。期望结果：健康检查间隔设置成功，系统运行正常。"
+    },
+    "slots": {
+      "cases": [
+        {
+          "text": "健康检查间隔设置回归测试",
+          "data": {
+            "id": "draft-good",
+            "title": "配置健康检查间隔为 60 秒",
+            "priority": 2,
+            "negative": false,
+            "expects_refutation": false,
+            "preconditions": [
+              "SLB服务正常运行"
+            ],
+            "steps": [
+              {
+                "text": "执行配置命令",
+                "command": "widget health interval 60"
+              }
+            ],
+            "expected": [
+              {
+                "text": "健康检查间隔设置成功",
+                "quote": {
+                  "reference": "src:345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982/json@1/p/fields/fix",
+                  "text": "健康检查间隔设置成功"
+                },
+                "after": 1,
+                "identity": {
+                  "source_sha256": "345222e457e0a9333587bf2613c8aa690b0d508cab1ae4eb7e3f14ef30e26982",
+                  "parser": "json@1",
+                  "path": "p/fields/fix",
+                  "span": {
+                    "unit": "byte",
+                    "offset": 448,
+                    "length": 30
+                  }
+                }
+              }
+            ],
+            "tags": [
+              "functional"
+            ],
+            "resource": [
+              "functional"
+            ]
+          }
+        }
+      ]
+    },
+    "evidence": []
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "74001"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "board",
+      "name": "质量看板",
+      "description": "每个（版本线、模块）分组的指标：用例数、无期望结果（has_expected 为 false）占比、只有含糊期望结果（has_expected 为 true 且 vague_expected 为 true）占比、负面用例占比；占比是精确分数，展示用的数值只在展示时取舍。总是记支持，指标写在结论数据里；分组的计数不自洽（超过用例总数）时记不通过（提示档）；可选同根标签视图给六种测试类型的出现、未见和未打标签数（不新增阈值）；不完整时标部分，只说已读来源中未见，下一步补取来源并重跑；R3：忽略旧 vague_expected，仅聚合已受理评审的期望质量判断；已判断数作含糊率分母，未判断单列，零分母未核对并补交评审。聚合以判断为前提。",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "board"
+      ],
+      "error_handling": []
+    },
+    {
+      "key": "thresholds",
+      "name": "阈值提示",
+      "description": "分组的无期望结果占比超过 max_missing_ratio（默认 0.05）、含糊期望占比超过 max_vague_ratio（默认 0.05）或负面用例占比低于 min_negative_ratio（默认 0.02）时记提示档的不通过（quality-board.missing_expected / vague_expected / negative_share）；等于阈值不算越界；管理信号，不是缺陷，从不是阻断档；R3：忽略旧 vague_expected，仅聚合已受理评审的期望质量判断；已判断数作含糊率分母，未判断单列，零分母未核对并补交评审。聚合以判断为前提。",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "thresholds"
+      ],
+      "error_handling": []
+    },
+    {
+      "key": "totals",
+      "name": "合计",
+      "description": "整个视图的合计（用例数、无期望结果数、含糊期望数、负面用例数）作为事实结论，并写明看板覆盖已索引文档的每一个用例（没有解析出命令的用例是未归位条目，也计入合计），描述的是已索引的用例，不是整套测试；视图有来源没读或截断时照写。视图声明未截断却与行合计对不上时，视图自相矛盾，合计记不通过（提示档）而不是照写；必填 placement 视图的空命令行给出未归位用例数，只作披露，不参与判定；R3：忽略旧 vague_expected，仅聚合已受理评审的期望质量判断；已判断数作含糊率分母，未判断单列，零分母未核对并补交评审。聚合以判断为前提。",
+      "target": "run",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "totals"
+      ],
+      "error_handling": []
+    }
+  ]
+}

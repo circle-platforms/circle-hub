@@ -1,0 +1,246 @@
+{
+  "schema": "case-compile.codes@1",
+  "origin": "编译包 2.0：只核验原运行器合约、发布配置与受限槽位",
+  "description": "模型可修复的反驳码均有修复行，最多两轮；文档和身份错误拒绝开始运行",
+  "violations": [
+    {
+      "code": "case-compile.slots_invalid",
+      "when": "槽位形状不符合 slots.schema.json",
+      "fix": "按完整形状填写 bucket、空 blocks、steps、expects、replacements，删除旧字段"
+    },
+    {
+      "code": "case-compile.method_forbidden",
+      "when": "组合不是合约启用条目",
+      "fix": "只用合约启用且非内部、非认证候选的组合"
+    },
+    {
+      "code": "case-compile.param_arity",
+      "when": "多余、缺失或重复参数",
+      "fix": "按原始签名给齐必填参数，删去未声明或重复参数，不补默认值"
+    },
+    {
+      "code": "case-compile.param_keyword",
+      "when": "仅位置参数使用了关键字",
+      "fix": "把该参数放在 args 中正确的位置"
+    },
+    {
+      "code": "case-compile.param_sensitive",
+      "when": "计划给出了默认值被脱敏的凭据参数",
+      "fix": "删除凭据参数；需要密码的步骤本轮不开放"
+    },
+    {
+      "code": "case-compile.param_value",
+      "when": "参数不是单行最终文字、含占位符、首尾空白或以等号开头",
+      "fix": "写单行最终文字，删除首尾空白、{}、{0} 和公式前缀；引号必须成对，不以反斜杠结尾"
+    },
+    {
+      "code": "case-compile.device_command_denied",
+      "when": "设备命令命中配置拒绝表",
+      "fix": "删除该命令，换为本轮允许的设备单行命令"
+    },
+    {
+      "code": "case-compile.host_command_denied",
+      "when": "主机 shell 命中配置拒绝表",
+      "fix": "删除拒绝表中的主机命令，不执行重启或清除类动作"
+    },
+    {
+      "code": "case-compile.bed_unknown",
+      "when": "bucket 不是配置选定的清单台架",
+      "fix": "bucket 写配置的 bed"
+    },
+    {
+      "code": "case-compile.address_off_bed",
+      "when": "字面地址或替换目标不在任何设备接口所在网段，也不是本血缘租约地址",
+      "fix": "环境不可达，整卷不跑。换用有触发设备的网段里的接口地址，或先取得本血缘租约后再编译"
+    },
+    {
+      "code": "case-compile.environment_unreachable",
+      "when": "计划地址落在没有触发设备的盲网段",
+      "fix": "环境不可达，整卷不跑。把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译"
+    },
+    {
+      "code": "case-compile.replacement_invalid",
+      "when": "替换表不是一一对应的有效地址映射",
+      "fix": "每个原地址和目标地址各出现一次，按数值去重"
+    },
+    {
+      "code": "case-compile.replacement_missing",
+      "when": "槽位仍有应替换的原用例地址",
+      "fix": "在客户端将步骤或期望改成替换后的最终文字"
+    },
+    {
+      "code": "case-compile.expect_without_source",
+      "when": "没有期望或缺逐字引文",
+      "fix": "至少一条期望带 quote.reference、quote.text 和 after"
+    },
+    {
+      "code": "case-compile.expect_not_in_quote",
+      "when": "期望不是套用替换表后原引文的片段",
+      "fix": "从替换后的原引文复制逐字片段，不改写结论"
+    },
+    {
+      "code": "case-compile.expect_after",
+      "when": "期望没有判断设备命令行或主机 shell 步骤",
+      "fix": "after 写对应命令步骤从 1 开始的编号，不指向等待或断言"
+    },
+    {
+      "code": "case-compile.assertion_in_steps",
+      "when": "steps 里直接填写了 literal_assertion 调用，绕过唯一的溯源期望入口",
+      "fix": "断言写进 expects，带引文和 after"
+    },
+    {
+      "code": "case-compile.param_unassigned",
+      "when": "提供的参数没有配置角色",
+      "fix": "去掉无角色参数或换用配置已开放的组合；集成者补角色后重新发布并开新运行"
+    },
+    {
+      "code": "case-compile.wait_value",
+      "when": "等待不是配置秒数上限内的正整数",
+      "fix": "写 ASCII 正整数秒数，且不超过配置 max_wait_seconds"
+    },
+    {
+      "code": "case-compile.expect_value",
+      "when": "断言文字不符合工作簿 G 取值规则",
+      "fix": "断言写成单行原文片段，去掉首尾空白、等号前缀和 {} 或 {0} 占位符"
+    },
+    {
+      "code": "case-compile.host_shell_dynamic",
+      "when": "主机 shell 含扩展、命令分隔或重定向语法",
+      "fix": "改成单一显式命令，不用变量、命令替换、glob、管道、分号或重定向绕开文字核对"
+    },
+    {
+      "code": "case-compile.address_notation",
+      "when": "主机命令包含非标准 IPv4 数字记法，目标不能唯一核对",
+      "fix": "地址写标准点分四段；十六进制、八进制、短点分或长整数形式不用于主机网络目标；非地址数据需拆出明确用途"
+    },
+    {
+      "code": "case-compile.method_not_allowed",
+      "when": "合约启用但运行环境配置没有开放的组合",
+      "fix": "换用配置已开放的组合；需要扩展时由集成者补角色和检查，重新发布配置并开始新运行"
+    },
+    {
+      "code": "case-compile.workbook_invalid",
+      "when": "工作簿原件、行结构、绑定身份或重算字节与已核验计划不一致",
+      "fix": "按驳回指针修正计划或工作簿，在客户端用当前生成器重新生成并上传原件，以已满足计划运行为前驱开始新核验运行"
+    },
+    {
+      "code": "case-compile.expect_not_in_criterion",
+      "when": "引用的期望与本运行冻结的已受理判据声明不一致",
+      "fix": "逐字引用本运行冻结的新判据，或使用原件逐字引文"
+    }
+  ],
+  "refusals": [
+    {
+      "code": "case-compile.no_subject",
+      "when": "没有用例文档",
+      "fix": "绑定用例脑图"
+    },
+    {
+      "code": "case-compile.subject_not_mindmap",
+      "when": "用例未由 kityminder@1 解析",
+      "fix": "绑定脑图源"
+    },
+    {
+      "code": "case-compile.no_contract",
+      "when": "没有运行器原格式合约",
+      "fix": "绑定发布的合约命名文档"
+    },
+    {
+      "code": "case-compile.contract_invalid",
+      "when": "原合约形状或重算身份不符",
+      "fix": "按逐条 JSON 指针修正并重新发布"
+    },
+    {
+      "code": "case-compile.no_inventory",
+      "when": "没有台架清单",
+      "fix": "绑定发布的台架清单"
+    },
+    {
+      "code": "case-compile.manifest_invalid",
+      "when": "台架清单不合式",
+      "fix": "按指针修正清单并重新发布"
+    },
+    {
+      "code": "case-compile.no_profile",
+      "when": "没有运行环境配置",
+      "fix": "绑定 runtime-profile@1 命名文档"
+    },
+    {
+      "code": "case-compile.profile_invalid",
+      "when": "配置形状、身份、座位或允许集合不符",
+      "fix": "按指针修正配置并重新发布"
+    },
+    {
+      "code": "case-compile.invalid_parameter",
+      "when": "case_rule 无效",
+      "fix": "case_rule 写 marked 或 tagged"
+    },
+    {
+      "code": "case-compile.autoid_invalid",
+      "when": "autoid 不是配置要求的原始文字",
+      "fix": "复制完整原始 autoid 字符串"
+    },
+    {
+      "code": "case-compile.autoid_not_found",
+      "when": "autoid 没有匹配的用例",
+      "fix": "核对文档及 case_rule 后重新开始运行"
+    },
+    {
+      "code": "case-compile.autoid_ambiguous",
+      "when": "autoid 重复",
+      "fix": "作者修正原文重复编号后重新绑定"
+    },
+    {
+      "code": "case-compile.internal_error",
+      "when": "投影函数内部出错",
+      "fix": "将输入交给任务包维护人，修复后重新开始运行"
+    },
+    {
+      "code": "case-compile.autoid_imprecise",
+      "when": "case autoid 是超出安全整数范围的 JSON 数值",
+      "fix": "从原文以文本重新导出编号或请求核心的无损数字解析，不从已舍入数值猜编号"
+    },
+    {
+      "code": "case-compile.workbook_input",
+      "when": "绑定工作簿不是完整的 xlsx@1 原件，或解析模型超过单用例核验预算",
+      "fix": "上传原始 xlsx 并按返回的 src: 绑定；超预算时减少该用例的非必要内容后重新生成，不截断模型或删除执行行"
+    },
+    {
+      "code": "case-compile.workbook_context",
+      "when": "绑定工作簿时没有合式的已满足计划运行号 plan_run",
+      "fix": "从已满足的计划提交与结果复制运行号，以其为 predecessor，填写相同 plan_run 并开始绑定原件的新核验运行"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "case-compile.no_cases",
+      "when": "文档没有用例",
+      "fix": "核对用例标记"
+    },
+    {
+      "code": "case-compile.candidate_only",
+      "when": "只靠标记的节点被 tagged 规则排除",
+      "fix": "补标签或使用 marked"
+    },
+    {
+      "code": "case-compile.contract_problem",
+      "when": "原格式合约的逐条问题",
+      "fix": "按指针处理"
+    },
+    {
+      "code": "case-compile.manifest_problem",
+      "when": "台架清单逐条问题",
+      "fix": "按指针处理"
+    },
+    {
+      "code": "case-compile.profile_problem",
+      "when": "运行环境配置逐条问题",
+      "fix": "按指针处理"
+    },
+    {
+      "code": "case-compile.autoid_problem",
+      "when": "一个用例的数字 autoid 无法保证原始精度",
+      "fix": "按节点指针从原件取得文本编号或请求核心无损解析"
+    }
+  ]
+}

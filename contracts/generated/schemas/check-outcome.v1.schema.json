@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "missing": {
+      "description": "Required for unknown; the Hub must not guess it from statement or data.missing",
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "exit": {
+      "description": "An optional fully bound exit intent; the Hub resolves a missing exit from the cause before writing a layer result",
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "reread",
+            "reconcile",
+            "observe",
+            "request",
+            "rerun",
+            "reevaluate"
+          ]
+        },
+        "request_kind": {
+          "type": "string",
+          "enum": [
+            "clarification",
+            "repair",
+            "disposition",
+            "judgment"
+          ]
+        },
+        "audience": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "hub": {
+                  "type": "boolean",
+                  "const": true
+                }
+              },
+              "required": [
+                "hub"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "user": {
+                  "type": "string",
+                  "pattern": "^usr_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                }
+              },
+              "required": [
+                "user"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "external": {
+                  "type": "object",
+                  "properties": {
+                    "mapping": {
+                      "type": "string",
+                      "maxLength": 8192,
+                      "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                    },
+                    "identity": {
+                      "type": "string",
+                      "pattern": "\\S",
+                      "description": "External account identity bound by the referenced mapping"
+                    }
+                  },
+                  "required": [
+                    "mapping",
+                    "identity"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "external"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "due": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+          "description": "Absolute next-execution time or the named request deadline; never inferred when reading history"
+        }
+      },
+      "required": [
+        "action",
+        "audience",
+        "due"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "request"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          "then": {
+            "properties": {
+              "request_kind": {},
+              "audience": {
+                "type": "object",
+                "not": {
+                  "required": [
+                    "hub"
+                  ],
+                  "properties": {
+                    "hub": {}
+                  }
+                }
+              }
+            },
+            "required": [
+              "request_kind"
+            ]
+          },
+          "else": {
+            "properties": {
+              "audience": {
+                "type": "object",
+                "properties": {
+                  "hub": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "hub"
+                ]
+              }
+            },
+            "not": {
+              "required": [
+                "request_kind"
+              ],
+              "properties": {
+                "request_kind": {}
+              }
+            }
+          }
+        }
+      ]
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "support",
+        "refute",
+        "unknown"
+      ]
+    },
+    "code": {
+      "description": "Violation code when refuted: core.*, a protocol code, or a pack code under the pack name",
+      "type": "string",
+      "minLength": 1
+    },
+    "statement": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What the check found, in Chinese"
+    },
+    "grounds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 8192,
+        "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+      },
+      "description": "References the outcome rests on"
+    },
+    "tier": {
+      "type": "string",
+      "enum": [
+        "blocking",
+        "advisory"
+      ]
+    },
+    "reason": {
+      "description": "Why the verdict is unknown",
+      "type": "string",
+      "enum": [
+        "no_check",
+        "check_error",
+        "timeout",
+        "missing_input",
+        "declared_skip",
+        "not_covered",
+        "awaiting_step",
+        "output_failed",
+        "repair_exhausted",
+        "budget_exhausted",
+        "integrity_unproven"
+      ]
+    },
+    "item": {
+      "description": "Item the outcome is about, when the subject holds several",
+      "type": "string"
+    },
+    "pointer": {
+      "description": "Location inside the subject",
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+    },
+    "data": {
+      "description": "Machine-readable parts of the statement",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "judgment_sources": {
+      "description": "Explicit pointers relative to this item slots into submitted model judgment objects with text; Hub binds model identity and records judgment premises, never treats their semantics as facts",
+      "maxItems": 128,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+        "description": "RFC 6901 JSON Pointer; the empty string is the whole value"
+      }
+    }
+  },
+  "required": [
+    "verdict",
+    "statement",
+    "grounds",
+    "tier"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "enum": [
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "verdict"
+        ]
+      },
+      "then": {
+        "properties": {
+          "missing": {},
+          "reason": {}
+        },
+        "required": [
+          "missing",
+          "reason"
+        ]
+      }
+    }
+  ],
+  "title": "check-outcome@1",
+  "description": "One outcome of a core interpreter or a pack check function (V01)"
+}

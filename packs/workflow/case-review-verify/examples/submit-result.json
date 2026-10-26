@@ -1,0 +1,64 @@
+{
+  "run": "run_01m5h9zm2nhzbz2hrfjfb6azta",
+  "model": "omega-checker 2.0 (scripted, temperature 0)",
+  "items": [
+    {
+      "item": "900103:imyvp5mr10r6",
+      "handling": "handled",
+      "slots": {
+        "verification": [
+          {
+            "text": "反向用例只覆盖上界外的 61，未覆盖下界外的 0，边界覆盖不完整",
+            "code": "verified",
+            "rank": "minor",
+            "location": "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6",
+            "quotes": [
+              {
+                "reference": "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6",
+                "text": "widget health interval pool1 61"
+              }
+            ],
+            "data": {
+              "finding": "rec:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef#/partitions/delivered/0/requirements/0/claims/0"
+            }
+          },
+          {
+            "text": "缺少探测间隔为 0 的反向用例",
+            "code": "new_finding",
+            "rank": "minor",
+            "location": "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6",
+            "quotes": [
+              {
+                "reference": "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6",
+                "text": "widget health interval pool1 61"
+              }
+            ],
+            "data": {
+              "probe": "negative_gap"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "cross_item": [
+    {
+      "nature": "judgment",
+      "statement": "结论理由：初评基本正确，但遗漏了反向用例，补充了一条新发现；对初评等级的质疑：初评 P4 合适",
+      "grounds": [
+        "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6"
+      ],
+      "code": "PARTIAL",
+      "rank": "P4"
+    },
+    {
+      "nature": "judgment",
+      "statement": "补：探测间隔为 0 的反向用例；因为：只覆盖上界外的 61；期望：提示参数超出范围 1-60",
+      "grounds": [
+        "src:48728fe18b2e89689f4aa1b00063fc3a3ef0c41744a32de6b12a449e01374d5f/kityminder@1/n/imyvp5mr10r6"
+      ],
+      "code": "suggestion",
+      "rank": "minor"
+    }
+  ]
+}

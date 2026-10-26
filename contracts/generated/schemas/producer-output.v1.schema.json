@@ -1,0 +1,866 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "incomplete": {
+      "description": "Controlled missing-input recovery; no partial output is admitted",
+      "type": "object",
+      "properties": {
+        "missing": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "next_action": {
+          "type": "string",
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "missing",
+        "next_action"
+      ],
+      "additionalProperties": false
+    },
+    "grammar": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "complete"
+      ],
+      "additionalProperties": false
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "attribute": {
+            "type": "string",
+            "minLength": 1
+          },
+          "position": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "type_declaration_status": {
+            "type": "string",
+            "enum": [
+              "declared",
+              "undeclared"
+            ]
+          },
+          "command_parse_status": {
+            "type": "string",
+            "enum": [
+              "parsed",
+              "not_command",
+              "parameters_unchecked"
+            ]
+          },
+          "syntax_valid": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "no_check",
+              "check_error",
+              "timeout",
+              "missing_input",
+              "declared_skip",
+              "not_covered",
+              "awaiting_step",
+              "output_failed",
+              "repair_exhausted",
+              "budget_exhausted",
+              "integrity_unproven"
+            ]
+          },
+          "missing": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "next_action": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "audience": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "due": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "source_value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "command",
+          "path",
+          "attribute",
+          "type_declaration_status",
+          "command_parse_status",
+          "syntax_valid",
+          "reason",
+          "missing",
+          "next_action",
+          "audience",
+          "due"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "inventory": {
+      "description": "Evidence for a complete zero selection; the Hub verifies fragments and counts before admitting an empty product-wide root",
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "listed": {
+            "type": "object",
+            "properties": {
+              "slot": {
+                "description": "which input slot; required when the producer has more than one",
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "source": {
+                "description": "digest of the source inside a list slot (ProducerSlot.sha256); required for a list slot",
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "parser": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+              },
+              "selector": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "parser",
+              "selector"
+            ],
+            "additionalProperties": false,
+            "description": "JSON array of the complete source inventory"
+          },
+          "complete": {
+            "type": "object",
+            "properties": {
+              "slot": {
+                "description": "which input slot; required when the producer has more than one",
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "source": {
+                "description": "digest of the source inside a list slot (ProducerSlot.sha256); required for a list slot",
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "parser": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+              },
+              "selector": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "parser",
+              "selector"
+            ],
+            "additionalProperties": false,
+            "description": "JSON true declaring the inventory complete"
+          },
+          "selected": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "label",
+          "listed",
+          "complete",
+          "selected"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "declared by the producer (K02 F[0], R[3]); the knowledge package checks it against the entry_kind axis one entry at a time, so one wrong entry is refused and reported without losing the rest"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\/(?:[^/]+(?:\\/[^/]+)*)?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "where it hangs; null when code cannot place it (a producer may declare it for the bot's placement proposals)"
+          },
+          "statement": {
+            "type": "string",
+            "description": "deterministic canonical statement; it carries everything data says (K02 R[4])"
+          },
+          "data": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "fragments": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "slot": {
+                  "description": "which input slot; required when the producer has more than one",
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*$"
+                },
+                "source": {
+                  "description": "digest of the source inside a list slot (ProducerSlot.sha256); required for a list slot",
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "parser": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+                },
+                "selector": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "applicability": {
+                  "description": "Field-specific source provenance, excluded from entry content",
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string",
+                        "enum": [
+                          "models",
+                          "platforms",
+                          "builds",
+                          "components",
+                          "memory",
+                          "licenses",
+                          "deployment_forms"
+                        ]
+                      },
+                      "section": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "declaration": {
+                        "type": "object",
+                        "properties": {
+                          "builds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "platforms": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "models": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "components": {
+                            "type": "object",
+                            "properties": {
+                              "with": {
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "without": {
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "memory": {
+                            "type": "object",
+                            "properties": {
+                              "minimum": {
+                                "type": "object",
+                                "properties": {
+                                  "bytes": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "inclusive": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "bytes",
+                                  "inclusive"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maximum": {
+                                "type": "object",
+                                "properties": {
+                                  "bytes": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "inclusive": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "bytes",
+                                  "inclusive"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "raw": {
+                                "type": "string",
+                                "pattern": "\\S"
+                              }
+                            },
+                            "required": [
+                              "raw"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "licenses": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "deployment_forms": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "inherited": {
+                            "description": "Inherited field codes only; source positions belong to composition provenance",
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "models",
+                                "platforms",
+                                "builds",
+                                "components",
+                                "memory",
+                                "licenses",
+                                "deployment_forms"
+                              ]
+                            }
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "conflict": {
+                        "type": "boolean"
+                      },
+                      "superseded": {
+                        "description": "An inner scope replaced this declaration; retained as provenance only",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "section",
+                      "declaration"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "range": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              "required": [
+                "parser",
+                "selector"
+              ],
+              "additionalProperties": false
+            },
+            "description": "the source pieces that warrant the entry, in order"
+          },
+          "applicability": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "builds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "platforms": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "components": {
+                    "type": "object",
+                    "properties": {
+                      "with": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "without": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "memory": {
+                    "type": "object",
+                    "properties": {
+                      "minimum": {
+                        "type": "object",
+                        "properties": {
+                          "bytes": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "inclusive": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "bytes",
+                          "inclusive"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maximum": {
+                        "type": "object",
+                        "properties": {
+                          "bytes": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "inclusive": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "bytes",
+                          "inclusive"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "raw": {
+                        "type": "string",
+                        "pattern": "\\S"
+                      }
+                    },
+                    "required": [
+                      "raw"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "licenses": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "deployment_forms": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "inherited": {
+                    "description": "Inherited field codes only; source positions belong to composition provenance",
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "models",
+                        "platforms",
+                        "builds",
+                        "components",
+                        "memory",
+                        "licenses",
+                        "deployment_forms"
+                      ]
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "statement",
+          "data",
+          "fragments",
+          "applicability"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "unplaced": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fragment": {
+            "type": "object",
+            "properties": {
+              "slot": {
+                "description": "which input slot; required when the producer has more than one",
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "source": {
+                "description": "digest of the source inside a list slot (ProducerSlot.sha256); required for a list slot",
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "parser": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+              },
+              "selector": {
+                "type": "string",
+                "minLength": 1
+              },
+              "applicability": {
+                "description": "Field-specific source provenance, excluded from entry content",
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string",
+                      "enum": [
+                        "models",
+                        "platforms",
+                        "builds",
+                        "components",
+                        "memory",
+                        "licenses",
+                        "deployment_forms"
+                      ]
+                    },
+                    "section": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "declaration": {
+                      "type": "object",
+                      "properties": {
+                        "builds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "platforms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "models": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "components": {
+                          "type": "object",
+                          "properties": {
+                            "with": {
+                              "minItems": 1,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "without": {
+                              "minItems": 1,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "memory": {
+                          "type": "object",
+                          "properties": {
+                            "minimum": {
+                              "type": "object",
+                              "properties": {
+                                "bytes": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "inclusive": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "bytes",
+                                "inclusive"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "maximum": {
+                              "type": "object",
+                              "properties": {
+                                "bytes": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "inclusive": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "bytes",
+                                "inclusive"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "raw": {
+                              "type": "string",
+                              "pattern": "\\S"
+                            }
+                          },
+                          "required": [
+                            "raw"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "licenses": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "deployment_forms": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "inherited": {
+                          "description": "Inherited field codes only; source positions belong to composition provenance",
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "models",
+                              "platforms",
+                              "builds",
+                              "components",
+                              "memory",
+                              "licenses",
+                              "deployment_forms"
+                            ]
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "conflict": {
+                      "type": "boolean"
+                    },
+                    "superseded": {
+                      "description": "An inner scope replaced this declaration; retained as provenance only",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "section",
+                    "declaration"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "range": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                ],
+                "items": false,
+                "minItems": 2,
+                "maxItems": 2
+              }
+            },
+            "required": [
+              "parser",
+              "selector"
+            ],
+            "additionalProperties": false
+          },
+          "section": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fragment",
+          "section",
+          "kind",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "entries",
+    "warnings"
+  ],
+  "additionalProperties": false
+}

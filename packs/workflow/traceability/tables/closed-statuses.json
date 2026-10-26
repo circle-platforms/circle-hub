@@ -1,0 +1,7 @@
+{
+  "schema": "traceability.closed-statuses@1",
+  "origin": "决定：traceability 任务包按任务页 docs/hub-r4-tasks/traceability-closed.md 声明的已关闭缺陷状态",
+  "statuses": [
+    "closed"
+  ]
+}

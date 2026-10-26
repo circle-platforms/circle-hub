@@ -1,0 +1,144 @@
+{
+  "interpreter": "quote@1",
+  "tables": {
+    "findings": {
+      "schema": "quote@1",
+      "origin": "合成样例：发现里的引文",
+      "quotes": [
+        {
+          "select": "$.slots.findings[*].quotes[*]",
+          "text": "/text",
+          "reference": "/reference"
+        }
+      ]
+    }
+  },
+  "positive": [
+    {
+      "name": "逐字引用，空白差异不算",
+      "table": "findings",
+      "sources": {
+        "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1": "点击“登录”按钮后，页面跳转到\n首页。",
+        "src:3333333333333333333333333333333333333333333333333333333333333333/markdown@1/section/2": "会话超时时间为 30 分钟。\t超时后需要重新登录。"
+      },
+      "subject": {
+        "slots": {
+          "findings": [
+            {
+              "code": "F-EXPECT",
+              "quotes": [
+                {
+                  "text": "点击“登录”按钮后",
+                  "reference": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1"
+                },
+                {
+                  "text": "页面跳转到 首页",
+                  "reference": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1"
+                },
+                {
+                  "text": "30 分钟。  超时后",
+                  "reference": "src:3333333333333333333333333333333333333333333333333333333333333333/markdown@1/section/2"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "support",
+          "pointer": "/slots/findings/0/quotes/0/text"
+        },
+        {
+          "verdict": "support"
+        },
+        {
+          "verdict": "support"
+        }
+      ]
+    }
+  ],
+  "negative": [
+    {
+      "name": "改写过的引文、去掉拉丁词界的引文和空引文",
+      "table": "findings",
+      "sources": {
+        "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1": "点击“登录”按钮后，页面跳转到\n首页。 set 10 0",
+        "src:3333333333333333333333333333333333333333333333333333333333333333/markdown@1/section/2": "会话超时时间为 30 分钟。\t超时后需要重新登录。"
+      },
+      "subject": {
+        "slots": {
+          "findings": [
+            {
+              "code": "F-EXPECT",
+              "quotes": [
+                {
+                  "text": "点击登录按钮后",
+                  "reference": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1"
+                },
+                {
+                  "text": "set 100",
+                  "reference": "src:1111111111111111111111111111111111111111111111111111111111111111/mindmap@1/n1"
+                },
+                {
+                  "text": "  ",
+                  "reference": "src:3333333333333333333333333333333333333333333333333333333333333333/markdown@1/section/2"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "QUOTE_MISMATCH"
+        },
+        {
+          "verdict": "refute",
+          "code": "QUOTE_MISMATCH"
+        },
+        {
+          "verdict": "refute",
+          "code": "QUOTE_MISMATCH"
+        }
+      ]
+    },
+    {
+      "name": "大小写和全半角不同的引文不算逐字",
+      "table": "findings",
+      "subject": {
+        "slots": {
+          "findings": [
+            {
+              "code": "F-EXPECT",
+              "quotes": [
+                {
+                  "text": "LOGIN 按钮",
+                  "reference": "src:4444444444444444444444444444444444444444444444444444444444444444/text@1/p/1"
+                },
+                {
+                  "text": "登录，",
+                  "reference": "src:4444444444444444444444444444444444444444444444444444444444444444/text@1/p/1"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "sources": {
+        "src:4444444444444444444444444444444444444444444444444444444444444444/text@1/p/1": "点击 login 按钮。登录,然后"
+      },
+      "expect": [
+        {
+          "verdict": "refute",
+          "code": "QUOTE_MISMATCH"
+        },
+        {
+          "verdict": "refute",
+          "code": "QUOTE_MISMATCH"
+        }
+      ]
+    }
+  ]
+}

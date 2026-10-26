@@ -1,0 +1,20 @@
+{
+  "run": "run_01m5h9zm2nhzbz2hrfjfb6azta",
+  "model": "omega-reporter 1.0 (scripted, temperature 0)",
+  "items": [
+    {
+      "item": "report",
+      "handling": "handled",
+      "slots": {}
+    }
+  ],
+  "cross_item": [
+    {
+      "nature": "judgment",
+      "statement": "评审意见（合成）：整体 PARTIAL。功能细节仍有覆盖缺口，等级理由沿用已受理的独立复核结论；逐例内容见 Hub 排出的评审表。",
+      "grounds": [],
+      "code": "PARTIAL",
+      "rank": "P5"
+    }
+  ]
+}

@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "product": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "definition",
+        "behaviour",
+        "case",
+        "defect",
+        "observation"
+      ],
+      "description": "declared by the producer (K02 F[0], R[3])"
+    },
+    "statement": {
+      "type": "string",
+      "description": "normalised canonical statement"
+    },
+    "data": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "applicability": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "builds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "platforms": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "components": {
+              "type": "object",
+              "properties": {
+                "with": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "without": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "memory": {
+              "type": "object",
+              "properties": {
+                "minimum": {
+                  "type": "object",
+                  "properties": {
+                    "bytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "inclusive": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "bytes",
+                    "inclusive"
+                  ],
+                  "additionalProperties": false
+                },
+                "maximum": {
+                  "type": "object",
+                  "properties": {
+                    "bytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "inclusive": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "bytes",
+                    "inclusive"
+                  ],
+                  "additionalProperties": false
+                },
+                "raw": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              "required": [
+                "raw"
+              ],
+              "additionalProperties": false
+            },
+            "licenses": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "deployment_forms": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "inherited": {
+              "description": "Inherited field codes only; source positions belong to composition provenance",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "models",
+                  "platforms",
+                  "builds",
+                  "components",
+                  "memory",
+                  "licenses",
+                  "deployment_forms"
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "null: 未声明 (K02 F[6])"
+    }
+  },
+  "required": [
+    "product",
+    "kind",
+    "statement",
+    "data",
+    "applicability"
+  ],
+  "additionalProperties": false
+}

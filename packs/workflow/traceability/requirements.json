@@ -1,0 +1,29 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "traced",
+      "name": "缺陷追溯",
+      "description": "构建的每个缺陷（release notes 列出、状态被 statuses 选中的）：至少一个已索引用例携带它的编号时记支持，数据里列出这些用例（编号、标题、文档，排序），依据是缺陷条目和用例条目的树引用；没有已索引用例标出时记未知（缺输入）——用例索引按构造不完整，没有列出不等于没有，从不记为不通过。缺陷条目之间状态矛盾的（既列为已修复又列为已知）记不通过（提示档）；用例列表与原始编号对不上的（被判对象自相矛盾）也记不通过（提示档）",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["traced"],
+      "error_handling": []
+    },
+    {
+      "key": "counts",
+      "name": "追溯统计",
+      "description": "整个构建的计数（缺陷数、已追溯数、未追溯数、状态矛盾数）作为事实结论；视图声明未截断却列出的内容少于它声明的总数时，视图自相矛盾，计数记不通过（提示档）而不是照写",
+      "target": "run",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["counts"],
+      "error_handling": []
+    }
+  ]
+}

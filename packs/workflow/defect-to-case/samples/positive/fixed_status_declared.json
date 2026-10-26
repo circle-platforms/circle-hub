@@ -1,0 +1,22 @@
+{
+  "id": "fixed_status_declared",
+  "source": "author",
+  "check": "fixed_status",
+  "note": "原始结构状态明确 fixed",
+  "subject": {
+    "item": "74001",
+    "fields": {
+      "fixed_status": {
+        "declaration_status": "declared",
+        "status": "fixed"
+      }
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "item": "74001",
+      "tier": "advisory"
+    }
+  ]
+}

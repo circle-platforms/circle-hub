@@ -1,0 +1,87 @@
+{
+  "id": "total_undercount",
+  "source": "author",
+  "check": "totals",
+  "note": "合成样例：视图声明未截断，各行加起来 3 个用例而声明共 100 个，视图自相矛盾，合计记不通过（提示档）而不是照写",
+  "subject": {
+    "items": [
+      {
+        "id": "10.6.1/SSL",
+        "location": "src:1c95704007f91baff2efad4f2090c705901e1d06d972b6c10de9b703c93f8205/json@1/p/rows",
+        "fields": {
+          "line": "10.6.1",
+          "module": "SSL",
+          "id": "10.6.1/SSL",
+          "counts": {
+            "cases": 3,
+            "missing": 0,
+            "vague": 0,
+            "negative": 0,
+            "negative_denominator": 3,
+            "type_unclassified": 0
+          },
+          "quality": {
+            "judged": 0,
+            "unjudged": 3,
+            "conflicted": 0,
+            "sources": []
+          },
+          "ratios": {
+            "missing": {
+              "num": 0,
+              "den": 3
+            },
+            "vague": {
+              "num": 0,
+              "den": 0
+            },
+            "negative": {
+              "num": 0,
+              "den": 3
+            }
+          },
+          "display": {
+            "missing": 0,
+            "vague": null,
+            "negative": 0
+          }
+        }
+      }
+    ],
+    "context": {
+      "product": "famx",
+      "names": [
+        "FAMX",
+        "FAMY"
+      ],
+      "parameters": {},
+      "groups": [
+        {
+          "placement": {
+            "unplaced": 0,
+            "source": "src:79326eb622e1f37dc95c74a630bf181e735627fdf6236266fb6cb3b55a13c79f",
+            "skipped": 0,
+            "truncated": false
+          },
+          "product": "famx",
+          "build": "Rel_FAMX_10_6_1_57",
+          "root": "88896053e8847222fbfccf724b2b53ef1d7ef1c71c02f6ed9db214579482ecf7",
+          "view": {
+            "source": "src:1c95704007f91baff2efad4f2090c705901e1d06d972b6c10de9b703c93f8205",
+            "total": 100,
+            "truncated": false,
+            "skipped": 0,
+            "listed_rows": 1
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "quality-board.total_undercount",
+      "tier": "advisory"
+    }
+  ]
+}
