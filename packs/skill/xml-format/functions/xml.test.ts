@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { MAX_SELECTOR_LENGTH, ParseEncodingError, ParseError, ParseForbiddenError, ParseLimitError, ParseSyntaxError, xmlParser, type XmlElement } from '../api.ts';
-import { fixture, latin1, timed, utf8 } from '../test-support.ts';
+import { ParseEncodingError, ParseError, ParseForbiddenError, ParseLimitError, ParseSyntaxError } from './format.ts';
+import { MAX_SELECTOR_LENGTH } from './selectors.ts';
+import { xmlParser, type XmlElement } from './xml.ts';
+import { fixture, latin1, timed, utf8 } from '../../../../hub/refs/test-support.ts';
 
 const bytes = fixture('command-tree.xml');
 const tree = xmlParser.parse(bytes);

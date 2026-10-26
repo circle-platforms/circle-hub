@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import * as dav from './functions/webdav.ts';
-import {xmlParser} from '../../../hub/refs/api.ts';
+import {xmlParser} from '../../../hub/testing/parsers.ts';
 import {startPostgres} from '../../../hub/testing/postgres.ts';
 import {startWebDavStub} from '../../../hub/connectors/testing/api.ts';
 import {openSystemKit,artifactBytes} from '../testing/kit.ts';

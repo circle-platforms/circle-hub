@@ -7,10 +7,9 @@ import type { RecordEnvelope } from '../../contracts/src/records.ts';
 import { canonicalJson, recordDigest, sha256Hex } from './canonical-json.ts';
 import { ParseError, mediaTypeEssence, parserKey, parserCacheKey,parseDocument, type Fragment, type JsonObject, type JsonValue, type ParsedDocument, type ParserRegistry } from './parser.ts';
 import { decodeHtmlText } from './parsers/html.ts';
-import { decodeXmlText } from './parsers/xml.ts';
 import { quoteMatches } from './quote.ts';
 import { ReferenceSyntaxError, formatReference, parseReference, pointerTokens, type Reference } from './reference.ts';
-import { decodeDeclared, removeNul } from './text-decoding.ts';
+import { decodeDeclared, decodeXmlText, removeNul } from './text-decoding.ts';
 
 /** Who reads. Readers implement visibility (R02) with it; refs never interprets it. */
 export interface ReaderIdentity {

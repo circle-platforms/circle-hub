@@ -15,7 +15,7 @@
 import { adminCommand, readExit, secretNamesOf } from './read-exit.ts';
 import {readRetryDelay,READ_TRANSPORT_RETRIES,READ_RETRY_WAIT_MS,type ReadRetry} from './read-retry.ts';
 import { SANDBOX_ERRORS, SandboxError } from '../rules/api.ts';
-import type { ParserRegistry } from '../refs/api.ts';
+import { parseDocument, type ParserRegistry } from '../refs/api.ts';
 import type { ExternalArtifact, ExternalReadContext, ExternalRedirect, PackHandle } from '../ports.ts';
 import type { Artifacts, Principals, RecordStore, SourceArtifact, Visibility } from '../records/api.ts';
 import { canonicalBytes, sha256Hex, scanForCredentials } from '../records/api.ts';
@@ -477,7 +477,7 @@ export class ReadEngine {
           const got = received as { exchange: HttpExchange; stored: Stored } | null;
           if (got === null) throw new ConnectorError('STORE_FAILED', `路由 ${route.id} 的应答没有保存`);
           let view: ReadResponse = withheld(route.id, path, query, reply, got.stored, null) ?? this.#view(route.id, path, query, reply, null);
-          if (view.ok && route.parse !== undefined) view = this.#parsed(view, route.parse, reply.bytes, reply.mediaType);
+          if (view.ok && route.parse !== undefined) view = await this.#parsed(view, route.parse, reply.bytes, reply.mediaType);
           responses.set(planned.key, { view, url: reply.url, artifact: got.stored.artifact });
           entries.push(entry(view.ok, view.ok ? null : (view.error?.code ?? 'SOURCE_MALFORMED')));
         } catch (error) {
@@ -1021,12 +1021,14 @@ export class ReadEngine {
     return { ...view, text };
   }
 
-  #parsed(view: ReadResponse, parser: string, bytes: Uint8Array, mediaType: string): ReadResponse {
+  async #parsed(view: ReadResponse, parser: string, bytes: Uint8Array, mediaType: string): Promise<ReadResponse> {
     if (!view.ok) return view;
+    await this.#o.parsers.refresh?.();
     const found = this.#o.parsers.get(parser);
     if (found === undefined) return { ...view, ok: false, error: { code: 'SOURCE_MALFORMED', message: `没有核心解析器 ${parser}` } };
     try {
-      return { ...view, model: found.parse(bytes, { mediaType }).model };
+      const doc = await parseDocument(found, bytes, { mediaType });
+      return { ...view, model: doc.model };
     } catch (error) {
       return { ...view, ok: false, error: { code: 'SOURCE_MALFORMED', message: `${parser} 解析失败：${this.#o.redactor.text((error as Error).message).slice(0, 300)}` } };
     }
