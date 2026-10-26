@@ -15,6 +15,7 @@ import { CompositionView } from './composition.ts';
 import { KnowledgeError } from './errors.ts';
 import type { TreeReading } from './read.ts';
 import { canonicalSize } from './digest.ts';
+import { operationIdentity, operationRecord } from './feeding.ts';
 import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
 
 export interface ContributionScope {
@@ -67,9 +68,11 @@ function scanPublicText(texts: readonly string[]): void {
 }
 
 function identityOf(prepared: PreparedContribution): string {
+  const feeding=prepared.feeding;
+  const operation=feeding&&operationRecord(feeding.schema)?operationIdentity(feeding as unknown as Record<string,unknown>):undefined;
   return digestOf({product:prepared.product,root:prepared.root,path:prepared.path,kind:prepared.kind,statement:prepared.statement,
       source:{reference:prepared.source.reference,quote:prepared.source.quote},
-      ...(prepared.feeding===undefined?{}:{feeding:prepared.feeding}),
+      ...(operation===undefined?prepared.feeding===undefined?{}:{feeding:prepared.feeding}:{operation}),
       ...(prepared.applicability_claim===undefined?{}:{applicability_claim:prepared.applicability_claim}),
       ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});
 }
@@ -135,13 +138,17 @@ export class ContributionLayer {
       const layer=this.#context.feeding;if(!layer)return fail('缺喂入核验服务；管理员恢复后重试');
       const value=await layer.prepare(reader,input.feeding,{composition:scope.composition,product:scope.product,root:scope.root,run:scope.run,classifications:scope.classifications});
       if(value.schema==='retraction@1')return fail('撤回请使用管理员喂入撤回入口，不得伪装对象回注');
+      if(operationRecord(value.schema)&&input.kind!=='assertion')return fail('操作记录的产出种类只能是声明（assertion）；观察、步骤和教训写在 feeding 里');
       const ref=parseReference(input.source.reference);if(ref.scheme!=='src'||ref.sha256!==value.source.bytes)return fail('回注主引文必须指向同一喂入原件');
       await layer.quote(reader,{reference:input.source.reference,text:input.source.quote});
       const original=await this.#context.records.artifacts.source(reader,ref.sha256,{consumer:'model',record:await layer.originalRecord(reader,value)});if(!original?.bytes)return fail('缺当前可读的原件；恢复来源后重交');
+      if(operationRecord(value.schema)&&original.artifact.body.provenance_type!=='client_captured')return fail('操作记录的根据必须是出处为 client_captured 的上传原件；其他出处仍拒收');
       const node=await this.#reading.nodeAt(input.root,pathSegments(input.path));if(!node)return fail('归位路径在锁定树苗中不存在');
       const fragment=await this.#reading.treeReader({composition:scope.composition}).read(input.root,input.path,null,{user:reader.id,role:reader.role});if(!fragment)return fail('归位节点当前不可读');
       scanPublicText([input.statement,JSON.stringify(value),scope.model??'',scope.session??'']);
-      return {layer:'contribution',product:scope.product,root:input.root,path:input.path,cited_fragment:sha256Hex(fragment.text),kind:input.kind,statement:input.statement,source:{...input.source,fragment:sha256Hex(input.source.quote),provenance:value.schema==='fed-note@1'?'declared':original.artifact.body.provenance_type as Extract<ProvenanceType, 'observed' | 'projected' | 'declared'>,records:[original.artifact.digest],sources:[ref.sha256]},feeding:value as KnowledgeContributionBody['feeding'],submitted_by:reader.id,basis_rank:'judgment',applicability:null};
+      // basis_rank has no value labeled 声明. The stored rank stays the existing contribution default; the record is kept out of evidence by its schema and claim qualifier.
+      const provenance=operationRecord(value.schema)?'client_captured':value.schema==='fed-note@1'?'declared':original.artifact.body.provenance_type as Extract<ProvenanceType, 'observed' | 'projected' | 'declared' | 'client_captured'>;
+      return {layer:'contribution',product:scope.product,root:input.root,path:input.path,cited_fragment:sha256Hex(fragment.text),kind:input.kind,statement:input.statement,source:{...input.source,fragment:sha256Hex(input.source.quote),provenance,records:[original.artifact.digest],sources:[ref.sha256]},feeding:value as KnowledgeContributionBody['feeding'],submitted_by:reader.id,basis_rank:'judgment',applicability:null};
     }
     const {composition, compositions, originals, lineage, custodian, fragments} = await this.#preparation(scope, reader, cacheScope);
     let segments:string[];
@@ -224,6 +231,7 @@ export class ContributionLayer {
       const artifact = await this.#context.records.store.get<SourceArtifact['body']>(records[0]);
       const provenance=ContributionSource.shape.provenance.safeParse(ref.scheme==='tree'?'projected':artifact?.body.provenance_type);
       if(!provenance.success)return refuse("core.contribution.signature_required", SIGNATURE);
+      if(provenance.data==='client_captured')return fail('客户端捕获的原件只随操作记录进入回注层；一般回注仍要锁定根里的原文。改交观察、步骤或教训，或改引锁定根里的原文。');
       return { ...quoted, reference: resolved.value.reference, fragment: sha256Hex(resolved.value.text),
         provenance: provenance.data,
         records: [...new Set([...records, ...(resolved.value.recordSource === undefined ? [] : [resolved.value.recordSource.record])])], sources: shas };
@@ -294,9 +302,11 @@ export class ContributionLayer {
     const principal=await this.#context.records.principals.get(prepared.submitted_by);
     const feedingRecord=prepared.feeding&&principal?await this.#context.feeding?.appendPrepared(principal,prepared.feeding,{product:prepared.product,root:prepared.root,run:origin.run},origin.model,tx):undefined;
     const body = KnowledgeContributionBody.parse({ ...prepared,...(feedingRecord?{feeding_record:feedingRecord}:{}), session:origin.session,model:origin.model, submitted_at: this.#context.now().toISOString() });
-    return (await this.#context.store.putClaim(SCHEMAS.contribution, 'declared', body,
+    const operation=body.feeding!==undefined&&operationRecord(body.feeding.schema);
+    return (await this.#context.store.putClaim(SCHEMAS.contribution, operation?'client_captured':'declared', body,
       [{ key: INDEX.contribution, value: body.product }, { key: 'knowledge.contribution.identity', value: key },
-        {key:'knowledge.contribution.node',value:digestOf({product:body.product,path:body.path})}], tx)).digest;
+        {key:'knowledge.contribution.node',value:digestOf({product:body.product,path:body.path})},
+        ...(operation?[{key:'knowledge.contribution.run',value:origin.run}]:[])], tx)).digest;
   }
 
   async read(digest: string, reader: Principal): Promise<StoredRecord | null> {

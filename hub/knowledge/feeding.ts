@@ -13,7 +13,7 @@ import {pathSegments} from '../refs/api.ts';
 import {Claim,type Claim as ClaimBody} from '../../contracts/src/claim.ts';
 import {KnowledgeStructureSchema,FeedingRetractionSchema,type FeedingRetraction,type VersionBinding,type FeedingOffset} from '../../contracts/src/feeding.ts';
 import type {FeedingQuote as QuoteEvidence} from '../../contracts/generated/shared-interfaces.ts';
-import {parseReference,parserKey,parseDocument,recognizeAsync,sliceUtf8} from '../refs/api.ts';
+import {parseReference,parserKey,parseDocument,quoteMatches,recognizeAsync,sliceUtf8} from '../refs/api.ts';
 import {parseExternal} from '../connectors/api.ts';
 import {canonicalize,sha256Hex,scanForCredentials,type Principal,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
 import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabulary.ts';
@@ -34,6 +34,23 @@ const object=(v:unknown):v is Record<string,any>=>v!==null&&typeof v==='object'&
 interface SeedlingAttachment {locked_root:string;locked_composition:string|null;seedling_root:string;seedling_composition:string;line:string}
 interface Projected {rows:Projection[];pack:string;digest:string;attachment:SeedlingAttachment|null}
 const annotations=['classification','manual_link','relations','applicability','correction','command_link','case_link','paragraph'] as const;
+const OPERATION_RECORD_SCHEMAS=new Set(['fed-observation@1','fed-procedure@1','fed-pitfall@1']);
+export const operationRecord=(schema:unknown):schema is 'fed-observation@1'|'fed-procedure@1'|'fed-pitfall@1'=>typeof schema==='string'&&OPERATION_RECORD_SCHEMAS.has(schema);
+/** Content identity of an operation record: the canonical statement and its quotations, nothing else. */
+export function operationIdentity(body:Record<string,unknown>):Record<string,unknown>{
+  if(body.schema==='fed-observation@1')return {action:body.action,result:body.result};
+  if(body.schema==='fed-procedure@1')return {goal:body.goal,steps:body.steps};
+  if(body.schema==='fed-pitfall@1')return {phenomenon:body.phenomenon,suggestion:body.suggestion,quote:body.quote};
+  throw new Error('not an operation record');
+}
+function operationQuotes(body:Record<string,any>):Array<Record<string,any>>{
+  const out:Array<Record<string,any>>=[];
+  const take=(quote:unknown)=>{if(object(quote)&&typeof quote.text==='string')out.push(quote);};
+  if(body.schema==='fed-observation@1')take(body.result);
+  if(body.schema==='fed-procedure@1')for(const step of body.steps??[])if(object(step))take(step.quote);
+  if(body.schema==='fed-pitfall@1')take(body.quote);
+  return out;
+}
 function fail(message:string):never{throw new KnowledgeError(message+'；修正原件或按生成结构修正整份提交后重交，不能猜测补值',{code:'SUBMISSION_SCHEMA_VIOLATION'});}
 export interface FeedingScope {product?:string|null;root?:string|null;composition?:string|null;run?:string|null;line?:string|null;meta?:Record<string,unknown>|null;metaSource?:string;metaRecord?:string;readManifest?:string;sourceRecord?:string;requested?:string;declaredLine?:string|null;}
 export interface FeedingReceipt {objects:string[];offset:number|null;pending:Array<{source:string;missing:string;next_action:string}>;}
@@ -171,8 +188,11 @@ export class FeedingLayer {
   await this.requireLines(scope.product,[...projected.rows.flatMap(row=>row.lines),...(scope.declaredLine?[scope.declaredLine]:[])],pack);
   return projected;
  }
- private claim(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],judgment=false,run:string|null=null,key='',metaSource?:string,gaps?:Projection['missing'],capture?:{external:string|null;read_manifest:string|null;seedling_attachment?:SeedlingAttachment}):ClaimBody{return Claim.parse({statement:{text:judgment?'客户端带原文引文的喂入主张；语义仍为判断':'按原件结构登记喂入事实',data:{feeding:body,actor:by.id,run,key,...capture,...(metaSource?{meta_source:metaSource}:{}),...(gaps?.length?{missing:gaps}:{})}},grounds,warrant:{producer:judgment?'model':'function',id:warrant,independence:'judge_not_author'},qualifier:{nature:judgment?'judgment':'fact',provenance:body.schema==='fed-note@1'||body.basis==='declared'?'declared':judgment?'declared':'projected',basis_rank:body.basis==='declared'?'rule_over_claims':judgment?'judgment':'rule_over_observation',marks:[]},validity:{status:'valid',bound:[...new Set(bound)],premises:[]}});}
- private async put(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],key:string,index:Array<{key:string;value:string}>,tx:Transaction,judgment=false,run:string|null=null,metaSource?:string,gaps?:Projection['missing'],capture?:{external:string|null;read_manifest:string|null;seedling_attachment?:SeedlingAttachment}){return this.context.records.store.put({kind:'claim',schema:'claim@1',provenance:body.schema==='usage@1'?'observed':judgment||body.schema==='fed-note@1'?'declared':'projected',body:this.claim(body,by,warrant,grounds,bound,judgment,run,key,metaSource,gaps,capture),unique_key:'feeding:'+key,index:[{key:LOG,value:'1'},{key:'knowledge.feeding.actor',value:by.id},{key:'knowledge.feeding.key',value:key},...index]},tx);}
+ private claim(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],judgment=false,run:string|null=null,key='',metaSource?:string,gaps?:Projection['missing'],capture?:{external:string|null;read_manifest:string|null;seedling_attachment?:SeedlingAttachment}):ClaimBody{
+  if(operationRecord(body.schema))return Claim.parse({statement:{text:'Circle 操作记录；等级为声明，不作为核验、评分或放行的证据',data:{feeding:body,actor:by.id,run,key}},grounds,warrant:{producer:'function',id:warrant,independence:'judge_not_author'},qualifier:{nature:'unknown',provenance:'client_captured',marks:['semantics_unasserted']},validity:{status:'valid',bound:[...new Set(bound)],premises:[]}});
+  return Claim.parse({statement:{text:judgment?'客户端带原文引文的喂入主张；语义仍为判断':'按原件结构登记喂入事实',data:{feeding:body,actor:by.id,run,key,...capture,...(metaSource?{meta_source:metaSource}:{}),...(gaps?.length?{missing:gaps}:{})}},grounds,warrant:{producer:judgment?'model':'function',id:warrant,independence:'judge_not_author'},qualifier:{nature:judgment?'judgment':'fact',provenance:body.schema==='fed-note@1'||body.basis==='declared'?'declared':judgment?'declared':'projected',basis_rank:body.basis==='declared'?'rule_over_claims':judgment?'judgment':'rule_over_observation',marks:[]},validity:{status:'valid',bound:[...new Set(bound)],premises:[]}});
+ }
+ private async put(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],key:string,index:Array<{key:string;value:string}>,tx:Transaction,judgment=false,run:string|null=null,metaSource?:string,gaps?:Projection['missing'],capture?:{external:string|null;read_manifest:string|null;seedling_attachment?:SeedlingAttachment}){return this.context.records.store.put({kind:'claim',schema:'claim@1',provenance:operationRecord(body.schema)?'client_captured':body.schema==='usage@1'?'observed':judgment||body.schema==='fed-note@1'?'declared':'projected',body:this.claim(body,by,warrant,grounds,bound,judgment,run,key,metaSource,gaps,capture),unique_key:'feeding:'+key,index:[{key:LOG,value:'1'},{key:'knowledge.feeding.actor',value:by.id},{key:'knowledge.feeding.key',value:key},...index]},tx);}
  private key(body:Record<string,any>){const {at:_at,...withoutTime}=body;return sha256Hex(canonicalize(withoutTime));}
  private async usage(principal:Principal,id:string,scope:FeedingScope,tx:Transaction){if(!scope.run)return;const body={schema:'usage@1',object:id,run:scope.run,line:scope.line??null,at:this.context.now().toISOString()};await this.put(body,principal,'hub.feeding@1',[],[id],`usage:${scope.run}:${id}`,[{key:USAGE,value:scope.run},{key:'knowledge.feeding.usage.object',value:id}],tx,false,scope.run);}
  private async todo(principal:Principal,source:Record<string,any>,product:string|null,missing:string,next:string,tx:Transaction,errorDetail?:FeedingErrorDetail){
@@ -272,7 +292,7 @@ export class FeedingLayer {
    const at=this.context.now().toISOString();await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',unique_key:'feeding.observed:'+observationKey,body:{action:'read',run:scope.run??null,item:null,component:'hub.feeding@2',inputs:['src:'+sha],lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{receipt:{objects:ids,pending}}},index:[{key:'knowledge.feeding.observed',value:observationKey}]},tx);
   });return {objects:ids,offset:await this.offset(),pending};
  }
- private sourceKey(body:Record<string,any>){if(!body.source||body.schema==='fed-note@1')return null;const {bytes:_bytes,revision:_revision,...identity}=body.source;return sha256Hex(canonicalize({product:body.product,identity}));}
+ private sourceKey(body:Record<string,any>){if(!body.source||body.schema==='fed-note@1'||operationRecord(body.schema))return null;const {bytes:_bytes,revision:_revision,...identity}=body.source;return sha256Hex(canonicalize({product:body.product,identity}));}
  private async sourceHead(body:Record<string,any>,source:Source,tx:Transaction){const key=this.sourceKey(body);if(!key)return;await this.context.records.store.lock('knowledge.feeding.head:'+key,tx);const old=(await this.context.records.store.find<any>({key:'knowledge.feeding.head',value:key,kind:'action',limit:1,newestFirst:true},tx)).items[0];if(old?.body.detail?.object===body.object)return;await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:null,item:null,component:'hub.feeding@1',inputs:['src:'+source.artifact.body.sha256],lease:null,started_at:this.context.now().toISOString(),ended_at:this.context.now().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{object:body.object,source_record:source.artifact.digest,parent:old?.digest??null}},index:[{key:'knowledge.feeding.head',value:key}]},tx);}
  private async changed(body:Record<string,any>,offset=Number.MAX_SAFE_INTEGER){const key=this.sourceKey(body);if(!key)return [];let head:StoredRecord<any>|undefined;for(const row of await this.context.store.all<any>({key:'knowledge.feeding.head',value:key,kind:'action'}))if(await this.position(row.digest)<=offset)head=row;return head&&head.body.detail?.object!==body.object?[head.digest]:[];}
  async upload(principal:Principal,artifact:SourceArtifact,scope:FeedingScope={}):Promise<FeedingReceipt>{
@@ -305,14 +325,52 @@ export class FeedingLayer {
  }
  async todos(principal:Principal):Promise<Array<Record<string,any>>>{if(principal.role!=='admin')return [];await this.refreshRetractionTodos();const rows=await this.context.store.all<any>({key:TODO,value:'1',kind:'action'}),out=[];for(const row of rows){const value=row.body.detail?.feeding_todo;if(!value)continue;const state=(await this.context.records.store.find<any>({key:'knowledge.feeding.todo.state',value:value.key,kind:'action',newestFirst:true,limit:1})).items[0];if(state?.body.detail?.resolved!==true){const latest=(await this.context.records.store.find<any>({key:'knowledge.feeding.todo.detail',value:value.key,kind:'action',newestFirst:true,limit:1})).items[0];out.push({record:row.digest,...value,...latest?.body.detail?.feeding_todo});}}return out;}
  private async originalSource(principal:Principal,body:Record<string,any>,scope:FeedingScope={}):Promise<Source>{
-  if(body.schema==='fed-note@1')return this.uploadedSource(principal,body);
+  if(body.schema==='fed-note@1'||operationRecord(body.schema))return this.uploadedSource(principal,body);
   if(scope.sourceRecord)return this.source(principal,body.source.bytes,scope.sourceRecord,scope.readManifest);
   const native=await this.nativeObservation(principal,body);
   if(native)for(const digest of native.body.validity.bound){const record=await this.context.records.store.get<any>(digest);if(record?.kind==='source_artifact'&&record.body.sha256===body.source.bytes){const manifest=native.body.statement.data?.read_manifest;return this.source(principal,body.source.bytes,digest,typeof manifest==='string'?manifest:undefined);}}
   return this.source(principal,body.source.bytes,scope.sourceRecord,scope.readManifest);
  }
+ private async bedInstalledBuild(runId:string|null):Promise<string|null>{
+  if(!runId)return null;
+  const effects=await this.context.records.store.find<any>({key:'effect.run',value:runId,kind:'effect',limit:20});
+  const jobs=[...new Set(effects.items.map(row=>row.body?.job).filter((job):job is string=>typeof job==='string'))];
+  const found=new Set<string>();
+  for(const job of jobs){
+    const events=await this.context.records.store.find<any>({key:'dispatch.job',value:job,kind:'action',limit:100});
+    for(const event of events.items){const detail=event.body?.detail;if(detail?.phase!=='bed_snapshot'||typeof detail.installed_build!=='string'||detail.installed_build.length===0)continue;found.add(detail.installed_build);}
+  }
+  return found.size===1?[...found][0]:null;
+ }
+ private async operationBinding(scope:FeedingScope):Promise<Record<string,unknown>>{
+  const run=scope.run?await runById(this.context.records.store,scope.run):null;
+  const claims=run?.body.target_basis??[];
+  const valueOf=(field:string)=>{const data=claims.find(claim=>claim.statement?.data?.field===field)?.statement?.data;return typeof data?.value==='string'?data.value:null;};
+  const locked=valueOf('build'),line=valueOf('version'),bed=await this.bedInstalledBuild(scope.run??null);
+  if(locked&&bed&&locked!==bed)return {source:'conflict',run_lock:{build:locked,line},bed_installed:{build:bed,line:null}};
+  if(locked)return {source:'run_lock',build:locked,line};
+  if(bed)return {source:'bed_installed',build:bed,line:null};
+  return {source:'undeclared',build:null,line:null,missing:'运行没有锁定构建，台架结构里也没有在装构建',next_action:'用锁定了构建的运行重交，或在台架结构里登记在装构建后再交；不要在提交里写版本'};
+ }
+ private async completeOperation(principal:Principal,raw:unknown,scope:FeedingScope):Promise<unknown>{
+  if(!object(raw)||!operationRecord(raw.schema))return raw;
+  for(const key of ['binding','version','build','line','family','by','run','at','object'])if(key in raw)fail(`提交写了 ${key}。操作记录的版本和采集事实只由 Hub 填写；缺的是运行锁定的构建或台架在装构建。删掉该字段后重交；这不是终局。`);
+  const bytes=object(raw.source)&&raw.source.system==='upload'&&typeof raw.source.bytes==='string'?raw.source.bytes:null;
+  if(!bytes)fail('操作记录缺上传原件');
+  const artifact=(await this.context.records.artifacts.records(bytes)).find(row=>'upload' in row.body.origin&&row.body.provenance_type==='client_captured'&&row.body.author.user!==null&&(row.body.author.user===principal.id||principal.role==='admin'));
+  if(!artifact||artifact.body.author.user===null)fail('操作记录的根据必须是当前上传者的 client_captured 原件；观察到的、投影的、声明的和候选的原件仍拒收');
+  if(raw.product!==scope.product||raw.root!==(scope.root??null)||!scope.product||!scope.root)fail('操作记录必须挂在本次运行锁定的产品和根上');
+  return {...raw,object:sha256Hex(canonicalize(operationIdentity(raw))),binding:await this.operationBinding(scope),by:artifact.body.author.user,run:scope.run??null,at:artifact.body.captured_at};
+ }
+ private async checkOperation(body:Record<string,any>,source:{bytes:Uint8Array;artifact:{body:{provenance_type:string;origin:object}}}):Promise<void>{
+  if(source.artifact.body.provenance_type!=='client_captured'||!('upload' in source.artifact.body.origin))fail('操作记录的根据必须是出处为 client_captured 的上传原件；其他出处仍拒收');
+  let text:string;try{text=new TextDecoder('utf-8',{fatal:true}).decode(source.bytes);}catch{fail('上传原件不是完整 UTF-8，引文无法逐字核对；改交文本原件');}
+  const quotes=operationQuotes(body);if(!quotes.length)fail('操作记录缺逐字引文');
+  for(const quote of quotes){const ref=this.quoteRef(quote as never);if(ref.sha!==body.source.bytes)fail('引文必须出自这份上传原件，不能引用别的对象');if(!quoteMatches(text,quote.text))fail('引文没有逐字出自上传原件；改一个字也不收。用原件原文重交');}
+ }
  async prepare(principal:Principal,raw:unknown,scope:FeedingScope&{classifications?:readonly string[];variables?:readonly {name:string;decision:string}[]}):Promise<Record<string,any>>{
-  const scan=scanForCredentials(new TextEncoder().encode(canonicalize(raw)));if(!scan.inspected||scan.truncated||scan.findings.length)fail('喂入主张没有通过完整凭据防护扫描；管理员核对原件后修正重交');const checked=KnowledgeStructureSchema.safeParse(raw);if(!checked.success)fail('喂入结构不合格：'+checked.error.issues.map(issue=>issue.path.join('/')).join('、'));const body=checked.data as Record<string,any>;
+  const filled=await this.completeOperation(principal,raw,scope);
+  const scan=scanForCredentials(new TextEncoder().encode(canonicalize(filled)));if(!scan.inspected||scan.truncated||scan.findings.length)fail('喂入主张没有通过完整凭据防护扫描；管理员核对原件后修正重交');const checked=KnowledgeStructureSchema.safeParse(filled);if(!checked.success)fail('喂入结构不合格：'+checked.error.issues.map(issue=>issue.path.join('/')).join('、'));const body=checked.data as Record<string,any>;
   if(body.schema==='version-binding@1')fail('模型不能推断或提交版本绑定；绑定只由原始结构或包声明的用户参数生成');
   if(body.schema==='usage@1'||body.schema==='feeding-offset@1')fail('使用和冻结序号由 Hub 观察并填写，客户端不得自报');
   if(body.schema==='retraction@1'){if(principal.role!=='admin'||body.by!==principal.id||body.reason.includes('\n')||body.reason.includes('\r'))fail('撤回只允许管理员，并且原因必须是一行');await this.retractionTargets(FeedingRetractionSchema.parse(body));return body;}
@@ -322,6 +380,8 @@ export class FeedingLayer {
    if(!('upload'in source.artifact.body.origin)||source.artifact.body.author.user!==principal.id&&principal.role!=='admin')fail('声明来源只允许上传者和管理员');
    const expected={schema:'fed-note@1',object:source.artifact.body.sha256,product:null,root:null,path:null,source:{system:'upload',bytes:source.artifact.body.sha256},by:source.artifact.body.author.user,run:null,at:source.artifact.body.captured_at};
    const base=Object.fromEntries(Object.entries(body).filter(([key])=>!annotations.includes(key as never)));if(canonicalize(base)!==canonicalize(expected))fail('上传对象的采集事实或摘要被改写');
+  }else if(operationRecord(body.schema)){
+   await this.checkOperation(body,source);
   }else{
    if(!source.external)fail('团队喂入对象必须来自 Hub 自己的连接器原件，上传不能伪装');
    if(body.product!==scope.product||body.root!==(scope.root??null))fail('投影产品与锁定树苗不一致');
@@ -364,7 +424,7 @@ export class FeedingLayer {
   if(body.schema==='retraction@1')return (await this.put(body,principal,'hub.retraction@1',[],[],'retraction:'+this.key(body),[{key:RETRACT,value:'1'}],tx)).digest;
   const source=await this.originalSource(principal,body,scope);const quotes=annotations.flatMap(key=>(body[key]??[]).map((value:any)=>value.quote));
   const native=await this.nativeObservation(principal,body);
-  if(!native&&body.schema!=='fed-note@1'){const projected=await this.projection(principal,source,scope),row=projected.rows.find(row=>row.body.object===body.object);if(!row)fail('缺规范内容；重新读取后重交');const stored=await this.context.records.objects.put(new TextEncoder().encode(canonicalize(row.identity)),'application/json');if(stored.sha256!==body.object)fail('规范内容摘要不一致');}
+  if(!native&&body.schema!=='fed-note@1'&&!operationRecord(body.schema)){const projected=await this.projection(principal,source,scope),row=projected.rows.find(row=>row.body.object===body.object);if(!row)fail('缺规范内容；重新读取后重交');const stored=await this.context.records.objects.put(new TextEncoder().encode(canonicalize(row.identity)),'application/json');if(stored.sha256!==body.object)fail('规范内容摘要不一致');}
   const bound=[body.source.bytes,source.artifact.digest,...(native?[native.digest]:[]),...quotes.map(q=>this.quoteRef(q).sha),...(scope.root?[scope.root]:[])];
   const stored=await this.put(body,principal,model,['src:'+body.source.bytes],bound,'annotation:'+sha256Hex(canonicalize({body,actor:principal.id,model,run:scope.run??null})),[{key:OBJECT,value:body.object},{key:'knowledge.feeding.product',value:body.product??principal.id},{key:'knowledge.feeding.annotation',value:'1'}],tx,true,scope.run??null);await this.usage(principal,body.object,scope,tx);return stored.digest;
  }
