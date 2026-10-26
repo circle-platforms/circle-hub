@@ -1,4 +1,4 @@
-# case-compile 3.7.1
+# case-compile 3.7.2
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -205,7 +205,7 @@ Hub 按检查声明的 judgment_sources，从本条目原始提交的精确槽�
 
 ## 块模型（R5 B1，先声明后实现）
 
-计划仍由客户端模型写，Hub 只核结构、授权、引文与义务。设备回显不在编译时解析：观察对象是一次调用的完整原文输出，不能从实际输出里反签期望。旧 `blocks:[] + steps + expects` 继续使用原规则；新计划用非空 blocks，steps/expects 留空，二者不能混写。唯一闭集正本是包声明 `tables/blocks-format.json`；槽位模式由本包生成器从它产生，代码不再维护另一份种类枚举。
+计划仍由客户端模型写，Hub 只核结构、授权、引文与义务。`runtime.block_model` 是 runtime-contract@2 加在 runtime 上的增补，恢复原合约身份时剥掉，不进入原合约的规范摘要。设备回显不在编译时解析：观察对象是一次调用的完整原文输出，不能从实际输出里反签期望。旧 `blocks:[] + steps + expects` 继续使用原规则；新计划用非空 blocks，steps/expects 留空，二者不能混写。唯一闭集正本是包声明 `tables/blocks-format.json`；槽位模式由本包生成器从它产生，代码不再维护另一份种类枚举。
 
 | 块种类 | 第一版 | 语义 |
 | --- | --- | --- |

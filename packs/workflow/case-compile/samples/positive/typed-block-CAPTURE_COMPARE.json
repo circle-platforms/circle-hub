@@ -729,10 +729,10 @@
         "schema": "ist.excel.capability-certification-set",
         "receipt_count": 0
       },
-      "contract_sha256": "db8b50b0ca7f4c608c81de62a9b485d39386dd6893dc7b45fae301e35fe74f34",
+      "contract_sha256": "cb916e387431b3f78a7dc23a1f7862aafa0caa32d78d967afef69275128ec810",
       "original": {
-        "contract_sha256": "e8099e924f7ebe257b192af5537bbc24fad54a5a511234c29b08a15dcb298e14",
-        "sha256": "b0d98967e70fc91066077f10406c8b16801794bf5effa8bfc49e4ea5aba80620"
+        "contract_sha256": "ff83a6fef7625053d6ea11ad9e379ebd195c7d99d485e68bd3bb1cb1ad4a1f64",
+        "sha256": "f9362bf039c6112dffc5e34600b8abd995fbd267fa627bf4311a52280a1c3b94"
       },
       "types": {
         "text": {
@@ -851,7 +851,7 @@
       "max_wait_seconds": 300,
       "runtime": {
         "minimum_version": "synthetic-runtime-v2",
-        "contract_sha256": "e8099e924f7ebe257b192af5537bbc24fad54a5a511234c29b08a15dcb298e14"
+        "contract_sha256": "ff83a6fef7625053d6ea11ad9e379ebd195c7d99d485e68bd3bb1cb1ad4a1f64"
       },
       "bed": "bed-a",
       "device_count": 2,

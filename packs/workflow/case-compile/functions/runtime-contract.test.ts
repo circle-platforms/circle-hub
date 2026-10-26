@@ -85,6 +85,45 @@ test('a runtime-contract@2 document declares the pinned original: stripping the 
   assert.equal(contractCanonical(recovered), v2.canonical, '去掉增补后逐字节恢复原合约的规范形式');
   assert.equal(runtimeDigest(recovered), v2.originalIdentity);
 });
+test('stripping runtime.block_model recovers the original canonical digest and the @2 document still parses', () => {
+  const original = runtimeDocument();
+  const built = v2Document(original);
+  const document = structuredClone(built.document) as Record<string, any>;
+  document.runtime = { ...document.runtime, block_model: { schema: 'case-compile.block-runtime@1', synthetic: true } };
+  delete document.contract_sha256;
+  const signed = signRuntime(document);
+  const recovered = stripAdditions(signed)!;
+  assert.equal(recovered.runtime.block_model, undefined);
+  assert.equal(recovered.runtime.runner_sha256, original.runtime.runner_sha256);
+  assert.equal(recovered.runtime.found_times_supported, original.runtime.found_times_supported);
+  assert.equal(runtimeDigest(recovered), built.originalIdentity);
+  assert.equal(contractCanonical(recovered), built.canonical);
+  const read = parseRuntimeContract(signed);
+  assert.equal(read.ok, true, JSON.stringify(read));
+});
+test('a runtime field other than block_model still refuses the pinned original identity', () => {
+  const built = v2Document(runtimeDocument());
+  const document = structuredClone(built.document) as Record<string, any>;
+  document.runtime = { ...document.runtime, block_model: { schema: 'case-compile.block-runtime@1' } };
+  for (const mutate of [
+    (value: Record<string, any>) => { value.runtime.found_times_supported = true; },
+    (value: Record<string, any>) => { value.runtime.runner_sha256 = 'b'.repeat(64); },
+  ]) {
+    const tampered = structuredClone(document);
+    mutate(tampered);
+    delete tampered.contract_sha256;
+    const read = parseRuntimeContract(signRuntime(tampered));
+    assert.equal(read.ok, false);
+    if (!read.ok) assert.ok(read.problems.some((problem) => problem.pointer === '/original'));
+  }
+});
+test('a runtime without block_model recovers the same original identity', () => {
+  const built = v2Document(runtimeDocument());
+  assert.equal((built.document as { runtime: { block_model?: unknown } }).runtime.block_model, undefined);
+  const recovered = stripAdditions(built.document as Record<string, unknown>)!;
+  assert.equal(runtimeDigest(recovered), built.originalIdentity);
+  assert.equal(parseRuntimeContract(built.document).ok, true);
+});
 test('the expected identity of a @2 document is the pinned original, not the recomputed @2 digest', () => {
   const v2 = v2Document(runtimeDocument());
   const good = parseRuntimeContract(v2.document, { digest: v2.originalIdentity, runtimeVersion: 'synthetic-runtime-v2' });
