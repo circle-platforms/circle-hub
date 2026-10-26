@@ -19,3 +19,11 @@ OBSERVE_DIST、OBSERVE_MEMBER、OBSERVE_EXIT 在同一闭集里声明但第一�
 在不含 B1 的 hub-redesign@78b3c5b5 干净副本复跑上述四文件：13 通过、同样 4 失败、0 跳过，差异一致。未改旧断言、未改核心或 acceptance；未合入 B1。下一步：主线修复这四处既有回归后再合最新主线并重跑要求的全量门槛。完整合成测试记录在 acceptance 工作目录 wf 的 b1-case-blocks-{full-packs,full-acceptance,main-baseline}.tap。
 
 额外 test:docs：239 通过、1 失败、0 跳过。pack-version 检查发现主线 case-review-report@2.0.8、case-review-verify@1.1.10、case-review@1.1.25、knowledge-contribution@1.2.3 的已列文件/清单变化但版本未升；四目录与主线逐字相同，且对主线只读调用同一 versionReuseProblems 得到同一四条。没有为 B1 改这四包或豁免扫描。记录为 wf/b1-case-blocks-docs.tap 和 wf/b1-case-blocks-main-version-baseline.json。
+
+最新复核：先同步所有者确认的 9a977c9c，再同步先合入的 B3（5c2a19c8）。B1 与 B3 合在一起的最终树通过 typecheck；Hub 全量 3209 通过、0 失败、1 既有环境跳过（本机有 sandbox-exec，故不运行“无 sandbox-exec 时默认拒绝”的反向环境分支）；contracts 全量 336 通过；packs 全量 2926 通过；完整 acceptance 含 oracle 154 通过，0 失败、0 取消、0 跳过。后三组均无跳过。
+
+最终树 test:docs 241 通过；随后按新规执行 gen:contracts，0 写入、0 删除、138 文件不变，再跑 test:docs 241 通过。日志为 wf/b1-case-blocks-final-{hub,contracts,packs,acceptance,docs-after-generation}.tap 及 final-types.log、final-generation.log。
+
+较早在 9a977c9c 上的并发 2 全量曾因主机共享内存配额耗尽，使 T1 的临时 PostgreSQL initdb 失败并取消 1 项；未改系统参数、未改断言，改为并发 1 完整重跑后 154 项全部通过。同步 B3 后又按并发 2 完成上述最终树的全部检查，没有取消。先前四项 A4 验收失败与漏升版本阻塞均已由主线修复。B1 自身除任务授权的块契约、版本号与样例计数对应断言外，没有迁就新行为修改旧 operational 断言；核心与其他包变化均来自同步主线。
+
+代码已通过带回滚静态门的 merge-locked 流程合入，提交 e129c068；本次补齐验证记录，代码与上述受检树相同。
