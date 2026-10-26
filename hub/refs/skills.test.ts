@@ -14,6 +14,7 @@ import {sha256Hex} from './canonical-json.ts';
 import {newId} from '../records/api.ts';
 import {kityminderParser} from '../testing/parsers.ts';
 import {RunRecord} from '../../contracts/src/run.ts';
+import {Submission} from '../../contracts/src/submission.ts';
 
 let postgres:TemporaryPostgres,bed:PackTestbed,h:Harness;
 let template:PackDescription;
@@ -162,18 +163,59 @@ test('migration-point binding freezes old references, records the administrator 
  const saved=await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',created_at:source.created_at,body:old,index:[{key:'runs.id',value:old.run}]});
  const oldResult={schema:'validation@1',run:old.run,submission:'a'.repeat(64),acceptance:'accepted',errors:[],rounds:{used:0,max:0},partitions:{delivered:[],rejected:[],quarantined:[],incomplete:[],unknown:[]},cross_item:[],coverage:{complete:true,examined:0,total:0},locks:{pack:old.pack,pack_digest:old.pack_digest},trace:'4bf92f3577b34da6a3ce929d0e0e4736'};
  const result=await bed.kit.store.put({kind:'validation_result',schema:'validation@1',provenance:'projected',body:oldResult});
+ const batch=[];
+ for(let index=0;index<40;index++){
+  const body={...old,run:newId('run')};batch.push(await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body,index:[{key:'runs.id',value:body.run}]}));
+ }
+ const unrelated={...old,run:newId('run'),items:[],sources:[],target_basis:[],instructions:'合成说明中提及 '+`src:${sha256Hex(bytes)}/kityminder@1/n/case1`};
+ const untouched=await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body:unrelated,index:[{key:'runs.id',value:unrelated.run}]});
+ const empty={...old,run:newId('run'),skills:[]};batch.push(await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body:empty,index:[{key:'runs.id',value:empty.run}]}));
+ const otherVersion=(await bed.registry.getVersion('shared-reading','1.0.0'))!;
+ const other={...old,run:newId('run'),skills:[{pack:'shared-reading',version:otherVersion.version,digest:otherVersion.digest}]};batch.push(await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body:other,index:[{key:'runs.id',value:other.run}]}));
+ const priorOther={...old,run:newId('run')};const priorOtherRecord=await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body:priorOther,index:[{key:'runs.id',value:priorOther.run}]});batch.push(priorOtherRecord);
+ const priorBinding=await bindLegacySkills(options(),bed.admin,priorOther.run,['shared-reading@1.0.0'],'合成：已有其他技能声明');
+ const linked={...unrelated,run:newId('run'),instructions:'合成：引用只在提交中'};
+ const linkedRecord=await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body:linked,index:[{key:'runs.id',value:linked.run}]});batch.push(linkedRecord);
+ const cited=Submission.parse({run:linked.run,model:'synthetic',items:[{item:'synthetic',handling:'handled',slots:{findings:[{nature:'judgment',text:'合成判断',quotes:[{reference:`src:${sha256Hex(bytes)}/kityminder@1/n/case1`,text:'合成用例'}]}]}}],cross_item:[]});
+ await bed.kit.store.put({kind:'submission',schema:'submission@1',provenance:'declared',body:cited,index:[{key:'runs.submission.run',value:linked.run}]});
+ const installedVersion=(await bed.registry.getVersion('mindmap-format','1.0.1'))!;
+ const pinned={...old,run:newId('run'),skills:[{pack:'mindmap-format',version:installedVersion.version,digest:installedVersion.digest}]};const pinnedRecord=await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body:pinned,index:[{key:'runs.id',value:pinned.run}]});
  const registry=createSkillParserRegistry(options()),reference=`src:${sha256Hex(bytes)}/kityminder@1/n/case1`;
  const context={parsers:registry,reader:{user:bed.bob.id,role:'user' as const,run:old.run},sources:{read:()=>({bytes,mediaType:'application/json',size:bytes.length,readTier:'model_readable' as const})}};
- const absent=await resolveReference(reference,context);assert.ok(!absent.resolved&&absent.fix.includes('skill bind-legacy'));
+ const absent=await resolveReference(reference,context);assert.ok(!absent.resolved&&absent.fix.includes('skill bind-legacy')&&absent.message.includes('未锁定技能包摘要'));
  await assert.rejects(bindLegacyParser(options(),bed.bob,'kityminder@1','mindmap-format@1.0.0'),/管理员/);
  const bound=await bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.0');
  assert.equal(bound.skill.digest,firstDigest);assert.equal(bound.decided_by,bed.admin.id);assert.equal(bound.test,'mindmap-format migration equivalence across repository documents');assert.equal(bound.label,'迁移时点事后声明');assert.ok(!Number.isNaN(Date.parse(bound.at)));
  await bed.registry.install(bed.admin,'mindmap-format@1.0.1');
  const resolved=await resolveReference(reference,{...context,parsers:createSkillParserRegistry({...options(),registry:bed.second()})});assert.ok(resolved.resolved&&resolved.text==='合成用例'&&resolved.note?.includes('迁移时点事后声明'));
- const locked=await registry.forRun!(old.run);assert.equal(locked.get('kityminder@1')?.skill_digest,firstDigest);assert.deepEqual(locked.bindingRecords,[bound.record]);
+ const locked=await registry.forRun!(old.run);assert.equal(locked.get('kityminder@1')?.skill_digest,firstDigest);
+ const perRun=(await bed.kit.store.find<any>({kind:'action',key:'runs.skills',value:old.run,limit:10})).items;assert.equal(perRun.length,1);assert.deepEqual(locked.bindingRecords,[perRun[0].digest]);assert.equal(perRun[0].body.detail.migration_record,bound.record);
+ assert.equal(bound.bound_runs,45);assert.ok(bound.scanned_runs>32);
+ for(const record of [saved,...batch]){
+  const allRows=(await bed.kit.store.find<any>({kind:'action',key:'runs.skills',value:record.body.run,limit:10})).items;assert.equal(allRows.length,record.body.run===priorOther.run?2:1);
+  const rows=allRows.filter(row=>row.body.detail.parser==='kityminder@1');assert.equal(rows.length,1);assert.equal(rows[0].body.run,record.body.run);assert.equal(rows[0].body.detail.run_record,record.digest);assert.equal(rows[0].body.detail.label,'迁移时点事后声明');assert.equal(rows[0].body.detail.decided_by,bed.admin.id);assert.equal(rows[0].body.detail.test,bound.test);assert.equal(rows[0].body.detail.skills[0].digest,firstDigest);
+  assert.deepEqual((await bed.kit.store.get(record.digest))?.body,record.body);
+ }
+ assert.ok(await bed.kit.store.get(priorBinding));assert.equal((await registry.forRun!(priorOther.run)).get('kityminder@1')?.skill_digest,firstDigest);
+ assert.deepEqual((await registry.forRun!(other.run)).skills,[...other.skills,{pack:'mindmap-format',version:'1.0.0',digest:firstDigest}]);
+ assert.equal((await registry.forRun!(pinned.run)).get('kityminder@1')?.skill_digest,installedVersion.digest);
+ for(const record of [untouched,pinnedRecord]){assert.deepEqual((await bed.kit.store.get(record.digest))?.body,record.body);assert.equal((await bed.kit.store.find({kind:'action',key:'runs.skills',value:record.body.run,limit:10})).items.length,0);}
+ const repeated=await bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.0');assert.equal(repeated.bound_runs,0);assert.equal(repeated.record,bound.record);
+
  const bare=await resolveReference(reference,{...context,reader:{user:bed.bob.id,role:'user' as const}});assert.ok(bare.resolved&&bare.note?.includes('迁移时点事后声明'));
  assert.deepEqual((await bed.kit.store.get(saved.digest))?.body,old);assert.deepEqual((await bed.kit.store.get(result.digest))?.body,oldResult);
  const later={...old,run:newId('run')};await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body:later,index:[{key:'runs.id',value:later.run}]});
- assert.equal((await registry.forRun!(later.run)).get('kityminder@1'),undefined,'a migration declaration never supplies an invented lock to a later run');
+ assert.equal((await registry.forRun!(later.run)).get('kityminder@1'),undefined,'a global declaration alone never supplies a missing per-run binding');
+ const resumed=await bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.0');assert.equal(resumed.bound_runs,1);assert.equal((await registry.forRun!(later.run)).get('kityminder@1')?.skill_digest,firstDigest);
  await assert.rejects(bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.1'),/不能改绑/);
+});
+
+test('a failed bulk binding rolls back the declaration and every per-run append',async t=>{
+ const isolated=await openPackTestbed({postgres});t.after(()=>isolated.close());await isolated.publish(isolated.alice,template);
+ const source=(await h.kit.store.find<RunRecord>({kind:'run',key:'runs.user',value:h.alice.id,limit:1})).items[0];
+ const runs=[];for(let index=0;index<3;index++){const body={...source.body,run:newId('run')};delete body.skills;runs.push(await isolated.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body,index:[{key:'runs.id',value:body.run}]}));}
+ let appends=0;const store=new Proxy(isolated.kit.store,{get(target,key){if(key==='put')return async(input:Parameters<typeof target.put>[0],tx?:Parameters<typeof target.put>[1])=>{if(input.index?.some(row=>row.key==='runs.skill-parser')&&++appends===2)throw new Error('synthetic append failure');return target.put(input,tx);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+ await assert.rejects(bindLegacyParser({registry:isolated.registry,records:{...isolated.kit,store}},isolated.admin,'kityminder@1','mindmap-format@1.0.0'),/synthetic append failure/);
+ assert.equal((await isolated.kit.store.find({kind:'action',key:'refs.legacy-parser',value:'kityminder@1',limit:10})).items.length,0);
+ for(const run of runs){assert.deepEqual((await isolated.kit.store.get(run.digest))?.body,run.body);assert.equal((await isolated.kit.store.find({kind:'action',key:'runs.skills',value:run.body.run,limit:10})).items.length,0);}
 });
