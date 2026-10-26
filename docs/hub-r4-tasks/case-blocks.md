@@ -13,3 +13,9 @@ OBSERVE_DIST、OBSERVE_MEMBER、OBSERVE_EXIT 在同一闭集里声明但第一�
 类型化判据的独立复核是同目录 review 工作包，按现有只读前驱、账号独立性、完整 Hub 记录及逐字引文机制运行。端到端测试从原提交开始，经管理员账号复核、记录分享、作者重新绑定复核证据，核到计划必需要求项满足，再通过实际 satisfiedRecipe 导出、生成及独立回读工作簿。
 
 按所有者新增合入门槛：typecheck、packs/** 全量与 tests/acceptance/** 全量，并发 2。旧 operational 断言保留；仅 B1 明确改契约所涉及的非空 blocks 禁止、槽位输入清单、版本号及新增样例计数随声明更新。结果计数在合入回报列出。
+
+本轮门槛结果：typecheck 通过；packs/** 全量 2926 通过、0 失败、0 跳过；tests/acceptance/** 全量 150 通过、4 失败、0 跳过。四处为 01-normal-review:148、05-cross-item-claims:58、22-fact-model-independence:168 与 oracle/differential:544。前三处运行级 level 中出现额外事实主张；最后一处 engine 的 independence_unknown 与 oracle 的 satisfied 不同。
+
+在不含 B1 的 hub-redesign@78b3c5b5 干净副本复跑上述四文件：13 通过、同样 4 失败、0 跳过，差异一致。未改旧断言、未改核心或 acceptance；未合入 B1。下一步：主线修复这四处既有回归后再合最新主线并重跑要求的全量门槛。完整合成测试记录在 acceptance 工作目录 wf 的 b1-case-blocks-{full-packs,full-acceptance,main-baseline}.tap。
+
+额外 test:docs：239 通过、1 失败、0 跳过。pack-version 检查发现主线 case-review-report@2.0.8、case-review-verify@1.1.10、case-review@1.1.25、knowledge-contribution@1.2.3 的已列文件/清单变化但版本未升；四目录与主线逐字相同，且对主线只读调用同一 versionReuseProblems 得到同一四条。没有为 B1 改这四包或豁免扫描。记录为 wf/b1-case-blocks-docs.tap 和 wf/b1-case-blocks-main-version-baseline.json。
