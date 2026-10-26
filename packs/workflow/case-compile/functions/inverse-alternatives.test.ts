@@ -28,6 +28,24 @@ test('an enum pair the product did not declare still refuses: demo mode auto has
   assert.ok(result.some(row => row.verdict !== 'support'), JSON.stringify(result));
 });
 
+test('declared sibling leaf paths invert by last segment: demo switch on cleans up with demo switch off', () => {
+  const value = fixture(['demo switch on', cleanup('demo switch off')]);
+  assert.ok(checkCommandsKnown(value).every(row => row.verdict === 'support'), JSON.stringify(checkCommandsKnown(value)));
+  const reversed = fixture(['demo relay disable', cleanup('demo relay enable')]);
+  assert.ok(checkCommandsKnown(reversed).every(row => row.verdict === 'support'), JSON.stringify(checkCommandsKnown(reversed)));
+});
+
+test('sibling leaves whose pair is not declared still refuse: demo lamp bright has no declared inverse', () => {
+  const value = fixture(['demo lamp bright', cleanup('demo lamp dim')], policyWithoutPairs);
+  assert.ok(checkCommandsKnown(value).some(row => row.verdict !== 'support'), JSON.stringify(checkCommandsKnown(value)));
+});
+
+test('a declared pair without a sibling leaf on the locked tree still refuses', () => {
+  // /commands/demo/feature is the same-signature form; nothing declares /commands/demo/feature-on leaves.
+  const value = fixture(['demo feature on', cleanup('demo feature off')]);
+  assert.ok(checkCommandsKnown(value).every(row => row.verdict === 'support'), JSON.stringify(checkCommandsKnown(value)));
+});
+
 test('the no-prefix rules keep working beside the alternatives: demo pool add cleans up with no demo pool add', () => {
   const value = fixture(['demo pool add one 10', 'demo feature on', cleanup('demo feature off'), cleanup('no demo pool add one')]);
   const result = checkCommandsKnown(value);

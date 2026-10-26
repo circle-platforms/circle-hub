@@ -9,7 +9,7 @@ import { isRecord, markers, type Outcome } from './text.ts';
 import { parseRuntimeContract, runtimeMethod, type RuntimeContract } from './runtime-contract.ts';
 import { parseProfile, allowedCall, type RuntimeProfile } from './profile.ts';
 import { parseManifest, addressKey, type ManifestBed } from './manifest.ts';
-import { inBlindSegment, readAddress, type LeaseRow } from './bed.ts';
+import { inBlindSegment, readAddress, triggerTypesOf, type LeaseRow } from './bed.ts';
 import { readSlots, type PlanSlots } from './slots.ts';
 import { bindArguments, hasShellDynamicSyntax, hasBalancedCommandText, hasSingleLineValue } from './binding.ts';
 import {identityOf} from './typed-contract.ts';
@@ -77,6 +77,7 @@ export function checkAddresses(input: unknown): Outcome[] {
   const read = slotsOf(s); if (read.errors) return read.errors;
   const unverified = typedPrerequisites(s, read.slots); if (unverified) return unverified;
   const slots = read.slots; const bed = s.beds.find((v) => v.name === slots.bucket);
+  const triggerTypes = triggerTypesOf(s.profile!.trigger_types);
   if (!bed || bed.name !== s.profile!.bed) return [refute(s, 'bed_unknown', 'bucket 必须是运行环境配置选定的清单台架', '/data/bucket')];
   const out:Outcome[]=[];
   const uses=typedAddressUses(s.contract!,s.profile!,slots,s.command_catalog);
@@ -90,7 +91,7 @@ export function checkAddresses(input: unknown): Outcome[] {
     if(source&&target&&source!==target&&slots.replacements.some((other,j)=>j!==i&&addressKey(other.case)===target))out.push(refute(s,'replacement_invalid','替换映射不能形成链或环',at));
     if(source)from.add(source);if(target)to.add(target);
     if(readAddress(bed,s.leases,s.now,replacement.bed).kind==='off_bed')out.push(refute(s,'address_off_bed','环境不可达，整卷不跑。该地址不在任何设备接口所在网段，也不是本血缘租约地址。下一步：换用有触发设备的网段里的接口地址，或先取得本血缘租约后再编译',at));
-    else if(inBlindSegment(bed,replacement.bed))out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段。下一步：把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译',at));
+    else if(inBlindSegment(bed,replacement.bed,triggerTypes))out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段。下一步：把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译',at));
   }
   for(const use of uses){
     if(use.kind!=='ipv4'&&use.kind!=='ipv6')continue;
@@ -98,7 +99,7 @@ export function checkAddresses(input: unknown): Outcome[] {
     if(!use.bed_member)continue;
     const value=String(use.value);if(slots.replacements.some(r=>addressKey(r.case)===addressKey(value)&&addressKey(r.case)!==addressKey(r.bed)))out.push(refute(s,'replacement_missing','声明地址位置仍保留替换前的值',use.pointer));
     if(readAddress(bed,s.leases,s.now,value).kind==='off_bed')out.push(refute(s,'address_off_bed','环境不可达，整卷不跑。该地址不在任何设备接口所在网段，也不是本血缘租约地址。下一步：换用有触发设备的网段里的接口地址，或先取得本血缘租约后再编译',use.pointer));
-    else if(inBlindSegment(bed,value))out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段。下一步：把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译',use.pointer));
+    else if(inBlindSegment(bed,value,triggerTypes))out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段。下一步：把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译',use.pointer));
   }
   return out.length?out:[support(s,uses.length+' 个声明地址/掩码/前缀位置已按类型、用途和冻结范围核对；普通文字不扫描',{typed_positions:uses,replacements:slots.replacements})];
 }
