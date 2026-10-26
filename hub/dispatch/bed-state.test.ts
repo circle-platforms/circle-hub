@@ -51,12 +51,12 @@ test('snapshot comparison uses the declared parser and ignores neighbouring text
   assert.equal(ExecutorDefinition.safeParse({ ...withBed, bed_state: { ...bedState, items: [{ ...addressItem, call: { ...addressItem.call, arguments: { item: 'addresses' } } }] } }).success, false);
 });
 
-async function bind(c: Awaited<ReturnType<typeof setup>>) {
+async function bind(c: Awaited<ReturnType<typeof setup>>, items: readonly object[] = bedState.items) {
   const stored = await c.kit.artifacts.ingest({ bytes: canonicalBytes({ id: 'synthetic-bed', devices: [1, 2].map(n => ({ interfaces: [{ address: `192.0.2.${n}/24` }] })), bed }), mediaType: 'application/json', origin: { upload: { session: 'synthetic' } }, author: { user: c.owner.id }, provenanceType: 'declared', visibility: { readers: [c.owner.id], admins: true, packs: [], shareable: false } });
   c.detail.run.sources = c.detail.run.sources.map(source => source.slot === 'synthetic-manifest' ? { ...source, reference: `src:${stored.body.sha256}` } : source);
   (c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as { bed: { manifest_sha256: string } }).bed.manifest_sha256 = stored.body.sha256;
   c.effectDocument.effects[0].parameters.values.manifest_sha256 = [stored.body.sha256];
-  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, manifest_sha256: stored.body.sha256, allowed_tools: [...c.executor.definition.allowed_tools, 'show_bed'], bed_state: bedState });
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, manifest_sha256: stored.body.sha256, allowed_tools: [...c.executor.definition.allowed_tools, 'show_bed'], bed_state: { ...bedState, items: items as typeof bedState.items } });
   await c.freezeExecutor();
 }
 
@@ -636,4 +636,41 @@ test('post-run match restores bed and post-run mismatch leaves bed unrestored wi
     const clearedState = await c.service.dispatch(c.admin, c.run, c.executor.id);
     assert.equal(clearedState.outcome, 'effective');
   }
+});
+
+test('post bed probes run while the remote lease is still renewed and before it is released', async t => {
+  const probes = ['north', 'east', 'south', 'west'].map(id => ({ ...addressItem, id, call: { ...addressItem.call, arguments: { ...addressItem.call.arguments, item: id } } }));
+  const queue = Array.from({ length: 8 }, () => cleanAddress);
+  let credits = 0;
+  let closed = false;
+  const waiting: Array<() => void> = [];
+  const wake = () => { const pending = waiting.splice(0); for (const fn of pending) fn(); };
+  const c = await setup({ ttl: 450, extraTools: ['show_bed'], alter: (name, value) => {
+    if (name === 'open_slot' || name === 'touch_slot') { if (!closed) { credits = 1; wake(); } return value; }
+    if (name === 'close_slot') { closed = true; credits = 0; wake(); return value; }
+    if (name !== 'show_bed') return value;
+    return (async () => {
+      if (credits <= 0) {
+        let woke = false;
+        await Promise.race([
+          new Promise<void>(resolve => waiting.push(() => { woke = true; resolve(); })),
+          new Promise<void>(resolve => setTimeout(resolve, 600)),
+        ]);
+        if (!woke || closed || credits <= 0) return { ok: false };
+      }
+      if (closed || credits <= 0) return { ok: false };
+      credits -= 1;
+      return queue.shift() ?? { ok: false };
+    })();
+  } });
+  t.after(() => c.close());
+  await bind(c, probes);
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(state.outcome, 'effective');
+  const bytes = await c.kit.objects.get(String(state.result).slice(4));
+  const report = JSON.parse(new TextDecoder().decode(bytes!)) as { bed_state: { recovery: string } };
+  assert.equal(report.bed_state.recovery, 'restored');
+  assert.equal(c.calls.filter(name => name === 'show_bed').length, 8);
+  const releaseAt = c.calls.lastIndexOf('close_slot');
+  assert.ok(releaseAt >= 0 && c.calls.every((name, index) => name !== 'show_bed' || index < releaseAt));
 });
