@@ -11,7 +11,7 @@
 import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protocol.ts';
 import {referencesIn} from '../../contracts/src/variables.ts';
 import { variableCommand, namedSecretCommand, VAR_USAGE, NAMED_SECRET_USAGE } from './variables.ts';
-import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE } from './cli-job.ts';
+import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE, bedCommand, BED_USAGE } from './cli-job.ts';
 import { copyFile, open, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { LeaseService } from '../leases/service.ts';
 import { createPool, Database } from '../records/db.ts';
@@ -1330,6 +1330,7 @@ const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
   {name:'records',summary:'verify [--kind <记录类型>]（只核存储、说明和摘要，不输出正文）',handler:recordsCommand},
   { name: 'executor', summary: EXECUTOR_USAGE, handler: executorCommand },
   { name: 'job', summary: JOB_USAGE, handler: jobCommand },
+  { name: 'bed', summary: BED_USAGE, handler: bedCommand },
   { name: 'pack', summary: PACK_USAGE.slice('pack '.length), handler: packCommand },
   { name: 'resource', summary: RESOURCE_USAGE.slice('resource '.length), handler: resourceCommand },
   { name: 'var', summary: VAR_USAGE.slice('var '.length), handler: variableCommand },

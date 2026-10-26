@@ -1378,6 +1378,11 @@
                 "minLength": 1,
                 "maxLength": 80
               },
+              "seat": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
               "call": {
                 "type": "object",
                 "properties": {
@@ -1408,8 +1413,29 @@
                 "additionalProperties": false
               },
               "output": {
+                "default": "/output",
                 "type": "string",
                 "maxLength": 500
+              },
+              "lead": {
+                "default": [],
+                "maxItems": 16,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
+              },
+              "trail": {
+                "default": [],
+                "maxItems": 16,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
               },
               "parser": {
                 "oneOf": [
@@ -1713,7 +1739,8 @@
               "id",
               "call",
               "output",
-              "parser",
+              "lead",
+              "trail",
               "cleanup"
             ],
             "additionalProperties": false
@@ -1721,7 +1748,6 @@
         }
       },
       "required": [
-        "bed",
         "items"
       ],
       "additionalProperties": false

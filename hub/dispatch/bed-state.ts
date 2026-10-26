@@ -8,9 +8,19 @@ export const SHARED_BED_LIMIT = '未排除共享床影响';
 export const UNRESTORED_LIMIT = '床面未恢复';
 const BED_NAME = /^[a-z0-9-]{1,64}$/;
 
-export interface Difference { item: string; kind: 'extra' | 'missing' | 'changed'; identity: string; field?: string }
+export interface Difference {
+  item: string;
+  kind: 'extra' | 'missing' | 'changed';
+  identity: string;
+  field?: string;
+  pre_sha256?: string;
+  post_sha256?: string;
+  diff_lines?: string[];
+}
 export type Canonical = { kind: 'address_table'; addresses: string[] } | { kind: 'config_list'; rows: Array<{ id: string; values: Record<string, string> }> };
-export type BedRead = { id: string; ok: true; canonical: Canonical; value?: unknown; source: string } | { id: string; ok: false; value?: unknown; source: string | null };
+export type BedRead =
+  | { id: string; ok: true; canonical: Canonical; text?: string; sha256?: string; reference?: string; value?: unknown; source: string }
+  | { id: string; ok: false; value?: unknown; source: string | null };
 export interface BedReport {
   bed: string;
   pre: 'passed';
@@ -19,6 +29,88 @@ export interface BedReport {
   originals: { pre: string[]; post: string[] };
   limits: string[];
   next_action: string | null;
+}
+
+export interface BedBaselineRecord {
+  executor: string;
+  probe: string;
+  sha256: string;
+  reference: string;
+  text: string;
+  recorded_by: string;
+  created_at: string;
+  reason?: string | null;
+}
+
+export function captureText(raw: string, lead?: readonly string[], trail?: readonly string[]): string {
+  const lines = raw.split(/\r?\n/).map(l => l.trimEnd());
+  while (lines.length > 0 && lines[lines.length - 1].trim().length === 0) {
+    lines.pop();
+  }
+  if (trail && trail.length > 0) {
+    while (lines.length > 0 && trail.some(t => t === lines[lines.length - 1])) {
+      lines.pop();
+      while (lines.length > 0 && lines[lines.length - 1].trim().length === 0) {
+        lines.pop();
+      }
+    }
+  }
+  if (lead && lead.length > 0) {
+    while (lines.length > 0 && lead.some(s => s === lines[0])) {
+      lines.shift();
+      while (lines.length > 0 && lines[0].trim().length === 0) {
+        lines.shift();
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
+export function lineDiff(expected: string, actual: string): string[] {
+  if (expected === actual) return [];
+  const expLines = expected.split('\n');
+  const actLines = actual.split('\n');
+  const diffs: string[] = [];
+  const max = Math.max(expLines.length, actLines.length);
+  for (let i = 0; i < max; i++) {
+    const exp = expLines[i];
+    const act = actLines[i];
+    if (exp !== act) {
+      if (exp !== undefined && act !== undefined) {
+        diffs.push(`第 ${i + 1} 行改变: - ${exp} / + ${act}`);
+      } else if (act !== undefined) {
+        diffs.push(`第 ${i + 1} 行新增: + ${act}`);
+      } else {
+        diffs.push(`第 ${i + 1} 行缺失: - ${exp}`);
+      }
+    }
+  }
+  return diffs;
+}
+
+export function unregisteredBaselineFact(ids?: readonly string[]): string {
+  return ids?.length ? `未登记基线，无法判残留。来源探针 ${ids.join('、')}` : '未登记基线，无法判残留';
+}
+
+export function unregisteredBaselineNext(executorId: string, ids?: readonly string[]): string {
+  const probes = ids?.length ? ids.join('、') : '<id>';
+  return `由管理员在床干净时用 circle-hub bed baseline record ${executorId} --probe ${probes} 登记基线后重开`;
+}
+
+export function residueCaptureFact(diffs: readonly { item: string; diff_lines?: string[] }[]): string {
+  const probes = diffs.map(d => d.item).join('、');
+  const lines = diffs.flatMap(d => d.diff_lines ?? []).slice(0, 5).join('；');
+  return `床面存在残留，与登记基线不一致。来源探针 ${probes}${lines ? `；${lines}` : ''}`;
+}
+
+export function residueCaptureNext(items: readonly BedItem[], diffs: readonly { item: string }[], executorId: string): string {
+  const map = new Map(items.map(i => [i.id, i]));
+  const actions = diffs.map(d => {
+    const item = map.get(d.item);
+    if (!item) return '';
+    return `由${item.cleanup.actor}按 ${item.cleanup.command} 处理后重开，或由管理员确认当前状态为新基线（circle-hub bed baseline record ${executorId} --probe ${item.id} --reason <理由>）`;
+  }).filter(Boolean);
+  return [...new Set(actions)].join('；');
 }
 
 export function bedName(bed: unknown): string | null {
@@ -132,6 +224,7 @@ function configRows(rows: unknown, identity: string, fields: readonly { name: st
 
 export function parseReply(item: BedItem, reply: unknown): Canonical | null {
   const parser = item.parser;
+  if (!parser) return null;
   if (parser.kind === 'address_table') {
     const addresses = addressSet(at(reply, parser.rows), parser.address);
     return addresses === null ? null : { kind: 'address_table', addresses };
@@ -204,6 +297,7 @@ export function parseReply(item: BedItem, reply: unknown): Canonical | null {
 
 export function parseBaseline(item: BedItem, bed: unknown): Canonical | null {
   const parser = item.parser;
+  if (!parser) return null;
   const isAddress = parser.kind === 'address_table' || (parser.kind === 'text_table' && (parser.address !== undefined || parser.manifest_lists !== undefined || parser.manifest_device !== undefined || parser.manifest_devices !== undefined || parser.columns.some(c => c.cidr)));
   if (isAddress) {
     let devices: unknown[];
@@ -273,7 +367,7 @@ export function againstBaseline(items: readonly BedItem[], bed: unknown, reads: 
   for (const item of items) {
     const read = reads.find(entry => entry.id === item.id);
     if (!read?.ok) return null;
-    if ('snapshot_only' in item.parser && item.parser.snapshot_only) {
+    if (item.parser && 'snapshot_only' in item.parser && item.parser.snapshot_only) {
       continue;
     }
     const baseline = parseBaseline(item, bed);
