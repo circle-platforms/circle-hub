@@ -48,6 +48,10 @@ export async function previewReference(ctx: EngineContext, user: Principal, raw:
     ctx.log({ traceId: call.traceId, run: input.run, what: 'resolve_reference', detail: `pack version ${stored.body.pack} is no longer loadable` });
     return { call_result: 'error', errors: [unavailableError('/run')], references: [], diagnostics: [] };
   }
+  if(ctx.parsers.forRun){
+    try{ctx={...ctx,parsers:await ctx.parsers.forRun(stored.body.run)};}
+    catch{return {call_result:'error',errors:[{code:'SOURCE_UNAVAILABLE',message:'缺少本运行锁定的解析技能包摘要',fix:'管理员恢复原技能包；历史运行缺锁时用 circle-hub skill bind-legacy <解析器 id@版本> <技能包 id@版本> 追加迁移声明后重读'}],references:[],diagnostics:[]};}
+  }
   // What the model will be shown: text the model may read (consumer model).
   const artifacts = ctx.deps.records.artifacts;
   const scopedArtifacts = new Proxy(artifacts, { get(target, property) {

@@ -19,7 +19,8 @@
       "enum": [
         "product",
         "workflow",
-        "system"
+        "system",
+        "skill"
       ]
     },
     "title": {

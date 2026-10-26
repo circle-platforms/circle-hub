@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
@@ -11,7 +12,7 @@ import {createConnectors} from '../connectors/api.ts';
 import {addSyntheticResource,setSyntheticCredential} from '../connectors/testing/credentials.ts';
 import {fakePacks} from '../connectors/testing/packs.ts';
 import {startStub,text} from '../connectors/testing/api.ts';
-import {createDefaultRegistry} from '../refs/api.ts';
+
 import {stagePack,readManifest} from '../../packs/workflow/case-review/packaging.ts';
 import {PACK_DIR} from '../../packs/system/svn/api.ts';
 import {makeWorld,startPostgres,sandboxIsolation} from './test-support.ts';

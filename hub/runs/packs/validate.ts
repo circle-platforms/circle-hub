@@ -14,6 +14,7 @@ import {
   REQUIRED_FILES,
   PublishableRequirementsFile,
   SlotsFile,
+  SkillDeclaration,
   WorkflowFile,
   type CheckEntry,
 } from '../../../contracts/src/pack.ts';
@@ -619,7 +620,7 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
   }
   for (const [i, file] of manifest.files.entries()) {
     const owner = DECLARATION_KIND.get(file.path);
-    if (owner !== undefined && owner !== manifest.kind) {
+    if (owner !== undefined && owner !== manifest.kind && !(manifest.kind === 'skill' && owner === 'workflow')) {
       c.add(
         problem('manifest.foreign_file', 'pack.json', `${file.path} 是${labelOf('pack_kind', owner)}的声明文件，这个包是${labelOf('pack_kind', manifest.kind)}，它不会被读到`, `删掉 ${file.path}，或者改正 pack.json 的 kind`, {
           field: pointerOf(['files', i, 'path']),
@@ -627,7 +628,7 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
       );
     }
   }
-  if (manifest.kind !== 'workflow') {
+  if (manifest.kind !== 'workflow' && manifest.kind !== 'skill') {
     for (const file of manifest.files) {
       if (file.path.startsWith('samples/')) c.add(problem('samples.unknown_check', file.path, `${file.path} 是样例，但只有${labelOf('pack_kind', 'workflow')}有检查和样例`, '删掉这个样例'));
     }
@@ -638,6 +639,20 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
     const workflow = await validateWorkflow(c, directory, policy);
     declarations = workflow?.declarations ?? null;
     samples = workflow?.samples ?? [];
+  } else if (manifest.kind === 'skill') {
+    const instructions=c.files.get('SKILL.md');
+    if(instructions!==undefined&&(utf8(instructions)===null||utf8(instructions)!.trim()===''))c.add(problem('skill.empty','SKILL.md','技能包规程必须是非空 UTF-8 文本','写明能力与边界'));
+    const skill = c.parse('skill.shape', 'skill.json', SkillDeclaration, 'skill@1', 'contracts/src/pack.ts');
+    let method: WorkflowDeclarations | null = null;
+    if (c.files.has('workflow.json')) {
+      const result = await validateWorkflow(c, directory, policy);
+      method = result?.declarations ?? null;
+      samples = result?.samples ?? [];
+    }
+    if (skill) {
+      for (const p of await scanFunctions(c.files, skill.parsers.map((row,i)=>functionEntry(row.function,'skill.json',`/parsers/${i}/function`)),policy)) c.add(p);
+      declarations = { kind: 'skill', skill, method };
+    } else declarations = null;
   } else if (manifest.kind === 'product') declarations = await validateProduct(c, policy);
   else declarations = await validateSystem(c, policy);
   if (c.problems.length > 0 || declarations === null) {

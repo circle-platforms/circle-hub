@@ -1,8 +1,10 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
+import { type KityMinderModel } from '../../../../hub/testing/parsers.ts';
 // Helpers for the tests of the case-review functions (not used by the functions): fixtures parsed by the real kityminder@1
 // parser, the pack tables, and narrowing of results.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { kityminderParser, type KityMinderModel, type ParsedDocument } from '../../../../hub/refs/api.ts';
+import {type ParsedDocument} from "../../../../hub/refs/api.ts";
 import { compactText, largeDocument } from '../../../../tests/fixtures/mindmaps/documents.ts';
 import { fixtureBytes, type MindmapFixture } from '../../../../tests/fixtures/mindmaps/index.ts';
 import { projectItems } from '../functions/project.ts';

@@ -21,7 +21,8 @@ import {
   locateQuote,
   parseReference,
   quoteMatches,
-  recognize,
+  recognizeAsync,
+  parserCacheKey,
   resolveReference,
   withRange,
   type QuoteCandidate,
@@ -136,8 +137,11 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
         for (const [sha, role] of sources) {
           const source = await readScope(`src:${sha}`, () => artifacts.source(reader, sha, { consumer }));
           if (source === null || source.bytes === null) continue;
-          const found = recognize(ctx.parsers, source.bytes, source.mediaType);
-          if (found === null) continue;
+          const key=(parser:import('../../refs/api.ts').Parser)=>`${sha}\0${parserCacheKey(parser)}\0${source.mediaType}`;
+          const cached=ctx.parsers.forMediaType(source.mediaType).map(parser=>({parser,document:ctx.documents.get(key(parser))})).find(row=>row.document!==undefined);
+          const found = cached??await recognizeAsync(ctx.parsers, source.bytes, source.mediaType);
+          if(found?.document)ctx.documents.set(key(found.parser),found.document);
+          if (found === null||found.document===undefined) continue;
           const list = candidatesFrom(found.document, sha, { role });
           for (let i = 0; i < list.length; i++) out.push(list[i]);
         }

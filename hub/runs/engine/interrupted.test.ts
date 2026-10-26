@@ -1,3 +1,4 @@
+import {createTestParserRegistry} from '../../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
@@ -68,7 +69,7 @@ test('durable recovery reservations survive service restarts and stop a repeated
   const frozen=(await h.service.getRun(h.alice,run.run))!.run;
   const {createRunsService}=await import('./service.ts');
   for(let restart=0;restart<2;restart++){
-    const service=createRunsService({records:h.kit,workflows:h.workflows,knowledge:h.knowledge,packs:h.packs,external:h.external,now:()=>new Date(frozen.started_at)});
+    const service=createRunsService({parsers:createTestParserRegistry(),records:h.kit,workflows:h.workflows,knowledge:h.knowledge,packs:h.packs,external:h.external,now:()=>new Date(frozen.started_at)});
     await service.maintain();
   }
   const actions=await actionsOf(h.kit.store,run.run);

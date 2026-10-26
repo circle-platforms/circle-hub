@@ -515,10 +515,10 @@ describe('commands of other packages', () => {
     assert.equal(show.code, 1);
     assert.match(show.text, /错误：run show 要用运行模块，这个装配模块没有提供/);
     assert.match(show.text, /处理：这个装配模块没有给单条命令用的装配（assembleCommand）/);
-    for (const name of ['pack', 'resource', 'secret', 'knowledge', 'init-admin', 'operator-token']) {
+    for (const name of ['pack', 'skill', 'resource', 'secret', 'knowledge', 'init-admin', 'operator-token']) {
       const result = await run([name, 'list'], env, { assembly: missingAssembly });
       assert.equal(result.code, 1, name);
-      assert.match(result.text, new RegExp(`命令 ${name} 由装配模块注册（默认的 hub/server/assemble\\.ts 注册 pack、resource、secret、knowledge、init-admin、operator-token），这个装配模块没有注册它`));
+      assert.match(result.text, new RegExp(`命令 ${name} 由装配模块注册（默认的 hub/server/assemble\\.ts 注册 pack、skill、resource、secret、knowledge、init-admin、operator-token），这个装配模块没有注册它`));
     }
     for (const name of ['frobnicate', 'constructor', 'toString', '__proto__']) {
       const unknown = await run([name], env);

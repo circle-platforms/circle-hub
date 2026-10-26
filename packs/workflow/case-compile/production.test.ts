@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../../hub/testing/parsers.ts';
 import {readAddress} from './functions/bed.ts';
 import {bedsOf} from './functions/test-support.ts';
 import { createHash } from 'node:crypto';
@@ -10,7 +11,7 @@ import { join } from 'node:path';
 import { StartRunOutput, SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { ValidationResult } from '../../../contracts/src/validation.ts';
 import { osIsolationAvailable } from '../../../hub/rules/api.ts';
-import { createDefaultRegistry, parserKey, recognize } from '../../../hub/refs/api.ts';
+import { parserKey, recognize } from '../../../hub/refs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { temporaryDirectory } from '../../../hub/runs/api.ts';
 import { stage as stageBed } from '../test-bed/pack-files.ts';

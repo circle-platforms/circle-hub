@@ -23,7 +23,7 @@ import type { ExternalReaderPort, PackCatalogPort, PacksPort, ResourceCatalogPor
 import type { Principal, RecordsKit } from '../../records/api.ts';
 import { LeaseService } from '../../leases/service.ts';
 import { createPool, Database } from '../../records/db.ts';
-import { createDefaultRegistry, type ParserRegistry } from '../../refs/api.ts';
+import { createSkillParserRegistry, type ParserRegistry } from '../../refs/api.ts';
 import { osIsolationAvailable, type SandboxOptions } from '../../rules/api.ts';
 import {
   createPackCatalog,
@@ -121,10 +121,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     notices.push('这台机器上没有可用的 sandbox-exec：任务包函数（投影、检查、同步和读取插件）都不会运行，相关的调用会失败');
   }
 
-  // 2. Core parsers: the Hub parses, never a pack.
-  const parsers = createDefaultRegistry();
-
-  // 3. The pack registry and the ports it provides.
+  // 2. Package lifecycle and the installed, sandboxed format capabilities.
   const registry = createPackRegistry({
     variableNameAvailable: (name,tx)=>productVariableNameAvailable(records,name,tx),
     records,
@@ -134,6 +131,8 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     onError: notes.registryError,
     onTamper: notes.tamper,
   });
+  const parsers = createSkillParserRegistry({ registry, records, sandbox, now });
+  await parsers.refresh?.();
   const packs = createPacksPort(registry);
   const workflows = createWorkflowStore(registry);
   const catalog = createPackCatalog(registry);

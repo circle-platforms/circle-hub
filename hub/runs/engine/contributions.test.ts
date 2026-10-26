@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../testing/parsers.ts';
 // Synthetic end-to-end contribution runs: real knowledge, records, resolver and pack sandbox.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -7,7 +8,7 @@ import { GetNodesOutput, SubmitResultOutput } from '../../../contracts/src/tools
 import { KnowledgeContributionBody, KnowledgeContributionView } from '../../../contracts/src/contributions.ts';
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { canonicalBytes,canonicalize, LimitError, type FindQuery, type Transaction } from '../../records/api.ts';
-import { createDefaultRegistry } from '../../refs/api.ts';
+
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { makeWorld, catalogXml, BASE_CATALOG, DEFAULT_PRODUCERS, extraProducer } from '../../knowledge/test-support.ts';
 import { createRunsService } from './api.ts';

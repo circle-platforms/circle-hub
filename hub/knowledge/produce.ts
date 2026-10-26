@@ -351,10 +351,10 @@ function basisOver(slots: ReadonlySet<string>, producerSlotBasis: ReadonlyMap<st
 type PathCache = Map<string, ReturnType<typeof checkPath>>;
 
 /** Verifies one producer call's output (K02 R[0], R[3]): kinds, storable text, sizes, fragments in their sources, paths. */
-function verifyOutput(context: KnowledgeContext, producer: string, output: ProducerOutput, sources: FragmentSources, loader: SourceLoader, paths: PathCache): Verified {
+async function verifyOutput(context: KnowledgeContext, producer: string, output: ProducerOutput, sources: FragmentSources, loader: SourceLoader, paths: PathCache): Promise<Verified> {
   const out: Verified = { grammar:output.grammar, inventory:[],inventoryError:null,placed: [], toPlace: [], refused: [], refusedCount: 0, refusedKinds: new Map(), warnings: output.warnings, entries: output.entries.length, spans: (output.unplaced ?? []).length };
   for(const row of output.inventory??[]){
-    const listed=verifyFragment(row.listed,sources,loader),complete=verifyFragment(row.complete,sources,loader);
+    const listed=await verifyFragment(row.listed,sources,loader),complete=await verifyFragment(row.complete,sources,loader);
     if(!listed.ok||!complete.ok||listed.value.sha256!==complete.value.sha256||row.selected!==0||(sources.list?.elements.size??0)!==0){out.inventoryError='空范围的清单来源或选中数不符；下一步核对生产器清单证明后重产';continue;}
     const source=sources.single.get(listed.value.slot);
     try{
@@ -369,12 +369,12 @@ function verifyOutput(context: KnowledgeContext, producer: string, output: Produ
     out.refusedKinds.set(item.kind, (out.refusedKinds.get(item.kind) ?? 0) + 1);
     out.refused.push(item);
   };
-  const collect = (
+  const collect = async (
     entry: { kind: string; statement: string; data: Record<string, unknown>; applicability: EntryContent['applicability'] },
     fragments: ProducerOutput['entries'][number]['fragments'],
     index: number,
     unplaced: boolean,
-  ): Collected | string => {
+  ): Promise<Collected | string> => {
     // K02 R[3]: only the kinds of the entry_kind axis.
     if (!isEntryKind(entry.kind)) return `种类“${cutText(entry.kind, 80)}”不是知识条目种类（${ENTRY_KINDS_TEXT}）`;
     let content: EntryContent;
@@ -394,7 +394,7 @@ function verifyOutput(context: KnowledgeContext, producer: string, output: Produ
     const applicabilitySources:NonNullable<CompositionRow['applicability_sources']>=[];
     const slotNames: string[] = [];
     for (const fragment of fragments) {
-      const verified = verifyFragment(fragment, sources, loader);
+      const verified = await verifyFragment(fragment, sources, loader);
       if (!verified.ok) return verified.reason;
       if (!references.includes(verified.value.reference)) references.push(verified.value.reference);
       for(const origin of fragment.applicability??[])applicabilitySources.push({...origin,fragment:verified.value.reference});
@@ -403,7 +403,7 @@ function verifyOutput(context: KnowledgeContext, producer: string, output: Produ
     const bytes = statementBytes + dataBytes + references.reduce((sum, r) => sum + r.length, 0) + canonicalSize(applicabilitySources) + 400;
     return { content: { ...content, kind: entry.kind }, digest, producer, index, unplaced, fragments: references, ...(applicabilitySources.length?{applicability_sources:applicabilitySources}:{}), slots: slotNames, bytes };
   };
-  output.entries.forEach((entry, index) => {
+  for (const [index,entry] of output.entries.entries()) {
     let at: { segments: string[]; path: string } | null = null;
     if (entry.path !== null) {
       let path = paths.get(entry.path);
@@ -413,26 +413,26 @@ function verifyOutput(context: KnowledgeContext, producer: string, output: Produ
       }
       if (!path.ok) {
         refuse({ producer, index, unplaced: false, kind: entry.kind, path: entry.path, reason: path.reason });
-        return;
+        continue;
       }
       at = path.value;
     }
-    const collected = collect(entry, entry.fragments, index, false);
+    const collected = await collect(entry, entry.fragments, index, false);
     if (typeof collected === 'string') {
       refuse({ producer, index, unplaced: false, kind: entry.kind, path: entry.path, reason: collected });
-      return;
+      continue;
     }
     if (at === null) out.toPlace.push({ ...collected, section: '' });
     else out.placed.push({ ...collected, segments: at.segments, path: at.path });
-  });
-  (output.unplaced ?? []).forEach((span, index) => {
-    const collected = collect({ kind: span.kind, statement: span.text, data: { section: span.section }, applicability: null }, [span.fragment], index, true);
+  }
+  for (const [index,span] of (output.unplaced ?? []).entries()) {
+    const collected = await collect({ kind: span.kind, statement: span.text, data: { section: span.section }, applicability: null }, [span.fragment], index, true);
     if (typeof collected === 'string') {
       refuse({ producer, index, unplaced: true, kind: span.kind, path: null, reason: collected });
-      return;
+      continue;
     }
     out.toPlace.push({ ...collected, section: span.section });
-  });
+  }
   return out;
 }
 
@@ -647,7 +647,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
       }
       const readable = await loader.readable(read, charged.has(source.external)?cap:cap - bytes,{slot:source.slot});
       if (!readable.ok) return fail(readable.reason);
-      const parse = loader.parse(readable.value,source.parser);
+      const parse = await loader.parse(readable.value,source.parser);
       if (!parse.ok) return fail(parse.reason);
       loaded = parse.value;
       bytes += charge;
@@ -711,7 +711,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
         ? await callSingleProducer(context,product,producer,handed,slots,totals)
         : await (async()=>{totals.made++;return runProducer(context, product, producer, { build: handed, slots, params: producer.params ?? {} });})();
       if (!output.ok) return fail(output.reason);
-      take(producer.id, verifyOutput(context, producer.id, output.value, singleSources(slots), loader, pathCache), { entries: 0, spans: 0 });
+      take(producer.id, await verifyOutput(context, producer.id, output.value, singleSources(slots), loader, pathCache), { entries: 0, spans: 0 });
       continue;
     }
     const outcome = await produceList(context, {
@@ -1165,7 +1165,7 @@ async function produceList(context: KnowledgeContext, input: ListInput): Promise
         for (const { elements: own, output } of called.outputs) {
           const byDigest = new Map<string, ParsedSource>();
           for (const element of own) if (!byDigest.has(element.sha256)) byDigest.set(element.sha256, element);
-          verified.push(verifyOutput(context, producer.id, output, { single: input.slots, list: { slot: list.slot, elements: byDigest } }, input.loader, input.paths));
+          verified.push(await verifyOutput(context, producer.id, output, { single: input.slots, list: { slot: list.slot, elements: byDigest } }, input.loader, input.paths));
         }
         for (const source of part) {
           if (failed.has(source)) continue;

@@ -1,7 +1,8 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createHash} from 'node:crypto';
-import {kityminderParser} from '../../../../hub/refs/api.ts';
+
 import {cases} from './cases.ts';
 
 test('untagged cases explicitly record undeclared polarity and test type',()=>{

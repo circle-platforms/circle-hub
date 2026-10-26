@@ -41,11 +41,13 @@ export {
   mediaTypeEssence,
   parserKey,
   recognize,
+  recognizeAsync,
+  parseDocument,
+  parserCacheKey,
 } from './parser.ts';
 export type { ByteRange, Fragment, JsonObject, JsonValue, ListOptions, ParsedDocument, ParseLimits, ParseOptions, Parser, ParserRegistry } from './parser.ts';
 
-export { createDefaultRegistry, defaultParsers, htmlParser, jsonParser, kityminderParser, markdownParser, textParser, xmlParser } from './parsers/index.ts';
-export type { KityMinderModel, MindMapNode } from './parsers/kityminder.ts';
+export { createDefaultRegistry, defaultParsers, htmlParser, jsonParser, markdownParser, textParser, xmlParser } from './parsers/index.ts';
 export type { XmlElement, XmlModel } from './parsers/xml.ts';
 export type { HtmlBlock, HtmlLink, HtmlModel, HtmlRun, HtmlWrapper } from './parsers/html.ts';
 export type { MarkdownBlock, MarkdownModel, MarkdownSection } from './parsers/markdown.ts';
@@ -75,3 +77,6 @@ export type {
 export { canonicalJson, recordDigest } from './canonical-json.ts';
 
 export {readContainerMembers} from './container.ts';
+
+export {createSkillParserRegistry,bindLegacySkills,bindLegacyParser} from './skills.ts';
+export type {SkillParserOptions} from './skills.ts';

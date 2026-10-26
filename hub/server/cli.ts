@@ -34,6 +34,7 @@ export interface CliOptions extends Omit<ServeOptions, 'io'> {
 
 /** Commands the assembly module registers; while the module in use does not, they print a clear message. */
 interface ReservedCommandDescriptions {
+  readonly skill:string;
   readonly pack:string;
   readonly resource:string;
   readonly secret:string;
@@ -43,6 +44,7 @@ interface ReservedCommandDescriptions {
 }
 const RESERVED_COMMAND_DESCRIPTIONS: ReservedCommandDescriptions = {
   pack: '管理任务包',
+  skill:'管理通用技能包的迁移声明',
   resource: '管理资源声明',
   secret: '管理密钥库条目',
   knowledge: '读取和管理知识树',

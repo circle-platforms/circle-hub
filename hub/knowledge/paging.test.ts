@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 // The reading side under load and misuse (D05 R[3], B01 R[5], K02 R[2]): get_nodes checks the reader before it reads the
 // paths, removes duplicates and examines a bounded number of paths; a page holds about pageBytes of statements and data and
 // a node with more is split over pages by an entry cursor; a cursor beyond the walk is refused; a mistyped path in a readable
@@ -8,7 +9,7 @@ import { after, before, describe, test } from 'node:test';
 import { TreeRootBody } from '../../contracts/src/knowledge.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { KnownBuild } from '../../contracts/src/product.ts';
-import { createDefaultRegistry, resolveReference } from '../refs/api.ts';
+import { resolveReference } from '../refs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import type { NodesPage } from '../ports.ts';
 import { BASE_CATALOG, DEFAULT_PRODUCERS, catalogXml, makeWorld, standardSite, startPostgres, type World } from './test-support.ts';

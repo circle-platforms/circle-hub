@@ -1,3 +1,4 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
 // The functions of the verification pack against the contract shapes: the projection of a draft validation result onto the
 // target, the expected sources, the two checks, the copies of the draft pack's modules and the pack codes.
 import assert from 'node:assert/strict';
@@ -8,7 +9,7 @@ import { CORE_VIOLATION_CODES } from '../../../../contracts/generated/protocol.t
 import { ExpectedSourcesOutput, ProjectionOutput } from '../../../../contracts/src/pack.ts';
 import { CheckOutcome } from '../../../../contracts/src/tables.ts';
 import { ValidationResult } from '../../../../contracts/src/validation.ts';
-import { kityminderParser } from '../../../../hub/refs/api.ts';
+
 import { callPackFunction, osIsolationAvailable } from '../../../../hub/rules/api.ts';
 import expectedFn, { expected } from './expected.ts';
 import projectionFn, { MAX_SUMMARY, projection } from './projection.ts';

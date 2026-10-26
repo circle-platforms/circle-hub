@@ -1,4 +1,5 @@
-import { createDefaultRegistry, recognize, parserKey } from '../../../../hub/refs/api.ts';
+import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
+import { recognize, parserKey } from '../../../../hub/refs/api.ts';
 import { unzipSync } from 'fflate';
 import { readWorkbookModel, type WorkbookModel } from '../functions/xlsx-model.ts';
 import { zipStore } from '../functions/zip-store.ts';

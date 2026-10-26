@@ -1,3 +1,4 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
 // The tests of case-review-report: the projection (the worst verdict wins, per-item delivery merges, an overlap refuses,
 // an item nobody delivered marks the whole unfinished with the missing items named, a missing final makes the overall
 // unknown) and the two checks (the overall fact and the report agreement over cross_item claims), driven on the same
@@ -5,7 +6,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import { describe, it } from 'node:test';
-import {kityminderParser} from '../../../../hub/refs/api.ts';
+
 import type { ProjectedItem } from '../../../../contracts/src/pack.ts';
 import projection from './projection.ts';
 import { overallCheck, reportCheck } from './checks.ts';

@@ -10,6 +10,7 @@
 // or a secret value: tokens come from stdin, credentials from stdin or explicitly named environment-file keys, never as argv values.
 import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protocol.ts';
 import {referencesIn} from '../../contracts/src/variables.ts';
+import {bindLegacySkills,bindLegacyParser} from '../refs/api.ts';
 import { variableCommand, namedSecretCommand, VAR_USAGE, NAMED_SECRET_USAGE } from './variables.ts';
 import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE, bedCommand, BED_USAGE } from './cli-job.ts';
 import { copyFile, open, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -48,8 +49,9 @@ export interface AdminCommandOptions {
   assembly?: AssemblyOptions;
 }
 
+export const SKILL_USAGE='skill bind-legacy <解析器 id@版本> <技能包 id@版本>';
 export const PACK_USAGE =
-  'pack publish <目录> [--stage] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list | shapes <任务包>';
+  'pack install <技能包@版本> | uninstall <技能包> | bind-skills <旧运行> --skill <技能包@版本>… --reason <理由> | publish <目录> [--stage] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list | shapes <任务包>';
 export const RESOURCE_USAGE = 'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <系统包>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = NAMED_SECRET_USAGE;
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
@@ -329,9 +331,34 @@ function packIdOf(ref: string, what: string): string {
   return parsed.id;
 }
 
+async function skillCommand(session:Session,args:readonly string[]):Promise<number>{
+ const [sub,...rest]=args;if(sub!=='bind-legacy')throw new UsageError(SKILL_USAGE);
+ const {positionals}=parse(rest,{},2);const by=await session.admin(),hub=await session.hub();
+ const binding=await decided(()=>bindLegacyParser({registry:hub.registry,records:hub.records},by,positionals[0],positionals[1]));
+ session.out(`解析器 ${binding.parser} → ${binding.skill.pack}@${binding.skill.version}；摘要 ${binding.skill.digest}`);
+ session.out(`迁移时点事后声明；操作者 ${binding.decided_by}；时间 ${binding.at}；测试 ${binding.test}；rec:${binding.record}；旧记录不改`);return 0;
+}
+
 async function packCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   switch (sub) {
+    case 'install': {
+      const {positionals}=parse(rest,{},1);const by=await session.admin();const hub=await session.hub();
+      const decision=await decided(()=>hub.registry.install(by,positionals[0]));
+      session.out(`通用技能包已安装；决定 ${decision.digest}`);return 0;
+    }
+    case 'uninstall': {
+      const {positionals}=parse(rest,{},1);const by=await session.admin();const hub=await session.hub();
+      const decision=await decided(()=>hub.registry.uninstall(by,positionals[0]));
+      session.out(`通用技能包已卸载；旧运行仍按冻结摘要复核；决定 ${decision.digest}`);return 0;
+    }
+    case 'bind-skills': {
+      const {positionals,values}=parse(rest,{skill:{type:'string',multiple:true},reason:{type:'string'}},1);
+      if(!values.reason||!Array.isArray(values.skill)||!values.skill.length)throw new UsageError('pack bind-skills <旧运行> --skill <技能包@版本>… --reason <理由>');
+      const by=await session.admin(),hub=await session.hub();
+      const record=await decided(()=>bindLegacySkills({registry:hub.registry,records:hub.records},by,positionals[0],values.skill as string[],values.reason as string));
+      session.out(`历史运行的技能摘要声明已追加；不是原执行历史的补造；rec:${record}`);return 0;
+    }
     case 'shapes': {
       const {positionals,values}=parse(rest,{as:{type:'string'}},1);
       const viewer=await session.viewer(values.as);
@@ -1331,6 +1358,7 @@ const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
   { name: 'executor', summary: EXECUTOR_USAGE, handler: executorCommand },
   { name: 'job', summary: JOB_USAGE, handler: jobCommand },
   { name: 'bed', summary: BED_USAGE, handler: bedCommand },
+  {name:'skill',summary:SKILL_USAGE.slice('skill '.length),handler:skillCommand},
   { name: 'pack', summary: PACK_USAGE.slice('pack '.length), handler: packCommand },
   { name: 'resource', summary: RESOURCE_USAGE.slice('resource '.length), handler: resourceCommand },
   { name: 'var', summary: VAR_USAGE.slice('var '.length), handler: variableCommand },

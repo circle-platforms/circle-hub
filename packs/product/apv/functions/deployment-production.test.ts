@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
 // A real knowledge service over synthetic ports: deployment values are explicit even when equal to a sample default.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -6,7 +7,7 @@ import {after,before,test} from 'node:test';
 import {ProductDeclaration} from '../../../../contracts/src/product.ts';
 import {createKnowledge} from '../../../../hub/knowledge/api.ts';
 import {FakeExternal,FakePacks} from '../../../../hub/knowledge/test-support.ts';
-import {createDefaultRegistry} from '../../../../hub/refs/api.ts';
+
 import {sha256Hex} from '../../../../hub/records/api.ts';
 import {startPostgres,type TemporaryPostgres} from '../../../../hub/testing/postgres.ts';
 import {openTestRecords} from '../../../../hub/testing/records.ts';

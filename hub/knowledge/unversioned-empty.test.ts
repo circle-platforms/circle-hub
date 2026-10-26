@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -7,7 +8,7 @@ import {ProductDeclaration} from '../../contracts/src/product.ts';
 import {TreeRootBody} from '../../contracts/src/knowledge.ts';
 import {startPostgres} from '../testing/postgres.ts';
 import {openTestRecords} from '../testing/records.ts';
-import {createDefaultRegistry} from '../refs/api.ts';
+
 import {osIsolationAvailable} from '../rules/api.ts';
 import {createKnowledge} from './api.ts';
 import {FakeExternal,FakePacks} from './test-support.ts';

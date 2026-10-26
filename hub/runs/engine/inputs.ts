@@ -13,7 +13,7 @@ import { ExternalObjectId } from '../../../contracts/src/reference.ts';
 import type { InputBinding, SourceBinding } from '../../../contracts/src/run.ts';
 import type { Principal, VariableSnapshot } from '../../records/api.ts';
 import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
-import { ReferenceSyntaxError, parseReference, parserKey, recognize, type Reference } from '../../refs/api.ts';
+import { ReferenceSyntaxError, parseReference, parserKey, recognizeAsync, type Reference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, protocolError, unavailableError } from './errors.ts';
 import { recordBytes } from './exact.ts';
@@ -262,7 +262,7 @@ export async function bindInputs(
       else { schemaError(path, '输入只能是上传得到的 src: 引用、Hub 记录引用 rec: 或外部对象'); continue; }
       if (read === null) continue;
       let refusal: ProtocolError | null = null;
-      const parsed = recognize(ctx.parsers, read.bytes, read.mediaType, {}, (error) => {
+      const parsed = await recognizeAsync(ctx.parsers, read.bytes, read.mediaType, {}, (error) => {
         refusal = protocolError('SOURCE_UNPARSEABLE', `${error.parser}：${error.message}`, { path, fix: error.fix });
       });
       if (parsed === null) {

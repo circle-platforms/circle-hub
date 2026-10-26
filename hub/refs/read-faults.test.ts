@@ -1,6 +1,7 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createDefaultRegistry, resolveReference } from './api.ts';
+import { resolveReference } from './api.ts';
 import { sha256Hex } from './canonical-json.ts';
 import { IntegrityError } from '../records/api.ts';
 const bytes = Buffer.from('synthetic source');

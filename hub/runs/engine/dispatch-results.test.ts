@@ -1,3 +1,4 @@
+import {createTestParserRegistry} from '../../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { canonicalBytes } from '../../records/api.ts';
@@ -21,7 +22,7 @@ test('unknown dispatch quarantines only its bound item, reconciles without sendi
   assert.equal(submitted.acceptance,'accepted');
   const job:RunJob={job:'a'.repeat(64),verification_run:run.run,plan_run:run.run,verification_item:run.items[0].id,items:[run.items[0].id],sha256:'b'.repeat(64),status:{job:'a'.repeat(64),phase:'unknown',outcome:'unknown',frozen:true,events:4,missing_fact:'原作业缺完整回执'}};
   let reconciles=0;
-  const service=createRunsService({records:h.kit,workflows:h.workflows,packs:h.packs,knowledge:h.knowledge,external:h.external,dispatch:{jobs:async()=>[structuredClone(job)],reconcile:async()=>{reconciles++;return job.status;}}});
+  const service=createRunsService({parsers:createTestParserRegistry(),records:h.kit,workflows:h.workflows,packs:h.packs,knowledge:h.knowledge,external:h.external,dispatch:{jobs:async()=>[structuredClone(job)],reconcile:async()=>{reconciles++;return job.status;}}});
   await service.maintain();
   const quarantined=(await service.getRun(h.alice,run.run))!.latest!.result;
   assert.equal(quarantined.partitions.quarantined.length,1);

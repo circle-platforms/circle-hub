@@ -1,10 +1,15 @@
 {
   "schema": "pack@1",
   "id": "template-gap",
-  "version": "1.2.11",
+  "version": "1.2.12",
   "kind": "workflow",
   "title": "模板缺口检查",
   "description": "文档级核验模板 v3 全部 24 类，并从锁定构建的用例索引核验每个已解析命令的 9 类覆盖；缺输入写明补齐动作、对象和期限",
+  "dependencies": [
+    {
+      "pack": "mindmap-format"
+    }
+  ],
   "files": [
     {
       "path": "SKILL.md",

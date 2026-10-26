@@ -1,3 +1,4 @@
+import {createTestParserRegistry} from '../../testing/parsers.ts';
 // The product pack's select_build function gets each candidate build with its single sources only: a role that lists
 // external objects (thousands of case documents per build) is stripped before the sandbox call, so the input stays small
 // whatever the knowledge base lists. A synthetic product pack whose function writes back, in its basis, which roles it saw.
@@ -69,7 +70,7 @@ describe('select_build candidates', () => {
     });
     const packs = new FakePacks();
     packs.handles.push(...h.packs.handles.map((handle) => (handle.product.id === 'meadow' ? { ...handle, directory: echo } : handle)));
-    const service = createRunsService({ records: h.kit, workflows: h.workflows, packs, knowledge: new ListingKnowledge(), external: h.external });
+    const service = createRunsService({ parsers:createTestParserRegistry(),records: h.kit, workflows: h.workflows, packs, knowledge: new ListingKnowledge(), external: h.external });
     const map = await h.upload(h.alice, toyMap(standardDocument()));
     const answer = await service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', inputs: { map: { reference: map } } }, h.call());
     assert.equal(answer.call_result, 'ok', JSON.stringify(answer.errors));

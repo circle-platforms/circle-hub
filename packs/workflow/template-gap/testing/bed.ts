@@ -1,3 +1,4 @@
+import {installMindmapFixture} from '../../../../hub/testing/skills.ts';
 // A test bed for the template-gap pack on the real Hub packages (not part of the pack): a records kit in a temporary
 // PostgreSQL database, an admin, the pack owner (with a publish right), a user the pack is assigned to and one it is not, the
 // real registry/run engine, a synthetic product line with a commands@1 root and a frozen knowledge:index reader; the agile platform is a fake reader that stores what it reads
@@ -148,6 +149,7 @@ export async function openBed(postgres: TemporaryPostgres, options: BedOptions =
     const stranger = principal(await kit.principals.createUser(admin, '旁人'));
     await kit.authorizations.grantPublishRight(admin, owner.id);
     const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted'), now });
+    const parsers=await installMindmapFixture(registry,kit,admin);
     const staged = join(temp.path, 'staged');
     for (const file of await packFiles()) { await mkdir(dirname(join(staged, file.path)), { recursive: true }); await copyFile(join(PACK_DIR, file.path), join(staged, file.path)); }
     await writeFile(join(staged, 'pack.json'), `${JSON.stringify({ ...await readManifest(), files: await packFiles() }, null, 2)}\n`);
@@ -164,6 +166,7 @@ export async function openBed(postgres: TemporaryPostgres, options: BedOptions =
     const agile = new FakeAgile(kit.artifacts);
     const logs: AdminLogEntry[] = [];
     const service = createRunsService({
+      parsers,
       records: kit,
       workflows: createWorkflowStore(registry),
       packs: createPacksPort(registry),

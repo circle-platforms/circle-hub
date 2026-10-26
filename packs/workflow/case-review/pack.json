@@ -1,10 +1,15 @@
 {
   "schema": "pack@1",
   "id": "case-review",
-  "version": "1.1.23",
+  "version": "1.1.24",
   "kind": "workflow",
   "title": "测试脑图评审（初评）",
   "description": "按团队的评审方法（test-list-review）初评一份测试脑图：Hub 判定字面问题、命令与目录、引文与位置，模型写七类评审发现和 P0-P7 等级；结论由复核任务包 case-review-verify 独立复核",
+  "dependencies": [
+    {
+      "pack": "mindmap-format"
+    }
+  ],
   "files": [
     {
       "path": "SKILL.md",
@@ -103,8 +108,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "800558cf66086af6af1dbcf4edff315484f3b6d6ad02dcf3c322278a11babb83",
-      "size": 12339
+      "sha256": "a15081636715bb15293040bedf8afcf576df9f794fbde7fb597502ad820bf596",
+      "size": 12401
     },
     {
       "path": "requirements.json",

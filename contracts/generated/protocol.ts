@@ -73,7 +73,7 @@ export const REFERENCE_FORMS = {
 export const RECORD_KINDS = ['claim', 'source_artifact', 'authorization', 'action', 'effect', 'request', 'call_log', 'run', 'submission', 'validation_result', 'pack_version', 'tree_node', 'tree_root', 'root_pointer'] as const;
 export type RecordKind = (typeof RECORD_KINDS)[number];
 
-export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 'slots.schema.json', 'checks.json', 'knowledge.json', 'policies/', 'capabilities.json', 'functions/', 'samples/positive/', 'samples/negative/', 'examples/', 'tools/', 'tables/', 'product.json', 'workflow.json', 'system.json', 'ledger.json'] as const;
+export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 'slots.schema.json', 'checks.json', 'knowledge.json', 'policies/', 'capabilities.json', 'functions/', 'samples/positive/', 'samples/negative/', 'examples/', 'tools/', 'tables/', 'product.json', 'workflow.json', 'system.json', 'ledger.json', 'skill.json'] as const;
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 

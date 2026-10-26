@@ -505,7 +505,9 @@
               "behaviour",
               "case",
               "defect",
-              "observation"
+              "observation",
+              "procedure",
+              "pitfall"
             ]
           },
           "producers": {
@@ -784,7 +786,9 @@
               "behaviour",
               "case",
               "defect",
-              "observation"
+              "observation",
+              "procedure",
+              "pitfall"
             ]
           },
           "producers": {
@@ -1102,7 +1106,9 @@
                   "behaviour",
                   "case",
                   "defect",
-                  "observation"
+                  "observation",
+                  "procedure",
+                  "pitfall"
                 ],
                 "description": "the kind of every row of the part"
               }
@@ -1299,7 +1305,9 @@
               "behaviour",
               "case",
               "defect",
-              "observation"
+              "observation",
+              "procedure",
+              "pitfall"
             ],
             "description": "kind of the knowledge entries that are its members"
           },
@@ -1384,7 +1392,9 @@
               "behaviour",
               "case",
               "defect",
-              "observation"
+              "observation",
+              "procedure",
+              "pitfall"
             ]
           },
           "target_producers": {
@@ -1475,20 +1485,42 @@
     "kinds": {
       "description": "composition rows per entry kind",
       "type": "object",
-      "propertyNames": {
-        "type": "string",
-        "enum": [
-          "definition",
-          "behaviour",
-          "case",
-          "defect",
-          "observation"
-        ]
-      },
-      "additionalProperties": {
-        "type": "integer",
-        "minimum": 0,
-        "maximum": 9007199254740991
+      "properties": {
+        "definition": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "behaviour": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "case": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "defect": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "observation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "procedure": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "pitfall": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
       },
       "required": [
         "definition",
@@ -1496,7 +1528,8 @@
         "case",
         "defect",
         "observation"
-      ]
+      ],
+      "additionalProperties": false
     },
     "warnings": {
       "maxItems": 200,

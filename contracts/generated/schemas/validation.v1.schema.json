@@ -1329,7 +1329,8 @@
                                   "observed",
                                   "projected",
                                   "declared",
-                                  "candidate"
+                                  "candidate",
+                                  "client_captured"
                                 ]
                               },
                               "basis_rank": {
@@ -2780,7 +2781,8 @@
                                   "observed",
                                   "projected",
                                   "declared",
-                                  "candidate"
+                                  "candidate",
+                                  "client_captured"
                                 ]
                               },
                               "basis_rank": {
@@ -4244,7 +4246,8 @@
                                   "observed",
                                   "projected",
                                   "declared",
-                                  "candidate"
+                                  "candidate",
+                                  "client_captured"
                                 ]
                               },
                               "basis_rank": {
@@ -5708,7 +5711,8 @@
                                   "observed",
                                   "projected",
                                   "declared",
-                                  "candidate"
+                                  "candidate",
+                                  "client_captured"
                                 ]
                               },
                               "basis_rank": {
@@ -6084,7 +6088,8 @@
                   "observed",
                   "projected",
                   "declared",
-                  "candidate"
+                  "candidate",
+                  "client_captured"
                 ]
               },
               "basis_rank": {
@@ -6369,6 +6374,33 @@
     "locks": {
       "type": "object",
       "properties": {
+        "skills": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pack": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "pack",
+              "version",
+              "digest"
+            ],
+            "additionalProperties": false
+          }
+        },
         "feeding_offset": {
           "type": "object",
           "properties": {

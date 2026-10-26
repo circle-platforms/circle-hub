@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
 // The actual product producer and the generic reader use one frozen declaration, including literals beyond the former cap.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -8,7 +9,7 @@ import { ProductDeclaration, type KnownBuild } from '../../../../contracts/src/p
 import { LinksView } from '../../../../contracts/src/views.ts';
 import { createKnowledge,createKnowledgeReader,type Knowledge } from '../../../../hub/knowledge/api.ts';
 import { FakeExternal,FakePacks } from '../../../../hub/knowledge/test-support.ts';
-import { createDefaultRegistry } from '../../../../hub/refs/api.ts';
+
 import { osIsolationAvailable } from '../../../../hub/rules/api.ts';
 import { openTestRecords,type TestRecordsKit } from '../../../../hub/testing/records.ts';
 import { startPostgres,type TemporaryPostgres } from '../../../../hub/testing/postgres.ts';

@@ -37,7 +37,7 @@ export function singleSources(slots: ReadonlyMap<string, ParsedSource | null>): 
  * digest the fragment gives as `source` (an element of another batch is not citable: an entry must not depend on another
  * batch).
  */
-export function verifyFragment(fragment: FragmentRef, sources: FragmentSources, loader: SourceLoader): Checked<VerifiedFragment> {
+export async function verifyFragment(fragment: FragmentRef, sources: FragmentSources, loader: SourceLoader): Promise<Checked<VerifiedFragment>> {
   let slot = fragment.slot;
   if (slot === undefined) {
     const names = [...sources.single.keys(), ...(sources.list === null ? [] : [sources.list.slot])];
@@ -61,7 +61,7 @@ export function verifyFragment(fragment: FragmentRef, sources: FragmentSources, 
     if (error instanceof ReferenceSyntaxError) return { ok: false, reason: `片段引用写法不对：${error.message}` };
     throw error;
   }
-  const document = fragment.parser === source.parser ? source.document : loader.documentWith(source, fragment.parser);
+  const document = fragment.parser === source.parser ? source.document : await loader.documentWith(source, fragment.parser);
   if (document === null) return { ok: false, reason: `解析器 ${fragment.parser} 没有登记，或不能解析源文件 ${source.sha256}` };
   const located = document.locate(fragment.selector);
   if (located === null) return { ok: false, reason: `片段 ${fragment.selector.slice(0, 200)} 在源文件 ${source.sha256} 里找不到` };

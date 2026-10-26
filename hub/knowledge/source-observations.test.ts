@@ -1,8 +1,9 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {ReadManifest} from '../../contracts/src/resources.ts';
 import {newId,type Artifacts} from '../records/api.ts';
-import {createDefaultRegistry} from '../refs/api.ts';
+
 import {SourceLoader,type SourceDeps} from './sources.ts';
 for(const status of [403,404])test(`source loading retains determined HTTP ${status} facts from the failure manifest`,async()=>{
  const by={id:newId('usr'),name:'synthetic administrator',role:'admin' as const},id='site:document:synthetic',at='2026-10-24T00:00:00.000Z';

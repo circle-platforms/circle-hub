@@ -519,7 +519,9 @@
           "behaviour",
           "case",
           "defect",
-          "observation"
+          "observation",
+          "procedure",
+          "pitfall"
         ]
       },
       "description": "the entry kinds whose difference counts as a change; default definition and behaviour; with catalog, the single kind of the catalog members"
@@ -533,7 +535,9 @@
           "behaviour",
           "case",
           "defect",
-          "observation"
+          "observation",
+          "procedure",
+          "pitfall"
         ]
       },
       "description": "the entry kinds listed on the changed nodes; default case"
@@ -663,7 +667,9 @@
               "behaviour",
               "case",
               "defect",
-              "observation"
+              "observation",
+              "procedure",
+              "pitfall"
             ]
           },
           "statement": {

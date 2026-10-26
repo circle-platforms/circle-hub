@@ -1,10 +1,15 @@
 {
   "schema": "pack@1",
   "id": "case-review-report",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "kind": "workflow",
   "title": "评审终稿",
   "description": "按已受理复核记录与目标原文确定性排出测试子项对照表，核对简短终稿的整体结论和等级",
+  "dependencies": [
+    {
+      "pack": "mindmap-format"
+    }
+  ],
   "files": [
     {
       "path": "SKILL.md",

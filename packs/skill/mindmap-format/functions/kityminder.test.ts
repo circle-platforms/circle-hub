@@ -1,8 +1,17 @@
+import { kityminderParser as migratedParser, type KityMinderModel, type MindMapNode } from '../../../../hub/testing/parsers.ts';
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
-import { MAX_SELECTOR_LENGTH, ParseEncodingError, ParseLimitError, ParseSyntaxError, kityminderParser, type KityMinderModel, type MindMapNode } from '../api.ts';
-import { fixture, timed, utf8 } from '../test-support.ts';
+import {after,describe,it} from 'node:test';
+import {originalCore} from '../testing/baseline.ts';
+import { MAX_SELECTOR_LENGTH, ParseEncodingError, ParseLimitError, ParseSyntaxError } from '../../../../hub/refs/api.ts';
+import { fixture, timed, utf8 } from '../../../../hub/refs/test-support.ts';
 
+const original=await originalCore();after(()=>original.close());
+const kityminderParser={...migratedParser,parse(...args:Parameters<typeof migratedParser.parse>){
+ let expected:ReturnType<typeof original.parser.parse>|undefined,oldError:unknown;
+ try{expected=original.parser.parse(...args);}catch(error){oldError=error;}
+ let actual;try{actual=migratedParser.parse(...args);}catch(error){assert.ok(oldError instanceof Error);assert.equal((error as Error).name,oldError.name);assert.equal((error as Error).message,oldError.message);throw error;}
+ assert.ok(expected,'pre-migration core must accept every migrated vector');assert.equal(JSON.stringify(actual.model),JSON.stringify(expected.model));assert.equal(JSON.stringify(actual.summary()),JSON.stringify(expected.summary()));return actual;
+}};
 const plain = kityminderParser.parse(fixture('mindmap.km.json'));
 const double = kityminderParser.parse(fixture('mindmap.double.json'));
 const model = plain.model;
