@@ -22,7 +22,7 @@ import {PrecheckFactError,precheckFailure} from './precheck-failure.ts';
 import { canRetryRead } from './read-policy.ts';
 import { dynamicDisposition, DISPATCH_QUALIFICATIONS } from './dynamic.ts';
 import { judgeBedSurface } from '../../packs/workflow/test-bed/api.ts';
-import { againstBaseline, againstStored, bedLimits, bedName, cleanupSteps, missingProbeFact, parseReply, residueFact, unknownSteps, unrestoredFact, type BedRead, type BedReport, type Canonical } from './bed-state.ts';
+import { againstBaseline, againstStored, bedLimits, bedName, cleanupSteps, missingProbeFact, parseReply, residueFact, undeclaredBaselineFact, undeclaredBaselineNext, unknownSteps, unrestoredFact, type BedRead, type BedReport, type Canonical } from './bed-state.ts';
 import { bytesKey, earlyStopSentence, repeats, roundAllowed, roundMeets, roundOf, roundPolicy, type RoundPolicy } from './rounds.ts';
 import { expectationFor } from '../runs/engine/terminals.ts';
 import { verifyInput, inspectInput, lockedBuildBase, InputVerificationError, type VerificationPort } from './proof.ts';
@@ -873,6 +873,18 @@ export class DispatchService {
       if (missing.length) {
         await this.noteBed(binding, 'pre', name, reads, []);
         throw new PrecheckFactError(missingProbeFact(missing), unknownSteps(spec.items, missing));
+      }
+      const undeclared = spec.items.filter(item => {
+        if (item.parser.kind === 'address_table') return false;
+        if (item.parser.kind === 'text_table' && (item.parser.address || item.parser.manifest_lists || item.parser.manifest_device || item.parser.manifest_devices || item.parser.columns.some(c => c.cidr))) return false;
+        const snapshotOnly = item.parser.snapshot_only;
+        if (snapshotOnly) return false;
+        const manifestRows = 'manifest_rows' in item.parser && item.parser.manifest_rows ? at(bed, item.parser.manifest_rows) : undefined;
+        return !Array.isArray(manifestRows);
+      });
+      if (undeclared.length) {
+        await this.noteBed(binding, 'pre', name, reads, []);
+        throw new PrecheckFactError(undeclaredBaselineFact(undeclared.map(item => item.id)), undeclaredBaselineNext(spec.items, undeclared.map(item => item.id)));
       }
     }
     const hold = await this.openBedHold(name);
