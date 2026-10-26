@@ -7,6 +7,7 @@ import { CORE_VIOLATION_CODES,type ProtocolCode } from '../../../contracts/gener
 import type { ProducerKind, Resolution, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { ValueResolution } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
+import type { TreeRootBody } from '../../../contracts/src/knowledge.ts';
 import { SlotClaim, type ResolvedEvidence } from '../../../contracts/src/pack.ts';
 import type { ItemProjection, RunRecord } from '../../../contracts/src/run.ts';
 import type { CriterionChange, Submission } from '../../../contracts/src/submission.ts';
@@ -150,6 +151,107 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
   };
 }
 
+/** The scope of a standalone knowledge root for one reader. */
+export async function buildRootScope(ctx: EngineContext, root: string, reader: Principal, consumer: Extract<ProducerKind, 'function' | 'model'>, attempts: Array<Record<string, unknown>> = []): Promise<RunScope> {
+  const { store, artifacts } = ctx.deps.records;
+  const readScope = async <T>(reference: string, read: () => Promise<T>): Promise<T> => {
+    try {
+      return await retryRead(read, () => null, (attempt) => {
+        if (attempt.retry || attempt.attempt > 1) attempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt, { reference }));
+      });
+    } catch (error) {
+      ctx.log({ traceId: null, run: null, what: 'exact root scope read', detail: describe(error) });
+      if (consumer === 'function') throw new HubReadFailure(reference, 'check_error', attempts);
+      throw error;
+    }
+  };
+
+  const sources = new Map<string, SourceRole>();
+  const records = new Map<string, SourceRole | null>();
+  const subject = { shas: new Set<string>(), records: new Set<string>() };
+  const catalogs: CatalogView[] = [];
+
+  const rootInfos = await readScope(`root:${root}`, () => ctx.deps.knowledge.rootInfo(root));
+  const compositions = [...new Set(rootInfos.map((i) => i.composition))];
+
+  for (const info of rootInfos) {
+    const compDigest = info.composition;
+    if (info.product !== undefined && !(await ctx.deps.packs.readableProducts(reader)).has(info.product)) continue;
+
+    const productHandle = (await ctx.deps.packs.productById(info.product) ?? await ctx.deps.packs.productByName(info.product));
+    const catalogIds = new Set<string>();
+    for (const cat of productHandle?.product.catalogs ?? []) catalogIds.add(cat.id);
+    catalogIds.add('commands@1');
+
+    for (const catId of catalogIds) {
+      const view = await readScope(`tree:${root}/${catId}`, () => ctx.deps.knowledge.catalog(root, catId));
+      if (view !== null && !catalogs.some((c) => c.reference === view.reference)) catalogs.push(view);
+    }
+
+    const record = await readScope(`rec:${compDigest}`, () => store.get(compDigest));
+    if (record === null) continue;
+    const body = record.body as TreeRootBody;
+
+    for (const cat of body.catalogs ?? []) {
+      const view = await readScope(`tree:${root}/${cat.id}`, () => ctx.deps.knowledge.catalog(root, cat.id));
+      if (view !== null && !catalogs.some((c) => c.reference === view.reference)) catalogs.push(view);
+    }
+
+    const sourcesList = [...(body.sources ?? [])];
+    if (body.parts?.sources !== undefined) {
+      for (const ref of body.parts.sources) {
+        const partRecord = await readScope(`part:${ref.record}`, () => store.get(ref.record));
+        if (partRecord !== null && Array.isArray((partRecord.body as { rows?: unknown[] })?.rows)) {
+          sourcesList.push(...((partRecord.body as { rows: typeof sourcesList }).rows));
+        }
+      }
+    }
+    for (const src of sourcesList) {
+      if (!sources.has(src.sha256)) sources.set(src.sha256, 'expected');
+    }
+  }
+
+  if (ctx.deps.knowledge.rootSources !== undefined) {
+    try {
+      const directSources = await readScope(`sources:${root}`, () => ctx.deps.knowledge.rootSources!(root));
+      for (const src of directSources) {
+        if (!sources.has(src.sha256)) sources.set(src.sha256, 'expected');
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+
+  let candidates: Promise<QuoteCandidate[]> | undefined;
+  const identity: ReaderIdentity = { user: reader.id, role: reader.role };
+  return {
+    reader: identity,
+    sources,
+    records,
+    subject,
+    root,
+    unversionedRoot: null,
+    compositions,
+    catalogs,
+    candidates: () =>
+      (candidates ??= (async () => {
+        const out: QuoteCandidate[] = [];
+        for (const [sha, role] of sources) {
+          const source = await readScope(`src:${sha}`, () => artifacts.source(reader, sha, { consumer }));
+          if (source === null || source.bytes === null) continue;
+          const key=(parser:import('../../refs/api.ts').Parser)=>`${sha}\0${parserCacheKey(parser)}\0${source.mediaType}`;
+          const cached=ctx.parsers.forMediaType(source.mediaType).map(parser=>({parser,document:ctx.documents.get(key(parser))})).find(row=>row.document!==undefined);
+          const found = cached??await recognizeAsync(ctx.parsers, source.bytes, source.mediaType);
+          if(found?.document)ctx.documents.set(key(found.parser),found.document);
+          if (found === null||found.document===undefined) continue;
+          const list = candidatesFrom(found.document, sha, { role });
+          for (let i = 0; i < list.length; i++) out.push(list[i]);
+        }
+        return out;
+      })()),
+  };
+}
+
 export interface ResolvedValue {
   /** W10: all tree provenance fragments resolve to src bindings explicitly marked expected. */
   expectedSourceBound?: boolean;
@@ -171,13 +273,26 @@ export interface Resolver {
 }
 
 export function scopeProblem(ref: Reference, scope: RunScope): string | null {
+  const isRun = scope.reader.run !== undefined;
   switch (ref.scheme) {
     case 'src':
-      return scope.sources.has(ref.sha256) ? null : '引用的源文件没有绑定到本次运行';
+      return scope.sources.has(ref.sha256)
+        ? null
+        : isRun
+          ? '引用的源文件没有绑定到本次运行'
+          : '引用的源文件不是指定知识根的组成来源';
     case 'tree':
-      return [scope.root, scope.unversionedRoot].includes(ref.root) ? null : '引用的知识树根不是本次运行锁定的根';
+      return [scope.root, scope.unversionedRoot].includes(ref.root)
+        ? null
+        : isRun
+          ? '引用的知识树根不是本次运行锁定的根'
+          : '引用的知识树根不是指定的根';
     case 'rec':
-      return scope.records.has(ref.record) ? null : '引用的 Hub 记录没有绑定到本次运行';
+      return scope.records.has(ref.record)
+        ? null
+        : isRun
+          ? '引用的 Hub 记录没有绑定到本次运行'
+          : 'rec: 引用和回注层条目需要运行锁定的喂入层序列';
     case 'entry':
       return '知识条目不能单独引用，请写它的知识树地址 tree:<根>/<路径>@<条目>';
   }

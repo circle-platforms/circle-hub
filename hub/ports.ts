@@ -310,6 +310,8 @@ export interface KnowledgePort {
   seedlingRoot?(product:string,line:string):Promise<RootInfo|null>;
   /** Current product-wide root; absent on older ports. */
   unversionedRoot?(product: string): Promise<(RootInfo<null> & { source_count: number }) | null>;
+  /** Sources recorded in the compositions of a root. */
+  rootSources?(root: string): Promise<import('../contracts/src/knowledge.ts').RootSource[]>;
   /** Builds the knowledge base knows for a product, any name family, newest first. */
   builds(product: string, filter?: { line?: string; released?: boolean }): Promise<KnownBuild[]>;
   /** Any build name, of any family, to the build record whose tree it uses (aliases resolved). Null when unknown. */

@@ -137,6 +137,72 @@ test('resolve_reference on a run with large bound sources (>65536 candidates) do
   assert.equal(answer.resolution, 'resolved');
 });
 
+test('resolve_reference in root mode resolves commands and quotations against root without a run, refuses rec: with exit, enforces parameter rules', { skip }, async () => {
+  const root = ROOTS.meadow329;
+  const manualBinding = run.sources.find((s) => s.label === '分区命令手册');
+  if (manualBinding) {
+    h.knowledge.sources.set(root, [
+      {
+        producer: 'manual',
+        slot: 'manual',
+        external: 'toy:manual:zone@1',
+        revision: '1',
+        sha256: manualBinding.reference.slice(4),
+        size: 100,
+        media_type: 'text/markdown',
+        parser: 'markdown@1',
+        artifact: '0'.repeat(64),
+        read_tier: 'model_readable',
+        basis: 'declared',
+        decided_by: 'system',
+      },
+    ]);
+  }
+
+  // 1. Command literal resolves to catalog entry
+  const cmd = await h.service.resolveReference(h.alice, { root, text: 'zone set', expect: 'command' }, h.call());
+  assert.equal(cmd.call_result, 'ok');
+  assert.equal(cmd.resolution, 'resolved');
+  assert.equal(cmd.references[0].reference, `tree:${root}/zone/set`);
+
+  // 2. Manual quotation resolves to src: fragment
+  const manual = await h.service.resolveReference(h.alice, { root, text: 'zone 取 1 到 8' }, h.call());
+  assert.equal(manual.call_result, 'ok');
+  assert.equal(manual.resolution, 'resolved');
+  assert.ok(manual.references[0].reference.startsWith('src:'));
+  assert.equal(manual.references[0].role, 'expected');
+
+  // 3. Single character change in quotation fails resolution
+  const tampered = await h.service.resolveReference(h.alice, { root, text: 'zone 取 1 到 9', expect: 'quotation' }, h.call());
+  assert.equal(tampered.call_result, 'ok');
+  assert.equal(tampered.resolution, 'unresolved');
+
+  // 4. Words not in this root's catalog or sources fail resolution
+  const absentWord = await h.service.resolveReference(h.alice, { root, text: '这句话哪里都没有', expect: 'quotation' }, h.call());
+  assert.equal(absentWord.call_result, 'ok');
+  assert.equal(absentWord.resolution, 'unresolved');
+
+  // 5. rec: reference in root mode is refused with explicit exit
+  const recRef = await h.service.resolveReference(h.alice, { root, text: `rec:${'a'.repeat(64)}` }, h.call());
+  assert.equal(recRef.call_result, 'error');
+  assert.equal(recRef.errors[0].code, 'REFERENCE_UNRESOLVED');
+  assert.ok(recRef.errors[0].fix?.includes('start_run'));
+
+  // 6. Parameter errors: neither or both
+  const neither = await h.service.resolveReference(h.alice, { text: 'zone set' } as any, h.call());
+  assert.equal(neither.call_result, 'error');
+  assert.equal(neither.errors[0].code, 'SUBMISSION_SCHEMA_VIOLATION');
+
+  const both = await h.service.resolveReference(h.alice, { run: run.run, root, text: 'zone set' } as any, h.call());
+  assert.equal(both.call_result, 'error');
+  assert.equal(both.errors[0].code, 'SUBMISSION_SCHEMA_VIOLATION');
+
+  // 7. Unavailable root
+  const forbiddenRoot = await h.service.resolveReference(h.alice, { root: '0'.repeat(64), text: 'zone set' }, h.call());
+  assert.equal(forbiddenRoot.call_result, 'error');
+  assert.equal(forbiddenRoot.errors[0].code, 'SOURCE_UNAVAILABLE');
+});
+
 test('sharing grants read queries and preview but never submission or predecessor rights', { skip }, async t => {
   const { recordReader, identityOf } = await import('./readers.ts');
   const { runById } = await import('./store.ts');

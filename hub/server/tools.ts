@@ -362,7 +362,7 @@ const startRun: Handler = async (deps, call, args) => {
 const resolveTool: Handler = async (deps, call, args) => {
   const parsed = ResolveReferenceInput.safeParse(args);
   if (!parsed.success) return { answer: errorAnswer('resolve_reference', schemaErrors('resolve_reference', parsed.error)) };
-  call.state.runId = parsed.data.run;
+  call.state.runId = parsed.data.run ?? null;
   return { answer: (await deps.runs.resolveReference(call.principal, parsed.data, call.context)) as Answer };
 };
 

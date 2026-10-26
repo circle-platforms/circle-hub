@@ -6,6 +6,7 @@ import {requestKnowledgeFact} from './requests.ts';
 import type { JevClient } from '../jev/api.ts';
 import type { EntryDiff, KnowledgePort, NodesPage, NodesQuery, PacksPort, ProductHandle, RootDiff, RootInfo, ExternalReaderPort } from '../ports.ts';
 import type { KnownBuild } from '../../contracts/src/product.ts';
+import type { RootSource } from '../../contracts/src/knowledge.ts';
 import type { EntryKind } from '../../contracts/generated/vocabulary.ts';
 import type { Principal } from '../records/api.ts';
 import { pathSegments, type ParserRegistry, type TreeReader } from '../refs/api.ts';
@@ -232,6 +233,16 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     async seedlingRoot(product,line){const seed=await feeding.seedFor(product,line);if(!seed)return null;const info=(await builds.rootInfo(seed.root)).find(info=>info.composition===seed.composition&&info.build!==null);return info as RootInfo|null??null;},
     rootOfBuild: (product, name) => builds.rootOfBuild(product, name),
     rootInfo: (root) => builds.rootInfo(root),
+    rootSources: (root: string): Promise<RootSource[]> => withReadCache(async () => {
+      const compositions = await reading.compositionsOf(root);
+      const out: RootSource[] = [];
+      for (const c of compositions) {
+        for (const s of await c.sources()) {
+          if (!out.some((existing) => existing.sha256 === s.sha256)) out.push(s);
+        }
+      }
+      return out;
+    }),
     catalog: (root, catalogId, selection): Promise<CatalogView | null> => withReadCache(()=>reading.catalog(root, catalogId, selection)),
     treeReader: (lock?: TreeLock | null): TreeReader => {
       const reader=reading.treeReader(lock??null);
