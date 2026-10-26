@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import { before,after,test } from 'node:test';
 import { Session } from 'node:inspector/promises';
@@ -6,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { locatePack,writePack } from './testing/packs.ts';
 import { setImmediate } from 'node:timers/promises';
-import { createDefaultRegistry,createParserRegistry,createDocumentCache,type ParsedDocument } from '../../refs/api.ts';
+import { createParserRegistry,createDocumentCache,type ParsedDocument } from '../../refs/api.ts';
 import { startPostgres,type TemporaryPostgres } from '../../testing/postgres.ts';
 import { createRunsService } from './service.ts';
 import { openHarness,sandboxSkip } from './testing/harness.ts';
@@ -53,4 +54,13 @@ test('one long-lived runs service releases parsed input documents after starts a
   await setImmediate();await inspector.post('HeapProfiler.collectGarbage');await setImmediate();
   assert.equal(references.filter(ref=>ref.deref()!==undefined).length,0,'the service retained a ParsedDocument after its call ended');
   t.diagnostic(JSON.stringify({starts:3,parsedDocuments:references.length,parsesPerStart:counts,retained:0}));
+});
+
+test('pending parse completion cannot repopulate a disposed operation cache',async()=>{
+ const cache=createDocumentCache(2),document={synthetic:true} as unknown as ParsedDocument;
+ let complete!:(value:ParsedDocument)=>void;let calls=0;
+ const parse=()=>{calls++;return new Promise<ParsedDocument>(resolve=>{complete=resolve;});};
+ const first=cache.load!('same',parse),second=cache.load!('same',parse);
+ await Promise.resolve();assert.equal(calls,1);cache.dispose!();complete(document);
+ assert.equal(await first,document);assert.equal(await second,document);assert.equal(cache.get('same'),undefined);
 });

@@ -1,10 +1,12 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
+import { type KityMinderModel } from '../../../../hub/testing/parsers.ts';
 // Helpers for the tests of the template-gap functions (not part of the pack): documents parsed by the real kityminder@1
 // parser and bound the way the run engine binds an input (BoundInput of projection-input@1), the pack's tables, narrowing.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { BoundInput } from '../../../../contracts/src/pack.ts';
-import { kityminderParser, type KityMinderModel, type ParsedDocument } from '../../../../hub/refs/api.ts';
+import {type ParsedDocument} from "../../../../hub/refs/api.ts";
 import { isFailure } from '../functions/common.ts';
 import { projectDocuments, type ProjectOptions } from '../functions/project.ts';
 import type { DocumentItem, PackFailure, ProjectionResult } from '../functions/types.ts';

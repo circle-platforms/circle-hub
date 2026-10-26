@@ -485,6 +485,12 @@ async function startFresh(
   variables: VariableSnapshot,
 ): Promise<StartRunDetail> {
   const { store, artifacts } = ctx.deps.records;
+  const dependencies=workflow.manifest?.dependencies??[];
+  let skills:import('../../../contracts/src/skills.ts').SkillLock[]=[];
+  if(ctx.parsers.freeze){
+    try{const frozen=await ctx.parsers.freeze(dependencies);skills=frozen.skills;ctx={...ctx,parsers:frozen.parsers};}
+    catch(error){throw new Refusal([protocolError('SOURCE_UNAVAILABLE',error instanceof Error?error.message:'技能包依赖不可读取',{path:'/pack',fix:'管理员安装工作包声明的技能包版本后重试；本次没有开始运行'})]);}
+  }else if(dependencies.length)throw new Refusal([protocolError('SOURCE_UNAVAILABLE','没有已安装技能包的注册表',{fix:'管理员配置技能包注册表并安装声明依赖后重试'})]);
   const startedAt = at.toISOString();
   let predecessor: StoredRecord<RunRecord> | null = null;
   if (input.predecessor !== undefined) {
@@ -614,6 +620,7 @@ async function startFresh(
   const effectRegistry=await ctx.deps.effectRegistry?.snapshot(variables);
   const frozenCommandPolicy=await commandPolicyForRoot(ctx.deps.records.store,target.root);
   const record: RunRecord = RunRecord.parse({
+    skills,
     ...(frozenCommandPolicy?{command_policy:frozenCommandPolicy}:{}),
     ...(effectRegistry??{}),
     ...(criterionSnapshot.refs.length?{accepted_criteria:criterionSnapshot.refs}:{}),
@@ -715,6 +722,7 @@ async function startFresh(
 
 /** The evaluation of a production run, made before its run record is stored (the result names the record's digest). */
 async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest: string, workflow: LoadedWorkflow, traceId: string, user: Principal): Promise<{ evaluation: Evaluation; startedAt: string }> {
+  if(ctx.parsers.forRun)ctx={...ctx,parsers:await ctx.parsers.forRun(run.run)};
   const startedAt = ctx.now().toISOString();
   const evaluation = await evaluate(ctx, productionEvaluationInput(run, workflow, runDigest, traceId));
   const notes = (run.groups ?? []).map((group, i) => ({group, i})).filter(({group}) => group.nature === 'fact' && group.verdict === 'support');

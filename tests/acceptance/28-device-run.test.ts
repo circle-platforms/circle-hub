@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../hub/testing/parsers.ts';
 import {addSyntheticExecutor} from '../../hub/dispatch/testing/credentials.ts';
 // All endpoints, documents, models and workbook bytes in this suite are synthetic.
 import assert from 'node:assert/strict';
@@ -5,7 +6,7 @@ import CASE_COMPILE_PACK from '../../packs/workflow/case-compile/pack.json' with
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
 import { osIsolationAvailable } from '../../hub/rules/api.ts';
-import { createDefaultRegistry, recognize } from '../../hub/refs/api.ts';
+import { recognize } from '../../hub/refs/api.ts';
 import { sha256Hex, type ActionBody } from '../../hub/records/api.ts';
 import { ExecutorDefinition, type JobStatus } from '../../hub/dispatch/api.ts';
 import { definition } from '../../hub/dispatch/testing/definition.ts';

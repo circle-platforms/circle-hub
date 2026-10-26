@@ -4133,6 +4133,11 @@
     "elements": [
      "W04"
     ]
+   },
+   {
+    "path": "skill.json",
+    "content": "可安装的通用技能包能力与解析器声明",
+    "elements": ["W03"]
    }
   ],
   "protocolCodes": [
@@ -7264,6 +7269,10 @@
     {
      "code": "candidate",
      "label": "候选"
+    },
+    {
+     "code": "client_captured",
+     "label": "客户端捕获"
     }
    ]
   },
@@ -8069,6 +8078,14 @@
     {
      "code": "observation",
      "label": "观察"
+    },
+    {
+     "code": "procedure",
+     "label": "步骤"
+    },
+    {
+     "code": "pitfall",
+     "label": "教训"
     }
    ]
   },
@@ -8263,6 +8280,10 @@
     {
      "code": "system",
      "label": "系统包"
+    },
+    {
+     "code": "skill",
+     "label": "通用技能包"
     }
    ]
   },

@@ -152,3 +152,12 @@ test('the published schemas compile without a warning, accept what zod accepts a
   }
   assert.deepEqual(warnings, []);
 });
+
+test('R5 knowledge counts preserve immutable pre-R5 shapes and accept the new kinds without inventing old fields',()=>{
+  const old=structuredClone(EXAMPLES['tree_root@1']) as {kinds:Record<string,number>};
+  assert.deepEqual(schemas['tree_root@1'].parse(old),old);
+  const current={...old,kinds:{...old.kinds,procedure:2,pitfall:1}};
+  assert.ok(schemas['tree_root@1'].safeParse(current).success);
+  assert.ok(new AjvJsonSchemaValidator().getValidator(published('tree_root@1'))(current).valid);
+  assert.equal(schemas['tree_root@1'].safeParse({...current,kinds:{...current.kinds,pitfall:-1}}).success,false);
+});

@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../testing/parsers.ts';
 // Synthetic ZIP/XML vectors are generated here; an existing independent writer supplies one interoperability check.
 import assert from 'node:assert/strict';
 import { crc32, deflateRawSync } from 'node:zlib';
@@ -248,7 +249,7 @@ test('xlsx@1 accepts Strict namespaces and refuses a worksheet with a foreign na
 });
 
 test('the registered XLSX parser is selected by upload extension, while non-ZIP bytes are never recognized', async () => {
-  const { createDefaultRegistry, recognize } = await import('../api.ts');
+  const { recognize } = await import('../api.ts');
   const { mediaTypeFor, structureOf } = await import('../../server/upload.ts');
   const registry = createDefaultRegistry(); const bytes = workbook();
   const mediaType = mediaTypeFor(bytes, undefined, 'synthetic.XLSX');

@@ -506,3 +506,9 @@ source/target lookup and duplicate detection all use that equivalence. Original 
 relationship is skipped merely because its part uses .RELS or _RELS. External targets are disclosed but never fetched.
 
 首轮复核修正：读取失败的下一次时刻与有效条件重读共用 ResolveContext.now，只有未注入时才用墙钟；来源、树、条目和记录的失败出口一致。
+
+## R5 A1：安装能力与历史锁
+
+KityMinder 实现已迁到独立的 `packs/skill/mindmap-format`，不再由核心默认注册表提供。生产程序集以 `createSkillParserRegistry` 按管理员安装记录装载；包函数经现有沙箱调用，消费方使用 `parseDocument` / `recognizeAsync`。核心保留引用语法、原件身份与逐字核对。其余内置格式在 B5 按该包 README 的模板迁移。
+
+工作包依赖、运行 skills 锁及结果锁使用包清单摘要。旧运行缺锁不允许以当前安装版本推定：管理员用 `circle-hub skill bind-legacy <parser@version> <pack@version>` 追加迁移时点事后声明（单个运行的显式声明仍可用 `pack bind-skills`），原运行、原结果均不改；解析结果附事后声明披露。未绑定时返回缺失摘要与补绑定出口。单元测试显式注入测试解析器，不构成生产自动安装。

@@ -1,8 +1,9 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import type {ProtocolError} from '../../contracts/src/common.ts';
 import {test} from 'node:test';
 import {IntegrityError} from '../records/api.ts';
-import {createDefaultRegistry} from '../refs/api.ts';
+
 import {KnowledgeError} from '../knowledge/api.ts';
 import type {ServerDeps} from './api.ts';
 import {callTool} from './tools.ts';

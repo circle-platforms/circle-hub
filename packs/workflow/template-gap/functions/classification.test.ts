@@ -1,6 +1,7 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { kityminderParser } from '../../../../hub/refs/api.ts';
+
 import { CategoryJudgmentSchema } from '../../../../contracts/generated/shared-interfaces.ts';
 import { classify } from './classification.ts';
 import TABLE from '../tables/template-v3.json' with { type: 'json' };

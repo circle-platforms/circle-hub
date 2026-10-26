@@ -1,3 +1,4 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
 // The case producer against the corpus truth of tests/fixtures/case-index (every case of every listed document, in the
 // batches the Hub cuts: hub/knowledge listBatches), the metamorphic checks (another document id changes only the key,
 // reordered cases change nothing, a document twice doubles nothing, an entry depends on its own document only), the
@@ -8,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 import { ProducerOutput, type ProducedEntry } from '../../../../contracts/src/product.ts';
 import { listBatches } from '../../../../hub/knowledge/api.ts';
-import { kityminderParser } from '../../../../hub/refs/api.ts';
+
 import { callPackFunction, osIsolationAvailable } from '../../../../hub/rules/api.ts';
 import {
   CATALOG_A,

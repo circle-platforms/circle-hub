@@ -219,7 +219,9 @@
               "behaviour",
               "case",
               "defect",
-              "observation"
+              "observation",
+              "procedure",
+              "pitfall"
             ]
           },
           "target_producers": {
@@ -292,7 +294,9 @@
               "behaviour",
               "case",
               "defect",
-              "observation"
+              "observation",
+              "procedure",
+              "pitfall"
             ],
             "description": "kind of the knowledge entries that are its members"
           },

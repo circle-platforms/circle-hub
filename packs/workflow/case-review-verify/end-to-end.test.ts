@@ -1,3 +1,4 @@
+import {kityminderParser} from "../../../hub/testing/parsers.ts";
 // End to end through the real Hub packages (registry, connectors, knowledge, runs) on synthetic systems: the products sync
 // into roots, the draft pack reviews a mind map read from the agile platform, the Hub's own checks judge it, and the
 // verification pack verifies the draft in another session with another model. The second product (Lumen API, REST endpoints)
@@ -9,7 +10,7 @@ import { after, before, describe, test } from 'node:test';
 import type { ItemProjection, RunSummary } from '../../../contracts/src/run.ts';
 import type { Submission } from '../../../contracts/src/submission.ts';
 import type { RequirementResult, ValidationResult } from '../../../contracts/src/validation.ts';
-import { kityminderParser } from '../../../hub/refs/api.ts';
+
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { DOCUMENTS } from '../../../tests/fixtures/agile/index.ts';
 import { compactText, fixtureBytes, largeDocument } from '../../../tests/fixtures/mindmaps/index.ts';

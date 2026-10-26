@@ -17,7 +17,7 @@ in `contracts/src/knowledge.ts`.
 ```ts
 const knowledge = createKnowledge({
   records: kit,                       // store, artifacts, pointers, principals and objects of hub/records
-  parsers: createDefaultRegistry(),   // hub/refs core parsers: the Hub parses, never the pack
+  parsers: installedParsers,          // hub/refs skill registry: installed capabilities execute in the sandbox
   packs,                              // PacksPort (runs)
   external,                           // ExternalReaderPort (connectors only: the views are not a source of the tree)
   // no jev: the Hub calls no model; only tests inject a scripted judge

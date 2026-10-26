@@ -1,9 +1,10 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
 // The case nodes of test mind maps: the corpus truth of tests/fixtures/case-index (built while the documents were built),
 // parity with the case-review workflow pack's projection under its marked rule (the tagged rule or the marked one), and
 // hostile models.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { kityminderParser } from '../../../../hub/refs/api.ts';
+
 import { caseCorpus, documentBytes } from '../../../../tests/fixtures/case-index/index.ts';
 import { fixtureBytes as mindmapBytes, largeDocument, compactText } from '../../../../tests/fixtures/mindmaps/index.ts';
 import { projectItems } from '../../../workflow/case-review/functions/project.ts';

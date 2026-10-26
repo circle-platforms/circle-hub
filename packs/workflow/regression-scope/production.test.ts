@@ -1,3 +1,4 @@
+import {createTestParserRegistry} from '../../../hub/testing/parsers.ts';
 // A production run end to end: the published pack, the real run engine, and a fake reader serving hand-built impact
 // views. start_run computes and stores the validation result. The real knowledge reader waits on the cases index.
 import assert from 'node:assert/strict';
@@ -324,7 +325,7 @@ describe('the real knowledge reader', () => {
     // Read the already-bound hint over the same MCP tool boundary used by the scripted client.
     const facetSource = detail.answer.run!.sources.find((source) => source.slot === 'facets')!;
     const context = call('synthetic-facet-client');
-    const response = await callTool({ records: runHub.kit, runs: runHub.service, packs: createPacksPort(runHub.registry), knowledge: w.knowledge, now: () => new Date() } as unknown as Parameters<typeof callTool>[0], {
+    const response = await callTool({ parsers:createTestParserRegistry(),records: runHub.kit, runs: runHub.service, packs: createPacksPort(runHub.registry), knowledge: w.knowledge, now: () => new Date() } as unknown as Parameters<typeof callTool>[0], {
       principal: runHub.alice, traceId: context.traceId, sessionId: context.sessionId,
       context: { ...context, adminNote: () => {} }, state: {},
     } as unknown as Parameters<typeof callTool>[1], 'get_nodes', { reference: facetSource.reference });

@@ -13,7 +13,7 @@ import pg from 'pg';
 import { openRecords, FileKeyProvider, sha256Hex } from '../hub/records/index.ts';
 import type { Principal } from '../hub/records/api.ts';
 import type { ProductHandle } from '../hub/ports.ts';
-import { createDefaultRegistry } from '../hub/refs/api.ts';
+import {createTestParserRegistry as createDefaultRegistry} from '../hub/testing/parsers.ts';
 import { createKnowledge } from '../hub/knowledge/service.ts';
 import { createKnowledgeReader } from '../hub/knowledge/api.ts';
 import { FakePacks, FakeExternal, makeWorld, startPostgres, mindMap, casesProducer, DEFAULT_PRODUCERS, catalogXml } from '../hub/knowledge/test-support.ts';

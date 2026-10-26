@@ -1,26 +1,10 @@
+import {testParsers as defaultParsers} from "../testing/parsers.ts";
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
+import { kityminderParser } from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { PRODUCER_KIND, type ReadTier } from '../../contracts/generated/vocabulary.ts';
-import {
-  UNAVAILABLE_MESSAGE,
-  createDefaultRegistry,
-  createDocumentCache,
-  createParserRegistry,
-  defaultParsers,
-  fragmentDigest,
-  kityminderParser,
-  recordDigest,
-  resolveReference,
-  srcFragment,
-  verifyQuote,
-  type Parser,
-  type ReaderIdentity,
-  type RecordRead,
-  type ResolveContext,
-  type ResolveDiagnostic,
-  type SourceRead,
-  type TreeRead,
-} from './api.ts';
+import {UNAVAILABLE_MESSAGE,createDocumentCache,createParserRegistry,fragmentDigest,recordDigest,resolveReference,srcFragment,verifyQuote,type Parser,type ReaderIdentity,type RecordRead,type ResolveContext,type ResolveDiagnostic,type SourceRead,type TreeRead} from "./api.ts";
 import { fixture, sha256, utf8 } from './test-support.ts';
 
 const alice: ReaderIdentity = { user: 'usr_01hzzzzzzzzzzzzzzzzzzzzzza', role: 'user' };

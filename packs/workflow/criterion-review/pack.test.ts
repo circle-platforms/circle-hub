@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../../hub/testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {mkdtemp,rm} from 'node:fs/promises';

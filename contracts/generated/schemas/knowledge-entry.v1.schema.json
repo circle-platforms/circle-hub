@@ -13,7 +13,9 @@
         "behaviour",
         "case",
         "defect",
-        "observation"
+        "observation",
+        "procedure",
+        "pitfall"
       ],
       "description": "declared by the producer (K02 F[0], R[3])"
     },

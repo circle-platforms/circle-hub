@@ -184,6 +184,7 @@ export async function submitResult(ctx: EngineContext, user: Principal, args: Re
 }
 
 async function submitLocked(ctx: EngineContext, user: Principal, args: Record<string, unknown>, call: CallContext, stored: StoredRecord<RunRecord>, refresh = false): Promise<SubmitAnswer> {
+  if(ctx.parsers.forRun)ctx={...ctx,parsers:await ctx.parsers.forRun(stored.body.run)};
   const store = ctx.deps.records.store;
   const run = stored.body;
   const received = receivedDigest(args);
@@ -234,7 +235,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   }
   if(management!==null){
     const refusal=protocolError('RUN_ABANDONED',PROTOCOL_CODES.RUN_ABANDONED.when,{path:'/run'});
-    const result:ValidationResult={schema:'validation@1',run:run.run,submission:received.digest,acceptance:'not_accepted',errors:[refusal],rounds:{used:0,max:0},partitions:emptyPartitions(),cross_item:[],coverage:{complete:false,examined:0,total:run.items.length,note:'已放弃运行的新输入仍原样保存，不重新核验'},locks:{...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),pack:run.pack,pack_digest:run.pack_digest,...(run.root?{root:run.root}:{})},trace:call.traceId};
+    const result:ValidationResult={schema:'validation@1',run:run.run,submission:received.digest,acceptance:'not_accepted',errors:[refusal],rounds:{used:0,max:0},partitions:emptyPartitions(),cross_item:[],coverage:{complete:false,examined:0,total:run.items.length,note:'已放弃运行的新输入仍原样保存，不重新核验'},locks:{...(run.skills?{skills:run.skills}:{}),...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),pack:run.pack,pack_digest:run.pack_digest,...(run.root?{root:run.root}:{})},trace:call.traceId};
     const saved=await putResult(store,result,ctx.now().toISOString());
     await action({acceptance:'not_accepted',codes:['RUN_ABANDONED'],repair:[],result:saved.digest,extra:{refusal:'RUN_ABANDONED'}});
     return answerOf(saved.body);
@@ -360,7 +361,7 @@ function notAccepted(base: Basis, errors: ProtocolError[]): ValidationResult {
     partitions: emptyPartitions(),
     cross_item: [],
     coverage: { complete: false, examined: 0, total: run.items.length, note: '提交未受理，没有分区' },
-    locks: { ...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
+    locks: { ...(run.skills?{skills:run.skills}:{}),...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
     trace: base.call.traceId,
   };
 }

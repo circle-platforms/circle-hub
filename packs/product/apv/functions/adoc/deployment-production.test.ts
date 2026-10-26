@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../../../../hub/testing/parsers.ts';
 // Real Hub knowledge transactions and sandbox functions; all source bytes and variables are synthetic.
 import assert from 'node:assert/strict';
 import {after,before,test} from 'node:test';
@@ -6,7 +7,7 @@ import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {ProductDeclaration,type BuildInfo} from '../../../../../contracts/src/product.ts';
 import {createKnowledge} from '../../../../../hub/knowledge/api.ts';
 import {FakeExternal,FakePacks} from '../../../../../hub/knowledge/test-support.ts';
-import {createDefaultRegistry} from '../../../../../hub/refs/api.ts';
+
 import {sha256Hex} from '../../../../../hub/records/api.ts';
 import {startPostgres,type TemporaryPostgres} from '../../../../../hub/testing/postgres.ts';
 import {openTestRecords} from '../../../../../hub/testing/records.ts';

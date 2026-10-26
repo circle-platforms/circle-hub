@@ -1,9 +1,10 @@
+import {type KityMinderModel,type MindMapNode} from "../../../skill/mindmap-format/api.ts";
 // Input and output types of the case-location pack functions. Types only: every import here is erased at run time, so the
 // functions stay self-contained inside the pack (the sandbox admits only modules inside the pack).
 import type { Reason, Verdict } from '../../../../contracts/generated/vocabulary.ts';
 import type { BoundInput, ContextBuild, PackWarning, ProjectedItem, RunContext } from '../../../../contracts/src/pack.ts';
 import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
-import type { KityMinderModel, MindMapNode } from '../../../../hub/refs/api.ts';
+
 
 export type { BoundInput, CheckOutcome, ContextBuild, KityMinderModel, MindMapNode, PackWarning, ProjectedItem, RunContext };
 

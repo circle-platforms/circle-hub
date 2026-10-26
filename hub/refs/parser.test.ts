@@ -22,15 +22,15 @@ describe('parser registry', () => {
   it('registers the six core parsers by id@version', () => {
     assert.deepEqual(
       registry.list().map((parser) => `${parser.id}@${parser.version}`),
-      ['kityminder@1', 'xml@1', 'html@1', 'markdown@1', 'json@1', 'text@1', 'xlsx@1'],
+      ['xml@1', 'html@1', 'markdown@1', 'json@1', 'text@1', 'xlsx@1'],
     );
-    assert.equal(registry.get('kityminder@1')?.id, 'kityminder');
+    assert.equal(registry.get('kityminder@1'), undefined);
     assert.equal(registry.get('kityminder'), undefined);
     assert.equal(registry.get('kityminder@2'), undefined);
   });
 
   it('finds parsers by media type, exact matches before wildcards', () => {
-    assert.deepEqual(registry.forMediaType('application/json; charset=utf-8').map((p) => p.id), ['kityminder', 'json']);
+    assert.deepEqual(registry.forMediaType('application/json; charset=utf-8').map((p) => p.id), ['json']);
     assert.deepEqual(registry.forMediaType('TEXT/MARKDOWN').map((p) => p.id), ['markdown', 'text']);
     assert.deepEqual(registry.forMediaType('text/csv').map((p) => p.id), ['text']);
     assert.deepEqual(registry.forMediaType('text/plain').map((p) => p.id), ['text']);
@@ -43,13 +43,13 @@ describe('parser registry', () => {
     const bad = { ...textParser, id: 'Bad Name' } as Parser;
     assert.throws(() => createParserRegistry([bad]));
     assert.throws(() => createParserRegistry([{ ...textParser, version: -1 } as Parser]));
-    assert.equal(createParserRegistry(defaultParsers()).list().length, 7);
+    assert.equal(createParserRegistry(defaultParsers()).list().length, 6);
   });
 
   it('recognizes a file with the first parser that accepts it', () => {
     const map = recognize(registry, fixture('mindmap.km.json'), 'application/json');
-    assert.equal(map?.parser.id, 'kityminder');
-    assert.equal(map?.document.summary().nodes, 150);
+    assert.equal(map?.parser.id, 'json');
+    assert.equal(registry.get('kityminder@1'), undefined, 'format skills are explicitly installed');
     const plain = recognize(registry, utf8('{"a":1}'), 'application/json');
     assert.equal(plain?.parser.id, 'json');
     assert.equal(recognize(registry, utf8('{bad'), 'application/json'), null);

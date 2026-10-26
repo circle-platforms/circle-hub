@@ -1,5 +1,6 @@
 // Parser interface, typed parse errors and the parser registry (B03 F[0]: a parser@version declares the selector grammar).
 import { PROTOCOL_CODES, type ProtocolCode } from '../../contracts/generated/protocol.ts';
+import type {SkillDependency,SkillLock} from '../../contracts/src/skills.ts';
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
@@ -65,6 +66,9 @@ export interface ParsedDocument<M extends JsonValue = JsonValue> {
 }
 
 export interface Parser<M extends JsonValue = JsonValue> {
+  readonly skill_digest?: string;
+  readonly migration_test?:string;
+  parseAsync?(bytes: Uint8Array, options?: ParseOptions): Promise<ParsedDocument<M>>;
   readonly id: string;
   readonly version: number;
   /** Media types the parser accepts; `type/*` is a wildcard that matches after exact matches. */
@@ -75,12 +79,32 @@ export interface Parser<M extends JsonValue = JsonValue> {
 }
 
 export interface ParserRegistry {
+  skills?:readonly SkillLock[];
+  bindingRecord?:string;
+  bindingRecords?:readonly string[];
+  bindingDisclosure?:string;
+  refresh?():Promise<void>;
+  freeze?(dependencies:readonly SkillDependency[]):Promise<{parsers:ParserRegistry;skills:SkillLock[]}>;
+  forRun?(run:string):Promise<ParserRegistry>;
+  forReference?(parser:string):Promise<ParserRegistry>;
+  unavailable?(parser:string):string|undefined;
   register(parser: Parser): void;
   /** Lookup by `id@version`, e.g. `kityminder@1`. */
   get(key: string): Parser | undefined;
   /** Parsers declaring the media type: exact matches first, then `type/*` wildcards, each in registration order. */
   forMediaType(mediaType: string): Parser[];
   list(): Parser[];
+}
+
+/** Async package implementations never run in the Hub process. */
+export function parseDocument(parser:Parser,bytes:Uint8Array,options:ParseOptions={}):Promise<ParsedDocument>{
+  return parser.parseAsync?parser.parseAsync(bytes,options):Promise.resolve(parser.parse(bytes,options));
+}
+export function parserCacheKey(parser:Parser):string{return parserKey(parser)+'@'+(parser.skill_digest??'platform');}
+export async function recognizeAsync(registry:ParserRegistry,bytes:Uint8Array,mediaType:string,options:ParseOptions={},onRejected?:(error:ParseError)=>void):Promise<{parser:Parser;document:ParsedDocument}|null>{
+  await registry.refresh?.();let last:ParseError|null=null;
+  for(const parser of registry.forMediaType(mediaType))try{return {parser,document:await parseDocument(parser,bytes,{...options,mediaType})};}catch(error){if(!(error instanceof ParseError))throw error;last=error;}
+  if(last)onRejected?.(last);return null;
 }
 
 /** A parse failure the caller can show. The registered code is the one start_run uses when an input does not parse. */

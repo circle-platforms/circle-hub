@@ -33,7 +33,7 @@ import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
 import { feedingText, fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
-import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOf } from './upload.ts';
+import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOfAsync as structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
 
@@ -274,7 +274,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
   let suggestMediaType = false;
   let structure: Record<string, unknown> | null = null;
   try {
-    structure = structureOf(deps.parsers, bytes, mediaType, (error) => {
+    structure = await structureOf(deps.parsers, bytes, mediaType, (error) => {
       suggestMediaType = mediaType !== 'text/plain' && !(error instanceof ParseLimitError) && (error instanceof ParseSyntaxError || error instanceof ParseEncodingError);
       refusal = { code: error.code, message: `${error.parser}：${error.message}`, fix: error.fix };
     });
@@ -286,7 +286,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
   if (refusal) {
     const rejected = refusal as ProtocolError;
     const guessed = mediaType;
-    const fallback = structureOf(deps.parsers, bytes, 'text/plain');
+    const fallback = await structureOf(deps.parsers, bytes, 'text/plain');
     if (fallback !== null) { mediaType = 'text/plain'; structure = fallback; }
     structure = { ...(structure ?? {}), media_type_guessed: true, guessed_media_type: guessed, guessed_refusal: rejected, note: `媒体类型由字节猜测，猜测格式未通过核验，文件仍原样保存；${rejected.message}；修正：${rejected.fix}${suggestMediaType ? '；若类型猜测有误，请用 media_type 明确指定实际格式后重传' : ''}` };
   }
@@ -503,7 +503,7 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     onDiagnostic: (d) => note(`${d.scheme} ${clipNote(d.reference, 300)}: ${d.message}`),
   });
   if (!result.resolved) {
-    if (result.code === 'SOURCE_UNAVAILABLE') return { answer: errorAnswer('get_nodes', [unavailable()]) };
+    if (result.code === 'SOURCE_UNAVAILABLE' && !result.parser_missing) return { answer: errorAnswer('get_nodes', [unavailable()]) };
     return { answer: errorAnswer('get_nodes', [{ code: result.code, message: result.message, fix: result.fix }]) };
   }
   if (cursor !== null) {

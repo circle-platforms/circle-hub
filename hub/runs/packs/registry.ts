@@ -1,3 +1,4 @@
+import {defaultParsers} from '../../refs/api.ts';
 import { createRequestService } from '../../requests/api.ts';
 // The pack registry (T01 T02 B04 R01): publication by the owner of a pack id holding a publish right, the publish check,
 // content-addressed storage of every file, assignment of workflow packs to users, activation of product packs for the whole
@@ -107,6 +108,9 @@ export interface PackRegistry {
   unassign(by: Principal, userId: string, packId: string, note?: string | null): Promise<AuthorizationRecord>;
   /** Admin: a product pack is inert until it is assigned to the whole Hub; names colliding with an active one are refused. */
   activate(by: Principal, packId: string, note?: string | null): Promise<AuthorizationRecord>;
+  install(by: Principal, ref: string, note?: string | null): Promise<AuthorizationRecord>;
+  uninstall(by: Principal, packId: string, note?: string | null): Promise<AuthorizationRecord>;
+  installedSkills(): Promise<OpenedPack[]>;
   deactivate(by: Principal, packId: string, note?: string | null): Promise<AuthorizationRecord>;
   isActive(packId: string): Promise<boolean>;
   listPacks(): Promise<PackInfo[]>;
@@ -154,6 +158,7 @@ const DECLARATION_FILES: Readonly<Record<PackKind, readonly string[]>> = {
   workflow: ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'knowledge.json', 'SKILL.md'],
   product: ['product.json'],
   system: ['system.json'],
+  skill: ['skill.json', 'SKILL.md', 'workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'knowledge.json', 'ledger.json'],
 };
 const MEDIA_TYPES: Readonly<Record<string, string>> = {
   '.json': 'application/json',
@@ -395,7 +400,7 @@ class Registry implements PackRegistry {
       id: packId,
       kind,
       owner: versions[0].owner,
-      active: kind === 'product' && (await this.#records.authorizations.isActive('assign', WHOLE_HUB, packId)),
+      active: (kind === 'product'||kind==='skill') && (await this.#records.authorizations.isActive('assign', WHOLE_HUB, packId)),
       latest: versions.find((v) => !v.withdrawn)?.version ?? null,
       versions,
     };
@@ -427,6 +432,7 @@ class Registry implements PackRegistry {
     if (userId === WHOLE_HUB) return this.activate(by, packId, options.note);
     await this.#admin(by, '只有管理员可以分配包');
     const kind = await this.#kindOf(packId);
+    if (kind === 'skill') throw new ConflictError('通用技能包由管理员安装，不按用户分配', { fix: '用 pack install 安装技能包' });
     if (kind === null) throw new ConflictError(`没有发布过包 ${packId}`, { fix: '先发布这个包，再分配' });
     const label = labelOf('pack_kind', kind);
     if (kind === 'system') throw new ConflictError(`${packId} 是${label}；${label}由管理员实例化为资源，不分配给用户（T01 R[3]）`, { fix: `在资源配置里实例化这个${label}` });
@@ -560,6 +566,42 @@ class Registry implements PackRegistry {
     });
   }
 
+  async install(by: Principal, ref: string, note?: string | null): Promise<AuthorizationRecord> {
+    await this.#admin(by, '只有管理员可以安装通用技能包');
+    if(parsePackRef(ref)?.version==null)throw new ConflictError('安装必须指定技能包精确版本',{fix:'使用 pack install <技能包@版本>'});
+    const info = await this.resolve(ref);
+    if (info?.kind !== 'skill') throw new ConflictError('没有可安装的通用技能包版本', { fix: '先发布 kind=skill 的包，再按精确版本安装' });
+    return this.#records.store.withTransaction(async tx=>{
+      await this.#records.store.lock('skills.install',tx);
+      const opened=await this.open(info.digest);
+      if(opened?.declarations.kind!=='skill')throw new ConflictError('技能包不可读取');
+      const installed=await this.installedSkills();
+      if(installed.length>=64&&!installed.some(pack=>pack.info.id===info.id))throw new ConflictError('安装技能包超过运行锁的 64 包上限',{fix:'先卸载不再需要的技能包，再安装'});
+      const occupied=new Set([...defaultParsers().map(p=>p.id+'@'+p.version),...(await this.installedSkills()).filter(p=>p.info.id!==info.id).flatMap(p=>p.declarations.kind==='skill'?p.declarations.skill.parsers.map(row=>row.parser):[])]);
+      for(const parser of opened.declarations.skill.parsers)if(occupied.has(parser.parser))throw new ConflictError('已安装技能包重复声明解析器 '+parser.parser,{fix:'先卸载冲突技能包，再安装唯一声明者'});
+      for(const dep of opened.info.manifest.dependencies??[])if(!(await this.installedSkills()).some(p=>p.info.id===dep.pack&&(dep.version===undefined||dep.version===p.info.version)))throw new ConflictError('缺少技能包依赖 '+dep.pack,{fix:'先安装声明的依赖版本'});
+      return this.#records.authorizations.grant(by,{permission:'assign',subject:WHOLE_HUB,object:info.id,bound:info.digest,note},tx);
+    });
+  }
+
+  async uninstall(by: Principal, packId: string, note?: string | null): Promise<AuthorizationRecord> {
+    await this.#admin(by,'只有管理员可以卸载通用技能包');
+    if(await this.#kindOf(packId)!=='skill')throw new ConflictError('这不是通用技能包',{fix:'指定已发布的通用技能包'});
+    return this.#records.authorizations.revoke(by,{permission:'assign',subject:WHOLE_HUB,object:packId,note});
+  }
+
+  async installedSkills(): Promise<OpenedPack[]> {
+    const out:OpenedPack[]=[];
+    for(const id of await this.#records.authorizations.packsFor(WHOLE_HUB)){
+      const decision=await this.#records.authorizations.latest('assign',WHOLE_HUB,id);
+      if(!decision||decision.body.revoked||!decision.body.bound)continue;
+      const info=await this.byDigest(decision.body.bound);
+      if(!info||info.kind!=='skill'||info.withdrawn)continue;
+      const opened=await this.open(info.digest);if(opened)out.push(opened);
+    }
+    return out;
+  }
+
   async deactivate(by: Principal, packId: string, note?: string | null): Promise<AuthorizationRecord> {
     return this.#records.authorizations.revoke(by, { permission: 'assign', subject: WHOLE_HUB, object: packId, note });
   }
@@ -589,7 +631,8 @@ class Registry implements PackRegistry {
     return this.#records.authorizations.packsFor(userId);
   }
 
-  canUse(userId: string, packId: string): Promise<boolean> {
+  async canUse(userId: string, packId: string): Promise<boolean> {
+    if(await this.#kindOf(packId)==='skill'){const user=await this.#records.principals.get(userId);return !!user&&!user.disabled&&(await this.installedSkills()).some(p=>p.info.id===packId);}
     return this.#records.authorizations.canUse(userId, packId);
   }
 

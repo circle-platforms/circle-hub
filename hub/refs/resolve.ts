@@ -5,7 +5,7 @@ import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contra
 import { labelOf, type PermissionRole, type ProducerKind, type ReadTier, type Reason, type ReferenceScheme } from '../../contracts/generated/vocabulary.ts';
 import type { RecordEnvelope } from '../../contracts/src/records.ts';
 import { canonicalJson, recordDigest, sha256Hex } from './canonical-json.ts';
-import { ParseError, mediaTypeEssence, parserKey, type Fragment, type JsonObject, type JsonValue, type ParsedDocument, type ParserRegistry } from './parser.ts';
+import { ParseError, mediaTypeEssence, parserKey, parserCacheKey,parseDocument, type Fragment, type JsonObject, type JsonValue, type ParsedDocument, type ParserRegistry } from './parser.ts';
 import { decodeHtmlText } from './parsers/html.ts';
 import { decodeXmlText } from './parsers/xml.ts';
 import { quoteMatches } from './quote.ts';
@@ -69,6 +69,8 @@ export interface RecordReader {
 
 /** Parsed documents keyed by digest, parser and media type. The owning read/evaluation must dispose them when done. */
 export interface DocumentCache {
+  /** Coalesce concurrent parses within the owning operation; never shared across calls. */
+  load?(key:string,parse:()=>Promise<ParsedDocument>):Promise<ParsedDocument>;
   get(key: string): ParsedDocument | undefined;
   set(key: string, document: ParsedDocument): void;
   /** Terminal release by the owner of one read/evaluation; late callbacks cannot repopulate the cache. */
@@ -126,6 +128,7 @@ export type Resolved = {
 export type UncheckedReason = Extract<Reason, 'check_error' | 'integrity_unproven'>;
 
 export type Unresolved = {
+  parser_missing?:string;
   resolved: false;
   reference: string;
   code: Extract<ProtocolCode, 'SOURCE_UNAVAILABLE' | 'REFERENCE_UNRESOLVED' | 'SOURCE_RETRYABLE' | 'SOURCE_INTEGRITY_UNPROVEN'>;
@@ -157,9 +160,18 @@ export function isGroundable(scheme: ReferenceScheme, recordKind: RecordKind | n
 
 export function createDocumentCache(maxEntries = 16): DocumentCache {
   const entries = new Map<string, ParsedDocument>();
+  const pending=new Map<string,Promise<ParsedDocument>>();
   let disposed=false;
-  return {
-    dispose(){disposed=true;entries.clear();},
+  const cache:DocumentCache={
+    async load(key,parse){
+      const found=cache.get(key);if(found)return found;
+      const active=pending.get(key);if(active)return active;
+      if(disposed)return parse();
+      if(pending.size>=Math.max(1,maxEntries)){await Promise.race(pending.values()).catch(()=>{});return cache.load!(key,parse);}
+      const value=Promise.resolve().then(parse).then(document=>{cache.set(key,document);return document;}).finally(()=>pending.delete(key));
+      pending.set(key,value);return value;
+    },
+    dispose(){disposed=true;entries.clear();pending.clear();},
     get(key) {
       if(disposed)return undefined;
       const document = entries.get(key);
@@ -176,6 +188,7 @@ export function createDocumentCache(maxEntries = 16): DocumentCache {
       while (entries.size > maxEntries) entries.delete(entries.keys().next().value!);
     },
   };
+  return cache;
 }
 
 /** SHA-256 of a fragment's text: the cited-fragment digest that detects a changed citation. */
@@ -257,6 +270,17 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
     const shown = (typeof input === 'string' ? input : (JSON.stringify(input) ?? '')).slice(0, 512);
     return unresolved(shown, `引用格式不对：${error.message}`);
   }
+  if(ref.scheme==='src'&&ref.parser){
+    try{
+      if(ctx.reader.run&&ctx.parsers.forRun)ctx={...ctx,parsers:await ctx.parsers.forRun(ctx.reader.run)};
+      else if(ctx.parsers.forReference)ctx={...ctx,parsers:await ctx.parsers.forReference(ref.parser)};
+      else await ctx.parsers.refresh?.();
+    }catch(error){
+      ctx.onDiagnostic?.({reference:canonical,scheme:ref.scheme,message:'locked parser package could not be loaded'});
+      const failed=unavailable(canonical,ctx,error instanceof IntegrityError?'integrity_unproven':'check_error');
+      return Object.assign(failed,{parser_missing:ref.parser,message:'缺少解析器 '+ref.parser+' 的已核验技能包摘要，当前不能复核这条引用',fix:'管理员恢复运行锁定的已发布包；历史运行缺锁时用 circle-hub skill bind-legacy <解析器 id@版本> <技能包 id@版本> 追加迁移声明，再按原引用重读'});
+    }
+  }
   if (ctx.visited?.has(canonical)) {
     return unresolved(canonical, `成环的引用：${canonical}`);
   }
@@ -264,8 +288,10 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
   const consumer = ctx.consumer ?? 'model';
   const diagnose = (message: string): void => ctx.onDiagnostic?.({ reference: canonical, scheme: ref.scheme, message });
   switch (ref.scheme) {
-    case 'src':
-      return resolveSource(ref, canonical, ctx, consumer, diagnose);
+    case 'src': {
+      const result=await resolveSource(ref, canonical, ctx, consumer, diagnose);
+      return result.resolved&&ctx.parsers.bindingDisclosure?{...result,note:[result.note,ctx.parsers.bindingDisclosure].filter(Boolean).join('；')}:result;
+    }
     case 'tree':
     case 'entry': {
       if (!ctx.trees) {
@@ -405,7 +431,11 @@ async function resolveSource(
 ): Promise<ResolveResult> {
   // The parser is checked before any read, so this answer never depends on whether the source exists.
   const parser = ref.parser === undefined ? null : ctx.parsers.get(ref.parser);
-  if (ref.parser !== undefined && !parser) return unresolved(canonical, `解析器 ${ref.parser} 没有登记`);
+  if (ref.parser !== undefined && !parser) {
+    const why=ctx.parsers.unavailable?.(ref.parser);
+    if(why)return {resolved:false,reference:canonical,code:'SOURCE_UNAVAILABLE',message:why,fix:why,parser_missing:ref.parser};
+    return unresolved(canonical, `解析器 ${ref.parser} 没有登记`);
+  }
   if (!ctx.sources) {
     diagnose('no source reader configured');
     return unavailable(canonical, ctx, 'check_error');
@@ -472,11 +502,12 @@ async function resolveSource(
       groundable,
     };
   }
-  const cacheKey = `${ref.sha256}\u0000${parserKey(parser)}\u0000${read.mediaType}`;
+  const cacheKey = `${ref.sha256}\u0000${parserCacheKey(parser)}\u0000${read.mediaType}`;
   let document = ctx.documents?.get(cacheKey);
   if (!document) {
     try {
-      document = parser.parse(bytes, { mediaType: read.mediaType });
+      const parse=()=>parseDocument(parser,bytes,{mediaType:read.mediaType});
+      document = ctx.documents?.load?await ctx.documents.load(cacheKey,parse):await parse();
     } catch (cause) {
       if (!(cause instanceof ParseError)) throw cause;
       return unresolved(canonical, `源文件不能按 ${ref.parser} 解析：${cause.message}`);

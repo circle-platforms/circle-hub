@@ -1,0 +1,21 @@
+{
+  "schema": "skill@1",
+  "parsers": [
+    {
+      "parser": "kityminder@1",
+      "media_types": [
+        "application/json"
+      ],
+      "limits": {
+        "maxBytes": 16777216,
+        "maxDepth": 200,
+        "maxNodes": 100000
+      },
+      "function": {
+        "module": "functions/parse.ts",
+        "export": "default"
+      },
+      "migration_test": "mindmap-format migration equivalence across repository documents"
+    }
+  ]
+}

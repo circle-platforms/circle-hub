@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {zipSync,strToU8,type ZipOptions,type Zippable} from 'fflate';
@@ -15,6 +16,6 @@ test('opaque XML credentials and uninspectable binary members are not hidden by 
 for(const place of ['archive comment','member comment','extra field'])test(`outbound container rejects opaque ${place} while ordinary parsing remains available`,async()=>{
  const text='password=SyntheticContainerMetadata83642';
  const bytes=place==='archive comment'?workbook({}, {comment:text}):place==='member comment'?workbook({}, {}, {comment:text}):workbook({}, {}, {extra:{65534:strToU8(text)}});
- const {recognize,createDefaultRegistry}=await import('../refs/api.ts');assert.ok(recognize(createDefaultRegistry(),bytes,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'));
+ const {recognize}=await import('../refs/api.ts');assert.ok(recognize(createDefaultRegistry(),bytes,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'));
  assert.equal(verifiedContent(bytes,sha256Hex(bytes),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),false);
 });

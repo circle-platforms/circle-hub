@@ -8,7 +8,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { HubConfig, Limits } from '../config/index.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { Principal, RecordsKit, User } from '../records/api.ts';
-import { createDefaultRegistry } from '../refs/api.ts';
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
 import type { HubApp, ServerDeps } from './api.ts';

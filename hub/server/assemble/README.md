@@ -35,9 +35,9 @@ orphan sweep, then `assemble(config, records)`, then `listen()`. `assemble` = `c
    `circle-hub key init --set-aside-vault`; plain `key init` is only for an empty vault. Startup never creates a key.
 2. sandbox-exec is probed; where it is missing a notice says pack functions cannot run (pack functions always run with
    `requireOsIsolation: true` in the deployed Hub).
-3. Core parsers (`createDefaultRegistry`), the pack registry (`createPackRegistry`, extraction under `<data dir>/packs`,
+3. The pack registry (`createPackRegistry`, extraction under `<data dir>/packs`,
    `onError` and `onTamper` to the operator's log) and its ports (`createPacksPort`, `createWorkflowStore`,
-   `createPackCatalog`).
+   `createPackCatalog`), plus `createSkillParserRegistry` loading explicitly installed parser capabilities in the package sandbox. KityMinder is independently installed; remaining built-ins migrate in R5 B5.
 4. Connectors (`createConnectors`: resources, logins, read plugins) with `createExternalReader` and `createResourceCatalog`.
 5. Knowledge (`createKnowledge` with the PacksPort, the connectors' ExternalReaderPort alone, since the views are not a
    source of the tree, and no placer: the Hub calls no model, so spans the code cannot place stay unplaced at the root),

@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -7,7 +8,7 @@ import {openHarness} from './testing/harness.ts';
 import {writePack,type PackSpec} from './testing/packs.ts';
 import {startPostgres} from '../../testing/postgres.ts';
 import {createKnowledge} from '../../knowledge/api.ts';
-import {createDefaultRegistry} from '../../refs/api.ts';
+
 import {runContextOf} from './evaluate.ts';
 import {RunRecord} from '../../../contracts/src/run.ts';
 test('start freezes feeding before bound and expected source reads; checks and result locks retain the same horizon',async t=>{

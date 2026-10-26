@@ -61,8 +61,8 @@ function tableOf(pack: ValidatedPack, check: CheckEntry): unknown {
 
 /** True when some sample exercises a pack function, which needs the extracted directory and the sandbox. */
 export function needsSandbox(pack: ValidatedPack): boolean {
-  const d = pack.declarations;
-  if (d.kind !== 'workflow') return false;
+  const d = pack.declarations.kind === 'skill' ? pack.declarations.method : pack.declarations;
+  if (!d || d.kind !== 'workflow') return false;
   const functions = new Set(d.checks.checks.filter((c) => c.function !== undefined).map((c) => c.id));
   return pack.samples.some((s) => functions.has(s.sample.check));
 }
@@ -108,8 +108,8 @@ async function runSample(input: PublishCheckInput, check: CheckEntry, table: unk
 /** Runs every sample and reports by check and by source. Product and system packs have no samples: an empty report. */
 export async function runPublishCheck(input: PublishCheckInput): Promise<PublishReport> {
   const report: PublishReport = { samples: { total: 0, passed: 0, failed: 0, sources: zeroSources() }, checks: [], failures: [], unsampled: [], warnings: [] };
-  const d = input.pack.declarations;
-  if (d.kind !== 'workflow') return report;
+  const d = input.pack.declarations.kind === 'skill' ? input.pack.declarations.method : input.pack.declarations;
+  if (!d || d.kind !== 'workflow') return report;
   const sets = closedSetsOf(d.slots);
   const byId = new Map(d.checks.checks.map((c) => [c.id, c]));
   const tables = new Map(d.checks.checks.map((c) => [c.id, tableOf(input.pack, c)]));
@@ -164,7 +164,8 @@ export function refusalsOf(report: PublishReport, pack: ValidatedPack): PackProb
   const out: PackProblem[] = report.failures.map((f) =>
     problem('publish.sample_failed', f.file, `样例 ${f.sample}（检查 ${f.check}）不符合它的期望：${f.differences.join('；')}`, '改正检查（表或函数）或者样例的期望；有样例不过就不发布（T02 R[0]）'),
   );
-  const checks = pack.declarations.kind === 'workflow' ? pack.declarations.checks.checks : [];
+  const declarations=pack.declarations.kind==='skill'?pack.declarations.method:pack.declarations;
+  const checks = declarations?.kind === 'workflow' ? declarations.checks.checks : [];
   for (const u of report.unsampled) {
     const k = checks.findIndex((c) => c.id === u.check);
     out.push(
