@@ -8,6 +8,14 @@ import { addressKey, addressValue, type ManifestBed } from './manifest.ts';
 
 export const TRIGGER_TYPES: ReadonlySet<string> = new Set(FORMAT.trigger_types);
 
+/** The trigger-capable device types of one deployment: the profile's declared narrowing of the pack's closed set
+ *  (every type the executor gives a usable host shell seat on, server included by default), or the whole set when
+ *  the deployment declares none. */
+export function triggerTypesOf(narrowed: readonly string[] | undefined): ReadonlySet<string> {
+  if (narrowed === undefined) return TRIGGER_TYPES;
+  return new Set(narrowed);
+}
+
 export interface SegmentFact {
   subnet: string;
   family: 'ipv4' | 'ipv6';
@@ -48,7 +56,7 @@ function compareText(a: string, b: string): number {
 }
 
 /** The facts of one bed, computed once and read by every address rule. */
-export function bedFacts(bed: ManifestBed): BedFacts {
+export function bedFacts(bed: ManifestBed, triggerTypes: ReadonlySet<string> = TRIGGER_TYPES): BedFacts {
   const segments = new Map<string, SegmentFact>();
   const listeners: ListenerFact[] = [];
   const blind: BlindFact[] = [];
@@ -66,7 +74,7 @@ export function bedFacts(bed: ManifestBed): BedFacts {
   for (const device of bed.devices) {
     for (const iface of [...device.ipv4, ...device.ipv6]) {
       if (device.type === 'load-balancer') {
-        const triggers = (segments.get(iface.subnet)?.members ?? []).filter((member) => TRIGGER_TYPES.has(member.type) && member.device !== device.name);
+        const triggers = (segments.get(iface.subnet)?.members ?? []).filter((member) => triggerTypes.has(member.type) && member.device !== device.name);
         if (triggers.length > 0) listeners.push({ device: device.name, address: iface.address, subnet: iface.subnet, triggers: triggers.map((member) => ({ device: member.device, address: member.address })) });
         else blind.push({ device: device.name, address: iface.address, subnet: iface.subnet });
       }
@@ -123,7 +131,7 @@ export function readAddress(bed: ManifestBed, leases: readonly LeaseRow[], now: 
  * Whether the address falls in a device-interface subnet that has no trigger device.
  * Compared by the numeric value and the interface prefix, not by the address text.
  */
-export function inBlindSegment(bed: ManifestBed, address: string): boolean {
+export function inBlindSegment(bed: ManifestBed, address: string, triggerTypes: ReadonlySet<string> = TRIGGER_TYPES): boolean {
   const v4 = addressValue('ipv4', address);
   const v6 = v4 === null ? addressValue('ipv6', address) : null;
   if (v4 === null && v6 === null) return false;
@@ -140,7 +148,7 @@ export function inBlindSegment(bed: ManifestBed, address: string): boolean {
   }
   if (subnets.size === 0) return false;
   for (const subnet of subnets) {
-    const triggered = bed.devices.some((device) => TRIGGER_TYPES.has(device.type) && [...device.ipv4, ...device.ipv6].some((iface) => iface.subnet === subnet));
+    const triggered = bed.devices.some((device) => triggerTypes.has(device.type) && [...device.ipv4, ...device.ipv6].some((iface) => iface.subnet === subnet));
     if (triggered) return false;
   }
   return true;

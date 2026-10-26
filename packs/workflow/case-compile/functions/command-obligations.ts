@@ -64,7 +64,17 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
    const inverse=identityOf(commandIdentity(grammar,line));
    if(inverse&&inverse.path===identity.path&&inverse.signature===identity.signature)inverses.set(identityKey(inverse),inverse);else unrepresentable=true;
   }
-  return {identities:[...inverses.values()],ambiguous:unrepresentable||inverses.size>1};
+  if(inverses.size||unrepresentable)return {identities:[...inverses.values()],ambiguous:unrepresentable||inverses.size>1};
+  // Only complete sibling paths of the same parent can use the leaf form of a declared pair.
+  const segments=identity.path.split('/'),leaf=decodeURIComponent(segments.at(-1)!);
+  const pair=pairs.find(([a,b])=>a===leaf||b===leaf);
+  if(!pair)return {identities:[],ambiguous:false};
+  const sibling=pair[0]===leaf?pair[1]:pair[0];
+  const siblingPath=segments.slice(0,-1).join('/')+'/'+encodeURIComponent(sibling);
+  if(!native.some(definition=>definition.path===siblingPath))return {identities:[],ambiguous:false};
+  const line=[...siblingPath.split('/').slice(2).map(decodeURIComponent),...identity.parameters.map(parameter=>parameter.raw)].join(' ');
+  const inverse=identityOf(commandIdentity(grammar,line));
+  return inverse&&inverse.path===siblingPath?{identities:[inverse],ambiguous:false}:{identities:[],ambiguous:true};
  };
  configured.forEach((operation,index)=>{
   const identity=operation.identity!;

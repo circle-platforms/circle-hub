@@ -198,3 +198,14 @@ Hub 按检查声明的 judgment_sources，从本条目原始提交的精确槽�
 作者片段按原有完整行语法解析，不截散文。出现次数按定义身份（来源根、完整路径、签名引用）计，不把参数值当成必须保留的文字；计划仍须独立核参数。可以改参数，不可以删命令：同一定义的执行次数至少等于作者次数，清理段不充数，缺失次数写入阻断结果的 `data.obligations` 并随结果留存。工作簿生成、独立核验、派发前检查共用这些边界。
 
 容量来自冻结 profile 的显式 ordinal 与台架同类型设备计数，不读对象名中的数字。设备座位还不超过冻结的预检设备数；主机映射若声明 ordinal，也按其类型计数核对。越界时投影整份拒绝，写明“框架取不到那台设备，整卷不跑”，没有部分工作簿。旧根缺产品规则时设备计划保持未知，需升级产品包并重新育苗，不能从命令文字猜只读/修改。
+
+### Sibling switches and declared trigger narrowing
+
+After the matched enum-parameter form, a declared inverse pair can name two complete sibling leaf paths of the same
+locked parent. Both paths and the paired command with unchanged bound parameters must fully parse; a missing leaf
+or ambiguous target is not guessed from prose. Ordinary prefix rules remain as declared.
+
+The default trigger types are the package's closed router/client/server set. A published profile may narrow it with
+`trigger_types`; an omitted field uses the default, while an explicit empty array declares no trigger types. Types
+outside the package's closed trigger set are rejected rather than silently filtered. The reachability rules still
+use the frozen bed interfaces and declared capability, not keyword inference or an observed connectivity claim.

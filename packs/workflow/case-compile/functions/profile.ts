@@ -19,6 +19,9 @@ export interface RuntimeProfile {
   hosts: Array<{ object: string; method: string; device: string; ordinal?:number }>;
   allowed: AllowedCall[];
   denied?: { device: string[]; host: string[] };
+  /** The deployment's declared trigger-capable device types (a subset of the manifest device types); absent means the
+   *  pack's whole closed set, server included. */
+  trigger_types?: string[];
 }
 export type ParsedProfile = { ok: true; profile: RuntimeProfile } | { ok: false; problems: Problem[] };
 export const oneLine = (value: unknown): value is string => typeof value === 'string' && value !== '' && value.trim() === value && !/[\r\n\v\f\u0085\u2028\u2029]/.test(value) && !value.startsWith('=');
@@ -36,6 +39,9 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   if (!isRecord(value)) return { ok: false, problems: [{ pointer: '', message: '运行环境配置不是对象', fix: '绑定发布的 runtime-profile@1 文档' }] };
   if (value.schema !== FORMAT.profile_schema) issue('/schema', '不是 runtime-profile@1');
   if (typeof value.synthetic !== 'boolean') issue('/synthetic', '没有明确的 synthetic 布尔声明');
+  if (value.trigger_types !== undefined) {
+    if (!Array.isArray(value.trigger_types) || value.trigger_types.some((type) => typeof type !== 'string' || !FORMAT.trigger_types.includes(type)) || new Set(value.trigger_types).size !== (value.trigger_types as string[]).length) issue('/trigger_types', 'trigger_types 必须是无重复的包声明触发类型子集；显式空数组表示没有触发类型');
+  }
   const runtime = isRecord(value.runtime) ? value.runtime : {};
   if (runtime.minimum_version !== contract.runtimeVersion) issue('/runtime/minimum_version', '运行时版本与合约不符');
   if (runtime.contract_sha256 !== contract.pinned.identity) issue('/runtime/contract_sha256', '期望合约摘要与网关钉住的原合约身份不符');
@@ -138,5 +144,5 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   const hasWait = allowed.some((call) => Object.values(call.parameters).some((role) => role === 'wait'));
   if (hasWait && (!Number.isSafeInteger(value.max_wait_seconds) || (value.max_wait_seconds as number) < 1)) issue('/max_wait_seconds', '等待角色必须配置明确的正整数秒数上限');
   if(value.denied!==undefined)issue('/denied','拒绝词表已退役；删除该字段，按 runtime-contract@2 的闭集角色、完整命令与效果授权重发');
-  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, max_wait_seconds: hasWait ? value.max_wait_seconds as number : null, runtimeVersion: contract.runtimeVersion, digest: contract.pinned.identity, bed: String(value.bed), device_count: value.device_count as number, fold_newlines, workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed } };
+  return problems.length ? { ok: false, problems } : { ok: true, profile: { synthetic: value.synthetic === true, max_wait_seconds: hasWait ? value.max_wait_seconds as number : null, runtimeVersion: contract.runtimeVersion, digest: contract.pinned.identity, bed: String(value.bed), device_count: value.device_count as number, fold_newlines, workbook: workbook as unknown as RuntimeProfile['workbook'], seats, hosts, allowed, ...(Array.isArray(value.trigger_types) ? { trigger_types: value.trigger_types as string[] } : {}) } };
 }
