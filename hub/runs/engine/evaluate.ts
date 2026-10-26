@@ -31,6 +31,7 @@ import { putAction } from './store.ts';
 import { createFunctionBatches } from './function-batches.ts';
 import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
+import { declarationGroundRefusal } from '../../knowledge/declaration-grade.ts';
 import { buildScope, scopeProblem, emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
@@ -466,7 +467,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   // reference per evaluation (quotedReferences warms them before the checks run, once); the declared reads' size cap
   // applies to a whole-source fallback, like readBoundSources.
   let fragmentScope: ReturnType<typeof buildScope> | undefined;
-  type GradedFragment = {text?: string; why: FragmentRead; unread?: FragmentReadFailure};
+  type GradedFragment = {text?: string; why: FragmentRead; unread?: FragmentReadFailure; rule?: string};
   const fragmentCache = new Map<string, Promise<GradedFragment>>();
   const gradeFragment = (reference: string, capBytes: number = MAX_CHECK_READ_BYTES): Promise<GradedFragment> => {
     let pending = fragmentCache.get(reference);
@@ -487,6 +488,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
             return { why: r.code === 'REFERENCE_UNRESOLVED' ? 'no_fragment' : 'unavailable' };
           }
           if (!r.groundable) return { why: 'not_groundable' };
+          const named = await declarationGroundRefusal(ref, digest => ctx.deps.records.store.get(digest));
+          if (named) return { why: 'not_groundable', rule: named };
           if (r.readTier === 'retain_only') return { why: 'retain_only', unread: {reason:'credential_unreadable', missing_fact:'管理员尚未接受此来源', next_action:'请求管理员接受来源，接受后重新核验'} };
           if (r.text === null) return { why: 'no_fragment' };
           if (Buffer.byteLength(r.text, 'utf8') > capBytes) return { why: 'too_large' };
@@ -529,9 +532,11 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const warmed = new Map<string, string>();
   const warmedWhy = new Map<string, FragmentRead>();
   const warmedUnread = new Map<string, FragmentReadFailure>();
+  const warmedRule = new Map<string, string>();
   const gradedSourceView = (texts: ReadonlyMap<string, string>): SourceView => ({
     text: (reference) => texts.get(reference) ?? warmed.get(reference),
     unread: reference => warmedUnread.get(reference),
+    rule: reference => warmedRule.get(reference),
     // A reference never warmed (not collected, or the warm pass failed) reads as unavailable: an honest
     // unknown, never a refutation.
     why: (reference) => (texts.has(reference) || warmed.has(reference) ? 'bound' : warmedWhy.get(reference) ?? 'unavailable'),
@@ -546,6 +551,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       else {
         warmedWhy.set(reference, graded.why);
         if(graded.unread) warmedUnread.set(reference,graded.unread);
+        if(graded.rule) warmedRule.set(reference, graded.rule);
       }
     });
   };

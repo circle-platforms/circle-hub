@@ -130,3 +130,74 @@ test('procedure and pitfall keep the same binding, a contradiction is marked, an
   assert.equal(after?.status, 'grounds_withdrawn');
   assert.ok(await ctx.w.kit.store.get(left));
 });
+
+function evidenceClaims(value: unknown, out: Array<{nature: string; grounds: unknown}> = []): Array<{nature: string; grounds: unknown}> {
+  if (!value || typeof value !== 'object') return out;
+  if (Array.isArray(value)) { for (const item of value) evidenceClaims(item, out); return out; }
+  const row = value as {qualifier?: {nature?: string}; grounds?: unknown};
+  if (typeof row.qualifier?.nature === 'string' && (row.qualifier.nature === 'fact' || row.qualifier.nature === 'judgment')) out.push({nature: row.qualifier.nature, grounds: row.grounds});
+  for (const item of Object.values(value as Record<string, unknown>)) evidenceClaims(item, out);
+  return out;
+}
+
+test('a declaration-grade operation record is refused as the ground of another submission', async t => {
+  const ctx = await world(t);
+  const answer = await ctx.service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', observation(ctx, '/commands/system/show')), call);
+  assert.equal(answer.result?.contributions?.stored.length, 1, JSON.stringify(answer.errors));
+  const digest = answer.result!.contributions!.stored[0].record;
+  assert.ok(ctx.run.product);
+  const rows = await ctx.w.knowledge.feeding!.entries(ctx.w.admin, ctx.run.product);
+  const operation = rows.filter(row => row.body.schema === 'fed-observation@1');
+  assert.ok(operation.length >= 1);
+  assert.ok(operation.every(row => row.claim.qualifier.nature === 'unknown' && row.claim.qualifier.provenance === 'client_captured' && row.claim.qualifier.basis_rank === undefined));
+  assert.ok(!rows.some(row => (row.claim.qualifier.nature === 'fact' || row.claim.qualifier.nature === 'judgment') && (row.body.schema === 'fed-observation@1' || row.body.schema === 'fed-procedure@1' || row.body.schema === 'fed-pitfall@1')));
+  assert.ok(!evidenceClaims(answer.result).some(row => JSON.stringify(row.grounds ?? '').includes(digest)));
+  const ordinary = await ctx.service.submitResult(ctx.w.admin, {run:ctx.run.run, model:'integration-synthetic@1', items:[{item:'assertion', handling:'handled', slots:{contribution:[{code:'assertion', text:'把上传原件当根据', data:{root:ctx.root, path:'/commands/system/show', source:{reference:`src:${ctx.sha}/text@1/l/1`, quote}}}]}}]}, {...call, traceId:'f'.repeat(32)});
+  assert.equal(ordinary.result?.contributions?.stored.length ?? 0, 0);
+  assert.match(JSON.stringify(ordinary.errors), /决定 73/);
+  assert.match(JSON.stringify(ordinary.errors), /客户端捕获的原件只随操作记录/);
+  const bound = await ctx.service.startRun(ctx.w.admin, {pack:'knowledge-contribution', product:'Acme', build:ctx.build.name, inputs:{subject:{reference:ctx.run.sources.find(source => source.slot==='subject')!.reference}, originals:[...ctx.run.sources.filter(source => source.slot==='originals').map(source => ({reference:source.reference})), {reference:`rec:${digest}`}]}}, {...call, traceId:'6'.repeat(32)});
+  assert.equal(bound.call_result, 'ok', JSON.stringify(bound.errors));
+  const cited = await ctx.service.submitResult(ctx.w.admin, {run:bound.run!.run, model:'integration-synthetic@1', items:[{item:'assertion', handling:'handled', slots:{contribution:[{code:'assertion', text:'把操作记录当根据', data:{root:ctx.root, path:'/commands/system/show', source:{reference:`rec:${digest}`, quote:'执行了合成显示'}}}]}}]}, {...call, traceId:'7'.repeat(32)});
+  assert.equal(cited.result?.contributions?.stored.length ?? 0, 0);
+  assert.match(JSON.stringify(cited.errors), /core\.contribution\.record_not_original/);
+  assert.match(JSON.stringify(cited.errors), /决定 73/);
+});
+
+test('a product reader who can read the original sees the operation record on the command node', async t => {
+  const ctx = await world(t);
+  const hidden = await ctx.service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', observation(ctx, '/commands/system/show')), call);
+  const hiddenDigest = hidden.result!.contributions!.stored[0].record;
+  const hiddenPage = await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/system/show'], depth:0}, ctx.w.user);
+  assert.ok(hiddenPage);
+  assert.equal((hiddenPage.nodes[0].contributions ?? []).some(row => row.record === hiddenDigest), false);
+  const sharedEcho = '读者可见的合成回显：状态正常\n';
+  const sharedQuote = '读者可见的合成回显';
+  const shared = await ctx.w.kit.artifacts.ingest({bytes:new TextEncoder().encode(sharedEcho), mediaType:'text/plain', origin:{upload:{session:'operation-session', message:null}}, author:{user:ctx.w.admin.id}, provenanceType:'client_captured', visibility:{readers:[ctx.w.admin.id, ctx.w.user.id], admins:true, packs:[], shareable:false}});
+  const tree = ctx.run.sources.find(source => source.slot==='originals' && source.reference !== `src:${ctx.sha}`)!.reference;
+  const started = await ctx.service.startRun(ctx.w.admin, {pack:'knowledge-contribution', product:'Acme', build:ctx.build.name, inputs:{subject:{reference:ctx.run.sources.find(source => source.slot==='subject')!.reference}, originals:[{reference:tree}, {reference:`src:${shared.body.sha256}`}]}}, {...call, traceId:'8'.repeat(32)});
+  assert.equal(started.call_result, 'ok', JSON.stringify(started.errors));
+  const run = RunRecord.parse((await ctx.service.getRun(ctx.w.admin, started.run!.run))!.run);
+  const reader = {...ctx, run, sha: shared.body.sha256};
+  const seen = observation(reader, '/commands/net/ping', '执行读者可见的显示');
+  (seen.result as {text:string}).text = sharedQuote;
+  const first = await ctx.service.submitResult(ctx.w.admin, submit(reader, '/commands/net/ping', seen, '执行了读者可见的显示'), {...call, traceId:'9'.repeat(32)});
+  assert.equal(first.result?.contributions?.stored.length, 1, JSON.stringify(first.errors));
+  const left = first.result!.contributions!.stored[0].record;
+  const pitfall = {schema:'fed-pitfall@1', product:run.product, root:ctx.root, path:'/commands/net/ping', source:{system:'upload', bytes:shared.body.sha256}, phenomenon:'读者可见的显示为空', suggestion:'先核对地址', quote:{reference:`src:${shared.body.sha256}/text@1/l/1`, text:sharedQuote}, relations:[{kind:'contradicts', object:sha256Hex(canonicalize(operationIdentity(seen))), quote:{reference:`src:${shared.body.sha256}/text@1/l/1`, text:sharedQuote}}]};
+  const second = await ctx.service.submitResult(ctx.w.admin, {...submit(reader, '/commands/net/ping', pitfall, '读者可见的显示为空时先核对地址'), run:run.run}, {...call, traceId:'a1'.padEnd(32, 'a')});
+  assert.equal(second.result?.contributions?.stored.length, 1, JSON.stringify(second.errors));
+  const page = await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/net/ping'], depth:0}, ctx.w.user);
+  const views = page!.nodes[0].contributions!.map(row => KnowledgeContributionView.parse(row));
+  const visible = views.find(row => row.record === left)!;
+  assert.ok('statement' in visible.contribution);
+  assert.equal(visible.contribution.source.provenance, 'client_captured');
+  assert.equal(visible.contribution.submitted_by, ctx.w.admin.id);
+  assert.equal(visible.contribution.session, 'operation-session');
+  const text = toolText('get_nodes', {call_result:'ok', errors:[], trace:call.traceId, root:ctx.root, nodes:page!.nodes});
+  assert.match(text, /客户端捕获/);
+  assert.match(text, new RegExp(ctx.w.admin.id));
+  assert.match(text, /会话 operation-session/);
+  assert.match(text, /矛盾已标记，两边都留，不裁决/);
+  assert.equal(await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/net/ping'], depth:0}, ctx.w.outsider), null);
+});

@@ -15,6 +15,7 @@ import { CompositionView } from './composition.ts';
 import { KnowledgeError } from './errors.ts';
 import type { TreeReading } from './read.ts';
 import { canonicalSize } from './digest.ts';
+import { CAPTURED_GROUND, DECLARATION_GROUND, declarationGradeBody } from './declaration-grade.ts';
 import { operationIdentity, operationRecord } from './feeding.ts';
 import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
 
@@ -196,12 +197,15 @@ export class ContributionLayer {
       if (ref.scheme === 'src') {
         const actual=await this.#context.records.artifacts.readable(reader,ref.sha256);
         if(actual===null)return fail('引用的原件当前不可读；恢复读取权限后重交','SOURCE_UNAVAILABLE');
+        if(actual.body.provenance_type==='client_captured')return fail(CAPTURED_GROUND+'。改交观察、步骤或教训，或改引锁定根里的原文。');
         await inspect(actual); // distinguish a session declaration from an outside-root Hub original
         shas = [ref.sha256];
       }
       else if (ref.scheme === 'rec') {
         const record=resolved.value.recordSource;
         if(record?.kind==='submission'||(record?.kind==='source_artifact'&&(record.provenance==='declared'||record.provenance==='candidate')))return refuse("core.contribution.signature_required", SIGNATURE);
+        const stored=await this.#context.records.store.get(ref.record);
+        if(stored&&declarationGradeBody(stored.body))return refuse("core.contribution.record_not_original", DECLARATION_GROUND);
         return refuse("core.contribution.record_not_original", '记录转述或回注条目不能作回注根据，缺少锁定根中的原文片段');
       }
       else if (ref.scheme === 'tree') {
@@ -231,7 +235,7 @@ export class ContributionLayer {
       const artifact = await this.#context.records.store.get<SourceArtifact['body']>(records[0]);
       const provenance=ContributionSource.shape.provenance.safeParse(ref.scheme==='tree'?'projected':artifact?.body.provenance_type);
       if(!provenance.success)return refuse("core.contribution.signature_required", SIGNATURE);
-      if(provenance.data==='client_captured')return fail('客户端捕获的原件只随操作记录进入回注层；一般回注仍要锁定根里的原文。改交观察、步骤或教训，或改引锁定根里的原文。');
+      if(provenance.data==='client_captured')return fail(CAPTURED_GROUND+'。改交观察、步骤或教训，或改引锁定根里的原文。');
       return { ...quoted, reference: resolved.value.reference, fragment: sha256Hex(resolved.value.text),
         provenance: provenance.data,
         records: [...new Set([...records, ...(resolved.value.recordSource === undefined ? [] : [resolved.value.recordSource.record])])], sources: shas };

@@ -19,6 +19,7 @@ import {canonicalize,sha256Hex,scanForCredentials,type Principal,type Transactio
 import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabulary.ts';
 import {callPackFunction,callPackFunctionBatch} from '../rules/api.ts';
 import {INDEX} from './store.ts';
+import {operationSchema} from './declaration-grade.ts';
 import {SeedlingBody} from '../../contracts/src/knowledge.ts';
 import type {KnowledgeContext} from './context.ts';
 import type {TreeReading} from './read.ts';
@@ -34,8 +35,7 @@ const object=(v:unknown):v is Record<string,any>=>v!==null&&typeof v==='object'&
 interface SeedlingAttachment {locked_root:string;locked_composition:string|null;seedling_root:string;seedling_composition:string;line:string}
 interface Projected {rows:Projection[];pack:string;digest:string;attachment:SeedlingAttachment|null}
 const annotations=['classification','manual_link','relations','applicability','correction','command_link','case_link','paragraph'] as const;
-const OPERATION_RECORD_SCHEMAS=new Set(['fed-observation@1','fed-procedure@1','fed-pitfall@1']);
-export const operationRecord=(schema:unknown):schema is 'fed-observation@1'|'fed-procedure@1'|'fed-pitfall@1'=>typeof schema==='string'&&OPERATION_RECORD_SCHEMAS.has(schema);
+export const operationRecord=(schema:unknown):schema is 'fed-observation@1'|'fed-procedure@1'|'fed-pitfall@1'=>operationSchema(schema);
 /** Content identity of an operation record: the canonical statement and its quotations, nothing else. */
 export function operationIdentity(body:Record<string,unknown>):Record<string,unknown>{
   if(body.schema==='fed-observation@1')return {action:body.action,result:body.result};
