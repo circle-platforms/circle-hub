@@ -5,8 +5,9 @@
 ## 判定与边界
 
 - 这是版本溯源问题，不是新的评审规则改动。四个包各递增一个补丁版本，并在同一提交重签：`case-review@1.1.26`、`case-review-verify@1.1.11`、`case-review-report@2.0.9`、`knowledge-contribution@1.2.4`。
-- 保留 A1 的技能包依赖和类型导入、A4 的规则与生成词表。除生成词表的版本号外不改已发布文件内容，不删或改测试，不改 `foundation/circle`、`references`，不接触真实系统、凭据或环境文件。
+- 保留 A1 的技能包依赖和类型导入、A4 的规则与生成词表。除生成词表的版本号外不改已发布文件内容，不改 `foundation/circle`、`references`，不接触真实系统、凭据或环境文件。
 - 旧版本记录不改。README 只补当前版本的不可变重发说明，不声称新增业务行为。
+- 所有者 2026-10-27 明确批准：01/05 只在原期望上增加 A4 第 13 项的两条机械事实，原断言保留；22 保持原断言行不变，以夹具的原模型结论视图读取等级，另加两条事实的精确期望，并显式写出已有的合成模型身份；P2 夹具的发现改为 minor 以符合既有区间，原 P2 断言不动；oracle 只给相关夹具补双方及负例的结构化身份，不改生产判定或原断言。不新增辅助事实契约，不顺手修其他发现。
 
 ## 可改路径
 
@@ -15,6 +16,7 @@
 - `packs/workflow/case-review-verify/{pack.json,README.md}`。
 - `packs/workflow/case-review-report/{pack.json,README.md}`。
 - `packs/workflow/knowledge-contribution/{pack.json,pack-files.ts,README.md,tools/jev/generated.json}`；生成文件只由官方生成器更新。
+- `tests/acceptance/{01-normal-review.test.ts,05-cross-item-claims.test.ts,22-fact-model-independence.test.ts,oracle/differential.test.ts}`：仅限上条所有者批准的期望加法与夹具迁移。
 
 ## 验证
 
