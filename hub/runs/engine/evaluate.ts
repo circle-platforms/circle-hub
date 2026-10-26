@@ -297,7 +297,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const items = run.items.filter(it => !exclude.has(it.id));
   const itemIds = new Set(items.map((it) => it.id));
   const criterionBound=(run.accepted_criteria??[]).flatMap(change=>[rootDigest(change.declaration),rootDigest(change.review)]).filter((digest):digest is string=>digest!==null);
-  const skills=run.skills??ctx.parsers.skills;
+  const skills=ctx.parsers.skills??run.skills;
   const baseBound = [run.pack_digest,...(ctx.parsers.bindingRecords??(ctx.parsers.bindingRecord?[ctx.parsers.bindingRecord]:[])), ...(skills??[]).map(skill=>skill.digest),...(run.root !== undefined ? [run.root] : []),...criterionBound];
   const itemDigests = items.map((it) => it.digest).filter((d): d is string => d !== undefined);
   const entries = new Map<string, { index: number; entry: Submission['items'][number] }>();

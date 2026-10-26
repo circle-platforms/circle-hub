@@ -336,7 +336,8 @@ async function skillCommand(session:Session,args:readonly string[]):Promise<numb
  const {positionals}=parse(rest,{},2);const by=await session.admin(),hub=await session.hub();
  const binding=await decided(()=>bindLegacyParser({registry:hub.registry,records:hub.records},by,positionals[0],positionals[1]));
  session.out(`解析器 ${binding.parser} → ${binding.skill.pack}@${binding.skill.version}；摘要 ${binding.skill.digest}`);
- session.out(`迁移时点事后声明；操作者 ${binding.decided_by}；时间 ${binding.at}；测试 ${binding.test}；rec:${binding.record}；旧记录不改`);return 0;
+ session.out(`迁移时点事后声明；操作者 ${binding.decided_by}；时间 ${binding.at}；测试 ${binding.test}；rec:${binding.record}；旧记录不改`);
+ session.out(`本次扫描 ${binding.scanned_runs} 个历史运行；追加绑定 ${binding.bound_runs} 条；已有绑定 ${binding.already_bound_runs} 条`);return 0;
 }
 
 async function packCommand(session: Session, args: readonly string[]): Promise<number> {
