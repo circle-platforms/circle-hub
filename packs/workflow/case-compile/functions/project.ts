@@ -14,6 +14,7 @@ interface Slot {
   sha256?: string;
   parser?: string | null;
   model: unknown;
+  meta?:Record<string,unknown>|null;
 }
 
 interface FrozenLeases {
@@ -108,7 +109,7 @@ export function projectItems(input: unknown): unknown {
         if(!rows.length||rows.every(row=>isRecord(row)&&isRecord(row.data)&&!Object.hasOwn(row.data,'command_identities')))return undefined;if(rows.some(row=>!isRecord(row)||!isRecord(row.data)||!Array.isArray(row.data.command_identities)))return null;
         return [...new Map(rows.flatMap(row=>(row as {data:{command_identities:unknown[]}}).data.command_identities).map(identity=>[JSON.stringify(identity),identity])).values()];
       })(),
-      expected_nodes:found.expected_nodes?.every(node=>node.selector!==null)?found.expected_nodes.map(node=>({reference:`src:${sha256}/kityminder@1/${node.selector}`,text:node.text})):undefined,
+      expected_nodes:found.expected_nodes?.every(node=>node.selector!==null)?found.expected_nodes.map(node=>({reference:`src:${sha256}/kityminder@1/${node.selector}`,text:node.text,...(node.declaration!==undefined?{declaration:node.declaration}:{})})):undefined,
       title: found.title,
       tags: found.tags,
       priority: found.priority,
@@ -127,6 +128,7 @@ export function projectItems(input: unknown): unknown {
     groups: [
       {
         kind: 'case-compile',
+        criteria_review:{result:slotOf(inputs,'criteria_review')??null,run:slotOf(inputs,'criteria_review_run')??null},
         contract: contractSlot.model,
         manifest: inventorySlot.model,
         profile: profileSlot.model,
