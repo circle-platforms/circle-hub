@@ -1,6 +1,10 @@
-# knowledge-contribution 1.1.2
+# knowledge-contribution 1.2.4
 
 所有者 2026-10-23 傍晚决定：候选留在 Circle 本地。Circle 的整合技能判定成为事实后开独立回注运行；Hub 核对原文、来源和归位，要求项全部满足才入回注层。依据是新版 `docs/hub-r4-tasks/kb-candidates.md`、知识库方向第二节及 K03、W07 R[4]、P10、K02 F[6]。
+
+## 1.2.4
+
+- 同步生成词表的版本号，重签合入后的清单；回注规则不变，历史版本记录不改。
 
 ## 声明和提交
 
