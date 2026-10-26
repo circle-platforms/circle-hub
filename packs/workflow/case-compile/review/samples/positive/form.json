@@ -1,0 +1,43 @@
+{
+  "id": "review_form_positive",
+  "source": "author",
+  "check": "review_form",
+  "subject": {
+    "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/json@1/p/body/criterion",
+    "fields": {
+      "criterion": {
+        "quote": {
+          "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/expected",
+          "text": "合成作者期望"
+        }
+      }
+    },
+    "slots": {
+      "review": [
+        {
+          "code": "accept",
+          "text": "合成接受",
+          "location": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/json@1/p/body/criterion",
+          "quotes": [
+            {
+              "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/expected",
+              "text": "合成作者期望"
+            }
+          ],
+          "data": {
+            "reason": "合成理由"
+          }
+        }
+      ]
+    }
+  },
+  "sources": {
+    "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/expected": "合成作者期望"
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "blocking"
+    }
+  ]
+}
