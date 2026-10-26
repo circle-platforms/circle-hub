@@ -9,7 +9,7 @@ import { after, before, describe, test } from 'node:test';
 import { SystemProfile, type HttpMethod, type ReadManifest } from '../../../contracts/src/resources.ts';
 import { compileRoutes, matchRoute } from '../../../hub/connectors/api.ts';
 import { startStub, text, type StubServer } from '../../../hub/connectors/testing/api.ts';
-import { xmlParser } from '../../../hub/refs/api.ts';
+import { xmlParser } from '../../../hub/testing/parsers.ts';
 import { manifestDigest } from '../../../hub/runs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { readManifest, stagePack } from '../../workflow/case-review/packaging.ts';

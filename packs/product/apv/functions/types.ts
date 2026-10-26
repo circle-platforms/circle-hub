@@ -1,7 +1,8 @@
 import type { Applicability as SourceApplicability, FragmentRef as SourceFragmentRef } from '../../../../contracts/src/product.ts';
 // Input and output shapes of the APV/NSAE product pack functions. Types only: every import here is erased at run time,
 // so the functions stay pure modules inside the pack.
-import type { HtmlModel, MarkdownModel, XmlModel } from '../../../../hub/refs/api.ts';
+import type { HtmlModel, MarkdownModel } from '../../../../hub/refs/api.ts';
+import type { XmlModel } from '../../../skill/xml-format/api.ts';
 import type { CatalogSignature } from '../../../../contracts/src/tables.ts';
 import type { EntryKind, ProvenanceType } from '../../../../contracts/generated/vocabulary.ts';
 import type { CommandCatalog } from './cases-commands.ts';

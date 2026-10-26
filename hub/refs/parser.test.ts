@@ -19,13 +19,14 @@ import { fixture, utf8 } from './test-support.ts';
 describe('parser registry', () => {
   const registry = createDefaultRegistry();
 
-  it('registers the five core parsers by id@version', () => {
+  it('registers the four core parsers by id@version', () => {
     assert.deepEqual(
       registry.list().map((parser) => `${parser.id}@${parser.version}`),
-      ['xml@1', 'html@1', 'markdown@1', 'json@1', 'text@1'],
+      ['html@1', 'markdown@1', 'json@1', 'text@1'],
     );
     assert.equal(registry.get('kityminder@1'), undefined);
     assert.equal(registry.get('xlsx@1'), undefined);
+    assert.equal(registry.get('xml@1'), undefined);
     assert.equal(registry.get('kityminder'), undefined);
     assert.equal(registry.get('kityminder@2'), undefined);
   });
@@ -35,7 +36,7 @@ describe('parser registry', () => {
     assert.deepEqual(registry.forMediaType('TEXT/MARKDOWN').map((p) => p.id), ['markdown', 'text']);
     assert.deepEqual(registry.forMediaType('text/csv').map((p) => p.id), ['text']);
     assert.deepEqual(registry.forMediaType('text/plain').map((p) => p.id), ['text']);
-    assert.deepEqual(registry.forMediaType('text/xml').map((p) => p.id), ['xml', 'text']);
+    assert.deepEqual(registry.forMediaType('text/xml').map((p) => p.id), ['text']);
     assert.deepEqual(registry.forMediaType('image/png'), []);
   });
 
@@ -44,7 +45,7 @@ describe('parser registry', () => {
     const bad = { ...textParser, id: 'Bad Name' } as Parser;
     assert.throws(() => createParserRegistry([bad]));
     assert.throws(() => createParserRegistry([{ ...textParser, version: -1 } as Parser]));
-    assert.equal(createParserRegistry(defaultParsers()).list().length, 5);
+    assert.equal(createParserRegistry(defaultParsers()).list().length, 4);
   });
 
   it('recognizes a file with the first parser that accepts it', () => {

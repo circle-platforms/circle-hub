@@ -13,8 +13,9 @@ import {openHarness,type Harness} from '../runs/engine/testing/harness.ts';
 import {sha256Hex} from './canonical-json.ts';
 import {newId} from '../records/api.ts';
 import {kityminderParser} from '../testing/parsers.ts';
-import {installWorkbookFixture} from '../testing/skills.ts';
+import {installWorkbookFixture,installXmlFixture} from '../testing/skills.ts';
 import {xlsxParser} from '../../packs/skill/workbook-format/api.ts';
+import {xmlParser} from '../../packs/skill/xml-format/api.ts';
 import ExcelJS from 'exceljs';
 import {RunRecord} from '../../contracts/src/run.ts';
 import {Submission} from '../../contracts/src/submission.ts';
@@ -248,5 +249,29 @@ test('workbook-format sandbox transport preserves xlsx@1 vectors and enforces de
     sources:{read:()=>({bytes:fixture,mediaType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',size:fixture.length,readTier:'model_readable'})},
   });
   assert.ok(resolved.resolved&&verifyQuote(resolved,'合成用例'));
+  await assert.rejects(parseDocument(parser,fixture,{maxBytes:4}),/字节限额/);
+});
+
+test('xml-format sandbox transport preserves xml@1 vectors and enforces declared limits',async()=>{
+  await installXmlFixture(bed.registry,bed.kit,bed.admin);
+  const registry=createSkillParserRegistry(options());await registry.refresh!();
+  const parser=registry.get('xml@1')!;
+  assert.ok(parser);
+  const fixture=Buffer.from('<commands><scope name="global"><menu name="system"><item name="ping"><arguments><arg name="host" help="IP or hostname"/></arguments></item></menu></scope></commands>');
+  const expected=xmlParser.parse(fixture),actual=await parseDocument(parser,fixture);
+  assert.deepEqual(actual.model,expected.model);
+  assert.deepEqual(actual.summary(),expected.summary());
+  assert.deepEqual(actual.listSelectors(),expected.listSelectors());
+  for(const selector of expected.listSelectors('',{properties:true})){
+    assert.deepEqual(actual.locate(selector),expected.locate(selector),selector);
+  }
+  const source=sha256Hex(fixture),reference=`src:${source}/xml@1/x/commands/scope/menu/item/arguments/arg/@help`;
+  const frozen=await registry.freeze!([{pack:'xml-format',version:'1.0.0'}]);
+  const resolved=await resolveReference(reference,{
+    parsers:frozen.parsers,
+    reader:{user:bed.bob.id,role:'user'},
+    sources:{read:()=>({bytes:fixture,mediaType:'application/xml',size:fixture.length,readTier:'model_readable'})},
+  });
+  assert.ok(resolved.resolved&&verifyQuote(resolved,'IP or hostname'));
   await assert.rejects(parseDocument(parser,fixture,{maxBytes:4}),/字节限额/);
 });

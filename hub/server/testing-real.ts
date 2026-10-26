@@ -65,6 +65,7 @@ export interface TestHubOptions {
   /** Explicit synthetic capability fixture; production never auto-installs skills. */
   mindmapSkill?: boolean;
   workbookSkill?: boolean;
+  xmlSkill?: boolean;
   /** Where the repository's packs are looked for; default REPOSITORY_PACKS (tests of this helper use a synthetic tree). */
   repositoryRoot?: string;
   /** More pack directories, published after the repository's in this order. */
@@ -276,6 +277,11 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
       const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/workbook-format/',import.meta.url)));
       await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
       await bindLegacyParser({registry:hub.registry,records},admin.principal,'xlsx@1',skill.id+'@'+skill.version);
+    }
+    if(options.xmlSkill!==false){
+      const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/xml-format/',import.meta.url)));
+      await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
+      await bindLegacyParser({registry:hub.registry,records},admin.principal,'xml@1',skill.id+'@'+skill.version);
     }
     const published: PackVersionInfo[] = [];
     const repository = options.repositoryPacks ?? true;

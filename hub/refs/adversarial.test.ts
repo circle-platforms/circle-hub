@@ -1,12 +1,12 @@
 import {testParsers as defaultParsers} from "../testing/parsers.ts";
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
-import { kityminderParser } from '../testing/parsers.ts';
+import { kityminderParser, xmlParser } from '../testing/parsers.ts';
 // Adversarial inputs for every core parser: large inputs under a time bound, nesting and entity attacks, invalid
 // UTF-8, NUL and control characters, attribute bombs and random bytes. A parser either succeeds or throws a ParseError.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
-import {ParseEncodingError,ParseError,ParseForbiddenError,ParseLimitError,ParseSyntaxError,candidatesFrom,createDocumentCache,findQuote,htmlParser,jsonParser,markdownParser,resolveReference,srcFragment,textParser,xmlParser,type Parser} from "./api.ts";
+import {ParseEncodingError,ParseError,ParseForbiddenError,ParseLimitError,ParseSyntaxError,candidatesFrom,createDocumentCache,findQuote,htmlParser,jsonParser,markdownParser,resolveReference,srcFragment,textParser,type Parser} from "./api.ts";
 import { fixture, seeded, timed, utf8 } from './test-support.ts';
 
 const MB = 1024 * 1024;
