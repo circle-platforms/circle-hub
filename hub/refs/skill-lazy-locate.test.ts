@@ -14,7 +14,10 @@ import {selectorSegment} from '../../packs/skill/xml-format/functions/selectors.
 import {htmlParser} from '../../packs/skill/html-format/api.ts';
 import {kityminderParser} from '../../packs/skill/mindmap-format/api.ts';
 import {xlsxParser} from '../../packs/skill/workbook-format/api.ts';
-import type {Fragment, ParsedDocument} from './parser.ts';
+import {QUOTATION_UNITS, type Fragment, type ParsedDocument, type QuotationSource} from './parser.ts';
+import {QUOTATION_UNITS as XML_QUOTATION} from '../../packs/skill/xml-format/functions/format.ts';
+import {QUOTATION_UNITS as HTML_QUOTATION} from '../../packs/skill/html-format/functions/format.ts';
+import {QUOTATION_UNITS as MIND_QUOTATION} from '../../packs/skill/mindmap-format/functions/format.ts';
 
 const OUTPUT_BUDGET = 24 * 1024 * 1024;
 const SANDBOX = {timeoutMs: 5000, inputBytes: 96 * 1024 * 1024, outputBytes: 64 * 1024 * 1024};
@@ -86,7 +89,9 @@ async function workbook(): Promise<Buffer> {
   const sheet = book.addWorksheet('合成');
   for (let r = 1; r <= 200; r++) {
     const row: string[] = [];
-    for (let c = 1; c <= 100; c++) row.push('v' + r + '-' + c);
+    // Preserve the 20,000-cell shape while crossing the lazy threshold after
+    // removal of selector aliases that the native parser never supported.
+    for (let c = 1; c <= 100; c++) row.push('v' + r + '-' + c + 'x'.repeat(64));
     sheet.addRow(row);
   }
   return Buffer.from(await book.xlsx.writeBuffer());
@@ -230,6 +235,26 @@ test('large synthetic documents stay inside the sandbox output budget and locate
   const htmlSmallDoc = await parseDocument(htmlParserInstalled, htmlSmall);
   const mindDoc = await parseDocument(mindParserInstalled, mind);
   const bookDoc = await parseDocument(bookParserInstalled, book);
+  // Compare the complete lists and quotation units on actual threshold-triggered
+  // documents, not just the sample of located fragments below.
+  for (const [wire, native] of [[xmlDoc, xmlEager], [htmlSmallDoc, htmlSmallEager], [htmlLargeDoc, htmlLargeEager], [mindDoc, mindEager], [bookDoc, bookEager]] as const) {
+    for (const properties of [false, true]) assert.deepEqual(wire.listSelectors('', {properties}), native.listSelectors('', {properties}));
+  }
+  const xmlUnits = xmlEager as typeof xmlEager & {[XML_QUOTATION]: (options: {properties: boolean}) => unknown};
+  const htmlSmallUnits = htmlSmallEager as typeof htmlSmallEager & {[HTML_QUOTATION]: (options: {properties: boolean}) => unknown};
+  const htmlLargeUnits = htmlLargeEager as typeof htmlLargeEager & {[HTML_QUOTATION]: (options: {properties: boolean}) => unknown};
+  const mindUnits = mindEager as typeof mindEager & {[MIND_QUOTATION]: (options: {properties: boolean}) => unknown};
+  for (const properties of [false, true]) {
+    assert.deepEqual((xmlDoc as ParsedDocument & QuotationSource)[QUOTATION_UNITS]({properties}), xmlUnits[XML_QUOTATION]({properties}));
+    assert.deepEqual((htmlSmallDoc as ParsedDocument & QuotationSource)[QUOTATION_UNITS]({properties}), htmlSmallUnits[HTML_QUOTATION]({properties}));
+    assert.deepEqual((htmlLargeDoc as ParsedDocument & QuotationSource)[QUOTATION_UNITS]({properties}), htmlLargeUnits[HTML_QUOTATION]({properties}));
+    assert.deepEqual((mindDoc as ParsedDocument & QuotationSource)[QUOTATION_UNITS]({properties}), mindUnits[MIND_QUOTATION]({properties}));
+    const expectedWorkbookUnits = bookEager.listSelectors('', {properties}).map(selector => {
+      const fragment = bookEager.locate(selector)!;
+      return {selector, text: fragment.text, byteRange: fragment.byteRange, parent: -1, start: -1, end: -1};
+    });
+    assert.deepEqual((bookDoc as ParsedDocument & QuotationSource)[QUOTATION_UNITS]({properties}), {stream: '', units: expectedWorkbookUnits});
+  }
   const firstXml = xmlEager.locate(xmlEager.listSelectors('')[0]);
   const index = (firstXml?.data as {index?: string} | undefined)?.index;
   assert.equal(typeof index, 'string');

@@ -353,9 +353,10 @@ type PathCache = Map<string, ReturnType<typeof checkPath>>;
 /** Verifies one producer call's output (K02 R[0], R[3]): kinds, storable text, sizes, fragments in their sources, paths. */
 async function verifyOutput(context: KnowledgeContext, producer: string, output: ProducerOutput, sources: FragmentSources, loader: SourceLoader, paths: PathCache): Promise<Verified> {
   const out: Verified = { grammar:output.grammar, inventory:[],inventoryError:null,placed: [], toPlace: [], refused: [], refusedCount: 0, refusedKinds: new Map(), warnings: output.warnings, entries: output.entries.length, spans: (output.unplaced ?? []).length };
-  await prefetchFragmentSelectors([...(output.inventory??[]).flatMap(row=>[row.listed,row.complete]),...output.entries.flatMap(entry=>entry.fragments),...(output.unplaced??[]).map(span=>span.fragment)], sources, loader);
+  const prefetched = await prefetchFragmentSelectors([...(output.inventory??[]).flatMap(row=>[row.listed,row.complete]),...output.entries.flatMap(entry=>entry.fragments),...(output.unplaced??[]).map(span=>span.fragment)], sources, loader);
+  const verify = (fragment: ProducerOutput['entries'][number]['fragments'][number]) => prefetched.get(fragment) ?? verifyFragment(fragment, sources, loader);
   for(const row of output.inventory??[]){
-    const listed=await verifyFragment(row.listed,sources,loader),complete=await verifyFragment(row.complete,sources,loader);
+    const listed=await verify(row.listed),complete=await verify(row.complete);
     if(!listed.ok||!complete.ok||listed.value.sha256!==complete.value.sha256||row.selected!==0||(sources.list?.elements.size??0)!==0){out.inventoryError='空范围的清单来源或选中数不符；下一步核对生产器清单证明后重产';continue;}
     const source=sources.single.get(listed.value.slot);
     try{
@@ -397,7 +398,7 @@ async function verifyOutput(context: KnowledgeContext, producer: string, output:
     const applicabilitySources:NonNullable<CompositionRow['applicability_sources']>=[];
     const slotNames: string[] = [];
     for (const fragment of fragments) {
-      const verified = await verifyFragment(fragment, sources, loader);
+      const verified = await verify(fragment);
       if (!verified.ok) return verified.reason;
       if (!references.includes(verified.value.reference)) references.push(verified.value.reference);
       for(const origin of fragment.applicability??[])applicabilitySources.push({...origin,fragment:verified.value.reference});

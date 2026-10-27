@@ -51,7 +51,7 @@ test('skill bind-legacy appends migration declaration for xlsx@1 using workbook-
    historical.push(body);
    await kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body,index:[{key:'runs.id',value:body.run}]});
  }
- const result=await run(['skill','bind-legacy','xlsx@1','workbook-format@1.0.1']);assert.equal(result.code,0,result.text);assert.ok(result.text.includes(digest));assert.match(result.text,/迁移时点事后声明/);assert.match(result.text,/追加绑定 2 条/);assert.match(result.text,/workbook-format migration equivalence across repository documents/);
+ const result=await run(['skill','bind-legacy','xlsx@1','workbook-format@1.0.2']);assert.equal(result.code,0,result.text);assert.ok(result.text.includes(digest));assert.match(result.text,/迁移时点事后声明/);assert.match(result.text,/追加绑定 2 条/);assert.match(result.text,/workbook-format migration equivalence across repository documents/);
  const rows=await kit.store.find<any>({kind:'action',key:'refs.legacy-parser',value:'xlsx@1',limit:10});assert.equal(rows.items.length,1);const record=rows.items[0];assert.equal(record.provenance,'declared');assert.equal(record.body.detail.migration.skill.digest,digest);assert.equal(record.body.detail.migration.decided_by,(await kit.principals.findByName('合成管理员'))!.id);
  for(const body of historical){
    const bindings=await kit.store.find<any>({kind:'action',key:'runs.skills',value:body.run,limit:10});
@@ -78,7 +78,7 @@ test('skill bind-legacy appends migration declaration for xml@1 using xml-format
    historical.push(body);
    await kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body,index:[{key:'runs.id',value:body.run}]});
  }
- const result=await run(['skill','bind-legacy','xml@1','xml-format@1.0.1']);assert.equal(result.code,0,result.text);assert.ok(result.text.includes(digest));assert.match(result.text,/迁移时点事后声明/);assert.match(result.text,/追加绑定 2 条/);assert.match(result.text,/xml-format migration equivalence across repository documents/);
+ const result=await run(['skill','bind-legacy','xml@1','xml-format@1.0.2']);assert.equal(result.code,0,result.text);assert.ok(result.text.includes(digest));assert.match(result.text,/迁移时点事后声明/);assert.match(result.text,/追加绑定 2 条/);assert.match(result.text,/xml-format migration equivalence across repository documents/);
  const rows=await kit.store.find<any>({kind:'action',key:'refs.legacy-parser',value:'xml@1',limit:10});assert.equal(rows.items.length,1);const record=rows.items[0];assert.equal(record.provenance,'declared');assert.equal(record.body.detail.migration.skill.digest,digest);assert.equal(record.body.detail.migration.decided_by,(await kit.principals.findByName('合成管理员'))!.id);
  for(const body of historical){
    const bindings=await kit.store.find<any>({kind:'action',key:'runs.skills',value:body.run,limit:10});

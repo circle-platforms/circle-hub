@@ -64,6 +64,12 @@ export interface ParsedDocument<M extends JsonValue = JsonValue> {
   locate(selector: string): Fragment | null | Promise<Fragment | null>;
   /** Loads a batch of selectors into this document so later `locate` calls reuse them. At most 256 selectors go to one pack call. */
   prefetch?(selectors: string[]): Promise<void>;
+  /** Estimated retained bytes for an operation-owned cache; legacy documents may omit it. */
+  retainedBytes?(): number;
+  /** Notify the cache when lazily retained data changes. Returns an unsubscribe callback. */
+  onRetainedBytesChange?(listener: () => void): () => void;
+  /** Monotonic deadline shared by all document lookups owned by one operation. */
+  setOperationDeadline?(deadline: number): void;
   /** Canonical selectors in document order whose text starts with `prefix`. */
   listSelectors(prefix?: string, options?: ListOptions): string[];
   /** Structure-only summary (counts and shape, no document text), safe to show for unreadable sources. */

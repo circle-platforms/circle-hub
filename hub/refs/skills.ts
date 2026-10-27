@@ -5,26 +5,32 @@ import type {SkillDeclaration} from '../../contracts/src/pack.ts';
 import type {RecordsKit,Principal} from '../records/api.ts';
 import {AccessError,ConflictError,IntegrityError} from '../records/api.ts';
 import type {RunRecord} from '../../contracts/src/run.ts';
-import {callPackFunction,type SandboxOptions} from '../rules/api.ts';
+import {callPackFunction,SandboxError,type SandboxOptions} from '../rules/api.ts';
 import {createDefaultRegistry} from './parsers/index.ts';
 import {parseReference,ReferenceSyntaxError} from './reference.ts';
 import type {RecordStore,Transaction,StoredRecord,Page} from '../records/api.ts';
 import type {RecordKind} from '../../contracts/generated/protocol.ts';
-import {createParserRegistry,ParseError,ParseLimitError,ParseSyntaxError,ParseEncodingError,QUOTATION_UNITS,type ParserRegistry,type Parser,type ParsedDocument,type Fragment,type JsonValue,type JsonObject,type ParseLimits,type QuotationUnits} from './parser.ts';
+import {createParserRegistry,ParseError,ParseLimitError,ParseSyntaxError,ParseEncodingError,QUOTATION_UNITS,DEFAULT_MAX_SELECTOR_CHARS,type ParserRegistry,type Parser,type ParsedDocument,type Fragment,type JsonValue,type JsonObject,type ParseLimits,type QuotationUnits} from './parser.ts';
 
 const object=(v:unknown):v is Record<string,unknown>=>typeof v==='object'&&v!==null&&!Array.isArray(v);
 const missing=(message:string)=>new ConflictError(message,{fix:'管理员安装所需通用技能包；缺历史锁时用 circle-hub skill bind-legacy <解析器 id@版本> <技能包 id@版本> 追加迁移声明，再按原引用重读'});
 const readRun=async(records:RecordsKit,run:string)=>(await records.store.find<RunRecord>({kind:'run',key:'runs.id',value:run,limit:1})).items[0]??null;
-export interface SkillParserOptions {registry:PackRegistry;records:RecordsKit;sandbox?:SandboxOptions;now?:()=>Date}
+export interface SkillParserOptions {registry:PackRegistry;records:RecordsKit;sandbox?:SandboxOptions;now?:()=>Date;/** Optional output-size instrumentation; never receives package data. */onWireOutput?:(bytes:number)=>void}
 export interface LegacySkillBinding {run:string;skills:SkillLock[];decided_by:string;reason:string;run_record:string}
 
 const LOCATE_BATCH=256;
 
-function failPack(parser:string,value:Record<string,unknown>):never {
-  const e=value.error as Record<string,unknown>,message=typeof e.message==='string'?e.message:'技能包解析失败';
-  if(typeof e.limit==='string'&&typeof e.max==='number'&&['maxBytes','maxDepth','maxNodes','maxAttributes','maxSelectorChars'].includes(e.limit))throw new ParseLimitError(parser,e.limit as keyof ParseLimits,e.max,message,typeof e.offset==='number'?e.offset:null);
-  if(e.name==='ParseEncodingError')throw new ParseEncodingError(parser,message,typeof e.offset==='number'?e.offset:null);
-  throw new ParseSyntaxError(parser,message,typeof e.offset==='number'?e.offset:null);
+function failPack(parser:string,value:Record<string,unknown>,limits?:ParseLimits):never {
+  // A pack is untrusted and can put original bytes, paths or credentials in any message.
+  const e=value.error as Record<string,unknown>,message=e.crc_mismatch===true
+    ? '解析器报告 ZIP CRC 校验不一致；下一步：重新获取完整原件后重读'
+    : '技能包不能解析原件；下一步：管理员核对技能包和原件格式，修正后重读';
+  if(typeof e.limit==='string'&&['maxBytes','maxDepth','maxNodes','maxAttributes','maxSelectorChars'].includes(e.limit)){
+    const limit=e.limit as keyof ParseLimits,max=limits?.[limit];
+    if(typeof max==='number')throw new ParseLimitError(parser,limit,max,message);
+  }
+  if(e.name==='ParseEncodingError')throw new ParseEncodingError(parser,message);
+  throw new ParseSyntaxError(parser,message);
 }
 
 function readWireFragment(parser:string,f:unknown):{lookup:string;fragment:Fragment} {
@@ -32,25 +38,62 @@ function readWireFragment(parser:string,f:unknown):{lookup:string;fragment:Fragm
   return {lookup:f.lookup,fragment:{selector:f.selector,text:f.text,byteRange:f.byteRange as Fragment['byteRange'],data:f.data as Fragment['data']}};
 }
 
-function checkQuotation(parser:string,quotation:unknown):void {
+// New compact arrays are additive: historic published skills still use literal strings.
+function stringList(parser:string,value:unknown,maxChars:number):string[] {
+  if(Array.isArray(value)&&value.every(s=>typeof s==='string')){
+    if(value.reduce((n,s)=>n+(s as string).length,0)>maxChars)throw new ParseLimitError(parser,'maxSelectorChars',maxChars,'技能包选择器超过声明的总长度；拆分原件后重读');
+    return value as string[];
+  }
+  if(!object(value)||value.encoding!=='prefix-delta@1'||!Array.isArray(value.entries))throw new ParseError(parser,'技能包文档结构不完整；修正技能包后重读');
+  const out:string[]=[];let previous='',total=0;
+  for(const entry of value.entries){
+    if(!Array.isArray(entry)||entry.length!==2||!Number.isSafeInteger(entry[0])||entry[0]<0||entry[0]>previous.length||typeof entry[1]!=='string')throw new ParseError(parser,'技能包选择器压缩结构无效；修正技能包后重读');
+    total+=entry[0]+entry[1].length;
+    if(total>maxChars)throw new ParseLimitError(parser,'maxSelectorChars',maxChars,'技能包选择器超过声明的总长度；拆分原件后重读');
+    previous=previous.slice(0,entry[0])+entry[1];out.push(previous);
+  }
+  return out;
+}
+
+function checkQuotation(parser:string,quotation:unknown,selectors:string[],properties:string[],sharedSelector:WeakSet<object>,sharedText:WeakSet<object>):void {
   if(!object(quotation))throw new ParseError(parser,'技能包没有返回逐字引文单元');
-  for(const field of ['plain','properties']){
+  for(const [field,list] of [['plain',selectors],['properties',properties]] as const){
     const q=quotation[field];
     if(!object(q)||typeof q.stream!=='string'||!Array.isArray(q.units))throw new ParseError(parser,'技能包引文单元结构无效');
-    for(const [index,u]of q.units.entries())if(!object(u)||typeof u.selector!=='string'||typeof u.text!=='string'||!Number.isInteger(u.parent)||Number(u.parent)<-1||Number(u.parent)>=index||!Number.isInteger(u.start)||!Number.isInteger(u.end)||Number(u.start)<-1||Number(u.start)>=0&&(Number(u.end)<Number(u.start)||Number(u.end)>q.stream.length||q.stream.slice(Number(u.start),Number(u.end))!==u.text))throw new ParseError(parser,'技能包引文单元边界或原文不一致');
+    for(const [index,u] of q.units.entries()){
+      if(!object(u)||!Number.isInteger(u.parent)||Number(u.parent)<-1||Number(u.parent)>=index||!Number.isInteger(u.start)||!Number.isInteger(u.end)||Number(u.start)<-1)throw new ParseError(parser,'技能包引文单元边界或原文不一致');
+      if(u.selector===undefined&&Number.isSafeInteger(u.selector_index)&&Number(u.selector_index)>=0&&Number(u.selector_index)<list.length){u.selector=list[Number(u.selector_index)];sharedSelector.add(u);}
+      if(typeof u.selector!=='string')throw new ParseError(parser,'技能包引文单元选择器无效');
+      if(Number(u.start)>=0){
+        if(Number(u.end)<Number(u.start)||Number(u.end)>q.stream.length)throw new ParseError(parser,'技能包引文单元边界或原文不一致');
+        const expected=q.stream.slice(Number(u.start),Number(u.end));
+        if(u.text===undefined){u.text=expected;sharedText.add(u);}
+        else if(typeof u.text!=='string'||u.text!==expected)throw new ParseError(parser,'技能包引文单元边界或原文不一致');
+      }else if(typeof u.text!=='string')throw new ParseError(parser,'技能包引文单元缺少原文');
+      delete u.selector_index;
+    }
   }
 }
 
-function stringList(parser:string,value:unknown):string[] {
-  if(!Array.isArray(value)||value.some(s=>typeof s!=='string'))throw new ParseError(parser,'技能包文档结构不完整；修正技能包后重读');
-  return value as string[];
+// Conservative retained heap estimate, including strings and object/list overhead.
+function stringBytes(value:string):number {for(let i=0;i<value.length;i++)if(value.charCodeAt(i)>255)return value.length*2;return value.length;}
+function estimate(value:unknown,sharedSelector?:WeakSet<object>,sharedText?:WeakSet<object>):number {
+  let total=0;const seen=new Set<object>(),work:unknown[]=[value];
+  while(work.length){const v=work.pop();if(typeof v==='string'){total+=stringBytes(v);continue;}if(!v||typeof v!=='object'){total+=8;continue;}if(seen.has(v))continue;seen.add(v);total+=64;
+    if(Array.isArray(v)){total+=v.length*8;for(const item of v)work.push(item);}else for(const [key,item] of Object.entries(v)){total+=key.length*2+16;if((key==='selector'&&sharedSelector?.has(v))||(key==='text'&&sharedText?.has(v))){total+=8;continue;}work.push(item);}}
+  return total;
 }
 
-function hydrate(value:unknown,parser:string,fetchFragments?:(selectors:string[])=>Promise<unknown>):ParsedDocument {
+const LOCATE_DEADLINE_MS=120_000;
+function hydrate(value:unknown,parser:string,fetchFragments?:(selectors:string[])=>Promise<unknown>,sourceBytes=0,limits?:ParseLimits):ParsedDocument {
   if(!object(value))throw new ParseError(parser,'技能包没有返回文档结构；请包作者修正后发布新版本');
-  if(object(value.error))failPack(parser,value);
+  if(object(value.error))failPack(parser,value,limits);
   const d=value.document;
-  if(!object(d)||d.parser!==parser||!object(d.summary)||!Array.isArray(d.selectors)||!Array.isArray(d.properties))throw new ParseError(parser,'技能包文档结构不完整；修正技能包后重读');
+  if(!object(d)||d.parser!==parser||!object(d.summary))throw new ParseError(parser,'技能包文档结构不完整；修正技能包后重读');
+  const maxSelectorChars=limits?.maxSelectorChars??DEFAULT_MAX_SELECTOR_CHARS;
+  const selectors=stringList(parser,d.selectors,maxSelectorChars),properties=stringList(parser,d.properties,maxSelectorChars);
+  d.selectors=selectors;d.properties=properties;
+  const declared=new Set([...selectors,...properties]);
   const eager=Object.hasOwn(d,'fragments');
   if(eager&&!Array.isArray(d.fragments))throw new ParseError(parser,'技能包文档结构不完整；修正技能包后重读');
   if(!eager&&!fetchFragments)throw new ParseError(parser,'按需文档缺少 locate 声明；技能包作者在 skill.json 写上 locate 后重读');
@@ -61,48 +104,100 @@ function hydrate(value:unknown,parser:string,fetchFragments?:(selectors:string[]
       if(fragments.has(row.lookup))throw new ParseError(parser,'技能包返回重复片段选择器');
       fragments.set(row.lookup,row.fragment);
     }
-    if([d.selectors,d.properties].some(list=>(list as unknown[]).some(s=>typeof s!=='string'||!fragments.has(s as string))))throw new ParseError(parser,'技能包选择器不对应已返回片段');
-  }else{
-    stringList(parser,d.selectors);stringList(parser,d.properties);
+    if([selectors,properties].some(list=>list.some(s=>!fragments.has(s))))throw new ParseError(parser,'技能包选择器不对应已返回片段');
   }
-  checkQuotation(parser,d.quotation);
+  const sharedSelector=new WeakSet<object>(),sharedText=new WeakSet<object>();
+  checkQuotation(parser,d.quotation,selectors,properties,sharedSelector,sharedText);
   const cached=new Map<string,Fragment|null>();
   const pending=new Map<string,Promise<void>>();
+  const listeners=new Set<()=>void>();
+  let retained=estimate(d,sharedSelector,sharedText)+sourceBytes*2+declared.size*32+fragments.size*32;
   if(eager)for(const [lookup,fragment]of fragments)cached.set(lookup,fragment);
-  const load=async(selectors:string[]):Promise<void>=>{
-    const wanted=[...new Set(selectors)];
+  // One active batch per document. The shared promises carry rejection to every waiter.
+  let tail:Promise<void>=Promise.resolve();
+  let stopped=false;let stoppedCause:unknown;
+  let operationDeadline=Infinity;
+  const expired=()=>new SandboxError('SANDBOX_TIMEOUT',{limit:'operation'});
+  const within=async<T>(promise:Promise<T>,deadline:number):Promise<T>=>{
+    const remaining=deadline-performance.now();if(remaining<=0){void promise.catch(()=>{});throw expired();}
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    const timely=promise.then(value=>{if(performance.now()>=deadline)throw expired();return value;});
+    try{return await Promise.race([timely,new Promise<never>((_,reject)=>{const tick=()=>{const left=deadline-performance.now();if(left<=0)reject(expired());else timer=setTimeout(tick,Math.ceil(left));};timer=setTimeout(tick,Math.ceil(remaining));})]);}finally{if(timer)clearTimeout(timer);}
+  };
+  const fetch=async(batch:string[],deadline:number):Promise<Map<string,Fragment>>=>{
+    if(performance.now()>=deadline)throw expired();
+    let output:unknown;
+    const call=fetchFragments!(batch);
+    try{output=await within(call,deadline);}catch(error){
+      if(error instanceof SandboxError&&error.code==='SANDBOX_TIMEOUT'&&error.detail.limit==='operation')await call.catch(()=>{});
+      if(error instanceof SandboxError&&batch.length>1&&(error.code==='SANDBOX_OUTPUT_TOO_LARGE'||error.code==='SANDBOX_VIOLATION'&&error.detail.limit==='memory')){
+        const half=Math.floor(batch.length/2),left=await fetch(batch.slice(0,half),deadline),right=await fetch(batch.slice(half),deadline);
+        for(const [key,fragment] of right)left.set(key,fragment);return left;
+      }
+      if(error instanceof SandboxError&&error.code==='SANDBOX_OUTPUT_TOO_LARGE')throw new SandboxError('SANDBOX_OUTPUT_TOO_LARGE',{reason:'single_fragment'});
+      throw error;
+    }
+    if(!object(output))throw new ParseError(parser,'技能包 locate 没有返回片段');
+    if(object(output.error))failPack(parser,output,limits);
+    if(!Array.isArray(output.fragments))throw new ParseError(parser,'技能包 locate 没有返回片段');
+    const rows=new Map<string,Fragment>(),wanted=new Set(batch);
+    for(const raw of output.fragments){
+      const row=readWireFragment(parser,raw);
+      if(!wanted.has(row.lookup))throw new ParseError(parser,'技能包返回了未请求的片段');
+      if(rows.has(row.lookup))throw new ParseError(parser,'技能包返回重复片段选择器');
+      rows.set(row.lookup,row.fragment);
+    }
+    for(const selector of batch)if(!rows.has(selector)&&declared.has(selector))throw new ParseError(parser,'技能包未返回清单中声明的片段；下一步：技能包作者修正 locate 后发布新版本并重读');
+    return rows;
+  };
+  const load=async(inputs:string[]):Promise<void>=>{
+    if(!fetchFragments)return;
+    if(stopped)throw stoppedCause;
+    const deadline=Math.min(performance.now()+LOCATE_DEADLINE_MS,operationDeadline);
+    if(performance.now()>=deadline)throw expired();
+    const wanted=[...new Set(inputs)];
     const waiting=[...new Set(wanted.flatMap(selector=>pending.has(selector)?[pending.get(selector)!]:[]))];
     const missing=wanted.filter(selector=>!cached.has(selector)&&!pending.has(selector));
-    const batches:string[][]=[];
-    for(let at=0;at<missing.length;at+=LOCATE_BATCH)batches.push(missing.slice(at,at+LOCATE_BATCH));
-    const jobs=batches.map(async batch=>{
-      let finish:()=>void=()=>{};
-      const gate=new Promise<void>(resolve=>{finish=resolve;});
-      for(const selector of batch)pending.set(selector,gate);
-      try{
-        const output=await fetchFragments!(batch);
-        if(!object(output))throw new ParseError(parser,'技能包 locate 没有返回片段');
-        if(object(output.error))failPack(parser,output);
-        if(!Array.isArray(output.fragments))throw new ParseError(parser,'技能包 locate 没有返回片段');
-        const seen=new Set<string>();
-        for(const raw of output.fragments){
-          const row=readWireFragment(parser,raw);
-          if(!batch.includes(row.lookup))throw new ParseError(parser,'技能包返回了未请求的片段');
-          if(seen.has(row.lookup))throw new ParseError(parser,'技能包返回重复片段选择器');
-          seen.add(row.lookup);
-          cached.set(row.lookup,row.fragment);
-        }
-        for(const selector of batch)if(!cached.has(selector))cached.set(selector,null);
-      }finally{for(const selector of batch)pending.delete(selector);finish();}
-    });
-    await Promise.all([...waiting,...jobs]);
+    const jobs:Promise<void>[]=[];
+    let failed=false, failure:unknown;
+    const owned=new Map<string,Promise<void>>();
+    const failGroup=(error:unknown)=>{failed=true;failure=error;for(const [selector,job] of owned)if(pending.get(selector)===job)pending.delete(selector);};
+    // Existing in-flight selectors belong to this request too: a failure of one
+    // prevents this request's still-queued batches from reaching the sandbox.
+    const dependencies=Promise.all(waiting).catch(error=>{failGroup(error);throw error;});
+    void dependencies.catch(()=>{});
+    for(let at=0;at<missing.length;at+=LOCATE_BATCH){
+      const batch=missing.slice(at,at+LOCATE_BATCH);
+      const job=tail.then(async()=>{
+        await dependencies;
+        if(failed)throw failure;
+        if(stopped)throw stoppedCause;
+        const rows=await fetch(batch,deadline);
+        if(performance.now()>=deadline)throw expired();
+        // Reserve the full batch against the document budget before exposing any row.
+        // A rejecting budget listener stops queued work, and no partial rows survive.
+        let added=0;
+        for(const selector of batch)added+=estimate(selector)+estimate(rows.get(selector)??null)+32;
+        retained+=added;
+        try{for(const listener of listeners)listener();}
+        catch(error){retained-=added;stopped=true;stoppedCause=error;throw error;}
+        for(const selector of batch)cached.set(selector,rows.get(selector)??null);
+      }).catch(error=>{failGroup(error);throw error;});
+      tail=job.catch(()=>{});
+      for(const selector of batch){pending.set(selector,job);owned.set(selector,job);}
+      const cleanup=()=>{for(const selector of batch)if(pending.get(selector)===job)pending.delete(selector);};
+      void job.then(cleanup,cleanup);jobs.push(job);
+    }
+    await within(Promise.all([...waiting,...jobs]).then(()=>{}),deadline);
   };
-  const locate=eager?(selector:string)=>fragments.get(selector)??null:(selector:string):Fragment|null|Promise<Fragment|null>=>{
+  const locate=(selector:string):Fragment|null|Promise<Fragment|null>=>{
+    if(stopped)return Promise.reject(stoppedCause);
     if(cached.has(selector))return cached.get(selector)??null;
+    if(!fetchFragments)return null;
     return load([selector]).then(()=>cached.get(selector)??null);
   };
-  return {parser,model:d.model as JsonValue,locate,listSelectors:(prefix='',options={})=>((options.properties?d.properties:d.selectors) as string[]).filter((s:string)=>s.startsWith(prefix)).slice(0,options.limit??Infinity),summary:()=>d.summary as JsonObject,
-    ...(!eager?{prefetch:load}:{}),
+  return {parser,model:d.model as JsonValue,locate,listSelectors:(prefix='',options={})=>(options.properties?properties:selectors).filter((s:string)=>s.startsWith(prefix)).slice(0,options.limit??Infinity),summary:()=>d.summary as JsonObject,
+    ...(!eager?{prefetch:load}:{}),setOperationDeadline:(deadline:number)=>{operationDeadline=Math.min(operationDeadline,deadline);},retainedBytes:()=>Math.ceil(retained*1.5),onRetainedBytesChange:(listener:()=>void)=>{listeners.add(listener);return()=>listeners.delete(listener);},
     ...(object(d.quotation)?{[QUOTATION_UNITS]:(options:{properties:boolean})=>(options.properties?(d.quotation as Record<string,unknown>).properties:(d.quotation as Record<string,unknown>).plain) as QuotationUnits}:{})};
 }
 
@@ -120,6 +215,7 @@ function parserOf(opened:OpenedPack,row:SkillDeclaration['parsers'][number],opti
         const input={bytes:Buffer.from(bytes).toString('base64'),options:{...parseOptions,...limits}};
         const limitsBox={timeoutMs:5000,inputBytes:96*1024*1024,outputBytes:64*1024*1024};
         const out=await callPackFunction({packDir:verified.handle.directory,module:row.function.module,export:row.function.export},input,limitsBox,options.sandbox);
+        if(options.onWireOutput)try{options.onWireOutput(Buffer.byteLength(JSON.stringify(out.output),'utf8'));}catch{/* Instrumentation must not alter parsing. */}
         const locate=row.locate;
         const fetchFragments=locate?async(selectors:string[])=>{
           const again=await options.registry.open(opened.info.digest);
@@ -127,8 +223,8 @@ function parserOf(opened:OpenedPack,row:SkillDeclaration['parsers'][number],opti
           const located=await callPackFunction({packDir:again.handle.directory,module:locate.module,export:locate.export},{...input,selectors},limitsBox,options.sandbox);
           return located.output;
         }:undefined;
-        return hydrate(out.output,row.parser,fetchFragments);
-      }catch(error){if(error instanceof ParseError||error instanceof IntegrityError)throw error;throw new ParseError(row.parser,'技能包解析未完成；请管理员核对沙箱及该技能包，修正后重读',null,error instanceof Error?error.message:null);}
+        return hydrate(out.output,row.parser,fetchFragments,input.bytes.length,limits);
+      }catch(error){if(error instanceof ParseError||error instanceof IntegrityError||error instanceof SandboxError)throw error;throw new ParseError(row.parser,'技能包解析未完成；请管理员核对沙箱及该技能包，修正后重读');}
     }};
 }
 

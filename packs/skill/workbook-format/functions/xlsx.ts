@@ -5,6 +5,8 @@ import { checkSize, effectiveLimits, mediaTypeEssence, selectorCharsError, type 
 import { MAX_SELECTOR_LENGTH, selectorOf, trySelectorSegments } from './selectors.ts';
 import { xmlParser, type XmlElement } from './xml.ts';
 const KEY = 'xlsx@1';
+/** A structured parser finding; its text still remains untrusted at the Hub boundary. */
+export class XlsxCrcError extends ParseSyntaxError {}
 const asciiFold = (value: string): string => value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
 /** Conservative full-model JSON budget, leaving room under the sandbox's 32 MiB bound-input cap. */
 export const XLSX_MODEL_BYTE_LIMIT = 16 * 1024 * 1024;
@@ -35,6 +37,7 @@ export function readXlsxArchive(input: Uint8Array, options: {rejectOpaqueMetadat
   let memberOrdinal: number | null = null;
   const located = (message: string): string => memberOrdinal === null ? message : `ZIP 成员 ${memberOrdinal}：${message}`;
   const syntax = (message: string): never => { throw new ParseSyntaxError(KEY, located(message), memberOffset); };
+  const crcMismatch = (message: string): never => { throw new XlsxCrcError(KEY, located(message), memberOffset); };
   const forbidden = (message: string): never => { throw new ParseForbiddenError(KEY, located(message), memberOffset); };
   const limits = XLSX_ZIP_LIMITS;
   if (input.length > limits.maxBytes)
@@ -144,7 +147,7 @@ export function readXlsxArchive(input: Uint8Array, options: {rejectOpaqueMetadat
     const unicode = fields.get(0x7075);
     if (!unicode) return;
     if (unicode.length < 5 || unicode[0] !== 1) syntax('ZIP Unicode 路径扩展字段格式或版本无效');
-    if (unicode.readUInt32LE(1) !== crc32(entry.nameBytes)) syntax('ZIP Unicode 路径扩展 CRC 与原始成员名不一致');
+    if (unicode.readUInt32LE(1) !== crc32(entry.nameBytes)) crcMismatch('ZIP Unicode 路径扩展 CRC 与原始成员名不一致');
     let name: string;
     try { name = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(unicode.subarray(5)); }
     catch { return syntax('ZIP Unicode 路径扩展不是 UTF-8'); }
@@ -259,8 +262,10 @@ export function readXlsxArchive(input: Uint8Array, options: {rejectOpaqueMetadat
           p += 8;
         }
     }
-    if ((!descriptor || localSize !== 0) && localSize !== entry.size || (!descriptor || localCompressed !== 0) && localCompressed !== entry.compressed || (!descriptor || bytes.readUInt32LE(at + 14) !== 0) && bytes.readUInt32LE(at + 14) !== entry.crc)
+    if ((!descriptor || localSize !== 0) && localSize !== entry.size || (!descriptor || localCompressed !== 0) && localCompressed !== entry.compressed)
       syntax('ZIP 本地头大小或 CRC 与中央目录不一致');
+    if ((!descriptor || bytes.readUInt32LE(at + 14) !== 0) && bytes.readUInt32LE(at + 14) !== entry.crc)
+      crcMismatch('ZIP 本地头大小或 CRC 与中央目录不一致');
     const dataAt = at + 30 + nameLength + extra;
     const data = bytes.subarray(dataAt, dataAt + entry.compressed);
     const nextAt = sorted[i + 1]?.at ?? directoryAt;
@@ -276,7 +281,9 @@ export function readXlsxArchive(input: Uint8Array, options: {rejectOpaqueMetadat
           syntax('ZIP 数据描述符签名不对');
         p += 4;
       }
-      if (bytes.readUInt32LE(p) !== entry.crc || (wide ? u64(p + 4, nextAt) : bytes.readUInt32LE(p + 4)) !== entry.compressed || (wide ? u64(p + 12, nextAt) : bytes.readUInt32LE(p + 8)) !== entry.size)
+      if (bytes.readUInt32LE(p) !== entry.crc)
+        crcMismatch('ZIP 数据描述符大小或 CRC 不一致');
+      if ((wide ? u64(p + 4, nextAt) : bytes.readUInt32LE(p + 4)) !== entry.compressed || (wide ? u64(p + 12, nextAt) : bytes.readUInt32LE(p + 8)) !== entry.size)
         syntax('ZIP 数据描述符大小或 CRC 不一致');
     }
     else if (dataEnd !== nextAt)
@@ -309,7 +316,7 @@ export function readXlsxArchive(input: Uint8Array, options: {rejectOpaqueMetadat
     if (content!.length !== entry.size)
       syntax('ZIP 实际解压大小与声明不一致');
     if (crc32(content!) !== entry.crc)
-      syntax('ZIP CRC 校验不一致');
+      crcMismatch('ZIP CRC 校验不一致');
     output.set(entry.name, content!);
     nextLocal = nextAt;
   }

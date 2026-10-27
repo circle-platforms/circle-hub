@@ -22,7 +22,7 @@ import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools
 import { partitionCountsOf, type PartitionCounts, type ValidationResult } from '../../../contracts/src/validation.ts';
 import { CanonicalizationError, RecordsError, LimitError, scanForCredentials, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
-import { parseReference, recReference, resolveReference } from '../../refs/api.ts';
+import { parseReference, prefetchReferences, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError, unavailable } from './errors.ts';
 import { productionEvaluationInput, evaluate, type Evaluation } from './evaluate.ts';
@@ -598,6 +598,7 @@ async function startFresh(
         boundShas,
         boundRecords,
         subjectShas: bound.filter((b) => b.slot === workflow.workflow.subject).map((b) => b.sha256),
+        prefetchFragments: references => prefetchReferences(references,resolveCtx),
         fragmentText: async (reference) => {
           const r = await resolveReference(reference, resolveCtx);
           return r.resolved ? r.text : null;
@@ -737,6 +738,7 @@ async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest:
   });
   const scope = await buildScope(ctx, run, workflow, user, 'function');
   const resolver = createResolver(ctx, scope, 'function');
+  await resolver.prefetch(notes.flatMap(({group})=>{const note=noteSchema.safeParse(group);return note.success?note.data.grounds:[];}));
   // Ordinary warnings, guesses and grouping metadata are not promoted into facts.
   for (const {group, i} of notes) {
     const at = pointerOf('groups', i);

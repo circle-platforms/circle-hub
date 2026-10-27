@@ -66,7 +66,10 @@ for (const mode of ['recover', 'exhaust', 'size', 'retain', 'hub-retain', 'binar
       assert.deepEqual(claim.statement.data?.reasons, mode === 'size' ? [reason, reason] : [reason]);
       assert.equal((claim.statement.data?.unread_sources as Array<{ reason: string }>)[0].reason, reason);
     }
-    if (mode === 'exhaust') assert.ok(h.logs.some(entry => entry.detail.includes('SyntheticPrivateReadFailure')));
+    if (mode === 'exhaust') {
+      assert.ok(h.logs.some(entry => entry.detail.includes('source reader failed: check_error')));
+      assert.ok(h.logs.every(entry => !entry.detail.includes('SyntheticPrivateReadFailure')), 'admin diagnostics do not disclose raw source errors');
+    }
     if (mode.includes('retain')) {
       assert.match(JSON.stringify(claim.statement.data?.unread_sources), /管理员/);
       assert.match(JSON.stringify(claim.statement.data?.unread_sources), /接受/);

@@ -1,5 +1,5 @@
 // Sandboxed wire boundary: source bytes in, format-neutral document data out.
-import { xlsxParser } from './xlsx.ts';
+import { XlsxCrcError, xlsxParser } from './xlsx.ts';
 import { ParseError, ParseLimitError, type ParseOptions } from './format.ts';
 
 const FRAGMENT_BUDGET = 4 * 1024 * 1024;
@@ -14,6 +14,7 @@ function packError(error: unknown) {
       message: error.message,
       offset: error.offset,
       fix: error.fix,
+      ...(error instanceof XlsxCrcError ? { crc_mismatch: true } : {}),
       ...(error instanceof ParseLimitError ? { limit: error.limit, max: error.max } : {}),
     },
   };
@@ -31,25 +32,9 @@ function opened(input: { bytes: string; options?: ParseOptions }) {
 
 function fragmentFor(document: ReturnType<typeof xlsxParser.parse>, lookup: string): Wire | null {
   const direct = document.locate(lookup);
-  if (direct) return wire(lookup, direct);
-  const pos = /^i\/(\d+)\/(\d+)\/(\d+)$/.exec(lookup);
-  if (pos) {
-    const sheet = document.model.sheets[Number(pos[1])];
-    const cell = sheet?.rows[Number(pos[2])]?.cells[Number(pos[3])];
-    if (!sheet || !cell) return null;
-    const canonical = document.locate(`c/${sheet.name}/${cell.reference}`);
-    return canonical ? wire(lookup, { selector: canonical.selector, text: cell.text, byteRange: null, data: cell }) : null;
-  }
-  const named = /^i\/n\/(\d+)$/.exec(lookup);
-  if (!named) return null;
-  const name = document.model.definedNames[Number(named[1])];
-  if (!name) return null;
-  const canonical = name.scope === null
-    ? document.locate(`n/${name.name}`)
-    : name.scope < document.model.sheets.length
-      ? document.locate(`n/${document.model.sheets[name.scope].name}/${name.name}`)
-      : null;
-  return canonical ? wire(lookup, { selector: canonical.selector, text: name.reference, byteRange: null, data: name }) : null;
+  // The format parser chooses position selectors only where names are ambiguous;
+  // manufacturing additional aliases here changes the original selector grammar.
+  return direct ? wire(lookup, direct) : null;
 }
 
 function eagerRows(document: ReturnType<typeof xlsxParser.parse>): Wire[] | null {
@@ -68,12 +53,6 @@ function eagerRows(document: ReturnType<typeof xlsxParser.parse>): Wire[] | null
     return true;
   };
   for (const selector of document.listSelectors('')) if (!push(selector)) return null;
-  for (const [s, sheet] of document.model.sheets.entries()) {
-    for (const [r, row] of sheet.rows.entries()) {
-      for (const [c] of row.cells.entries()) if (!push(`i/${s}/${r}/${c}`)) return null;
-    }
-  }
-  for (let i = 0; i < document.model.definedNames.length; i++) if (!push(`i/n/${i}`)) return null;
   return rows;
 }
 
@@ -101,15 +80,23 @@ export default function parse(input: { bytes: string; options?: ParseOptions }) 
   try {
     const document = opened(input);
     const fragments = eagerRows(document);
+    // The native workbook parser has no shared quotation index: its candidates
+    // are its listed fragments. Preserve that behavior across the sandbox wire.
+    const selectors = document.listSelectors('');
+    const units = selectors.map((selector) => {
+      const fragment = document.locate(selector)!;
+      return {selector, text: fragment.text, byteRange: fragment.byteRange, parent: -1, start: -1, end: -1};
+    });
+    const quotation = {stream: '', units};
     return {
       document: {
         parser: document.parser,
         model: document.model,
         summary: document.summary(),
-        selectors: document.listSelectors(''),
-        properties: [] as string[],
+        selectors,
+        properties: document.listSelectors('', { properties: true }),
         ...(fragments ? { fragments } : {}),
-        quotation: { plain: { stream: '', units: [] }, properties: { stream: '', units: [] } },
+        quotation: { plain: quotation, properties: quotation },
       },
     };
   } catch (error) {

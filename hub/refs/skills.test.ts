@@ -243,7 +243,7 @@ test('workbook-format sandbox transport preserves xlsx@1 vectors and enforces de
     assert.deepEqual((await actual.locate(selector)),(await expected.locate(selector)),selector);
   }
   const source=sha256Hex(fixture),reference=`src:${source}/xlsx@1/c/工作表一/A2`;
-  const frozen=await registry.freeze!([{pack:'workbook-format',version:'1.0.1'}]);
+  const frozen=await registry.freeze!([{pack:'workbook-format',version:'1.0.2'}]);
   const resolved=await resolveReference(reference,{
     parsers:frozen.parsers,
     reader:{user:bed.bob.id,role:'user'},
@@ -267,7 +267,7 @@ test('xml-format sandbox transport preserves xml@1 vectors and enforces declared
     assert.deepEqual((await actual.locate(selector)),(await expected.locate(selector)),selector);
   }
   const source=sha256Hex(fixture),reference=`src:${source}/xml@1/x/commands/scope/menu/item/arguments/arg/@help`;
-  const frozen=await registry.freeze!([{pack:'xml-format',version:'1.0.1'}]);
+  const frozen=await registry.freeze!([{pack:'xml-format',version:'1.0.2'}]);
   const resolved=await resolveReference(reference,{
     parsers:frozen.parsers,
     reader:{user:bed.bob.id,role:'user'},

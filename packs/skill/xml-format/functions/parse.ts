@@ -1,6 +1,6 @@
 // Sandboxed wire boundary: source bytes in, format-neutral document data out.
-import { xmlParser } from './xml.ts';
-import { ParseError, ParseLimitError, QUOTATION_UNITS, type Fragment, type ParseOptions } from './format.ts';
+import { xmlParser, XML_COMPACT_QUOTATION } from './xml.ts';
+import { ParseError, ParseLimitError, type Fragment, type ParseOptions } from './format.ts';
 import { selectorSegment } from './selectors.ts';
 
 const FRAGMENT_BUDGET = 4 * 1024 * 1024;
@@ -46,18 +46,16 @@ function take(lookups: Iterable<string>, locate: (lookup: string) => Fragment | 
   return rows;
 }
 
-function aliases(document: ReturnType<typeof xmlParser.parse>): string[] {
-  const selectors = document.listSelectors('');
-  const properties = document.listSelectors('', { properties: true });
-  const aliases = new Set(properties);
+function* aliases(document: ReturnType<typeof xmlParser.parse>, selectors: string[], properties: string[]): Iterable<string> {
+  yield* properties;
   let rootName: string | null = null;
   if (selectors.length > 0 && selectors[0].startsWith('x/')) {
     const slash = selectors[0].indexOf('/', 2);
     rootName = slash < 0 ? selectors[0].slice(2) : selectors[0].slice(2, slash);
     if (!rootName.includes('[')) {
       for (const sel of properties) {
-        if (sel === 'x/' + rootName) aliases.add('x/' + rootName + '[1]');
-        else if (sel.startsWith('x/' + rootName + '/')) aliases.add('x/' + rootName + '[1]/' + sel.slice(rootName.length + 3));
+        if (sel === 'x/' + rootName) yield 'x/' + rootName + '[1]';
+        else if (sel.startsWith('x/' + rootName + '/')) yield 'x/' + rootName + '[1]/' + sel.slice(rootName.length + 3);
       }
     }
   }
@@ -66,35 +64,46 @@ function aliases(document: ReturnType<typeof xmlParser.parse>): string[] {
     if (!fragment?.data || typeof fragment.data !== 'object') continue;
     const data = fragment.data as { index?: string | null; attributes?: Record<string, string> };
     if (typeof data.index !== 'string') continue;
-    aliases.add(data.index);
+    yield data.index;
     for (const name of Object.keys(data.attributes ?? {})) {
       try {
-        aliases.add(`${data.index}/${selectorSegment('@' + name)}`);
+        yield `${data.index}/${selectorSegment('@' + name)}`;
       } catch {
         // A name that is not a selector segment has no attribute alias.
       }
     }
   }
-  return [...aliases];
 }
 
 function opened(input: { bytes: string; options?: ParseOptions }) {
   return xmlParser.parse(Buffer.from(input.bytes, 'base64'), input.options);
 }
 
-function documentOf(document: ReturnType<typeof xmlParser.parse>, fragments: Wire[] | undefined) {
-  const quotation = document as typeof document & { [QUOTATION_UNITS]: (options: { properties: boolean }) => unknown };
+function documentOf(document: ReturnType<typeof xmlParser.parse>, fragments: Wire[] | undefined, selectors: string[], properties: string[]) {
+  const quotation = document as typeof document & { [XML_COMPACT_QUOTATION]: (options: { properties: boolean }) => unknown };
+  // Adjacent canonical paths normally share nearly all their prefix.  The wire
+  // format is additive: older packages may continue to return string arrays.
+  const paths = (list: string[]) => {
+    let previous = '';
+    const entries = list.map(path => {
+      let prefix = 0;
+      while (prefix < previous.length && prefix < path.length && previous.charCodeAt(prefix) === path.charCodeAt(prefix)) prefix++;
+      previous = path;
+      return [prefix, path.slice(prefix)] as const;
+    });
+    return { encoding: 'prefix-delta@1', entries };
+  };
   return {
     document: {
       parser: document.parser,
       model: document.model,
       summary: document.summary(),
-      selectors: document.listSelectors(''),
-      properties: document.listSelectors('', { properties: true }),
+      selectors: paths(selectors),
+      properties: paths(properties),
       ...(fragments ? { fragments } : {}),
       quotation: {
-        plain: quotation[QUOTATION_UNITS]({ properties: false }),
-        properties: quotation[QUOTATION_UNITS]({ properties: true }),
+        plain: quotation[XML_COMPACT_QUOTATION]({ properties: false }),
+        properties: quotation[XML_COMPACT_QUOTATION]({ properties: true }),
       },
     },
   };
@@ -123,8 +132,10 @@ export function locate(input: { bytes: string; options?: ParseOptions; selectors
 export default function parse(input: { bytes: string; options?: ParseOptions }) {
   try {
     const document = opened(input);
-    const fragments = take(aliases(document), (lookup) => document.locate(lookup));
-    return documentOf(document, fragments ?? undefined);
+    const selectors = document.listSelectors('');
+    const properties = document.listSelectors('', { properties: true });
+    const fragments = take(aliases(document, selectors, properties), (lookup) => document.locate(lookup));
+    return documentOf(document, fragments ?? undefined, selectors, properties);
   } catch (error) {
     return packError(error);
   }
