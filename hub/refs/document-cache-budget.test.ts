@@ -91,6 +91,34 @@ test('a stalled source read shares the reference operation deadline',async()=>{
   cache.dispose!();
 });
 
+test('a legacy document is weighed once and later eviction uses that stored weight', async () => {
+  let reads = 0;
+  const model: { body?: string } = {};
+  Object.defineProperty(model, 'body', { enumerable: true, get() { reads += 1; return reads === 1 ? 'ok' : 'z'.repeat(8_000_000); } });
+  const legacy = { parser: 'legacy@1', model, summary: () => ({}), listSelectors: () => [], locate: () => null } satisfies ParsedDocument;
+  const budget = 24 * 1024 * 1024;
+  const cache = createDocumentCache(4, budget);
+  cache.set('kept', legacy);
+  for (let i = 0; i < 16; i++) assert.equal(cache.get('kept'), legacy);
+  for (let i = 0; i < 16; i++) assert.equal(await cache.load!('kept', async () => { throw new Error('cached document was parsed again'); }), legacy);
+  cache.set('kept', legacy);
+  assert.equal(reads, 1);
+  const other = { parser: 'legacy@1', model: { note: 'synthetic' }, summary: () => ({}), listSelectors: () => [], locate: () => null } satisfies ParsedDocument;
+  cache.set('other', other);
+  assert.equal(cache.get('kept'), undefined);
+  assert.equal(cache.get('other'), other);
+  assert.equal(reads, 1);
+  let heavyReads = 0;
+  const heavyModel: { body?: string } = {};
+  Object.defineProperty(heavyModel, 'body', { enumerable: true, get() { heavyReads += 1; return 'z'.repeat(8_000_000); } });
+  const heavy = { parser: 'legacy@1', model: heavyModel, summary: () => ({}), listSelectors: () => [], locate: () => null } satisfies ParsedDocument;
+  const full = createDocumentCache(2, budget);
+  assert.throws(() => full.set('heavy', heavy), { code: 'SANDBOX_OUTPUT_TOO_LARGE', detail: { limit: 'document_cache_bytes' } });
+  assert.equal(heavyReads, 1);
+  assert.throws(() => full.get('heavy'), { code: 'SANDBOX_OUTPUT_TOO_LARGE' });
+  assert.equal(heavyReads, 1);
+});
+
 test('a completed read cannot be used after the shared deadline even if the event loop was blocked',async()=>{
   const cache=createDocumentCache(2,1024,20);
   const result=cache.within!(Promise.resolve('synthetic'));
