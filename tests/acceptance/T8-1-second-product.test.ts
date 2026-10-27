@@ -33,9 +33,9 @@ test('T8-1 Lumen and ORBIT use identical review and defect-to-case workflows and
   await bed.hub.setCredential(bed.resources.plm.id,'password',bed.hub.stubs!.agileAccount.password);
   const client=await bed.connect(bed.reviewer,'synthetic-two-products');
   const subject=await client.upload(Buffer.from(JSON.stringify({root:{data:{id:'root',text:'合成观察'},children:[{data:{id:'case',text:'合成用例',priority:2,resource:['functional']},children:[{data:{id:'expect',text:'ready'}}]}]}})),'synthetic-two-products.km.json');
-  const products=[{product:bed.product,version:bed.site.LINE,sync:bed.syncs.two!},{product:bed.second,version:'2.1',sync:bed.syncs.one!}];
+  const products=[{product:bed.product,version:bed.site.LINE,sync:bed.syncs.two!,absentTerminal:'violation' as const},{product:bed.second,version:'2.1',sync:bed.syncs.one!,absentTerminal:'unchecked' as const}];
   const reviews:ValidationResult[]=[], defects:ValidationResult[]=[];
-  for(const {product,version,sync} of products){
+  for(const {product,version,sync,absentTerminal} of products){
     const review=await startReview(client,{product:product.names[0],version,inputs:{subject:{reference:subject}}});
     assert.equal(review.product,product.line);
     const reviewed=await client.call('submit_result',draft(review));assert.equal(reviewed.out.acceptance,'accepted',reviewed.text);reviews.push(resultOf(reviewed));
@@ -58,6 +58,7 @@ test('T8-1 Lumen and ORBIT use identical review and defect-to-case workflows and
     for(const requirement of rejectedCommands){
       assert.notEqual(requirement.status,'satisfied','an absent command is never established by either catalog');
       for(const layer of requirement.layers){
+        assert.equal(layer.terminal,absentTerminal,'the fixture declaration fixes completeness, never the observed answer');
         if(layer.terminal==='unchecked'){
           assert.equal(requirement.status,'pending');
           assert.equal(layer.reason,'integrity_unproven');
