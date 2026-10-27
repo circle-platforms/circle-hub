@@ -1,0 +1,23 @@
+{
+  "id": "quotes_positive",
+  "source": "author",
+  "check": "quotes",
+  "subject": {
+    "item": "synthetic",
+    "quotes": [
+      {
+        "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/text",
+        "text": "synthetic literal"
+      }
+    ]
+  },
+  "sources": {
+    "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/text": "synthetic literal"
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "blocking"
+    }
+  ]
+}

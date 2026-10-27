@@ -1,0 +1,22 @@
+{
+  "schema": "recompose-declarations@1",
+  "parameters": [
+    {
+      "path": "/commands/widget/health/interval",
+      "position": 1,
+      "type": "int",
+      "minimum": 1,
+      "maximum": 60,
+      "role": "asserted_value",
+      "load_bearing": true
+    }
+  ],
+  "values": [
+    {
+      "slot": "interval_value",
+      "values": [
+        5
+      ]
+    }
+  ]
+}

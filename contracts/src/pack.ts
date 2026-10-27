@@ -315,6 +315,9 @@ export const LeaseContextRow = z.strictObject({
 export const LeaseRegistrationRow = z.strictObject({prefix:z.string().min(1),mine:z.boolean(),
   owner:z.strictObject({user:z.string().min(1),name:z.string().min(1)}).optional()});
 export const RunContext = z.strictObject({
+  run: z.string().min(1).optional().describe('Actual Hub run identity; not supplied by a model'),
+  predecessor: z.string().min(1).nullable().optional().describe('Actual Hub predecessor; null for a new lineage, absent only in historical contexts'),
+  product_pack_digest: Sha256.optional().describe('Frozen product package identity; absent on historical or productless runs'),
   skills: SkillLocks.optional(),
   command_policy:CommandPolicy.optional(),
   feeding_offset:FeedingOffsetSchema.optional(),
@@ -570,6 +573,7 @@ export type WorkflowParameter = z.infer<typeof WorkflowParameter>;
 export const WorkflowFile = z
   .strictObject({
     schema: z.literal('workflow@1'),
+    incremental_submissions:z.boolean().optional().describe('Opt-in: preserving all previous material while first filling empty slots does not charge unknown-only requirements as repairs; edits, removals and actual violations keep normal budgets'),
     predecessor_access:z.literal('view').optional().describe('Read-only predecessor visibility; never grants mutation or lineage lease rights'),
     criterion_review:z.boolean().optional().describe('W10 review protocol over an explicitly bound declaration submission'),
     work_class: WorkClassSchema.optional().describe('V07 R[5]: the class of work this workflow does; a requirement that writes no repetition policy takes the class default, and a workflow that declares no class runs one round'),

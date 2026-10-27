@@ -1,0 +1,85 @@
+{
+  "schema": "test-bed-manifest@1",
+  "beds": [
+    {
+      "name": "bed-b",
+      "devices": [
+        {
+          "name": "orbit0",
+          "type": "load-balancer",
+          "product": "orbit",
+          "ipv4": [
+            "192.0.2.20/26",
+            "192.0.2.84/26"
+          ],
+          "ipv6": [
+            "2001:db8:2::20/64"
+          ],
+          "installed": {
+            "build": "Rel_ORBIT_7_1_0_30",
+            "base": null
+          }
+        },
+        {
+          "name": "orbit1",
+          "type": "load-balancer",
+          "product": "orbit",
+          "ipv4": [
+            "192.0.2.21/26"
+          ],
+          "ipv6": [
+            "2001:db8:2::21/64"
+          ],
+          "installed": {
+            "build": "Rel_ORBIT_7_1_0_31",
+            "base": null
+          }
+        },
+        {
+          "name": "router1",
+          "type": "router",
+          "ipv4": [
+            "192.0.2.2/26"
+          ],
+          "ipv6": []
+        },
+        {
+          "name": "client1",
+          "type": "client",
+          "ipv4": [
+            "192.0.2.81/26"
+          ],
+          "ipv6": []
+        },
+        {
+          "name": "server1",
+          "type": "server",
+          "ipv4": [
+            "192.0.2.91/26"
+          ],
+          "ipv6": []
+        },
+        {
+          "name": "console1",
+          "type": "console",
+          "ipv4": [
+            "192.0.2.141/26"
+          ],
+          "ipv6": []
+        }
+      ],
+      "services": [
+        {
+          "host": "server1",
+          "ip": "192.0.2.91",
+          "proto": "tcp",
+          "port": 8080
+        }
+      ],
+      "reserved": [
+        "192.0.2.2-192.0.2.9",
+        "192.0.2.65-192.0.2.69"
+      ]
+    }
+  ]
+}

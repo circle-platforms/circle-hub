@@ -1,0 +1,51 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "record",
+      "title": "record",
+      "function": {
+        "module": "functions/recompose-check.ts",
+        "export": "checkRecomposition"
+      },
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "Declared structure and exact source identities",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "subject"
+      },
+      "catalog": "commands@1",
+      "catalog_select": {
+        "module": "functions/subject.ts",
+        "export": "selectCatalog"
+      }
+    },
+    {
+      "id": "quotes",
+      "title": "逐字原文",
+      "interpreter": "quote@1",
+      "table": "tables/quotes.json",
+      "applies": "item",
+      "subject": {
+        "module": "functions/subject.ts",
+        "export": "quotes"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "核心 quote@1 逐字核验"
+    },
+    {
+      "id": "full_set",
+      "title": "full_set",
+      "function": {
+        "module": "functions/seal.ts"
+      },
+      "applies": "run",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "Declared structure and exact source identities"
+    }
+  ]
+}

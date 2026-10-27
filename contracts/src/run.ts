@@ -184,6 +184,7 @@ const PersistedRequirementSummary=RequirementSummary.partial({rules:true,run_int
   if((row.rules===undefined)!==(row.run_interpreters===undefined))ctx.addIssue({code:'custom',message:'ruling fields are either both present or both absent on a historical row'});
 });
 export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
+  product_pack_digest:Sha256.optional().describe('Product package digest frozen at admission; absent on historical records'),
   command_policy:CommandPolicy.optional(),
   accepted_criteria:z.array(AcceptedCriterionRef).optional(),
   criterion_requests:z.array(Sha256).optional(),

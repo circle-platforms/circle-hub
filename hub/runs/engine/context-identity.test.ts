@@ -1,0 +1,5 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { runContextOf } from './evaluate.ts';
+import { RunContext } from '../../../contracts/src/pack.ts';
+test('run context uses the saved run and predecessor and never invents a historical product lock', () => { const record: any = { run: 'run_synthetic_context', predecessor: 'run_synthetic_previous', product: 'orbit', version: '10.8', root: 'a'.repeat(64), parameters: {}, groups: [], target_basis: [], product_pack_digest: 'b'.repeat(64) }; const before = JSON.stringify(record), context = runContextOf(record); assert.equal(context.run, record.run); assert.equal(context.predecessor, record.predecessor); assert.equal(context.product_pack_digest, record.product_pack_digest); assert.ok(RunContext.safeParse(context).success); assert.equal(JSON.stringify(record), before); delete record.product_pack_digest; delete record.predecessor; const historical = runContextOf(record); assert.equal(historical.predecessor, null); assert.equal(historical.product_pack_digest, undefined); assert.equal(Object.hasOwn(record, 'predecessor'), false); });

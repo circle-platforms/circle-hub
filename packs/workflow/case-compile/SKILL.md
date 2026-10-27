@@ -48,3 +48,17 @@ allowed 只提供已声明范围内的收紧配置，不能替代原合约的参
 作者期望全部进 obligations：实际断言 id，或 unmet 加 missing/next_action。没有作者闭集字面声明的描述性期望，提出 criteria（明确类型、算子、取值、原引文、scope_root 与理由），由本目录 review 阶段的非作者账号复核，之后绑定真实 criteria_review 和 criteria_review_run 记录。不能拿上传 JSON、同作者判断或无关前驱替代。text/literal 要选择设备真实可观察的文字；Hub 只核机械条件，语义判断会保留限定。
 
 RESTORE_FROM 在改动前捕获原文，末尾同设备、逆序恢复，for 精确指配置块。只能用已声明的 guarded restore 方法；root/target 由锁根、产品逆规则和冻结清单机械派生。缺执行器守卫能力保持未知，请维护者补实现及发布声明；不把 {} 塞进普通设备命令。OBSERVE_DIST/MEMBER/EXIT 本版暂缓，按声明给出口，不自造正则或成功标记。
+
+## 重组后编写（B2）
+
+新用例先执行 recompose 阶段，case-compile 的 pipeline 显式写 recomposed；旧已锁定运行与旧 flat 路径保持兼容。管理员先发布/分配本目录 authority、recompose、adjudicate 三个独立工作单元；产品包作者在生产器 params.recompose 中声明实际规范来源、适用范围、参数用途与裁决角色。不要把自述的 product-declared 或上传裁定 JSON 当凭证。
+
+模型理解意图、知识位置、语义等价与缺前置；代码只读结构。读逐节点资格报告，未判定单列，按作者声明深度核对。两种布局保留原文及跨度：自身动作/叶期望，或标题/步骤/期望；编号及方括号定位按声明语法匹配，不能按“成功”“配置”等词判断角色。未绑定期望请作者或核对方明确定位，不静默删掉。
+
+先绑定完整作者脑图及来源权威运行/结果，提交 record 三元契约、逐字原文账、适配账、具体化账和空重绑定账。所有引用要在本轮可读；声明位置也放进 quotes/grounds，由核心解析和逐字核验。状态 settled 也写后续编写出口；欠定、冲突、缺前置各走自己的角色与时点。冲突不是删除作者输入的许可；作者同意删除时应更新原件并按新来源身份重开。
+
+对初稿提交取得实际 Hub submission 记录，交非作者账号的 recompose-adjudication 作只读前驱复核，绑定 source_run 完整快照及作者/规范来源。裁定由模型写，Hub 核形状、逐字引文、账号独立性与锁定产品/根。之后以原重组运行为 predecessor 新开重组修订，绑定 previous_run/result 和实际独立裁定快照/结果，record.predecessor 必须等于真实前驱；不覆盖旧记录。
+
+逐案分片要保留冻结全集。客户端 tools/seal-recompose.ts 从实际运行导出和原提交记录数组汇总：未完成项仍携 record:[]，不以 not_covered 冒充完整；每次只替换明确的新候选，其他原记录不改。该工具只产草稿和缺案数，不签发受理。把汇总草稿交 submit_result；只有 Hub 的全部条目要求项及 full_set 都满足才能称整批完成，分片 worker 不独立封整批。
+
+编写在 recomposition_run/result 绑定真正已受理的记录，并填写 plan.data.recomposition（receipt、case_id、每个期望位的独立 assertion id、rebindings）。平面 expects 的 id 按从 1 开始的文字序号，块断言用显式 id。断言 quote 必须等于所履约原子的逐字文本；按 B1 提出并独立复核判据，不能把方法说明当设备输出。物理替换只在此阶段出现，重绑定账保留 from/to、source_of_value、冻结 inventory 的 authority，且与 replacements 一一对应。缺来源或权限就是 unknown，点名等产品包作者、来源维护者或编写方在何时补，不能猜。

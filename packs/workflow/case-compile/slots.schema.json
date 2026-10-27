@@ -1199,6 +1199,85 @@
                 "assertions"
               ]
             }
+          },
+          "recomposition": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "receipt": {
+                "type": "string",
+                "minLength": 1
+              },
+              "case_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "slots": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "slot": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "assertions": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "required": [
+                    "slot",
+                    "assertions"
+                  ]
+                }
+              },
+              "rebindings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "slot": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "from": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "to": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "authority": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "source_of_value": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "slot",
+                    "from",
+                    "to"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "receipt",
+              "case_id",
+              "slots",
+              "rebindings"
+            ]
           }
         }
       }

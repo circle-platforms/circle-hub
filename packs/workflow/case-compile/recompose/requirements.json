@@ -1,0 +1,74 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "record",
+      "name": "record",
+      "description": "结构及凭证由代码核对，语义由带引文模型判断",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "judgment",
+      "checks": [
+        "record",
+        "quotes"
+      ],
+      "error_handling": [
+        {
+          "code": "recompose.quote_not_verbatim",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "recompose.missing_without_exit",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "recompose.candidate_signed",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "recompose.prerequisite_as_conflict",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "recompose.unmarked_load_bearing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "recompose.bound_to_bed",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "recompose.atom_dropped",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    },
+    {
+      "key": "full_set",
+      "name": "full_set",
+      "description": "结构及凭证由代码核对，语义由带引文模型判断",
+      "target": "run",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "full_set"
+      ],
+      "error_handling": []
+    }
+  ]
+}
