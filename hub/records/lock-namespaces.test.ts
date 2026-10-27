@@ -21,7 +21,7 @@ test('every records advisory lock uses a named namespace distinct from all other
       const calls=(node:ts.Node)=>{
         if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&node.expression.name.text==='query'){
           const sql=node.arguments[0];
-          if(sql&&(ts.isStringLiteral(sql)||ts.isNoSubstitutionTemplateLiteral(sql))&&sql.text.includes('pg_advisory_xact_lock(')){
+          if(sql&&(ts.isStringLiteral(sql)||ts.isNoSubstitutionTemplateLiteral(sql))&&(sql.text.includes('pg_advisory_xact_lock(')||sql.text.includes('pg_try_advisory_lock('))){
             const args=node.arguments[1];assert.ok(args&&ts.isArrayLiteralExpression(args),'lock arguments must be statically inspectable');
             const space=args.elements[0];assert.ok(space);
             const name=ts.isIdentifier(space)?space.text:space.getText(source);

@@ -9,6 +9,7 @@
 - [Hub r4 进度](hub-r4-progress.md)：阶段清单、记录和已定的决定。
 - [设计](design/README.md)：[通用模型](design/generic-model.md)摘要、[对象标准：五要素检查单](design/object-standard.md)、研究提案和已被取代的旧设计篇；英文在 [design/en](design/en/README.md)。设计的权威是 [contracts/model.json](../contracts/model.json)。
 - [兼容矩阵](compatibility.md)：circle、circle-hub、circle-packs 三个仓库彼此的要求。
+- [R5 派发运维手册](hub-r5-runbook-dispatch.md)：真实台架派发排错、执行器与版本对齐、床面门与床面占用（bed hold）、全流程操作指南。
 
 ## 历史记录
 

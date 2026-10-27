@@ -176,6 +176,8 @@ export interface RecordStore {
 
   /** Holds a typed business-key advisory lock until the given transaction commits or rolls back. */
   lock(key: string, tx: Transaction): Promise<void>;
+  /** Session lock that dies with the connection. Null means a live holder already has this key. */
+  tryHold(key: string): Promise<(() => Promise<void>) | null>;
   /** Appends a record; an identical digest returns the existing record with `created: false`. */
   put<B>(input: RecordInput<B>, tx?: Transaction): Promise<PutResult<B>>;
   get<B = unknown>(digest: string, tx?: Transaction): Promise<StoredRecord<B> | null>;
