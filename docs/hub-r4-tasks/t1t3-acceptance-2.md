@@ -17,7 +17,7 @@
   - `docs/hub-r4-tasks/t1t3-acceptance-2.md`
   - `docs/hub-r5-test-map-t1-t3.md`
   - `docs/hub-r5-test-map.md`
-  - `tests/acceptance/38-r5-t1t3-acceptance.test.ts`
+  - `tests/acceptance/41-r5-t1t3-acceptance.test.ts`
 - 规则：
   - 旧测试一个字不改；
   - 纯合成数据与夹具（ORBIT/COMET、lumen-api、192.0.2.0/24 与 2001:db8::/32），不出现任何真实地址与产品名；
