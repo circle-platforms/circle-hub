@@ -382,26 +382,32 @@ test('media_types_by_extension resolves octet-stream and missing types, server h
   // 1) application/octet-stream with mapped extension .adoc -> text/plain
   replyContentType = 'application/octet-stream';
   const adocExchange = await http.request({ method: 'GET', path: '/files/Chapter18.adoc' });
+  assert.equal(adocExchange.serverMediaType, 'application/octet-stream');
   assert.equal(adocExchange.mediaType, 'text/plain');
 
   // Case insensitive and percent decoded
   const encodedAdoc = await http.request({ method: 'GET', path: '/files/%E7%AB%A0%E8%8A%82.ADOC' });
+  assert.equal(encodedAdoc.serverMediaType, 'application/octet-stream');
   assert.equal(encodedAdoc.mediaType, 'text/plain');
 
   // 2) application/octet-stream with unmapped extension .bin -> remains application/octet-stream
   const binExchange = await http.request({ method: 'GET', path: '/files/archive.bin' });
+  assert.equal(binExchange.serverMediaType, 'application/octet-stream');
   assert.equal(binExchange.mediaType, 'application/octet-stream');
 
   // 3) explicit server header (text/html or text/custom) -> server header wins
   replyContentType = 'text/html; charset=utf-8';
   const htmlHeaderExchange = await http.request({ method: 'GET', path: '/files/Chapter18.adoc' });
+  assert.equal(htmlHeaderExchange.serverMediaType, 'text/html; charset=utf-8');
   assert.equal(htmlHeaderExchange.mediaType, 'text/html; charset=utf-8');
 
   // 4) missing Content-Type
   replyContentType = null;
   const missingMapped = await http.request({ method: 'GET', path: '/files/Chapter18.adoc' });
+  assert.equal(missingMapped.serverMediaType, 'text/plain');
   assert.equal(missingMapped.mediaType, 'text/plain');
 
   const missingUnmapped = await http.request({ method: 'GET', path: '/files/archive.bin' });
+  assert.equal(missingUnmapped.serverMediaType, 'text/plain');
   assert.equal(missingUnmapped.mediaType, 'text/plain'); // DEFAULT_MEDIA_TYPES[response='text']
 });
