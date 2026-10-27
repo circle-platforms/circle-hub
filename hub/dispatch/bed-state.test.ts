@@ -820,6 +820,30 @@ test('an open hold compares the probe intersection and names a changed set inste
   }
 });
 
+test('an open hold whose probe is now empty stays unrestored until an administrator accepts the empty baseline', async t => {
+  const queue: Array<ReturnType<typeof echo>> = [];
+  const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
+  t.after(() => c.close());
+  await leaveOpenHold(c, queue);
+  await c.service.setBaseline(c.admin, c.executor.id, 'A', '', '设备重启后配置已不存在');
+  await rotate(c, 'synthetic verified bytes after the device restarted');
+  const empty = { output: 'show interfaces\nDEVICE#' };
+  queue.push(empty, echo(textB), echo(textC));
+  const blocked = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(blocked.outcome, 'not_dispatched');
+  assert.match(blocked.missing_fact ?? '', /该床尚未恢复/);
+  assert.match(blocked.missing_fact ?? '', /来源探针 A/);
+  assert.match(blocked.missing_fact ?? '', /第 1 行改变/);
+  assert.match(blocked.next_action ?? '', /按 synthetic-cleanup-A 处理后重开/);
+  assert.match(blocked.next_action ?? '', /确认当前状态是干净的（例如设备已重启过、占用时的配置已不存在）才用/);
+  assert.match(blocked.next_action ?? '', new RegExp(`circle-hub bed hold clear ${c.executor.id} --reason <理由>`));
+  await c.service.clearBedHold(c.admin, c.executor.id, '设备已重启，占用时的配置已不存在');
+  await rotate(c, 'synthetic verified bytes after the stale hold was cleared');
+  queue.push(empty, echo(textB), echo(textC), empty, echo(textB), echo(textC));
+  const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(next.outcome, 'effective', JSON.stringify(next));
+});
+
 test('an administrator clear appends a record and the next gate lets the same bed through', async t => {
   const queue: Array<ReturnType<typeof echo>> = [];
   const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });

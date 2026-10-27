@@ -44,6 +44,7 @@ import {
   compareHeldProbes,
   disjointHoldFact,
   holdClearNext,
+  unrestoredHoldNext,
   holdMissingBaselineFact,
   ignoredHoldProbes,
   type BedBaselineRecord,
@@ -1202,7 +1203,7 @@ export class DispatchService {
         if (compared.outcome === 'unrestored') {
           await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, compared.differences);
           const lines = compared.differences.flatMap(diff => diff.diff_lines ?? []).slice(0, 5).join('；');
-          throw new PrecheckFactError(withNote([unrestoredFact(compared.differences), lines].filter(Boolean).join('；'), compared.ignored), cleanupSteps(spec.items, compared.differences.map(diff => diff.item)));
+          throw new PrecheckFactError(withNote([unrestoredFact(compared.differences), lines].filter(Boolean).join('；'), compared.ignored), unrestoredHoldNext(spec.items, compared.differences.map(diff => diff.item), binding.executor));
         }
         await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: bedNameOrExecutor, state: 'clear', pre: hold.pre, ...(compared.ignored.length ? { ignored_probes: compared.ignored, note: ignoredHoldProbes(compared.ignored) } : {}) });
       } else {
@@ -1236,7 +1237,7 @@ export class DispatchService {
         }
         if (outstanding.length) {
           await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, outstanding);
-          throw new PrecheckFactError(withNote(unrestoredFact(outstanding), ignored), cleanupSteps(spec.items, outstanding.map(diff => diff.item)));
+          throw new PrecheckFactError(withNote(unrestoredFact(outstanding), ignored), unrestoredHoldNext(spec.items, outstanding.map(diff => diff.item), binding.executor));
         }
         await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: bedNameOrExecutor, state: 'clear', pre: hold.pre, ...(ignored.length ? { ignored_probes: ignored, note: ignoredHoldProbes(ignored) } : {}) });
       }

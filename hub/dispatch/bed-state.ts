@@ -169,6 +169,13 @@ export function holdClearNext(executorId: string): string {
   return `由管理员确认床面干净后运行 circle-hub bed hold clear ${executorId} --reason <理由>`;
 }
 
+/** Exit beside the cleanup steps when a hold is unrestored. The command is only for a state the administrator has already accepted as clean. */
+export function unrestoredHoldNext(items: readonly BedItem[], ids: readonly string[], executorId: string): string {
+  const cleanup = cleanupSteps(items, ids);
+  const clear = `确认当前状态是干净的（例如设备已重启过、占用时的配置已不存在）才用 circle-hub bed hold clear ${executorId} --reason <理由>`;
+  return [cleanup, clear].filter(Boolean).join('；');
+}
+
 export function holdMissingBaselineFact(ids: readonly string[]): string {
   return `无法比较床面占用：探针 ${ids.join('、')} 在占用时没有、现在有，没有登记基线`;
 }
