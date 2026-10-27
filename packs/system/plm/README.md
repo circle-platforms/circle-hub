@@ -9,7 +9,7 @@ route one by one (method and path template) and has no write route.
 | `plm:bug:<id>`, `plm:story:<id>` | the original answer, content `{id, kind, title, fields, html_fields}` (every HTML field as plain text, empty lines dropped) and meta `{id, kind, title: "缺陷 <id> <title>" or "需求 <id> <title>", status}`; an id the service does not know is a failed read (unavailable to callers) |
 | `plm:bugs:<id>+<id>+...` | the original answer, content `{bugs: [{id, status, title}], unread: [<ids>]}` (up to 50 ids, sorted numerically, deduplicated); unreturned ids listed in unread |
 | `plm:products:<any>` | the product list (`GET /plmquery/product/all/`) |
-| `plm:builds:<product id or encoded names>` | a product resolved by explicit id or all requested names, and its build list; content `{product, product_resolution, builds: [{id, name, stories, scope_note}]}`; the original is the build array after product selection, or the enveloped product list when names remain unresolved or ambiguous |
+| `plm:builds:<product id or encoded names>` | a product resolved by explicit id or all requested names, and its build list; content `{product, product_resolution, builds: [{id, name, stories, scope_note}]}`; the original is the enveloped build response (or legacy bare build array) after product selection, or the enveloped product list when names remain unresolved or ambiguous |
 
 Profile: roles `plm-oauth` (the same login as the agile platform: the token works for both) and `plm-api`; auth
 `login_token` (password `sha512_base64`, envelope code 1000 ok); routes `products`, `builds`, `bug-detail`
@@ -30,7 +30,7 @@ Needs: none.
 
 合成验证：`node --test --test-concurrency=1 packs/system/plm/*.test.ts`。真实需求状态与阶段取值由集成者核实，当前不需要新词表轴。
 
-可选构建需求范围：`plm:builds:<产品编号>` 的原件仍保留原样数组，content 在 1.2.0 合并产品解析结果，构建项保留 `{id,stories,scope_note}` 并增加 name。管理员在资源设置里配置 `settings.build_story_field`，字段名需先核实真实原件；只接受该顶层字段的正整数编号数组（数字或字符串），不猜字段、不解析自由文本。没配置、字段缺失或形状错误时 stories 为 null，scope_note 指出具体缺口并请求用户给出编号。合成测试中的字段名只是结构示例，不能作为真实字段默认值。
+可选构建需求范围：`plm:builds:<产品编号>` 的原件保留整个应答（带信封时保存整个信封，构建数组取自 data；兼容裸数组），content 在 1.2.0 合并产品解析结果，构建项保留 `{id,stories,scope_note}` 并增加 name。管理员在资源设置里配置 `settings.build_story_field`，字段名需先核实真实原件；只接受该顶层字段的正整数编号数组（数字或字符串），不猜字段、不解析自由文本。没配置、字段缺失或形状错误时 stories 为 null，scope_note 指出具体缺口并请求用户给出编号。合成测试中的字段名只是结构示例，不能作为真实字段默认值。
 
 ## 1.2.0：修复字段声明和产品名字解析
 
@@ -86,3 +86,9 @@ separate from fields_absent and explicit null; the workflow counts these observe
 A regression feeds this actual projection into story-traceability instead of manufacturing the marker in a fixture.
 
 缺席观察：读取声明的 `absent_codes` 包含 `plm.absent`。仅在原始应答已保存、根据全部可读且无其他读取故障时，Hub 将该码转为带系统、对象、读取时刻和应答键的 SOURCE_ABSENT；原件照存，检查读取独立的规范 JSON 观察。401/403、未读完或凭据保留不作缺席。
+
+## 构建列表信封应答与原件存储
+
+真实 PLM 服务的构建列表应答带标准信封：`{"code": 1000, "data": [ ... ], "msg": "success"}`。`buildsProject` 投影函数同时兼容信封形应答（从 `json.data` 取构建数组）与裸数组应答（旧测试兼容）；若既不是数组且没有数组形的 `data`，则报 `plm.no_records`（`构建列表不是数组，应答既不是数组也没有数组形的 data；核对原始应答，重新读取该产品的构建原件`）。
+
+原件保存服务端完整的原始应答（带信封时原件保存整个信封，裸数组时保存数组），构建数组是其中的 `data`。`chooseProduct` 读取产品列表时同样支持信封（`json.data`）与裸数组。

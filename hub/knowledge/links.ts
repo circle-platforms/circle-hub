@@ -129,14 +129,15 @@ export function relationFacts(root:string,declarations:readonly Rule[],nodes:Rel
 
 export class LinkReading {
   readonly #context:KnowledgeContext;readonly #builds:Builds;
+  readonly #readRoot: ((product: string, query: import('../ports.ts').ReadRootQuery) => Promise<import('../ports.ts').ReadRoot | null>) | null;
   readonly #cache=new Lru<string,RelationFacts>(4,64*1024*1024,true);
   readonly #compact=new Lru<string,CompactRelations>(4,64*1024*1024,true);
-  constructor(context:KnowledgeContext,builds:Builds){this.#context=context;this.#builds=builds;}
+  constructor(context:KnowledgeContext,builds:Builds,readRoot?:(product: string, query: import('../ports.ts').ReadRootQuery) => Promise<import('../ports.ts').ReadRoot | null>){this.#context=context;this.#builds=builds;this.#readRoot=readRoot??null;}
   async compositionFor(root:string,reader:Principal,composition?:string|null):Promise<CompositionView|null>{
     if(composition){const body=await this.#context.store.composition(composition);return body?.root===root&&await this.#allowed(body.product,reader)?new CompositionView(this.#context.store,composition,body):null;}
     const productions=await this.#context.store.productionsOfRoot(root),selected=new Map<string,CompositionView>();
     const seen=new Set<string>();
-    for(const p of productions){const key=canonicalize([p.detail.product,p.detail.build?.line ?? null]);if(seen.has(key)||!await this.#allowed(p.detail.product,reader))continue;seen.add(key);const info=await this.#builds.currentRoot(p.detail.product,(p.detail.build?.line ?? null));if(info?.root!==root)continue;const body=await this.#context.store.composition(info.composition);if(body)selected.set(info.composition,new CompositionView(this.#context.store,info.composition,body));}
+    for(const p of productions){const key=canonicalize([p.detail.product,p.detail.build?.line ?? null]);if(seen.has(key)||!await this.#allowed(p.detail.product,reader))continue;seen.add(key);const line=p.detail.build?.line ?? null;const chosen=this.#readRoot?await this.#readRoot(p.detail.product,{line}):null;const info=chosen?.info??await this.#builds.currentRoot(p.detail.product,line);if(info?.root!==root)continue;const body=await this.#context.store.composition(info.composition);if(body)selected.set(info.composition,new CompositionView(this.#context.store,info.composition,body));}
     if(selected.size!==1)return null;return [...selected.values()][0];
   }
   async #allowed(product:string,reader:Principal):Promise<boolean>{

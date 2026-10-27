@@ -43,6 +43,7 @@ D01 R[10]):
 
 - `media_types_by_extension` maps filename extensions (`.adoc`, `.md`, `.html`, etc.) to MIME media types when the server answers
   `application/octet-stream` or omits `Content-Type`; an explicit non-octet-stream server `Content-Type` always takes precedence;
+  the read receipt records the server's verbatim media type (`requests[].media_type`) while the stored original records the effective type;
 
 - a **POST route has a literal path**: a read that uses POST is allowed on its exact path only, so it can never match a write
   under the same prefix; parameters exist on GET and PROPFIND routes only;

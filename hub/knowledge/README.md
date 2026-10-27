@@ -9,10 +9,12 @@ names) and **W09** (the sync is a standing obligation the Hub executes). Milesto
 in `contracts/src/knowledge.ts`.
 
 `createKnowledge(options)` returns an object that implements `KnowledgePort` of `hub/ports.ts` exactly (`builds`,
-`resolveBuild`, `currentRoot`, `rootOfBuild`, `rootInfo`, `catalog`, `treeReader`, `getNodes`, `diffRoots`,
-`diffEntries`), plus `produceTree`, `syncProduct`, `lockRoot`, `moveRoot`, `reconcileLine`, `provenanceOf`,
-`calibration`, `placement`, `layers`, `views` and `store`. Its `treeReader` also takes an optional lock
-(`{ composition }`, see decision 13). `createKnowledgeReader(knowledge)` serves the views as an `ExternalReaderPort`.
+`resolveBuild`, `currentRoot`, `rootOfBuild`, `rootForRead`, `rootInfo`, `catalog`, `treeReader`, `getNodes`,
+`diffRoots`, `diffEntries`), plus `produceTree`, `syncProduct`, `lockRoot`, `moveRoot`, `reconcileLine`,
+`provenanceOf`, `calibration`, `placement`, `layers`, `views` and `store`. `rootForRead(product, {build?, line?})`
+is the root a run locks and a view reads: the line's seedling pointer when it names one, otherwise `rootOfBuild` or
+`currentRoot`. When those two digests differ, the view's `notes` name both. Its `treeReader` also takes an optional
+lock (`{ composition }`, see decision 13). `createKnowledgeReader(knowledge)` serves the views as an `ExternalReaderPort`.
 
 ```ts
 const knowledge = createKnowledge({
@@ -666,10 +668,12 @@ budget). The suite runs a reduced version (`scale.test.ts`: 300 documents of 20 
   into the note as `生产动作 rec:<digest>` and into the `root_pointer` record). (2) A batched get by index value would
   make the first catalog or page of a large root faster. (3) A named lock (advisory lock) on the API, so that syncs and
   productions in different processes are serialised as they are within one.
-- **runs**: lock with `lockRoot(product, {build})` or `{line}` (`rootOfBuild` / `currentRoot`), keep `RootInfo.composition`
-  with the run and resolve the run's tree references with a reader bound to it once the port allows; every
-  `KnowledgePort` method takes the product line id, not a product name. If production runs of workflow packs should
-  move current roots later, a way to check that a run id is a completed production run of the product.
+- **runs**: lock with `rootForRead` / `lockRoot(product, {build})` or `{line}` (the line's seedling root when that
+  pointer names one, otherwise `rootOfBuild` / `currentRoot`). A view that reads the seedling while the same build
+  still has a different sync root names both digests in `notes`. Keep `RootInfo.composition` with the run and resolve
+  the run's tree references with a reader bound to it once the port allows; every `KnowledgePort` method takes the
+  product line id, not a product name. If production runs of workflow packs should move current roots later, a way to
+  check that a run id is a completed production run of the product.
 - **server**: register `knowledgeCliCommand` in the assembly; pass the knowledge service as `KnowledgePort`; supply the
   admin principal; route knowledge-contribution@1 record reads through layers.contributions.read before any admin
   bypass, and treat

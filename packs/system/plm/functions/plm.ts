@@ -252,7 +252,8 @@ type ProductChoice = { product: Product | null; resolution: Resolution; candidat
 function chooseProduct(key: BuildKey, responses: Record<string, Response>): ProductChoice | { error: string } {
   if ('id' in key) return { product: { id: key.id, name: null }, resolution: 'resolved' };
   const response = responses.products;
-  const data = isRecord(response?.json) ? response.json.data : undefined;
+  const raw = response?.json;
+  const data = Array.isArray(raw) ? raw : (isRecord(raw) ? raw.data : undefined);
   const fallback = '；下一步核对该行原件，或改用 plm:builds:<产品编号>';
   if (response?.ok === false) return { error: '产品列表请求未成功；核对读取记录和访问，或改用 plm:builds:<产品编号>' };
   if (!Array.isArray(data)) return { error: '产品列表的 data 不是数组；核对原始应答，或改用 plm:builds:<产品编号>' };
@@ -298,8 +299,9 @@ export function buildsProject(input: unknown): unknown {
     const note = ('下一步：核对名字，或明确使用 plm:builds:<产品编号> 重新读取（由集成者核实编号后配置）；尚未读取构建列表。原因：' + cause).slice(0, 500);
     return { complete: false, note, artifacts: [{ name: 'content', media_type: 'application/json', json: { product: null, product_resolution: choice.resolution, builds: null, candidates: choice.candidates ?? [], requested_names: 'names' in key ? key.names : [], note } }] };
   }
-  const data = responses[original]?.json;
-  if (responses[original]?.ok === false || !Array.isArray(data)) return { error: { code: 'plm.no_records', message: '构建列表不是数组；重新读取该产品的构建原件' } };
+  const raw = responses[original]?.json;
+  const data = Array.isArray(raw) ? raw : (isRecord(raw) && Array.isArray(raw.data) ? raw.data : null);
+  if (responses[original]?.ok === false || data === null) return { error: { code: 'plm.no_records', message: '构建列表不是数组，应答既不是数组也没有数组形的 data；核对原始应答，重新读取该产品的构建原件' } };
   const settings = isRecord(input) && isRecord(input.settings) ? input.settings : {};
   const field = typeof settings.build_story_field === 'string' && settings.build_story_field !== '' ? settings.build_story_field : null;
   const builds = data.filter(isRecord).map(record => {

@@ -177,6 +177,15 @@ export class Builds {
     };
   }
 
+  /** The sync root of a build name: one name lookup and the latest completed production of its base. */
+  async syncRoot(product: string, name: string): Promise<(RootInfo & { build: KnownBuild }) | null> {
+    const chain = await this.#chain(product, name);
+    if (chain === null) return null;
+    const production = await this.#store.latestProduction(product, baseOf(chain.last));
+    const info = production === null ? null : this.rootInfoOf(production, product);
+    return info?.build ? { ...info, build: info.build } : null;
+  }
+
   /** The root a build name of any family resolves to. */
   async rootOfBuild(product: string, name: string): Promise<(RootInfo & { build: KnownBuild }) | null> {
     const build = await this.resolve(product, name);

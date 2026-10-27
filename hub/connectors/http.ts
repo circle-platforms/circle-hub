@@ -77,6 +77,7 @@ export interface HttpExchange {
   /** The full URL. For the connectors only: never handed to pack functions, never put into a message. */
   url: string;
   status: number;
+  serverMediaType: string;
   mediaType: string;
   etag: string | null;
   bytes: Uint8Array;
@@ -376,6 +377,7 @@ export class HttpSource {
       url: url.href,
       ...(raw.location===undefined?{}:{location:raw.location}),
       status: raw.status,
+      serverMediaType: raw.mediaType === '' ? DEFAULT_MEDIA_TYPES[route.response] : raw.mediaType,
       mediaType: effectiveMediaType(raw.mediaType, route, url),
       etag: raw.etag,
       ...(raw.retryAfterMs===undefined?{}:Number.isNaN(raw.retryAfterMs)?{retryAfterInvalid:true}:{retryAfterMs:raw.retryAfterMs}),

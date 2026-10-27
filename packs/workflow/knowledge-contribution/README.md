@@ -1,6 +1,14 @@
-# knowledge-contribution 1.3.5
+# knowledge-contribution 1.3.6
 
 所有者 2026-10-23 傍晚决定：候选留在 Circle 本地。Circle 的整合技能判定成为事实后开独立回注运行；Hub 核对原文、来源和归位，要求项全部满足才入回注层。依据是新版 `docs/hub-r4-tasks/kb-candidates.md`、知识库方向第二节及 K03、W07 R[4]、P10、K02 F[6]。
+
+## 1.3.6（WIP 交接，2026-10-27）
+
+本版只补交接边界和验证限制，不新增功能。
+
+本分支不作为已解除阻断的成品合入。第三轮复核指出的预取绕过声明级检查、当前令牌子串泄露、缺采集时间的 `at` 表达，以及租约时间戳与行锁顺序，均已有实现和定向反例；在独立复核确认前，仍按 GitHub issue 中的已知阻断项交接。复现入口分别是 `hub/runs/engine/captured-ground.test.ts`、`testing/operation-integrate.test.ts`、`hub/records/artifacts.test.ts` 和 `hub/leases/time-order.test.ts`，每条直接构造旧绑定或预取、令牌前后缀与轮换、缺采集时间声明、受行锁阻塞的释放动作。
+
+时间顺序修复覆盖 `LeaseService.#change` 的取锁后取时；单个 gated 事务反例不等于证明所有租约操作及其调用方都没有并发时序问题，同事仍须独立复核锁、时间戳与可见性。合并 `hub-redesign@768ff328` 后只按要求运行受影响测试、类型检查、契约生成检查和 docs；此前的最终全量已按所有者要求停止，合入后的最终全量没有运行，不能据此排除其他目录或旧场景的回归。
 
 ## 1.3.5
 
@@ -107,7 +115,7 @@ Circle 做过的事走同一回注槽，不另开通道。产出种类用 `asser
 
 技能位于 tools/jev，自成一体，Node 24 直接运行，只用 Node 内置模块和 fetch。Hub 核心、知识层、包内函数不导入它；它不会把 Jev 密钥交给 Hub。技能脚本从 Circle 执行命令的标准输入读取密钥，既不读环境密钥，也不读 Circle 文件或钥匙串。官方接口说明见 [TypeSafe System One](https://docs.typesafe.ai/api/system-one)；本版有意保留仓库对 noul/choice/score 的字符串问题子集，服务商增加的其他能力不在技能接口中。
 
-先按 pack.json 下载并核对整个包，再将其中 tools/jev 的已列文件原样复制到 circle-home-skills 任务所备上机和技能用 Circle 主目录的 skills/jev（不是把整个回注包当技能安装）；运行 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录>` 逐项核大小、SHA-256、缺项、额外文件和链接。不要改写目录内的脚本、hooks.json、egress.json 或 generated.json。generated.json 的 id 和 version 分别记录包名与版本，本版为 knowledge-contribution、1.3.5；不写包号或清单摘要，以免自引用。真实身份核对仍以 pack.json 的规范清单摘要和每文件摘要为准。`pack-files.ts --check` 同时比对四个词表轴及外发策略快照，重签命令无参数。
+先按 pack.json 下载并核对整个包，再将其中 tools/jev 的已列文件原样复制到 circle-home-skills 任务所备上机和技能用 Circle 主目录的 skills/jev（不是把整个回注包当技能安装）；运行 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录>` 逐项核大小、SHA-256、缺项、额外文件和链接。不要改写目录内的脚本、hooks.json、egress.json 或 generated.json。generated.json 的 id 和 version 分别记录包名与版本，本版为 knowledge-contribution、1.3.6；不写包号或清单摘要，以免自引用。真实身份核对仍以 pack.json 的规范清单摘要和每文件摘要为准。`pack-files.ts --check` 同时比对四个词表轴及外发策略快照，重签命令无参数。
 
 默认只向 Jev 发送 Hub 原树中的定义、行为和题目；默认不发用例、缺陷、观察或 src。选择加入只在本次 --send 生效；技能加载后钩子才要求确认，另备主目录也须安装同一钩子；档位必须是 model_readable，不能选择加入绕过。条目的种类、原文、引用以 Hub 返回为准，输入文件自报的 text/kind 无效。子节点说明永不取用例、缺陷或观察。问题最多 2000 字、选项说明最多 160 字；脚本不能证明模型撰写的问题里没有夹带受限原文，规程明确禁止。请求记录与未提交的判断记录留在 Circle 的工作目录内，不在仓库；submit 才上传这批提议引用的判断记录（题目、候选、摘要、版本、概率、用量等），以 notes 的 src 引用使判断可追查，不上传 Jev 凭据或 state 原文。
 

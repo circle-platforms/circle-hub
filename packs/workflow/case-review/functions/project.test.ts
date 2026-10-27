@@ -71,12 +71,12 @@ describe('projection of the review fixture (default: caseRule marked)', () => {
     assert.equal(one(items, '探测超时时间内无响应判定失败').fields.priority, 1);
   });
 
-  it('counts the untagged nodes in the case form in a warning with projected: true', () => {
+  it('counts the untagged nodes in the case form in a warning with projected: true', async () => {
     const warning = warnings.find((w) => w.code === 'case-review.untagged_cases');
     assert.ok(warning);
     assert.equal(warning.data?.count, 3);
     assert.equal(warning.data?.projected, true);
-    const titles = (warning.data?.nodes as string[]).map(async (selector) => (await review.locate(selector))?.text);
+    const titles = await Promise.all((warning.data?.nodes as string[]).map(async (selector) => (await review.locate(selector))?.text));
     assert.deepEqual(titles, UNTAGGED);
   });
 
@@ -582,7 +582,7 @@ describe('identity, location and hostile structure', () => {
     assertJson(out);
   });
 
-  it('treats only a non-empty tag list as tagged; the untagged nodes in the case form are counted, not listed as groups', () => {
+  it('treats only a non-empty tag list as tagged; the untagged nodes in the case form are counted, not listed as groups', async () => {
     const parsed = parseText(
       mindMap([
         caseNode('a', '空标签', []),
@@ -602,7 +602,7 @@ describe('identity, location and hostile structure', () => {
     assert.deepEqual(groups, []);
     const untagged = warnings.find((warning) => warning.code === 'case-review.untagged_cases');
     assert.deepEqual(
-      (untagged?.data?.nodes as string[]).map(async (selector) => (await parsed.locate(selector))?.text),
+      await Promise.all((untagged?.data?.nodes as string[]).map(async (selector) => (await parsed.locate(selector))?.text)),
       ['空标签', '没有标签', '标签不是数组'],
     );
 
