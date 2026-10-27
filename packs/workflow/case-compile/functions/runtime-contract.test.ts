@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
-import { contractCanonical, runtimeDigest, parseRuntimeContract, runtimeMethod, stripAdditions } from './runtime-contract.ts';
+import { contractCanonical, runtimeDigest, parseRuntimeContract, runtimeMethod, RUNTIME_ADDITIONS, stripAdditions } from './runtime-contract.ts';
 import { isRecord } from './text.ts';
 import { runtimeDocument, signRuntime } from '../testing/runtime.ts';
 test('canonical bytes match the runner sorted compact UTF-8 algorithm independently', () => {
@@ -103,13 +103,32 @@ test('stripping runtime.block_model recovers the original canonical digest and t
   const read = parseRuntimeContract(signed);
   assert.equal(read.ok, true, JSON.stringify(read));
 });
-test('a runtime field other than block_model still refuses the pinned original identity', () => {
+test('runtime.block_model and runtime.checkpoint_two_argument strip back to the original digest and the @2 document still parses', () => {
+  const original = runtimeDocument();
+  const built = v2Document(original);
+  const document = structuredClone(built.document) as Record<string, any>;
+  document.runtime = { ...document.runtime, checkpoint_two_argument: true, block_model: { schema: 'case-compile.block-runtime@1', synthetic: true } };
+  delete document.contract_sha256;
+  const signed = signRuntime(document);
+  const recovered = stripAdditions(signed)!;
+  assert.ok(isRecord(recovered.runtime));
+  assert.equal(recovered.runtime.block_model, undefined);
+  assert.equal(recovered.runtime.checkpoint_two_argument, undefined);
+  assert.equal(recovered.runtime.runner_sha256, original.runtime.runner_sha256);
+  assert.equal(recovered.runtime.found_times_supported, original.runtime.found_times_supported);
+  assert.equal(runtimeDigest(recovered), built.originalIdentity);
+  assert.equal(contractCanonical(recovered), built.canonical);
+  const read = parseRuntimeContract(signed);
+  assert.equal(read.ok, true, JSON.stringify(read));
+});
+test('a runtime field other than the closed additions still refuses the pinned original identity', () => {
   const built = v2Document(runtimeDocument());
   const document = structuredClone(built.document) as Record<string, any>;
-  document.runtime = { ...document.runtime, block_model: { schema: 'case-compile.block-runtime@1' } };
+  document.runtime = { ...document.runtime, checkpoint_two_argument: true, block_model: { schema: 'case-compile.block-runtime@1' } };
   for (const mutate of [
     (value: Record<string, any>) => { value.runtime.found_times_supported = true; },
     (value: Record<string, any>) => { value.runtime.runner_sha256 = 'b'.repeat(64); },
+    (value: Record<string, any>) => { value.runtime.synthetic_extra = true; },
   ]) {
     const tampered = structuredClone(document);
     mutate(tampered);
@@ -119,13 +138,17 @@ test('a runtime field other than block_model still refuses the pinned original i
     if (!read.ok) assert.ok(read.problems.some((problem) => problem.pointer === '/original'));
   }
 });
-test('a runtime without block_model recovers the same original identity', () => {
+test('a runtime without block_model or checkpoint_two_argument recovers the same original identity', () => {
   const built = v2Document(runtimeDocument());
   const document = built.document as Record<string, unknown>;
+  assert.deepEqual(RUNTIME_ADDITIONS, ['block_model', 'checkpoint_two_argument']);
   assert.ok(isRecord(document.runtime));
   assert.equal(document.runtime.block_model, undefined);
+  assert.equal(document.runtime.checkpoint_two_argument, undefined);
   const recovered = stripAdditions(document)!;
+  assert.equal(recovered.runtime, document.runtime);
   assert.equal(runtimeDigest(recovered), built.originalIdentity);
+  assert.equal(contractCanonical(recovered), built.canonical);
   assert.equal(parseRuntimeContract(built.document).ok, true);
 });
 test('the expected identity of a @2 document is the pinned original, not the recomputed @2 digest', () => {
