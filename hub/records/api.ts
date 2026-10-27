@@ -325,6 +325,8 @@ export interface SourceArtifactBody {
   origin: ArtifactOrigin;
   author: ArtifactAuthor;
   captured_at: string;
+  /** True only when the client explicitly supplied captured_at for this upload; absent on historical records. */
+  captured_at_declared?: boolean;
   provenance_type: ProvenanceType;
   read_tier: ReadTier;
   /** Requested policy before credential holding; absent on historical records. */

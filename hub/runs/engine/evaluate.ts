@@ -491,8 +491,23 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
             return { why: r.code === 'REFERENCE_UNRESOLVED' ? 'no_fragment' : 'unavailable' };
           }
           if (!r.groundable) return { why: 'not_groundable' };
-          const named = await declarationGroundRefusal(ref, digest => ctx.deps.records.store.get(digest));
+          const binding = ref.scheme === 'src' && workflow.pack.id !== 'knowledge-contribution' ? run.sources.find(row => {
+            const candidate = parseReference(row.reference);
+            return candidate.scheme === 'src' && candidate.sha256 === ref.sha256 && row.artifact !== undefined;
+          }) : undefined;
+          const source = binding?.artifact ? await ctx.deps.records.store.get(binding.artifact) : null;
+          const named = await declarationGroundRefusal(ref, digest => ctx.deps.records.store.get(digest), source);
           if (named) return { why: 'not_groundable', rule: named };
+          for (const ground of r.grounds ?? []) {
+            const inner = parseReference(ground);
+            const original = inner.scheme === 'src' && workflow.pack.id !== 'knowledge-contribution' ? run.sources.find(row => {
+              const candidate = parseReference(row.reference);
+              return candidate.scheme === 'src' && candidate.sha256 === inner.sha256 && row.artifact !== undefined;
+            }) : undefined;
+            const artifact = original?.artifact ? await ctx.deps.records.store.get(original.artifact) : null;
+            const refusal = await declarationGroundRefusal(inner, digest => ctx.deps.records.store.get(digest), artifact);
+            if (refusal) return { why: 'not_groundable', rule: refusal };
+          }
           if (r.readTier === 'retain_only') return { why: 'retain_only', unread: {reason:'credential_unreadable', missing_fact:'管理员尚未接受此来源', next_action:'请求管理员接受来源，接受后重新核验'} };
           if (r.text === null) return { why: 'no_fragment' };
           if (Buffer.byteLength(r.text, 'utf8') > capBytes) return { why: 'too_large' };

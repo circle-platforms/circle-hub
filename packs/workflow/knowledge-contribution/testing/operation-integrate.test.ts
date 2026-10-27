@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { Submission } from '../../../../contracts/src/submission.ts';
 import { ContributionInput } from '../../../../contracts/src/contributions.ts';
 import { KnowledgeStructureSchema } from '../../../../contracts/src/feeding.ts';
-import { SESSION, ROOT, PACK_DIGEST, scratch, fakeHub, enable, hook, skill } from './operation-support.ts';
+import { SESSION, ROOT, PACK_DIGEST, TOKEN, scratch, fakeHub, enable, hook, skill } from './operation-support.ts';
+import { scanWithMatches } from '../tools/operation-capture/lib/credentials.ts';
 
 test('observation procedure and pitfall submissions use the actual B3 contracts and run lock without model versions', async t => {
   const local = await scratch(t);
@@ -137,6 +138,29 @@ test('equal-byte proposals bind exact capture artifacts instead of the latest ti
   assert.deepEqual(originals.map((row: any) => row.artifact), captures.map(row => row.upload.artifact));
   assert.equal(new Set(originals.map((row: any) => row.artifact)).size, 2);
   assert.deepEqual(hub.submissions[0].items.map((row: any) => row.slots.contribution[0].data.feeding.device), ['edge-a', 'edge-b']);
+});
+
+test('the bare current Hub token is refused as a device or bed before start_run', async t => {
+  const local = await scratch(t);
+  const hub = await fakeHub(t);
+  assert.equal((await enable(local, hub.url)).code, 0);
+  assert.equal((await hook(local, 'ORBIT synthetic status: ready\n')).code, 0);
+  const capture = [...hub.uploads.keys()][0]!;
+  const proposals = join(local.home, 'proposals.json');
+  assert.equal(scanWithMatches(new TextEncoder().encode(TOKEN)).scan.clean, true);
+  for (const field of ['device', 'bed']) {
+    await writeFile(proposals, JSON.stringify({
+      schema: 'operation-integration@1', session: SESSION,
+      items: [{ capture, kind: 'observation', path: '/commands/system/show', statement: '当前令牌字段', action: '执行合成检查', [field]: TOKEN, quote: { line: 1, text: 'ORBIT synthetic status: ready' } }],
+    }));
+    const result = await skill(local, ['submit', '--session', SESSION, '--proposals', proposals, '--product', 'ORBIT', '--model', 'integration-synthetic@1']);
+    assert.equal(result.code, 1);
+    assert.match(result.err, /当前 Hub 令牌|credential_in_target/);
+    assert.equal(result.err.includes(TOKEN), false);
+  }
+  assert.equal(hub.runs.length, 0);
+  assert.equal(hub.submissions.length, 0);
+  assert.equal(hub.uploads.size, 1);
 });
 
 test('credential-shaped explicit device or bed text is refused before start_run', async t => {

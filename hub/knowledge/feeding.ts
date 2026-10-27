@@ -470,8 +470,9 @@ export class FeedingLayer {
   const actor=artifact.body.author.user;
   if(actor===null)fail('操作记录的上传原件缺记录者');
   if(raw.product!==scope.product||raw.root!==(scope.root??null)||!scope.product||!scope.root)fail('操作记录必须挂在本次运行锁定的产品和根上');
-  const device=await completeOperationDevice(this.context.records.store,{run:scope.run??null,device:raw.device,bed:raw.bed,user:actor,capturedAt:artifact.body.captured_at,receivedAt:artifact.created_at},this.context.leases);
-  return {...raw,...device,object:sha256Hex(canonicalize(operationIdentity(raw))),binding:await this.operationBinding(scope),by:actor,run:scope.run??null,at:artifact.body.captured_at};
+  const device=await completeOperationDevice(this.context.records.store,{run:scope.run??null,device:raw.device,bed:raw.bed,user:actor,capturedAt:artifact.body.captured_at,receivedAt:artifact.created_at,captureTimeDeclared:artifact.body.captured_at_declared===true},this.context.leases);
+  const resolved={...raw,source:{...raw.source as Record<string,unknown>,artifact:artifact.digest},...device};
+  return {...resolved,object:sha256Hex(canonicalize(operationIdentity(resolved))),binding:await this.operationBinding(scope),by:actor,run:scope.run??null,at:artifact.body.captured_at};
  }
  private async checkOperation(body:Record<string,any>,source:{bytes:Uint8Array;artifact:{body:{provenance_type:string;origin:object}}}):Promise<void>{
   if(source.artifact.body.provenance_type!=='client_captured'||!('upload' in source.artifact.body.origin))fail('操作记录的根据必须是出处为 client_captured 的上传原件；其他出处仍拒收');

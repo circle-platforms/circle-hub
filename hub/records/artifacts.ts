@@ -281,6 +281,7 @@ export class RecordArtifacts implements Artifacts {
       origin,
       author,
       captured_at: capturedAt,
+      captured_at_declared: 'upload' in origin && input.capturedAt !== undefined,
       provenance_type: input.provenanceType,
       read_tier: readTier,
       requested_read_tier:requestedTier,

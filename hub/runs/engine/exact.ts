@@ -40,7 +40,8 @@ import { HubReadFailure, retryRead } from './retry-read.ts';
 import { describe, protocolError } from './errors.ts';
 import { declarationGroundRefusal } from '../../knowledge/declaration-grade.ts';
 import { recordReader, sourceReader } from './readers.ts';
-import { resultsOf } from './store.ts';
+import { resultsOf, runById } from './store.ts';
+import { packIdOf } from './lineage.ts';
 import { pointerOf, valueAt } from './util.ts';
 
 /** What a run may cite: its bound sources by digest, the records bound as inputs, the locked root and its catalogs. */
@@ -325,6 +326,18 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
     documents: ctx.documents,
     onDiagnostic: (diagnostic: {reference:string;message:string}) => ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
   } as const;
+  let groundRun: ReturnType<typeof runById> | undefined;
+  const groundSource = async (ref: Reference) => {
+    if (ref.scheme !== 'src' || scope.reader.run === undefined) return null;
+    groundRun ??= runById(store, scope.reader.run);
+    const stored = await groundRun;
+    if (stored === null || packIdOf(stored.body.pack) === 'knowledge-contribution') return null;
+    const binding = stored.body.sources.find(row => {
+      const candidate = parseReference(row.reference);
+      return candidate.scheme === 'src' && candidate.sha256 === ref.sha256 && row.artifact !== undefined;
+    });
+    return binding?.artifact ? store.get(binding.artifact) : null;
+  };
   const run = async (reference: string, scoped: boolean, grounds: boolean): Promise<ValueOutcome> => {
     let ref: Reference;
     let canonical: string;
@@ -363,16 +376,22 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
       }
       if (!result.resolved) return { ok: false, code:result.code, message: result.code === 'SOURCE_UNAVAILABLE' ? `引用解析不出（${UNAVAILABLE_MESSAGE}）` : result.message };
       if (grounds) {
-        const named = await declarationGroundRefusal(ref, digest => store.get(digest));
+        const named = await declarationGroundRefusal(ref, digest => store.get(digest), await groundSource(ref));
         if (named) return { ok: false, message: named };
       }
       if (grounds && !result.groundable) return { ok: false, message: '这类记录不能作根据（B01 R[4]），请改引结果、动作或效果记录' };
       for (const ground of result.grounds ?? []) {
         let innerCanonical: string;
+        let innerRef: Reference;
         try {
-          innerCanonical = formatReference(parseReference(ground));
+          innerRef = parseReference(ground);
+          innerCanonical = formatReference(innerRef);
         } catch {
           continue;
+        }
+        if (grounds) {
+          const named = await declarationGroundRefusal(innerRef, digest => store.get(digest), await groundSource(innerRef));
+          if (named) return { ok: false, message: named };
         }
         if (resolving.has(innerCanonical)) {
           return { ok: false, message: `成环的引用：${innerCanonical}` };

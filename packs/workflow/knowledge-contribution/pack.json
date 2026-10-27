@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "knowledge-contribution",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "kind": "workflow",
   "title": "知识回注",
   "description": "Circle 整合技能回注，Hub 按锁定根核对原文和归位，不改变原文或根",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "6697679ce1409896fa4abd0c95f39a5eb047728b4794d793e226b35354957785",
-      "size": 6009
+      "sha256": "f38a666d59bf35b012358e1a606fe52aeac23908a540aba793c74df39a30ffeb",
+      "size": 6169
     },
     {
       "path": "checks.json",
@@ -113,7 +113,7 @@
     },
     {
       "path": "tools/jev/generated.json",
-      "sha256": "d65cd8a1105319eaf166209fe4906f0cb3d48509f503b039c20394978d35710d",
+      "sha256": "7fb44c3c7587eb916989f5f92f0842dd19b5a5cf173e505a23111aa5c5de2114",
       "size": 1632
     },
     {
@@ -203,8 +203,8 @@
     },
     {
       "path": "tools/operation-capture/SKILL.md",
-      "sha256": "2512c7c9b85f29aa4a11400feea1e4a264bd569d24539956c0c58ed5f601e4a3",
-      "size": 5995
+      "sha256": "c637f1699077975b9777c164474facebc289d59a74b5c0ffa493643b7c9ae8cb",
+      "size": 6182
     },
     {
       "path": "tools/operation-capture/egress.json",
@@ -213,7 +213,7 @@
     },
     {
       "path": "tools/operation-capture/generated.json",
-      "sha256": "335adc0b68099e504511a90fab17fd476f05943cf02a63c02751047967021612",
+      "sha256": "b115c7ab0b2473108656443296e1f441d18323cdd14bb742d6c10b42af18d85e",
       "size": 391
     },
     {
@@ -253,8 +253,8 @@
     },
     {
       "path": "tools/operation-capture/lib/integrate.ts",
-      "sha256": "a53f252930d3d3dae699862dc5a21c0e39f6a7e163602e8c89b1bc47bf817f43",
-      "size": 13192
+      "sha256": "5c8ce35f50b649cf57ba0bcf8f1642c7f7f27d57874c797b1681f5578fd79f73",
+      "size": 13482
     },
     {
       "path": "tools/operation-capture/lib/redact.ts",

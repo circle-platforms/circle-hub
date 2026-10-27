@@ -1,5 +1,6 @@
 import { IsoTime } from '../../contracts/src/common.ts';
 import { LeaseDetail } from '../../contracts/src/records.ts';
+import { LeaseOpSchema } from '../../contracts/generated/vocabulary.ts';
 import { RECORD_SCHEMAS } from '../records/constants.ts';
 import type { ActionBody, RecordStore, StoredRecord } from '../records/api.ts';
 import type { LeaseService } from '../leases/api.ts';
@@ -82,7 +83,7 @@ function leaseDetail(record: StoredRecord<ActionBody>, key?: string): Check<{ de
   const raw = record.body.detail;
   if (!object(raw)) return problem(`租约动作 rec:${record.digest} 的结构不完整；请管理员核对记录后重传`);
   if (raw.keys === undefined) {
-    if (raw.op === 'register' || raw.op === 'unregister') return { ok: true, value: null };
+    if (LeaseOpSchema.extract(['register', 'unregister']).safeParse(raw.op).success) return { ok: true, value: null };
     return problem(`租约动作 rec:${record.digest} 缺少 keys，不能确定它是否覆盖声明的设备；请管理员核对记录后重传`);
   }
   const projected = Object.fromEntries(['op', 'lease', 'keys', 'holder', 'until', 'token'].map(key => [key, raw[key]]));
@@ -131,7 +132,7 @@ export async function operationLease(
   let held: HeldDevice | null = null;
   if (initial?.value) {
     if (!initial.value.detail.keys.includes(key)) return unconfirmed(`窗口前动作 rec:${initial.value.record.digest} 不覆盖完整设备键 ${key}；请管理员核对记录`);
-    if (initial.value.detail.op === 'acquire' || initial.value.detail.op === 'extend') held = { lease_id: initial.value.lease_id, user: initial.value.detail.holder.user, until: initial.value.detail.until };
+    if (LeaseOpSchema.extract(['acquire', 'extend']).safeParse(initial.value.detail.op).success) held = { lease_id: initial.value.lease_id, user: initial.value.detail.holder.user, until: initial.value.detail.until };
     if (initial.value.at >= from) return unconfirmed('窗口前的租约动作越过了声明采集时刻；请管理员核对记录');
   }
   if (held?.until !== undefined && held.until !== null) {
@@ -155,14 +156,15 @@ export async function operationLease(
     if (detail.until !== null && held.until !== null && Date.parse(detail.until) < Date.parse(held.until)) return unconfirmed('续租记录的到期时间倒退，不能证明连续覆盖；请管理员核对后重传');
     held.until = detail.until;
   }
-  if (!held || held.user !== input.user) return { lease: null, lease_id: null };
+  if (!held) return { lease: null, lease_id: null };
   if (held.until !== null && Date.parse(held.until) <= to) return unconfirmed('租约在声明采集至 Hub 收到之间到期，不能证明连续覆盖；核对操作与租约时间后重传');
+  if (held.user !== input.user) return { lease: null, lease_id: null };
   return { lease: key, lease_id: held.lease_id };
 }
 
 export async function completeOperationDevice(
   store: RecordStore,
-  input: { run: string | null; device: unknown; bed?: unknown; user: string; capturedAt: string; receivedAt: string },
+  input: { run: string | null; device: unknown; bed?: unknown; user: string; capturedAt: string; receivedAt: string; captureTimeDeclared?: boolean },
   leases?: HistoryService,
 ): Promise<{ device: string; bed?: string; lease: string | null; lease_id: string | null; lease_unconfirmed?: LeaseUnconfirmed } | Record<string, never>> {
   const device = input.device;
@@ -199,6 +201,7 @@ export async function completeOperationDevice(
     }
   }
   if (bed === undefined) return withIdentity(unconfirmed('运行未绑定台架清单且声明里没有床身份；在提案中写明床，或先预订台架使运行冻结清单后重交'));
+  if (input.captureTimeDeclared === false) return withIdentity(unconfirmed('客户端没有明确声明采集时刻，上传时刻不能替代它；用支持 captured_at 的客户端重新采集上传，或补交带明确采集时刻的新原件', '升级采集客户端，重新采集并在 upload_file 中显式传 captured_at 后重交；本次记录保留为租约未能确认，不按上传时刻判定'));
   return withIdentity(await operationLease(store, { ...input, device, bed, key: `bed/${bed}/${device}` }, leases), bed);
 }
 

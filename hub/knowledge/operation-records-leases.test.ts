@@ -12,6 +12,7 @@ import {KnowledgeStructureSchema} from '../../contracts/src/feeding.ts';
 import {startPostgres, type TemporaryPostgres} from '../testing/postgres.ts';
 import {makeWorld, catalogXml, BASE_CATALOG} from './test-support.ts';
 import {createRunsService} from '../runs/engine/api.ts';
+import {putRun} from '../runs/engine/store.ts';
 import {manifestDigest} from '../runs/api.ts';
 import {FakeWorkflowStore} from '../runs/engine/testing/workflows.ts';
 import {toolText} from '../server/text.ts';
@@ -62,7 +63,7 @@ function leasesOf(t: {after(fn: () => Promise<void>): void}, ctx: Context, now?:
   return {db, service};
 }
 
-async function captureRun(ctx: Context, options: {author?: string; capturedAt?: string; text?: string; historicalFinding?: boolean} = {}): Promise<Context> {
+async function captureRun(ctx: Context, options: {author?: string; capturedAt?: string; text?: string; historicalFinding?: boolean; declareCaptureTime?: boolean; predecessor?: string} = {}): Promise<Context> {
   const author = options.author ?? ctx.w.admin.id;
   const latest = options.capturedAt === undefined ? (await ctx.w.kit.store.find({key:'action.kind', value:'lease', kind:'action', newestFirst:true, limit:1})).items[0] : undefined;
   const capturedAt = options.capturedAt ?? (latest ? new Date(Date.parse((latest.body as {started_at:string}).started_at) + 1).toISOString() : new Date(Date.now() + captureSequence + 1).toISOString());
@@ -76,7 +77,7 @@ async function captureRun(ctx: Context, options: {author?: string; capturedAt?: 
       kind:'source_artifact', schema:RECORD_SCHEMAS.source_artifact, provenance:'client_captured', created_at:capturedAt,
       body:{
         sha256, size:bytes.byteLength, media_type:'text/plain', name:`operation-capture-${++captureSequence}.txt`,
-        origin:{upload:{session:'operation-session', message:null}}, author:{user:author, declared:null}, captured_at:capturedAt,
+        origin:{upload:{session:'operation-session', message:null}}, author:{user:author, declared:null}, captured_at:capturedAt, captured_at_declared:true,
         provenance_type:'client_captured', read_tier:'model_readable', requested_read_tier:'model_readable',
         visibility:{readers:[author, ctx.w.admin.id], admins:true, packs:[], shareable:false}, scan:{...scan, findings:[], clean:true},
       },
@@ -84,7 +85,7 @@ async function captureRun(ctx: Context, options: {author?: string; capturedAt?: 
     });
     return artifact;
   })() : await ctx.w.kit.artifacts.ingest({
-    bytes, mediaType:'text/plain', name:`operation-capture-${++captureSequence}.txt`, capturedAt,
+    bytes, mediaType:'text/plain', name:`operation-capture-${++captureSequence}.txt`, ...(options.declareCaptureTime === false ? {} : {capturedAt}),
     origin:{upload:{session:'operation-session', message:null}}, author:{user:author}, provenanceType:'client_captured',
     visibility:{readers:[author, ctx.w.admin.id], admins:true, packs:[], shareable:false},
   });
@@ -98,6 +99,7 @@ async function captureRun(ctx: Context, options: {author?: string; capturedAt?: 
   }) : null;
   const started = await ctx.service.startRun(principal, {
     pack:'knowledge-contribution', product:'Acme', build:ctx.build.name,
+    ...(options.predecessor === undefined ? {} : {predecessor:options.predecessor}),
     inputs:{
       subject:{reference:own ? `src:${subject!.body.sha256}` : ctx.run.sources.find(source => source.slot === 'subject')!.reference},
       originals:[...(own ? [] : [{reference:tree}]), {reference:`src:${captured.body.sha256}`, artifact:captured.digest}],
@@ -151,8 +153,9 @@ test('capture time decides absent, acquired and released leases without changing
   assert.equal(plain.view.note, null);
   assert.doesNotMatch(plain.text, /无租约|设备 device0/);
 
-  const earlyAnswer = await submit(ctx, {...observation(ctx, '采集后才取得'), device:'device0'}, '采集后才取得');
-  const early = await stored(ctx, earlyAnswer);
+  const earlyCapture = await captureRun(ctx);
+  const earlyAnswer = await submit(earlyCapture, {...observation(earlyCapture, '采集后才取得'), device:'device0'}, '采集后才取得');
+  const early = await stored(earlyCapture, earlyAnswer);
   assert.equal(early.receipt.device, 'device0');
   assert.equal(early.receipt.lease, null);
   assert.equal(early.feeding.lease, null);
@@ -498,7 +501,7 @@ test('credential-shaped device text is refused before the raw submission is pers
   assert.ok(answer.errors.some(error => error.code === 'CREDENTIAL_IN_UPLOAD'));
 });
 
-test('thousands of historical lease records do not cause a full-history read', async t => {
+test('thousands of historical lease records use bounded database calls and returned rows', async t => {
   const ctx = await world(t);
   for (let index = 0; index < 3000; index++) {
     const lease = `lse_synthetic_history_${index}`;
@@ -507,31 +510,166 @@ test('thousands of historical lease records do not cause a full-history read', a
       body:{
         action:'lease', run:ctx.run.run, item:null, inputs:[], component:'leases@1', lease:{lease, fencing:1},
         started_at:'2026-01-01T00:00:00.000Z', ended_at:'2026-01-01T00:00:00.000Z', result:'completed', error_code:null, acceptance:null, codes:[],
-        detail:{op:'acquire', lease, keys:[`bed/history/${index}`], holder:holder(ctx), until:null, token:1},
+        detail:{op:'acquire', lease, keys:[`bed/history/${index % 64}`], holder:holder(ctx), until:null, token:1},
       },
       index:[{key:'action.kind', value:'lease'}],
     });
   }
-  const original = ctx.w.kit.store.findMany;
-  let loaded = 0;
-  const counted: typeof original = async <B,>(
-    query: {key:string; values:readonly string[]; kind?:import('../../contracts/generated/protocol.ts').RecordKind},
-    tx?: import('../records/api.ts').Transaction,
-  ): Promise<Array<import('../records/api.ts').StoredRecord<B>>> => {
-    const rows = await original.call(ctx.w.kit.store, query, tx);
-    loaded += rows.length;
-    return rows as Array<import('../records/api.ts').StoredRecord<B>>;
-  };
-  ctx.w.kit.store.findMany = counted;
-  t.after(() => { ctx.w.kit.store.findMany = original; });
-  const {service:leases} = leasesOf(t, ctx);
+  const {db, service:leases} = leasesOf(t, ctx);
   const granted = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
   assert.ok(granted.ok);
+  const queries = t.mock.method(db, 'query');
   const {operationLease} = await import('./feeding-leases.ts');
   const capturedAt = await justAfter(ctx, granted.lease);
   const result = await operationLease(ctx.w.kit.store, {bed:'synthetic', device:'device0', user:ctx.w.admin.id, capturedAt, receivedAt:new Date().toISOString()}, leases);
   assert.deepEqual(result, {lease:'bed/synthetic/device0', lease_id:granted.lease});
-  assert.ok(loaded < 100, `loaded ${loaded} lease records`);
+  const limited = await leases.history({key:'bed/history/0', from:'2026-01-01T00:00:00.000Z', to:new Date().toISOString(), limit:32});
+  assert.equal(limited.complete, false, JSON.stringify({complete:limited.complete, events:limited.events.length, first:limited.events[0]?.body.detail}));
+  assert.equal(limited.events.length, 32);
+  assert.equal(queries.mock.calls.length, 6);
+  const returned: number[] = [];
+  for (const call of queries.mock.calls) {
+    if (!String(call.arguments[0]).startsWith('SELECT r.digest FROM record_index')) continue;
+    const answer = await call.result as {rows:unknown[]};
+    returned.push(answer.rows.length);
+  }
+  assert.equal(returned.length, 6);
+  assert.ok(returned.every(count => count <= 1025), JSON.stringify(returned));
+  assert.ok(returned.reduce((sum, count) => sum + count, 0) < 100, JSON.stringify(returned));
+});
+
+test('an upload without a declared capture time keeps its record but cannot prove a lease', async t => {
+  const ctx = await world(t);
+  const {service:leases} = leasesOf(t, ctx);
+  const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
+  assert.ok(acquired.ok);
+  const current = await captureRun(ctx, {declareCaptureTime:false});
+  const artifact = await ctx.w.kit.store.get<import('../records/api.ts').SourceArtifactBody>(current.capture!.digest);
+  assert.equal(artifact?.body.captured_at_declared, false);
+  const saved = await stored(current, await submit(current, {...observation(current, '旧客户端缺采集时刻'), device:'device0'}, '旧客户端缺采集时刻'));
+  assert.equal(saved.feeding.lease, null);
+  assert.equal(saved.feeding.lease_id, null);
+  assert.match(JSON.stringify(saved.feeding.lease_unconfirmed), /没有明确声明采集时刻/);
+  assert.match(JSON.stringify(saved.feeding.lease_unconfirmed), /captured_at/);
+  assert.match(saved.view.note ?? '', /租约未能确认/);
+  assert.doesNotMatch(saved.view.note ?? '', /无租约（未授权）/);
+});
+
+test('omitted artifacts and a manifest-derived bed identify equal-byte captures without breaking replay', async t => {
+  const ctx = await world(t);
+  const {run:_run, predecessor:_predecessor, groups:_groups, leases:_leases, feeding_offset:_feedingOffset, ...base} = ctx.run;
+  const booking = await putRun(ctx.w.kit.store, {
+    ...base, run:newId('run'), pack:'test-bed@1.0.0',
+    groups:[{manifest:{schema:'test-bed-manifest@1', beds:[{name:'synthetic', devices:[{name:'device0', type:'router', ipv4:[], ipv6:[]}]}]}}],
+  }, ctx.run.started_at);
+  const before = await captureRun(ctx, {predecessor:booking.body.run});
+  const {service:leases} = leasesOf(t, ctx);
+  const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
+  assert.ok(acquired.ok);
+  const after = await captureRun(ctx, {predecessor:booking.body.run});
+  assert.equal(before.sha, after.sha);
+  const feeding = (current: Context) => {
+    const raw = {...observation(current, '省略原件并推导床'), device:'device0'};
+    delete raw.source.artifact;
+    return raw;
+  };
+  const first = await stored(before, await submit(before, feeding(before), '省略原件并推导床', {missingBed:true}));
+  const second = await stored(after, await submit(after, feeding(after), '省略原件并推导床', {missingBed:true}));
+  assert.notEqual(second.receipt.record, first.receipt.record);
+  assert.equal(first.feeding.lease, null);
+  assert.equal(second.feeding.lease, 'bed/synthetic/device0');
+  assert.equal(second.feeding.lease_id, acquired.lease);
+  assert.equal(first.feeding.bed, 'synthetic');
+  assert.equal(second.feeding.bed, 'synthetic');
+  assert.equal((first.feeding.source as {artifact?:string}).artifact, before.capture!.digest);
+  assert.equal((second.feeding.source as {artifact?:string}).artifact, after.capture!.digest);
+  const replay = await submit(after, {...feeding(after), bed:'synthetic'}, '省略原件并推导床', {missingBed:true});
+  assert.equal(replay.acceptance, 'accepted', JSON.stringify(replay.errors));
+  assert.equal(replay.result?.contributions?.stored[0]?.record, second.receipt.record);
+});
+
+test('another holders expiry inside the interval is a change rather than a confirmed absence', async t => {
+  const ctx = await world(t);
+  const {service:leases} = leasesOf(t, ctx, async () => new Date('2026-10-27T09:59:00.000Z'));
+  const foreign = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx, ctx.w.user.id), prefix:'bed/', ttlSeconds:60, maxTtlSeconds:600});
+  assert.ok(foreign.ok);
+  const {operationLease} = await import('./feeding-leases.ts');
+  const result = await operationLease(ctx.w.kit.store, {key:'bed/synthetic/device0', device:'device0', user:ctx.w.admin.id, capturedAt:'2026-10-27T09:59:30.000Z', receivedAt:'2026-10-27T10:00:10.000Z'}, leases);
+  assert.equal(result.lease, null);
+  assert.equal(result.lease_id, null);
+  assert.match(result.lease_unconfirmed?.missing ?? '', /到期/);
+});
+
+test('non-string device and bed values are refused before raw submission persistence', async t => {
+  const ctx = await world(t);
+  const before = (await ctx.w.kit.store.list({kind:'submission', limit:500})).items.length;
+  const secret = ['SECRET', 'KEY'].join('_') + '=' + ['Synth3tic', 'key', '42'].join('-');
+  for (const key of ['device', 'bed']) {
+    const answer = await submit(ctx, {...observation(ctx, `非字符串 ${key}`), [key]:{value:secret}}, `非字符串 ${key}`);
+    assert.equal(answer.acceptance, 'not_accepted');
+    assert.ok(answer.errors.some(error => error.code === 'SUBMISSION_SCHEMA_VIOLATION'));
+    assert.equal(JSON.stringify(answer.errors).includes(secret), false);
+    assert.equal((await ctx.w.kit.store.list({kind:'submission', limit:500})).items.length, before);
+  }
+});
+
+async function coveredOperation(ctx: Context, feeding: Record<string, unknown>, statement: string, key: string, leaseId: string) {
+  const saved = await stored(ctx, await submit(ctx, feeding, statement));
+  assert.equal(saved.feeding.lease, key);
+  assert.equal(saved.feeding.lease_id, leaseId);
+  assert.equal(saved.feeding.lease_unconfirmed, undefined);
+  return saved;
+}
+
+test('release after Hub receipt and before submission keeps the completed interval proof', async t => {
+  const ctx = await world(t);
+  const {service:leases} = leasesOf(t, ctx);
+  const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
+  assert.ok(acquired.ok);
+  const current = await captureRun(ctx);
+  assert.ok((await leases.release({keys:['bed/synthetic/device0'], holder:holder(ctx)})).ok);
+  await coveredOperation(current, {...observation(current, '收到后提交前释放'), device:'device0'}, '收到后提交前释放', 'bed/synthetic/device0', acquired.lease);
+});
+
+test('takeover after Hub receipt and before submission keeps the completed interval proof', async t => {
+  const ctx = await world(t);
+  const {service:leases} = leasesOf(t, ctx);
+  const first = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
+  assert.ok(first.ok);
+  const current = await captureRun(ctx);
+  assert.ok((await leases.forceRelease({keys:['bed/synthetic/device0'], by:ctx.w.admin.id, reason:'合成接管'})).ok);
+  const other = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx, ctx.w.user.id), prefix:'bed/'});
+  assert.ok(other.ok);
+  await coveredOperation(current, {...observation(current, '收到后提交前接管'), device:'device0'}, '收到后提交前接管', 'bed/synthetic/device0', first.lease);
+});
+
+test('orphan reclamation after Hub receipt and before submission keeps the completed interval proof', async t => {
+  const ctx = await world(t);
+  const {db, service:old} = leasesOf(t, ctx, async () => new Date(Date.now() - 120000));
+  const orphan = await old.acquire({keys:['bed/synthetic/orphan0'], holder:{user:ctx.w.admin.id, run:newId('run')}, prefix:'bed/'});
+  assert.ok(orphan.ok);
+  const current = await captureRun(ctx);
+  const latest = new LeaseService(db, {records:ctx.w.kit.store});
+  assert.equal(await latest.reclaimOrphans(), 1);
+  await coveredOperation(current, {...observation(current, '收到后提交前回收'), device:'orphan0'}, '收到后提交前回收', 'bed/synthetic/orphan0', orphan.lease);
+});
+
+test('batch force release after Hub receipt and before submission keeps every completed interval proof', async t => {
+  const ctx = await world(t);
+  const now = Date.now();
+  const {db, service:old} = leasesOf(t, ctx, async () => new Date(now - 4000));
+  const keys = ['bed/synthetic/first0', 'bed/synthetic/second0'];
+  const first = await old.acquire({keys:[keys[0]], holder:holder(ctx), prefix:'bed/', ttlSeconds:1, maxTtlSeconds:600});
+  const second = await old.acquire({keys:[keys[1]], holder:holder(ctx), prefix:'bed/', ttlSeconds:1, maxTtlSeconds:600});
+  assert.ok(first.ok && second.ok);
+  const extending = new LeaseService(db, {records:ctx.w.kit.store, now:async () => new Date(now - 3500)});
+  assert.ok((await extending.extend({keys, holder:holder(ctx), ttlSeconds:60, maxTtlSeconds:600})).ok);
+  const current = await captureRun(ctx);
+  const latest = new LeaseService(db, {records:ctx.w.kit.store});
+  assert.ok((await latest.forceRelease({keys, by:ctx.w.admin.id, reason:'合成批量强制释放'})).ok);
+  for (const [index, device] of ['first0', 'second0'].entries()) {
+    await coveredOperation(current, {...observation(current, `收到后提交前强制释放 ${device}`), device}, `收到后提交前强制释放 ${device}`, keys[index]!, index === 0 ? first.lease : second.lease);
+  }
 });
 
 test('a frozen old pack replays a legacy operation without device or lease fields', async t => {
