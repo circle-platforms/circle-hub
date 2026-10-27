@@ -4,14 +4,20 @@
 
 ## 发布、安装与依赖
 
-用 `node packs/skill/xml-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install xml-format@1.0.0` 安装；`pack uninstall xml-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
+用 `node packs/skill/xml-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install xml-format@1.0.1` 安装；`pack uninstall xml-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
 
 工作包在 pack.json 声明 `dependencies: [{"pack":"xml-format"}]`，可附精确 `version`。管理员安装的版本必须满足声明，否则 start_run 在读取前拒绝，写出缺少的依赖和安装出口。新运行将可用的安装集合锁为 `skills: [{pack,version,digest}]`；结果锁与主张有效条件包括这些摘要。已锁运行按自己的摘要读取，后续升级、卸载不改历史。安装是全局授权记录绑定包摘要，非用户分配。
 
 ## 旧运行兼容
 
-`src:<摘要>/xml@1/x/<路径>` 与 `i/...` 地址不变。有 skills 锁的运行按该摘要复核。迁移前没有保存摘要的运行不能从当前安装版本补造历史：管理员首先以 `circle-hub skill bind-legacy xml@1 xml-format@1.0.0` 追加迁移时点声明；已获授权的逐运行显式声明仍可用 `circle-hub pack bind-skills <运行> --skill xml-format@1.0.0 --reason <理由>` 单独追加。绑定记录引用原运行记录与包发布记录，保留账号与理由；原运行和原结果不改，不能重绑。复核会披露“管理员事后声明”，不声称当时执行过该包。未绑定时说明缺失事实及补绑定出口。
+`src:<摘要>/xml@1/x/<路径>` 与 `i/...` 地址不变。有 skills 锁的运行按该摘要复核。迁移前没有保存摘要的运行不能从当前安装版本补造历史：管理员首先以 `circle-hub skill bind-legacy xml@1 xml-format@1.0.1` 追加迁移时点声明；已获授权的逐运行显式声明仍可用 `circle-hub pack bind-skills <运行> --skill xml-format@1.0.1 --reason <理由>` 单独追加。绑定记录引用原运行记录与包发布记录，保留账号与理由；原运行和原结果不改，不能重绑。复核会披露“管理员事后声明”，不声称当时执行过该包。未绑定时说明缺失事实及补绑定出口。
 
 ## 迁移等价与验证
 
 `testing/baseline` 保存迁移前核心 78b3c5b5 的六个文件的原始字节和 SHA 清单，只作测试数据，不进发布清单。测试在临时目录重建原模块，不能用搬迁后的实现充当基线。迁移测试枚举仓库全部相关夹具及合成 XML 文档，比较全部可读 XML 的模型、摘要与选择器。原有解析器向量逐项保留在包内测试。
+
+## 按需取片段
+
+解析时按文档本身估算 fragments 的 JSON。逐条累计，不超过 4 MiB 就随解析输出（急切路径，和以前一样）；超过就不输出 fragments，由 skill.json 的 locate 按调用方给的选择器现算，一次最多 256 个。同样的字节永远走同一条路，估算不用时钟。quotation 仍随解析输出。
+
+合成命令树一次沙箱测量：输入 2100047 字节（21845 个元素、嵌套 8 层、每个元素三个短属性，其余字节是一条注释，避免长属性值在引文单元里被逐层复制后超过 24 MiB），输出 20523679 字节，沙箱内 594 毫秒，fragments 未随解析输出。旧地址 `x/` 与 `i/` 不变。

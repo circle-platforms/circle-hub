@@ -80,7 +80,7 @@ import {
 } from './store.ts';
 import { literalWarningDetails,relationFacts,relationNode } from './links.ts';
 import { TreeBuilder, flatten, type BuiltNode } from './tree.ts';
-import { checkPath, singleSources, verifyFragment, type FragmentSources } from './verify.ts';
+import { checkPath, prefetchFragmentSelectors, singleSources, verifyFragment, type FragmentSources } from './verify.ts';
 
 /** Longest warning, refusal reason or failure reason kept (characters). */
 const MAX_PROBLEM_TEXT = 1000;
@@ -353,13 +353,16 @@ type PathCache = Map<string, ReturnType<typeof checkPath>>;
 /** Verifies one producer call's output (K02 R[0], R[3]): kinds, storable text, sizes, fragments in their sources, paths. */
 async function verifyOutput(context: KnowledgeContext, producer: string, output: ProducerOutput, sources: FragmentSources, loader: SourceLoader, paths: PathCache): Promise<Verified> {
   const out: Verified = { grammar:output.grammar, inventory:[],inventoryError:null,placed: [], toPlace: [], refused: [], refusedCount: 0, refusedKinds: new Map(), warnings: output.warnings, entries: output.entries.length, spans: (output.unplaced ?? []).length };
+  await prefetchFragmentSelectors([...(output.inventory??[]).flatMap(row=>[row.listed,row.complete]),...output.entries.flatMap(entry=>entry.fragments),...(output.unplaced??[]).map(span=>span.fragment)], sources, loader);
   for(const row of output.inventory??[]){
     const listed=await verifyFragment(row.listed,sources,loader),complete=await verifyFragment(row.complete,sources,loader);
     if(!listed.ok||!complete.ok||listed.value.sha256!==complete.value.sha256||row.selected!==0||(sources.list?.elements.size??0)!==0){out.inventoryError='空范围的清单来源或选中数不符；下一步核对生产器清单证明后重产';continue;}
     const source=sources.single.get(listed.value.slot);
     try{
       if(!source||row.listed.parser!=='json@1'||row.complete.parser!=='json@1')throw Error('invalid inventory');
-      const items=JSON.parse(source.document.locate(row.listed.selector)!.text),done=JSON.parse(source.document.locate(row.complete.selector)!.text);
+      await source.document.prefetch?.([row.listed.selector,row.complete.selector]);
+      const listedText=(await source.document.locate(row.listed.selector))!.text,doneText=(await source.document.locate(row.complete.selector))!.text;
+      const items=JSON.parse(listedText),done=JSON.parse(doneText);
       if(!Array.isArray(items)||done!==true)throw Error('incomplete inventory');
       out.inventory.push({producer,label:row.label,listed:listed.value.reference,completion:complete.value.reference,total:items.length,selected:0});
     }catch{out.inventoryError='空范围缺少完整清单数组及完成标记；下一步重读完整来源清单后重产';}

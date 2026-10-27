@@ -420,6 +420,38 @@ function validityOf(value: unknown): unknown {
   return validity !== null && typeof validity === 'object' ? validity : undefined;
 }
 
+/** Parses each cited source once and loads every selector on it before the per-reference checks. Failures stay with resolveReference. */
+export async function prefetchReferences(inputs: readonly string[], ctx: ResolveContext): Promise<void> {
+  const groups = new Map<string, { sha: string; parser: string; selectors: string[] }>();
+  for (const input of inputs) {
+    let ref: Reference;
+    try { ref = parseReference(input); } catch { continue; }
+    if (ref.scheme !== 'src' || ref.parser === undefined || ref.selector === undefined) continue;
+    const key = `${ref.sha256}\u0000${ref.parser}`;
+    const group = groups.get(key) ?? { sha: ref.sha256, parser: ref.parser, selectors: [] };
+    group.selectors.push(ref.selector);
+    groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    try {
+      const parser = ctx.parsers.get(group.parser);
+      if (!parser || !ctx.sources) continue;
+      const read = await ctx.sources.read(group.sha, ctx.reader);
+      if (!read?.bytes || read.readTier === 'retain_only' || read.bytes.length !== read.size || sha256Hex(read.bytes) !== group.sha) continue;
+      const cacheKey = `${group.sha}\u0000${parserCacheKey(parser)}\u0000${read.mediaType}`;
+      let document = ctx.documents?.get(cacheKey);
+      if (!document) {
+        const parse = () => parseDocument(parser, read.bytes!, { mediaType: read.mediaType });
+        document = ctx.documents?.load ? await ctx.documents.load(cacheKey, parse) : await parse();
+        ctx.documents?.set(cacheKey, document);
+      }
+      await document.prefetch?.(group.selectors);
+    } catch {
+      // The same read or parse failure is reported when the reference is resolved.
+    }
+  }
+}
+
 async function resolveSource(
   ref: Extract<Reference, { scheme: 'src' }>,
   canonical: string,
@@ -512,7 +544,7 @@ async function resolveSource(
     }
     ctx.documents?.set(cacheKey, document);
   }
-  const fragment = document.locate(ref.selector!);
+  const fragment = await document.locate(ref.selector!);
   if (!fragment) return unresolved(canonical, `片段定位 ${ref.selector} 在源文件里找不到`);
   let text = fragment.text;
   if (ref.range) {

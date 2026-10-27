@@ -68,7 +68,7 @@ test('every produced fragment is a text@1 line of the chapter file it names, and
       const verified = await verifyFragment(fragment, sources, loader);
       assert.ok(verified.ok, `${JSON.stringify(fragment)}: ${verified.ok ? '' : verified.reason}`);
       // The line the fragment cites holds the entry's own words: the citation is not merely well formed.
-      const located = sources.list!.elements.get(fragment.source!)!.document.locate(fragment.selector);
+      const located = (await sources.list!.elements.get(fragment.source!)!.document.locate(fragment.selector));
       assert.ok(located !== null);
       const statement = String(entry.statement);
       assert.ok(

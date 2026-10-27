@@ -71,7 +71,7 @@ test('a product publication, genuine independent adjudication and append-only re
             quotes.push({ reference: 'src:' + sha(bytes), text: bytes });
             if (name === 'declarations.json') {
                 const ref = record.ledgers.adapted[0].equivalence_refs[0];
-                quotes.push({ reference: ref, text: jsonParser.parse(Buffer.from(bytes), {}).locate('p/parameters/0')!.text! });
+                quotes.push({ reference: ref, text: (await jsonParser.parse(Buffer.from(bytes), {}).locate('p/parameters/0'))!.text! });
             }
         }
         const submit = (run: string, item: string, data: any) => ({ run, model: 'scripted-recomposer', items: [{ item, handling: 'handled' as const, slots: { record: [{ text: '合成重组判断', quotes, data }] } }] });

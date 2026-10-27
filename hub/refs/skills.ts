@@ -18,31 +18,91 @@ const readRun=async(records:RecordsKit,run:string)=>(await records.store.find<Ru
 export interface SkillParserOptions {registry:PackRegistry;records:RecordsKit;sandbox?:SandboxOptions;now?:()=>Date}
 export interface LegacySkillBinding {run:string;skills:SkillLock[];decided_by:string;reason:string;run_record:string}
 
-function hydrate(value:unknown,parser:string):ParsedDocument {
-  if(!object(value))throw new ParseError(parser,'技能包没有返回文档结构；请包作者修正后发布新版本');
-  if(object(value.error)){
-    const e=value.error,message=typeof e.message==='string'?e.message:'技能包解析失败';
-    if(typeof e.limit==='string'&&typeof e.max==='number'&&['maxBytes','maxDepth','maxNodes','maxAttributes','maxSelectorChars'].includes(e.limit))throw new ParseLimitError(parser,e.limit as keyof ParseLimits,e.max,message,typeof e.offset==='number'?e.offset:null);
-    if(e.name==='ParseEncodingError')throw new ParseEncodingError(parser,message,typeof e.offset==='number'?e.offset:null);
-    throw new ParseSyntaxError(parser,message,typeof e.offset==='number'?e.offset:null);
-  }
-  const d=value.document;
-  if(!object(d)||d.parser!==parser||!object(d.summary)||!Array.isArray(d.fragments)||!Array.isArray(d.selectors)||!Array.isArray(d.properties))throw new ParseError(parser,'技能包文档结构不完整；修正技能包后重读');
-  const fragments=new Map<string,Fragment>();
-  for(const f of d.fragments){
-    if(!object(f)||typeof f.lookup!=='string'||typeof f.selector!=='string'||typeof f.text!=='string'||f.byteRange!==null&&(!Array.isArray(f.byteRange)||f.byteRange.length!==2||f.byteRange.some(n=>typeof n!=='number'||!Number.isSafeInteger(n)||n<0)))throw new ParseError(parser,'技能包片段结构无效');
-    if(fragments.has(f.lookup))throw new ParseError(parser,'技能包返回重复片段选择器');
-    fragments.set(f.lookup,{selector:f.selector,text:f.text,byteRange:f.byteRange,data:f.data} as Fragment);
-  }
-  const lists=[d.selectors,d.properties] as unknown[][];
-  if(lists.some(list=>list.some(s=>typeof s!=='string'||!fragments.has(s))))throw new ParseError(parser,'技能包选择器不对应已返回片段');
-  if(!object(d.quotation))throw new ParseError(parser,'技能包没有返回逐字引文单元');
+const LOCATE_BATCH=256;
+
+function failPack(parser:string,value:Record<string,unknown>):never {
+  const e=value.error as Record<string,unknown>,message=typeof e.message==='string'?e.message:'技能包解析失败';
+  if(typeof e.limit==='string'&&typeof e.max==='number'&&['maxBytes','maxDepth','maxNodes','maxAttributes','maxSelectorChars'].includes(e.limit))throw new ParseLimitError(parser,e.limit as keyof ParseLimits,e.max,message,typeof e.offset==='number'?e.offset:null);
+  if(e.name==='ParseEncodingError')throw new ParseEncodingError(parser,message,typeof e.offset==='number'?e.offset:null);
+  throw new ParseSyntaxError(parser,message,typeof e.offset==='number'?e.offset:null);
+}
+
+function readWireFragment(parser:string,f:unknown):{lookup:string;fragment:Fragment} {
+  if(!object(f)||typeof f.lookup!=='string'||typeof f.selector!=='string'||typeof f.text!=='string'||f.byteRange!==null&&(!Array.isArray(f.byteRange)||f.byteRange.length!==2||f.byteRange.some(n=>typeof n!=='number'||!Number.isSafeInteger(n)||n<0)))throw new ParseError(parser,'技能包片段结构无效');
+  return {lookup:f.lookup,fragment:{selector:f.selector,text:f.text,byteRange:f.byteRange as Fragment['byteRange'],data:f.data as Fragment['data']}};
+}
+
+function checkQuotation(parser:string,quotation:unknown):void {
+  if(!object(quotation))throw new ParseError(parser,'技能包没有返回逐字引文单元');
   for(const field of ['plain','properties']){
-    const q=d.quotation[field];
+    const q=quotation[field];
     if(!object(q)||typeof q.stream!=='string'||!Array.isArray(q.units))throw new ParseError(parser,'技能包引文单元结构无效');
     for(const [index,u]of q.units.entries())if(!object(u)||typeof u.selector!=='string'||typeof u.text!=='string'||!Number.isInteger(u.parent)||Number(u.parent)<-1||Number(u.parent)>=index||!Number.isInteger(u.start)||!Number.isInteger(u.end)||Number(u.start)<-1||Number(u.start)>=0&&(Number(u.end)<Number(u.start)||Number(u.end)>q.stream.length||q.stream.slice(Number(u.start),Number(u.end))!==u.text))throw new ParseError(parser,'技能包引文单元边界或原文不一致');
   }
-  return {parser,model:d.model as JsonValue,locate:selector=>fragments.get(selector)??null,listSelectors:(prefix='',options={})=>((options.properties?d.properties:d.selectors) as string[]).filter((s:string)=>s.startsWith(prefix)).slice(0,options.limit??Infinity),summary:()=>d.summary as JsonObject,
+}
+
+function stringList(parser:string,value:unknown):string[] {
+  if(!Array.isArray(value)||value.some(s=>typeof s!=='string'))throw new ParseError(parser,'技能包文档结构不完整；修正技能包后重读');
+  return value as string[];
+}
+
+function hydrate(value:unknown,parser:string,fetchFragments?:(selectors:string[])=>Promise<unknown>):ParsedDocument {
+  if(!object(value))throw new ParseError(parser,'技能包没有返回文档结构；请包作者修正后发布新版本');
+  if(object(value.error))failPack(parser,value);
+  const d=value.document;
+  if(!object(d)||d.parser!==parser||!object(d.summary)||!Array.isArray(d.selectors)||!Array.isArray(d.properties))throw new ParseError(parser,'技能包文档结构不完整；修正技能包后重读');
+  const eager=Object.hasOwn(d,'fragments');
+  if(eager&&!Array.isArray(d.fragments))throw new ParseError(parser,'技能包文档结构不完整；修正技能包后重读');
+  if(!eager&&!fetchFragments)throw new ParseError(parser,'按需文档缺少 locate 声明；技能包作者在 skill.json 写上 locate 后重读');
+  const fragments=new Map<string,Fragment>();
+  if(eager){
+    for(const raw of d.fragments as unknown[]){
+      const row=readWireFragment(parser,raw);
+      if(fragments.has(row.lookup))throw new ParseError(parser,'技能包返回重复片段选择器');
+      fragments.set(row.lookup,row.fragment);
+    }
+    if([d.selectors,d.properties].some(list=>(list as unknown[]).some(s=>typeof s!=='string'||!fragments.has(s as string))))throw new ParseError(parser,'技能包选择器不对应已返回片段');
+  }else{
+    stringList(parser,d.selectors);stringList(parser,d.properties);
+  }
+  checkQuotation(parser,d.quotation);
+  const cached=new Map<string,Fragment|null>();
+  const pending=new Map<string,Promise<void>>();
+  if(eager)for(const [lookup,fragment]of fragments)cached.set(lookup,fragment);
+  const load=async(selectors:string[]):Promise<void>=>{
+    const wanted=[...new Set(selectors)];
+    const waiting=[...new Set(wanted.flatMap(selector=>pending.has(selector)?[pending.get(selector)!]:[]))];
+    const missing=wanted.filter(selector=>!cached.has(selector)&&!pending.has(selector));
+    const batches:string[][]=[];
+    for(let at=0;at<missing.length;at+=LOCATE_BATCH)batches.push(missing.slice(at,at+LOCATE_BATCH));
+    const jobs=batches.map(async batch=>{
+      let finish:()=>void=()=>{};
+      const gate=new Promise<void>(resolve=>{finish=resolve;});
+      for(const selector of batch)pending.set(selector,gate);
+      try{
+        const output=await fetchFragments!(batch);
+        if(!object(output))throw new ParseError(parser,'技能包 locate 没有返回片段');
+        if(object(output.error))failPack(parser,output);
+        if(!Array.isArray(output.fragments))throw new ParseError(parser,'技能包 locate 没有返回片段');
+        const seen=new Set<string>();
+        for(const raw of output.fragments){
+          const row=readWireFragment(parser,raw);
+          if(!batch.includes(row.lookup))throw new ParseError(parser,'技能包返回了未请求的片段');
+          if(seen.has(row.lookup))throw new ParseError(parser,'技能包返回重复片段选择器');
+          seen.add(row.lookup);
+          cached.set(row.lookup,row.fragment);
+        }
+        for(const selector of batch)if(!cached.has(selector))cached.set(selector,null);
+      }finally{for(const selector of batch)pending.delete(selector);finish();}
+    });
+    await Promise.all([...waiting,...jobs]);
+  };
+  const locate=eager?(selector:string)=>fragments.get(selector)??null:(selector:string):Fragment|null|Promise<Fragment|null>=>{
+    if(cached.has(selector))return cached.get(selector)??null;
+    return load([selector]).then(()=>cached.get(selector)??null);
+  };
+  return {parser,model:d.model as JsonValue,locate,listSelectors:(prefix='',options={})=>((options.properties?d.properties:d.selectors) as string[]).filter((s:string)=>s.startsWith(prefix)).slice(0,options.limit??Infinity),summary:()=>d.summary as JsonObject,
+    ...(!eager?{prefetch:load}:{}),
     ...(object(d.quotation)?{[QUOTATION_UNITS]:(options:{properties:boolean})=>(options.properties?(d.quotation as Record<string,unknown>).properties:(d.quotation as Record<string,unknown>).plain) as QuotationUnits}:{})};
 }
 
@@ -57,8 +117,17 @@ function parserOf(opened:OpenedPack,row:SkillDeclaration['parsers'][number],opti
       const verified=await options.registry.open(opened.info.digest);
       if(!verified||verified.declarations.kind!=='skill')throw new IntegrityError('冻结技能包缺失或被改变');
       try{
-        const out=await callPackFunction({packDir:verified.handle.directory,module:row.function.module,export:row.function.export},{bytes:Buffer.from(bytes).toString('base64'),options:{...parseOptions,...limits}},{timeoutMs:5000,inputBytes:96*1024*1024,outputBytes:64*1024*1024},options.sandbox);
-        return hydrate(out.output,row.parser);
+        const input={bytes:Buffer.from(bytes).toString('base64'),options:{...parseOptions,...limits}};
+        const limitsBox={timeoutMs:5000,inputBytes:96*1024*1024,outputBytes:64*1024*1024};
+        const out=await callPackFunction({packDir:verified.handle.directory,module:row.function.module,export:row.function.export},input,limitsBox,options.sandbox);
+        const locate=row.locate;
+        const fetchFragments=locate?async(selectors:string[])=>{
+          const again=await options.registry.open(opened.info.digest);
+          if(!again||again.declarations.kind!=='skill')throw new IntegrityError('冻结技能包缺失或被改变');
+          const located=await callPackFunction({packDir:again.handle.directory,module:locate.module,export:locate.export},{...input,selectors},limitsBox,options.sandbox);
+          return located.output;
+        }:undefined;
+        return hydrate(out.output,row.parser,fetchFragments);
       }catch(error){if(error instanceof ParseError||error instanceof IntegrityError)throw error;throw new ParseError(row.parser,'技能包解析未完成；请管理员核对沙箱及该技能包，修正后重读',null,error instanceof Error?error.message:null);}
     }};
 }

@@ -4,7 +4,7 @@
 // (what resolveReference does for src after its digest check) instead of re-hashing megabytes per fragment.
 import { TreePath } from '../../contracts/src/reference.ts';
 import type { FragmentRef } from '../../contracts/src/product.ts';
-import { ReferenceSyntaxError, pathOf, pathSegments, sliceUtf8, srcFragment } from '../refs/api.ts';
+import { ReferenceSyntaxError, pathOf, pathSegments, sliceUtf8, srcFragment, type ParsedDocument } from '../refs/api.ts';
 import type { ParsedSource, SourceLoader } from './sources.ts';
 import { MAX_TREE_DEPTH } from './tree.ts';
 
@@ -63,12 +63,43 @@ export async function verifyFragment(fragment: FragmentRef, sources: FragmentSou
   }
   const document = fragment.parser === source.parser ? source.document : await loader.documentWith(source, fragment.parser);
   if (document === null) return { ok: false, reason: `解析器 ${fragment.parser} 没有登记，或不能解析源文件 ${source.sha256}` };
-  const located = document.locate(fragment.selector);
+  const located = await document.locate(fragment.selector);
   if (located === null) return { ok: false, reason: `片段 ${fragment.selector.slice(0, 200)} 在源文件 ${source.sha256} 里找不到` };
   if (fragment.range !== undefined && sliceUtf8(located.text, fragment.range[0], fragment.range[1]) === null) {
     return { ok: false, reason: `字节范围 [${fragment.range[0]}, ${fragment.range[1]}) 超出片段，或没有落在字符边界上` };
   }
   return { ok: true, value: { reference: srcFragment(source.sha256, fragment.parser, located.selector, fragment.range), sha256: source.sha256, slot } };
+}
+
+/** Loads every selector of one producer output before the per-fragment checks. A missing source stays a per-fragment refusal. */
+export async function prefetchFragmentSelectors(fragments: readonly FragmentRef[], sources: FragmentSources, loader: SourceLoader): Promise<void> {
+  const groups = new Map<ParsedDocument, string[]>();
+  for (const fragment of fragments) {
+    let slot = fragment.slot;
+    if (slot === undefined) {
+      const names = [...sources.single.keys(), ...(sources.list === null ? [] : [sources.list.slot])];
+      if (names.length !== 1) continue;
+      slot = names[0];
+    }
+    let source: ParsedSource | null;
+    if (sources.list !== null && slot === sources.list.slot) source = fragment.source === undefined ? null : sources.list.elements.get(fragment.source) ?? null;
+    else {
+      source = sources.single.get(slot) ?? null;
+      if (source !== null && fragment.source !== undefined && fragment.source !== source.sha256) source = null;
+    }
+    if (source === null) continue;
+    let document: ParsedDocument | null;
+    try {
+      document = fragment.parser === source.parser ? source.document : await loader.documentWith(source, fragment.parser);
+    } catch {
+      continue;
+    }
+    if (document?.prefetch === undefined) continue;
+    const list = groups.get(document) ?? [];
+    list.push(fragment.selector);
+    groups.set(document, list);
+  }
+  for (const [document, selectors] of groups) await document.prefetch!(selectors);
 }
 
 export interface CheckedPath {

@@ -24,6 +24,7 @@ import {
   quoteMatches,
   recognizeAsync,
   parserCacheKey,
+  prefetchReferences,
   resolveReference,
   withRange,
   type QuoteCandidate,
@@ -144,7 +145,7 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
           const found = cached??await recognizeAsync(ctx.parsers, source.bytes, source.mediaType);
           if(found?.document)ctx.documents.set(key(found.parser),found.document);
           if (found === null||found.document===undefined) continue;
-          const list = candidatesFrom(found.document, sha, { role });
+          const list = await candidatesFrom(found.document, sha, { role });
           for (let i = 0; i < list.length; i++) out.push(list[i]);
         }
         return out;
@@ -245,7 +246,7 @@ export async function buildRootScope(ctx: EngineContext, root: string, reader: P
           const found = cached??await recognizeAsync(ctx.parsers, source.bytes, source.mediaType);
           if(found?.document)ctx.documents.set(key(found.parser),found.document);
           if (found === null||found.document===undefined) continue;
-          const list = candidatesFrom(found.document, sha, { role });
+          const list = await candidatesFrom(found.document, sha, { role });
           for (let i = 0; i < list.length; i++) out.push(list[i]);
         }
         return out;
@@ -271,6 +272,8 @@ export type ValueOutcome = { ok: true; value: ResolvedValue } | { ok: false; mes
 export interface Resolver {
   /** Resolves inside the run scope; `scoped: false` only for the predecessor's statements a carry-over brings along. */
   resolve(reference: string, options?: { scoped?: boolean; grounds?: boolean }): Promise<ValueOutcome>;
+  /** Loads every selector of one submission's sources before the per-quote checks. */
+  prefetch(references: readonly string[]): Promise<void>;
 }
 
 export function scopeProblem(ref: Reference, scope: RunScope): string | null {
@@ -369,6 +372,9 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
     }
   };
   return {
+    prefetch(references) {
+      return prefetchReferences(references, context);
+    },
     resolve(reference, options = {}) {
       const scoped = options.scoped !== false;
       const key = `${scoped ? 's' : 'u'}${options.grounds ? 'g' : 't'}\u0000${reference}`;
@@ -549,6 +555,7 @@ export async function resolveStatement(
 ): Promise<ClaimEvidence> {
   const canonical: SlotClaim = structuredClone(claim);
   const out: ClaimEvidence = { resolutions: [], roles: [], bound: [], grounds: [], canonical };
+  await resolver.prefetch([...(claim.location !== undefined ? [claim.location] : []), ...(claim.grounds ?? []), ...(claim.quotes ?? []).map((quote) => quote.reference)]);
   const fail = (code: 'REFERENCE_UNRESOLVED' | 'REFERENCE_AMBIGUOUS' | 'QUOTE_MISMATCH', path: string, message: string, options?: string[], fix?: string) =>
     errors.push(protocolError(code, message, { path, ...extra, ...(options && options.length > 0 ? { options } : {}), ...(fix !== undefined ? { fix } : {}) }));
   const take = (pointer: string, text: string, value: ResolvedValue, cites: boolean, reference = value.reference): void => {
@@ -644,6 +651,18 @@ export async function resolveSlots(
   scoped = true,
 ): Promise<Record<string, unknown>> {
   const copy: Record<string, unknown> = structuredClone(slots);
+  const ahead: string[] = [];
+  for (const key of Object.keys(workflow.slots.item)) {
+    const list = slots[key];
+    if (!Array.isArray(list)) continue;
+    for (const raw of list) {
+      const claim = SlotClaim.safeParse(raw);
+      if (!claim.success) continue;
+      if (claim.data.location !== undefined) ahead.push(claim.data.location);
+      ahead.push(...(claim.data.grounds ?? []), ...(claim.data.quotes ?? []).map((quote) => quote.reference));
+    }
+  }
+  await resolver.prefetch(ahead);
   for (const key of Object.keys(workflow.slots.item)) {
     const list = slots[key];
     if (!Array.isArray(list)) continue;
