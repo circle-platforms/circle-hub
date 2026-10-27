@@ -22,6 +22,7 @@ import {
   readParameters,
   releasePlan,
   searchFields,
+  unmatchedBuild,
   type AcquirePlan,
   type Action,
   type FrozenLeases,
@@ -105,6 +106,8 @@ export default function project(input: unknown): Out | Failure {
 
   if (action === 'search') {
     const fields = searchFields(beds, normalized.need, leases, now, frozenLeases);
+    const gap = unmatchedBuild(beds, normalized.need, leases, now);
+    if (gap) warnings.push({ code: 'test-bed.no_matching_build', message: `${gap.missing}。${gap.fix}` });
     return {
       items: fields.map((f) => ({
         id: f.bed,

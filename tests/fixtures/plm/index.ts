@@ -14,6 +14,17 @@ export const BUGS: Record<string, Record<string, unknown>> = {
     steps: '<p>1. 配置 http 探测，后端返回 <b>500</b></p><p>2. 执行 show health</p><p>预期：后端状态为 down</p>',
     resolution: 'fixed',
   },
+  '88001': {
+    id: 88001,
+    title: 'ORBIT 合成监听没有应答',
+    phenomenon: 'ORBIT 合成监听没有应答',
+    version_line: 'SYN_ORBIT_10_8',
+    build: 'SYN_ORBIT_10_8_1',
+    status: 'open',
+    severity: 2,
+    openedDate: '2026-10-01 09:00:00',
+    steps: '<p>ORBIT 合成监听没有应答</p>',
+  },
   '70412': {
     id: '70412',
     title: '信标权重为 0 时仍被调度',
