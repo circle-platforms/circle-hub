@@ -757,7 +757,7 @@ B5 的迁移等价测试只用小文档，没有覆盖到真实尺寸。处理�
 - GitHub issue（公开仓库 `circle-platforms/circle-hub`）：#28 操作记录设备/租约绑定的阻断项（含两个安全相关）、#29 截图另传、#30 手册与操作记录的矛盾表达不了、#31 同步里别名构建失败、#32 重新育苗后用例索引为空、#33 聚合口用例与合约 restore 声明、#34 核心导入产品包（设计待决定）、#35 凭据扫描扣留的提示、#36 整台派发 explain-release 放行但派发被拒；Circle 仓库 #319（已安装的 1.12.0 不发 `Circle-Session-Id`）。
 - 公开快照 R6：从 GitHub main 新开 `hub-r6`，按 R4/R5 的做法做身份映射和三方合并，一个签名提交，不带私有历史；`docs/**`、`scripts/real/**`、`references/**`、`.github/**`、根目录文件不带。任务页 `docs/hub-r4-tasks/public-snapshot-r6.md`。
 - 带已知阻断项的 WIP：分支 `operation-device-lease`（kimi，提交 `38000008`，`knowledge-contribution` 1.3.6），不合进主线，等独立复核。
-- 本机交接文档（含真实构建名和编号，不进 Git）：`~/Library/Application Support/circle-hub-acceptance/HANDOFF.md`；里面有五分钟自检、续写版 goal、接下来的任务、操作手册、红线和踩过的坑。
+- 本机交接文档（含真实构建名和编号，不进 Git）：集成者持久工作目录下的 `HANDOFF.md`（目录名见集成者的记忆文件）；里面有五分钟自检、续写版 goal、接下来的任务、操作手册、红线和踩过的坑。
 - 集成树代码头 `768ff328`（线上是 `1a3b031294df`）：多出的 PLM 构建列表信封修复和运行/视图共用的树苗优先根解析器还没部署，部署前要做独立全量检查。
 
 ### 已知限制与待决
