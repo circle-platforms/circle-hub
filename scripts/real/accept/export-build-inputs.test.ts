@@ -12,6 +12,7 @@ import { agileOptions } from '../../../tests/fixtures/agile/index.ts';
 import { productSite, twoNameProduct } from '../../../tests/acceptance/support/env.ts';
 import { startPostgres } from '../../../hub/testing/postgres.ts';
 import type { TemporaryPostgres } from '../../../hub/testing/postgres.ts';
+import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { memoryOperatorTokens } from '../../../hub/server/assemble/operator-token.ts';
 import { CliError } from '../../../hub/server/errors.ts';
 import { adminCommands } from '../../../hub/server/cli-admin.ts';
@@ -22,6 +23,7 @@ import { FacetView, IndexView } from '../../../contracts/src/views.ts';
 import type { KnownBuild } from '../../../contracts/src/product.ts';
 
 const sha = (s: Uint8Array) => createHash('sha256').update(s).digest('hex');
+const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 const root = 'a'.repeat(64), id = 'b'.repeat(64);
 
 let postgres: TemporaryPostgres;
@@ -579,7 +581,7 @@ test('accepts a locked product-wide root whose own answer declares it complete a
   assert.equal(JSON.parse(readFileSync(join(options.out,'index-1.json'),'utf8')).total_keys,0);
 });
 
-test('administrator knowledge view and original export operate against the synthetic acceptance Hub', {timeout:180_000}, async t=>{
+test('administrator knowledge view and original export operate against the synthetic acceptance Hub', {skip, timeout:180_000}, async t=>{
   const product=await twoNameProduct(),site=await productSite();
   const match=/_(\d+)_(\d+)_(\d+)_/.exec(site.RELEASED)!;
   const agile=JSON.parse(JSON.stringify(agileOptions()).replaceAll('ORBIT',product.names[0]).replaceAll('COMET',product.names[1]).replaceAll('7.1',match.slice(1).join('.')));

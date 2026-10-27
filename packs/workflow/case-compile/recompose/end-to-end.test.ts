@@ -12,15 +12,16 @@ import { createHash } from 'node:crypto';
 import { startPostgres } from '../../../../hub/testing/postgres.ts';
 import { temporaryDirectory, writePack } from '../../../../hub/runs/api.ts';
 import { jsonParser } from '../../../../hub/refs/api.ts';
-import { createCatalogView } from '../../../../hub/rules/api.ts';
+import { createCatalogView, osIsolationAvailable } from '../../../../hub/rules/api.ts';
 import { INDEX } from '../../../../hub/runs/engine/store.ts';
 import { openHub, call } from '../testing/hub.ts';
 import { stageRecompose } from '../testing/stage-recompose.ts';
 import { fixture as unitFixture } from '../testing/recompose.ts';
 import { fixtureJson, fixtureText } from '../../../../tests/fixtures/recompose/index.ts';
 import { admittedRecomposition } from '../functions/recomposition.ts';
+const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 const sha = (s: string | Uint8Array) => createHash('sha256').update(s).digest('hex');
-test('a product publication, genuine independent adjudication and append-only recomposition admit one complete artifact', async () => {
+test('a product publication, genuine independent adjudication and append-only recomposition admit one complete artifact', { skip }, async () => {
     const postgres = await startPostgres(), temp = await temporaryDirectory('recompose-e2e-');
     let h: Awaited<ReturnType<typeof openHub>> | undefined;
     try {
