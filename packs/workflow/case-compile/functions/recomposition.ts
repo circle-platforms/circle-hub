@@ -1,3 +1,4 @@
+import type {Verdict} from '../../../../contracts/generated/vocabulary.ts';
 // Consume an admitted case artifact, not a review receipt or a self-described upload.
 import { acceptedPair, object } from './recompose-evidence.ts';
 import T from '../tables/recompose-format.json' with { type: 'json' };
@@ -20,14 +21,14 @@ export function admittedRecomposition(runInput: any, resultInput: any, context: 
 }
 export function recompositionGaps(slots: PlanSlots, proof: any, manifestSha?: string): Array<{
     message: string;
-    verdict: 'unknown' | 'refute';
+    verdict: Extract<Verdict, 'unknown' | 'refute'>;
 }> {
     if (!proof)
         return [];
     const issues: Array<{
         message: string;
-        verdict: 'unknown' | 'refute';
-    }> = [], use = slots.recomposition, note = (message: string, verdict: 'unknown' | 'refute' = 'unknown') => issues.push({ message, verdict });
+        verdict: Extract<Verdict, 'unknown' | 'refute'>;
+    }> = [], use = slots.recomposition, note = (message: string, verdict: Extract<Verdict, 'unknown' | 'refute'> = 'unknown') => issues.push({ message, verdict });
     if (!use) {
         note('缺显式重组消费身份；等待编写模型在编写提交前填写已受理 receipt 和 case_id');
         return issues;
