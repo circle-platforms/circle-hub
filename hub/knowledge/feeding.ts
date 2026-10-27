@@ -26,6 +26,49 @@ import type {TreeReading} from './read.ts';
 import {seedlingOfRoot,currentSeedling,seedlingRecord,seedlingName} from './seedling.ts';
 import {KnowledgeError} from './errors.ts';
 const PROJECTION='knowledge.feeding.projection';
+
+interface LeaseBody { leases?: unknown; groups?: unknown; predecessor?: unknown }
+
+function leaseRows(body: LeaseBody | null | undefined): Array<{ lease?: unknown; op?: unknown; keys?: unknown }> {
+  return Array.isArray(body?.leases) ? body.leases.filter((row): row is { lease?: unknown; op?: unknown; keys?: unknown } => row !== null && typeof row === 'object') : [];
+}
+
+/** Installed builds of devices this run actually booked (`bed/<bed>/<device>`), read from its frozen manifest. */
+export function bookedInstalls(body: LeaseBody | null | undefined): string[] {
+  const group = Array.isArray(body?.groups) ? body.groups[0] : undefined;
+  const beds = group !== null && typeof group === 'object' && 'manifest' in group && group.manifest !== null && typeof group.manifest === 'object' && 'beds' in group.manifest ? (group.manifest as { beds?: unknown }).beds : undefined;
+  if (!Array.isArray(beds)) return [];
+  const keys = leaseRows(body).flatMap(row => Array.isArray(row.keys) ? row.keys.filter((key): key is string => typeof key === 'string') : []);
+  const out: string[] = [];
+  for (const key of keys) {
+    const parts = key.split('/');
+    if (parts.length !== 3 || parts[0] !== 'bed') continue;
+    const bed = beds.find(row => row !== null && typeof row === 'object' && (row as { name?: unknown }).name === parts[1]) as { devices?: unknown } | undefined;
+    const devices = Array.isArray(bed?.devices) ? bed.devices : [];
+    const device = devices.find(row => row !== null && typeof row === 'object' && (row as { name?: unknown }).name === parts[2]) as { installed?: { build?: unknown } } | undefined;
+    if (typeof device?.installed?.build === 'string' && device.installed.build.length > 0) out.push(device.installed.build);
+  }
+  return out;
+}
+
+function bookedLease(body: LeaseBody | null | undefined): string | null {
+  for (const row of leaseRows(body)) {
+    if (typeof row.lease !== 'string' || !Array.isArray(row.keys)) continue;
+    if (row.keys.some(key => typeof key === 'string' && key.startsWith('bed/') && key.split('/').length === 3)) return row.lease;
+  }
+  return null;
+}
+
+/** The acquire lease of this run, or of its predecessor booking, when that lease holds a bed device. */
+export async function reproductionLease(store: Parameters<typeof runById>[0], runId: string): Promise<string | null> {
+  const run = await runById(store, runId);
+  const own = bookedLease(run?.body);
+  if (own) return own;
+  const predecessor = run?.body.predecessor;
+  if (typeof predecessor !== 'string') return null;
+  return bookedLease((await runById(store, predecessor))?.body);
+}
+
 export const FEEDING_BOUNDS={waitMs:250,concurrency:2,queued:32,callMs:5000,rows:1000} as const;
 const FEEDING_CALL_MS=FEEDING_BOUNDS.callMs,MAX_FEEDING_ROWS=FEEDING_BOUNDS.rows;
 interface FeedingJob {key:string;captureKey:string;pack:ProductHandle|null;principal:Principal;sha:string;scope:FeedingScope;state:'queued'|'running';done:Promise<FeedingReceipt>;resolve:(value:FeedingReceipt)=>void;announced:Promise<void>;}
@@ -341,6 +384,10 @@ export class FeedingLayer {
     const events=await this.context.records.store.find<any>({key:'dispatch.job',value:job,kind:'action',limit:100});
     for(const event of events.items){const detail=event.body?.detail;if(detail?.phase!=='bed_snapshot'||typeof detail.installed_build!=='string'||detail.installed_build.length===0)continue;found.add(detail.installed_build);}
   }
+  const run=await runById(this.context.records.store,runId);
+  for(const build of bookedInstalls(run?.body))found.add(build);
+  const predecessor=run?.body.predecessor;
+  if(typeof predecessor==='string')for(const build of bookedInstalls((await runById(this.context.records.store,predecessor))?.body))found.add(build);
   return found.size===1?[...found][0]:null;
  }
  private async operationBinding(scope:FeedingScope):Promise<Record<string,unknown>>{
@@ -349,8 +396,8 @@ export class FeedingLayer {
   const valueOf=(field:string)=>{const data=claims.find(claim=>claim.statement?.data?.field===field)?.statement?.data;return typeof data?.value==='string'?data.value:null;};
   const locked=valueOf('build'),line=valueOf('version'),bed=await this.bedInstalledBuild(scope.run??null);
   if(locked&&bed&&locked!==bed)return {source:'conflict',run_lock:{build:locked,line},bed_installed:{build:bed,line:null}};
+  if(bed)return {source:'bed_installed',build:bed,line};
   if(locked)return {source:'run_lock',build:locked,line};
-  if(bed)return {source:'bed_installed',build:bed,line:null};
   return {source:'undeclared',build:null,line:null,missing:'运行没有锁定构建，台架结构里也没有在装构建',next_action:'用锁定了构建的运行重交，或在台架结构里登记在装构建后再交；不要在提交里写版本'};
  }
  private async operationArtifact(principal:Principal,bytes:string,runId:string|null):Promise<SourceArtifact>{
