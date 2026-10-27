@@ -4,7 +4,7 @@ import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
 // never invented run ids, locks or digests.
 import { z } from 'zod';
 import { KnowledgeContributionPageView, MAX_NODE_CONTRIBUTIONS,ApplicabilityFields } from './contributions.ts';
-import { AcceptanceSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
+import { AcceptanceSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ProvenanceTypeSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
 import { IsoTime, Coverage, Envelope as BaseEnvelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
 import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
 import { Backlinks } from './views.ts';
@@ -73,6 +73,7 @@ export const UploadFileInput = z.strictObject({
     .describe('The file to upload. Give the local path; the client sends the file bytes.'),
   media_type: z.string().optional().describe('Media type if known, for example text/markdown'),
   name: z.string().optional().describe('Original file name, for display'),
+  provenance_type: ProvenanceTypeSchema.extract(['declared', 'client_captured']).optional().describe('Client-declared upload provenance; defaults to declared. client_captured is for Circle operation captures and stays declaration grade.'),
 });
 // safeExtend: the receipt, optional in the envelope, is required here, and the envelope's refinements stay.
 export const UploadFileOutput = Envelope.safeExtend({

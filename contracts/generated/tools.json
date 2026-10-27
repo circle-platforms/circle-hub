@@ -610,6 +610,14 @@
         "name": {
           "description": "Original file name, for display",
           "type": "string"
+        },
+        "provenance_type": {
+          "description": "Client-declared upload provenance; defaults to declared. client_captured is for Circle operation captures and stays declaration grade.",
+          "type": "string",
+          "enum": [
+            "declared",
+            "client_captured"
+          ]
         }
       },
       "required": [
