@@ -4,8 +4,8 @@
 
 ## 位置
 
-- 私有集成树（只读，不要改、不要在里面提交）：`~/Public/circle-hub-redesign`，分支 `hub-redesign` 的 `768ff328`（NEW）；上一轮公开快照的私有来源是 `a203f297`（OLD）。用 `git -C ~/Public/circle-hub-redesign show/archive/diff` 取内容。
-- 公开副本（你的工作目录）：`~/Public/circle-hub-publication`，分支 `hub-r6`，从公开 `origin/main`（`06d0426`）开出，**只有公开历史**。改动留在工作区，**不要 commit、不要 push、不要用 gh、不要联网访问 GitHub**（装依赖的 `npm ci` 可以）。提交由集成者做（作者身份、签名行要统一）。
+- 私有集成树（只读，不要改、不要在里面提交）：集成者的 `circle-hub-redesign` 工作树，分支 `hub-redesign` 的 `768ff328`（NEW）；上一轮公开快照的私有来源是 `a203f297`（OLD）。用 `git -C <该工作树> show/archive/diff` 取内容。
+- 公开副本（你的工作目录）：同级目录的 `circle-hub-publication` 工作树，分支 `hub-r6`，从公开 `origin/main`（`06d0426`）开出，**只有公开历史**。改动留在工作区，**不要 commit、不要 push、不要用 gh、不要联网访问 GitHub**（装依赖的 `npm ci` 可以）。提交由集成者做（作者身份、签名行要统一）。
 
 ## 做法（上一轮的做法，三方合并）
 
@@ -22,7 +22,7 @@
 
 - 产品族：`APV`→`FAMX`、`Apv`→`Famx`、`apv`→`famx`；`NSAE`→`FAMY`、`Nsae`→`Famy`、`nsae`→`famy`。注意设备编号 `apv0`/`apv1`… 在公开侧是 `afamx0`/`afamx1`…（不是 `famx0`）。
 - 平台/OEM 名（按"以 `-`、`_`、`.` 或非字母数字分隔的整词"替换，不要替换单词内部）：`HG`/`hg`→`SY`/`sy`；`FT`/`ft`→`SZ`/`sz`；`UOS`/`uos`→`DEMOOS12`/`demoos12`；`KylinV10`/`kylinv10`→`Demoos10`/`demoos10`；`neokylin`→`demoos11`；`zhaoxin`→`demoarch`；组合如 `hg-k`→`sy-k`、`ft-kylinv10`→`sz-demoos10`、`hg-uos`→`sy-demoos12`、`zx-neokylin`→`zx-demoos11`；构建名里的 `Rel_FAMX-HG-K_…`→`Rel_FAMX-SY-K_…`。
-- 其他：`InfoTest`→`SyntheticReference`；`infosec-platform`→`legacydemo-platform`；路径里的 `/Users/…`→`synthetic-homes` 一类中性夹具根（看公开侧现有写法）。
+- 其他：`InfoTest`→`SyntheticReference`；`infosec-platform`→`legacydemo-platform`；路径里的本机用户目录一律改成 `synthetic-homes` 一类中性夹具根（看公开侧现有写法）。
 - 公开侧的文字有一部分是英文改写的（README、包说明）；三方合并时以保留公开侧写法为先。
 
 ## 不带的清单（私有记录/本机/真实环境相关）
@@ -31,7 +31,7 @@
 
 ## 红线（遇到就停下来报，不要自己判断放过）
 
-- NEW 里新增的行出现下面任一类而映射 T 没覆盖：产品/OEM/平台/内部项目名、私有网段地址（`10.`、`172.16–31.`、`192.168.` 里除保留示例段 `192.0.2.0/24`、`198.51.100.0/24`、`203.0.113.0/24` 以外的）、主机名/URL、`/Users/…` 本机路径、邮箱/账号、凭据形状、真实构建名/缺陷号/运行号/文档编号（敏捷平台脑图编号、PLM 编号）、日志/转储。把文件、行和原因记进报告，**这个文件先不带**，并说明不带的后果。
+- NEW 里新增的行出现下面任一类而映射 T 没覆盖：产品/OEM/平台/内部项目名、私有网段地址（`10.`、`172.16–31.`、`192.168.` 里除保留示例段 `192.0.2.0/24`、`198.51.100.0/24`、`203.0.113.0/24` 以外的）、主机名/URL、本机用户目录路径、邮箱/账号、凭据形状、真实构建名/缺陷号/运行号/文档编号（敏捷平台脑图编号、PLM 编号）、日志/转储。把文件、行和原因记进报告，**这个文件先不带**，并说明不带的后果。
 - 任何断言、白名单、安全检查的放松；任何测试被删。
 
 ## 验证和扫描（都要做，数字都要报）
