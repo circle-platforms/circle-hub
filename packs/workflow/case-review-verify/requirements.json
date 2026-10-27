@@ -138,7 +138,9 @@
       "layers": [
         "static"
       ],
-      "accepted_producer": "judgment",
+      "accepted_producer": "independent_judgment",
+      "independent_of": "predecessor",
+      "accepts_declared_independence": true,
       "checks": [
         "suggestion_targets"
       ],
