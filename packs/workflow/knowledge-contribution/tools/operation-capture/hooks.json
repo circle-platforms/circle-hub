@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "after_tool": [
+      {
+        "name": "操作采集：仅本会话已开启共享",
+        "tools": "*",
+        "timeout_ms": 120000,
+        "command": "node --input-type=module -e 'import{join,resolve}from\"node:path\";import{homedir}from\"node:os\";import{realpathSync}from\"node:fs\";import{createRequire}from\"node:module\";try{const configured=(process.env.CIRCLE_HOME||\"\").trim()||join(homedir(),\".circle\");const expanded=configured===\"~\"?homedir():configured.startsWith(\"~/\")||configured.startsWith(\"~\\\\\")?join(homedir(),configured.slice(2)):configured;let home=resolve(expanded);try{home=realpathSync.native(home)}catch(error){if(error.code!==\"ENOENT\")throw error}const load=createRequire(join(home,\"skills\",\"operation-capture\",\"hooks\",\"cwd.txt\"));await load(\"../lib/capture.ts\").hook();}catch{}'"
+      }
+    ]
+  }
+}

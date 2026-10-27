@@ -146,7 +146,10 @@ Semantics owned by the server:
   refused); the cap is `min(limits.maxUploadBytes, MAX_UPLOAD_BYTES)`, checked before decoding; the media type is the
   argument's (validated like records), else by the file name's extension, else sniffed (JSON, HTML, XML, UTF-8 text,
   else `application/octet-stream`); `Artifacts.ingest` with origin `upload {session}`, author the caller, provenance
-  `declared`, visibility `{readers: [caller], admins: true, packs: [], shareable: true}` (B02 R[3]). A credential hit is a
+  `declared` by default or `client_captured` when the optional `provenance_type` explicitly says so (K03 R[7]); other
+  provenance values are refused. This client declaration does not prove that model code never handled the bytes, and
+  operation records stay declaration grade. Visibility is `{readers: [caller], admins: true, packs: [], shareable: true}`
+  (B02 R[3]). A credential hit is a
   not-accepted answer `CREDENTIAL_IN_UPLOAD` (records' message with line and column, never the matched text) with the
   digest and size and no reference. An accepted answer has `src:<sha256>`, sha256, size, media type and, when a core
   parser recognises the bytes, `structure: {parser, summary}` (counts and shape only).

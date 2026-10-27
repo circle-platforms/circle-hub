@@ -1,6 +1,12 @@
-# knowledge-contribution 1.2.4
+# knowledge-contribution 1.3.0
 
 所有者 2026-10-23 傍晚决定：候选留在 Circle 本地。Circle 的整合技能判定成为事实后开独立回注运行；Hub 核对原文、来源和归位，要求项全部满足才入回注层。依据是新版 `docs/hub-r4-tasks/kb-candidates.md`、知识库方向第二节及 K03、W07 R[4]、P10、K02 F[6]。
+
+## 1.3.0
+
+- 新增 `tools/operation-capture`：按会话选择开启的工具输出采集、脱敏、哈希链清单、钩子直传和三类操作整合。默认不采，模型不参与原件上传。
+- B3 的实际 MCP 上传处理器缺少 `client_captured` 出处传递，本版补齐可选 `provenance_type`；省略仍为 `declared`，其他出处不收。该字段不证明字节未经模型，操作记录仍只作声明。
+- 客户端提案只收观察、步骤、教训及逐字引文，产品版本只由运行锁定结构给出。安装核验增加显式 `--skill operation-capture`，Jev 原有用法不变。
 
 ## 1.2.4
 
@@ -52,13 +58,25 @@ Circle 做过的事走同一回注槽，不另开通道。产出种类用 `asser
 
 `node pack-files.ts` 从生成词表写槽位声明并重签本目录；`node pack-files.ts --check` 核对生成槽位和清单。包测试还通过真实目录读取及发布校验器验证，运行测试使用临时 PostgreSQL、合成产品根和沙箱，没有真实资料或设备。
 
-签名流程、尚未入根来源只绑片段/修订、Circle 本地整合技能不属于本版。矛盾关系读侧标记由 K3 分支实现；本包提供集中关系形状，不冒充已经完成矛盾裁定。模型其他段落仍有旧候选隐私措辞（例如 B02 R[3]）；本次按负责人指定的模型改写范围处理 K03/W07/P10/K02 和 knowledge_layer，旧措辞由集成者一并对齐，运行时没有新增或保留候选写通道。
+签名流程和尚未入根来源只绑片段/修订仍属后续；Circle 操作采集技能已随本版提供。矛盾关系读侧标记由 K3 分支实现；本包提供集中关系形状，不冒充已经完成矛盾裁定。模型其他段落仍有旧候选隐私措辞（例如 B02 R[3]）；本次按负责人指定的模型改写范围处理 K03/W07/P10/K02 和 knowledge_layer，旧措辞由集成者一并对齐，运行时没有新增或保留候选写通道。
 
-## Circle 的 Jev 技能（1.1.2）
+## Circle 的操作采集技能（随本版提供）
+
+技能位于 `tools/operation-capture`，自成一体，Node 24 直接运行，只用内置模块和 fetch。安装时把清单所列的该目录原样复制到目标 Circle home 的 `skills/operation-capture/`，不要复制成整个回注包，也不要改写 `hooks.json`、`egress.json` 或 `generated.json`。官方核验命令是 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录> --skill operation-capture`；它核大小、SHA-256、缺项、额外文件和链接，Jev 不带 `--skill` 的原命令不变。
+
+技能只在会话加载后启动 `after_tool` 钩子，且默认不采。用户按技能说明为明确会话执行 `enable`，提供 Hub 地址和单独配置的 0600 令牌文件；不读 Circle 密钥库、环境密钥或其他配置。状态目录在该 Circle home 的 `operation-capture/`。`disable` 与进行中的采集、上传和整合串行，返回后不再执行这些动作；`flush` 只在重新开启后重试。钩子没有模型输出，失败只写不含原文的本地结构日志。
+
+输出先做 Circle 同形替换和当前 Hub 令牌的字面替换，再按 `credential-scan@2` 精确脱敏并复扫；上传初始化后再读一次令牌，内容检查与实际上传 Authorization 使用同一快照。无法完整处理就整条不采。保存的是脱敏后的完整 UTF-8 输出，不是摘要。追加清单把采集与 Hub 上传回执分成两类事件，文件 SHA-256、前序摘要和自身摘要都可核；并发由会话锁串行化，旧 owner 原子隔离后才允许回收崩溃锁，不删除新锁。元数据先扫描，追加失败回滚本次新文件或未完整行，目录及父目录链接均拒收。`recover` 将未登记输出和不完整清单尾部保全到 `recovery/` 并计数，无法证明完整的片段不上传。钩子直传 `upload_file` 的 `provenance_type=client_captured`，不让模型改写上传字节。普通工作清单仍按默认值 `declared` 上传。
+
+整合提案只收 `operation-integration@1` 的 observation、procedure、pitfall，引用必须是已上传原件的带行号逐字片段。脚本核验整份清单和引用后开独立回注运行，从运行回答取 product/root；操作者给的构建仅用于运行锁定，不进入提交条目。Hub 对同字节输出取本次运行绑定的具体 artifact，不任选旧上传。模型不得写版本或 Hub 采集字段。`receipts.jsonl` 只追加，未受理返回非零。
+
+清单没有外部信任锚，能重写整个状态目录并重算全部摘要的人可伪造自洽链；这里保证的是检出未同步重算的修改，不是抗恶意重写。验收 `tests/acceptance/37-operation-capture.test.ts` 使用临时 PostgreSQL、真实 Hub 和合成 ORBIT/COMET，未安装到真实 Circle home，未验证真实设备效果；没有启动完整 Circle 会话，协议测试直接执行安装后的 `hooks.json`。
+
+## Circle 的 Jev 技能
 
 技能位于 tools/jev，自成一体，Node 24 直接运行，只用 Node 内置模块和 fetch。Hub 核心、知识层、包内函数不导入它；它不会把 Jev 密钥交给 Hub。技能脚本从 Circle 执行命令的标准输入读取密钥，既不读环境密钥，也不读 Circle 文件或钥匙串。官方接口说明见 [TypeSafe System One](https://docs.typesafe.ai/api/system-one)；本版有意保留仓库对 noul/choice/score 的字符串问题子集，服务商增加的其他能力不在技能接口中。
 
-先按 pack.json 下载并核对整个包，再将其中 tools/jev 的已列文件原样复制到 circle-home-skills 任务所备上机和技能用 Circle 主目录的 skills/jev（不是把整个回注包当技能安装）；运行 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录>` 逐项核大小、SHA-256、缺项、额外文件和链接。不要改写目录内的脚本、hooks.json、egress.json 或 generated.json。generated.json 的 id 和 version 分别记录包名与版本，本版为 knowledge-contribution、1.1.2；不写包号或清单摘要，以免自引用。真实身份核对仍以 pack.json 的规范清单摘要和每文件摘要为准。`pack-files.ts --check` 同时比对四个词表轴及外发策略快照，重签命令无参数。
+先按 pack.json 下载并核对整个包，再将其中 tools/jev 的已列文件原样复制到 circle-home-skills 任务所备上机和技能用 Circle 主目录的 skills/jev（不是把整个回注包当技能安装）；运行 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录>` 逐项核大小、SHA-256、缺项、额外文件和链接。不要改写目录内的脚本、hooks.json、egress.json 或 generated.json。generated.json 的 id 和 version 分别记录包名与版本，本版为 knowledge-contribution、1.3.0；不写包号或清单摘要，以免自引用。真实身份核对仍以 pack.json 的规范清单摘要和每文件摘要为准。`pack-files.ts --check` 同时比对四个词表轴及外发策略快照，重签命令无参数。
 
 默认只向 Jev 发送 Hub 原树中的定义、行为和题目；默认不发用例、缺陷、观察或 src。选择加入只在本次 --send 生效；技能加载后钩子才要求确认，另备主目录也须安装同一钩子；档位必须是 model_readable，不能选择加入绕过。条目的种类、原文、引用以 Hub 返回为准，输入文件自报的 text/kind 无效。子节点说明永不取用例、缺陷或观察。问题最多 2000 字、选项说明最多 160 字；脚本不能证明模型撰写的问题里没有夹带受限原文，规程明确禁止。请求记录与未提交的判断记录留在 Circle 的工作目录内，不在仓库；submit 才上传这批提议引用的判断记录（题目、候选、摘要、版本、概率、用量等），以 notes 的 src 引用使判断可追查，不上传 Jev 凭据或 state 原文。
 

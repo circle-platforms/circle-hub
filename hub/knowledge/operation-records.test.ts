@@ -201,3 +201,27 @@ test('a product reader who can read the original sees the operation record on th
   assert.match(text, /矛盾已标记，两边都留，不裁决/);
   assert.equal(await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/net/ping'], depth:0}, ctx.w.outsider), null);
 });
+
+test('a repeated byte output keeps the exact capture record bound by its run', async t => {
+  const ctx = await world(t);
+  const first = ctx.run.sources.find(source => source.slot === 'originals' && source.reference === `src:${ctx.sha}`)!.artifact;
+  const second = await ctx.w.kit.artifacts.ingest({bytes:new TextEncoder().encode(echo), mediaType:'text/plain', origin:{upload:{session:'operation-session-two',message:null}}, author:{user:ctx.w.admin.id}, provenanceType:'client_captured', visibility:{readers:[ctx.w.admin.id],admins:true,packs:[],shareable:false}, name:'second-capture.txt'});
+  assert.notEqual(second.digest, first);
+  const tree = ctx.run.sources.find(source => source.slot === 'originals' && source.reference !== `src:${ctx.sha}`)!.reference;
+  const started = await ctx.service.startRun(ctx.w.admin, {pack:'knowledge-contribution',product:ctx.run.product,build:ctx.build.name,inputs:{subject:{reference:ctx.run.sources.find(source => source.slot==='subject')!.reference},originals:[{reference:tree},{reference:`src:${second.body.sha256}`}]}}, {...call,traceId:'a2'.repeat(16)});
+  assert.equal(started.call_result,'ok',JSON.stringify(started.errors));
+  const run = RunRecord.parse((await ctx.service.getRun(ctx.w.admin,started.run!.run))!.run);
+  const local = {...ctx,run,sha:second.body.sha256};
+  const feeding = observation(local,'/commands/system/show','执行第二次合成显示');
+  const answer = await ctx.service.submitResult(ctx.w.admin,submit(local,'/commands/system/show',feeding,'第二次合成显示'),{...call,traceId:'a3'.repeat(16)});
+  assert.equal(answer.result?.contributions?.stored.length,1,JSON.stringify(answer.errors));
+  const digest = answer.result!.contributions!.stored[0].record;
+  const page = await ctx.w.knowledge.getNodes({root:ctx.root,paths:['/commands/system/show'],depth:0},ctx.w.admin);
+  const view = page!.nodes[0].contributions!.map(row => KnowledgeContributionView.parse(row)).find(row => row.record===digest)!;
+  assert.ok('statement' in view.contribution);
+  assert.equal(view.contribution.source.records[0],second.digest);
+  const storedFeeding = view.contribution.feeding;
+  assert.ok(storedFeeding && (storedFeeding.schema === 'fed-observation@1' || storedFeeding.schema === 'fed-procedure@1' || storedFeeding.schema === 'fed-pitfall@1'));
+  assert.equal(storedFeeding.at,second.body.captured_at);
+  assert.ok(run.sources.some(source => source.artifact===second.digest));
+});

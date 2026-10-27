@@ -142,7 +142,7 @@ export class ContributionLayer {
       if(operationRecord(value.schema)&&input.kind!=='assertion')return fail('操作记录的产出种类只能是声明（assertion）；观察、步骤和教训写在 feeding 里');
       const ref=parseReference(input.source.reference);if(ref.scheme!=='src'||ref.sha256!==value.source.bytes)return fail('回注主引文必须指向同一喂入原件');
       await layer.quote(reader,{reference:input.source.reference,text:input.source.quote});
-      const original=await this.#context.records.artifacts.source(reader,ref.sha256,{consumer:'model',record:await layer.originalRecord(reader,value)});if(!original?.bytes)return fail('缺当前可读的原件；恢复来源后重交');
+      const original=await this.#context.records.artifacts.source(reader,ref.sha256,{consumer:'model',record:await layer.originalRecord(reader,value,{run:scope.run})});if(!original?.bytes)return fail('缺当前可读的原件；恢复来源后重交');
       if(operationRecord(value.schema)&&original.artifact.body.provenance_type!=='client_captured')return fail('操作记录的根据必须是出处为 client_captured 的上传原件；其他出处仍拒收');
       const node=await this.#reading.nodeAt(input.root,pathSegments(input.path));if(!node)return fail('归位路径在锁定树苗中不存在');
       const fragment=await this.#reading.treeReader({composition:scope.composition}).read(input.root,input.path,null,{user:reader.id,role:reader.role});if(!fragment)return fail('归位节点当前不可读');

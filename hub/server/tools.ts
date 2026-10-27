@@ -297,7 +297,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
       mediaType,
       origin: { upload: { session: call.context.sessionId, message: null } },
       author: { user: call.principal.id, declared: null },
-      provenanceType: 'declared',
+      provenanceType: parsed.data.provenance_type ?? 'declared',
       // B02 R[3]: what is uploaded for a run is visible to its uploader and to admins; widening goes through a share.
       visibility: { readers: [call.principal.id], admins: true, packs: [], shareable: true },
       readTier: 'model_readable',
