@@ -41,6 +41,11 @@ import {
   unregisteredBaselineNext,
   residueCaptureFact,
   residueCaptureNext,
+  compareHeldProbes,
+  disjointHoldFact,
+  holdClearNext,
+  holdMissingBaselineFact,
+  ignoredHoldProbes,
   type BedBaselineRecord,
   type BedRead,
   type BedReport,
@@ -1109,13 +1114,35 @@ export class DispatchService {
     await this.journal.append(binding, 'bed_snapshot', 'read', 'completed', { when, bed, canonical, differences, sources, reads }, sources);
     return canonical;
   }
-  private async openBedHold(bed: string): Promise<{ pre: Record<string, Canonical>; pre_reads?: BedRead[] } | null> {
+  private async openBedHold(bed: string): Promise<{ job: string; pre: Record<string, Canonical>; pre_reads?: BedRead[] } | null> {
     const rows = await this.options.records.store.findMany<ActionBody>({ kind: 'action', key: 'dispatch.phase', values: ['bed_hold'] });
     const mine = rows.filter(row => row.body.detail.bed === bed).sort((left, right) => left.created_at < right.created_at ? -1 : left.created_at > right.created_at ? 1 : 0);
     const last = mine.at(-1);
     const pre = last?.body.detail.pre;
-    if (!last || last.body.detail.state !== 'open' || !pre || typeof pre !== 'object' || Array.isArray(pre)) return null;
-    return { pre: pre as Record<string, Canonical>, pre_reads: last.body.detail.pre_reads as BedRead[] | undefined };
+    if (!last || last.body.detail.state !== 'open' || !pre || typeof pre !== 'object' || Array.isArray(pre) || typeof last.body.detail.job !== 'string') return null;
+    return { job: last.body.detail.job, pre: pre as Record<string, Canonical>, pre_reads: last.body.detail.pre_reads as BedRead[] | undefined };
+  }
+
+  /** Latest bed_hold for this executor. An open row is the hold an administrator can clear; a later clear hides it. */
+  private async latestExecutorHold(executor: string): Promise<{ job: string; bed: string; state: string } | null> {
+    const rows = await this.options.records.store.findMany<ActionBody>({ kind: 'action', key: 'dispatch.executor', values: [executor] });
+    const holds = rows.filter(row => row.body.detail.phase === 'bed_hold' && typeof row.body.detail.bed === 'string' && typeof row.body.detail.job === 'string' && typeof row.body.detail.state === 'string');
+    holds.sort((left, right) => left.created_at < right.created_at ? -1 : left.created_at > right.created_at ? 1 : 0);
+    const last = holds.at(-1);
+    if (!last) return null;
+    return { job: String(last.body.detail.job), bed: String(last.body.detail.bed), state: String(last.body.detail.state) };
+  }
+
+  /** Append a clear for the executor's open bed hold. Does not rewrite the open record. */
+  async clearBedHold(by: Principal, executor: string, reason: string): Promise<{ cleared: false } | { cleared: true; job: string; bed: string }> {
+    await this.registry.admin(by);
+    if (!reason.trim() || reason.includes('\n') || reason.includes('\r')) throw new Error('结清理由必须是一行非空说明');
+    const text = reason.trim();
+    const open = await this.latestExecutorHold(executor);
+    if (!open || open.state !== 'open') return { cleared: false };
+    const binding = await this.journal.binding(open.job);
+    await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: open.bed, state: 'clear', method: 'admin', reason: text, cleared_by: by.id, held_job: open.job });
+    return { cleared: true, job: open.job, bed: open.bed };
   }
   /** Pre-dispatch bed gate. A residue, an open recovery diff, or a missing probe refuses before any intent. */
   private async gateBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<void> {
@@ -1138,43 +1165,81 @@ export class DispatchService {
       }
     }
 
-    // Open bed hold check
+    // Open bed hold check. Overlapping probes compare held text; probes added since the hold compare a registered baseline.
     const hold = await this.openBedHold(bedNameOrExecutor);
     if (hold) {
-      let outstanding: Difference[] | null = null;
-      if (hold.pre_reads && hold.pre_reads.some(r => r.ok && 'text' in r && typeof r.text === 'string')) {
-        outstanding = [];
+      const heldReads = hold.pre_reads?.filter(read => read.ok && 'text' in read && typeof read.text === 'string') ?? [];
+      const ignoredNote = (ids: readonly string[]) => ids.length ? ignoredHoldProbes(ids) : '';
+      const withNote = (fact: string, ignored: readonly string[]) => [fact, ignoredNote(ignored)].filter(Boolean).join('；');
+      if (heldReads.length > 0) {
+        const baselines = new Map<string, { text: string; sha256: string }>();
         for (const item of spec.items) {
-          const preRead = hold.pre_reads.find(r => r.id === item.id);
-          const currentRead = reads.find(r => r.id === item.id);
-          if (!preRead || !preRead.ok || !currentRead || !currentRead.ok || !('text' in preRead) || !('text' in currentRead) || preRead.text === undefined || currentRead.text === undefined) {
-            outstanding = null;
-            break;
-          }
-          if (preRead.text !== currentRead.text) {
-            const diffLines = lineDiff(preRead.text, currentRead.text);
-            outstanding.push({
-              item: item.id,
-              kind: 'changed',
-              identity: item.id,
-              diff_lines: diffLines,
-              pre_sha256: preRead.sha256,
-              post_sha256: currentRead.sha256,
-            });
-          }
+          if (heldReads.some(read => read.id === item.id)) continue;
+          const baseline = await this.getBaseline(binding.executor, item.id);
+          if (baseline) baselines.set(item.id, { text: baseline.text, sha256: baseline.sha256 });
         }
+        const compared = compareHeldProbes(
+          heldReads.flatMap(read => read.ok && 'text' in read && typeof read.text === 'string' ? [{ id: read.id, text: read.text, sha256: 'sha256' in read ? read.sha256 : undefined }] : []),
+          spec.items.map(item => {
+            const read = reads.find(entry => entry.id === item.id);
+            const text = read?.ok && 'text' in read && typeof read.text === 'string' ? read.text : undefined;
+            return { id: item.id, text, sha256: read?.ok && 'sha256' in read ? read.sha256 : undefined };
+          }),
+          baselines,
+        );
+        if (compared.outcome === 'disjoint') {
+          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
+          throw new PrecheckFactError(withNote(disjointHoldFact(hold.job, compared.heldIds, compared.currentIds), compared.ignored), holdClearNext(binding.executor));
+        }
+        if (compared.outcome === 'unread') {
+          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
+          throw new PrecheckFactError(missingProbeFact(compared.unread), unknownSteps(spec.items, compared.unread));
+        }
+        if (compared.outcome === 'no_baseline') {
+          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, compared.differences);
+          throw new PrecheckFactError(withNote(holdMissingBaselineFact(compared.missingBaseline), compared.ignored), unregisteredBaselineNext(binding.executor, compared.missingBaseline));
+        }
+        if (compared.outcome === 'unrestored') {
+          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, compared.differences);
+          const lines = compared.differences.flatMap(diff => diff.diff_lines ?? []).slice(0, 5).join('；');
+          throw new PrecheckFactError(withNote([unrestoredFact(compared.differences), lines].filter(Boolean).join('；'), compared.ignored), cleanupSteps(spec.items, compared.differences.map(diff => diff.item)));
+        }
+        await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: bedNameOrExecutor, state: 'clear', pre: hold.pre, ...(compared.ignored.length ? { ignored_probes: compared.ignored, note: ignoredHoldProbes(compared.ignored) } : {}) });
       } else {
-        outstanding = againstStored(spec.items, hold.pre, reads);
+        const heldIds = Object.keys(hold.pre);
+        const currentIds = spec.items.map(item => item.id);
+        const currentSet = new Set(currentIds);
+        const ignored = heldIds.filter(id => !currentSet.has(id));
+        const overlap = spec.items.filter(item => Object.hasOwn(hold.pre, item.id));
+        if (overlap.length === 0) {
+          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
+          throw new PrecheckFactError(withNote(disjointHoldFact(hold.job, heldIds, currentIds), ignored), holdClearNext(binding.executor));
+        }
+        const outstanding = againstStored(overlap, hold.pre, reads);
+        if (outstanding === null) {
+          const unread = overlap.filter(item => !reads.find(read => read.id === item.id)?.ok).map(item => item.id);
+          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
+          throw new PrecheckFactError(missingProbeFact(unread.length ? unread : overlap.map(item => item.id)), unknownSteps(spec.items, unread.length ? unread : overlap.map(item => item.id)));
+        }
+        const added = spec.items.filter(item => !Object.hasOwn(hold.pre, item.id));
+        const missingBaseline: string[] = [];
+        for (const item of added) {
+          const read = reads.find(entry => entry.id === item.id);
+          const text = read?.ok && 'text' in read && typeof read.text === 'string' ? read.text : undefined;
+          const baseline = await this.getBaseline(binding.executor, item.id);
+          if (!baseline || text === undefined) { missingBaseline.push(item.id); continue; }
+          if (text !== baseline.text) outstanding.push({ item: item.id, kind: 'changed', identity: item.id, diff_lines: lineDiff(baseline.text, text), pre_sha256: baseline.sha256, post_sha256: read?.ok && 'sha256' in read ? read.sha256 : undefined });
+        }
+        if (missingBaseline.length) {
+          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, outstanding);
+          throw new PrecheckFactError(withNote(holdMissingBaselineFact(missingBaseline), ignored), unregisteredBaselineNext(binding.executor, missingBaseline));
+        }
+        if (outstanding.length) {
+          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, outstanding);
+          throw new PrecheckFactError(withNote(unrestoredFact(outstanding), ignored), cleanupSteps(spec.items, outstanding.map(diff => diff.item)));
+        }
+        await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: bedNameOrExecutor, state: 'clear', pre: hold.pre, ...(ignored.length ? { ignored_probes: ignored, note: ignoredHoldProbes(ignored) } : {}) });
       }
-      if (outstanding === null) {
-        await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
-        throw new PrecheckFactError(missingProbeFact(spec.items.map(item => item.id)), unknownSteps(spec.items, spec.items.map(item => item.id)));
-      }
-      if (outstanding.length) {
-        await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, outstanding);
-        throw new PrecheckFactError(unrestoredFact(outstanding), cleanupSteps(spec.items, outstanding.map(diff => diff.item)));
-      }
-      await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: bedNameOrExecutor, state: 'clear', pre: hold.pre });
     }
 
     // Baseline residue check

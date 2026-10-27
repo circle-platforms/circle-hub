@@ -163,11 +163,11 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
   } finally { await dispatch.close(); }
 }
 
-export const BED_USAGE = 'baseline record <执行器> --probe <id> [--reason <说明>] | baseline list [<执行器>] | baseline show <执行器> --probe <id>';
+export const BED_USAGE = 'baseline record <执行器> --probe <id> [--reason <说明>] | baseline list [<执行器>] | baseline show <执行器> --probe <id> | hold clear <执行器> --reason <理由>';
 
 export async function bedCommand(s: JobCommandSession, args: readonly string[]): Promise<number> {
   const [group, sub, ...rest] = args;
-  if (group !== 'baseline') throw new UsageError(`bed 的子命令：${BED_USAGE}`);
+  if (group !== 'baseline' && group !== 'hold') throw new UsageError(`bed 的子命令：${BED_USAGE}`);
   let parsed;
   try {
     parsed = parseArgs({
@@ -184,8 +184,16 @@ export async function bedCommand(s: JobCommandSession, args: readonly string[]):
   }
   const { positionals, values } = parsed;
   const by = await s.admin();
-  const dispatch = await service(s, sub === 'record');
+  const dispatch = await service(s, group === 'baseline' && sub === 'record');
   try {
+    if (group === 'hold') {
+      if (sub !== 'clear' || positionals.length !== 1) throw new UsageError(`bed hold clear 用法：hold clear <执行器> --reason <理由>`);
+      if (!values.reason || !values.reason.trim() || values.reason.includes('\n') || values.reason.includes('\r')) throw new UsageError('结清理由必须是一行非空说明');
+      const result = await dispatch.clearBedHold(by, positionals[0], values.reason.trim());
+      if (!result.cleared) { s.out('没有未结清的占用'); return 0; }
+      s.out(`已结清占用：执行器 ${positionals[0]}；台架 ${result.bed}；作业 ${result.job.slice(0, 12)}；方式 admin`);
+      return 0;
+    }
     if (sub === 'record') {
       if (positionals.length !== 1 || !values.probe) throw new UsageError(`bed baseline record 用法：baseline record <执行器> --probe <id> [--reason <说明>]`);
       const executor = positionals[0];
