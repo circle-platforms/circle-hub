@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.6.18",
+  "version": "1.6.19",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "7efc304a78defa029b8828e7f58f2b389129bb6aaa4f401effb6a8305af1c12d",
-      "size": 9381
+      "sha256": "d74feebf243159e3238f493d4d10d258de6c012258f5123bf4b0d38bc426ef21",
+      "size": 10789
     },
     {
       "path": "checks.json",

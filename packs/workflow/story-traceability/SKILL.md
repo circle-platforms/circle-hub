@@ -2,6 +2,22 @@
 
 Hub 只分发和核验，所有交互动作由客户端执行。本包没有模型调用，不生成用例。
 
+## 知识视图标识
+
+写法是 `knowledge:<视图>:<产品>:<构建>[?参数]`，四段用冒号，参数在问号后。产品按登记的大小写照抄。下面用合成产品 ORBIT、构建 Rel_ORBIT_7_1_0_30，不要写成 orbit，也不要换成别的分隔符。
+
+- facets：`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。必填 kind、by。
+- index：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。必填 kind、key。
+- impact：`knowledge:impact:ORBIT:Rel_ORBIT_7_1_0_29..Rel_ORBIT_7_1_0_30?changed=definition&attached=case`。构建段写成 `<起始>..<目标>`；changed、attached、catalog 可以不写。
+- links：`knowledge:links:ORBIT:Rel_ORBIT_7_1_0_30`。没有必填参数，prefix 默认 /。
+
+三种写错：
+（1）分隔符用了 @。错 `knowledge:facets@ORBIT@Rel_ORBIT_7_1_0_30?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（2）缺构建。错 `knowledge:facets:ORBIT?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（3）参数不全。错 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?key=commands`。对 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。
+
+本包的索引用这条：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=stories`。
+
 1. 先问用户产品、构建和要核对的需求编号；没有编号就询问，不猜。可选已有 PLM 构建列表与明确的构建记录编号：管理员核实真实字段后配置资源 `settings.build_story_field`。只有指定字段是编号数组才可从构建取范围；范围依据代码为 observed（用户提供编号时为 declared），显示文字来自词表标签。配置或字段缺失、数组为空、应答未包含构建编号三者分别说明；向用户索取需求编号，不能把空数组说成字段缺失。不要让用户填写字段名。用户给出编号的路径优先。
 2. 编号按数字去前导零，数值排序去重，每批最多 50 个，绑定多个 `stories: [{external: "plm:stories:<编号>+…"}]`。在 `cases` 绑定 `knowledge:index:<产品>:<构建>?kind=case&key=stories`。已经绑定的需求编号由 Hub 写入 cases 的 only=；fields 缺省时补上 document、node、stories、title。不要为了收窄用例索引再向用户要一遍编号。需求编号本身仍须询问，不猜测范围。可选构建路径只绑定 `build: {external: "plm:builds:<产品编号>"}` 并给 `parameters.build_id`，Hub 从构建范围自动分批读取需求详情。不要从发布说明的缺陷范围猜需求范围。
 3. `start_run` 指定 `pack: "story-traceability"`。这个任务包不绑定产品线：不要给 start_run 顶层的 product、version、build，也不要写进 parameters。构建范围只用 inputs.build 和 parameters.build_id。这是事实生产运行，不提交模型生成的结果。分页读取完整条目及跨条目统计。每个条目列出原样状态和阶段、用例、来源；PLM 没返回不算任何状态。没有状态到“已交付”的映射，不推断已交付。字段未提供只是原件里的观察事实，不要求补写或修补原件；应答里没有某编号时，立即请用户确认该编号，不宣称该需求不存在。
