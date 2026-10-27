@@ -18,6 +18,7 @@
 - `tests/acceptance/43-r5-t4-3-change.test.ts`。
 - `tests/acceptance/44-r5-t5-1-webui.test.ts`。
 - `tests/acceptance/support/operation-acceptance.ts`（新增共享夹具，如确有需要）。
+- `docs/hub-r4-tasks/skill-lazy-locate.md` 中不合规的本机目录写法（仅合入门要求的单行路径清理，不涉及该任务的实现）。
 
 其他路径不改。合入前主线若触碰这些文件，先同步、复核并重跑规定验证。
 

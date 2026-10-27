@@ -37,7 +37,7 @@
 
 ## 分支、路径和规矩
 
-- 分支和工作树：`skill-lazy-locate`，目录 `~/cursor-trees/skill-lazy-locate`（集成者已从 hub-redesign 开出，依赖已链接）。
+- 分支和工作树：`skill-lazy-locate`，目录 `cursor-trees/skill-lazy-locate`（集成者已从 hub-redesign 开出，依赖已链接）。
 - 可以改的路径：
   - `hub/refs/**`（含测试），`hub/knowledge/verify.ts`、`applicability-claims.ts`、`produce.ts`、`feeding.ts` 及它们的测试，`hub/runs/packs/validate.ts` 及测试；
   - `contracts/src/pack.ts` 与重新生成的 `contracts/generated/**`；
