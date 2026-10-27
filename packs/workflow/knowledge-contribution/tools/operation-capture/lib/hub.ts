@@ -95,12 +95,14 @@ export class HubClient {
     return value;
   }
 
-  async upload(bytes: Uint8Array, sequence: number): Promise<string> {
+  async upload(bytes: Uint8Array, sequence: number, capturedAt?: string): Promise<{reference:string;artifact:string}> {
+    if (capturedAt !== undefined) need(new Date(capturedAt).toISOString() === capturedAt, 'invalid_capture_time', '采集时刻格式不对');
     const args = {
       file_path: Buffer.from(bytes).toString('base64'),
       media_type: 'text/plain',
       name: `circle-operation-${sequence}.txt`,
       provenance_type: GENERATED.provenance_type,
+      ...(capturedAt ? { captured_at: capturedAt } : {}),
     };
     const check = (token: string) => need(!Buffer.from(bytes).toString('utf8').includes(token), 'credential_redaction_failed', '原件含当前 Hub 令牌，停止上传');
     const initial = await validateTokenFile(this.tokenFile);
@@ -114,7 +116,8 @@ export class HubClient {
       const value = await this.call('upload_file', args);
       const digest = sha256(bytes);
       need(value.call_result === 'ok' && value.acceptance === 'accepted' && value.reference === `src:${digest}` && value.sha256 === digest && value.size === bytes.byteLength, 'invalid_upload_receipt', 'Hub 上传回执与原件不符');
-      return value.reference as string;
+      need(typeof value.artifact === 'string' && /^[0-9a-f]{64}$/.test(value.artifact), 'invalid_upload_receipt', 'Hub 上传回执缺具体原件记录；使用支持 artifact 的 Hub，不按字节猜采集身份');
+      return { reference: value.reference as string, artifact: value.artifact };
     } finally {
       this.tokenSnapshot = null;
     }

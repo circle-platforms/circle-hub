@@ -20,6 +20,7 @@ import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabul
 import {callPackFunction,callPackFunctionBatch} from '../rules/api.ts';
 import {INDEX} from './store.ts';
 import {operationSchema} from './declaration-grade.ts';
+import {completeOperationDevice} from './feeding-leases.ts';
 import {SeedlingBody} from '../../contracts/src/knowledge.ts';
 import type {KnowledgeContext} from './context.ts';
 import type {TreeReading} from './read.ts';
@@ -79,11 +80,12 @@ interface SeedlingAttachment {locked_root:string;locked_composition:string|null;
 interface Projected {rows:Projection[];pack:string;digest:string;attachment:SeedlingAttachment|null}
 const annotations=['classification','manual_link','relations','applicability','correction','command_link','case_link','paragraph'] as const;
 export const operationRecord=(schema:unknown):schema is 'fed-observation@1'|'fed-procedure@1'|'fed-pitfall@1'=>operationSchema(schema);
-/** Content identity of an operation record: the canonical statement and its quotations, nothing else. */
+/** Content identity of an operation record: its canonical statement, quotations, exact capture and declared target, nothing else. */
 export function operationIdentity(body:Record<string,unknown>):Record<string,unknown>{
-  if(body.schema==='fed-observation@1')return {action:body.action,result:body.result};
-  if(body.schema==='fed-procedure@1')return {goal:body.goal,steps:body.steps};
-  if(body.schema==='fed-pitfall@1')return {phenomenon:body.phenomenon,suggestion:body.suggestion,quote:body.quote};
+  const capture=Object.fromEntries([['artifact',object(body.source)?body.source.artifact:undefined],['device',body.device],['bed',body.bed]].filter(([,value])=>value!==undefined));
+  if(body.schema==='fed-observation@1')return {action:body.action,result:body.result,...capture};
+  if(body.schema==='fed-procedure@1')return {goal:body.goal,steps:body.steps,...capture};
+  if(body.schema==='fed-pitfall@1')return {phenomenon:body.phenomenon,suggestion:body.suggestion,quote:body.quote,...capture};
   throw new Error('not an operation record');
 }
 function operationQuotes(body:Record<string,any>):Array<Record<string,any>>{
@@ -408,7 +410,7 @@ export class FeedingLayer {
  async todos(principal:Principal):Promise<Array<Record<string,any>>>{if(principal.role!=='admin')return [];await this.refreshRetractionTodos();const rows=await this.context.store.all<any>({key:TODO,value:'1',kind:'action'}),out=[];for(const row of rows){const value=row.body.detail?.feeding_todo;if(!value)continue;const state=(await this.context.records.store.find<any>({key:'knowledge.feeding.todo.state',value:value.key,kind:'action',newestFirst:true,limit:1})).items[0];if(state?.body.detail?.resolved!==true){const latest=(await this.context.records.store.find<any>({key:'knowledge.feeding.todo.detail',value:value.key,kind:'action',newestFirst:true,limit:1})).items[0];out.push({record:row.digest,...value,...latest?.body.detail?.feeding_todo});}}return out;}
  private async originalSource(principal:Principal,body:Record<string,any>,scope:FeedingScope={}):Promise<Source>{
   if(body.schema==='fed-note@1')return this.uploadedSource(principal,body);
-  if(operationRecord(body.schema)){const artifact=await this.operationArtifact(principal,body.source.bytes,scope.run??null);return this.source(principal,body.source.bytes,artifact.digest);}
+  if(operationRecord(body.schema)){const artifact=await this.operationArtifact(principal,body.source.bytes,scope.run??null,body.source.artifact);return this.source(principal,body.source.bytes,artifact.digest);}
   if(scope.sourceRecord)return this.source(principal,body.source.bytes,scope.sourceRecord,scope.readManifest);
   const native=await this.nativeObservation(principal,body);
   if(native)for(const digest of native.body.validity.bound){const record=await this.context.records.store.get<any>(digest);if(record?.kind==='source_artifact'&&record.body.sha256===body.source.bytes){const manifest=native.body.statement.data?.read_manifest;return this.source(principal,body.source.bytes,digest,typeof manifest==='string'?manifest:undefined);}}
@@ -439,31 +441,38 @@ export class FeedingLayer {
   if(locked)return {source:'run_lock',build:locked,line};
   return {source:'undeclared',build:null,line:null,missing:'运行没有锁定构建，台架结构里也没有在装构建',next_action:'用锁定了构建的运行重交，或在台架结构里登记在装构建后再交；不要在提交里写版本'};
  }
- private async operationArtifact(principal:Principal,bytes:string,runId:string|null):Promise<SourceArtifact>{
+ private async operationArtifact(principal:Principal,bytes:string,runId:string|null,requested?:unknown):Promise<SourceArtifact>{
   const candidates=(await this.context.records.artifacts.records(bytes)).filter(row=>'upload' in row.body.origin&&row.body.provenance_type==='client_captured'&&row.body.author.user!==null&&(row.body.author.user===principal.id||principal.role==='admin'));
   if(runId){
    const run=await runById(this.context.records.store,runId);
    const bound=run?.body.sources.filter(binding=>{
-    if(typeof binding.artifact!=='string')return false;
+    if(typeof binding.artifact!=='string'||requested!==undefined&&binding.artifact!==requested)return false;
     const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===bytes;
    })??[];
-   if(bound.length!==1)fail('操作记录必须唯一对应本次运行绑定的上传原件记录；重新绑定本次采集后重交');
+   if(bound.length!==1)fail(bound.length>1&&requested===undefined?'同字节原件有多份绑定；从同一次上传回执填写 source.artifact 后重交，不能按摘要猜测':'操作记录必须唯一对应本次运行绑定的上传原件记录；重新绑定本次采集后重交');
    const artifact=candidates.find(row=>row.digest===bound[0].artifact);
    if(!artifact)fail('运行绑定的原件不是当前上传者有权使用的 client_captured 记录；重新上传本次采集后重交');
    return artifact;
   }
-  const artifact=candidates[0];
-  if(!artifact)fail('操作记录的根据必须是当前上传者的 client_captured 原件；观察到的、投影的、声明的和候选的原件仍拒收');
-  return artifact;
+  const selected=requested===undefined?candidates[0]:candidates.find(row=>row.digest===requested);
+  if(!selected)fail('操作记录的根据必须是当前上传者的 client_captured 原件；观察到的、投影的、声明的和候选的原件仍拒收');
+  return selected;
  }
  private async completeOperation(principal:Principal,raw:unknown,scope:FeedingScope):Promise<unknown>{
   if(!object(raw)||!operationRecord(raw.schema))return raw;
-  for(const key of ['binding','version','build','line','family','by','run','at','object'])if(key in raw)fail(`提交写了 ${key}。操作记录的版本和采集事实只由 Hub 填写；缺的是运行锁定的构建或台架在装构建。删掉该字段后重交；这不是终局。`);
+  for(const key of ['binding','version','build','line','family','by','run','at','object','lease','lease_id','lease_unconfirmed','captured_at_declared','received_at'])if(key in raw){
+   if(key==='lease'||key==='lease_id'||key==='lease_unconfirmed')fail(`提交写了 ${key}。租约由 Hub 填写，删掉该字段后重交；Hub 按上传者、声明采集时刻和收到时刻核对租约记录。`);
+   fail(`提交写了 ${key}。操作记录的版本和采集事实只由 Hub 填写；缺的是运行锁定的构建或台架在装构建。删掉该字段后重交；这不是终局。`);
+  }
   const bytes=object(raw.source)&&raw.source.system==='upload'&&typeof raw.source.bytes==='string'?raw.source.bytes:null;
   if(!bytes)fail('操作记录缺上传原件');
-  const artifact=await this.operationArtifact(principal,bytes,scope.run??null);
+  const artifact=await this.operationArtifact(principal,bytes,scope.run??null,object(raw.source)?raw.source.artifact:undefined);
+  const actor=artifact.body.author.user;
+  if(actor===null)fail('操作记录的上传原件缺记录者');
   if(raw.product!==scope.product||raw.root!==(scope.root??null)||!scope.product||!scope.root)fail('操作记录必须挂在本次运行锁定的产品和根上');
-  return {...raw,object:sha256Hex(canonicalize(operationIdentity(raw))),binding:await this.operationBinding(scope),by:artifact.body.author.user,run:scope.run??null,at:artifact.body.captured_at};
+  const device=await completeOperationDevice(this.context.records.store,{run:scope.run??null,device:raw.device,bed:raw.bed,user:actor,capturedAt:artifact.body.captured_at,receivedAt:artifact.created_at,captureTimeDeclared:artifact.body.captured_at_declared===true},this.context.leases);
+  const resolved={...raw,source:{...raw.source as Record<string,unknown>,artifact:artifact.digest},...device};
+  return {...resolved,object:sha256Hex(canonicalize(operationIdentity(resolved))),binding:await this.operationBinding(scope),by:actor,run:scope.run??null,at:artifact.body.captured_at_declared===true?artifact.body.captured_at:undefined,captured_at_declared:artifact.body.captured_at_declared===true,received_at:artifact.created_at};
  }
  private async checkOperation(body:Record<string,any>,source:{bytes:Uint8Array;artifact:{body:{provenance_type:string;origin:object}}}):Promise<void>{
   if(source.artifact.body.provenance_type!=='client_captured'||!('upload' in source.artifact.body.origin))fail('操作记录的根据必须是出处为 client_captured 的上传原件；其他出处仍拒收');

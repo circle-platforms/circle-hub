@@ -1426,6 +1426,13 @@ function resolveText(v: ResolveOut): string {
 
 // ---------------------------------------------------------------- submit_result
 
+function operationReceipt(entry: {device?: string; bed?: string; lease?: string | null; lease_id?: string | null; lease_unconfirmed?: {missing: string; next_action: string}}): string {
+  if (entry.device === undefined || entry.lease === undefined) return '';
+  const device = `；设备 ${oneLine(entry.device)}`;
+  if (entry.lease_unconfirmed) return `${device}；租约未能确认：${oneLine(entry.lease_unconfirmed.missing)}；下一步：${oneLine(entry.lease_unconfirmed.next_action)}`;
+  return `${device}；${entry.lease === null ? '无租约（未授权）' : `租约 ${oneLine(entry.lease)}（记录 ${oneLine(entry.lease_id ?? '')}）`}`;
+}
+
 function submitText(v: SubmitOut, context: TextContext): string {
   const result = v.result;
   const accepted = v.acceptance === 'accepted' && result !== undefined;
@@ -1445,7 +1452,7 @@ function submitText(v: SubmitOut, context: TextContext): string {
   if (result?.contributions !== undefined) {
     const c = result.contributions;
     head.push(`回注：提交 ${c.submitted} 条，入层 ${c.stored.length} 条，未入层 ${c.not_stored.length} 条`);
-    for (const entry of c.stored) head.push(`回注条目 ${oneLine(entry.item)}：rec:${entry.record}`);
+    for (const entry of c.stored) head.push(`回注条目 ${oneLine(entry.item)}：rec:${entry.record}${operationReceipt(entry)}`);
     for (const entry of c.not_stored) head.push(`未入层条目 ${oneLine(entry.item)}：${oneLine(entry.reason)}`);
   }
   const blocks: Block[] = [{ priority: 0, head }];

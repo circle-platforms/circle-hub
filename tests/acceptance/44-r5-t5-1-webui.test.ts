@@ -103,4 +103,30 @@ describe('scenario 44: T5-1 synthetic WebUI originals and operation integration'
     const notText = await world.client.call('get_nodes', { reference: `src:${sha}/text@1/l/1` });
     assert.equal(notText.isError, true, 'a PNG is not promoted to a text@1 quotation');
   });
+
+  test('submits a declared browser device and accepts it with the explicit unauthorized lease state', async t => {
+    const world = await openOperationWorld(t, { manual: true });
+    if (!world) return;
+    const path = await pageTarget(world);
+    const saved = await capture(world, PAGE_TEXT, {
+      url: 'http://192.0.2.45/synthetic/pools', bed: 'bench-web', device: 'edge-web',
+    }, 'browser_snapshot');
+    const first = quote(saved.event, 1, 'Navigation: Synthetic Pools');
+    const receipt = await integrate(world, [{
+      capture: saved.event.output.sha256, kind: 'procedure', path, device: 'edge-web',
+      statement: '合成页面设备声明', goal: '核对设备与租约状态',
+      steps: [{ text: '打开合成池页面', quote: { line: 1, text: first.text } }],
+    }]);
+    assert.deepEqual(receipt.result.contributions.stored[0], {
+      item: 'operation-1', record: receipt.result.contributions.stored[0].record, device: 'edge-web', bed: 'bench-web', lease: null, lease_id: null,
+    });
+    const record = receipt.result.contributions.stored[0].record;
+    const view = await contribution(world, path, record);
+    const feeding = FedProcedureSchema.parse(view.contribution.feeding);
+    assert.equal(feeding.device, 'edge-web');
+    assert.equal(feeding.lease, null);
+    assert.match(view.note ?? '', /设备 edge-web；无租约（未授权）/);
+    const page = await world.client.call('get_nodes', { root: world.root, paths: [path], depth: 0 });
+    assert.match(page.text, /设备 edge-web；无租约（未授权）/);
+  });
 });

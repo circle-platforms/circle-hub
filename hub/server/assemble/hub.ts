@@ -158,6 +158,12 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   const external = createExternalReader(connectors);
   const resources = createResourceCatalog(connectors);
 
+  // The lease service: the caller's own (tests may inject a clock), or one built over the same database — so `serve`
+  // and the test hub alike give lease-declaring workflows a service (C3); a CLI command's assembly may pass null to
+  // keep a read-only command from opening a pool it does not need.
+  const leaseDatabase = options.leases === undefined ? new Database(createPool(config.database, 2)) : null;
+  const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, ...(now === undefined ? {} : { now: async () => now() }) });
+
   // 5. Knowledge: it reads its sources through the connectors alone. No placer: the Hub calls no model, so spans the
   // code cannot place stay unplaced at the root (a producer may declare them for the bot's placement proposals).
   const knowledge = createKnowledge({
@@ -168,6 +174,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     sandbox: { requireOsIsolation: sandbox.requireOsIsolation },
     ...(now === undefined ? {} : { clock: now }),
     admin: options.knowledgeAdmin ?? null,
+    leases,
   });
 
   // 6. The named documents (C4): doc put/list/show and the reader of the `doc:doc:` external ids.
@@ -178,11 +185,6 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   // the connectors. It writes each call's reasons to the call's admin note itself (CallContext.adminNote); the connectors
   // and the registry report through the call notes.
   const runsExternal = routeDocs(docs.reader, routeKnowledgeViews(createKnowledgeReader(knowledge), external));
-  // The lease service: the caller's own (tests may inject a clock), or one built over the same database — so `serve`
-  // and the test hub alike give lease-declaring workflows a service (C3); a CLI command's assembly may pass null to
-  // keep a read-only command from opening a pool it does not need.
-  const leaseDatabase = options.leases === undefined ? new Database(createPool(config.database, 2)) : null;
-  const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, ...(now === undefined ? {} : { now: async () => now() }) });
   let dispatch: DispatchService | null = null;
   const engineDeps:RunsEngineDeps = {
     effectRegistry:{snapshot:variables=>freezeEffectRegistry(records,variables)},

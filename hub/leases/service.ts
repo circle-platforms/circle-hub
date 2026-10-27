@@ -12,6 +12,7 @@ import { RECORD_SCHEMAS } from '../records/constants.ts';
 import type { Database, PgTransaction } from '../records/db.ts';
 import type { LeaseOp } from '../../contracts/generated/vocabulary.ts';
 import { LeaseRegistrationDetail, LeaseDetail } from '../../contracts/src/records.ts';
+import { IsoTime } from '../../contracts/src/common.ts';
 
 /** The holder of a lease: the user and the run (a lease is held by a run, D04 R[0]). */
 export interface Holder {
@@ -135,7 +136,7 @@ export class LeaseService {
           rows.push({ key, token: Number(inserted.rows[0].token) });
         }
         const token = Math.max(...rows.map((r) => r.token));
-        await this.#appendAction(tx, 'acquire', lease, keys, input.holder, until?.toISOString() ?? null, token);
+        await this.#appendAction(tx, 'acquire', lease, keys, input.holder, until?.toISOString() ?? null, token, {}, now.toISOString());
         const granted: AcquireOutcome = { ok: true, lease, keys, until: until?.toISOString() ?? null, token };
         return granted;
       })
@@ -247,7 +248,7 @@ export class LeaseService {
       for (const key of input.keys) {
         await this.#db.query(`UPDATE leases SET released_at = $2, token = token + 1 WHERE key = $1 AND released_at IS NULL`, [key, now], tx);
       }
-      await this.#appendAction(tx, 'force_release', lease, input.keys, holder, until, token, { by: input.by, reason: input.reason, previous_holders: holding.map(row=>({key:row.key,user:row.user_id,run:row.run_id})) });
+      await this.#appendAction(tx, 'force_release', lease, input.keys, holder, until, token, { by: input.by, reason: input.reason, previous_holders: holding.map(row=>({key:row.key,user:row.user_id,run:row.run_id})) }, now.toISOString());
       return { ok: true, lease, until, token };
     });
   }
@@ -293,11 +294,39 @@ export class LeaseService {
       let reclaimed = 0;
       for (const row of rows.rows) {
         await this.#db.query(`UPDATE leases SET released_at = $2, token = token + 1 WHERE key = $1`, [row.key, now], tx);
-        await this.#appendAction(tx, 'take_over', row.lease_id, [row.key], { user: row.user_id, run: row.run_id }, row.expires_at?.toISOString() ?? null, Number(row.token) + 1, { reason: '孤儿回收：行引用的运行不存在' });
+        await this.#appendAction(tx, 'take_over', row.lease_id, [row.key], { user: row.user_id, run: row.run_id }, row.expires_at?.toISOString() ?? null, Number(row.token) + 1, { reason: '孤儿回收：行引用的运行不存在' }, now.toISOString());
         reclaimed++;
       }
       return reclaimed;
     });
+  }
+
+  /** Read one exact resource key's latest pre-window action and bounded in-window actions, with verified record bodies. */
+  async history(input: { key: string; from: string; to: string; limit?: number }): Promise<{ before: StoredRecord<ActionBody> | null; events: StoredRecord<ActionBody>[]; complete: boolean; unattributable: StoredRecord<ActionBody>[] }> {
+    if (!KEY.test(input.key)) throw new TypeError('invalid lease history key');
+    const from = IsoTime.parse(input.from), to = IsoTime.parse(input.to);
+    if (Date.parse(from) > Date.parse(to)) throw new TypeError('lease history window is inverted');
+    const limit = input.limit ?? 1024;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 4096) throw new TypeError('lease history limit must be between 1 and 4096');
+    const action = `i.key = 'action.kind' AND i.value = 'lease' AND r.kind = 'action' AND r.schema = '${RECORD_SCHEMAS.action}' AND (r.body)::jsonb ->> 'action' = 'lease'`;
+    const legacy = `(${action} AND ((r.body)::jsonb -> 'detail' -> 'keys') @> $2::jsonb AND NOT EXISTS (SELECT 1 FROM record_index newer WHERE newer.digest = r.digest AND newer.key = 'lease.key'))`;
+    const predicate = `((i.key = 'lease.key' AND i.value = $1) OR ${legacy})`;
+    const beforeRows = await this.#db.query<{ digest: string }>(`SELECT r.digest FROM record_index i JOIN records r ON r.digest = i.digest WHERE ${predicate} AND r.created_at < $3::timestamptz ORDER BY r.seq DESC LIMIT 1`, [input.key, JSON.stringify([input.key]), from]);
+    const eventRows = await this.#db.query<{ digest: string }>(`SELECT r.digest FROM record_index i JOIN records r ON r.digest = i.digest WHERE ${predicate} AND r.created_at >= $3::timestamptz AND r.created_at <= $4::timestamptz ORDER BY r.seq ASC LIMIT $5`, [input.key, JSON.stringify([input.key]), from, to, limit + 1]);
+    const keys = `(r.body)::jsonb -> 'detail' -> 'keys'`;
+    const damaged = await this.#db.query<{ digest: string }>(`SELECT r.digest FROM record_index i JOIN records r ON r.digest = i.digest WHERE ${action} AND COALESCE((r.body)::jsonb -> 'detail' ->> 'op', '') NOT IN ('register', 'unregister') AND r.created_at <= $1::timestamptz AND (CASE WHEN jsonb_typeof(${keys}) = 'array' THEN jsonb_array_length(${keys}) = 0 OR EXISTS (SELECT 1 FROM jsonb_array_elements(${keys}) entry WHERE jsonb_typeof(entry) <> 'string') ELSE true END) ORDER BY r.seq DESC LIMIT 1`, [to]);
+    const load = async (rows: readonly { digest: string }[]): Promise<StoredRecord<ActionBody>[]> => {
+      const records = await this.#records.getMany<ActionBody>(rows.map(row => row.digest));
+      return rows.map(row => {
+        const record = records.get(row.digest);
+        if (!record) throw new Error('租约历史记录不可读');
+        return record;
+      });
+    };
+    const before = beforeRows.rows.length === 0 ? null : (await load(beforeRows.rows))[0]!;
+    const events = await load(eventRows.rows.slice(0, limit));
+    const unattributable = await load(damaged.rows);
+    return { before, events, complete: eventRows.rows.length <= limit, unattributable };
   }
 
   /** The lease action records of a prefix, oldest first (the audit line B05 keeps). */
@@ -325,8 +354,8 @@ export class LeaseService {
   async #change(keys: string[], holder: Holder, op: Extract<LeaseOp, 'extend' | 'release'>, ttlSeconds: number, maxTtlSeconds: number | undefined): Promise<ChangeOutcome> {
     const ordered = [...keys].sort();
     return this.#db.transaction(async (tx) => {
-      const now = await this.#nowIn(tx);
       const rows = await this.#rowsLocked(ordered, tx);
+      const now = await this.#nowIn(tx);
       if (rows.length === 0) return { ok: false, code: 'LEASE_NO_ROW', message: `这些键上没有租约行` };
       if (rows.some((row) => (row.run_id !== holder.run || row.user_id !== holder.user))) {
         return { ok: false, code: 'LEASE_UNAVAILABLE', message: `键 ${rows.find((row) => row.run_id !== holder.run || row.user_id !== holder.user)!.key} 由别的运行持有` };
@@ -364,7 +393,7 @@ export class LeaseService {
         }
         token += 1;
       }
-      await this.#appendAction(tx, op, lease, ordered, holder, until, token);
+      await this.#appendAction(tx, op, lease, ordered, holder, until, token, { key_leases: rows.map(row => ({ key: row.key, lease: row.lease_id })) }, now.toISOString());
       return { ok: true, lease, until, token };
     });
   }
@@ -397,9 +426,9 @@ export class LeaseService {
     return row.rows[0]?.expires_at?.toISOString() ?? null;
   }
 
-  async #appendAction(tx: PgTransaction, op: LeaseOp, lease: string, keys: string[], holder: Holder, until: string | null, token: number, extra: Record<string, unknown> = {}): Promise<void> {
+  async #appendAction(tx: PgTransaction, op: LeaseOp, lease: string, keys: string[], holder: Holder, until: string | null, token: number, extra: Record<string, unknown> = {}, at: string): Promise<void> {
     const detail = LeaseDetail.parse({ op, lease, keys, holder, until, token });
-    const startedAt = new Date().toISOString();
+    const startedAt = at;
     const body: ActionBody = {
       action: 'lease',
       run: holder.run,
@@ -416,6 +445,6 @@ export class LeaseService {
       detail: { ...(detail as unknown as Record<string, unknown>), ...extra },
     };
     await this.#records.put<ActionBody>({ kind: 'action', schema: RECORD_SCHEMAS.action, provenance: 'observed', created_at: startedAt, body,
-      index: [{ key: 'action.kind', value: 'lease' }, { key: 'action.run', value: holder.run }, { key: 'lease.id', value: lease }] }, tx);
+      index: [{ key: 'action.kind', value: 'lease' }, { key: 'action.run', value: holder.run }, { key: 'lease.id', value: lease }, ...keys.map(key => ({ key: 'lease.key', value: key }))] }, tx);
   }
 }
