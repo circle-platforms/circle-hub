@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { contractCanonical, runtimeDigest, parseRuntimeContract, runtimeMethod, stripAdditions } from './runtime-contract.ts';
+import { isRecord } from './text.ts';
 import { runtimeDocument, signRuntime } from '../testing/runtime.ts';
 test('canonical bytes match the runner sorted compact UTF-8 algorithm independently', () => {
   const expected = '{"a":"文字","z":[1,true,null]}';
@@ -93,6 +94,7 @@ test('stripping runtime.block_model recovers the original canonical digest and t
   delete document.contract_sha256;
   const signed = signRuntime(document);
   const recovered = stripAdditions(signed)!;
+  assert.ok(isRecord(recovered.runtime));
   assert.equal(recovered.runtime.block_model, undefined);
   assert.equal(recovered.runtime.runner_sha256, original.runtime.runner_sha256);
   assert.equal(recovered.runtime.found_times_supported, original.runtime.found_times_supported);
@@ -119,8 +121,10 @@ test('a runtime field other than block_model still refuses the pinned original i
 });
 test('a runtime without block_model recovers the same original identity', () => {
   const built = v2Document(runtimeDocument());
-  assert.equal((built.document as { runtime: { block_model?: unknown } }).runtime.block_model, undefined);
-  const recovered = stripAdditions(built.document as Record<string, unknown>)!;
+  const document = built.document as Record<string, unknown>;
+  assert.ok(isRecord(document.runtime));
+  assert.equal(document.runtime.block_model, undefined);
+  const recovered = stripAdditions(document)!;
   assert.equal(runtimeDigest(recovered), built.originalIdentity);
   assert.equal(parseRuntimeContract(built.document).ok, true);
 });
