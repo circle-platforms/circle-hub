@@ -5,7 +5,7 @@ import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import { NOT_APPLICABLE, coverageText, statusText, terminalKind, terminalText } from '../claims.ts';
 import { countsLine } from '../text.ts';
 import { code, definitions, html, link, page, section, table } from './html.ts';
-import { ruleWithdrawalNotice, claimBlock, sharedRunNotice, neutralPage, missingProductionResult, type PageContext, type PageResult } from './pages.ts';
+import { ruleWithdrawalNotice, claimBlockAtRead, sharedRunNotice, neutralPage, missingProductionResult, type PageContext, type PageResult } from './pages.ts';
 
 const production = (run: RunRecord): boolean => run.requirements.length > 0 && run.requirements.every((r) => r.accepted_producer === 'fact');
 const param = (ctx: PageContext, key: string): string | undefined => ctx.url.searchParams.get(key) || undefined;
@@ -30,6 +30,7 @@ export async function resultPage(ctx: PageContext, runId: string): Promise<PageR
   if (!/^run_[0-9a-z]{26}$/.test(runId)) return neutralPage(ctx);
   const detail = await ctx.deps.runs.getRun(ctx.principal, runId);
   if (detail === null || !production(detail.run)) return neutralPage(ctx);
+  const renderClaim=claimBlockAtRead(detail.rule_withdrawn===true);
   const terminal = param(ctx, 'terminal');
   const rawOffset = param(ctx, 'offset') ?? '0';
   if ((terminal !== undefined && !isStaticTerminal(terminal) && !isDynamicTerminal(terminal)) || !/^(0|[1-9][0-9]*)$/.test(rawOffset) || !Number.isSafeInteger(Number(rawOffset))) {
@@ -52,7 +53,7 @@ export async function resultPage(ctx: PageContext, runId: string): Promise<PageR
       return html`<div>${r.requirement} ${names.get(r.requirement) ?? ''}：${statusText(r)}<br>${LAYER.map(name=>{
         const layer=r.layers.find(l=>l.layer===name);
         return html`${layer === undefined ? html`${labelOf('layer',name)}：${NOT_APPLICABLE}` : html`<span class="t-${terminalKind(layer)}">${terminalText(layer)}</span>`}<br>`;
-      })}${r.claims.map(claimBlock)}</div>`;
+      })}${r.claims.map(renderClaim)}</div>`;
     })}`,
   ]);
   const terminals=[...new Set([...STATIC_TERMINAL,...DYNAMIC_TERMINAL])];
@@ -61,7 +62,7 @@ export async function resultPage(ctx: PageContext, runId: string): Promise<PageR
   return { status: 200, body: page(ctx.chrome(`结果 ${runId}`), html`${sharedRunNotice(ctx,detail.run)}${ruleWithdrawalNotice(detail)}${authority}${commentary}
 <p><strong>${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}</strong></p>
 ${definitions([['覆盖', coverageText(result.coverage) ?? '—'], ['生产结果记录（start_run 计算）', code(detail.production.record)]])}
-${section('跨条目主张（不计入分区）', result.cross_item.length === 0 ? html`<p class="empty">没有</p>` : result.cross_item.map(claimBlock))}
+${section('跨条目主张（不计入分区）', result.cross_item.length === 0 ? html`<p class="empty">没有</p>` : result.cross_item.map(renderClaim))}
 ${filter}<p>筛选后 ${filtered.length} 个；本页 ${Math.min(offset + 1, filtered.length)}–${Math.min(offset + 500, filtered.length)}</p>
 ${table(['编号', '名称', '摘要', '分区及原因', '要求项状态、各层终态与主张'], rows, '没有条目')}${nav}`) };
 }

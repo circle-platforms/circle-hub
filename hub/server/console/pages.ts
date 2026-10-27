@@ -71,6 +71,11 @@ export function claimBlock(claim: Claim): Html {
 
 // ---------------------------------------------------------------- runs
 
+/** Bind the live condition only to result claims; the claim and its receipt remain original evidence. */
+export function claimBlockAtRead(ruleWithdrawn:boolean):typeof claimBlock{
+  return ruleWithdrawn?claim=>html`<div class="claim">${definitions(claimFields(claim,true))}</div>`:claimBlock;
+}
+
 export async function runsPage(ctx: PageContext): Promise<PageResult> {
   const pack = param(ctx, 'pack');
   const cursor = param(ctx, 'cursor');
@@ -112,7 +117,7 @@ function itemCells(requirements: readonly RequirementResult[]): Html {
   })}`;
 }
 
-function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, string>): Html {
+function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, string>, renderClaim:typeof claimBlock = claimBlock): Html {
   const rows: unknown[][] = [];
   for (const item of items) {
     const why = 'code' in item ? code(item.code) : 'reason' in item ? labelOf('reason', item.reason) : '';
@@ -133,7 +138,7 @@ function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, stri
         html`${r.requirement} ${names.get(r.requirement) ?? ''}`,
         html`${layers.map((text) => html`<div>${text}</div>`)}`,
         statusText(r),
-        html`${r.claims.map(claimBlock)}`,
+        html`${r.claims.map(renderClaim)}`,
       ]);
     }
   }
@@ -147,14 +152,14 @@ function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, stri
 const GROUP_OF = { delivered: 'adopted', rejected: 'open', quarantined: 'open', incomplete: 'open' } as const satisfies Record<Partition, 'adopted' | 'open'>;
 const GROUP_TITLE = { adopted: '已采用的成果', open: '仍需处理的事项' } as const;
 
-function partitionGroups(result: ValidationResult, run: RunRecord): Html {
+function partitionGroups(result: ValidationResult, run: RunRecord, renderClaim:typeof claimBlock = claimBlock): Html {
   const names = new Map(run.requirements.map((r) => [r.key, r.name]));
   const groups: Html[] = [];
   for (const group of ['adopted', 'open'] as const) {
     const members = PARTITION.filter((p) => GROUP_OF[p] === group);
     const total = members.reduce((sum, p) => sum + result.partitions[p].length, 0);
     // Display rule 6: every partition shows its count and lists its items, an empty one included.
-    const parts = members.map((p) => section(`${labelOf('partition', p)}（${result.partitions[p].length}）`, itemTable(result.partitions[p], names)));
+    const parts = members.map((p) => section(`${labelOf('partition', p)}（${result.partitions[p].length}）`, itemTable(result.partitions[p], names,renderClaim)));
     groups.push(section(`${GROUP_TITLE[group]}（${members.map((p) => labelOf('partition', p)).join('、')}，${total}）`, html`${parts}`));
   }
 
@@ -162,9 +167,9 @@ function partitionGroups(result: ValidationResult, run: RunRecord): Html {
 }
 
 /** Commentary has judgments, not another authoritative partition report. */
-function commentaryJudgments(result: ValidationResult): Html {
+function commentaryJudgments(result: ValidationResult,renderClaim:typeof claimBlock = claimBlock): Html {
   return table(['条目', '名称', '模型逐条判断（未采用）'], PARTITION.flatMap(partition => result.partitions[partition]).map(item => [code(item.item), item.label,
-    html`${item.requirements.flatMap(requirement => requirement.claims).filter(claim => claim.qualifier.nature === 'judgment').map(claimBlock)}`]), '没有逐条模型判断');
+    html`${item.requirements.flatMap(requirement => requirement.claims).filter(claim => claim.qualifier.nature === 'judgment').map(renderClaim)}`]), '没有逐条模型判断');
 }
 
 async function commentaryHandling(ctx: PageContext, detail: RunDetail, result: NonNullable<RunDetail['latest']>): Promise<Html> {
@@ -238,6 +243,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
   const detail: RunDetail | null = await ctx.deps.runs.getRun(ctx.principal, runId);
   if (detail === null) return neutralPage(ctx);
   const run = detail.run;
+  const renderClaim=claimBlockAtRead(detail.rule_withdrawn===true);
   const summary = definitions([
     ['运行', code(run.run)],
     ['任务包', html`${run.pack} ${code(run.pack_digest)}`],
@@ -288,8 +294,8 @@ ${definitions([
   ['锁定', html`任务包 ${result.locks.pack} ${code(result.locks.pack_digest)}${result.locks.root ? html`，知识根 ${code(result.locks.root)}` : ''}${result.locks.policy ? `，政策 ${result.locks.policy}` : ''}`],
   ['追踪', code(result.trace)],
 ])}
-${commentary ? section('逐条模型判断（未采用）', commentaryJudgments(result)) : partitionGroups(result, run)}
-${section('跨条目主张（不计入分区）', result.cross_item.length === 0 ? html`<p class="empty">没有</p>` : html`${result.cross_item.map(claimBlock)}`)}
+${commentary ? section('逐条模型判断（未采用）', commentaryJudgments(result,renderClaim)) : partitionGroups(result, run,renderClaim)}
+${section('跨条目主张（不计入分区）', result.cross_item.length === 0 ? html`<p class="empty">没有</p>` : html`${result.cross_item.map(renderClaim)}`)}
 ${section('错误与修正', errorsTable(result.errors))}`;
   };
   const results=primary===null?(factOnly?missingProductionResult(detail):html`<p class="empty">还没有校验结果</p>`):renderResult(primary,factOnly?'生产结果记录（start_run 计算）':'校验结果记录');
