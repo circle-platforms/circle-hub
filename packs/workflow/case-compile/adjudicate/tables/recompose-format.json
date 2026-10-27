@@ -1,0 +1,81 @@
+{
+  "schema": "recompose-format@1",
+  "record": "recompose-record@1",
+  "sources": "recompose-sources@1",
+  "product": "recompose-product@1",
+  "method_kinds": [
+    "declared",
+    "recomposed",
+    "missing"
+  ],
+  "knowledge_locations": [
+    "has_verification_knowledge",
+    "recomposable_from_elsewhere",
+    "genuinely_missing"
+  ],
+  "states": [
+    "settled",
+    "underdetermined",
+    "conflict",
+    "missing_prerequisite"
+  ],
+  "statuses": [
+    "complete",
+    "partial",
+    "refused"
+  ],
+  "actions": [
+    "parameter_change",
+    "equivalent_form",
+    "structural_completion"
+  ],
+  "value_origins": [
+    "author",
+    "governing",
+    "catalog"
+  ],
+  "issue_kinds": [
+    "settled",
+    "underdetermined",
+    "source_conflict",
+    "missing_prerequisite"
+  ],
+  "critical_roles": [
+    "asserted_value",
+    "trigger_direction",
+    "observation_object"
+  ],
+  "bed_fields": [
+    "bed",
+    "bed_name",
+    "inventory",
+    "device",
+    "device_index",
+    "seat",
+    "bed_address"
+  ],
+  "packs": {
+    "authority": "recompose-authority",
+    "review": "recompose-adjudication",
+    "stage": "recompose"
+  },
+  "max_atoms": 2048,
+  "atom_kinds": [
+    "intent",
+    "action",
+    "expectation"
+  ],
+  "governing_kinds": [
+    "spec",
+    "safety_defect_projection"
+  ],
+  "pipelines": [
+    "legacy",
+    "recomposed"
+  ],
+  "declaration_roles": [
+    "parameter_type",
+    "address_purpose",
+    "verification_method"
+  ]
+}

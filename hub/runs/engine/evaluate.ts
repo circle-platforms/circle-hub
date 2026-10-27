@@ -210,6 +210,9 @@ export function productNamesOf(run: Pick<RunRecord, 'target_basis'>): string[] {
 /** The facts about a run that checks and pack functions may use, from the frozen run record. */
 export function runContextOf(run: RunRecord): RunContext {
   return {
+    run: run.run,
+    predecessor: run.predecessor ?? null,
+    ...(run.product_pack_digest ? {product_pack_digest:run.product_pack_digest}:{}),
     ...(run.skills!==undefined?{skills:run.skills}:{}),
     ...(run.command_policy?{command_policy:run.command_policy}:{}),
     ...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),

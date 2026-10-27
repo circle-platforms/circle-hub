@@ -1,4 +1,4 @@
-# case-compile 3.7.2
+# case-compile 3.8.2
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -248,3 +248,29 @@ W06：本用例全部期望节点有稳定引用身份；每条都映射到断�
 字面声明的结构依据：新块读取作者期望节点 data.assertion 中的 op/literal/count；原文没有这组明确声明时，不通过词语判断“是不是描述性”，而是保留 unknown，要求模型提出带引文的类型化判据并经独立复核。旧 flat 语言继续按其已发布的字面 text 规则，不宣称它已经具备块语言的判据能力。
 
 复核阶段发布目录是本目录的 review/，id=case-compile-criterion-review；先用其 api.ts stage/publish 并分配给独立复核账号。作者提交判据后共享该运行的只读视图，复核者以原声明运行为 predecessor 绑定原提交和 evidence；主包绑定该复核的真实 run 快照与 validation 结果，核实际前驱相等及账号独立标记。此阶段不会修改旧 W10 或核心角色规则。
+
+## 重组阶段（R5 B2）
+
+重组独立于评审和编写：模型提交 recompose-record@1 三元契约、来源状态和四本账；工作包只核结构、全集、声明、来源及凭证。编写显式绑定重组的实际运行和已受理结果，不能用评审记录或原件 steps/expects 代替。旧 flat 计划路径保留。
+
+四项实现口径：①现有全局词表没有等价的知识位置三值；局部工作语言闭集写在 tables/recompose-format.json，不借用含义不同的全局枚举。②R05 使用现有逐条提交、分区和追加记录：完整节点清单冻结，允许分片提交，每次从实际全集重算缺案，封批要求无遗漏、无重复且所有要求项满足；后版须以同一来源身份的旧运行作 predecessor，禁止跨来源冒接。③R03 接 B1 的 criteria/obligations：重组期望位保持原件身份，可携 criterion_id，编写期仍由 B1 核算子、引文与独立判据复核，不把重组方法当设备事实。④只用 recompose-sources@1，废弃误拼的 recompute-sources@1；与仓库既有 schema 无冲突。
+
+发布单元均在本目录：authority/（recompose-authority，产品声明凭证）、recompose/（recompose，独立重组）、adjudicate/（recompose-adjudication，独立原子裁定）。管理员一次性绑定实际产品包发布记录、发布授权和与清单 SHA 相等的 product.json；从产品生产器 params.recompose 中读 recompose-product@1 声明，再把已受理来源凭证分享给执行者。工作包没有默认规范来源排序，模型的 product-declared 字样不构成权威。普通执行者绑定可共享的真实 Hub 快照和结果，不需要管理员读所有原件。当前产品没有声明时，等待产品包作者补声明并重发。
+
+节点资格由 compile-structure@1 声明：autoid 与原始 auto 值按完全相等闭集；未声明标记单独报告，不按标题或自然语言判断。深度由层级和声明参数核对；嵌套用例及混合布局保留为未判定条目。两种布局共用同一结构投影：用例自身动作+直接叶期望，或标题/动作/叶期望；编号、行和方括号定位是声明的语法，原文字节不改。没有作者定位的多动作/多期望不强配，未绑定原子单列并给作者补定位出口。
+
+覆盖分母是结构投影的作者原子全集，不采信模型 author_atoms 自报；mapped/unmapped 由代码与全集双向比。原文账只存逐字原子，释义另留说明。适配 action 为声明操作，commands 为完整命令行，按锁定树比较定义身份及次数；等价理由附声明引用。实际参数变化按产品声明的语义角色核 load_bearing，未能机械判定的语义由独立裁定提出且带逐字引文。具体化只接作者/规范来源/目录声明的值，缺来源或权限一律未知，点名产品包作者或重组者及提交前时点。
+
+床无关按类型与来源判定：重组输入不读取 inventory；账本结构不允许物理床、座位或设备字段，具体化的来源闭集不含台架，重组阶段 rebindings 为空。不会拿床名词表扫散文，也不会因作者原文地址恰好与某床相等就改写原文；散文是否带入物理语义由带引文的独立裁定披露。对两床运行同一产物，字节及结论必须一致。物理替换仅在编写阶段的类型化 replacements/重绑定账执行。
+
+孪生文件入库迁移：原示意中的占位引用、释义原文账、本机路径和自述裁定改成可核引用与合成凭证；四种预期状态不变。原 README 中的真实名扫描模式不作为数据复制。检查脚本改写为 TypeScript，使用已安装技能的解析接口，不恢复核心默认 KityMinder。
+
+R05 首版采用单个冻结任务集合、逐案草稿和无损客户端汇总，不引入另一份可变本地权威账本。tools/seal-recompose.ts 接收 --run、--parts、--model、--out；parts 是实际提交导出的数组，按显式顺序选最新候选，不依赖墙钟。输出永远是 admitted:false 的草稿：已知原记录保持原样，尚未登记的目标也保留为空槽；真正的封批取决于 Hub 的完整集合和全部条目要求项。超出平台预算时保留预算出口，不能静默截断或让分片宣称整份来源完成。
+
+完整交付回归还修复了 B1 的指纹边界：客户公共摘要没有私有裁定组，工作簿指纹改绑定两份不变的复核记录引用，服务端仍先完整核验原记录、账号与内容；不拿客户端自述当受理。新端到端覆盖重组、独立判据、摘要导出、生成和后继回读。
+
+B2 所需平台机制仅有通用只读运行上下文（实际 run、predecessor、冻结 product_pack_digest）及默认关闭的 incremental_submissions。后者只让保留已有全部材料、首次填空槽且仅有 unknown 的要求项不计修复；删除、替换、换模型或真实违反仍沿用原预算。旧工作流默认不启用。公共运行摘要不暴露私有锁字段，历史记录不回填产品包摘要。
+
+补充结构口径：标题/步骤布局把标题也保留为意图原子；未编号多行期望不切碎，编号与方括号标签按原样文字匹配，大小写或前导零不归一化。唯一层级父动作可以绑定无冲突的期望标签；存在冲突显式动作引用、多动作未定位或未知角色时单列未判定。span 是解析后文字的 UTF-16 代码单元位置；原始字节及解析器身份仍由 Hub 原件/引用机制保存。
+
+legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代表重组完成”。新客户端使用 pipeline=recomposed，缺真实重组凭证时全部后续核验保持未知，不允许拿 flat steps/expects 或评审回执冒充重组受理。

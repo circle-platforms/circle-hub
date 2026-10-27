@@ -1,0 +1,38 @@
+{
+  "root": {
+    "data": {
+      "id": "synthetic-root",
+      "text": "ORBIT / COMET synthetic recomposition"
+    },
+    "children": [
+      {
+        "data": {
+          "id": "case-4",
+          "created": 1767577149000,
+          "text": "widget health probe pool1 http",
+          "priority": 2,
+          "degree": 1,
+          "resource": [
+            "[Configuration]"
+          ],
+          "autoid": "orbit-case-0004",
+          "auto": "YES",
+          "compile_layout": "case_body_expectations"
+        },
+        "children": [
+          {
+            "data": {
+              "id": "expected-4",
+              "created": 1767577210000,
+              "text": "show health 显示 pool1 的探测类型为 http"
+            },
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "template": "right",
+  "theme": "classic",
+  "version": "1.4.43"
+}

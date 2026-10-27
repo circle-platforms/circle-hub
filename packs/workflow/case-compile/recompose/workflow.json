@@ -1,0 +1,114 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "subject",
+      "role": "subject",
+      "required": true,
+      "many": false,
+      "accepts": [
+        "application/json",
+        "agile:mindmap"
+      ],
+      "description": "subject exact bound source"
+    },
+    {
+      "slot": "authority_run",
+      "role": "expected",
+      "required": false,
+      "many": false,
+      "accepts": [
+        "application/json"
+      ],
+      "description": "authority_run exact bound source"
+    },
+    {
+      "slot": "authority_result",
+      "role": "expected",
+      "required": false,
+      "many": false,
+      "accepts": [
+        "application/json"
+      ],
+      "description": "authority_result exact bound source"
+    },
+    {
+      "slot": "review_run",
+      "role": "expected",
+      "required": false,
+      "many": false,
+      "accepts": [
+        "application/json"
+      ],
+      "description": "review_run exact bound source"
+    },
+    {
+      "slot": "review_result",
+      "role": "expected",
+      "required": false,
+      "many": false,
+      "accepts": [
+        "application/json"
+      ],
+      "description": "review_result exact bound source"
+    },
+    {
+      "slot": "previous_run",
+      "role": "expected",
+      "required": false,
+      "many": false,
+      "accepts": [
+        "application/json"
+      ],
+      "description": "previous_run exact bound source"
+    },
+    {
+      "slot": "previous_result",
+      "role": "expected",
+      "required": false,
+      "many": false,
+      "accepts": [
+        "application/json"
+      ],
+      "description": "previous_result exact bound source"
+    },
+    {
+      "slot": "evidence",
+      "role": "expected",
+      "required": false,
+      "many": true,
+      "accepts": [
+        "application/json",
+        "doc:doc",
+        "agile:mindmap"
+      ],
+      "description": "evidence exact bound source"
+    }
+  ],
+  "parameters": [
+    {
+      "name": "case_depths",
+      "description": "Declared absolute depths, no text heuristics",
+      "required": false,
+      "schema": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        }
+      }
+    }
+  ],
+  "product": {
+    "catalogs": [
+      "commands@1"
+    ]
+  },
+  "subject": "subject",
+  "projection": {
+    "module": "functions/project.ts"
+  },
+  "incremental_submissions": true
+}

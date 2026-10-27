@@ -1,0 +1,93 @@
+{
+  "schema": "twin-dataset@1",
+  "purpose": "重组阶段（R01/R02/R04）规格 review/compile-recompose-spec.md 的合成孪生数据集：每份真实文档类型对应一份结构相同、内容合成的文件；能复用仓库现有合成夹具的只引用路径，不重复造。",
+  "naming": "沿用 tests/fixtures/README.md 的虚构产品 ORBIT / COMET（同一产品两个名字）与第二产品 lumen-api；构建名形如 Rel_ORBIT_7_1_0_30；地址只用 192.0.2.0/24 与 2001:db8::/32。",
+  "documents": [
+    {
+      "type": "mindmap",
+      "role": "重组输入（作者脑图）",
+      "twin": null,
+      "reuse": "tests/fixtures/mindmaps/review-150.km.json",
+      "reuse_alt": "tests/fixtures/mindmaps/tiny.km.json",
+      "structure": "kityminder@1：root.data{id,created,text} + children[]，用例节点带 priority:2 与 resource[]，期望/观察节点是其子节点",
+      "parser": "by installed parser@version"
+    },
+    {
+      "type": "manual_chapter",
+      "role": "规范来源与验证方法出处",
+      "twin": null,
+      "reuse": "tests/fixtures/manual-store/files/spec/环之间的负载分配.md",
+      "structure": "markdown@1：一级标题 + 粗体命令名 + 取值闭集句子",
+      "parser": "by installed parser@version"
+    },
+    {
+      "type": "command_tree_xml",
+      "role": "命令/地址结构解析的来源（R04.1）",
+      "twin": null,
+      "reuse": "tests/fixtures/build-site/write.ts",
+      "structure": "commands>scope>menu/item>arguments>arg（属性 name/type/optional/limit/default_value），ISO-8859-1",
+      "parser": "by installed parser@version"
+    },
+    {
+      "type": "bed_manifest",
+      "role": "床无关检查的床 A",
+      "twin": null,
+      "reuse": "packs/workflow/test-bed/examples/bed-topology.json",
+      "structure": "test-bed-manifest@1：beds[].{name,devices[].{name,type,product?,ipv4[],ipv6[],installed?},services[],reserved[],baseline?}",
+      "parser": "by installed parser@version"
+    },
+    {
+      "type": "bed_manifest_second",
+      "role": "床无关检查的床 B（同 schema，不同内容）",
+      "twin": "bed-b.json",
+      "structure": "同上",
+      "parser": "by installed parser@version"
+    },
+    {
+      "type": "governing_spec",
+      "role": "R02 的规范来源声明（有签发权）",
+      "twin": "governing-spec.json",
+      "structure": "recompose-sources@1 的 governing 条目：kind/ref/version/authority",
+      "parser": "by installed parser@version"
+    },
+    {
+      "type": "conflicting_spec",
+      "role": "R02 冲突例的第二份有签发权来源",
+      "twin": "conflicting-spec.json",
+      "structure": "同上",
+      "parser": "by installed parser@version"
+    },
+    {
+      "type": "adjudication",
+      "role": "R02 已受理裁定记录（settled 的 adjudicated_by）",
+      "twin": "adjudication.json",
+      "structure": "裁定记录：case/atom/decision/quotes/decided_by/decided_at/run",
+      "parser": "by installed parser@version"
+    }
+  ],
+  "recompose_records": [
+    {
+      "file": "recompose-pass.json",
+      "class": "合格路径"
+    },
+    {
+      "file": "recompose-underdetermined.json",
+      "class": "反例：欠定"
+    },
+    {
+      "file": "recompose-conflict.json",
+      "class": "反例：冲突"
+    },
+    {
+      "file": "recompose-missing-prerequisite.json",
+      "class": "反例：缺前置"
+    }
+  ],
+  "source_digests": {
+    "mindmap_review_150": "41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0",
+    "mindmap_tiny": "3ee2d93294a40bdfe810ed51dfccb488df39b53909c3c05497e631976538f9ca",
+    "spec_ring_mode": "17c8cdcf284a42a4a946c3736f9447ef1d049ee3ce43fea940ff7138ebe70aba",
+    "bed_a": "a49f1612f2ba7c9b4bac5518539815d96bc0f0683361a05fab1b721410810651",
+    "command_tree_source": "79c10c9e853c7e8a983e23038d5b43e35c2ca3783792ae19a1b9143b91f19793"
+  }
+}
