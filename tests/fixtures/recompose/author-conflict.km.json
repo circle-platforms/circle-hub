@@ -1,0 +1,38 @@
+{
+  "root": {
+    "data": {
+      "id": "synthetic-root",
+      "text": "ORBIT / COMET synthetic recomposition"
+    },
+    "children": [
+      {
+        "data": {
+          "id": "case-3",
+          "created": 1767576905000,
+          "text": "widget health interval pool1 5",
+          "priority": 2,
+          "degree": 1,
+          "resource": [
+            "Configuration"
+          ],
+          "autoid": "orbit-case-0003",
+          "auto": "YES",
+          "compile_layout": "case_body_expectations"
+        },
+        "children": [
+          {
+            "data": {
+              "id": "expected-3",
+              "created": 1767576966000,
+              "text": "show health 显示 pool1 的探测间隔为 5 秒"
+            },
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "template": "right",
+  "theme": "classic",
+  "version": "1.4.43"
+}

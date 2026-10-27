@@ -1,0 +1,125 @@
+{
+  "schema": "recompose-record@1",
+  "case": {
+    "id": "orbit-case-0004",
+    "source_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0",
+    "source_path": "tests/fixtures/mindmaps/review-150.km.json",
+    "node": "n/<合成节点id>"
+  },
+  "contract": {
+    "intent": {
+      "text": "widget health probe pool1 http",
+      "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text",
+      "verbatim": true
+    },
+    "method": {
+      "kind": "declared",
+      "text": "show health 显示 pool1 的探测类型为 http",
+      "sources": [
+        "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+      ],
+      "basis": "作者原文"
+    },
+    "expectation": {
+      "text": "show health 显示 pool1 的探测类型为 http",
+      "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text",
+      "verbatim": true
+    }
+  },
+  "expectation_slots": [
+    {
+      "slot": "e1",
+      "knowledge_location": "has_verification_knowledge",
+      "evidence": [
+        "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+      ],
+      "proposal": null
+    }
+  ],
+  "coverage": {
+    "author_atoms": [
+      "a1",
+      "a2"
+    ],
+    "mapped": {
+      "a1": [
+        "e1"
+      ],
+      "a2": [
+        "e1"
+      ]
+    },
+    "unmapped": []
+  },
+  "atoms": [
+    {
+      "id": "a1",
+      "text": "把 pool1 的探测类型设为 http",
+      "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+    },
+    {
+      "id": "a2",
+      "text": "用 show health 观察探测类型",
+      "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+    }
+  ],
+  "sources": {
+    "governing": [
+      {
+        "kind": "spec",
+        "ref": "src:17c8cdcf284a42a4a946c3736f9447ef1d049ee3ce43fea940ff7138ebe70aba",
+        "path": "tests/fixtures/manual-store/files/spec/环之间的负载分配.md",
+        "version": "1.0",
+        "authority": "product-declared"
+      }
+    ],
+    "candidates": [],
+    "states": [
+      {
+        "atom": "a1",
+        "state": "missing_prerequisite",
+        "adjudicated_by": null,
+        "reason": "配置对象的存在前置未在原文声明",
+        "exit": {
+          "action": "编写阶段补声明前置",
+          "object": "pool1 及其成员",
+          "owner": "编写阶段",
+          "due": "重新提交之前"
+        }
+      },
+      {
+        "atom": "a2",
+        "state": "settled",
+        "adjudicated_by": "src:3348626a90a6c526cea4b357b1bf568e1a4f21101e18f17cc38282a9e92c3ea8",
+        "reason": "观察方法与判定点来自作者原文",
+        "exit": null
+      }
+    ]
+  },
+  "ledgers": {
+    "original": [
+      {
+        "atom": "a1",
+        "text": "把 pool1 的探测类型设为 http",
+        "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+      },
+      {
+        "atom": "a2",
+        "text": "用 show health 观察探测类型",
+        "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+      }
+    ],
+    "adapted": [],
+    "concretizations": [],
+    "rebindings": []
+  },
+  "status": "partial",
+  "unknowns": [
+    {
+      "missing": "作者原文没有声明 pool1 及其成员的存在前置；这是缺前置，不是矛盾",
+      "next_action": "编写阶段按声明前置补齐（先建 pool 与成员，再改探测类型），不改作者意图、不记为冲突",
+      "audience": "编写阶段的模型与核对方",
+      "due": "编写提交之前"
+    }
+  ]
+}

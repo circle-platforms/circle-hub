@@ -1,0 +1,68 @@
+{
+  "schema": "twin-dataset@1",
+  "naming": "ORBIT/COMET and lumen-api; documentation addresses only",
+  "files": [
+    {
+      "name": "candidate.json",
+      "sha256": "f07316214ebacaa31e5bdeafd0dd757db705fc9be170183095e1995cfcc98a78"
+    },
+    {
+      "name": "governing-spec.json",
+      "sha256": "f13eb55d7393200cf252623fbc638dc55d62d9c568f4ad036a478eaa6d4da5f1"
+    },
+    {
+      "name": "conflicting-spec.json",
+      "sha256": "75a5dc26c47240dfedf0aa9b5bfc2e63a79f6d413498a8d29a563abcc589307c"
+    },
+    {
+      "name": "declarations.json",
+      "sha256": "eb4aabf53cc3b789e2912c8531e8daec1e09cbd0f8a8a5dc74580a4550326ee5"
+    },
+    {
+      "name": "product-policy.json",
+      "sha256": "748fb239224ebac5c8bc989a3723d09b53dc624bd5f870c2d27debb98d6230a1"
+    },
+    {
+      "name": "author-pass.km.json",
+      "sha256": "dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a"
+    },
+    {
+      "name": "recompose-pass.json",
+      "sha256": "17d54ce39c7642a90888e5301e998b504f84012a48ef534a04358bf9337aeafa"
+    },
+    {
+      "name": "author-underdetermined.km.json",
+      "sha256": "3efe6facb7339966f8fc93b7bfbcad940b2c4825d15b572bd63ba592d6f01b26"
+    },
+    {
+      "name": "recompose-underdetermined.json",
+      "sha256": "4494015386980e0443f4c7ac1e1ee6525bff28da231da0dff90d7bf43b0c352f"
+    },
+    {
+      "name": "author-conflict.km.json",
+      "sha256": "e72e76d0d875770df0b105876df5008496f2bf8ed0b7c079f44c6d93711eb9d4"
+    },
+    {
+      "name": "recompose-conflict.json",
+      "sha256": "15e8ea02e0f3878e3617c114ee5b0b8532e58196613ef1a7cd7f9789a0851755"
+    },
+    {
+      "name": "author-missing-prerequisite.km.json",
+      "sha256": "d598af7c4e2fd74b0d6dc40bb44737e10cb7d4d8629a1d0c0d9fbd1103e18dbe"
+    },
+    {
+      "name": "recompose-missing-prerequisite.json",
+      "sha256": "1f75afc9e2629d00df0adc81f9779af6c03f26c76b19ad2b8086a671b9806cb1"
+    },
+    {
+      "name": "bed-b.json",
+      "sha256": "18b2e8929e908d10e082560383187d862f9dec581b4869008292177a0a6b945d"
+    },
+    {
+      "name": "adjudication.json",
+      "sha256": "3bd12b1a8b62b14a55f5d89ca5b586c528ecab303cc898a2739ab511fe337841"
+    }
+  ],
+  "templates": "B6 originals preserved apart from machine paths",
+  "runtime_bindings": "Actual Hub run and validation record references are bound by the synthetic harness; static files never self-attest admission"
+}

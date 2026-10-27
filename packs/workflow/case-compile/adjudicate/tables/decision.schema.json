@@ -1,0 +1,36 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "atom": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "settled",
+        "underdetermined",
+        "conflict",
+        "missing_prerequisite"
+      ]
+    },
+    "load_bearing": {
+      "type": "boolean"
+    },
+    "bed_independent": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "atom",
+    "state",
+    "load_bearing",
+    "bed_independent",
+    "reason"
+  ]
+}

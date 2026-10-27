@@ -1,0 +1,112 @@
+{
+  "schema": "recompose-record@1",
+  "case": {
+    "id": "orbit-case-0002",
+    "source_ref": "src:3ee2d93294a40bdfe810ed51dfccb488df39b53909c3c05497e631976538f9ca",
+    "source_path": "tests/fixtures/mindmaps/tiny.km.json",
+    "node": "n/<合成节点id>"
+  },
+  "contract": {
+    "intent": {
+      "text": "widget pool add pool1",
+      "quote_ref": "src:3ee2d93294a40bdfe810ed51dfccb488df39b53909c3c05497e631976538f9ca#/node/text",
+      "verbatim": true
+    },
+    "method": {
+      "kind": "missing",
+      "text": null,
+      "sources": [],
+      "basis": null
+    },
+    "expectation": {
+      "text": "show pools 显示 pool1",
+      "quote_ref": "src:3ee2d93294a40bdfe810ed51dfccb488df39b53909c3c05497e631976538f9ca#/node/text",
+      "verbatim": true
+    }
+  },
+  "expectation_slots": [
+    {
+      "slot": "e1",
+      "knowledge_location": "genuinely_missing",
+      "evidence": [],
+      "proposal": "作者或产品包补一份声明 show pools 输出字段与判定点的规范来源；在此之前该期望位只有提议，不是契约"
+    }
+  ],
+  "coverage": {
+    "author_atoms": [
+      "a1",
+      "a2"
+    ],
+    "mapped": {
+      "a1": [
+        "e1"
+      ]
+    },
+    "unmapped": [
+      "a2"
+    ]
+  },
+  "atoms": [
+    {
+      "id": "a1",
+      "text": "新建 pool1",
+      "quote_ref": "src:3ee2d93294a40bdfe810ed51dfccb488df39b53909c3c05497e631976538f9ca#/node/text"
+    },
+    {
+      "id": "a2",
+      "text": "用 show pools 观察 pool1 存在",
+      "quote_ref": "src:3ee2d93294a40bdfe810ed51dfccb488df39b53909c3c05497e631976538f9ca#/node/text"
+    }
+  ],
+  "sources": {
+    "governing": [],
+    "candidates": [
+      {
+        "ref": "src:0000000000000000000000000000000000000000000000000000000000000000",
+        "path": "（合成）检索命中但无签发权",
+        "found_by": "search",
+        "signing_authority": false
+      }
+    ],
+    "states": [
+      {
+        "atom": "a2",
+        "state": "underdetermined",
+        "adjudicated_by": null,
+        "reason": "没有任何有签发权的来源覆盖该观察",
+        "exit": {
+          "action": "补规范来源后重交",
+          "object": "a2 的验证方法",
+          "owner": "产品包作者",
+          "due": "重新提交之前"
+        }
+      }
+    ]
+  },
+  "ledgers": {
+    "original": [
+      {
+        "atom": "a1",
+        "text": "新建 pool1",
+        "quote_ref": "src:3ee2d93294a40bdfe810ed51dfccb488df39b53909c3c05497e631976538f9ca#/node/text"
+      },
+      {
+        "atom": "a2",
+        "text": "用 show pools 观察 pool1 存在",
+        "quote_ref": "src:3ee2d93294a40bdfe810ed51dfccb488df39b53909c3c05497e631976538f9ca#/node/text"
+      }
+    ],
+    "adapted": [],
+    "concretizations": [],
+    "rebindings": []
+  },
+  "status": "partial",
+  "unknowns": [
+    {
+      "missing": "声明 show pools 的观察字段与判定点的规范来源（现有合成手册夹具里没有这条命令的任何记载）",
+      "next_action": "产品包作者补规范来源并重新发布，或作者改写期望位到已有来源覆盖的观察",
+      "audience": "产品包作者",
+      "due": "重新提交之前"
+    }
+  ]
+}

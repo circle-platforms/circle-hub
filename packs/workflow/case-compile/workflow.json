@@ -84,6 +84,26 @@
       ],
       "required": false,
       "many": false
+    },
+    {
+      "slot": "recomposition_run",
+      "role": "expected",
+      "description": "独立重组阶段的完整 Hub 记录；不接受上传自述",
+      "accepts": [
+        "application/json"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "recomposition_result",
+      "role": "expected",
+      "description": "独立重组阶段的完整 Hub 记录；不接受上传自述",
+      "accepts": [
+        "application/json"
+      ],
+      "required": false,
+      "many": false
     }
   ],
   "parameters": [
@@ -117,6 +137,18 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 128
+      }
+    },
+    {
+      "name": "pipeline",
+      "description": "Explicit recomposed pipeline, legacy remains compatible",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "enum": [
+          "legacy",
+          "recomposed"
+        ]
       }
     }
   ],

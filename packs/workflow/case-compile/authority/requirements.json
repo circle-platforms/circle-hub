@@ -1,0 +1,21 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "authority",
+      "name": "authority",
+      "description": "结构及凭证由代码核对，语义由带引文模型判断",
+      "target": "run",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "authority"
+      ],
+      "error_handling": []
+    }
+  ]
+}

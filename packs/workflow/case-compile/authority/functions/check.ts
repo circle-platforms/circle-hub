@@ -1,0 +1,3 @@
+export default function (input: any) { const value = input.subject?.context?.groups?.find((g: any) => g.kind === 'recompose-product@1'); if (value?.invalid)
+    return [{ verdict: 'refute', code: 'recompose-authority.identity_invalid', statement: '产品文件、发布记录、授权或锁定摘要不相等；发布管理员在重新提交之前修正绑定，不改原件', grounds: [], tier: 'blocking' }]; return value?.authority ? [{ verdict: 'support', statement: '产品声明原件与已发布清单、发布授权及本轮产品摘要相等', grounds: [], tier: 'blocking', data: { product: value.authority.scope.product } }] : [{ verdict: 'unknown', reason: 'missing_input', missing: value?.missing ?? '缺产品声明；等待产品包发布管理员在重新提交之前补凭证', statement: value?.missing ?? '缺产品来源凭证；等待产品包发布管理员', grounds: [], tier: 'blocking' }]; }
+export function subject(input: any) { return { context: input.context }; }

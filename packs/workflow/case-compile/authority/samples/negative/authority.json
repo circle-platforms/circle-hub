@@ -1,0 +1,23 @@
+{
+  "id": "authority_negative",
+  "source": "author",
+  "check": "authority",
+  "subject": {
+    "context": {
+      "groups": [
+        {
+          "kind": "recompose-product@1",
+          "authority": null,
+          "invalid": true
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "tier": "blocking",
+      "code": "recompose-authority.identity_invalid"
+    }
+  ]
+}

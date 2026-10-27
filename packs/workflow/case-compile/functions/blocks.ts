@@ -79,7 +79,7 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
    if(call.args.length!==1||call.args[0]!=='{}')issue(at+'/call/args','捕获还原只接收完整原文参数 {}，由声明的守卫方法核验后执行；不拼接或解析回显');
   }
  }
- const slots:PlanSlots={bucket:String(value.bucket),blocks:blocks,steps,expects,replacements:value.replacements as PlanSlots['replacements'],...(Object.hasOwn(value,'command_identities')?{command_identities:value.command_identities}:{}),...(value.block_context!==undefined?{block_context:value.block_context as Record<string,any>}:{}),...(value.criteria!==undefined?{criteria:value.criteria as Array<Record<string,any>>}:{}),...(value.obligations!==undefined?{obligations:value.obligations as Array<Record<string,any>>}:{})};
+ const slots:PlanSlots={...(value.recomposition!==undefined?{recomposition:value.recomposition as PlanSlots['recomposition']}:{}),bucket:String(value.bucket),blocks:blocks,steps,expects,replacements:value.replacements as PlanSlots['replacements'],...(Object.hasOwn(value,'command_identities')?{command_identities:value.command_identities}:{}),...(value.block_context!==undefined?{block_context:value.block_context as Record<string,any>}:{}),...(value.criteria!==undefined?{criteria:value.criteria as Array<Record<string,any>>}:{}),...(value.obligations!==undefined?{obligations:value.obligations as Array<Record<string,any>>}:{})};
  normalized.set(slots,meta);return problems.length?{ok:false,problems}:{ok:true,slots};
 }
 /** Escape a declared literal for a regex-backed checkpoint; no author-provided regex is executed or inferred. */

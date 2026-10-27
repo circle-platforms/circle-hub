@@ -1,0 +1,57 @@
+{
+  "schema": "slots@1",
+  "item": {
+    "decision": {
+      "min": 1,
+      "max": 1,
+      "evidence": true,
+      "codes": [
+        {
+          "code": "accept",
+          "label": "接受"
+        },
+        {
+          "code": "reject",
+          "label": "拒绝"
+        }
+      ],
+      "data": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "atom": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "settled",
+              "underdetermined",
+              "conflict",
+              "missing_prerequisite"
+            ]
+          },
+          "load_bearing": {
+            "type": "boolean"
+          },
+          "bed_independent": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "atom",
+          "state",
+          "load_bearing",
+          "bed_independent",
+          "reason"
+        ]
+      }
+    }
+  },
+  "run": {}
+}

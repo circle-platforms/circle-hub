@@ -1,0 +1,43 @@
+{
+  "id": "form_positive",
+  "source": "author",
+  "check": "form",
+  "subject": {
+    "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/text",
+    "fields": {
+      "atom": "a1",
+      "quote": {
+        "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/text",
+        "text": "synthetic literal"
+      }
+    },
+    "slots": {
+      "decision": [
+        {
+          "code": "accept",
+          "text": "合成裁定",
+          "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/text",
+          "quotes": [
+            {
+              "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/text",
+              "text": "synthetic literal"
+            }
+          ],
+          "data": {
+            "atom": "a1",
+            "state": "settled",
+            "load_bearing": false,
+            "bed_independent": true,
+            "reason": "合成独立判断"
+          }
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "blocking"
+    }
+  ]
+}
