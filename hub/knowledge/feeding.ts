@@ -38,7 +38,7 @@ export function bookedInstalls(body: LeaseBody | null | undefined): string[] {
   const group = Array.isArray(body?.groups) ? body.groups[0] : undefined;
   const beds = group !== null && typeof group === 'object' && 'manifest' in group && group.manifest !== null && typeof group.manifest === 'object' && 'beds' in group.manifest ? (group.manifest as { beds?: unknown }).beds : undefined;
   if (!Array.isArray(beds)) return [];
-  const keys = leaseRows(body).flatMap(row => (row.op !== undefined && row.op !== 'acquire' && row.op !== 'extend') || !Array.isArray(row.keys) ? [] : row.keys.filter((key): key is string => typeof key === 'string'));
+  const keys = leaseRows(body).flatMap(row => Array.isArray(row.keys) ? row.keys.filter((key): key is string => typeof key === 'string') : []);
   const out: string[] = [];
   for (const key of keys) {
     const parts = key.split('/');
