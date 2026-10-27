@@ -1,4 +1,4 @@
-# case-compile 3.8.2
+# case-compile 3.8.3
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -205,7 +205,7 @@ Hub 按检查声明的 judgment_sources，从本条目原始提交的精确槽�
 
 ## 块模型（R5 B1，先声明后实现）
 
-计划仍由客户端模型写，Hub 只核结构、授权、引文与义务。`runtime.block_model` 是 runtime-contract@2 加在 runtime 上的增补，恢复原合约身份时剥掉，不进入原合约的规范摘要。设备回显不在编译时解析：观察对象是一次调用的完整原文输出，不能从实际输出里反签期望。旧 `blocks:[] + steps + expects` 继续使用原规则；新计划用非空 blocks，steps/expects 留空，二者不能混写。唯一闭集正本是包声明 `tables/blocks-format.json`；槽位模式由本包生成器从它产生，代码不再维护另一份种类枚举。
+计划仍由客户端模型写，Hub 只核结构、授权、引文与义务。`runtime.block_model` 与 `runtime.checkpoint_two_argument` 是 runtime-contract@2 加在 runtime 上的增补，恢复原合约身份时按这个闭集剥掉，不进入原合约的规范摘要。原合约 runtime 保留 `minimum_version`、`runner_source`、`runner_sha256` 和 `found_times_supported`。设备回显不在编译时解析：观察对象是一次调用的完整原文输出，不能从实际输出里反签期望。旧 `blocks:[] + steps + expects` 继续使用原规则；新计划用非空 blocks，steps/expects 留空，二者不能混写。唯一闭集正本是包声明 `tables/blocks-format.json`；槽位模式由本包生成器从它产生，代码不再维护另一份种类枚举。
 
 | 块种类 | 第一版 | 语义 |
 | --- | --- | --- |
@@ -274,3 +274,9 @@ B2 所需平台机制仅有通用只读运行上下文（实际 run、predecesso
 补充结构口径：标题/步骤布局把标题也保留为意图原子；未编号多行期望不切碎，编号与方括号标签按原样文字匹配，大小写或前导零不归一化。唯一层级父动作可以绑定无冲突的期望标签；存在冲突显式动作引用、多动作未定位或未知角色时单列未判定。span 是解析后文字的 UTF-16 代码单元位置；原始字节及解析器身份仍由 Hub 原件/引用机制保存。
 
 legacy 兼容路径在条目字段中明确标为“未走重组阶段，不代表重组完成”。新客户端使用 pipeline=recomposed，缺真实重组凭证时全部后续核验保持未知，不允许拿 flat steps/expects 或评审回执冒充重组受理。
+
+### 块调用的类型化地址核对
+
+地址入口统一先用 readSlots 解析作者计划：原始 blocks 中步骤数组为空，也必须展开为同一套类型化调用。观察、配置、显式清理与 RESTORE_FROM 的已声明参数逐个进入现有角色、bed_member、床接口/本血缘租约与触发可达规则；完整命令按锁定目录解析后，其类型化地址参数也进入同一检查。位置保留 /data/blocks/<序号>/call/...，角色违规的首要位置同样落回对应块。普通文本与捕获原文不扫描，不按 VIP、方法名或文字推地址用途。
+
+规范化只发生在解析产物上，作者输入与引用不改；非空块计划结构不合式时，不得被当成空地址计划。扁平 PlanSlots 沿用既有已校验入口，新增降阶分支只处理非空 blocks。冻结 profile 的设备序号容量检查在计划读取前就执行，超限仍拒绝整卷；块计划不能绕过。捕获原文在编译时未知时，仍依赖已声明的发送前语法、角色和效果守卫，不把未知原文猜成合法地址。

@@ -7,6 +7,14 @@ draft's lineage (`predecessor` = the draft run); its input is the draft's valida
 reference (`rec:`), so the receiver inherits the items and references, not the judgments, and re-checks on its own boundary.
 Model elements A04 (independence), W02 W03 W05, C05 (checks with samples), T02.
 
+## 1.1.12
+
+- Declare `predecessor_access: view`, so another account assigned this pack can use a draft run shared with it together
+  with the shared original. This grants read visibility only, not submission or lease authority. The existing `target`
+  and `draft` predecessor defaults stay unchanged; `suggestions` declares the same independence of the predecessor as
+  the other requirements. `case-review-report` is unchanged: its `from_runs` input and non-independent `overall` do
+  not meet this declaration's publication constraints.
+
 ## 1.1.11
 
 - Reissue the A1 type-only import and the merged manifest as a new immutable version. The verification rules are unchanged
@@ -27,8 +35,8 @@ Model elements A04 (independence), W02 W03 W05, C05 (checks with samples), T02.
 
 | File | Content |
 | --- | --- |
-| `workflow.json` | `predecessor: "required"`; inputs `target` (role subject: the same mind map, `agile:mindmap` or `application/json`) and `draft` (role artifact under verification: the draft's validation result as `rec:<digest>`, parsed with json@1); the expected-source parameters and case-rule parameters (`case_rule`, `case_priority`, `group_priority`, `precondition_priority`) of the draft pack, inherited from the predecessor by default; catalog `commands@1`; projection `functions/projection.ts`, expected sources `functions/expected.ts` |
-| `requirements.json` | `verification` (item, independent judgment, independent of the predecessor, accepts the declared independence; checks dispositions, command_claims and verdict; repair rows, two rounds, for every pack check code and `core.catalog.membership_contradicted`), `suggestions` (run, judgment, not required), `final` (run, independent judgment; checks verdict and review_scope) |
+| `workflow.json` | `predecessor: "required"` and `predecessor_access: "view"`; inputs `target` (role subject: the same mind map, `agile:mindmap` or `application/json`) and `draft` (role artifact under verification: the draft's validation result as `rec:<digest>`, parsed with json@1); the expected-source parameters and case-rule parameters (`case_rule`, `case_priority`, `group_priority`, `precondition_priority`) of the draft pack, inherited from the predecessor by default; catalog `commands@1`; projection `functions/projection.ts`, expected sources `functions/expected.ts` |
+| `requirements.json` | `verification` (item, independent judgment, independent of the predecessor, accepts the declared independence; checks dispositions, command_claims and verdict; repair rows, two rounds, for every pack check code and `core.catalog.membership_contradicted`), `suggestions` (run, independent judgment, independent of the predecessor, not required), `final` (run, independent judgment; checks verdict and review_scope) |
 | `checks.json` | `dispositions` (item, `functions/verify.ts#dispositionsCheck`), `command_claims` (item, catalog@1 `tables/command-claims.json` over `functions/subjects.ts#claimSubject`, catalog `commands@1`), `verdict` (run, `functions/verify.ts#verdictCheck`) and `review_scope` (run, frozen groups through `functions/review-scope.ts#reviewScopeSubject`), blocking as declared |
 | `slots.schema.json` | item `verification`: codes verified, refuted, partial, new_finding; ranks critical, major, minor; evidence required; data `{ finding?: string, probe?: one of the seven }`; run `suggestions` (code suggestion, ranks critical, major, minor) and `final` (codes PASS, PARTIAL, FAIL; ranks P0-P7; exactly one) |
 | `SKILL.md` | the verifier's procedure (about 2,900 characters): the "break the draft" stance, starting the run, reading the draft findings, the dispositions (no item with a draft finding skipped), the seven probes, unfamiliar commands and command statements, the level challenge, the verdict rules, blocks and slices, the report |
@@ -193,9 +201,11 @@ data.source_facts 并列原引用为根据；不重判、不改生产者或归�
 
 本包的跳过不是完成：handling=skipped 必须附 reason，列入待续做清单，按回执继续本条目或以当前运行为前驱续做；不能因跳过而省略发现、处置、结论或等级。缺判定时按修正说明补齐并重交；初评缺等级、报告缺块或有未交付条目时先修复所列块或条目，再用新回执重开后续运行。
 
-## Predecessor result default
+## Predecessor visibility
 
-The `draft` slot explicitly declares `default_from_predecessor: {pack: "case-review"}`. A verifier may omit it when supplying `predecessor`; the Hub binds that run's newest accepted submitted validation record and discloses the frozen `input_defaults` provenance in both the start reply and run record. Newer refusals or system deliveries do not replace the eligible submitted result. No accepted submission refuses start with the existing schema code and a concrete resubmit-then-review action. Explicit draft references retain the package's existing validation, including `draft_invalid` and `draft_not_accepted`. This adds no read or predecessor authority. Other artifact slots opt in separately; the compiler's binary workbook slot is unchanged.
+`predecessor_access: "view"` lets a run's runner, an administrator, or an account with a current share of that run use it as the draft predecessor. Sharing the run does not share its original artifacts: `target` must also name an original the reviewer may read, and `draft` must name the accepted validation result record. Without a current run share, the same neutral `SOURCE_UNAVAILABLE` shape is returned at `/predecessor`.
+
+The `draft` slot retains `default_from_predecessor: {pack: "case-review"}`: a verifier may omit it when supplying `predecessor`; the Hub binds that run's newest accepted submitted validation record and discloses the frozen `input_defaults` provenance in both the start reply and run record. Newer refusals or system deliveries do not replace the eligible submitted result. Explicit draft references retain the package's existing validation, including `draft_invalid` and `draft_not_accepted`. Read-only predecessor visibility does not grant submission or lease authority and does not make a shared account an author of the draft.
 
 R6（所有者 2026-10-24）：声明 apv-directory@1，产品根精确等于产品 names 成员；版本层为三位字母数字码（至少一位数字）、冒号、完整 dotted version，下一层为同版本加列车后缀，再下一层为非空单目录段模块（允许“测试/bug/回归”等字面内容）。不从正文版本或活动词推断层级。缺层、重名或语法外写明缺失身份，下一步由包作者补语法或作者调整目录后重产。apv-id-fields@1 只接受整字段 bug:编号列表 或 story:编号列表（逗号分隔非零十进制），不从标题散文抽取；未声明须作者补字段或模型逐字引用。apv-assets@1 只识别完整 Rel_APV/NSAE_数字构建名加 _command-tree.xml、_bugs-fixed.json、_mib.txt/mib/my 或声明的镜像扩展名，其余保留原链接但不认角色。版本线前导零与末尾 .0 按 U24 同线，构建 id 不变。页面只认完整声明的 mainline/platform、patch数字 或 customer_标识结构；无兜底客户类。旧关键词结果原样保留，新包重产新根并沿原运行建立血缘。本次未运行验证。
 
