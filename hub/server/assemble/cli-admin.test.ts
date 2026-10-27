@@ -516,6 +516,7 @@ describe('init-admin and the operator token', () => {
       ['resource', 'enable', 'res_00000000000000000000000000'],
       ['resource', 'reset-login', 'res_00000000000000000000000000'],
       ['knowledge', 'sync', '--product', 'DEMO'],
+      ['knowledge', 'retract', '--entry', 'a'.repeat(64), '--reason', '合成撤回'],
     ];
     admin.stdin.push('never-read-synthetic-secret');
     for (const argv of changing) {

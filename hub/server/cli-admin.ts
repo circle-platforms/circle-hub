@@ -22,7 +22,7 @@ import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, isLeaseOp, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError, type HubConfig } from '../config/index.ts';
 import { ConnectorError, type AddResourceInput, type LoginStatus, type UpdateResourceInput } from '../connectors/api.ts';
-import { KnowledgeError, createKnowledgeReader, formatSeedReport, formatSyncReport, knowledgeSeed, knowledgeSync, parseKnowledgeSeedArgs, parseKnowledgeSyncArgs, type KnowledgeSeedArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
+import { KnowledgeError, createKnowledgeReader, formatKnowledgeRetract, formatSeedReport, formatSyncReport, knowledgeRetract, knowledgeSeed, knowledgeSync, parseKnowledgeSeedArgs, parseKnowledgeSyncArgs, type KnowledgeSeedArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
 import { DocsError } from './docs.ts';
 import type { ProductHandle } from '../ports.ts';
 import { productionShareKey, RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
@@ -60,7 +60,7 @@ export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --
 export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-users) [--reason <理由>] | production <任务包> [--reason <理由>] | list [--object <对象>]';
 export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <任务包>';
 export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
-export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run] | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
+export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run] | retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因> | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
 export const INIT_ADMIN_USAGE = 'init-admin <名字>   建第一位管理员，令牌存进钥匙串（账户 operator-token），不显示';
 export const OPERATOR_TOKEN_USAGE =
   'operator-token set   从标准输入读一个启用中的管理员的令牌，存进钥匙串（账户 operator-token）；钥匙串项丢失时用，已有的项不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进钥匙串，不显示；已有的项不覆盖';
@@ -860,6 +860,25 @@ async function knowledgeCommand(session: Session, args: readonly string[]): Prom
     const report = await decided(() => knowledgeSeed(hub.knowledge, hub.packs, admin, parsed, hub.resources));
     for (const line of formatSeedReport(report).trimEnd().split('\n')) session.out(line);
     return report.ok ? 0 : 1;
+  }
+  if (sub === 'retract') {
+    const { values } = parse(rest, { entry: { type: 'string', multiple: true }, run: { type: 'string', multiple: true }, object: { type: 'string', multiple: true }, reason: { type: 'string' } }, 0);
+    const entries = values.entry ?? [];
+    const runs = values.run ?? [];
+    const objects = values.object ?? [];
+    const reason = values.reason;
+    if (reason === undefined || reason.trim() === '') throw new UsageError('knowledge retract 要用 --reason 给一行原因');
+    if (reason.includes('\n') || reason.includes('\r')) throw new UsageError('knowledge retract 的 --reason 必须是一行');
+    if (entries.length + runs.length + objects.length === 0) throw new UsageError('knowledge retract 至少要一个 --entry、--run 或 --object');
+    if ([...entries, ...runs, ...objects].some(id => id.trim() === '')) throw new UsageError('knowledge retract 的目标不能为空');
+    if ([...entries, ...objects].some(id => !isSha256(id))) throw new UsageError('knowledge retract 的 --entry 和 --object 是记录摘要（64 位十六进制）');
+    const admin = await session.admin();
+    const hub = await session.hub(true);
+    const feeding = hub.knowledge.feeding;
+    if (!feeding) throw new CliError('喂入层没有装上', '用当前 Hub 装配后重试');
+    const report = await decided(() => knowledgeRetract(feeding, admin, { entries, runs, objects, reason: reason.trim(), at: hub.knowledge.__context.now().toISOString() }));
+    for (const line of formatKnowledgeRetract(report)) session.out(line);
+    return 0;
   }
   if (sub === 'roots') {
     const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);

@@ -10,6 +10,7 @@ import {makeWorld, catalogXml, BASE_CATALOG} from './test-support.ts';
 import {createRunsService} from '../runs/engine/api.ts';
 import {FakeWorkflowStore} from '../runs/engine/testing/workflows.ts';
 import {toolText} from '../server/text.ts';
+import {formatKnowledgeRetract, knowledgeRetract} from './api.ts';
 import {operationIdentity} from './feeding.ts';
 import {canonicalize, sha256Hex} from '../records/api.ts';
 
@@ -139,6 +140,38 @@ function evidenceClaims(value: unknown, out: Array<{nature: string; grounds: unk
   for (const item of Object.values(value as Record<string, unknown>)) evidenceClaims(item, out);
   return out;
 }
+
+test('retracting a pitfall contribution marks only that entry and leaves the tree bytes', async t => {
+  const ctx = await world(t);
+  const observedFeeding = observation(ctx, '/commands/system/show');
+  const observed = await ctx.service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', observedFeeding), call);
+  assert.equal(observed.result?.contributions?.stored.length, 1, JSON.stringify(observed.errors));
+  const observationRecord = observed.result!.contributions!.stored[0].record;
+  const pitfall = {schema:'fed-pitfall@1', product:ctx.run.product, root:ctx.root, path:'/commands/net/ping', source:{system:'upload', bytes:ctx.sha}, phenomenon:'合成显示为空', suggestion:'先核对地址', quote:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}, relations:[{kind:'contradicts', object:sha256Hex(canonicalize(operationIdentity(observedFeeding as unknown as Record<string, unknown>))), quote:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}}]};
+  const secondRun = await ctx.service.startRun(ctx.w.admin, {pack:'knowledge-contribution', product:'Acme', build:ctx.build.name, inputs:{subject:{reference:ctx.run.sources.find(source => source.slot==='subject')!.reference}, originals:ctx.run.sources.filter(source => source.slot==='originals').map(source => ({reference:source.reference}))}}, {...call, traceId:'f'.repeat(32)});
+  assert.equal(secondRun.call_result, 'ok', JSON.stringify(secondRun.errors));
+  const other = {...ctx, run:RunRecord.parse((await ctx.service.getRun(ctx.w.admin, secondRun.run!.run))!.run)};
+  const submitted = await ctx.service.submitResult(ctx.w.admin, {...submit(other, '/commands/net/ping', pitfall, '合成显示为空时先核对地址'), run:other.run.run}, {...call, traceId:'1'.repeat(32)});
+  assert.equal(submitted.result?.contributions?.stored.length, 1, JSON.stringify(submitted.errors));
+  const record = submitted.result!.contributions!.stored[0].record;
+  const beforeRecord = await ctx.w.kit.store.get(record);
+  const before = await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/net/ping', '/commands/system/show'], depth:0}, ctx.w.admin);
+  const report = await knowledgeRetract(ctx.w.knowledge.feeding!, ctx.w.admin, {entries:[record], runs:[], objects:[], reason:'合成撤回教训', at:'2026-10-27T09:00:00.000Z'});
+  assert.equal(report.appended.length, 1);
+  assert.equal(formatKnowledgeRetract(report).at(-1), '原记录未改动；读侧将显示根据已撤回');
+  const withdrawn = await ctx.w.knowledge.layers.contributions.readView(record, ctx.w.admin);
+  assert.equal(withdrawn?.status, 'grounds_withdrawn');
+  assert.match(withdrawn?.note ?? '', /失效|撤回/);
+  assert.equal((await ctx.w.knowledge.layers.contributions.readView(observationRecord, ctx.w.admin))?.status, 'valid');
+  assert.deepEqual(await ctx.w.kit.store.get(record), beforeRecord);
+  const after = await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/net/ping', '/commands/system/show'], depth:0}, ctx.w.admin);
+  assert.deepEqual(after?.nodes.map(node => node.entries), before?.nodes.map(node => node.entries));
+  const page = await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/net/ping'], depth:0}, ctx.w.admin);
+  assert.match(toolText('get_nodes', {call_result:'ok', errors:[], trace:call.traceId, root:ctx.root, nodes:page!.nodes}), /失效|撤回/);
+  const repeat = await knowledgeRetract(ctx.w.knowledge.feeding!, ctx.w.admin, {entries:[record], runs:[], objects:[], reason:'合成撤回教训', at:'2026-10-27T09:00:00.000Z'});
+  assert.deepEqual(repeat.appended, []);
+  assert.match(formatKnowledgeRetract(repeat)[0], /这些目标已撤回（撤回记录 [0-9a-f]{12}），没有追加/);
+});
 
 test('a declaration-grade operation record is refused as the ground of another submission', async t => {
   const ctx = await world(t);

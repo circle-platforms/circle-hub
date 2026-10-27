@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { test } from 'node:test';
+import { KNOWLEDGE_USAGE } from './cli-admin.ts';
 import { main, RESERVED_COMMANDS } from './cli.ts';
 
 test('reserved command help carries command descriptions rather than home-axis meanings', async () => {
@@ -11,4 +12,5 @@ test('reserved command help carries command descriptions rather than home-axis m
   const help = out.join('\n');
   assert.match(help, /resource\s+管理资源声明；由装配模块注册/);
   assert.match(help, /knowledge\s+读取和管理知识树；由装配模块注册/);
+  assert.match(KNOWLEDGE_USAGE, /retract \(--entry <记录摘要> \| --run <运行> \| --object <对象摘要>\)… --reason <一行原因>/);
 });
