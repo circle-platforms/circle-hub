@@ -11,7 +11,16 @@ test('CI test partitions are disjoint and cover every original tracked unit test
  const owned=new Set(['contracts','hub','packs','scripts']);
  const tracked=execFileSync('git',['ls-files','-z'],{cwd:ROOT}).toString().split('\0').filter(file=>file.endsWith('.test.ts')&&owned.has(file.split('/')[0]));
  for(const file of tracked)assert.ok(all.includes(file),file);
- assert.deepEqual(parsers,['hub/refs/adversarial.test.ts','hub/refs/parsers/html.test.ts']);assert.ok(regular.length>0);
+ assert.deepEqual(parsers,[
+  'hub/refs/adversarial.test.ts',
+  'hub/refs/parsers/html.test.ts',
+  'hub/refs/skill-lazy-locate.test.ts',
+  'packs/skill/html-format/functions/html.test.ts',
+  'packs/skill/mindmap-format/functions/kityminder.test.ts',
+  'packs/skill/workbook-format/functions/xlsx.test.ts',
+  'packs/skill/xml-format/functions/resource.test.ts',
+  'packs/skill/xml-format/functions/xml.test.ts',
+ ]);assert.ok(regular.length>0);
 });
 test('parser bounds retain a single worker and other unit tests retain the two-worker cap',()=>{
  assert.equal(unitArguments('parser-bounds')[1],'--test-concurrency=1');assert.equal(unitArguments('regular')[1],'--test-concurrency=2');
