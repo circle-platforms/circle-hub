@@ -229,13 +229,13 @@ describe('entries from the converted manual', () => {
     const decoder = new TextDecoder();
     for (const entry of fromMarkdown.entries) {
       // A shared table entry cites one fragment per line (the range picks the line out of the block's text).
-      const located = entry.fragments
+      const located = (await Promise.all(entry.fragments
         .filter((fragment,index)=>index===0||!fragment.applicability)
         .map(async (fragment) => {
           const text = (await md.locate(fragment.selector))?.text ?? '';
           const range = (fragment as { range?: [number, number] }).range;
           return range === undefined ? text : decoder.decode(new TextEncoder().encode(text).slice(range[0], range[1]));
-        })
+        })))
         .join('\n');
       assert.ok(located !== '', entry.fragments[0].selector);
       if (entry.data.form === 'text') assert.equal(located.replace(/\n+$/, '').trim(), entry.statement.trim());
@@ -925,15 +925,15 @@ describe('tree-independent content', () => {
   const TREE_A = '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu><menu name="route"><item name="static" help_string="s"><arguments></arguments></item></menu></menu></scope></commands>';
   const TREE_B = '<commands><scope type="global"><menu name="demo"><menu name="route"><item name="static" help_string="s"><arguments></arguments></item></menu></menu></scope></commands>';
 
-  it('preserves every source fragment across trees while only verified commands become definitions', () => {
+  it('preserves every source fragment across trees while only verified commands become definitions', async () => {
     const document = markdownDocument(Buffer.from(TEXT));
     const a = produceManualEntries(document.model, null, {catalog: commandCatalog(xml(TREE_A)).catalog});
     const b = produceManualEntries(document.model, null, {catalog: commandCatalog(xml(TREE_B)).catalog});
-    const sources = (result: ManualResult) => [...new Set(result.entries.flatMap(entry => entry.fragments.map(async fragment => {
+    const sources = async (result: ManualResult) => [...new Set(await Promise.all(result.entries.flatMap(entry => entry.fragments.map(async fragment => {
       const located = (await document.locate(fragment.selector)); assert.ok(located, fragment.selector);
       return canonicalJson({selector:fragment.selector,range:fragment.range,text:located.text});
-    })))].sort();
-    assert.deepEqual(sources(a), sources(b));
+    }))))].sort();
+    assert.deepEqual(await sources(a), await sources(b));
     assert.ok(a.entries.some(entry => entry.data.form === 'signature' && entry.path === '/commands/demo/pool/add'));
     assert.ok(!b.entries.some(entry => entry.path === '/commands/demo/pool/add'));
     assert.ok(b.entries.some(entry => entry.data.signature_rejected === true && entry.statement.includes('demo pool add')));
