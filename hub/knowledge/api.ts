@@ -12,6 +12,7 @@ import { viewReader } from './views.ts';
 
 export { createKnowledge } from './service.ts';
 export type { BuildCalibrationInput, Knowledge, KnowledgeCalibration, KnowledgeOptions, KnowledgePlacement } from './service.ts';
+export type { ReadRoot, ReadRootQuery } from '../ports.ts';
 
 /** The knowledge views (`knowledge:impact|facets|index:...`, contracts/src/views.ts) as an ExternalReaderPort. */
 export function createKnowledgeReader(knowledge: Knowledge): ExternalReaderPort {

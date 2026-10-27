@@ -307,9 +307,27 @@ export interface EntryDiff {
   truncated: boolean;
 }
 
+/** A build name, a version line, or both. A named build selects its own line. */
+export interface ReadRootQuery {
+  build?: string | null;
+  line?: string | null;
+}
+
+/**
+ * The root a run locks and a view reads. `source` says which pointer won. `sync` is the sync root only when it is a
+ * different digest from the seedling; views name both digests in that case.
+ */
+export interface ReadRoot {
+  info: RootInfo;
+  source: 'seedling' | 'sync';
+  sync: RootInfo | null;
+}
+
 export interface KnowledgePort {
   feeding?:import('./knowledge/feeding.ts').FeedingLayer;
   seedlingRoot?(product:string,line:string):Promise<RootInfo|null>;
+  /** Seedling pointer of the line, otherwise the sync root. Absent on older ports; runs then keep the seedling-then-sync fallback. */
+  rootForRead?(product: string, query: ReadRootQuery): Promise<ReadRoot | null>;
   /** Current product-wide root; absent on older ports. */
   unversionedRoot?(product: string): Promise<(RootInfo<null> & { source_count: number }) | null>;
   /** Sources recorded in the compositions of a root. */
@@ -320,7 +338,7 @@ export interface KnowledgePort {
   resolveBuild(product: string, name: string): Promise<KnownBuild | null>;
   /** The root of the newest produced build of a version line. */
   currentRoot(product: string, line: string): Promise<RootInfo | null>;
-  /** The root a build name of any family resolves to. This is what a run locks. */
+  /** The sync root a build name resolves to: the latest completed production of its base. */
   rootOfBuild(product: string, name: string): Promise<RootInfo | null>;
   /** Every composition record of a root digest (equal content from different builds shares one root). */
   rootInfo(root: string): Promise<RootInfo<KnownBuild | null>[]>;
