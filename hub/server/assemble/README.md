@@ -62,6 +62,9 @@ circle-hub pack publish <dir> [--stage] | grant-publish <user> | revoke-publish 
 circle-hub pack retire <pack@version> | activate <product pack> | deactivate <product pack> | list [--as <account>]
 circle-hub resource add <system pack> --name <n> --environment test|shared|production --origin <role>=<url> ...
                     [--allow-plaintext <role>] ... [--setting <key>=<JSON or text>] ...
+circle-hub resource update <res> [--system-pack <pack>] [--name <n>] [--environment <env>]
+                    [--origin <role>=<url> ...] [--allow-plaintext <role> ... | --clear-plaintext]
+                    [--credential <item>=<secret>] [--setting <k>=<v>] [--unset-setting <k>]
 circle-hub resource list [--as] | disable <res> | enable <res> | reset-login <res>
 circle-hub secret set --name <NAME> --reason <note>   # one line per name, stdin only
 circle-hub secret list                              # administrator metadata only
