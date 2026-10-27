@@ -176,6 +176,8 @@ export interface RunRequestView {
 
 /** Everything the console shows about one run. */
 export interface RunDetail {
+  /** Live read qualifier, outside immutable run/result records and their digests. */
+  rule_withdrawn?: true;
   management?:{record:string;disposition:'abandon';result:string|null};
   run: RunRecordView;
   submissions: RunSubmissionView[];

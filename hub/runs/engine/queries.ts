@@ -17,6 +17,8 @@ import { actionOfSubmission, isVerbatimObject, latestAccepted, listRunRecords, r
 import { isObject, receivedDigest } from './util.ts';
 
 export interface StoredResult {
+  /** Current package state; never rewrite the result named by record. */
+  rule_withdrawn?: true;
   /** Digest of the validation_result record. */
   record: string;
   result: ValidationResult;
@@ -33,6 +35,11 @@ async function withRulingSummary(ctx:EngineContext,record:RunRecord,packages=new
   if(!loading){loading=ctx.deps.workflows.byDigest(record.pack_digest);packages.set(record.pack_digest,loading);}
   const workflow=await loading;
   return {...record,requirements:summaryOf(record,workflow??undefined).requirements};
+}
+
+/** Read the exact frozen version through the existing metadata port, after run visibility has been checked. */
+async function ruleWithdrawal(ctx:EngineContext,user:Principal,run:RunRecord):Promise<{rule_withdrawn:true}|Record<string,never>>{
+  return await ctx.deps.workflows.absence?.(user,run.pack)==='withdrawn'?{rule_withdrawn:true}:{};
 }
 
 export async function getRun(ctx: EngineContext, user: Principal, run: string): Promise<RunDetail | null> {
@@ -66,7 +73,7 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string): 
   const latest=selected!==null&&(!owner&&selected.body.acceptance!=='accepted')?null:selected;
   const production = results.filter(result => result.body.submission === stored.digest&&result.body.system_input===undefined).at(-1);
   const notices=await criterionNotices(ctx,stored.body);
-  return { run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
+  return { ...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(management?{management:{record:management.digest,disposition:'abandon' as const,result:latest?.digest??null}}:{}), requests: await requestsOf(ctx,user,run), latest: latest === null ? null : { record: latest.digest, result: latest.body },
     production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
 
@@ -117,7 +124,7 @@ export async function getResult(ctx: EngineContext, user: Principal, run: string
   const store = ctx.deps.records.store;
   const management=submission===undefined?await abandonDecision(ctx,run):null;
   const found = management ? (await store.find<ValidationResult>({kind:'validation_result',key:INDEX.resultSystemInput,value:'rec:'+management.digest,limit:1})).items[0]??null : submission===undefined?await latestAccepted(store,run):await resultFor(store,run,submission);
-  return found === null || !canSeeRun(user,stored.body) && found.body.acceptance !== 'accepted' ? null : { record: found.digest, result: found.body };
+  return found === null || !canSeeRun(user,stored.body) && found.body.acceptance !== 'accepted' ? null : { ...await ruleWithdrawal(ctx,user,stored.body),record: found.digest, result: found.body };
 }
 
 /** The runs of one pack the user may see, newest first. */

@@ -50,7 +50,7 @@ function typedPrerequisites(s: CheckSubject, slots: PlanSlots): Outcome[] | null
   const gaps = typedAuthorityGaps(s.contract!, s.profile!, plan,s.command_identities,s.command_catalog,s.case_texts,s.manifest_sha256,s.bed_services);
   if (!gaps.length) return null;
   const missing = authorityRecovery(gaps);
-  if(gaps.some(g=>g.verdict==='refute'))return [refute(s,'method_forbidden',missing,'/data',{problems:gaps,obligations:gaps.flatMap(gap=>gap.obligation?[gap.obligation]:[])})];
+  if(gaps.some(g=>g.verdict==='refute')){const first=gaps.find(gap=>gap.verdict==='refute')!;const pointer=blockMeta(slots)&&first.pointer.startsWith('/blocks/')?'/data'+first.pointer:'/data';return [refute(s,'method_forbidden',missing,pointer,{problems:gaps,obligations:gaps.flatMap(gap=>gap.obligation?[gap.obligation]:[])})];}
   return [{ verdict: 'unknown', reason: 'missing_input', missing, statement: missing, grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, data: { problems: gaps } }];
 }
 export function checkContractShape(input: unknown): Outcome[] {
