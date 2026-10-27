@@ -83,6 +83,23 @@
               "module"
             ],
             "additionalProperties": false
+          },
+          "locate": {
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+              },
+              "export": {
+                "type": "string",
+                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+              }
+            },
+            "required": [
+              "module"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

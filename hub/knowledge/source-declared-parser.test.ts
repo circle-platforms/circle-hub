@@ -32,6 +32,6 @@ test('declared parser documents remain separate when server charset options diff
  const utf8={...source,bytes,size:bytes.length,mediaType:'text/plain; charset=utf-8'};
  const latin={...utf8,mediaType:'text/plain; charset=iso-8859-1'};
  const first=await loader.parse(utf8,'text@1');const second=await loader.parse(latin,'text@1');assert.ok(first.ok&&second.ok);
- assert.equal(first.value.document.locate('l/1')!.text,'café');assert.equal(second.value.document.locate('l/1')!.text,'cafÃ©');
- assert.equal((await loader.documentWith(utf8,'text@1'))!.locate('l/1')!.text,'café');
+ assert.equal((await first.value.document.locate('l/1'))!.text,'café');assert.equal((await second.value.document.locate('l/1'))!.text,'cafÃ©');
+ assert.equal((await (await loader.documentWith(utf8,'text@1'))!.locate('l/1'))!.text,'café');
 });

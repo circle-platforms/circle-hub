@@ -15,6 +15,7 @@ import { canonicalize, sha256Hex, type Principal } from '../../records/api.ts';
 import type { LoadedWorkflow } from '../../ports.ts';
 import {
   ReferenceSyntaxError,
+  ParseError,
   UNAVAILABLE_MESSAGE,
   candidatesFrom,
   findQuote,
@@ -24,6 +25,7 @@ import {
   quoteMatches,
   recognizeAsync,
   parserCacheKey,
+  prefetchReferences,
   resolveReference,
   withRange,
   type QuoteCandidate,
@@ -31,7 +33,7 @@ import {
   type Reference,
   type Resolved,
 } from '../../refs/api.ts';
-import type { CatalogView } from '../../rules/api.ts';
+import { SandboxError, type CatalogView } from '../../rules/api.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead } from './retry-read.ts';
@@ -144,7 +146,7 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
           const found = cached??await recognizeAsync(ctx.parsers, source.bytes, source.mediaType);
           if(found?.document)ctx.documents.set(key(found.parser),found.document);
           if (found === null||found.document===undefined) continue;
-          const list = candidatesFrom(found.document, sha, { role });
+          const list = await candidatesFrom(found.document, sha, { role });
           for (let i = 0; i < list.length; i++) out.push(list[i]);
         }
         return out;
@@ -245,7 +247,7 @@ export async function buildRootScope(ctx: EngineContext, root: string, reader: P
           const found = cached??await recognizeAsync(ctx.parsers, source.bytes, source.mediaType);
           if(found?.document)ctx.documents.set(key(found.parser),found.document);
           if (found === null||found.document===undefined) continue;
-          const list = candidatesFrom(found.document, sha, { role });
+          const list = await candidatesFrom(found.document, sha, { role });
           for (let i = 0; i < list.length; i++) out.push(list[i]);
         }
         return out;
@@ -266,11 +268,13 @@ export interface ResolvedValue {
   source: string | null;
 }
 
-export type ValueOutcome = { ok: true; value: ResolvedValue } | { ok: false; message: string; code?: ProtocolCode };
+export type ValueOutcome = { ok: true; value: ResolvedValue } | { ok: false; message: string; code?: ProtocolCode; fix?: string; retryable?: boolean };
 
 export interface Resolver {
   /** Resolves inside the run scope; `scoped: false` only for the predecessor's statements a carry-over brings along. */
   resolve(reference: string, options?: { scoped?: boolean; grounds?: boolean }): Promise<ValueOutcome>;
+  /** Loads every selector of one submission's sources before the per-quote checks. */
+  prefetch(references: readonly string[], options?: { scoped?: boolean }): Promise<void>;
 }
 
 export function scopeProblem(ref: Reference, scope: RunScope): string | null {
@@ -303,10 +307,18 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
   const { store, artifacts } = ctx.deps.records;
   const cache = new Map<string, Promise<ValueOutcome>>();
   const resolving = new Set<string>();
+  // Documents may be evicted between groups. Retain only bounded successful
+  // reference results, and re-authorize their source before every actual use.
+  const prepared = new Map<string, { result: Extract<ValueOutcome,{ok:true}>; tier:string }>();
+  let preparedBytes=0;
+  const preparedLimit=64*1024*1024;
+  let aborted:HubReadFailure|undefined;
+  // Reading is an authorization decision, not immutable document content: recheck it on every use.
+  const sources = sourceReader(artifacts, consumer);
   const context = {
     reader: scope.reader,
     parsers: ctx.parsers,
-    sources: sourceReader(artifacts, consumer),
+    sources,
     trees: ctx.deps.knowledge.treeReader({ compositions: scope.compositions }),
     records: recordReader(store, ctx.deps.knowledge.layers?.contributions),
     consumer,
@@ -323,10 +335,10 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
       if (error instanceof ReferenceSyntaxError) return { ok: false, code:'REFERENCE_UNRESOLVED', message: `引用格式不对：${error.message}` };
       throw error;
     }
-    if (resolving.has(canonical)) {
+    if (ref.scheme !== 'src' && resolving.has(canonical)) {
       return { ok: false, message: `成环的引用：${canonical}` };
     }
-    resolving.add(canonical);
+    if (ref.scheme !== 'src') resolving.add(canonical);
     try {
       if (scoped) {
         const problem = scopeProblem(ref, scope);
@@ -338,8 +350,11 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
           && result.reason !== undefined ? { reason: result.reason, retry: true } : null,
           attempt => { if (attempt.retry || attempt.attempt > 1) attempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt, {reference:canonical})); });
       } catch (error) {
-        ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: describe(error) });
+        // A sandbox failure can carry plugin-controlled output and paths in its details.
+        ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: error instanceof SandboxError ? `技能包沙箱失败：${error.code}` : error instanceof ParseError ? `技能包解析失败：${error.code}` : describe(error) });
         if (consumer === 'function') throw new HubReadFailure(canonical, 'check_error', attempts);
+        if (error instanceof SandboxError) return { ok: false, code: 'SOURCE_RETRYABLE', retryable: true, message: error.detail.limit === 'document_cache_bytes' ? `文档缓存估算超过预算：${error.code}` : `来源片段暂时未核对：技能包沙箱 ${error.code}`, fix: error.detail.limit === 'document_cache_bytes' ? '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读' : '管理员核对技能包和沙箱状态，恢复后重新解析该引用' };
+        if (error instanceof ParseError) return { ok: false, code: 'SOURCE_RETRYABLE', retryable: true, message: '来源片段暂时未核对：技能包解析未完成', fix: '管理员核对技能包和原件格式，修正后重新解析该引用' };
         return { ok: false, message: `引用解析不出（${UNAVAILABLE_MESSAGE}）` };
       }
       if (!result.resolved && result.reason !== undefined) {
@@ -369,8 +384,74 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
     }
   };
   return {
-    resolve(reference, options = {}) {
+    async prefetch(references, options = {}) {
+      if(aborted)throw aborted;
+      const scoped=options.scoped!==false;
+      const inScope = references.filter(reference => {
+        try { const ref=parseReference(reference);return !scoped ? ref.scheme!=='entry' : scopeProblem(ref, scope) === null; }
+        catch { return false; }
+      });
+      const groups=new Map<string,Map<string,{reference:string;sha:string}>>();
+      for(const reference of inScope){
+        const ref=parseReference(reference);if(ref.scheme!=='src'||ref.parser===undefined||ref.selector===undefined)continue;
+        const canonical=formatReference(ref),key=(scoped?'s':'u')+'\0'+canonical;if(prepared.has(key))continue;
+        const groupKey=ref.sha256+'\0'+ref.parser,group=groups.get(groupKey)??new Map();
+        group.set(key,{reference:canonical,sha:ref.sha256});groups.set(groupKey,group);
+      }
+      try {
+        for(const group of groups.values()){
+          await retryRead(() => prefetchReferences([...group.values()].map(row=>row.reference), context), () => null, attempt => { if (attempt.retry || attempt.attempt > 1) attempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt)); });
+          const additions:Array<{key:string;result:Extract<ValueOutcome,{ok:true}>;tier:string;bytes:number}>=[];
+          let total=0;
+          for(const [key,row] of group){
+            const checking=Promise.resolve(sources.read(row.sha,scope.reader));
+            const read=await (ctx.documents.within?.(checking)??checking);
+            if(!read?.bytes||read.bytes.length!==read.size||sha256Hex(read.bytes)!==row.sha)continue;
+            const result=await run(row.reference,scoped,false);
+            if(!result.ok||result.value.text===null)continue;
+            const confirming=Promise.resolve(sources.read(row.sha,scope.reader));
+            const confirmed=await (ctx.documents.within?.(confirming)??confirming);
+            if(!confirmed?.bytes||confirmed.readTier!==read.readTier||confirmed.bytes.length!==confirmed.size||sha256Hex(confirmed.bytes)!==row.sha)continue;
+            const value=result.value;
+            const bytes=512+2*(key.length+value.reference.length+(value.text?.length??0)+(value.role?.length??0)+value.digest.length+(value.source?.length??0));
+            total+=bytes;if(total>preparedLimit)throw new SandboxError('SANDBOX_OUTPUT_TOO_LARGE',{limit:'document_cache_bytes'});
+            additions.push({key,result,tier:read.readTier,bytes});
+          }
+          // Another prefetch can have completed the same keys while this batch
+          // awaited authorization. Charge each retained result only once.
+          const fresh=additions.filter(row=>!prepared.has(row.key));
+          if(preparedBytes+fresh.reduce((sum,row)=>sum+row.bytes,0)>preparedLimit)throw new SandboxError('SANDBOX_OUTPUT_TOO_LARGE',{limit:'document_cache_bytes'});
+          for(const row of fresh){prepared.set(row.key,{result:row.result,tier:row.tier});preparedBytes+=row.bytes;}
+        }
+      }
+      catch (error) {
+        const code = error instanceof SandboxError ? error.code : 'SOURCE_RETRYABLE';
+        const cacheLimit = error instanceof SandboxError && error.detail.limit === 'document_cache_bytes';
+        ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:`来源片段预取未完成：${code}`});
+        aborted=new HubReadFailure(inScope[0] ?? '', 'check_error', attempts,
+          cacheLimit ? `Hub 文档缓存估算超过预算，核验未完成（${code}）` : `Hub 来源片段核对未完成（${code}）`,
+          cacheLimit ? '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读；本次不计修复轮数' : '管理员核对技能包和沙箱状态，恢复后原样重交；本次不计修复轮数');
+        throw aborted;
+      }
+    },
+    async resolve(reference, options = {}) {
       const scoped = options.scoped !== false;
+      if(aborted)throw aborted;
+      // Immutable parsed documents may be cached, but source access and disclosure may change between reads.
+      let ref:Reference|undefined;
+      try{ref=parseReference(reference);}catch{/* run gives the structured syntax error */}
+      if(ref?.scheme==='src'){
+      try {
+          const saved=prepared.get((scoped?'s':'u')+'\0'+formatReference(ref));
+          if(saved){
+            ctx.documents.assertActive?.();
+            const checking=Promise.resolve(sources.read(ref.sha256,scope.reader));
+            const read=await (ctx.documents.within?.(checking)??checking);
+            if(read?.bytes&&read.readTier===saved.tier&&read.bytes.length===read.size&&sha256Hex(read.bytes)===ref.sha256)return {ok:true,value:{...saved.result.value}};
+          }
+      }catch{/* The ordinary path reports read errors and deadline exhaustion. */}
+      return run(reference, scoped, options.grounds === true);
+      }
       const key = `${scoped ? 's' : 'u'}${options.grounds ? 'g' : 't'}\u0000${reference}`;
       let found = cache.get(key);
       if (!found) cache.set(key, (found = run(reference, scoped, options.grounds === true)));
@@ -549,6 +630,7 @@ export async function resolveStatement(
 ): Promise<ClaimEvidence> {
   const canonical: SlotClaim = structuredClone(claim);
   const out: ClaimEvidence = { resolutions: [], roles: [], bound: [], grounds: [], canonical };
+  await resolver.prefetch([...(claim.location !== undefined ? [claim.location] : []), ...(claim.grounds ?? []), ...(claim.quotes ?? []).map((quote) => quote.reference)], {scoped});
   const fail = (code: 'REFERENCE_UNRESOLVED' | 'REFERENCE_AMBIGUOUS' | 'QUOTE_MISMATCH', path: string, message: string, options?: string[], fix?: string) =>
     errors.push(protocolError(code, message, { path, ...extra, ...(options && options.length > 0 ? { options } : {}), ...(fix !== undefined ? { fix } : {}) }));
   const take = (pointer: string, text: string, value: ResolvedValue, cites: boolean, reference = value.reference): void => {
@@ -644,6 +726,18 @@ export async function resolveSlots(
   scoped = true,
 ): Promise<Record<string, unknown>> {
   const copy: Record<string, unknown> = structuredClone(slots);
+  const ahead: string[] = [];
+  for (const key of Object.keys(workflow.slots.item)) {
+    const list = slots[key];
+    if (!Array.isArray(list)) continue;
+    for (const raw of list) {
+      const claim = SlotClaim.safeParse(raw);
+      if (!claim.success) continue;
+      if (claim.data.location !== undefined) ahead.push(claim.data.location);
+      ahead.push(...(claim.data.grounds ?? []), ...(claim.data.quotes ?? []).map((quote) => quote.reference));
+    }
+  }
+  await resolver.prefetch(ahead, {scoped});
   for (const key of Object.keys(workflow.slots.item)) {
     const list = slots[key];
     if (!Array.isArray(list)) continue;
@@ -670,6 +764,31 @@ export async function resolveSubmission(
 ): Promise<ExactResult> {
   const result: ExactResult = { errors: [], items: new Map(), cross: new Map(), crossEntries: [], failedItems: new Set() };
   const byId = new Map(items.map((it) => [it.id, it]));
+  // Collect source references for the complete submission before any individual
+  // resolve. A document may be shared by items, cross-item claims and criterion
+  // changes; per-item prefetch alone would start a sandbox for each item.
+  const ahead: string[] = [];
+  for (const entry of submission.items) {
+    const item = byId.get(entry.item);
+    if (!item || entry.handling !== 'handled' || entry.slots === undefined) continue;
+    ahead.push(item.location);
+    for (const key of Object.keys(workflow.slots.item)) {
+      const list = entry.slots[key];
+      if (!Array.isArray(list)) continue;
+      for (const raw of list) {
+        const claim = SlotClaim.safeParse(raw);
+        if (!claim.success) continue;
+        if (claim.data.location !== undefined) ahead.push(claim.data.location);
+        ahead.push(...(claim.data.grounds ?? []), ...(claim.data.quotes ?? []).map(quote => quote.reference));
+      }
+    }
+  }
+  for (const entry of submission.cross_item ?? []) ahead.push(...entry.grounds);
+  for (const change of submission.criterion_changes ?? []) {
+    if (!byId.has(change.item)) continue;
+    ahead.push(change.criterion, ...change.grounds.map(ground => ground.reference));
+  }
+  await resolver.prefetch(ahead);
   for (const [i, entry] of submission.items.entries()) {
     const item = byId.get(entry.item);
     if (item === undefined || entry.handling !== 'handled' || entry.slots === undefined) continue;
@@ -716,6 +835,7 @@ export async function resolveSubmission(
 export async function resolveCriterionChanges(resolver:Resolver,items:readonly {id:string}[],changes:NonNullable<Submission['criterion_changes']>):Promise<{errors:ProtocolError[];refused:ProtocolError[];accepted:Array<{index:number;change:CriterionChange}>}>{
   const errors:ProtocolError[]=[],refused:ProtocolError[]=[];
   const accepted:Array<{index:number;change:CriterionChange}>=[],seen=new Set<string>();
+  await resolver.prefetch(changes.filter(change=>items.some(item=>item.id===change.item)).flatMap(change=>[change.criterion,...change.grounds.map(ground=>ground.reference)]));
   for(const [index,change] of changes.entries()){
     const at=pointerOf('criterion_changes',index),before=errors.length;
     if(!items.some(item=>item.id===change.item)){errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION','判据变更声明的条目不在本运行中',{path:at+'/item',item:change.item}));continue;}

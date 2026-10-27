@@ -157,7 +157,8 @@ describe('resolveReference: neutral permission answers and actionable read fault
     assert.deepEqual(results[0] && Object.keys(results[0]).sort(), ['code','fix','message','reference','resolved']);
     assert.equal(!results[1].resolved && results[1].message,UNAVAILABLE_MESSAGE);
     assert.ok(diagnostics.some((d) => /do not hash/.test(d.message)));
-    assert.ok(diagnostics.some((d) => /disk failure/.test(d.message)));
+    assert.ok(diagnostics.some((d) => /source reader failed: check_error/.test(d.message)));
+    assert.ok(diagnostics.every((d) => !/disk failure/.test(d.message)), 'source reader diagnostics never expose raw exception messages');
     assert.ok(diagnostics.every((d) => !/对你不可用/.test(d.message)));
     // The internal caller still distinguishes unchecked work from a missing fragment (T03 R[3]).
     assert.deepEqual(

@@ -59,7 +59,7 @@ describe('the synthetic document', () => {
 });
 
 describe('projectDocuments', () => {
-  it('gives one item per document in the projection-output@1 shape, with the fields the gold declares', () => {
+  it('gives one item per document in the projection-output@1 shape, with the fields the gold declares', async () => {
     const doc = baseDocument();
     const bound = bind(doc, { external: `${external()}@4`, meta: { title: ' 小部件探测  测试用例 ', folders: ['示例产品', '030：示例测试项目', '101：2.1.0', '模块'], found: true } });
     const out = project([bound]);
@@ -78,7 +78,7 @@ describe('projectDocuments', () => {
     // The location is the root node, addressed as the parser addresses it.
     const parsed = parse(bytesOf(doc));
     assert.deepEqual(item.location, { parser: 'kityminder@1', selector: parsed.model.nodes[0].selector });
-    assert.equal(parsed.locate(item.location.selector)?.text, doc.title);
+    assert.equal((await parsed.locate(item.location.selector))?.text, doc.title);
     assert.match(item.summary, /用例 75 个/);
     assert.match(item.summary, /用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）/);
 
@@ -362,7 +362,7 @@ describe('refusals (W01 R[3])', () => {
     assert.equal(refuse([bind(doc, { slot: 'other' })]).error.code, 'template-gap.invalid_input', 'only the documents slot is read');
   });
 
-  it('documents whose roots cannot be told apart are refused; one document alone is located by position instead', () => {
+  it('documents whose roots cannot be told apart are refused; one document alone is located by position instead', async () => {
     const doc = baseDocument();
     const same = refuse([bind(doc, { external: external('900051') }), bind(shuffled(doc, 3), { external: external('900052') })]);
     assert.equal(same.error.code, 'template-gap.root_ambiguous');
@@ -373,7 +373,7 @@ describe('refusals (W01 R[3])', () => {
     const clash = new TextEncoder().encode(JSON.stringify(km));
     assert.equal(refuse([bind(clash, { external: external('900053') }), bind(renamed(doc, 'r0other00001'), { external: external('900054') })]).error.code, 'template-gap.root_ambiguous');
     assert.equal(itemOf(clash, { external: external('900053') }).location.selector, 'i');
-    assert.equal(parse(clash).locate('i')?.text, doc.title);
+    assert.equal((await parse(clash).locate('i'))?.text, doc.title);
   });
 
   it('refuses a result above the output limit with a fix instead of failing in the sandbox', () => {

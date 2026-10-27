@@ -169,10 +169,10 @@ describe('command entries from the command tree', () => {
     ]);
   });
 
-  it('gives selectors that locate the item in the xml@1 document', () => {
+  it('gives selectors that locate the item in the xml@1 document', async () => {
     for (const item of result.entries) {
       for (const fragment of item.fragments) {
-        const located = document.locate(fragment.selector);
+        const located = (await document.locate(fragment.selector));
         assert.ok(located, fragment.selector);
         const attributes = (located.data as { attributes: { name: string } }).attributes;
         assert.equal(attributes.name, (item.data as CommandEntryData).words.at(-1), fragment.selector);
