@@ -304,12 +304,16 @@ export class DispatchService {
     let session = this.session(binding, d, secret);
     let remote: RemoteLease | undefined; let stop = async () => {}; let pulse:Heartbeat|undefined;
     const flags = { intended: false, submitInvoked: false };
+    let unlockObservation: (() => Promise<void>) | undefined;
     const hold = {
       setStop: (fn: () => Promise<void>) => { stop = fn; },
       setSession: (client: RpcClient) => { session = client; },
       setRemote: (value: RemoteLease) => { remote = value; },
     };
     try {
+      const held = await this.options.records.store.tryHold(`dispatch.observation:${binding.job}`);
+      if (!held) throw new Error('同一作业的观察仍在进行；请等它结束，或在原进程退出后用 circle-hub job resume 只读继续');
+      unlockObservation = held;
       await session.connect();
       remote = await this.acquire(binding, d, session, this.context(binding));
       pulse = this.heartbeat(binding,d,session,remote);stop=pulse.stop;
@@ -454,7 +458,7 @@ export class DispatchService {
         if (remote) await this.release(binding, session, remote);
       }
       return await this.status(by, binding.job);
-    } finally { await stop(); }
+    } finally { await stop(); await unlockObservation?.(); }
   }
   private async boundaryRefused(by:Principal,binding:JobBinding,failure:BoundaryFailure):Promise<JobStatus>{
     let adminReleaseSha:string|undefined,adminReleaseMissing=false;
@@ -508,6 +512,12 @@ export class DispatchService {
   }
   async resume(by: Principal, job: string): Promise<JobStatus> {
     await this.registry.admin(by);
+    const unlock = await this.options.records.store.tryHold(`dispatch.observation:${job}`);
+    if (!unlock) return this.status(by, job);
+    try { return await this.resumeHeld(by, job); }
+    finally { await unlock(); }
+  }
+  private async resumeHeld(by: Principal, job: string): Promise<JobStatus> {
     const binding = { ...await this.journal.binding(job), acting_by: by.id }; const events = await this.journal.events(job);
     const reportRefresh=!isFrozen(events)?await this.reportReadback(by,binding,events):null;
     if (isDone(events) && !isFrozen(events)&&!reportRefresh) return this.status(by, job);
@@ -1333,8 +1343,23 @@ export class DispatchService {
     await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, diffs);
     if (diffs.length) throw new PrecheckFactError(residueFact(diffs), cleanupSteps(spec.items, diffs.map(diff => diff.item)));
   }
+  /** An effective complete already sealed this job. A later finish must not release the lease or append another conclusion. */
+  private async effectivelyComplete(job: string): Promise<boolean> {
+    const end = eventOf(await this.journal.events(job), 'complete');
+    return end?.body.detail.done === true && end.body.detail.outcome === 'effective';
+  }
+
+  /** The post snapshot that already recorded a restored bed, if this job is sealed. */
+  private async restoredReport(job: string): Promise<BedReport | null> {
+    if (!await this.effectivelyComplete(job)) return null;
+    const snap = [...await this.journal.events(job)].reverse().find(event => event.body.detail.phase === 'bed_snapshot' && event.body.detail.when === 'post' && Array.isArray(event.body.detail.differences) && event.body.detail.differences.length === 0 && Array.isArray(event.body.detail.reads) && event.body.detail.reads.length > 0 && event.body.detail.reads.every(read => object(read) && read.ok === true));
+    if (!snap) return null;
+    return { bed: typeof snap.body.detail.bed === 'string' ? snap.body.detail.bed : '', pre: 'passed', recovery: 'restored', differences: [], originals: { pre: [], post: [] }, limits: [], next_action: null };
+  }
+
   /** Post-terminal snapshot. Pass/fail stays as reported; only the shared-bed limit moves. */
   private async finishBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<BedReport | null> {
+    if (await this.effectivelyComplete(binding.job)) return this.restoredReport(binding.job);
     const spec = d.bed_state;
     if (!spec) return null;
     const events = await this.journal.events(binding.job);
@@ -1376,6 +1401,8 @@ export class DispatchService {
     }
     const recovery: BedReport['recovery'] = missing || diffs === null ? 'unknown' : diffs.length ? 'unrestored' : 'restored';
     const differences = diffs ?? [];
+    const late = await this.restoredReport(binding.job);
+    if (await this.effectivelyComplete(binding.job)) return late;
     if (name) await this.noteBed(binding, 'post', name, reads, differences);
     if (name && recovery !== 'restored') await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: name, state: 'open', reason: recovery, pre: prior, differences, pre_reads: preReads });
     const ids = recovery === 'unknown' ? spec.items.map(item => item.id) : differences.map(diff => diff.item);
@@ -1493,6 +1520,7 @@ export class DispatchService {
     // Post probes need the remote lease. Heartbeats keep it alive; stopping or releasing first makes later probes fail.
     const bed = options?.seal === false && !pending ? null : await this.finishBed(binding, d, client, context);
     await stopHeartbeat();
+    if (!options?.execution && await this.effectivelyComplete(binding.job)) return this.status(by, binding.job);
     const leaseInterrupted=options?.execution?(options.execution.lease_interrupted??false):(await this.journal.events(binding.job)).some(e=>e.body.detail.lease_interrupted===true);
     const ownershipCertified = await this.certified(binding,d,client,'result_ownership');
     const attribution=d.result.ownership;

@@ -844,6 +844,62 @@ test('an open hold whose probe is now empty stays unrestored until an administra
   assert.equal(next.outcome, 'effective', JSON.stringify(next));
 });
 
+test('a resume during the last post probe does not open a second session or an open hold', async t => {
+  const queue = [echo(textA), echo(textB), echo(textC), echo(textA), echo(textB), echo(textC)];
+  let job = '';
+  let posts = 0;
+  let late: Promise<{ outcome?: string }> | undefined;
+  const c = await setup({ ttl: 300, extraTools: ['show_bed'], alter: async (name, value) => {
+    if (name !== 'show_bed') return value;
+    const next = queue.shift() ?? value;
+    posts += 1;
+    if (posts === 6) {
+      const before = c.endpoint.calls.filter(call => call.method === 'initialize').length;
+      late = c.service.resume(c.admin, job);
+      await new Promise(resolve => setTimeout(resolve, 400));
+      const status = await late;
+      assert.equal(status.outcome, 'issued');
+      assert.equal(c.endpoint.calls.filter(call => call.method === 'initialize').length, before);
+    }
+    return next;
+  } });
+  t.after(() => c.close());
+  await bind(c, [captureProbe('A'), captureProbe('B'), captureProbe('C')]);
+  await c.service.setBaseline(c.admin, c.executor.id, 'A', textA);
+  await c.service.setBaseline(c.admin, c.executor.id, 'B', textB);
+  await c.service.setBaseline(c.admin, c.executor.id, 'C', textC);
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id, id => { job = id; });
+  assert.equal(state.outcome, 'effective', JSON.stringify(state));
+  assert.ok(late);
+  assert.equal(c.endpoint.calls.filter(call => call.method === 'initialize').length, 1);
+  assert.equal(c.calls.filter(name => name === 'close_slot').length, 1);
+  assert.equal((await bedHolds(c)).some(detail => detail.state === 'open'), false);
+  const bytes = await c.kit.objects.get(String(state.result).slice(4));
+  const report = JSON.parse(new TextDecoder().decode(bytes!)) as { bed_state: { recovery: string; differences: unknown[] } };
+  assert.equal(report.bed_state.recovery, 'restored');
+  assert.deepEqual(report.bed_state.differences, []);
+});
+
+test('a late finish after a restored complete does not read again or open a hold', async t => {
+  const queue = [echo(textA), echo(textB), echo(textC), echo(textA), echo(textB), echo(textC)];
+  const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
+  t.after(() => c.close());
+  await bind(c, [captureProbe('A'), captureProbe('B'), captureProbe('C')]);
+  await c.service.setBaseline(c.admin, c.executor.id, 'A', textA);
+  await c.service.setBaseline(c.admin, c.executor.id, 'B', textB);
+  await c.service.setBaseline(c.admin, c.executor.id, 'C', textC);
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(state.outcome, 'effective');
+  const before = await bedHolds(c);
+  const registered = (await c.registry.get(c.executor.id))!.definition;
+  const binding = await c.service.journal.binding(state.job);
+  let reads = 0;
+  const report = await (c.service as unknown as { finishBed: (binding: unknown, definition: unknown, client: { declaredRead: () => Promise<unknown> }, context: Record<string, unknown>) => Promise<{ recovery: string } | null> }).finishBed(binding, registered, { declaredRead: async () => { reads += 1; throw new Error('late probe'); } }, {});
+  assert.equal(reads, 0);
+  assert.equal(report?.recovery, 'restored');
+  assert.deepEqual(await bedHolds(c), before);
+});
+
 test('an administrator clear appends a record and the next gate lets the same bed through', async t => {
   const queue: Array<ReturnType<typeof echo>> = [];
   const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });

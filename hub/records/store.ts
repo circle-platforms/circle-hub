@@ -20,6 +20,8 @@ import { newId } from './ids.ts';
 const BUSINESS_LOCK_SPACE = 730_160;
 /** Separate namespace for atomically binding a record to its unique business key. */
 const UNIQUE_KEY_LOCK_SPACE = 730_161;
+/** Session lock for one in-flight job observation. Released when the connection closes, including process death. */
+const OBSERVATION_LOCK_SPACE = 730_162;
 
 const INDEX_KEY = /^[a-z][a-z0-9_.-]{0,99}$/;
 /** UTF-8 bytes of one index value; with the key and digest this stays well inside a btree index row (2704 bytes). */
@@ -207,6 +209,24 @@ export class PgRecordStore implements RecordStore {
 
   async position(digest:string,tx?:Transaction):Promise<number|null>{const rows=await this.#db.query<{seq:string}>('SELECT seq FROM records WHERE digest=$1',[digest],tx);if(!rows.rows.length)return null;const value=Number(rows.rows[0].seq);if(!Number.isSafeInteger(value))throw new LimitError('追加序号超过安全整数范围');return value;}
   async watermark(tx?:Transaction):Promise<number>{const rows=await this.#db.query<{seq:string}>('SELECT coalesce(max(seq),0)::text AS seq FROM records',[],tx);const value=Number(rows.rows[0].seq);if(!Number.isSafeInteger(value))throw new LimitError('追加序号超过安全整数范围');return value;}
+
+  /** Holds a session advisory lock until the returned function runs. Null means another live connection already holds it. */
+  async tryHold(key: string): Promise<(() => Promise<void>) | null> {
+    if (typeof key !== 'string' || !key.isWellFormed() || !key.length || key.includes('\0') || Buffer.byteLength(key, 'utf8') > 1000) throw new RecordsError('观察锁需要有效的非空键，至多 1000 UTF-8 字节且不含 NUL');
+    const client = await this.#db.pool.connect();
+    const name = `dispatch.observation:${key}`;
+    try {
+      const result = await client.query<{ locked: boolean }>('SELECT pg_try_advisory_lock($1, hashtext($2)) AS locked', [OBSERVATION_LOCK_SPACE, name]);
+      if (result.rows[0]?.locked !== true) { client.release(); return null; }
+    } catch (error) { client.release(); throw error; }
+    let done = false;
+    return async () => {
+      if (done) return;
+      done = true;
+      try { await client.query('SELECT pg_advisory_unlock($1, hashtext($2))', [OBSERVATION_LOCK_SPACE, name]); }
+      finally { client.release(); }
+    };
+  }
 
   async lock(key: string, tx: Transaction): Promise<void> {
     if (!tx || typeof key !== 'string' || !key.isWellFormed() || !key.length || key.includes('\0') || Buffer.byteLength(key, 'utf8') > 1000) throw new RecordsError('业务锁需要给定事务和有效的非空键，至多 1000 UTF-8 字节且不含 NUL');
