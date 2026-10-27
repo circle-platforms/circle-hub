@@ -34,3 +34,27 @@
 - 验证：`npx tsc --noEmit`；`node tools/gen-contracts.ts --check`；`node --test --test-concurrency=2` 对你改的路径、`tests/acceptance/*.test.ts`、`.github/checks/*.test.ts`；合入前合并最新 hub-redesign 再跑一遍相关部分并报计数（按现行规则：新进提交没碰你的包时不必重跑无关全量）。
 
 完成后在终端里回报：提交号、各项测试数量、改了哪些路径、没做完或拿不准的地方。
+
+## 独立复核的九项处理
+
+1. **连续区间**：采集时刻是客户端声明，Hub 收到时刻取原件记录 `created_at`。只有同一租约连续覆盖整段才填写；区间内取得、释放、接管、到期或历史不完整均写 `lease_unconfirmed`，不是确认有租约或无租约。上传链传 `captured_at`，不改写 Hub 的收到时刻。
+2. **采集身份**：操作身份包含具体 `source.artifact`、`device`、`bed`；显式 `captured_at` 也进入上传去重键。不同采集或设备不得复用第一条记录，只有同一次采集的重复提交才幂等。原错误地复用无设备记录的测试期望已按此行为更正。
+3. **完整床与设备**：`lease` 是 `bed/<床>/<设备>` 资源键，`lease_id` 另存 `lse_…`。清单唯一匹配可补床；不能从唯一持租候选反推床。缺床身份保留未确认原因和下一步。
+4. **时间与损坏边界**：边界同毫秒、缺 `keys`、结构或时刻不一致均为未能确认。租约动作记录使用租约服务自身时钟；只读查询不修改租约状态机。缺 `keys` 的历史不能被精确键过滤吞掉。
+5. **两侧脱敏**：Circle 提案在 `start_run` 前扫描 `device`、`bed`；Hub 在原始 submission 持久化前用现有 `credential-scan@2` 检查三种操作结构的新字段。扫描不靠产品或敏感词名单。
+6. **两个租约身份**：回执、节点和列表同时显示资源键与记录身份；关联索引使用 `lease_id`。旧的无设备路径不增加这些字段。
+7. **有界历史**：`LeaseService.history` 只取窗口前最近一条和窗口内有界记录，另有上限和缺 `keys` 检查。新动作按 `lease.key` 索引，旧动作按记录内容回退；3000 条历史的测试直接断言不全量加载。
+8. **冻结旧包**：从提交 `886d9f4c8a04630fcb70257becbec0589684500c` 提取 `knowledge-contribution@1.3.0` 作为测试夹具，断言运行锁其清单摘要；无设备/租约字段的旧提交、读取和重复回执保持不变。
+9. **声明级边界**：端到端复现证实 `client_captured` 上传可被另一工作流当作 `src:` 输入。现在非回注工作流在输入绑定边界拒绝这类 `src:` 与 `rec:` 来源，测试使用真实的 case-review 调用链；不扩大为其他通用判断改写。
+
+## 本轮新增路径及理由
+
+- `contracts/model.json` 与生成文件：三种操作结构是模型中的正式形状，补 `bed`、`lease_id`、`lease_unconfirmed` 并重新定义 `lease` 为资源键；没有新增枚举。
+- `hub/leases/service.ts`、`hub/leases/history.test.ts`：按精确设备键和时间窗口只读历史，动作时钟与资源键索引必须在这里产生。
+- `hub/records/artifacts.ts` 及测试：显式采集时刻是采集身份的一部分，不能在底层上传去重时丢失。
+- `hub/knowledge/context.ts`、`service.ts`、`declaration-grade.ts`：注入只读租约端口，并在提交边界复用现有扫描器。
+- `hub/server/assemble/hub.ts`：创建知识服务前接入同一个 LeaseService。
+- `hub/runs/engine/inputs.ts`、`tests/acceptance/45-r5-capture-boundary.test.ts`：关闭复核发现的跨工作流声明级输入通道。
+- `tests/acceptance/43-r5-t4-3-change.test.ts`：既有场景只做资源键与记录身份的加法；44 号没有设备声明的旧断言保持。
+
+包版本为 `knowledge-contribution@1.3.3`。全部验证仍只使用合成数据、回环服务与临时 PostgreSQL；不证明真实设备上的授权效果，也不合入或推送本分支。

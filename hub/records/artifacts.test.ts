@@ -88,6 +88,20 @@ test('a clean upload stores the bytes and a source_artifact record; repeating it
   assert.deepEqual(await readdir(join(kit.dataDir, 'objects', body.sha256.slice(0, 2))), [body.sha256]);
 });
 
+test('explicit capture times distinguish equal bytes and the same capture replays idempotently', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const { uploader } = await people(kit);
+  const input = { ...upload(uploader, Buffer.from('synthetic repeated capture')), provenanceType: 'client_captured' as const };
+  const first = await kit.artifacts.ingest({ ...input, capturedAt: '2026-10-27T08:00:00.000Z' });
+  const second = await kit.artifacts.ingest({ ...input, capturedAt: '2026-10-27T08:00:01.000Z' });
+  const replay = await kit.artifacts.ingest({ ...input, capturedAt: '2026-10-27T08:00:00.000Z' });
+  assert.notEqual(first.digest, second.digest);
+  assert.equal(replay.digest, first.digest);
+  assert.notEqual(first.created_at, second.created_at);
+  assert.equal((await kit.artifacts.records(first.body.sha256)).length, 2);
+});
+
 test('an upload with a plaintext credential is refused: no bytes kept, only the digest and the scan conclusion', async (t) => {
   const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());

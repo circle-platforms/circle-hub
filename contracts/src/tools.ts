@@ -74,6 +74,7 @@ export const UploadFileInput = z.strictObject({
   media_type: z.string().optional().describe('Media type if known, for example text/markdown'),
   name: z.string().optional().describe('Original file name, for display'),
   provenance_type: ProvenanceTypeSchema.extract(['declared', 'client_captured']).optional().describe('Client-declared upload provenance; defaults to declared. client_captured is for Circle operation captures and stays declaration grade.'),
+  captured_at: IsoTime.optional().describe('The original capture moment declared by the client, not the Hub receipt moment; Hub receipt is kept separately in the record created_at'),
 });
 // safeExtend: the receipt, optional in the envelope, is required here, and the envelope's refinements stay.
 export const UploadFileOutput = Envelope.safeExtend({

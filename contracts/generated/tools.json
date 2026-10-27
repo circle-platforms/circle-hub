@@ -618,6 +618,12 @@
             "declared",
             "client_captured"
           ]
+        },
+        "captured_at": {
+          "description": "The original capture moment declared by the client, not the Hub receipt moment; Hub receipt is kept separately in the record created_at",
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
         }
       },
       "required": [
@@ -7760,6 +7766,12 @@
                                           "maxLength": 200,
                                           "description": "The client's declared device name from the frozen bed manifest, when one is bound; otherwise an unverified declaration."
                                         },
+                                        "bed": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 200,
+                                          "description": "The client's declared bed name used to make a complete bed/device identity; it is never inferred from a lease candidate."
+                                        },
                                         "lease": {
                                           "anyOf": [
                                             {
@@ -7772,7 +7784,42 @@
                                               "const": null
                                             }
                                           ],
-                                          "description": "Hub-filled lease identity held by the original uploader over this device at the original capture time; null when none is found. Never supplied by the client."
+                                          "description": "The resource key bed/<bed>/<device> covered by a lease continuously held from declared capture through Hub receipt; null when confirmed absent or unconfirmed."
+                                        },
+                                        "lease_id": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 200
+                                            },
+                                            {
+                                              "type": "null",
+                                              "const": null
+                                            }
+                                          ],
+                                          "description": "The Hub lease action identity lse_... for the resource key, when continuously held; otherwise null."
+                                        },
+                                        "lease_unconfirmed": {
+                                          "type": "object",
+                                          "properties": {
+                                            "missing": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 8192
+                                            },
+                                            "next_action": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 8192
+                                            }
+                                          },
+                                          "required": [
+                                            "missing",
+                                            "next_action"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "Why continuous lease coverage, bed identity or lease history cannot be proven, and the action that can resolve it. This is not a confirmed absence."
                                         },
                                         "version": {
                                           "type": "string",
@@ -8033,7 +8080,7 @@
                                       ],
                                       "additionalProperties": false,
                                       "title": "fed-observation@1",
-                                      "description": "Circle operation record of one action and what was seen. Identity is only the canonical action and result quotation. product, root, path, upload digest, version binding and collector are outside identity. The grade is a declaration and is not evidence for verification, scoring or release. Hub fills the binding from the run-locked build or the bed's installed build and refuses a model-reported version."
+                                      "description": "Circle operation record of one action and what was seen. Identity is the canonical action and result quotation, exact capture artifact, and declared bed/device. Product, root, path, version binding, lease evidence and collector are outside identity. The grade is a declaration and is not evidence for verification, scoring or release. Hub fills the binding from the run-locked build or the bed's installed build and refuses a model-reported version."
                                     },
                                     {
                                       "type": "object",
@@ -8287,6 +8334,12 @@
                                           "maxLength": 200,
                                           "description": "The client's declared device name from the frozen bed manifest, when one is bound; otherwise an unverified declaration."
                                         },
+                                        "bed": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 200,
+                                          "description": "The client's declared bed name used to make a complete bed/device identity; it is never inferred from a lease candidate."
+                                        },
                                         "lease": {
                                           "anyOf": [
                                             {
@@ -8299,7 +8352,42 @@
                                               "const": null
                                             }
                                           ],
-                                          "description": "Hub-filled lease identity held by the original uploader over this device at the original capture time; null when none is found. Never supplied by the client."
+                                          "description": "The resource key bed/<bed>/<device> covered by a lease continuously held from declared capture through Hub receipt; null when confirmed absent or unconfirmed."
+                                        },
+                                        "lease_id": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 200
+                                            },
+                                            {
+                                              "type": "null",
+                                              "const": null
+                                            }
+                                          ],
+                                          "description": "The Hub lease action identity lse_... for the resource key, when continuously held; otherwise null."
+                                        },
+                                        "lease_unconfirmed": {
+                                          "type": "object",
+                                          "properties": {
+                                            "missing": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 8192
+                                            },
+                                            "next_action": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 8192
+                                            }
+                                          },
+                                          "required": [
+                                            "missing",
+                                            "next_action"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "Why continuous lease coverage, bed identity or lease history cannot be proven, and the action that can resolve it. This is not a confirmed absence."
                                         },
                                         "version": {
                                           "type": "string",
@@ -8580,7 +8668,7 @@
                                       ],
                                       "additionalProperties": false,
                                       "title": "fed-procedure@1",
-                                      "description": "Circle operation record of a method. Identity is only the canonical goal and the ordered steps with their quotations. Version binding and collector are outside identity. The grade is a declaration and is not evidence. Hub fills the binding and refuses a model-reported version."
+                                      "description": "Circle operation record of a method. Identity is the canonical goal and ordered steps with their quotations, exact capture artifact, and declared bed/device. Version binding, lease evidence and collector are outside identity. The grade is a declaration and is not evidence. Hub fills the binding and refuses a model-reported version."
                                     },
                                     {
                                       "type": "object",
@@ -8834,6 +8922,12 @@
                                           "maxLength": 200,
                                           "description": "The client's declared device name from the frozen bed manifest, when one is bound; otherwise an unverified declaration."
                                         },
+                                        "bed": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 200,
+                                          "description": "The client's declared bed name used to make a complete bed/device identity; it is never inferred from a lease candidate."
+                                        },
                                         "lease": {
                                           "anyOf": [
                                             {
@@ -8846,7 +8940,42 @@
                                               "const": null
                                             }
                                           ],
-                                          "description": "Hub-filled lease identity held by the original uploader over this device at the original capture time; null when none is found. Never supplied by the client."
+                                          "description": "The resource key bed/<bed>/<device> covered by a lease continuously held from declared capture through Hub receipt; null when confirmed absent or unconfirmed."
+                                        },
+                                        "lease_id": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 200
+                                            },
+                                            {
+                                              "type": "null",
+                                              "const": null
+                                            }
+                                          ],
+                                          "description": "The Hub lease action identity lse_... for the resource key, when continuously held; otherwise null."
+                                        },
+                                        "lease_unconfirmed": {
+                                          "type": "object",
+                                          "properties": {
+                                            "missing": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 8192
+                                            },
+                                            "next_action": {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 8192
+                                            }
+                                          },
+                                          "required": [
+                                            "missing",
+                                            "next_action"
+                                          ],
+                                          "additionalProperties": false,
+                                          "description": "Why continuous lease coverage, bed identity or lease history cannot be proven, and the action that can resolve it. This is not a confirmed absence."
                                         },
                                         "version": {
                                           "type": "string",
@@ -9113,7 +9242,7 @@
                                       ],
                                       "additionalProperties": false,
                                       "title": "fed-pitfall@1",
-                                      "description": "Circle operation record of a lesson. Identity is only the canonical phenomenon, suggestion and quotation. Version binding and collector are outside identity. The grade is a declaration and is not evidence. Hub fills the binding and refuses a model-reported version."
+                                      "description": "Circle operation record of a lesson. Identity is the canonical phenomenon, suggestion and quotation, exact capture artifact, and declared bed/device. Version binding, lease evidence and collector are outside identity. The grade is a declaration and is not evidence. Hub fills the binding and refuses a model-reported version."
                                     },
                                     {
                                       "anyOf": [
@@ -11911,8 +12040,14 @@
                         "minLength": 1,
                         "maxLength": 200
                       },
+                      "bed": {
+                        "description": "The declared bed completing the bed/device identity",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
                       "lease": {
-                        "description": "The lease filled by the Hub for the original capture time; null means unauthorized, not refused",
+                        "description": "The resource key covered by a lease continuously held from declared capture through Hub receipt; null when absent or unconfirmed",
                         "anyOf": [
                           {
                             "type": "string",
@@ -11923,6 +12058,40 @@
                             "type": "null"
                           }
                         ]
+                      },
+                      "lease_id": {
+                        "description": "The Hub lease action identity lse_... for that resource key; null when absent or unconfirmed",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "lease_unconfirmed": {
+                        "description": "Why continuous coverage, bed identity or history cannot be proven, and the action that can resolve it",
+                        "type": "object",
+                        "properties": {
+                          "missing": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 8192
+                          },
+                          "next_action": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 8192
+                          }
+                        },
+                        "required": [
+                          "missing",
+                          "next_action"
+                        ],
+                        "additionalProperties": false
                       }
                     },
                     "required": [

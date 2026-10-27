@@ -117,6 +117,10 @@ export async function bindInputs(
         schemaError(path, `输入槽 ${slot.slot} 不接受媒体类型 ${source.mediaType}（接受：${slot.accepts.join('、')}）`);
         return null;
       }
+      if (source.artifact.body.provenance_type === 'client_captured' && workflow.pack.id !== 'knowledge-contribution') {
+        schemaError(path, '客户端捕获的原件只能随操作记录进入回注层，不能作其他工作流的输入或核验根据（决定 73）');
+        return null;
+      }
       return {
         bytes: source.bytes,
         mediaType: source.mediaType,
@@ -136,6 +140,10 @@ export async function bindInputs(
       const record = await recordReader(store, ctx.deps.knowledge.layers?.contributions).read(ref.record, identityOf(user));
       if (record === null) {
         gone(path, 'record absent or not visible to the caller');
+        return null;
+      }
+      if (record.provenance === 'client_captured' && workflow.pack.id !== 'knowledge-contribution') {
+        schemaError(path, '客户端捕获的原件只能随操作记录进入回注层，不能作其他工作流的输入或核验根据（决定 73）');
         return null;
       }
       const bytes = recordBytes(record, ref.pointer);

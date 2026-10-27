@@ -322,7 +322,7 @@ export class ContributionLayer {
     const feeding=body.feeding;
     const operation=feeding!==undefined&&operationRecord(feeding.schema);
     const lease=operation&&feeding!==undefined
-      ? ('lease' in feeding ? (typeof feeding.lease==='string'?feeding.lease:null) : await reproductionLease(this.#context.records.store,origin.run))
+      ? ('lease_id' in feeding ? (typeof feeding.lease_id==='string'?feeding.lease_id:null) : await reproductionLease(this.#context.records.store,origin.run))
       : null;
     return (await this.#context.store.putClaim(SCHEMAS.contribution, operation?'client_captured':'declared', body,
       [{ key: INDEX.contribution, value: body.product }, { key: 'knowledge.contribution.identity', value: key },

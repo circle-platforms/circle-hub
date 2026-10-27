@@ -80,11 +80,12 @@ interface SeedlingAttachment {locked_root:string;locked_composition:string|null;
 interface Projected {rows:Projection[];pack:string;digest:string;attachment:SeedlingAttachment|null}
 const annotations=['classification','manual_link','relations','applicability','correction','command_link','case_link','paragraph'] as const;
 export const operationRecord=(schema:unknown):schema is 'fed-observation@1'|'fed-procedure@1'|'fed-pitfall@1'=>operationSchema(schema);
-/** Content identity of an operation record: the canonical statement and its quotations, nothing else. */
+/** Content identity of an operation record: its canonical statement, quotations, exact capture and declared target, nothing else. */
 export function operationIdentity(body:Record<string,unknown>):Record<string,unknown>{
-  if(body.schema==='fed-observation@1')return {action:body.action,result:body.result};
-  if(body.schema==='fed-procedure@1')return {goal:body.goal,steps:body.steps};
-  if(body.schema==='fed-pitfall@1')return {phenomenon:body.phenomenon,suggestion:body.suggestion,quote:body.quote};
+  const capture=Object.fromEntries([['artifact',object(body.source)?body.source.artifact:undefined],['device',body.device],['bed',body.bed]].filter(([,value])=>value!==undefined));
+  if(body.schema==='fed-observation@1')return {action:body.action,result:body.result,...capture};
+  if(body.schema==='fed-procedure@1')return {goal:body.goal,steps:body.steps,...capture};
+  if(body.schema==='fed-pitfall@1')return {phenomenon:body.phenomenon,suggestion:body.suggestion,quote:body.quote,...capture};
   throw new Error('not an operation record');
 }
 function operationQuotes(body:Record<string,any>):Array<Record<string,any>>{
@@ -459,8 +460,8 @@ export class FeedingLayer {
  }
  private async completeOperation(principal:Principal,raw:unknown,scope:FeedingScope):Promise<unknown>{
   if(!object(raw)||!operationRecord(raw.schema))return raw;
-  for(const key of ['binding','version','build','line','family','by','run','at','object','lease'])if(key in raw){
-   if(key==='lease')fail('提交写了 lease。租约由 Hub 填写，删掉该字段后重交；Hub 按上传者和原件采集时刻核对租约记录。');
+  for(const key of ['binding','version','build','line','family','by','run','at','object','lease','lease_id','lease_unconfirmed'])if(key in raw){
+   if(key==='lease'||key==='lease_id'||key==='lease_unconfirmed')fail(`提交写了 ${key}。租约由 Hub 填写，删掉该字段后重交；Hub 按上传者、声明采集时刻和收到时刻核对租约记录。`);
    fail(`提交写了 ${key}。操作记录的版本和采集事实只由 Hub 填写；缺的是运行锁定的构建或台架在装构建。删掉该字段后重交；这不是终局。`);
   }
   const bytes=object(raw.source)&&raw.source.system==='upload'&&typeof raw.source.bytes==='string'?raw.source.bytes:null;
@@ -469,7 +470,7 @@ export class FeedingLayer {
   const actor=artifact.body.author.user;
   if(actor===null)fail('操作记录的上传原件缺记录者');
   if(raw.product!==scope.product||raw.root!==(scope.root??null)||!scope.product||!scope.root)fail('操作记录必须挂在本次运行锁定的产品和根上');
-  const device=await completeOperationDevice(this.context.records.store,{run:scope.run??null,device:raw.device,user:actor,capturedAt:artifact.body.captured_at});
+  const device=await completeOperationDevice(this.context.records.store,{run:scope.run??null,device:raw.device,bed:raw.bed,user:actor,capturedAt:artifact.body.captured_at,receivedAt:artifact.created_at},this.context.leases);
   return {...raw,...device,object:sha256Hex(canonicalize(operationIdentity(raw))),binding:await this.operationBinding(scope),by:actor,run:scope.run??null,at:artifact.body.captured_at};
  }
  private async checkOperation(body:Record<string,any>,source:{bytes:Uint8Array;artifact:{body:{provenance_type:string;origin:object}}}):Promise<void>{

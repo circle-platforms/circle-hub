@@ -15,7 +15,7 @@ async function uploadPending(dir: string, settings: Settings): Promise<void> {
     const bytes = await outputBytes(settings.session, capture);
     const current = await readSettings(settings.session);
     need(current?.enabled, 'sharing_disabled', '本会话共享已关闭，停止待传上传');
-    const reference = await hub.upload(bytes, capture.sequence);
+    const reference = await hub.upload(bytes, capture.sequence, capture.captured_at);
     await appendUpload(dir, capture, reference);
   }
 }

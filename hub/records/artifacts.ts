@@ -288,8 +288,10 @@ export class RecordArtifacts implements Artifacts {
       scan: { ...scan, ...(accepted === null ? {} : {accepted}), ...(derived === null ? {} : {derived}) },
     };
     // The acceptance takes part only when there is one, so the dedupe key of every other ingest is what it always was.
+    // An explicit capture time distinguishes captures; omitting it keeps the legacy upload idempotency unchanged.
     const dedupe = digestOf({
       sha256,
+      ...(input.capturedAt === undefined ? {} : { captured_at: capturedAt }),
       media_type: input.mediaType,
       name,
       origin,

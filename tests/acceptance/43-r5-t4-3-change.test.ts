@@ -180,13 +180,15 @@ test('scenario 43: T4-3 binds a declared device to its capture-time lease and re
   const duringReceipt = duringAnswer.out.result?.contributions?.stored[0];
   assert.ok(duringReceipt);
   assert.equal(duringReceipt.device, 'edge-a');
-  assert.equal(duringReceipt.lease, lease.lease);
-  assert.match(duringAnswer.text, new RegExp(`设备 edge-a；租约 ${lease.lease}`));
+  assert.equal(duringReceipt.lease, key);
+  assert.equal(duringReceipt.lease_id, lease.lease);
+  assert.match(duringAnswer.text, new RegExp(`设备 edge-a；租约 ${key}（记录 ${lease.lease}）`));
   const duringView = await contribution(world, target.path, duringReceipt.record);
   const duringFeeding = FedObservationSchema.parse(duringView.contribution.feeding);
   assert.equal(duringFeeding.device, 'edge-a');
-  assert.equal(duringFeeding.lease, lease.lease);
-  assert.match(duringView.note ?? '', new RegExp(`设备 edge-a；租约 ${lease.lease}`));
+  assert.equal(duringFeeding.lease, key);
+  assert.equal(duringFeeding.lease_id, lease.lease);
+  assert.match(duringView.note ?? '', new RegExp(`设备 edge-a；租约 ${key}（记录 ${lease.lease}）`));
   const linked = await world.bed.hub.records.store.find({ key: 'knowledge.contribution.lease', value: lease.lease, kind: 'claim', limit: 10 });
   assert.ok(linked.items.some(row => row.digest === duringReceipt.record));
 

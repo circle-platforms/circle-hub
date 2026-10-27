@@ -1,5 +1,9 @@
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {after, before, test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {KnowledgeContributionView} from '../../contracts/src/contributions.ts';
@@ -8,6 +12,7 @@ import {KnowledgeStructureSchema} from '../../contracts/src/feeding.ts';
 import {startPostgres, type TemporaryPostgres} from '../testing/postgres.ts';
 import {makeWorld, catalogXml, BASE_CATALOG} from './test-support.ts';
 import {createRunsService} from '../runs/engine/api.ts';
+import {manifestDigest} from '../runs/api.ts';
 import {FakeWorkflowStore} from '../runs/engine/testing/workflows.ts';
 import {toolText} from '../server/text.ts';
 import {Database, createPool} from '../records/db.ts';
@@ -27,14 +32,14 @@ let postgres: TemporaryPostgres;
 before(async () => { postgres = await startPostgres(); });
 after(async () => { await postgres?.stop(); });
 
-async function world(t: {after(fn: () => Promise<void>): void}) {
+async function world(t: {after(fn: () => Promise<void>): void}, packDirectory?: string) {
   const w = await makeWorld(postgres); t.after(() => w.close());
   const build = {name:'Rel_ACME_1_2_15', family:'ACME', line:'1.2', base:'Rel_ACME_1_2_15', platform:null, built_at:'2026-01-02T10:00:00.000Z', released_at:'2026-01-03T10:00:00.000Z', sources:{tree:'site:tree:Rel_ACME_1_2_15'}, root:null};
   w.external.set(build.sources.tree, {bytes:new TextEncoder().encode(catalogXml(BASE_CATALOG)), mediaType:'application/xml'});
   const produced = await w.knowledge.produceTree({product:w.product, build});
   assert.ok(produced.ok, produced.reason ?? '');
   const workflows = new FakeWorkflowStore();
-  await workflows.add(fileURLToPath(new URL('../../packs/workflow/knowledge-contribution/', import.meta.url)));
+  await workflows.add(packDirectory ?? fileURLToPath(new URL('../../packs/workflow/knowledge-contribution/', import.meta.url)));
   workflows.assign(w.user.id, 'knowledge-contribution');
   const service = createRunsService({records:w.kit, packs:w.packs, knowledge:w.knowledge, external:w.external, workflows, parsers:createDefaultRegistry()});
   const manifest = await w.kit.artifacts.ingest({bytes:new TextEncoder().encode(JSON.stringify({items:[{id:'assertion', title:'assertion'}]})), mediaType:'application/json', origin:{upload:{session:'operation-session', message:null}}, author:{user:w.admin.id}, provenanceType:'declared', visibility:{readers:[w.admin.id], admins:true, packs:[], shareable:false}});
@@ -52,12 +57,15 @@ type Context = Awaited<ReturnType<typeof world>> & {capture?: {digest:string}};
 function leasesOf(t: {after(fn: () => Promise<void>): void}, ctx: Context, now?: () => Promise<Date>) {
   const db = new Database(createPool(ctx.w.kit.database, 2));
   t.after(() => db.end());
-  return {db, service:new LeaseService(db, {records:ctx.w.kit.store, ...(now ? {now} : {})})};
+  const service = new LeaseService(db, {records:ctx.w.kit.store, ...(now ? {now} : {})});
+  ctx.w.knowledge.__context.leases = service;
+  return {db, service};
 }
 
 async function captureRun(ctx: Context, options: {author?: string; capturedAt?: string; text?: string; historicalFinding?: boolean} = {}): Promise<Context> {
   const author = options.author ?? ctx.w.admin.id;
-  const capturedAt = options.capturedAt ?? new Date(Date.now() + captureSequence + 1).toISOString();
+  const latest = options.capturedAt === undefined ? (await ctx.w.kit.store.find({key:'action.kind', value:'lease', kind:'action', newestFirst:true, limit:1})).items[0] : undefined;
+  const capturedAt = options.capturedAt ?? (latest ? new Date(Date.parse((latest.body as {started_at:string}).started_at) + 1).toISOString() : new Date(Date.now() + captureSequence + 1).toISOString());
   const bytes = new TextEncoder().encode(options.text ?? echo);
   // Current upload admission refuses credential-bearing uploads; this historical fixture exercises the read-side hold.
   const captured = options.historicalFinding ? await (async () => {
@@ -104,10 +112,11 @@ function observation(ctx: Context, action: string) {
   return {schema:'fed-observation@1', product:ctx.run.product, root:ctx.root, path, source:{system:'upload', bytes:ctx.sha, ...(ctx.capture?{artifact:ctx.capture.digest}:{})}, action, result:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}};
 }
 
-function submit(ctx: Context, feeding: Record<string, unknown>, statement = '合成操作记录') {
+function submit(ctx: Context, feeding: Record<string, unknown>, statement = '合成操作记录', fixture: {missingBed?: boolean} = {}) {
+  const declared = feeding.device !== undefined && feeding.bed === undefined && fixture.missingBed !== true ? {...feeding, bed:'synthetic'} : feeding;
   return ctx.service.submitResult(ctx.w.admin, {
     run:ctx.run.run, model:'integration-synthetic@1',
-    items:[{item:'assertion', handling:'handled', slots:{contribution:[{code:'assertion', text:statement, data:{root:ctx.root, path, source:{reference:`src:${ctx.sha}/text@1/l/1`, quote}, feeding}}]}}],
+    items:[{item:'assertion', handling:'handled', slots:{contribution:[{code:'assertion', text:statement, data:{root:ctx.root, path, source:{reference:`src:${ctx.sha}/text@1/l/1`, quote}, feeding:declared}}]}}],
   }, nextCall());
 }
 
@@ -124,6 +133,11 @@ async function stored(ctx: Context, answer: Awaited<ReturnType<typeof submit>>) 
 }
 
 function holder(ctx: Context, user = ctx.w.admin.id) { return {user, run:ctx.run.run}; }
+
+async function justAfter(ctx: Context, lease: string) {
+  const action = (await ctx.w.kit.store.find({key:'lease.id', value:lease, kind:'action', newestFirst:true, limit:1})).items[0]!;
+  return new Date(Date.parse((action.body as {started_at:string}).started_at) + 1).toISOString();
+}
 
 test('capture time decides absent, acquired and released leases without changing lease history', async t => {
   const ctx = await world(t);
@@ -150,13 +164,14 @@ test('capture time decides absent, acquired and released leases without changing
   const acquired = await leases.acquire({keys:[key], holder:holder(ctx), prefix:'bed/'});
   assert.ok(acquired.ok);
   const authorizedCapture = await captureRun(ctx);
+  const authorized = await stored(authorizedCapture, await submit(authorizedCapture, {...observation(authorizedCapture, '持有期间采集'), device:'device0'}, '持有期间采集'));
+  assert.equal(authorized.feeding.lease, key);
+  assert.equal(authorized.feeding.lease_id, acquired.lease);
+  assert.equal(authorized.receipt.lease, key);
+  assert.match(authorized.view.note ?? '', new RegExp(`设备 device0；租约 ${key}（记录 ${acquired.lease}）`));
+  assert.match(authorized.text, new RegExp(acquired.lease));
   const released = await leases.release({keys:[key], holder:holder(ctx)});
   assert.ok(released.ok);
-  const authorized = await stored(authorizedCapture, await submit(authorizedCapture, {...observation(authorizedCapture, '持有期间采集'), device:'device0'}, '持有期间采集'));
-  assert.equal(authorized.feeding.lease, acquired.lease);
-  assert.equal(authorized.receipt.lease, acquired.lease);
-  assert.match(authorized.view.note ?? '', new RegExp(`设备 device0；租约 ${acquired.lease}`));
-  assert.match(authorized.text, new RegExp(acquired.lease));
 
   const later = await captureRun(ctx);
   const afterFixture = await history();
@@ -173,13 +188,14 @@ test('takeover and renewal use the uploader and the capture-time history', async
   const first = await leases.acquire({keys:[key], holder:holder(ctx), prefix:'bed/'});
   assert.ok(first.ok);
   const during = await captureRun(ctx);
+  const retained = await stored(during, await submit(during, {...observation(during, '接管前的上传者'), device:'device0'}, '接管前的上传者'));
+  assert.equal(retained.feeding.by, ctx.w.admin.id);
+  assert.equal(retained.feeding.lease, key);
+  assert.equal(retained.feeding.lease_id, first.lease);
   assert.ok((await leases.forceRelease({keys:[key], by:ctx.w.admin.id, reason:'合成接管'})).ok);
   const other = await leases.acquire({keys:[key], holder:holder(ctx, ctx.w.user.id), prefix:'bed/'});
   assert.ok(other.ok);
   assert.notEqual(other.lease, first.lease);
-  const retained = await stored(during, await submit(during, {...observation(during, '接管前的上传者'), device:'device0'}, '接管前的上传者'));
-  assert.equal(retained.feeding.by, ctx.w.admin.id);
-  assert.equal(retained.feeding.lease, first.lease);
 
   const afterTakeover = await captureRun(ctx);
   const refused = await stored(afterTakeover, await submit(afterTakeover, {...observation(afterTakeover, '接管后的原上传者'), device:'device0'}, '接管后的原上传者'));
@@ -190,7 +206,8 @@ test('takeover and renewal use the uploader and the capture-time history', async
   const current = await stored(byOther, await submit(byOther, {...observation(byOther, '接管后的新上传者'), device:'device0'}, '接管后的新上传者'));
   const candidates = await byOther.w.kit.artifacts.records(byOther.sha);
   assert.equal(current.feeding.by, ctx.w.user.id, JSON.stringify({admin:ctx.w.admin.id, expected:ctx.w.user.id, sources:byOther.run.sources, captures:candidates.map(row => ({digest:row.digest, created_at:row.created_at, body:row.body}))}));
-  assert.equal(current.feeding.lease, other.lease);
+  assert.equal(current.feeding.lease, key);
+  assert.equal(current.feeding.lease_id, other.lease);
 });
 
 test('expiry and the extended window are evaluated at capture time, including orphan takeover records', async t => {
@@ -213,7 +230,8 @@ test('expiry and the extended window are evaluated at capture time, including or
   assert.ok(extended.ok);
   const within = await captureRun(ctx);
   const extendedView = await stored(within, await submit(within, {...observation(within, '续租期内'), device:'renew0'}, '续租期内'));
-  assert.equal(extendedView.feeding.lease, renewed.lease);
+  assert.equal(extendedView.feeding.lease, renewedResource);
+  assert.equal(extendedView.feeding.lease_id, renewed.lease);
 
   const current = new LeaseService(db, {records:ctx.w.kit.store});
   const orphanHolder = {user:ctx.w.admin.id, run:newId('run')};
@@ -221,9 +239,10 @@ test('expiry and the extended window are evaluated at capture time, including or
   const orphan = await old.acquire({keys:[orphanResource], holder:orphanHolder, prefix:'bed/'});
   assert.ok(orphan.ok);
   const beforeReclaim = await captureRun(ctx);
-  assert.equal(await current.reclaimOrphans(), 1);
   const reclaimed = await stored(beforeReclaim, await submit(beforeReclaim, {...observation(beforeReclaim, '接管记录前的采集'), device:'orphan0'}, '接管记录前的采集'));
-  assert.equal(reclaimed.feeding.lease, orphan.lease);
+  assert.equal(reclaimed.feeding.lease, orphanResource);
+  assert.equal(reclaimed.feeding.lease_id, orphan.lease);
+  assert.equal(await current.reclaimOrphans(), 1);
   const afterReclaim = await captureRun(ctx);
   const noOrphan = await stored(afterReclaim, await submit(afterReclaim, {...observation(afterReclaim, '接管记录后的采集'), device:'orphan0'}, '接管记录后的采集'));
   assert.equal(noOrphan.feeding.lease, null);
@@ -240,7 +259,8 @@ test('all three operation structures carry device and every client-supplied Hub 
   for (const feeding of [{...observation(current, '三类设备记录'), device:'device0'}, procedure, pitfall]) {
     const view = await stored(current, await submit(current, feeding, `三类设备记录 ${feeding.schema}`));
     assert.equal(view.feeding.device, 'device0');
-    assert.equal(view.feeding.lease, acquired.lease);
+    assert.equal(view.feeding.lease, 'bed/synthetic/device0');
+    assert.equal(view.feeding.lease_id, acquired.lease);
   }
   const supplied = await submit(current, {...observation(current, '客户端租约'), device:'device0', lease:'lse_client_supplied'}, '客户端租约');
   assert.equal(supplied.acceptance, 'not_accepted');
@@ -263,10 +283,15 @@ test('an unbound run accepts a device declaration but never picks one of several
   const {service:leases} = leasesOf(t, ctx);
   for (const key of ['bed/first/device0', 'bed/second/device0']) assert.ok((await leases.acquire({keys:[key], holder:holder(ctx), prefix:'bed/'})).ok);
   const current = await captureRun(ctx);
-  const answer = await submit(current, {...observation(current, '同名设备候选不唯一'), device:'device0'}, '同名设备候选不唯一');
-  assert.equal(answer.acceptance, 'not_accepted');
-  assert.equal(answer.result?.contributions?.stored.length, 0);
-  assert.ok(answer.errors.some(error => error.code === 'SOURCE_UNAVAILABLE' && error.message.includes('多份候选租约')));
+  const answer = await submit(current, {...observation(current, '同名设备候选不唯一'), device:'device0'}, '同名设备候选不唯一', {missingBed:true});
+  const missing = await stored(current, answer);
+  assert.equal(missing.feeding.lease, null);
+  assert.equal(missing.feeding.lease_id, null);
+  assert.match(JSON.stringify(missing.feeding.lease_unconfirmed), /床|台架/);
+  assert.doesNotMatch(missing.view.note ?? '', /无租约（未授权）/);
+  const first = await stored(current, await submit(current, {...observation(current, '明确床身份'), device:'device0', bed:'first'}, '明确床身份'));
+  assert.equal(first.feeding.lease, 'bed/first/device0');
+  assert.notEqual(first.feeding.lease_id, null);
 });
 
 test('mixed-lease batch extension and force release replay every affected key', async t => {
@@ -282,12 +307,13 @@ test('mixed-lease batch extension and force release replay every affected key', 
   assert.ok((await extending.extend({keys, holder:holder(ctx), ttlSeconds:60, maxTtlSeconds:600})).ok);
   const before = await captureRun(ctx);
   const current = new LeaseService(db, {records:ctx.w.kit.store});
-  assert.ok((await current.forceRelease({keys, by:ctx.w.admin.id, reason:'合成批量强制释放'})).ok);
   for (const [index, device] of ['first0', 'second0'].entries()) {
     const expected: string = index === 0 ? first.lease : second.lease;
     const view = await stored(before, await submit(before, {...observation(before, `批量续租 ${device}`), device}, `批量续租 ${device}`));
-    assert.equal(view.feeding.lease, expected);
+    assert.equal(view.feeding.lease, keys[index]);
+    assert.equal(view.feeding.lease_id, expected);
   }
+  assert.ok((await current.forceRelease({keys, by:ctx.w.admin.id, reason:'合成批量强制释放'})).ok);
   const after = await captureRun(ctx);
   for (const device of ['first0', 'second0']) {
     const view = await stored(after, await submit(after, {...observation(after, `批量释放 ${device}`), device}, `批量释放 ${device}`));
@@ -310,7 +336,8 @@ test('equal-byte captures keep their own timestamps and idempotent receipts read
   const early = await stored(before, await submit(before, {...observation(before, '同字节前态'), device:'device0'}, '同字节前态'));
   const late = await stored(after, await submit(after, {...observation(after, '同字节后态'), device:'device0'}, '同字节后态'));
   assert.equal(early.feeding.lease, null);
-  assert.equal(late.feeding.lease, acquired.lease);
+  assert.equal(late.feeding.lease, 'bed/synthetic/device0');
+  assert.equal(late.feeding.lease_id, acquired.lease);
   assert.ok(Date.parse(String(early.feeding.at)) < Date.parse(String(late.feeding.at)));
 
   const plainAnswer = await submit(before, observation(before, '幂等无设备'), '幂等操作');
@@ -318,15 +345,21 @@ test('equal-byte captures keep their own timestamps and idempotent receipts read
   assert.equal(plain.feeding.device, undefined);
   const replayAnswer = await submit(after, {...observation(after, '幂等无设备'), device:'device0'}, '幂等操作');
   const replay = await stored(after, replayAnswer);
-  assert.equal(replay.receipt.record, plain.receipt.record);
-  assert.equal(replay.receipt.device, undefined);
-  assert.equal(replay.receipt.lease, undefined);
-  assert.equal(replay.feeding.lease, undefined);
-  assert.equal(replay.view.note, null);
+  assert.notEqual(replay.receipt.record, plain.receipt.record);
+  assert.equal(replay.receipt.device, 'device0');
+  assert.equal(replay.receipt.lease, 'bed/synthetic/device0');
+  assert.equal((replay.receipt as Record<string, unknown>).lease_id, acquired.lease);
+  assert.equal(replay.feeding.lease, 'bed/synthetic/device0');
+  assert.equal(replay.feeding.lease_id, acquired.lease);
+  assert.match(replay.view.note ?? '', /租约 bed\/synthetic\/device0/);
+  const identical = await submit(after, {...observation(after, '幂等无设备'), device:'device0'}, '幂等操作');
+  assert.equal(identical.acceptance, 'accepted', JSON.stringify(identical.errors));
+  assert.equal(identical.result?.contributions?.stored[0]?.record, replay.receipt.record);
 });
 
 test('credential withholding keeps the device and unauthorized state without exposing the quote', async t => {
   const ctx = await world(t);
+  leasesOf(t, ctx);
   const current = await captureRun(ctx, {text:['合成回显：状态正常', ['SECRET', 'KEY'].join('_') + '=' + ['Synth3tic', 'key', '42'].join('-'), ''].join('\n'), historicalFinding:true});
   const saved = await stored(current, await submit(current, {...observation(current, '扣留的设备操作'), device:'device0'}, '扣留的设备操作'));
   assert.equal(saved.feeding.lease, null);
@@ -364,4 +397,172 @@ test('an artifact from another capture is refused instead of rebinding equal byt
   }, nextCall());
   assert.equal(started.call_result, 'error');
   assert.ok(started.errors.some(error => error.message.includes('artifact 与 src')));
+});
+
+test('lease proof covers the declared capture through Hub receipt and exposes its resource key and id', async t => {
+  const ctx = await world(t);
+  const {service:leases} = leasesOf(t, ctx);
+  const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
+  assert.ok(acquired.ok);
+  const acquiredRecord = (await ctx.w.kit.store.find({key:'lease.id', value:acquired.lease, kind:'action', limit:1})).items[0]!;
+  const declaredAt = new Date(Date.parse((acquiredRecord.body as {started_at:string}).started_at) + 1).toISOString();
+  const current = await captureRun(ctx, {capturedAt:declaredAt});
+  const held = await stored(current, await submit(current, {...observation(current, '延迟上传的连续租约'), device:'device0'}, '延迟上传的连续租约'));
+  assert.equal(held.feeding.lease, 'bed/synthetic/device0');
+  assert.equal(held.feeding.lease_id, acquired.lease);
+  assert.equal(held.receipt.lease, 'bed/synthetic/device0');
+  assert.equal((held.receipt as Record<string, unknown>).lease_id, acquired.lease);
+
+  const changedAt = new Date().toISOString();
+  assert.ok((await leases.release({keys:['bed/synthetic/device0'], holder:holder(ctx)})).ok);
+  const changed = await captureRun(ctx, {capturedAt:changedAt});
+  const uncertain = await stored(changed, await submit(changed, {...observation(changed, '区间内发生变化'), device:'device0'}, '区间内发生变化'));
+  assert.equal(uncertain.feeding.lease, null);
+  assert.equal(uncertain.feeding.lease_id, null);
+  assert.ok(uncertain.feeding.lease_unconfirmed);
+  assert.match(uncertain.view.note ?? '', /未能确认/);
+});
+
+test('continuous coverage permits the same lease renewal but not an interval expiry', async t => {
+  const ctx = await world(t);
+  const {db, service:leases} = leasesOf(t, ctx, async () => new Date('2026-10-27T09:59:00.000Z'));
+  const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/', ttlSeconds:600, maxTtlSeconds:600});
+  assert.ok(acquired.ok);
+  const extending = new LeaseService(db, {records:ctx.w.kit.store, now:async () => new Date('2026-10-27T10:00:05.000Z')});
+  assert.ok((await extending.extend({keys:['bed/synthetic/device0'], holder:holder(ctx), ttlSeconds:60, maxTtlSeconds:600})).ok);
+  const {operationLease} = await import('./feeding-leases.ts');
+  const renewed = await operationLease(ctx.w.kit.store, {key:'bed/synthetic/device0', device:'device0', user:ctx.w.admin.id, capturedAt:'2026-10-27T10:00:00.000Z', receivedAt:'2026-10-27T10:00:10.000Z'}, leases);
+  assert.deepEqual(renewed, {lease:'bed/synthetic/device0', lease_id:acquired.lease});
+
+  const expiring = await leases.acquire({keys:['bed/synthetic/expiring0'], holder:holder(ctx), prefix:'bed/', ttlSeconds:60, maxTtlSeconds:600});
+  assert.ok(expiring.ok);
+  const expired = await operationLease(ctx.w.kit.store, {key:'bed/synthetic/expiring0', device:'expiring0', user:ctx.w.admin.id, capturedAt:'2026-10-27T09:59:30.000Z', receivedAt:'2026-10-27T10:00:10.000Z'}, leases);
+  assert.equal(expired.lease, null);
+  assert.equal(expired.lease_id, null);
+  assert.match(expired.lease_unconfirmed?.missing ?? '', /到期/);
+});
+
+test('a shared device name never borrows a lease from another bed', async t => {
+  const ctx = await world(t);
+  const {service:leases} = leasesOf(t, ctx);
+  const acquired = await leases.acquire({keys:['bed/first/device0'], holder:holder(ctx), prefix:'bed/'});
+  assert.ok(acquired.ok);
+  const current = await captureRun(ctx);
+  const missing = await stored(current, await submit(current, {...observation(current, '缺台架身份'), device:'device0'}, '缺台架身份', {missingBed:true}));
+  assert.equal(missing.feeding.lease, null);
+  assert.equal(missing.feeding.lease_id, null);
+  assert.ok(missing.feeding.lease_unconfirmed);
+  assert.match(JSON.stringify(missing.feeding.lease_unconfirmed), /床|台架/);
+  const identified = await stored(current, await submit(current, {...observation(current, '明确台架与设备'), device:'device0', bed:'first'}, '明确台架与设备'));
+  assert.equal(identified.feeding.lease, 'bed/first/device0');
+  assert.equal(identified.feeding.lease_id, acquired.lease);
+});
+
+test('capture and lease acquisition in the same millisecond is unconfirmed', async t => {
+  const ctx = await world(t);
+  const {service:leases} = leasesOf(t, ctx);
+  const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
+  assert.ok(acquired.ok);
+  const action = (await ctx.w.kit.store.find({key:'action.kind', value:'lease', kind:'action', limit:1})).items[0]!;
+  const current = await captureRun(ctx, {capturedAt:(action.body as {started_at:string}).started_at});
+  const view = await stored(current, await submit(current, {...observation(current, '同毫秒采集'), device:'device0'}, '同毫秒采集'));
+  assert.ok(view.feeding.lease_unconfirmed);
+  assert.match(view.view.note ?? '', /未能确认/);
+});
+
+test('a damaged acquire record is unconfirmed rather than a confirmed absence', async t => {
+  const ctx = await world(t);
+  const lease = 'lse_synthetic_missing_keys';
+  await ctx.w.kit.store.put({
+    kind:'action', schema:RECORD_SCHEMAS.action, provenance:'observed', created_at:'2026-01-01T00:00:00.000Z',
+    body:{
+      action:'lease', run:ctx.run.run, item:null, inputs:[], component:'leases@1', lease:{lease, fencing:1},
+      started_at:'2026-01-01T00:00:00.000Z', ended_at:'2026-01-01T00:00:00.000Z', result:'completed', error_code:null, acceptance:null, codes:[],
+      detail:{op:'acquire', lease, holder:holder(ctx), until:null, token:1},
+    },
+    index:[{key:'action.kind', value:'lease'}],
+  });
+  const current = await captureRun(ctx);
+  const view = await stored(current, await submit(current, {...observation(current, '损坏租约记录'), device:'device0'}, '损坏租约记录'));
+  assert.ok(view.feeding.lease_unconfirmed);
+  assert.match(JSON.stringify(view.feeding.lease_unconfirmed), /keys|管理员/);
+});
+
+test('credential-shaped device text is refused before the raw submission is persisted', async t => {
+  const ctx = await world(t);
+  const before = (await ctx.w.kit.store.list({kind:'submission', limit:500})).items.length;
+  const device = ['SECRET', 'KEY'].join('_') + '=' + ['Synth3tic', 'key', '42'].join('-');
+  const answer = await submit(ctx, {...observation(ctx, '设备字段凭据'), device}, '设备字段凭据');
+  const after = (await ctx.w.kit.store.list({kind:'submission', limit:500})).items.length;
+  assert.equal(after, before);
+  assert.ok(answer.errors.some(error => error.code === 'CREDENTIAL_IN_UPLOAD'));
+});
+
+test('thousands of historical lease records do not cause a full-history read', async t => {
+  const ctx = await world(t);
+  for (let index = 0; index < 3000; index++) {
+    const lease = `lse_synthetic_history_${index}`;
+    await ctx.w.kit.store.put({
+      kind:'action', schema:RECORD_SCHEMAS.action, provenance:'observed', created_at:'2026-01-01T00:00:00.000Z',
+      body:{
+        action:'lease', run:ctx.run.run, item:null, inputs:[], component:'leases@1', lease:{lease, fencing:1},
+        started_at:'2026-01-01T00:00:00.000Z', ended_at:'2026-01-01T00:00:00.000Z', result:'completed', error_code:null, acceptance:null, codes:[],
+        detail:{op:'acquire', lease, keys:[`bed/history/${index}`], holder:holder(ctx), until:null, token:1},
+      },
+      index:[{key:'action.kind', value:'lease'}],
+    });
+  }
+  const original = ctx.w.kit.store.findMany;
+  let loaded = 0;
+  const counted: typeof original = async <B,>(
+    query: {key:string; values:readonly string[]; kind?:import('../../contracts/generated/protocol.ts').RecordKind},
+    tx?: import('../records/api.ts').Transaction,
+  ): Promise<Array<import('../records/api.ts').StoredRecord<B>>> => {
+    const rows = await original.call(ctx.w.kit.store, query, tx);
+    loaded += rows.length;
+    return rows as Array<import('../records/api.ts').StoredRecord<B>>;
+  };
+  ctx.w.kit.store.findMany = counted;
+  t.after(() => { ctx.w.kit.store.findMany = original; });
+  const {service:leases} = leasesOf(t, ctx);
+  const granted = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
+  assert.ok(granted.ok);
+  const {operationLease} = await import('./feeding-leases.ts');
+  const capturedAt = await justAfter(ctx, granted.lease);
+  const result = await operationLease(ctx.w.kit.store, {bed:'synthetic', device:'device0', user:ctx.w.admin.id, capturedAt, receivedAt:new Date().toISOString()}, leases);
+  assert.deepEqual(result, {lease:'bed/synthetic/device0', lease_id:granted.lease});
+  assert.ok(loaded < 100, `loaded ${loaded} lease records`);
+});
+
+test('a frozen old pack replays a legacy operation without device or lease fields', async t => {
+  const revision = '886d9f4c8a04630fcb70257becbec0589684500c';
+  const repository = fileURLToPath(new URL('../../', import.meta.url));
+  const directory = await mkdtemp(join(tmpdir(), 'operation-frozen-pack-'));
+  t.after(() => rm(directory, {recursive:true, force:true}));
+  const archive = execFileSync('git', ['archive', revision, 'packs/workflow/knowledge-contribution'], {cwd:repository, maxBuffer:32 * 1024 * 1024});
+  execFileSync('tar', ['-x', '-C', directory], {input:archive});
+  const packDirectory = join(directory, 'packs/workflow/knowledge-contribution');
+  const manifest = JSON.parse(await readFile(join(packDirectory, 'pack.json'), 'utf8')) as {id:string; version:string};
+  const digest = manifestDigest(manifest);
+  const ctx = await world(t, packDirectory);
+  assert.equal(ctx.run.pack, `${manifest.id}@${manifest.version}`);
+  assert.equal(ctx.run.pack_digest, digest);
+
+  const legacy = observation(ctx, '冻结旧包操作');
+  delete legacy.source.artifact;
+  assert.ok(!('device' in legacy) && !('bed' in legacy) && !('lease' in legacy) && !('lease_id' in legacy));
+  const answer = await submit(ctx, legacy, '冻结旧包操作');
+  const saved = await stored(ctx, answer);
+  for (const field of ['device', 'bed', 'lease', 'lease_id', 'lease_unconfirmed']) assert.ok(!(field in saved.feeding), field);
+  assert.equal(saved.receipt.device, undefined);
+  assert.equal(saved.receipt.lease, undefined);
+  assert.equal(saved.view.status, 'valid');
+  assert.equal(saved.view.note, null);
+  const first = await ctx.w.knowledge.layers.contributions.readView(saved.receipt.record, ctx.w.admin);
+  const second = await ctx.w.knowledge.layers.contributions.readView(saved.receipt.record, ctx.w.admin);
+  assert.deepEqual(second, first);
+  const replay = await submit(ctx, legacy, '冻结旧包操作');
+  assert.equal(replay.acceptance, 'accepted', JSON.stringify(replay.errors));
+  assert.equal(replay.result?.contributions?.stored[0]?.record, saved.receipt.record);
+  assert.deepEqual(await ctx.w.knowledge.layers.contributions.readView(saved.receipt.record, ctx.w.admin), first);
 });

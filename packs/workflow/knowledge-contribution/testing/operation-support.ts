@@ -68,7 +68,7 @@ export async function enable(scratch: Scratch, url: string): Promise<Result> {
   return skill(scratch, ['enable', '--session', SESSION, '--hub', url, '--token-file', scratch.tokenFile]);
 }
 
-interface StoredUpload { bytes: Buffer; provenance: string; artifact: string }
+interface StoredUpload { bytes: Buffer; provenance: string; artifact: string; captured_at: string; received_at: string }
 async function body(request: IncomingMessage): Promise<any> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(Buffer.from(chunk));
@@ -103,12 +103,14 @@ export async function fakeHub(t: { after(fn: () => Promise<void>): void }, optio
           const bytes = Buffer.from(args.file_path, 'base64');
           const digest = createHash('sha256').update(bytes).digest('hex');
           const provenance = args.provenance_type ?? 'declared';
-          const artifact = createHash('sha256').update(JSON.stringify({ name: args.name ?? null, provenance, digest })).digest('hex');
-          uploads.set(digest, { bytes, provenance, artifact });
+          const receivedAt = new Date().toISOString();
+          const capturedAt = args.captured_at ?? receivedAt;
+          const artifact = createHash('sha256').update(JSON.stringify({ name: args.name ?? null, provenance, digest, captured_at: capturedAt, received_at: receivedAt })).digest('hex');
+          uploads.set(digest, { bytes, provenance, artifact, captured_at: capturedAt, received_at: receivedAt });
           value = { call_result: 'ok', errors: [], trace: 'b'.repeat(32), acceptance: 'accepted', reference: `src:${digest}`, artifact, sha256: digest, size: bytes.length, media_type: args.media_type ?? 'text/plain' };
         } else if (name === 'start_run') {
           runs.push(args);
-          value = { call_result: 'ok', errors: [], trace: 'b'.repeat(32), run: { run: 'run_01arz3ndektsv4rrffq69g5fav', pack: 'knowledge-contribution@1.3.2', pack_digest: PACK_DIGEST, product: args.product, root: ROOT } };
+          value = { call_result: 'ok', errors: [], trace: 'b'.repeat(32), run: { run: 'run_01arz3ndektsv4rrffq69g5fav', pack: 'knowledge-contribution@1.3.3', pack_digest: PACK_DIGEST, product: args.product, root: ROOT } };
         } else if (name === 'submit_result') {
           submissions.push(args);
           const errors: any[] = [];

@@ -96,8 +96,13 @@ test('device declarations reuse capture targets and conflicting proposals stop b
   assert.equal((await submit({ ...base, device: 'edge-a' })).code, 0);
   assert.equal((await submit({ ...base, capture: second, quote: { line: 1, text: 'COMET synthetic status: ready' } })).code, 0);
   assert.deepEqual(hub.submissions.map(row => row.items[0].slots.contribution[0].data.feeding.device), ['edge-a', 'edge-b']);
+  assert.deepEqual(hub.submissions.map(row => row.items[0].slots.contribution[0].data.feeding.bed), ['bench-a', 'bench-b']);
   for (const row of hub.submissions) assert.ok(!('lease' in row.items[0].slots.contribution[0].data.feeding));
   assert.equal((await submit({ ...base, device: 'edge-other' })).code, 1);
+  assert.equal((await submit({ ...base, device: null })).code, 1);
+  assert.equal((await submit({ ...base, bed: null })).code, 1);
+  assert.equal((await submit({ ...base, bed: 'bench-b' })).code, 1);
+  assert.equal((await submit({ ...base, bed: ['SECRET', 'KEY'].join('_') + '=' + ['Synth3tic', 'key', '42'].join('-') })).code, 1);
   assert.equal((await submit({ ...base, device: 'edge-a', lease: 'lse_client_supplied' })).code, 1);
   assert.equal(hub.runs.length, 2);
   assert.equal(hub.submissions.length, 2);
@@ -132,4 +137,25 @@ test('equal-byte proposals bind exact capture artifacts instead of the latest ti
   assert.deepEqual(originals.map((row: any) => row.artifact), captures.map(row => row.upload.artifact));
   assert.equal(new Set(originals.map((row: any) => row.artifact)).size, 2);
   assert.deepEqual(hub.submissions[0].items.map((row: any) => row.slots.contribution[0].data.feeding.device), ['edge-a', 'edge-b']);
+});
+
+test('credential-shaped explicit device or bed text is refused before start_run', async t => {
+  const local = await scratch(t);
+  const hub = await fakeHub(t);
+  assert.equal((await enable(local, hub.url)).code, 0);
+  assert.equal((await hook(local, 'ORBIT synthetic status: ready\n')).code, 0);
+  const capture = [...hub.uploads.keys()][0]!;
+  const target = ['SECRET', 'KEY'].join('_') + '=' + ['Synth3tic', 'key', '42'].join('-');
+  const proposals = join(local.home, 'proposals.json');
+  for (const field of ['device', 'bed']) {
+    await writeFile(proposals, JSON.stringify({
+      schema: 'operation-integration@1', session: SESSION,
+      items: [{ capture, kind: 'observation', path: '/commands/system/show', statement: '设备字段凭据', action: '执行合成检查', [field]: target, quote: { line: 1, text: 'ORBIT synthetic status: ready' } }],
+    }));
+    const result = await skill(local, ['submit', '--session', SESSION, '--proposals', proposals, '--product', 'ORBIT', '--model', 'integration-synthetic@1']);
+    assert.equal(result.code, 1);
+    assert.match(result.err, /credential|凭据/);
+  }
+  assert.equal(hub.runs.length, 0);
+  assert.equal(hub.submissions.length, 0);
 });

@@ -95,12 +95,14 @@ export class HubClient {
     return value;
   }
 
-  async upload(bytes: Uint8Array, sequence: number): Promise<{reference:string;artifact:string}> {
+  async upload(bytes: Uint8Array, sequence: number, capturedAt?: string): Promise<{reference:string;artifact:string}> {
+    if (capturedAt !== undefined) need(new Date(capturedAt).toISOString() === capturedAt, 'invalid_capture_time', '采集时刻格式不对');
     const args = {
       file_path: Buffer.from(bytes).toString('base64'),
       media_type: 'text/plain',
       name: `circle-operation-${sequence}.txt`,
       provenance_type: GENERATED.provenance_type,
+      ...(capturedAt ? { captured_at: capturedAt } : {}),
     };
     const check = (token: string) => need(!Buffer.from(bytes).toString('utf8').includes(token), 'credential_redaction_failed', '原件含当前 Hub 令牌，停止上传');
     const initial = await validateTokenFile(this.tokenFile);

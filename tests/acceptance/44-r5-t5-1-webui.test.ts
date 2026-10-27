@@ -118,7 +118,7 @@ describe('scenario 44: T5-1 synthetic WebUI originals and operation integration'
       steps: [{ text: '打开合成池页面', quote: { line: 1, text: first.text } }],
     }]);
     assert.deepEqual(receipt.result.contributions.stored[0], {
-      item: 'operation-1', record: receipt.result.contributions.stored[0].record, device: 'edge-web', lease: null,
+      item: 'operation-1', record: receipt.result.contributions.stored[0].record, device: 'edge-web', bed: 'bench-web', lease: null, lease_id: null,
     });
     const record = receipt.result.contributions.stored[0].record;
     const view = await contribution(world, path, record);

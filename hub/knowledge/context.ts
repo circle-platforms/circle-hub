@@ -116,6 +116,8 @@ export interface KnowledgeContext {
   additionalScopeRoots?: (product:string)=>Promise<readonly {root:string;composition:string}[]>;
   credentialAcceptance?:import('./credential-policy.ts').CredentialAcceptanceOptions;
   feeding?:import('./feeding.ts').FeedingLayer;
+  /** Read-only lease history used to prove coverage at a capture's declared and received moments. */
+  leases?:Pick<import('../leases/api.ts').LeaseService,'history'>;
   records: KnowledgeRecords;
   store: KnowledgeStore;
   parsers: ParserRegistry;

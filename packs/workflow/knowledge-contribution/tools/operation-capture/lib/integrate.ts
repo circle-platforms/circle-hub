@@ -1,6 +1,7 @@
 import { lstat, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { EGRESS, GENERATED, PACK } from './constants.ts';
+import { scanWithMatches } from './credentials.ts';
 import { canonical, exact, isRecord, need, sessionDirectory, sha256, splitTextLines, text } from './common.ts';
 import { HubClient } from './hub.ts';
 import { appendReceipt, outputBytes, readSettings, verifyState, withLock, type VerifiedCapture } from './state.ts';
@@ -12,6 +13,7 @@ interface Prepared {
   path: string;
   statement: string;
   device?: string;
+  bed?: string;
   action?: string;
   goal?: string;
   phenomenon?: string;
@@ -44,14 +46,27 @@ function quoteOf(value: unknown, bytes: Uint8Array): Quote {
   return { reference: `src:${sha256(bytes)}/text@1/l/${row.line}`, text: quote };
 }
 
+function targetText(raw: unknown, kind: 'bed' | 'device'): string {
+  const declared = text(raw, `invalid_${kind}`, `提案或采集清单的${kind === 'bed' ? '台架' : '设备'}名格式不对`, 200);
+  need(declared.trim() === declared && !/[\p{Cc}\p{Cf}]/u.test(declared), `invalid_${kind}`, '目标名不含控制字符或首尾空白');
+  const checked = scanWithMatches(new TextEncoder().encode(declared));
+  need(checked.complete && checked.scan.inspected && checked.scan.clean && !checked.scan.truncated, 'credential_in_target', `${kind} 未通过完整凭据扫描；清理该字段后重交`);
+  return declared;
+}
+
 function operationDevice(raw: unknown, targets: Record<string, string>): string | undefined {
   const known = targets.device ?? targets.device_id;
   need(targets.device === undefined || targets.device_id === undefined || targets.device === targets.device_id, 'invalid_device', '采集清单的 device 与 device_id 不一致；修正工具参数后重新采集');
-  if (known !== undefined) text(known, 'invalid_device', '采集清单的设备名格式不对', 200);
-  if (raw === undefined) return known;
-  const declared = text(raw, 'invalid_device', '提案设备名格式不对', 200);
-  need(declared.trim() === declared && !/[\p{Cc}\p{Cf}]/u.test(declared), 'invalid_device', '提案设备名不含控制字符或首尾空白');
-  need(known === undefined || declared === known, 'device_mismatch', '提案设备与采集清单 targets.device 不一致；照清单修正或省略 device');
+  const declared = raw === undefined && known === undefined ? undefined : targetText(raw === undefined ? known : raw, 'device');
+  need(declared === undefined || known === undefined || declared === known, 'device_mismatch', '提案设备与采集清单 targets.device 不一致；照清单修正或省略 device');
+  return declared;
+}
+
+function operationBed(raw: unknown, targets: Record<string, string>): string | undefined {
+  const known = targets.bed ?? targets.bed_id;
+  need(targets.bed === undefined || targets.bed_id === undefined || targets.bed === targets.bed_id, 'invalid_bed', '采集清单的 bed 与 bed_id 不一致；修正工具参数后重新采集');
+  const declared = raw === undefined && known === undefined ? undefined : targetText(raw === undefined ? known : raw, 'bed');
+  need(declared === undefined || known === undefined || declared === known, 'bed_mismatch', '提案台架与采集清单 targets.bed 不一致；照清单修正或省略 bed');
   return declared;
 }
 
@@ -74,7 +89,7 @@ async function proposals(path: string, session: string, captures: VerifiedCaptur
     need(isRecord(item), 'invalid_proposals', '提案条目不是对象');
     const kind = text(item.kind, 'invalid_proposals', '提案缺类型');
     need(Object.hasOwn(GENERATED.operation_kinds, kind), 'unsupported_operation_kind', '只收 observation、procedure 或 pitfall');
-    const { device: declaredDevice, artifact: declaredArtifact, ...fields } = item;
+    const { device: declaredDevice, bed: declaredBed, artifact: declaredArtifact, ...fields } = item;
     const common = exact(fields, kind === 'observation'
       ? ['capture', 'kind', 'path', 'statement', 'action', 'quote']
       : kind === 'procedure'
@@ -91,6 +106,8 @@ async function proposals(path: string, session: string, captures: VerifiedCaptur
     need(capture.upload, 'capture_not_uploaded', '原件尚未由钩子上传，不能整合');
     need(typeof capture.upload.source.artifact === 'string', 'capture_identity_required', '采集清单缺具体原件记录；用支持 artifact 的 Hub 重新采集上传，不能按字节猜采集时刻');
     const device = operationDevice(declaredDevice, capture.capture.targets);
+    const bed = operationBed(declaredBed, capture.capture.targets);
+    need(device !== undefined || bed === undefined, 'invalid_target', '声明台架时必须同时声明设备；补 device 或省略 bed');
     const bytes = await outputBytes(session, capture.capture);
     const base = {
       capture,
@@ -98,6 +115,7 @@ async function proposals(path: string, session: string, captures: VerifiedCaptur
       path: treePath(common.path),
       statement: text(common.statement, 'invalid_proposals', '提案缺陈述'),
       ...(device === undefined ? {} : { device }),
+      ...(bed === undefined ? {} : { bed }),
     };
     if (kind === 'observation') {
       prepared.push({ ...base, action: text(common.action, 'invalid_proposals', '观察缺动作'), result: quoteOf(common.quote, bytes) });
@@ -128,6 +146,7 @@ function feeding(row: Prepared, product: string, root: string): Record<string, u
     path: row.path,
     source: { system: 'upload', bytes: row.capture.capture.output.sha256, artifact: row.capture.upload!.source.artifact! },
     ...(row.device === undefined ? {} : { device: row.device }),
+    ...(row.bed === undefined ? {} : { bed: row.bed }),
   };
   if (row.kind === 'observation') return { ...common, action: row.action, result: row.result };
   if (row.kind === 'procedure') return { ...common, goal: row.goal, steps: row.steps };

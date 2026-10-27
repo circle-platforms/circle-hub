@@ -7,9 +7,11 @@ import { applyDispatchResults } from './dispatch-results.ts';
 import { recordResultRequests, answerRepairedRequests } from './requests.ts';
 import { ContributionRefusal, KnowledgeError, type PreparedContribution, type ContributionScope } from '../../knowledge/api.ts';
 import { operationDeviceStatus } from '../../knowledge/feeding-leases.ts';
+import { assertOperationFields } from '../../knowledge/declaration-grade.ts';
 import { KnowledgeStore } from '../../knowledge/store.ts';
 import { getInterpreter, type CheckOutcome } from '../../rules/api.ts';
-// submit_result (W07, W08, T03, A04): the arguments are stored exactly as received before anything else; a repeat of the same
+// submit_result (W07, W08, T03, A04): credential-shaped operation device/bed fields are refused before raw persistence;
+// every other argument is stored exactly as received before anything else. A repeat of the same
 // (run, submission digest) observed at the same session and declared model returns the stored result without re-running
 // anything. A different session or model is a different judge of that body and is validated again, so a drafter cannot
 // receive the verifier's receipt by resubmitting it. A run superseded by a newer revision of
@@ -191,6 +193,14 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   if(ctx.parsers.forRun)ctx={...ctx,parsers:await ctx.parsers.forRun(stored.body.run)};
   const store = ctx.deps.records.store;
   const run = stored.body;
+  try {
+    assertOperationFields(args);
+  } catch (error) {
+    if (error instanceof KnowledgeError && error.code === 'CREDENTIAL_IN_UPLOAD') {
+      return { call_result: 'error', acceptance: 'not_accepted', errors: [{ code: error.code, message: error.message, fix: error.fix ?? PROTOCOL_CODES[error.code].fix }] };
+    }
+    throw error;
+  }
   const received = receivedDigest(args);
   const sessionNow = sessionOf(call);
   const modelNow = typeof args.model === 'string' ? wellFormed(args.model) : null;

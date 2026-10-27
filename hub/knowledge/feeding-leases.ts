@@ -2,133 +2,223 @@ import { IsoTime } from '../../contracts/src/common.ts';
 import { LeaseDetail } from '../../contracts/src/records.ts';
 import { RECORD_SCHEMAS } from '../records/constants.ts';
 import type { ActionBody, RecordStore, StoredRecord } from '../records/api.ts';
+import type { LeaseService } from '../leases/api.ts';
 import { runById } from '../runs/api.ts';
 import { operationSchema } from './declaration-grade.ts';
 import { KnowledgeError } from './errors.ts';
 
 interface LeaseBody { groups?: unknown; predecessor?: unknown }
-interface HeldDevice { lease: string; user: string; until: string | null }
+interface LeaseUnconfirmed { missing: string; next_action: string }
+interface LeaseResult { lease: string | null; lease_id: string | null; lease_unconfirmed?: LeaseUnconfirmed }
+interface HeldDevice { lease_id: string; user: string; until: string | null }
+type HeldLease = Extract<import('zod').z.infer<typeof LeaseDetail>, { keys: string[] }>;
+type HistoryService = Pick<LeaseService, 'history'>;
+type Check<T> = { ok: true; value: T } | { ok: false; missing: string; next_action?: string };
+
+const KEY = /^[a-z0-9][a-z0-9:._/-]{0,199}$/;
+const NEXT = '重传本次采集；仍无法确定时请管理员核对台架与租约记录，不能把不确定当成有租约或无租约';
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function unavailable(message: string): never {
-  throw new KnowledgeError(message, { code: 'SOURCE_UNAVAILABLE' });
+function problem(missing: string, next_action = NEXT): Check<never> {
+  return { ok: false, missing, next_action };
 }
 
-function manifest(body: LeaseBody | null | undefined): Record<string, unknown> | null {
-  if (!Array.isArray(body?.groups)) return null;
-  for (const group of body.groups) {
-    if (object(group) && object(group.manifest) && Array.isArray(group.manifest.beds)) return group.manifest;
-  }
-  return null;
+function unconfirmed(missing: string, next_action = NEXT): LeaseResult {
+  return { lease: null, lease_id: null, lease_unconfirmed: { missing, next_action } };
 }
 
-async function runManifest(store: RecordStore, runId: string | null): Promise<Record<string, unknown> | null> {
+function uncertain(check: Check<unknown>): LeaseResult {
+  return check.ok ? unconfirmed('租约核验未完成') : unconfirmed(check.missing, check.next_action);
+}
+
+function manifest(body: LeaseBody | null | undefined): Check<Record<string, unknown> | null> {
+  if (body?.groups === undefined) return { ok: true, value: null };
+  if (!Array.isArray(body.groups)) return problem('运行或预订前驱的台架组结构不完整');
+  const found = body.groups.flatMap(group => object(group) && object(group.manifest) && Array.isArray(group.manifest.beds) ? [group.manifest] : []);
+  if (found.length > 1) return problem('预订前驱有多份台架清单，不能选择其中一份推定设备身份');
+  return { ok: true, value: found[0] ?? null };
+}
+
+async function runManifest(store: RecordStore, runId: string | null): Promise<Check<Record<string, unknown> | null>> {
   const seen = new Set<string>();
   let current = runId;
   while (current !== null) {
-    if (seen.has(current)) unavailable('预订前驱链成环，无法确定设备清单');
-    if (seen.size >= 32) unavailable('预订前驱链超过 32 层，无法确定设备清单');
+    if (seen.has(current)) return problem('预订前驱链成环，无法确定台架清单');
+    if (seen.size >= 32) return problem('预订前驱链超过 32 层，无法确定台架清单');
     seen.add(current);
     const run = await runById(store, current);
-    if (!run) unavailable('运行或预订前驱记录缺失，无法确定设备清单');
+    if (!run) return problem('运行或预订前驱记录缺失，无法确定台架清单');
     const frozen = manifest(run.body);
-    if (frozen) return frozen;
-    current = typeof run?.body.predecessor === 'string' ? run.body.predecessor : null;
+    if (!frozen.ok) return frozen;
+    if (frozen.value) return frozen;
+    current = typeof run.body.predecessor === 'string' ? run.body.predecessor : null;
   }
-  return null;
+  return { ok: true, value: null };
 }
 
-function manifestDevices(frozen: Record<string, unknown>): { names: string[]; keys: string[] } {
+function manifestDevices(frozen: Record<string, unknown>): Check<{ names: string[]; beds: Map<string, string[]> }> {
   const names = new Set<string>();
-  const keys = new Set<string>();
+  const beds = new Map<string, string[]>();
   for (const bed of frozen.beds as unknown[]) {
-    if (!object(bed) || typeof bed.name !== 'string' || !Array.isArray(bed.devices)) unavailable('运行冻结的台架清单结构不完整，无法核对设备名');
+    if (!object(bed) || typeof bed.name !== 'string' || !Array.isArray(bed.devices) || beds.has(bed.name)) return problem('运行冻结的台架清单结构不完整或有重名台架，无法确定床与设备身份');
+    const devices: string[] = [];
     for (const device of bed.devices) {
-      if (!object(device) || typeof device.name !== 'string') unavailable('运行冻结的设备清单结构不完整，无法核对设备名');
+      if (!object(device) || typeof device.name !== 'string' || devices.includes(device.name)) return problem('运行冻结的设备清单结构不完整或有重名设备，无法确定床与设备身份');
       names.add(device.name);
-      keys.add(`bed/${bed.name}/${device.name}`);
+      devices.push(device.name);
     }
+    beds.set(bed.name, devices);
   }
-  return { names: [...names].sort(), keys: [...keys].sort() };
+  return { ok: true, value: { names: [...names].sort(), beds } };
 }
 
-function leaseDetail(record: StoredRecord<ActionBody>) {
-  if (record.integrity_note || record.schema !== RECORD_SCHEMAS.action || record.body.action !== 'lease') {
-    unavailable('租约动作记录未通过完整性核对，不能把未知租约当成无租约');
+function leaseDetail(record: StoredRecord<ActionBody>, key?: string): Check<{ detail: HeldLease; lease_id: string; at: number; record: StoredRecord<ActionBody> } | null> {
+  if (record.integrity_note || record.schema !== RECORD_SCHEMAS.action || record.provenance !== 'observed' || record.body.action !== 'lease') {
+    return problem(`租约动作 rec:${record.digest} 未通过完整性核对；请管理员核对记录后重传`);
   }
   const raw = record.body.detail;
-  if (!object(raw) || raw.keys === undefined) return null;
+  if (!object(raw)) return problem(`租约动作 rec:${record.digest} 的结构不完整；请管理员核对记录后重传`);
+  if (raw.keys === undefined) {
+    if (raw.op === 'register' || raw.op === 'unregister') return { ok: true, value: null };
+    return problem(`租约动作 rec:${record.digest} 缺少 keys，不能确定它是否覆盖声明的设备；请管理员核对记录后重传`);
+  }
   const projected = Object.fromEntries(['op', 'lease', 'keys', 'holder', 'until', 'token'].map(key => [key, raw[key]]));
   const parsed = LeaseDetail.safeParse(projected);
-  if (!parsed.success || !('keys' in parsed.data)) unavailable('租约动作结构不完整，无法按采集时刻重放');
+  if (!parsed.success || !('keys' in parsed.data)) return problem(`租约动作 rec:${record.digest} 的结构不完整；请管理员核对记录后重传`);
+  if (key !== undefined && !parsed.data.keys.includes(key)) return problem(`租约动作 rec:${record.digest} 不覆盖完整设备键 ${key}；请管理员核对记录`);
+  let leaseId = parsed.data.lease;
+  if (parsed.data.op === 'extend' && parsed.data.keys.length > 1) {
+    if (!Array.isArray(raw.key_leases)) return problem(`批量续租 rec:${record.digest} 缺逐键租约身份，不能任选摘要中的租约；请管理员核对记录`);
+    const identities = new Map<string, string>();
+    for (const entry of raw.key_leases) {
+      if (!object(entry) || typeof entry.key !== 'string' || typeof entry.lease !== 'string' || identities.has(entry.key)) return problem(`批量续租 rec:${record.digest} 的逐键租约身份不完整`);
+      identities.set(entry.key, entry.lease);
+    }
+    if (identities.size !== parsed.data.keys.length || parsed.data.keys.some(resource => !identities.has(resource))) return problem(`批量续租 rec:${record.digest} 的键与逐键租约身份不一致`);
+    leaseId = identities.get(key!)!;
+  }
   const at = IsoTime.safeParse(record.body.started_at);
-  if (!at.success) unavailable('租约动作缺有效的发生时刻，无法按采集时刻重放');
-  if (parsed.data.until !== null && !IsoTime.safeParse(parsed.data.until).success) unavailable('租约动作的到期时刻无效，无法按采集时刻重放');
-  return { detail: parsed.data, at: Date.parse(at.data) };
+  const received = IsoTime.safeParse(record.created_at);
+  if (!at.success || !received.success || Date.parse(at.data) !== Date.parse(received.data) || record.body.ended_at !== record.body.started_at) {
+    return problem(`租约动作 rec:${record.digest} 的发生时刻与记录时刻不一致或无效；请管理员核对记录后重传`);
+  }
+  if (parsed.data.until !== null && !IsoTime.safeParse(parsed.data.until).success) return problem(`租约动作 rec:${record.digest} 的到期时刻无效；请管理员核对记录后重传`);
+  return { ok: true, value: { detail: parsed.data, lease_id: leaseId, at: Date.parse(at.data), record } };
 }
 
 export async function operationLease(
   store: RecordStore,
-  input: { run: string | null; device: string; user: string; capturedAt: string; keys?: readonly string[] },
-): Promise<string | null> {
+  input: { key?: string; bed?: string; device: string; user: string; capturedAt: string; receivedAt?: string },
+  leases?: HistoryService,
+): Promise<LeaseResult> {
   const capturedAt = IsoTime.safeParse(input.capturedAt);
-  if (!capturedAt.success) unavailable('原件缺有效的采集时刻，无法核对租约');
-  const at = Date.parse(capturedAt.data);
-  const held = new Map<string, HeldDevice>();
-  const actions = await store.findMany<ActionBody>({ key: 'action.kind', values: ['lease'], kind: 'action' });
-  const replay = actions.map(leaseDetail).filter(row => row !== null && row.at <= at).sort((a, b) => a!.at - b!.at);
-  for (const row of replay) {
-    const { detail } = row!;
-    for (const key of detail.keys) {
-      const current = held.get(key);
-      if (detail.op === 'acquire') held.set(key, { lease: detail.lease, user: detail.holder.user, until: detail.until });
-      else if (detail.op === 'extend' && current) current.until = detail.until;
-      else if (detail.op === 'release' || detail.op === 'force_release' || detail.op === 'take_over') held.delete(key);
-    }
+  const receivedAt = IsoTime.safeParse(input.receivedAt ?? input.capturedAt);
+  if (!capturedAt.success || !receivedAt.success) return unconfirmed('声明的采集时刻或 Hub 收到时刻无效；校正时钟后重新采集上传');
+  const from = Date.parse(capturedAt.data), to = Date.parse(receivedAt.data);
+  if (from > to) return unconfirmed('声明的采集时刻晚于 Hub 收到时刻，无法证明连续租约；校正客户端时钟后重新采集上传');
+  const key = input.key ?? (input.bed ? `bed/${input.bed}/${input.device}` : undefined);
+  if (!key || !KEY.test(key) || !key.startsWith('bed/') || key.split('/').length !== 3) return unconfirmed('缺完整有效的台架（床）与设备身份；在提案中写明床后重交');
+  if (!leases) return unconfirmed('缺租约历史只读查询接口；管理员完成接线后重传');
+  const { before, events, complete, unattributable = [] } = await leases.history({ key, from: capturedAt.data, to: receivedAt.data });
+  if (!complete) return unconfirmed('声明采集至收到时刻之间的租约记录超过有界读取上限；缩小时间窗口或让管理员核对记录后重传');
+  if (unattributable.length > 0) return uncertain(leaseDetail(unattributable[0]!));
+  const initial = before ? leaseDetail(before, key) : null;
+  if (initial && !initial.ok) return uncertain(initial);
+  if (initial?.value === null) return unconfirmed('窗口前的租约动作不是设备持有记录，无法确定覆盖关系；请管理员核对记录');
+  let held: HeldDevice | null = null;
+  if (initial?.value) {
+    if (!initial.value.detail.keys.includes(key)) return unconfirmed(`窗口前动作 rec:${initial.value.record.digest} 不覆盖完整设备键 ${key}；请管理员核对记录`);
+    if (initial.value.detail.op === 'acquire' || initial.value.detail.op === 'extend') held = { lease_id: initial.value.lease_id, user: initial.value.detail.holder.user, until: initial.value.detail.until };
+    if (initial.value.at >= from) return unconfirmed('窗口前的租约动作越过了声明采集时刻；请管理员核对记录');
   }
-  const matching = [...held.entries()].filter(([key, value]) => {
-    if (value.user !== input.user || value.until !== null && Date.parse(value.until) <= at) return false;
-    if (input.keys) return input.keys.includes(key);
-    const parts = key.split('/');
-    return parts.length === 3 && parts[0] === 'bed' && parts[2] === input.device;
-  });
-  const leases = new Set(matching.map(([, value]) => value.lease));
-  if (leases.size > 1) unavailable(`设备 ${input.device} 在采集时刻有多份候选租约，缺少可确定其一的台架绑定；不能任选一份`);
-  return leases.values().next().value ?? null;
+  if (held?.until !== undefined && held.until !== null) {
+    const expiry = Date.parse(held.until);
+    if (expiry === from) return unconfirmed('租约到期与采集同毫秒，先后未能确认；请管理员核对租约记录后重传');
+    if (expiry < from) held = null;
+  }
+  let previous = initial?.value?.at ?? from;
+  for (const record of events) {
+    const checked = leaseDetail(record, key);
+    if (!checked.ok) return uncertain(checked);
+    if (checked.value === null) return unconfirmed('设备窗口内混入非持有租约动作；请管理员核对记录');
+    const { detail, lease_id, at } = checked.value;
+    if (!detail.keys.includes(key)) return unconfirmed(`窗口内动作 rec:${record.digest} 不覆盖完整设备键 ${key}；请管理员核对记录`);
+    if (at === from || at === to) return unconfirmed(`租约动作 rec:${record.digest} 与采集或收到时刻同毫秒，先后未能确认；重传或让管理员核对租约记录`);
+    if (at < previous || at < from || at > to) return unconfirmed('租约动作的时间窗口或追加次序不一致；请管理员核对租约记录');
+    previous = at;
+    if (detail.op !== 'extend') return unconfirmed('租约在声明采集至 Hub 收到之间取得、释放或被接管，不能证明同一租约连续覆盖；核对操作与租约时间后重传');
+    if (!held || held.lease_id !== lease_id || held.user !== detail.holder.user) return unconfirmed('续租记录缺少同一租约与持有者的连续前序，不能证明连续覆盖；请管理员核对后重传');
+    if (held.until !== null && Date.parse(held.until) <= at) return unconfirmed('续租前已经到期或先后不明，不能证明连续覆盖；请管理员核对后重传');
+    if (detail.until !== null && held.until !== null && Date.parse(detail.until) < Date.parse(held.until)) return unconfirmed('续租记录的到期时间倒退，不能证明连续覆盖；请管理员核对后重传');
+    held.until = detail.until;
+  }
+  if (!held || held.user !== input.user) return { lease: null, lease_id: null };
+  if (held.until !== null && Date.parse(held.until) <= to) return unconfirmed('租约在声明采集至 Hub 收到之间到期，不能证明连续覆盖；核对操作与租约时间后重传');
+  return { lease: key, lease_id: held.lease_id };
 }
 
 export async function completeOperationDevice(
   store: RecordStore,
-  input: { run: string | null; device: unknown; user: string; capturedAt: string },
-): Promise<{ device: string; lease: string | null } | Record<string, never>> {
+  input: { run: string | null; device: unknown; bed?: unknown; user: string; capturedAt: string; receivedAt: string },
+  leases?: HistoryService,
+): Promise<{ device: string; bed?: string; lease: string | null; lease_id: string | null; lease_unconfirmed?: LeaseUnconfirmed } | Record<string, never>> {
   const device = input.device;
-  if (device === undefined) return {};
+  if (device === undefined) {
+    if (input.bed !== undefined) throw new KnowledgeError('台架声明必须同时带设备声明；补齐 device，或删掉 bed 后重交', { code: 'SUBMISSION_SCHEMA_VIOLATION' });
+    return {};
+  }
   if (typeof device !== 'string' || device.length === 0 || device.length > 200 || device.trim() !== device || /[\p{Cc}\p{Cf}]/u.test(device)) {
     throw new KnowledgeError('设备名须是 1 到 200 个字符的完整声明，不含控制字符或首尾空白；按运行绑定的台架清单修正', { code: 'SUBMISSION_SCHEMA_VIOLATION' });
   }
-  const frozen = await runManifest(store, input.run);
-  let keys: string[] | undefined;
-  if (frozen) {
-    const inventory = manifestDevices(frozen);
-    if (!inventory.names.includes(device)) {
-      throw new KnowledgeError(`设备 ${device} 不在运行绑定的台架清单里；清单设备名：${inventory.names.join('、') || '（空）'}；按清单修正 device 后重交`, { code: 'SUBMISSION_SCHEMA_VIOLATION' });
-    }
-    keys = inventory.keys.filter(key => key.split('/')[2] === device);
+  const declaredBed = input.bed;
+  if (declaredBed !== undefined && (typeof declaredBed !== 'string' || declaredBed.length === 0 || declaredBed.length > 200 || declaredBed.trim() !== declaredBed || /[\p{Cc}\p{Cf}]/u.test(declaredBed))) {
+    throw new KnowledgeError('台架名须是 1 到 200 个字符的完整声明，不含控制字符或首尾空白；按运行绑定的台架清单修正', { code: 'SUBMISSION_SCHEMA_VIOLATION' });
   }
-  return { device, lease: await operationLease(store, { ...input, device, keys }) };
+  const withIdentity = (result: LeaseResult, bed = declaredBed) => ({ device, ...(bed === undefined ? {} : { bed }), ...result });
+  const frozen = await runManifest(store, input.run);
+  if (!frozen.ok) return withIdentity(uncertain(frozen));
+  let bed = declaredBed;
+  if (frozen.value) {
+    const inventory = manifestDevices(frozen.value);
+    if (!inventory.ok) return withIdentity(uncertain(inventory));
+    if (bed !== undefined && !inventory.value.beds.has(bed)) {
+      throw new KnowledgeError(`台架 ${bed} 不在运行绑定的清单里；清单台架：${[...inventory.value.beds.keys()].join('、') || '（空）'}；按清单修正 bed 后重交`, { code: 'SUBMISSION_SCHEMA_VIOLATION' });
+    }
+    const candidates = bed === undefined ? inventory.value.names : inventory.value.beds.get(bed)!;
+    if (!candidates.includes(device)) {
+      const where = bed === undefined ? '运行绑定的台架清单' : `台架 ${bed}`;
+      throw new KnowledgeError(`设备 ${device} 不在${where}里；设备名：${candidates.join('、') || '（空）'}；按清单修正 device 后重交`, { code: 'SUBMISSION_SCHEMA_VIOLATION' });
+    }
+    if (bed === undefined) {
+      const matches = [...inventory.value.beds].filter(([, devices]) => devices.includes(device));
+      if (matches.length !== 1) return withIdentity(unconfirmed(`设备 ${device} 同时属于多个台架 ${matches.map(([name]) => name).join('、')}，缺台架身份；在提案中写明床后重交`));
+      bed = matches[0]![0];
+    }
+  }
+  if (bed === undefined) return withIdentity(unconfirmed('运行未绑定台架清单且声明里没有床身份；在提案中写明床，或先预订台架使运行冻结清单后重交'));
+  return withIdentity(await operationLease(store, { ...input, device, bed, key: `bed/${bed}/${device}` }, leases), bed);
 }
 
-export function operationDeviceStatus(body: unknown): { device: string; lease: string | null } | null {
+export function operationDeviceStatus(body: unknown): { device: string; bed?: string; lease: string | null; lease_id: string | null; lease_unconfirmed?: LeaseUnconfirmed } | null {
   if (!object(body) || !operationSchema(body.schema) || typeof body.device !== 'string' || body.device.length === 0) return null;
-  if (body.lease !== null && typeof body.lease !== 'string') return null;
-  return { device: body.device, lease: body.lease };
+  if (body.bed !== undefined && typeof body.bed !== 'string') return null;
+  if (body.lease === undefined || body.lease_id === undefined || body.lease !== null && typeof body.lease !== 'string' || body.lease_id !== null && typeof body.lease_id !== 'string') return null;
+  if (body.lease === null) { if (body.lease_id !== null) return null; }
+  else if (typeof body.lease_id !== 'string') return null;
+  const value = body.lease_unconfirmed;
+  if (value !== undefined && (!object(value) || typeof value.missing !== 'string' || typeof value.next_action !== 'string')) return null;
+  const status = { device: body.device, lease: body.lease, lease_id: body.lease_id };
+  const unknown: LeaseUnconfirmed | undefined = value === undefined ? undefined : { missing: value.missing as string, next_action: value.next_action as string };
+  if (unknown && (body.lease !== null || body.lease_id !== null)) return null;
+  return { ...status, ...(body.bed === undefined ? {} : { bed: body.bed }), ...(unknown === undefined ? {} : { lease_unconfirmed: unknown }) };
 }
 
 export function operationDeviceNote(body: unknown): string | null {
   const status = operationDeviceStatus(body);
   if (!status) return null;
-  return `设备 ${status.device}；${status.lease === null ? '无租约（未授权）' : `租约 ${status.lease}`}`;
+  if (status.lease_unconfirmed) return `设备 ${status.device}；租约未能确认：${status.lease_unconfirmed.missing}；下一步：${status.lease_unconfirmed.next_action}`;
+  return `设备 ${status.device}；${status.lease === null ? '无租约（未授权）' : `租约 ${status.lease}（记录 ${status.lease_id}）`}`;
 }
