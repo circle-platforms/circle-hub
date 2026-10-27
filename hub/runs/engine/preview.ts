@@ -15,6 +15,7 @@ import { buildRootScope, buildScope, createResolver, resolveCommand, type RunSco
 import { canViewRun } from './readers.ts';
 import { issuesOf } from './slots.ts';
 import { runById } from './store.ts';
+import { HubReadFailure } from './retry-read.ts';
 
 export type ResolveAnswer = Untraced<z.infer<typeof ResolveReferenceOutput>>;
 
@@ -138,6 +139,9 @@ async function resolveAgainstScope(
 
     const r = await resolver.resolve(asReference);
     if (!r.ok) {
+      if (r.retryable) {
+        return { call_result: 'error', errors: [{ code: r.code ?? 'SOURCE_UNAVAILABLE', message: r.message, fix: r.fix ?? '管理员恢复来源核对能力后重新解析', path: '/text' }], references: [], diagnostics: [] };
+      }
       if (isRootMode && r.code === 'SOURCE_UNAVAILABLE') {
         return { call_result: 'error', errors: [unavailableError()], references: [], diagnostics: [] };
       }
@@ -154,6 +158,11 @@ async function resolveAgainstScope(
     // Without an expectation only the catalog is asked here; a verbatim occurrence is found by the quotation search below.
     const found = await resolveCommand(scope, input.text, [], { search: expect === 'command' });
     if (found.resolution !== 'unresolved' || expect === 'command') {
+      try { await resolver.prefetch(found.references); }
+      catch (error) {
+        if (!(error instanceof HubReadFailure)) throw error;
+        return {call_result:'error',errors:[{code:'SOURCE_RETRYABLE',message:error.message,fix:error.fix,path:'/text'}],references:[],diagnostics:[]};
+      }
       for (const reference of found.references) {
         if (!Ground.safeParse(reference).success) continue;
         const read = await resolver.resolve(reference);

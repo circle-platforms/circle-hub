@@ -350,18 +350,20 @@ function candidatesFromUnits(index: QuotationUnits, parser: string, sha256: stri
  * mind-map node stands for its own `text` field, and text@1 and html@1 add the whole document (`l/1-<n>`, `b/0-<n>`)
  * so that a quotation across lines or blocks resolves.
  */
-export function candidatesFrom(
+export async function candidatesFrom(
   document: ParsedDocument,
   sha256: string,
   options: { role?: SourceRole; prefix?: string; properties?: boolean; limit?: number } = {},
-): QuoteCandidate[] {
+): Promise<QuoteCandidate[]> {
   // An invalid digest is the caller's mistake, never a quotation that is not there.
   srcFragment(sha256, document.parser, ['x']);
   const units = (document as Partial<QuotationSource>)[QUOTATION_UNITS];
   if (typeof units === 'function') return candidatesFromUnits(units.call(document, { properties: options.properties ?? false }), document.parser, sha256, options);
   const out: QuoteCandidate[] = [];
-  for (const selector of document.listSelectors(options.prefix, { properties: options.properties, limit: options.limit })) {
-    const fragment = document.locate(selector);
+  const selectors = document.listSelectors(options.prefix, { properties: options.properties, limit: options.limit });
+  await document.prefetch?.(selectors);
+  for (const selector of selectors) {
+    const fragment = await document.locate(selector);
     if (!fragment) continue;
     let reference: string;
     try {

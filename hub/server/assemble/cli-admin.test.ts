@@ -1269,9 +1269,9 @@ describe('knowledge', () => {
     await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
     await expectOk(admin, ['pack', 'publish', packs.site]);
     await expectOk(admin, ['pack', 'publish', packs.xml]);
-    await expectOk(admin, ['pack', 'install', 'xml-format@1.0.0']);
+    await expectOk(admin, ['pack', 'install', 'xml-format@1.0.2']);
     await expectOk(admin, ['pack', 'publish', packs.html]);
-    await expectOk(admin, ['pack', 'install', 'html-format@1.0.0']);
+    await expectOk(admin, ['pack', 'install', 'html-format@1.0.1']);
     await expectOk(admin, ['pack', 'publish', packs.product]);
     await expectOk(admin, ['pack', 'activate', PRODUCT_PACK]);
     await expectOk(admin, ['resource', 'add', SITE_PACK, '--name', '合成构建站', '--environment', 'shared', '--origin', `build-site=${site.origin}`]);

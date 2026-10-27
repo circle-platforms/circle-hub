@@ -77,6 +77,15 @@ export type XmlModel = {
   nulRemoved?: number;
 };
 
+/** Package wire optimization; the public parser's quotation contract is unchanged. */
+export const XML_COMPACT_QUOTATION: unique symbol = Symbol('xml compact quotation');
+type CompactQuotation = {
+  [XML_COMPACT_QUOTATION](options: {properties:boolean}): {
+    stream:string;
+    units:Array<Record<string,unknown>>;
+  };
+};
+
 type Flat = {
   name: string;
   attributes: { [name: string]: string };
@@ -684,7 +693,7 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xm
     return current;
   };
 
-  const document: ParsedDocument<XmlModel> & QuotationSource = {
+  const document: ParsedDocument<XmlModel> & QuotationSource & CompactQuotation = {
     parser: KEY,
     model,
     locate(selector) {
@@ -770,6 +779,25 @@ function parse(bytes: Uint8Array, options: ParseOptions = {}): ParsedDocument<Xm
         }
       }
       return { stream: value, units };
+    },
+    [XML_COMPACT_QUOTATION]({ properties }) {
+      const { text: value, start, end } = stream();
+      const units: Array<Record<string,unknown>> = [];
+      const unitOf = new Int32Array(count).fill(-1);
+      for (let index = 0; index < count; index++) {
+        if (canonicalLength[index] > MAX_SELECTOR_LENGTH) continue;
+        const flat = flats[index];
+        unitOf[index] = units.length;
+        units.push({selector_index: units.length, byteRange: range(flat),
+          parent: flat.parent < 0 ? -1 : unitOf[flat.parent], start: start[index], end: end[index]});
+        if (!properties) continue;
+        for (const name of Object.keys(flat.attributes)) {
+          const segment = segmentOf(`@${name}`);
+          if (segment === null || canonicalLength[index] + 1 + segment.length > MAX_SELECTOR_LENGTH) continue;
+          units.push({selector_index: units.length, text: flat.attributes[name], byteRange: null, parent: -1, start: -1, end: -1});
+        }
+      }
+      return {stream: value, units};
     },
   };
   return document;

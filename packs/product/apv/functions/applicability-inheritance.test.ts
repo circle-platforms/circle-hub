@@ -50,14 +50,14 @@ test('a declared condition reaches third-level text, signatures and table rows',
   assert.equal(stateOf(body(out)).judgment_status, 'unjudged', 'no judgment here: a claim needs a verified quote');
 });
 
-test('every inherited origin reads the declared block and names only the corresponding field', () => {
+test('every inherited origin reads the declared block and names only the corresponding field', async () => {
   const out = result();
   const document = markdownDocument(source);
   const lines = textParser.parse(utf8(source));
   const entry = body(out);
   let seen = 0;
   for (const fragment of entry.fragments.slice(1)) {
-    const located = (fragment.parser === 'text@1' ? lines : document).locate(fragment.selector);
+    const located = (await (fragment.parser === 'text@1' ? lines : document).locate(fragment.selector));
     assert.ok(located, fragment.selector);
     for (const origin of fragment.applicability ?? []) {
       seen++;

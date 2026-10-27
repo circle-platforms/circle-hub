@@ -17,6 +17,10 @@
         "module": "functions/parse.ts",
         "export": "default"
       },
+      "locate": {
+        "module": "functions/parse.ts",
+        "export": "locate"
+      },
       "migration_test": "xml-format migration equivalence across repository documents"
     }
   ]

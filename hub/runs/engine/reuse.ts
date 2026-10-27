@@ -8,6 +8,7 @@ import {submissionOrigin} from './independence.ts';
 // bound to this run. At submit the offer is checked again and the predecessor's judgments come along with judge and model of
 // their record; the checks re-run on this run's boundary.
 import type { Claim } from '../../../contracts/src/claim.ts';
+import { SlotClaim } from '../../../contracts/src/pack.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { ItemProjection, RunRecord } from '../../../contracts/src/run.ts';
 import { Submission, type ItemSubmission } from '../../../contracts/src/submission.ts';
@@ -57,6 +58,8 @@ export interface OfferContext {
   subjectShas: readonly string[];
   /** The text of a fragment for the boundary (consumer function), or null. */
   fragmentText: (reference: string) => Promise<string | null>;
+  /** Prepare cited old/new fragments together before checking individual carried claims. */
+  prefetchFragments?: (references: readonly string[]) => Promise<void>;
 }
 
 /** The same fragment in the new judged source (one source in the subject slot), by parser, selector and range. */
@@ -101,6 +104,18 @@ export async function reuseOffers(offer: OfferContext, items: readonly ItemProje
   if ((await submissionView(offer.ctx, latest, views)) === null) return out;
   const previous = new Map(p.items.map((it) => [it.id, it]));
   const delivered = latest.body.partitions.delivered;
+  const ahead:string[]=[];
+  for(const item of items){
+    const before=previous.get(item.id);
+    if(before===undefined||before.digest===undefined||before.digest!==item.digest)continue;
+    const result=delivered.find(row=>row.item===item.id);if(!result)continue;
+    for(const reference of judgmentsOf(result).flatMap(citedBy)){
+      const ref=parsed(reference);
+      if(ref?.scheme!=='src'||offer.boundShas.has(ref.sha256))continue;
+      const target=moved(ref,offer.subjectShas);if(target!==null)ahead.push(reference,target);
+    }
+  }
+  await offer.prefetchFragments?.(ahead);
   for (const item of items) {
     const before = previous.get(item.id);
     if (before === undefined || before.digest === undefined || before.digest !== item.digest) continue;
@@ -183,6 +198,26 @@ export async function carriedItems(
   const byId = new Map(run.items.map((it) => [it.id, it]));
   const store = ctx.deps.records.store;
   const views: SubmissionViews = new Map();
+  await resolver.prefetch(submission.items.flatMap(entry=>entry.handling==='handled'&&entry.reuse!==undefined&&byId.get(entry.item)?.reuse===entry.reuse?[byId.get(entry.item)!.location]:[]));
+  // Only immutable slots from an actually offered and verified predecessor are
+  // eligible for unscoped resolution. Prepare them together before rechecking
+  // each item so one old source does not start one sandbox per carried item.
+  const originals=new Map<number,NonNullable<Awaited<ReturnType<typeof originalSlots>>>>();
+  const ahead:string[]=[];
+  for(const [i,entry] of submission.items.entries()){
+    if(entry.handling!=='handled'||entry.reuse===undefined||byId.get(entry.item)?.reuse!==entry.reuse)continue;
+    const ref=parsed(entry.reuse);if(ref?.scheme!=='rec'||ref.pointer===undefined)continue;
+    const record=await store.get<ValidationResult>(ref.record);
+    const fragment=record===null?undefined:valueAt(record.body,ref.pointer);
+    if(record===null||record.kind!=='validation_result'||!isObject(fragment)||fragment.item!==entry.item)continue;
+    const original=await originalSlots(ctx,record,entry.item,views);if(original===null)continue;
+    originals.set(i,original);
+    for(const key of Object.keys(workflow.slots.item)){
+      const values=original.slots[key];if(!Array.isArray(values))continue;
+      for(const value of values){const claim=SlotClaim.safeParse(value);if(!claim.success)continue;if(claim.data.location!==undefined)ahead.push(claim.data.location);ahead.push(...(claim.data.grounds??[]),...(claim.data.quotes??[]).map(quote=>quote.reference));}
+    }
+  }
+  await resolver.prefetch(ahead,{scoped:false});
   for (const [i, entry] of submission.items.entries()) {
     if (entry.handling !== 'handled' || entry.reuse === undefined) continue;
     const item = byId.get(entry.item);
@@ -202,7 +237,7 @@ export async function carriedItems(
       fail('沿用引用读不回来：前驱的校验结果里没有这个条目');
       continue;
     }
-    const original = await originalSlots(ctx, record, entry.item, views);
+    const original = originals.get(i) ?? await originalSlots(ctx, record, entry.item, views);
     if (original === null) {
       fail('沿用引用读不回来：找不到前驱提交里这个条目的槽位记录');
       continue;
