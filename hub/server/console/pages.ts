@@ -60,6 +60,11 @@ function errorsTable(errors: readonly ProtocolError[]): Html {
   );
 }
 
+/** Current rule status is a view qualifier, never a replacement for the immutable receipt. */
+export function ruleWithdrawalNotice(detail:Pick<RunDetail,'rule_withdrawn'>):Html{
+  return detail.rule_withdrawn?html`<p class="notice"><strong>${labelOf('validity_status','rule_withdrawn')}（版本已下架）</strong>；下列回执展示生成时的状态；原摘要、分区和要求项终态保持原样，这是当前读取时的限定。</p>`:html``;
+}
+
 export function claimBlock(claim: Claim): Html {
   return html`<div class="claim">${definitions(claimFields(claim))}</div>`;
 }
@@ -317,7 +322,7 @@ ${section('错误与修正', errorsTable(result.errors))}`;
     status: 200,
     body: page(
       ctx.chrome(`运行 ${run.run}`),
-      html`${sharedRunNotice(ctx,run)}${summary}
+      html`${sharedRunNotice(ctx,run)}${ruleWithdrawalNotice(detail)}${summary}
 ${await runSharing(ctx,run)}
 ${detail.management?section('管理处置',html`<p>目标已放弃；来源 ${link('/console/runs/'+run.run,'运行',{})} ${code(detail.management.record)}。${detail.management.result?'下列为管理交付，技术终态沿用原记录，未重新核验；未知计数保留，旧缺字段只引用此次真实处置请求。':'管理交付投影尚未形成，Hub 将自动重试；旧技术结果仍在原记录中。'}</p>`):''}
 ${section('版本依据', basis)}
