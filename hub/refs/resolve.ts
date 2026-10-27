@@ -200,7 +200,7 @@ export function createDocumentCache(maxEntries = 16, maxBytes = DOCUMENT_CACHE_B
     const timely=promise.then(value=>{checkDeadline();return value;});
     try{return await Promise.race([timely,new Promise<never>((_,reject)=>{const tick=()=>{const left=deadline-performance.now();if(left<=0)reject(expired());else timer=setTimeout(tick,Math.ceil(left));};timer=setTimeout(tick,Math.ceil(remaining));})]);}finally{if(timer)clearTimeout(timer);}
   };
-  const entries = new Map<string, { document: ParsedDocument; unsubscribe?: () => void }>();
+  const entries = new Map<string, { document: ParsedDocument; bytes: number; unsubscribe?: () => void }>();
   const pending=new Map<string,Promise<ParsedDocument>>();
   let disposed=false;
   let budgetExceeded=false;
@@ -211,17 +211,21 @@ export function createDocumentCache(maxEntries = 16, maxBytes = DOCUMENT_CACHE_B
     return typeof measured === 'number' && Number.isSafeInteger(measured) && measured >= 0
       ? measured : legacyDocumentBytes(document, maxBytes);
   };
+  // A legacy model does not change after parse, so its walk is stored on the row. A document that reports
+  // retainedBytes grows as fragments are fetched, and every budget check reads that current number.
+  const accounted = (row: { document: ParsedDocument; bytes: number }): number =>
+    typeof row.document.retainedBytes === 'function' ? weight(row.document) : row.bytes;
   const remove = (key: string): void => { const row=entries.get(key); entries.delete(key); row?.unsubscribe?.(); };
   const trim = (): void => {
     let total=0;
     for (const row of entries.values()) {
-      const bytes=weight(row.document);
+      const bytes=accounted(row);
       if(bytes>maxBytes){budgetExceeded=true;for(const old of entries.keys())remove(old);throw budgetError();}
       total+=bytes;
     }
     while (entries.size > maxEntries || total > maxBytes) {
       const key=entries.keys().next().value!;
-      total-=weight(entries.get(key)!.document);
+      total-=accounted(entries.get(key)!);
       remove(key);
     }
   };
@@ -256,9 +260,11 @@ export function createDocumentCache(maxEntries = 16, maxBytes = DOCUMENT_CACHE_B
       checkDeadline();
       checkBudget();
       document.setOperationDeadline?.(deadline);
+      const previous=entries.get(key);
       remove(key);
-      if(weight(document)>maxBytes){budgetExceeded=true;for(const old of entries.keys())remove(old);throw budgetError();}
-      const row: { document: ParsedDocument; unsubscribe?: () => void } = {document};
+      const bytes=previous?.document===document&&typeof document.retainedBytes!=='function'?previous.bytes:weight(document);
+      if(bytes>maxBytes){budgetExceeded=true;for(const old of entries.keys())remove(old);throw budgetError();}
+      const row: { document: ParsedDocument; bytes: number; unsubscribe?: () => void } = {document, bytes};
       entries.set(key, row);
       row.unsubscribe=document.onRetainedBytesChange?.(()=>{
         if(weight(document)>maxBytes){budgetExceeded=true;for(const old of entries.keys())remove(old);throw budgetError();}
