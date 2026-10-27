@@ -60,10 +60,11 @@ const FIELDS = {
 } satisfies Record<DisplayLabel, (claim: Claim) => string>;
 
 /** The fields of a claim in display order, as [label, text]; empty fields are left out. */
-export function claimFields(claim: Claim): [DisplayLabel, string][] {
+export function claimFields(claim: Claim, ruleWithdrawn = false): [DisplayLabel, string][] {
   const out: [DisplayLabel, string][] = [];
   for (const label of DISPLAY_ORDER) {
-    const text = FIELDS[label](claim);
+    const recorded = FIELDS[label](claim);
+    const text = label === '有效条件' && ruleWithdrawn ? `${labelOf('validity_status','rule_withdrawn')}（版本已下架）；记录时：${recorded}` : recorded;
     if (text.length > 0) out.push([label, text]);
   }
   return out;

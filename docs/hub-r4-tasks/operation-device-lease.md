@@ -26,7 +26,7 @@
 
 ## 分支、路径和规矩
 
-- 分支和工作树：`operation-device-lease`，目录 `kimi-trees/operation-device-lease`（集成者已从 hub-redesign 开出，依赖已链接）。
+- 分支和工作树：`operation-device-lease`，目录 `kimi-trees/operation-device-lease`（在主目录下，集成者已从 hub-redesign 开出，依赖已链接）。
 - 可以改的路径：定义三种操作记录的契约文件及其重新生成的 `contracts/generated/**`；`hub/knowledge/feeding*.ts`、`hub/knowledge/operation-records*.ts`、读侧节点文本所在的文件及其测试；`packs/workflow/knowledge-contribution/**`；`tests/acceptance/` 的 43、44 号场景；`docs/hub-r5-test-map.md`。读租约记录要用到的 `hub/dispatch` 或租约模块只通过它们的 `api.ts` 调用，不改。别的路径要改先在回报里说明理由。
 - 回执与列表必须携带同一状态，因此另允许：`contracts/src/validation.ts` 的结构化回执字段、`hub/knowledge/contributions.ts` 的索引与视图说明、`hub/runs/engine/submit.ts` 的回执填充和 `hub/server/text.ts` 的回执文本；不改它们的旧行为。
 - 规则：同前（不推送、不建 PR、不发布、不部署；不碰线上 Hub、钥匙串、环境配置文件和任何真实系统；测试只用合成数据；`git commit -s`，只暂存明确的路径）。所有者的规矩：未知只能是过渡状态，写明缺的事实和下一步动作；不用关键词匹配做判断；枚举只来自 `contracts/generated`，不自造词（本任务不需要新词表项；如果你觉得需要，先报告，不要自己加）。
