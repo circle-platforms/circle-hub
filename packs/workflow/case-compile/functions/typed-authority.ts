@@ -1,4 +1,4 @@
-import {blockPointer} from './blocks.ts';
+import {blockMeta,blockPointer} from './blocks.ts';
 import {blockGraphGaps} from './block-checks.ts';
 import {blockRuntimeGaps,assertionTarget,assertionCells} from './block-runtime.ts';
 import {prepareRestores} from './block-restore.ts';
@@ -8,7 +8,7 @@ import {planCommands} from './plan-commands.ts';
 // One authority boundary is shared by checks, generation, workbook verification and dispatch.
 import { runtimeMethod, type RuntimeContract } from './runtime-contract.ts';
 import type { RuntimeProfile } from './profile.ts';
-import type { PlanSlots } from './slots.ts';
+import {readSlots, type PlanSlots} from './slots.ts';
 import {bindArguments} from './binding.ts';
 import {identityOf,identityKey,valueProblem,type Authority,type ValueType} from './typed-contract.ts';
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
@@ -62,9 +62,15 @@ function commandRole(a:Authority,i:CommandIdentity,position:number,native?:strin
 }
 export interface AddressUse {value:string|number;kind:string;bed_member:boolean|undefined;pointer:string}
 export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,catalog?:unknown):AddressUse[]{
+ // Flat callers keep their existing boundary; a block carrier must be lowered even when its steps is empty.
+ if(slots.blocks?.length){
+  const parsed=readSlots(slots);
+  if(!parsed.ok)throw new Error('类型化地址检查需要完整结构计划：'+parsed.problems.map(problem=>problem.pointer+' '+problem.message).join('；'));
+  slots=parsed.slots;
+ }
  const resolved=planCommands(contract,profile,slots,catalog);
  const uses:AddressUse[]=[];const put=(type:ValueType,value:string|number,a:Authority,role:string,pointer:string)=>{const kind=type.address_kind??type.declaration.catalog_type;if(kind==='ipv4'||kind==='ipv6'||kind==='mask'||kind==='ipv4_prefix'||kind==='ipv6_prefix')uses.push({value,kind,bed_member:a.roles[role]?.bed_member,pointer});};
- for(const [index,step]of slots.steps.entries()){const entry=runtimeMethod(contract,step.object,step.method),a=entry?.authority;if(!entry||!a)continue;for(const v of bindArguments(entry,step,`/data/steps/${index}`).values){const param=a.parameters[v.name];if(!param)continue;put(param.type,v.value,a,param.role,v.pointer);if(param.role==='device_cli')for(const raw of [resolved.byLine.get(String(v.value))]){const i=identityOf(raw);if(!i)continue;for(const p of i.parameters)if(p.parsed.kind==='address'){const role=commandRole(a,i,p.position,p.role?.name);uses.push({value:p.parsed.value.value,kind:p.parsed.value.kind,bed_member:role?a.roles[role]?.bed_member:undefined,pointer:v.pointer+'/command_parameters/'+p.position});}}}}
+ for(const [index,step]of slots.steps.entries()){const entry=runtimeMethod(contract,step.object,step.method),a=entry?.authority;if(!entry||!a)continue;for(const v of bindArguments(entry,step,blockMeta(slots)&&step.origin?'/data'+step.origin:`/data/steps/${index}`).values){const param=a.parameters[v.name];if(!param)continue;put(param.type,v.value,a,param.role,v.pointer);if(param.role==='device_cli')for(const raw of [resolved.byLine.get(String(v.value))]){const i=identityOf(raw);if(!i)continue;for(const p of i.parameters)if(p.parsed.kind==='address'){const role=commandRole(a,i,p.position,p.role?.name);uses.push({value:p.parsed.value.value,kind:p.parsed.value.kind,bed_member:role?a.roles[role]?.bed_member:undefined,pointer:v.pointer+'/command_parameters/'+p.position});}}}}
  const assertion=profile.allowed.find(call=>Object.values(call.parameters).includes('literal_assertion'));if(assertion){const a=runtimeMethod(contract,assertion.object,assertion.method)?.authority,name=Object.keys(assertion.parameters).find(n=>assertion.parameters[n]==='literal_assertion');if(a&&name&&a.parameters[name])slots.expects.forEach((e,i)=>put(a.parameters[name].type,e.text,a,a.parameters[name].role,`/data/expects/${i}/text`));}
  return uses;
 }
