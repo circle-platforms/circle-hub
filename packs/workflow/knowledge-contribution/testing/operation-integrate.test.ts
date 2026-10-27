@@ -79,3 +79,26 @@ test('a changed quote a fourth kind or a model supplied version is refused befor
   assert.equal(hub.submissions.length, 0);
   assert.equal(hub.uploads.size, 1, 'no work manifest was uploaded for an invalid proposal');
 });
+
+test('device declarations reuse capture targets and conflicting proposals stop before a run', async t => {
+  const local = await scratch(t);
+  const hub = await fakeHub(t);
+  assert.equal((await enable(local, hub.url)).code, 0);
+  assert.equal((await hook(local, 'ORBIT synthetic status: ready\n', { bed: 'bench-a', device: 'edge-a' })).code, 0);
+  assert.equal((await hook(local, 'COMET synthetic status: ready\n', { bed: 'bench-b', device_id: 'edge-b' })).code, 0);
+  const [first, second] = [...hub.uploads.keys()];
+  const proposals = join(local.home, 'proposals.json');
+  const base = { capture: first, kind: 'observation', path: '/commands/system/show', statement: '核对合成状态', action: '执行合成检查', quote: { line: 1, text: 'ORBIT synthetic status: ready' } };
+  const submit = async (item: Record<string, unknown>) => {
+    await writeFile(proposals, JSON.stringify({ schema: 'operation-integration@1', session: SESSION, items: [item] }));
+    return skill(local, ['submit', '--session', SESSION, '--proposals', proposals, '--product', 'ORBIT', '--model', 'integration-synthetic@1']);
+  };
+  assert.equal((await submit({ ...base, device: 'edge-a' })).code, 0);
+  assert.equal((await submit({ ...base, capture: second, quote: { line: 1, text: 'COMET synthetic status: ready' } })).code, 0);
+  assert.deepEqual(hub.submissions.map(row => row.items[0].slots.contribution[0].data.feeding.device), ['edge-a', 'edge-b']);
+  for (const row of hub.submissions) assert.ok(!('lease' in row.items[0].slots.contribution[0].data.feeding));
+  assert.equal((await submit({ ...base, device: 'edge-other' })).code, 1);
+  assert.equal((await submit({ ...base, device: 'edge-a', lease: 'lse_client_supplied' })).code, 1);
+  assert.equal(hub.runs.length, 2);
+  assert.equal(hub.submissions.length, 2);
+});

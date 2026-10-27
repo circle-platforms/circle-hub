@@ -20,6 +20,7 @@ import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabul
 import {callPackFunction,callPackFunctionBatch} from '../rules/api.ts';
 import {INDEX} from './store.ts';
 import {operationSchema} from './declaration-grade.ts';
+import {completeOperationDevice} from './feeding-leases.ts';
 import {SeedlingBody} from '../../contracts/src/knowledge.ts';
 import type {KnowledgeContext} from './context.ts';
 import type {TreeReading} from './read.ts';
@@ -419,12 +420,18 @@ export class FeedingLayer {
  }
  private async completeOperation(principal:Principal,raw:unknown,scope:FeedingScope):Promise<unknown>{
   if(!object(raw)||!operationRecord(raw.schema))return raw;
-  for(const key of ['binding','version','build','line','family','by','run','at','object'])if(key in raw)fail(`提交写了 ${key}。操作记录的版本和采集事实只由 Hub 填写；缺的是运行锁定的构建或台架在装构建。删掉该字段后重交；这不是终局。`);
+  for(const key of ['binding','version','build','line','family','by','run','at','object','lease'])if(key in raw){
+   if(key==='lease')fail('提交写了 lease。租约由 Hub 填写，删掉该字段后重交；Hub 按上传者和原件采集时刻核对租约记录。');
+   fail(`提交写了 ${key}。操作记录的版本和采集事实只由 Hub 填写；缺的是运行锁定的构建或台架在装构建。删掉该字段后重交；这不是终局。`);
+  }
   const bytes=object(raw.source)&&raw.source.system==='upload'&&typeof raw.source.bytes==='string'?raw.source.bytes:null;
   if(!bytes)fail('操作记录缺上传原件');
   const artifact=await this.operationArtifact(principal,bytes,scope.run??null);
+  const actor=artifact.body.author.user;
+  if(actor===null)fail('操作记录的上传原件缺记录者');
   if(raw.product!==scope.product||raw.root!==(scope.root??null)||!scope.product||!scope.root)fail('操作记录必须挂在本次运行锁定的产品和根上');
-  return {...raw,object:sha256Hex(canonicalize(operationIdentity(raw))),binding:await this.operationBinding(scope),by:artifact.body.author.user,run:scope.run??null,at:artifact.body.captured_at};
+  const device=await completeOperationDevice(this.context.records.store,{run:scope.run??null,device:raw.device,user:actor,capturedAt:artifact.body.captured_at});
+  return {...raw,...device,object:sha256Hex(canonicalize(operationIdentity(raw))),binding:await this.operationBinding(scope),by:actor,run:scope.run??null,at:artifact.body.captured_at};
  }
  private async checkOperation(body:Record<string,any>,source:{bytes:Uint8Array;artifact:{body:{provenance_type:string;origin:object}}}):Promise<void>{
   if(source.artifact.body.provenance_type!=='client_captured'||!('upload' in source.artifact.body.origin))fail('操作记录的根据必须是出处为 client_captured 的上传原件；其他出处仍拒收');

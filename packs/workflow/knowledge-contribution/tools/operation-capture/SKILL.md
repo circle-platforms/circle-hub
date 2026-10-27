@@ -44,7 +44,7 @@ node <技能目录>/operation.ts read --session <会话号> --sha <原件 SHA-25
 
 ## 3. 模型只写三类提案
 
-写一个普通 JSON 文件，结构如下。`kind` 只能是 `observation`、`procedure`、`pitfall`，其他内容不提交。`session` 与开启共享的会话相同，`capture` 是已上传原件摘要，`path` 从 Hub 知识树复制。
+写一个普通 JSON 文件，结构如下。`kind` 只能是 `observation`、`procedure`、`pitfall`，其他内容不提交。`session` 与开启共享的会话相同，`capture` 是已上传原件摘要，`path` 从 Hub 知识树复制。每条可写 `device`，设备名取自台架清单，只是客户端声明；省略时沿用采集清单的 `targets.device` / `device_id`，不得与它冲突。`lease` 由 Hub 按上传者与原件采集时刻填写；设备无租约时照常入层并标「无租约（未授权）」，不阻止操作。
 
 - observation：`statement`、`action`、`quote`；quote 为 `{line: 行号, text: 逐字引文}`。
 - procedure：`statement`、`goal`、`steps`；每步为 `{text: 步骤, quote: {line, text}}`。
@@ -67,7 +67,7 @@ node <技能目录>/operation.ts read --session <会话号> --sha <原件 SHA-25
 }
 ```
 
-不要写 `object`、`binding`、`by`、`run`、`at`、`version`、`build`、`line` 或任何产品版本声明。不要改写引文的空白、大小写、标点、字符宽度或 Unicode 形式；改一个字就会在本地或 Hub 边界被拒。
+不要写 `object`、`binding`、`by`、`run`、`at`、`lease`、`version`、`build`、`line` 或任何产品版本声明。不要改写引文的空白、大小写、标点、字符宽度或 Unicode 形式；改一个字就会在本地或 Hub 边界被拒。
 
 ## 4. 开独立回注运行并提交
 

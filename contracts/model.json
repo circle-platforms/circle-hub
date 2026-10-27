@@ -6595,6 +6595,25 @@
        "at": {
         "$ref": "contract:common/IsoTime"
        },
+       "device": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "The client's declared device name from the frozen bed manifest, when one is bound; otherwise an unverified declaration."
+       },
+       "lease": {
+        "anyOf": [
+         {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+         },
+         {
+          "const": null
+         }
+        ],
+        "description": "Hub-filled lease identity held by the original uploader over this device at the original capture time; null when none is found. Never supplied by the client."
+       },
        "version": {
         "type": "string",
         "minLength": 1,
@@ -6882,6 +6901,25 @@
        },
        "at": {
         "$ref": "contract:common/IsoTime"
+       },
+       "device": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "The client's declared device name from the frozen bed manifest, when one is bound; otherwise an unverified declaration."
+       },
+       "lease": {
+        "anyOf": [
+         {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+         },
+         {
+          "const": null
+         }
+        ],
+        "description": "Hub-filled lease identity held by the original uploader over this device at the original capture time; null when none is found. Never supplied by the client."
        },
        "version": {
         "type": "string",
@@ -7190,6 +7228,25 @@
        },
        "at": {
         "$ref": "contract:common/IsoTime"
+       },
+       "device": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "The client's declared device name from the frozen bed manifest, when one is bound; otherwise an unverified declaration."
+       },
+       "lease": {
+        "anyOf": [
+         {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+         },
+         {
+          "const": null
+         }
+        ],
+        "description": "Hub-filled lease identity held by the original uploader over this device at the original capture time; null when none is found. Never supplied by the client."
        },
        "version": {
         "type": "string",

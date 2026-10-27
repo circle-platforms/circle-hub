@@ -26,6 +26,25 @@
               "record": {
                 "type": "string",
                 "pattern": "^[0-9a-f]{64}$"
+              },
+              "device": {
+                "description": "The declared device of a stored operation record",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "lease": {
+                "description": "The lease filled by the Hub for the original capture time; null means unauthorized, not refused",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [

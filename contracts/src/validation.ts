@@ -223,7 +223,11 @@ export const ValidationResult = z
   .strictObject({
     schema: z.literal('validation@1'),
   contributions: z.strictObject({ submitted: z.number().int().nonnegative(),
-    stored: z.array(z.strictObject({ item: z.string(), record: Sha256 })),
+    stored: z.array(z.strictObject({
+      item: z.string(), record: Sha256,
+      device: z.string().min(1).max(200).optional().describe('The declared device of a stored operation record'),
+      lease: z.string().min(1).max(200).nullable().optional().describe('The lease filled by the Hub for the original capture time; null means unauthorized, not refused'),
+    })),
     not_stored: z.array(z.strictObject({ item: z.string(), reason: z.string() })),
   }).optional().describe('Dedicated contribution run receipt; ordinary submissions never write the knowledge layer'),
     run: RunId,
@@ -243,6 +247,9 @@ export const ValidationResult = z
       const c = v.contributions;
       if (c.submitted !== c.stored.length + c.not_stored.length) ctx.addIssue({code:'custom',path:['contributions'],message:'contribution receipt counts agree'});
       if (v.acceptance === 'not_accepted' && c.stored.length > 0) ctx.addIssue({code:'custom',path:['contributions','stored'],message:'a refused submission admits no contribution'});
+      for (const row of c.stored) if ((row.device === undefined) !== (row.lease === undefined)) {
+        ctx.addIssue({code:'custom',path:['contributions','stored'],message:'a declared device and its Hub-filled lease are either both present or both absent'});
+      }
     }
     if (v.acceptance !== 'not_accepted') return;
     if (v.errors.length === 0) ctx.addIssue({ code: 'custom', path: ['errors'], message: 'a submission that is not accepted names its codes (W08 R[1])' });

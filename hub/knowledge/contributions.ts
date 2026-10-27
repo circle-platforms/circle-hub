@@ -17,6 +17,7 @@ import type { TreeReading } from './read.ts';
 import { canonicalSize } from './digest.ts';
 import { CAPTURED_GROUND, DECLARATION_GROUND, declarationGradeBody } from './declaration-grade.ts';
 import { operationIdentity, operationRecord, reproductionLease } from './feeding.ts';
+import { operationDeviceNote } from './feeding-leases.ts';
 import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
 
 export interface ContributionScope {
@@ -76,6 +77,11 @@ function identityOf(prepared: PreparedContribution): string {
       ...(operation===undefined?prepared.feeding===undefined?{}:{feeding:prepared.feeding}:{operation}),
       ...(prepared.applicability_claim===undefined?{}:{applicability_claim:prepared.applicability_claim}),
       ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});
+}
+
+function noteWithDevice(body: KnowledgeContributionBody, note: string | null): string | null {
+  const device = operationDeviceNote(body.feeding);
+  return [note, device].filter((value): value is string => value !== null).join('；') || null;
 }
 
 export class ContributionLayer {
@@ -311,8 +317,11 @@ export class ContributionLayer {
     const principal=await this.#context.records.principals.get(prepared.submitted_by);
     const feedingRecord=prepared.feeding&&principal?await this.#context.feeding?.appendPrepared(principal,prepared.feeding,{product:prepared.product,root:prepared.root,run:origin.run},origin.model,tx):undefined;
     const body = KnowledgeContributionBody.parse({ ...prepared,...(feedingRecord?{feeding_record:feedingRecord}:{}), session:origin.session,model:origin.model, submitted_at: this.#context.now().toISOString() });
-    const operation=body.feeding!==undefined&&operationRecord(body.feeding.schema);
-    const lease=operation?await reproductionLease(this.#context.records.store,origin.run):null;
+    const feeding=body.feeding;
+    const operation=feeding!==undefined&&operationRecord(feeding.schema);
+    const lease=operation&&feeding!==undefined
+      ? ('lease' in feeding ? (typeof feeding.lease==='string'?feeding.lease:null) : await reproductionLease(this.#context.records.store,origin.run))
+      : null;
     return (await this.#context.store.putClaim(SCHEMAS.contribution, operation?'client_captured':'declared', body,
       [{ key: INDEX.contribution, value: body.product }, { key: 'knowledge.contribution.identity', value: key },
         {key:'knowledge.contribution.node',value:digestOf({product:body.product,path:body.path})},
@@ -373,7 +382,7 @@ export class ContributionLayer {
     if(body===null||!(await this.mayRead(body.product,reader)))return null;
     const state=await this.#groundsState(body,reader,new Map());if(!state.visible)return null;
     const feedingState=body.feeding_record?await this.#context.feeding?.recordState(body.feeding_record,reader,digest):null;
-    return state.held?this.#withheld(digest,body):{record:digest,contribution:body,status:feedingState?.validity==='invalid'?'grounds_withdrawn':'valid',note:feedingState?.validity==='invalid'?'根据已失效；查看喂入撤回和来源修订记录':null};
+    return state.held?this.#withheld(digest,body):{record:digest,contribution:body,status:feedingState?.validity==='invalid'?'grounds_withdrawn':'valid',note:noteWithDevice(body,feedingState?.validity==='invalid'?'根据已失效；查看喂入撤回和来源修订记录':null)};
   }
 
   async has(root:string,reader:Principal):Promise<boolean>{
@@ -437,7 +446,7 @@ export class ContributionLayer {
       if (body === null) continue;
       const state=await this.#groundsState(body,reader,readable);if(!state.visible)continue;
       if(state.held){out.push(this.#withheld(record.digest,body));continue;}
-      if(body.feeding_record&&(await this.#context.feeding?.recordState(body.feeding_record,reader,record.digest))?.validity==='invalid'){out.push({record:record.digest,contribution:body,status:'grounds_withdrawn',note:'喂入主张根据已撤回或原件已修订；历史引文仍保留'});continue;}
+      if(body.feeding_record&&(await this.#context.feeding?.recordState(body.feeding_record,reader,record.digest))?.validity==='invalid'){out.push({record:record.digest,contribution:body,status:'grounds_withdrawn',note:noteWithDevice(body,'喂入主张根据已撤回或原件已修订；历史引文仍保留')});continue;}
       if (!digests.has(body.path)) {
         const fragment = await this.#reading.treeReader().read(root, body.path, null, { user: reader.id, role: reader.role });
         digests.set(body.path, fragment === null ? null : sha256Hex(fragment.text));
@@ -453,7 +462,7 @@ export class ContributionLayer {
         if(await endpoints.get(key)!==source.fragment){changed=true;changedEndpoints.push(name);}
       }
       out.push({ record: record.digest, contribution: body, status: changed ? 'cited_fragment_changed' : 'valid',
-        note: changed ? `${labelOf('validity_status','cited_fragment_changed')}（根 ${body.root.slice(0, 12)} → ${root.slice(0, 12)}）${changedEndpoints.length===0?'':`；变化端点：${changedEndpoints.join('、')}`}` : null });
+        note: noteWithDevice(body, changed ? `${labelOf('validity_status','cited_fragment_changed')}（根 ${body.root.slice(0, 12)} → ${root.slice(0, 12)}）${changedEndpoints.length===0?'':`；变化端点：${changedEndpoints.join('、')}`}` : null) });
     }
     return out;
   }

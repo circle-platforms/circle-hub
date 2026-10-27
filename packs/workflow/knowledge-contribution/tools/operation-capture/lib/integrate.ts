@@ -11,6 +11,7 @@ interface Prepared {
   kind: keyof typeof GENERATED.operation_kinds;
   path: string;
   statement: string;
+  device?: string;
   action?: string;
   goal?: string;
   phenomenon?: string;
@@ -43,6 +44,17 @@ function quoteOf(value: unknown, bytes: Uint8Array): Quote {
   return { reference: `src:${sha256(bytes)}/text@1/l/${row.line}`, text: quote };
 }
 
+function operationDevice(raw: unknown, targets: Record<string, string>): string | undefined {
+  const known = targets.device ?? targets.device_id;
+  need(targets.device === undefined || targets.device_id === undefined || targets.device === targets.device_id, 'invalid_device', '采集清单的 device 与 device_id 不一致；修正工具参数后重新采集');
+  if (known !== undefined) text(known, 'invalid_device', '采集清单的设备名格式不对', 200);
+  if (raw === undefined) return known;
+  const declared = text(raw, 'invalid_device', '提案设备名格式不对', 200);
+  need(declared.trim() === declared && !/[\p{Cc}\p{Cf}]/u.test(declared), 'invalid_device', '提案设备名不含控制字符或首尾空白');
+  need(known === undefined || declared === known, 'device_mismatch', '提案设备与采集清单 targets.device 不一致；照清单修正或省略 device');
+  return declared;
+}
+
 async function proposals(path: string, session: string, captures: VerifiedCapture[]): Promise<Prepared[]> {
   need(path.endsWith('.json'), 'invalid_proposals', '提案文件必须是 JSON 文件');
   const stat = await lstat(path).catch(() => null);
@@ -58,7 +70,8 @@ async function proposals(path: string, session: string, captures: VerifiedCaptur
     need(isRecord(item), 'invalid_proposals', '提案条目不是对象');
     const kind = text(item.kind, 'invalid_proposals', '提案缺类型');
     need(Object.hasOwn(GENERATED.operation_kinds, kind), 'unsupported_operation_kind', '只收 observation、procedure 或 pitfall');
-    const common = exact(item, kind === 'observation'
+    const { device: declaredDevice, ...fields } = item;
+    const common = exact(fields, kind === 'observation'
       ? ['capture', 'kind', 'path', 'statement', 'action', 'quote']
       : kind === 'procedure'
         ? ['capture', 'kind', 'path', 'statement', 'goal', 'steps']
@@ -67,12 +80,14 @@ async function proposals(path: string, session: string, captures: VerifiedCaptur
     need(/^[0-9a-f]{64}$/.test(digest), 'invalid_proposals', '原件摘要格式不对');
     const capture = byDigest.get(digest);
     need(capture?.upload, 'capture_not_uploaded', '原件尚未由钩子上传，不能整合');
+    const device = operationDevice(declaredDevice, capture.capture.targets);
     const bytes = await outputBytes(session, capture.capture);
     const base = {
       capture,
       kind: kind as Prepared['kind'],
       path: treePath(common.path),
       statement: text(common.statement, 'invalid_proposals', '提案缺陈述'),
+      ...(device === undefined ? {} : { device }),
     };
     if (kind === 'observation') {
       prepared.push({ ...base, action: text(common.action, 'invalid_proposals', '观察缺动作'), result: quoteOf(common.quote, bytes) });
@@ -102,6 +117,7 @@ function feeding(row: Prepared, product: string, root: string): Record<string, u
     root,
     path: row.path,
     source: { system: 'upload', bytes: row.capture.capture.output.sha256 },
+    ...(row.device === undefined ? {} : { device: row.device }),
   };
   if (row.kind === 'observation') return { ...common, action: row.action, result: row.result };
   if (row.kind === 'procedure') return { ...common, goal: row.goal, steps: row.steps };
