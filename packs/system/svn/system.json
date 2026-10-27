@@ -87,6 +87,12 @@
         }
       },
       "response": "text",
+      "media_types_by_extension": {
+        ".adoc": "text/plain",
+        ".html": "text/html",
+        ".md": "text/markdown",
+        ".txt": "text/plain"
+      },
       "max_bytes": 33554432,
       "timeout_ms": 60000,
       "read": true,
