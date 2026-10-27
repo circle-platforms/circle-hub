@@ -185,12 +185,12 @@ test('expiry and the extended window are evaluated at capture time, including or
   const expiredView = await stored(expired, await submit(expired, {...observation(expired, '过期的租约'), device:'expired0'}, '过期的租约'));
   assert.equal(expiredView.feeding.lease, null);
 
-  const renewedKey = 'bed/synthetic/renew0';
+  const renewedResource = 'bed/synthetic/renew0';
   const renewer = new LeaseService(db, {records:ctx.w.kit.store, now:async () => new Date(now - 4000)});
-  const renewed = await renewer.acquire({keys:[renewedKey], holder:holder(ctx), prefix:'bed/', ttlSeconds:1, maxTtlSeconds:600});
+  const renewed = await renewer.acquire({keys:[renewedResource], holder:holder(ctx), prefix:'bed/', ttlSeconds:1, maxTtlSeconds:600});
   assert.ok(renewed.ok);
   const extending = new LeaseService(db, {records:ctx.w.kit.store, now:async () => new Date(now - 3500)});
-  const extended = await extending.extend({keys:[renewedKey], holder:holder(ctx), ttlSeconds:60, maxTtlSeconds:600});
+  const extended = await extending.extend({keys:[renewedResource], holder:holder(ctx), ttlSeconds:60, maxTtlSeconds:600});
   assert.ok(extended.ok);
   const within = await captureRun(ctx);
   const extendedView = await stored(within, await submit(within, {...observation(within, '续租期内'), device:'renew0'}, '续租期内'));
@@ -198,8 +198,8 @@ test('expiry and the extended window are evaluated at capture time, including or
 
   const current = new LeaseService(db, {records:ctx.w.kit.store});
   const orphanHolder = {user:ctx.w.admin.id, run:newId('run')};
-  const orphanKey = 'bed/synthetic/orphan0';
-  const orphan = await old.acquire({keys:[orphanKey], holder:orphanHolder, prefix:'bed/'});
+  const orphanResource = 'bed/synthetic/orphan0';
+  const orphan = await old.acquire({keys:[orphanResource], holder:orphanHolder, prefix:'bed/'});
   assert.ok(orphan.ok);
   const beforeReclaim = await captureRun(ctx);
   assert.equal(await current.reclaimOrphans(), 1);
