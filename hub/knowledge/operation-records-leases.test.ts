@@ -20,7 +20,9 @@ import {Database, createPool} from '../records/db.ts';
 import {RECORD_SCHEMAS, scanForCredentials, sha256Hex} from '../records/api.ts';
 import {newId} from '../records/ids.ts';
 import {LeaseService} from '../leases/api.ts';
+import {osIsolationAvailable} from '../rules/api.ts';
 
+const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 const call = {traceId:'4bf92f3577b34da6a3ce929d0e0e4736', sessionId:'operation-session'};
 let trace = 100;
 let captureSequence = 0;
@@ -141,7 +143,7 @@ async function justAfter(ctx: Context, lease: string) {
   return new Date(Date.parse((action.body as {started_at:string}).started_at) + 1).toISOString();
 }
 
-test('capture time decides absent, acquired and released leases without changing lease history', async t => {
+test('capture time decides absent, acquired and released leases without changing lease history', {skip}, async t => {
   const ctx = await world(t);
   const {service:leases} = leasesOf(t, ctx);
   const history = () => leases.actionLog('bed/');
@@ -184,7 +186,7 @@ test('capture time decides absent, acquired and released leases without changing
   assert.deepEqual(await history(), afterFixture);
 });
 
-test('takeover and renewal use the uploader and the capture-time history', async t => {
+test('takeover and renewal use the uploader and the capture-time history', {skip}, async t => {
   const ctx = await world(t);
   const {service:leases} = leasesOf(t, ctx);
   const key = 'bed/synthetic/device0';
@@ -213,7 +215,7 @@ test('takeover and renewal use the uploader and the capture-time history', async
   assert.equal(current.feeding.lease_id, other.lease);
 });
 
-test('expiry and the extended window are evaluated at capture time, including orphan takeover records', async t => {
+test('expiry and the extended window are evaluated at capture time, including orphan takeover records', {skip}, async t => {
   const ctx = await world(t);
   const now = Date.now();
   const past = new Date(now - 120000);
@@ -251,7 +253,7 @@ test('expiry and the extended window are evaluated at capture time, including or
   assert.equal(noOrphan.feeding.lease, null);
 });
 
-test('all three operation structures carry device and every client-supplied Hub field is refused', async t => {
+test('all three operation structures carry device and every client-supplied Hub field is refused', {skip}, async t => {
   const ctx = await world(t);
   const {service:leases} = leasesOf(t, ctx);
   const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
@@ -282,7 +284,7 @@ test('all three operation structures carry device and every client-supplied Hub 
   }
 });
 
-test('an unbound run accepts a device declaration but never picks one of several current leases', async t => {
+test('an unbound run accepts a device declaration but never picks one of several current leases', {skip}, async t => {
   const ctx = await world(t);
   const {service:leases} = leasesOf(t, ctx);
   for (const key of ['bed/first/device0', 'bed/second/device0']) assert.ok((await leases.acquire({keys:[key], holder:holder(ctx), prefix:'bed/'})).ok);
@@ -298,7 +300,7 @@ test('an unbound run accepts a device declaration but never picks one of several
   assert.notEqual(first.feeding.lease_id, null);
 });
 
-test('mixed-lease batch extension and force release replay every affected key', async t => {
+test('mixed-lease batch extension and force release replay every affected key', {skip}, async t => {
   const ctx = await world(t);
   const now = Date.now();
   const {db, service:old} = leasesOf(t, ctx, async () => new Date(now - 4000));
@@ -326,7 +328,7 @@ test('mixed-lease batch extension and force release replay every affected key', 
   }
 });
 
-test('equal-byte captures keep their own timestamps and idempotent receipts read the stored operation', async t => {
+test('equal-byte captures keep their own timestamps and idempotent receipts read the stored operation', {skip}, async t => {
   const ctx = await world(t);
   const before = await captureRun(ctx);
   const {service:leases} = leasesOf(t, ctx);
@@ -361,7 +363,7 @@ test('equal-byte captures keep their own timestamps and idempotent receipts read
   assert.equal(identical.result?.contributions?.stored[0]?.record, replay.receipt.record);
 });
 
-test('credential withholding keeps the device and unauthorized state without exposing the quote', async t => {
+test('credential withholding keeps the device and unauthorized state without exposing the quote', {skip}, async t => {
   const ctx = await world(t);
   leasesOf(t, ctx);
   const current = await captureRun(ctx, {text:['合成回显：状态正常', ['SECRET', 'KEY'].join('_') + '=' + ['Synth3tic', 'key', '42'].join('-'), ''].join('\n'), historicalFinding:true});
@@ -390,7 +392,7 @@ test('credential withholding keeps the device and unauthorized state without exp
   assert.doesNotMatch(text, /合成回显：状态正常/);
 });
 
-test('an artifact from another capture is refused instead of rebinding equal bytes', async t => {
+test('an artifact from another capture is refused instead of rebinding equal bytes', {skip}, async t => {
   const ctx = await world(t);
   const started = await ctx.service.startRun(ctx.w.admin, {
     pack:'knowledge-contribution', product:'Acme', build:ctx.build.name,
@@ -403,7 +405,7 @@ test('an artifact from another capture is refused instead of rebinding equal byt
   assert.ok(started.errors.some(error => error.message.includes('artifact 与 src')));
 });
 
-test('lease proof covers the declared capture through Hub receipt and exposes its resource key and id', async t => {
+test('lease proof covers the declared capture through Hub receipt and exposes its resource key and id', {skip}, async t => {
   const ctx = await world(t);
   const {service:leases} = leasesOf(t, ctx);
   const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
@@ -427,7 +429,7 @@ test('lease proof covers the declared capture through Hub receipt and exposes it
   assert.match(uncertain.view.note ?? '', /未能确认/);
 });
 
-test('continuous coverage permits the same lease renewal but not an interval expiry', async t => {
+test('continuous coverage permits the same lease renewal but not an interval expiry', {skip}, async t => {
   const ctx = await world(t);
   const {db, service:leases} = leasesOf(t, ctx, async () => new Date('2026-10-27T09:59:00.000Z'));
   const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/', ttlSeconds:600, maxTtlSeconds:600});
@@ -446,7 +448,7 @@ test('continuous coverage permits the same lease renewal but not an interval exp
   assert.match(expired.lease_unconfirmed?.missing ?? '', /到期/);
 });
 
-test('a shared device name never borrows a lease from another bed', async t => {
+test('a shared device name never borrows a lease from another bed', {skip}, async t => {
   const ctx = await world(t);
   const {service:leases} = leasesOf(t, ctx);
   const acquired = await leases.acquire({keys:['bed/first/device0'], holder:holder(ctx), prefix:'bed/'});
@@ -462,7 +464,7 @@ test('a shared device name never borrows a lease from another bed', async t => {
   assert.equal(identified.feeding.lease_id, acquired.lease);
 });
 
-test('capture and lease acquisition in the same millisecond is unconfirmed', async t => {
+test('capture and lease acquisition in the same millisecond is unconfirmed', {skip}, async t => {
   const ctx = await world(t);
   const {service:leases} = leasesOf(t, ctx);
   const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
@@ -474,7 +476,7 @@ test('capture and lease acquisition in the same millisecond is unconfirmed', asy
   assert.match(view.view.note ?? '', /未能确认/);
 });
 
-test('a damaged acquire record is unconfirmed rather than a confirmed absence', async t => {
+test('a damaged acquire record is unconfirmed rather than a confirmed absence', {skip}, async t => {
   const ctx = await world(t);
   const lease = 'lse_synthetic_missing_keys';
   await ctx.w.kit.store.put({
@@ -492,7 +494,7 @@ test('a damaged acquire record is unconfirmed rather than a confirmed absence', 
   assert.match(JSON.stringify(view.feeding.lease_unconfirmed), /keys|管理员/);
 });
 
-test('credential-shaped device text is refused before the raw submission is persisted', async t => {
+test('credential-shaped device text is refused before the raw submission is persisted', {skip}, async t => {
   const ctx = await world(t);
   const before = (await ctx.w.kit.store.list({kind:'submission', limit:500})).items.length;
   const device = ['SECRET', 'KEY'].join('_') + '=' + ['Synth3tic', 'key', '42'].join('-');
@@ -502,7 +504,7 @@ test('credential-shaped device text is refused before the raw submission is pers
   assert.ok(answer.errors.some(error => error.code === 'CREDENTIAL_IN_UPLOAD'));
 });
 
-test('thousands of historical lease records use bounded database calls and returned rows', async t => {
+test('thousands of historical lease records use bounded database calls and returned rows', {skip}, async t => {
   const ctx = await world(t);
   for (let index = 0; index < 3000; index++) {
     const lease = `lse_synthetic_history_${index}`;
@@ -550,7 +552,7 @@ test('thousands of historical lease records use bounded database calls and retur
   assert.ok(scanned < 3000, `rows removed by filter/index recheck: ${scanned}`);
 });
 
-test('an upload without a declared capture time keeps its record but cannot prove a lease', async t => {
+test('an upload without a declared capture time keeps its record but cannot prove a lease', {skip}, async t => {
   const ctx = await world(t);
   const {service:leases} = leasesOf(t, ctx);
   const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
@@ -572,7 +574,7 @@ test('an upload without a declared capture time keeps its record but cannot prov
   assert.doesNotMatch(saved.view.note ?? '', /无租约（未授权）/);
 });
 
-test('omitted artifacts and a manifest-derived bed identify equal-byte captures without breaking replay', async t => {
+test('omitted artifacts and a manifest-derived bed identify equal-byte captures without breaking replay', {skip}, async t => {
   const ctx = await world(t);
   const {run:_run, predecessor:_predecessor, groups:_groups, leases:_leases, feeding_offset:_feedingOffset, ...base} = ctx.run;
   const booking = await putRun(ctx.w.kit.store, {
@@ -605,7 +607,7 @@ test('omitted artifacts and a manifest-derived bed identify equal-byte captures 
   assert.equal(replay.result?.contributions?.stored[0]?.record, second.receipt.record);
 });
 
-test('another holders expiry inside the interval is a change rather than a confirmed absence', async t => {
+test('another holders expiry inside the interval is a change rather than a confirmed absence', {skip}, async t => {
   const ctx = await world(t);
   const {service:leases} = leasesOf(t, ctx, async () => new Date('2026-10-27T09:59:00.000Z'));
   const foreign = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx, ctx.w.user.id), prefix:'bed/', ttlSeconds:60, maxTtlSeconds:600});
@@ -617,7 +619,7 @@ test('another holders expiry inside the interval is a change rather than a confi
   assert.match(result.lease_unconfirmed?.missing ?? '', /到期/);
 });
 
-test('non-string device and bed values are refused before raw submission persistence', async t => {
+test('non-string device and bed values are refused before raw submission persistence', {skip}, async t => {
   const ctx = await world(t);
   const before = (await ctx.w.kit.store.list({kind:'submission', limit:500})).items.length;
   const secret = ['SECRET', 'KEY'].join('_') + '=' + ['Synth3tic', 'key', '42'].join('-');
@@ -638,7 +640,7 @@ async function coveredOperation(ctx: Context, feeding: Record<string, unknown>, 
   return saved;
 }
 
-test('release after Hub receipt and before submission keeps the completed interval proof', async t => {
+test('release after Hub receipt and before submission keeps the completed interval proof', {skip}, async t => {
   const ctx = await world(t);
   const {service:leases} = leasesOf(t, ctx);
   const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
@@ -648,7 +650,7 @@ test('release after Hub receipt and before submission keeps the completed interv
   await coveredOperation(current, {...observation(current, '收到后提交前释放'), device:'device0'}, '收到后提交前释放', 'bed/synthetic/device0', acquired.lease);
 });
 
-test('takeover after Hub receipt and before submission keeps the completed interval proof', async t => {
+test('takeover after Hub receipt and before submission keeps the completed interval proof', {skip}, async t => {
   const ctx = await world(t);
   const {service:leases} = leasesOf(t, ctx);
   const first = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
@@ -660,7 +662,7 @@ test('takeover after Hub receipt and before submission keeps the completed inter
   await coveredOperation(current, {...observation(current, '收到后提交前接管'), device:'device0'}, '收到后提交前接管', 'bed/synthetic/device0', first.lease);
 });
 
-test('orphan reclamation after Hub receipt and before submission keeps the completed interval proof', async t => {
+test('orphan reclamation after Hub receipt and before submission keeps the completed interval proof', {skip}, async t => {
   const ctx = await world(t);
   const {db, service:old} = leasesOf(t, ctx, async () => new Date(Date.now() - 120000));
   const orphan = await old.acquire({keys:['bed/synthetic/orphan0'], holder:{user:ctx.w.admin.id, run:newId('run')}, prefix:'bed/'});
@@ -671,7 +673,7 @@ test('orphan reclamation after Hub receipt and before submission keeps the compl
   await coveredOperation(current, {...observation(current, '收到后提交前回收'), device:'orphan0'}, '收到后提交前回收', 'bed/synthetic/orphan0', orphan.lease);
 });
 
-test('batch force release after Hub receipt and before submission keeps every completed interval proof', async t => {
+test('batch force release after Hub receipt and before submission keeps every completed interval proof', {skip}, async t => {
   const ctx = await world(t);
   const now = Date.now();
   const {db, service:old} = leasesOf(t, ctx, async () => new Date(now - 4000));
