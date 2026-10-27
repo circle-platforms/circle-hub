@@ -52,7 +52,7 @@ export interface AdminCommandOptions {
 export const SKILL_USAGE='skill bind-legacy <解析器 id@版本> <技能包 id@版本>';
 export const PACK_USAGE =
   'pack install <技能包@版本> | uninstall <技能包> | bind-skills <旧运行> --skill <技能包@版本>… --reason <理由> | publish <目录> [--stage] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list | shapes <任务包>';
-export const RESOURCE_USAGE = 'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <系统包>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
+export const RESOURCE_USAGE = 'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <系统包>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>… | --clear-plaintext] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = NAMED_SECRET_USAGE;
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
 export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--suffix <外部标识的后缀>] [--limit <条数>] | export <sha256> --out <文件>';
@@ -590,6 +590,7 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
           environment: { type: 'string' },
           origin: { type: 'string', multiple: true },
           'allow-plaintext': { type: 'string', multiple: true },
+          'clear-plaintext': { type: 'boolean' },
           setting: { type: 'string', multiple: true },
           'setting-json': {type:'string',multiple:true},
           'setting-var': {type:'string',multiple:true},
@@ -598,6 +599,9 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
         },
         1,
       );
+      if (values['clear-plaintext'] && values['allow-plaintext'] !== undefined) {
+        throw new UsageError('--clear-plaintext 与 --allow-plaintext 不能同时给');
+      }
       const changes: UpdateResourceInput = {};
       if (values['system-pack'] !== undefined) changes.system_pack = values['system-pack'];
       if (values.name !== undefined) {
@@ -616,7 +620,9 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
         }
         changes.origins = origins;
       }
-      if (values['allow-plaintext'] !== undefined) {
+      if (values['clear-plaintext']) {
+        changes.allow_plaintext = [];
+      } else if (values['allow-plaintext'] !== undefined) {
         const plaintext = new Set<string>();
         for (const role of values['allow-plaintext']) {
           const url = changes.origins?.[role];
@@ -636,14 +642,35 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
       if(Object.keys(settings).length)changes.settings=settings;
       if(values['unset-setting'])changes.unset_settings=values['unset-setting'];
       if(values.credential)changes.credentials=Object.fromEntries(pairs(values.credential,'--credential'));
-      if (Object.keys(changes).length === 0) throw new UsageError('没有要改的项：给 --system-pack、--name、--environment、--origin、--allow-plaintext 或 --setting');
+      if (Object.keys(changes).length === 0) throw new UsageError('没有要改的项：给 --system-pack、--name、--environment、--origin、--allow-plaintext、--clear-plaintext 或 --setting');
       const admin = await session.admin();
       const hub = await session.hub();
       const previous=await hub.connectors.admin.describe(admin,positionals[0]);
+      const clearedRoles: string[] = [];
+      if (changes.origins !== undefined && values['allow-plaintext'] === undefined && !values['clear-plaintext'] && previous) {
+        const prevOrigins = previous.origins ?? {};
+        const prevPlaintext = new Set(previous.allow_plaintext ?? []);
+        const kept = new Set<string>();
+        for (const [role, oldUrl] of Object.entries(prevOrigins)) {
+          try {
+            const oldOrigin = new URL(oldUrl).origin;
+            if (prevPlaintext.has(oldOrigin)) {
+              if (changes.origins[role] === oldUrl) {
+                kept.add(oldOrigin);
+              } else {
+                clearedRoles.push(role);
+              }
+            }
+          } catch {}
+        }
+        changes.allow_plaintext = [...kept];
+      }
       const missingLegacy=(previous?.credentials??[]).filter(c=>!c.entry.startsWith('${secret:')&&!c.set&&changes.credentials?.[c.name]);
       const record = await decided(() => hub.connectors.admin.updateResource(admin, positionals[0], changes));
       for(const item of missingLegacy)session.out(`原值不在密钥库里：接着用 circle-hub secret set --name ${changes.credentials![item.name]} 设置`);
       session.out(`已更新资源 ${record.id}：${record.name}（系统包 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
+      if (values['clear-plaintext']) session.out('已清空所有明文放行');
+      else if (clearedRoles.length > 0) session.out(`已清掉角色 ${clearedRoles.sort().join('、')} 的明文放行`);
       await resourceWarnings(session,record);
       return 0;
     }
