@@ -2,6 +2,22 @@
 
 Hub 不调用模型。类别语义来自作者原件的 `category_ids`，或你逐用例提交的模型判断；Hub 只核验结构、身份、逐字引文、用例归属与集合运算。引文存在不证明分类语义正确，结果仍需独立复核查漏。不得用关键词、词典、同义词、前缀、自由文本正则判断类别，也不得把 Functional 等测试类型标签映射成 functional。
 
+## 知识视图标识
+
+写法是 `knowledge:<视图>:<产品>:<构建>[?参数]`，四段用冒号，参数在问号后。产品按登记的大小写照抄。下面用合成产品 ORBIT、构建 Rel_ORBIT_7_1_0_30，不要写成 orbit，也不要换成别的分隔符。
+
+- facets：`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。必填 kind、by。
+- index：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。必填 kind、key。
+- impact：`knowledge:impact:ORBIT:Rel_ORBIT_7_1_0_29..Rel_ORBIT_7_1_0_30?changed=definition&attached=case`。构建段写成 `<起始>..<目标>`；changed、attached、catalog 可以不写。
+- links：`knowledge:links:ORBIT:Rel_ORBIT_7_1_0_30`。没有必填参数，prefix 默认 /。
+
+三种写错：
+（1）分隔符用了 @。错 `knowledge:facets@ORBIT@Rel_ORBIT_7_1_0_30?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（2）缺构建。错 `knowledge:facets:ORBIT?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（3）参数不全。错 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?key=commands`。对 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。
+
+本包要收窄到一份文档时照抄：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=document&only=1001&fields=document,node,commands,command_identities,title,path_labels`。
+
 1. 用 get_workflow 读此版本的要求项、槽位及本规程末尾按 `tables/template-v3.json` 列出的描述性闭集。类别的 id、label、group、description 供阅读，不能编译成文字匹配规则。24 个类别的必选范围与用户跳过政策在 `template-v3-coverage.json`。
 2. start_run：pack=template-gap；documents 绑定敏捷平台脑图或 upload_file 回执。要对照某个构建时，product 和 build、version 写在 start_run 顶层，与 pack、inputs 并列，用来锁定目录，不写进 parameters。每份脑图一个条目。默认 case_rule=marked；tagged 会与按命令的默认用例范围不一致，按回执改用 marked 重跑。批量过大时拆批。
 3. 可选 case_index 绑定 `knowledge:index:<产品>:<同构建>?kind=case&key=document&only=<本次敏捷平台文档编号>&fields=document,node,commands,command_identities,title,path_labels`。only 不多不少，不含上传文件。commands 是 command_identities 派生的路径集合；完整身份包含根、路径、签名及带类型的参数，不能按路径相同合并不同参数调用。

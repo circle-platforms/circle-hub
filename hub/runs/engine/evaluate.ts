@@ -31,6 +31,7 @@ import { putAction } from './store.ts';
 import { createFunctionBatches } from './function-batches.ts';
 import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
+import { declarationGroundRefusal } from '../../knowledge/declaration-grade.ts';
 import { buildScope, scopeProblem, emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
@@ -209,6 +210,10 @@ export function productNamesOf(run: Pick<RunRecord, 'target_basis'>): string[] {
 /** The facts about a run that checks and pack functions may use, from the frozen run record. */
 export function runContextOf(run: RunRecord): RunContext {
   return {
+    run: run.run,
+    predecessor: run.predecessor ?? null,
+    ...(run.product_pack_digest ? {product_pack_digest:run.product_pack_digest}:{}),
+    ...(run.skills!==undefined?{skills:run.skills}:{}),
     ...(run.command_policy?{command_policy:run.command_policy}:{}),
     ...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),
     product: run.product ?? null,
@@ -296,7 +301,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const items = run.items.filter(it => !exclude.has(it.id));
   const itemIds = new Set(items.map((it) => it.id));
   const criterionBound=(run.accepted_criteria??[]).flatMap(change=>[rootDigest(change.declaration),rootDigest(change.review)]).filter((digest):digest is string=>digest!==null);
-  const baseBound = [run.pack_digest, ...(run.root !== undefined ? [run.root] : []),...criterionBound];
+  const skills=ctx.parsers.skills??run.skills;
+  const baseBound = [run.pack_digest,...(ctx.parsers.bindingRecords??(ctx.parsers.bindingRecord?[ctx.parsers.bindingRecord]:[])), ...(skills??[]).map(skill=>skill.digest),...(run.root !== undefined ? [run.root] : []),...criterionBound];
   const itemDigests = items.map((it) => it.digest).filter((d): d is string => d !== undefined);
   const entries = new Map<string, { index: number; entry: Submission['items'][number] }>();
   submission?.items.forEach((entry, index) => entries.set(entry.item, { index, entry }));
@@ -305,7 +311,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const artifactRequirements = new Set(itemTemplates.filter(t => t.checks.some(id => checks.get(id)?.judges === 'artifact_under_verification')).map(t => t.key));
   const sets = closedSets(workflow);
   const criteria=await frozenCriteria(ctx,run.accepted_criteria??[]);
-  const context = {...runContextOf(run),...(criteria.length?{accepted_criteria:criteria}:{})};
+  const context = {...runContextOf(run),...(skills?{skills:[...skills]}:{}),...(criteria.length?{accepted_criteria:criteria}:{})};
 
   const handlingOf = (id: string): Handling => {
     if (input.carried.has(id)) return 'handled';
@@ -373,7 +379,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     };
   }
 
-  if(ctx.deps.knowledge.feeding&&resolveCtx.sources){const original=resolveCtx.sources;resolveCtx.sources={async read(sha,reader){const value=await original.read(sha,reader);if(value?.bytes&&value.readTier==='model_readable'){const captures=run.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha&&binding.artifact;});for(const capture of captures.length?captures:[undefined]){const meta=capture?.meta_artifact?await ctx.deps.records.store.get<any>(capture.meta_artifact):null;await ctx.deps.knowledge.feeding!.observeSourceBounded(principalOf(reader),sha,{sourceRecord:capture?.artifact,readManifest:capture?.read_manifest,metaRecord:capture?.meta_artifact,metaSource:meta?.kind==='source_artifact'?meta.body.sha256:undefined,composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version});}}return value;}};}
+  if(ctx.deps.knowledge.feeding&&resolveCtx.sources){const original=resolveCtx.sources;const observed=new Map<string,Promise<unknown>>();resolveCtx.sources={async read(sha,reader){const value=await original.read(sha,reader);if(value?.bytes&&value.readTier==='model_readable'){const captures=run.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha&&binding.artifact;});for(const capture of captures.length?captures:[undefined]){const meta=capture?.meta_artifact?await ctx.deps.records.store.get<any>(capture.meta_artifact):null;const key=sha+'\0'+(capture?.artifact??'');let observation=observed.get(key);if(!observation){observation=ctx.deps.knowledge.feeding!.observeSourceBounded(principalOf(reader),sha,{sourceRecord:capture?.artifact,readManifest:capture?.read_manifest,metaRecord:capture?.meta_artifact,metaSource:meta?.kind==='source_artifact'?meta.body.sha256:undefined,composition:run.target_basis.find(claim=>claim.statement.data?.root===run.root&&typeof claim.statement.data?.composition==='string')?.statement.data?.composition as string|undefined,product:run.product,root:run.root,run:run.run,line:run.version});observed.set(key,observation);}await observation;}}return value;}};}
   const readBudget=new CheckReadBudget();
   const readReference=(reference:string,ref:Parameters<typeof resolveReference>[0])=>readBudget.read(reference,()=>resolveReference(ref,resolveCtx));
   const boundSourceCache = new Map<string, Promise<{ resolved: boolean; text: string | null; byteLength?: number; reason?: ReadFailureReason }>>();
@@ -464,7 +470,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   // reference per evaluation (quotedReferences warms them before the checks run, once); the declared reads' size cap
   // applies to a whole-source fallback, like readBoundSources.
   let fragmentScope: ReturnType<typeof buildScope> | undefined;
-  type GradedFragment = {text?: string; why: FragmentRead; unread?: FragmentReadFailure};
+  type GradedFragment = {text?: string; why: FragmentRead; unread?: FragmentReadFailure; rule?: string};
   const fragmentCache = new Map<string, Promise<GradedFragment>>();
   const gradeFragment = (reference: string, capBytes: number = MAX_CHECK_READ_BYTES): Promise<GradedFragment> => {
     let pending = fragmentCache.get(reference);
@@ -485,6 +491,8 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
             return { why: r.code === 'REFERENCE_UNRESOLVED' ? 'no_fragment' : 'unavailable' };
           }
           if (!r.groundable) return { why: 'not_groundable' };
+          const named = await declarationGroundRefusal(ref, digest => ctx.deps.records.store.get(digest));
+          if (named) return { why: 'not_groundable', rule: named };
           if (r.readTier === 'retain_only') return { why: 'retain_only', unread: {reason:'credential_unreadable', missing_fact:'管理员尚未接受此来源', next_action:'请求管理员接受来源，接受后重新核验'} };
           if (r.text === null) return { why: 'no_fragment' };
           if (Buffer.byteLength(r.text, 'utf8') > capBytes) return { why: 'too_large' };
@@ -527,9 +535,11 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const warmed = new Map<string, string>();
   const warmedWhy = new Map<string, FragmentRead>();
   const warmedUnread = new Map<string, FragmentReadFailure>();
+  const warmedRule = new Map<string, string>();
   const gradedSourceView = (texts: ReadonlyMap<string, string>): SourceView => ({
     text: (reference) => texts.get(reference) ?? warmed.get(reference),
     unread: reference => warmedUnread.get(reference),
+    rule: reference => warmedRule.get(reference),
     // A reference never warmed (not collected, or the warm pass failed) reads as unavailable: an honest
     // unknown, never a refutation.
     why: (reference) => (texts.has(reference) || warmed.has(reference) ? 'bound' : warmedWhy.get(reference) ?? 'unavailable'),
@@ -544,6 +554,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       else {
         warmedWhy.set(reference, graded.why);
         if(graded.unread) warmedUnread.set(reference,graded.unread);
+        if(graded.rule) warmedRule.set(reference, graded.rule);
       }
     });
   };
@@ -1178,9 +1189,9 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       complete: examined === items.length,
       examined,
       total: items.length,
-      ...(submission !== null && hasItemJudgments ? { note: `提交处理了 ${handled} 个条目，共 ${items.length} 个` } : {}),
+      ...((submission !== null && hasItemJudgments)||ctx.parsers.bindingDisclosure ? {note:[...(submission!==null&&hasItemJudgments?[`提交处理了 ${handled} 个条目，共 ${items.length} 个`]:[]),...(ctx.parsers.bindingDisclosure?[ctx.parsers.bindingDisclosure]:[])].join('；')} : {}),
     },
-    locks: { ...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
+    locks: { ...(skills?{skills:[...skills]}:{}),...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
     trace: input.traceId,
   };
   attachParentRecovery(result,retryAttempts,ctx.now());

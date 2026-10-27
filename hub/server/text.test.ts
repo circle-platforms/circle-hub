@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 // The text of every tool answer, through the real text functions: synthetic runs of 5, 62, 400 and 3000 items, every answer
 // within TEXT_BUDGET and ending with the trace line, the facts first (counts, every requirement's state, every problem), the
 // note exactly when something was left out or shortened, ways to read the rest that the server takes (page cursors when it
@@ -26,7 +27,7 @@ import {
 } from '../../contracts/src/tools.ts';
 import { ValidationResult, partitionCountsOf, type ItemResult, type Partitions, type RequirementResult } from '../../contracts/src/validation.ts';
 import type { LoadedWorkflow } from '../ports.ts';
-import { canonicalJson, createDefaultRegistry, recordDigest, resolveReference, type RecordRead } from '../refs/api.ts';
+import { canonicalJson, recordDigest, resolveReference, type RecordRead } from '../refs/api.ts';
 import { slotSchemaOf } from '../runs/engine/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { TEXT_BUDGET } from './budget.ts';

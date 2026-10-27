@@ -1,9 +1,9 @@
-// quote@1: every quotation appears verbatim in the fragment its reference resolves to. White space differences only are
-// ignored; the rule is quoteMatches in text.ts and must agree with hub/refs (shared vectors: quote-vectors.json).
+// quote@1: every quotation is an exact contiguous substring of the decoded fragment its reference resolves to.
+// The rule is quoteMatches in text.ts and must agree with hub/refs (shared vectors: quote-vectors.json).
 import { QuoteTable, type CheckOutcome } from '../../../contracts/src/tables.ts';
 import { getAt, joinPointer, selectAll } from '../json.ts';
 import { baseFor, isReferenceUri, quoted, refuteProtocol, support, unknown } from '../outcome.ts';
-import { collapseWhitespace, quotationForm, quoteInCollapsed } from '../text.ts';
+import { collapseWhitespace, quoteMatches } from '../text.ts';
 import { defineInterpreter, pathIssues } from './define.ts';
 
 export const quoteInterpreter = defineInterpreter({
@@ -14,8 +14,6 @@ export const quoteInterpreter = defineInterpreter({
   run(table, request) {
     const base = baseFor(request.subject, table);
     const outcomes: CheckOutcome[] = [];
-    // A fragment can be megabytes and quoted many times: collapse it once per run.
-    const collapsed = new Map<string, string>();
     for (const rule of table.quotes) {
       for (const selected of selectAll(request.subject, rule.select) ?? []) {
         const text = getAt(selected.value, rule.text);
@@ -42,7 +40,7 @@ export const quoteInterpreter = defineInterpreter({
             }));
           }
           else if (why === 'not_bound') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的源文件不是这次运行的输入，请改引本运行已绑定的输入（src:<摘要> 或 tree:<锁定根>/<路径>@<条目>）`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
-          else if (why === 'not_groundable') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', '这类记录不能作根据（B01 R[4]），请改引结果、动作或效果记录', { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
+          else if (why === 'not_groundable') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', request.sources?.rule?.(ref) ?? '这类记录不能作根据（B01 R[4]），请改引结果、动作或效果记录', { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'entry_unaddressed') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', '知识条目不能单独作根据（B01 R[5]），请改写为 tree:<根>/<路径>@<条目>', { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'malformed') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', '引用写法不对，请使用 src:<摘要>、tree:<根>/<路径>@<条目> 或 rec:<记录>#/<字段>', { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'no_fragment') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的片段不存在`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
@@ -53,13 +51,7 @@ export const quoteInterpreter = defineInterpreter({
           continue;
         }
         const data = { quote: text.value, reference: ref };
-        let haystack = collapsed.get(ref);
-        if (haystack === undefined) {
-          haystack = quotationForm(fragment);
-          collapsed.set(ref, haystack);
-        }
-        // Same rule as quoteMatches(fragment, quote), with the fragment side computed once.
-        if (quoteInCollapsed(haystack, text.value)) outcomes.push(support(base, `引文 ${quoted(text.value)} 与所引片段逐字一致`, { pointer, grounds: [ref], data }));
+        if (quoteMatches(fragment, text.value)) outcomes.push(support(base, `引文 ${quoted(text.value)} 与所引片段逐字一致`, { pointer, grounds: [ref], data }));
         else {
           const why = collapseWhitespace(text.value) === '' ? '引文为空' : `所引片段里没有 ${quoted(text.value)}`;
           outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', why, { pointer, grounds: [ref], data }));

@@ -232,6 +232,18 @@ describe('project with declared installs in the manifest', () => {
     assert.match(String(a.conclusion), /构建不一致（装的是 Rel_FAMX_10_6_1_8，需要升级到 Rel_FAMX_10_6_1_9，声明，未核对）/);
   });
 
+  it('search: no matching build adds one unknown exit and does not rewrite the per-bed fields', () => {
+    const out = project(input({ need: { ...needBuild, build: 'Rel_FAMX_10_6_1_9' } }, { manifest: DECLARED })) as { warnings?: Array<{ code: string; message: string }> };
+    const warning = out.warnings?.find((row) => row.code === 'test-bed.no_matching_build');
+    assert.ok(warning);
+    assert.match(warning.message, /没有任何台架的在装构建匹配版本线 Rel_FAMX_10_6_1_9/);
+    assert.match(warning.message, /管理员在清单登记在装构建，或把某台升级到该构建后重试/);
+    assert.equal(fieldsOf(out, 'bed-a').build_ok, 'mismatch');
+    assert.match(String(fieldsOf(out, 'bed-a').conclusion), /需要升级到 Rel_FAMX_10_6_1_9/);
+    const matched = project(input({ need: needBuild }, { manifest: DECLARED })) as { warnings?: Array<{ code: string }> };
+    assert.equal(matched.warnings?.some((row) => row.code === 'test-bed.no_matching_build'), false);
+  });
+
   it('facts: the declared installs ride the item with 声明，未核对 in the summary', () => {
     const out = project(input({ action: 'facts' }, { manifest: DECLARED }));
     const a = fieldsOf(out, 'bed-a');

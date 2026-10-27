@@ -2,8 +2,8 @@
 import assert from 'node:assert/strict';
 import { crc32, deflateRawSync } from 'node:zlib';
 import { test } from 'node:test';
-import { ParseError, ParseLimitError } from '../parser.ts';
-import { readXlsxArchive, XLSX_MODEL_BYTE_LIMIT, XLSX_ZIP_LIMITS } from './xlsx.ts';
+import { ParseError, ParseLimitError } from '../../../packs/skill/workbook-format/functions/format.ts';
+import { readXlsxArchive, XLSX_MODEL_BYTE_LIMIT, XLSX_ZIP_LIMITS } from '../../../packs/skill/workbook-format/functions/xlsx.ts';
 
 type Member = { name: string; text?: string; bytes?: Buffer; method?: number; flags?: number; size?: number; crc?: number; extra?: Buffer; localExtra?: Buffer; nameBytes?: Buffer; attributes?: number; descriptor?: boolean | 12 | 16 | 20 | 24; zip64?: boolean; compressed?: Buffer };
 function zip(members: Member[]): Buffer {
@@ -111,7 +111,7 @@ function workbook(options: { book?: string; sheet?: string; shared?: string; ext
   ]);
 }
 // Kept here to exercise the module directly without extending refs/api.ts beyond this task's paths.
-import { xlsxParser } from './xlsx.ts';
+import { xlsxParser } from '../../../packs/skill/workbook-format/functions/xlsx.ts';
 const parseWorkbook = (options: Parameters<typeof workbook>[0] = {}) => xlsxParser.parse(workbook(options));
 const badWorkbook = (options: Parameters<typeof workbook>[0], reason: RegExp) => assert.throws(() => parseWorkbook(options), (e: unknown) => e instanceof ParseError && e.parser === 'xlsx@1' && reason.test(e.message));
 
@@ -248,9 +248,10 @@ test('xlsx@1 accepts Strict namespaces and refuses a worksheet with a foreign na
 });
 
 test('the registered XLSX parser is selected by upload extension, while non-ZIP bytes are never recognized', async () => {
-  const { createDefaultRegistry, recognize } = await import('../api.ts');
+  const { recognize } = await import('../api.ts');
+  const { createTestParserRegistry } = await import('../../testing/parsers.ts');
   const { mediaTypeFor, structureOf } = await import('../../server/upload.ts');
-  const registry = createDefaultRegistry(); const bytes = workbook();
+  const registry = createTestParserRegistry(); const bytes = workbook();
   const mediaType = mediaTypeFor(bytes, undefined, 'synthetic.XLSX');
   assert.equal(mediaType, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   assert.equal(registry.get('xlsx@1')?.id, 'xlsx');

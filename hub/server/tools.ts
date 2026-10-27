@@ -28,12 +28,13 @@ import {
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
 import { IntegrityError, RecordsError, isSha256, type Principal } from '../records/api.ts';
-import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
+import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
+import { SandboxError } from '../rules/api.ts';
 import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
 import { feedingText, fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
-import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOf } from './upload.ts';
+import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOfAsync as structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
 
@@ -160,6 +161,12 @@ export function internalError(trace: string): McpError {
 
 /** A thrown error with a registered protocol code becomes that error answer; anything else is an internal error. */
 function fromThrown(tool: ToolName, error: unknown, call: ToolCall): Answer {
+  if (error instanceof SandboxError) {
+    // Pack-controlled diagnostics and stdout may contain function-only source bytes. Record only the fixed sandbox code.
+    call.context.adminNote(`技能包沙箱失败：${error.code}`);
+    const cacheLimit = error.detail.limit === 'document_cache_bytes';
+    return errorAnswer(tool, [{ code: 'SOURCE_RETRYABLE', message: cacheLimit ? `文档缓存估算超过预算：${error.code}` : `来源片段暂时未核对：技能包沙箱 ${error.code}`, fix: cacheLimit ? '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读' : '管理员核对技能包和沙箱状态，恢复后重新读取' }]);
+  }
   const code = protocolCodeOf(error);
   if (code === null) {
     call.context.adminNote(describeInternalError(error));
@@ -274,7 +281,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
   let suggestMediaType = false;
   let structure: Record<string, unknown> | null = null;
   try {
-    structure = structureOf(deps.parsers, bytes, mediaType, (error) => {
+    structure = await structureOf(deps.parsers, bytes, mediaType, (error) => {
       suggestMediaType = mediaType !== 'text/plain' && !(error instanceof ParseLimitError) && (error instanceof ParseSyntaxError || error instanceof ParseEncodingError);
       refusal = { code: error.code, message: `${error.parser}：${error.message}`, fix: error.fix };
     });
@@ -286,7 +293,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
   if (refusal) {
     const rejected = refusal as ProtocolError;
     const guessed = mediaType;
-    const fallback = structureOf(deps.parsers, bytes, 'text/plain');
+    const fallback = await structureOf(deps.parsers, bytes, 'text/plain');
     if (fallback !== null) { mediaType = 'text/plain'; structure = fallback; }
     structure = { ...(structure ?? {}), media_type_guessed: true, guessed_media_type: guessed, guessed_refusal: rejected, note: `媒体类型由字节猜测，猜测格式未通过核验，文件仍原样保存；${rejected.message}；修正：${rejected.fix}${suggestMediaType ? '；若类型猜测有误，请用 media_type 明确指定实际格式后重传' : ''}` };
   }
@@ -297,7 +304,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
       mediaType,
       origin: { upload: { session: call.context.sessionId, message: null } },
       author: { user: call.principal.id, declared: null },
-      provenanceType: 'declared',
+      provenanceType: parsed.data.provenance_type ?? 'declared',
       // B02 R[3]: what is uploaded for a run is visible to its uploader and to admins; widening goes through a share.
       visibility: { readers: [call.principal.id], admins: true, packs: [], shareable: true },
       readTier: 'model_readable',
@@ -362,7 +369,7 @@ const startRun: Handler = async (deps, call, args) => {
 const resolveTool: Handler = async (deps, call, args) => {
   const parsed = ResolveReferenceInput.safeParse(args);
   if (!parsed.success) return { answer: errorAnswer('resolve_reference', schemaErrors('resolve_reference', parsed.error)) };
-  call.state.runId = parsed.data.run;
+  call.state.runId = parsed.data.run ?? null;
   return { answer: (await deps.runs.resolveReference(call.principal, parsed.data, call.context)) as Answer };
 };
 
@@ -491,7 +498,9 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
   // evaluating the selector, so absent and withheld follow refs' one rule.
   const sources = sourceReaderFor(deps.records, call.principal, 'function', note);
   const reader: ReaderIdentity = { user: call.principal.id, role: call.principal.role, ...(run === undefined ? {} : { run }) };
-  const result = await resolveReference(parsed, {
+  const documents = createDocumentCache();
+  let result: Awaited<ReturnType<typeof resolveReference>>;
+  try { result = await documents.within!(resolveReference(parsed, {
     retryReads:true,
     now:deps.now?.bind(deps),
     reader,
@@ -500,10 +509,11 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     trees: deps.knowledge.treeReader(),
     records: recordReaderFor(deps.records, deps.runs, call.principal, note, (deps.knowledge as typeof deps.knowledge & {layers?:{contributions:ContributionLayer}}).layers?.contributions),
     consumer: 'model',
+    documents,
     onDiagnostic: (d) => note(`${d.scheme} ${clipNote(d.reference, 300)}: ${d.message}`),
-  });
+  })); } finally { documents.dispose?.(); }
   if (!result.resolved) {
-    if (result.code === 'SOURCE_UNAVAILABLE') return { answer: errorAnswer('get_nodes', [unavailable()]) };
+    if (result.code === 'SOURCE_UNAVAILABLE' && !result.parser_missing) return { answer: errorAnswer('get_nodes', [unavailable()]) };
     return { answer: errorAnswer('get_nodes', [{ code: result.code, message: result.message, fix: result.fix }]) };
   }
   if (cursor !== null) {

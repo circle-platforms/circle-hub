@@ -14,7 +14,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'quality-board',
-  version: '2.0.10',
+  version: '2.0.11',
   kind: 'workflow',
   title: '质量看板',
   description: '构建的用例质量看板：每个（版本线、模块）分组的用例数、无期望结果占比、只有含糊期望结果占比、负面用例占比，以及合计；阈值越界是提示档的管理信号，从不是阻断；不绑定产品线（输入的外部标识写明产品和构建）；只含事实要求项，开始运行时由 Hub 直接算出结果',

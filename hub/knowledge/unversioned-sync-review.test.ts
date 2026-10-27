@@ -1,9 +1,10 @@
 import {osIsolationAvailable} from '../rules/api.ts';
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import{before,after,test}from'node:test';
 import{makeWorld,startPostgres,catalogXml,BASE_CATALOG,DEFAULT_PRODUCERS,DEFAULT_SYNC}from'./test-support.ts';
 import{createKnowledge}from'./api.ts';
-import{createDefaultRegistry}from'../refs/api.ts';
+
 import{pointerName}from'./store.ts';
 let pg:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{pg=await startPostgres();});after(()=>pg?.stop());

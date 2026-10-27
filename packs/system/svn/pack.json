@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "svn",
-  "version": "1.1.0",
+  "version": "1.2.1",
   "kind": "system",
   "title": "SVN 只读系统包",
   "description": "按修订号读取仓库原件",
@@ -13,8 +13,8 @@
     },
     {
       "path": "system.json",
-      "sha256": "50fc1ac2f37e3092f434cf1c0afb9b2b1e750df9d02b80aecdd8ae3e7e02696f",
-      "size": 3199
+      "sha256": "494da4b09f5d64c57dfe10b8096f42ccc967907168c1672b806309cc881bdd61",
+      "size": 3366
     }
   ]
 }

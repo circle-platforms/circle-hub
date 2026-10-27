@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { normalizeMindmap } from '../../../packs/workflow/case-compile/tools/normalize-mindmap.ts';
-import { kityminderParser, ParseError, ParseLimitError } from '../../../hub/refs/api.ts';
+import { kityminderParser } from '../../../packs/skill/mindmap-format/api.ts';
+import { ParseError, ParseLimitError } from '../../../packs/skill/mindmap-format/functions/format.ts';
 import { extractCases, type CaseRule } from '../../../packs/workflow/case-compile/functions/cases.ts';
 import { argumentsOf, jsonBytes, main, output, record, readJson, requireFact, sha256 } from './io.ts';
 const CONTENT_EXPORT = '请改喂 agile:mindmap 的 content 制品（内层 KityMinder JSON），不要喂 original。先执行 circle-hub resource read <资源> mindmap <文档键>，再执行 circle-hub original export <产物 content 的摘要> --out <仓库外文件>';

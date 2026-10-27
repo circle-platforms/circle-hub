@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 // The reading side: the permission matrix (admin, a reader with the product's pack, an outsider, a disabled or demoted
 // account, an unknown root: absent and forbidden are the same null), get_nodes pages and coverage, the shape get_nodes
 // returns, tree and entry references resolved through hub/refs, provenance and the diff of two roots.
@@ -6,7 +7,7 @@ import { after, before, describe, test } from 'node:test';
 import { GetNodesOutput } from '../../contracts/src/tools.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { KnownBuild } from '../../contracts/src/product.ts';
-import { createDefaultRegistry, resolveReference } from '../refs/api.ts';
+import { resolveReference } from '../refs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { BASE_CATALOG, catalogXml, makeWorld, startPostgres, type World } from './test-support.ts';
 

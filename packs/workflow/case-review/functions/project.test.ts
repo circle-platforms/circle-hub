@@ -71,22 +71,22 @@ describe('projection of the review fixture (default: caseRule marked)', () => {
     assert.equal(one(items, '探测超时时间内无响应判定失败').fields.priority, 1);
   });
 
-  it('counts the untagged nodes in the case form in a warning with projected: true', () => {
+  it('counts the untagged nodes in the case form in a warning with projected: true', async () => {
     const warning = warnings.find((w) => w.code === 'case-review.untagged_cases');
     assert.ok(warning);
     assert.equal(warning.data?.count, 3);
     assert.equal(warning.data?.projected, true);
-    const titles = (warning.data?.nodes as string[]).map((selector) => review.locate(selector)?.text);
+    const titles = await Promise.all((warning.data?.nodes as string[]).map(async (selector) => (await review.locate(selector))?.text));
     assert.deepEqual(titles, UNTAGGED);
   });
 
-  it('locates every item at its node through the kityminder@1 selector, identical to the parser selector', () => {
+  it('locates every item at its node through the kityminder@1 selector, identical to the parser selector', async () => {
     for (const item of items) {
       assert.equal(item.location.parser, 'kityminder@1');
       const node = review.model.nodes.find((candidate) => candidate.selector === item.location.selector);
       assert.ok(node, item.location.selector);
       assert.equal(node.text, item.fields.title);
-      assert.equal(review.locate(item.location.selector)?.text, item.fields.title);
+      assert.equal((await review.locate(item.location.selector))?.text, item.fields.title);
     }
     assert.equal(items.filter((item) => item.location.selector.startsWith('n/')).length, 65);
   });
@@ -152,10 +152,10 @@ describe('projection of the review fixture (default: caseRule marked)', () => {
     assert.deepEqual(nested[0].data, { outer: outer.id });
   });
 
-  it('names the tagged group node once, at its own node', () => {
+  it('names the tagged group node once, at its own node', async () => {
     const tagged = warnings.filter((w) => w.code === 'case-review.tagged_group');
     assert.equal(tagged.length, 1);
-    assert.equal(review.locate(tagged[0].node as string)?.text, '会话保持');
+    assert.equal((await review.locate(tagged[0].node as string))?.text, '会话保持');
   });
 
   it('keeps repeated titles under different paths as separate items', () => {
@@ -200,13 +200,13 @@ describe('projection of the review fixture (default: caseRule marked)', () => {
     );
   });
 
-  it('lists the group nodes with their case counts, the tagged group node among them', () => {
+  it('lists the group nodes with their case counts, the tagged group node among them', async () => {
     assert.deepEqual(
       groups.map((group) => [group.label, group.cases]),
       GROUPS,
     );
     assert.equal(groups.find((group) => group.label === '待补充')?.priority, null);
-    for (const group of groups) assert.equal(review.locate(group.location.selector)?.text, group.label);
+    for (const group of groups) assert.equal((await review.locate(group.location.selector))?.text, group.label);
     const groupIds = new Set(groups.map((group) => group.id));
     assert.equal(groupIds.size, groups.length);
     assert.ok(items.every((item) => !groupIds.has(item.id)));
@@ -377,7 +377,7 @@ describe('small and large documents', () => {
     assert.deepEqual(upgrade.expected, ['升级成功，命令改动后的配置自动转换']);
   });
 
-  it('stays linear on the 3,000-node document', () => {
+  it('stays linear on the 3,000-node document', async () => {
     const parsed = parseLarge();
     assert.ok(parsed.model.nodes.length > 2900 && parsed.model.nodes.length < 3100, String(parsed.model.nodes.length));
     const start = performance.now();
@@ -386,7 +386,7 @@ describe('small and large documents', () => {
     assert.ok(items.length > 1000, String(items.length));
     assert.equal(groups.length, 12 + 12 + 12 * 3 * 4);
     assert.ok(ms < 1000, `${ms} ms`);
-    for (const item of items.slice(0, 200)) assert.equal(parsed.locate(item.location.selector)?.text, item.fields.title);
+    for (const item of items.slice(0, 200)) assert.equal((await parsed.locate(item.location.selector))?.text, item.fields.title);
   });
 
   it('handles 60,000 nodes and 950 children of one node in linear time', () => {
@@ -582,7 +582,7 @@ describe('identity, location and hostile structure', () => {
     assertJson(out);
   });
 
-  it('treats only a non-empty tag list as tagged; the untagged nodes in the case form are counted, not listed as groups', () => {
+  it('treats only a non-empty tag list as tagged; the untagged nodes in the case form are counted, not listed as groups', async () => {
     const parsed = parseText(
       mindMap([
         caseNode('a', '空标签', []),
@@ -602,7 +602,7 @@ describe('identity, location and hostile structure', () => {
     assert.deepEqual(groups, []);
     const untagged = warnings.find((warning) => warning.code === 'case-review.untagged_cases');
     assert.deepEqual(
-      (untagged?.data?.nodes as string[]).map((selector) => parsed.locate(selector)?.text),
+      await Promise.all((untagged?.data?.nodes as string[]).map(async (selector) => (await parsed.locate(selector))?.text)),
       ['空标签', '没有标签', '标签不是数组'],
     );
 

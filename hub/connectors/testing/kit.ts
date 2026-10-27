@@ -9,6 +9,7 @@ import { openTestRecords, type TestRecordsKit } from '../../testing/records.ts';
 import type { PackHandle } from '../../ports.ts';
 import type { User } from '../../records/api.ts';
 import { createConnectors, osIsolationAvailable, type Connectors, type ConnectorsOptions } from '../connectors.ts';
+import { createTestParserRegistry } from '../../testing/parsers.ts';
 import type { ConnectorLogEvent } from '../http.ts';
 import {
   AGILE_FUNCTIONS,
@@ -75,6 +76,7 @@ export async function openConnectorKit(postgres: TemporaryPostgres, options: Par
         log: (event) => void log.push(event),
         sandbox: { requireOsIsolation },
         resourceCacheMs: 0,
+        parsers: createTestParserRegistry(),
         ...options,
         ...extra,
       });

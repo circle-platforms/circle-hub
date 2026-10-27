@@ -1,0 +1,43 @@
+// T7-1: model identity is a declared field; a different account cannot disguise a shared family.
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { startPostgres } from '../../hub/testing/postgres.ts';
+import { openBed } from './support/hub.ts';
+import { draft, finding, startReview, DRAFTER_IDENTITY, VERIFIER_IDENTITY } from './support/review.ts';
+
+test('T7-1 a different account in the author family is saved but cannot release the final report',async t=>{
+  const postgres=await startPostgres();t.after(()=>postgres.stop());
+  const bed=await openBed({postgres});t.after(()=>bed.close());
+  const author=await bed.connect(bed.reviewer,'synthetic-t7-author');
+  const subject=await author.upload(Buffer.from(JSON.stringify({root:{data:{id:'root',text:'合成观察'},children:[{data:{id:'case',text:'合成用例',priority:2,resource:['functional']},children:[{data:{id:'expect',text:'ready'}}]}]}})),'synthetic-governance.km.json');
+  const original=await startReview(author,{product:bed.second.names[0],version:'2.1',inputs:{subject:{reference:subject}}});
+  const submitted=await author.call('submit_result',draft(original,new Map(original.items.map(item=>[item.id,[finding(item,{rank:'major'})]]))));assert.equal(submitted.out.acceptance,'accepted');
+  const receipt=(await bed.hub.deps.runs.getRun(bed.reviewer.principal,original.run))!.latest!.record;
+  const other=bed.hub.admin;
+  for(const pack of ['case-review-verify','case-review-report'])await bed.hub.assignPack(other.principal,pack);
+  await bed.hub.records.authorizations.share(bed.hub.admin.principal,original.run,[other.user.id]);
+  await bed.hub.records.authorizations.share(bed.hub.admin.principal,subject,[other.user.id]);
+  const verifier=await bed.connect(other,'synthetic-t7-verifier');
+  const started=await verifier.call('start_run',{pack:'case-review-verify',product:bed.second.names[0],version:'2.1',predecessor:original.run,inputs:{target:{reference:subject},draft:{reference:'rec:'+receipt}}});
+  assert.equal(started.isError,false,started.text);
+  const run=started.out.run!;
+  const payload={run:run.run,model:'synthetic-verifier',model_identity:{model_id:'different-model-same-family',model_family_id:DRAFTER_IDENTITY.model_family_id},items:run.items.map(item=>({item:item.id,handling:'handled',slots:{verification:(item.fields.draft_findings as Array<{reference:string}>).map(f=>({text:'合成独立核实',code:'verified',rank:'major',location:item.location,quotes:[{reference:item.location.slice(0,item.location.lastIndexOf('/')+1)+'expect',text:'ready'}],data:{finding:f.reference}}))}})),cross_item:[{nature:'judgment',statement:'合成复核结论 PASS',grounds:[],code:'PASS',rank:'P4'}]};
+  const saved=await verifier.call('submit_result',payload);assert.equal(saved.out.acceptance,'accepted',saved.text);
+  const requirements=Object.values(saved.out.result!.partitions).flat().flatMap(item=>item.requirements).filter(r=>r.requirement==='verification');
+  assert.ok(requirements.length>0);assert.ok(requirements.every(r=>r.status==='unsatisfied'&&r.unsatisfied_reason==='independence_unknown'),JSON.stringify(requirements));
+  const verifyReceipt=(await bed.hub.deps.runs.getRun(other.principal,run.run))!.latest!.record;
+  const report=await verifier.call('start_run',{pack:'case-review-report',inputs:{target:{reference:subject},verifications:[{reference:'rec:'+verifyReceipt}]}});
+  assert.equal(report.isError,true);assert.ok(report.out.errors.some(e=>e.code==='case-review-report.block_unsettled'));
+  const repaired=await verifier.call('submit_result',{...payload,model_identity:VERIFIER_IDENTITY});
+  assert.equal(repaired.out.acceptance,'accepted',repaired.text);
+  const corrected=Object.values(repaired.out.result!.partitions).flat().flatMap(item=>item.requirements).filter(r=>r.requirement==='verification');
+  assert.ok(corrected.every(r=>r.status==='satisfied'),'different account and explicitly different family satisfy independence');
+  const replacement=(await bed.hub.deps.runs.getRun(other.principal,run.run))!.latest!.record;
+  const released=await verifier.call('start_run',{pack:'case-review-report',inputs:{target:{reference:subject},verifications:[{reference:'rec:'+replacement}]}});
+  assert.equal(released.isError,false,released.text);
+  const finalRun=released.out.run!;
+  const final=await verifier.call('submit_result',{run:finalRun.run,model:'synthetic-reporter',model_identity:VERIFIER_IDENTITY,items:finalRun.items.map(item=>({item:item.id,handling:'handled',slots:{}})),cross_item:[{nature:'judgment',statement:'合成终稿 PASS',grounds:[],code:'PASS',rank:'P4'}]});
+  assert.equal(final.out.acceptance,'accepted',final.text);
+  assert.equal(final.out.result!.partitions.delivered.length,finalRun.items.length);
+  assert.equal(final.out.result!.partitions.rejected.length,0);
+});

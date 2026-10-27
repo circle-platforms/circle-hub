@@ -1,4 +1,6 @@
-// Cold process, real temporary PostgreSQL, generated synthetic source documents. The benchmark clock is fixed, so this hash is the predecessor's output.
+// Cold process, real temporary PostgreSQL, synthetic documents and a fixed clock.
+// R5 adds procedure/pitfall zero counters to the composition; its identity changes in the view.
+// Payload length, entry coverage, query/RSS budgets and all other assertions stay fixed.
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,7 +13,7 @@ test('a cold 49000-entry index preserves predecessor bytes, complete truncated c
   t.after(() => rm(directory, { recursive: true, force: true }));
   const result = await benchmarkView(directory);
   t.diagnostic(JSON.stringify(result));
-  assert.equal(result.sha256, 'ed5ba89a218d20fdd96a4b61d3555aa68492cd2926e6caf1185139ea1a285fb9');
+  assert.equal(result.sha256, 'cd3f039db1e69eb9f6675754c8d17197ce2b4c3a974faf9c51e0e3b5febb9d35');
   assert.equal(result.bytes, 15_665_029);
   assert.deepEqual([result.totalEntries, result.totalKeys, result.listed, result.truncated], [49_000, 1800, 30_199, true]);
   assert.deepEqual(result.totals, { entry_counts: { placed: 49_000, total: 49_000, unplaced: 0 } });

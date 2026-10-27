@@ -10,7 +10,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'defect-to-case',
-  version: '1.6.18',
+  version: '1.6.20',
   kind: 'workflow',
   title: '缺陷转用例',
   description: '从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例',

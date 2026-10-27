@@ -13,7 +13,7 @@ import { ExternalObjectId } from '../../../contracts/src/reference.ts';
 import type { InputBinding, SourceBinding } from '../../../contracts/src/run.ts';
 import type { Principal, VariableSnapshot } from '../../records/api.ts';
 import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
-import { ReferenceSyntaxError, parseReference, parserKey, recognize, type Reference } from '../../refs/api.ts';
+import { ReferenceSyntaxError, parseReference, parserKey, recognizeAsync, type Reference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, protocolError, unavailableError } from './errors.ts';
 import { recordBytes } from './exact.ts';
@@ -183,14 +183,18 @@ export async function bindInputs(
     }
     const read = merged ?? (requestId.startsWith('knowledge:') ? await completeKnowledgeView(requestId,readContext,ctx.deps.external,records) : await ctx.deps.external.read(requestId,readContext));
     if (!read.ok) {
-      if (read.inputError !== undefined) {
-        if(read.inputError.code)errors.push(protocolError(read.inputError.code,read.inputError.message,{path,fix:read.inputError.fix}));
-        else schemaError(path, read.inputError.message, read.inputError.fix);
+      if(read.retry) {
+        const step = read.inputError?.fix;
+        const message = step === undefined
+          ? `缺少输入 ${id} 的读取结果；下一次重读时间 ${read.retry.at}，按原输入重读`
+          : `${read.inputError?.message ?? `缺少输入 ${id} 的读取结果`}；下一次重读时间 ${read.retry.at}，${step}`;
+        errors.push(protocolError('SOURCE_RETRYABLE', message, {path, ...(step === undefined ? {} : {fix: step})}));
         notes.push(`${path}: ${read.reason}`);
         return null;
       }
-      if(read.retry) {
-        errors.push(protocolError('SOURCE_RETRYABLE',`缺少输入 ${id} 的读取结果；下一次重读时间 ${read.retry.at}，按原输入重读`,{path}));
+      if (read.inputError !== undefined) {
+        if(read.inputError.code)errors.push(protocolError(read.inputError.code,read.inputError.message,{path,fix:read.inputError.fix}));
+        else schemaError(path, read.inputError.message, read.inputError.fix);
         notes.push(`${path}: ${read.reason}`);
         return null;
       }
@@ -258,7 +262,7 @@ export async function bindInputs(
       else { schemaError(path, '输入只能是上传得到的 src: 引用、Hub 记录引用 rec: 或外部对象'); continue; }
       if (read === null) continue;
       let refusal: ProtocolError | null = null;
-      const parsed = recognize(ctx.parsers, read.bytes, read.mediaType, {}, (error) => {
+      const parsed = await recognizeAsync(ctx.parsers, read.bytes, read.mediaType, {}, (error) => {
         refusal = protocolError('SOURCE_UNPARSEABLE', `${error.parser}：${error.message}`, { path, fix: error.fix });
       });
       if (parsed === null) {

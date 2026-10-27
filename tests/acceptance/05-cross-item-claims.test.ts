@@ -55,8 +55,13 @@ describe('scenario 5: cross-item fact and judgment resting on it', () => {
     const result = resultOf(answer);
 
     // 1. Listed separately in cross_item
-    assert.equal(result.cross_item.length, 3);
-    const [factClaim, judgmentClaim, levelClaim] = result.cross_item;
+    assert.equal(result.cross_item.length, 3 + 2);
+    const [levelConsistencyFact, reviewScopeFact, factClaim, judgmentClaim, levelClaim] = result.cross_item;
+    // A4 #13 adds two mechanical facts before the original cross-item claims.
+    assert.deepEqual([levelConsistencyFact, reviewScopeFact].map((c) => [c.requirement, c.statement.code, c.statement.rank, c.qualifier.nature]), [
+      ['level', undefined, undefined, 'fact'],
+      ['level', undefined, undefined, 'fact'],
+    ]);
     assert.equal(factClaim.statement.text, '跨条目事实：多个用例共享前置条件配置');
     assert.equal(judgmentClaim.statement.text, '跨条目判断：前置条件缺少容灾分支覆盖');
     assert.deepEqual(judgmentClaim.validity.premises, ['/cross_item/0']);
@@ -102,7 +107,7 @@ describe('scenario 5: cross-item fact and judgment resting on it', () => {
     const stored = await bed.hub.records.store.find({ key: 'runs.result.run', value: run.run });
     assert.equal(stored.items.length, 1);
     const storedResult = stored.items[0].body as typeof result;
-    assert.equal(storedResult.cross_item.length, 3);
+    assert.equal(storedResult.cross_item.length, 3 + 2);
 
     // 4. Call log & Console HTML
     const logs = await bed.hub.records.callLog.query(bed.hub.admin.principal, { runId: run.run });

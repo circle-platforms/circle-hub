@@ -22,7 +22,7 @@ import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools
 import { partitionCountsOf, type PartitionCounts, type ValidationResult } from '../../../contracts/src/validation.ts';
 import { CanonicalizationError, RecordsError, LimitError, scanForCredentials, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
-import { parseReference, recReference, resolveReference } from '../../refs/api.ts';
+import { parseReference, prefetchReferences, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError, unavailable } from './errors.ts';
 import { productionEvaluationInput, evaluate, type Evaluation } from './evaluate.ts';
@@ -97,7 +97,7 @@ export function hasRulingSummary(record:RunRecord):record is RunRecordView {
   return record.requirements.every(row=>row.rules!==undefined && row.run_interpreters!==undefined);
 }
 export function summaryOf(record: RunRecord, workflow?:Pick<LoadedWorkflow,'pack'|'requirements'|'checks'|'ledger'> & { workflow?: Pick<import('../../../contracts/src/pack.ts').WorkflowFile,'work_class'>; effects?: LoadedWorkflow['effects'] }): RunSummary {
-  const {command_policy:_commandPolicy,accepted_criteria:_ac,criterion_requests:_cr,criterion_review:_cv,predecessor_access:_pa, runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, lease_registrations: _lr, ...summary } = record;
+  const {product_pack_digest:_productPackDigest,command_policy:_commandPolicy,accepted_criteria:_ac,criterion_requests:_cr,criterion_review:_cv,predecessor_access:_pa, runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, lease_registrations: _lr, ...summary } = record;
   const requirements=record.requirements.map(row=>{
     if(row.rules!==undefined && row.run_interpreters!==undefined)return row;
     const template=workflow?.requirements.find(t=>t.key===row.key);
@@ -485,6 +485,12 @@ async function startFresh(
   variables: VariableSnapshot,
 ): Promise<StartRunDetail> {
   const { store, artifacts } = ctx.deps.records;
+  const dependencies=workflow.manifest?.dependencies??[];
+  let skills:import('../../../contracts/src/skills.ts').SkillLock[]=[];
+  if(ctx.parsers.freeze){
+    try{const frozen=await ctx.parsers.freeze(dependencies);skills=frozen.skills;ctx={...ctx,parsers:frozen.parsers};}
+    catch(error){throw new Refusal([protocolError('SOURCE_UNAVAILABLE',error instanceof Error?error.message:'技能包依赖不可读取',{path:'/pack',fix:'管理员安装工作包声明的技能包版本后重试；本次没有开始运行'})]);}
+  }else if(dependencies.length)throw new Refusal([protocolError('SOURCE_UNAVAILABLE','没有已安装技能包的注册表',{fix:'管理员配置技能包注册表并安装声明依赖后重试'})]);
   const startedAt = at.toISOString();
   let predecessor: StoredRecord<RunRecord> | null = null;
   if (input.predecessor !== undefined) {
@@ -548,6 +554,9 @@ async function startFresh(
     leaseLineageHolders = new Set(holders.filter((row) => row.user === user.id && lineage.has(row.run)).map((row) => row.key));
   }
   const context: RunContext = {
+    run: runId,
+    predecessor: predecessor?.body.run ?? null,
+    ...(target.product ? {product_pack_digest:target.product.digest}:{}),
     ...(feedingOffset?{feeding_offset:feedingOffset}:{}),
     ...(criterionSnapshot.criteria.length?{accepted_criteria:criterionSnapshot.criteria}:{}),
     ...(criterionReview?{criterion_review:criterionReview.context}:{}),
@@ -589,6 +598,7 @@ async function startFresh(
         boundShas,
         boundRecords,
         subjectShas: bound.filter((b) => b.slot === workflow.workflow.subject).map((b) => b.sha256),
+        prefetchFragments: references => prefetchReferences(references,resolveCtx),
         fragmentText: async (reference) => {
           const r = await resolveReference(reference, resolveCtx);
           return r.resolved ? r.text : null;
@@ -614,6 +624,8 @@ async function startFresh(
   const effectRegistry=await ctx.deps.effectRegistry?.snapshot(variables);
   const frozenCommandPolicy=await commandPolicyForRoot(ctx.deps.records.store,target.root);
   const record: RunRecord = RunRecord.parse({
+    ...(target.product ? {product_pack_digest:target.product.digest}:{}),
+    skills,
     ...(frozenCommandPolicy?{command_policy:frozenCommandPolicy}:{}),
     ...(effectRegistry??{}),
     ...(criterionSnapshot.refs.length?{accepted_criteria:criterionSnapshot.refs}:{}),
@@ -715,6 +727,7 @@ async function startFresh(
 
 /** The evaluation of a production run, made before its run record is stored (the result names the record's digest). */
 async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest: string, workflow: LoadedWorkflow, traceId: string, user: Principal): Promise<{ evaluation: Evaluation; startedAt: string }> {
+  if(ctx.parsers.forRun)ctx={...ctx,parsers:await ctx.parsers.forRun(run.run)};
   const startedAt = ctx.now().toISOString();
   const evaluation = await evaluate(ctx, productionEvaluationInput(run, workflow, runDigest, traceId));
   const notes = (run.groups ?? []).map((group, i) => ({group, i})).filter(({group}) => group.nature === 'fact' && group.verdict === 'support');
@@ -725,6 +738,7 @@ async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest:
   });
   const scope = await buildScope(ctx, run, workflow, user, 'function');
   const resolver = createResolver(ctx, scope, 'function');
+  await resolver.prefetch(notes.flatMap(({group})=>{const note=noteSchema.safeParse(group);return note.success?note.data.grounds:[];}));
   // Ordinary warnings, guesses and grouping metadata are not promoted into facts.
   for (const {group, i} of notes) {
     const at = pointerOf('groups', i);

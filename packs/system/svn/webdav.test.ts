@@ -9,7 +9,11 @@ import { after, before, describe, test } from 'node:test';
 import { SystemProfile, type HttpMethod, type ReadManifest } from '../../../contracts/src/resources.ts';
 import { compileRoutes, matchRoute } from '../../../hub/connectors/api.ts';
 import { startStub, text, type StubServer } from '../../../hub/connectors/testing/api.ts';
-import { xmlParser } from '../../../hub/refs/api.ts';
+import { createDefaultRegistry, recognizeAsync, resolveReference, verifyQuote } from '../../../hub/refs/api.ts';
+import { protocolError } from '../../../hub/runs/engine/errors.ts';
+import { sourceReaderFor } from '../../../hub/server/readers.ts';
+import { structureOf } from '../../../hub/server/upload.ts';
+import { xmlParser } from '../../../hub/testing/parsers.ts';
 import { manifestDigest } from '../../../hub/runs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { readManifest, stagePack } from '../../workflow/case-review/packaging.ts';
@@ -152,7 +156,9 @@ describe('SVN reads over loopback with temporary PostgreSQL and the real sandbox
       if (r.headers.authorization !== authorization) return text('Unauthorized', 'text/plain', 401);
       if (r.method === 'PROPFIND' && r.path === `${prefix}/${dir}/` && r.headers.depth === '0') return text(multi(row(r.path)), 'application/xml', 207);
       if (r.method === 'PROPFIND' && r.path === base && r.headers.depth === '1') return text(listing(badRevision ? '18' : '16').replaceAll(prefix, wrongListPrefix ? '/other' : prefix), 'application/xml', 207);
-      if (r.method === 'GET' && decodeURIComponent(r.path) === `${base}${file}`) return text(echo ? authorization : payload, 'text/plain');
+      if (r.method === 'GET' && decodeURIComponent(r.path) === `${base}${file}`) return text(echo ? authorization : payload, 'application/octet-stream');
+      if (r.method === 'GET' && decodeURIComponent(r.path) === `${base}unmapped.bin`) return text(Buffer.from([0x00, 0x01, 0x02, 0x03]), 'application/octet-stream');
+      if (r.method === 'GET' && decodeURIComponent(r.path) === `${base}explicit.adoc`) return text('<p>explicit</p>', 'text/html; charset=utf-8');
       return text('Absent', 'text/plain', 404);
     });
     resource = (await addSyntheticResource(kit.records, kit.packs, kit.connectors, kit.admin, { system_pack: 'svn', name: '合成仓库', environment: 'test', origins: { svn: `${server.origin}${prefix}` }, allow_plaintext: [server.origin], settings })).id;
@@ -178,7 +184,20 @@ describe('SVN reads over loopback with temporary PostgreSQL and the real sandbox
     assert.ok(first.ok && second.ok, JSON.stringify([first, second]));
     const original = first.artifacts.find((a) => a.name === 'original')!;
     assert.equal(original.artifact.body.sha256, second.artifacts.find((a) => a.name === 'original')!.artifact.body.sha256);
+    assert.equal(original.artifact.body.media_type, 'text/plain');
     assert.deepEqual(Buffer.from(await artifactBytes(kit, original.artifact.body.sha256)), Buffer.from(payload));
+    const parsers = createDefaultRegistry();
+    const recognized = await recognizeAsync(parsers, Buffer.from(payload), original.artifact.body.media_type);
+    assert.equal(recognized?.parser.id, 'text');
+    const ref = `src:${original.artifact.body.sha256}/text@1/l/1`;
+    const resolved = await resolveReference(ref, {
+      parsers,
+      reader: { user: kit.admin.id, role: kit.admin.role },
+      sources: sourceReaderFor(kit.records, kit.admin, 'function'),
+    });
+    assert.ok(resolved.resolved, JSON.stringify(resolved));
+    assert.equal(resolved.text, '= Synthetic');
+    assert.ok(verifyQuote(resolved, '= Synthetic'));
     const receipt = (await kit.records.store.get<ReadManifest>(first.manifest))!.body;
     assert.equal(receipt.revision, '17');
     assert.equal(receipt.requests[0].path, '/!svn/rvr/17/manuals/%E7%AB%A0%E8%8A%82.adoc');
@@ -193,6 +212,39 @@ describe('SVN reads over loopback with temporary PostgreSQL and the real sandbox
     const result=await read(`svn:directory-at:17/${encodeURIComponent(dir)}`);
     assert.ok(result.ok,JSON.stringify(result));assert.equal(result.revision,'17');
     assert.deepEqual(server.requests.slice(before).map(r=>[r.method,r.path,r.headers.depth]),[['PROPFIND',base,'1']]);
+  });
+  test('unmapped extension with application/octet-stream remains unrecognized and gives fix advice', async () => {
+    const unmappedId = `svn:file:17/${encodeURIComponent(`${dir}/unmapped.bin`)}`;
+    const result = await read(unmappedId);
+    assert.ok(result.ok, JSON.stringify(result));
+    const original = result.artifacts.find((a) => a.name === 'original')!;
+    assert.equal(original.artifact.body.media_type, 'application/octet-stream');
+    const bytes = await artifactBytes(kit, original.artifact.body.sha256);
+    const parsers = createDefaultRegistry();
+    const recognized = await recognizeAsync(parsers, bytes, original.artifact.body.media_type);
+    assert.equal(recognized, null);
+    assert.equal(structureOf(parsers, bytes, original.artifact.body.media_type), null);
+
+    const unparseable = protocolError('SOURCE_UNPARSEABLE', `媒体类型 ${original.artifact.body.media_type} 没有可用的核心解析器`, { path: '/inputs/svn_file' });
+    assert.equal(unparseable.code, 'SOURCE_UNPARSEABLE');
+    assert.equal(unparseable.message, '媒体类型 application/octet-stream 没有可用的核心解析器');
+    assert.ok(unparseable.fix?.includes('修改后重传'));
+
+    const whole = await resolveReference(`src:${original.artifact.body.sha256}`, {
+      parsers,
+      reader: { user: kit.admin.id, role: kit.admin.role },
+      sources: sourceReaderFor(kit.records, kit.admin, 'function'),
+    });
+    assert.ok(whole.resolved);
+    assert.equal(whole.text, null);
+    assert.equal(whole.note, '二进制内容，没有文本');
+  });
+  test('explicit server Content-Type takes precedence over extension mapping', async () => {
+    const explicitId = `svn:file:17/${encodeURIComponent(`${dir}/explicit.adoc`)}`;
+    const result = await read(explicitId);
+    assert.ok(result.ok, JSON.stringify(result));
+    const original = result.artifacts.find((a) => a.name === 'original')!;
+    assert.equal(original.artifact.body.media_type, 'text/html; charset=utf-8');
   });
   test('missing repository_path refuses all reads without network requests', async () => {
     await kit.connectors.admin.updateResource(kit.admin, resource, { unset_settings: ['repository_path'] });

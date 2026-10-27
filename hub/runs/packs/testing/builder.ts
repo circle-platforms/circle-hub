@@ -13,6 +13,7 @@ import { removeTree } from '../tree.ts';
 export type FileContent = string | Uint8Array | Record<string, unknown> | unknown[];
 
 export interface PackDescription {
+  dependencies?:import('../../../../contracts/src/skills.ts').SkillDependency[];
   id: string;
   version: string;
   kind: PackKind;
@@ -28,6 +29,7 @@ export interface ManifestEntry {
 }
 
 export interface WrittenManifest {
+  dependencies?:import('../../../../contracts/src/skills.ts').SkillDependency[];
   schema: 'pack@1';
   id: string;
   version: string;
@@ -73,6 +75,7 @@ export function editJson<T = Record<string, unknown>>(pack: PackDescription, pat
 function manifestOf(pack: Omit<PackDescription, 'files'>, files: ManifestEntry[]): WrittenManifest {
   return {
     schema: 'pack@1',
+    ...(pack.dependencies!==undefined?{dependencies:pack.dependencies}:{}),
     id: pack.id,
     version: pack.version,
     kind: pack.kind,

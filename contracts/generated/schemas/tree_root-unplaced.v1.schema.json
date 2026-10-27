@@ -19,7 +19,9 @@
               "behaviour",
               "case",
               "defect",
-              "observation"
+              "observation",
+              "procedure",
+              "pitfall"
             ]
           },
           "producers": {

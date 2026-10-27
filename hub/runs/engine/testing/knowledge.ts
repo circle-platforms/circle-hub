@@ -3,6 +3,7 @@
 // a closed command catalog per root.
 import { createHash } from 'node:crypto';
 import type { KnownBuild, ProductDeclaration } from '../../../../contracts/src/product.ts';
+import type { RootSource } from '../../../../contracts/src/knowledge.ts';
 import { digestOf, type Principal } from '../../../records/api.ts';
 import type { EntryDiff, KnowledgePort, NodesPage, PackHandle, PacksPort, ProductHandle, RootDiff, RootInfo } from '../../../ports.ts';
 import type { ReaderIdentity, TreeRead, TreeReader } from '../../../refs/api.ts';
@@ -154,12 +155,17 @@ export class FakeKnowledge implements KnowledgePort {
     for (const [product, builds] of Object.entries(BUILDS)) for (const b of builds) if (b.root === root && b.base === b.name) out.push((await this.rootOfBuild(product, b.name))!);
     return out;
   }
+  readonly sources = new Map<string, RootSource[]>();
+  async rootSources(root: string): Promise<RootSource[]> {
+    return this.sources.get(root) ?? [];
+  }
   async catalog(root: string, catalogId: string): Promise<CatalogView | null> {
     if (catalogId !== 'commands@1' || this.withoutCatalog.has(root)) return null;
     return Object.values(BUILDS).some((builds) => builds.some((b) => b.root === root)) ? catalogOf(root) : null;
   }
   treeReader(): TreeReader {
     return {
+      hasRoot: (root: string) => Object.values(BUILDS).some((builds) => builds.some((b) => b.root === root)),
       read(root: string, path: string, _entry: string | null, _reader: ReaderIdentity): TreeRead | null {
         if (!Object.values(BUILDS).some((builds) => builds.some((b) => b.root === root))) return null;
         const words = path === '/' ? [] : path.slice(1).split('/').map((s) => decodeURIComponent(s));

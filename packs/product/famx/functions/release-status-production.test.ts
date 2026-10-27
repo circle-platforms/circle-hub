@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
 // Actual FAMX producer modules, Hub production, real temporary PostgreSQL; only synthetic source bytes.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -7,7 +8,7 @@ import {test} from 'node:test';
 import {ProductDeclaration,type KnownBuild} from '../../../../contracts/src/product.ts';
 import {createKnowledge,createKnowledgeReader} from '../../../../hub/knowledge/api.ts';
 import {FakeExternal,FakePacks} from '../../../../hub/knowledge/test-support.ts';
-import {createDefaultRegistry} from '../../../../hub/refs/api.ts';
+
 import {osIsolationAvailable} from '../../../../hub/rules/api.ts';
 import {startPostgres} from '../../../../hub/testing/postgres.ts';
 import {openTestRecords} from '../../../../hub/testing/records.ts';

@@ -1,0 +1,43 @@
+{
+  "id": "scope_frozen",
+  "source": "author",
+  "check": "review_scope",
+  "note": "整份预期条目与本块选定条目由投影冻结",
+  "subject": {
+    "scope": {
+      "schema": "case-review-scope@1",
+      "source": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "document": "sample",
+      "parameters": {
+        "case_rule": "marked",
+        "case_priority": 2,
+        "group_priority": 1,
+        "precondition_priority": 3
+      },
+      "expected": [
+        {
+          "item": "sample:c1",
+          "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c1"
+        },
+        {
+          "item": "sample:c2",
+          "location": "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/n/c2"
+        }
+      ],
+      "selected": [
+        "sample:c1",
+        "sample:c2"
+      ]
+    },
+    "conflict": false
+  },
+  "sources": {
+    "src:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/kityminder@1/i/0": "合成根"
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "blocking"
+    }
+  ]
+}

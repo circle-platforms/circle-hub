@@ -8,7 +8,7 @@ import type {RecordStore} from '../records/api.ts';
 import { labelOf, type ReadTier } from '../../contracts/generated/vocabulary.ts';
 import { EXTERNAL_ARTIFACT, type ExternalReaderPort } from '../ports.ts';
 import type { Artifacts, Principal, SourceArtifact, VariableSnapshot } from '../records/api.ts';
-import { ParseError, parserKey, recognize, type ParsedDocument, type ParserRegistry } from '../refs/api.ts';
+import { ParseError, parserKey,parserCacheKey,parseDocument,recognizeAsync, type ParsedDocument, type ParserRegistry } from '../refs/api.ts';
 import { describeError } from './errors.ts';
 import { Lru } from './store.ts';
 
@@ -217,14 +217,16 @@ export class SourceLoader {
   }
 
   /** Uses the explicit source parser without fallback, otherwise the existing media recognizer. */
-  parse(source: ReadableSource, declaredParser?: string): Loaded<ParsedSource> {
+  async parse(source: ReadableSource, declaredParser?: string): Promise<Loaded<ParsedSource>> {
+    await this.#deps.parsers.refresh?.();
+    const sourceKey=source.sha256+"\0"+source.mediaType+"\0"+this.#deps.parsers.list().map(parserCacheKey).join(";");
     if (declaredParser !== undefined) {
       const parser=this.#deps.parsers.get(declaredParser);
       if (!parser) return {ok:false,sha256:source.sha256,reason:`源文件 ${source.sha256}（${source.external}）来源声明的解析器 ${declaredParser} 未登记；请包作者修正声明或管理员登记解析器后重产`};
-      const key=documentKey(source,declaredParser);
+      const key=documentKey(source,parserCacheKey(parser));
       try {
         let document=this.#documents.get(key);
-        if (!document) {document=parser.parse(source.bytes,{mediaType:source.mediaType});this.#documents.set(key,document);}
+        if (!document) {document=await parseDocument(parser,source.bytes,{mediaType:source.mediaType});this.#documents.set(key,document);}
         const inferred=this.#deps.parsers.forMediaType(source.mediaType)[0];
         const origin=source.artifact?.body?.origin;
         const mediaLabel=origin&&'generated' in origin?'派生件媒体类型':'服务器媒体类型';
@@ -235,13 +237,13 @@ export class SourceLoader {
         return {ok:false,sha256:source.sha256,reason:`源文件 ${source.sha256}（${source.external}）被来源声明的 ${declaredParser} 拒绝：${reason}；请修正来源或显式声明后重产`};
       }
     }
-    const known = this.#recognized.get(`${source.sha256}\u0000${source.mediaType}`);
-    const cached = known === undefined ? undefined : this.#documents.get(documentKey(source,known!));
+    const known = this.#recognized.get(sourceKey);
+    const cached = known === undefined ? undefined : this.#documents.get(documentKey(source,parserCacheKey(this.#deps.parsers.get(known!)!)));
     if (known !== undefined && cached !== undefined) return { ok: true, value: { ...source, parser: known, document: cached } };
-    let found: ReturnType<typeof recognize>;
+    let found: Awaited<ReturnType<typeof recognizeAsync>>;
     let rejected: ParseError | undefined;
     try {
-      found = recognize(this.#deps.parsers, source.bytes, source.mediaType, {}, error => { rejected = error; });
+      found = await recognizeAsync(this.#deps.parsers, source.bytes, source.mediaType, {}, error => { rejected = error; });
     } catch (error) {
       return { ok: false, sha256: source.sha256, reason: `源文件 ${source.sha256}（${source.external}）解析时出错：${describeError(error)}` };
     }
@@ -251,8 +253,8 @@ export class SourceLoader {
         : `源文件 ${source.sha256}（${source.external}）被 ${rejected.parser} 拒绝：${rejected.message}${rejected.offset === null ? '' : `（字节 ${rejected.offset}）`}；${rejected.fix}` };
     }
     const parser = parserKey(found.parser);
-    this.#documents.set(documentKey(source,parser), found.document);
-    this.#recognized.set(`${source.sha256}\u0000${source.mediaType}`, parser);
+    this.#documents.set(documentKey(source,parserCacheKey(found.parser)), found.document);
+    this.#recognized.set(sourceKey, parser);
     return { ok: true, value: { ...source, parser, document: found.document } };
   }
 
@@ -260,14 +262,15 @@ export class SourceLoader {
    * The document of a source parsed with a named parser (a fragment may name another parser than the one that parsed
    * the slot); null when the parser is not registered or does not accept the bytes.
    */
-  documentWith(source: ReadableSource, parser: string): ParsedDocument | null {
-    const key = documentKey(source,parser);
+  async documentWith(source: ReadableSource, parser: string): Promise<ParsedDocument | null> {
+    await this.#deps.parsers.refresh?.();
+    const found=this.#deps.parsers.get(parser);if(!found)return null;
+    const key = documentKey(source,parserCacheKey(found));
     const cached = this.#documents.get(key);
     if (cached !== undefined) return cached;
-    const found = this.#deps.parsers.get(parser);
-    if (found === undefined) return null;
+
     try {
-      const document = found.parse(source.bytes, { mediaType: source.mediaType });
+      const document = await parseDocument(found,source.bytes, { mediaType: source.mediaType });
       this.#documents.set(key, document);
       return document;
     } catch (error) {

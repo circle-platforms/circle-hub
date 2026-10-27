@@ -1,0 +1,30 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "form",
+      "title": "form",
+      "function": {
+        "module": "functions/check.ts"
+      },
+      "applies": "item",
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "Declared structure and exact source identities"
+    },
+    {
+      "id": "quotes",
+      "title": "裁定引文",
+      "interpreter": "quote@1",
+      "table": "tables/quotes.json",
+      "applies": "item",
+      "subject": {
+        "module": "functions/check.ts",
+        "export": "quotes"
+      },
+      "judges": "artifact_under_verification",
+      "tier": "blocking",
+      "basis": "逐字原文"
+    }
+  ]
+}

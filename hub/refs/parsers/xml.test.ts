@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { MAX_SELECTOR_LENGTH, ParseEncodingError, ParseError, ParseForbiddenError, ParseLimitError, ParseSyntaxError, xmlParser, type XmlElement } from '../api.ts';
+import { ParseEncodingError, ParseError, ParseForbiddenError, ParseLimitError, ParseSyntaxError } from '../../../packs/skill/xml-format/functions/format.ts';
+import { MAX_SELECTOR_LENGTH } from '../../../packs/skill/xml-format/functions/selectors.ts';
+import { xmlParser, type XmlElement } from '../../../packs/skill/xml-format/api.ts';
 import { fixture, latin1, timed, utf8 } from '../test-support.ts';
 
 const bytes = fixture('command-tree.xml');

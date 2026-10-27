@@ -153,3 +153,18 @@ test('bed baseline CLI records baseline via probe, lists registered baselines an
   assert.ok(!s.lines.join('\n').includes('show interfaces'));
   assert.ok(!s.lines.join('\n').includes('DEVICE#'));
 });
+
+test('bed hold clear refuses a non-admin and a missing reason, and says when nothing is open', async t => {
+  const c = await setup();
+  t.after(() => c.close());
+  const s = session(c);
+  const stranger = { ...s, admin: async () => c.owner };
+  await assert.rejects(bedCommand(stranger, ['hold', 'clear', c.executor.id, '--reason', '合成运行者不能结清']), /只有启用中的管理员能操作执行器和作业/);
+  await assert.rejects(bedCommand(s, ['hold', 'clear', c.executor.id]), /结清理由必须是一行非空说明/);
+  await assert.rejects(bedCommand(s, ['hold', 'clear', c.executor.id, '--reason', '第一行\n第二行']), /结清理由必须是一行非空说明/);
+  assert.equal(await bedCommand(s, ['hold', 'clear', c.executor.id, '--reason', '尚无占用']), 0);
+  assert.match(s.lines.join('\n'), /没有未结清的占用/);
+  const rows = await c.kit.store.findMany<{ detail: { phase?: string } }>({ kind: 'action', key: 'dispatch.phase', values: ['bed_hold'] });
+  assert.equal(rows.length, 0);
+  assert.match(adminCommands().find(command => command.name === 'bed')?.summary ?? '', /hold clear <执行器> --reason <理由>/);
+});

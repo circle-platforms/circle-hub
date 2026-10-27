@@ -29,8 +29,11 @@ const graded = (texts: Record<string, string>, why: (reference: string) => Fragm
 describe('quote@1 over the graded source view', () => {
   it('verbatim passes and a non-verbatim quote is refuted, for a reference that appears only in slot data', () => {
     const view = graded({ [FRAGMENT]: '点击"登录"按钮后，页面跳转到\n首页。' }, () => 'bound');
-    const ok = run(view, { q: [{ t: '页面跳转到 首页', r: FRAGMENT }] });
+    const ok = run(view, { q: [{ t: '页面跳转到\n首页', r: FRAGMENT }] });
     assert.equal(ok[0].verdict, 'support');
+    const folded = run(view, { q: [{ t: '页面跳转到 首页', r: FRAGMENT }] });
+    assert.equal(folded[0].verdict, 'refute');
+    assert.equal(folded[0].code, 'QUOTE_MISMATCH');
     const bad = run(view, { q: [{ t: '页面跳转到登录页', r: FRAGMENT }] });
     assert.equal(bad[0].verdict, 'refute');
     assert.equal(bad[0].code, 'QUOTE_MISMATCH');

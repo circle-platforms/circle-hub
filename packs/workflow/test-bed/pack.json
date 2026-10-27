@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "test-bed",
-  "version": "1.2.8",
+  "version": "1.2.10",
   "kind": "workflow",
   "title": "设备台架",
   "description": "读管理员发布的台架清单（命名文档），按需求搜索台架（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订台架（租约键 bed/<台架>/<设备>，可带地址分配，没有时长限额，由运行持有到释放）；只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/check-bed.ts",
-      "sha256": "3aa2b1941ec758aef7fb89773f4587d35e66628a43a523049c3c5c5f7490b97e",
-      "size": 13863
+      "sha256": "8f7dd067a7d68edef8b456bad1641784bcf2933b64c72babb13ce691c9ed9843",
+      "size": 14226
     },
     {
       "path": "functions/common.ts",
@@ -63,8 +63,8 @@
     },
     {
       "path": "functions/conclude.ts",
-      "sha256": "299c5b8be6cef1fa2e963b50f481f134362150dd1641695d5b9a96cf44ee1cc1",
-      "size": 18751
+      "sha256": "1675f85ce3dddffcdcb5bde97b38c648ef8b49f52374fe4018a0efc28509009e",
+      "size": 19397
     },
     {
       "path": "functions/facts.ts",
@@ -78,8 +78,8 @@
     },
     {
       "path": "functions/match.ts",
-      "sha256": "1e5abade880c8f9140b81b9e7a6789787b315c917a984cf887ab9f9fc0614c5d",
-      "size": 7894
+      "sha256": "c9a84a35bd54e7506ed2e5c0a20f0c0ba04a5e95b92cd80fea6299959f75a013",
+      "size": 10674
     },
     {
       "path": "functions/ownership.ts",
@@ -88,8 +88,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "23286117ff67e497731cc17cea48626f173d4d82f1918d84942cdee161ae3f26",
-      "size": 8546
+      "sha256": "d55530710b1c856e7a6cbc009c204ecf36f908f87ddb0137fa90d969e7472a1a",
+      "size": 8740
     },
     {
       "path": "functions/subject.ts",
@@ -98,8 +98,8 @@
     },
     {
       "path": "functions/surface.ts",
-      "sha256": "5b235da24bc5b75e0cdc474ad0584ae1b4bf116a904d042299d9d66799f3f914",
-      "size": 24387
+      "sha256": "b38eca77d94620c2f5d83c59dc2e2caf4e06c61c50d6e781ae844437ec5d8709",
+      "size": 25074
     },
     {
       "path": "requirements.json",

@@ -313,12 +313,12 @@ test('follow-up reasons distinguish absent inputs from unsupported rules',()=>{
   assert.ok(!unsupported.some(q=>q.next_action.includes('replay_submission')));
 });
 
-test('comparison delegates hard wrapped quotations to the independent decision 37 oracle', () => {
+test('comparison rejects whitespace variants through the independent verbatim oracle', () => {
   const bytes = Buffer.from('返回\n成功 set 10 0'), digest = createHash('sha256').update(bytes).digest('hex');
   const quoted = { ...draft('synthetic', 'show health'), expected: [{ text: '返回成功', quote: { reference: `src:${digest}/text@1/l/1-2`, text: '返回成功' } }] };
   const options = { sources: new Map([[digest, bytes]]), run: { sources: [] } };
   const report = computeComparison(docGold, submissionOf(quoted), {}, options).quoteOracle;
-  assert.equal(report.counts.support, 1); assert.equal(report.expectedVerbatim, 1);
+  assert.equal(report.counts.refute, 1); assert.equal(report.expectedVerbatim, 0);
   quoted.expected[0].quote.text = 'set 100';
   assert.equal(computeComparison(docGold, submissionOf(quoted), {}, options).quoteOracle.counts.refute, 1);
 });

@@ -1,4 +1,5 @@
 import {osIsolationAvailable} from '../rules/api.ts';
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
@@ -8,10 +9,18 @@ import {makeWorld,startPostgres,STATIC_PLAN_SOURCE,DEFAULT_SYNC,COMMANDS_SOURCE,
 import {SeedlingBody} from '../../contracts/src/knowledge.ts';
 import {seedlingName} from './seedling.ts';
 import {FeedingLayer,FEEDING_BOUNDS} from './feeding.ts';
-import {createRunsService} from '../runs/api.ts';
+import {createRunsService,manifestDigest} from '../runs/api.ts';
 import {FakeWorkflowStore} from '../runs/engine/testing/workflows.ts';
-import {createDefaultRegistry} from '../refs/api.ts';
+
 const famx=new URL('../../packs/product/famx/',import.meta.url);
+// This isolated feeding world explicitly declares its installed capability; production installation is tested in refs/skills.
+function installedMindmapFixture(){
+ const registry=createDefaultRegistry();
+ const manifest=JSON.parse(readFileSync(new URL('../../packs/skill/mindmap-format/pack.json',import.meta.url),'utf8'));
+ registry.freeze=async dependencies=>{assert.ok(dependencies.every(dep=>dep.pack===manifest.id&&(dep.version===undefined||dep.version===manifest.version)));return {parsers:registry,skills:[{pack:manifest.id,version:manifest.version,digest:manifestDigest(manifest)}]};};
+ return registry;
+}
+
 const mapBytes=Buffer.from(JSON.stringify({agile:{id:'SYN-DOC'},root:{data:{id:'root',text:'Synthetic zx-u 10.8'},children:Array.from({length:40},(_,i)=>({data:{id:'case-'+i,autoid:'SYN-'+i,text:'Synthetic case '+i,priority:2,resource:['functional']},children:[{data:{id:'step-'+i,text:'system show'},children:[{data:{id:'expect-'+i,text:'Synthetic expected '+i}}]}]}))}}));
 async function world(pg:Awaited<ReturnType<typeof startPostgres>>,slow:boolean|number=false,failure?:string,nativeTree?:string){
  const manifest=JSON.parse(readFileSync(new URL('pack.json',famx),'utf8'));
@@ -52,7 +61,7 @@ test('actual case-location start_run with granularity=case returns 40 items with
   if(id==='agile:tree:roots'){const artifact=await w.kit.artifacts.ingest({bytes:Buffer.from(JSON.stringify({roots:[{id:'synthetic-root',title:'FAMX'}],documents:[{id:'SYN-DOC',title:'Synthetic doc',ancestors:['rel_famx_10_8'],root:'synthetic-root',listed:true}],complete:true,repeated:0})),mediaType:'application/json',origin:{read:{object:id}},author:{user:null},provenanceType:'observed',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false},readTier:'model_readable'});return {ok:true,id,revision:null,manifest:'synthetic',artifacts:[{name:'original',artifact}]};}
   return previous(id,context);
  };
- const service=createRunsService({sandbox:{requireOsIsolation:await osIsolationAvailable()},records:w.kit,packs:w.packs,knowledge:w.knowledge,external:w.external,workflows,parsers:createDefaultRegistry()});const started=performance.now();const answer=await service.startRun(w.user,{pack:'case-location',product:'FAMX',build:w.name,parameters:{granularity:'case'},inputs:{documents:{external:'agile:mindmap:SYN-DOC'}}},{traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:'synthetic'});assert.equal(answer.call_result,'ok',JSON.stringify(answer.errors));assert.equal(answer.run!.items.length,40);const elapsed=performance.now()-started;assert.ok(elapsed<5000,'case-location start returns before the two deliberately slow document passes finish');assert.ok((await layer.pending(w.user,answer.run!.run)).some(row=>row.missing.includes('进行中')));t.diagnostic('synthetic case-location start: '+Math.round(elapsed)+' ms; background passes deliberately take 3000 ms each');await layer.drain();assert.ok(w.calls()<=5,'feeding process count is per distinct source document, not per case/check');assert.equal((await layer.entries(w.user,'famx')).length,40);assert.ok((await layer.usages(w.user,answer.run!.run)).includes(w.document.body.sha256));
+ const service=createRunsService({sandbox:{requireOsIsolation:await osIsolationAvailable()},records:w.kit,packs:w.packs,knowledge:w.knowledge,external:w.external,workflows,parsers:installedMindmapFixture()});const started=performance.now();const answer=await service.startRun(w.user,{pack:'case-location',product:'FAMX',build:w.name,parameters:{granularity:'case'},inputs:{documents:{external:'agile:mindmap:SYN-DOC'}}},{traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:'synthetic'});assert.equal(answer.call_result,'ok',JSON.stringify(answer.errors));assert.equal(answer.run!.items.length,40);const elapsed=performance.now()-started;assert.ok(elapsed<5000,'case-location start returns before the two deliberately slow document passes finish');assert.ok((await layer.pending(w.user,answer.run!.run)).some(row=>row.missing.includes('进行中')));t.diagnostic('synthetic case-location start: '+Math.round(elapsed)+' ms; background passes deliberately take 3000 ms each');await layer.drain();assert.ok(w.calls()<=5,'feeding process count is per distinct source document, not per case/check');assert.equal((await layer.entries(w.user,'famx')).length,40);assert.ok((await layer.usages(w.user,answer.run!.run)).includes(w.document.body.sha256));
 });
 test('queue admission has a hard capacity and rejects excess work without starting another sandbox',async t=>{
  const {newId}=await import('../records/api.ts');const pg=await startPostgres();t.after(()=>pg.stop());const w=await world(pg);const layer=w.knowledge.feeding!;t.after(async()=>{await layer.drain();await w.close();});
@@ -83,7 +92,7 @@ test('equal bytes from agile:case and agile:mindmap retain both capture identiti
  // A later equal-byte capture must not replace the capture frozen by this start_run.
  await w.kit.artifacts.ingest({bytes:mapBytes,mediaType:'application/json',origin:{read:{object:'agile:mindmap:OTHER-DOC'}},author:{user:null},provenanceType:'observed',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false},readTier:'model_readable'});
  const workflows=new FakeWorkflowStore(w.admin.id);await workflows.add(fileURLToPath(new URL('../../packs/workflow/case-location/',import.meta.url)));workflows.assign(w.user.id,'case-location');w.external.accepts=async()=>true;const prior=w.external.read.bind(w.external);w.external.read=async(id,context)=>id===current.id?current:id==='agile:tree:roots'?{ok:false,id,reason:'synthetic tree is not supplied'}:prior(id,context);
- const service=createRunsService({sandbox:{requireOsIsolation:await osIsolationAvailable()},records:w.kit,packs:w.packs,knowledge:w.knowledge,external:w.external,workflows,parsers:createDefaultRegistry()});const answer=await service.startRun(w.user,{pack:'case-location',product:'FAMX',build:w.name,parameters:{granularity:'case'},inputs:{documents:{external:current.id}}},{traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:'synthetic'});assert.equal(answer.call_result,'ok',JSON.stringify(answer.errors));assert.equal(answer.run!.items.length,40);const binding=answer.run!.sources.find(row=>row.slot==='documents')!;assert.equal(binding.artifact,current.content.digest);assert.equal(binding.read_manifest,current.manifest);assert.equal(binding.meta_artifact,current.meta.digest);assert.equal((await w.kit.artifacts.sourceForRun(w.user,current.content.body.sha256,answer.run!.run,{consumer:'function'}))!.artifact.digest,current.content.digest);await layer.drain();
+ const service=createRunsService({sandbox:{requireOsIsolation:await osIsolationAvailable()},records:w.kit,packs:w.packs,knowledge:w.knowledge,external:w.external,workflows,parsers:installedMindmapFixture()});const answer=await service.startRun(w.user,{pack:'case-location',product:'FAMX',build:w.name,parameters:{granularity:'case'},inputs:{documents:{external:current.id}}},{traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:'synthetic'});assert.equal(answer.call_result,'ok',JSON.stringify(answer.errors));assert.equal(answer.run!.items.length,40);const binding=answer.run!.sources.find(row=>row.slot==='documents')!;assert.equal(binding.artifact,current.content.digest);assert.equal(binding.read_manifest,current.manifest);assert.equal(binding.meta_artifact,current.meta.digest);assert.equal((await w.kit.artifacts.sourceForRun(w.user,current.content.body.sha256,answer.run!.run,{consumer:'function'}))!.artifact.digest,current.content.digest);await layer.drain();
 });
 test('changed canonical content under one document/node number creates a new identity and invalidates only old dependent claims',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const w=await world(pg);const layer=w.knowledge.feeding!;t.after(async()=>{await layer.drain();await w.close();});
@@ -98,7 +107,7 @@ test('start_run unknown names the failed function and code; an existing document
  const identity={system:'agile',document:'SYN-DOC'},key=sha256Hex(canonicalize({product:'famx',identity})),at=new Date().toISOString();
  const original=await w.kit.store.put({kind:'action',schema:'action@1',provenance:'observed',unique_key:'feeding.todo:'+key,body:{action:'read',run:null,item:null,component:'hub.feeding@1',inputs:[],lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{feeding_todo:{key,product:'famx',source:identity,missing:'包内函数抛出了错误',next_action:'重读',by:w.user.id}}},index:[{key:'knowledge.feeding.todo',value:'1'},{key:'knowledge.feeding.todo.key',value:key}]});
  const workflows=new FakeWorkflowStore(w.admin.id);await workflows.add(fileURLToPath(new URL('../../packs/workflow/case-location/',import.meta.url)));workflows.assign(w.user.id,'case-location');w.external.accepts=async()=>true;const previous=w.external.read.bind(w.external);w.external.read=async(id,context)=>id==='agile:mindmap:SYN-DOC'?{ok:true,id,revision:null,manifest:'synthetic',artifacts:[{name:'content',artifact:w.document},{name:'meta',artifact:w.meta}]}:id==='agile:tree:roots'?{ok:false,id,reason:'synthetic tree is not supplied'}:previous(id,context);
- const service=createRunsService({sandbox:{requireOsIsolation:await osIsolationAvailable()},records:w.kit,packs:w.packs,knowledge:w.knowledge,external:w.external,workflows,parsers:createDefaultRegistry()});
+ const service=createRunsService({sandbox:{requireOsIsolation:await osIsolationAvailable()},records:w.kit,packs:w.packs,knowledge:w.knowledge,external:w.external,workflows,parsers:installedMindmapFixture()});
  const response=await callTool({records:w.kit,runs:service,knowledge:w.knowledge,parsers:createDefaultRegistry()} as unknown as import('../server/api.ts').ServerDeps,{principal:w.user,context:{traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:'synthetic',adminNote:()=>{}},state:{method:'tools/call',tool:'start_run',args:{},started:0,runId:null,callResult:null,acceptance:null,errorCode:null,notes:[]}},'start_run',{pack:'case-location',product:'FAMX',build:w.name,parameters:{granularity:'case'},inputs:{documents:{external:'agile:mindmap:SYN-DOC'}}});
  assert.equal(response.structuredContent.call_result,'ok',JSON.stringify(response.structuredContent));await layer.drain();const fn='famx@'+w.product.version+'/functions/failure.ts#default';const unknown=JSON.stringify(response.structuredContent.feeding_pending);assert.ok(unknown.includes('FUNCTION_THREW'));assert.ok(unknown.includes(fn));assert.ok(!unknown.includes('Declaration metadata'));assert.ok(response.content[0].text.includes(fn));
  const todos=(await layer.todos(w.admin)).filter(row=>row.key===key);assert.equal(todos.length,1);assert.deepEqual(todos[0].detail,{function:fn,code:'FUNCTION_THREW',message:Array.from(message).slice(0,500).join(''),message_status:'included',truncated:true});assert.equal(todos[0].record,original.digest);assert.deepEqual((await w.kit.store.get(original.digest))!.body,original.body);assert.deepEqual(await layer.todos(w.user),[]);assert.ok(!JSON.stringify(todos[0].detail).includes('Synthetic zx-u 10.8'));const stored=await w.kit.store.find<any>({key:'knowledge.feeding.todo.detail',value:key,kind:'action',limit:100});assert.ok(stored.items.some(row=>row.body.detail.feeding_todo.detail?.code==='FUNCTION_THREW'));const count=stored.items.length;
@@ -145,4 +154,47 @@ test('40 case-body layouts retain their authored step lines and resolve only exa
  const xml='<commands><menu name="system"><item name="show"><arguments/></item></menu><menu name="net"><item name="ping"><arguments><arg name="host" type="DOTTEDIP"/></arguments></item></menu></commands>';const pg=await startPostgres();t.after(()=>pg.stop());const w=await world(pg,false,undefined,xml);const layer=w.knowledge.feeding!;t.after(async()=>{await layer.drain();await w.close();});
  const input=JSON.parse(mapBytes.toString());for(const [i,node]of input.root.children.entries()){node.data.text=i===0?'system show\nnet ping 192.0.2.8':'1.在设备上配置 xxx [check1]\n2.从主机发起 yyy [check2]';node.children=[{data:{id:'expected-'+i,text:'[check1] 合成期望一\n[check2] 合成期望二'}}];}
  const capture=await readCapture(w,'agile:mindmap:SYN-DOC',Buffer.from(JSON.stringify(input)));const receipt=await layer.observeSource(w.user,capture.content.body.sha256,capture.scope);assert.equal(receipt.objects.length,40);assert.equal(w.calls(),3,'step parsing stays inside whole-document product calls');const entries=await layer.entries(w.user,'famx');assert.equal(entries.length,40);for(const entry of entries){assert.equal(entry.body.steps.length,2);assert.equal(entry.body.expects.length,1);if(entry.body.source.element==='case-0'){assert.equal(entry.body.commands.length,2);assert.equal(entry.body.unparsed_steps,0);assert.equal(entry.body.commands[1].parameters[0].raw,'192.0.2.8');}else{assert.deepEqual(entry.body.steps,[{text:'1.在设备上配置 xxx [check1]'},{text:'2.从主机发起 yyy [check2]'}]);assert.deepEqual(entry.body.commands,[]);assert.equal(entry.body.unparsed_steps,2);}}
+});
+
+test('40 projected case selectors are batched before the feeding transaction without metadata',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await world(pg);t.after(()=>w.close());
+ const registry=w.knowledge.__context.parsers,originalGet=registry.get.bind(registry),base=originalGet('kityminder@1');assert.ok(base);
+ const batches:string[][]=[];let singles=0,underLock=false;
+ const originalLock=w.kit.store.lock.bind(w.kit.store);
+ w.kit.store.lock=async(key,tx)=>{if(key==='knowledge.feeding.log')underLock=true;return originalLock(key,tx);};
+ const decorate=(document:ReturnType<typeof base.parse>)=>{const loaded=new Set<string>();return {...document,
+  prefetch:async(selectors:string[])=>{assert.equal(underLock,false,'document locate must precede the feeding append lock');const wanted=[...new Set(selectors)].filter(selector=>!loaded.has(selector));if(wanted.length){batches.push(wanted);for(const selector of wanted)loaded.add(selector);}},
+  locate:async(selector:string)=>{if(!loaded.has(selector)){singles++;loaded.add(selector);}return document.locate(selector);}};};
+ const counting={...base,parse:(bytes:Uint8Array,options?:Parameters<typeof base.parse>[1])=>decorate(base.parse(bytes,options))};
+ registry.get=(key:string)=>key==='kityminder@1'?counting:originalGet(key);
+ const {metaSource:_metaSource,...scope}=w.scope;
+ const receipt=await w.knowledge.feeding!.observeSource(w.user,w.document.body.sha256,scope);
+ assert.equal(receipt.objects.length,40);
+ assert.equal(batches.length,1);
+ assert.equal(batches[0].length,40);
+ assert.equal(singles,0);
+});
+
+test('feeding rechecks the exact source grant after prefetch and rolls back on revocation',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await world(pg);t.after(()=>w.close());
+ const registry=w.knowledge.__context.parsers,originalGet=registry.get.bind(registry),base=originalGet('kityminder@1');assert.ok(base);
+ let revoked=false,prefetches=0;const originalSource=w.kit.artifacts.source.bind(w.kit.artifacts);
+ w.kit.artifacts.source=async(principal,sha,options)=>revoked&&sha===w.document.body.sha256?null:originalSource(principal,sha,options);
+ registry.get=(key:string)=>key==='kityminder@1'?{...base,parse:(bytes,options)=>{const doc=base.parse(bytes,options);return {...doc,prefetch:async()=>{prefetches++;revoked=true;}};}}:originalGet(key);
+ const {metaSource:_metaSource,...scope}=w.scope;
+ const receipt=await w.knowledge.feeding!.observeSource(w.user,w.document.body.sha256,scope);
+ assert.equal(prefetches,1);assert.deepEqual(receipt.objects,[]);assert.ok(receipt.pending.some(value=>value.missing.includes('SOURCE_UNAVAILABLE')&&value.next_action.length>0));
+ assert.equal((await w.knowledge.feeding!.entries(w.admin,'famx')).length,0,'no partial object or binding commits after the source becomes unreadable');
+});
+
+test('feeding discards a projection when the package changes during document prefetch',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await world(pg);t.after(()=>w.close());
+ const registry=w.knowledge.__context.parsers,originalGet=registry.get.bind(registry),base=originalGet('kityminder@1');assert.ok(base);
+ let superseded=false,prefetches=0;const packs=w.knowledge.__context.packs,originalProduct=packs.productById.bind(packs);
+ packs.productById=async id=>{const pack=await originalProduct(id);return superseded&&pack?{...pack,digest:'a'.repeat(64)}:pack;};
+ registry.get=(key:string)=>key==='kityminder@1'?{...base,parse:(bytes,options)=>{const doc=base.parse(bytes,options);return {...doc,prefetch:async()=>{prefetches++;superseded=true;}};}}:originalGet(key);
+ const {metaSource:_metaSource,...scope}=w.scope;
+ const receipt=await w.knowledge.feeding!.observeSource(w.user,w.document.body.sha256,scope);
+ assert.equal(prefetches,1);assert.deepEqual(receipt.objects,[]);assert.ok(receipt.pending.some(value=>value.missing.includes('包已被新摘要替代')&&value.next_action.length>0));
+ assert.equal((await w.knowledge.feeding!.entries(w.admin,'famx')).length,0,'superseded projections do not enter the feeding log');
 });

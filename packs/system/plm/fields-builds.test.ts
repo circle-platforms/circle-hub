@@ -101,3 +101,92 @@ test('percent-encoded literal pluses and Unicode aliases remain separate names',
   const input = { ...request(key), responses: productResponse([{ id: 410, name: 'ＧＡＭＭＡ+ＤＥＬＴＡ／合成族' }]) };
   assert.deepEqual(buildsPlan(input).requests, [{ key: 'builds', route: 'builds', query: { product: '410' } }]);
 });
+
+test('enveloped build list response projects field-for-field identical to bare array and rejects non-array data', () => {
+  const syntheticItem = {
+    id: 810,
+    product: '410',
+    branch: 'synthetic/branch',
+    project: 'SYNTHETIC_PROJ',
+    name: 'Synthetic_10_7_A',
+    scmPath: 'svn://192.0.2.1/repo/trunk/synthetic',
+    filePath: '/builds/synthetic.tar.gz',
+    date: '2026-04-01 10:00:00',
+    builder: 'synthetic-builder',
+    desc: 'synthetic build description',
+    synthetic_links: [21, '00022'],
+  };
+  const bareArray = [syntheticItem];
+  const envelope = { code: 1000, data: bareArray, msg: 'success' };
+
+  const bareResult = content(buildsProject({
+    ...request('410'),
+    original: 'builds',
+    settings: { build_story_field: 'synthetic_links' },
+    responses: { builds: { ok: true, json: bareArray } },
+  }));
+  const envelopedResult = content(buildsProject({
+    ...request('410'),
+    original: 'builds',
+    settings: { build_story_field: 'synthetic_links' },
+    responses: { builds: { ok: true, json: envelope } },
+  }));
+
+  assert.deepEqual(envelopedResult.builds, bareResult.builds);
+  assert.deepEqual(envelopedResult, bareResult);
+  assert.equal(envelopedResult.builds.length, 1);
+  const row = envelopedResult.builds[0];
+  assert.equal(row.id, '810');
+  assert.equal(row.name, 'Synthetic_10_7_A');
+  assert.deepEqual(row.stories, ['21', '22']);
+  assert.equal(row.scope_note, '需求范围取自构建记录');
+  assert.deepEqual(row.fields, {
+    id: 810,
+    product: '410',
+    branch: 'synthetic/branch',
+    project: 'SYNTHETIC_PROJ',
+    name: 'Synthetic_10_7_A',
+    scmPath: 'svn://192.0.2.1/repo/trunk/synthetic',
+    filePath: '/builds/synthetic.tar.gz',
+    date: '2026-04-01 10:00:00',
+    builder: 'synthetic-builder',
+    desc: 'synthetic build description',
+  });
+
+  for (const notArray of ['not an array', 123, true, { not: 'array' }]) {
+    const res = buildsProject({
+      ...request('410'),
+      original: 'builds',
+      responses: { builds: { ok: true, json: { code: 1000, data: notArray, msg: 'success' } } },
+    }) as any;
+    assert.equal(res.error.code, 'plm.no_records');
+    assert.match(res.error.message, /构建列表不是数组.*重新读取/);
+    assert.match(res.error.message, /应答既不是数组也没有数组形的 data/);
+  }
+
+  const missingData = buildsProject({
+    ...request('410'),
+    original: 'builds',
+    responses: { builds: { ok: true, json: { code: 1000, msg: 'success' } } },
+  }) as any;
+  assert.equal(missingData.error.code, 'plm.no_records');
+  assert.match(missingData.error.message, /构建列表不是数组.*重新读取/);
+  assert.match(missingData.error.message, /应答既不是数组也没有数组形的 data/);
+
+  const emptyJson = buildsProject({
+    ...request('410'),
+    original: 'builds',
+    responses: { builds: { ok: true, json: {} } },
+  }) as any;
+  assert.equal(emptyJson.error.code, 'plm.no_records');
+  assert.match(emptyJson.error.message, /构建列表不是数组.*重新读取/);
+  assert.match(emptyJson.error.message, /应答既不是数组也没有数组形的 data/);
+});
+
+test('chooseProduct accepts both envelope and bare array for products', () => {
+  const bare = buildsPlan({ ...request(), responses: { products: { ok: true, json: products } } });
+  assert.deepEqual(bare, { requests: [{ key: 'builds', route: 'builds', query: { product: '410' } }], original: 'builds', done: true });
+
+  const enveloped = buildsPlan({ ...request(), responses: productResponse() });
+  assert.deepEqual(enveloped, { requests: [{ key: 'builds', route: 'builds', query: { product: '410' } }], original: 'builds', done: true });
+});

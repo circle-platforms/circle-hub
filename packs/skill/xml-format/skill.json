@@ -1,0 +1,27 @@
+{
+  "schema": "skill@1",
+  "parsers": [
+    {
+      "parser": "xml@1",
+      "media_types": [
+        "application/xml",
+        "text/xml"
+      ],
+      "limits": {
+        "maxBytes": 16777216,
+        "maxDepth": 100,
+        "maxNodes": 1000000,
+        "maxAttributes": 1024
+      },
+      "function": {
+        "module": "functions/parse.ts",
+        "export": "default"
+      },
+      "locate": {
+        "module": "functions/parse.ts",
+        "export": "locate"
+      },
+      "migration_test": "xml-format migration equivalence across repository documents"
+    }
+  ]
+}

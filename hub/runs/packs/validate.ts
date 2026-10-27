@@ -14,6 +14,7 @@ import {
   REQUIRED_FILES,
   PublishableRequirementsFile,
   SlotsFile,
+  SkillDeclaration,
   WorkflowFile,
   type CheckEntry,
 } from '../../../contracts/src/pack.ts';
@@ -254,7 +255,7 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
   const ledger = c.files.has('ledger.json') ? c.parse('ledger.shape', 'ledger.json', LedgerFile, 'ledger@1') : null;
   if(workflow?.predecessor_access==='view'&&requirements){
     if(!requirements.requirements.length||requirements.requirements.some(row=>row.independent_of!=='predecessor'))c.add(problem('workflow.predecessor_access','workflow.json','只读前驱要求每个要求项都独立于前驱','所有要求项声明 independent_of: predecessor，或移除 predecessor_access',{field:'/predecessor_access'}));
-    if(workflow.inputs.some(row=>row.default_from_predecessor!==undefined||row.from_runs!==undefined))c.add(problem('workflow.predecessor_default','workflow.json','只读复核前驱不能缺省绑定已受理结果','显式绑定声明提交的 rec:，不要绑定前驱结果',{field:'/inputs'}));
+    if(workflow.criterion_review&&workflow.inputs.some(row=>row.default_from_predecessor!==undefined||row.from_runs!==undefined))c.add(problem('workflow.predecessor_default','workflow.json','判据复核前驱不能缺省绑定已受理结果','显式绑定声明提交的 rec:，不要绑定前驱结果',{field:'/inputs'}));
   }
   if(workflow?.criterion_review&&requirements&&(workflow.predecessor_access!=='view'||requirements.requirements.length!==1||requirements.requirements.some(row=>!row.independence_by_account)))c.add(problem('workflow.criterion_review','workflow.json','判据复核需要只读前驱和一个按账号独立的要求项','声明 predecessor_access: view 和 independence_by_account: true',{field:'/criterion_review'}));
   if (requirements) {
@@ -619,7 +620,7 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
   }
   for (const [i, file] of manifest.files.entries()) {
     const owner = DECLARATION_KIND.get(file.path);
-    if (owner !== undefined && owner !== manifest.kind) {
+    if (owner !== undefined && owner !== manifest.kind && !(manifest.kind === 'skill' && owner === 'workflow')) {
       c.add(
         problem('manifest.foreign_file', 'pack.json', `${file.path} 是${labelOf('pack_kind', owner)}的声明文件，这个包是${labelOf('pack_kind', manifest.kind)}，它不会被读到`, `删掉 ${file.path}，或者改正 pack.json 的 kind`, {
           field: pointerOf(['files', i, 'path']),
@@ -627,7 +628,7 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
       );
     }
   }
-  if (manifest.kind !== 'workflow') {
+  if (manifest.kind !== 'workflow' && manifest.kind !== 'skill') {
     for (const file of manifest.files) {
       if (file.path.startsWith('samples/')) c.add(problem('samples.unknown_check', file.path, `${file.path} 是样例，但只有${labelOf('pack_kind', 'workflow')}有检查和样例`, '删掉这个样例'));
     }
@@ -638,6 +639,21 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
     const workflow = await validateWorkflow(c, directory, policy);
     declarations = workflow?.declarations ?? null;
     samples = workflow?.samples ?? [];
+  } else if (manifest.kind === 'skill') {
+    const instructions=c.files.get('SKILL.md');
+    if(instructions!==undefined&&(utf8(instructions)===null||utf8(instructions)!.trim()===''))c.add(problem('skill.empty','SKILL.md','技能包规程必须是非空 UTF-8 文本','写明能力与边界'));
+    const skill = c.parse('skill.shape', 'skill.json', SkillDeclaration, 'skill@1', 'contracts/src/pack.ts');
+    let method: WorkflowDeclarations | null = null;
+    if (c.files.has('workflow.json')) {
+      const result = await validateWorkflow(c, directory, policy);
+      method = result?.declarations ?? null;
+      samples = result?.samples ?? [];
+    }
+    if (skill) {
+      const functions=skill.parsers.flatMap((row,i)=>[functionEntry(row.function,'skill.json',`/parsers/${i}/function`),...(row.locate?[functionEntry(row.locate,'skill.json',`/parsers/${i}/locate`)]:[] )]);
+      for (const p of await scanFunctions(c.files, functions, policy)) c.add(p);
+      declarations = { kind: 'skill', skill, method };
+    } else declarations = null;
   } else if (manifest.kind === 'product') declarations = await validateProduct(c, policy);
   else declarations = await validateSystem(c, policy);
   if (c.problems.length > 0 || declarations === null) {

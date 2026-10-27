@@ -12,9 +12,10 @@
 // at retain_only gives nested readers no content. A planned request that would carry a sent credential value is refused.
 // Visibility of what a read stores (B02 R[3], D01 R[4]; milestone 1 has shared service credentials only): the reader and
 // admins, never shareable.
+import { adminCommand, readExit, secretNamesOf } from './read-exit.ts';
 import {readRetryDelay,READ_TRANSPORT_RETRIES,READ_RETRY_WAIT_MS,type ReadRetry} from './read-retry.ts';
 import { SANDBOX_ERRORS, SandboxError } from '../rules/api.ts';
-import type { ParserRegistry } from '../refs/api.ts';
+import { parseDocument, type ParserRegistry } from '../refs/api.ts';
 import type { ExternalArtifact, ExternalReadContext, ExternalRedirect, PackHandle } from '../ports.ts';
 import type { Artifacts, Principals, RecordStore, SourceArtifact, Visibility } from '../records/api.ts';
 import { canonicalBytes, sha256Hex, scanForCredentials } from '../records/api.ts';
@@ -458,7 +459,7 @@ export class ReadEngine {
           error,
           sha256: received?.stored.echoed?null:received?.exchange.sha256 ?? null,
           size: received?.exchange.bytes.byteLength ?? null,
-          media_type: received?.exchange.mediaType ?? null,
+          media_type: received?.exchange.serverMediaType ?? null,
           etag: received?.stored.echoed?null:received?.exchange.etag ?? null,
           ...(received && received.stored.artifact.body.read_tier!==RETAIN_ONLY?this.#location(received.exchange):{}),
           artifact: received?.stored.echoed?null:received?.stored.artifact.digest ?? null,
@@ -476,7 +477,7 @@ export class ReadEngine {
           const got = received as { exchange: HttpExchange; stored: Stored } | null;
           if (got === null) throw new ConnectorError('STORE_FAILED', `路由 ${route.id} 的应答没有保存`);
           let view: ReadResponse = withheld(route.id, path, query, reply, got.stored, null) ?? this.#view(route.id, path, query, reply, null);
-          if (view.ok && route.parse !== undefined) view = this.#parsed(view, route.parse, reply.bytes, reply.mediaType);
+          if (view.ok && route.parse !== undefined) view = await this.#parsed(view, route.parse, reply.bytes, reply.mediaType);
           responses.set(planned.key, { view, url: reply.url, artifact: got.stored.artifact });
           entries.push(entry(view.ok, view.ok ? null : (view.error?.code ?? 'SOURCE_MALFORMED')));
         } catch (error) {
@@ -835,7 +836,9 @@ export class ReadEngine {
       const final = failure ?? new ConnectorError('STORE_FAILED', '读清单保存失败');
       const refusedRedirect=final.code==='SOURCE_REDIRECT_REFUSED'?[...responses].findLast(([key,state])=>state.view.error?.code==='SOURCE_REDIRECT_REFUSED' && !covered(key)):undefined;
       const redirect=refusedRedirect?{status:refusedRedirect[1].view.status!,location:refusedRedirect[1].view.location??null,observed_at:this.#o.now().toISOString(),...(refusedRedirect[1].view.location_redacted?{location_redacted:true as const}:{})}:undefined;
-      return { ok: false, external: subject.id, code: final.code, disclosable, message:this.#o.redactor.text(final.message), reason: depth === 0 ? this.#adminReason(final) : this.#o.redactor.text(final.message), manifest: digest,...(redirect?{redirect}:{}),...(typeof final.detail.retry_at==='string'?{retry:{code:final.code,at:final.detail.retry_at,attempts:Number(final.detail.attempts)}}:{}) };
+      const admin = depth === 0 ? this.#adminReason(final) : this.#o.redactor.text(final.message);
+      const command = depth === 0 ? adminCommand(readExit(final.code).admin, runtime.resource.id, secretNamesOf(runtime.resource.credentials)) : '';
+      return { ok: false, external: subject.id, code: final.code, disclosable, message:this.#o.redactor.text(final.message), reason: command === '' ? admin : `${admin}；下一步：${command}`, manifest: digest,...(redirect?{redirect}:{}),...(typeof final.detail.retry_at==='string'?{retry:{code:final.code,at:final.detail.retry_at,attempts:Number(final.detail.attempts)}}:{}) };
     }
     return { ok: true, external: subject.id, revision, artifacts, manifest: digest, content, meta,coverage:manifest.coverage,...(absent?{absent}:{}) };
   }
@@ -1018,12 +1021,14 @@ export class ReadEngine {
     return { ...view, text };
   }
 
-  #parsed(view: ReadResponse, parser: string, bytes: Uint8Array, mediaType: string): ReadResponse {
+  async #parsed(view: ReadResponse, parser: string, bytes: Uint8Array, mediaType: string): Promise<ReadResponse> {
     if (!view.ok) return view;
+    await this.#o.parsers.refresh?.();
     const found = this.#o.parsers.get(parser);
     if (found === undefined) return { ...view, ok: false, error: { code: 'SOURCE_MALFORMED', message: `没有核心解析器 ${parser}` } };
     try {
-      return { ...view, model: found.parse(bytes, { mediaType }).model };
+      const doc = await parseDocument(found, bytes, { mediaType });
+      return { ...view, model: doc.model };
     } catch (error) {
       return { ...view, ok: false, error: { code: 'SOURCE_MALFORMED', message: `${parser} 解析失败：${this.#o.redactor.text((error as Error).message).slice(0, 300)}` } };
     }

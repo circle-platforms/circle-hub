@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "agile-platform",
-  "version": "1.2.2",
+  "version": "1.2.4",
   "kind": "system",
   "title": "敏捷测试平台（系统包）",
   "description": "敏捷测试平台的只读系统包：根、子树（一次读全部配置的根）、脑图文档（content 与 meta）和配置根里文档的清单（关键词检索已退役：不打分、不选文档、不读正文）；登录换令牌，失败不重试",

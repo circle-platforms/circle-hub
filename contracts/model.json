@@ -2593,7 +2593,8 @@
     "观察层不写运行编号；源文件到运行动作的链接只对运行者和管理员可见，运行经分享的，也对分享的受众可见（B04 R[3]）",
     "回注的根据必须是 Hub 已存的源文件片段或设备回显，这一版的范围见 R[5]。只有会话里人的说法作根据的回注不入层，因为确认不了说的对不对：回执写明缺的是 Hub 已存的原文，下一步是先在 Hub 经连接器同步的外部系统里登记这件事，再由 Hub 同步进来。",
     "回注条目绑定节点路径、被引片段摘要和它所依据的根；读者锁定的根里同一路径的片段摘要与回注条目所引的不同，就对该根显示“被引片段已变（根 X → Y）”，在回注条目所依据的根上仍成立；不设全局“过期”。这一版只收本次运行锁定的根（版本根和产品线不分版本的根）的组成里已有的原文；不在其中的（设备回显、别的根里的原文、Hub 记录和已有的回注条目）拒收，回执写明缺的是锁定的根里的原文，下一步是改引锁定的根里同一段原文（用 get_nodes 读），或把这条留在 Circle 本地，等该源进入某个根后另开回注运行。所引源文件不在任何根里时只绑被引片段和该源的修订、不绑节点、等该源进入某个根再在对应节点上显示，这种做法以后做",
-    "写回注层同样经过边界校验，只做确定性核验：引文逐字出自所引原文（和边界用同一比对规则）；路径在锁定的根里能解析；不越过声明，不改片段的来源类型，不添原文没有的适用条件；关系只记关系和双方引用（两段不同的原文），不改任何一方，“说的是同一件事”只表示两段说的是同一议题，不表示内容等价；回注的文字过凭据扫描。没过的条目不入层，回执给核心码和修正说明（D05 R[2]），凭据命中用 CREDENTIAL_IN_UPLOAD。回注本身是一次运行，提交按普通提交原样保存。"
+    "写回注层同样经过边界校验，只做确定性核验：引文逐字出自所引原文（和边界用同一比对规则）；路径在锁定的根里能解析；不越过声明，不改片段的来源类型，不添原文没有的适用条件；关系只记关系和双方引用（两段不同的原文），不改任何一方，“说的是同一件事”只表示两段说的是同一议题，不表示内容等价；回注的文字过凭据扫描。没过的条目不入层，回执给核心码和修正说明（D05 R[2]），凭据命中用 CREDENTIAL_IN_UPLOAD。回注本身是一次运行，提交按普通提交原样保存。",
+    "Circle 的操作记录（决定 73）是回注层的另一类根据：根据是 Circle 工具后钩子上传、出处为 client_captured 的原件。Hub 无法确认这些字节是否经过模型，所以等级一律为声明，不进入任何核验、评分、放行路径当证据。条目种类为观察、步骤、教训（K02）。版本绑定只取本次运行锁定的构建或台架在装构建；引文必须逐字出自该上传原件（同一比对规则）；产品读者可读，矛盾只打标不裁决，管理员可追加撤回。R[4]、R[5] 对这一类根据不适用。"
    ],
    "tracedTo": [
     "E1-247",
@@ -2639,6 +2640,9 @@
     "写明这一版只收锁定的根（版本根和不分版本的根）的组成里已有的原文，其余拒收并给下一步；只绑片段和修订的做法以后做；R[5] 恢复“依赖知识树细化，待你确认”（来源：K2 模型复核第 5、10 条；kb-unversioned 任务页第 4 条）",
     "边界核验照决定 25 列全，“说的是同一件事”的含义写进规则；拒收给核心码，凭据命中用 CREDENTIAL_IN_UPLOAD（来源：决定 25、38；K2 模型复核第 11、12 条）",
     "按已定事项清理现行文本中过时的待确认标记；真正暂缓的事项不变（来源：独立批评第 5 条；模型相应 pendingDecisions 的已定决定）"
+   ],
+   "changes14": [
+    "Circle 的操作记录按决定 73 进入回注层：种类用 assertion，结构化内容为 fed-observation@1、fed-procedure@1、fed-pitfall@1；出处 client_captured；等级为声明且不作核验、评分、放行的证据；版本只取运行锁定构建或台架在装构建；引文逐字出自上传原件；产品读者可读；矛盾只打标；管理员可追加撤回。R[4]、R[5] 对这一类不适用。（来源：决定 73；R5 B3）"
    ]
   },
   {
@@ -4133,6 +4137,11 @@
     "elements": [
      "W04"
     ]
+   },
+   {
+    "path": "skill.json",
+    "content": "可安装的通用技能包能力与解析器声明",
+    "elements": ["W03"]
    }
   ],
   "protocolCodes": [
@@ -6365,6 +6374,896 @@
      }
     },
     {
+     "name": "FedObservation",
+     "id": "fed-observation@1",
+     "meaning": "Circle operation record of one action and what was seen. Identity is only the canonical action and result quotation. product, root, path, upload digest, version binding and collector are outside identity. The grade is a declaration and is not evidence for verification, scoring or release. Hub fills the binding from the run-locked build or the bed's installed build and refuses a model-reported version.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "schema": {
+        "const": "fed-observation@1"
+       },
+       "object": {
+        "$ref": "contract:common/Sha256"
+       },
+       "product": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+       },
+       "root": {
+        "$ref": "contract:common/Sha256"
+       },
+       "path": {
+        "$ref": "contract:reference/TreePath"
+       },
+       "source": {
+        "type": "object",
+        "properties": {
+         "system": {
+          "const": "upload"
+         },
+         "bytes": {
+          "$ref": "contract:common/Sha256"
+         }
+        },
+        "required": [
+         "system",
+         "bytes"
+        ],
+        "additionalProperties": false
+       },
+       "binding": {
+        "anyOf": [
+         {
+          "type": "object",
+          "properties": {
+           "source": {
+            "const": "run_lock"
+           },
+           "build": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+           },
+           "line": {
+            "anyOf": [
+             {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+             },
+             {
+              "const": null
+             }
+            ]
+           }
+          },
+          "required": [
+           "source",
+           "build",
+           "line"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "source": {
+            "const": "bed_installed"
+           },
+           "build": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+           },
+           "line": {
+            "anyOf": [
+             {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+             },
+             {
+              "const": null
+             }
+            ]
+           }
+          },
+          "required": [
+           "source",
+           "build",
+           "line"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "source": {
+            "const": "conflict"
+           },
+           "run_lock": {
+            "type": "object",
+            "properties": {
+             "build": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+             },
+             "line": {
+              "anyOf": [
+               {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+               },
+               {
+                "const": null
+               }
+              ]
+             }
+            },
+            "required": [
+             "build",
+             "line"
+            ],
+            "additionalProperties": false
+           },
+           "bed_installed": {
+            "type": "object",
+            "properties": {
+             "build": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+             },
+             "line": {
+              "anyOf": [
+               {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+               },
+               {
+                "const": null
+               }
+              ]
+             }
+            },
+            "required": [
+             "build",
+             "line"
+            ],
+            "additionalProperties": false
+           }
+          },
+          "required": [
+           "source",
+           "run_lock",
+           "bed_installed"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "source": {
+            "const": "undeclared"
+           },
+           "build": {
+            "const": null
+           },
+           "line": {
+            "const": null
+           },
+           "missing": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+           },
+           "next_action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+           }
+          },
+          "required": [
+           "source",
+           "build",
+           "line",
+           "missing",
+           "next_action"
+          ],
+          "additionalProperties": false
+         }
+        ]
+       },
+       "by": {
+        "$ref": "contract:common/UserId"
+       },
+       "run": {
+        "anyOf": [
+         {
+          "$ref": "contract:common/RunId"
+         },
+         {
+          "const": null
+         }
+        ]
+       },
+       "at": {
+        "$ref": "contract:common/IsoTime"
+       },
+       "version": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "build": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "line": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "family": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "relations": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "$ref": "vocabulary:relation_kind"
+          },
+          "object": {
+           "$ref": "contract:common/Sha256"
+          },
+          "quote": {
+           "$ref": "#/$defs/FeedingQuote"
+          }
+         },
+         "required": [
+          "kind",
+          "object",
+          "quote"
+         ],
+         "additionalProperties": false
+        },
+        "minItems": 0,
+        "maxItems": 100
+       },
+       "action": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 65536
+       },
+       "result": {
+        "$ref": "#/$defs/FeedingQuote"
+       }
+      },
+      "required": [
+       "schema",
+       "product",
+       "root",
+       "path",
+       "source",
+       "action",
+       "result"
+      ],
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "FedProcedure",
+     "id": "fed-procedure@1",
+     "meaning": "Circle operation record of a method. Identity is only the canonical goal and the ordered steps with their quotations. Version binding and collector are outside identity. The grade is a declaration and is not evidence. Hub fills the binding and refuses a model-reported version.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "schema": {
+        "const": "fed-procedure@1"
+       },
+       "object": {
+        "$ref": "contract:common/Sha256"
+       },
+       "product": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+       },
+       "root": {
+        "$ref": "contract:common/Sha256"
+       },
+       "path": {
+        "$ref": "contract:reference/TreePath"
+       },
+       "source": {
+        "type": "object",
+        "properties": {
+         "system": {
+          "const": "upload"
+         },
+         "bytes": {
+          "$ref": "contract:common/Sha256"
+         }
+        },
+        "required": [
+         "system",
+         "bytes"
+        ],
+        "additionalProperties": false
+       },
+       "binding": {
+        "anyOf": [
+         {
+          "type": "object",
+          "properties": {
+           "source": {
+            "const": "run_lock"
+           },
+           "build": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+           },
+           "line": {
+            "anyOf": [
+             {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+             },
+             {
+              "const": null
+             }
+            ]
+           }
+          },
+          "required": [
+           "source",
+           "build",
+           "line"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "source": {
+            "const": "bed_installed"
+           },
+           "build": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+           },
+           "line": {
+            "anyOf": [
+             {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+             },
+             {
+              "const": null
+             }
+            ]
+           }
+          },
+          "required": [
+           "source",
+           "build",
+           "line"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "source": {
+            "const": "conflict"
+           },
+           "run_lock": {
+            "type": "object",
+            "properties": {
+             "build": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+             },
+             "line": {
+              "anyOf": [
+               {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+               },
+               {
+                "const": null
+               }
+              ]
+             }
+            },
+            "required": [
+             "build",
+             "line"
+            ],
+            "additionalProperties": false
+           },
+           "bed_installed": {
+            "type": "object",
+            "properties": {
+             "build": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+             },
+             "line": {
+              "anyOf": [
+               {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+               },
+               {
+                "const": null
+               }
+              ]
+             }
+            },
+            "required": [
+             "build",
+             "line"
+            ],
+            "additionalProperties": false
+           }
+          },
+          "required": [
+           "source",
+           "run_lock",
+           "bed_installed"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "source": {
+            "const": "undeclared"
+           },
+           "build": {
+            "const": null
+           },
+           "line": {
+            "const": null
+           },
+           "missing": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+           },
+           "next_action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+           }
+          },
+          "required": [
+           "source",
+           "build",
+           "line",
+           "missing",
+           "next_action"
+          ],
+          "additionalProperties": false
+         }
+        ]
+       },
+       "by": {
+        "$ref": "contract:common/UserId"
+       },
+       "run": {
+        "anyOf": [
+         {
+          "$ref": "contract:common/RunId"
+         },
+         {
+          "const": null
+         }
+        ]
+       },
+       "at": {
+        "$ref": "contract:common/IsoTime"
+       },
+       "version": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "build": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "line": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "family": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "relations": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "$ref": "vocabulary:relation_kind"
+          },
+          "object": {
+           "$ref": "contract:common/Sha256"
+          },
+          "quote": {
+           "$ref": "#/$defs/FeedingQuote"
+          }
+         },
+         "required": [
+          "kind",
+          "object",
+          "quote"
+         ],
+         "additionalProperties": false
+        },
+        "minItems": 0,
+        "maxItems": 100
+       },
+       "goal": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 65536
+       },
+       "steps": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "text": {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 65536
+          },
+          "quote": {
+           "$ref": "#/$defs/FeedingQuote"
+          }
+         },
+         "required": [
+          "text",
+          "quote"
+         ],
+         "additionalProperties": false
+        },
+        "minItems": 1,
+        "maxItems": 100
+       }
+      },
+      "required": [
+       "schema",
+       "product",
+       "root",
+       "path",
+       "source",
+       "goal",
+       "steps"
+      ],
+      "additionalProperties": false
+     }
+    },
+    {
+     "name": "FedPitfall",
+     "id": "fed-pitfall@1",
+     "meaning": "Circle operation record of a lesson. Identity is only the canonical phenomenon, suggestion and quotation. Version binding and collector are outside identity. The grade is a declaration and is not evidence. Hub fills the binding and refuses a model-reported version.",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "schema": {
+        "const": "fed-pitfall@1"
+       },
+       "object": {
+        "$ref": "contract:common/Sha256"
+       },
+       "product": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+       },
+       "root": {
+        "$ref": "contract:common/Sha256"
+       },
+       "path": {
+        "$ref": "contract:reference/TreePath"
+       },
+       "source": {
+        "type": "object",
+        "properties": {
+         "system": {
+          "const": "upload"
+         },
+         "bytes": {
+          "$ref": "contract:common/Sha256"
+         }
+        },
+        "required": [
+         "system",
+         "bytes"
+        ],
+        "additionalProperties": false
+       },
+       "binding": {
+        "anyOf": [
+         {
+          "type": "object",
+          "properties": {
+           "source": {
+            "const": "run_lock"
+           },
+           "build": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+           },
+           "line": {
+            "anyOf": [
+             {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+             },
+             {
+              "const": null
+             }
+            ]
+           }
+          },
+          "required": [
+           "source",
+           "build",
+           "line"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "source": {
+            "const": "bed_installed"
+           },
+           "build": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+           },
+           "line": {
+            "anyOf": [
+             {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+             },
+             {
+              "const": null
+             }
+            ]
+           }
+          },
+          "required": [
+           "source",
+           "build",
+           "line"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "source": {
+            "const": "conflict"
+           },
+           "run_lock": {
+            "type": "object",
+            "properties": {
+             "build": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+             },
+             "line": {
+              "anyOf": [
+               {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+               },
+               {
+                "const": null
+               }
+              ]
+             }
+            },
+            "required": [
+             "build",
+             "line"
+            ],
+            "additionalProperties": false
+           },
+           "bed_installed": {
+            "type": "object",
+            "properties": {
+             "build": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+             },
+             "line": {
+              "anyOf": [
+               {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+               },
+               {
+                "const": null
+               }
+              ]
+             }
+            },
+            "required": [
+             "build",
+             "line"
+            ],
+            "additionalProperties": false
+           }
+          },
+          "required": [
+           "source",
+           "run_lock",
+           "bed_installed"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "source": {
+            "const": "undeclared"
+           },
+           "build": {
+            "const": null
+           },
+           "line": {
+            "const": null
+           },
+           "missing": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+           },
+           "next_action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+           }
+          },
+          "required": [
+           "source",
+           "build",
+           "line",
+           "missing",
+           "next_action"
+          ],
+          "additionalProperties": false
+         }
+        ]
+       },
+       "by": {
+        "$ref": "contract:common/UserId"
+       },
+       "run": {
+        "anyOf": [
+         {
+          "$ref": "contract:common/RunId"
+         },
+         {
+          "const": null
+         }
+        ]
+       },
+       "at": {
+        "$ref": "contract:common/IsoTime"
+       },
+       "version": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "build": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "line": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "family": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+       },
+       "relations": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "$ref": "vocabulary:relation_kind"
+          },
+          "object": {
+           "$ref": "contract:common/Sha256"
+          },
+          "quote": {
+           "$ref": "#/$defs/FeedingQuote"
+          }
+         },
+         "required": [
+          "kind",
+          "object",
+          "quote"
+         ],
+         "additionalProperties": false
+        },
+        "minItems": 0,
+        "maxItems": 100
+       },
+       "phenomenon": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 65536
+       },
+       "suggestion": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 65536
+       },
+       "quote": {
+        "$ref": "#/$defs/FeedingQuote"
+       }
+      },
+      "required": [
+       "schema",
+       "product",
+       "root",
+       "path",
+       "source",
+       "phenomenon",
+       "suggestion",
+       "quote"
+      ],
+      "additionalProperties": false
+     }
+    },
+    {
      "name": "VersionBinding",
      "id": "version-binding@1",
      "meaning": "Direct bindings only. Source structure requires verbatim source evidence and a declared grammar; a declaration requires the actual actor and run. Targets/usages do not create bindings. Conflict candidates are preserved, never resolved by the Hub.",
@@ -6970,7 +7869,7 @@
     {
      "name": "KnowledgeStructure",
      "id": "knowledge-structure@1",
-     "meaning": "Closed versioned family of five feeding object projections, direct binding claims, usages, frozen offsets and administrator retractions beside seedlings. Identity, authorization, quotation and closed-set membership are boundary checks; nothing enters root content hashes.",
+     "meaning": "Closed versioned family of feeding object projections, Circle operation records (observation, procedure, pitfall), direct binding claims, usages, frozen offsets and administrator retractions beside seedlings. Identity, authorization, quotation and closed-set membership are boundary checks; nothing enters root content hashes. Operation-record identity is only the canonical statement and quotations.",
      "schema": {
       "anyOf": [
        {
@@ -6987,6 +7886,15 @@
        },
        {
         "$ref": "#/$defs/FedNote"
+       },
+       {
+        "$ref": "#/$defs/FedObservation"
+       },
+       {
+        "$ref": "#/$defs/FedProcedure"
+       },
+       {
+        "$ref": "#/$defs/FedPitfall"
        },
        {
         "$ref": "#/$defs/VersionBinding"
@@ -7027,6 +7935,9 @@
     "fed-spec@1",
     "fed-build@1",
     "fed-note@1",
+    "fed-observation@1",
+    "fed-procedure@1",
+    "fed-pitfall@1",
     "version-binding@1",
     "usage@1",
     "feeding-offset@1",
@@ -7049,7 +7960,20 @@
      "line",
      "platform"
     ],
-    "fed-note@1": "source.bytes"
+    "fed-note@1": "source.bytes",
+    "fed-observation@1": [
+     "action",
+     "result"
+    ],
+    "fed-procedure@1": [
+     "goal",
+     "steps"
+    ],
+    "fed-pitfall@1": [
+     "phenomenon",
+     "suggestion",
+     "quote"
+    ]
    },
    "excluded_from_identity": [
     "source provenance",
@@ -7264,6 +8188,10 @@
     {
      "code": "candidate",
      "label": "候选"
+    },
+    {
+     "code": "client_captured",
+     "label": "客户端捕获"
     }
    ]
   },
@@ -8069,6 +8997,14 @@
     {
      "code": "observation",
      "label": "观察"
+    },
+    {
+     "code": "procedure",
+     "label": "步骤"
+    },
+    {
+     "code": "pitfall",
+     "label": "教训"
     }
    ]
   },
@@ -8263,6 +9199,10 @@
     {
      "code": "system",
      "label": "系统包"
+    },
+    {
+     "code": "skill",
+     "label": "通用技能包"
     }
    ]
   },

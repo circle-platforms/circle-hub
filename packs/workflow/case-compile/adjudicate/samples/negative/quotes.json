@@ -1,0 +1,24 @@
+{
+  "id": "quotes_negative",
+  "source": "author",
+  "check": "quotes",
+  "subject": {
+    "item": "synthetic",
+    "quotes": [
+      {
+        "reference": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/text",
+        "text": "no such quote"
+      }
+    ]
+  },
+  "sources": {
+    "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/text": "synthetic literal"
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "tier": "blocking",
+      "code": "QUOTE_MISMATCH"
+    }
+  ]
+}

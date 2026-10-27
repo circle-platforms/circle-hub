@@ -41,7 +41,8 @@
         "observed",
         "projected",
         "declared",
-        "candidate"
+        "candidate",
+        "client_captured"
       ],
       "description": "provenance type (A01) of the recorded content"
     },

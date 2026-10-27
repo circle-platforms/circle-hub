@@ -1,9 +1,10 @@
+import {kityminderParser,type KityMinderModel} from "../../../skill/mindmap-format/api.ts";
 // Helpers for the tests of the case-location functions (not a pack function): tiny synthetic KityMinder documents parsed by
 // the real kityminder@1 parser, bound inputs as the engine hands them to the projection, hostile values and the totality
 // check. Every name, id and text here is invented.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { kityminderParser, type KityMinderModel } from '../../../../hub/refs/api.ts';
+
 import type { BoundInput } from './types.ts';
 
 export const sha256 = (bytes: Uint8Array | string): string => createHash('sha256').update(bytes).digest('hex');

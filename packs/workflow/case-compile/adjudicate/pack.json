@@ -1,0 +1,120 @@
+{
+  "schema": "pack@1",
+  "id": "recompose-adjudication",
+  "version": "1.0.1",
+  "kind": "workflow",
+  "title": "recompose-adjudication",
+  "description": "独立重组工作阶段，非平台默认能力",
+  "dependencies": [
+    {
+      "pack": "mindmap-format"
+    }
+  ],
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "2ff19f25df43f59513ba3bb621ebf295e2c08b0512aa33be14a1d839fd4774dc",
+      "size": 155
+    },
+    {
+      "path": "checks.json",
+      "sha256": "ffefb2ef85e8dfadb8f9b03aab77008bdb264b1b9a9f1941675b826ff6172a3b",
+      "size": 689
+    },
+    {
+      "path": "functions/canonical-json.ts",
+      "sha256": "1205f7e664f147172a57cb55e31f4f38f85f935f47a8bfdd0e62b5fa8d913d16",
+      "size": 958
+    },
+    {
+      "path": "functions/check.ts",
+      "sha256": "95710166ba5e3126adb15405443ee32a8c085841be5f7498feaae9f74584b1ac",
+      "size": 1229
+    },
+    {
+      "path": "functions/compile-structure.ts",
+      "sha256": "f09f66fac05ba85c04be39c6cc1f09885b5f35949fab33ae2b79729addec519f",
+      "size": 12443
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "4f8f2e4bb29a7b47cf86f4198ea17295ba3f9c6a8d644f344aa4cc69ddcd6d4c",
+      "size": 1357
+    },
+    {
+      "path": "functions/recompose-evidence.ts",
+      "sha256": "07370dca08b95d55dc92923049d055a98f835f97e265ac9810f33664f6588778",
+      "size": 4185
+    },
+    {
+      "path": "functions/schema.ts",
+      "sha256": "222fca7d222a6054d80c083e9b71fdaa9c8dd39e174fc668f718769e76cad4c0",
+      "size": 3058
+    },
+    {
+      "path": "functions/text.ts",
+      "sha256": "3e9e1753b14522c6d6b6d9387e38a3f9555af0c37d70d3aa3b5b867896044de5",
+      "size": 2771
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "5dd3f89ceffaefd7ff236a3d48a9207459fa2c96051147c6388522342f4275c0",
+      "size": 551
+    },
+    {
+      "path": "samples/negative/form.json",
+      "sha256": "d353358ae593b6306c0ffc3586bcbecc5044a41cac3407de8589c6a3899fe51f",
+      "size": 1174
+    },
+    {
+      "path": "samples/negative/quotes.json",
+      "sha256": "8213f39d5b0a720e8747057bd12526a15e34d8609599dad2809dac5d2d81df6c",
+      "size": 540
+    },
+    {
+      "path": "samples/positive/form.json",
+      "sha256": "91a7e3d72d122935f9f3d4753476a4ba1d6b44fbf7fa4f2be8fed1c9795ac3e3",
+      "size": 1148
+    },
+    {
+      "path": "samples/positive/quotes.json",
+      "sha256": "fb14fa4d8b39fbdfddf3e1df1faa5a251900625bf897c107e245e8e5a9db6bf5",
+      "size": 513
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "39baa9be27786fa491a63d56102fd2e531ec1b959fedbe3733ae117ce9215a27",
+      "size": 1129
+    },
+    {
+      "path": "tables/codes.json",
+      "sha256": "d3c71245bc1271cbefddd28d242da8102cb4d0091685dd6ce629da9d3ed7d612",
+      "size": 271
+    },
+    {
+      "path": "tables/compile-structure.json",
+      "sha256": "d6ed96abebf56a8bdb4cd684982b457905b0ac864b13d92736d3c7a689833923",
+      "size": 617
+    },
+    {
+      "path": "tables/decision.schema.json",
+      "sha256": "69fb3bccae30663004bdd3c39ff6dc46e3666525551318fedcf804b8e33fb74f",
+      "size": 590
+    },
+    {
+      "path": "tables/quotes.json",
+      "sha256": "784e2a5cb5e252bdb5f7785509ec9111e93a235f2dfcec27a5948ffaa9650581",
+      "size": 655
+    },
+    {
+      "path": "tables/recompose-format.json",
+      "sha256": "b95d35af0113024ed0f00630b091c8cd9350d1b50fb8406d5bae32fd4dd28ab7",
+      "size": 1453
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "f37893125f30eb9f7d96eb530bb7bb1963e706f53419276e2debe96db395cbcb",
+      "size": 998
+    }
+  ]
+}

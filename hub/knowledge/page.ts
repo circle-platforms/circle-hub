@@ -18,7 +18,7 @@ export async function readSource(loader: SourceLoader, id: string, maxBytes: num
   const mediaType = load.artifact.body.media_type;
   const readable = await loader.readable(load, maxBytes);
   if (!readable.ok) return { page: { ok: false, media_type: mediaType, parser: null, model: null, reason: readable.reason }, revision: load.revision };
-  const parsed = loader.parse(readable.value, declaredParser);
+  const parsed = await loader.parse(readable.value, declaredParser);
   if (!parsed.ok) return { page: { ok: false, media_type: mediaType, parser: null, model: null, reason: parsed.reason }, revision: load.revision };
   return { page: { ok: true, media_type: mediaType, parser: parsed.value.parser, model: parsed.value.document.model, reason: null }, revision: load.revision };
 }

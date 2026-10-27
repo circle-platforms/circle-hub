@@ -3,7 +3,7 @@
 // Synthetic data only (bed-*, Rel_FAMX_10_6_1_* names, leases on bed/<bed>/<device> keys).
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { matchNeed, type Installed, type LeaseEntry } from './match.ts';
+import { matchNeed, unmatchedBuildExit, type Installed, type LeaseEntry } from './match.ts';
 import type { ManifestBed } from './manifest.ts';
 
 const NOW = '2026-10-22T08:00:00.000Z';
@@ -114,6 +114,22 @@ describe('matchNeed with a build requirement', () => {
     assert.equal(a.buildOk, 'unknown');
     assert.equal(a.buildSource, 'none');
     assert.doesNotMatch(a.conclusion, /需要升级/);
+  });
+  it('no bed matches the required build: unknown names the version line, each deciding device and the exit; per-bed fields stay', () => {
+    const need = { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_FAMX_10_6_1_9' };
+    const installed: Record<string, Installed> = { 'bed/bed-a/afamx0': { build: 'Rel_FAMX_10_6_1_8', source: 'declared', at: '2026-10-20T00:00:00.000Z' } };
+    const matches = matchNeed(beds, need, installed, {}, noLeases, NOW);
+    assert.equal(matches.find((row) => row.bed === 'bed-a')!.buildOk, 'mismatch');
+    assert.equal(matches.find((row) => row.bed === 'bed-b')!.buildOk, 'unknown');
+    const gap = unmatchedBuildExit(beds, need, installed, {}, noLeases, NOW, matches);
+    assert.ok(gap);
+    assert.equal(gap.verdict, 'unknown');
+    assert.match(gap.missing, /没有任何台架的在装构建匹配版本线 Rel_FAMX_10_6_1_9/);
+    assert.match(gap.missing, /bed-a\/afamx0 装的是 Rel_FAMX_10_6_1_8/);
+    assert.match(gap.missing, /缺在装构建记录：bed-b\/lb0/);
+    assert.equal(gap.fix, '管理员在清单登记在装构建，或把某台升级到该构建后重试');
+    const matched = matchNeed(beds, { ...need, build: 'Rel_FAMX_10_6_1_8' }, installed, {}, noLeases, NOW);
+    assert.equal(unmatchedBuildExit(beds, { ...need, build: 'Rel_FAMX_10_6_1_8' }, installed, {}, noLeases, NOW, matched), null);
   });
   it('the install record of a leased spare does not decide: the pick is the free device', () => {
     const installed: Record<string, Installed> = { 'bed/bed-a/afamx1': { build: 'Rel_FAMX_10_6_1_9', source: 'declared', at: '2026-10-20T00:00:00.000Z' } };

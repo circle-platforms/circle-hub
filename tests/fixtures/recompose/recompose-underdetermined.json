@@ -1,0 +1,150 @@
+{
+  "schema": "recompose-record@1",
+  "case": {
+    "id": "orbit-case-0002",
+    "source_ref": "src:3efe6facb7339966f8fc93b7bfbcad940b2c4825d15b572bd63ba592d6f01b26",
+    "source_path": "tests/fixtures/recompose/author-underdetermined.km.json",
+    "node": "n/case-2"
+  },
+  "contract": {
+    "intent": {
+      "text": "widget pool add pool1",
+      "quote_ref": "src:3efe6facb7339966f8fc93b7bfbcad940b2c4825d15b572bd63ba592d6f01b26/kityminder@1/n/case-2",
+      "verbatim": true
+    },
+    "method": {
+      "kind": "missing",
+      "text": null,
+      "sources": [],
+      "basis": null
+    },
+    "expectation": {
+      "text": "show pools 显示 pool1",
+      "quote_ref": "src:3efe6facb7339966f8fc93b7bfbcad940b2c4825d15b572bd63ba592d6f01b26/kityminder@1/n/expected-2",
+      "verbatim": true
+    }
+  },
+  "expectation_slots": [
+    {
+      "slot": "e1",
+      "knowledge_location": "genuinely_missing",
+      "evidence": [],
+      "proposal": "作者或产品包补一份声明 show pools 输出字段与判定点的规范来源；在此之前该期望位只有提议，不是契约",
+      "atom": "a2"
+    }
+  ],
+  "coverage": {
+    "author_atoms": [
+      "a1",
+      "a2"
+    ],
+    "mapped": {
+      "a1": [
+        "e1"
+      ]
+    },
+    "unmapped": [
+      "a2"
+    ]
+  },
+  "atoms": [
+    {
+      "id": "a1",
+      "kind": "action",
+      "text": "widget pool add pool1",
+      "quote_ref": "src:3efe6facb7339966f8fc93b7bfbcad940b2c4825d15b572bd63ba592d6f01b26/kityminder@1/n/case-2",
+      "span": [
+        0,
+        21
+      ]
+    },
+    {
+      "id": "a2",
+      "kind": "expectation",
+      "text": "show pools 显示 pool1",
+      "quote_ref": "src:3efe6facb7339966f8fc93b7bfbcad940b2c4825d15b572bd63ba592d6f01b26/kityminder@1/n/expected-2",
+      "span": [
+        0,
+        19
+      ]
+    }
+  ],
+  "sources": {
+    "governing": [
+      {
+        "kind": "spec",
+        "ref": "src:f13eb55d7393200cf252623fbc638dc55d62d9c568f4ad036a478eaa6d4da5f1",
+        "version": "1.0",
+        "authority": "product-declared"
+      }
+    ],
+    "candidates": [
+      {
+        "ref": "src:f07316214ebacaa31e5bdeafd0dd757db705fc9be170183095e1995cfcc98a78",
+        "path": "（合成）检索命中但无签发权",
+        "found_by": "search",
+        "signing_authority": false
+      }
+    ],
+    "states": [
+      {
+        "atom": "a1",
+        "state": "settled",
+        "adjudicated_by": null,
+        "reason": "原始动作存在，等待实际独立裁定凭证",
+        "exit": {
+          "action": "交编写阶段消费已受理重组记录",
+          "object": "a1",
+          "owner": "编写模型",
+          "due": "编写提交之前"
+        }
+      },
+      {
+        "atom": "a2",
+        "state": "underdetermined",
+        "adjudicated_by": null,
+        "reason": "没有任何有签发权的来源覆盖该观察",
+        "exit": {
+          "action": "补规范来源后重交",
+          "object": "a2 的验证方法",
+          "owner": "产品包作者",
+          "due": "重新提交之前"
+        }
+      }
+    ]
+  },
+  "ledgers": {
+    "original": [
+      {
+        "atom": "a1",
+        "text": "widget pool add pool1",
+        "quote_ref": "src:3efe6facb7339966f8fc93b7bfbcad940b2c4825d15b572bd63ba592d6f01b26/kityminder@1/n/case-2",
+        "span": [
+          0,
+          21
+        ]
+      },
+      {
+        "atom": "a2",
+        "text": "show pools 显示 pool1",
+        "quote_ref": "src:3efe6facb7339966f8fc93b7bfbcad940b2c4825d15b572bd63ba592d6f01b26/kityminder@1/n/expected-2",
+        "span": [
+          0,
+          19
+        ]
+      }
+    ],
+    "adapted": [],
+    "concretizations": [],
+    "rebindings": []
+  },
+  "status": "partial",
+  "unknowns": [
+    {
+      "missing": "声明 show pools 的观察字段与判定点的规范来源（现有合成手册夹具里没有这条命令的任何记载）",
+      "next_action": "产品包作者补规范来源并重新发布，或作者改写期望位到已有来源覆盖的观察",
+      "audience": "产品包作者",
+      "due": "重新提交之前"
+    }
+  ]
+}

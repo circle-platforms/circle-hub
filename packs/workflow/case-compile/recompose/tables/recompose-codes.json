@@ -1,0 +1,42 @@
+{
+  "schema": "recompose.codes@1",
+  "violations": [
+    {
+      "code": "recompose.quote_not_verbatim",
+      "when": "意图/期望不是原件逐字子串，或引用指不到",
+      "fix": "重组者按原件补正确引用后重交；不改作者原文"
+    },
+    {
+      "code": "recompose.missing_without_exit",
+      "when": "真实欠缺却没有具名出口",
+      "fix": "写明缺的事实、由谁在何时补，再重交"
+    },
+    {
+      "code": "recompose.candidate_signed",
+      "when": "用检索候选当签发依据",
+      "fix": "换成产品包声明的规范来源，或把它记为 underdetermined"
+    },
+    {
+      "code": "recompose.prerequisite_as_conflict",
+      "when": "把缺前置记成冲突",
+      "fix": "改记 missing_prerequisite，交编写阶段补齐"
+    },
+    {
+      "code": "recompose.unmarked_load_bearing",
+      "when": "承载语义的适配未标 load_bearing",
+      "fix": "标注并给等价条件；不标则该适配不生效"
+    },
+    {
+      "code": "recompose.bound_to_bed",
+      "when": "重组产物里出现具体台架事实",
+      "fix": "移到编写/计划阶段的重绑定账"
+    },
+    {
+      "code": "recompose.atom_dropped",
+      "when": "作者原子/命令出现次数在适配后减少",
+      "fix": "缺失次数留作义务，补回或写明作者同意删除的引用"
+    }
+  ],
+  "refusals": [],
+  "warnings": []
+}

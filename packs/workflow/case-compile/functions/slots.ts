@@ -1,22 +1,28 @@
+import SLOT_TABLE from '../slots.schema.json' with {type:'json'};
+import {schema} from './schema.ts';
+import {readBlockSlots,isNormalized} from './blocks.ts';
 import {isExpectationBasis,type ExpectationBasis} from './generated/vocabulary.ts';
 // Restricted authored plan slots. This module verifies structure and never generates an execution artifact.
 import { isRecord } from './text.ts';
 export type KeywordValue = string | number;
-export interface PlanStep { cleanup?:boolean; object: string; method: string; args: string[]; keywords: Record<string, KeywordValue> }
-export interface PlanExpect {basis?:ExpectationBasis;rationale?:string; text: string; quote: { reference: string; text: string }; after: number }
+export interface PlanStep { id?:string;origin?:string;block_kind?:string;output?:boolean;save_as?:string;input_register?:string;restore_for?:number;restore_target?:{tree_root:string;path:string;leading_parameters:unknown[];bed:string;manifest_sha256:string};cleanup?:boolean; object: string; method: string; args: string[]; keywords: Record<string, KeywordValue> }
+export interface PlanExpect {id?:string;origin?:string;operator?:string;output?:string;register?:string;actual_register?:string;comparison?:string;count?:number;expectation?:string;criterion?:string;basis?:ExpectationBasis;rationale?:string; text: string; quote: { reference: string; text: string }; after: number }
 export interface Replacement { case: string; bed: string }
-export interface PlanSlots { command_identities?:unknown; bucket: string; blocks: never[]; steps: PlanStep[]; expects: PlanExpect[]; replacements: Replacement[] }
+export interface PlanSlots { recomposition?:{receipt:string;case_id:string;slots:Array<{slot:string;assertions:string[]}>;rebindings:Array<{slot:string;from:string;to:string;authority?:string;source_of_value?:string}>}; command_identities?:unknown; bucket: string; blocks: Array<Record<string,any>>;block_context?:Record<string,any>;criteria?:Array<Record<string,any>>;obligations?:Array<Record<string,any>>; steps: PlanStep[]; expects: PlanExpect[]; replacements: Replacement[] }
 export interface SlotProblem { pointer: string; message: string }
 export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok: false; problems: SlotProblem[] } {
+  if(isNormalized(value))return {ok:true,slots:value};
+  if(isRecord(value)&&Array.isArray(value.blocks)&&value.blocks.length)return readBlockSlots(value);
   const problems: SlotProblem[] = [];
   const issue = (pointer: string, message: string) => problems.push({ pointer, message });
   if (!isRecord(value)) return { ok: false, problems: [{ pointer: '', message: '槽位不是对象；按 slots.schema.json 的完整形状填写' }] };
   const keys = (raw: Record<string, unknown>, allowed: string[], at: string): void => {
     for (const key of Object.keys(raw)) if (!allowed.includes(key)) issue(`${at}/${key.replaceAll('~', '~0').replaceAll('/', '~1')}`, '多余字段；按 slots.schema.json 删除');
   };
-  keys(value, ['bucket', 'blocks', 'steps', 'expects', 'replacements','command_identities'], '');
+  keys(value, ['bucket', 'blocks', 'steps', 'expects', 'replacements','command_identities','recomposition'], '');
   if (typeof value.bucket !== 'string' || !value.bucket) issue('/bucket', 'bucket 必须是台架名');
   if (!Array.isArray(value.blocks) || value.blocks.length) issue('/blocks', '本轮 blocks 必须是空数组');
+  if(Object.hasOwn(value,'recomposition')&&!schema(SLOT_TABLE.item.plan.data.properties.recomposition).safeParse(value.recomposition).success)issue('/recomposition','重组消费形状不符合声明');
   const steps: PlanStep[] = [];
   if (!Array.isArray(value.steps) || !value.steps.length) issue('/steps', '步骤必须是非空数组');
   for (const [i, raw] of (Array.isArray(value.steps) ? value.steps : []).entries()) {
@@ -52,5 +58,5 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
     if (typeof raw.case !== 'string' || !raw.case || typeof raw.bed !== 'string' || !raw.bed) issue(at, '替换条目必须是 {case, bed} 文字地址');
     else replacements.push({ case: raw.case, bed: raw.bed });
   }
-  return problems.length ? { ok: false, problems } : { ok: true, slots: { ...(Object.hasOwn(value,'command_identities')?{command_identities:value.command_identities}:{}),bucket: String(value.bucket), blocks: [], steps, expects, replacements } };
+  return problems.length ? { ok: false, problems } : { ok: true, slots: { ...(Object.hasOwn(value,'command_identities')?{command_identities:value.command_identities}:{}),...(Object.hasOwn(value,'recomposition')?{recomposition:value.recomposition as PlanSlots['recomposition']}:{}),bucket: String(value.bucket), blocks: [], steps, expects, replacements } };
 }

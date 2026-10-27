@@ -57,6 +57,21 @@
           "max_rounds": 2
         },
         {
+          "code": "case-review-verify.pass_with_partial",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.severity_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review-verify.level_severity_mismatch",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
           "code": "case-review-verify.pass_with_new_finding",
           "action": "repair",
           "max_rounds": 2
@@ -123,7 +138,9 @@
       "layers": [
         "static"
       ],
-      "accepted_producer": "judgment",
+      "accepted_producer": "independent_judgment",
+      "independent_of": "predecessor",
+      "accepts_declared_independence": true,
       "checks": [
         "suggestion_targets"
       ],
@@ -143,7 +160,8 @@
       "independent_of": "predecessor",
       "accepts_declared_independence": true,
       "checks": [
-        "verdict"
+        "verdict",
+        "review_scope"
       ],
       "error_handling": []
     }

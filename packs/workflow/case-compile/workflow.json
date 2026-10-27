@@ -61,6 +61,49 @@
       ],
       "required": false,
       "many": false
+    },
+    {
+      "slot": "criteria_review",
+      "role": "expected",
+      "description": "类型化判据复核的已受理 Hub 结果，仅真实 record meta 有效",
+      "accepts": [
+        "application/json"
+      ],
+      "required": false,
+      "many": false,
+      "from_runs": {
+        "pack": "case-compile-criterion-review"
+      }
+    },
+    {
+      "slot": "criteria_review_run",
+      "role": "expected",
+      "description": "该复核的完整 Hub 运行快照 rec:，核实际前驱与声明运行",
+      "accepts": [
+        "application/json"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "recomposition_run",
+      "role": "expected",
+      "description": "独立重组阶段的完整 Hub 记录；不接受上传自述",
+      "accepts": [
+        "application/json"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
+      "slot": "recomposition_result",
+      "role": "expected",
+      "description": "独立重组阶段的完整 Hub 记录；不接受上传自述",
+      "accepts": [
+        "application/json"
+      ],
+      "required": false,
+      "many": false
     }
   ],
   "parameters": [
@@ -94,6 +137,18 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 128
+      }
+    },
+    {
+      "name": "pipeline",
+      "description": "Explicit recomposed pipeline, legacy remains compatible",
+      "required": false,
+      "schema": {
+        "type": "string",
+        "enum": [
+          "legacy",
+          "recomposed"
+        ]
       }
     }
   ],

@@ -934,3 +934,7 @@ Predecessor defaults recognize only own input properties as explicit values and 
 The complete predecessor-result scan, including submission-existence reads, holds the predecessor’s existing `submit:<run>` key. Pagination therefore serializes with submissions in the same engine; a queued submission becomes eligible for the next selection after the current scan releases the key. The existing submission guard scopes this serialization to one engine process.
 
 显式模型身份补线：submit_result 的可选 model_identity 使用既有 model-identity@1，显示用的 model 文字保持独立。当前提交、原槽位沿用和效果重验都读取结构声明；作者血缘从保存的原提交回读族，不从日志里的名字补造。模型 warrant 的 id 对显式声明取 model_id。任一旧作者提交没有声明族时仍未知；账号独立性不受声明族替代。
+
+### Read-time withdrawal qualifier
+
+getRun / getResult check the exact frozen pack version through the existing workflow metadata port after run visibility is established. A known withdrawn version adds rule_withdrawn: true to the read wrapper, outside the immutable run and validation_result bodies. Run and production-result pages disclose the generated validity label with “版本已下架”. Historical result digests, claims, partitions and requirement terminals remain byte-for-byte unchanged; unassignment is not withdrawal, and no approval workflow is introduced. Raw record references remain original evidence, not a rewritten current-state result.

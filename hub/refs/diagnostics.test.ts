@@ -1,8 +1,9 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 // Synthetic refusals across registry, upload MCP response and the production input binder.
 import assert from 'node:assert/strict';
 import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
 import { test } from 'node:test';
-import { ParseError, createDefaultRegistry, recognize } from './api.ts';
+import { ParseError, recognize } from './api.ts';
 import { createTestServer } from '../server/testing.ts';
 import { bindInputs } from '../runs/engine/inputs.ts';
 import { Refusal } from '../runs/engine/errors.ts';

@@ -98,11 +98,11 @@ import only `hub/rules/api.ts`.
 - `coverage@1`: required members by value, by reference, by pack set name or selected from the subject; a declared skip
   counts only with a non-empty reason.
 - `membership@1` and `coverage@1` sets by reference: the bound fragment's text must be a JSON array of scalars.
-- `quote@1` independently implements the decision-37 rule in `text.ts` with rules-local W/F data. A whitespace run adjacent to an
-  East_Asian_Width W/F code point disappears; other interior runs collapse to one space and both ends are trimmed.
-  Case, punctuation, character width and normalization form remain significant; empty quotations never match. The
-  29 shared vectors cross-check rules and refs independently and test direct checks, the cached collapsed-fragment path and the interpreter. Ordinary table match
-  representations retain their original whitespace normalization; this change affects quotation checking only.
+- `quote@1` independently implements exact contiguous substring matching in `text.ts`. Case, punctuation, character
+  width, Unicode normalization form and every whitespace character remain significant; no trimming, folding or
+  normalization is applied. Empty and whitespace-only quotations never match. The 36 shared vectors cross-check rules
+  and refs independently and test direct checks and the interpreter. Ordinary table match representations retain their
+  original whitespace normalization; this change affects quotation checking only.
 
 ### Catalog view (C07)
 
@@ -347,6 +347,5 @@ The boundary applies B01 R[4] to quotation references and grounds, including cro
 
 Scope note: the owner authorized the rules implementation/tests and this README beyond the original vectors-only task list. Architecture permits only refs type imports; the first runtime delegation was a defect, corrected by a local implementation.
 
-Stale contract wording: QuoteTable in contracts/src/tables.ts and generated quote.v1.schema.json still describe every
-whitespace run as one space. The independent decision-37 implementations are authoritative for this owner-approved
-change; the integrator/rules contract owner must update the description and regenerate the schemas.
+QuoteTable in contracts/src/tables.ts and the regenerated quote.v1.schema.json describe the same exact contiguous
+substring contract as the independent rules and refs implementations.

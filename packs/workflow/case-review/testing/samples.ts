@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PackSample } from '../../../../contracts/src/pack.ts';
 import { commandSubject, scanSubject, structureSubject } from '../functions/subjects.ts';
+import { createReviewScope, REVIEW_SCOPE_GROUP, reviewScopeSubject } from '../functions/review-scope.ts';
 
 const SHA = 'c'.repeat(64);
 const ROOT = 'd'.repeat(64);
@@ -97,7 +98,18 @@ export function samples(): Entry[] {
   const withLine = (node: string, line: string): Item => caseItem(node, { steps: [{ text: line, expected: ['显示的探测间隔与设置一致'] }] });
   const leaf=loc('e1'),quality={item:'sample:c1',location:loc('c1'),fields:{expected:['合成期望'],expectedCount:1,expectedSelectors:['n/e1']},slots:{expected_quality:[{code:'expected_quality',text:'脚本化模型主张',quotes:[{reference:leaf,text:'合成期望'}],data:{schema:'expected-quality@1',vague:false,source_sha256:SHA,expected_count:1,expected_references:[leaf]}}]}};
   const badQuality=structuredClone(quality);badQuality.slots.expected_quality[0].quotes[0].text='改写引文';
+  const scope=createReviewScope({source:SHA,document:'sample',parameters:{case_rule:'marked',case_priority:2,group_priority:1,precondition_priority:3},expected:good.map(item=>({item:item.id,location:item.location})),selected:good.map(item=>item.id)});
+  const scopeGroup={kind:REVIEW_SCOPE_GROUP,data:{review_scope:scope}};
+  const scopeSubject=reviewScopeSubject({applies:'run',items:[],context:{...context,groups:[scopeGroup]}});
+  const levelSubject=(rank:unknown,level:unknown)=>({items:[{...good[0],slots:{findings:[{rank}]}},{...good[1],slots:{findings:[]}}],cross_item:[{code:'level',rank:level}]});
   return [
+    sample('positive','level_major_band','level_consistency','最重发现 major 时 P4 在允许区间',levelSubject('major','P4'),[{verdict:'support',tier:'blocking'}]),
+    sample('negative','level_minor_band_mismatch','level_consistency','最重发现 minor 时 P4 越出允许区间',levelSubject('minor','P4'),[{verdict:'refute',code:'case-review.level_severity_mismatch',tier:'blocking'}]),
+    sample('negative','level_missing','level_consistency','缺少有效 P 等级不能通过',levelSubject('minor',undefined),[{verdict:'refute',code:'case-review.level_missing',tier:'blocking'}]),
+    sample('negative','severity_missing','level_consistency','发现缺严重程度不能核对等级',levelSubject(undefined,'P2'),[{verdict:'refute',code:'case-review.severity_missing',tier:'blocking'}]),
+    sample('positive','scope_frozen','review_scope','整份预期条目与本块选定条目由投影冻结',scopeSubject,[{verdict:'support',tier:'blocking'}],{sources:{[`src:${SHA}/kityminder@1/i/0`]:'合成根'}}),
+    sample('negative','scope_conflict','review_scope','同次运行有两份识别范围不能任选一份',reviewScopeSubject({applies:'run',items:[],context:{...context,groups:[scopeGroup,scopeGroup]}}),[{verdict:'refute',code:'case-review.scope_conflict',tier:'blocking'}]),
+    sample('negative','quotes_whitespace_changed','findings_quotes','只有空白不同的引文也不是严格逐字',defaultSubject(caseItem('c1'),{findings:[finding({quotes:[{reference:`src:${SPEC}/markdown@1/s/interval`,text:'取值范围  1-300 秒'}]})]},[]),[{verdict:'refute',code:'QUOTE_MISMATCH',item:'sample:c1',tier:'blocking'}],{sources:{[`src:${SPEC}/markdown@1/s/interval`]:'探测间隔的取值范围 1-300 秒，默认 5 秒。'}}),
     sample('positive','expected_quality_exact','expected_quality_evidence','全部期望叶子的逐字身份匹配',quality,[{verdict:'support',item:'sample:c1',tier:'blocking'}],{sources:{[leaf]:'合成期望'}}),
     sample('negative','expected_quality_changed','expected_quality_evidence','引文不是原件逐字文本',badQuality,[{verdict:'refute',code:'case-review.quote_missing',item:'sample:c1',tier:'blocking'}],{sources:{[leaf]:'合成期望'}}),
     sample('positive','negative_command_present','negative_commands','反向用例从自身取命令行',itemSubject(commandSubject,negativeCase,{findings:[]}),[{verdict:'support',item:'sample:n1',tier:'advisory'}],{catalog:CATALOG}),

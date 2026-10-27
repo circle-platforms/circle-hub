@@ -1,29 +1,12 @@
+import {testParsers as defaultParsers} from "../testing/parsers.ts";
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
+import { kityminderParser, xmlParser, htmlParser } from '../testing/parsers.ts';
 // Adversarial inputs for every core parser: large inputs under a time bound, nesting and entity attacks, invalid
 // UTF-8, NUL and control characters, attribute bombs and random bytes. A parser either succeeds or throws a ParseError.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
-import {
-  ParseEncodingError,
-  ParseError,
-  ParseForbiddenError,
-  ParseLimitError,
-  ParseSyntaxError,
-  candidatesFrom,
-  createDefaultRegistry,
-  createDocumentCache,
-  defaultParsers,
-  findQuote,
-  htmlParser,
-  jsonParser,
-  kityminderParser,
-  markdownParser,
-  resolveReference,
-  srcFragment,
-  textParser,
-  xmlParser,
-  type Parser,
-} from './api.ts';
+import {ParseEncodingError,ParseError,ParseForbiddenError,ParseLimitError,ParseSyntaxError,candidatesFrom,createDocumentCache,findQuote,jsonParser,markdownParser,resolveReference,srcFragment,textParser,type Parser} from "./api.ts";
 import { fixture, seeded, timed, utf8 } from './test-support.ts';
 
 const MB = 1024 * 1024;
@@ -191,11 +174,11 @@ describe('invalid UTF-8', () => {
 describe('NUL and control characters', () => {
   const controls = '\u0001\u0002\u0007\u0008\u000b\u000c\u001b\u007f';
 
-  it('removes NUL but keeps other control characters in text formats', () => {
+  it('removes NUL but keeps other control characters in text formats', async () => {
     const text = textParser.parse(utf8(`a\u0000b${controls}c\n`));
     assert.equal(text.model.lines[0], `ab${controls}c`);
     const markdown = markdownParser.parse(utf8(`# 标\u0000题\n\n段\u0000落${controls}\n`));
-    assert.equal(markdown.locate('b/0/标题')!.text, `段落${controls}`);
+    assert.equal((await markdown.locate('b/0/标题'))!.text, `段落${controls}`);
     const html = htmlParser.parse(utf8(`<p>a\u0000b${controls}</p>`));
     assert.ok(!html.model.blocks[0].text.includes('\u0000'));
     const json = jsonParser.parse(utf8(JSON.stringify({ k: `a\u0000b${controls}` })));
@@ -214,7 +197,7 @@ describe('NUL and control characters', () => {
 });
 
 describe('random bytes', () => {
-  it('every parser either parses or throws a ParseError on 1500 random and corrupted inputs', () => {
+  it('every parser either parses or throws a ParseError on 1500 random and corrupted inputs', async () => {
     const r = seeded(1021);
     const seeds = [fixture('mindmap.km.json'), fixture('command-tree.xml'), fixture('listing.html'), fixture('spec.md')];
     const parsers = defaultParsers();
@@ -231,7 +214,7 @@ describe('random bytes', () => {
       for (const parser of parsers) {
         try {
           const document = parser.parse(input);
-          for (const selector of document.listSelectors('', { limit: 20 })) assert.ok(document.locate(selector), `${parser.id} lists ${selector} but cannot locate it`);
+          for (const selector of document.listSelectors('', { limit: 20 })) assert.ok((await document.locate(selector)), `${parser.id} lists ${selector} but cannot locate it`);
           JSON.stringify(document.model);
           JSON.stringify(document.summary());
         } catch (error) {
@@ -268,8 +251,8 @@ describe('every public API stays within the time bound on hostile input that par
       const start = performance.now();
       const document = parser.parse(bytes);
       const selectors = document.listSelectors('', { properties: true });
-      for (const selector of selectors) assert.ok(document.locate(selector), `${name}: ${selector}`);
-      const candidates = candidatesFrom(document, sha, { properties: true });
+      for (const selector of selectors) assert.ok((await document.locate(selector)), `${name}: ${selector}`);
+      const candidates = (await candidatesFrom(document, sha, { properties: true }));
       for (const quote of ['x', 'a b', 'y', '的', 'no such text']) findQuote(candidates, quote);
       const ctx = {
         reader: { user: 'usr_01hzzzzzzzzzzzzzzzzzzzzzza', role: 'user' as const },

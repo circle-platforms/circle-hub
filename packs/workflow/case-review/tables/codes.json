@@ -156,6 +156,26 @@
       "code": "case-review.negative_command_missing",
       "when": "反向用例自身没有可核验的目录命令行",
       "fix": "修正原用例命令行后重开评审"
+    },
+    {
+      "code": "case-review.level_missing",
+      "when": "等级主张不是恰好一条，或没有有效的 P0–P7 rank",
+      "fix": "只提交一条 code=level 的跨条目主张，rank 写 P0–P7 之一"
+    },
+    {
+      "code": "case-review.severity_missing",
+      "when": "发现缺少有效的 critical、major 或 minor 严重程度，无法核对最重发现与等级区间",
+      "fix": "为每条发现写有效 rank 后重交；不要由脚本猜严重程度"
+    },
+    {
+      "code": "case-review.level_severity_mismatch",
+      "when": "初评最重发现与整份等级区间不一致",
+      "fix": "critical 只许 P6–P7，major 只许 P3–P5，minor 只许 P0–P2；只在允许区间内选择等级，不按数量自动评级"
+    },
+    {
+      "code": "case-review.scope_conflict",
+      "when": "同一次运行有多份整份识别范围，不能确定唯一覆盖清单",
+      "fix": "重新执行初评投影，只保留同一源和识别规则的一份冻结范围；不要由模型选择或合并"
     }
   ],
   "findings": [

@@ -3,7 +3,7 @@
 import { readFileSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PackKind } from '../../../contracts/generated/vocabulary.ts';
-import { ChecksFile, LedgerFile, KnowledgeFile, packPathProblem, RequirementsFile, SlotsFile, WorkflowFile, type PackManifest } from '../../../contracts/src/pack.ts';
+import { ChecksFile, LedgerFile, KnowledgeFile, packPathProblem, RequirementsFile, SlotsFile, WorkflowFile, SkillDeclaration, type PackManifest } from '../../../contracts/src/pack.ts';
 import { ProductDeclaration } from '../../../contracts/src/product.ts';
 import { SystemProfile } from '../../../contracts/src/resources.ts';
 import { IntegrityError, sha256Hex } from '../../records/api.ts';
@@ -36,6 +36,11 @@ function shaped<T>(schema: { safeParse(value: unknown): { success: boolean; data
 }
 
 export function parseDeclarations(kind: PackKind, files: ReadonlyMap<string, Uint8Array>): PackDeclarations {
+  if (kind === 'skill') {
+    const method = files.has('workflow.json') ? parseDeclarations('workflow', files) : null;
+    if (method !== null && method.kind !== 'workflow') throw new IntegrityError('技能包方法声明不是工作流');
+    return { kind, skill: shaped(SkillDeclaration, files, 'skill.json'), method };
+  }
   if (kind === 'product') return { kind, product: shaped(ProductDeclaration, files, 'product.json') };
   if (kind === 'system') return { kind, system: shaped(SystemProfile, files, 'system.json') };
   const skill = files.get('SKILL.md');

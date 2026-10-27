@@ -1,4 +1,5 @@
 // Deterministic admission of a model field claim. Matching evidence never makes the semantic value a fact.
+import {parseDocument} from '../refs/api.ts';
 import {ProductDeclaration,Applicability} from '../../contracts/src/product.ts';
 import type {ContributionInput,KnowledgeContributionBody} from '../../contracts/src/contributions.ts';
 import type {RootSource} from '../../contracts/src/knowledge.ts';
@@ -62,7 +63,7 @@ export async function admitApplicability(context:KnowledgeContext,reading:TreeRe
  const original=originals.get(id.source_sha256);if(!original)return missing('原件不在锁定根的来源清单中');
  const bytes=await context.records.artifacts.source(custodian,id.source_sha256,{consumer:'function',record:original.artifact});if(!bytes?.bytes)return missing('引文原件当前不可读');
  const parser=context.parsers.get(id.parser);if(!parser)return missing('引文解析器版本不可用');
- const document=parser.parse(bytes.bytes),fragment=document.locate(id.path);if(!fragment?.byteRange)return missing('解析器未提供该片段的原始 byte range');
+ const document=await parseDocument(parser,bytes.bytes);await document.prefetch?.([id.path]);const fragment=await document.locate(id.path);if(!fragment?.byteRange)return missing('解析器未提供该片段的原始 byte range');
  const end=id.span.offset+id.span.length;if(id.span.offset<fragment.byteRange[0]||end>fragment.byteRange[1]||end>bytes.bytes.byteLength)return invalid('byte span 不在所引片段内');
  let text:string;try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes.bytes.slice(id.span.offset,end));}catch{return invalid('byte span 不对应完整 UTF-8 原文');}if(text!==evidence.text)return invalid('逐字引文与原始 byte span 不一致');
  let unmappedRange=false;

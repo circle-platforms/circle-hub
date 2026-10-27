@@ -1,7 +1,7 @@
 {
   "schema": "system@1",
   "title": "PLM 查询服务",
-  "description": "PLM 查询服务的只读访问：缺陷详情（plm:bug:<编号>）、需求详情（plm:story:<编号>）、产品列表（plm:products:all）和一个产品的构建列表（plm:builds:<产品编号> 或 plm:builds:<逐族编码的名字，以 + 连接>）。读接口也用 POST，而且写接口与读接口同一个前缀，所以读路由逐条列出（方法加路径模板），写接口一条也没有列，传输层按路由清单拒绝它。登录与敏捷测试平台相同（同一个令牌可用）；信封 {code, msg, data}，code 1000 表示成功，构建列表的成功应答是不带信封的数组。",
+  "description": "PLM 查询服务的只读访问：缺陷详情（plm:bug:<编号>）、需求详情（plm:story:<编号>）、产品列表（plm:products:all）和一个产品的构建列表（plm:builds:<产品编号> 或 plm:builds:<逐族编码的名字，以 + 连接>）。读接口也用 POST，而且写接口与读接口同一个前缀，所以读路由逐条列出（方法加路径模板），写接口一条也没有列，传输层按路由清单拒绝它。登录与敏捷测试平台相同（同一个令牌可用）；信封 {code, msg, data}，code 1000 表示成功，构建列表应答带信封（投影从 data 取数组，原件保存整个信封，同时兼容裸数组）。",
   "roles": [
     {
       "name": "plm-oauth",
@@ -104,7 +104,7 @@
       "max_bytes": 16777216,
       "timeout_ms": 60000,
       "read": true,
-      "description": "一个产品的全部构建（一个数组，不分页）"
+      "description": "一个产品的全部构建（带信封或裸数组，不分页）"
     },
     {
       "id": "bug-detail",

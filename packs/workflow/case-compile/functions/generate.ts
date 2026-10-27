@@ -1,3 +1,6 @@
+import {blockReviewIdentity} from './block-review-identity.ts';
+import {assertionTarget,assertionCells} from './block-runtime.ts';
+import {blockMeta,sourcePlan} from './blocks.ts';
 import {authorTexts} from './command-policy.ts';
 import {selectedExpectedNodes} from './expected-nodes.ts';
 import { typedAuthorityGaps, authorityRecovery } from './typed-authority.ts';
@@ -12,7 +15,7 @@ import { bindArguments, hasSingleLineValue } from './binding.ts';
 import { encodeG, type GOptions } from './g-syntax.ts';
 import { zipStore } from './zip-store.ts';
 export const GENERATOR = FORMAT.generator;
-export interface GenerationFields {expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; autoid: string; title: string; priority?: string | null; steps: Array<{ text: string }> }
+export interface GenerationFields {source_atoms?:unknown;bed_services?:unknown;manifest_sha256?:string;criteria_review?:unknown;expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; autoid: string; title: string; priority?: string | null; steps: Array<{ text: string }> }
 export interface GenerationInput { slots: PlanSlots; fields: GenerationFields; contract: RuntimeContract; profile: RuntimeProfile; plan_run: string; build: string; generator?: string }
 export class GenerationError extends Error { readonly rule: string; readonly pointer: string; constructor(pointer: string, message: string, rule = 'generation') { super(`${pointer}：${message}`); this.name = 'GenerationError'; this.pointer = pointer; this.rule = rule; } }
 const reject = (at: string, message: string): never => { throw new GenerationError(at, message); };
@@ -31,7 +34,7 @@ function escape(text: string, at: string, xstring = true): string {
 export function generateWorkbook(input: GenerationInput): Uint8Array {
   const read = readSlots(input.slots); if (!read.ok) reject('/slots', read.problems[0].pointer + ' ' + read.problems[0].message);
   const slots = read.ok ? read.slots : input.slots; const { fields, contract, profile } = input;
-  const gaps = typedAuthorityGaps(contract, profile, slots,fields.command_identities,fields.command_catalog,authorTexts(fields));
+  const gaps = typedAuthorityGaps(contract, profile, slots,fields.command_identities,fields.command_catalog,authorTexts(fields),fields.manifest_sha256,fields.bed_services);
   if (gaps.length) reject('/contract', authorityRecovery(gaps));
   if (input.generator !== undefined && input.generator !== GENERATOR) reject('/generator', '生成器版本与当前包版本不符');
   if (!input.plan_run || !input.plan_run.startsWith('run_') || /[\r\n]/.test(input.plan_run) || !input.build || /[\r\n]/.test(input.build)) reject('/context', '缺少已满足的计划运行号或锁定构建');
@@ -39,14 +42,14 @@ export function generateWorkbook(input: GenerationInput): Uint8Array {
   if(profile.seats.some(seat=>!Number.isSafeInteger(seat.ordinal)||seat.ordinal<0||seat.ordinal>=profile.device_count))reject('/profile/seats','框架取不到那台设备，整卷不跑：对象序号超出冻结预检容量');
   if (slots.bucket !== profile.bed || typeof fields.autoid !== 'string' || !new RegExp(profile.workbook.autoid_pattern, 'u').test(fields.autoid)) reject('/fields/autoid', '台架或 autoid 与已核验输入不符');
   if (typeof fields.title !== 'string' || !fields.title || !Array.isArray(fields.steps) || fields.steps.some((v) => typeof v.text !== 'string')) reject('/fields', '缺少条目标题或步骤原文');
-  const assertions = profile.allowed.filter((v) => Object.values(v.parameters).some((role) => role === 'literal_assertion'));
-  if (assertions.length !== 1 || !runtimeMethod(contract, assertions[0].object, assertions[0].method)) reject('/profile/allowed', '生成器需要唯一的已启用字面断言组合');
+  const defaultAssertion=assertionTarget(contract,profile);
+  if (!defaultAssertion) reject('/profile/allowed', '生成器需要唯一的已启用字面断言组合');
   if (!slots.expects.length) reject('/expects', '至少一条溯源期望才可生成');
-  const assertionSeat = profile.seats.find((v) => v.object === assertions[0].object);
+  const assertionSeat = profile.seats.find((v) => v.object === defaultAssertion!.call.object);
   if (assertionSeat && assertionSeat.ordinal >= profile.device_count) reject('/profile/seats', '断言对象的座位超出预检设备数');
   const identity: Array<string | number> = [profile.workbook.identity_marker, contract.runtimeVersion, contract.pinned.identity, '', ''];
   identity[FORMAT.identity_generator_column - 1] = GENERATOR;
-  identity[FORMAT.identity_recipe_column - 1] = createHash('sha256').update(canonicalJson({ slots, fields: { expected_nodes:selectedExpectedNodes(fields.expected_nodes,slots)??null,command_catalog:fields.command_catalog??null,command_identities:fields.command_identities??null,autoid: fields.autoid, title: fields.title, priority: fields.priority ?? null, steps: fields.steps.map((v) => ({ text: v.text })) }, contract: { runtimeVersion: contract.runtimeVersion, digest: contract.pinned.identity }, profile, plan_run: input.plan_run, build: input.build, generator: GENERATOR }), 'utf8').digest('hex');
+  identity[FORMAT.identity_recipe_column - 1] = createHash('sha256').update(canonicalJson({ slots:sourcePlan(slots), fields: { ...(fields.source_atoms!==undefined?{source_atoms:fields.source_atoms}:{}),expected_nodes:selectedExpectedNodes(fields.expected_nodes,slots)??null,command_catalog:fields.command_catalog??null,command_identities:fields.command_identities??null,autoid: fields.autoid, title: fields.title, priority: fields.priority ?? null,...(blockMeta(slots)?{bed_services:fields.bed_services??null,manifest_sha256:fields.manifest_sha256??null,criteria_review:blockReviewIdentity(fields.criteria_review)}:{}), steps: fields.steps.map((v) => ({ text: v.text })) }, contract: { runtimeVersion: contract.runtimeVersion, digest: contract.pinned.identity }, profile, plan_run: input.plan_run, build: input.build, generator: GENERATOR }), 'utf8').digest('hex');
   const rows: Array<Array<string | number>> = [
     identity,
     [...profile.workbook.header],
@@ -67,12 +70,15 @@ export function generateWorkbook(input: GenerationInput): Uint8Array {
     const seat = profile.seats.find((v) => v.object === step.object);
     if (seat && seat.ordinal >= profile.device_count) reject(`/steps/${i}`, '座位序号超出预检设备数；派发前还须重核实际设备数');
     let g: string; try { g = encodeG(step, gOptions(step.object, step.method, contract, profile)); } catch (e) { return reject(`/steps/${i}/G`, e instanceof Error ? e.message : 'G 无法往返'); }
-    rows.push([i === 0 ? fields.autoid : '', fields.priority ?? '', FORMAT.statement_type, fields.title, step.object, step.method, g]);
+    rows.push([i === 0 ? fields.autoid : '', fields.priority ?? '', FORMAT.statement_type, fields.title, step.object, step.method, g,...(blockMeta(slots)?[step.save_as??'',step.input_register??'']:[])]);
     for (const [k, expect] of slots.expects.entries()) if (expect.after === i + 1) {
-      if (!Object.values(allowed!.parameters).some((v) => v === 'device_cli' || v === 'host_shell')) reject(`/expects/${k}/after`, '期望不能跟在等待或断言之后');
-      if (!hasSingleLineValue(expect.text)) reject(`/expects/${k}/text`, '断言必须是有效单行原文，没有边缘空白、公式前缀或占位符');
-      const text = encodeG({ args: [expect.text], keywords: {} }, { literalAssertion: true });
-      rows.push(['', '', FORMAT.statement_type, expect.text, assertions[0].object, assertions[0].method, text]);
+      if (!blockMeta(slots)&&!Object.values(allowed!.parameters).some((v) => v === 'device_cli' || v === 'host_shell')) reject(`/expects/${k}/after`, '期望不能跟在等待或断言之后');
+      if (!expect.register&&!hasSingleLineValue(expect.text)) reject(`/expects/${k}/text`, '断言必须是有效单行原文，没有边缘空白、公式前缀或占位符');
+      const target=assertionTarget(contract,profile,expect);if(!target)reject(`/expects/${k}`,'缺断言方法声明');
+      const cells=assertionCells(expect,target!);
+      const text=expect.register?'':encodeG({args:[cells.g],keywords:{}},{literalAssertion:true});
+      rows.push(['', '', FORMAT.statement_type, expect.text,target!.call.object,target!.call.method,text,...(blockMeta(slots)?[cells.h,cells.i]:[])]);
+
     }
   }
   if (slots.expects.some((v) => v.after < 1 || v.after > slots.steps.length)) reject('/expects/after', '期望的步骤号越界');

@@ -1,20 +1,25 @@
 {
   "schema": "pack@1",
   "id": "case-review-verify",
-  "version": "1.1.9",
+  "version": "1.1.13",
   "kind": "workflow",
   "title": "测试脑图评审（独立复核）",
   "description": "按团队的复核方法（review-verifier）独立复核 case-review 的初评：逐条处置初评发现、用七个探针找遗漏、质疑等级，给出 PASS、PARTIAL 或 FAIL 和最终等级；只能由与初评不同的会话和模型完成",
+  "dependencies": [
+    {
+      "pack": "mindmap-format"
+    }
+  ],
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "5d6e84e2df68d2dc4fb58547d33b044ab28318165393b60547ff3358a65f8681",
-      "size": 10597
+      "sha256": "76f0cf30f0d1824169d220aff4e856abc194e2832960b977c1e6d5f848ddccc8",
+      "size": 11555
     },
     {
       "path": "checks.json",
-      "sha256": "aa44e9d6c3a8fb052447a4f266207024ec7370511dcfddac2e4a35e177f03c5c",
-      "size": 2223
+      "sha256": "6812689131b45d7b962144adce8603492f3b9b2023959c68ec839d2a12e7638c",
+      "size": 2767
     },
     {
       "path": "examples/start-run.json",
@@ -23,12 +28,12 @@
     },
     {
       "path": "examples/submission.json",
-      "sha256": "e14faceac0accf2d921e790180a811c269524651e89fae6211ba775df8ab1afc",
+      "sha256": "141d347bb6d43e9ceaaefa3a81e89e276282f979c99f230ec07bf2d9f4d92f64",
       "size": 1904
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "52b53d5ce969f960fa703b3870f919ba360a9ced7341af54b2d050dd7b05c338",
+      "sha256": "648123f00b6a5cbe52eef5fa4b6755ea593bf6aee07eb83a92e1570275910893",
       "size": 2389
     },
     {
@@ -52,9 +57,19 @@
       "size": 4642
     },
     {
+      "path": "functions/levels.ts",
+      "sha256": "7cb22aa711b0f5fd9892600b460774e9da268c8959f23f491c75be81d79a93d0",
+      "size": 1002
+    },
+    {
       "path": "functions/projection.ts",
-      "sha256": "30f5f6a7e74009df82ccd80dbbbabb0b92518b41b0d254bb2c0e1fc9ef018a70",
-      "size": 16534
+      "sha256": "f4a2c32a79b1cf141c47a6b8ee7be12f16346261385083d67c09f644fe3222c9",
+      "size": 17715
+    },
+    {
+      "path": "functions/review-scope.ts",
+      "sha256": "57ef1954d1f161543111a2c0f0e059b88afe6e43fb0618bafee100c5e2b9f5cb",
+      "size": 4730
     },
     {
       "path": "functions/subjects.ts",
@@ -68,18 +83,18 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "b4aaf807f97821bb153892f96ab9c18d805bdd565b915b83384d93dd3bc7e1b0",
-      "size": 12391
+      "sha256": "5bc2f336c8317a6dd2b8053fcfadc0cbec0632048dfd5826f9a83d569244a993",
+      "size": 12453
     },
     {
       "path": "functions/verify.ts",
-      "sha256": "ffbf7cd4cbce6582a0fa1e3baa38b6253c389b4a6c8f8377c0029e7af92f1a62",
-      "size": 17469
+      "sha256": "81c93a827965ad2db635df167dcdda4511fe8ff40a8ed5013b8dfbcf82d0b49d",
+      "size": 19066
     },
     {
       "path": "requirements.json",
-      "sha256": "32e46c4e265c96d7ea20cf3e69ad3efffc3844f3d45407e5cd874430aa69e835",
-      "size": 5068
+      "sha256": "701433850d1e3b8a647ce6af6181ce714d6008959e8315d40e177be1a7c63ca0",
+      "size": 5598
     },
     {
       "path": "samples/negative/claims_contradicted.json",
@@ -95,6 +110,11 @@
       "path": "samples/negative/dispositions_twice.json",
       "sha256": "a415ee867ac76ff44054b0e5e08ef380e26b3130df3d627de1e919f4c4db406f",
       "size": 2967
+    },
+    {
+      "path": "samples/negative/scope_conflict.json",
+      "sha256": "c74bf4c9419bd3f92adc8ffd958d987746d70d89cb2b493188d26ef4784d97c8",
+      "size": 337
     },
     {
       "path": "samples/negative/suggestion_empty_part.json",
@@ -122,6 +142,11 @@
       "size": 2765
     },
     {
+      "path": "samples/negative/verdict_level_severity_mismatch.json",
+      "sha256": "e1d8e1958c808a77c0d18e61248fc47f9f08ba4f7697c6e9b12f1e62bd453529",
+      "size": 3382
+    },
+    {
       "path": "samples/negative/verdict_partial_without_change.json",
       "sha256": "4e7044307ce6fc21104f011d748b804370c8cb55f65c831fb5d6691133254632",
       "size": 2757
@@ -133,13 +158,18 @@
     },
     {
       "path": "samples/negative/verdict_pass_inconsistent.json",
-      "sha256": "7aa8428ee9a32f32bdab41fc8e30e077855c4a9718739ef690b88515c0d82f54",
+      "sha256": "f584c937f5a5ab5ed2648fa06f57b3a41dc17d084cf97e3806bb9e438a92becc",
       "size": 3610
     },
     {
       "path": "samples/negative/verdict_pass_location_only.json",
       "sha256": "4b6b50f7822e0b15c02b2a59cdd5cc2fdc34d5a4d94e2ddb84d5ec9cb1ab3e6f",
       "size": 2912
+    },
+    {
+      "path": "samples/negative/verdict_pass_partial.json",
+      "sha256": "742373447f9783951bad9375d890df1feeb5ccb22a755c589e4d97f9c001a370",
+      "size": 2726
     },
     {
       "path": "samples/negative/verdict_pass_unverified.json",
@@ -150,6 +180,11 @@
       "path": "samples/negative/verdict_pass_without_evidence.json",
       "sha256": "ffab04e9fb9dd92fedd1138b592aaba796a6d1f38935c50c62fe1adbc479c66d",
       "size": 1454
+    },
+    {
+      "path": "samples/negative/verdict_severity_missing.json",
+      "sha256": "bb3bff61cb19e5531b90a2f8a13bf74b81a64353afdb32db994b4abc155a73d0",
+      "size": 3326
     },
     {
       "path": "samples/positive/claims_agree.json",
@@ -165,6 +200,11 @@
       "path": "samples/positive/dispositions_nothing.json",
       "sha256": "309521abbcaaf8d4011d98659585ae16708f223794e77c567db8ea4b80178dd2",
       "size": 974
+    },
+    {
+      "path": "samples/positive/scope_frozen.json",
+      "sha256": "7a7ab95fcc6e03f058cfceced6415600980bf732a49be2d172fb8c2a28c8d19f",
+      "size": 1109
     },
     {
       "path": "samples/positive/suggestion_case.json",
@@ -208,8 +248,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "d43546b82ce7574aa34e380c58e5a01c9dd3cbfd91cec0eb8772f5cf14cf3a1b",
-      "size": 7553
+      "sha256": "eff15dffeaf4c38dbe3cd16b840040319a230f64cd7e56426606361d1c0c0a64",
+      "size": 9209
     },
     {
       "path": "tables/command-claims.json",
@@ -223,8 +263,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "14d5de324dd0b2d243b6eebaa590d45a4bdd32944cd1b04b8a74b55f45c782c1",
-      "size": 5156
+      "sha256": "1447025d1f9b5dc194d67a45d5be1e9b3607dd0b6fe58a2f80caef240990e403",
+      "size": 5217
     }
   ]
 }

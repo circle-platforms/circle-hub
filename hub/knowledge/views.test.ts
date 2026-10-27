@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 // The knowledge views as external objects (impact-view@1, facet-view@1, index-view@1) and KnowledgePort.diffEntries,
 // checked against answers computed by hand on two small trees: every change kind, attached entries on both sides, a change
@@ -10,7 +11,7 @@ import { FacetView, ImpactView, IndexView } from '../../contracts/src/views.ts';
 import type { KnownBuild } from '../../contracts/src/product.ts';
 import type { ExternalRead, ExternalReadContext } from '../ports.ts';
 import type { Principal } from '../records/api.ts';
-import { createDefaultRegistry, parserKey, recognize } from '../refs/api.ts';
+import { parserKey, recognize } from '../refs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { createKnowledgeReader, routeKnowledgeViews } from './api.ts';
 import { parseViewId } from './views.ts';

@@ -12,13 +12,16 @@ export const FEEDING_INDEX = {
   retraction: 'knowledge.feeding.retraction',
 } as const;
 
-/** Any of the five object kinds of the layer (the knowledge-structure@1 family minus its non-object records). */
+/** Object kinds of the layer (the knowledge-structure@1 family minus its non-object records). */
 export type KnowledgeStructureObject =
   | { schema: 'fed-case@1'; object: string; product: string; root: string | null; path: string | null; commands?: unknown[]; relations?: Array<{ kind: string; object: string }>; [key: string]: unknown }
   | { schema: 'fed-defect@1'; object: string; product: string; root: string | null; path: string | null; relations?: Array<{ kind: string; object: string }>; [key: string]: unknown }
   | { schema: 'fed-spec@1'; object: string; product: string; root: string | null; path: string | null; relations?: Array<{ kind: string; object: string }>; [key: string]: unknown }
   | { schema: 'fed-build@1'; object: string; product: string; root: string | null; path: string | null; relations?: Array<{ kind: string; object: string }>; [key: string]: unknown }
-  | { schema: 'fed-note@1'; object: string; product: string|null; root: string | null; path: string | null; relations?: Array<{ kind: string; object: string }>; [key: string]: unknown };
+  | { schema: 'fed-note@1'; object: string; product: string|null; root: string | null; path: string | null; relations?: Array<{ kind: string; object: string }>; [key: string]: unknown }
+  | { schema: 'fed-observation@1'; object: string; product: string; root: string; path: string; relations?: Array<{ kind: string; object: string }>; [key: string]: unknown }
+  | { schema: 'fed-procedure@1'; object: string; product: string; root: string; path: string; relations?: Array<{ kind: string; object: string }>; [key: string]: unknown }
+  | { schema: 'fed-pitfall@1'; object: string; product: string; root: string; path: string; relations?: Array<{ kind: string; object: string }>; [key: string]: unknown };
 
 /** The read shape the views consume: a cut of the layer at a frozen offset. */
 export interface FeedingCut {

@@ -44,7 +44,7 @@ describe('the case rule (unified default marked, tagged switch)', () => {
     assert.equal(untagged, 0);
   });
 
-  it('tagged rule: counts untagged nodes written like cases without making them cases, and names them by their selectors', () => {
+  it('tagged rule: counts untagged nodes written like cases without making them cases, and names them by their selectors', async () => {
     const { cases, untagged, warnings, parsed } = casesIn(
       node('r', '根', {}, node('g', '分组', { priority: 1 }, node('u1', '没有标签的用例', { priority: 2 }, leaf('u1e', '期望')), node('u2', '另一个', { priority: 2 }, leaf(null, '期望')), kase('c1', '有标签的用例', ['Function'], leaf('c1e', '期望')))),
       'd1',
@@ -54,18 +54,18 @@ describe('the case rule (unified default marked, tagged switch)', () => {
     assert.equal(untagged, 2);
     const warning = warnings.find((w) => w.code === 'template-gap.untagged_cases');
     assert.deepEqual(warning?.data, { count: 2, nodes: ['n/u1', 'n/u2'] });
-    for (const selector of warning?.data?.nodes as string[]) assert.ok(parsed.locate(selector) !== null, selector);
+    for (const selector of warning?.data?.nodes as string[]) assert.ok((await parsed.locate(selector)) !== null, selector);
     // An untagged priority-2 node that holds a tagged node is a group, not a candidate.
     assert.equal(casesIn(node('r', '根', {}, node('u', '外层', { priority: 2 }, kase('c', '内层'))), 'd1', { caseRule: 'tagged' }).untagged, 0);
   });
 
-  it('a tagged node with the group priority that holds cases is a group; without cases below it is a case (both directions of README deviation 5)', () => {
+  it('a tagged node with the group priority that holds cases is a group; without cases below it is a case (both directions of README deviation 5)', async () => {
     const tagged = (...children: Node[]): Node => node('tg', '带标签的分组', { priority: 1, resource: ['Function'] }, ...children);
     const grouped = casesIn(node('r', '根', {}, tagged(kase('c1', '里面的用例', ['Stress'], leaf('e', '期望')))));
     assert.deepEqual(grouped.records.map((c) => [c.id, c.path]), [['d1:c1', ['根', '带标签的分组']]]);
     const warning = grouped.warnings.find((w) => w.code === 'template-gap.tagged_group');
     assert.deepEqual(warning?.data, { count: 1, nodes: ['n/tg'] });
-    assert.equal(grouped.parsed.locate('n/tg')?.text, '带标签的分组');
+    assert.equal((await grouped.parsed.locate('n/tg'))?.text, '带标签的分组');
     // Removal: with the case below it gone the node becomes a case, so its tag shows a category again.
     const emptied = casesIn(node('r', '根', {}, tagged(leaf('e', '期望'))));
     assert.deepEqual(emptied.records.map((c) => [c.id, c.tags, c.expected]), [['d1:tg', ['Function'], ['期望']]]);

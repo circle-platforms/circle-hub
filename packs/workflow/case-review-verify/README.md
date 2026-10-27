@@ -7,19 +7,43 @@ draft's lineage (`predecessor` = the draft run); its input is the draft's valida
 reference (`rec:`), so the receiver inherits the items and references, not the judgments, and re-checks on its own boundary.
 Model elements A04 (independence), W02 W03 W05, C05 (checks with samples), T02.
 
+## 1.1.12
+
+- Declare `predecessor_access: view`, so another account assigned this pack can use a draft run shared with it together
+  with the shared original. This grants read visibility only, not submission or lease authority. The existing `target`
+  and `draft` predecessor defaults stay unchanged; `suggestions` declares the same independence of the predecessor as
+  the other requirements. `case-review-report` is unchanged: its `from_runs` input and non-independent `overall` do
+  not meet this declaration's publication constraints.
+
+## 1.1.11
+
+- Reissue the A1 type-only import and the merged manifest as a new immutable version. The verification rules are unchanged
+  from 1.1.10.
+
+## 1.1.10
+
+- `workflow.json` now declares `predecessor: "required"`; a verifier cannot start without an accepted draft predecessor.
+  The generic mechanism existed, but this pack had not adopted it.
+- PASS rejects `partial` as well as refutations, new findings and level changes. The final severity band uses only verified,
+  partial and new findings; refuted findings are excluded. These close existing procedural rules rather than add a score.
+- The initial frozen scope is required and carried through a Hub function fact on `final`. Effective recognition parameters
+  are inherited rather than guessed from remaining nodes; an older draft without scope needs a new draft and verification.
+- Independence remains declaration-level: observed sessions, exact model_id and explicit model_family_id. A fork alone does
+  not establish independence and display names never supply a family.
+
 ## The pack
 
 | File | Content |
 | --- | --- |
-| `workflow.json` | inputs `target` (role subject: the same mind map, `agile:mindmap` or `application/json`) and `draft` (role artifact under verification: the draft's validation result as `rec:<digest>`, parsed with json@1); the expected-source parameters and case-rule parameters (`case_rule`, `case_priority`, `group_priority`, `precondition_priority`) of the draft pack, inherited from the predecessor by default; catalog `commands@1`; projection `functions/projection.ts`, expected sources `functions/expected.ts` |
-| `requirements.json` | `verification` (item, independent judgment, independent of the predecessor, accepts the declared independence; checks dispositions, command_claims and verdict; repair rows, two rounds, for every pack check code and `core.catalog.membership_contradicted`), `suggestions` (run, judgment, not required), `final` (run, independent judgment; check verdict) |
-| `checks.json` | `dispositions` (item, `functions/verify.ts#dispositionsCheck`), `command_claims` (item, catalog@1 `tables/command-claims.json` over `functions/subjects.ts#claimSubject`, catalog `commands@1`) and `verdict` (run, `functions/verify.ts#verdictCheck`), all blocking on the artifact under verification |
+| `workflow.json` | `predecessor: "required"` and `predecessor_access: "view"`; inputs `target` (role subject: the same mind map, `agile:mindmap` or `application/json`) and `draft` (role artifact under verification: the draft's validation result as `rec:<digest>`, parsed with json@1); the expected-source parameters and case-rule parameters (`case_rule`, `case_priority`, `group_priority`, `precondition_priority`) of the draft pack, inherited from the predecessor by default; catalog `commands@1`; projection `functions/projection.ts`, expected sources `functions/expected.ts` |
+| `requirements.json` | `verification` (item, independent judgment, independent of the predecessor, accepts the declared independence; checks dispositions, command_claims and verdict; repair rows, two rounds, for every pack check code and `core.catalog.membership_contradicted`), `suggestions` (run, independent judgment, independent of the predecessor, not required), `final` (run, independent judgment; checks verdict and review_scope) |
+| `checks.json` | `dispositions` (item, `functions/verify.ts#dispositionsCheck`), `command_claims` (item, catalog@1 `tables/command-claims.json` over `functions/subjects.ts#claimSubject`, catalog `commands@1`), `verdict` (run, `functions/verify.ts#verdictCheck`) and `review_scope` (run, frozen groups through `functions/review-scope.ts#reviewScopeSubject`), blocking as declared |
 | `slots.schema.json` | item `verification`: codes verified, refuted, partial, new_finding; ranks critical, major, minor; evidence required; data `{ finding?: string, probe?: one of the seven }`; run `suggestions` (code suggestion, ranks critical, major, minor) and `final` (codes PASS, PARTIAL, FAIL; ranks P0-P7; exactly one) |
 | `SKILL.md` | the verifier's procedure (about 2,900 characters): the "break the draft" stance, starting the run, reading the draft findings, the dispositions (no item with a draft finding skipped), the seven probes, unfamiliar commands and command statements, the level challenge, the verdict rules, blocks and slices, the report |
-| `functions/projection.ts`, `expected.ts`, `verify.ts`, `subjects.ts` | this pack's functions |
-| `functions/expected-sources.ts`, `text.ts`, `types.ts`, `common.ts` | copies of the draft pack's modules (a pack imports only inside itself); `common.ts` differs only in the pack name; a test keeps them equal |
+| `functions/projection.ts`, `expected.ts`, `verify.ts`, `subjects.ts`, `review-scope.ts` | this pack's functions |
+| `functions/expected-sources.ts`, `text.ts`, `types.ts`, `common.ts`, `levels.ts`, `review-scope.ts` | copies of the draft pack's modules (a pack imports only inside itself); `common.ts` differs only in the pack name; a test keeps them equal |
 | `tables/codes.json`, `tables/command-claims.json` | every code the functions give, with Chinese when and fix; the catalog table of the verifier's command statements |
-| `samples/` | 24 samples (10 positive, 14 negative) written by `testing/samples.ts`; every check has positive and negative ones |
+| `samples/` | 30 samples (11 positive, 19 negative) written by `testing/samples.ts`; every check has positive and negative ones |
 | `examples/` | a start_run and a submit_result, synthetic, with placeholders |
 
 Not published: `api.ts`, this README, the tests and `testing/` (the samples generator and the end-to-end bed).
@@ -36,7 +60,10 @@ binds, or a validation result bound below a record, whose pointer the references
   never the Hub's facts), each with `reference` (`rec:<record>#/partitions/<p>/<n>/requirements/<r>/claims/<c>`, the value a
   disposition's `data.finding` must name), code, rank, text, location, quotations and commands from the claim's resolutions;
   `fields.draft_level` and the group `{ kind: draft_level, reference, rank, text }` carry the draft level (the run-level
-  judgment of `level`); the group `{ kind: draft }` names the record, the draft run and the counts;
+  judgment of `level`); the group `{ kind: draft }` names the record, the draft run and the counts; the
+  `case_review_scope` group carries the initial Hub-verified source digest, document identity, complete recognition
+  parameters, all expected items of the root or explicit block, and selected slice items. Missing or malformed scope is refused with
+  `draft_scope_missing`; changed items or recognition parameters are refused with `draft_scope_mismatch`;
 - the summary of an item (at most 200 characters) lists its draft findings by code and rank, the draft partition and the path;
 - refusals: `invalid_input`, `draft_invalid` (not a validation result, no record digest, a result of another workflow pack
   than `case-review` (its `locks.pack`), items that are no mind-map nodes, no items), `draft_not_accepted` (nothing to verify),
@@ -59,20 +86,24 @@ as hints), so the verifier can cite it on its own boundary; pass the draft's par
   and `verification` sends `core.catalog.membership_contradicted` back for repair (scenario 3; FAIL exists for inverted
   product semantics, so this run's own statements about the product are checked like the draft's).
 - `verdict` (default run subject: the items with their slot records and the cross-item entries): PASS is refused when a
-  draft finding is refuted (`pass_with_refuted`), a new finding is listed (`pass_with_new_finding`), the final level differs
-  from the draft level (`pass_level_changed`) or a draft finding of any item has no disposition (`pass_with_unverified`: a
-  skipped or uncovered item disposes of none), and it needs a quotation of the verifier's own into the target
-  (`pass_without_evidence`): a quotation whose reference lies in the target, other than the draft's own quotations of it.
+  draft finding is refuted (`pass_with_refuted`), partly correct (`pass_with_partial`), a new finding is listed
+  (`pass_with_new_finding`), the final level differs from the draft (`pass_level_changed`) or a draft finding has no
+  disposition (`pass_with_unverified`), and it needs the verifier's own target quotation (`pass_without_evidence`).
   FAIL needs a refuted draft finding that the draft itself ranked major or critical (`fail_without_major_refutation`).
-  PARTIAL needs a new finding, a refuted or partly correct draft finding, or a level change (`partial_without_change`). So
-  every verifier has a consistent verdict: refuting only minor findings with the level kept is a PARTIAL. Without a verdict,
-  or without a draft level to compare where the rule needs one, the check refutes with verdict_missing or level_missing and a repair action; a draft without a level cannot start verification.
-  The verdict check appends the case rule summary line (`用例规则：...`) to its statement and includes `{ case_rule, marked_only }` in its `data`.
+  PARTIAL needs a new finding, a refuted or partly correct draft finding, or a level change (`partial_without_change`).
+  The final level is checked against the worst rank of verified, partial and new findings only; refuted findings no longer
+  set the band. critical permits P6-P7, major P3-P5, minor P0-P2. The check constrains an interval, never assigns a grade
+  from finding counts or text. It also appends the case-rule summary and `{ case_rule, marked_only }` in its `data`.
+
+`review_scope` carries the initial projection's frozen source digest, document identity, effective recognition parameters,
+whole-document expected items and selected block items through a Hub function fact on `final`. Missing or invalid scope
+keeps the result unverifiable; it is not an empty or complete coverage claim.
 
 Independence (A04): the requirements `verification` and `final` are independent of the predecessor and accept the
-independence the client declares (A04 R[4]): a submission from a session of the draft's lineage, or from a declared model of
-the same family (names that share a word), is not independent and leaves the requirement unsatisfied; another session with
-another model satisfies it, marked "independence declared by the client".
+independence the client declares (A04 R[4]): an observed shared session, exactly equal declared model_id, or exactly equal
+model_family_id is not independent. Missing sessions or family declarations remain unknown. The Hub never infers a family
+from words, case, width, a version or a hosting prefix in a display name; a fork or a fresh context alone is not an
+independent judgment identity. This is declaration-level evidence, not a physical or cryptographic identity proof.
 
 ## How to test
 
@@ -123,9 +154,6 @@ location only, with a copied quotation, FAIL without a refuted major point, PART
 
 ## Deviations from the brief
 
-- **Predecessor required at start_run** cannot be declared: `workflow@1` has no such field and the engine starts a run
-  without a predecessor (its independence is then unknown and the requirements stay unsatisfied, A04 R[5]). SKILL.md tells
-  the verifier to give it. See Needs.
 - **The level challenge and the expected result of a suggestion** are written in the statements: cross-item entries carry no
   `data` (see the draft pack's README).
 - **"A PASS needs an evidence reference of its own that resolves in the target"** is judged by the run-level verdict check
@@ -133,9 +161,9 @@ location only, with a copied quotation, FAIL without a refuted major point, PART
   not over the `ResolvedEvidence` of an item subject: an item check does not see the verdict, which is a cross-item entry. It
   is read strictly (decision 7): only a quotation into the target that is not the draft's own counts, not a location or a
   ground.
-- **Groups reach the checks through the item fields**: a check function gets no `context.groups` (only subject builders get
-  the run context), and the run subject builder gets no slot records or cross-item entries; the verdict check therefore uses
-  the default run subject and reads the draft level from `fields.draft_level`.
+- **Groups reach checks through subject builders**: `reviewScopeSubject` reads the frozen group for the scope check; the
+  default run subject used by `verdict` instead reads the draft level from `fields.draft_level`. This needs no new core
+  context on a check function.
 
 ## Limits
 
@@ -144,15 +172,11 @@ location only, with a copied quotation, FAIL without a refuted major point, PART
 - A block of a large document is verified as its own pair of runs; the overall verdict across blocks (the worst one) and
   the Chinese report are computed and checked by `case-review-report` after every review, including a single block.
 - The verifier reads the full draft findings through `get_nodes` on the run record's item fields or `resolve_reference` on
-  their references; the item lines show only codes and ranks.
+  their references; the item lines show only codes and ranks. Drafts and verification results without the frozen scope are
+  not accepted as proof of whole-document coverage; redo them with current packs instead of inferring a scope from prose.
 
 ## Needs from other packages
 
-- **contracts / runs-engine**: a workflow declaration that a predecessor is required (for example `predecessor: required`
-  in `workflow@1`), so that start_run refuses a verification without one instead of starting a run that can never be
-  independent.
-- **runs-engine**: the run context (with `groups`) in the input of check functions, not only of subject builders; and the
-  slot records and cross-item entries in `RunSubjectInput`, so a run subject builder can see what it judges.
 - **contracts**: `data` on cross-item entries (see the draft pack's README).
 
 ## 生成词表与包版本
@@ -177,9 +201,11 @@ data.source_facts 并列原引用为根据；不重判、不改生产者或归�
 
 本包的跳过不是完成：handling=skipped 必须附 reason，列入待续做清单，按回执继续本条目或以当前运行为前驱续做；不能因跳过而省略发现、处置、结论或等级。缺判定时按修正说明补齐并重交；初评缺等级、报告缺块或有未交付条目时先修复所列块或条目，再用新回执重开后续运行。
 
-## Predecessor result default
+## Predecessor visibility
 
-The `draft` slot explicitly declares `default_from_predecessor: {pack: "case-review"}`. A verifier may omit it when supplying `predecessor`; the Hub binds that run's newest accepted submitted validation record and discloses the frozen `input_defaults` provenance in both the start reply and run record. Newer refusals or system deliveries do not replace the eligible submitted result. No accepted submission refuses start with the existing schema code and a concrete resubmit-then-review action. Explicit draft references retain the package's existing validation, including `draft_invalid` and `draft_not_accepted`. This adds no read or predecessor authority. Other artifact slots opt in separately; the compiler's binary workbook slot is unchanged.
+`predecessor_access: "view"` lets a run's runner, an administrator, or an account with a current share of that run use it as the draft predecessor. Sharing the run does not share its original artifacts: `target` must also name an original the reviewer may read, and `draft` must name the accepted validation result record. Without a current run share, the same neutral `SOURCE_UNAVAILABLE` shape is returned at `/predecessor`.
+
+The `draft` slot retains `default_from_predecessor: {pack: "case-review"}`: a verifier may omit it when supplying `predecessor`; the Hub binds that run's newest accepted submitted validation record and discloses the frozen `input_defaults` provenance in both the start reply and run record. Newer refusals or system deliveries do not replace the eligible submitted result. Explicit draft references retain the package's existing validation, including `draft_invalid` and `draft_not_accepted`. Read-only predecessor visibility does not grant submission or lease authority and does not make a shared account an author of the draft.
 
 R6（所有者 2026-10-24）：声明 famx-directory@1，产品根精确等于产品 names 成员；版本层为三位字母数字码（至少一位数字）、冒号、完整 dotted version，下一层为同版本加列车后缀，再下一层为非空单目录段模块（允许“测试/bug/回归”等字面内容）。不从正文版本或活动词推断层级。缺层、重名或语法外写明缺失身份，下一步由包作者补语法或作者调整目录后重产。famx-id-fields@1 只接受整字段 bug:编号列表 或 story:编号列表（逗号分隔非零十进制），不从标题散文抽取；未声明须作者补字段或模型逐字引用。famx-assets@1 只识别完整 Rel_FAMX/FAMY_数字构建名加 _command-tree.xml、_bugs-fixed.json、_mib.txt/mib/my 或声明的镜像扩展名，其余保留原链接但不认角色。版本线前导零与末尾 .0 按 U24 同线，构建 id 不变。页面只认完整声明的 mainline/platform、patch数字 或 customer_标识结构；无兜底客户类。旧关键词结果原样保留，新包重产新根并沿原运行建立血缘。本次未运行验证。
 

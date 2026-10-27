@@ -1,3 +1,4 @@
+import {installMindmapFixture} from '../../../hub/testing/skills.ts';
 import type { PermissionRole } from '../../../contracts/generated/vocabulary.ts';
 // Test harness of the case-location pack against the real Hub parts (not part of the pack): a records kit in a temporary
 // PostgreSQL, the real pack registry (publish check included) and run engine, a synthetic product pack of a line named FAMX
@@ -192,6 +193,7 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
     const bob = await kit.principals.createUser(admin, '乙');
     await kit.authorizations.grantPublishRight(admin, alice.id);
     const registry = createPackRegistry({ records: kit, extractDir: join(root, 'extracted'), now });
+    const parsers=await installMindmapFixture(registry,kit,admin);
     const published = await registry.publish(alice, await stage(join(root, 'case-location')));
     if (!published.ok) throw new Error(`case-location was not published: ${JSON.stringify(published.problems, null, 1)}`);
     const product = await registry.publish(alice, (await writePack(join(root, 'famx'), PRODUCT)).dir);
@@ -201,6 +203,7 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
     const external = new FakeExternal(kit.artifacts);
     const logs: AdminLogEntry[] = [];
     const service = createRunsService({
+      parsers,
       records: kit,
       workflows: createWorkflowStore(registry),
       packs: createPacksPort(registry),

@@ -225,10 +225,26 @@ export class ResourceRegistry {
     const { note, credentials: given, unset_settings, ...rest } = changes;
     const settings = {...current.settings, ...changes.settings};
     for (const key of unset_settings ?? []) delete settings[key];
+    let allowPlaintext = changes.allow_plaintext;
+    if (changes.origins !== undefined && allowPlaintext === undefined) {
+      const kept = new Set<string>();
+      for (const [role, oldUrl] of Object.entries(current.origins)) {
+        try {
+          const oldOrigin = new URL(oldUrl).origin;
+          if (current.allow_plaintext.includes(oldOrigin)) {
+            if (changes.origins[role] === oldUrl) {
+              kept.add(oldOrigin);
+            }
+          }
+        } catch {}
+      }
+      allowPlaintext = [...kept];
+    }
     const record = this.#validated(
       {
         ...current,
         ...rest,
+        allow_plaintext: allowPlaintext ?? current.allow_plaintext,
         settings,
         system_pack: bound.system_pack,
         system_pack_digest: bound.system_pack_digest,

@@ -1,0 +1,176 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "governing": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "spec",
+              "safety_defect_projection"
+            ]
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authority": {
+            "const": "product-declared"
+          }
+        },
+        "required": [
+          "kind",
+          "ref",
+          "version",
+          "authority"
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 2048
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "found_by": {
+            "type": "string",
+            "minLength": 1
+          },
+          "signing_authority": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ref",
+          "found_by",
+          "signing_authority"
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 2048
+    },
+    "states": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "atom": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "settled",
+              "underdetermined",
+              "conflict",
+              "missing_prerequisite"
+            ]
+          },
+          "adjudicated_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "exit": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "type": "string"
+                  },
+                  "object": {
+                    "type": "string"
+                  },
+                  "owner": {
+                    "type": "string"
+                  },
+                  "due": {
+                    "type": "string"
+                  }
+                },
+                "required": []
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0,
+            "maxItems": 2048
+          },
+          "prerequisites": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0,
+            "maxItems": 2048
+          },
+          "conflict_field": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "atom",
+          "state",
+          "adjudicated_by",
+          "reason",
+          "exit"
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 2048
+    }
+  },
+  "required": [
+    "governing",
+    "candidates",
+    "states"
+  ],
+  "title": "recompose-sources@1"
+}

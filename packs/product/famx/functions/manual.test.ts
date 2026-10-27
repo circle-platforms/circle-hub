@@ -225,22 +225,22 @@ describe('entries from the converted manual', () => {
     assert.deepEqual(fromMarkdown.warnings.filter(warning=>!warning.startsWith('适用条件')), ['有 1 段写成命令签名的文字不能作为命令锚点（括号不配对、转义多余、首词不是已知命令或斜杠头），这些段落及其后的块不归到前一条命令，挂在所在章节节点']);
   });
 
-  it('gives fragments the markdown@1 document locates, with the same text', () => {
+  it('gives fragments the markdown@1 document locates, with the same text', async () => {
     const decoder = new TextDecoder();
     for (const entry of fromMarkdown.entries) {
       // A shared table entry cites one fragment per line (the range picks the line out of the block's text).
-      const located = entry.fragments
+      const located = (await Promise.all(entry.fragments
         .filter((fragment,index)=>index===0||!fragment.applicability)
-        .map((fragment) => {
-          const text = md.locate(fragment.selector)?.text ?? '';
+        .map(async (fragment) => {
+          const text = (await md.locate(fragment.selector))?.text ?? '';
           const range = (fragment as { range?: [number, number] }).range;
           return range === undefined ? text : decoder.decode(new TextEncoder().encode(text).slice(range[0], range[1]));
-        })
+        })))
         .join('\n');
       assert.ok(located !== '', entry.fragments[0].selector);
       if (entry.data.form === 'text') assert.equal(located.replace(/\n+$/, '').trim(), entry.statement.trim());
     }
-    for (const item of fromMarkdown.unplaced) assert.equal(md.locate(item.fragment.selector)?.text.trim(), item.text);
+    for (const item of fromMarkdown.unplaced) assert.equal((await md.locate(item.fragment.selector))?.text.trim(), item.text);
   });
 
   it('keeps NUL bytes out of the entries', () => {
@@ -325,10 +325,10 @@ describe('entries from the manual command catalog', () => {
     for (const entry of result.entries) assert.ok(!/["“”]/.test(entry.path ?? ''), entry.path ?? '');
   });
 
-  it('gives fragments the json@1 document locates', () => {
-    for (const entry of fromCatalog.entries) assert.ok(catalogDocument.locate(entry.fragments[0].selector), entry.fragments[0].selector);
-    for (const item of fromCatalog.unplaced) assert.ok(catalogDocument.locate(item.fragment.selector), item.fragment.selector);
-    const verbatim = catalogDocument.locate('p/signatures/1/signature_verbatim');
+  it('gives fragments the json@1 document locates', async () => {
+    for (const entry of fromCatalog.entries) assert.ok((await catalogDocument.locate(entry.fragments[0].selector)), entry.fragments[0].selector);
+    for (const item of fromCatalog.unplaced) assert.ok((await catalogDocument.locate(item.fragment.selector)), item.fragment.selector);
+    const verbatim = (await catalogDocument.locate('p/signatures/1/signature_verbatim'));
     assert.equal(canonicalSignature(verbatim?.text ?? ''), fromCatalog.entries[1].statement);
   });
 
@@ -875,17 +875,17 @@ describe('command tables split by row', () => {
     assert.equal(rest.data.command_literals, undefined, 'a prose cell claims no command, so it can create no drift');
   });
 
-  it('cites the row lines of the table block, locatable by the parser', () => {
+  it('cites the row lines of the table block, locatable by the parser', async () => {
     const document = markdownDocument(TABLE);
     const result = produceManualEntries(document.model as MarkdownModel, null, { catalog });
-    const lines = (selector: string): string[] => (document.locate(selector)?.text ?? '').split('\n');
+    const lines = async (selector: string): Promise<string[]> => ((await document.locate(selector))?.text ?? '').split('\n');
     for (const entry of result.entries) {
       for (const fragment of entry.fragments) {
-        const located = document.locate(fragment.selector);
+        const located = (await document.locate(fragment.selector));
         assert.ok(located, fragment.selector);
         if (fragment.range === undefined) continue;
         const text = sliceBytes(located.text, fragment.range);
-        assert.ok(lines(fragment.selector).includes(text), `${entry.path}: ${text}`);
+        assert.ok((await lines(fragment.selector)).includes(text), `${entry.path}: ${text}`);
       }
     }
   });
@@ -925,15 +925,15 @@ describe('tree-independent content', () => {
   const TREE_A = '<commands><scope type="global"><menu name="demo"><menu name="pool"><item name="add" help_string="a"><arguments></arguments></item></menu><menu name="route"><item name="static" help_string="s"><arguments></arguments></item></menu></menu></scope></commands>';
   const TREE_B = '<commands><scope type="global"><menu name="demo"><menu name="route"><item name="static" help_string="s"><arguments></arguments></item></menu></menu></scope></commands>';
 
-  it('preserves every source fragment across trees while only verified commands become definitions', () => {
+  it('preserves every source fragment across trees while only verified commands become definitions', async () => {
     const document = markdownDocument(Buffer.from(TEXT));
     const a = produceManualEntries(document.model, null, {catalog: commandCatalog(xml(TREE_A)).catalog});
     const b = produceManualEntries(document.model, null, {catalog: commandCatalog(xml(TREE_B)).catalog});
-    const sources = (result: ManualResult) => [...new Set(result.entries.flatMap(entry => entry.fragments.map(fragment => {
-      const located = document.locate(fragment.selector); assert.ok(located, fragment.selector);
+    const sources = async (result: ManualResult) => [...new Set(await Promise.all(result.entries.flatMap(entry => entry.fragments.map(async fragment => {
+      const located = (await document.locate(fragment.selector)); assert.ok(located, fragment.selector);
       return canonicalJson({selector:fragment.selector,range:fragment.range,text:located.text});
-    })))].sort();
-    assert.deepEqual(sources(a), sources(b));
+    }))))].sort();
+    assert.deepEqual(await sources(a), await sources(b));
     assert.ok(a.entries.some(entry => entry.data.form === 'signature' && entry.path === '/commands/demo/pool/add'));
     assert.ok(!b.entries.some(entry => entry.path === '/commands/demo/pool/add'));
     assert.ok(b.entries.some(entry => entry.data.signature_rejected === true && entry.statement.includes('demo pool add')));

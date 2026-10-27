@@ -7,12 +7,12 @@
 ## 1. 开始运行
 
 - 这个任务包不绑定产品线：不要给 start_run 的 product、version、build，也不要写进 parameters。
-- verifications 每块一条：写那次复核的运行编号，或省略。省略时 Hub 按 predecessor 血缘里的 case-review-verify 运行缺省。Hub 把该运行的已受理结果解析成 rec:，并在回答里写明。不要问人要摘要。运行不存在、没有已受理提交、或不是 case-review-verify 运行时，按修正说明改。仍可直接写复核 submit_result 回执中的 rec:<摘要>，不带 # 指针。
+- verifications 每块一条：写那次复核的运行编号，或省略。省略时 Hub 按 predecessor 血缘里的 case-review-verify 运行缺省。Hub 把该运行的已受理结果解析成 rec:，并在回答里写明。不要问人要摘要。运行不存在、没有已受理提交、或不是 case-review-verify 运行时，按修正说明改。仍可直接写复核 submit_result 回执中的 rec:<摘要>，不带 # 指针。每块都必须带初评冻结、复核承接的完整识别范围；旧记录没有这份 Hub 事实时，用当前版本重做初评和复核，不把已有块当作整份覆盖。
 - target 必填，绑定各块评审的同一份脑图；被拒时按修正说明改用 src:<摘要>。
-- precondition_priority 与初评一致，默认 3；初评关闭这条规则时传 null。
-- 同一用例只能由一块交付，某块未完成但另一块已交付时以已交付者为准。
-- 若摘要指出缺结论、缺等级、缺条目或缺初评 Hub 核对快照，先按它写明的动作补齐：
-  把那块复核完，或把缺的条目重新初评、复核，再开终稿；旧快照需用新版复核。不要猜出一个结论。
+- 所有块的 case_rule、case_priority、group_priority、precondition_priority 和整份预期条目必须相同；终稿不写时可继承 precondition_priority，显式写出时必须等于冻结值（默认 3，关闭时为 null）。
+- Hub 对账预期、已交付、重叠和遗漏集合。未进入任何块的预期条目也算遗漏；同一用例或同一源节点只能由一块交付，某块未完成但另一块已交付时以已交付者为准。
+- 若摘要指出缺结论、缺等级、缺条目、识别范围或初评 Hub 核对快照，先按它写明的动作补齐：
+  把那块复核完，或把缺的条目重新初评、复核，再开终稿；不要猜出一个结论。完整对账计数也可读 #/items/0/fields/review_coverage。
 
 终稿条目在条目列表第一个（序号 0）。整体结论和等级直接照抄它的摘要：
 整体结论码 <码>、等级 <等级>（最差那块的，照抄）。Hub 按各块取最差，初评方不另算或改判。
@@ -20,7 +20,7 @@
 ## 2. 提交简短评审意见
 
 所有投影条目都按回执列出的编号处理；没有条目槽位时写 slots: {}。
-cross_item 写一条结论主张：nature 为 judgment，code 和 rank 照抄整体结论和等级，
+cross_item 必须恰好一条结论主张：nature 为 judgment，code 和 rank 照抄整体结论和等级，不能再写第二个 PASS、PARTIAL 或 FAIL；
 statement 写简短的总体意见和等级理由。grounds 不要求逐条引用发现，可以为空。
 证据缺口可另列 code=gap，rank 仍照抄所属报告的整体等级，不另给缺口定级；写明缺什么事实和下一步。能取得的原件先重读、核对，模型没完成的工作先补完，不能当作已完成的缺口。不要再提交 suggestion 主张，建议已由复核方提交并在表里原样列出。
 

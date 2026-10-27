@@ -10,6 +10,7 @@ import {retryAfterMs} from './read-retry.ts';
 // is the login exchange is refused: only the login handling sends it. Messages and log events carry route ids, codes and
 // sizes, never a header value, a host or a body.
 import { createHash } from 'node:crypto';
+import { posix } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   DEFAULT_MEDIA_TYPES,
@@ -19,6 +20,7 @@ import {
   type ResourceLimits,
   type RouteDeclaration,
 } from '../../contracts/src/resources.ts';
+import { mediaTypeEssence } from '../refs/api.ts';
 import { ConnectorError, type ErrorLayer } from './errors.ts';
 import { Redactor } from './redact.ts';
 import { compileRoutes, matchRoute, splitPath, type CompiledRoute } from './routes.ts';
@@ -75,6 +77,7 @@ export interface HttpExchange {
   /** The full URL. For the connectors only: never handed to pack functions, never put into a message. */
   url: string;
   status: number;
+  serverMediaType: string;
   mediaType: string;
   etag: string | null;
   bytes: Uint8Array;
@@ -182,6 +185,30 @@ export function decodeText(bytes: Uint8Array, mediaType: string): string {
   }
   const text = decoder.decode(bytes);
   return text.startsWith('﻿') ? text.slice(1) : text;
+}
+
+/**
+ * Resolves the effective media type for an exchange.
+ * An explicitly declared media type on the server response wins unless the server returned
+ * application/octet-stream or omitted Content-Type, in which case a matching extension mapping
+ * from the route declaration takes precedence over the generic default.
+ */
+export function effectiveMediaType(rawMediaType: string, route: RouteDeclaration, url: URL): string {
+  const isOctetStream = rawMediaType !== '' && mediaTypeEssence(rawMediaType) === 'application/octet-stream';
+  const isMissing = rawMediaType === '';
+  if ((isOctetStream || isMissing) && route.media_types_by_extension) {
+    let pathname = url.pathname;
+    try {
+      pathname = decodeURIComponent(url.pathname);
+    } catch {
+      // keep raw pathname
+    }
+    const ext = posix.extname(pathname).toLowerCase();
+    if (ext !== '' && Object.hasOwn(route.media_types_by_extension, ext)) {
+      return route.media_types_by_extension[ext];
+    }
+  }
+  return isMissing ? DEFAULT_MEDIA_TYPES[route.response] : rawMediaType;
 }
 
 /** Splits a base URL into its origin and its path prefix (no trailing slash; empty for the root). */
@@ -350,7 +377,8 @@ export class HttpSource {
       url: url.href,
       ...(raw.location===undefined?{}:{location:raw.location}),
       status: raw.status,
-      mediaType: raw.mediaType === '' ? DEFAULT_MEDIA_TYPES[route.response] : raw.mediaType,
+      serverMediaType: raw.mediaType === '' ? DEFAULT_MEDIA_TYPES[route.response] : raw.mediaType,
+      mediaType: effectiveMediaType(raw.mediaType, route, url),
       etag: raw.etag,
       ...(raw.retryAfterMs===undefined?{}:Number.isNaN(raw.retryAfterMs)?{retryAfterInvalid:true}:{retryAfterMs:raw.retryAfterMs}),
       bytes: raw.bytes,

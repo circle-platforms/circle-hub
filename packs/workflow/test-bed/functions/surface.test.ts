@@ -5,7 +5,7 @@ import { factsFields } from './conclude.ts';
 import { bedOutcomes } from './check-bed.ts';
 import { parseManifest } from './manifest.ts';
 import project from './project.ts';
-import { judgeBedSurface, parseBedSurface } from './surface.ts';
+import { judgeBedSurface, parseBedSurface, toCIDR } from './surface.ts';
 
 const declaration = JSON.parse(readFileSync(new URL('../../../product/famx/tables/bed-surface.json', import.meta.url), 'utf8')) as unknown;
 const bed = {
@@ -65,6 +65,40 @@ describe('bed surface declaration', () => {
     assert.equal(judged.exits[0]?.owner, '合成管理员');
     assert.match(judged.exits[0]?.action ?? '', /确认/);
     assert.equal(judged.exits[0]?.deadline, '重新派发之前');
+  });
+});
+
+describe('address prefix forms', () => {
+  it('treats an IPv6 address plus a prefix length as the same CIDR and leaves IPv4 masks unchanged', () => {
+    assert.equal(toCIDR('2001:db8::70 64'), toCIDR('2001:db8::70/64'));
+    assert.equal(toCIDR('2001:db8::70 64'), '2001:db8::70/64');
+    assert.equal(toCIDR('2001:db8::70 129'), null);
+    assert.equal(toCIDR('2001:db8::70 6a'), null);
+    assert.equal(toCIDR('192.0.2.1 64'), null);
+    assert.equal(toCIDR('192.0.2.1/24'), '192.0.2.1/24');
+    assert.equal(toCIDR('192.0.2.1 255.255.255.0'), '192.0.2.1/24');
+  });
+
+  it('does not call a listed IPv6 address residue when the echo writes the prefix as a separate length', () => {
+    const declaration = {
+      schema: 'bed-surface@1',
+      probes: [{
+        id: 'addresses',
+        seat: 'synthetic-0',
+        parser: 'text_table',
+        header: 'address',
+        fields: [{ name: 'address', start: 0, cidr: true, role: 'residue', from: 'interfaces' }],
+        empty: { kind: 'header_only', header: 'address' },
+        cleanups: [{ residue: 'address', command: 'synthetic-clear-row', granularity: 'row', confirm: 'none', channel: 'single_shot' }],
+      }],
+    };
+    const listed = { name: 'bed-a', devices: [{ ipv4: ['192.0.2.1/24'], ipv6: ['2001:db8::70/64'] }] };
+    const judged = judgeBedSurface(declaration, listed, [
+      { id: 'addresses', value: { output: 'address\n2001:db8::70 64\n192.0.2.1/24\n' } },
+    ]);
+    assert.equal(judged.ok, true);
+    if (!judged.ok) return;
+    assert.deepEqual(judged.residues, []);
   });
 });
 

@@ -96,7 +96,7 @@ test('an accepted submission: terminals, satisfaction, attribution, partitions, 
   assert.ok(ValidationResult.safeParse(result).success);
   assert.deepEqual(answer.counts, partitionCountsOf(result.partitions));
   assert.deepEqual(answer.counts, { delivered: 4, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
-  assert.deepEqual(result.locks, { pack: run.pack, pack_digest: run.pack_digest, root: ROOTS.meadow329 });
+  assert.deepEqual(result.locks, { skills:[],pack: run.pack, pack_digest: run.pack_digest, root: ROOTS.meadow329 });
   // c1: every fact passes; the independent judgment has no predecessor, so its independence is unknown (A04 R[5])
   const c1 = itemOf(result, ITEM.c1);
   assert.equal(c1.partition, 'delivered');

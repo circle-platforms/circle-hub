@@ -6,6 +6,10 @@
       "type": "string",
       "const": "workflow@1"
     },
+    "incremental_submissions": {
+      "description": "Opt-in: preserving all previous material while first filling empty slots does not charge unknown-only requirements as repairs; edits, removals and actual violations keep normal budgets",
+      "type": "boolean"
+    },
     "predecessor_access": {
       "description": "Read-only predecessor visibility; never grants mutation or lineage lease rights",
       "type": "string",

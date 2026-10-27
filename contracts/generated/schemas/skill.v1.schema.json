@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "skill@1"
+    },
+    "parsers": {
+      "maxItems": 64,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "migration_test": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "parser": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*@(?:0|[1-9][0-9]*)$"
+          },
+          "media_types": {
+            "minItems": 1,
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "maxBytes": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 67108864
+              },
+              "maxDepth": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 10000
+              },
+              "maxNodes": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 1000000
+              },
+              "maxAttributes": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "maxSelectorChars": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "maxBytes",
+              "maxDepth",
+              "maxNodes"
+            ],
+            "additionalProperties": false
+          },
+          "function": {
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+              },
+              "export": {
+                "type": "string",
+                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+              }
+            },
+            "required": [
+              "module"
+            ],
+            "additionalProperties": false
+          },
+          "locate": {
+            "type": "object",
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^functions\\/[A-Za-z0-9_.\\/-]+\\.ts$"
+              },
+              "export": {
+                "type": "string",
+                "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+              }
+            },
+            "required": [
+              "module"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "parser",
+          "media_types",
+          "limits",
+          "function"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "parsers"
+  ],
+  "additionalProperties": false
+}

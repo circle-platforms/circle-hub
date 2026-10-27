@@ -1,0 +1,790 @@
+{
+  "id": "record_positive",
+  "source": "author",
+  "check": "record",
+  "subject": {
+    "item": "n/case-1",
+    "fields": {
+      "case_id": "orbit-case-0001",
+      "source_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a",
+      "node": "n/case-1",
+      "atoms": [
+        {
+          "id": "a1",
+          "kind": "action",
+          "text": "widget health interval pool1 5",
+          "content": "widget health interval pool1 5",
+          "selector": "n/case-1",
+          "reference": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/case-1",
+          "node_id": "case-1",
+          "start": 0,
+          "end": 30,
+          "labels": [],
+          "explicit_labels": [],
+          "number_label": null,
+          "after": []
+        },
+        {
+          "id": "a2",
+          "kind": "expectation",
+          "text": "show health 显示 pool1 的探测间隔为 5 秒",
+          "content": "show health 显示 pool1 的探测间隔为 5 秒",
+          "selector": "n/expected-1",
+          "reference": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1",
+          "node_id": "expected-1",
+          "start": 0,
+          "end": 31,
+          "labels": [],
+          "explicit_labels": [],
+          "number_label": null,
+          "after": [
+            "a1"
+          ]
+        }
+      ],
+      "missing": []
+    },
+    "data": {
+      "schema": "recompose-record@1",
+      "case": {
+        "id": "orbit-case-0001",
+        "source_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a",
+        "source_path": "tests/fixtures/recompose/author-pass.km.json",
+        "node": "n/case-1"
+      },
+      "contract": {
+        "intent": {
+          "text": "widget health interval pool1 5",
+          "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/case-1",
+          "verbatim": true
+        },
+        "method": {
+          "kind": "declared",
+          "text": "show health 显示 pool1 的探测间隔为 5 秒",
+          "sources": [
+            "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1"
+          ],
+          "basis": "作者在脑图内写明观察命令与判定点（同一节点的逐字文本）；不需要外部来源重组"
+        },
+        "expectation": {
+          "text": "show health 显示 pool1 的探测间隔为 5 秒",
+          "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1",
+          "verbatim": true
+        }
+      },
+      "expectation_slots": [
+        {
+          "slot": "e1",
+          "knowledge_location": "has_verification_knowledge",
+          "evidence": [
+            "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1"
+          ],
+          "proposal": null,
+          "atom": "a2"
+        }
+      ],
+      "coverage": {
+        "author_atoms": [
+          "a1",
+          "a2"
+        ],
+        "mapped": {
+          "a1": [
+            "e1"
+          ],
+          "a2": [
+            "e1"
+          ]
+        },
+        "unmapped": []
+      },
+      "atoms": [
+        {
+          "id": "a1",
+          "kind": "action",
+          "text": "widget health interval pool1 5",
+          "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/case-1",
+          "span": [
+            0,
+            30
+          ]
+        },
+        {
+          "id": "a2",
+          "kind": "expectation",
+          "text": "show health 显示 pool1 的探测间隔为 5 秒",
+          "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1",
+          "span": [
+            0,
+            31
+          ]
+        }
+      ],
+      "sources": {
+        "governing": [
+          {
+            "kind": "spec",
+            "ref": "src:f13eb55d7393200cf252623fbc638dc55d62d9c568f4ad036a478eaa6d4da5f1",
+            "version": "1.0",
+            "authority": "product-declared"
+          }
+        ],
+        "candidates": [],
+        "states": [
+          {
+            "atom": "a1",
+            "state": "settled",
+            "adjudicated_by": "rec:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "reason": "已受理裁定 twin/adjudication.json 确认一致性",
+            "exit": {
+              "action": "交编写阶段消费已受理重组记录",
+              "object": "a1",
+              "owner": "编写模型",
+              "due": "编写提交之前"
+            }
+          },
+          {
+            "atom": "a2",
+            "state": "settled",
+            "adjudicated_by": "rec:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "reason": "同上",
+            "exit": {
+              "action": "交编写阶段消费已受理重组记录",
+              "object": "a2",
+              "owner": "编写模型",
+              "due": "编写提交之前"
+            }
+          }
+        ]
+      },
+      "ledgers": {
+        "original": [
+          {
+            "atom": "a1",
+            "text": "widget health interval pool1 5",
+            "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/case-1",
+            "span": [
+              0,
+              30
+            ]
+          },
+          {
+            "atom": "a2",
+            "text": "show health 显示 pool1 的探测间隔为 5 秒",
+            "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1",
+            "span": [
+              0,
+              31
+            ]
+          }
+        ],
+        "adapted": [
+          {
+            "atom": "a1",
+            "action": "parameter_change",
+            "equivalence_reason": "命令树里 widget health interval 的参数 2 声明为整数类型（产品包声明位置）",
+            "load_bearing": true,
+            "conditions": [
+              "间隔值落在声明范围内",
+              "观察对象与配置对象是同一个 pool"
+            ],
+            "text": "widget health interval pool1 5",
+            "commands": [
+              "widget health interval pool1 5"
+            ],
+            "equivalence_refs": [
+              "src:eb4aabf53cc3b789e2912c8531e8daec1e09cbd0f8a8a5dc74580a4550326ee5/json@1/p/parameters/0"
+            ],
+            "source_of_value": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/case-1",
+            "authority": "src:eb4aabf53cc3b789e2912c8531e8daec1e09cbd0f8a8a5dc74580a4550326ee5/json@1/p/parameters/0"
+          }
+        ],
+        "concretizations": [],
+        "rebindings": []
+      },
+      "status": "complete",
+      "unknowns": []
+    },
+    "context": {
+      "run": "run_synthetic_recompose",
+      "predecessor": null,
+      "product": "orbit",
+      "product_pack_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "line": "10.8",
+      "build": "Rel_ORBIT_10_8_0_30",
+      "root": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "names": [
+        "ORBIT",
+        "COMET"
+      ],
+      "parameters": {},
+      "groups": []
+    },
+    "authority_run": {
+      "external": null,
+      "meta": {
+        "kind": "run",
+        "record": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "model": {
+        "kind": "run",
+        "body": {
+          "run": "run_synthetic_recompose-authority",
+          "pack": "recompose-authority@1.0.1",
+          "pack_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "product": "orbit",
+          "runner": "synthetic-reviewer",
+          "items": [],
+          "groups": [
+            {
+              "kind": "recompose-product@1",
+              "authority": {
+                "adjudication_owner": "产品包作者与集成者",
+                "schema": "recompose-product@1",
+                "governing": [
+                  {
+                    "kind": "spec",
+                    "ref": "src:f13eb55d7393200cf252623fbc638dc55d62d9c568f4ad036a478eaa6d4da5f1",
+                    "version": "1.0",
+                    "authority": "product-declared",
+                    "applies_to": {
+                      "lines": [
+                        "10.8"
+                      ],
+                      "all_builds": true
+                    },
+                    "constraints": [
+                      {
+                        "field": "orbit.mode",
+                        "values": [
+                          "rr",
+                          "lc",
+                          "hash"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "spec",
+                    "ref": "src:75a5dc26c47240dfedf0aa9b5bfc2e63a79f6d413498a8d29a563abcc589307c",
+                    "version": "1.1",
+                    "authority": "product-declared",
+                    "applies_to": {
+                      "lines": [
+                        "10.8"
+                      ],
+                      "all_builds": true
+                    },
+                    "constraints": [
+                      {
+                        "field": "orbit.mode",
+                        "values": [
+                          "rr",
+                          "lc",
+                          "hash",
+                          "weighted"
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "declarations": [
+                  {
+                    "ref": "src:eb4aabf53cc3b789e2912c8531e8daec1e09cbd0f8a8a5dc74580a4550326ee5/json@1/p/parameters/0",
+                    "role": "parameter_type",
+                    "path": "/commands/widget/health/interval"
+                  }
+                ],
+                "parameters": [
+                  {
+                    "path": "/commands/widget/health/interval",
+                    "position": 1,
+                    "type": "int",
+                    "minimum": 1,
+                    "maximum": 60,
+                    "role": "asserted_value",
+                    "load_bearing": true
+                  }
+                ],
+                "values": [
+                  {
+                    "slot": "interval_value",
+                    "ref": "src:eb4aabf53cc3b789e2912c8531e8daec1e09cbd0f8a8a5dc74580a4550326ee5/json@1/p/values/0",
+                    "values": [
+                      5
+                    ],
+                    "path": "/commands/widget/health/interval",
+                    "position": 1
+                  }
+                ],
+                "scope": {
+                  "product": "orbit",
+                  "product_pack_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                  "line": "10.8",
+                  "build": "Rel_ORBIT_10_8_0_30",
+                  "root": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "authority_result": {
+      "external": null,
+      "meta": {
+        "kind": "validation_result",
+        "record": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "model": {
+        "kind": "validation_result",
+        "body": {
+          "schema": "validation@1",
+          "run": "run_synthetic_recompose-authority",
+          "locks": {
+            "pack": "recompose-authority@1.0.1",
+            "pack_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          "acceptance": "accepted",
+          "partitions": {
+            "delivered": []
+          },
+          "cross_item": [
+            {
+              "requirement": "authority",
+              "statement": {
+                "verdict": "support"
+              },
+              "validity": {
+                "status": "valid"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "review_run": {
+      "external": null,
+      "meta": {
+        "kind": "run",
+        "record": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "model": {
+        "kind": "run",
+        "body": {
+          "run": "run_synthetic_recompose-adjudication",
+          "pack": "recompose-adjudication@1.0.1",
+          "pack_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "product": "orbit",
+          "runner": "synthetic-reviewer",
+          "items": [
+            {
+              "id": "orbit-case-0001:a1",
+              "fields": {
+                "scope": {
+                  "product": "orbit",
+                  "root": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "product_pack_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                },
+                "atom": "a1",
+                "author_run": "run_synthetic_recompose",
+                "subject": {
+                  "case": {
+                    "id": "orbit-case-0001",
+                    "source_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a",
+                    "source_path": "tests/fixtures/recompose/author-pass.km.json",
+                    "node": "n/case-1"
+                  },
+                  "atom": {
+                    "id": "a1",
+                    "kind": "action",
+                    "text": "widget health interval pool1 5",
+                    "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/case-1",
+                    "span": [
+                      0,
+                      30
+                    ]
+                  },
+                  "contract": {
+                    "intent": {
+                      "text": "widget health interval pool1 5",
+                      "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/case-1",
+                      "verbatim": true
+                    },
+                    "method": {
+                      "kind": "declared",
+                      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+                      "sources": [
+                        "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1"
+                      ],
+                      "basis": "作者在脑图内写明观察命令与判定点（同一节点的逐字文本）；不需要外部来源重组"
+                    },
+                    "expectation": {
+                      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+                      "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1",
+                      "verbatim": true
+                    }
+                  },
+                  "expectation_slots": [
+                    {
+                      "slot": "e1",
+                      "knowledge_location": "has_verification_knowledge",
+                      "evidence": [
+                        "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1"
+                      ],
+                      "proposal": null,
+                      "atom": "a2"
+                    }
+                  ],
+                  "governing": [
+                    {
+                      "kind": "spec",
+                      "ref": "src:f13eb55d7393200cf252623fbc638dc55d62d9c568f4ad036a478eaa6d4da5f1",
+                      "version": "1.0",
+                      "authority": "product-declared"
+                    }
+                  ],
+                  "candidates": [],
+                  "adapted": [
+                    {
+                      "atom": "a1",
+                      "action": "parameter_change",
+                      "equivalence_reason": "命令树里 widget health interval 的参数 2 声明为整数类型（产品包声明位置）",
+                      "load_bearing": true,
+                      "conditions": [
+                        "间隔值落在声明范围内",
+                        "观察对象与配置对象是同一个 pool"
+                      ],
+                      "text": "widget health interval pool1 5",
+                      "commands": [
+                        "widget health interval pool1 5"
+                      ],
+                      "equivalence_refs": [
+                        "src:eb4aabf53cc3b789e2912c8531e8daec1e09cbd0f8a8a5dc74580a4550326ee5/json@1/p/parameters/0"
+                      ],
+                      "source_of_value": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/case-1",
+                      "authority": "src:eb4aabf53cc3b789e2912c8531e8daec1e09cbd0f8a8a5dc74580a4550326ee5/json@1/p/parameters/0"
+                    }
+                  ],
+                  "concretizations": []
+                }
+              },
+              "decision": {
+                "atom": "a1",
+                "state": "settled",
+                "load_bearing": false,
+                "bed_independent": true,
+                "reason": "合成独立裁定"
+              }
+            },
+            {
+              "id": "orbit-case-0001:a2",
+              "fields": {
+                "scope": {
+                  "product": "orbit",
+                  "root": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "product_pack_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                },
+                "atom": "a2",
+                "author_run": "run_synthetic_recompose",
+                "subject": {
+                  "case": {
+                    "id": "orbit-case-0001",
+                    "source_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a",
+                    "source_path": "tests/fixtures/recompose/author-pass.km.json",
+                    "node": "n/case-1"
+                  },
+                  "atom": {
+                    "id": "a2",
+                    "kind": "expectation",
+                    "text": "show health 显示 pool1 的探测间隔为 5 秒",
+                    "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1",
+                    "span": [
+                      0,
+                      31
+                    ]
+                  },
+                  "contract": {
+                    "intent": {
+                      "text": "widget health interval pool1 5",
+                      "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/case-1",
+                      "verbatim": true
+                    },
+                    "method": {
+                      "kind": "declared",
+                      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+                      "sources": [
+                        "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1"
+                      ],
+                      "basis": "作者在脑图内写明观察命令与判定点（同一节点的逐字文本）；不需要外部来源重组"
+                    },
+                    "expectation": {
+                      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+                      "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1",
+                      "verbatim": true
+                    }
+                  },
+                  "expectation_slots": [
+                    {
+                      "slot": "e1",
+                      "knowledge_location": "has_verification_knowledge",
+                      "evidence": [
+                        "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1"
+                      ],
+                      "proposal": null,
+                      "atom": "a2"
+                    }
+                  ],
+                  "governing": [
+                    {
+                      "kind": "spec",
+                      "ref": "src:f13eb55d7393200cf252623fbc638dc55d62d9c568f4ad036a478eaa6d4da5f1",
+                      "version": "1.0",
+                      "authority": "product-declared"
+                    }
+                  ],
+                  "candidates": [],
+                  "adapted": [],
+                  "concretizations": []
+                }
+              },
+              "decision": {
+                "atom": "a2",
+                "state": "settled",
+                "load_bearing": false,
+                "bed_independent": true,
+                "reason": "合成独立裁定"
+              }
+            }
+          ],
+          "groups": [],
+          "predecessor": "run_synthetic_recompose"
+        }
+      }
+    },
+    "review_result": {
+      "external": null,
+      "meta": {
+        "kind": "validation_result",
+        "record": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "model": {
+        "kind": "validation_result",
+        "body": {
+          "schema": "validation@1",
+          "run": "run_synthetic_recompose-adjudication",
+          "locks": {
+            "pack": "recompose-adjudication@1.0.1",
+            "pack_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          "acceptance": "accepted",
+          "partitions": {
+            "delivered": [
+              {
+                "item": "orbit-case-0001:a1",
+                "requirements": [
+                  {
+                    "requirement": "decision",
+                    "status": "satisfied",
+                    "claims": [
+                      {
+                        "statement": {
+                          "code": "accept",
+                          "data": {
+                            "atom": "a1",
+                            "state": "settled",
+                            "load_bearing": false,
+                            "bed_independent": true,
+                            "reason": "合成独立裁定"
+                          }
+                        },
+                        "warrant": {
+                          "producer": "model",
+                          "id": "scripted-reviewer",
+                          "independence": "human_non_author"
+                        },
+                        "qualifier": {
+                          "nature": "judgment"
+                        },
+                        "validity": {
+                          "status": "valid"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "item": "orbit-case-0001:a2",
+                "requirements": [
+                  {
+                    "requirement": "decision",
+                    "status": "satisfied",
+                    "claims": [
+                      {
+                        "statement": {
+                          "code": "accept",
+                          "data": {
+                            "atom": "a2",
+                            "state": "settled",
+                            "load_bearing": false,
+                            "bed_independent": true,
+                            "reason": "合成独立裁定"
+                          }
+                        },
+                        "warrant": {
+                          "producer": "model",
+                          "id": "scripted-reviewer",
+                          "independence": "human_non_author"
+                        },
+                        "qualifier": {
+                          "nature": "judgment"
+                        },
+                        "validity": {
+                          "status": "valid"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "cross_item": [
+            {
+              "requirement": "authority",
+              "statement": {
+                "verdict": "support"
+              },
+              "validity": {
+                "status": "valid"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "catalog": {
+      "root": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "entries": [
+        {
+          "words": [
+            "widget",
+            "health",
+            "interval"
+          ],
+          "reference": "tree:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/commands/widget/health/interval",
+          "signatures": [
+            {
+              "id": "widget/health/interval",
+              "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/xml@1/x/widget/health/interval/arguments",
+              "params": [
+                {
+                  "name": "pool",
+                  "type": "string",
+                  "native_type": {
+                    "name": "synthetic-string",
+                    "declaration": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/xml@1/x/arg",
+                    "grammar": "synthetic-tree@1"
+                  }
+                },
+                {
+                  "name": "value",
+                  "type": "int",
+                  "native_type": {
+                    "name": "synthetic-int",
+                    "declaration": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/xml@1/x/arg",
+                    "grammar": "synthetic-tree@1"
+                  },
+                  "minimum": 1,
+                  "maximum": 60
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "words": [
+            "widget",
+            "health",
+            "probe"
+          ],
+          "reference": "tree:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/commands/widget/health/probe",
+          "signatures": [
+            {
+              "id": "widget/health/probe",
+              "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/xml@1/x/widget/health/probe/arguments",
+              "params": [
+                {
+                  "name": "pool",
+                  "type": "string",
+                  "native_type": {
+                    "name": "synthetic-string",
+                    "declaration": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/xml@1/x/arg",
+                    "grammar": "synthetic-tree@1"
+                  }
+                },
+                {
+                  "name": "type",
+                  "type": "enum",
+                  "native_type": {
+                    "name": "synthetic-enum",
+                    "declaration": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/xml@1/x/arg",
+                    "grammar": "synthetic-tree@1"
+                  },
+                  "values": [
+                    "http",
+                    "tcp"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "words": [
+            "widget",
+            "pool",
+            "add"
+          ],
+          "reference": "tree:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/commands/widget/pool/add",
+          "signatures": [
+            {
+              "id": "widget/pool/add",
+              "reference": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/xml@1/x/widget/pool/add/arguments",
+              "params": [
+                {
+                  "name": "pool",
+                  "type": "string",
+                  "native_type": {
+                    "name": "synthetic-string",
+                    "declaration": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/xml@1/x/arg",
+                    "grammar": "synthetic-tree@1"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "evidence": [
+      {
+        "reference": "src:f13eb55d7393200cf252623fbc638dc55d62d9c568f4ad036a478eaa6d4da5f1",
+        "resolved": true,
+        "text": "synthetic source"
+      },
+      {
+        "reference": "src:eb4aabf53cc3b789e2912c8531e8daec1e09cbd0f8a8a5dc74580a4550326ee5/json@1/p/parameters/0",
+        "resolved": true,
+        "text": "synthetic declaration"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "blocking"
+    }
+  ]
+}

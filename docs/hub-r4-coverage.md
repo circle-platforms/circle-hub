@@ -35,7 +35,7 @@
 | **V06** | 判定与终态 | 交付规则 | definition of done | `implemented` | `hub/runs/engine/partitions.ts`, `hub/runs/engine/evaluate.ts`, `hub/runs/engine/submit.ts` | 场景 01, 场景 16, 场景 20 |
 | **V07** | 判定与终态 | 重复策略 | repetition policy | `implemented` | `hub/runs/engine/submit.ts`, `hub/runs/engine/evaluate.ts`, `hub/server/mcp.ts` | 场景 02, 场景 03, 场景 21 |
 | **V08** | 判定与终态 | 假设集 | hypothesis set | `contract only` | `contracts/model.json` | M1 范围外暂缓，没能验证 |
-| **W01** | 工作结构 | 条目与投影 | item / item projection | `implemented` | `hub/runs/engine/projection.ts`, `hub/refs/parsers/kityminder.ts`, `packs/workflow/case-review/functions/projection.ts` | 场景 01, 场景 10, 场景 16, 场景 20 |
+| **W01** | 工作结构 | 条目与投影 | item / item projection | `implemented` | `hub/runs/engine/projection.ts`, `packs/skill/mindmap-format/functions/kityminder.ts`, `packs/workflow/case-review/functions/projection.ts` | 场景 01, 场景 10, 场景 16, 场景 20 |
 | **W02** | 工作结构 | 要求项 | requirement item | `implemented` | `contracts/generated/schemas/requirements.v1.schema.json`, `packs/workflow/case-review/requirements.json`, `hub/runs/engine/evaluate.ts` | 场景 01, 场景 08, 场景 16, 场景 20 |
 | **W03** | 工作结构 | 工作流与绑定 | workflow / product binding | `implemented` | `contracts/generated/schemas/workflow.v1.schema.json`, `packs/workflow/case-review/workflow.json`, `packs/product/famx/product.json`, `packs/product/lumen-api/product.json`, `hub/runs/packs/validate.ts` | 场景 01, 场景 08, 场景 15, 场景 16 |
 | **W04** | 工作结构 | 判定形状与台账 | decision shape / ledger | `implemented` | `contracts/src/run.ts`, `contracts/generated/schemas/validation.v1.schema.json`, `hub/runs/engine/terminals.ts`, `hub/runs/engine/evaluate.ts` | 场景 01, 场景 06, 场景 21 |

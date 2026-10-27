@@ -5,7 +5,7 @@
 ## 读法与批次身份
 
 - `svn:directory:<编码后的目录路径>`：先在最新目录上执行 `PROPFIND`，`Depth: 0`，取 `DAV:version-name`；再对 `!svn/rvr/<修订号>/<目录>/` 执行 `PROPFIND`，`Depth: 1`。返回 `content` JSON：`directory`、`revision` 和按名称排序的 `members`。成员包含 `name`、`directory`、`size`（目录为 null）、最后修改的 `revision` 和文件的 `external` 标识。
-- `svn:file:<修订号>/<编码后的文件路径>`：在指定修订号执行一次 GET。`original` 是响应原始字节，`meta` 给出修订号和解码后的路径，读取结果的 `revision` 是批次修订号。CRLF 和 NUL 都保留，不清洗源文件。
+- `svn:file:<修订号>/<编码后的文件路径>`：在指定修订号执行一次 GET。`original` 是响应原始字节，`meta` 给出修订号和解码后的路径，读取结果的 `revision` 是批次修订号。CRLF 和 NUL 都保留，不清洗源文件。`file` 路由声明 `media_types_by_extension`（`.adoc` 与 `.txt` 为 `text/plain`、`.md` 为 `text/markdown`、`.html` 为 `text/html`），在源服务返回 `application/octet-stream` 或缺少媒体类型时生效，使 `.adoc` 原件能被核心 `text@1` 认出并按行号引用；源服务若给出了明确的媒体类型则以服务响应头优先。读取回执（`requests[].media_type`）保留服务器原话，存入的原件记录生效类型，两栏不同即表明规则起作用。
 
 例如，先读 `svn:directory:manuals`，再使用返回成员的 `external` 读取文件。路径可以整体用 `encodeURIComponent` 编码；包只解码一次，连接器按路径段编码后发出请求。文件标识的修订号是批次修订号，不能替换为成员最后修改的修订号。多个文件由产品包的同步计划组合读取；本包不递归抓取，不解析 include，不负责知识树写入。
 

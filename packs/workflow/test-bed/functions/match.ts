@@ -147,6 +147,62 @@ export function matchNeed(
   return answers.sort((a, b) => rankFree(a) - rankFree(b) || rankTime(a) - rankTime(b) || a.spareDevices - b.spareDevices || compareText(a.bed, b.bed));
 }
 
+/** No bed has the needed build. Per-bed fields stay as matchNeed wrote them; this is only the search-level unknown. */
+export interface UnmatchedBuild {
+  verdict: 'unknown';
+  missing: string;
+  fix: string;
+}
+
+const UNMATCHED_FIX = '管理员在清单登记在装构建，或把某台升级到该构建后重试';
+
+/** The deciding devices of one fitting bed, the same pick matchNeed uses for the build verdict. */
+function decidingDevices(bed: ManifestBed, need: Need, leases: Record<string, LeaseEntry>, now: string): string[] {
+  const picks: string[] = [];
+  for (const { type, count } of need.devices) picks.push(...pickDevices(bed, leases, now, type, count).picked);
+  const wantsBalancer = need.devices.some((device) => device.type === 'load-balancer');
+  return picks.filter((name) => {
+    const device = bed.devices.find((row) => row.name === name);
+    return device !== undefined && (device.type === 'load-balancer' || (!wantsBalancer && need.devices.some((row) => row.type === device.type && row.count > 0)));
+  });
+}
+
+/**
+ * When a build is required and every bed that has the devices fails it: unknown, naming the version line and each
+ * deciding device (a missing install record, or the build it actually holds) and the one exit. A matching bed, a need
+ * without a build, or a search where no bed has the devices returns null. Existing per-bed fields are not rewritten.
+ */
+export function unmatchedBuildExit(
+  beds: readonly ManifestBed[],
+  need: Need,
+  installed: Record<string, Installed>,
+  builds: Record<string, string>,
+  leases: Record<string, LeaseEntry>,
+  now: string,
+  matches: readonly BedMatch[],
+): UnmatchedBuild | null {
+  if (need.build === undefined) return null;
+  const fitting = matches.filter((row) => row.devicesOk);
+  if (fitting.length === 0 || fitting.some((row) => row.buildOk === 'match')) return null;
+  const absent: string[] = [];
+  const other: string[] = [];
+  const want = baseOf(builds, need.build);
+  for (const row of fitting) {
+    const bed = beds.find((candidate) => candidate.name === row.bed);
+    if (bed === undefined) continue;
+    for (const name of decidingDevices(bed, need, leases, now)) {
+      const record = installed[`bed/${bed.name}/${name}`];
+      const where = `${bed.name}/${name}`;
+      if (record === undefined) absent.push(where);
+      else if (baseOf(builds, record.build) !== want) other.push(`${where} 装的是 ${record.build}`);
+    }
+  }
+  const parts = [`没有任何台架的在装构建匹配版本线 ${need.build}`];
+  if (absent.length > 0) parts.push(`缺在装构建记录：${absent.join('、')}`);
+  if (other.length > 0) parts.push(`在装构建不是该版本线：${other.join('、')}`);
+  return { verdict: 'unknown', missing: parts.join('。'), fix: UNMATCHED_FIX };
+}
+
 const TYPE_LABEL: Record<string, string> = {
   'load-balancer': '负载均衡',
   router: '路由器',

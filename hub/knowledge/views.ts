@@ -31,7 +31,8 @@ import {
   type ViewEntry,
   type UnversionedView,
 } from '../../contracts/src/views.ts';
-import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort } from '../ports.ts';
+import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort, ReadRoot, ReadRootQuery } from '../ports.ts';
+import { readRootNote } from './root-note.ts';
 import {KnowledgeError} from './errors.ts';
 import {seedlingOfRoot} from './seedling.ts';
 import type { FeedingCut } from './feeding-types.ts';
@@ -343,6 +344,51 @@ interface At {
   composition?: string;
   build: string;
   root: string;
+  /** The resolved root is the line's seedling, so fed-case rows of this root join the case counts. */
+  seedling?: boolean;
+  /** Set when this seedling and the sync root are different digests. */
+  seedlingNote?: string;
+}
+
+type ReadRootFn = (product: string, query: ReadRootQuery) => Promise<ReadRoot | null>;
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+/** Fed cases bound to this seedling root, projected onto the same case fields a sync-root entry carries into a facet. */
+function fedCaseRows(root: string, cut: FeedingCut): KindEntry[] {
+  const rows: KindEntry[] = [];
+  for (const object of cut.objects.values()) {
+    if (object.schema !== 'fed-case@1' || object.root !== root) continue;
+    const declaration = record(object.resource_declaration);
+    const declared = declaration?.status === 'declared';
+    const types = Array.isArray(declaration?.types) ? declaration.types : [];
+    const expects = Array.isArray(object.expects) ? object.expects : [];
+    const lines = Array.isArray(object.document_lines) ? object.document_lines.filter((line): line is string => typeof line === 'string') : [];
+    const steps = Array.isArray(object.steps) ? object.steps : [];
+    const first = steps.map(record).find((step) => step !== null && typeof step.text === 'string');
+    rows.push({
+      entry: object.object,
+      path: typeof object.path === 'string' ? object.path : '/',
+      unplaced: object.path === null,
+      root,
+      unversioned: false,
+      content: {
+        kind: 'case',
+        statement: first && typeof first.text === 'string' ? first.text : '',
+        data: {
+          line: lines,
+          has_expected: expects.length > 0,
+          test_type_status: declared ? 'declared' : 'undeclared',
+          negative: declared ? types.includes('negative') : null,
+          commands: Array.isArray(object.commands) ? object.commands : [],
+        },
+        applicability: null,
+      },
+    });
+  }
+  return rows;
 }
 
 function viewEntry(digest: string, content: EntryContent, root: string, path: string, unversioned = false): ViewEntry {
@@ -392,6 +438,7 @@ export class KnowledgeViews {
   readonly #builds: Builds;
   readonly #reading: TreeReading;
   readonly #relations: LinkReading;
+  readonly #readRoot: ReadRootFn | null;
   /** Canonical bytes of computed views by request and roots (a root's content never changes). */
   readonly #cache = new Lru<string, Uint8Array | { view: IndexView; entries: Map<string, Uint8Array> ;}>(4,Number.POSITIVE_INFINITY,true);
   /** Encodings belong to these immutable projected entries only; never cache credential decisions. */
@@ -439,11 +486,12 @@ export class KnowledgeViews {
     return out;
   }
 
-  constructor(context: KnowledgeContext, builds: Builds, reading: TreeReading, relations:LinkReading=new LinkReading(context,builds)) {
+  constructor(context: KnowledgeContext, builds: Builds, reading: TreeReading, relations:LinkReading=new LinkReading(context,builds), readRoot?: ReadRootFn) {
     this.#context = context;
     this.#builds = builds;
     this.#reading = reading;
     this.#relations = relations;
+    this.#readRoot = readRoot ?? null;
   }
 
   /**
@@ -476,6 +524,8 @@ export class KnowledgeViews {
   }
 
   async #composition(product:string,at:At):Promise<CompositionView|null>{
+    const chosen=this.#readRoot?await this.#readRoot(product,{build:at.build}):null;
+    if(chosen&&chosen.info.root===at.root){const body=await this.#context.store.composition(chosen.info.composition);if(body?.product===product&&body.root===at.root)return new CompositionView(this.#context.store,chosen.info.composition,body);}
     const named=await this.#builds.rootOfBuild(product,at.build);
     if(named?.root===at.root){const body=await this.#context.store.composition(named.composition);if(body?.product===product)return new CompositionView(this.#context.store,named.composition,body);}
     const all=(await this.#reading.compositionsOf(at.root)).filter(composition=>composition.body.product===product);
@@ -707,6 +757,7 @@ export class KnowledgeViews {
       if (syntaxOnly > 0) notes.push(`${syntaxOnly} 个路径的目录成员只有说明性内容（参数说明、条目摘要）或签名顺序的差异，不算变更`);
       if (attachedFields !== null) notes.push(`附着的${attached.map((k) => labelOf('entry_kind', k)).join('、')}条目只带字段 ${attachedFields.join('、')}（attached_fields 参数），陈述为空；变更的条目不受影响`);
       if (from.root === to.root) notes.push(`两个构建用的是同一个根 ${to.root}，没有版本差`);
+      for (const side of [from, to]) if (side.seedlingNote && !notes.includes(side.seedlingNote)) notes.push(side.seedlingNote);
       const missingAttachedOverall: EntryKind[] = [];
       {
         const countsBySide = await Promise.all([fromComposition, toComposition].map(async (composition) => composition === null ? new Map<string, number>() : await composition.kindCounts()));
@@ -809,29 +860,32 @@ export class KnowledgeViews {
     let cut = 0;
     let unlisted = 0;
     let unplacedCount = 0;
-    if (composition !== null || scope !== null) {
-      for await (const row of scopedEntries(composition, scope, kind)) {
-        seen.add(row.entry);
-        if (row.unplaced && !scopePlaced?.has(row.entry)) unplacedCount++;
-        const lists = by.map((field) => facetValues(row.content.data, field, odd));
-        // Count membership of each null group before collecting combinations or applying any row limit.
-        lists.forEach((values, i) => { if (values.includes(null)) empty[by[i]]++; });
-        if (lists.reduce((n, list) => n * list.length, 1) > MAX_FACET_COMBINATIONS) {
-          throw new ImpactRefusal('单个条目的分面字段组合超过上限；减少 by 字段后重读，未返回部分计数');
-        }
-        let combos: FacetValue[][] = [[]];
-        for (const list of lists) combos = combos.flatMap((combo) => list.map((value) => [...combo, value]));
-        let left = false;
-        for (const combo of combos) {
-          const key = canonicalize(combo);
-          const held = counts.get(key);
-          if (held !== undefined) { held.count++; if(row.unversioned) held.unversioned++; }
-          else if (counts.size < limit) counts.set(key, { values: combo, count: 1, unversioned: row.unversioned ? 1 : 0 });
-          else throw new ImpactRefusal('分面取值组合超过可计算上限；减少 by 字段后重读，未返回部分计数');
-        }
-        if (left) unlisted++;
+    const take = (row: KindEntry): void => {
+      if (seen.has(row.entry)) return;
+      seen.add(row.entry);
+      if (row.unplaced && !scopePlaced?.has(row.entry)) unplacedCount++;
+      const lists = by.map((field) => facetValues(row.content.data, field, odd));
+      // Count membership of each null group before collecting combinations or applying any row limit.
+      lists.forEach((values, i) => { if (values.includes(null)) empty[by[i]]++; });
+      if (lists.reduce((n, list) => n * list.length, 1) > MAX_FACET_COMBINATIONS) {
+        throw new ImpactRefusal('单个条目的分面字段组合超过上限；减少 by 字段后重读，未返回部分计数');
       }
+      let combos: FacetValue[][] = [[]];
+      for (const list of lists) combos = combos.flatMap((combo) => list.map((value) => [...combo, value]));
+      let left = false;
+      for (const combo of combos) {
+        const key = canonicalize(combo);
+        const held = counts.get(key);
+        if (held !== undefined) { held.count++; if(row.unversioned) held.unversioned++; }
+        else if (counts.size < limit) counts.set(key, { values: combo, count: 1, unversioned: row.unversioned ? 1 : 0 });
+        else throw new ImpactRefusal('分面取值组合超过可计算上限；减少 by 字段后重读，未返回部分计数');
+      }
+      if (left) unlisted++;
+    };
+    if (composition !== null || scope !== null) {
+      for await (const row of scopedEntries(composition, scope, kind)) take(row);
     }
+    if (at.seedling && kind === 'case' && feeding?.cut) for (const row of fedCaseRows(at.root, feeding.cut)) take(row);
     const compareRows = (a: FacetValue[], b: FacetValue[]): number => {
       for (let i = 0; i < a.length; i++) {
         const c = compareValues(a[i], b[i]);
@@ -864,6 +918,7 @@ export class KnowledgeViews {
     if (excluded > 0) notes.push(`${excluded} 种取值组合的文字有凭据扫描命中，没有列出`);
     const skipped = skippedNote(at, composition);
     if (skipped !== null) notes.push(skipped);
+    if (at.seedlingNote) notes.push(at.seedlingNote);
     const view: FacetView = {
       schema: 'facet-view@1',
       next: page.offset+rows.length<all.length?page.next(page.offset+rows.length):null,
@@ -935,13 +990,9 @@ export class KnowledgeViews {
     let unplacedCount = 0;
     const excluded = new Map<string, string>();
     const seenScope = scope === null ? null : new Set<string>();
-    for (const source of [composition, scope]) {
-      if (source === null) continue;
-      await source.forEachEntry(kind, (entry, path, content, unplaced) => {
-        if (seenScope?.has(entry)) return;
-        seenScope?.add(entry);
-        const row = { entry, path, content, unplaced, root: source.body.root, unversioned: source === scope };
-        seen.add(entry);
+    const absorb = (row: KindEntry): void => {
+        if (seen.has(row.entry)) return;
+        seen.add(row.entry);
         ofKind++;
         if (row.unplaced && !scopePlaced?.has(row.entry)) unplacedCount++;
         const values = indexKeys(row.content.data, key).filter((value) => onlySet === null || onlySet.has(value));
@@ -986,8 +1037,16 @@ export class KnowledgeViews {
           if (list === undefined) keys.set(detachedText(value), [row.entry]);
           else list.push(row.entry);
         }
+    };
+    for (const source of [composition, scope]) {
+      if (source === null) continue;
+      await source.forEachEntry(kind, (entry, path, content, unplaced) => {
+        if (seenScope?.has(entry)) return;
+        seenScope?.add(entry);
+        absorb({ entry, path, content, unplaced, root: source.body.root, unversioned: source === scope });
       }, validatedParts);
     }
+    if (at.seedling && kind === 'case' && feeding?.cut) for (const row of fedCaseRows(at.root, feeding.cut)) absorb(row);
     const entryCounts = { total: seen.size, placed: seen.size - unplacedCount, unplaced: unplacedCount };
     interface Kept {
       value: string;
@@ -1033,6 +1092,13 @@ export class KnowledgeViews {
         if (wanted.size === 0) break;
       }
     }
+    if (wanted.size > 0 && at.seedling && kind === 'case' && feeding?.cut) {
+      for (const row of fedCaseRows(at.root, feeding.cut)) {
+        if (!wanted.has(row.entry)) continue;
+        held.set(row.entry, encoder.bytes(viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned)));
+        wanted.delete(row.entry);
+      }
+    }
     if(wanted.size>0)throw new Error('第二遍读取缺少不可变索引条目');
     // The selection is fixed. Drop unselected serialized candidates before materializing the answer.
     for (const digest of held.keys()) if (!listedAll.has(digest)) held.delete(digest);
@@ -1061,6 +1127,7 @@ export class KnowledgeViews {
       if (excluded.size > 0) out.push(credentialNote([...excluded.values()]));
       const skipped = skippedNote(at, composition);
       if (skipped !== null) out.push(skipped);
+      if (at.seedlingNote) out.push(at.seedlingNote);
       out.push(this.#scopeNote(summary,scopeLocked,scope));
       return out;
     };
@@ -1165,17 +1232,21 @@ export class KnowledgeViews {
     if(context.run&&useRunLock&&storedRun&&lockedRoot!==null&&!locked)return {ok:false,id:bare,reason:'这个运行没有锁定组成快照；下一步：以同样输入新开运行再读关联'};
     const effectiveLock=context.run?(useRunLock?locked:undefined):locked;
     if(effectiveLock&&request.composition&&effectiveLock!==request.composition)return {ok:false,id:bare,reason:'请求的组成与运行锁定的组成不同；按锁定组成重读'};
+    const supplied=Boolean(effectiveLock||request.composition||cursorComposition);
     let composition=effectiveLock??request.composition??cursorComposition??(scopeRoot===null?request.revision:null);
     if(!composition&&request.cursor){try{const cursor=JSON.parse(Buffer.from(request.cursor,'base64url').toString('utf8'));if(Sha256.safeParse(cursor.c).success)composition=cursor.c;}catch{}}
+    const chosen=this.#readRoot?await this.#readRoot(handle.product.id,named!==null?{build:named.name}:{line:request.build}):null;
     if(!composition){
-      if(named!==null){const namedRoot=await this.#builds.rootOfBuild(handle.product.id,named.name);if(!namedRoot)return {ok:false,id:bare,reason:'这个命名构建没有已生产的组成；先生产其基础构建再读'};composition=namedRoot.composition;}
+      if(chosen)composition=chosen.info.composition;
+      else if(named!==null){const namedRoot=await this.#builds.rootOfBuild(handle.product.id,named.name);if(!namedRoot)return {ok:false,id:bare,reason:'这个命名构建没有已生产的组成；先生产其基础构建再读'};composition=namedRoot.composition;}
       else {const current=await this.#builds.currentRoot(handle.product.id,request.build);if(!current)return {ok:false,id:bare,reason:'没有这个构建或版本线的当前组成；先核对名称并生产后再读'};composition=current.composition;}
     }
+    const fromResolver=!supplied&&chosen?.info.composition===composition;
     const body=await this.#context.store.composition(composition);
     if(!body||body.product!==handle.product.id)return {ok:false,id:bare,reason:'组成不属于请求的产品，改用该产品的组成'};
     if(useRunLock&&context.run&&lockedRoot!==null&&body.root!==lockedRoot)return {ok:false,id:bare,reason:'组成的根与运行锁定的根不同；按运行锁定组成重读'};
-    if(named===null&&body.version?.line!==request.build)return {ok:false,id:bare,reason:'组成不属于请求的版本线'};
-    if(named!==null&&!target){
+    if(named===null&&!fromResolver&&body.version?.line!==request.build)return {ok:false,id:bare,reason:'组成不属于请求的版本线'};
+    if(named!==null&&!target&&!fromResolver){
       const base=fold(body.build?.name ?? ''),graph=new Map<string,Set<string>>();
       for(const row of await history()){const key=fold(row.body.build.name),values=graph.get(key)??new Set<string>();values.add(fold(row.body.build.base));graph.set(key,values);}
       const seen=new Set<string>(),belongs=(name:string):boolean=>{const key=fold(name);if(key===base)return true;if(seen.has(key))return false;seen.add(key);return [...(graph.get(key)??[])].some(belongs);};
@@ -1204,6 +1275,8 @@ export class KnowledgeViews {
     const view=await this.#relations.page(new CompositionView(this.#context.store,composition,body),{prefix:request.prefix,target:request.target,rule:request.rule,cursor:pageCursor,limit:request.limit,maxBytes:Math.max(0,this.#context.limits.maxViewBytes-reserve),...(named?{build:request.build}:{})});
     if(view.next!==null)view.next=Buffer.from(canonicalize({c:composition,scope:scopeRoot,cursor:view.next,scope_cut:cut})).toString('base64url');
     view.unversioned=summary;
+    const rootNote=readRootNote(chosen&&body.root===chosen.info.root?chosen:null);
+    if(rootNote)view.notes.push(rootNote);
     view.notes.push(this.#scopeNote(summary,scopeLocked,scope));
     if(scope){
       view.entries=firstPage?entries:{};
@@ -1246,12 +1319,19 @@ export class KnowledgeViews {
         if(candidates.length>1)throw new BuildNameRefusal(`构建名字的大小写有歧义，候选：${candidates.map(build=>build.name).join('、')}；请使用候选的完整原样构建名重读`);
         return `产品 ${product} 没有构建 ${cutText(name,80)}`;
       }
-      const root = await this.#builds.rootOfBuild(product, name);
+      const chosen = this.#readRoot ? await this.#readRoot(product, { build: name }) : null;
+      const root = chosen?.info ?? (this.#readRoot ? null : await this.#builds.rootOfBuild(product, name));
       if (root === null) return `构建 ${named.name} 还没有知识树的根`;
+      const seedlingNote = readRootNote(chosen);
       const locked=context.composition && context.build===named.name ? await this.#context.store.composition(context.composition) : null;
-      const at = locked && locked.product===product
-        ? {build:named.name,root:locked.root,composition:context.composition!}
-        : {build:named.name,root:root.root,composition:root.composition};
+      const useLocked = Boolean(locked && locked.product===product);
+      const seedling = useLocked ? Boolean(chosen?.source === 'seedling' && locked!.root === chosen.info.root) : chosen?.source === 'seedling';
+      const at = {
+        build: named.name,
+        root: useLocked ? locked!.root : root.root,
+        composition: useLocked ? context.composition! : root.composition,
+        ...(seedling ? { seedling: true, ...(seedlingNote ? { seedlingNote } : {}) } : {}),
+      };
       const body=await this.#context.store.composition(at.composition);
       if(!body||body.product!==product||body.root!==at.root)throw new ImpactRefusal('构建的组成快照缺失；管理员恢复组成后重读');
       pins.set(`${at.root}\0${at.build}`,new CompositionView(this.#context.store,at.composition,body));

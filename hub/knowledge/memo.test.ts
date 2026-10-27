@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 // Memoized producer calls (one batch per call): the output is stored as an object under the memo key and used again when
 // the key recurs, reuse is reported and never changes a digest; a changed document re-runs only its batch, a changed other
 // slot or another build re-runs every batch (the key covers everything the function receives, the build included). Large
@@ -9,7 +10,7 @@ import { TreeRootBody } from '../../contracts/src/knowledge.ts';
 import type { KnownBuild } from '../../contracts/src/product.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { ActionBody } from '../records/api.ts';
-import { createDefaultRegistry, resolveReference } from '../refs/api.ts';
+import { resolveReference } from '../refs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { Builds } from './builds.ts';
 import { memoKey } from './lists.ts';

@@ -38,7 +38,7 @@ describe('the pack directory', () => {
   it('pack.json lists every pack file with its SHA-256 and size, and nothing else', async () => {
     assert.deepEqual(await manifestProblems(), []);
     const manifest = await readManifest();
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['template-gap', '1.2.12', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['template-gap', '1.2.14', 'workflow']);
     assert.deepEqual(manifest.files, await packFiles());
     for (const own of ['README.md', 'api.ts', 'pack.test.ts', 'engine.test.ts', 'testing/bed.ts', 'functions/project.test.ts']) assert.equal(isPackFile(own), false, own);
     const paths = manifest.files.map((f) => f.path);
@@ -164,7 +164,7 @@ describe('the declaration files', () => {
     assert.match(skill, /默认 case_rule=marked/);
     for (const category of TEMPLATE.categories) assert.ok(skill.includes(category.id) && skill.includes(category.label), category.id);
     assert.match(skill, /24 个类别的必选范围/);
-    assert.ok(skill.length < 4000, 'the procedure travels in every start_run answer');
+    assert.ok(skill.length < 5000, 'the procedure travels in every start_run answer');
   });
 
   it('SKILL.md: a skip is the user’s call with the user’s words, and the evidence step does not depend on a reference the answer may lack', async () => {

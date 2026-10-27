@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
 // The famx manual producer through the real knowledge production (K01): the same sources produce the same root twice;
 // a tree change in a command the manual never names leaves the manual subtree byte-identical (the node digest of
 // /manual/cli), while the /commands subtree changes; editing one section of the same source changes only that node and its ancestors. Synthetic sources only.
@@ -12,7 +13,7 @@ import { osIsolationAvailable } from '../../../../hub/connectors/api.ts';
 import { createKnowledge, type Knowledge } from '../../../../hub/knowledge/api.ts';
 import { FakeExternal, FakePacks } from '../../../../hub/knowledge/test-support.ts';
 import type { ProductHandle } from '../../../../hub/ports.ts';
-import { createDefaultRegistry } from '../../../../hub/refs/api.ts';
+
 import { canonicalBytes, type Principal } from '../../../../hub/records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../../hub/testing/records.ts';

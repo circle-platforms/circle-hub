@@ -255,7 +255,7 @@ test('all module paths are checked before importing a partial source tree', asyn
 
 const modules = [
   'hub/connectors/api.ts',
-  'hub/refs/api.ts',
+  'hub/testing/parsers.ts',
   'hub/testing/postgres.ts',
   'hub/knowledge/test-support.ts',
   'hub/knowledge/seed.ts',

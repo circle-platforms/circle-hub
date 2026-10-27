@@ -1,0 +1,12 @@
+{
+  "schema": "recompose-authority.codes@1",
+  "violations": [
+    {
+      "code": "recompose-authority.identity_invalid",
+      "when": "产品发布身份不一致",
+      "fix": "发布管理员修正真实绑定后重交"
+    }
+  ],
+  "refusals": [],
+  "warnings": []
+}

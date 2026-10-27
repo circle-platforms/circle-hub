@@ -118,6 +118,55 @@
     "context": {
       "type": "object",
       "properties": {
+        "run": {
+          "description": "Actual Hub run identity; not supplied by a model",
+          "type": "string",
+          "minLength": 1
+        },
+        "predecessor": {
+          "description": "Actual Hub predecessor; null for a new lineage, absent only in historical contexts",
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "product_pack_digest": {
+          "description": "Frozen product package identity; absent on historical or productless runs",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "skills": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pack": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,40}$"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "pack",
+              "version",
+              "digest"
+            ],
+            "additionalProperties": false
+          }
+        },
         "command_policy": {
           "type": "object",
           "properties": {

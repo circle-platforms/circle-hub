@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
 import { labelOf } from '../../../../contracts/generated/vocabulary.ts';
 import {productVariableNameAvailable} from '../../../../hub/server/variables.ts';
 import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../../../hub/connectors/testing/credentials.ts';
@@ -17,7 +18,7 @@ import { startAgileStub, startBuildSiteStub, type AgileStub, type StaticFile, ty
 import { createKnowledge, createKnowledgeReader, type Knowledge, type SyncReport } from '../../../../hub/knowledge/api.ts';
 import type { ExternalReaderPort, PacksPort, ProductHandle } from '../../../../hub/ports.ts';
 import type { Principal } from '../../../../hub/records/api.ts';
-import { createDefaultRegistry } from '../../../../hub/refs/api.ts';
+
 import { createPackRegistry, createPacksPort, temporaryDirectory } from '../../../../hub/runs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../../hub/testing/records.ts';
@@ -92,7 +93,7 @@ before(async () => {
   packs = createPacksPort(registry);
   agile = await startAgileStub(caseIndexAgileOptions(corpus));
   buildSite = await startBuildSiteStub(site());
-  connectors = createConnectors({ records: kit, packs, log: () => undefined, sandbox: { requireOsIsolation: isolation }, resourceCacheMs: 0, now });
+  connectors = createConnectors({ records: kit, packs, parsers: createDefaultRegistry(), log: () => undefined, sandbox: { requireOsIsolation: isolation }, resourceCacheMs: 0, now });
   const resource = await addSyntheticResource(kit, packs, connectors, admin, {
     system_pack: 'agile-platform',
     name: '合成敏捷平台',

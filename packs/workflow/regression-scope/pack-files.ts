@@ -14,7 +14,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'regression-scope',
-  version: '1.8.6',
+  version: '1.8.9',
   kind: 'workflow',
   title: '回归范围',
   description: '按两个构建的影响视图（限定命令目录：catalog=commands@1；瘦身：attached_fields=document,node,title,priority,negative）先按路径列出整个命令差（变更种类、后一构建用例数），再列出后一构建里放在新增或修改路径上的用例；没有用例的变更路径记为未知而不是失败。一次最多 4,000 条。只含事实要求项，开始运行时由 Hub 直接算出结果',

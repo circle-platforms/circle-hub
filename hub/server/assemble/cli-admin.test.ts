@@ -516,6 +516,7 @@ describe('init-admin and the operator token', () => {
       ['resource', 'enable', 'res_00000000000000000000000000'],
       ['resource', 'reset-login', 'res_00000000000000000000000000'],
       ['knowledge', 'sync', '--product', 'DEMO'],
+      ['knowledge', 'retract', '--entry', 'a'.repeat(64), '--reason', '合成撤回'],
     ];
     admin.stdin.push('never-read-synthetic-secret');
     for (const argv of changing) {
@@ -1086,6 +1087,95 @@ describe('resource and secret', () => {
     assert.equal((await admin.run(['resource', 'update', 'res_00000000000000000000000000', '--name', '丙'])).code, 1, 'an unknown resource');
   });
 
+  test('resource update origins prunes stale allow-plaintext entries with notification, clear-plaintext, and validates plaintext matching', async () => {
+    const admin = await setup();
+    await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+    await expectOk(admin, ['pack', 'publish', packs.agile]);
+
+    const added = await expectOk(admin, [
+      'resource', 'add', AGILE_PACK,
+      '--name', '明文测试资源',
+      '--environment', 'test',
+      '--origin', `agile-oauth=${agile.origin}`,
+      '--origin', `agile-api=${agile.origin}`,
+      '--allow-plaintext', 'agile-oauth',
+      '--allow-plaintext', 'agile-api',
+      '--setting-json', 'roots=["7714"]',
+      ...syntheticCredentialArgs('username', 'password'),
+    ]);
+    const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)?.[1];
+    assert.ok(id);
+
+    const renamed = await expectOk(admin, ['resource', 'update', id, '--name', '改名测试', '--setting-json', 'roots=["7714","7002"]']);
+    assert.ok(!renamed.text.includes('已清掉角色'));
+    assert.ok(!renamed.text.includes('已清空所有明文放行'));
+    const listAfterRename = await expectOk(admin, ['resource', 'list']);
+    assert.ok(listAfterRename.out[0].includes(`允许明文 ${agile.origin}`), 'allow-plaintext remains when changing name/settings only');
+
+    const moved = await expectOk(admin, [
+      'resource', 'update', id,
+      '--origin', 'agile-oauth=https://oauth.example.invalid',
+      '--origin', 'agile-api=http://192.0.2.11:8080',
+    ]);
+    assert.match(moved.text, /已清掉角色 agile-api、agile-oauth 的明文放行/);
+    const listAfterMove = await expectOk(admin, ['resource', 'list']);
+    assert.ok(!listAfterMove.out[0].includes('允许明文'), 'old allow-plaintext entries were pruned');
+
+    const allowed = await expectOk(admin, [
+      'resource', 'update', id,
+      '--origin', 'agile-oauth=http://192.0.2.12:8080',
+      '--origin', 'agile-api=http://192.0.2.12:8080',
+      '--allow-plaintext', 'agile-oauth',
+      '--allow-plaintext', 'agile-api',
+    ]);
+    assert.ok(!allowed.text.includes('已清掉角色'));
+    const listAfterAllow = await expectOk(admin, ['resource', 'list']);
+    assert.ok(listAfterAllow.out[0].includes('允许明文 http://192.0.2.12:8080'));
+
+    const conflict = await admin.run(['resource', 'update', id, '--clear-plaintext', '--allow-plaintext', 'agile-api']);
+    assert.equal(conflict.code, 2);
+    assert.match(conflict.text, /--clear-plaintext 与 --allow-plaintext 不能同时给/);
+
+    const httpsRole = await admin.run([
+      'resource', 'update', id,
+      '--origin', 'agile-oauth=https://oauth.example.invalid',
+      '--origin', 'agile-api=http://192.0.2.12:8080',
+      '--allow-plaintext', 'agile-oauth',
+    ]);
+    assert.equal(httpsRole.code, 2);
+    assert.match(httpsRole.text, /--allow-plaintext agile-oauth：只有 http 地址才需要允许明文/);
+
+    const missingRole = await admin.run([
+      'resource', 'update', id,
+      '--origin', 'agile-oauth=http://192.0.2.12:8080',
+      '--origin', 'agile-api=http://192.0.2.12:8080',
+      '--allow-plaintext', 'other-role',
+    ]);
+    assert.equal(missingRole.code, 2);
+    assert.match(missingRole.text, /--allow-plaintext other-role：同一条命令里要用 --origin 给出这个角色的地址（地址整项替换）/);
+
+    const cleared = await expectOk(admin, ['resource', 'update', id, '--clear-plaintext']);
+    assert.match(cleared.text, /已清空所有明文放行/);
+    const listAfterClear = await expectOk(admin, ['resource', 'list']);
+    assert.ok(!listAfterClear.out[0].includes('允许明文'), 'all plaintext cleared');
+
+    await expectOk(admin, [
+      'resource', 'update', id,
+      '--origin', 'agile-oauth=http://192.0.2.13:8080',
+      '--origin', 'agile-api=http://192.0.2.14:8080',
+      '--allow-plaintext', 'agile-oauth',
+      '--allow-plaintext', 'agile-api',
+    ]);
+    const partial = await expectOk(admin, [
+      'resource', 'update', id,
+      '--origin', 'agile-oauth=https://oauth.example.invalid',
+      '--origin', 'agile-api=http://192.0.2.14:8080',
+    ]);
+    assert.match(partial.text, /已清掉角色 agile-oauth 的明文放行/);
+    const listAfterPartial = await expectOk(admin, ['resource', 'list']);
+    assert.ok(listAfterPartial.out[0].includes('允许明文 http://192.0.2.14:8080'), 'kept agile-api plaintext allowance');
+  });
+
   test('a credential set or a login reset clears the vault\'s login state; a running Hub ends its stop at its next read, without a restart, and both commands say so', async () => {
     const admin = await setup();
     const stub = await startAgileStub(agileFixture(DOCUMENT, { password: PASSWORD }));
@@ -1179,6 +1269,10 @@ describe('knowledge', () => {
     const admin = await setup();
     await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
     await expectOk(admin, ['pack', 'publish', packs.site]);
+    await expectOk(admin, ['pack', 'publish', packs.xml]);
+    await expectOk(admin, ['pack', 'install', 'xml-format@1.0.3']);
+    await expectOk(admin, ['pack', 'publish', packs.html]);
+    await expectOk(admin, ['pack', 'install', 'html-format@1.0.2']);
     await expectOk(admin, ['pack', 'publish', packs.product]);
     await expectOk(admin, ['pack', 'activate', PRODUCT_PACK]);
     await expectOk(admin, ['resource', 'add', SITE_PACK, '--name', '合成构建站', '--environment', 'shared', '--origin', `build-site=${site.origin}`]);

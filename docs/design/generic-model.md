@@ -67,7 +67,7 @@ Hub 是标准 MCP 服务器（D06）：本地 Circle、bot 和其他客户端共
 |---|---|---|
 | `nature` | 性质 | 事实、判断、未知 |
 | `basis_rank` | 依据等级 | 观察上的规则 > 主张上的规则 > 判断 > 转述 |
-| `provenance_type` | 来源类型 | 观察、投影、声明、候选 |
+| `provenance_type` | 来源类型 | 观察、投影、声明、候选、客户端捕获 |
 | `static_terminal` | 静态层终态 | 通过、不通过、判断、未核对、未完成 |
 | `dynamic_terminal` | 动态层终态 | 通过、失败、无判定、未运行、未完成 |
 | `requirement_status` | 要求满足状态 | 满足、未满足、未决 |

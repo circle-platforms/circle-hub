@@ -87,8 +87,8 @@ export async function manifestProblems(dir: string): Promise<string[]> {
 
 /** Rewrites the file list of pack.json from the files on disk; the identity (id, version, kind, title, description) stays. */
 export async function signManifest(dir: string): Promise<PackManifest> {
-  const { schema, id, version, kind, title, description } = JSON.parse(await readFile(join(dir, MANIFEST), 'utf8')) as Record<string, unknown>;
-  const manifest = PackManifest.parse({ schema, id, version, kind, title, description, files: await packFiles(dir) });
+  const { schema, id, version, kind, title, description, dependencies } = JSON.parse(await readFile(join(dir, MANIFEST), 'utf8')) as Record<string, unknown>;
+  const manifest = PackManifest.parse({ schema, id, version, kind, title, description, ...(dependencies!==undefined?{dependencies}:{}), files: await packFiles(dir) });
   await writeFile(join(dir, MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
 }

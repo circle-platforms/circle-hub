@@ -1,26 +1,10 @@
+import {testParsers as defaultParsers} from "../testing/parsers.ts";
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
+import { kityminderParser } from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { PRODUCER_KIND, type ReadTier } from '../../contracts/generated/vocabulary.ts';
-import {
-  UNAVAILABLE_MESSAGE,
-  createDefaultRegistry,
-  createDocumentCache,
-  createParserRegistry,
-  defaultParsers,
-  fragmentDigest,
-  kityminderParser,
-  recordDigest,
-  resolveReference,
-  srcFragment,
-  verifyQuote,
-  type Parser,
-  type ReaderIdentity,
-  type RecordRead,
-  type ResolveContext,
-  type ResolveDiagnostic,
-  type SourceRead,
-  type TreeRead,
-} from './api.ts';
+import {UNAVAILABLE_MESSAGE,createDocumentCache,createParserRegistry,fragmentDigest,recordDigest,resolveReference,srcFragment,verifyQuote,type Parser,type ReaderIdentity,type RecordRead,type ResolveContext,type ResolveDiagnostic,type SourceRead,type TreeRead} from "./api.ts";
 import { fixture, sha256, utf8 } from './test-support.ts';
 
 const alice: ReaderIdentity = { user: 'usr_01hzzzzzzzzzzzzzzzzzzzzzza', role: 'user' };
@@ -81,7 +65,8 @@ describe('resolveReference: source fragments', () => {
     assert.equal(result.readTier, 'model_readable');
     assert.equal(result.mediaType, 'application/json');
     assert.equal(result.groundable, true);
-    assert.equal(verifyQuote(result, '名称超过 32 个字符'), true);
+    assert.equal(verifyQuote(result, '名称超过 32 个字符'), true);
+    assert.equal(verifyQuote(result, '名称超过 32 个字符'), false);
     assert.equal(verifyQuote(result, '名称超过 33 个字符'), false);
   });
 
@@ -172,7 +157,8 @@ describe('resolveReference: neutral permission answers and actionable read fault
     assert.deepEqual(results[0] && Object.keys(results[0]).sort(), ['code','fix','message','reference','resolved']);
     assert.equal(!results[1].resolved && results[1].message,UNAVAILABLE_MESSAGE);
     assert.ok(diagnostics.some((d) => /do not hash/.test(d.message)));
-    assert.ok(diagnostics.some((d) => /disk failure/.test(d.message)));
+    assert.ok(diagnostics.some((d) => /source reader failed: check_error/.test(d.message)));
+    assert.ok(diagnostics.every((d) => !/disk failure/.test(d.message)), 'source reader diagnostics never expose raw exception messages');
     assert.ok(diagnostics.every((d) => !/对你不可用/.test(d.message)));
     // The internal caller still distinguishes unchecked work from a missing fragment (T03 R[3]).
     assert.deepEqual(

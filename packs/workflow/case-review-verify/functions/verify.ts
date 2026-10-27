@@ -3,16 +3,18 @@
 //   refuted or partial) whose data.finding is its rec: reference; a disposition names a draft finding of this item; every
 //   statement carries a location and a quotation; a new finding names its probe (data.probe, one of the seven).
 // - verdict (run): the verdict (cross_item PASS, PARTIAL or FAIL, ranked with the final level) agrees with the dispositions.
-//   PASS: no draft finding refuted, no new finding, the level unchanged, every draft finding of the run disposed of (also the
-//   ones on skipped items), and at least one quotation of the verifier's own into the target (a quotation is checked verbatim
-//   at the boundary; a location or a ground is a reference anyone can copy from the item list, and a copy of the draft's own
-//   quotation is no check of the verifier's). PARTIAL: a new finding, a refuted or partly correct draft finding, or a level
-//   change. FAIL: a refuted draft finding the draft itself ranked major or critical (a major factual error of the draft; the
-//   rank the verifier gives its refutation does not raise a minor finding to one). A run-wide problem is reported on the
-//   first handled item, so that the error table of the item requirement routes it back to the verifier.
+//   PASS: no draft finding refuted or partly correct, no new finding, the level unchanged, every draft finding of the run
+//   disposed of (also skipped items), and at least one quotation of the verifier's own into the target (a quotation is checked
+//   verbatim at the boundary; a location, a ground, or a copy of the draft's own quotation is not independent evidence).
+//   PARTIAL: a new finding, a refuted or partly correct draft finding, or a level change; every correction rules out PASS.
+//   FAIL: a refuted draft finding the draft itself ranked major or critical. The final level also fits the worst remaining
+//   verified, partial or new finding's declared band; refuted findings do not set that band. A run-wide problem is reported
+//   on the first handled item so that the error table of the item requirement routes it back to the verifier.
 import type { CheckOutcome } from '../../../../contracts/src/tables.ts';
 import type { CheckTier } from '../../../../contracts/generated/vocabulary.ts';
 import { PACK, isRecord } from './common.ts';
+import { levelNumber, worstSeverity } from './levels.ts';
+import { captureReviewScope } from './review-scope.ts';
 
 export const DISPOSITIONS = ['verified', 'refuted', 'partial'] as const;
 export const NEW_FINDING = 'new_finding';
@@ -31,7 +33,10 @@ export const CODES = {
   quoteMissing: `${PACK}.quote_missing`,
   probeMissing: `${PACK}.probe_missing`,
   passRefuted: `${PACK}.pass_with_refuted`,
+  passPartial: `${PACK}.pass_with_partial`,
   passNewFinding: `${PACK}.pass_with_new_finding`,
+  severityMissing: `${PACK}.severity_missing`,
+  levelSeverityMismatch: `${PACK}.level_severity_mismatch`,
   passLevelChanged: `${PACK}.pass_level_changed`,
   passWithoutEvidence: `${PACK}.pass_without_evidence`,
   passUnverified: `${PACK}.pass_with_unverified`,
@@ -124,8 +129,10 @@ export function verdict(input: unknown): CheckOutcome[] {
   const pointer = `/cross_item/${finalIndex}`;
   const claims = handled.flatMap((it) => records((it.slots as Record<string, unknown>)[SLOT]).map((claim) => ({ claim, item: it })));
   const refuted = claims.filter(({ claim }) => claim.code === 'refuted');
+  const partial = claims.filter(({ claim }) => claim.code === 'partial');
   const corrected = claims.filter(({ claim }) => claim.code === 'refuted' || claim.code === 'partial');
   const fresh = claims.filter(({ claim }) => claim.code === NEW_FINDING);
+  const remaining = claims.filter(({ claim }) => claim.code === 'verified' || claim.code === 'partial' || claim.code === NEW_FINDING);
   const draftLevel = (() => {
     for (const it of items) {
       const level = isRecord(it.fields) && isRecord(it.fields.draft_level) ? it.fields.draft_level : null;
@@ -135,20 +142,29 @@ export function verdict(input: unknown): CheckOutcome[] {
   })();
   const finalLevel = typeof final.rank === 'string' ? final.rank : null;
   if (!draftLevel?.trim() || !finalLevel?.trim()) return [{verdict:'refute',code:CODES.levelMissing,statement:!draftLevel?.trim()?'初评没有等级，请先补齐初评等级并重交初评，再重开复核':'复核结论没有等级，请在结论主张 rank 写最终等级后重交',grounds:[],tier:TIER,...own,pointer}];
-  const levelChanged = draftLevel !== null && finalLevel !== null ? draftLevel !== finalLevel : null;
+  const levelChanged = draftLevel !== finalLevel;
   const firstFields = isRecord(items[0]?.fields) ? (items[0].fields as Record<string, unknown>) : {};
   const case_rule = (firstFields.case_rule === 'tagged' ? 'tagged' : 'marked') as 'tagged' | 'marked';
   const marked_only = typeof firstFields.marked_only === 'number' ? firstFields.marked_only : 0;
   const ruleLine = `用例规则：${case_rule === 'marked' ? '标签或标记' : '只认标签'}；其中 ${marked_only} 个只靠标记识别（没有标签）`;
-  const data = { verdict: final.code, level: finalLevel, draft_level: draftLevel, refuted: refuted.length, corrected: corrected.length, new_findings: fresh.length, case_rule, marked_only };
+  const data = { verdict: final.code, level: finalLevel, draft_level: draftLevel, refuted: refuted.length, corrected: corrected.length, new_findings: fresh.length, remaining_findings: remaining.length, case_rule, marked_only };
   const out: CheckOutcome[] = [];
   const add = (code: string, statement: string): void => {
     out.push({ verdict: 'refute', code, statement, grounds: [], tier: TIER, ...own, pointer, data });
   };
+  const numericLevel = levelNumber(finalLevel);
+  if (numericLevel === null) add(CODES.levelMissing, `复核结论等级 ${finalLevel} 不在 P0–P7；先写有效等级再核对结论`);
+  const worst = worstSeverity(remaining.map(({ claim }) => claim.rank));
+  if (worst !== null && 'invalid' in worst) {
+    add(CODES.severityMissing, '仍成立、部分修正或新增的发现都应有 critical、major 或 minor 的严重程度；先补齐再核最终等级');
+  } else if (worst !== null && numericLevel !== null && (numericLevel < worst.minimum || numericLevel > worst.maximum)) {
+    add(CODES.levelSeverityMismatch, `最终仍成立、修正或新增发现中最重的是 ${worst.severity}，最终等级应在 P${worst.minimum}–P${worst.maximum}；当前为 P${numericLevel}。被推翻项不再决定等级，具体等级仍由独立复核判断`);
+  }
   if (final.code === 'PASS') {
     if (refuted.length > 0) add(CODES.passRefuted, `结论 PASS，但推翻了 ${refuted.length} 条初评发现：结论应为 FAIL 或 PARTIAL`);
+    if (partial.length > 0) add(CODES.passPartial, `结论 PASS，但有 ${partial.length} 条初评发现需要修正（partial）：需要修正即 PARTIAL`);
     if (fresh.length > 0) add(CODES.passNewFinding, `结论 PASS，但列出了 ${fresh.length} 条新发现：结论应为 PARTIAL（或 FAIL）`);
-    if (levelChanged === true) add(CODES.passLevelChanged, `结论 PASS，但最终等级 ${finalLevel} 与初评等级 ${draftLevel} 不同：等级改了时结论应为 PARTIAL`);
+    if (levelChanged) add(CODES.passLevelChanged, `结论 PASS，但最终等级 ${finalLevel} 与初评等级 ${draftLevel} 不同：等级改了时结论应为 PARTIAL`);
     // Every draft finding of the run needs a disposition in a handled slot record (a skipped item disposes of none).
     const disposed = new Set(claims.flatMap(({ claim }) => (isDisposition(claim.code) && typeof dataOf(claim).finding === 'string' ? [dataOf(claim).finding as string] : [])));
     const unverified = items.flatMap((it) => [...draftFindings(it.fields).keys()].filter((reference) => !disposed.has(reference)));
@@ -170,11 +186,11 @@ export function verdict(input: unknown): CheckOutcome[] {
     });
     if (major.length === 0) add(CODES.failWithoutRefutation, '结论 FAIL，但没有推翻初评定为严重或主要的发现：FAIL 要有初评的重大事实错误（误判、位置错误、产品语义颠倒）；推翻的只是次要发现时结论应为 PARTIAL');
   } else if (final.code === 'PARTIAL') {
-    if (fresh.length === 0 && corrected.length === 0 && levelChanged !== true) {
+    if (fresh.length === 0 && corrected.length === 0 && !levelChanged) {
       add(CODES.partialWithoutChange, '结论 PARTIAL，但没有新发现，没有推翻或修正初评发现，等级也没有改：PARTIAL 要有其中之一；初评基本正确、没有补充时应为 PASS');
     }
   }
-  if (out.length === 0) out.push({ verdict: 'support', statement: `结论 ${String(final.code)}（等级 ${finalLevel ?? '无'}）与处置一致\n${ruleLine}`, grounds: [], tier: TIER, ...own, pointer, data });
+  if (out.length === 0) out.push({ verdict: 'support', statement: `结论 ${String(final.code)}（等级 ${finalLevel}）与处置及最终仍成立发现的严重度区间一致\n${ruleLine}`, grounds: [], tier: TIER, ...own, pointer, data });
   return out;
 }
 
@@ -210,6 +226,7 @@ function totally(run: (input: unknown) => CheckOutcome[], name: string): (input:
 export const dispositionsCheck = totally(dispositions, 'dispositions');
 export const verdictCheck = totally(verdict, 'verdict');
 export const suggestionTargetsCheck=totally(suggestionTargets,'suggestion_targets');
+export const reviewScopeCheck=totally(input=>captureReviewScope(input,PACK),'review_scope');
 
 /** Without a named export: the check the subject's shape calls for. */
 export default function (input: unknown): unknown {

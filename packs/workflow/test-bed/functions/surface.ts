@@ -1,6 +1,7 @@
 // Bed-surface declarations. The shape and the judgment live here. A product pack fills in the probe seats,
 // the parsed fields and the cleanup references. Nothing in this module names a product or matches wording.
 import SHAPE from '../tables/bed-surface.json' with { type: 'json' };
+import { parseIp, parseIpv4ish } from './addresses.ts';
 import { isRecord } from './common.ts';
 
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
@@ -268,7 +269,7 @@ function addressTexts(entry: unknown): string[] {
   return [];
 }
 
-function toCIDR(value: string): string | null {
+export function toCIDR(value: string): string | null {
   const trimmed = value.trim();
   const slash = trimmed.lastIndexOf('/');
   if (slash > 0) {
@@ -287,8 +288,26 @@ function toCIDR(value: string): string | null {
         return `${ip}/${prefix}`;
       }
     }
+    if (parseIp(ip) !== null && !parseIpv4ish(ip)) {
+      const bits = prefixBits(mask, 128);
+      if (bits === null) return null;
+      return `${ip}/${bits}`;
+    }
   }
   return null;
+}
+
+/** Decimal prefix length 0..max, or null. Two tokens only; this does not interpret the rest of a line. */
+function prefixBits(text: string, max: number): number | null {
+  if (text.length < 1 || text.length > 3) return null;
+  let bits = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 48 || code > 57) return null;
+    bits = bits * 10 + (code - 48);
+  }
+  if (bits > max) return null;
+  return bits;
 }
 
 /** Baseline strings for one field, taken from the frozen bed by the field's declared source. */

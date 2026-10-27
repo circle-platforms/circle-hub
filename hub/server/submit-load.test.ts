@@ -1,5 +1,6 @@
 // Scenario 19's real MCP path: ten concurrent 67-item submissions, with bounded synthetic CPU load.
 import assert from 'node:assert/strict';
+import {realpathSync} from 'node:fs';
 import childProcess from 'node:child_process';
 import { once } from 'node:events';
 import { syncBuiltinESMExports } from 'node:module';
@@ -35,9 +36,11 @@ test('scenario 19 under load completes ten 67-item MCP submissions within the ex
   const submit = engine.submitResult.bind(engine); const work: Promise<unknown>[] = [];
   engine.submitResult = (...args) => { const result = submit(...args); work.push(result); return result; };
   restoreEngine = () => { engine.submitResult = submit; };
-  let launches = 0;
+  await bed.hub.hub.knowledge.feeding!.drain();
+  const parserDirectories=(await bed.hub.hub.registry.installedSkills()).map(pack=>'--allow-fs-read='+realpathSync(pack.handle.directory));
+  let launches = 0,parserLaunches=0;
   childProcess.spawn = ((...args: Parameters<typeof spawn>) => {
-    if (args[1]?.some(arg => String(arg).endsWith('/bootstrap.ts'))) launches++;
+    if (args[1]?.some(arg => String(arg).endsWith('/bootstrap.ts'))){if(args[1].some(arg=>parserDirectories.includes(String(arg))))parserLaunches++;else launches++;}
     return spawn(...args);
   }) as typeof spawn; syncBuiltinESMExports();
   const loadWorkers = Math.min(8, Math.max(1, availableParallelism() - 2));
@@ -53,7 +56,7 @@ test('scenario 19 under load completes ten 67-item MCP submissions within the ex
   }));
   // Drain the observed server work even if MCP timed out; do not let abandoned baseline evaluations poison later tests.
   await Promise.allSettled(work);
-  t.diagnostic(JSON.stringify({ submissions: 10, items: 67, loadWorkers, loadBefore, loadAfter: loadavg(), submitMs: completed.map(ms => Math.round(ms)), launches }));
+  t.diagnostic(JSON.stringify({ submissions: 10, items: 67, loadWorkers, loadBefore, loadAfter: loadavg(), submitMs: completed.map(ms => Math.round(ms)), launches,parserLaunches }));
   assert.equal(work.length, 10);
   for (const [index, answer] of answers.entries()) {
     assert.equal(answer.status, 'fulfilled', `submission ${index} exceeded the unchanged MCP deadline or failed`);
@@ -65,5 +68,7 @@ test('scenario 19 under load completes ten 67-item MCP submissions within the ex
   }
   assert.ok(Math.max(...completed) < 60_000, 'submission phase must stay inside the existing MCP timeout');
   // negative_commands adds a second item-check batch and expected_quality_evidence a third; all three command checks still share one commandSubject build.
-  assert.equal(launches, 10 * 6, 'two run calls, one shared item-builder batch and three item-check batches per submission');
+  assert.ok(parserLaunches<=10*3,`format parsing must stay per document, not per item: ${parserLaunches}`);
+  // level_consistency and review_scope add one run check each, and reviewScopeSubject adds one run-subject build, so the six existing calls become nine.
+  assert.equal(launches, 10 * 9, 'the existing six calls plus level_consistency and the reviewScopeSubject/reviewScopeCheck pair per submission');
 });

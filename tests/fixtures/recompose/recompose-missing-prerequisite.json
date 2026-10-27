@@ -1,0 +1,151 @@
+{
+  "schema": "recompose-record@1",
+  "case": {
+    "id": "orbit-case-0004",
+    "source_ref": "src:d598af7c4e2fd74b0d6dc40bb44737e10cb7d4d8629a1d0c0d9fbd1103e18dbe",
+    "source_path": "tests/fixtures/recompose/author-missing-prerequisite.km.json",
+    "node": "n/case-4"
+  },
+  "contract": {
+    "intent": {
+      "text": "widget health probe pool1 http",
+      "quote_ref": "src:d598af7c4e2fd74b0d6dc40bb44737e10cb7d4d8629a1d0c0d9fbd1103e18dbe/kityminder@1/n/case-4",
+      "verbatim": true
+    },
+    "method": {
+      "kind": "declared",
+      "text": "show health 显示 pool1 的探测类型为 http",
+      "sources": [
+        "src:d598af7c4e2fd74b0d6dc40bb44737e10cb7d4d8629a1d0c0d9fbd1103e18dbe/kityminder@1/n/expected-4"
+      ],
+      "basis": "作者原文"
+    },
+    "expectation": {
+      "text": "show health 显示 pool1 的探测类型为 http",
+      "quote_ref": "src:d598af7c4e2fd74b0d6dc40bb44737e10cb7d4d8629a1d0c0d9fbd1103e18dbe/kityminder@1/n/expected-4",
+      "verbatim": true
+    }
+  },
+  "expectation_slots": [
+    {
+      "slot": "e1",
+      "knowledge_location": "has_verification_knowledge",
+      "evidence": [
+        "src:d598af7c4e2fd74b0d6dc40bb44737e10cb7d4d8629a1d0c0d9fbd1103e18dbe/kityminder@1/n/expected-4"
+      ],
+      "proposal": null,
+      "atom": "a2"
+    }
+  ],
+  "coverage": {
+    "author_atoms": [
+      "a1",
+      "a2"
+    ],
+    "mapped": {
+      "a1": [
+        "e1"
+      ],
+      "a2": [
+        "e1"
+      ]
+    },
+    "unmapped": []
+  },
+  "atoms": [
+    {
+      "id": "a1",
+      "kind": "action",
+      "text": "widget health probe pool1 http",
+      "quote_ref": "src:d598af7c4e2fd74b0d6dc40bb44737e10cb7d4d8629a1d0c0d9fbd1103e18dbe/kityminder@1/n/case-4",
+      "span": [
+        0,
+        30
+      ]
+    },
+    {
+      "id": "a2",
+      "kind": "expectation",
+      "text": "show health 显示 pool1 的探测类型为 http",
+      "quote_ref": "src:d598af7c4e2fd74b0d6dc40bb44737e10cb7d4d8629a1d0c0d9fbd1103e18dbe/kityminder@1/n/expected-4",
+      "span": [
+        0,
+        32
+      ]
+    }
+  ],
+  "sources": {
+    "governing": [
+      {
+        "kind": "spec",
+        "ref": "src:f13eb55d7393200cf252623fbc638dc55d62d9c568f4ad036a478eaa6d4da5f1",
+        "version": "1.0",
+        "authority": "product-declared"
+      }
+    ],
+    "candidates": [],
+    "states": [
+      {
+        "atom": "a1",
+        "state": "missing_prerequisite",
+        "adjudicated_by": null,
+        "reason": "配置对象的存在前置未在原文声明",
+        "exit": {
+          "action": "编写阶段补声明前置",
+          "object": "pool1 及其成员",
+          "owner": "编写阶段",
+          "due": "重新提交之前"
+        },
+        "prerequisites": [
+          "src:d598af7c4e2fd74b0d6dc40bb44737e10cb7d4d8629a1d0c0d9fbd1103e18dbe/kityminder@1/n/case-4"
+        ]
+      },
+      {
+        "atom": "a2",
+        "state": "settled",
+        "adjudicated_by": null,
+        "reason": "观察方法与判定点来自作者原文",
+        "exit": {
+          "action": "交编写阶段消费已受理重组记录",
+          "object": "a2",
+          "owner": "编写模型",
+          "due": "编写提交之前"
+        }
+      }
+    ]
+  },
+  "ledgers": {
+    "original": [
+      {
+        "atom": "a1",
+        "text": "widget health probe pool1 http",
+        "quote_ref": "src:d598af7c4e2fd74b0d6dc40bb44737e10cb7d4d8629a1d0c0d9fbd1103e18dbe/kityminder@1/n/case-4",
+        "span": [
+          0,
+          30
+        ]
+      },
+      {
+        "atom": "a2",
+        "text": "show health 显示 pool1 的探测类型为 http",
+        "quote_ref": "src:d598af7c4e2fd74b0d6dc40bb44737e10cb7d4d8629a1d0c0d9fbd1103e18dbe/kityminder@1/n/expected-4",
+        "span": [
+          0,
+          32
+        ]
+      }
+    ],
+    "adapted": [],
+    "concretizations": [],
+    "rebindings": []
+  },
+  "status": "partial",
+  "unknowns": [
+    {
+      "missing": "作者原文没有声明 pool1 及其成员的存在前置；这是缺前置，不是矛盾",
+      "next_action": "编写阶段按声明前置补齐（先建 pool 与成员，再改探测类型），不改作者意图、不记为冲突",
+      "audience": "编写阶段的模型与核对方",
+      "due": "编写提交之前"
+    }
+  ]
+}

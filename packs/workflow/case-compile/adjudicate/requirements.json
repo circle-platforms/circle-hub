@@ -1,0 +1,24 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "decision",
+      "name": "decision",
+      "description": "结构及凭证由代码核对，语义由带引文模型判断",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "independent_judgment",
+      "checks": [
+        "form",
+        "quotes"
+      ],
+      "error_handling": [],
+      "independent_of": "predecessor",
+      "independence_by_account": true
+    }
+  ]
+}

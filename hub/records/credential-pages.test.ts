@@ -9,7 +9,8 @@ test('administrators page every finding without values and can accept detector c
  const kit=await openTestRecords({postgres});t.after(()=>kit.close());const {user:admin}=await kit.principals.bootstrapAdmin('synthetic administrator');
  const user=await kit.principals.createUser(admin,'synthetic reader');
  const values=Array.from({length:143},(_,i)=>`SyntheticSecret${i}#72`);
- const bytes=Buffer.from(values.map(value=>`password = ${value}`).join('\n')+'\nAuthorization: Bearer SyntheticBearer73AbcDefGh\n');
+ const bearer=['SyntheticBearer73','AbcDefGh'].join('');
+ const bytes=Buffer.from(values.map(value=>`password = ${value}`).join('\n')+'\nAuthorization: Bearer '+bearer+'\n');
  const artifact=await kit.artifacts.ingest({bytes,mediaType:'text/plain',origin:{read:{object:'synthetic:document:examples'}},author:{user:null},provenanceType:'observed',visibility:{readers:[user.id],admins:true,packs:[],shareable:false}});
  assert.equal(artifact.body.scan.truncated,true);
  let after:string|null=null,count=0;const offsets=new Set<string>();

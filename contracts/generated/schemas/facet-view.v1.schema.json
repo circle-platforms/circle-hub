@@ -498,7 +498,9 @@
         "behaviour",
         "case",
         "defect",
-        "observation"
+        "observation",
+        "procedure",
+        "pitfall"
       ],
       "description": "the kind of the entries counted"
     },

@@ -20,7 +20,7 @@ import {
 import type { ItemProjection, SourceBinding } from '../../../contracts/src/run.ts';
 import { digestOf, type Principal, type VariableSnapshot } from '../../records/api.ts';
 import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
-import { ReferenceSyntaxError, resolveReference, srcFragment } from '../../refs/api.ts';
+import { ReferenceSyntaxError, prefetchReferences, resolveReference, srcFragment } from '../../refs/api.ts';
 import { callPackFunction } from '../../rules/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError } from './errors.ts';
@@ -91,6 +91,16 @@ export async function projectItems(
     consumer: 'function' as const,
     documents: ctx.documents,
   };
+  const ahead:string[]=[];
+  for(const item of projected){
+    const slot=item.location.slot??subject;
+    const candidates=bound.filter(binding=>binding.slot===slot&&(item.location.source===undefined||binding.sha256===item.location.source));
+    for(const candidate of candidates){
+      try{ahead.push(srcFragment(candidate.sha256,item.location.parser,item.location.selector,item.location.range));}
+      catch(error){if(!(error instanceof ReferenceSyntaxError))throw error;}
+    }
+  }
+  await prefetchReferences(ahead,resolveCtx);
   const items: ItemProjection[] = [];
   for (const item of projected) {
     const slot = item.location.slot ?? subject;
@@ -197,15 +207,18 @@ export async function bindExpected(
       }
       const read = await ctx.deps.external.read(wanted.external, { principal: user, run: runId, variables, purpose: '期望来源',feeding_offset:context.feeding_offset,adminNote:detail=>ctx.log({traceId,run:runId,what:`expected source ${wanted.external}`,detail}), ...(composition !== undefined ? {composition} : {}),...(build!==undefined?{build}:{}),...(unversioned!==undefined?{unversioned}:{}) });
       if (!read.ok) {
-        if(read.inputError?.code==='SOURCE_READ_FAILED'){out.warnings.push({code:'SOURCE_READ_FAILED',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
-        if(read.inputError?.code==='SOURCE_READ_LIMIT'){out.warnings.push({code:'SOURCE_READ_LIMIT',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
-        if(read.redirect && read.inputError) {out.warnings.push({code:'SOURCE_REDIRECT_REFUSED',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
         if(read.retry) {
-          const message=`缺少期望来源 ${wanted.external} 的读取结果；下一次时间 ${read.retry.at}，按原对象重读后重新开始运行`;
+          const step = read.inputError?.fix;
+          const message = step === undefined
+            ? `缺少期望来源 ${wanted.external} 的读取结果；下一次时间 ${read.retry.at}，按原对象重读后重新开始运行`
+            : `${read.inputError?.message ?? `缺少期望来源 ${wanted.external} 的读取结果`}；下一次时间 ${read.retry.at}，${step}`;
           out.warnings.push({code:'SOURCE_RETRYABLE',message});
           miss(read.reason,message);
           continue;
         }
+        if(read.inputError?.code==='SOURCE_READ_FAILED'){out.warnings.push({code:'SOURCE_READ_FAILED',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
+        if(read.inputError?.code==='SOURCE_READ_LIMIT'){out.warnings.push({code:'SOURCE_READ_LIMIT',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
+        if(read.redirect && read.inputError) {out.warnings.push({code:'SOURCE_REDIRECT_REFUSED',message:`${wanted.external}：${read.inputError.message}；${read.inputError.fix}`});miss(read.reason,read.inputError.message);continue;}
         miss(read.reason);
         continue;
       }

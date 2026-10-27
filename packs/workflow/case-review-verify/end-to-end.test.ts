@@ -1,3 +1,4 @@
+import {kityminderParser} from "../../../hub/testing/parsers.ts";
 // End to end through the real Hub packages (registry, connectors, knowledge, runs) on synthetic systems: the products sync
 // into roots, the draft pack reviews a mind map read from the agile platform, the Hub's own checks judge it, and the
 // verification pack verifies the draft in another session with another model. The second product (Lumen API, REST endpoints)
@@ -9,7 +10,7 @@ import { after, before, describe, test } from 'node:test';
 import type { ItemProjection, RunSummary } from '../../../contracts/src/run.ts';
 import type { Submission } from '../../../contracts/src/submission.ts';
 import type { RequirementResult, ValidationResult } from '../../../contracts/src/validation.ts';
-import { kityminderParser } from '../../../hub/refs/api.ts';
+
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { DOCUMENTS } from '../../../tests/fixtures/agile/index.ts';
 import { compactText, fixtureBytes, largeDocument } from '../../../tests/fixtures/mindmaps/index.ts';
@@ -231,6 +232,13 @@ describe('the draft review (case-review) and its independent verification (case-
 
   let verify: RunSummary;
 
+  test('the verification cannot start without its required draft predecessor', async () => {
+    const answer = await bed.service.startRun(bed.reviewer, { pack: 'case-review-verify', parameters: DECLARED_SOURCES, product: 'FAMX', version: LINE, build: ALIAS, inputs: { target: { external: MINDMAP }, draft: { reference: `rec:${draftRecord}` } } }, bed.call('sess-no-predecessor'));
+    assert.equal(answer.call_result, 'error');
+    assert.equal(answer.run, undefined);
+    assert.ok(answer.errors.some(error => error.path === '/predecessor' && error.code === 'SUBMISSION_SCHEMA_VIOLATION'));
+  });
+
   test('start_run of the verification: the draft items with their draft findings and the draft level', async () => {
     const answer = await bed.service.startRun(bed.reviewer, { pack: 'case-review-verify', parameters:DECLARED_SOURCES, product: 'FAMX', version: LINE, build: ALIAS, inputs: { target: { external: MINDMAP }, draft: { reference: `rec:${draftRecord}` } }, predecessor: draft.run }, bed.call('sess-verify'));
     verify = runOf(answer);
@@ -344,11 +352,11 @@ describe('the draft review (case-review) and its independent verification (case-
     assert.ok(!answer.errors.some((e) => e.code === 'case-review-verify.pass_without_evidence'), 'the expected results the verifier quoted are its own check of the target');
   });
 
-  test('a refutation of a minor draft finding with the level unchanged is a consistent PARTIAL', async () => {
+  test('a refutation of a minor draft finding is a consistent PARTIAL after the remaining severity is applied', async () => {
     const negative = byTitle(second, 'widget health retries pool1 0').find((i) => (i.fields.draft_findings as Array<{ rank: string }>).some((f) => f.rank === 'minor'));
     assert.ok(negative, 'the negative case with its minor draft finding');
     const claims = disposeEvery(second, (item) => [expectedQuote(item)], { [negative.label]: 'refuted' });
-    const answer = await bed.service.submitResult(bed.reviewer, { run: second.run, model: VERIFIER, model_identity:VERIFIER_IDENTITY, items: handled(second, 'verification', claims), cross_item: [{ nature: 'judgment', statement: '结论理由：初评基本正确，推翻了一条次要发现；对初评等级的质疑：P4 合适', grounds: [], code: 'PARTIAL', rank: 'P4' }] }, bed.call('sess-verify-2'));
+    const answer = await bed.service.submitResult(bed.reviewer, { run: second.run, model: VERIFIER, model_identity:VERIFIER_IDENTITY, items: handled(second, 'verification', claims), cross_item: [{ nature: 'judgment', statement: '结论理由：初评基本正确，推翻了一条次要发现；对初评等级的质疑：剩余次要发现对应 P2', grounds: [], code: 'PARTIAL', rank: 'P2' }] }, bed.call('sess-verify-2'));
     assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors).slice(0, 1500));
     assert.deepEqual(answer.errors.filter((e) => e.rounds_left !== undefined), [], JSON.stringify(answer.errors).slice(0, 1500));
     assert.equal(requirement(answer.result!, negative.id, 'verification').status, 'satisfied');
@@ -398,7 +406,7 @@ describe('the second product: REST endpoints reviewed by the same workflow pack'
     assert.equal(latest.items.length, 6);
     const negative = one(latest, 'GET /v1/pools 500');
     const remove = one(latest, 'DELETE /v1/pools/{id} true');
-    const finding = (item: Item, claim: Claim): Claim => ({ text: '示例发现', code: 'edge_case_gap', rank: 'minor', location: item.location, quotes: [{ reference: item.location, text: item.label }], ...claim });
+    const finding = (item: Item, claim: Claim): Claim => ({ text: '示例发现', code: 'edge_case_gap', rank: 'major', location: item.location, quotes: [{ reference: item.location, text: item.label }], ...claim });
     const claims = new Map<string, Claim[]>([
       [negative.id, [finding(negative, { commands: [{ command: 'GET /v1/pools 500' }] })]],
       [remove.id, [finding(remove, { commands: [{ command: 'DELETE /v1/pools/{id}', present: true }, { command: 'PATCH /v1/pools', present: false }] })]],

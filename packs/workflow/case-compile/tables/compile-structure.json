@@ -1,0 +1,41 @@
+{
+  "schema": "compile-structure@1",
+  "layouts": [
+    "case_body_expectations",
+    "title_steps_expectations"
+  ],
+  "auto_allowed": [
+    "YES",
+    "1",
+    "01",
+    1,
+    true
+  ],
+  "auto_excluded": [
+    "NO",
+    "0",
+    0,
+    false
+  ],
+  "auto_absent": "allow",
+  "maximum_depth": 64,
+  "number_separators": [
+    "."
+  ],
+  "marker_grammar": "trailing_bracket@1",
+  "nested": "undetermined",
+  "action_depth": 1,
+  "expectation_depth": 2,
+  "atom_kinds": [
+    "intent",
+    "action",
+    "expectation"
+  ],
+  "node_roles": [
+    "group",
+    "note",
+    "case",
+    "action",
+    "expectation"
+  ]
+}

@@ -59,7 +59,7 @@
             {
               "text": "初评遗漏：缺少探测间隔为 0 的反向用例",
               "code": "new_finding",
-              "rank": "minor",
+              "rank": "major",
               "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/kityminder@1/n/c1",
               "quotes": [
                 {

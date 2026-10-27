@@ -1,3 +1,5 @@
+import {analyzeStructure} from './compile-structure.ts';
+import {admittedRecomposition} from './recomposition.ts';
 // Project exactly one authored case and freeze the original runner contract, profile, manifest and lease view.
 // Every check recomputes from these inputs; malformed documents refuse the whole run with all problem pointers.
 import { isRecord, refusal, type PackWarning } from './text.ts';
@@ -14,6 +16,7 @@ interface Slot {
   sha256?: string;
   parser?: string | null;
   model: unknown;
+  meta?:Record<string,unknown>|null;
 }
 
 interface FrozenLeases {
@@ -85,7 +88,12 @@ export function projectItems(input: unknown): unknown {
   const extraction = extractCases(subject.model, rule,true);
   if (extraction.impreciseAutoids.length) return refusal('autoid_imprecise', `文档有 ${extraction.impreciseAutoids.length} 个 autoid 数值超出安全范围，JSON 解析后无法保证原编号精度`, `把原文节点 ${extraction.impreciseAutoids[0].selector ?? extraction.impreciseAutoids[0].node} 的 autoid 以文本重新导出或重新上传；不能从已舍入数值猜原编号`, extraction.impreciseAutoids.map((value) => ({ code: 'case-compile.autoid_problem', message: `${value.pointer}（节点 ${value.selector ?? value.node}）：数值精度无法保证；从原件以文本重导出或请求核心无损数字解析，不复制当前数值` })));
   if (typeof parameters.autoid !== 'string' || !new RegExp(profileRead.profile.workbook.autoid_pattern, 'u').test(parameters.autoid)) return refusal('autoid_invalid', 'autoid 必须是符合配置形状的原始文字', '从用例原文复制完整 autoid 字符串，不能转为数字，改正后重新开始运行');
-  const selected = extraction.cases.filter((found) => found.autoid === parameters.autoid);
+  const structure=analyzeStructure(subject.model,subject.sha256??'');
+  const selected=structure.cases.filter(c=>c.autoid===parameters.autoid&&!c.excluded.length&&(rule!=='tagged'||(isRecord((subject.model as any)?.nodes?.[c.node]?.data)&&Array.isArray((subject.model as any).nodes[c.node].data.resource)&&(subject.model as any).nodes[c.node].data.resource.length>0))).map(c=>{
+    const raw=(subject.model as any).nodes[c.node],data=raw.data??{},old=extraction.cases.find(v=>v.selector===c.selector||v.id===c.id);
+    const expectedNodes=[...new Set(c.atoms.filter(a=>a.kind==='expectation').map(a=>a.selector))].map(selector=>{const n=(subject.model as any).nodes.find((n:any)=>n.selector===selector);return {text:n?.text??c.atoms.find(a=>a.selector===selector)?.text??'',selector:n?selector:null,...(n?.data?.assertion!==undefined?{declaration:n.data.assertion}:{})};});
+    return {...(old??{id:c.id,title:raw.text,tags:Array.isArray(data.resource)?data.resource:[],priority:data.priority===undefined?null:String(data.priority),autoid:c.autoid,auto:data.auto===undefined?null:String(data.auto),negative:data.negative===true,selector:c.selector}),steps:c.atoms.filter(a=>a.kind==='action').map(a=>({text:a.text,expected:c.atoms.filter(e=>e.kind==='expectation'&&e.after.includes(a.id)).map(e=>e.text)})),expected:c.atoms.filter(a=>a.kind==='expectation'&&!a.after.length).map(a=>a.text),expected_nodes:expectedNodes,projection_unknowns:c.missing,source_atoms:c.atoms};
+  });
   if (selected.length === 0) return refusal('autoid_not_found', '指定 autoid 在按规则抽取的用例里找不到', '核对用例文档和 case_rule，取得该用例原始 autoid 文字后重新开始运行');
   if (selected.length > 1) return refusal('autoid_ambiguous', '指定 autoid 在用例文档里重复，无法确定一个用例', '作者修正重复编号并重新上传文档，再开始新运行');
   const model = isRecord(subject.model) ? subject.model : {};
@@ -95,6 +103,8 @@ export function projectItems(input: unknown): unknown {
   if (extraction.candidates > 0) warnings.push({ code: 'case-compile.candidate_only', message: `${extraction.candidates} 个节点只靠标记识别，case_rule 为 tagged 时不是用例（要取用请加标签，或改用默认规则）` });
   const context = isRecord(params.context) ? params.context : {};
   const frozenLeases = isRecord(context.leases) ? (context.leases as unknown as FrozenLeases) : { now: new Date(0).toISOString(), entries: [] };
+  const recompositionRun=slotOf(inputs,'recomposition_run'),recompositionResult=slotOf(inputs,'recomposition_result');
+  const recompositionRequested=!!recompositionRun||!!recompositionResult||parameters.pipeline==='recomposed';
   const sha256 = typeof subject.sha256 === 'string' ? subject.sha256 : '';
   const items = selected.map((found) => ({
     id: `${documentId}:${found.id}`,
@@ -108,7 +118,11 @@ export function projectItems(input: unknown): unknown {
         if(!rows.length||rows.every(row=>isRecord(row)&&isRecord(row.data)&&!Object.hasOwn(row.data,'command_identities')))return undefined;if(rows.some(row=>!isRecord(row)||!isRecord(row.data)||!Array.isArray(row.data.command_identities)))return null;
         return [...new Map(rows.flatMap(row=>(row as {data:{command_identities:unknown[]}}).data.command_identities).map(identity=>[JSON.stringify(identity),identity])).values()];
       })(),
-      expected_nodes:found.expected_nodes?.every(node=>node.selector!==null)?found.expected_nodes.map(node=>({reference:`src:${sha256}/kityminder@1/${node.selector}`,text:node.text})):undefined,
+      expected_nodes:found.expected_nodes?.every(node=>node.selector!==null)?found.expected_nodes.map(node=>({reference:`src:${sha256}/kityminder@1/${node.selector}`,text:node.text,...(node.declaration!==undefined?{declaration:node.declaration}:{})})):undefined,
+      pipeline:recompositionRequested?'recomposed':'legacy',
+      pipeline_note:recompositionRequested?'必须消费独立重组受理凭证':'本运行未走重组阶段，不代表重组完成',
+      projection_unknowns:found.projection_unknowns,
+      source_atoms:found.source_atoms,
       title: found.title,
       tags: found.tags,
       priority: found.priority,
@@ -127,6 +141,10 @@ export function projectItems(input: unknown): unknown {
     groups: [
       {
         kind: 'case-compile',
+        projection_report:structure,
+        recomposition_requested:recompositionRequested,
+        recomposition:recompositionRequested?admittedRecomposition(recompositionRun,recompositionResult,context,'src:'+sha256,selected[0].selector??''):null,
+        criteria_review:{result:slotOf(inputs,'criteria_review')??null,run:slotOf(inputs,'criteria_review_run')??null},
         contract: contractSlot.model,
         manifest: inventorySlot.model,
         profile: profileSlot.model,

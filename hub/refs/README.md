@@ -9,7 +9,7 @@ Other packages import only from `hub/refs/api.ts`. refs imports only `contracts/
 | --- | --- |
 | `reference.ts` | `parseReference`, `formatReference`, `normalizeReference`, `sameTarget`, `sameSource`, `srcFragment`, `treeReference`, `recReference`, selector, path and pointer codecs, `MAX_SELECTOR_LENGTH`, `ReferenceSyntaxError` |
 | `parser.ts` | `Parser`, `ParsedDocument`, `Fragment`, limits, typed parse errors, `createParserRegistry`, `recognize` |
-| `parsers/*.ts` | the seven core parsers: `kityminder@1`, `xml@1`, `html@1`, `markdown@1`, `json@1`, `text@1`, `xlsx@1` |
+| `parsers/*.ts` | the transitional core parsers: `xml@1`, `html@1`, `markdown@1`, `json@1`, `text@1` |
 | `quote.ts` | `quoteMatches`, `locateQuote`, `findQuote`, `candidatesFrom` |
 | `resolve.ts` | `SourceReader`, `TreeReader`, `RecordReader`, `resolveReference`, `verifyQuote`, document cache, `isGroundable` |
 | `canonical-json.ts` | RFC 8785 serialization and `recordDigest`, used to re-verify `rec:` references |
@@ -155,12 +155,12 @@ of tags with 500 attributes each takes about 2 s; every hostile input in the tes
 
 ## Quotations (T04 R[1])
 
-`quoteMatches(fragmentText, quote)` uses decision 37: a Unicode White_Space run adjacent to a W/F code point is
-removed; other interior runs count as one space and both ends are trimmed. The normalized quote must be a non-empty
-verbatim substring. Case, punctuation, character width, zero-width characters and Unicode normalization form stay
-significant. An unpaired surrogate never matches half a character. The same contextual function serves normalization
-and the streaming KMP matcher, without a collapsed copy per candidate. The 29 shared vectors run on both refs and
-rules; `locateQuote` maps matches back to UTF-8 byte offsets in the original unmodified fragment text.
+`quoteMatches(fragmentText, quote)` requires an exact contiguous substring of the decoded fragment text. Case,
+punctuation, character width, zero-width characters, Unicode normalization form and every whitespace character stay
+significant; there is no trimming, folding or normalization. Empty and whitespace-only quotes never match, and an
+unpaired surrogate never matches half a character. KMP searches the original text directly without a normalized copy.
+The 36 shared vectors run on both refs and rules; `locateQuote` maps matches to the exact UTF-8 bytes of the submitted
+quote in the original unmodified fragment text.
 
 `findQuote(candidates, quote)` returns the resolution (`resolved`, `ambiguous`, `unresolved`, from the vocabulary) over
 candidate fragments. Every occurrence belongs to the innermost candidate around it, and the places are the candidates
@@ -212,7 +212,17 @@ onDiagnostic? }`. It never rejects for anything a reference or a stored source c
   only for results and the Hub's own records, kinds `claim`, `validation_result`, `action`, `effect` (B01 R[4]).
 - `verifyQuote(result, quote)` is true or false on readable text and null when the text cannot be checked.
 - `createDocumentCache(n)` keeps parsed documents keyed by digest, parser and media type (safe: bytes behind a digest
-  never change). Permission is still checked by the reader on every call.
+  never change). Permission is still checked by the reader on every call. A call-owned cache applies an LRU limit of
+  192 MiB in estimated retained bytes as well as its entry limit; a lazy document reports fragment growth so eviction
+  need not wait for another read. Legacy parsers without retained-byte accounting use a model estimate and a 16 MiB
+  allowance for hidden state. This is a conservative accounting policy, not a measured or guaranteed RSS bound: parser
+  closures, active operations, subprocesses and temporary serialization allocations can retain additional memory.
+  A single document over the estimate budget fails the operation with a retryable resource error; it is not silently
+  evicted and reparsed separately for every selector. The administrator can ask the source maintainer to split the
+  document or the parser maintainer to reduce its retained representation, then reread it.
+  Parsing and all lazy lookups sharing a cache use one 120-second monotonic operation deadline, including time spent
+  waiting to parse. A timed-out parse is not inserted if it subsequently completes. The sandbox's separate per-call
+  timeout and input/output limits still apply.
 
 ## Decisions and deviations from the brief
 
@@ -290,44 +300,43 @@ templates, repeated body tags, foster parenting, misnested formatting, deep wrap
 headings, invalid UTF-8 with offsets, NUL and control characters, unpaired surrogates, 1500 random or corrupted inputs
 per parser that must either parse or raise a ParseError); every public API (parse, listSelectors, locate on every
 selector, candidatesFrom, findQuote, resolveReference) under a time bound on hostile input that parses; selector length
-and total limits; quotation cases (NBSP, tabs, CRLF, U+3000 match; case, punctuation, width and normalization
-differences do not; the shared hub/rules vectors; 4000 random cases against the definition; places and pins in nested
-fragments, links, mind-map fields, JSON values, cross-line and cross-block quotations); resolution with fake readers
-(tiers, retain-only probing, indistinguishable unavailability with the internal reason, visible and invisible tree
-roots, digest re-verification, ranges, unwritable canonical selectors, cache); canonical JSON refusals.
+and total limits; quotation cases (exact NBSP, tabs, CRLF and U+3000 match; whitespace substitutions, case,
+punctuation, width and normalization differences do not; the shared hub/rules vectors; 4000 random cases against the
+definition; places and exact pins in nested fragments, links, mind-map fields, JSON values, cross-line and cross-block
+quotations); resolution with fake readers (tiers, retain-only probing, indistinguishable unavailability with the
+internal reason, visible and invisible tree roots, digest re-verification, ranges, unwritable canonical selectors,
+cache); canonical JSON refusals.
 
-## Quotation whitespace (decision 37)
+## Strict quotation whitespace
 
-A run of Unicode White_Space is removed when either adjacent code point has East_Asian_Width W or F. Other interior
-runs collapse to one ASCII space; leading/trailing whitespace is trimmed. Case, punctuation, character width and
-normalization form remain significant: `set 10 0` differs from `set 100`, while `超时\n时间` matches `超时时间`.
-Classification is the frozen [Unicode 17.0.0 W/F data](https://www.unicode.org/Public/17.0.0/ucd/EastAsianWidth.txt)
-in quote-whitespace.ts, including supplementary characters and wide emoji; ambiguous-width and halfwidth characters
-are not treated as W/F. The Unicode license is included in unicode-license.txt.
+Every whitespace character is significant. A tab, line break, NBSP or ideographic space matches only the same character
+sequence; no whitespace run is deleted, collapsed or trimmed, including beside a wide or fullwidth character. Thus
+`set 10 0` differs from `set 100`, and `超时\n时间` differs from both `超时时间` and `超时 时间`. Empty and
+whitespace-only quotes never match, even when the fragment contains exactly that whitespace.
 
-One contextual function decides whitespace for normalization and streaming search. Matching, occurrence counts,
-byte-range pinning and the not-found diagnostic use that rule; ranges still point into the unmodified fragment.
-Rules independently implements the same quotation rule and reads the shared vectors; ordinary rules table matching retains its original whitespace
-normalization. Shared vectors test both direct quotation checks and the cached collapsed-fragment path.
+Matching, occurrence counts, byte-range pinning and the not-found diagnostic use this rule. Ranges point into the
+unmodified fragment and slice out exactly the submitted quote. Rules independently implements the same quotation rule
+and reads the shared vectors; ordinary rules table matching retains its original whitespace normalization.
 
 ## Independent gold quotation alignment
 
-`compile-check.ts` checkVerbatimQuote now independently implements decision 37. It uses a local regular-expression
-classifier derived directly from Unicode 17.0.0 W/F source data (`scripts/real/gold/quote-widths.ts`, with source digest and Unicode license), with no Hub or pack imports.
-Its ordinary collapseWhitespace utility remains unchanged for the separate expected-text containment contract.
-Missing exported source bytes still produce the existing unknown receipt; this change does not make unavailable evidence pass.
+`compile-check.ts` checkVerbatimQuote and expected-text containment independently use exact contiguous substring
+matching from `scripts/real/gold/quote-widths.ts`, with no Hub or pack imports. Empty, whitespace-only and ill-formed
+quotes are rejected. Missing exported source bytes still produce the existing unknown receipt; unavailable evidence
+never passes.
 
 The conformance harness lives in `hub/refs/gold-quotes.test.ts`: only that test imports both implementations. It reads
-the same 29 synthetic rules vectors, adds Chinese hard-wrap, mixed-width, Latin-boundary and Unicode edge cases, and
-compares a deterministic 5000-case synthetic Unicode corpus. Gold expected verdicts in the named vectors are literal
-booleans, not computed from Hub output. A production dependency-closure test rejects imports of Hub or pack modules.
+the same 36 synthetic rules vectors, adds exact and mismatched whitespace, character-boundary and Unicode edge cases,
+and compares a deterministic 5000-case synthetic Unicode corpus. Gold expected verdicts in the named vectors are
+literal booleans, not computed from Hub output. A production dependency-closure test rejects imports of Hub or pack
+modules.
 
 Read-only audit of the 120 local branch heads (committed snapshots, excluding uncommitted work; 39 distinct production
 file versions below scripts/real/gold before this follow-up), plus quotation-related scripts/real call sites:
 
 | Snapshot | Implementation / caller | Current rule and integration action |
 | --- | --- | --- |
-| Current branch | `scripts/real/gold/compile-check.ts`: compileCheck expected-text containment (`case-compile.expect_not_in_quote`); corresponding `packs/workflow/case-compile/functions/checks.ts`: foldText/checkExpectedSources | Still uses ordinary whitespace collapse for the separate package check. A hard wrap can pass the generic source-quotation check and fail this containment check. Arrange package-contract and independent gold alignment together; this follow-up changes checkVerbatimQuote only. |
+| Current branch | `scripts/real/gold/compile-check.ts`: checkVerbatimQuote and compileCheck expected-text containment (`case-compile.expect_not_in_quote`) | Both use exact contiguous matching without whitespace normalization. Pack-specific changes are outside this core task. |
 | `gold-d2c` at `49e5f13c` | `scripts/real/gold/quotes.ts`: quoteMatches; judgeQuote/quotesReport; called by `scripts/real/accept/defect-to-case-compare.ts` and its batch driver | Unicode White_Space collapses to one space; Chinese hard wraps still differ. After merge, independently align it with decision 37 and run the shared vectors. |
 | `gold-review` at `e41dafd6`, `gold-catalog` at `c50ecb72` | `scripts/real/lib/inject.ts`: noWhiteSpace and the contradict_manual quotation precondition | Deletes all whitespace, including Latin word boundaries. This is an injection guard, not a gold verdict; after merge, have its owner align the guard where it promises a verbatim quotation. |
 | Other local branch snapshots carrying `scripts/real/gold/compile-check.ts` | checkVerbatimQuote and compileCheck expected-text containment | Same old generic checkVerbatimQuote implementation, not an additional independent rule. Preserve this branch's generic quotation fix when merging; no other branch was edited. |
@@ -343,11 +352,6 @@ or worktree was changed and no real-system script was run; only synthetic tests 
 
 - **model / integrator**: align T03 DEF with the owner-approved upload boundary: credential scan plus definite parsing
   refusals for declared/recognized-extension media types; sniffing alone is advisory and cannot refuse storage.
-
-- **contracts / rules owner**: update the QuoteTable description in contracts/src/tables.ts to decision 37: remove
-  W/F-adjacent whitespace, collapse other interior runs and trim ends. Regenerate
-  contracts/generated/schemas/quote.v1.schema.json (currently the same stale description) and run gen-contracts --check.
-  These contract files are outside this task's paths; no contract edit is claimed here.
 
 - **runs**: reject an oversized aggregate bound input before sandbox serialization, naming the input slot(s), measured
   byte budget and cap, with a split/reduce action. Do not report it as a pack-author function defect. The per-model XLSX
@@ -478,10 +482,10 @@ character or a platform Big5 expansion shares one original sequence. No Unicode 
 The [Encoding Standard](https://encoding.spec.whatwg.org/) documents the decoder API and sequence layouts; legacy
 character mappings follow the installed Node/ICU decoder, including its Big5 special-pair mapping.
 
-Scope disclosure for decision 37: the owner explicitly authorized rules/text.ts, quote.test.ts and its conformance
-fixtures beyond the original quote-vectors-only task path; the rules README update was separately approved. The first
-runtime refs import violated `rules -> refs(types)` and is now removed. This review adds rules-local W/F data; no
-production quotation implementation imports the other. Shared vectors are the independent agreement check.
+Scope disclosure for strict quotation correction: the owner authorized rules/text.ts, quote.test.ts and its conformance
+fixtures beyond the original quote-vectors-only task path; the rules README update was separately approved. No
+production quotation implementation imports the other, and neither consults East Asian width data. Shared vectors are
+the independent agreement check.
 
 HTML encoding refusals label the declaration source (media-type charset or meta) at the throw site. Unsupported source labels stay in ParseError.detail only and are never interpolated into caller messages.
 
@@ -506,3 +510,15 @@ source/target lookup and duplicate detection all use that equivalence. Original 
 relationship is skipped merely because its part uses .RELS or _RELS. External targets are disclosed but never fetched.
 
 首轮复核修正：读取失败的下一次时刻与有效条件重读共用 ResolveContext.now，只有未注入时才用墙钟；来源、树、条目和记录的失败出口一致。
+
+## R5 A1/B5：安装能力与历史锁
+
+KityMinder 与 XLSX 实现已分别迁到独立的 `packs/skill/mindmap-format` 与 `packs/skill/workbook-format`，不再由核心默认注册表提供。生产程序集以 `createSkillParserRegistry` 按管理员安装记录装载；包函数经现有沙箱调用，消费方使用 `parseDocument` / `recognizeAsync`。核心保留引用语法、原件身份与逐字核对。其余内置格式在 B5 按模板继续迁移。
+
+工作包依赖、运行 skills 锁及结果锁使用包清单摘要。旧运行缺锁不允许以当前安装版本推定：管理员用 `circle-hub skill bind-legacy <parser@version> <pack@version>` 追加迁移时点事后声明（单个运行的显式声明仍可用 `pack bind-skills`），原运行、原结果均不改；解析结果附事后声明披露。未绑定时返回缺失摘要与补绑定出口。单元测试显式注入测试解析器，不构成生产自动安装。
+
+### A1 补充：运行级迁移记录
+
+`circle-hub skill bind-legacy <parser@version> <pack@version>` 为每个引用该解析器、缺少其技能摘要的历史运行单独追加绑定；全局迁移声明不再作为运行的隐式补锁。判断只使用完整结构引用（包括关联提交、核验结果和动作中的引用），不会从说明文字中捞片段。原运行、原结果和已有技能锁保持原字节。空技能集合或仅锁其他解析器的运行仍可补足目标解析器，已锁定该解析器的摘要不覆盖。
+
+每条运行绑定引用原运行记录和发布记录，标明迁移时点事后声明、管理员、时间和迁移验证测试名；复核的结果锁与有效条件包含追加摘要及声明记录。未补绑时明确返回“运行未锁定技能包摘要”和 `skill bind-legacy` 出口。同一摘要重复执行只补缺失记录，不重复追加；改变映射拒绝。扫描按页处理，整批事务失败不留下半批绑定。

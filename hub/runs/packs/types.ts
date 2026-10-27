@@ -11,6 +11,7 @@ import type {
   SAMPLE_SOURCES,
   SlotsFile,
   WorkflowFile,
+  SkillDeclaration,
 } from '../../../contracts/src/pack.ts';
 import type { ProductDeclaration } from '../../../contracts/src/product.ts';
 import type { SystemProfile } from '../../../contracts/src/resources.ts';
@@ -110,7 +111,13 @@ export interface SystemDeclarations {
   system: SystemProfile;
 }
 
-export type PackDeclarations = WorkflowDeclarations | ProductDeclarations | SystemDeclarations;
+export interface SkillDeclarations {
+  kind: Extract<PackKind, 'skill'>;
+  skill: SkillDeclaration;
+  /** Optional runnable method; parser-only capabilities are not start_run entries. */
+  method: WorkflowDeclarations | null;
+}
+export type PackDeclarations = WorkflowDeclarations | ProductDeclarations | SystemDeclarations | SkillDeclarations;
 
 export interface ValidatedPack {
   directory: PackDirectory;

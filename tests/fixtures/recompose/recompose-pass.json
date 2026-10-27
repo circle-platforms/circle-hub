@@ -1,0 +1,161 @@
+{
+  "schema": "recompose-record@1",
+  "case": {
+    "id": "orbit-case-0001",
+    "source_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a",
+    "source_path": "tests/fixtures/recompose/author-pass.km.json",
+    "node": "n/case-1"
+  },
+  "contract": {
+    "intent": {
+      "text": "widget health interval pool1 5",
+      "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/case-1",
+      "verbatim": true
+    },
+    "method": {
+      "kind": "declared",
+      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+      "sources": [
+        "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1"
+      ],
+      "basis": "作者在脑图内写明观察命令与判定点（同一节点的逐字文本）；不需要外部来源重组"
+    },
+    "expectation": {
+      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+      "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1",
+      "verbatim": true
+    }
+  },
+  "expectation_slots": [
+    {
+      "slot": "e1",
+      "knowledge_location": "has_verification_knowledge",
+      "evidence": [
+        "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1"
+      ],
+      "proposal": null,
+      "atom": "a2"
+    }
+  ],
+  "coverage": {
+    "author_atoms": [
+      "a1",
+      "a2"
+    ],
+    "mapped": {
+      "a1": [
+        "e1"
+      ],
+      "a2": [
+        "e1"
+      ]
+    },
+    "unmapped": []
+  },
+  "atoms": [
+    {
+      "id": "a1",
+      "kind": "action",
+      "text": "widget health interval pool1 5",
+      "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/case-1",
+      "span": [
+        0,
+        30
+      ]
+    },
+    {
+      "id": "a2",
+      "kind": "expectation",
+      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+      "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1",
+      "span": [
+        0,
+        31
+      ]
+    }
+  ],
+  "sources": {
+    "governing": [
+      {
+        "kind": "spec",
+        "ref": "src:f13eb55d7393200cf252623fbc638dc55d62d9c568f4ad036a478eaa6d4da5f1",
+        "version": "1.0",
+        "authority": "product-declared"
+      }
+    ],
+    "candidates": [],
+    "states": [
+      {
+        "atom": "a1",
+        "state": "settled",
+        "adjudicated_by": null,
+        "reason": "已受理裁定 twin/adjudication.json 确认一致性",
+        "exit": {
+          "action": "交编写阶段消费已受理重组记录",
+          "object": "a1",
+          "owner": "编写模型",
+          "due": "编写提交之前"
+        }
+      },
+      {
+        "atom": "a2",
+        "state": "settled",
+        "adjudicated_by": null,
+        "reason": "同上",
+        "exit": {
+          "action": "交编写阶段消费已受理重组记录",
+          "object": "a2",
+          "owner": "编写模型",
+          "due": "编写提交之前"
+        }
+      }
+    ]
+  },
+  "ledgers": {
+    "original": [
+      {
+        "atom": "a1",
+        "text": "widget health interval pool1 5",
+        "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/case-1",
+        "span": [
+          0,
+          30
+        ]
+      },
+      {
+        "atom": "a2",
+        "text": "show health 显示 pool1 的探测间隔为 5 秒",
+        "quote_ref": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/expected-1",
+        "span": [
+          0,
+          31
+        ]
+      }
+    ],
+    "adapted": [
+      {
+        "atom": "a1",
+        "action": "parameter_change",
+        "equivalence_reason": "命令树里 widget health interval 的参数 2 声明为整数类型（产品包声明位置）",
+        "load_bearing": true,
+        "conditions": [
+          "间隔值落在声明范围内",
+          "观察对象与配置对象是同一个 pool"
+        ],
+        "text": "widget health interval pool1 5",
+        "commands": [
+          "widget health interval pool1 5"
+        ],
+        "equivalence_refs": [
+          "src:eb4aabf53cc3b789e2912c8531e8daec1e09cbd0f8a8a5dc74580a4550326ee5/json@1/p/parameters/0"
+        ],
+        "source_of_value": "src:dcffbbfc0d99ef1e2a930c10a2eea81cbbc272aadd2c892440c528578df3f45a/kityminder@1/n/case-1",
+        "authority": "src:eb4aabf53cc3b789e2912c8531e8daec1e09cbd0f8a8a5dc74580a4550326ee5/json@1/p/parameters/0"
+      }
+    ],
+    "concretizations": [],
+    "rebindings": []
+  },
+  "status": "complete",
+  "unknowns": []
+}

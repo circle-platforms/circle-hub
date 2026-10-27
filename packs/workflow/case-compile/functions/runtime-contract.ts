@@ -47,9 +47,21 @@ export function runtimeMethod(contract: RuntimeContract, object: string, method:
 /** The members a runtime-contract@2 document adds on top of the original contract (Hub-side deployment declaration). */
 const ADDITIONS = ['types', 'roles', 'effects'];
 /**
- * Removes the @2 additions (types, roles, effects, per-entry typed_authority and the original declaration itself) and
- * restores the original schema and its contract_sha256: the recovered document must carry the original contract's
- * canonical identity. Returns null when the value is not a @2 document with an original declaration.
+ * Runtime members B1 reads that the pinned original contract does not have. That original (canonical identity
+ * ca32544f…) has exactly minimum_version, runner_source, runner_sha256 and found_times_supported. block_model and
+ * checkpoint_two_argument are the closed @2 additions; found_times_supported stays. This is not "drop every unknown
+ * runtime member".
+ */
+export const RUNTIME_ADDITIONS = ['block_model', 'checkpoint_two_argument'] as const;
+function withoutRuntimeAdditions(member: Record<string, unknown>): Record<string, unknown> {
+  if (!RUNTIME_ADDITIONS.some((field) => Object.hasOwn(member, field))) return member;
+  return Object.fromEntries(Object.entries(member).filter(([field]) => !RUNTIME_ADDITIONS.some((addition) => addition === field)));
+}
+/**
+ * Removes the @2 additions (types, roles, effects, per-entry typed_authority, the runtime members in
+ * RUNTIME_ADDITIONS, and the original declaration itself) and restores the original schema and its contract_sha256:
+ * the recovered document must carry the original contract's canonical identity. Every runtime member outside that
+ * closed set stays. Returns null when the value is not a @2 document with an original declaration.
  */
 export function stripAdditions(value: Record<string, unknown>): Record<string, unknown> | null {
   if (value.schema !== 'runtime-contract@2' || !isRecord(value.original)) return null;
@@ -58,7 +70,7 @@ export function stripAdditions(value: Record<string, unknown>): Record<string, u
     if (key === 'schema' || key === 'contract_sha256' || key === 'original' || ADDITIONS.includes(key)) continue;
     out[key] = key === 'entries' && Array.isArray(member)
       ? member.map((entry) => isRecord(entry) ? Object.fromEntries(Object.entries(entry).filter(([field]) => field !== 'typed_authority')) : entry)
-      : member;
+      : key === 'runtime' && isRecord(member) ? withoutRuntimeAdditions(member) : member;
   }
   out.schema = FORMAT.contract_schema;
   out.contract_sha256 = value.original.contract_sha256;

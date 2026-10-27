@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 // Regression tests for the findings of the milestone 2 review of this package, one scenario per finding: a list producer
 // broken for every document, failures that are not memoized, too many documents skipped or isolated, a document that times
 // out alone, skipped documents shown as absent, a list producer that reads the build, a recheck with more than 50 skipped
@@ -12,7 +13,7 @@ import { KnowledgeBuildBody, TreeRootBody } from '../../contracts/src/knowledge.
 import type { BuildInfo, KnownBuild } from '../../contracts/src/product.ts';
 import type { ExternalRead, ExternalReadContext } from '../ports.ts';
 import type { ActionBody, DerivedCoverageInput, IngestInput, Principal, SourceArtifact } from '../records/api.ts';
-import { createDefaultRegistry } from '../refs/api.ts';
+
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { createKnowledge, createKnowledgeReader } from './api.ts';
 import { parseViewId } from './views.ts';

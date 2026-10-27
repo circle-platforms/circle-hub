@@ -9,15 +9,17 @@ names) and **W09** (the sync is a standing obligation the Hub executes). Milesto
 in `contracts/src/knowledge.ts`.
 
 `createKnowledge(options)` returns an object that implements `KnowledgePort` of `hub/ports.ts` exactly (`builds`,
-`resolveBuild`, `currentRoot`, `rootOfBuild`, `rootInfo`, `catalog`, `treeReader`, `getNodes`, `diffRoots`,
-`diffEntries`), plus `produceTree`, `syncProduct`, `lockRoot`, `moveRoot`, `reconcileLine`, `provenanceOf`,
-`calibration`, `placement`, `layers`, `views` and `store`. Its `treeReader` also takes an optional lock
-(`{ composition }`, see decision 13). `createKnowledgeReader(knowledge)` serves the views as an `ExternalReaderPort`.
+`resolveBuild`, `currentRoot`, `rootOfBuild`, `rootForRead`, `rootInfo`, `catalog`, `treeReader`, `getNodes`,
+`diffRoots`, `diffEntries`), plus `produceTree`, `syncProduct`, `lockRoot`, `moveRoot`, `reconcileLine`,
+`provenanceOf`, `calibration`, `placement`, `layers`, `views` and `store`. `rootForRead(product, {build?, line?})`
+is the root a run locks and a view reads: the line's seedling pointer when it names one, otherwise `rootOfBuild` or
+`currentRoot`. When those two digests differ, the view's `notes` name both. Its `treeReader` also takes an optional
+lock (`{ composition }`, see decision 13). `createKnowledgeReader(knowledge)` serves the views as an `ExternalReaderPort`.
 
 ```ts
 const knowledge = createKnowledge({
   records: kit,                       // store, artifacts, pointers, principals and objects of hub/records
-  parsers: createDefaultRegistry(),   // hub/refs core parsers: the Hub parses, never the pack
+  parsers: installedParsers,          // hub/refs skill registry: installed capabilities execute in the sandbox
   packs,                              // PacksPort (runs)
   external,                           // ExternalReaderPort (connectors only: the views are not a source of the tree)
   // no jev: the Hub calls no model; only tests inject a scripted judge
@@ -666,10 +668,12 @@ budget). The suite runs a reduced version (`scale.test.ts`: 300 documents of 20 
   into the note as `生产动作 rec:<digest>` and into the `root_pointer` record). (2) A batched get by index value would
   make the first catalog or page of a large root faster. (3) A named lock (advisory lock) on the API, so that syncs and
   productions in different processes are serialised as they are within one.
-- **runs**: lock with `lockRoot(product, {build})` or `{line}` (`rootOfBuild` / `currentRoot`), keep `RootInfo.composition`
-  with the run and resolve the run's tree references with a reader bound to it once the port allows; every
-  `KnowledgePort` method takes the product line id, not a product name. If production runs of workflow packs should
-  move current roots later, a way to check that a run id is a completed production run of the product.
+- **runs**: lock with `rootForRead` / `lockRoot(product, {build})` or `{line}` (the line's seedling root when that
+  pointer names one, otherwise `rootOfBuild` / `currentRoot`). A view that reads the seedling while the same build
+  still has a different sync root names both digests in `notes`. Keep `RootInfo.composition` with the run and resolve
+  the run's tree references with a reader bound to it once the port allows; every `KnowledgePort` method takes the
+  product line id, not a product name. If production runs of workflow packs should move current roots later, a way to
+  check that a run id is a completed production run of the product.
 - **server**: register `knowledgeCliCommand` in the assembly; pass the knowledge service as `KnowledgePort`; supply the
   admin principal; route knowledge-contribution@1 record reads through layers.contributions.read before any admin
   bypass, and treat
@@ -824,10 +828,14 @@ entry edits. Ordinary-field declarations and their counts keep their existing be
 | `cited_fragment_changed` 被引片段已变 | **所引根 X 与读者根 Y 比**（K03 R[5]）：X ≠ Y，且 Y 里同一路径的条目摘要与 X 里的不同、或 Y 里没有这个路径，才标，并写出 X 和 Y 两个根（`cited_root`、`reader_root`）。读者根：运行里 = 读者的锁（锁定组成）所属的根；**运行外（K01 R[6]）= 这条产品线的当前根指针**（指针已移到别的根时同样标，并注明主张在所引根上仍成立）；**同一个根永远不会变**（根按内容寻址）；当前指针也取不到（这条产品线@构建还没有根）时不标，照实不算 | 有数据，已算 |
 | `expired` 已过期 | 记录主张 `validity.expires_at`，解析时按解析上下文注入的时钟（没有才用墙钟）重读（B01 R[3]）；树条目自身无过期字段，不算 | 记录主张有数据，已算；树条目无来源 |
 | `contradicted` 出现矛盾主张 | `claim` 记录带 `relation: 'contradicts'`，见下；**只算读者本人可见的关系**（本人的候选关系 + Hub 确定性规则产出的关系），别人的私有候选关系不给另一个读者打标（K05 R[4]，管理员也不例外）；也包括组成记录 `applicability_sources` 标记的适用条件冲突，含义是「来源声明互相矛盾」：凡可读这个根的人都能看到这些组成出处，只有 claim 关系受上述读者可见范围限制；这一来源不补造 claim，也不写入 `validity.contradictions` 关系列表 | 合成关系记录与组成出处已算；候选层的提议通道由另一终端在建 |
-| `grounds_withdrawn` 根据已撤回 | 无撤回记录通道 | 无数据来源，先不算 |
+| `grounds_withdrawn` 根据已撤回 | 管理员命令 `circle-hub knowledge retract` 追加的 `retraction@1` | 有数据来源；喂入和回注的读侧已按撤回记录标出 |
 | `premise_failed` 前提失效 | 前提的认证状态没有机器可读记录 | 无数据来源，先不算 |
 
 一次读里所有条目的矛盾关系**合成一次查询**（一次 `findMany` 取全部条目摘要的关系，内部翻完，无上限截断）；查询次数不随条目数增长。
+
+### 撤回喂入条目
+
+管理员执行 `circle-hub knowledge retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因>`。`--entry` 可以是喂入条目的记录摘要，也可以是 `knowledge-contribution@1` 回注记录的摘要。三种目标可以混用，每种目标各追加一条 `retraction@1`。撤回不删除、不改写原记录；读侧随后把对应喂入条目标成 `invalid`，把回注标成 `grounds_withdrawn`（根据已撤回）。同一目标已经有撤回记录时不再追加。
 
 ### 矛盾关系怎样存、怎样查
 

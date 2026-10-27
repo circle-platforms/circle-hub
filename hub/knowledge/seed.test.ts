@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 // The knowledge seed command and the feeding hang from a per-build root onto the line's current seedling.
 // Synthetic only: loopback SVN, platform zx-u, version lines from 10.8, addresses in 192.0.2.0/24.
 import assert from 'node:assert/strict';
@@ -15,7 +16,7 @@ import type { ResourceCatalogPort } from '../ports.ts';
 import { addSyntheticResource, setSyntheticCredential } from '../connectors/testing/credentials.ts';
 import { fakePacks } from '../connectors/testing/packs.ts';
 import { startStub, text, type StubServer } from '../connectors/testing/api.ts';
-import { createDefaultRegistry } from '../refs/api.ts';
+
 import { readManifest, stagePack } from '../../packs/workflow/case-review/packaging.ts';
 import { PACK_DIR } from '../../packs/system/svn/api.ts';
 import { knowledgeCliCommand } from './cli.ts';

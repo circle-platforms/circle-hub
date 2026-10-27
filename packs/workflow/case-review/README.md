@@ -5,18 +5,33 @@ map with the team's method (the earlier skill `test-list-review`), the Hub judge
 conclusion is left to the independent verification pack `case-review-verify`. Model elements T01 T02 W02 W03 W05 C03-C08 K01
 K04. Everything product-specific comes from the product pack the run binds (names, catalogs); this pack names no product.
 
+## 1.1.26
+
+- Reissue the A1 type-only import and the merged manifest as a new immutable version. The review rules are unchanged from
+  1.1.25.
+
+## 1.1.25
+
+- Quotation is exact contiguous text, including every whitespace character. The core model already required this; the
+  previous folding matcher was an implementation regression. L16 is deliberately reversed: strict quotation stays in core.
+- `level_consistency` checks only the declared band of the worst finding: critical P6-P7, major P3-P5, minor P0-P2. It does
+  not assign a grade from counts or prose. Empty findings do not imply a grade.
+- The projection freezes `case-review-scope@1`: source digest, document identity, effective recognition parameters, all
+  expected items and the selected block. A Hub function fact on `level` carries this scope to verification and reporting.
+  Older drafts without it must be redone rather than treated as complete.
+
 ## The pack
 
 | File | Content |
 | --- | --- |
 | `workflow.json` | input slot `subject` (role subject; `agile:mindmap` or an uploaded `application/json` KityMinder export); the run parameters below; product binding without a fixed line, catalog `commands@1`; projection `functions/projection.ts`, expected sources `functions/expected.ts` |
-| `requirements.json` | `literal` (fact, item: checks structure, node_ids, tags), `catalog` (fact, item: cited_commands, command_claims; a negative case expects `core.catalog.param_out_of_range`, `param_type_mismatch` or `arity_mismatch`), `findings` (judgment, item: findings_quotes, command_claims, findings_sources; repair rows, two rounds, for `core.catalog.membership_contradicted`, `case-review.hint_only`, `case-review.location_missing`, `case-review.quote_missing`, `case-review.command_not_in_case`, `QUOTE_MISMATCH`), `level` (judgment, run) |
-| `checks.json` | eight checks (table below); `case_commands` is listed by no requirement: the optional scan, off |
+| `requirements.json` | `literal` (fact, item: checks structure, node_ids, tags), `catalog` (fact, item: cited_commands, command_claims; a negative case expects `core.catalog.param_out_of_range`, `param_type_mismatch` or `arity_mismatch`), `findings` (judgment, item: findings_quotes, command_claims, findings_sources; repair rows, two rounds, for `core.catalog.membership_contradicted`, `case-review.hint_only`, `case-review.location_missing`, `case-review.quote_missing`, `case-review.command_not_in_case`, `QUOTE_MISMATCH`), `level` (judgment, run: `level_consistency` and `review_scope`) |
+| `checks.json` | twelve checks (table below); `case_commands` is listed by no requirement: the optional scan, off |
 | `slots.schema.json` | item `findings`: codes the seven probe names, ranks critical, major, minor (with their level bands), evidence required (the check `findings_sources` asks for a verbatim quotation besides), at most 20; run `level`: code `level`, ranks P0-P7 with the brief's definitions, exactly one |
 | `SKILL.md` | the drafter's procedure (about 4,000 characters): target, blocks and slices, the six evidence groups in order and how to read them, findings (location, verbatim quotation, command lines as the case writes them), severity bands, levels, submission with the context digest, repair, revision runs with `predecessor` and `reuse`, the mandatory case-review-report table view after every review (single block included), followed by short overall prose |
-| `functions/` | the adapters (`projection.ts`, `expected.ts`, `subjects.ts`, `checks.ts`) on the pure functions (`project.ts`, `expected-sources.ts`, `subject.ts`, `lines.ts`, `tags.ts`, `template-coverage.ts`, `text.ts`, `common.ts`, `types.ts`) |
+| `functions/` | the adapters (`projection.ts`, `expected.ts`, `subjects.ts`, `checks.ts`, `review-scope.ts`) on the pure functions (`project.ts`, `expected-sources.ts`, `subject.ts`, `lines.ts`, `tags.ts`, `template-coverage.ts`, `text.ts`, `common.ts`, `types.ts`, `levels.ts`) |
 | `tables/` | the check tables, `codes.json` (every pack code with Chinese when/fix, the finding codes, bands and levels), the template tables |
-| `samples/` | 23 samples (`pack-sample@1`, source author; 11 positive, 12 negative) written by `testing/samples.ts`: every check has positive and negative ones |
+| `samples/` | 31 samples (`pack-sample@1`, source author; 13 positive, 18 negative) written by `testing/samples.ts`: every check has positive and negative ones |
 | `examples/` | a start_run and a submit_result, synthetic, with placeholders (the submission writes the context digest of each judged item and carries one item over with `reuse`) |
 
 Not published (not pack paths): `api.ts` (the package surface and `node packs/workflow/case-review/api.ts check|sign|stage`),
@@ -49,6 +64,10 @@ workflow name (`workflowNames` in `functions/common.ts`).
 | `findings_quotes` | quote@1 `tables/findings-quotes.json` | item, default subject | artifact under verification | blocking | findings |
 | `findings_sources` | `functions/checks.ts#findingSources` | item, default subject | artifact under verification | blocking | findings |
 | `case_commands` | catalog@1 `tables/catalog.json` | item, `scanSubject` | subject | advisory | none (optional, off) |
+| `expected_quality_evidence` | `functions/expected-quality.ts` | item, default subject | artifact under verification | blocking | expected_quality |
+| `negative_commands` | `functions/checks.ts#negativeCommands` | item, `commandSubject` | subject | advisory | catalog |
+| `level_consistency` | `functions/checks.ts#levelConsistencyCheck` | run, default subject | artifact under verification | blocking | level |
+| `review_scope` | `functions/checks.ts#reviewScopeCheck` | run, `reviewScopeSubject` over frozen groups | subject | blocking | level |
 
 `commandSubject` splits what the findings of one item say about commands. A command with `present` is a statement that it
 exists (true) or does not (false), judged as a membership claim (`claims`). A command without `present` must be a command

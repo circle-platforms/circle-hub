@@ -778,19 +778,36 @@ export class FakeRuns implements RunsService {
     this.contexts.push(context);
     const scripted = this.script.take('resolveReference');
     if (scripted !== undefined) return scripted.value as ResolveOut;
-    const stored = await this.#visible(user, input.run);
-    if (stored === null) {
-      this.#note(context, `run ${input.run} is absent or not visible to ${user.id}`);
-      return { call_result: 'error', errors: [UNAVAILABLE], references: [], diagnostics: [] };
+    if (input.run !== undefined) {
+      const stored = await this.#visible(user, input.run);
+      if (stored === null) {
+        this.#note(context, `run ${input.run} is absent or not visible to ${user.id}`);
+        return { call_result: 'error', errors: [UNAVAILABLE], references: [], diagnostics: [] };
+      }
+      const found = stored.record.items.filter((item) => item.label.includes(input.text));
+      if (found.length === 0) return { call_result: 'ok', errors: [], resolution: 'unresolved', references: [], diagnostics: [`没有找到 ${input.text}`] };
+      return {
+        call_result: 'ok',
+        errors: [],
+        resolution: found.length === 1 ? 'resolved' : 'ambiguous',
+        references: found.map((item) => ({ reference: item.location, text: item.label, role: 'subject' as const })),
+        diagnostics: [],
+      };
     }
-    const found = stored.record.items.filter((item) => item.label.includes(input.text));
-    if (found.length === 0) return { call_result: 'ok', errors: [], resolution: 'unresolved', references: [], diagnostics: [`没有找到 ${input.text}`] };
+    if (input.text.trim().startsWith('rec:')) {
+      return {
+        call_result: 'error',
+        errors: [{ code: 'REFERENCE_UNRESOLVED', message: 'rec: 引用和回注层条目需要运行锁定的喂入层序列', fix: '改用 start_run 启动运行并在 resolve_reference 中传入 run 参数', path: '/text' }],
+        references: [],
+        diagnostics: [],
+      };
+    }
     return {
       call_result: 'ok',
       errors: [],
-      resolution: found.length === 1 ? 'resolved' : 'ambiguous',
-      references: found.map((item) => ({ reference: item.location, text: item.label, role: 'subject' as const })),
-      diagnostics: [],
+      resolution: 'unresolved',
+      references: [],
+      diagnostics: [`没有找到 ${input.text}`],
     };
   }
 

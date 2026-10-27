@@ -10,6 +10,7 @@
 // or a secret value: tokens come from stdin, credentials from stdin or explicitly named environment-file keys, never as argv values.
 import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protocol.ts';
 import {referencesIn} from '../../contracts/src/variables.ts';
+import {bindLegacySkills,bindLegacyParser} from '../refs/api.ts';
 import { variableCommand, namedSecretCommand, VAR_USAGE, NAMED_SECRET_USAGE } from './variables.ts';
 import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE, bedCommand, BED_USAGE } from './cli-job.ts';
 import { copyFile, open, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -21,7 +22,7 @@ import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, isLeaseOp, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError, type HubConfig } from '../config/index.ts';
 import { ConnectorError, type AddResourceInput, type LoginStatus, type UpdateResourceInput } from '../connectors/api.ts';
-import { KnowledgeError, createKnowledgeReader, formatSeedReport, formatSyncReport, knowledgeSeed, knowledgeSync, parseKnowledgeSeedArgs, parseKnowledgeSyncArgs, type KnowledgeSeedArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
+import { KnowledgeError, createKnowledgeReader, formatKnowledgeRetract, formatSeedReport, formatSyncReport, knowledgeRetract, knowledgeSeed, knowledgeSync, parseKnowledgeSeedArgs, parseKnowledgeSyncArgs, type KnowledgeSeedArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
 import { DocsError } from './docs.ts';
 import type { ProductHandle } from '../ports.ts';
 import { productionShareKey, RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
@@ -48,9 +49,10 @@ export interface AdminCommandOptions {
   assembly?: AssemblyOptions;
 }
 
+export const SKILL_USAGE='skill bind-legacy <解析器 id@版本> <技能包 id@版本>';
 export const PACK_USAGE =
-  'pack publish <目录> [--stage] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list | shapes <任务包>';
-export const RESOURCE_USAGE = 'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <系统包>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>…] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
+  'pack install <技能包@版本> | uninstall <技能包> | bind-skills <旧运行> --skill <技能包@版本>… --reason <理由> | publish <目录> [--stage] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <任务包> | unassign <用户> <任务包> | retire <任务包@版本> | activate <产品包> | deactivate <产品包> | list | shapes <任务包>';
+export const RESOURCE_USAGE = 'resource add <系统包> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <系统包>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>… | --clear-plaintext] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = NAMED_SECRET_USAGE;
 export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
 export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--suffix <外部标识的后缀>] [--limit <条数>] | export <sha256> --out <文件>';
@@ -58,7 +60,7 @@ export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --
 export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-users) [--reason <理由>] | production <任务包> [--reason <理由>] | list [--object <对象>]';
 export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <任务包>';
 export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
-export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run] | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
+export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run] | retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因> | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
 export const INIT_ADMIN_USAGE = 'init-admin <名字>   建第一位管理员，令牌存进钥匙串（账户 operator-token），不显示';
 export const OPERATOR_TOKEN_USAGE =
   'operator-token set   从标准输入读一个启用中的管理员的令牌，存进钥匙串（账户 operator-token）；钥匙串项丢失时用，已有的项不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进钥匙串，不显示；已有的项不覆盖';
@@ -329,9 +331,35 @@ function packIdOf(ref: string, what: string): string {
   return parsed.id;
 }
 
+async function skillCommand(session:Session,args:readonly string[]):Promise<number>{
+ const [sub,...rest]=args;if(sub!=='bind-legacy')throw new UsageError(SKILL_USAGE);
+ const {positionals}=parse(rest,{},2);const by=await session.admin(),hub=await session.hub();
+ const binding=await decided(()=>bindLegacyParser({registry:hub.registry,records:hub.records},by,positionals[0],positionals[1]));
+ session.out(`解析器 ${binding.parser} → ${binding.skill.pack}@${binding.skill.version}；摘要 ${binding.skill.digest}`);
+ session.out(`迁移时点事后声明；操作者 ${binding.decided_by}；时间 ${binding.at}；测试 ${binding.test}；rec:${binding.record}；旧记录不改`);
+ session.out(`本次扫描 ${binding.scanned_runs} 个历史运行；追加绑定 ${binding.bound_runs} 条；已有绑定 ${binding.already_bound_runs} 条`);return 0;
+}
+
 async function packCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   switch (sub) {
+    case 'install': {
+      const {positionals}=parse(rest,{},1);const by=await session.admin();const hub=await session.hub();
+      const decision=await decided(()=>hub.registry.install(by,positionals[0]));
+      session.out(`通用技能包已安装；决定 ${decision.digest}`);return 0;
+    }
+    case 'uninstall': {
+      const {positionals}=parse(rest,{},1);const by=await session.admin();const hub=await session.hub();
+      const decision=await decided(()=>hub.registry.uninstall(by,positionals[0]));
+      session.out(`通用技能包已卸载；旧运行仍按冻结摘要复核；决定 ${decision.digest}`);return 0;
+    }
+    case 'bind-skills': {
+      const {positionals,values}=parse(rest,{skill:{type:'string',multiple:true},reason:{type:'string'}},1);
+      if(!values.reason||!Array.isArray(values.skill)||!values.skill.length)throw new UsageError('pack bind-skills <旧运行> --skill <技能包@版本>… --reason <理由>');
+      const by=await session.admin(),hub=await session.hub();
+      const record=await decided(()=>bindLegacySkills({registry:hub.registry,records:hub.records},by,positionals[0],values.skill as string[],values.reason as string));
+      session.out(`历史运行的技能摘要声明已追加；不是原执行历史的补造；rec:${record}`);return 0;
+    }
     case 'shapes': {
       const {positionals,values}=parse(rest,{as:{type:'string'}},1);
       const viewer=await session.viewer(values.as);
@@ -562,6 +590,7 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
           environment: { type: 'string' },
           origin: { type: 'string', multiple: true },
           'allow-plaintext': { type: 'string', multiple: true },
+          'clear-plaintext': { type: 'boolean' },
           setting: { type: 'string', multiple: true },
           'setting-json': {type:'string',multiple:true},
           'setting-var': {type:'string',multiple:true},
@@ -570,6 +599,9 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
         },
         1,
       );
+      if (values['clear-plaintext'] && values['allow-plaintext'] !== undefined) {
+        throw new UsageError('--clear-plaintext 与 --allow-plaintext 不能同时给');
+      }
       const changes: UpdateResourceInput = {};
       if (values['system-pack'] !== undefined) changes.system_pack = values['system-pack'];
       if (values.name !== undefined) {
@@ -588,7 +620,9 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
         }
         changes.origins = origins;
       }
-      if (values['allow-plaintext'] !== undefined) {
+      if (values['clear-plaintext']) {
+        changes.allow_plaintext = [];
+      } else if (values['allow-plaintext'] !== undefined) {
         const plaintext = new Set<string>();
         for (const role of values['allow-plaintext']) {
           const url = changes.origins?.[role];
@@ -608,14 +642,35 @@ async function resourceCommand(session: Session, args: readonly string[]): Promi
       if(Object.keys(settings).length)changes.settings=settings;
       if(values['unset-setting'])changes.unset_settings=values['unset-setting'];
       if(values.credential)changes.credentials=Object.fromEntries(pairs(values.credential,'--credential'));
-      if (Object.keys(changes).length === 0) throw new UsageError('没有要改的项：给 --system-pack、--name、--environment、--origin、--allow-plaintext 或 --setting');
+      if (Object.keys(changes).length === 0) throw new UsageError('没有要改的项：给 --system-pack、--name、--environment、--origin、--allow-plaintext、--clear-plaintext 或 --setting');
       const admin = await session.admin();
       const hub = await session.hub();
       const previous=await hub.connectors.admin.describe(admin,positionals[0]);
+      const clearedRoles: string[] = [];
+      if (changes.origins !== undefined && values['allow-plaintext'] === undefined && !values['clear-plaintext'] && previous) {
+        const prevOrigins = previous.origins ?? {};
+        const prevPlaintext = new Set(previous.allow_plaintext ?? []);
+        const kept = new Set<string>();
+        for (const [role, oldUrl] of Object.entries(prevOrigins)) {
+          try {
+            const oldOrigin = new URL(oldUrl).origin;
+            if (prevPlaintext.has(oldOrigin)) {
+              if (changes.origins[role] === oldUrl) {
+                kept.add(oldOrigin);
+              } else {
+                clearedRoles.push(role);
+              }
+            }
+          } catch {}
+        }
+        changes.allow_plaintext = [...kept];
+      }
       const missingLegacy=(previous?.credentials??[]).filter(c=>!c.entry.startsWith('${secret:')&&!c.set&&changes.credentials?.[c.name]);
       const record = await decided(() => hub.connectors.admin.updateResource(admin, positionals[0], changes));
       for(const item of missingLegacy)session.out(`原值不在密钥库里：接着用 circle-hub secret set --name ${changes.credentials![item.name]} 设置`);
       session.out(`已更新资源 ${record.id}：${record.name}（系统包 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
+      if (values['clear-plaintext']) session.out('已清空所有明文放行');
+      else if (clearedRoles.length > 0) session.out(`已清掉角色 ${clearedRoles.sort().join('、')} 的明文放行`);
       await resourceWarnings(session,record);
       return 0;
     }
@@ -805,6 +860,25 @@ async function knowledgeCommand(session: Session, args: readonly string[]): Prom
     const report = await decided(() => knowledgeSeed(hub.knowledge, hub.packs, admin, parsed, hub.resources));
     for (const line of formatSeedReport(report).trimEnd().split('\n')) session.out(line);
     return report.ok ? 0 : 1;
+  }
+  if (sub === 'retract') {
+    const { values } = parse(rest, { entry: { type: 'string', multiple: true }, run: { type: 'string', multiple: true }, object: { type: 'string', multiple: true }, reason: { type: 'string' } }, 0);
+    const entries = values.entry ?? [];
+    const runs = values.run ?? [];
+    const objects = values.object ?? [];
+    const reason = values.reason;
+    if (reason === undefined || reason.trim() === '') throw new UsageError('knowledge retract 要用 --reason 给一行原因');
+    if (reason.includes('\n') || reason.includes('\r')) throw new UsageError('knowledge retract 的 --reason 必须是一行');
+    if (entries.length + runs.length + objects.length === 0) throw new UsageError('knowledge retract 至少要一个 --entry、--run 或 --object');
+    if ([...entries, ...runs, ...objects].some(id => id.trim() === '')) throw new UsageError('knowledge retract 的目标不能为空');
+    if ([...entries, ...objects].some(id => !isSha256(id))) throw new UsageError('knowledge retract 的 --entry 和 --object 是记录摘要（64 位十六进制）');
+    const admin = await session.admin();
+    const hub = await session.hub(true);
+    const feeding = hub.knowledge.feeding;
+    if (!feeding) throw new CliError('喂入层没有装上', '用当前 Hub 装配后重试');
+    const report = await decided(() => knowledgeRetract(feeding, admin, { entries, runs, objects, reason: reason.trim(), at: hub.knowledge.__context.now().toISOString() }));
+    for (const line of formatKnowledgeRetract(report)) session.out(line);
+    return 0;
   }
   if (sub === 'roots') {
     const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
@@ -1331,6 +1405,7 @@ const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
   { name: 'executor', summary: EXECUTOR_USAGE, handler: executorCommand },
   { name: 'job', summary: JOB_USAGE, handler: jobCommand },
   { name: 'bed', summary: BED_USAGE, handler: bedCommand },
+  {name:'skill',summary:SKILL_USAGE.slice('skill '.length),handler:skillCommand},
   { name: 'pack', summary: PACK_USAGE.slice('pack '.length), handler: packCommand },
   { name: 'resource', summary: RESOURCE_USAGE.slice('resource '.length), handler: resourceCommand },
   { name: 'var', summary: VAR_USAGE.slice('var '.length), handler: variableCommand },

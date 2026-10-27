@@ -1,20 +1,25 @@
 {
   "schema": "pack@1",
   "id": "case-review",
-  "version": "1.1.24",
+  "version": "1.1.27",
   "kind": "workflow",
   "title": "测试脑图评审（初评）",
   "description": "按团队的评审方法（test-list-review）初评一份测试脑图：Hub 判定字面问题、命令与目录、引文与位置，模型写七类评审发现和 P0-P7 等级；结论由复核任务包 case-review-verify 独立复核",
+  "dependencies": [
+    {
+      "pack": "mindmap-format"
+    }
+  ],
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "ae3efea745fde9de6f2f939975cf8548faf719991b453d3b1eb2593992fc33ce",
-      "size": 12807
+      "sha256": "eadf8cbf03b997556624e6a08b97803142f7718de5dfe635de5f5173c04cdcd9",
+      "size": 13348
     },
     {
       "path": "checks.json",
-      "sha256": "afc5bde3f02a7b7e41df7ca1282c70e33558c2323d5152d233e3708a3d867ecf",
-      "size": 4132
+      "sha256": "d49460c2d755c4789d1c7ca922b71ac1eac66c6861edbd98738afb43a72a0960",
+      "size": 5155
     },
     {
       "path": "examples/start-run.json",
@@ -23,18 +28,18 @@
     },
     {
       "path": "examples/submission.json",
-      "sha256": "1078c35072fecfbdc17a2f640e90be8b0eee6230d0ae969949ae7bc2ea3807af",
+      "sha256": "5b1ddf49b2111f4dbbcef045b9cd32f71b8b7094cc5c86a04506518590c75179",
       "size": 1788
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "1139e527f69a0b0df33acc6006aa405ca1b9bc0199b3bec5f33bdf66ee7c099d",
+      "sha256": "414672f421845f2698482a23356af66c6acbddc25486547fc26b3fdaeb0ced42",
       "size": 1434
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "f0dc86b51c2cb6d274b5024b4af6207a0310cd5d8f80a93ce7bcd351e147937d",
-      "size": 10754
+      "sha256": "16c3fa9c7876addf3ada0251ef052d8f892ea54d9b37fb3532069e8d3b12ae07",
+      "size": 13522
     },
     {
       "path": "functions/common.ts",
@@ -62,19 +67,29 @@
       "size": 4642
     },
     {
+      "path": "functions/levels.ts",
+      "sha256": "7cb22aa711b0f5fd9892600b460774e9da268c8959f23f491c75be81d79a93d0",
+      "size": 1002
+    },
+    {
       "path": "functions/lines.ts",
       "sha256": "23e60be80031d29d4892b4ffaf8b111a3418a90a189ce96bfafae7387b36f48d",
       "size": 2865
     },
     {
       "path": "functions/project.ts",
-      "sha256": "e9eaac8a49ed8c250d234463cb926466d6fe56c1add35e6d3230c7d98275c897",
-      "size": 27685
+      "sha256": "9d69489ac6b32433d6691db280f25237e8b4f98e091382999cfb48c27fe65738",
+      "size": 27807
     },
     {
       "path": "functions/projection.ts",
-      "sha256": "f9b6c9b30e82f7053f45a3695a80eea3db3dd3337a67abc15f8d481fd5a97500",
-      "size": 20778
+      "sha256": "d45bcff9d2aa6f80d8e86f2182169ce8f8389aa2302860697b0d2214c03fbdde",
+      "size": 21568
+    },
+    {
+      "path": "functions/review-scope.ts",
+      "sha256": "57ef1954d1f161543111a2c0f0e059b88afe6e43fb0618bafee100c5e2b9f5cb",
+      "size": 4730
     },
     {
       "path": "functions/subject.ts",
@@ -103,13 +118,13 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "800558cf66086af6af1dbcf4edff315484f3b6d6ad02dcf3c322278a11babb83",
-      "size": 12339
+      "sha256": "a15081636715bb15293040bedf8afcf576df9f794fbde7fb597502ad820bf596",
+      "size": 12401
     },
     {
       "path": "requirements.json",
-      "sha256": "cc72ecfa3207eae62b130fbe3e5d422733052437c232fba5f344806cb6a68286",
-      "size": 4805
+      "sha256": "bf6999b1b499853dbbd4a83b800bdfee5a5aeaa814df090cee9c7be78f5a7d68",
+      "size": 5317
     },
     {
       "path": "samples/negative/cited_negative_case.json",
@@ -132,6 +147,16 @@
       "size": 1494
     },
     {
+      "path": "samples/negative/level_minor_band_mismatch.json",
+      "sha256": "f5e8df5733e05c55d1e07abb46acbf8cd7aad3e5a9bfdee947e2d0ae53f8cbb2",
+      "size": 2439
+    },
+    {
+      "path": "samples/negative/level_missing.json",
+      "sha256": "4d2cd2c172f4c2ac414f3c2a8d8e036f9d2fae37bbf03168596c10a4a54a643f",
+      "size": 2384
+    },
+    {
       "path": "samples/negative/negative_command_missing.json",
       "sha256": "e5804f97be5d35511077fad67974df2bc2430ca1ecdb99b3999c2172cf15803f",
       "size": 1495
@@ -147,9 +172,24 @@
       "size": 1782
     },
     {
+      "path": "samples/negative/quotes_whitespace_changed.json",
+      "sha256": "e449a28c38416f0284ba209d66c873bab35488a2d6c36fb1f97a2974534b92d2",
+      "size": 1829
+    },
+    {
       "path": "samples/negative/scan_out_of_range.json",
       "sha256": "ff55e5d9ce4e7b3f971ecca23fc270c79ac88e16b106167b37cb85fec9927acf",
       "size": 1555
+    },
+    {
+      "path": "samples/negative/scope_conflict.json",
+      "sha256": "5ba6d0dbe97bb194d6161b7ef58dc13189c52ddd5326598083c5d3af442d35cb",
+      "size": 330
+    },
+    {
+      "path": "samples/negative/severity_missing.json",
+      "sha256": "68481e6f796f190d2b9e204ff2cc8e13e20f75af77d60853b57082c007c3084f",
+      "size": 2375
     },
     {
       "path": "samples/negative/sources_cited_line_variant.json",
@@ -212,6 +252,11 @@
       "size": 1459
     },
     {
+      "path": "samples/positive/level_major_band.json",
+      "sha256": "33d2376ec2fe5a793db0e13c1d693d9162596ae492c9c219b7414839a12e2be0",
+      "size": 2375
+    },
+    {
       "path": "samples/positive/negative_command_present.json",
       "sha256": "ff539d9eb13d9263d953f65def2db22f641781663918667cbbe006bc10346d71",
       "size": 1518
@@ -230,6 +275,11 @@
       "path": "samples/positive/scan_valid.json",
       "sha256": "57eb329fc992e977328ba1cf2bbded8f8ba914dd07c36e50579723e917782a95",
       "size": 1517
+    },
+    {
+      "path": "samples/positive/scope_frozen.json",
+      "sha256": "6a9a1edd33fed73f4b355bded6f4d1ee540609306bee6f4ecd59a22f1ed56a7a",
+      "size": 1145
     },
     {
       "path": "samples/positive/sources_cited_line.json",
@@ -268,8 +318,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "50e9d4d5c0d3e717e4600df19a5ecf06f21a2f1320938f2df31a297222e1253e",
-      "size": 12244
+      "sha256": "c9ad3e074cff6ef67e401981d71468847aad6ff300439dc0eabf6c422c7ab46b",
+      "size": 13297
     },
     {
       "path": "tables/command-claims.json",
@@ -278,8 +328,8 @@
     },
     {
       "path": "tables/findings-quotes.json",
-      "sha256": "17812479ae6fbb944b571f407333c1a0956970f0cb7f4842cb5866c4d12449bf",
-      "size": 571
+      "sha256": "4cf5413fe7e37f28b90d565aed3eae2cdef072af3155dbbc57c7dc55050f11a4",
+      "size": 634
     },
     {
       "path": "tables/resource-tags.json",

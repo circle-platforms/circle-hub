@@ -1,14 +1,13 @@
-// Verbatim quotation check (T04 R[1], decision 37): W/F-adjacent whitespace disappears; other runs collapse, then the quote
-// must be contained verbatim; case, punctuation, character width and Unicode normalization form all stay significant.
-// One matcher serves every check: KMP over the contextually normalized text, so a search is linear
-// in the text and allocates nothing per candidate.
+// Verbatim quotation check (T04 R[1]): the quote must be an exact contiguous substring of decoded fragment text.
+// Case, punctuation, character width, Unicode normalization form and every whitespace character stay significant.
+// One KMP matcher serves every check, so a search is linear in the text and allocates nothing per candidate.
 import type { Resolution, SourceRole } from '../../contracts/generated/vocabulary.ts';
 import { QUOTATION_UNITS, type ByteRange, type ParsedDocument, type QuotationSource, type QuotationUnits } from './parser.ts';
 import { ReferenceSyntaxError, parseReference, srcFragment, withRange } from './reference.ts';
 import { isWhiteSpace, utf8Length } from './text-decoding.ts';
 import { dropQuoteWhitespace } from './quote-whitespace.ts';
 
-/** Normalizes quotation whitespace: W/F-adjacent runs disappear, other interior runs become one space. */
+/** Contextual whitespace normalization for non-quotation callers; strict quotation matching does not use it. */
 export function collapseWhitespace(text: string): string {
   const parts: string[] = [];
   let start = 0;
@@ -24,12 +23,10 @@ export function collapseWhitespace(text: string): string {
   return parts.join('');
 }
 
-/** A collapsed, non-empty quotation compiled for search. Not reentrant: one scan at a time. */
+/** A non-empty quotation compiled for exact search. */
 class Matcher {
   readonly #pattern: string;
   readonly #failure: Int32Array;
-  // Start index of each of the last `length` symbols read, to recover where an occurrence begins.
-  readonly #starts: Int32Array;
 
   constructor(pattern: string) {
     const m = pattern.length;
@@ -41,52 +38,36 @@ class Matcher {
     }
     this.#pattern = pattern;
     this.#failure = failure;
-    this.#starts = new Int32Array(m);
   }
 
-  /**
-   * Calls `visit(start, end)` with the UTF-16 bounds of every occurrence in `text[from, to)`, in order and overlaps
-   * included; whitespace follows the same contextual rule as quotation normalization. Stops when `visit` returns false. Occurrences start and
-   * end on characters that are not white space, and later occurrences end later.
-   */
+  /** Calls `visit(start, end)` with the UTF-16 bounds of every exact occurrence, including overlaps. */
   scan(text: string, from: number, to: number, visit: (start: number, end: number) => boolean): void {
     const pattern = this.#pattern;
     const failure = this.#failure;
-    const starts = this.#starts;
     const m = pattern.length;
     let matched = 0;
-    let symbol = 0;
-    let i = from;
-    while (i < to) {
-      const start = i;
-      let code = text.charCodeAt(i++);
-      if (isWhiteSpace(code)) {
-        while (i < to && isWhiteSpace(text.charCodeAt(i))) i++;
-        if (dropQuoteWhitespace(text, start, i, from, to)) continue;
-        code = 0x20;
-      }
-      starts[symbol % m] = start;
+    for (let i = from; i < to; i++) {
+      const code = text.charCodeAt(i);
       while (matched > 0 && pattern.charCodeAt(matched) !== code) matched = failure[matched - 1];
       if (pattern.charCodeAt(matched) === code) matched++;
       if (matched === m) {
-        if (!visit(starts[(symbol - m + 1) % m], i)) return;
+        if (!visit(i - m + 1, i + 1)) return;
         matched = failure[m - 1];
       }
-      symbol++;
     }
   }
 }
 
-/** The matcher for a quotation, or null when nothing can match: not a string, ill-formed UTF-16, or only white space. */
+/** The matcher for a quotation, or null for ill-formed UTF-16, an empty string, or only Unicode White_Space. */
 function compile(quote: string): Matcher | null {
   if (typeof quote !== 'string' || !quote.isWellFormed()) return null;
-  const pattern = collapseWhitespace(quote);
-  return pattern === '' ? null : new Matcher(pattern);
+  if (!/[^\p{White_Space}]/u.test(quote)) return null;
+  return new Matcher(quote);
 }
 
 /**
- * True when the quote, white space collapsed, occurs verbatim in the fragment text. An empty quote never matches, and
- * neither does one with an unpaired surrogate (it could match half of a character).
+ * True when the quote is an exact contiguous substring of the fragment text. Empty and whitespace-only quotes never
+ * match, and neither does a quote with an unpaired surrogate (it could match half of a character).
  */
 export function quoteMatches(fragmentText: string, quote: string): boolean {
   const matcher = compile(quote);
@@ -175,7 +156,7 @@ export interface QuoteSearch {
 
 const EMPTY_QUOTE = '原文为空，没有可核对的内容';
 const ILL_FORMED_QUOTE = '原文里有不成对的 UTF-16 代理字符，不是完整的文字，无法核对';
-const NOT_FOUND = '在已绑定的来源里找不到这段原文。请逐字引用：空白两侧任意一边为东亚宽字符或全角字符时去掉空白，其余连续空白折成一个空格；大小写、标点和字符宽度仍须逐字相同';
+const NOT_FOUND = '在已绑定的来源里找不到这段原文。请逐字引用：大小写、标点、字符宽度、Unicode 规范化形式和全部空白（包括空格、制表符与换行）均须完全相同';
 
 type Place = {
   candidate: QuoteCandidate;
@@ -369,18 +350,20 @@ function candidatesFromUnits(index: QuotationUnits, parser: string, sha256: stri
  * mind-map node stands for its own `text` field, and text@1 and html@1 add the whole document (`l/1-<n>`, `b/0-<n>`)
  * so that a quotation across lines or blocks resolves.
  */
-export function candidatesFrom(
+export async function candidatesFrom(
   document: ParsedDocument,
   sha256: string,
   options: { role?: SourceRole; prefix?: string; properties?: boolean; limit?: number } = {},
-): QuoteCandidate[] {
+): Promise<QuoteCandidate[]> {
   // An invalid digest is the caller's mistake, never a quotation that is not there.
   srcFragment(sha256, document.parser, ['x']);
   const units = (document as Partial<QuotationSource>)[QUOTATION_UNITS];
   if (typeof units === 'function') return candidatesFromUnits(units.call(document, { properties: options.properties ?? false }), document.parser, sha256, options);
   const out: QuoteCandidate[] = [];
-  for (const selector of document.listSelectors(options.prefix, { properties: options.properties, limit: options.limit })) {
-    const fragment = document.locate(selector);
+  const selectors = document.listSelectors(options.prefix, { properties: options.properties, limit: options.limit });
+  await document.prefetch?.(selectors);
+  for (const selector of selectors) {
+    const fragment = await document.locate(selector);
     if (!fragment) continue;
     let reference: string;
     try {

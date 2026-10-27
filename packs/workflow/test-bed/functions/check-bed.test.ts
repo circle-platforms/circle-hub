@@ -168,6 +168,18 @@ describe('bedOutcomes refute and unknown', () => {
     ],
   };
 
+  it('search with no matching build appends an unknown that names the missing install and the exit', () => {
+    const outcomes = bedOutcomes(subjectOf({ need: { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_FAMX_10_6_1_9' } }, { manifest: DECLARED }));
+    assert.equal(outcomes[0].verdict, 'support');
+    const gap = outcomes.at(-1);
+    assert.ok(gap);
+    assert.equal(gap.verdict, 'unknown');
+    assert.equal(gap.reason, 'missing_input');
+    assert.match(gap.missing ?? '', /版本线 Rel_FAMX_10_6_1_9/);
+    assert.match(gap.statement, /管理员在清单登记在装构建，或把某台升级到该构建后重试/);
+    assert.equal(gap.data?.next_action, '管理员在清单登记在装构建，或把某台升级到该构建后重试');
+  });
+
   it('search with a build requirement: support naming 声明，未核对, refute on a tampered build verdict', () => {
     const parameters = { need: { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_FAMX_10_6_1_8' } };
     const good = bedOutcomes(subjectOf(parameters, { manifest: DECLARED }));
