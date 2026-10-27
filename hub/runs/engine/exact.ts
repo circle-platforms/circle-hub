@@ -306,10 +306,21 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
   const { store, artifacts } = ctx.deps.records;
   const cache = new Map<string, Promise<ValueOutcome>>();
   const resolving = new Set<string>();
+  const baseSources = sourceReader(artifacts, consumer);
+  // Prefetch and each later resolve share one settled read per digest. Failures are not kept, so retry can try again.
+  const sourceMemo = new Map<string, Awaited<ReturnType<typeof baseSources.read>>>();
+  const sources: typeof baseSources = {
+    async read(sha256, reader) {
+      if (sourceMemo.has(sha256)) return sourceMemo.get(sha256)!;
+      const value = await baseSources.read(sha256, reader);
+      sourceMemo.set(sha256, value);
+      return value;
+    },
+  };
   const context = {
     reader: scope.reader,
     parsers: ctx.parsers,
-    sources: sourceReader(artifacts, consumer),
+    sources,
     trees: ctx.deps.knowledge.treeReader({ compositions: scope.compositions }),
     records: recordReader(store, ctx.deps.knowledge.layers?.contributions),
     consumer,

@@ -37,9 +37,9 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
     assert.ok(!JSON.stringify(answer).includes('SyntheticPrivateReadFailure'));
     if (mode === 'absence') {
       assert.equal(answer.acceptance, 'not_accepted'); assert.equal(answer.errors[0].code, 'REFERENCE_UNRESOLVED');
-      assert.equal(reads, 4, 'target and grounds cache entries each take one direct and one run-scoped read; permanent absence is not retried'); assert.ok(!(await actions())[0].body.detail.hub_error); return;
+      assert.equal(reads, 2, 'prefetch and the later resolves share one settled absence (source then sourceForRun); permanent absence is not retried'); assert.ok(!(await actions())[0].body.detail.hub_error); return;
     }
-    assert.equal(reads, mode === 'recover' ? 4 : 3, 'groundability uses a separate cache entry after recovery');
+    assert.equal(reads, 3, 'prefetch failure is not kept; resolve retries until the shared read succeeds or is exhausted');
     if (mode === 'recover') {
       assert.equal(answer.acceptance, 'accepted'); assert.equal(answer.result?.rounds.used, 0);
       const attempts = ((await actions())[0].body.detail.retry_attempts as Array<Record<string, unknown>>).filter(attempt => attempt.operation === 'read');

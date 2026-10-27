@@ -211,8 +211,8 @@ test('migration-point binding freezes old references, records the administrator 
  assert.deepEqual((await bed.kit.store.get(saved.digest))?.body,old);assert.deepEqual((await bed.kit.store.get(result.digest))?.body,oldResult);
  const later={...old,run:newId('run')};await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body:later,index:[{key:'runs.id',value:later.run}]});
  assert.equal((await registry.forRun!(later.run)).get('kityminder@1'),undefined,'a global declaration alone never supplies a missing per-run binding');
- const resumed=await bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.1');assert.equal(resumed.bound_runs,1);assert.equal((await registry.forRun!(later.run)).get('kityminder@1')?.skill_digest,firstDigest);
- await assert.rejects(bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.1'),/不能改绑/);
+  const resumed=await bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.1');assert.equal(resumed.bound_runs,1);assert.equal((await registry.forRun!(later.run)).get('kityminder@1')?.skill_digest,firstDigest);
+ await assert.rejects(bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.2'),/不能改绑/);
 });
 
 test('a failed bulk binding rolls back the declaration and every per-run append',async t=>{
