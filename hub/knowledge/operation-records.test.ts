@@ -247,7 +247,7 @@ test('a product reader who can read the original sees the operation record on th
 test('a repeated byte output keeps the exact capture record bound by its run', async t => {
   const ctx = await world(t);
   const first = ctx.run.sources.find(source => source.slot === 'originals' && source.reference === `src:${ctx.sha}`)!.artifact;
-  const second = await ctx.w.kit.artifacts.ingest({bytes:new TextEncoder().encode(echo), mediaType:'text/plain', origin:{upload:{session:'operation-session-two',message:null}}, author:{user:ctx.w.admin.id}, provenanceType:'client_captured', visibility:{readers:[ctx.w.admin.id],admins:true,packs:[],shareable:false}, name:'second-capture.txt'});
+  const second = await ctx.w.kit.artifacts.ingest({bytes:new TextEncoder().encode(echo), mediaType:'text/plain', origin:{upload:{session:'operation-session-two',message:null}}, author:{user:ctx.w.admin.id}, provenanceType:'client_captured', visibility:{readers:[ctx.w.admin.id],admins:true,packs:[],shareable:false}, name:'second-capture.txt', capturedAt:'2026-10-27T08:00:00.000Z'});
   assert.notEqual(second.digest, first);
   const tree = ctx.run.sources.find(source => source.slot === 'originals' && source.reference !== `src:${ctx.sha}`)!.reference;
   const started = await ctx.service.startRun(ctx.w.admin, {pack:'knowledge-contribution',product:ctx.run.product,build:ctx.build.name,inputs:{subject:{reference:ctx.run.sources.find(source => source.slot==='subject')!.reference},originals:[{reference:tree},{reference:`src:${second.body.sha256}`}]}}, {...call,traceId:'a2'.repeat(16)});

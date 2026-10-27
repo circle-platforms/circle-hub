@@ -4763,6 +4763,14 @@
                   "at": {
                     "type": "string"
                   },
+                  "captured_at_declared": {
+                    "type": "boolean",
+                    "description": "Whether at was explicitly declared by the client; absent on historical records. False means at is absent and the timestamp came from upload, not declared capture."
+                  },
+                  "received_at": {
+                    "type": "string",
+                    "description": "The Hub receipt time of the exact source artifact, separate from the optional client-declared capture time."
+                  },
                   "device": {
                     "type": "string",
                     "minLength": 1,
@@ -5314,6 +5322,14 @@
                   },
                   "at": {
                     "type": "string"
+                  },
+                  "captured_at_declared": {
+                    "type": "boolean",
+                    "description": "Whether at was explicitly declared by the client; absent on historical records. False means at is absent and the timestamp came from upload, not declared capture."
+                  },
+                  "received_at": {
+                    "type": "string",
+                    "description": "The Hub receipt time of the exact source artifact, separate from the optional client-declared capture time."
                   },
                   "device": {
                     "type": "string",
@@ -5886,6 +5902,14 @@
                   },
                   "at": {
                     "type": "string"
+                  },
+                  "captured_at_declared": {
+                    "type": "boolean",
+                    "description": "Whether at was explicitly declared by the client; absent on historical records. False means at is absent and the timestamp came from upload, not declared capture."
+                  },
+                  "received_at": {
+                    "type": "string",
+                    "description": "The Hub receipt time of the exact source artifact, separate from the optional client-declared capture time."
                   },
                   "device": {
                     "type": "string",

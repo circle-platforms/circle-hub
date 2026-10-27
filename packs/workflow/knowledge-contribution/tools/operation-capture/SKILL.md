@@ -44,7 +44,7 @@ node <技能目录>/operation.ts read --session <会话号> --sha <原件 SHA-25
 
 ## 3. 模型只写三类提案
 
-写一个普通 JSON 文件，结构如下。`kind` 只能是 `observation`、`procedure`、`pitfall`，其他内容不提交。`session` 与开启共享的会话相同，`capture` 是已上传原件摘要，`path` 从 Hub 知识树复制。每条可写 `device` 和 `bed`，只是客户端声明，只收字符串且不得等于当前 Hub 令牌；省略时分别沿用采集清单的 `targets.device` / `device_id`、`targets.bed` / `bed_id`，不得冲突，声明床必须同时有设备。运行冻结清单唯一匹配时可由 Hub 补床，不从持租候选反推。Hub 只证明同一租约连续覆盖声明采集到 Hub 收到的整段；成立时 `lease` 是资源键，`lease_id` 是 `lse_…` 记录身份。确认无租约标「无租约（未授权）」；缺床身份、区间内变化或同毫秒边界标「租约未能确认」并给下一步。两种状态照常入层。单份采集会自动带上 `upload.source.artifact`；同字节有多份采集时必须在条目里另写 `artifact`，从 `list` 选本次原件。旧清单缺这个字段时须重新采集上传，不按字节或顺序猜采集时刻。
+写一个普通 JSON 文件，结构如下。`kind` 只能是 `observation`、`procedure`、`pitfall`，其他内容不提交。`session` 与开启共享的会话相同，`capture` 是已上传原件摘要，`path` 从 Hub 知识树复制。每条可写 `device` 和 `bed`，只是客户端声明，只收字符串且任何位置不得包含当前 Hub 令牌；省略时分别沿用采集清单的 `targets.device` / `device_id`、`targets.bed` / `bed_id`，不得冲突，声明床必须同时有设备。运行冻结清单唯一匹配时可由 Hub 补床，不从持租候选反推。Hub 只证明同一租约连续覆盖声明采集到 Hub 收到的整段；成立时 `lease` 是资源键，`lease_id` 是 `lse_…` 记录身份。确认无租约标「无租约（未授权）」；缺床身份、区间内变化或同毫秒边界标「租约未能确认」并给下一步。两种状态照常入层。单份采集会自动带上 `upload.source.artifact`；同字节有多份采集时必须在条目里另写 `artifact`，从 `list` 选本次原件。旧清单缺这个字段时须重新采集上传，不按字节或顺序猜采集时刻。
 
 - observation：`statement`、`action`、`quote`；quote 为 `{line: 行号, text: 逐字引文}`。
 - procedure：`statement`、`goal`、`steps`；每步为 `{text: 步骤, quote: {line, text}}`。

@@ -39,7 +39,7 @@ import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead } from './retry-read.ts';
 import { describe, protocolError } from './errors.ts';
 import { declarationGroundRefusal } from '../../knowledge/declaration-grade.ts';
-import { recordReader, sourceReader } from './readers.ts';
+import { recordReader, sourceReader, principalOf } from './readers.ts';
 import { resultsOf, runById } from './store.ts';
 import { packIdOf } from './lineage.ts';
 import { pointerOf, valueAt } from './util.ts';
@@ -336,7 +336,10 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
       const candidate = parseReference(row.reference);
       return candidate.scheme === 'src' && candidate.sha256 === ref.sha256 && row.artifact !== undefined;
     });
-    return binding?.artifact ? store.get(binding.artifact) : null;
+    if (binding?.artifact) return store.get(binding.artifact);
+    const found = await artifacts.source(principalOf(scope.reader), ref.sha256, { consumer: 'function' })
+      ?? await artifacts.sourceForRun(principalOf(scope.reader), ref.sha256, scope.reader.run, { consumer: 'function' });
+    return found?.artifact ?? null;
   };
   const run = async (reference: string, scoped: boolean, grounds: boolean): Promise<ValueOutcome> => {
     let ref: Reference;
@@ -466,7 +469,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
             ctx.documents.assertActive?.();
             const checking=Promise.resolve(sources.read(ref.sha256,scope.reader));
             const read=await (ctx.documents.within?.(checking)??checking);
-            if(read?.bytes&&read.readTier===saved.tier&&read.bytes.length===read.size&&sha256Hex(read.bytes)===ref.sha256)return {ok:true,value:{...saved.result.value}};
+            if(options.grounds!==true&&read?.bytes&&read.readTier===saved.tier&&read.bytes.length===read.size&&sha256Hex(read.bytes)===ref.sha256)return {ok:true,value:{...saved.result.value}};
           }
       }catch{/* The ordinary path reports read errors and deadline exhaustion. */}
       return run(reference, scoped, options.grounds === true);

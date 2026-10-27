@@ -83,7 +83,9 @@ function noteWithDevice(body: KnowledgeContributionBody, note: string): string;
 function noteWithDevice(body: KnowledgeContributionBody, note: string | null): string | null;
 function noteWithDevice(body: KnowledgeContributionBody, note: string | null): string | null {
   const device = operationDeviceNote(body.feeding);
-  return [note, device].filter((value): value is string => value !== null).join('；') || null;
+  const feeding = body.feeding;
+  const time = feeding && operationRecord(feeding.schema) && 'device' in feeding && feeding.captured_at_declared === false ? `采集时间未声明（取自上传时刻）；Hub 收到 ${feeding.received_at}` : null;
+  return [note, device, time].filter((value): value is string => value !== null).join('；') || null;
 }
 
 export class ContributionLayer {

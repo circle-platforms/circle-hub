@@ -460,7 +460,7 @@ export class FeedingLayer {
  }
  private async completeOperation(principal:Principal,raw:unknown,scope:FeedingScope):Promise<unknown>{
   if(!object(raw)||!operationRecord(raw.schema))return raw;
-  for(const key of ['binding','version','build','line','family','by','run','at','object','lease','lease_id','lease_unconfirmed'])if(key in raw){
+  for(const key of ['binding','version','build','line','family','by','run','at','object','lease','lease_id','lease_unconfirmed','captured_at_declared','received_at'])if(key in raw){
    if(key==='lease'||key==='lease_id'||key==='lease_unconfirmed')fail(`提交写了 ${key}。租约由 Hub 填写，删掉该字段后重交；Hub 按上传者、声明采集时刻和收到时刻核对租约记录。`);
    fail(`提交写了 ${key}。操作记录的版本和采集事实只由 Hub 填写；缺的是运行锁定的构建或台架在装构建。删掉该字段后重交；这不是终局。`);
   }
@@ -472,7 +472,7 @@ export class FeedingLayer {
   if(raw.product!==scope.product||raw.root!==(scope.root??null)||!scope.product||!scope.root)fail('操作记录必须挂在本次运行锁定的产品和根上');
   const device=await completeOperationDevice(this.context.records.store,{run:scope.run??null,device:raw.device,bed:raw.bed,user:actor,capturedAt:artifact.body.captured_at,receivedAt:artifact.created_at,captureTimeDeclared:artifact.body.captured_at_declared===true},this.context.leases);
   const resolved={...raw,source:{...raw.source as Record<string,unknown>,artifact:artifact.digest},...device};
-  return {...resolved,object:sha256Hex(canonicalize(operationIdentity(resolved))),binding:await this.operationBinding(scope),by:actor,run:scope.run??null,at:artifact.body.captured_at};
+  return {...resolved,object:sha256Hex(canonicalize(operationIdentity(resolved))),binding:await this.operationBinding(scope),by:actor,run:scope.run??null,at:artifact.body.captured_at_declared===true?artifact.body.captured_at:undefined,captured_at_declared:artifact.body.captured_at_declared===true,received_at:artifact.created_at};
  }
  private async checkOperation(body:Record<string,any>,source:{bytes:Uint8Array;artifact:{body:{provenance_type:string;origin:object}}}):Promise<void>{
   if(source.artifact.body.provenance_type!=='client_captured'||!('upload' in source.artifact.body.origin))fail('操作记录的根据必须是出处为 client_captured 的上传原件；其他出处仍拒收');

@@ -64,8 +64,11 @@ export function assertOperationFields(value: unknown): void {
         }
       }
     }
-    for (const [key, child] of Object.entries(row)) {
-      pending.push(child);
+    let width = 0;
+    for (const key in row) {
+      if (!Object.hasOwn(row, key)) continue;
+      if (++width > MAX_OPERATION_SCAN_NODES) throw new KnowledgeError('操作记录扫描超过宽度上限；按提交结构拆分后重交', { code: 'SUBMISSION_SCHEMA_VIOLATION', detail: { path: operationPath(paths[index]!) } });
+      pending.push(row[key]);
       depths.push(depth + 1);
       paths.push([...paths[index]!, key]);
     }

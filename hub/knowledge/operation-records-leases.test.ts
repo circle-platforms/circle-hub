@@ -272,8 +272,9 @@ test('all three operation structures carry device and every client-supplied Hub 
   const hubValues: Record<string, unknown> = {
     binding:{source:'run_lock', build:current.build.name, line:current.build.line}, version:'synthetic-version', build:'synthetic-build',
     line:'1.2', family:'ACME', by:ctx.w.admin.id, run:ctx.run.run, at:new Date().toISOString(), object:'a'.repeat(64),
+    received_at:new Date().toISOString(), captured_at_declared:true,
   };
-  for (const field of ['binding', 'version', 'build', 'line', 'family', 'by', 'run', 'at', 'object']) {
+  for (const field of ['binding', 'version', 'build', 'line', 'family', 'by', 'run', 'at', 'object', 'received_at', 'captured_at_declared']) {
     const answer = await submit(current, {...observation(current, `客户端字段 ${field}`), device:'device0', [field]:hubValues[field]}, `客户端字段 ${field}`);
     assert.equal(answer.acceptance, 'not_accepted', field);
     assert.equal(answer.result?.contributions?.stored.length, 0, field);
@@ -518,7 +519,15 @@ test('thousands of historical lease records use bounded database calls and retur
   const {db, service:leases} = leasesOf(t, ctx);
   const granted = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
   assert.ok(granted.ok);
-  const queries = t.mock.method(db, 'query');
+  const originalQuery = db.query.bind(db);
+  const plans: string[] = [];
+  const queries = t.mock.method(db, 'query', async (text: string, values?: readonly unknown[], tx?: import('../records/api.ts').Transaction) => {
+    if (text.startsWith('SELECT r.digest FROM record_index')) {
+      const plan = await originalQuery(`EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF) ${text}`, values, tx);
+      plans.push(plan.rows.map(row => String(Object.values(row)[0])).join('\n'));
+    }
+    return originalQuery(text, values, tx);
+  });
   const {operationLease} = await import('./feeding-leases.ts');
   const capturedAt = await justAfter(ctx, granted.lease);
   const result = await operationLease(ctx.w.kit.store, {bed:'synthetic', device:'device0', user:ctx.w.admin.id, capturedAt, receivedAt:new Date().toISOString()}, leases);
@@ -528,14 +537,17 @@ test('thousands of historical lease records use bounded database calls and retur
   assert.equal(limited.events.length, 32);
   assert.equal(queries.mock.calls.length, 6);
   const returned: number[] = [];
+  let scanned = 0;
   for (const call of queries.mock.calls) {
-    if (!String(call.arguments[0]).startsWith('SELECT r.digest FROM record_index')) continue;
     const answer = await call.result as {rows:unknown[]};
     returned.push(answer.rows.length);
   }
+  for (const plan of plans) for (const match of plan.matchAll(/Rows Removed by (?:Filter|Index Recheck): (\d+)/g)) scanned += Number(match[1]);
   assert.equal(returned.length, 6);
+  assert.equal(plans.length, 6);
   assert.ok(returned.every(count => count <= 1025), JSON.stringify(returned));
   assert.ok(returned.reduce((sum, count) => sum + count, 0) < 100, JSON.stringify(returned));
+  assert.ok(scanned < 3000, `rows removed by filter/index recheck: ${scanned}`);
 });
 
 test('an upload without a declared capture time keeps its record but cannot prove a lease', async t => {
@@ -547,6 +559,11 @@ test('an upload without a declared capture time keeps its record but cannot prov
   const artifact = await ctx.w.kit.store.get<import('../records/api.ts').SourceArtifactBody>(current.capture!.digest);
   assert.equal(artifact?.body.captured_at_declared, false);
   const saved = await stored(current, await submit(current, {...observation(current, '旧客户端缺采集时刻'), device:'device0'}, '旧客户端缺采集时刻'));
+  assert.equal(saved.feeding.at, undefined);
+  assert.equal(saved.feeding.captured_at_declared, false);
+  assert.equal(saved.feeding.received_at, artifact?.created_at);
+  assert.match(saved.view.note ?? '', /采集时间未声明（取自上传时刻）/);
+  assert.match(saved.text, /采集时间未声明（取自上传时刻）/);
   assert.equal(saved.feeding.lease, null);
   assert.equal(saved.feeding.lease_id, null);
   assert.match(JSON.stringify(saved.feeding.lease_unconfirmed), /没有明确声明采集时刻/);

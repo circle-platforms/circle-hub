@@ -354,8 +354,8 @@ export class LeaseService {
   async #change(keys: string[], holder: Holder, op: Extract<LeaseOp, 'extend' | 'release'>, ttlSeconds: number, maxTtlSeconds: number | undefined): Promise<ChangeOutcome> {
     const ordered = [...keys].sort();
     return this.#db.transaction(async (tx) => {
-      const now = await this.#nowIn(tx);
       const rows = await this.#rowsLocked(ordered, tx);
+      const now = await this.#nowIn(tx);
       if (rows.length === 0) return { ok: false, code: 'LEASE_NO_ROW', message: `这些键上没有租约行` };
       if (rows.some((row) => (row.run_id !== holder.run || row.user_id !== holder.user))) {
         return { ok: false, code: 'LEASE_UNAVAILABLE', message: `键 ${rows.find((row) => row.run_id !== holder.run || row.user_id !== holder.user)!.key} 由别的运行持有` };

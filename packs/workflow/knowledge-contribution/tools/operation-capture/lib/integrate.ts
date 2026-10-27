@@ -49,7 +49,7 @@ function quoteOf(value: unknown, bytes: Uint8Array): Quote {
 function targetText(raw: unknown, kind: 'bed' | 'device', token: string): string {
   const declared = text(raw, `invalid_${kind}`, `提案或采集清单的${kind === 'bed' ? '台架' : '设备'}名格式不对`, 200);
   need(declared.trim() === declared && !/[\p{Cc}\p{Cf}]/u.test(declared), `invalid_${kind}`, '目标名不含控制字符或首尾空白');
-  need(declared !== token, 'credential_in_target', `${kind} 等于当前 Hub 令牌；清理该字段后重交`);
+  need(!declared.includes(token), 'credential_in_target', `${kind} 含当前 Hub 令牌；清理该字段后重交`);
   const checked = scanWithMatches(new TextEncoder().encode(declared));
   need(checked.complete && checked.scan.inspected && checked.scan.clean && !checked.scan.truncated, 'credential_in_target', `${kind} 未通过完整凭据扫描；清理该字段后重交`);
   return declared;
@@ -158,6 +158,13 @@ function primaryQuote(row: Prepared): Quote {
   return (row.kind === 'observation' ? row.result : row.kind === 'procedure' ? row.steps?.[0]?.quote : row.quote)!;
 }
 
+function checkTargetTokens(rows: readonly Prepared[], token: string): void {
+  for (const row of rows) {
+    if (row.device !== undefined) targetText(row.device, 'device', token);
+    if (row.bed !== undefined) targetText(row.bed, 'bed', token);
+  }
+}
+
 export async function submitProposals(session: string, proposalPath: string, product: string, build: string | undefined, model: string) {
   const settings = await readSettings(session);
   need(settings?.enabled, 'sharing_disabled', '本会话未开启共享');
@@ -181,13 +188,16 @@ export async function submitProposals(session: string, proposalPath: string, pro
     return [canonical(input), input];
   })).values()];
   const clientKey = sha256(canonical({ schema: GENERATED.proposal_schema, session, subject, product, build: build ?? null, originals }));
-  const started = await allowed(() => hub.call('start_run', {
-    pack: PACK,
-    product,
-    ...(build === undefined ? {} : { build }),
-    inputs: { subject: { reference: subject }, originals },
-    client_key: clientKey,
-  }));
+  const started = await allowed(async () => {
+    checkTargetTokens(rows, await validateTokenFile(settings.token_file));
+    return hub.call('start_run', {
+      pack: PACK,
+      product,
+      ...(build === undefined ? {} : { build }),
+      inputs: { subject: { reference: subject }, originals },
+      client_key: clientKey,
+    });
+  });
   need(isRecord(started.run), 'invalid_run', 'Hub 没有返回回注运行');
   const run = started.run;
   const runId = text(run.run, 'invalid_run', '运行号格式不对', 100);
@@ -214,7 +224,10 @@ export async function submitProposals(session: string, proposalPath: string, pro
       },
     })),
   };
-  const result = await allowed(() => hub.call('submit_result', submission));
+  const result = await allowed(async () => {
+    checkTargetTokens(rows, await validateTokenFile(settings.token_file));
+    return hub.call('submit_result', submission);
+  });
   await appendReceipt(session, result);
   return { result, texts: hub.lastText, submission, run };
 }
