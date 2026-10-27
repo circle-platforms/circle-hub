@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import { knowledgeRetract } from '../../hub/knowledge/api.ts';
 import { artifactShareKey } from '../../hub/records/constants.ts';
 import {
   capture, capturedArtifact, commandTarget, contribution, integrate,
@@ -195,9 +196,9 @@ describe('scenario 42: T4-2 and T6 operation evidence through the capture hook a
     assert.ok(feedingRecord);
     const layer = world.bed.hub.hub.knowledge.feeding;
     assert.ok(layer);
-    await layer.retract(world.bed.hub.admin.principal, {
-      schema: 'retraction@1', entries: [feedingRecord], by: world.bed.hub.admin.user.id,
-      at: new Date().toISOString(), reason: '合成管理员撤回教训',
+    await knowledgeRetract(layer, world.bed.hub.admin.principal, {
+      entries: [feedingRecord], runs: [], objects: [], reason: '合成管理员撤回教训',
+      at: world.bed.hub.hub.knowledge.__context.now().toISOString(),
     });
     const withdrawn = await contribution(world, target.path, record);
     assert.equal(withdrawn.status, 'grounds_withdrawn');
