@@ -20,7 +20,7 @@ import {
 import type { ItemProjection, SourceBinding } from '../../../contracts/src/run.ts';
 import { digestOf, type Principal, type VariableSnapshot } from '../../records/api.ts';
 import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
-import { ReferenceSyntaxError, resolveReference, srcFragment } from '../../refs/api.ts';
+import { ReferenceSyntaxError, prefetchReferences, resolveReference, srcFragment } from '../../refs/api.ts';
 import { callPackFunction } from '../../rules/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError } from './errors.ts';
@@ -91,6 +91,16 @@ export async function projectItems(
     consumer: 'function' as const,
     documents: ctx.documents,
   };
+  const ahead:string[]=[];
+  for(const item of projected){
+    const slot=item.location.slot??subject;
+    const candidates=bound.filter(binding=>binding.slot===slot&&(item.location.source===undefined||binding.sha256===item.location.source));
+    for(const candidate of candidates){
+      try{ahead.push(srcFragment(candidate.sha256,item.location.parser,item.location.selector,item.location.range));}
+      catch(error){if(!(error instanceof ReferenceSyntaxError))throw error;}
+    }
+  }
+  await prefetchReferences(ahead,resolveCtx);
   const items: ItemProjection[] = [];
   for (const item of projected) {
     const slot = item.location.slot ?? subject;

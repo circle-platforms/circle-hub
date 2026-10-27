@@ -134,11 +134,16 @@ export class FeedingLayer {
   for(const input of body.origin.generated.inputs){const ref=parseReference(input);if(ref.scheme!=='rec')continue;const record=await this.context.records.store.get(ref.record);if(record?.kind!=='source_artifact'||record.schema!=='source_artifact@1')continue;const parent=record as SourceArtifact;const source=await this.context.records.artifacts.source(principal,parent.body.sha256,{consumer:'function',record:parent.digest});if(!source?.bytes)continue;const external=await this.origin(principal,parent,undefined,new Set(seen));if(external)origins.set(canonicalize(external),external);}
   return origins.size===1?[...origins.values()][0]:null;
  }
- private async source(principal:Principal,sha:string,record?:string,manifest?:string,stage='input_source',run?:string|null):Promise<Source>{
+ /** Recheck the exact capture and read tier at use time without reparsing it. */
+ private async sourceAccess(principal:Principal,sha:string,record?:string,manifest?:string,stage='input_source',run?:string|null){
   if(record){const captured=await this.context.records.store.get<any>(record);if(captured?.kind!=='source_artifact'||captured.body.sha256!==sha)throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：采集记录与摘要不匹配；原件 ${sha}，记录 ${record}；按本次读取重新绑定`,{code:'SOURCE_UNAVAILABLE'});}
   let found=await this.context.records.artifacts.source(principal,sha,{consumer:'function',...(record?{record}:{})});
   if(!found&&record&&run){const stored=await runById(this.context.records.store,run);if(stored&&await canViewRun(principal,stored.body,this.context.records.store)&&stored.body.sources.some(binding=>binding.artifact===record&&(!manifest||binding.read_manifest===manifest)&&(()=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===sha;})())){const scoped=await this.context.records.artifacts.sourceForRun(principal,sha,run,{consumer:'function',record});if(scoped?.artifact.digest===record)found=scoped;}}
   if(!found?.bytes||found.readTier!=='model_readable')throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：来源不存在、保留中或当前不可读；原件 ${sha}，记录 ${record??'未指定'}，当前档位 ${found?.readTier??'未获读取授权或缺记录'}；核对这条采集记录和读取身份后重读`,{code:'SOURCE_UNAVAILABLE'});
+  return {...found,bytes:found.bytes};
+ }
+ private async source(principal:Principal,sha:string,record?:string,manifest?:string,stage='input_source',run?:string|null):Promise<Source>{
+  const found=await this.sourceAccess(principal,sha,record,manifest,stage,run);
   const parsed=await recognizeAsync(this.context.parsers,found.bytes,found.mediaType);if(!parsed)fail('来源格式不能按已声明解析器读取');
   let external:ReturnType<typeof parseExternal>;try{external=await this.origin(principal,found.artifact,manifest&&Sha256.safeParse(manifest).success?manifest:undefined);}catch(error){if(!(error instanceof KnowledgeError))throw error;throw new KnowledgeError(`喂入来源读取未完成（${stage}，SOURCE_UNAVAILABLE）：读取清单与采集记录未核对；原件 ${sha}，记录 ${record??found.artifact.digest}，清单 ${manifest??'未指定'}；按本次读取重新绑定`,{code:'SOURCE_UNAVAILABLE'});}
   return {artifact:found.artifact,bytes:found.bytes,parser:parserKey(parsed.parser),model:parsed.document.model,external};
@@ -154,9 +159,13 @@ export class FeedingLayer {
  private async currentPack(pack?:ProductHandle|null){return !pack||(await this.context.packs.productById(pack.product.id))?.digest===pack.digest;}
  private superseded(sha:string){return this.pendingReceipt(sha,'投影所用包已被新摘要替代，旧结果未写入喂入层','按当前已发布包重读该来源；不把旧包失败当成终局');}
  private quoteRef(quote:QuoteEvidence){return 'identity'in quote?{sha:quote.identity.source_sha256,parser:quote.identity.parser,selector:quote.identity.path,span:quote.identity.span,range:null}:{...(()=>{const ref=parseReference(quote.reference);if(ref.scheme!=='src'||!ref.parser||!ref.selector)fail('喂入引文必须是带解析器和选择器的 src 引用');return {sha:ref.sha256,parser:ref.parser,selector:ref.selector,range:ref.range??null};})(),span:null};}
- async quote(principal:Principal,quote:QuoteEvidence):Promise<void>{
+ async quote(principal:Principal,quote:QuoteEvidence,cache?:Map<string,Awaited<ReturnType<typeof parseDocument>>>):Promise<void>{
   const ref=this.quoteRef(quote),source=await this.context.records.artifacts.source(principal,ref.sha,{consumer:'model'});if(!source?.bytes||source.readTier!=='model_readable')fail('引文原件不存在或当前不可读');
-  const parser=this.context.parsers.get(ref.parser);if(!parser)fail('引文解析器版本不存在');const fragment=(await parseDocument(parser,source.bytes)).locate(ref.selector);if(!fragment)fail('引文选择器不能解析');
+  const parser=this.context.parsers.get(ref.parser);if(!parser)fail('引文解析器版本不存在');
+  const cacheKey=ref.sha+'\0'+ref.parser;
+  const document=cache?.get(cacheKey)??await parseDocument(parser,source.bytes);
+  cache?.set(cacheKey,document);
+  const fragment=await document.locate(ref.selector);if(!fragment)fail('引文选择器不能解析');
   if(ref.span){const range=fragment.byteRange??(ref.parser==='json@1'&&ref.selector==='p'?[0,source.bytes.byteLength]:null);if(!range)fail('该解析器没有原始范围；改用生成的 source+selector 逐字引用，不得猜 byte span');const end=ref.span.offset+ref.span.length;if(ref.span.offset<range[0]||end>range[1])fail('引文跨度不在原始片段中');let text:string;try{text=new TextDecoder('utf-8',{fatal:true}).decode(source.bytes.slice(ref.span.offset,end));}catch{fail('引文不是完整 UTF-8 字节');}if(text!==quote.text)fail('引文不是原件逐字内容');}
   else {const text=ref.range?sliceUtf8(fragment.text,ref.range[0],ref.range[1]):fragment.text;if(text===null||!text.includes(quote.text))fail('引文不是选择器原文的逐字片段');}
  }
@@ -249,13 +258,8 @@ export class FeedingLayer {
    const at=this.context.now().toISOString();await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:null,item:null,component:'hub.feeding@2',inputs:['rec:'+saved.digest,...(latest?['rec:'+latest.digest]:[])],lease:null,started_at:at,ended_at:at,result:'unknown',error_code:null,acceptance:null,codes:[],detail:{feeding_todo:{...saved.body.detail.feeding_todo,...state}}},index:[{key:'knowledge.feeding.todo.detail',value:key}]},tx);
   }
  }
- private async bindings(principal:Principal,row:Projection,source:Source,scope:FeedingScope,tx:Transaction,preparedEvidence?:{source:Source;document:ReturnType<NonNullable<ReturnType<KnowledgeContext['parsers']['get']>>['parse']>},attachment?:SeedlingAttachment|null){
+ private async bindings(principal:Principal,row:Projection,source:Source,scope:FeedingScope,tx:Transaction,evidence:{reference:string;text:string},attachment?:SeedlingAttachment|null){
   const candidates=[...new Set(row.lines)],line=candidates.length===1?candidates[0]:null;
-  const evidenceSource=preparedEvidence?.source??source;
-  const evidenceParser=scope.metaSource?'json@1':evidenceSource.parser,evidenceSelector=scope.metaSource?'p/ancestors':row.selector;
-  let fragment=(preparedEvidence?.document??await parseDocument(this.context.parsers.get(evidenceParser)!,evidenceSource.bytes)).locate(evidenceSelector);
-  let selector=evidenceSelector,parser=evidenceParser;if(!fragment?.text){parser='json@1';selector='p';fragment=(await parseDocument(this.context.parsers.get(parser)!,evidenceSource.bytes)).locate(selector);}if(!fragment?.text)fail('绑定来源片段不存在或为空');
-  const evidence={reference:'src:'+evidenceSource.artifact.body.sha256+'/'+parser+'/'+selector,text:fragment.text};
   const make=(value:string|null,state:BindingStatus)=>({schema:'version-binding@1',object:row.body.object,product:scope.product,line:value,basis:'source_structure',grounds:{quote:evidence,grammar:row.grammar},state,candidates:state==='conflict'?candidates:[],...(state==='undeclared'?{missing:'原始目录或结构字段没有版本声明',next_action:'维护者补结构版本；下一次读取自动登记；运行目标不能补绑定'}:{})});
   const bodies=candidates.length?(row.conflict?[make(null,'conflict')]:candidates.map(value=>make(value,'bound'))):[make(null,'undeclared')];
   if(scope.declaredLine){bodies.push({schema:'version-binding@1',object:row.body.object,product:scope.product,line:scope.declaredLine,basis:'declared',grounds:{by:principal.id,run:scope.run},state:'bound',candidates:[]} as never);}
@@ -328,13 +332,31 @@ export class FeedingLayer {
   try{projection=await this.projection(principal,source,scope,pack);}catch(error){return this.failedAttempt(principal,sha,scope,error,pack);}
   if(!await this.currentPack(pack))return this.superseded(sha);
   const observationKey=sha256Hex(canonicalize({version:3,by:principal.id,source:source.artifact.digest,sha,scope:captureScope(scope),pack:projection.digest,seedling:projection.attachment?.seedling_composition??null}));const completed=(await this.context.records.store.find<any>({key:'knowledge.feeding.observed',value:observationKey,kind:'action',limit:1})).items[0];if(completed)return {...completed.body.detail.receipt,offset:await this.offset()};
-  const evidenceSource=scope.metaSource?await this.metadataSource(principal,scope.metaSource,scope.metaRecord,scope.readManifest):source;const evidence={source:evidenceSource,document:await parseDocument(this.context.parsers.get(scope.metaSource?'json@1':evidenceSource.parser)!,evidenceSource.bytes)};
+  // Locate all binding evidence before taking the append lock. One parsed
+  // document is shared across every row, so lazy parsers issue bounded batches.
+  const evidenceSource=scope.metaSource?await this.metadataSource(principal,scope.metaSource,scope.metaRecord,scope.readManifest):source;
+  const evidenceParser=scope.metaSource?'json@1':evidenceSource.parser;
+  const document=await parseDocument(this.context.parsers.get(evidenceParser)!,evidenceSource.bytes);
+  const selectors=[...new Set(projection.rows.map(row=>scope.metaSource?'p/ancestors':row.selector))];
+  await document.prefetch?.(selectors);
+  const evidenceBySelector=new Map<string,{reference:string;text:string}>();
+  let fallback:{reference:string;text:string}|undefined;
+  for(const selector of selectors){
+   const fragment=await document.locate(selector);
+   if(fragment?.text){evidenceBySelector.set(selector,{reference:'src:'+evidenceSource.artifact.body.sha256+'/'+evidenceParser+'/'+selector,text:fragment.text});continue;}
+   if(!fallback){const json=await parseDocument(this.context.parsers.get('json@1')!,evidenceSource.bytes);await json.prefetch?.(['p']);const whole=await json.locate('p');if(!whole?.text)fail('绑定来源片段不存在或为空');fallback={reference:'src:'+evidenceSource.artifact.body.sha256+'/json@1/p',text:whole.text};}
+   evidenceBySelector.set(selector,fallback);
+  }
   const ids=projection.rows.map(row=>row.body.object as string);for(const row of projection.rows)for(const gap of row.missing??[])pending.push({source:sha,...gap});
-  await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);
-   if(!projection.rows.length){await this.usage(principal,sha,scope,tx);if(!scope.product){const missing='缺少产品及树苗上下文，不能按业务来源猜产品',next_action='用绑定产品和树苗的运行号重新 get_nodes 读取此原件';pending.push({source:sha,missing,next_action});await this.todo(principal,{system:source.external?.system??'unknown',document:source.external?.key??sha},null,missing,next_action,tx);}return;}
-   for(const row of projection.rows){const bytes=new TextEncoder().encode(canonicalize(row.identity));const stored=await this.context.records.objects.put(bytes,'application/json');if(stored.sha256!==row.body.object)fail('规范内容摘要不一致');await this.put(row.body,principal,projection.pack,['src:'+sha],[sha,source.artifact.digest,...(scope.metaSource?[scope.metaSource]:[]),projection.digest,...(scope.readManifest&&Sha256.safeParse(scope.readManifest).success?[scope.readManifest]:[]),...(scope.root?[scope.root]:[]),...(scope.composition?[scope.composition]:[]),...(projection.attachment?[projection.attachment.seedling_root,projection.attachment.seedling_composition]:[])],'object:'+this.key(row.body)+':'+source.artifact.digest+':'+(scope.run??'')+':'+(scope.composition??'')+':'+(scope.readManifest??'')+(projection.attachment?':'+projection.attachment.seedling_composition:''),[{key:OBJECT,value:row.body.object},{key:'knowledge.feeding.product',value:scope.product!},{key:'knowledge.feeding.source',value:sha}],tx,false,scope.run??null,scope.metaSource,row.missing,{external:source.external?.id??null,read_manifest:scope.readManifest&&Sha256.safeParse(scope.readManifest).success?scope.readManifest:null,...(projection.attachment?{seedling_attachment:projection.attachment}:{})});await this.bindings(principal,row,source,scope,tx,evidence,projection.attachment);if(scope.sourceRecord&&scope.requested&&parseExternal(scope.requested)?.revision===null)await this.sourceHead(row.body,source,tx);await this.usage(principal,row.body.object,scope,tx);}
+  const committed=await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);
+   if(!await this.currentPack(pack))return false;
+   const recheck=async()=>{await this.sourceAccess(principal,sha,source.artifact.digest,scope.readManifest,'input_source',scope.run);if(scope.metaSource)await this.sourceAccess(principal,scope.metaSource,evidenceSource.artifact.digest,scope.readManifest,'metadata');};
+   await recheck();
+   if(!projection.rows.length){await this.usage(principal,sha,scope,tx);if(!scope.product){const missing='缺少产品及树苗上下文，不能按业务来源猜产品',next_action='用绑定产品和树苗的运行号重新 get_nodes 读取此原件';pending.push({source:sha,missing,next_action});await this.todo(principal,{system:source.external?.system??'unknown',document:source.external?.key??sha},null,missing,next_action,tx);}return true;}
+   for(const row of projection.rows){await recheck();const bytes=new TextEncoder().encode(canonicalize(row.identity));const stored=await this.context.records.objects.put(bytes,'application/json');if(stored.sha256!==row.body.object)fail('规范内容摘要不一致');await this.put(row.body,principal,projection.pack,['src:'+sha],[sha,source.artifact.digest,...(scope.metaSource?[scope.metaSource]:[]),projection.digest,...(scope.readManifest&&Sha256.safeParse(scope.readManifest).success?[scope.readManifest]:[]),...(scope.root?[scope.root]:[]),...(scope.composition?[scope.composition]:[]),...(projection.attachment?[projection.attachment.seedling_root,projection.attachment.seedling_composition]:[])],'object:'+this.key(row.body)+':'+source.artifact.digest+':'+(scope.run??'')+':'+(scope.composition??'')+':'+(scope.readManifest??'')+(projection.attachment?':'+projection.attachment.seedling_composition:''),[{key:OBJECT,value:row.body.object},{key:'knowledge.feeding.product',value:scope.product!},{key:'knowledge.feeding.source',value:sha}],tx,false,scope.run??null,scope.metaSource,row.missing,{external:source.external?.id??null,read_manifest:scope.readManifest&&Sha256.safeParse(scope.readManifest).success?scope.readManifest:null,...(projection.attachment?{seedling_attachment:projection.attachment}:{})});await this.bindings(principal,row,source,scope,tx,evidenceBySelector.get(scope.metaSource?'p/ancestors':row.selector)!,projection.attachment);if(scope.sourceRecord&&scope.requested&&parseExternal(scope.requested)?.revision===null)await this.sourceHead(row.body,source,tx);await this.usage(principal,row.body.object,scope,tx);}
    const at=this.context.now().toISOString();await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',unique_key:'feeding.observed:'+observationKey,body:{action:'read',run:scope.run??null,item:null,component:'hub.feeding@2',inputs:['src:'+sha],lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{receipt:{objects:ids,pending}}},index:[{key:'knowledge.feeding.observed',value:observationKey}]},tx);
-  });return {objects:ids,offset:await this.offset(),pending};
+   return true;
+  });if(!committed)return this.superseded(sha);return {objects:ids,offset:await this.offset(),pending};
  }
  private sourceKey(body:Record<string,any>){if(!body.source||body.schema==='fed-note@1'||operationRecord(body.schema))return null;const {bytes:_bytes,revision:_revision,...identity}=body.source;return sha256Hex(canonicalize({product:body.product,identity}));}
  private async sourceHead(body:Record<string,any>,source:Source,tx:Transaction){const key=this.sourceKey(body);if(!key)return;await this.context.records.store.lock('knowledge.feeding.head:'+key,tx);const old=(await this.context.records.store.find<any>({key:'knowledge.feeding.head',value:key,kind:'action',limit:1,newestFirst:true},tx)).items[0];if(old?.body.detail?.object===body.object)return;await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:null,item:null,component:'hub.feeding@1',inputs:['src:'+source.artifact.body.sha256],lease:null,started_at:this.context.now().toISOString(),ended_at:this.context.now().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{object:body.object,source_record:source.artifact.digest,parent:old?.digest??null}},index:[{key:'knowledge.feeding.head',value:key}]},tx);}
@@ -463,14 +485,38 @@ export class FeedingLayer {
   }
   const pack=scope.product?await this.context.packs.productById(scope.product):null;
   let classifications=scope.classifications;if(!classifications&&pack?.product.feeding?.classifications){const out=await callPackFunction({packDir:pack.directory,...pack.product.feeding.classifications},{},this.context.sandbox.producer,this.context.sandbox);if(!Array.isArray(out.output)||out.output.length>1000||out.output.some(value=>typeof value!=='string'))fail('产品包没有返回有界分类闭集');classifications=out.output;}
+  const quoteCache=new Map<string,Awaited<ReturnType<typeof parseDocument>>>();
+  const quoted:Array<{key:string;proposal:any}> = [];
   for(const key of annotations)for(const proposal of body[key]??[]){
-   if(!object(proposal))fail('主张不是结构对象');await this.quote(principal,proposal.quote);
+   if(!object(proposal))fail('主张不是结构对象');
+   quoted.push({key,proposal});
+  }
+  const selectors=new Map<string,string[]>();
+  for(const {proposal} of quoted){
+   let ref:{sha:string;parser:string;selector:string};
+   try{ref=this.quoteRef(proposal.quote);}catch{continue;}
+   const id=ref.sha+'\0'+ref.parser;const list=selectors.get(id)??[];list.push(ref.selector);selectors.set(id,list);
+  }
+  for(const [id,wanted] of selectors){
+   try{
+    const split=id.indexOf('\0'),sha=id.slice(0,split),parserId=id.slice(split+1);
+    const bytes=await this.context.records.artifacts.source(principal,sha,{consumer:'model'});
+    const parser=this.context.parsers.get(parserId);
+    if(!bytes?.bytes||bytes.readTier!=='model_readable'||!parser)continue;
+    const document=await parseDocument(parser,bytes.bytes);
+    quoteCache.set(id,document);
+    await document.prefetch?.(wanted);
+   }catch{/* quote() reports the same missing source or parser */ }
+  }
+  for(const {key,proposal} of quoted){
+   await this.quote(principal,proposal.quote,quoteCache);
    if(!['manual_link','command_link','case_link','relations'].includes(key)&&this.quoteRef(proposal.quote).sha!==body.source.bytes)fail('主张必须引用本对象原件，不能用兄弟或祖先代替');
    if(key==='classification'&&body.schema!=='fed-note@1'&&(!classifications||!classifications.includes(proposal.value)))fail('分类值不等于锁定包声明的闭集原文，或包未声明闭集');
    if(key==='manual_link'){
     if(proposal.root!==scope.root)fail('手册关联不在锁定树苗');const segments=pathSegments(proposal.path);if(segments[0]!=='manual'||!await this.reading.nodeAt(proposal.root,segments))fail('手册章节不能按锁定路径解析');
     const node=await this.reading.treeReader({composition:scope.composition??null}).read(proposal.root,proposal.path,null,{user:principal.id,role:principal.role}),q=this.quoteRef(proposal.quote);let owned=false;
-    for(const ground of node?.grounds??[]){const g=parseReference(ground);if(g.scheme!=='src'||g.sha256!==q.sha||g.parser!==q.parser||g.selector!==q.selector)continue;const original=await this.context.records.artifacts.source(principal,g.sha256,{consumer:'model'}),parsed=this.context.parsers.get(q.parser);const fragment=original?.bytes&&parsed?(await parseDocument(parsed,original.bytes)).locate(q.selector):null;if(!fragment)continue;const text=g.range?fragment.text.slice(g.range[0],g.range[1]):fragment.text;if(text.includes(proposal.quote.text))owned=true;}if(!owned)fail('手册引文与目标章节没有精确来源对应');
+    const matched=(node?.grounds??[]).flatMap(ground=>{try{const g=parseReference(ground);return g.scheme==='src'&&g.sha256===q.sha&&g.parser===q.parser&&g.selector===q.selector?[g]:[];}catch{return [];}});
+    if(matched.length){const original=await this.context.records.artifacts.source(principal,q.sha,{consumer:'model'}),parsed=this.context.parsers.get(q.parser),cacheKey=q.sha+'\0'+q.parser;const document=original?.bytes&&original.readTier==='model_readable'&&parsed?(quoteCache.get(cacheKey)??await parseDocument(parsed,original.bytes)):null;if(document){quoteCache.set(cacheKey,document);await document.prefetch?.(matched.map(g=>g.selector!));for(const g of matched){const fragment=await document.locate(g.selector!);if(!fragment)continue;const text=g.range?fragment.text.slice(g.range[0],g.range[1]):fragment.text;if(text.includes(proposal.quote.text))owned=true;}}}if(!owned)fail('手册引文与目标章节没有精确来源对应');
    }
    if(key==='command_link'){
     if(!scope.root||!pack)fail('命令关联缺锁定树苗');const found=await this.root(principal,scope.product!,scope.root,scope.composition,scope.line);const seed=found.seed;const tree=seed.origin.find(origin=>origin.role==='command-tree');if(!tree)fail('树苗缺命令原件');const known=await this.context.store.node(seed.root);if(!known||proposal.command.tree_root!==tree.sha256)fail('命令身份不在锁定命令树');if(!await this.reading.nodeAt(seed.root,pathSegments(proposal.command.path)))fail('命令路径解析不出');const fn=pack.product.feeding?.verify_command;if(!fn)fail('产品包未声明完整命令核验回调');const original=await this.commandSource(principal,seed);const verified=await callPackFunction({packDir:pack.directory,...fn},{command:proposal.command,tree:{model:original.model,sha256:tree.sha256}},this.context.sandbox.producer,this.context.sandbox);if(!object(verified.output)||!verified.output.identity||canonicalize(verified.output.identity)!==canonicalize(proposal.command))fail('命令身份不能按锁定原树完整解析');

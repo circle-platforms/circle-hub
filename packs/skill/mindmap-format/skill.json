@@ -15,6 +15,10 @@
         "module": "functions/parse.ts",
         "export": "default"
       },
+      "locate": {
+        "module": "functions/parse.ts",
+        "export": "locate"
+      },
       "migration_test": "mindmap-format migration equivalence across repository documents"
     }
   ]

@@ -28,7 +28,8 @@ import {
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
 import { IntegrityError, RecordsError, isSha256, type Principal } from '../records/api.ts';
-import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
+import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
+import { SandboxError } from '../rules/api.ts';
 import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
@@ -160,6 +161,12 @@ export function internalError(trace: string): McpError {
 
 /** A thrown error with a registered protocol code becomes that error answer; anything else is an internal error. */
 function fromThrown(tool: ToolName, error: unknown, call: ToolCall): Answer {
+  if (error instanceof SandboxError) {
+    // Pack-controlled diagnostics and stdout may contain function-only source bytes. Record only the fixed sandbox code.
+    call.context.adminNote(`技能包沙箱失败：${error.code}`);
+    const cacheLimit = error.detail.limit === 'document_cache_bytes';
+    return errorAnswer(tool, [{ code: 'SOURCE_RETRYABLE', message: cacheLimit ? `文档缓存估算超过预算：${error.code}` : `来源片段暂时未核对：技能包沙箱 ${error.code}`, fix: cacheLimit ? '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读' : '管理员核对技能包和沙箱状态，恢复后重新读取' }]);
+  }
   const code = protocolCodeOf(error);
   if (code === null) {
     call.context.adminNote(describeInternalError(error));
@@ -492,7 +499,9 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
   // evaluating the selector, so absent and withheld follow refs' one rule.
   const sources = sourceReaderFor(deps.records, call.principal, 'function', note);
   const reader: ReaderIdentity = { user: call.principal.id, role: call.principal.role, ...(run === undefined ? {} : { run }) };
-  const result = await resolveReference(parsed, {
+  const documents = createDocumentCache();
+  let result: Awaited<ReturnType<typeof resolveReference>>;
+  try { result = await documents.within!(resolveReference(parsed, {
     retryReads:true,
     now:deps.now?.bind(deps),
     reader,
@@ -501,8 +510,9 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
     trees: deps.knowledge.treeReader(),
     records: recordReaderFor(deps.records, deps.runs, call.principal, note, (deps.knowledge as typeof deps.knowledge & {layers?:{contributions:ContributionLayer}}).layers?.contributions),
     consumer: 'model',
+    documents,
     onDiagnostic: (d) => note(`${d.scheme} ${clipNote(d.reference, 300)}: ${d.message}`),
-  });
+  })); } finally { documents.dispose?.(); }
   if (!result.resolved) {
     if (result.code === 'SOURCE_UNAVAILABLE' && !result.parser_missing) return { answer: errorAnswer('get_nodes', [unavailable()]) };
     return { answer: errorAnswer('get_nodes', [{ code: result.code, message: result.message, fix: result.fix }]) };

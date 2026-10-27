@@ -37,15 +37,17 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
     assert.ok(!JSON.stringify(answer).includes('SyntheticPrivateReadFailure'));
     if (mode === 'absence') {
       assert.equal(answer.acceptance, 'not_accepted'); assert.equal(answer.errors[0].code, 'REFERENCE_UNRESOLVED');
-      assert.equal(reads, 4, 'target and grounds cache entries each take one direct and one run-scoped read; permanent absence is not retried'); assert.ok(!(await actions())[0].body.detail.hub_error); return;
+      assert.ok(reads >= 4, 'prefetch and later resolves each recheck current authorization; a previous absence is not an authorization cache'); assert.ok(!(await actions())[0].body.detail.hub_error); return;
     }
-    assert.equal(reads, mode === 'recover' ? 4 : 3, 'groundability uses a separate cache entry after recovery');
+    if (mode === 'recover') assert.ok(reads > 3, 'after bounded recovery every later resolution rechecks current authorization');
+    else assert.equal(reads, 3, 'a failed prefetch retries only three times before reporting an unfinished Hub check');
     if (mode === 'recover') {
       assert.equal(answer.acceptance, 'accepted'); assert.equal(answer.result?.rounds.used, 0);
       const attempts = ((await actions())[0].body.detail.retry_attempts as Array<Record<string, unknown>>).filter(attempt => attempt.operation === 'read');
       assert.deepEqual(attempts.map(attempt => attempt.attempt), [1, 2, 3]); return;
     }
-    assert.ok(h.logs.some(entry => entry.detail.includes('SyntheticPrivateReadFailure')));
+    assert.ok(h.logs.some(entry => entry.detail.includes('SOURCE_RETRYABLE')));
+    assert.ok(h.logs.every(entry => !entry.detail.includes('SyntheticPrivateReadFailure')), 'admin diagnostics do not contain untrusted source error text');
     assert.equal(answer.acceptance, 'not_accepted'); assert.equal(answer.result, undefined);
     assert.deepEqual(answer.errors.map(error => error.code), ['SOURCE_UNAVAILABLE']);
     assert.ok(answer.errors.every(error => error.rounds_left === undefined && error.requirement === undefined));

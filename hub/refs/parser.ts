@@ -57,8 +57,19 @@ export interface ParsedDocument<M extends JsonValue = JsonValue> {
   readonly parser: string;
   /** JSON-serializable structure of the document. */
   readonly model: M;
-  /** The fragment a selector points at, or null when the selector does not locate anything. Never throws for bad selectors. */
-  locate(selector: string): Fragment | null;
+  /**
+   * The fragment a selector points at, or null when the selector does not locate anything. Never throws for bad selectors.
+   * A skill document without eager fragments returns a promise and fills it from the pack `locate` function.
+   */
+  locate(selector: string): Fragment | null | Promise<Fragment | null>;
+  /** Loads a batch of selectors into this document so later `locate` calls reuse them. At most 256 selectors go to one pack call. */
+  prefetch?(selectors: string[]): Promise<void>;
+  /** Estimated retained bytes for an operation-owned cache; legacy documents may omit it. */
+  retainedBytes?(): number;
+  /** Notify the cache when lazily retained data changes. Returns an unsubscribe callback. */
+  onRetainedBytesChange?(listener: () => void): () => void;
+  /** Monotonic deadline shared by all document lookups owned by one operation. */
+  setOperationDeadline?(deadline: number): void;
   /** Canonical selectors in document order whose text starts with `prefix`. */
   listSelectors(prefix?: string, options?: ListOptions): string[];
   /** Structure-only summary (counts and shape, no document text), safe to show for unreadable sources. */

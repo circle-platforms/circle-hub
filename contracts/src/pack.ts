@@ -78,6 +78,7 @@ export const SkillParser = z.strictObject({
   media_types: z.array(z.string().min(1).max(200)).min(1).max(32),
   limits: z.strictObject({ maxBytes:z.number().int().positive().max(64*1024*1024), maxDepth:z.number().int().positive().max(10000), maxNodes:z.number().int().positive().max(1000000), maxAttributes:z.number().int().positive().optional(), maxSelectorChars:z.number().int().positive().optional() }),
   function: PackFunctionRef,
+  locate: PackFunctionRef.optional(),
 });
 export const SkillDeclaration = z.strictObject({ schema:z.literal('skill@1'), parsers:z.array(SkillParser).max(64) }).refine(value=>new Set(value.parsers.map(p=>p.parser)).size===value.parsers.length,'parser versions are unique in a skill');
 export type SkillDeclaration = z.infer<typeof SkillDeclaration>;

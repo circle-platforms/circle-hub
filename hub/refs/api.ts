@@ -54,7 +54,7 @@ export type { TextModel } from './parsers/text.ts';
 export { candidatesFrom, collapseWhitespace, findQuote, locateQuote, quoteMatches } from './quote.ts';
 export type { QuoteCandidate, QuoteLocation, QuoteMatch, QuoteSearch, QuoteSpan, QuoteStream } from './quote.ts';
 
-export { UNAVAILABLE_MESSAGE, createDocumentCache, fragmentDigest, isGroundable, resolveReference, sliceUtf8, verifyQuote } from './resolve.ts';
+export { UNAVAILABLE_MESSAGE, createDocumentCache, fragmentDigest, isGroundable, prefetchReferences, resolveReference, sliceUtf8, verifyQuote } from './resolve.ts';
 export type {
   DocumentCache,
   ReaderIdentity,

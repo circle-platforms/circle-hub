@@ -60,9 +60,9 @@ describe('kityminder@1 on the fixture', () => {
     assert.ok(cases.every((node) => [1, 2, 3].includes(node.data.priority as number)));
   });
 
-  it('locates nodes by data.id with the parent chain and children', () => {
+  it('locates nodes by data.id with the parent chain and children', async () => {
     const target = model.nodes.find((node) => node.data.autoid === 'TC-SYN-0014')!;
-    const fragment = plain.locate(`n/${target.id}`)!;
+    const fragment = (await plain.locate(`n/${target.id}`))!;
     assert.equal(fragment.selector, `n/${target.id}`);
     assert.equal(fragment.text, '权重设为 101 被拒绝');
     assert.equal(fragment.byteRange, null);
@@ -72,37 +72,37 @@ describe('kityminder@1 on the fixture', () => {
       ['需求 4021-示例网关会话保持功能测试', '基本功能', '池配置'],
     );
     assert.equal(data.children.length, 1);
-    assert.equal(plain.locate(data.children[0])!.text, '提示参数超出范围 1-100');
+    assert.equal((await plain.locate(data.children[0]))!.text, '提示参数超出范围 1-100');
     assert.deepEqual(data.data.resource, ['negative']);
-    assert.equal(plain.locate(data.parent)!.text, '池配置');
+    assert.equal((await plain.locate(data.parent))!.text, '池配置');
   });
 
-  it('locates data fields and index paths', () => {
+  it('locates data fields and index paths', async () => {
     const target = model.nodes.find((node) => node.data.autoid === 'TC-SYN-0014')!;
-    const field = plain.locate(`n/${target.id}/@resource`)!;
+    const field = (await plain.locate(`n/${target.id}/@resource`))!;
     assert.equal(field.text, '["negative"]');
     assert.deepEqual((field.data as { value: string[] }).value, ['negative']);
-    assert.equal(plain.locate(`n/${target.id}/@autoid`)!.text, 'TC-SYN-0014');
-    assert.equal(plain.locate(`n/${target.id}/@missing`), null);
-    assert.equal(plain.locate('i')!.selector, model.nodes[0].selector);
-    assert.equal(plain.locate('i/0/2')!.text, '池配置');
-    assert.equal(plain.locate('i/0/2/@priority')!.text, '1');
-    assert.equal(plain.locate('i/9'), null);
-    assert.equal(plain.locate('i/01'), null);
-    assert.equal(plain.locate('n/unknown'), null);
-    assert.equal(plain.locate('n'), null);
-    assert.equal(plain.locate('x/1'), null);
-    assert.equal(plain.locate('not a selector'), null);
+    assert.equal((await plain.locate(`n/${target.id}/@autoid`))!.text, 'TC-SYN-0014');
+    assert.equal((await plain.locate(`n/${target.id}/@missing`)), null);
+    assert.equal((await plain.locate('i'))!.selector, model.nodes[0].selector);
+    assert.equal((await plain.locate('i/0/2'))!.text, '池配置');
+    assert.equal((await plain.locate('i/0/2/@priority'))!.text, '1');
+    assert.equal((await plain.locate('i/9')), null);
+    assert.equal((await plain.locate('i/01')), null);
+    assert.equal((await plain.locate('n/unknown')), null);
+    assert.equal((await plain.locate('n')), null);
+    assert.equal((await plain.locate('x/1')), null);
+    assert.equal((await plain.locate('not a selector')), null);
   });
 
-  it('lists canonical selectors in document order, with fields on request', () => {
+  it('lists canonical selectors in document order, with fields on request', async () => {
     const selectors = plain.listSelectors();
     assert.equal(selectors.length, 150);
     assert.deepEqual(selectors, model.nodes.map((node) => node.selector));
-    for (const selector of selectors) assert.equal(plain.locate(selector)!.selector, selector);
+    for (const selector of selectors) assert.equal((await plain.locate(selector))!.selector, selector);
     const withFields = plain.listSelectors('', { properties: true });
     assert.ok(withFields.length > 600);
-    for (const selector of withFields.filter((s) => s.includes('/@')).slice(0, 50)) assert.ok(plain.locate(selector), selector);
+    for (const selector of withFields.filter((s) => s.includes('/@')).slice(0, 50)) assert.ok((await plain.locate(selector)), selector);
     assert.equal(plain.listSelectors('n/', { limit: 5 }).length, 5);
   });
 
@@ -120,7 +120,7 @@ function map(root: unknown, extra: object = {}): Uint8Array {
 }
 
 describe('kityminder@1 edge cases', () => {
-  it('addresses nodes without a unique id by position', () => {
+  it('addresses nodes without a unique id by position', async () => {
     const document = kityminderParser.parse(
       map({ data: { id: 'r', text: 'root' }, children: [{ data: { id: 'd', text: 'one' } }, { data: { id: 'd', text: 'two' } }, { data: { text: 'none' } }, { data: { id: '@x', text: 'at' } }] }),
     );
@@ -128,19 +128,19 @@ describe('kityminder@1 edge cases', () => {
     assert.deepEqual(model.duplicateIds, ['d']);
     assert.equal(model.missingIds, 1);
     assert.deepEqual(document.listSelectors(), ['n/r', 'i/0', 'i/1', 'i/2', 'i/3']);
-    assert.equal(document.locate('n/d'), null);
-    assert.equal(document.locate('i/1')!.text, 'two');
-    assert.equal(document.locate('i/2/@text')!.text, 'none');
-    assert.equal(document.locate('i/3')!.text, 'at');
+    assert.equal((await document.locate('n/d')), null);
+    assert.equal((await document.locate('i/1'))!.text, 'two');
+    assert.equal((await document.locate('i/2/@text'))!.text, 'none');
+    assert.equal((await document.locate('i/3'))!.text, 'at');
   });
 
-  it('keeps numeric ids and texts, extra node members and wrapper members', () => {
+  it('keeps numeric ids and texts, extra node members and wrapper members', async () => {
     const document = kityminderParser.parse(map({ data: { id: 7, text: 12 }, children: [], layout: 'right' }, { theme: 'x', custom: { a: 1 } }));
     assert.equal(document.model.nodes[0].id, '7');
     assert.equal(document.model.nodes[0].text, '12');
     assert.deepEqual(document.model.nodes[0].extra, { layout: 'right' });
     assert.deepEqual(document.model.meta, { theme: 'x', custom: { a: 1 } });
-    assert.equal(document.locate('n/7')!.text, '12');
+    assert.equal((await document.locate('n/7'))!.text, '12');
   });
 
   it('removes NUL from strings and counts it', () => {
@@ -191,12 +191,12 @@ describe('kityminder@1 text that can be stored, and selectors that can be cited'
     assert.ok(document.model.nodes.every((node) => node.text.isWellFormed()));
   });
 
-  it('addresses a node by position when its id selector would be too long, and lists only citable fields', () => {
+  it('addresses a node by position when its id selector would be too long, and lists only citable fields', async () => {
     const long = 'k'.repeat(MAX_SELECTOR_LENGTH);
     const document = kityminderParser.parse(map({ data: { id: 'r', text: 'root' }, children: [{ data: { id: long, text: 'long' } }, { data: { id: 'ok', text: 'fine', [long]: 1 } }] }));
     assert.deepEqual(document.listSelectors(), ['n/r', 'i/0', 'n/ok']);
-    assert.equal(document.locate('i/0')!.text, 'long');
-    assert.equal(document.locate(`n/${long.slice(0, 4000)}`), null);
+    assert.equal((await document.locate('i/0'))!.text, 'long');
+    assert.equal((await document.locate(`n/${long.slice(0, 4000)}`)), null);
     const withFields = document.listSelectors('', { properties: true });
     assert.ok(withFields.every((selector) => selector.length <= MAX_SELECTOR_LENGTH));
     assert.ok(withFields.includes('n/ok/@text') && !withFields.some((selector) => selector.startsWith('n/ok/@k')));

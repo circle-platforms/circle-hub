@@ -650,7 +650,8 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
       samples = result?.samples ?? [];
     }
     if (skill) {
-      for (const p of await scanFunctions(c.files, skill.parsers.map((row,i)=>functionEntry(row.function,'skill.json',`/parsers/${i}/function`)),policy)) c.add(p);
+      const functions=skill.parsers.flatMap((row,i)=>[functionEntry(row.function,'skill.json',`/parsers/${i}/function`),...(row.locate?[functionEntry(row.locate,'skill.json',`/parsers/${i}/locate`)]:[] )]);
+      for (const p of await scanFunctions(c.files, functions, policy)) c.add(p);
       declarations = { kind: 'skill', skill, method };
     } else declarations = null;
   } else if (manifest.kind === 'product') declarations = await validateProduct(c, policy);

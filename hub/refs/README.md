@@ -212,7 +212,17 @@ onDiagnostic? }`. It never rejects for anything a reference or a stored source c
   only for results and the Hub's own records, kinds `claim`, `validation_result`, `action`, `effect` (B01 R[4]).
 - `verifyQuote(result, quote)` is true or false on readable text and null when the text cannot be checked.
 - `createDocumentCache(n)` keeps parsed documents keyed by digest, parser and media type (safe: bytes behind a digest
-  never change). Permission is still checked by the reader on every call.
+  never change). Permission is still checked by the reader on every call. A call-owned cache applies an LRU limit of
+  192 MiB in estimated retained bytes as well as its entry limit; a lazy document reports fragment growth so eviction
+  need not wait for another read. Legacy parsers without retained-byte accounting use a model estimate and a 16 MiB
+  allowance for hidden state. This is a conservative accounting policy, not a measured or guaranteed RSS bound: parser
+  closures, active operations, subprocesses and temporary serialization allocations can retain additional memory.
+  A single document over the estimate budget fails the operation with a retryable resource error; it is not silently
+  evicted and reparsed separately for every selector. The administrator can ask the source maintainer to split the
+  document or the parser maintainer to reduce its retained representation, then reread it.
+  Parsing and all lazy lookups sharing a cache use one 120-second monotonic operation deadline, including time spent
+  waiting to parse. A timed-out parse is not inserted if it subsequently completes. The sandbox's separate per-call
+  timeout and input/output limits still apply.
 
 ## Decisions and deviations from the brief
 
