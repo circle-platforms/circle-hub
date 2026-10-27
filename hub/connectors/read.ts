@@ -459,7 +459,7 @@ export class ReadEngine {
           error,
           sha256: received?.stored.echoed?null:received?.exchange.sha256 ?? null,
           size: received?.exchange.bytes.byteLength ?? null,
-          media_type: received?.exchange.mediaType ?? null,
+          media_type: received?.exchange.serverMediaType ?? null,
           etag: received?.stored.echoed?null:received?.exchange.etag ?? null,
           ...(received && received.stored.artifact.body.read_tier!==RETAIN_ONLY?this.#location(received.exchange):{}),
           artifact: received?.stored.echoed?null:received?.stored.artifact.digest ?? null,
