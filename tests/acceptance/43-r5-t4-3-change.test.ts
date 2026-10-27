@@ -63,7 +63,7 @@ test('scenario 43: T4-3 preserves three synthetic configuration snapshots and th
     const citation = quote(saved.event, 1, `ORBIT synthetic probe interval: ${index === 1 || index === 2 ? '30' : '10'}`);
     const feeding = {
       schema: 'fed-observation@1', product: world.productId, root: world.root, path: target.path,
-      source: { system: 'upload', bytes: saved.event.output.sha256 }, action: actionText, result: citation,
+      source: { system: 'upload', bytes: saved.event.output.sha256, artifact: saved.upload.source.artifact! }, action: actionText, result: citation,
     };
     const submitted: import('./support/mcp.ts').Answer<import('./support/mcp.ts').Outputs['submit_result']> = await world.client.call('submit_result', {
       run: run.run, model: 'integration-synthetic@1',
@@ -154,7 +154,7 @@ test('scenario 43: T4-3 binds a declared device to its capture-time lease and re
             source: { reference: citation.reference, quote: citation.text },
             feeding: {
               schema: 'fed-observation@1', product: world.productId, root: world.root, path: target.path,
-              source: { system: 'upload', bytes: saved.event.output.sha256 }, action, result: citation, device, ...extra,
+              source: { system: 'upload', bytes: saved.event.output.sha256, artifact: saved.upload.source.artifact! }, action, result: citation, device, ...extra,
             },
           },
         }] },

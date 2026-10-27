@@ -95,7 +95,7 @@ export class HubClient {
     return value;
   }
 
-  async upload(bytes: Uint8Array, sequence: number): Promise<string> {
+  async upload(bytes: Uint8Array, sequence: number): Promise<{reference:string;artifact:string}> {
     const args = {
       file_path: Buffer.from(bytes).toString('base64'),
       media_type: 'text/plain',
@@ -114,7 +114,8 @@ export class HubClient {
       const value = await this.call('upload_file', args);
       const digest = sha256(bytes);
       need(value.call_result === 'ok' && value.acceptance === 'accepted' && value.reference === `src:${digest}` && value.sha256 === digest && value.size === bytes.byteLength, 'invalid_upload_receipt', 'Hub 上传回执与原件不符');
-      return value.reference as string;
+      need(typeof value.artifact === 'string' && /^[0-9a-f]{64}$/.test(value.artifact), 'invalid_upload_receipt', 'Hub 上传回执缺具体原件记录；使用支持 artifact 的 Hub，不按字节猜采集身份');
+      return { reference: value.reference as string, artifact: value.artifact };
     } finally {
       this.tokenSnapshot = null;
     }

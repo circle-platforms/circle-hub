@@ -320,6 +320,7 @@ async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unk
     errors: [],
     acceptance: 'accepted',
     reference: `src:${sha256}`,
+    artifact: artifact.digest,
     feeding_objects:[sha256],
     sha256,
     size: artifact.body.size,

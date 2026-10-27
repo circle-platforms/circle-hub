@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "knowledge-contribution",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "kind": "workflow",
   "title": "知识回注",
   "description": "Circle 整合技能回注，Hub 按锁定根核对原文和归位，不改变原文或根",
@@ -73,13 +73,13 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "b4fb65fce0ec8e1d0a3f163e13c93d1f3ea9f9f7845117f5d26809f79b080c7b",
-      "size": 318823
+      "sha256": "bafb490009bb90abd1a02149b65af86359e5615447ff7faf44d6eeda529519b2",
+      "size": 319534
     },
     {
       "path": "tables/knowledge-structure.json",
-      "sha256": "0c9627499b47a1273f7010fefcb6ba77a69f2d58b7804917ab4b051ca49c8c30",
-      "size": 289227
+      "sha256": "e92b7481a69d3d09c022afc0fe063efa5ededa757f40f6eb806d8bd22628906a",
+      "size": 289947
     },
     {
       "path": "tables/quotes.json",
@@ -113,7 +113,7 @@
     },
     {
       "path": "tools/jev/generated.json",
-      "sha256": "1544acc84cb486e99f0cc80f55895d60ae0200e71a0e40e69ef8fc5915ad6c75",
+      "sha256": "00e3a18b01db10754e7ab3381ea8384733262c4ddd6f0e767695ad45eff5c6e2",
       "size": 1632
     },
     {
@@ -203,8 +203,8 @@
     },
     {
       "path": "tools/operation-capture/SKILL.md",
-      "sha256": "15df9484906713ce13a8a64af22a17b7cac35642d7bbb14f2b59f400cee5d149",
-      "size": 5462
+      "sha256": "ab93594051996f0887b8d65fbdfcb1945b30530a43143056cc307a88efe03014",
+      "size": 5701
     },
     {
       "path": "tools/operation-capture/egress.json",
@@ -213,7 +213,7 @@
     },
     {
       "path": "tools/operation-capture/generated.json",
-      "sha256": "f3d95bd258527f28b52108a2553413a5bd51d78b5070368ae1432feeb3633c0b",
+      "sha256": "f217c5385614720c1045468da4df5bb56d5a8f96a40018d3f95e3fb54033192f",
       "size": 391
     },
     {
@@ -248,13 +248,13 @@
     },
     {
       "path": "tools/operation-capture/lib/hub.ts",
-      "sha256": "f5a9d204ab3fe1fa29d1433d442ec24f76c954ada5f595ce402e9bb0a06b9ae3",
-      "size": 6483
+      "sha256": "f571dc4d50ce3eb5be4b25574b9dd1befc8666663f68289093075c297d250dd6",
+      "size": 6770
     },
     {
       "path": "tools/operation-capture/lib/integrate.ts",
-      "sha256": "e47fc5dfb6694bc0a2a16349e212a16d01dda0e503cc4d12866ffcda26cbcac2",
-      "size": 10527
+      "sha256": "3d8f643137cd163016521ba41d388e7654c2bd71032a0647bd5675e705d859e2",
+      "size": 11725
     },
     {
       "path": "tools/operation-capture/lib/redact.ts",
@@ -263,8 +263,8 @@
     },
     {
       "path": "tools/operation-capture/lib/state.ts",
-      "sha256": "202446981e72a337414756e5ad89fc80173eef9597c1d7036179782bee62d38d",
-      "size": 25504
+      "sha256": "b3ccf14376b61d76c88d2a75d00955ddb4b9d72a014fc6632df133369ac5e805",
+      "size": 25895
     },
     {
       "path": "tools/operation-capture/operation.ts",

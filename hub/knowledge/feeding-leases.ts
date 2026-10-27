@@ -85,8 +85,8 @@ export async function operationLease(
     for (const key of detail.keys) {
       const current = held.get(key);
       if (detail.op === 'acquire') held.set(key, { lease: detail.lease, user: detail.holder.user, until: detail.until });
-      else if (detail.op === 'extend' && current?.lease === detail.lease) current.until = detail.until;
-      else if ((detail.op === 'release' || detail.op === 'force_release' || detail.op === 'take_over') && current?.lease === detail.lease) held.delete(key);
+      else if (detail.op === 'extend' && current) current.until = detail.until;
+      else if (detail.op === 'release' || detail.op === 'force_release' || detail.op === 'take_over') held.delete(key);
     }
   }
   const matching = [...held.entries()].filter(([key, value]) => {

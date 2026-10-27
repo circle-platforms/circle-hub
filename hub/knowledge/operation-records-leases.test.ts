@@ -11,13 +11,15 @@ import {createRunsService} from '../runs/engine/api.ts';
 import {FakeWorkflowStore} from '../runs/engine/testing/workflows.ts';
 import {toolText} from '../server/text.ts';
 import {Database, createPool} from '../records/db.ts';
+import {RECORD_SCHEMAS, scanForCredentials, sha256Hex} from '../records/api.ts';
 import {newId} from '../records/ids.ts';
 import {LeaseService} from '../leases/api.ts';
 
 const call = {traceId:'4bf92f3577b34da6a3ce929d0e0e4736', sessionId:'operation-session'};
 let trace = 100;
 let captureSequence = 0;
-const nextCall = () => ({...call, traceId:(++trace).toString(16).padStart(32, '0')});
+const diagnostics: string[] = [];
+const nextCall = () => ({...call, traceId:(++trace).toString(16).padStart(32, '0'), adminNote:(reason:string) => { diagnostics.push(reason); }});
 const echo = '合成回显：状态正常\n';
 const quote = '合成回显';
 const path = '/commands/system/show';
@@ -45,7 +47,7 @@ async function world(t: {after(fn: () => Promise<void>): void}) {
   return {w, service, run, root: produced.root!, sha: captured.body.sha256, build};
 }
 
-type Context = Awaited<ReturnType<typeof world>>;
+type Context = Awaited<ReturnType<typeof world>> & {capture?: {digest:string}};
 
 function leasesOf(t: {after(fn: () => Promise<void>): void}, ctx: Context, now?: () => Promise<Date>) {
   const db = new Database(createPool(ctx.w.kit.database, 2));
@@ -53,11 +55,28 @@ function leasesOf(t: {after(fn: () => Promise<void>): void}, ctx: Context, now?:
   return {db, service:new LeaseService(db, {records:ctx.w.kit.store, ...(now ? {now} : {})})};
 }
 
-async function captureRun(ctx: Context, options: {author?: string; capturedAt?: string} = {}): Promise<Context> {
+async function captureRun(ctx: Context, options: {author?: string; capturedAt?: string; text?: string; historicalFinding?: boolean} = {}): Promise<Context> {
   const author = options.author ?? ctx.w.admin.id;
   const capturedAt = options.capturedAt ?? new Date(Date.now() + captureSequence + 1).toISOString();
-  const captured = await ctx.w.kit.artifacts.ingest({
-    bytes:new TextEncoder().encode(echo), mediaType:'text/plain', name:`operation-capture-${++captureSequence}.txt`, capturedAt,
+  const bytes = new TextEncoder().encode(options.text ?? echo);
+  // Current upload admission refuses credential-bearing uploads; this historical fixture exercises the read-side hold.
+  const captured = options.historicalFinding ? await (async () => {
+    const sha256 = sha256Hex(bytes);
+    const scan = scanForCredentials(bytes);
+    await ctx.w.kit.objects.put(bytes, 'text/plain');
+    const artifact = await ctx.w.kit.store.put({
+      kind:'source_artifact', schema:RECORD_SCHEMAS.source_artifact, provenance:'client_captured', created_at:capturedAt,
+      body:{
+        sha256, size:bytes.byteLength, media_type:'text/plain', name:`operation-capture-${++captureSequence}.txt`,
+        origin:{upload:{session:'operation-session', message:null}}, author:{user:author, declared:null}, captured_at:capturedAt,
+        provenance_type:'client_captured', read_tier:'model_readable', requested_read_tier:'model_readable',
+        visibility:{readers:[author, ctx.w.admin.id], admins:true, packs:[], shareable:false}, scan:{...scan, findings:[], clean:true},
+      },
+      index:[{key:'artifact.sha256', value:sha256}],
+    });
+    return artifact;
+  })() : await ctx.w.kit.artifacts.ingest({
+    bytes, mediaType:'text/plain', name:`operation-capture-${++captureSequence}.txt`, capturedAt,
     origin:{upload:{session:'operation-session', message:null}}, author:{user:author}, provenanceType:'client_captured',
     visibility:{readers:[author, ctx.w.admin.id], admins:true, packs:[], shareable:false},
   });
@@ -73,16 +92,16 @@ async function captureRun(ctx: Context, options: {author?: string; capturedAt?: 
     pack:'knowledge-contribution', product:'Acme', build:ctx.build.name,
     inputs:{
       subject:{reference:own ? `src:${subject!.body.sha256}` : ctx.run.sources.find(source => source.slot === 'subject')!.reference},
-      originals:[...(own ? [] : [{reference:tree}]), {reference:`src:${captured.body.sha256}`}],
+      originals:[...(own ? [] : [{reference:tree}]), {reference:`src:${captured.body.sha256}`, artifact:captured.digest}],
     },
   }, nextCall());
   assert.equal(started.call_result, 'ok', JSON.stringify(started.errors));
   const run = RunRecord.parse((await ctx.service.getRun(ctx.w.admin, started.run!.run))!.run);
-  return {...ctx, run, sha:captured.body.sha256};
+  return {...ctx, run, sha:captured.body.sha256, capture:{digest:captured.digest}};
 }
 
 function observation(ctx: Context, action: string) {
-  return {schema:'fed-observation@1', product:ctx.run.product, root:ctx.root, path, source:{system:'upload', bytes:ctx.sha}, action, result:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}};
+  return {schema:'fed-observation@1', product:ctx.run.product, root:ctx.root, path, source:{system:'upload', bytes:ctx.sha, ...(ctx.capture?{artifact:ctx.capture.digest}:{})}, action, result:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}};
 }
 
 function submit(ctx: Context, feeding: Record<string, unknown>, statement = '合成操作记录') {
@@ -93,7 +112,7 @@ function submit(ctx: Context, feeding: Record<string, unknown>, statement = '合
 }
 
 async function stored(ctx: Context, answer: Awaited<ReturnType<typeof submit>>) {
-  assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
+  assert.equal(answer.acceptance, 'accepted', JSON.stringify({errors:answer.errors, diagnostics:diagnostics.slice(-12)}));
   const receipt = answer.result!.contributions!.stored[0]!;
   const page = await ctx.w.knowledge.getNodes({root:ctx.root, paths:[path], depth:0}, ctx.w.admin);
   const view = page!.nodes[0].contributions!.map(row => KnowledgeContributionView.parse(row)).find(row => row.record === receipt.record)!;
@@ -216,8 +235,8 @@ test('all three operation structures carry device and every client-supplied Hub 
   const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
   assert.ok(acquired.ok);
   const current = await captureRun(ctx);
-  const procedure = {schema:'fed-procedure@1', product:current.run.product, root:current.root, path, source:{system:'upload', bytes:current.sha}, goal:'合成步骤', steps:[{text:'执行', quote:{reference:`src:${current.sha}/text@1/l/1`, text:quote}}], device:'device0'};
-  const pitfall = {schema:'fed-pitfall@1', product:current.run.product, root:current.root, path, source:{system:'upload', bytes:current.sha}, phenomenon:'合成现象', suggestion:'合成建议', quote:{reference:`src:${current.sha}/text@1/l/1`, text:quote}, device:'device0'};
+  const procedure = {schema:'fed-procedure@1', product:current.run.product, root:current.root, path, source:{system:'upload', bytes:current.sha, artifact:current.capture!.digest}, goal:'合成步骤', steps:[{text:'执行', quote:{reference:`src:${current.sha}/text@1/l/1`, text:quote}}], device:'device0'};
+  const pitfall = {schema:'fed-pitfall@1', product:current.run.product, root:current.root, path, source:{system:'upload', bytes:current.sha, artifact:current.capture!.digest}, phenomenon:'合成现象', suggestion:'合成建议', quote:{reference:`src:${current.sha}/text@1/l/1`, text:quote}, device:'device0'};
   for (const feeding of [{...observation(current, '三类设备记录'), device:'device0'}, procedure, pitfall]) {
     const view = await stored(current, await submit(current, feeding, `三类设备记录 ${feeding.schema}`));
     assert.equal(view.feeding.device, 'device0');
@@ -248,4 +267,101 @@ test('an unbound run accepts a device declaration but never picks one of several
   assert.equal(answer.acceptance, 'not_accepted');
   assert.equal(answer.result?.contributions?.stored.length, 0);
   assert.ok(answer.errors.some(error => error.code === 'SOURCE_UNAVAILABLE' && error.message.includes('多份候选租约')));
+});
+
+test('mixed-lease batch extension and force release replay every affected key', async t => {
+  const ctx = await world(t);
+  const now = Date.now();
+  const {db, service:old} = leasesOf(t, ctx, async () => new Date(now - 4000));
+  const keys = ['bed/synthetic/first0', 'bed/synthetic/second0'];
+  const first = await old.acquire({keys:[keys[0]], holder:holder(ctx), prefix:'bed/', ttlSeconds:1, maxTtlSeconds:600});
+  const second = await old.acquire({keys:[keys[1]], holder:holder(ctx), prefix:'bed/', ttlSeconds:1, maxTtlSeconds:600});
+  assert.ok(first.ok);
+  assert.ok(second.ok);
+  const extending = new LeaseService(db, {records:ctx.w.kit.store, now:async () => new Date(now - 3500)});
+  assert.ok((await extending.extend({keys, holder:holder(ctx), ttlSeconds:60, maxTtlSeconds:600})).ok);
+  const before = await captureRun(ctx);
+  const current = new LeaseService(db, {records:ctx.w.kit.store});
+  assert.ok((await current.forceRelease({keys, by:ctx.w.admin.id, reason:'合成批量强制释放'})).ok);
+  for (const [index, device] of ['first0', 'second0'].entries()) {
+    const expected: string = index === 0 ? first.lease : second.lease;
+    const view = await stored(before, await submit(before, {...observation(before, `批量续租 ${device}`), device}, `批量续租 ${device}`));
+    assert.equal(view.feeding.lease, expected);
+  }
+  const after = await captureRun(ctx);
+  for (const device of ['first0', 'second0']) {
+    const view = await stored(after, await submit(after, {...observation(after, `批量释放 ${device}`), device}, `批量释放 ${device}`));
+    assert.equal(view.feeding.lease, null);
+    assert.match(view.text, /无租约（未授权）/);
+  }
+});
+
+test('equal-byte captures keep their own timestamps and idempotent receipts read the stored operation', async t => {
+  const ctx = await world(t);
+  const before = await captureRun(ctx);
+  const {service:leases} = leasesOf(t, ctx);
+  const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
+  assert.ok(acquired.ok);
+  const after = await captureRun(ctx);
+  assert.equal(before.sha, after.sha);
+  const artifactOf = (value: Context) => value.run.sources.find(source => source.slot === 'originals' && source.reference === `src:${value.sha}`)?.artifact;
+  assert.notEqual(artifactOf(before), artifactOf(after));
+
+  const early = await stored(before, await submit(before, {...observation(before, '同字节前态'), device:'device0'}, '同字节前态'));
+  const late = await stored(after, await submit(after, {...observation(after, '同字节后态'), device:'device0'}, '同字节后态'));
+  assert.equal(early.feeding.lease, null);
+  assert.equal(late.feeding.lease, acquired.lease);
+  assert.ok(Date.parse(String(early.feeding.at)) < Date.parse(String(late.feeding.at)));
+
+  const plainAnswer = await submit(before, observation(before, '幂等无设备'), '幂等操作');
+  const plain = await stored(before, plainAnswer);
+  assert.equal(plain.feeding.device, undefined);
+  const replayAnswer = await submit(after, {...observation(after, '幂等无设备'), device:'device0'}, '幂等操作');
+  const replay = await stored(after, replayAnswer);
+  assert.equal(replay.receipt.record, plain.receipt.record);
+  assert.equal(replay.receipt.device, undefined);
+  assert.equal(replay.receipt.lease, undefined);
+  assert.equal(replay.feeding.lease, undefined);
+  assert.equal(replay.view.note, null);
+});
+
+test('credential withholding keeps the device and unauthorized state without exposing the quote', async t => {
+  const ctx = await world(t);
+  const current = await captureRun(ctx, {text:['合成回显：状态正常', ['SECRET', 'KEY'].join('_') + '=' + ['Synth3tic', 'key', '42'].join('-'), ''].join('\n'), historicalFinding:true});
+  const saved = await stored(current, await submit(current, {...observation(current, '扣留的设备操作'), device:'device0'}, '扣留的设备操作'));
+  assert.equal(saved.feeding.lease, null);
+  const bytes = await current.w.kit.objects.get(current.sha);
+  assert.ok(bytes);
+  await current.w.kit.store.put({
+    kind:'source_artifact', schema:RECORD_SCHEMAS.source_artifact, provenance:'observed',
+    body:{
+      sha256:current.sha, size:bytes.byteLength, media_type:'text/plain', name:'synthetic-observation.txt',
+      origin:{read:{object:'synthetic:echo:history'}}, author:{user:null,declared:null}, captured_at:new Date().toISOString(),
+      provenance_type:'observed', read_tier:'retain_only', requested_read_tier:'retain_only',
+      visibility:{readers:[], admins:true, packs:[], shareable:false}, scan:scanForCredentials(bytes),
+    },
+    index:[{key:'artifact.sha256', value:current.sha}],
+  });
+  const view = await ctx.w.knowledge.layers.contributions.readView(saved.receipt.record, ctx.w.admin);
+  assert.equal(view?.status, 'credential_unreadable');
+  assert.match(view?.note ?? '', /设备 device0；无租约（未授权）/);
+  const listed = await ctx.w.knowledge.layers.contributions.list(ctx.root, [path], ctx.w.admin);
+  assert.match(listed.find(row => row.record === saved.receipt.record)?.note ?? '', /设备 device0；无租约（未授权）/);
+  const page = await ctx.w.knowledge.getNodes({root:ctx.root, paths:[path], depth:0}, ctx.w.admin);
+  const text = toolText('get_nodes', {call_result:'ok', errors:[], trace:call.traceId, root:ctx.root, nodes:page!.nodes});
+  assert.match(text, /设备 device0；无租约（未授权）/);
+  assert.doesNotMatch(text, /合成回显：状态正常/);
+});
+
+test('an artifact from another capture is refused instead of rebinding equal bytes', async t => {
+  const ctx = await world(t);
+  const started = await ctx.service.startRun(ctx.w.admin, {
+    pack:'knowledge-contribution', product:'Acme', build:ctx.build.name,
+    inputs:{
+      subject:{reference:ctx.run.sources.find(source => source.slot === 'subject')!.reference},
+      originals:[{reference:`src:${ctx.sha}`, artifact:'0'.repeat(64)}],
+    },
+  }, nextCall());
+  assert.equal(started.call_result, 'error');
+  assert.ok(started.errors.some(error => error.message.includes('artifact 与 src')));
 });

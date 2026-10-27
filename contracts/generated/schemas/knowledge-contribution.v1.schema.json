@@ -4783,6 +4783,11 @@
                 "bytes": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
+                },
+                "artifact": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "Exact source_artifact record for equal-byte captures; Hub checks it against the run binding."
                 }
               },
               "required": [
@@ -5305,6 +5310,11 @@
                 "bytes": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
+                },
+                "artifact": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "Exact source_artifact record for equal-byte captures; Hub checks it against the run binding."
                 }
               },
               "required": [
@@ -5847,6 +5857,11 @@
                 "bytes": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
+                },
+                "artifact": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "Exact source_artifact record for equal-byte captures; Hub checks it against the run binding."
                 }
               },
               "required": [

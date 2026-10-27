@@ -87,7 +87,7 @@ export async function bindInputs(
     if (!slots.has(name)) schemaError(`/inputs/${name}`, `任务包没有输入槽 ${name}（有：${[...slots.keys()].join('、')}）`);
   }
 
-  const readReference = async (slot: WorkflowInput, path: string, text: string): Promise<Read | null> => {
+  const readReference = async (slot: WorkflowInput, path: string, text: string, artifact?: string): Promise<Read | null> => {
     let ref: Reference;
     try {
       ref = parseReference(text);
@@ -101,7 +101,14 @@ export async function bindInputs(
         schemaError(path, '输入要引用整份源文件（src:<sha256>），不是其中的片段');
         return null;
       }
-      const source = await artifacts.source(user, ref.sha256, { consumer: 'function' });
+      if (artifact !== undefined) {
+        const pinned = await store.get<{sha256?:unknown}>(artifact);
+        if (pinned?.kind !== 'source_artifact' || pinned.body.sha256 !== ref.sha256) {
+          schemaError(path, 'artifact 与 src 字节摘要或原件记录不符；从同一次 upload_file 回执复制这两个字段');
+          return null;
+        }
+      }
+      const source = await artifacts.source(user, ref.sha256, { consumer: 'function', ...(artifact ? {record:artifact} : {}) });
       if (source === null || source.bytes === null) {
         gone(path, source === null ? 'source absent or not readable by the caller' : `bytes withheld (${source.readTier})`);
         return null;
@@ -120,6 +127,10 @@ export async function bindInputs(
         meta: null,
         record: null,
       };
+    }
+    if (artifact !== undefined) {
+      schemaError(path, 'artifact 只能与整份 src 原件引用一起使用；rec 引用本身已确定记录');
+      return null;
     }
     if (ref.scheme === 'rec') {
       const record = await recordReader(store, ctx.deps.knowledge.layers?.contributions).read(ref.record, identityOf(user));
@@ -257,7 +268,7 @@ export async function bindInputs(
     for (const [k, binding] of list.entries()) {
       const path = Array.isArray(given) ? `/inputs/${slot.slot}/${k}` : `/inputs/${slot.slot}`;
       let read: Read | null;
-      if ('reference' in binding) read = await readReference(slot, path, binding.reference);
+      if ('reference' in binding) read = await readReference(slot, path, binding.reference, binding.artifact);
       else if ('external' in binding) read = await readExternal(slot, path, binding.external);
       else { schemaError(path, '输入只能是上传得到的 src: 引用、Hub 记录引用 rec: 或外部对象'); continue; }
       if (read === null) continue;

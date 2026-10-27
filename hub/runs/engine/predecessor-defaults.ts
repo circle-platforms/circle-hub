@@ -32,10 +32,10 @@ const REVISION=/@([0-9a-f]{64}(?:\.\.[0-9a-f]{64})?)$/;
 const bare=(id:string):string=>id.replace(REVISION,'');
 const listOf=(value:InputBinding|InputBinding[]|undefined):InputBinding[]=>value===undefined?[]:Array.isArray(value)?value:[value];
 
-function matchesFrozen(given:InputBinding,source:{reference:string;external?:string|null}):boolean{
+function matchesFrozen(given:InputBinding,source:{reference:string;external?:string|null;artifact?:string}):boolean{
   if('run' in given)return false;
   if('external' in given)return typeof source.external==='string'&&bare(given.external)===bare(source.external);
-  return given.reference===source.reference;
+  return given.reference===source.reference&&(given.artifact===undefined||given.artifact===source.artifact);
 }
 
 async function ancestors(ctx:EngineContext,start:StoredRecord<RunRecord>):Promise<StoredRecord<RunRecord>[]>{
@@ -89,7 +89,7 @@ export async function defaultPredecessorInputs(ctx:EngineContext,workflow:Loaded
       const identity=source.external??source.reference;
       const given=current[slot.slot];
       if(given===undefined){
-        const binding:InputBinding=source.external!==undefined?{external:source.external}:{reference:source.reference};
+        const binding:InputBinding=source.external!==undefined?{external:source.external}:{reference:source.reference,...(source.artifact?{artifact:source.artifact}:{})};
         current={...current,[slot.slot]:slot.many?[binding]:binding};
         defaults.push({slot:slot.slot,predecessor:predecessor.body.run,reference:identity,kind:'input'});
         continue;

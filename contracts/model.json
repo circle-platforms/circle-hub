@@ -6405,6 +6405,10 @@
          },
          "bytes": {
           "$ref": "contract:common/Sha256"
+         },
+         "artifact": {
+          "$ref": "contract:common/Sha256",
+          "description": "Exact source_artifact record for equal-byte captures; Hub checks it against the run binding."
          }
         },
         "required": [
@@ -6712,6 +6716,10 @@
          },
          "bytes": {
           "$ref": "contract:common/Sha256"
+         },
+         "artifact": {
+          "$ref": "contract:common/Sha256",
+          "description": "Exact source_artifact record for equal-byte captures; Hub checks it against the run binding."
          }
         },
         "required": [
@@ -7039,6 +7047,10 @@
          },
          "bytes": {
           "$ref": "contract:common/Sha256"
+         },
+         "artifact": {
+          "$ref": "contract:common/Sha256",
+          "description": "Exact source_artifact record for equal-byte captures; Hub checks it against the run binding."
          }
         },
         "required": [

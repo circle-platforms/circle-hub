@@ -64,13 +64,17 @@ async function proposals(path: string, session: string, captures: VerifiedCaptur
   const document = exact(value, ['schema', 'session', 'items']);
   need(document.schema === GENERATED.proposal_schema && document.session === session && Array.isArray(document.items), 'invalid_proposals', '提案文档身份或会话不符');
   need(document.items.length >= 1 && document.items.length <= EGRESS.max_proposals, 'invalid_proposals', '提案条数必须在一到一百之间');
-  const byDigest = new Map(captures.map(capture => [capture.capture.output.sha256, capture]));
+  const byDigest = new Map<string, VerifiedCapture[]>();
+  for (const capture of captures) {
+    const digest = capture.capture.output.sha256;
+    byDigest.set(digest, [...(byDigest.get(digest) ?? []), capture]);
+  }
   const prepared: Prepared[] = [];
   for (const item of document.items) {
     need(isRecord(item), 'invalid_proposals', '提案条目不是对象');
     const kind = text(item.kind, 'invalid_proposals', '提案缺类型');
     need(Object.hasOwn(GENERATED.operation_kinds, kind), 'unsupported_operation_kind', '只收 observation、procedure 或 pitfall');
-    const { device: declaredDevice, ...fields } = item;
+    const { device: declaredDevice, artifact: declaredArtifact, ...fields } = item;
     const common = exact(fields, kind === 'observation'
       ? ['capture', 'kind', 'path', 'statement', 'action', 'quote']
       : kind === 'procedure'
@@ -78,8 +82,14 @@ async function proposals(path: string, session: string, captures: VerifiedCaptur
         : ['capture', 'kind', 'path', 'statement', 'phenomenon', 'suggestion', 'quote']);
     const digest = text(common.capture, 'invalid_proposals', '提案缺原件摘要', 64);
     need(/^[0-9a-f]{64}$/.test(digest), 'invalid_proposals', '原件摘要格式不对');
-    const capture = byDigest.get(digest);
-    need(capture?.upload, 'capture_not_uploaded', '原件尚未由钩子上传，不能整合');
+    const candidates = (byDigest.get(digest) ?? []).filter(candidate => candidate.upload);
+    need(candidates.length > 0, 'capture_not_uploaded', '原件尚未由钩子上传，不能整合');
+    if (declaredArtifact !== undefined) need(typeof declaredArtifact === 'string' && /^[0-9a-f]{64}$/.test(declaredArtifact), 'invalid_proposals', '提案原件记录格式不对');
+    const matching = declaredArtifact === undefined ? candidates : candidates.filter(candidate => candidate.upload!.source.artifact === declaredArtifact);
+    need(matching.length === 1, 'capture_identity_required', '同字节有多次采集或原件记录不符；从 list 的 upload.source.artifact 选择本次原件');
+    const capture = matching[0]!;
+    need(capture.upload, 'capture_not_uploaded', '原件尚未由钩子上传，不能整合');
+    need(typeof capture.upload.source.artifact === 'string', 'capture_identity_required', '采集清单缺具体原件记录；用支持 artifact 的 Hub 重新采集上传，不能按字节猜采集时刻');
     const device = operationDevice(declaredDevice, capture.capture.targets);
     const bytes = await outputBytes(session, capture.capture);
     const base = {
@@ -116,7 +126,7 @@ function feeding(row: Prepared, product: string, root: string): Record<string, u
     product,
     root,
     path: row.path,
-    source: { system: 'upload', bytes: row.capture.capture.output.sha256 },
+    source: { system: 'upload', bytes: row.capture.capture.output.sha256, artifact: row.capture.upload!.source.artifact! },
     ...(row.device === undefined ? {} : { device: row.device }),
   };
   if (row.kind === 'observation') return { ...common, action: row.action, result: row.result };
@@ -145,7 +155,10 @@ export async function submitProposals(session: string, proposalPath: string, pro
   });
   const manifest = { items: rows.map((_, index) => ({ id: `operation-${index + 1}`, title: `操作记录 ${index + 1}` })) };
   const subject = await allowed(() => hub.uploadDocument(manifest, 'circle-operation-manifest.json'));
-  const originals = [...new Set(rows.map(row => `src:${row.capture.capture.output.sha256}`))].map(reference => ({ reference }));
+  const originals = [...new Map(rows.map(row => {
+    const input = { reference: `src:${row.capture.capture.output.sha256}`, artifact: row.capture.upload!.source.artifact! };
+    return [canonical(input), input];
+  })).values()];
   const clientKey = sha256(canonical({ schema: GENERATED.proposal_schema, session, subject, product, build: build ?? null, originals }));
   const started = await allowed(() => hub.call('start_run', {
     pack: PACK,

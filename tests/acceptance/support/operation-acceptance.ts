@@ -137,11 +137,17 @@ export async function startOperationRun(world: OperationWorld, captures: Capture
     new TextEncoder().encode(JSON.stringify({ items: [{ id: 'assertion', title: '合成操作断言' }] })),
     'synthetic-operation-manifest.json',
   );
+  const events = await readEvents(sessionDirectory(world.session, { CIRCLE_HOME: world.local.home }), world.session);
+  const originals = captures.map(event => {
+    const upload = events.find(row => row.kind === 'upload' && row.capture === event.sequence);
+    assert.ok(upload?.kind === 'upload' && upload.source.artifact, 'the exact upload artifact accompanies this capture');
+    return { reference: `src:${event.output.sha256}`, artifact: upload.source.artifact };
+  });
   const started = await world.client.call('start_run', {
     pack: 'knowledge-contribution', product: world.product, build: world.build,
     inputs: {
       subject: { reference: manifest },
-      originals: [...new Set(captures.map(event => `src:${event.output.sha256}`))].map(reference => ({ reference })),
+      originals: [...new Map(originals.map(row => [row.artifact, row])).values()],
     },
   });
   assert.equal(started.isError, false, started.text);

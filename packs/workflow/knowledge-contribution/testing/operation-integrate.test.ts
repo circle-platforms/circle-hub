@@ -102,3 +102,34 @@ test('device declarations reuse capture targets and conflicting proposals stop b
   assert.equal(hub.runs.length, 2);
   assert.equal(hub.submissions.length, 2);
 });
+
+test('equal-byte proposals bind exact capture artifacts instead of the latest timestamp', async t => {
+  const local = await scratch(t);
+  const hub = await fakeHub(t);
+  assert.equal((await enable(local, hub.url)).code, 0);
+  assert.equal((await hook(local, 'ORBIT repeated output\n', { device: 'edge-a' })).code, 0);
+  assert.equal((await hook(local, 'ORBIT repeated output\n', { device: 'edge-b' })).code, 0);
+  const capture = [...hub.uploads.keys()][0]!;
+  const proposals = join(local.home, 'proposals.json');
+  const base = { capture, kind: 'observation', path: '/commands/system/show', statement: '同字节操作', action: '读取合成输出', quote: { line: 1, text: 'ORBIT repeated output' } };
+  await writeFile(proposals, JSON.stringify({ schema: 'operation-integration@1', session: SESSION, items: [base] }));
+  const ambiguous = await skill(local, ['submit', '--session', SESSION, '--proposals', proposals, '--product', 'ORBIT', '--model', 'integration-synthetic@1']);
+  assert.equal(ambiguous.code, 1);
+  assert.match(ambiguous.err, /capture_identity_required/);
+  assert.equal(hub.runs.length, 0);
+  const listed = await skill(local, ['list', '--session', SESSION]);
+  assert.equal(listed.code, 0, listed.err);
+  const captures = JSON.parse(listed.out) as Array<{ upload: { artifact: string } }>;
+  assert.equal(captures.length, 2);
+  await writeFile(proposals, JSON.stringify({
+    schema: 'operation-integration@1', session: SESSION,
+    items: captures.map((row, index) => ({ ...base, artifact: row.upload.artifact, device: index === 0 ? 'edge-a' : 'edge-b', action: `读取第 ${index + 1} 次输出` })),
+  }));
+  const accepted = await skill(local, ['submit', '--session', SESSION, '--proposals', proposals, '--product', 'ORBIT', '--model', 'integration-synthetic@1']);
+  assert.equal(accepted.code, 0, accepted.err);
+  const originals = hub.runs[0].inputs.originals;
+  assert.equal(originals.length, 2);
+  assert.deepEqual(originals.map((row: any) => row.artifact), captures.map(row => row.upload.artifact));
+  assert.equal(new Set(originals.map((row: any) => row.artifact)).size, 2);
+  assert.deepEqual(hub.submissions[0].items.map((row: any) => row.slots.contribution[0].data.feeding.device), ['edge-a', 'edge-b']);
+});

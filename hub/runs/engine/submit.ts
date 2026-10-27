@@ -7,6 +7,7 @@ import { applyDispatchResults } from './dispatch-results.ts';
 import { recordResultRequests, answerRepairedRequests } from './requests.ts';
 import { ContributionRefusal, KnowledgeError, type PreparedContribution, type ContributionScope } from '../../knowledge/api.ts';
 import { operationDeviceStatus } from '../../knowledge/feeding-leases.ts';
+import { KnowledgeStore } from '../../knowledge/store.ts';
 import { getInterpreter, type CheckOutcome } from '../../rules/api.ts';
 // submit_result (W07, W08, T03, A04): the arguments are stored exactly as received before anything else; a repeat of the same
 // (run, submission digest) observed at the same session and declared model returns the stored result without re-running
@@ -400,7 +401,10 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
             continue;
           }
           const record = await layer.append(prepared, {run:base.run.run,submission:base.digest,session:sessionOf(base.call),model:outcome.model!}, tx);
-          receipt.stored.push({ item, record, ...(operationDeviceStatus(prepared.feeding) ?? {}) });
+          const saved = await store.get(record, tx);
+          const body = saved && KnowledgeStore.contributionOf(saved);
+          if (!body) throw new KnowledgeError('回注入层记录缺失或结构不符，不能确定设备租约状态', {code:'SOURCE_UNAVAILABLE'});
+          receipt.stored.push({ item, record, ...(operationDeviceStatus(body.feeding) ?? {}) });
         }
         return putResult(store, { ...outcome.result, contributions: receipt }, ctx.now().toISOString(), tx);
       });

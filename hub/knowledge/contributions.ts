@@ -79,6 +79,8 @@ function identityOf(prepared: PreparedContribution): string {
       ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});
 }
 
+function noteWithDevice(body: KnowledgeContributionBody, note: string): string;
+function noteWithDevice(body: KnowledgeContributionBody, note: string | null): string | null;
 function noteWithDevice(body: KnowledgeContributionBody, note: string | null): string | null {
   const device = operationDeviceNote(body.feeding);
   return [note, device].filter((value): value is string => value !== null).join('；') || null;
@@ -374,7 +376,7 @@ export class ContributionLayer {
     const {statement:_statement,source,relation,applicability_claim:_applicabilityClaim,feeding:_feeding,feeding_record:_feedingRecord,...metadata}=body;const {quote:_quote,...safeSource}=source;
     const safeOther=relation===undefined?undefined:(({quote:_quote,...rest})=>rest)(relation.other);
     return {record,contribution:WithheldContributionBody.parse({...metadata,source:safeSource,...(relation===undefined?{}:{relation:{kind:relation.kind,other:safeOther}})}),status:'credential_unreadable',
-      note:`${labelOf('validity_status','credential_unreadable')}；缺少当前可供模型读取的原件，须由管理员核查扫描结论；确属误报才受理后重读，真凭据须清理并重新采集；不要转述陈述或引文`};
+      note:noteWithDevice(body,`${labelOf('validity_status','credential_unreadable')}；缺少当前可供模型读取的原件，须由管理员核查扫描结论；确属误报才受理后重读，真凭据须清理并重新采集；不要转述陈述或引文`)};
   }
 
   async readView(digest:string,reader:Principal):Promise<KnowledgeContributionView|null>{

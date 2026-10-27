@@ -79,6 +79,7 @@ export const UploadFileInput = z.strictObject({
 export const UploadFileOutput = Envelope.safeExtend({
   acceptance: AcceptanceSchema,
   reference: referenceUriOf('src').optional().describe('src:<sha256> of the stored bytes, to use as a run input; only when accepted'),
+  artifact: Sha256.optional().describe('Exact source_artifact record, so equal-byte captures can be bound independently; only when accepted'),
   sha256: Sha256.optional(),
   size: z.number().int().nonnegative().optional(),
   media_type: z.string().optional(),
@@ -86,6 +87,7 @@ export const UploadFileOutput = Envelope.safeExtend({
 }).superRefine((o, ctx) => {
   if (o.acceptance !== 'accepted') {
     if (o.reference !== undefined) issue(ctx, ['reference'], 'an upload that is not accepted has no reference');
+    if (o.artifact !== undefined) issue(ctx, ['artifact'], 'an upload that is not accepted has no exact artifact record');
   } else if (o.reference === undefined || o.sha256 === undefined || o.size === undefined) {
     issue(ctx, ['reference'], 'an accepted upload returns its reference, sha256 and size');
   } else if (o.reference !== `src:${o.sha256}`) {
