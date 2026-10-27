@@ -14,10 +14,11 @@ import {generateWorkbook} from '../functions/generate.ts';
 import {readWorkbook} from '../functions/workbook.ts';
 import {satisfiedRecipe} from '../tools/generate-workbook.ts';
 import {coreModel} from '../testing/workbook-model.ts';
-import {createCatalogView} from '../../../../hub/rules/api.ts';
+import {createCatalogView,osIsolationAvailable} from '../../../../hub/rules/api.ts';
 import {fileURLToPath} from 'node:url';
 
-test('a real independent review binds the original declaration and grounds a block workbook',async()=>{
+const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
+test('a real independent review binds the original declaration and grounds a block workbook',{skip},async()=>{
  const postgres=await startPostgres(),temp=await temporaryDirectory('block-review-');let hub:Awaited<ReturnType<typeof openHub>>|undefined;
  try{
   hub=await openHub(postgres);

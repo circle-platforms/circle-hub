@@ -13,7 +13,9 @@ import {toolText} from '../server/text.ts';
 import {formatKnowledgeRetract, knowledgeRetract} from './api.ts';
 import {operationIdentity} from './feeding.ts';
 import {canonicalize, sha256Hex} from '../records/api.ts';
+import {osIsolationAvailable} from '../rules/api.ts';
 
+const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 const call = {traceId:'4bf92f3577b34da6a3ce929d0e0e4736', sessionId:'operation-session'};
 let postgres: TemporaryPostgres;
 before(async () => { postgres = await startPostgres(); });
@@ -49,7 +51,7 @@ function submit(ctx: Awaited<ReturnType<typeof world>>, path: string, feeding: R
   return {run:ctx.run.run, model:'integration-synthetic@1', items:[{item:'assertion', handling:'handled' as const, slots:{contribution:[{code:'assertion', text:statement, data:{root:ctx.root, path, source:{reference:`src:${ctx.sha}/text@1/l/1`, quote}, feeding, ...(relation?{relation}:{})}}]}}]};
 }
 
-test('an operation record enters at declaration grade from a client capture and keeps the locked build', async t => {
+test('an operation record enters at declaration grade from a client capture and keeps the locked build', {skip}, async t => {
   const ctx = await world(t);
   const frozen = ctx.run.feeding_offset?.offset;
   const answer = await ctx.service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', observation(ctx, '/commands/system/show')), call);
@@ -84,7 +86,7 @@ test('an operation record enters at declaration grade from a client capture and 
   assert.ok(await ctx.w.knowledge.layers.contributions.read(digest, ctx.w.admin));
 });
 
-test('a changed character, a model-reported version and any other provenance are refused', async t => {
+test('a changed character, a model-reported version and any other provenance are refused', {skip}, async t => {
   const ctx = await world(t);
   const changed = observation(ctx, '/commands/system/show');
   (changed.result as {text:string}).text = '合成回显X';
@@ -105,7 +107,7 @@ test('a changed character, a model-reported version and any other provenance are
   assert.match(JSON.stringify(refused.errors), /client_captured|上传原件/);
 });
 
-test('procedure and pitfall keep the same binding, a contradiction is marked, and withdrawal leaves the bytes', async t => {
+test('procedure and pitfall keep the same binding, a contradiction is marked, and withdrawal leaves the bytes', {skip}, async t => {
   const ctx = await world(t);
   const procedure = {schema:'fed-procedure@1', product:ctx.run.product, root:ctx.root, path:'/commands/system/show', source:{system:'upload', bytes:ctx.sha}, goal:'核对合成状态', steps:[{text:'执行合成显示', quote:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}}]};
   const first = await ctx.service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', procedure, '核对合成状态的步骤'), call);
@@ -141,7 +143,7 @@ function evidenceClaims(value: unknown, out: Array<{nature: string; grounds: unk
   return out;
 }
 
-test('retracting a pitfall contribution marks only that entry and leaves the tree bytes', async t => {
+test('retracting a pitfall contribution marks only that entry and leaves the tree bytes', {skip}, async t => {
   const ctx = await world(t);
   const observedFeeding = observation(ctx, '/commands/system/show');
   const observed = await ctx.service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', observedFeeding), call);
@@ -173,7 +175,7 @@ test('retracting a pitfall contribution marks only that entry and leaves the tre
   assert.match(formatKnowledgeRetract(repeat)[0], /这些目标已撤回（撤回记录 [0-9a-f]{12}），没有追加/);
 });
 
-test('a declaration-grade operation record is refused as the ground of another submission', async t => {
+test('a declaration-grade operation record is refused as the ground of another submission', {skip}, async t => {
   const ctx = await world(t);
   const answer = await ctx.service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', observation(ctx, '/commands/system/show')), call);
   assert.equal(answer.result?.contributions?.stored.length, 1, JSON.stringify(answer.errors));
@@ -197,7 +199,7 @@ test('a declaration-grade operation record is refused as the ground of another s
   assert.match(JSON.stringify(cited.errors), /决定 73/);
 });
 
-test('a product reader who can read the original sees the operation record on the command node', async t => {
+test('a product reader who can read the original sees the operation record on the command node', {skip}, async t => {
   const ctx = await world(t);
   const hidden = await ctx.service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', observation(ctx, '/commands/system/show')), call);
   const hiddenDigest = hidden.result!.contributions!.stored[0].record;
@@ -235,7 +237,7 @@ test('a product reader who can read the original sees the operation record on th
   assert.equal(await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/net/ping'], depth:0}, ctx.w.outsider), null);
 });
 
-test('a repeated byte output keeps the exact capture record bound by its run', async t => {
+test('a repeated byte output keeps the exact capture record bound by its run', {skip}, async t => {
   const ctx = await world(t);
   const first = ctx.run.sources.find(source => source.slot === 'originals' && source.reference === `src:${ctx.sha}`)!.artifact;
   const second = await ctx.w.kit.artifacts.ingest({bytes:new TextEncoder().encode(echo), mediaType:'text/plain', origin:{upload:{session:'operation-session-two',message:null}}, author:{user:ctx.w.admin.id}, provenanceType:'client_captured', visibility:{readers:[ctx.w.admin.id],admins:true,packs:[],shareable:false}, name:'second-capture.txt'});
