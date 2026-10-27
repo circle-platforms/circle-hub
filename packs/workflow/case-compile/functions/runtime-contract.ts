@@ -47,9 +47,10 @@ export function runtimeMethod(contract: RuntimeContract, object: string, method:
 /** The members a runtime-contract@2 document adds on top of the original contract (Hub-side deployment declaration). */
 const ADDITIONS = ['types', 'roles', 'effects'];
 /**
- * Removes the @2 additions (types, roles, effects, per-entry typed_authority and the original declaration itself) and
- * restores the original schema and its contract_sha256: the recovered document must carry the original contract's
- * canonical identity. Returns null when the value is not a @2 document with an original declaration.
+ * Removes the @2 additions (types, roles, effects, per-entry typed_authority, runtime.block_model and the original
+ * declaration itself) and restores the original schema and its contract_sha256: the recovered document must carry the
+ * original contract's canonical identity. block_model is the only runtime member removed; every other runtime member
+ * stays. Returns null when the value is not a @2 document with an original declaration.
  */
 export function stripAdditions(value: Record<string, unknown>): Record<string, unknown> | null {
   if (value.schema !== 'runtime-contract@2' || !isRecord(value.original)) return null;
@@ -58,7 +59,9 @@ export function stripAdditions(value: Record<string, unknown>): Record<string, u
     if (key === 'schema' || key === 'contract_sha256' || key === 'original' || ADDITIONS.includes(key)) continue;
     out[key] = key === 'entries' && Array.isArray(member)
       ? member.map((entry) => isRecord(entry) ? Object.fromEntries(Object.entries(entry).filter(([field]) => field !== 'typed_authority')) : entry)
-      : member;
+      : key === 'runtime' && isRecord(member) && Object.hasOwn(member, 'block_model')
+        ? Object.fromEntries(Object.entries(member).filter(([field]) => field !== 'block_model'))
+        : member;
   }
   out.schema = FORMAT.contract_schema;
   out.contract_sha256 = value.original.contract_sha256;
