@@ -426,3 +426,24 @@ GitHub 或独立重跑；回执没有给出本次类型检查结果，不能据�
    任意限制设置失败。x64 和 ARM64 分别记录结果、架构与跳过。所有资源均为临时合成资源。
 
 若候选设计不能满足全局禁写或禁网，探测必须继续返回不可用；不能静默放宽 Hub 的隔离契约。
+
+#### Windows 原生后端的分层实施
+
+所有者后续明确要求保留 pack 禁网、禁写、禁止启动其他程序；Circle 审批和 Job 均不能替代这些边界。
+设计顺序为：无网络能力的 LPAC、仅限制写访问的受限令牌、STARTUPINFOEX 子进程禁止策略与继承句柄
+白名单、挂起创建进程、Job 绑定/限制及令牌核验、恢复线程、逐调用内核反例验证、最后加载 pack。
+受限 SID 的选择、LPAC 与受限令牌组合、Node 启动所需只读权限仍待原生验证，不能把此设计当实现结果。
+Microsoft 说明受限 SID 引入第二次访问检查，且子进程禁止策略依赖隔离应用不泄漏高权限进程句柄：
+[Restricted Tokens](https://learn.microsoft.com/en-us/windows/win32/secauthz/restricted-tokens)、
+[UpdateProcThreadAttribute](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)。
+
+已增加可独立验收的 Job 资源设置原语（尚未接 pack）：整个 Job 的用户态 CPU 时间与整个 Job 的
+已提交虚拟内存上限，设置失败关闭句柄并拒绝；无 breakaway 标志。两者分别不是总 CPU 时间和 RSS，
+不能冒充 Hub 现有计量语义。[Job 基本限制](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_limit_information)
+与[扩展限制](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information)
+给出其范围。新增 CPU 忙循环和虚拟内存提交前后对照的原生合成用例，尚未执行。
+
+远端验证顺序（x64、ARM64 各自执行、逐层记录结果）：加载器/版本及失败注入；Job CPU/提交内存；
+受限令牌/LPAC 自省；挂起启动前的策略与句柄核验；真实监听 TCP/UDP/本地 IPC 拒绝、文件写删重命名
+拒绝和 Node/cmd 启动拒绝；父进程退出与子孙清理；最后再测成功和恶意 pack。
+当前仅前两层有待测代码；后续层未实现，pack 入口继续拒绝。

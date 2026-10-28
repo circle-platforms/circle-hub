@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { test } from 'node:test';
-import { attachWindowsJob, createWindowsJobApi, loadWindowsJobApi, windowsIsolationFailure, type WindowsJobApi } from './windows.ts';
+import { attachWindowsJob, createWindowsJobApi, loadWindowsJobApi, windowsJobLimits, windowsIsolationFailure, type WindowsJobApi } from './windows.ts';
 import { isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { callPackFunction } from './sandbox.ts';
 
@@ -96,4 +96,72 @@ test('unexpected koffi versions fail before any DLL load', () => {
     } }), /版本不匹配/);
     assert.equal(loaded, false);
   }
+});
+
+
+test('Job limits encode aggregate user CPU and committed memory without breakaway', () => {
+  const data = windowsJobLimits({ userCpuSeconds: 2, committedBytes: 512 * 1024 * 1024 });
+  assert.equal(data.length, 144);
+  assert.equal(data.readUInt32LE(16), 0x2204);
+  assert.equal(data.readBigInt64LE(8), 20_000_000n);
+  assert.equal(data.readBigUInt64LE(120), 512n * 1024n * 1024n);
+  assert.equal(windowsJobLimits().readUInt32LE(16), 0x2000);
+});
+
+test('invalid Job limits fail before creating any native handle', () => {
+  let created = false;
+  const api = createWindowsJobApi({ version: '3.3.3', load: () => ({ func: declaration => () => {
+    if (declaration.includes('CreateJobObjectW')) created = true;
+    return 1n;
+  } }) });
+  for (const userCpuSeconds of [0, -1, 0.5, NaN, Infinity, 3601]) {
+    assert.throws(() => api.create({ userCpuSeconds, committedBytes: 1024 }), RangeError);
+  }
+  for (const committedBytes of [0, -1, 0.5, NaN, Infinity]) {
+    assert.throws(() => api.create({ userCpuSeconds: 1, committedBytes }), RangeError);
+  }
+  assert.equal(created, false);
+});
+
+test('Job resource policy failure closes the handle and cannot return a usable Job', () => {
+  const calls: string[] = [];
+  const api = createWindowsJobApi({ version: '3.3.3', load: () => ({ func: declaration => () => {
+    if (declaration.includes('CreateJobObjectW')) return 1n;
+    if (declaration.includes('CloseHandle')) { calls.push('close'); return 1; }
+    return 0;
+  } }) });
+  assert.throws(() => api.create({ userCpuSeconds: 1, committedBytes: 1024 }), /设置失败/);
+  assert.deepEqual(calls, ['close']);
+});
+
+test('native Job user CPU limit ends a busy synthetic worker', { skip: !native, timeout: 20_000 }, async t => {
+  const api = await loadWindowsJobApi();
+  const child = spawn(process.execPath, ['-e', "process.send('ready');process.once('message',()=>{for(;;) Math.sqrt(Math.random());});"],
+    { stdio: ['ignore', 'ignore', 'ignore', 'ipc'], env: {} });
+  t.after(() => { child.kill(); });
+  await once(child, 'message');
+  const job = attachWindowsJob(api, child.pid!, { userCpuSeconds: 1, committedBytes: 512 * 1024 * 1024 });
+  t.after(() => job.stop());
+  const exited = once(child, 'exit');
+  child.send('run');
+  const [code] = await exited;
+  assert.notEqual(code, 0);
+  await job.stop();
+});
+
+test('native Job committed memory limit rejects an allocation that succeeded before assignment', { skip: !native, timeout: 20_000 }, async t => {
+  const api = await loadWindowsJobApi();
+  // Commit virtual pages without touching them; this is not an RSS measurement.
+  const source = `const koffi=require('koffi');if(koffi.version!=='3.3.3')process.exit(3);const kernel=koffi.load('kernel32.dll');const alloc=kernel.func('void * __stdcall VirtualAlloc(void *address, uintptr_t size, uint32_t kind, uint32_t protection)');const free=kernel.func('int __stdcall VirtualFree(void *address, uintptr_t size, uint32_t kind)');const valid=p=>p!==null&&p!==0n;const probe=alloc(null,512*1024*1024,0x3000,4);if(!valid(probe))process.exit(4);if(!free(probe,0,0x8000))process.exit(5);process.send('ready');process.once('message',()=>{const p=alloc(null,512*1024*1024,0x3000,4);const denied=!valid(p);if(!denied)free(p,0,0x8000);process.send(denied,()=>process.exit(0));});`;
+  const child = spawn(process.execPath, ['-e', source], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'], env: {} });
+  t.after(() => { child.kill(); });
+  const [ready] = await once(child, 'message');
+  assert.equal(ready, 'ready');
+  const job = attachWindowsJob(api, child.pid!, { userCpuSeconds: 5, committedBytes: 256 * 1024 * 1024 });
+  t.after(() => job.stop());
+  const result = once(child, 'message');
+  child.send('allocate');
+  const [denied] = await result;
+  assert.equal(denied, true);
+  await job.stop();
 });
