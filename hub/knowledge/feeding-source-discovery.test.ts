@@ -19,7 +19,7 @@ test('an unbound source uses one readable witness for thousands of identical pro
   t.mock.method(internal,'recordVisible',async(row:any,principal:unknown)=>{if(row.digest===first.digest){checks++;return true;}return visible(row,principal);});
   const result=await layer.observeSource(w.user,w.document.body.sha256,{...w.scope,product:undefined});
   assert.deepEqual(result.objects,initial.objects);
-  assert.ok(checks<=2,'visibility checks for one established product: '+checks);
+  assert.equal(checks,1,'one established product uses exactly one readable witness');
 });
 
 test('product discovery requires a readable witness and does not choose between distinct visible products', async t => {
