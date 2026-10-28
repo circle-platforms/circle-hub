@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
+import { createSocket } from 'node:dgram';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { attachWindowsJob, createWindowsJobApi, createWindowsRestrictedToken, loadWindowsRestrictedToken, loadWindowsJobApi, windowsJobLimits, windowsIsolationFailure, type WindowsJobApi } from './windows.ts';
+import { attachWindowsJob, createWindowsJobApi, createWindowsRestrictedToken, loadWindowsRestrictedToken, loadWindowsJobApi, quoteWindowsArgument, runWindowsIsolationProbe, windowsJobLimits, windowsIsolationFailure, type WindowsJobApi } from './windows.ts';
 import { isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { callPackFunction } from './sandbox.ts';
 
@@ -97,7 +102,6 @@ test('unexpected koffi versions fail before any DLL load', () => {
     assert.equal(loaded, false);
   }
 });
-
 
 test('Job limits encode aggregate user CPU and committed memory without breakaway', () => {
   const data = windowsJobLimits({ userCpuSeconds: 2, committedBytes: 512 * 1024 * 1024 });
@@ -230,4 +234,58 @@ test('native write-restricted token has the exact restricting SID and closes cle
   try { assert.ok(token.handle > 0n); }
   finally { token.close(); }
   assert.throws(() => token.handle, /已关闭/);
+});
+
+test('Windows argv quoting retains quotes, trailing slashes and rejects NUL', () => {
+  const slash = String.fromCharCode(92);
+  assert.equal(quoteWindowsArgument(''), '""');
+  assert.equal(quoteWindowsArgument('a b'), '"a b"');
+  assert.equal(quoteWindowsArgument('a"b'), '"a' + slash + '"b"');
+  assert.equal(quoteWindowsArgument('a' + slash), '"a' + slash.repeat(2) + '"');
+  assert.throws(() => quoteWindowsArgument('a' + String.fromCharCode(0) + 'b'), TypeError);
+});
+
+test('native LPAC starts Node only after restricted token and Job verification', { skip: !native, timeout: 20_000 }, async () => {
+  assert.equal(await runWindowsIsolationProbe('process.exit(0)'), 0);
+});
+
+test('native LPAC denies TCP to an actually listening synthetic endpoint', { skip: !native, timeout: 20_000 }, async t => {
+  let connected = false;
+  const server = createServer(socket => { connected = true; socket.destroy(); });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const source = `const socket=require('node:net').connect(${address.port},'127.0.0.1');socket.once('connect',()=>process.exit(2));socket.once('error',e=>process.exit(['EACCES','EPERM'].includes(e.code)?0:3));setTimeout(()=>process.exit(4),3000);`;
+  assert.equal(await runWindowsIsolationProbe(source), 0);
+  assert.equal(connected, false);
+});
+
+test('native LPAC denies UDP to a bound synthetic endpoint', { skip: !native, timeout: 20_000 }, async t => {
+  let received = false;
+  const socket = createSocket('udp4');
+  socket.on('message', () => { received = true; });
+  socket.bind(0, '127.0.0.1');
+  await once(socket, 'listening');
+  t.after(() => socket.close());
+  const port = socket.address().port;
+  const source = `const s=require('node:dgram').createSocket('udp4');const done=e=>process.exit(e&&['EACCES','EPERM'].includes(e.code)?0:2);s.on('error',done);s.send('synthetic',${port},'127.0.0.1',done);setTimeout(()=>process.exit(3),3000);`;
+  assert.equal(await runWindowsIsolationProbe(source), 0);
+  assert.equal(received, false);
+});
+
+test('native LPAC denies file create overwrite delete rename and directory creation', { skip: !native, timeout: 20_000 }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'hub-lpac-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const target = join(directory, 'target');
+  await writeFile(target, 'synthetic');
+  const source = `const fs=require('node:fs'),p=${JSON.stringify(target)},d=${JSON.stringify(directory)};for(const f of [()=>fs.writeFileSync(p,'changed'),()=>fs.writeFileSync(d+'/created','new'),()=>fs.unlinkSync(p),()=>fs.renameSync(p,d+'/renamed'),()=>fs.mkdirSync(d+'/directory')]){try{f();process.exit(2)}catch(e){if(!['EACCES','EPERM'].includes(e.code))process.exit(3)}}process.exit(0);`;
+  assert.equal(await runWindowsIsolationProbe(source), 0);
+  assert.equal(await readFile(target, 'utf8'), 'synthetic');
+});
+
+test('native LPAC denies starting another Node process without Node permission flags', { skip: !native, timeout: 20_000 }, async () => {
+  const source = `const cp=require('node:child_process');const result=cp.spawnSync(process.execPath,['-e','process.exit(0)']);process.exit(result.error&&['EACCES','EPERM'].includes(result.error.code)?0:2);`;
+  assert.equal(await runWindowsIsolationProbe(source), 0);
 });
