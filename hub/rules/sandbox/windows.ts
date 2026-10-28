@@ -212,6 +212,28 @@ export function quoteWindowsArgument(value: string): string {
   return '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
 }
 
+// Windows needs these to start a process (libuv adds the same kind of set to every spawn), and kernelbase
+// derives the AppContainer folders from the profile ones; an empty block fails with ERROR_ENVVAR_NOT_FOUND.
+// Only non-secret system and profile locations are copied; every other parent variable stays out.
+const windowsProbeEnvironment = [
+  'APPDATA', 'HOMEDRIVE', 'HOMEPATH', 'LOCALAPPDATA', 'PATH', 'SYSTEMDRIVE', 'SYSTEMROOT', 'TEMP', 'TMP',
+  'USERPROFILE', 'WINDIR',
+] as const;
+
+/** A sorted CREATE_UNICODE_ENVIRONMENT block holding only the fixed allow-list, read case-insensitively. */
+export function windowsEnvironmentBlock(environment: Record<string, string | undefined>): Buffer {
+  const values = new Map<string, string>();
+  for (const [name, value] of Object.entries(environment)) {
+    const key = name.toUpperCase();
+    if (value === undefined || !(windowsProbeEnvironment as readonly string[]).includes(key) || values.has(key)) continue;
+    if (value === '' || value.includes('\0')) throw new TypeError('Windows 环境变量无效');
+    values.set(key, value);
+  }
+  if (!values.has('SYSTEMROOT')) throw new Error('Windows 环境缺少 SystemRoot');
+  const entries = [...values].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+  return Buffer.from(entries.map(([name, value]) => `${name}=${value}\0`).join('') + '\0', 'utf16le');
+}
+
 export function windowsProbeFailure(stage: string, code: number, diagnostics: {
   executableExists: boolean; executableBinary: boolean; directoryExists: boolean;
 }): Error {
@@ -323,9 +345,10 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     if (!diagnostics.executableExists || !diagnostics.executableBinary || !diagnostics.directoryExists) failed('父侧路径预检');
     const command = w([process.execPath, '--no-addons', '--no-experimental-websocket', '-e', source].map(quoteWindowsArgument).join(' '));
     // CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW.
-    // No inherited handles, no shell, no ambient environment, no pack bytes.
+    // No inherited handles, no shell, no pack bytes, and only the allow-listed system and profile locations.
+    const environment = windowsEnvironmentBlock(process.env);
     if (!create(restricted.handle, w(process.execPath), command, null, null, 0, 0x08080404,
-      Buffer.alloc(4), w(directory), startup, info)) failed('挂起创建');
+      environment, w(directory), startup, info)) failed('挂起创建');
     processHandle = info.readBigUInt64LE();
     thread = info.readBigUInt64LE(8);
     if (!valid(processHandle) || !valid(thread)) failed('进程句柄');
