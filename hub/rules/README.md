@@ -461,3 +461,7 @@ Windows x64 与 ARM64 的 Job 限额文件分别 12/12、0 跳过。该回执覆
 和 [GetTokenInformation](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation)。
 新增合成故障注入与原生 SID 自省用例尚未运行；NULL SID 在目标 Windows 的写拒绝效果、派生后的
 令牌组合、LPAC、启动与网络限制仍须后续原生行为验证。此原语本身不构成完整禁写或防逃逸保证。
+
+集成者提供的令牌+Job 原生回执（2026-10-28）：公开固定 `f066e779`、运行 `40639445472`，
+x64 与 ARM64 文件各 16/16、0 跳过；整体仍因 Windows 未支持门禁失败。本回执仅证明已有 Job 与
+令牌自省，不证明实际禁网/禁写/防启动，也不覆盖后续 LPAC 启动代码。本分支代理未独立读取该运行。
