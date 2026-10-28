@@ -561,3 +561,8 @@ same store (including the actual service user and data root); a successful key i
 wiring. Real migration decryption requires the explicit vault verification on the restored ciphertext with the imported key.
 No real keys, environment files, credential stores or business systems were accessed. Independent review and all execution
 validation remain pending; this branch is not merged or pushed.
+
+Source-side timeout or broken-pipe failure cannot prove that the destination did not import: bytes may already have arrived.
+The fixed error marks destination import state unknown and directs operators to target `key status`, then
+`records verify --vault`, before any retry. A controlled synthetic pipe test covers destination store.write completing before
+source timeout/EPIPE and verifies that a repeated import cannot overwrite that key. This new test has not been run.

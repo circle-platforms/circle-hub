@@ -93,7 +93,7 @@ export async function exportVaultKey(store: KeychainStore, pipe: KeyPipe, confir
     if (key.length !== KEY_BYTES) throw new PlatformError('主密钥长度不对，没有写出');
     await pipe.writeKeyBytes(key);
   } catch {
-    throw new PlatformError('密钥导出未完成；检查主密钥是否可读以及管道是否可用');
+    throw new PlatformError('密钥导出未完成；目标是否已导入未知', '下一步先在目标运行 circle-hub key status，再用 circle-hub records verify --vault 核验，勿盲目重试');
   } finally {
     key?.fill(0);
   }

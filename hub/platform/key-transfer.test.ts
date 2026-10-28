@@ -217,3 +217,59 @@ test('export keeps bytes until callback and overflow import never calls the stor
   }), /密钥导入未完成/);
   assert.equal(writes, 0);
 });
+
+
+test('destination can import before source output timeout or EPIPE and must not be overwritten', async () => {
+  for (const outcome of ['timeout', 'EPIPE'] as const) {
+    const original = Buffer.alloc(32, 37);
+    let stored: Buffer | undefined;
+    let writes = 0;
+    const source = {
+      service: 'synthetic', account: 'vault', init: async () => {}, delete: async () => false,
+      status: async () => ({present: true}), read: async () => Buffer.from(original),
+      write: async (_bytes: Uint8Array) => { throw new Error('source is read-only'); },
+    };
+    const target = {
+      ...source, status: async () => ({present: stored !== undefined}),
+      write: async (bytes: Uint8Array) => {
+        if (stored) throw new Error('synthetic existing-key diagnostic');
+        stored = Buffer.from(bytes); writes++;
+      },
+    };
+    const input = new PassThrough();
+    const imported = importVaultKey(target, {
+      stdinIsPipe: true, stdoutIsPipe: false, readKeyBytes: () => readKeyStdin(input, 1000),
+    });
+    const output = new Writable({write(bytes, _encoding, done) {
+      // Model transport delivery independently of the source-side acknowledgement.
+      input.end(Buffer.from(bytes));
+      if (outcome === 'EPIPE') {
+        void imported.then(() => done(new Error('EPIPE synthetic private diagnostic')));
+      }
+      // In the timeout case the destination commits but this callback never arrives.
+    }});
+    await assert.rejects(exportVaultKey(source, {
+      stdinIsPipe: false, stdoutIsPipe: true,
+      writeKeyBytes: bytes => writeKeyStdout(bytes, output, 50),
+    }, true), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      const diagnostic = error.message + ('hint' in error ? String(error.hint) : '');
+      assert.match(diagnostic, /目标是否已导入未知/);
+      assert.match(diagnostic, /key status/);
+      assert.match(diagnostic, /records verify --vault/);
+      assert.match(diagnostic, /勿盲目重试/);
+      assert.equal(diagnostic.includes('synthetic private diagnostic'), false);
+      assert.equal(diagnostic.includes(original.toString('hex')), false);
+      return true;
+    });
+    await imported;
+    assert.deepEqual(stored, original); assert.equal(writes, 1);
+    let readAgain = false;
+    await assert.rejects(importVaultKey(target, {
+      stdinIsPipe: true, stdoutIsPipe: false,
+      readKeyBytes: () => { readAgain = true; return Buffer.alloc(32, 38); },
+    }), /已存在，不覆盖/);
+    assert.equal(readAgain, false); assert.equal(writes, 1); assert.deepEqual(stored, original);
+    stored!.fill(0); original.fill(0);
+  }
+});
