@@ -2,7 +2,7 @@
   {
     "name": "list_task_packs",
     "title": "List task packs",
-    "description": "List the task packs you may use, with the inputs, parameters and requirements of each.",
+    "description": "List the task packs you may use, with inputs, parameters and requirements. Filter by exact pack_id or continue a truncated list with offset.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -16,6 +16,17 @@
             "system",
             "skill"
           ]
+        },
+        "pack_id": {
+          "description": "Only the pack with this exact ID",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,40}$"
+        },
+        "offset": {
+          "description": "Continue at this zero-based position in the same filtered list",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "additionalProperties": false
