@@ -42,6 +42,11 @@ these checks. Subsequent consumers must resolve the actual accepted result; a se
 
 ## Coverage, completeness and recovery
 
+The client reads the package inputs and requirements with `list_task_packs` and the slot schema from the `start_run`
+receipt or its run record. Index examples include `command_tree_root` so that the consumer can check the identities'
+declared tree source. Feeding may still be in progress; an empty interim list is not an empty completed corpus. These
+are guidance changes and do not change the category or coverage rules.
+
 First classify each case, then aggregate in the frozen declared scope. Fields disclose classification_status, classifications,
 unclassified, scope_complete, category counts/evidence, missing and skipped separately. A display evidence list is capped at
 20 ids; counts and membership use all cases. No unclassified case is counted as a missing category. Missing/unchecked scope
@@ -49,7 +54,7 @@ blocks a missing-category claim. Existing observed categories may still be discl
 
 The client follows SKILL.md: read the unclassified cases, judge with raw quotes, submit, repair rejected evidence and resubmit.
 A missing original triggers re-read; failure to obtain the required fact after the stated bounded action is a design gap for
-integrator Claude before the final report. Check unknowns name missing facts and an actionable next step; the existing engine
+the maintainer before the final report. Check unknowns name missing facts and an actionable next step; the existing engine
 binds a named exit by reason. They are not converted into support, refutation or a completed classification.
 
 ## Complete command identity and index revision
