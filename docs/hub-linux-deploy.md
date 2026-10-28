@@ -8,7 +8,7 @@
 
 - 登录前先核验 SSH 主机密钥，仅以非交互公钥认证检查访问；拒绝时停止，不尝试密码或重复登录。登录后读取 `/etc/os-release`，用 `uname -m` 核对架构，再按实测系统准备 Node 24、bubblewrap、AppArmor、systemd 和与嵌入式服务端同主版本的 PostgreSQL 客户端。不能用 SSH banner 推断操作系统版本。
 - Hub 以专用服务用户运行；数据目录和密钥文件由该用户持有，密钥目录 0700、主密钥文件 0600。目标安装适合本机架构的依赖和 Node，不使用 macOS 的 `node_modules`。跨机设置中旧 Node 绝对路径不自动替换；平台命令需要时显式指定已经核对的目标 Node 路径。
-- Linux 使用 bubblewrap 与 AppArmor 叠加隔离；按目标发行版配置用户命名空间和相应策略。策略由 `node hub/rules/sandbox/linux.ts` 生成，由管理员核对并装载；Node 或 shell 路径变化时在服务停止、写入冻结后重装。不能通过关闭系统隔离或全局关闭 AppArmor 限制来解决启动失败。Linux 隔离要求 `process.permission.drop`：Node [24.20.0 发行说明](https://nodejs.org/en/blog/release/v24.20.0)记载了该接口，目标实际运行时仍必须进行功能探测；不可用时拒绝执行。
+- Linux 使用 bubblewrap 与 AppArmor 叠加隔离；按目标发行版配置用户命名空间和相应策略。策略由 `node hub/rules/sandbox/linux.ts` 生成，由管理员核对并装载；Node 或 shell 路径变化时在服务停止、写入冻结后重装。Ubuntu 26 的现场兼容处理可能需要由管理员设置 `kernel.apparmor_restrict_unprivileged_userns=0`，否则 bubblewrap 设置回环接口可能被拒绝；这会放宽全机非特权用户命名空间限制，不是仅对 Hub 的例外，必须在交接中如实记录。AppArmor 策略仍装载，不能把该设置称为 AppArmor 已关闭。当前兼容代码接受引擎实际返回的 `//&unconfined` 叠加标签；不据此声称所有发行版均已验证。Linux 隔离要求 `process.permission.drop`：Node [24.20.0 发行说明](https://nodejs.org/en/blog/release/v24.20.0)记载了该接口，目标实际运行时仍必须进行功能探测；不可用时拒绝执行。
 - 服务可以显式监听所有者批准的内网地址，必须同时提供精确允许主机名单；未指定时默认回环。防火墙来源由所有者决定，文档中的示例地址只使用 `192.0.2.0/24`。HTTP 直连的令牌和数据在传输路径上可能被观察；是否用反向代理终止 TLS 由所有者决定。
 
 ## 冻结与迁移
