@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import { VaultError } from './errors.ts';
+import { openEveryVaultEntry } from './api.ts';
 import { FileKeyProvider, FileVault, maskedForDisplay } from './vault.ts';
 
 async function scratch(t: TestContext): Promise<string> {
@@ -136,6 +137,32 @@ test('entries without a key-check file: the key must open an entry before a chec
   assert.equal(existsSync(join(directory, 'vault', 'key-check')), true);
   assert.equal(await vault.getText('agile.password'), 'synthetic-first');
   await assert.rejects(intruder.get('agile.password'), (error: unknown) => error instanceof VaultError && /密钥与密钥库不符/.test((error as Error).message));
+});
+
+test('opening every entry decrypts it and wipes the plaintext', async (t) => {
+  const { vault } = await ready(t);
+  const secret = `synthetic-${randomBytes(8).toString('hex')}`;
+  await vault.put('agile.token', secret);
+  let seen: Uint8Array | undefined;
+  const wrapped = {
+    list: () => vault.list(),
+    async get(name: string) {
+      const plain = await vault.get(name);
+      if (plain) seen = plain;
+      return plain;
+    },
+  };
+  assert.equal(await openEveryVaultEntry(wrapped), 1);
+  assert.ok(seen !== undefined && seen.every((byte) => byte === 0));
+  assert.equal(await vault.getText('agile.token'), secret);
+  const other = new FileKeyProvider(join((await scratch(t)), 'other.key'));
+  await other.initKey();
+  const wrong = new FileVault(vault.directory, other);
+  await assert.rejects(openEveryVaultEntry(wrong), (error: unknown) => {
+    assert.ok(error instanceof VaultError);
+    assert.equal((error as Error).message.includes(secret), false);
+    return true;
+  });
 });
 
 test('masked display shows only that a value is set and its length', () => {

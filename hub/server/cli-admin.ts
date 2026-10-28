@@ -25,7 +25,7 @@ import { ConnectorError, type AddResourceInput, type LoginStatus, type UpdateRes
 import { KnowledgeError, createKnowledgeReader, formatKnowledgeRetract, formatSeedReport, formatSyncReport, knowledgeRetract, knowledgeSeed, knowledgeSync, parseKnowledgeSeedArgs, parseKnowledgeSyncArgs, type KnowledgeSeedArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
 import { DocsError } from './docs.ts';
 import type { ProductHandle } from '../ports.ts';
-import { productionShareKey, RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
+import { openEveryVaultEntry, productionShareKey, RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
 import { unruledShapes, parsePackRef, type PackProblem } from '../runs/api.ts';
 import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
@@ -1347,7 +1347,10 @@ async function recordsCommand(session:Session,args:readonly string[]):Promise<nu
     for(const record of page.items){total++;if(record.integrity_note){notes++;if(record.kind==='action')session.out(`记录 ${record.id}；摘要 ${record.digest}；${record.integrity_note}`);}}
     cursor=page.next;
   }while(cursor);
-  session.out(`已核对记录 ${total}；正文不是规范写法、内容与摘要一致 ${notes}`);return 0;
+  session.out(`已核对记录 ${total}；正文不是规范写法、内容与摘要一致 ${notes}`);
+  const opened = await openEveryVaultEntry(records.vault);
+  session.out(opened === 0 ? '密库没有条目；当前主密钥与密钥库相符' : `密库条目 ${opened} 个，全部能用当前主密钥解开`);
+  return 0;
 }
 
 // ---------------------------------------------------------------- sharing (B04, R02): a read capability only
@@ -1401,7 +1404,7 @@ type Handler = (session: Session, args: readonly string[]) => Promise<number>;
 const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
   {name:'share',summary:SHARE_USAGE.slice('share '.length),handler:sharingCommand},
   {name:'unshare',summary:UNSHARE_USAGE.slice('unshare '.length),handler:(session,args)=>sharingCommand(session,args,true)},
-  {name:'records',summary:'verify [--kind <记录类型>]（只核存储、说明和摘要，不输出正文）',handler:recordsCommand},
+  {name:'records',summary:'verify [--kind <记录类型>]（只核存储、说明和摘要，不输出正文；并解开每个密库条目，只报个数）',handler:recordsCommand},
   { name: 'executor', summary: EXECUTOR_USAGE, handler: executorCommand },
   { name: 'job', summary: JOB_USAGE, handler: jobCommand },
   { name: 'bed', summary: BED_USAGE, handler: bedCommand },

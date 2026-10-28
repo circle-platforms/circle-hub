@@ -31,7 +31,7 @@ name). Every directory is 0700.
 
 ## Commands
 
-`circle-hub init --environment <test|shared|production> [--port <p>]`, `db start|stop|status`, `key init [--set-aside-vault]|status`,
+`circle-hub init --environment <test|shared|production> [--port <p>]`, `db start|stop|status`, `key init [--set-aside-vault]|status|export --confirm|import`,
 `service install|uninstall|start|stop|status`, `backup [--keep N]`, `restore <dir>`,
 `deploy [--source <dir>] [--commit <rev>] [--copy]`, `rollback`, `rehearse [--keep]`, `status`. Exit codes: 0 ok,
 1 failure, 2 usage, 3 "not running / not present" for status commands. All output is Chinese; the environment classes
@@ -297,7 +297,7 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
   removed by hand), handle the data root by hand and then delete that file; until then backup and restore refuse.
 - The data root path may not contain double quotes, dollar signs, backquotes, backslashes, commas, single quotes or
   newlines (pg_ctl runs its command through `/bin/sh`), and the socket path must fit in 103 bytes.
-- Moving to another machine needs both keychain items there too; there is no export command for either.
+- The operator token is not moved. The vault master key moves only through `circle-hub key export --confirm | ssh <destination> circle-hub key import`: 32 raw bytes on a pipe or socket, never a terminal, a regular file, an argument or an environment value. Import uses the destination's key store and refuses to replace a key. On macOS that store is the keychain; on Linux it is the file store (`<data root>/keys/<sha256 of the service and account>.key`, mode 0600, directory 0700) from the platform key-file branch, which implements the same `KeychainStore.write`. After import, `records verify` decrypts every vault entry and prints only the count.
 - A restore and `setAside` leave `packs/` as it is, so trees of pack versions the restored data does not have stay there
   unused (each is named by its digest and checked at every use). To reclaim the space, remove `packs/` by hand while the
   Hub is stopped (`chmod -R u+w` first: its directories are 0500); the registry builds what it needs again.

@@ -13,6 +13,7 @@ import { messageOf, PlatformError } from './errors.ts';
 import { isMissingOrEmpty, withLock } from './files.ts';
 import { checkHealth, HEALTH_PATH, portAnswers } from './health.ts';
 import { VAULT_KEY_ITEM } from './keychain-items.ts';
+import { exportVaultKey, importVaultKey, liveKeyPipe, type KeyPipe } from './key-transfer.ts';
 import { checkNode, serviceDefinition, stableNodePath } from './launchd.ts';
 import { DATA_ROOT_VARIABLE, ensureLayout, socketFile, type Layout } from './layout.ts';
 import { databaseOwner, ensureDatabaseRunning } from './postgres.ts';
@@ -41,6 +42,8 @@ export interface PlatformIo {
   cwd: string;
   /** CIRCLE_HUB_* names the calling program reads itself (the server CLI); every other unknown name is refused. */
   allowVariables?: readonly string[];
+  /** Pipe ends for `key export` and `key import`. Absent means neither command may touch a key. */
+  keyPipe?: KeyPipe;
 }
 
 class UsageError extends Error {
@@ -65,7 +68,7 @@ export function usage(): string {
     '',
     `  init --environment <环境类别> [--port <端口>]   建数据根和部署设置，初始化并启动数据库；环境类别：${environmentChoices()}`,
     '  db start|stop|status                           本机 PostgreSQL（只有 unix 套接字，没有 TCP 端口）',
-    `  key init [--set-aside-vault]|status             在钥匙串里建立或查看${VAULT_KEY_ITEM.label}（从不显示密钥）`,
+    `  key init [--set-aside-vault]|status|export --confirm|import   建立或查看${VAULT_KEY_ITEM.label}；export 只向管道写出 32 字节，import 只从管道读入且不覆盖`,
     '  service install|uninstall|start|stop|status    launchd 用户服务 circle-hub serve',
     '  backup [--keep <份数>]                         备份数据库、对象、密钥库与设置文件，并清理旧备份',
     '  restore <备份目录>                             校验后恢复到空的数据根',
@@ -196,10 +199,33 @@ class KeyInitRefusal extends PlatformError {
   readonly reason: keyof typeof KEY_INIT_REFUSALS;
   constructor(reason: keyof typeof KEY_INIT_REFUSALS) {const refusal=KEY_INIT_REFUSALS[reason];super(refusal.message,refusal.hint);this.reason=reason;this.name='KeyInitRefusal';}
 }
+const KEY_USAGE = `用法：circle-hub key init [--set-aside-vault]|status|export --confirm|import`;
+
+/** Refuses without repeating the argument: a mistaken argument may be the key itself. */
+function onlyConfirm(args: readonly string[]): void {
+  if (args.length !== 1 || args[0] !== '--confirm') throw new UsageError('用法：circle-hub key export --confirm');
+}
+
 const key: Handler = async (args, context, io) => {
   const [action, ...rest] = args;
+  if (action === 'export') {
+    onlyConfirm(rest);
+    const pipe = io.keyPipe ?? { stdoutIsPipe: false, stdinIsPipe: false };
+    const settings = await settingsOf(context);
+    await exportVaultKey(keychainFor(context, settings), pipe, true);
+    io.stderr(`已通过标准输出送出${VAULT_KEY_ITEM.label}（32 字节）；密钥不会显示`);
+    return 0;
+  }
+  if (action === 'import') {
+    if (rest.length !== 0) throw new UsageError('用法：circle-hub key import');
+    const pipe = io.keyPipe ?? { stdoutIsPipe: false, stdinIsPipe: false };
+    const settings = await settingsOf(context);
+    await importVaultKey(keychainFor(context, settings), pipe);
+    io.stderr(`已从标准输入写入${VAULT_KEY_ITEM.label}；已存在的不会覆盖，密钥不会显示`);
+    return 0;
+  }
   const setAsideVault = action === 'init' && rest.length === 1 && rest[0] === '--set-aside-vault';
-  if ((action !== 'init' && action !== 'status') || (rest.length > 0 && !setAsideVault)) throw new UsageError('用法：circle-hub key init [--set-aside-vault]|status');
+  if ((action !== 'init' && action !== 'status') || (rest.length > 0 && !setAsideVault)) throw new UsageError(KEY_USAGE);
   const settings=await settingsOf(context);
   const store = keychainFor(context, settings);
   const item = `服务 ${store.service}，账户 ${store.account}`;
@@ -494,5 +520,6 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     stderr: (line) => process.stderr.write(`${line}\n`),
     env: process.env,
     cwd: process.cwd(),
+    keyPipe: liveKeyPipe(),
   });
 }

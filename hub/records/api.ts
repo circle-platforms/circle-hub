@@ -14,6 +14,7 @@ import type {
 } from '../../contracts/generated/vocabulary.ts';
 import type { RecordKind } from '../../contracts/generated/protocol.ts';
 import type { HubConfig } from '../config/index.ts';
+import { VaultError } from './errors.ts';
 
 export type { HubConfig, DatabaseConfig, Limits } from '../config/index.ts';
 export type { RecordKind } from '../../contracts/generated/protocol.ts';
@@ -497,6 +498,21 @@ export interface Vault {
  */
 export async function checkVaultKey(vault: Pick<Vault, 'get'>): Promise<void> {
   await vault.get('hub.vault-key-check-probe');
+}
+
+/**
+ * Decrypts every sealed entry and wipes the plaintext. An empty vault still has to accept the key (the key-check).
+ * Returns the number of entries opened. Nothing returned or thrown contains plaintext.
+ */
+export async function openEveryVaultEntry(vault: Pick<Vault, 'list' | 'get'>): Promise<number> {
+  const names = await vault.list();
+  for (const name of names) {
+    const plain = await vault.get(name);
+    if (plain === null) throw new VaultError(`密钥库条目 ${name} 打不开`);
+    plain.fill(0);
+  }
+  if (names.length === 0) await checkVaultKey(vault);
+  return names.length;
 }
 
 // ---------------------------------------------------------------- authorizations (B04)
