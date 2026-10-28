@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request replaces its running checks; every push to main keeps its own run.
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   typecheck:
     name: Types
@@ -39,14 +44,21 @@ jobs:
       - run: npm ci
       - run: npm run verify:contracts
 
+  # regular runs in three shards (Node's --test-shard over its file list); parser-bounds stays one single-worker process.
   unit_parts:
-    name: Unit tests / ${{ matrix.suite }}
+    name: Unit tests / ${{ matrix.suite }} ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        suite: [regular, parser-bounds]
+        include:
+          - { suite: regular, shard: 1/3 }
+          - { suite: regular, shard: 2/3 }
+          - { suite: regular, shard: 3/3 }
+          - { suite: parser-bounds, shard: 1/1 }
+    env:
+      UNIT_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -59,7 +71,7 @@ jobs:
         run: npm run test:unit -- ${{ matrix.suite }} 2>&1 | tee "$RUNNER_TEMP/unit.log"
       - name: Count what ran and what was skipped
         if: ${{ !cancelled() }}
-        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/unit.log" 'Unit tests / ${{ matrix.suite }}'
+        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/unit.log" 'Unit tests / ${{ matrix.suite }} ${{ matrix.shard }}'
 
   unit:
     name: Unit tests
@@ -71,10 +83,17 @@ jobs:
       - name: Require every unit partition to pass
         run: test '${{ needs.unit_parts.result }}' = 'success'
 
-  acceptance:
-    name: Acceptance on a temporary PostgreSQL
+  # Four slices balanced by measured file durations (tools/run-acceptance-tests.ts); each file runs in exactly one.
+  acceptance_parts:
+    name: Acceptance on a temporary PostgreSQL / ${{ matrix.shard }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/4, 2/4, 3/4, 4/4]
+    env:
+      ACCEPTANCE_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -86,11 +105,20 @@ jobs:
       - name: Run the acceptance tests
         shell: bash
         run: npm run test:acceptance 2>&1 | tee "$RUNNER_TEMP/acceptance.log"
-      # node --test succeeds when its pattern matches no file; this step fails then, so the job is red until
-      # tests/acceptance exists (phase 4), never green with nothing run.
+      # A slice that ran no test fails here, so no slice is green with nothing run.
       - name: Count what ran and what was skipped
         if: ${{ !cancelled() }}
-        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/acceptance.log" 'Acceptance'
+        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/acceptance.log" 'Acceptance ${{ matrix.shard }}'
+
+  acceptance:
+    name: Acceptance on a temporary PostgreSQL
+    needs: acceptance_parts
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every acceptance slice to pass
+        run: test '${{ needs.acceptance_parts.result }}' = 'success'
 
   docs:
     name: Docs and CI checks
