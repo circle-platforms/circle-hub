@@ -181,6 +181,14 @@ function sharedEnv(postgres: TemporaryPostgres): NodeJS.ProcessEnv {
 export async function runUnitTests(group: UnitGroup = 'all'): Promise<number> {
   const files = unitFiles(group);
   if (files.length === 0) throw new Error('单元测试分组没有文件，拒绝空运行；检查测试文件声明');
+  // The public timing partition needs neither the shared database nor concurrent lanes.
+  if (group === 'parser-bounds') {
+    const child = spawnLane(files, 1, stringEnv());
+    const stop = (): void => { if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGINT'); };
+    process.once('SIGINT', stop); process.once('SIGTERM', stop);
+    try { return await exitOf(child); }
+    finally { process.off('SIGINT', stop); process.off('SIGTERM', stop); }
+  }
   const lanes = classifyLanes(files);
   const concurrency = sharedConcurrency(group);
   const wallBegan = Date.now();
