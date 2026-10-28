@@ -10,7 +10,7 @@ import { PLATFORM_VARIABLES, variable } from './environment.ts';
 import { PlatformError } from './errors.ts';
 import { writeFileExclusive } from './files.ts';
 import { OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM } from './keychain-items.ts';
-import { validAllowedHosts, validListenAddress } from '../listen.ts';
+import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
 import { isIP } from 'node:net';
 import type { Layout } from './layout.ts';
 
@@ -80,6 +80,7 @@ export const PlatformSettingsFile = z
     port: Port,
     listen_host: z.string().optional(),
     allowed_hosts: z.array(z.string()).optional(),
+    proxy_origin: z.string().optional(),
     keychain_service: KeychainName,
     keychain_account: KeychainName,
     database: DatabaseSettings,
@@ -92,6 +93,7 @@ export const PlatformSettingsFile = z
     if (value.allowed_hosts && !validAllowedHosts(value.allowed_hosts)) ctx.addIssue({ code: 'custom', path: ['allowed_hosts'], message: '允许主机须为精确、无重复的主机名' });
     const loopback = host === '::1' || (isIP(host) === 4 && host.startsWith('127.'));
     if (!loopback && !value.allowed_hosts) ctx.addIssue({ code: 'custom', path: ['allowed_hosts'], message: '非回环监听必须声明允许主机' });
+    if (value.proxy_origin && !validProxyOrigin(value.proxy_origin, value.allowed_hosts, value.port)) ctx.addIssue({ code: 'custom', path: ['proxy_origin'], message: '代理来源须为明确声明的 HTTPS 主机，且与直接监听权威不同' });
   });
 export type PlatformSettingsFile = z.infer<typeof PlatformSettingsFile>;
 
@@ -121,6 +123,7 @@ export interface PlatformSettings {
   port: number;
   listenHost?: string;
   allowedHosts?: readonly string[];
+  proxyOrigin?: string;
   keychainService: string;
   keychainAccount: string;
   database: DatabaseNames;
@@ -138,6 +141,7 @@ export function newSettingsFile(input: {
   port?: number;
   listenHost?: string;
   allowedHosts?: readonly string[];
+  proxyOrigin?: string;
   keychainService?: string;
   keychainAccount?: string;
   backupsKeep?: number;
@@ -149,6 +153,7 @@ export function newSettingsFile(input: {
     port: input.port ?? DEFAULT_PORT,
     ...(input.listenHost ? { listen_host: input.listenHost } : {}),
     ...(input.allowedHosts ? { allowed_hosts: input.allowedHosts } : {}),
+    ...(input.proxyOrigin ? { proxy_origin: input.proxyOrigin } : {}),
     keychain_service: input.keychainService ?? DEFAULT_KEYCHAIN_SERVICE,
     keychain_account: input.keychainAccount ?? DEFAULT_KEYCHAIN_ACCOUNT,
     database: {
@@ -257,6 +262,7 @@ export function resolveSettings(file: PlatformSettingsFile, env: NodeJS.ProcessE
   agree(PLATFORM_VARIABLES.port, String(file.port));
   agree(PLATFORM_VARIABLES.host, file.listen_host ?? '127.0.0.1');
   agree(PLATFORM_VARIABLES.allowedHosts, (file.allowed_hosts ?? []).join(','));
+  agree(PLATFORM_VARIABLES.proxyOrigin, file.proxy_origin ?? '');
   agree(PLATFORM_VARIABLES.keychainService, file.keychain_service);
   agree(PLATFORM_VARIABLES.keychainAccount, file.keychain_account);
   agree(PLATFORM_VARIABLES.databaseName, database.name);
@@ -274,6 +280,7 @@ export function resolveSettings(file: PlatformSettingsFile, env: NodeJS.ProcessE
     port: file.port,
     ...(file.listen_host ? { listenHost: file.listen_host } : {}),
     ...(file.allowed_hosts ? { allowedHosts: file.allowed_hosts } : {}),
+    ...(file.proxy_origin ? { proxyOrigin: file.proxy_origin } : {}),
     keychainService: file.keychain_service,
     keychainAccount: file.keychain_account,
     database,

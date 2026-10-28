@@ -2,7 +2,7 @@
 import { isAbsolute, join, resolve } from 'node:path';
 import { HUB_ENVIRONMENT, HUB_PREFIX, isHubEnvironmentName, isPlatformOnlyName } from './names.ts';
 import { assertNoRetiredEnvironment } from './retired.ts';
-import { validAllowedHosts, validListenAddress } from '../listen.ts';
+import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
 
 export { HUB_ENVIRONMENT, HUB_PREFIX, PLATFORM_ONLY_ENVIRONMENT, RETIRED_PREFIX, isHubEnvironmentName, isPlatformOnlyName } from './names.ts';
 export type { HubEnvironmentName, PlatformOnlyName } from './names.ts';
@@ -32,6 +32,7 @@ export interface HubConfig {
   logDir: string;
   host: string;
   allowedHosts?: readonly string[];
+  proxyOrigin?: string;
   port: number;
   database: DatabaseConfig;
   keychain: { service: string; account: string };
@@ -152,6 +153,8 @@ export function loadConfig(
   if (!validListenAddress(host)) problems.push(`CIRCLE_HUB_HOST 只允许回环地址或明确的内网 IP，不能用通配地址${host === 'localhost' ? '，请写 127.0.0.1' : ''}`);
   else if (!isLoopbackAddress(host) && !allowedHosts) problems.push('CIRCLE_HUB_HOST 只允许回环地址；非回环监听必须显式设置 CIRCLE_HUB_ALLOWED_HOSTS');
   const port = integer('CIRCLE_HUB_PORT', undefined, 0, 65535);
+  const proxyOrigin = read('CIRCLE_HUB_PROXY_ORIGIN');
+  if (proxyOrigin && (port === undefined || !validProxyOrigin(proxyOrigin, allowedHosts, port))) problems.push('CIRCLE_HUB_PROXY_ORIGIN 必须是允许主机上的精确 HTTPS 来源，与直接 HTTP 监听权威不同');
 
   const socketDir = absolute('CIRCLE_HUB_DATABASE_SOCKET_DIR', false);
   const databaseHost = read('CIRCLE_HUB_DATABASE_HOST');
@@ -196,6 +199,7 @@ export function loadConfig(
     logDir,
     host,
     ...(allowedHosts ? { allowedHosts } : {}),
+    ...(proxyOrigin ? { proxyOrigin } : {}),
     port,
     database: { host: resolvedDatabaseHost, port: databasePort, database, user },
     keychain,

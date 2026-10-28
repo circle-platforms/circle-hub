@@ -39,7 +39,8 @@ request can leave a rejection nobody handles. Every request then passes two chec
 - **Host** must exactly match an allowed name and listener port; loopback defaults retain `127.0.0.1` and `localhost`.
   The authority of an absolute-form target must also be allowed; a missing or other Host is 403 (DNS rebinding).
 - **Origin**, when present, must match the declared origins; the default loopback listener keeps its existing loopback
-  origin behavior. `null`, paths and other hosts are 403. Console form posts must match the current request Host.
+  origin behavior. An explicit HTTPS proxy origin is accepted only on its distinct declared authority; no forwarded
+  header changes this check. `null`, paths and other hosts are 403. Console form posts must match the current request Host.
 
 Routes: `POST /mcp`; `GET|HEAD /healthz` (no token, `{"status":"ok","release":<id or null>}` with the id of
 `release.json` in the code root, so a deploy tells the new process from the old one; a `release.json` that is not a
@@ -530,7 +531,7 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
 
 发送前重新核对摘要和大小，存储被改动时不给文件字节并记管理员日志；调用日志只留包号、引用及路径的摘要与长度，不留令牌、文件内容或原路径。下发不改写、不重新打包；客户端运行结果仅为“客户端预览”，Hub 沙箱中的重算核验算数。Circle 没有为此新增界面。
 
-客户端用 `circle-hub local-tools install <包>@<版本> --digest <包号> --into <目录> [--hub <已配置地址>]` 安装。令牌仅从标准输入读取，不接受令牌参数或环境令牌，不打开数据库或钥匙串；默认地址取 CIRCLE_HUB_HOST 和 CIRCLE_HUB_PORT。除回环外，只允许显式配置的内网 IP 与端口，须有允许主机声明，不跟随重定向。下载用 `node:http` 直连字面 IP，不走环境变量里的代理；内网明文令牌可能被网络观察者看到。先钉住规范清单的包号，再按清单下载全部原文件并重算大小、摘要及响应完整性头；同级私有临时目录全部通过后才改名，任一失败清理临时产物。SIGINT 和 SIGTERM 会删掉这份临时目录。上次安装留下的锁目录，以及所属进程已经不在的临时目录，由下一次安装清掉；所属进程还在的临时目录留着。已有目标相同时答“已安装”，不同时拒绝，不覆盖。改名撞上已有目录时，按那份目录再核对一次。连不上 Hub、令牌无效、版本不可用、完整性不符和本地写失败，各有自己的下一步，不都说成 pack.json。
+客户端用 `circle-hub local-tools install <包>@<版本> --digest <包号> --into <目录> [--hub <地址>]` 安装。令牌仅从标准输入读取，不接受令牌参数或环境令牌，不打开数据库或钥匙串；没有部署锁时只允许回环，已有数据根的部署设置可锁定内网 IP 和端口，环境冲突或指定不同地址在读令牌之前拒绝。下载直连该字面 IP，不走环境代理、不跟随重定向；内网 HTTP 明文令牌可能被网络观察者看到。先钉住规范清单的包号，再按清单下载全部原文件并重算大小、摘要及响应完整性头；同级私有临时目录全部通过后才改名，任一失败清理临时产物。SIGINT 和 SIGTERM 会删掉这份临时目录。上次安装留下的锁目录，以及所属进程已经不在的临时目录，由下一次安装清掉；所属进程还在的临时目录留着。已有目标相同时答“已安装”，不同时拒绝，不覆盖。改名撞上已有目录时，按那份目录再核对一次。连不上 Hub、令牌无效、版本不可用、完整性不符和本地写失败，各有自己的下一步，不都说成 pack.json。
 
 `circle-hub local-tools verify <目录> --digest <包号>` 必须带包号。先比目录里 pack.json 的 SHA-256 和这个包号，不等就失败；再按 pack.json 重算每个文件，指出第一处不符的路径并列出多出的文件。只读，不联网，拒绝链接。清单里某个文件的摘要或大小不符时，报的是这个文件的路径。它也能核对集成者手工安装的完整清单目录。同步修改清单和文件会得到另一个包号，用发布时的包号核，这一份过不了。输出只含包号、版本、文件数、字节数及不符路径，不含文件正文或令牌。没有运行任何下载代码。
 

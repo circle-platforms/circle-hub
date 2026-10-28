@@ -8,6 +8,8 @@ import { PackManifest, type PackManifest as Manifest } from '../../contracts/src
 import { canonicalBytes, sha256Hex } from '../records/api.ts';
 import { isLoopbackAddress } from '../config/index.ts';
 import { validAllowedHosts, validListenAddress } from '../listen.ts';
+import { resolveLayout } from '../platform/layout.ts';
+import { readSettingsFileSync, resolveSettings, type PlatformSettings } from '../platform/settings.ts';
 import { readPackDirectory } from '../runs/packs/directory.ts';
 import { DEFAULT_PACK_LIMITS } from '../runs/packs/types.ts';
 import { parsePackRef } from '../runs/packs/versions.ts';
@@ -19,7 +21,7 @@ const LIMITS = DEFAULT_PACK_LIMITS;
 const LISTED_FILE = new Set(['manifest.digest_mismatch', 'manifest.size_mismatch', 'manifest.missing_file']);
 const httpAgent = new HttpAgent({ keepAlive: false });
 const httpsAgent = new HttpsAgent({ keepAlive: false });
-export const LOCAL_TOOLS_USAGE = 'local-tools install <包>@<版本> --digest <包号> --into <目录> [--hub <已配置地址>] | local-tools verify <目录> --digest <包号>';
+export const LOCAL_TOOLS_USAGE = 'local-tools install <包>@<版本> --digest <包号> --into <目录> [--hub <回环地址>] | local-tools verify <目录> --digest <包号>';
 
 /** Refusal decided at the throw site. The catch prints this text; it does not classify the error. */
 export type LocalToolsReason =
@@ -52,9 +54,9 @@ export function localToolsRefusal(reason: LocalToolsReason): string {
     case 'into':
       return '必须给出 --into <目录>；安装只写到这个目录里';
     case 'address':
-      return '只接受回环地址或显式配置的 Hub 内网 IP 和端口；不要带路径、查询或账号';
+      return '只接受回环地址；已初始化部署可使用其锁定的内网 IP 和端口；不要带路径、查询或账号';
     case 'unreachable':
-      return `Hub 连不上 ${reason.address}；${isLoopbackAddress(new URL(reason.address).hostname.replace(/^\[|\]$/g, '')) ? '确认本机 Hub 已在这个回环地址监听后再试' : '确认已配置的 Hub 监听地址和网络可达后再试'}`;
+      return `Hub 连不上 ${reason.address}；${isLoopbackAddress(new URL(reason.address).hostname.replace(/^\[|\]$/g, '')) ? '确认本机 Hub 已在这个回环地址监听后再试' : '确认部署的监听地址和网络可达后再试'}`;
     case 'unauthorized':
       return '令牌无效或已撤销；重新领取令牌后再试';
     case 'unavailable':
@@ -62,7 +64,7 @@ export function localToolsRefusal(reason: LocalToolsReason): string {
     case 'integrity':
       return `完整性核对未通过；第一处不符 ${reason.path}；重新取这一份后再试`;
     case 'redirect':
-      return 'Hub 回答了重定向；只接受已配置地址上的直接回答';
+      return 'Hub 回答了重定向；只接受回环地址上的直接回答';
     case 'filesystem':
       return `本地目录无法写入 ${reason.path}（${reason.code}）；检查目录权限后重试`;
   }
@@ -139,11 +141,11 @@ async function reclaim(into: string, ref: string): Promise<void> {
   }
 }
 
-export function localHubAddress(value: string | undefined, env: NodeJS.ProcessEnv): URL {
-  const configured = env.CIRCLE_HUB_HOST ?? '127.0.0.1';
+export function localHubAddress(value: string | undefined, env: NodeJS.ProcessEnv, pinned?: Pick<PlatformSettings, 'listenHost' | 'allowedHosts' | 'port'>): URL {
+  const configured = pinned?.listenHost ?? '127.0.0.1';
   const literal = configured.includes(':') ? `[${configured}]` : configured;
-  const address = value ?? `http://${literal}:${env.CIRCLE_HUB_PORT ?? ''}`;
-  if (value === undefined && !(/^\d+$/.test(env.CIRCLE_HUB_PORT ?? '') && Number(env.CIRCLE_HUB_PORT) > 0 && Number(env.CIRCLE_HUB_PORT) <= 65535)) {
+  const address = value ?? `http://${literal}:${pinned?.port ?? env.CIRCLE_HUB_PORT ?? ''}`;
+  if (value === undefined && !pinned && !(/^\d+$/.test(env.CIRCLE_HUB_PORT ?? '') && Number(env.CIRCLE_HUB_PORT) > 0 && Number(env.CIRCLE_HUB_PORT) <= 65535)) {
     throw new LocalToolsError({ kind: 'address' });
   }
   let url: URL;
@@ -155,10 +157,9 @@ export function localHubAddress(value: string | undefined, env: NodeJS.ProcessEn
   const host = url.hostname.replace(/^\[|\]$/g, '');
   const safeUrl = (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === '' && url.pathname === '/' && url.search === '' && url.hash === '';
   const loopback = host === 'localhost' || isLoopbackAddress(host);
-  const declared = env.CIRCLE_HUB_ALLOWED_HOSTS?.split(',');
-  if (declared && !validAllowedHosts(declared)) throw new LocalToolsError({ kind: 'address' });
-  const configuredRemote = host === configured && validListenAddress(host) && declared !== undefined && validAllowedHosts(declared) && url.port === env.CIRCLE_HUB_PORT;
-  if (!safeUrl || (!loopback && !configuredRemote)) throw new LocalToolsError({ kind: 'address' });
+  const locked = pinned?.listenHost === host && validListenAddress(host) && pinned.allowedHosts !== undefined && validAllowedHosts(pinned.allowedHosts) && url.port === String(pinned.port);
+  if (pinned && ((host === 'localhost' ? '127.0.0.1' : host) !== configured || url.port !== String(pinned.port))) throw new LocalToolsError({ kind: 'address' });
+  if (!safeUrl || (!loopback && !locked)) throw new LocalToolsError({ kind: 'address' });
   // Pin localhost to a literal loopback address; never delegate this boundary to DNS.
   if (host === 'localhost') url.hostname = '127.0.0.1';
   return url;
@@ -424,9 +425,18 @@ export async function localToolsCommand(args: readonly string[], io: CliIo, secr
       return verified.ok ? 0 : 1;
     }
     if (typeof parsed.values.into !== 'string' || parsed.values.into === '') throw new LocalToolsError({ kind: 'into' });
-    const hub = localHubAddress(parsed.values.hub as string | undefined, io.env);
+    // An internal endpoint is accepted only from this data root's existing, drift-checked deployment settings.
+    let pinned: PlatformSettings | undefined;
+    if (io.env.CIRCLE_HUB_DATA_DIR) {
+      try {
+        const layout = resolveLayout(io.env);
+        const file = readSettingsFileSync(layout);
+        if (file) pinned = resolveSettings(file, io.env, layout);
+      } catch { throw new LocalToolsError({ kind: 'address' }); }
+    }
+    const hub = localHubAddress(parsed.values.hub as string | undefined, io.env, pinned);
     const token = await readSecret('Bearer 令牌', { ...secret, prompt: secret.prompt ?? io.stderr });
-    const result = await installLocalTools(parsed.positionals[0]!, digest, resolve(io.cwd, parsed.values.into), hub, token, io.env.CIRCLE_HUB_ALLOWED_HOSTS?.split(',')[0]);
+    const result = await installLocalTools(parsed.positionals[0]!, digest, resolve(io.cwd, parsed.values.into), hub, token, pinned?.allowedHosts?.[0]);
     io.stdout(terminalSafe(`${result.installed ? '已安装；' : ''}${resultLine(result.verified)}`));
     return 0;
   } catch (error) {

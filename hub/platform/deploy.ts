@@ -16,7 +16,7 @@ import { backupPath, createBackup, pruneBackups, verifyBackup } from './backup.t
 import { agentFor, identityOf, keychainNamesFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from './context.ts';
 import { messageOf, PlatformError } from './errors.ts';
 import { withLock, writeFileAtomic } from './files.ts';
-import { portAnswers, waitForHealth } from './health.ts';
+import { portOccupied, waitForHealth } from './health.ts';
 import { checkNode, serviceDefinition, serviceEnvironment, stableNodePath } from './launchd.ts';
 import type { Layout } from './layout.ts';
 import { dataMajorMismatch, ensureDatabaseRunning } from './postgres.ts';
@@ -698,7 +698,7 @@ export function systemDeployHost(context: PlatformContext, settings: PlatformSet
     portBusy: async () => {
       // An old server may still be shutting down right after bootout.
       for (let attempt = 0; attempt < 20; attempt++) {
-        if (!(await portAnswers(settings.port, 1000, settings.listenHost))) return false;
+        if (!(await portOccupied(settings.port))) return false;
         await delay(500);
       }
       return true;

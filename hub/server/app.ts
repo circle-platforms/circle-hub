@@ -7,7 +7,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { isLoopbackAddress } from '../config/index.ts';
-import { validAllowedHosts, validListenAddress } from '../listen.ts';
+import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
 import type { AppOptions, HubApp, ListenInfo, ServerDeps } from './api.ts';
 import { handleConsole } from './console/index.ts';
 import { SessionStore } from './console/session.ts';
@@ -55,7 +55,8 @@ function printable(target: string | undefined): string {
 export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const host = deps.config.host;
   const declared = deps.config.allowedHosts;
-  if (!validListenAddress(host) || (declared && !validAllowedHosts(declared)) || (!isLoopbackAddress(host) && !declared)) throw new Error('监听地址或允许主机无效：非回环监听必须显式声明精确的允许主机');
+  const proxyOrigin = deps.config.proxyOrigin;
+  if (!validListenAddress(host) || (declared && !validAllowedHosts(declared)) || (!isLoopbackAddress(host) && !declared) || (proxyOrigin && !validProxyOrigin(proxyOrigin, declared, deps.config.port))) throw new Error('监听地址或允许主机无效：非回环监听必须显式声明精确的允许主机');
   const release = readReleaseId(options.codeRoot);
   const log = options.log ?? ((line: string) => process.stderr.write(`${line}\n`));
   const closeTimeoutMs = options.closeTimeoutMs ?? 10_000;
@@ -64,7 +65,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const sessions = new SessionStore(() => clock().getTime());
   const budget = new BodyBudget(options.maxInflightBodyBytes ?? 4 * deps.config.limits.maxRequestBytes);
   let hosts = allowedHosts(host, deps.config.port, declared);
-  let origins = ownOrigins(hosts, Boolean(declared));
+  let origins = ownOrigins(hosts);
+  if (proxyOrigin) { hosts.add(new URL(proxyOrigin).host); origins.add(proxyOrigin); }
   let server: Server | null = null;
   let stopping = false;
   let closing: Promise<void> | null = null;
@@ -156,8 +158,14 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     });
     server = created;
     const port = (created.address() as AddressInfo).port;
+    if (proxyOrigin && !validProxyOrigin(proxyOrigin, declared, port)) {
+      await new Promise<void>(resolve => created.close(() => resolve()));
+      server = null;
+      throw new Error('HTTPS 代理来源不能与实际 HTTP 监听权威相同');
+    }
     hosts = allowedHosts(host, port, declared);
-    origins = ownOrigins(hosts, Boolean(declared));
+    origins = ownOrigins(hosts);
+    if (proxyOrigin) { hosts.add(new URL(proxyOrigin).host); origins.add(proxyOrigin); }
     const literal = host.includes(':') ? `[${host}]` : host;
     return { host, port, url: `http://${literal}:${port}` };
   };

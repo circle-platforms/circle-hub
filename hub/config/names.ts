@@ -10,6 +10,7 @@ export const HUB_ENVIRONMENT = {
   CIRCLE_HUB_LOG_DIR: '日志目录，绝对路径，默认是 <数据目录>/logs',
   CIRCLE_HUB_HOST: '监听地址，默认回环；指定内网地址时须同时声明允许主机',
   CIRCLE_HUB_ALLOWED_HOSTS: '允许的主机名或 IP 字面，以逗号分隔，不含端口、协议、路径或通配符',
+  CIRCLE_HUB_PROXY_ORIGIN: '可选的 HTTPS 代理公开来源，必须属于允许主机且与直接 HTTP 监听权威不同',
   CIRCLE_HUB_PORT: '监听端口，必填，0 表示由系统分配',
   CIRCLE_HUB_DATABASE_SOCKET_DIR: 'PostgreSQL 的 Unix 套接字目录，绝对路径；与 CIRCLE_HUB_DATABASE_HOST 二选一',
   CIRCLE_HUB_DATABASE_HOST: 'PostgreSQL 的回环地址；与 CIRCLE_HUB_DATABASE_SOCKET_DIR 二选一',

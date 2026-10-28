@@ -2,6 +2,8 @@
 // healthy yet, so an old process still holding the port cannot pass a deploy.
 import { connect } from 'node:net';
 import { request } from 'node:http';
+import { execFile } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { PlatformError } from './errors.ts';
 
@@ -85,4 +87,33 @@ export function portAnswers(port: number, timeoutMs = 1000, host = LOOPBACK): Pr
     socket.once('connect', () => done(true));
     socket.once('error', () => done(false));
   });
+}
+
+/** Fail closed on an unavailable inventory. Checking only the newly configured IP can miss an old running service. */
+export async function portOccupied(port: number): Promise<boolean> {
+  if (process.platform === 'darwin') return new Promise(resolve => {
+    execFile('/usr/sbin/lsof', ['-nP', '-t', `-iTCP:${port}`, '-sTCP:LISTEN'], { timeout: 3000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+      if (stdout.trim() || stderr.trim()) return resolve(true);
+      resolve(error === null ? false : (error as { code?: string | number }).code !== 1);
+    });
+  });
+  if (process.platform === 'linux') {
+    try {
+      const [v4, v6] = await Promise.all([readFile('/proc/net/tcp', 'utf8'), readFile('/proc/net/tcp6', 'utf8').catch(error => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
+        throw error;
+      })]);
+      const target = port.toString(16).toUpperCase().padStart(4, '0');
+      for (const line of `${v4}\n${v6}`.split('\n').slice(1)) {
+        const fields = line.trim().split(/\s+/);
+        if (fields.length < 4) continue;
+        if (fields[0] === 'sl') continue;
+        const local = fields[1]?.split(':');
+        if (!local || local.length !== 2) return true;
+        if (local[1] === target && fields[3] === '0A') return true;
+      }
+      return false;
+    } catch { return true; }
+  }
+  return true;
 }

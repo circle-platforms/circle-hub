@@ -21,10 +21,12 @@ an explicit allowed list; wildcard listeners and public IPs are refused. Address
 subnets. This is not TLS: a token sent over internal HTTP can be observed by an intervening network observer.
 
 Host and Origin must use a declared host and the configured listener port. Console form POSTs additionally require the
-Origin authority to equal the request Host; an absent Origin remains usable by non-browser clients. No forwarded header
-is trusted. A TLS-terminating reverse proxy must preserve an explicitly declared authority and port; deployments needing
-a different external port require a separately reviewed proxy authority design. Local tool installation accepts only
-loopback or the exact configured literal IP and port, never follows redirects, and sends the declared authority as Host.
+Origin authority to equal the request Host; an absent Origin remains usable by non-browser clients. A TLS-terminating
+reverse proxy requires the explicit `CIRCLE_HUB_PROXY_ORIGIN` HTTPS origin, whose host appears in the allowed-host list
+and whose authority differs from every direct HTTP authority. The proxy preserves that authority as Host; the Hub never
+trusts forwarded headers. Direct HTTP and proxy HTTPS origins remain separate, including their scheme. Local tool
+installation can use an internal address only when this data root's existing deployment settings lock the exact IP and
+port and all supplied environment values agree. A client without that trusted lock still accepts loopback only.
 Configure the target and firewall before exposing the service; this setting does not itself configure network access.
 
 ## Data root

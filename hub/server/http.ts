@@ -14,8 +14,8 @@ export function allowedHosts(listenHost: string, port: number, declared: readonl
 }
 
 /** The origins of this server itself, for the console's own forms. */
-export function ownOrigins(hosts: ReadonlySet<string>, tlsProxy = false): Set<string> {
-  return new Set([...hosts].flatMap((host) => [`http://${host}`, ...(tlsProxy ? [`https://${host}`] : [])]));
+export function ownOrigins(hosts: ReadonlySet<string>): Set<string> {
+  return new Set([...hosts].map((host) => `http://${host}`));
 }
 
 export function hostAllowed(request: IncomingMessage, hosts: ReadonlySet<string>): boolean {

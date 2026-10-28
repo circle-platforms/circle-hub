@@ -18,6 +18,8 @@ Secrets never come from the environment; they enter through the vault. `CIRCLE_H
 The default listener remains loopback. An explicit non-loopback internal IP requires `CIRCLE_HUB_ALLOWED_HOSTS`, an exact
 comma-separated list of lower-case hostnames or IP literals without a port or wildcard. The listener port applies to
 each entry. Wildcard and public-IP listeners are refused; callers must separately restrict network access.
+An optional `CIRCLE_HUB_PROXY_ORIGIN` names the exact HTTPS origin served by a TLS proxy; its host must be declared and
+its authority must differ from the directly listened HTTP authority. Forwarded headers do not change the accepted origin.
 
 | Variable | Default | `HubConfig` |
 | --- | --- | --- |
