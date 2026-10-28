@@ -6,7 +6,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rea
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { drift, generate, LOCK_FILE, REPO_ROOT, validateInputs } from '../../tools/gen-contracts.ts';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -151,7 +151,7 @@ describe('on a temporary copy', () => {
     symlinkSync(root, link, 'dir');
     try {
       const output = join(root, 'linked-generated.json');
-      const code = `import { generate } from ${JSON.stringify(join(repo, 'tools', 'gen-contracts.ts'))};
+      const code = `import { generate } from ${JSON.stringify(pathToFileURL(join(repo, 'tools', 'gen-contracts.ts')).href)};
         import {writeFileSync} from 'node:fs';
         writeFileSync(process.argv[2],JSON.stringify(await generate(process.argv[1])));`;
       // Keep the exact snapshot comparison independent of stdout size and bound unexpected child output.
