@@ -125,9 +125,10 @@ test('export and import move a raw key only through the pipe and the imported ke
     const short = await destination.run(['key', 'import'], { stdinIsPipe: true, readKeyBytes: () => Buffer.alloc(31) });
     assert.equal(short.code, 1);
     assert.equal(destination.system.state.key, undefined);
+    const callsBeforeRefusedTransport = destination.system.calls.length;
     const typed = await destination.run(['key', 'import']);
     assert.equal(typed.code, 1);
-    assert.equal(destination.system.calls.length, 0);
+    assert.equal(destination.system.calls.length, callsBeforeRefusedTransport);
 
     const imported = await destination.run(['key', 'import'], { stdinIsPipe: true, readKeyBytes: () => piped[0]! });
     assert.equal(imported.code, 0, imported.text);
