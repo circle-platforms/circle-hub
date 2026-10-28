@@ -437,8 +437,7 @@ function fedCaseRows(root: string, cut: FeedingCut, sourceEntries=false): KindEn
           ...(Array.isArray(object.defects)?{defects:object.defects}:{}),
           ...(caseLocation?{case_location:caseLocation}:{}),
           ...(typeof source?.bytes==='string'?{source_sha256:source.bytes}:{}),
-          commands: paths,
-          command_identities: identities,
+          ...(object.unparsed_steps===0?{commands:paths,command_identities:identities}:{}),
           command_tree_root: typeof object.command_tree_root==='string'?object.command_tree_root:treeRoots.length===1?treeRoots[0]:null,
           ...(typeof object.unparsed_steps==='number'?{unparsed_steps:object.unparsed_steps}:{}),
           ...(declaration?{...(rawResource!==undefined?{tags}:{}),resource_empty:resourceEmpty,tag_valid:Array.isArray(declaration.violations)?declaration.violations.length===0:null}:{}),
@@ -945,13 +944,14 @@ export class KnowledgeViews {
     if (composition !== null || scope !== null) {
       for await (const row of scopedEntries(composition, scope, kind)) take(row);
     }
-    let feedingConflicts=0,feedingUnknown=0;
+    let feedingConflicts=0,feedingUnknown=0,feedingCommandsUnknown=0;
     if (at.seedling && kind === 'case' && feeding?.cut) {
       const groups=new Map<string,KindEntry[]>();
       for(const row of fedCaseRows(at.root,feeding.cut,true)){const id=row.content.data.object;if(typeof id!=='string')continue;const group=groups.get(id)??[];group.push(row);groups.set(id,group);}
       for(const [id,group] of groups){
         if(group.some(row=>Array.isArray(row.content.data.line_candidates)&&row.content.data.line_candidates.length>1)){feedingConflicts++;continue;}
         if(by.includes('has_expected')&&group.some(row=>typeof row.content.data.has_expected!=='boolean')){feedingUnknown++;continue;}
+        if((by.includes('commands')||by.includes('command_identities'))&&group.some(row=>typeof row.content.data.unparsed_steps==='number'&&row.content.data.unparsed_steps>0)){feedingCommandsUnknown++;continue;}
         const signature=(row:KindEntry)=>canonicalize(by.map(field=>facetValues(row.content.data,field,{count:0}).map(value=>canonicalize(value)).sort()));
         if(new Set(group.map(signature)).size!==1){feedingConflicts++;continue;}
         const selected=group.find(row=>!row.unplaced)??group[0];take({...selected,entry:id,unplaced:group.every(row=>row.unplaced)});
@@ -992,6 +992,7 @@ export class KnowledgeViews {
     if (at.seedlingNote) notes.push(at.seedlingNote);
     if(feedingConflicts)notes.push(`${feedingConflicts} 个喂入对象的多个来源在请求字段上不一致，未计入本页；缺少一致的来源事实，下一步由来源维护者核对后重新读取`);
     if(feedingUnknown)notes.push(`${feedingUnknown} 个用例缺期望节点的结构判定，未计入本页；下一步用新版产品包按锁定树苗重读原件`);
+    if(feedingCommandsUnknown)notes.push(`${feedingCommandsUnknown} 个用例缺完整命令身份，未计入命令分面；下一步核对锁定命令树或补完整命令后重读，不把未知当作没有命令`);
     if(unrooted)notes.push(`${unrooted} 个用例缺所查树苗的投影，未计入本页；下一步用绑定树苗的运行重读原件，不把未核命令当作没有命令`);
     const view: FacetView = {
       schema: 'facet-view@1',
@@ -1004,7 +1005,7 @@ export class KnowledgeViews {
       rows,
       total: seen.size,
       totals: { empty, entry_counts: entryCounts, ...this.#scopeCounts(summary) },
-      truncated: page.offset + rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0 || feedingConflicts>0 || feedingUnknown>0 || unrooted>0,
+      truncated: page.offset + rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0 || feedingConflicts>0 || feedingUnknown>0 || feedingCommandsUnknown>0 || unrooted>0,
       skipped: skippedCount(composition) + skippedCount(scope),
       notes: [...notes,this.#scopeNote(summary,scopeLocked,scope)],
     };
@@ -1125,9 +1126,12 @@ export class KnowledgeViews {
         absorb({ entry, path, content, unplaced, root: source.body.root, unversioned: source === scope });
       }, validatedParts);
     }
-    let feedingConflicts=0;
+    let feedingConflicts=0,feedingCommandsUnknown=0;
     if (at.seedling && kind === 'case' && feeding?.cut) for (const row of fedCaseRows(at.root, feeding.cut,true)) {
       if(Array.isArray(row.content.data.line_candidates)&&row.content.data.line_candidates.length>1){if(key!=='document'||!onlySet||typeof row.content.data.document!=='string'||onlySet.has(row.content.data.document))feedingConflicts++;continue;}
+      const needsCommands=key==='commands'||key==='command_identities'||fields===null||fields.includes('commands')||fields.includes('command_identities');
+      const selectedDocument=key!=='document'||!onlySet||typeof row.content.data.document!=='string'||onlySet.has(row.content.data.document);
+      if(needsCommands&&selectedDocument&&typeof row.content.data.unparsed_steps==='number'&&row.content.data.unparsed_steps>0)feedingCommandsUnknown++;
       absorb(row);
     }
     const entryCounts = { total: seen.size, placed: seen.size - unplacedCount, unplaced: unplacedCount };
@@ -1196,9 +1200,10 @@ export class KnowledgeViews {
     const notes = (count: number): string[] => {
       const out: string[] = [];
       if (ofKind === 0) { out.push(`构建 ${at.build} 的根里没有${labelOf('entry_kind', kind)}种类的条目`); out.push(...feedingNotes); }
-      else if (keys.size === 0) out.push(`没有${labelOf('entry_kind', kind)}条目在数据字段 ${key} 上有${only === null ? '取值' : '所列的取值'}`);
+      else if (keys.size === 0) out.push(`${feedingCommandsUnknown||feedingConflicts||unrooted?'当前没有可列出的':'没有'}${labelOf('entry_kind', kind)}条目在数据字段 ${key} 上有${only === null ? '取值' : '所列的取值'}`);
       if(feedingRecords)out.push(`喂入索引列出 ${feedingRecords} 条来源记录、${feedingObjects.size} 个内容身份；同一内容的多个出处分别引用记录，data.object 是共享身份`);
       if(feedingConflicts)out.push(`${feedingConflicts} 条用例来源的版本层有冲突，未计入本索引；下一步由来源维护者核对目录后重读`);
+      if(feedingCommandsUnknown)out.push(`${feedingCommandsUnknown} 条用例来源缺完整命令身份，不能认为命令集合为空；下一步核对锁定命令树或补完整命令后重读`);
       if(unrooted)out.push(`${unrooted} 个用例缺所查树苗的投影，未计入本索引；下一步用绑定树苗的运行重读原件`);
       if (only !== null) {
         const absent = only.filter((value) => !keys.has(value));
@@ -1240,7 +1245,7 @@ export class KnowledgeViews {
         cut_keys: items.filter((item) => item.cut).map((item) => item.value),
         total_keys: keys.size,
         total_entries: carriers.size,
-        truncated: page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0 || unrooted>0 || feedingConflicts>0,
+        truncated: page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0 || unrooted>0 || feedingConflicts>0 || feedingCommandsUnknown>0,
         skipped: skippedCount(composition) + skippedCount(scope),
         notes: notes(count),
       };
