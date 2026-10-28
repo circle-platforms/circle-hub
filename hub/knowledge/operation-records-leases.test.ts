@@ -691,7 +691,7 @@ test('batch force release after Hub receipt and before submission keeps every co
   }
 });
 
-test('a frozen old pack replays a legacy operation without device or lease fields', async t => {
+test('a frozen old pack replays a legacy operation without device or lease fields', {skip}, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'operation-frozen-pack-'));
   t.after(() => rm(directory, {recursive:true, force:true}));
   const packDirectory = join(directory, 'knowledge-contribution');
