@@ -8,6 +8,7 @@ import { access } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DECLARED_DEPENDENCIES, LINUX_LABEL } from './policy.ts';
+import { windowsIsolationFailure } from './windows.ts';
 import { AA_EXEC, BWRAP, LAUNCH_PROFILE, linuxBubblewrapArgs, linuxToolsPresent } from './linux.ts';
 
 export const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
@@ -92,6 +93,7 @@ async function probeSandboxExec(): Promise<ProbeOutcome> {
       child.on('exit', (code) => resolve(code === 0 ? { available: true } : { available: false, lasting: false, reason: 'bubblewrap_apparmor_or_user_namespace_unavailable' }));
     });
   }
+  if (process.platform === 'win32') return { available: false, lasting: true, reason: windowsIsolationFailure() };
   if (process.platform !== 'darwin') return { available: false, lasting: true, reason: 'platform' };
   try {
     await access(SANDBOX_EXEC, constants.X_OK);
@@ -176,6 +178,7 @@ export interface IsolatedCommand {
  * set well above the resident limit the parent enforces, because V8 aborts on heap exhaustion (which leaves a crash report).
  */
 export function isolatedCommand(options: { entry: string; reads: string[]; heapMb: number; cpuSeconds: number; os: boolean; probeDir?: string }): IsolatedCommand {
+  if (process.platform === 'win32') throw new Error(windowsIsolationFailure());
   const linuxProbe = options.os && process.platform === 'linux' && options.probeDir !== undefined;
   const node = [
     '--permission',

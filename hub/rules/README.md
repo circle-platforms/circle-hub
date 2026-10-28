@@ -381,3 +381,30 @@ substring contract as the independent rules and refs implementations.
 Antigravity independently reviewed the fixed implementation at `ab2ec6c6` and found the two earlier blockers addressed:
 all-thread descendant accounting and per-child kernel isolation attestation. This was a source review, not production
 proof. The policy administrator remains trusted; stop the Hub and drain children before replacing an AppArmor policy.
+
+### Windows：复用 Circle 的进程清理设计，隔离缺口保持关闭
+
+来源：决定 79；Circle `src/sandbox.ts`、`src/windows_stranded.ts`、`src/process_group.ts` 及对应测试，
+查阅源码版本 `25863be04d2b169b5d776d7ec21a76ccbd330738`。Circle 的代码为 Apache-2.0，
+Copyright (c) 2026 qingshanfeihu and the Circle contributors，源项目 https://github.com/circle-platforms/circle。
+本次适配保留来源与许可证声明，没有导入或修改 Circle 或冻结归档。
+
+Circle 的路径/命令审批、凭据名过滤和环境过滤属于客户端策略；Windows `taskkill /T /F` 及 Job/进程树
+扫描用于清理。它们没有给 Hub 提供内核禁网、禁写。Circle 的 Job 分配失败可退回进程表扫描；
+Hub 适配不作这种降级：Job 创建、清理策略、分配、状态读取或终止失败均向调用方报错。
+`windows.ts` 延迟加载同版本 koffi，使用 kernel32 Job，结束整个 Job 后等待活动计数为零，
+并保留同一次终止 Promise；关闭句柄时的 kill-on-close 是额外清理措施。该模块目前是待集成原语，
+没有用它运行 pack。进程启动后才分配 Job 可能漏掉启动阶段已创建的子进程，因此调用方只能附加
+仍在等待可信握手的 bootstrap；未来需要在不运行 pack 的前提下完成分配和验证。
+
+Windows 探测明确返回 `windows_kernel_network_write_isolation_unimplemented`，pack 调用始终返回
+`SANDBOX_UNAVAILABLE`，即使传 `requireOsIsolation: false` 也拒绝。命令构造同样拒绝 Windows，
+不会错误调用 `/bin/sh` 或以 JavaScript 限制冒充完整隔离。仍缺少内核网络/写入隔离后端与逐子进程验证、
+CPU 限制、Job 内存边界/测量及生产生命周期接线。没有宣称 Windows 与 macOS/Linux 安全等同。
+
+合成验收已准备在 `windows.test.ts`：Job 分配拒绝、并发终止等待、状态不可读、Windows opt-out
+仍拒绝，以及原生 Node 子孙进程实际退出。集成者在依赖分支提供 koffi 3.3.3 后，分别在 Windows x64
+与 ARM64 原生 runner 执行 `node --test hub/rules/sandbox/windows.test.ts` 和 `npx tsc --noEmit`，
+必须记录架构、结果和跳过；非 Windows 跳过的原生用例不是 Windows 证据。后续实现强隔离时还必须
+以真正监听的本地 TCP/UDP 与 Unix/named-pipe 端点、可写临时目录、派生进程及超限用例验证拒绝效果。
+本任务遵照所有者要求未运行任何测试、类型检查或 GitHub 操作；上述用例均未验证。
