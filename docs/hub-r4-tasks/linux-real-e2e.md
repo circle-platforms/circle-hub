@@ -33,7 +33,7 @@
 
 - `hub-listen`：配置可表达明确监听地址与 Host/Origin 白名单，并可由独占数据根注入；合入前不能进行第9步。
 - `key-transfer`：真实 export 非终端确认参数、import stdin 帧/编码、无覆盖契约尚待合入后读取，不猜测参数或编码；合入前不能进行第7步。
-- 管理员/token/vault/records 命令由 server 包正式入口提供，具体调用须以合入后的 CLI 为准；不能写 SQL 绕过 vault 或授权层来制造通过。已对照 key-transfer 的 `records verify --vault`：它逐条 AEAD 核验，不回传明文；不能用普通 `records verify` 替代。合成凭据由三个正式 executor 定义引用，之后用 secret set 的 stdin 写入；不派发、不接触这些 endpoint。
+- 管理员/token/vault/records 命令由 server 包正式入口提供，具体调用须以合入后的 CLI 为准；不能写 SQL 绕过 vault 或授权层来制造通过。集成者只读复核后决定整合 c0b88a6a 的管道实现与只读 `records verify --vault`：空库保持未知，修复分块超长导入和异步导出清零问题。runner 唯一面向该整合接口，待实际合入代码复核；不保留两套 CLI 分支兼容。旧主线的普通 records verify 不构成密库证明。合成凭据由三个正式 executor 定义引用，之后用 secret set 的 stdin 写入；不派发、不接触这些 endpoint。
 - 当前 systemd adapter 使用真实账户 user manager，HOME 不可通过 fake identity 注入；演练应使用 VM 专属非 root 账户和其 manager，不能在宿主账户上假装隔离。
 - 环境变量和 root 标记只是显式选择加入条件，不能证明隔离；管理员必须确认可丢弃 VM。任何真实生产备份/主密钥演练是另一项授权步骤，不属于本合成测试。
 
@@ -43,6 +43,39 @@
 
 ## 真实 runner 当前状态
 
-实现已包含真实 Git archive 与两次 npm ci、嵌入式 PG 动态链接与版本核对、正式迁移/管理员/secret 命令、真实随机 systemd 源目标单元、随机 dummy 接口、backup@3/restore、直接 key export→import 管道和拒绝覆盖、逐条 --vault、全部记录类型核验、目标非回环 MCP initialize/六工具与 Host/Origin 拒绝。接口前置检查不通过会失败，绝不替换 HTTP server。清理错误可见，只有清理全部成功才删除独占数据根。
+实现已包含真实 Git archive 与两次 npm ci、嵌入式 PG 动态链接与版本核对、正式迁移/管理员/secret 命令、真实随机 systemd 源目标单元、随机 dummy 接口、backup@3/restore、直接 key export→import 管道和拒绝覆盖、逐条密库核验、全部记录类型核验、目标非回环 MCP initialize/六工具与 Host/Origin 拒绝。接口前置检查不通过会失败，绝不替换 HTTP server。清理错误可见，只有清理全部成功才删除独占数据根。
 
 代码尚未运行或类型检查；任何实际通过结论都需后续 VM 输出。接口创建需专用 VM 账户被管理员授予受限 sudo ip 权限；本测试不会配置 sudoers。未实现 AppArmor profile 改动。真实 backup/restore 内部已校验表摘要/权限/文件 SHA；测试不额外读取或显示业务正文。
+
+## 真实备份 VM 演练方案（当前不执行）
+
+所有者已明确授权后续用最新真实 backup 和真实主密钥管道演练；主代理仍须先协调并确认 Linux 依赖分支合入、合成 e2e 通过、独审及完整测试满足。当前没有读取真实 backup、环境文件、钥匙串或原文，也没有操作本机服务或真实目标。
+
+**当前合成自动化不接收外部 backup 路径或数据根参数，不能用它跑实物演练。** 它在 VM 默认网络命名空间新建 dummy 接口，只对它自己生成的数据安全；这不隔离恢复后存在的真实资源、作业、执行器和运行状态。不能把替换输入路径当作实物演练支持。恢复的 Hub 可能在启动 maintenance 时联系旧 endpoint，包含写、心跳、释放和取消出口。默认监听回环、Host 白名单、只做 MCP initialize、使用 bubblewrap 隔离包内函数，都不能阻止 Hub 宿主网络外连。
+
+### 必须先补的隔离边界
+
+- 在可丢弃 VM 内建立**无 veth、无物理接口、无默认路由**的专用 network namespace，只启用 lo；它没有生产网络出口。不能仅用应用配置禁用资源或黑名单；不得修改恢复的 append-only 内容来造安全状态。
+- 所有会读真实恢复数据的进程（restore 启动的 PG、key import、operator-token reissue、records verify、serve、MCP 测试客户端）必须在此 namespace 内以专用非 root 账户运行。SSH 传输进程留在外层，只将标准输入交给 namespace 内命令，不能把 SSH 连接误当隔离内的网络出口。
+- systemd 用户 manager 默认属于 VM 主 network namespace。现有 `systemdAgent` 不支持 NetworkNamespacePath，所以实物演练**不能运行现有 service install/deploy/start**。如要检验真实服务，须另建 root 管理的随机 unit，`User=<专用用户>`、`NetworkNamespacePath=/run/netns/<本次名称>`、`Restart=no`；核验服务 PID 的 `/proc/<pid>/ns/net` 与本次 namespace 相同。不得修改平台默认 unit 或真实服务。此独占服务夹具尚未实现/验证。
+- root 权限只用于创建/核验/删除自己的 namespace 和独占服务，不用于以 root 运行 PostgreSQL/Hub。全流程用 root 拥有、禁止其他用户改写的固定 wrapper 进入 namespace；wrapper 的账户、根路径、Node/CLI路径、namespace名和 unit 名均由本次清单固定，不接受任意命令，不接受环境继承。
+- 在任何数据传输前，用合成探针在 namespace 内确认只有 lo、没有非 lo 路由、没有可用 DNS；访问 VM 外的合成监听点必须失败，而外层相同探针成功。服务启动后再核验 namespace inode、接口/路由；任何未知或检查失败都中止。不得用真实生产地址作负例探测。
+
+### 操作顺序与固定命令
+
+下列是主代理后续准备的操作清单，变量均由协调后的专用清单提供；不是现在执行的脚本。`SOURCE_ROOT` 指本机已有部署，`SOURCE_CLI` 指已合入版本平台入口；`VM` 是专用演练 VM 的 SSH 别名，不能是真实目标；`RUN`、`NS`、`VM_USER`、`VM_ROOT` 和端口均本次唯一。不得把这些变量解析为仓库内的真实配置或从环境文件搜值。
+
+1. 主代理记录合成 e2e 与独审的提交 SHA、各验证层结果及本次实物演练授权；确认 VM 可丢弃、无真实数据/凭据、无共享宿主生产目录。先在 VM 本地文件系统构建固定提交的真实 release，真实 npm ci、PG18 与 ldd 检查均在引入真实数据前完成。配置只允许 namespace 内回环地址与回环 Host，不启动 Hub。
+2. VM 管理员使用 `sudo ip netns add "$NS"`，然后 `sudo ip -n "$NS" link set lo up`；不创建 veth 或移动已有 NIC。创建 0700 的唯一 `VM_ROOT` 和仅本次使用的 SSH 接收目录；以专用账户预置目标 settings（只包含本次回环 endpoint、DB socket 和独占密钥服务名）。确认目标 db/objects/vault 为空，尚无主密钥或 operator-token。
+3. 在 namespace 内完成上述合成正/负网络探针；设置固定 wrapper，使 `restore <接收备份目录>`、`key import`、`key status`、`operator-token reissue --as <管理员>`、`records verify --vault`、只读 MCP 探针和 `db stop` 全部进入同一 namespace，使用 `env -i` 明确给数据根/Node/PATH/HOME/USER，仅允许清单内的命令。wrapper 不允许 key export、secret show/value 导出或任意 shell。主密钥不作 wrapper 参数。
+4. 主代理协调后在本机通过平台命令取最新一致性备份：`CIRCLE_HUB_DATA_DIR="$SOURCE_ROOT" "$SOURCE_CLI" backup`。不手工读取/复制 db、vault 或 objects。若平台报告遗漏文件、校验不完整或其他未知，中止；不把结果归为通过，不自行停止本机服务修补快照。
+5. 仅将这次 `circle-hub-backup@3` 的完整目录用 SSH 加密通道复制到 VM 的本次 0700 接收目录。用平台 `restore <接收目录>` 的清单/SHA/表摘要/权限校验作为接收与恢复验收，不打印原文或手工 dump。该命令须经 namespace wrapper 执行；不得先在默认 namespace restore 后再隔离。
+6. 通过直接进程管道传主密钥：`CIRCLE_HUB_DATA_DIR="$SOURCE_ROOT" "$SOURCE_CLI" key export --confirm | ssh -T "$VM" <固定的本次 key-import wrapper>`。实际 runner 必须分别记录 export、ssh/远端 import 的退出状态并设超时；不能只检查管道末端。禁止 `tee`、shell tracing、命令替换、捕获 key stdout、重定向到临时文件或终端。远端 wrapper 的 stdout/stderr 只能是平台数量/状态消息，不含字节。失败时不覆盖、不重建主密钥；清理本次 VM 根后重新完整演练。
+7. namespace 内通过平台 `key status` 核对存在性；检查目标 keys 目录0700/文件0600/专用属主。源 operator-token 不随 backup 搬运，目标通过正式 `operator-token reissue --as <已恢复管理员>` 另建，token不显示。管理员名字必须由主代理/所有者提供，不读取真实会话或原文搜索。
+8. namespace 内执行整合实现的 `records verify --vault`，要求实际非零条目全部可解开；空库不能证明密钥与历史条目一致。各记录类型的核验也是平台命令。只记录 schema、完整性计数、SHA收据、退出码及缺证，不记条目名、正文、凭据、内部地址、数据库行或账号。
+9. 若要启动 Hub，须使用上面的独占 namespace systemd unit，不能使用恢复数据里的默认服务安装入口；先核验 unit 的 User、ExecStart、NetworkNamespacePath、数据根及 FragmentPath。用同 namespace 的独占测试客户端经回环完成真实 MCP initialize/工具枚举。无外部 endpoint 请求、无实际只读业务运行、更不能派发作业。网络不可达仅证明隔离，不证明远端停止或真实业务正确。
+10. finally 先停止/移除本次 unit，核验进程结束；namespace 内平台 `db stop` 停 PG，核验无本次 PID；确认 `ip netns pids "$NS"` 为空后删除本次 namespace。再删除本次接收备份、解密后的数据库、密文 vault/主密钥文件和本次数据根，最终销毁可丢弃 VM/其磁盘快照。任何清理失败都保留隔离边界并报告缺证，不能先删 namespace 名导致进程失联。绝不删除源备份、源数据/密钥或修改本机服务。
+
+### 尚未关闭的危险缺口
+
+固定 namespace wrapper、systemd root-unit 夹具、合成出口探针、SSH 双端超时与退出码核验、清理进程/namespace后销毁含真实数据的VM磁盘收据，均尚未实现/验证。故**尚不支持自动实物演练，也不可执行上述第4步起的数据操作**。主代理在补齐这些环节并协调窗口后再执行。实物演练不连接真实目标；其隔离内 MCP 成功不等于同事端 Circle 连接成功、生产业务正确或正式切换验收。
