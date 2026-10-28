@@ -2,9 +2,12 @@
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
 import {constants,type Stats} from 'node:fs';
-import {chmod, lstat, mkdir, open, readFile, readdir, readlink, realpath, rm, stat, writeFile} from 'node:fs/promises';
+import {chmod, lstat, mkdir, open, readFile, readdir, readlink, realpath, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
-import {join, resolve} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {prepareRelease} from '../release.ts';
+import {ensureLayout,layoutAt} from '../layout.ts';
 import {runCommand} from '../process.ts';
 
 const safePath = (path:string) => path.startsWith('/') && /^\/[A-Za-z0-9_./-]+$/.test(path) && resolve(path)===path;
@@ -43,15 +46,21 @@ export function parseMountInfo(text:string):MountRow[] {
     return {device:left[2]!,root:decode(left[3]!),target:decode(left[4]!),fs:right[0]!};
   });
 }
-/** Reject nested mounts and non-local backing filesystems before any source directory is bound. */
-export function sourceMountReceipt(rows:MountRow[],source:string,target:string):MountReceipt {
+/** Freeze an independent VM root-device baseline before constructing any release, data or service. */
+export function trustedRootMount(rows:MountRow[]):MountRow {
+  const roots=rows.filter(row=>row.target==='/');
+  if(roots.length!==1||roots[0]!.root!=='/'||!['ext4','xfs','btrfs'].includes(roots[0]!.fs))throw new Error('VM 根挂载不是独立可核对的本地根文件系统');
+  return {...roots[0]!};
+}
+/** Derive expected roots from a prior VM-root baseline, never from a covering source mount. */
+export function sourceMountReceipt(rows:MountRow[],source:string,target:string,baseline:MountRow):MountReceipt {
+  if(baseline.target!=='/'||baseline.root!=='/'||!['ext4','xfs','btrfs'].includes(baseline.fs))throw new Error('缺少可信 VM 根挂载基线');
+  const current=trustedRootMount(rows);
+  if(current.device!==baseline.device||current.fs!==baseline.fs)throw new Error('VM 根设备在预备后改变');
   const beneath=(path:string,parent:string)=>path===parent||path.startsWith(parent==='/'?'/':parent+'/');
-  const covering=rows.filter(row=>beneath(source,row.target)).sort((a,b)=>b.target.length-a.target.length)[0];
-  if(!covering||!['ext4','xfs','btrfs'].includes(covering.fs))throw new Error('绑定源不是已声明的 VM 本地文件系统');
-  if(rows.some(row=>row.target!==source&&beneath(row.target,source)))throw new Error('绑定源含子挂载，拒绝递归暴露宿主文件系统');
-  const relative=source.slice(covering.target==='/'?0:covering.target.length);
-  const root=(covering.root==='/'?'':covering.root)+relative;
-  return {target,device:covering.device,root:root||'/',fs:covering.fs};
+  if(rows.some(row=>row.target!=='/'&&(beneath(source,row.target)||beneath(row.target,source))))throw new Error('绑定源本身、祖先或子树被额外挂载覆盖');
+  if(!source.startsWith('/')||source.includes('/../')||source.includes('//'))throw new Error('绑定源路径不规范');
+  return {target,device:baseline.device,root:source,fs:baseline.fs};
 }
 /** Every real filesystem mount must match its host-side receipt; unrecognized mounts fail closed. */
 export function verifyMountTable(rows:MountRow[],expected:MountReceipt[]):void {
@@ -104,22 +113,37 @@ async function rootVmGate():Promise<void> {
 }
 
 /** This exercise creates only synthetic bytes and returns no reusable real-data authorization or "safe" token. */
-export async function proveSyntheticIsolation(release:string):Promise<void> {
+export async function proveSyntheticIsolation():Promise<void> {
   await rootVmGate();
-  if(!safePath(release))throw new Error('发布路径不安全');
-  const source=await realpath(release);
-  if(source!==release || !/^\/var\/tmp\/chvm-build-[a-f0-9]{12}\/release$/.test(source))throw new Error('只接受 VM 专用 chvm-build 暂存 release，拒绝现有部署路径');
-  if(!(await lstat(join(source,'bin','circle-hub'))).isFile())throw new Error('必须使用预备的真实 Hub release');
+  // No caller-provided release/data path exists: close construction over an exact committed archive in a fresh root.
+  const baseline=trustedRootMount(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')));
   const id=randomBytes(6).toString('hex'), user=`chvm-${id}`, namespace=user;
-  const root='/var/tmp/'+user;
+  const build='/var/tmp/chvm-build-'+id;
   await assertCanonicalPath('/var/tmp');
+  sourceMountReceipt(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),build,build,baseline);
+  await mkdir(build,{mode:0o700});
+  const buildIdentity=await lstat(build);
+  const tree=fileURLToPath(new URL('../../../',import.meta.url)),node=await realpath(process.execPath);
+  const buildEnv={PATH:dirname(node)+':/usr/bin:/bin',HOME:join(build,'home'),USER:'root',LANG:'C',LC_ALL:'C',
+    NPM_CONFIG_USERCONFIG:join(build,'absent-npmrc'),NPM_CONFIG_GLOBALCONFIG:'/dev/null',NPM_CONFIG_CACHE:join(build,'npm-cache'),
+    GIT_CONFIG_COUNT:'1',GIT_CONFIG_KEY_0:'safe.directory',GIT_CONFIG_VALUE_0:tree};
+  await mkdir(buildEnv.HOME,{mode:0o700});
+  const revision=await runCommand('git',['-C',tree,'rev-parse','--verify','HEAD^{commit}'],{env:buildEnv,timeoutMs:30_000});
+  if(revision.code!==0||!/^[a-f0-9]{40}$/.test(revision.stdout.trim()))throw new Error('封闭构建无法取得固定提交，禁止创建服务');
+  const stage=layoutAt(join(build,'stage'));await ensureLayout(stage);
+  const release=await prepareRelease({path:tree,commit:revision.stdout.trim()},{layout:stage,env:buildEnv});
+  assert.equal(release.reused,false);assert.equal(release.file.commit,revision.stdout.trim());
+  const source=join(build,'release');await rename(release.dir,source);
   await assertCanonicalPath(source);await assertFrozenParents(source);await assertRootOwnedTree(source);
-  await assertFrozenParents(await realpath(process.execPath));
+  sourceMountReceipt(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),source,'/release',baseline);
+  const root='/var/tmp/'+user;
+  await assertFrozenParents(node);
+  sourceMountReceipt(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),node,'/runtime/node',baseline);
   await mkdir(root,{mode:0o755});
   const rootIdentity=await lstat(root);
   const external='/var/tmp/chvm-host-'+id;
   let externalIdentity:Stats|undefined;
-  const definition:IsolationDefinition={unit:`${user}-probe`,user,namespace,root,data:join(root,'data'),release:source,node:await realpath(process.execPath)};
+  const definition:IsolationDefinition={unit:`${user}-probe`,user,namespace,root,data:join(root,'data'),release:source,node};
   const env={PATH:'/usr/sbin:/usr/bin:/sbin:/bin',LANG:'C',LC_ALL:'C'};
   let userReceipt:{uid:number;gid:number;passwd:string;group:string}|undefined, namespaceIdentity:Stats|undefined, step='前置检查';
   const errors:Error[]=[];
@@ -156,7 +180,7 @@ export async function proveSyntheticIsolation(release:string):Promise<void> {
     await writeFile(join(root,'sentinel/visible'),'');
     bound.push({source:join(external,'visible'),target:'/sentinel/visible'});
     const expected=[];
-    for(const item of bound){await assertCanonicalPath(item.source);expected.push(sourceMountReceipt(hostMounts,item.source,item.target));}
+    for(const item of bound){await assertCanonicalPath(item.source);expected.push(sourceMountReceipt(hostMounts,item.source,item.target,baseline));}
     await new Promise<void>((resolve,reject)=>{sentinel.once('error',reject);sentinel.listen(0,'0.0.0.0',()=>resolve());});
     const address=sentinel.address();assert.ok(address&&typeof address!=='string');
     const network=JSON.parse(await run('/usr/sbin/ip',['-j','-4','address','show']));
@@ -205,6 +229,7 @@ export async function proveSyntheticIsolation(release:string):Promise<void> {
     if(errors.length===0)try{
       await assertCanonicalPath(root);assertSameIdentity(await lstat(root),rootIdentity);await rm(root,{recursive:true});
       if(externalIdentity){await assertCanonicalPath(external);assertSameIdentity(await lstat(external),externalIdentity);await rm(external,{recursive:true});}
+      await assertCanonicalPath(build);assertSameIdentity(await lstat(build),buildIdentity);await rm(build,{recursive:true});
     }catch{errors.push(new Error('本次目录身份未确认，不删除'));}
     if(errors.length)throw new AggregateError(errors,'隔离实证未通过；本次资源保持隔离供管理员处理，不得运行实物');
   }

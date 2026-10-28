@@ -97,3 +97,11 @@
 - root固定为 `/var/tmp/chvm-<本次12hex>`，user/namespace/unit同suffix，data固定root/data；release固定专用 `/var/tmp/chvm-build-<12hex>/release`。禁止 `/`、重复斜线、dot/parent跳转、符号链接祖先与非管理员可改写的绑定源祖先；发布树必须管理员冻结，内部symlink仅能留在该发布内。
 
 新增可复现合成负例覆盖宿主库子挂载、共享源、错误mount root/额外挂载、替换inode/设备/属主/文件类型、`/`与suffix不一致、symlink和词法重解析。全部尚未运行；原始 `pipeSyntheticKey` 仍只用于合成测试，不能作为真实主密钥传输保护设施。真实数据阶段继续关闭，不能用此补丁代替独审、完整测试与真实PG/Hub进程树实证。
+
+### 21fe5fdc 绑定源自证阻断修正（未执行）
+
+取消外部release路径输入，管理员VM夹具先冻结本机根挂载基线（唯一target=/、mount-root=/、ext4/xfs/btrfs设备），然后在唯一新建build根内从固定Git提交archive做真实npm ci；使用本次私有HOME/npm配置/缓存，不能读取现有部署release或任何环境文件。账户、namespace和服务全部晚于封闭构建。新stage发布只能由这一条内部路径产生。
+
+所有绑定期望设备来自构建前冻结的VM根设备，期望mount-root直接等于本次规范源绝对路径；不再从当前源covering mount推导。任何非根挂载覆盖源自身、任一祖先或子树均拒绝，包含“同一ext4设备上的production目录bind到合规release路径”与“bind到/usr/lib”。VM根设备在预备后改变、根自身mount-root不为/、独立/usr或/var挂载等未知拓扑也拒绝，不猜测其安全。隔离内仍核对独立期望表。
+
+新增精确反例：同设备 `/srv/production-release` bind覆盖合规release与/usr/lib，/var/tmp祖先被覆盖、根设备更换、根本身来自非/子树；均应拒绝。未执行这些测试或实际构建。此基线信任管理员声明的可丢弃VM启动根；无法证明该根来源时必须拒绝启动，不将被验证源的当前mountinfo当来源证明。初期构建失败可能保留无真实数据的本次build根供管理员确认npm子进程退出后清理，不执行模糊进程清杀。实物仍关闭，尚无真实Hub/PG树或真实密钥管道验收。

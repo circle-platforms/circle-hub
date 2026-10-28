@@ -4,7 +4,7 @@ import {test} from 'node:test';
 import {mkdtemp,symlink,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {assertCanonicalPath,assertSameIdentity,parseMountInfo,sourceMountReceipt,verifyMountTable,isolatedUnitArguments, proveSyntheticIsolation, type IsolationDefinition} from './testing/linux-rehearsal-isolation.ts';
+import {assertCanonicalPath,assertSameIdentity,parseMountInfo,sourceMountReceipt,trustedRootMount,verifyMountTable,isolatedUnitArguments, proveSyntheticIsolation, type IsolationDefinition} from './testing/linux-rehearsal-isolation.ts';
 const fixture:IsolationDefinition={unit:'chvm-123456abcdef-probe',user:'chvm-123456abcdef',namespace:'chvm-123456abcdef',root:'/var/tmp/chvm-123456abcdef',data:'/var/tmp/chvm-123456abcdef/data',release:'/var/tmp/chvm-build-123456abcdef/release',node:'/usr/bin/node'};
 test('isolated units require rootfs and netns plus capability and host-filesystem restrictions',()=>{
  const args=isolatedUnitArguments(fixture,['/runtime/node','/release/bin/circle-hub','serve']);
@@ -17,20 +17,18 @@ test('foreign identities, escaping paths, external roots and arbitrary executabl
  assert.throws(()=>isolatedUnitArguments(fixture,['/bin/sh','-c','ignored']));
 });
 test('root-managed synthetic VM isolation establishes outbound denial and child inheritance',{
- skip:process.env.CIRCLE_HUB_TEST_ISOLATION_VM===undefined?'requires administrator-declared disposable VM and prepared synthetic release':false,
- timeout:300_000,
+ skip:process.env.CIRCLE_HUB_TEST_ISOLATION_VM===undefined?'requires administrator-declared disposable VM and fresh closed release build':false,
+ timeout:2_400_000,
 },async()=>{
- const release=process.env.CIRCLE_HUB_TEST_SYNTHETIC_RELEASE;
- assert.ok(release,'supply a freshly built synthetic release, never a production deployment');
- await proveSyntheticIsolation(release);
+ await proveSyntheticIsolation();
 });
 
 test('host-library submount and shared source negatives reproduce the mount leak boundary',()=>{
  const local=parseMountInfo('1 0 8:1 / / rw - ext4 /dev/synthetic rw');
  const nested=parseMountInfo('2 1 0:42 /host/private /usr/lib/shared rw - virtiofs shared rw');
- assert.throws(()=>sourceMountReceipt([...local,...nested],'/usr/lib','/usr/lib'));
- assert.throws(()=>sourceMountReceipt(nested,'/usr/lib/shared','/usr/lib'));
- const receipt=sourceMountReceipt(local,'/usr/lib','/usr/lib');
+ assert.throws(()=>sourceMountReceipt([...local,...nested],'/usr/lib','/usr/lib',trustedRootMount(local)));
+ assert.throws(()=>sourceMountReceipt(nested,'/usr/lib/shared','/usr/lib',trustedRootMount(local)));
+ const receipt=sourceMountReceipt(local,'/usr/lib','/usr/lib',trustedRootMount(local));
  verifyMountTable([{device:'8:1',root:'/usr/lib',target:'/usr/lib',fs:'ext4'}],[receipt]);
  assert.throws(()=>verifyMountTable([{device:'8:1',root:'/home/private',target:'/usr/lib',fs:'ext4'}],[receipt]));
  assert.throws(()=>verifyMountTable([{device:'8:1',root:'/usr/lib',target:'/usr/lib',fs:'ext4'},...nested],[receipt]));
@@ -45,4 +43,18 @@ test('canonical path check rejects symbolic and lexical reparsing of a synthetic
  const directory=await mkdtemp(join(tmpdir(),'chvm-path-'));
  try{await symlink(directory,join(directory,'alias'));await assert.rejects(assertCanonicalPath(join(directory,'alias')));await assert.rejects(assertCanonicalPath(directory+'/../'+directory.split('/').pop()));}
  finally{await rm(directory,{recursive:true});}
+});
+
+test('same-device production bind over the source itself cannot self-certify its backing root',()=>{
+ const before=parseMountInfo('1 0 8:1 / / rw - ext4 /dev/synthetic rw');
+ const baseline=trustedRootMount(before);
+ for(const source of ['/var/tmp/chvm-build-123456abcdef/release','/usr/lib']){
+  const covered=parseMountInfo(`2 1 8:1 /srv/production-release ${source} rw - ext4 /dev/synthetic rw`);
+  assert.throws(()=>sourceMountReceipt([...before,...covered],source,'/release',baseline));
+ }
+ const ancestor=parseMountInfo('3 1 8:1 /srv/production /var/tmp rw - ext4 /dev/synthetic rw');
+ assert.throws(()=>sourceMountReceipt([...before,...ancestor],'/var/tmp/chvm-build-123456abcdef/release','/release',baseline));
+ const switched=parseMountInfo('1 0 8:2 / / rw - ext4 /dev/other rw');
+ assert.throws(()=>sourceMountReceipt(switched,'/usr/lib','/usr/lib',baseline));
+ assert.throws(()=>trustedRootMount(parseMountInfo('1 0 8:1 /srv/production / rw - ext4 /dev/synthetic rw')));
 });
