@@ -24,13 +24,13 @@ test('records verify decrypts every vault entry and prints only the count', asyn
       for (const command of adminCommands({ tokens: () => memoryOperatorTokens(null, '测试的空钥匙串') })) register(command);
     },
   });
-  const verified = await admin.run(['records', 'verify'], { assembly });
-  assert.match(verified.text, /密库条目 1 个，全部能用当前主密钥解开/);
+  const verified = await admin.run(['records', 'verify', '--vault'], { assembly });
+  assert.match(verified.text, /已核验 1 条；异常 0 项/);
   assert.equal(verified.text.includes(secret), false);
   const wrong = new FileKeyProvider(join(harness.scratch, 'wrong.key'));
   await wrong.initKey();
-  const failed = await admin.run(['records', 'verify'], { assembly, keyProvider: () => wrong });
+  const failed = await admin.run(['records', 'verify', '--vault'], { assembly, keyProvider: () => wrong });
   assert.equal(failed.code, 1);
   assert.equal(failed.text.includes(secret), false);
-  assert.match(failed.text, /密钥与密钥库不符|无法解开/);
+  assert.match(failed.text, /核验未通过/);
 });

@@ -297,7 +297,7 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
   removed by hand), handle the data root by hand and then delete that file; until then backup and restore refuse.
 - The data root path may not contain double quotes, dollar signs, backquotes, backslashes, commas, single quotes or
   newlines (pg_ctl runs its command through `/bin/sh`), and the socket path must fit in 103 bytes.
-- The operator token is not moved. The vault master key moves only through `circle-hub key export --confirm | ssh <destination> circle-hub key import`: 32 raw bytes on a pipe or socket, never a terminal, a regular file, an argument or an environment value. Import uses the destination's key store and refuses to replace a key. On macOS that store is the keychain; on Linux it is the file store (`<data root>/keys/<sha256 of the service and account>.key`, mode 0600, directory 0700) from the platform key-file branch, which implements the same `KeychainStore.write`. After import, `records verify` decrypts every vault entry and prints only the count.
+- The operator token is not moved. The vault master key moves only through `circle-hub key export --confirm | ssh <destination> circle-hub key import`: 32 raw bytes on a pipe or socket, never a terminal, a regular file, an argument or an environment value. Import uses the destination's key store and refuses to replace a key. On macOS that store is the keychain; on Linux it is the file store (`<data root>/keys/<sha256 of the service and account>.key`, mode 0600, directory 0700) from the platform key-file branch, which implements the same `KeychainStore.write`. After import, `records verify --vault` explicitly authenticates every sealed entry and prints counts only; an empty vault is unknown. It never creates a key-check file.
 - A restore and `setAside` leave `packs/` as it is, so trees of pack versions the restored data does not have stay there
   unused (each is named by its digest and checked at every use). To reclaim the space, remove `packs/` by hand while the
   Hub is stopped (`chmod -R u+w` first: its directories are 0500); the registry builds what it needs again.
@@ -541,3 +541,23 @@ a complete real Hub migration, production safety, or target-server behavior. Thi
 Independent integration review: Antigravity reviewed merge `1b845383` against the prior platform review and found no
 static conflict with the Linux permission-revocation readiness probe. This review did not run tests or verify a real Hub
 migration; the synthetic Linux and integration checks remain separate evidence.
+
+
+### Final key-transfer synthesis (2026-10-28)
+
+The final branch starts at Cursor change c0b88a6a and merges current hub-redesign, retaining Linux file-key and service fixes.
+There is one KeyPipe implementation: bounded binary reads require exactly 32 bytes and EOF within 30 seconds; exports await
+write callbacks and fail closed by destroying the output on a 30-second timeout. Errors are fixed diagnostics. Import refuses
+existing keys before reading. The explicit `records verify --vault` path uses read-only per-entry AEAD verification adapted from
+d0146bc6; no alternate automatic vault verification path remains. Writers must be stopped during verification.
+
+Tests were edited but deliberately NOT RUN because the integrator's full macOS acceptance occupies the machine. No typecheck,
+unit, acceptance, Linux, real-key or migration validation is claimed for this synthesis. Added/retained synthetic cases include
+32+1-byte overflow, short/oversized input, delayed and absent output callbacks, broken pipes, input timeout, raw binary child
+pipes, argv/environment/temp-file disclosure checks, empty/missing/corrupt vaults and read-only verification.
+
+Linux keychainFor now selects the merged fileKeyStore. End-to-end Linux server assembly must still be verified against that
+same store (including the actual service user and data root); a successful key import alone does not establish runtime vault
+wiring. Real migration decryption requires the explicit vault verification on the restored ciphertext with the imported key.
+No real keys, environment files, credential stores or business systems were accessed. Independent review and all execution
+validation remain pending; this branch is not merged or pushed.

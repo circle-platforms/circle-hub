@@ -3,7 +3,7 @@
 // regular file. A terminal or a file redirect is refused before the key is read. The destination store's write refuses
 // to replace an existing key (the macOS keychain store, or the Linux file store of the same KeychainStore interface).
 import { fstatSync } from 'node:fs';
-import type { Readable } from 'node:stream';
+import type { Readable, Writable } from 'node:stream';
 import { PlatformError } from './errors.ts';
 import { KEY_BYTES, type KeychainStore } from './keychain.ts';
 
@@ -14,7 +14,7 @@ export interface KeyPipe {
   /** True only for a FIFO or a socket, never a terminal or a regular file. */
   stdinIsPipe: boolean;
   /** Copies the bytes into the pipe. Must not retain the buffer it is given. */
-  writeKeyBytes?: (bytes: Uint8Array) => void;
+  writeKeyBytes?: (bytes: Uint8Array) => void | Promise<void>;
   /** Exactly the bytes read from the pipe, or a shorter or longer buffer that import refuses. */
   readKeyBytes?: () => Uint8Array | Promise<Uint8Array>;
 }
@@ -36,57 +36,83 @@ export function fdIsKeyPipe(fd: number): boolean {
   }
 }
 
-/** Reads one stdin to the end. A buffer longer than the key is wiped and still returned so the caller can refuse it. */
-export async function readKeyStdin(input: Readable = process.stdin): Promise<Uint8Array> {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  let overflow = false;
-  for await (const chunk of input) {
-    const buffer = Buffer.from(chunk as Uint8Array);
-    if (overflow || size + buffer.length > KEY_BYTES) {
-      overflow = true;
-      buffer.fill(0);
-      continue;
-    }
-    size += buffer.length;
-    chunks.push(buffer);
-  }
-  const all = Buffer.concat(chunks);
-  for (const chunk of chunks) chunk.fill(0);
-  if (overflow) all.fill(0);
-  return all;
+/** Reads at most one key and requires EOF within the deadline. */
+export function readKeyStdin(input: Readable = process.stdin, timeoutMs = 30_000): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+      const bytes = Buffer.alloc(KEY_BYTES); let used = 0; let finished = false;
+      const finish = (error?: Error) => {
+        if (finished) return; finished = true; clearTimeout(timer);
+        input.removeListener('data', data); input.removeListener('end', end); input.removeListener('error', failed); input.removeListener('close', closed);
+        input.pause();
+        if (error) { input.on('error', () => {}); input.destroy(); bytes.fill(0); reject(error); } else resolve(bytes);
+      };
+      const data = (chunk: Buffer | string) => {
+        if (typeof chunk === 'string' || !Buffer.isBuffer(chunk)) { finish(new Error('binary input required')); return; }
+        if (used + chunk.length > KEY_BYTES) { chunk.fill(0); finish(new Error('input too long')); return; }
+        chunk.copy(bytes, used); used += chunk.length; chunk.fill(0);
+      };
+      const end = () => finish(used === KEY_BYTES ? undefined : new Error('input too short'));
+      const failed = () => finish(new Error('input failed'));
+      const closed = () => finish(new Error('input closed'));
+      const timer = setTimeout(() => finish(new Error('input timed out')), timeoutMs);
+      input.on('data', data); input.once('end', end); input.once('error', failed); input.once('close', closed); input.resume();
+    });
 }
 
-function copyAndWipe(bytes: Uint8Array, write: (bytes: Uint8Array) => void): void {
-  const copy = Buffer.from(bytes);
-  try {
-    write(copy);
-  } finally {
-    copy.fill(0);
-  }
+/** Waits for the write callback; timeout destroys the stream before the key can be wiped. */
+export function writeKeyStdout(value: Uint8Array, output: Writable = process.stdout, timeoutMs = 30_000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let finished = false;
+    // Keep a non-secret listener after failure: Node can emit error after the callback or destroy.
+    const absorb = () => {};
+    const finish = (error?: Error) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      output.removeListener('error', failed);
+      if (error) {
+        output.on('error', absorb);
+        output.destroy();
+        reject(new Error('output failed'));
+      } else resolve();
+    };
+    const failed = () => finish(new Error('output failed'));
+    const timer = setTimeout(() => finish(new Error('output timed out')), timeoutMs);
+    output.once('error', failed);
+    try { output.write(value, error => finish(error ?? undefined)); }
+    catch { finish(new Error('output failed')); }
+  });
 }
 
 /** Writes the raw key to the pipe. Refuses before reading when the pipe is not a pipe or --confirm was not given. */
 export async function exportVaultKey(store: KeychainStore, pipe: KeyPipe, confirmed: boolean): Promise<void> {
   if (!confirmed || !pipe.stdoutIsPipe || pipe.writeKeyBytes === undefined) throw exportRefused();
-  const key = Buffer.from(await store.read());
+  let key: Uint8Array | undefined;
   try {
+    key = await store.read();
     if (key.length !== KEY_BYTES) throw new PlatformError('主密钥长度不对，没有写出');
-    copyAndWipe(key, pipe.writeKeyBytes);
+    await pipe.writeKeyBytes(key);
+  } catch {
+    throw new PlatformError('密钥导出未完成；检查主密钥是否可读以及管道是否可用');
   } finally {
-    key.fill(0);
+    key?.fill(0);
   }
 }
 
 /** Reads a raw key from the pipe and stores it. An existing key is left as it is. The buffer is wiped either way. */
 export async function importVaultKey(store: KeychainStore, pipe: KeyPipe): Promise<void> {
   if (!pipe.stdinIsPipe || pipe.readKeyBytes === undefined) throw importRefused();
-  const received = Buffer.from(await pipe.readKeyBytes());
+  let received: Uint8Array | undefined;
   try {
-    if (received.length !== KEY_BYTES) throw new PlatformError('标准输入不是 32 字节的主密钥，没有写入');
+    if ((await store.status()).present) throw new PlatformError('主密钥已存在，不覆盖');
+    received = await pipe.readKeyBytes();
+    if (received.length !== KEY_BYTES) throw new Error('invalid input');
     await store.write(received);
+  } catch (error) {
+    if (error instanceof PlatformError && error.message === '主密钥已存在，不覆盖') throw error;
+    throw new PlatformError('密钥导入未完成；检查输入长度、管道和密钥存储状态，已有主密钥不会覆盖');
   } finally {
-    received.fill(0);
+    received?.fill(0);
   }
 }
 
@@ -95,12 +121,9 @@ export function liveKeyPipe(): KeyPipe {
   return {
     stdoutIsPipe: fdIsKeyPipe(1),
     stdinIsPipe: fdIsKeyPipe(0),
-    writeKeyBytes(bytes) {
+    async writeKeyBytes(bytes) {
       if (!fdIsKeyPipe(1)) throw exportRefused();
-      const copy = Buffer.from(bytes);
-      const queued = process.stdout.write(copy);
-      if (queued) copy.fill(0);
-      else process.stdout.once('drain', () => copy.fill(0));
+      await writeKeyStdout(bytes);
     },
     readKeyBytes: () => readKeyStdin(),
   };

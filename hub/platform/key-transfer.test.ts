@@ -1,17 +1,16 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { closeSync, openSync } from 'node:fs';
 import { lstat, mkdtemp, open, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Readable } from 'node:stream';
+import { Readable, PassThrough, Writable } from 'node:stream';
 import { test } from 'node:test';
-import { openEveryVaultEntry } from '../records/api.ts';
 import { FileVault } from '../records/vault.ts';
 import { runPlatformCommand } from './cli.ts';
 import { ensureLayout, layoutAt } from './layout.ts';
-import { fdIsKeyPipe, readKeyStdin } from './key-transfer.ts';
+import { fdIsKeyPipe, readKeyStdin, writeKeyStdout, importVaultKey, exportVaultKey } from './key-transfer.ts';
 import { newSettingsFile, writeSettingsFile } from './settings.ts';
 import { captureIo, exit, ok, recordingRunner, removeDir, tempDir, type Call } from './test-support.ts';
 
@@ -83,16 +82,13 @@ test('a key pipe is a fifo, not a regular file', async () => {
 });
 
 test('stdin shorter or longer than a key is refused and wiped', async () => {
-  const short = await readKeyStdin(Readable.from([Buffer.from('short')]));
-  assert.equal(short.length, 5);
-  const long = await readKeyStdin(Readable.from([randomBytes(40)]));
-  assert.equal(long.length, 0);
-  const exact = randomBytes(32);
+  await assert.rejects(readKeyStdin(Readable.from([Buffer.from('short')])));
+  await assert.rejects(readKeyStdin(Readable.from([randomBytes(40)])));
+  await assert.rejects(readKeyStdin(Readable.from([randomBytes(32), Buffer.alloc(1)])));
+  const exact = randomBytes(32), expected = Buffer.from(exact);
   const read = await readKeyStdin(Readable.from([exact]));
-  assert.equal(read.length, 32);
-  assert.ok(timingSafeEqual(read, exact));
-  read.fill(0);
-  exact.fill(0);
+  assert.ok(timingSafeEqual(read, expected));
+  read.fill(0); expected.fill(0);
 });
 
 test('export and import move a raw key only through the pipe and the imported key opens the vault', async () => {
@@ -116,7 +112,7 @@ test('export and import move a raw key only through the pipe and the imported ke
     const absent = source.system.state.key;
     assert.equal(absent?.length, 64);
     const piped: Buffer[] = [];
-    const exported = await source.run(['key', 'export', '--confirm'], { stdoutIsPipe: true, writeKeyBytes: (bytes) => piped.push(Buffer.from(bytes)) });
+    const exported = await source.run(['key', 'export', '--confirm'], { stdoutIsPipe: true, writeKeyBytes: (bytes) => { piped.push(Buffer.from(bytes)); } });
     assert.equal(exported.code, 0, exported.text);
     assert.equal(piped.length, 1);
     assert.equal(piped[0]!.length, 32);
@@ -147,17 +143,47 @@ test('export and import move a raw key only through the pipe and the imported ke
     const vault = new FileVault(join(parent, 'vault'), provider);
     await vault.put('agile.token', secret);
     assert.equal(await vault.getText('agile.token'), secret);
-    assert.equal(await openEveryVaultEntry(vault), 1);
+    assert.deepEqual(await vault.verify(), {checked: 1, failed: 0, unknown: false});
     assert.equal((await readFile(join(parent, 'vault', 'agile.token.sealed'), 'utf8')).includes(secret), false);
     const wrong = { getKey: async () => randomBytes(32) };
-    await assert.rejects(openEveryVaultEntry(new FileVault(join(parent, 'vault'), wrong)), (error: unknown) => {
-      assert.equal((error as Error).message.includes(secret), false);
-      return true;
-    });
+    const wrongResult = await new FileVault(join(parent, 'vault'), wrong).verify();
+    assert.ok(wrongResult.failed > 0);
     assert.equal(await contains(parent, Buffer.from(absent!, 'hex')), false);
     assert.equal(await contains(parent, Buffer.from(secret)), false);
     piped[0]!.fill(0);
   } finally {
     await removeDir(parent);
   }
+});
+
+test('real inherited pipe transfers binary key bytes without writing a file or command argument',async()=>{
+ const moduleUrl=new URL('./key-transfer.ts',import.meta.url).href;
+ const producer=`import {liveKeyPipe} from ${JSON.stringify(moduleUrl)};const io=liveKeyPipe();if(!io.stdoutIsPipe)process.exit(2);const value=Uint8Array.from({length:32},(_,i)=>i);await io.writeKeyBytes(value);value.fill(0);`;
+ const consumer=`import {liveKeyPipe} from ${JSON.stringify(moduleUrl)};const io=liveKeyPipe();if(!io.stdinIsPipe)process.exit(2);const value=await io.readKeyBytes();const ok=value.length===32&&value.every((v,i)=>v===i);value.fill(0);process.exitCode=ok?0:3;`;
+ const left=spawn(process.execPath,['--input-type=module','-e',producer],{stdio:['ignore','pipe','pipe']});
+ const right=spawn(process.execPath,['--input-type=module','-e',consumer],{stdio:['pipe','ignore','pipe']});
+ left.stdout.pipe(right.stdin);let errors='';left.stderr.on('data',chunk=>errors+=chunk);right.stderr.on('data',chunk=>errors+=chunk);
+ const [a,b]=await Promise.all([new Promise<number|null>(r=>left.on('exit',r)),new Promise<number|null>(r=>right.on('exit',r))]);
+ assert.equal(a,0,errors);assert.equal(b,0,errors);assert.equal(errors,'');
+});
+
+
+test('output callback controls key lifetime and timeouts fail closed', async () => {
+  const value = Buffer.alloc(32, 19);
+  let callback: ((error?: Error | null) => void) | undefined;
+  const output = new Writable({write(chunk, _encoding, done) { assert.equal(chunk[0], 19); callback = done; }});
+  let complete = false;
+  const pending = writeKeyStdout(value, output, 1000).then(() => { complete = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(complete, false); assert.equal(value[0], 19);
+  callback!(); await pending;
+  const blocked = new Writable({write() {}});
+  await assert.rejects(writeKeyStdout(value, blocked, 10), /output failed/);
+  assert.equal(blocked.destroyed, true);
+  const broken = new Writable({write(_chunk, _encoding, done) { done(new Error('EPIPE synthetic private')); }});
+  await assert.rejects(writeKeyStdout(value, broken, 100), /output failed/);
+  await new Promise(resolve => setImmediate(resolve));
+  const input = new PassThrough();
+  await assert.rejects(readKeyStdin(input, 10), /input timed out/);
+  input.destroy(); value.fill(0);
 });

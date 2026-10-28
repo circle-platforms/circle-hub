@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { copyFile, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import { VaultError } from './errors.ts';
-import { openEveryVaultEntry } from './api.ts';
 import { FileKeyProvider, FileVault, maskedForDisplay } from './vault.ts';
 
 async function scratch(t: TestContext): Promise<string> {
@@ -139,32 +139,6 @@ test('entries without a key-check file: the key must open an entry before a chec
   await assert.rejects(intruder.get('agile.password'), (error: unknown) => error instanceof VaultError && /密钥与密钥库不符/.test((error as Error).message));
 });
 
-test('opening every entry decrypts it and wipes the plaintext', async (t) => {
-  const { vault } = await ready(t);
-  const secret = `synthetic-${randomBytes(8).toString('hex')}`;
-  await vault.put('agile.token', secret);
-  let seen: Uint8Array | undefined;
-  const wrapped = {
-    list: () => vault.list(),
-    async get(name: string) {
-      const plain = await vault.get(name);
-      if (plain) seen = plain;
-      return plain;
-    },
-  };
-  assert.equal(await openEveryVaultEntry(wrapped), 1);
-  assert.ok(seen !== undefined && seen.every((byte) => byte === 0));
-  assert.equal(await vault.getText('agile.token'), secret);
-  const other = new FileKeyProvider(join((await scratch(t)), 'other.key'));
-  await other.initKey();
-  const wrong = new FileVault(vault.directory, other);
-  await assert.rejects(openEveryVaultEntry(wrong), (error: unknown) => {
-    assert.ok(error instanceof VaultError);
-    assert.equal((error as Error).message.includes(secret), false);
-    return true;
-  });
-});
-
 test('masked display shows only that a value is set and its length', () => {
   assert.equal(maskedForDisplay('synthetic-secret'), '已设置（长度 16）');
   assert.equal(maskedForDisplay('口令'), '已设置（长度 2）');
@@ -173,4 +147,82 @@ test('masked display shows only that a value is set and its length', () => {
   assert.equal(maskedForDisplay(null), '未设置');
   assert.equal(maskedForDisplay(undefined), '未设置');
   assert.equal(maskedForDisplay('abc123').includes('abc'), false);
+});
+
+test('read-only vault verification authenticates every entry without disclosing values or changing bytes', async t => {
+  const {vault, directory} = await ready(t);
+  const secret = 'synthetic-secret-value';
+  await vault.put('first', secret);
+  await vault.put('second', Buffer.from('synthetic-other'));
+  const path = join(directory, 'vault');
+  const names = await readdir(path);
+  const before = await Promise.all(names.map(name => readFile(join(path, name))));
+  const result = await vault.verify();
+  assert.deepEqual(result, {checked: 2, failed: 0, unknown: false});
+  assert.deepEqual(await readdir(path), names);
+  assert.deepEqual(await Promise.all(names.map(name => readFile(join(path, name)))), before);
+  assert.ok(!JSON.stringify(result).includes(secret) && !JSON.stringify(result).includes('first'));
+});
+
+test('empty or unavailable vault verification is unknown and creates no key-check', async t => {
+  const {vault, directory} = await ready(t);
+  assert.deepEqual(await vault.verify(), {checked: 0, failed: 0, unknown: true});
+  assert.equal(existsSync(join(directory, 'vault')), false);
+  await vault.put('first', 'synthetic');
+  const withoutKey = new FileVault(join(directory, 'vault'));
+  assert.deepEqual(await withoutKey.verify(), {checked: 0, failed: 0, unknown: true});
+  const brokenProvider = new FileVault(join(directory, 'vault'), {getKey: async () => {throw new Error('synthetic-private-value');}});
+  const result = await brokenProvider.verify();
+  assert.equal(result.unknown, true);
+  assert.ok(!JSON.stringify(result).includes('synthetic-private-value'));
+});
+
+test('read-only legacy verification authenticates entries without creating a missing key-check', async t => {
+  const {vault, directory} = await ready(t);
+  await vault.put('first', 'synthetic');
+  const check = join(directory, 'vault', 'key-check');
+  await rm(check);
+  assert.deepEqual(await vault.verify(), {checked: 1, failed: 0, unknown: false});
+  assert.equal(existsSync(check), false);
+});
+
+test('read-only vault verification refuses the wrong key and corrupted or renamed entries without leaking names', async t => {
+  const {vault, directory, keyPath} = await ready(t);
+  await vault.put('sensitive-name', 'synthetic-value');
+  await vault.put('second', 'synthetic-other');
+  const vaultDir = join(directory, 'vault');
+  await copyFile(join(vaultDir, 'second.sealed'), join(vaultDir, 'renamed.sealed'));
+  await writeFile(join(vaultDir, 'sensitive-name.sealed'), 'bad sealed data');
+  const damaged = await vault.verify();
+  assert.equal(damaged.checked, 1);
+  assert.equal(damaged.failed, 2);
+  assert.ok(!JSON.stringify(damaged).includes('sensitive-name') && !JSON.stringify(damaged).includes('synthetic-value'));
+  await writeFile(keyPath, randomBytes(32));
+  const wrong = await vault.verify();
+  assert.equal(wrong.checked, 0);
+  assert.ok(wrong.failed > 0);
+});
+
+test('read-only vault verification refuses symlinks, noncanonical files and excessive entries', async t => {
+  const {vault, directory} = await ready(t);
+  await vault.put('first', 'synthetic');
+  const vaultDir = join(directory, 'vault');
+  await symlink(join(vaultDir, 'first.sealed'), join(vaultDir, 'link.sealed'));
+  await writeFile(join(vaultDir, 'UPPER.sealed'), 'synthetic-unknown');
+  await writeFile(join(vaultDir, 'huge.sealed'), Buffer.alloc(128 * 1024 + 1));
+  const result = await vault.verify();
+  assert.equal(result.checked, 1);
+  assert.equal(result.failed, 3);
+  const linkedDirectory = join(directory, 'linked-vault');
+  await symlink(vaultDir, linkedDirectory);
+  const linked = await new FileVault(linkedDirectory, new FileKeyProvider(join(directory, 'keys', 'vault.key'))).verify();
+  assert.ok(linked.failed > 0 && linked.unknown);
+});
+
+test('read-only vault verification refuses FIFOs without waiting for a writer', {timeout: 5000}, async t => {
+  const {vault, directory} = await ready(t);
+  await vault.put('first', 'synthetic');
+  execFileSync('mkfifo', [join(directory, 'vault', 'fifo.sealed')]);
+  const result = await vault.verify();
+  assert.deepEqual(result, {checked: 1, failed: 1, unknown: false});
 });
