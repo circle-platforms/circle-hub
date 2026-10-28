@@ -541,3 +541,16 @@ a complete real Hub migration, production safety, or target-server behavior. Thi
 Independent integration review: Antigravity reviewed merge `1b845383` against the prior platform review and found no
 static conflict with the Linux permission-revocation readiness probe. This review did not run tests or verify a real Hub
 migration; the synthetic Linux and integration checks remain separate evidence.
+
+### Linux real Hub synthetic VM rehearsal (pending)
+
+`testing/linux-real-vm.ts` provides a fail-closed VM opt-in gate, unique private data roots,
+reverse cleanup with visible failures, and a direct subprocess key pipe that never captures key
+bytes. The root-owned 0644 marker is a non-secret administrator declaration, not proof of VM
+isolation. The account and VM must be disposable and contain no production data or credentials.
+The complete real-release/systemd/backup/restore/vault/MCP scenario remains pending the listen
+and key-transfer branches; neither these safety unit tests nor `linux-lifecycle-real.test.ts`
+(which substitutes npm and the Hub) establishes end-to-end migration. Exact scope, prerequisites,
+resource cleanup rules, missing interfaces and the unrun verification record are in
+[`linux-real-e2e`](../../docs/hub-r4-tasks/linux-real-e2e.md). No VM mutation or test was run for
+this initial safety foundation delivery.
