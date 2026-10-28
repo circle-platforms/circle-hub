@@ -6,13 +6,14 @@ import {chmod, chown, lchown, lstat, mkdir, open, readFile, readdir, readlink, r
 import {createServer} from 'node:net';
 import {join, resolve} from 'node:path';
 import {runCommand} from '../process.ts';
+import {hubMigrationProgram} from './hub-migration-program.ts';
 
 const safePath = (path:string) => path.startsWith('/') && /^\/[A-Za-z0-9_./-]+$/.test(path) && resolve(path)===path;
 export interface IsolationDefinition {unit:string; user:string; namespace:string; root:string; data:string; release:string; node:string}
 
 /** Only a generated synthetic identity and simple absolute paths may enter systemd's property parser. */
 export function isolatedUnitArguments(d:IsolationDefinition, programArgs:string[]):string[] {
-  if(!/^chvm-[a-f0-9]{12}$/.test(d.user) || d.namespace!==d.user || ![d.user+'-probe',d.user+'-build'].includes(d.unit) || d.root!=='/var/tmp/'+d.user)throw new Error('隔离身份不属于本次合成命名空间');
+  if(!/^chvm-[a-f0-9]{12}$/.test(d.user) || d.namespace!==d.user || ![d.user+'-probe',d.user+'-build',d.user+'-escape',d.user+'-hub'].includes(d.unit) || d.root!=='/var/tmp/'+d.user)throw new Error('隔离身份不属于本次合成命名空间');
   if(![d.root,d.data,d.release,d.node].every(safePath) || !/^\/var\/tmp\/chvm-build-[a-f0-9]{12}\/release$/.test(d.release))throw new Error('隔离路径不安全');
   if(d.data!==join(d.root,'data') || !programArgs.length || programArgs[0]!=='/runtime/node')throw new Error('隔离入口或数据根无效');
   const properties=[
@@ -109,6 +110,20 @@ async function rootVmGate():Promise<void> {
   if(detected.code!==0)throw new Error('拒绝在未识别 VM 的主机创建隔离夹具');
 }
 
+export function namespaceEscapeProgram(input:{uid:number;net:number;root:number;outer:number;hostPath:string;mounts:MountReceipt[]}):string{
+ if(input.uid<1||!/^\/var\/tmp\/chvm-host-[a-f0-9]{12}\/hidden$/.test(input.hostPath))throw new Error('边界反例只能使用本次合成哨兵');
+ const inner=`import assert from 'node:assert/strict';import {open,readFile,stat,mkdir} from 'node:fs/promises';import {spawn} from 'node:child_process';
+ const mapping=(await readFile('/proc/self/uid_map','utf8')).trim().split(/\\s+/).map(Number);assert.equal(mapping[1],${input.uid});assert.notEqual(mapping[1],0);
+ const handle=await open('/probe/outer-netns','r');await handle.close();assert.equal((await stat('/probe/outer-netns')).ino,${input.outer});
+ const run=(file,args)=>new Promise((resolve,reject)=>{const p=spawn(file,args,{stdio:'ignore'});p.once('error',reject);p.once('exit',code=>resolve(code));});
+ assert.notEqual(await run('/runtime/nsenter',['--net=/probe/outer-netns','/runtime/node','-e','process.exit(0)']),0);
+ await mkdir('/data/escape-mount');assert.notEqual(await run('/runtime/mount',['--bind',${JSON.stringify(input.hostPath)},'/data/escape-mount']),0);
+ assert.notEqual((await stat('/proc/self/ns/net')).ino,${input.outer});assert.equal((await stat('/')).ino,${input.root});process.stdout.write('child-contained');`;
+ return `import assert from 'node:assert/strict';import {readFile,stat} from 'node:fs/promises';import {spawn} from 'node:child_process';const parse=${parseMountInfo.toString()};const verify=${verifyMountTable.toString()};verify(parse(await readFile('/proc/self/mountinfo','utf8')),${JSON.stringify(input.mounts)});
+ const check=async()=>{assert.equal(process.getuid(),${input.uid});assert.equal((await stat('/proc/self/ns/net')).ino,${input.net});assert.equal((await stat('/')).ino,${input.root});assert.match(await readFile('/proc/self/status','utf8'),/^CapEff:\\s+0+$/m);};await check();
+ const child=spawn('/usr/bin/bwrap',['--unshare-user','--unshare-pid','--unshare-net','--unshare-ipc','--unshare-uts','--uid','0','--gid','0','--ro-bind','/','/','--bind','/data','/data','--proc','/proc','--dev','/dev','/runtime/node','--input-type=module','-e',${JSON.stringify(inner)}],{stdio:['ignore','pipe','ignore']});let output='';child.stdout.on('data',bytes=>output+=bytes);const code=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',resolve);});assert.equal(code,0);assert.equal(output,'child-contained');await check();process.stdout.write('nested-namespaces-contained');`;
+}
+
 interface OfflineManifest {schema:'circle-hub-offline-build@1';source_commit:string;node_sha256:string;files:Record<string,string>}
 async function hashFile(path:string):Promise<string>{const hash=createHash('sha256');for await(const bytes of createReadStream(path))hash.update(bytes);return hash.digest('hex');}
 export async function verifyOfflineBundle(path:string,pin:string,baseline?:MountRow):Promise<{path:string;manifest:OfflineManifest}>{
@@ -138,23 +153,59 @@ async function freezeBuiltTree(path:string,base=path):Promise<void>{
 }
 export function offlineBuildProgram(input:{uid:number;net:number;root:number;mounts:MountReceipt[];commit:string;host:string;port:number;malicious:boolean}):string{
  if(!Number.isSafeInteger(input.uid)||input.uid<1||! /^[a-f0-9]{40}$/.test(input.commit))throw new Error('离线构建必须使用专用非 root 身份和固定提交');
- return `import assert from 'node:assert/strict';import {cp,mkdir,readFile,writeFile,stat,chmod,readdir} from 'node:fs/promises';import {spawn} from 'node:child_process';
+ return `import assert from 'node:assert/strict';import {createHash} from 'node:crypto';import {cp,mkdir,readFile,writeFile,stat,lstat,readlink,chmod,readdir} from 'node:fs/promises';import {spawn} from 'node:child_process';
  const parse=${parseMountInfo.toString()};const verify=${verifyMountTable.toString()};
  assert.equal(process.getuid(),${input.uid});assert.notEqual(process.getuid(),0);assert.equal((await stat('/proc/self/ns/net')).ino,${input.net});assert.equal((await stat('/')).ino,${input.root});verify(parse(await readFile('/proc/self/mountinfo','utf8')),${JSON.stringify(input.mounts)});
  const run=(file,args,cwd)=>new Promise((resolve,reject)=>{const child=spawn(file,args,{cwd,env:{HOME:'/data/home',PATH:'/runtime:/bin:/usr/bin',LANG:'C'},stdio:'ignore'});child.once('error',reject);child.once('exit',code=>resolve(code));});
  await mkdir('/data/source',{recursive:false});await cp('/offline/cache','/data/cache',{recursive:true});const writable=async(path)=>{const info=await stat(path);await chmod(path,info.isDirectory()?0o700:0o600);if(info.isDirectory())for(const name of await readdir(path))await writable(path+'/'+name)};await writable('/data/cache');
  assert.equal(await run('/runtime/tar',['--extract','--file=/offline/source.tar','--directory=/data/source','--no-same-owner','--no-same-permissions','--no-overwrite-dir'],'/data'),0);
+ const snapshot=async()=>{const rows={};const walk=async(path)=>{for(const name of await readdir(path)){const file=path+'/'+name;if(file==='/data/source/node_modules')continue;const info=await lstat(file);if(info.isDirectory())await walk(file);else if(info.isFile())rows[file]=createHash('sha256').update(await readFile(file)).digest('hex');else if(info.isSymbolicLink())rows[file]='link:'+await readlink(file);else throw Error('unexpected source file');}};await walk('/data/source');return rows;};const authored=await snapshot();
  if(${input.malicious}){
   const attack="import assert from 'node:assert/strict';import {writeFile,stat} from 'node:fs/promises';import {connect} from 'node:net';assert.notEqual(process.getuid(),0);assert.equal((await stat('/proc/self/ns/net')).ino,${input.net});assert.equal((await stat('/')).ino,${input.root});await assert.rejects(writeFile('/sentinel/hidden','attack'));await assert.rejects(writeFile('/release/.attack','attack'));await assert.rejects(new Promise((resolve,reject)=>{const s=connect({host:"+JSON.stringify(${JSON.stringify(input.host)})+",port:${input.port}});s.setTimeout(1000,()=>{s.destroy();reject(Error('timeout'))});s.once('connect',()=>{s.destroy();resolve()});s.once('error',reject)}));await writeFile('/data/attack-receipt','denied-nonroot-offline');process.exit(73);";
   await writeFile('/data/attack.mjs',attack);const pkg=JSON.parse(await readFile('/data/source/package.json','utf8'));pkg.scripts={...pkg.scripts,postinstall:'node /data/attack.mjs'};await writeFile('/data/source/package.json',JSON.stringify(pkg));
  }
  const code=await run('/runtime/node',['/offline/npm/bin/npm-cli.js','ci','--offline','--include=dev','--no-audit','--no-fund','--cache=/data/cache','--userconfig=/dev/null','--globalconfig=/data/absent-global-npmrc'],'/data/source');
  if(${input.malicious}){assert.notEqual(code,0);assert.equal(await readFile('/data/attack-receipt','utf8'),'denied-nonroot-offline');process.stdout.write('malicious-postinstall-denied');}
- else{assert.equal(code,0);await stat('/data/source/bin/circle-hub');await writeFile('/data/source/release.json',JSON.stringify({schema:'circle-hub-release@1',id:${JSON.stringify(input.commit.slice(0,12))},commit:${JSON.stringify(input.commit)},created_at:new Date().toISOString()}));process.stdout.write('offline-npm-ci-ok');}`;
+ else{assert.equal(code,0);const after=await snapshot();for(const [file,digest] of Object.entries(authored))assert.equal(after[file],digest,'npm changed authored source');await stat('/data/source/bin/circle-hub');await writeFile('/data/source/release.json',JSON.stringify({schema:'circle-hub-release@1',id:${JSON.stringify(input.commit.slice(0,12))},commit:${JSON.stringify(input.commit)},created_at:new Date().toISOString()}));process.stdout.write('offline-npm-ci-ok');}`;
+}
+
+/** Seal only a new non-root prepared public-code bundle, after provenance checks and before any code execution. */
+export async function sealPreparedOfflineBundle(prepared:string,pin:string):Promise<{path:string;pin:string}>{
+ await rootVmGate();
+ const match=/^\/var\/tmp\/chvm-prep-([a-f0-9]{12})\/bundle$/.exec(prepared);
+ if(!match||! /^[a-f0-9]{64}$/.test(pin))throw new Error('只封存本次非特权准备的离线代码包');
+ const baseline=trustedRootMount(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')));
+ sourceMountReceipt(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),prepared,'/offline',baseline);
+ await assertCanonicalPath(prepared);
+ const parent=await lstat(prepared);if(parent.uid===0)throw new Error('准备步骤必须由非 root 账户执行');
+ const manifestFile=await open(join(prepared,'manifest.json'),constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);let manifest:Buffer;try{const info=await manifestFile.stat();if(!info.isFile()||info.nlink!==1||info.uid!==parent.uid||info.size>1024*1024)throw new Error('准备清单文件身份无效');manifest=await manifestFile.readFile();}finally{await manifestFile.close();}if(createHash('sha256').update(manifest).digest('hex')!==pin)throw new Error('准备收据与独立pin不符');
+ const path='/var/tmp/chvm-offline-'+match[1];
+ sourceMountReceipt(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),path,'/offline',baseline);
+ await mkdir(path,{mode:0o700});const identity=await lstat(path);let complete=false;
+ try{
+  const parsed=JSON.parse(manifest.toString('utf8')) as OfflineManifest;
+  if(!parsed.files||typeof parsed.files!=='object'||Array.isArray(parsed.files))throw new Error('准备清单文件集无效');
+  const directory=await open(prepared,constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
+  try{
+   for(const name of ['manifest.json',...Object.keys(parsed.files)]){
+    if(name!=='manifest.json'&&!/^(source\.tar|npm\/[A-Za-z0-9_./@+-]+|cache\/[A-Za-z0-9_./@+-]+)$/.test(name)||name.split('/').includes('..'))throw new Error('准备文件名越界');
+    const parts=name.split('/'),handles=[directory];
+    try{
+     for(const part of parts.slice(0,-1)){const handle=await open('/proc/self/fd/'+handles.at(-1)!.fd+'/'+part,constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);handles.push(handle);if((await handle.stat()).uid!==parent.uid)throw new Error('准备目录属主改变');}
+     const input=await open('/proc/self/fd/'+handles.at(-1)!.fd+'/'+parts.at(-1),constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+     try{const info=await input.stat();if(!info.isFile()||info.nlink!==1||info.uid!==parent.uid)throw new Error('准备资产身份改变');const bytes=await input.readFile();await mkdir(join(path,...parts.slice(0,-1)),{recursive:true});await writeFile(join(path,...parts),bytes,{flag:'wx',mode:0o600});}finally{await input.close();}
+    }finally{for(const handle of handles.slice(1).reverse())await handle.close();}
+   }
+  }finally{await directory.close();}
+  // The destination is root-owned and private throughout copying. Reject links before dereferencing any file body.
+  const noLinks=async(directory:string)=>{for(const entry of await readdir(directory,{withFileTypes:true})){if(entry.isSymbolicLink()||(!entry.isDirectory()&&!entry.isFile()))throw new Error('准备包含链接或特殊文件');if(entry.isDirectory())await noLinks(join(directory,entry.name));}};await noLinks(path);
+  await freezeBuiltTree(path);
+  await verifyOfflineBundle(path,pin,baseline);complete=true;return {path,pin};
+ }finally{if(!complete){const current=await lstat(path);const createdMode=identity.mode&0o777;const currentMode=current.mode&0o777;if(currentMode!==createdMode&&currentMode!==0o755)throw new Error('封存失败且目录权限身份未知，保留本次目录');assertSameIdentity(current,{...identity,mode:current.mode});await rm(path,{recursive:true});}}
 }
 
 /** This exercise creates only synthetic bytes and returns no reusable real-data authorization or "safe" token. */
-export async function proveSyntheticIsolation(mode:'normal'|'malicious-postinstall'='normal'):Promise<{root:string;build:string;user:string;namespace:string}> {
+export async function proveSyntheticIsolation(mode:'normal'|'malicious-postinstall'|'hub-migration'='normal'):Promise<{root:string;build:string;user:string;namespace:string}> {
   await rootVmGate();
   const baseline=trustedRootMount(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')));
   // Offline bundle pin is supplied before the fixture runs. No network acquisition or owner configuration is read.
@@ -164,7 +215,8 @@ export async function proveSyntheticIsolation(mode:'normal'|'malicious-postinsta
   await assertCanonicalPath('/var/tmp');await assertFrozenParents(node);
   assert.equal(await hashFile(node),bundle.manifest.node_sha256,'Node 与离线包固定摘要不一致');
   let rootIdentity:Stats|undefined,buildIdentity:Stats|undefined;
-  let rootCreated=false,buildCreated=false,accountCreated=false,namespaceCreated=false,externalCreated=false;
+  let rootCreated=false,buildCreated=false,accountCreated=false,namespaceCreated=false,externalCreated=false,outerCreated=false;
+  const outer=user+'-outer';let outerIdentity:Stats|undefined;
   const external='/var/tmp/chvm-host-'+id;
   let externalIdentity:Stats|undefined;
   const definition:IsolationDefinition={unit:`${user}-probe`,user,namespace,root,data:join(root,'data'),release:source,node};
@@ -185,7 +237,7 @@ export async function proveSyntheticIsolation(mode:'normal'|'malicious-postinsta
     const uid=Number((await run('/usr/bin/id',['-u',user])).trim()),gid=Number((await run('/usr/bin/id',['-g',user])).trim());
     assert.ok(Number.isInteger(uid)&&uid>0&&Number.isInteger(gid)&&gid>0);
     userReceipt={uid,gid,passwd:await accountLine('/etc/passwd',user),group:await accountLine('/etc/group',user)};
-    for(const dir of ['data/home','runtime','release','usr/lib','lib','lib64','etc','proc','dev','tmp','run','sentinel','offline','bin','usr/bin'])await mkdir(join(root,dir),{recursive:true,mode:0o755});
+    for(const dir of ['data/home','runtime','release','usr/lib','lib','lib64','etc','proc','dev','tmp','run','sentinel','offline','bin','usr/bin','probe'])await mkdir(join(root,dir),{recursive:true,mode:0o755});
     await run('/usr/bin/chown',['-R',`${uid}:${gid}`,definition.data]);await chmod(definition.data,0o700);
     await writeFile(join(root,'etc/passwd'),`${user}:x:${uid}:${gid}:Synthetic:/data/home:/runtime/node\n`,{mode:0o644});
     await writeFile(join(root,'etc/group'),`${user}:x:${gid}:\n`,{mode:0o644});
@@ -243,6 +295,20 @@ export async function proveSyntheticIsolation(mode:'normal'|'malicious-postinsta
     assert.equal((await run('/usr/bin/systemd-run',isolatedUnitArguments(definition,['/runtime/node','--input-type=module','-e',nodeScript]))).trim(),'synthetic-isolation-probe-ok');
     assert.equal(await readFile(join(definition.data,'probe-result'),'utf8'),'synthetic-only');
     const receipt=JSON.parse(await readFile(join(definition.data,'unit-receipt'),'utf8'));assert.match(receipt.invocation,/^[a-f0-9]{32}$/);assert.equal(receipt.uid,userReceipt.uid);assert.equal(receipt.net,namespaceIdentity.ino);assert.equal(receipt.root,rootIdentity.ino);
+    let escapeProof=false;
+    if(mode==='hub-migration'){
+     step='最小bwrap namespace边界反例';
+     const hostNet=await stat('/proc/self/ns/net');
+     await run('/usr/sbin/ip',['netns','attach',outer,String(process.pid)]);outerCreated=true;outerIdentity=await stat('/run/netns/'+outer);assertSameIdentity(outerIdentity,hostNet);
+     const rows=parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),ref=rows.find(row=>row.target==='/run/netns/'+outer);assert.ok(ref&&ref.fs==='nsfs');
+     const escapeTools=[{source:await realpath('/bin/sh'),target:'/bin/sh'},{source:await realpath('/usr/bin/bwrap'),target:'/usr/bin/bwrap'},{source:await realpath('/usr/bin/nsenter'),target:'/runtime/nsenter'},{source:await realpath('/usr/bin/mount'),target:'/runtime/mount'}];
+     for(const item of escapeTools){await assertCanonicalPath(item.source);await assertFrozenParents(item.source);await writeFile(join(root,item.target),'');}
+     await writeFile(join(root,'probe/outer-netns'),'');
+     const escapeMounts=[...expected,...escapeTools.map(item=>sourceMountReceipt(rows,item.source,item.target,baseline)),{...ref,target:'/probe/outer-netns'}];
+     const program=namespaceEscapeProgram({uid,net:namespaceIdentity.ino,root:rootIdentity.ino,outer:hostNet.ino,hostPath:sentinelPath,mounts:escapeMounts});
+     const escapeArgs=isolatedUnitArguments({...definition,unit:user+'-escape'},['/runtime/node','--input-type=module','-e',program]).map(arg=>arg.startsWith('BindReadOnlyPaths=')?arg+' '+escapeTools.map(item=>item.source+':'+item.target).join(' ')+' /run/netns/'+outer+':/probe/outer-netns':arg==='RestrictNamespaces=yes'?'RestrictNamespaces=user mnt pid net ipc uts':arg);
+     assert.equal((await run('/usr/bin/systemd-run',escapeArgs)).trim(),'nested-namespaces-contained');escapeProof=true;
+    }
     step='封闭离线非 root npm ci';
     const tools=[{source:bundle.path,target:'/offline'},{source:await realpath('/usr/bin/tar'),target:'/runtime/tar'},{source:await realpath('/bin/sh'),target:'/bin/sh'},{source:await realpath('/usr/bin/env'),target:'/usr/bin/env'}];
     for(const item of tools){await assertCanonicalPath(item.source);await assertFrozenParents(item.source);if(item.target!=='/offline')await writeFile(join(root,item.target),'');}
@@ -255,9 +321,23 @@ export async function proveSyntheticIsolation(mode:'normal'|'malicious-postinsta
     assert.equal(built.code,0,'封闭离线 npm 构建未完成');
     assert.equal(built.stdout.trim(),mode==='malicious-postinstall'?'malicious-postinstall-denied':'offline-npm-ci-ok');
     assert.equal((await run('/usr/sbin/ip',['netns','pids',namespace])).trim(),'','构建 unit 尚有子进程，禁止冻结或清理');
-    if(mode==='normal'){
+    if(mode!=='malicious-postinstall'){
       await rmdir(source);await rename(join(definition.data,'source'),source);await freezeBuiltTree(source);await assertRootOwnedTree(source);
       sourceMountReceipt(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),source,'/release',baseline);
+      if(mode==='hub-migration'){
+       assert.equal(escapeProof,true,'没有namespace逃逸负例实证，禁止启动真实Hub链');
+       step='封闭namespace内真实Hub合成迁移';
+       const link='ch'+id.slice(0,10);await run('/usr/sbin/ip',['-n',namespace,'link','add',link,'type','dummy']);await run('/usr/sbin/ip',['-n',namespace,'address','add','192.0.2.1/32','dev',link]);await run('/usr/sbin/ip',['-n',namespace,'link','set',link,'up']);
+       const all=JSON.parse(await run('/usr/sbin/ip',['-n',namespace,'-j','link','show']));assert.deepEqual(all.map((item:{ifname:string})=>item.ifname).sort(),['lo',link].sort());
+       for(const family of ['-4','-6'])assert.ok(JSON.parse(await run('/usr/sbin/ip',['-n',namespace,family,'-j','route','show','table','all'])).every((route:{dev:string;dst?:string})=>(route.dev==='lo'||route.dev===link)&&route.dst!=='default'));
+       const extra=[{source:await realpath('/usr/lib/postgresql/18/bin/pg_dump'),target:'/runtime/pg_dump'},{source:await realpath('/usr/lib/postgresql/18/bin/pg_restore'),target:'/runtime/pg_restore'},{source:await realpath('/usr/bin/ldd'),target:'/usr/bin/ldd'},{source:await realpath('/bin/bash'),target:'/bin/bash'},{source:await realpath('/usr/bin/bwrap'),target:'/usr/bin/bwrap'},{source:await realpath('/usr/bin/aa-exec'),target:'/usr/bin/aa-exec'}];
+       for(const item of extra){await assertCanonicalPath(item.source);await assertFrozenParents(item.source);await writeFile(join(root,item.target),'');}
+       const now=parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),hubExpected=[...buildExpected,...extra.map(item=>sourceMountReceipt(now,item.source,item.target,baseline))];
+       const script=hubMigrationProgram({uid,net:namespaceIdentity.ino,root:rootIdentity.ino,address:'192.0.2.1'},hubExpected);
+       const hubArgs=isolatedUnitArguments({...definition,unit:user+'-hub'},['/runtime/node','--input-type=module','-e',script]).map(arg=>arg.startsWith('BindReadOnlyPaths=')?arg+' '+[...tools,...extra].map(item=>item.source+':'+item.target).join(' '):arg==='RuntimeMaxSec=120s'?'RuntimeMaxSec=1200s':arg==='RestrictNamespaces=yes'?'RestrictNamespaces=user mnt pid net ipc uts':arg);
+       const result=await runCommand('/usr/bin/systemd-run',hubArgs,{env,timeoutMs:1_260_000});assert.equal(result.code,0,'真实Hub链在保留边界下未完成');assert.equal(result.stdout.trim(),'isolated-real-Hub-migration-ok');
+      }
+
     }
 
   }catch{errors.push(new Error(`合成隔离证明失败：${step}；禁止实物演练`));}
@@ -267,7 +347,9 @@ export async function proveSyntheticIsolation(mode:'normal'|'malicious-postinsta
     // RuntimeMaxSec bounds the transient unit and any remaining PIDs keep namespace/account/root intact.
     let namespaceRemoved=false;
     if(namespaceIdentity)try{await assertCanonicalPath('/run/netns/'+namespace);assertSameIdentity(await stat('/run/netns/'+namespace),namespaceIdentity);assert.equal((await run('/usr/sbin/ip',['netns','pids',namespace])).trim(),'');await run('/usr/sbin/ip',['netns','delete',namespace]);namespaceRemoved=true;}catch{errors.push(new Error('本次 namespace 身份或清空状态未确认，不删除'));}
-    let cleanupFailed=(namespaceCreated&&!namespaceRemoved)||(accountCreated&&!userReceipt)||(rootCreated&&!rootIdentity)||(buildCreated&&!buildIdentity)||(externalCreated&&!externalIdentity);
+    let outerRemoved=false;
+    if(outerIdentity&&namespaceRemoved)try{await assertCanonicalPath('/run/netns/'+outer);assertSameIdentity(await stat('/run/netns/'+outer),outerIdentity);await run('/usr/sbin/ip',['netns','delete',outer]);outerRemoved=true;}catch{errors.push(new Error('本次外层namespace只读引用身份未确认，不删除'));}
+    let cleanupFailed=(outerCreated&&!outerRemoved)||(namespaceCreated&&!namespaceRemoved)||(accountCreated&&!userReceipt)||(rootCreated&&!rootIdentity)||(buildCreated&&!buildIdentity)||(externalCreated&&!externalIdentity);
     if(cleanupFailed)errors.push(new Error('本次资源缺少创建身份或仍有进程，不按名字清理'));
     if(!cleanupFailed&&userReceipt)try{
       assert.equal(Number((await run('/usr/bin/id',['-u',user])).trim()),userReceipt.uid);

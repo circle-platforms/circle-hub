@@ -5,7 +5,10 @@ import {mkdtemp,symlink,rm,lstat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {runCommand} from './process.ts';
-import {assertCanonicalPath,assertSameIdentity,parseMountInfo,sourceMountReceipt,trustedRootMount,offlineBuildProgram,verifyOfflineBundle,verifyMountTable,isolatedUnitArguments, proveSyntheticIsolation, type IsolationDefinition} from './testing/linux-rehearsal-isolation.ts';
+import {publicLockedTarballs,stableCacheIndex} from './testing/prepare-offline-bundle.ts';
+import {createHash} from 'node:crypto';
+import {hubMigrationProgram} from './testing/hub-migration-program.ts';
+import {assertCanonicalPath,assertSameIdentity,parseMountInfo,sourceMountReceipt,trustedRootMount,offlineBuildProgram,verifyOfflineBundle,namespaceEscapeProgram,verifyMountTable,isolatedUnitArguments, proveSyntheticIsolation, type IsolationDefinition} from './testing/linux-rehearsal-isolation.ts';
 const fixture:IsolationDefinition={unit:'chvm-123456abcdef-probe',user:'chvm-123456abcdef',namespace:'chvm-123456abcdef',root:'/var/tmp/chvm-123456abcdef',data:'/var/tmp/chvm-123456abcdef/data',release:'/var/tmp/chvm-build-123456abcdef/release',node:'/usr/bin/node'};
 test('isolated units require rootfs and netns plus capability and host-filesystem restrictions',()=>{
  const args=isolatedUnitArguments(fixture,['/runtime/node','/release/bin/circle-hub','serve']);
@@ -85,4 +88,22 @@ test('bundle subtree mount rejection precedes manifest or asset reads',()=>{
    contentsRead=true;
  });
  assert.equal(contentsRead,false);
+});
+
+test('independent preparation accepts fixed public tarballs and rejects private or unlocked sources',()=>{
+ const item={resolved:'https://registry.npmjs.org/example/-/example-1.0.0.tgz',integrity:'sha512-'+Buffer.alloc(64).toString('base64')};
+ assert.equal(publicLockedTarballs({lockfileVersion:3,packages:{'':{},'node_modules/example':item}}).length,1);
+ for(const patch of [{resolved:'http://registry.npmjs.org/example.tgz'},{resolved:'https://private.invalid/example.tgz'},{resolved:'https://user:pass@registry.npmjs.org/example.tgz'},{integrity:''},{link:true}])assert.throws(()=>publicLockedTarballs({lockfileVersion:3,packages:{'node_modules/example':{...item,...patch}}}));
+});
+test('offline cache index hashes are repeatable despite acquisition timestamps',()=>{
+ const line=(time:number)=>{const body=JSON.stringify({key:'make-fetch-happen:request-cache:https://registry.npmjs.org/example.tgz',integrity:'sha512-YQ==',size:1,time,metadata:{time,headers:{date:String(time)}}});return createHash('sha1').update(body).digest('hex')+'\t'+body;};
+ assert.equal(stableCacheIndex(line(1)),stableCacheIndex(line(999)));
+ assert.throws(()=>stableCacheIndex('bad\t{}'));
+});
+
+test('namespace and Hub program guards refuse root identities and non-synthetic destinations',()=>{
+ assert.throws(()=>namespaceEscapeProgram({uid:0,net:1,root:2,outer:3,hostPath:'/var/tmp/chvm-host-123456abcdef/hidden',mounts:[]}));
+ assert.throws(()=>namespaceEscapeProgram({uid:500,net:1,root:2,outer:3,hostPath:'/var/lib/circle-hub',mounts:[]}));
+ assert.throws(()=>hubMigrationProgram({uid:0,net:1,root:2,address:'192.0.2.1'},[]));
+ assert.throws(()=>hubMigrationProgram({uid:500,net:1,root:2,address:'198.51.100.1'},[]));
 });

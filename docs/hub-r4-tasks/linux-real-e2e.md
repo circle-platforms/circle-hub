@@ -2,7 +2,7 @@
 
 依据：所有者的 Linux 迁移要求及集成者本轮委派。分支 `linux-real-e2e` 从 `hub-redesign` 的 `5bd43165` 开出。
 
-允许修改：本任务页、`hub/platform/testing/linux-real-vm.ts`、`hub/platform/testing/linux-rehearsal-isolation.ts`、`hub/platform/linux-rehearsal-isolation.test.ts`、`hub/platform/linux-real-vm.test.ts`、`hub/platform/linux-hub-migration-real.test.ts`、`hub/platform/README.md` 中本任务的限制说明。不得修改工作流、HANDOFF、生产配置、真实数据或其他包。
+允许修改：本任务页、`hub/platform/testing/linux-real-vm.ts`、`hub/platform/testing/linux-rehearsal-isolation.ts`、`hub/platform/testing/prepare-offline-bundle.ts`、`hub/platform/testing/hub-migration-program.ts`、`hub/platform/linux-rehearsal-isolation.test.ts`、`hub/platform/linux-real-vm.test.ts`、`hub/platform/linux-hub-migration-real.test.ts`、`hub/platform/README.md` 中本任务的限制说明。不得修改工作流、HANDOFF、生产配置、真实数据或其他包。
 
 ## 当前交付与边界
 
@@ -109,15 +109,28 @@ a50acceb 的 root联网构建方案已撤销，不能使用。当前改为预先
 
 ### a50acceb root联网构建和提前分配泄漏阻断修正（未执行）
 
-- 删除所有 root `prepareRelease`/npm 与联网取依赖路径。夹具从独立明确给定的 `CIRCLE_HUB_TEST_OFFLINE_BUNDLE` 与 `CIRCLE_HUB_TEST_OFFLINE_SHA256` 读取预先审批的只读代码资产包；没有包/独立pin就拒绝，不自动下载，不读取所有者配置。包路径只接受 `/var/tmp/chvm-offline-<12hex>`，必须root冻结、对构建用户只读可遍历、不含symlink/特殊文件，实际文件集与SHA清单完全闭合。
-- 清单schema `circle-hub-offline-build@1`，含固定 `source_commit`、`node_sha256`、`files`（每文件SHA256）；至少 `source.tar`、`npm/bin/npm-cli.js`、`npm/**` 的完整npm运行资产及 `cache/**` 的完整离线npm缓存。manifest自身SHA由调用前的独立审批提供；不能运行时自己计算当前manifest后当独立pin。固定source tar的commit归属由审批过程保证，夹具只验证其pin与内容。离线资产包的获取/制作不在本夹具内，需由主代理另行审查，不允许root在线npm制作。
+- 删除所有 root `prepareRelease`/npm 与联网取依赖路径。夹具从独立明确给定的 `CIRCLE_HUB_TEST_OFFLINE_BUNDLE` 与 `CIRCLE_HUB_TEST_OFFLINE_SHA256` 读取预先生成核验的只读代码资产包；没有包/独立pin就拒绝，不自动下载，不读取所有者配置。包路径只接受 `/var/tmp/chvm-offline-<12hex>`，必须root冻结、对构建用户只读可遍历、不含symlink/特殊文件，实际文件集与SHA清单完全闭合。
+- 清单schema `circle-hub-offline-build@1`，含固定 `source_commit`、`node_sha256`、`files`（每文件SHA256）；至少 `source.tar`、`npm/bin/npm-cli.js`、`npm/**` 的完整npm运行资产及 `cache/**` 的完整离线npm缓存。manifest自身SHA由调用前的独立生成核验提供；不能运行时自己计算当前manifest后当独立pin。固定source tar的commit归属由生成核验过程保证，夹具只验证其pin与内容。离线资产包的获取/制作不在本夹具内，需由主代理另行审查，不允许root在线npm制作。
 - 根挂载基线仍在所有分配前冻结；root/build/外部哨兵一创建即记录dev/inode/uid/mode，账户与namespace也创建成功后立即登记。全部分配移入统一try/finally；构建失败同样先确认ns无PID，再核身份删除本次账户/目录，身份缺失或活进程则保留并披露，不按名字猜删除。
 - 真正 `npm ci --offline --include=dev` 在 root-managed `User=<本次专用非root>` + RootDirectory + NetworkNamespacePath 的独占 `-build` unit内运行。先完成外联哨兵正/负对照与文件系统核验，再开始构建；source tar在隔离内非root解包，离线cache只读挂载后复制到本次/data私有可写缓存；npm运行资产与Node/必要shell/tar/env只读绑定且核挂载来源。保留生命周期脚本，未使用ignore-scripts。脚本只能写本次/data，不能联网或接触宿主共享目录。
 - 构建unit上限600秒；主进程退出后核namespace无PID，才将构建结果移到本次release并管理员冻结。失败/超时不停止猜测unit；cgroup仍有进程则不清理账户/ns/root。离线缓存缺项、npm脚本依赖未绑定工具或systemd额外挂载无法证明时，必须失败，不联网补齐或放宽保护。
 - 新增synthetic恶意postinstall模式：正常真实npm生命周期执行合成hook，hook实测非root、精确net/root inode、外部哨兵不可达、/sentinel/hidden与/release不可写，写仅本次/data的拒绝收据后故意退出73；必须看到npm非零及hook收据才算这个负例成立。VM负例随后检查本次root/build/ns/账户均已清理。普通单元负例拒绝空pin/部署路径/root安装身份。以上均未运行。
 
-仍未提供可运行的离线审批包，尚无VM实证或PG/Hub完整树验证；实物阶段继续关闭。现有 `pipeSyntheticKey` 不具备这套隔离，不得据此传真实密钥。
+仍未提供可运行的离线生成核验包，尚无VM实证或PG/Hub完整树验证；实物阶段继续关闭。现有 `pipeSyntheticKey` 不具备这套隔离，不得据此传真实密钥。
 
 ### 离线资产读取顺序修正（未执行）
 
 `verifyOfflineBundle` 现在要求调用前的独立根设备基线，先读取内核mountinfo并对整个bundle源、祖先和所有子挂载做拒绝检查，然后才允许realpath/递归元数据、manifest内容和资产SHA读取。合法bundle下的source.tar被其他本地文件bind覆盖时，在任何正文读取前中止，不靠hash失败事后发现。新增合成覆盖反例验证内容阶段不可到达；尚未执行。
+
+
+### 自行准备离线包与真实Hub链接入（实现未执行）
+
+无需额外所有者批准离线包/pin。非root VM专用账户运行 `CIRCLE_HUB_TEST_REAL_VM=synthetic-only <Node24> hub/platform/testing/prepare-offline-bundle.ts prepare <固定40位Git提交>`；仅从该提交的lock@3读取固定公开registry.npmjs.org tarball，拒绝非HTTPS、私域、凭据、查询、重定向、缺integrity、代理或Node预加载。下载先核lock SHA512，随后在本次私有HOME/cwd下 `npm cache add <本地tarball> --offline`，不执行任何包生命周期；真实带脚本的ci仍在封闭unit内。系统npm代码资产需管理员安装且不可被非root改写，复制后的文件集与Node均记录SHA。缓存本地路径/时间索引被移除或规范化，内容按integrity保存；相同固定源、Node/npm资产及registry字节应产出相同pin，重复性测试待运行，不能提前称已实证。
+
+准备命令只输出本次合成路径、manifest SHA、资产/包计数。管理员在同一VM运行 `CIRCLE_HUB_TEST_ISOLATION_VM=synthetic-only <Node24> hub/platform/testing/prepare-offline-bundle.ts seal <本次prepare返回bundle路径> <返回SHA>`；先核挂载再读取/复制，以NOFOLLOW目录FD逐级打开已声明文件，拒绝链接/特殊/多硬链接文件，复制到新root私有目录后冻结并重核逐文件SHA。原prepare输入不删；封存失败只按本次identity清理。本次root封存路径/pin给后续测试的 `CIRCLE_HUB_TEST_OFFLINE_BUNDLE` 和 `CIRCLE_HUB_TEST_OFFLINE_SHA256`。不联网补缺缓存、不root执行npm。
+
+`linux-hub-migration-real.test.ts` 已去掉旧的默认网络user-unit链，唯一调用封闭夹具的hub-migration模式：先基础保护正/负例，再最小bwrap命名空间逃逸负例，再隔离离线真实ci，再新的 `testing/hub-migration-program.ts` 真实Hub/PG合成链。所有PG、CLI、key管道、Hub与MCP客户端均为同一root-managed非root瞬时unit子进程，逐个核netns/root inode/UID；源目标根只能由函数在/data内生成，不接受真实backup/key路径。仍使用真平台migration/vault/backup@3/restore/逐条--vault/直接进程key管道和真实MCP，不替换HTTP/npm/PG。非回环地址只在无veth/无默认路由的本次namespace中创建dummy192.0.2.1，不能联系生产。
+
+为允许真实bwrap，仅escape与Hub unit将RestrictNamespaces从全禁改成明确user/mnt/pid/net/ipc/uts白名单；builder仍全禁。逃逸反例实际创建子user/pid/net等namespace，UID映射必须回到本次专用非rootUID；给反例只读暴露一个已核inode的外层netns引用，确保可打开后再要求nsenter失败，同时宿主合成路径bind失败、父进程CapEff为0且父root/net inode保持。外层netns仅新建引用名，清理只卸载本次引用，不停止或改写其现有进程/网络。该引用不会挂给Hub unit。必须收到子namespace全部通过标记才允许进入Hub链，bwrap在RootDirectory/AppArmor下不能建立子namespace或探测失败就停止，不能跳过Hub自己的隔离探测。
+
+尚未运行缓存准备、负例或真实Hub链；最小namespace配置/RootDirectory/AppArmor兼容性仍需VM实证和独审，PG18直接工具路径也需核对。实物数据阶段仍完全关闭。
