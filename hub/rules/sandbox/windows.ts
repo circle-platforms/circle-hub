@@ -4,8 +4,31 @@
 // A Job contains descendants; it does not deny network access or filesystem writes.
 import { setTimeout as delay } from 'node:timers/promises';
 
+export interface WindowsJobLimits {
+  /** Aggregate user-mode CPU seconds, not total kernel + user CPU time. */
+  userCpuSeconds: number;
+  /** Aggregate committed virtual memory, not RSS. */
+  committedBytes: number;
+}
+
+/** Encode the supported x64/ARM64 JOBOBJECT_EXTENDED_LIMIT_INFORMATION ABI. */
+export function windowsJobLimits(limits?: WindowsJobLimits): Buffer {
+  const data = Buffer.alloc(144);
+  let flags = 0x2000; // KILL_ON_JOB_CLOSE, without either breakaway flag.
+  if (limits !== undefined) {
+    if (!Number.isSafeInteger(limits.userCpuSeconds) || limits.userCpuSeconds < 1 || limits.userCpuSeconds > 3600 ||
+        !Number.isSafeInteger(limits.committedBytes) || limits.committedBytes < 1 || limits.committedBytes > Number.MAX_SAFE_INTEGER)
+      throw new RangeError('Windows Job 资源上限无效');
+    flags |= 0x4 | 0x200; // JOB_TIME and JOB_MEMORY.
+    data.writeBigInt64LE(BigInt(limits.userCpuSeconds) * 10_000_000n, 8);
+    data.writeBigUInt64LE(BigInt(limits.committedBytes), 120);
+  }
+  data.writeUInt32LE(flags, 16);
+  return data;
+}
+
 export interface WindowsJobApi {
-  create(): bigint;
+  create(limits?: WindowsJobLimits): bigint;
   assign(job: bigint, pid: number): boolean;
   active(job: bigint): number;
   terminate(job: bigint): void;
@@ -13,9 +36,9 @@ export interface WindowsJobApi {
 }
 
 /** Owns a trusted, idle bootstrap only. Assignment after spawn cannot confine earlier descendants. */
-export function attachWindowsJob(api: WindowsJobApi, pid: number): { stop(): Promise<void> } {
+export function attachWindowsJob(api: WindowsJobApi, pid: number, limits?: WindowsJobLimits): { stop(): Promise<void> } {
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Windows 进程标识无效');
-  const job = api.create();
+  const job = api.create(limits);
   try {
     if (!api.assign(job, pid)) throw new Error('Windows Job 分配失败');
   } catch (error) {
@@ -72,13 +95,12 @@ export function createWindowsJobApi(koffi: {
   const close = kernel.func('int __stdcall CloseHandle(void *handle)');
   const valid = (handle: unknown): handle is bigint => typeof handle === 'bigint' && handle !== 0n && BigInt.asIntN(64, handle) !== -1n;
   return {
-    create() {
+    create(resourceLimits) {
+      const limits = windowsJobLimits(resourceLimits);
       const job: unknown = create(null, null);
       if (!valid(job)) throw new Error('Windows Job 创建失败');
       // JOBOBJECT_EXTENDED_LIMIT_INFORMATION on both supported 64-bit ABIs.
       // KILL_ON_JOB_CLOSE is cleanup only; it is not a security isolation policy.
-      const limits = Buffer.alloc(144);
-      limits.writeUInt32LE(0x2000, 16);
       if (!set(job, 9, limits, limits.length)) {
         close(job);
         throw new Error('Windows Job 清理策略设置失败');
