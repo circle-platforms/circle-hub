@@ -18,3 +18,7 @@ LPAC、挂起创建与逐调用内核验证方案。新增用例未执行，原 
 后续原生回执来源：集成者 2026-10-28 派发消息；公开固定 ce7ba265、运行 40638643465，x64 与 ARM64
 Job 限额文件各 12/12、0 跳过。仅证明合成 Job 用户态 CPU/committed memory；整体 job 因 Windows
 readiness 门仍失败，OS 禁网、禁写、防启动未完成。本机仍未运行测试或类型检查。
+
+受限令牌原语后续提交：当前进程 token → WRITE_RESTRICTED/DISABLE_MAX_PRIVILEGE + 单个 NULL SID →
+精确限制 SID 自省；含失败释放与原生自省用例。仅原语，未接 LPAC/挂起启动/pack，也未证明实际禁写。
+新增 4 个用例未运行；12/12 旧回执不覆盖此变更。

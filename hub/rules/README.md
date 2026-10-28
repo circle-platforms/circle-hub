@@ -452,3 +452,12 @@ Microsoft 说明受限 SID 引入第二次访问检查，且子进程禁止策�
 Windows x64 与 ARM64 的 Job 限额文件分别 12/12、0 跳过。该回执覆盖用户态 CPU 和 committed memory
 用例，不能证明总 CPU/RSS 或禁网、禁写、防启动。整体 job 仍因 Windows readiness 门失败，
 不得将测试文件通过写作整个 CI 通过。本分支代理没有访问该运行或本机重跑。
+
+受限令牌原语已补入 `windows.ts`，仍未接 pack 或创建子进程：只读取当前进程的 Windows token，
+使用 `DISABLE_MAX_PRIVILEGE | WRITE_RESTRICTED` 与单个 NULL SID，随后检查派生 token 真实限制 SID
+恰为该 SID；不能以 `TokenHasRestrictions` 或一次 API 成功替代核验。仅使用 KnownDLL 与固定 koffi，
+失败路径释放句柄/SID；不登录、不提权、不模拟线程、不读取凭据库。
+参考 [CreateRestrictedToken](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-createrestrictedtoken)
+和 [GetTokenInformation](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation)。
+新增合成故障注入与原生 SID 自省用例尚未运行；NULL SID 在目标 Windows 的写拒绝效果、派生后的
+令牌组合、LPAC、启动与网络限制仍须后续原生行为验证。此原语本身不构成完整禁写或防逃逸保证。
