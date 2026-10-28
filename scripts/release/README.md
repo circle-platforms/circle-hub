@@ -2,7 +2,7 @@
 
 本目录独立于 `hub/platform/release.ts` 的机器部署记录。实现以 Circle 的 `scripts/build-release.ts`、`src/install_layout.ts`、`scripts/smoke-release.ts` 和 `.github/workflows/release.yml` 为对照，适配 Hub 的完整依赖、PostgreSQL 及隔离要求。
 
-当前已有清单与固定表、可注入的原生构建流程和文件安装/升级流程，以及待执行的合成回归。构建/安装新增实现尚待测试；服务接入、完整原生 smoke、下载解包安装入口、Actions 或 GitHub Release 操作未实现；任何平台均没有由本目录建立的发行支持结论。`assertReleaseReady` 当前始终失败，不接受调用者自报成功来解除阻塞。它还未被任何现有部署或发布入口调用。
+当前已有清单与固定表、可注入的原生构建流程和文件安装/升级流程，以及已通过的定向合成回归（13 通过、0 跳过；typecheck 通过）。实际构建/安装尚未进行原生验收；服务接入、完整原生 smoke、下载解包安装入口、Actions 或 GitHub Release 操作未实现；任何平台均没有由本目录建立的发行支持结论。`assertReleaseReady` 当前始终失败，不接受调用者自报成功来解除阻塞。它还未被任何现有部署或发布入口调用。
 
 ## 构建接口设计
 
