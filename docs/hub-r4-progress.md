@@ -642,6 +642,7 @@ nav_order: 3
     - Hub 的发布平台与 Circle 一样覆盖 macOS、Windows、Linux，这样才是统一的 circle-platform；Windows 的验证用 GitHub 的 Windows 运行器（x64、ARM64）。
     - Windows 的系统级沙箱和密库（DPAPI）要调 Win32 接口，Node 自带库没有：所有者授权 Hub 引入并固定与 Circle 相同版本的 koffi（只放在 Windows 适配模块里，版本和完整性值锁死），沙箱和密库按 Circle 的实现和做法来做，不另起一套。这是对"依赖只限 package.json 已有的"这条规则的例外，只限这一个依赖。
     - 顺序：Linux 迁移到 172.16.2.90 优先，Windows 随后；改公开仓库工作流（Windows 运行器）以所有者此处的授权为准，改动前 codex 先写明改什么。
+    - 沙箱的权限不放宽：Windows 复用 Circle 的实现机制，但保留 Hub 的规则——包内函数不能联网、不能写文件、不能起别的程序。需要这些能力的是以后 Hub 上 bot 要开发的内容（所有者 2026-10-28：暂时不考虑）。
 
 ## R5 进度记录
 
