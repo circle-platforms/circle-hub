@@ -7,7 +7,7 @@ import { createSocket } from 'node:dgram';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { attachWindowsJob, createWindowsJobApi, createWindowsRestrictedToken, loadWindowsRestrictedToken, loadWindowsJobApi, quoteWindowsArgument, runWindowsIsolationProbe, windowsProbeFailure, windowsJobLimits, windowsIsolationFailure, type WindowsJobApi } from './windows.ts';
+import { attachWindowsJob, createWindowsJobApi, createWindowsRestrictedToken, loadWindowsRestrictedToken, loadWindowsJobApi, quoteWindowsArgument, runWindowsIsolationProbe, windowsEnvironmentBlock, windowsProbeFailure, windowsJobLimits, windowsIsolationFailure, type WindowsJobApi } from './windows.ts';
 import { isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { callPackFunction } from './sandbox.ts';
 
@@ -290,6 +290,17 @@ test('native LPAC denies starting another Node process without Node permission f
   assert.equal(await runWindowsIsolationProbe(source), 0);
 });
 
+
+test('LPAC environment block keeps only sorted system and profile locations', () => {
+  const block = windowsEnvironmentBlock({
+    Path: 'C:\\Windows\\system32', SystemRoot: 'C:\\Windows', TEMP: 'C:\\Temp', SECRET_TOKEN: 'private-token',
+    GITHUB_TOKEN: 'private-token', ComSpec: 'C:\\Windows\\system32\\cmd.exe', windir: undefined,
+  });
+  assert.equal(block.toString('utf16le'), 'PATH=C:\\Windows\\system32\0SYSTEMROOT=C:\\Windows\0TEMP=C:\\Temp\0\0');
+  assert.equal(block.length % 2, 0);
+  assert.throws(() => windowsEnvironmentBlock({ PATH: 'C:\\Windows' }), /SystemRoot/);
+  assert.throws(() => windowsEnvironmentBlock({ SystemRoot: 'C:\\Windows\0PATH=x' }), TypeError);
+});
 
 test('LPAC startup diagnostics expose only fixed stage observations', () => {
   const error = windowsProbeFailure('挂起创建', 2, {
