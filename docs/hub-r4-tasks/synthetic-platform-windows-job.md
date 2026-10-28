@@ -6,4 +6,4 @@ The Job primitives and synthetic tests use the publication transform T on the so
 
 The workflow runs exactly the Windows Job test file on the existing Windows x64 and ARM64 runners. Existing contracts, vault checks and the Windows readiness rejection remain unchanged. Job cleanup does not establish network or filesystem isolation; Windows pack execution remains unavailable even with synthetic OS opt-out.
 
-No local tests or native execution ran for this change, as requested while Linux validation is active. Windows native results remain unverified until the workflow executes. No GitHub access, push, PR or deployment is included.
+No local tests or native execution ran for this change while Linux validation is active. This branch is for synthetic GitHub runner verification only; its workflow does not publish a release or deploy to a production system. Windows native results remain unverified until the workflow executes.
