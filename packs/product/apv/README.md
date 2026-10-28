@@ -1143,3 +1143,13 @@ block stays literal; example contents stay reference-only. No author intent or m
 messages and NUL/table-cell diagnostics remain visible alongside these recovery records. A missing verifiable recovery
 range or an unrelated ERROR/FATAL still refuses the group. Synthetic tests cover bounded and file-end recoveries, nested
 blocks, cross-file source positions, unchanged failure severity, restored observation hooks and byte-identical reruns.
+
+### Case feeding directory bindings
+
+Case feeding reads the original agile ancestor metadata with the same `apv-directory@1` coded line and train syntax;
+it uses the first three version components for line identity, applies U24 normalization, and retains different candidates
+as a conflict. A single declared line or train can still identify the line; missing sibling layers remain missing. Whole
+manual-store folder names remain accepted by the existing `apv-directory-folder@1` rule. If both rules produce candidates,
+both are disclosed; no title, prose, or run target supplies a binding. A directory exceeding the existing 64-layer or
+1000-character-per-layer limits stays undeclared with a repair action, rather than being bound from truncated input.
+The new pack digest causes a source re-read to project again; earlier records are retained.
