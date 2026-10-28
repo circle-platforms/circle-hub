@@ -75,21 +75,37 @@ export function createIsolationProbe(options: { probe: () => Promise<ProbeOutcom
   };
 }
 
+/** Trusted startup probe: temporary grants must actually be revocable before readiness can be cached. */
+export const LINUX_PERMISSION_PROBE = `
+if(typeof process.permission?.drop!=='function')process.exit(22);
+try {
+  if(!process.permission.has('child')||!process.permission.has('fs.write','/dev/null'))process.exit(23);
+  process.permission.drop('child');process.permission.drop('fs.write');
+  if(process.permission.has('child')||process.permission.has('fs.write','/dev/null'))process.exit(23);
+} catch { process.exit(23); }
+`;
+
+/** Private startup diagnostics, not protocol or vocabulary codes. */
+export function linuxProbeOutcome(code: number | null): ProbeOutcome {
+  if (code === 0) return { available: true };
+  return { available: false, lasting: false, reason: code === 22 ? 'node_permission_drop_missing' : code === 23 ? 'node_permission_drop_failed' : 'bubblewrap_apparmor_or_user_namespace_unavailable' };
+}
+
 /** Runs sandbox-exec with the real profile once. */
 async function probeSandboxExec(): Promise<ProbeOutcome> {
   if (process.platform === 'linux') {
     if (!linuxToolsPresent()) return { available: false, lasting: false, reason: 'bubblewrap_or_apparmor_tools_missing' };
     let args: string[];
     try {
-      const source = `const fs=require('node:fs'),cp=require('node:child_process');const label=fs.readFileSync(3,'utf8').trim();fs.closeSync(3);if(label!==${JSON.stringify(LINUX_LABEL)})process.exit(20);const child=cp.spawnSync(process.execPath,['-e','process.exit(0)']);if(child.error?.code!=='EACCES')process.exit(21);`;
-      args = ['-p', LAUNCH_PROFILE, '--', BWRAP, ...linuxBubblewrapArgs(NODE, ['--no-warnings', '-e', source], [])];
+      const source = `if(typeof process.permission?.drop!=='function')process.exit(22);const fs=require('node:fs'),cp=require('node:child_process');const label=fs.readFileSync(3,'utf8').trim();fs.closeSync(3);if(label!==${JSON.stringify(LINUX_LABEL)})process.exit(20);const child=cp.spawnSync(process.execPath,['-e','process.exit(0)']);if(child.error?.code!=='EACCES')process.exit(21);${LINUX_PERMISSION_PROBE}`;
+      args = ['-p', LAUNCH_PROFILE, '--', BWRAP, ...linuxBubblewrapArgs(NODE, ['--permission', '--allow-child-process', '--allow-fs-write=/dev/null', '--no-warnings', '-e', source], [])];
     } catch {
       return { available: false, lasting: false, reason: 'linux_runtime_bindings_unavailable' };
     }
     return new Promise<ProbeOutcome>((resolve) => {
       const child = spawn(AA_EXEC, args, { stdio: 'ignore', env: { TZ: 'UTC' }, timeout: 5_000, killSignal: 'SIGKILL' });
       child.on('error', () => resolve({ available: false, lasting: false, reason: 'bubblewrap_or_apparmor_spawn_failed' }));
-      child.on('exit', (code) => resolve(code === 0 ? { available: true } : { available: false, lasting: false, reason: 'bubblewrap_apparmor_or_user_namespace_unavailable' }));
+      child.on('exit', (code) => resolve(linuxProbeOutcome(code)));
     });
   }
   if (process.platform !== 'darwin') return { available: false, lasting: true, reason: 'platform' };
