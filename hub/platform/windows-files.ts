@@ -41,7 +41,17 @@ export function finishWindowsPrivateCreate(size: number, operations: {
 }
 
 /** Never uses chmod, environment identity, PowerShell or an inherited DACL as a Windows security boundary. */
-export function windowsPrivateFiles(directory: string): WindowsPrivateFiles {
+export function windowsPrivateFiles(directory: string, onStep?: (step: string) => void): WindowsPrivateFiles {
+  // Diagnostics receive literal operation names only, never native arguments or results.
+  const native = <T>(step: string, operation: () => T): T => {
+    onStep?.(`${step}:begin`);
+    const result = operation();
+    // Sync diagnostic output can call Win32 APIs. Preserve the operation's error before emitting its completion.
+    const error = lastError();
+    onStep?.(`${step}:end`);
+    setLastError(error);
+    return result;
+  };
   if (process.platform !== 'win32') throw new PlatformError('Windows 私有存储只可在 Windows 上使用');
   const koffi = require('koffi') as typeof import('koffi');
   if (koffi.version !== '3.3.3') throw new PlatformError('Windows 私有存储需要 koffi 3.3.3');
@@ -55,11 +65,12 @@ export function windowsPrivateFiles(directory: string): WindowsPrivateFiles {
   const fn = (definition: string) => kernel.func(definition);
   const close = fn('int32_t __stdcall CloseHandle(void *handle)');
   const lastError = fn('uint32_t __stdcall GetLastError()');
+  const setLastError = fn('void __stdcall SetLastError(uint32_t code)');
   const currentProcess = fn('void * __stdcall GetCurrentProcess()');
   const currentThread = fn('void * __stdcall GetCurrentThread()');
   const getSystemDirectory = fn('uint32_t __stdcall GetSystemDirectoryW(_Out_ char16_t *buffer, uint32_t size)');
   const systemBuffer = Buffer.alloc(65536);
-  const systemLength = getSystemDirectory(systemBuffer, 32768) as number;
+  const systemLength = native('system-directory', () => getSystemDirectory(systemBuffer, 32768)) as number;
   if (!systemLength || systemLength >= 32768) throw new PlatformError('无法确定 Windows 系统目录');
   const systemDirectory = systemBuffer.toString('utf16le', 0, systemLength * 2);
   const advapi = koffi.load(`${systemDirectory}\\advapi32.dll`);
@@ -75,29 +86,30 @@ export function windowsPrivateFiles(directory: string): WindowsPrivateFiles {
   const reject = (): never => { throw new PlatformError('Windows 私有存储的身份、用户配置或访问控制未通过原生检查'); };
   const noImpersonation = () => {
     const thread: Pointer[] = [null];
-    if (openThreadToken(currentThread(), 8, 1, thread)) { if (thread[0]) close(thread[0]); reject(); }
+    if (native('thread-token', () => openThreadToken(currentThread(), 8, 1, thread))) { if (thread[0]) close(thread[0]); reject(); }
     if (lastError() !== 1008) reject(); // ERROR_NO_TOKEN is the only accepted result.
   };
   noImpersonation();
   const token: Pointer[] = [null];
-  if (!openProcessToken(currentProcess(), 8, token) || !token[0]) reject();
+  if (!native('process-token', () => openProcessToken(currentProcess(), 8, token)) || !token[0]) reject();
   let sid: string;
   let tokenInfo: Buffer;
   let userSid: Pointer;
   let profile: string;
   try {
     const needed = [0];
-    getTokenInformation(token[0], 1, null, 0, needed); // TokenUser
+    native('token-user-size', () => getTokenInformation(token[0], 1, null, 0, needed)); // TokenUser
     if (needed[0]! < 8 || needed[0]! > 65536) reject();
     tokenInfo = Buffer.alloc(needed[0]!);
-    if (!getTokenInformation(token[0], 1, tokenInfo, tokenInfo.length, needed)) reject();
-    userSid = koffi.decode(tokenInfo, 'void *') as Pointer;
+    if (!native('token-user', () => getTokenInformation(token[0], 1, tokenInfo, tokenInfo.length, needed))) reject();
+    userSid = native('decode-token-user-pointer', () => koffi.decode(tokenInfo, 'void *')) as Pointer;
     const text: Pointer[] = [null];
-    if (!userSid || !sidToString(userSid, text) || !text[0]) reject();
-    try { sid = koffi.decode(text[0], 'str16') as string; } finally { localFree(text[0]); }
+    if (!userSid || !native('sid-to-string', () => sidToString(userSid, text)) || !text[0]) reject();
+    // text[0] already is LPWSTR. Generic decode(..., 'str16') would read a second pointer from the UTF-16 bytes.
+    try { sid = native('decode-sid-string', () => koffi.decode.string16(text[0])); } finally { localFree(text[0]); }
     const profileBuffer = Buffer.alloc(65536);
     const size = [32768];
-    if (!getProfile(token[0], profileBuffer, size) || size[0]! < 2 || size[0]! > 32768) reject();
+    if (!native('profile-directory', () => getProfile(token[0], profileBuffer, size)) || size[0]! < 2 || size[0]! > 32768) reject();
     profile = profileBuffer.toString('utf16le', 0, (size[0]! - 1) * 2);
     if (!/^[A-Za-z]:\\/.test(profile)) reject();
   } finally { close(token[0]); }
@@ -105,8 +117,8 @@ export function windowsPrivateFiles(directory: string): WindowsPrivateFiles {
   const loadedProfile = () => {
     noImpersonation();
     const hive: Pointer[] = [null];
-    if (regOpen(0xffffffff80000003n, sid, 0, 0x20019, hive) !== 0 || !hive[0]) reject();
-    regClose(hive[0]);
+    if (native('profile-hive-open', () => regOpen(0xffffffff80000003n, sid, 0, 0x20019, hive)) !== 0 || !hive[0]) reject();
+    native('profile-hive-close', () => regClose(hive[0]));
   };
   loadedProfile();
   const rootPrefix = `${profile.toLowerCase()}\\`;
@@ -130,24 +142,24 @@ export function windowsPrivateFiles(directory: string): WindowsPrivateFiles {
   const valid = (handle: Pointer) => handle !== null && handle !== -1n && handle !== 0xffffffffffffffffn;
   const assertObject = (handle: Pointer, isDirectory: boolean, privateAcl: boolean) => {
     const information = Buffer.alloc(52); // BY_HANDLE_FILE_INFORMATION: 13 DWORDs on both supported ABIs.
-    if (!getFileInformation(handle, information)) reject();
+    if (!native('file-information', () => getFileInformation(handle, information))) reject();
     const attrs = information.readUInt32LE(0);
     if ((attrs & 0x400) !== 0 || Boolean(attrs & 0x10) !== isDirectory) reject();
     if (!isDirectory && information.readUInt32LE(40) !== 1) reject(); // No hardlinked credentials.
     if (!privateAcl) return;
     // Keep the token's SID backing buffer alive for every native SID comparison.
-    userSid = koffi.decode(tokenInfo, 'void *') as Pointer;
+    userSid = native('decode-token-user-pointer', () => koffi.decode(tokenInfo, 'void *')) as Pointer;
     const owner: Pointer[] = [null], dacl: Pointer[] = [null], descriptor: Pointer[] = [null];
-    if (getSecurityInfo(handle, 1, 5, owner, null, dacl, null, descriptor) !== 0 || !descriptor[0]) reject();
+    if (native('security-information', () => getSecurityInfo(handle, 1, 5, owner, null, dacl, null, descriptor)) !== 0 || !descriptor[0]) reject();
     try {
       const control = [0], revision = [0];
-      if (!owner[0] || !equalSid(owner[0], userSid) || !dacl[0] || !getControl(descriptor[0], control, revision) || !(control[0]! & 0x1000)) reject();
+      if (!owner[0] || !native('compare-owner-sid', () => equalSid(owner[0], userSid)) || !dacl[0] || !native('security-descriptor-control', () => getControl(descriptor[0], control, revision)) || !(control[0]! & 0x1000)) reject();
       const info = { AceCount: 0, AclBytesInUse: 0, AclBytesFree: 0 };
-      if (!getAclInfo(dacl[0], info, koffi.sizeof(aclInfoType), 2) || info.AceCount !== 1) reject();
+      if (!native('acl-information', () => getAclInfo(dacl[0], info, koffi.sizeof(aclInfoType), 2)) || info.AceCount !== 1) reject();
       const ace: Pointer[] = [null];
-      if (!getAce(dacl[0], 0, ace) || !ace[0]) reject();
+      if (!native('acl-entry', () => getAce(dacl[0], 0, ace)) || !ace[0]) reject();
       // ACCESS_ALLOWED_ACE: header type/flags, mask, then SID. Accept only this user with explicit full control.
-      if (koffi.decode(ace[0], 'uint8_t') !== 0 || koffi.decode(ace[0], 1, 'uint8_t') !== 0 || koffi.decode(ace[0], 4, 'uint32_t') !== FILE_ALL_ACCESS || !equalSid(ace[0]! + 8n, userSid)) reject();
+      if (koffi.decode(ace[0], 'uint8_t') !== 0 || koffi.decode(ace[0], 1, 'uint8_t') !== 0 || koffi.decode(ace[0], 4, 'uint32_t') !== FILE_ALL_ACCESS || !native('compare-entry-sid', () => equalSid(ace[0]! + 8n, userSid))) reject();
     } finally { localFree(descriptor[0]); }
   };
   const withDirectory = <T>(create: boolean, absent: T, operation: () => T): T => {
@@ -155,17 +167,17 @@ export function windowsPrivateFiles(directory: string): WindowsPrivateFiles {
     const handles: Pointer[] = [];
     const security: Pointer[] = [null];
     try {
-      if (!sddlToDescriptor(`O:${sid}D:P(A;;FA;;;${sid})`, 1, security, null) || !security[0]) reject();
+      if (!native('create-security-descriptor', () => sddlToDescriptor(`O:${sid}D:P(A;;FA;;;${sid})`, 1, security, null)) || !security[0]) reject();
       const attributes = { nLength: koffi.sizeof(attributesType), lpSecurityDescriptor: security[0], bInheritHandle: 0 };
       let path = parsed.root;
       const all = [parsed.root, ...components.map((part) => { path = win32.join(path, part); return path; })];
       for (let index = 0; index < all.length; index++) {
         const root = index === all.length - 1;
-        let handle = createFile(all[index], READ_CONTROL | 0x80, 1, null, OPEN_EXISTING, OPEN_REPARSE_POINT | BACKUP_SEMANTICS, null) as Pointer;
+        let handle = native('open-directory', () => createFile(all[index], READ_CONTROL | 0x80, 1, null, OPEN_EXISTING, OPEN_REPARSE_POINT | BACKUP_SEMANTICS, null)) as Pointer;
         if (!valid(handle) && root && lastError() === 2) {
           if (!create) return absent;
-          if (!createDirectory(all[index], attributes) && lastError() !== 183) reject();
-          handle = createFile(all[index], READ_CONTROL | 0x80, 1, null, OPEN_EXISTING, OPEN_REPARSE_POINT | BACKUP_SEMANTICS, null) as Pointer;
+          if (!native('create-directory', () => createDirectory(all[index], attributes)) && lastError() !== 183) reject();
+          handle = native('open-directory', () => createFile(all[index], READ_CONTROL | 0x80, 1, null, OPEN_EXISTING, OPEN_REPARSE_POINT | BACKUP_SEMANTICS, null)) as Pointer;
         }
         if (!valid(handle)) reject();
         handles.push(handle);
@@ -182,7 +194,7 @@ export function windowsPrivateFiles(directory: string): WindowsPrivateFiles {
     return win32.join(directory, name);
   };
   const openExisting = (name: string, access: number): Pointer | undefined => {
-    const handle = createFile(filePath(name), access | READ_CONTROL, 0, null, OPEN_EXISTING, OPEN_REPARSE_POINT, null) as Pointer;
+    const handle = native('open-existing-key-file', () => createFile(filePath(name), access | READ_CONTROL, 0, null, OPEN_EXISTING, OPEN_REPARSE_POINT, null)) as Pointer;
     if (!valid(handle)) { if (lastError() === 2) return undefined; reject(); }
     try { assertObject(handle, false, true); } catch (error) { close(handle); throw error; }
     return handle;
@@ -195,10 +207,10 @@ export function windowsPrivateFiles(directory: string): WindowsPrivateFiles {
         if (handle === undefined) return undefined;
         try {
           const size: (bigint | number)[] = [0n];
-          if (!fileSize(handle, size) || BigInt(size[0]!) < 1n || BigInt(size[0]!) > BigInt(MAX_FILE)) reject();
+          if (!native('key-file-size', () => fileSize(handle, size)) || BigInt(size[0]!) < 1n || BigInt(size[0]!) > BigInt(MAX_FILE)) reject();
           const bytes = Buffer.alloc(Number(size[0]));
           const count = [0];
-          if (!readFile(handle, bytes, bytes.length, count, null) || count[0] !== bytes.length) reject();
+          if (!native('read-key-file', () => readFile(handle, bytes, bytes.length, count, null)) || count[0] !== bytes.length) reject();
           return bytes;
         } finally { close(handle); }
       });
@@ -207,21 +219,21 @@ export function windowsPrivateFiles(directory: string): WindowsPrivateFiles {
       if (value.length < 1 || value.length > MAX_FILE) throw new PlatformError('Windows 私有存储条目长度无效');
       withDirectory(true, undefined, () => {
         const security: Pointer[] = [null];
-        if (!sddlToDescriptor(`O:${sid}D:P(A;;FA;;;${sid})`, 1, security, null) || !security[0]) reject();
+        if (!native('create-security-descriptor', () => sddlToDescriptor(`O:${sid}D:P(A;;FA;;;${sid})`, 1, security, null)) || !security[0]) reject();
         let handle: Pointer = null;
         try {
           const attributes = { nLength: koffi.sizeof(attributesType), lpSecurityDescriptor: security[0], bInheritHandle: 0 };
-          handle = createFile(filePath(name), GENERIC_WRITE | READ_CONTROL | DELETE, 0, attributes, CREATE_NEW, OPEN_REPARSE_POINT, null) as Pointer;
+          handle = native('create-new-key-file', () => createFile(filePath(name), GENERIC_WRITE | READ_CONTROL | DELETE, 0, attributes, CREATE_NEW, OPEN_REPARSE_POINT, null)) as Pointer;
           if (!valid(handle)) throw new PlatformError('Windows 密钥条目创建失败；已有条目不会覆盖');
           finishWindowsPrivateCreate(value.length, {
             write() {
               assertObject(handle, false, true);
               const count = [0];
-              if (!writeFile(handle, value, value.length, count, null)) reject();
+              if (!native('write-key-file', () => writeFile(handle, value, value.length, count, null))) reject();
               return count[0]!;
             },
-            flush() { return Boolean(flush(handle)); },
-            discard() { return Boolean(disposition(handle, 4, Buffer.from([1]), 1)); },
+            flush() { return Boolean(native('flush-key-file', () => flush(handle))); },
+            discard() { return Boolean(native('discard-incomplete-key-file', () => disposition(handle, 4, Buffer.from([1]), 1))); },
           });
         } finally { if (valid(handle)) close(handle); localFree(security[0]); }
       });
@@ -230,7 +242,7 @@ export function windowsPrivateFiles(directory: string): WindowsPrivateFiles {
       return withDirectory(false, false, () => {
         const handle = openExisting(name, DELETE);
         if (handle === undefined) return false;
-        try { if (!disposition(handle, 4, Buffer.from([1]), 1)) reject(); return true; }
+        try { if (!native('delete-key-file', () => disposition(handle, 4, Buffer.from([1]), 1))) reject(); return true; }
         finally { close(handle); }
       });
     },
