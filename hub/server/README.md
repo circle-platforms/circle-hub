@@ -37,6 +37,10 @@ own interface in cleanup. It prints the randomly chosen interface name so an ope
 SIGKILL or a VM crash prevents cleanup; never delete other interfaces. It refuses an already-used address and refuses to contact it unless its route is local. This
 script is deliberately outside the ordinary unit-test glob because changing a VM network interface is a privileged test
 operation. A successful run does not establish an actual server deployment or connectivity to an enterprise system.
+Antigravity independently reviewed the implementation at commit `d33b18655161bfeaeeaa2369c05a78bbb34de151` and
+reported PASS after a read-only source review and synthetic checks. This review is not evidence of a deployment to the
+target server. In particular, the VM check injects fake principals and call logging; its successful MCP initialization
+does not validate a real identity store, colleague's Circle, actual credentials or the target network.
 
 The default is loopback `127.0.0.1`; a specific internal IP requires an explicit allowed-host list. Wildcard and public
 listeners are refused. The port comes from `CIRCLE_HUB_PORT`. The request target is parsed once and never throws (`parseTarget`): an origin-form target is always a
