@@ -8,6 +8,7 @@ import { access } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DECLARED_DEPENDENCIES } from './policy.ts';
+import { windowsIsolationFailure } from './windows.ts';
 
 export const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
 // Real paths: the permission model does not follow a symbolic link on the way to a granted file.
@@ -76,6 +77,7 @@ export function createIsolationProbe(options: { probe: () => Promise<ProbeOutcom
 
 /** Runs sandbox-exec with the real profile once. */
 async function probeSandboxExec(): Promise<ProbeOutcome> {
+  if (process.platform === 'win32') return { available: false, lasting: true, reason: windowsIsolationFailure() };
   if (process.platform !== 'darwin') return { available: false, lasting: true, reason: 'platform' };
   try {
     await access(SANDBOX_EXEC, constants.X_OK);
@@ -160,6 +162,7 @@ export interface IsolatedCommand {
  * set well above the resident limit the parent enforces, because V8 aborts on heap exhaustion (which leaves a crash report).
  */
 export function isolatedCommand(options: { entry: string; reads: string[]; heapMb: number; cpuSeconds: number; os: boolean }): IsolatedCommand {
+  if (process.platform === 'win32') throw new Error(windowsIsolationFailure());
   const node = [
     '--permission',
     ...[options.entry, POLICY, ...options.reads].map((path) => `--allow-fs-read=${path}`),
