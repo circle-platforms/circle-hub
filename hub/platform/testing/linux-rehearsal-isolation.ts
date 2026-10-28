@@ -8,12 +8,19 @@ import {join, resolve} from 'node:path';
 import {runCommand} from '../process.ts';
 import {hubMigrationProgram} from './hub-migration-program.ts';
 
+export interface VerifiedEnclosure {
+ readonly root:string;readonly release:string;readonly node:string;readonly namespace:string;readonly user:string;readonly uid:number;readonly gid:number;
+ readonly runReceiver:(program:string,volume:import('./real-rehearsal-support.ts').EncryptedVolume,action:'backup'|'key'|'verify')=>Promise<import('./real-rehearsal-support.ts').ReceiverProcess>;
+}
+const liveEnclosures=new WeakSet<object>();
+export function assertLiveEnclosure(value:VerifiedEnclosure):void{if(!liveEnclosures.has(value))throw new Error('保护与真实Hub合成链未在当前作用域通过，禁止实物数据');}
+
 const safePath = (path:string) => path.startsWith('/') && /^\/[A-Za-z0-9_./-]+$/.test(path) && resolve(path)===path;
 export interface IsolationDefinition {unit:string; user:string; namespace:string; root:string; data:string; release:string; node:string}
 
 /** Only a generated synthetic identity and simple absolute paths may enter systemd's property parser. */
 export function isolatedUnitArguments(d:IsolationDefinition, programArgs:string[]):string[] {
-  if(!/^chvm-[a-f0-9]{12}$/.test(d.user) || d.namespace!==d.user || ![d.user+'-probe',d.user+'-build',d.user+'-escape',d.user+'-hub'].includes(d.unit) || d.root!=='/var/tmp/'+d.user)throw new Error('隔离身份不属于本次合成命名空间');
+  if(!/^chvm-[a-f0-9]{12}$/.test(d.user) || d.namespace!==d.user || ![d.user+'-probe',d.user+'-build',d.user+'-escape',d.user+'-hub',d.user+'-backup',d.user+'-key',d.user+'-verify'].includes(d.unit) || d.root!=='/var/tmp/'+d.user)throw new Error('隔离身份不属于本次合成命名空间');
   if(![d.root,d.data,d.release,d.node].every(safePath) || !/^\/var\/tmp\/chvm-build-[a-f0-9]{12}\/release$/.test(d.release))throw new Error('隔离路径不安全');
   if(d.data!==join(d.root,'data') || !programArgs.length || programArgs[0]!=='/runtime/node')throw new Error('隔离入口或数据根无效');
   const properties=[
@@ -212,7 +219,7 @@ export async function sealPreparedOfflineBundle(prepared:string,pin:string):Prom
 }
 
 /** This exercise creates only synthetic bytes and returns no reusable real-data authorization or "safe" token. */
-export async function proveSyntheticIsolation(mode:'normal'|'malicious-postinstall'|'hub-migration'='normal'):Promise<{root:string;build:string;user:string;namespace:string}> {
+export async function proveSyntheticIsolation(mode:'normal'|'malicious-postinstall'|'hub-migration'='normal',afterHubProof?:(enclosure:VerifiedEnclosure)=>Promise<void>):Promise<{root:string;build:string;user:string;namespace:string}> {
   await rootVmGate();
   const baseline=trustedRootMount(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')));
   // Offline bundle pin is supplied before the fixture runs. No network acquisition or owner configuration is read.
@@ -367,6 +374,16 @@ export async function proveSyntheticIsolation(mode:'normal'|'malicious-postinsta
        const script=hubMigrationProgram({uid,net:namespaceIdentity.ino,root:rootIdentity.ino,address:'192.0.2.1'},hubExpected);
        const hubArgs=isolatedUnitArguments({...definition,unit:user+'-hub'},['/runtime/node','--input-type=module','-e',script]).map(arg=>arg.startsWith('BindReadOnlyPaths=')?arg+' '+[...tools,...extra].map(item=>item.source+':'+item.target).join(' '):arg==='RuntimeMaxSec=120s'?'RuntimeMaxSec=1200s':arg==='RestrictNamespaces=yes'?'RestrictNamespaces=user mnt pid net ipc uts':arg);
        const result=await budgeted(hubArgs,1_260_000);assert.equal(result.code,0,'真实Hub链在保留边界下未完成');assert.equal(result.stdout.trim(),'isolated-real-Hub-migration-ok');
+       if(afterHubProof){
+        const enclosure:VerifiedEnclosure=Object.freeze({root,release:source,node,namespace,user,uid,gid,async runReceiver(program:string,volume:import('./real-rehearsal-support.ts').EncryptedVolume,action:'backup'|'key'|'verify'){
+          assertLiveEnclosure(enclosure);const support=await import('./real-rehearsal-support.ts');await support.assertLiveVolume(volume,enclosure);
+          const expected=hubExpected.filter(receipt=>receipt.target!=='/data');expected.push(volume.mountReceipt);
+          const args=isolatedUnitArguments({...definition,unit:user+'-'+action},['/runtime/node','--input-type=module','-e',program]).map(arg=>arg.startsWith('BindReadOnlyPaths=')?arg+' '+[...tools,...extra].map(item=>item.source+':'+item.target).join(' '):arg.startsWith('BindPaths=')?'BindPaths='+volume.data+':/data':arg==='RuntimeMaxSec=120s'?'RuntimeMaxSec=1800s':arg==='RestrictNamespaces=yes'?'RestrictNamespaces=user mnt pid net ipc uts':arg);
+          return support.startVerifiedReceiver({context:enclosure,volume,args,env,expected,root,namespace,uid,data:volume.data,assertLive:()=>{assertLiveEnclosure(enclosure);return support.assertLiveVolume(volume,enclosure);}});
+        }});
+        liveEnclosures.add(enclosure);try{await afterHubProof(enclosure);}finally{liveEnclosures.delete(enclosure);}
+       }
+
       }
 
     }

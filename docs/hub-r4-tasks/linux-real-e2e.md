@@ -2,7 +2,7 @@
 
 依据：所有者的 Linux 迁移要求及集成者本轮委派。分支 `linux-real-e2e` 从 `hub-redesign` 的 `5bd43165` 开出。
 
-允许修改：本任务页、`hub/platform/testing/linux-real-vm.ts`、`hub/platform/testing/linux-rehearsal-isolation.ts`、`hub/platform/testing/prepare-offline-bundle.ts`、`hub/platform/testing/hub-migration-program.ts`、`hub/platform/linux-rehearsal-isolation.test.ts`、`hub/platform/linux-real-vm.test.ts`、`hub/platform/linux-hub-migration-real.test.ts`、`hub/platform/README.md` 中本任务的限制说明。不得修改工作流、HANDOFF、生产配置、真实数据或其他包。
+允许修改：本任务页、`hub/platform/testing/linux-real-vm.ts`、`hub/platform/testing/linux-rehearsal-isolation.ts`、`hub/platform/testing/prepare-offline-bundle.ts`、`hub/platform/testing/hub-migration-program.ts`、`hub/platform/testing/real-rehearsal-support.ts`、`hub/platform/linux-rehearsal-isolation.test.ts`、`hub/platform/linux-real-vm.test.ts`、`hub/platform/linux-hub-migration-real.test.ts`、`hub/platform/README.md` 中本任务的限制说明。不得修改工作流、HANDOFF、生产配置、真实数据或其他包。
 
 ## 当前交付与边界
 
@@ -144,3 +144,10 @@ a50acceb 的 root联网构建方案已撤销，不能使用。当前改为预先
 /data改为本次独占3GiB/262144 inode tmpfs，/tmp与/var/tmp分别16MiB独占tmpfs，TMPDIR也指向/data；不再把宿主PrivateTmp可写目录暴露给脚本。挂载创建后记录真实device/root/inode并核statfs容量，只有该创建收据可作为原根挂载检查的受控例外。恶意postinstall需先成功写小临时文件，再真实触发17MiB写入的ENOSPC；未执行。构建产物离开容量盘前还核总逻辑大小≤3GiB与条目上限，拒绝稀疏巨文件绕过；复制前保留至少6GiB VM空闲预算。卸载只在本次进程全部退出且mount/inode身份一致后进行。
 
 3GiB盘专供合成保护与Hub链；不能用于真实backup规模，更不能据此声称实物接收已支持。真实接收须有独立有上限且可销毁密钥的加密卷，接收/密钥传输代码将另行关闭这一缺口。
+
+
+### 保存但禁用的wrapper草稿
+
+按集成者最新决定，改走一次性plain Lima整机隔离最小路径。尚未提交的 `real-rehearsal-support.ts` 和活作用域回调桥接明确保存为WIP；所有真实接收/卷创建/平台生产者管道/forward入口均硬拒绝，没有启用，也未运行或类型检查。其加密容量盘、SSH双端状态、失败销毁思想可参考，但不能作为实物已支持或已通过的证据。停止扩张RootDirectory/多namespace wrapper。
+
+实物演练已获用户授权；当前不开始的原因是保护设施和合成链尚未验证，不是缺少新的用户批准。下一步仅实现专用plain VM配置、无共享/转发桥证明、独立无sudo账号、精确SSH控制流防火墙与哨兵和失败停毁脚本；读取本机Lima版本/命令属于只读预检，不启动或修改VM。
