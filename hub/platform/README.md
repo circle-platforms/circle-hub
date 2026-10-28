@@ -529,3 +529,11 @@ Recovery follow-up validation on macOS: `npx tsc --noEmit` exited 0;
 `node --test --test-concurrency=2 'hub/platform/**/*.test.ts' hub/server/assemble/cli-admin.test.ts hub/server/assemble/operator-token.test.ts`
 ran 310 tests: 306 passed, 0 failed, 4 skipped (Linux deployment with a real user manager, Linux empty-root restore, Linux file-key rehearsal,
 and the real Linux user-unit lifecycle). This is synthetic macOS evidence, including injected Linux backends; Linux execution remains pending.
+
+Antigravity independently reviewed the fixed commit `7f5c5702599c71c9711a344500bad1c0fd700204` against baseline
+`385d37d3c5f8e7e2bb28f68de63dc90b4a992819` on 2026-10-28 and reported PASS for the inspected platform changes.
+The review was read-only static inspection of source, diffs and existing synthetic evidence; the reviewer ran no tests
+and accessed no real systems, credentials or environment configuration. It covered sandbox alignment, FIFO rejection,
+effective-account binding, systemd ownership and contradictory-state refusals, operator-token-only removal, and Node
+and restore recovery guidance. This is independent static review evidence for that fixed change set; it does not prove
+a complete real Hub migration, production safety, or target-server behavior. This documentation update ran no tests.
