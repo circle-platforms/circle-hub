@@ -152,6 +152,32 @@ Layers, outermost first:
    inspection only of itself, and no file writes except `/dev/null`. Node 24's permission model does not restrict the network
    (verified with a really listening loopback server), so this layer is required by default: without it `callPackFunction`
    throws `SANDBOX_UNAVAILABLE` unless the caller passes `{ requireOsIsolation: false }`.
+   On Linux this layer uses bubblewrap with private user, PID, network, IPC and UTS namespaces and read-only bindings for the
+   Node runtime, its dynamic loader and libraries, the trusted bootstrap, the pack and declared dependencies. AppArmor adds a
+   mandatory deny-exec worker profile that also denies Internet-family sockets: a trusted shell sets a stack-on-exec transition before Node starts,
+   so every Node thread inherits the restriction. The bootstrap verifies the enforced label before loading a pack. The
+   worker permits Unix sockets for Node's inherited stdio; the private network namespace isolates abstract Unix sockets, and
+   the file-write denial blocks pathname socket connections even through a mounted directory. Runtime exposes private proc and
+   device pseudo-filesystems for the transition and runtime, not host directories; Node's
+   permission model still denies pack reads outside its explicit grants. Missing bubblewrap, AppArmor tools, profile, user
+   namespaces, loader dependencies or a verified label leaves isolation unavailable; there is no production fallback.
+
+   An administrator installs the generated policy for the exact service Node binary, for example by piping the output of
+   `node hub/rules/sandbox/linux.ts` to `apparmor_parser -r`. Reinstall it after changing that binary or shell. The host must
+   allow the launcher profile to create user namespaces. Linux systems without a usable AppArmor policy need an equivalent
+   independently verified kernel backend before Hub can run pack functions. This does not alter CI configuration.
+
+   Each Linux child also tests the loaded enforcement before importing any pack: real execution of Node, synchronous and
+   asynchronous writes to an isolated writable synthetic directory, and a pathname Unix socket connection must all fail with
+   the expected kernel denial. The trusted bootstrap temporarily receives child-process and synthetic-directory write grants;
+   it drops both using `process.permission.drop`, confirms they are gone, and refuses the call if that API is unavailable.
+   The synthetic listener and directory are removed on completion. Policy names include a digest of the canonical worker rules;
+   this is a version identifier, not proof that the administrator loaded those exact rules. An administrator or root able to
+   replace an active kernel policy and the Node executable are within the deployment trust boundary. Reloading an active
+   same-named profile can change confinement between checks: stop the Hub and drain its children before installing or replacing
+   policy, and do not treat a successful synthetic path test as proof of every possible pathname. The dedicated-VM-only A/B
+   command is `CIRCLE_HUB_SYNTHETIC_APPARMOR_TEST=1 node --test hub/rules/sandbox/testing/linux-policy-ab.ts`; it refuses to
+   replace an already installed Hub sandbox policy and intentionally tests same-name weak policies and a cached probe.
 4. Node's permission model: read access only to the bootstrap, `policy.ts`, the pack directory and the declared dependencies'
    package directories (resolved recursively); no writes, child processes, workers, addons, WASI or inspector;
    `--disallow-code-generation-from-strings`, `--no-addons`, `--no-experimental-websocket`, an empty environment (only `TZ=UTC`).
@@ -349,3 +375,9 @@ Scope note: the owner authorized the rules implementation/tests and this README 
 
 QuoteTable in contracts/src/tables.ts and the regenerated quote.v1.schema.json describe the same exact contiguous
 substring contract as the independent rules and refs implementations.
+
+### Independent Linux isolation review
+
+Antigravity independently reviewed the fixed implementation at `ab2ec6c6` and found the two earlier blockers addressed:
+all-thread descendant accounting and per-child kernel isolation attestation. This was a source review, not production
+proof. The policy administrator remains trusted; stop the Hub and drain children before replacing an AppArmor policy.

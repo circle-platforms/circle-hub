@@ -27,7 +27,7 @@
 ## 交付物（按这个顺序，各一个分支一个提交序列，合入前独立复核）
 
 1. **`linux-isolation`**：bubblewrap 后端（命令拼装、探测、孤儿清理、错误文案），以及真正在 Linux 虚拟机里执行的测试：断言包内函数联不了网、写不了文件、起不了别的程序、读不到未绑定的路径；探测在没有 bwrap 或用户命名空间被禁时给出明确的不可用原因（Ubuntu 24.04 默认用 AppArmor 限制非特权用户命名空间，要在运行手册里写清楚怎么放行）。现有因"没有沙箱隔离"而在 Linux 跳过的测试，在有 bwrap 的 Linux 上应当真的跑。
-2. **`linux-platform`**：把 `init`、`db`、`key`、`service`、`backup`、`restore`、`deploy`、`rollback`、`rehearse`、`status` 做成能在 Linux 上跑：平台适配层（数据根默认值：以服务用户运行时用 `/var` 下的 `lib/circle-hub`，否则 `$XDG_DATA_HOME/circle-hub`；密钥提供者：Linux 用密钥文件，0600，所在目录 0700，属主是服务用户；服务管理：systemd 单元，等价于 LaunchAgent 的"崩了自动拉起"；libpq 工具查找：`CIRCLE_HUB_LIBPQ_BIN`，否则 PATH 里与服务端大版本一致的）。macOS 路径行为不变，所有现有测试仍过。
+2. **`linux-platform`**：把 `init`、`db`、`key`、`service`、`backup`、`restore`、`deploy`、`rollback`、`rehearse`、`status` 做成能在 Linux 上跑：平台适配层（数据根默认值：以服务用户运行时用系统服务数据目录（`/var` 下的 `lib/circle-hub`），否则 `$XDG_DATA_HOME/circle-hub`；密钥提供者：Linux 用密钥文件，0600，所在目录 0700，属主是服务用户；服务管理：systemd 单元，等价于 LaunchAgent 的"崩了自动拉起"；libpq 工具查找：`CIRCLE_HUB_LIBPQ_BIN`，否则 PATH 里与服务端大版本一致的）。macOS 路径行为不变，所有现有测试仍过。
 3. **`hub-listen`**：可配置监听地址和允许主机（环境类别 `shared` 可用），默认仍是回环；非回环必须同时配置允许主机；写入 `config/platform.json` 并进 `status`；Host/Origin/控制台同源检查按配置放行；加测试（含 DNS 重绑定的反例：不在名单里的 Host 被拒）。TLS：本任务不做内置 TLS，运行手册里写"前面放反向代理终止 TLS"的做法和风险（内网明文令牌可被嗅探），由所有者决定是否上。
 4. **`key-transfer`**：`key export`（macOS）、`key import`（Linux/macOS）、`key status`，以及传输后在目标上用 `records verify` 证明密库条目能打开。密钥任何时候不出现在屏幕、日志、命令行参数、环境变量里。
 5. **`linux-runbook`**：`docs/hub-linux-deploy.md`——目标服务器的前置清单（系统版本、架构、Node 24、bubblewrap 与命名空间、`postgresql-client-18`、磁盘 ≥ 40 GB、服务用户、防火墙只放行内网网段、到各被读系统的网络可达：PLM 查询服务、敏捷平台、构建站、SVN、手册库、堡垒机/网关）、安装步骤、**切换步骤**（本机先 `backup` → 冻结写入（停 Hub）→ 传输 → 目标 `restore` 并核对清单 → `key import` → 启动 → 冒烟：健康检查、`records verify`、一次只读运行、一次 Circle 连接）、回滚（切换前本机保持为准，目标失败就在本机重新启动）、日常运维（备份、升级、发令牌）。目标机上的实际切换需要 SSH 账号和 sudo，**由所有者或同事执行，你只准备脚本和清单**。
@@ -40,3 +40,14 @@
 - 红线同 `AGENTS.md`：不动本机正在运行的部署（不 stop、不 deploy、不改数据根；只读的 `status` 可以；要做备份演练用 `rehearse` 或自建的临时数据根）；不碰钥匙串里的真实密钥（测试用临时钥匙串和临时密钥文件）；不打开环境配置文件；测试只用合成数据；不放松任何断言，不删测试；不碰任何真实系统和设备。
 - 公开 CI 的 Ubuntu 没有 sandbox-exec，现有 282 个常规单元和 9 个验收测试在那里被跳过；有了 bubblewrap 后，应让这些测试在 Linux 上真的跑（CI 里装 bubblewrap 与放行命名空间是工作流改动，**要所有者批准**，先在运行手册里写做法，不要改 `.github/workflows`）。
 - 完成后写报告到 `handoff/linux-migration-report.txt`（持久工作目录的 handoff 子目录），终端里只回一行结论加路径；交接文档 `HANDOFF.md` 由集成者维护，你不要改（里面有本机真实值）。
+
+## 补充：所有者的答复（2026-10-28，覆盖上面对应的"专属事项"和红线）
+
+- 登录：**直接用 root** 登录 172.16.2.90。集成者为这件事生成了一对专用 SSH 密钥（私钥只在本机，权限 0600，文件名 `circle_hub_2_90`，在本机用户的 `.ssh` 目录下；公钥注释 `circle-hub-migration-2026-10-28`）；所有者用 root 密码把公钥装到目标机一次后，用 `ssh -i <该私钥> -o IdentitiesOnly=yes -o BatchMode=yes root@172.16.2.90` 登录。**不要把 root 密码写进任何文件、简报或命令行**；密钥只用于这件事，迁完在运行手册里写明如何从目标机的 `authorized_keys` 里删掉。先用 `BatchMode` 试一次，登录不了就在终端里告诉集成者"密钥还没装"，不要去找密码。
+- 时间：**随时都可以切换**。但切换前要核对：本机 Hub 没有未结束的作业（`job list`）、没有被占用的租约（`lease list`）、没有进行中的运行；停 Hub 前先在终端里回一行"即将切换"，让集成者通知所有者。本机的数据和部署切换后原样保留（只停服务，不删任何东西），作为回滚。
+- 防火墙：只放行 `172.16.0.0/16`。
+- TLS：**不加**。运行手册里把"内网明文令牌可被嗅探"作为已知并被所有者接受的风险写一句。
+- 对"不动本机正在运行的部署"的修改：只在运行手册规定的切换步骤里、并且满足上面的核对之后，才可以对本机部署做 `backup`、停服务、`key export`；除此之外仍然不动。
+- 对目标机的限制：只做**加法**——新建服务用户和目录、装 bubblewrap 与 postgresql-client-18 与 Node 24（若系统没有）、放 systemd 单元、加一条只对 `172.16.0.0/16` 开放 Hub 端口的防火墙规则；**不要碰文档库（OpenKM 等）现有的服务、端口、数据和配置**。先做只读预检（系统版本与架构、磁盘与内存、已占用端口、已有的防火墙、Node 与 bwrap 是否在、用户命名空间是否被禁）并把结果写进报告，预检不过就停下来问。
+- 顺序：1–4 件合入且 Linux 虚拟机测试全绿 → 在虚拟机里用最新的真实备份加真实的密钥管道（`key export | ssh` 到虚拟机）整套演练一遍（演练完删掉虚拟机上的数据和密钥）→ 目标机预检 → 安装 → 切换 → 冒烟（健康检查、`records verify`、一次只读运行）→ 报告。
+
