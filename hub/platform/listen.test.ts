@@ -32,6 +32,7 @@ test('Linux listener inventory fails closed when either table is missing or malf
   assert.equal(await linuxPortOccupied(8000, async () => header), false);
   assert.equal(await linuxPortOccupied(8000, async path => path.endsWith('tcp6') ? header : `${header}0: 0100007F:1F40 00000000:0000 0A\n`), true);
   assert.equal(await linuxPortOccupied(8000, async () => 'corrupt'), true);
+  assert.equal(await linuxPortOccupied(8000, async () => 'local_address\n'), true);
   assert.equal(await linuxPortOccupied(8000, async () => `${header}broken line\n`), true);
   assert.equal(await linuxPortOccupied(8000, async path => { if (path.endsWith('tcp6')) throw new Error('unavailable'); return header; }), true);
 });

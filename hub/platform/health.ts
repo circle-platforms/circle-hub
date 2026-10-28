@@ -96,7 +96,8 @@ export async function linuxPortOccupied(port: number, read: (path: string) => Pr
     const target = port.toString(16).toUpperCase().padStart(4, '0');
     for (let table = 0; table < tables.length; table++) {
       const lines = tables[table]!.split('\n');
-      if (!/\blocal_address\b/.test(lines.shift() ?? '')) return true;
+      const header = (lines.shift() ?? '').trim().split(/\s+/);
+      if (header[0] !== 'sl' || header[1] !== 'local_address' || header[2] !== 'rem_address' || header[3] !== 'st') return true;
       for (const line of lines) {
         if (!line.trim()) continue;
         const fields = line.trim().split(/\s+/);

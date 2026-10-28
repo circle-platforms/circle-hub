@@ -116,5 +116,10 @@ test('a direct connection cannot forge the proxy Host and HTTPS Origin from an u
       req.on('error', reject); req.end();
     });
     assert.equal(mixed, 403);
+    const absolute = await new Promise<number>((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port, path: 'http://hub.example/healthz', headers: { host: `hub.example:${port}` } }, res => { res.resume(); res.on('end', () => resolve(res.statusCode!)); });
+      req.on('error', reject); req.end();
+    });
+    assert.equal(absolute, 403);
   } finally { await app.close(); }
 });

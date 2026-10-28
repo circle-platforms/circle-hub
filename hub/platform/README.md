@@ -26,7 +26,8 @@ reverse proxy requires the explicit `CIRCLE_HUB_PROXY_ORIGIN` HTTPS origin, whos
 and whose authority differs from every direct HTTP authority, and `CIRCLE_HUB_PROXY_PEER`, the proxy's exact source IP.
 The proxy preserves that authority as Host; the Hub checks the connection's peer address and never trusts forwarded
 headers. Restrict this address so only the trusted proxy can connect from it. Direct HTTP and proxy HTTPS origins remain
-separate, including their scheme. Local tool
+separate, including their scheme. This is IP-level trust, not process authentication: choosing `127.0.0.1` trusts every
+local process able to connect. Local tool
 installation can use an internal address only when this data root's existing deployment settings lock the exact IP and
 port and all supplied environment values agree. A client without that trusted lock still accepts loopback only.
 Configure the target and firewall before exposing the service; this setting does not itself configure network access.
