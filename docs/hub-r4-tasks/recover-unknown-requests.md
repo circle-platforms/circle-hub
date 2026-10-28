@@ -1,0 +1,7 @@
+# Restore missing requests for recorded unknown exits
+
+A stored accepted result can contain a complete, named request exit while the corresponding request record is absent. In that case the result describes the missing fact and recipient, but the request is not present in the shared work queue. Startup and periodic maintenance already reconstruct requests for older results whose exit fields are absent; it must also restore requests for complete recorded exits without changing the historical result or repeating the work that produced it.
+
+Use the exact stored item, requirement, missing fact, reason, request kind, audience, due time and submission identity. Reuse the normal request-routing code for a minimal copy of the affected result, and retain its existing idempotency and authorization behavior. Do not invent an audience, deadline, source or content. Do not reopen answered requests, re-dispatch effects, repeat a submission, change any stored result or weaken existing rules. Preserve additional independent gaps and avoid unnecessary per-request lookups when scanning a run.
+
+Scope: `hub/runs/engine/maintenance.ts`, narrowly necessary request-routing code, synthetic tests in `hub/runs/engine`, its README if needed, and this task page. A synthetic old result must reproduce the missing queue entry before the change; afterward maintenance appends the exact request once and leaves the stored result byte-identical, including on repeated maintenance.

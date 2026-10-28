@@ -16,13 +16,13 @@ import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import type { EngineContext } from './deps.ts';
 import { latestAccepted, listRunRecords, putAction, putResult, submissionsOf, submissionByDigest, actionOfSubmission, actionsOf, isVerbatimObject } from './store.ts';
-import { putRequest, recordResultRequests, requestRecords, answerRequest, answerSuccessorRequests } from './requests.ts';
+import { putRequest, recordResultRequests, requestRecords, answerRequest, answerSuccessorRequests, RequestBodySchema, type RequestBody } from './requests.ts';
 
 export async function maintainRuns(ctx:EngineContext):Promise<void>{
   let cursor:string|null=null;
   do{
     const page:Page<StoredRecord<RunRecord>>=await listRunRecords(ctx.deps.records.store,{}, {limit:200,cursor});
-    for(const run of page.items){const stopped=await abandonDecision(ctx,run.body.run);if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run);continue;}if(run.body.predecessor){const before=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,run.body.predecessor!));if(before)await answerSuccessorRequests(ctx,before.body,run);}await reconcileDispatch(ctx,run);await rootUpdateRequest(ctx,run);await legacyResultRequests(ctx,run);await recoverRun(ctx,run);await recoverParent(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
+    for(const run of page.items){const stopped=await abandonDecision(ctx,run.body.run);if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run);continue;}if(run.body.predecessor){const before=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,run.body.predecessor!));if(before)await answerSuccessorRequests(ctx,before.body,run);}await reconcileDispatch(ctx,run);await rootUpdateRequest(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>legacyResultRequests(ctx,run));await recoverRun(ctx,run);await recoverParent(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
     cursor=page.next;
   }while(cursor!==null);
   await repairedPackRequests(ctx);
@@ -254,12 +254,67 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
 async function legacyResultRequests(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promise<void>{
   const latest=await latestAccepted(ctx.deps.records.store,stored.body.run);
   const runner=stored.body.runner??stored.body.configurer;
-  if(!latest||!runner)return;
-  for(const [partition,items] of Object.entries(latest.body.partitions))for(const [i,item] of items.entries())for(const [j,requirement] of item.requirements.entries())for(const [k,layer] of requirement.layers.entries()){
+  if(!latest)return;
+  if(runner)for(const [partition,items] of Object.entries(latest.body.partitions))for(const [i,item] of items.entries())for(const [j,requirement] of item.requirements.entries())for(const [k,layer] of requirement.layers.entries()){
     if(!isUnsettled(layer)||!layer.reason||layer.exit&&layer.missing)continue;
     const path='/partitions/'+partition+'/'+i+'/requirements/'+j+'/layers/'+k;
     await putRequest(ctx,{run:stored.body.run,kind:'repair',audience:runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:latest.digest,code:layer.reason,item:item.item,requirement:requirement.requirement,missing:'旧结果 rec:'+latest.digest+' '+path+'：'+(!layer.exit?'出口未写；':'')+(!layer.missing?'缺失事实未写':''),next_action:'原提交者带 Circle-Session-Id 用 submit_result 原样重交，Hub 追加重评结果；旧运行或作者缺会话时，以原工作为 predecessor 开带会话的新修订后重新复核。旧记录不回填'});
   }
+  await restoreRecordedRequests(ctx,stored,latest);
+}
+
+/** Older accepted results may name a complete exit without its corresponding queue record. */
+async function restoreRecordedRequests(ctx:EngineContext,stored:StoredRecord<RunRecord>,latest:StoredRecord<ValidationResult>):Promise<void>{
+  const result=latest.body;
+  const candidates=Object.values(result.partitions).flat().some(item=>item.requirements.some(requirement=>requirement.layers.some(layer=>
+    layer.exit?.action==='request'&&'user'in layer.exit.audience&&Boolean(layer.missing)||layer.gaps?.some(gap=>gap.exit.action==='request'&&'user'in gap.exit.audience))));
+  if(!candidates)return;
+  // Read the run's indexed request bodies in pages; resolving each answer separately is unnecessary here.
+  const existing=new Set<string>();let cursor:string|null=null;
+  do{
+    const page:Page<StoredRecord<RequestBody>>=await ctx.deps.records.store.find<RequestBody>({kind:'request',key:'runs.request.run',value:stored.body.run,limit:500,cursor});
+    for(const row of page.items){const parsed=RequestBodySchema.safeParse(row.body);if(row.schema==='request@1'&&parsed.success){const q=parsed.data;existing.add(JSON.stringify([q.source,q.item??null,q.requirement??null,q.kind,q.audience,q.missing,q.code]));}}
+    cursor=page.next;
+  }while(cursor!==null);
+  const missing=new Set<string>();
+  for(const partition of PARTITION){
+    const items=result.partitions[partition];
+    for(let i=0;i<items.length;i++){
+      const item=items[i]!;
+      for(let j=0;j<item.requirements.length;j++){
+        const requirement=item.requirements[j]!;
+        for(let k=0;k<requirement.layers.length;k++){
+          const layer=requirement.layers[k]!;
+          const primary=layer.exit&&layer.missing?{exit:layer.exit,missing:layer.missing,reason:layer.reason??'check_error',code:layer.code??layer.reason??'check_error'}:null;
+          const gaps=[...(primary?[primary]:[]),...(layer.gaps??[]).map(gap=>({...gap,code:gap.reason}))];
+          const needsRequest=gaps.some(gap=>{
+            if(gap.exit.action!=='request'||!('user'in gap.exit.audience)||gap.exit.request_kind===undefined)return false;
+            const audience=gap.exit.audience.user;
+            const key=JSON.stringify([result.submission,item.item,requirement.requirement,gap.exit.request_kind,audience,gap.missing,gap.code]);
+            return !existing.has(key);
+          });
+          if(needsRequest)missing.add(JSON.stringify([partition,i,j,k]));
+        }
+      }
+    }
+  }
+  if(!missing.size)return;
+  // The normal router derives the same named next action; only the detached copy can be annotated.
+  const draft=structuredClone(result);
+  for(const partition of PARTITION){
+    const items=draft.partitions[partition];
+    for(let i=items.length-1;i>=0;i--){
+      const item=items[i]!;
+      for(let j=item.requirements.length-1;j>=0;j--){
+        const requirement=item.requirements[j]!;
+        requirement.layers=requirement.layers.filter((_,k)=>missing.has(JSON.stringify([partition,i,j,k])));
+        if(!requirement.layers.length)item.requirements.splice(j,1);
+      }
+      if(!item.requirements.length)items.splice(i,1);
+    }
+  }
+  draft.cross_item=[];draft.errors=[];
+  await recordResultRequests(ctx,stored.body,draft);
 }
 
 /** Cache identity contains only the safe status fields used by the projection, never remote error text or lease material. */
