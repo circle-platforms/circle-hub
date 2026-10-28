@@ -21,3 +21,7 @@
 按集成者指令，当前 macOS 全量验收占用期间不运行测试或类型检查。本任务尚未建立固定种子输入实际 clean 或所有断言通过的运行证据。
 
 待集成者运行 `node --test hub/records/scan.test.ts`、`npx tsc --noEmit`，并纳入 macOS 全量验收。没有跳过、删除或放宽原断言。
+
+Independent review: Antigravity reviewed fixed commit `3c7d10e0` without executing tests and found the existing
+assertions and input size preserved, with a separate runtime-assembled credential-shape positive. The local synthetic
+`node --test --test-concurrency=2 hub/records/scan.test.ts` run subsequently passed 12/12 with no skips.
