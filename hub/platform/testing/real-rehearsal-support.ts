@@ -15,6 +15,7 @@ export interface DestroyReceipt {unmounted:boolean;mappingClosed:boolean;loopDet
 export interface EncryptedVolume {readonly data:string;readonly mountReceipt:MountReceipt;readonly capacityBytes:number}
 const activeVolumes=new WeakMap<EncryptedVolume,{context:VerifiedEnclosure;root:string;image:string;imageIdentity:Stats;dataIdentity:Stats;mapper:string;mapperIdentity:Stats;loop:string;loopIdentity:Stats}>();
 const env={PATH:'/usr/sbin:/usr/bin:/sbin:/bin',LANG:'C',LC_ALL:'C'};
+function rejectDisabledWrapper():void{throw new Error('WIP wrapper disabled: use the dedicated plain VM path');}
 async function run(command:string,args:string[],timeoutMs=120_000):Promise<string>{const result=await runCommand(command,args,{env,timeoutMs});if(result.code!==0)throw new Error('演练平台动作失败（只报告退出码 '+result.code+'）');return result.stdout;}
 async function requireUnswappableController():Promise<void>{
  const row=(await readFile('/proc/self/cgroup','utf8')).trim();if(!row.startsWith('0::/')||row.includes('\n')||row.includes('..'))throw new Error('真实演练控制器需要可核对的cgroup v2');
@@ -37,7 +38,7 @@ export async function assertLiveVolume(volume:EncryptedVolume,context:VerifiedEn
 }
 /** 24GiB is reserved before receipt; no real bytes enter before mount, capacity and independent kernel identities pass. */
 export async function withEncryptedRehearsalVolume<T>(context:VerifiedEnclosure,use:(volume:EncryptedVolume)=>Promise<T>):Promise<{result:T;destroyed:DestroyReceipt}>{
- throw new Error('WIP wrapper disabled: use the dedicated plain VM path');
+ rejectDisabledWrapper();
  assertLiveEnclosure(context);await requireUnswappableController();
  const capacityBytes=24*1024**3,root='/var/tmp/chvm-real-'+randomBytes(6).toString('hex'),image=join(root,'image'),data=join(root,'data'),mapper=basename(root);
  const baseline=trustedRootMount(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')));sourceMountReceipt(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),root,root,baseline);
@@ -81,7 +82,7 @@ export async function withEncryptedRehearsalVolume<T>(context:VerifiedEnclosure,
 export interface ReceiverProcess {readonly input:Writable;readonly output:Readable;readonly ready:Promise<void>;readonly completed:Promise<number>;cancel():Promise<void>}
 /** Launches a receiver but does not expose stdin until real PID/mount/cgroup verification has completed. */
 export async function startVerifiedReceiver(input:{context:VerifiedEnclosure;volume:EncryptedVolume;args:string[];env:NodeJS.ProcessEnv;expected:MountReceipt[];root:string;namespace:string;uid:number;data:string;assertLive:()=>Promise<void>}):Promise<ReceiverProcess>{
- throw new Error('WIP wrapper disabled: use the dedicated plain VM path');
+ rejectDisabledWrapper();
  assertLiveEnclosure(input.context);await assertLiveVolume(input.volume,input.context);assert.equal(input.root,input.context.root);assert.equal(input.namespace,input.context.namespace);assert.equal(input.uid,input.context.uid);assert.equal(input.data,input.volume.data);
  await input.assertLive();assert.ok(input.args.at(-2)==='-e');const delimiter=input.args.indexOf('--');assert.deepEqual(input.args.slice(delimiter+1,delimiter+4),['/runtime/node','--input-type=module','-e']);assert.ok(input.args.includes('RootDirectory='+input.context.root)&&input.args.includes('BindPaths='+input.volume.data+':/data'));const nonce=randomBytes(12).toString('hex'),readyFile=join(input.data,'ready-'+nonce),goFile=join(input.data,'go-'+nonce);
  const prefix=`const _r=await import('node:fs/promises');await _r.writeFile('/data/ready-${nonce}',JSON.stringify({pid:process.pid,invocation:process.env.INVOCATION_ID,cgroup:await _r.readFile('/proc/self/cgroup','utf8')}),{flag:'wx'});let _go=false;for(let i=0;i<300;i++){try{await _r.access('/data/go-${nonce}');_go=true;break;}catch{}await new Promise(r=>setTimeout(r,100));}if(!_go)throw Error('receiver not verified');`;
@@ -153,7 +154,7 @@ export function vmReceiverCommand(endpoint:ReplayEndpoint,options:{node:string;h
 }
 /** A receiver announces verified readiness before the source process is started; both exits and timeout are mandatory. */
 export async function pipePlatformProducer(producer:Producer,receiver:ReceiverCommand,expectedNonce:string,timeoutMs=1_800_000):Promise<{sourceExit:0;receiverExit:0}>{
- throw new Error('WIP wrapper disabled: use the dedicated plain VM path');
+ rejectDisabledWrapper();
  if(!producers.has(producer)||!vmReceivers.has(receiver)||! /^[a-f0-9]{32}$/.test(expectedNonce)||!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>1_800_000)throw new Error('未固定平台生产者或接收端收据');
  const target=spawn(receiver.command,[...receiver.args],{env:receiver.env,stdio:['pipe','pipe','ignore']});let source:ChildProcess|undefined,failed=false;let timer:NodeJS.Timeout|undefined;
  const stop=()=>{if(source?.exitCode===null)source.kill('SIGKILL');if(target.exitCode===null)target.kill('SIGKILL');};
@@ -171,7 +172,7 @@ export async function pipePlatformProducer(producer:Producer,receiver:ReceiverCo
 export interface ReplayEndpoint {schema:'circle-hub-rehearsal-endpoint@1';action:'backup'|'key';socket:string;nonce:string;forwardScript:string}
 /** Coordinates actual receiving only inside the live proof callback. The caller supplies the host-side platform producers. */
 export async function serveRealReplay(context:VerifiedEnclosure,onEndpoint:(endpoint:ReplayEndpoint)=>Promise<void>):Promise<{result:{backup:Record<string,unknown>;verified:Record<string,unknown>};destroyed:DestroyReceipt}>{
- throw new Error('WIP wrapper disabled: use the dedicated plain VM path');
+ rejectDisabledWrapper();
  assertLiveEnclosure(context);
  return withEncryptedRehearsalVolume(context,async volume=>{
   const action=async(kind:'backup'|'key'|'verify',program:string):Promise<Record<string,unknown>>=>{
@@ -211,7 +212,7 @@ export async function serveRealReplay(context:VerifiedEnclosure,onEndpoint:(endp
 }
 /** VM root forwarder: it never interprets archive/key bytes; only bounded control responses are decoded. */
 export async function forwardReplaySocket(path:string):Promise<void>{
- throw new Error('WIP wrapper disabled: use the dedicated plain VM path');
+ rejectDisabledWrapper();
  if(process.platform!=='linux'||process.getuid?.()!==0||process.env.CIRCLE_HUB_TEST_ISOLATION_VM!=='synthetic-only')throw new Error('只允许显式VM管理员转发');
  const marker=await open('/run/circle-hub-synthetic-vm',constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);try{const info=await marker.stat();assert.ok(info.isFile()&&info.uid===0&&info.nlink===1&&(info.mode&0o777)===0o644&&info.size===Buffer.byteLength('circle-hub-synthetic-only-v1\n'));assert.equal(await marker.readFile('utf8'),'circle-hub-synthetic-only-v1\n');}finally{await marker.close();}
  const detected=await runCommand('/usr/bin/systemd-detect-virt',['--vm','--quiet'],{env,timeoutMs:5000});assert.equal(detected.code,0);await requireUnswappableController();
