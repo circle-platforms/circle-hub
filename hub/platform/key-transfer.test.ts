@@ -187,3 +187,32 @@ test('output callback controls key lifetime and timeouts fail closed', async () 
   await assert.rejects(readKeyStdin(input, 10), /input timed out/);
   input.destroy(); value.fill(0);
 });
+
+test('export keeps bytes until callback and overflow import never calls the store writer', async () => {
+  const value = Buffer.alloc(32, 29);
+  let writes = 0;
+  const store = {
+    service: 'synthetic', account: 'vault',
+    init: async () => {}, delete: async () => false,
+    status: async () => ({present: false}),
+    read: async () => value,
+    write: async (_bytes: Uint8Array) => { writes++; },
+  };
+  let callback: ((error?: Error | null) => void) | undefined;
+  const output = new Writable({write(chunk, _encoding, done) {
+    assert.equal(chunk[0], 29); callback = done;
+  }});
+  const pending = exportVaultKey(store, {
+    stdinIsPipe: false, stdoutIsPipe: true,
+    writeKeyBytes: bytes => writeKeyStdout(bytes, output, 1000),
+  }, true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(value[0], 29, 'export cannot wipe bytes before output completes');
+  callback!(); await pending;
+  assert.ok(value.every(byte => byte === 0));
+  await assert.rejects(importVaultKey(store, {
+    stdinIsPipe: true, stdoutIsPipe: false,
+    readKeyBytes: () => readKeyStdin(Readable.from([Buffer.alloc(32, 29), Buffer.alloc(1, 29)])),
+  }), /密钥导入未完成/);
+  assert.equal(writes, 0);
+});
