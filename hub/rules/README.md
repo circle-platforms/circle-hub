@@ -389,4 +389,4 @@ permissions used by the bootstrap. It requires `permission.drop`, revokes both g
 caching readiness. Missing support reports private diagnostic `node_permission_drop_missing`; a throwing or ineffective
 implementation reports `node_permission_drop_failed`. Neither condition permits a fallback. The existing per-child
 attestation still runs before pack loading. Synthetic missing/no-op/throwing implementations are regression inputs;
-tests and typecheck for this follow-up are delegated to the integrator and have not been run by its package agent.
+verification results are recorded in `docs/hub-r4-tasks/linux-probe-capability.md`.
