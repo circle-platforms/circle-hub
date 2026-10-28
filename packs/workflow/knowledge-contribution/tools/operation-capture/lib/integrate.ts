@@ -112,6 +112,16 @@ function primaryQuote(row: Prepared): Quote {
   return (row.kind === 'observation' ? row.result : row.kind === 'procedure' ? row.steps?.[0]?.quote : row.quote)!;
 }
 
+/** Only validated proposal fields enter this identity; the raw text itself never enters the key. */
+function proposalDigest(rows:Prepared[]):string {
+  return sha256(canonical(rows.map(row=>{
+    const common={capture:row.capture.capture.output.sha256,kind:row.kind,path:row.path,statement:row.statement};
+    if(row.kind==='observation')return {...common,action:row.action!,quote:row.result!};
+    if(row.kind==='procedure')return {...common,goal:row.goal!,steps:row.steps!};
+    return {...common,phenomenon:row.phenomenon!,suggestion:row.suggestion!,quote:row.quote!};
+  })));
+}
+
 export async function submitProposals(session: string, proposalPath: string, product: string, build: string | undefined, model: string) {
   const settings = await readSettings(session);
   need(settings?.enabled, 'sharing_disabled', '本会话未开启共享');
@@ -130,7 +140,7 @@ export async function submitProposals(session: string, proposalPath: string, pro
   const manifest = { items: rows.map((_, index) => ({ id: `operation-${index + 1}`, title: `操作记录 ${index + 1}` })) };
   const subject = await allowed(() => hub.uploadDocument(manifest, 'circle-operation-manifest.json'));
   const originals = [...new Set(rows.map(row => `src:${row.capture.capture.output.sha256}`))].map(reference => ({ reference }));
-  const clientKey = sha256(canonical({ schema: GENERATED.proposal_schema, session, subject, product, build: build ?? null, originals }));
+  const clientKey = sha256(canonical({ schema: GENERATED.proposal_schema, skill_version:GENERATED.version, session, subject, product, build: build ?? null, model, originals, proposal_digest:proposalDigest(rows) }));
   const started = await allowed(() => hub.call('start_run', {
     pack: PACK,
     product,
