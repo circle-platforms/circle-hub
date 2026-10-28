@@ -47,7 +47,7 @@ export function windowsKeychainStoreWithBoundary(options: WindowsKeychainOptions
   };
   const write = async (value: Uint8Array): Promise<void> => {
     if (!(value instanceof Uint8Array)) throw new PlatformError('Windows 密钥条目必须是 32 字节');
-    const key = Buffer.from(new Uint8Array(value));
+    const key = Buffer.from(new Uint8Array(value).buffer);
     let plain: Buffer | undefined;
     try {
       if (key.length !== KEY_BYTES) throw new PlatformError('Windows 密钥条目必须是 32 字节');

@@ -16,7 +16,7 @@
 - `windows-files.ts` 用进程 token 的 SID 确定身份，不采信 USERNAME、HOME 或配置里的用户名。线程存在 impersonation token 时拒绝。`GetUserProfileDirectoryW` 获取 profile 路径，`HKEY_USERS/<SID>` 必须已加载；这两个条件不是 DPAPI 可用性的替代证明，写前还会原生加解密合成 probe。
 - 目录必须是当前服务用户 profile 下的本地盘路径，拒绝 UNC、设备名、ADS、路径别名分量。父目录必须已存在。仅末级目录可由原生 `CreateDirectoryW` 创建；不会递归放宽父目录权限。
 - 每次操作保留逐级目录 OS 句柄，直到结束；打开时不共享写或删除，并用 `GetFileInformationByHandle` 拒绝 reparse point。最后目录及文件以句柄查询 owner 和 DACL：owner 必须当前 SID，DACL 必须 protected、只有当前 SID 的一个显式 full-control ACE。未继承管理员、SYSTEM 或 Everyone 访问。其他 ACL 一律拒绝，绝不自动修补或把 Node chmod 当 Windows 边界。文件硬链接数量必须为 1。
-- `CreateFileW` 的 `CREATE_NEW` 是拒覆盖边界；status 不是锁。write 完整写入并 `FlushFileBuffers` 后再读回比较。初始化中断可能留下格式无效的已占用条目，后续失败关闭，不能覆盖或重新生成 key。删除通过已验证的独占句柄设置 disposition。
+- `CreateFileW` 的 `CREATE_NEW` 是拒覆盖边界；status 不是锁。write 完整写入并 `FlushFileBuffers` 后再读回比较。短写、flush 或创建后校验失败时，在这次 CREATE_NEW 返回的原独占句柄上标记删除，关闭后撤销此次不完整新建；不会删除任何先前条目。若原生标记删除失败，明确报告状态未确认，停止并要求操作者检查，不能覆盖或重新生成 key。进程或机器突然中断仍可能留下格式无效的已占用条目，后续失败关闭。删除通过已验证的独占句柄设置 disposition。
 - 服务与管理命令必须以同一个已加载 profile 的用户运行。更换服务用户会遇到不同 SID/profile 和 DPAPI 身份；不能自动找到旧用户密钥。ACL 对其他普通身份的限制不构成对管理员提权、所有者主动改 ACL 或同一用户恶意程序的隔离承诺。
 
 现有 Hub `FileVault` 的 AES-256-GCM `.sealed` 条目没有改动。只有原始 32 字节 master key 一致，原条目才可能继续打开；更换 key 会失去解密能力。此分支没有把 Windows `.sealed` 目录的现有 Node 模式位认作 Windows ACL 证明；Windows 全部 vault 路径的持久化访问控制仍需集成审核，不能凭 master-key adapter 宣称整个密库安全完成。
@@ -41,3 +41,5 @@
 - [Koffi output parameters](https://koffi.dev/output)
 
 本任务没有发现需改动模型的规则冲突；Windows 服务/ACL/迁移可用性不足是明确保留的实现与证据缺口。
+
+内部只读复核后修正：输入副本使用一个新 Uint8Array 的 backing buffer，由 Buffer 共享后在 finally 清零，不再二次复制明文。新增副本擦除、短写/flush/rollback 故障注入测试源码；未运行。故障注入验证清理控制流，Windows 原生删除实际效果仍待 runner。

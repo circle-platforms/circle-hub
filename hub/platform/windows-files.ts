@@ -22,6 +22,24 @@ const BACKUP_SEMANTICS = 0x2000000;
 const MAX_FILE = 16384;
 type Pointer = bigint | null;
 
+/** Runs only after CREATE_NEW succeeded. Rollback acts on that same exclusive handle, never a pathname. */
+export function finishWindowsPrivateCreate(size: number, operations: {
+  write(): number;
+  flush(): boolean;
+  discard(): boolean;
+}): void {
+  try {
+    if (operations.write() !== size || !operations.flush()) throw new Error('incomplete write');
+  } catch {
+    let discarded = false;
+    try { discarded = operations.discard(); } catch { /* Preserve the original failure without native exception text. */ }
+    if (!discarded) {
+      throw new PlatformError('Windows 密钥条目写入未完成，原生删除也未确认；已停止，不覆盖或重新生成密钥', '保持服务停止，由操作者检查并处理这次新建的损坏条目后重试');
+    }
+    throw new PlatformError('Windows 密钥条目写入未完成；已在原创建句柄上标记删除，没有覆盖已有密钥');
+  }
+}
+
 /** Never uses chmod, environment identity, PowerShell or an inherited DACL as a Windows security boundary. */
 export function windowsPrivateFiles(directory: string): WindowsPrivateFiles {
   if (process.platform !== 'win32') throw new PlatformError('Windows 私有存储只可在 Windows 上使用');
@@ -193,11 +211,18 @@ export function windowsPrivateFiles(directory: string): WindowsPrivateFiles {
         let handle: Pointer = null;
         try {
           const attributes = { nLength: koffi.sizeof(attributesType), lpSecurityDescriptor: security[0], bInheritHandle: 0 };
-          handle = createFile(filePath(name), GENERIC_WRITE | READ_CONTROL, 0, attributes, CREATE_NEW, OPEN_REPARSE_POINT, null) as Pointer;
+          handle = createFile(filePath(name), GENERIC_WRITE | READ_CONTROL | DELETE, 0, attributes, CREATE_NEW, OPEN_REPARSE_POINT, null) as Pointer;
           if (!valid(handle)) throw new PlatformError('Windows 密钥条目创建失败；已有条目不会覆盖');
-          assertObject(handle, false, true);
-          const count = [0];
-          if (!writeFile(handle, value, value.length, count, null) || count[0] !== value.length || !flush(handle)) reject();
+          finishWindowsPrivateCreate(value.length, {
+            write() {
+              assertObject(handle, false, true);
+              const count = [0];
+              if (!writeFile(handle, value, value.length, count, null)) reject();
+              return count[0]!;
+            },
+            flush() { return Boolean(flush(handle)); },
+            discard() { return Boolean(disposition(handle, 4, Buffer.from([1]), 1)); },
+          });
         } finally { if (valid(handle)) close(handle); localFree(security[0]); }
       });
     },

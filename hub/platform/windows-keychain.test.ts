@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { windowsKeychainStore, windowsKeychainStoreWithBoundary } from './windows-keychain.ts';
-import type { WindowsPrivateFiles } from './windows-files.ts';
+import { finishWindowsPrivateCreate, type WindowsPrivateFiles } from './windows-files.ts';
 import type { WindowsDataProtection } from './windows-dpapi.ts';
 
 function fixture() {
@@ -105,4 +105,46 @@ test('Windows runner native fixture: persistence, duplicate create, DACL rejecti
     await assert.rejects(store.read());
     await assert.rejects(store.write(randomBytes(32)));
   } finally { await rm(parent, { recursive: true, force: true }); }
+});
+
+
+test('owned master-key copy has one shared backing allocation and is cleared after success or failure', async (t) => {
+  const { store, files, options, cipher } = fixture();
+  const key = randomBytes(32), original = Buffer.from(key);
+  const owned: Buffer[] = [];
+  const from = Buffer.from;
+  t.mock.method(Buffer, 'from', ((...args: unknown[]) => {
+    if (args[0] instanceof Uint8Array && args[0].byteLength === 32) throw Error('untracked extra plaintext copy');
+    const result = Reflect.apply(from, Buffer, args) as Buffer;
+    if (args[0] instanceof ArrayBuffer && args[0].byteLength === 32) owned.push(result);
+    return result;
+  }) as typeof Buffer.from);
+  await store.write(key);
+  const denied = windowsKeychainStoreWithBoundary(options, files, { ...cipher, protect() { throw Error('injected encryption failure'); } });
+  await assert.rejects(denied.write(key), /injected encryption failure/);
+  assert.equal(owned.length, 2);
+  for (const copy of owned) assert.ok(copy.every((byte) => byte === 0));
+  assert.deepEqual(key, original);
+});
+
+test('short write and flush failure discard only the newly created handle; failed discard reports unresolved state', () => {
+  for (const fault of ['short write', 'flush failure', 'write throws', 'flush throws']) {
+    let discarded = 0, flushed = 0;
+    assert.throws(() => finishWindowsPrivateCreate(32, {
+      write() { if (fault === 'write throws') throw Error('private native text'); return fault === 'short write' ? 31 : 32; },
+      flush() { flushed++; if (fault === 'flush throws') throw Error('private native text'); return fault !== 'flush failure'; },
+      discard() { discarded++; return true; },
+    }), /标记删除/);
+    assert.equal(discarded, 1);
+    assert.equal(flushed, fault === 'short write' || fault === 'write throws' ? 0 : 1);
+  }
+  let discarded = 0;
+  finishWindowsPrivateCreate(32, { write: () => 32, flush: () => true, discard() { discarded++; return true; } });
+  assert.equal(discarded, 0);
+  for (const throws of [false, true]) {
+    assert.throws(() => finishWindowsPrivateCreate(32, {
+      write: () => 0, flush: () => true,
+      discard() { if (throws) throw Error('private native text'); return false; },
+    }), /原生删除也未确认/);
+  }
 });

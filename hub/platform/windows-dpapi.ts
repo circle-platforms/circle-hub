@@ -41,7 +41,7 @@ export function windowsDataProtection(): WindowsDataProtection {
 
     const transform = (value: Uint8Array, decrypt: boolean): Uint8Array => {
       if (!(value instanceof Uint8Array)) throw new PlatformError('Windows 数据保护输入必须是字节');
-      const bytes = Buffer.from(new Uint8Array(value));
+      const bytes = Buffer.from(new Uint8Array(value).buffer);
       if (bytes.length === 0 || bytes.length > MAX_BYTES) {
         bytes.fill(0);
         throw new PlatformError('Windows 数据保护输入长度必须在 1 到 1048576 字节之间');
