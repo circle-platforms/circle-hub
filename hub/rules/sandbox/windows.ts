@@ -2,7 +2,6 @@
 // Apache-2.0, Copyright (c) 2026 qingshanfeihu and the Circle contributors.
 // See https://github.com/circle-platforms/circle. No archived module is imported.
 // A Job contains descendants; it does not deny network access or filesystem writes.
-import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 export interface WindowsJobApi {
@@ -53,7 +52,17 @@ export function loadWindowsJobApi(): Promise<WindowsJobApi> {
 
 async function loadNative(): Promise<WindowsJobApi> {
   const { default: koffi } = await import('koffi');
-  const kernel = koffi.load(join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'kernel32.dll'));
+  return createWindowsJobApi(koffi);
+}
+
+/** Injectable native boundary for synthetic loader/version checks without loading an addon. */
+export function createWindowsJobApi(koffi: {
+  version: string;
+  load(name: string): { func(declaration: string): (...args: unknown[]) => unknown };
+}): WindowsJobApi {
+  if (koffi.version !== '3.3.3') throw new Error('Windows Job 的 koffi 版本不匹配');
+  // Windows resolves this KnownDLL; no caller-controlled environment path is consulted.
+  const kernel = koffi.load('kernel32.dll');
   const create = kernel.func('void * __stdcall CreateJobObjectW(void *attributes, void *name)');
   const set = kernel.func('int __stdcall SetInformationJobObject(void *job, int kind, void *data, uint32_t size)');
   const open = kernel.func('void * __stdcall OpenProcess(uint32_t access, int inherit, uint32_t pid)');

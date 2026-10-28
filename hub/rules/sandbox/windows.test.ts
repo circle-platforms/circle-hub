@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { test } from 'node:test';
-import { attachWindowsJob, loadWindowsJobApi, windowsIsolationFailure, type WindowsJobApi } from './windows.ts';
+import { attachWindowsJob, createWindowsJobApi, loadWindowsJobApi, windowsIsolationFailure, type WindowsJobApi } from './windows.ts';
 import { isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { callPackFunction } from './sandbox.ts';
 
@@ -72,4 +72,28 @@ test('native Job cleanup terminates an idle bootstrap and its nested descendant'
   await job.stop();
   await exit;
   assert.throws(() => process.kill(pid as number, 0), { code: 'ESRCH' });
+});
+
+test('native loader uses the KnownDLL without consulting an overridden environment', () => {
+  const original = Object.getOwnPropertyDescriptor(process, 'env')!;
+  const loaded: string[] = [];
+  Object.defineProperty(process, 'env', { configurable: true, get() { throw Error('environment must not be read'); } });
+  try {
+    createWindowsJobApi({ version: '3.3.3', load(name) {
+      loaded.push(name);
+      return { func: () => () => undefined };
+    } });
+  } finally { Object.defineProperty(process, 'env', original); }
+  assert.deepEqual(loaded, ['kernel32.dll']);
+});
+
+test('unexpected koffi versions fail before any DLL load', () => {
+  for (const version of ['3.3.2', '3.3.4', '3.3.3-custom', '']) {
+    let loaded = false;
+    assert.throws(() => createWindowsJobApi({ version, load() {
+      loaded = true;
+      throw Error('must not load');
+    } }), /版本不匹配/);
+    assert.equal(loaded, false);
+  }
 });

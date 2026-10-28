@@ -392,7 +392,8 @@ Copyright (c) 2026 qingshanfeihu and the Circle contributors，源项目 https:/
 Circle 的路径/命令审批、凭据名过滤和环境过滤属于客户端策略；Windows `taskkill /T /F` 及 Job/进程树
 扫描用于清理。它们没有给 Hub 提供内核禁网、禁写。Circle 的 Job 分配失败可退回进程表扫描；
 Hub 适配不作这种降级：Job 创建、清理策略、分配、状态读取或终止失败均向调用方报错。
-`windows.ts` 延迟加载同版本 koffi，使用 kernel32 Job，结束整个 Job 后等待活动计数为零，
+`windows.ts` 延迟加载并严格核对 koffi 3.3.3，通过 Windows KnownDLL `kernel32.dll` 加载内核接口，
+不读取 SystemRoot 或从环境拼接 DLL 路径，版本不匹配在 DLL 加载前拒绝；使用 kernel32 Job，结束整个 Job 后等待活动计数为零，
 并保留同一次终止 Promise；关闭句柄时的 kill-on-close 是额外清理措施。该模块目前是待集成原语，
 没有用它运行 pack。进程启动后才分配 Job 可能漏掉启动阶段已创建的子进程，因此调用方只能附加
 仍在等待可信握手的 bootstrap；未来需要在不运行 pack 的前提下完成分配和验证。
