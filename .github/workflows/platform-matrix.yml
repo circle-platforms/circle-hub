@@ -1,0 +1,39 @@
+name: Synthetic native platform matrix
+
+# Synthetic checks only on explicit test branches or manual dispatch. This does not build or publish a release.
+on:
+  push:
+    branches: ['synthetic-platform/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Synthetic (${{ matrix.platform }}-${{ matrix.arch }})
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, platform: linux, arch: x64 }
+          - { runner: ubuntu-24.04-arm, platform: linux, arch: arm64 }
+          - { runner: macos-15-intel, platform: darwin, arch: x64 }
+          - { runner: macos-15, platform: darwin, arch: arm64 }
+          - { runner: windows-2025, platform: win32, arch: x64 }
+          - { runner: windows-11-arm, platform: win32, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts
+      - name: Check the native architecture and execute synthetic contracts
+        run: node .github/checks/platform-matrix.ts ${{ matrix.platform }} ${{ matrix.arch }}
+      - name: Reject unsupported Windows release readiness
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        run: node .github/checks/platform-matrix.ts --windows-readiness
