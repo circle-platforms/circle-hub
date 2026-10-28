@@ -40,7 +40,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   }
   const bound = (input.inputs as unknown[]).filter(isRecord);
   const inputs = bound.filter((b) => b.slot === SLOT);
-  const fix = `inputs.facets 绑定一个 by=line,module,has_expected,vague_expected,negative 计数视图，可再绑一个 by=line,module,tags 标签视图；inputs.placement 必填，绑定 by=commands ${COMMANDLESS_CASES}视图，三个视图同产品同知识根`;
+  const fix = `inputs.facets 绑定一个 by=line,module,has_expected,negative,test_type_status 计数视图，可再绑一个 by=line,module,tags,resource_empty,tag_valid 标签视图；inputs.placement 必填，绑定 by=commands ${COMMANDLESS_CASES}视图，三个视图同产品同知识根`;
   if (inputs.length < 1 || inputs.length > 2) return refusal('invalid_input', 'facets 需要一个计数视图和可选的一个标签视图', fix);
   const countInputs = inputs.filter((b) => isRecord(b.model) && Array.isArray(b.model.by) && b.model.by.includes('has_expected'));
   const tagInputs = inputs.filter((b) => { const model = b.model; if (!isRecord(model) || !Array.isArray(model.by)) return false; const by = model.by; return by.length === 5 && ['line', 'module', 'tags','resource_empty','tag_valid'].every((key) => by.includes(key)); });
@@ -63,7 +63,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   const placement = placeRead.view;
   if (placement.by.length !== 1 || placement.product !== view.product || placement.root !== view.root || placement.total !== view.total) return refusal('view_mismatch', `${COMMANDLESS_CASES}视图必须是同产品同知识根的 by=commands 视图，且 total 相同`, fix);
   const nullRows = placement.rows.filter((row) => row.values.commands === null);
-  if (placement.truncated && nullRows.length === 0) return refusal('wrong_view', `缺少事实：${COMMANDLESS_CASES}计数；视图截断且没有读到空组`, `自动重新读取同根未截断的 by=commands 视图并重试；当前分面接口不能分页或按 only= 补读，若仍被截断，报告知识包的汇总能力缺口，请集成者补取不可截断的${COMMANDLESS_CASES}汇总字段，不能结束为未知`);
+  if (placement.truncated && nullRows.length === 0) return refusal('wrong_view', `缺少事实：${COMMANDLESS_CASES}计数；视图截断且没有读到空组`, `重新绑定同根完整的 by=commands 视图；若续页仍受能力缺口、预算或来源限制，请管理员补足来源或请维护者提供完整的${COMMANDLESS_CASES}汇总，不猜测为零`);
   const unplaced = nullRows.reduce((sum, row) => sum + row.count, 0);
   const warnings: PackWarning[] = [];
 
@@ -77,6 +77,8 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   applyExpectedJudgments(groups,view,bound);
   if (tags) attachCoverage(groups, tags);
   if (groups.length === 0) {
+    if(view.total>0||view.truncated||view.skipped>0||view.scopeComplete===false)
+      return refusal('wrong_view', `计数视图没有可用分组（total=${view.total}，truncated=${view.truncated}，skipped=${view.skipped}${view.scopeComplete===false?'，文档范围未完成':''}）；不能据此认定没有用例`, '按视图续读并补齐未读来源；仍无法取得完整计数时请知识库维护者提供完整视图', warnings);
     return refusal('no_cases', `构建 ${view.build} 的根里没有用例条目（视图的 total 是 ${view.total}），看板没有条目可算`, '确认这个构建的用例索引已经同步（knowledge sync），再开始运行', warnings);
   }
   const ids = new Set(groups.map((g) => g.id));
