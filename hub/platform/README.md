@@ -537,3 +537,7 @@ and accessed no real systems, credentials or environment configuration. It cover
 effective-account binding, systemd ownership and contradictory-state refusals, operator-token-only removal, and Node
 and restore recovery guidance. This is independent static review evidence for that fixed change set; it does not prove
 a complete real Hub migration, production safety, or target-server behavior. This documentation update ran no tests.
+
+Independent integration review: Antigravity reviewed merge `1b845383` against the prior platform review and found no
+static conflict with the Linux permission-revocation readiness probe. This review did not run tests or verify a real Hub
+migration; the synthetic Linux and integration checks remain separate evidence.
