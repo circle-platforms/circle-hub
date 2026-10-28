@@ -87,3 +87,13 @@
 夹具只接受预备的真实代码release，生成全合成外层TCP哨兵与文件；先正向证明VM外层同一哨兵可达，再在真实瞬时systemd进程里证明不可达、宿主路径不可读、发布不可写及Node子进程netns继承。显式检查namespace接口和IPv4/6非lo路由。失败保持禁止实物状态；namespace仍有PID时不删除。没有任何真实backup、主密钥或环境读取入口。
 
 新增 `linux-rehearsal-isolation.test.ts` 包含拒绝foreign identity/escaping path/任意入口的合成负例，以及显式opt-in管理员VM实证入口。此夹具尚未运行/类型检查；并未证明当前hublinux已授予systemd/root权限或可用RootDirectory/ProtectProc。它只实证基础隔离，不执行restore/serve/PG，因此PG/Hub进程树继承和真实数据阶段的固定命令wrapper/传输编排仍未关闭，不能开始实物。所有实物数据操作仍由主代理协调后另行实现与审查。
+
+### 84b16edc 静态审查阻断修正（仍未运行）
+
+- 宿主动态库/发布/Node/数据绑定先以真实规范路径定位其 mountinfo 的本地 ext4/xfs/btrfs 设备与 mount root；任一绑定源含子挂载或处在 virtiofs/9p/NFS 等未允许文件系统上即拒绝。隔离内逐个核设备、来源根和目标，未声明的真实文件系统挂载一律失败；不再用“mountinfo 非空”作证明。此严格规则可能拒绝 systemd 自动生成的额外挂载，未在VM跑过前不能放宽或声称可用。
+- 哨兵在 rootfs 外的本次独占目录：仅 visible 单文件绑定到 `/sentinel/visible`，兄弟 hidden 不绑定；同时验证内路径、self/root路径与父进程 `/proc/<pid>/root` 逃逸拒绝。
+- 取消任何按猜测名称 `systemctl stop` 的逻辑。同步 `--wait --collect` 成功后才读取真正systemd进程产生的 InvocationID/UID/netns/root inode收据。失败或超时不停止可能同名的他人unit；RuntimeMaxSec限制瞬时unit寿命，仍有PID时保留namespace/账户/目录并披露失败。
+- namespace创建成功后登记dev/inode，删除前重核且要求无PID；账户创建成功后登记UID/GID和精确passwd/group行，删除前重核；rootfs和外部哨兵目录删除前核规范路径及dev/inode/属主/类型。未知不删。
+- root固定为 `/var/tmp/chvm-<本次12hex>`，user/namespace/unit同suffix，data固定root/data；release固定专用 `/var/tmp/chvm-build-<12hex>/release`。禁止 `/`、重复斜线、dot/parent跳转、符号链接祖先与非管理员可改写的绑定源祖先；发布树必须管理员冻结，内部symlink仅能留在该发布内。
+
+新增可复现合成负例覆盖宿主库子挂载、共享源、错误mount root/额外挂载、替换inode/设备/属主/文件类型、`/`与suffix不一致、symlink和词法重解析。全部尚未运行；原始 `pipeSyntheticKey` 仍只用于合成测试，不能作为真实主密钥传输保护设施。真实数据阶段继续关闭，不能用此补丁代替独审、完整测试与真实PG/Hub进程树实证。
