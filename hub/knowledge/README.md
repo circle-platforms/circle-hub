@@ -734,6 +734,12 @@ Milestone 2:
 
 ## Composition-pinned literal relations (kb-links, first step)
 
+Relation preparation reads tree nodes in batches of at most 128 instead of issuing one indexed read per node. Each node
+uses the same oldest indexed record and digest/shape validation as the single-node reader; missing or invalid records still
+produce the existing repair outcome. After prefetch, relation sources are processed in the original depth-first order,
+including a shared digest reached at more than one path. The computation still examines the full declared relation scope;
+batching reduces storage round trips and does not establish a wall-time bound for an arbitrarily large composition.
+
 The product's optional `links` array declares `id`, a top-level literal `field`, a target `namespace`, generated `link_match`,
 and an `entry_kind` (required for longest-prefix matching). Only declared boolean normalizers are supported: `lowercase`,
 `nfc`, `nfkc` and `strip_nul`; NFC and NFKC are mutually exclusive. Omission means unchanged spelling. Tokenization is by
