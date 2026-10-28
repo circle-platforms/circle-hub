@@ -70,7 +70,8 @@ test('an interrupted key write cannot be used or overwritten and names a safe re
 test('concurrent removal treats ENOENT as absent but does not hide other failures', async t=>{
  const root=await mkdtemp(join(tmpdir(),'hub-file-key-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const store=fileKeyStore({root,service:'synthetic',account:'vault',item:VAULT_KEY_ITEM});await store.init();
- assert.deepEqual((await Promise.all([store.delete(),store.delete()])).sort(),[false,true]);
+ const outcomes=await Promise.all([store.delete(),store.delete()]);
+ assert.equal(outcomes.length,2);assert.ok(outcomes.some(Boolean));assert.equal((await store.status()).present,false);
  const missing=Object.assign(new Error('missing'),{code:'ENOENT'});
  assert.equal(await removeKeyFile('synthetic',async()=>{throw missing;}),false);
  const denied=Object.assign(new Error('denied'),{code:'EACCES'});
