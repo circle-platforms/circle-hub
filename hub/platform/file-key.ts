@@ -9,6 +9,11 @@ import { KeychainName, OPERATOR_TOKEN_ACCOUNT } from './settings.ts';
 import { VAULT_KEY_ITEM, UNNAMED_ITEM, OPERATOR_TOKEN_ITEM } from './keychain-items.ts';
 
 export interface FileKeyOptions { root: string; service: string; account: string; item?: KeychainItem }
+/** Removing an already removed key is idempotent; other filesystem failures remain visible. */
+export async function removeKeyFile(path: string, remove: typeof unlink = unlink): Promise<boolean> {
+  try { await remove(path); return true; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
+}
 /** Store file is keyed by names, not secret data. The directory and files are checked on every access. */
 export function fileKeyStore(options: FileKeyOptions): KeychainStore {
   const {root, service, account} = options;
@@ -63,7 +68,7 @@ export function fileKeyStore(options: FileKeyOptions): KeychainStore {
       try { if (!timingSafeEqual(bytes, actual)) throw new PlatformError(`读回的${item.label}不一致`); } finally { actual.fill(0); }
     } finally { bytes.fill(0); }
   };
-  return {service,account,status,read,write,async init(){const bytes=randomBytes(KEY_BYTES);try{await write(bytes);}finally{bytes.fill(0);}},async delete(){if(!(await status()).present)return false;await unlink(path);return true;}};
+  return {service,account,status,read,write,async init(){const bytes=randomBytes(KEY_BYTES);try{await write(bytes);}finally{bytes.fill(0);}},async delete(){if(!(await status()).present)return false;return removeKeyFile(path);}};
 }
 export function fileKeyProvider(options: FileKeyOptions): Required<KeyProvider> {
   const store = fileKeyStore({...options,item:VAULT_KEY_ITEM});

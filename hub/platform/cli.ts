@@ -59,14 +59,14 @@ function environmentChoices(): string {
   return ENVIRONMENT.map((code) => `${code}（${labelOf('environment', code)}）`).join('、');
 }
 
-export function usage(): string {
+export function usage(platform: NodeJS.Platform = process.platform): string {
   return [
     '用法：circle-hub <命令>',
     '',
     `  init --environment <环境类别> [--port <端口>]   建数据根和部署设置，初始化并启动数据库；环境类别：${environmentChoices()}`,
     '  db start|stop|status                           本机 PostgreSQL（只有 unix 套接字，没有 TCP 端口）',
     `  key init [--set-aside-vault]|status             在钥匙串里建立或查看${VAULT_KEY_ITEM.label}（从不显示密钥）`,
-    '  service install|uninstall|start|stop|status    launchd 用户服务 circle-hub serve',
+    `  service install|uninstall|start|stop|status    ${platform === 'linux' ? 'systemd' : 'launchd'} 用户服务 circle-hub serve`,
     '  backup [--keep <份数>]                         备份数据库、对象、密钥库与设置文件，并清理旧备份',
     '  restore <备份目录>                             校验后恢复到空的数据根',
     '  deploy [--source <目录>] [--commit <提交>] [--copy]   部署一个提交；失败时恢复部署前备份并切回上一版',
@@ -323,7 +323,7 @@ const restore: Handler = async (args, context, io) => {
   return withLock(platformLockPath(context), async () => {
     await refuseWhilePending(context, '恢复');
     if ((await agentFor(context).status()).loaded) {
-      throw new PlatformError('Hub 服务已加载（launchd 会不断重启它，它会和恢复抢数据库），不恢复', '先运行 circle-hub service stop，恢复完成后再运行 circle-hub service start');
+      throw new PlatformError(`Hub 服务已加载（${context.platform === 'linux' ? 'systemd' : 'launchd'} 会不断重启它，它会和恢复抢数据库），不恢复`, '先运行 circle-hub service stop，恢复完成后再运行 circle-hub service start');
     }
     // The settings that will apply after the restore: the data root's own, else the backup's.
     const file = (await readSettingsFile(context.layout)) ?? (await backupSettings(dir));
@@ -481,7 +481,7 @@ export async function runPlatformCommand(argv: readonly string[], io: PlatformIo
   try {
     assertHubEnvironment(io.env);
     if (command === undefined || command === 'help' || command === '--help' || command === '-h') {
-      io.stdout(usage());
+      io.stdout(usage(overrides.platform));
       return command === undefined ? 2 : 0;
     }
     const handler = isPlatformCommand(command) ? HANDLERS[command] : undefined;
@@ -493,7 +493,7 @@ export async function runPlatformCommand(argv: readonly string[], io: PlatformIo
   } catch (error) {
     if (error instanceof UsageError) {
       io.stderr(error.message);
-      io.stderr(usage());
+      io.stderr(usage(overrides.platform));
       return 2;
     }
     io.stderr(`错误：${error instanceof Error ? error.message : String(error)}`);

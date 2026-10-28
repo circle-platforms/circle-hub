@@ -367,6 +367,17 @@ describe('platform CLI', () => {
   });
 });
 
+test('Linux restore reports systemd when a loaded service would race the database', async () => {
+  const parent=await tempDir();
+  try {
+    const root=join(parent,'root');const captured=captureIo({CIRCLE_HUB_DATA_DIR:root},parent);
+    const runner=recordingRunner(call=>call.command==='/usr/bin/systemctl' ? ok('LoadState=loaded\nActiveState=active\nMainPID=12\nExecMainStatus=0\n') : undefined,{real:false});
+    assert.equal(await runPlatformCommand(['restore',join(parent,'backup')],captured.io,{platform:'linux',home:parent,runner:runner.runner,launchAgentsDir:join(parent,'units')}),1);
+    assert.match(captured.err.join('\n'),/systemd 会不断重启它/);
+    assert.doesNotMatch(captured.err.join('\n'),/launchd/);
+  } finally { await removeDir(parent); }
+});
+
 describe('service commands on settings that give the vault master key the operator token\'s account', () => {
   test('install and start are refused before launchctl or anything else runs; stop, uninstall and status still work', async () => {
     const parent = await tempDir();

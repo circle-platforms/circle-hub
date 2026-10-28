@@ -3,7 +3,7 @@ import {mkdtemp, chmod, lstat, readdir, rename, rm, symlink, writeFile} from 'no
 import {tmpdir,userInfo} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
-import {fileKeyProvider, fileKeyStore} from './file-key.ts';
+import {fileKeyProvider, fileKeyStore, removeKeyFile} from './file-key.ts';
 import {VAULT_KEY_ITEM, OPERATOR_TOKEN_ITEM} from './keychain-items.ts';
 import {agentFor, createContext, keychainFor} from './context.ts';
 import {layoutAt} from './layout.ts';
@@ -65,4 +65,14 @@ test('an interrupted key write cannot be used or overwritten and names a safe re
  await assert.rejects(store.write(Buffer.alloc(32)), /不覆盖/);
  await rename(path,join(root,'damaged-key'));
  await store.write(Buffer.alloc(32));assert.equal((await store.read()).length,32);
+});
+
+test('concurrent removal treats ENOENT as absent but does not hide other failures', async t=>{
+ const root=await mkdtemp(join(tmpdir(),'hub-file-key-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const store=fileKeyStore({root,service:'synthetic',account:'vault',item:VAULT_KEY_ITEM});await store.init();
+ assert.deepEqual((await Promise.all([store.delete(),store.delete()])).sort(),[false,true]);
+ const missing=Object.assign(new Error('missing'),{code:'ENOENT'});
+ assert.equal(await removeKeyFile('synthetic',async()=>{throw missing;}),false);
+ const denied=Object.assign(new Error('denied'),{code:'EACCES'});
+ await assert.rejects(removeKeyFile('synthetic',async()=>{throw denied;}),error=>error===denied);
 });

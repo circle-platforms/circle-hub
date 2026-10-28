@@ -503,3 +503,10 @@ comes from the effective operating-system account, not an inherited `HOME`; the 
 user-unit directory must be controlled by that account or a trusted administrator. Use a correctly configured user manager
 and linger. For a durable migration freeze use `service uninstall`, which stops and disables the unit; `service stop`
 alone does not disable autostart on the next login or reboot.
+
+### Independent platform review
+
+Antigravity independently reviewed commits `f6640e08` and `385d37d3` by static inspection and reported PASS, with two
+follow-up findings. Linux service recovery and restore messages now name systemd while macOS retains launchd; concurrent
+key deletion now treats an already removed file as absent and still reports other filesystem errors. Synthetic regression
+tests cover both paths. The review did not execute tests; the follow-up tests must be run separately before integration.
