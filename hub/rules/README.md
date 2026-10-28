@@ -471,7 +471,7 @@ userenv（不假定 userenv 是 KnownDLL，不读 SystemRoot），派生 AppCont
 ALL_APPLICATION_PACKAGES opt-out、禁止子进程与 Win32k 禁用属性；使用现有 write-restricted token，
 无 shell、无继承句柄、空环境，以 CREATE_SUSPENDED 创建当前 Node。在恢复前核对 LPAC、AppContainer
 SID、空 capabilities、child-process 标志、派生写限制 SID，绑定限额 Job，恢复后观察退出，失败终止并
-确认退出。探针不修改系统 ACL、不创建登录会话、不注册持久 AppContainer profile。
+确认退出。探针不修改系统 ACL、不创建登录会话；使用唯一临时 AppContainer profile，并在子进程退出后删除本次创建的身份。
 依据 [Microsoft LPAC 启动示例](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer)
 与 [DeriveAppContainerSidFromAppContainerName](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-deriveappcontainersidfromappcontainername)。
 
@@ -481,3 +481,13 @@ Node。另有 argv 引号/末尾反斜杠/NUL 用例。新增 6 例未运行，�
 所在目录缺少 LPAC 只读执行授权，或令牌组合不支持而拒绝启动；遇到这些情况必须保持拒绝并记录原生
 错误，不能退回普通进程。尚缺：只读资源授权、协议管道、每调用验证、更多 IPC/异步写反例与 pack 接线。
 因此新代码仍不是 Windows 生产可用证据，readiness 与 pack 入口继续失败关闭。
+
+
+LPAC 第一轮原生运行 `df7e1cc` / `40640246103`（集成者回执及本机保存的 runner 日志）：双架构
+各 17 通过、5 失败、0 跳过；5 例均在挂起创建报 Win32 2，未到安全断言。静态复核发现只派生 SID、
+未创建 profile，遗漏 Microsoft 启动流程中的创建步骤；这与失败一致，但尚不能定为唯一运行根因。
+修复改为每次唯一临时 profile，已有同名明确失败，不复用、不删除；创建成功才允许清理该身份。
+参数仍为显式 UTF-16/NUL、STARTUPINFOEXW112、挂起/扩展/Unicode/无窗口标志，未去掉任何 OS 属性。
+增加父侧路径存在/可识别二进制/工作目录存在的布尔预检，失败日志只列固定阶段、数字错误码和这些布尔，
+不含路径、账户、SID、令牌、源代码或环境。profile 删除或其他回滚失败均拒绝并披露清理未知，且保留
+启动阶段错误。原 5 项安全断言完整保留，尚待双架构复测；当前没有 LPAC 成功证据。
