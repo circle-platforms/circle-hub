@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import { ParseEncodingError, ParseLimitError } from './format.ts';
 import { htmlParser, type HtmlBlock, type HtmlModel } from './html.ts';
 import { fixture, latin1, timed, utf8 } from '../../../../hub/refs/test-support.ts';
+import { assertLinearGrowth } from '../../../../hub/testing/growth.ts';
 
 const bytes = fixture('listing.html');
 const listing = htmlParser.parse(bytes);
@@ -181,12 +182,17 @@ describe('html@1 behaviour', () => {
 });
 
 describe('html@1 on hostile input', () => {
-  const BOUND_MS = 2_000;
+  // A catastrophic ceiling, about ten times the slowest parse seen on a CI runner: it catches a hang, not a slowdown.
+  // Whether the work stays linear is checked by growth ratios, which do not depend on how fast or busy the runner is.
+  const CEILING_MS = 20_000;
   const attributes = (count: number): string => Array.from({ length: count }, (_, i) => `a${i}`).join(' ');
   function outcomeOf(html: string, options = {}): ReturnType<typeof timed> {
     const outcome = timed(() => htmlParser.parse(utf8(html), options));
-    assert.ok(outcome.ms < BOUND_MS, `${html.slice(0, 40)}... took ${outcome.ms.toFixed(0)} ms`);
+    assert.ok(outcome.ms < CEILING_MS, `${html.slice(0, 40)}... took ${outcome.ms.toFixed(0)} ms`);
     return outcome;
+  }
+  function linear(label: string, html: (count: number) => string, small: number): void {
+    assertLinearGrowth(label, (count) => utf8(html(count)), (input) => htmlParser.parse(input), { small });
   }
   const limited = (limit: string) => (error: unknown): boolean => error instanceof ParseLimitError && error.limit === limit;
 
@@ -218,6 +224,8 @@ describe('html@1 on hostile input', () => {
     const fostered = outcomeOf(`<table>${'x<b>y</b>'.repeat(200_000)}`);
     assert.equal(fostered.error, null, String(fostered.error));
     assert.equal(outcomeOf('<a><table><a>'.repeat(80_000)).error, null);
+    linear('foster-parented text', (n) => `<table>${'x<b>y</b>'.repeat(n)}`, 12_500);
+    linear('misnested formatting around tables', (n) => '<a><table><a>'.repeat(n), 5_000);
     assert.ok(limited('maxNodes')(outcomeOf(`<table>${'x<b>y</b>'.repeat(100)}`, { maxNodes: 150 }).error), 'text nodes count');
     const text = outcomeOf(`<div>${'x<br>'.repeat(100)}</div>`, { maxNodes: 150 });
     assert.ok(limited('maxNodes')(text.error), 'text appended in body counts too');
@@ -229,6 +237,7 @@ describe('html@1 on hostile input', () => {
     const model = (outcome.value as { model: HtmlModel }).model;
     assert.equal(model.blocks[0].links.length, 240_000);
     assert.equal(model.links[239_999].block, 0);
+    linear('links in one block', (n) => `<p>${'<a href=x>y</a>'.repeat(n)}`, 15_000);
   });
 
   it('bounds the wrapper lists of text deep inside formatting elements', () => {
