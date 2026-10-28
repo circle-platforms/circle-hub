@@ -13,6 +13,7 @@ import { messageOf, PlatformError } from './errors.ts';
 import { isMissingOrEmpty, withLock } from './files.ts';
 import { checkHealth, HEALTH_PATH, portAnswers } from './health.ts';
 import { VAULT_KEY_ITEM } from './keychain-items.ts';
+import { exportVaultKey, importVaultKey, processKeyTransferIo, type KeyTransferIo } from './key-transfer.ts';
 import { checkNode, serviceDefinition, stableNodePath } from './launchd.ts';
 import { DATA_ROOT_VARIABLE, ensureLayout, socketFile, type Layout } from './layout.ts';
 import { databaseOwner, ensureDatabaseRunning } from './postgres.ts';
@@ -39,6 +40,8 @@ export interface PlatformIo {
   stderr(line: string): void;
   env: NodeJS.ProcessEnv;
   cwd: string;
+  /** Binary pipe for master-key transfer; ordinary output never carries key bytes. */
+  keyTransfer?: KeyTransferIo;
   /** CIRCLE_HUB_* names the calling program reads itself (the server CLI); every other unknown name is refused. */
   allowVariables?: readonly string[];
 }
@@ -65,7 +68,7 @@ export function usage(): string {
     '',
     `  init --environment <环境类别> [--port <端口>]   建数据根和部署设置，初始化并启动数据库；环境类别：${environmentChoices()}`,
     '  db start|stop|status                           本机 PostgreSQL（只有 unix 套接字，没有 TCP 端口）',
-    `  key init [--set-aside-vault]|status             在钥匙串里建立或查看${VAULT_KEY_ITEM.label}（从不显示密钥）`,
+    `  key init [--set-aside-vault]|status|export --confirm|import   管理${VAULT_KEY_ITEM.label}，导入导出只经管道`,
     '  service install|uninstall|start|stop|status    launchd 用户服务 circle-hub serve',
     '  backup [--keep <份数>]                         备份数据库、对象、密钥库与设置文件，并清理旧备份',
     '  restore <备份目录>                             校验后恢复到空的数据根',
@@ -199,10 +202,14 @@ class KeyInitRefusal extends PlatformError {
 const key: Handler = async (args, context, io) => {
   const [action, ...rest] = args;
   const setAsideVault = action === 'init' && rest.length === 1 && rest[0] === '--set-aside-vault';
-  if ((action !== 'init' && action !== 'status') || (rest.length > 0 && !setAsideVault)) throw new UsageError('用法：circle-hub key init [--set-aside-vault]|status');
+  const exportConfirmed = action === 'export' && rest.length === 1 && rest[0] === '--confirm';
+  if (!['init', 'status', 'export', 'import'].includes(action ?? '') || (rest.length > 0 && !setAsideVault && !exportConfirmed) || (action === 'export' && !exportConfirmed)) throw new UsageError('用法：circle-hub key init [--set-aside-vault]|status|export --confirm|import');
+  if ((action === 'export' || action === 'import') && !io.keyTransfer) throw new PlatformError('密钥管道不可用；请在系统命令行用管道执行');
   const settings=await settingsOf(context);
   const store = keychainFor(context, settings);
   const item = `服务 ${store.service}，账户 ${store.account}`;
+  if (action === 'export') { await exportVaultKey(store, io.keyTransfer!); return 0; }
+  if (action === 'import') { await importVaultKey(store, io.keyTransfer!); io.stderr('密钥已导入；请核验密钥库条目'); return 0; }
   if (action === 'init') {
     if (!setAsideVault && !(await isMissingOrEmpty(context.layout.vault))) throw new KeyInitRefusal('vault_not_empty');
     const initialize = async (): Promise<number> => {
@@ -494,5 +501,6 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     stderr: (line) => process.stderr.write(`${line}\n`),
     env: process.env,
     cwd: process.cwd(),
+    keyTransfer: processKeyTransferIo(),
   });
 }

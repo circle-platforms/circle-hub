@@ -13,7 +13,7 @@ import { isAbsolute, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { PARTITION, PERMISSION_ROLE, isPermissionRole, labelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError, assertNoRetiredEnvironment, type HubConfig } from '../config/index.ts';
-import { PLATFORM_COMMANDS, hubKeyProvider, isPlatformCommand, runPlatformCommand } from '../platform/api.ts';
+import { PLATFORM_COMMANDS, hubKeyProvider, isPlatformCommand, processKeyTransferIo, runPlatformCommand } from '../platform/api.ts';
 import { RecordsError, openRecords, type CallLogLine, type Principal, type RecordsKit, type User } from '../records/index.ts';
 import type { AssemblyModule, CliCommand, CliContext, CliIo, RegisterCommand, ServerDeps } from './api.ts';
 import { OPERATOR_TOKEN_VARIABLE, takeEnvironmentToken, type OperatorTokenStore } from './assemble/operator-token.ts';
@@ -514,6 +514,7 @@ const processIo = (): CliIo => ({
   stderr: (line) => process.stderr.write(`${line}\n`),
   env: process.env,
   cwd: process.cwd(),
+  keyTransfer: processKeyTransferIo(),
 });
 
 /** Runs one command and resolves with its exit code: 0 ok, 1 failure, 2 usage (platform status commands may give 3). */
@@ -542,7 +543,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2), over
   }
   if (isPlatformCommand(command)) {
     // allowVariables names what the server CLI reads itself (hub/platform); the token is not passed on at all.
-    return runPlatformCommand(argv, { stdout: io.stdout, stderr: io.stderr, env: platformEnvironment(io.env), cwd: io.cwd, allowVariables: [OPERATOR_TOKEN_VARIABLE] });
+    return runPlatformCommand(argv, { stdout: io.stdout, stderr: io.stderr, env: platformEnvironment(io.env), cwd: io.cwd, keyTransfer: io.keyTransfer, allowVariables: [OPERATOR_TOKEN_VARIABLE] });
   }
   if (command === 'serve') return serve(rest, options);
   const ctx = contextFor(options, assembly);

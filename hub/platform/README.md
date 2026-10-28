@@ -31,6 +31,19 @@ name). Every directory is 0700.
 
 ## Commands
 
+`circle-hub key export --confirm` writes exactly 32 binary key bytes only to a pipe or socket; it refuses terminals and
+regular files, writes no success message to stdout and never includes the key in arguments, environment or logs.
+`circle-hub key import` reads exactly 32 bytes from a pipe or socket, refuses an existing key and reports only status on
+stderr. Use an authenticated pipe to the intended machine and verify its identity before sending; a pipe's downstream
+consumer remains responsible for not displaying or saving the key. The operation token is a separate item and is not
+transferred. On Linux the key-store implementation must be installed before this command can use the file provider.
+
+After restoration, freeze vault writers and run `circle-hub records verify --vault`: it checks every ciphertext with the
+master key and reports only counts, never names or plaintext. An empty vault or missing proof is unknown and has a next
+step; exceptions and changes during the scan are not success. Metadata checks cannot prevent a separate writer from
+changing the vault after the scan, so stopping writers is a prerequisite. Legacy vaults are checked without creating or
+rewriting their key-check file.
+
 `circle-hub init --environment <test|shared|production> [--port <p>]`, `db start|stop|status`, `key init [--set-aside-vault]|status`,
 `service install|uninstall|start|stop|status`, `backup [--keep N]`, `restore <dir>`,
 `deploy [--source <dir>] [--commit <rev>] [--copy]`, `rollback`, `rehearse [--keep]`, `status`. Exit codes: 0 ok,

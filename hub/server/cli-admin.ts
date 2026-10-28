@@ -1337,8 +1337,8 @@ async function docCommand(session: Session, args: readonly string[]): Promise<nu
 }
 
 async function recordsCommand(session:Session,args:readonly string[]):Promise<number> {
-  const [sub,...rest]=args;if(sub!=='verify')throw new UsageError('records verify [--kind <记录类型>]');
-  const {values}=parse(rest,{kind:{type:'string'},as:{type:'string'}},0);
+  const [sub,...rest]=args;if(sub!=='verify')throw new UsageError('records verify [--kind <记录类型>] [--vault]');
+  const {values}=parse(rest,{kind:{type:'string'},as:{type:'string'},vault:{type:'boolean'}},0);
   const viewer=await session.viewer(values.as);if(viewer.role!=='admin')throw new CliError('只有管理员能核对记录完整性');
   const kind=values.kind ?? 'action';if(!(RECORD_KINDS as readonly string[]).includes(kind))throw new UsageError('记录类型不在生成的协议词表里');
   const records=await session.records();let cursor:string|null=null,total=0,notes=0;
@@ -1347,7 +1347,16 @@ async function recordsCommand(session:Session,args:readonly string[]):Promise<nu
     for(const record of page.items){total++;if(record.integrity_note){notes++;if(record.kind==='action')session.out(`记录 ${record.id}；摘要 ${record.digest}；${record.integrity_note}`);}}
     cursor=page.next;
   }while(cursor);
-  session.out(`已核对记录 ${total}；正文不是规范写法、内容与摘要一致 ${notes}`);return 0;
+  session.out(`已核对记录 ${total}；正文不是规范写法、内容与摘要一致 ${notes}`);
+  if(values.vault){
+    if(!records.vault.verify){session.out('密钥库核验未知：当前密钥库不支持只读逐条核验；下一步：安装支持核验的版本并停写后重试');return 1;}
+    let result;
+    try { result=await records.vault.verify(); } catch {session.out('密钥库核验未知：读取或解密核验未完成；下一步：停写并检查密钥来源和密钥库完整性后重试');return 1;}
+    session.out(`密钥库：已核验 ${result.checked} 条；异常 ${result.failed} 项`);
+    if(result.unknown){session.out('密钥库核验未知：没有可核对的密文条目或缺少必要事实；下一步：确认迁移源含密文条目和正确主密钥，停写后重试');return 1;}
+    if(result.failed){session.out('密钥库核验未通过；下一步：检查备份、密钥及密文条目，停写后重试');return 1;}
+  }
+  return 0;
 }
 
 // ---------------------------------------------------------------- sharing (B04, R02): a read capability only
@@ -1401,7 +1410,7 @@ type Handler = (session: Session, args: readonly string[]) => Promise<number>;
 const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
   {name:'share',summary:SHARE_USAGE.slice('share '.length),handler:sharingCommand},
   {name:'unshare',summary:UNSHARE_USAGE.slice('unshare '.length),handler:(session,args)=>sharingCommand(session,args,true)},
-  {name:'records',summary:'verify [--kind <记录类型>]（只核存储、说明和摘要，不输出正文）',handler:recordsCommand},
+  {name:'records',summary:'verify [--kind <记录类型>] [--vault]（核存储摘要，可选核验密钥库解密，不输出正文）',handler:recordsCommand},
   { name: 'executor', summary: EXECUTOR_USAGE, handler: executorCommand },
   { name: 'job', summary: JOB_USAGE, handler: jobCommand },
   { name: 'bed', summary: BED_USAGE, handler: bedCommand },

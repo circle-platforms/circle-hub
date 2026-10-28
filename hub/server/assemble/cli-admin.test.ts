@@ -1420,6 +1420,25 @@ test('R32 a fresh administrator command exposes noncanonical action diagnostics 
   assert.match(result.text,/正文不是规范写法/);assert.match(result.text,new RegExp(digest));assert.doesNotMatch(result.text,/SYNTHETIC_PRIVATE_DIAGNOSTIC/);
 });
 
+test('records verify --vault authenticates every frozen synthetic entry without disclosing names or values',async t=>{
+  const admin=await setup();const kit=await admin.kit();t.after(()=>kit.close());
+  const first='synthetic-private-alpha';const second='synthetic-private-beta';
+  await kit.vault.put('hidden-alpha',first);await kit.vault.put('hidden-beta',second);
+  const result=await admin.run(['records','verify','--vault']);
+  assert.equal(result.code,0,result.text);assert.match(result.text,/密钥库：已核验 2 条；异常 0 项/);
+  assert.doesNotMatch(result.text,/hidden-alpha|hidden-beta|synthetic-private-alpha|synthetic-private-beta/);
+  await writeFile(join(admin.deployment.dataDir,'vault','hidden-beta.sealed'),'broken synthetic data');
+  const broken=await admin.run(['records','verify','--vault']);
+  assert.notEqual(broken.code,0);assert.match(broken.text,/异常 1 项/);
+  assert.doesNotMatch(broken.text,/hidden-alpha|hidden-beta|synthetic-private-alpha|synthetic-private-beta/);
+});
+
+test('records verify --vault leaves an empty synthetic vault unknown with an exit',async t=>{
+  const admin=await setup();const kit=await admin.kit();t.after(()=>kit.close());
+  const result=await admin.run(['records','verify','--vault']);
+  assert.notEqual(result.code,0);assert.match(result.text,/核验未知/);assert.match(result.text,/下一步/);
+});
+
 test('R33 lease release honors the configured record byte limit atomically',async t=>{
   const admin=await setup({deployment:{extra:{CIRCLE_HUB_MAX_RECORD_BYTES:'65536'}}});
   const kit=await admin.kit();t.after(()=>kit.close());const db=new Database(createPool(loadServerConfig(admin.deployment.env).database,2));t.after(()=>db.end());

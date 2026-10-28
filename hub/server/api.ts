@@ -99,6 +99,7 @@ export interface CliIo {
   stderr(line: string): void;
   env: NodeJS.ProcessEnv;
   cwd: string;
+  keyTransfer?: import('../platform/api.ts').KeyTransferIo;
 }
 
 /** What a registered CLI command gets: the IO, the configuration and lazily opened records (runtime role, no migration). */
