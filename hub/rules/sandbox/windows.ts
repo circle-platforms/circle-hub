@@ -361,9 +361,10 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
       if (!query(handle, kind, data, data.length, needed) || needed.readUInt32LE() > data.length) failed(`子令牌核验 ${kind}`);
       return data;
     };
-    // CLAIM_SECURITY_ATTRIBUTES_INFORMATION holds absolute pointers, so it is read from a native block whose
-    // base address is known, and every pointer is bounds-checked against that block before it is followed.
-    const tokenSecurityAttribute = (handle: bigint, expected: string): boolean => {
+    // TokenSecurityAttributes returns TOKEN_SECURITY_ATTRIBUTES_INFORMATION, whose V1 entries name themselves
+    // with a UNICODE_STRING (40 bytes each on x64/ARM64). It holds absolute pointers, so it is read from a
+    // native block whose base address is known, and every pointer is bounds-checked before it is followed.
+    const tokenSecurityAttribute = (handle: bigint, expected: string): true => {
       const length = 65536, needed = Buffer.alloc(4);
       const base = native(Buffer.alloc(length));
       if (!query(handle, 39, base, length, needed) || needed.readUInt32LE() > length) failed('子令牌核验 39');
@@ -376,15 +377,16 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
       };
       const count = data.readUInt32LE(4);
       if (data.readUInt16LE(0) !== 1 || count > 1024) failed('安全属性数量', -2);
-      const entries = count === 0 ? 0 : offset(data.readBigUInt64LE(8), count * 32); // CLAIM_SECURITY_ATTRIBUTE_V1
+      const entries = count === 0 ? 0 : offset(data.readBigUInt64LE(8), count * 40);
       for (let index = 0; index < count; index++) {
-        const name = offset(data.readBigUInt64LE(entries + index * 32), 2);
-        let end = name;
-        while (end + 1 < length && data.readUInt16LE(end) !== 0) end += 2;
-        if (end + 1 >= length) failed('安全属性名称', -2);
-        if (data.subarray(name, end).toString('utf16le') === expected) return true;
+        const entry = entries + index * 40;
+        const size = data.readUInt16LE(entry);
+        if (size % 2 !== 0) failed('安全属性名称', -2);
+        const name = size === 0 ? 0 : offset(data.readBigUInt64LE(entry + 8), size);
+        if (data.subarray(name, name + size).toString('utf16le') === expected) return true;
       }
-      return false;
+      // Only the attribute count is reported; names and values stay out of the diagnostic.
+      return failed('LPAC 属性核验', count);
     };
     // TokenIsAppContainer, TokenCapabilities (none) and TokenAppContainerSid.
     if (tokenInfo(childToken, 29).readUInt32LE() !== 1) failed('AppContainer 核验', -2);
@@ -397,7 +399,7 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     // and an LPAC token carries the WIN://NOALLAPPPKG security attribute.
     const access = tokenInfo(childToken, 22).readUInt32LE(44);
     if ((access & 0x84000) !== 0x84000) failed('子进程限制核验', access);
-    if (!tokenSecurityAttribute(childToken, 'WIN://NOALLAPPPKG')) failed('LPAC 属性核验', -2);
+    tokenSecurityAttribute(childToken, 'WIN://NOALLAPPPKG');
     const before = tokenInfo(restricted.handle, 11), after = tokenInfo(childToken, 11);
     if (before.readUInt32LE() !== 1 || after.readUInt32LE() !== 1 ||
         !equal(before.readBigUInt64LE(8), after.readBigUInt64LE(8))) failed('写限制 SID 核验');
