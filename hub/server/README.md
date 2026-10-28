@@ -55,6 +55,18 @@ request can leave a rejection nobody handles. Every request then passes two chec
   origin behavior. An explicit HTTPS proxy origin is accepted only on its distinct declared authority; no forwarded
   header changes this check. `null`, paths and other hosts are 403. Console form posts must match the current request Host.
 
+The console distinguishes a request through the configured HTTPS authority and trusted proxy peer from direct HTTP.
+HTTPS login and session cookies use separate `__Secure-` names and the `Secure` attribute; server-side nonces and
+sessions are bound to that channel and cannot be replayed by renaming a cookie on direct HTTP. Direct HTTP keeps its
+separate, non-Secure cookies for compatibility: anyone who can observe that connection can capture the credentials or
+session, so use network restrictions or the explicitly configured TLS proxy. A trusted proxy peer is an IP boundary,
+not authentication of a particular process. The proxy must terminate TLS, preserve the declared HTTPS authority, and
+never forward plaintext client traffic under that authority; the Hub does not inspect TLS on its HTTP backend socket.
+
+For a Circle MCP connection, select transport `streamable_http`, use this service's `/mcp` endpoint, and ensure the URL's
+host exactly matches the deployment's allowed-host declaration (and its HTTPS proxy origin, when applicable). MCP still
+requires a valid Bearer token on every request; `/healthz` alone is unauthenticated.
+
 Routes: `POST /mcp`; `GET|HEAD /healthz` (no token, `{"status":"ok","release":<id or null>}` with the id of
 `release.json` in the code root, so a deploy tells the new process from the old one; a `release.json` that is not a
 `circle-hub-release@1` record refuses to start); `/console/**`; anything else 404. Responses carry `nosniff`,
