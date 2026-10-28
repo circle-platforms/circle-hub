@@ -15,11 +15,10 @@ import { assignedCases, indexView, bindIndex, LOCK, PRODUCT, BUILD, ROOT } from 
 import { PACK_DIR } from './api.ts';
 import { openBed, type Bed } from './testing/bed.ts';
 import { baseDocument, bytesOf, outlineDocument, renamed, shuffled, withCase, withoutCategory, witnessCase, type DocumentSpec } from './testing/mindmap.ts';
-import { bind, isFailure, projectionInput, sha256, table } from './testing/support.ts';
+import { bind, isFailure, projectionInput, sha256 } from './testing/support.ts';
 import { projectDocuments } from './functions/project.ts';
 
 const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
-const CATEGORIES = (table('template-v3.json') as { categories: Array<{ id: string }> }).categories.map((category) => category.id);
 const skip = (await osIsolationAvailable()) ? false : 'operating-system isolation for pack functions (sandbox-exec) is not available here';
 
 let postgres: TemporaryPostgres;
@@ -95,7 +94,8 @@ describe('a production run', { skip }, () => {
   it('one item per document; start_run computes and stores the result; every gap is exactly the removed category, of any group', async () => {
     const base = renamed(baseDocument(), 'r0e2ebase001');
     const upload = await bed.upload(bed.runner, bytesOf(base));
-    const removed = CATEGORIES.map((category, k) => ({ category, doc: renamed(withoutCategory(baseDocument(), category), `r0e2egap${String(k).padStart(4, '0')}`), id: `9002${String(k).padStart(2, '0')}` }));
+    // One category from each group. The other categories each have their own start_run in engine-gap-*.test.ts.
+    const removed = ['functional', 'command_add', 'configuration_sync', 'upgrade_new_to_new', 'security'].map((category, k) => ({ category, doc: renamed(withoutCategory(baseDocument(), category), `r0e2egap${String(k).padStart(4, '0')}`), id: `9002${String(k).padStart(2, '0')}` }));
     const restored = renamed(withCase(withoutCategory(baseDocument(), 'audit_log'), '其他', witnessCase('audit_log')), 'r0e2erest001');
     const skippedDoc = renamed(withoutCategory(baseDocument(), 'stress'), 'r0e2eskip001');
     const reason = '用户说这份脑图的功能不涉及性能';

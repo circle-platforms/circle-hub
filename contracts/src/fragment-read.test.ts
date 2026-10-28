@@ -25,6 +25,12 @@ test('fragment grades and provenance implement integrator decision 36', () => {
 test('the fragment vocabulary pin is included by the unit test runner', () => {
   const root = fileURLToPath(new URL('../../', import.meta.url));
   const scripts = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).scripts;
-  const patterns = [...scripts['test:unit'].matchAll(/"([^" ]+\.test\.ts)"|(tools\/[^ ]+\.test\.ts)/g)].map((m: RegExpMatchArray) => m[1] ?? m[2]);
+  const command = String(scripts['test:unit']);
+  const patterns = [...command.matchAll(/"([^" ]+\.test\.ts)"|(tools\/[^ ]+\.test\.ts)/g)].map((m: RegExpMatchArray) => m[1] ?? m[2]);
+  // The package script delegates to the runner. The pin still has to be one of the globs that runner executes.
+  if (patterns.length === 0 && command.includes('tools/run-unit-tests.ts')) {
+    const source = readFileSync(new URL('../../tools/run-unit-tests.ts', import.meta.url), 'utf8');
+    patterns.push(...[...source.matchAll(/'([^']+\.test\.ts)'/g)].map((match) => match[1]));
+  }
   assert.ok(patterns.some((pattern: string) => globSync(pattern, { cwd: root }).includes(relative(root, fileURLToPath(import.meta.url)))));
 });
