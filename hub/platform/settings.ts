@@ -81,6 +81,7 @@ export const PlatformSettingsFile = z
     listen_host: z.string().optional(),
     allowed_hosts: z.array(z.string()).optional(),
     proxy_origin: z.string().optional(),
+    proxy_peer: z.string().optional(),
     keychain_service: KeychainName,
     keychain_account: KeychainName,
     database: DatabaseSettings,
@@ -94,6 +95,7 @@ export const PlatformSettingsFile = z
     const loopback = host === '::1' || (isIP(host) === 4 && host.startsWith('127.'));
     if (!loopback && !value.allowed_hosts) ctx.addIssue({ code: 'custom', path: ['allowed_hosts'], message: '非回环监听必须声明允许主机' });
     if (value.proxy_origin && !validProxyOrigin(value.proxy_origin, value.allowed_hosts, value.port)) ctx.addIssue({ code: 'custom', path: ['proxy_origin'], message: '代理来源须为明确声明的 HTTPS 主机，且与直接监听权威不同' });
+    if (Boolean(value.proxy_origin) !== Boolean(value.proxy_peer) || (value.proxy_peer && !validListenAddress(value.proxy_peer))) ctx.addIssue({ code: 'custom', path: ['proxy_peer'], message: '代理来源和可信对端须同时声明，对端为明确的内网 IP 或回环地址' });
   });
 export type PlatformSettingsFile = z.infer<typeof PlatformSettingsFile>;
 
@@ -124,6 +126,7 @@ export interface PlatformSettings {
   listenHost?: string;
   allowedHosts?: readonly string[];
   proxyOrigin?: string;
+  proxyPeer?: string;
   keychainService: string;
   keychainAccount: string;
   database: DatabaseNames;
@@ -142,6 +145,7 @@ export function newSettingsFile(input: {
   listenHost?: string;
   allowedHosts?: readonly string[];
   proxyOrigin?: string;
+  proxyPeer?: string;
   keychainService?: string;
   keychainAccount?: string;
   backupsKeep?: number;
@@ -154,6 +158,7 @@ export function newSettingsFile(input: {
     ...(input.listenHost ? { listen_host: input.listenHost } : {}),
     ...(input.allowedHosts ? { allowed_hosts: input.allowedHosts } : {}),
     ...(input.proxyOrigin ? { proxy_origin: input.proxyOrigin } : {}),
+    ...(input.proxyPeer ? { proxy_peer: input.proxyPeer } : {}),
     keychain_service: input.keychainService ?? DEFAULT_KEYCHAIN_SERVICE,
     keychain_account: input.keychainAccount ?? DEFAULT_KEYCHAIN_ACCOUNT,
     database: {
@@ -263,6 +268,7 @@ export function resolveSettings(file: PlatformSettingsFile, env: NodeJS.ProcessE
   agree(PLATFORM_VARIABLES.host, file.listen_host ?? '127.0.0.1');
   agree(PLATFORM_VARIABLES.allowedHosts, (file.allowed_hosts ?? []).join(','));
   agree(PLATFORM_VARIABLES.proxyOrigin, file.proxy_origin ?? '');
+  agree(PLATFORM_VARIABLES.proxyPeer, file.proxy_peer ?? '');
   agree(PLATFORM_VARIABLES.keychainService, file.keychain_service);
   agree(PLATFORM_VARIABLES.keychainAccount, file.keychain_account);
   agree(PLATFORM_VARIABLES.databaseName, database.name);
@@ -281,6 +287,7 @@ export function resolveSettings(file: PlatformSettingsFile, env: NodeJS.ProcessE
     ...(file.listen_host ? { listenHost: file.listen_host } : {}),
     ...(file.allowed_hosts ? { allowedHosts: file.allowed_hosts } : {}),
     ...(file.proxy_origin ? { proxyOrigin: file.proxy_origin } : {}),
+    ...(file.proxy_peer ? { proxyPeer: file.proxy_peer } : {}),
     keychainService: file.keychain_service,
     keychainAccount: file.keychain_account,
     database,

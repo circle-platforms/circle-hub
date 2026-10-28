@@ -33,6 +33,7 @@ export interface HubConfig {
   host: string;
   allowedHosts?: readonly string[];
   proxyOrigin?: string;
+  proxyPeer?: string;
   port: number;
   database: DatabaseConfig;
   keychain: { service: string; account: string };
@@ -154,7 +155,9 @@ export function loadConfig(
   else if (!isLoopbackAddress(host) && !allowedHosts) problems.push('CIRCLE_HUB_HOST 只允许回环地址；非回环监听必须显式设置 CIRCLE_HUB_ALLOWED_HOSTS');
   const port = integer('CIRCLE_HUB_PORT', undefined, 0, 65535);
   const proxyOrigin = read('CIRCLE_HUB_PROXY_ORIGIN');
+  const proxyPeer = read('CIRCLE_HUB_PROXY_PEER');
   if (proxyOrigin && (port === undefined || !validProxyOrigin(proxyOrigin, allowedHosts, port))) problems.push('CIRCLE_HUB_PROXY_ORIGIN 必须是允许主机上的精确 HTTPS 来源，与直接 HTTP 监听权威不同');
+  if (Boolean(proxyOrigin) !== Boolean(proxyPeer) || (proxyPeer && !validListenAddress(proxyPeer))) problems.push('CIRCLE_HUB_PROXY_ORIGIN 与 CIRCLE_HUB_PROXY_PEER 必须同时声明，可信代理对端须是明确的内网 IP 或回环地址');
 
   const socketDir = absolute('CIRCLE_HUB_DATABASE_SOCKET_DIR', false);
   const databaseHost = read('CIRCLE_HUB_DATABASE_HOST');
@@ -200,6 +203,7 @@ export function loadConfig(
     host,
     ...(allowedHosts ? { allowedHosts } : {}),
     ...(proxyOrigin ? { proxyOrigin } : {}),
+    ...(proxyPeer ? { proxyPeer } : {}),
     port,
     database: { host: resolvedDatabaseHost, port: databasePort, database, user },
     keychain,

@@ -133,6 +133,7 @@ const init: Handler = async (args, context, io) => {
       listenHost: variable(context.env, PLATFORM_VARIABLES.host),
       allowedHosts: variable(context.env, PLATFORM_VARIABLES.allowedHosts)?.split(','),
       proxyOrigin: variable(context.env, PLATFORM_VARIABLES.proxyOrigin),
+      proxyPeer: variable(context.env, PLATFORM_VARIABLES.proxyPeer),
       keychainService: variable(context.env, PLATFORM_VARIABLES.keychainService),
       keychainAccount: variable(context.env, PLATFORM_VARIABLES.keychainAccount),
       database: context.database,
@@ -157,7 +158,7 @@ const init: Handler = async (args, context, io) => {
   io.stdout(started ? '数据库已启动' : '数据库本来就在运行');
   if (created) io.stdout(`已建数据库 ${cluster.target.database}`);
   io.stdout(`数据根：${layout.root}`);
-  io.stdout(`环境类别：${environmentText(settings.environment)}；端口：${settings.listenHost ?? '127.0.0.1'}:${settings.port}${settings.allowedHosts ? `；允许主机：${settings.allowedHosts.join('、')}` : ''}${settings.proxyOrigin ? `；代理来源：${settings.proxyOrigin}` : ''}`);
+  io.stdout(`环境类别：${environmentText(settings.environment)}；端口：${settings.listenHost ?? '127.0.0.1'}:${settings.port}${settings.allowedHosts ? `；允许主机：${settings.allowedHosts.join('、')}` : ''}${settings.proxyOrigin ? `；代理来源：${settings.proxyOrigin}；可信对端：${settings.proxyPeer}` : ''}`);
   io.stdout(databaseText(layout, settings, await databaseOwner(cluster)));
   io.stdout('下一步：circle-hub key init，然后 circle-hub deploy');
   return 0;
@@ -385,7 +386,7 @@ const status: Handler = async (args, context, io) => {
     return NOT_RUNNING;
   }
   const settings = resolveSettings(file, context.env, layout);
-  io.stdout(`环境类别：${environmentText(settings.environment)}；端口：${settings.listenHost ?? '127.0.0.1'}:${settings.port}${settings.allowedHosts ? `；允许主机：${settings.allowedHosts.join('、')}` : ''}${settings.proxyOrigin ? `；代理来源：${settings.proxyOrigin}` : ''}`);
+  io.stdout(`环境类别：${environmentText(settings.environment)}；端口：${settings.listenHost ?? '127.0.0.1'}:${settings.port}${settings.allowedHosts ? `；允许主机：${settings.allowedHosts.join('、')}` : ''}${settings.proxyOrigin ? `；代理来源：${settings.proxyOrigin}；可信对端：${settings.proxyPeer}` : ''}`);
   // The owner is printed only from the running cluster: a data root of an earlier platform version has another one.
   io.stdout(databaseText(layout, settings));
   const unsure = (subject: string, error: unknown) => io.stdout(`${subject}：无法确认（${messageOf(error)}）`);

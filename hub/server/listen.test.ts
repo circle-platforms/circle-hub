@@ -76,11 +76,13 @@ test('an explicit non-loopback listener needs a closed authority list and cannot
     { CIRCLE_HUB_HOST: '192.0.2.10', CIRCLE_HUB_ALLOWED_HOSTS: 'hub.example', CIRCLE_HUB_PROXY_ORIGIN: 'https://hub.example:8000' },
     { CIRCLE_HUB_HOST: '192.0.2.10', CIRCLE_HUB_ALLOWED_HOSTS: 'hub.example', CIRCLE_HUB_PROXY_ORIGIN: 'https://other.example' },
     { CIRCLE_HUB_HOST: '192.0.2.10', CIRCLE_HUB_ALLOWED_HOSTS: '[2001:0db8:0:0:0:0:0:1]' },
+    { CIRCLE_HUB_HOST: 'fe80::1%synthetic', CIRCLE_HUB_ALLOWED_HOSTS: 'hub.example' },
+    { CIRCLE_HUB_HOST: '192.0.2.10', CIRCLE_HUB_ALLOWED_HOSTS: 'hub.example', CIRCLE_HUB_PROXY_ORIGIN: 'https://hub.example' },
   ]) assert.throws(() => loadConfig({ ...BASE, ...env }), HubConfigError);
 });
 
 test('declared hosts and origins are exact and console POSTs must match the request host', async () => {
-  const deps = { config: { host: '127.0.0.1', port: 0, allowedHosts: ['hub.example', 'other.example'], proxyOrigin: 'https://hub.example', limits: { maxRequestBytes: 1024 } }, records: { principals: { authenticate: async () => null } } } as unknown as ServerDeps;
+  const deps = { config: { host: '127.0.0.1', port: 0, allowedHosts: ['hub.example', 'other.example'], proxyOrigin: 'https://hub.example', proxyPeer: '127.0.0.1', limits: { maxRequestBytes: 1024 } }, records: { principals: { authenticate: async () => null } } } as unknown as ServerDeps;
   const app = createApp(deps);
   const { port } = await app.listen();
   const send = (host: string, origin?: string, method = 'GET', path = '/healthz') => new Promise<number>((resolve, reject) => {
@@ -97,5 +99,22 @@ test('declared hosts and origins are exact and console POSTs must match the requ
     assert.equal(await send(`hub.example:${port}`, 'http://localhost:1'), 403);
     assert.equal(await send(`hub.example:${port}`, `http://other.example:${port}`, 'POST', '/console/login'), 403);
     assert.equal(await send('hub.example', `http://hub.example:${port}`, 'POST', '/console/login'), 403);
+  } finally { await app.close(); }
+});
+
+test('a direct connection cannot forge the proxy Host and HTTPS Origin from an untrusted peer', async () => {
+  const deps = { config: { host: '127.0.0.1', port: 0, allowedHosts: ['hub.example'], proxyOrigin: 'https://hub.example', proxyPeer: '127.0.0.2', limits: { maxRequestBytes: 1024 } } } as unknown as ServerDeps;
+  const app = createApp(deps); const { port } = await app.listen();
+  try {
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port, path: '/healthz', headers: { host: 'hub.example', origin: 'https://hub.example' } }, res => { res.resume(); res.on('end', () => resolve(res.statusCode!)); });
+      req.on('error', reject); req.end();
+    });
+    assert.equal(status, 403);
+    const mixed = await new Promise<number>((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port, path: '/healthz', headers: { host: `hub.example:${port}`, origin: 'https://hub.example' } }, res => { res.resume(); res.on('end', () => resolve(res.statusCode!)); });
+      req.on('error', reject); req.end();
+    });
+    assert.equal(mixed, 403);
   } finally { await app.close(); }
 });

@@ -89,6 +89,28 @@ export function portAnswers(port: number, timeoutMs = 1000, host = LOOPBACK): Pr
   });
 }
 
+/** A malformed or unreadable kernel inventory is unknown, never proof of an idle port. */
+export async function linuxPortOccupied(port: number, read: (path: string) => Promise<string> = path => readFile(path, 'utf8')): Promise<boolean> {
+  try {
+    const tables = await Promise.all([read('/proc/net/tcp'), read('/proc/net/tcp6')]);
+    const target = port.toString(16).toUpperCase().padStart(4, '0');
+    for (let table = 0; table < tables.length; table++) {
+      const lines = tables[table]!.split('\n');
+      if (!/\blocal_address\b/.test(lines.shift() ?? '')) return true;
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const fields = line.trim().split(/\s+/);
+        if (fields.length < 4) return true;
+        const pattern = table === 0 ? /^[0-9A-F]{8}:([0-9A-F]{4})$/ : /^[0-9A-F]{32}:([0-9A-F]{4})$/;
+        const local = pattern.exec(fields[1] ?? '');
+        if (!local || !/^[0-9A-F]{2}$/.test(fields[3] ?? '')) return true;
+        if (local[1] === target && fields[3] === '0A') return true;
+      }
+    }
+    return false;
+  } catch { return true; }
+}
+
 /** Fail closed on an unavailable inventory. Checking only the newly configured IP can miss an old running service. */
 export async function portOccupied(port: number): Promise<boolean> {
   if (process.platform === 'darwin') return new Promise(resolve => {
@@ -97,23 +119,6 @@ export async function portOccupied(port: number): Promise<boolean> {
       resolve(error === null ? false : (error as { code?: string | number }).code !== 1);
     });
   });
-  if (process.platform === 'linux') {
-    try {
-      const [v4, v6] = await Promise.all([readFile('/proc/net/tcp', 'utf8'), readFile('/proc/net/tcp6', 'utf8').catch(error => {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
-        throw error;
-      })]);
-      const target = port.toString(16).toUpperCase().padStart(4, '0');
-      for (const line of `${v4}\n${v6}`.split('\n').slice(1)) {
-        const fields = line.trim().split(/\s+/);
-        if (fields.length < 4) continue;
-        if (fields[0] === 'sl') continue;
-        const local = fields[1]?.split(':');
-        if (!local || local.length !== 2) return true;
-        if (local[1] === target && fields[3] === '0A') return true;
-      }
-      return false;
-    } catch { return true; }
-  }
+  if (process.platform === 'linux') return linuxPortOccupied(port);
   return true;
 }

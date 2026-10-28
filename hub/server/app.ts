@@ -56,7 +56,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const host = deps.config.host;
   const declared = deps.config.allowedHosts;
   const proxyOrigin = deps.config.proxyOrigin;
-  if (!validListenAddress(host) || (declared && !validAllowedHosts(declared)) || (!isLoopbackAddress(host) && !declared) || (proxyOrigin && !validProxyOrigin(proxyOrigin, declared, deps.config.port))) throw new Error('监听地址或允许主机无效：非回环监听必须显式声明精确的允许主机');
+  const proxyPeer = deps.config.proxyPeer;
+  if (!validListenAddress(host) || (declared && !validAllowedHosts(declared)) || (!isLoopbackAddress(host) && !declared) || (proxyOrigin && !validProxyOrigin(proxyOrigin, declared, deps.config.port)) || Boolean(proxyOrigin) !== Boolean(proxyPeer) || (proxyPeer && !validListenAddress(proxyPeer))) throw new Error('监听地址、允许主机或可信代理无效');
   const release = readReleaseId(options.codeRoot);
   const log = options.log ?? ((line: string) => process.stderr.write(`${line}\n`));
   const closeTimeoutMs = options.closeTimeoutMs ?? 10_000;
@@ -79,7 +80,10 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     if (stopping) response.setHeader('connection', 'close');
     const isMcp = target?.url.pathname === '/mcp';
     // An absolute-form target names an authority too: it must be this server, like the Host header.
-    const hostOk = hostAllowed(request, hosts) && (target === null || target.authority === null || hosts.has(target.authority));
+    const proxyAuthority = proxyOrigin ? new URL(proxyOrigin).host : null;
+    const usesProxy = proxyAuthority !== null && (request.headers.host?.toLowerCase() === proxyAuthority || target?.authority === proxyAuthority || request.headers.origin === proxyOrigin);
+    const peer = request.socket.remoteAddress?.replace(/^::ffff:/, '');
+    const hostOk = hostAllowed(request, hosts) && (target === null || target.authority === null || hosts.has(target.authority)) && (!usesProxy || peer === proxyPeer);
     if (!hostOk || !originAllowed(request, declared ? origins : undefined)) {
       request.resume();
       const message = hostOk ? REFUSED_ORIGIN : REFUSED_HOST;
