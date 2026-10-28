@@ -34,6 +34,9 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Check the native architecture and execute synthetic contracts
         run: node .github/checks/platform-matrix.ts ${{ matrix.platform }} ${{ matrix.arch }}
+      - name: Execute synthetic Windows native security fixtures
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        run: node --test --test-reporter=tap --test-concurrency=2 hub/platform/windows-dpapi.test.ts hub/platform/windows-keychain.test.ts
       - name: Reject unsupported Windows release readiness
         if: ${{ !cancelled() && runner.os == 'Windows' }}
         run: node .github/checks/platform-matrix.ts --windows-readiness
