@@ -357,14 +357,47 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     childToken = tokenOut.readBigUInt64LE();
     if (!valid(childToken)) failed('子令牌句柄');
     const tokenInfo = (handle: bigint, kind: number): Buffer => {
-      const data = Buffer.alloc(4096), needed = Buffer.alloc(4);
-      if (!query(handle, kind, data, data.length, needed) || needed.readUInt32LE() > data.length) failed('子令牌核验');
+      const data = Buffer.alloc(65536), needed = Buffer.alloc(4);
+      if (!query(handle, kind, data, data.length, needed) || needed.readUInt32LE() > data.length) failed(`子令牌核验 ${kind}`);
       return data;
     };
-    if (tokenInfo(childToken, 29).readUInt32LE() !== 1 || tokenInfo(childToken, 46).readUInt32LE() !== 1 ||
-        tokenInfo(childToken, 30).readUInt32LE() !== 0 ||
-        (tokenInfo(childToken, 45).readUInt32LE() & 1) !== 1 ||
-        !equal(tokenInfo(childToken, 31).readBigUInt64LE(), sid)) failed('LPAC 能力核验');
+    // CLAIM_SECURITY_ATTRIBUTES_INFORMATION holds absolute pointers, so it is read from a native block whose
+    // base address is known, and every pointer is bounds-checked against that block before it is followed.
+    const tokenSecurityAttribute = (handle: bigint, expected: string): boolean => {
+      const length = 65536, needed = Buffer.alloc(4);
+      const base = native(Buffer.alloc(length));
+      if (!query(handle, 39, base, length, needed) || needed.readUInt32LE() > length) failed('子令牌核验 39');
+      const data = Buffer.alloc(length);
+      copy(data, base, length);
+      const offset = (pointer: bigint, size: number): number => {
+        const at = pointer - base;
+        if (at < 0n || at + BigInt(size) > BigInt(length)) failed('安全属性越界', -2);
+        return Number(at);
+      };
+      const count = data.readUInt32LE(4);
+      if (data.readUInt16LE(0) !== 1 || count > 1024) failed('安全属性数量', -2);
+      const entries = count === 0 ? 0 : offset(data.readBigUInt64LE(8), count * 32); // CLAIM_SECURITY_ATTRIBUTE_V1
+      for (let index = 0; index < count; index++) {
+        const name = offset(data.readBigUInt64LE(entries + index * 32), 2);
+        let end = name;
+        while (end + 1 < length && data.readUInt16LE(end) !== 0) end += 2;
+        if (end + 1 >= length) failed('安全属性名称', -2);
+        if (data.subarray(name, end).toString('utf16le') === expected) return true;
+      }
+      return false;
+    };
+    // TokenIsAppContainer, TokenCapabilities (none) and TokenAppContainerSid.
+    if (tokenInfo(childToken, 29).readUInt32LE() !== 1) failed('AppContainer 核验', -2);
+    if (tokenInfo(childToken, 30).readUInt32LE() !== 0) failed('能力列表核验', -2);
+    if (!equal(tokenInfo(childToken, 31).readBigUInt64LE(), sid)) failed('包 SID 核验', -2);
+    // Querying TokenIsLessPrivilegedAppContainer (46) and TokenChildProcessFlags (45) together with the classes
+    // above failed with ERROR_INVALID_PARAMETER (87) on both Windows runners. Read both policies where the
+    // kernel records them instead:
+    // TOKEN_ACCESS_INFORMATION.Flags carries TOKEN_LOWBOX (0x4000) and TOKEN_NO_CHILD_PROCESS (0x80000),
+    // and an LPAC token carries the WIN://NOALLAPPPKG security attribute.
+    const access = tokenInfo(childToken, 22).readUInt32LE(44);
+    if ((access & 0x84000) !== 0x84000) failed('子进程限制核验', access);
+    if (!tokenSecurityAttribute(childToken, 'WIN://NOALLAPPPKG')) failed('LPAC 属性核验', -2);
     const before = tokenInfo(restricted.handle, 11), after = tokenInfo(childToken, 11);
     if (before.readUInt32LE() !== 1 || after.readUInt32LE() !== 1 ||
         !equal(before.readBigUInt64LE(8), after.readBigUInt64LE(8))) failed('写限制 SID 核验');
