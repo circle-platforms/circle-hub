@@ -1,7 +1,7 @@
 // Credential scan positives and negatives. Every credential-shaped value is synthetic and assembled at run time, so the
 // source file itself holds nothing a secret scanner would flag.
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
 import { CREDENTIAL_DETECTORS, CREDENTIAL_SCANNER, scanForCredentials, scanWithContexts } from './scan.ts';
@@ -323,13 +323,21 @@ test('32 MiB adversarial inputs: memory stays bounded and every scan is linear',
   assert.deepEqual({ findings: many.findings.length, truncated: many.truncated }, { findings: 100, truncated: true });
 });
 
+// A fixed public seed gives reproducible, incompressible synthetic bytes. Random base64 can
+// accidentally contain credential shapes; whether this negative is clean must not vary by run.
+const largeSyntheticBytes = () => createHash('shake256', { outputLength: 1_500_000 })
+  .update('circle-hub scan large clean fixture v1').digest();
+
 test('many hits are capped and marked truncated; large inputs scan in linear time', () => {
   const many = Array.from({ length: 150 }, () => `t=${jwt()}`).join('\n');
   const capped = scanForCredentials(Buffer.from(many));
   assert.equal(capped.findings.length, 100);
   assert.equal(capped.truncated, true);
   assert.equal(capped.clean, false);
-  const blob = `![diagram](data:image/png;base64,${randomBytes(1_500_000).toString('base64')})`;
+  const bytes = largeSyntheticBytes();
+  assert.equal(bytes.byteLength, 1_500_000);
+  assert.ok(gzipSync(bytes).byteLength > bytes.byteLength * 0.99);
+  const blob = `![diagram](data:image/png;base64,${bytes.toString('base64')})`;
   const adversarial = [
     'password'.repeat(50_000),
     'x'.repeat(300_000) + 'token=' + 'y'.repeat(300_000),
@@ -346,6 +354,24 @@ test('many hits are capped and marked truncated; large inputs scan in linear tim
   assert.equal(blobScan.clean, true);
   assert.ok(adversarialScan.findings.length <= 100);
   assert.ok(elapsed < 5000, `scan took ${elapsed} ms`);
+});
+
+test('base64 image data containing a synthetic credential shape is still a cloud key finding', () => {
+  const bytes = largeSyntheticBytes();
+  // This 44-character base64 block encodes 33 bytes. Replacing bytes at a multiple
+  // of three preserves the block verbatim in the image's base64, including word boundaries.
+  // Assemble the synthetic shape at runtime; no credential-shaped literal is stored here.
+  const collision = `/${'AI' + 'za'}${'Ab3'.repeat(11)}Z9/AAA`;
+  const block = Buffer.from(collision, 'base64');
+  assert.equal(block.byteLength, 33);
+  bytes.set(block, 750_000);
+  assert.equal(bytes.byteLength, 1_500_000);
+  const encoded = bytes.toString('base64');
+  assert.equal(encoded.slice(1_000_000, 1_000_044), collision);
+  const scan = scanForCredentials(Buffer.from(`![diagram](data:image/png;base64,${encoded})`));
+  assert.equal(scan.inspected, true);
+  assert.equal(scan.clean, false);
+  assert.ok(scan.findings.some((finding) => finding.detector === 'cloud_key'));
 });
 
 test('scanWithContexts gives the same scan and, per kept finding, the text it was found in', () => {
