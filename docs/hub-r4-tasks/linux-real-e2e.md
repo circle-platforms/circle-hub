@@ -2,7 +2,7 @@
 
 依据：所有者的 Linux 迁移要求及集成者本轮委派。分支 `linux-real-e2e` 从 `hub-redesign` 的 `5bd43165` 开出。
 
-允许修改：本任务页、`hub/platform/testing/linux-real-vm.ts`、`hub/platform/linux-real-vm.test.ts`、`hub/platform/linux-hub-migration-real.test.ts`、`hub/platform/README.md` 中本任务的限制说明。不得修改工作流、HANDOFF、生产配置、真实数据或其他包。
+允许修改：本任务页、`hub/platform/testing/linux-real-vm.ts`、`hub/platform/testing/linux-rehearsal-isolation.ts`、`hub/platform/linux-rehearsal-isolation.test.ts`、`hub/platform/linux-real-vm.test.ts`、`hub/platform/linux-hub-migration-real.test.ts`、`hub/platform/README.md` 中本任务的限制说明。不得修改工作流、HANDOFF、生产配置、真实数据或其他包。
 
 ## 当前交付与边界
 
@@ -79,3 +79,11 @@
 ### 尚未关闭的危险缺口
 
 固定 namespace wrapper、systemd root-unit 夹具、合成出口探针、SSH 双端超时与退出码核验、清理进程/namespace后销毁含真实数据的VM磁盘收据，均尚未实现/验证。故**尚不支持自动实物演练，也不可执行上述第4步起的数据操作**。主代理在补齐这些环节并协调窗口后再执行。实物演练不连接真实目标；其隔离内 MCP 成功不等于同事端 Circle 连接成功、生产业务正确或正式切换验收。
+
+### 隔离保护设施实现（未执行）
+
+`testing/linux-rehearsal-isolation.ts` 新增 root-only opt-in 夹具：Node24 + Linux +管理员声明VM门，唯一合成用户、无veth且仅lo的唯一namespace，私有chroot文件系统，真实systemd-run瞬时单元的User/RootDirectory/NetworkNamespacePath，去全部capabilities/NoNewPrivileges/禁止新namespace/隐藏其他用户proc/只读发布和动态库，只允许本次/data写入。没有绑定宿主/home、共享挂载或现有部署目录。
+
+夹具只接受预备的真实代码release，生成全合成外层TCP哨兵与文件；先正向证明VM外层同一哨兵可达，再在真实瞬时systemd进程里证明不可达、宿主路径不可读、发布不可写及Node子进程netns继承。显式检查namespace接口和IPv4/6非lo路由。失败保持禁止实物状态；namespace仍有PID时不删除。没有任何真实backup、主密钥或环境读取入口。
+
+新增 `linux-rehearsal-isolation.test.ts` 包含拒绝foreign identity/escaping path/任意入口的合成负例，以及显式opt-in管理员VM实证入口。此夹具尚未运行/类型检查；并未证明当前hublinux已授予systemd/root权限或可用RootDirectory/ProtectProc。它只实证基础隔离，不执行restore/serve/PG，因此PG/Hub进程树继承和真实数据阶段的固定命令wrapper/传输编排仍未关闭，不能开始实物。所有实物数据操作仍由主代理协调后另行实现与审查。
