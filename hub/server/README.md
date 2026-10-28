@@ -29,6 +29,15 @@ administrator commands of `cli-admin.ts`.
 
 ## The HTTP surface
 
+For a disposable Linux VM with `ip` and permission to execute `sudo -n ip`, run
+`SYNTHETIC_VM_NETWORK_TEST=1 node --test hub/server/linux-listen-vm.ts` to exercise a real internal listener without an external system. It refuses to run unless the hostname is `lima-hublinux` and the flag is present. The explicit
+VM-only test creates a uniquely named dummy interface with the documentation address `192.0.2.77/32`, confirms the route
+is local, supplies fake authentication dependencies, checks Host/Origin and health/port behavior, and removes only its
+own interface in cleanup. It prints the randomly chosen interface name so an operator can remove that exact interface if
+SIGKILL or a VM crash prevents cleanup; never delete other interfaces. It refuses an already-used address and refuses to contact it unless its route is local. This
+script is deliberately outside the ordinary unit-test glob because changing a VM network interface is a privileged test
+operation. A successful run does not establish an actual server deployment or connectivity to an enterprise system.
+
 The default is loopback `127.0.0.1`; a specific internal IP requires an explicit allowed-host list. Wildcard and public
 listeners are refused. The port comes from `CIRCLE_HUB_PORT`. The request target is parsed once and never throws (`parseTarget`): an origin-form target is always a
 path on this server, so `//x/mcp` is the path `//x/mcp` (404), never an authority `x` with the path `/mcp`; an absolute
