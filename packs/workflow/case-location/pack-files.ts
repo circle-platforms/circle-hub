@@ -14,7 +14,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'case-location',
-  version: '1.4.11',
+  version: '1.4.12',
   kind: 'workflow',
   dependencies: [{pack:'mindmap-format'}],
   title: '用例定位',
