@@ -127,3 +127,80 @@ export function createWindowsJobApi(koffi: {
 export function windowsIsolationFailure(): string {
   return 'windows_kernel_network_write_isolation_unimplemented';
 }
+
+export interface WindowsRestrictedToken {
+  readonly handle: bigint;
+  close(): void;
+}
+
+/** A write-restricted token primitive, not a complete network/exec isolation backend. */
+export async function loadWindowsRestrictedToken(): Promise<WindowsRestrictedToken> {
+  if (process.platform !== 'win32' || !['x64', 'arm64'].includes(process.arch))
+    throw new Error('Windows 受限令牌仅支持原生 x64 或 ARM64');
+  const { default: koffi } = await import('koffi');
+  return createWindowsRestrictedToken(koffi);
+}
+
+/** No impersonation, privilege enabling, account login, or credential-store access. */
+export function createWindowsRestrictedToken(koffi: {
+  version: string;
+  load(name: string): { func(declaration: string): (...args: unknown[]) => unknown };
+}): WindowsRestrictedToken {
+  if (koffi.version !== '3.3.3') throw new Error('Windows 令牌的 koffi 版本不匹配');
+  const kernel = koffi.load('kernel32.dll');
+  const security = koffi.load('advapi32.dll');
+  const current = kernel.func('void * __stdcall GetCurrentProcess()');
+  const close = kernel.func('int __stdcall CloseHandle(void *handle)');
+  const free = kernel.func('void * __stdcall LocalFree(void *memory)');
+  const open = security.func('int __stdcall OpenProcessToken(void *process, uint32_t access, void *token)');
+  const sidFromString = security.func('int __stdcall ConvertStringSidToSidW(void *text, void *sid)');
+  const restrict = security.func('int __stdcall CreateRestrictedToken(void *existing, uint32_t flags, uint32_t disabledCount, void *disabled, uint32_t deletedCount, void *deleted, uint32_t restrictedCount, void *restricted, void *token)');
+  const query = security.func('int __stdcall GetTokenInformation(void *token, uint32_t kind, void *data, uint32_t size, void *needed)');
+  const equal = security.func('int __stdcall EqualSid(void *first, void *second)');
+  const isRestricted = security.func('int __stdcall IsTokenRestricted(void *token)');
+  const valid = (handle: bigint): boolean => handle !== 0n && BigInt.asIntN(64, handle) !== -1n;
+  let original: bigint | undefined;
+  let sid: bigint | undefined;
+  let token: bigint | undefined;
+  try {
+    const output = Buffer.alloc(8);
+    // TOKEN_DUPLICATE | TOKEN_QUERY. Never request privilege adjustment rights.
+    if (!open(current(), 0xa, output)) throw new Error('Windows 当前进程令牌读取失败');
+    original = output.readBigUInt64LE();
+    if (!valid(original)) throw new Error('Windows 当前进程令牌无效');
+    output.fill(0);
+    // NULL SID has no intended grants. It is a restricting SID, not an empty DACL.
+    // Actual write denial still requires native behavioral validation of the derived token.
+    if (!sidFromString(Buffer.from('S-1-0-0\0', 'utf16le'), output)) throw new Error('Windows 限制 SID 创建失败');
+    sid = output.readBigUInt64LE();
+    if (!valid(sid)) throw new Error('Windows 限制 SID 无效');
+    const entry = Buffer.alloc(16); // SID_AND_ATTRIBUTES on both supported 64-bit ABIs.
+    entry.writeBigUInt64LE(sid);
+    output.fill(0);
+    // DISABLE_MAX_PRIVILEGE | WRITE_RESTRICTED; no SANDBOX_INERT or LUA fallback.
+    if (!restrict(original, 0x9, 0, null, 0, null, 1, entry, output)) throw new Error('Windows 受限令牌创建失败');
+    token = output.readBigUInt64LE();
+    if (!valid(token) || !isRestricted(token)) throw new Error('Windows 受限令牌核验失败');
+    // Verify the exact derived restricting SID, not merely TokenHasRestrictions.
+    const groups = Buffer.alloc(4096);
+    const needed = Buffer.alloc(4);
+    if (!query(token, 11, groups, groups.length, needed) || needed.readUInt32LE() < 24 ||
+        needed.readUInt32LE() > groups.length || groups.readUInt32LE() !== 1 ||
+        !equal(groups.readBigUInt64LE(8), sid)) throw new Error('Windows 受限 SID 核验失败');
+    const owned = token;
+    let closed = false;
+    token = undefined;
+    return {
+      get handle() { if (closed) throw new Error('Windows 受限令牌已关闭'); return owned; },
+      close() {
+        if (closed) return;
+        if (!close(owned)) throw new Error('Windows 受限令牌关闭失败');
+        closed = true;
+      },
+    };
+  } finally {
+    if (token !== undefined && valid(token)) close(token);
+    if (sid !== undefined && valid(sid)) free(sid);
+    if (original !== undefined && valid(original)) close(original);
+  }
+}

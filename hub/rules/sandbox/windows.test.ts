@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { test } from 'node:test';
-import { attachWindowsJob, createWindowsJobApi, loadWindowsJobApi, windowsJobLimits, windowsIsolationFailure, type WindowsJobApi } from './windows.ts';
+import { attachWindowsJob, createWindowsJobApi, createWindowsRestrictedToken, loadWindowsRestrictedToken, loadWindowsJobApi, windowsJobLimits, windowsIsolationFailure, type WindowsJobApi } from './windows.ts';
 import { isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { callPackFunction } from './sandbox.ts';
 
@@ -164,4 +164,70 @@ test('native Job committed memory limit rejects an allocation that succeeded bef
   const [denied] = await result;
   assert.equal(denied, true);
   await job.stop();
+});
+
+
+function tokenKoffi(failure?: string) {
+  const calls: string[] = [];
+  return { calls, version: '3.3.3', load(name: string) {
+    calls.push(name);
+    return { func(declaration: string) {
+      const name = declaration.split(' __stdcall ')[1]!.split('(')[0]!;
+      return (...args: unknown[]) => {
+        calls.push(name);
+        if (name === failure) return 0;
+        if (name === 'GetCurrentProcess') return -1n;
+        if (name === 'OpenProcessToken') (args[2] as Buffer).writeBigUInt64LE(10n);
+        if (name === 'ConvertStringSidToSidW') (args[1] as Buffer).writeBigUInt64LE(20n);
+        if (name === 'CreateRestrictedToken') {
+          assert.equal(args[1], 0x9);
+          assert.equal(args[6], 1);
+          assert.equal((args[7] as Buffer).readBigUInt64LE(), 20n);
+          (args[8] as Buffer).writeBigUInt64LE(30n);
+        }
+        if (name === 'GetTokenInformation') {
+          assert.equal(args[1], 11);
+          (args[2] as Buffer).writeUInt32LE(1);
+          (args[2] as Buffer).writeBigUInt64LE(20n, 8);
+          (args[4] as Buffer).writeUInt32LE(24);
+        }
+        return 1;
+      };
+    } };
+  } };
+}
+
+test('write-restricted token closes temporary handles and owns exactly one checked token', () => {
+  const fake = tokenKoffi();
+  const token = createWindowsRestrictedToken(fake);
+  assert.equal(token.handle, 30n);
+  assert.equal(fake.calls.filter(name => name === 'CloseHandle').length, 1);
+  assert.ok(fake.calls.includes('LocalFree'));
+  token.close();
+  token.close();
+  assert.equal(fake.calls.filter(name => name === 'CloseHandle').length, 2);
+  assert.throws(() => token.handle, /已关闭/);
+});
+
+test('token native failure or mismatched restricting SID never returns a usable token', () => {
+  for (const failure of ['OpenProcessToken', 'ConvertStringSidToSidW', 'CreateRestrictedToken', 'IsTokenRestricted', 'GetTokenInformation', 'EqualSid']) {
+    const fake = tokenKoffi(failure);
+    assert.throws(() => createWindowsRestrictedToken(fake));
+    if (['IsTokenRestricted', 'GetTokenInformation', 'EqualSid'].includes(failure))
+      assert.equal(fake.calls.filter(name => name === 'CloseHandle').length, 2);
+  }
+});
+
+test('wrong token addon version fails before loading native libraries', () => {
+  const fake = tokenKoffi();
+  fake.version = '3.3.4';
+  assert.throws(() => createWindowsRestrictedToken(fake), /版本不匹配/);
+  assert.deepEqual(fake.calls, []);
+});
+
+test('native write-restricted token has the exact restricting SID and closes cleanly', { skip: !native }, async () => {
+  const token = await loadWindowsRestrictedToken();
+  try { assert.ok(token.handle > 0n); }
+  finally { token.close(); }
+  assert.throws(() => token.handle, /已关闭/);
 });
