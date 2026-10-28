@@ -13,6 +13,7 @@ import { TreeRootBody } from '../../../contracts/src/knowledge.ts';
 import { startBuildSiteStub, type StubServer } from '../../connectors/testing/api.ts';
 import { osIsolationAvailable } from '../../rules/api.ts';
 import { writePack } from '../../runs/api.ts';
+import { installHtmlFixture, installXmlFixture } from '../../testing/skills.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { openTestRecords } from '../../testing/records.ts';
 import type { HubConfig } from '../../config/index.ts';
@@ -71,6 +72,8 @@ test('a legacy key in the vault buys no client and no outbound call; declared pa
     const boot = await kit.principals.bootstrapAdmin('管理员');
     const admin = { id: boot.user.id, name: boot.user.name, role: boot.user.role };
     await kit.authorizations.grantPublishRight(admin, boot.user.id, '装配保险测试发布任务包');
+    await installXmlFixture(hub.registry, kit, admin);
+    await installHtmlFixture(hub.registry, kit, admin);
     const site = await writePack(join(scratch, SITE_PACK), await sitePack());
     const product = await writePack(join(scratch, PRODUCT_PACK), productPack('1.0.0', { unplaced: true }));
     for (const directory of [site.dir, product.dir]) {

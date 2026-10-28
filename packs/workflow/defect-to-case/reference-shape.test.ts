@@ -13,13 +13,13 @@ function references(value: unknown): string[] {
   if (value && typeof value === 'object') return Object.values(value).flatMap(references);
   return [];
 }
-test('PLM fixture uses plain fields and an html_fields name list', () => {
+test('PLM fixture uses plain fields and an html_fields name list', async () => {
   assert.ok(Array.isArray(SYNTHETIC_BUG_74001.html_fields));
   const parsed = jsonParser.parse(bytes);
-  assert.equal(parsed.locate('p/html_fields/fix'), null);
-  assert.match(parsed.locate('p/fields/fix')!.text!, /健康检查间隔设置成功/);
+  assert.equal((await parsed.locate('p/html_fields/fix')), null);
+  assert.match((await parsed.locate('p/fields/fix'))!.text!, /健康检查间隔设置成功/);
 });
-test('concrete submission and SKILL references resolve into the synthetic PLM fix field', () => {
+test('concrete submission and SKILL references resolve into the synthetic PLM fix field', async () => {
   const submission = JSON.parse(readFileSync(new URL('./examples/submit-result.json', import.meta.url), 'utf8'));
   const skill = readFileSync(new URL('./SKILL.md', import.meta.url), 'utf8');
   const block = /```json\n([\s\S]*?)\n```/.exec(skill)!;
@@ -28,6 +28,6 @@ test('concrete submission and SKILL references resolve into the synthetic PLM fi
     if (parsed.scheme !== 'src') throw new Error('expected source');
     assert.equal(parsed.sha256, sha);
     assert.equal(parsed.parser, 'json@1'); assert.equal(parsed.selector, 'p/fields/fix');
-    assert.ok(jsonParser.parse(bytes).locate(parsed.selector));
+    assert.ok((await jsonParser.parse(bytes).locate(parsed.selector)));
   }
 });

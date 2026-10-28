@@ -1,0 +1,47 @@
+{
+  "schema": "workflow@1",
+  "predecessor": "required",
+  "predecessor_access": "view",
+  "inputs": [
+    {
+      "slot": "declaration",
+      "role": "artifact_under_verification",
+      "required": true,
+      "many": false,
+      "accepts": [
+        "application/json"
+      ],
+      "description": "declaration exact bound source"
+    },
+    {
+      "slot": "evidence",
+      "role": "expected",
+      "required": false,
+      "many": true,
+      "accepts": [
+        "application/json",
+        "doc:doc",
+        "agile:mindmap"
+      ],
+      "description": "evidence exact bound source"
+    },
+    {
+      "slot": "source_run",
+      "role": "expected",
+      "required": true,
+      "many": false,
+      "accepts": [
+        "application/json"
+      ],
+      "description": "Actual complete Hub snapshot of the declaration run"
+    }
+  ],
+  "parameters": [],
+  "product": {
+    "catalogs": []
+  },
+  "subject": "declaration",
+  "projection": {
+    "module": "functions/project.ts"
+  }
+}

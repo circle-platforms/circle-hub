@@ -1,0 +1,35 @@
+{
+  "commit": "ba3743c46f245e52d9eb4ab0307631ae8ac916cc",
+  "files": [
+    {
+      "path": "hub/refs/parsers/html.ts",
+      "sha256": "b6feb5b0520e0f7f12008bd3017924c06f9bbc556c0166c70d4bb945ec53252c",
+      "size": 26861
+    },
+    {
+      "path": "hub/refs/parser.ts",
+      "sha256": "91cad538c490b3f88a41cb261800e9860432fc7ccae65d2a1df660281a2e1f18",
+      "size": 14224
+    },
+    {
+      "path": "hub/refs/reference.ts",
+      "sha256": "ae7963e944c92d7fb51e8ab00f87bc280b9ce892a949cfd1a4f375676396891e",
+      "size": 27688
+    },
+    {
+      "path": "hub/refs/text-decoding.ts",
+      "sha256": "40fe233ac8c338aab449a26dc5eeb3ba31036b8c4b63832ff6ab84a0f64b0a48",
+      "size": 15039
+    },
+    {
+      "path": "contracts/generated/protocol.ts",
+      "sha256": "0f5db6fa68c0db4047ed76d002609274f859894c45500e778be887c521b91456",
+      "size": 11670
+    },
+    {
+      "path": "contracts/generated/vocabulary.ts",
+      "sha256": "b54802eecf8fd88040df8ca7695e230b35898d7a48ca82cf5188067b78c36131",
+      "size": 74416
+    }
+  ]
+}

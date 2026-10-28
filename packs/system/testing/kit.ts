@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import type { PermissionRole } from '../../../contracts/generated/vocabulary.ts';
 import { createConnectors, osIsolationAvailable, type Connectors, type ConnectorLogEvent } from '../../../hub/connectors/api.ts';
 import { fakePacks, type FakePacks } from '../../../hub/connectors/testing/api.ts';
+import { createTestParserRegistry } from '../../../hub/testing/parsers.ts';
 import type { PackHandle } from '../../../hub/ports.ts';
 import type { Principal } from '../../../hub/records/api.ts';
 import { manifestDigest } from '../../../hub/runs/api.ts';
@@ -45,6 +46,7 @@ export async function openSystemKit(postgres: TemporaryPostgres, ids: readonly s
     const connectors = createConnectors({
       records,
       packs,
+      parsers: createTestParserRegistry(),
       log: (event) => void log.push(event),
       sandbox: { requireOsIsolation: await osIsolationAvailable() },
       resourceCacheMs: 0,

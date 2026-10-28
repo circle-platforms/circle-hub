@@ -1,0 +1,65 @@
+{
+  "schema": "pack@1",
+  "id": "case-compile-criterion-review",
+  "version": "1.0.1",
+  "kind": "workflow",
+  "title": "编译判据独立复核",
+  "description": "由非作者账号复核类型化判据，机械核原声明与逐字引文",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "dc5bfcbfc74fe8af6c43b2960e84bdb93a45565a34dbdc98782f54448e676b2b",
+      "size": 791
+    },
+    {
+      "path": "checks.json",
+      "sha256": "c72b94bccb71e80f732b58cc650883c95b132995d9ebb11ac2248ed48809d494",
+      "size": 457
+    },
+    {
+      "path": "functions/check.ts",
+      "sha256": "0ec47e6432efa86d6d1bb6aaa10009a9043bfef46732245cab0888cd6bb9485a",
+      "size": 1821
+    },
+    {
+      "path": "functions/project.ts",
+      "sha256": "ac5c9ce48c66de5599d2ffb9a9018d3e46f37dbf3ea52ce4f16bcb75b64dc6d6",
+      "size": 1782
+    },
+    {
+      "path": "functions/schema.ts",
+      "sha256": "7f00700410785370b57450dee1f6320783cb2cb886c577fddb8fac7d84a14fe5",
+      "size": 3210
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "87353efb675dbb10707aa569b90e6bf4f49525b3ce7681c402ad2250f7495202",
+      "size": 584
+    },
+    {
+      "path": "samples/negative/form.json",
+      "sha256": "c297b32055bddd408ba15cf693187a7703ffe3a466aebe9d7eff96732c68ddf2",
+      "size": 1263
+    },
+    {
+      "path": "samples/positive/form.json",
+      "sha256": "9c79f20bbe1060548fe5e65e2f7cd83045e61f7b8b8b7bf30420c13da2bc08ec",
+      "size": 1224
+    },
+    {
+      "path": "slots.schema.json",
+      "sha256": "ef500b4f00fec605696b29e7fce8dab7a8a270d3f86d270e9ad1d711871a8d67",
+      "size": 579
+    },
+    {
+      "path": "tables/criterion.schema.json",
+      "sha256": "917acda6eda632aafec623741b1094556b004fa4be6a909aacc45d473f47f07c",
+      "size": 1364
+    },
+    {
+      "path": "workflow.json",
+      "sha256": "21bd5986b34ba33cf8129d593552e8d255a1eff8788ee51cdfba06b0a74b7272",
+      "size": 805
+    }
+  ]
+}

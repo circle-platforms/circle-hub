@@ -19,7 +19,7 @@ function definitions(raw:unknown):CommandDefinition[]{
  });
 }
 export function commandObligations(operations:readonly Operation[],slots:PlanSlots,raw:unknown,sourceTexts:readonly string[]):AuthorityGap[]{
- if(!operations.length&&!sourceTexts.length)return [];
+ if(!operations.length&&!sourceTexts.length&&!slots.steps.some(step=>step.restore_for!==undefined))return [];
  const policy=readCommandPolicy(isRecord(raw)?raw.policy:undefined);
  const gaps:AuthorityGap[]=[];
  const note=(pointer:string,message:string,verdict:Extract<Verdict,'unknown'|'refute'>='refute',obligation?:Record<string,unknown>)=>gaps.push({document:'catalog',pointer,message,verdict,...(obligation?{obligation}:{})});
@@ -37,7 +37,9 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
  if(!policy){if(operations.length)note('/command_policy','缺锁定根的产品命令范围与逆操作声明；下一步：产品包作者声明 command-policy@1 后重新育苗并核验','unknown');return gaps;}
  const modifies=(identity:CommandIdentity)=>!policy.read_only.some(prefix=>within(identity.path,prefix));
  const configured=main.filter(operation=>modifies(operation.identity!)).reverse();
- const actual=cleanup.filter(operation=>modifies(operation.identity!));
+ const actual=cleanup.filter(operation=>modifies(operation.identity!)).map(operation=>({...operation,restore:undefined as typeof slots.steps[number]|undefined}));
+ for(const [index,step]of slots.steps.entries())if(step.restore_for!==undefined)actual.push({line:'',pointer:'/steps/'+index,object:step.object,cleanup:true,identity:null,restore:step});
+ const ordinal=(pointer:string)=>Number(pointer.split('/')[2]);actual.sort((a,b)=>ordinal(a.pointer)-ordinal(b.pointer));
  // A signature whose enum alternatives the product declared as inverse pairs (on/off and the like): the inverse of a
  // value is the paired value of the SAME signature — decided on the locked tree's declared enum members, never by
  // matching free text. Multiple inverse positions or a non-unique target stay unknown; only an absent enum rule
@@ -79,6 +81,11 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
  configured.forEach((operation,index)=>{
   const identity=operation.identity!;
   const received=actual[index];
+  if(received?.restore){
+   const step=received.restore,target=step.restore_target,configOrdinal=Number(operation.pointer.split('/')[2])+1;
+   if(step.restore_for!==configOrdinal||step.object!==operation.object||!target||target.tree_root!==identity.tree_root)note(operation.pointer,'缺同设备、逆序且绑定该配置的捕获恢复守卫','refute',{cleanup_for:operation.pointer,missing_count:1});
+   return;
+  }
   const alternatives=alternativeInverses(identity,received?.identity??undefined);
   if(alternatives.ambiguous){note(operation.pointer,'声明的枚举互逆不能在同一签名中得到唯一完整身份；下一步由产品包作者修正互逆声明或命令树后重核','unknown');return;}
   const alternative=alternatives.identities[0];

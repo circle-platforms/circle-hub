@@ -1,5 +1,7 @@
 {
   "schema": "workflow@1",
+  "predecessor": "required",
+  "predecessor_access": "view",
   "inputs": [
     {
       "slot": "target",

@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
-import { goldQuoteContains, normalizeGoldQuote } from './quote-widths.ts';
+import { goldQuoteContains, goldQuoteHasText } from './quote-widths.ts';
 
 export function parseIpv4(ip: string): bigint | null {
   const parts = ip.trim().split('.');
@@ -469,7 +469,7 @@ export function checkCatalogCommand(catalog: CatalogCommand[], line: string, dec
 }
 export const collapseWhitespace = (s: string): string => s.replace(/\s+/g,' ').trim();
 export function checkVerbatimQuote(sources: ReadonlyMap<string,string>, reference: string, quote: string): Answer {
-  if (!quote.isWellFormed() || !normalizeGoldQuote(quote) || !reference.trim()) return fail('期望结果缺少完整的逐字引文或来源');
+  if (!quote.isWellFormed() || !goldQuoteHasText(quote) || !reference.trim()) return fail('期望结果缺少完整的逐字引文或来源');
   if (!/^(src|rec|tree):/.test(reference)) return fail('期望来源不是 src:/rec:/tree: 引用');
   const fragment = sources.get(reference);
   if (fragment === undefined) return unknown(`来源 ${reference} 无法读取或未绑定`);

@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { recompositionGaps, admittedRecomposition } from './recomposition.ts';
+import { fixture, pair, bound } from '../testing/recompose.ts';
+import { readSlots } from './slots.ts';
+import { positiveBlocks } from '../testing/blocks.ts';
+const use = (f: ReturnType<typeof fixture>) => ({ record: f.record, receipt: 'rec:' + 'a'.repeat(64) });
+test('all recomposed expectation slots need distinct actual B1 assertions with the complete original quote', () => { const f = fixture(), raw = positiveBlocks().OBSERVE_ASSERT; raw.blocks[0].assertions[0].quote = { reference: f.record.atoms[1].quote_ref, text: f.record.atoms[1].text }; raw.blocks[0].assertions[0].expectation = f.record.atoms[1].quote_ref; raw.recomposition = { receipt: use(f).receipt, case_id: f.record.case.id, slots: [{ slot: 'e1', assertions: ['assertA'] }], rebindings: [] }; const p = readSlots(raw); assert.ok(p.ok); if (!p.ok)
+    return; assert.deepEqual(recompositionGaps(p.slots, use(f)), []); p.slots.recomposition!.slots[0].assertions = ['invented']; assert.ok(recompositionGaps(p.slots, use(f)).some(i => i.verdict === 'refute')); });
+test('missing physical value authority is unknown, provided false authority is a violation', () => { const f = fixture(), raw = positiveBlocks().OBSERVE_ASSERT; raw.recomposition = { receipt: use(f).receipt, case_id: f.record.case.id, slots: [], rebindings: [{ slot: 'address', from: '192.0.2.1', to: '192.0.2.2', authority: '', source_of_value: '' }] }; raw.replacements = [{ case: '192.0.2.1', bed: '192.0.2.2' }]; const p = readSlots({ ...raw, recomposition: { ...raw.recomposition, rebindings: raw.recomposition.rebindings.map(({ authority, source_of_value, ...row }) => row) } }); assert.ok(p.ok); if (!p.ok)
+    return; assert.ok(recompositionGaps(p.slots, use(f), 'b'.repeat(64)).some(i => i.verdict === 'unknown' && i.message.includes('source_of_value'))); });
+test('a review receipt and a copied upload cannot substitute for a satisfied recomposition', () => { const f = fixture(), review = pair('case-compile-criterion-review', []); assert.equal(admittedRecomposition(review.run, review.result, f.context, f.record.case.source_ref, f.record.case.node), null); const uploaded = { external: null, meta: null, model: { kind: 'run', body: {} } }; assert.equal(admittedRecomposition(uploaded, review.result, f.context, f.record.case.source_ref, f.record.case.node), null); });

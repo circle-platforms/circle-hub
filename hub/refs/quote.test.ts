@@ -1,23 +1,9 @@
+import { htmlParser, kityminderParser, xmlParser } from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import {
-  candidatesFrom,
-  collapseWhitespace,
-  findQuote,
-  htmlParser,
-  jsonParser,
-  kityminderParser,
-  locateQuote,
-  markdownParser,
-  quoteMatches,
-  sliceUtf8,
-  textParser,
-  xmlParser,
-  type Parser,
-  type QuoteCandidate,
-  type QuoteSearch,
-} from './api.ts';
+  candidatesFrom, collapseWhitespace, findQuote, jsonParser, locateQuote, markdownParser, quoteMatches, sliceUtf8, textParser, type Parser, type QuoteCandidate, type QuoteSearch } from './api.ts';
 import { fixture, seeded, sha256, timed, utf8 } from './test-support.ts';
 
 const FRAGMENT = '超时时间设为 0 时，配置被拒绝。\r\n提示：参数超出范围 1-3600（Timeout）。';
@@ -26,8 +12,8 @@ describe('quoteMatches', () => {
   const matching: Array<[string, string]> = [
     ['NBSP', '超时时间设为 0 时'],
     ['tabs', '超时时间设为\t0\t\t时'],
-    ['CRLF across lines', '配置被拒绝。 提示：'],
-    ['LF instead of CRLF', '配置被拒绝。\n提示：'],
+    ['CRLF across lines', '配置被拒绝。\r\n提示：'],
+    ['LF across lines', '配置被拒绝。\n提示：'],
     ['ideographic space', '超时时间设为　0　时'],
     ['runs of spaces', '超时时间设为    0   时'],
     ['leading and trailing white space', '  \n\t参数超出范围 1-3600　 '],
@@ -35,7 +21,7 @@ describe('quoteMatches', () => {
     ['line separator and NEL', '超时时间设为 0\u0085时'],
   ];
   for (const [name, quote] of matching) {
-    it(`matches with ${name}`, () => assert.ok(quoteMatches(FRAGMENT, quote)));
+    it(`matches exact ${name}`, () => assert.ok(quoteMatches(`before:${quote}:after`, quote)));
   }
 
   const different: Array<[string, string]> = [
@@ -54,6 +40,28 @@ describe('quoteMatches', () => {
   for (const [name, quote] of different) {
     it(`does not match with ${name}`, () => assert.equal(quoteMatches(FRAGMENT, quote), false));
   }
+
+  it('rejects whitespace substitutions, including deletion beside W/F characters', () => {
+    for (const [fragment, quote] of [
+      ['页面\r\n跳转', '页面跳转'],
+      ['页面\r\n跳转', '页面 跳转'],
+      ['中 \n A', '中A'],
+      ['Ａ \n B', 'ＡB'],
+      ['a b', 'a  b'],
+      ['a\tb', 'a b'],
+      ['a\u00a0b', 'a b'],
+      ['a\u3000b', 'a b'],
+      ['abc', ' abc'],
+      ['abc', 'abc '],
+    ]) assert.equal(quoteMatches(fragment, quote), false, JSON.stringify([fragment, quote]));
+  });
+
+  it('rejects whitespace-only quotes even when the fragment contains them', () => {
+    for (const quote of [' ', '\t\r\n', '\u00a0', '\u3000', '\u0085\u2028\u2029']) {
+      assert.equal(quoteMatches(`中${quote}文`, quote), false, JSON.stringify(quote));
+      assert.equal(locateQuote(`中${quote}文`, quote), null, JSON.stringify(quote));
+    }
+  });
 
   it('keeps Unicode normalization forms significant', () => {
     assert.equal(quoteMatches('café', 'café'), false);
@@ -105,8 +113,7 @@ describe('the refs-side verbatim matcher names its invariants', () => {
   });
 });
 
-// The matcher reads every white-space run as one space without building a collapsed copy; it must agree with the
-// definition: both sides collapsed and trimmed, then contained.
+// The streaming matcher must agree with raw substring search and pin the exact original bytes.
 describe('the matcher against the definition', () => {
   const ALPHABET = ['a', 'b', ' ', '  ', '\t', '\n', '\r\n', '　', ' ', '中', '文', '😀', '​', 'ab', 'a b'];
   const randomText = (r: ReturnType<typeof seeded>, max: number): string => Array.from({ length: r.int(max) }, () => r.pick(ALPHABET)).join('');
@@ -115,18 +122,16 @@ describe('the matcher against the definition', () => {
     for (let i = 0; i < 4000; i++) {
       const fragment = randomText(r, 24);
       const quote = r.chance(0.5) ? randomText(r, 6) : fragment.slice(r.int(fragment.length + 1), r.int(fragment.length + 1) + 1 + r.int(8));
-      const q = collapseWhitespace(quote);
       // A slice may cut a surrogate pair: such a quotation is not text and never matches.
-      const expected = quote.isWellFormed() && q !== '' && collapseWhitespace(fragment).includes(q);
+      const expected = quote.isWellFormed() && /[^\p{White_Space}]/u.test(quote) && fragment.includes(quote);
       assert.equal(quoteMatches(fragment, quote), expected, JSON.stringify([fragment, quote]));
       const location = locateQuote(fragment, quote);
       assert.equal(location !== null, expected);
       if (location === null) continue;
       const slice = sliceUtf8(fragment, location.from, location.to);
-      assert.ok(slice !== null && collapseWhitespace(slice) === q, JSON.stringify([fragment, quote, slice]));
+      assert.equal(slice, quote, JSON.stringify([fragment, quote, slice]));
       let count = 0;
-      const collapsed = collapseWhitespace(fragment);
-      for (let at = collapsed.indexOf(q); at >= 0; at = collapsed.indexOf(q, at + 1)) count++;
+      for (let at = fragment.indexOf(quote); at >= 0; at = fragment.indexOf(quote, at + 1)) count++;
       assert.equal(location.occurrences, count);
     }
   });
@@ -134,7 +139,7 @@ describe('the matcher against the definition', () => {
 
 describe('locateQuote', () => {
   it('maps the match back to UTF-8 byte offsets of the original text', () => {
-    const location = locateQuote(FRAGMENT, '配置被拒绝。 提示：参数');
+    const location = locateQuote(FRAGMENT, '配置被拒绝。\r\n提示：参数');
     assert.ok(location);
     const slice = sliceUtf8(FRAGMENT, location.from, location.to);
     assert.equal(slice, '配置被拒绝。\r\n提示：参数');
@@ -144,7 +149,7 @@ describe('locateQuote', () => {
   it('counts occurrences and takes the first', () => {
     const text = 'a b a  b a\tb';
     const location = locateQuote(text, 'a b');
-    assert.deepEqual(location, { from: 0, to: 3, occurrences: 3 });
+    assert.deepEqual(location, { from: 0, to: 3, occurrences: 1 });
   });
 
   it('returns null when absent or empty', () => {
@@ -154,9 +159,25 @@ describe('locateQuote', () => {
 
   it('handles astral characters', () => {
     const text = '前😀 后　😀';
-    const location = locateQuote(text, '😀 后 😀');
+    const location = locateQuote(text, '😀 后　😀');
     assert.ok(location);
     assert.equal(sliceUtf8(text, location.from, location.to), '😀 后　😀');
+  });
+
+  it('pins the exact submitted UTF-8 bytes and counts only identical occurrences', () => {
+    const quote = '😀\t中\r\n\u00a0\u3000后';
+    const text = `前${quote}；${quote}`;
+    const from = utf8('前').length;
+    const to = from + utf8(quote).length;
+    assert.deepEqual(locateQuote(text, quote), { from, to, occurrences: 2 });
+    assert.equal(locateQuote(text, quote.replace('\t', ' ')), null);
+    assert.equal(Buffer.from(text).subarray(from, to).toString('utf8'), quote);
+    assert.equal(sliceUtf8(text, from, to), quote);
+    const found = findQuote([{ reference: `src:${'a'.repeat(64)}/text@1/l/1`, text }], quote);
+    assert.equal(found.resolution, 'resolved');
+    assert.deepEqual(found.matches[0].location, { from, to, occurrences: 2 });
+    assert.ok(found.matches[0].ranged.endsWith(`:${from}-${to}`));
+    assert.equal(sliceUtf8(text, from, to), quote);
   });
 });
 
@@ -199,23 +220,23 @@ describe('findQuote', () => {
     assert.equal(findQuote(candidates, ' ').resolution, 'unresolved');
   });
 
-  it('resolves against every fragment of a parsed document', () => {
+  it('resolves against every fragment of a parsed document', async () => {
     const bytes = fixture('spec.md');
     const document = markdownParser.parse(bytes);
-    const found = findQuote(candidatesFrom(document, sha256(bytes), { role: 'expected' }), '超时时间以秒计。设为 0 时配置被拒绝。');
+    const found = findQuote((await candidatesFrom(document, sha256(bytes), { role: 'expected' })), '超时时间以秒计。设为 0 时配置被拒绝。');
     assert.equal(found.resolution, 'resolved');
     assert.equal(found.matches[0].reference, `src:${sha256(bytes)}/markdown@1/b/1/概述/功能说明/超时`);
     assert.equal(found.matches[0].role, 'expected');
-    assert.equal(findQuote(candidatesFrom(document, sha256(bytes)), '会话').resolution, 'ambiguous');
+    assert.equal(findQuote((await candidatesFrom(document, sha256(bytes))), '会话').resolution, 'ambiguous');
   });
 });
 
 /** findQuote over every candidate of a parsed source. */
-function search(parser: Parser, input: string | Uint8Array, quote: string, options: { properties?: boolean; mediaType?: string } = {}): QuoteSearch & { sha: string } {
+async function search(parser: Parser, input: string | Uint8Array, quote: string, options: { properties?: boolean; mediaType?: string } = {}): Promise<QuoteSearch & { sha: string }> {
   const bytes = typeof input === 'string' ? utf8(input) : input;
   const document = parser.parse(bytes, options.mediaType ? { mediaType: options.mediaType } : {});
   const sha = sha256(bytes);
-  return { ...findQuote(candidatesFrom(document, sha, { properties: options.properties }), quote), sha };
+  return { ...findQuote((await candidatesFrom(document, sha, { properties: options.properties })), quote), sha };
 }
 
 /** The selector of a src reference (after `src:<sha256>/<parser>/`). */
@@ -229,8 +250,8 @@ function pinned(result: QuoteSearch): string[] {
 }
 
 describe('findQuote: every occurrence belongs to the innermost fragment around it', () => {
-  it('counts a heading that holds the quotation as a place of its own, next to the paragraph', () => {
-    const result = search(markdownParser, '# 会话保持超时\n\n设置会话保持超时为 300 秒。\n', '会话保持超时');
+  it('counts a heading that holds the quotation as a place of its own, next to the paragraph', async () => {
+    const result = (await search(markdownParser, '# 会话保持超时\n\n设置会话保持超时为 300 秒。\n', '会话保持超时'));
     assert.equal(result.resolution, 'ambiguous');
     assert.deepEqual(result.matches.map((m) => selectorIn(m.reference)), ['h/会话保持超时', 'b/0/会话保持超时']);
     assert.deepEqual(pinned(result), ['会话保持超时', '会话保持超时']);
@@ -238,82 +259,88 @@ describe('findQuote: every occurrence belongs to the innermost fragment around i
     assert.deepEqual(result.matches.map((m) => m.location.occurrences), [1, 1]);
   });
 
-  it('pins an occurrence across two blocks on the section, apart from the one inside a block', () => {
-    const result = search(markdownParser, '# S\n\nalpha X Y beta X\n\nY gamma\n', 'X Y');
-    assert.equal(result.resolution, 'ambiguous');
-    assert.deepEqual(result.matches.map((m) => selectorIn(m.reference)), ['h/S', 'b/0/S']);
-    assert.deepEqual(pinned(result), ['X\n\nY', 'X Y']);
-    assert.equal(search(markdownParser, '# S\n\nalpha X Y beta\n\ngamma\n', 'X Y').resolution, 'resolved');
+  it('pins exact occurrences across two blocks and inside a block without equating their whitespace', async () => {
+    const source = '# S\n\nalpha X Y beta X\n\nY gamma\n';
+    const across = (await search(markdownParser, source, 'X\n\nY'));
+    assert.equal(across.resolution, 'resolved');
+    assert.deepEqual(across.matches.map((m) => selectorIn(m.reference)), ['h/S']);
+    assert.deepEqual(pinned(across), ['X\n\nY']);
+    const inside = (await search(markdownParser, source, 'X Y'));
+    assert.equal(inside.resolution, 'resolved');
+    assert.deepEqual(inside.matches.map((m) => selectorIn(m.reference)), ['b/0/S']);
+    assert.deepEqual(pinned(inside), ['X Y']);
+    assert.equal((await search(markdownParser, source, 'X\nY')).resolution, 'unresolved');
   });
 
-  it('separates an element text from the same text in a child element', () => {
-    const result = search(xmlParser, '<a>port 80<b>port 80</b></a>', 'port 80');
+  it('separates an element text from the same text in a child element', async () => {
+    const result = (await search(xmlParser, '<a>port 80<b>port 80</b></a>', 'port 80'));
     assert.equal(result.resolution, 'ambiguous');
     assert.deepEqual(result.matches.map((m) => selectorIn(m.reference)), ['x/a', 'x/a/b']);
     assert.deepEqual(pinned(result), ['port 80', 'port 80']);
-    assert.equal(search(xmlParser, '<a>x<b>port 80</b>y</a>', 'port 80').resolution, 'resolved');
-    assert.equal(selectorIn(search(xmlParser, '<a>x<b>port 80</b>y</a>', 'port 80').matches[0].reference), 'x/a/b');
+    assert.equal((await search(xmlParser, '<a>x<b>port 80</b>y</a>', 'port 80')).resolution, 'resolved');
+    assert.equal(selectorIn((await search(xmlParser, '<a>x<b>port 80</b>y</a>', 'port 80')).matches[0].reference), 'x/a/b');
   });
 
-  it('takes a link as the place of its text, whatever the white space around it in the block', () => {
+  it('takes a link as the place of its text, whatever the white space around it in the block', async () => {
     for (const html of ['<p>see <a href=x.xml>command_tree-Rel_X_1_2.xml</a></p>', '<p><a href=x.xml>command_tree-Rel_X_1_2.xml</a> (12K)</p>', '<blockquote>\n<A href=a>command_tree-Rel_X_1_2.xml</A><BR>\n<A href=b>MIB</A></blockquote>']) {
-      const result = search(htmlParser, html, 'command_tree-Rel_X_1_2.xml');
+      const result = (await search(htmlParser, html, 'command_tree-Rel_X_1_2.xml'));
       assert.equal(result.resolution, 'resolved', html);
       assert.equal(selectorIn(result.matches[0].reference), 'a/0', html);
     }
-    const gbk = search(htmlParser, new Uint8Array([...utf8('<p>x <a href=y>'), 0xd6, 0xd0, 0xce, 0xc4, ...utf8('</a></p>')]), '中文', { mediaType: 'text/html; charset=gbk' });
+    const gbk = (await search(htmlParser, new Uint8Array([...utf8('<p>x <a href=y>'), 0xd6, 0xd0, 0xce, 0xc4, ...utf8('</a></p>')]), '中文', { mediaType: 'text/html; charset=gbk' }));
     assert.equal(gbk.resolution, 'resolved', 'without byte ranges (a legacy charset) the link still nests in its block');
     assert.equal(selectorIn(gbk.matches[0].reference), 'a/0');
-    const twice = search(htmlParser, '<p>file.xml <a href=x>file.xml</a></p>', 'file.xml');
+    const twice = (await search(htmlParser, '<p>file.xml <a href=x>file.xml</a></p>', 'file.xml'));
     assert.equal(twice.resolution, 'ambiguous', 'the block holds the name once more outside the link');
     assert.deepEqual(twice.matches.map((m) => selectorIn(m.reference)), ['b/0', 'a/0']);
   });
 
-  it('takes a mind-map node as its own text field, and other fields as places of their own', () => {
+  it('takes a mind-map node as its own text field, and other fields as places of their own', async () => {
     const map = fixture('mindmap.km.json');
     for (const properties of [false, true]) {
-      const result = search(kityminderParser, map, '需求 4021-示例网关会话保持功能测试', { properties });
+      const result = (await search(kityminderParser, map, '需求 4021-示例网关会话保持功能测试', { properties }));
       assert.equal(result.resolution, 'resolved', `properties: ${properties}`);
       assert.equal(selectorIn(result.matches[0].reference), 'n/i7vkfd4cdjok');
     }
-    const noted = search(kityminderParser, JSON.stringify({ root: { data: { id: 'r', text: 'abc', note: 'abc' } } }), 'abc', { properties: true });
+    const noted = (await search(kityminderParser, JSON.stringify({ root: { data: { id: 'r', text: 'abc', note: 'abc' } } }), 'abc', { properties: true }));
     assert.deepEqual(noted.matches.map((m) => selectorIn(m.reference)), ['n/r', 'n/r/@note']);
   });
 
-  it('quotes JSON values, not the JSON text of the objects around them', () => {
+  it('quotes JSON values, not the JSON text of the objects around them', async () => {
     const json = '{"story":{"title":"会话保持在 3.2 引入","tags":["a","b"]}}';
-    const result = search(jsonParser, json, '会话保持在 3.2 引入');
+    const result = (await search(jsonParser, json, '会话保持在 3.2 引入'));
     assert.equal(result.resolution, 'resolved');
     assert.equal(selectorIn(result.matches[0].reference), 'p/story/title');
     const document = jsonParser.parse(utf8(json));
-    assert.deepEqual(candidatesFrom(document, sha256(json)).map((c) => selectorIn(c.reference)), ['p/story/title', 'p/story/tags/0', 'p/story/tags/1']);
+    assert.deepEqual((await candidatesFrom(document, sha256(json))).map((c) => selectorIn(c.reference)), ['p/story/title', 'p/story/tags/0', 'p/story/tags/1']);
     assert.ok(document.listSelectors().includes('p/story'), 'listSelectors still lists the containers');
   });
 
-  it('resolves a quotation across a line break or a block boundary to the range around it', () => {
-    const text = search(textParser, 'The session timeout is applied after the\nlast packet of the flow is seen.\n', 'applied after the last packet');
+  it('resolves an exact quotation across a line break or a block boundary to the range around it', async () => {
+    const text = (await search(textParser, 'The session timeout is applied after the\nlast packet of the flow is seen.\n', 'applied after the\nlast packet'));
     assert.equal(text.resolution, 'resolved');
     assert.equal(selectorIn(text.matches[0].reference), 'l/1-2');
     assert.deepEqual(pinned(text), ['applied after the\nlast packet']);
-    assert.equal(selectorIn(search(textParser, 'one line\nlast packet here\n', 'last packet').matches[0].reference), 'l/2', 'a quotation inside one line stays on it');
-    const html = search(htmlParser, '<p>applied after the</p><p>last packet</p>', 'applied after the last packet');
+    assert.equal(selectorIn((await search(textParser, 'one line\nlast packet here\n', 'last packet')).matches[0].reference), 'l/2', 'a quotation inside one line stays on it');
+    const html = (await search(htmlParser, '<p>applied after the</p><p>last packet</p>', 'applied after the\nlast packet'));
     assert.equal(html.resolution, 'resolved');
     assert.equal(selectorIn(html.matches[0].reference), 'b/0-1');
-    assert.equal(htmlParser.parse(utf8('<p>applied after the</p><p>last packet</p>')).locate('b/0-1')!.text, 'applied after the\nlast packet');
+    assert.equal((await htmlParser.parse(utf8('<p>applied after the</p><p>last packet</p>')).locate('b/0-1'))!.text, 'applied after the\nlast packet');
   });
 
-  it('says what the white-space rule is when nothing is found, and refuses half characters', () => {
-    const missing = search(markdownParser, 'set 10 0\n', 'set 100');
+  it('states the exact whitespace rule when nothing is found, and refuses half characters', async () => {
+    const missing = (await search(markdownParser, 'set 10 0\n', 'set 100'));
     assert.equal(missing.resolution, 'unresolved');
-    assert.match(missing.diagnostics[0], /东亚宽字符或全角字符/);
+    assert.match(missing.diagnostics[0], /空白.*完全相同/);
     assert.doesNotMatch(missing.diagnostics[0], /空白差异不影响核对/);
-    assert.equal(search(markdownParser, '会话保持超时\n时间默认为 300 秒。\n', '会话保持超时 时间').resolution, 'resolved');
+    assert.equal((await search(markdownParser, '会话保持超时\n时间默认为 300 秒。\n', '会话保持超时\n时间')).resolution, 'resolved');
+    assert.equal((await search(markdownParser, '会话保持超时\n时间默认为 300 秒。\n', '会话保持超时 时间')).resolution, 'unresolved');
     const half = findQuote([{ reference: `src:${'a'.repeat(64)}/text@1/l/1`, text: 'ok 😀 ok' }], '\ude00');
     assert.equal(half.resolution, 'unresolved');
     assert.match(half.diagnostics[0], /代理字符/);
   });
 
-  it('pins every match of the fixtures on the quotation itself', () => {
+  it('pins every match of the fixtures on the quotation itself', async () => {
     const sources: Array<[Parser, string, string[], boolean]> = [
       [markdownParser, 'spec.md', ['会话', '超时', '设为 0 时配置被拒绝', '全角空格：前　后', 'Cookie']],
       [xmlParser, 'command-tree.xml', ['pool', 'Name of the pool', 'fast', 'Seconds before'], true],
@@ -322,9 +349,9 @@ describe('findQuote: every occurrence belongs to the innermost fragment around i
     ].map(([parser, name, quotes, properties]) => [parser as Parser, name as string, quotes as string[], properties === true]);
     for (const [parser, name, quotes, properties] of sources) {
       for (const quote of quotes) {
-        const result = search(parser, fixture(name), quote, { properties });
+        const result = (await search(parser, fixture(name), quote, { properties }));
         assert.ok(result.total > 0, `${name}: ${quote}`);
-        for (const text of pinned(result)) assert.equal(collapseWhitespace(text), collapseWhitespace(quote), `${name}: ${quote}`);
+        for (const text of pinned(result)) assert.equal(text, quote, `${name}: ${quote}`);
       }
     }
   });
@@ -338,10 +365,10 @@ describe('findQuote and candidatesFrom stay linear in the document', () => {
     assert.ok(outcome.ms < BOUND_MS, `${label} took ${outcome.ms.toFixed(0)} ms`);
   };
 
-  it('a common word over 40000 sections with a paragraph each', () => {
+  it('a common word over 40000 sections with a paragraph each', async () => {
     const bytes = utf8(Array.from({ length: 40_000 }, (_, i) => `# 标题${i}\n\n的段落\n`).join('\n'));
     const document = markdownParser.parse(bytes);
-    const candidates = candidatesFrom(document, sha256(bytes));
+    const candidates = (await candidatesFrom(document, sha256(bytes)));
     assert.equal(candidates.length, 80_000);
     within('findQuote', () => assert.equal(findQuote(candidates, '的').total, 40_000));
   });
@@ -350,8 +377,8 @@ describe('findQuote and candidatesFrom stay linear in the document', () => {
     const leaf = `<t>${'x '.repeat(499)}xy</t>`;
     const bytes = utf8(`${'<a>'.repeat(60)}${leaf.repeat(4_000)}${'</a>'.repeat(60)}`);
     const document = xmlParser.parse(bytes);
-    within('candidatesFrom and findQuote', () => {
-      const candidates = candidatesFrom(document, sha256(bytes));
+    within('candidatesFrom and findQuote', async () => {
+      const candidates = (await candidatesFrom(document, sha256(bytes)));
       assert.equal(findQuote(candidates, 'x xy').total, 4_000);
       assert.equal(findQuote(candidates, 'xyx').resolution, 'resolved', 'only the parent of two leaves holds it, across them');
       assert.equal(findQuote(candidates, 'y x y').resolution, 'unresolved');
@@ -361,7 +388,7 @@ describe('findQuote and candidatesFrom stay linear in the document', () => {
   it('40000 sibling elements', () => {
     const bytes = utf8(`<r>${'<i/>'.repeat(40_000)}</r>`);
     const document = xmlParser.parse(bytes);
-    within('candidatesFrom', () => assert.equal(candidatesFrom(document, sha256(bytes)).length, 40_001));
+    within('candidatesFrom', async () => assert.equal((await candidatesFrom(document, sha256(bytes))).length, 40_001));
   });
 
   it('200000 JSON values nested 100 deep', () => {
@@ -369,23 +396,27 @@ describe('findQuote and candidatesFrom stay linear in the document', () => {
     for (let depth = 0; depth < 99; depth++) value = [value];
     const bytes = utf8(JSON.stringify(value));
     const document = jsonParser.parse(bytes);
-    within('candidatesFrom and findQuote', () => {
-      const candidates = candidatesFrom(document, sha256(bytes));
+    within('candidatesFrom and findQuote', async () => {
+      const candidates = (await candidatesFrom(document, sha256(bytes)));
       assert.equal(candidates.length, 200_000, 'values only');
       assert.equal(findQuote(candidates, 'v199999').resolution, 'resolved');
     });
   });
 });
 
-describe('East Asian quotation whitespace', () => {
-  it('drops a run when either adjacent code point is wide or fullwidth and keeps Latin boundaries', () => {
+describe('strict quotation whitespace', () => {
+  it('never deletes or folds a run beside wide, fullwidth, or Latin characters', () => {
     for (const [text, quote] of [['页面\r\n跳转', '页面跳转'], ['中\nA', '中A'], ['A\n中', 'A中'], ['Ａ \n B', 'ＡB'], ['𠀀\nA', '𠀀A'], ['🙂\nA', '🙂A']]) {
-      assert.ok(quoteMatches(text, quote)); assert.ok(locateQuote(text, quote));
+      assert.equal(quoteMatches(text, quote), false);
+      assert.equal(locateQuote(text, quote), null);
+      assert.ok(quoteMatches(text, text));
     }
     for (const [text, quote] of [['set 10 0', 'set 100'], ['a b', 'ab'], ['a + b', 'a+b'], ['α β', 'αβ'], ['ｱ A', 'ｱA']]) assert.equal(quoteMatches(text, quote), false);
-    const source = '前中\r\nA后'; const location = locateQuote(source, '中A')!;
+    const source = '前中\r\nA后';
+    assert.equal(locateQuote(source, '中A'), null);
+    const location = locateQuote(source, '中\r\nA')!;
     assert.equal(sliceUtf8(source, location.from, location.to), '中\r\nA');
     const failed = findQuote([{ reference: `src:${'a'.repeat(64)}/text@1/l/1`, text: 'set 10 0' }], 'set 100');
-    assert.match(failed.diagnostics.join(''), /东亚|全角/);
+    assert.match(failed.diagnostics.join(''), /空白.*完全相同/);
   });
 });

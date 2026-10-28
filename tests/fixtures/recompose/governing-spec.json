@@ -1,0 +1,34 @@
+{
+  "schema": "recompose-sources@1",
+  "product": "orbit",
+  "governing": [
+    {
+      "kind": "spec",
+      "ref": "src:17c8cdcf284a42a4a946c3736f9447ef1d049ee3ce43fea940ff7138ebe70aba",
+      "path": "tests/fixtures/manual-store/files/spec/环之间的负载分配.md",
+      "version": "1.0",
+      "authority": "product-declared",
+      "covers": [
+        "orbit mode 的取值闭集"
+      ],
+      "quote": "**orbit mode** 设置分配方式：rr、lc 或 hash。"
+    }
+  ],
+  "candidates": [
+    {
+      "ref": "src:0000000000000000000000000000000000000000000000000000000000000000",
+      "path": "（合成）历史工单检索命中，无签发权",
+      "found_by": "search",
+      "signing_authority": false
+    }
+  ],
+  "note": "只有 governing 有签发权；candidates 永远 signing_authority:false（规格 §2.1 规则 1）。",
+  "declared_values": {
+    "field": "orbit.mode",
+    "values": [
+      "rr",
+      "lc",
+      "hash"
+    ]
+  }
+}

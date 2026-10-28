@@ -8,7 +8,7 @@ import { formatIp, nextFree, parseIp, parseSubnet, subnetContains, type Subnet }
 import { isRecord } from './common.ts';
 import { bedFacts, declaredSurface } from './facts.ts';
 import { parseManifest, DEVICE_TYPE_LABEL, DEVICE_TYPES, type ManifestBed } from './manifest.ts';
-import { matchNeed, pickDevices, type BedMatch, type Installed, type LeaseEntry, type Need, type NeedDevice } from './match.ts';
+import { matchNeed, pickDevices, unmatchedBuildExit, type BedMatch, type Installed, type LeaseEntry, type Need, type NeedDevice, type UnmatchedBuild } from './match.ts';
 
 export type Action = 'search' | 'facts' | Extract<LeaseOp, 'acquire' | 'release' | 'register' | 'unregister' | 'force_release'>;
 
@@ -133,6 +133,16 @@ export function declaredInstalls(beds: readonly ManifestBed[]): { installed: Rec
     }
   }
   return { installed, builds };
+}
+
+/**
+ * Search-level unknown when a build is required and every bed that has the devices fails it. Null when some bed
+ * matches, the need names no build, or no bed has the devices. Per-bed fields stay whatever searchFields computed.
+ */
+export function unmatchedBuild(beds: ManifestBed[], need: BedNeed, leases: Record<string, LeaseEntry>, now: string): UnmatchedBuild | null {
+  const { installed, builds } = declaredInstalls(beds);
+  const shaped = matchNeedOf(need);
+  return unmatchedBuildExit(beds, shaped, installed, builds, leases, now, matchNeed(beds, shaped, installed, builds, leases, now));
 }
 
 /** One search conclusion per bed (matchNeed's order); the build verdict reads the manifest's declared installs. */

@@ -1,10 +1,11 @@
+import {kityminderParser} from "../../../hub/testing/parsers.ts";
 import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../../hub/connectors/testing/credentials.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, before, describe, test } from 'node:test';
 import { MAX_NESTED_READS, ReadPlanOutput, ReadProjectionOutput, SystemProfile } from '../../../contracts/src/resources.ts';
 import { startAgileStub, type AgileStub } from '../../../hub/connectors/testing/api.ts';
-import { kityminderParser } from '../../../hub/refs/api.ts';
+
 import type { ExternalRead } from '../../../hub/ports.ts';
 import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/postgres.ts';
 import { AGILE_ACCOUNT, DOCUMENTS, REVIEW_ANCESTORS, REVIEW_TITLE, ROOTS, agileOptions, agileTrees } from '../../../tests/fixtures/agile/index.ts';

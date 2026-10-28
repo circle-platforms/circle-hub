@@ -198,7 +198,9 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
       buildWarrant = { producer: 'function', id: DEFAULT_RULE };
     }
   }
-  const root = await knowledge.seedlingRoot?.(pid,build.line)??await knowledge.rootOfBuild(pid, buildName);
+  const root = knowledge.rootForRead
+    ? (await knowledge.rootForRead(pid, { build: buildName, line: build.line }))?.info ?? null
+    : await knowledge.seedlingRoot?.(pid, build.line) ?? await knowledge.rootOfBuild(pid, buildName);
   if (root === null) throw unresolved('/build', `构建 ${buildName} 还没有知识根`, (await withRoot()).map((b) => b.name), '换一个已产出知识根的构建');
   const ground = treeReference(root.root, '/');
   basis.push(

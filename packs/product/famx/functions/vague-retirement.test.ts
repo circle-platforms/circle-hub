@@ -1,6 +1,7 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {kityminderParser} from '../../../../hub/refs/api.ts';
+
 import {caseNodes} from './cases-nodes.ts';
 test('case production preserves structural expectations without deciding their semantic quality',()=>{
  for(const text of ['操作成功','某项约束应当满足','结果等于 7']){

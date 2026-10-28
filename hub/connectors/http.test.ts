@@ -355,3 +355,59 @@ test('the sending hook of a login runs once it has its slot and before anything 
   assert.equal(server.requests.length, before);
   assert.equal((await http.login(login, { username: 'u', password: 'p' })).token, SECRET, 'the slot was released');
 });
+
+test('media_types_by_extension resolves octet-stream and missing types, server headers take precedence', async () => {
+  const route: RouteDeclaration = {
+    id: 'file',
+    role: 'plm-api',
+    method: 'GET',
+    path: '/files/{path*}',
+    response: 'text',
+    max_bytes: 10_000,
+    read: true,
+    media_types_by_extension: {
+      '.adoc': 'text/plain',
+      '.html': 'text/html',
+      '.md': 'text/markdown',
+    },
+  };
+  let replyContentType: string | null = 'application/octet-stream';
+  const server = await stub(() => {
+    const headers: Record<string, string> = {};
+    if (replyContentType !== null) headers['content-type'] = replyContentType;
+    return { status: 200, headers, body: 'hello world' };
+  });
+  const http = source(server, { routes: [route] });
+
+  // 1) application/octet-stream with mapped extension .adoc -> text/plain
+  replyContentType = 'application/octet-stream';
+  const adocExchange = await http.request({ method: 'GET', path: '/files/Chapter18.adoc' });
+  assert.equal(adocExchange.serverMediaType, 'application/octet-stream');
+  assert.equal(adocExchange.mediaType, 'text/plain');
+
+  // Case insensitive and percent decoded
+  const encodedAdoc = await http.request({ method: 'GET', path: '/files/%E7%AB%A0%E8%8A%82.ADOC' });
+  assert.equal(encodedAdoc.serverMediaType, 'application/octet-stream');
+  assert.equal(encodedAdoc.mediaType, 'text/plain');
+
+  // 2) application/octet-stream with unmapped extension .bin -> remains application/octet-stream
+  const binExchange = await http.request({ method: 'GET', path: '/files/archive.bin' });
+  assert.equal(binExchange.serverMediaType, 'application/octet-stream');
+  assert.equal(binExchange.mediaType, 'application/octet-stream');
+
+  // 3) explicit server header (text/html or text/custom) -> server header wins
+  replyContentType = 'text/html; charset=utf-8';
+  const htmlHeaderExchange = await http.request({ method: 'GET', path: '/files/Chapter18.adoc' });
+  assert.equal(htmlHeaderExchange.serverMediaType, 'text/html; charset=utf-8');
+  assert.equal(htmlHeaderExchange.mediaType, 'text/html; charset=utf-8');
+
+  // 4) missing Content-Type
+  replyContentType = null;
+  const missingMapped = await http.request({ method: 'GET', path: '/files/Chapter18.adoc' });
+  assert.equal(missingMapped.serverMediaType, 'text/plain');
+  assert.equal(missingMapped.mediaType, 'text/plain');
+
+  const missingUnmapped = await http.request({ method: 'GET', path: '/files/archive.bin' });
+  assert.equal(missingUnmapped.serverMediaType, 'text/plain');
+  assert.equal(missingUnmapped.mediaType, 'text/plain'); // DEFAULT_MEDIA_TYPES[response='text']
+});

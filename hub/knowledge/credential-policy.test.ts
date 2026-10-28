@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {after,before,test} from 'node:test';
 import {ReadManifest} from '../../contracts/src/resources.ts';

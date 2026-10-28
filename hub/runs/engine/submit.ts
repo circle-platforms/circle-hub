@@ -1,3 +1,4 @@
+import {firstDeclarationGrowth,unknownOnlyRequirement} from './incremental.ts';
 import {submissionOrigin} from './independence.ts';
 import {publishCriterionRequests,answerCriterionReview,criterionReviewVisible} from './criterion-changes.ts';
 import { abandonDecision } from './management.ts';
@@ -38,6 +39,7 @@ import { HubReadFailure } from './retry-read.ts';
 import { carriedItems } from './reuse.ts';
 import { issuesOf, requirementAt, slotProblems, slotSchemaOf } from './slots.ts';
 import {
+  INDEX,
   actionsOf,
   isVerbatimObject,
   keyOwner,
@@ -184,6 +186,7 @@ export async function submitResult(ctx: EngineContext, user: Principal, args: Re
 }
 
 async function submitLocked(ctx: EngineContext, user: Principal, args: Record<string, unknown>, call: CallContext, stored: StoredRecord<RunRecord>, refresh = false): Promise<SubmitAnswer> {
+  if(ctx.parsers.forRun)ctx={...ctx,parsers:await ctx.parsers.forRun(stored.body.run)};
   const store = ctx.deps.records.store;
   const run = stored.body;
   const received = receivedDigest(args);
@@ -234,7 +237,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   }
   if(management!==null){
     const refusal=protocolError('RUN_ABANDONED',PROTOCOL_CODES.RUN_ABANDONED.when,{path:'/run'});
-    const result:ValidationResult={schema:'validation@1',run:run.run,submission:received.digest,acceptance:'not_accepted',errors:[refusal],rounds:{used:0,max:0},partitions:emptyPartitions(),cross_item:[],coverage:{complete:false,examined:0,total:run.items.length,note:'已放弃运行的新输入仍原样保存，不重新核验'},locks:{...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),pack:run.pack,pack_digest:run.pack_digest,...(run.root?{root:run.root}:{})},trace:call.traceId};
+    const result:ValidationResult={schema:'validation@1',run:run.run,submission:received.digest,acceptance:'not_accepted',errors:[refusal],rounds:{used:0,max:0},partitions:emptyPartitions(),cross_item:[],coverage:{complete:false,examined:0,total:run.items.length,note:'已放弃运行的新输入仍原样保存，不重新核验'},locks:{...(run.skills?{skills:run.skills}:{}),...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),pack:run.pack,pack_digest:run.pack_digest,...(run.root?{root:run.root}:{})},trace:call.traceId};
     const saved=await putResult(store,result,ctx.now().toISOString());
     await action({acceptance:'not_accepted',codes:['RUN_ABANDONED'],repair:[],result:saved.digest,extra:{refusal:'RUN_ABANDONED'}});
     return answerOf(saved.body);
@@ -246,6 +249,8 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
   }
   if(!await criterionReviewVisible(ctx,user,run))return {call_result:'error',acceptance:'not_accepted',errors:[unavailableError('/inputs')]};
+  const priorMaterial=workflow.workflow.incremental_submissions===true&&existing===null?(await store.find({key:INDEX.submissionRun,value:run.run,kind:'submission',newestFirst:true,limit:2})).items.find(r=>r.digest!==record.digest)?.body??null:null;
+  const incrementalGrowth=workflow.workflow.incremental_submissions===true&&existing===null&&parsed?.success===true&&firstDeclarationGrowth(priorMaterial,args);
   const roundsUsed = await roundsUsedOf(ctx, run.run);
   const base: Basis = { ctx, user, call, run, workflow, digest: received.digest, submissionRecord:record.digest, roundsUsed };
   const early = earlyProblem(kept, received, args);
@@ -271,6 +276,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   if(outcome.result.acceptance==='accepted')await applyDispatchResults(ctx,run,outcome.result);
   await recordResultRequests(ctx,run,outcome.result,roundsUsed,args);
   for(const error of outcome.result.errors)if(error.requirement&&isReason(error.code))outcome.problems.add(error.requirement);
+  if(incrementalGrowth&&outcome.result.acceptance==='accepted')for(const key of [...outcome.problems])if(unknownOnlyRequirement(outcome.result,key))outcome.problems.delete(key);
   const saved = await keepResult(base, outcome);
   await answerRepairedRequests(ctx,run,saved.result.body,saved.result.digest);
   await action({
@@ -278,7 +284,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     codes: saved.result.body.acceptance === 'not_accepted' ? unique(saved.result.body.errors.map((e) => e.code)) : [],
     repair: [...saved.problems].sort(),
     result: saved.result.digest,
-    extra: { ...(saved.result.body.acceptance==='accepted' && outcome.runtimeAdmission?.length ? {admission:outcome.runtimeAdmission} : {}), reevaluation:refresh,retry_attempts: saved.retryAttempts,...(outcome.parentObservedSuccess?{parent_observed_success:true}:{}), ...(sessionMissing ? {refusal:'session_missing'} : {}) },
+    extra: { ...(saved.result.body.acceptance==='accepted' && outcome.runtimeAdmission?.length ? {admission:outcome.runtimeAdmission} : {}), reevaluation:refresh,...(incrementalGrowth?{first_material_growth:true}:{}),retry_attempts: saved.retryAttempts,...(outcome.parentObservedSuccess?{parent_observed_success:true}:{}), ...(sessionMissing ? {refusal:'session_missing'} : {}) },
   });
   return answerOf(saved.result.body);
 }
@@ -360,7 +366,7 @@ function notAccepted(base: Basis, errors: ProtocolError[]): ValidationResult {
     partitions: emptyPartitions(),
     cross_item: [],
     coverage: { complete: false, examined: 0, total: run.items.length, note: '提交未受理，没有分区' },
-    locks: { ...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
+    locks: { ...(run.skills?{skills:run.skills}:{}),...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
     trace: base.call.traceId,
   };
 }

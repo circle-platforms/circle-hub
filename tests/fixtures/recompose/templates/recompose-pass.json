@@ -1,0 +1,124 @@
+{
+  "schema": "recompose-record@1",
+  "case": {
+    "id": "orbit-case-0001",
+    "source_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0",
+    "source_path": "tests/fixtures/mindmaps/review-150.km.json",
+    "node": "n/<合成节点id>"
+  },
+  "contract": {
+    "intent": {
+      "text": "widget health interval pool1 5",
+      "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text",
+      "verbatim": true
+    },
+    "method": {
+      "kind": "declared",
+      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+      "sources": [
+        "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+      ],
+      "basis": "作者在脑图内写明观察命令与判定点（同一节点的逐字文本）；不需要外部来源重组"
+    },
+    "expectation": {
+      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+      "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text",
+      "verbatim": true
+    }
+  },
+  "expectation_slots": [
+    {
+      "slot": "e1",
+      "knowledge_location": "has_verification_knowledge",
+      "evidence": [
+        "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+      ],
+      "proposal": null
+    }
+  ],
+  "coverage": {
+    "author_atoms": [
+      "a1",
+      "a2"
+    ],
+    "mapped": {
+      "a1": [
+        "e1"
+      ],
+      "a2": [
+        "e1"
+      ]
+    },
+    "unmapped": []
+  },
+  "atoms": [
+    {
+      "id": "a1",
+      "text": "把 pool1 的探测间隔设为 5 秒",
+      "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+    },
+    {
+      "id": "a2",
+      "text": "用 show health 观察间隔值",
+      "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+    }
+  ],
+  "sources": {
+    "governing": [
+      {
+        "kind": "spec",
+        "ref": "src:17c8cdcf284a42a4a946c3736f9447ef1d049ee3ce43fea940ff7138ebe70aba",
+        "path": "tests/fixtures/manual-store/files/spec/环之间的负载分配.md",
+        "version": "1.0",
+        "authority": "product-declared"
+      }
+    ],
+    "candidates": [],
+    "states": [
+      {
+        "atom": "a1",
+        "state": "settled",
+        "adjudicated_by": "src:3348626a90a6c526cea4b357b1bf568e1a4f21101e18f17cc38282a9e92c3ea8",
+        "reason": "已受理裁定 twin/adjudication.json 确认一致性",
+        "exit": null
+      },
+      {
+        "atom": "a2",
+        "state": "settled",
+        "adjudicated_by": "src:3348626a90a6c526cea4b357b1bf568e1a4f21101e18f17cc38282a9e92c3ea8",
+        "reason": "同上",
+        "exit": null
+      }
+    ]
+  },
+  "ledgers": {
+    "original": [
+      {
+        "atom": "a1",
+        "text": "把 pool1 的探测间隔设为 5 秒",
+        "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+      },
+      {
+        "atom": "a2",
+        "text": "用 show health 观察间隔值",
+        "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+      }
+    ],
+    "adapted": [
+      {
+        "atom": "a1",
+        "action": "把作者写的间隔值保留为声明参数，不改命令头 widget health interval",
+        "equivalence_reason": "命令树里 widget health interval 的参数 2 声明为整数类型（产品包声明位置）",
+        "load_bearing": true,
+        "conditions": [
+          "间隔值落在声明范围内",
+          "观察对象与配置对象是同一个 pool"
+        ]
+      }
+    ],
+    "concretizations": [],
+    "rebindings": []
+  },
+  "status": "complete",
+  "unknowns": []
+}

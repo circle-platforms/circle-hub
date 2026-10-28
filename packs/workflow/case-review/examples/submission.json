@@ -25,7 +25,7 @@
       { "item": "<start_run 标出可沿用的条目>", "handling": "handled", "reuse": "rec:<start_run 给出的可沿用引用>" }
     ],
     "cross_item": [
-      { "nature": "judgment", "statement": "等级理由：覆盖了全部功能，有一些反向用例，兼容性不足；证据缺口：命令的已验证测试事实（足迹）还没有", "grounds": ["src:<需求的摘要>"], "code": "level", "rank": "P4" }
+      { "nature": "judgment", "statement": "等级理由：覆盖了全部功能，有一些反向用例，兼容性不足；证据缺口：命令的已验证测试事实（足迹）还没有", "grounds": ["src:<需求的摘要>"], "code": "level", "rank": "P2" }
     ]
   }
 }

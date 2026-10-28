@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "knowledge-contribution",
-  "version": "1.2.2",
+  "version": "1.3.1",
   "kind": "workflow",
   "title": "知识回注",
   "description": "Circle 整合技能回注，Hub 按锁定根核对原文和归位，不改变原文或根",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "384c425e9f1178d593b5245e051f696dc1199a85007c0136f71e4b8a458a4dc7",
-      "size": 3987
+      "sha256": "2b280834be057e2ace90c58dc964eb098ed8f3bfb10ce1c3f5a4de8a6ba76de2",
+      "size": 5518
     },
     {
       "path": "checks.json",
@@ -73,13 +73,13 @@
     },
     {
       "path": "slots.schema.json",
-      "sha256": "2f4b396e9ca9b808e80acac8f7f08bb6929a24a527698a04518810abc43e4bba",
-      "size": 251828
+      "sha256": "d4e3452a35f62fa13864c9a2501fcaf1e992be1af29d8e71911ea1561a375fe4",
+      "size": 316072
     },
     {
       "path": "tables/knowledge-structure.json",
-      "sha256": "b81a7d840afef7b5a5ca464242b116066134d6cd5e3628f86db3005cb81a0d53",
-      "size": 229896
+      "sha256": "c69308eff64b273dfe296749df20a028f216e1f777832991eec3299f2b26b1bf",
+      "size": 287076
     },
     {
       "path": "tables/quotes.json",
@@ -113,8 +113,8 @@
     },
     {
       "path": "tools/jev/generated.json",
-      "sha256": "f7b1d8111fc76546957990568f27fca7cb272dd2d1c064d6cb1c1602f6745925",
-      "size": 1490
+      "sha256": "1544acc84cb486e99f0cc80f55895d60ae0200e71a0e40e69ef8fc5915ad6c75",
+      "size": 1632
     },
     {
       "path": "tools/jev/hooks.json",
@@ -200,6 +200,76 @@
       "path": "tools/jev/lib/workflow.ts",
       "sha256": "0d13b7505e832d9805e16767a0ca9ccefbd40357a1e3cf5c6ef84972ef73b537",
       "size": 24326
+    },
+    {
+      "path": "tools/operation-capture/SKILL.md",
+      "sha256": "7d81e43a328c4aeb8a669912f3b7be33ecd7751b4fa360e845b4c4b86fda0b80",
+      "size": 5144
+    },
+    {
+      "path": "tools/operation-capture/egress.json",
+      "sha256": "6348dcef383f8e65a4f1d685ce70e8b99ac628dede91d1b7e5a09f47ac301cea",
+      "size": 157
+    },
+    {
+      "path": "tools/operation-capture/generated.json",
+      "sha256": "f3d95bd258527f28b52108a2553413a5bd51d78b5070368ae1432feeb3633c0b",
+      "size": 391
+    },
+    {
+      "path": "tools/operation-capture/hooks.json",
+      "sha256": "131d5b41e3895bfa5e59684405fcb0b31acb846b3f95b5c3bca67dfb5aa18224",
+      "size": 890
+    },
+    {
+      "path": "tools/operation-capture/hooks/cwd.txt",
+      "sha256": "fca46549b7e09894d44639a5bedd1ed8ec1b23b1102200c64b7c9753945eb3bd",
+      "size": 43
+    },
+    {
+      "path": "tools/operation-capture/lib/capture.ts",
+      "sha256": "9ef5544f16e23019552bd87419ff63e324341556410528e2e7a0947af231f97f",
+      "size": 5200
+    },
+    {
+      "path": "tools/operation-capture/lib/common.ts",
+      "sha256": "491e3d6331cb28cd356b47158ee48098774b72726157e612c3ba2fd5cac5e04d",
+      "size": 3850
+    },
+    {
+      "path": "tools/operation-capture/lib/constants.ts",
+      "sha256": "4f3d1261a7691ab72155d51f708a5d60bb55eb5049d1627e61f7dc6a99fdbda8",
+      "size": 663
+    },
+    {
+      "path": "tools/operation-capture/lib/credentials.ts",
+      "sha256": "7beb909decee7b804f8126420a19dc74d713e9c1a6e8c4e336d0cf1c06fd2e1d",
+      "size": 38450
+    },
+    {
+      "path": "tools/operation-capture/lib/hub.ts",
+      "sha256": "f5a9d204ab3fe1fa29d1433d442ec24f76c954ada5f595ce402e9bb0a06b9ae3",
+      "size": 6483
+    },
+    {
+      "path": "tools/operation-capture/lib/integrate.ts",
+      "sha256": "1555c2cac5f1153dde83d54736a243203c5bb32a98078cfddbaf71f588e1a116",
+      "size": 9340
+    },
+    {
+      "path": "tools/operation-capture/lib/redact.ts",
+      "sha256": "3e2c167c4ee735b5cf9a79bfbe707d4ded2a935c48d2c41e75c9ba0a6a72f50f",
+      "size": 1954
+    },
+    {
+      "path": "tools/operation-capture/lib/state.ts",
+      "sha256": "202446981e72a337414756e5ad89fc80173eef9597c1d7036179782bee62d38d",
+      "size": 25504
+    },
+    {
+      "path": "tools/operation-capture/operation.ts",
+      "sha256": "b3438cdf2862513981fb8d4c8ad3c0216ca37e414b1217110ac00f1a410f51f7",
+      "size": 5749
     },
     {
       "path": "workflow.json",

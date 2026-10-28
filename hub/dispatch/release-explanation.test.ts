@@ -52,6 +52,19 @@ test('explain-release returns a nonzero CLI result with field-only diagnostics f
  assert.equal(c.calls.length,0);
  const reservations=await c.kit.store.findMany({kind:'action',key:'dispatch.phase',values:['reservation']});assert.equal(reservations.length,0);
 });
+test('explain-release names a missing result_ownership premise without a session and omits it once registered',async t=>{
+ const c=await setup();t.after(()=>c.close());
+ const absent=await c.service.explainRelease(c.admin,c.run,c.executor.id);
+ assert.equal(absent.satisfied,true);assert.deepEqual(absent.no_verdict.map(gap=>gap.premise),['result_ownership']);assert.equal(c.calls.length,0);
+ const output:string[]=[];
+ const session:JobCommandSession={ctx:{io:{cwd:process.cwd()}},options:{},out:line=>output.push(line),err:line=>{throw new Error(line);},admin:async()=>c.admin,records:async()=>c.kit,hub:async requireKey=>{assert.equal(requireKey,false);return {dispatch:c.service,records:c.kit};}};
+ assert.equal(await jobCommand(session,['explain-release','--run',c.run,'--executor',c.executor.id]),0);
+ assert.ok(output.some(line=>line.startsWith('无判定前提 result_ownership；')));assert.equal(c.calls.length,0);
+ const proof=await c.kit.artifacts.ingest({bytes:new TextEncoder().encode('synthetic attribution certification'),mediaType:'text/plain',origin:{upload:{session:'synthetic'}},author:{user:c.admin.id},provenanceType:'declared',visibility:{readers:[c.admin.id],admins:true,packs:[],shareable:false}});
+ await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,premises:{result_ownership:{version:'1',evidence:[`src:${proof.body.sha256}`]}}});
+ const present=await c.service.explainRelease(c.admin,c.run,c.executor.id);
+ assert.equal(present.satisfied,true);assert.deepEqual(present.no_verdict,[]);assert.equal(c.calls.length,0);
+});
 test('proof failures before release still reach private administrator notes without contacting the executor',async t=>{
  for(const missing of [false,true]){
   const c=await setup();t.after(()=>c.close());const logs:unknown[]=[];c.service.options.adminLog=entry=>logs.push(entry);

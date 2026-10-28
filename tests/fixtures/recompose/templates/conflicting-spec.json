@@ -1,0 +1,32 @@
+{
+  "schema": "recompose-sources@1",
+  "product": "orbit",
+  "governing": [
+    {
+      "kind": "spec",
+      "ref": "src:0177e033f5f287ad9344813b3d5b561e5ea4b0ad115d30a9095fbc6c57e3fb5f",
+      "path": "twin/conflicting-spec.json（合成的第二份规范来源）",
+      "version": "1.1",
+      "authority": "product-declared",
+      "covers": [
+        "orbit mode 的取值闭集"
+      ],
+      "declared_values": [
+        "rr",
+        "lc",
+        "hash",
+        "least-connection"
+      ]
+    }
+  ],
+  "conflicts_with": {
+    "ref": "src:17c8cdcf284a42a4a946c3736f9447ef1d049ee3ce43fea940ff7138ebe70aba",
+    "path": "tests/fixtures/manual-store/files/spec/环之间的负载分配.md",
+    "declared_values": [
+      "rr",
+      "lc",
+      "hash"
+    ]
+  },
+  "note": "两份都有签发权且取值闭集互斥 → 状态只能是 conflict，模型不得择一（规格 §2.1 规则 3）。"
+}

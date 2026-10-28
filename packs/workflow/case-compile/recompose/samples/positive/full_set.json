@@ -1,0 +1,34 @@
+{
+  "id": "full_set_positive",
+  "source": "author",
+  "check": "full_set",
+  "subject": {
+    "items": [
+      {
+        "id": "synthetic",
+        "fields": {
+          "source_ref": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "node": "n/c"
+        },
+        "slots": {
+          "record": [
+            {
+              "data": {
+                "case": {
+                  "source_ref": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "node": "n/c"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "support",
+      "tier": "blocking"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import {createTestParserRegistry} from '../../../testing/parsers.ts';
 import type { PermissionRole } from '../../../../contracts/generated/vocabulary.ts';
 // Test harness of the runs engine: a records kit in a temporary PostgreSQL database, three accounts, the toy packs in a
 // temporary directory, fakes of the ports built beside the engine, a clock the tests can move, and the service.
@@ -19,6 +20,7 @@ import { standardDocument, toyMap } from './mindmap.ts';
 import { FakeWorkflowStore } from './workflows.ts';
 
 export interface HarnessOptions {
+  parsers?:import('../../../refs/api.ts').ParserRegistry;
   review?: ReviewOptions;
   /** Passed through to reviewPack (dataQuotes adds the slot-data quote check). */
   dataQuotes?: boolean;
@@ -102,6 +104,7 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
     const service = createRunsService({
       sandbox: options.sandbox ?? { requireOsIsolation: await osIsolationAvailable() },
       records: kit,
+      parsers: options.parsers??createTestParserRegistry(),
       workflows,
       packs,
       knowledge,

@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 type Hub = Pick<typeof import('../../hub/connectors/api.ts'), 'createConnectors'> &
-  Pick<typeof import('../../hub/refs/api.ts'), 'createDefaultRegistry'> &
+  Pick<typeof import('../../hub/testing/parsers.ts'), 'createTestParserRegistry'> &
   Pick<typeof import('../../hub/testing/postgres.ts'), 'startPostgres'> &
   Pick<
     typeof import('../../hub/knowledge/test-support.ts'),
@@ -33,7 +33,7 @@ interface ReproIO {
 
 const HUB_MODULES = [
   ['hub/connectors/api.ts', ['createConnectors']],
-  ['hub/refs/api.ts', ['createDefaultRegistry']],
+  ['hub/testing/parsers.ts', ['createTestParserRegistry']],
   ['hub/testing/postgres.ts', ['startPostgres']],
   ['hub/knowledge/test-support.ts', ['makeWorld', 'DEFAULT_SYNC', 'STATIC_PLAN_SOURCE', 'catalogXml']],
   ['hub/knowledge/seed.ts', ['knowledgeSeed', 'parseKnowledgeSeedArgs', 'formatSeedReport']],
@@ -110,7 +110,7 @@ export async function runRepro(hub: Hub, io: ReproIO = {}) {
     fakePacks,
     manifestDigest,
     createConnectors,
-    createDefaultRegistry,
+    createTestParserRegistry,
     addSyntheticResource,
     setSyntheticCredential,
     knowledgeSeed,
@@ -291,7 +291,7 @@ export async function runRepro(hub: Hub, io: ReproIO = {}) {
       records: w.kit,
       packs: svnPacks,
       sandbox: { requireOsIsolation: false },
-      parsers: createDefaultRegistry(),
+      parsers: createTestParserRegistry(),
       resourceCacheMs: 0,
     });
     const original = w.external.read.bind(w.external);

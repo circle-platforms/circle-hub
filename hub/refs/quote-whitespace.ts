@@ -140,7 +140,7 @@ export function isEastAsianWide(code: number | undefined): boolean {
   return false;
 }
 
-/** The same contextual whitespace decision serves normalization and the streaming quotation matcher. */
+/** Contextual decision for the separate collapseWhitespace utility; strict quotation matching does not call it. */
 export function dropQuoteWhitespace(text: string, start: number, end: number, from = 0, to = text.length): boolean {
   if (start <= from || end >= to) return true;
   let left = start - 1;

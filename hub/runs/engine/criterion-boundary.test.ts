@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {resolveCriterionChanges,type Resolver} from './exact.ts';
 const expected='src:'+'a'.repeat(64)+'/text@1/l/1',subject='src:'+'b'.repeat(64)+'/text@1/l/1';
 const criterion={item:'one',criterion:expected,assertion:'合成声明',old:'旧判据',new:'新判据',grounds:[{reference:expected,quote:'依据'}]};
-const resolver:Resolver={resolve:async reference=>reference==='src:'+'c'.repeat(64)?{ok:false,message:'不可用'}:{ok:true,value:{reference,text:'旧判据；依据',role:reference===subject?'subject':'expected',source:'a'.repeat(64),digest:'a'.repeat(64)}}};
+const resolver:Resolver={prefetch:async()=>{},resolve:async reference=>reference==='src:'+'c'.repeat(64)?{ok:false,message:'不可用'}:{ok:true,value:{reference,text:'旧判据；依据',role:reference===subject?'subject':'expected',source:'a'.repeat(64),digest:'a'.repeat(64)}}};
 test('valid criterion declarations remain eligible without changing the original proposal',async()=>{
  const before=JSON.stringify(criterion);const result=await resolveCriterionChanges(resolver,[{id:'one'}],[criterion]);
  assert.equal(result.errors.length,0);assert.equal(result.refused.length,0);assert.equal(result.accepted.length,1);assert.equal(JSON.stringify(criterion),before);

@@ -1,0 +1,12 @@
+{
+  "schema": "recompose-adjudication.codes@1",
+  "violations": [
+    {
+      "code": "recompose-adjudication.form",
+      "when": "裁定形状不符",
+      "fix": "裁定模型按原子补完整判断、引文和出口"
+    }
+  ],
+  "refusals": [],
+  "warnings": []
+}

@@ -1,10 +1,11 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { after, before, test } from 'node:test';
 import { RunRecord } from '../../../contracts/src/run.ts';
 import { StartRunOutput } from '../../../contracts/src/tools.ts';
 import type { ActionBody } from '../../records/api.ts';
-import { resolveReference, createDefaultRegistry, recognize } from '../../refs/api.ts';
+import { resolveReference, recognize } from '../../refs/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { sourceReader } from './readers.ts';
 import { INDEX } from './store.ts';

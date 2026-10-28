@@ -1,0 +1,40 @@
+{
+  "commit": "7bfca782b4f48d7af3f881f557dd2dcc7221373f",
+  "files": [
+    {
+      "path": "hub/refs/parsers/kityminder.ts",
+      "sha256": "102f155fbb00f640e4fa1d347132630a18c735f7d4eb31c399616c4c48fd384b",
+      "size": 13803
+    },
+    {
+      "path": "hub/refs/parsers/json-walk.ts",
+      "sha256": "dad2064bee2e259274c5a94ccaab01bab59109de8de8080360165e5ac970516d",
+      "size": 4387
+    },
+    {
+      "path": "hub/refs/parser.ts",
+      "sha256": "b02bab65c2f20c19a2243714d61c82bca9bfd8cb767c3b6b7b8fd6e900e0b15c",
+      "size": 12649
+    },
+    {
+      "path": "hub/refs/reference.ts",
+      "sha256": "ae7963e944c92d7fb51e8ab00f87bc280b9ce892a949cfd1a4f375676396891e",
+      "size": 27688
+    },
+    {
+      "path": "hub/refs/text-decoding.ts",
+      "sha256": "88b8716b4ecb82b5f651858c588ba4b59866a62f2c94ee76b65ab428f7bf842a",
+      "size": 12517
+    },
+    {
+      "path": "contracts/generated/protocol.ts",
+      "sha256": "6364bd56d1b8b88d68b16372a8dc6ca3e18fc21263362dfc531f6ec950af1ba5",
+      "size": 11656
+    },
+    {
+      "path": "contracts/generated/vocabulary.ts",
+      "sha256": "bf9b0ffd576ec7cd791710780c7728cf741ee60785f525064b6310b28135091b",
+      "size": 74076
+    }
+  ]
+}

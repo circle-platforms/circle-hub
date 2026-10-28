@@ -1,8 +1,9 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
 import {makeUnversionedWorld,startPostgres} from './test-support.ts';
 import {createKnowledge,createKnowledgeReader} from './api.ts';
-import {createDefaultRegistry} from '../refs/api.ts';
+
 import {completeKnowledgeView} from './complete-view.ts';
 let pg:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{pg=await startPostgres();});after(()=>pg?.stop());

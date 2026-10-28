@@ -1,3 +1,4 @@
+import {installMindmapFixture, installWorkbookFixture} from '../../../../hub/testing/skills.ts';
 import {commandTokens} from '../../../../contracts/generated/command-grammar.ts';
 import {catalogFor,SYNTHETIC_COMMAND_POLICY} from './command-catalog.ts';
 import {COMMAND_IDENTITIES} from '../functions/test-support.ts';
@@ -172,6 +173,8 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
     const bob = await kit.principals.createUser(admin, '乙');
     await kit.authorizations.grantPublishRight(admin, alice.id);
     const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted'), now });
+    const parsers=await installMindmapFixture(registry,kit,admin);
+    await installWorkbookFixture(registry,kit,admin);
     const staged = await stage(join(temp.path, 'case-compile'));
     const published = await registry.publish(alice, staged);
     if (!published.ok) throw new Error(`case-compile was not published: ${JSON.stringify(published.problems, null, 1)}`);
@@ -184,6 +187,7 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
     const logs: AdminLogEntry[] = [];
     const knowledge=new FakeKnowledge();
     const service = createRunsService({
+      parsers,
       records: kit,
       workflows: createWorkflowStore(registry),
       packs: createPacksPort(registry),

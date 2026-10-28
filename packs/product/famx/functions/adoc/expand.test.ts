@@ -40,7 +40,7 @@ test('NUL and CRLF remain attributable to raw source bytes and every emitted tex
   for (const block of out.model.blocks) if (block.origin) {
     const file = input.files[block.origin.file];
     const parsed = textParser.parse(new TextEncoder().encode(file.text));
-    assert.equal(parsed.locate(block.origin.selector)!.text, block.origin.verbatim);
+    assert.equal((await parsed.locate(block.origin.selector))!.text, block.origin.verbatim);
   }
 });
 test('identity and complete output bytes are deterministic, while declared attributes change identity', async () => {
@@ -75,7 +75,7 @@ test('UTF-8 BOM and mixed line breaks produce the exact text@1 fragment text', a
   const out = await compileAdoc(input); assert.ok(out.ok, JSON.stringify(out));
   assert.equal(out.report.files[0].utf8_bom_bytes, 3);
   const parsed = textParser.parse(new TextEncoder().encode(input.files['book.adoc'].text));
-  for (const block of out.model.blocks) for (const origin of block.origins) assert.equal(parsed.locate(origin.selector)!.text, origin.verbatim);
+  for (const block of out.model.blocks) for (const origin of block.origins) assert.equal((await parsed.locate(origin.selector))!.text, origin.verbatim);
 });
 
 test('include-path lookup flushes body attribute updates and unsets immediately before the include', async () => {

@@ -11,8 +11,8 @@ export function schema(shape:unknown){
   if(Object.hasOwn(node,'const')&&value!==node.const)return false;
   if(Array.isArray(node.enum)&&!node.enum.includes(value))return false;
   if(node.type==='object'){
-   if(!record(value)||!record(node.properties))return false;
-   const properties=node.properties;
+   const properties=node.properties===undefined&&node.additionalProperties!==undefined?{}:node.properties;
+   if(!record(value)||!record(properties))return false;
    if(Array.isArray(node.required)&&node.required.some(key=>typeof key!=='string'||!Object.hasOwn(value,key)))return false;
    for(const [key,child]of Object.entries(value)){if(Object.hasOwn(properties,key)){if(!matches(properties[key],child))return false;}else if(node.additionalProperties===false)return false;else if(record(node.additionalProperties)&&!matches(node.additionalProperties,child))return false;}
   }else if(node.type==='array'){

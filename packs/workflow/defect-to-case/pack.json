@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.6.18",
+  "version": "1.6.20",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "7efc304a78defa029b8828e7f58f2b389129bb6aaa4f401effb6a8305af1c12d",
-      "size": 9381
+      "sha256": "d74feebf243159e3238f493d4d10d258de6c012258f5123bf4b0d38bc426ef21",
+      "size": 10789
     },
     {
       "path": "checks.json",
-      "sha256": "4ee70aab06148b3371ffd43cd74fd7e6ba4abe9abc23b08370e39266ff735320",
-      "size": 5289
+      "sha256": "5c2d8e34d8c3b9430170a3c9e0b6bb19effd8bb83270c146d3825f4a2cb1049b",
+      "size": 5340
     },
     {
       "path": "examples/start-run.json",
@@ -88,8 +88,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "b8ab6fdb6a0acf3bd39114ce13c5537a59354c412678376da9b944cdc3fa3ff0",
-      "size": 5811
+      "sha256": "0ca7485575de9c99c9231b9d0a28926a07501e9d24c8997b2f714b4225ecf2b6",
+      "size": 5874
     },
     {
       "path": "samples/negative/commands_out_of_range.json",
@@ -208,8 +208,8 @@
     },
     {
       "path": "tables/quotes.json",
-      "sha256": "4fe1adbaf6f8130add45c2146a6bb152736cc1163ba8e6c092e86f4f388b6d0d",
-      "size": 764
+      "sha256": "ca415416d5b3c94df57d3f5f1c0e5ee6494bf92b3a5b854063a592bea0f67d98",
+      "size": 827
     },
     {
       "path": "tables/refutation-commands.json",

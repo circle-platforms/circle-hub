@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "criterion-review",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "kind": "workflow",
   "title": "判据变更声明复核",
   "description": "非作者账号复核声明；不修改原件、不代替人判断",

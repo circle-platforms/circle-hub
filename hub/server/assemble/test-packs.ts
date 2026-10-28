@@ -5,6 +5,7 @@
 // producer reads its command trees. Every name and text is invented; nothing here is product content.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { AGILE_FUNCTIONS, BUILDSITE_FUNCTIONS, FUNCTIONS_DIR, agileSystem, buildSiteFiles, buildSiteSystem, commandTree, type StaticFile } from '../../connectors/testing/api.ts';
 import { writePack, type PackDescription } from '../../runs/api.ts';
 
@@ -12,6 +13,7 @@ export const REVIEW_PACK = 'demo-check';
 export const AGILE_PACK = 'demo-agile';
 export const SITE_PACK = 'demo-site';
 export const PRODUCT_PACK = 'demo';
+export const XML_PACK = 'xml-format';
 /** The product line's names: the build site lists builds under both. */
 export const PRODUCT_NAMES = ['DEMO', 'ALT'];
 
@@ -467,11 +469,23 @@ export function syncSiteFiles(): Record<string, StaticFile> {
 }
 
 /** Writes the packs under `root` and returns their directories by pack id. */
-export async function writeTestPacks(root: string): Promise<Record<'review' | 'agile' | 'site' | 'product', string>> {
+export async function writeTestPacks(root: string): Promise<Record<'review' | 'agile' | 'site' | 'product' | 'xml' | 'html', string>> {
+  const xmlSource = fileURLToPath(new URL('../../../packs/skill/xml-format/', import.meta.url));
+  const xmlManifest = JSON.parse(await readFile(join(xmlSource, 'pack.json'), 'utf8'));
+  const xmlFiles: Record<string, Uint8Array> = {};
+  for (const row of xmlManifest.files) xmlFiles[row.path] = await readFile(join(xmlSource, row.path));
+  const xmlStaged = await writePack(join(root, 'xml-format'), { ...xmlManifest, files: xmlFiles });
+  const htmlSource = fileURLToPath(new URL('../../../packs/skill/html-format/', import.meta.url));
+  const htmlManifest = JSON.parse(await readFile(join(htmlSource, 'pack.json'), 'utf8'));
+  const htmlFiles: Record<string, Uint8Array> = {};
+  for (const row of htmlManifest.files) htmlFiles[row.path] = await readFile(join(htmlSource, row.path));
+  const htmlStaged = await writePack(join(root, 'html-format'), { ...htmlManifest, files: htmlFiles });
   return {
     review: (await writePack(join(root, REVIEW_PACK), reviewPack())).dir,
     agile: (await writePack(join(root, AGILE_PACK), await agilePack())).dir,
     site: (await writePack(join(root, SITE_PACK), await sitePack())).dir,
     product: (await writePack(join(root, PRODUCT_PACK), productPack())).dir,
+    xml: xmlStaged.dir,
+    html: htmlStaged.dir,
   };
 }

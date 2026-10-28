@@ -423,6 +423,18 @@
               "bytes"
             ]
           },
+          "media_types_by_extension": {
+            "description": "media type by lowercase filename extension when the server returns application/octet-stream or omits Content-Type",
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^\\.[a-z0-9_-]{1,32}$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[a-z0-9!#$&^_.+-]+\\/[a-z0-9!#$&^_.+-]+$"
+            }
+          },
           "max_bytes": {
             "type": "integer",
             "minimum": 1,

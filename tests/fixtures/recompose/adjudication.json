@@ -1,0 +1,19 @@
+{
+  "schema": "recompose-adjudication@1",
+  "case": "orbit-case-0001",
+  "atom": "a1",
+  "decision": "settled",
+  "quotes": [
+    {
+      "ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0",
+      "path": "tests/fixtures/mindmaps/review-150.km.json",
+      "text": "widget health interval pool1 5"
+    }
+  ],
+  "decided_by": "account-owner",
+  "decided_at": "2026-10-26T00:00:00Z",
+  "run": "run_synth_orbit_0001",
+  "reason": "作者原文已写明观察命令与判定点，无需另行来源；本裁定只确认一致性，不改写原文。",
+  "is_receipt": false,
+  "note": "仅为合成模型裁定模板；测试必须经真实 Hub 工作运行取得快照和已受理结果，不信自述"
+}

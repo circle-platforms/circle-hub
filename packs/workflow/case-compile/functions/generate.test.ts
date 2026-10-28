@@ -1,9 +1,10 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
 import {planCommands} from './plan-commands.ts';
 import {COMMAND_CATALOG} from './test-support.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { createDefaultRegistry, recognize, parserKey } from '../../../../hub/refs/api.ts';
+import { recognize, parserKey } from '../../../../hub/refs/api.ts';
 import { unzipSync } from 'fflate';
 import { generateWorkbook, GenerationError, GENERATOR } from './generate.ts';
 import { crc32 } from './zip-store.ts';

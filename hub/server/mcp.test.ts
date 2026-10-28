@@ -243,6 +243,24 @@ describe('upload_file', () => {
     await client.close();
   });
 
+  test('only an explicit operation capture upload changes provenance from declared to client_captured', async () => {
+    const client = await connect(await person());
+    const content = '合成操作输出：ORBIT 状态正常\n';
+    const ordinary = await upload(client, content);
+    assert.equal(ordinary.isError, false);
+    const captured = await upload(client, content, { provenance_type: 'client_captured' });
+    assert.equal(captured.isError, false);
+    assert.equal(captured.structuredContent.reference, ordinary.structuredContent.reference);
+    const rows = await server.records.artifacts.records(String(captured.structuredContent.sha256));
+    assert.deepEqual(rows.map(row => row.body.provenance_type).sort(), ['client_captured', 'declared']);
+    for (const provenance_type of ['observed', 'projected', 'candidate']) {
+      const refused = await upload(client, content, { provenance_type });
+      assert.equal(refused.isError, true);
+      assert.equal(firstError(refused).path, '/provenance_type');
+    }
+    await client.close();
+  });
+
   test('a credential in the upload is not accepted: CREDENTIAL_IN_UPLOAD, no reference, isError', async () => {
     const client = await connect(await person());
     const result = await upload(client, '配置说明\ndb_password = "Xk9!rT2#qL"\n', { name: 'conf.txt' });

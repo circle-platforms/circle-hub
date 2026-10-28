@@ -1,0 +1,35 @@
+{
+  "id": "full_set_negative",
+  "source": "author",
+  "check": "full_set",
+  "subject": {
+    "items": [
+      {
+        "id": "synthetic",
+        "fields": {
+          "source_ref": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "node": "n/c"
+        },
+        "slots": {
+          "record": [
+            {
+              "data": {
+                "case": {
+                  "source_ref": "src:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                  "node": "n/c"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "tier": "blocking",
+      "code": "recompose.atom_dropped"
+    }
+  ]
+}

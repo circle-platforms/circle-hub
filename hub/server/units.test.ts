@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 // Unit tests without a database: trace and session ids, strict base64 and media types, escaping and the CSP hash, origin and
 // host rules, request targets, admin notes, the body budget, console sessions, claim display order, terminal symbols, item
 // cells and the counts line, the run of a record, JSON Pointers of schema issues.
@@ -10,7 +11,7 @@ import { accepted } from '../../contracts/src/fixtures.ts';
 import { ListTaskPacksInput, StartRunInput } from '../../contracts/src/tools.ts';
 import { LayerResult, ValidationResult, isUnknownTerminal, type Partitions } from '../../contracts/src/validation.ts';
 import { VIEW_SYSTEM } from '../knowledge/api.ts';
-import { createDefaultRegistry } from '../refs/api.ts';
+
 import { parseTarget } from './app.ts';
 import { SYMBOL, cellText, claimFields, terminalSymbol, terminalText } from './claims.ts';
 import { CONTENT_SECURITY_POLICY, escapeHtml, href, html, page } from './console/html.ts';

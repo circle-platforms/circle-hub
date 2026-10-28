@@ -1,3 +1,4 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
 // The functions of the verification pack against the contract shapes: the projection of a draft validation result onto the
 // target, the expected sources, the two checks, the copies of the draft pack's modules and the pack codes.
 import assert from 'node:assert/strict';
@@ -8,12 +9,13 @@ import { CORE_VIOLATION_CODES } from '../../../../contracts/generated/protocol.t
 import { ExpectedSourcesOutput, ProjectionOutput } from '../../../../contracts/src/pack.ts';
 import { CheckOutcome } from '../../../../contracts/src/tables.ts';
 import { ValidationResult } from '../../../../contracts/src/validation.ts';
-import { kityminderParser } from '../../../../hub/refs/api.ts';
+
 import { callPackFunction, osIsolationAvailable } from '../../../../hub/rules/api.ts';
 import expectedFn, { expected } from './expected.ts';
 import projectionFn, { MAX_SUMMARY, projection } from './projection.ts';
 import verifyFn, { CODES, dispositions, dispositionsCheck, verdict, verdictCheck, suggestionTargets } from './verify.ts';
 import { claimSubject } from './subjects.ts';
+import { createReviewScope } from './review-scope.ts';
 
 const TARGET = 'a'.repeat(64);
 const RECORD = 'b'.repeat(64);
@@ -93,6 +95,15 @@ function draftResult(changes: Record<string, unknown> = {}) {
     trace: '4bf92f3577b34da6a3ce929d0e0e4736',
     ...changes,
   };
+  const entries = Object.values(result.partitions).flat();
+  const scope = createReviewScope({
+    source: TARGET,
+    document: '880001',
+    parameters: { case_rule: 'marked', case_priority: 2, group_priority: 1, precondition_priority: 3 },
+    expected: entries.map(entry => ({ item: entry.item, location: entry.location })),
+    selected: entries.map(entry => entry.item),
+  });
+  if (!Object.hasOwn(changes, 'cross_item')) result.cross_item.splice(1, 0, { ...fact('level'), statement: { text: '冻结整份识别范围', verdict: 'support', data: { review_scope: scope } } });
   return result;
 }
 
@@ -139,13 +150,13 @@ describe('projection of the draft result onto the target', () => {
       },
     ]);
     assert.deepEqual(second.fields.draft_findings, [], 'Hub facts are not draft findings');
-    assert.deepEqual(first.fields.draft_level, { reference: `rec:${RECORD}#/cross_item/1`, rank: 'P4', text: '等级理由：示例' });
+    assert.deepEqual(first.fields.draft_level, { reference: `rec:${RECORD}#/cross_item/2`, rank: 'P4', text: '等级理由：示例' });
     assert.deepEqual(first.fields.path, ['需求 20931 示例网关健康检查', '基本功能']);
     assert.equal(first.fields.draft_partition, 'delivered');
     for (const i of out.items) assert.ok(typeof i.summary === 'string' && i.summary.length <= MAX_SUMMARY);
     assert.match(first.summary ?? '', /^初评 1 条发现：coverage_gap\/major｜初评分区 delivered/);
-    assert.deepEqual(out.groups[0], { kind: 'draft_level', reference: `rec:${RECORD}#/cross_item/1`, rank: 'P4', text: '等级理由：示例' });
-    assert.deepEqual(out.groups[1], {
+    assert.deepEqual(out.groups[0], { kind: 'draft_level', reference: `rec:${RECORD}#/cross_item/2`, rank: 'P4', text: '等级理由：示例' });
+    assert.deepEqual(out.groups[2], {
       kind: 'draft',
       record: RECORD,
       run: RUN,
@@ -165,6 +176,17 @@ describe('projection of the draft result onto the target', () => {
 
   it('rejects a draft without a level and names the initial review that needs repair',()=>{
     const out=projection(input([target(),draft(record(draftResult({cross_item:[]})))]));refused(out,'case-review-verify.draft_level_missing');
+  });
+
+  it('requires a frozen whole-document scope and refuses changed recognition parameters', () => {
+    const out = projected(projection(input([target(), draft(record(draftResult()))])));
+    assert.equal(out.groups[1].kind, 'case_review_scope');
+    const scope = (out.groups[1].data as any).review_scope;
+    assert.equal(scope.expected.length, 2);
+    assert.deepEqual(scope.parameters, { case_rule: 'marked', case_priority: 2, group_priority: 1, precondition_priority: 3 });
+    const legacy = draftResult({ cross_item: [fact('literal'), judgment('level', { text: '等级理由：示例', code: 'level', rank: 'P4' })] });
+    refused(projection(input([target(), draft(record(legacy))])), 'case-review-verify.draft_scope_missing');
+    refused(projection({ ...input([target(), draft(record(draftResult()))]), parameters: { case_priority: 3 } }), 'case-review-verify.draft_scope_mismatch');
   });
 
   it('refuses inputs that are not a target and a draft result of that target', () => {
@@ -271,15 +293,29 @@ describe('the checks', () => {
     assert.deepEqual(codesOf(subjectWith([verified({ quotes: [{ reference: loc('c1e'), text: '间隔生效' }] })])), ['support']);
   });
 
-  it('PARTIAL is consistent with a refuted or partly correct draft finding, so a refutation of a minor finding has a verdict', () => {
+  it('PARTIAL is consistent with a refuted or partly correct draft finding, while PASS cannot carry a correction', () => {
     const runOf = (claims: unknown[], code: string, rank = 'P4', draftRank = 'minor') => ({
       subject: { items: [{ id: '880001:c1', label: 'l', location: loc('c1'), fields: { draft_findings: [{ reference: ref(1), rank: draftRank }], draft_level: { rank: 'P4' } }, slots: { verification: claims } }], cross_item: [final(code, rank)] },
     });
     const minorRefuted = [claim('refuted', { rank: 'minor', data: { finding: ref(1) } })];
     assert.deepEqual(verdict(runOf(minorRefuted, 'PASS')).map((o) => o.code), [CODES.passRefuted]);
     assert.deepEqual(verdict(runOf(minorRefuted, 'PARTIAL')).map((o) => o.verdict), ['support'], 'an honest verifier has a consistent verdict');
-    assert.deepEqual(verdict(runOf([claim('partial', { rank: 'minor', data: { finding: ref(1) } })], 'PARTIAL')).map((o) => o.verdict), ['support']);
+    assert.deepEqual(verdict(runOf([claim('partial', { rank: 'minor', data: { finding: ref(1) } })], 'PARTIAL', 'P2')).map((o) => o.verdict), ['support']);
+    assert.deepEqual(verdict(runOf([claim('partial', { rank: 'major', data: { finding: ref(1) } })], 'PASS')).map((o) => o.code), [CODES.passPartial]);
     assert.deepEqual(verdict(runOf([claim('verified', { data: { finding: ref(1) } })], 'PARTIAL')).map((o) => o.code), [CODES.partialWithoutChange]);
+  });
+
+  it('uses only remaining verified, corrected and new findings for the final severity band', () => {
+    const runOf = (claims: unknown[], code: string, rank = 'P4') => ({
+      subject: { items: [{ id: '880001:c1', label: 'l', location: loc('c1'), fields: { draft_findings: [{ reference: ref(1), rank: 'minor' }], draft_level: { rank: 'P4' } }, slots: { verification: claims } }], cross_item: [final(code, rank)] },
+    });
+    const critical = claim('verified', { rank: 'critical', data: { finding: ref(1) } });
+    assert.deepEqual(verdict(runOf([critical], 'PARTIAL', 'P6')).map(outcome => outcome.verdict), ['support']);
+    assert.deepEqual(verdict(runOf([critical], 'PARTIAL', 'P5')).map(outcome => outcome.code), [CODES.levelSeverityMismatch]);
+    const fresh = claim('new_finding', { rank: 'minor', data: { probe: 'edge_case_gap' } });
+    assert.deepEqual(verdict(runOf([fresh], 'PARTIAL', 'P2')).map(outcome => outcome.verdict), ['support']);
+    const missing = claim('verified', { rank: undefined, data: { finding: ref(1) } });
+    assert.ok(verdict(runOf([missing], 'PARTIAL')).some(outcome => outcome.code === CODES.severityMissing));
   });
 
   it('FAIL rests on the draft\'s rank of the refuted finding, not on the rank the verifier gives its refutation', () => {
@@ -338,9 +374,9 @@ describe('the checks', () => {
     });
     const verifyMarked = projected(projection({ inputs: [targetInput, draft(record(draftMarkedResult))], parameters: { case_rule: 'marked' }, context }));
     assert.deepEqual(verifyMarked.items.map((i) => i.id), reviewMarked.items.map((i) => i.id));
-    assert.equal(verifyMarked.groups[1].case_rule, 'marked');
-    assert.equal(verifyMarked.groups[1].marked_only, 1);
-    assert.match(String(verifyMarked.groups[1].rule_summary), /用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）/);
+    assert.equal(verifyMarked.groups[2].case_rule, 'marked');
+    assert.equal(verifyMarked.groups[2].marked_only, 1);
+    assert.match(String(verifyMarked.groups[2].rule_summary), /用例规则：标签或标记；其中 1 个只靠标记识别（没有标签）/);
 
     // 2. Tagged rule
     const reviewTagged = projectItems({ documents: [{ slot: 'subject', documentId: '880001', model: mindmapWithUntagged }], parameters: { caseRule: 'tagged' } });
@@ -353,17 +389,18 @@ describe('the checks', () => {
         rejected: [], quarantined: [], incomplete: [],
       },
     });
+    (draftTaggedResult.cross_item[1].statement as any).data.review_scope.parameters.case_rule = 'tagged';
     const verifyTagged = projected(projection({ inputs: [targetInput, draft(record(draftTaggedResult))], parameters: { case_rule: 'tagged' }, context }));
     assert.deepEqual(verifyTagged.items.map((i) => i.id), reviewTagged.items.map((i) => i.id));
-    assert.equal(verifyTagged.groups[1].case_rule, 'tagged');
-    assert.equal(verifyTagged.groups[1].marked_only, 0);
-    assert.match(String(verifyTagged.groups[1].rule_summary), /用例规则：只认标签；其中 0 个只靠标记识别（没有标签）/);
+    assert.equal(verifyTagged.groups[2].case_rule, 'tagged');
+    assert.equal(verifyTagged.groups[2].marked_only, 0);
+    assert.match(String(verifyTagged.groups[2].rule_summary), /用例规则：只认标签；其中 0 个只靠标记识别（没有标签）/);
 
     // 3. Draft used tagged, verify did NOT specify case_rule: verify inherits tagged rule from draft
     const verifyInherited = projected(projection({ inputs: [targetInput, draft(record(draftTaggedResult))], parameters: {}, context }));
     assert.deepEqual(verifyInherited.items.map((i) => i.id), reviewTagged.items.map((i) => i.id));
-    assert.equal(verifyInherited.groups[1].case_rule, 'tagged');
-    assert.equal(verifyInherited.groups[1].marked_only, 0);
+    assert.equal(verifyInherited.groups[2].case_rule, 'tagged');
+    assert.equal(verifyInherited.groups[2].marked_only, 0);
   });
 
   it('verdict check statement includes case_rule summary and data includes case_rule and marked_only', () => {
@@ -414,7 +451,7 @@ describe('the pack', () => {
   const draftPack = (name: string) => readFileSync(new URL(`../../case-review/functions/${name}`, import.meta.url), 'utf8');
 
   it('carries exact shared definitions with explicit draft type-owner and pack-name bindings', () => {
-    for (const name of ['text.ts', 'types.ts', 'expected-sources.ts', 'generated/vocabulary.ts']) {
+    for (const name of ['text.ts', 'types.ts', 'expected-sources.ts', 'generated/vocabulary.ts', 'levels.ts', 'review-scope.ts']) {
       // Template types belong to the draft module; type-only references are erased in the sandbox.
       const expected=name==='types.ts'?draftPack(name).replaceAll("import('./template-coverage.ts')","import('../../case-review/functions/template-coverage.ts')"):draftPack(name);
       assert.equal(here(name),expected,`${name}: synchronize the shared draft definitions`);

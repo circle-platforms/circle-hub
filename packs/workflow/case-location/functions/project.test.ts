@@ -1,7 +1,8 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { ProjectionInput, ProjectionOutput } from '../../../../contracts/src/pack.ts';
-import { kityminderParser } from '../../../../hub/refs/api.ts';
+
 import { locateInputOf, locateItem, summaryOf } from './locate.ts';
 import project, { MAX_ITEMS, projectItems } from './project.ts';
 import { BOUND, UNBOUND, assertTotal, boundDocument, hostileInputs, mindMapJson, sha256, smallMap, type Node } from './test-support.ts';

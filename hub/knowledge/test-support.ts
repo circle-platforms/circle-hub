@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { ProductDeclaration } from '../../contracts/src/product.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PackHandle, PacksPort, ProductHandle } from '../ports.ts';
 import type { Limits, Principal, RecordsKit, User } from '../records/api.ts';
-import { createDefaultRegistry } from '../refs/api.ts';
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import { osIsolationAvailable } from '../rules/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';

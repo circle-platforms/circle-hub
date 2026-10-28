@@ -5,7 +5,7 @@ import type { Verdict } from '../../../../contracts/generated/vocabulary.ts';
 // frozen fields equal the recomputation; refute (test-bed.<action>_mismatch) with the fields that differ. Grounds are
 // the item's location (its bed in the inventory document) and the fields it was checked against.
 import { isRecord } from './common.ts';
-import { isAction, acquirePlan, factsFields, leaseRecord, manifestBeds, readParameters, releasePlan, searchFields, type Action, type BedNeed, type FrozenLeases } from './conclude.ts';
+import { isAction, acquirePlan, factsFields, leaseRecord, manifestBeds, readParameters, releasePlan, searchFields, unmatchedBuild, type Action, type BedNeed, type FrozenLeases } from './conclude.ts';
 
 const TIER = 'advisory' as const;
 
@@ -167,6 +167,10 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
     } catch (error) {
       out.push(transitional({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + (`台架结论复核出错（任务包缺陷）：${error instanceof Error ? error.message : String(error)}`), reason: 'check_error', statement: `台架结论复核出错（任务包缺陷）：${error instanceof Error ? error.message : String(error)}`, grounds: [], tier: TIER, item: id }));
     }
+  }
+  if (frozen.action === 'search') {
+    const gap = unmatchedBuild(manifest.beds, frozen.need, leases, frozen.leases.now);
+    if (gap) out.push({ verdict: 'unknown', reason: 'missing_input', missing: gap.missing, statement: `${gap.missing}。${gap.fix}`, grounds: [], tier: TIER, data: { missing_fact: gap.missing, next_action: gap.fix } });
   }
   if (out.length === 0) out.push(transitional({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('台架结论复核的被判对象里没有条目（子对象构建函数没有给出 items）'), reason: 'check_error', statement: '台架结论复核的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER }));
   return out;

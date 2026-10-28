@@ -3,7 +3,7 @@
 // ExternalReaderPort (accepts, read) and ResourceCatalogPort. A resource uses the system pack version and digest its
 // configuration binds, nothing else. The credential handling of a resource is kept while what its session depends on (the
 // binding: origins, plaintext declarations, pack version and digest, credentials and their rules) stays the same.
-// The reader never throws and never says more to its caller than ok or not: the reason of a failure is for the admin log.
+// The reader never throws. A failure the caller may see carries the fixed exit for its code; the reason stays on the admin log.
 import { secretNameOf } from '../../contracts/src/variables.ts';
 import { CredentialStop } from './credential-stop.ts';
 import { callPackFunction, osIsolationAvailable, type SandboxLimits } from '../rules/api.ts';
@@ -11,7 +11,8 @@ import { createDefaultRegistry, type ParserRegistry } from '../refs/api.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PacksPort, ResourceCatalogPort, ResourceListing } from '../ports.ts';
 import { canonicalBytes, sha256Hex, type Principal, type RecordsKit } from '../records/api.ts';
 import type { ReadDeclaration } from '../../contracts/src/resources.ts';
-import { CONNECTOR_ERRORS, ConnectorError, asConnectorError } from './errors.ts';
+import { ConnectorError, asConnectorError } from './errors.ts';
+import { adminCommand, readExit, secretNamesOf } from './read-exit.ts';
 import { HttpSource, type ConnectorLog, type FetchLike } from './http.ts';
 import { LoginManager, StaticCredential, type LoginStatus } from './login.ts';
 import { ProfileCache, type LoadedProfile } from './profiles.ts';
@@ -20,6 +21,19 @@ import { Redactor } from './redact.ts';
 import { ResourceRegistry, sessionEntry, resourceConsumer, storedCredential, type AddResourceInput, type ResourceDescription, type ResourceState, type UpdateResourceInput } from './resources.ts';
 import { compileRoutes } from './routes.ts';
 import type { ResourceRecord } from '../../contracts/src/resources.ts';
+
+/** Attaches the code-keyed caller exit. A retained envelope or a code with no caller row stays on the admin reason. */
+function exposeRead(id: string, outcome: Extract<ReadOutcome, { ok: false }>, resource: Pick<ResourceRecord, 'id' | 'credentials'> | null): ExternalRead {
+  const exit = readExit(outcome.code);
+  const command = adminCommand(exit.admin, resource?.id ?? '', resource === null ? [] : secretNamesOf(resource.credentials));
+  const reason = outcome.reason.includes('下一步：') ? `${outcome.code}：${outcome.reason}` : `${outcome.code}：${outcome.reason}；下一步：${command}`;
+  const retry = outcome.disclosable !== false && outcome.retry ? { retry: outcome.retry } : {};
+  if (outcome.disclosable === false || exit.caller === null) return { ok: false, id, manifest: outcome.manifest, reason, ...retry };
+  const redirect = outcome.redirect ? { redirect: outcome.redirect } : {};
+  const message = outcome.redirect ? `来源明确给出 HTTP ${outcome.redirect.status} 重定向；本次没有跟随该地址` : exit.caller.message;
+  const protocol = outcome.retry ? 'SOURCE_RETRYABLE' : outcome.redirect ? 'SOURCE_REDIRECT_REFUSED' : exit.caller.protocol;
+  return { ok: false, id, manifest: outcome.manifest, reason, ...retry, ...redirect, inputError: { code: protocol, message, fix: exit.caller.fix } };
+}
 
 export interface ConnectorsOptions {
   records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts' | 'vault' | 'principals' | 'authorizations' | 'variables'>;
@@ -340,44 +354,24 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         if (subject === null) return { ok: false, id: shown, reason: `${redactor.text(shown)} 不是外部对象标识` };
         const candidates = await resolve(`${subject.system}:${subject.type}`,context);
         if (candidates.length !== 1) {
+          const ids = candidates.map((c) => c.runtime.resource.id);
           const reason =
-            candidates.length === 0
+            ids.length === 0
               ? `没有启用的资源声明外部类型 ${subject.system}:${subject.type}（或其系统包不可用）`
-              : `${candidates.length} 个启用的资源都声明了外部类型 ${subject.system}:${subject.type}：${candidates.map((c) => c.runtime.resource.id).join('、')}`;
+              : `${ids.length} 个启用的资源都声明了外部类型 ${subject.system}:${subject.type}：${ids.join('、')}`;
           event('read_unresolved', { external: subject.id, reason });
-          return { ok: false, id: subject.id, reason };
+          const exit = readExit('RESOURCE_UNAVAILABLE');
+          const command = ids.length === 0 ? adminCommand('list', '') : ids.map((resource) => adminCommand('show', resource)).join('；');
+          return { ok: false, id: subject.id, reason: `${reason}；下一步：${command}`, ...(exit.caller ? { inputError: { code: exit.caller.protocol, message: exit.caller.message, fix: exit.caller.fix } } : {}) };
         }
         const [{ runtime, read }] = candidates;
         const outcome = await engine.top(runtime, read, subject, context);
-        if(!outcome.ok && outcome.disclosable===true && !outcome.retry) {
-          const fixes:Partial<Record<typeof outcome.code,string>>={
-            ROUTE_REFUSED:'缺少符合路由声明的读取请求；由系统包负责人修复规划，按允许路由重读',
-            ORIGIN_REFUSED:'规划链接不在允许的同源范围；由资源管理员核对地址声明或系统包负责人修复规划后重读',
-            PLAINTEXT_REFUSED:'本地传输策略拒绝经明文发送凭据；由资源管理员核对 HTTPS 与地址声明后重读',
-            SOURCE_HTTP_STATUS:'来源明确以非成功 HTTP 状态作答；由资源管理员核对路由、参数与系统状态后重读',
-            SOURCE_ENVELOPE_ERROR:'来源在应答信封中明确报错；由资源管理员核对参数与系统状态后重读',
-            STORE_FAILED:'缺少已保存并可回读的来源原件；由 Hub 管理员修复对象存储，必要时从备份恢复后重读',
-            SOURCE_MALFORMED:'缺少符合声明格式的应答；由资源管理员核对应答格式与路由声明，修复后重读',
-            PROJECTION_FAILED:'缺少符合投影契约的出件；由系统包负责人核对投影输入、输出与回读，修复后重读',
-            PLAN_INVALID:'缺少符合契约的完整读取计划；由系统包负责人核对规划函数与路由，修复后重读',
-            FUNCTION_FAILED:'缺少包函数的成功出件；由系统包负责人修复函数后重读',
-            SOURCE_ABSENT:'未读到要求的锁定修订；由资源管理员核对对象修订后重读，需要改修订时开始新运行',
-          };
-          const fix=fixes[outcome.code];
-          if(fix)return {ok:false,id:subject.id,manifest:outcome.manifest,reason:`${outcome.code}：${outcome.reason}`,inputError:{code:'SOURCE_READ_FAILED',message:outcome.code==='SOURCE_ABSENT'?'未读到要求的锁定修订':outcome.code==='SOURCE_HTTP_STATUS'?(outcome.message??CONNECTOR_ERRORS[outcome.code]):CONNECTOR_ERRORS[outcome.code],fix}};
-        }
-        if(!outcome.ok && outcome.disclosable===true && (outcome.code==='READ_LIMIT' || outcome.code==='RESPONSE_TOO_LARGE'))return {ok:false,id:subject.id,manifest:outcome.manifest,reason:`${outcome.code}：${outcome.reason}`,inputError:{code:'SOURCE_READ_LIMIT',message:outcome.reason,fix:'由资源管理员调整声明或缩小读取范围后重新完整读取'}};
-        if(!outcome.ok && outcome.disclosable===true && outcome.redirect) {
-          const observation=outcome.redirect;
-          const message=`来源明确给出 HTTP ${observation.status} 重定向，Location：${observation.location??(observation.location_redacted?'不可安全回显，请管理员核对原来源响应':'来源没有给出')}；本次没有跟随该地址`;
-          return {ok:false,id:subject.id,manifest:outcome.manifest,reason:`${outcome.code}：${outcome.reason}`,redirect:observation,inputError:{code:'SOURCE_REDIRECT_REFUSED',message,fix:'由资源管理员核对来源给出的 Location 与路由声明，修复配置后按原对象重读'}};
-        }
-        if (!outcome.ok) return { ok: false, id: subject.id, manifest:outcome.manifest, reason: `${outcome.code}：${outcome.reason}`,...(outcome.disclosable!==false && outcome.retry?{retry:outcome.retry}:{}) };
+        if (!outcome.ok) return exposeRead(subject.id, outcome, runtime.resource);
         return { ok: true, id: subject.id, revision: outcome.revision, artifacts: outcome.artifacts, manifest: outcome.manifest,coverage:outcome.coverage,...(outcome.absent?{absent:outcome.absent}:{}) };
       } catch (error) {
         const failure = asConnectorError(error, 'STORE_FAILED');
         event('read_failed',{reason:failure.message});
-        return { ok: false, id: shown, reason: `${failure.code}：${redactor.text(failure.message)}` };
+        return exposeRead(shown, { ok: false, external: shown, code: failure.code, reason: redactor.text(failure.message), manifest: null }, null);
       }
     },
   };

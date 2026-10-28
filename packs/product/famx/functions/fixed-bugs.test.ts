@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {htmlParser} from '../../../../hub/refs/parsers/html.ts';
+import {htmlParser} from '../../../../hub/testing/parsers.ts';
 import {fixedBugEntries} from './fixed-bugs.ts';
 const build='Rel_FAMX_10_8_9_42_main_zx-u';
 function read(page:string){const parsed=htmlParser.parse(Buffer.from(page));const out=fixedBugEntries(parsed.model,build);for(const row of out.entries)for(const fragment of row.fragments)assert.ok(parsed.locate(fragment.selector));return out;}

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { MAX_SELECTOR_LENGTH, ParseEncodingError, ParseLimitError, ParseSyntaxError, kityminderParser, type KityMinderModel, type MindMapNode } from '../api.ts';
+import { ParseEncodingError, ParseLimitError, ParseSyntaxError } from '../../../packs/skill/mindmap-format/functions/format.ts';
+import { MAX_SELECTOR_LENGTH } from '../../../packs/skill/mindmap-format/functions/selectors.ts';
+import { kityminderParser, type KityMinderModel, type MindMapNode } from '../../../packs/skill/mindmap-format/api.ts';
 import { fixture, timed, utf8 } from '../test-support.ts';
 
 const plain = kityminderParser.parse(fixture('mindmap.km.json'));

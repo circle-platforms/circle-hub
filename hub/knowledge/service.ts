@@ -4,8 +4,9 @@ import {requestKnowledgeFact} from './requests.ts';
 // createKnowledge: wires the knowledge service. It provides KnowledgePort exactly as hub/ports.ts declares it, plus the
 // production, sync, current-root, calibration, placement, provenance and layer operations of this package.
 import type { JevClient } from '../jev/api.ts';
-import type { EntryDiff, KnowledgePort, NodesPage, NodesQuery, PacksPort, ProductHandle, RootDiff, RootInfo, ExternalReaderPort } from '../ports.ts';
+import type { EntryDiff, KnowledgePort, NodesPage, NodesQuery, PacksPort, ProductHandle, ReadRoot, ReadRootQuery, RootDiff, RootInfo, ExternalReaderPort } from '../ports.ts';
 import type { KnownBuild } from '../../contracts/src/product.ts';
+import type { RootSource } from '../../contracts/src/knowledge.ts';
 import type { EntryKind } from '../../contracts/generated/vocabulary.ts';
 import type { Principal } from '../records/api.ts';
 import { pathSegments, type ParserRegistry, type TreeReader } from '../refs/api.ts';
@@ -86,7 +87,9 @@ export interface Knowledge extends KnowledgePort {
   syncProduct(product: ProductHandle, options?: SyncOptions): Promise<SyncReport>;
   /** Explicit opt-in periodic synchronization; the caller owns and stops this handle. */
   scheduleSync(product:ProductHandle,options:{intervalMs:number;sync?:SyncOptions;onReport?:(report:SyncReport)=>void}):ReturnType<typeof scheduleSync<SyncReport>>;
-  /** What a run locks: the root of a named build (any family), else the current root of the line. */
+  /** The root a run locks and a view reads: the line's seedling when that pointer names one, otherwise the sync root. */
+  rootForRead(product: string, query: ReadRootQuery): Promise<ReadRoot | null>;
+  /** Same choice as rootForRead, as the root alone. */
   lockRoot(product: string, target: { line?: string | null; build?: string | null }): Promise<RootInfo | null>;
   /** An enabled admin moves a current root, with the completed generate action that produced it as `cause` (K01 R[6], B05 R[4]). */
   moveRoot(product: string, line: string | null, expected: string | null, root: string, cause: string | null, options?: MoveRootOptions): Promise<MoveRootResult>;
@@ -140,9 +143,33 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
   const feeding=new FeedingLayer(context,reading);context.feeding=feeding;context.feedingReader??=feeding;
   const observations = new ObservationLayer(context, reading);
   const contributions = new ContributionLayer(context, reading);
-  const relations = new LinkReading(context, builds);
+  const seedlingInfo = async (product: string, line: string): Promise<RootInfo | null> => {
+    const seed = await feeding.seedFor(product, line);
+    if (!seed) return null;
+    const info = (await builds.rootInfo(seed.root)).find((row) => row.composition === seed.composition && row.build !== null);
+    return (info as RootInfo | undefined) ?? null;
+  };
+  const rootForRead = async (product: string, query: ReadRootQuery): Promise<ReadRoot | null> => {
+    const buildName = typeof query.build === 'string' && query.build !== '' ? query.build : null;
+    const lineQuery = typeof query.line === 'string' && query.line !== '' ? query.line : null;
+    let line: string | null = null;
+    let sync: RootInfo | null = null;
+    if (buildName) {
+      sync = await builds.syncRoot(product, buildName);
+      const named = sync?.build ?? await builds.named(product, buildName);
+      if (named === null) return null;
+      line = named.line;
+    } else if (lineQuery) {
+      line = lineQuery;
+      sync = await builds.currentRoot(product, lineQuery);
+    } else return null;
+    const seedling = line ? await seedlingInfo(product, line) : null;
+    if (seedling) return { info: seedling, source: 'seedling', sync: sync && sync.root !== seedling.root ? sync : null };
+    return sync ? { info: sync, source: 'sync', sync: null } : null;
+  };
+  const relations = new LinkReading(context, builds, rootForRead);
   reading.setRelations(relations);
-  const views = new KnowledgeViews(context, builds, reading, relations);
+  const views = new KnowledgeViews(context, builds, reading, relations, rootForRead);
 
   const buildCalibrationSet = async (input: BuildCalibrationInput): Promise<{ record: string | null; samples: number; state: CalibrationState | null }> => {
     await requireAdmin(context, input.by, '建立校准样例');
@@ -229,9 +256,20 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       return { ...info, source_count: body.sources.length + (body.parts?.sources ?? []).reduce((n, p) => n + p.rows, 0) };
     },
     currentRoot: (product, line) => builds.currentRoot(product, line),
-    async seedlingRoot(product,line){const seed=await feeding.seedFor(product,line);if(!seed)return null;const info=(await builds.rootInfo(seed.root)).find(info=>info.composition===seed.composition&&info.build!==null);return info as RootInfo|null??null;},
+    seedlingRoot: (product, line) => seedlingInfo(product, line),
+    rootForRead,
     rootOfBuild: (product, name) => builds.rootOfBuild(product, name),
     rootInfo: (root) => builds.rootInfo(root),
+    rootSources: (root: string): Promise<RootSource[]> => withReadCache(async () => {
+      const compositions = await reading.compositionsOf(root);
+      const out: RootSource[] = [];
+      for (const c of compositions) {
+        for (const s of await c.sources()) {
+          if (!out.some((existing) => existing.sha256 === s.sha256)) out.push(s);
+        }
+      }
+      return out;
+    }),
     catalog: (root, catalogId, selection): Promise<CatalogView | null> => withReadCache(()=>reading.catalog(root, catalogId, selection)),
     treeReader: (lock?: TreeLock | null): TreeReader => {
       const reader=reading.treeReader(lock??null);
@@ -254,11 +292,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     scheduleSync(product,options){
       return scheduleSync(signal=>syncOne(product,{...options.sync,signal}),{intervalMs:options.intervalMs,onReport:options.onReport,onError:async()=>{await requestKnowledgeFact(context,{kind:'repair',subject:product.product.id,missing:'定时知识同步未能完成',action:'管理员核对该产品同步动作的错误并修复后重新同步',inputs:[]});}});
     },
-    async lockRoot(product, target) {
-      if (target.build !== undefined && target.build !== null && target.build !== '') return builds.rootOfBuild(product, target.build);
-      if (target.line !== undefined && target.line !== null && target.line !== '') return builds.currentRoot(product, target.line);
-      return null;
-    },
+    lockRoot: async (product, target) => (await rootForRead(product, target))?.info ?? null,
     moveRoot: (product, line, expected, root, cause, moveOptions) => builds.moveRoot(product, line, expected, root, cause, moveOptions),
     async reconcileLine(product, line, by) {
       const account = await requireAdmin(context, by, '移动当前根');

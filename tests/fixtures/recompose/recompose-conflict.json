@@ -1,0 +1,158 @@
+{
+  "schema": "recompose-record@1",
+  "case": {
+    "id": "orbit-case-0003",
+    "source_ref": "src:e72e76d0d875770df0b105876df5008496f2bf8ed0b7c079f44c6d93711eb9d4",
+    "source_path": "tests/fixtures/recompose/author-conflict.km.json",
+    "node": "n/case-3"
+  },
+  "contract": {
+    "intent": {
+      "text": "widget health interval pool1 5",
+      "quote_ref": "src:e72e76d0d875770df0b105876df5008496f2bf8ed0b7c079f44c6d93711eb9d4/kityminder@1/n/case-3",
+      "verbatim": true
+    },
+    "method": {
+      "kind": "declared",
+      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+      "sources": [
+        "src:e72e76d0d875770df0b105876df5008496f2bf8ed0b7c079f44c6d93711eb9d4/kityminder@1/n/expected-3"
+      ],
+      "basis": "作者原文"
+    },
+    "expectation": {
+      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+      "quote_ref": "src:e72e76d0d875770df0b105876df5008496f2bf8ed0b7c079f44c6d93711eb9d4/kityminder@1/n/expected-3",
+      "verbatim": true
+    }
+  },
+  "expectation_slots": [
+    {
+      "slot": "e1",
+      "knowledge_location": "has_verification_knowledge",
+      "evidence": [
+        "src:e72e76d0d875770df0b105876df5008496f2bf8ed0b7c079f44c6d93711eb9d4/kityminder@1/n/expected-3"
+      ],
+      "proposal": null,
+      "atom": "a2"
+    }
+  ],
+  "coverage": {
+    "author_atoms": [
+      "a1",
+      "a2"
+    ],
+    "mapped": {
+      "a1": [
+        "e1"
+      ]
+    },
+    "unmapped": [
+      "a2"
+    ]
+  },
+  "atoms": [
+    {
+      "id": "a1",
+      "kind": "action",
+      "text": "widget health interval pool1 5",
+      "quote_ref": "src:e72e76d0d875770df0b105876df5008496f2bf8ed0b7c079f44c6d93711eb9d4/kityminder@1/n/case-3",
+      "span": [
+        0,
+        30
+      ]
+    },
+    {
+      "id": "a2",
+      "kind": "expectation",
+      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+      "quote_ref": "src:e72e76d0d875770df0b105876df5008496f2bf8ed0b7c079f44c6d93711eb9d4/kityminder@1/n/expected-3",
+      "span": [
+        0,
+        31
+      ]
+    }
+  ],
+  "sources": {
+    "governing": [
+      {
+        "kind": "spec",
+        "ref": "src:f13eb55d7393200cf252623fbc638dc55d62d9c568f4ad036a478eaa6d4da5f1",
+        "version": "1.0",
+        "authority": "product-declared"
+      },
+      {
+        "kind": "spec",
+        "ref": "src:75a5dc26c47240dfedf0aa9b5bfc2e63a79f6d413498a8d29a563abcc589307c",
+        "version": "1.1",
+        "authority": "product-declared"
+      }
+    ],
+    "candidates": [],
+    "states": [
+      {
+        "atom": "a1",
+        "state": "conflict",
+        "adjudicated_by": null,
+        "reason": "1.0 声明三个取值，1.1 声明四个取值，互斥且都有签发权",
+        "exit": {
+          "action": "裁决适用版本后重开",
+          "object": "取值闭集",
+          "owner": "产品包作者与集成者",
+          "due": "重新提交之前"
+        },
+        "conflicts": [
+          "src:f13eb55d7393200cf252623fbc638dc55d62d9c568f4ad036a478eaa6d4da5f1",
+          "src:75a5dc26c47240dfedf0aa9b5bfc2e63a79f6d413498a8d29a563abcc589307c"
+        ],
+        "conflict_field": "orbit.mode"
+      },
+      {
+        "atom": "a2",
+        "state": "underdetermined",
+        "adjudicated_by": null,
+        "reason": "a1 未定，观察判定点无法确定",
+        "exit": {
+          "action": "等 a1 裁决",
+          "object": "a2",
+          "owner": "政策规定的裁决者",
+          "due": "重新提交之前"
+        }
+      }
+    ]
+  },
+  "ledgers": {
+    "original": [
+      {
+        "atom": "a1",
+        "text": "widget health interval pool1 5",
+        "quote_ref": "src:e72e76d0d875770df0b105876df5008496f2bf8ed0b7c079f44c6d93711eb9d4/kityminder@1/n/case-3",
+        "span": [
+          0,
+          30
+        ]
+      },
+      {
+        "atom": "a2",
+        "text": "show health 显示 pool1 的探测间隔为 5 秒",
+        "quote_ref": "src:e72e76d0d875770df0b105876df5008496f2bf8ed0b7c079f44c6d93711eb9d4/kityminder@1/n/expected-3",
+        "span": [
+          0,
+          31
+        ]
+      }
+    ],
+    "adapted": [],
+    "concretizations": [],
+    "rebindings": []
+  },
+  "status": "refused",
+  "unknowns": [
+    {
+      "missing": "两份都有签发权的规范来源对同一取值闭集给出互斥声明，本阶段无权择一",
+      "next_action": "由政策规定的裁决者裁定哪一份适用于本版本，裁定后重开本用例",
+      "audience": "产品包作者与集成者（按既有治理出口）",
+      "due": "重新提交之前"
+    }
+  ]
+}

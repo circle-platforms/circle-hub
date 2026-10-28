@@ -1,8 +1,9 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
 // Synthetic source bytes and accepted-result-shaped records; expected grouping is computed independently here.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {kityminderParser} from '../../../../hub/refs/api.ts';
+
 import {projectItems} from '../../case-review/api.ts';
 import {fixtureBytes,largeDocument,compactText} from '../../../../tests/fixtures/mindmaps/index.ts';
 import {reviewTables as rawReviewTables,escapeTableText,caseText,type TableBlock,type TableInput} from './tables.ts';

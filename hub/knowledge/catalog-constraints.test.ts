@@ -5,7 +5,7 @@ import {ProducerOutput} from '../../contracts/src/product.ts';
 import {CheckOutcome} from '../../contracts/src/tables.ts';
 import {getInterpreter} from '../rules/api.ts';
 import {commandTreeProducer} from '../../packs/product/famx/api.ts';
-import {xmlParser} from '../refs/api.ts';
+import {xmlParser} from '../testing/parsers.ts';
 import {makeWorld,startPostgres} from './test-support.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(async()=>{await postgres?.stop();});

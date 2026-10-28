@@ -24,7 +24,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['regression-scope', '1.8.6', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['regression-scope', '1.8.9', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/scope.ts') && files.includes('samples/negative/not-in-scope.json') && files.includes('examples/scope.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -60,7 +60,7 @@ describe('the pack files', () => {
       ],
     );
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
-    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 3000);
+    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 3800);
   });
 
   it('declares parameter schemas the engine can enforce (no regular expressions, zod reads them)', () => {

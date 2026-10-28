@@ -1,3 +1,4 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
 // The tests of case-review-report: the projection (the worst verdict wins, per-item delivery merges, an overlap refuses,
 // an item nobody delivered marks the whole unfinished with the missing items named, a missing final makes the overall
 // unknown) and the two checks (the overall fact and the report agreement over cross_item claims), driven on the same
@@ -5,10 +6,11 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import { describe, it } from 'node:test';
-import {kityminderParser} from '../../../../hub/refs/api.ts';
+
 import type { ProjectedItem } from '../../../../contracts/src/pack.ts';
 import projection from './projection.ts';
 import { overallCheck, reportCheck } from './checks.ts';
+import { createReviewScope, type ReviewScope } from './review-scope.ts';
 
 const A = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 const B = 'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
@@ -53,9 +55,18 @@ function block(spec: Block): Record<string, unknown> {
 }
 
 type ProjectionAnswer={items?:ProjectedItem[];error?:{code?:string;message?:string;fix?:string}};
-function run(blocks:Array<{result:Record<string,unknown>;record?:string}>,options:{omitTarget?:boolean;parser?:string;digest?:string;priority?:number|null;model?:unknown}={}):ProjectionAnswer{
+function run(blocks:Array<{result:Record<string,unknown>;record?:string}>,options:{omitTarget?:boolean;parser?:string;digest?:string;priority?:number|null;model?:unknown;withoutScope?:boolean;scope?:(scope:ReviewScope,index:number)=>ReviewScope}={}):ProjectionAnswer{
   let n=0;
   const ids=[...new Set(blocks.flatMap(block=>Object.values((block.result.partitions??{}) as Record<string,any[]>).flatMap(entries=>entries.map(entry=>String(entry.item)))))];
+  blocks.forEach((block,index)=>{
+    if(options.withoutScope)return;
+    const selected=Object.values((block.result.partitions??{}) as Record<string,any[]>).flat().map(entry=>String(entry.item));
+    const base=createReviewScope({source:DIGEST,document:'synthetic',parameters:{case_rule:'marked',case_priority:2,group_priority:1,precondition_priority:3},expected:ids.map(item=>({item,location:`src:${DIGEST}/kityminder@1/n/${item}`})),selected});
+    const scope=options.scope?.(base,index)??base;
+    const claims=(Array.isArray(block.result.cross_item)?block.result.cross_item:[]).filter((claim:any)=>claim?.statement?.data?.review_scope===undefined);
+    claims.push({requirement:'final',qualifier:{nature:'fact'},warrant:{producer:'function',id:'case-review-verify@1'},statement:{verdict:'support',text:'冻结整份识别范围',data:{review_scope:scope}}});
+    block.result.cross_item=claims;
+  });
   const source=kityminderParser.parse(Buffer.from(JSON.stringify({root:{data:{id:'root',text:'合成文档'},children:ids.map(id=>({data:{id,text:'用例 '+id,priority:2,resource:['Functional']},children:[{data:{id:id+'-pre',text:'准备',priority:3}},{data:{id:id+'-e',text:'成功'}}]}))}}))).model;
   const inputs:unknown[]=blocks.map(block=>({slot:'verifications',external:null,sha256:'0'.repeat(64),media_type:'application/json',parser:'json@1',model:{kind:'validation_result',schema:'record@1',body:block.result},meta:{record:block.record??String(++n).repeat(64)}}));
   if(!options.omitTarget)inputs.push({slot:'target',external:null,sha256:options.digest??DIGEST,media_type:'application/json',parser:options.parser??'kityminder@1',model:options.model??source,meta:null});
@@ -264,6 +275,15 @@ describe('the checks of case-review-report', () => {
     assert.equal(reportCheck({subject:subjectWith([verdictClaim('PARTIAL','P1',[])])})[0]!.code,'case-review-report.level_mismatch');
   });
 
+  it('requires exactly one verdict and keeps every evidence gap at the overall level',()=>{
+    const good=subjectWith([verdictClaim('PARTIAL','P5',[]),{code:'gap',rank:'P5',statement:'缺少合成足迹；下一步：补充版本化观察'}]);
+    assert.equal(overallCheck({subject:good})[0].verdict,'support');
+    const multiple=overallCheck({subject:subjectWith([verdictClaim('PARTIAL','P5',[]),verdictClaim('PASS','P5',[]),{code:'gap',rank:'P4',statement:'合成缺口'}])});
+    assert.deepEqual(multiple.map(outcome=>outcome.code),['case-review-report.multiple_verdicts','case-review-report.gap_level_mismatch']);
+    const gap=overallCheck({subject:subjectWith([verdictClaim('PARTIAL','P5',[]),{code:'gap',statement:'未写等级的合成缺口'}])});
+    assert.deepEqual(gap.map(outcome=>outcome.code),['case-review-report.gap_level_mismatch']);
+  });
+
   it('the report slot no longer accepts suggestion codes',()=>{
     const slots=JSON.parse(readFileSync(new URL('../slots.schema.json',import.meta.url),'utf8'));
     assert.ok(!slots.run.report.codes.some((code:{code:string})=>code.code==='suggestion'),'suggestions must be made by the verifier and placed in the verified table');
@@ -283,7 +303,7 @@ describe('the table projection binding',()=>{
     assert.equal(report.id,'report');assert.equal(typeof report.fields.review_tables,'string');assert.equal(typeof (report.fields.review_tables_full??report.fields.review_tables),'string');
     assert.ok(report.fields.review_counts);assert.match(report.summary??'',/#\/items\/0\/fields\/review_tables/);
     assert.match(String(report.fields.review_tables_full??report.fields.review_tables),/；前置：准备/);
-    const noPriority=run(blocks(),{priority:null});assert.match(String(noPriority.items![0].fields.review_tables_full??noPriority.items![0].fields.review_tables),/；期望：准备/);assert.doesNotMatch(String(noPriority.items![0].fields.review_tables_full??noPriority.items![0].fields.review_tables),/；前置：/);
+    const noPriority=run(blocks(),{scope:scope=>({...scope,parameters:{...scope.parameters,precondition_priority:null}})});assert.match(String(noPriority.items![0].fields.review_tables_full??noPriority.items![0].fields.review_tables),/；期望：准备/);assert.doesNotMatch(String(noPriority.items![0].fields.review_tables_full??noPriority.items![0].fields.review_tables),/；前置：/);
   });
   it('does not produce tables until missing conclusions and undelivered items are repaired',()=>{
     for(const entries of [[{result:block({verdict:null,level:null,entries:[{item:'c1'}]})}],[{result:block({verdict:'PASS',level:'P3',entries:[{item:'c1'}],partition:'incomplete'})}]]){
@@ -440,4 +460,33 @@ it('pack findings refuses missing block finals and uncovered items before starti
  for(const result of [block({verdict:null,level:null,entries:[{item:'c1'}]}),block({verdict:'PASS',level:'P4',partition:'incomplete',entries:[{item:'c9'}]})]){
   const out=run([{result}]);assert.ok(out.error);assert.match(out.error.message ?? '',/第.*块|条目.*c9/);assert.match(out.error.fix ?? '',/复核|重交/);assert.ok(!out.items);
  }
+});
+
+it('refuses a legacy block without a Hub-supported whole-document scope',()=>{
+  const out=run([{result:block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]})}],{withoutScope:true});
+  assert.equal(out.error?.code,'case-review-report.scope_missing');
+  assert.match(out.error?.fix??'',/当前初评和复核版本/);
+});
+
+it('reconciles the frozen whole-document expectation, including an item absent from every input block',()=>{
+  const result=block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]});
+  const out=run([{result}],{scope:scope=>({...scope,expected:[...scope.expected,{item:'c9',location:`src:${DIGEST}/kityminder@1/n/c9`}]})});
+  assert.equal(out.error?.code,'case-review-report.incomplete_blocks');
+  assert.match(out.error?.message??'',/预期 2 条，已交付 1 条，重叠 0 条，遗漏 1 条/);
+  assert.match(out.error?.message??'',/c9/);
+});
+
+it('refuses blocks whose complete recognition rules differ and rejects an overridden precondition rule',()=>{
+  const out=run([
+    {result:block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]})},
+    {result:block({verdict:'PASS',level:'P2',entries:[{item:'c2'}]})},
+  ],{scope:(scope,index)=>({...scope,parameters:{...scope.parameters,case_priority:index===0?2:4}})});
+  assert.equal(out.error?.code,'case-review-report.scope_mismatch');
+  const overridden=run([{result:block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'}]})}],{priority:3,scope:scope=>({...scope,parameters:{...scope.parameters,precondition_priority:null}})});
+  assert.equal(overridden.error?.code,'case-review-report.scope_mismatch');
+});
+
+it('records expected, delivered, overlapping and missing counts after complete reconciliation',()=>{
+  const out=run([{result:block({verdict:'PARTIAL',level:'P4',entries:[{item:'c1'},{item:'c2'}]})}]);
+  assert.deepEqual(reportItemOf(out).fields.review_coverage,{expected:2,delivered:2,overlaps:[],missing:[]});
 });

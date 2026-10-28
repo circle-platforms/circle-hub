@@ -1,0 +1,38 @@
+{
+  "root": {
+    "data": {
+      "id": "synthetic-root",
+      "text": "ORBIT / COMET synthetic recomposition"
+    },
+    "children": [
+      {
+        "data": {
+          "id": "case-2",
+          "created": 1767576722000,
+          "text": "widget pool add pool1",
+          "priority": 2,
+          "degree": 1,
+          "resource": [
+            "Functional"
+          ],
+          "autoid": "orbit-case-0002",
+          "auto": "YES",
+          "compile_layout": "case_body_expectations"
+        },
+        "children": [
+          {
+            "data": {
+              "id": "expected-2",
+              "created": 1767576783000,
+              "text": "show pools 显示 pool1"
+            },
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "template": "right",
+  "theme": "classic",
+  "version": "1.4.43"
+}

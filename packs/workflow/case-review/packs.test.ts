@@ -22,6 +22,7 @@ import { samples as verifySamples } from '../case-review-verify/testing/samples.
 const KINDS: Record<string, string> = {
   'case-review': 'workflow',
   'case-review-verify': 'workflow',
+  'case-review-report': 'workflow',
   famx: 'product',
   'lumen-api': 'product',
   'agile-platform': 'system',
@@ -63,8 +64,8 @@ describe('every pack of this package', () => {
     });
   }
 
-  it('every check in checks.json across the three packs declares tier', () => {
-    for (const dir of [PACK_DIRECTORIES['case-review'], PACK_DIRECTORIES['case-review-verify'], join(PACK_DIRECTORIES['case-review'], '../template-gap')]) {
+  it('every check in checks.json across the review packs and template-gap declares tier', () => {
+    for (const dir of [PACK_DIRECTORIES['case-review'], PACK_DIRECTORIES['case-review-verify'], PACK_DIRECTORIES['case-review-report'], join(PACK_DIRECTORIES['case-review'], '../template-gap')]) {
       const checks = JSON.parse(readFileSync(join(dir, 'checks.json'), 'utf8')) as { checks: Array<{ id: string; tier?: string }> };
       assert.ok(checks.checks.length > 0);
       for (const check of checks.checks) {

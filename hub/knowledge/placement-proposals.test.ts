@@ -1,9 +1,10 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {after,before,test} from 'node:test';
 import {BASE_CATALOG,DEFAULT_PRODUCERS,catalogXml,extraProducer,makeWorld,startPostgres} from './test-support.ts';
-import {resolveReference,createDefaultRegistry} from '../refs/api.ts';
+import {resolveReference} from '../refs/api.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(async()=>{await postgres?.stop();});
 for(const allowed of [false,true])test(`placement proposals require the source producer permission (${allowed})`,async t=>{

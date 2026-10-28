@@ -6,29 +6,29 @@ import { timed, utf8 } from '../test-support.ts';
 describe('json@1', () => {
   const document = jsonParser.parse(utf8('{"items":[{"id":1,"name":"甲"},{"id":2,"tags":["a b",null]}],"a/b":{"c:d":true},"":"empty key","__proto__":{"x":1}}'));
 
-  it('locates values by member names and array indices', () => {
-    assert.equal(document.locate('p/items/0/name')!.text, '甲');
-    assert.equal(document.locate('p/items/1/tags/0')!.text, 'a b');
-    assert.equal(document.locate('p/items/1/tags/1')!.text, 'null');
-    assert.equal(document.locate('p/items/0/id')!.text, '1');
-    assert.equal(document.locate('p/a%2Fb/c%3Ad')!.text, 'true');
-    assert.equal(document.locate('p/items/0')!.text, '{"id":1,"name":"甲"}');
-    assert.deepEqual(document.locate('p/items')!.data, { type: 'array', size: 2 });
-    assert.equal(document.locate('p/__proto__/x')!.text, '1');
-    assert.equal(document.locate('p')!.selector, 'p');
+  it('locates values by member names and array indices', async () => {
+    assert.equal((await document.locate('p/items/0/name'))!.text, '甲');
+    assert.equal((await document.locate('p/items/1/tags/0'))!.text, 'a b');
+    assert.equal((await document.locate('p/items/1/tags/1'))!.text, 'null');
+    assert.equal((await document.locate('p/items/0/id'))!.text, '1');
+    assert.equal((await document.locate('p/a%2Fb/c%3Ad'))!.text, 'true');
+    assert.equal((await document.locate('p/items/0'))!.text, '{"id":1,"name":"甲"}');
+    assert.deepEqual((await document.locate('p/items'))!.data, { type: 'array', size: 2 });
+    assert.equal((await document.locate('p/__proto__/x'))!.text, '1');
+    assert.equal((await document.locate('p'))!.selector, 'p');
   });
 
-  it('refuses selectors that do not exist', () => {
+  it('refuses selectors that do not exist', async () => {
     for (const selector of ['p/items/2', 'p/items/01', 'p/items/-1', 'p/missing', 'p/items/0/name/x', 'q', 'p/constructor', 'p/toString']) {
-      assert.equal(document.locate(selector), null, selector);
+      assert.equal((await document.locate(selector)), null, selector);
     }
   });
 
-  it('lists every addressable value in document order', () => {
+  it('lists every addressable value in document order', async () => {
     const selectors = document.listSelectors();
     assert.deepEqual(selectors.slice(0, 5), ['p', 'p/items', 'p/items/0', 'p/items/0/id', 'p/items/0/name']);
     assert.ok(!selectors.some((s) => s.endsWith('/')), 'the empty member name is not addressable');
-    for (const selector of selectors) assert.ok(document.locate(selector), selector);
+    for (const selector of selectors) assert.ok((await document.locate(selector)), selector);
     assert.equal(document.listSelectors('p/items/1', { limit: 2 }).length, 2);
   });
 
@@ -62,7 +62,7 @@ describe('json@1 text that can be stored, and selectors that can be cited', () =
     assert.throws(() => jsonParser.parse(utf8('{"k\\udc00":"v"}')), ParseEncodingError);
   });
 
-  it('hides values whose selector would be too long, and stays linear for long names over many values', () => {
+  it('hides values whose selector would be too long, and stays linear for long names over many values', async () => {
     let value: unknown = Object.fromEntries(Array.from({ length: 4_000 }, (_, i) => [`k${i}`, i]));
     for (let d = 0; d < 30; d++) value = { [`m${d}${'q'.repeat(400)}`]: value };
     const bytes = utf8(JSON.stringify(value));
@@ -75,10 +75,10 @@ describe('json@1 text that can be stored, and selectors that can be cited', () =
     assert.equal(selectors.length, 11, 'p and the ten levels that fit');
     assert.ok(selectors.every((selector) => selector.length <= MAX_SELECTOR_LENGTH));
     const document = jsonParser.parse(bytes);
-    assert.equal(document.locate(selectors[10])!.selector, selectors[10]);
+    assert.equal((await document.locate(selectors[10]))!.selector, selectors[10]);
     const deeper = `${selectors[10]}/m19${'q'.repeat(400)}`;
     assert.ok(deeper.length > MAX_SELECTOR_LENGTH && deeper.length < 8192);
-    assert.equal(document.locate(deeper), null, 'one level further the selector would be too long to cite');
+    assert.equal((await document.locate(deeper)), null, 'one level further the selector would be too long to cite');
   });
 
   it('refuses names just under the budget repeated over many values', () => {

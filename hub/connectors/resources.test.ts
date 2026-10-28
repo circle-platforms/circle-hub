@@ -260,3 +260,27 @@ test('other resource configurations of the Hub (not resource ids) are not resour
   assert.deepEqual(listed.map((row) => row.id), [record.id]);
   assert.ok(!k.log.some((event) => event.event === 'resource_unreadable'));
 });
+
+test('updateResource prunes stale allow_plaintext when origins change without explicit allow_plaintext, keeps it when origins unchanged or roles kept', async (t) => {
+  const k = await kit(t);
+  const record = await addSyntheticResource(k.records, k.packs, k.connectors, k.admin, agileInput());
+
+  const renamed = await k.connectors.admin.updateResource(k.admin, record.id, { name: '新名字', settings: { roots: ['7714', '7001'] } });
+  assert.deepEqual(renamed.allow_plaintext, ['http://192.0.2.10:8080']);
+
+  const moved = await k.connectors.admin.updateResource(k.admin, record.id, {
+    origins: { 'agile-oauth': 'https://oauth.example.invalid', 'agile-api': 'https://api.example.invalid' },
+  });
+  assert.deepEqual(moved.allow_plaintext, []);
+
+  const withPlain = await k.connectors.admin.updateResource(k.admin, record.id, {
+    origins: { 'agile-oauth': 'http://192.0.2.30:8080', 'agile-api': 'http://192.0.2.30:8080' },
+    allow_plaintext: ['http://192.0.2.30:8080'],
+  });
+  assert.deepEqual(withPlain.allow_plaintext, ['http://192.0.2.30:8080']);
+
+  const partial = await k.connectors.admin.updateResource(k.admin, record.id, {
+    origins: { 'agile-oauth': 'https://oauth.example.invalid', 'agile-api': 'http://192.0.2.30:8080' },
+  });
+  assert.deepEqual(partial.allow_plaintext, ['http://192.0.2.30:8080']);
+});

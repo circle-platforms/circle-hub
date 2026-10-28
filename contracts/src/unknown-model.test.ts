@@ -150,6 +150,12 @@ test('item 9 allows explicit finite pagination and same-origin redirects on read
   assert.ok(RouteDeclaration.safeParse(route).success);
   assert.equal(RouteDeclaration.safeParse({...route,redirects:{same_origin:false,max_hops:2}}).success,false);
   assert.equal(RouteDeclaration.safeParse({...route,pagination:{max_pages:0}}).success,false);
+  assert.ok(RouteDeclaration.safeParse({...route,media_types_by_extension:{'.adoc':'text/plain','.md':'text/markdown'}}).success);
+  assert.equal(RouteDeclaration.safeParse({...route,media_types_by_extension:{'adoc':'text/plain'}}).success,false);
+  assert.equal(RouteDeclaration.safeParse({...route,media_types_by_extension:{'.ADOC':'text/plain'}}).success,false);
+  assert.equal(RouteDeclaration.safeParse({...route,media_types_by_extension:{'.adoc':'plain'}}).success,false);
+  const oversized=Object.fromEntries(Array.from({length:33},(_,i)=>([`.ext${i}`,'text/plain'])));
+  assert.equal(RouteDeclaration.safeParse({...route,media_types_by_extension:oversized}).success,false);
 });
 
 

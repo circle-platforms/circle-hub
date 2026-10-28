@@ -1,0 +1,47 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "product_data",
+      "role": "subject",
+      "required": true,
+      "many": false,
+      "accepts": [
+        "application/json",
+        "doc:doc",
+        "agile:mindmap"
+      ],
+      "description": "product_data exact bound source"
+    },
+    {
+      "slot": "product_version",
+      "role": "expected",
+      "required": false,
+      "many": false,
+      "accepts": [
+        "application/json"
+      ],
+      "description": "product_version exact bound source"
+    },
+    {
+      "slot": "publication",
+      "role": "expected",
+      "required": false,
+      "many": false,
+      "accepts": [
+        "application/json"
+      ],
+      "description": "publication exact bound source"
+    }
+  ],
+  "parameters": [],
+  "product": {
+    "catalogs": [
+      "commands@1"
+    ]
+  },
+  "subject": "product_data",
+  "projection": {
+    "module": "functions/project.ts"
+  }
+}

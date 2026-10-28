@@ -58,7 +58,7 @@ describe('publishing the regression-scope pack', { skip }, () => {
       report.warnings.map((w) => w.rule),
       ['publish.author_samples_only', 'publish.author_samples_only'],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['regression-scope', '1.8.6', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['regression-scope', '1.8.9', 'workflow']);
     const again = await registry.publish(owner, await staged());
     assert.ok(again.ok && again.created === false);
   });

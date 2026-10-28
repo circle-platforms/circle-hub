@@ -1,6 +1,7 @@
+import {kityminderParser} from "../../../../hub/testing/parsers.ts";
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {kityminderParser,htmlParser} from '../../../../hub/refs/api.ts';
+import {htmlParser} from "../../../../hub/testing/parsers.ts";
 import * as sync from './cases-sync.ts';
 import {cases} from './cases.ts';
 import {planBuilds} from './sync.ts';

@@ -1,7 +1,8 @@
-import type {TestTypeId,ResourceTagDeclaration} from './generated/vocabulary.ts';
+import type { KityMinderModel, MindMapNode } from '../../../skill/mindmap-format/api.ts';
+import type { TestTypeId, ResourceTagDeclaration} from './generated/vocabulary.ts';
 // Input and output types of the case-review pack functions. Type-only imports: they are erased at run time, so the
 // functions stay self-contained inside the pack (the sandbox admits only modules inside the pack).
-import type { JsonValue, KityMinderModel, MindMapNode } from '../../../../hub/refs/api.ts';
+import type { JsonValue } from '../../../../hub/refs/api.ts';
 import type { ExternalObjectId } from '../../../../contracts/src/reference.ts';
 
 export type { JsonValue, KityMinderModel, MindMapNode, ExternalObjectId };

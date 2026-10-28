@@ -127,7 +127,7 @@
     {
       "key": "level",
       "name": "等级",
-      "description": "整个被评审对象（一份文档或一个分块）的等级，P0 到 P7 选一个，写成一条跨条目主张（码 level）：陈述里写理由和证据缺口（没有读到或读不到的证据组），grounds 引用所依据的来源",
+      "description": "整个被评审对象（一份文档或一个分块）的等级，P0 到 P7 选一个，写成一条跨条目主张（码 level）：最重发现为 critical 时限 P6–P7，major 时限 P3–P5，minor 时限 P0–P2；只核区间，不自动评级。函数同时冻结整份识别范围供后续对账",
       "target": "run",
       "required": true,
       "done_rule": "bookkeeping",
@@ -135,8 +135,27 @@
         "static"
       ],
       "accepted_producer": "judgment",
-      "checks": [],
-      "error_handling": []
+      "checks": [
+        "level_consistency",
+        "review_scope"
+      ],
+      "error_handling": [
+        {
+          "code": "case-review.level_severity_mismatch",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review.level_missing",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-review.severity_missing",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
     }
   ]
 }

@@ -1,10 +1,11 @@
 // `circle-hub <command>`: the server's commands. main(argv) returns the exit code and never runs on import (bin/circle-hub
 // calls it). Platform commands go to hub/platform's runPlatformCommand; serve is main.ts; user, token, logs and run need only
-// records (run show the assembly module's command-time assembly); pack, resource, secret, knowledge, init-admin,
-// operator-token and anything else the assembly module registers through registerCommand. The built-in commands that change
-// state (user create once an admin exists, user disable|enable, token issue|revoke) act as the admin of the operator token
-// (CIRCLE_HUB_TOKEN, else the deployment's keychain item), like the assembly's; the read-only ones that read as an account
-// (logs export, run show) read as the token's account, like the assembly's listings. Output is Chinese, made safe for a
+// records (run show the assembly module's command-time assembly; run list the same records, administrator only); pack,
+// resource, secret, knowledge, init-admin, operator-token and anything else the assembly module registers through
+// registerCommand. The built-in commands that change state (user create once an admin exists, user disable|enable, token
+// issue|revoke) act as the admin of the operator token (CIRCLE_HUB_TOKEN, else the deployment's keychain item), like the
+// assembly's; the read-only ones that read as an account (logs export, run show) read as the token's account, like the
+// assembly's listings. run list is read-only and refuses every account that is not an administrator. Output is Chinese, made safe for a
 // terminal (stored text may come from users' documents), and never shows a secret: a token is printed once, when it is
 // issued, and never again.
 import { writeFile } from 'node:fs/promises';
@@ -21,6 +22,7 @@ import type { OperatorAct } from './cli-admin.ts';
 import { AssemblyMissingError, CliError, UsageError, isAssemblyMissing } from './errors.ts';
 import { SERVE_USAGE, loadServerConfig, prepareDatabase, serve, type ServeOptions } from './main.ts';
 import { localToolsCommand, LOCAL_TOOLS_USAGE } from './cli-local-tools.ts';
+import { listRunInventory, RUN_LIST_DEFAULT_LIMIT, RUN_LIST_MAX_LIMIT, RUN_LIST_STATES, runListLines, type RunListState } from './run-list.ts';
 import { countsLine } from './text.ts';
 
 export interface CliOptions extends Omit<ServeOptions, 'io'> {
@@ -34,6 +36,7 @@ export interface CliOptions extends Omit<ServeOptions, 'io'> {
 
 /** Commands the assembly module registers; while the module in use does not, they print a clear message. */
 interface ReservedCommandDescriptions {
+  readonly skill:string;
   readonly pack:string;
   readonly resource:string;
   readonly secret:string;
@@ -43,6 +46,7 @@ interface ReservedCommandDescriptions {
 }
 const RESERVED_COMMAND_DESCRIPTIONS: ReservedCommandDescriptions = {
   pack: '管理任务包',
+  skill:'管理通用技能包的迁移声明',
   resource: '管理资源声明',
   secret: '管理密钥库条目',
   knowledge: '读取和管理知识树',
@@ -81,6 +85,7 @@ function usage(extra: readonly CliCommand[]): string {
     '  logs export [--from <时间>] [--to <时间>] [--user <用户>] [--tool <工具>] [--run <运行>] [--out <文件>] [--as <管理员>]   导出调用日志（JSON Lines）',
     `  ${LOCAL_TOOLS_USAGE}`,
     '  run abandon <运行> --answer-request <摘要> --reason <理由>  管理放弃目标，原效果与冻结不改',
+    '  run list [--pack <包>] [--user <用户>] [--state 受理|未受理|进行中] [--since <ISO时间>] [--unknown] [--limit <N>] [--cursor <游标>] [--json] [--as <管理员>]  列出运行（仅管理员；默认 50 条，新到旧，超出给下一页游标）',
     '  run show <运行> [--json] [--as <管理员>]        显示一次运行',
     ...extra.map((command) => `  ${command.name.padEnd(44)} ${command.summary}`),
     ...Object.entries(RESERVED_COMMAND_DESCRIPTIONS).filter(([name]) => !extra.some((command) => command.name === name)).map(([name, description]) => `  ${name.padEnd(44)} ${description}；由装配模块注册；这个装配模块没有注册它`),
@@ -88,6 +93,7 @@ function usage(extra: readonly CliCommand[]): string {
     `平台命令 ${PLATFORM_COMMANDS.join('、')} 由 hub/platform 执行（例如 circle-hub status），用法见 hub/platform/README.md。`,
     `改变状态的命令（建用户、停用、恢复、签发和撤销令牌，以及装配模块的这类命令）以操作令牌的管理员身份执行：${OPERATOR_TOKEN_VARIABLE}（只给一条命令：${OPERATOR_TOKEN_VARIABLE}="$T" circle-hub <命令>），没有时用钥匙串里的操作令牌（init-admin、operator-token set 或 operator-token reissue 存进去）。`,
     '只读命令（logs export、run show 和装配模块的列表）有操作令牌时以令牌的账号读，--as 只能写这个账号；没有令牌时 --as 指明以哪位管理员的身份读，只有一位启用中的管理员时可以省略。',
+    'run list 也是只读，但只允许管理员；普通用户的令牌会被拒绝。它按已有的运行和验证结果列出，不新写存储，不输出提交正文、引文或凭据。--limit 默认 50，最大 500，按开始时间新到旧；还有更多时给出下一页游标，不悄悄截断。未知和各要求项终态取最新一条已受理结果，没有已受理结果时未知为 0、终态为无。验证状态取最新一条验证结果：没有结果是进行中。',
   ];
   return lines.join('\n');
 }
@@ -349,8 +355,71 @@ async function logsCommand(args: readonly string[], ctx: CliContext, options: Cl
   return 0;
 }
 
+const USER_ID = /^usr_[0-9a-z]{26}$/;
+
+function packIdOf(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  const id = value.split('@')[0] ?? '';
+  if (!/^[a-z][a-z0-9-]{0,80}$/.test(id)) throw new UsageError('--pack 要包标识（版本号会被忽略）');
+  return id;
+}
+
+function stateOf(value: string | undefined): RunListState | null {
+  if (value === undefined) return null;
+  if (!(RUN_LIST_STATES as readonly string[]).includes(value)) throw new UsageError('--state 只能是 受理、未受理 或 进行中');
+  return value as RunListState;
+}
+
+function sinceOf(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  if (!Number.isFinite(Date.parse(value))) throw new UsageError('--since 要能解析的 ISO 时间');
+  return value;
+}
+
+function limitOf(value: string | undefined): number {
+  if (value === undefined) return RUN_LIST_DEFAULT_LIMIT;
+  if (!/^[1-9][0-9]*$/.test(value) || Number(value) > RUN_LIST_MAX_LIMIT) throw new UsageError(`--limit 要 1 到 ${RUN_LIST_MAX_LIMIT} 的整数`);
+  return Number(value);
+}
+
+async function runListCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
+  const { values } = parse(args, {
+    pack: { type: 'string' },
+    user: { type: 'string' },
+    state: { type: 'string' },
+    since: { type: 'string' },
+    unknown: { type: 'boolean' },
+    limit: { type: 'string' },
+    cursor: { type: 'string' },
+    json: { type: 'boolean' },
+    as: { type: 'string' },
+  }, 0);
+  const by = await (await tokenRules(options)).viewer(ctx, values.as);
+  if (by.role !== 'admin') throw new CliError('只有管理员可以列出运行', '用管理员的操作令牌执行这一条命令');
+  const kit = await ctx.records();
+  const named = values.user;
+  const user = named === undefined ? null : USER_ID.test(named) ? await kit.principals.get(named) : await kit.principals.findByName(named);
+  if (named !== undefined && user === null) throw new CliError(`没有用户 ${terminalSafe(named)}`);
+  const page = await listRunInventory(kit, by, {
+    pack: packIdOf(values.pack),
+    user: user?.id ?? null,
+    state: stateOf(values.state),
+    since: sinceOf(values.since),
+    unknown: values.unknown === true,
+    limit: limitOf(values.limit),
+    cursor: values.cursor ?? null,
+  });
+  if (values.json === true) {
+    ctx.io.stdout(jsonSafe(JSON.stringify({ runs: page.items, next: page.next }, null, 2)));
+    return 0;
+  }
+  for (const line of runListLines(page)) out(ctx.io, line);
+  return 0;
+}
+
 async function runCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
   const [sub, ...rest] = args;
+  if (sub === 'list') return runListCommand(rest, ctx, options);
   if(sub==='abandon'){
     const {values,positionals}=parse(rest,{'answer-request':{type:'string'},reason:{type:'string'}},1);
     if(!values['answer-request']||!values.reason)throw new UsageError('需要 --answer-request 和 --reason；此命令管理放弃整个运行，不停止远端执行或解除冻结');
@@ -362,7 +431,7 @@ async function runCommand(args: readonly string[], ctx: CliContext, options: Cli
     out(ctx.io,'技术层只保留来源判定，未重新核验；要求项未满足（已放弃）；原效果和冻结记录不改写。');
     return 0;
   }
-  if (sub !== 'show') throw new UsageError('run 的子命令是 show 或 abandon');
+  if (sub !== 'show') throw new UsageError('run 的子命令是 list、show 或 abandon');
   const { values, positionals } = parse(rest, { json: { type: 'boolean' }, as: { type: 'string' } }, 1);
   const by = await (await tokenRules(options)).viewer(ctx, values.as);
   let deps: ServerDeps;

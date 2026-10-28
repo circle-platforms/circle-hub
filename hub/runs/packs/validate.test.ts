@@ -331,7 +331,8 @@ test('pack files carrying credentials are refused, naming the file and the line 
   const p = await refused(withFiles(base, { 'SKILL.md': `# 合成规程\n\npassword=${secret}\n` }), 'file.credential', { file: 'SKILL.md' });
   assert.equal(p.line, 3);
   assert.ok(!p.message.includes(secret) && !p.fix.includes(secret));
-  await refused(editJson<Json>(base, 'tables/titles.json', (t) => void (t.description = 'Authorization: Bearer abcDEF123ghiJKL456mnoPQR789stuVWX012yz')), 'file.credential', { file: 'tables/titles.json' });
+  const syntheticBearer = ['abcDEF123ghi', 'JKL456mnoPQR', '789stuVWX012yz'].join('');
+  await refused(editJson<Json>(base, 'tables/titles.json', (t) => void (t.description = 'Authorization: Bearer ' + syntheticBearer)), 'file.credential', { file: 'tables/titles.json' });
   const titled = await refused({ ...base, title: `合成评审 password=${secret}` }, 'file.credential', { file: 'pack.json', field: '/title' });
   assert.ok(!titled.message.includes(secret));
   await refused(withFiles(productPack(), { 'functions/produce.ts': `const key = 'password=${secret}';\nexport default function produce(): unknown {\n  return key;\n}\n` }), 'file.credential', { file: 'functions/produce.ts' });

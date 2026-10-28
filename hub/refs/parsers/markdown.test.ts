@@ -32,74 +32,74 @@ describe('markdown@1 on the pandoc-style spec fixture', () => {
     assert.equal(model.sections[8].level, 2, 'setext heading');
   });
 
-  it('keeps tables, lists, quotes and code as verbatim blocks', () => {
+  it('keeps tables, lists, quotes and code as verbatim blocks', async () => {
     const summary = spec.summary();
     assert.deepEqual(summary.kinds, { yaml_metadata_block: 1, paragraph: 8, table: 4, list: 2, code_block: 2, block_quote: 1, thematic_break: 1 });
-    const grid = spec.locate('b/0/概述/术语')!;
+    const grid = (await spec.locate('b/0/概述/术语'))!;
     assert.equal((grid.data as { kind: string }).kind, 'table');
     assert.ok(grid.text.startsWith('+--------------+'));
     assert.ok(grid.text.includes('一个池里可以有多个后端。'));
-    assert.equal(spec.locate('b/0/概述/功能说明/超时')!.text.split('\n').length, 3, 'pipe table');
-    const multiline = spec.locate('b/0/概述/配置示例[2][1]')!;
+    assert.equal((await spec.locate('b/0/概述/功能说明/超时'))!.text.split('\n').length, 3, 'pipe table');
+    const multiline = (await spec.locate('b/0/概述/配置示例[2][1]'))!;
     assert.equal((multiline.data as { lines: number }).lines, 8, 'multiline table with blank lines between rows');
     assert.ok(multiline.text.endsWith('缺省为 10。\n-------------------------------------------------------------'));
-    assert.equal((spec.locate('b/2/概述/配置示例[2][1]')!.data as { kind: string }).kind, 'table', 'simple table');
-    assert.equal(spec.locate('b/1/概述/功能说明/会话保持')!.text, '- 按源地址保持\n- 按 Cookie 保持\n  - Cookie 名称可配置\n- 按请求头保持');
-    assert.equal(spec.locate('b/4/概述/配置示例[2][1]')!.text, '> 注意：修改模式会中断现有会话。\n请在维护窗口操作。');
+    assert.equal(((await spec.locate('b/2/概述/配置示例[2][1]'))!.data as { kind: string }).kind, 'table', 'simple table');
+    assert.equal((await spec.locate('b/1/概述/功能说明/会话保持'))!.text, '- 按源地址保持\n- 按 Cookie 保持\n  - Cookie 名称可配置\n- 按请求头保持');
+    assert.equal((await spec.locate('b/4/概述/配置示例[2][1]'))!.text, '> 注意：修改模式会中断现有会话。\n请在维护窗口操作。');
   });
 
-  it('does not take a # line inside a code fence for a heading', () => {
-    const code = spec.locate('b/2/概述/功能说明/超时')!;
+  it('does not take a # line inside a code fence for a heading', async () => {
+    const code = (await spec.locate('b/2/概述/功能说明/超时'))!;
     assert.equal((code.data as { kind: string }).kind, 'code_block');
     assert.ok(code.text.includes('# 这一行不是标题'));
     assert.ok(!model.sections.some((section) => section.title.includes('这一行不是标题')));
   });
 
-  it('locates sections with their subsections and blocks by heading path and index', () => {
-    const section = spec.locate('h/概述/功能说明')!;
+  it('locates sections with their subsections and blocks by heading path and index', async () => {
+    const section = (await spec.locate('h/概述/功能说明'))!;
     assert.ok(section.text.startsWith('## 功能说明'));
     assert.ok(section.text.includes('第二个同名小节'), 'a section spans its subsections');
     assert.ok(!section.text.includes('配置示例'));
     assert.deepEqual((section.data as { subsections: string[] }).subsections, ['h/概述/功能说明/会话保持', 'h/概述/功能说明/超时', 'h/概述/功能说明/超时[2]']);
-    assert.equal(spec.locate('b/0/概述/功能说明/超时[2]')!.text, '第二个同名小节，用来检验同名标题的序号。');
-    assert.equal(spec.locate('h/概述/功能说明/超时[1]')!.selector, 'h/概述/功能说明/超时');
-    assert.equal(spec.locate('b/0')!.text.split('\n')[0], '---', 'blocks before the first heading');
-    assert.equal(spec.locate('b/0/附录/[1]')!.text, '空标题的小节。');
+    assert.equal((await spec.locate('b/0/概述/功能说明/超时[2]'))!.text, '第二个同名小节，用来检验同名标题的序号。');
+    assert.equal((await spec.locate('h/概述/功能说明/超时[1]'))!.selector, 'h/概述/功能说明/超时');
+    assert.equal((await spec.locate('b/0'))!.text.split('\n')[0], '---', 'blocks before the first heading');
+    assert.equal((await spec.locate('b/0/附录/[1]'))!.text, '空标题的小节。');
     const [from, to] = section.byteRange!;
     assert.ok(Buffer.from(bytes).subarray(from, to).toString('utf8').startsWith('## 功能说明'));
-    for (const selector of ['h', 'h/不存在', 'h/概述/超时', 'h/概述/配置示例[2]', 'b/9/概述', 'b/x/概述', 'b/01/概述', 'q/概述']) assert.equal(spec.locate(selector), null, selector);
+    for (const selector of ['h', 'h/不存在', 'h/概述/超时', 'h/概述/配置示例[2]', 'b/9/概述', 'b/x/概述', 'b/01/概述', 'q/概述']) assert.equal((await spec.locate(selector)), null, selector);
   });
 
-  it('lists every section and block in document order', () => {
+  it('lists every section and block in document order', async () => {
     const selectors = spec.listSelectors();
     assert.equal(selectors.length, model.sections.length - 1 + model.blocks.length);
-    for (const selector of selectors) assert.equal(spec.locate(selector)!.selector, selector, selector);
+    for (const selector of selectors) assert.equal((await spec.locate(selector))!.selector, selector, selector);
     assert.deepEqual(spec.listSelectors('h/附录'), ['h/附录', 'h/附录/[1]']);
   });
 
-  it('keeps full-width characters and NBSP as written', () => {
-    const last = spec.locate('b/2/附录/[1]')!;
+  it('keeps full-width characters and NBSP as written', async () => {
+    const last = (await spec.locate('b/2/附录/[1]'))!;
     assert.equal(last.text, '全角字符：ＡＢＣ，全角空格：前　后。不换行空格：甲 乙。');
   });
 });
 
 describe('markdown@1 behaviour', () => {
-  it('removes NUL from texts but keeps byte ranges on the original bytes', () => {
+  it('removes NUL from texts but keeps byte ranges on the original bytes', async () => {
     const text = '# 标题\u0000一\n\n段落\u0000\u0000文字\n';
     const document = markdownParser.parse(utf8(text));
     assert.equal(document.model.nulRemoved, 3);
-    assert.equal(document.locate('h/标题一')!.selector, 'h/标题一');
-    const block = document.locate('b/0/标题一')!;
+    assert.equal((await document.locate('h/标题一'))!.selector, 'h/标题一');
+    const block = (await document.locate('b/0/标题一'))!;
     assert.equal(block.text, '段落文字');
     const [from, to] = block.byteRange!;
     assert.equal(Buffer.from(utf8(text)).subarray(from, to).toString('utf8'), '段落\u0000\u0000文字');
   });
 
-  it('handles CRLF, CR and a byte order mark', () => {
+  it('handles CRLF, CR and a byte order mark', async () => {
     const document = markdownParser.parse(new Uint8Array([0xef, 0xbb, 0xbf, ...utf8('# A\r\n\r\npara\r\nmore\r# B\r\rtext')]));
     assert.deepEqual(document.listSelectors(), ['h/A', 'b/0/A', 'h/B', 'b/0/B']);
-    assert.equal(document.locate('b/0/A')!.text, 'para\r\nmore');
-    const [from] = document.locate('h/A')!.byteRange!;
+    assert.equal((await document.locate('b/0/A'))!.text, 'para\r\nmore');
+    const [from] = (await document.locate('h/A'))!.byteRange!;
     assert.equal(from, 3);
   });
 
@@ -190,27 +190,27 @@ describe('markdown@1 on hostile headings', () => {
     assert.equal(parsed('    # code\n').model.blocks[0].kind, 'code_block');
   });
 
-  it('gives no selector to a section or block whose heading path is too long, and stays linear', () => {
+  it('gives no selector to a section or block whose heading path is too long, and stays linear', async () => {
     const document = parsed(`# ${'h'.repeat(20_000)}\n\n${'p\n\n'.repeat(40_000)}# short\n\ntext\n`);
     const { sections, blocks } = document.model;
     assert.equal(sections[1].selector, null);
     assert.equal(blocks.length, 40_001);
     assert.ok(blocks.slice(0, 40_000).every((block) => block.selector === null));
     assert.deepEqual(document.listSelectors(), ['h/short', 'b/0/short']);
-    assert.equal(document.locate(`h/${'h'.repeat(4_100)}`), null);
-    assert.equal(document.locate('b/0/short')!.text, 'text');
+    assert.equal((await document.locate(`h/${'h'.repeat(4_100)}`)), null);
+    assert.equal((await document.locate('b/0/short'))!.text, 'text');
     // The 20000-character path is no longer repeated in each of 40000 blocks (800 M characters of model).
     const json = timed(() => JSON.stringify(document.model).length);
     assert.ok(json.ms < BOUND_MS && (json.value as number) < 10_000_000, `model JSON is ${String(json.value)} characters`);
   });
 
-  it('maps texts without NUL in linear time, however few the NULs', () => {
+  it('maps texts without NUL in linear time, however few the NULs', async () => {
     const document = parsed(`${'p\n\n'.repeat(300_000)}tail\u0000end\n`);
     assert.equal(document.model.nulRemoved, 1);
     assert.equal(document.model.blocks.at(-1)!.text, 'tailend');
     const many = markdownParser.parse(utf8('# a\u0000b\n\nx\u0000\u0000y\n\n\u0000z\n'));
     assert.deepEqual(many.model.blocks.map((block) => block.text), ['xy', 'z']);
-    assert.equal(many.locate('h/ab')!.text, '# ab\n\nxy\n\nz');
+    assert.equal((await many.locate('h/ab'))!.text, '# ab\n\nxy\n\nz');
   });
 
   it('refuses headings just under the budget repeated over many blocks', () => {
@@ -247,11 +247,11 @@ describe('markdown@1 block section paths', () => {
     }
   });
 
-  it('nests a skipped level under the nearest lower heading without a synthetic segment', () => {
+  it('nests a skipped level under the nearest lower heading without a synthetic segment', async () => {
     const document = markdownParser.parse(utf8('# A\n\n### B\n\n正文\n'));
     assert.deepEqual(document.model.sections[2].level, 3);
     assert.deepEqual(document.model.blocks[0].path, ['A', 'B']);
-    assert.equal(document.locate('h/A/B')!.text, '### B\n\n正文');
+    assert.equal((await document.locate('h/A/B'))!.text, '### B\n\n正文');
   });
 
   it('keeps duplicated sibling titles apart by their ordinal', () => {

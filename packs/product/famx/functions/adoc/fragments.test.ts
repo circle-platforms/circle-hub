@@ -65,10 +65,10 @@ test('every produced fragment is a text@1 line of the chapter file it names, and
       assert.equal(fragment.range, undefined, 'a line of the original is cited whole; no byte range inside a mapped text');
       const file = bySha.get(fragment.source ?? '');
       assert.ok(file !== undefined, `${JSON.stringify(fragment)} names no file of the group`);
-      const verified = verifyFragment(fragment, sources, loader);
+      const verified = await verifyFragment(fragment, sources, loader);
       assert.ok(verified.ok, `${JSON.stringify(fragment)}: ${verified.ok ? '' : verified.reason}`);
       // The line the fragment cites holds the entry's own words: the citation is not merely well formed.
-      const located = sources.list!.elements.get(fragment.source!)!.document.locate(fragment.selector);
+      const located = (await sources.list!.elements.get(fragment.source!)!.document.locate(fragment.selector));
       assert.ok(located !== null);
       const statement = String(entry.statement);
       assert.ok(
@@ -88,7 +88,7 @@ test('the two families cite the same chapter files, and a fragment of the other 
   const fragment = produced.entries[0]!.fragments[0]!;
   // Another file's digest is not an element of this batch: the Hub refuses it, so an entry cannot cite another group.
   const foreign = { ...fragment, source: sha('not a chapter of this group') };
-  const refused = verifyFragment(foreign, sources, loader);
+  const refused = await verifyFragment(foreign, sources, loader);
   assert.equal(refused.ok, false);
 });
 
@@ -100,10 +100,10 @@ test('the shape K1 emits without the rewrite is refused by the Hub: a packed ref
   const { sources } = sourcesOf(FILES);
   const cite = mapped.model.blocks.find((block) => block.text === '本节介绍成员池的配置。')!.cite;
   const packed = { slot: 'manual', source: cite.sha256, parser: 'markdown@1', selector: `src:${cite.sha256}/text@1/${cite.selector}` };
-  const refused = verifyFragment(packed, sources, loader);
+  const refused = await verifyFragment(packed, sources, loader);
   assert.equal(refused.ok, false, 'the packed spelling must not verify');
   const plain = { slot: 'manual', source: cite.sha256, parser: ADOC_PARSER, selector: cite.selector };
-  assert.ok(verifyFragment(plain, sources, loader).ok, 'the same citation in its own fields verifies');
+  assert.ok((await verifyFragment(plain, sources, loader)).ok, 'the same citation in its own fields verifies');
 });
 
 test('a fragment the mapping cannot resolve refuses the group instead of going out as a reference to nothing', async () => {
@@ -139,7 +139,7 @@ const COMMAND_FILES: Record<string, string> = {
 };
 
 /** The Hub's own check over every fragment of every entry, against a text@1 parse of the file each fragment names. */
-const checkFragments = (entries: Array<{ statement: string; fragments: Array<{ slot?: string; source?: string; parser: string; selector: string; range?: [number, number] }> }>, files: Record<string, string>): void => {
+const checkFragments = async (entries: Array<{ statement: string; fragments: Array<{ slot?: string; source?: string; parser: string; selector: string; range?: [number, number] }> }>, files: Record<string, string>): Promise<void> => {
   const { sources, bySha } = sourcesOf(files);
   for (const entry of entries) {
     assert.ok(entry.fragments.length > 0, JSON.stringify(entry));
@@ -148,7 +148,7 @@ const checkFragments = (entries: Array<{ statement: string; fragments: Array<{ s
       assert.equal(fragment.slot, 'manual');
       assert.match(fragment.selector, /^l\/[1-9][0-9]*(?:-[1-9][0-9]*)?$/, JSON.stringify(fragment));
       assert.ok(bySha.has(fragment.source ?? ''), `${JSON.stringify(fragment)} names no file of the group`);
-      const verified = verifyFragment(fragment as never, sources, loader);
+      const verified = await verifyFragment(fragment as never, sources, loader);
       assert.ok(verified.ok, `${entry.statement} ${JSON.stringify(fragment)}: ${verified.ok ? '' : verified.reason}`);
     }
   }
@@ -177,7 +177,7 @@ test('every row of a command table cites its own source line, not the header lin
     ['| **demo pool add** *<name>* | 添加成员 |', '/manual/cli-famx/配置命令', 'l/6'],
     ['| **demo pool del** *<name>* | 删除成员 |', '/manual/cli-famx/配置命令', 'l/7'],
   ]);
-  checkFragments(produced.entries, COMMAND_FILES);
+  await checkFragments(produced.entries, COMMAND_FILES);
 });
 
 test('a table row whose cells were not verified is reported and does not borrow another row\'s line', async () => {
@@ -200,5 +200,5 @@ test('a table row whose cells were not verified is reported and does not borrow 
   // What stays is cited on its own line: the surviving row does not move onto the dropped row's line or the header's.
   const kept = produced.entries.filter((entry) => entry.data.form === 'table_row'&&entry.statement.includes('添加成员'));
   assert.deepEqual(kept.map((entry) => [String(entry.statement), entry.fragments[0]!.selector]), [['| **demo pool add** *<name>* | 添加成员 |', 'l/6']]);
-  checkFragments(produced.entries, COMMAND_FILES);
+  await checkFragments(produced.entries, COMMAND_FILES);
 });

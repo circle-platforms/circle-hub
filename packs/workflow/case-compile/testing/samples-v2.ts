@@ -39,3 +39,5 @@ const workbook={...base,fields,generation,manifest_sha256:hash(JSON.stringify(MA
 for(const check of ['workbook_verified','dispatch_policy']){save('positive','typed-'+check,check,workbook);const bad=structuredClone(workbook);bad.workbook.sha256='f'.repeat(64);save('negative','typed-'+check,check,bad,'case-compile.workbook_invalid');}
 
 await import('./authority-samples.ts');
+
+await import('./block-samples.ts');

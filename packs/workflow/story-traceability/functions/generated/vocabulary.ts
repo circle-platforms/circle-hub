@@ -4,6 +4,7 @@ export const PROVENANCE_TYPE_LABEL = {
   "observed": "观察",
   "projected": "投影",
   "declared": "声明",
-  "candidate": "候选"
+  "candidate": "候选",
+  "client_captured": "客户端捕获"
 } as const satisfies Record<ProvenanceType, string>;
 export function labelOf(axis: 'provenance_type', value: ProvenanceType): string { return PROVENANCE_TYPE_LABEL[value]; }

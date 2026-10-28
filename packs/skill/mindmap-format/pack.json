@@ -1,0 +1,55 @@
+{
+  "schema": "pack@1",
+  "id": "mindmap-format",
+  "version": "1.0.2",
+  "kind": "skill",
+  "title": "脑图格式",
+  "description": "按原件结构读取 KityMinder，不承担工作角色判断",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "5edb4c9e143561d85cf5f3078e1359c5125cdbd5e08ffbecebe8c556fc1244ff",
+      "size": 275
+    },
+    {
+      "path": "functions/format.ts",
+      "sha256": "391b7639d3dcd5b8de625b7255e629d86b7b6411f7105f71928ac6259abb0fcc",
+      "size": 10517
+    },
+    {
+      "path": "functions/generated/protocol.ts",
+      "sha256": "c834495644e47d2da4a567dbc1f586021c139b8d90dcba447cf9ff723f6233af",
+      "size": 6074
+    },
+    {
+      "path": "functions/json-walk.ts",
+      "sha256": "7f323ba33a27ea428e8f0ff2b2cd0697a89b61b9f11c2d80f01b4d2e2b0c194d",
+      "size": 4386
+    },
+    {
+      "path": "functions/kityminder.ts",
+      "sha256": "0dade81c32b693c432236eb6324cbc09cdd76fc32d3396cb95f12f15f3096ef2",
+      "size": 13800
+    },
+    {
+      "path": "functions/parse.ts",
+      "sha256": "7ee9718d7b6d29b98b9212d84bdc04e6f0f5ed55115928df2903fb6820bb7a22",
+      "size": 4487
+    },
+    {
+      "path": "functions/selectors.ts",
+      "sha256": "4eb68ce5a3893c8fb3d32d146da71180960b9c8b515353132a9520893db05b32",
+      "size": 7836
+    },
+    {
+      "path": "functions/text-decoding.ts",
+      "sha256": "5bb193d6d6f3a492c7230e47bac0df76e2c22b9c310e382bc97ad4241a6076b8",
+      "size": 12517
+    },
+    {
+      "path": "skill.json",
+      "sha256": "4544c7ffc3465a804a86a70e24e933accca9601946d987946340ea174b1fd35a",
+      "size": 540
+    }
+  ]
+}

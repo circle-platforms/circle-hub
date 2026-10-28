@@ -13,7 +13,7 @@ import { VariableUse } from './variables.ts';
 // entryDigest in hub/knowledge.
 import { KNOWLEDGE_CONTRIBUTION_SCHEMA, KnowledgeContributionBody } from './contributions.ts';
 import { z } from 'zod';
-import { EntryKindSchema, NodeLevelSchema, ProvenanceTypeSchema, ReadTierSchema, type NodeLevel } from '../generated/vocabulary.ts';
+import { ENTRY_KIND,type EntryKind,EntryKindSchema, NodeLevelSchema, ProvenanceTypeSchema, ReadTierSchema, type NodeLevel } from '../generated/vocabulary.ts';
 import { IsoTime, PackId, PackVersion, Sha256, UserId, Versioned } from './common.ts';
 import { CommandPolicy, Applicability, ApplicabilityOrigin, BuildInfo, CatalogDeclaration, LinkDeclaration, MAX_LIST_SOURCES, PackFunctionRef, ProductId } from './product.ts';
 import { ExternalObjectId, TreePath, referenceUriOf } from './reference.ts';
@@ -261,6 +261,10 @@ export type TreeRootSourcesPart = z.infer<typeof TreeRootSourcesPart>;
  * The composition record of one produced root (tree_root@1, K01 R[5]-R[7]): product line, version identity, root digest,
  * the producing product pack, every source with its basis and decider, and per entry the fragments that provide it.
  */
+// R5 adds counts for new kinds without making immutable pre-R5 compositions unreadable.
+type AddedKind=Extract<EntryKind,'procedure'|'pitfall'>;
+const count=z.number().int().nonnegative();
+const kindCounts=z.strictObject(Object.fromEntries(ENTRY_KIND.map(kind=>[kind,kind==='procedure'||kind==='pitfall'?count.optional():count])) as {[K in EntryKind]:K extends AddedKind?z.ZodOptional<z.ZodNumber>:z.ZodNumber});
 export const TreeRootBody = z.strictObject({
   command_policy:CommandPolicy.optional(),
   known_builds:z.array(z.strictObject({name:z.string().min(1),record:Sha256})).max(50000).optional(),
@@ -293,7 +297,7 @@ export const TreeRootBody = z.strictObject({
     placed_by_model: z.number().int().nonnegative(),
     unplaced: z.number().int().nonnegative(),
   }),
-  kinds: z.record(EntryKindSchema, z.number().int().nonnegative()).optional().describe('composition rows per entry kind'),
+  kinds: kindCounts.optional().describe('composition rows per entry kind'),
   warnings: z.array(z.string()).max(MAX_KEPT_PROBLEMS),
   warnings_count: z.number().int().nonnegative(),
   empty_scope: z.strictObject({

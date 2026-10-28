@@ -1,3 +1,4 @@
+import {bindLegacyParser} from '../refs/api.ts';
 import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../connectors/testing/credentials.ts';
 // createTestHub(): the Hub assembled from the REAL packages in-process (hub/server/assemble/hub.ts: pack registry, run
 // engine, knowledge, connectors) on a temporary PostgreSQL, listening on a loopback port. The external systems are the
@@ -61,6 +62,11 @@ export interface TestHubOptions {
    * none, a list of pack ids exactly those (one that is not there is an error).
    */
   repositoryPacks?: boolean | string[];
+  /** Explicit synthetic capability fixture; production never auto-installs skills. */
+  mindmapSkill?: boolean;
+  workbookSkill?: boolean;
+  xmlSkill?: boolean;
+  htmlSkill?: boolean;
   /** Where the repository's packs are looked for; default REPOSITORY_PACKS (tests of this helper use a synthetic tree). */
   repositoryRoot?: string;
   /** More pack directories, published after the repository's in this order. */
@@ -156,7 +162,7 @@ export async function findPackDirectories(root: string = REPOSITORY_PACKS, ids?:
     }
   };
   await walk(resolve(root), 0);
-  const chosen = ids === undefined ? out : out.filter((p) => ids.includes(p.id));
+  const chosen = ids === undefined ? out.filter(p=>p.kind!=='skill') : out.filter((p) => ids.includes(p.id));
   const missing = (ids ?? []).filter((id) => !out.some((p) => p.id === id));
   if (missing.length > 0) throw new Error(`${root} 下没有这些任务包：${missing.join('、')}`);
   return chosen.sort((a, b) => kindOrder(a.kind) - kindOrder(b.kind) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map((p) => p.dir);
@@ -263,6 +269,27 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
       return outcome.version;
     };
 
+    if(options.mindmapSkill!==false){
+      const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/mindmap-format/',import.meta.url)));
+      await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
+      await bindLegacyParser({registry:hub.registry,records},admin.principal,'kityminder@1',skill.id+'@'+skill.version);
+    }
+    if(options.workbookSkill!==false){
+      const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/workbook-format/',import.meta.url)));
+      await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
+      await bindLegacyParser({registry:hub.registry,records},admin.principal,'xlsx@1',skill.id+'@'+skill.version);
+    }
+    if(options.xmlSkill!==false){
+      const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/xml-format/',import.meta.url)));
+      await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
+      await bindLegacyParser({registry:hub.registry,records},admin.principal,'xml@1',skill.id+'@'+skill.version);
+    }
+    if(options.htmlSkill!==false){
+      const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/html-format/',import.meta.url)));
+      await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
+      await bindLegacyParser({registry:hub.registry,records},admin.principal,'html@1',skill.id+'@'+skill.version);
+    }
+    await hub.deps.parsers.refresh?.();
     const published: PackVersionInfo[] = [];
     const repository = options.repositoryPacks ?? true;
     const directories = [

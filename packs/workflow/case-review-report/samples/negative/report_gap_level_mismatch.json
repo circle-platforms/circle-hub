@@ -1,0 +1,41 @@
+{
+  "id": "report_gap_level_mismatch",
+  "source": "author",
+  "check": "report",
+  "note": "证据缺口不能另定等级，rank 与整体等级相同",
+  "subject": {
+    "items": [
+      {
+        "id": "report",
+        "label": "评审终稿",
+        "fields": {
+          "overall": {
+            "verdict": "PARTIAL",
+            "level": "P5"
+          }
+        }
+      }
+    ],
+    "cross_item": [
+      {
+        "nature": "judgment",
+        "statement": "与整体一致的结论",
+        "code": "PARTIAL",
+        "rank": "P5"
+      },
+      {
+        "nature": "judgment",
+        "statement": "缺少合成足迹；下一步：补充版本化观察",
+        "code": "gap",
+        "rank": "P4"
+      }
+    ]
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "case-review-report.gap_level_mismatch",
+      "tier": "blocking"
+    }
+  ]
+}

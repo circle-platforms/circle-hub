@@ -8,7 +8,7 @@ export const AXES = {
   nature: { label: '性质', owner: 'B01', values: [{ code: 'fact', label: '事实' }, { code: 'judgment', label: '判断' }, { code: 'unknown', label: '未知' }] },
   basis_rank: { label: '依据等级', owner: 'A02', values: [{ code: 'rule_over_observation', label: '观察上的规则' }, { code: 'rule_over_claims', label: '主张上的规则' }, { code: 'judgment', label: '判断' }, { code: 'relay', label: '转述' }] },
   expectation_basis: { label: '期望检查文字依据', owner: 'A02', values: [{ code: 'model_judgment', label: '模型判断' }] },
-  provenance_type: { label: '来源类型', owner: 'A01', values: [{ code: 'observed', label: '观察' }, { code: 'projected', label: '投影' }, { code: 'declared', label: '声明' }, { code: 'candidate', label: '候选' }] },
+  provenance_type: { label: '来源类型', owner: 'A01', values: [{ code: 'observed', label: '观察' }, { code: 'projected', label: '投影' }, { code: 'declared', label: '声明' }, { code: 'candidate', label: '候选' }, { code: 'client_captured', label: '客户端捕获' }] },
   source_role: { label: '来源角色', owner: 'A03', values: [{ code: 'expected', label: '期望来源' }, { code: 'subject', label: '被判对象' }, { code: 'artifact_under_verification', label: '待判定产物' }, { code: 'reported_actual', label: '报告的实际结果' }, { code: 'republished', label: '派生' }, { code: 'hint', label: '线索' }, { code: 'request_text', label: '请求原文' }] },
   independence: { label: '独立性', owner: 'A04', values: [{ code: 'human_non_author', label: '人且非作者' }, { code: 'model_family_declared', label: '不同模型族（客户端声明）' }, { code: 'judge_not_author', label: '判断者不是作者' }, { code: 'not_independent', label: '非独立' }, { code: 'unknown', label: '未知' }] },
   control: { label: '控制区间', owner: 'A05', values: [{ code: 'automatic', label: '自动' }, { code: 'human_takeover', label: '人工接管' }] },
@@ -43,7 +43,7 @@ export const AXES = {
   request_kind: { label: '请求种类', owner: 'B07', values: [{ code: 'clarification', label: '澄清' }, { code: 'repair', label: '修复' }, { code: 'disposition', label: '处置' }, { code: 'judgment', label: '判断' }] },
   permission_kind: { label: '许可种类', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '任务包分配' }, { code: 'publish_right', label: '发布权授予' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
   knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'contribution', label: '回注层' }] },
-  entry_kind: { label: '知识条目种类', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }] },
+  entry_kind: { label: '知识条目种类', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }, { code: 'procedure', label: '步骤' }, { code: 'pitfall', label: '教训' }] },
   node_level: { label: '节点位置', owner: 'K01', values: [{ code: 'trunk', label: '干' }, { code: 'branch', label: '枝' }, { code: 'leaf', label: '叶' }] },
   change_kind: { label: '版本差类型', owner: 'K01', values: [{ code: 'added', label: '新增' }, { code: 'removed', label: '删除' }, { code: 'modified', label: '修改' }] },
   read_tier: { label: '读取档位', owner: 'B02', values: [{ code: 'model_readable', label: '模型可读' }, { code: 'function_bytes_only', label: '只许函数按引用读字节' }, { code: 'retain_only', label: '只保留' }] },
@@ -53,7 +53,7 @@ export const AXES = {
   determinism: { label: '确定性类', owner: 'C08', values: [{ code: 'deterministic', label: '确定性' }, { code: 'nondeterministic', label: '非确定性' }] },
   error_handling: { label: '错误处理', owner: 'W02', values: [{ code: 'repair', label: '修复' }, { code: 'reject', label: '进已拒收' }, { code: 'request', label: '发请求' }, { code: 'unknown', label: '记未知' }] },
   check_tier: { label: '检查档位', owner: 'C05', values: [{ code: 'blocking', label: '阻断' }, { code: 'advisory', label: '提示' }] },
-  pack_kind: { label: '任务包种类', owner: 'T01', values: [{ code: 'product', label: '产品包' }, { code: 'workflow', label: '工作流包' }, { code: 'system', label: '系统包' }] },
+  pack_kind: { label: '任务包种类', owner: 'T01', values: [{ code: 'product', label: '产品包' }, { code: 'workflow', label: '工作流包' }, { code: 'system', label: '系统包' }, { code: 'skill', label: '通用技能包' }] },
   environment: { label: '环境类别', owner: 'D01', values: [{ code: 'test', label: '测试' }, { code: 'shared', label: '共享' }, { code: 'production', label: '生产' }] },
   permission_role: { label: '权限角色', owner: 'R01', values: [{ code: 'user', label: '用户' }, { code: 'admin', label: '管理员' }] },
   reference_scheme: { label: '引用形式', owner: 'B03', values: [{ code: 'src', label: '源文件或片段' }, { code: 'tree', label: '知识树节点' }, { code: 'entry', label: '知识条目' }, { code: 'rec', label: 'Hub 记录' }] },
@@ -135,9 +135,9 @@ export function isExpectationBasis(value: unknown): value is ExpectationBasis {
 }
 
 /** 来源类型 (A01) */
-export const PROVENANCE_TYPE = ['observed', 'projected', 'declared', 'candidate'] as const;
+export const PROVENANCE_TYPE = ['observed', 'projected', 'declared', 'candidate', 'client_captured'] as const;
 export type ProvenanceType = (typeof PROVENANCE_TYPE)[number];
-export const PROVENANCE_TYPE_LABEL = { 'observed': '观察', 'projected': '投影', 'declared': '声明', 'candidate': '候选' } as const satisfies { readonly [K in ProvenanceType]: string };
+export const PROVENANCE_TYPE_LABEL = { 'observed': '观察', 'projected': '投影', 'declared': '声明', 'candidate': '候选', 'client_captured': '客户端捕获' } as const satisfies { readonly [K in ProvenanceType]: string };
 export const ProvenanceTypeSchema = z.enum(PROVENANCE_TYPE);
 export function isProvenanceType(value: unknown): value is ProvenanceType {
   return (PROVENANCE_TYPE as readonly unknown[]).includes(value);
@@ -450,9 +450,9 @@ export function isKnowledgeLayer(value: unknown): value is KnowledgeLayer {
 }
 
 /** 知识条目种类 (K02) */
-export const ENTRY_KIND = ['definition', 'behaviour', 'case', 'defect', 'observation'] as const;
+export const ENTRY_KIND = ['definition', 'behaviour', 'case', 'defect', 'observation', 'procedure', 'pitfall'] as const;
 export type EntryKind = (typeof ENTRY_KIND)[number];
-export const ENTRY_KIND_LABEL = { 'definition': '定义', 'behaviour': '行为', 'case': '用例', 'defect': '缺陷', 'observation': '观察' } as const satisfies { readonly [K in EntryKind]: string };
+export const ENTRY_KIND_LABEL = { 'definition': '定义', 'behaviour': '行为', 'case': '用例', 'defect': '缺陷', 'observation': '观察', 'procedure': '步骤', 'pitfall': '教训' } as const satisfies { readonly [K in EntryKind]: string };
 export const EntryKindSchema = z.enum(ENTRY_KIND);
 export function isEntryKind(value: unknown): value is EntryKind {
   return (ENTRY_KIND as readonly unknown[]).includes(value);
@@ -540,9 +540,9 @@ export function isCheckTier(value: unknown): value is CheckTier {
 }
 
 /** 任务包种类 (T01) */
-export const PACK_KIND = ['product', 'workflow', 'system'] as const;
+export const PACK_KIND = ['product', 'workflow', 'system', 'skill'] as const;
 export type PackKind = (typeof PACK_KIND)[number];
-export const PACK_KIND_LABEL = { 'product': '产品包', 'workflow': '工作流包', 'system': '系统包' } as const satisfies { readonly [K in PackKind]: string };
+export const PACK_KIND_LABEL = { 'product': '产品包', 'workflow': '工作流包', 'system': '系统包', 'skill': '通用技能包' } as const satisfies { readonly [K in PackKind]: string };
 export const PackKindSchema = z.enum(PACK_KIND);
 export function isPackKind(value: unknown): value is PackKind {
   return (PACK_KIND as readonly unknown[]).includes(value);

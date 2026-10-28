@@ -1,0 +1,23 @@
+// Unit fixtures do not confer production authority; end-to-end tests obtain real Hub receipts.
+import { createHash } from 'node:crypto';
+import { kityminderParser } from '../../../skill/mindmap-format/api.ts';
+import { fixtureJson, fixtureText, recordFor, type RecomposeFixture } from '../../../../tests/fixtures/recompose/index.ts';
+import { analyzeStructure } from '../functions/compile-structure.ts';
+import { reviewSubject } from '../functions/recompose-evidence.ts';
+const sha = (bytes: string) => createHash('sha256').update(bytes).digest('hex');
+export const ROOT = 'b'.repeat(64), PRODUCT = 'c'.repeat(64), RUN = 'run_synthetic_recompose';
+export function bound(kind: string, body: any, id = 'a'.repeat(64)) { return { external: null, meta: { kind, record: id }, model: { kind, body } }; }
+export function pair(pack: string, items: any[], groups: any[] = [], extra: any = {}) { const run = { run: 'run_synthetic_' + pack, pack: pack + '@1.0.1', pack_digest: 'd'.repeat(64), product: 'orbit', runner: 'synthetic-reviewer', items, groups, ...extra }; const result = { schema: 'validation@1', run: run.run, locks: { pack: run.pack, pack_digest: run.pack_digest }, acceptance: 'accepted', partitions: { delivered: items.map(i => ({ item: i.id, requirements: [{ requirement: 'decision', status: 'satisfied', claims: [{ statement: { code: 'accept', data: i.decision }, warrant: { producer: 'model', id: 'scripted-reviewer', independence: 'human_non_author' }, qualifier: { nature: 'judgment' }, validity: { status: 'valid' } }] }] })) }, cross_item: [{ requirement: 'authority', statement: { verdict: 'support' }, validity: { status: 'valid' } }] }; return { run: bound('run', run), result: bound('validation_result', result, 'e'.repeat(64)) }; }
+export function fixture(name: RecomposeFixture = 'pass') {
+    const bytes = fixtureText('author-' + name + '.km.json'), parsed = kityminderParser.parse(Buffer.from(bytes), {}), model = parsed.model, report = analyzeStructure(model, sha(bytes), [1]), entry = report.cases.find(c => c.autoid !== null)!;
+    const context = { run: RUN, predecessor: null, product: 'orbit', product_pack_digest: PRODUCT, line: '10.8', build: 'Rel_ORBIT_10_8_0_30', root: ROOT, names: ['ORBIT', 'COMET'], parameters: {}, groups: [] };
+    const authority = { ...fixtureJson('product-policy.json'), scope: { product: 'orbit', product_pack_digest: PRODUCT, line: context.line, build: context.build, root: ROOT } };
+    const auth = pair('recompose-authority', [], [{ kind: 'recompose-product@1', authority }]);
+    const record = recordFor(name, 'rec:' + 'e'.repeat(64));
+    const items = record.atoms.map((atom: any) => ({ id: record.case.id + ':' + atom.id, fields: { scope: { product: context.product, root: context.root, product_pack_digest: context.product_pack_digest }, atom: atom.id, author_run: RUN, subject: reviewSubject(record, atom.id) }, decision: { atom: atom.id, state: record.sources.states.find((s: any) => s.atom === atom.id).state, load_bearing: false, bed_independent: true, reason: '合成独立裁定' } }));
+    const review = pair('recompose-adjudication', items, [], { predecessor: RUN });
+    const param = (name: string, type: string) => ({ name, type, native_type: { name: 'synthetic-' + type, declaration: 'src:' + ROOT + '/xml@1/x/arg', grammar: 'synthetic-tree@1' }, ...(type === 'int' ? { minimum: 1, maximum: 60 } : {}) });
+    const rows = [{ words: ['widget', 'health', 'interval'], params: [param('pool', 'string'), param('value', 'int')] }, { words: ['widget', 'health', 'probe'], params: [param('pool', 'string'), { ...param('type', 'enum'), values: ['http', 'tcp'] }] }, { words: ['widget', 'pool', 'add'], params: [param('pool', 'string')] }];
+    const entries = rows.map(row => ({ words: row.words, reference: 'tree:' + ROOT + '/commands/' + row.words.join('/'), signatures: [{ id: row.words.join('/'), reference: 'src:' + ROOT + '/xml@1/x/' + row.words.join('/') + '/arguments', params: row.params }] }));
+    return { record, context, model, report, entry, auth, review, authority, catalog: { root: ROOT, entries }, subject: { item: entry.selector, fields: { case_id: record.case.id, source_ref: 'src:' + sha(bytes), node: entry.selector, atoms: entry.atoms, missing: entry.missing }, data: record, context, authority_run: auth.run, authority_result: auth.result, review_run: review.run, review_result: review.result, catalog: { root: ROOT, entries }, evidence: [...record.sources.governing.map((g: any) => ({ reference: g.ref, resolved: true, text: 'synthetic source' })), ...record.ledgers.adapted.flatMap((a: any) => a.equivalence_refs.map((reference: string) => ({ reference, resolved: true, text: 'synthetic declaration' })))] } };
+}

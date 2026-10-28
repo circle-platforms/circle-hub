@@ -155,6 +155,82 @@ export function missingProbeFact(ids: readonly string[]): string {
   return `床面探针缺失：${ids.join('、')}`;
 }
 
+/** Probes recorded on the open hold but absent from the current executor definition. */
+export function ignoredHoldProbes(ids: readonly string[]): string {
+  return `占用时的探针 ${ids.join('、')} 现在不在执行器定义里，没有比较`;
+}
+
+/** The hold cannot be compared because the probe sets no longer overlap. */
+export function disjointHoldFact(job: string, held: readonly string[], current: readonly string[]): string {
+  return `上一次派发（${job.slice(0, 12)}）留下的床面占用未结清，占用时的探针集与现在不同（占用时 ${held.join('、')}；现在 ${current.join('、')}）`;
+}
+
+export function holdClearNext(executorId: string): string {
+  return `由管理员确认床面干净后运行 circle-hub bed hold clear ${executorId} --reason <理由>`;
+}
+
+/** Exit beside the cleanup steps when a hold is unrestored. The command is only for a state the administrator has already accepted as clean. */
+export function unrestoredHoldNext(items: readonly BedItem[], ids: readonly string[], executorId: string): string {
+  const cleanup = cleanupSteps(items, ids);
+  const clear = `确认当前状态是干净的（例如设备已重启过、占用时的配置已不存在）才用 circle-hub bed hold clear ${executorId} --reason <理由>`;
+  return [cleanup, clear].filter(Boolean).join('；');
+}
+
+export function holdMissingBaselineFact(ids: readonly string[]): string {
+  return `无法比较床面占用：探针 ${ids.join('、')} 在占用时没有、现在有，没有登记基线`;
+}
+
+export interface HeldProbe { id: string; text?: string; sha256?: string }
+export interface CurrentProbe { id: string; text?: string; sha256?: string }
+export interface HeldComparison {
+  outcome: 'clear' | 'unrestored' | 'unread' | 'no_baseline' | 'disjoint';
+  differences: Difference[];
+  unread: string[];
+  missingBaseline: string[];
+  ignored: string[];
+  heldIds: string[];
+  currentIds: string[];
+}
+
+/** Compare an open hold with the probes declared now. Overlap uses the held text; probes only in the current set use a registered baseline. */
+export function compareHeldProbes(
+  held: readonly HeldProbe[],
+  current: readonly CurrentProbe[],
+  baselines: ReadonlyMap<string, { text: string; sha256: string }>,
+): HeldComparison {
+  const heldIds = held.map(probe => probe.id);
+  const currentIds = current.map(probe => probe.id);
+  const heldSet = new Set(heldIds);
+  const currentSet = new Set(currentIds);
+  const ignored = heldIds.filter(id => !currentSet.has(id));
+  const overlap = currentIds.filter(id => heldSet.has(id));
+  const added = currentIds.filter(id => !heldSet.has(id));
+  const base = { differences: [] as Difference[], unread: [] as string[], missingBaseline: [] as string[], ignored, heldIds, currentIds };
+  if (overlap.length === 0) return { ...base, outcome: 'disjoint' };
+  const heldById = new Map(held.map(probe => [probe.id, probe]));
+  const currentById = new Map(current.map(probe => [probe.id, probe]));
+  const unread: string[] = [];
+  const differences: Difference[] = [];
+  for (const id of overlap) {
+    const prior = heldById.get(id);
+    const now = currentById.get(id);
+    if (prior?.text === undefined || now?.text === undefined) { unread.push(id); continue; }
+    if (prior.text !== now.text) differences.push({ item: id, kind: 'changed', identity: id, diff_lines: lineDiff(prior.text, now.text), pre_sha256: prior.sha256, post_sha256: now.sha256 });
+  }
+  const missingBaseline: string[] = [];
+  for (const id of added) {
+    const now = currentById.get(id);
+    if (now?.text === undefined) { unread.push(id); continue; }
+    const baseline = baselines.get(id);
+    if (!baseline) { missingBaseline.push(id); continue; }
+    if (baseline.text !== now.text) differences.push({ item: id, kind: 'changed', identity: id, diff_lines: lineDiff(baseline.text, now.text), pre_sha256: baseline.sha256, post_sha256: now.sha256 });
+  }
+  if (unread.length) return { ...base, outcome: 'unread', differences, unread, missingBaseline };
+  if (missingBaseline.length) return { ...base, outcome: 'no_baseline', differences, unread, missingBaseline };
+  if (differences.length) return { ...base, outcome: 'unrestored', differences, unread, missingBaseline };
+  return { ...base, outcome: 'clear', differences, unread, missingBaseline };
+}
+
 function interfaceKey(value: string): string | null {
   const slash = value.lastIndexOf('/');
   if (slash <= 0) return null;
@@ -186,8 +262,26 @@ export function toCIDR(value: string): string | null {
         }
       }
     }
+    if (family === 6) {
+      const bits = prefixBits(mask, 128);
+      if (bits === null) return null;
+      return interfaceKey(`${ip}/${bits}`);
+    }
   }
   return null;
+}
+
+/** Decimal prefix length 0..max, or null. Two tokens only; this does not interpret the rest of a line. */
+function prefixBits(text: string, max: number): number | null {
+  if (text.length < 1 || text.length > 3) return null;
+  let bits = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 48 || code > 57) return null;
+    bits = bits * 10 + (code - 48);
+  }
+  if (bits > max) return null;
+  return bits;
 }
 
 function addressSet(rows: unknown, address: string): string[] | null {

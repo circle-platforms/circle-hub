@@ -1,6 +1,6 @@
 // upload_file helpers: strict base64 decoding, the media type (given, from the file name, or sniffed from the bytes) and the
 // structure summary of the core parser that recognises the file. The bytes are stored by records (B02); nothing is executed.
-import { mediaTypeEssence, parserKey, recognize, type ParseError, type ParserRegistry } from '../refs/api.ts';
+import { mediaTypeEssence, parserKey, recognize, recognizeAsync, type ParseError, type ParserRegistry } from '../refs/api.ts';
 
 /**
  * RFC 4648 base64 with padding and nothing else: the contracts schema already limits the alphabet and the length; this also
@@ -94,4 +94,10 @@ export function structureOf(parsers: ParserRegistry, bytes: Uint8Array, mediaTyp
   const found = recognize(parsers, bytes, mediaType, {}, onRejected);
   if (found === null) return null;
   return { parser: parserKey(found.parser), summary: found.document.summary() };
+}
+
+export async function structureOfAsync(parsers:ParserRegistry,bytes:Uint8Array,mediaType:string,onRejected?:(error:ParseError)=>void):Promise<Record<string,unknown>|null>{
+  if(mediaTypeEssence(mediaType)==='application/octet-stream')return null;
+  const found=await recognizeAsync(parsers,bytes,mediaType,{},onRejected);
+  return found?{parser:parserKey(found.parser),summary:found.document.summary()}:null;
 }

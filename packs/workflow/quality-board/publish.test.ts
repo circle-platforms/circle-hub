@@ -59,7 +59,7 @@ describe('publishing the quality-board pack', { skip }, () => {
       report.warnings.map((w) => w.rule),
       ['publish.author_samples_only', 'publish.author_samples_only', 'publish.author_samples_only'],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['quality-board', '2.0.10', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['quality-board', '2.0.11', 'workflow']);
     const again = await registry.publish(owner, await staged());
     assert.ok(again.ok && again.created === false);
   });

@@ -1,0 +1,40 @@
+{
+  "commit": "77e9de850eb2f4625b1ea5b078a05c6d48259fc6",
+  "files": [
+    {
+      "path": "hub/refs/parsers/xlsx.ts",
+      "sha256": "16a37bf9e335e952237a47546f0420b54a14055ec8e0cf7d02982159f4f4f24a",
+      "size": 43286
+    },
+    {
+      "path": "hub/refs/parsers/xml.ts",
+      "sha256": "3684dea96e3c612c7adda6925dec971e8fa741f5293172e7d6b90a0d4881e411",
+      "size": 34386
+    },
+    {
+      "path": "hub/refs/parser.ts",
+      "sha256": "91cad538c490b3f88a41cb261800e9860432fc7ccae65d2a1df660281a2e1f18",
+      "size": 14224
+    },
+    {
+      "path": "hub/refs/reference.ts",
+      "sha256": "ae7963e944c92d7fb51e8ab00f87bc280b9ce892a949cfd1a4f375676396891e",
+      "size": 27688
+    },
+    {
+      "path": "hub/refs/text-decoding.ts",
+      "sha256": "88b8716b4ecb82b5f651858c588ba4b59866a62f2c94ee76b65ab428f7bf842a",
+      "size": 12517
+    },
+    {
+      "path": "contracts/generated/protocol.ts",
+      "sha256": "0f5db6fa68c0db4047ed76d002609274f859894c45500e778be887c521b91456",
+      "size": 11670
+    },
+    {
+      "path": "contracts/generated/vocabulary.ts",
+      "sha256": "b54802eecf8fd88040df8ca7695e230b35898d7a48ca82cf5188067b78c36131",
+      "size": 74416
+    }
+  ]
+}

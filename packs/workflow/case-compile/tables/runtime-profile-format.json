@@ -6,7 +6,9 @@
     "host_shell",
     "literal_assertion",
     "wait",
-    "executor_return"
+    "executor_return",
+    "checkpoint_count",
+    "captured_restore"
   ],
   "header_columns": 9,
   "manifest_device_types": [
@@ -27,11 +29,13 @@
   ],
   "method_review_field": "reviewed",
   "parameter_role_basis": {
-    "executor_return": "由执行器提供上一步的返回（两参数检查点的 result）；模型不能填写，生成器不写",
+    "executor_return": "由执行器提供明确来源的原文输出：旧计划为前一步，新块可由 I 指向已捕获的实际原文；模型不能在 G 填写",
     "device_cli": "设备命令文字",
     "host_shell": "主机 shell 文字",
     "literal_assertion": "字面期望",
-    "wait": "等待秒数"
+    "wait": "等待秒数",
+    "checkpoint_count": "由执行器从检查点 I 列提供的次数，不能冒充 executor_return 或由 G 参数补默认",
+    "captured_restore": "仅供已声明的捕获还原守卫；运行时完整解析并核角色与效果后才可发送"
   },
   "trigger_types_basis": "包默认触发类型为 router/client/server；runtime-profile@1 可按实际主机 shell 座位收窄到该闭集的子集。省略字段用默认值，显式空数组表示没有触发类型。"
 }

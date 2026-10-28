@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { canonicalBytes } from '../records/api.ts';
-import { againstBaseline, bedName, parseBaseline, parseReply, captureText, lineDiff, type BedItem } from './bed-state.ts';
+import { againstBaseline, bedName, parseBaseline, parseReply, captureText, lineDiff, toCIDR, type BedItem } from './bed-state.ts';
 import { ExecutorDefinition } from './definition.ts';
 import { definition } from './testing/definition.ts';
 import { setup } from './testing/context.ts';
@@ -35,6 +36,16 @@ const cleanAddress = { rows: [{ address: '192.0.2.2/24' }, { address: '192.0.2.1
 const cleanConfig = { rows: [{ id: 'pool', mode: 'off', comment: '未恢复' }] };
 const dirtyAddress = { rows: [{ address: '192.0.2.1/24' }, { address: '192.0.2.2/24' }, { address: '192.0.2.9/24' }] };
 
+test('an IPv6 address and a prefix length normalize like a slash prefix, and IPv4 masks stay put', () => {
+  assert.equal(toCIDR('2001:db8::70 64'), toCIDR('2001:db8::70/64'));
+  assert.equal(toCIDR('2001:db8::70 64'), '2001:db8::70/64');
+  assert.equal(toCIDR('2001:db8::70 129'), null);
+  assert.equal(toCIDR('2001:db8::70 6a'), null);
+  assert.equal(toCIDR('192.0.2.1 64'), null);
+  assert.equal(toCIDR('192.0.2.1/24'), '192.0.2.1/24');
+  assert.equal(toCIDR('192.0.2.1 255.255.255.0'), '192.0.2.1/24');
+});
+
 test('snapshot comparison uses the declared parser and ignores neighbouring text', () => {
   const addresses = parseReply(addressItem as BedItem, cleanAddress);
   const config = parseReply(configItem as BedItem, cleanConfig);
@@ -51,12 +62,12 @@ test('snapshot comparison uses the declared parser and ignores neighbouring text
   assert.equal(ExecutorDefinition.safeParse({ ...withBed, bed_state: { ...bedState, items: [{ ...addressItem, call: { ...addressItem.call, arguments: { item: 'addresses' } } }] } }).success, false);
 });
 
-async function bind(c: Awaited<ReturnType<typeof setup>>) {
+async function bind(c: Awaited<ReturnType<typeof setup>>, items: readonly object[] = bedState.items) {
   const stored = await c.kit.artifacts.ingest({ bytes: canonicalBytes({ id: 'synthetic-bed', devices: [1, 2].map(n => ({ interfaces: [{ address: `192.0.2.${n}/24` }] })), bed }), mediaType: 'application/json', origin: { upload: { session: 'synthetic' } }, author: { user: c.owner.id }, provenanceType: 'declared', visibility: { readers: [c.owner.id], admins: true, packs: [], shareable: false } });
   c.detail.run.sources = c.detail.run.sources.map(source => source.slot === 'synthetic-manifest' ? { ...source, reference: `src:${stored.body.sha256}` } : source);
   (c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as { bed: { manifest_sha256: string } }).bed.manifest_sha256 = stored.body.sha256;
   c.effectDocument.effects[0].parameters.values.manifest_sha256 = [stored.body.sha256];
-  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, manifest_sha256: stored.body.sha256, allowed_tools: [...c.executor.definition.allowed_tools, 'show_bed'], bed_state: bedState });
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, manifest_sha256: stored.body.sha256, allowed_tools: [...c.executor.definition.allowed_tools, 'show_bed'], bed_state: { ...bedState, items: items as typeof bedState.items } });
   await c.freezeExecutor();
 }
 
@@ -601,6 +612,19 @@ test('post-run match restores bed and post-run mismatch leaves bed unrestored wi
     assert.equal(report.bed_state.recovery, 'restored');
     assert.deepEqual(report.bed_state.differences, []);
     assert.deepEqual(report.bed_state.limits, []);
+    const shots = await snaps(c, state.job);
+    const capture = (when: string) => {
+      const detail = shots.find(shot => shot.when === when);
+      const reads = detail?.reads as Array<{ id: string; reference?: string }> | undefined;
+      return reads?.find(read => read.id === 'raw_probe')?.reference;
+    };
+    const preRef = capture('pre');
+    const postRef = capture('post');
+    assert.ok(preRef?.startsWith('art:') && postRef?.startsWith('art:'));
+    const preBytes = await c.kit.objects.get(preRef!.slice(4));
+    const postBytes = await c.kit.objects.get(postRef!.slice(4));
+    assert.ok(preBytes && postBytes);
+    assert.equal(createHash('sha256').update(preBytes).digest('hex'), createHash('sha256').update(postBytes).digest('hex'));
   }
 
   // Case B: Post mismatch -> unrestored with line diffs, blocks subsequent dispatch
@@ -636,4 +660,269 @@ test('post-run match restores bed and post-run mismatch leaves bed unrestored wi
     const clearedState = await c.service.dispatch(c.admin, c.run, c.executor.id);
     assert.equal(clearedState.outcome, 'effective');
   }
+});
+
+test('post bed probes run while the remote lease is still renewed and before it is released', async t => {
+  const probes = ['north', 'east', 'south', 'west'].map(id => ({ ...addressItem, id, call: { ...addressItem.call, arguments: { ...addressItem.call.arguments, item: id } } }));
+  const queue = Array.from({ length: 8 }, () => cleanAddress);
+  let credits = 0;
+  let closed = false;
+  const waiting: Array<() => void> = [];
+  const wake = () => { const pending = waiting.splice(0); for (const fn of pending) fn(); };
+  const c = await setup({ ttl: 450, extraTools: ['show_bed'], alter: (name, value) => {
+    if (name === 'open_slot' || name === 'touch_slot') { if (!closed) { credits = 1; wake(); } return value; }
+    if (name === 'close_slot') { closed = true; credits = 0; wake(); return value; }
+    if (name !== 'show_bed') return value;
+    return (async () => {
+      if (credits <= 0) {
+        let woke = false;
+        await Promise.race([
+          new Promise<void>(resolve => waiting.push(() => { woke = true; resolve(); })),
+          new Promise<void>(resolve => setTimeout(resolve, 600)),
+        ]);
+        if (!woke || closed || credits <= 0) return { ok: false };
+      }
+      if (closed || credits <= 0) return { ok: false };
+      credits -= 1;
+      return queue.shift() ?? { ok: false };
+    })();
+  } });
+  t.after(() => c.close());
+  await bind(c, probes);
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(state.outcome, 'effective');
+  const bytes = await c.kit.objects.get(String(state.result).slice(4));
+  const report = JSON.parse(new TextDecoder().decode(bytes!)) as { bed_state: { recovery: string } };
+  assert.equal(report.bed_state.recovery, 'restored');
+  assert.equal(c.calls.filter(name => name === 'show_bed').length, 8);
+  const releaseAt = c.calls.lastIndexOf('close_slot');
+  assert.ok(releaseAt >= 0 && c.calls.every((name, index) => name !== 'show_bed' || index < releaseAt));
+});
+
+function captureProbe(id: string) {
+  return {
+    id,
+    call: { tool: 'show_bed', arguments: { ticket: { $value: 'lease_id' }, item: id }, timeout_ms: 30000 },
+    output: '/output',
+    lead: ['show interfaces'],
+    trail: ['DEVICE#'],
+    cleanup: { actor: '合成管理员', command: `synthetic-cleanup-${id}` },
+  };
+}
+
+function echo(body: string) {
+  return { output: `show interfaces\n${body}\nDEVICE#` };
+}
+
+const textA = 'port-a 192.0.2.1/24';
+const textB = 'port-b 192.0.2.2/24';
+const textC = 'port-c 192.0.2.3/24';
+const textD = 'port-d 192.0.2.4/24';
+const dirtyA = 'port-a 192.0.2.9/24';
+const dirtyC = 'port-c 192.0.2.9/24';
+
+async function bedHolds(c: Awaited<ReturnType<typeof setup>>) {
+  const rows = await c.kit.store.findMany<{ detail: Record<string, unknown> }>({ kind: 'action', key: 'dispatch.phase', values: ['bed_hold'] });
+  return rows.map(row => row.body.detail);
+}
+
+async function leaveOpenHold(c: Awaited<ReturnType<typeof setup>>, queue: Array<ReturnType<typeof echo>>) {
+  queue.push(echo(textA), echo(textB), echo(textC), echo(textA), echo(textB), echo(dirtyC));
+  await bind(c, [captureProbe('A'), captureProbe('B'), captureProbe('C')]);
+  await c.service.setBaseline(c.admin, c.executor.id, 'A', textA);
+  await c.service.setBaseline(c.admin, c.executor.id, 'B', textB);
+  await c.service.setBaseline(c.admin, c.executor.id, 'C', textC);
+  const held = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(held.outcome, 'effective');
+  const open = (await bedHolds(c)).filter(detail => detail.job === held.job && detail.state === 'open');
+  assert.equal(open.length, 1);
+  return held;
+}
+
+test('an open hold compares the probe intersection and names a changed set instead of a missing probe', async t => {
+  const clean = echo;
+  // Overlap A,B equal, added D matches its baseline, dropped C is named, and the hold clears.
+  {
+    const queue: Array<ReturnType<typeof echo>> = [];
+    const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
+    t.after(() => c.close());
+    const held = await leaveOpenHold(c, queue);
+    const openBefore = JSON.stringify((await bedHolds(c)).find(detail => detail.job === held.job && detail.state === 'open'));
+    await bind(c, [captureProbe('A'), captureProbe('B'), captureProbe('D')]);
+    await c.service.setBaseline(c.admin, c.executor.id, 'D', textD);
+    await rotate(c, 'synthetic verified bytes after probe change');
+    queue.push(clean(textA), clean(textB), clean(textD), clean(textA), clean(textB), clean(textD));
+    const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
+    assert.equal(next.outcome, 'effective', JSON.stringify(next));
+    const rows = await bedHolds(c);
+    assert.equal(JSON.stringify(rows.find(detail => detail.job === held.job && detail.state === 'open')), openBefore);
+    const cleared = rows.find(detail => detail.job === next.job && detail.state === 'clear');
+    assert.ok(cleared);
+    assert.deepEqual(cleared.ignored_probes, ['C']);
+    assert.match(String(cleared.note), /占用时的探针 C 现在不在执行器定义里，没有比较/);
+  }
+
+  // Overlap A differs: unrestored, with the line diff, and the dropped probe is named.
+  {
+    const queue: Array<ReturnType<typeof echo>> = [];
+    const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
+    t.after(() => c.close());
+    await leaveOpenHold(c, queue);
+    await bind(c, [captureProbe('A'), captureProbe('B'), captureProbe('D')]);
+    await c.service.setBaseline(c.admin, c.executor.id, 'D', textD);
+    await rotate(c, 'synthetic verified bytes with a dirty overlap');
+    queue.push(echo(dirtyA), echo(textB), echo(textD));
+    const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
+    assert.equal(next.outcome, 'not_dispatched');
+    assert.match(next.missing_fact ?? '', /该床尚未恢复/);
+    assert.match(next.missing_fact ?? '', /来源探针 A/);
+    assert.match(next.missing_fact ?? '', /第 1 行改变/);
+    assert.match(next.missing_fact ?? '', /占用时的探针 C 现在不在执行器定义里，没有比较/);
+    assert.equal((await bedHolds(c)).some(detail => detail.state === 'clear'), false);
+  }
+
+  // Added probe D has no baseline: name D and the baseline record command.
+  {
+    const queue: Array<ReturnType<typeof echo>> = [];
+    const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
+    t.after(() => c.close());
+    await leaveOpenHold(c, queue);
+    await bind(c, [captureProbe('A'), captureProbe('B'), captureProbe('D')]);
+    await rotate(c, 'synthetic verified bytes without a new baseline');
+    queue.push(echo(textA), echo(textB), echo(textD));
+    const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
+    assert.equal(next.outcome, 'not_dispatched');
+    assert.match(next.missing_fact ?? '', /无法比较床面占用：探针 D/);
+    assert.match(next.next_action ?? '', new RegExp(`bed baseline record ${c.executor.id} --probe D`));
+    assert.doesNotMatch(next.missing_fact ?? '', /探针缺失/);
+    assert.doesNotMatch(next.next_action ?? '', /bed hold clear/);
+  }
+
+  // Empty intersection keeps the hold and names both probe sets plus the clear command.
+  {
+    const queue: Array<ReturnType<typeof echo>> = [];
+    const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
+    t.after(() => c.close());
+    const held = await leaveOpenHold(c, queue);
+    await bind(c, [captureProbe('D')]);
+    await c.service.setBaseline(c.admin, c.executor.id, 'D', textD);
+    await rotate(c, 'synthetic verified bytes with a disjoint probe set');
+    queue.push(echo(textD));
+    const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
+    assert.equal(next.outcome, 'not_dispatched');
+    assert.match(next.missing_fact ?? '', new RegExp(`上一次派发（${held.job.slice(0, 12)}）留下的床面占用未结清`));
+    assert.match(next.missing_fact ?? '', /占用时 A、B、C；现在 D/);
+    assert.match(next.missing_fact ?? '', /占用时的探针 A、B、C 现在不在执行器定义里，没有比较/);
+    assert.match(next.next_action ?? '', new RegExp(`circle-hub bed hold clear ${c.executor.id} --reason <理由>`));
+    assert.doesNotMatch(next.missing_fact ?? '', /探针缺失/);
+    assert.doesNotMatch(next.next_action ?? '', /重读/);
+    assert.equal((await bedHolds(c)).some(detail => detail.state === 'clear'), false);
+  }
+});
+
+test('an open hold whose probe is now empty stays unrestored until an administrator accepts the empty baseline', async t => {
+  const queue: Array<ReturnType<typeof echo>> = [];
+  const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
+  t.after(() => c.close());
+  await leaveOpenHold(c, queue);
+  await c.service.setBaseline(c.admin, c.executor.id, 'A', '', '设备重启后配置已不存在');
+  await rotate(c, 'synthetic verified bytes after the device restarted');
+  const empty = { output: 'show interfaces\nDEVICE#' };
+  queue.push(empty, echo(textB), echo(textC));
+  const blocked = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(blocked.outcome, 'not_dispatched');
+  assert.match(blocked.missing_fact ?? '', /该床尚未恢复/);
+  assert.match(blocked.missing_fact ?? '', /来源探针 A/);
+  assert.match(blocked.missing_fact ?? '', /第 1 行改变/);
+  assert.match(blocked.next_action ?? '', /按 synthetic-cleanup-A 处理后重开/);
+  assert.match(blocked.next_action ?? '', /确认当前状态是干净的（例如设备已重启过、占用时的配置已不存在）才用/);
+  assert.match(blocked.next_action ?? '', new RegExp(`circle-hub bed hold clear ${c.executor.id} --reason <理由>`));
+  await c.service.clearBedHold(c.admin, c.executor.id, '设备已重启，占用时的配置已不存在');
+  await rotate(c, 'synthetic verified bytes after the stale hold was cleared');
+  queue.push(empty, echo(textB), echo(textC), empty, echo(textB), echo(textC));
+  const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(next.outcome, 'effective', JSON.stringify(next));
+});
+
+test('a resume during the last post probe does not open a second session or an open hold', async t => {
+  const queue = [echo(textA), echo(textB), echo(textC), echo(textA), echo(textB), echo(textC)];
+  let job = '';
+  let posts = 0;
+  let late: Promise<{ outcome?: string }> | undefined;
+  const c = await setup({ ttl: 300, extraTools: ['show_bed'], alter: async (name, value) => {
+    if (name !== 'show_bed') return value;
+    const next = queue.shift() ?? value;
+    posts += 1;
+    if (posts === 6) {
+      const before = c.endpoint.calls.filter(call => call.method === 'initialize').length;
+      late = c.service.resume(c.admin, job);
+      await new Promise(resolve => setTimeout(resolve, 400));
+      const status = await late;
+      assert.equal(status.outcome, 'issued');
+      assert.equal(c.endpoint.calls.filter(call => call.method === 'initialize').length, before);
+    }
+    return next;
+  } });
+  t.after(() => c.close());
+  await bind(c, [captureProbe('A'), captureProbe('B'), captureProbe('C')]);
+  await c.service.setBaseline(c.admin, c.executor.id, 'A', textA);
+  await c.service.setBaseline(c.admin, c.executor.id, 'B', textB);
+  await c.service.setBaseline(c.admin, c.executor.id, 'C', textC);
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id, id => { job = id; });
+  assert.equal(state.outcome, 'effective', JSON.stringify(state));
+  assert.ok(late);
+  assert.equal(c.endpoint.calls.filter(call => call.method === 'initialize').length, 1);
+  assert.equal(c.calls.filter(name => name === 'close_slot').length, 1);
+  assert.equal((await bedHolds(c)).some(detail => detail.state === 'open'), false);
+  const bytes = await c.kit.objects.get(String(state.result).slice(4));
+  const report = JSON.parse(new TextDecoder().decode(bytes!)) as { bed_state: { recovery: string; differences: unknown[] } };
+  assert.equal(report.bed_state.recovery, 'restored');
+  assert.deepEqual(report.bed_state.differences, []);
+});
+
+test('a late finish after a restored complete does not read again or open a hold', async t => {
+  const queue = [echo(textA), echo(textB), echo(textC), echo(textA), echo(textB), echo(textC)];
+  const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
+  t.after(() => c.close());
+  await bind(c, [captureProbe('A'), captureProbe('B'), captureProbe('C')]);
+  await c.service.setBaseline(c.admin, c.executor.id, 'A', textA);
+  await c.service.setBaseline(c.admin, c.executor.id, 'B', textB);
+  await c.service.setBaseline(c.admin, c.executor.id, 'C', textC);
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(state.outcome, 'effective');
+  const before = await bedHolds(c);
+  const registered = (await c.registry.get(c.executor.id))!.definition;
+  const binding = await c.service.journal.binding(state.job);
+  let reads = 0;
+  const report = await (c.service as unknown as { finishBed: (binding: unknown, definition: unknown, client: { declaredRead: () => Promise<unknown> }, context: Record<string, unknown>) => Promise<{ recovery: string } | null> }).finishBed(binding, registered, { declaredRead: async () => { reads += 1; throw new Error('late probe'); } }, {});
+  assert.equal(reads, 0);
+  assert.equal(report?.recovery, 'restored');
+  assert.deepEqual(await bedHolds(c), before);
+});
+
+test('an administrator clear appends a record and the next gate lets the same bed through', async t => {
+  const queue: Array<ReturnType<typeof echo>> = [];
+  const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
+  t.after(() => c.close());
+  assert.deepEqual(await c.service.clearBedHold(c.admin, c.executor.id, '尚无占用'), { cleared: false });
+  await assert.rejects(() => c.service.clearBedHold(c.owner, c.executor.id, '合成运行者不能结清'), /只有启用中的管理员能操作执行器和作业/);
+  await assert.rejects(() => c.service.clearBedHold(c.admin, c.executor.id, '第一行\n第二行'), /结清理由必须是一行非空说明/);
+  const held = await leaveOpenHold(c, queue);
+  const openBefore = JSON.stringify((await bedHolds(c)).find(detail => detail.job === held.job && detail.state === 'open'));
+  const cleared = await c.service.clearBedHold(c.admin, c.executor.id, '  合成管理员确认床面干净  ');
+  assert.deepEqual(cleared, { cleared: true, job: held.job, bed: 'bed-a' });
+  const rows = await bedHolds(c);
+  assert.equal(JSON.stringify(rows.find(detail => detail.job === held.job && detail.state === 'open')), openBefore);
+  const appended = rows.filter(detail => detail.job === held.job && detail.state === 'clear');
+  assert.equal(appended.length, 1);
+  assert.equal(appended[0].method, 'admin');
+  assert.equal(appended[0].reason, '合成管理员确认床面干净');
+  assert.equal(appended[0].cleared_by, c.admin.id);
+  assert.equal(appended[0].held_job, held.job);
+  assert.deepEqual(await c.service.clearBedHold(c.admin, c.executor.id, '已经结清'), { cleared: false });
+  assert.equal((await bedHolds(c)).filter(detail => detail.state === 'clear').length, 1);
+  await rotate(c, 'synthetic verified bytes after the hold was cleared');
+  queue.push(echo(textA), echo(textB), echo(textC), echo(textA), echo(textB), echo(textC));
+  const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(next.outcome, 'effective', JSON.stringify(next));
 });

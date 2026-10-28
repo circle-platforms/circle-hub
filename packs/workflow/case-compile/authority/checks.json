@@ -1,0 +1,20 @@
+{
+  "schema": "checks@1",
+  "checks": [
+    {
+      "id": "authority",
+      "title": "authority",
+      "function": {
+        "module": "functions/check.ts"
+      },
+      "applies": "run",
+      "judges": "subject",
+      "tier": "blocking",
+      "basis": "Declared structure and exact source identities",
+      "subject": {
+        "module": "functions/check.ts",
+        "export": "subject"
+      }
+    }
+  ]
+}

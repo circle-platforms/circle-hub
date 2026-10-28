@@ -24,7 +24,11 @@ before(async () => {
   plm = await startStub((r) => {
     if (agile.tokens.has(r.headers.authorization ?? '')) {
       if (r.method === 'GET' && r.path === '/plmquery/product/all/') return reply(productFailure ? { code: 4321, msg: 'synthetic-failure', data: null } : { code: 1000, data: products });
-      if (r.method === 'GET' && r.path === '/plmquery/build/') return reply(r.query.product === '410' ? builds : []);
+      if (r.method === 'GET' && r.path === '/plmquery/build/') {
+        if (r.query.product === '410') return reply(builds);
+        if (r.query.product === '412') return reply({ code: 1000, data: [{ id: 812, name: 'Synthetic_12_Enveloped', synthetic_links: [910001] }], msg: 'success' });
+        return reply([]);
+      }
       if (r.method === 'POST' && r.path === '/plmquery/story/detail/') return reply({ code: 1000, data: [{ id: 21, status: { raw: 'synthetic' }, stage: ['synthetic'] }, { id: 22, status: null, stage: null }, { id: 23 }] });
       if (r.method === 'POST' && r.path === '/plmquery/bug/detail/') return reply({ code: 1000, data: [{ id: 910001, title: '合成缺陷', repair_notes: '<p>合成修复说明</p>' }] });
     }
@@ -151,4 +155,21 @@ test('an oversized non-PLM key gets generic connector advice only', async () => 
   assert.match(answer.reason, /904 字节.*900 字节上限/);
   assert.match(answer.reason, /缩短读取键/);
   assert.doesNotMatch(answer.reason, /产品编号|名字集合|plm:builds/);
+});
+
+test('connector reads enveloped build list, projects content and preserves full envelope in original artifact', async () => {
+  const answer = await kit.connectors.reader.read('plm:builds:412', { principal: kit.user, run: null, purpose: '合成信封核对' });
+  assert.ok(answer.ok, answer.ok ? '' : answer.reason);
+  const contentArtifact = answer.artifacts.find(a => a.name === 'content')!;
+  const contentData = JSON.parse(new TextDecoder().decode(await artifactBytes(kit, contentArtifact.artifact.body.sha256)));
+  assert.deepEqual(contentData.builds, [
+    { id: '812', name: 'Synthetic_12_Enveloped', fields: { id: 812, name: 'Synthetic_12_Enveloped' }, stories: ['910001'], scope_note: '需求范围取自构建记录' },
+  ]);
+  const originalArtifact = answer.artifacts.find(a => a.name === 'original')!;
+  const originalData = JSON.parse(new TextDecoder().decode(await artifactBytes(kit, originalArtifact.artifact.body.sha256)));
+  assert.deepEqual(originalData, {
+    code: 1000,
+    data: [{ id: 812, name: 'Synthetic_12_Enveloped', synthetic_links: [910001] }],
+    msg: 'success',
+  });
 });

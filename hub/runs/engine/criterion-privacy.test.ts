@@ -1,10 +1,11 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {startPostgres} from '../../testing/postgres.ts';
 import {criterionHarness} from './testing/criterion.ts';
 import {installReview,judgment,criterionRequests,revision} from './testing/criterion-review.ts';
 import {callTool} from '../../server/tools.ts';
-import {createDefaultRegistry} from '../../refs/api.ts';
+
 import type {ServerDeps} from '../../server/api.ts';
 async function get(h:Awaited<ReturnType<typeof criterionHarness>>,reference:string,principal=h.alice){const deps={records:h.kit,runs:h.service,knowledge:h.knowledge,parsers:createDefaultRegistry()} as unknown as ServerDeps;return callTool(deps,{principal,context:{traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:null,adminNote:()=>{}},state:{method:'tools/call',tool:'get_nodes',args:{},started:0,runId:null,callResult:null,acceptance:null,errorCode:null,notes:[]}},'get_nodes',{reference});}
 test('authors see safe decision summaries but get_nodes cannot resolve the reviewer private result',async t=>{

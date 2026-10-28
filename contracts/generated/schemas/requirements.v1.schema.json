@@ -7,7 +7,6 @@
       "const": "requirements@1"
     },
     "requirements": {
-      "minItems": 1,
       "type": "array",
       "items": {
         "type": "object",

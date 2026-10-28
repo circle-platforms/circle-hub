@@ -1,3 +1,5 @@
+import {commandTokens} from './generated/command-grammar.ts';
+import {readCommandPolicy,pathSegments} from './command-policy.ts';
 import {authorTexts} from './command-policy.ts';
 import {commandLines} from './generated/command-grammar.ts';
 import {selectedExpectedNodes} from './expected-nodes.ts';
@@ -55,7 +57,7 @@ export function citedCriterion(criteria: readonly FrozenItemCriterion[], referen
   return criteria.find((criterion) => criterion.declaration === reference) ?? null;
 }
 
-export interface PlanSubject { expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; item: string; location: string | null; data: unknown; contract: unknown; profile: unknown; manifest: unknown; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[] }
+export interface PlanSubject {projection_unknowns?:string[];recomposition_requested?:boolean;recomposition?:any;bed_services?:unknown;manifest_sha256?:string;criteria_review?:unknown; expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; item: string; location: string | null; data: unknown; contract: unknown; profile: unknown; manifest: unknown; leases: LeaseRow[]; now: string; case_texts: string[]; criteria: FrozenItemCriterion[] }
 export function planDataOf(record: Record<string, unknown>): unknown {
   const slots = isRecord(record.slots) ? record.slots : {};
   const plan = Array.isArray(slots.plan) ? slots.plan[0] : slots.plan;
@@ -70,7 +72,8 @@ export function planSubject(input: unknown): PlanSubject {
   const leases = isRecord(frozen.leases) ? frozen.leases : {};
   const item = isRecord(raw.item) ? raw.item : {};
   const id = typeof raw.item === 'string' ? raw.item : typeof item.id === 'string' ? item.id : '';
-  return { expected_nodes:selectedExpectedNodes(isRecord(item.fields)?item.fields.expected_nodes:undefined,planDataOf(raw)),command_catalog:Array.isArray(raw.catalog)&&typeof context.root==='string'?{root:context.root,complete:raw.catalog_complete===true,entries:raw.catalog,...(context.command_policy!==undefined?{policy:context.command_policy}:{}),...(typeof raw.catalog_missing==='string'?{missing:raw.catalog_missing}:{})}:undefined,command_identities:isRecord(item.fields)?item.fields.command_identities:undefined,case_texts: authoredCaseTexts(item.fields), item: id, location: typeof raw.location === 'string' ? raw.location : typeof item.location === 'string' ? item.location : null, data: planDataOf(raw), contract: frozen.contract, profile: frozen.profile, manifest: frozen.manifest, leases: Array.isArray(leases.entries) ? leases.entries as LeaseRow[] : [], now: typeof leases.now === 'string' ? leases.now : new Date(0).toISOString(), criteria: criteriaOf(context, id) };
+  const inventory=parseManifest(frozen.manifest),profile=isRecord(frozen.profile)?frozen.profile:{};
+  return {projection_unknowns:isRecord(item.fields)&&Array.isArray(item.fields.projection_unknowns)?item.fields.projection_unknowns as string[]:[],recomposition_requested:frozen.recomposition_requested===true||isRecord(planDataOf(raw))&&Object.hasOwn(planDataOf(raw) as object,'recomposition'),recomposition:frozen.recomposition,bed_services:inventory.ok?inventory.beds.find(bed=>bed.name===profile.bed)?.services:undefined,manifest_sha256:typeof frozen.manifest_sha256==='string'?frozen.manifest_sha256:undefined,criteria_review:frozen.criteria_review, expected_nodes:selectedExpectedNodes(isRecord(item.fields)?item.fields.expected_nodes:undefined,planDataOf(raw)),command_catalog:Array.isArray(raw.catalog)&&typeof context.root==='string'?{root:context.root,complete:raw.catalog_complete===true,entries:raw.catalog,...(context.command_policy!==undefined?{policy:context.command_policy}:{}),...(typeof raw.catalog_missing==='string'?{missing:raw.catalog_missing}:{})}:undefined,command_identities:isRecord(item.fields)?item.fields.command_identities:undefined,case_texts: authoredCaseTexts(item.fields), item: id, location: typeof raw.location === 'string' ? raw.location : typeof item.location === 'string' ? item.location : null, data: planDataOf(raw), contract: frozen.contract, profile: frozen.profile, manifest: frozen.manifest, leases: Array.isArray(leases.entries) ? leases.entries as LeaseRow[] : [], now: typeof leases.now === 'string' ? leases.now : new Date(0).toISOString(), criteria: criteriaOf(context, id) };
 }
 export function commandSubject(input:unknown):unknown{return planSubject(input);}
 export function quoteSubject(input: unknown): unknown {
@@ -84,6 +87,11 @@ export function quoteSubject(input: unknown): unknown {
     const criterion = citedCriterion(subject.criteria, v.quote.reference);
     return criterion === null || criterion.new !== v.quote.text ? [v.quote] : criterion.grounds.map((ground) => ({ reference: ground.reference, text: ground.quote }));
   });
+  if(read.slots.blocks.length){
+    const context=read.slots.block_context;
+    for(const list of [context?.preconditions,context?.causal_links,context?.responders])for(const row of Array.isArray(list)?list:[])if(isRecord(row.quote)&&typeof row.quote.reference==='string'&&typeof row.quote.text==='string')quotes.push({reference:row.quote.reference,text:row.quote.text});
+    for(const row of Array.isArray(subject.expected_nodes)?subject.expected_nodes:[])if(isRecord(row)&&row.declaration!==undefined&&typeof row.reference==='string')quotes.push({reference:row.reference+'/@assertion',text:JSON.stringify(row.declaration)});
+  }
   return { item: subject.item, quotes };
 }
 
@@ -96,14 +104,21 @@ export function workbookSubject(input: unknown): unknown {
   const groups = Array.isArray(context.groups) ? context.groups : []; const group = groups.find((v) => isRecord(v) && v.kind === 'case-compile');
   const frozen = isRecord(group) ? group : {}; const item = isRecord(raw.item) ? raw.item : {};
   const subject=planSubject(input),contract=parseRuntimeContract(subject.contract),manifest=parseManifest(subject.manifest),slots=readSlots(subject.data);const profile=contract.ok&&manifest.ok?parseProfile(subject.profile,contract.contract,manifest.beds):null;const catalog=contract.ok&&profile?.ok&&slots.ok?planCommands(contract.contract,profile.profile,slots.slots,subject.command_catalog).catalog:null;
-  return {...subject,fields:{...(isRecord(item.fields)?item.fields:{}),expected_nodes:subject.expected_nodes,command_catalog:catalog},workbook:frozen.workbook??null,generation:frozen.generation??null,manifest_sha256:frozen.manifest_sha256??null};
+  return {...subject,fields:{...(isRecord(item.fields)?item.fields:{}),bed_services:subject.bed_services,manifest_sha256:subject.manifest_sha256,criteria_review:subject.criteria_review,expected_nodes:subject.expected_nodes,command_catalog:catalog},workbook:frozen.workbook??null,generation:frozen.generation??null,manifest_sha256:frozen.manifest_sha256??null};
 }
 
 /** Only frozen contract/profile roles choose device CLI slots; no scanning prose or author identities. */
 export function selectCommandCatalog(input:unknown):unknown{
  const subject=planSubject(input),contract=parseRuntimeContract(subject.contract),manifest=parseManifest(subject.manifest),slots=readSlots(subject.data);
  const profile=contract.ok&&manifest.ok?parseProfile(subject.profile,contract.contract,manifest.beds):null;
- const lines=contract.ok&&profile?.ok&&slots.ok?deviceCommandLines(contract.contract,profile.profile,slots.slots).map(value=>value.line):[];
+ let lines=contract.ok&&profile?.ok&&slots.ok?deviceCommandLines(contract.contract,profile.profile,slots.slots).map(value=>value.line):[];
  const raw=isRecord(input)?input:{},context=isRecord(raw.context)?raw.context:{};
+ if(slots.ok&&slots.slots.steps.some(step=>step.restore_for!==undefined)){
+  const policy=readCommandPolicy(context.command_policy);
+  const targets=new Set(slots.slots.steps.flatMap(step=>step.restore_for!==undefined?[step.restore_for]:[]));
+  const restoreLines=contract.ok&&profile?.ok?deviceCommandLines(contract.contract,profile.profile,{...slots.slots,steps:slots.slots.steps.filter((_,index)=>targets.has(index+1))}).map(row=>row.line):[];
+  if(policy)for(const line of restoreLines){const tokens=commandTokens(line);if(!tokens)continue;for(const rule of policy.inverse_rules){const prefix=pathSegments(rule.source_prefix)?.slice(1),inverse=pathSegments(rule.inverse_prefix)?.slice(1);if(prefix&&inverse&&prefix.every((word,index)=>tokens[index]?.value===decodeURIComponent(word)&&!tokens[index].quoted))lines.push([...inverse.map(decodeURIComponent),...tokens.slice(prefix.length).map(token=>token.raw)].join(' '));}}
+ }
+
  return {base:'/commands',lines:[...new Set([...lines,...subject.case_texts.flatMap(text=>commandLines(text).map(line=>line.text))])]};
 }

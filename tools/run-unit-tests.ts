@@ -5,7 +5,16 @@ import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 export const UNIT_PATTERNS=['contracts/**/*.test.ts','hub/**/*.test.ts','packs/**/*.test.ts','scripts/**/*.test.ts','tools/gen-contracts*.test.ts','tools/run-unit-tests.test.ts'];
-const PARSER_BOUNDS=new Set(['hub/refs/adversarial.test.ts','hub/refs/parsers/html.test.ts']);
+const PARSER_BOUNDS=new Set([
+ 'hub/refs/adversarial.test.ts',
+ 'hub/refs/parsers/html.test.ts',
+ 'hub/refs/skill-lazy-locate.test.ts',
+ 'packs/skill/html-format/functions/html.test.ts',
+ 'packs/skill/mindmap-format/functions/kityminder.test.ts',
+ 'packs/skill/workbook-format/functions/xlsx.test.ts',
+ 'packs/skill/xml-format/functions/resource.test.ts',
+ 'packs/skill/xml-format/functions/xml.test.ts',
+]);
 export function unitFiles(group='all'):string[]{
  const all=[...new Set(globSync(UNIT_PATTERNS,{cwd:ROOT}))].sort();
  if(group==='all')return all;

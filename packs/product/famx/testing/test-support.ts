@@ -2,7 +2,8 @@
 // a seeded generator, hostile values and the totality check every default export must pass.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { htmlParser, jsonParser, markdownParser, xmlParser, type HtmlModel, type MarkdownModel, type XmlModel } from '../../../../hub/refs/api.ts';
+import { jsonParser, markdownParser, type MarkdownModel } from '../../../../hub/refs/api.ts';
+import { xmlParser, type XmlModel, htmlParser, type HtmlModel } from '../../../../hub/testing/parsers.ts';
 
 /** A fixture of the product pack's tests (testing/fixtures: product names may appear only inside packs). */
 export function fixtureBytes(name: string): Uint8Array {

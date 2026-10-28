@@ -1,0 +1,136 @@
+{
+  "schema": "recompose-record@1",
+  "case": {
+    "id": "orbit-case-0003",
+    "source_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0",
+    "source_path": "tests/fixtures/mindmaps/review-150.km.json",
+    "node": "n/<合成节点id>"
+  },
+  "contract": {
+    "intent": {
+      "text": "widget health interval pool1 5",
+      "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text",
+      "verbatim": true
+    },
+    "method": {
+      "kind": "declared",
+      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+      "sources": [
+        "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+      ],
+      "basis": "作者原文"
+    },
+    "expectation": {
+      "text": "show health 显示 pool1 的探测间隔为 5 秒",
+      "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text",
+      "verbatim": true
+    }
+  },
+  "expectation_slots": [
+    {
+      "slot": "e1",
+      "knowledge_location": "has_verification_knowledge",
+      "evidence": [
+        "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+      ],
+      "proposal": null
+    }
+  ],
+  "coverage": {
+    "author_atoms": [
+      "a1",
+      "a2"
+    ],
+    "mapped": {
+      "a1": [
+        "e1"
+      ]
+    },
+    "unmapped": [
+      "a2"
+    ]
+  },
+  "atoms": [
+    {
+      "id": "a1",
+      "text": "把 pool1 的分配方式设为作者写的取值",
+      "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+    },
+    {
+      "id": "a2",
+      "text": "用 show health 观察",
+      "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+    }
+  ],
+  "sources": {
+    "governing": [
+      {
+        "kind": "spec",
+        "ref": "src:17c8cdcf284a42a4a946c3736f9447ef1d049ee3ce43fea940ff7138ebe70aba",
+        "path": "tests/fixtures/manual-store/files/spec/环之间的负载分配.md",
+        "version": "1.0",
+        "authority": "product-declared"
+      },
+      {
+        "kind": "spec",
+        "ref": "src:0177e033f5f287ad9344813b3d5b561e5ea4b0ad115d30a9095fbc6c57e3fb5f",
+        "path": "twin/conflicting-spec.json",
+        "version": "1.1",
+        "authority": "product-declared"
+      }
+    ],
+    "candidates": [],
+    "states": [
+      {
+        "atom": "a1",
+        "state": "conflict",
+        "adjudicated_by": null,
+        "reason": "1.0 声明三个取值，1.1 声明四个取值，互斥且都有签发权",
+        "exit": {
+          "action": "裁决适用版本后重开",
+          "object": "取值闭集",
+          "owner": "政策规定的裁决者",
+          "due": "重新提交之前"
+        }
+      },
+      {
+        "atom": "a2",
+        "state": "underdetermined",
+        "adjudicated_by": null,
+        "reason": "a1 未定，观察判定点无法确定",
+        "exit": {
+          "action": "等 a1 裁决",
+          "object": "a2",
+          "owner": "政策规定的裁决者",
+          "due": "重新提交之前"
+        }
+      }
+    ]
+  },
+  "ledgers": {
+    "original": [
+      {
+        "atom": "a1",
+        "text": "把 pool1 的分配方式设为作者写的取值",
+        "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+      },
+      {
+        "atom": "a2",
+        "text": "用 show health 观察",
+        "quote_ref": "src:41e4ac6af6cfd35ad14504d9e9415a127e02e8b3172d605d9739c6e41e754ba0#/node/text"
+      }
+    ],
+    "adapted": [],
+    "concretizations": [],
+    "rebindings": []
+  },
+  "status": "refused",
+  "unknowns": [
+    {
+      "missing": "两份都有签发权的规范来源对同一取值闭集给出互斥声明，本阶段无权择一",
+      "next_action": "由政策规定的裁决者裁定哪一份适用于本版本，裁定后重开本用例",
+      "audience": "产品包作者与集成者（按既有治理出口）",
+      "due": "重新提交之前"
+    }
+  ]
+}

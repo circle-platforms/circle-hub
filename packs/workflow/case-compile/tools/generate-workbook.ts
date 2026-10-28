@@ -1,3 +1,4 @@
+import {blockReviewSources} from '../functions/block-review-identity.ts';
 import {selectedExpectedNodes} from '../functions/expected-nodes.ts';
 // Offline recipe verification and artifact generation. Every source is read from the explicitly named local file.
 import { realpathSync } from 'node:fs';
@@ -57,7 +58,7 @@ export function satisfiedRecipe(input: { run: unknown; result: unknown; submissi
   if (typeof fields.autoid !== 'string' || typeof fields.title !== 'string' || !Array.isArray(fields.steps) || fields.steps.some((v) => !isRecord(v) || typeof v.text !== 'string') || fields.priority !== null && typeof fields.priority !== 'string') throw new Error('条目字段没有原始文字 autoid、标题、优先级或步骤');
   if (typeof run.build !== 'string' || !run.build) throw new Error('计划运行没有锁定构建');
   const commandClaims=itemResult.requirements.filter((value:unknown)=>isRecord(value)&&value.requirement==='commands_known').flatMap((value:unknown)=>isRecord(value)&&Array.isArray(value.claims)?value.claims:[]);const command=commandClaims.find((value:unknown)=>isRecord(value)&&isRecord(value.statement)&&value.statement.verdict==='support'&&isRecord(value.statement.data)&&isRecord(value.statement.data.command_catalog));const parsedCommand=isRecord(command)&&isRecord(command.statement)&&isRecord(command.statement.data)?command.statement.data.command_catalog:undefined;if(!isRecord(parsedCommand)||parsedCommand.root!==run.root)throw new Error('缺 commands_known 的锁定目录解析回执；重新核验计划后导出，不以用例缺声明阻止计划解析');
-  return { slots: plan.slots, fields: {expected_nodes:selectedExpectedNodes(fields.expected_nodes,plan.slots), command_catalog:parsedCommand,command_identities:fields.command_identities,autoid: fields.autoid, title: fields.title, priority: fields.priority, steps: fields.steps as Array<{ text: string }> }, contract: contract.contract, profile: profile.profile, plan_run: run.run, build: run.build, generator: GENERATOR };
+  return { slots: plan.slots, fields: {source_atoms:fields.source_atoms,bed_services:inventory.beds.find(bed=>bed.name===profile.profile.bed)?.services,manifest_sha256:sha256(input.inventory),criteria_review:(Array.isArray(run.groups)?run.groups:[]).find((value:unknown)=>isRecord(value)&&value.kind==='case-compile')?.criteria_review??blockReviewSources(run.sources),expected_nodes:selectedExpectedNodes(fields.expected_nodes,plan.slots), command_catalog:parsedCommand,command_identities:fields.command_identities,autoid: fields.autoid, title: fields.title, priority: fields.priority, steps: fields.steps as Array<{ text: string }> }, contract: contract.contract, profile: profile.profile, plan_run: run.run, build: run.build, generator: GENERATOR };
 }
 export async function main(argv: string[]): Promise<number> {
   try {

@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PackSample } from '../../../../contracts/src/pack.ts';
 import { claimSubject } from '../functions/subjects.ts';
+import { createReviewScope, REVIEW_SCOPE_GROUP, reviewScopeSubject } from '../functions/review-scope.ts';
 
 const TARGET = 'a'.repeat(64);
 const DRAFT = 'b'.repeat(64);
@@ -84,7 +85,14 @@ export function samples(): Entry[] {
   const f1 = draftFinding(0, 0, 'coverage_gap', 'major', 'c1');
   const f2 = draftFinding(0, 1, 'literal_issue', 'minor', 'c1');
   const f3 = draftFinding(1, 0, 'negative_gap', 'critical', 'c2');
+  const scope=createReviewScope({source:TARGET,document:'sample',parameters:{case_rule:'marked',case_priority:2,group_priority:1,precondition_priority:3},expected:[{item:'sample:c1',location:loc('c1')},{item:'sample:c2',location:loc('c2')}],selected:['sample:c1']});
+  const scopeSubject=reviewScopeSubject({applies:'run',items:[],context:{groups:[{kind:REVIEW_SCOPE_GROUP,data:{review_scope:scope}}]}});
   return [
+    sample('positive','scope_frozen','review_scope','复核保留初评的整份识别范围',scopeSubject,[{verdict:'support',tier:'blocking'}],{sources:{[`src:${TARGET}/kityminder@1/i/0`]:'合成根'}}),
+    sample('negative','scope_conflict','review_scope','同次复核有两份识别范围不能任选一份',reviewScopeSubject({applies:'run',items:[],context:{groups:[{kind:REVIEW_SCOPE_GROUP,data:{review_scope:scope}},{kind:REVIEW_SCOPE_GROUP,data:{review_scope:scope}}]}}),[{verdict:'refute',code:'case-review-verify.scope_conflict',tier:'blocking'}]),
+    sample('negative','verdict_severity_missing','verdict','新增发现缺严重程度时不能核最终等级',runSubject([{node:'c1',findings:[f1],claims:[disposition('verified',draftRef(0,0),'c1'),newFinding('edge_case_gap','c1',{rank:undefined})]}],[final('PARTIAL','P3')]),[{verdict:'refute',code:'case-review-verify.severity_missing',item:'sample:c1',tier:'blocking'}]),
+    sample('negative','verdict_pass_partial','verdict','PASS 却有一条部分正确、需要修正的初评发现',runSubject([{node:'c1',findings:[f1],claims:[disposition('partial',draftRef(0,0),'c1')]}],[final('PASS','P3')]),[{verdict:'refute',code:'case-review-verify.pass_with_partial',item:'sample:c1',tier:'blocking'}]),
+    sample('negative','verdict_level_severity_mismatch','verdict','新增 critical 发现却把最终等级写成 major 区间',runSubject([{node:'c1',findings:[f1],claims:[disposition('verified',draftRef(0,0),'c1'),newFinding('edge_case_gap','c1',{rank:'critical'})]}],[final('PARTIAL','P3')]),[{verdict:'refute',code:'case-review-verify.level_severity_mismatch',item:'sample:c1',tier:'blocking'}]),
     sample('positive', 'dispositions_complete', 'dispositions', '两条初评发现各一条处置，另有一条新发现，每条有位置和引文', itemSubject('c1', [f1, f2], [disposition('verified', draftRef(0, 0), 'c1'), disposition('partial', draftRef(0, 1), 'c1', { rank: 'minor' }), newFinding('edge_case_gap', 'c1')]), [
       { verdict: 'support', item: 'sample:c1', tier: 'blocking' },
     ]),
@@ -151,7 +159,7 @@ export function samples(): Entry[] {
       'verdict_pass_inconsistent',
       'verdict',
       'PASS 却推翻了一条发现、列出了新发现、改了等级',
-      runSubject([{ node: 'c1', findings: [f1], claims: [disposition('refuted', draftRef(0, 0), 'c1'), newFinding('coverage_gap', 'c1')] }], [final('PASS', 'P4')]),
+      runSubject([{ node: 'c1', findings: [f1], claims: [disposition('refuted', draftRef(0, 0), 'c1'), newFinding('coverage_gap', 'c1', { rank: 'major' })] }], [final('PASS', 'P4')]),
       [
         { verdict: 'refute', code: 'case-review-verify.pass_with_refuted', item: 'sample:c1', tier: 'blocking' },
         { verdict: 'refute', code: 'case-review-verify.pass_with_new_finding', item: 'sample:c1' },

@@ -4,6 +4,7 @@ import {AcceptedCriterionRef,CriterionNotice} from './criterion.ts';
 // Run (W06), item projection (W01), source binding (P02) and the summaries start_run and list_task_packs return.
 import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
+import { SkillLocks } from './skills.ts';
 import {
   AcceptedProducerSchema,
   AggregationSchema,
@@ -135,6 +136,7 @@ export const InputDefault = z.strictObject({
 export type InputDefault = z.infer<typeof InputDefault>;
 
 export const RunSummary = z.strictObject({
+  skills: SkillLocks.optional().describe('Skill package digests frozen at start; absent only on historical runs'),
   feeding_offset:FeedingOffsetSchema.optional().describe('Append-only feeding horizon frozen with the root; missing on a historical run remains unknown'),
   feeding_objects:z.array(Sha256).optional().describe('Objects actually consumed by this run'),
   criterion_changes:z.array(CriterionNotice).optional(),
@@ -182,6 +184,7 @@ const PersistedRequirementSummary=RequirementSummary.partial({rules:true,run_int
   if((row.rules===undefined)!==(row.run_interpreters===undefined))ctx.addIssue({code:'custom',message:'ruling fields are either both present or both absent on a historical row'});
 });
 export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
+  product_pack_digest:Sha256.optional().describe('Product package digest frozen at admission; absent on historical records'),
   command_policy:CommandPolicy.optional(),
   accepted_criteria:z.array(AcceptedCriterionRef).optional(),
   criterion_requests:z.array(Sha256).optional(),

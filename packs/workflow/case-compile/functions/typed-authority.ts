@@ -1,10 +1,14 @@
+import {blockMeta,blockPointer} from './blocks.ts';
+import {blockGraphGaps} from './block-checks.ts';
+import {blockRuntimeGaps,assertionTarget,assertionCells} from './block-runtime.ts';
+import {prepareRestores} from './block-restore.ts';
 import {commandObligations,definitionKey} from './command-obligations.ts';
 import {within} from './command-policy.ts';
 import {planCommands} from './plan-commands.ts';
 // One authority boundary is shared by checks, generation, workbook verification and dispatch.
 import { runtimeMethod, type RuntimeContract } from './runtime-contract.ts';
 import type { RuntimeProfile } from './profile.ts';
-import type { PlanSlots } from './slots.ts';
+import {readSlots, type PlanSlots} from './slots.ts';
 import {bindArguments} from './binding.ts';
 import {identityOf,identityKey,valueProblem,type Authority,type ValueType} from './typed-contract.ts';
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
@@ -14,9 +18,10 @@ export interface AuthorityGap { document: string; pointer: string; message: stri
 export function replacedIdentity(identity:CommandIdentity,slots:PlanSlots):CommandIdentity {
  const out=structuredClone(identity);for(const p of out.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const original=p.parsed.value.value;const replacement=slots.replacements.find(r=>addressKey(r.case)===addressKey(original));if(replacement){p.parsed.value.value=replacement.bed;p.raw=replacement.bed;}}return out;
 }
-export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimeProfile, slots: PlanSlots, known?:unknown,catalog?:unknown,caseTexts:readonly string[]=[]): AuthorityGap[] {
+export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimeProfile, slots: PlanSlots, known?:unknown,catalog?:unknown,caseTexts:readonly string[]=[],manifestSha?:string,services?:unknown): AuthorityGap[] {
+ const blockGaps=blockRuntimeGaps(contract,profile,slots,catalog);if(blockGaps.length)return blockGaps;
  const gaps:AuthorityGap[]=[];const note=(pointer:string,message:string,verdict:Verdict='unknown')=>gaps.push({document:'contract',pointer,message,verdict});
- const resolution=planCommands(contract,profile,slots,catalog);gaps.push(...resolution.problems);const knownIds=Array.isArray(known)?known.map(identityOf):known===undefined?[]:null;
+ const resolution=planCommands(contract,profile,slots,catalog);gaps.push(...resolution.problems);gaps.push(...prepareRestores(contract,profile,slots,catalog,resolution.byLine,manifestSha));gaps.push(...blockGraphGaps(contract,profile,slots,catalog,resolution.byLine,services));const knownIds=Array.isArray(known)?known.map(identityOf):known===undefined?[]:null;
  const keys=new Set((knownIds??[]).filter((i):i is CommandIdentity=>i!==null).map(i=>definitionKey(replacedIdentity(i,slots))));
  const usage=new Map<string,{budget:number;count:number}>();
  const effectUse=(a:Authority,at:string)=>{for(const e of a.effects){const row=usage.get(e.id)??{budget:e.budget,count:0};row.count++;row.budget=Math.min(row.budget,e.budget);usage.set(e.id,row);if(row.count>row.budget)note(at,`效果 ${e.id} 的计划调用 ${row.count} 次超过声明预算 ${row.budget} 次`,'refute');}};
@@ -41,10 +46,13 @@ export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimePr
    }
   }
  }
- const assertion=profile.allowed.find(call=>Object.values(call.parameters).includes('literal_assertion'));
- if(assertion){const entry=runtimeMethod(contract,assertion.object,assertion.method),a=entry?.authority;const name=Object.keys(assertion.parameters).find(n=>assertion.parameters[n]==='literal_assertion');if(!a||!name||!a.parameters[name])note(entry?.sourcePointer??'/entries','字面断言方法缺 runtime-contract@2 的类型、角色和效果授权');else for(const [i,expect]of slots.expects.entries()){effectUse(a,`/expects/${i}`);if(a.parameters[name].role!=='literal_assertion')note(`/expects/${i}`,'断言角色不等于原合约声明','refute');const problem=valueProblem(a.parameters[name].type,expect.text);if(problem)note(`/expects/${i}/text`,problem,'refute');}}
+ for(const [i,expect]of slots.expects.entries()){
+  const target=assertionTarget(contract,profile,expect),entry=target?.entry,a=entry?.authority,name=target?Object.keys(target.call.parameters).find(name=>target.call.parameters[name]==='literal_assertion'):null;
+  if(!a||!name||!a.parameters[name])note(entry?.sourcePointer??'/entries','断言方法缺类型、角色或效果依据');
+  else{effectUse(a,`/expects/${i}`);if(a.parameters[name].role!=='literal_assertion')note(`/expects/${i}`,'断言角色不等于原合约声明','refute');if(!expect.register){const problem=valueProblem(a.parameters[name].type,assertionCells(expect,target!).g);if(problem)note(`/expects/${i}/text`,problem,'refute');}if(expect.count!==undefined&&target){const countName=Object.keys(target.call.parameters).find(name=>target.call.parameters[name]==='checkpoint_count');if(countName&&a.parameters[countName]){const problem=valueProblem(a.parameters[countName].type,expect.count);if(problem)note(`/expects/${i}/count`,problem,'refute');}}}
+ }
  gaps.push(...commandObligations((awaitOperations(contract,profile,slots)),slots,catalog,caseTexts));
- return gaps;
+ return gaps.map(gap=>({...gap,pointer:blockPointer(slots,gap.pointer)}));
 }
 function awaitOperations(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots){return slots.steps.flatMap((step,index)=>{const entry=runtimeMethod(contract,step.object,step.method),allowed=profile.allowed.find(call=>call.object===step.object&&call.method===step.method);if(!entry||!allowed)return [];return bindArguments(entry,step,`/steps/${index}`).values.filter(value=>allowed.parameters[value.name]==='device_cli'&&typeof value.value==='string').map(value=>({line:String(value.value),pointer:value.pointer,object:step.object,cleanup:step.cleanup===true}));});}
 function commandRole(a:Authority,i:CommandIdentity,position:number,native?:string):string|null {
@@ -54,9 +62,15 @@ function commandRole(a:Authority,i:CommandIdentity,position:number,native?:strin
 }
 export interface AddressUse {value:string|number;kind:string;bed_member:boolean|undefined;pointer:string}
 export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,catalog?:unknown):AddressUse[]{
+ // Flat callers keep their existing boundary; a block carrier must be lowered even when its steps is empty.
+ if(slots.blocks?.length){
+  const parsed=readSlots(slots);
+  if(!parsed.ok)throw new Error('类型化地址检查需要完整结构计划：'+parsed.problems.map(problem=>problem.pointer+' '+problem.message).join('；'));
+  slots=parsed.slots;
+ }
  const resolved=planCommands(contract,profile,slots,catalog);
  const uses:AddressUse[]=[];const put=(type:ValueType,value:string|number,a:Authority,role:string,pointer:string)=>{const kind=type.address_kind??type.declaration.catalog_type;if(kind==='ipv4'||kind==='ipv6'||kind==='mask'||kind==='ipv4_prefix'||kind==='ipv6_prefix')uses.push({value,kind,bed_member:a.roles[role]?.bed_member,pointer});};
- for(const [index,step]of slots.steps.entries()){const entry=runtimeMethod(contract,step.object,step.method),a=entry?.authority;if(!entry||!a)continue;for(const v of bindArguments(entry,step,`/data/steps/${index}`).values){const param=a.parameters[v.name];if(!param)continue;put(param.type,v.value,a,param.role,v.pointer);if(param.role==='device_cli')for(const raw of [resolved.byLine.get(String(v.value))]){const i=identityOf(raw);if(!i)continue;for(const p of i.parameters)if(p.parsed.kind==='address'){const role=commandRole(a,i,p.position,p.role?.name);uses.push({value:p.parsed.value.value,kind:p.parsed.value.kind,bed_member:role?a.roles[role]?.bed_member:undefined,pointer:v.pointer+'/command_parameters/'+p.position});}}}}
+ for(const [index,step]of slots.steps.entries()){const entry=runtimeMethod(contract,step.object,step.method),a=entry?.authority;if(!entry||!a)continue;for(const v of bindArguments(entry,step,blockMeta(slots)&&step.origin?'/data'+step.origin:`/data/steps/${index}`).values){const param=a.parameters[v.name];if(!param)continue;put(param.type,v.value,a,param.role,v.pointer);if(param.role==='device_cli')for(const raw of [resolved.byLine.get(String(v.value))]){const i=identityOf(raw);if(!i)continue;for(const p of i.parameters)if(p.parsed.kind==='address'){const role=commandRole(a,i,p.position,p.role?.name);uses.push({value:p.parsed.value.value,kind:p.parsed.value.kind,bed_member:role?a.roles[role]?.bed_member:undefined,pointer:v.pointer+'/command_parameters/'+p.position});}}}}
  const assertion=profile.allowed.find(call=>Object.values(call.parameters).includes('literal_assertion'));if(assertion){const a=runtimeMethod(contract,assertion.object,assertion.method)?.authority,name=Object.keys(assertion.parameters).find(n=>assertion.parameters[n]==='literal_assertion');if(a&&name&&a.parameters[name])slots.expects.forEach((e,i)=>put(a.parameters[name].type,e.text,a,a.parameters[name].role,`/data/expects/${i}/text`));}
  return uses;
 }

@@ -4,6 +4,8 @@
 // engine on them; the packs package writes packs in these shapes. Product dialect is data and pack functions, never core code.
 // Register every record or pack-file schema in `schemas`; contracts/src/index.ts merges them into SCHEMA_REGISTRY.
 import {FeedingOffsetSchema} from './feeding.ts';
+import {SkillDependencies,SkillLocks} from './skills.ts';
+export {SkillDependency,SkillLock,SkillDependencies,SkillLocks} from './skills.ts';
 import { WorkflowOutputs } from './contributions.ts';
 import { z } from 'zod';
 import {FrozenCriterion} from './criterion.ts';
@@ -68,6 +70,19 @@ export const PackPath = z.string().superRefine((p, ctx) => {
 });
 export type PackPath = z.infer<typeof PackPath>;
 
+/** Installed capabilities are dependencies, never per-user assignments. */
+
+export const SkillParser = z.strictObject({
+  migration_test:z.string().min(1).max(300).optional(),
+  parser: Versioned.refine(value=>{const version=value.slice(value.lastIndexOf('@')+1);return Number.isSafeInteger(Number(version))&&String(Number(version))===version;},'parser version has one canonical integer spelling'),
+  media_types: z.array(z.string().min(1).max(200)).min(1).max(32),
+  limits: z.strictObject({ maxBytes:z.number().int().positive().max(64*1024*1024), maxDepth:z.number().int().positive().max(10000), maxNodes:z.number().int().positive().max(1000000), maxAttributes:z.number().int().positive().optional(), maxSelectorChars:z.number().int().positive().optional() }),
+  function: PackFunctionRef,
+  locate: PackFunctionRef.optional(),
+});
+export const SkillDeclaration = z.strictObject({ schema:z.literal('skill@1'), parsers:z.array(SkillParser).max(64) }).refine(value=>new Set(value.parsers.map(p=>p.parser)).size===value.parsers.length,'parser versions are unique in a skill');
+export type SkillDeclaration = z.infer<typeof SkillDeclaration>;
+
 // ---------------------------------------------------------------- pack.json
 
 export const PackFileEntry = z.strictObject({
@@ -82,6 +97,7 @@ export const REQUIRED_FILES = {
   product: ['product.json'],
   workflow: ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md'],
   system: ['system.json'],
+  skill: ['skill.json', 'SKILL.md'],
 } as const satisfies Record<PackKind, readonly string[]>;
 
 /**
@@ -96,6 +112,7 @@ export const PackManifest = z
     kind: PackKindSchema,
     title: z.string().min(1),
     description: z.string().min(1),
+    dependencies: SkillDependencies.optional(),
     files: z.array(PackFileEntry).describe('every file of the pack except pack.json, sorted by path'),
   })
   .superRefine((m, ctx) => {
@@ -234,7 +251,7 @@ export type AllowedEffect=z.infer<typeof AllowedEffect>;
 export const RequirementsFile = z
   .strictObject({
     schema: z.literal('requirements@1'),
-    requirements: z.array(RequirementTemplate).min(1),
+    requirements: z.array(RequirementTemplate),
     effects:z.array(AllowedEffect).max(100).optional(),
   })
   .superRefine((f, ctx) => {
@@ -299,6 +316,10 @@ export const LeaseContextRow = z.strictObject({
 export const LeaseRegistrationRow = z.strictObject({prefix:z.string().min(1),mine:z.boolean(),
   owner:z.strictObject({user:z.string().min(1),name:z.string().min(1)}).optional()});
 export const RunContext = z.strictObject({
+  run: z.string().min(1).optional().describe('Actual Hub run identity; not supplied by a model'),
+  predecessor: z.string().min(1).nullable().optional().describe('Actual Hub predecessor; null for a new lineage, absent only in historical contexts'),
+  product_pack_digest: Sha256.optional().describe('Frozen product package identity; absent on historical or productless runs'),
+  skills: SkillLocks.optional(),
   command_policy:CommandPolicy.optional(),
   feeding_offset:FeedingOffsetSchema.optional(),
   accepted_criteria:z.array(FrozenCriterion).optional(),
@@ -553,6 +574,7 @@ export type WorkflowParameter = z.infer<typeof WorkflowParameter>;
 export const WorkflowFile = z
   .strictObject({
     schema: z.literal('workflow@1'),
+    incremental_submissions:z.boolean().optional().describe('Opt-in: preserving all previous material while first filling empty slots does not charge unknown-only requirements as repairs; edits, removals and actual violations keep normal budgets'),
     predecessor_access:z.literal('view').optional().describe('Read-only predecessor visibility; never grants mutation or lineage lease rights'),
     criterion_review:z.boolean().optional().describe('W10 review protocol over an explicitly bound declaration submission'),
     work_class: WorkClassSchema.optional().describe('V07 R[5]: the class of work this workflow does; a requirement that writes no repetition policy takes the class default, and a workflow that declares no class runs one round'),
@@ -749,6 +771,7 @@ export const LedgerFile = z.strictObject({
 export type LedgerFile = z.infer<typeof LedgerFile>;
 
 export const schemas: Record<string, z.ZodType> = {
+  'skill@1': SkillDeclaration,
   'subject-blocked@1': SubjectBlocked,
   'pack@1': PackManifest,
   'ledger@1': LedgerFile,

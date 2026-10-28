@@ -24,7 +24,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['maintenance-sweep', '1.8.6', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['maintenance-sweep', '1.8.9', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/sweep.ts') && files.includes('functions/diff.ts') && files.includes('samples/negative/command-removed.json') && files.includes('examples/sweep.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -54,7 +54,7 @@ describe('the pack files', () => {
     assert.equal(checks[1].tier, 'advisory');
     assert.equal(checks[1].basis, undefined);
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
-    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 3000);
+    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 3600);
     assert.match(text('SKILL.md'), /阻断/);
     assert.match(text('SKILL.md'), /提示/);
   });

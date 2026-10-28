@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 // Isolate disclosure policy without a database; ingest explicitly reports the scanner's retain_only decision.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
@@ -5,7 +6,7 @@ import {ReadEngine,type ReadEngineOptions,type ResourceRuntime} from './read.ts'
 import {HttpSource} from './http.ts';
 import {Redactor} from './redact.ts';
 import {compileRoutes} from './routes.ts';
-import {createDefaultRegistry} from '../refs/api.ts';
+
 import {SystemProfile} from '../../contracts/src/resources.ts';
 import {sha256Hex,type SourceArtifact} from '../records/api.ts';
 for(const echoed of [false,true])test(`a retained ${echoed?'echoed':'ordinary'} response fault keeps its protected diagnostics private`,async()=>{

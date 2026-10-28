@@ -1,3 +1,4 @@
+import {kityminderParser} from "../testing/parsers.ts";
 import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials, syntheticStoredCredential } from './testing/credentials.ts';
 // Reads end to end: the synthetic system packs' functions run in the real sandbox against loopback stubs; every response is
 // stored by SHA-256 before anything interprets it; the derived content and meta of a mind map; the folder trees read once and
@@ -7,7 +8,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { RECORD_KINDS } from '../../contracts/generated/protocol.ts';
 import { SandboxError, callPackFunction } from '../rules/api.ts';
-import { kityminderParser, htmlParser } from '../refs/api.ts';
+import {htmlParser} from "../testing/parsers.ts";
 import type { ExternalRead, ExternalReadContext } from '../ports.ts';
 import type { Page, SourceArtifact, StoredRecord } from '../records/api.ts';
 import { sha256Hex } from '../records/api.ts';

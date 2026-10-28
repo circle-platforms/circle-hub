@@ -77,6 +77,7 @@ export function createPacksPort(registry: PackRegistry): PacksPort {
     async pack(ref: string): Promise<PackHandle | null> {
       const info = await registry.resolve(ref);
       if (info === null) return null;
+      if(info.kind==='skill'&&!(await registry.installedSkills()).some(p=>p.info.digest===info.digest))return null;
       if (info.kind === 'product' && !(await registry.isActive(info.id))) return null;
       return (await registry.open(info.digest))?.handle ?? null;
     },
@@ -103,7 +104,8 @@ export function createPacksPort(registry: PackRegistry): PacksPort {
       for (const id of await registry.packsFor(account.id)) {
         const info = await registry.latestVersion(id);
         if (info === null || info.kind !== 'workflow') continue;
-        const declarations = await registry.declarations(info.digest);
+        const raw = await registry.declarations(info.digest);
+        const declarations=raw?.kind==='skill'?raw.method:raw;
         if (declarations?.kind !== 'workflow') continue;
         for (const bound of boundProducts(declarations, active)) out.add(bound.product.id);
       }
@@ -114,11 +116,13 @@ export function createPacksPort(registry: PackRegistry): PacksPort {
 
 export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
   const load = async (info: PackVersionInfo): Promise<LoadedWorkflow | null> => {
-    if (info.kind !== 'workflow') return null;
+    if (info.kind !== 'workflow' && info.kind !== 'skill') return null;
     const opened = await registry.open(info.digest);
-    if (opened === null || opened.declarations.kind !== 'workflow') return null;
+    if (opened === null) return null;
+    const method=opened.declarations.kind==='skill'?opened.declarations.method:opened.declarations;
+    if(method?.kind!=='workflow')return null;
     // Copies: the declarations are shared by every caller of this version.
-    const d = structuredClone(opened.declarations);
+    const d = structuredClone(method);
     return {
       pack: opened.handle,
       owner: info.owner,
@@ -141,7 +145,7 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       const parsed = parsePackRef(ref);
       if (account === null || parsed === null || !(await registry.canUse(account.id, parsed.id))) return null;
       const info = await registry.resolve(ref);
-      return info === null ? null : load(info);
+      return info === null || info.kind==='skill'&&!(await registry.installedSkills()).some(p=>p.info.digest===info.digest) ? null : load(info);
     },
     async absence(user: Principal, ref: string): Promise<WorkflowAbsence | null> {
       const account = await registry.account(user);
@@ -151,7 +155,7 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       const info = await registry.getVersion(parsed.id, parsed.version);
       if (info === null) return 'unknown';
       if (info.withdrawn) return 'withdrawn';
-      if (!(await registry.canUse(account.id, parsed.id))) return 'unassigned';
+      if (!(await registry.canUse(account.id, parsed.id)) || info.kind==='skill'&&!(await registry.installedSkills()).some(p=>p.info.digest===info.digest)) return 'unassigned';
       return null;
     },
     async publicationOf(digest: string): Promise<string | null> {return (await registry.byDigest(digest))?.record??null;},
@@ -167,10 +171,12 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       if (account === null) return [];
       const active = await registry.activeProducts();
       const out: PackSummary[] = [];
-      for (const id of await registry.packsFor(account.id)) {
-        const info = await registry.latestVersion(id);
-        if (info === null || info.kind !== 'workflow') continue;
-        const declarations = await registry.declarations(info.digest);
+      for (const id of [...new Set([...(await registry.packsFor(account.id)),...(await registry.installedSkills()).filter(p=>p.declarations.kind==='skill'&&p.declarations.method!==null).map(p=>p.info.id)])]) {
+        const installed=(await registry.installedSkills()).find(p=>p.info.id===id);
+        const info = installed?.info ?? await registry.latestVersion(id);
+        if (info === null || info.kind !== 'workflow' && info.kind !== 'skill') continue;
+        const raw = await registry.declarations(info.digest);
+        const declarations=raw?.kind==='skill'?raw.method:raw;
         if (declarations?.kind !== 'workflow') continue;
         out.push(packSummary(info, declarations, boundProducts(declarations, active)));
       }
@@ -206,14 +212,15 @@ export function createPackCatalog(registry: PackRegistry): PackCatalogPort {
         for (const pack of await registry.listPacks()) {
           const assigned = pack.kind === 'workflow' ? await registry.usersOf(pack.id) : [];
           // A product pack is active in the version it is used in: the latest that is not withdrawn.
-          for (const version of pack.versions) out.push(listing(version, pack.active && version.version === pack.latest, assigned));
+          for (const version of pack.versions) out.push(listing(version, pack.kind==='skill'?(await registry.installedSkills()).some(p=>p.info.digest===version.digest):pack.active && version.version === pack.latest, assigned));
         }
         return out;
       }
       const out: PackListing[] = [];
-      for (const id of await registry.packsFor(account.id)) {
-        const info = await registry.latestVersion(id);
-        if (info !== null && info.kind === 'workflow') out.push(listing(info, false));
+      for (const id of [...new Set([...(await registry.packsFor(account.id)),...(await registry.installedSkills()).filter(p=>p.declarations.kind==='skill'&&p.declarations.method!==null).map(p=>p.info.id)])]) {
+        const installed=(await registry.installedSkills()).find(p=>p.info.id===id);
+        const info = installed?.info ?? await registry.latestVersion(id);
+        if (info !== null && (info.kind === 'workflow'||info.kind==='skill')) out.push(listing(info, info.kind==='skill'));
       }
       return out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     },

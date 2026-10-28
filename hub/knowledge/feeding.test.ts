@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {makeWorld,startPostgres,STATIC_PLAN_SOURCE,DEFAULT_SYNC,catalogXml,type World} from './test-support.ts';
 import {SeedlingBody} from '../../contracts/src/knowledge.ts';
+import {formatKnowledgeRetract, knowledgeRetract} from './api.ts';
 import {newId} from '../records/api.ts';
 import {runRecord} from '../../contracts/src/fixtures.ts';
 import {RunRecord} from '../../contracts/src/run.ts';
@@ -31,3 +32,39 @@ test('uploads remain uploader/admin-only even with identical public bytes; uploa
 });
 
 test('a current pointer naming a content root selects its own line record when two lines share tree bytes',async t=>{const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const root=await seed(w,'10.8');await seed(w,'10.9');for(const line of ['10.8','10.9']){const old=await w.kit.pointers.get(seedlingName(w.product.id,line));assert.ok(old);await w.kit.pointers.move({name:old.name,expected:old.target,next:root.root,by:w.admin,run:null,component:'synthetic.feeding@1'});}assert.equal((await w.knowledge.feeding!.seedFor(w.product.id,'10.8'))!.line,'10.8');assert.equal((await w.knowledge.feeding!.seedFor(w.product.id,'10.9'))!.line,'10.9');});
+
+test('knowledge retract appends one record per target kind and leaves a covered target unwritten',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!,root=await seed(w),a=await source(w,'SYN-R1'),r1=await run(w);
+ const scope={product:w.product.id,root:root.root,line:'10.8',run:r1};const first=await layer.observeSource(w.user,a.body.sha256,scope);
+ const entry=(await layer.entries(w.admin,w.product.id)).find(row=>row.body.object===first.objects[0]);assert.ok(entry);
+ const at='2026-10-27T09:00:00.000Z';const count=async()=>(await w.kit.store.find({key:'knowledge.feeding.retraction',value:'1',kind:'claim',limit:20})).items.length;
+ await assert.rejects(()=>knowledgeRetract(layer,w.user,{entries:[entry.record],runs:[],objects:[],reason:'合成撤回',at}),/只有管理员/);
+ const missing='b'.repeat(64),absent=newId('run');
+ await assert.rejects(()=>knowledgeRetract(layer,w.admin,{entries:[],runs:[],objects:[missing],reason:'合成撤回',at}),/撤回对象不存在/);
+ await assert.rejects(()=>knowledgeRetract(layer,w.admin,{entries:[missing],runs:[],objects:[],reason:'合成撤回',at}),/撤回目标不是已登记的喂入或回注条目/);
+ await assert.rejects(()=>knowledgeRetract(layer,w.admin,{entries:[],runs:[absent],objects:[],reason:'合成撤回',at}),/撤回运行不存在/);
+ await assert.rejects(()=>knowledgeRetract(layer,w.admin,{entries:[entry.record],runs:[],objects:[],reason:'两行\n原因',at}),/一行/);
+ await assert.rejects(()=>knowledgeRetract(layer,w.admin,{entries:[],runs:[],objects:[],reason:'合成撤回',at}),/至少要一个/);
+ assert.equal(await count(),0);
+ const mixed=await knowledgeRetract(layer,w.admin,{entries:[entry.record],runs:[r1],objects:[first.objects[0]],reason:'合成撤回',at});
+ assert.equal(mixed.appended.length,3);assert.equal(await count(),3);
+ const lines=formatKnowledgeRetract(mixed);
+ assert.match(lines[0],/撤回记录 [0-9a-f]{12}：条目 1 个，原因 合成撤回/);
+ assert.match(lines[1],/运行 1 个，原因 合成撤回/);
+ assert.match(lines[2],/对象 1 个，原因 合成撤回/);
+ assert.equal(lines.at(-1),'原记录未改动；读侧将显示根据已撤回');
+ const again=await knowledgeRetract(layer,w.admin,{entries:[entry.record],runs:[r1],objects:[first.objects[0]],reason:'合成撤回',at});
+ assert.deepEqual(again.appended,[]);assert.equal(await count(),3);
+ assert.match(formatKnowledgeRetract(again)[0],/^这些目标已撤回（撤回记录 [0-9a-f]{12}(、[0-9a-f]{12})*），没有追加$/);
+ const r2=await run(w);const partial=await knowledgeRetract(layer,w.admin,{entries:[],runs:[r2],objects:[first.objects[0]],reason:'再撤回一条运行',at});
+ assert.equal(partial.appended.length,1);assert.equal(partial.appended[0].kind,'runs');assert.equal(partial.skipped.length,1);assert.equal(await count(),4);
+ const partialLines=formatKnowledgeRetract(partial);
+ assert.match(partialLines.join('\n'),/已跳过对象 [0-9a-f]{12}：已有撤回记录 /);
+ assert.equal(partialLines.at(-1),'原记录未改动；读侧将显示根据已撤回');
+});
+
+test('legacy src ranges slice quotation fragments at UTF-8 byte boundaries',async t=>{const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;const a=await source(w,'SYN-R',{status:'open',affected_lines:[],description:'甲open'});const reference=`src:${a.body.sha256}/json@1/p/fields/description`;
+ await layer.quote(w.user,{reference:reference+':3-7',text:'open'});
+ await assert.rejects(()=>layer.quote(w.user,{reference:reference+':1-5',text:'open'}),/逐字/);
+ await assert.rejects(()=>layer.quote(w.user,{reference:reference+':2-7',text:'open'}),/逐字/);
+});

@@ -1,3 +1,4 @@
+import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { KNOWLEDGE_CONTRIBUTION_SCHEMA, KnowledgeContributionBody } from '../../contracts/src/contributions.ts';
@@ -5,7 +6,7 @@ import { makeWorld } from '../knowledge/test-support.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { recordReaderFor } from './readers.ts';
 import { FakeRuns, FakeWorkflows } from './fakes.ts';
-import { createDefaultRegistry } from '../refs/api.ts';
+
 import type { ServerDeps } from './api.ts';
 import { callTool } from './tools.ts';
 

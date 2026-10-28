@@ -298,3 +298,70 @@ export function splitLines(text: string, max: number): Lines | null {
   }
   return { starts, ends };
 }
+
+const XML_LATIN1_LABELS = new Set(['iso-8859-1', 'iso8859-1', 'iso_8859-1', 'latin1', 'latin-1', 'l1', 'iso-ir-100', 'cp819', 'ibm819', 'csisolatin1']);
+const XML_ASCII_LABELS = new Set(['us-ascii', 'ascii', 'ansi_x3.4-1968', 'iso646-us', 'us', 'cp367', 'ibm367', 'csascii']);
+
+function xmlCharsetOf(label: string, from: string): Exclude<TextCharset, 'windows-1252'> {
+  if (isUtf8Label(label)) return 'utf-8';
+  if (XML_LATIN1_LABELS.has(label)) return 'iso-8859-1';
+  if (XML_ASCII_LABELS.has(label)) return 'us-ascii';
+  const legacy = legacyCharset(label);
+  if (legacy) return legacy as Exclude<TextCharset, 'windows-1252'>;
+  throw new ParseEncodingError('xml@1', `XML ${from} 使用了不支持的编码`, 0);
+}
+
+export function detectXmlCharset(bytes: Uint8Array, mediaType: string | undefined): Exclude<TextCharset, 'windows-1252'> {
+  const marker = bomCharset(bytes);
+  const bom = marker === 'utf-8' ? 3 : marker ? 2 : 0;
+  const parameter = mediaTypeCharset(mediaType);
+  const given = parameter === null ? null : xmlCharsetOf(parameter, '媒体类型的 charset 参数');
+  const head = marker?.startsWith('utf-16') ? new TextDecoder(marker).decode(bytes.subarray(0, 1024)) : Buffer.from(bytes.buffer, bytes.byteOffset + bom, Math.min(1024, bytes.byteLength - bom)).toString('latin1');
+  const declaration = /^<\?xml[ \t\r\n][^>]*?\?>/.exec(head);
+  const declared = declaration ? /[ \t\r\n]encoding[ \t\r\n]*=[ \t\r\n]*(["'])([A-Za-z][A-Za-z0-9._-]*)\1/.exec(declaration[0]) : null;
+  const label = declared ? declared[2].toLowerCase() : null;
+  if (marker) {
+    const agrees = (value: string): boolean => (value.toLowerCase() === 'utf-16' && marker.startsWith('utf-16')) || xmlCharsetOf(value.toLowerCase(), '编码声明') === marker;
+    if (parameter !== null && !agrees(parameter)) throw new ParseEncodingError('xml@1', 'XML 字节序标记与媒体类型编码不一致', 0);
+    if (label !== null && !agrees(label)) throw new ParseEncodingError('xml@1', 'XML 字节序标记与 XML 编码声明不一致', 0);
+    return marker as Exclude<TextCharset, 'windows-1252'>;
+  }
+  if (given !== null) return given;
+  return label === null ? 'utf-8' : xmlCharsetOf(label, 'XML 声明');
+}
+
+/** The decoded text of XML bytes, by the same charset rules as xml@1 (the whole-file text of an XML source). */
+export function decodeXmlText(bytes: Uint8Array, mediaType: string | undefined): string {
+  const charset = detectXmlCharset(bytes, mediaType);
+  return decodeEncoding('xml@1', bytes, charset).text;
+}
+
+function metaCharset(bytes: Uint8Array): string | null {
+  const head = Buffer.from(bytes.buffer, bytes.byteOffset, Math.min(1024, bytes.byteLength)).toString('latin1');
+  const match = /<meta\b[^>]*?\bcharset[ \t\n\f\r]*=[ \t\n\f\r]*["']?[ \t\n\f\r]*([A-Za-z0-9._:-]+)/i.exec(head);
+  return match ? match[1].toLowerCase() : null;
+}
+
+/** The decoded text of HTML bytes, by the same charset rules as html@1 (the whole-file text of an HTML source). */
+export function decodeHtmlText(bytes: Uint8Array, mediaType: string | undefined): string {
+  const marker = bomCharset(bytes);
+  if (marker) return decodeEncoding('html@1', bytes, marker).text;
+  const parameter = mediaTypeCharset(mediaType);
+  let label = parameter ?? metaCharset(bytes) ?? (isUtf8(bytes) ? 'utf-8' : 'windows-1252');
+  if (parameter === null && label.startsWith('utf-16')) label = 'utf-8';
+  if (isUtf8Label(label)) {
+    return decodeUtf8('html@1', bytes).text;
+  }
+  if (isWindows1252Label(label)) {
+    return decodeSingleByte('html@1', bytes, 'windows-1252').text;
+  }
+  const legacy = legacyCharset(label);
+  if (legacy) return decodeEncoding('html@1', bytes, legacy).text;
+  let decoder: TextDecoder;
+  try {
+    decoder = new TextDecoder(label);
+  } catch {
+    throw new ParseEncodingError('html@1', parameter === null ? 'HTML <meta> 声明了不支持的字符编码' : 'HTML 媒体类型 charset 声明了不支持的字符编码', null, label);
+  }
+  return decoder.decode(bytes);
+}

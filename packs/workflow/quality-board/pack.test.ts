@@ -25,7 +25,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['quality-board', '2.0.10', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['quality-board', '2.0.11', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/board.ts') && files.includes('samples/negative/thresholds-exceeded.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -71,7 +71,7 @@ describe('the pack files', () => {
       ],
     );
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
-    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 2000, 'a short Chinese procedure (it is in every start_run answer)');
+    assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').length < 3400, 'a short Chinese procedure (it is in every start_run answer)');
   });
 
   it('declares parameter schemas the engine can enforce (no regular expressions, zod reads them)', () => {

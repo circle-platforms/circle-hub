@@ -84,12 +84,14 @@ test('malformed or unsupported XML becomes unknown, not a green empty catalog', 
   for (const xml of ['<commands><item name="x"></commands>','<commands>','<!DOCTYPE commands><commands/>','<commands><item name=x/></commands>']) assert.throws(() => parseCommandTree(xml));
   const f = fixture(); f.commandTreeXml = '<commands>'; assert.ok(has(f,'command','unknown'));
 });
-test('quote allows whitespace folding but rejects paraphrases, missing and unreadable sources', () => {
+test('quote requires exact whitespace and rejects paraphrases, blank quotes, missing and unreadable sources', () => {
   const sources = new Map([['src:synthetic','预期：返回  200\nOK。']]);
-  assert.equal(checkVerbatimQuote(sources,'src:synthetic','返回 200 OK').verdict,'pass');
+  assert.equal(checkVerbatimQuote(sources,'src:synthetic','返回  200\nOK').verdict,'pass');
+  assert.equal(checkVerbatimQuote(sources,'src:synthetic','返回 200 OK').verdict,'fail');
   assert.equal(checkVerbatimQuote(sources,'src:synthetic','返回 500 OK').verdict,'fail');
-  assert.equal(checkVerbatimQuote(sources,'src:missing','返回 200 OK').verdict,'unknown');
-  assert.equal(checkVerbatimQuote(sources,'','返回 200 OK').verdict,'fail');
+  assert.equal(checkVerbatimQuote(sources,'src:missing','返回  200\nOK').verdict,'unknown');
+  assert.equal(checkVerbatimQuote(sources,'','返回  200\nOK').verdict,'fail');
+  for (const quote of ['', ' \t\r\n', '\u00a0\u3000']) assert.equal(checkVerbatimQuote(sources,'src:synthetic',quote).verdict,'fail');
 });
 test('expected text cannot be invented beside a true quote', () => { const f = fixture(); data(f).expects[0].text = '模型自造成功'; assert.ok(has(f,'quotation','fail')); });
 test('top-level quotes are not a prerequisite for independently grounded expectations', () => {
@@ -355,24 +357,25 @@ test('unknown interpreter evidence cannot erase a known positional comparison', 
   assert.equal(compileCheck(f).comparison.equal,false);
 });
 
-test('expected-text containment and source quotation both align Chinese hard wraps under decision 37', () => {
+test('expected-text containment and source quotation reject deleted or substituted Chinese hard wraps', () => {
   const f = fixture();
   const e = data(f).expects[0];
   e.text = '健康检查间隔设置成功'; e.quote.text = '健康检查间隔\n设置成功';
   f.sources.set(e.quote.reference, '健康检查间隔\r\n设置成功');
-  const judgments = compileCheck(f).stepVerdicts.filter(v => v.checkType === 'quotation');
+  const judgments = compileCheck(f).stepVerdicts.filter(v => v.checkType === 'quotation' && v.item === f.submission.items[0].item);
   assert.ok(judgments.length > 0);
-  assert.ok(judgments.every(v => v.verdict === 'pass'), JSON.stringify(judgments));
-  assert.equal(checkVerbatimQuote(f.sources, e.quote.reference, e.text).verdict, 'pass');
+  assert.ok(judgments.every(v => v.verdict === 'fail'), JSON.stringify(judgments));
+  assert.equal(checkVerbatimQuote(f.sources, e.quote.reference, e.text).verdict, 'fail');
 });
 
 for (const [quote, expected, verdict] of [
-  ['返回\n成功', '返回成功', 'pass'], ['A\n中文', 'A中文', 'pass'], ['中文\nA', '中文A', 'pass'],
-  ['Ａ\nB', 'ＡB', 'pass'], ['𠀀\nA', '𠀀A', 'pass'], ['🙂\nA', '🙂A', 'pass'],
-  ['set\t10\n0', 'set 10 0', 'pass'], ['a\u0085b', 'a b', 'pass'],
+  ['返回\n成功', '返回成功', 'fail'], ['A\n中文', 'A中文', 'fail'], ['中文\nA', '中文A', 'fail'],
+  ['Ａ\nB', 'ＡB', 'fail'], ['𠀀\nA', '𠀀A', 'fail'], ['🙂\nA', '🙂A', 'fail'],
+  ['set\t10\n0', 'set 10 0', 'fail'], ['a\u0085b', 'a b', 'fail'],
   ['set 10 0', 'set 100', 'fail'], ['a + b', 'a+b', 'fail'], ['α β', 'αβ', 'fail'],
   ['ｱ A', 'ｱA', 'fail'], ['中\ufeff文', '中文', 'fail'], ['é', 'e\u0301', 'fail'],
-] as const) test(`decision 37 expected containment ${JSON.stringify([quote, expected])}`, () => {
+  ['返回\n成功', '返回\n成功', 'pass'], ['a\tb', 'a\tb', 'pass'], ['a\u00a0b', 'a\u00a0b', 'pass'], ['a\u3000b', 'a\u3000b', 'pass'],
+] as const) test(`strict expected containment ${JSON.stringify([quote, expected])}`, () => {
   const f = fixture(), e = data(f).expects[0]; e.text = expected; e.quote.text = quote;
   f.sources.set(e.quote.reference, quote);
   const rows = compileCheck(f).stepVerdicts.filter(v => v.checkType === 'quotation' && v.stepIndex === 1 && v.item === f.submission.items[0].item);

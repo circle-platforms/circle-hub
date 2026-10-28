@@ -2,6 +2,25 @@
 
 Hub 直接算出一个构建的用例质量看板：每个（版本线、模块）分组的用例数、无期望结果占比、只有含糊期望结果占比、负面用例占比，以及整个构建的合计。不需要你提交结果。
 
+## 知识视图标识
+
+写法是 `knowledge:<视图>:<产品>:<构建>[?参数]`，四段用冒号，参数在问号后。产品按登记的大小写照抄。下面用合成产品 ORBIT、构建 Rel_ORBIT_7_1_0_30，不要写成 orbit，也不要换成别的分隔符。
+
+- facets：`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。必填 kind、by。
+- index：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。必填 kind、key。
+- impact：`knowledge:impact:ORBIT:Rel_ORBIT_7_1_0_29..Rel_ORBIT_7_1_0_30?changed=definition&attached=case`。构建段写成 `<起始>..<目标>`；changed、attached、catalog 可以不写。
+- links：`knowledge:links:ORBIT:Rel_ORBIT_7_1_0_30`。没有必填参数，prefix 默认 /。
+
+三种写错：
+（1）分隔符用了 @。错 `knowledge:facets@ORBIT@Rel_ORBIT_7_1_0_30?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（2）缺构建。错 `knowledge:facets:ORBIT?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
+（3）参数不全。错 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?key=commands`。对 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。
+
+本包照抄这三条（同一产品、同一构建）：
+`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=line,module,has_expected,vague_expected,negative`
+`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`
+`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=line,module,tags`
+
 1. 开始运行：pack 写 quality-board；inputs.facets 写 `{"external": "knowledge:facets:<产品>:<构建>?kind=case&by=line,module,has_expected,vague_expected,negative"}`（可以在 by 里加 priority 等字段，不影响分组）。同时必须绑定 inputs.placement：`{"external":"knowledge:facets:<产品>:<构建>?kind=case&by=commands"}`，角色为提示，只披露未归位数，不作阈值判据。需要测试类型覆盖时，inputs.facets 改成两个对象的数组，再加 `{"external":"knowledge:facets:<产品>:<构建>?kind=case&by=line,module,tags"}`，计数视图和标签视图不得合成一个，三个视图必须同产品同根。这个任务包不绑定产品线：不要写 product、version、build（顶层和 parameters 都不要）——输入里的外部标识已经写明产品和构建，运行不会去锁定别的构建。
 2. 结果在开始运行时就算好了：每个条目是一个分组（条目编号是 `<版本线>/<模块>`，没有归组的版本线或模块是 unplaced），摘要是“用例数、三项个数和占比”，完整结论在 result.reference 指向的校验结果里。逐条结论用 get_nodes 读取；条目多时照回答末尾的说明接着读。
 3. 原样转述每个分组的指标和阈值结论，不补全、不猜测：

@@ -11,10 +11,11 @@ import type { CallContext, Untraced } from '../../ports.ts';
 import { findQuote, normalizeReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { unavailableError } from './errors.ts';
-import { buildScope, createResolver, resolveCommand } from './exact.ts';
+import { buildRootScope, buildScope, createResolver, resolveCommand, type RunScope } from './exact.ts';
 import { canViewRun } from './readers.ts';
 import { issuesOf } from './slots.ts';
 import { runById } from './store.ts';
+import { HubReadFailure } from './retry-read.ts';
 
 export type ResolveAnswer = Untraced<z.infer<typeof ResolveReferenceOutput>>;
 
@@ -38,28 +39,76 @@ export async function previewReference(ctx: EngineContext, user: Principal, raw:
   const parsed = ResolveReferenceInput.safeParse(raw);
   if (!parsed.success) return { call_result: 'error', errors: issuesOf(parsed.error, ''), references: [], diagnostics: [] };
   const input = parsed.data;
-  const stored = await runById(ctx.deps.records.store, input.run);
-  if (stored === null || !await canViewRun(user, stored.body, ctx.deps.records.store)) {
-    ctx.log({ traceId: call.traceId, run: input.run, what: 'resolve_reference', detail: `run ${input.run} is unknown or not visible to ${user.id}` });
-    return { call_result: 'error', errors: [unavailableError('/run')], references: [], diagnostics: [] };
+
+  if (input.run !== undefined) {
+    const stored = await runById(ctx.deps.records.store, input.run);
+    if (stored === null || !await canViewRun(user, stored.body, ctx.deps.records.store)) {
+      ctx.log({ traceId: call.traceId, run: input.run, what: 'resolve_reference', detail: `run ${input.run} is unknown or not visible to ${user.id}` });
+      return { call_result: 'error', errors: [unavailableError('/run')], references: [], diagnostics: [] };
+    }
+    const workflow = await ctx.deps.workflows.byDigest(stored.body.pack_digest);
+    if (workflow === null) {
+      ctx.log({ traceId: call.traceId, run: input.run, what: 'resolve_reference', detail: `pack version ${stored.body.pack} is no longer loadable` });
+      return { call_result: 'error', errors: [unavailableError('/run')], references: [], diagnostics: [] };
+    }
+    if (ctx.parsers.forRun) {
+      try { ctx = { ...ctx, parsers: await ctx.parsers.forRun(stored.body.run) }; }
+      catch { return { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '缺少本运行锁定的解析技能包摘要', fix: '管理员恢复原技能包；历史运行缺锁时用 circle-hub skill bind-legacy <解析器 id@版本> <技能包 id@版本> 追加迁移声明后重读' }], references: [], diagnostics: [] }; }
+    }
+    // What the model will be shown: text the model may read (consumer model).
+    const artifacts = ctx.deps.records.artifacts;
+    const scopedArtifacts = new Proxy(artifacts, { get(target, property) {
+      if (property === 'source') return async (principal: Principal, sha: string, options: Parameters<typeof artifacts.source>[2]) =>
+        await artifacts.source(principal,sha,options) ?? await artifacts.sourceForRun(principal,sha,stored.body.run,options);
+      const value = Reflect.get(target,property,target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }});
+    const readContext = {...ctx,deps:{...ctx.deps,records:{...ctx.deps.records,artifacts:scopedArtifacts}}};
+    let scope = await buildScope(readContext, stored.body, workflow, user, 'model');
+    if (stored.body.product !== undefined && !(await ctx.deps.packs.readableProducts(user)).has(stored.body.product)) scope = {...scope,catalogs:[]};
+    return resolveAgainstScope(readContext, scope, input, user, false);
   }
-  const workflow = await ctx.deps.workflows.byDigest(stored.body.pack_digest);
-  if (workflow === null) {
-    ctx.log({ traceId: call.traceId, run: input.run, what: 'resolve_reference', detail: `pack version ${stored.body.pack} is no longer loadable` });
-    return { call_result: 'error', errors: [unavailableError('/run')], references: [], diagnostics: [] };
+
+  // ---------------------------------------------------- root mode
+  if (input.root === undefined) {
+    return { call_result: 'error', errors: [{ code: 'SUBMISSION_SCHEMA_VIOLATION', message: 'provide exactly one of run or root', fix: '给出 run 或 root 参数之一', path: '/root' }], references: [], diagnostics: [] };
   }
-  // What the model will be shown: text the model may read (consumer model).
-  const artifacts = ctx.deps.records.artifacts;
-  const scopedArtifacts = new Proxy(artifacts, { get(target, property) {
-    if (property === 'source') return async (principal: Principal, sha: string, options: Parameters<typeof artifacts.source>[2]) =>
-      await artifacts.source(principal,sha,options) ?? await artifacts.sourceForRun(principal,sha,stored.body.run,options);
-    const value = Reflect.get(target,property,target);
-    return typeof value === 'function' ? value.bind(target) : value;
-  }});
-  const readContext = {...ctx,deps:{...ctx.deps,records:{...ctx.deps.records,artifacts:scopedArtifacts}}};
-  let scope = await buildScope(readContext, stored.body, workflow, user, 'model');
-  if (stored.body.product !== undefined && !(await ctx.deps.packs.readableProducts(user)).has(stored.body.product)) scope = {...scope,catalogs:[]};
-  const resolver = createResolver(readContext, scope, 'model');
+
+  const treeReader = ctx.deps.knowledge.treeReader();
+  const hasRoot = treeReader.hasRoot !== undefined
+    ? await treeReader.hasRoot(input.root, { user: user.id, role: user.role })
+    : (await ctx.deps.knowledge.rootInfo(input.root)).length > 0;
+  if (!hasRoot) {
+    ctx.log({ traceId: call.traceId, run: null, what: 'resolve_reference', detail: `root ${input.root} is absent or not readable by ${user.id}` });
+    return { call_result: 'error', errors: [unavailableError()], references: [], diagnostics: [] };
+  }
+
+  if (input.text.trim().startsWith('rec:')) {
+    return {
+      call_result: 'error',
+      errors: [{
+        code: 'REFERENCE_UNRESOLVED',
+        message: 'rec: 引用和回注层条目需要运行锁定的喂入层序列',
+        fix: '改用 start_run 启动运行（如 start_run { pack: "<任务包名>" }）并在 resolve_reference 中传入 run 参数',
+        path: '/text',
+      }],
+      references: [],
+      diagnostics: [],
+    };
+  }
+
+  const scope = await buildRootScope(ctx, input.root, user, 'model');
+  return resolveAgainstScope(ctx, scope, input, user, true);
+}
+
+async function resolveAgainstScope(
+  ctx: EngineContext,
+  scope: RunScope,
+  input: { text: string; expect?: string },
+  user: Principal,
+  isRootMode: boolean,
+): Promise<ResolveAnswer> {
+  const resolver = createResolver(ctx, scope, 'model');
   const expect = expectOf(input.expect);
   const diagnostics: string[] = [PREVIEW];
   const references: { reference: string; text: string; role?: SourceRole }[] = [];
@@ -74,8 +123,28 @@ export async function previewReference(ctx: EngineContext, user: Principal, raw:
     }
   }
   if (asReference !== null) {
+    if (isRootMode && asReference.startsWith('rec:')) {
+      return {
+        call_result: 'error',
+        errors: [{
+          code: 'REFERENCE_UNRESOLVED',
+          message: 'rec: 引用和回注层条目需要运行锁定的喂入层序列',
+          fix: '改用 start_run 启动运行（如 start_run { pack: "<任务包名>" }）并在 resolve_reference 中传入 run 参数',
+          path: '/text',
+        }],
+        references: [],
+        diagnostics: [],
+      };
+    }
+
     const r = await resolver.resolve(asReference);
     if (!r.ok) {
+      if (r.retryable) {
+        return { call_result: 'error', errors: [{ code: r.code ?? 'SOURCE_UNAVAILABLE', message: r.message, fix: r.fix ?? '管理员恢复来源核对能力后重新解析', path: '/text' }], references: [], diagnostics: [] };
+      }
+      if (isRootMode && r.code === 'SOURCE_UNAVAILABLE') {
+        return { call_result: 'error', errors: [unavailableError()], references: [], diagnostics: [] };
+      }
       diagnostics.push(r.message);
       return answer('unresolved');
     }
@@ -89,6 +158,11 @@ export async function previewReference(ctx: EngineContext, user: Principal, raw:
     // Without an expectation only the catalog is asked here; a verbatim occurrence is found by the quotation search below.
     const found = await resolveCommand(scope, input.text, [], { search: expect === 'command' });
     if (found.resolution !== 'unresolved' || expect === 'command') {
+      try { await resolver.prefetch(found.references); }
+      catch (error) {
+        if (!(error instanceof HubReadFailure)) throw error;
+        return {call_result:'error',errors:[{code:'SOURCE_RETRYABLE',message:error.message,fix:error.fix,path:'/text'}],references:[],diagnostics:[]};
+      }
       for (const reference of found.references) {
         if (!Ground.safeParse(reference).success) continue;
         const read = await resolver.resolve(reference);

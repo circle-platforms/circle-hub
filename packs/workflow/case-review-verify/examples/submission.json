@@ -30,7 +30,7 @@
       }
     ],
     "cross_item": [
-      { "nature": "judgment", "statement": "结论理由：初评基本正确，遗漏了一个反向用例；对初评等级的质疑：P4 合适", "grounds": ["src:<被复核脑图的摘要>/kityminder@1/n/<节点编号>"], "code": "PARTIAL", "rank": "P4" },
+      { "nature": "judgment", "statement": "结论理由：初评基本正确，遗漏了一个反向用例；对初评等级的质疑：P2 合适", "grounds": ["src:<被复核脑图的摘要>/kityminder@1/n/<节点编号>"], "code": "PARTIAL", "rank": "P2" },
       { "nature": "judgment", "statement": "补一个探测间隔为 0 的反向用例；期望结果：提示参数超出范围", "grounds": [], "code": "suggestion", "rank": "minor" }
     ]
   }
