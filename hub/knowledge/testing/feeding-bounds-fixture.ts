@@ -1,16 +1,16 @@
-import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
+import {createTestParserRegistry as createDefaultRegistry} from '../../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {makeWorld,startPostgres,STATIC_PLAN_SOURCE,DEFAULT_SYNC,COMMANDS_SOURCE,catalogXml} from './test-support.ts';
-import {SeedlingBody} from '../../contracts/src/knowledge.ts';
-import {seedlingName} from './seedling.ts';
-import {manifestDigest} from '../runs/api.ts';
+import {makeWorld,startPostgres,STATIC_PLAN_SOURCE,DEFAULT_SYNC,COMMANDS_SOURCE,catalogXml} from '../test-support.ts';
+import {SeedlingBody} from '../../../contracts/src/knowledge.ts';
+import {seedlingName} from '../seedling.ts';
+import {manifestDigest} from '../../runs/api.ts';
 
-const famx=new URL('../../packs/product/famx/',import.meta.url);
+const famx=new URL('../../../packs/product/famx/',import.meta.url);
 // This isolated feeding world explicitly declares its installed capability; production installation is tested in refs/skills.
 export function installedMindmapFixture(){
  const registry=createDefaultRegistry();
- const manifest=JSON.parse(readFileSync(new URL('../../packs/skill/mindmap-format/pack.json',import.meta.url),'utf8'));
+ const manifest=JSON.parse(readFileSync(new URL('../../../packs/skill/mindmap-format/pack.json',import.meta.url),'utf8'));
  registry.freeze=async dependencies=>{assert.ok(dependencies.every(dep=>dep.pack===manifest.id&&(dep.version===undefined||dep.version===manifest.version)));return {parsers:registry,skills:[{pack:manifest.id,version:manifest.version,digest:manifestDigest(manifest)}]};};
  return registry;
 }
@@ -33,8 +33,8 @@ export async function world(pg:Awaited<ReturnType<typeof startPostgres>>,slow:bo
  return {...w,name,root,document,meta,calls:()=>calls,scope:{product:'famx',root:root.root,composition:root.composition,sourceRecord:document.digest,metaSource:meta.body.sha256}};
 }
 export async function readCapture(w:Awaited<ReturnType<typeof world>>,external:string,bytes:Uint8Array){
- const {newId}=await import('../records/api.ts');const {ReadManifest}=await import('../../contracts/src/resources.ts');
- const ingest=(data:Uint8Array,origin:import('../records/api.ts').ArtifactOrigin,name:string,provenanceType:import('../records/api.ts').IngestInput['provenanceType'])=>w.kit.artifacts.ingest({bytes:data,mediaType:'application/json',origin,name,author:{user:null},provenanceType,visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false},readTier:'model_readable'});
+ const {newId}=await import('../../records/api.ts');const {ReadManifest}=await import('../../../contracts/src/resources.ts');
+ const ingest=(data:Uint8Array,origin:import('../../records/api.ts').ArtifactOrigin,name:string,provenanceType:import('../../records/api.ts').IngestInput['provenanceType'])=>w.kit.artifacts.ingest({bytes:data,mediaType:'application/json',origin,name,author:{user:null},provenanceType,visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false},readTier:'model_readable'});
  const original=await ingest(bytes,{read:{object:external}},'original','observed');const nested=await ingest(Buffer.from('{"synthetic_tree":true}'),{read:{object:'agile:tree:roots'}},'tree','observed');
  const origin={generated:{generator:'synthetic-agile.mindmap@1',inputs:['src:'+original.body.sha256,'src:'+nested.body.sha256]}};
  const content=await ingest(bytes,origin,'content','projected');const meta=await ingest(Buffer.from(JSON.stringify({id:'SYN-DOC',ancestors:['rel_famx_10_8'],root:{id:'synthetic-root',title:'FAMX'}})),origin,'meta','projected');const artifacts=[{name:'original',artifact:original},{name:'content',artifact:content},{name:'meta',artifact:meta}];
@@ -42,4 +42,4 @@ export async function readCapture(w:Awaited<ReturnType<typeof world>>,external:s
  const manifest=await w.kit.store.put({kind:'action',schema:'read-manifest@1',provenance:'observed',body,index:artifacts.map(({artifact})=>({key:'connectors.artifact',value:artifact.digest}))});
  return {ok:true as const,id:external,revision:null,artifacts,manifest:manifest.digest,content,meta,scope:{...w.scope,sourceRecord:content.digest,metaSource:meta.body.sha256,metaRecord:meta.digest,readManifest:manifest.digest,requested:external}};
 }
-export async function workingPackage(w:Awaited<ReturnType<typeof world>>){const {writeProductPack}=await import('./test-support.ts');const manifest=JSON.parse(readFileSync(new URL('pack.json',famx),'utf8'));const functions:Record<string,string>=Object.fromEntries(manifest.files.filter((file:{path:string})=>file.path.startsWith('functions/')).map((file:{path:string})=>[file.path.slice(10),readFileSync(new URL(file.path,famx),'utf8')]));const current=writeProductPack(w.dir,{id:'famx',version:'1.7.4',names:['FAMX','FAMY'],functions,declaration:{...w.product.product,feeding:{...w.product.product.feeding!,project:{module:'functions/feeding.ts'}}}});w.packs.add(current);return current;}
+export async function workingPackage(w:Awaited<ReturnType<typeof world>>){const {writeProductPack}=await import('../test-support.ts');const manifest=JSON.parse(readFileSync(new URL('pack.json',famx),'utf8'));const functions:Record<string,string>=Object.fromEntries(manifest.files.filter((file:{path:string})=>file.path.startsWith('functions/')).map((file:{path:string})=>[file.path.slice(10),readFileSync(new URL(file.path,famx),'utf8')]));const current=writeProductPack(w.dir,{id:'famx',version:'1.7.4',names:['FAMX','FAMY'],functions,declaration:{...w.product.product,feeding:{...w.product.product.feeding!,project:{module:'functions/feeding.ts'}}}});w.packs.add(current);return current;}

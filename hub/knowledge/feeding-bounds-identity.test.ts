@@ -8,7 +8,7 @@ import {FeedingLayer,FEEDING_BOUNDS} from './feeding.ts';
 import {createRunsService} from '../runs/api.ts';
 import {FakeWorkflowStore} from '../runs/engine/testing/workflows.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
-import {installedMindmapFixture,mapBytes,readCapture,workingPackage,world} from './feeding-bounds-fixture.ts';
+import {installedMindmapFixture,mapBytes,readCapture,workingPackage,world} from './testing/feeding-bounds-fixture.ts';
 
 test('equal bytes from agile:case and agile:mindmap retain both capture identities and one canonical case object',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const w=await world(pg);const layer=w.knowledge.feeding!;t.after(async()=>{await layer.drain();await w.close();});

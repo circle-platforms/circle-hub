@@ -8,7 +8,7 @@ import {FeedingLayer,FEEDING_BOUNDS} from './feeding.ts';
 import {createRunsService} from '../runs/api.ts';
 import {FakeWorkflowStore} from '../runs/engine/testing/workflows.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
-import {installedMindmapFixture,mapBytes,readCapture,workingPackage,world} from './feeding-bounds-fixture.ts';
+import {installedMindmapFixture,mapBytes,readCapture,workingPackage,world} from './testing/feeding-bounds-fixture.ts';
 
 test('40 FAMX cases and 20 seed lines take three sandbox processes per document; repeat and restart reuse the content-addressed projection',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const w=await world(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;

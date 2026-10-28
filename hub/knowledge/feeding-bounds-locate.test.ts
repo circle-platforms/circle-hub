@@ -7,7 +7,7 @@ import {FeedingLayer,FEEDING_BOUNDS} from './feeding.ts';
 import {createRunsService} from '../runs/api.ts';
 import {FakeWorkflowStore} from '../runs/engine/testing/workflows.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
-import {installedMindmapFixture,mapBytes,readCapture,workingPackage,world} from './feeding-bounds-fixture.ts';
+import {installedMindmapFixture,mapBytes,readCapture,workingPackage,world} from './testing/feeding-bounds-fixture.ts';
 
 test('40 case-body layouts retain their authored step lines and resolve only exact locked-tree commands',async t=>{
  const xml='<commands><menu name="system"><item name="show"><arguments/></item></menu><menu name="net"><item name="ping"><arguments><arg name="host" type="DOTTEDIP"/></arguments></item></menu></commands>';const pg=await startPostgres();t.after(()=>pg.stop());const w=await world(pg,false,undefined,xml);const layer=w.knowledge.feeding!;t.after(async()=>{await layer.drain();await w.close();});
