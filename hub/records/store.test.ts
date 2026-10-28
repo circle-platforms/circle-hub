@@ -303,7 +303,8 @@ test('a transaction commits all of its records or none', async (t) => {
 });
 
 test('migrations apply once, concurrently safe, and later opens apply nothing', async (t) => {
-  const database = await postgres.createDatabase();
+  // Empty on purpose: a shared unit cluster clones an already-migrated template, and this test has to see the versions applied.
+  const database = await postgres.createDatabase(undefined, { empty: true });
   t.after(() => postgres.dropDatabase(database.database));
   const pools = [new Database(createPool(database, 2)), new Database(createPool(database, 2)), new Database(createPool(database, 2))];
   t.after(() => Promise.all(pools.map((db) => db.end())));
