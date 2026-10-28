@@ -23,4 +23,10 @@
 
 ## 验证记录
 
-按集成者要求，当前 macOS 测试窗口忙，本任务未运行测试或 typecheck。仅只读检查源文件、Git 状态与差异；新增静态回归尚未执行，不能记为通过。后续需运行 docs checks 与独立 checks TypeScript 检查，然后在授权公开快照上获得六个原生 runner 的实际证据。
+初始提交时 macOS 测试窗口忙，未运行测试。集成者随后释放窗口并授权定向验证；仅链接既有依赖，未安装或联网。
+
+- `node --test --test-concurrency=2 .github/checks/platform-workflow.test.ts`：退出 0；tests 1、pass 1、fail 0、cancelled 0、skipped 0、todo 0。
+- `./node_modules/.bin/tsc --noEmit -p .github/checks`：退出 0，无输出。
+- `git diff --check`：退出 0。
+
+窗口已释放。未运行完整 contracts、完整 docs 套件或平台集成测试；仍需在授权公开快照上获得六个原生 runner 的实际证据。
