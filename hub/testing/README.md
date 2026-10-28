@@ -26,3 +26,9 @@ test('something', async (t) => {
   a cluster left by it keeps running until removed by hand (`circle-hub-pg-*` in the temp directory).
 - `openTestRecords({ postgres?, now?, limits?, initKey? })`: a ready `RecordsKit`; without `postgres` it starts and stops its
   own cluster. `close()` removes the database, the cluster it started and the temp directory.
+- `assertLinearGrowth(label, make, run, { small, factor?, runs?, maxRatio?, noiseFloorMs? })` (`growth.ts`): checks that
+  the cost of `run` grows linearly with the input, instead of a fixed millisecond budget that a slow or busy runner
+  breaks. It times `make(small)` and `make(factor × small)` (factor 8 by default) on the calling thread's CPU time,
+  interleaved, after a warm-up pair and a full collection before each run, keeps the fastest of `runs` (3), and fails
+  when the ratio exceeds `maxRatio` (2 × factor): linear and n log n work pass with margin, quadratic work fails. A large
+  run under `noiseFloorMs` (25) is not judged. Pair it with a generous wall-clock ceiling that only catches a hang.
