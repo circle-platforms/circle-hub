@@ -7,7 +7,7 @@ import { createSocket } from 'node:dgram';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { attachWindowsJob, createWindowsJobApi, createWindowsRestrictedToken, loadWindowsRestrictedToken, loadWindowsJobApi, quoteWindowsArgument, runWindowsIsolationProbe, windowsJobLimits, windowsIsolationFailure, type WindowsJobApi } from './windows.ts';
+import { attachWindowsJob, createWindowsJobApi, createWindowsRestrictedToken, loadWindowsRestrictedToken, loadWindowsJobApi, quoteWindowsArgument, runWindowsIsolationProbe, windowsProbeFailure, windowsJobLimits, windowsIsolationFailure, type WindowsJobApi } from './windows.ts';
 import { isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { callPackFunction } from './sandbox.ts';
 
@@ -288,4 +288,14 @@ test('native LPAC denies file create overwrite delete rename and directory creat
 test('native LPAC denies starting another Node process without Node permission flags', { skip: !native, timeout: 20_000 }, async () => {
   const source = `const cp=require('node:child_process');const result=cp.spawnSync(process.execPath,['-e','process.exit(0)']);process.exit(result.error&&['EACCES','EPERM'].includes(result.error.code)?0:2);`;
   assert.equal(await runWindowsIsolationProbe(source), 0);
+});
+
+
+test('LPAC startup diagnostics expose only fixed stage observations', () => {
+  const error = windowsProbeFailure('挂起创建', 2, {
+    executableExists: true, executableBinary: true, directoryExists: true,
+    path: 'private-path', source: 'private-source', token: 'private-token',
+  } as Parameters<typeof windowsProbeFailure>[2]);
+  assert.equal(error.message, 'Windows LPAC 挂起创建失败 (2); {"executableExists":true,"executableBinary":true,"directoryExists":true}');
+  assert.equal(error.message.includes('private-'), false);
 });
