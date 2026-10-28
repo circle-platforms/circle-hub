@@ -37,7 +37,7 @@ export interface BuildOptions {
 
 const SOURCE_PATHS = ['bin', 'hub', 'contracts', 'packs', 'scripts/release', 'package.json', 'package-lock.json', 'LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'];
 
-export async function buildRelease(options: BuildOptions): Promise<{ archive: string; sha256: string; manifest: Manifest }> {
+export async function buildRelease(options: BuildOptions): Promise<{ archive: string; sha256: string; manifest: Manifest; manifestSha256: string }> {
   const target = options.target ?? targetFor();
   requireTarget(target);
   const runner = options.runner ?? run;
@@ -100,10 +100,13 @@ export async function buildRelease(options: BuildOptions): Promise<{ archive: st
     // Exclusive publication: never silently replace an already built version/target.
     const { linkSync } = await import('node:fs');
     linkSync(partial, archive);
-    try { writeFileSync(`${archive}.sha256`, `${digest}  ${name}\n`, { flag: 'wx' }); }
-    catch (error) { rmSync(archive, { force: true }); throw error; }
+    const created = [archive], manifestBytes = readFileSync(join(root, 'release.json'));
+    try {
+      writeFileSync(`${archive}.sha256`, `${digest}  ${name}\n`, { flag: 'wx' }); created.push(`${archive}.sha256`);
+      writeFileSync(`${archive}.manifest.json`, manifestBytes, { flag: 'wx' }); created.push(`${archive}.manifest.json`);
+    } catch (error) { for (const path of created) rmSync(path, { force: true }); throw error; }
     rmSync(partial); partial = undefined;
-    return { archive, sha256: digest, manifest };
+    return { archive, sha256: digest, manifest, manifestSha256: sha256(manifestBytes) };
   } finally {
     if (partial) rmSync(partial, { force: true });
     rmSync(temporary, { recursive: true, force: true });
