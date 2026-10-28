@@ -45,3 +45,7 @@ Dedicated synthetic Linux VM, Node 24.22.1:
 - Removed only the test-owned policy, confirmed no Hub profile remained, deleted the test directory and released the VM.
 
 These are local synthetic checks, not deployment or real-system evidence. Full integrator checks remain required.
+
+Independent review: Antigravity examined fixed implementation commit `1d123e32` and its synthetic test cases without
+running tests or contacting a production system. The reviewer found no remaining issue in the permission-revocation
+readiness check. This static result does not substitute for the Linux VM tests or the full integration suite above.
