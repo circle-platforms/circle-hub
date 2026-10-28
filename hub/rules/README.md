@@ -375,3 +375,9 @@ Scope note: the owner authorized the rules implementation/tests and this README 
 
 QuoteTable in contracts/src/tables.ts and the regenerated quote.v1.schema.json describe the same exact contiguous
 substring contract as the independent rules and refs implementations.
+
+### Independent Linux isolation review
+
+Antigravity independently reviewed the fixed implementation at `ab2ec6c6` and found the two earlier blockers addressed:
+all-thread descendant accounting and per-child kernel isolation attestation. This was a source review, not production
+proof. The policy administrator remains trusted; stop the Hub and drain children before replacing an AppArmor policy.
