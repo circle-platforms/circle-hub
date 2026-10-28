@@ -38,9 +38,9 @@ export const residentSizes: Measure = async (pids) => {
   });
 };
 
-/** Sum a Linux sandbox supervisor and its descendants. A PID namespace may leave Node below bubblewrap's monitor. */
-export const residentTreeSizes: Measure = async (pids) => {
-  if (process.platform !== 'linux') return residentSizes(pids);
+/** Sum a Linux supervisor and descendants; a live but unreadable process tree is an unprovable memory bound. */
+export function createResidentTreeMeasure(options: { readChildren(pid: number): Promise<string>; measure: Measure }): Measure {
+ return async (pids) => {
   const result = new Map<number, number>();
   await Promise.all(pids.map(async (root) => {
     const found = new Set<number>();
@@ -52,19 +52,37 @@ export const residentTreeSizes: Measure = async (pids) => {
       // An unexpectedly broad process tree must trigger the watchdog, not evade it.
       if (found.size > 256) { result.set(root, Number.MAX_SAFE_INTEGER); return; }
       try {
-        const children = await readFile(`/proc/${pid}/task/${pid}/children`, 'utf8');
-        for (const child of children.trim().split(/\s+/)) {
-          if (/^[1-9]\d*$/.test(child)) pending.push(Number(child));
+        const children = (await options.readChildren(pid)).trim();
+        for (const child of children ? children.split(/\s+/) : []) {
+          const number = Number(child);
+          if (!/^[1-9]\d*$/.test(child) || !Number.isSafeInteger(number)) { result.set(root, Number.MAX_SAFE_INTEGER); return; }
+          pending.push(number);
         }
-      } catch {
-        // The process may have exited between samples.
+      } catch (error) {
+        // ENOENT can mean a process exited between samples; any other failure, or a still-live process, fails closed.
+        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT' || (await options.measure([pid])).has(pid)) {
+          result.set(root, Number.MAX_SAFE_INTEGER);
+          return;
+        }
+        found.delete(pid);
       }
     }
-    const sizes = await residentSizes([...found]);
+    const sizes = await options.measure([...found]);
+    // An unreadable status is indistinguishable from an exit after enumeration. The watcher checks liveness before killing.
+    for (const pid of found) if (!sizes.has(pid)) {
+      result.set(root, Number.MAX_SAFE_INTEGER);
+      return;
+    }
     if (sizes.has(root)) result.set(root, [...sizes.values()].reduce((sum, bytes) => sum + bytes, 0));
   }));
   return result;
-};
+ };
+}
+
+/** A PID namespace may leave Node below bubblewrap's monitor. */
+export const residentTreeSizes: Measure = process.platform === 'linux'
+  ? createResidentTreeMeasure({ readChildren: pid => readFile(`/proc/${pid}/task/${pid}/children`, 'utf8'), measure: residentSizes })
+  : residentSizes;
 
 export interface ResidentWatch {
   /** Calls `onBytes` with the child's resident size once per round until the returned function is called. */

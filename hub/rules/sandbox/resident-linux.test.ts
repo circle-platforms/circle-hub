@@ -2,7 +2,29 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { test } from 'node:test';
-import { residentSizes, residentTreeSizes } from './resident.ts';
+import { createResidentTreeMeasure, residentSizes, residentTreeSizes } from './resident.ts';
+
+test('an inaccessible live process tree fails closed rather than counting only its supervisor', async () => {
+  const measure = createResidentTreeMeasure({
+    readChildren: async (pid) => {
+      if (pid === 1) return '2';
+      throw Object.assign(new Error('inaccessible'), { code: 'EACCES' });
+    },
+    measure: async pids => new Map(pids.map(pid => [pid, 100])),
+  });
+  assert.equal((await measure([1])).get(1), Number.MAX_SAFE_INTEGER);
+});
+
+test('a child that exited between samples does not count as an inaccessible live tree', async () => {
+  const measure = createResidentTreeMeasure({
+    readChildren: async (pid) => {
+      if (pid === 1) return '2';
+      throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+    },
+    measure: async pids => new Map(pids.filter(pid => pid === 1).map(pid => [pid, 100])),
+  });
+  assert.equal((await measure([1])).get(1), 100);
+});
 
 test('Linux resident accounting includes a supervisor and its child', { skip: process.platform !== 'linux', timeout: 10_000 }, async (t) => {
   const childSource = "const bytes = Buffer.alloc(48 * 1024 * 1024, 7); process.stdout.write('ready\\n'); setInterval(() => bytes[0], 1000);";
