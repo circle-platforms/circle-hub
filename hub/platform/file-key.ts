@@ -37,7 +37,8 @@ export function fileKeyStore(options: FileKeyOptions): KeychainStore {
   };
   const read = async (): Promise<Uint8Array> => {
     if (!(await verifyDirectory(false))) throw new PlatformError(`没有${item.label}`, item.missingHint);
-    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') throw new PlatformError(`没有${item.label}`, item.missingHint); throw new PlatformError(`无法安全读取${item.label}`); });
+    // A substituted FIFO without a writer must never block open before fstat can reject the non-regular file.
+    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') throw new PlatformError(`没有${item.label}`, item.missingHint); throw new PlatformError(`无法安全读取${item.label}`); });
     try {
       const stat = await file.stat();
       if (!stat.isFile() || stat.nlink !== 1 || (owner !== undefined && stat.uid !== owner) || (stat.mode & 0o777) !== 0o600) throw new PlatformError(`${item.label}文件的属主或权限不对`);

@@ -323,7 +323,9 @@ const restore: Handler = async (args, context, io) => {
   return withLock(platformLockPath(context), async () => {
     await refuseWhilePending(context, '恢复');
     if ((await agentFor(context).status()).loaded) {
-      throw new PlatformError(`Hub 服务已加载（${context.platform === 'linux' ? 'systemd' : 'launchd'} 会不断重启它，它会和恢复抢数据库），不恢复`, '先运行 circle-hub service stop，恢复完成后再运行 circle-hub service start');
+      throw new PlatformError(`Hub 服务已加载（${context.platform === 'linux' ? 'systemd' : 'launchd'} 会不断重启它，它会和恢复抢数据库），不恢复`, context.platform === 'linux'
+        ? '先运行 circle-hub service stop 和 circle-hub service uninstall，确认自启已禁用；恢复完成后重新运行 circle-hub service install'
+        : '先运行 circle-hub service stop，恢复完成后再运行 circle-hub service start');
     }
     // The settings that will apply after the restore: the data root's own, else the backup's.
     const file = (await readSettingsFile(context.layout)) ?? (await backupSettings(dir));

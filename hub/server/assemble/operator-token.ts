@@ -26,6 +26,8 @@ export interface OperatorTokenStore {
   read(): Promise<string | null>;
   /** Stores a token; refuses when one is stored already. */
   write(token: string): Promise<void>;
+  /** Removes only the local operator-token item, when supported by the storage backend. */
+  remove?(): Promise<boolean>;
 }
 
 /** A failure of the operator token item, with the operator's next step (`hint`, printed by the CLI after the message). */
@@ -216,6 +218,7 @@ export function fileOperatorTokens(root: string, service: string): OperatorToken
   return {
     where,
     async present() { return (await store.status()).present; },
+    async remove() { return store.delete(); },
     async read() {
       if (!(await store.status()).present) return null;
       const bytes = await store.read();

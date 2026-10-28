@@ -510,3 +510,22 @@ Antigravity independently reviewed commits `f6640e08` and `385d37d3` by static i
 follow-up findings. Linux service recovery and restore messages now name systemd while macOS retains launchd; concurrent
 key deletion now treats an already removed file as absent and still reports other filesystem errors. Synthetic regression
 tests cover both paths. The review did not execute tests; the follow-up tests must be run separately before integration.
+
+### Conservative Linux recovery
+
+Linux operator recovery uses `circle-hub operator-token remove --confirm-only-operator-token` to remove only the
+local operator-token file. It refuses without confirmation and never touches the vault master key. Stop the Hub service
+before recovery and account for any concurrent readers. Removing the file does not revoke its database token: after
+`operator-token reissue --as <管理员>`, use `token list` and `token revoke` to reconcile and revoke old tokens. An existing
+item is never overwritten, even when revoked. File permission or integrity failures remain refusals requiring an
+administrator to inspect the private directory. FIFO substitutions are rejected without blocking.
+
+systemd lifecycle mutations refuse ambiguous state, missing expected files for loaded units, and loaded units whose
+FragmentPath differs from the deployment file. Inherited HOME/USER are replaced by the effective account identity.
+Restore guidance requires `service stop` plus `service uninstall` to disable autostart persistently, followed by
+`service install` after restore. These changes use synthetic fixtures and do not establish any target-server result.
+
+Recovery follow-up validation on macOS: `npx tsc --noEmit` exited 0;
+`node --test --test-concurrency=2 'hub/platform/**/*.test.ts' hub/server/assemble/cli-admin.test.ts hub/server/assemble/operator-token.test.ts`
+ran 310 tests: 306 passed, 0 failed, 4 skipped (Linux deployment with a real user manager, Linux empty-root restore, Linux file-key rehearsal,
+and the real Linux user-unit lifecycle). This is synthetic macOS evidence, including injected Linux backends; Linux execution remains pending.

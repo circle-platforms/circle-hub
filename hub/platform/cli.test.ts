@@ -374,6 +374,8 @@ test('Linux restore reports systemd when a loaded service would race the databas
     const runner=recordingRunner(call=>call.command==='/usr/bin/systemctl' ? ok('LoadState=loaded\nActiveState=active\nMainPID=12\nExecMainStatus=0\n') : undefined,{real:false});
     assert.equal(await runPlatformCommand(['restore',join(parent,'backup')],captured.io,{platform:'linux',home:parent,runner:runner.runner,launchAgentsDir:join(parent,'units')}),1);
     assert.match(captured.err.join('\n'),/systemd 会不断重启它/);
+    assert.match(captured.err.join('\n'),/service stop 和 circle-hub service uninstall，确认自启已禁用/);
+    assert.match(captured.err.join('\n'),/恢复完成后重新运行 circle-hub service install/);
     assert.doesNotMatch(captured.err.join('\n'),/launchd/);
   } finally { await removeDir(parent); }
 });

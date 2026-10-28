@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
 import {mkdtemp, chmod, lstat, readdir, rename, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir,userInfo} from 'node:os';
 import {join} from 'node:path';
@@ -33,6 +34,18 @@ test('Linux file keys refuse insecure permissions and symlinks rather than readi
  await chmod(path,0o600);await rm(path);const other=join(root,'target');await writeFile(other,Buffer.alloc(32),{mode:0o600});await symlink(other,path);
  await assert.rejects(store.read(),/无法安全读取/);await assert.rejects(store.status(),/权限/);
  await rm(path);await chmod(keys,0o755);await assert.rejects(store.write(Buffer.alloc(32)),/0700/);
+});
+
+test('a substituted FIFO with no writer is rejected without blocking', {timeout:5000}, async t=>{
+ const root=await mkdtemp(join(tmpdir(),'hub-file-fifo-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const store=fileKeyStore({root,service:'synthetic',account:'vault',item:VAULT_KEY_ITEM});await store.init();
+ const keys=join(root,'keys');const [name]=await readdir(keys);const path=join(keys,name!);await rm(path);
+ const fifo=spawnSync('/usr/bin/mkfifo',['-m','600',path],{encoding:'utf8',timeout:2000});
+ assert.equal(fifo.error,undefined);assert.equal(fifo.status,0,fifo.stderr);
+ const script=`const {fileKeyStore}=await import(process.argv[2]);try{await fileKeyStore({root:process.argv[1],service:'synthetic',account:'vault'}).read();process.exitCode=1;}catch(e){if(!String(e).includes('权限'))process.exitCode=2;}`;
+ // A separate process imposes a hard deadline even if a regression strands a libuv worker in open().
+ const child=spawnSync(process.execPath,['--input-type=module','-e',script,root,new URL('./file-key.ts',import.meta.url).href],{encoding:'utf8',timeout:3000,env:{PATH:'/usr/bin:/bin',HOME:root}});
+ assert.equal(child.error,undefined,'FIFO read must finish before the hard deadline');assert.equal(child.status,0,child.stderr);
 });
 
 test('Linux platform dispatch uses systemd and private files even with an injected command runner', async t=>{
