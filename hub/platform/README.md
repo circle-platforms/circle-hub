@@ -44,6 +44,11 @@ step; exceptions and changes during the scan are not success. Metadata checks ca
 changing the vault after the scan, so stopping writers is a prerequisite. Legacy vaults are checked without creating or
 rewriting their key-check file.
 
+Independent review: Antigravity reviewed commit `6ea80924` and its synthetic test source read-only and found no blocking
+issue in the key-transfer and vault-verification implementation. This is a static review, not a Linux integration or
+end-to-end test. The file-key provider and merged platform interfaces need a separate review after integration, and the
+pipe, restored vault and service must still be exercised together on Linux with synthetic data before any migration.
+
 `circle-hub init --environment <test|shared|production> [--port <p>]`, `db start|stop|status`, `key init [--set-aside-vault]|status`,
 `service install|uninstall|start|stop|status`, `backup [--keep N]`, `restore <dir>`,
 `deploy [--source <dir>] [--commit <rev>] [--copy]`, `rollback`, `rehearse [--keep]`, `status`. Exit codes: 0 ok,
