@@ -1169,6 +1169,12 @@ reader and source permission checked separately. A synthetic 40-record regressio
 and source-head reads before the change and at most four after it, while comparing the returned entries with the old
 path. This does not establish that index reads are the only cause of a slow real request.
 
+For `get_nodes`, the batched read selects candidate records by the requested root and the same exact node path or
+declared command path before reading their originals. Every selected record still receives its own current permission,
+source, retraction and frozen-offset checks. A synthetic request for an unrelated node previously read the same source
+40 times and now reads it zero times; the related node still checks all 40 candidates. A store without batch support
+uses the earlier per-record path. This is not a measurement of total latency on a real document.
+
 ### Feeding cases in views
 
 A feeding cut keeps valid function projections by exact locked root and exact source identity. A later source-only read

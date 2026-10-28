@@ -395,6 +395,16 @@ export class FeedingLayer {
  async entries(principal:Principal,product:string,offset=Number.MAX_SAFE_INTEGER):Promise<FeedingView[]>{
   if(this.context.records.store.findIndexed)return this.frozenEntries(principal,product,offset);
   const out:FeedingView[]=[];for(const row of await this.all('knowledge.feeding.product',product)){const body=this.body(row);if(!body||await this.position(row.digest)>offset||!await this.recordVisible(row,principal))continue;const retractions=[...await this.withdrawals(body.object,row.digest,typeof row.body.statement.data?.run==='string'?row.body.statement.data.run:null,row.body.validity.bound,offset),...await this.changed(body,offset)];out.push({record:row.digest,offset:await this.position(row.digest),body,claim:row.body,validity:retractions.length?'invalid':'valid',retractions});}return out;}
+ /** Only records that could be shown on the requested nodes need their sources read and authorized. */
+ async entriesAtNodes(principal:Principal,product:string,root:string,paths:readonly string[],offset=Number.MAX_SAFE_INTEGER):Promise<FeedingView[]>{
+  const selected=new Set(paths);if(!selected.size)return [];
+  const relevant=(body:Record<string,any>)=>body.root===root&&(
+   typeof body.path==='string'&&selected.has(body.path)||body.path===null&&selected.has('/')||
+   Array.isArray(body.commands)&&body.commands.some((command:unknown)=>object(command)&&typeof command.path==='string'&&selected.has(command.path))
+  );
+  if(this.context.records.store.findIndexed)return this.frozenEntries(principal,product,offset,relevant);
+  return (await this.entries(principal,product,offset)).filter(row=>relevant(row.body));
+ }
  /** Keep the matched index value: one record can be indexed under more than one object. */
  private async indexed<B>(key:string,values:readonly string[],kind:RecordKind,through:number):Promise<Map<string,IndexedRecord<B>[]>>{
   const scan=this.context.records.store.findIndexed;
@@ -409,10 +419,10 @@ export class FeedingLayer {
   return groups;
  }
  /** Frozen cuts batch immutable index facts but still check every record's present-day read permission. */
- private async frozenEntries(principal:Principal,product:string,through:number):Promise<FeedingView[]>{
+ private async frozenEntries(principal:Principal,product:string,through:number,select?:(body:Record<string,any>)=>boolean):Promise<FeedingView[]>{
   const productRows=(await this.indexed<ClaimBody>('knowledge.feeding.product',[product],'claim',through)).get(product)??[];
   const visible:Array<{row:IndexedRecord<ClaimBody>;body:Record<string,any>}>=[];
-  for(const row of productRows){const body=this.body(row.record);if(body&&await this.recordVisible(row.record,principal))visible.push({row,body});}
+  for(const row of productRows){const body=this.body(row.record);if(body&&(!select||select(body))&&await this.recordVisible(row.record,principal))visible.push({row,body});}
   const withdrawals=(await this.indexed<ClaimBody>(RETRACT,['1'],'claim',through)).get('1')??[];
   const heads=await this.indexed<any>('knowledge.feeding.head',visible.flatMap(({body})=>{const key=this.sourceKey(body);return key?[key]:[];}),'action',through);
   return visible.map(({row,body})=>{
