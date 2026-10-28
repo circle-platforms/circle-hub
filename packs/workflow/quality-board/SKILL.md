@@ -17,11 +17,11 @@ Hub 直接算出一个构建的用例质量看板：每个（版本线、模块�
 （3）参数不全。错 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?key=commands`。对 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。
 
 本包照抄这三条（同一产品、同一构建）：
-`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=line,module,has_expected,vague_expected,negative`
+`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=line,module,has_expected,negative,test_type_status`
 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`
-`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=line,module,tags`
+`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=line,module,tags,resource_empty,tag_valid`
 
-1. 开始运行：pack 写 quality-board；inputs.facets 写 `{"external": "knowledge:facets:<产品>:<构建>?kind=case&by=line,module,has_expected,vague_expected,negative"}`（可以在 by 里加 priority 等字段，不影响分组）。同时必须绑定 inputs.placement：`{"external":"knowledge:facets:<产品>:<构建>?kind=case&by=commands"}`，角色为提示，只披露未归位数，不作阈值判据。需要测试类型覆盖时，inputs.facets 改成两个对象的数组，再加 `{"external":"knowledge:facets:<产品>:<构建>?kind=case&by=line,module,tags"}`，计数视图和标签视图不得合成一个，三个视图必须同产品同根。这个任务包不绑定产品线：不要写 product、version、build（顶层和 parameters 都不要）——输入里的外部标识已经写明产品和构建，运行不会去锁定别的构建。
+1. 开始运行：pack 写 quality-board；inputs.facets 写 `{"external": "knowledge:facets:<产品>:<构建>?kind=case&by=line,module,has_expected,negative,test_type_status"}`（可以在 by 里加 priority 等字段，不影响分组）。同时必须绑定 inputs.placement：`{"external":"knowledge:facets:<产品>:<构建>?kind=case&by=commands"}`，角色为提示，只披露未归位数，不作阈值判据。需要测试类型覆盖时，inputs.facets 改成两个对象的数组，再加 `{"external":"knowledge:facets:<产品>:<构建>?kind=case&by=line,module,tags,resource_empty,tag_valid"}`，计数视图和标签视图不得合成一个，三个视图必须同产品同根。这个任务包不绑定产品线：不要写 product、version、build（顶层和 parameters 都不要）——输入里的外部标识已经写明产品和构建，运行不会去锁定别的构建。
 2. 结果在开始运行时就算好了：每个条目是一个分组（条目编号是 `<版本线>/<模块>`，没有归组的版本线或模块是 unplaced），摘要是“用例数、三项个数和占比”，完整结论在 result.reference 指向的校验结果里。逐条结论用 get_nodes 读取；条目多时照回答末尾的说明接着读。
 3. 原样转述每个分组的指标和阈值结论，不补全、不猜测：
    - 占比是精确分数（结论数据里是 num/den），转述用展示值（四位小数或一位百分数）；“超过上限”“低于下限”是提示档的不通过，等于阈值不算越界。
@@ -31,9 +31,9 @@ Hub 直接算出一个构建的用例质量看板：每个（版本线、模块�
 6. submit_result 不是必需的；要补充看法时可以提交，看法记为模型转述的判断，不改变 Hub 算出的看板。
 
 7. 标签视图只给六种测试类型的出现、未见和未打标签用例数，不给每种的精确用例数。同一用例可能有同类型的多个标签。其余 18 类需要步骤和期望等原文，这个视图看不到，请另开 template-gap；不能把未见标签写成没有这类测试。
-8. 标签视图截断或有未读来源时，原样转述“部分”和“在已读的来源里没看到”，自动同步未读来源并重新获取同根标签视图重跑。若仍截断，明确报告分面补读能力缺口并交集成者补取，不把它当最终完整覆盖。
-9. 未归位数按合计里的“未归位（没有命令归属的用例） N 个”原样转述。placement 截断且没有空组时会拒绝启动：缺的是未归位数。自动重新获取同根未截断的 by=commands 视图并重试；当前接口不能分页，也不支持 only=，不要发出虚构查询。仍取不全时报告知识包汇总能力缺口，请集成者补取不可截断的未归位汇总字段后再运行，不能以未知结束。有来源未读时自动同步这些来源并重新运行，说明这个数只覆盖已索引的来源。
+8. 标签视图截断或有未读来源时，原样转述“部分”和“在已读的来源里没看到”；绑定时 Hub 会续读分页，仍不完整就补来源或请维护者补完整视图。
+9. 未归位数按合计原样转述。placement 截断且没有空组时不能猜零：重新绑定同根完整 by=commands 视图；续页仍受预算或来源限制时，补来源或请维护者提供完整汇总。
 
-含糊比例只引用已受理评审判断，写明已判断分母、未判断数和冲突数；没有判断时先补 case-review 和同根 cases 索引，不转述旧 vague_expected。引文存在不证明语义判断正确。
+含糊比例只引用同根、同原件且已受理有效的 case-review 判断：inputs.cases 绑定 `knowledge:index:<产品>:<构建>?kind=case&key=case_location`，inputs.reviews 绑定其结果 rec:。写明已判断分母、未判断数和冲突数；零分母为未判断，不转述旧 vague_expected。负向比例分母只含测试类型已声明的用例。引文存在不证明语义判断正确。
 
 喂入层：这个包读到的用例、缺陷、构建、规格凡经 Hub 读的都由程序自动进喂入层（带锁定树苗和冻结序号），视图按"锁定树苗 + 冻结序号之前的喂入层"读；版本未声明和矛盾的对象单列计数，不进版本差。Circle 只经 knowledge-contribution 回注补程序填不了的语义（带逐字引文），运行中不问人；结构契约见该包 tables/knowledge-structure.json 或 get_nodes 根路径。

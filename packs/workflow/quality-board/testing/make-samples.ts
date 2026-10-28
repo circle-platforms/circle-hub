@@ -25,7 +25,7 @@ async function write(dir: string, name: string, sample: unknown): Promise<void> 
 }
 
 async function main(): Promise<void> {
-  // Positive of board and thresholds: one group within every threshold (20 cases: 1 missing, 1 vague, 1 negative).
+  // Positive of board and thresholds: 20 cases, 1 missing, 19 judged with 0 vague, and 1 negative.
   const within = subjectOf([
     facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: false }, 1),
     facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: true, negative: false }, 1),
@@ -37,7 +37,7 @@ async function main(): Promise<void> {
     id: 'board_with_metrics',
     source: 'author',
     check: 'board',
-    note: '合成样例：一个分组的指标按定义算出（20 个用例：无期望 1、含糊期望 1、负面 1），总是记支持，指标写在结论数据里',
+    note: '合成样例：20 个用例中无期望 1、已判断 19 且含糊 0、负面 1；指标写在结论数据里',
     subject: within,
     expect: [{ verdict: 'support', item: '10.6.1/SSL', tier: 'advisory' }],
   });
@@ -87,7 +87,7 @@ async function main(): Promise<void> {
     id: 'totals_consistent',
     source: 'author',
     check: 'totals',
-    note: '合成样例：合计覆盖整个视图（用例 23 个：无期望 2、含糊期望 1、负面 1），并写明看板只覆盖用例索引收录的用例',
+    note: '合成样例：合计覆盖 23 个用例，其中无期望 2、负面 2、含糊未判断 23；只覆盖用例索引收录范围',
     subject: subjectOf([
       facetRow({ line: '10.6.1', module: 'SSL', has_expected: false, vague_expected: false, negative: true }, 2),
       facetRow({ line: '10.6.1', module: 'SSL', has_expected: true, vague_expected: true, negative: false }, 1),
