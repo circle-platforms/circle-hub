@@ -25,7 +25,8 @@ test('maintenance recreates missing requests for recorded exits without rewritin
   const due = '2099-01-01T00:00:00.000Z';
   const exit = {action:'request' as const,request_kind:'repair' as const,audience:{user:h.alice.id},due};
   requirement.layers = [{layer:'static',terminal:'unchecked',reason:'missing_input',missing:'合成主要缺失事实',exit,
-    gaps:[{reason:'missing_input',missing:'合成独立缺失事实',exit:structuredClone(exit)}]},
+    gaps:[{reason:'missing_input',missing:'合成独立缺失事实',exit:structuredClone(exit)},
+      {reason:'missing_input',missing:'缺受众的旧出口',exit:{action:'request'}} as never]},
     {layer:'dynamic',terminal:'no_verdict',reason:'missing_input',missing:'合成自动重跑事实',exit:{action:'rerun',audience:{hub:true},due}}];
   requirement.status = 'pending';
   delete requirement.unsatisfied_reason;
