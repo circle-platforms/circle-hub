@@ -22,3 +22,9 @@
 ## 本阶段验证
 
 `node --test --test-concurrency=2 scripts/release/integrity.test.ts`：首次 1 通过、1 失败，发现 macOS 临时目录系统路径别名使合法链接被误判；检查根目录本身后统一真实路径修复。再次运行 2 通过、0 失败、0 跳过。`npx tsc --noEmit`：退出 0。`git diff --cached --check`：退出 0。均只使用临时合成文件，没有原生构建/安装/升级、PostgreSQL、服务或沙箱验证；未运行完整套，不能作为合入或发布验收。测试窗口已归还集成者。
+
+## 独立审查修复：特殊文件名
+
+审查发现 `__proto__` 根文件名写入普通对象时会修改原型并被清单遗漏。追加回归后先运行同一 own tests：2 通过、2 失败，确认普通文件及链接的特殊名字均未成为自有清单项。修复为无原型字典，同时替换会剥离 `__proto__` 的 `z.record` 文件清单解析：逐个自有条目保留名字并执行原有严格 Entry 校验。新增、修改已列特殊文件、特殊链接变更/越界与清单自身为链接均有反例。
+
+修复后 `node --test --test-concurrency=2 scripts/release/integrity.test.ts`：4 通过、0 失败、0 跳过；`npx tsc --noEmit`：退出 0。当前链接反例在 macOS 实际执行；Windows 缺链接创建权限时会明确跳过该目录级合成项，这不构成 Windows 发布验收。仍未实现完整发行，发布阻断函数仍未接入任何运行入口；本修复不改变这些边界。

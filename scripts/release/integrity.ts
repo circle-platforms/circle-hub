@@ -12,11 +12,26 @@ const Entry = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('file'), sha256: Digest, size: z.number().int().nonnegative(), executable: z.boolean() }).strict(),
   z.object({ kind: z.literal('link'), target: z.string().min(1) }).strict(),
 ]);
+// z.record strips __proto__ keys; filesystem inventories must retain every own name.
+const Files = z.unknown().transform((value, context): Record<string, z.infer<typeof Entry>> => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    context.addIssue({ code: 'custom', message: '发行文件清单必须是对象' });
+    return z.NEVER;
+  }
+  const result: Record<string, z.infer<typeof Entry>> = Object.create(null);
+  for (const [key, entry] of Object.entries(value)) {
+    const parsed = Entry.safeParse(entry);
+    if (!parsed.success) context.addIssue({ code: 'custom', path: [key], message: '发行文件条目不合法' });
+    else result[key] = parsed.data;
+  }
+  return result;
+});
+
 export const Manifest = z.object({
   schema: z.literal('circle-hub-release/v1'), version: Version, target: Target, nodeVersion: z.string().regex(/^24\.\d+\.\d+$/),
   commit: z.string().regex(/^[a-f0-9]{40}$/),
   runtime: z.object({ version: z.string().regex(/^24\.\d+\.\d+$/), archive: z.string().regex(/^[A-Za-z0-9.-]+$/), sha256: Digest }).strict(),
-  files: z.record(z.string(), Entry),
+  files: Files,
 }).strict();
 export type Manifest = z.infer<typeof Manifest>;
 
@@ -24,7 +39,7 @@ export function inventory(root: string): Manifest['files'] {
   if (!lstatSync(root).isDirectory() || lstatSync(root).isSymbolicLink()) throw new Error('发行目录必须是普通目录');
   // macOS temporary directories may have a system path alias; compare canonical roots.
   root = realpathSync(root);
-  const result: Manifest['files'] = {};
+  const result: Manifest['files'] = Object.create(null);
   const inside = (path: string): boolean => { const rel = relative(root, path); return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel); };
   const visit = (dir: string): void => {
     for (const name of readdirSync(dir).sort()) {
