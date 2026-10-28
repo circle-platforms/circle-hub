@@ -548,8 +548,8 @@ migration; the synthetic Linux and integration checks remain separate evidence.
 reverse cleanup with visible failures, and a direct subprocess key pipe that never captures key
 bytes. The root-owned 0644 marker is a non-secret administrator declaration, not proof of VM
 isolation. The account and VM must be disposable and contain no production data or credentials.
-The complete real-release/systemd/backup/restore/vault/MCP scenario remains pending the listen
-and key-transfer branches; neither these safety unit tests nor `linux-lifecycle-real.test.ts`
+`linux-hub-migration-real.test.ts` implements the real-release/systemd/backup/restore/vault/MCP
+scenario, pending the listen and key-transfer branches and VM execution; neither these safety unit tests nor `linux-lifecycle-real.test.ts`
 (which substitutes npm and the Hub) establishes end-to-end migration. Exact scope, prerequisites,
 resource cleanup rules, missing interfaces and the unrun verification record are in
 [`linux-real-e2e`](../../docs/hub-r4-tasks/linux-real-e2e.md). No VM mutation or test was run for
