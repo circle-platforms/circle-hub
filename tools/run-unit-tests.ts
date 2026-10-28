@@ -26,6 +26,7 @@ export const UNIT_PATTERNS = [
   'scripts/**/*.test.ts',
   'tools/gen-contracts*.test.ts',
   'tools/run-acceptance-tests.test.ts',
+  'tools/run-macos-tests.test.ts',
   'tools/run-unit-tests.test.ts',
   'tools/slot-schema.test.ts',
   'tests/fixtures/**/*.test.ts',

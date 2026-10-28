@@ -45,7 +45,7 @@ npm test                   # 合约检查、单元、验收与参考测试
 node --test ".github/checks/*.test.ts"   # 文档检查
 ```
 
-`node tools/show-element.ts B01 W06` 打印模型元素，`node tools/show-element.ts --vocab partition` 打印一个词表轴。测试和 CI 只用合成夹具与脚本化模型，从不连接真实系统；只有已部署的 Hub 和所有者自己的脚本读取真实系统，而且只读。CI 在 Ubuntu 上运行，需要 macOS 或 libpq 的测试在那里跳过；这些路径靠本机 macOS 上的运行核对，记在进度里。
+`node tools/show-element.ts B01 W06` 打印模型元素，`node tools/show-element.ts --vocab partition` 打印一个词表轴。测试和 CI 只用合成夹具与脚本化模型，从不连接真实系统；只有已部署的 Hub 和所有者自己的脚本读取真实系统，而且只读。CI 在 Ubuntu 上运行，需要 macOS 的测试在那里跳过；另有一个 macOS 工作流在每次推送到 main 和每晚运行它们，每个阶段还在本机 macOS 上完整运行一次，记在进度里。
 
 ## 文档
 

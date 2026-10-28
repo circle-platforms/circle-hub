@@ -1,0 +1,73 @@
+name: macOS-only paths
+
+# The tests that skip on Ubuntu because they need macOS: sandbox-exec isolation of pack functions (and its network denial),
+# the keychain, plutil and launchd, plus backup, restore and deploy with pg_dump and pg_restore 18. tools/run-macos-tests.ts
+# selects them from the sources by their skip guards. Synthetic fixtures and scripted models only; no secret is read.
+# Not on pull requests: macOS runners are few and shared across the organisation. This workflow is not a required check.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# At most one run per branch at a time; a newer one waits instead of cancelling the running one.
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    name: macOS-only paths
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      # postgresql@18 stays on major 18 (libpq follows the newest major); CIRCLE_HUB_LIBPQ_BIN points the platform tests at it.
+      - name: Install the PostgreSQL 18 client
+        timeout-minutes: 15
+        shell: bash
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: '1'
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if brew install postgresql@18; then break; fi
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            sleep 20
+          done
+          bin="$(brew --prefix postgresql@18)/bin"
+          for tool in pg_dump pg_restore; do "$bin/$tool" --version | grep -E ' 18\.'; done
+          echo "CIRCLE_HUB_LIBPQ_BIN=$bin" >> "$GITHUB_ENV"
+      # Fail here rather than let every guarded test skip quietly on a runner without working isolation or keychain tools.
+      - name: Require sandbox-exec isolation and the keychain tools
+        id: ready
+        run: |
+          test -x /usr/bin/security
+          node --input-type=module -e "const m = await import('./hub/rules/api.ts'); if (!(await m.osIsolationAvailable())) { console.error('sandbox-exec isolation unavailable: ' + m.osIsolationFailure()); process.exit(1); }"
+      - name: List the selected test files
+        run: node tools/run-macos-tests.ts list
+      - name: Run the unit tests that need macOS
+        shell: bash
+        run: node tools/run-macos-tests.ts unit 2>&1 | tee "$RUNNER_TEMP/macos-unit.log"
+      - name: Count what ran and what was skipped (unit)
+        if: ${{ !cancelled() }}
+        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/macos-unit.log" 'macOS unit tests'
+      - name: Run the acceptance tests that need macOS
+        if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
+        shell: bash
+        run: node tools/run-macos-tests.ts acceptance 2>&1 | tee "$RUNNER_TEMP/macos-acceptance.log"
+      - name: Count what ran and what was skipped (acceptance)
+        if: ${{ !cancelled() }}
+        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/macos-acceptance.log" 'macOS acceptance'

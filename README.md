@@ -45,7 +45,7 @@ npm test                   # contracts check, unit, docs, acceptance and referen
 node --test ".github/checks/*.test.ts"   # docs checks
 ```
 
-`node tools/show-element.ts B01 W06` prints model elements and `node tools/show-element.ts --vocab partition` prints a vocabulary axis. Tests and CI use only synthetic fixtures and scripted models and never reach a real system. Only the deployed Hub and the owner's own scripts read real systems, and only to read. CI runs on Ubuntu, where the tests that need macOS or libpq skip; those paths are checked by local macOS runs recorded in the progress page.
+`node tools/show-element.ts B01 W06` prints model elements and `node tools/show-element.ts --vocab partition` prints a vocabulary axis. Tests and CI use only synthetic fixtures and scripted models and never reach a real system. Only the deployed Hub and the owner's own scripts read real systems, and only to read. CI runs on Ubuntu, where the tests that need macOS skip; a separate macOS workflow runs them on every push to main and nightly, and each phase records a local macOS run in the progress page.
 
 ## Documentation
 
