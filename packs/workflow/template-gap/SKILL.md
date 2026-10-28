@@ -16,11 +16,11 @@ Hub 不调用模型。类别语义来自作者原件的 `category_ids`，或你�
 （2）缺构建。错 `knowledge:facets:ORBIT?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
 （3）参数不全。错 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?key=commands`。对 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。
 
-本包要收窄到一份文档时照抄：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=document&only=1001&fields=document,node,commands,command_identities,title,path_labels`。
+本包要收窄到一份文档时照抄：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=document&only=1001&fields=document,node,commands,command_identities,title,path_labels,object`。喂入索引的条目引用是 `rec:`，条目摘要是来源记录摘要；`data.object` 才是共享的用例内容身份。旧树条目仍用 `tree:`。
 
 1. 用 get_workflow 读此版本的要求项、槽位及本规程末尾按 `tables/template-v3.json` 列出的描述性闭集。类别的 id、label、group、description 供阅读，不能编译成文字匹配规则。24 个类别的必选范围与用户跳过政策在 `template-v3-coverage.json`。
 2. start_run：pack=template-gap；documents 绑定敏捷平台脑图或 upload_file 回执。要对照某个构建时，product 和 build、version 写在 start_run 顶层，与 pack、inputs 并列，用来锁定目录，不写进 parameters。每份脑图一个条目。默认 case_rule=marked；tagged 会与按命令的默认用例范围不一致，按回执改用 marked 重跑。批量过大时拆批。
-3. 可选 case_index 绑定 `knowledge:index:<产品>:<同构建>?kind=case&key=document&only=<本次敏捷平台文档编号>&fields=document,node,commands,command_identities,title,path_labels`。only 不多不少，不含上传文件。commands 是 command_identities 派生的路径集合；完整身份包含根、路径、签名及带类型的参数，不能按路径相同合并不同参数调用。
+3. 可选 case_index 绑定 `knowledge:index:<产品>:<同构建>?kind=case&key=document&only=<本次敏捷平台文档编号>&fields=document,node,commands,command_identities,title,path_labels,object`。only 不多不少，不含上传文件。commands 是 command_identities 派生的路径集合；完整身份包含根、路径、签名及带类型的参数，不能按路径相同合并不同参数调用。
 4. 读 start_run 的条目字段和运行记录。unclassified 是还缺类别判断的用例，不是缺类别。读取原件中这些用例的节点及下属步骤/结果；用模型逐用例判断可适用类别，按该包声明的 id 提出 CategoryJudgment。每条写 item（用例编号）、category_id、quote、producer；quote.identity 写原件 source_sha256、kityminder@1、精确 selector、原始字节 span（unit=byte、offset、length），quote.text 逐字对应这些原始字节；producer 显式写 model_id、model_family_id。不得拿祖先、兄弟或嵌套用例的同文当证据。JSON 转义和双重编码按原始字节身份写，不正规化宽窄、大小写或空白。
 5. submit_result：每份文档条目的 slots.coverage 为 SlotClaim 列表，每条的 data 是一份 CategoryJudgment，statement 是你的分类陈述。已有作者精确声明且不另补判断的文档也显式交 coverage:[]。空列表只代表没交模型判断，不能把未分类用例变成已分类。提交回执不受理时，按逐条结构/引文错误修正后重交；原件字段非法时请作者改正原件再重读、开始新运行，不暗中修剪或映射标签。
 6. 遇到未分类立即继续第 4–5 步补判断，不停下来向用户索要已绑定的原件。来源读失败则按回执重读；命令身份缺失则用新生产器重产知识、重读索引并开新运行；命令未连接则按文档键和精确修订事实补同步。补证仍失败时记清缺的事实及做过的动作，交具名集成者 Claude 作为设计缺口，本轮不得声称核验完成。

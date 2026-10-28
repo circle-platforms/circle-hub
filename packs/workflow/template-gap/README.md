@@ -125,3 +125,10 @@ Command skips on orphan-only commands refuse; skips on unmatched current revisio
 标签按 resource-tags@1 的精确原文闭集读取，保留 resource 原值。闭集外是提示档结构违规“未声明的标签”；大小写、全半角与同义词不相等。非法声明不进入正反向比例分母。此版本替代旧关键词规则，历史结果不改写；应以新包重产新根与新运行。本次续接按所有者指令未运行验证。
 
 R1/R4 衔接：索引所属知识根仍按运行 context.root 核对；CommandIdentity.tree_root 单独绑定其签名的命令树来源根（src 摘要或 tree 根），不把包含用例自身的知识根写进自身身份。原文提供 command_tree_root 时必须一致，缺命令树的显式 null 保持缺完整身份。路径集合只取完整身份。类别与 resource 测试类型分别核对；未分类时也披露已覆盖集合，不把未见类别记为缺口。两份共享接口快照统一由 tools/gen-contracts.ts 生成。本次续接未运行验证。
+
+### Feeding-backed case indexes
+
+An index can cite either a tree entry with its `tree:` reference or a feeding projection with a complete `rec:` reference
+whose digest is the index entry. `data.object`, when present, is the shared content identity; distinct source records may
+name the same object. The index still needs the document, node, title, ancestor labels and complete command identities;
+older feeding records without them remain unknown until a root-bound re-read supplies the missing fields.
