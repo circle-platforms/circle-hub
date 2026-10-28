@@ -1,9 +1,20 @@
 #!/usr/bin/env node
-// circle-hub command. Refuses retired CIRCLE_SERVER_* names first (hub/config/guard.ts, or the platform's equivalent
+// circle-hub command. Except the pure --version query, refuses retired CIRCLE_SERVER_* names first (hub/config/guard.ts, or the platform's equivalent
 // guard when that package is absent), then runs the server CLI (hub/server/cli.ts) when this checkout has one,
 // otherwise the platform commands alone. Both CLIs export main(argv) and return the exit code; a CLI module without
 // main is an error, never a silent success.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+
+// A release identity query must not load settings, credentials or environment guards.
+if (process.argv.length === 3 && process.argv[2] === '--version') {
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version)) {
+    process.stderr.write('错误：包版本不合法\n');
+    process.exit(1);
+  }
+  process.stdout.write(`${version}\n`);
+  process.exit(0);
+}
 
 const local = (path) => new URL(`../${path}`, import.meta.url);
 try {

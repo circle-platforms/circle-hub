@@ -68,7 +68,7 @@ export function verifyDistribution(root: string, expected: { version: string; ta
   if (JSON.stringify(Object.entries(actual).sort()) !== JSON.stringify(Object.entries(manifest.files).sort())) throw new Error('发行逐文件清单不一致');
   const pkg = JSON.parse(readFileSync(join(root, 'app/package.json'), 'utf8'));
   if (pkg.name !== 'circle-hub' || pkg.version !== manifest.version) throw new Error('发行版本不一致');
-  for (const required of ['app/bin/circle-hub', 'app/node_modules/embedded-postgres/package.json', `runtime/${manifest.target.startsWith('windows-') ? 'node.exe' : 'node'}`]) {
+  for (const required of ['app/scripts/release/install-release.ts', 'app/scripts/release/operations.ts', 'app/scripts/release/executable.ts', 'app/scripts/release/integrity.ts', 'app/scripts/release/node-runtime.json', 'app/bin/circle-hub', 'app/node_modules/embedded-postgres/package.json', `runtime/${manifest.target.startsWith('windows-') ? 'node.exe' : 'node'}`]) {
     if (manifest.files[required]?.kind !== 'file') throw new Error('发行缺少必要文件');
   }
   return manifest;

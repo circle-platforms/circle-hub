@@ -17,9 +17,9 @@ test('six targets are required and current readiness blocks publication', () => 
 test('inventory rejects modified, added and missing files and preserves npm links', () => {
   const root = mkdtempSync(join(tmpdir(), 'hub-distribution-'));
   try {
-    for (const dir of ['app/bin', 'app/node_modules/embedded-postgres', 'runtime']) mkdirSync(join(root, dir), { recursive: true });
+    for (const dir of ['app/bin', 'app/scripts/release', 'app/node_modules/embedded-postgres', 'runtime']) mkdirSync(join(root, dir), { recursive: true });
     writeFileSync(join(root, 'app/package.json'), JSON.stringify({ name: 'circle-hub', version: '0.2.0' }));
-    for (const path of ['app/bin/circle-hub', 'app/node_modules/embedded-postgres/package.json', 'runtime/node']) writeFileSync(join(root, path), 'synthetic');
+    for (const path of ['app/scripts/release/install-release.ts', 'app/scripts/release/operations.ts', 'app/scripts/release/executable.ts', 'app/scripts/release/integrity.ts', 'app/scripts/release/node-runtime.json', 'app/bin/circle-hub', 'app/node_modules/embedded-postgres/package.json', 'runtime/node']) writeFileSync(join(root, path), 'synthetic');
     const manifest: Manifest = { schema: 'circle-hub-release/v1', version: '0.2.0', nodeVersion: '24.21.0', target: 'darwin-arm64', commit: 'a'.repeat(40), runtime: { version: '24.21.0', archive: 'node.tar.gz', sha256: 'b'.repeat(64) }, files: inventory(root) };
     writeFileSync(join(root, 'release.json'), JSON.stringify(manifest));
     assert.equal(verifyDistribution(root, manifest).version, '0.2.0');
@@ -48,9 +48,9 @@ test('inventory rejects modified, added and missing files and preserves npm link
 function withRelease(run: (root: string, manifest: Manifest, save: () => void) => void): void {
   const root = mkdtempSync(join(tmpdir(), 'hub-special-path-'));
   try {
-    for (const dir of ['app/bin', 'app/node_modules/embedded-postgres', 'runtime']) mkdirSync(join(root, dir), { recursive: true });
+    for (const dir of ['app/bin', 'app/scripts/release', 'app/node_modules/embedded-postgres', 'runtime']) mkdirSync(join(root, dir), { recursive: true });
     writeFileSync(join(root, 'app/package.json'), JSON.stringify({ name: 'circle-hub', version: '0.2.0' }));
-    for (const path of ['app/bin/circle-hub', 'app/node_modules/embedded-postgres/package.json', 'runtime/node']) writeFileSync(join(root, path), 'synthetic');
+    for (const path of ['app/scripts/release/install-release.ts', 'app/scripts/release/operations.ts', 'app/scripts/release/executable.ts', 'app/scripts/release/integrity.ts', 'app/scripts/release/node-runtime.json', 'app/bin/circle-hub', 'app/node_modules/embedded-postgres/package.json', 'runtime/node']) writeFileSync(join(root, path), 'synthetic');
     const manifest: Manifest = { schema: 'circle-hub-release/v1', version: '0.2.0', nodeVersion: '24.21.0', target: 'darwin-arm64', commit: 'a'.repeat(40), runtime: { version: '24.21.0', archive: 'node.tar.gz', sha256: 'b'.repeat(64) }, files: inventory(root) };
     const save = (): void => { writeFileSync(join(root, 'release.json'), JSON.stringify(manifest)); };
     save();
