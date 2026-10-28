@@ -56,3 +56,57 @@ test('without a deployment, or with unreadable settings, nothing is added', asyn
     await rm(empty, { recursive: true, force: true });
   }
 });
+
+test('Linux operator resolves the effective account home instead of an inherited HOME', async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'hub-operator-home-'));
+  const effectiveHome = join(parent, 'effective');
+  const inheritedHome = join(parent, 'other');
+  const root = join(effectiveHome, '.local', 'share', 'circle-hub');
+  const wrongRoot = join(inheritedHome, '.local', 'share', 'circle-hub');
+  const previous = process.env.HOME;
+  try {
+    for (const [dir, port] of [[root, 7435], [wrongRoot, 7436]] as const) {
+      const layout = layoutAt(dir);
+      await mkdir(layout.config, {recursive:true});
+      await writeFile(settingsPath(layout), JSON.stringify(newSettingsFile({environment:'test',port})));
+    }
+    process.env.HOME = inheritedHome;
+    const host = {platform:'linux' as const,username:'synthetic-user',effectiveHome};
+    const got = await operatorEnvironment({}, undefined, host);
+    assert.equal(got[PLATFORM_VARIABLES.dataDir],root);
+    assert.equal(got[PLATFORM_VARIABLES.port],'7435');
+    assert.notEqual(got[PLATFORM_VARIABLES.dataDir],wrongRoot);
+  } finally {
+    if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous;
+    await rm(parent,{recursive:true,force:true});
+  }
+});
+
+test('Linux accepts an explicit absolute XDG data home and never falls back from an invalid one', async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'hub-operator-xdg-'));
+  try {
+    const xdg = join(parent,'xdg');
+    const root = join(xdg,'circle-hub');
+    const layout = layoutAt(root);
+    await mkdir(layout.config,{recursive:true});
+    await writeFile(settingsPath(layout),JSON.stringify(newSettingsFile({environment:'test',port:7437})));
+    const host = {platform:'linux' as const,username:'synthetic-user',effectiveHome:join(parent,'effective')};
+    const got = await operatorEnvironment({XDG_DATA_HOME:xdg},undefined,host);
+    assert.equal(got[PLATFORM_VARIABLES.dataDir],root);
+    assert.equal(got[PLATFORM_VARIABLES.port],'7437');
+    assert.deepEqual(await operatorEnvironment({XDG_DATA_HOME:'relative'},undefined,host),{});
+  } finally { await rm(parent,{recursive:true,force:true}); }
+});
+
+test('an explicit home still selects the macOS deployment', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'hub-operator-darwin-'));
+  try {
+    const root = join(home,'Library','Application Support','circle-hub');
+    const layout = layoutAt(root);
+    await mkdir(layout.config,{recursive:true});
+    await writeFile(settingsPath(layout),JSON.stringify(newSettingsFile({environment:'test',port:7438})));
+    const got = await operatorEnvironment({},home,{platform:'darwin',username:'synthetic-user'});
+    assert.equal(got[PLATFORM_VARIABLES.dataDir],root);
+    assert.equal(got[PLATFORM_VARIABLES.port],'7438');
+  } finally { await rm(home,{recursive:true,force:true}); }
+});

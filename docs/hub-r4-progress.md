@@ -638,6 +638,12 @@ nav_order: 3
     - 本机数据搬运格式沿用 `backup`/`restore`（数据库导出约 1.1 GB、对象约 4.7 GB，不含 releases、set-aside、backups、packs、logs）。任务页 `docs/hub-r4-tasks/linux-server-migration.md`，由 codex 全程负责（集成者额度不足）；到目标机的 SSH 账号、切换时间、防火墙与 TLS、是否仍要改服务账号，是所有者专属事项。
     - 所有者 2026-10-28 的后续答复：用 root 登录 172.16.2.90（用专用密钥，所有者装公钥一次）；随时可以切换（切换前核对无未结作业、无租约占用）；防火墙只放行 172.16.0.0/16；不加 TLS。本机部署切换后原样保留作回滚。
 
+79. **发布平台统一为 macOS、Windows、Linux，Windows 沙箱与 Circle 保持一致**（来源：所有者，2026-10-28，对话里直接对 codex 说）：
+    - Hub 的发布平台与 Circle 一样覆盖 macOS、Windows、Linux，这样才是统一的 circle-platform；Windows 的验证用 GitHub 的 Windows 运行器（x64、ARM64）。
+    - Windows 的系统级沙箱和密库（DPAPI）要调 Win32 接口，Node 自带库没有：所有者授权 Hub 引入并固定与 Circle 相同版本的 koffi（只放在 Windows 适配模块里，版本和完整性值锁死），沙箱和密库按 Circle 的实现和做法来做，不另起一套。这是对"依赖只限 package.json 已有的"这条规则的例外，只限这一个依赖。
+    - 顺序：Linux 迁移到 172.16.2.90 优先，Windows 随后；改公开仓库工作流（Windows 运行器）以所有者此处的授权为准，改动前 codex 先写明改什么。
+    - 沙箱的权限不放宽：Windows 复用 Circle 的实现机制，但保留 Hub 的规则——包内函数不能联网、不能写文件、不能起别的程序。需要这些能力的是以后 Hub 上 bot 要开发的内容（所有者 2026-10-28：暂时不考虑）。
+
 ## R5 进度记录
 
 截至 2026-10-27 中午。依据 `docs/hub-r5-brief.md`、`docs/hub-r5-tests.md` 和 Git 历史（`7bfca782..hub-redesign`）。数字只写本节作者亲自核过的；真实层的运行号、地址和内容只留本机，不进 Git。

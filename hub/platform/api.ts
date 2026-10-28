@@ -72,4 +72,5 @@ export { verifyPostgres, type VerifyResult } from './verify.ts';
 export { isPlatformCommand, main, PLATFORM_COMMANDS, runPlatformCommand, type PlatformIo } from './cli.ts';
 export { fdIsKeyPipe, liveKeyPipe, readKeyStdin, type KeyPipe } from './key-transfer.ts';
 export { ensureHubDatabase, hubKeyProvider } from './service.ts';
+export { fileKeyStore, fileKeyProvider, type FileKeyOptions } from './file-key.ts';
 export { runCommand, type CommandResult, type CommandRunner } from './process.ts';
