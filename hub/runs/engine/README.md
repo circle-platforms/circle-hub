@@ -627,6 +627,13 @@ rewrite requests or old results. `getRun`/`listRequests` apply run visibility be
 rows retain an empty hypothesis set with the mandatory open residual and a named judgment request, without inventing
 hypotheses or predictions. The console lists unanswered requests with their named audience and deadline.
 
+Maintenance also checks accepted historical results whose layer already contains a complete named request exit. If the
+corresponding item/requirement request is absent, it uses the ordinary routing rules on a detached result copy to append
+the request with the recorded missing fact, audience, source and deadline. Existing or answered requests are retained,
+independent gaps are kept, and the old result is never rewritten. Non-request exits are not turned into human requests.
+For older results without those fields, the already-created repair requests are looked up by their existing exact
+identity in batches; repeated maintenance does not refresh their deadlines or issue one lookup per historical layer.
+
 Installed checks returning no outcome for an item are `check_error`, not `no_check`. Output failures retain
 `output_failed` on the dynamic not-run layer. Work-limit exhaustion is unchecked; it is distinct from an effect budget.
 Every distinct unknown is retained in layer gaps even beside a settled violation. `pending_unknown` is an optional

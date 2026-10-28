@@ -57,6 +57,8 @@ const issue = <T>(ctx: z.core.$RefinementCtx<T>, path: Path, message: string): v
 
 export const ListTaskPacksInput = z.strictObject({
   kind: PackKindSchema.optional().describe('Only packs of this kind'),
+  pack_id: PackId.optional().describe('Only the pack with this exact ID'),
+  offset: z.number().int().nonnegative().optional().describe('Continue at this zero-based position in the same filtered list'),
 });
 export const ListTaskPacksOutput = Envelope.extend({ packs: z.array(PackSummary) }).superRefine((o, ctx) => {
   if (o.call_result === 'error' && o.packs.length > 0) issue(ctx, ['packs'], 'an error answer lists no packs');
@@ -244,7 +246,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'list_task_packs',
     title: 'List task packs',
-    description: 'List the task packs you may use, with the inputs, parameters and requirements of each.',
+    description: 'List the task packs you may use, with inputs, parameters and requirements. Filter by exact pack_id or continue a truncated list with offset.',
     input: ListTaskPacksInput,
     output: ListTaskPacksOutput,
     effect: 'none',

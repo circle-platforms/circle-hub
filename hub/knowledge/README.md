@@ -734,6 +734,12 @@ Milestone 2:
 
 ## Composition-pinned literal relations (kb-links, first step)
 
+Relation preparation reads tree nodes in batches of at most 128 instead of issuing one indexed read per node. Each node
+uses the same oldest indexed record and digest/shape validation as the single-node reader; missing or invalid records still
+produce the existing repair outcome. After prefetch, relation sources are processed in the original depth-first order,
+including a shared digest reached at more than one path. The computation still examines the full declared relation scope;
+batching reduces storage round trips and does not establish a wall-time bound for an arbitrarily large composition.
+
 The product's optional `links` array declares `id`, a top-level literal `field`, a target `namespace`, generated `link_match`,
 and an `entry_kind` (required for longest-prefix matching). Only declared boolean normalizers are supported: `lowercase`,
 `nfc`, `nfkc` and `strip_nul`; NFC and NFKC are mutually exclusive. Omission means unchanged spelling. Tokenization is by
@@ -1150,3 +1156,9 @@ The optional `tree_root@1.empty_scope` stores complete=true and each producer la
 ## Explicit source parsers
 
 `ProducerSource.parser` pins a registered core parser for a single source or every member of a list. The product pack owns that source interpretation; a system pack retains its observed Content-Type. SourceLoader executes the exact declaration without recognition fallback, while undeclared sources keep media recognition. Original artifacts, read manifests, composition rows and producer slots retain the observed media type; mismatch notes identify the declared parser in the production report. Parse caches include source digest, parser and media/charset options, and declaration-specific slot caches cannot grant recognition to an undeclared binary source. Read tiers, credential checks and size budgets still apply.
+
+## Frozen feeding cuts
+
+For a frozen append position, the feeding reader pages the product, retraction, source-head, binding and usage indexes in bounded batches. Index values and insertion order are retained, so a record indexed under multiple objects is still associated with each matching object. Product-wide notes and all other records in the frozen cut remain included. Each record and original is still checked against the reader's current permissions and read tier; those decisions are not shared between records. An unfrozen read continues to use the original live path. This changes query layout only, not historical records or their frozen horizon.
+
+When an unbound source discovers products from prior feeding records, one currently readable witness establishes each distinct product. Additional records of that same product do not need another visibility check to prove the same existence fact. An unreadable record establishes nothing, so later records of that product are still checked; two distinct readable products remain ambiguous. No other record is made readable by a witness.

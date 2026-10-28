@@ -250,8 +250,12 @@ const listTaskPacks: Handler = async (deps, call, args) => {
   const parsed = ListTaskPacksInput.safeParse(args);
   if (!parsed.success) return { answer: errorAnswer('list_task_packs', schemaErrors('list_task_packs', parsed.error)) };
   const packs = await deps.workflows.summaries(call.principal);
-  const kind = parsed.data.kind;
-  return { answer: { call_result: 'ok', errors: [], packs: kind === undefined ? packs : packs.filter((pack) => pack.kind === kind) } };
+  const { kind, pack_id: packId, offset = 0 } = parsed.data;
+  const filtered = packs.filter((pack) => (kind === undefined || pack.kind === kind) && (packId === undefined || pack.id === packId));
+  return {
+    answer: { call_result: 'ok', errors: [], packs: filtered.slice(offset) },
+    text: { packList: { offset, ...(kind === undefined ? {} : { kind }), ...(packId === undefined ? {} : { packId }) } },
+  };
 };
 
 const NAME = /^[^\p{Cc}]{1,300}$/u;

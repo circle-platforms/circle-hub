@@ -15,7 +15,7 @@ import {KnowledgeStructureSchema,FeedingRetractionSchema,type FeedingRetraction,
 import type {FeedingQuote as QuoteEvidence} from '../../contracts/generated/shared-interfaces.ts';
 import {parseReference,parserKey,parseDocument,quoteMatches,recognizeAsync,sliceUtf8} from '../refs/api.ts';
 import {parseExternal} from '../connectors/api.ts';
-import {canonicalize,sha256Hex,scanForCredentials,type Principal,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
+import {canonicalize,sha256Hex,scanForCredentials,type IndexedRecord,type Principal,type RecordKind,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
 import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabulary.ts';
 import {callPackFunction,callPackFunctionBatch} from '../rules/api.ts';
 import {INDEX} from './store.ts';
@@ -323,7 +323,7 @@ export class FeedingLayer {
   if(scope.readManifest&&!Sha256.safeParse(scope.readManifest).success)scope={...scope,readManifest:undefined};
   if(scope.run&&!scope.metaSource&&!scope.sourceRecord){const prior=await this.context.store.all<any>({key:'knowledge.feeding.job',value:scope.run,kind:'action'});for(const row of prior){const job=row.body.detail?.feeding_job,old=job?.scope;if(job?.by===principal.id&&job.source===sha&&old?.product===scope.product&&old.root===scope.root&&old.composition===scope.composition)scope={...scope,metaSource:old.metaSource,metaRecord:old.metaRecord,readManifest:old.readManifest,sourceRecord:old.sourceRecord,declaredLine:old.declaredLine};}}
   const source=await this.source(principal,sha,scope.sourceRecord,scope.readManifest,'input_source',scope.run),pending:FeedingReceipt['pending']=[];
-  if(!scope.product){const products=new Set<string>();for(const entry of await this.all('knowledge.feeding.source',sha)){const value=this.body(entry);if(value?.product&&await this.recordVisible(entry,principal))products.add(value.product);}if(products.size===1)scope={...scope,product:[...products][0]};}
+  if(!scope.product){const products=new Set<string>();for(const entry of await this.all('knowledge.feeding.source',sha)){const value=this.body(entry);if(value?.product&&!products.has(value.product)&&await this.recordVisible(entry,principal))products.add(value.product);}if(products.size===1)scope={...scope,product:[...products][0]};}
   if('upload'in source.artifact.body.origin){return this.upload(principal,source.artifact,scope);}
   if(!scope.metaSource)for(const previous of await this.all('knowledge.feeding.source',sha)){const meta=previous.body.statement.data?.meta_source;if(typeof meta==='string'&&await this.recordVisible(previous,principal))scope={...scope,metaSource:meta};}
   if(!source.external&&'generated'in source.artifact.body.origin&&scope.product&&(await this.context.packs.productById(scope.product))?.product.feeding){const receipt=this.pendingReceipt(sha,'来源身份未声明：缺本次生成件对应的读取动作；同内容多个出处不是冲突，不能按摘要反挑一条','经原外部标识重新读取并绑定原件记录与读取清单；旧记录保留，不猜补出处');await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);await this.usage(principal,sha,scope,tx);await this.todo(principal,{system:'capture',document:source.artifact.digest},scope.product!,receipt.pending[0].missing,receipt.pending[0].next_action,tx);});return {...receipt,offset:await this.offset()};}
@@ -376,6 +376,37 @@ export class FeedingLayer {
   return false;
  }
  async entries(principal:Principal,product:string,offset=Number.MAX_SAFE_INTEGER):Promise<FeedingView[]>{const out:FeedingView[]=[];for(const row of await this.all('knowledge.feeding.product',product)){const body=this.body(row);if(!body||await this.position(row.digest)>offset||!await this.recordVisible(row,principal))continue;const retractions=[...await this.withdrawals(body.object,row.digest,typeof row.body.statement.data?.run==='string'?row.body.statement.data.run:null,row.body.validity.bound,offset),...await this.changed(body,offset)];out.push({record:row.digest,offset:await this.position(row.digest),body,claim:row.body,validity:retractions.length?'invalid':'valid',retractions});}return out;}
+ /** Keep the matched index value: one record can be indexed under more than one object. */
+ private async indexed<B>(key:string,values:readonly string[],kind:RecordKind,through:number):Promise<Map<string,IndexedRecord<B>[]>>{
+  const scan=this.context.records.store.findIndexed;
+  if(!scan)throw new KnowledgeError('缺批量记录索引能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});
+  const groups=new Map<string,IndexedRecord<B>[]>(),wanted=[...new Set(values)];
+  for(let start=0;start<wanted.length;start+=128){
+   let cursor:import('../records/api.ts').IndexedCursor|null=null;
+   do{const page:{items:IndexedRecord<B>[];next:import('../records/api.ts').IndexedCursor|null}=await scan.call(this.context.records.store,{key,values:wanted.slice(start,start+128),kind,through,limit:500,cursor}) as {items:IndexedRecord<B>[];next:import('../records/api.ts').IndexedCursor|null};
+    for(const item of page.items){const group=groups.get(item.value)??[];group.push(item as IndexedRecord<B>);groups.set(item.value,group);}cursor=page.next;
+   }while(cursor);
+  }
+  return groups;
+ }
+ /** Frozen cuts batch immutable index facts but still check every record's present-day read permission. */
+ private async frozenEntries(principal:Principal,product:string,through:number):Promise<FeedingView[]>{
+  const productRows=(await this.indexed<ClaimBody>('knowledge.feeding.product',[product],'claim',through)).get(product)??[];
+  const visible:Array<{row:IndexedRecord<ClaimBody>;body:Record<string,any>}>=[];
+  for(const row of productRows){const body=this.body(row.record);if(body&&await this.recordVisible(row.record,principal))visible.push({row,body});}
+  const withdrawals=(await this.indexed<ClaimBody>(RETRACT,['1'],'claim',through)).get('1')??[];
+  const heads=await this.indexed<any>('knowledge.feeding.head',visible.flatMap(({body})=>{const key=this.sourceKey(body);return key?[key]:[];}),'action',through);
+  return visible.map(({row,body})=>{
+   const record=row.record,run=typeof record.body.statement.data?.run==='string'?record.body.statement.data.run:null,bound=record.body.validity.bound;
+   const retractions:string[]=[];
+   for(const item of withdrawals){const value=this.body(item.record);if(!value)continue;
+    if(value.objects?.some((target:string)=>target===body.object||bound.includes(target))||value.entries?.some((target:string)=>target===record.digest||bound.includes(target))||run!==null&&value.runs?.includes(run))retractions.push(item.record.digest);
+   }
+   const unique=[...new Set(retractions)],key=this.sourceKey(body),history=key?heads.get(key):undefined,head=history?.at(-1)?.record;
+   if(head&&head.body.detail?.object!==body.object)unique.push(head.digest);
+   return {record:record.digest,offset:row.position,body,claim:record.body,validity:unique.length?'invalid':'valid',retractions:unique};
+  });
+ }
  private async withdrawals(id:string,entry:string,run:string|null=null,bound:readonly string[]=[],offset=Number.MAX_SAFE_INTEGER){
   const rows=await this.all(RETRACT,'1'),found:string[]=[];
   for(const row of rows){if(await this.position(row.digest)>offset)continue;const body=this.body(row);if(!body)continue;if(body.objects?.some((target:string)=>target===id||bound.includes(target))||body.entries?.some((target:string)=>target===entry||bound.includes(target))||run!==null&&body.runs?.includes(run))found.push(row.digest);}
@@ -558,11 +589,13 @@ export class FeedingLayer {
  async admit(principal:Principal,payload:readonly unknown[],scope:FeedingScope&{classifications?:readonly string[]}):Promise<string[]>{const bodies:Record<string,any>[]=[];for(const raw of payload)bodies.push(await this.prepare(principal,raw,scope));return this.context.records.store.withTransaction(async tx=>{const refs=[];for(const body of bodies)refs.push(await this.appendPrepared(principal,body,scope,'client-declared-model',tx));return refs;});}
  async frozenOffset(run:string):Promise<number|null>{const row=(await this.context.records.store.find<FeedingOffset>({key:'knowledge.feeding.offset',value:run,kind:'claim',limit:1})).items[0];return row?.body.offset??null;}
  async cut(product:string,offset:number|null,principal?:Principal):Promise<FeedingCut|null>{
-  if(!principal)return null;const ceiling=offset??Number.MAX_SAFE_INTEGER,entries=await this.entries(principal,product,ceiling);
+  if(!principal)return null;const ceiling=offset??Number.MAX_SAFE_INTEGER,batched=offset!==null&&Boolean(this.context.records.store.findIndexed),entries=batched?await this.frozenEntries(principal,product,ceiling):await this.entries(principal,product,ceiling);
   const objects=new Map<string,KnowledgeStructureObject>(),bindings=new Map<string,VersionBinding[]>(),retracted=new Set<string>(),contradicted=new Set<string>(),usages=[];
   for(const entry of entries){if(entry.validity==='invalid'){retracted.add(entry.body.object);continue;}const old=objects.get(entry.body.object);const relations=[...old?.relations??[],...entry.body.relations??[]];objects.set(entry.body.object,{...old,...entry.body,relations} as KnowledgeStructureObject);}
-  for(const id of objects.keys()){retracted.delete(id);const rows=await this.all(BINDING,id),list:VersionBinding[]=[];for(const row of rows){if(await this.position(row.digest)>ceiling)continue;let readable=false;for(const proof of row.body.validity.bound){const original=await this.context.records.store.get<any>(proof);if(original?.kind==='source_artifact'&&(await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:proof}))?.bytes)readable=true;}const value=this.body(row);if(value&&readable)list.push(value as VersionBinding);}bindings.set(id,list);
-   for(const row of await this.all('knowledge.feeding.usage.object',id)){if(await this.position(row.digest)>ceiling)continue;const value=this.body(row);if(!value)continue;const run=await runById(this.context.records.store,value.run);if(run&&await canViewRun(principal,run.body,this.context.records.store))usages.push(value as import('../../contracts/src/feeding.ts').FeedingUsage);}
+  const bound=batched?await this.indexed<ClaimBody>(BINDING,[...objects.keys()],'claim',ceiling):null;
+  const used=batched?await this.indexed<ClaimBody>('knowledge.feeding.usage.object',[...objects.keys()],'claim',ceiling):null;
+  for(const id of objects.keys()){retracted.delete(id);const rows=bound?(bound.get(id)??[]).map(item=>item.record):await this.all(BINDING,id),list:VersionBinding[]=[];for(const row of rows){if(!batched&&await this.position(row.digest)>ceiling)continue;let readable=false;for(const proof of row.body.validity.bound){const original=await this.context.records.store.get<any>(proof);if(original?.kind==='source_artifact'&&(await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:proof}))?.bytes)readable=true;}const value=this.body(row);if(value&&readable)list.push(value as VersionBinding);}bindings.set(id,list);
+   for(const row of used?(used.get(id)??[]).map(item=>item.record):await this.all('knowledge.feeding.usage.object',id)){if(!batched&&await this.position(row.digest)>ceiling)continue;const value=this.body(row);if(!value)continue;const run=await runById(this.context.records.store,value.run);if(run&&await canViewRun(principal,run.body,this.context.records.store))usages.push(value as import('../../contracts/src/feeding.ts').FeedingUsage);}
    if(objects.get(id)!.relations?.some(relation=>relation.kind==='contradicts'))contradicted.add(id);
   }
   return entries.length?{offset,objects,bindings,retracted,contradicted,usages}:null;
