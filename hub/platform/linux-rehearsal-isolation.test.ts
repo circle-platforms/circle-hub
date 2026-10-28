@@ -1,10 +1,11 @@
 // Pure safety-contract negatives plus an opt-in root VM proof; never accepts a real backup or a key pipeline.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {mkdtemp,symlink,rm} from 'node:fs/promises';
+import {mkdtemp,symlink,rm,lstat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {assertCanonicalPath,assertSameIdentity,parseMountInfo,sourceMountReceipt,trustedRootMount,verifyMountTable,isolatedUnitArguments, proveSyntheticIsolation, type IsolationDefinition} from './testing/linux-rehearsal-isolation.ts';
+import {runCommand} from './process.ts';
+import {assertCanonicalPath,assertSameIdentity,parseMountInfo,sourceMountReceipt,trustedRootMount,offlineBuildProgram,verifyOfflineBundle,verifyMountTable,isolatedUnitArguments, proveSyntheticIsolation, type IsolationDefinition} from './testing/linux-rehearsal-isolation.ts';
 const fixture:IsolationDefinition={unit:'chvm-123456abcdef-probe',user:'chvm-123456abcdef',namespace:'chvm-123456abcdef',root:'/var/tmp/chvm-123456abcdef',data:'/var/tmp/chvm-123456abcdef/data',release:'/var/tmp/chvm-build-123456abcdef/release',node:'/usr/bin/node'};
 test('isolated units require rootfs and netns plus capability and host-filesystem restrictions',()=>{
  const args=isolatedUnitArguments(fixture,['/runtime/node','/release/bin/circle-hub','serve']);
@@ -57,4 +58,18 @@ test('same-device production bind over the source itself cannot self-certify its
  const switched=parseMountInfo('1 0 8:2 / / rw - ext4 /dev/other rw');
  assert.throws(()=>sourceMountReceipt(switched,'/usr/lib','/usr/lib',baseline));
  assert.throws(()=>trustedRootMount(parseMountInfo('1 0 8:1 /srv/production / rw - ext4 /dev/synthetic rw')));
+});
+
+test('offline build refuses missing pins and privileged install identities before running a command',async()=>{
+ await assert.rejects(verifyOfflineBundle('', ''));
+ await assert.rejects(verifyOfflineBundle('/var/lib/circle-hub','a'.repeat(64)));
+ assert.throws(()=>offlineBuildProgram({uid:0,net:1,root:2,mounts:[],commit:'a'.repeat(40),host:'192.0.2.1',port:1234,malicious:false}));
+});
+test('untrusted postinstall cannot reach the outbound sentinel or host paths and failed npm resources are removed',{
+ skip:process.env.CIRCLE_HUB_TEST_ISOLATION_VM===undefined?'requires pinned offline synthetic bundle in an administrator-declared VM':false,
+ timeout:2_400_000,
+},async()=>{
+ const own=await proveSyntheticIsolation('malicious-postinstall');
+ for(const path of [own.root,own.build,'/run/netns/'+own.namespace])await assert.rejects(lstat(path));
+ const account=await runCommand('/usr/bin/id',['-u',own.user],{env:{PATH:'/usr/bin:/bin',LANG:'C'},timeoutMs:5000});assert.notEqual(account.code,0);
 });

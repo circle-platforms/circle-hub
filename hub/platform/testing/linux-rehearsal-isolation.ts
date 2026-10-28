@@ -1,13 +1,10 @@
 // Root-only synthetic VM isolation fixture. No backup, keychain or production deployment is accepted as input.
 import assert from 'node:assert/strict';
-import {randomBytes} from 'node:crypto';
-import {constants,type Stats} from 'node:fs';
-import {chmod, lstat, mkdir, open, readFile, readdir, readlink, realpath, rename, rm, stat, writeFile} from 'node:fs/promises';
+import {createHash,randomBytes} from 'node:crypto';
+import {constants,createReadStream,type Stats} from 'node:fs';
+import {chmod, chown, lchown, lstat, mkdir, open, readFile, readdir, readlink, realpath, rename, rm, rmdir, stat, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
-import {dirname, join, resolve} from 'node:path';
-import {fileURLToPath} from 'node:url';
-import {prepareRelease} from '../release.ts';
-import {ensureLayout,layoutAt} from '../layout.ts';
+import {join, resolve} from 'node:path';
 import {runCommand} from '../process.ts';
 
 const safePath = (path:string) => path.startsWith('/') && /^\/[A-Za-z0-9_./-]+$/.test(path) && resolve(path)===path;
@@ -15,7 +12,7 @@ export interface IsolationDefinition {unit:string; user:string; namespace:string
 
 /** Only a generated synthetic identity and simple absolute paths may enter systemd's property parser. */
 export function isolatedUnitArguments(d:IsolationDefinition, programArgs:string[]):string[] {
-  if(!/^chvm-[a-f0-9]{12}$/.test(d.user) || d.namespace!==d.user || d.unit!==d.user+'-probe' || d.root!=='/var/tmp/'+d.user)throw new Error('隔离身份不属于本次合成命名空间');
+  if(!/^chvm-[a-f0-9]{12}$/.test(d.user) || d.namespace!==d.user || ![d.user+'-probe',d.user+'-build'].includes(d.unit) || d.root!=='/var/tmp/'+d.user)throw new Error('隔离身份不属于本次合成命名空间');
   if(![d.root,d.data,d.release,d.node].every(safePath) || !/^\/var\/tmp\/chvm-build-[a-f0-9]{12}\/release$/.test(d.release))throw new Error('隔离路径不安全');
   if(d.data!==join(d.root,'data') || !programArgs.length || programArgs[0]!=='/runtime/node')throw new Error('隔离入口或数据根无效');
   const properties=[
@@ -112,35 +109,58 @@ async function rootVmGate():Promise<void> {
   if(detected.code!==0)throw new Error('拒绝在未识别 VM 的主机创建隔离夹具');
 }
 
+interface OfflineManifest {schema:'circle-hub-offline-build@1';source_commit:string;node_sha256:string;files:Record<string,string>}
+async function hashFile(path:string):Promise<string>{const hash=createHash('sha256');for await(const bytes of createReadStream(path))hash.update(bytes);return hash.digest('hex');}
+export async function verifyOfflineBundle(path:string,pin:string):Promise<{path:string;manifest:OfflineManifest}>{
+  if(!/^\/var\/tmp\/chvm-offline-[a-f0-9]{12}$/.test(path)||! /^[a-f0-9]{64}$/.test(pin))throw new Error('缺少预先固定的离线构建包和独立清单 SHA；不联网补齐');
+  await assertCanonicalPath(path);await assertFrozenParents(path);await assertRootOwnedTree(path);
+  if(((await lstat(path)).mode&0o005)!==0o005)throw new Error('离线包须对专用构建账户只读可遍历');
+  const raw=await readFile(join(path,'manifest.json'));if(raw.length>1024*1024||createHash('sha256').update(raw).digest('hex')!==pin)throw new Error('离线清单 SHA 不符');
+  const manifest=JSON.parse(raw.toString('utf8')) as OfflineManifest;
+  if(manifest.schema!=='circle-hub-offline-build@1'||! /^[a-f0-9]{40}$/.test(manifest.source_commit)||! /^[a-f0-9]{64}$/.test(manifest.node_sha256)||!manifest.files||typeof manifest.files!=='object'||Array.isArray(manifest.files))throw new Error('离线构建清单形状无效');
+  const found:string[]=[];
+  const visit=async(directory:string)=>{for(const entry of await readdir(directory,{withFileTypes:true})){const file=join(directory,entry.name);if(entry.isSymbolicLink())throw new Error('离线包不接受符号链接');const mode=(await lstat(file)).mode;if((mode&0o004)===0||(entry.isDirectory()&&(mode&0o001)===0))throw new Error('离线资产对非 root 构建账户不可读');if(entry.isDirectory())await visit(file);else if(entry.isFile())found.push(file.slice(path.length+1));else throw new Error('离线包含非普通文件');}};
+  await visit(path);
+  const declared=Object.keys(manifest.files).sort();
+  if(!declared.includes('source.tar')||!declared.includes('npm/bin/npm-cli.js')||!declared.some(file=>file.startsWith('cache/'))||JSON.stringify(found.filter(file=>file!=='manifest.json').sort())!==JSON.stringify(declared))throw new Error('离线包文件集不闭合');
+  for(const file of declared){if(!/^(source\.tar|npm\/[A-Za-z0-9_./@+-]+|cache\/[A-Za-z0-9_./@+-]+)$/.test(file)||file.split('/').includes('..')||! /^[a-f0-9]{64}$/.test(manifest.files[file]!))throw new Error('离线包文件声明不安全');if(await hashFile(join(path,file))!==manifest.files[file])throw new Error('离线包文件 SHA 不符');}
+  return {path,manifest};
+}
+async function freezeBuiltTree(path:string,base=path):Promise<void>{
+ const info=await lstat(path);if(info.isSymbolicLink()){const target=await realpath(path);if(!target.startsWith(base+'/'))throw new Error('构建输出链接越界');await lchown(path,0,0);return;}
+ if(!info.isDirectory()&&!info.isFile())throw new Error('构建输出包含特殊文件');
+ await chown(path,0,0);await chmod(path,info.isDirectory()?0o755:(info.mode&0o111)!==0?0o755:0o644);
+ if(info.isDirectory())for(const entry of await readdir(path))await freezeBuiltTree(join(path,entry),base);
+}
+export function offlineBuildProgram(input:{uid:number;net:number;root:number;mounts:MountReceipt[];commit:string;host:string;port:number;malicious:boolean}):string{
+ if(!Number.isSafeInteger(input.uid)||input.uid<1||! /^[a-f0-9]{40}$/.test(input.commit))throw new Error('离线构建必须使用专用非 root 身份和固定提交');
+ return `import assert from 'node:assert/strict';import {cp,mkdir,readFile,writeFile,stat,chmod,readdir} from 'node:fs/promises';import {spawn} from 'node:child_process';
+ const parse=${parseMountInfo.toString()};const verify=${verifyMountTable.toString()};
+ assert.equal(process.getuid(),${input.uid});assert.notEqual(process.getuid(),0);assert.equal((await stat('/proc/self/ns/net')).ino,${input.net});assert.equal((await stat('/')).ino,${input.root});verify(parse(await readFile('/proc/self/mountinfo','utf8')),${JSON.stringify(input.mounts)});
+ const run=(file,args,cwd)=>new Promise((resolve,reject)=>{const child=spawn(file,args,{cwd,env:{HOME:'/data/home',PATH:'/runtime:/bin:/usr/bin',LANG:'C'},stdio:'ignore'});child.once('error',reject);child.once('exit',code=>resolve(code));});
+ await mkdir('/data/source',{recursive:false});await cp('/offline/cache','/data/cache',{recursive:true});const writable=async(path)=>{const info=await stat(path);await chmod(path,info.isDirectory()?0o700:0o600);if(info.isDirectory())for(const name of await readdir(path))await writable(path+'/'+name)};await writable('/data/cache');
+ assert.equal(await run('/runtime/tar',['--extract','--file=/offline/source.tar','--directory=/data/source','--no-same-owner','--no-same-permissions','--no-overwrite-dir'],'/data'),0);
+ if(${input.malicious}){
+  const attack="import assert from 'node:assert/strict';import {writeFile,stat} from 'node:fs/promises';import {connect} from 'node:net';assert.notEqual(process.getuid(),0);assert.equal((await stat('/proc/self/ns/net')).ino,${input.net});assert.equal((await stat('/')).ino,${input.root});await assert.rejects(writeFile('/sentinel/hidden','attack'));await assert.rejects(writeFile('/release/.attack','attack'));await assert.rejects(new Promise((resolve,reject)=>{const s=connect({host:"+JSON.stringify(${JSON.stringify(input.host)})+",port:${input.port}});s.setTimeout(1000,()=>{s.destroy();reject(Error('timeout'))});s.once('connect',()=>{s.destroy();resolve()});s.once('error',reject)}));await writeFile('/data/attack-receipt','denied-nonroot-offline');process.exit(73);";
+  await writeFile('/data/attack.mjs',attack);const pkg=JSON.parse(await readFile('/data/source/package.json','utf8'));pkg.scripts={...pkg.scripts,postinstall:'node /data/attack.mjs'};await writeFile('/data/source/package.json',JSON.stringify(pkg));
+ }
+ const code=await run('/runtime/node',['/offline/npm/bin/npm-cli.js','ci','--offline','--include=dev','--no-audit','--no-fund','--cache=/data/cache','--userconfig=/dev/null','--globalconfig=/data/absent-global-npmrc'],'/data/source');
+ if(${input.malicious}){assert.notEqual(code,0);assert.equal(await readFile('/data/attack-receipt','utf8'),'denied-nonroot-offline');process.stdout.write('malicious-postinstall-denied');}
+ else{assert.equal(code,0);await stat('/data/source/bin/circle-hub');await writeFile('/data/source/release.json',JSON.stringify({schema:'circle-hub-release@1',id:${JSON.stringify(input.commit.slice(0,12))},commit:${JSON.stringify(input.commit)},created_at:new Date().toISOString()}));process.stdout.write('offline-npm-ci-ok');}`;
+}
+
 /** This exercise creates only synthetic bytes and returns no reusable real-data authorization or "safe" token. */
-export async function proveSyntheticIsolation():Promise<void> {
+export async function proveSyntheticIsolation(mode:'normal'|'malicious-postinstall'='normal'):Promise<{root:string;build:string;user:string;namespace:string}> {
   await rootVmGate();
-  // No caller-provided release/data path exists: close construction over an exact committed archive in a fresh root.
   const baseline=trustedRootMount(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')));
+  // Offline bundle pin is supplied before the fixture runs. No network acquisition or owner configuration is read.
+  const bundle=await verifyOfflineBundle(process.env.CIRCLE_HUB_TEST_OFFLINE_BUNDLE??'',process.env.CIRCLE_HUB_TEST_OFFLINE_SHA256??'');
   const id=randomBytes(6).toString('hex'), user=`chvm-${id}`, namespace=user;
-  const build='/var/tmp/chvm-build-'+id;
-  await assertCanonicalPath('/var/tmp');
-  sourceMountReceipt(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),build,build,baseline);
-  await mkdir(build,{mode:0o700});
-  const buildIdentity=await lstat(build);
-  const tree=fileURLToPath(new URL('../../../',import.meta.url)),node=await realpath(process.execPath);
-  const buildEnv={PATH:dirname(node)+':/usr/bin:/bin',HOME:join(build,'home'),USER:'root',LANG:'C',LC_ALL:'C',
-    NPM_CONFIG_USERCONFIG:join(build,'absent-npmrc'),NPM_CONFIG_GLOBALCONFIG:'/dev/null',NPM_CONFIG_CACHE:join(build,'npm-cache'),
-    GIT_CONFIG_COUNT:'1',GIT_CONFIG_KEY_0:'safe.directory',GIT_CONFIG_VALUE_0:tree};
-  await mkdir(buildEnv.HOME,{mode:0o700});
-  const revision=await runCommand('git',['-C',tree,'rev-parse','--verify','HEAD^{commit}'],{env:buildEnv,timeoutMs:30_000});
-  if(revision.code!==0||!/^[a-f0-9]{40}$/.test(revision.stdout.trim()))throw new Error('封闭构建无法取得固定提交，禁止创建服务');
-  const stage=layoutAt(join(build,'stage'));await ensureLayout(stage);
-  const release=await prepareRelease({path:tree,commit:revision.stdout.trim()},{layout:stage,env:buildEnv});
-  assert.equal(release.reused,false);assert.equal(release.file.commit,revision.stdout.trim());
-  const source=join(build,'release');await rename(release.dir,source);
-  await assertCanonicalPath(source);await assertFrozenParents(source);await assertRootOwnedTree(source);
-  sourceMountReceipt(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),source,'/release',baseline);
-  const root='/var/tmp/'+user;
-  await assertFrozenParents(node);
-  sourceMountReceipt(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),node,'/runtime/node',baseline);
-  await mkdir(root,{mode:0o755});
-  const rootIdentity=await lstat(root);
+  const build='/var/tmp/chvm-build-'+id,source=join(build,'release'),root='/var/tmp/'+user,node=await realpath(process.execPath);
+  await assertCanonicalPath('/var/tmp');await assertFrozenParents(node);
+  assert.equal(await hashFile(node),bundle.manifest.node_sha256,'Node 与离线包固定摘要不一致');
+  let rootIdentity:Stats|undefined,buildIdentity:Stats|undefined;
+  let rootCreated=false,buildCreated=false,accountCreated=false,namespaceCreated=false,externalCreated=false;
   const external='/var/tmp/chvm-host-'+id;
   let externalIdentity:Stats|undefined;
   const definition:IsolationDefinition={unit:`${user}-probe`,user,namespace,root,data:join(root,'data'),release:source,node};
@@ -151,12 +171,17 @@ export async function proveSyntheticIsolation():Promise<void> {
   // The sentinel listens outside the future namespace. No production address is probed.
   const sentinel=createServer(socket=>socket.end('synthetic-only'));
   try {
+    step='登记封闭构建根';
+    sourceMountReceipt(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),build,build,baseline);
+    await mkdir(build,{mode:0o700});buildCreated=true;buildIdentity=await lstat(build);
+    await mkdir(source,{mode:0o755});
+    await mkdir(root,{mode:0o755});rootCreated=true;rootIdentity=await lstat(root);
     step='创建专用账户';
-    await run('/usr/sbin/useradd',['--system','--user-group','--no-create-home','--home-dir','/data/home','--shell','/usr/sbin/nologin',user]);
+    await run('/usr/sbin/useradd',['--system','--user-group','--no-create-home','--home-dir','/data/home','--shell','/usr/sbin/nologin',user]);accountCreated=true;
     const uid=Number((await run('/usr/bin/id',['-u',user])).trim()),gid=Number((await run('/usr/bin/id',['-g',user])).trim());
     assert.ok(Number.isInteger(uid)&&uid>0&&Number.isInteger(gid)&&gid>0);
     userReceipt={uid,gid,passwd:await accountLine('/etc/passwd',user),group:await accountLine('/etc/group',user)};
-    for(const dir of ['data/home','runtime','release','usr/lib','lib','lib64','etc','proc','dev','tmp','run','sentinel'])await mkdir(join(root,dir),{recursive:true,mode:0o755});
+    for(const dir of ['data/home','runtime','release','usr/lib','lib','lib64','etc','proc','dev','tmp','run','sentinel','offline','bin','usr/bin'])await mkdir(join(root,dir),{recursive:true,mode:0o755});
     await run('/usr/bin/chown',['-R',`${uid}:${gid}`,definition.data]);await chmod(definition.data,0o700);
     await writeFile(join(root,'etc/passwd'),`${user}:x:${uid}:${gid}:Synthetic:/data/home:/runtime/node\n`,{mode:0o644});
     await writeFile(join(root,'etc/group'),`${user}:x:${gid}:\n`,{mode:0o644});
@@ -165,7 +190,7 @@ export async function proveSyntheticIsolation():Promise<void> {
     // Mount destination must exist; this contains no executable until systemd binds the actual Node binary.
     await writeFile(join(root,'runtime/node'),'');
     step='创建无出口 namespace';
-    await run('/usr/sbin/ip',['netns','add',namespace]);namespaceIdentity=await stat('/run/netns/'+namespace);
+    await run('/usr/sbin/ip',['netns','add',namespace]);namespaceCreated=true;namespaceIdentity=await stat('/run/netns/'+namespace);
     await run('/usr/sbin/ip',['-n',namespace,'link','set','lo','up']);
     const interfaces=JSON.parse(await run('/usr/sbin/ip',['-n',namespace,'-j','link','show']));
     assert.deepEqual(interfaces.map((item:{ifname:string})=>item.ifname),['lo']);
@@ -174,7 +199,7 @@ export async function proveSyntheticIsolation():Promise<void> {
     const bound=[{source:root,target:'/'},{source:definition.data,target:'/data'},{source:source,target:'/release'},{source:definition.node,target:'/runtime/node'}];
     for(const path of ['/usr/lib','/lib','/lib64']){try{bound.push({source:await realpath(path),target:path});}catch(error){if(path!=='/lib64'||(error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
     // Bind only the visible synthetic file; its unbound sibling stays outside the rootfs. Test parent /proc/root too.
-    await mkdir(external,{mode:0o755});externalIdentity=await lstat(external);
+    await mkdir(external,{mode:0o755});externalCreated=true;externalIdentity=await lstat(external);
     const sentinelPath=join(external,'hidden');await writeFile(sentinelPath,'synthetic-hidden',{mode:0o644,flag:'wx'});
     await writeFile(join(external,'visible'),'synthetic-visible',{mode:0o644,flag:'wx'});
     await writeFile(join(root,'sentinel/visible'),'');
@@ -214,23 +239,44 @@ export async function proveSyntheticIsolation():Promise<void> {
     assert.equal((await run('/usr/bin/systemd-run',isolatedUnitArguments(definition,['/runtime/node','--input-type=module','-e',nodeScript]))).trim(),'synthetic-isolation-probe-ok');
     assert.equal(await readFile(join(definition.data,'probe-result'),'utf8'),'synthetic-only');
     const receipt=JSON.parse(await readFile(join(definition.data,'unit-receipt'),'utf8'));assert.match(receipt.invocation,/^[a-f0-9]{32}$/);assert.equal(receipt.uid,userReceipt.uid);assert.equal(receipt.net,namespaceIdentity.ino);assert.equal(receipt.root,rootIdentity.ino);
+    step='封闭离线非 root npm ci';
+    const tools=[{source:bundle.path,target:'/offline'},{source:await realpath('/usr/bin/tar'),target:'/runtime/tar'},{source:await realpath('/bin/sh'),target:'/bin/sh'},{source:await realpath('/usr/bin/env'),target:'/usr/bin/env'}];
+    for(const item of tools){await assertCanonicalPath(item.source);await assertFrozenParents(item.source);if(item.target!=='/offline')await writeFile(join(root,item.target),'');}
+    await symlink('/offline/npm/bin/npm-cli.js',join(root,'runtime/npm'));
+    const mountSnapshot=parseMountInfo(await readFile('/proc/self/mountinfo','utf8'));
+    const buildExpected=[...expected,...tools.map(item=>sourceMountReceipt(mountSnapshot,item.source,item.target,baseline))];
+    const program=offlineBuildProgram({uid,net:namespaceIdentity.ino,root:rootIdentity.ino,mounts:buildExpected,commit:bundle.manifest.source_commit,host:outside.local,port:address.port,malicious:mode==='malicious-postinstall'});
+    const args=isolatedUnitArguments({...definition,unit:user+'-build'},['/runtime/node','--input-type=module','-e',program]).map(arg=>arg.startsWith('BindReadOnlyPaths=')?arg+' '+tools.map(item=>item.source+':'+item.target).join(' '):arg==='RuntimeMaxSec=120s'?'RuntimeMaxSec=600s':arg);
+    const built=await runCommand('/usr/bin/systemd-run',args,{env,timeoutMs:660_000});
+    assert.equal(built.code,0,'封闭离线 npm 构建未完成');
+    assert.equal(built.stdout.trim(),mode==='malicious-postinstall'?'malicious-postinstall-denied':'offline-npm-ci-ok');
+    assert.equal((await run('/usr/sbin/ip',['netns','pids',namespace])).trim(),'','构建 unit 尚有子进程，禁止冻结或清理');
+    if(mode==='normal'){
+      await rmdir(source);await rename(join(definition.data,'source'),source);await freezeBuiltTree(source);await assertRootOwnedTree(source);
+      sourceMountReceipt(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')),source,'/release',baseline);
+    }
+
   }catch{errors.push(new Error(`合成隔离证明失败：${step}；禁止实物演练`));}
   finally {
     await new Promise<void>(resolve=>sentinel.close(()=>resolve()));
     // Never stop a unit by a guessed name. --wait/--collect means success has already exited; on failure,
     // RuntimeMaxSec bounds the transient unit and any remaining PIDs keep namespace/account/root intact.
-    if(namespaceIdentity)try{await assertCanonicalPath('/run/netns/'+namespace);assertSameIdentity(await stat('/run/netns/'+namespace),namespaceIdentity);assert.equal((await run('/usr/sbin/ip',['netns','pids',namespace])).trim(),'');await run('/usr/sbin/ip',['netns','delete',namespace]);}catch{errors.push(new Error('本次 namespace 身份或清空状态未确认，不删除'));}
-    if(errors.length===0&&userReceipt)try{
+    let namespaceRemoved=false;
+    if(namespaceIdentity)try{await assertCanonicalPath('/run/netns/'+namespace);assertSameIdentity(await stat('/run/netns/'+namespace),namespaceIdentity);assert.equal((await run('/usr/sbin/ip',['netns','pids',namespace])).trim(),'');await run('/usr/sbin/ip',['netns','delete',namespace]);namespaceRemoved=true;}catch{errors.push(new Error('本次 namespace 身份或清空状态未确认，不删除'));}
+    let cleanupFailed=(namespaceCreated&&!namespaceRemoved)||(accountCreated&&!userReceipt)||(rootCreated&&!rootIdentity)||(buildCreated&&!buildIdentity)||(externalCreated&&!externalIdentity);
+    if(cleanupFailed)errors.push(new Error('本次资源缺少创建身份或仍有进程，不按名字清理'));
+    if(!cleanupFailed&&userReceipt)try{
       assert.equal(Number((await run('/usr/bin/id',['-u',user])).trim()),userReceipt.uid);
       assert.equal(Number((await run('/usr/bin/id',['-g',user])).trim()),userReceipt.gid);
       assert.equal(await accountLine('/etc/passwd',user),userReceipt.passwd);assert.equal(await accountLine('/etc/group',user),userReceipt.group);
       await run('/usr/sbin/userdel',[user]);
-    }catch{errors.push(new Error('本次专用账户身份未确认，不删除'));}
-    if(errors.length===0)try{
-      await assertCanonicalPath(root);assertSameIdentity(await lstat(root),rootIdentity);await rm(root,{recursive:true});
+    }catch{cleanupFailed=true;errors.push(new Error('本次专用账户身份未确认，不删除'));}
+    if(!cleanupFailed)try{
+      if(rootIdentity){await assertCanonicalPath(root);assertSameIdentity(await lstat(root),rootIdentity);await rm(root,{recursive:true});}
       if(externalIdentity){await assertCanonicalPath(external);assertSameIdentity(await lstat(external),externalIdentity);await rm(external,{recursive:true});}
-      await assertCanonicalPath(build);assertSameIdentity(await lstat(build),buildIdentity);await rm(build,{recursive:true});
+      if(buildIdentity){await assertCanonicalPath(build);assertSameIdentity(await lstat(build),buildIdentity);await rm(build,{recursive:true});}
     }catch{errors.push(new Error('本次目录身份未确认，不删除'));}
-    if(errors.length)throw new AggregateError(errors,'隔离实证未通过；本次资源保持隔离供管理员处理，不得运行实物');
+    if(errors.length)throw new AggregateError(errors,'隔离实证未通过；清理未确认的本次资源保持隔离，不得运行实物');
   }
+  return {root,build,user,namespace};
 }

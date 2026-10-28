@@ -100,8 +100,20 @@
 
 ### 21fe5fdc 绑定源自证阻断修正（未执行）
 
-取消外部release路径输入，管理员VM夹具先冻结本机根挂载基线（唯一target=/、mount-root=/、ext4/xfs/btrfs设备），然后在唯一新建build根内从固定Git提交archive做真实npm ci；使用本次私有HOME/npm配置/缓存，不能读取现有部署release或任何环境文件。账户、namespace和服务全部晚于封闭构建。新stage发布只能由这一条内部路径产生。
+a50acceb 的 root联网构建方案已撤销，不能使用。当前改为预先固定离线包与独立清单SHA，真实 npm ci 只在专用非root账户、已封网namespace与隔离rootfs的独占构建unit中执行；不读取现有部署release或任何环境文件。详见下方最新构建约束。
 
 所有绑定期望设备来自构建前冻结的VM根设备，期望mount-root直接等于本次规范源绝对路径；不再从当前源covering mount推导。任何非根挂载覆盖源自身、任一祖先或子树均拒绝，包含“同一ext4设备上的production目录bind到合规release路径”与“bind到/usr/lib”。VM根设备在预备后改变、根自身mount-root不为/、独立/usr或/var挂载等未知拓扑也拒绝，不猜测其安全。隔离内仍核对独立期望表。
 
 新增精确反例：同设备 `/srv/production-release` bind覆盖合规release与/usr/lib，/var/tmp祖先被覆盖、根设备更换、根本身来自非/子树；均应拒绝。未执行这些测试或实际构建。此基线信任管理员声明的可丢弃VM启动根；无法证明该根来源时必须拒绝启动，不将被验证源的当前mountinfo当来源证明。初期构建失败可能保留无真实数据的本次build根供管理员确认npm子进程退出后清理，不执行模糊进程清杀。实物仍关闭，尚无真实Hub/PG树或真实密钥管道验收。
+
+
+### a50acceb root联网构建和提前分配泄漏阻断修正（未执行）
+
+- 删除所有 root `prepareRelease`/npm 与联网取依赖路径。夹具从独立明确给定的 `CIRCLE_HUB_TEST_OFFLINE_BUNDLE` 与 `CIRCLE_HUB_TEST_OFFLINE_SHA256` 读取预先审批的只读代码资产包；没有包/独立pin就拒绝，不自动下载，不读取所有者配置。包路径只接受 `/var/tmp/chvm-offline-<12hex>`，必须root冻结、对构建用户只读可遍历、不含symlink/特殊文件，实际文件集与SHA清单完全闭合。
+- 清单schema `circle-hub-offline-build@1`，含固定 `source_commit`、`node_sha256`、`files`（每文件SHA256）；至少 `source.tar`、`npm/bin/npm-cli.js`、`npm/**` 的完整npm运行资产及 `cache/**` 的完整离线npm缓存。manifest自身SHA由调用前的独立审批提供；不能运行时自己计算当前manifest后当独立pin。固定source tar的commit归属由审批过程保证，夹具只验证其pin与内容。离线资产包的获取/制作不在本夹具内，需由主代理另行审查，不允许root在线npm制作。
+- 根挂载基线仍在所有分配前冻结；root/build/外部哨兵一创建即记录dev/inode/uid/mode，账户与namespace也创建成功后立即登记。全部分配移入统一try/finally；构建失败同样先确认ns无PID，再核身份删除本次账户/目录，身份缺失或活进程则保留并披露，不按名字猜删除。
+- 真正 `npm ci --offline --include=dev` 在 root-managed `User=<本次专用非root>` + RootDirectory + NetworkNamespacePath 的独占 `-build` unit内运行。先完成外联哨兵正/负对照与文件系统核验，再开始构建；source tar在隔离内非root解包，离线cache只读挂载后复制到本次/data私有可写缓存；npm运行资产与Node/必要shell/tar/env只读绑定且核挂载来源。保留生命周期脚本，未使用ignore-scripts。脚本只能写本次/data，不能联网或接触宿主共享目录。
+- 构建unit上限600秒；主进程退出后核namespace无PID，才将构建结果移到本次release并管理员冻结。失败/超时不停止猜测unit；cgroup仍有进程则不清理账户/ns/root。离线缓存缺项、npm脚本依赖未绑定工具或systemd额外挂载无法证明时，必须失败，不联网补齐或放宽保护。
+- 新增synthetic恶意postinstall模式：正常真实npm生命周期执行合成hook，hook实测非root、精确net/root inode、外部哨兵不可达、/sentinel/hidden与/release不可写，写仅本次/data的拒绝收据后故意退出73；必须看到npm非零及hook收据才算这个负例成立。VM负例随后检查本次root/build/ns/账户均已清理。普通单元负例拒绝空pin/部署路径/root安装身份。以上均未运行。
+
+仍未提供可运行的离线审批包，尚无VM实证或PG/Hub完整树验证；实物阶段继续关闭。现有 `pipeSyntheticKey` 不具备这套隔离，不得据此传真实密钥。

@@ -554,3 +554,10 @@ scenario, pending the listen and key-transfer branches and VM execution; neither
 resource cleanup rules, missing interfaces and the unrun verification record are in
 [`linux-real-e2e`](../../docs/hub-r4-tasks/linux-real-e2e.md). No VM mutation or test was run for
 this initial safety foundation delivery.
+
+The administrator isolation fixture now requires an independently pinned, root-frozen offline
+code/cache bundle. It never invokes npm as root or acquires dependencies online. Real npm ci
+and lifecycle scripts run as the unique non-root account only after the namespace/rootfs probes,
+inside their own hardened systemd unit. All mutable resources are registered inside one cleanup
+scope; identity uncertainty or live PIDs prevents deletion. Offline bundle preparation, the VM
+proofs, and the real Hub/PostgreSQL process tree remain unverified, so real-data rehearsal is closed.
