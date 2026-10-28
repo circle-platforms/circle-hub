@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {execFileSync} from 'node:child_process';
+import {execFileSync,spawnSync} from 'node:child_process';
 import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {unitArguments,unitFiles,PARSER_BOUNDS,SENTINELS,classifyLanes,sentinelConcurrency,sharedConcurrency,unitLane} from './run-unit-tests.ts';
+import {unitArguments,unitFiles,PARSER_BOUNDS,SENTINELS,classifyLanes,laneArguments,runUnitTests,sentinelConcurrency,sharedConcurrency,unitLane,unitSeconds,unitShardFiles,UNIT_MEASURED_SECONDS} from './run-unit-tests.ts';
 const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 test('CI test partitions are disjoint and cover every original tracked unit test',()=>{
  const all=unitFiles(),regular=unitFiles('regular'),parsers=unitFiles('parser-bounds');
@@ -63,4 +63,30 @@ test('local concurrency tracks this machine and the public partitions stay cappe
   assert.equal(sentinelConcurrency('regular'), sharedConcurrency('regular'));
   assert.equal(sentinelConcurrency('all'), 2);
   assert.equal(classifyLanes(unitFiles('parser-bounds')).shared.length, 0);
+});
+
+test('the shards of a public partition cover it once, balanced, and the measured files exist', () => {
+  const regular = unitFiles('regular');
+  assert.deepEqual(laneArguments(regular, 2), ['--test', '--test-isolation=process', '--test-concurrency=2', ...regular]);
+  assert.deepEqual(unitShardFiles('regular', undefined), regular, 'without a shard the whole partition runs');
+  for (const group of ['regular', 'parser-bounds'] as const) {
+    for (let total = 1; total <= 4; total++) {
+      const files = unitFiles(group);
+      const parts = Array.from({ length: total }, (_, i) => unitShardFiles(group, { index: i + 1, total }));
+      assert.equal(parts.flat().length, files.length, `${group} in ${total} shards: no overlap`);
+      assert.deepEqual(parts.flat().sort(), files, `${group} in ${total} shards: every file`);
+      for (const part of parts) assert.ok(part.length > 0, `${group} ${total} shards: none empty`);
+    }
+  }
+  const loads = [1, 2, 3].map((index) => unitShardFiles('regular', { index, total: 3 }).reduce((sum, file) => sum + unitSeconds(file), 0));
+  assert.ok(Math.max(...loads) <= Math.min(...loads) * 1.1, `balanced shards: ${loads.join(', ')}`);
+  const all = new Set(unitFiles('all'));
+  for (const file of Object.keys(UNIT_MEASURED_SECONDS)) assert.ok(all.has(file), file);
+});
+
+test('the runner refuses a shard of the local lanes and a malformed shard', async () => {
+  await assert.rejects(runUnitTests('all', { index: 1, total: 2 }), /分片只用于/);
+  const out = spawnSync(process.execPath, ['tools/run-unit-tests.ts', 'regular', '4/3'], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(out.status, 2);
+  assert.match(out.stderr, /分片必须写成/);
 });
