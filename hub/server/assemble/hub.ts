@@ -55,7 +55,7 @@ export interface AssemblyOptions {
    * Hub does not start (default false).
    */
   command?: boolean;
-  /** Probe sandbox-exec at start-up and say when pack functions cannot run here (default false; serve does it). */
+  /** Probe operating-system isolation at start-up and say when pack functions cannot run (default false; serve does it). */
   checkSandbox?: boolean;
   /** Transport of the connectors; default the global fetch. Tests reach only loopback stubs. */
   fetch?: FetchLike;
@@ -109,6 +109,12 @@ const stderrLog = (line: string): void => {
   process.stderr.write(`${line}\n`);
 };
 
+/** A bounded, platform-specific recovery instruction; no tool output or local paths enter the log. */
+export function sandboxUnavailableNotice(platform: NodeJS.Platform = process.platform): string {
+  if (platform === 'linux') return '这台机器上没有可用的 bubblewrap/AppArmor 隔离：任务包函数（投影、检查、同步和读取插件）都不会运行，相关的调用会失败；下一步：管理员检查 bubblewrap、已加载的 Hub AppArmor 策略和用户命名空间，修复后重启 Hub';
+  return '这台机器上没有可用的 sandbox-exec：任务包函数（投影、检查、同步和读取插件）都不会运行，相关的调用会失败';
+}
+
 export async function assembleHub(config: HubConfig, records: RecordsKit, options: AssemblyOptions = {}): Promise<AssembledHub> {
   const notes = new CallNotes(options.log ?? stderrLog);
   const notices: string[] = [];
@@ -118,7 +124,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   const now = options.now;
   const sandbox: SandboxOptions = { requireOsIsolation: options.requireOsIsolation ?? true };
   if (options.checkSandbox === true && sandbox.requireOsIsolation === true && !(await osIsolationAvailable())) {
-    notices.push('这台机器上没有可用的 sandbox-exec：任务包函数（投影、检查、同步和读取插件）都不会运行，相关的调用会失败');
+    notices.push(sandboxUnavailableNotice());
   }
 
   // 2. Package lifecycle and the installed, sandboxed format capabilities.

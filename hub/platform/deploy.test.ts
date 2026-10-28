@@ -160,6 +160,13 @@ const hintOf = (error: unknown) => String((error as PlatformError).hint);
 const after = (host: FakeHost, call: string) => host.calls.slice(host.calls.lastIndexOf(call) + 1);
 
 describe('deploy flow', () => {
+  test('Linux recovery names systemd when it cannot stop a failed release', async () => {
+    const host=Object.assign(new FakeHost(V1),{linuxService:true});
+    host.failAt.add(`waitHealthy:${V2.id}`);host.failFrom.set('stopService',2);
+    await assert.rejects(runDeploy(host,now),(error:unknown)=>{
+      assert.match(hintOf(error),/systemd 会重启它/);assert.doesNotMatch(hintOf(error),/launchd/);return true;
+    });
+  });
   test('success: build and check while the Hub runs, then stop, backup, switch, migrate, start, health, record', async () => {
     const host = new FakeHost(V1);
     const report = await runDeploy(host, now);
@@ -365,7 +372,7 @@ describe('deploy flow', () => {
       const file = newSettingsFile({ environment: 'test' });
       await writeFile(settingsPath(layout), JSON.stringify({ ...file, database: { ...file.database, role: 'hub-app' } }));
       const { runner, calls } = recordingRunner(() => undefined, { real: false });
-      const context = createContext({}, { layout, home: root, runner, launchAgentsDir: join(root, 'agents') });
+      const context = createContext({}, { layout, home: root, runner, platform: 'darwin', launchAgentsDir: join(root, 'agents') });
       const host = new FakeHost(V1);
       await assert.rejects(deploy(context, { path: root }, host), (error: unknown) => {
         assert.match((error as Error).message, /^部署设置里的应用角色名 hub-app 不符合要求，不部署：/);
@@ -389,7 +396,7 @@ describe('deploy flow', () => {
       // serve refuses it, so a deploy could only fail after the service stopped, and a rollback after the data moved.
       await writeFile(settingsPath(layout), JSON.stringify({ ...newSettingsFile({ environment: 'test' }), keychain_account: OPERATOR_TOKEN_ACCOUNT }));
       const { runner, calls } = recordingRunner(() => undefined, { real: false });
-      const context = createContext({}, { layout, home: root, runner, launchAgentsDir: join(root, 'agents') });
+      const context = createContext({}, { layout, home: root, runner, platform: 'darwin', launchAgentsDir: join(root, 'agents') });
       const deploying = new FakeHost(V1);
       // A recorded deploy with its backup: the rollback would otherwise go ahead.
       const rollingBack = new FakeHost(V2);
@@ -552,6 +559,14 @@ describe('rollback flow', () => {
     host.saved = [];
     return host;
   };
+
+  test('Linux rollback recovery names systemd when the service cannot be unloaded', async () => {
+    const host=Object.assign(await deployed(),{linuxService:true});
+    host.failAt.add(`waitHealthy:${V1.id}`);host.failAt.add('unloadService');
+    await assert.rejects(runRollback(host,now),(error:unknown)=>{
+      assert.match(hintOf(error),/systemd 会重启它/);assert.doesNotMatch(hintOf(error),/launchd/);return true;
+    });
+  });
 
   test('rollback restores the backup taken before the last deploy and runs the previous release', async () => {
     const host = await deployed();

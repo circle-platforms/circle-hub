@@ -77,16 +77,16 @@ test('hubKeyProvider reads the keychain item of the deployment settings; a data 
   const plain = await tempDir();
   roots.push(plain);
   const { runner, calls } = recordingRunner(() => ok(`${key}\n`), { real: false });
-  const provider = hubKeyProvider({ CIRCLE_HUB_DATA_DIR: plain, CIRCLE_HUB_KEYCHAIN_SERVICE: 'hub-x', CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'key-x' }, { runner });
+  const provider = hubKeyProvider({ CIRCLE_HUB_DATA_DIR: plain, CIRCLE_HUB_KEYCHAIN_SERVICE: 'hub-x', CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'key-x' }, { runner, platform: 'darwin' });
   assert.equal(Buffer.from(await provider.getKey()).toString('hex'), key);
   assert.deepEqual(calls[0]?.args, ['find-generic-password', '-s', 'hub-x', '-a', 'key-x', '-w']);
   const defaults = recordingRunner(() => ok(`${key}\n`), { real: false });
-  await hubKeyProvider({ CIRCLE_HUB_DATA_DIR: plain }, { runner: defaults.runner }).getKey();
+  await hubKeyProvider({ CIRCLE_HUB_DATA_DIR: plain }, { runner: defaults.runner, platform: 'darwin' }).getKey();
   assert.deepEqual(defaults.calls[0]?.args, ['find-generic-password', '-s', 'circle-hub', '-a', 'vault-master-key', '-w']);
   // Without a data root nothing is guessed, as ensureHubDatabase refuses: the default root's settings may name other items.
   const unset = recordingRunner(() => ok(`${key}\n`), { real: false });
   for (const env of [{}, { CIRCLE_HUB_DATA_DIR: '' }, { CIRCLE_HUB_KEYCHAIN_SERVICE: 'hub-x', CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'key-x' }]) {
-    await assert.rejects(hubKeyProvider(env, { runner: unset.runner }).getKey(), /^PlatformError: 没有设置 CIRCLE_HUB_DATA_DIR：钥匙串项由部署的数据根里的部署设置决定，不猜默认数据根$/, JSON.stringify(env));
+    await assert.rejects(hubKeyProvider(env, { runner: unset.runner, platform: 'darwin' }).getKey(), /^PlatformError: 没有设置 CIRCLE_HUB_DATA_DIR：钥匙串项由部署的数据根里的部署设置决定，不猜默认数据根$/, JSON.stringify(env));
   }
   assert.deepEqual(unset.calls, [], 'the keychain was not asked');
 
@@ -96,9 +96,9 @@ test('hubKeyProvider reads the keychain item of the deployment settings; a data 
   await ensureLayout(layout);
   await writeSettingsFile(layout, newSettingsFile({ environment: 'test', keychainService: 'hub-pinned', keychainAccount: 'key-pinned' }));
   const pinned = recordingRunner(() => ok(`${key}\n`), { real: false });
-  await hubKeyProvider({ CIRCLE_HUB_DATA_DIR: root }, { runner: pinned.runner }).getKey();
+  await hubKeyProvider({ CIRCLE_HUB_DATA_DIR: root }, { runner: pinned.runner, platform: 'darwin' }).getKey();
   assert.deepEqual(pinned.calls[0]?.args, ['find-generic-password', '-s', 'hub-pinned', '-a', 'key-pinned', '-w']);
   const stray = recordingRunner(() => ok(`${key}\n`), { real: false });
-  await assert.rejects(hubKeyProvider({ CIRCLE_HUB_DATA_DIR: root, CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'dev-key' }, { runner: stray.runner }).getKey(), /CIRCLE_HUB_KEYCHAIN_ACCOUNT 是 dev-key/);
+  await assert.rejects(hubKeyProvider({ CIRCLE_HUB_DATA_DIR: root, CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'dev-key' }, { runner: stray.runner, platform: 'darwin' }).getKey(), /CIRCLE_HUB_KEYCHAIN_ACCOUNT 是 dev-key/);
   assert.deepEqual(stray.calls, [], 'the keychain was not asked for another item');
 });
