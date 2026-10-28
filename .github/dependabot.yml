@@ -1,0 +1,27 @@
+# Version updates for the Hub's own dependencies and for the actions the workflows pin by commit SHA.
+# foundation/circle and references/ are frozen bytes (AGENTS.md, Source and reference ownership): they are excluded
+# here, but exclude-paths applies to version updates only. Security updates for their manifests are governed by the
+# repository's Dependabot settings, not by this file.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    exclude-paths:
+      - 'foundation/**'
+      - 'references/**'
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    exclude-paths:
+      - 'foundation/**'
+      - 'references/**'
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
