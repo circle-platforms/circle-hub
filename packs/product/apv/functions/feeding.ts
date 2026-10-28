@@ -7,6 +7,7 @@ import {caseNodes} from './cases-nodes.ts';
 import {elementDocument,caseBody} from './cases.ts';
 import {commandCatalog,stepCommands} from './cases-commands.ts';
 import {folderLine} from './documents.ts';
+import {directoryBindingLines} from './locate.ts';
 import {parseBuildName,lineKey} from './naming.ts';
 import {parseListing} from './listing.ts';
 import {isRecord} from './util.ts';
@@ -21,8 +22,11 @@ export default function project(input:unknown):unknown{
  if(!isRecord(input)||!isRecord(input.source)||typeof input.product!=='string')throw Error('缺原始来源和产品上下文；在带产品的运行中重新读取');
  const s=input.source,model=isRecord(input.model)?input.model:{},meta=isRecord(input.meta)?input.meta:{};
  const root=typeof input.root==='string'?input.root:null,base={product:input.product,root,path:null};
- // Only complete directory-folder names are parsed. Titles and descriptions are never fed to documentLines/locate.
- const directory=strings(meta.ancestors,'目录祖先'),lines=[...new Set(directory.map(folderLine).filter((line):line is string=>line!==null).map(lineKey))];
+ // Read only complete declared directory layers, never titles or descriptions.
+ const directory=strings(meta.ancestors,'目录祖先'),manualLines=[...new Set(directory.map(folderLine).filter((line):line is string=>line!==null).map(lineKey))];
+ const caseDirectory=s.system==='agile'?directoryBindingLines(directory):null;
+ const lines=caseDirectory&&!caseDirectory.complete?[]:[...new Set([...caseDirectory?.lines??[],...manualLines])];
+ const caseGrammar=caseDirectory?.lines.length?(manualLines.length?'apv-directory@1 + apv-directory-folder@1':'apv-directory@1'):'apv-directory-folder@1';
  const rows:Array<{body:Record<string,unknown>;identity:unknown;lines:string[];selector:string;grammar:string;conflict:boolean;missing?:Array<{missing:string;next_action:string}>}>=[];
  if(s.system==='agile'&&input.parser==='kityminder@1'){
   const scan=caseNodes(model);if(scan.malformed||scan.deep)throw Error('脑图结构或位置不完整；修正原件后整份重读');
@@ -36,7 +40,8 @@ export default function project(input:unknown):unknown{
    const content={autoid:node.autoid,priority:node.priority,resources:node.resource===undefined?[]:node.resource,steps,expects};
    const resource_declaration={status:declaration.status,present:declaration.present,raw_json:JSON.stringify(declaration.raw),types:declaration.types,table:declaration.table,missing:declaration.missing,next_action:declaration.next_action,violations:declaration.valid?[]:[{field:'resource',tier:'advisory',allowed_values:[...RESOURCE_TAG_TEXTS],statement:'未声明的标签：'+declaration.issues.map(issue=>JSON.stringify(issue.raw)).join('、')+'；resource 应改为发布闭集的精确原文：'+RESOURCE_TAG_TEXTS.join('、')+'；不推测原值对应哪项',next_action:declaration.next_action!}]};
    const resources=declaration.valid&&Array.isArray(node.resource)?[...new Set(node.resource)]:[];
-   rows.push({body:{schema:'fed-case@1',...base,source:{system:'agile',document,element:node.id??node.selector,revision:text(s.revision),bytes:s.bytes},...content,resources,resource_declaration,commands,unparsed_steps,document_lines:lines},identity:content,lines,selector:node.selector,grammar:'apv-directory-folder@1',conflict:lines.length>1,...(unparsed_steps?{missing:[{missing:unparsed_steps+' 个步骤缺可核对的完整命令身份',next_action:'包作者核对锁定命令树的完整签名，或作者补完整命令后重新读取；不猜命令'}]}:{})});
+   const missing=[...(!caseDirectory?.complete?[{missing:'目录层数或单层长度超过完整解析上限',next_action:'目录维护者缩短目录层级或名称后重新读取；不从截断内容猜版本'}]:[]),...(unparsed_steps?[{missing:unparsed_steps+' 个步骤缺可核对的完整命令身份',next_action:'包作者核对锁定命令树的完整签名，或作者补完整命令后重新读取；不猜命令'}]:[])];
+   rows.push({body:{schema:'fed-case@1',...base,source:{system:'agile',document,element:node.id??node.selector,revision:text(s.revision),bytes:s.bytes},...content,resources,resource_declaration,commands,unparsed_steps,document_lines:lines},identity:content,lines,selector:node.selector,grammar:caseGrammar,conflict:lines.length>1,...(missing.length?{missing}:{})});
   }
  }else if(s.system==='plm'&&model.kind==='bug'){
   const original=structuredDefect(model)!;if(text(s.key)!==original.id)throw Error('PLM 记录身份与读取地址不一致');const {id,status,fix_builds}=original,affected_lines=original.affected_lines.map(nativeLine),resolved_lines=original.resolved_lines.map(nativeLine);
