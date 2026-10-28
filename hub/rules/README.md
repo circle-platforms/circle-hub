@@ -213,19 +213,21 @@ large, bad limits) throw `TypeError` or `RangeError`. Defaults: 10 s, 256 MB, 8 
 input; maxima 120 s, 4 GB, 64 MiB, 1 MiB, 128 MiB.
 
 Memory is enforced on the resident size rather than by V8's heap limit, because V8 aborts on heap exhaustion and macOS then
-writes a crash report (observed); the heap limit is set far above as a backstop.
+writes a crash report (observed); the heap limit is set far above as a backstop. Linux sums the supervisor and descendants
+of all its threads. A changing thread set is retried at most 12 times; an inaccessible or persistently unstable process tree,
+missing RSS, a failed sampler or a sampler that does not answer within one second ends the call as `SANDBOX_UNAVAILABLE` with
+the missing observation and the administrator's next step. It is never presented as a measured memory overrun.
 
 ## Limits
 
-- Linux has no operating-system network layer here. By default the sandbox refuses to run there; with
-  `requireOsIsolation: false` (synthetic tests only) network denial rests on the JavaScript lockdown alone. The OS probe test is
-  skipped on Linux; the tests were run on macOS only.
+- Linux requires the bubblewrap and AppArmor policy described above; without them the default is `SANDBOX_UNAVAILABLE`.
+  With `requireOsIsolation: false` (synthetic tests only), network denial rests on the JavaScript lockdown alone.
 - `sandbox-exec` is deprecated by Apple. If a macOS release removes it, the default becomes `SANDBOX_UNAVAILABLE`.
 - Resident size is polled: a burst can overshoot by what fits in about 100 ms, and memory the OS has compressed is not
   resident.
-- If the Hub is killed (SIGKILL, a crash) no exit listener runs: a child that sleeps without using CPU (for example in
-  `Atomics.wait`) outlives it until the next Hub start calls `sweepOrphans()`; CPU-bound children end at the CPU limit. On a
-  machine where orphans are not reparented to pid 1 (Linux with a subreaper) the sweep finds nothing.
+- If the Hub is killed (SIGKILL, a crash), Linux bubblewrap's `--die-with-parent` ends its child. On macOS an orphan that
+  sleeps without using CPU can remain until the next Hub start calls `sweepOrphans()`; CPU-bound children end at the CPU limit.
+  On a machine where orphans are not reparented to pid 1 (Linux with a subreaper) the sweep finds nothing.
 - The waiting line is bounded by count, not bytes: waiting calls hold only references to the caller's objects; the bytes in
   flight are at most 8 children times the input limit.
 - The pack directory is scanned before each call; it must not be writable by anyone else while a function runs.
@@ -390,3 +392,8 @@ caching readiness. Missing support reports private diagnostic `node_permission_d
 implementation reports `node_permission_drop_failed`. Neither condition permits a fallback. The existing per-child
 attestation still runs before pack loading. Synthetic missing/no-op/throwing implementations are regression inputs;
 verification results are recorded in `docs/hub-r4-tasks/linux-probe-capability.md`.
+
+Independent Linux RSS review: Antigravity reviewed fixed merge `23ec924d` and found no remaining static blocker in
+bounded thread-tree retries or the distinction between measured excess and unavailable observation. The review did not
+run tests. Linux synthetic pair and fault-injection results remain separate evidence; unusual system load may still make
+observation unavailable and must not be reported as a measured excess.
