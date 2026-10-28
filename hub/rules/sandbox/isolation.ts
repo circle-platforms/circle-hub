@@ -7,7 +7,7 @@ import { constants, existsSync, readFileSync, realpathSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { DECLARED_DEPENDENCIES, LINUX_LABEL } from './policy.ts';
+import { DECLARED_DEPENDENCIES, LINUX_LABEL, LINUX_LABEL_UBUNTU26 } from './policy.ts';
 import { AA_EXEC, BWRAP, LAUNCH_PROFILE, linuxBubblewrapArgs, linuxToolsPresent } from './linux.ts';
 
 export const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
@@ -97,7 +97,7 @@ async function probeSandboxExec(): Promise<ProbeOutcome> {
     if (!linuxToolsPresent()) return { available: false, lasting: false, reason: 'bubblewrap_or_apparmor_tools_missing' };
     let args: string[];
     try {
-      const source = `if(typeof process.permission?.drop!=='function')process.exit(22);const fs=require('node:fs'),cp=require('node:child_process');const label=fs.readFileSync(3,'utf8').trim();fs.closeSync(3);if(label!==${JSON.stringify(LINUX_LABEL)})process.exit(20);const child=cp.spawnSync(process.execPath,['-e','process.exit(0)']);if(child.error?.code!=='EACCES')process.exit(21);${LINUX_PERMISSION_PROBE}`;
+      const source = `if(typeof process.permission?.drop!=='function')process.exit(22);const fs=require('node:fs'),cp=require('node:child_process');const label=fs.readFileSync(3,'utf8').trim();fs.closeSync(3);if(label!==${JSON.stringify(LINUX_LABEL)}&&label!==${JSON.stringify(LINUX_LABEL_UBUNTU26)})process.exit(20);const child=cp.spawnSync(process.execPath,['-e','process.exit(0)']);if(child.error?.code!=='EACCES')process.exit(21);${LINUX_PERMISSION_PROBE}`;
       args = ['-p', LAUNCH_PROFILE, '--', BWRAP, ...linuxBubblewrapArgs(NODE, ['--permission', '--allow-child-process', '--allow-fs-write=/dev/null', '--no-warnings', '-e', source], [])];
     } catch {
       return { available: false, lasting: false, reason: 'linux_runtime_bindings_unavailable' };

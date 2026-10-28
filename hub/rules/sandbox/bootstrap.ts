@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { format } from 'node:util';
 import type { SandboxErrorCode } from './errors.ts';
-import { DECLARED_DEPENDENCIES, DEPENDENCY_BUILTINS, LINUX_LABEL, PACK_MODULE_FORMATS, PURE_BUILTINS } from './policy.ts';
+import { DECLARED_DEPENDENCIES, DEPENDENCY_BUILTINS, LINUX_LABEL, LINUX_LABEL_UBUNTU26, PACK_MODULE_FORMATS, PURE_BUILTINS } from './policy.ts';
 
 // Intrinsics captured before any pack code runs. Pack code shares this realm and may replace prototype methods or globals;
 // everything this file does after the import goes through these captured functions (the primordials technique of Node core).
@@ -89,7 +89,7 @@ if (request.linuxOsIsolation) {
     const label = readFileSync(3, 'utf8').trim();
     closeSync(3);
     const dir = request.linuxProbeDir;
-    if (label !== LINUX_LABEL || typeof dir !== 'string' || typeof permission?.drop !== 'function') throw new Error('missing isolation proof');
+    if ((label !== LINUX_LABEL && label !== LINUX_LABEL_UBUNTU26) || typeof dir !== 'string' || typeof permission?.drop !== 'function') throw new Error('missing isolation proof');
     if (!permission.has('child') || !permission.has('fs.write', dir)) throw new Error('missing temporary test permissions');
     // `ignore` opens /dev/null for writing, which could fail before exec even under a weak policy.
     const executable = spawnSync(process.execPath, ['--version'], { stdio: 'pipe', env: {}, timeout: 1_000 });

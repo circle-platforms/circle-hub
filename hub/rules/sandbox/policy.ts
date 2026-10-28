@@ -7,6 +7,8 @@ export const LINUX_POLICY_REVISION = '17338cfaea07';
 export const LINUX_LAUNCH_PROFILE = `circle-hub-sandbox-launch-v2-${LINUX_POLICY_REVISION}`;
 export const LINUX_WORKER_PROFILE = `circle-hub-sandbox-worker-v2-${LINUX_POLICY_REVISION}`;
 export const LINUX_LABEL = `${LINUX_LAUNCH_PROFILE}//&${LINUX_WORKER_PROFILE} (enforce)`;
+// Ubuntu 26 stacks the unconfined domain as an additional intersection.
+export const LINUX_LABEL_UBUNTU26 = `${LINUX_LAUNCH_PROFILE}//&${LINUX_WORKER_PROFILE}//&unconfined (enforce)`;
 
 /** Builtins pack code may import: computation only, no file, network, process or thread access. */
 export const PURE_BUILTINS: readonly string[] = [
