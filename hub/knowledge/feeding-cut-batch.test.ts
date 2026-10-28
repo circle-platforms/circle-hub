@@ -5,7 +5,7 @@ import { runRecord } from '../../contracts/src/fixtures.ts';
 import { RunRecord } from '../../contracts/src/run.ts';
 import { putRun } from '../runs/engine/store.ts';
 import { startPostgres } from './test-support.ts';
-import { mapBytes, readCapture, world } from './feeding-bounds-fixture.ts';
+import { mapBytes, readCapture, world } from './testing/feeding-bounds-fixture.ts';
 import type { FeedingCut } from './feeding-types.ts';
 
 /** Frozen and live cuts should differ only in the explicitly returned horizon. */

@@ -6,12 +6,16 @@ import type { SandboxErrorCode } from './errors.ts';
 
 /** Resident bytes by pid; a pid that is gone is left out. */
 export type Measure = (pids: readonly number[]) => Promise<Map<number, number>>;
-/** null is an unobservable tree, not a measured number of bytes. */
-export type TreeMeasure = (pids: readonly number[]) => Promise<Map<number, number | null>>;
+/** null is unobservable; this sentinel means the root was observed to have already ended. */
+export const RESIDENT_EXITED = Number.NEGATIVE_INFINITY;
+export type TreeObservation = number | null;
+export type TreeMeasure = (pids: readonly number[]) => Promise<Map<number, TreeObservation>>;
 export const RESIDENT_UNAVAILABLE_MESSAGE = '缺少沙箱进程树完整的内存观测；下一步：请管理员检查进程观测权限和系统负载后重试';
 
 /** A missing observation is not evidence that a memory limit was exceeded. */
-export function residentFailure(bytes: number | null, limit: number, memoryMb: number): { code: SandboxErrorCode; detail: Record<string, unknown> } | undefined {
+export function residentFailure(bytes: TreeObservation, limit: number, memoryMb: number): { code: SandboxErrorCode; detail: Record<string, unknown> } | undefined {
+  // The kernel has already observed the root exit; Node may not have delivered its exit event yet.
+  if (bytes === RESIDENT_EXITED) return undefined;
   if (bytes === null || !Number.isSafeInteger(bytes) || bytes < 0) return { code: 'SANDBOX_UNAVAILABLE', detail: { reason: 'resident_observation_unavailable', missing: '沙箱进程树完整的内存观测', next_action: '请管理员检查进程观测权限和系统负载后重试' } };
   return bytes > limit ? { code: 'SANDBOX_VIOLATION', detail: { limit: 'memory', residentBytes: bytes, memoryMb } } : undefined;
 }
@@ -87,7 +91,7 @@ export function createResidentTreeMeasure(options: {
   pause?: () => Promise<void>;
 }): TreeMeasure {
  return async (pids) => {
-  const result = new Map<number, number | null>();
+  const result = new Map<number, TreeObservation>();
   await Promise.all(pids.map(async (root) => {
     const found = new Set<number>();
     const pending = [root];
@@ -102,11 +106,11 @@ export function createResidentTreeMeasure(options: {
         let threads: string[];
         try { threads = (await options.readThreads(pid)).sort(); }
         catch (error) {
-          if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && await options.gone(pid)) { found.delete(pid); complete = true; break; }
+          if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && await options.gone(pid)) { if (pid === root) { result.set(root, RESIDENT_EXITED); return; } found.delete(pid); complete = true; break; }
           result.set(root, null); return;
         }
         if (!threads.length) {
-          if (await options.gone(pid)) { found.delete(pid); complete = true; break; }
+          if (await options.gone(pid)) { if (pid === root) { result.set(root, RESIDENT_EXITED); return; } found.delete(pid); complete = true; break; }
           await (options.pause?.() ?? new Promise<void>(resolve => setTimeout(resolve, 2)));
           continue;
         }
@@ -116,7 +120,7 @@ export function createResidentTreeMeasure(options: {
           let children: string;
           try { children = (await options.readChildren(pid, tid)).trim(); }
           catch (error) {
-            if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && await options.gone(pid)) { found.delete(pid); complete = true; break; }
+            if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && await options.gone(pid)) { if (pid === root) { result.set(root, RESIDENT_EXITED); return; } found.delete(pid); complete = true; break; }
             if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && await options.threadGone(pid, tid)) { retry = true; break; }
             result.set(root, null); return;
           }
@@ -130,7 +134,7 @@ export function createResidentTreeMeasure(options: {
         if (retry) { await (options.pause?.() ?? new Promise<void>(resolve => setTimeout(resolve, 2))); continue; }
         try { complete = threads.join(',') === (await options.readThreads(pid)).sort().join(','); }
         catch (error) {
-          if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && await options.gone(pid)) { found.delete(pid); complete = true; break; }
+          if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && await options.gone(pid)) { if (pid === root) { result.set(root, RESIDENT_EXITED); return; } found.delete(pid); complete = true; break; }
           result.set(root, null); return;
         }
         if (!complete) await (options.pause?.() ?? new Promise<void>(resolve => setTimeout(resolve, 2)));
@@ -141,6 +145,7 @@ export function createResidentTreeMeasure(options: {
     // A status may disappear when a child exits. Unreadable status for a live process remains a failure.
     for (const pid of found) if (!sizes.has(pid)) {
       if (!(await options.gone(pid))) { result.set(root, null); return; }
+      if (pid === root) { result.set(root, RESIDENT_EXITED); return; }
     }
     const total = [...sizes.values()].reduce((sum, bytes) => sum + bytes, 0);
     result.set(root, sizes.has(root) && Number.isSafeInteger(total) && total >= 0 ? total : null);
