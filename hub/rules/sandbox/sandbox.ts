@@ -300,6 +300,7 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
   const header = JSON.stringify({
     nonce,
     batch,
+    linuxOsIsolation: os && process.platform === 'linux',
     pack: dirUrl(pack.dir),
     entry: pathToFileURL(pack.entry).href,
     exportName: pack.exportName,
@@ -309,13 +310,18 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
     logBytes: lim.logBytes,
   });
   const request = `${header.slice(0, -1)},"input":${inputText}}`;
-  const command = isolatedCommand({
-    entry: BOOTSTRAP,
-    reads: [pack.dir, ...deps.reads],
-    heapMb: heapBackstopMb(lim.memoryMb),
-    cpuSeconds: Math.ceil(lim.timeoutMs / 1000) * 2 + 1,
-    os,
-  });
+  let command: ReturnType<typeof isolatedCommand>;
+  try {
+    command = isolatedCommand({
+      entry: BOOTSTRAP,
+      reads: [pack.dir, ...deps.reads],
+      heapMb: heapBackstopMb(lim.memoryMb),
+      cpuSeconds: Math.ceil(lim.timeoutMs / 1000) * 2 + 1,
+      os,
+    });
+  } catch {
+    throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'linux_runtime_bindings_unavailable' });
+  }
 
   return new Promise<SandboxResult>((resolve, reject) => {
     const started = Date.now();
@@ -428,6 +434,7 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
       // What is missing is that measurement; the next step is the administrator's: raise memoryMb or the poller's reach
       // and rerun, or read the captured streams as a human. No cause is claimed here.
       if (exitCode === 70) return reject(new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'cpu_limit', durationMs }, logs));
+      if (exitCode === 72) return reject(new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'linux_isolation_attestation', durationMs }, logs));
       if (signal) return reject(new SandboxError('SANDBOX_VIOLATION', { reason: 'signal', signal, durationMs, resourceObservation: 'absent' }, logs));
       return reject(new SandboxError('FUNCTION_THREW', { reason: 'exit_without_result', exitCode, durationMs, resourceObservation: 'absent' }, logs));
     };

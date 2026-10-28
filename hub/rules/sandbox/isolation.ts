@@ -7,7 +7,8 @@ import { constants, existsSync, readFileSync, realpathSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { DECLARED_DEPENDENCIES } from './policy.ts';
+import { DECLARED_DEPENDENCIES, LINUX_LABEL } from './policy.ts';
+import { AA_EXEC, BWRAP, LAUNCH_PROFILE, linuxBubblewrapArgs, linuxToolsPresent } from './linux.ts';
 
 export const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
 // Real paths: the permission model does not follow a symbolic link on the way to a granted file.
@@ -76,6 +77,21 @@ export function createIsolationProbe(options: { probe: () => Promise<ProbeOutcom
 
 /** Runs sandbox-exec with the real profile once. */
 async function probeSandboxExec(): Promise<ProbeOutcome> {
+  if (process.platform === 'linux') {
+    if (!linuxToolsPresent()) return { available: false, lasting: false, reason: 'bubblewrap_or_apparmor_tools_missing' };
+    let args: string[];
+    try {
+      const source = `const fs=require('node:fs'),cp=require('node:child_process');const label=fs.readFileSync(3,'utf8').trim();fs.closeSync(3);if(label!==${JSON.stringify(LINUX_LABEL)})process.exit(20);const child=cp.spawnSync(process.execPath,['-e','process.exit(0)']);if(child.error?.code!=='EACCES')process.exit(21);`;
+      args = ['-p', LAUNCH_PROFILE, '--', BWRAP, ...linuxBubblewrapArgs(NODE, ['--no-warnings', '-e', source], [])];
+    } catch {
+      return { available: false, lasting: false, reason: 'linux_runtime_bindings_unavailable' };
+    }
+    return new Promise<ProbeOutcome>((resolve) => {
+      const child = spawn(AA_EXEC, args, { stdio: 'ignore', env: { TZ: 'UTC' }, timeout: 5_000, killSignal: 'SIGKILL' });
+      child.on('error', () => resolve({ available: false, lasting: false, reason: 'bubblewrap_or_apparmor_spawn_failed' }));
+      child.on('exit', (code) => resolve(code === 0 ? { available: true } : { available: false, lasting: false, reason: 'bubblewrap_apparmor_or_user_namespace_unavailable' }));
+    });
+  }
   if (process.platform !== 'darwin') return { available: false, lasting: true, reason: 'platform' };
   try {
     await access(SANDBOX_EXEC, constants.X_OK);
@@ -169,7 +185,11 @@ export function isolatedCommand(options: { entry: string; reads: string[]; heapM
     '--no-experimental-websocket',
     options.entry,
   ];
-  const program = options.os ? [SANDBOX_EXEC, '-p', sandboxProfile(), NODE, ...node] : [NODE, ...node];
+  const program = options.os
+    ? process.platform === 'linux'
+      ? [AA_EXEC, '-p', LAUNCH_PROFILE, '--', BWRAP, ...linuxBubblewrapArgs(NODE, node, [options.entry, POLICY, ...options.reads])]
+      : [SANDBOX_EXEC, '-p', sandboxProfile(), NODE, ...node]
+    : [NODE, ...node];
   return {
     command: '/bin/sh',
     args: ['-c', 'ulimit -t "$1" || exit 70; shift; exec "$@"', 'sh', String(options.cpuSeconds), ...program],

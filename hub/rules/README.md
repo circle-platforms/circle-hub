@@ -152,6 +152,18 @@ Layers, outermost first:
    inspection only of itself, and no file writes except `/dev/null`. Node 24's permission model does not restrict the network
    (verified with a really listening loopback server), so this layer is required by default: without it `callPackFunction`
    throws `SANDBOX_UNAVAILABLE` unless the caller passes `{ requireOsIsolation: false }`.
+   On Linux this layer uses bubblewrap with private user, PID, network, IPC and UTS namespaces and read-only bindings for the
+   Node runtime, its dynamic loader and libraries, the trusted bootstrap, the pack and declared dependencies. AppArmor adds a
+   mandatory deny-exec and deny-network worker profile: a trusted shell sets a stack-on-exec transition before Node starts,
+   so every Node thread inherits the restriction. The bootstrap verifies the enforced label before loading a pack. The
+   runtime exposes private proc and device pseudo-filesystems for the transition and runtime, not host directories; Node's
+   permission model still denies pack reads outside its explicit grants. Missing bubblewrap, AppArmor tools, profile, user
+   namespaces, loader dependencies or a verified label leaves isolation unavailable; there is no production fallback.
+
+   An administrator installs the generated policy for the exact service Node binary, for example by piping the output of
+   `node hub/rules/sandbox/linux.ts` to `apparmor_parser -r`. Reinstall it after changing that binary or shell. The host must
+   allow the launcher profile to create user namespaces. Linux systems without a usable AppArmor policy need an equivalent
+   independently verified kernel backend before Hub can run pack functions. This does not alter CI configuration.
 4. Node's permission model: read access only to the bootstrap, `policy.ts`, the pack directory and the declared dependencies'
    package directories (resolved recursively); no writes, child processes, workers, addons, WASI or inspector;
    `--disallow-code-generation-from-strings`, `--no-addons`, `--no-experimental-websocket`, an empty environment (only `TZ=UTC`).

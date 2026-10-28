@@ -1,7 +1,7 @@
 // Resident memory of the sandboxed children, measured by one shared poller: one round per interval for every running child (on
 // macOS a single /bin/ps for all of them), instead of one process per child per tick.
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 
 /** Resident bytes by pid; a pid that is gone is left out. */
 export type Measure = (pids: readonly number[]) => Promise<Map<number, number>>;
@@ -39,7 +39,7 @@ export const residentSizes: Measure = async (pids) => {
 };
 
 /** Sum a Linux supervisor and descendants; a live but unreadable process tree is an unprovable memory bound. */
-export function createResidentTreeMeasure(options: { readChildren(pid: number): Promise<string>; measure: Measure }): Measure {
+export function createResidentTreeMeasure(options: { readChildren(pid: number): Promise<string>; measure: Measure; gone(pid: number): Promise<boolean> }): Measure {
  return async (pids) => {
   const result = new Map<number, number>();
   await Promise.all(pids.map(async (root) => {
@@ -60,7 +60,7 @@ export function createResidentTreeMeasure(options: { readChildren(pid: number): 
         }
       } catch (error) {
         // ENOENT can mean a process exited between samples; any other failure, or a still-live process, fails closed.
-        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT' || (await options.measure([pid])).has(pid)) {
+        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT' || !(await options.gone(pid))) {
           result.set(root, Number.MAX_SAFE_INTEGER);
           return;
         }
@@ -68,10 +68,9 @@ export function createResidentTreeMeasure(options: { readChildren(pid: number): 
       }
     }
     const sizes = await options.measure([...found]);
-    // An unreadable status is indistinguishable from an exit after enumeration. The watcher checks liveness before killing.
+    // A status may disappear when a child exits. Unreadable status for a live process remains a failure.
     for (const pid of found) if (!sizes.has(pid)) {
-      result.set(root, Number.MAX_SAFE_INTEGER);
-      return;
+      if (!(await options.gone(pid))) { result.set(root, Number.MAX_SAFE_INTEGER); return; }
     }
     if (sizes.has(root)) result.set(root, [...sizes.values()].reduce((sum, bytes) => sum + bytes, 0));
   }));
@@ -81,7 +80,14 @@ export function createResidentTreeMeasure(options: { readChildren(pid: number): 
 
 /** A PID namespace may leave Node below bubblewrap's monitor. */
 export const residentTreeSizes: Measure = process.platform === 'linux'
-  ? createResidentTreeMeasure({ readChildren: pid => readFile(`/proc/${pid}/task/${pid}/children`, 'utf8'), measure: residentSizes })
+  ? createResidentTreeMeasure({
+      readChildren: pid => readFile(`/proc/${pid}/task/${pid}/children`, 'utf8'),
+      measure: residentSizes,
+      gone: async pid => {
+        try { await stat(`/proc/${pid}`); return false; }
+        catch (error) { return (error as NodeJS.ErrnoException)?.code === 'ENOENT'; }
+      },
+    })
   : residentSizes;
 
 export interface ResidentWatch {

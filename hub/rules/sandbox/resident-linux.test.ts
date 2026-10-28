@@ -11,6 +11,7 @@ test('an inaccessible live process tree fails closed rather than counting only i
       throw Object.assign(new Error('inaccessible'), { code: 'EACCES' });
     },
     measure: async pids => new Map(pids.map(pid => [pid, 100])),
+    gone: async () => false,
   });
   assert.equal((await measure([1])).get(1), Number.MAX_SAFE_INTEGER);
 });
@@ -22,8 +23,21 @@ test('a child that exited between samples does not count as an inaccessible live
       throw Object.assign(new Error('gone'), { code: 'ENOENT' });
     },
     measure: async pids => new Map(pids.filter(pid => pid === 1).map(pid => [pid, 100])),
+    gone: async pid => pid === 2,
   });
   assert.equal((await measure([1])).get(1), 100);
+});
+
+test('an exited child after enumeration is ignored but an unmeasurable live child fails closed', async () => {
+  let childGone = true;
+  const measure = createResidentTreeMeasure({
+    readChildren: async pid => pid === 1 ? '2' : '',
+    measure: async pids => new Map(pids.filter(pid => pid === 1).map(pid => [pid, 100])),
+    gone: async pid => pid === 2 && childGone,
+  });
+  assert.equal((await measure([1])).get(1), 100);
+  childGone = false;
+  assert.equal((await measure([1])).get(1), Number.MAX_SAFE_INTEGER);
 });
 
 test('Linux resident accounting includes a supervisor and its child', { skip: process.platform !== 'linux', timeout: 10_000 }, async (t) => {

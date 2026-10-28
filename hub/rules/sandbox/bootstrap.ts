@@ -2,12 +2,12 @@
 // stdin. This file is trusted: it locks the process down, imports the pack module, calls the function once, writes a single
 // result frame to fd 1 and exits. Pack code never sees the real stdio, the frame nonce or the request.
 import { Console } from 'node:console';
-import { readFileSync, writeSync } from 'node:fs';
+import { closeSync, readFileSync, writeSync } from 'node:fs';
 import { isBuiltin, registerHooks, syncBuiltinESMExports } from 'node:module';
 import { Readable, Writable } from 'node:stream';
 import { format } from 'node:util';
 import type { SandboxErrorCode } from './errors.ts';
-import { DECLARED_DEPENDENCIES, DEPENDENCY_BUILTINS, PACK_MODULE_FORMATS, PURE_BUILTINS } from './policy.ts';
+import { DECLARED_DEPENDENCIES, DEPENDENCY_BUILTINS, LINUX_LABEL, PACK_MODULE_FORMATS, PURE_BUILTINS } from './policy.ts';
 
 // Intrinsics captured before any pack code runs. Pack code shares this realm and may replace prototype methods or globals;
 // everything this file does after the import goes through these captured functions (the primordials technique of Node core).
@@ -47,6 +47,7 @@ interface Dependency {
 
 interface Request {
   nonce: string;
+  linuxOsIsolation?: boolean;
   batch?: boolean;
   /** File URL of the extracted pack directory, with a trailing slash. */
   pack: string;
@@ -75,6 +76,13 @@ try {
   request = JSON.parse(readFileSync(0, 'utf8')) as Request;
 } catch {
   hardExit(71);
+}
+if (request.linuxOsIsolation) {
+  try {
+    const label = readFileSync(3, 'utf8').trim();
+    closeSync(3);
+    if (label !== LINUX_LABEL) hardExit(72);
+  } catch { hardExit(72); }
 }
 const dependencies = new Map(request.dependencies.map((d) => [d.name, d] as const));
 const loadable = [request.pack, ...request.dependencyDirs];

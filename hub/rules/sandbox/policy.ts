@@ -1,6 +1,10 @@
 // Import policy for pack functions, shared by the parent (sandbox.ts) and the child (bootstrap.ts). No imports: the child
 // reads this file under the permission model before any lockdown is in place.
 
+export const LINUX_LAUNCH_PROFILE = 'circle-hub-sandbox-launch-v1';
+export const LINUX_WORKER_PROFILE = 'circle-hub-sandbox-worker-v1';
+export const LINUX_LABEL = `${LINUX_LAUNCH_PROFILE}//&${LINUX_WORKER_PROFILE} (enforce)`;
+
 /** Builtins pack code may import: computation only, no file, network, process or thread access. */
 export const PURE_BUILTINS: readonly string[] = [
   'assert',
