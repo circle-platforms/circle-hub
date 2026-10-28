@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
+import { writeSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import test from 'node:test';
+import { windowsPrivateFiles } from './windows-files.ts';
+import { windowsKeychainKeyProvider } from './windows-keychain.ts';
+import { windowsFileVault, windowsFileVaultStorage } from './windows-vault.ts';
+
+const runnerOnly = process.platform === 'win32' && process.env.GITHUB_ACTIONS === 'true';
+test('Windows runner full vault native boundary preserves key-check, AES-GCM, AAD and atomic replacement', { skip: !runnerOnly }, async () => {
+  const parent = await mkdtemp(join(homedir(), 'circle-hub-vault-synthetic-'));
+  const directory = join(parent, 'vault'), keys = join(parent, 'keys');
+  const onNativeStep = (step: string) => { writeSync(1, `windows-vault-native:${step}\n`); };
+  try {
+    const expectedSid = windowsPrivateFiles(keys, onNativeStep).sid;
+    assert.throws(() => windowsFileVaultStorage(directory, { expectedSid: 'S-1-0-0', onNativeStep }), /身份不一致/);
+    const options = { expectedSid, onNativeStep };
+    const provider = windowsKeychainKeyProvider({ directory: keys, expectedSid, service: 'synthetic-vault', account: 'master' });
+    await provider.initKey!();
+    const vault = windowsFileVault(directory, provider, options);
+    await vault.put('alpha', 'synthetic original');
+    assert.equal(await vault.getText('alpha'), 'synthetic original');
+    const files = windowsPrivateFiles(directory, onNativeStep, expectedSid);
+    const before = files.read('alpha.sealed')!;
+    assert.ok(!Buffer.from(before).includes(Buffer.from('synthetic original')));
+    await vault.put('alpha', 'synthetic replacement');
+    assert.equal(await vault.getText('alpha'), 'synthetic replacement');
+    assert.notDeepEqual(files.read('alpha.sealed'), before);
+    assert.deepEqual(await vault.list(), ['alpha']);
+    assert.equal(await vault.has('alpha'), true);
+    assert.ok(typeof (await vault.stat('alpha'))?.written_at === 'string');
+    assert.ok(files.stat('key-check'));
+    assert.ok(!files.list().some((file) => file.endsWith('.tmp')));
+    await vault.put('maximum', randomBytes(64 * 1024));
+    assert.equal((await vault.get('maximum'))?.length, 64 * 1024);
+    const wrong = windowsFileVault(directory, { async getKey() { return randomBytes(32); } }, options);
+    await assert.rejects(wrong.get('alpha'), /密钥与密钥库不符/);
+    files.replace('renamed.sealed', before);
+    await assert.rejects(vault.get('renamed'), /无法解开/);
+    assert.equal(await vault.remove('renamed'), true);
+    assert.equal(await vault.remove('renamed'), false);
+    const sealed = JSON.parse(new TextDecoder().decode(files.read('alpha.sealed')));
+    sealed.tag = randomBytes(16).toString('base64');
+    files.replace('alpha.sealed', Buffer.from(JSON.stringify(sealed)));
+    await assert.rejects(vault.get('alpha'), /无法解开/);
+    // OS reads remain allowed after this mutation, so failure must come from the exact per-file ACL boundary.
+    const widened = spawnSync('icacls.exe', [join(directory, 'maximum.sealed'), '/grant', '*S-1-1-0:(R)'], { encoding: 'utf8' });
+    assert.equal(widened.status, 0, 'fixture ACL mutation failed');
+    await assert.rejects(vault.get('maximum'));
+    await assert.rejects(vault.put('maximum', 'must not replace a file with unaccepted ACL'));
+    await assert.rejects(vault.has('maximum'));
+    await assert.rejects(vault.stat('maximum'));
+    await assert.rejects(vault.list());
+    await assert.rejects(vault.remove('maximum'));
+  } finally { await rm(parent, { recursive: true, force: true }); }
+});

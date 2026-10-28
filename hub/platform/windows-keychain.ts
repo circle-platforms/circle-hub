@@ -12,11 +12,13 @@ export interface WindowsKeychainOptions {
   service?: string;
   account?: string;
   item?: KeychainItem;
+  /** When used by a service, pin its installer-recorded native SID. */
+  expectedSid?: string;
 }
 
 /** Kept independent of the production factory until native Windows runner checks have passed. */
 export function windowsKeychainStore(options: WindowsKeychainOptions, onNativeStep?: (step: string) => void): KeychainStore {
-  return windowsKeychainStoreWithBoundary(options, windowsPrivateFiles(options.directory, onNativeStep), windowsDataProtection());
+  return windowsKeychainStoreWithBoundary(options, windowsPrivateFiles(options.directory, onNativeStep, options.expectedSid), windowsDataProtection());
 }
 
 /** Dependency-injected boundary for synthetic tests; production entry always constructs the native implementations. */

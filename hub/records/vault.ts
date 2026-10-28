@@ -4,7 +4,7 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { KeyProvider, Vault } from './api.ts';
+import type { FileVaultStorage, KeyProvider, Vault } from './api.ts';
 import { VaultError } from './errors.ts';
 
 const NAME = /^[a-z0-9][a-z0-9._-]{0,99}$/;
@@ -75,10 +75,13 @@ interface Sealed {
 export class FileVault implements Vault {
   readonly directory: string;
   readonly #provider: KeyProvider | undefined;
+  readonly #storage: FileVaultStorage | undefined;
 
-  constructor(directory: string, provider?: KeyProvider) {
+  constructor(directory: string, provider?: KeyProvider, storage?: FileVaultStorage) {
+    if (process.platform === 'win32' && storage === undefined) throw new VaultError('Windows 密钥库必须配置原生文件访问控制，不使用 POSIX 模式位回退');
     this.directory = directory;
     this.#provider = provider;
+    this.#storage = storage;
   }
 
   async initKey(): Promise<void> {
@@ -95,6 +98,10 @@ export class FileVault implements Vault {
     cipher.setAAD(associatedData(name));
     const data = Buffer.concat([cipher.update(plain), cipher.final()]);
     const sealed: Sealed = { v: FORMAT, iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: data.toString('base64') };
+    if (this.#storage) {
+      await this.#storage.writeAtomic(`${name}${SUFFIX}`, JSON.stringify(sealed));
+      return;
+    }
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     const temporary = `${target}.${randomBytes(8).toString('hex')}.tmp`;
     try {
@@ -115,6 +122,10 @@ export class FileVault implements Vault {
   async get(name: string): Promise<Uint8Array | null> {
     const target = this.#path(name);
     const key = await this.#key();
+    if (this.#storage) {
+      const text = await this.#storage.read(`${name}${SUFFIX}`);
+      return text === null ? null : openSealed(name, text, key);
+    }
     let text: string;
     try {
       text = await readFile(target, 'utf8');
@@ -131,6 +142,8 @@ export class FileVault implements Vault {
   }
 
   async has(name: string): Promise<boolean> {
+    this.#path(name);
+    if (this.#storage) return (await this.#storage.stat(`${name}${SUFFIX}`)) !== null;
     try {
       return (await stat(this.#path(name))).isFile();
     } catch (error) {
@@ -140,6 +153,8 @@ export class FileVault implements Vault {
   }
 
   async stat(name: string): Promise<{ written_at: string } | null> {
+    this.#path(name);
+    if (this.#storage) return this.#storage.stat(`${name}${SUFFIX}`);
     try { const info = await stat(this.#path(name)); return info.isFile() ? { written_at: info.mtime.toISOString() } : null; }
     catch (error) { if (errno(error) === 'ENOENT') return null; throw error; }
   }
@@ -147,9 +162,9 @@ export class FileVault implements Vault {
   async list(): Promise<string[]> {
     let names: string[];
     try {
-      names = await readdir(this.directory);
+      names = this.#storage ? await this.#storage.list() : await readdir(this.directory);
     } catch (error) {
-      if (errno(error) === 'ENOENT') return [];
+      if (!this.#storage && errno(error) === 'ENOENT') return [];
       throw error;
     }
     return names
@@ -160,6 +175,8 @@ export class FileVault implements Vault {
   }
 
   async remove(name: string): Promise<boolean> {
+    this.#path(name);
+    if (this.#storage) return this.#storage.remove(`${name}${SUFFIX}`);
     try {
       await unlink(this.#path(name));
     } catch (error) {
@@ -189,9 +206,9 @@ export class FileVault implements Vault {
     const path = join(this.directory, KEY_CHECK);
     let stored: string | null = null;
     try {
-      stored = (await readFile(path, 'utf8')).trim();
+      stored = this.#storage ? (await this.#storage.read(KEY_CHECK))?.trim() ?? null : (await readFile(path, 'utf8')).trim();
     } catch (error) {
-      if (errno(error) !== 'ENOENT') throw error;
+      if (this.#storage || errno(error) !== 'ENOENT') throw error;
     }
     if (stored === null) {
       // Entries but no check file (restored without it): the key must open an existing entry before the check is written,
@@ -199,6 +216,12 @@ export class FileVault implements Vault {
       const names = await this.list();
       if (names.length > 0 && !(await this.#opensAnEntry(names, key))) {
         throw new VaultError('密钥与密钥库不符：现有条目没有一条能用这把主密钥解开');
+      }
+      if (this.#storage) {
+        if (await this.#storage.create(KEY_CHECK, `${expected}\n`)) return;
+        stored = (await this.#storage.read(KEY_CHECK))?.trim() ?? null;
+        if (stored !== expected) throw new VaultError('密钥与密钥库不符：密钥库是用另一把主密钥封存的');
+        return;
       }
       await mkdir(this.directory, { recursive: true, mode: 0o700 });
       try {
@@ -221,8 +244,11 @@ export class FileVault implements Vault {
   /** True when the key opens at least one entry (GCM authentication: a wrong key never opens one). */
   async #opensAnEntry(names: readonly string[], key: Buffer): Promise<boolean> {
     for (const name of names) {
+      // A native boundary denial must propagate, never be relabeled as an entry for another key.
+      const nativeText = this.#storage ? await this.#storage.read(`${name}${SUFFIX}`) : undefined;
       try {
-        openSealed(name, await readFile(this.#path(name), 'utf8'), key);
+        if (nativeText === null) continue;
+        openSealed(name, this.#storage ? nativeText! : await readFile(this.#path(name), 'utf8'), key);
         return true;
       } catch {
         // An altered entry or another key; try the next one.

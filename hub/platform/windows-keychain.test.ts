@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { writeSync } from 'node:fs';
 import test from 'node:test';
 import { windowsKeychainStore, windowsKeychainStoreWithBoundary } from './windows-keychain.ts';
-import { finishWindowsPrivateCreate, type WindowsPrivateFiles } from './windows-files.ts';
+import { commitWindowsPrivateReplace, finishWindowsPrivateCreate, type WindowsPrivateFiles } from './windows-files.ts';
 import type { WindowsDataProtection } from './windows-dpapi.ts';
 
 function fixture() {
@@ -151,4 +151,23 @@ test('short write and flush failure discard only the newly created handle; faile
       discard() { if (throws) throw Error('private native text'); return false; },
     }), /原生删除也未确认/);
   }
+});
+
+
+test('atomic rename rejection discards the temporary ciphertext without replacing the existing file', () => {
+  for (const throws of [false, true]) {
+    const original = 'previous complete ciphertext';
+    let final = original, temporary = 'new ciphertext', discarded = 0;
+    assert.throws(() => commitWindowsPrivateReplace({
+      rename() { if (throws) throw Error('private native text'); return false; },
+      discard() { discarded++; temporary = ''; return true; },
+    }), /没有覆盖已有条目/);
+    assert.equal(final, original);
+    assert.equal(temporary, '');
+    assert.equal(discarded, 1);
+  }
+  assert.throws(() => commitWindowsPrivateReplace({ rename: () => false, discard: () => false }), /删除未确认/);
+  let discarded = 0;
+  commitWindowsPrivateReplace({ rename: () => true, discard() { discarded++; return true; } });
+  assert.equal(discarded, 0);
 });

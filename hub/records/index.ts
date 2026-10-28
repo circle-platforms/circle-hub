@@ -55,7 +55,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   const store = new PgRecordStore(db, { maxRecordBytes: config.limits.maxRecordBytes, now });
   const objects = new FileObjectStore(objectsDir, db, { maxBytes: config.limits.maxUploadBytes, now });
   const authorizations = new RecordAuthorizations(db, store, now);
-  const vault = new FileVault(join(config.dataDir, 'vault'), options.keyProvider);
+  const vault = new FileVault(join(config.dataDir, 'vault'), options.keyProvider, options.vaultStorage);
   const principals = new PgPrincipals(db, now);
   const variables = new RecordVariables({ database: db, store, objects, vault, principals, authorizations, now });
   let closed: Promise<void> | undefined;

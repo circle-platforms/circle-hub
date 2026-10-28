@@ -1,5 +1,6 @@
 // Windows-only OS boundary. All paths are local drive paths; every ancestor is pinned without write/delete sharing.
 import { createRequire } from 'node:module';
+import { randomBytes } from 'node:crypto';
 import { win32 } from 'node:path';
 import { PlatformError } from './errors.ts';
 
@@ -19,7 +20,13 @@ const OPEN_EXISTING = 3;
 const CREATE_NEW = 1;
 const OPEN_REPARSE_POINT = 0x200000;
 const BACKUP_SEMANTICS = 0x2000000;
-const MAX_FILE = 16384;
+const MAX_FILE = 128 * 1024;
+export interface WindowsVaultFiles extends WindowsPrivateFiles {
+  createIfMissing(name: string, value: Uint8Array): boolean;
+  replace(name: string, value: Uint8Array): void;
+  stat(name: string): { written_at: string } | null;
+  list(): string[];
+}
 type Pointer = bigint | null;
 
 /** Runs only after CREATE_NEW succeeded. Rollback acts on that same exclusive handle, never a pathname. */
@@ -40,8 +47,19 @@ export function finishWindowsPrivateCreate(size: number, operations: {
   }
 }
 
+/** The verified target stays untouched when rename is rejected; discard can only act on the new temporary handle. */
+export function commitWindowsPrivateReplace(operations: { rename(): boolean; discard(): boolean }): void {
+  let committed = false;
+  try { committed = operations.rename(); } catch { /* Report the state without native exception text. */ }
+  if (committed) return;
+  let discarded = false;
+  try { discarded = operations.discard(); } catch { /* Cleanup remains explicitly unconfirmed. */ }
+  if (!discarded) throw new PlatformError('Windows 密钥库原子替换失败，临时密文删除未确认；停止并由操作者检查');
+  throw new PlatformError('Windows 密钥库原子替换失败；临时密文已标记删除，没有覆盖已有条目');
+}
+
 /** Never uses chmod, environment identity, PowerShell or an inherited DACL as a Windows security boundary. */
-export function windowsPrivateFiles(directory: string, onStep?: (step: string) => void): WindowsPrivateFiles {
+export function windowsPrivateFiles(directory: string, onStep?: (step: string) => void, expectedSid?: string): WindowsVaultFiles {
   // Diagnostics receive literal operation names only, never native arguments or results.
   const native = <T>(step: string, operation: () => T): T => {
     onStep?.(`${step}:begin`);
@@ -107,6 +125,7 @@ export function windowsPrivateFiles(directory: string, onStep?: (step: string) =
     if (!userSid || !native('sid-to-string', () => sidToString(userSid, text)) || !text[0]) reject();
     // text[0] already is LPWSTR. Generic decode(..., 'str16') would read a second pointer from the UTF-16 bytes.
     try { sid = native('decode-sid-string', () => koffi.decode.string16(text[0])); } finally { localFree(text[0]); }
+    if (expectedSid !== undefined && expectedSid !== sid) throw new PlatformError('Windows 服务配置的身份与当前原生进程身份不一致，拒绝访问密钥库');
     const profileBuffer = Buffer.alloc(65536);
     const size = [32768];
     if (!native('profile-directory', () => getProfile(token[0], profileBuffer, size)) || size[0]! < 2 || size[0]! > 32768) reject();
@@ -138,6 +157,9 @@ export function windowsPrivateFiles(directory: string, onStep?: (step: string) =
   const readFile = fn('int32_t __stdcall ReadFile(void *handle, _Out_ void *buffer, uint32_t size, _Out_ uint32_t *read, void *overlapped)');
   const writeFile = fn('int32_t __stdcall WriteFile(void *handle, const void *buffer, uint32_t size, _Out_ uint32_t *written, void *overlapped)');
   const flush = fn('int32_t __stdcall FlushFileBuffers(void *handle)');
+  const findFirst = fn('void * __stdcall FindFirstFileW(str16 pattern, _Out_ void *data)');
+  const findNext = fn('int32_t __stdcall FindNextFileW(void *handle, _Out_ void *data)');
+  const findClose = fn('int32_t __stdcall FindClose(void *handle)');
   const disposition = fn('int32_t __stdcall SetFileInformationByHandle(void *handle, uint32_t informationClass, const void *information, uint32_t size)');
   const valid = (handle: Pointer) => handle !== null && handle !== -1n && handle !== 0xffffffffffffffffn;
   const assertObject = (handle: Pointer, isDirectory: boolean, privateAcl: boolean) => {
@@ -190,14 +212,47 @@ export function windowsPrivateFiles(directory: string, onStep?: (step: string) =
     }
   };
   const filePath = (name: string) => {
-    if (!/^[a-f0-9]{64}\.bin$/.test(name)) throw new PlatformError('Windows 私有存储条目名无效');
+    if (!/^(?:key-check|[a-z0-9][a-z0-9._-]{0,99}\.sealed|[a-f0-9]{64}\.bin|[a-f0-9]{32}\.tmp)$/.test(name)) throw new PlatformError('Windows 私有存储条目名无效');
     return win32.join(directory, name);
   };
-  const openExisting = (name: string, access: number): Pointer | undefined => {
-    const handle = native('open-existing-key-file', () => createFile(filePath(name), access | READ_CONTROL, 0, null, OPEN_EXISTING, OPEN_REPARSE_POINT, null)) as Pointer;
+  const openExisting = (name: string, access: number, sharing = 0): Pointer | undefined => {
+    const handle = native('open-existing-key-file', () => createFile(filePath(name), access | READ_CONTROL, sharing, null, OPEN_EXISTING, OPEN_REPARSE_POINT, null)) as Pointer;
     if (!valid(handle)) { if (lastError() === 2) return undefined; reject(); }
     try { assertObject(handle, false, true); } catch (error) { close(handle); throw error; }
     return handle;
+  };
+  const createEntry = (name: string, value: Uint8Array): boolean => {
+    if (value.length < 1 || value.length > MAX_FILE) throw new PlatformError('Windows 私有存储条目长度无效');
+    return withDirectory(true, false, () => {
+      const security: Pointer[] = [null];
+      if (!native('create-security-descriptor', () => sddlToDescriptor(`O:${sid}D:P(A;;FA;;;${sid})`, 1, security, null)) || !security[0]) reject();
+      let handle: Pointer = null;
+      try {
+        const attributes = { nLength: koffi.sizeof(attributesType), lpSecurityDescriptor: security[0], bInheritHandle: 0 };
+        handle = native('create-new-key-file', () => createFile(filePath(name), GENERIC_WRITE | READ_CONTROL | DELETE, 0, attributes, CREATE_NEW, OPEN_REPARSE_POINT, null)) as Pointer;
+        if (!valid(handle)) {
+          const error = lastError();
+          if (error === 80 || error === 183) {
+            const existing = openExisting(name, 0x80);
+            if (existing === undefined) reject();
+            close(existing);
+            return false;
+          }
+          throw new PlatformError('Windows 密钥条目创建失败；已有条目不会覆盖');
+        }
+        finishWindowsPrivateCreate(value.length, {
+          write() {
+            assertObject(handle, false, true);
+            const count = [0];
+            if (!native('write-key-file', () => writeFile(handle, value, value.length, count, null))) reject();
+            return count[0]!;
+          },
+          flush() { return Boolean(native('flush-key-file', () => flush(handle))); },
+          discard() { return Boolean(native('discard-incomplete-key-file', () => disposition(handle, 4, Buffer.from([1]), 1))); },
+        });
+        return true;
+      } finally { if (valid(handle)) close(handle); localFree(security[0]); }
+    });
   };
   return {
     sid,
@@ -216,26 +271,85 @@ export function windowsPrivateFiles(directory: string, onStep?: (step: string) =
       });
     },
     create(name, value) {
+      if (!createEntry(name, value)) throw new PlatformError('Windows 密钥条目已经存在，不覆盖');
+    },
+    createIfMissing: createEntry,
+    replace(name, value) {
       if (value.length < 1 || value.length > MAX_FILE) throw new PlatformError('Windows 私有存储条目长度无效');
       withDirectory(true, undefined, () => {
+        // An existing target is verified and retained with DELETE sharing only during the atomic rename.
+        const target = openExisting(name, DELETE, 4);
+        const temporary = `${randomBytes(16).toString('hex')}.tmp`;
         const security: Pointer[] = [null];
-        if (!native('create-security-descriptor', () => sddlToDescriptor(`O:${sid}D:P(A;;FA;;;${sid})`, 1, security, null)) || !security[0]) reject();
         let handle: Pointer = null;
         try {
+          if (!native('create-security-descriptor', () => sddlToDescriptor(`O:${sid}D:P(A;;FA;;;${sid})`, 1, security, null)) || !security[0]) reject();
           const attributes = { nLength: koffi.sizeof(attributesType), lpSecurityDescriptor: security[0], bInheritHandle: 0 };
-          handle = native('create-new-key-file', () => createFile(filePath(name), GENERIC_WRITE | READ_CONTROL | DELETE, 0, attributes, CREATE_NEW, OPEN_REPARSE_POINT, null)) as Pointer;
-          if (!valid(handle)) throw new PlatformError('Windows 密钥条目创建失败；已有条目不会覆盖');
+          handle = native('create-vault-temporary', () => createFile(filePath(temporary), GENERIC_WRITE | READ_CONTROL | DELETE, 0, attributes, CREATE_NEW, OPEN_REPARSE_POINT, null)) as Pointer;
+          if (!valid(handle)) reject();
           finishWindowsPrivateCreate(value.length, {
             write() {
               assertObject(handle, false, true);
               const count = [0];
-              if (!native('write-key-file', () => writeFile(handle, value, value.length, count, null))) reject();
+              if (!native('write-vault-temporary', () => writeFile(handle, value, value.length, count, null))) reject();
               return count[0]!;
             },
-            flush() { return Boolean(native('flush-key-file', () => flush(handle))); },
-            discard() { return Boolean(native('discard-incomplete-key-file', () => disposition(handle, 4, Buffer.from([1]), 1))); },
+            flush() { return Boolean(native('flush-vault-temporary', () => flush(handle))); },
+            discard() { return Boolean(native('discard-vault-temporary', () => disposition(handle, 4, Buffer.from([1]), 1))); },
           });
-        } finally { if (valid(handle)) close(handle); localFree(security[0]); }
+          // Both supported ABIs use 8-byte HANDLEs: Flags at 0, RootDirectory at 8, length at 16, UTF-16 name at 20.
+          const destination = Buffer.from(filePath(name), 'utf16le');
+          const rename = Buffer.alloc(20 + destination.length);
+          rename.writeUInt32LE(3, 0); // FILE_RENAME_FLAG_REPLACE_IF_EXISTS | FILE_RENAME_FLAG_POSIX_SEMANTICS
+          rename.writeUInt32LE(destination.length, 16);
+          destination.copy(rename, 20);
+          commitWindowsPrivateReplace({
+            rename() { return Boolean(native('rename-vault-temporary', () => disposition(handle, 22, rename, rename.length))); },
+            discard() { return Boolean(native('discard-vault-temporary', () => disposition(handle, 4, Buffer.from([1]), 1))); },
+          });
+          try { assertObject(handle, false, true); } catch {
+            throw new PlatformError('Windows 密钥库替换已提交，但随后原生访问检查失败；停止并由操作者检查，不自动回滚或重试');
+          }
+        } finally {
+          if (valid(handle)) close(handle);
+          if (security[0]) localFree(security[0]);
+          if (target !== undefined) close(target);
+        }
+      });
+    },
+    stat(name) {
+      return withDirectory<{ written_at: string } | null>(false, null, () => {
+        const handle = openExisting(name, 0x80);
+        if (handle === undefined) return null;
+        try {
+          const information = Buffer.alloc(52);
+          if (!native('vault-file-time', () => getFileInformation(handle, information))) reject();
+          const milliseconds = information.readBigUInt64LE(20) / 10000n - 11644473600000n;
+          const date = new Date(Number(milliseconds));
+          if (!Number.isSafeInteger(Number(milliseconds)) || !Number.isFinite(date.getTime())) reject();
+          return { written_at: date.toISOString() };
+        } finally { close(handle); }
+      });
+    },
+    list() {
+      return withDirectory<string[]>(false, [], () => {
+        const data = Buffer.alloc(592); // WIN32_FIND_DATAW contains fixed-width DWORDs and WCHAR arrays on both ABIs.
+        const search = native('vault-list-first', () => findFirst(win32.join(directory, '*'), data)) as Pointer;
+        if (!valid(search)) { if (lastError() === 2) return []; reject(); }
+        const names: string[] = [];
+        try {
+          for (;;) {
+            const name = data.toString('utf16le', 44, 564).split('\0')[0]!;
+            if (name !== '.' && name !== '..') {
+              const handle = openExisting(name, 0x80);
+              if (handle === undefined) reject();
+              close(handle);
+              names.push(name);
+            }
+            if (!native('vault-list-next', () => findNext(search, data))) { if (lastError() !== 18) reject(); break; }
+          }
+          return names.sort();
+        } finally { native('vault-list-close', () => findClose(search)); }
       });
     },
     remove(name) {

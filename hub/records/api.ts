@@ -29,7 +29,7 @@ export { newId, ulid, idTime, isId } from './ids.ts';
 export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
 export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, MAX_ADMIN_FINDINGS, CREDENTIAL_DETECTORS } from './scan.ts';
 export { textPreview, stripNul } from './text.ts';
-export { maskedForDisplay, FileKeyProvider } from './vault.ts';
+export { maskedForDisplay, FileKeyProvider, FileVault } from './vault.ts';
 export { sharedWith, runIsSharedWith, productionShareKey, productionShareBinding } from './authorizations.ts';
 export { WHOLE_HUB, RECORD_SCHEMAS, artifactShareKey, scanAcceptanceKey } from './constants.ts';
 
@@ -474,6 +474,17 @@ export interface KeyProvider {
   initKey?(): Promise<void>;
 }
 
+/** OS-owned vault file boundary. Names are basenames, never paths. Errors are not treated as missing evidence. */
+export interface FileVaultStorage {
+  read(file: string): Promise<string | null>;
+  writeAtomic(file: string, text: string): Promise<void>;
+  /** Atomic create-only; false only when a valid existing entry won the race. */
+  create(file: string, text: string): Promise<boolean>;
+  stat(file: string): Promise<{ written_at: string } | null>;
+  list(): Promise<string[]>;
+  remove(file: string): Promise<boolean>;
+}
+
 /** AES-256-GCM sealed entries under <data>/vault, the entry name bound as associated data. Values never leave except by get. */
 export interface Vault {
   /** Explicit key creation through the key provider. The vault never creates a key on its own. */
@@ -763,6 +774,8 @@ export interface OpenRecordsOptions {
   migrate?: boolean;
   /** Supplies the vault key; without one every vault operation fails with VaultError. */
   keyProvider?: KeyProvider;
+  /** Required on Windows: native per-handle ACL and identity boundary for every vault file. */
+  vaultStorage?: FileVaultStorage;
   /** Clock for created_at, expiry and the call log; default the system clock. */
   now?: () => Date;
   /** Connection pool size, default 10. */

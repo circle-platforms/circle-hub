@@ -19,17 +19,17 @@
 - `CreateFileW` 的 `CREATE_NEW` 是拒覆盖边界；status 不是锁。write 完整写入并 `FlushFileBuffers` 后再读回比较。短写、flush 或创建后校验失败时，在这次 CREATE_NEW 返回的原独占句柄上标记删除，关闭后撤销此次不完整新建；不会删除任何先前条目。若原生标记删除失败，明确报告状态未确认，停止并要求操作者检查，不能覆盖或重新生成 key。进程或机器突然中断仍可能留下格式无效的已占用条目，后续失败关闭。删除通过已验证的独占句柄设置 disposition。
 - 服务与管理命令必须以同一个已加载 profile 的用户运行。更换服务用户会遇到不同 SID/profile 和 DPAPI 身份；不能自动找到旧用户密钥。ACL 对其他普通身份的限制不构成对管理员提权、所有者主动改 ACL 或同一用户恶意程序的隔离承诺。
 
-现有 Hub `FileVault` 的 AES-256-GCM `.sealed` 条目没有改动。只有原始 32 字节 master key 一致，原条目才可能继续打开；更换 key 会失去解密能力。此分支没有把 Windows `.sealed` 目录的现有 Node 模式位认作 Windows ACL 证明；Windows 全部 vault 路径的持久化访问控制仍需集成审核，不能凭 master-key adapter 宣称整个密库安全完成。
+Hub `FileVault` 的 AES-256-GCM `.sealed` 格式和算法保持不变；下述续作仅增加显式 OS 文件 IO seam。只有原始 32 字节 master key 一致，原条目才可能继续打开；更换 key 会失去解密能力。此分支没有把 Windows `.sealed` 目录的现有 Node 模式位认作 Windows ACL 证明；Windows 全部 vault 路径的持久化访问控制仍需集成审核，不能凭 master-key adapter 宣称整个密库安全完成。
 
 ## 迁移
 
 没有自动迁移，没有读取真实 Circle/Hub 密钥、环境文件或用户凭据目录。macOS keychain、Circle safeStorage 文件、明文开发 key 文件和其他用户的 DPAPI 文件均不被接受为此 envelope。原样迁移本 envelope 必须保留相同 service/account、用户 DPAPI 上下文与受限 ACL；换机器、换用户、只复制文件或只重建用户名均无成功保证。需要操作者设计显式的原 key 转交、身份/ACL 复核和实际旧 vault 解密验收，不能默认生成新 key。迁移命令未实现。
 
-## 验证与未证实内容
+## 初次交付的验证限制（历史口径）
 
 遵照所有者本轮限制，没有运行测试、typecheck、原生 API、钥匙串或真实系统操作。仅检查源码与 Git diff。`windows-keychain.test.ts` 有纯合成边界测试；错误注入只证明 adapter 传播失败，不证明 OS 已执行相应拒绝。Windows 原生测试只在 Windows 的 GitHub runner 上启用，使用新建临时合成目录和随机字节，包含 fresh-process 读取、重复创建、硬链接、junction 和 ACL 放宽反例。`windows-dpapi.test.ts` 的 Windows 合成往返也未运行。
 
-尚待 Windows x64/ARM64 runner 实证：koffi ABI、结构体布局、DLL 加载、目录共享约束、完整读写和删除、并发 create-only、服务非交互登录与 profile 加载/未加载两种情形、跨用户 DPAPI 失败、跨机迁移、完整 vault 旧 key 解密。当前测试没有伪造跨用户或卸载用户 hive；这些反例仍未实证。默认工厂必须保持不可用，直到集成方核对这些缺口与可用性口径。
+初次交付时尚待 Windows x64/ARM64 runner 实证：koffi ABI、结构体布局、DLL 加载、目录共享约束、完整读写和删除、并发 create-only、服务非交互登录与 profile 加载/未加载两种情形、跨用户 DPAPI 失败、跨机迁移、完整 vault 旧 key 解密。当前测试没有伪造跨用户或卸载用户 hive；这些反例仍未实证。默认工厂必须保持不可用，直到集成方核对这些缺口与可用性口径。
 
 ## 原始依据
 
@@ -42,12 +42,32 @@
 
 本任务没有发现需改动模型的规则冲突；Windows 服务/ACL/迁移可用性不足是明确保留的实现与证据缺口。
 
-内部只读复核后修正：输入副本使用一个新 Uint8Array 的 backing buffer，由 Buffer 共享后在 finally 清零，不再二次复制明文。新增副本擦除、短写/flush/rollback 故障注入测试源码；未运行。故障注入验证清理控制流，Windows 原生删除实际效果仍待 runner。
+内部只读复核后修正：输入副本使用一个新 Uint8Array 的 backing buffer，由 Buffer 共享后在 finally 清零，不再二次复制明文。新增副本擦除、短写/flush/rollback 故障注入测试源码；未运行。故障注入验证清理控制流，当时 Windows 原生删除实际效果仍待 runner；后续复测范围见下文。
 
 ## Windows 原生崩溃复核
 
 集成方提供的 GitHub 运行 40636426679 的 x64 日志表明：DPAPI 原生往返与输入副本擦除通过，keychain 前三个纯合成案例通过；随后 keychain 测试进程以 `3221225477`（`0xC0000005`，access violation）退出。这是原生进程崩溃，不是正常拒绝或可捕获的安全错误；该次 Windows 密钥存储验收失败。ARM64 失败由集成方报告，本分支没有把它描述成已经复核了同一根因。
 
-源码与 [Koffi values 文档](https://koffi.dev/values) 显示：`ConvertSidToStringSidW` 已返回 LPWSTR，原代码再用 generic `decode(pointer, 'str16')` 将字符串开头的 UTF-16 字节作为另一个指针读取，可能产生无效地址访问。改成直接读取 LPWSTR 的 `decode.string16(pointer)`。这是源码和文档支持的最可能原因，尚需两架构原生复测确认。
+源码与 [Koffi values 文档](https://koffi.dev/values) 显示：`ConvertSidToStringSidW` 已返回 LPWSTR，原代码再用 generic `decode(pointer, 'str16')` 将字符串开头的 UTF-16 字节作为另一个指针读取，可能产生无效地址访问。改成直接读取 LPWSTR 的 `decode.string16(pointer)`。这是当时源码和文档支持的最可能原因；后续两架构复测结果见下一节，不能把历史崩溃视为普通拒绝。
 
 原生 fixture 注入同步诊断回调，仅输出固定操作步骤名与 begin/end；不输出 SID、profile、路径、密钥、参数、返回值或原生异常内容。回调输出后恢复原生 GetLastError，避免诊断写入改变错误分支。默认生产调用不输出诊断，也没有捕获或掩盖进程 access violation。现有完整原生 fixture 对这次指针修复提供回归覆盖；未在本机执行任何测试或原生操作。
+
+## 两架构当前用户合成复测
+
+集成方报告 [GitHub 运行 40637119213](https://github.com/circle-platforms/circle-hub/actions/runs/40637119213)，固定公开提交 `33dbb2f`：Windows x64 和 ARM64 的密钥存储测试分别为 **8 passed、1 skipped、0 failed**；skip 是 non-Windows-only construction 案例。先前的 access violation 在此轮未重现。这里记录的是集成方提供的真实 CI 执行结果，本任务未在本机重跑。前次失败证据保留，不能被此次结果改写。
+
+这些结果只覆盖 runner 当前用户、新建合成目录及随机字节：DPAPI、持久化往返、fresh process、拒覆盖、硬链接/junction、ACL 放宽与故障注入。它不证明 Windows 服务账户及 profile 加载/未加载、多用户隔离、跨机迁移或完整 FileVault；后续接线及这些缺口仍需独立验收。
+
+## 完整 FileVault 的窄接线（新增，未验证）
+
+本次按集成方授权，在 records 的公共接口增加 `FileVaultStorage`，`openRecords` 只把显式 storage 传给 `FileVault`。AES-256-GCM、版本 1 sealed 格式、条目名 AAD、key-check HMAC 与恢复时先打开旧条目的行为保留在 records。POSIX 默认 IO 保持原行为；Windows 不提供原生 storage 时构造即拒绝，不能以 Node chmod 或普通 fs 读写绕过。
+
+平台 `windowsFileVaultStorage` 提供原生文件 IO：最终文件、key-check、临时密文全部用句柄验证 SID/owner/protected DACL、拒 reparse/hardlink；枚举后逐个打开并核验，stat 只读原生文件时间。原子写入创建私有随机临时密文，完整写入并 flush，使用持有的源文件句柄调用 FileRenameInfoEx；已有目标先验证并保持只共享 DELETE 的句柄，替换使用 REPLACE_IF_EXISTS/POSIX_SEMANTICS。短写/flush/rename 失败只在本次新建临时句柄上标记删除；cleanup 未确认则明确停止。若替换已提交但后续核验失败，明确披露已提交而非声称未改动。此路径及结构体布局必须经两架构 runner 验证，不以先前 keychain receipt 代替。
+
+服务接线要求持久化的 `expectedSid`，对比原生 token 返回的 SID；缺失不猜当前用户，身份不符在接触 vault 文件前拒绝。`windowsKeychainStore` 也可显式固定 expectedSid。服务安装器仍需记录此值、约束配置 ACL，并验证真实服务登录方式下 profile 已加载；这里没有用用户名或环境变量替代 OS 身份。新增 runner 源码仅模拟配置指向 Null SID 的反例，不冒充不同用户登录的实证。
+
+新增纯合成 `vault-storage.test.ts` 覆盖 OS seam、替换失败保留旧密文、拒绝不能变成空值、AAD/错误 key/缺 key-check。新增 `windows-vault.test.ts` 仅在 Windows GitHub runner 用新建合成目录运行，覆盖 DPAPI key provider 与完整 FileVault、原子替换、64KiB、原生枚举/stat/remove、最终文件 ACL 放宽及固定身份不符。以上新增路径均未在本机或 CI 运行；现有 40637119213 的 8/1/0 receipt 不覆盖它们。默认生产工厂与 Windows 可发布门槛保持关闭，等待独立结果。
+
+合并提醒：key-transfer 分支在同一 records 文件新增的只读 `verify` 必须保留，并在合并后改为走同一个 OS seam，不能回到普通 fs 或引入初始化副作用。
+
+新增原子替换拒绝/异常及 cleanup 未确认的故障注入源码，均未执行；`FileRenameInfoEx` 失败不降级到 Node rename、路径删除或先删旧条目。
