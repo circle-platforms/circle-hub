@@ -1,18 +1,41 @@
 // (b) The generated files are current and deterministic; tools/gen-contracts.ts reports drift and bad input clearly.
 // Mutations run on a temporary copy of contracts/ so the repository is never touched.
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { drift, generate, LOCK_FILE, REPO_ROOT, validateInputs } from '../../tools/gen-contracts.ts';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 const run = (script: string, args: string[], cwd = repo) => spawnSync(process.execPath, [script, ...args], { cwd, encoding: 'utf8' });
 /** Runs an ES module given as text in a fresh Node process. */
 const evaluate = (code: string, args: string[] = [], maxBuffer: number = 16 * 1024 * 1024) => spawnSync(process.execPath, ['--input-type=module', '-e', code, ...args], { cwd: repo, encoding: 'utf8', maxBuffer });
+
+/** Denies creation in a synthetic directory using the platform's permission mechanism. */
+function denyDirectoryWrites(dir: string): () => void {
+  if (process.platform !== 'win32') {
+    chmodSync(dir, 0o555);
+    return () => chmodSync(dir, 0o755);
+  }
+  // Use the SID, rather than an account name whose spelling depends on locale or domain.
+  const sid = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value'], { encoding: 'utf8' }).trim();
+  assert.match(sid, /^S-1-(?:\d+-)+\d+$/);
+  const acl = (...args: string[]): void => {
+    execFileSync('icacls.exe', [dir, ...args], { encoding: 'utf8' });
+  };
+  // WD/AD are directory add-file/add-subdirectory rights. The new temporary directory has no explicit deny ACE.
+  // Do not propagate this ACE to existing files; only creation in this directory is under test.
+  try {
+    acl('/deny', `*${sid}:(WD,AD)`);
+  } catch (error) {
+    acl('/remove:d', `*${sid}`);
+    throw error;
+  }
+  return () => acl('/remove:d', `*${sid}`);
+}
 
 /** Every file under a directory, by relative name. */
 function snapshot(dir: string, prefix = ''): Record<string, string> {
@@ -151,7 +174,7 @@ describe('on a temporary copy', () => {
     symlinkSync(root, link, 'dir');
     try {
       const output = join(root, 'linked-generated.json');
-      const code = `import { generate } from ${JSON.stringify(join(repo, 'tools', 'gen-contracts.ts'))};
+      const code = `import { generate } from ${JSON.stringify(pathToFileURL(join(repo, 'tools', 'gen-contracts.ts')).href)};
         import {writeFileSync} from 'node:fs';
         writeFileSync(process.argv[2],JSON.stringify(await generate(process.argv[1])));`;
       // Keep the exact snapshot comparison independent of stdout size and bound unexpected child output.
@@ -288,14 +311,16 @@ describe('on a temporary copy', () => {
   test('a directory that cannot be written gives exit status 3 and one line, not a stack', { skip: process.getuid?.() === 0 ? 'root ignores permissions' : false }, () => {
     fresh();
     writeFileSync(generated('tools.json'), '[]\n');
-    chmodSync(generated(''), 0o555);
+    const restore = denyDirectoryWrites(generated(''));
     try {
+      // Establish an actual OS denial; Windows chmod does not remove directory write permissions.
+      assert.throws(() => writeFileSync(generated('write-permission-probe'), ''), (error: unknown) => error instanceof Error && 'code' in error && (error.code === 'EACCES' || error.code === 'EPERM'));
       const result = run(script, [], root);
       assert.equal(result.status, 3, result.stderr);
       assert.match(result.stderr, /^cannot write contracts\/generated: /);
       assert.doesNotMatch(result.stderr, /    at /);
     } finally {
-      chmodSync(generated(''), 0o755);
+      restore();
     }
   });
 

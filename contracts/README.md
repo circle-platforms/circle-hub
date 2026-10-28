@@ -341,3 +341,11 @@ R7 增加生成词表 release_status（K02，fixed/known），CatalogParam.nativ
 knowledge-structure@1（方向 2）：模型定义 fed-case/fed-defect/fed-spec/fed-build/fed-note、version-binding、usage、feeding-offset、retraction 的封闭形状，生成于 shared-interfaces.ts，由 src/feeding.ts 注册。来源、运行目标、采集时间、派生命令解析和回注均不偷偷加入对象身份。具体身份投影见模型 knowledgeStructure.identity。source_structure 是生成的组成依据；binding_status/binding_basis 与 covers 关系也只从模型生成。模型判版本禁止，运行目标只形成 usage；来源结构和人的直接声明保留各自依据，冲突不覆盖。该步只建立合约，不表示已实现喂入存储或真实资源接入。
 
 验收恢复接线：submission@1 增加可选 model_identity，直接使用已审定 model-identity@1。model 仍是显示文字；没有新字段的旧提交保持可读，族独立性保持未知。生成器重生 submission schema 与工具输入形状，不手改生成物。
+
+## Windows 生成器测试的路径和权限
+
+`generator.test.ts` 的合成子进程将本机文件路径通过 `pathToFileURL` 转为 ESM 导入地址，避免 Windows 盘符被解释为 URL scheme。生成器自己的模块加载已经使用该转换；本次不修改生产生成器或生成物。
+
+不可写目录样例在 POSIX 使用 `chmod(0555)`，在 Windows 使用 `icacls` 对当前进程用户 SID 拒绝临时目录的新增文件和新增子目录权限，不传播到已有文件；最终移除该临时拒绝项。运行生成器前以实际新增文件操作确认 `EACCES` 或 `EPERM`，仍要求生成器退出 3、保留原诊断且不输出堆栈。ACL 设置或恢复失败均为测试失败，不跳过。
+
+本任务按集成者指示不运行测试或类型检查，Windows x64/ARM64 的实际 ACL 行为与契约测试结果待 GitHub 合成 runner 验证；任务页 `docs/hub-r4-tasks/windows-contracts-fix.md` 记录执行方式。
