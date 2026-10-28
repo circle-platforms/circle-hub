@@ -40,7 +40,7 @@ async function deployment(parent: string, name: string) {
   const env = { CIRCLE_HUB_DATA_DIR: root };
   const run = async (argv: string[], pipe?: { stdoutIsPipe?: boolean; stdinIsPipe?: boolean; writeKeyBytes?: (bytes: Uint8Array) => void; readKeyBytes?: () => Uint8Array }) => {
     const captured = captureIo(env, parent);
-    const code = await runPlatformCommand(argv, { ...captured.io, ...(pipe ? { keyPipe: { stdoutIsPipe: false, stdinIsPipe: false, ...pipe } } : {}) }, { runner: system.runner, home: parent, uid: 501 });
+    const code = await runPlatformCommand(argv, { ...captured.io, ...(pipe ? { keyPipe: { stdoutIsPipe: false, stdinIsPipe: false, ...pipe } } : {}) }, { platform: 'darwin', runner: system.runner, home: parent, uid: 501 });
     const text = [...captured.out, ...captured.err].join('\n');
     return { code, text, out: captured.out, err: captured.err };
   };

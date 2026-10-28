@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { Worker } from 'node:worker_threads';
-import { createLinuxResidentMeasure, createResidentTreeMeasure, createResidentWatch, residentFailure, residentSizes, residentTreeSizes, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
+import { createLinuxResidentMeasure, createResidentTreeMeasure, createResidentWatch, residentFailure, residentSizes, residentTreeSizes, RESIDENT_EXITED, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
 import { SandboxError } from './errors.ts';
 import { runCheck } from '../check.ts';
 
@@ -61,6 +61,29 @@ test('an exited child after enumeration is ignored but an unmeasurable live chil
   assert.equal((await measure([1])).get(1), 100);
   childGone = false;
   assert.equal((await measure([1])).get(1), null);
+});
+
+test('a root proven to have exited is distinguished from an unobservable live tree', async () => {
+  let phase: 'before-enumeration' | 'before-measure' | 'live' = 'before-enumeration';
+  const measure = createResidentTreeMeasure({
+    readThreads: async pid => {
+      if (phase === 'before-enumeration') throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+      return [String(pid)];
+    },
+    readChildren: async () => '',
+    measure: async () => new Map(),
+    gone: async () => phase !== 'live',
+    threadGone: async () => false,
+  });
+  const exited = (await measure([1])).get(1);
+  assert.equal(exited, RESIDENT_EXITED);
+  assert.equal(residentFailure(exited, 256, 1), undefined);
+  phase = 'before-measure';
+  assert.equal((await measure([1])).get(1), RESIDENT_EXITED);
+  phase = 'live';
+  const live = (await measure([1])).get(1);
+  assert.equal(live, null);
+  assert.equal(residentFailure(live, 256, 1)?.code, 'SANDBOX_UNAVAILABLE');
 });
 
 test('an unreadable thread list fails closed and a disappearing thread restarts the scan', async () => {
