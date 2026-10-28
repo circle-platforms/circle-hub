@@ -15,7 +15,7 @@ class SyntheticOnlyRefusal extends Error {
 
 export function assertSyntheticCommand(command: unknown, shell = false): void {
   if (typeof command !== 'string') return;
-  if (['security', 'launchctl'].includes(basename(command)) || (shell && /(?:^|[\s;|&])(?:\/usr\/bin\/|\/bin\/)?(?:security|launchctl)(?:\s|$)/.test(command))) throw new SyntheticOnlyRefusal('host_tool');
+  if (['security', 'launchctl', 'systemctl'].includes(basename(command)) || (shell && /(?:^|[\s;|&])(?:\/usr\/bin\/|\/bin\/)?(?:security|launchctl|systemctl)(?:\s|$)/.test(command))) throw new SyntheticOnlyRefusal('host_tool');
 }
 
 export function assertSyntheticPort(first: unknown): void {
@@ -24,7 +24,7 @@ export function assertSyntheticPort(first: unknown): void {
   if ((typeof value === 'string' || typeof value === 'number') && Number(value) === 7420) throw new SyntheticOnlyRefusal('persistent_port');
 }
 
-const protectedRoots = [join(homedir(), 'Library', 'Application Support', 'circle-hub'), join(homedir(), 'Library', 'Keychains'), join(homedir(), 'Library', 'LaunchAgents')];
+const protectedRoots = [join(homedir(), 'Library', 'Application Support', 'circle-hub'), join(homedir(), 'Library', 'Keychains'), join(homedir(), 'Library', 'LaunchAgents'), join('/var', 'lib', 'circle-hub'), join(homedir(), '.local', 'share', 'circle-hub'), join(homedir(), '.config', 'systemd', 'user')];
 export function assertSyntheticPath(value: unknown): void {
   const path = value instanceof URL ? fileURLToPath(value) : Buffer.isBuffer(value) ? value.toString() : value;
   if (typeof path !== 'string') return;

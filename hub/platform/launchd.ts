@@ -80,6 +80,10 @@ export function serviceEnvironment(layout: Layout, settings: PlatformSettings, i
   return {
     [PLATFORM_VARIABLES.dataDir]: layout.root,
     [PLATFORM_VARIABLES.port]: String(settings.port),
+    ...(settings.listenHost ? { [PLATFORM_VARIABLES.host]: settings.listenHost } : {}),
+    ...(settings.allowedHosts ? { [PLATFORM_VARIABLES.allowedHosts]: settings.allowedHosts.join(',') } : {}),
+    ...(settings.proxyOrigin ? { [PLATFORM_VARIABLES.proxyOrigin]: settings.proxyOrigin } : {}),
+    ...(settings.proxyPeer ? { [PLATFORM_VARIABLES.proxyPeer]: settings.proxyPeer } : {}),
     [PLATFORM_VARIABLES.databaseSocketDir]: layout.run,
     [PLATFORM_VARIABLES.databasePort]: String(identity.database.port),
     [PLATFORM_VARIABLES.databaseName]: identity.database.name,

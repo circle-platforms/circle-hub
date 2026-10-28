@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { DEFAULT_LIMITS, type HubConfig } from '../../config/index.ts';
 import { agileFixture, passwordDigest, startAgileStub, startBuildSiteStub, startStub, type AgileStub, type StubServer } from '../../connectors/testing/api.ts';
-import { keychainKeyProvider, keychainStore, runPlatformCommand, createContext, postgresFor, runCommand, OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type KeyProvider, type CommandRunner } from '../../platform/api.ts';
+import { fileKeyStore, keychainKeyProvider, keychainStore, runPlatformCommand, createContext, postgresFor, runCommand, OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type KeyProvider, type CommandRunner } from '../../platform/api.ts';
 import { openRecords, type SourceArtifactBody, type RecordKind, type RecordsKit, type User } from '../../records/index.ts';
 import { osIsolationAvailable } from '../../rules/api.ts';
 import { withFiles, writePack } from '../../runs/api.ts';
@@ -28,7 +28,7 @@ import { adminCommands, type AdminCommandOptions } from '../cli-admin.ts';
 import { CliError } from '../errors.ts';
 import { loadServerConfig } from '../main.ts';
 import { assembleHub, createAssembly } from './hub.ts';
-import { OPERATOR_TOKEN_VARIABLE, keychainOperatorTokens, memoryOperatorTokens, type OperatorTokenStore } from './operator-token.ts';
+import { OPERATOR_TOKEN_VARIABLE, fileOperatorTokens, keychainOperatorTokens, memoryOperatorTokens, type OperatorTokenStore } from './operator-token.ts';
 import { openCliHarness, type CliHarness, type Deployment, type RunResult } from './test-cli.ts';
 import { LeaseService } from '../../leases/service.ts';
 import { createPool, Database } from '../../records/db.ts';
@@ -200,6 +200,27 @@ async function countFiles(dir: string): Promise<number> {
 }
 
 describe('init-admin and the operator token', () => {
+  test('an existing administrator can reissue into the Linux file store without displaying the token', async () => {
+    const admin = await setup({store:(config,service)=>fileOperatorTokens(config.dataDir,service ?? config.keychain.service)});
+    const config=loadServerConfig(admin.deployment.env);const store=fileOperatorTokens(config.dataDir,config.keychain.service);
+    const original=await store.read();assert.ok(original);secrets.add(original);
+    const master=fileKeyStore({root:config.dataDir,service:config.keychain.service,account:'synthetic-master',item:VAULT_KEY_ITEM});
+    await master.write(Buffer.alloc(32,17));
+    const refused=await admin.run(['operator-token','reissue']);
+    assert.equal(refused.code,1);assert.match(refused.text,/remove --confirm-only-operator-token/);assert.doesNotMatch(refused.text,/钥匙串访问/);
+    assert.equal((await admin.run(['operator-token','remove'])).code,2);
+    assert.equal(await store.read(),original);
+    const tokenId=await withKit(admin,async kit=>(await kit.principals.tokens((await kit.principals.findByName('根管理员'))!.id))[0]!.id);
+    const revoked=await admin.run(['token','revoke',tokenId]);
+    assert.equal(revoked.code,0,revoked.text);assert.match(revoked.text,/remove --confirm-only-operator-token/);
+    assert.equal((await admin.run(['operator-token','remove','--confirm-only-operator-token'])).code,0);
+    assert.equal(await store.read(),null);
+    assert.equal((await admin.run(['operator-token','remove','--confirm-only-operator-token'])).code,0);
+    assert.deepEqual(await master.read(),Uint8Array.from(Buffer.alloc(32,17)));
+    const result=await admin.run(['operator-token','reissue','--as','根管理员']);
+    assert.equal(result.code,0,result.text);const token=await store.read();assert.ok(token && token!==original);secrets.add(token);
+    assert.ok(!result.text.includes(token));await expectOk(admin,['user','create','合成用户']);
+  });
   test('init-admin creates the first admin and stores its token without printing it; it is refused once an admin exists', async () => {
     const admin = await setup();
     const token = admin.tokens?.value;
@@ -1568,7 +1589,7 @@ describe('reimport after key loss', () => {
           }
           return undefined;
         });
-        const overrides = { runner: host.runner, home: directory, launchAgentsDir: join(directory, 'agents'), keychain: file };
+        const overrides = { platform: 'darwin' as const, runner: host.runner, home: directory, launchAgentsDir: join(directory, 'agents'), keychain: file };
         const context = createContext(env, overrides);
         stopPlatform = async () => { await postgresFor(context).stop(); };
         const platformRun = async (argv: string[]) => {

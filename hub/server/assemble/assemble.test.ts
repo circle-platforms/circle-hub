@@ -122,7 +122,7 @@ describe('start-up order and failure modes', () => {
     const security = fakeSecurity();
     const result = await deployment.run(['serve'], {
       assembly: realAssembly,
-      keyProvider: (env) => hubKeyProvider(env, { runner: security.runner }),
+      keyProvider: (env) => hubKeyProvider(env, { runner: security.runner, platform: 'darwin' }),
       stopSignal: stopSoon,
     });
     assert.equal(result.code, 1, result.text);
@@ -146,7 +146,7 @@ describe('start-up order and failure modes', () => {
     const security = fakeSecurity();
     const result = await deployment.run(['serve'], {
       assembly: realAssembly,
-      keyProvider: (env) => hubKeyProvider(env, { runner: security.runner }),
+      keyProvider: (env) => hubKeyProvider(env, { runner: security.runner, platform: 'darwin' }),
       stopSignal: stopSoon,
     });
     assert.equal(result.code, 1, result.text);

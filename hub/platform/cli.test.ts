@@ -73,6 +73,7 @@ describe('platform CLI', () => {
     port = String(await freePort());
     await mkdir(join(parent, 'home'), { recursive: true });
     overrides = {
+      platform: 'darwin',
       home: join(parent, 'home'),
       runner: system.runner,
       launchAgentsDir: join(parent, 'home', 'Library', 'LaunchAgents'),
@@ -366,6 +367,19 @@ describe('platform CLI', () => {
   });
 });
 
+test('Linux restore reports systemd when a loaded service would race the database', async () => {
+  const parent=await tempDir();
+  try {
+    const root=join(parent,'root');const captured=captureIo({CIRCLE_HUB_DATA_DIR:root},parent);
+    const runner=recordingRunner(call=>call.command==='/usr/bin/systemctl' ? ok('LoadState=loaded\nActiveState=active\nMainPID=12\nExecMainStatus=0\n') : undefined,{real:false});
+    assert.equal(await runPlatformCommand(['restore',join(parent,'backup')],captured.io,{platform:'linux',home:parent,runner:runner.runner,launchAgentsDir:join(parent,'units')}),1);
+    assert.match(captured.err.join('\n'),/systemd 会不断重启它/);
+    assert.match(captured.err.join('\n'),/service stop 和 circle-hub service uninstall，确认自启已禁用/);
+    assert.match(captured.err.join('\n'),/恢复完成后重新运行 circle-hub service install/);
+    assert.doesNotMatch(captured.err.join('\n'),/launchd/);
+  } finally { await removeDir(parent); }
+});
+
 describe('service commands on settings that give the vault master key the operator token\'s account', () => {
   test('install and start are refused before launchctl or anything else runs; stop, uninstall and status still work', async () => {
     const parent = await tempDir();
@@ -382,7 +396,7 @@ describe('service commands on settings that give the vault master key the operat
       await symlink(join('releases', id), layout.current);
       const system = fakeSystem();
       const agents = join(parent, 'home', 'Library', 'LaunchAgents');
-      const overrides = { home: join(parent, 'home'), runner: system.runner, launchAgentsDir: agents, uid: 501, nodePath: process.execPath };
+      const overrides = { platform: 'darwin' as const, home: join(parent, 'home'), runner: system.runner, launchAgentsDir: agents, uid: 501, nodePath: process.execPath };
       const run = async (...argv: string[]) => {
         const captured = captureIo({ CIRCLE_HUB_DATA_DIR: root }, parent);
         return { code: await runPlatformCommand(argv, captured.io, overrides), err: captured.err.join('\n') };
@@ -415,7 +429,7 @@ async function keyAsideWorld(t: {after(fn:()=>Promise<void>):void},port?:number)
  const keychain=join(parent,'synthetic.keychain-db');await writeFile(keychain,'synthetic fake-keychain target');
  const dbPort=socketPort();await writeFile(settingsPath(layout),JSON.stringify(newSettingsFile({environment:ENVIRONMENT[0],port:port ?? await freePort(),keychainService:'synthetic-key-recovery',database:{port:dbPort}})));
  const system=fakeSystem();const runner:PlatformContext['runner']=async(command,args,options)=>{if(command==='/usr/bin/security'){await access(join(layout.run,'platform.lock'));assert.ok([...args,options?.input ?? ''].join(' ').includes(keychain));}return system.runner(command,args,options);};
- const run=async(...args:string[])=>{const capture=captureIo({CIRCLE_HUB_DATA_DIR:layout.root,CIRCLE_HUB_DATABASE_PORT:String(dbPort)},parent);const code=await runPlatformCommand(args,capture.io,{runner,home:parent,keychain,uid:501,now:()=>new Date('2026-10-23T00:00:00.000Z')});return{code,out:capture.out.join('\n'),err:capture.err.join('\n')};};
+ const run=async(...args:string[])=>{const capture=captureIo({CIRCLE_HUB_DATA_DIR:layout.root,CIRCLE_HUB_DATABASE_PORT:String(dbPort)},parent);const code=await runPlatformCommand(args,capture.io,{runner,platform:'darwin',home:parent,keychain,uid:501,now:()=>new Date('2026-10-23T00:00:00.000Z')});return{code,out:capture.out.join('\n'),err:capture.err.join('\n')};};
  await writeFile(join(layout.vault,'sealed'),'synthetic sealed bytes');await writeFile(join(layout.db,'sentinel'),'synthetic database');await writeFile(join(layout.objects,'sentinel'),'synthetic object');
  return{parent,layout,system,run};
 }
@@ -439,6 +453,19 @@ test('closure key init flag refuses a manually occupied configured port before t
  const address=server.address();assert.ok(address && typeof address!=='string');const w=await keyAsideWorld(t,address.port);
  const result=await w.run('key','init','--set-aside-vault');assert.equal(result.code,1);assert.match(result.err,/配置端口.*进程应答/);
  assert.equal(w.system.calls.filter(c=>c.command==='/usr/bin/security').length,0);assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');
+});
+
+test('a listener at an earlier address still blocks restore and vault recovery without changing bytes',async t=>{
+ const {createServer}=await import('node:net');const server=createServer(socket=>socket.end());
+ await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));t.after(()=>new Promise<void>(done=>server.close(()=>done())));
+ const address=server.address();assert.ok(address && typeof address!=='string');const w=await keyAsideWorld(t,address.port);
+ const file=JSON.parse(await readFile(settingsPath(w.layout),'utf8'));file.listen_host='127.0.0.2';await writeFile(settingsPath(w.layout),JSON.stringify(file));
+ const recovery=await w.run('key','init','--set-aside-vault');assert.equal(recovery.code,1);assert.match(recovery.err,/配置端口.*进程应答/);
+ const restore=await w.run('restore','synthetic-backup');assert.equal(restore.code,1);assert.match(restore.err,/有进程应答/);
+ assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');
+ assert.equal(await readFile(join(w.layout.db,'sentinel'),'utf8'),'synthetic database');
+ assert.equal(await readFile(join(w.layout.objects,'sentinel'),'utf8'),'synthetic object');
+ assert.equal(w.system.calls.filter(c=>c.command==='/usr/bin/security').length,0);
 });
 
 test('closure key init recovery order reissues a missing operator token before importing secrets',async t=>{

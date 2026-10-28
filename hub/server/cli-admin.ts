@@ -30,7 +30,7 @@ import { unruledShapes, parsePackRef, type PackProblem } from '../runs/api.ts';
 import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
 import { assembleHub, type AssembledHub, type AssemblyOptions } from './assemble/hub.ts';
-import { OPERATOR_TOKEN_VARIABLE, deploymentKeychainService, keychainOperatorTokens, takeEnvironmentToken, tokenBytes, type OperatorTokenStore } from './assemble/operator-token.ts';
+import { OPERATOR_TOKEN_VARIABLE, deploymentKeychainService, fileOperatorTokens, keychainOperatorTokens, takeEnvironmentToken, tokenBytes, type OperatorTokenStore } from './assemble/operator-token.ts';
 import { SecretInputError, readSecret as readSecretFromStdin } from './assemble/secret-input.ts';
 import { terminalSafe } from './assemble/terminal.ts';
 import { readNamedEnvironment } from './assemble/env-file.ts';
@@ -63,7 +63,7 @@ export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
 export const KNOWLEDGE_USAGE = 'knowledge sync --product <产品> [--line <版本线>] [--dry-run] [--recheck] [--include-unreleased] | seed --product <产品> --line <版本线> [--build <构建>] --basis <一句理由> [--dry-run] | retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因> | roots <产品> | diff <根A> <根B> | view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <文件>';
 export const INIT_ADMIN_USAGE = 'init-admin <名字>   建第一位管理员，令牌存进钥匙串（账户 operator-token），不显示';
 export const OPERATOR_TOKEN_USAGE =
-  'operator-token set   从标准输入读一个启用中的管理员的令牌，存进钥匙串（账户 operator-token）；钥匙串项丢失时用，已有的项不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进钥匙串，不显示；已有的项不覆盖';
+  'operator-token set   从标准输入读一个启用中的管理员的令牌，存进钥匙串（账户 operator-token）；钥匙串项丢失时用，已有的项不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进钥匙串，不显示；已有的项不覆盖 | remove --confirm-only-operator-token   Linux 仅删除本地操作令牌文件，不改主密钥、不撤销数据库令牌';
 
 const USER_ID = /^usr_[0-9a-z]{26}$/;
 /** Label of a token `operator-token reissue` issues (shown by `token list`). */
@@ -72,6 +72,9 @@ const REISSUE_LABEL = '操作令牌（重新签发）';
 const REISSUE = 'circle-hub operator-token reissue';
 /** What to do when the keychain item's token no longer works (revoked, its account disabled or no longer an admin). */
 const DEAD_ITEM = `在“钥匙串访问”里删掉这个项，再运行 ${REISSUE}（给一位启用中的管理员签发新令牌存进钥匙串，不显示；有几位管理员时加 --as <管理员>）`;
+
+const removeItemHint = (store: OperatorTokenStore): string => store.remove ? '运行 circle-hub operator-token remove --confirm-only-operator-token（仅删除本地操作令牌，不改密钥库主密钥；不会撤销数据库令牌）' : '在“钥匙串访问”里删掉这个项';
+const deadItemHint = (store: OperatorTokenStore): string => store.remove ? `${removeItemHint(store)}，再运行 ${REISSUE}（有几位管理员时加 --as <管理员>）` : DEAD_ITEM;
 
 /**
  * How to give one command a token other than the keychain item's. Not exported: serve refuses to start while the variable
@@ -170,7 +173,7 @@ class Session {
     this.#tokens ??= (async () => {
       const config = this.config();
       const service = await deploymentKeychainService(this.ctx.io.env, config.keychain.service);
-      return this.options.tokens?.(config, service) ?? keychainOperatorTokens({ service });
+      return this.options.tokens?.(config, service) ?? (process.platform === 'linux' ? fileOperatorTokens(config.dataDir, service) : keychainOperatorTokens({ service }));
     })();
     return this.#tokens;
   }
@@ -217,7 +220,7 @@ class Session {
       if(!requireAdmin)throw new CliError('操作令牌无效或账号已停用','用运行者本人或管理员的有效令牌重试');
       const hint =
         this.envToken === null
-          ? `${(await this.tokens()).where}里的操作令牌已不能用（已撤销、账号已停用或不再是管理员）：${DEAD_ITEM}`
+          ? `${(await this.tokens()).where}里的操作令牌已不能用（已撤销、账号已停用或不再是管理员）：${deadItemHint(await this.tokens())}`
           : `给这条命令一个启用中的管理员的有效令牌（${OPERATOR_TOKEN_VARIABLE}）`;
       throw new CliError('令牌无效，或者不属于启用中的管理员；这个命令只有管理员能执行', hint);
     }
@@ -232,7 +235,7 @@ class Session {
     const lost =
       this.envToken !== null
         ? `${OPERATOR_TOKEN_VARIABLE} 给这条命令的管理员令牌现在已不能用（令牌已撤销或账号已停用）`
-        : `${(await this.tokens()).where}里的操作令牌现在已不能用（令牌已撤销或账号已停用）：之后改变状态的命令会被拒绝；恢复：${DEAD_ITEM}`;
+        : `${(await this.tokens()).where}里的操作令牌现在已不能用（令牌已撤销或账号已停用）：之后改变状态的命令会被拒绝；恢复：${deadItemHint(await this.tokens())}`;
     return {
       admin,
       noticeIfLost: async () => {
@@ -254,7 +257,7 @@ class Session {
     if (token === null) {
       const store = await this.tokens();
       source = `${store.where}里的操作令牌`;
-      hint = `在“钥匙串访问”里删掉这个项后，只读命令按 --as 或唯一启用的管理员读取；改变状态的命令要的新操作令牌用 ${REISSUE} 签发`;
+      hint = `${removeItemHint(store)}后，只读命令按 --as 或唯一启用的管理员读取；改变状态的命令要的新操作令牌用 ${REISSUE} 签发`;
       try {
         token = await store.read();
       } catch (error) {
@@ -960,8 +963,8 @@ async function storeUnseen(kit: RecordsKit, store: OperatorTokenStore, admin: Pi
     // A write whose read-back failed may still have left the item behind.
     const left = await store.present().catch(() => false);
     const stored = `${done}，但令牌没能存进${store.where}：${messageOf(error)}`;
-    const remove = left ? '钥匙串里留下了这个项，先在“钥匙串访问”里删掉它；' : '';
-    const again = `${remove}钥匙串能用后（例如解锁了钥匙串）用 ${REISSUE} --as ${admin.name} 签发新令牌存进钥匙串（不显示）`;
+    const remove = left ? (store.remove ? `${removeItemHint(store)}；` : '钥匙串里留下了这个项，先在“钥匙串访问”里删掉它；') : '';
+    const again = store.remove ? `${remove}确认私有密钥目录可用后，用 ${REISSUE} --as ${admin.name} 签发新令牌存进${store.where}（不显示）` : `${remove}钥匙串能用后（例如解锁了钥匙串）用 ${REISSUE} --as ${admin.name} 签发新令牌存进钥匙串（不显示）`;
     if (revoked) throw new CliError(`${stored}。这个令牌已撤销，没有显示`, again);
     throw new CliError(`${stored}。这个没有显示过的令牌 ${token.id} 没能确认已经撤销${why}`, `${again}；再用 circle-hub token revoke ${token.id} 撤销这个没有显示过的令牌`);
   }
@@ -978,7 +981,7 @@ async function initAdminCommand(session: Session, args: readonly string[]): Prom
   }
   const store = await session.tokens();
   if (await store.present()) {
-    throw new CliError(`${store.where}里已经有操作令牌`, '它属于另一个 Hub 时先在“钥匙串访问”里删掉它，再运行 init-admin');
+    throw new CliError(`${store.where}里已经有操作令牌`, `它属于另一个 Hub 时先${removeItemHint(store)}，再运行 init-admin`);
   }
   const { user, token } = await decided(() => kit.principals.bootstrapAdmin(positionals[0]));
   await storeUnseen(kit, store, user, token, `已建立第一位管理员 ${user.name}（${user.id}）`);
@@ -1001,12 +1004,22 @@ async function initAdminCommand(session: Session, args: readonly string[]): Prom
 async function operatorTokenCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'reissue') return reissueCommand(session, rest);
+  if (sub === 'remove') {
+    const {values} = parse(rest, {'confirm-only-operator-token':{type:'boolean'}}, 0);
+    const store = await session.tokens();
+    if (!store.remove) throw new CliError('此存储不支持操作令牌文件删除', '在“钥匙串访问”里仅删除操作令牌项');
+    if (values['confirm-only-operator-token'] !== true) throw new UsageError('仅删除本地操作令牌文件须加 --confirm-only-operator-token；不会撤销数据库令牌或改动密钥库主密钥');
+    session.out('先停止 Hub 服务并核对旧令牌；删除本地文件不会阻止运行中读取者或撤销旧令牌，恢复后用 token list 和 token revoke 核对并撤销旧令牌');
+    session.out(await store.remove() ? '已删除本地操作令牌文件；密钥库主密钥未改动，数据库令牌未撤销' : '本地操作令牌文件本来就不存在；密钥库主密钥未改动');
+    session.out(`下一步：${REISSUE}（有几位管理员时加 --as <管理员>），再核对并撤销旧令牌`);
+    return 0;
+  }
   if (sub !== 'set') throw new UsageError(`operator-token 的子命令：${OPERATOR_TOKEN_USAGE}`);
   parse(rest, {}, 0);
   const kit = await session.records();
   const store = await session.tokens();
   if (await store.present()) {
-    throw new CliError(`${store.where}里已经有操作令牌，不覆盖`, '它不能用了就先在“钥匙串访问”里删掉这个项，再运行 circle-hub operator-token set');
+    throw new CliError(`${store.where}里已经有操作令牌，不覆盖`, `它不能用了就先${removeItemHint(store)}，再运行 circle-hub operator-token set`);
   }
   const read = session.options.readSecret ?? ((label: string) => readSecretFromStdin(label));
   // A Hub token has no white space; a pasted line may.
@@ -1028,7 +1041,7 @@ async function reissueCommand(session: Session, args: readonly string[]): Promis
   const kit = await session.records();
   const store = await session.tokens();
   if (await store.present()) {
-    throw new CliError(`${store.where}里已经有操作令牌，不覆盖`, `它还能用就不用重新签发；不能用了（令牌已撤销、账号已停用）就先在“钥匙串访问”里删掉这个项，再运行 ${REISSUE}`);
+    throw new CliError(`${store.where}里已经有操作令牌，不覆盖`, `它还能用就不用重新签发；不能用了（令牌已撤销、账号已停用）就先${removeItemHint(store)}，再运行 ${REISSUE}`);
   }
   // Who: `--as`, or the only enabled admin (records keeps at least one enabled admin).
   const admin = await session.ctx.actingAdmin(values.as);
@@ -1337,8 +1350,8 @@ async function docCommand(session: Session, args: readonly string[]): Promise<nu
 }
 
 async function recordsCommand(session:Session,args:readonly string[]):Promise<number> {
-  const [sub,...rest]=args;if(sub!=='verify')throw new UsageError('records verify [--kind <记录类型>]');
-  const {values}=parse(rest,{kind:{type:'string'},as:{type:'string'}},0);
+  const [sub,...rest]=args;if(sub!=='verify')throw new UsageError('records verify [--kind <记录类型>] [--vault]');
+  const {values}=parse(rest,{kind:{type:'string'},as:{type:'string'},vault:{type:'boolean'}},0);
   const viewer=await session.viewer(values.as);if(viewer.role!=='admin')throw new CliError('只有管理员能核对记录完整性');
   const kind=values.kind ?? 'action';if(!(RECORD_KINDS as readonly string[]).includes(kind))throw new UsageError('记录类型不在生成的协议词表里');
   const records=await session.records();let cursor:string|null=null,total=0,notes=0;
@@ -1347,7 +1360,16 @@ async function recordsCommand(session:Session,args:readonly string[]):Promise<nu
     for(const record of page.items){total++;if(record.integrity_note){notes++;if(record.kind==='action')session.out(`记录 ${record.id}；摘要 ${record.digest}；${record.integrity_note}`);}}
     cursor=page.next;
   }while(cursor);
-  session.out(`已核对记录 ${total}；正文不是规范写法、内容与摘要一致 ${notes}`);return 0;
+  session.out(`已核对记录 ${total}；正文不是规范写法、内容与摘要一致 ${notes}`);
+  if(values.vault){
+    if(!records.vault.verify){session.out('密钥库核验未知：当前密钥库不支持只读逐条核验；下一步：安装支持核验的版本并停写后重试');return 1;}
+    let result;
+    try { result=await records.vault.verify(); } catch {session.out('密钥库核验未知：读取或解密核验未完成；下一步：停写并检查密钥来源和密钥库完整性后重试');return 1;}
+    session.out(`密钥库：已核验 ${result.checked} 条；异常 ${result.failed} 项`);
+    if(result.unknown){session.out('密钥库核验未知：没有可核对的密文条目或缺少必要事实；下一步：确认迁移源含密文条目和正确主密钥，停写后重试');return 1;}
+    if(result.failed){session.out('密钥库核验未通过；下一步：检查备份、密钥及密文条目，停写后重试');return 1;}
+  }
+  return 0;
 }
 
 // ---------------------------------------------------------------- sharing (B04, R02): a read capability only
@@ -1401,7 +1423,7 @@ type Handler = (session: Session, args: readonly string[]) => Promise<number>;
 const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
   {name:'share',summary:SHARE_USAGE.slice('share '.length),handler:sharingCommand},
   {name:'unshare',summary:UNSHARE_USAGE.slice('unshare '.length),handler:(session,args)=>sharingCommand(session,args,true)},
-  {name:'records',summary:'verify [--kind <记录类型>]（只核存储、说明和摘要，不输出正文）',handler:recordsCommand},
+  {name:'records',summary:'verify [--kind <记录类型>] [--vault]（核存储摘要，可选核验密钥库解密，不输出正文）',handler:recordsCommand},
   { name: 'executor', summary: EXECUTOR_USAGE, handler: executorCommand },
   { name: 'job', summary: JOB_USAGE, handler: jobCommand },
   { name: 'bed', summary: BED_USAGE, handler: bedCommand },

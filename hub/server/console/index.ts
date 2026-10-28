@@ -23,13 +23,15 @@ import {
   type PageResult,
 } from './pages.ts';
 import { resultPage, resultsPage } from './results.ts';
-import { LOGIN_COOKIE, SESSION_COOKIE, cookie, type ConsoleSession, type SessionStore } from './session.ts';
+import { LOGIN_COOKIE, SESSION_COOKIE, SECURE_LOGIN_COOKIE, SECURE_SESSION_COOKIE, cookie, type ConsoleSession, type SessionStore } from './session.ts';
 
 export interface ConsoleOptions {
   deps: ServerDeps;
   sessions: SessionStore;
   /** This server's own origins (http://127.0.0.1:<port>, http://localhost:<port>): the only ones its forms may come from. */
   ownOrigins: () => ReadonlySet<string>;
+  /** True only after the app has authenticated the configured proxy authority and peer address. */
+  secureRequest: (request: IncomingMessage) => boolean;
   log: (line: string) => void;
 }
 
@@ -57,8 +59,8 @@ function redirect(response: ServerResponse, location: string, cookies: string[] 
 
 const anonymous = (title: string): PageChrome => ({ title, user: null, csrf: null });
 
-function loginPage(sessions: SessionStore, response: ServerResponse, status: number, message: string | null): void {
-  const nonce = sessions.issueNonce();
+function loginPage(sessions: SessionStore, response: ServerResponse, status: number, message: string | null, secure: boolean): void {
+  const nonce = sessions.issueNonce(secure);
   const body = page(
     anonymous('登录'),
     html`${message === null ? '' : html`<p class="error">${message}</p>`}
@@ -69,7 +71,7 @@ function loginPage(sessions: SessionStore, response: ServerResponse, status: num
 </form>
 <p>令牌由管理员用 circle-hub token issue 签发；控制台只读。</p>`,
   );
-  sendHtml(response, status, body, { 'set-cookie': cookie(LOGIN_COOKIE, nonce, '/console/login', 15 * 60) });
+  sendHtml(response, status, body, { 'set-cookie': cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, nonce, '/console/login', 15 * 60, secure) });
 }
 
 function forbidden(response: ServerResponse, message: string): void {
@@ -79,7 +81,9 @@ function forbidden(response: ServerResponse, message: string): void {
 /** A console POST must come from this server's own pages: an Origin, when sent, is one of its own origins. */
 function sameOrigin(request: IncomingMessage, own: ReadonlySet<string>): boolean {
   const origin = request.headers.origin;
-  return origin === undefined || (typeof origin === 'string' && own.has(origin));
+  if (origin === undefined) return true;
+  if (typeof origin !== 'string' || !own.has(origin) || typeof request.headers.host !== 'string') return false;
+  try { return new URL(origin).host === request.headers.host.toLowerCase(); } catch { return false; }
 }
 
 async function formOf(request: IncomingMessage): Promise<URLSearchParams | 'too_large' | 'wrong_type' | 'aborted'> {
@@ -94,6 +98,7 @@ async function formOf(request: IncomingMessage): Promise<URLSearchParams | 'too_
 }
 
 async function login(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions): Promise<void> {
+  const secure = options.secureRequest(request);
   if (!sameOrigin(request, options.ownOrigins())) {
     request.resume();
     forbidden(response, '登录表单只能从本控制台的页面提交');
@@ -109,22 +114,23 @@ async function login(request: IncomingMessage, response: ServerResponse, options
     return;
   }
   const nonce = form.get('csrf') ?? '';
-  const cookieNonce = cookiesOf(request).get(LOGIN_COOKIE);
-  if (nonce.length === 0 || cookieNonce !== nonce || !options.sessions.takeNonce(nonce)) {
+  const cookieNonce = cookiesOf(request).get(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE);
+  if (nonce.length === 0 || cookieNonce !== nonce || !options.sessions.takeNonce(nonce, secure)) {
     forbidden(response, '表单已过期或不是本控制台发出的，请重新打开登录页');
     return;
   }
   const match = TOKEN.exec((form.get('token') ?? '').trim());
   const principal = match === null ? null : await options.deps.records.principals.authenticate(`Bearer ${match[1]}`);
   if (match === null || principal === null) {
-    loginPage(options.sessions, response, 401, '令牌无效：不存在、已撤销，或账号已停用');
+    loginPage(options.sessions, response, 401, '令牌无效：不存在、已撤销，或账号已停用', secure);
     return;
   }
-  const session = options.sessions.open(match[1]);
-  redirect(response, '/console/runs', [cookie(SESSION_COOKIE, session.id, '/console'), cookie(LOGIN_COOKIE, '', '/console/login', 0)]);
+  const session = options.sessions.open(match[1], secure);
+  redirect(response, '/console/runs', [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, session.id, '/console', undefined, secure), cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, '', '/console/login', 0, secure)]);
 }
 
 async function logout(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, session: ConsoleSession | null): Promise<void> {
+  const secure = options.secureRequest(request);
   if (!sameOrigin(request, options.ownOrigins())) {
     request.resume();
     forbidden(response, '退出表单只能从本控制台的页面提交');
@@ -140,7 +146,7 @@ async function logout(request: IncomingMessage, response: ServerResponse, option
     return;
   }
   options.sessions.close(session.id);
-  redirect(response, '/console/login', [cookie(SESSION_COOKIE, '', '/console', 0)]);
+  redirect(response, '/console/login', [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, '', '/console', 0, secure)]);
 }
 
 type Route = (ctx: PageContext, rest: string[]) => Promise<PageResult>;
@@ -161,10 +167,11 @@ const ROUTES: Record<string, Route> = {
 /** Handles every path under /console. */
 export async function handleConsole(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions): Promise<void> {
   const segments = url.pathname.split('/').slice(2).filter((s) => s.length > 0);
-  const session = options.sessions.get(cookiesOf(request).get(SESSION_COOKIE));
+  const secure = options.secureRequest(request);
+  const session = options.sessions.get(cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE), secure);
   if (segments[0] === 'login') {
     if (segments.length !== 1) return sendHtml(response, 404, page(anonymous('没有这个页面'), html`<p>没有这个页面</p>`));
-    if (request.method === 'GET') return loginPage(options.sessions, response, 200, null);
+    if (request.method === 'GET') return loginPage(options.sessions, response, 200, null, secure);
     if (request.method === 'POST') return login(request, response, options);
     request.resume();
     return sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>只接受 GET 和 POST</p>`), { allow: 'GET, POST' });
@@ -181,7 +188,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
   const principal: Principal | null = session === null ? null : await options.deps.records.principals.authenticate(`Bearer ${session.token}`);
   if (principal === null) {
     if (session !== null) options.sessions.close(session.id);
-    return redirect(response, '/console/login', session === null ? [] : [cookie(SESSION_COOKIE, '', '/console', 0)]);
+    return redirect(response, '/console/login', session === null ? [] : [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, '', '/console', 0, secure)]);
   }
   if (segments.length === 0) return redirect(response, '/console/runs');
   const names = new Map<string, Promise<string>>();

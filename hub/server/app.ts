@@ -7,6 +7,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { isLoopbackAddress } from '../config/index.ts';
+import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
 import type { AppOptions, HubApp, ListenInfo, ServerDeps } from './api.ts';
 import { handleConsole } from './console/index.ts';
 import { SessionStore } from './console/session.ts';
@@ -16,8 +17,8 @@ import { handleMcp } from './mcp.ts';
 import { describeError } from './notes.ts';
 import { packageVersion, readReleaseId } from './release.ts';
 
-const REFUSED_HOST = '拒绝：Host 必须是本机地址 127.0.0.1:<端口> 或 localhost:<端口>';
-const REFUSED_ORIGIN = '拒绝：Origin 不是本机来源';
+const REFUSED_HOST = '拒绝：Host 不在此服务允许的主机名单里';
+const REFUSED_ORIGIN = '拒绝：Origin 不在此服务允许的来源名单里';
 const BAD_TARGET = '请求目标不对：要么是以 / 开头的路径，要么是本服务器的 http 绝对地址';
 
 /** A parsed request target: the URL on this server, and the authority an absolute-form target named (null for a path). */
@@ -53,7 +54,13 @@ function printable(target: string | undefined): string {
 
 export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const host = deps.config.host;
-  if (!isLoopbackAddress(host)) throw new Error(`circle-hub 只监听本机回环地址，${host} 不是`);
+  const declared = deps.config.allowedHosts;
+  const refusedHost = declared ? REFUSED_HOST : '拒绝：Host 必须是本机地址 127.0.0.1:<端口> 或 localhost:<端口>';
+  const refusedOrigin = declared ? REFUSED_ORIGIN : '拒绝：Origin 不是本机来源';
+  const proxyOrigin = deps.config.proxyOrigin;
+  const proxyPeer = deps.config.proxyPeer;
+  if (!validListenAddress(host) || (declared && !validAllowedHosts(declared)) || (!isLoopbackAddress(host) && !declared) || (proxyOrigin && !validProxyOrigin(proxyOrigin, declared, deps.config.port)) || Boolean(proxyOrigin) !== Boolean(proxyPeer) || (proxyPeer && !validListenAddress(proxyPeer))) throw new Error('监听地址、允许主机或可信代理无效');
+  const proxyAuthority = proxyOrigin ? new URL(proxyOrigin).host : null;
   const release = readReleaseId(options.codeRoot);
   const log = options.log ?? ((line: string) => process.stderr.write(`${line}\n`));
   const closeTimeoutMs = options.closeTimeoutMs ?? 10_000;
@@ -61,24 +68,33 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const clock = deps.now ?? (() => new Date());
   const sessions = new SessionStore(() => clock().getTime());
   const budget = new BodyBudget(options.maxInflightBodyBytes ?? 4 * deps.config.limits.maxRequestBytes);
-  let hosts = allowedHosts(host, deps.config.port);
+  let hosts = allowedHosts(host, deps.config.port, declared);
   let origins = ownOrigins(hosts);
+  if (proxyOrigin) { hosts.add(new URL(proxyOrigin).host); origins.add(proxyOrigin); }
   let server: Server | null = null;
   let stopping = false;
   let closing: Promise<void> | null = null;
   const inflight = new Set<Promise<void>>();
 
   const mcpOptions = { deps, serverVersion: packageVersion(), log, budget };
-  const consoleOptions = { deps, sessions, ownOrigins: () => origins, log };
+  const consoleOptions = {
+    deps, sessions, ownOrigins: () => origins, log,
+    // Forwarded headers never establish the HTTPS channel; only the configured authority and peer do.
+    secureRequest: (request: IncomingMessage) => proxyAuthority !== null
+      && request.headers.host?.toLowerCase() === proxyAuthority
+      && request.socket.remoteAddress?.replace(/^::ffff:/, '') === proxyPeer,
+  };
 
   const route = async (request: IncomingMessage, response: ServerResponse, target: RequestTarget | null): Promise<void> => {
     if (stopping) response.setHeader('connection', 'close');
     const isMcp = target?.url.pathname === '/mcp';
     // An absolute-form target names an authority too: it must be this server, like the Host header.
-    const hostOk = hostAllowed(request, hosts) && (target === null || target.authority === null || hosts.has(target.authority));
-    if (!hostOk || !originAllowed(request)) {
+    const usesProxy = proxyAuthority !== null && (request.headers.host?.toLowerCase() === proxyAuthority || target?.authority === proxyAuthority || request.headers.origin === proxyOrigin);
+    const peer = request.socket.remoteAddress?.replace(/^::ffff:/, '');
+    const hostOk = hostAllowed(request, hosts) && (target === null || target.authority === null || hosts.has(target.authority)) && (!usesProxy || peer === proxyPeer);
+    if (!hostOk || !originAllowed(request, declared ? origins : undefined)) {
       request.resume();
-      const message = hostOk ? REFUSED_ORIGIN : REFUSED_HOST;
+      const message = hostOk ? refusedOrigin : refusedHost;
       if (isMcp) sendRpcError(response, 403, -32000, message, { connection: 'close' });
       else sendText(response, 403, message, { connection: 'close' });
       return;
@@ -154,8 +170,14 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     });
     server = created;
     const port = (created.address() as AddressInfo).port;
-    hosts = allowedHosts(host, port);
+    if (proxyOrigin && !validProxyOrigin(proxyOrigin, declared, port)) {
+      await new Promise<void>(resolve => created.close(() => resolve()));
+      server = null;
+      throw new Error('HTTPS 代理来源不能与实际 HTTP 监听权威相同');
+    }
+    hosts = allowedHosts(host, port, declared);
     origins = ownOrigins(hosts);
+    if (proxyOrigin) { hosts.add(new URL(proxyOrigin).host); origins.add(proxyOrigin); }
     const literal = host.includes(':') ? `[${host}]` : host;
     return { host, port, url: `http://${literal}:${port}` };
   };
