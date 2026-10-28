@@ -73,3 +73,16 @@ test('untrusted postinstall cannot reach the outbound sentinel or host paths and
  for(const path of [own.root,own.build,'/run/netns/'+own.namespace])await assert.rejects(lstat(path));
  const account=await runCommand('/usr/bin/id',['-u',own.user],{env:{PATH:'/usr/bin:/bin',LANG:'C'},timeoutMs:5000});assert.notEqual(account.code,0);
 });
+
+test('bundle subtree mount rejection precedes manifest or asset reads',()=>{
+ const before=parseMountInfo('1 0 8:1 / / rw - ext4 /dev/synthetic rw');
+ const baseline=trustedRootMount(before), path='/var/tmp/chvm-offline-123456abcdef';
+ const overlaid=parseMountInfo(`2 1 8:1 /synthetic-backup/database.dump ${path}/source.tar rw - ext4 /dev/synthetic rw`);
+ let contentsRead=false;
+ assert.throws(()=>{
+   // Match the verifier's explicit pre-content boundary. A rejected mount cannot reach content work.
+   sourceMountReceipt([...before,...overlaid],path,'/offline',baseline);
+   contentsRead=true;
+ });
+ assert.equal(contentsRead,false);
+});

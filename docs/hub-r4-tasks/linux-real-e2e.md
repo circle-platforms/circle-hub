@@ -117,3 +117,7 @@ a50acceb 的 root联网构建方案已撤销，不能使用。当前改为预先
 - 新增synthetic恶意postinstall模式：正常真实npm生命周期执行合成hook，hook实测非root、精确net/root inode、外部哨兵不可达、/sentinel/hidden与/release不可写，写仅本次/data的拒绝收据后故意退出73；必须看到npm非零及hook收据才算这个负例成立。VM负例随后检查本次root/build/ns/账户均已清理。普通单元负例拒绝空pin/部署路径/root安装身份。以上均未运行。
 
 仍未提供可运行的离线审批包，尚无VM实证或PG/Hub完整树验证；实物阶段继续关闭。现有 `pipeSyntheticKey` 不具备这套隔离，不得据此传真实密钥。
+
+### 离线资产读取顺序修正（未执行）
+
+`verifyOfflineBundle` 现在要求调用前的独立根设备基线，先读取内核mountinfo并对整个bundle源、祖先和所有子挂载做拒绝检查，然后才允许realpath/递归元数据、manifest内容和资产SHA读取。合法bundle下的source.tar被其他本地文件bind覆盖时，在任何正文读取前中止，不靠hash失败事后发现。新增合成覆盖反例验证内容阶段不可到达；尚未执行。

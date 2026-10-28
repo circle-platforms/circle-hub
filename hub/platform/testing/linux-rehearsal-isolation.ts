@@ -111,8 +111,12 @@ async function rootVmGate():Promise<void> {
 
 interface OfflineManifest {schema:'circle-hub-offline-build@1';source_commit:string;node_sha256:string;files:Record<string,string>}
 async function hashFile(path:string):Promise<string>{const hash=createHash('sha256');for await(const bytes of createReadStream(path))hash.update(bytes);return hash.digest('hex');}
-export async function verifyOfflineBundle(path:string,pin:string):Promise<{path:string;manifest:OfflineManifest}>{
+export async function verifyOfflineBundle(path:string,pin:string,baseline?:MountRow):Promise<{path:string;manifest:OfflineManifest}>{
   if(!/^\/var\/tmp\/chvm-offline-[a-f0-9]{12}$/.test(path)||! /^[a-f0-9]{64}$/.test(pin))throw new Error('缺少预先固定的离线构建包和独立清单 SHA；不联网补齐');
+  if(!baseline)throw new Error('离线包缺少独立根设备基线');
+  const mountSnapshot=parseMountInfo(await readFile('/proc/self/mountinfo','utf8'));
+  // This must precede realpath, recursive metadata, manifest reading and every asset hash.
+  sourceMountReceipt(mountSnapshot,path,'/offline',baseline);
   await assertCanonicalPath(path);await assertFrozenParents(path);await assertRootOwnedTree(path);
   if(((await lstat(path)).mode&0o005)!==0o005)throw new Error('离线包须对专用构建账户只读可遍历');
   const raw=await readFile(join(path,'manifest.json'));if(raw.length>1024*1024||createHash('sha256').update(raw).digest('hex')!==pin)throw new Error('离线清单 SHA 不符');
@@ -154,7 +158,7 @@ export async function proveSyntheticIsolation(mode:'normal'|'malicious-postinsta
   await rootVmGate();
   const baseline=trustedRootMount(parseMountInfo(await readFile('/proc/self/mountinfo','utf8')));
   // Offline bundle pin is supplied before the fixture runs. No network acquisition or owner configuration is read.
-  const bundle=await verifyOfflineBundle(process.env.CIRCLE_HUB_TEST_OFFLINE_BUNDLE??'',process.env.CIRCLE_HUB_TEST_OFFLINE_SHA256??'');
+  const bundle=await verifyOfflineBundle(process.env.CIRCLE_HUB_TEST_OFFLINE_BUNDLE??'',process.env.CIRCLE_HUB_TEST_OFFLINE_SHA256??'',baseline);
   const id=randomBytes(6).toString('hex'), user=`chvm-${id}`, namespace=user;
   const build='/var/tmp/chvm-build-'+id,source=join(build,'release'),root='/var/tmp/'+user,node=await realpath(process.execPath);
   await assertCanonicalPath('/var/tmp');await assertFrozenParents(node);
