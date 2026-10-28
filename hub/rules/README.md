@@ -383,3 +383,12 @@ substring contract as the independent rules and refs implementations.
 Antigravity independently reviewed the fixed implementation at `ab2ec6c6` and found the two earlier blockers addressed:
 all-thread descendant accounting and per-child kernel isolation attestation. This was a source review, not production
 proof. The policy administrator remains trusted; stop the Hub and drain children before replacing an AppArmor policy.
+
+### Linux startup Node capability preflight
+
+The Linux readiness probe now runs the real Node executable with its permission model and the temporary child/write
+permissions used by the bootstrap. It requires `permission.drop`, revokes both grants, and checks they are gone before
+caching readiness. Missing support reports private diagnostic `node_permission_drop_missing`; a throwing or ineffective
+implementation reports `node_permission_drop_failed`. Neither condition permits a fallback. The existing per-child
+attestation still runs before pack loading. Synthetic missing/no-op/throwing implementations are regression inputs;
+verification results are recorded in `docs/hub-r4-tasks/linux-probe-capability.md`.

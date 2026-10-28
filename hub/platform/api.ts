@@ -71,4 +71,5 @@ export { rehearse, type RehearsalReport } from './rehearse.ts';
 export { verifyPostgres, type VerifyResult } from './verify.ts';
 export { isPlatformCommand, main, PLATFORM_COMMANDS, runPlatformCommand, type PlatformIo } from './cli.ts';
 export { ensureHubDatabase, hubKeyProvider } from './service.ts';
+export { fileKeyStore, fileKeyProvider, type FileKeyOptions } from './file-key.ts';
 export { runCommand, type CommandResult, type CommandRunner } from './process.ts';

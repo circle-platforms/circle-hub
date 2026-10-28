@@ -2,7 +2,9 @@
 import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { libpqDirectory } from './backup.ts';
+import { platformLibpqDirectory } from './backup.ts';
+import { fileKeyStore } from './file-key.ts';
+import { defaultSystemdDirectory, systemdAgent } from './systemd.ts';
 import { PlatformError } from './errors.ts';
 import { keychainStore, settingsKeychainNames, type DeploymentKeychainNames, type KeychainStore } from './keychain.ts';
 import { defaultLaunchAgentsDirectory, launchAgent, type LaunchAgent, type ServiceIdentity } from './launchd.ts';
@@ -12,6 +14,7 @@ import { runCommand, type CommandRunner } from './process.ts';
 import { deploymentDatabase, readSettings, sameDatabase, SERVICE_LABEL, settingsPath, type DatabaseNames, type PlatformSettings } from './settings.ts';
 
 export interface PlatformContext {
+  platform: NodeJS.Platform;
   env: NodeJS.ProcessEnv;
   layout: Layout;
   /**
@@ -27,7 +30,7 @@ export interface PlatformContext {
   keychain?: string;
   /** Node binary for the service and for migrations; default: the settings, then a stable path to this Node. */
   nodePath?: string;
-  libpqBin: string;
+  libpqBin?: string;
   /** Root of the code running this command; its node_modules holds the PostgreSQL binaries. */
   codeRoot: string;
   /** The deployment settings' names when the data root has settings, else the names init will write. */
@@ -44,19 +47,22 @@ export interface PlatformContext {
 export const CODE_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
 export function createContext(env: NodeJS.ProcessEnv = process.env, overrides: Partial<PlatformContext> = {}): PlatformContext {
-  const home = overrides.home ?? homedir();
-  const layout = overrides.layout ?? resolveLayout(env, home);
+  const platform = overrides.platform ?? process.platform;
+  // A sudo-inherited HOME may name another account; Linux service files belong to the effective service account.
+  const home = overrides.home ?? (platform === 'linux' ? userInfo().homedir : homedir());
+  const layout = overrides.layout ?? resolveLayout(env, home, {platform, ...(overrides.user ? {username: overrides.user} : {})});
   return {
+    platform,
     env,
     layout,
     user: overrides.user ?? userInfo().username,
     uid: overrides.uid ?? process.getuid?.() ?? userInfo().uid,
     home,
     runner: overrides.runner ?? runCommand,
-    launchAgentsDir: overrides.launchAgentsDir ?? defaultLaunchAgentsDirectory(home),
+    launchAgentsDir: overrides.launchAgentsDir ?? (platform === 'linux' ? defaultSystemdDirectory(home) : defaultLaunchAgentsDirectory(home)),
     ...(overrides.keychain ? { keychain: overrides.keychain } : {}),
     ...(overrides.nodePath ? { nodePath: overrides.nodePath } : {}),
-    libpqBin: overrides.libpqBin ?? libpqDirectory(undefined, env),
+    libpqBin: platformLibpqDirectory(overrides.libpqBin, env),
     codeRoot: overrides.codeRoot ?? CODE_ROOT,
     database: overrides.database ?? deploymentDatabase(layout, env),
     healthTimeoutMs: overrides.healthTimeoutMs ?? 90_000,
@@ -101,6 +107,7 @@ export function platformLockPath(context: PlatformContext): string {
 }
 
 export function agentFor(context: PlatformContext, settings: Pick<PlatformSettings, 'label'> = { label: SERVICE_LABEL }): LaunchAgent {
+  if (context.platform === 'linux') return systemdAgent({label: settings.label, directory: context.launchAgentsDir, uid: context.uid, runner: context.runner});
   return launchAgent({ label: settings.label, directory: context.launchAgentsDir, uid: context.uid, runner: context.runner });
 }
 
@@ -114,6 +121,7 @@ export function keychainNamesFor(context: PlatformContext, settings: PlatformSet
 
 /** The vault master key's item of the deployment; a reserved account (the operator token's) is refused. */
 export function keychainFor(context: PlatformContext, settings: PlatformSettings): KeychainStore {
+  if (context.platform === 'linux') return fileKeyStore({root: context.layout.root, ...keychainNamesFor(context, settings).vaultKey});
   return keychainStore({
     ...keychainNamesFor(context, settings).vaultKey,
     runner: context.runner,
