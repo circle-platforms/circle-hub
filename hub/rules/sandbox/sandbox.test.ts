@@ -593,7 +593,7 @@ describe('isolation layers', () => {
     try {
       const target = join(root, `os-${counter}.txt`);
       const result = await probe(probeSource(port, target, secret), { os: true });
-      assert.equal(result.connect, 'EPERM');
+      assert.equal(result.connect, process.platform === 'linux' ? 'EACCES' : 'EPERM');
       assert.equal(result.write, 'ERR_ACCESS_DENIED');
       assert.equal(result.spawn, 'ERR_ACCESS_DENIED');
       assert.equal(result.read, 'ERR_ACCESS_DENIED');
