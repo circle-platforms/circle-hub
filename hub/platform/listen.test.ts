@@ -27,10 +27,22 @@ test('deployment settings persist and pin the explicit listener and allowed auth
   assert.equal(resolveSettings(old, {}).listenHost, undefined);
 });
 
+test('Linux listener inventory accepts the distinct real IPv4 and IPv6 kernel headers', async () => {
+  const ipv4 = '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n';
+  const ipv6 = '  sl  local_address remote_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n';
+  const table = (path: string) => path.endsWith('tcp6') ? ipv6 : ipv4;
+  assert.equal(await linuxPortOccupied(8000, async path => table(path)), false, 'empty IPv4 and IPv6 inventories are idle');
+  assert.equal(await linuxPortOccupied(8000, async path => path.endsWith('tcp6')
+    ? `${ipv6}0: 00000000000000000000000001000000:1F40 00000000000000000000000000000000:0000 0A\n`
+    : ipv4), true, 'an IPv6 listener still blocks the port');
+  assert.equal(await linuxPortOccupied(8000, async path => path.endsWith('tcp6') ? ipv6.replace('remote_address', 'unknown_address') : ipv4), true);
+});
+
 test('Linux listener inventory fails closed when either table is missing or malformed', async () => {
   const header = '  sl  local_address rem_address   st\n';
-  assert.equal(await linuxPortOccupied(8000, async () => header), false);
-  assert.equal(await linuxPortOccupied(8000, async path => path.endsWith('tcp6') ? header : `${header}0: 0100007F:1F40 00000000:0000 0A\n`), true);
+  const inventory = (path: string) => path.endsWith('tcp6') ? header.replace('rem_address', 'remote_address') : header;
+  assert.equal(await linuxPortOccupied(8000, async path => inventory(path)), false);
+  assert.equal(await linuxPortOccupied(8000, async path => path.endsWith('tcp6') ? inventory(path) : `${header}0: 0100007F:1F40 00000000:0000 0A\n`), true);
   assert.equal(await linuxPortOccupied(8000, async () => 'corrupt'), true);
   assert.equal(await linuxPortOccupied(8000, async () => 'local_address\n'), true);
   assert.equal(await linuxPortOccupied(8000, async () => `${header}broken line\n`), true);
