@@ -12,6 +12,17 @@ Also owned here: `scripts/verify-postgres.ts` (CI check; its logic is `verify.ts
 
 ## Data root
 
+Windows preparation (`windows-paths`): `target.ts` maps Node `win32/x64` only to the already pinned
+`@embedded-postgres/windows-x64`; `postgresBinaryPaths` builds absolute `.exe` candidates with Windows separators.
+`layoutAt(root, 'win32')` supports synthetic lexical checks of local drive paths, rejecting UNC/device paths, ADS,
+traversal, ambiguous names and command characters before normalization. These pure functions prove no filesystem
+containment, DLL completeness, binary integrity or native execution. `createPostgres` refuses Windows before creating a
+socket/peer controller, and `ensureLayout` refuses Windows before creating directories with ineffective POSIX modes.
+Windows authentication, ACLs, key storage, service management, OS isolation and default data root remain unimplemented;
+Windows ARM64 has no pinned native PostgreSQL dependency and does not fall back to x64 emulation. This does not change
+Linux default-path policy. See `docs/hub-r4-tasks/windows-paths.md`; tests/typecheck were not run in this task by the
+integrator's instruction while a macOS full run was active. No Windows support verdict is recorded.
+
 `~/Library/Application Support/circle-hub`, or `CIRCLE_HUB_DATA_DIR` (the name hub/config reads too; there is no second
 name). Every directory is 0700.
 

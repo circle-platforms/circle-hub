@@ -1,9 +1,10 @@
 // The data root of one Hub deployment and its fixed directories.
 import { chmod, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { PLATFORM_VARIABLES } from './environment.ts';
 import { PlatformError } from './errors.ts';
+import { assertUnixPostgres, targetPaths, windowsLocalPath } from './target.ts';
 
 export interface Layout {
   root: string;
@@ -45,12 +46,14 @@ export function defaultDataRoot(home: string = homedir()): string {
   return join(home, 'Library', 'Application Support', 'circle-hub');
 }
 
-export function layoutAt(root: string): Layout {
-  if (!isAbsolute(root)) throw new PlatformError(`数据根必须是绝对路径：${root}`);
-  if (UNSAFE_PATH.test(root)) {
+export function layoutAt(root: string, platform: NodeJS.Platform = process.platform): Layout {
+  const paths = targetPaths(platform);
+  if (!paths.isAbsolute(root)) throw new PlatformError(`数据根必须是绝对路径：${root}`);
+  if (platform !== 'win32' && UNSAFE_PATH.test(root)) {
     throw new PlatformError(`数据根路径含有不支持的字符（双引号、$、反引号、反斜杠、逗号、单引号或换行）：${root}`, '换一个只含字母、数字、空格和常见标点的路径');
   }
-  const base = resolve(root);
+  const base = platform === 'win32' ? windowsLocalPath(root) : paths.resolve(root);
+  const join = paths.join;
   return {
     root: base,
     db: join(base, 'db'),
@@ -73,10 +76,12 @@ export function resolveLayout(env: NodeJS.ProcessEnv = process.env, home: string
   if (value === undefined) return layoutAt(defaultDataRoot(home));
   if (value.trim() === '') throw new PlatformError(`${DATA_ROOT_VARIABLE} 设成了空值`, '删掉它或设成绝对路径');
   if (!isAbsolute(value)) throw new PlatformError(`${DATA_ROOT_VARIABLE} 必须是绝对路径：${value}`);
-  return layoutAt(resolve(value));
+  // Validate the authored Windows path before normalization can erase alias/traversal segments.
+  return layoutAt(value);
 }
 
 export async function ensureLayout(layout: Layout): Promise<void> {
+  if (process.platform === 'win32') throw new PlatformError('Windows 目录 ACL 尚未实现，不创建数据目录');
   await mkdir(layout.root, { recursive: true, mode: 0o700 });
   await chmod(layout.root, 0o700);
   for (const name of PRIVATE_DIRECTORIES) {
@@ -91,6 +96,7 @@ export function socketFile(layout: Layout, port: number): string {
 }
 
 export function assertSocketPath(layout: Layout, port: number): void {
+  assertUnixPostgres();
   const path = socketFile(layout, port);
   const bytes = Buffer.byteLength(path);
   if (bytes > SOCKET_PATH_LIMIT) {

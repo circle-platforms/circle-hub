@@ -21,6 +21,7 @@ import { assertSocketPath, DATA_ROOT_VARIABLE, type Layout } from './layout.ts';
 import { runCommand, tailLines, toolEnvironment, type CommandRunner } from './process.ts';
 import { APPLICATION_ROLE, DATABASE_NAME, DATABASE_PORT } from './settings.ts';
 import { quoteIdentifier, socketConnector, withSession, type SqlConnector } from './sql.ts';
+import { assertUnixPostgres, embeddedPostgresPackage, targetPaths, windowsLocalPath } from './target.ts';
 
 export interface PostgresBinaries {
   initdb: string;
@@ -97,8 +98,18 @@ const DATABASE_NAME_RULE = /^[A-Za-z0-9_$-]{1,63}$/;
 const MANAGED_CONF = 'circle-hub.conf';
 const IDENT_MAP = 'owner';
 
-export function binaryPackage(): string {
-  return `@embedded-postgres/${process.platform}-${process.arch}`;
+export function binaryPackage(platform: NodeJS.Platform = process.platform, arch: string = process.arch): string {
+  return embeddedPostgresPackage(platform, arch);
+}
+
+/** Pure lookup candidate, not proof that executables, DLLs or their architecture are usable. */
+export function postgresBinaryPaths(root: string, platform: NodeJS.Platform = process.platform, arch: string = process.arch): PostgresBinaries {
+  const paths = targetPaths(platform);
+  const base = platform === 'win32' ? windowsLocalPath(root) : root;
+  if (!paths.isAbsolute(base)) throw new PlatformError('PostgreSQL 二进制根必须是绝对路径');
+  const dir = paths.join(base, 'node_modules', ...binaryPackage(platform, arch).split('/'), 'native', 'bin');
+  const extension = platform === 'win32' ? '.exe' : '';
+  return { initdb: paths.join(dir, `initdb${extension}`), pg_ctl: paths.join(dir, `pg_ctl${extension}`), postgres: paths.join(dir, `postgres${extension}`) };
 }
 
 async function present(path: string): Promise<boolean> {
@@ -113,16 +124,17 @@ async function present(path: string): Promise<boolean> {
 /** The pinned binaries under `<root>/node_modules`, falling back to Node resolution for this checkout. */
 export async function resolveBinaries(root: string = CODE_ROOT): Promise<PostgresBinaries> {
   const pkg = binaryPackage();
-  const candidates = [join(root, 'node_modules', pkg, 'native', 'bin')];
+  const candidates = [postgresBinaryPaths(root)];
   if (root === CODE_ROOT) {
     try {
-      candidates.push(join(dirname(fileURLToPath(import.meta.resolve(pkg))), '..', 'native', 'bin'));
+      const dir = join(dirname(fileURLToPath(import.meta.resolve(pkg))), '..', 'native', 'bin');
+      const extension = process.platform === 'win32' ? '.exe' : '';
+      candidates.push({ initdb: join(dir, `initdb${extension}`), pg_ctl: join(dir, `pg_ctl${extension}`), postgres: join(dir, `postgres${extension}`) });
     } catch {
       // Not installed for this platform.
     }
   }
-  for (const dir of candidates) {
-    const binaries = { initdb: join(dir, 'initdb'), pg_ctl: join(dir, 'pg_ctl'), postgres: join(dir, 'postgres') };
+  for (const binaries of candidates) {
     let complete = true;
     for (const tool of TOOLS) complete &&= await present(binaries[tool]);
     if (complete) return binaries;
@@ -198,6 +210,7 @@ export function dataMajorMismatch(dataMajor: number, binaryMajor: number): Platf
 }
 
 export function createPostgres(options: PostgresOptions): PostgresControl {
+  assertUnixPostgres();
   const layout = options.layout;
   const runner = options.runner ?? runCommand;
   const admin = options.admin ?? currentUser();
