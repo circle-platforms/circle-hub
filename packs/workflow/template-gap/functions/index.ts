@@ -41,6 +41,7 @@ export function readCaseIndex(input: Record<string, unknown>, agileDocuments: st
       if (!isRecord(entry.data) || entry.data.document !== document || typeof entry.data.node !== 'string' || entry.data.node === '' || typeof entry.data.title !== 'string' || !strings(entry.data.path_labels) || !strings(entry.data.commands) || entry.data.commands.some(p => p === '')) return bad('条目缺少可连接的 document、node 或已解析 commands');
       // The guard above narrowed entry.data; a closure does not keep that narrowing, so the checked value is held once.
       const data = entry.data;
+      if(data.command_tree_root!==undefined&&data.command_tree_root!==null&&(typeof data.command_tree_root!=='string'||!sha.test(data.command_tree_root)))return bad('command_tree_root 不是完整命令树来源摘要');
       if (data.command_identities !== undefined) {
         const identities=data.command_identities;
         const treeRoot=typeof data.command_tree_root==='string'?data.command_tree_root:undefined;

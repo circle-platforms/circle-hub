@@ -128,7 +128,8 @@
         "commands",
         "command_identities",
         "title",
-        "path_labels"
+        "path_labels",
+        "command_tree_root"
       ],
       "only": [
         "900001"

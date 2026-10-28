@@ -23,13 +23,15 @@ export function indexedCommands(index: CaseIndex | null, document: string): stri
 }
 export function commandCoverage(template: Template, document: string, cases: CaseCategory[], index: CaseIndex | null, skips: Skip[], uploaded = false, lock: { root?: unknown; build?: unknown } = {}, caseRule: 'marked' | 'tagged' = 'marked', nodes?: CaseRevisionNodes): CommandCoverage {
   const revision=(title:string,labels:string[])=>JSON.stringify([title,...labels]);
-  const rows=new Map<string,{identities:Map<string,CommandIdentity>; references:Set<string>;revisions:Set<string>;title:string;labels:string[];legacy:boolean}>();
+  const rows=new Map<string,{identities:Map<string,CommandIdentity>; references:Set<string>;revisions:Set<string>;title:string;labels:string[];legacy:boolean;missingIdentities:boolean;missingTreeRoot:boolean}>();
   if(index&&!uploaded)for(const digest of Object.hasOwn(index.keys,document)?index.keys[document]!:[]){
     const e=index.entries[digest]!,key=e.data.node as string;let row=rows.get(key);
-    if(!row){row={identities:new Map(),references:new Set(),revisions:new Set(),title:e.data.title as string,labels:e.data.path_labels as string[],legacy:false};rows.set(key,row);}
+    if(!row){row={identities:new Map(),references:new Set(),revisions:new Set(),title:e.data.title as string,labels:e.data.path_labels as string[],legacy:false,missingIdentities:false,missingTreeRoot:false};rows.set(key,row);}
     const identities=e.data.command_identities;
-    if(!Array.isArray(identities)||e.data.command_tree_root===null)row.legacy=true;
-    else for(const value of identities){const identity=readCommandIdentity(value,typeof e.data.command_tree_root==='string'?e.data.command_tree_root:undefined);if(identity)rememberIdentity(row.identities,identity);else row.legacy=true;}
+    if(!Array.isArray(identities))row.missingIdentities=true;
+    if(typeof e.data.command_tree_root!=='string')row.missingTreeRoot=true;
+    if(row.missingIdentities||row.missingTreeRoot)row.legacy=true;
+    else for(const value of identities as unknown[]){const identity=readCommandIdentity(value,e.data.command_tree_root as string);if(identity)rememberIdentity(row.identities,identity);else{row.legacy=true;row.missingIdentities=true;}}
     row.references.add(e.reference);row.revisions.add(revision(e.data.title as string,e.data.path_labels as string[]));
   }
   const sameRevision=(fact:CaseCategory,row:{title:string;labels:string[]})=>{
@@ -54,5 +56,6 @@ export function commandCoverage(template: Template, document: string, cases: Cas
     const unseen=facts.filter(c=>!c.present&&!skipped.some(s=>s.category===c.id)).map(c=>c.id);
     return{command:identity.path,identity,caseCount:chosen.length,categories:facts,unclassified,potential_missing:unclassified.length?unseen:[],missing:unclassified.length?[]:unseen,skipped,references:[...new Set(chosen.flatMap(m=>[...m.row.references]))].sort(compareText)};
   });
-  return{case_rule:caseRule,rule_mismatch:caseRule!=='marked',bound:index!==null,uploaded,documentIndexed:index!==null&&Object.hasOwn(index.keys,document),root:index?.build.root??(typeof lock.root==='string'?lock.root:null),build:index?.build.build??(typeof lock.build==='string'?lock.build:null),caseCount:cases.length,matchedCases:matched.length,unmatched:unmatched.sort(compareText),orphaned,pending_commands,pending_identities,pending_skips,commandlessCases:matched.filter(m=>!m.row.legacy&&m.row.identities.size===0).length,truncated:index?.truncated??false,skippedSources:index?.skipped??0,cutKeys:index?.cut_keys??[],unplacedRoot:null,notes:index?.notes??[],missing_identities:matched.filter(m=>m.row.legacy).map(m=>m.fact.id).sort(compareText),unclassified:cases.filter(c=>c.status!=='classified').map(c=>c.id).sort(compareText),commands};
+  const missingTreeRoots=matched.filter(m=>m.row.missingTreeRoot).map(m=>m.fact.id).sort(compareText);
+  return{case_rule:caseRule,rule_mismatch:caseRule!=='marked',bound:index!==null,uploaded,documentIndexed:index!==null&&Object.hasOwn(index.keys,document),root:index?.build.root??(typeof lock.root==='string'?lock.root:null),build:index?.build.build??(typeof lock.build==='string'?lock.build:null),caseCount:cases.length,matchedCases:matched.length,unmatched:unmatched.sort(compareText),orphaned,pending_commands,pending_identities,pending_skips,commandlessCases:matched.filter(m=>!m.row.legacy&&m.row.identities.size===0).length,truncated:index?.truncated??false,skippedSources:index?.skipped??0,cutKeys:index?.cut_keys??[],unplacedRoot:null,notes:index?.notes??[],missing_identities:matched.filter(m=>m.row.missingIdentities).map(m=>m.fact.id).sort(compareText),...(missingTreeRoots.length?{missing_tree_roots:missingTreeRoots}:{}),unclassified:cases.filter(c=>c.status!=='classified').map(c=>c.id).sort(compareText),commands};
 }

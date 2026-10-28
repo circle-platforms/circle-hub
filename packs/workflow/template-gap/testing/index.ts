@@ -14,14 +14,14 @@ export function indexView(cases: IndexedCase[], only = [...new Set(cases.map(c =
   const entries: IndexView['entries'] = {}; const keys: IndexView['keys'] = {};
   for (const c of cases) {
     const entry = digest(JSON.stringify(c));
-    entries[entry] = { entry, kind: 'case', statement: '', data: { ...c, command_identities:c.commands.map(commandIdentity) }, reference: `tree:${ROOT}/cases@${entry}` };
+    entries[entry] = { entry, kind: 'case', statement: '', data: { ...c, command_identities:c.commands.map(commandIdentity), command_tree_root:ROOT }, reference: `tree:${ROOT}/cases@${entry}` };
     (keys[c.document] ??= []).push(entry);
   }
   for (const key of Object.keys(keys)) keys[key]!.sort();
-  return { schema: 'index-view@1', product: PRODUCT, build: { build: BUILD, root: ROOT }, kind: 'case', key: 'document', keys, entries, fields: ['document', 'node', 'commands', 'command_identities', 'title', 'path_labels'], only, cut_keys: [], total_keys: Object.keys(keys).length, total_entries: Object.keys(entries).length, truncated: false, skipped: 0, notes: [] };
+  return { schema: 'index-view@1', product: PRODUCT, build: { build: BUILD, root: ROOT }, kind: 'case', key: 'document', keys, entries, fields: ['document', 'node', 'commands', 'command_identities', 'title', 'path_labels', 'command_tree_root'], only, cut_keys: [], total_keys: Object.keys(keys).length, total_entries: Object.keys(entries).length, truncated: false, skipped: 0, notes: [] };
 }
 export function bindIndex(view: unknown): BoundInput {
-  return { slot: 'case_index', external: `knowledge:index:${PRODUCT}:${BUILD}?kind=case&key=document&only=${(view as IndexView).only?.join(',') ?? ''}&fields=document,node,commands,command_identities,title,path_labels`, sha256: digest(JSON.stringify(view)), media_type: 'application/json', parser: 'json@1', model: view, meta: null };
+  return { slot: 'case_index', external: `knowledge:index:${PRODUCT}:${BUILD}?kind=case&key=document&only=${(view as IndexView).only?.join(',') ?? ''}&fields=document,node,commands,command_identities,title,path_labels,command_tree_root`, sha256: digest(JSON.stringify(view)), media_type: 'application/json', parser: 'json@1', model: view, meta: null };
 }
 
 /** Assign invented command paths to the fixture's declared case nodes, without parsing their text. */
