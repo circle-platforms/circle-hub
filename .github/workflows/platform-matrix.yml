@@ -34,6 +34,6 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Check the native architecture and execute synthetic contracts
         run: node .github/checks/platform-matrix.ts ${{ matrix.platform }} ${{ matrix.arch }}
-      - name: Reject unsupported Windows release readiness
+      - name: Report unsupported Windows release readiness
         if: ${{ !cancelled() && runner.os == 'Windows' }}
         run: node .github/checks/platform-matrix.ts --windows-readiness
