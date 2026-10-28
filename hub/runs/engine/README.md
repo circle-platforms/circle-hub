@@ -631,6 +631,8 @@ Maintenance also checks accepted historical results whose layer already contains
 corresponding item/requirement request is absent, it uses the ordinary routing rules on a detached result copy to append
 the request with the recorded missing fact, audience, source and deadline. Existing or answered requests are retained,
 independent gaps are kept, and the old result is never rewritten. Non-request exits are not turned into human requests.
+For older results without those fields, the already-created repair requests are looked up by their existing exact
+identity in batches; repeated maintenance does not refresh their deadlines or issue one lookup per historical layer.
 
 Installed checks returning no outcome for an item are `check_error`, not `no_check`. Output failures retain
 `output_failed` on the dynamic not-run layer. Work-limit exhaustion is unchecked; it is distinct from an effect budget.

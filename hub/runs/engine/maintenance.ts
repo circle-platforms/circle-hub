@@ -3,7 +3,6 @@ import {ENGINE_COMPONENT} from './deps.ts';
 import { abandonDecision,finishAbandon } from './management.ts';
 import { canSeeRun } from './readers.ts';
 import { recheckProduction } from './start.ts';
-import { isUnsettled } from './terminals.ts';
 import { applyDispatchResults } from './dispatch-results.ts';
 import { parseReference } from '../../refs/api.ts';
 import { submitResult, roundsUsedOf } from './submit.ts';
@@ -17,7 +16,7 @@ import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import type { EngineContext } from './deps.ts';
 import { latestAccepted, listRunRecords, putAction, putResult, submissionsOf, submissionByDigest, actionOfSubmission, actionsOf, isVerbatimObject } from './store.ts';
 import { putRequest, recordResultRequests, requestRecords, answerRequest, answerSuccessorRequests } from './requests.ts';
-import { restoreRecordedRequests } from './maintenance-requests.ts';
+import { restoreLegacyRequests,restoreRecordedRequests } from './maintenance-requests.ts';
 
 export async function maintainRuns(ctx:EngineContext):Promise<void>{
   let cursor:string|null=null;
@@ -254,13 +253,8 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
 
 async function legacyResultRequests(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promise<void>{
   const latest=await latestAccepted(ctx.deps.records.store,stored.body.run);
-  const runner=stored.body.runner??stored.body.configurer;
   if(!latest)return;
-  if(runner)for(const [partition,items] of Object.entries(latest.body.partitions))for(const [i,item] of items.entries())for(const [j,requirement] of item.requirements.entries())for(const [k,layer] of requirement.layers.entries()){
-    if(!isUnsettled(layer)||!layer.reason||layer.exit&&layer.missing)continue;
-    const path='/partitions/'+partition+'/'+i+'/requirements/'+j+'/layers/'+k;
-    await putRequest(ctx,{run:stored.body.run,kind:'repair',audience:runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:latest.digest,code:layer.reason,item:item.item,requirement:requirement.requirement,missing:'旧结果 rec:'+latest.digest+' '+path+'：'+(!layer.exit?'出口未写；':'')+(!layer.missing?'缺失事实未写':''),next_action:'原提交者带 Circle-Session-Id 用 submit_result 原样重交，Hub 追加重评结果；旧运行或作者缺会话时，以原工作为 predecessor 开带会话的新修订后重新复核。旧记录不回填'});
-  }
+  await restoreLegacyRequests(ctx,stored,latest);
   await restoreRecordedRequests(ctx,stored,latest);
 }
 
