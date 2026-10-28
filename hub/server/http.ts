@@ -4,10 +4,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isLoopbackAddress } from '../config/index.ts';
 
 /** Host header values the server answers to: 127.0.0.1:<port> and localhost:<port> (and the listen address when it differs). */
-export function allowedHosts(listenHost: string, port: number): Set<string> {
-  const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+export function allowedHosts(listenHost: string, port: number, declared: readonly string[] = []): Set<string> {
+  const hosts = isLoopbackAddress(listenHost) ? new Set([`127.0.0.1:${port}`, `localhost:${port}`]) : new Set<string>();
   if (listenHost === '::1') hosts.add(`[::1]:${port}`);
   else if (listenHost !== '127.0.0.1' && isLoopbackAddress(listenHost)) hosts.add(`${listenHost}:${port}`);
+  for (const name of declared) hosts.add(`${name}:${port}`);
   if (port === 80) for (const host of [...hosts]) hosts.add(host.slice(0, host.lastIndexOf(':')));
   return hosts;
 }
@@ -37,10 +38,10 @@ export function isLoopbackOrigin(origin: string): boolean {
 }
 
 /** Origin, if present, must be a loopback origin (MCP clients in a browser on another local port included). */
-export function originAllowed(request: IncomingMessage): boolean {
+export function originAllowed(request: IncomingMessage, own?: ReadonlySet<string>): boolean {
   const origin = request.headers.origin;
   if (origin === undefined) return true;
-  return typeof origin === 'string' && isLoopbackOrigin(origin);
+  return typeof origin === 'string' && (own ? own.has(origin) : isLoopbackOrigin(origin));
 }
 
 /**

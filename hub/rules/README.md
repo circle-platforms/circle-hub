@@ -152,6 +152,32 @@ Layers, outermost first:
    inspection only of itself, and no file writes except `/dev/null`. Node 24's permission model does not restrict the network
    (verified with a really listening loopback server), so this layer is required by default: without it `callPackFunction`
    throws `SANDBOX_UNAVAILABLE` unless the caller passes `{ requireOsIsolation: false }`.
+   On Linux this layer uses bubblewrap with private user, PID, network, IPC and UTS namespaces and read-only bindings for the
+   Node runtime, its dynamic loader and libraries, the trusted bootstrap, the pack and declared dependencies. AppArmor adds a
+   mandatory deny-exec worker profile that also denies Internet-family sockets: a trusted shell sets a stack-on-exec transition before Node starts,
+   so every Node thread inherits the restriction. The bootstrap verifies the enforced label before loading a pack. The
+   worker permits Unix sockets for Node's inherited stdio; the private network namespace isolates abstract Unix sockets, and
+   the file-write denial blocks pathname socket connections even through a mounted directory. Runtime exposes private proc and
+   device pseudo-filesystems for the transition and runtime, not host directories; Node's
+   permission model still denies pack reads outside its explicit grants. Missing bubblewrap, AppArmor tools, profile, user
+   namespaces, loader dependencies or a verified label leaves isolation unavailable; there is no production fallback.
+
+   An administrator installs the generated policy for the exact service Node binary, for example by piping the output of
+   `node hub/rules/sandbox/linux.ts` to `apparmor_parser -r`. Reinstall it after changing that binary or shell. The host must
+   allow the launcher profile to create user namespaces. Linux systems without a usable AppArmor policy need an equivalent
+   independently verified kernel backend before Hub can run pack functions. This does not alter CI configuration.
+
+   Each Linux child also tests the loaded enforcement before importing any pack: real execution of Node, synchronous and
+   asynchronous writes to an isolated writable synthetic directory, and a pathname Unix socket connection must all fail with
+   the expected kernel denial. The trusted bootstrap temporarily receives child-process and synthetic-directory write grants;
+   it drops both using `process.permission.drop`, confirms they are gone, and refuses the call if that API is unavailable.
+   The synthetic listener and directory are removed on completion. Policy names include a digest of the canonical worker rules;
+   this is a version identifier, not proof that the administrator loaded those exact rules. An administrator or root able to
+   replace an active kernel policy and the Node executable are within the deployment trust boundary. Reloading an active
+   same-named profile can change confinement between checks: stop the Hub and drain its children before installing or replacing
+   policy, and do not treat a successful synthetic path test as proof of every possible pathname. The dedicated-VM-only A/B
+   command is `CIRCLE_HUB_SYNTHETIC_APPARMOR_TEST=1 node --test hub/rules/sandbox/testing/linux-policy-ab.ts`; it refuses to
+   replace an already installed Hub sandbox policy and intentionally tests same-name weak policies and a cached probe.
 4. Node's permission model: read access only to the bootstrap, `policy.ts`, the pack directory and the declared dependencies'
    package directories (resolved recursively); no writes, child processes, workers, addons, WASI or inspector;
    `--disallow-code-generation-from-strings`, `--no-addons`, `--no-experimental-websocket`, an empty environment (only `TZ=UTC`).
@@ -187,19 +213,21 @@ large, bad limits) throw `TypeError` or `RangeError`. Defaults: 10 s, 256 MB, 8 
 input; maxima 120 s, 4 GB, 64 MiB, 1 MiB, 128 MiB.
 
 Memory is enforced on the resident size rather than by V8's heap limit, because V8 aborts on heap exhaustion and macOS then
-writes a crash report (observed); the heap limit is set far above as a backstop.
+writes a crash report (observed); the heap limit is set far above as a backstop. Linux sums the supervisor and descendants
+of all its threads. A changing thread set is retried at most 12 times; an inaccessible or persistently unstable process tree,
+missing RSS, a failed sampler or a sampler that does not answer within one second ends the call as `SANDBOX_UNAVAILABLE` with
+the missing observation and the administrator's next step. It is never presented as a measured memory overrun.
 
 ## Limits
 
-- Linux has no operating-system network layer here. By default the sandbox refuses to run there; with
-  `requireOsIsolation: false` (synthetic tests only) network denial rests on the JavaScript lockdown alone. The OS probe test is
-  skipped on Linux; the tests were run on macOS only.
+- Linux requires the bubblewrap and AppArmor policy described above; without them the default is `SANDBOX_UNAVAILABLE`.
+  With `requireOsIsolation: false` (synthetic tests only), network denial rests on the JavaScript lockdown alone.
 - `sandbox-exec` is deprecated by Apple. If a macOS release removes it, the default becomes `SANDBOX_UNAVAILABLE`.
 - Resident size is polled: a burst can overshoot by what fits in about 100 ms, and memory the OS has compressed is not
   resident.
-- If the Hub is killed (SIGKILL, a crash) no exit listener runs: a child that sleeps without using CPU (for example in
-  `Atomics.wait`) outlives it until the next Hub start calls `sweepOrphans()`; CPU-bound children end at the CPU limit. On a
-  machine where orphans are not reparented to pid 1 (Linux with a subreaper) the sweep finds nothing.
+- If the Hub is killed (SIGKILL, a crash), Linux bubblewrap's `--die-with-parent` ends its child. On macOS an orphan that
+  sleeps without using CPU can remain until the next Hub start calls `sweepOrphans()`; CPU-bound children end at the CPU limit.
+  On a machine where orphans are not reparented to pid 1 (Linux with a subreaper) the sweep finds nothing.
 - The waiting line is bounded by count, not bytes: waiting calls hold only references to the caller's objects; the bytes in
   flight are at most 8 children times the input limit.
 - The pack directory is scanned before each call; it must not be writable by anyone else while a function runs.
@@ -349,3 +377,23 @@ Scope note: the owner authorized the rules implementation/tests and this README 
 
 QuoteTable in contracts/src/tables.ts and the regenerated quote.v1.schema.json describe the same exact contiguous
 substring contract as the independent rules and refs implementations.
+
+### Independent Linux isolation review
+
+Antigravity independently reviewed the fixed implementation at `ab2ec6c6` and found the two earlier blockers addressed:
+all-thread descendant accounting and per-child kernel isolation attestation. This was a source review, not production
+proof. The policy administrator remains trusted; stop the Hub and drain children before replacing an AppArmor policy.
+
+### Linux startup Node capability preflight
+
+The Linux readiness probe now runs the real Node executable with its permission model and the temporary child/write
+permissions used by the bootstrap. It requires `permission.drop`, revokes both grants, and checks they are gone before
+caching readiness. Missing support reports private diagnostic `node_permission_drop_missing`; a throwing or ineffective
+implementation reports `node_permission_drop_failed`. Neither condition permits a fallback. The existing per-child
+attestation still runs before pack loading. Synthetic missing/no-op/throwing implementations are regression inputs;
+verification results are recorded in `docs/hub-r4-tasks/linux-probe-capability.md`.
+
+Independent Linux RSS review: Antigravity reviewed fixed merge `23ec924d` and found no remaining static blocker in
+bounded thread-tree retries or the distinction between measured excess and unavailable observation. The review did not
+run tests. Linux synthetic pair and fault-injection results remain separate evidence; unusual system load may still make
+observation unavailable and must not be reported as a measured excess.

@@ -587,3 +587,9 @@ error. A source reference without the authorized run continues to use the reader
 `getTexts` 按有界窗口批量读取并核对每个记录摘要，返回的是文本而非已校验业务对象，消费者仍须核对 JSON 和对应业务合约。`findFirstMany` 保留逐值查询的最早记录选择，单次 SQL 内按索引查询；规范编码和摘要以固定块避免整份中间字符串。当前改进由集成者接收，合成冷读 RSS 回归护栏为实测 494,448 KiB 加 15%；原三分之一目标保留为后续项。这里只证明合成路径，不代表持久部署或发布验证。
 
 合成测量、预算和后续项见[视图性能任务页](../../docs/hub-r4-tasks/hub-view-perf.md)。
+
+## 大体积扫描测试数据（2026-10-28）
+
+`scan.test.ts` 的 1,500,000 字节图片使用固定公开种子的 SHAKE256 合成数据，避免每轮随机 base64 偶合凭据形状使 clean 断言不稳定。保留原性能、命中上限及 clean 断言，并检查输入大小和低可压缩性；另用同规模数据构造 base64 内的合成凭据形状，检查仍有 cloud_key 命中。生产扫描器没有改变。
+
+来源及允许修改范围见任务页 `docs/hub-r4-tasks/stable-scan-fixture.md`。按集成者指令，本轮没有运行测试或类型检查；固定输入的 clean 结论和新增断言均待集成者验证，不计通过。

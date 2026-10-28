@@ -1,6 +1,6 @@
 // The data root of one Hub deployment and its fixed directories.
 import { chmod, mkdir } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { PLATFORM_VARIABLES } from './environment.ts';
 import { PlatformError } from './errors.ts';
@@ -41,7 +41,23 @@ const UNSAFE_PATH = /["$`\\,'\n\r\0]/;
 /** macOS sun_path holds 104 bytes including the terminating NUL. */
 export const SOCKET_PATH_LIMIT = 103;
 
-export function defaultDataRoot(home: string = homedir()): string {
+export interface DataRootHost {
+  /** Injectable only to exercise both operating systems in synthetic tests. */
+  platform?: NodeJS.Platform;
+  /** Effective operating-system account; never inferred from environment variables. */
+  username?: string;
+}
+
+export function defaultDataRoot(home: string = process.platform === 'linux' ? userInfo().homedir : homedir(), env: NodeJS.ProcessEnv = process.env, host: DataRootHost = {}): string {
+  if ((host.platform ?? process.platform) === 'linux') {
+    if ((host.username ?? userInfo().username) === 'circle-hub') return join('/var', 'lib', 'circle-hub');
+    const dataHome = env.XDG_DATA_HOME;
+    if (dataHome !== undefined && dataHome !== '') {
+      if (!isAbsolute(dataHome)) throw new PlatformError('XDG_DATA_HOME 必须是绝对路径', '改为绝对路径或删掉它');
+      return join(dataHome, 'circle-hub');
+    }
+    return join(home, '.local', 'share', 'circle-hub');
+  }
   return join(home, 'Library', 'Application Support', 'circle-hub');
 }
 
@@ -67,10 +83,10 @@ export function layoutAt(root: string): Layout {
   };
 }
 
-/** CIRCLE_HUB_DATA_DIR when set (the name hub/config reads), otherwise ~/Library/Application Support/circle-hub. */
-export function resolveLayout(env: NodeJS.ProcessEnv = process.env, home: string = homedir()): Layout {
+/** CIRCLE_HUB_DATA_DIR takes precedence; otherwise choose the host-specific default. */
+export function resolveLayout(env: NodeJS.ProcessEnv = process.env, home: string = process.platform === 'linux' ? userInfo().homedir : homedir(), host: DataRootHost = {}): Layout {
   const value = env[DATA_ROOT_VARIABLE];
-  if (value === undefined) return layoutAt(defaultDataRoot(home));
+  if (value === undefined) return layoutAt(defaultDataRoot(home, env, host));
   if (value.trim() === '') throw new PlatformError(`${DATA_ROOT_VARIABLE} 设成了空值`, '删掉它或设成绝对路径');
   if (!isAbsolute(value)) throw new PlatformError(`${DATA_ROOT_VARIABLE} 必须是绝对路径：${value}`);
   return layoutAt(resolve(value));

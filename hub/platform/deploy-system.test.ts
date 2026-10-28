@@ -125,6 +125,7 @@ describe('deploy through the system host', { skip: libpq ? false : LIBPQ_MISSING
       {},
       {
         layout,
+        platform: 'darwin',
         home: join(parent, 'home'),
         user: userInfo().username,
         uid: 501,

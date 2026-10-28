@@ -12,6 +12,8 @@ import {
   isTransientName,
   libpqDirectory,
   libpqTools,
+  libpqToolsForMajor,
+  platformLibpqDirectory,
   listBackups,
   MANIFEST_FILE,
   pruneBackups,
@@ -229,4 +231,23 @@ test('libpq tools are found by absolute path or refused with the install hint; m
   const { runner } = recordingRunner(() => ok('pg_dump (PostgreSQL) 17.2\n'), { real: false });
   await assert.rejects(checkToolMajor('/fake/pg_dump', 18, runner), /PostgreSQL 17，数据库是 PostgreSQL 18/);
   assert.equal(await checkToolMajor('/fake/pg_dump', 17, runner), 'pg_dump (PostgreSQL) 17.2');
+});
+
+test('Linux resolves the matching PostgreSQL major from PATH, and an explicit directory never falls back', async () => {
+  const root = await tempDir(); roots.push(root);
+  const older = join(root, 'old'), current = join(root, 'current'), missing = join(root, 'missing');
+  for (const dir of [older, current, missing]) await mkdir(dir);
+  for (const dir of [older, current]) for (const tool of ['pg_dump', 'pg_restore']) await writeFile(join(dir, tool), '');
+  const {runner, calls} = recordingRunner(call => ok(`${basename(call.command)} (PostgreSQL) ${call.command.startsWith(older) ? '17.9' : '18.4'}\n`), {real:false});
+  const env = {PATH: `${missing}:${older}:relative:${current}`};
+  assert.equal(platformLibpqDirectory(undefined, env, 'linux'), undefined);
+  assert.equal(platformLibpqDirectory(undefined, {}, 'darwin'), '/opt/homebrew/opt/libpq/bin');
+  assert.equal(platformLibpqDirectory(undefined, {CIRCLE_HUB_LIBPQ_BIN: current}, 'linux'), current);
+  assert.throws(() => platformLibpqDirectory('relative', env, 'linux'), /绝对路径/);
+  assert.equal((await libpqToolsForMajor(undefined, 18, 'pg_dump', runner, env, 'linux')).dir, current);
+  assert.equal((await libpqToolsForMajor(undefined, 18, 'pg_restore', runner, env, 'linux')).dir, current);
+  assert.ok(calls.every(call => call.args[0] === '--version'));
+  await assert.rejects(libpqToolsForMajor(older, 18, 'pg_dump', runner, env, 'linux'), /PostgreSQL 17，数据库是 PostgreSQL 18/);
+  await assert.rejects(libpqToolsForMajor(missing, 18, 'pg_restore', runner, env, 'linux'), /找不到/);
+  await assert.rejects(libpqToolsForMajor(undefined, 19, 'pg_dump', runner, env, 'linux'), /PATH 中没有与 PostgreSQL 19/);
 });

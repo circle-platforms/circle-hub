@@ -395,7 +395,7 @@ describe('the keychain names of a deployment', () => {
     // hubKeyProvider asks for exactly the vault key item the resolver names.
     const key = randomBytes(32).toString('hex');
     const { runner, calls } = recordingRunner(() => ok(`${key}\n`), { real: false });
-    await hubKeyProvider({ CIRCLE_HUB_DATA_DIR: root }, { runner }).getKey();
+    await hubKeyProvider({ CIRCLE_HUB_DATA_DIR: root }, { runner, platform: 'darwin' }).getKey();
     assert.deepEqual(calls[0]?.args, ['find-generic-password', '-s', names.vaultKey.service, '-a', names.vaultKey.account, '-w']);
   });
 
@@ -459,9 +459,9 @@ describe('the keychain names of a deployment', () => {
       return true;
     });
     const { runner, calls } = recordingRunner(() => ok(), { real: false });
-    await assert.rejects(hubKeyProvider({ CIRCLE_HUB_DATA_DIR: root }, { runner }).getKey(), /留给操作令牌/);
+    await assert.rejects(hubKeyProvider({ CIRCLE_HUB_DATA_DIR: root }, { runner, platform: 'darwin' }).getKey(), /留给操作令牌/);
     // The platform's own key init, key status and status use the same rule.
-    const context = createContext({ CIRCLE_HUB_DATA_DIR: root }, { runner });
+    const context = createContext({ CIRCLE_HUB_DATA_DIR: root }, { runner, platform: 'darwin' });
     assert.throws(() => keychainFor(context, resolveSettings(file, {}, layout)), /密钥库主密钥的钥匙串账户是 operator-token/);
     assert.deepEqual(calls, [], 'the keychain was not asked');
   });

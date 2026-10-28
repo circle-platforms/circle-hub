@@ -2,9 +2,10 @@
 // associated data, so a renamed or copied entry does not open; replaces are atomic; the key comes only from a KeyProvider and
 // is never created implicitly. A key-check file tells a wrong key apart from an altered entry.
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
-import { mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { KeyProvider, Vault } from './api.ts';
+import type { KeyProvider, Vault, VaultVerification } from './api.ts';
 import { VaultError } from './errors.ts';
 
 const NAME = /^[a-z0-9][a-z0-9._-]{0,99}$/;
@@ -12,6 +13,7 @@ const SUFFIX = '.sealed';
 const KEY_CHECK = 'key-check';
 const FORMAT = 1;
 const MAX_VALUE_BYTES = 64 * 1024;
+const MAX_SEALED_BYTES = 128 * 1024;
 /** AES-256-GCM with a 96-bit IV and the full 128-bit tag; anything shorter is refused, never accepted as a weaker tag. */
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
@@ -159,6 +161,63 @@ export class FileVault implements Vault {
       .sort();
   }
 
+  /**
+   * Authenticate every entry without writing key-check or revealing names or values. Writers must be stopped while this
+   * runs: metadata checks detect changes during the scan, but cannot freeze an unrelated process after the last check.
+   */
+  async verify(): Promise<VaultVerification> {
+    const result: VaultVerification = { checked: 0, failed: 0, unknown: false };
+    let key: Buffer | undefined;
+    try {
+      let before;
+      try { before = await lstat(this.directory, { bigint: true }); }
+      catch (error) {
+        if (errno(error) === 'ENOENT') return { ...result, unknown: true };
+        throw error;
+      }
+      if (!before.isDirectory() || before.isSymbolicLink()) throw new Error('invalid directory');
+      const files = (await readdir(this.directory)).sort();
+      const names = files.filter(file => file.endsWith(SUFFIX) && NAME.test(file.slice(0, -SUFFIX.length)));
+      result.failed += files.length - names.length - (files.includes(KEY_CHECK) ? 1 : 0);
+      if (this.#provider === undefined) return { ...result, unknown: true };
+      try { key = Buffer.from(await this.#provider.getKey()); }
+      catch { return { ...result, unknown: true }; }
+      if (key.byteLength !== 32) return { ...result, unknown: true };
+
+      const observed = new Map<string, Awaited<ReturnType<typeof fingerprint>>>();
+      if (files.includes(KEY_CHECK)) {
+        try {
+          const entry = await readVerifiedFile(join(this.directory, KEY_CHECK), 1024);
+          observed.set(KEY_CHECK, entry.fingerprint);
+          const expected = createHmac('sha256', key).update('circle-hub vault key check v1').digest('hex');
+          if (entry.bytes.toString('utf8').trim() !== expected) result.failed++;
+        } catch { result.failed++; }
+      }
+      for (const file of names) {
+        try {
+          const entry = await readVerifiedFile(join(this.directory, file), MAX_SEALED_BYTES);
+          observed.set(file, entry.fingerprint);
+          const plain = openSealed(file.slice(0, -SUFFIX.length), entry.bytes.toString('utf8'), key);
+          plain.fill(0);
+          result.checked++;
+        } catch { result.failed++; }
+      }
+      const after = await lstat(this.directory, { bigint: true });
+      if (!sameFingerprint(before, after) || JSON.stringify((await readdir(this.directory)).sort()) !== JSON.stringify(files)) result.failed++;
+      for (const [file, identity] of observed) {
+        try { if (!sameFingerprint(identity, await fingerprint(join(this.directory, file)))) result.failed++; }
+        catch { result.failed++; }
+      }
+      result.unknown = result.checked === 0 && result.failed === 0;
+      return result;
+    } catch {
+      // Filesystem errors can contain a path or an entry name: never return the original error.
+      return { ...result, failed: result.failed + 1, unknown: true };
+    } finally {
+      key?.fill(0);
+    }
+  }
+
   async remove(name: string): Promise<boolean> {
     try {
       await unlink(this.#path(name));
@@ -230,6 +289,35 @@ export class FileVault implements Vault {
     }
     return false;
   }
+}
+
+async function fingerprint(path: string) { return lstat(path, { bigint: true }); }
+
+function sameFingerprint(a: Awaited<ReturnType<typeof fingerprint>>, b: Awaited<ReturnType<typeof fingerprint>>): boolean {
+  return a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
+}
+
+async function readVerifiedFile(path: string, limit: number): Promise<{ bytes: Buffer; fingerprint: Awaited<ReturnType<typeof fingerprint>> }> {
+  // Nonblocking prevents an unexpected FIFO from hanging before fstat can refuse it.
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile() || before.nlink !== 1n || before.size > BigInt(limit)) throw new Error('invalid file');
+    // Bound the read itself as well as the initial size check: another writer can grow a file after fstat.
+    const buffer = Buffer.allocUnsafe(limit + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const read = await handle.read(buffer, offset, buffer.length - offset, null);
+      if (read.bytesRead === 0) break;
+      offset += read.bytesRead;
+    }
+    if (offset > limit) throw new Error('oversized file');
+    const bytes = buffer.subarray(0, offset);
+    const after = await handle.stat({ bigint: true });
+    const named = await fingerprint(path);
+    if (!sameFingerprint(before, after) || !sameFingerprint(before, named)) throw new Error('changed file');
+    return { bytes, fingerprint: named };
+  } finally { await handle.close(); }
 }
 
 /** Opens one sealed entry; refuses a wrong format, an IV that is not 12 bytes and a tag that is not 16 bytes. */

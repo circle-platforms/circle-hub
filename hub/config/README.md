@@ -15,6 +15,13 @@ Secrets never come from the environment; they enter through the vault. `CIRCLE_H
 (the credential scan decodes an upload into strings, which V8 caps near 512 Mi characters) and
 `CIRCLE_HUB_MAX_REQUEST_BYTES` at most 512 MiB.
 
+The default listener remains loopback. An explicit non-loopback internal IP requires `CIRCLE_HUB_ALLOWED_HOSTS`, an exact
+comma-separated list of lower-case hostnames or IP literals without a port or wildcard. The listener port applies to
+each entry. Wildcard and public-IP listeners are refused; callers must separately restrict network access.
+An optional `CIRCLE_HUB_PROXY_ORIGIN` names the exact HTTPS origin served by a TLS proxy; its host must be declared and
+its authority must differ from the directly listened HTTP authority. It requires `CIRCLE_HUB_PROXY_PEER`, the proxy's
+exact source IP. Only connections from that peer can use the proxy authority; forwarded headers do not change the check.
+
 | Variable | Default | `HubConfig` |
 | --- | --- | --- |
 | `CIRCLE_HUB_KEYCHAIN_SERVICE` | `circle-hub` | `keychain.service` |

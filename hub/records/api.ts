@@ -474,6 +474,14 @@ export interface KeyProvider {
   initKey?(): Promise<void>;
 }
 
+/** Counts only: never exposes a key, entry name, value or filesystem error. */
+export interface VaultVerification {
+  checked: number;
+  failed: number;
+  /** No entry could be verified or a required verification fact was unavailable. */
+  unknown: boolean;
+}
+
 /** AES-256-GCM sealed entries under <data>/vault, the entry name bound as associated data. Values never leave except by get. */
 export interface Vault {
   /** Explicit key creation through the key provider. The vault never creates a key on its own. */
@@ -488,6 +496,8 @@ export interface Vault {
   /** Names only, sorted. */
   list(): Promise<string[]>;
   remove(name: string): Promise<boolean>;
+  /** Read-only authenticated check of every entry, when the provider supports it. */
+  verify?(): Promise<VaultVerification>;
 }
 
 /**

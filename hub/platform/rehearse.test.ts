@@ -14,6 +14,20 @@ const security = '/usr/bin/security';
 const hasSecurity = await access(security).then(() => true, () => false);
 const keyLossSkip = !libpq ? LIBPQ_MISSING : !hasSecurity ? 'skipped: /usr/bin/security is only on macOS' : false;
 
+test('Linux rehearsal loses both private file keys and proves backups contain neither', { skip: !libpq ? LIBPQ_MISSING : process.platform !== 'linux' ? 'skipped: Linux file key rehearsal' : false }, async () => {
+  const parent = await tempDir();
+  try {
+    const report = await rehearse({ parent, records: 3, objects: 1, keep: true });
+    assert.equal(report.ok, true, report.differences.join('\n'));
+    assert.equal(report.keyLoss.skipped, false);
+    assert.equal(report.keyLoss.items, 2);
+    assert.equal(report.keyLoss.backupHits, 0);
+    assert.equal(report.keyLoss.remaining, 0);
+    const { readdir } = await import('node:fs/promises');
+    assert.deepEqual(await readdir(join(report.root, 'keys')), []);
+  } finally { await removeDir(parent); }
+});
+
 test('rehearsal: init, write, back up, destroy, restore, compare in a throwaway root that is removed', { skip: libpq ? false : LIBPQ_MISSING }, async () => {
   const parent = await tempDir();
   try {

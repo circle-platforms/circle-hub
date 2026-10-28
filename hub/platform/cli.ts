@@ -2,7 +2,7 @@
 // main() here when the server package is absent. All output is Chinese; the vault master key is never printed.
 // The vault is 密钥库 (the design standard's term); its key is named by VAULT_KEY_ITEM.label.
 import { mkdir, readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, labelOf } from '../../contracts/generated/vocabulary.ts';
 import { backupPath, createBackup, listBackups, pruneBackups } from './backup.ts';
@@ -11,8 +11,9 @@ import { deploy, deployLogPath, progressPath, progressText, protectedBackups, re
 import { assertHubEnvironment, assertKnownHubVariables, PLATFORM_VARIABLES, variable } from './environment.ts';
 import { messageOf, PlatformError } from './errors.ts';
 import { isMissingOrEmpty, withLock } from './files.ts';
-import { checkHealth, HEALTH_PATH, portAnswers } from './health.ts';
+import { checkHealth, HEALTH_PATH, portOccupied } from './health.ts';
 import { VAULT_KEY_ITEM } from './keychain-items.ts';
+import { exportVaultKey, importVaultKey, liveKeyPipe, type KeyPipe } from './key-transfer.ts';
 import { checkNode, serviceDefinition, stableNodePath } from './launchd.ts';
 import { DATA_ROOT_VARIABLE, ensureLayout, socketFile, type Layout } from './layout.ts';
 import { databaseOwner, ensureDatabaseRunning } from './postgres.ts';
@@ -41,6 +42,8 @@ export interface PlatformIo {
   cwd: string;
   /** CIRCLE_HUB_* names the calling program reads itself (the server CLI); every other unknown name is refused. */
   allowVariables?: readonly string[];
+  /** Pipe ends for `key export` and `key import`. Absent means neither command may touch a key. */
+  keyPipe?: KeyPipe;
 }
 
 class UsageError extends Error {
@@ -59,14 +62,14 @@ function environmentChoices(): string {
   return ENVIRONMENT.map((code) => `${code}（${labelOf('environment', code)}）`).join('、');
 }
 
-export function usage(): string {
+export function usage(platform: NodeJS.Platform = process.platform): string {
   return [
     '用法：circle-hub <命令>',
     '',
     `  init --environment <环境类别> [--port <端口>]   建数据根和部署设置，初始化并启动数据库；环境类别：${environmentChoices()}`,
     '  db start|stop|status                           本机 PostgreSQL（只有 unix 套接字，没有 TCP 端口）',
-    `  key init [--set-aside-vault]|status             在钥匙串里建立或查看${VAULT_KEY_ITEM.label}（从不显示密钥）`,
-    '  service install|uninstall|start|stop|status    launchd 用户服务 circle-hub serve',
+    `  key init [--set-aside-vault]|status|export --confirm|import   建立或查看${VAULT_KEY_ITEM.label}；密钥只经管道传输且不覆盖`,
+    `  service install|uninstall|start|stop|status    ${platform === 'linux' ? 'systemd' : 'launchd'} 用户服务 circle-hub serve`,
     '  backup [--keep <份数>]                         备份数据库、对象、密钥库与设置文件，并清理旧备份',
     '  restore <备份目录>                             校验后恢复到空的数据根',
     '  deploy [--source <目录>] [--commit <提交>] [--copy]   部署一个提交；失败时恢复部署前备份并切回上一版',
@@ -130,6 +133,10 @@ const init: Handler = async (args, context, io) => {
     const fresh = newSettingsFile({
       environment: values.environment,
       port: port ?? (envPort === undefined ? undefined : parsePort(envPort, PLATFORM_VARIABLES.port)),
+      listenHost: variable(context.env, PLATFORM_VARIABLES.host),
+      allowedHosts: variable(context.env, PLATFORM_VARIABLES.allowedHosts)?.split(','),
+      proxyOrigin: variable(context.env, PLATFORM_VARIABLES.proxyOrigin),
+      proxyPeer: variable(context.env, PLATFORM_VARIABLES.proxyPeer),
       keychainService: variable(context.env, PLATFORM_VARIABLES.keychainService),
       keychainAccount: variable(context.env, PLATFORM_VARIABLES.keychainAccount),
       database: context.database,
@@ -154,7 +161,7 @@ const init: Handler = async (args, context, io) => {
   io.stdout(started ? '数据库已启动' : '数据库本来就在运行');
   if (created) io.stdout(`已建数据库 ${cluster.target.database}`);
   io.stdout(`数据根：${layout.root}`);
-  io.stdout(`环境类别：${environmentText(settings.environment)}；端口：127.0.0.1:${settings.port}`);
+  io.stdout(`环境类别：${environmentText(settings.environment)}；端口：${settings.listenHost ?? '127.0.0.1'}:${settings.port}${settings.allowedHosts ? `；允许主机：${settings.allowedHosts.join('、')}` : ''}${settings.proxyOrigin ? `；代理来源：${settings.proxyOrigin}；可信对端：${settings.proxyPeer}` : ''}`);
   io.stdout(databaseText(layout, settings, await databaseOwner(cluster)));
   io.stdout('下一步：circle-hub key init，然后 circle-hub deploy');
   return 0;
@@ -196,10 +203,33 @@ class KeyInitRefusal extends PlatformError {
   readonly reason: keyof typeof KEY_INIT_REFUSALS;
   constructor(reason: keyof typeof KEY_INIT_REFUSALS) {const refusal=KEY_INIT_REFUSALS[reason];super(refusal.message,refusal.hint);this.reason=reason;this.name='KeyInitRefusal';}
 }
+const KEY_USAGE = `用法：circle-hub key init [--set-aside-vault]|status|export --confirm|import`;
+
+/** Refuses without repeating the argument: a mistaken argument may be the key itself. */
+function onlyConfirm(args: readonly string[]): void {
+  if (args.length !== 1 || args[0] !== '--confirm') throw new UsageError('用法：circle-hub key export --confirm');
+}
+
 const key: Handler = async (args, context, io) => {
   const [action, ...rest] = args;
+  if (action === 'export') {
+    onlyConfirm(rest);
+    const pipe = io.keyPipe ?? { stdoutIsPipe: false, stdinIsPipe: false };
+    const settings = await settingsOf(context);
+    await exportVaultKey(keychainFor(context, settings), pipe, true);
+    io.stderr(`已通过标准输出送出${VAULT_KEY_ITEM.label}（32 字节）；密钥不会显示`);
+    return 0;
+  }
+  if (action === 'import') {
+    if (rest.length !== 0) throw new UsageError('用法：circle-hub key import');
+    const pipe = io.keyPipe ?? { stdoutIsPipe: false, stdinIsPipe: false };
+    const settings = await settingsOf(context);
+    await importVaultKey(keychainFor(context, settings), pipe);
+    io.stderr(`已从标准输入写入${VAULT_KEY_ITEM.label}；已存在的不会覆盖，密钥不会显示`);
+    return 0;
+  }
   const setAsideVault = action === 'init' && rest.length === 1 && rest[0] === '--set-aside-vault';
-  if ((action !== 'init' && action !== 'status') || (rest.length > 0 && !setAsideVault)) throw new UsageError('用法：circle-hub key init [--set-aside-vault]|status');
+  if ((action !== 'init' && action !== 'status') || (rest.length > 0 && !setAsideVault)) throw new UsageError(KEY_USAGE);
   const settings=await settingsOf(context);
   const store = keychainFor(context, settings);
   const item = `服务 ${store.service}，账户 ${store.account}`;
@@ -208,27 +238,39 @@ const key: Handler = async (args, context, io) => {
     const initialize = async (): Promise<number> => {
       if (setAsideVault) {
         if ((await agentFor(context, settings).status()).loaded) throw new KeyInitRefusal('service_loaded');
-        if (await portAnswers(settings.port)) throw new KeyInitRefusal('port_busy');
+        if (await portOccupied(settings.port)) throw new KeyInitRefusal('port_busy');
         if ((await store.status()).present) throw new KeyInitRefusal('key_present');
         const moved=await archiveVault(context.layout,context.now());
         if(moved.path) io.stdout(`密钥库已移到 ${moved.path}，原文件保留`);
       }
       await store.init();
-      io.stdout(`已在钥匙串建立${VAULT_KEY_ITEM.label}（${item}）；密钥不会显示，也不进备份`);
+      io.stdout(`已在${context.platform === 'linux' ? '私有密钥文件' : '钥匙串'}建立${VAULT_KEY_ITEM.label}（${item}）；密钥不会显示，也不进备份`);
       return 0;
     };
     return setAsideVault ? withLock(platformLockPath(context),initialize) : initialize();
   }
   const { present } = await store.status();
-  io.stdout(present ? `${VAULT_KEY_ITEM.label}：已在钥匙串（${item}）` : `${VAULT_KEY_ITEM.label}：没有（${item}）；运行 circle-hub key init`);
+  io.stdout(present ? `${VAULT_KEY_ITEM.label}：已在${context.platform === 'linux' ? '私有密钥文件' : '钥匙串'}（${item}）` : `${VAULT_KEY_ITEM.label}：没有（${item}）；运行 circle-hub key init`);
   return present ? 0 : NOT_RUNNING;
 };
 
 const SERVICE_USAGE = '用法：circle-hub service install|uninstall|start|stop|status';
 
+async function selectedNode(context: PlatformContext, configured: string | undefined, explicit?: string): Promise<{node:string;version:string}> {
+  if (explicit !== undefined && !isAbsolute(explicit)) throw new UsageError('--node 必须是绝对路径');
+  const node = explicit ?? context.nodePath ?? configured ?? (await stableNodePath());
+  try { return {node,version:await checkNode(node, context.runner)}; }
+  catch (error) {
+    if (context.platform !== 'linux') throw error;
+    throw new PlatformError(`无法使用配置的 Node：${node}`, '确认目标上的 Node 24 路径后，用 --node <绝对路径> 明确指定', {cause:error});
+  }
+}
+
 const service: Handler = async (args, context, io) => {
   const [action, ...rest] = args;
-  noArguments(rest);
+  const {values, positionals} = parse(rest, {node:{type:'string'}});
+  noArguments(positionals);
+  if (values.node !== undefined && action !== 'install') throw new UsageError('--node 只能用于 service install');
   if (!['install', 'uninstall', 'start', 'stop', 'status'].includes(action ?? '')) throw new UsageError(SERVICE_USAGE);
   const settings = await settingsOf(context);
   // serve would refuse a vault master key on the operator token's account, and launchd would restart it every 10 s;
@@ -238,8 +280,7 @@ const service: Handler = async (args, context, io) => {
   switch (action) {
     case 'install': {
       if (!(await readCurrentRelease(context.layout))) throw new PlatformError('还没有部署任何发布（没有 current）', '先运行 circle-hub deploy');
-      const node = context.nodePath ?? settings.node ?? (await stableNodePath());
-      const version = await checkNode(node, context.runner);
+      const {node,version} = await selectedNode(context, settings.node, values.node);
       await agent.install(serviceDefinition(context.layout, settings, { node, ...identityOf(context) }));
       io.stdout(`已安装并加载服务 ${settings.label}（${agent.plist}；Node ${version}）`);
       return 0;
@@ -312,13 +353,15 @@ const restore: Handler = async (args, context, io) => {
   return withLock(platformLockPath(context), async () => {
     await refuseWhilePending(context, '恢复');
     if ((await agentFor(context).status()).loaded) {
-      throw new PlatformError('Hub 服务已加载（launchd 会不断重启它，它会和恢复抢数据库），不恢复', '先运行 circle-hub service stop，恢复完成后再运行 circle-hub service start');
+      throw new PlatformError(`Hub 服务已加载（${context.platform === 'linux' ? 'systemd' : 'launchd'} 会不断重启它，它会和恢复抢数据库），不恢复`, context.platform === 'linux'
+        ? '先运行 circle-hub service stop 和 circle-hub service uninstall，确认自启已禁用；恢复完成后重新运行 circle-hub service install'
+        : '先运行 circle-hub service stop，恢复完成后再运行 circle-hub service start');
     }
     // The settings that will apply after the restore: the data root's own, else the backup's.
     const file = (await readSettingsFile(context.layout)) ?? (await backupSettings(dir));
     const settings = file ? resolveSettings(file, context.env, context.layout) : undefined;
-    if (settings && (await portAnswers(settings.port))) {
-      throw new PlatformError(`端口 127.0.0.1:${settings.port} 有进程应答（可能是手动启动的 Hub），不恢复`, '先停掉它再恢复');
+    if (settings && (await portOccupied(settings.port))) {
+      throw new PlatformError(`端口 ${settings.listenHost ?? '127.0.0.1'}:${settings.port} 有进程应答（可能是手动启动的 Hub），不恢复`, '先停掉它再恢复');
     }
     const target = settings ? { ...context, database: settings.database } : context;
     const cluster = postgresFor(target, (await readCurrentRelease(context.layout))?.dir);
@@ -331,7 +374,7 @@ const restore: Handler = async (args, context, io) => {
 };
 
 const deployCommand: Handler = async (args, context, io) => {
-  const { values, positionals } = parse(args, { source: { type: 'string' }, commit: { type: 'string' }, copy: { type: 'boolean' } });
+  const { values, positionals } = parse(args, { source: { type: 'string' }, commit: { type: 'string' }, copy: { type: 'boolean' }, node: {type:'string'} });
   noArguments(positionals);
   if (values.copy && values.commit !== undefined) throw new UsageError('--copy 与 --commit 不能同时用');
   const source = {
@@ -340,7 +383,8 @@ const deployCommand: Handler = async (args, context, io) => {
     ...(values.copy ? { copy: true } : {}),
   };
   io.stdout(`数据根：${context.layout.root}`);
-  const report = await deploy(context, source);
+  const node = context.platform === 'linux' || values.node !== undefined ? (await selectedNode(context, (await settingsOf(context)).node, values.node)).node : undefined;
+  const report = await deploy(node === undefined ? context : { ...context, nodePath: node }, source);
   io.stdout(`部署完成：发布 ${report.release}${report.previous ? `（上一版 ${report.previous}）` : ''}`);
   io.stdout(`部署前备份：${backupPath(context.layout, report.backup)}`);
   io.stdout(`日志：${deployLogPath(context)}`);
@@ -348,9 +392,11 @@ const deployCommand: Handler = async (args, context, io) => {
 };
 
 const rollbackCommand: Handler = async (args, context, io) => {
-  noArguments(args);
+  const { values, positionals } = parse(args, {node:{type:'string'}});
+  noArguments(positionals);
   io.stdout(`数据根：${context.layout.root}`);
-  const report = await rollback(context);
+  const node = context.platform === 'linux' || values.node !== undefined ? (await selectedNode(context, (await settingsOf(context)).node, values.node)).node : undefined;
+  const report = await rollback(node === undefined ? context : { ...context, nodePath: node });
   io.stdout(`回滚完成：现在运行发布 ${report.release}（回滚自 ${report.previous}）`);
   io.stdout(`回滚前备份：${backupPath(context.layout, report.backup)}`);
   io.stdout(`日志：${deployLogPath(context)}`);
@@ -382,7 +428,7 @@ const status: Handler = async (args, context, io) => {
     return NOT_RUNNING;
   }
   const settings = resolveSettings(file, context.env, layout);
-  io.stdout(`环境类别：${environmentText(settings.environment)}；端口：127.0.0.1:${settings.port}`);
+  io.stdout(`环境类别：${environmentText(settings.environment)}；端口：${settings.listenHost ?? '127.0.0.1'}:${settings.port}${settings.allowedHosts ? `；允许主机：${settings.allowedHosts.join('、')}` : ''}${settings.proxyOrigin ? `；代理来源：${settings.proxyOrigin}；可信对端：${settings.proxyPeer}` : ''}`);
   // The owner is printed only from the running cluster: a data root of an earlier platform version has another one.
   io.stdout(databaseText(layout, settings));
   const unsure = (subject: string, error: unknown) => io.stdout(`${subject}：无法确认（${messageOf(error)}）`);
@@ -424,7 +470,7 @@ const status: Handler = async (args, context, io) => {
     unsure('数据库', error);
   }
   try {
-    io.stdout(`${VAULT_KEY_ITEM.label}：${(await keychainFor(context, settings).status()).present ? '已在钥匙串' : '没有'}`);
+    io.stdout(`${VAULT_KEY_ITEM.label}：${(await keychainFor(context, settings).status()).present ? (context.platform === 'linux' ? '已在私有密钥文件' : '已在钥匙串') : '没有'}`);
   } catch (error) {
     unsure(VAULT_KEY_ITEM.label, error);
   }
@@ -437,8 +483,9 @@ const status: Handler = async (args, context, io) => {
   const backups = await listBackups(layout);
   io.stdout(`备份：${backups.length} 份${backups.length ? `，最近一份 ${backups.at(-1)}` : ''}`);
   if (!(await isMissingOrEmpty(layout.setAside))) io.stdout(`注意：${layout.setAside} 里有移开的数据，确认不需要后手动删除`);
-  const health = await checkHealth(settings.port, { timeoutMs: 1500 });
-  io.stdout(`健康检查（http://127.0.0.1:${settings.port}${HEALTH_PATH}）：${health.ok ? '正常' : `不正常（${health.status ? `HTTP ${health.status}` : (health.error ?? '没有应答')}）`}`);
+  const health = await checkHealth(settings.port, { timeoutMs: 1500, host: settings.listenHost, authority: settings.allowedHosts?.[0] });
+  const listener = settings.listenHost ?? '127.0.0.1';
+  io.stdout(`健康检查（http://${listener.includes(':') ? `[${listener}]` : listener}:${settings.port}${HEALTH_PATH}）：${health.ok ? '正常' : `不正常（${health.status ? `HTTP ${health.status}` : (health.error ?? '没有应答')}）`}`);
   return 0;
 };
 
@@ -467,7 +514,7 @@ export async function runPlatformCommand(argv: readonly string[], io: PlatformIo
   try {
     assertHubEnvironment(io.env);
     if (command === undefined || command === 'help' || command === '--help' || command === '-h') {
-      io.stdout(usage());
+      io.stdout(usage(overrides.platform));
       return command === undefined ? 2 : 0;
     }
     const handler = isPlatformCommand(command) ? HANDLERS[command] : undefined;
@@ -479,7 +526,7 @@ export async function runPlatformCommand(argv: readonly string[], io: PlatformIo
   } catch (error) {
     if (error instanceof UsageError) {
       io.stderr(error.message);
-      io.stderr(usage());
+      io.stderr(usage(overrides.platform));
       return 2;
     }
     io.stderr(`错误：${error instanceof Error ? error.message : String(error)}`);
@@ -494,5 +541,6 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     stderr: (line) => process.stderr.write(`${line}\n`),
     env: process.env,
     cwd: process.cwd(),
+    keyPipe: liveKeyPipe(),
   });
 }

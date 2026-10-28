@@ -93,6 +93,13 @@ export function libpqDirectory(explicit?: string, env: NodeJS.ProcessEnv = proce
   return dir;
 }
 
+/** Linux defers the default until the receiving PostgreSQL major is known; explicit settings always take precedence. */
+export function platformLibpqDirectory(explicit?: string, env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): string | undefined {
+  const dir = explicit ?? env[PLATFORM_VARIABLES.libpqBin];
+  if (dir !== undefined) return libpqDirectory(dir, env);
+  return platform === 'linux' ? undefined : libpqDirectory(undefined, env);
+}
+
 /** pg_dump and pg_restore by absolute path; missing tools are an error with the install hint. */
 export async function libpqTools(dir: string): Promise<LibpqTools> {
   const tools = { dir, pg_dump: join(dir, 'pg_dump'), pg_restore: join(dir, 'pg_restore') };
@@ -100,7 +107,7 @@ export async function libpqTools(dir: string): Promise<LibpqTools> {
     try {
       await access(tool);
     } catch {
-      throw new PlatformError(`找不到 ${tool}`, `用 Homebrew 安装 libpq（brew install libpq），或把 ${PLATFORM_VARIABLES.libpqBin} 设成装有 pg_dump 的目录`);
+      throw new PlatformError(`找不到 ${tool}`, `用 Homebrew 安装 libpq（brew install libpq），或在 Linux 安装同主版本的 PostgreSQL 客户端，或把 ${PLATFORM_VARIABLES.libpqBin} 设成工具所在目录`);
     }
   }
   return tools;
@@ -122,6 +129,30 @@ export async function checkToolMajor(tool: string, expected: number, runner: Com
     throw new PlatformError(`${tool} 是 PostgreSQL ${version.major}，数据库是 PostgreSQL ${expected}：主版本必须相同`, `装 PostgreSQL ${expected} 的 libpq，或设置 ${PLATFORM_VARIABLES.libpqBin}`);
   }
   return version.text;
+}
+
+/** Resolve absolute tools without a shell. On Linux search PATH in order for a pair whose selected tool matches. */
+export async function libpqToolsForMajor(
+  explicit: string | undefined, expected: number, tool: 'pg_dump' | 'pg_restore', runner: CommandRunner,
+  env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform,
+): Promise<LibpqTools> {
+  const configured = platformLibpqDirectory(explicit, env, platform);
+  if (configured !== undefined) {
+    const tools = await libpqTools(configured);
+    await checkToolMajor(tools[tool], expected, runner);
+    return tools;
+  }
+  for (const dir of [...new Set((env.PATH ?? '').split(':').filter(isAbsolute))]) {
+    try {
+      const tools = await libpqTools(dir);
+      await checkToolMajor(tools[tool], expected, runner);
+      return tools;
+    } catch {
+      // A missing, unusable or wrong-major candidate is not a valid match; later PATH entries may be suitable.
+    }
+  }
+  throw new PlatformError(`PATH 中没有与 PostgreSQL ${expected} 主版本一致的 ${tool} 和 pg_dump/pg_restore`,
+    `安装 PostgreSQL ${expected} 客户端，或把 ${PLATFORM_VARIABLES.libpqBin} 设成工具所在的绝对目录`);
 }
 
 /** The directory of a backup recorded by name (or, in older records, by absolute path) in this data root. */
@@ -196,7 +227,6 @@ export async function createBackup(options: BackupOptions): Promise<BackupResult
   const { layout, postgres } = options;
   const runner = options.runner ?? runCommand;
   const now = options.now ?? (() => new Date());
-  const tools = await libpqTools(libpqDirectory(options.libpqBin));
   const { target } = postgres;
   const role = postgres.application.user;
   await mkdir(layout.backups, { recursive: true, mode: 0o700 });
@@ -220,6 +250,7 @@ export async function createBackup(options: BackupOptions): Promise<BackupResult
       const [version] = await session.query("SELECT current_setting('server_version') AS text, current_setting('server_version_num')::int AS num");
       serverVersion = String(version?.text ?? '');
       const serverMajor = Math.floor(Number(version?.num ?? 0) / 10000);
+      const tools = await libpqToolsForMajor(options.libpqBin, serverMajor, 'pg_dump', runner);
       dumpTool = await checkToolMajor(tools.pg_dump, serverMajor, runner);
       const [snapshot] = await session.query('SELECT pg_catalog.pg_export_snapshot() AS id');
       tables = await summarizeTables(session);
