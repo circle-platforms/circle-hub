@@ -60,6 +60,8 @@ type SubmitOut = z.infer<typeof SubmitResultOutput>;
  * budget and names only ways to read that work without it (sources by range, records by pointer, the console page).
  */
 export interface TextContext {
+  /** list_task_packs: the exact filters and absolute offset needed to continue the same list. */
+  packList?: { offset: number; kind?: string; packId?: string };
   /** The server takes get_nodes {reference, cursor} and passes the cursor back here: only then are page cursors offered. */
   paging?: boolean;
   /** get_nodes with a reference: the page cursor the caller gave (made by pageCursor for an earlier page). */
@@ -362,14 +364,21 @@ function packEntry(p: PackSummary): Entry {
   return clip.entry(lines);
 }
 
-function listText(v: ListOut): string {
+function listText(v: ListOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
   const head = [`可用的任务包 ${v.packs.length} 个`];
   if (v.packs.some((p) => p.inputs.length > 0 || p.parameters.length > 0)) {
     const product = v.packs.some((p) => p.products.length > 0) ? '；product 换成被判对象所属产品线的名字（“产品”里列出的任一个）' : '';
     head.push(`示例 start_run 里的 ${EXAMPLE_SOURCE.slice(0, 8)}… 换成 upload_file 返回的引用，尖括号里的占位换成真实的编号或取值${product}`);
   }
-  const packs: Block = { priority: 1, entries: v.packs.map(packEntry), unit: '任务包', measure: '个', more: () => '任务包：在控制台任务包页 /console/packs 查看' };
+  const packs: Block = { priority: 1, entries: v.packs.map(packEntry), unit: '任务包', measure: '个', more: (from) => {
+    const list = context.packList;
+    if (!list) return '任务包：在控制台任务包页 /console/packs 查看';
+    if (from === 0 && list.packId === v.packs[0]?.id) return '单个任务包详情超出回答预算；在控制台任务包页 /console/packs 查看';
+    if (from === 0) return `单个任务包详情超出回答预算；按精确 ID 查询 list_task_packs ${JSON.stringify({ pack_id: v.packs[0]?.id })}，或在控制台任务包页 /console/packs 查看`;
+    const next = { ...(list.kind === undefined ? {} : { kind: list.kind }), ...(list.packId === undefined ? {} : { pack_id: list.packId }), offset: list.offset + from };
+    return `任务包：继续 list_task_packs ${JSON.stringify(next)}；也可在控制台任务包页 /console/packs 查看`;
+  } };
   return fit([{ priority: 0, head }, packs], { tail: [traceLine(v.trace)] }).text;
 }
 
