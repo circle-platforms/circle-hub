@@ -1,9 +1,28 @@
 import {MissingFact,RecoveryGap,UnknownExit,type LayerResult,type ValidationResult} from '../../../contracts/src/validation.ts';
 import {PARTITION,isReason} from '../../../contracts/generated/vocabulary.ts';
 import type {RunRecord} from '../../../contracts/src/run.ts';
-import type {Page,StoredRecord} from '../../records/api.ts';
+import {digestOf,type Page,type StoredRecord} from '../../records/api.ts';
 import type {EngineContext} from './deps.ts';
-import {recordResultRequests,RequestBodySchema,type RequestBody} from './requests.ts';
+import {putRequest,recordResultRequests,RequestBodySchema,type RequestBody} from './requests.ts';
+import {isUnsettled} from './terminals.ts';
+
+/** Batch the same request identity that putRequest uses; due time is not part of that identity. */
+export async function restoreLegacyRequests(ctx:EngineContext,stored:StoredRecord<RunRecord>,latest:StoredRecord<ValidationResult>):Promise<void>{
+  const runner=stored.body.runner??stored.body.configurer;if(!runner)return;
+  const planned:Array<{input:RequestBody;key:string}>=[];
+  for(const [partition,items] of Object.entries(latest.body.partitions))for(const [i,item] of items.entries())for(const [j,requirement] of item.requirements.entries())for(const [k,layer] of requirement.layers.entries()){
+    if(!isUnsettled(layer)||!layer.reason||layer.exit&&layer.missing)continue;
+    const path='/partitions/'+partition+'/'+i+'/requirements/'+j+'/layers/'+k;
+    const input:RequestBody={run:stored.body.run,kind:'repair',audience:runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:latest.digest,code:layer.reason,item:item.item,requirement:requirement.requirement,missing:'旧结果 rec:'+latest.digest+' '+path+'：'+(!layer.exit?'出口未写；':'')+(!layer.missing?'缺失事实未写':''),next_action:'原提交者带 Circle-Session-Id 用 submit_result 原样重交，Hub 追加重评结果；旧运行或作者缺会话时，以原工作为 predecessor 开带会话的新修订后重新复核。旧记录不回填'};
+    const {due:_,...identity}=input;planned.push({input,key:digestOf(identity)});
+  }
+  const keys=[...new Set(planned.map(row=>row.key))],existing=new Set<string>();
+  for(let at=0;at<keys.length;at+=128){
+    const found=await ctx.deps.records.store.findFirstMany({key:'runs.request.key',values:keys.slice(at,at+128),kind:'request'});
+    for(const key of found.keys())existing.add(key);
+  }
+  for(const row of planned)if(!existing.has(row.key)){await putRequest(ctx,row.input);existing.add(row.key);}
+}
 
 /** Only the complete, contract-valid exits already present in a result can be restored. */
 function recordedRequestGaps(layer:LayerResult){
