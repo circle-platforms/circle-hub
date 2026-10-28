@@ -8,7 +8,7 @@ export { recordIntegrityNotes, type RecordIntegrityNote } from './integrity-note
 import { SchemaId } from '../../contracts/src/common.ts';
 import { RecordKindSchema } from '../../contracts/src/records.ts';
 import { isProvenanceType } from '../../contracts/generated/vocabulary.ts';
-import type { FindQuery, IndexEntry, ListQuery, Page, PutResult, RecordInput, RecordStore, StoredRecord, Transaction } from './api.ts';
+import type { FindQuery, IndexedCursor, IndexedQuery, IndexedRecord, IndexEntry, ListQuery, Page, PutResult, RecordInput, RecordStore, StoredRecord, Transaction } from './api.ts';
 import { canonicalize } from './canonical.ts';
 import { decodeCursor, encodeCursor, iso, normalizeTime, pageLimit } from './db.ts';
 import type { Database, Row } from './db.ts';
@@ -152,6 +152,34 @@ export class PgRecordStore implements RecordStore {
          ORDER BY i.record_seq LIMIT 1
        ) AS matched`, query.kind === undefined ? [query.key, values] : [query.key, values, query.kind], tx);
     return new Map(result.rows.map(row => [row.value as string, verifiedRecord<B>(row)]));
+  }
+
+  async findIndexed<B = unknown>(query: IndexedQuery, tx?: Transaction): Promise<{items: IndexedRecord<B>[]; next: IndexedCursor | null}> {
+    if (typeof query.key !== 'string' || !INDEX_KEY.test(query.key)) throw new TypeError('invalid index key');
+    if (query.kind !== undefined && !RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');
+    if (!Number.isSafeInteger(query.through) || query.through < 0) throw new TypeError('invalid snapshot position');
+    const limit = pageLimit(query.limit);
+    const cursor = query.cursor;
+    if (cursor && (!Number.isSafeInteger(cursor.sequence) || cursor.sequence < 0 || !isIndexValue(cursor.value))) throw new TypeError('invalid index cursor');
+    const wanted = [...new Set(query.values.filter(isIndexValue))];
+    if (!wanted.length) return {items: [], next: null};
+    const values: unknown[] = [query.key, wanted, query.through, limit + 1];
+    let where = 'i.key=$1 AND i.value=ANY($2::text[]) AND r.seq <= $3';
+    if (query.kind !== undefined) { values.push(query.kind); where += ` AND r.kind=$${values.length}`; }
+    if (cursor) { values.push(cursor.sequence, cursor.value); where += ` AND (i.record_seq,i.value) > ($${values.length - 1},$${values.length})`; }
+    const result = await this.#db.query(
+      `SELECT i.value, i.record_seq AS index_seq, r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
+       FROM record_index i JOIN records r ON r.digest=i.digest
+       WHERE ${where} ORDER BY i.record_seq,i.value LIMIT $4`, values, tx);
+    const items = result.rows.slice(0, limit).map(row => {
+      const position = Number(row.seq);
+      if (!Number.isSafeInteger(position)) throw new LimitError('追加序号超过安全整数范围');
+      return {value: row.value as string, position, record: verifiedRecord<B>(row)};
+    });
+    const last = result.rows.length > limit ? result.rows[limit - 1] : undefined;
+    const sequence = last === undefined ? null : Number(last.index_seq);
+    if (sequence !== null && !Number.isSafeInteger(sequence)) throw new LimitError('索引序号超过安全整数范围');
+    return {items, next: last === undefined ? null : {sequence: sequence!, value: last.value as string}};
   }
 
   async getById<B = unknown>(id: string, tx?: Transaction): Promise<StoredRecord<B> | null> {

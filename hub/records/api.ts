@@ -168,6 +168,18 @@ export interface ListQuery extends PageQuery {
   kind: RecordKind;
 }
 
+/** A position in a batched index scan. Several index values may name the same record. */
+export interface IndexedCursor { sequence: number; value: string }
+export interface IndexedRecord<B = unknown> { value: string; position: number; record: StoredRecord<B> }
+export interface IndexedQuery {
+  key: string;
+  values: readonly string[];
+  kind?: RecordKind;
+  through: number;
+  limit?: number;
+  cursor?: IndexedCursor | null;
+}
+
 export interface RecordStore {
   /** Internal append-log position; never part of a record digest. Snapshot horizons may contain gaps. */
   position?(digest:string,tx?:Transaction):Promise<number|null>;
@@ -190,6 +202,8 @@ export interface RecordStore {
   findMany<B = unknown>(query: {key: string; values: readonly string[]; kind?: RecordKind}, tx?: Transaction): Promise<StoredRecord<B>[]>;
   /** Oldest matching record per index value, verified, in one query; equivalent to find({limit:1}) per value. */
   findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
+  /** Bounded index scan retaining each matching value and the record's append position. */
+  findIndexed?<B = unknown>(query: IndexedQuery, tx?: Transaction): Promise<{ items: IndexedRecord<B>[]; next: IndexedCursor | null }>;
   getById<B = unknown>(id: string, tx?: Transaction): Promise<StoredRecord<B> | null>;
   find<B = unknown>(query: FindQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>>;
   list<B = unknown>(query: ListQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>>;
