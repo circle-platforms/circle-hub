@@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url';
 import { SandboxError, isSandboxErrorCode, type SandboxErrorCode } from './errors.ts';
 import { BOOTSTRAP, declaredDependencies, isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { ENTRY_EXTENSIONS } from './policy.ts';
-import { createResidentWatch, residentTreeSizes } from './resident.ts';
+import { createResidentWatch, residentFailure, residentTreeSizes, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
 import { createSlotPool } from './slots.ts';
 import { retryFunction, type FunctionAttempt } from './retry.ts';
 
@@ -111,7 +111,7 @@ const slots = createSlotPool({
   waiting: MAX_WAITING,
   full: () => new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'queue_full', limit: 'queue', waiting: MAX_WAITING }),
 });
-const residentWatch = createResidentWatch({ intervalMs: POLL_MS, measure: residentTreeSizes });
+const residentWatch = createResidentWatch({ intervalMs: POLL_MS, measure: residentTreeSizes, unavailable: () => null, timeoutMs: 1_000 });
 
 // Running children by pid, with the function that stops each.
 const live = new Map<number, (code: SandboxErrorCode, detail: Record<string, unknown>) => void>();
@@ -408,7 +408,8 @@ function runChildWithProbe(pack: PreparedPack, inputText: string, lim: SandboxLi
       pid === undefined
         ? () => {}
         : residentWatch.watch(pid, (bytes) => {
-            if (bytes > residentLimit && !settled && !stopped && alive()) stop('SANDBOX_VIOLATION', { limit: 'memory', residentBytes: bytes, memoryMb: lim.memoryMb });
+            const failure = residentFailure(bytes, residentLimit, lim.memoryMb);
+            if (failure && !settled && !stopped && alive()) stop(failure.code, failure.detail);
           });
     const forget = (): void => {
       clearTimeout(timer);
@@ -447,7 +448,7 @@ function runChildWithProbe(pack: PreparedPack, inputText: string, lim: SandboxLi
       const childStdout = frame && frame !== 'invalid' && typeof frame.stdout === 'string' ? frame.stdout : '';
       const childStderr = frame && frame !== 'invalid' && typeof frame.stderr === 'string' ? frame.stderr : '';
       const logs = { stdout: childStdout, stderr: [childStderr, stderrText].filter(Boolean).join('\n') };
-      if (stopped) return reject(new SandboxError(stopped.code, { ...stopped.detail, durationMs }, logs));
+      if (stopped) return reject(new SandboxError(stopped.code, { ...stopped.detail, durationMs }, logs, stopped.detail.reason === 'resident_observation_unavailable' ? RESIDENT_UNAVAILABLE_MESSAGE : undefined));
       // A real external signal remains an observed process failure even if it arrived during the startup attestation.
       if (probeDir && linuxAttestation !== nonce && signal === 'SIGXCPU') return reject(new SandboxError('SANDBOX_TIMEOUT', { limit: 'cpu', durationMs }, logs));
       if (probeDir && linuxAttestation !== nonce && signal) return reject(new SandboxError('SANDBOX_VIOLATION', { reason: 'signal', signal, durationMs, resourceObservation: 'absent' }, logs));
