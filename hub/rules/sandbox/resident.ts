@@ -2,9 +2,19 @@
 // macOS a single /bin/ps for all of them), instead of one process per child per tick.
 import { spawn, spawnSync } from 'node:child_process';
 import { readFile, readdir, stat } from 'node:fs/promises';
+import type { SandboxErrorCode } from './errors.ts';
 
 /** Resident bytes by pid; a pid that is gone is left out. */
 export type Measure = (pids: readonly number[]) => Promise<Map<number, number>>;
+/** null is an unobservable tree, not a measured number of bytes. */
+export type TreeMeasure = (pids: readonly number[]) => Promise<Map<number, number | null>>;
+export const RESIDENT_UNAVAILABLE_MESSAGE = '缺少沙箱进程树完整的内存观测；下一步：请管理员检查进程观测权限和系统负载后重试';
+
+/** A missing observation is not evidence that a memory limit was exceeded. */
+export function residentFailure(bytes: number | null, limit: number, memoryMb: number): { code: SandboxErrorCode; detail: Record<string, unknown> } | undefined {
+  if (bytes === null || !Number.isSafeInteger(bytes) || bytes < 0) return { code: 'SANDBOX_UNAVAILABLE', detail: { reason: 'resident_observation_unavailable', missing: '沙箱进程树完整的内存观测', next_action: '请管理员检查进程观测权限和系统负载后重试' } };
+  return bytes > limit ? { code: 'SANDBOX_VIOLATION', detail: { limit: 'memory', residentBytes: bytes, memoryMb } } : undefined;
+}
 
 /** VmRSS is occasionally absent during exec or exit; statm supplies the kernel's resident-page count instead. */
 export function createLinuxResidentMeasure(options: { status(pid: number): Promise<string>; statm(pid: number): Promise<string>; pageBytes?: number }): Measure {
@@ -74,9 +84,10 @@ export function createResidentTreeMeasure(options: {
   gone(pid: number): Promise<boolean>;
   threadGone(pid: number, tid: string): Promise<boolean>;
   measure: Measure;
-}): Measure {
+  pause?: () => Promise<void>;
+}): TreeMeasure {
  return async (pids) => {
-  const result = new Map<number, number>();
+  const result = new Map<number, number | null>();
   await Promise.all(pids.map(async (root) => {
     const found = new Set<number>();
     const pending = [root];
@@ -85,16 +96,21 @@ export function createResidentTreeMeasure(options: {
       if (found.has(pid)) continue;
       found.add(pid);
       // An unexpectedly broad process tree must trigger the watchdog, not evade it.
-      if (found.size > 256) { result.set(root, Number.MAX_SAFE_INTEGER); return; }
+      if (found.size > 256) { result.set(root, null); return; }
       let complete = false;
-      for (let attempt = 0; attempt < 3 && !complete; attempt++) {
+      for (let attempt = 0; attempt < 12 && !complete; attempt++) {
         let threads: string[];
         try { threads = (await options.readThreads(pid)).sort(); }
         catch (error) {
           if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && await options.gone(pid)) { found.delete(pid); complete = true; break; }
-          result.set(root, Number.MAX_SAFE_INTEGER); return;
+          result.set(root, null); return;
         }
-        if (!threads.length || threads.length > 1024 || threads.some(tid => !/^[1-9]\d*$/.test(tid))) { result.set(root, Number.MAX_SAFE_INTEGER); return; }
+        if (!threads.length) {
+          if (await options.gone(pid)) { found.delete(pid); complete = true; break; }
+          await (options.pause?.() ?? new Promise<void>(resolve => setTimeout(resolve, 2)));
+          continue;
+        }
+        if (threads.length > 1024 || threads.some(tid => !/^[1-9]\d*$/.test(tid))) { result.set(root, null); return; }
         let retry = false;
         for (const tid of threads) {
           let children: string;
@@ -102,37 +118,39 @@ export function createResidentTreeMeasure(options: {
           catch (error) {
             if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && await options.gone(pid)) { found.delete(pid); complete = true; break; }
             if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && await options.threadGone(pid, tid)) { retry = true; break; }
-            result.set(root, Number.MAX_SAFE_INTEGER); return;
+            result.set(root, null); return;
           }
           for (const child of children ? children.split(/\s+/) : []) {
             const number = Number(child);
-            if (!/^[1-9]\d*$/.test(child) || !Number.isSafeInteger(number)) { result.set(root, Number.MAX_SAFE_INTEGER); return; }
+            if (!/^[1-9]\d*$/.test(child) || !Number.isSafeInteger(number)) { result.set(root, null); return; }
             pending.push(number);
           }
         }
         if (complete) break;
-        if (retry) continue;
+        if (retry) { await (options.pause?.() ?? new Promise<void>(resolve => setTimeout(resolve, 2))); continue; }
         try { complete = threads.join(',') === (await options.readThreads(pid)).sort().join(','); }
         catch (error) {
           if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && await options.gone(pid)) { found.delete(pid); complete = true; break; }
-          result.set(root, Number.MAX_SAFE_INTEGER); return;
+          result.set(root, null); return;
         }
+        if (!complete) await (options.pause?.() ?? new Promise<void>(resolve => setTimeout(resolve, 2)));
       }
-      if (!complete) { result.set(root, Number.MAX_SAFE_INTEGER); return; }
+      if (!complete) { result.set(root, null); return; }
     }
     const sizes = await options.measure([...found]);
     // A status may disappear when a child exits. Unreadable status for a live process remains a failure.
     for (const pid of found) if (!sizes.has(pid)) {
-      if (!(await options.gone(pid))) { result.set(root, Number.MAX_SAFE_INTEGER); return; }
+      if (!(await options.gone(pid))) { result.set(root, null); return; }
     }
-    if (sizes.has(root)) result.set(root, [...sizes.values()].reduce((sum, bytes) => sum + bytes, 0));
+    const total = [...sizes.values()].reduce((sum, bytes) => sum + bytes, 0);
+    result.set(root, sizes.has(root) && Number.isSafeInteger(total) && total >= 0 ? total : null);
   }));
   return result;
  };
 }
 
 /** A PID namespace may leave Node below bubblewrap's monitor. */
-export const residentTreeSizes: Measure = process.platform === 'linux'
+export const residentTreeSizes: TreeMeasure = process.platform === 'linux'
   ? createResidentTreeMeasure({
       readThreads: pid => readdir(`/proc/${pid}/task`),
       readChildren: (pid, tid) => readFile(`/proc/${pid}/task/${tid}/children`, 'utf8'),
@@ -150,32 +168,42 @@ export const residentTreeSizes: Measure = process.platform === 'linux'
         catch (error) { return (error as NodeJS.ErrnoException)?.code === 'ENOENT'; }
       },
     })
-  : residentSizes;
+  : async pids => { const sizes = await residentSizes(pids); return new Map(pids.map(pid => [pid, sizes.get(pid) ?? null])); };
 
-export interface ResidentWatch {
+export interface ResidentWatch<T = number> {
   /** Calls `onBytes` with the child's resident size once per round until the returned function is called. */
-  watch(pid: number, onBytes: (bytes: number) => void): () => void;
+  watch(pid: number, onBytes: (bytes: T) => void): () => void;
   readonly watching: number;
 }
 
-export function createResidentWatch(options: { intervalMs: number; measure: Measure }): ResidentWatch {
-  const watched = new Map<number, (bytes: number) => void>();
+export function createResidentWatch<T = number>(options: { intervalMs: number; measure: (pids: readonly number[]) => Promise<Map<number, T>>; unavailable?: () => T; timeoutMs?: number }): ResidentWatch<T> {
+  const watched = new Map<number, (bytes: T) => void>();
   let timer: NodeJS.Timeout | undefined;
   let measuring = false;
   const round = (): void => {
     if (measuring || watched.size === 0) return;
     measuring = true;
-    options
-      .measure([...watched.keys()])
+    const snapshot = new Map(watched);
+    const pids = [...snapshot.keys()];
+    let timeout: NodeJS.Timeout | undefined;
+    const work = Promise.resolve().then(() => options.measure(pids));
+    const measurement = options.timeoutMs === undefined ? work : Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => { timeout = setTimeout(() => reject(new Error('resident observation timeout')), options.timeoutMs); }),
+    ]);
+    measurement
       .then(
         (sizes) => {
-          for (const [pid, bytes] of sizes) watched.get(pid)?.(bytes);
+          for (const [pid, callback] of snapshot) {
+            if (watched.get(pid) !== callback) continue;
+            if (sizes.has(pid)) callback(sizes.get(pid)!);
+            else if (options.unavailable) callback(options.unavailable());
+          }
         },
-        () => {
-          // A failed round is followed by the next one.
-        },
+        () => { if (options.unavailable) for (const [pid, callback] of snapshot) if (watched.get(pid) === callback) callback(options.unavailable()); },
       )
       .finally(() => {
+        if (timeout) clearTimeout(timeout);
         measuring = false;
       });
   };
