@@ -3,7 +3,7 @@
 import { access, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { libpqDirectory } from './backup.ts';
+import { checkToolMajor, libpqDirectory, libpqToolsForMajor } from './backup.ts';
 import { removeTree } from './files.ts';
 import type { PostgresControl } from './postgres.ts';
 import { runCommand, type CommandOptions, type CommandResult, type CommandRunner } from './process.ts';
@@ -64,6 +64,13 @@ export function recordingRunner(
 
 /** The libpq directory when pg_dump and pg_restore are installed, else undefined. */
 export async function libpqAvailable(): Promise<string | undefined> {
+  if (process.platform === 'linux') {
+    try {
+      const tools = await libpqToolsForMajor(undefined, 18, 'pg_dump', runCommand);
+      await checkToolMajor(tools.pg_restore, 18, runCommand);
+      return tools.dir;
+    } catch { return undefined; }
+  }
   const dir = libpqDirectory(undefined, process.env);
   for (const tool of ['pg_dump', 'pg_restore']) {
     try {
@@ -75,7 +82,7 @@ export async function libpqAvailable(): Promise<string | undefined> {
   return dir;
 }
 
-export const LIBPQ_MISSING = 'skipped: pg_dump and pg_restore are not installed (brew install libpq, or set CIRCLE_HUB_LIBPQ_BIN)';
+export const LIBPQ_MISSING = 'skipped: PostgreSQL 18 pg_dump and pg_restore are not installed (brew install libpq / postgresql-client-18, or set CIRCLE_HUB_LIBPQ_BIN)';
 
 export interface CapturedIo {
   out: string[];

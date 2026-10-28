@@ -12,8 +12,8 @@ after(async () => {
 });
 
 test('default data root is under Application Support of the given home', () => {
-  assert.equal(defaultDataRoot('/Users/someone'), '/Users/someone/Library/Application Support/circle-hub');
-  const layout = resolveLayout({}, '/Users/someone');
+  assert.equal(defaultDataRoot('/Users/someone', {}, { platform: 'darwin' }), '/Users/someone/Library/Application Support/circle-hub');
+  const layout = resolveLayout({}, '/Users/someone', { platform: 'darwin' });
   assert.equal(layout.root, '/Users/someone/Library/Application Support/circle-hub');
   assert.equal(layout.db, '/Users/someone/Library/Application Support/circle-hub/db');
   assert.equal(layout.current, '/Users/someone/Library/Application Support/circle-hub/current');
@@ -26,7 +26,19 @@ test('CIRCLE_HUB_DATA_DIR, the one name hub/config reads too, overrides the root
   assert.throws(() => resolveLayout({ CIRCLE_HUB_DATA_DIR: '' }), /空值/);
   assert.throws(() => resolveLayout({ CIRCLE_HUB_DATA_DIR: 'relative/root' }), /绝对路径/);
   // The CLI refuses CIRCLE_HUB_HOME as an unknown name (environment.test.ts); here it is simply not a data root name.
-  assert.equal(resolveLayout({ CIRCLE_HUB_HOME: '/srv/elsewhere' }, '/Users/x').root, '/Users/x/Library/Application Support/circle-hub');
+  assert.equal(resolveLayout({ CIRCLE_HUB_HOME: '/srv/elsewhere' }, '/Users/x', { platform: 'darwin' }).root, '/Users/x/Library/Application Support/circle-hub');
+});
+
+test('Linux defaults use the service account or an absolute XDG data home', () => {
+  const service = { platform: 'linux' as const, username: 'circle-hub' };
+  const user = { platform: 'linux' as const, username: 'synthetic-user' };
+  assert.equal(resolveLayout({ XDG_DATA_HOME: '/tmp/synthetic-data' }, '/tmp/synthetic-home', service).root, '/var/lib/circle-hub');
+  assert.equal(resolveLayout({ XDG_DATA_HOME: '/tmp/synthetic-data' }, '/tmp/synthetic-home', user).root, '/tmp/synthetic-data/circle-hub');
+  assert.equal(resolveLayout({}, '/tmp/synthetic-home', user).root, '/tmp/synthetic-home/.local/share/circle-hub');
+  assert.equal(resolveLayout({ XDG_DATA_HOME: '' }, '/tmp/synthetic-home', user).root, '/tmp/synthetic-home/.local/share/circle-hub');
+  assert.equal(resolveLayout({ USER: 'circle-hub' }, '/tmp/synthetic-home', user).root, '/tmp/synthetic-home/.local/share/circle-hub');
+  assert.equal(resolveLayout({ CIRCLE_HUB_DATA_DIR: '/tmp/explicit', XDG_DATA_HOME: 'relative' }, '/tmp/synthetic-home', service).root, '/tmp/explicit');
+  assert.throws(() => resolveLayout({ XDG_DATA_HOME: 'relative' }, '/tmp/synthetic-home', user), /绝对路径/);
 });
 
 test('paths that would break pg_ctl or the socket list are refused', () => {

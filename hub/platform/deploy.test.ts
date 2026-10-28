@@ -365,7 +365,7 @@ describe('deploy flow', () => {
       const file = newSettingsFile({ environment: 'test' });
       await writeFile(settingsPath(layout), JSON.stringify({ ...file, database: { ...file.database, role: 'hub-app' } }));
       const { runner, calls } = recordingRunner(() => undefined, { real: false });
-      const context = createContext({}, { layout, home: root, runner, launchAgentsDir: join(root, 'agents') });
+      const context = createContext({}, { layout, home: root, runner, platform: 'darwin', launchAgentsDir: join(root, 'agents') });
       const host = new FakeHost(V1);
       await assert.rejects(deploy(context, { path: root }, host), (error: unknown) => {
         assert.match((error as Error).message, /^部署设置里的应用角色名 hub-app 不符合要求，不部署：/);
@@ -389,7 +389,7 @@ describe('deploy flow', () => {
       // serve refuses it, so a deploy could only fail after the service stopped, and a rollback after the data moved.
       await writeFile(settingsPath(layout), JSON.stringify({ ...newSettingsFile({ environment: 'test' }), keychain_account: OPERATOR_TOKEN_ACCOUNT }));
       const { runner, calls } = recordingRunner(() => undefined, { real: false });
-      const context = createContext({}, { layout, home: root, runner, launchAgentsDir: join(root, 'agents') });
+      const context = createContext({}, { layout, home: root, runner, platform: 'darwin', launchAgentsDir: join(root, 'agents') });
       const deploying = new FakeHost(V1);
       // A recorded deploy with its backup: the rollback would otherwise go ahead.
       const rollingBack = new FakeHost(V2);

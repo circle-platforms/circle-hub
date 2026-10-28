@@ -30,7 +30,7 @@ import { unruledShapes, parsePackRef, type PackProblem } from '../runs/api.ts';
 import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
 import { assembleHub, type AssembledHub, type AssemblyOptions } from './assemble/hub.ts';
-import { OPERATOR_TOKEN_VARIABLE, deploymentKeychainService, keychainOperatorTokens, takeEnvironmentToken, tokenBytes, type OperatorTokenStore } from './assemble/operator-token.ts';
+import { OPERATOR_TOKEN_VARIABLE, deploymentKeychainService, fileOperatorTokens, keychainOperatorTokens, takeEnvironmentToken, tokenBytes, type OperatorTokenStore } from './assemble/operator-token.ts';
 import { SecretInputError, readSecret as readSecretFromStdin } from './assemble/secret-input.ts';
 import { terminalSafe } from './assemble/terminal.ts';
 import { readNamedEnvironment } from './assemble/env-file.ts';
@@ -170,7 +170,7 @@ class Session {
     this.#tokens ??= (async () => {
       const config = this.config();
       const service = await deploymentKeychainService(this.ctx.io.env, config.keychain.service);
-      return this.options.tokens?.(config, service) ?? keychainOperatorTokens({ service });
+      return this.options.tokens?.(config, service) ?? (process.platform === 'linux' ? fileOperatorTokens(config.dataDir, service) : keychainOperatorTokens({ service }));
     })();
     return this.#tokens;
   }

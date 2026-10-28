@@ -471,3 +471,25 @@ real temporary-keychain integration tests, but do not count them as passed when 
 
 The launchd plist tests prove RunAtLoad/KeepAlive declarations and simulated service commands, not a machine reboot.
 Actual reboot recovery requires an operator observation. This branch records no new observation of a persistent service.
+
+## Linux portability
+
+On Linux, the `circle-hub` service account defaults to `/var/lib/circle-hub`; other accounts use
+`$XDG_DATA_HOME/circle-hub`, or `~/.local/share/circle-hub` when XDG_DATA_HOME is absent. An explicitly configured
+`CIRCLE_HUB_DATA_DIR` still wins. The service runs as the same account as its PostgreSQL cluster. Its systemd user unit
+uses `Restart=always`; an administrator must enable lingering and provide the user's systemd and D-Bus session. The
+operator must check this manager before an installation, restore or rollback. The macOS LaunchAgent remains unchanged.
+
+Linux keeps the vault master key and operator token as separate 32-byte files under the private `keys/` directory of the
+data root; the service account must own the root, the 0700 directory and each 0600 single-link regular file. Symlinks,
+wrong owners, wrong permissions, malformed files and replacements are refused. No key bytes enter the backup: `keys/` is
+outside its object, vault and config areas. This protects the key against other local accounts, not against the service
+account or a privileged administrator. The key-transfer operation and verification of existing encrypted vault entries
+are a separate migration step; `records verify` by itself is not evidence that those entries decrypt.
+
+On Linux, an explicit absolute `CIRCLE_HUB_LIBPQ_BIN` is authoritative; otherwise executable `pg_dump` and `pg_restore`
+are located through PATH and the command's required tool must match the PostgreSQL server major. Restore into a new empty
+data root directly from a verified backup, without `init` first: restore initializes PostgreSQL, copies the saved config
+and checks the restored data and grants. A restored deployment with existing administrators does not call `init-admin`;
+its owner separately reissues an operator token for an existing enabled administrator. These steps need a synthetic
+end-to-end Linux rehearsal and independent review before production migration.

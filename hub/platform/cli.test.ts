@@ -73,6 +73,7 @@ describe('platform CLI', () => {
     port = String(await freePort());
     await mkdir(join(parent, 'home'), { recursive: true });
     overrides = {
+      platform: 'darwin',
       home: join(parent, 'home'),
       runner: system.runner,
       launchAgentsDir: join(parent, 'home', 'Library', 'LaunchAgents'),
@@ -382,7 +383,7 @@ describe('service commands on settings that give the vault master key the operat
       await symlink(join('releases', id), layout.current);
       const system = fakeSystem();
       const agents = join(parent, 'home', 'Library', 'LaunchAgents');
-      const overrides = { home: join(parent, 'home'), runner: system.runner, launchAgentsDir: agents, uid: 501, nodePath: process.execPath };
+      const overrides = { platform: 'darwin' as const, home: join(parent, 'home'), runner: system.runner, launchAgentsDir: agents, uid: 501, nodePath: process.execPath };
       const run = async (...argv: string[]) => {
         const captured = captureIo({ CIRCLE_HUB_DATA_DIR: root }, parent);
         return { code: await runPlatformCommand(argv, captured.io, overrides), err: captured.err.join('\n') };
@@ -415,7 +416,7 @@ async function keyAsideWorld(t: {after(fn:()=>Promise<void>):void},port?:number)
  const keychain=join(parent,'synthetic.keychain-db');await writeFile(keychain,'synthetic fake-keychain target');
  const dbPort=socketPort();await writeFile(settingsPath(layout),JSON.stringify(newSettingsFile({environment:ENVIRONMENT[0],port:port ?? await freePort(),keychainService:'synthetic-key-recovery',database:{port:dbPort}})));
  const system=fakeSystem();const runner:PlatformContext['runner']=async(command,args,options)=>{if(command==='/usr/bin/security'){await access(join(layout.run,'platform.lock'));assert.ok([...args,options?.input ?? ''].join(' ').includes(keychain));}return system.runner(command,args,options);};
- const run=async(...args:string[])=>{const capture=captureIo({CIRCLE_HUB_DATA_DIR:layout.root,CIRCLE_HUB_DATABASE_PORT:String(dbPort)},parent);const code=await runPlatformCommand(args,capture.io,{runner,home:parent,keychain,uid:501,now:()=>new Date('2026-10-23T00:00:00.000Z')});return{code,out:capture.out.join('\n'),err:capture.err.join('\n')};};
+ const run=async(...args:string[])=>{const capture=captureIo({CIRCLE_HUB_DATA_DIR:layout.root,CIRCLE_HUB_DATABASE_PORT:String(dbPort)},parent);const code=await runPlatformCommand(args,capture.io,{runner,platform:'darwin',home:parent,keychain,uid:501,now:()=>new Date('2026-10-23T00:00:00.000Z')});return{code,out:capture.out.join('\n'),err:capture.err.join('\n')};};
  await writeFile(join(layout.vault,'sealed'),'synthetic sealed bytes');await writeFile(join(layout.db,'sentinel'),'synthetic database');await writeFile(join(layout.objects,'sentinel'),'synthetic object');
  return{parent,layout,system,run};
 }

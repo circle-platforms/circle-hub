@@ -214,13 +214,13 @@ const key: Handler = async (args, context, io) => {
         if(moved.path) io.stdout(`密钥库已移到 ${moved.path}，原文件保留`);
       }
       await store.init();
-      io.stdout(`已在钥匙串建立${VAULT_KEY_ITEM.label}（${item}）；密钥不会显示，也不进备份`);
+      io.stdout(`已在${context.platform === 'linux' ? '私有密钥文件' : '钥匙串'}建立${VAULT_KEY_ITEM.label}（${item}）；密钥不会显示，也不进备份`);
       return 0;
     };
     return setAsideVault ? withLock(platformLockPath(context),initialize) : initialize();
   }
   const { present } = await store.status();
-  io.stdout(present ? `${VAULT_KEY_ITEM.label}：已在钥匙串（${item}）` : `${VAULT_KEY_ITEM.label}：没有（${item}）；运行 circle-hub key init`);
+  io.stdout(present ? `${VAULT_KEY_ITEM.label}：已在${context.platform === 'linux' ? '私有密钥文件' : '钥匙串'}（${item}）` : `${VAULT_KEY_ITEM.label}：没有（${item}）；运行 circle-hub key init`);
   return present ? 0 : NOT_RUNNING;
 };
 
@@ -424,7 +424,7 @@ const status: Handler = async (args, context, io) => {
     unsure('数据库', error);
   }
   try {
-    io.stdout(`${VAULT_KEY_ITEM.label}：${(await keychainFor(context, settings).status()).present ? '已在钥匙串' : '没有'}`);
+    io.stdout(`${VAULT_KEY_ITEM.label}：${(await keychainFor(context, settings).status()).present ? (context.platform === 'linux' ? '已在私有密钥文件' : '已在钥匙串') : '没有'}`);
   } catch (error) {
     unsure(VAULT_KEY_ITEM.label, error);
   }

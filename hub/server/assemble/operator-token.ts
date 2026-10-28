@@ -6,7 +6,7 @@
 // No message ever carries the token or its bytes.
 import { spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
-import { OPERATOR_TOKEN_ITEM, PLATFORM_VARIABLES, keychainStore, readSettingsFile, resolveLayout, resolveSettings, type CommandRunner } from '../../platform/api.ts';
+import { OPERATOR_TOKEN_ITEM, PLATFORM_VARIABLES, fileKeyStore, keychainStore, readSettingsFile, resolveLayout, resolveSettings, type CommandRunner } from '../../platform/api.ts';
 import { hintOf, messageOf } from './errors.ts';
 
 /** The environment variable a shell or a script gives the operator token in. */
@@ -205,6 +205,27 @@ export function keychainOperatorTokens(options: KeychainTokenOptions): OperatorT
       } finally {
         bytes.fill(0);
       }
+    },
+  };
+}
+
+/** Linux operator item, stored separately from the vault master key and never included in backups. */
+export function fileOperatorTokens(root: string, service: string): OperatorTokenStore {
+  const store = fileKeyStore({root, service, account: OPERATOR_TOKEN_ACCOUNT, item: OPERATOR_TOKEN_ITEM});
+  const where = '密钥文件中的操作令牌';
+  return {
+    where,
+    async present() { return (await store.status()).present; },
+    async read() {
+      if (!(await store.status()).present) return null;
+      const bytes = await store.read();
+      const copy = Buffer.from(bytes);
+      try { return copy.toString('base64url'); } finally { bytes.fill(0); copy.fill(0); }
+    },
+    async write(token: string) {
+      const bytes = tokenBytes(token);
+      if (bytes === null) throw new Error('这个令牌不是 Hub 签发的格式，不能保存');
+      try { await store.write(bytes); } finally { bytes.fill(0); }
     },
   };
 }

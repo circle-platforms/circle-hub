@@ -1568,7 +1568,7 @@ describe('reimport after key loss', () => {
           }
           return undefined;
         });
-        const overrides = { runner: host.runner, home: directory, launchAgentsDir: join(directory, 'agents'), keychain: file };
+        const overrides = { platform: 'darwin' as const, runner: host.runner, home: directory, launchAgentsDir: join(directory, 'agents'), keychain: file };
         const context = createContext(env, overrides);
         stopPlatform = async () => { await postgresFor(context).stop(); };
         const platformRun = async (argv: string[]) => {
