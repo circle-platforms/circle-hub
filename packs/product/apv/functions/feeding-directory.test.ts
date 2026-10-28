@@ -6,6 +6,7 @@ import { kityminderParser } from '../../../../hub/testing/parsers.ts';
 import { callPackFunction, osIsolationAvailable } from '../../../../hub/rules/api.ts';
 import { startPostgres } from '../../../../hub/knowledge/test-support.ts';
 import { world } from '../../../../hub/knowledge/testing/feeding-bounds-fixture.ts';
+import { PRODUCT_LINE } from './naming.ts';
 
 const bytes = 'a'.repeat(64);
 const model = kityminderParser.parse(Buffer.from(JSON.stringify({
@@ -20,7 +21,7 @@ function input(ancestors: string[], title = 'Synthetic document') {
   return {
     product: 'ORBIT', root: null, parser: 'kityminder@1', model,
     source: { system: 'agile', type: 'mindmap', key: 'SYN-DOC', bytes },
-    meta: { ancestors, title },
+    meta: { ancestors, title, root: { id: 'SYN-ROOT', title: PRODUCT_LINE.names[0] } },
   };
 }
 function row(ancestors: string[], title = 'Synthetic document') {
@@ -89,7 +90,7 @@ test('a real Hub feeding pipeline stores a bound version from coded document met
   const w = await world(pg);
   t.after(() => w.close());
   const meta = await w.kit.artifacts.ingest({
-    bytes: Buffer.from(JSON.stringify({ id: 'SYN-DOC', ancestors: ['ORBIT', '060：10.8.0', '004：10.8-R1', 'Network'] })),
+    bytes: Buffer.from(JSON.stringify({ id: 'SYN-DOC', root: { id: 'SYN-ROOT', title: PRODUCT_LINE.names[0] }, ancestors: ['060：10.8.0', '004：10.8-R1', 'Network'] })),
     mediaType: 'application/json', origin: { read: { object: 'agile:mindmap:SYN-DOC' } }, author: { user: null },
     provenanceType: 'observed', visibility: { readers: [w.user.id], admins: true, packs: [], shareable: false }, readTier: 'model_readable',
   });

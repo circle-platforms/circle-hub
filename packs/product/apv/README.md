@@ -1146,7 +1146,9 @@ blocks, cross-file source positions, unchanged failure severity, restored observ
 
 ### Case feeding directory bindings
 
-Case feeding reads the original agile ancestor metadata with the same `apv-directory@1` coded line and train syntax;
+Case feeding requires the original agile root title to equal a declared product name exactly. A missing or different
+root leaves the case version undeclared and names the missing fact and next action. It then reads ancestor metadata with
+the same `apv-directory@1` coded line and train syntax;
 it uses the first three version components for line identity, applies U24 normalization, and retains different candidates
 as a conflict. A single declared line or train can still identify the line; missing sibling layers remain missing. Whole
 manual-store folder names remain accepted by the existing `apv-directory-folder@1` rule. If both rules produce candidates,
