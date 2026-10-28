@@ -10,6 +10,8 @@ export const PLATFORM_VARIABLES = {
   /** The data root; the same name hub/config reads. */
   dataDir: 'CIRCLE_HUB_DATA_DIR',
   port: 'CIRCLE_HUB_PORT',
+  host: 'CIRCLE_HUB_HOST',
+  allowedHosts: 'CIRCLE_HUB_ALLOWED_HOSTS',
   databaseSocketDir: 'CIRCLE_HUB_DATABASE_SOCKET_DIR',
   databaseHost: 'CIRCLE_HUB_DATABASE_HOST',
   databasePort: 'CIRCLE_HUB_DATABASE_PORT',
@@ -29,6 +31,7 @@ export const HUB_CONFIG_VARIABLES: readonly string[] = [
   'CIRCLE_HUB_DATA_DIR',
   'CIRCLE_HUB_LOG_DIR',
   'CIRCLE_HUB_HOST',
+  'CIRCLE_HUB_ALLOWED_HOSTS',
   'CIRCLE_HUB_PORT',
   'CIRCLE_HUB_DATABASE_SOCKET_DIR',
   'CIRCLE_HUB_DATABASE_HOST',

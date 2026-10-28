@@ -4,11 +4,28 @@ Persistent single-machine deployment of the Hub on macOS: the data root, a socke
 embedded-postgres binaries, the deployment's keychain items (the vault master key and the operator token), backups and
 restores with SHA-256 manifests, the user LaunchAgent for `circle-hub serve`, deploy with automatic recovery, rollback,
 and a backup rehearsal. The Hub runs as the
-invoking user and listens on loopback only. Model: the deployment decisions in `docs/hub-r4-architecture.md` (section 1
+invoking user and listens on loopback by default; an internal listener requires explicit settings. Model: the deployment decisions in `docs/hub-r4-architecture.md` (section 1
 item 4) and D01 R[6] (a deployment instance carries an environment class; endpoints and credential references live only
 in the deployment instance).
 
 Also owned here: `scripts/verify-postgres.ts` (CI check; its logic is `verify.ts`) and `bin/circle-hub` (the command entry).
+
+## Explicit internal listener
+
+The default listener stays `127.0.0.1`. To create a shared deployment on a specific internal IP, set
+`CIRCLE_HUB_HOST` and `CIRCLE_HUB_ALLOWED_HOSTS` before `init`. The latter is a comma-separated list of exact lower-case
+DNS names or IP literals, without ports, schemes, credentials, paths, wildcards or empty entries. The platform stores
+both declarations in `config/platform.json`, pins them against environment drift, supplies them to the service and
+shows them in `status`. Older settings without either field keep the loopback default. Non-loopback listeners require
+an explicit allowed list; wildcard listeners and public IPs are refused. Address examples in tests use documentation
+subnets. This is not TLS: a token sent over internal HTTP can be observed by an intervening network observer.
+
+Host and Origin must use a declared host and the configured listener port. Console form POSTs additionally require the
+Origin authority to equal the request Host; an absent Origin remains usable by non-browser clients. No forwarded header
+is trusted. A TLS-terminating reverse proxy must preserve an explicitly declared authority and port; deployments needing
+a different external port require a separately reviewed proxy authority design. Local tool installation accepts only
+loopback or the exact configured literal IP and port, never follows redirects, and sends the declared authority as Host.
+Configure the target and firewall before exposing the service; this setting does not itself configure network access.
 
 ## Data root
 

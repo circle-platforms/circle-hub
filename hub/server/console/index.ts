@@ -79,7 +79,9 @@ function forbidden(response: ServerResponse, message: string): void {
 /** A console POST must come from this server's own pages: an Origin, when sent, is one of its own origins. */
 function sameOrigin(request: IncomingMessage, own: ReadonlySet<string>): boolean {
   const origin = request.headers.origin;
-  return origin === undefined || (typeof origin === 'string' && own.has(origin));
+  if (origin === undefined) return true;
+  if (typeof origin !== 'string' || !own.has(origin) || typeof request.headers.host !== 'string') return false;
+  try { return new URL(origin).host === request.headers.host.toLowerCase(); } catch { return false; }
 }
 
 async function formOf(request: IncomingMessage): Promise<URLSearchParams | 'too_large' | 'wrong_type' | 'aborted'> {

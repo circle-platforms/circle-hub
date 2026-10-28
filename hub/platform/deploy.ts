@@ -698,7 +698,7 @@ export function systemDeployHost(context: PlatformContext, settings: PlatformSet
     portBusy: async () => {
       // An old server may still be shutting down right after bootout.
       for (let attempt = 0; attempt < 20; attempt++) {
-        if (!(await portAnswers(settings.port))) return false;
+        if (!(await portAnswers(settings.port, 1000, settings.listenHost))) return false;
         await delay(500);
       }
       return true;
@@ -758,7 +758,7 @@ export function systemDeployHost(context: PlatformContext, settings: PlatformSet
       await assertApplicationRole(cluster(release), '迁移之后，');
     },
     waitHealthy: async (release) => {
-      await waitForHealth(settings.port, { release: release.id, totalMs: own.healthTimeoutMs });
+      await waitForHealth(settings.port, { release: release.id, totalMs: own.healthTimeoutMs, host: settings.listenHost, authority: settings.allowedHosts?.[0] });
     },
     setAside: (reason) => setAside(layout, reason, own.now()),
     restore: async (name, release) => {

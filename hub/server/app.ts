@@ -7,6 +7,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { isLoopbackAddress } from '../config/index.ts';
+import { validAllowedHosts, validListenAddress } from '../listen.ts';
 import type { AppOptions, HubApp, ListenInfo, ServerDeps } from './api.ts';
 import { handleConsole } from './console/index.ts';
 import { SessionStore } from './console/session.ts';
@@ -16,8 +17,8 @@ import { handleMcp } from './mcp.ts';
 import { describeError } from './notes.ts';
 import { packageVersion, readReleaseId } from './release.ts';
 
-const REFUSED_HOST = '拒绝：Host 必须是本机地址 127.0.0.1:<端口> 或 localhost:<端口>';
-const REFUSED_ORIGIN = '拒绝：Origin 不是本机来源';
+const REFUSED_HOST = '拒绝：Host 不在此服务允许的主机名单里';
+const REFUSED_ORIGIN = '拒绝：Origin 不在此服务允许的来源名单里';
 const BAD_TARGET = '请求目标不对：要么是以 / 开头的路径，要么是本服务器的 http 绝对地址';
 
 /** A parsed request target: the URL on this server, and the authority an absolute-form target named (null for a path). */
@@ -53,7 +54,8 @@ function printable(target: string | undefined): string {
 
 export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const host = deps.config.host;
-  if (!isLoopbackAddress(host)) throw new Error(`circle-hub 只监听本机回环地址，${host} 不是`);
+  const declared = deps.config.allowedHosts;
+  if (!validListenAddress(host) || (declared && !validAllowedHosts(declared)) || (!isLoopbackAddress(host) && !declared)) throw new Error('监听地址或允许主机无效：非回环监听必须显式声明精确的允许主机');
   const release = readReleaseId(options.codeRoot);
   const log = options.log ?? ((line: string) => process.stderr.write(`${line}\n`));
   const closeTimeoutMs = options.closeTimeoutMs ?? 10_000;
@@ -61,8 +63,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const clock = deps.now ?? (() => new Date());
   const sessions = new SessionStore(() => clock().getTime());
   const budget = new BodyBudget(options.maxInflightBodyBytes ?? 4 * deps.config.limits.maxRequestBytes);
-  let hosts = allowedHosts(host, deps.config.port);
-  let origins = ownOrigins(hosts);
+  let hosts = allowedHosts(host, deps.config.port, declared);
+  let origins = ownOrigins(hosts, Boolean(declared));
   let server: Server | null = null;
   let stopping = false;
   let closing: Promise<void> | null = null;
@@ -76,7 +78,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     const isMcp = target?.url.pathname === '/mcp';
     // An absolute-form target names an authority too: it must be this server, like the Host header.
     const hostOk = hostAllowed(request, hosts) && (target === null || target.authority === null || hosts.has(target.authority));
-    if (!hostOk || !originAllowed(request)) {
+    if (!hostOk || !originAllowed(request, declared ? origins : undefined)) {
       request.resume();
       const message = hostOk ? REFUSED_ORIGIN : REFUSED_HOST;
       if (isMcp) sendRpcError(response, 403, -32000, message, { connection: 'close' });
@@ -154,8 +156,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     });
     server = created;
     const port = (created.address() as AddressInfo).port;
-    hosts = allowedHosts(host, port);
-    origins = ownOrigins(hosts);
+    hosts = allowedHosts(host, port, declared);
+    origins = ownOrigins(hosts, Boolean(declared));
     const literal = host.includes(':') ? `[${host}]` : host;
     return { host, port, url: `http://${literal}:${port}` };
   };

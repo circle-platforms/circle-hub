@@ -2,6 +2,7 @@
 import { isAbsolute, join, resolve } from 'node:path';
 import { HUB_ENVIRONMENT, HUB_PREFIX, isHubEnvironmentName, isPlatformOnlyName } from './names.ts';
 import { assertNoRetiredEnvironment } from './retired.ts';
+import { validAllowedHosts, validListenAddress } from '../listen.ts';
 
 export { HUB_ENVIRONMENT, HUB_PREFIX, PLATFORM_ONLY_ENVIRONMENT, RETIRED_PREFIX, isHubEnvironmentName, isPlatformOnlyName } from './names.ts';
 export type { HubEnvironmentName, PlatformOnlyName } from './names.ts';
@@ -30,6 +31,7 @@ export interface HubConfig {
   dataDir: string;
   logDir: string;
   host: string;
+  allowedHosts?: readonly string[];
   port: number;
   database: DatabaseConfig;
   keychain: { service: string; account: string };
@@ -144,9 +146,11 @@ export function loadConfig(
   const logDir = absolute('CIRCLE_HUB_LOG_DIR', false) ?? (dataDir === undefined ? undefined : join(dataDir, 'logs'));
 
   const host = read('CIRCLE_HUB_HOST') ?? '127.0.0.1';
-  if (!isLoopbackAddress(host)) {
-    problems.push(`CIRCLE_HUB_HOST 只允许回环地址（127.0.0.0/8 或 ::1）${host === 'localhost' ? '，请写 127.0.0.1' : ''}`);
-  }
+  const allowedHostsValue = read('CIRCLE_HUB_ALLOWED_HOSTS');
+  const allowedHosts = allowedHostsValue?.split(',');
+  if (allowedHosts && !validAllowedHosts(allowedHosts)) problems.push('CIRCLE_HUB_ALLOWED_HOSTS 必须是以逗号分隔的精确主机名或 IP，不能有端口、通配符、重复项或空项');
+  if (!validListenAddress(host)) problems.push(`CIRCLE_HUB_HOST 只允许回环地址或明确的内网 IP，不能用通配地址${host === 'localhost' ? '，请写 127.0.0.1' : ''}`);
+  else if (!isLoopbackAddress(host) && !allowedHosts) problems.push('CIRCLE_HUB_HOST 只允许回环地址；非回环监听必须显式设置 CIRCLE_HUB_ALLOWED_HOSTS');
   const port = integer('CIRCLE_HUB_PORT', undefined, 0, 65535);
 
   const socketDir = absolute('CIRCLE_HUB_DATABASE_SOCKET_DIR', false);
@@ -191,6 +195,7 @@ export function loadConfig(
     dataDir,
     logDir,
     host,
+    ...(allowedHosts ? { allowedHosts } : {}),
     port,
     database: { host: resolvedDatabaseHost, port: databasePort, database, user },
     keychain,

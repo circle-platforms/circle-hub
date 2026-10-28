@@ -10,6 +10,8 @@ import { PLATFORM_VARIABLES, variable } from './environment.ts';
 import { PlatformError } from './errors.ts';
 import { writeFileExclusive } from './files.ts';
 import { OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM } from './keychain-items.ts';
+import { validAllowedHosts, validListenAddress } from '../listen.ts';
+import { isIP } from 'node:net';
 import type { Layout } from './layout.ts';
 
 export const SETTINGS_SCHEMA = 'circle-hub-platform@2';
@@ -76,13 +78,21 @@ export const PlatformSettingsFile = z
     schema: z.literal(SETTINGS_SCHEMA),
     environment: EnvironmentSchema,
     port: Port,
+    listen_host: z.string().optional(),
+    allowed_hosts: z.array(z.string()).optional(),
     keychain_service: KeychainName,
     keychain_account: KeychainName,
     database: DatabaseSettings,
     backups_keep: z.number().int().min(1).max(365),
     node: z.string().startsWith('/').optional().describe('absolute path of the Node 24 binary the service runs'),
   })
-  .strict();
+  .strict().superRefine((value, ctx) => {
+    const host = value.listen_host ?? '127.0.0.1';
+    if (!validListenAddress(host)) ctx.addIssue({ code: 'custom', path: ['listen_host'], message: '监听地址须是明确的内网 IP 或回环地址' });
+    if (value.allowed_hosts && !validAllowedHosts(value.allowed_hosts)) ctx.addIssue({ code: 'custom', path: ['allowed_hosts'], message: '允许主机须为精确、无重复的主机名' });
+    const loopback = host === '::1' || (isIP(host) === 4 && host.startsWith('127.'));
+    if (!loopback && !value.allowed_hosts) ctx.addIssue({ code: 'custom', path: ['allowed_hosts'], message: '非回环监听必须声明允许主机' });
+  });
 export type PlatformSettingsFile = z.infer<typeof PlatformSettingsFile>;
 
 const PlatformSettingsFileV1 = z
@@ -109,6 +119,8 @@ export interface DatabaseNames {
 export interface PlatformSettings {
   environment: Environment;
   port: number;
+  listenHost?: string;
+  allowedHosts?: readonly string[];
   keychainService: string;
   keychainAccount: string;
   database: DatabaseNames;
@@ -124,6 +136,8 @@ export function settingsPath(layout: Layout): string {
 export function newSettingsFile(input: {
   environment: Environment;
   port?: number;
+  listenHost?: string;
+  allowedHosts?: readonly string[];
   keychainService?: string;
   keychainAccount?: string;
   backupsKeep?: number;
@@ -133,6 +147,8 @@ export function newSettingsFile(input: {
     schema: SETTINGS_SCHEMA,
     environment: input.environment,
     port: input.port ?? DEFAULT_PORT,
+    ...(input.listenHost ? { listen_host: input.listenHost } : {}),
+    ...(input.allowedHosts ? { allowed_hosts: input.allowedHosts } : {}),
     keychain_service: input.keychainService ?? DEFAULT_KEYCHAIN_SERVICE,
     keychain_account: input.keychainAccount ?? DEFAULT_KEYCHAIN_ACCOUNT,
     database: {
@@ -239,6 +255,8 @@ export function resolveSettings(file: PlatformSettingsFile, env: NodeJS.ProcessE
     if (actual !== undefined && actual !== expected) problems.push(`${name} 是 ${actual}，部署设置里是 ${expected}`);
   };
   agree(PLATFORM_VARIABLES.port, String(file.port));
+  agree(PLATFORM_VARIABLES.host, file.listen_host ?? '127.0.0.1');
+  agree(PLATFORM_VARIABLES.allowedHosts, (file.allowed_hosts ?? []).join(','));
   agree(PLATFORM_VARIABLES.keychainService, file.keychain_service);
   agree(PLATFORM_VARIABLES.keychainAccount, file.keychain_account);
   agree(PLATFORM_VARIABLES.databaseName, database.name);
@@ -254,6 +272,8 @@ export function resolveSettings(file: PlatformSettingsFile, env: NodeJS.ProcessE
   return {
     environment: file.environment,
     port: file.port,
+    ...(file.listen_host ? { listenHost: file.listen_host } : {}),
+    ...(file.allowed_hosts ? { allowedHosts: file.allowed_hosts } : {}),
     keychainService: file.keychain_service,
     keychainAccount: file.keychain_account,
     database,
