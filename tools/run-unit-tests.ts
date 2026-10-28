@@ -85,6 +85,17 @@ export function sharedConcurrency(group: UnitGroup): number {
   return Math.max(2, Math.min(14, availableParallelism() - 1));
 }
 
+/**
+ * Timing sentinels follow the group concurrency, so `parser-bounds` stays a single worker.
+ * `all` does not inherit the shared lane's width. On this machine three consecutive runs of the
+ * sentinel lane at concurrency 2 all passed (99–171s), including one that started at load 30,
+ * and three at concurrency 1 also passed but took 166–315s. The local default is 2.
+ */
+export function sentinelConcurrency(group: UnitGroup): number {
+  if (group === 'all') return 2;
+  return sharedConcurrency(group);
+}
+
 function stringEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) if (typeof value === 'string' && !key.startsWith('HUB_UNIT_PG_')) env[key] = value;
@@ -183,11 +194,12 @@ export async function runUnitTests(group: UnitGroup = 'all'): Promise<number> {
   if (files.length === 0) throw new Error('单元测试分组没有文件，拒绝空运行；检查测试文件声明');
   const lanes = classifyLanes(files);
   const concurrency = sharedConcurrency(group);
+  const sentinelLimit = sentinelConcurrency(group);
   const wallBegan = Date.now();
   process.stderr.write(
-    `unit lanes shared=${lanes.shared.length} isolated=${lanes.isolated.length} sentinel=${lanes.sentinel.length} sharedConcurrency=${concurrency} load=${loadavg().map((n) => n.toFixed(2)).join(' ')}\n`,
+    `unit lanes shared=${lanes.shared.length} isolated=${lanes.isolated.length} sentinel=${lanes.sentinel.length} sharedConcurrency=${concurrency} sentinelConcurrency=${sentinelLimit} load=${loadavg().map((n) => n.toFixed(2)).join(' ')}\n`,
   );
-  const postgres = await startPostgres({ maxConnections: 500, sharedBuffers: '512MB', autovacuum: false, private: true });
+  const postgres = lanes.shared.length === 0 ? undefined : await startPostgres({ maxConnections: 500, sharedBuffers: '512MB', autovacuum: false, private: true });
   const children: ChildProcess[] = [];
   const stopChildren = (): void => {
     for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGINT');
@@ -195,15 +207,19 @@ export async function runUnitTests(group: UnitGroup = 'all'): Promise<number> {
   process.once('SIGINT', stopChildren);
   process.once('SIGTERM', stopChildren);
   try {
-    await prepareTemplate(postgres);
-    process.stderr.write(`template clone ${(await timeClone(postgres)).toFixed(0)} ms\n`);
-    const shared = spawnLane(lanes.shared, concurrency, sharedEnv(postgres));
+    if (postgres) {
+      await prepareTemplate(postgres);
+      process.stderr.write(`template clone ${(await timeClone(postgres)).toFixed(0)} ms\n`);
+    } else {
+      process.stderr.write('unit shared cluster not started\n');
+    }
+    const shared = postgres ? spawnLane(lanes.shared, concurrency, sharedEnv(postgres)) : undefined;
     // Own-cluster files stay at 2 so they do not add SysV segments while the shared lane is busy.
     const isolated = spawnLane(lanes.isolated, 2, stringEnv());
-    const sentinel = spawnLane(lanes.sentinel, 2, stringEnv());
+    const sentinel = spawnLane(lanes.sentinel, sentinelLimit, stringEnv());
     for (const child of [shared, isolated, sentinel]) if (child) children.push(child);
     const peaks: Peaks = { shm: 0, rssKiB: 0, cpu: 0 };
-    const postmaster = postgres.pid ?? 0;
+    const postmaster = postgres?.pid ?? 0;
     const timer = setInterval(() => samplePeaks(postmaster, peaks), 2000);
     timer.unref();
     const laneDone = async (name: string, child: ChildProcess | undefined): Promise<number> => {
@@ -227,7 +243,7 @@ export async function runUnitTests(group: UnitGroup = 'all'): Promise<number> {
   } finally {
     process.off('SIGINT', stopChildren);
     process.off('SIGTERM', stopChildren);
-    await postgres.stop();
+    await postgres?.stop();
   }
 }
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { PARSER_BOUNDS, SENTINELS, classifyLanes, sharedConcurrency, unitFiles, unitLane } from './run-unit-tests.ts';
+import { PARSER_BOUNDS, SENTINELS, classifyLanes, sentinelConcurrency, sharedConcurrency, unitFiles, unitLane } from './run-unit-tests.ts';
 
 test('public partitions cover the unit files once', () => {
   const all = unitFiles('all');
@@ -31,4 +31,8 @@ test('local concurrency tracks this machine and the public partitions stay cappe
   assert.equal(sharedConcurrency('regular'), 2);
   assert.equal(sharedConcurrency('parser-bounds'), 1);
   assert.ok(sharedConcurrency('all') >= 2 && sharedConcurrency('all') <= 14);
+  assert.equal(sentinelConcurrency('parser-bounds'), 1);
+  assert.equal(sentinelConcurrency('regular'), sharedConcurrency('regular'));
+  assert.equal(sentinelConcurrency('all'), 2);
+  assert.equal(classifyLanes(unitFiles('parser-bounds')).shared.length, 0);
 });
