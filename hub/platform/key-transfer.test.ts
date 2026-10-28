@@ -139,7 +139,8 @@ test('export and import move a raw key only through the pipe and the imported ke
     assert.match(again.text, /不覆盖/);
     assert.equal(destination.system.state.key, absent);
 
-    const provider = { getKey: async () => Uint8Array.from(piped[0]!) };
+    assert.ok(piped[0]!.every(byte => byte === 0), 'consumed transport bytes are wiped');
+    const provider = { getKey: async () => Buffer.from(destination.system.state.key!, 'hex') };
     const vault = new FileVault(join(parent, 'vault'), provider);
     await vault.put('agile.token', secret);
     assert.equal(await vault.getText('agile.token'), secret);
