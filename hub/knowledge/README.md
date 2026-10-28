@@ -1159,7 +1159,7 @@ The optional `tree_root@1.empty_scope` stores complete=true and each producer la
 
 ## Frozen feeding cuts
 
-For a frozen append position, the feeding reader pages the product, retraction, source-head, binding and usage indexes in bounded batches. Index values and insertion order are retained, so a record indexed under multiple objects is still associated with each matching object. Product-wide notes and all other records in the frozen cut remain included. Each record and original is still checked against the reader's current permissions and read tier; those decisions are not shared between records. An unfrozen read continues to use the original live path. This changes query layout only, not historical records or their frozen horizon.
+For a frozen append position, the feeding reader pages the product, retraction, source-head, binding and usage indexes in bounded batches. Index values and insertion order are retained, so a record indexed under multiple objects is still associated with each matching object. Product-wide notes and all other records in the frozen cut remain included. Each record and original is still checked against the reader's current permissions and read tier; those decisions are not shared between records. This changes query layout only, not historical records or their frozen horizon.
 
 When an unbound source discovers products from prior feeding records, one currently readable witness establishes each distinct product. Additional records of that same product do not need another visibility check to prove the same existence fact. An unreadable record establishes nothing, so later records of that product are still checked; two distinct readable products remain ambiguous. No other record is made readable by a witness.
 
@@ -1168,3 +1168,24 @@ cuts when the store supports them; the previous per-record path remains the fall
 reader and source permission checked separately. A synthetic 40-record regression reproduces 80 per-record retraction
 and source-head reads before the change and at most four after it, while comparing the returned entries with the old
 path. This does not establish that index reads are the only cause of a slow real request.
+
+### Feeding cases in views
+
+A feeding cut keeps valid function projections by exact locked root and exact source identity. A later source-only read
+cannot replace a root-specific command projection; projections on different roots stay separate. Facets count the content
+identity once. If multiple sources of that identity disagree on a requested facet field, that identity is omitted from
+that facet, the view is marked truncated, and a note names the missing agreement and the next action.
+
+An index lists each source projection by its immutable claim-record digest, with `rec:<digest>` as its reference and the
+shared content digest in `data.object`; multiple sources can therefore point to one content object without inventing tree
+membership. Tree entries keep their existing tree references. Exact source title, ancestors, parser selector and command-tree
+source are used only when present and verified in that projection. Older records without these fields remain readable and
+must be re-read under the desired locked root when a consumer needs them. A nonempty legacy expectation list without a
+product-declared nonblank flag remains unknown in expectation-count facets; it is not counted as present. A case seen only without a locked root is not
+attached to a version view by this change; it needs a root-bound read. No version inheritance is inferred here.
+The view artifact's derived-coverage ancestry still pins the tree and its composition, not the individual feeding source
+artifacts. A credential finding in a feeding field may therefore require source-coverage handling before that view can be
+read, even when the individual feeding record is readable. This limit does not grant access through another capture.
+The shared `ViewEntry` contract also allows record references in impact and links views, but their current producers still
+emit only tree references and regression-scope and maintenance-sweep accept only those. Before adding feeding records to
+an impact view, narrow that shared contract or update the affected consumers together.

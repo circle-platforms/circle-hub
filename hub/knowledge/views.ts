@@ -38,9 +38,9 @@ import {seedlingOfRoot} from './seedling.ts';
 import type { FeedingCut } from './feeding-types.ts';
 
 /** The feeding-layer context a view read carries: the run's frozen cut (null offset: everything now in the layer). */
-type FeedingNotes = { context: ExternalReadContext | undefined; cut: FeedingCut | null };
+type FeedingNotes = { context: ExternalReadContext | undefined; cut: FeedingCut | null; identity: string | null };
 import { sha256Hex, canonicalBytes, canonicalByteLength, createCanonicalEncoder, canonicalize, MAX_ADMIN_FINDINGS, type DerivedCoverage, type ActionBody, type SourceArtifact } from '../records/api.ts';
-import { pathSegments, treeReference } from '../refs/api.ts';
+import { pathSegments, srcFragment, treeReference } from '../refs/api.ts';
 import { LinksView } from '../../contracts/src/views.ts';
 import { LinkReading,RelationReadError,LinkRefusal } from './links.ts';
 import { CompositionView } from './composition.ts';
@@ -285,7 +285,7 @@ function facetValues(data: Record<string, unknown>, field: string, odd: { count:
 }
 
 /** One entry of a kind, once: a placed row keeps its path; an unplaced row is cited at the root (K01 R[4]). */
-type KindEntry = { entry: string; path: string; content: EntryContent; unplaced: boolean; root?:string; unversioned?:boolean };
+type KindEntry = { entry: string; path: string; content: EntryContent; unplaced: boolean; root?:string; unversioned?:boolean; reference?:string|null };
 type ScopeRoot = {root:string;composition:string};
 
 /**
@@ -356,10 +356,45 @@ function record(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-/** Fed cases bound to this seedling root, projected onto the same case fields a sync-root entry carries into a facet. */
-function fedCaseRows(root: string, cut: FeedingCut): KindEntry[] {
+/** A view's feeding cut is separate from the tree digest and depends on the current reader's readable records. */
+function feedingIdentity(cut:FeedingCut,reader:string):string {
+  const objects=[...cut.objects.entries()].map(([id,body])=>cut.casesByRoot===undefined?[id,body]:[id,body.schema]).sort((a,b)=>compareText(String(a[0]),String(b[0])));
+  const cases=[...cut.casesByRoot?.entries()??[]].flatMap(([root,byObject])=>[...byObject.entries()].flatMap(([id,bySource])=>[...bySource.entries()].map(([source,value])=>canonicalize([root,id,source,value.record,value.position])))).sort(compareText);
+  const bindings=[...cut.bindings.entries()].map(([id,values])=>[id,values.map(value=>canonicalize({state:value.state,line:value.line,candidates:value.candidates})).sort(compareText)]).sort((a,b)=>compareText(String(a[0]),String(b[0])));
+  return sha256Hex(canonicalize({reader,offset:cut.offset,objects,cases,bindings,retracted:[...cut.retracted].sort(compareText),contradicted:[...cut.contradicted].sort(compareText)}));
+}
+
+function rootlessCases(cut:FeedingCut,root:string,key?:string,only?:ReadonlySet<string>|null):number {
+  const rooted=cut.casesByRoot?.get(root),unrooted=cut.casesByRoot?.get(null);
+  if(cut.casesByRoot){
+    let missing=0;
+    for(const [id,sources] of unrooted??[]){
+      const rootSources=rooted?.get(id);
+      for(const [sourceKey,projection] of sources){
+        if(rootSources?.has(sourceKey))continue;
+        const source=record(projection.body.source);
+        if(key==='document'&&only&&typeof source?.document==='string'&&!only.has(source.document))continue;
+        missing++;break;
+      }
+    }
+    return missing;
+  }
+  let missing=0;
+  for(const object of cut.objects.values()){
+    if(object.schema!=='fed-case@1'||object.root!==null)continue;
+    const source=record(object.source);
+    if(key==='document'&&only&&typeof source?.document==='string'&&!only.has(source.document))continue;
+    missing++;
+  }
+  return missing;
+}
+
+/** Facets count content once; indexes preserve the separately citable sources of that content. */
+function fedCaseRows(root: string, cut: FeedingCut, sourceEntries=false): KindEntry[] {
   const rows: KindEntry[] = [];
-  for (const object of cut.objects.values()) {
+  const cases=cut.casesByRoot?.get(root);
+  const objects=cut.casesByRoot===undefined?[...cut.objects.values()].map(body=>({body,record:null,position:0})):[...cases?.values()??[]].flatMap(sources=>{const values=[...sources.values()].sort((a,b)=>a.position-b.position);return sourceEntries?values:values.slice(-1);});
+  for (const {body:object,record:recordDigest} of objects) {
     if (object.schema !== 'fed-case@1' || object.root !== root) continue;
     const declaration = record(object.resource_declaration);
     const declared = declaration?.status === 'declared';
@@ -368,21 +403,45 @@ function fedCaseRows(root: string, cut: FeedingCut): KindEntry[] {
     const lines = Array.isArray(object.document_lines) ? object.document_lines.filter((line): line is string => typeof line === 'string') : [];
     const steps = Array.isArray(object.steps) ? object.steps : [];
     const first = steps.map(record).find((step) => step !== null && typeof step.text === 'string');
+    const source=record(object.source),identities=Array.isArray(object.commands)?object.commands.map(record).filter((value):value is Record<string,unknown>=>value!==null):[];
+    const paths=[...new Set(identities.flatMap(value=>typeof value.path==='string'?[value.path]:[]))].sort(compareText);
+    const treeRoots=[...new Set(identities.flatMap(value=>typeof value.tree_root==='string'?[value.tree_root]:[]))];
+    let rawResource:unknown;
+    if(typeof declaration?.raw_json==='string')try{rawResource=JSON.parse(declaration.raw_json);}catch{/* The stored declaration stays unknown. */}
+    const tags=Array.isArray(rawResource)?rawResource.filter((value):value is string=>typeof value==='string'):[];
+    const resourceEmpty=declaration?.present===false?true:Array.isArray(rawResource)?rawResource.length===0:rawResource!==undefined?false:null;
+    const caseLocation=typeof source?.bytes==='string'&&typeof object.node_parser==='string'&&typeof object.node_selector==='string'?srcFragment(source.bytes,object.node_parser,object.node_selector):null;
     rows.push({
-      entry: object.object,
+      entry: sourceEntries&&recordDigest!==null?recordDigest:object.object,
       path: typeof object.path === 'string' ? object.path : '/',
       unplaced: object.path === null,
       root,
       unversioned: false,
+      reference: recordDigest===null?null:`rec:${recordDigest}`,
       content: {
         kind: 'case',
         statement: first && typeof first.text === 'string' ? first.text : '',
         data: {
-          line: lines,
-          has_expected: expects.length > 0,
+          line: lines.length===1?lines[0]:null,
+          ...(lines.length>1?{line_candidates:lines}:{}),
+          module: typeof object.module==='string'?object.module:null,
+          has_expected: typeof object.has_expected==='boolean'?object.has_expected:expects.length===0?false:null,
           test_type_status: declared ? 'declared' : 'undeclared',
           negative: declared ? types.includes('negative') : null,
-          commands: Array.isArray(object.commands) ? object.commands : [],
+          object: object.object,
+          ...(typeof source?.document==='string'?{document:source.document}:{}),
+          ...(typeof object.node_key==='string'?{node:object.node_key}:{}),
+          ...(typeof object.title==='string'?{title:object.title}:{}),
+          ...(Array.isArray(object.path_labels)?{path_labels:object.path_labels}:{}),
+          ...(Array.isArray(object.stories)?{stories:object.stories}:{}),
+          ...(Array.isArray(object.defects)?{defects:object.defects}:{}),
+          ...(caseLocation?{case_location:caseLocation}:{}),
+          ...(typeof source?.bytes==='string'?{source_sha256:source.bytes}:{}),
+          commands: paths,
+          command_identities: identities,
+          command_tree_root: typeof object.command_tree_root==='string'?object.command_tree_root:treeRoots.length===1?treeRoots[0]:null,
+          ...(typeof object.unparsed_steps==='number'?{unparsed_steps:object.unparsed_steps}:{}),
+          ...(declaration?{...(rawResource!==undefined?{tags}:{}),resource_empty:resourceEmpty,tag_valid:Array.isArray(declaration.violations)?declaration.violations.length===0:null}:{}),
         },
         applicability: null,
       },
@@ -391,8 +450,8 @@ function fedCaseRows(root: string, cut: FeedingCut): KindEntry[] {
   return rows;
 }
 
-function viewEntry(digest: string, content: EntryContent, root: string, path: string, unversioned = false): ViewEntry {
-  return { ...(unversioned ? {root,build:null} : {}), entry: digest, kind: EntryKindSchema.parse(content.kind), statement: content.statement, data: content.data, reference: treeReference(root, path, digest) };
+function viewEntry(digest: string, content: EntryContent, root: string, path: string, unversioned = false, reference?: string): ViewEntry {
+  return { ...(unversioned ? {root,build:null} : {}), entry: digest, kind: EntryKindSchema.parse(content.kind), statement: content.statement, data: content.data, reference: reference??treeReference(root, path, digest) };
 }
 
 /** Exact bytes of one member `"<key>":<value>,` of an object in the canonical answer (the last member has no comma: one byte to spare). */
@@ -511,7 +570,7 @@ export class KnowledgeViews {
     if (undeclared > 0) notes.push(`喂入层里 ${undeclared} 个对象版本未声明，单列计数，不进版本差`);
     if (cut.contradicted.size > 0) notes.push(`喂入层里 ${cut.contradicted.size} 个对象有矛盾（contradicts），单列`);
     for (const kind of kindEmpty) {
-      const inLayer = kind === 'case' ? cut.objects.size : 0;
+      const inLayer = kind === 'case' ? [...cut.objects.values()].filter(object=>object.schema==='fed-case@1').length : 0;
       notes.push(inLayer > 0
         ? `根里没有${labelOf('entry_kind', kind)}种类的条目；喂入层（冻结序号之前）有 ${inLayer} 个对象，按锁定树苗 + 喂入层读`
         : `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：根和喂入层都没有；在运行里经 Hub 读到或上传后即进入喂入层`);
@@ -639,7 +698,7 @@ export class KnowledgeViews {
     };
     const nodes = (await this.#reading.changedNodes(from.root, to.root)) ?? [];
     const [fromComposition, toComposition] = pinned?[pinned.from,pinned.to]:await Promise.all([this.#buildView(product,from),this.#buildView(product,to)]);
-    const page=pageState(after,{product,from,to,changed,attached,attachedFields,catalog,compositions:[fromComposition?.record,toComposition?.record],scope:scope?.record??null,exclude:[...exclude].sort()});
+    const page=pageState(after,{product,from,to,changed,attached,attachedFields,catalog,compositions:[fromComposition?.record,toComposition?.record],scope:scope?.record??null,exclude:[...exclude].sort(),...(feeding?.identity?{feeding:feeding.identity}:{})});
     const budget = this.#budget(pinned?.reserve);
     interface Item {
       position:number;
@@ -851,11 +910,12 @@ export class KnowledgeViews {
     const summary = await this.#scopeSummary(scope, [kind], undefined, scopePlaced === null ? undefined : row => {
       if (!row.unplaced) scopePlaced.add(row.entry);
     });
-    const page=pageState(after,{product,at,kind,by,composition:composition?.record,scope:scope?.record??null,exclude:[...exclude].sort()});
+    const page=pageState(after,{product,at,kind,by,composition:composition?.record,scope:scope?.record??null,exclude:[...exclude].sort(),...(feeding?.identity?{feeding:feeding.identity}:{})});
     const seen = new Set<string>();
     const counts = new Map<string, { values: FacetValue[]; count: number; unversioned: number }>();
     const empty = Object.fromEntries(by.map(field => [field, 0]));
     const odd = { count: 0 };
+    const unrooted=at.seedling&&kind==='case'&&feeding?.cut?rootlessCases(feeding.cut,at.root):0;
     const limit = Math.max(1, this.#context.limits.facetCombinations);
     let cut = 0;
     let unlisted = 0;
@@ -885,7 +945,18 @@ export class KnowledgeViews {
     if (composition !== null || scope !== null) {
       for await (const row of scopedEntries(composition, scope, kind)) take(row);
     }
-    if (at.seedling && kind === 'case' && feeding?.cut) for (const row of fedCaseRows(at.root, feeding.cut)) take(row);
+    let feedingConflicts=0,feedingUnknown=0;
+    if (at.seedling && kind === 'case' && feeding?.cut) {
+      const groups=new Map<string,KindEntry[]>();
+      for(const row of fedCaseRows(at.root,feeding.cut,true)){const id=row.content.data.object;if(typeof id!=='string')continue;const group=groups.get(id)??[];group.push(row);groups.set(id,group);}
+      for(const [id,group] of groups){
+        if(group.some(row=>Array.isArray(row.content.data.line_candidates)&&row.content.data.line_candidates.length>1)){feedingConflicts++;continue;}
+        if(by.includes('has_expected')&&group.some(row=>typeof row.content.data.has_expected!=='boolean')){feedingUnknown++;continue;}
+        const signature=(row:KindEntry)=>canonicalize(by.map(field=>facetValues(row.content.data,field,{count:0}).map(value=>canonicalize(value)).sort()));
+        if(new Set(group.map(signature)).size!==1){feedingConflicts++;continue;}
+        const selected=group.find(row=>!row.unplaced)??group[0];take({...selected,entry:id,unplaced:group.every(row=>row.unplaced)});
+      }
+    }
     const compareRows = (a: FacetValue[], b: FacetValue[]): number => {
       for (let i = 0; i < a.length; i++) {
         const c = compareValues(a[i], b[i]);
@@ -919,6 +990,9 @@ export class KnowledgeViews {
     const skipped = skippedNote(at, composition);
     if (skipped !== null) notes.push(skipped);
     if (at.seedlingNote) notes.push(at.seedlingNote);
+    if(feedingConflicts)notes.push(`${feedingConflicts} 个喂入对象的多个来源在请求字段上不一致，未计入本页；缺少一致的来源事实，下一步由来源维护者核对后重新读取`);
+    if(feedingUnknown)notes.push(`${feedingUnknown} 个用例缺期望节点的结构判定，未计入本页；下一步用新版产品包按锁定树苗重读原件`);
+    if(unrooted)notes.push(`${unrooted} 个用例缺所查树苗的投影，未计入本页；下一步用绑定树苗的运行重读原件，不把未核命令当作没有命令`);
     const view: FacetView = {
       schema: 'facet-view@1',
       next: page.offset+rows.length<all.length?page.next(page.offset+rows.length):null,
@@ -930,7 +1004,7 @@ export class KnowledgeViews {
       rows,
       total: seen.size,
       totals: { empty, entry_counts: entryCounts, ...this.#scopeCounts(summary) },
-      truncated: page.offset + rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0,
+      truncated: page.offset + rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0 || feedingConflicts>0 || feedingUnknown>0 || unrooted>0,
       skipped: skippedCount(composition) + skippedCount(scope),
       notes: [...notes,this.#scopeNote(summary,scopeLocked,scope)],
     };
@@ -959,8 +1033,9 @@ export class KnowledgeViews {
     };
     const composition = pinned===undefined?await this.#buildView(product,at):pinned.composition;
     const scope = await this.#scopeView(product,scopeRoot === undefined ? await this.#scope(product) : scopeRoot);
-    const page=pageState(after,{product,at,kind,key,only,fields,composition:composition?.record,scope:scope?.record??null,exclude:[...exclude].sort()});
+    const page=pageState(after,{product,at,kind,key,only,fields,composition:composition?.record,scope:scope?.record??null,exclude:[...exclude].sort(),...(feeding?.identity?{feeding:feeding.identity}:{})});
     const onlySet = only === null ? null : new Set(only);
+    const unrooted=at.seedling&&kind==='case'&&feeding?.cut?rootlessCases(feeding.cut,at.root,key,onlySet):0;
     // Position membership is collected before the index-key filter; the count covers every entry of the kind.
     const scopePlaced = composition !== null && scope !== null ? new Set<string>() : null;
     const summary = await this.#scopeSummary(scope, [kind], row => indexKeys(row.content.data, key).some(value => onlySet === null || onlySet.has(value)), scopePlaced === null ? undefined : row => {
@@ -984,24 +1059,28 @@ export class KnowledgeViews {
       if (row.path !== previousPath || row.root !== previousRoot) { previousPath = row.path; previousRoot = row.root!; referencePrefix = treeReference(row.root!, row.path, row.entry).slice(0, -64); }
       if (row.content.kind !== previousKind) { previousKind = row.content.kind; parsedKind = EntryKindSchema.parse(row.content.kind); }
       const content = slim(row.content);
-      return { ...(row.unversioned ? { root: row.root!, build: null } : {}), entry: row.entry, kind: parsedKind, statement: content.statement, data: content.data, reference: referencePrefix + row.entry };
+      return { ...(row.unversioned ? { root: row.root!, build: null } : {}), entry: row.entry, kind: parsedKind, statement: content.statement, data: content.data, reference: row.reference??referencePrefix + row.entry };
     };
     let ofKind = 0;
     let unplacedCount = 0;
+    let feedingRecords=0;
+    const feedingObjects=new Set<string>();
     const excluded = new Map<string, string>();
     const seenScope = scope === null ? null : new Set<string>();
     const absorb = (row: KindEntry): void => {
+        if(row.reference===null)throw new ImpactRefusal('缺喂入用例对应的可引用记录；请维护者补完整记录后重读索引');
         if (seen.has(row.entry)) return;
         seen.add(row.entry);
         ofKind++;
         if (row.unplaced && !scopePlaced?.has(row.entry)) unplacedCount++;
         const values = indexKeys(row.content.data, key).filter((value) => onlySet === null || onlySet.has(value));
         if (values.length === 0) return;
+        if(typeof row.reference==='string'&&row.reference.startsWith('rec:')){feedingRecords++;if(typeof row.content.data.object==='string')feedingObjects.add(row.content.data.object);}
         const value = projected(row);
         const serialized = encoder.text(value);
         const entryBytes = (entryKeyBytes ??= encoder.size(row.entry) + 2) + Buffer.byteLength(serialized);
         carriers.set(row.entry, entryBytes);
-        if (exclude.has(row.entry)) excluded.set(row.entry, treeReference(row.root!, row.path, row.entry));
+        if (exclude.has(row.entry)) excluded.set(row.entry, row.reference??treeReference(row.root!, row.path, row.entry));
         else {
           // Cache an ordered prefix of index values rather than whichever paths happened to be scanned first.
           // This bounds retained candidate bytes; final selection and the second-scan fallback below stay unchanged.
@@ -1046,7 +1125,11 @@ export class KnowledgeViews {
         absorb({ entry, path, content, unplaced, root: source.body.root, unversioned: source === scope });
       }, validatedParts);
     }
-    if (at.seedling && kind === 'case' && feeding?.cut) for (const row of fedCaseRows(at.root, feeding.cut)) absorb(row);
+    let feedingConflicts=0;
+    if (at.seedling && kind === 'case' && feeding?.cut) for (const row of fedCaseRows(at.root, feeding.cut,true)) {
+      if(Array.isArray(row.content.data.line_candidates)&&row.content.data.line_candidates.length>1){if(key!=='document'||!onlySet||typeof row.content.data.document!=='string'||onlySet.has(row.content.data.document))feedingConflicts++;continue;}
+      absorb(row);
+    }
     const entryCounts = { total: seen.size, placed: seen.size - unplacedCount, unplaced: unplacedCount };
     interface Kept {
       value: string;
@@ -1087,15 +1170,16 @@ export class KnowledgeViews {
     if (wanted.size > 0 && (composition !== null || scope !== null)) {
       for await (const row of scopedEntries(composition, scope, kind)) {
         if (!wanted.has(row.entry)) continue;
-        held.set(row.entry, encoder.bytes(viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned)));
+        held.set(row.entry, encoder.bytes(viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned, row.reference??undefined)));
         wanted.delete(row.entry);
         if (wanted.size === 0) break;
       }
     }
     if (wanted.size > 0 && at.seedling && kind === 'case' && feeding?.cut) {
-      for (const row of fedCaseRows(at.root, feeding.cut)) {
+      for (const row of fedCaseRows(at.root, feeding.cut,true)) {
         if (!wanted.has(row.entry)) continue;
-        held.set(row.entry, encoder.bytes(viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned)));
+        if(row.reference===null)throw new ImpactRefusal('缺喂入用例对应的可引用记录；请维护者补完整记录后重读索引');
+        held.set(row.entry, encoder.bytes(viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned, row.reference??undefined)));
         wanted.delete(row.entry);
       }
     }
@@ -1113,6 +1197,9 @@ export class KnowledgeViews {
       const out: string[] = [];
       if (ofKind === 0) { out.push(`构建 ${at.build} 的根里没有${labelOf('entry_kind', kind)}种类的条目`); out.push(...feedingNotes); }
       else if (keys.size === 0) out.push(`没有${labelOf('entry_kind', kind)}条目在数据字段 ${key} 上有${only === null ? '取值' : '所列的取值'}`);
+      if(feedingRecords)out.push(`喂入索引列出 ${feedingRecords} 条来源记录、${feedingObjects.size} 个内容身份；同一内容的多个出处分别引用记录，data.object 是共享身份`);
+      if(feedingConflicts)out.push(`${feedingConflicts} 条用例来源的版本层有冲突，未计入本索引；下一步由来源维护者核对目录后重读`);
+      if(unrooted)out.push(`${unrooted} 个用例缺所查树苗的投影，未计入本索引；下一步用绑定树苗的运行重读原件`);
       if (only !== null) {
         const absent = only.filter((value) => !keys.has(value));
         if (absent.length > 0 && keys.size > 0) out.push(`这些取值没有条目：${cutText(absent.slice(0, 20).join('、'), 500)}${absent.length > 20 ? ` 等 ${absent.length} 个` : ''}`);
@@ -1153,7 +1240,7 @@ export class KnowledgeViews {
         cut_keys: items.filter((item) => item.cut).map((item) => item.value),
         total_keys: keys.size,
         total_entries: carriers.size,
-        truncated: page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0,
+        truncated: page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0 || unrooted>0 || feedingConflicts>0,
         skipped: skippedCount(composition) + skippedCount(scope),
         notes: notes(count),
       };
@@ -1378,10 +1465,11 @@ export class KnowledgeViews {
       if(reader===this.#context.feeding){const at=await resolveOnce(request.type==='impact'?request.to:request.build);if(typeof at==='string'||!await seedlingOfRoot(this.#context,product,at.root))return null;}
       const offset = context.feeding_offset?.offset??(context.run === undefined || context.run === null ? null : await reader.frozenOffset(context.run));
       if(context.run&&offset===null)throw new KnowledgeError('旧运行缺少冻结的喂入序号；另开运行以冻结树苗和喂入层，不能用最新序号冒充历史',{code:'REFERENCE_UNRESOLVED'});
-      return { context, cut: await reader.cut(handle.product.id, offset,context.principal) };
+      const cut=await reader.cut(handle.product.id, offset,context.principal);
+      return { context, cut, identity:cut===null?null:feedingIdentity(cut,principal.id) };
     })();
-    key = canonicalize({request:key,scope:scopeRoot});
-    const revision = scopeRoot === null ? roots.join('..') : request.type === 'impact' ? [roots[0],sha256Hex(canonicalize({root:roots[1],scope:scopeRoot}))].join('..') : sha256Hex(canonicalize({root:roots[0],scope:scopeRoot}));
+    key = canonicalize({request:key,scope:scopeRoot,feeding:feeding?.identity??null});
+    const revision = feeding?.identity ? request.type==='impact'?[roots[0],sha256Hex(canonicalize({root:roots[1],scope:scopeRoot,feeding:feeding.identity}))].join('..'):sha256Hex(canonicalize({root:roots[0],scope:scopeRoot,feeding:feeding.identity})) : scopeRoot === null ? roots.join('..') : request.type === 'impact' ? [roots[0],sha256Hex(canonicalize({root:roots[1],scope:scopeRoot}))].join('..') : sha256Hex(canonicalize({root:roots[0],scope:scopeRoot}));
     if (request.revision !== null && request.revision !== revision) return { ok: false, id: bare, reason: `要求修订 ${cutText(request.revision, 140)}，现在是 ${revision}` };
     const compositions=[...new Map([...pins.values()].map(composition=>[composition.record,composition])).values()];
     key=canonicalize({query:key,compositions:compositions.map(composition=>composition.record)});

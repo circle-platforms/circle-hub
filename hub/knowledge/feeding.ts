@@ -13,7 +13,7 @@ import {pathSegments} from '../refs/api.ts';
 import {Claim,type Claim as ClaimBody} from '../../contracts/src/claim.ts';
 import {KnowledgeStructureSchema,FeedingRetractionSchema,type FeedingRetraction,type VersionBinding,type FeedingOffset} from '../../contracts/src/feeding.ts';
 import type {FeedingQuote as QuoteEvidence} from '../../contracts/generated/shared-interfaces.ts';
-import {parseReference,parserKey,parseDocument,quoteMatches,recognizeAsync,sliceUtf8} from '../refs/api.ts';
+import {parseReference,parserKey,parseDocument,quoteMatches,recognizeAsync,sliceUtf8,type ParsedDocument} from '../refs/api.ts';
 import {parseExternal} from '../connectors/api.ts';
 import {canonicalize,sha256Hex,scanForCredentials,type IndexedRecord,type Principal,type RecordKind,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
 import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabulary.ts';
@@ -231,7 +231,17 @@ export class FeedingLayer {
    if(result.output.rows.length&&anchor){const origin=anchor.seed.origin.find(row=>row.role==='command-tree');if(origin){const original=await this.commandSource(principal,anchor.seed);if(original.parser!=='xml@1')fail('锁定命令树不是原始 XML');tree={model:original.model,sha256:origin.sha256};result=await project();}}
    if(!object(result.output)||!Array.isArray(result.output.rows)||result.output.rows.length>MAX_FEEDING_ROWS)fail('产品包喂入投影结构不完整或超过单文档上限');
   const rows=result.output.rows as Projection[];
-  for(const row of rows){if(row.missing&&(!Array.isArray(row.missing)||row.missing.length>1000||row.missing.some(gap=>!object(gap)||typeof gap.missing!=='string'||!gap.missing||typeof gap.next_action!=='string'||!gap.next_action)))fail('产品包缺失事实出口不合格式');if(!object(row.body)||!Array.isArray(row.lines)||row.lines.some(line=>typeof line!=='string')||typeof row.selector!=='string'||typeof row.grammar!=='string'||typeof row.conflict!=='boolean')fail('产品包喂入行结构不完整');row.body={...row.body,object:sha256Hex(canonicalize(row.identity))};if(!KnowledgeStructureSchema.safeParse(row.body).success)fail('原件投影不合 knowledge-structure@1；修正类型或缺失字段');}
+  for(const row of rows){
+   if(row.missing&&(!Array.isArray(row.missing)||row.missing.length>1000||row.missing.some(gap=>!object(gap)||typeof gap.missing!=='string'||!gap.missing||typeof gap.next_action!=='string'||!gap.next_action)))fail('产品包缺失事实出口不合格式');
+   if(!object(row.body)||!Array.isArray(row.lines)||row.lines.some(line=>typeof line!=='string')||typeof row.selector!=='string'||typeof row.grammar!=='string'||typeof row.conflict!=='boolean')fail('产品包喂入行结构不完整');
+   row.body={...row.body,object:sha256Hex(canonicalize(row.identity))};
+   if(!KnowledgeStructureSchema.safeParse(row.body).success)fail('原件投影不合 knowledge-structure@1；修正类型或缺失字段');
+   if(row.body.schema==='fed-case@1'){
+    const expected=tree&&typeof tree.sha256==='string'?tree.sha256:null;
+    const mismatch=(Object.hasOwn(row.body,'command_tree_root')&&row.body.command_tree_root!==expected)||(row.body.commands as Array<Record<string,unknown>>).some(identity=>identity.tree_root!==expected);
+    if(mismatch){if((row.missing?.length??0)>=1000)fail('用例的缺失事实超过上限；缩小原件后重读');row.body.commands=[];row.body.command_tree_root=null;row.body.unparsed_steps=Array.isArray(row.body.steps)?row.body.steps.length:0;row.missing=[...row.missing??[],{missing:'用例命令身份与本次锁定命令树不一致',next_action:'包作者核对锁定命令树及完整身份后重新读取；不把不一致的身份当作已知命令'}];}
+   }
+  }
 
    const value:Projected={rows,pack:pack.id+'@'+pack.version,digest:pack.digest,attachment};const stored=await this.context.records.objects.put(new TextEncoder().encode(canonicalize(value)),'application/json');const at=this.context.now().toISOString();
    await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'projected',unique_key:'feeding.projection:'+key,body:{action:'read',run:null,item:null,component:'hub.feeding@2',inputs:['src:'+source.artifact.body.sha256],lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{key,sha256:stored.sha256}},index:[{key:PROJECTION,value:key}]});return value;
@@ -338,6 +348,13 @@ export class FeedingLayer {
   const document=await parseDocument(this.context.parsers.get(evidenceParser)!,evidenceSource.bytes);
   const selectors=[...new Set(projection.rows.map(row=>scope.metaSource?'p/ancestors':row.selector))];
   await document.prefetch?.(selectors);
+  const caseRows=projection.rows.filter(row=>row.body.schema==='fed-case@1'&&typeof row.body.node_selector==='string');
+  const caseSelectors=[...new Set(caseRows.map(row=>row.body.node_selector as string))];
+  const caseDocument=scope.metaSource&&caseSelectors.length?await parseDocument(this.context.parsers.get(source.parser)!,source.bytes):document;
+  if(scope.metaSource&&caseSelectors.length)await caseDocument.prefetch?.(caseSelectors);
+  const caseFragments=new Map<string,Awaited<ReturnType<ParsedDocument['locate']>>>();
+  for(const selector of caseSelectors)caseFragments.set(selector,await caseDocument.locate(selector));
+  for(const row of caseRows){const fragment=caseFragments.get(row.body.node_selector as string);if(row.body.node_selector!==row.selector||row.body.node_parser!==source.parser||!fragment||fragment.selector!==row.selector||typeof row.body.title==='string'&&fragment.text!==row.body.title){delete row.body.node_selector;delete row.body.node_parser;delete row.body.node_key;delete row.body.title;delete row.body.path_labels;row.missing=[...row.missing??[],{missing:'用例节点的选择器或标题不能从本次原件核对',next_action:'包作者核对解析器与节点投影后重新读取；不伪造来源引用'}];}}
   const evidenceBySelector=new Map<string,{reference:string;text:string}>();
   let fallback:{reference:string;text:string}|undefined;
   for(const selector of selectors){
@@ -592,15 +609,15 @@ export class FeedingLayer {
  async frozenOffset(run:string):Promise<number|null>{const row=(await this.context.records.store.find<FeedingOffset>({key:'knowledge.feeding.offset',value:run,kind:'claim',limit:1})).items[0];return row?.body.offset??null;}
  async cut(product:string,offset:number|null,principal?:Principal):Promise<FeedingCut|null>{
   if(!principal)return null;const ceiling=offset??Number.MAX_SAFE_INTEGER,batched=offset!==null&&Boolean(this.context.records.store.findIndexed),entries=batched?await this.frozenEntries(principal,product,ceiling):await this.entries(principal,product,ceiling);
-  const objects=new Map<string,KnowledgeStructureObject>(),bindings=new Map<string,VersionBinding[]>(),retracted=new Set<string>(),contradicted=new Set<string>(),usages=[];
-  for(const entry of entries){if(entry.validity==='invalid'){retracted.add(entry.body.object);continue;}const old=objects.get(entry.body.object);const relations=[...old?.relations??[],...entry.body.relations??[]];objects.set(entry.body.object,{...old,...entry.body,relations} as KnowledgeStructureObject);}
+  const objects=new Map<string,KnowledgeStructureObject>(),casesByRoot:NonNullable<FeedingCut['casesByRoot']>=new Map(),bindings=new Map<string,VersionBinding[]>(),retracted=new Set<string>(),contradicted=new Set<string>(),usages=[];
+  for(const entry of entries){if(entry.validity==='invalid'){retracted.add(entry.body.object);continue;}const old=objects.get(entry.body.object);const relations=[...old?.relations??[],...entry.body.relations??[]];objects.set(entry.body.object,{...old,...entry.body,relations} as KnowledgeStructureObject);if(entry.body.schema==='fed-case@1'&&(entry.body.root===null||typeof entry.body.root==='string')&&entry.claim.warrant.producer==='function'){const cases=casesByRoot.get(entry.body.root)??new Map(),sources=cases.get(entry.body.object)??new Map();const source=object(entry.body.source)?entry.body.source:{},key=canonicalize({source,node:entry.body.node_key??source.element??null,external:entry.claim.statement.data?.external??null});sources.set(key,{body:entry.body,record:entry.record,position:entry.offset});cases.set(entry.body.object,sources);casesByRoot.set(entry.body.root,cases);}}
   const bound=batched?await this.indexed<ClaimBody>(BINDING,[...objects.keys()],'claim',ceiling):null;
   const used=batched?await this.indexed<ClaimBody>('knowledge.feeding.usage.object',[...objects.keys()],'claim',ceiling):null;
   for(const id of objects.keys()){retracted.delete(id);const rows=bound?(bound.get(id)??[]).map(item=>item.record):await this.all(BINDING,id),list:VersionBinding[]=[];for(const row of rows){if(!batched&&await this.position(row.digest)>ceiling)continue;let readable=false;for(const proof of row.body.validity.bound){const original=await this.context.records.store.get<any>(proof);if(original?.kind==='source_artifact'&&(await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:proof}))?.bytes)readable=true;}const value=this.body(row);if(value&&readable)list.push(value as VersionBinding);}bindings.set(id,list);
    for(const row of used?(used.get(id)??[]).map(item=>item.record):await this.all('knowledge.feeding.usage.object',id)){if(!batched&&await this.position(row.digest)>ceiling)continue;const value=this.body(row);if(!value)continue;const run=await runById(this.context.records.store,value.run);if(run&&await canViewRun(principal,run.body,this.context.records.store))usages.push(value as import('../../contracts/src/feeding.ts').FeedingUsage);}
    if(objects.get(id)!.relations?.some(relation=>relation.kind==='contradicts'))contradicted.add(id);
   }
-  return entries.length?{offset,objects,bindings,retracted,contradicted,usages}:null;
+  return entries.length?{offset,objects,casesByRoot,bindings,retracted,contradicted,usages}:null;
  }
  async bindingsFor(principal:Principal,id:string,offset=Number.MAX_SAFE_INTEGER){if(!await this.visible(id,principal))return null;const rows=[];for(const record of await this.all(BINDING,id)){if(await this.position(record.digest)>offset||!await this.proofReadable(record,principal))continue;const body=this.body(record);if(body)rows.push({record:record.digest,body,claim:record.body});}const structure=rows.filter(row=>row.body.basis==='source_structure'),declared=rows.filter(row=>row.body.basis==='declared');return {items:rows.sort((a,b)=>Number(a.body.basis==='declared')-Number(b.body.basis==='declared')),conflict:rows.some(row=>row.body.state==='conflict')||declared.some(row=>{const same=structure.filter(source=>source.claim.validity.bound.length===row.claim.validity.bound.length&&source.claim.validity.bound.every((v,i)=>v===row.claim.validity.bound[i]));return same.some(source=>source.body.state==='bound')&&!same.some(source=>source.body.state==='bound'&&source.body.line===row.body.line);}),candidates:[...new Set(rows.flatMap(row=>row.body.state==='conflict'?row.body.candidates:row.body.line?[row.body.line]:[]))]};}
  async refreshRetractionTodos():Promise<void>{
