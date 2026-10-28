@@ -9,7 +9,7 @@ import type { Shard } from './test-shards.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-export const ACCEPTANCE_PATTERNS = ['tests/acceptance/*.test.ts'];
+export const ACCEPTANCE_PATTERNS = ['tests/acceptance/*.test.ts', 'tests/acceptance/oracle/*.test.ts'];
 
 /** What a file not listed below is expected to take: most acceptance files start their own PostgreSQL and Hub. */
 export const DEFAULT_SECONDS = 50;
@@ -49,6 +49,8 @@ export const MEASURED_SECONDS: Readonly<Record<string, number>> = {
   'tests/acceptance/T7-4-publish-governance.test.ts': 39,
   'tests/acceptance/T8-1-second-product.test.ts': 66,
   'tests/acceptance/coverage-paths.test.ts': 0,
+  'tests/acceptance/oracle/differential.test.ts': 0,
+  'tests/acceptance/oracle/oracle.test.ts': 1,
 };
 
 export function acceptanceFiles(): string[] {
