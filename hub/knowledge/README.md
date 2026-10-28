@@ -1162,3 +1162,9 @@ The optional `tree_root@1.empty_scope` stores complete=true and each producer la
 For a frozen append position, the feeding reader pages the product, retraction, source-head, binding and usage indexes in bounded batches. Index values and insertion order are retained, so a record indexed under multiple objects is still associated with each matching object. Product-wide notes and all other records in the frozen cut remain included. Each record and original is still checked against the reader's current permissions and read tier; those decisions are not shared between records. An unfrozen read continues to use the original live path. This changes query layout only, not historical records or their frozen horizon.
 
 When an unbound source discovers products from prior feeding records, one currently readable witness establishes each distinct product. Additional records of that same product do not need another visibility check to prove the same existence fact. An unreadable record establishes nothing, so later records of that product are still checked; two distinct readable products remain ambiguous. No other record is made readable by a witness.
+
+Live feeding entry reads, including `get_nodes`, use the same batched retraction and source-head index reads as frozen
+cuts when the store supports them; the previous per-record path remains the fallback. Each record still has its current
+reader and source permission checked separately. A synthetic 40-record regression reproduces 80 per-record retraction
+and source-head reads before the change and at most four after it, while comparing the returned entries with the old
+path. This does not establish that index reads are the only cause of a slow real request.
