@@ -6,6 +6,8 @@ import { randomBytes } from 'node:crypto';
 export interface ConsoleSession {
   id: string;
   token: string;
+  /** A proxy HTTPS session cannot be replayed over direct HTTP. */
+  secure: boolean;
   /** CSRF token of the session's forms. */
   csrf: string;
   created: number;
@@ -30,12 +32,14 @@ export const DEFAULT_SESSION_LIMITS: SessionLimits = {
 
 export const SESSION_COOKIE = 'circle_hub_session';
 export const LOGIN_COOKIE = 'circle_hub_login';
+export const SECURE_SESSION_COOKIE = '__Secure-circle_hub_session';
+export const SECURE_LOGIN_COOKIE = '__Secure-circle_hub_login';
 
 const secret = (): string => randomBytes(32).toString('base64url');
 
 export class SessionStore {
   readonly #sessions = new Map<string, ConsoleSession>();
-  readonly #nonces = new Map<string, number>();
+  readonly #nonces = new Map<string, { expires: number; secure: boolean }>();
   readonly #now: () => number;
   readonly #limits: SessionLimits;
 
@@ -45,33 +49,33 @@ export class SessionStore {
   }
 
   /** A one-time login nonce; the oldest are dropped beyond the limit. */
-  issueNonce(): string {
+  issueNonce(secure = false): string {
     const nonce = secret();
-    this.#nonces.set(nonce, this.#now() + this.#limits.nonceMs);
+    this.#nonces.set(nonce, { expires: this.#now() + this.#limits.nonceMs, secure });
     while (this.#nonces.size > this.#limits.maxNonces) this.#nonces.delete(this.#nonces.keys().next().value!);
     return nonce;
   }
 
   /** True once for a nonce this store issued and that has not expired. */
-  takeNonce(nonce: string): boolean {
-    const expires = this.#nonces.get(nonce);
-    if (expires === undefined) return false;
+  takeNonce(nonce: string, secure = false): boolean {
+    const entry = this.#nonces.get(nonce);
+    if (entry === undefined || entry.secure !== secure) return false;
     this.#nonces.delete(nonce);
-    return expires > this.#now();
+    return entry.expires > this.#now();
   }
 
-  open(token: string): ConsoleSession {
+  open(token: string, secure = false): ConsoleSession {
     const at = this.#now();
-    const session: ConsoleSession = { id: secret(), token, csrf: secret(), created: at, seen: at };
+    const session: ConsoleSession = { id: secret(), token, secure, csrf: secret(), created: at, seen: at };
     this.#sessions.set(session.id, session);
     while (this.#sessions.size > this.#limits.maxSessions) this.#sessions.delete(this.#sessions.keys().next().value!);
     return session;
   }
 
-  get(id: string | undefined): ConsoleSession | null {
+  get(id: string | undefined, secure = false): ConsoleSession | null {
     if (id === undefined) return null;
     const session = this.#sessions.get(id);
-    if (session === undefined) return null;
+    if (session === undefined || session.secure !== secure) return null;
     const at = this.#now();
     if (at - session.seen > this.#limits.idleMs || at - session.created > this.#limits.absoluteMs) {
       this.#sessions.delete(id);
@@ -92,6 +96,6 @@ export class SessionStore {
 }
 
 /** Set-Cookie value: HttpOnly, SameSite=Strict, scoped to a path; no Max-Age makes it end with the browser session. */
-export function cookie(name: string, value: string, path: string, maxAgeSeconds?: number): string {
-  return `${name}=${value}; Path=${path}; HttpOnly; SameSite=Strict${maxAgeSeconds === undefined ? '' : `; Max-Age=${maxAgeSeconds}`}`;
+export function cookie(name: string, value: string, path: string, maxAgeSeconds?: number, secure = false): string {
+  return `${name}=${value}; Path=${path}; HttpOnly; SameSite=Strict${maxAgeSeconds === undefined ? '' : `; Max-Age=${maxAgeSeconds}`}${secure ? '; Secure' : ''}`;
 }

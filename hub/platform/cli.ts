@@ -11,7 +11,7 @@ import { deploy, deployLogPath, progressPath, progressText, protectedBackups, re
 import { assertHubEnvironment, assertKnownHubVariables, PLATFORM_VARIABLES, variable } from './environment.ts';
 import { messageOf, PlatformError } from './errors.ts';
 import { isMissingOrEmpty, withLock } from './files.ts';
-import { checkHealth, HEALTH_PATH, portAnswers } from './health.ts';
+import { checkHealth, HEALTH_PATH, portOccupied } from './health.ts';
 import { VAULT_KEY_ITEM } from './keychain-items.ts';
 import { exportVaultKey, importVaultKey, liveKeyPipe, type KeyPipe } from './key-transfer.ts';
 import { checkNode, serviceDefinition, stableNodePath } from './launchd.ts';
@@ -133,6 +133,10 @@ const init: Handler = async (args, context, io) => {
     const fresh = newSettingsFile({
       environment: values.environment,
       port: port ?? (envPort === undefined ? undefined : parsePort(envPort, PLATFORM_VARIABLES.port)),
+      listenHost: variable(context.env, PLATFORM_VARIABLES.host),
+      allowedHosts: variable(context.env, PLATFORM_VARIABLES.allowedHosts)?.split(','),
+      proxyOrigin: variable(context.env, PLATFORM_VARIABLES.proxyOrigin),
+      proxyPeer: variable(context.env, PLATFORM_VARIABLES.proxyPeer),
       keychainService: variable(context.env, PLATFORM_VARIABLES.keychainService),
       keychainAccount: variable(context.env, PLATFORM_VARIABLES.keychainAccount),
       database: context.database,
@@ -157,7 +161,7 @@ const init: Handler = async (args, context, io) => {
   io.stdout(started ? '数据库已启动' : '数据库本来就在运行');
   if (created) io.stdout(`已建数据库 ${cluster.target.database}`);
   io.stdout(`数据根：${layout.root}`);
-  io.stdout(`环境类别：${environmentText(settings.environment)}；端口：127.0.0.1:${settings.port}`);
+  io.stdout(`环境类别：${environmentText(settings.environment)}；端口：${settings.listenHost ?? '127.0.0.1'}:${settings.port}${settings.allowedHosts ? `；允许主机：${settings.allowedHosts.join('、')}` : ''}${settings.proxyOrigin ? `；代理来源：${settings.proxyOrigin}；可信对端：${settings.proxyPeer}` : ''}`);
   io.stdout(databaseText(layout, settings, await databaseOwner(cluster)));
   io.stdout('下一步：circle-hub key init，然后 circle-hub deploy');
   return 0;
@@ -234,7 +238,7 @@ const key: Handler = async (args, context, io) => {
     const initialize = async (): Promise<number> => {
       if (setAsideVault) {
         if ((await agentFor(context, settings).status()).loaded) throw new KeyInitRefusal('service_loaded');
-        if (await portAnswers(settings.port)) throw new KeyInitRefusal('port_busy');
+        if (await portOccupied(settings.port)) throw new KeyInitRefusal('port_busy');
         if ((await store.status()).present) throw new KeyInitRefusal('key_present');
         const moved=await archiveVault(context.layout,context.now());
         if(moved.path) io.stdout(`密钥库已移到 ${moved.path}，原文件保留`);
@@ -356,8 +360,8 @@ const restore: Handler = async (args, context, io) => {
     // The settings that will apply after the restore: the data root's own, else the backup's.
     const file = (await readSettingsFile(context.layout)) ?? (await backupSettings(dir));
     const settings = file ? resolveSettings(file, context.env, context.layout) : undefined;
-    if (settings && (await portAnswers(settings.port))) {
-      throw new PlatformError(`端口 127.0.0.1:${settings.port} 有进程应答（可能是手动启动的 Hub），不恢复`, '先停掉它再恢复');
+    if (settings && (await portOccupied(settings.port))) {
+      throw new PlatformError(`端口 ${settings.listenHost ?? '127.0.0.1'}:${settings.port} 有进程应答（可能是手动启动的 Hub），不恢复`, '先停掉它再恢复');
     }
     const target = settings ? { ...context, database: settings.database } : context;
     const cluster = postgresFor(target, (await readCurrentRelease(context.layout))?.dir);
@@ -424,7 +428,7 @@ const status: Handler = async (args, context, io) => {
     return NOT_RUNNING;
   }
   const settings = resolveSettings(file, context.env, layout);
-  io.stdout(`环境类别：${environmentText(settings.environment)}；端口：127.0.0.1:${settings.port}`);
+  io.stdout(`环境类别：${environmentText(settings.environment)}；端口：${settings.listenHost ?? '127.0.0.1'}:${settings.port}${settings.allowedHosts ? `；允许主机：${settings.allowedHosts.join('、')}` : ''}${settings.proxyOrigin ? `；代理来源：${settings.proxyOrigin}；可信对端：${settings.proxyPeer}` : ''}`);
   // The owner is printed only from the running cluster: a data root of an earlier platform version has another one.
   io.stdout(databaseText(layout, settings));
   const unsure = (subject: string, error: unknown) => io.stdout(`${subject}：无法确认（${messageOf(error)}）`);
@@ -479,8 +483,9 @@ const status: Handler = async (args, context, io) => {
   const backups = await listBackups(layout);
   io.stdout(`备份：${backups.length} 份${backups.length ? `，最近一份 ${backups.at(-1)}` : ''}`);
   if (!(await isMissingOrEmpty(layout.setAside))) io.stdout(`注意：${layout.setAside} 里有移开的数据，确认不需要后手动删除`);
-  const health = await checkHealth(settings.port, { timeoutMs: 1500 });
-  io.stdout(`健康检查（http://127.0.0.1:${settings.port}${HEALTH_PATH}）：${health.ok ? '正常' : `不正常（${health.status ? `HTTP ${health.status}` : (health.error ?? '没有应答')}）`}`);
+  const health = await checkHealth(settings.port, { timeoutMs: 1500, host: settings.listenHost, authority: settings.allowedHosts?.[0] });
+  const listener = settings.listenHost ?? '127.0.0.1';
+  io.stdout(`健康检查（http://${listener.includes(':') ? `[${listener}]` : listener}:${settings.port}${HEALTH_PATH}）：${health.ok ? '正常' : `不正常（${health.status ? `HTTP ${health.status}` : (health.error ?? '没有应答')}）`}`);
   return 0;
 };
 

@@ -16,7 +16,7 @@ import { backupPath, createBackup, pruneBackups, verifyBackup } from './backup.t
 import { agentFor, identityOf, keychainNamesFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from './context.ts';
 import { messageOf, PlatformError } from './errors.ts';
 import { withLock, writeFileAtomic } from './files.ts';
-import { portAnswers, waitForHealth } from './health.ts';
+import { portOccupied, waitForHealth } from './health.ts';
 import { checkNode, serviceDefinition, serviceEnvironment, stableNodePath } from './launchd.ts';
 import type { Layout } from './layout.ts';
 import { dataMajorMismatch, ensureDatabaseRunning } from './postgres.ts';
@@ -701,7 +701,7 @@ export function systemDeployHost(context: PlatformContext, settings: PlatformSet
     portBusy: async () => {
       // An old server may still be shutting down right after bootout.
       for (let attempt = 0; attempt < 20; attempt++) {
-        if (!(await portAnswers(settings.port))) return false;
+        if (!(await portOccupied(settings.port))) return false;
         await delay(500);
       }
       return true;
@@ -761,7 +761,7 @@ export function systemDeployHost(context: PlatformContext, settings: PlatformSet
       await assertApplicationRole(cluster(release), '迁移之后，');
     },
     waitHealthy: async (release) => {
-      await waitForHealth(settings.port, { release: release.id, totalMs: own.healthTimeoutMs });
+      await waitForHealth(settings.port, { release: release.id, totalMs: own.healthTimeoutMs, host: settings.listenHost, authority: settings.allowedHosts?.[0] });
     },
     setAside: (reason) => setAside(layout, reason, own.now()),
     restore: async (name, release) => {

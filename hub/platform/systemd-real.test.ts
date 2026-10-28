@@ -13,6 +13,9 @@ test('synthetic user unit really installs, stops, restarts and uninstalls on Lin
   const root=await mkdtemp(join(tmpdir(),'hub systemd % synthetic-'));
   const label='circle-hub-synthetic-test-'+randomBytes(8).toString('hex');
   const agent=systemdAgent({label,directory:defaultSystemdDirectory(),uid:process.getuid!()});
+  const preexisting = await agent.status();
+  assert.equal(preexisting.installed, false, 'refuse a pre-existing synthetic unit before cleanup is armed');
+  assert.equal(preexisting.loaded, false, 'refuse a loaded synthetic unit before cleanup is armed');
   try {
     assert.equal((await agent.status()).installed,false);
     await agent.install({label,programArguments:['/usr/bin/sleep','30'],workingDirectory:root,environment:{SYNTHETIC:'ok'},standardOutPath:join(root,'out'),standardErrorPath:join(root,'err')});

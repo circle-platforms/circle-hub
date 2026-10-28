@@ -455,6 +455,19 @@ test('closure key init flag refuses a manually occupied configured port before t
  assert.equal(w.system.calls.filter(c=>c.command==='/usr/bin/security').length,0);assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');
 });
 
+test('a listener at an earlier address still blocks restore and vault recovery without changing bytes',async t=>{
+ const {createServer}=await import('node:net');const server=createServer(socket=>socket.end());
+ await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));t.after(()=>new Promise<void>(done=>server.close(()=>done())));
+ const address=server.address();assert.ok(address && typeof address!=='string');const w=await keyAsideWorld(t,address.port);
+ const file=JSON.parse(await readFile(settingsPath(w.layout),'utf8'));file.listen_host='127.0.0.2';await writeFile(settingsPath(w.layout),JSON.stringify(file));
+ const recovery=await w.run('key','init','--set-aside-vault');assert.equal(recovery.code,1);assert.match(recovery.err,/配置端口.*进程应答/);
+ const restore=await w.run('restore','synthetic-backup');assert.equal(restore.code,1);assert.match(restore.err,/有进程应答/);
+ assert.equal(await readFile(join(w.layout.vault,'sealed'),'utf8'),'synthetic sealed bytes');
+ assert.equal(await readFile(join(w.layout.db,'sentinel'),'utf8'),'synthetic database');
+ assert.equal(await readFile(join(w.layout.objects,'sentinel'),'utf8'),'synthetic object');
+ assert.equal(w.system.calls.filter(c=>c.command==='/usr/bin/security').length,0);
+});
+
 test('closure key init recovery order reissues a missing operator token before importing secrets',async t=>{
  const w=await keyAsideWorld(t);const result=await w.run('key','init');assert.equal(result.code,1);
  assert.ok(result.err.indexOf('operator-token reissue')<result.err.indexOf('secret import'),result.err);
