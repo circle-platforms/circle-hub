@@ -44,6 +44,9 @@ test('Linux synthetic deploy, backup, empty-root restore, verification and rollb
  const target=createPostgres({layout:other,port:dbPort});
  const definition=newSettingsFile({environment:'test',port,database:{port:dbPort}});const settings={...resolveSettings(definition,env,layout),label};
  const agent=agentFor(context,settings);
+ const preexisting = await agent.status();
+ assert.equal(preexisting.installed, false, 'refuse a pre-existing synthetic unit before cleanup is armed');
+ assert.equal(preexisting.loaded, false, 'refuse a loaded synthetic unit before cleanup is armed');
  try {
   await ensureLayout(layout);await writeSettingsFile(layout,definition);
   const control=postgresFor(context);await control.initialise();await ensureDatabaseRunning(control,{create:true});
