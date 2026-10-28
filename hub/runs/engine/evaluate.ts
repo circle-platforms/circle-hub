@@ -142,7 +142,7 @@ function sandboxReason(error: SandboxError): Reason {
 }
 
 /** The unknown outcome a failed subject builder gives, marked as a sandbox failure like runCheck's. */
-function builderFailure(check: CheckEntry, error: unknown): CheckOutcome {
+export function builderFailure(check: CheckEntry, error: unknown): CheckOutcome {
   if (error instanceof SubjectCopyError) return {
     verdict: 'unknown', reason: 'check_error', missing: `检查 ${check.id} 的可复制被判对象；下一步：修复复制能力后重核`, tier: check.tier ?? 'advisory', grounds: [],
     statement: `Hub 复制检查 ${check.id} 的被判对象数据失败；请 Hub 维护人恢复复制能力后重试`,
@@ -150,10 +150,11 @@ function builderFailure(check: CheckEntry, error: unknown): CheckOutcome {
   };
   const sandbox = error instanceof SandboxError;
   const reason: Reason = sandbox ? sandboxReason(error) : 'check_error';
+  const residentMissing = sandbox && error.detail.reason === 'resident_observation_unavailable' ? error.message : undefined;
   return {
     verdict: 'unknown',
     reason,
-    missing: `检查 ${check.id} 的被判对象；下一步：修复或重试构建后重核`,
+    missing: residentMissing ?? `检查 ${check.id} 的被判对象；下一步：修复或重试构建后重核`,
     statement: `未知（检查 ${check.id} 的被判对象没有构建出来）：${sandbox ? error.message : '包内函数无法运行'}`,
     grounds: [],
     tier: check.tier ?? (check.basis ? 'blocking' : 'advisory'),

@@ -6,6 +6,8 @@ import { PlatformError } from './errors.ts';
 import { deploymentKeychainNames, keychainKeyProvider, type KeychainOptions, type KeyProvider } from './keychain.ts';
 import { ensureDatabaseRunning } from './postgres.ts';
 import { assertApplicationRole, roleFixHint } from './roles.ts';
+import { fileKeyProvider } from './file-key.ts';
+import { resolveLayout } from './layout.ts';
 
 /**
  * Starts the cluster of the data root CIRCLE_HUB_DATA_DIR names, on the binaries of the running release, when it is
@@ -37,11 +39,13 @@ export async function ensureHubDatabase(
  * development root) takes the variables, else the defaults; without CIRCLE_HUB_DATA_DIR the first use is refused, as
  * ensureHubDatabase refuses. The item is looked up at the first use.
  */
-export function hubKeyProvider(env: NodeJS.ProcessEnv = process.env, options: Pick<KeychainOptions, 'runner' | 'keychain'> = {}): Required<KeyProvider> {
+export function hubKeyProvider(env: NodeJS.ProcessEnv = process.env, options: Pick<KeychainOptions, 'runner' | 'keychain'> & {platform?: NodeJS.Platform} = {}): Required<KeyProvider> {
   let resolved: Promise<Required<KeyProvider>> | undefined;
   const provider = () =>
     (resolved ??= deploymentKeychainNames(env)
-      .then(({ vaultKey }) => keychainKeyProvider({ ...options, ...vaultKey }))
+      .then(({ vaultKey }) => (options.platform ?? process.platform) === 'linux'
+        ? fileKeyProvider({ root: resolveLayout(env).root, ...vaultKey })
+        : keychainKeyProvider({ ...options, ...vaultKey }))
       .catch((error: unknown) => {
         resolved = undefined;
         throw error;

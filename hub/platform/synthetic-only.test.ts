@@ -11,8 +11,11 @@ const reason = (expected: string) => (error: unknown) => (error as { reason?: st
 test('restricted verification refuses host tools and protected targets before any host access', () => {
   assert.throws(() => assertSyntheticCommand('/nonexistent/security'), reason('host_tool'));
   assert.throws(() => assertSyntheticCommand('/nonexistent/launchctl'), reason('host_tool'));
+  assert.throws(() => assertSyntheticCommand('/nonexistent/systemctl'), reason('host_tool'));
   assert.throws(() => assertSyntheticPort({ port: 7420 }), reason('persistent_port'));
   assert.throws(() => assertSyntheticPath(join(homedir(), 'Library', 'Application Support', 'circle-hub', 'never-open')), reason('persistent_data'));
+  assert.throws(() => assertSyntheticPath(join('/var', 'lib', 'circle-hub', 'never-open')), reason('persistent_data'));
+  assert.throws(() => assertSyntheticPath(join(homedir(), '.local', 'share', 'circle-hub', 'never-open')), reason('persistent_data'));
   assert.doesNotThrow(() => assertSyntheticPort(0));
   assert.doesNotThrow(() => assertSyntheticPath(join(homedir(), 'Library', 'Application Support', 'circle-hub-acceptance', 'review')));
 });

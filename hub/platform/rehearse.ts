@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RECORD_KINDS } from '../../contracts/generated/protocol.ts';
 import { keychainStore, VAULT_KEY_ITEM, OPERATOR_TOKEN_ITEM } from './keychain.ts';
+import { fileKeyStore } from './file-key.ts';
 import { createBackup } from './backup.ts';
 import { PlatformError } from './errors.ts';
 import { exists, listFiles, removeTree, removeWithin, sha256File, sha256Text } from './files.ts';
@@ -248,7 +249,8 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
   let running: PostgresControl | undefined;
   const security = options.security ?? '/usr/bin/security';
   const keychain = join(root, 'synthetic.keychain-db');
-  const available = await access(security).then(() => true, () => false);
+  const fileKeys = process.platform === 'linux' && options.security === undefined;
+  const available = fileKeys || await access(security).then(() => true, () => false);
   const keyLoss: RehearsalReport['keyLoss'] = { skipped: !available, ...(!available ? { reason: '跳过，不算通过：security 不可用' } : {}), items: 0, backupHits: 0, remaining: 0, setAsideFiles: 0 };
   // No security invocation can reach a default keychain, even on failure or cleanup.
   const guarded: CommandRunner = async (command, args, options = {}) => {
@@ -258,7 +260,10 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
     return result;
   };
   const service = `circle-hub-rehearsal-${randomBytes(12).toString('hex')}`;
-  const stores = [VAULT_KEY_ITEM, OPERATOR_TOKEN_ITEM].map((item, i) => keychainStore({ runner: guarded, security, keychain, service, account: i === 0 ? 'vault-master-key' : 'operator-token', item }));
+  const stores = [VAULT_KEY_ITEM, OPERATOR_TOKEN_ITEM].map((item, i) => {
+    const account = i === 0 ? 'vault-master-key' : 'operator-token';
+    return fileKeys ? fileKeyStore({root, service, account, item}) : keychainStore({ runner: guarded, security, keychain, service, account, item });
+  });
   const secretBytes: Uint8Array[] = [];
 
   try {
@@ -274,8 +279,10 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
     const written = await writeSyntheticFiles(layout, options.objects ?? 20);
     const packFiles = await writeSyntheticPacks(layout);
     if (available) {
-      const password = randomBytes(24).toString('hex');
-      for (const args of [['create-keychain', '-p', password, keychain], ['unlock-keychain', '-p', password, keychain], ['set-keychain-settings', keychain]]) await guarded(security, args);
+      if (!fileKeys) {
+        const password = randomBytes(24).toString('hex');
+        for (const args of [['create-keychain', '-p', password, keychain], ['unlock-keychain', '-p', password, keychain], ['set-keychain-settings', keychain]]) await guarded(security, args);
+      }
       for (const store of stores) { await store.init(); secretBytes.push(await store.read()); }
       keyLoss.items = stores.length;
     }
@@ -351,7 +358,9 @@ export async function rehearse(options: RehearsalOptions = {}): Promise<Rehearsa
   } finally {
     for (const bytes of secretBytes) bytes.fill(0);
     let cleanupFailed = false;
-    if (available) {
+    if (available && fileKeys) {
+      try { for (const store of stores) await store.delete(); } catch { cleanupFailed = true; }
+    } else if (available) {
       try { await guarded(security, ['delete-keychain', keychain]); }
       catch { cleanupFailed = true; }
       finally { await rm(keychain, { force: true }); }

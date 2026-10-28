@@ -9,7 +9,7 @@
 // restore then proves that the application role holds exactly the privileges the manifest recorded and owns nothing.
 import { chmod, mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
-import { checkToolMajor, DUMP_FILE, libpqDirectory, libpqTools, permissions, verifyBackup } from './backup.ts';
+import { DUMP_FILE, libpqToolsForMajor, permissions, verifyBackup } from './backup.ts';
 import { messageOf, PlatformError } from './errors.ts';
 import { copyFileHashed, exists, isMissingOrEmpty, listFiles, sha256File, slug, timestampName, uniqueChild } from './files.ts';
 import { DATA_ROOT_VARIABLE, ensureLayout, type Layout } from './layout.ts';
@@ -105,9 +105,8 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRep
     );
   }
   await assertRestorable(layout);
-  const tools = await libpqTools(libpqDirectory(options.libpqBin));
   // A dump from an older major restores into a newer one; pg_restore must match the server that receives it.
-  await checkToolMajor(tools.pg_restore, (await postgres.binaryVersion()).major, runner);
+  const tools = await libpqToolsForMajor(options.libpqBin, (await postgres.binaryVersion()).major, 'pg_restore', runner);
 
   const keptConfig: string[] = [];
   const copies: { path: string; sha256: string }[] = [];

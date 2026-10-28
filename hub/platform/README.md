@@ -4,11 +4,33 @@ Persistent single-machine deployment of the Hub on macOS: the data root, a socke
 embedded-postgres binaries, the deployment's keychain items (the vault master key and the operator token), backups and
 restores with SHA-256 manifests, the user LaunchAgent for `circle-hub serve`, deploy with automatic recovery, rollback,
 and a backup rehearsal. The Hub runs as the
-invoking user and listens on loopback only. Model: the deployment decisions in `docs/hub-r4-architecture.md` (section 1
+invoking user and listens on loopback by default; an internal listener requires explicit settings. Model: the deployment decisions in `docs/hub-r4-architecture.md` (section 1
 item 4) and D01 R[6] (a deployment instance carries an environment class; endpoints and credential references live only
 in the deployment instance).
 
 Also owned here: `scripts/verify-postgres.ts` (CI check; its logic is `verify.ts`) and `bin/circle-hub` (the command entry).
+
+## Explicit internal listener
+
+The default listener stays `127.0.0.1`. To create a shared deployment on a specific internal IP, set
+`CIRCLE_HUB_HOST` and `CIRCLE_HUB_ALLOWED_HOSTS` before `init`. The latter is a comma-separated list of exact lower-case
+DNS names or IP literals, without ports, schemes, credentials, paths, wildcards or empty entries. The platform stores
+both declarations in `config/platform.json`, pins them against environment drift, supplies them to the service and
+shows them in `status`. Older settings without either field keep the loopback default. Non-loopback listeners require
+an explicit allowed list; wildcard listeners and public IPs are refused. Address examples in tests use documentation
+subnets. This is not TLS: a token sent over internal HTTP can be observed by an intervening network observer.
+
+Host and Origin must use a declared host and the configured listener port. Console form POSTs additionally require the
+Origin authority to equal the request Host; an absent Origin remains usable by non-browser clients. A TLS-terminating
+reverse proxy requires the explicit `CIRCLE_HUB_PROXY_ORIGIN` HTTPS origin, whose host appears in the allowed-host list
+and whose authority differs from every direct HTTP authority, and `CIRCLE_HUB_PROXY_PEER`, the proxy's exact source IP.
+The proxy preserves that authority as Host; the Hub checks the connection's peer address and never trusts forwarded
+headers. Restrict this address so only the trusted proxy can connect from it. Direct HTTP and proxy HTTPS origins remain
+separate, including their scheme. This is IP-level trust, not process authentication: choosing `127.0.0.1` trusts every
+local process able to connect. Local tool
+installation can use an internal address only when this data root's existing deployment settings lock the exact IP and
+port and all supplied environment values agree. A client without that trusted lock still accepts loopback only.
+Configure the target and firewall before exposing the service; this setting does not itself configure network access.
 
 ## Data root
 
@@ -31,7 +53,7 @@ name). Every directory is 0700.
 
 ## Commands
 
-`circle-hub init --environment <test|shared|production> [--port <p>]`, `db start|stop|status`, `key init [--set-aside-vault]|status`,
+`circle-hub init --environment <test|shared|production> [--port <p>]`, `db start|stop|status`, `key init [--set-aside-vault]|status|export --confirm|import`,
 `service install|uninstall|start|stop|status`, `backup [--keep N]`, `restore <dir>`,
 `deploy [--source <dir>] [--commit <rev>] [--copy]`, `rollback`, `rehearse [--keep]`, `status`. Exit codes: 0 ok,
 1 failure, 2 usage, 3 "not running / not present" for status commands. All output is Chinese; the environment classes
@@ -297,7 +319,7 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
   removed by hand), handle the data root by hand and then delete that file; until then backup and restore refuse.
 - The data root path may not contain double quotes, dollar signs, backquotes, backslashes, commas, single quotes or
   newlines (pg_ctl runs its command through `/bin/sh`), and the socket path must fit in 103 bytes.
-- Moving to another machine needs both keychain items there too; there is no export command for either.
+- The operator token is not moved. The vault master key moves only through `circle-hub key export --confirm | ssh <destination> circle-hub key import`: 32 raw bytes on a pipe or socket, never a terminal, a regular file, an argument or an environment value. Import uses the destination's key store and refuses to replace a key. On macOS that store is the keychain; on Linux it is the file store (`<data root>/keys/<sha256 of the service and account>.key`, mode 0600, directory 0700) from the platform key-file branch, which implements the same `KeychainStore.write`. After import, `records verify --vault` explicitly authenticates every sealed entry and prints counts only; an empty vault is unknown. It never creates a key-check file.
 - A restore and `setAside` leave `packs/` as it is, so trees of pack versions the restored data does not have stay there
   unused (each is named by its digest and checked at every use). To reclaim the space, remove `packs/` by hand while the
   Hub is stopped (`chmod -R u+w` first: its directories are 0500); the registry builds what it needs again.
@@ -471,3 +493,110 @@ real temporary-keychain integration tests, but do not count them as passed when 
 
 The launchd plist tests prove RunAtLoad/KeepAlive declarations and simulated service commands, not a machine reboot.
 Actual reboot recovery requires an operator observation. This branch records no new observation of a persistent service.
+
+## Linux portability
+
+On Linux, the `circle-hub` service account defaults to `lib/circle-hub` under `/var`; other accounts use
+`$XDG_DATA_HOME/circle-hub`, or `~/.local/share/circle-hub` when XDG_DATA_HOME is absent. An explicitly configured
+`CIRCLE_HUB_DATA_DIR` still wins. The service runs as the same account as its PostgreSQL cluster. Its systemd user unit
+uses `Restart=always`; an administrator must enable lingering and provide the user's systemd and D-Bus session. The
+operator must check this manager before an installation, restore or rollback. The macOS LaunchAgent remains unchanged.
+
+Linux keeps the vault master key and operator token as separate 32-byte files under the private `keys/` directory of the
+data root; the service account must own the root, the 0700 directory and each 0600 single-link regular file. Symlinks,
+wrong owners, wrong permissions, malformed files and replacements are refused. No key bytes enter the backup: `keys/` is
+outside its object, vault and config areas. This protects the key against other local accounts, not against the service
+account or a privileged administrator. The key-transfer operation and verification of existing encrypted vault entries
+are a separate migration step; `records verify` by itself is not evidence that those entries decrypt.
+
+On Linux, an explicit absolute `CIRCLE_HUB_LIBPQ_BIN` is authoritative; otherwise executable `pg_dump` and `pg_restore`
+are located through PATH and the command's required tool must match the PostgreSQL server major. Restore into a new empty
+data root directly from a verified backup, without `init` first: restore initializes PostgreSQL, copies the saved config
+and checks the restored data and grants. A restored deployment with existing administrators does not call `init-admin`;
+its owner separately reissues an operator token for an existing enabled administrator. These steps need a synthetic
+end-to-end Linux rehearsal and independent review before production migration.
+
+A restored platform setting can name a Node binary that exists only on the source machine. `deploy --node <absolute-path>`,
+`rollback --node <absolute-path>`, and `service install --node <absolute-path>` explicitly select the target's Node 24;
+the setting from the backup is preserved rather than silently changed. Each override is checked before the service is
+stopped or changed. Repeat the option for later operations until an authorized administrator updates the deployment
+setting. A failed or missing configured Node on Linux is reported with that recovery action. The service account's home
+comes from the effective operating-system account, not an inherited `HOME`; the home and every parent of its systemd
+user-unit directory must be controlled by that account or a trusted administrator. Use a correctly configured user manager
+and linger. For a durable migration freeze use `service uninstall`, which stops and disables the unit; `service stop`
+alone does not disable autostart on the next login or reboot.
+
+### Independent platform review
+
+Antigravity independently reviewed commits `f6640e08` and `385d37d3` by static inspection and reported PASS, with two
+follow-up findings. Linux service recovery and restore messages now name systemd while macOS retains launchd; concurrent
+key deletion now treats an already removed file as absent and still reports other filesystem errors. Synthetic regression
+tests cover both paths. The review did not execute tests; the follow-up tests must be run separately before integration.
+
+### Conservative Linux recovery
+
+Linux operator recovery uses `circle-hub operator-token remove --confirm-only-operator-token` to remove only the
+local operator-token file. It refuses without confirmation and never touches the vault master key. Stop the Hub service
+before recovery and account for any concurrent readers. Removing the file does not revoke its database token: after
+`operator-token reissue --as <管理员>`, use `token list` and `token revoke` to reconcile and revoke old tokens. An existing
+item is never overwritten, even when revoked. File permission or integrity failures remain refusals requiring an
+administrator to inspect the private directory. FIFO substitutions are rejected without blocking.
+
+systemd lifecycle mutations refuse ambiguous state, missing expected files for loaded units, and loaded units whose
+FragmentPath differs from the deployment file. Inherited HOME/USER are replaced by the effective account identity.
+Restore guidance requires `service stop` plus `service uninstall` to disable autostart persistently, followed by
+`service install` after restore. These changes use synthetic fixtures and do not establish any target-server result.
+
+Recovery follow-up validation on macOS: `npx tsc --noEmit` exited 0;
+`node --test --test-concurrency=2 'hub/platform/**/*.test.ts' hub/server/assemble/cli-admin.test.ts hub/server/assemble/operator-token.test.ts`
+ran 310 tests: 306 passed, 0 failed, 4 skipped (Linux deployment with a real user manager, Linux empty-root restore, Linux file-key rehearsal,
+and the real Linux user-unit lifecycle). This is synthetic macOS evidence, including injected Linux backends; Linux execution remains pending.
+
+Antigravity independently reviewed the fixed commit `7f5c5702599c71c9711a344500bad1c0fd700204` against baseline
+`385d37d3c5f8e7e2bb28f68de63dc90b4a992819` on 2026-10-28 and reported PASS for the inspected platform changes.
+The review was read-only static inspection of source, diffs and existing synthetic evidence; the reviewer ran no tests
+and accessed no real systems, credentials or environment configuration. It covered sandbox alignment, FIFO rejection,
+effective-account binding, systemd ownership and contradictory-state refusals, operator-token-only removal, and Node
+and restore recovery guidance. This is independent static review evidence for that fixed change set; it does not prove
+a complete real Hub migration, production safety, or target-server behavior. This documentation update ran no tests.
+
+Independent integration review: Antigravity reviewed merge `1b845383` against the prior platform review and found no
+static conflict with the Linux permission-revocation readiness probe. This review did not run tests or verify a real Hub
+migration; the synthetic Linux and integration checks remain separate evidence.
+
+
+### Final key-transfer synthesis (2026-10-28)
+
+The final branch starts at Cursor change c0b88a6a and merges current hub-redesign, retaining Linux file-key and service fixes.
+There is one KeyPipe implementation: bounded binary reads require exactly 32 bytes and EOF within 30 seconds; exports await
+write callbacks and fail closed by destroying the output on a 30-second timeout. Errors are fixed diagnostics. Import refuses
+existing keys before reading. The explicit `records verify --vault` path uses read-only per-entry AEAD verification adapted from
+d0146bc6; no alternate automatic vault verification path remains. Writers must be stopped during verification.
+
+Tests were edited but deliberately NOT RUN because the integrator's full macOS acceptance occupies the machine. No typecheck,
+unit, acceptance, Linux, real-key or migration validation is claimed for this synthesis. Added/retained synthetic cases include
+32+1-byte overflow, short/oversized input, delayed and absent output callbacks, broken pipes, input timeout, raw binary child
+pipes, argv/environment/temp-file disclosure checks, empty/missing/corrupt vaults and read-only verification.
+
+Linux keychainFor now selects the merged fileKeyStore. End-to-end Linux server assembly must still be verified against that
+same store (including the actual service user and data root); a successful key import alone does not establish runtime vault
+wiring. Real migration decryption requires the explicit vault verification on the restored ciphertext with the imported key.
+No real keys, environment files, credential stores or business systems were accessed. Independent review and all execution
+validation remain pending; this branch is not merged or pushed.
+
+Source-side timeout or broken-pipe failure cannot prove that the destination did not import: bytes may already have arrived.
+The fixed error marks destination import state unknown and directs operators to target `key status`, then
+`records verify --vault`, before any retry. A controlled synthetic pipe test covers destination store.write completing before
+source timeout/EPIPE and verifies that a repeated import cannot overwrite that key. This new test has not been run.
+
+
+Final targeted verification (2026-10-28): after merging latest hub-redesign, `npm run typecheck` exited 0. The command
+`node --test --test-concurrency=2 --test-name-pattern='stdin shorter|export and import move|real inherited pipe|output callback|export keeps|destination can import' hub/platform/key-transfer.test.ts`
+passed 6 tests, failed 0, skipped 0. These cover split 32+1 overflow, destination-key decryption, binary child pipes, delayed
+and missing callbacks, EPIPE and unknown destination state. No full suite, acceptance, VM rehearsal or real-key transfer ran.
+Earlier targeted evidence: the 7 file-key tests and 12 vault tests passed; the initial 6-file run totaled 67 passed and 1 failed
+because the old assertion did not account for the new existing-key preflight. That assertion was corrected to compare the
+call count immediately before/after refused transport; its test now passes in the final 6-test command above.
+Static wiring is aligned: Linux keychainFor selects fileKeyStore and hubKeyProvider selects fileKeyProvider using the same
+resolved deployment root and vault key names. Actual service-user production execution remains unverified. The owner canceled
+backup/rehearsal work; the integrator performs the final authorized real pipe. No agent accessed real keys or target systems.

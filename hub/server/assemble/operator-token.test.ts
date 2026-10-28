@@ -18,6 +18,7 @@ import {
   OPERATOR_TOKEN_VARIABLE,
   OperatorTokenError,
   deploymentKeychainService,
+  fileOperatorTokens,
   keychainOperatorTokens,
   memoryOperatorTokens,
   runTool,
@@ -27,6 +28,19 @@ import {
 import { MAX_SECRET_BYTES, readSecret } from './secret-input.ts';
 
 const newToken = (): string => randomBytes(32).toString('base64url');
+
+test('Linux operator token is private, distinct from the vault key, and never overwritten', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'hub-operator-file-'));
+  t.after(() => removeTree(root));
+  const store = fileOperatorTokens(root, 'synthetic');
+  const token = newToken();
+  assert.equal(await store.present(), false);
+  assert.equal(await store.read(), null);
+  await store.write(token);
+  assert.equal(await store.read(), token);
+  await assert.rejects(store.write(newToken()), /不覆盖/);
+  await assert.rejects(store.write('invalid'), /不是 Hub 签发的格式/);
+});
 
 /** A fake security tool holding generic-password items in memory, recording every call (arguments and stdin). */
 function fakeKeychain(options: { failAdd?: { code: number; stderr: string }; lockedRead?: boolean } = {}) {

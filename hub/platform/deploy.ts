@@ -16,7 +16,7 @@ import { backupPath, createBackup, pruneBackups, verifyBackup } from './backup.t
 import { agentFor, identityOf, keychainNamesFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from './context.ts';
 import { messageOf, PlatformError } from './errors.ts';
 import { withLock, writeFileAtomic } from './files.ts';
-import { portAnswers, waitForHealth } from './health.ts';
+import { portOccupied, waitForHealth } from './health.ts';
 import { checkNode, serviceDefinition, serviceEnvironment, stableNodePath } from './launchd.ts';
 import type { Layout } from './layout.ts';
 import { dataMajorMismatch, ensureDatabaseRunning } from './postgres.ts';
@@ -99,6 +99,8 @@ export interface DeployReport {
 
 /** The side effects a deploy or rollback needs; the system host composes the real modules, tests substitute fakes. */
 export interface DeployHost {
+  /** The real Linux host uses systemd; omitted fake and macOS hosts retain the launchd wording. */
+  linuxService?: boolean;
   log(event: Record<string, unknown>): Promise<void>;
   currentRelease(): Promise<ReleaseRef | undefined>;
   findRelease(id: string): Promise<ReleaseRef | undefined>;
@@ -224,7 +226,7 @@ async function recoverDeploy(host: DeployHost, s: DeployRecovery, notes: string[
   const attempt = attempter(host, notes);
   const stopped = await attempt('stop-service', () => host.stopService());
   if (!stopped && (s.switched || s.dataTouched)) {
-    notes.push(`发布 ${s.release?.id ?? '（未知）'} 可能还在运行（launchd 会重启它），所以没有动数据和 current；先用 circle-hub service stop 停掉它，再运行 circle-hub deploy 完成恢复`);
+    notes.push(`发布 ${s.release?.id ?? '（未知）'} 可能还在运行（${host.linuxService ? 'systemd' : 'launchd'} 会重启它），所以没有动数据和 current；先用 circle-hub service stop 停掉它，再运行 circle-hub deploy 完成恢复`);
     return false;
   }
   let dataOk = true;
@@ -536,7 +538,7 @@ async function rollbackSteps(
     } else {
       // The data is out of place: the service must not run until the rollback is finished.
       const unloaded = await attempt('unload-service', () => host.unloadService());
-      notes.push(unloaded ? '服务已停止并卸下（服务定义已删除，下次登录也不会启动）' : '服务可能还在运行（launchd 会重启它）：先运行 circle-hub service stop');
+      notes.push(unloaded ? '服务已停止并卸下（服务定义已删除，下次登录也不会启动）' : `服务可能还在运行（${host.linuxService ? 'systemd' : 'launchd'} 会重启它）：先运行 circle-hub service stop`);
       notes.push(state.aside ? `回滚前的数据在 ${state.aside}` : '回滚前的数据没有移开');
       if (state.safety) notes.push(`回滚前的备份是 ${state.safety}`);
       notes.push('排除原因后再运行 circle-hub rollback，它从这里继续完成回滚');
@@ -680,6 +682,7 @@ export function systemDeployHost(context: PlatformContext, settings: PlatformSet
   const identity = identityOf(own);
   const node = async () => own.nodePath ?? settings.node ?? (await stableNodePath());
   return {
+    linuxService: context.platform === 'linux',
     log: (event) => appendLine(deployLogPath(own), JSON.stringify({ at: own.now().toISOString(), ...event })),
     currentRelease: () => readCurrentRelease(layout),
     findRelease: (id) => findRelease(layout, id),
@@ -698,7 +701,7 @@ export function systemDeployHost(context: PlatformContext, settings: PlatformSet
     portBusy: async () => {
       // An old server may still be shutting down right after bootout.
       for (let attempt = 0; attempt < 20; attempt++) {
-        if (!(await portAnswers(settings.port))) return false;
+        if (!(await portOccupied(settings.port))) return false;
         await delay(500);
       }
       return true;
@@ -758,7 +761,7 @@ export function systemDeployHost(context: PlatformContext, settings: PlatformSet
       await assertApplicationRole(cluster(release), '迁移之后，');
     },
     waitHealthy: async (release) => {
-      await waitForHealth(settings.port, { release: release.id, totalMs: own.healthTimeoutMs });
+      await waitForHealth(settings.port, { release: release.id, totalMs: own.healthTimeoutMs, host: settings.listenHost, authority: settings.allowedHosts?.[0] });
     },
     setAside: (reason) => setAside(layout, reason, own.now()),
     restore: async (name, release) => {

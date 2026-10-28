@@ -5,17 +5,23 @@
 // missing configuration itself, as hub/config does.
 import { homedir, userInfo } from 'node:os';
 import { PLATFORM_VARIABLES } from './environment.ts';
-import { resolveLayout } from './layout.ts';
+import { resolveLayout, type DataRootHost } from './layout.ts';
 import { serviceEnvironment } from './launchd.ts';
 import { deploymentDatabase, readSettings, readSettingsFileSync } from './settings.ts';
 
-export async function operatorEnvironment(env: NodeJS.ProcessEnv = process.env, home: string = homedir()): Promise<Record<string, string>> {
+/** Optional host values are supplied by synthetic cross-platform tests; production uses the effective OS account. */
+export interface OperatorHost extends DataRootHost { effectiveHome?: string }
+
+export async function operatorEnvironment(env: NodeJS.ProcessEnv = process.env, home?: string, host: OperatorHost = {}): Promise<Record<string, string>> {
   try {
-    const layout = resolveLayout(env, home);
+    const platform = host.platform ?? process.platform;
+    const effectiveHome = home ?? (platform === 'linux' ? host.effectiveHome ?? userInfo().homedir : homedir());
+    const user = host.username ?? userInfo().username;
+    const layout = resolveLayout(env, effectiveHome, {platform, username:user});
     if (readSettingsFileSync(layout) === undefined) return {};
     const settings = await readSettings(layout, env);
     const database = deploymentDatabase(layout, env);
-    const full = serviceEnvironment(layout, settings, { home, user: userInfo().username, database });
+    const full = serviceEnvironment(layout, settings, { home:effectiveHome, user, database });
     const names = new Set<string>(Object.values(PLATFORM_VARIABLES));
     return Object.fromEntries(Object.entries(full).filter(([name]) => names.has(name) && (env[name] === undefined || env[name] === '')));
   } catch {
