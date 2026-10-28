@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DECLARED_DEPENDENCIES, LINUX_LABEL, LINUX_LABEL_UBUNTU26 } from './policy.ts';
 import { AA_EXEC, BWRAP, LAUNCH_PROFILE, linuxBubblewrapArgs, linuxToolsPresent } from './linux.ts';
+import { windowsIsolationFailure } from './windows.ts';
 
 export const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
 // Real paths: the permission model does not follow a symbolic link on the way to a granted file.
@@ -93,6 +94,7 @@ export function linuxProbeOutcome(code: number | null): ProbeOutcome {
 
 /** Runs sandbox-exec with the real profile once. */
 async function probeSandboxExec(): Promise<ProbeOutcome> {
+  if (process.platform === 'win32') return { available: false, lasting: true, reason: windowsIsolationFailure() };
   if (process.platform === 'linux') {
     if (!linuxToolsPresent()) return { available: false, lasting: false, reason: 'bubblewrap_or_apparmor_tools_missing' };
     let args: string[];
@@ -192,6 +194,7 @@ export interface IsolatedCommand {
  * set well above the resident limit the parent enforces, because V8 aborts on heap exhaustion (which leaves a crash report).
  */
 export function isolatedCommand(options: { entry: string; reads: string[]; heapMb: number; cpuSeconds: number; os: boolean; probeDir?: string }): IsolatedCommand {
+  if (process.platform === 'win32') throw new Error(windowsIsolationFailure());
   const linuxProbe = options.os && process.platform === 'linux' && options.probeDir !== undefined;
   const node = [
     '--permission',

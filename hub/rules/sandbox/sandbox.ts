@@ -12,6 +12,7 @@ import { availableParallelism, tmpdir } from 'node:os';
 import { extname, isAbsolute, join, normalize, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { SandboxError, isSandboxErrorCode, type SandboxErrorCode } from './errors.ts';
+import { windowsIsolationFailure } from './windows.ts';
 import { BOOTSTRAP, declaredDependencies, isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { ENTRY_EXTENSIONS } from './policy.ts';
 import { createResidentVerdict, createResidentWatch, residentTreeSizes, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
@@ -269,6 +270,9 @@ async function executePack(
   options: SandboxOptions,
   batch: boolean,
 ): Promise<SandboxResult> {
+  if (process.platform === 'win32') {
+    throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'os_isolation', platform: process.platform, probe: windowsIsolationFailure() });
+  }
   const epoch = stopEpoch;
   const lim = resolveLimits(limits);
   const os = await osIsolationAvailable();
