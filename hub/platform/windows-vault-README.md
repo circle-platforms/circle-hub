@@ -43,3 +43,11 @@
 本任务没有发现需改动模型的规则冲突；Windows 服务/ACL/迁移可用性不足是明确保留的实现与证据缺口。
 
 内部只读复核后修正：输入副本使用一个新 Uint8Array 的 backing buffer，由 Buffer 共享后在 finally 清零，不再二次复制明文。新增副本擦除、短写/flush/rollback 故障注入测试源码；未运行。故障注入验证清理控制流，Windows 原生删除实际效果仍待 runner。
+
+## Windows 原生崩溃复核
+
+集成方提供的 GitHub 运行 40636426679 的 x64 日志表明：DPAPI 原生往返与输入副本擦除通过，keychain 前三个纯合成案例通过；随后 keychain 测试进程以 `3221225477`（`0xC0000005`，access violation）退出。这是原生进程崩溃，不是正常拒绝或可捕获的安全错误；该次 Windows 密钥存储验收失败。ARM64 失败由集成方报告，本分支没有把它描述成已经复核了同一根因。
+
+源码与 [Koffi values 文档](https://koffi.dev/values) 显示：`ConvertSidToStringSidW` 已返回 LPWSTR，原代码再用 generic `decode(pointer, 'str16')` 将字符串开头的 UTF-16 字节作为另一个指针读取，可能产生无效地址访问。改成直接读取 LPWSTR 的 `decode.string16(pointer)`。这是源码和文档支持的最可能原因，尚需两架构原生复测确认。
+
+原生 fixture 注入同步诊断回调，仅输出固定操作步骤名与 begin/end；不输出 SID、profile、路径、密钥、参数、返回值或原生异常内容。回调输出后恢复原生 GetLastError，避免诊断写入改变错误分支。默认生产调用不输出诊断，也没有捕获或掩盖进程 access violation。现有完整原生 fixture 对这次指针修复提供回归覆盖；未在本机执行任何测试或原生操作。
