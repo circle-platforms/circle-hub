@@ -55,6 +55,8 @@ function printable(target: string | undefined): string {
 export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const host = deps.config.host;
   const declared = deps.config.allowedHosts;
+  const refusedHost = declared ? REFUSED_HOST : '拒绝：Host 必须是本机地址 127.0.0.1:<端口> 或 localhost:<端口>';
+  const refusedOrigin = declared ? REFUSED_ORIGIN : '拒绝：Origin 不是本机来源';
   const proxyOrigin = deps.config.proxyOrigin;
   const proxyPeer = deps.config.proxyPeer;
   if (!validListenAddress(host) || (declared && !validAllowedHosts(declared)) || (!isLoopbackAddress(host) && !declared) || (proxyOrigin && !validProxyOrigin(proxyOrigin, declared, deps.config.port)) || Boolean(proxyOrigin) !== Boolean(proxyPeer) || (proxyPeer && !validListenAddress(proxyPeer))) throw new Error('监听地址、允许主机或可信代理无效');
@@ -92,7 +94,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     const hostOk = hostAllowed(request, hosts) && (target === null || target.authority === null || hosts.has(target.authority)) && (!usesProxy || peer === proxyPeer);
     if (!hostOk || !originAllowed(request, declared ? origins : undefined)) {
       request.resume();
-      const message = hostOk ? REFUSED_ORIGIN : REFUSED_HOST;
+      const message = hostOk ? refusedOrigin : refusedHost;
       if (isMcp) sendRpcError(response, 403, -32000, message, { connection: 'close' });
       else sendText(response, 403, message, { connection: 'close' });
       return;
