@@ -1,18 +1,18 @@
 // Pure safety-contract negatives plus an opt-in root VM proof; never accepts a real backup or a key pipeline.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {mkdtemp,symlink,rm,lstat} from 'node:fs/promises';
+import {mkdtemp,symlink,rm,lstat,writeFile,truncate} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {runCommand} from './process.ts';
 import {publicLockedTarballs,stableCacheIndex} from './testing/prepare-offline-bundle.ts';
 import {createHash} from 'node:crypto';
 import {hubMigrationProgram} from './testing/hub-migration-program.ts';
-import {assertCanonicalPath,assertSameIdentity,parseMountInfo,sourceMountReceipt,trustedRootMount,offlineBuildProgram,verifyOfflineBundle,namespaceEscapeProgram,verifyMountTable,isolatedUnitArguments, proveSyntheticIsolation, type IsolationDefinition} from './testing/linux-rehearsal-isolation.ts';
+import {assertCanonicalPath,assertSameIdentity,parseMountInfo,sourceMountReceipt,trustedRootMount,offlineBuildProgram,verifyOfflineBundle,namespaceEscapeProgram,assertBuiltTreeBudget,verifyMountTable,isolatedUnitArguments, proveSyntheticIsolation, type IsolationDefinition} from './testing/linux-rehearsal-isolation.ts';
 const fixture:IsolationDefinition={unit:'chvm-123456abcdef-probe',user:'chvm-123456abcdef',namespace:'chvm-123456abcdef',root:'/var/tmp/chvm-123456abcdef',data:'/var/tmp/chvm-123456abcdef/data',release:'/var/tmp/chvm-build-123456abcdef/release',node:'/usr/bin/node'};
 test('isolated units require rootfs and netns plus capability and host-filesystem restrictions',()=>{
  const args=isolatedUnitArguments(fixture,['/runtime/node','/release/bin/circle-hub','serve']);
- for(const property of [`RootDirectory=${fixture.root}`,`NetworkNamespacePath=/run/netns/${fixture.namespace}`,'CapabilityBoundingSet=','NoNewPrivileges=yes','ProtectProc=invisible','ProcSubset=pid','PrivateDevices=yes','PrivateMounts=yes','RestrictNamespaces=yes','ProtectSystem=strict','ReadWritePaths=/data','KillMode=control-group','Restart=no'])assert.ok(args.includes(property));
+ for(const property of [`RootDirectory=${fixture.root}`,`NetworkNamespacePath=/run/netns/${fixture.namespace}`,'CapabilityBoundingSet=','NoNewPrivileges=yes','ProtectProc=invisible','ProcSubset=pid','PrivateDevices=yes','PrivateMounts=yes','RestrictNamespaces=yes','ProtectSystem=strict','ReadWritePaths=/data /tmp /var/tmp','KillMode=control-group','Restart=no','MemoryMax=4G','MemorySwapMax=0','TasksMax=128'])assert.ok(args.includes(property));
  assert.ok(args.includes('User='+fixture.user));
  assert.ok(!args.some(arg=>arg.includes('BindPaths=/home')||arg.includes('BindPaths=/mnt')));
 });
@@ -106,4 +106,18 @@ test('namespace and Hub program guards refuse root identities and non-synthetic 
  assert.throws(()=>namespaceEscapeProgram({uid:500,net:1,root:2,outer:3,hostPath:'/var/lib/circle-hub',mounts:[]}));
  assert.throws(()=>hubMigrationProgram({uid:0,net:1,root:2,address:'192.0.2.1'},[]));
  assert.throws(()=>hubMigrationProgram({uid:500,net:1,root:2,address:'198.51.100.1'},[]));
+});
+
+test('only the freshly created bounded tmpfs is admitted as a source-mount exception',()=>{
+ const root=parseMountInfo('1 0 8:1 / / rw - ext4 /dev/synthetic rw'),baseline=trustedRootMount(root);
+ const volume={device:'0:44',root:'/',target:'/var/tmp/chvm-123456abcdef/data',fs:'tmpfs'};
+ assert.throws(()=>sourceMountReceipt([...root,volume],volume.target,'/data',baseline));
+ assert.equal(sourceMountReceipt([...root,volume],volume.target,'/data',baseline,[volume]).device,'0:44');
+ assert.throws(()=>sourceMountReceipt([...root,{...volume,root:'/production'}],volume.target,'/data',baseline,[volume]));
+});
+
+test('sparse logical output cannot bypass the bounded build volume during privileged copy',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'chvm-size-'));
+ try{const file=join(root,'sparse');await writeFile(file,'');await truncate(file,2048);await assert.rejects(assertBuiltTreeBudget(root,1024,10));}
+ finally{await rm(root,{recursive:true});}
 });

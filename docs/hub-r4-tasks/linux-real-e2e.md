@@ -134,3 +134,13 @@ a50acceb 的 root联网构建方案已撤销，不能使用。当前改为预先
 为允许真实bwrap，仅escape与Hub unit将RestrictNamespaces从全禁改成明确user/mnt/pid/net/ipc/uts白名单；builder仍全禁。逃逸反例实际创建子user/pid/net等namespace，UID映射必须回到本次专用非rootUID；给反例只读暴露一个已核inode的外层netns引用，确保可打开后再要求nsenter失败，同时宿主合成路径bind失败、父进程CapEff为0且父root/net inode保持。外层netns仅新建引用名，清理只卸载本次引用，不停止或改写其现有进程/网络。该引用不会挂给Hub unit。必须收到子namespace全部通过标记才允许进入Hub链，bwrap在RootDirectory/AppArmor下不能建立子namespace或探测失败就停止，不能跳过Hub自己的隔离探测。
 
 尚未运行缓存准备、负例或真实Hub链；最小namespace配置/RootDirectory/AppArmor兼容性仍需VM实证和独审，PG18直接工具路径也需核对。实物数据阶段仍完全关闭。
+
+### effbf559 挂载正控与容量约束修正（未执行）
+
+挂载反例现在使用确实存在且可读的同一 `/sentinel/visible`：父进程先读出合成正控、创建已有目标文件，再要求无cap父进程bind被拒；子user/mount namespace中同源bind必须成功且能读到正控，之后才接受外层netns setns拒绝与未绑定hidden不可访问结论。不再把不存在宿主路径的ENOENT称为权限拒绝。
+
+所有unit明确 `MemoryMax=4G`、`MemorySwapMax=0`、`TasksMax=128`、CPUQuota200%；root控制器在payload运行前等待已启动Node的nonce握手，逐个核真实PID的uid/root/net以及实际cgroup v2的memory.max、memory.swap.max、pids.max文件，匹配后才写放行文件；缺控制器、未知cgroup或预算不符则不执行payload。不是仅凭unit文本声称已限制。
+
+/data改为本次独占3GiB/262144 inode tmpfs，/tmp与/var/tmp分别16MiB独占tmpfs，TMPDIR也指向/data；不再把宿主PrivateTmp可写目录暴露给脚本。挂载创建后记录真实device/root/inode并核statfs容量，只有该创建收据可作为原根挂载检查的受控例外。恶意postinstall需先成功写小临时文件，再真实触发17MiB写入的ENOSPC；未执行。构建产物离开容量盘前还核总逻辑大小≤3GiB与条目上限，拒绝稀疏巨文件绕过；复制前保留至少6GiB VM空闲预算。卸载只在本次进程全部退出且mount/inode身份一致后进行。
+
+3GiB盘专供合成保护与Hub链；不能用于真实backup规模，更不能据此声称实物接收已支持。真实接收须有独立有上限且可销毁密钥的加密卷，接收/密钥传输代码将另行关闭这一缺口。
