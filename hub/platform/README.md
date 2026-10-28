@@ -588,3 +588,15 @@ Source-side timeout or broken-pipe failure cannot prove that the destination did
 The fixed error marks destination import state unknown and directs operators to target `key status`, then
 `records verify --vault`, before any retry. A controlled synthetic pipe test covers destination store.write completing before
 source timeout/EPIPE and verifies that a repeated import cannot overwrite that key. This new test has not been run.
+
+
+Final targeted verification (2026-10-28): after merging latest hub-redesign, `npm run typecheck` exited 0. The command
+`node --test --test-concurrency=2 --test-name-pattern='stdin shorter|export and import move|real inherited pipe|output callback|export keeps|destination can import' hub/platform/key-transfer.test.ts`
+passed 6 tests, failed 0, skipped 0. These cover split 32+1 overflow, destination-key decryption, binary child pipes, delayed
+and missing callbacks, EPIPE and unknown destination state. No full suite, acceptance, VM rehearsal or real-key transfer ran.
+Earlier targeted evidence: the 7 file-key tests and 12 vault tests passed; the initial 6-file run totaled 67 passed and 1 failed
+because the old assertion did not account for the new existing-key preflight. That assertion was corrected to compare the
+call count immediately before/after refused transport; its test now passes in the final 6-test command above.
+Static wiring is aligned: Linux keychainFor selects fileKeyStore and hubKeyProvider selects fileKeyProvider using the same
+resolved deployment root and vault key names. Actual service-user production execution remains unverified. The owner canceled
+backup/rehearsal work; the integrator performs the final authorized real pipe. No agent accessed real keys or target systems.

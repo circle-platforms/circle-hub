@@ -14,3 +14,6 @@ Independent review: Antigravity reviewed fixed implementation `a85514a6` without
 static blocker in bounded transfer, destination-state uncertainty, non-overwrite and explicit read-only vault verification.
 This source review does not establish real key migration or target-machine behavior; synthetic and real rehearsal results
 must be recorded separately after execution.
+
+
+最终收尾：已签署合最新 hub-redesign。typecheck 退出0；最小定向（32+1分块、真实二进制子进程管道、回调/超时/EPIPE及目标未知）6通过、0失败、0跳过。未重复全量、vault全套或acceptance。源码确认 Linux 导入 fileKeyStore 与运行时 hubKeyProvider 的 fileKeyProvider 使用同一部署根及密钥名称；真实服务用户执行未验证。所有者取消备份/演练；实际平台密钥管道由集成者执行，本代理不读真实密钥或目标系统。准备由集成者合主线。
