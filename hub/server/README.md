@@ -571,3 +571,8 @@ Needs：登录停止的具名管理员请求、处置后的自动重读等 hub-u
 可重试读取的下一次时刻统一由本次调用的 Hub 时钟计算；get_nodes 按引用读取也向解析器传入同一时钟，不另取 Date.now。
 
 喂入清单、冻结序号与未知出口也受同一个 30,000 字符回答预算约束；它们在正文渲染和降级渲染后统一布局，保留回执、原有补读说明与追踪尾行。超长说明明确标记省略，完整结构仍在 structuredContent。
+
+Independent integration review: Antigravity reviewed fixed merge `2967a45b` without executing tests or contacting a
+system. The reviewer found no static blocker in the procfs header fix, service ownership checks, or integration of the
+Linux unavailable-memory path. Synthetic Mac/Linux test results remain separate from this source review and do not
+establish target-server, real-user or production-network behavior.
