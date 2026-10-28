@@ -47,6 +47,10 @@ receipt or its run record. Index examples include `command_tree_root` so that th
 declared tree source. Feeding may still be in progress; an empty interim list is not an empty completed corpus. These
 are guidance changes and do not change the category or coverage rules.
 
+An index entry without an explicit `command_tree_root` cannot establish a complete command identity, even if its
+identity and signature agree with each other. Such cases remain unknown and name the missing source and re-read exit;
+an explicitly declared source must match each identity. Existing records remain unchanged.
+
 First classify each case, then aggregate in the frozen declared scope. Fields disclose classification_status, classifications,
 unclassified, scope_complete, category counts/evidence, missing and skipped separately. A display evidence list is capped at
 20 ids; counts and membership use all cases. No unclassified case is counted as a missing category. Missing/unchecked scope

@@ -121,6 +121,7 @@ export type CommandCoverage = {
   caseCount: number; matchedCases: number; unmatched: string[]; orphaned: string[]; pending_commands: string[]; pending_skips: Skip[]; commandlessCases: number;
   truncated: boolean; skippedSources: number; cutKeys: string[]; unplacedRoot: number | null; notes: string[];
   missing_identities?: string[];
+  missing_tree_roots?: string[];
   unclassified?: string[];
   pending_identities?: CommandIdentity[];
   commands: CommandFact[];
