@@ -2,6 +2,7 @@
 // Apache-2.0, Copyright (c) 2026 qingshanfeihu and the Circle contributors.
 // See https://github.com/circle-platforms/circle. No archived module is imported.
 // A Job contains descendants; it does not deny network access or filesystem writes.
+import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
 export interface WindowsJobLimits {
@@ -211,6 +212,17 @@ export function quoteWindowsArgument(value: string): string {
   return '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
 }
 
+export function windowsProbeFailure(stage: string, code: number, diagnostics: {
+  executableExists: boolean; executableBinary: boolean; directoryExists: boolean;
+}): Error {
+  // Only stages and bounded primitive observations; no paths, command/source, SID, token or environment.
+  return new Error(`Windows LPAC ${stage}失败 (${code}); ${JSON.stringify({
+    executableExists: diagnostics.executableExists === true,
+    executableBinary: diagnostics.executableBinary === true,
+    directoryExists: diagnostics.directoryExists === true,
+  })}`);
+}
+
 /**
  * Trusted synthetic probe launcher only: no pack integration or readiness claim.
  * A suspended LPAC is checked and assigned before any supplied JavaScript runs.
@@ -229,7 +241,8 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
   const directory = system.subarray(0, systemLength * 2).toString('utf16le');
   // userenv is not assumed to be a KnownDLL: use the kernel-reported protected directory.
   const userenv = koffi.load(directory + '\\userenv.dll');
-  const derive = userenv.func('int32_t __stdcall DeriveAppContainerSidFromAppContainerName(void *name, void *sid)');
+  const createProfile = userenv.func('int32_t __stdcall CreateAppContainerProfile(void *name, void *display, void *description, void *capabilities, uint32_t count, void *sid)');
+  const deleteProfile = userenv.func('int32_t __stdcall DeleteAppContainerProfile(void *name)');
   const freeSid = security.func('void * __stdcall FreeSid(void *sid)');
   const initialize = kernel.func('int __stdcall InitializeProcThreadAttributeList(void *list, uint32_t count, uint32_t flags, void *size)');
   const update = kernel.func('int __stdcall UpdateProcThreadAttribute(void *list, uint32_t flags, uintptr_t kind, void *value, uintptr_t size, void *previous, void *returned)');
@@ -248,7 +261,10 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
   const exitCode = kernel.func('int __stdcall GetExitCodeProcess(void *process, void *code)');
   const close = kernel.func('int __stdcall CloseHandle(void *handle)');
   const lastError = kernel.func('uint32_t __stdcall GetLastError()');
-  const failed = (stage: string): never => { throw new Error(`Windows LPAC ${stage}失败 (${String(lastError())})`); };
+  const diagnostics = { executableExists: false, executableBinary: false, directoryExists: false };
+  const failed = (stage: string, code = Number(lastError())): never => {
+    throw windowsProbeFailure(stage, code, diagnostics);
+  };
   const valid = (value: unknown): value is bigint => typeof value === 'bigint' && value !== 0n && BigInt.asIntN(64, value) !== -1n;
   const w = (value: string): Buffer => Buffer.from(value + '\0', 'utf16le');
   const allocations: bigint[] = [];
@@ -259,6 +275,8 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     copy(pointer, buffer, buffer.length);
     return pointer;
   };
+  const profileName = 'circle-hub.probe.' + randomUUID();
+  let profileCreated = false;
   let sid: bigint | undefined;
   let attributes: bigint | undefined;
   let attributesInitialized = false;
@@ -267,9 +285,14 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
   let childToken: bigint | undefined;
   let job: { stop(): Promise<void> } | undefined;
   const restricted = createWindowsRestrictedToken(koffi);
+  let launchFailure: unknown;
   try {
     const output = Buffer.alloc(8);
-    if (derive(w('circle-hub.isolation-probe'), output) !== 0) failed('包 SID');
+    // Deriving a SID alone does not create the profile Windows needs at launch.
+    // A unique temporary profile prevents reuse or deletion of any existing profile.
+    const profileResult = Number(createProfile(w(profileName), w('Hub synthetic probe'), w('Temporary isolated fixture'), null, 0, output));
+    if (profileResult !== 0) failed('临时 profile 创建', profileResult);
+    profileCreated = true;
     sid = output.readBigUInt64LE();
     if (!valid(sid)) failed('包 SID');
     const size = Buffer.alloc(8);
@@ -291,6 +314,13 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     startup.writeUInt32LE(startup.length);
     startup.writeBigUInt64LE(attributes, 104);
     const info = Buffer.alloc(24);
+    const getAttributes = kernel.func('uint32_t __stdcall GetFileAttributesW(void *path)');
+    const getBinaryType = kernel.func('int __stdcall GetBinaryTypeW(void *path, void *kind)');
+    diagnostics.executableExists = getAttributes(w(process.execPath)) !== 0xffffffff;
+    diagnostics.directoryExists = getAttributes(w(directory)) !== 0xffffffff;
+    const binary = Buffer.alloc(4);
+    diagnostics.executableBinary = Boolean(getBinaryType(w(process.execPath), binary));
+    if (!diagnostics.executableExists || !diagnostics.executableBinary || !diagnostics.directoryExists) failed('父侧路径预检');
     const command = w([process.execPath, '--no-addons', '--no-experimental-websocket', '-e', source].map(quoteWindowsArgument).join(' '));
     // CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW.
     // No inherited handles, no shell, no ambient environment, no pack bytes.
@@ -329,6 +359,9 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     const code = Buffer.alloc(4);
     if (!exitCode(processHandle, code)) failed('退出码');
     return code.readUInt32LE();
+  } catch (error) {
+    launchFailure = error;
+    throw error;
   } finally {
     // A rejected setup can only leave a suspended process; never resume to clean it up.
     let cleanupFailure: Error | undefined;
@@ -340,16 +373,26 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
         if (wait(processHandle, 0) !== 0) cleanupFailure = new Error('Windows LPAC 退出未确认');
       }
     }
+    const cleanupFailures: Error[] = cleanupFailure ? [cleanupFailure] : [];
+    const cleanup = (stage: string, operation: () => boolean): void => {
+      try { if (!operation()) cleanupFailures.push(windowsProbeFailure(stage, Number(lastError()), diagnostics)); }
+      catch { cleanupFailures.push(windowsProbeFailure(stage, -1, diagnostics)); }
+    };
     try { if (job) await job.stop(); }
-    finally {
-      if (childToken !== undefined && valid(childToken)) close(childToken);
-      if (thread !== undefined && valid(thread)) close(thread);
-      if (processHandle !== undefined && valid(processHandle)) close(processHandle);
-      if (attributesInitialized) deleteAttributes(attributes!);
-      for (const pointer of allocations.reverse()) release(heap, 0, pointer);
-      if (sid !== undefined && valid(sid)) freeSid(sid);
-      restricted.close();
-      if (cleanupFailure) throw cleanupFailure;
+    catch { cleanupFailures.push(windowsProbeFailure('Job 清理', -1, diagnostics)); }
+    if (childToken !== undefined && valid(childToken)) cleanup('子令牌关闭', () => Boolean(close(childToken)));
+    if (thread !== undefined && valid(thread)) cleanup('线程关闭', () => Boolean(close(thread)));
+    if (processHandle !== undefined && valid(processHandle)) cleanup('进程关闭', () => Boolean(close(processHandle)));
+    if (attributesInitialized) cleanup('属性删除', () => { deleteAttributes(attributes!); return true; });
+    for (const pointer of allocations.reverse()) cleanup('内存释放', () => Boolean(release(heap, 0, pointer)));
+    if (sid !== undefined && valid(sid)) cleanup('SID 释放', () => { const result = freeSid(sid); return result === null || result === 0n; });
+    cleanup('受限令牌关闭', () => { restricted.close(); return true; });
+    if (profileCreated) {
+      try {
+        const profileResult = Number(deleteProfile(w(profileName)));
+        if (profileResult !== 0) cleanupFailures.push(windowsProbeFailure('临时 profile 删除', profileResult, diagnostics));
+      } catch { cleanupFailures.push(windowsProbeFailure('临时 profile 删除', -1, diagnostics)); }
     }
+    if (cleanupFailures.length) throw new AggregateError(launchFailure instanceof Error ? [launchFailure, ...cleanupFailures] : cleanupFailures, 'Windows LPAC 清理未确认，结果未知');
   }
 }
