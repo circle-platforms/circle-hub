@@ -7,7 +7,7 @@ import {FeedingLayer,FEEDING_BOUNDS} from './feeding.ts';
 import {createRunsService} from '../runs/api.ts';
 import {FakeWorkflowStore} from '../runs/engine/testing/workflows.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
-import {installedMindmapFixture,mapBytes,readCapture,workingPackage,world} from './feeding-bounds-fixture.ts';
+import {installedMindmapFixture,mapBytes,readCapture,workingPackage,world} from './testing/feeding-bounds-fixture.ts';
 
 test('the same source retries after a package upgrade without a configured admin and clears the old package failure',async t=>{
  const {writeProductPack}=await import('./test-support.ts');const {sha256Hex}=await import('../records/api.ts');const pg=await startPostgres();t.after(()=>pg.stop());
