@@ -2,7 +2,7 @@
 // main() here when the server package is absent. All output is Chinese; the vault master key is never printed.
 // The vault is 密钥库 (the design standard's term); its key is named by VAULT_KEY_ITEM.label.
 import { mkdir, readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ENVIRONMENT, isEnvironment, labelOf } from '../../contracts/generated/vocabulary.ts';
 import { backupPath, createBackup, listBackups, pruneBackups } from './backup.ts';
@@ -226,9 +226,21 @@ const key: Handler = async (args, context, io) => {
 
 const SERVICE_USAGE = '用法：circle-hub service install|uninstall|start|stop|status';
 
+async function selectedNode(context: PlatformContext, configured: string | undefined, explicit?: string): Promise<{node:string;version:string}> {
+  if (explicit !== undefined && !isAbsolute(explicit)) throw new UsageError('--node 必须是绝对路径');
+  const node = explicit ?? context.nodePath ?? configured ?? (await stableNodePath());
+  try { return {node,version:await checkNode(node, context.runner)}; }
+  catch (error) {
+    if (context.platform !== 'linux') throw error;
+    throw new PlatformError(`无法使用配置的 Node：${node}`, '确认目标上的 Node 24 路径后，用 --node <绝对路径> 明确指定', {cause:error});
+  }
+}
+
 const service: Handler = async (args, context, io) => {
   const [action, ...rest] = args;
-  noArguments(rest);
+  const {values, positionals} = parse(rest, {node:{type:'string'}});
+  noArguments(positionals);
+  if (values.node !== undefined && action !== 'install') throw new UsageError('--node 只能用于 service install');
   if (!['install', 'uninstall', 'start', 'stop', 'status'].includes(action ?? '')) throw new UsageError(SERVICE_USAGE);
   const settings = await settingsOf(context);
   // serve would refuse a vault master key on the operator token's account, and launchd would restart it every 10 s;
@@ -238,8 +250,7 @@ const service: Handler = async (args, context, io) => {
   switch (action) {
     case 'install': {
       if (!(await readCurrentRelease(context.layout))) throw new PlatformError('还没有部署任何发布（没有 current）', '先运行 circle-hub deploy');
-      const node = context.nodePath ?? settings.node ?? (await stableNodePath());
-      const version = await checkNode(node, context.runner);
+      const {node,version} = await selectedNode(context, settings.node, values.node);
       await agent.install(serviceDefinition(context.layout, settings, { node, ...identityOf(context) }));
       io.stdout(`已安装并加载服务 ${settings.label}（${agent.plist}；Node ${version}）`);
       return 0;
@@ -331,7 +342,7 @@ const restore: Handler = async (args, context, io) => {
 };
 
 const deployCommand: Handler = async (args, context, io) => {
-  const { values, positionals } = parse(args, { source: { type: 'string' }, commit: { type: 'string' }, copy: { type: 'boolean' } });
+  const { values, positionals } = parse(args, { source: { type: 'string' }, commit: { type: 'string' }, copy: { type: 'boolean' }, node: {type:'string'} });
   noArguments(positionals);
   if (values.copy && values.commit !== undefined) throw new UsageError('--copy 与 --commit 不能同时用');
   const source = {
@@ -340,7 +351,8 @@ const deployCommand: Handler = async (args, context, io) => {
     ...(values.copy ? { copy: true } : {}),
   };
   io.stdout(`数据根：${context.layout.root}`);
-  const report = await deploy(context, source);
+  const node = context.platform === 'linux' || values.node !== undefined ? (await selectedNode(context, (await settingsOf(context)).node, values.node)).node : undefined;
+  const report = await deploy(node === undefined ? context : { ...context, nodePath: node }, source);
   io.stdout(`部署完成：发布 ${report.release}${report.previous ? `（上一版 ${report.previous}）` : ''}`);
   io.stdout(`部署前备份：${backupPath(context.layout, report.backup)}`);
   io.stdout(`日志：${deployLogPath(context)}`);
@@ -348,9 +360,11 @@ const deployCommand: Handler = async (args, context, io) => {
 };
 
 const rollbackCommand: Handler = async (args, context, io) => {
-  noArguments(args);
+  const { values, positionals } = parse(args, {node:{type:'string'}});
+  noArguments(positionals);
   io.stdout(`数据根：${context.layout.root}`);
-  const report = await rollback(context);
+  const node = context.platform === 'linux' || values.node !== undefined ? (await selectedNode(context, (await settingsOf(context)).node, values.node)).node : undefined;
+  const report = await rollback(node === undefined ? context : { ...context, nodePath: node });
   io.stdout(`回滚完成：现在运行发布 ${report.release}（回滚自 ${report.previous}）`);
   io.stdout(`回滚前备份：${backupPath(context.layout, report.backup)}`);
   io.stdout(`日志：${deployLogPath(context)}`);

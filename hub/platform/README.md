@@ -474,7 +474,7 @@ Actual reboot recovery requires an operator observation. This branch records no 
 
 ## Linux portability
 
-On Linux, the `circle-hub` service account defaults to `/var/lib/circle-hub`; other accounts use
+On Linux, the `circle-hub` service account defaults to `lib/circle-hub` under `/var`; other accounts use
 `$XDG_DATA_HOME/circle-hub`, or `~/.local/share/circle-hub` when XDG_DATA_HOME is absent. An explicitly configured
 `CIRCLE_HUB_DATA_DIR` still wins. The service runs as the same account as its PostgreSQL cluster. Its systemd user unit
 uses `Restart=always`; an administrator must enable lingering and provide the user's systemd and D-Bus session. The
@@ -493,3 +493,13 @@ data root directly from a verified backup, without `init` first: restore initial
 and checks the restored data and grants. A restored deployment with existing administrators does not call `init-admin`;
 its owner separately reissues an operator token for an existing enabled administrator. These steps need a synthetic
 end-to-end Linux rehearsal and independent review before production migration.
+
+A restored platform setting can name a Node binary that exists only on the source machine. `deploy --node <absolute-path>`,
+`rollback --node <absolute-path>`, and `service install --node <absolute-path>` explicitly select the target's Node 24;
+the setting from the backup is preserved rather than silently changed. Each override is checked before the service is
+stopped or changed. Repeat the option for later operations until an authorized administrator updates the deployment
+setting. A failed or missing configured Node on Linux is reported with that recovery action. The service account's home
+comes from the effective operating-system account, not an inherited `HOME`; the home and every parent of its systemd
+user-unit directory must be controlled by that account or a trusted administrator. Use a correctly configured user manager
+and linger. For a durable migration freeze use `service uninstall`, which stops and disables the unit; `service stop`
+alone does not disable autostart on the next login or reboot.

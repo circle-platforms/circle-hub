@@ -19,6 +19,7 @@ export function fileKeyStore(options: FileKeyOptions): KeychainStore {
   const directory = join(root, 'keys');
   const path = join(directory, createHash('sha256').update(JSON.stringify([service, account])).digest('hex') + '.key');
   const owner = process.getuid?.();
+  const damaged = () => new PlatformError(`${item.label}文件长度不对，可能是写入时中断`, `在私有目录中保留并移走损坏文件 ${path}，确认来源后重新导入；密钥库非空时不要运行 key init`);
   const verifyDirectory = async (create: boolean): Promise<boolean> => {
     const base = await lstat(root).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT' && !create) return undefined; throw error; });
     if (!base) return false;
@@ -34,9 +35,10 @@ export function fileKeyStore(options: FileKeyOptions): KeychainStore {
     const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') throw new PlatformError(`没有${item.label}`, item.missingHint); throw new PlatformError(`无法安全读取${item.label}`); });
     try {
       const stat = await file.stat();
-      if (!stat.isFile() || stat.nlink !== 1 || (owner !== undefined && stat.uid !== owner) || (stat.mode & 0o777) !== 0o600 || stat.size !== KEY_BYTES) throw new PlatformError(`${item.label}文件的属主、权限或长度不对`);
+      if (!stat.isFile() || stat.nlink !== 1 || (owner !== undefined && stat.uid !== owner) || (stat.mode & 0o777) !== 0o600) throw new PlatformError(`${item.label}文件的属主或权限不对`);
+      if (stat.size !== KEY_BYTES) throw damaged();
       const key = await file.readFile();
-      if (key.length !== KEY_BYTES) { key.fill(0); throw new PlatformError(`${item.label}长度不对`); }
+      if (key.length !== KEY_BYTES) { key.fill(0); throw damaged(); }
       const out = Uint8Array.from(key); key.fill(0); return out;
     } finally { await file.close(); }
   };
@@ -44,7 +46,8 @@ export function fileKeyStore(options: FileKeyOptions): KeychainStore {
     if (!(await verifyDirectory(false))) return {present:false};
     const stat = await lstat(path).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return undefined; throw error; });
     if (!stat) return {present:false};
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || (owner !== undefined && stat.uid !== owner) || (stat.mode & 0o777) !== 0o600 || stat.size !== KEY_BYTES) throw new PlatformError(`${item.label}文件的属主、权限或长度不对`);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || (owner !== undefined && stat.uid !== owner) || (stat.mode & 0o777) !== 0o600) throw new PlatformError(`${item.label}文件的属主或权限不对`);
+    if (stat.size !== KEY_BYTES) throw damaged();
     return {present:true};
   };
   const write = async (input: Uint8Array): Promise<void> => {

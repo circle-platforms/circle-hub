@@ -48,9 +48,9 @@ export interface DataRootHost {
   username?: string;
 }
 
-export function defaultDataRoot(home: string = homedir(), env: NodeJS.ProcessEnv = process.env, host: DataRootHost = {}): string {
+export function defaultDataRoot(home: string = process.platform === 'linux' ? userInfo().homedir : homedir(), env: NodeJS.ProcessEnv = process.env, host: DataRootHost = {}): string {
   if ((host.platform ?? process.platform) === 'linux') {
-    if ((host.username ?? userInfo().username) === 'circle-hub') return '/var/lib/circle-hub';
+    if ((host.username ?? userInfo().username) === 'circle-hub') return join('/var', 'lib', 'circle-hub');
     const dataHome = env.XDG_DATA_HOME;
     if (dataHome !== undefined && dataHome !== '') {
       if (!isAbsolute(dataHome)) throw new PlatformError('XDG_DATA_HOME 必须是绝对路径', '改为绝对路径或删掉它');
@@ -84,7 +84,7 @@ export function layoutAt(root: string): Layout {
 }
 
 /** CIRCLE_HUB_DATA_DIR takes precedence; otherwise choose the host-specific default. */
-export function resolveLayout(env: NodeJS.ProcessEnv = process.env, home: string = homedir(), host: DataRootHost = {}): Layout {
+export function resolveLayout(env: NodeJS.ProcessEnv = process.env, home: string = process.platform === 'linux' ? userInfo().homedir : homedir(), host: DataRootHost = {}): Layout {
   const value = env[DATA_ROOT_VARIABLE];
   if (value === undefined) return layoutAt(defaultDataRoot(home, env, host));
   if (value.trim() === '') throw new PlatformError(`${DATA_ROOT_VARIABLE} 设成了空值`, '删掉它或设成绝对路径');

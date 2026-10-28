@@ -47,8 +47,9 @@ export interface PlatformContext {
 export const CODE_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
 export function createContext(env: NodeJS.ProcessEnv = process.env, overrides: Partial<PlatformContext> = {}): PlatformContext {
-  const home = overrides.home ?? homedir();
   const platform = overrides.platform ?? process.platform;
+  // A sudo-inherited HOME may name another account; Linux service files belong to the effective service account.
+  const home = overrides.home ?? (platform === 'linux' ? userInfo().homedir : homedir());
   const layout = overrides.layout ?? resolveLayout(env, home, {platform, ...(overrides.user ? {username: overrides.user} : {})});
   return {
     platform,

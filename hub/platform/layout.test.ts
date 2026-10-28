@@ -32,7 +32,7 @@ test('CIRCLE_HUB_DATA_DIR, the one name hub/config reads too, overrides the root
 test('Linux defaults use the service account or an absolute XDG data home', () => {
   const service = { platform: 'linux' as const, username: 'circle-hub' };
   const user = { platform: 'linux' as const, username: 'synthetic-user' };
-  assert.equal(resolveLayout({ XDG_DATA_HOME: '/tmp/synthetic-data' }, '/tmp/synthetic-home', service).root, '/var/lib/circle-hub');
+  assert.equal(resolveLayout({ XDG_DATA_HOME: '/tmp/synthetic-data' }, '/tmp/synthetic-home', service).root, join('/var', 'lib', 'circle-hub'));
   assert.equal(resolveLayout({ XDG_DATA_HOME: '/tmp/synthetic-data' }, '/tmp/synthetic-home', user).root, '/tmp/synthetic-data/circle-hub');
   assert.equal(resolveLayout({}, '/tmp/synthetic-home', user).root, '/tmp/synthetic-home/.local/share/circle-hub');
   assert.equal(resolveLayout({ XDG_DATA_HOME: '' }, '/tmp/synthetic-home', user).root, '/tmp/synthetic-home/.local/share/circle-hub');

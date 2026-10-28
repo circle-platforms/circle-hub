@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, chmod, lstat, readdir, rm, symlink, writeFile} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
+import {mkdtemp, chmod, lstat, readdir, rename, rm, symlink, writeFile} from 'node:fs/promises';
+import {tmpdir,userInfo} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
 import {fileKeyProvider, fileKeyStore} from './file-key.ts';
@@ -42,4 +42,27 @@ test('Linux platform dispatch uses systemd and private files even with an inject
  const settings=resolveSettings(newSettingsFile({environment:'test'}),{},layout);
  const store=keychainFor(context,settings);await store.init();assert.equal((await store.status()).present,true);
  assert.equal((await agentFor(context,settings).status()).loaded,false);assert.deepEqual(calls,['/usr/bin/systemctl']);
+});
+
+test('Linux service defaults to the effective account home even when HOME is inherited from another account', async t=>{
+ const root=await mkdtemp(join(tmpdir(),'hub-linux-home-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const previous=process.env.HOME;
+ try {
+  process.env.HOME=join(root,'wrong-home');
+  const context=createContext({}, {layout:layoutAt(root),platform:'linux'});
+  assert.equal(context.home,userInfo().homedir);
+  assert.equal(context.launchAgentsDir,join(userInfo().homedir,'.config','systemd','user'));
+ } finally { if(previous===undefined)delete process.env.HOME;else process.env.HOME=previous; }
+});
+
+test('an interrupted key write cannot be used or overwritten and names a safe recovery action', async t=>{
+ const root=await mkdtemp(join(tmpdir(),'hub-file-key-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const store=fileKeyStore({root,service:'synthetic',account:'vault',item:VAULT_KEY_ITEM});await store.init();
+ const keys=join(root,'keys');const [name]=await readdir(keys);const path=join(keys,name!);
+ await writeFile(path,Buffer.alloc(7));
+ await assert.rejects(store.status(), (error: unknown) => /写入时中断/.test(String(error)) && /重新导入/.test((error as {hint?: string}).hint ?? ''));
+ await assert.rejects(store.read(), /写入时中断/);
+ await assert.rejects(store.write(Buffer.alloc(32)), /不覆盖/);
+ await rename(path,join(root,'damaged-key'));
+ await store.write(Buffer.alloc(32));assert.equal((await store.read()).length,32);
 });

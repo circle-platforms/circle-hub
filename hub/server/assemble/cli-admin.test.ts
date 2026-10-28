@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { DEFAULT_LIMITS, type HubConfig } from '../../config/index.ts';
 import { agileFixture, passwordDigest, startAgileStub, startBuildSiteStub, startStub, type AgileStub, type StubServer } from '../../connectors/testing/api.ts';
-import { keychainKeyProvider, keychainStore, runPlatformCommand, createContext, postgresFor, runCommand, OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type KeyProvider, type CommandRunner } from '../../platform/api.ts';
+import { fileKeyStore, keychainKeyProvider, keychainStore, runPlatformCommand, createContext, postgresFor, runCommand, OPERATOR_TOKEN_ITEM, VAULT_KEY_ITEM, type KeyProvider, type CommandRunner } from '../../platform/api.ts';
 import { openRecords, type SourceArtifactBody, type RecordKind, type RecordsKit, type User } from '../../records/index.ts';
 import { osIsolationAvailable } from '../../rules/api.ts';
 import { withFiles, writePack } from '../../runs/api.ts';
@@ -28,7 +28,7 @@ import { adminCommands, type AdminCommandOptions } from '../cli-admin.ts';
 import { CliError } from '../errors.ts';
 import { loadServerConfig } from '../main.ts';
 import { assembleHub, createAssembly } from './hub.ts';
-import { OPERATOR_TOKEN_VARIABLE, keychainOperatorTokens, memoryOperatorTokens, type OperatorTokenStore } from './operator-token.ts';
+import { OPERATOR_TOKEN_VARIABLE, fileOperatorTokens, keychainOperatorTokens, memoryOperatorTokens, type OperatorTokenStore } from './operator-token.ts';
 import { openCliHarness, type CliHarness, type Deployment, type RunResult } from './test-cli.ts';
 import { LeaseService } from '../../leases/service.ts';
 import { createPool, Database } from '../../records/db.ts';
@@ -200,6 +200,15 @@ async function countFiles(dir: string): Promise<number> {
 }
 
 describe('init-admin and the operator token', () => {
+  test('an existing administrator can reissue into the Linux file store without displaying the token', async () => {
+    const admin = await setup({store:(config,service)=>fileOperatorTokens(config.dataDir,service ?? config.keychain.service)});
+    const config=loadServerConfig(admin.deployment.env);const store=fileOperatorTokens(config.dataDir,config.keychain.service);
+    const original=await store.read();assert.ok(original);secrets.add(original);
+    assert.equal(await fileKeyStore({root:config.dataDir,service:config.keychain.service,account:'operator-token',item:OPERATOR_TOKEN_ITEM}).delete(),true);
+    const result=await admin.run(['operator-token','reissue','--as','根管理员']);
+    assert.equal(result.code,0,result.text);const token=await store.read();assert.ok(token && token!==original);secrets.add(token);
+    assert.ok(!result.text.includes(token));await expectOk(admin,['user','create','合成用户']);
+  });
   test('init-admin creates the first admin and stores its token without printing it; it is refused once an admin exists', async () => {
     const admin = await setup();
     const token = admin.tokens?.value;

@@ -23,6 +23,8 @@ test('synthetic user unit really installs, stops, restarts and uninstalls on Lin
     assert.equal((await agent.status()).running,true);
     assert.equal(await agent.uninstall(),true);
     assert.equal((await agent.status()).installed,false);
+    const enabled=spawnSync('/usr/bin/systemctl',['--user','is-enabled',`${label}.service`],{stdio:'ignore'});
+    assert.notEqual(enabled.status,0,'uninstall must also disable automatic restart on login or reboot');
   } finally {
     // If a malformed test unit cannot be loaded, remove only the unique name created by this test.
     spawnSync('/usr/bin/systemctl',['--user','disable','--now',`${label}.service`],{stdio:'ignore'});

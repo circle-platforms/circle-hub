@@ -32,7 +32,7 @@ export async function removeDir(path: string): Promise<void> {
 /** Refuses commands that could reach the user's real environment. */
 export function guard(call: Call, keychain?: string): void {
   const name = basename(call.command);
-  if (name === 'launchctl') throw new Error(`test tried to run launchctl ${call.args.join(' ')}`);
+  if (name === 'launchctl' || name === 'systemctl') throw new Error(`test tried to run ${name} ${call.args.join(' ')}`);
   if (name === 'security') {
     // Every security call must name the temporary keychain file: as its last argument, or inside the -i input line.
     const input = call.options.input ?? '';
