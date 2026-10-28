@@ -1,0 +1,7 @@
+{
+  "max_capture_bytes": 16777216,
+  "max_manifest_bytes": 67108864,
+  "max_input_summary_chars": 4096,
+  "max_proposals": 100,
+  "http_timeout_ms": 20000
+}

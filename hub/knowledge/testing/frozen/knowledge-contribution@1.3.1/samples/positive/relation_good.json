@@ -1,0 +1,44 @@
+{
+  "id": "relation_good",
+  "source": "author",
+  "check": "quotes",
+  "note": "关系双方引用的合成正例",
+  "subject": {
+    "item": "relation_one",
+    "slots": {
+      "contribution": [
+        {
+          "code": "relation",
+          "text": "两段原文的关系",
+          "data": {
+            "root": "1111111111111111111111111111111111111111111111111111111111111111",
+            "path": "/commands/status",
+            "source": {
+              "reference": "src:2222222222222222222222222222222222222222222222222222222222222222",
+              "quote": "status prints state"
+            },
+            "relation": {
+              "kind": "contradicts",
+              "other": {
+                "reference": "src:3333333333333333333333333333333333333333333333333333333333333333",
+                "quote": "ping sends echo"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "sources": {
+    "src:2222222222222222222222222222222222222222222222222222222222222222": "status prints state",
+    "src:3333333333333333333333333333333333333333333333333333333333333333": "ping sends echo"
+  },
+  "expect": [
+    {
+      "verdict": "support"
+    },
+    {
+      "verdict": "support"
+    }
+  ]
+}

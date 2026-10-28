@@ -1,6 +1,5 @@
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
-import {execFileSync} from 'node:child_process';
 import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -21,6 +20,7 @@ import {RECORD_SCHEMAS, scanForCredentials, sha256Hex} from '../records/api.ts';
 import {newId} from '../records/ids.ts';
 import {LeaseService} from '../leases/api.ts';
 import {osIsolationAvailable} from '../rules/api.ts';
+import {FROZEN_KNOWLEDGE_CONTRIBUTION, copyFrozenKnowledgeContribution} from './testing/frozen/knowledge-contribution.ts';
 
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 const call = {traceId:'4bf92f3577b34da6a3ce929d0e0e4736', sessionId:'operation-session'};
@@ -692,15 +692,13 @@ test('batch force release after Hub receipt and before submission keeps every co
 });
 
 test('a frozen old pack replays a legacy operation without device or lease fields', async t => {
-  const revision = '886d9f4c8a04630fcb70257becbec0589684500c';
-  const repository = fileURLToPath(new URL('../../', import.meta.url));
   const directory = await mkdtemp(join(tmpdir(), 'operation-frozen-pack-'));
   t.after(() => rm(directory, {recursive:true, force:true}));
-  const archive = execFileSync('git', ['archive', revision, 'packs/workflow/knowledge-contribution'], {cwd:repository, maxBuffer:32 * 1024 * 1024});
-  execFileSync('tar', ['-x', '-C', directory], {input:archive});
-  const packDirectory = join(directory, 'packs/workflow/knowledge-contribution');
+  const packDirectory = join(directory, 'knowledge-contribution');
+  await copyFrozenKnowledgeContribution(packDirectory);
   const manifest = JSON.parse(await readFile(join(packDirectory, 'pack.json'), 'utf8')) as {id:string; version:string};
   const digest = manifestDigest(manifest);
+  assert.equal(digest, FROZEN_KNOWLEDGE_CONTRIBUTION.digest);
   const ctx = await world(t, packDirectory);
   assert.equal(ctx.run.pack, `${manifest.id}@${manifest.version}`);
   assert.equal(ctx.run.pack_digest, digest);
