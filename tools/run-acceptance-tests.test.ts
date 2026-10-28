@@ -1,23 +1,24 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { acceptanceFiles, expectedSeconds, MEASURED_SECONDS, parseShard, shardFiles, slices } from './run-acceptance-tests.ts';
+import { acceptanceFiles, expectedSeconds, MEASURED_SECONDS } from './run-acceptance-tests.ts';
+import { parseShard, shardFiles, slices } from './test-shards.ts';
 
 test('every slice count runs every acceptance file exactly once', () => {
   const all = acceptanceFiles();
   assert.ok(all.length > 0);
   for (let total = 1; total <= 8; total++) {
-    const parts = Array.from({ length: total }, (_, i) => shardFiles(all, { index: i + 1, total }));
+    const parts = Array.from({ length: total }, (_, i) => shardFiles(all, { index: i + 1, total }, expectedSeconds));
     const union = parts.flat();
     assert.equal(union.length, all.length, `${total} slices have no overlap`);
     assert.deepEqual([...union].sort(), all, `${total} slices cover every file`);
-    assert.deepEqual(parts, slices(all, total), 'the same input gives the same slices');
+    assert.deepEqual(parts, slices(all, total, expectedSeconds), 'the same input gives the same slices');
   }
-  assert.deepEqual(shardFiles(all, undefined), all, 'without a shard the whole suite runs');
+  assert.deepEqual(shardFiles(all, undefined, expectedSeconds), all, 'without a shard the whole suite runs');
 });
 
 test('the four CI slices each run tests and stay within a fifth of each other', () => {
   const all = acceptanceFiles();
-  const loads = slices(all, 4).map((slice) => {
+  const loads = slices(all, 4, expectedSeconds).map((slice) => {
     assert.ok(slice.some((file) => expectedSeconds(file) > 0), 'each slice has a file that runs on Ubuntu, so its summary counts tests');
     return slice.reduce((sum, file) => sum + expectedSeconds(file), 0);
   });

@@ -2,8 +2,8 @@
 // `all` is the local run: one shared PostgreSQL cluster, per-file CREATE DATABASE ... TEMPLATE, and a higher
 // concurrency for files that do not start a postmaster. Files that need their own cluster stay at concurrency 2.
 // Timing sentinels run in their own process so a crowded template clone does not share their millisecond budget.
-// CI splits a public partition further with a shard (`UNIT_SHARD=<index>/<total>` or a second argument), which Node's
-// --test-shard applies to the partition's file list.
+// CI splits a public partition further with a shard (`UNIT_SHARD=<index>/<total>` or a second argument), balanced by the
+// durations in UNIT_MEASURED_SECONDS (tools/test-shards.ts).
 import { execFileSync, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { globSync, readFileSync } from 'node:fs';
@@ -14,8 +14,8 @@ import { createPool, Database } from '../hub/records/db.ts';
 import { migrate } from '../hub/records/migrations.ts';
 import { startPostgres } from '../hub/testing/postgres.ts';
 import type { TemporaryPostgres } from '../hub/testing/postgres.ts';
-import { parseShard } from './run-acceptance-tests.ts';
-import type { Shard } from './run-acceptance-tests.ts';
+import { parseShard, shardFiles } from './test-shards.ts';
+import type { Shard } from './test-shards.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -118,21 +118,70 @@ function stringEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   return env;
 }
 
-/** The files Node's --test-shard keeps: index modulo total over the sorted list. Used to refuse an empty shard. */
-export function shardOf(files: readonly string[], shard: Shard | undefined): string[] {
-  if (shard === undefined) return [...files];
-  return files.filter((_, i) => i % shard.total === shard.index - 1);
+/** What a unit file not listed in UNIT_MEASURED_SECONDS is expected to take, in worker seconds. */
+export const UNIT_DEFAULT_SECONDS = 2;
+
+/**
+ * Worker seconds of the unit files that took 12 s or more on the Ubuntu CI runner (mean of Hub checks runs 40698639709
+ * and 40728577809, the `regular` partition at concurrency 2). Only the balance of the shards depends on these numbers; a
+ * stale entry makes a shard slower, never drops a file.
+ */
+export const UNIT_MEASURED_SECONDS: Readonly<Record<string, number>> = {
+  'contracts/src/generator.test.ts': 26,
+  'hub/connectors/login.test.ts': 22,
+  'hub/connectors/processes.test.ts': 21,
+  'hub/connectors/read.test.ts': 29,
+  'hub/dispatch/bed-state.test.ts': 15,
+  'hub/dispatch/results.test.ts': 15,
+  'hub/dispatch/review-first.test.ts': 13,
+  'hub/knowledge/feeding-bounds-identity.test.ts': 16,
+  'hub/knowledge/feeding-bounds-package.test.ts': 13,
+  'hub/knowledge/feeding-bounds.test.ts': 20,
+  'hub/knowledge/links-performance.test.ts': 26,
+  'hub/knowledge/links.test.ts': 19,
+  'hub/knowledge/lists-sync.test.ts': 12,
+  'hub/knowledge/lists.test.ts': 12,
+  'hub/knowledge/placement.test.ts': 16,
+  'hub/knowledge/review.test.ts': 59,
+  'hub/knowledge/scale.test.ts': 14,
+  'hub/knowledge/seed.test.ts': 67,
+  'hub/knowledge/sync.test.ts': 21,
+  'hub/knowledge/view-perf.test.ts': 47,
+  'hub/knowledge/views-fields.test.ts': 40,
+  'hub/knowledge/views.test.ts': 50,
+  'hub/refs/skills.test.ts': 13,
+  'hub/rules/sandbox/sandbox.test.ts': 16,
+  'hub/runs/engine/contributions.test.ts': 38,
+  'hub/runs/engine/criterion-freeze.test.ts': 17,
+  'hub/runs/engine/leases-wiring.test.ts': 22,
+  'hub/server/assemble/cli-admin.test.ts': 25,
+  'hub/server/assemble/testing-real.test.ts': 58,
+  'hub/server/mcp.test.ts': 40,
+  'hub/server/submit-load.test.ts': 104,
+  'hub/server/text.test.ts': 17,
+  'packs/product/famx/functions/cases-integration.test.ts': 13,
+  'packs/workflow/case-review-verify/end-to-end.test.ts': 121,
+  'packs/workflow/case-review-verify/predecessor-view.test.ts': 35,
+  'packs/workflow/case-review/packs.test.ts': 16,
+  'scripts/diagnostics/seed-lists-repro.test.ts': 84,
+};
+
+export function unitSeconds(file: string): number {
+  return UNIT_MEASURED_SECONDS[file] ?? UNIT_DEFAULT_SECONDS;
 }
 
-/** Arguments of one lane. The shard goes before the files: Node ignores a --test-shard written after them. */
-export function laneArguments(files: readonly string[], concurrency: number, shard?: Shard): string[] {
-  const split = shard === undefined ? [] : [`--test-shard=${shard.index}/${shard.total}`];
-  return ['--test', '--test-isolation=process', `--test-concurrency=${concurrency}`, ...split, ...files];
+/** The files of one shard of a public partition (all of them without a shard). */
+export function unitShardFiles(group: UnitGroup, shard: Shard | undefined): string[] {
+  return shardFiles(unitFiles(group), shard, unitSeconds);
 }
 
-function spawnLane(files: string[], concurrency: number, env: NodeJS.ProcessEnv, shard?: Shard): ChildProcess | undefined {
+export function laneArguments(files: readonly string[], concurrency: number): string[] {
+  return ['--test', '--test-isolation=process', `--test-concurrency=${concurrency}`, ...files];
+}
+
+function spawnLane(files: string[], concurrency: number, env: NodeJS.ProcessEnv): ChildProcess | undefined {
   if (files.length === 0) return undefined;
-  return spawn(process.execPath, laneArguments(files, concurrency, shard), { cwd: ROOT, env, stdio: 'inherit' });
+  return spawn(process.execPath, laneArguments(files, concurrency), { cwd: ROOT, env, stdio: 'inherit' });
 }
 
 function exitOf(child: ChildProcess | undefined): Promise<number> {
@@ -220,7 +269,8 @@ export async function runUnitTests(group: UnitGroup = 'all', shard?: Shard): Pro
   const files = unitFiles(group);
   if (files.length === 0) throw new Error('单元测试分组没有文件，拒绝空运行；检查测试文件声明');
   if (shard !== undefined && group === 'all') throw new Error('分片只用于 regular 和 parser-bounds 分组');
-  if (shardOf(files, shard).length === 0) throw new Error('单元测试分片没有文件，拒绝空运行；减少分片数');
+  const sharded = unitShardFiles(group, shard);
+  if (sharded.length === 0) throw new Error('单元测试分片没有文件，拒绝空运行；减少分片数');
   const children: ChildProcess[] = [];
   const stopChildren = (): void => {
     for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGINT');
@@ -231,7 +281,8 @@ export async function runUnitTests(group: UnitGroup = 'all', shard?: Shard): Pro
   try {
     // Public CI partitions keep one process and a global worker cap; shared lanes are local-all only.
     if (group !== 'all') {
-      const child = spawnLane(files, sharedConcurrency(group), stringEnv(), shard);
+      if (shard !== undefined) process.stderr.write(`unit ${group} shard ${shard.index}/${shard.total}: ${sharded.length} files\n`);
+      const child = spawnLane(sharded, sharedConcurrency(group), stringEnv());
       if (child) children.push(child);
       return await exitOf(child);
     }

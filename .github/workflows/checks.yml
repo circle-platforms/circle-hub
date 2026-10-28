@@ -44,7 +44,7 @@ jobs:
       - run: npm ci
       - run: npm run verify:contracts
 
-  # regular runs in three shards (Node's --test-shard over its file list); parser-bounds stays one single-worker process.
+  # regular runs in three shards balanced by measured durations (tools/run-unit-tests.ts); parser-bounds stays one single-worker process.
   unit_parts:
     name: Unit tests / ${{ matrix.suite }} ${{ matrix.shard }}
     runs-on: ubuntu-24.04
