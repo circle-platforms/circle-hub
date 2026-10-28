@@ -4,6 +4,7 @@ import { mkdtemp, rm, readdir, link, unlink, symlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { writeSync } from 'node:fs';
 import test from 'node:test';
 import { windowsKeychainStore, windowsKeychainStoreWithBoundary } from './windows-keychain.ts';
 import { finishWindowsPrivateCreate, type WindowsPrivateFiles } from './windows-files.ts';
@@ -78,13 +79,16 @@ test('Windows runner native fixture: persistence, duplicate create, DACL rejecti
   const directory = join(parent, 'keys');
   try {
     const options = { directory, service: 'synthetic-runner', account: 'synthetic-key' };
-    const store = windowsKeychainStore(options);
+    // Sync operation names survive an access violation. No native arguments, identity, paths or bytes are printed.
+    const nativeStep = (step: string) => { writeSync(1, `windows-native:${step}\n`); };
+    const store = windowsKeychainStore(options, nativeStep);
     const key = randomBytes(32);
     await store.write(key);
-    assert.deepEqual(await windowsKeychainStore(options).read(), Uint8Array.from(key));
+    assert.deepEqual(await windowsKeychainStore(options, nativeStep).read(), Uint8Array.from(key));
     await assert.rejects(store.write(randomBytes(32)));
     assert.deepEqual(await store.read(), Uint8Array.from(key));
-    const child = spawnSync(process.execPath, ['--input-type=module', '-e', `import { windowsKeychainStore } from ${JSON.stringify(new URL('./windows-keychain.ts', import.meta.url).href)}; const key = await windowsKeychainStore(${JSON.stringify(options)}).read(); if (key.length !== 32) process.exit(2); key.fill(0);`], { encoding: 'utf8' });
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', `import { windowsKeychainStore } from ${JSON.stringify(new URL('./windows-keychain.ts', import.meta.url).href)}; import { writeSync } from 'node:fs'; const key = await windowsKeychainStore(${JSON.stringify(options)}, step => writeSync(1, 'windows-native-child:' + step + '\\n')).read(); if (key.length !== 32) process.exit(2); key.fill(0);`], { encoding: 'utf8' });
+    if (child.status !== 0) writeSync(1, child.stdout);
     assert.equal(child.status, 0, 'fresh process read failed');
     const file = join(directory, (await readdir(directory))[0]!);
     const linkedFile = join(parent, 'hardlink.bin');
@@ -94,8 +98,8 @@ test('Windows runner native fixture: persistence, duplicate create, DACL rejecti
     assert.equal((await store.read()).length, 32);
     const junction = join(parent, 'junction');
     await symlink(directory, junction, 'junction');
-    await assert.rejects(windowsKeychainStore({ ...options, directory: junction }).read());
-    const disposable = windowsKeychainStore({ ...options, account: 'disposable' });
+    await assert.rejects(windowsKeychainStore({ ...options, directory: junction }, nativeStep).read());
+    const disposable = windowsKeychainStore({ ...options, account: 'disposable' }, nativeStep);
     await disposable.init();
     assert.equal(await disposable.delete(), true);
     assert.equal(await disposable.delete(), false);
