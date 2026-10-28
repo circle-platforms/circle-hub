@@ -465,3 +465,19 @@ Windows x64 与 ARM64 的 Job 限额文件分别 12/12、0 跳过。该回执覆
 集成者提供的令牌+Job 原生回执（2026-10-28）：公开固定 `f066e779`、运行 `40639445472`，
 x64 与 ARM64 文件各 16/16、0 跳过；整体仍因 Windows 未支持门禁失败。本回执仅证明已有 Job 与
 令牌自省，不证明实际禁网/禁写/防启动，也不覆盖后续 LPAC 启动代码。本分支代理未独立读取该运行。
+
+LPAC 挂起启动候选已作为独立可信探针实现，仍未接 pack：从内核返回的 System32 绝对路径加载
+userenv（不假定 userenv 是 KnownDLL，不读 SystemRoot），派生 AppContainer SID；配置零 capabilities、
+ALL_APPLICATION_PACKAGES opt-out、禁止子进程与 Win32k 禁用属性；使用现有 write-restricted token，
+无 shell、无继承句柄、空环境，以 CREATE_SUSPENDED 创建当前 Node。在恢复前核对 LPAC、AppContainer
+SID、空 capabilities、child-process 标志、派生写限制 SID，绑定限额 Job，恢复后观察退出，失败终止并
+确认退出。探针不修改系统 ACL、不创建登录会话、不注册持久 AppContainer profile。
+依据 [Microsoft LPAC 启动示例](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer)
+与 [DeriveAppContainerSidFromAppContainerName](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-deriveappcontainersidfromappcontainername)。
+
+新增原生用例要求：Node 正常退出；真正监听的本地 TCP 与绑定的 UDP 无连接/收包；临时文件创建、
+覆盖、删除、重命名、建目录均返回权限拒绝，原文件保持；无 Node permission flags 时也不能启动另一个
+Node。另有 argv 引号/末尾反斜杠/NUL 用例。新增 6 例未运行，旧 16/16 不覆盖。此候选可能因 Node
+所在目录缺少 LPAC 只读执行授权，或令牌组合不支持而拒绝启动；遇到这些情况必须保持拒绝并记录原生
+错误，不能退回普通进程。尚缺：只读资源授权、协议管道、每调用验证、更多 IPC/异步写反例与 pack 接线。
+因此新代码仍不是 Windows 生产可用证据，readiness 与 pack 入口继续失败关闭。
