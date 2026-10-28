@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {execFileSync} from 'node:child_process';
+import {execFileSync,spawnSync} from 'node:child_process';
 import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {unitArguments,unitFiles,PARSER_BOUNDS,SENTINELS,classifyLanes,sentinelConcurrency,sharedConcurrency,unitLane} from './run-unit-tests.ts';
+import {unitArguments,unitFiles,PARSER_BOUNDS,SENTINELS,classifyLanes,laneArguments,runUnitTests,sentinelConcurrency,shardOf,sharedConcurrency,unitLane} from './run-unit-tests.ts';
 const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 test('CI test partitions are disjoint and cover every original tracked unit test',()=>{
  const all=unitFiles(),regular=unitFiles('regular'),parsers=unitFiles('parser-bounds');
@@ -63,4 +63,28 @@ test('local concurrency tracks this machine and the public partitions stay cappe
   assert.equal(sentinelConcurrency('regular'), sharedConcurrency('regular'));
   assert.equal(sentinelConcurrency('all'), 2);
   assert.equal(classifyLanes(unitFiles('parser-bounds')).shared.length, 0);
+});
+
+test('a CI shard goes before the files and the shards of a partition cover it once', () => {
+  const regular = unitFiles('regular');
+  const args = laneArguments(regular, 2, { index: 2, total: 3 });
+  assert.equal(args[2], '--test-concurrency=2');
+  assert.equal(args[3], '--test-shard=2/3', 'Node ignores a --test-shard written after the file list');
+  assert.deepEqual(args.slice(4), regular);
+  assert.deepEqual(laneArguments(regular, 2).slice(3), regular, 'without a shard the arguments are unchanged');
+  for (const group of ['regular', 'parser-bounds'] as const) {
+    for (let total = 1; total <= 4; total++) {
+      const files = unitFiles(group);
+      const parts = Array.from({ length: total }, (_, i) => shardOf(files, { index: i + 1, total }));
+      assert.deepEqual(parts.flat().sort(), files, `${group} in ${total} shards`);
+      for (const part of parts) assert.ok(part.length > 0, `${group} ${total} shards: none empty`);
+    }
+  }
+});
+
+test('the runner refuses a shard of the local lanes and a malformed shard', async () => {
+  await assert.rejects(runUnitTests('all', { index: 1, total: 2 }), /分片只用于/);
+  const out = spawnSync(process.execPath, ['tools/run-unit-tests.ts', 'regular', '4/3'], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(out.status, 2);
+  assert.match(out.stderr, /分片必须写成/);
 });

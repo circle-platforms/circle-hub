@@ -2,6 +2,8 @@
 // `all` is the local run: one shared PostgreSQL cluster, per-file CREATE DATABASE ... TEMPLATE, and a higher
 // concurrency for files that do not start a postmaster. Files that need their own cluster stay at concurrency 2.
 // Timing sentinels run in their own process so a crowded template clone does not share their millisecond budget.
+// CI splits a public partition further with a shard (`UNIT_SHARD=<index>/<total>` or a second argument), which Node's
+// --test-shard applies to the partition's file list.
 import { execFileSync, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { globSync, readFileSync } from 'node:fs';
@@ -12,6 +14,8 @@ import { createPool, Database } from '../hub/records/db.ts';
 import { migrate } from '../hub/records/migrations.ts';
 import { startPostgres } from '../hub/testing/postgres.ts';
 import type { TemporaryPostgres } from '../hub/testing/postgres.ts';
+import { parseShard } from './run-acceptance-tests.ts';
+import type { Shard } from './run-acceptance-tests.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -21,6 +25,7 @@ export const UNIT_PATTERNS = [
   'packs/**/*.test.ts',
   'scripts/**/*.test.ts',
   'tools/gen-contracts*.test.ts',
+  'tools/run-acceptance-tests.test.ts',
   'tools/run-unit-tests.test.ts',
 ];
 
@@ -113,9 +118,21 @@ function stringEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   return env;
 }
 
-function spawnLane(files: string[], concurrency: number, env: NodeJS.ProcessEnv): ChildProcess | undefined {
+/** The files Node's --test-shard keeps: index modulo total over the sorted list. Used to refuse an empty shard. */
+export function shardOf(files: readonly string[], shard: Shard | undefined): string[] {
+  if (shard === undefined) return [...files];
+  return files.filter((_, i) => i % shard.total === shard.index - 1);
+}
+
+/** Arguments of one lane. The shard goes before the files: Node ignores a --test-shard written after them. */
+export function laneArguments(files: readonly string[], concurrency: number, shard?: Shard): string[] {
+  const split = shard === undefined ? [] : [`--test-shard=${shard.index}/${shard.total}`];
+  return ['--test', '--test-isolation=process', `--test-concurrency=${concurrency}`, ...split, ...files];
+}
+
+function spawnLane(files: string[], concurrency: number, env: NodeJS.ProcessEnv, shard?: Shard): ChildProcess | undefined {
   if (files.length === 0) return undefined;
-  return spawn(process.execPath, ['--test', '--test-isolation=process', `--test-concurrency=${concurrency}`, ...files], { cwd: ROOT, env, stdio: 'inherit' });
+  return spawn(process.execPath, laneArguments(files, concurrency, shard), { cwd: ROOT, env, stdio: 'inherit' });
 }
 
 function exitOf(child: ChildProcess | undefined): Promise<number> {
@@ -198,12 +215,35 @@ function sharedEnv(postgres: TemporaryPostgres): NodeJS.ProcessEnv {
   });
 }
 
-/** Runs one public partition or the whole local suite. Resolves to the test runner's exit code. */
-export async function runUnitTests(group: UnitGroup = 'all'): Promise<number> {
+/** Runs one public partition (optionally one shard of it) or the whole local suite. Resolves to the test runner's exit code. */
+export async function runUnitTests(group: UnitGroup = 'all', shard?: Shard): Promise<number> {
   const files = unitFiles(group);
   if (files.length === 0) throw new Error('单元测试分组没有文件，拒绝空运行；检查测试文件声明');
-  // Public CI partitions keep one process and a global worker cap; shared lanes are local-all only.
-  if (group !== 'all') return exitOf(spawnLane(files, sharedConcurrency(group), stringEnv()));
+  if (shard !== undefined && group === 'all') throw new Error('分片只用于 regular 和 parser-bounds 分组');
+  if (shardOf(files, shard).length === 0) throw new Error('单元测试分片没有文件，拒绝空运行；减少分片数');
+  const children: ChildProcess[] = [];
+  const stopChildren = (): void => {
+    for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGINT');
+  };
+  // Installed before either path, so an interrupted CI partition also stops its runner and the clusters it started.
+  process.once('SIGINT', stopChildren);
+  process.once('SIGTERM', stopChildren);
+  try {
+    // Public CI partitions keep one process and a global worker cap; shared lanes are local-all only.
+    if (group !== 'all') {
+      const child = spawnLane(files, sharedConcurrency(group), stringEnv(), shard);
+      if (child) children.push(child);
+      return await exitOf(child);
+    }
+    return await runLocalLanes(files, children);
+  } finally {
+    process.off('SIGINT', stopChildren);
+    process.off('SIGTERM', stopChildren);
+  }
+}
+
+async function runLocalLanes(files: string[], children: ChildProcess[]): Promise<number> {
+  const group: UnitGroup = 'all';
   const lanes = classifyLanes(files);
   const concurrency = sharedConcurrency(group);
   const sentinelLimit = sentinelConcurrency(group);
@@ -212,12 +252,6 @@ export async function runUnitTests(group: UnitGroup = 'all'): Promise<number> {
     `unit lanes shared=${lanes.shared.length} isolated=${lanes.isolated.length} sentinel=${lanes.sentinel.length} sharedConcurrency=${concurrency} sentinelConcurrency=${sentinelLimit} load=${loadavg().map((n) => n.toFixed(2)).join(' ')}\n`,
   );
   const postgres = lanes.shared.length === 0 ? undefined : await startPostgres({ maxConnections: 500, sharedBuffers: '512MB', autovacuum: false, private: true });
-  const children: ChildProcess[] = [];
-  const stopChildren = (): void => {
-    for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGINT');
-  };
-  process.once('SIGINT', stopChildren);
-  process.once('SIGTERM', stopChildren);
   try {
     if (postgres) {
       await prepareTemplate(postgres);
@@ -253,8 +287,6 @@ export async function runUnitTests(group: UnitGroup = 'all'): Promise<number> {
     );
     return failed;
   } finally {
-    process.off('SIGINT', stopChildren);
-    process.off('SIGTERM', stopChildren);
     await postgres?.stop();
   }
 }
@@ -262,18 +294,20 @@ export async function runUnitTests(group: UnitGroup = 'all'): Promise<number> {
 const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 if (isMain) {
   const group = process.argv[2] ?? 'all';
-  if ((group !== 'all' && group !== 'regular' && group !== 'parser-bounds') || process.argv.length > 3) {
-    process.stderr.write('用法：node tools/run-unit-tests.ts [all|regular|parser-bounds]\n');
+  const fail = (message: string): void => {
+    process.stderr.write(`${message}\n`);
     process.exitCode = 2;
+  };
+  if ((group !== 'all' && group !== 'regular' && group !== 'parser-bounds') || process.argv.length > 4) {
+    fail('用法：node tools/run-unit-tests.ts [all|regular|parser-bounds] [<序号>/<总数>]（分片也可由 UNIT_SHARD 指定）');
   } else {
-    runUnitTests(group).then(
-      (code) => {
-        process.exitCode = code;
-      },
-      (error: unknown) => {
-        process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-        process.exitCode = 2;
-      },
-    );
+    Promise.resolve()
+      .then(() => runUnitTests(group, parseShard(process.argv[3] ?? process.env.UNIT_SHARD)))
+      .then(
+        (code) => {
+          process.exitCode = code;
+        },
+        (error: unknown) => fail(error instanceof Error ? error.message : String(error)),
+      );
   }
 }
