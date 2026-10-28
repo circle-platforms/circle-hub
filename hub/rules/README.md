@@ -166,6 +166,18 @@ Layers, outermost first:
    `node hub/rules/sandbox/linux.ts` to `apparmor_parser -r`. Reinstall it after changing that binary or shell. The host must
    allow the launcher profile to create user namespaces. Linux systems without a usable AppArmor policy need an equivalent
    independently verified kernel backend before Hub can run pack functions. This does not alter CI configuration.
+
+   Each Linux child also tests the loaded enforcement before importing any pack: real execution of Node, synchronous and
+   asynchronous writes to an isolated writable synthetic directory, and a pathname Unix socket connection must all fail with
+   the expected kernel denial. The trusted bootstrap temporarily receives child-process and synthetic-directory write grants;
+   it drops both using `process.permission.drop`, confirms they are gone, and refuses the call if that API is unavailable.
+   The synthetic listener and directory are removed on completion. Policy names include a digest of the canonical worker rules;
+   this is a version identifier, not proof that the administrator loaded those exact rules. An administrator or root able to
+   replace an active kernel policy and the Node executable are within the deployment trust boundary. Reloading an active
+   same-named profile can change confinement between checks: stop the Hub and drain its children before installing or replacing
+   policy, and do not treat a successful synthetic path test as proof of every possible pathname. The dedicated-VM-only A/B
+   command is `CIRCLE_HUB_SYNTHETIC_APPARMOR_TEST=1 node --test hub/rules/sandbox/testing/linux-policy-ab.ts`; it refuses to
+   replace an already installed Hub sandbox policy and intentionally tests same-name weak policies and a cached probe.
 4. Node's permission model: read access only to the bootstrap, `policy.ts`, the pack directory and the declared dependencies'
    package directories (resolved recursively); no writes, child processes, workers, addons, WASI or inspector;
    `--disallow-code-generation-from-strings`, `--no-addons`, `--no-experimental-websocket`, an empty environment (only `TZ=UTC`).

@@ -175,9 +175,12 @@ export interface IsolatedCommand {
  * paths it may read. The CPU limit is in seconds of processor time across all threads. `heapMb` is V8's heap limit: a backstop
  * set well above the resident limit the parent enforces, because V8 aborts on heap exhaustion (which leaves a crash report).
  */
-export function isolatedCommand(options: { entry: string; reads: string[]; heapMb: number; cpuSeconds: number; os: boolean }): IsolatedCommand {
+export function isolatedCommand(options: { entry: string; reads: string[]; heapMb: number; cpuSeconds: number; os: boolean; probeDir?: string }): IsolatedCommand {
+  const linuxProbe = options.os && process.platform === 'linux' && options.probeDir !== undefined;
   const node = [
     '--permission',
+    // Only the trusted bootstrap receives these temporary grants; it must drop both before it loads a pack.
+    ...(linuxProbe ? ['--allow-child-process', '--disable-warning=PERM0002', `--allow-fs-write=${options.probeDir}`] : []),
     ...[options.entry, POLICY, ...options.reads].map((path) => `--allow-fs-read=${path}`),
     `--max-old-space-size=${options.heapMb}`,
     '--disallow-code-generation-from-strings',
@@ -187,7 +190,7 @@ export function isolatedCommand(options: { entry: string; reads: string[]; heapM
   ];
   const program = options.os
     ? process.platform === 'linux'
-      ? [AA_EXEC, '-p', LAUNCH_PROFILE, '--', BWRAP, ...linuxBubblewrapArgs(NODE, node, [options.entry, POLICY, ...options.reads])]
+      ? [AA_EXEC, '-p', LAUNCH_PROFILE, '--', BWRAP, ...linuxBubblewrapArgs(NODE, node, [options.entry, POLICY, ...options.reads], linuxProbe ? [options.probeDir!] : [])]
       : [SANDBOX_EXEC, '-p', sandboxProfile(), NODE, ...node]
     : [NODE, ...node];
   return {

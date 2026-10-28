@@ -11,7 +11,7 @@ import { LINUX_LABEL } from './policy.ts';
 
 test('AppArmor policy requires a stacked worker with no execution or network', () => {
   const policy = linuxAppArmorPolicy(NODE);
-  assert.match(policy, /change_profile .* -> &circle-hub-sandbox-worker-v1/);
+  assert.match(policy, /change_profile .* -> &circle-hub-sandbox-worker-v2-17338cfaea07/);
   assert.match(policy, /deny network inet,/);
   assert.match(policy, /deny network inet6,/);
   assert.match(policy, /deny \/\*\* w,/);

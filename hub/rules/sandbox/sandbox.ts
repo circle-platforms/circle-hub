@@ -6,8 +6,9 @@ import type { CallResult } from '../../../contracts/generated/vocabulary.ts';
 // running child (also when the Hub process exits); sweepOrphans (orphans.ts) ends those an earlier Hub process left behind.
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { lstat, readdir, realpath, stat } from 'node:fs/promises';
-import { availableParallelism } from 'node:os';
+import { chmod, lstat, mkdtemp, readdir, realpath, rm, stat } from 'node:fs/promises';
+import { createServer } from 'node:net';
+import { availableParallelism, tmpdir } from 'node:os';
 import { extname, isAbsolute, join, normalize, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { SandboxError, isSandboxErrorCode, type SandboxErrorCode } from './errors.ts';
@@ -293,7 +294,29 @@ function spawnFailure(error: unknown): SandboxError {
   });
 }
 
-function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os: boolean, batch: boolean): Promise<SandboxResult> {
+async function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os: boolean, batch: boolean): Promise<SandboxResult> {
+  if (!os || process.platform !== 'linux') return runChildWithProbe(pack, inputText, lim, os, batch);
+  let dir: string | undefined;
+  const server = createServer(socket => socket.destroy());
+  let listening = false;
+  try {
+    dir = await realpath(await mkdtemp(join(tmpdir(), 'circle-hub-sandbox-probe-')));
+    await chmod(dir, 0o700);
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(join(dir!, 'probe.sock'), () => { listening = true; resolve(); });
+    });
+    return await runChildWithProbe(pack, inputText, lim, os, batch, dir);
+  } catch (error) {
+    if (error instanceof SandboxError) throw error;
+    throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'linux_isolation_selftest_unavailable' });
+  } finally {
+    if (listening) await new Promise<void>(resolve => server.close(() => resolve()));
+    if (dir) await rm(dir, { recursive: true, force: true });
+  }
+}
+
+function runChildWithProbe(pack: PreparedPack, inputText: string, lim: SandboxLimits, os: boolean, batch: boolean, probeDir?: string): Promise<SandboxResult> {
   const deps = declaredDependencies();
   const nonce = randomBytes(16).toString('hex');
   const dirUrl = (dir: string): string => `${pathToFileURL(dir).href}/`;
@@ -301,6 +324,7 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
     nonce,
     batch,
     linuxOsIsolation: os && process.platform === 'linux',
+    linuxProbeDir: probeDir,
     pack: dirUrl(pack.dir),
     entry: pathToFileURL(pack.entry).href,
     exportName: pack.exportName,
@@ -318,6 +342,7 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
       heapMb: heapBackstopMb(lim.memoryMb),
       cpuSeconds: Math.ceil(lim.timeoutMs / 1000) * 2 + 1,
       os,
+      probeDir,
     });
   } catch {
     throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'linux_runtime_bindings_unavailable' });
@@ -330,9 +355,9 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
       child = spawn(command.command, command.args, {
         cwd: pack.dir,
         env: { TZ: 'UTC' },
-        stdio: ['pipe', 'pipe', 'pipe'],
+        stdio: probeDir ? ['pipe', 'pipe', 'pipe', 'ignore', 'pipe'] : ['pipe', 'pipe', 'pipe'],
         detached: process.platform !== 'win32',
-      });
+      }) as ChildProcessWithoutNullStreams;
     } catch (error) {
       reject(spawnFailure(error));
       return;
@@ -342,6 +367,7 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
     let frameBytes = 0;
     let stderrText = '';
     let stderrBytes = 0;
+    let linuxAttestation = '';
     let stopped: { code: SandboxErrorCode; detail: Record<string, unknown> } | undefined;
     let settled = false;
 
@@ -364,6 +390,10 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
       stopped ??= { code, detail };
       kill();
     };
+    if (probeDir) child.stdio[4]?.on('data', (chunk: Buffer) => {
+      linuxAttestation += chunk.toString('utf8');
+      if (linuxAttestation.length > nonce.length) stop('SANDBOX_UNAVAILABLE', { reason: 'linux_isolation_attestation' });
+    });
     const pid = child.pid;
     if (pid !== undefined) live.set(pid, stop);
     if (!exitHook) {
@@ -418,6 +448,10 @@ function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimits, os:
       const childStderr = frame && frame !== 'invalid' && typeof frame.stderr === 'string' ? frame.stderr : '';
       const logs = { stdout: childStdout, stderr: [childStderr, stderrText].filter(Boolean).join('\n') };
       if (stopped) return reject(new SandboxError(stopped.code, { ...stopped.detail, durationMs }, logs));
+      // A real external signal remains an observed process failure even if it arrived during the startup attestation.
+      if (probeDir && linuxAttestation !== nonce && signal === 'SIGXCPU') return reject(new SandboxError('SANDBOX_TIMEOUT', { limit: 'cpu', durationMs }, logs));
+      if (probeDir && linuxAttestation !== nonce && signal) return reject(new SandboxError('SANDBOX_VIOLATION', { reason: 'signal', signal, durationMs, resourceObservation: 'absent' }, logs));
+      if (probeDir && linuxAttestation !== nonce) return reject(new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'linux_isolation_attestation', durationMs }, logs));
       if (frame && frame !== 'invalid') {
         if (frame.status === 'ok') {
           return resolve({ output: frame.output, ...logs, truncated: frame.truncated === true || stderrText.length >= lim.logBytes, durationMs, osIsolation: os });
