@@ -38,6 +38,34 @@ export const residentSizes: Measure = async (pids) => {
   });
 };
 
+/** Sum a Linux sandbox supervisor and its descendants. A PID namespace may leave Node below bubblewrap's monitor. */
+export const residentTreeSizes: Measure = async (pids) => {
+  if (process.platform !== 'linux') return residentSizes(pids);
+  const result = new Map<number, number>();
+  await Promise.all(pids.map(async (root) => {
+    const found = new Set<number>();
+    const pending = [root];
+    while (pending.length) {
+      const pid = pending.pop()!;
+      if (found.has(pid)) continue;
+      found.add(pid);
+      // An unexpectedly broad process tree must trigger the watchdog, not evade it.
+      if (found.size > 256) { result.set(root, Number.MAX_SAFE_INTEGER); return; }
+      try {
+        const children = await readFile(`/proc/${pid}/task/${pid}/children`, 'utf8');
+        for (const child of children.trim().split(/\s+/)) {
+          if (/^[1-9]\d*$/.test(child)) pending.push(Number(child));
+        }
+      } catch {
+        // The process may have exited between samples.
+      }
+    }
+    const sizes = await residentSizes([...found]);
+    if (sizes.has(root)) result.set(root, [...sizes.values()].reduce((sum, bytes) => sum + bytes, 0));
+  }));
+  return result;
+};
+
 export interface ResidentWatch {
   /** Calls `onBytes` with the child's resident size once per round until the returned function is called. */
   watch(pid: number, onBytes: (bytes: number) => void): () => void;

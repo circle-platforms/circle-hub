@@ -13,7 +13,7 @@ import { pathToFileURL } from 'node:url';
 import { SandboxError, isSandboxErrorCode, type SandboxErrorCode } from './errors.ts';
 import { BOOTSTRAP, declaredDependencies, isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { ENTRY_EXTENSIONS } from './policy.ts';
-import { createResidentWatch, residentSizes } from './resident.ts';
+import { createResidentWatch, residentTreeSizes } from './resident.ts';
 import { createSlotPool } from './slots.ts';
 import { retryFunction, type FunctionAttempt } from './retry.ts';
 
@@ -110,7 +110,7 @@ const slots = createSlotPool({
   waiting: MAX_WAITING,
   full: () => new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'queue_full', limit: 'queue', waiting: MAX_WAITING }),
 });
-const residentWatch = createResidentWatch({ intervalMs: POLL_MS, measure: residentSizes });
+const residentWatch = createResidentWatch({ intervalMs: POLL_MS, measure: residentTreeSizes });
 
 // Running children by pid, with the function that stops each.
 const live = new Map<number, (code: SandboxErrorCode, detail: Record<string, unknown>) => void>();
