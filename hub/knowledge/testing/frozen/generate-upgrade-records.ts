@@ -1,4 +1,4 @@
-// Writes upgrade-records.json: the records database and object bytes that the Hub before the operation lease binding
+// Writes tests/fixtures/frozen/upgrade-records.json: the records database and object bytes that the Hub before the operation lease binding
 // (the tree of aecc1a9, the parent of the lease work) leaves after one knowledge-contribution run with a legacy operation
 // record. Run once by hand against an extracted old tree whose node_modules points at this checkout's:
 //   git archive <old revision> | tar -x -C <dir> && ln -s "$PWD/node_modules" <dir>/node_modules
@@ -74,7 +74,7 @@ try {
       view,
       ...dump,
     };
-    await writeFile(fileURLToPath(new URL('./upgrade-records.json', import.meta.url)), `${JSON.stringify(fixture, null, 1)}\n`);
+    await writeFile(fileURLToPath(new URL('../../../../tests/fixtures/frozen/upgrade-records.json', import.meta.url)), `${JSON.stringify(fixture, null, 1)}\n`);
   } finally {
     await w.close();
   }

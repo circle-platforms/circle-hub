@@ -1,5 +1,5 @@
 // The frozen records of the upgrade test: what the Hub before the operation lease binding wrote for one
-// knowledge-contribution run, as table rows plus object bytes. generate-upgrade-records.ts writes upgrade-records.json by
+// knowledge-contribution run, as table rows plus object bytes. generate-upgrade-records.ts writes tests/fixtures/frozen/upgrade-records.json by
 // running the old tree's code; the test restores it into a fresh database migrated by the current code and replays there.
 import type { ObjectStore } from '../../../records/api.ts';
 import type { Database } from '../../../records/db.ts';

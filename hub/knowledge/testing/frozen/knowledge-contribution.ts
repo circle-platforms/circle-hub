@@ -1,7 +1,8 @@
-// knowledge-contribution@1.3.1 as published before the operation lease binding: pack.json and the files it lists, byte
-// for byte from packs/workflow/knowledge-contribution at aecc1a9222495d561fd983f53fe985038b2fd0e6 (the parent of the lease
-// work). Tests that replay legacy runs copy it from here instead of extracting an earlier commit, which a shallow or
-// public clone may not have.
+// knowledge-contribution@1.3.1 as published before the operation lease binding, kept in
+// tests/fixtures/frozen/knowledge-contribution@1.3.1: pack.json and the files it lists, byte for byte from
+// packs/workflow/knowledge-contribution at aecc1a9222495d561fd983f53fe985038b2fd0e6 (the parent of the lease work).
+// Tests that replay legacy runs copy it from there instead of extracting an earlier commit, which a shallow or public
+// clone may not have. It sits outside hub/ because its old judgment tool must not count as Hub source.
 import { cp, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +14,7 @@ export const FROZEN_KNOWLEDGE_CONTRIBUTION = {
   revision: 'aecc1a9222495d561fd983f53fe985038b2fd0e6',
   /** manifestDigest of the frozen pack.json: the pack_digest an old run of this version carries. */
   digest: '2acb969822443242f3867c37364a9cc076f5a3ed85628beb014b82894030f1f0',
-  directory: fileURLToPath(new URL('./knowledge-contribution@1.3.1/', import.meta.url)),
+  directory: fileURLToPath(new URL('../../../../tests/fixtures/frozen/knowledge-contribution@1.3.1/', import.meta.url)),
 } as const;
 
 /** Copies the frozen pack into `target` after checking the manifest digest and every listed file's size and SHA-256. */

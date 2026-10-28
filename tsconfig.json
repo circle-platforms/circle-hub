@@ -24,6 +24,6 @@
     "foundation",
     "references",
     "node_modules",
-    "hub/knowledge/testing/frozen/*@*"
+    "tests/fixtures/frozen/*@*"
   ]
 }

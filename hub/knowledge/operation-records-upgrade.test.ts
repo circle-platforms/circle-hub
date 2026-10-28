@@ -28,7 +28,7 @@ interface UpgradeFixture extends RecordsDump {
   view: { status: string; contribution: Record<string, unknown> } & Record<string, unknown>;
 }
 
-const frozen = new URL('./testing/frozen/', import.meta.url);
+const frozen = new URL('../../tests/fixtures/frozen/', import.meta.url);
 const plain = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
 
 test('a run and receipt persisted by the frozen Hub replay unchanged after upgrade', async t => {
