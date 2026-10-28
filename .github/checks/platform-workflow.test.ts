@@ -20,5 +20,13 @@ test('native matrix is restricted, read-only and fixed to six native runners', (
   assert.match(workflow, /npm ci --ignore-scripts/);
   assert.ok(workflow.includes('node .github/checks/platform-matrix.ts ${{ matrix.platform }} ${{ matrix.arch }}'));
   assert.ok(workflow.includes("if: ${{ !cancelled() && runner.os == 'Windows' }}"));
-  assert.match(workflow, /run: node .github\/checks\/platform-matrix.ts --windows-readiness/);
+  assert.match(workflow, /name: Report unsupported Windows release readiness\n.*\n        run: node .github\/checks\/platform-matrix.ts --windows-readiness/);
+});
+test('Windows release readiness is reported as unsupported without failing the synthetic matrix', () => {
+  const script = readFileSync(new URL('./platform-matrix.ts', import.meta.url), 'utf8');
+  const readiness = script.slice(script.indexOf("'--windows-readiness'"), script.indexOf('} else {'));
+  assert.ok(readiness.includes('Windows 运行时打包、原生服务、凭证存储与规则沙箱尚未完成验收；当前不支持发布'));
+  assert.match(readiness, /::warning title=Windows 发布就绪::/);
+  assert.match(readiness, /GITHUB_STEP_SUMMARY/);
+  assert.doesNotMatch(readiness, /exitCode|process\.exit\(/);
 });

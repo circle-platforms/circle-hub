@@ -40,6 +40,6 @@ jobs:
       - name: Execute synthetic Windows native Job fixtures
         if: ${{ !cancelled() && runner.os == 'Windows' }}
         run: node --test --test-reporter=tap --test-concurrency=2 hub/rules/sandbox/windows.test.ts
-      - name: Reject unsupported Windows release readiness
+      - name: Report unsupported Windows release readiness
         if: ${{ !cancelled() && runner.os == 'Windows' }}
         run: node .github/checks/platform-matrix.ts --windows-readiness
