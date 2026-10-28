@@ -1,22 +1,37 @@
-// The Hub checks workflow must count what each test job ran: an empty or skipped run is not a pass (AGENTS.md, Verification).
+// The Hub checks and macOS workflows must count what each test job ran: an empty or skipped run is not a pass (AGENTS.md,
+// Verification).
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 const WORKFLOW = readFileSync(new URL('../workflows/checks.yml', import.meta.url), 'utf8');
+const MACOS = readFileSync(new URL('../workflows/macos.yml', import.meta.url), 'utf8');
 
-/** One job as text (the workflow is plain enough that indentation finds it). */
-function job(name: string): string {
-  const start = WORKFLOW.search(new RegExp(`^  ${name}:$`, 'm'));
+/** One job as text (the workflows are plain enough that indentation finds it). */
+function job(name: string, workflow = WORKFLOW): string {
+  const start = workflow.search(new RegExp(`^  ${name}:$`, 'm'));
   assert.notEqual(start, -1, `job ${name} exists`);
-  const rest = WORKFLOW.slice(start + 1);
+  const rest = workflow.slice(start + 1);
   const end = rest.search(/^ {2}\S/m);
   return end === -1 ? rest : rest.slice(0, end);
 }
 
 /** Steps of one job as text blocks. */
-function steps(name: string): string[] {
-  return job(name).split(/^ {6}- /m).slice(1);
+function steps(name: string, workflow = WORKFLOW): string[] {
+  return job(name, workflow).split(/^ {6}- /m).slice(1);
+}
+
+/** The run step of `command` keeps its output in `log` through bash and tee, and a later step counts that log after a failure. */
+function assertCounted(all: readonly string[], command: string, log: string): void {
+  const runIndex = all.findIndex((s) => s.includes(command));
+  assert.notEqual(runIndex, -1, `runs ${command}`);
+  const runStep = all[runIndex];
+  assert.match(runStep, /shell: bash/, 'bash, so that pipefail keeps the exit code of the tests through tee');
+  assert.ok(runStep.includes(`${command} 2>&1 | tee "$RUNNER_TEMP/${log}.log"`), `keeps the output in ${log}.log`);
+  const summary = all.slice(runIndex + 1).find((s) => s.includes('node .github/checks/test-summary.ts'));
+  assert.ok(summary !== undefined, `counts the output of ${command} after running it`);
+  assert.ok(summary.includes(`"$RUNNER_TEMP/${log}.log"`), `counts the same log, ${log}.log`);
+  assert.match(summary, /if: \$\{\{ !cancelled\(\) \}\}/, 'the count also runs when the tests failed');
 }
 
 /** The `<index>/<total>` shards a job's matrix lists, in order. */
@@ -38,16 +53,7 @@ describe('test jobs count what ran', () => {
     ['docs', 'node --test ".github/checks/*.test.ts"', 'docs'],
   ] as const) {
     it(`${job}: the output is kept and counted, and an empty run fails`, () => {
-      const all = steps(job);
-      const runIndex = all.findIndex((s) => s.includes(command));
-      assert.notEqual(runIndex, -1, `${job} runs ${command}`);
-      const runStep = all[runIndex];
-      assert.match(runStep, /shell: bash/, 'bash, so that pipefail keeps the exit code of the tests through tee');
-      assert.ok(runStep.includes(`${command} 2>&1 | tee "$RUNNER_TEMP/${log}.log"`), `${job} keeps the output in ${log}.log`);
-      const summary = all.slice(runIndex + 1).find((s) => s.includes('node .github/checks/test-summary.ts'));
-      assert.ok(summary !== undefined, `${job} counts the output after running it`);
-      assert.ok(summary.includes(`"$RUNNER_TEMP/${log}.log"`), `${job} counts the same log`);
-      assert.match(summary, /if: \$\{\{ !cancelled\(\) \}\}/, 'the count also runs when the tests failed');
+      assertCounted(steps(job), command, log);
     });
   }
 
@@ -57,6 +63,7 @@ describe('test jobs count what ran', () => {
 
   it('no job reaches a secret', () => {
     assert.doesNotMatch(WORKFLOW, /secrets\./);
+    assert.doesNotMatch(MACOS, /secrets\./);
   });
 });
 
@@ -90,10 +97,57 @@ describe('sharded test jobs keep one stable status each', () => {
 
   it('no job continues on error', () => {
     assert.doesNotMatch(WORKFLOW, /continue-on-error/);
+    assert.doesNotMatch(MACOS, /continue-on-error/);
   });
 
   it('a newer push replaces the checks of a pull request but never of main', () => {
     assert.ok(WORKFLOW.includes('group: checks-${{ github.event.pull_request.number || github.sha }}'));
     assert.ok(WORKFLOW.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
   });
+});
+
+describe('backup, restore and deploy tests find pg_dump and pg_restore 18 on Ubuntu', () => {
+  it('every regular unit shard installs the PostgreSQL 18 client before the tests, bounded and checked', () => {
+    const all = steps('unit_parts');
+    const install = all.findIndex((s) => s.includes('postgresql-client-18'));
+    assert.notEqual(install, -1, 'unit_parts installs postgresql-client-18');
+    assert.ok(install < all.findIndex((s) => s.includes('npm run test:unit')), 'before the tests run');
+    const step = all[install];
+    assert.ok(step.includes("if: ${{ matrix.suite == 'regular' }}"), 'in every regular shard, wherever the platform files land');
+    assert.match(step, /timeout-minutes: \d+/);
+    assert.match(step, /https:\/\/apt\.postgresql\.org\/pub\/repos\/apt/, 'from the PostgreSQL apt repository');
+    assert.match(step, /--version \| grep -E ' 18\\\.'/, 'the installed tools report major 18');
+    assert.ok(step.includes('echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"'), 'first on PATH, where hub/platform/backup.ts looks on Linux');
+  });
+});
+
+describe('the macOS-only paths run outside pull requests', () => {
+  it('runs on a push to main, nightly and on demand, never for a pull request', () => {
+    const triggers = MACOS.slice(MACOS.indexOf('\non:'), MACOS.indexOf('\npermissions:'));
+    assert.match(triggers, /^  push:\n    branches: \[main\]$/m);
+    assert.match(triggers, /^  schedule:\n    - cron: '[^']+'$/m);
+    assert.match(triggers, /^  workflow_dispatch:$/m);
+    assert.doesNotMatch(triggers, /pull_request/, 'macOS runners are few and shared, so pull requests do not wait for them');
+    assert.ok(MACOS.includes('cancel-in-progress: false'), 'a newer run waits instead of cancelling the running one');
+  });
+
+  it('one bounded macos-15 job with libpq 18 and working isolation before the tests', () => {
+    const body = job('macos', MACOS);
+    assert.ok(body.includes('runs-on: macos-15'));
+    assert.match(body, /^    timeout-minutes: \d+$/m);
+    const all = steps('macos', MACOS);
+    const install = all.find((s) => s.includes('brew install postgresql@18'));
+    assert.ok(install !== undefined && /timeout-minutes: \d+/.test(install), 'the PostgreSQL 18 client install is bounded');
+    assert.ok(install.includes('CIRCLE_HUB_LIBPQ_BIN=$bin'), 'the platform tests are pointed at it');
+    assert.ok(all.some((s) => s.includes('id: ready') && s.includes('osIsolationAvailable()') && s.includes('/usr/bin/security')), 'missing isolation fails the job');
+  });
+
+  for (const [kind, log] of [
+    ['unit', 'macos-unit'],
+    ['acceptance', 'macos-acceptance'],
+  ] as const) {
+    it(`${kind}: the selected files run, and the output is kept and counted`, () => {
+      assertCounted(steps('macos', MACOS), `node tools/run-macos-tests.ts ${kind}`, log);
+    });
+  }
 });
