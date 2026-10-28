@@ -1,7 +1,7 @@
 // Projection function of the generic source-read skill pack (ProjectionInput -> ProjectionOutput).
 // This pack reads platform original artifacts without binding any product line.
-// It declares zero requirements: the run is a production run that freezes the bound original
-// references (src:sha256), projections, version binding status and contradiction counts.
+// It declares zero requirements: this projection only checks that a source was bound. The Hub
+// separately reports the original references and any asynchronous feeding progress or missing facts.
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);

@@ -1155,3 +1155,10 @@ manual-store folder names remain accepted by the existing `apv-directory-folder@
 both are disclosed; no title, prose, or run target supplies a binding. A directory exceeding the existing 64-layer or
 1000-character-per-layer limits stays undeclared with a repair action, rather than being bound from truncated input.
 The new pack digest causes a source re-read to project again; earlier records are retained.
+
+Case feeding also records the parser's exact node selector, the shared case key, the original node title and ancestor
+texts, the structurally observed nonblank-expectation flag, and the command-tree source digest used for that projection. These contextual fields do not change content identity;
+if a field cannot fit the declared bounds it is omitted with a missing fact and next action. Duplicate node ids use the
+same disambiguating keys and positional selectors as the existing case producer. Story and defect lists reuse the
+existing `apv-id-fields@1` reader of whole declared fields; prose mentions do not become links. Historical records without these fields
+remain valid; a root-bound re-read supplies the newer context.
