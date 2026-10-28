@@ -1183,6 +1183,9 @@ source are used only when present and verified in that projection. Older records
 must be re-read under the desired locked root when a consumer needs them. A nonempty legacy expectation list without a
 product-declared nonblank flag remains unknown in expectation-count facets; it is not counted as present. A case seen only without a locked root is not
 attached to a version view by this change; it needs a root-bound read. No version inheritance is inferred here.
+When a case has unparsed steps, its complete command set is unknown: the view omits `commands` and `command_identities`
+for that source, and command-dependent facets and indexes are incomplete with a missing fact and next action. This does
+not assert whether the unparsed steps contain commands.
 The view artifact's derived-coverage ancestry still pins the tree and its composition, not the individual feeding source
 artifacts. A credential finding in a feeding field may therefore require source-coverage handling before that view can be
 read, even when the individual feeding record is readable. This limit does not grant access through another capture.

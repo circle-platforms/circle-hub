@@ -8,5 +8,10 @@ the exact reader's current access, immutable offset, source-head and retraction 
 across operations or weaken any existing assertion. Record what the synthetic test measures; it does not claim to have
 established that this is the only cause of the real latency.
 
-Allowed paths: this task page, `hub/knowledge/feeding.ts`, `hub/knowledge/README.md`, and synthetic knowledge tests.
+While preparing the real case indexes, a synthetic projection with unparsed author steps exposed another correctness
+gap: a view could return an empty command list as complete. Keep the command set unknown when any step is unparsed and
+mark command-dependent facets and indexes incomplete, with the missing fact and next action. Preserve unrelated fields
+and old assertions; do not infer that the unparsed text is or is not a command.
+
+Allowed paths: this task page, `hub/knowledge/feeding.ts`, `hub/knowledge/views.ts`, `hub/knowledge/README.md`, and synthetic knowledge tests.
 Use the affected-test runner and merge through merge-locked.sh after the current feeding-root-views branch is integrated.
