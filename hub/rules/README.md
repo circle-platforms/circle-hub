@@ -392,3 +392,8 @@ caching readiness. Missing support reports private diagnostic `node_permission_d
 implementation reports `node_permission_drop_failed`. Neither condition permits a fallback. The existing per-child
 attestation still runs before pack loading. Synthetic missing/no-op/throwing implementations are regression inputs;
 verification results are recorded in `docs/hub-r4-tasks/linux-probe-capability.md`.
+
+Independent Linux RSS review: Antigravity reviewed fixed merge `23ec924d` and found no remaining static blocker in
+bounded thread-tree retries or the distinction between measured excess and unavailable observation. The review did not
+run tests. Linux synthetic pair and fault-injection results remain separate evidence; unusual system load may still make
+observation unavailable and must not be reported as a measured excess.
