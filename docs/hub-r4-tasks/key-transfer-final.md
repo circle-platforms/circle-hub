@@ -9,3 +9,8 @@
 合成选择：保留 KeyPipe 和确认参数；采用有界二进制输入、等待输出回调、输入/输出 30 秒超时和固定错误。输出超时先销毁流后结束传输；仅 records verify --vault 逐条只读 AEAD 核验，空库未知，不创建 key-check，不输出名称。
 
 未完成：类型检查、全部测试、Linux 服务用户 fileKeyStore 端到端接线、独立复核、真实迁移密文解密证明。所有这些未运行项均不是通过。
+
+Independent review: Antigravity reviewed fixed implementation `a85514a6` without executing tests and found no remaining
+static blocker in bounded transfer, destination-state uncertainty, non-overwrite and explicit read-only vault verification.
+This source review does not establish real key migration or target-machine behavior; synthetic and real rehearsal results
+must be recorded separately after execution.
