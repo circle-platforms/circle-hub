@@ -20,7 +20,11 @@ ids are deduplicated. Absence is unclassified. A group's declarations are not in
 
 ## Judgment submission and quotation identity
 
-The existing submit_result item slot `coverage` is a SlotClaim list; each data object is the generated CategoryJudgment shape.
+The existing submit_result item slot `coverage` is a SlotClaim list; each claim uses `text` for the statement and its data
+object is the generated CategoryJudgment shape. A CategoryJudgment span counts absolute bytes of the retained original;
+a `src:` reference's `:from-to` range instead counts UTF-8 bytes inside the selected fragment. When JSON escapes or double
+encoding change the displayed text, the submitted quote must still match the original bytes. If the client cannot locate
+the original span mechanically, classification remains unknown and the pack maintainer must provide a byte-location tool.
 It contains the exact case item id, category_id, QuoteEvidence and explicit ModelIdentity. The package bundles the generated
 category-judgment@1 schema byte-for-byte; a test checks the copy against contracts/generated. A nonempty accepted claim supplies
 classification for that case. An empty claim list supplies none. A document entirely classified by author fields can submit
