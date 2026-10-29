@@ -1,11 +1,11 @@
-import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
+import {FeedingOffsetSchema,ModelIdentitySchema} from '../generated/shared-interfaces.ts';
 // The six MCP tools of the Hub (D06). Schemas here are the single source for the server, the tests and contracts/generated/tools.json.
 // Every answer conforms to its output schema, a protocol error included: the envelope plus the tool's empty shape (D05 R[3]),
 // never invented run ids, locks or digests.
 import { z } from 'zod';
 import { KnowledgeContributionPageView, MAX_NODE_CONTRIBUTIONS,ApplicabilityFields } from './contributions.ts';
-import { AcceptanceSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ProvenanceTypeSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
-import { IsoTime, Coverage, Envelope as BaseEnvelope, ItemId, PackId, RunId, Sha256 } from './common.ts';
+import { AcceptanceSchema, CallResultSchema, EntryKindSchema, NodeLevelSchema, PackKindSchema, ProvenanceTypeSchema, ReadTierSchema, ResolutionSchema, SourceRoleSchema } from '../generated/vocabulary.ts';
+import { IsoTime, Coverage, Envelope as BaseEnvelope, ItemId, PackId, RunId, Sha256, TraceId } from './common.ts';
 import { ExternalObjectId, Ground, ReferenceUri, TreePath, referenceUriOf } from './reference.ts';
 import { Backlinks } from './views.ts';
 import { InputBinding, PackSummary, RunSummary } from './run.ts';
@@ -35,6 +35,7 @@ export const SERVER_INSTRUCTIONS = `This server verifies results; it does not ge
 3. start_run - freeze the work: requirements, items to judge, locked version and the pack procedure.
 4. get_nodes / resolve_reference - read the expected sources and check exact values before you rely on them.
 5. submit_result - hand in your results item by item. If the receipt is not accepted, read the errors, fix exactly those points and submit again.
+If start_run or get_nodes times out, get_nodes call_query checks the exact original arguments without rerunning them. Use the original trace when known; without it matching calls are candidates, not proven to be the timed-out call.
 Rules: quote exact values verbatim from the sources; never invent commands, numbers or identifiers; relay the server's results unchanged and mark your own commentary as model relay.`;
 
 const Fields = {
@@ -57,6 +58,8 @@ const issue = <T>(ctx: z.core.$RefinementCtx<T>, path: Path, message: string): v
 
 export const ListTaskPacksInput = z.strictObject({
   kind: PackKindSchema.optional().describe('Only packs of this kind'),
+  pack_id: PackId.optional().describe('Only the pack with this exact ID'),
+  offset: z.number().int().nonnegative().optional().describe('Continue at this zero-based position in the same filtered list'),
 });
 export const ListTaskPacksOutput = Envelope.extend({ packs: z.array(PackSummary) }).superRefine((o, ctx) => {
   if (o.call_result === 'error' && o.packs.length > 0) issue(ctx, ['packs'], 'an error answer lists no packs');
@@ -98,6 +101,7 @@ export const StartRunInput = z.strictObject({
   product: z.string().optional().describe('Product name; every name of a product line is accepted'),
   version: z.string().optional().describe('Version line of the product'),
   build: z.string().optional().describe('Exact build name; chosen by the pack rule when omitted'),
+  model_identity: ModelIdentitySchema.optional().describe('Explicit model and family declaration; submissions from this same observed session can reuse it'),
   inputs: z.record(z.string(), z.union([InputBinding, z.array(InputBinding)])).describe('Input slot name to reference or external object'),
   parameters: z.record(z.string(), z.unknown()).optional().describe('The parameters the pack declares, as one object by name, for example {"<name>": <value>}; list_task_packs lists every pack parameter with its name, description and schema'),
   submission_due:IsoTime.optional().describe('Requested absolute submission deadline; the service binds its actual finite policy before writing the run'),
@@ -120,6 +124,12 @@ export const StartRunOutput = Envelope.extend({ run: RunSummary.optional(), resu
   if (o.result !== undefined && o.run === undefined) issue(ctx, ['result'], 'a result belongs to a run');
 });
 
+const CallQuery=z.strictObject({
+  start_run:z.record(z.string(),z.unknown()).optional().describe('Exact arguments of your earlier start_run call'),
+  get_nodes:z.record(z.string(),z.unknown()).optional().describe('Exact arguments of your earlier get_nodes call'),
+  trace:TraceId.optional().describe('The original trace when known; omit it to list matching candidates'),
+}).superRefine((value,ctx)=>{if((value.start_run===undefined)===(value.get_nodes===undefined))issue(ctx,[],'provide exactly one original call argument object');});
+
 export const GetNodesInput = z.strictObject({
   run: RunId.optional().describe('Use the knowledge root locked by this run'),
   root: Sha256.optional().describe('Knowledge root digest; defaults to the run root'),
@@ -131,6 +141,7 @@ export const GetNodesInput = z.strictObject({
   depth: z.number().int().min(0).max(6).optional().describe('Levels below each path; default 1'),
   reference: ReferenceUri.optional().describe('Read the content a reference points at instead of a subtree'),
   cursor: z.string().optional(),
+  call_query:CallQuery.optional().describe('Check your own in-flight call and recent completion logs without rerunning it; provide the exact original arguments'),
 });
 
 const NodeEntry = z.strictObject({
@@ -160,6 +171,14 @@ const KnowledgeNode = z.strictObject({
 });
 
 export const GetNodesOutput = Envelope.extend({
+  call_status:z.strictObject({
+    tool:z.string(),
+    active_total:z.number().int().nonnegative(),
+    active:z.array(z.strictObject({trace:TraceId,started_at:IsoTime})),
+    completed:z.array(z.strictObject({trace:TraceId,at:IsoTime,call_result:CallResultSchema,error_code:z.string().nullable(),duration_ms:z.number().int().nonnegative(),run:RunId.nullable(),run_record:referenceUriOf('rec').optional(),result_record:referenceUriOf('rec').optional()})),
+    truncated:z.boolean(),
+    missing:z.string().optional(),next_action:z.string(),
+  }).optional(),
   root: Sha256.optional().describe('Knowledge root the nodes belong to'),
   nodes: z.array(KnowledgeNode).optional(),
   content: z
@@ -176,9 +195,10 @@ export const GetNodesOutput = Envelope.extend({
     .optional(),
 }).superRefine((o, ctx) => {
   if (o.call_result === 'error') {
-    if ((o.nodes ?? []).length > 0 || o.content !== undefined) issue(ctx, ['nodes'], 'an error answer carries no nodes and no content');
+    if ((o.nodes ?? []).length > 0 || o.content !== undefined || o.call_status !== undefined) issue(ctx, ['nodes'], 'an error answer carries no nodes, content or call status');
     return;
   }
+  if(o.call_status!==undefined && (o.root!==undefined || o.nodes!==undefined || o.content!==undefined))issue(ctx,['call_status'],'a call status is separate from a knowledge or reference read');
   const nodes = o.nodes ?? [];
   if (nodes.length > 0 && o.root === undefined) issue(ctx, ['root'], 'nodes come with the root they belong to');
   if (o.root === undefined) return;
@@ -244,7 +264,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'list_task_packs',
     title: 'List task packs',
-    description: 'List the task packs you may use, with the inputs, parameters and requirements of each.',
+    description: 'List the task packs you may use, with inputs, parameters and requirements. Filter by exact pack_id or continue a truncated list with offset.',
     input: ListTaskPacksInput,
     output: ListTaskPacksOutput,
     effect: 'none',
@@ -273,7 +293,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_nodes',
     title: 'Read knowledge nodes',
-    description: 'Read subtrees of the knowledge tree locked by a run, or the content a reference points at.',
+    description: 'Read subtrees or referenced content; use call_query with exact original arguments to check your own long start_run or get_nodes call without rerunning it.',
     input: GetNodesInput,
     output: GetNodesOutput,
     effect: 'none',

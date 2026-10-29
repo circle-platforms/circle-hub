@@ -480,7 +480,7 @@ sandbox: 12 chapters of 1200 short paragraphs each with an attribute reference a
 paragraphs, 358 ms in one warm host process, 19575674 bytes of output JSON. Both runs stay far inside the producer
 profile; neither is an SLA.
 
-The tests run with `node --test --test-concurrency=2 "packs/product/famx/functions/adoc/*.test.ts"`; concurrency is capped at 2 on this host. A cold process gives
+Run `node tools/run-unit-tests.ts files packs/product/famx/functions/adoc/*.test.ts` to schedule the tests according to available CPU and load. A cold process gives
 the same bytes under a different Date and Math.random, and the same sandbox still refuses the network, file writes and
 child processes. Where the environment gives no OS network isolation the sandbox evidence is skipped explicitly instead of
 being weakened into a pass. Every check so far uses synthetic originals: no real manual and no knowledge root has been
@@ -1152,3 +1152,23 @@ The paired command must fully parse back to the same signature. Other parameter 
 cleanup order stay fixed; valid quoting is read through the existing command grammar. Conflicting pair declarations,
 multiple invertible parameters or a non-unique paired target remain unknown with an author repair action. They cannot
 fall through to a guessed prefix inverse. Ordinary declared prefix rules remain available when no enum rule applies.
+
+
+### Case feeding directory bindings
+
+Case feeding requires the original agile root title to equal a declared product name exactly. A missing or different
+root leaves the case version undeclared and names the missing fact and next action. It then reads ancestor metadata with
+the same `famx-directory@1` coded line and train syntax;
+it uses the first three version components for line identity, applies U24 normalization, and retains different candidates
+as a conflict. A single declared line or train can still identify the line; missing sibling layers remain missing. Whole
+manual-store folder names remain accepted by the existing `famx-directory-folder@1` rule. If both rules produce candidates,
+both are disclosed; no title, prose, or run target supplies a binding. A directory exceeding the existing 64-layer or
+1000-character-per-layer limits stays undeclared with a repair action, rather than being bound from truncated input.
+The new pack digest causes a source re-read to project again; earlier records are retained.
+
+Case feeding also records the parser's exact node selector, the shared case key, the original node title and ancestor
+texts, the structurally observed nonblank-expectation flag, and the command-tree source digest used for that projection. These contextual fields do not change content identity;
+if a field cannot fit the declared bounds it is omitted with a missing fact and next action. Duplicate node ids use the
+same disambiguating keys and positional selectors as the existing case producer. Story and defect lists reuse the
+existing `famx-id-fields@1` reader of whole declared fields; prose mentions do not become links. Historical records without these fields
+remain valid; a root-bound re-read supplies the newer context.

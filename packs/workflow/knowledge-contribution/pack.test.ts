@@ -45,6 +45,15 @@ test('published relation quote rules have both polarities and published examples
   const submission=Submission.parse(JSON.parse(readFileSync(new URL('./examples/submit-result.json',import.meta.url),'utf8')));
   for(const item of submission.items){if(item.handling!=='handled')continue;for(const row of SlotClaim.array().parse(item.slots?.contribution??[])){const input=ContributionInput.parse({...row.data,kind:row.code,statement:row.text});assert.equal(input.source.reference,`tree:${input.root}${input.path}`);}}
 });
+test('the contribution example and skill both require a declared target and the returned lock',()=>{
+  const start=StartRunInput.parse(JSON.parse(readFileSync(new URL('./examples/start-run.json',import.meta.url),'utf8')));
+  assert.ok(start.product&&start.build);
+  const skill=readFileSync(new URL('./SKILL.md',import.meta.url),'utf8');
+  assert.ok(skill.includes('在 start_run 顶层写已确认的 product'));
+  assert.ok(skill.includes('核对回执里的 product、build 和 root'));
+  assert.ok(skill.includes('目标或根缺失时记未知'));
+  assert.ok(!skill.includes('不要给 start_run 的 product、version、build'));
+});
 test('manifest projection is deterministic and refuses malformed input with a correction',()=>{
   const input={inputs:[{slot:'subject',external:null,sha256:'1'.repeat(64),media_type:'application/json',parser:'json@1',model:{items:[{id:'one',title:'one'}]},meta:null}],parameters:{},context:{}};
   const first=project(input as never);assert.ok(ProjectionOutput.safeParse(first).success);

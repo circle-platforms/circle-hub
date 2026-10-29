@@ -27,6 +27,7 @@ import type { Database } from './db.ts';
 import { digestOf, isSha256 } from './digest.ts';
 import { verifiedRecord } from './store.ts';
 import { AccessError, ConflictError, IntegrityError } from './errors.ts';
+import { requestPermissions } from './request-permissions.ts';
 
 const ADMIN: PermissionRole = 'admin';
 const PUBLISH: PermissionKind = 'publish';
@@ -99,10 +100,14 @@ export class RecordAuthorizations implements Authorizations {
   async latest(permission: PermissionKind, subject: string, object: string): Promise<AuthorizationRecord | null> {
     // A query with a malformed term has no answer rather than an error: nothing was ever decided about it.
     if (!isPermissionKind(permission) || !isTerm(subject) || !isTerm(object)) return null;
+    const snapshot = requestPermissions(subject);
+    if (snapshot && permission === ASSIGN) return snapshot.latest(permission,subject,object);
     return this.#latest(permission, subject, object);
   }
 
   async isActive(permission: PermissionKind, subject: string, object: string): Promise<boolean> {
+    const snapshot = requestPermissions(subject);
+    if (snapshot && permission === ASSIGN) return snapshot.canUse(object);
     const record = await this.latest(permission, subject, object);
     return record !== null && this.#active(record);
   }
@@ -211,6 +216,7 @@ export class RecordAuthorizations implements Authorizations {
 
   async packsFor(user: string): Promise<string[]> {
     if (!isTerm(user)) return [];
+    const snapshot = requestPermissions(user); if (snapshot) return snapshot.packs();
     return this.#activeTerms({ key: 'authz.subject', value: `${ASSIGN}|${user}` }, (body) => body.object);
   }
 
@@ -407,6 +413,7 @@ async function activeShares(store: RecordStore, object: string | undefined, now:
 /** Read-only authorization view for readers that have a record store, never a database or a decision capability. */
 export async function sharedWith(store: RecordStore, user: string, object: string, now = new Date(), expectedPack?: string): Promise<boolean> {
   if (!UserId.safeParse(user).success || !isTerm(object)) return false;
+  const snapshot = requestPermissions(user); if (snapshot) return snapshot.shared(object,expectedPack);
   for (const share of await activeShares(store, object, now)) {
     const body = share.body;
     if (object.startsWith('production:')) {
@@ -426,6 +433,7 @@ export async function sharedWith(store: RecordStore, user: string, object: strin
 
 /** Sharing is based on frozen requirements, never the currently installed workflow version. */
 export async function runIsSharedWith(store: RecordStore, user: string, run: Pick<RunRecord, 'run'|'pack'|'requirements'>, now = new Date()): Promise<boolean> {
+  const snapshot = requestPermissions(user); if (snapshot) return snapshot.runShared(run);
   const pack = run.pack.slice(0, run.pack.lastIndexOf('@'));
   if (!PackId.safeParse(pack).success) return false;
   if (await sharedWith(store, user, run.run, now, pack)) return true;

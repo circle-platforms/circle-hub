@@ -166,7 +166,7 @@ characters, else `sha256:<hex>` (the call log's rule, so runs and call-log lines
 
 Semantics owned by the server:
 
-- `list_task_packs`: `WorkflowStore.summaries(user)` filtered by `kind`.
+- `list_task_packs`: `WorkflowStore.summaries(user)` filtered by `kind` and, when supplied, an exact `pack_id`. The optional zero-based `offset` continues that same filtered list. When descriptions exceed the text budget, the answer supplies the next offset and retains the filters; an unknown or unassigned ID produces the same empty list. The list is live, so an assignment or publication change between pages can change positions.
 - `upload_file`: `file_path` is base64, decoded strictly (canonical padding; a second spelling of the same bytes is
   refused); the cap is `min(limits.maxUploadBytes, MAX_UPLOAD_BYTES)`, checked before decoding; the media type is the
   argument's (validated like records), else by the file name's extension, else sniffed (JSON, HTML, XML, UTF-8 text,
@@ -193,6 +193,19 @@ Semantics owned by the server:
   never split a character), is no page position: the first page is shown and the text says so. An empty partition or item
   list (every item delivered leaves three partitions empty) reads as its head, `条目 0 个`.
   Neither run, root nor reference is a schema violation.
+- `get_nodes {call_query: {start_run: <original arguments>}}` or `{call_query: {get_nodes: <original arguments>}}`
+  checks the authenticated caller's current-process calls and recent completion logs without reissuing the call. Only an
+  argument digest, trace and start time are held while the call runs; the last 500 log lines and at most 20 matching
+  entries are shown, with truncation disclosed. When known, `call_query.trace` narrows the candidates. Matching arguments
+  alone do not prove which of several calls timed out; an absent entry also does not prove a failure or that the request
+  never arrived. A completed visible start names its run and production-result records for `get_nodes` to read under
+  current permissions. A future successful `get_nodes` response can be retained in memory for at most 10 minutes within
+  a 64 MiB budget. With a unique trace, the caller may retrieve that historical snapshot only after the current source
+  and dynamic-record visibility checks succeed. A tree check is limited to 512 source captures and 100 each of included
+  contributions and feeding records; unsupported or unverifiable cases stay unknown with a re-read exit. Original
+  responses lost before this feature, expired or evicted entries, and process restarts cannot be recovered from the cache.
+  Restart also loses the in-flight index; the durable call log remains. The recovered text is labeled as the original
+  call's snapshot and may differ from current knowledge.
 - `start_run`: `ServerDeps.runsDetail.startRunDetailed` when the assembly gives it (the answer, the run record digest, the
   production result, the evidence gaps for the text), else `RunsService.startRun`.
 - `resolve_reference`, `submit_result`: `RunsService`; a `submit_result` answer that carries a result also gets its stored

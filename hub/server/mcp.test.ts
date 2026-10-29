@@ -191,6 +191,70 @@ describe('initialize and tools/list', () => {
 });
 
 describe('list_task_packs', () => {
+  test('the MCP text can reach every assigned pack across a budget-truncated list', async () => {
+    const packs = Array.from({ length: 80 }, (_, i) => {
+      const pack = fakeWorkflowPack(`sample-${String(i).padStart(3, '0')}`, '合成任务', ['application/json']);
+      return { ...pack, summary: { ...pack.summary!, description: '合成说明'.repeat(100) } };
+    });
+    const other = await createTestServer({ postgres, packs });
+    try {
+      const user = await other.createUser('合成列表用户');
+      for (const pack of packs) await other.assign(user.principal, pack.id);
+      const client = await other.client(user.token);
+      const found: string[] = [];
+      let offset = 0;
+      for (let page = 0; page < 20; page++) {
+        const result = await client.call('list_task_packs', { kind: 'workflow', offset });
+        const text = result.content[0].text ?? '';
+        assert.ok(text.length <= 30_000);
+        found.push(...[...text.matchAll(/^- (sample-\d{3})@/gm)].map((match) => match[1]!));
+        const next = text.match(/list_task_packs (\{[^}]+\})/);
+        if (!next) break;
+        const args = JSON.parse(next[1]!) as { kind: string; offset: number };
+        assert.equal(args.kind, 'workflow');
+        assert.ok(args.offset > offset);
+        offset = args.offset;
+      }
+      assert.deepEqual(found, packs.map((pack) => pack.id));
+      const exact = await client.call('list_task_packs', { pack_id: 'sample-079' });
+      assert.deepEqual((exact.structuredContent.packs as { id: string }[]).map((pack) => pack.id), ['sample-079']);
+      assert.match(exact.content[0].text ?? '', /输入 subject/);
+      await client.close();
+    } finally {
+      await other.close();
+    }
+  });
+
+  test('filters an assigned pack by exact ID and continues from an offset without revealing unassigned packs', async () => {
+    const client = await connect(await person(['review', 'local-review']));
+    const all = await client.call('list_task_packs', { kind: 'workflow' });
+    const ids = (all.structuredContent.packs as { id: string }[]).map((pack) => pack.id);
+    assert.equal(ids.length, 2);
+    const exact = await client.call('list_task_packs', { pack_id: 'review' });
+    assert.deepEqual((exact.structuredContent.packs as { id: string }[]).map((pack) => pack.id), ['review']);
+    assert.match(exact.content[0].text ?? '', /review@/);
+    const prefix = await client.call('list_task_packs', { pack_id: 'revie' });
+    assert.deepEqual(prefix.structuredContent.packs, []);
+    const incompatibleKind = await client.call('list_task_packs', { kind: 'product', pack_id: 'review' });
+    assert.deepEqual(incompatibleKind.structuredContent.packs, []);
+    const continued = await client.call('list_task_packs', { kind: 'workflow', offset: 1 });
+    assert.deepEqual((continued.structuredContent.packs as { id: string }[]).map((pack) => pack.id), ids.slice(1));
+    const pastEnd = await client.call('list_task_packs', { offset: 99 });
+    assert.deepEqual(pastEnd.structuredContent.packs, []);
+    const invalidOffset = await client.call('list_task_packs', { offset: -1 });
+    assert.equal(invalidOffset.isError, true);
+    assert.equal(firstError(invalidOffset).path, '/offset');
+    await client.close();
+
+    const limited = await connect(await person(['review']));
+    const unavailable = await limited.call('list_task_packs', { pack_id: 'local-review' });
+    const absent = await limited.call('list_task_packs', { pack_id: 'not-a-pack' });
+    assert.deepEqual(unavailable.structuredContent.packs, []);
+    assert.deepEqual(absent.structuredContent.packs, []);
+    assert.deepEqual(comparable(unavailable), comparable(absent));
+    await limited.close();
+  });
+
   test('lists the assigned workflow packs, filters by kind and refuses bad arguments with the empty shape', async () => {
     const user = await person(['review', 'local-review']);
     const client = await connect(user);

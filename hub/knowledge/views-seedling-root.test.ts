@@ -16,7 +16,7 @@ const DUAL = 'Synthetic_zx-u_10_8_1';
 const ONLY = 'Synthetic_zx-u_10_5_1';
 const SYNC = 'Synthetic_zx-u_9_1_1';
 const TREE = 'site:tree:10_8';
-const PROJECT = `export default function project(input:any){if(input.source.system!=='agile'||input.model.kind!=='case')return {rows:[]};const identity={case:'synthetic-1',line:'10.8'};return {rows:[{body:{schema:'fed-case@1',product:input.product,root:input.root,path:null,source:{system:'agile',document:'synthetic-document',element:'case-1',revision:null,bytes:input.source.bytes},autoid:null,priority:1,resources:[],steps:[{text:'合成步骤'}],expects:[{text:'合成期望'}],commands:[],unparsed_steps:0,document_lines:['10.8']},identity,lines:['10.8'],selector:'p',grammar:'synthetic-case@1',conflict:false}]};}`;
+const PROJECT = `export default function project(input:any){if(input.source.system!=='agile'||input.model.kind!=='case')return {rows:[]};const identity={case:'synthetic-1',line:'10.8'};return {rows:[{body:{schema:'fed-case@1',product:input.product,root:input.root,path:null,source:{system:'agile',document:'synthetic-document',element:'case-1',revision:null,bytes:input.source.bytes},autoid:null,priority:1,resources:[],steps:[{text:'合成步骤'}],expects:[{text:'合成期望'}],has_expected:true,commands:[],unparsed_steps:0,document_lines:['10.8']},identity,lines:['10.8'],selector:'p',grammar:'synthetic-case@1',conflict:false}]};}`;
 
 function build(name: string, line: string, tree: string, released: string | null) {
   return { name, base: name, family: 'ACME', line, platform: 'zx-u', built_at: '2026-10-01T00:00:00.000Z', released_at: released, sources: { tree } };

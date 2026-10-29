@@ -38,7 +38,8 @@
                     }
                   }
                 ],
-                "tags": ["Functional"]
+                "id": "draft-1",
+                "resource": ["functional"]
               }
             }
           ]

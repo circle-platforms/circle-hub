@@ -158,7 +158,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@6df6270e54e56468954707d7b0e2e32736b1bdfeea69c2379ccbeb6ed7f9f04f"
         },
@@ -183,7 +184,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c8f6cddaf61b0266e892685215b3d5bbe9a876a50aa653a64e01edca45746284"
         },
@@ -208,7 +210,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@f97dde6958efd4ae37a6769ca856941d63e2c0ba186ccc5d9c1d6c8f0f6685c7"
         },
@@ -233,7 +236,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@2df5e718aba72c7f9b273f0d2fe0605e95331722e26c6931ffdd7b9412f209ac"
         },
@@ -258,7 +262,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@d5b360cc301c54133db8f9c6ae9dee48eb637749f81df846072e287ad07cd29b"
         },
@@ -283,7 +288,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@c3a83f6107cc9775b7b727ce4ef835aaecab75acf0323f1442a0eb6207a91c6b"
         },
@@ -308,7 +314,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@3141f1cea05ac8c25bc04e0d6c29b95c693f213eac2cf19224f7fd94a0fb4b0b"
         },
@@ -333,7 +340,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@55b86d9e2b9fd711388c2c3fae24fbc254b01fd3a479ff1c239972da8b2b0d06"
         },
@@ -358,7 +366,8 @@
                 "signature": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/CLI/widget/probe",
                 "parameters": []
               }
-            ]
+            ],
+            "command_tree_root": "3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c"
           },
           "reference": "tree:3afa6e91b84986fb0426d74976ec501a88898375b10c43aacd25d28e2cca182c/cases@fde11aabf10121af36256981c6091379f17d1f171af6b615937181e456eed8ef"
         }
@@ -369,7 +378,8 @@
         "commands",
         "command_identities",
         "title",
-        "path_labels"
+        "path_labels",
+        "command_tree_root"
       ],
       "only": [
         "900001"

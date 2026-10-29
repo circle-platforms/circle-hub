@@ -27,13 +27,16 @@ import {
   type ToolDefinition,
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
-import { IntegrityError, RecordsError, isSha256, type Principal } from '../records/api.ts';
-import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
+import { IntegrityError, RecordsError, isSha256, withRequestPermissions, type Principal } from '../records/api.ts';
+import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, sandboxReadDiagnostic, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import { SandboxError } from '../rules/api.ts';
 import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
 import { feedingText, fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
+import { callStatus } from './call-status.ts';
+import { cachedReadReply } from './read-replies.ts';
+import { recoverRead } from './recover-read.ts';
 import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOfAsync as structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
@@ -162,10 +165,10 @@ export function internalError(trace: string): McpError {
 /** A thrown error with a registered protocol code becomes that error answer; anything else is an internal error. */
 function fromThrown(tool: ToolName, error: unknown, call: ToolCall): Answer {
   if (error instanceof SandboxError) {
-    // Pack-controlled diagnostics and stdout may contain function-only source bytes. Record only the fixed sandbox code.
-    call.context.adminNote(`技能包沙箱失败：${error.code}`);
-    const cacheLimit = error.detail.limit === 'document_cache_bytes';
-    return errorAnswer(tool, [{ code: 'SOURCE_RETRYABLE', message: cacheLimit ? `文档缓存估算超过预算：${error.code}` : `来源片段暂时未核对：技能包沙箱 ${error.code}`, fix: cacheLimit ? '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读' : '管理员核对技能包和沙箱状态，恢复后重新读取' }]);
+    // Pack-controlled diagnostics and stdout may contain source bytes; retain only the code and safe declaration identity.
+    const diagnostic = sandboxReadDiagnostic(error);
+    call.context.adminNote(diagnostic.admin);
+    return errorAnswer(tool, [{ code: 'SOURCE_RETRYABLE', message: diagnostic.message, fix: diagnostic.fix }]);
   }
   const code = protocolCodeOf(error);
   if (code === null) {
@@ -250,8 +253,12 @@ const listTaskPacks: Handler = async (deps, call, args) => {
   const parsed = ListTaskPacksInput.safeParse(args);
   if (!parsed.success) return { answer: errorAnswer('list_task_packs', schemaErrors('list_task_packs', parsed.error)) };
   const packs = await deps.workflows.summaries(call.principal);
-  const kind = parsed.data.kind;
-  return { answer: { call_result: 'ok', errors: [], packs: kind === undefined ? packs : packs.filter((pack) => pack.kind === kind) } };
+  const { kind, pack_id: packId, offset = 0 } = parsed.data;
+  const filtered = packs.filter((pack) => (kind === undefined || pack.kind === kind) && (packId === undefined || pack.id === packId));
+  return {
+    answer: { call_result: 'ok', errors: [], packs: filtered.slice(offset) },
+    text: { packList: { offset, ...(kind === undefined ? {} : { kind }), ...(packId === undefined ? {} : { packId }) } },
+  };
 };
 
 const NAME = /^[^\p{Cc}]{1,300}$/u;
@@ -411,6 +418,24 @@ const getNodes: Handler = async (deps, call, args) => {
   if (!parsed.success) return { answer: errorAnswer('get_nodes', schemaErrors('get_nodes', parsed.error)) };
   const input = parsed.data;
   const note = call.context.adminNote;
+  if(input.call_query!==undefined){
+    const mixed=(['run','root','paths','depth','reference','cursor'] as const).find(key=>input[key]!==undefined);
+    if(mixed)return {answer:errorAnswer('get_nodes',[violation('get_nodes',`/${mixed}`,'查询调用状态时只给 call_query','把调用状态查询与读取内容分开')])};
+    const tool=input.call_query.start_run!==undefined?'start_run':'get_nodes';
+    // Hash the original argument object, not a schema-transformed copy (for example a JSON __proto__ member).
+    const rawQuery=args.call_query as Record<string,unknown>;
+    const original=rawQuery[tool] as Record<string,unknown>;
+    const trace=input.call_query.trace,status=await callStatus(deps,call.principal,tool,original,trace);
+    if(tool==='get_nodes'&&trace&&status.active_total===0&&!status.truncated&&status.completed.length===1&&status.completed[0].call_result==='ok'){
+      const cached=cachedReadReply(deps,call.principal.id,original,trace);
+      if(cached){
+        const restored=await recoverRead(deps,call.principal,original,cached.answer,trace,cached.at);
+        if(restored){const {trace:_trace,...answer}=restored;const originalInput=GetNodesInput.safeParse(original);return {answer,text:{cursor:originalInput.success&&originalInput.data.cursor?originalInput.data.cursor:null}};}
+        status.missing='暂存的原回答未能按当前权限或来源状态核对';status.next_action='请管理员核对来源、权限和凭据状态；也可按当前权限重读原引用或路径';
+      }
+    }
+    return {answer:{call_result:'ok',errors:[],call_status:status}};
+  }
   // An empty cursor is no cursor (a model may fill an optional string with ''), for a reference as for a subtree.
   const cursor = input.cursor === undefined || input.cursor === '' ? null : input.cursor;
   if (input.run !== undefined) call.state.runId = input.run;
@@ -558,6 +583,17 @@ export interface ToolResult {
 
 /** Runs one tool call and returns the MCP result; an answer that violates the output schema throws an internal error instead. */
 export async function callTool(deps: ServerDeps, call: ToolCall, name: string, args: Record<string, unknown> | undefined): Promise<ToolResult> {
+  if (!DEFINITIONS.has(name) || !isToolName(name)) return callToolWithPermissions(deps,call,name,args);
+  try { return await withRequestPermissions(deps.records?.artifacts,call.principal,()=>callToolWithPermissions(deps,call,name,args)); }
+  catch (error) {
+    if (error instanceof McpError) throw error;
+    call.state.callResult = 'error';
+    call.context.adminNote(`request permissions: ${describeInternalError(error)}`);
+    throw internalError(call.context.traceId);
+  }
+}
+
+async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: string, args: Record<string, unknown> | undefined): Promise<ToolResult> {
   const definition = DEFINITIONS.get(name);
   if (definition === undefined || !isToolName(name)) {
     call.state.callResult = 'error';

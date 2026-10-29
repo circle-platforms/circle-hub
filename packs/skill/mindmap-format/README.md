@@ -4,9 +4,13 @@
 
 ## 发布、安装与依赖
 
-用 `node packs/skill/mindmap-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install mindmap-format@1.0.2` 安装；`pack uninstall mindmap-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
+用 `node packs/skill/mindmap-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install mindmap-format@1.0.3` 安装；`pack uninstall mindmap-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
 
 工作包在 pack.json 声明 `dependencies: [{"pack":"mindmap-format"}]`，可附精确 `version`。管理员安装的版本必须满足声明，否则 start_run 在读取前拒绝，写出缺少的依赖和安装出口。新运行将可用的安装集合锁为 `skills: [{pack,version,digest}]`，因为输入解析器可能来自任一已安装能力；结果锁与主张有效条件包括这些摘要。已锁运行按自己的摘要读取，后续升级、卸载不改历史。安装是全局授权记录绑定包摘要，非用户分配。
+
+## 本地解析工具
+
+已获准读取的原件可用本包 `tools/parse-model.ts --source <原件> --out <新模型文件>` 在本地解析，生成原件摘要及同一 kityminder@1 解析器的模型。工具不联网、不打印原文，输出文件权限为 0600，不覆盖已有文件。模型可能包含原件内容，应保存在当前用户的私有工作目录；不把它写进仓库。再用 `tools/locate-quotes.ts` 在明确选定的节点里定位原文，得到原件字节跨度；它不判断用例归属或语义，结果须由 Hub 核验。这些文件只是准备输入，不是 Hub 的核验结果。
 
 ## 解析器迁移模板
 
@@ -20,7 +24,7 @@
 
 ## 旧运行兼容
 
-`src:<摘要>/kityminder@1/n/<节点>` 与 `i/...` 地址不变。有 skills 锁的运行按该摘要复核。A1 前没有保存摘要的运行不能从当前安装版本补造历史：管理员首先以 `circle-hub skill bind-legacy kityminder@1 mindmap-format@1.0.2` 追加迁移时点声明；已获授权的逐运行显式声明仍可用 `circle-hub pack bind-skills <运行> --skill mindmap-format@1.0.2 --reason <理由>` 单独追加。绑定记录引用原运行记录与包发布记录，保留账号与理由；原运行和原结果不改，不能重绑。复核会披露“管理员事后声明”，不声称当时执行过该包。未绑定时说明缺失事实及补绑定出口。管理员可声明绑定已撤回但仍保留发布记录和原包的归档版本；这不会重新安装或启用它。
+`src:<摘要>/kityminder@1/n/<节点>` 与 `i/...` 地址不变。有 skills 锁的运行按该摘要复核。A1 前没有保存摘要的运行不能从当前安装版本补造历史：管理员首先以 `circle-hub skill bind-legacy kityminder@1 mindmap-format@1.0.3` 追加迁移时点声明；已获授权的逐运行显式声明仍可用 `circle-hub pack bind-skills <运行> --skill mindmap-format@1.0.3 --reason <理由>` 单独追加。绑定记录引用原运行记录与包发布记录，保留账号与理由；原运行和原结果不改，不能重绑。复核会披露“管理员事后声明”，不声称当时执行过该包。未绑定时说明缺失事实及补绑定出口。管理员可声明绑定已撤回但仍保留发布记录和原包的归档版本；这不会重新安装或启用它。
 
 ## 验证范围
 
@@ -28,7 +32,7 @@
 
 ## 迁移时点声明命令
 
-管理员执行 `circle-hub skill bind-legacy kityminder@1 mindmap-format@1.0.2`。命令从已发布版本解析摘要并显示；要求 skill.json 中该 parser 的 migration_test 指向已执行的等价测试名。追加记录包含解析器、包与摘要、操作者、时间、测试名、当时的记录序号和“迁移时点事后声明”标签。每个 parser@version 只能绑定一次，不改绑、不安装包，也不改变任何旧运行、结果或原件。
+管理员执行 `circle-hub skill bind-legacy kityminder@1 mindmap-format@1.0.3`。命令从已发布版本解析摘要并显示；要求 skill.json 中该 parser 的 migration_test 指向已执行的等价测试名。追加记录包含解析器、包与摘要、操作者、时间、测试名、当时的记录序号和“迁移时点事后声明”标签。每个 parser@version 只能绑定一次，不改绑、不安装包，也不改变任何旧运行、结果或原件。
 
 迁移声明只为时点之前已记录且没有 skills 锁的旧运行补充明确声明的复核解释器；新运行自己的锁优先，时点之后的无锁运行不能借它补造历史。不带运行号的旧解析器引用使用同一固定映射，并披露事后声明；未声明时给出缺失事实与 bind-legacy 出口。有单独运行追加绑定的，仍按此前管理员为该运行声明的摘要复核。包升级、卸载、撤回不会替换已绑定摘要；原包不可读取时返回未知及恢复出口。
 
@@ -43,7 +47,7 @@
 5. 从 `hub/refs/parsers/index.ts` 的过渡默认集合和 `hub/refs/api.ts` 移除该格式的实现/领域类型导出；消费方类型改从技能包公开 API 取，异步读取继续走 `parseDocument` / `recognizeAsync`。原 `src:…/parser@version/…` 写法不改。为实际消费工作包补 dependencies，修各包签名工具保留依赖字段。若多个解析器接受同一媒体类型（例如专用结构与通用 JSON），B5 必须保留原来的专用先行/通用兜底关系，以显式声明和结构测试实现顺序，不按产品名或正文词判断。
 6. 测试床显式发布、安装技能包；用 `hub/testing/skills.ts` 的方式注入真实管理注册表。纯单元测试才用 `hub/testing/parsers.ts` 夹具，生产程序集不得导入它。生产环境由管理员安装，并执行该解析器的 `skill bind-legacy`，不做启动自动安装或自动补历史锁。
 7. 必补测试：无包/缺依赖有缺失事实及出口；普通用户不能安装/绑定、技能不按用户分配；新运行和结果冻结摘要；升级/卸载/撤回后旧引用仍按原摘要；迁移前未绑定、绑定后、时点后的无锁运行；不带运行号的旧引用；旧运行与旧结果字节不改；权限不扩大、坏摘要不降级；沙箱与限额；同文档并发引用只解析一次，结束不留模型；读取触发的投影保持文档级常数调用次数。
-8. 运行 typecheck、gen-contracts --check、原格式/迁移/注册表/引用测试及受影响包和验收测试，并发不超过 2。改已发布包同提交升版重签；新技能包独立发布，记录合成测试计数与尚未验证的真实范围。
+8. 按决定 80 和 83 运行类型、契约及受影响测试；测试并发由 `tools/run-unit-tests.ts` 根据核数与负载动态调整，计时敏感项单独跑。改已发布包同提交升版重签；新技能包独立发布，记录合成测试计数与尚未验证的真实范围。
 
 ## 按需取片段
 

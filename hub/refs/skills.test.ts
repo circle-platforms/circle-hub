@@ -28,7 +28,7 @@ before(async()=>{
   const root=fileURLToPath(new URL('../../packs/skill/mindmap-format/',import.meta.url));
   const m=JSON.parse(await readFile(join(root,'pack.json'),'utf8'));
   const files:PackDescription['files']={};for(const f of m.files)files[f.path]=await readFile(join(root,f.path));
-  template={...m,version:'1.0.1',files};
+  template={...m,files};
 });
 after(async()=>{await h?.close();await bed?.close();await postgres?.stop();});
 const options=()=>({registry:bed.registry,records:bed.kit,sandbox:{requireOsIsolation:false}});
@@ -48,11 +48,11 @@ test('format capability requires an administrator install and rejects user assig
   assert.equal(refused.call_result,'error');assert.ok(JSON.stringify(refused).includes('安装'));
   assert.equal((await h.kit.store.find({kind:'run',key:'runs.user',value:h.alice.id,limit:10})).items.length,0);
   await assert.rejects(registry.freeze!([{pack:'mindmap-format'}]),/缺少已安装技能包/);
-  await assert.rejects(bed.registry.install(bed.alice,'mindmap-format@1.0.1'),/管理员/);
+  await assert.rejects(bed.registry.install(bed.alice,'mindmap-format@1.0.3'),/管理员/);
   await assert.rejects(bed.registry.assign(bed.admin,bed.bob.id,'mindmap-format'),/不按用户分配/);
-  await bed.registry.install(bed.admin,'mindmap-format@1.0.1');
-  const frozen=await registry.freeze!([{pack:'mindmap-format',version:'1.0.1'}]);
-  assert.deepEqual(frozen.skills,[{pack:'mindmap-format',version:'1.0.1',digest:firstDigest}]);
+  await bed.registry.install(bed.admin,'mindmap-format@1.0.3');
+  const frozen=await registry.freeze!([{pack:'mindmap-format',version:'1.0.3'}]);
+  assert.deepEqual(frozen.skills,[{pack:'mindmap-format',version:'1.0.3',digest:firstDigest}]);
   const doc=await parse(registry);
   assert.equal((await doc.locate('n/case1'))?.text,'合成用例');
   assert.equal((await doc.locate('i/0'))?.text,'合成用例');
@@ -66,18 +66,18 @@ test('format capability requires an administrator install and rejects user assig
 test('duplicate parser declarations are refused and published skill upgrades are not implicitly installed',async()=>{
   const duplicate=await bed.publish(bed.alice,{...template,id:'other-format'});
   await assert.rejects(bed.registry.install(bed.admin,duplicate.version.id+'@'+template.version),/重复声明解析器/);
-  const next={...template,version:'1.0.2'};await bed.publish(bed.alice,next);
+  const next={...template,version:'1.0.4'};await bed.publish(bed.alice,next);
   const registry=createSkillParserRegistry(options());
   assert.equal((await registry.freeze!([])).skills[0].version,template.version);
   const store=createWorkflowStore(bed.registry);
-  assert.equal(await store.forUser(bed.bob,'mindmap-format@1.0.2'),null);
-  assert.equal(await createPacksPort(bed.registry).pack('mindmap-format@1.0.2'),null);
+  assert.equal(await store.forUser(bed.bob,'mindmap-format@1.0.4'),null);
+  assert.equal(await createPacksPort(bed.registry).pack('mindmap-format@1.0.4'),null);
 });
 
 test('new run records freeze skills and historical explicit bindings never modify the old record',async()=>{
   const answer=await h.service.startRun(h.alice,{pack:'toy-review',product:'PASTURE',version:'3.2',inputs:{map:{reference:await h.upload(h.alice,bytes)}}},h.call());
   assert.equal(answer.call_result,'ok',JSON.stringify(answer));assert.ok(answer.run);
-  assert.deepEqual(answer.run.skills,[{pack:'mindmap-format',version:'1.0.1',digest:firstDigest}]);
+  assert.deepEqual(answer.run.skills,[{pack:'mindmap-format',version:'1.0.3',digest:firstDigest}]);
   const original=await h.kit.store.find<RunRecord>({kind:'run',key:'runs.id',value:answer.run.run,limit:1});
   const old={...original.items[0].body,run:newId('run')};delete old.skills;
   // Copy synthetic historical structure into this registry's store, without manufacturing a historical skill lock.
@@ -87,25 +87,25 @@ test('new run records freeze skills and historical explicit bindings never modif
   const ctx={parsers:registry,reader:{user:bed.bob.id,role:'user' as const,run:old.run},sources};
   const reference=`src:${sha256Hex(bytes)}/kityminder@1/n/case1`;
   const missing=await resolveReference(reference,ctx);assert.ok(!missing.resolved&&missing.fix.includes('bind-legacy'));
-  await assert.rejects(bindLegacySkills(options(),bed.bob,old.run,['mindmap-format@1.0.1'],'合成历史声明'),/管理员/);
-  const binding=await bindLegacySkills(options(),bed.admin,old.run,['mindmap-format@1.0.1'],'合成历史声明');
+  await assert.rejects(bindLegacySkills(options(),bed.bob,old.run,['mindmap-format@1.0.3'],'合成历史声明'),/管理员/);
+  const binding=await bindLegacySkills(options(),bed.admin,old.run,['mindmap-format@1.0.3'],'合成历史声明');
   const resolved=await resolveReference(reference,ctx);assert.ok(resolved.resolved&&resolved.note?.includes('事后声明')&&resolved.note.includes(binding));
   assert.equal((await bed.kit.store.find({kind:'run',key:'runs.id',value:old.run,limit:1})).items[0].digest,saved.digest);
-  await assert.rejects(bindLegacySkills(options(),bed.admin,old.run,['mindmap-format@1.0.1'],'重绑'),/不接受改绑/);
+  await assert.rejects(bindLegacySkills(options(),bed.admin,old.run,['mindmap-format@1.0.3'],'重绑'),/不接受改绑/);
   const modern={...original.items[0].body,run:newId('run')};
   await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',created_at:original.items[0].created_at,body:modern,index:[{key:'runs.id',value:modern.run}]});
-  await assert.rejects(bindLegacySkills(options(),bed.admin,modern.run,['mindmap-format@1.0.1'],'重绑'),/已有冻结/);
-  await bed.registry.install(bed.admin,'mindmap-format@1.0.1');
+  await assert.rejects(bindLegacySkills(options(),bed.admin,modern.run,['mindmap-format@1.0.3'],'重绑'),/已有冻结/);
+  await bed.registry.install(bed.admin,'mindmap-format@1.0.3');
   await bed.registry.uninstall(bed.admin,'mindmap-format');
   const restarted=createSkillParserRegistry({...options(),registry:bed.second()});
   assert.equal((await restarted.forRun!(modern.run)).get('kityminder@1')?.skill_digest,firstDigest);
   const locked=await restarted.forRun!(old.run);assert.equal(locked.get('kityminder@1')?.skill_digest,firstDigest);
-  assert.equal(locked.bindingRecord,binding);assert.deepEqual(locked.skills,[{pack:'mindmap-format',version:'1.0.1',digest:firstDigest}]);
+  assert.equal(locked.bindingRecord,binding);assert.deepEqual(locked.skills,[{pack:'mindmap-format',version:'1.0.3',digest:firstDigest}]);
   assert.equal((await (await parseDocument(locked.get('kityminder@1')!,bytes)).locate('n/case1'))?.text,'合成用例');
 });
 
 test('dependency manifests survive publication and installation grants no product entitlements',async()=>{
-  const pack={...workflowPack({id:'dependent-review'}),dependencies:[{pack:'mindmap-format',version:'1.0.1'}]};
+  const pack={...workflowPack({id:'dependent-review'}),dependencies:[{pack:'mindmap-format',version:'1.0.3'}]};
   const published=await bed.publish(bed.alice,pack);
   assert.deepEqual(published.version.manifest.dependencies,pack.dependencies);
   assert.deepEqual([...(await createPacksPort(bed.registry).readableProducts(bed.bob))],[]);
@@ -126,7 +126,7 @@ test('a runnable skill is available by its installed digest without per-user ass
 });
 
 test('sandbox transport preserves the original format vectors and enforces declared limits',async()=>{
-  await bed.registry.install(bed.admin,'mindmap-format@1.0.1');
+  await bed.registry.install(bed.admin,'mindmap-format@1.0.3');
   const registry=createSkillParserRegistry(options());await registry.refresh!();
   const parser=registry.get('kityminder@1')!;
   const fixture=await readFile(new URL('./fixtures/mindmap.km.json',import.meta.url));
@@ -183,15 +183,15 @@ test('migration-point binding freezes old references, records the administrator 
  const linkedRecord=await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body:linked,index:[{key:'runs.id',value:linked.run}]});batch.push(linkedRecord);
  const cited=Submission.parse({run:linked.run,model:'synthetic',items:[{item:'synthetic',handling:'handled',slots:{findings:[{nature:'judgment',text:'合成判断',quotes:[{reference:`src:${sha256Hex(bytes)}/kityminder@1/n/case1`,text:'合成用例'}]}]}}],cross_item:[]});
  await bed.kit.store.put({kind:'submission',schema:'submission@1',provenance:'declared',body:cited,index:[{key:'runs.submission.run',value:linked.run}]});
- const installedVersion=(await bed.registry.getVersion('mindmap-format','1.0.1'))!;
+ const installedVersion=(await bed.registry.getVersion('mindmap-format','1.0.3'))!;
  const pinned={...old,run:newId('run'),skills:[{pack:'mindmap-format',version:installedVersion.version,digest:installedVersion.digest}]};const pinnedRecord=await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body:pinned,index:[{key:'runs.id',value:pinned.run}]});
  const registry=createSkillParserRegistry(options()),reference=`src:${sha256Hex(bytes)}/kityminder@1/n/case1`;
  const context={parsers:registry,reader:{user:bed.bob.id,role:'user' as const,run:old.run},sources:{read:()=>({bytes,mediaType:'application/json',size:bytes.length,readTier:'model_readable' as const})}};
  const absent=await resolveReference(reference,context);assert.ok(!absent.resolved&&absent.fix.includes('skill bind-legacy')&&absent.message.includes('未锁定技能包摘要'));
- await assert.rejects(bindLegacyParser(options(),bed.bob,'kityminder@1','mindmap-format@1.0.1'),/管理员/);
- const bound=await bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.1');
+ await assert.rejects(bindLegacyParser(options(),bed.bob,'kityminder@1','mindmap-format@1.0.3'),/管理员/);
+ const bound=await bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.3');
  assert.equal(bound.skill.digest,firstDigest);assert.equal(bound.decided_by,bed.admin.id);assert.equal(bound.test,'mindmap-format migration equivalence across repository documents');assert.equal(bound.label,'迁移时点事后声明');assert.ok(!Number.isNaN(Date.parse(bound.at)));
- await bed.registry.install(bed.admin,'mindmap-format@1.0.1');
+ await bed.registry.install(bed.admin,'mindmap-format@1.0.3');
  const resolved=await resolveReference(reference,{...context,parsers:createSkillParserRegistry({...options(),registry:bed.second()})});assert.ok(resolved.resolved&&resolved.text==='合成用例'&&resolved.note?.includes('迁移时点事后声明'));
  const locked=await registry.forRun!(old.run);assert.equal(locked.get('kityminder@1')?.skill_digest,firstDigest);
  const perRun=(await bed.kit.store.find<any>({kind:'action',key:'runs.skills',value:old.run,limit:10})).items;assert.equal(perRun.length,1);assert.deepEqual(locked.bindingRecords,[perRun[0].digest]);assert.equal(perRun[0].body.detail.migration_record,bound.record);
@@ -202,17 +202,17 @@ test('migration-point binding freezes old references, records the administrator 
   assert.deepEqual((await bed.kit.store.get(record.digest))?.body,record.body);
  }
  assert.ok(await bed.kit.store.get(priorBinding));assert.equal((await registry.forRun!(priorOther.run)).get('kityminder@1')?.skill_digest,firstDigest);
- assert.deepEqual((await registry.forRun!(other.run)).skills,[...other.skills,{pack:'mindmap-format',version:'1.0.1',digest:firstDigest}]);
+ assert.deepEqual((await registry.forRun!(other.run)).skills,[...other.skills,{pack:'mindmap-format',version:'1.0.3',digest:firstDigest}]);
  assert.equal((await registry.forRun!(pinned.run)).get('kityminder@1')?.skill_digest,installedVersion.digest);
  for(const record of [untouched,pinnedRecord]){assert.deepEqual((await bed.kit.store.get(record.digest))?.body,record.body);assert.equal((await bed.kit.store.find({kind:'action',key:'runs.skills',value:record.body.run,limit:10})).items.length,0);}
- const repeated=await bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.1');assert.equal(repeated.bound_runs,0);assert.equal(repeated.record,bound.record);
+ const repeated=await bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.3');assert.equal(repeated.bound_runs,0);assert.equal(repeated.record,bound.record);
 
  const bare=await resolveReference(reference,{...context,reader:{user:bed.bob.id,role:'user' as const}});assert.ok(bare.resolved&&bare.note?.includes('迁移时点事后声明'));
  assert.deepEqual((await bed.kit.store.get(saved.digest))?.body,old);assert.deepEqual((await bed.kit.store.get(result.digest))?.body,oldResult);
  const later={...old,run:newId('run')};await bed.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body:later,index:[{key:'runs.id',value:later.run}]});
  assert.equal((await registry.forRun!(later.run)).get('kityminder@1'),undefined,'a global declaration alone never supplies a missing per-run binding');
-  const resumed=await bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.1');assert.equal(resumed.bound_runs,1);assert.equal((await registry.forRun!(later.run)).get('kityminder@1')?.skill_digest,firstDigest);
- await assert.rejects(bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.2'),/不能改绑/);
+  const resumed=await bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.3');assert.equal(resumed.bound_runs,1);assert.equal((await registry.forRun!(later.run)).get('kityminder@1')?.skill_digest,firstDigest);
+ await assert.rejects(bindLegacyParser(options(),bed.admin,'kityminder@1','mindmap-format@1.0.4'),/不能改绑/);
 });
 
 test('a failed bulk binding rolls back the declaration and every per-run append',async t=>{
@@ -220,7 +220,7 @@ test('a failed bulk binding rolls back the declaration and every per-run append'
  const source=(await h.kit.store.find<RunRecord>({kind:'run',key:'runs.user',value:h.alice.id,limit:1})).items[0];
  const runs=[];for(let index=0;index<3;index++){const body={...source.body,run:newId('run')};delete body.skills;runs.push(await isolated.kit.store.put({kind:'run',schema:'run@1',provenance:'projected',body,index:[{key:'runs.id',value:body.run}]}));}
  let appends=0;const store=new Proxy(isolated.kit.store,{get(target,key){if(key==='put')return async(input:Parameters<typeof target.put>[0],tx?:Parameters<typeof target.put>[1])=>{if(input.index?.some(row=>row.key==='runs.skill-parser')&&++appends===2)throw new Error('synthetic append failure');return target.put(input,tx);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
- await assert.rejects(bindLegacyParser({registry:isolated.registry,records:{...isolated.kit,store}},isolated.admin,'kityminder@1','mindmap-format@1.0.1'),/synthetic append failure/);
+ await assert.rejects(bindLegacyParser({registry:isolated.registry,records:{...isolated.kit,store}},isolated.admin,'kityminder@1','mindmap-format@1.0.3'),/synthetic append failure/);
  assert.equal((await isolated.kit.store.find({kind:'action',key:'refs.legacy-parser',value:'kityminder@1',limit:10})).items.length,0);
  for(const run of runs){assert.deepEqual((await isolated.kit.store.get(run.digest))?.body,run.body);assert.equal((await isolated.kit.store.find({kind:'action',key:'runs.skills',value:run.body.run,limit:10})).items.length,0);}
 });

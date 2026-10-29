@@ -20,11 +20,33 @@ ids are deduplicated. Absence is unclassified. A group's declarations are not in
 
 ## Judgment submission and quotation identity
 
-The existing submit_result item slot `coverage` is a SlotClaim list; each data object is the generated CategoryJudgment shape.
+The existing submit_result item slot `coverage` is a SlotClaim list; each claim uses `text` for the statement and its data
+object is the generated CategoryJudgment shape. A CategoryJudgment span counts absolute bytes of the retained original;
+a `src:` reference's `:from-to` range instead counts UTF-8 bytes inside the selected fragment. When JSON escapes or double
+encoding change the displayed text, the submitted quote must still match the original bytes. If the client cannot locate
+the original span mechanically, classification remains unknown; the local byte-location tool below can prepare it.
 It contains the exact case item id, category_id, QuoteEvidence and explicit ModelIdentity. The package bundles the generated
 category-judgment@1 schema byte-for-byte; a test checks the copy against contracts/generated. A nonempty accepted claim supplies
 classification for that case. An empty claim list supplies none. A document entirely classified by author fields can submit
 coverage:[]; it does not need invented model judgments. A new run is no longer a wholly factual production run.
+
+The mindmap-format local `tools/locate-quotes.ts` accepts the original UTF-8 file, the model produced by its
+`tools/parse-model.ts`, and exact node/text candidates. It returns raw byte slices and absolute offsets without deciding a
+category, model identity or case ownership; escaped and double-encoded JSON keep their original bytes. Zero and multiple
+matches are left for the client to resolve. Both tools write new mode-0600 files rather than printing source text; their
+output is a preparation aid and the normal Hub check remains authoritative. `SKILL.md` gives the commands.
+
+`tools/prepare-claims.ts` assembles the locator's result into the existing `coverage` list without asking the model to repeat
+its identity in every claim. Supply the explicit `model-identity@1` object once, or a saved start-run response/run record
+containing `model_identity`. Supply choices as `[{"ordinal":1,"category_id":"audit_log","statement":"合成判断"}]`:
+`ordinal` refers to a locator result. If it has several quotations, add the zero-based `quote_index`; zero quotations or an
+ambiguous selection without an index is refused. Category ids are checked by exact equality against `template-v3.json`.
+Run `node <template-gap>/tools/prepare-claims.ts --located <locator.json> --choices <choices.json> --identity <identity.json>
+--out <coverage.json>`, then put the array in that document item's `slots.coverage`. The tool copies the chosen raw quote and
+the declared identity; it does not classify text, decide which quote belongs to a case, or establish acceptance. Hub still
+checks those facts. It creates a mode-0600 file without overwriting and prints counts only. The same output shape can be used
+with old locked runs, and a different session must use its own explicitly declared identity.
+The helper copies that declaration; it does not establish which session produced a claim.
 
 The frozen context holds the bound source digest and parser model. The function read declaration obtains the original subject
 text through the existing permission/integrity boundary. SHA-256 of its UTF-8 bytes must equal the bound original digest before
@@ -42,6 +64,15 @@ these checks. Subsequent consumers must resolve the actual accepted result; a se
 
 ## Coverage, completeness and recovery
 
+The client reads the package inputs and requirements with `list_task_packs` and the slot schema from the `start_run`
+receipt or its run record. Index examples include `command_tree_root` so that the consumer can check the identities'
+declared tree source. Feeding may still be in progress; an empty interim list is not an empty completed corpus. These
+are guidance changes and do not change the category or coverage rules.
+
+An index entry without an explicit `command_tree_root` cannot establish a complete command identity, even if its
+identity and signature agree with each other. Such cases remain unknown and name the missing source and re-read exit;
+an explicitly declared source must match each identity. Existing records remain unchanged.
+
 First classify each case, then aggregate in the frozen declared scope. Fields disclose classification_status, classifications,
 unclassified, scope_complete, category counts/evidence, missing and skipped separately. A display evidence list is capped at
 20 ids; counts and membership use all cases. No unclassified case is counted as a missing category. Missing/unchecked scope
@@ -49,7 +80,7 @@ blocks a missing-category claim. Existing observed categories may still be discl
 
 The client follows SKILL.md: read the unclassified cases, judge with raw quotes, submit, repair rejected evidence and resubmit.
 A missing original triggers re-read; failure to obtain the required fact after the stated bounded action is a design gap for
-integrator Claude before the final report. Check unknowns name missing facts and an actionable next step; the existing engine
+the maintainer before the final report. Check unknowns name missing facts and an actionable next step; the existing engine
 binds a named exit by reason. They are not converted into support, refutation or a completed classification.
 
 ## Complete command identity and index revision
@@ -125,3 +156,10 @@ Command skips on orphan-only commands refuse; skips on unmatched current revisio
 标签按 resource-tags@1 的精确原文闭集读取，保留 resource 原值。闭集外是提示档结构违规“未声明的标签”；大小写、全半角与同义词不相等。非法声明不进入正反向比例分母。此版本替代旧关键词规则，历史结果不改写；应以新包重产新根与新运行。本次续接按所有者指令未运行验证。
 
 R1/R4 衔接：索引所属知识根仍按运行 context.root 核对；CommandIdentity.tree_root 单独绑定其签名的命令树来源根（src 摘要或 tree 根），不把包含用例自身的知识根写进自身身份。原文提供 command_tree_root 时必须一致，缺命令树的显式 null 保持缺完整身份。路径集合只取完整身份。类别与 resource 测试类型分别核对；未分类时也披露已覆盖集合，不把未见类别记为缺口。两份共享接口快照统一由 tools/gen-contracts.ts 生成。本次续接未运行验证。
+
+### Feeding-backed case indexes
+
+An index can cite either a tree entry with its `tree:` reference or a feeding projection with a complete `rec:` reference
+whose digest is the index entry. `data.object`, when present, is the shared content identity; distinct source records may
+name the same object. The index still needs the document, node, title, ancestor labels and complete command identities;
+older feeding records without them remain unknown until a root-bound re-read supplies the missing fields.

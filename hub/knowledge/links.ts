@@ -4,6 +4,7 @@ import { LinkDeclaration, type LinkDeclaration as Rule } from '../../contracts/s
 import type { Backlinks, LinkEdge, LinkDrift, LinksView,LinkDiagnostic,LinkRuleDiagnostic } from '../../contracts/src/views.ts';
 import { RunRecord } from '../../contracts/src/run.ts';
 import { RunId, Sha256 } from '../../contracts/src/common.ts';
+import type { TreeNodeBody } from '../../contracts/src/knowledge.ts';
 import { canonicalBytes, canonicalize, sha256Hex, type Principal } from '../records/api.ts';
 import { pathOf, pathSegments, treeReference,ReferenceSyntaxError } from '../refs/api.ts';
 import { CompositionView } from './composition.ts';
@@ -169,14 +170,21 @@ export class LinkReading {
     const nodes=new Map<string,RelationNode>(),sources:LiteralSource[]=[],contents=new Map<string,EntryContent>(),owners=new Map<string,readonly string[]>();
     for await(const row of composition.contentRows(undefined)){contents.set(row.entry,row.content);owners.set(row.path+"\0"+row.entry,row.producers);}
     // Reachability comes from the node graph; a row alone never invents a target.
-    const visit=async(digest:string,names:string[]):Promise<void>=>{
-      const node=await this.#context.store.node(digest);if(!node)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少关联树节点 '+digest,'管理员从可信备份恢复缺失的记录 '+digest+'（或原件），再重新核验这份组成');
-      const kinds:Array<{kind:string;producers:readonly string[]}>=[];
-      for(const id of node.entries){const entry=contents.get(id)??await this.#context.store.entry(id);if(!entry)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少关联树条目 '+id,'管理员从可信备份恢复缺失的记录 '+id+'（或原件），再重新核验这份组成');const producers=owners.get(pathOf(names)+"\0"+id)??[];kinds.push({kind:entry.kind,producers});sources.push({path:pathOf(names),entry:id,content:entry,producers});}
-      nodes.set(pathOf(names),relationNode(kinds));
-      for(const child of node.children)await visit(child.digest,[...names,child.name]);
-    };
-    await visit(composition.body.root,[]);
+    const queue=[composition.body.root],scheduled=new Set(queue),loadedNodes=new Map<string,TreeNodeBody>();
+    for(let at=0;at<queue.length;){
+      const batch=queue.slice(at,at+128);at+=batch.length;
+      const loaded=await this.#context.store.nodes(batch);
+      const needed:string[]=[];
+      for(const digest of batch){const node=loaded.get(digest);if(!node)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少关联树节点 '+digest,'管理员从可信备份恢复缺失的记录 '+digest+'（或原件），再重新核验这份组成');loadedNodes.set(digest,node);for(const id of node.entries)if(!contents.has(id))needed.push(id);for(const child of node.children)if(!scheduled.has(child.digest)){scheduled.add(child.digest);queue.push(child.digest);}}
+      const fetched=needed.length?await this.#context.store.entries(needed,undefined,{cache:false}):new Map<string,EntryContent>();
+      for(const [id,entry] of fetched)contents.set(id,entry);
+    }
+    // Process the prefetched tree in the same depth-first order as the original reader.
+    const walk:Array<{digest:string;names:string[]}>=[{digest:composition.body.root,names:[]}];
+    while(walk.length){const {digest,names}=walk.pop()!,node=loadedNodes.get(digest)!,path=pathOf(names),kinds:Array<{kind:string;producers:readonly string[]}>=[];
+      for(const id of node.entries){const entry=contents.get(id);if(!entry)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少关联树条目 '+id,'管理员从可信备份恢复缺失的记录 '+id+'（或原件），再重新核验这份组成');const producers=owners.get(path+"\0"+id)??[];kinds.push({kind:entry.kind,producers});sources.push({path,entry:id,content:entry,producers});}
+      nodes.set(path,relationNode(kinds));for(let i=node.children.length-1;i>=0;i--){const child=node.children[i]!;walk.push({digest:child.digest,names:[...names,child.name]});}
+    }
     for await(const row of composition.unplacedRows()){const content=contents.get(row.entry)??await this.#context.store.entry(row.entry);if(!content)throw new RelationReadError(REASON.find(reason=>reason==='integrity_unproven')!,'缺少未归位关联条目 '+row.entry,'管理员从可信备份恢复缺失的记录 '+row.entry+'（或原件），再重新核验这份组成');sources.push({path:'/',entry:row.entry,content,unplaced:true,producers:row.producers});}
     const result=relationFacts(composition.body.root,composition.body.links,nodes,sources);
     this.#cache.set(composition.record,result,canonicalBytes(result).byteLength);return result;

@@ -41,14 +41,14 @@ The `data` of each item's `location` outcome, and so of its claim (`claim.statem
 | --- | --- |
 | `case_id` | the item id: the document id (`24001`) or `document:node` (`24001:<data.id>`) |
 | `product_line`, `product_name` | the line id and the name the tree root gives; `product_line` null when the root is not a name of the run's line |
-| `version`, `version_source`, `confidence` | the version and where it was read: `folders` (high at a consistent version level; low when only mentioned in a folder name or when the level contradicts itself), `title` low, `parameter` low, `none` |
-| `build`, `build_source`, `patch`, `patch_source` | the build date (eight digits) and the patch; at the version level they share its confidence, otherwise they are references (`folders` or `title`) |
+| `version`, `version_source`, `confidence` | the version and where it was read: a declared directory level or whole version label, a whole title used as a low-confidence reference, a caller declaration, or none |
+| `build`, `build_source`, `patch`, `patch_source` | legacy fields; the retired build-date and patch extraction does not populate them |
 | `line`, `train`, `module` | the folder convention `NNN：<line>` / `NNN：<line>-<train>` / module, where it holds |
 | `ancestor_path` | root, folders, and for a case the document title and the map path, top down |
 | `source` | the external identity (with revision) of the document the answer was read from |
 | `build_names` | build names written in the folders, the title or the map, verbatim, of the line's name families; not checked, not resolved |
 | `version_values`, `missing` | version-level values with original labels and depths; missing source facts and the corrective action in the statement |
-| `requirements`, `defects`, `unclassified` | linked ids: marked by a word as story or bug, or unmarked |
+| `requirements`, `defects`, `unclassified` | identifiers from exact declared fields, or an untyped whole decimal list where that position is allowed |
 | `id_sources` | per linked id: its kind and every place it was read (`title`, `folders`, `map`) |
 | `ranged` | the unclassified ids the caller's `id_ranges` assign a kind (a declaration, apart from the tree facts) |
 | `declared`, `conflicts`, `notes` | fields filled from the caller's product or line, declarations the tree contradicts, explanations in Chinese |
@@ -67,9 +67,22 @@ on (`基于 <build>`), and the release state apart (`已发布 <date>` or `未�
 (name as the tie-break, no built time last), at most the first 12, the rest counted as `另有 N 个`. Each written build name is
 classified against the knowledge base's builds and its statement carries the name: known (a candidate, or the base an
 alias is based on) is a support; known but of another line is an advisory violation (`build_other_line`, naming the line);
-not known is an unknown (the knowledge base lists only the builds of the build site), never a violation.
+not listed is an advisory `build_not_listed` refutation of the frozen-list membership, not a claim that the name is wrong.
 
-## The scheme (decisions)
+## Current identifier rule
+
+`famx-id-fields@1` accepts an entire `bug:<ids>` or `story:<ids>` field with comma-separated nonzero ASCII decimal
+identifiers, each at most 12 digits with no leading zero. Prose, spelling variants, padded values and full-width forms
+do not declare an identifier. A whole untyped decimal list is accepted only in the positions the projection declares;
+its kind remains undeclared unless a caller supplies a non-overlapping `id_ranges` declaration. The expected-source
+function retains its two candidate reads for an undeclared kind, but whether either source exists or is readable does
+not prove the author's intended type or association. The warning names that missing fact and asks the author to declare
+the type, or to provide a quoted model claim in a workflow that supports it.
+Those two reads still use the existing expected-source role in the run; a consumer must not treat that role alone as
+proof that either candidate is the author's association. A separate candidate-only source mechanism would be needed if
+other workflows must enforce that distinction at the source-binding level.
+
+## Historical scheme (superseded where R6 below differs)
 
 1. **Product.** The root's name (meta.root: a string, or `{name|title|label}`; `name` first) compared with every name of
    the run's line (NFKC, case and white space folded). Equal: `product_line` = the line id, `product_name` = that name.
@@ -291,7 +304,7 @@ staged copy: `node packs/workflow/case-location/pack-files.ts --stage <empty dir
 - **packs integrator**: publish through `pack-files.ts --stage`; assign the pack to users; the knowledge base needs a root
   of some build of the line before runs can start (see the first item).
 
-## 已定（决定 35 第 18 项）
+## 历史决定 35 第 18 项（与下方 R6 不同时以 R6 为准）
 
 1. 版本层自相矛盾是确定的冲突（提示档）；最近根的值保留在 version，所有值及目录原文、层数写入 version_values。
 2. 本产品构建名目录提供版本：四个以上数字取前三个，三个数字取前两个；版本层以下仍只作引用。
@@ -326,4 +339,4 @@ famx-directory@1 的逐层语法（`functions/convention.ts` 文件头是同一�
 
 不折叠：标签按目录原样读取，全角数字或全角冒号写成的码不在语法内，该层记未知并给出出口（包作者补语法或作者改目录名）。已退役且不再实现：build 日期与 patch 号方案、正文中捞版本、模块层的活动/文档/版本/编号语义排除、协议/数量/地址形状守卫（`192.0.2.10` 这样的整段标签按语法就是版本线，属作者命名问题，不按含义拒绝）。
 
-测试状态（本次）：`functions/convention.test.ts` 已按上述声明逐行重写，11 条全过；`functions/locate.test.ts` 89 条中 41 过，其余 48 行、以及 `conventions/expected/ids/candidates/check/project` 里共 87 行仍按已退役规则写期望，待按声明重写（分五类：编号不再从标题或目录散文抽取、build/patch 字段不再产出、模块层不再语义排除、不折叠后全角标签不可读、以及上述引起的 verdict 变化）。包级 `pack.test.ts`、`production.test.ts`、`publish.test.ts` 现在无法加载，原因是主线 `hub/knowledge/produce.ts` 重复声明 `inventory`（已派 Cursor）。不把实际输出倒写为期望。
+历史测试状态（R6 交接时，非当前结果）：`functions/convention.test.ts` 已按上述声明逐行重写，11 条全过；`functions/locate.test.ts` 89 条中 41 过，其余 48 行、以及 `conventions/expected/ids/candidates/check/project` 里共 87 行仍按已退役规则写期望，待按声明重写（分五类：编号不再从标题或目录散文抽取、build/patch 字段不再产出、模块层不再语义排除、不折叠后全角标签不可读、以及上述引起的 verdict 变化）。包级 `pack.test.ts`、`production.test.ts`、`publish.test.ts` 当时无法加载，原因是主线 `hub/knowledge/produce.ts` 重复声明 `inventory`（已派 Cursor）。不把实际输出倒写为期望。

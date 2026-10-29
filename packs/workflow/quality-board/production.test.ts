@@ -113,7 +113,7 @@ describe('a production run of quality-board', { skip }, () => {
     assert.deepEqual(metrics.ratios.missing, { num: 1, den: 20 });
     assert.deepEqual([metrics.display.missing, metrics.display.negative], [0.05, 0.05]);
     assert.equal(board.claims[0].statement.verdict, 'support');
-    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@2.0.11', independence: 'judge_not_author' });
+    assert.deepEqual(board.claims[0].warrant, { producer: 'function', id: 'quality-board.board@2.0.12', independence: 'judge_not_author' });
     // 没有绑定评审时含糊分母是 0，阈值检查是 unknown，不是支持。
     assert.deepEqual(ssl.requirements[1].claims.map((c) => c.statement.verdict), ['unknown']);
 

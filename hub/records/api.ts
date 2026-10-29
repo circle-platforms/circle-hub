@@ -28,9 +28,12 @@ export { sha256Hex, digestOf, recordDigest, isSha256, SHA256_PATTERN } from './d
 export { newId, ulid, idTime, isId } from './ids.ts';
 export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
 export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, MAX_ADMIN_FINDINGS, CREDENTIAL_DETECTORS } from './scan.ts';
+export { argumentDigest } from './calllog.ts';
 export { textPreview, stripNul } from './text.ts';
 export { maskedForDisplay, FileKeyProvider } from './vault.ts';
 export { sharedWith, runIsSharedWith, productionShareKey, productionShareBinding } from './authorizations.ts';
+export { withRequestPermissions, requestRead } from './request-permissions.ts';
+export type { RequestPermissions } from './request-permissions.ts';
 export { WHOLE_HUB, RECORD_SCHEMAS, artifactShareKey, scanAcceptanceKey } from './constants.ts';
 
 // ---------------------------------------------------------------- identity
@@ -168,6 +171,18 @@ export interface ListQuery extends PageQuery {
   kind: RecordKind;
 }
 
+/** A position in a batched index scan. Several index values may name the same record. */
+export interface IndexedCursor { sequence: number; value: string }
+export interface IndexedRecord<B = unknown> { value: string; position: number; record: StoredRecord<B> }
+export interface IndexedQuery {
+  key: string;
+  values: readonly string[];
+  kind?: RecordKind;
+  through: number;
+  limit?: number;
+  cursor?: IndexedCursor | null;
+}
+
 export interface RecordStore {
   /** Internal append-log position; never part of a record digest. Snapshot horizons may contain gaps. */
   position?(digest:string,tx?:Transaction):Promise<number|null>;
@@ -190,6 +205,8 @@ export interface RecordStore {
   findMany<B = unknown>(query: {key: string; values: readonly string[]; kind?: RecordKind}, tx?: Transaction): Promise<StoredRecord<B>[]>;
   /** Oldest matching record per index value, verified, in one query; equivalent to find({limit:1}) per value. */
   findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
+  /** Bounded index scan retaining each matching value and the record's append position. */
+  findIndexed?<B = unknown>(query: IndexedQuery, tx?: Transaction): Promise<{ items: IndexedRecord<B>[]; next: IndexedCursor | null }>;
   getById<B = unknown>(id: string, tx?: Transaction): Promise<StoredRecord<B> | null>;
   find<B = unknown>(query: FindQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>>;
   list<B = unknown>(query: ListQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>>;
@@ -395,6 +412,8 @@ export interface FindingsAcceptance {
 }
 
 export interface Artifacts {
+  /** Capture the reader's direct and pack-audience permissions for one request. */
+  capturePermissionSnapshot?(principal: Principal): Promise<import('./request-permissions.ts').RequestPermissions>;
   /**
    * Stores the bytes and a source_artifact record. An upload with a credential hit is refused with a RecordsError coded
    * CREDENTIAL_IN_UPLOAD: no bytes are stored, only a validate action with the digest and the scan conclusion (B02 R[4]).
@@ -414,7 +433,7 @@ export interface Artifacts {
   coverDerived(input: DerivedScanInput): Promise<DerivedScanAcceptance | null>;
   /** Every source_artifact record of these bytes, oldest first. No access check: for trusted callers only. */
   records(sha256: string): Promise<SourceArtifact[]>;
-  /** B02 R[3] for one record. The account is re-read: a disabled or demoted account loses access at once. */
+  /** B02 R[3] for one record; a request uses its initial reader permissions, otherwise current permissions. */
   canRead(principal: Principal, artifact: SourceArtifact): Promise<boolean>;
   /**
    * The record of these bytes that decides for this reader (README decision 6): the newest record the reader may read,

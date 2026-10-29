@@ -39,6 +39,7 @@ import type {
 import { canonicalize, sha256Hex, type Page, type Principal, type RecordsKit } from '../records/api.ts';
 import type { ReaderIdentity, TreeRead, TreeReader } from '../refs/api.ts';
 import type { ProductionResult, StartRunDetail, StoredResult } from '../runs/api.ts';
+import { effectiveSubmission } from '../runs/engine/api.ts';
 import { pointerOfPath, unavailable } from './tools.ts';
 import type { z } from 'zod';
 import type { ResolveReferenceOutput, StartRunOutput, SubmitResultOutput } from '../../contracts/src/tools.ts';
@@ -462,6 +463,7 @@ interface StoredRun {
   recordDigest: string;
   submissions: RunSubmissionView[];
   results: Map<string, { record: string; result: ValidationResult }>;
+  resultsBySession: Map<string, { record: string; result: ValidationResult }>;
   latest: { record: string; result: ValidationResult } | null;
   /** The result a fact-only pack computed at start_run. */
   production: ProductionResult | null;
@@ -581,14 +583,15 @@ export class FakeRuns implements RunsService {
       instructions_digest: sha(instructions),
       ...(input.predecessor === undefined ? {} : { predecessor: input.predecessor }),
       ...(context.sessionId === null ? {} : { session: context.sessionId }),
+      ...(input.model_identity === undefined ? {} : { model_identity: input.model_identity }),
       started_at: this.#now().toISOString(),
       runner: user.id,
       host: 'local_circle',
       trigger: 'session',
       parameters: input.parameters ?? {},
     };
-    const stored = await this.#records.store.put({ kind: 'run', schema: 'run@1', provenance: 'declared', body: record, index: [{ key: 'run.id', value: run }] });
-    const kept: StoredRun = { record, recordDigest: stored.digest, submissions: [], results: new Map(), latest: null, production: null };
+    const stored = await this.#records.store.put({ kind: 'run', schema: 'run@1', provenance: 'declared', body: record, index: [{ key: 'run.id', value: run },{key:'runs.id',value:run}] });
+    const kept: StoredRun = { record, recordDigest: stored.digest, submissions: [], results: new Map(), resultsBySession: new Map(), latest: null, production: null };
     this.runs.set(run, kept);
     if (summary.requirements.every((r) => r.accepted_producer === 'fact')) kept.production = await this.#produce(kept, context);
     const { runner: _runner, host: _host, trigger: _trigger, parameters: _parameters, ...shown } = record;
@@ -684,9 +687,11 @@ export class FakeRuns implements RunsService {
       text = JSON.stringify(args);
     }
     const digest = sha(text);
-    const repeated = stored.results.get(digest);
-    if (repeated !== undefined) return this.#answer(repeated.result);
     const parsed = Submission.safeParse(args);
+    const effective = parsed.success ? effectiveSubmission(parsed.data,stored.record,context.sessionId) : null;
+    const observer=JSON.stringify([digest,context.sessionId,effective?.model??null]);
+    const repeated = stored.resultsBySession.get(observer);
+    if (repeated !== undefined) return this.#answer(repeated.result);
     const received = await this.#records.store.put({ kind: 'submission', schema: parsed.success ? 'submission@1' : 'submission-received@1', provenance: 'declared', body: { ...args } });
     const base = {
       schema: 'validation@1' as const,
@@ -713,6 +718,8 @@ export class FakeRuns implements RunsService {
         partitions: empty,
         cross_item: [],
       };
+    } else if (effective === null) {
+      result = { ...base, acceptance: 'not_accepted', errors: [{code:'SUBMISSION_SCHEMA_VIOLATION',message:'本次提交没有可沿用或显式声明的模型身份',fix:'本会话显式声明 model_identity，或带原先声明身份的同一 Circle 会话重交',path:'/model_identity'}], partitions: empty, cross_item: [] };
     } else if (parsed.data.notes === 'quote-mismatch') {
       result = {
         ...base,
@@ -722,10 +729,11 @@ export class FakeRuns implements RunsService {
         cross_item: [],
       };
     } else {
-      result = { ...base, acceptance: 'accepted', errors: [], partitions: this.#partition(stored.record, parsed.data), cross_item: [] };
+      result = { ...base, acceptance: 'accepted', errors: [], partitions: this.#partition(stored.record, effective), cross_item: [] };
     }
     const resultRecord = await this.#records.store.put({ kind: 'validation_result', schema: 'validation@1', provenance: 'projected', body: result });
     stored.results.set(digest, { record: resultRecord.digest, result });
+    stored.resultsBySession.set(observer, { record: resultRecord.digest, result });
     stored.submissions.push({ record: received.digest, received_at: this.#now().toISOString(), acceptance: result.acceptance, errors: result.errors, result: result.acceptance === 'accepted' ? resultRecord.digest : null });
     if (result.acceptance === 'accepted') stored.latest = { record: resultRecord.digest, result };
     return this.#answer(result);
@@ -737,7 +745,7 @@ export class FakeRuns implements RunsService {
   }
 
   /** Handled items are delivered (an `unknown: true` slot leaves the static layer unchecked), skipped and uncovered ones incomplete. */
-  #partition(run: RunRecord, submission: z.infer<typeof Submission>): Partitions {
+  #partition(run: RunRecord, submission: z.infer<typeof Submission> & {model:string}): Partitions {
     const parts = Object.fromEntries(PARTITION.map((p) => [p, [] as unknown[]])) as Record<string, unknown[]>;
     const due = new Date(this.#now().getTime() + 72 * 60 * 60 * 1000).toISOString();
     const exit = { action: 'request' as const, request_kind: 'repair' as const, audience: { user: (run.runner ?? run.configurer)! }, due };

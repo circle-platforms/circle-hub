@@ -9,7 +9,7 @@ of the whole view and the thresholds as advisory signals.
 
 | Path | What it is |
 | --- | --- |
-| `workflow.json` | `workflow@1`: required `facets` (subject, one count view and optionally one tag view) and `placement` (hint, one commands view), the external id `knowledge:facets:<product>:<build>?kind=case&by=line,module,has_expected,vague_expected,negative` (the caller may add `priority`); the threshold parameters; the pack binds no product line (the id names product and build, so no unrelated build is locked) |
+| `workflow.json` | `workflow@1`: required `facets` (subject, one count view and optionally one tag view) and `placement` (hint, one commands view), the external id `knowledge:facets:<product>:<build>?kind=case&by=line,module,has_expected,negative,test_type_status` (the caller may add `priority`); the threshold parameters; the pack binds no product line (the id names product and build, so no unrelated build is locked) |
 | `requirements.json` | `board` (item, fact, bookkeeping), `thresholds` (item, fact, advisory), `totals` (run, fact), all static layer only |
 | `checks.json` | `board`, `thresholds`, `totals`: pack functions with `applies: run`, all advisory — the board never blocks, these are management signals, not defects |
 | `functions/` | `views.ts` (reading the facet view), `board.ts` (the grouping, the metrics, the board check), `thresholds.ts`, `totals.ts`, `project.ts`, `subject.ts`, `text.ts`, `types.ts`; tests beside them |
@@ -34,24 +34,20 @@ of the whole view and the thresholds as advisory signals.
 
 ## Decisions
 
-- **The metric definitions are the ones of the owner's real-sample measurement**, quoted in the task page: a case without an
-  expected result has `has_expected` false; a case with only vague expected results has `has_expected` true and
-  `vague_expected` true; the negative share is `negative` true over all cases. No others are invented.
+- **Metric facts come from declared structure and accepted judgments**: `has_expected` false counts missing expectations;
+  vague expectations come only from valid same-root, same-original case-review judgments, with judged, unjudged and conflict
+  counts disclosed. The negative share uses only cases with a declared test type. No wording or keyword classifies an expectation.
 - **Unplaced cases (1.1.0)**: `placement` is mandatory and reads `by=commands`, on the same product and root as
   the count view. Only the `commands: null` row is counted, once; non-null command rows can repeat a case and are not
   summed. The count is disclosed in totals (`未归位（没有命令归属的用例） N 个`), without a threshold or a new requirement.
   An absent null row in a complete view means zero. If the view is truncated and has no null row, projection refuses:
   the missing fact is the unplaced count; the fix asks for a complete same-root view and identifies the current
-  knowledge interface's inability to page/filter facets. It does not finish as an unknown result.
-- **Test types (1.1.0)**: the optional second `facets` view is exactly `by=line,module,tags`; it must share product, root
-  and total with the count view. Two count views or another combination refuse. Tags are kept out of the count view:
-  list-valued fields repeat rows per value. `tag-table.ts` copies the six types and aliases declared by template-gap;
-  `tag-table-consistency.test.ts` requires exact types, labels and aliases on both sides, and `coverage.test.ts` compares normalization with that pack on thousands of spellings. Per group the board states the
-  types observed, the types with no observed tag and the exact empty-tag count, never a per-type case count. Unknown
-  labels are tagged cases, not untagged ones. Several spellings on one case prove presence once.
-  Truncation or skipped sources qualify absence as “在已读的来源里没看到” and “部分”; a missing null-tag row in a truncated
-  view gives no invented zero. The claim names the follow-up action and SKILL requires the caller to perform it.
-  The other 18 template categories need title/path/steps/expected text absent from this view; only template-gap reads them.
+  remaining source, pagination or budget limit. It does not guess the missing count.
+- **Test types**: the optional tag view is exactly `by=line,module,tags,resource_empty,tag_valid`, on the same product, root
+  and total as the count view. The generated resource declaration supplies the exact closed set: no case folding,
+  synonyms or normalization. Undeclared tags remain structural violations and do not enter the declared-type denominator.
+  Per group the board reports types seen, types not seen and empty-resource count, never a per-type case count.
+  Truncation or unread sources qualify absence; the other template categories require their own source-based check.
 - **The violation codes live in the pack namespace.** The task page names `quality.missing_expected` etc.; the Hub requires a
   pack function's codes under `<pack>.` (hub/rules/check.ts), so they are `quality-board.missing_expected`,
   `quality-board.vague_expected`, `quality-board.negative_share`.
@@ -102,10 +98,10 @@ node --test --test-concurrency=1 "packs/workflow/quality-board/**/*.test.ts"
 ## Needs from other packages
 
 - ~~packs/product/famx~~ **resolved**: the `cases` producer writes `document`, `line`, `module`, `priority`, `negative`,
-  `has_expected`, `vague_expected` as quoted (single-valued), which the board reads.
+  `has_expected`, `negative` and `test_type_status` as declared single-valued fields; tags retain their exact resource values.
 - **hub/knowledge**: the integrator accepted a temporary refusal for truncated placement without the null group
   (gold-trace task discussion, 2026-10-23). The durable fix is an untruncatable unplaced summary field after K2; current
-  `facet-view@1` supports neither `only=` nor pagination. This pack must switch to that field when available. Package
+  facet views support continuation; the Hub binds all available pages within its budget. This pack must switch to that field when available. Package
   functions verify bound inputs; they cannot fetch more inputs themselves. Source omissions require source sync before retry.
 - **Acceptance gold**: `gold/board.ts --types` reads raw exported mindmaps/tree/documents, copies declarations only and
   independently classifies raw tags. It verifies attribution/counts, not the build's document selection. `BoardGold.unplaced`
@@ -126,6 +122,8 @@ registry publication and a temporary PostgreSQL production run with a fake knowl
 results on real business inputs; the integrator runs the real scans and acceptance after publication.
 
 Privacy update (integrator, 2026-10-23): acceptance group names use ordinals only. The scan prints build ordinals, never hashes of names. The board prints a digest of metric counts only, excluding line and module labels. Private `--out` files retain correspondence.
+
+**Historical gold notes (2026-10-23): the earlier keyword and normalization rules below are superseded by the exact structured declarations recorded after them.**
 
 Gold closure A: --case-commands validates the consumed measurement fields, document coverage and per-document counts against
 its case rows before counting paths. A listed document with zero case rows is an observed zero, not a missing export;

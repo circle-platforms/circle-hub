@@ -60,6 +60,8 @@ type SubmitOut = z.infer<typeof SubmitResultOutput>;
  * budget and names only ways to read that work without it (sources by range, records by pointer, the console page).
  */
 export interface TextContext {
+  /** list_task_packs: the exact filters and absolute offset needed to continue the same list. */
+  packList?: { offset: number; kind?: string; packId?: string };
   /** The server takes get_nodes {reference, cursor} and passes the cursor back here: only then are page cursors offered. */
   paging?: boolean;
   /** get_nodes with a reference: the page cursor the caller gave (made by pageCursor for an earlier page). */
@@ -362,14 +364,21 @@ function packEntry(p: PackSummary): Entry {
   return clip.entry(lines);
 }
 
-function listText(v: ListOut): string {
+function listText(v: ListOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
   const head = [`可用的任务包 ${v.packs.length} 个`];
   if (v.packs.some((p) => p.inputs.length > 0 || p.parameters.length > 0)) {
     const product = v.packs.some((p) => p.products.length > 0) ? '；product 换成被判对象所属产品线的名字（“产品”里列出的任一个）' : '';
     head.push(`示例 start_run 里的 ${EXAMPLE_SOURCE.slice(0, 8)}… 换成 upload_file 返回的引用，尖括号里的占位换成真实的编号或取值${product}`);
   }
-  const packs: Block = { priority: 1, entries: v.packs.map(packEntry), unit: '任务包', measure: '个', more: () => '任务包：在控制台任务包页 /console/packs 查看' };
+  const packs: Block = { priority: 1, entries: v.packs.map(packEntry), unit: '任务包', measure: '个', more: (from) => {
+    const list = context.packList;
+    if (!list) return '任务包：在控制台任务包页 /console/packs 查看';
+    if (from === 0 && list.packId === v.packs[0]?.id) return '单个任务包详情超出回答预算；在控制台任务包页 /console/packs 查看';
+    if (from === 0) return `单个任务包详情超出回答预算；按精确 ID 查询 list_task_packs ${JSON.stringify({ pack_id: v.packs[0]?.id })}，或在控制台任务包页 /console/packs 查看`;
+    const next = { ...(list.kind === undefined ? {} : { kind: list.kind }), ...(list.packId === undefined ? {} : { pack_id: list.packId }), offset: list.offset + from };
+    return `任务包：继续 list_task_packs ${JSON.stringify(next)}；也可在控制台任务包页 /console/packs 查看`;
+  } };
   return fit([{ priority: 0, head }, packs], { tail: [traceLine(v.trace)] }).text;
 }
 
@@ -549,14 +558,15 @@ const isProductionRun = (run: RunSummary): boolean => run.requirements.length > 
  * item slots, one cross-item judgment. Once the lists are filled it parses with Submission.
  */
 export function submitExample(run: RunSummary): string {
+  const model = run.model_identity !== undefined && run.session !== undefined ? {} : {model: MODEL_PLACEHOLDER};
   if (isProductionRun(run)) {
-    const commentary = (grounds: string[]) => ({ run: run.run, model: MODEL_PLACEHOLDER, items: [], cross_item: [{ nature: 'judgment', statement: '<你的评论>', grounds }] });
+    const commentary = (grounds: string[]) => ({ run: run.run, ...model, items: [], cross_item: [{ nature: 'judgment', statement: '<你的评论>', grounds }] });
     const grounded = commentary(run.items.length > 0 ? [run.items[0].location] : []);
     return JSON.stringify(Submission.safeParse(grounded).success ? grounded : commentary([]));
   }
   const keys = slotKeys(run.slots);
   const items = run.items.slice(0, 2).map((item) => ({ item: item.id, handling: 'handled', slots: Object.fromEntries(keys.map((key) => [key, []])) }));
-  const example = { run: run.run, model: MODEL_PLACEHOLDER, items, ...(crossKeys(run.slots).length > 0 ? { cross_item: [] } : {}) };
+  const example = { run: run.run, ...model, items, ...(crossKeys(run.slots).length > 0 ? { cross_item: [] } : {}) };
   return JSON.stringify(Submission.safeParse(example).success ? example : { run: run.run, model: MODEL_PLACEHOLDER, items: [] });
 }
 
@@ -803,6 +813,7 @@ function startText(v: StartOut, context: TextContext): string {
   let supportedBlock:(Block & {entries:readonly Entry[]})|undefined;
   const headClip = new Clip(null, seeConsole(r.run));
   const head = [`运行 ${r.run}：任务包 ${headClip.field(r.pack, CLIP.name, '任务包编号的超出部分')}，条目 ${r.items.length} 个，要求项 ${r.requirements.length} 个`];
+  if(r.model_identity!==undefined&&r.session!==undefined)head.push('同一开始会话提交可省略 model 和 model_identity；其他会话须明确声明自己的模型身份');
   const production = v.result ?? null;
   const full = production !== null ? (context.production ?? null) : null;
   const layout = full !== null ? resultLayout(full, production!.reference) : null;
@@ -1063,6 +1074,12 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
 
 function nodesText(v: NodesOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
+  if(v.call_status){
+    const status=v.call_status;
+    const head=[`调用查询 ${status.tool}：当前进程在途 ${status.active_total} 个，最近日志匹配 ${status.completed.length} 条`,...(status.truncated?['调用或日志范围未列全']:[]),...(status.missing?[`缺失事实：${status.missing}`]:[]),`下一步：${status.next_action}`];
+    const entries=[...status.active.map(call=>`- 进行中：追踪 ${call.trace}，开始 ${call.started_at}`),...status.completed.map(call=>`- 已结束：追踪 ${call.trace}，${call.call_result}${call.error_code?`，${call.error_code}`:''}，耗时 ${call.duration_ms} 毫秒${call.run?`，运行 ${call.run}`:''}${call.run_record?`，运行记录 ${call.run_record}`:''}${call.result_record?`，结果 ${call.result_record}`:''}`)];
+    return fit([{priority:0,head},{priority:1,entries,unit:'调用',measure:'条',more:()=>null}],{tail:[traceLine(v.trace)]}).text;
+  }
   if (v.content !== undefined) return contentText(v.content, v.trace, context);
   const nodes = v.nodes ?? [];
   const root = v.root ?? '';
@@ -1263,6 +1280,11 @@ interface Position {
   offset: number;
 }
 
+/** A concise model-facing access outcome; detailed tiers and the reason remain in the structured answer and note. */
+function sourceAccess(c: Content): string {
+  return c.readable && c.read_tier === 'model_readable' ? labelOf('read_tier', c.read_tier) : '原文不可读';
+}
+
 /** Whether UTF-16 offset `at` of `text` falls between the two halves of a surrogate pair (no page starts there). */
 function insidePair(text: string, at: number): boolean {
   if (at <= 0 || at >= text.length) return false;
@@ -1287,7 +1309,7 @@ function structurePage(c:Content,trace:string,context:TextContext):string {
   const {parser,summary,...rest}=c.structure!;
   const fields=isRecord(summary)?summary:summary===undefined?{}:{summary};
   const lines=Object.entries({...fields,...rest}).map(([key,value])=>`  ${oneLine(key)} ${valueText(value)}`);
-  const head=[`内容 ${c.reference}：${labelOf('read_tier',c.read_tier)}`,...(c.sha256?[`sha256 ${c.sha256}`]:[]),...(c.note?[oneLine(c.note)]:[]),...(typeof parser==='string'?[`解析器 ${oneLine(parser)} 认出了这份文件`]:[]),'结构摘要：'];
+  const head=[`内容 ${c.reference}：${sourceAccess(c)}`,...(c.sha256?[`sha256 ${c.sha256}`]:[]),...(c.note?[oneLine(c.note)]:[]),...(typeof parser==='string'?[`解析器 ${oneLine(parser)} 认出了这份文件`]:[]),'结构摘要：'];
   const tail=[traceLine(trace)];
   if(!lines.length)return fit([{priority:0,head:[...head,'（空）']}],{tail}).text;
   const at=context.cursor?cursorPosition(c.reference,context.cursor):null;
@@ -1319,7 +1341,7 @@ function structurePage(c:Content,trace:string,context:TextContext):string {
 function contentText(c: Content, trace: string, context: TextContext): string {
   if(c.text===undefined && c.structure!==undefined)return structurePage(c,trace,context);
   const tail = [traceLine(trace)];
-  const head = [`内容 ${c.reference}：${labelOf('read_tier', c.read_tier)}`];
+  const head = [`内容 ${c.reference}：${sourceAccess(c)}`];
   if (c.sha256 !== undefined) head.push(`sha256 ${c.sha256}`);
   if (c.note !== undefined) head.push(oneLine(c.note));
   const blocks: Block[] = [{ priority: 0, head }];

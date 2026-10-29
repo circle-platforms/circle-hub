@@ -108,7 +108,7 @@ describe('an identifier of undeclared kind is read both ways', () => {
       ['plm:story:33001', 'plm:bug:33001'],
     );
     assert.ok(out.sources.every((s) => s.reason.includes('没有标明类型')));
-    assert.match(out.warnings[0]?.message ?? '', /分别读取，存在的那一个决定种类/);
+    assert.match(out.warnings[0]?.message ?? '', /分别读取作为候选，不能凭是否存在判断类型/);
     assert.match(out.warnings[0]?.message ?? '', /下一步作者补类型/);
   });
 

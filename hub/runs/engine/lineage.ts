@@ -13,7 +13,7 @@ import { parseReference, type Reference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import type { AuthorOrigin } from './independence.ts';
 import { runOfRecord } from './readers.ts';
-import { actionsOf, runById, submissionByDigest } from './store.ts';
+import { actionOfSubmission, actionsOf, runById, submissionByDigest } from './store.ts';
 import { isObject } from './util.ts';
 
 /** Longest predecessor chain the engine follows; a longer chain is cut, a cycle ends the walk. */
@@ -91,9 +91,10 @@ export async function authorOriginOf(ctx: EngineContext, run: RunRecord): Promis
   const models = new Set<string>();
   const families = new Set<string>(),identifiedModels=new Set<string>();
   let declarationsComplete=true;
-  const producer=(value:unknown):boolean=>{
+  const producer=(value:unknown,start?:RunRecord,submittedSession?:string|null):boolean=>{
     if(!isObject(value))return false;
-    const identity=ModelIdentitySchema.safeParse(value.model_identity);
+    const inherited=value.model_identity===undefined&&start?.session!==undefined&&submittedSession===start.session?start.model_identity:undefined;
+    const identity=ModelIdentitySchema.safeParse(value.model_identity??inherited);
     if(identity.success){models.add(identity.data.model_id);identifiedModels.add(identity.data.model_id);families.add(identity.data.model_family_id);return true;}
     declarationsComplete=false;
     if(typeof value.model==='string')models.add(value.model);
@@ -119,7 +120,11 @@ export async function authorOriginOf(ctx: EngineContext, run: RunRecord): Promis
       complete = false;
       continue;
     }
-    if (record.kind === 'submission') producer(record.body);
+    if (record.kind === 'submission') {
+      const owner = runOfRecord(record), start = owner === null ? undefined : (await runById(store,owner))?.body;
+      const action = await actionOfSubmission(store,record.digest), detail = isObject(action?.body.detail) ? action.body.detail : {};
+      producer(record.body,start,typeof detail.session==='string'?detail.session:null);
+    }
     modelWarrants(record.body, models);
     const owner = runOfRecord(record);
     const chain = owner === null ? [] : await lineageOf(store, owner);
@@ -141,7 +146,7 @@ export async function authorOriginOf(ctx: EngineContext, run: RunRecord): Promis
       if (typeof body.detail.session === 'string') sessions.add(body.detail.session);
       else if (accepted) { complete = false; missingSessions.push(`已受理提交 ${String(body.detail.submission)}（运行 ${r.run}，原运行者 ${r.runner??r.configurer??'记录未给出'}）`); }
       const original=typeof body.detail.submission==='string'?await submissionByDigest(store,r.run,body.detail.submission):null;
-      if(original!==null)producer(original.body);
+      if(original!==null)producer(original.body,r,typeof body.detail.session==='string'?body.detail.session:null);
       else if(typeof body.detail.model==='string'){models.add(body.detail.model);declarationsComplete=false;}
       else if(accepted)complete=false;
     }

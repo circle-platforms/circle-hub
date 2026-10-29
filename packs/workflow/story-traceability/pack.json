@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "story-traceability",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "kind": "workflow",
   "title": "需求追溯矩阵",
   "description": "用户给出的需求编号或管理员配置的构建记录需求范围到已索引用例的矩阵；只核验事实，保留原样状态和阶段，按请求编号报告已列出的确定命中与条目下限，仅拒绝无法判断的编号，不绑定产品线",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "0aa074c914be5c65a1e53ab2ce72c5e187285f0f1c8439234d1ef881eb2e3715",
-      "size": 5540
+      "sha256": "d85c7a00bd6e361b2e2a5a761d85e071c25ecb9ff4d192e0835936cfefd481eb",
+      "size": 5650
     },
     {
       "path": "checks.json",
@@ -23,8 +23,8 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "66f72c0997f7e3f8d691c11178086fb8eac49ddfacbdf912aa6cc222872a3a79",
-      "size": 6387
+      "sha256": "4b10f60cb499a98c6c2a8424eff368618916f94cd94b044dc7cd6b6f158100a6",
+      "size": 6864
     },
     {
       "path": "functions/counts.ts",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "ecef7dc513678830edd2ef007b9de555187cfa8873d78c1e8edee34b0b42408d",
-      "size": 14388
+      "sha256": "5d9e773ddcfab17e61ec6e999a17fe2ceaef0502ac5ae8de27d0537d27ed16a9",
+      "size": 14628
     },
     {
       "path": "functions/scope.ts",
@@ -73,13 +73,13 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "5f5f1ff547626cdfd8e1d7ceeb4f3596a54d93be516e1c7a1177d65001d8b82c",
-      "size": 1622
+      "sha256": "810c3b58eada6d7338d0783b1ede9818a5533497ea667f7be62ae353858f9d67",
+      "size": 1986
     },
     {
       "path": "functions/views.ts",
-      "sha256": "fc53dd3bf5afe7b38c74ef2e52e519f399656f7b31793ed7c9190a078a6f2031",
-      "size": 5240
+      "sha256": "0e24141f87eb8c7d7a6d4426e8057e18b7aa95ded8839ce1ba0d033153f95d23",
+      "size": 6331
     },
     {
       "path": "requirements.json",
@@ -88,23 +88,23 @@
     },
     {
       "path": "samples/negative/counts.json",
-      "sha256": "e5218bc2c964467ea3579a3fb63a675a33d53304cebd89181862994c67968fa8",
-      "size": 2146
+      "sha256": "bb6cf25906124fbfef0f6351190f8ed5aef99601e5bafbec4f64fc611a563112",
+      "size": 2336
     },
     {
       "path": "samples/negative/traced.json",
-      "sha256": "128eb7ab4fd904fc42d017f372d729ff91a8eb3af8e5cef67c8857c3cbdfe6c8",
-      "size": 2145
+      "sha256": "7c0ed8910b297f859f061580a96d9679a4a0e828f7fa11a78c115cfcb4f58676",
+      "size": 2335
     },
     {
       "path": "samples/positive/counts.json",
-      "sha256": "fa04228a62f90714197087079fcb055f3b1dd9caa64e5edb30264f2bc8adf958",
-      "size": 2097
+      "sha256": "fb00e184562d6ef9574f4018f137a5f6b977b0183768a960d85cc338d3344b09",
+      "size": 2287
     },
     {
       "path": "samples/positive/traced.json",
-      "sha256": "cce1145ac16356937ea5038148859d0e567e6107e9d4c2e31954ad39d949a20c",
-      "size": 2097
+      "sha256": "ac74a595ac324cd340907e03abb9027c4f9f9ae2405682a4d8dc0131b90eab21",
+      "size": 2287
     },
     {
       "path": "slots.schema.json",

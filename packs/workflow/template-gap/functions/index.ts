@@ -10,7 +10,7 @@ const count = (v: unknown): v is number => Number.isSafeInteger(v) && (v as numb
 const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === 'string');
 export function indexBindingFix(build: unknown, documents: string[]): string {
   const expected = [...new Set(documents)].sort(compareText);
-  return `锁定构建 ${String(build ?? '未提供')}；按这个构建重新绑定 knowledge:index:<产品>:<构建>?kind=case&key=document&only=${expected.join(',')}&fields=document,node,commands,command_identities,command_tree_root,title,path_labels；only 只写这次敏捷平台文档，不含上传文件`;
+  return `锁定构建 ${String(build ?? '未提供')}；按这个构建重新绑定 knowledge:index:<产品>:<构建>?kind=case&key=document&only=${expected.join(',')}&fields=document,node,commands,command_identities,command_tree_root,title,path_labels,object；only 只写这次敏捷平台文档，不含上传文件`;
 }
 export function readCaseIndex(input: Record<string, unknown>, agileDocuments: string[]): CaseIndex | null | PackFailure {
   const bound = (input.inputs as unknown[]).filter(v => isRecord(v) && v.slot === 'case_index');
@@ -34,10 +34,14 @@ export function readCaseIndex(input: Record<string, unknown>, agileDocuments: st
     if (!expected.includes(document) || !strings(digests)) return bad('keys 含运行范围外的文档或非摘要列表');
     for (const digest of digests) {
       const entry = v.entries[digest];
-      if (!sha.test(digest) || !isRecord(entry) || entry.entry !== digest || entry.kind !== 'case' || typeof entry.reference !== 'string' || !entry.reference.startsWith(`tree:${v.build.root}/`) || !entry.reference.endsWith(`@${digest}`)) return bad('条目身份、种类或 tree 引用不一致');
+      if (!sha.test(digest) || !isRecord(entry) || entry.entry !== digest || entry.kind !== 'case' || typeof entry.reference !== 'string') return bad('条目身份、种类或引用不一致');
+      const tree=entry.reference.startsWith(`tree:${v.build.root}/`)&&entry.reference.endsWith(`@${digest}`);
+      const feeding=entry.reference===`rec:${digest}`;
+      if(!tree&&!feeding)return bad('条目引用既不是锁定树中的同一条目，也不是完整的喂入记录引用');
       if (!isRecord(entry.data) || entry.data.document !== document || typeof entry.data.node !== 'string' || entry.data.node === '' || typeof entry.data.title !== 'string' || !strings(entry.data.path_labels) || !strings(entry.data.commands) || entry.data.commands.some(p => p === '')) return bad('条目缺少可连接的 document、node 或已解析 commands');
       // The guard above narrowed entry.data; a closure does not keep that narrowing, so the checked value is held once.
       const data = entry.data;
+      if(data.command_tree_root!==undefined&&data.command_tree_root!==null&&(typeof data.command_tree_root!=='string'||!sha.test(data.command_tree_root)))return bad('command_tree_root 不是完整命令树来源摘要');
       if (data.command_identities !== undefined) {
         const identities=data.command_identities;
         const treeRoot=typeof data.command_tree_root==='string'?data.command_tree_root:undefined;
@@ -58,8 +62,8 @@ export function readCaseIndex(input: Record<string, unknown>, agileDocuments: st
     keys[document] = [...new Set(v.keys[document] as string[])].sort(compareText);
     for (const digest of keys[document]!) {
       const e = (v.entries as Record<string, any>)[digest];
-      entries[digest] = { entry: digest, kind: 'case', statement: '', reference: e.reference, data: { document, node: e.data.node, title: e.data.title, path_labels: [...e.data.path_labels], commands: [...new Set<string>(e.data.commands)].sort(compareText), ...(e.data.command_identities!==undefined?{command_identities:e.data.command_identities}: {}),...(Object.hasOwn(e.data,'command_tree_root')?{command_tree_root:e.data.command_tree_root}: {}) } };
+      entries[digest] = { entry: digest, kind: 'case', statement: '', reference: e.reference, data: { document, node: e.data.node, title: e.data.title, path_labels: [...e.data.path_labels], commands: [...new Set<string>(e.data.commands)].sort(compareText), ...(typeof e.data.object==='string'?{object:e.data.object}:{}), ...(e.data.command_identities!==undefined?{command_identities:e.data.command_identities}: {}),...(Object.hasOwn(e.data,'command_tree_root')?{command_tree_root:e.data.command_tree_root}: {}) } };
     }
   }
-  return { schema: 'index-view@1', product: v.product, build: { root: v.build.root, build: v.build.build }, kind: 'case', key: 'document', only: expected, fields: ['document', 'node', 'commands', 'title', 'path_labels'], keys, entries, cut_keys: [...new Set(v.cut_keys as string[] ?? [])].sort(compareText), truncated: v.truncated, skipped: v.skipped, total_keys: v.total_keys, total_entries: v.total_entries, notes: [...v.notes].sort(compareText) };
+  return { schema: 'index-view@1', product: v.product, build: { root: v.build.root, build: v.build.build }, kind: 'case', key: 'document', only: expected, fields: ['document', 'node', 'commands', 'title', 'path_labels',...(Object.values(entries).some(entry=>typeof entry.data.object==='string')?['object']:[])], keys, entries, cut_keys: [...new Set(v.cut_keys as string[] ?? [])].sort(compareText), truncated: v.truncated, skipped: v.skipped, total_keys: v.total_keys, total_entries: v.total_entries, notes: [...v.notes].sort(compareText) };
 }

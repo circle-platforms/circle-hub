@@ -29,6 +29,8 @@ export interface FeedingCut {
   offset: number | null;
   /** Objects of the five kinds keyed by digest, minus objects a retraction before the offset invalidated. */
   objects: Map<string, KnowledgeStructureObject>;
+  /** Valid function projections, grouped by exact root (or null), content identity and source identity. */
+  casesByRoot?: Map<string|null, Map<string, Map<string, { body: KnowledgeStructureObject; record: string; position: number }>>>;
   /** Direct bindings per object digest, oldest first. */
   bindings: Map<string, VersionBinding[]>;
   /** Digests a retraction before the offset invalidated (withdrawn: excluded from views, still visible in provenance). */

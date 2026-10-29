@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.6.21",
+  "version": "1.6.22",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "d74feebf243159e3238f493d4d10d258de6c012258f5123bf4b0d38bc426ef21",
-      "size": 10789
+      "sha256": "dc0034e71b93790f257a12acd53a4e30fef24e61b658ab0d14877135d31b65c6",
+      "size": 11074
     },
     {
       "path": "checks.json",
@@ -23,13 +23,13 @@
     },
     {
       "path": "examples/submission.json",
-      "sha256": "a5f325b7a4d83dd8c94a2fac00331c6578d36e52fb65fb0e91f9268798b54cb7",
-      "size": 1916
+      "sha256": "730c327fd8bff528ad1a969488aeb97e4c32af0801094f099197767869da94a0",
+      "size": 1953
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "7bb0820012a8835d94d9909ec080bb75f4ffc6ba0f71c6afb773520a2803e358",
-      "size": 1473
+      "sha256": "71e7e17301ed9f703c8bb861b0f94c05d7849cb71e679b65ca4d9f0a5f7cb393",
+      "size": 1508
     },
     {
       "path": "functions/case-identity.ts",

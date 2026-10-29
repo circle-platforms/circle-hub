@@ -1,7 +1,7 @@
 // Views of the Hub's own knowledge that workflow packs read like any external object (`knowledge:<type>:<id>`). The Hub serves
 // them itself, stores each answer as an original (so every exact value resolves to a reference) and hands the parsed JSON to the
-// projection and check functions of a pack. A view is derived data, never a second source of truth: every entry in it carries
-// its tree reference. The impact view answers "what changed between two builds, and which entries of another kind sit on the
+// projection and check functions of a pack. A view is derived data, never a second source of truth: an entry carries its
+// tree reference or its exact feeding claim-record reference. The impact view answers "what changed between two builds, and which entries of another kind sit on the
 // changed nodes" (K01 R[1]: the version difference is the regression scope).
 //   knowledge:impact:<product>:<from build>..<to build>[?changed=definition,behaviour&attached=case][&attached_fields=document,node,title][&catalog=commands@1]
 //     (with attached_fields the attached entries carry only those data fields and an empty statement; the changed entries are untouched.
@@ -45,15 +45,15 @@ export const UnversionedView = z.strictObject({
 export type UnversionedView = z.infer<typeof UnversionedView>;
 const ScopeCounts = { unversioned_entries: z.number().int().nonnegative().optional(), unversioned_documents: z.number().int().nonnegative().optional() };
 
-/** An entry of the tree as a view shows it: what it says and where to cite it. */
+/** A tree entry or a separately stored feeding projection as a view shows it. */
 export const ViewEntry = z.strictObject({
   root: Sha256.optional(),
   build: z.null().optional(),
-  entry: Sha256,
+  entry: Sha256.describe('tree entry digest, or the feeding claim record digest; a feeding projection carries its content identity in data.object'),
   kind: EntryKindSchema,
   statement: z.string(),
   data: z.record(z.string(), z.unknown()),
-  reference: referenceUriOf('tree').describe('tree:<root><path>@<entry>, citable as a ground'),
+  reference: referenceUriOf('tree', 'rec').describe('tree:<root><path>@<entry> for a tree entry, or rec:<claim> for a separately stored feeding object; citable as a ground'),
 });
 export type ViewEntry = z.infer<typeof ViewEntry>;
 
@@ -190,6 +190,7 @@ export const IndexView = z.strictObject({
   fields: z.array(DataFieldName).optional().describe('the request asked for only these data fields per entry: each entry carries them and an empty statement; absent means full entries'),
   only: z.array(z.string()).optional().describe('the requested index values, deduplicated and sorted in UTF-16 code-unit order; absent when the request has no only parameter'),
   cut_keys: z.array(z.string()).optional().describe('listed keys whose entries were cut by MAX_INDEX_PER_KEY, sorted in UTF-16 code-unit order; generated views always include an empty array when none were cut; keys omitted entirely by the byte or entry budget are not included'),
+  key_space_complete: z.boolean().optional().describe('true only when this page lists every raw key in the frozen view and no known skipped source, unresolved feeding projection or missing indexed field can add a key; it does not cover unobserved sources; absent on legacy views'),
   totals: z.strictObject({...ScopeCounts,entry_counts:KnowledgeEntryCounts.optional().describe('All distinct entries of the requested kind, even without the indexed key or outside only; the carrier total remains total_entries')}).optional(),
   total_keys: z.number().int().nonnegative(),
   total_entries: z.number().int().nonnegative(),

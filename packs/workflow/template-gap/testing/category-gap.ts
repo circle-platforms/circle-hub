@@ -8,7 +8,7 @@ import type { Bed } from './bed.ts';
 import { baseDocument, bytesOf, renamed, withoutCategory } from './mindmap.ts';
 
 const FOLDERS = ['合成产品线', '030：合成测试项目', '101：10.6.8', '201: 10.6.8-R1-2026/1', '探测'];
-const WARRANT = ['fact', 'projected', 'function', 'template-gap.coverage@1.2.14'] as const;
+const WARRANT = ['fact', 'projected', 'function', 'template-gap.coverage@1.2.19'] as const;
 
 function requirementOf(result: ValidationResult, item: string): { partition: string; result: ItemResult['requirements'][number] } {
   for (const [partition, items] of Object.entries(result.partitions)) {

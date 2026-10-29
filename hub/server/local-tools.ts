@@ -15,7 +15,7 @@ const UNAUTHENTICATED = Buffer.from('需要有效的 Bearer 令牌\n');
 /** One verified open per user and version. Later requests in this window re-check assignment without extracting again. */
 const DISTRIBUTION_REUSE_MS = 60_000;
 const DISTRIBUTION_CACHE_MAX = 32;
-type LoadedForDownload = NonNullable<Awaited<ReturnType<ServerDeps['workflows']['forUser']>>>;
+type LoadedForDownload = Pick<NonNullable<Awaited<ReturnType<ServerDeps['workflows']['forUser']>>>, 'pack' | 'manifest'>;
 const distributionCache = new Map<string, { at: number; loaded: LoadedForDownload }>();
 const ABSENCE_NOTE = {
   unknown: '版本不存在',
@@ -51,7 +51,7 @@ async function openForDownload(deps: ServerDeps, principal: Principal, ref: stri
     distributionCache.delete(key);
     return null;
   }
-  const loaded = await deps.workflows.forUser(principal, ref);
+  const loaded = await deps.workflows.forUser(principal, ref) ?? await deps.workflows.skillForTools?.(principal, ref) ?? null;
   if (loaded !== null && ask !== undefined) rememberDistribution(key, loaded);
   return loaded;
 }

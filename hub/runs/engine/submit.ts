@@ -1,5 +1,5 @@
 import {firstDeclarationGrowth,unknownOnlyRequirement} from './incremental.ts';
-import {submissionOrigin} from './independence.ts';
+import {effectiveSubmission,submissionOrigin,type EffectiveSubmission} from './independence.ts';
 import {publishCriterionRequests,answerCriterionReview,criterionReviewVisible} from './criterion-changes.ts';
 import { abandonDecision } from './management.ts';
 import { isReason } from '../../../contracts/generated/vocabulary.ts';
@@ -179,7 +179,8 @@ export async function submitResult(ctx: EngineContext, user: Principal, args: Re
       ctx.log({traceId:call.traceId,run:stored.body.run,what:'submit_result interrupted',detail:describe(error)});
       const received=receivedDigest(args);
       const record=await submissionByDigest(ctx.deps.records.store,stored.body.run,received.digest);
-      if(record!==null)await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:[recReference(record.digest)],submissionRecord:record.digest,startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:['check_error'],result:'error',errorCode:'check_error',detail:{hub_error:true,submission:received.digest,session:sessionOf(call),model:typeof args.model==='string'?args.model:null,repair:[],result:null,fix:'Hub 将在启动和每分钟自动重验，最多三次；也可带同一会话原样重交，不需要修改提交'}});
+      const parsed=Submission.safeParse(args),effective=parsed.success?effectiveSubmission(parsed.data,stored.body,sessionOf(call)):null;
+      if(record!==null)await putAction(ctx.deps.records.store,{action:'validate',run:stored.body.run,inputs:[recReference(record.digest)],submissionRecord:record.digest,startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:['check_error'],result:'error',errorCode:'check_error',detail:{hub_error:true,submission:received.digest,session:sessionOf(call),model:effective?.model??(typeof args.model==='string'?args.model:null),repair:[],result:null,fix:'Hub 将在启动和每分钟自动重验，最多三次；也可带同一会话原样重交，不需要修改提交'}});
       return {call_result:'error',acceptance:'not_accepted',errors:[{code:'check_error',message:'未校验（中断）',fix:'Hub 将自动重验；也可带同一会话原样重交，不需要修改提交'}]};
     }
   });
@@ -191,11 +192,11 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const run = stored.body;
   const received = receivedDigest(args);
   const sessionNow = sessionOf(call);
-  const modelNow = typeof args.model === 'string' ? wellFormed(args.model) : null;
-
   const startedAt = ctx.now().toISOString();
   // Arguments canonical JSON cannot carry are never parsed: nothing built from them could be stored.
   const parsed = received.canonical ? Submission.safeParse(args) : null;
+  const effective = parsed?.success ? effectiveSubmission(parsed.data,run,sessionNow) : null;
+  const modelNow = typeof args.model === 'string' ? wellFormed(args.model) : effective?.model ?? null;
   const existing = await submissionByDigest(store, run.run, received.digest);
   const kept: Kept =
     existing !== null
@@ -211,9 +212,9 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const repeat = !useCached ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
   if (repeat !== null) return answerOf(repeat);
   const previous=useCached?await resultFor(store,run.run,received.digest):null;
-  if (useCached && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return answerOf(previous.body);
+  if (useCached && effective !== null && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return answerOf(previous.body);
 
-  const model = parsed?.success ? parsed.data.model : typeof args.model === 'string' ? wellFormed(args.model) : null;
+  const model = parsed?.success ? effective?.model ?? null : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
   const action = (input: { acceptance: Acceptance | null; codes: string[]; repair: string[]; result: string | null; actionResult?: 'error'; errorCode?: string; extra?: Record<string, unknown> }) =>
     putAction(store, {
@@ -259,7 +260,10 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     if (early !== null) {
       const errors = withRounds(workflow, args, [early], roundsUsed);
       outcome = { result: notAccepted(base, errors), problems: requirementsOf(errors) };
-    } else if (parsed?.success === true) outcome = await validate(base, parsed.data, [], null);
+    } else if (parsed?.success === true && effective === null) {
+      const error=protocolError('SUBMISSION_SCHEMA_VIOLATION','本次提交没有可沿用或显式声明的模型身份',{path:'/model_identity',fix:'本会话显式声明 model_identity，或带原先声明身份的同一 Circle 会话重交'});
+      outcome={result:notAccepted(base,[error]),problems:new Set()};
+    } else if (parsed?.success === true && effective !== null) outcome = await validate(base, effective, [], null);
     else outcome = await validatePartial(base, args, parsed?.error ?? null);
   } catch (error) {
     if (!(error instanceof HubReadFailure)) throw error;
@@ -471,7 +475,7 @@ async function validatePartial(base: Basis, args: Record<string, unknown>, error
     });
   }
   const model = typeof args.model === 'string' && args.model.length > 0 ? args.model : UNDECLARED_MODEL;
-  const partial: Submission = { run: base.run.run, model, items, ...(cross.length > 0 ? { cross_item: cross } : {}) };
+  const partial: EffectiveSubmission = { run: base.run.run, model, items, ...(cross.length > 0 ? { cross_item: cross } : {}) };
   const checked = await validate(base, partial, issues.length > 0 ? issues : [protocolError('SUBMISSION_SCHEMA_VIOLATION', '提交的结构不对', { path: '' })], positions);
   return checked;
 }
@@ -495,7 +499,7 @@ export function runtimeCheckProblems(workflow: LoadedWorkflow, items: readonly {
   return errors;
 }
 
-async function validate(base: Basis, submission: Submission, before: ProtocolError[], positions: Positions | null): Promise<Validated> {
+async function validate(base: Basis, submission: EffectiveSubmission, before: ProtocolError[], positions: Positions | null): Promise<Validated> {
   const { ctx, user, call, run, workflow, roundsUsed } = base;
   const capability=workflow.workflow.contribution;
   const attribute=(errors:ProtocolError[])=>errors.map(error=>{
@@ -557,7 +561,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   const declarations = new Set((run.outputs?.tasks ?? []).map(output => output.id));
   for (const [i, output] of (submission.task_outputs ?? []).entries()) if (!declarations.has(output.output)) structure.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', '按任务的产出未在任务包里声明', {path:pointerOf('task_outputs',i,'output'),fix:'请任务包维护人在 workflow.outputs.tasks 声明该产出，或从 task_outputs 移除后重交'}));
   const exact = await resolveSubmission(scope, resolver, workflow, run.items, submission);
-  const origin: ProducerOrigin = submissionOrigin(submission,[run.session ?? null, sessionOf(call)]);
+  const origin: ProducerOrigin = submissionOrigin(submission,[run.session ?? null, sessionOf(call)],run,sessionOf(call));
   const author: AuthorOrigin | null = await authorOriginOf(ctx, run);
   const moved = (errors: ProtocolError[]): ProtocolError[] => errors.map((e) => (positions === null || e.path === undefined ? e : { ...e, path: remap(e.path, positions) }));
   // Partial-schema errors already carry original argument positions and rounds.

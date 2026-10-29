@@ -23,6 +23,30 @@ export function stripPrefix(label: string): string {
   return match ? text.slice(match[0].length).trim() : text;
 }
 
+/** Version candidates in the declared coded agile ancestor layers, without selecting a winner on conflict. */
+export function directoryBindingLines(labels: readonly string[]): { lines: string[]; complete: boolean; module: string|null } {
+  // A partial path or label is not evidence of a complete version level.
+  if (labels.length > MAX_LABELS || labels.some((label) => label.length > MAX_LABEL)) return { lines: [], complete: false, module:null };
+  const lines: string[] = [];
+  let sawTrain = false;
+  let module:string|null=null;
+  for (const [index,label] of labels.entries()) {
+    const prefix = PREFIX.exec(label);
+    if (prefix === null) continue;
+    const rest = label.slice(prefix[0].length).trim();
+    const line = LINE.exec(rest);
+    const train = line === null && !sawTrain ? TRAIN.exec(rest) : null;
+    if (train !== null) {sawTrain = true;const next=labels[index+1];if(next!==undefined){const value=stripPrefix(next);if(isModuleName(value))module=value;}}
+    const version = line?.[1] ?? train?.[1];
+    if (version !== undefined) {
+      // The case-location convention compares the first three components as a line.
+      const canonical = lineKey(version.split('.').slice(0, 3).join('.'));
+      if (!lines.includes(canonical)) lines.push(canonical);
+    }
+  }
+  return { lines, complete: true, module };
+}
+
 function isModuleName(text: string): boolean {
   // famx-directory@1: the single segment immediately below the release-train node is the module.
   return /^[^\r\n]{1,1000}$/.test(text);

@@ -49,7 +49,8 @@
 - `expected`：期望结果列表。每个期望结果必须自己带 `quote`，槽位路径为 `/cases/<用例序号>/expected/<期望结果序号>/quote`。不要把引文放在用例一级。不要写 `identity`、`after`、`digest`、`sha256`、`original`、`span` 或 `byte_span`：Hub 从 `reference` 解析出源摘要、parser@主版本、片段路径，再在原件字节里定位引文的 offset 和 length，得到 ExpectedQuoteIdentity 后核对。
   - `text`：期望结果文字，必须是自身引文的非空逐字片段，不得改写。
   - `quote`：`{ "text": "<修复说明或手册里的逐字原文>", "reference": "src:<64位摘要>/<解析器@主版本>/<片段路径>" }`。`reference` 用 `resolve_reference` 能解析的那种。修复说明写 `src:<缺陷摘要>/json@1/p/fields/<fix_field>` 或 `src:<缺陷摘要>/json@1/p/fix_notes/<序号>/comment`；手册写 `src:<手册摘要>/<解析器@主版本>/<片段路径>`。
-- `tags`：标签列表，至少包含一个属于团队模板类别的标签（`Functional`、`Negative`、`Boundary`、`Performance`、`Security`、`Compatibility`）。反向用例若含 `Negative` 标签，必须保证 `negative: true`。
+- `id`：本条草稿稳定、唯一的结构标识。
+- `resource`：作者声明的标签数组，原文必须与本包 `tables/resource-tags.json` 的 `text` 完全相等，且至少有一项声明为测试类型。例如功能用例可写 `["functional"]`，反向用例可写 `["negative"]`；大小写、全半角和同义写法不自动转换。`negative` 必须与所选声明的反向属性一致。旧字段 `tags` 只保留原文，不作为测试类型声明。
 
 ## 4. 边界校验与修复规则
 
@@ -58,7 +59,7 @@ Hub 对提交进行两层核对：
    - 引文必须一字不差地存在于引用片段中（`QUOTE_MISMATCH`）。
    - 引用必须在所绑定来源中成功解析（`REFERENCE_UNRESOLVED`）。
 2. **要求项事实检查**：
-   - `shape`（结构）：空标题、缺失步骤或期望结果、优先级越界、非标准标签、同次提交重复用例（退回修复，最多 2 轮）。
+   - `shape`（结构）：空标题、缺失步骤或期望结果、优先级越界、未声明的 resource 标签、同次提交重复用例；标签结构问题按提示档处理。
    - `commands`（命令与参数）：参数类型不符、参数越界或命令不存在；反向用例反驳与预期不一致（退回修复，最多 2 轮）。
    - `grounded`（依据）：只允许本条缺陷 src 原件的 json@1/p/fields/<fix_field>、json@1/p/fix_notes/<序号>/comment，或 manual 槽绑定手册的 src 片段。quote 只写 text 和 reference。Hub 自己推出完整期望引用身份并核对原始字节；引文在片段中不唯一或原件读不到时仍是未知。期望文字不是引文的逐字片段则退回修复，最多 2 轮。
    - `not_duplicate`（去重）：读取键由 Hub 从命令目录解析出的 CommandIdentity 完整路径计算，并自动重绑索引。不要在 data 里写 read_keys。索引在这些命令上没有用例时，结论是范围内没有重复。有同命令用例时，仍按 case-structure@2 比较；缺作者结构则未知，不把未知说成没有重复。
@@ -108,8 +109,9 @@ Hub 对提交进行两层核对：
                   }
                 }
               ],
-              "tags": [
-                "Functional"
+              "id": "draft-1",
+              "resource": [
+                "functional"
               ]
             }
           }

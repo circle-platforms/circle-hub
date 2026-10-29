@@ -72,7 +72,7 @@ by construction (absence is not proof).
 ## How to test
 
 ```
-node --test --test-concurrency=2 "packs/workflow/traceability/**/*.test.ts"
+node tools/run-unit-tests.ts files packs/workflow/traceability/**/*.test.ts
 ```
 
 - `functions/ids.test.ts`, `matrix.test.ts`: the normalisation; hand-built views (one case, many, none, a case carrying two

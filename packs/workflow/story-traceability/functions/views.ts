@@ -55,6 +55,9 @@ export function readIndexView(input: BoundInput, slot: string, expect: { kind: s
   }
   if (typeof model.truncated !== 'boolean') return failure('视图的 truncated 不是布尔值', fix);
   const keys = model.keys as Record<string, string[]>;
+  if(model.key_space_complete!==undefined&&typeof model.key_space_complete!=='boolean')return failure('视图的 key_space_complete 不是布尔值',fix);
+  const scopeComplete=isRecord(model.scope)&&typeof model.scope.complete==='boolean'?model.scope.complete:null;
+  if(model.key_space_complete===true&&(Object.hasOwn(model,'only')||model.skipped!==0||model.total_keys!==Object.keys(keys).length||scopeComplete===false))return failure('视图声称键范围完整，但范围、来源或键计数不完整',fix);
   let missing = 0;
   for (const list of Object.values(keys)) for (const digest of list) if (entries[digest] === undefined) missing++;
   const warnings: PackWarning[] = [];
@@ -67,6 +70,9 @@ export function readIndexView(input: BoundInput, slot: string, expect: { kind: s
   }
   const digest = input.sha256;
   if (typeof digest !== 'string' || !HEX.test(digest)) return failure('绑定的输入没有有效的源文件摘要', fix);
+  const metadata = isRecord(input.meta) && input.meta.index_view_sha256 === digest ? input.meta : null;
+  const omitted = metadata?.index_excluded_entries;
+  if (omitted !== undefined && (!Number.isSafeInteger(omitted) || (omitted as number) < 0)) return failure('视图元数据的 index_excluded_entries 不是非负整数', '请管理员修复视图元数据并重读');
   const view: IndexViewData = {
     product: model.product,
     build: buildName,
@@ -78,6 +84,9 @@ export function readIndexView(input: BoundInput, slot: string, expect: { kind: s
     total_keys: model.total_keys as number,
     total_entries: model.total_entries as number,
     truncated: model.truncated,
+    key_space_complete: typeof model.key_space_complete==='boolean'?model.key_space_complete:null,
+    scope_complete: scopeComplete,
+    excluded_entries: typeof omitted === 'number' ? omitted : null,
     cut_keys: strings(model.cut_keys),
     only: Array.isArray(model.only) ? strings(model.only) : null,
     skipped: model.skipped as number,

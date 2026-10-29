@@ -1,36 +1,21 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { createIsolationProbe, LINUX_PERMISSION_PROBE, linuxProbeOutcome, NODE } from './isolation.ts';
+import { BOOTSTRAP, isolatedCommand, linuxProbeOutcome, NODE, osIsolationAvailable } from './isolation.ts';
 
-function run(prelude = '') {
-  return spawnSync(NODE, ['--permission', '--allow-child-process', '--allow-fs-write=/dev/null', '--no-warnings', '-e', prelude + LINUX_PERMISSION_PROBE], { encoding: 'utf8', env: {} });
-}
-
-test('Linux startup refuses a Node runtime without permission.drop and records the missing capability', async () => {
-  const result = run('process.permission.drop=undefined;');
-  assert.equal(result.error, undefined);
-  assert.equal(result.status, 22, result.stderr);
-  const probe = createIsolationProbe({ probe: async () => linuxProbeOutcome(result.status), retryMs: 5_000 });
-  assert.equal(await probe.available(), false);
-  assert.equal(probe.lastFailure(), 'node_permission_drop_missing');
+test('Node starts without child or write grants even when permission.drop is unavailable', () => {
+  const script = `process.permission.drop=undefined; if(process.permission.has('child')||process.permission.has('fs.write','/dev/null'))process.exit(1);`;
+  const result = spawnSync(NODE, ['--permission', '--no-warnings', '-e', script], { encoding: 'utf8', env: {} });
+  assert.equal(result.error, undefined); assert.equal(result.status, 0, result.stderr);
 });
 
-test('Linux startup refuses a drop implementation that leaves temporary permissions enabled', () => {
-  const result = run('process.permission.drop=()=>{};');
-  assert.equal(result.status, 23, result.stderr);
-  assert.deepEqual(linuxProbeOutcome(result.status), { available: false, lasting: false, reason: 'node_permission_drop_failed' });
+test('the normal worker command grants neither child execution nor filesystem writes', () => {
+  const command = isolatedCommand({ entry: BOOTSTRAP, reads: [], heapMb: 256, cpuSeconds: 10, os: false });
+  assert.equal(typeof osIsolationAvailable, 'function');
+  assert.ok(!command.args.some(arg => arg.startsWith('--allow-child-process') || arg.startsWith('--allow-fs-write')));
 });
 
-test('Linux startup refuses a throwing drop implementation', () => {
-  const result = run("process.permission.drop=()=>{throw Error('synthetic')};");
-  assert.equal(result.status, 23, result.stderr);
-});
-
-test('Linux startup actually revokes Node child and write permissions', t => {
-  const result = run();
-  if (result.status === 22) return t.skip('This Node runtime lacks permission.drop; startup correctly reports it unavailable');
-  assert.equal(result.error, undefined);
-  assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(linuxProbeOutcome(result.status), { available: true });
+test('an unavailable operating-system sandbox still has no production fallback', () => {
+  assert.deepEqual(linuxProbeOutcome(0), { available: true });
+  assert.deepEqual(linuxProbeOutcome(20), { available: false, lasting: false, reason: 'bubblewrap_apparmor_or_user_namespace_unavailable' });
 });
