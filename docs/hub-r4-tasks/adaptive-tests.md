@@ -1,0 +1,5 @@
+# Adapt test parallelism to machine load
+
+The owner replaced the old fixed-two-worker limit: choose test parallelism from available CPU cores and measured CPU utilization and adjust it while work runs. Reuse the existing shared PostgreSQL template and keep each test file isolated. Limit private PostgreSQL clusters from available memory and shared-memory slots, not a fixed worker count. Timing-sensitive parser and performance files run alone so their existing elapsed-time assertions remain meaningful. Never change test assertions or skip tests for speed.
+
+Apply the scheduler to the local unit and acceptance commands, including the acceptance oracle once. Preserve regular/parser-bounds membership and GitHub's machine-readable test/skip counts. Use only synthetic workloads; no settings, credentials, production or devices. Scope: `tools/run-unit-tests.ts`, its tests, `package.json` scripts, this task page, the owner decision in `docs/hub-r4-progress.md`, and a concise note in `docs/hub-r4-research/hub-simplification.md`.

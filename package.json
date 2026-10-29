@@ -19,8 +19,8 @@
     "gen:contracts": "node tools/gen-contracts.ts",
     "verify:contracts": "node tools/gen-contracts.ts --check",
     "test:unit": "node tools/run-unit-tests.ts",
-    "test:acceptance": "node --test --test-concurrency=1 \"tests/acceptance/*.test.ts\"",
-    "test:docs": "node --test \".github/checks/*.test.ts\"",
+    "test:acceptance": "node tools/run-unit-tests.ts acceptance",
+    "test:docs": "node tools/run-unit-tests.ts docs",
     "test": "npm run verify:contracts && npm run test:unit && npm run test:docs && npm run test:acceptance && npm run test:references",
     "typecheck": "tsc --noEmit"
   },
