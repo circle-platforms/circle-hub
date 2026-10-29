@@ -199,8 +199,13 @@ Semantics owned by the server:
   entries are shown, with truncation disclosed. When known, `call_query.trace` narrows the candidates. Matching arguments
   alone do not prove which of several calls timed out; an absent entry also does not prove a failure or that the request
   never arrived. A completed visible start names its run and production-result records for `get_nodes` to read under
-  current permissions. The former `get_nodes` response body is not saved, so a lost read response remains missing and
-  names a current-permission re-read exit. Restart loses the in-flight index; the durable call log remains.
+  current permissions. A future successful `get_nodes` response can be retained in memory for at most 10 minutes within
+  a 64 MiB budget. With a unique trace, the caller may retrieve that historical snapshot only after the current source
+  and dynamic-record visibility checks succeed. A tree check is limited to 512 source captures and 100 each of included
+  contributions and feeding records; unsupported or unverifiable cases stay unknown with a re-read exit. Original
+  responses lost before this feature, expired or evicted entries, and process restarts cannot be recovered from the cache.
+  Restart also loses the in-flight index; the durable call log remains. The recovered text is labeled as the original
+  call's snapshot and may differ from current knowledge.
 - `start_run`: `ServerDeps.runsDetail.startRunDetailed` when the assembly gives it (the answer, the run record digest, the
   production result, the evidence gaps for the text), else `RunsService.startRun`.
 - `resolve_reference`, `submit_result`: `RunsService`; a `submit_result` answer that carries a result also gets its stored

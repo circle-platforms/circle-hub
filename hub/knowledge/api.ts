@@ -11,6 +11,7 @@ import type { Knowledge } from './service.ts';
 import { viewReader } from './views.ts';
 
 export { createKnowledge } from './service.ts';
+export { recoverySourcesReadable } from './recovery-sources.ts';
 export type { BuildCalibrationInput, Knowledge, KnowledgeCalibration, KnowledgeOptions, KnowledgePlacement } from './service.ts';
 export type { ReadRoot, ReadRootQuery } from '../ports.ts';
 
