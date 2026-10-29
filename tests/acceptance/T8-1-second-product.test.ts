@@ -12,6 +12,7 @@ import { startPostgres } from '../../hub/testing/postgres.ts';
 import { productPacks } from './support/env.ts';
 import { openBed } from './support/hub.ts';
 import { draft, startReview, resultOf } from './support/review.ts';
+import { fileURLToPath } from 'node:url';
 
 // Compare the public result schema and actual terminals without substituting product-specific text or volatile references.
 const shape = (result:ValidationResult) => ({
@@ -79,7 +80,7 @@ test('T8-1 Lumen and ORBIT use identical review and defect-to-case workflows and
 });
 
 test('T8-1 production core contains no product identity literals',async()=>{
-  const root=new URL('../../hub/',import.meta.url).pathname;
+  const root=fileURLToPath(new URL('../../hub/',import.meta.url));
   const forbidden=new Set((await productPacks()).flatMap(product=>[product.id,product.line,...product.names]));
   const violations:string[]=[];
   async function visit(dir:string):Promise<void>{

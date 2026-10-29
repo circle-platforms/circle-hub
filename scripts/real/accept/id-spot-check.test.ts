@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { main, sampleIds } from './id-spot-check.ts';
+import { fileURLToPath } from 'node:url';
 
 const data = { requirements: ['870001', '870002', '870001'], defects: ['880001'], unclassified: ['890001', '890002'] };
 const raw = { partitions: { delivered: [{ item: '950801', requirements: [{ requirement: 'location', claims: [{ statement: { data } }] }] }] } };
@@ -33,7 +34,7 @@ test('samples all categories including unclassified IDs and writes a private imm
 });
 test('record paths in Git are rejected', async t => {
   const w = world(t);
-  assert.equal(await main(['sample', '--results', w.results, '--record', new URL('./forbidden-record.json', import.meta.url).pathname], () => {}), 2);
+  assert.equal(await main(['sample', '--results', w.results, '--record', fileURLToPath(new URL('./forbidden-record.json', import.meta.url))], () => {}), 2);
 });
 test('tally counts found, not found and blank exactly; only all found exits zero', async t => {
   const w = world(t); await main(['sample', '--results', w.results, '--count', '3', '--seed', 'synthetic', '--record', w.record], () => {});
