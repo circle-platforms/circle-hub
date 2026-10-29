@@ -27,7 +27,7 @@ import {
   type ToolDefinition,
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
-import { IntegrityError, RecordsError, isSha256, type Principal } from '../records/api.ts';
+import { IntegrityError, RecordsError, isSha256, withRequestPermissions, type Principal } from '../records/api.ts';
 import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import { SandboxError } from '../rules/api.ts';
 import type { ServerDeps } from './api.ts';
@@ -562,6 +562,17 @@ export interface ToolResult {
 
 /** Runs one tool call and returns the MCP result; an answer that violates the output schema throws an internal error instead. */
 export async function callTool(deps: ServerDeps, call: ToolCall, name: string, args: Record<string, unknown> | undefined): Promise<ToolResult> {
+  if (!DEFINITIONS.has(name) || !isToolName(name)) return callToolWithPermissions(deps,call,name,args);
+  try { return await withRequestPermissions(deps.records?.artifacts,call.principal,()=>callToolWithPermissions(deps,call,name,args)); }
+  catch (error) {
+    if (error instanceof McpError) throw error;
+    call.state.callResult = 'error';
+    call.context.adminNote(`request permissions: ${describeInternalError(error)}`);
+    throw internalError(call.context.traceId);
+  }
+}
+
+async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: string, args: Record<string, unknown> | undefined): Promise<ToolResult> {
   const definition = DEFINITIONS.get(name);
   if (definition === undefined || !isToolName(name)) {
     call.state.callResult = 'error';

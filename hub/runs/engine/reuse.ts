@@ -20,7 +20,7 @@ import type { EngineContext } from './deps.ts';
 import { emptyEvidence, resolveSlots, type ItemEvidence, type QuotePlace, type Resolver, type RunScope } from './exact.ts';
 import type { ProducerOrigin } from './independence.ts';
 import type { CarriedItem } from './evaluate.ts';
-import { actionOfSubmission, latestAccepted, runById, submissionByDigest } from './store.ts';
+import { actionOfResult, latestAccepted, runById, submissionByDigest } from './store.ts';
 import { isObject, pointerOf, valueAt } from './util.ts';
 
 /** Every reference a judgment claim cites: grounds and the referents of its exact values. */
@@ -145,11 +145,11 @@ function submissionView(ctx: EngineContext, result: StoredRecord<ValidationResul
       if (submission === null) return null;
       const parsedSubmission = Submission.safeParse(submission.body);
       if (!parsedSubmission.success) return null;
-      const action = await actionOfSubmission(store, submission.digest);
+      const action = await actionOfResult(store, submission.digest, result.digest);
       const detail = isObject(action?.body.detail) ? action.body.detail : {};
       const run = await runById(store, result.body.run);
       const sessions = [run?.body.session ?? null, typeof detail.session === 'string' ? detail.session : null];
-      return { entries: new Map(parsedSubmission.data.items.map((e) => [e.item, e])), origin: submissionOrigin(parsedSubmission.data,sessions) };
+      return { entries: new Map(parsedSubmission.data.items.map((e) => [e.item, e])), origin: submissionOrigin(parsedSubmission.data,sessions,run?.body,typeof detail.session === 'string' ? detail.session : null) };
     })();
     views.set(result.digest, view);
   }

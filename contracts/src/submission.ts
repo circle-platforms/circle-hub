@@ -82,7 +82,7 @@ export const Submission = z
   .strictObject({
     run: RunId,
     model: z.string().min(1).describe('model name and exact configuration as the client declares it'),
-    model_identity: ModelIdentitySchema.optional().describe('Explicit exact model and family identity; absent on legacy submissions, whose family independence stays unknown'),
+    model_identity: ModelIdentitySchema.optional().describe('Explicit model and family identity; if omitted, the current run declaration is reused only for the same observed session; legacy submissions without either stay unknown'),
     items: z.array(ItemSubmission),
     cross_item: z.array(CrossItemSubmission).optional().describe('claims over several items; optional'),
     notes: z.string().optional(),
