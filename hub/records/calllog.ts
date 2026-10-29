@@ -223,6 +223,14 @@ export class PgCallLog implements CallLog {
     }
     if (query.tool !== undefined) add('c.tool = ?', query.tool);
     if (query.runId !== undefined) add('c.run_id = ?', query.runId);
+    if (query.traceId !== undefined) {
+      if (typeof query.traceId !== 'string' || !TRACE.test(query.traceId)) return { items: [], next: null };
+      add('c.trace_id = ?', query.traceId);
+    }
+    if (query.argsDigest !== undefined) {
+      if (typeof query.argsDigest !== 'string' || !/^[0-9a-f]{64}$/.test(query.argsDigest)) return { items: [], next: null };
+      add('c.args_digest = ?', query.argsDigest);
+    }
     if (query.from !== undefined) add('c.at >= ?', normalizeTime(query.from, 'from'));
     if (query.to !== undefined) add('c.at < ?', normalizeTime(query.to, 'to'));
     if (after !== null) add(`c.seq ${descending ? '<' : '>'} ?`, after);

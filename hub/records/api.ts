@@ -746,6 +746,10 @@ export interface CallLogQuery extends PageQuery {
   userId?: string;
   tool?: string;
   runId?: string;
+  /** The W3C trace id of one call. */
+  traceId?: string;
+  /** The digest of the call arguments (`argumentDigest`), to find the calls made with exactly these arguments. */
+  argsDigest?: string;
   /** Inclusive lower and exclusive upper bound on `at`. */
   from?: string;
   to?: string;

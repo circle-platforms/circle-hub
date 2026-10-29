@@ -314,3 +314,22 @@ test('administrator reasons never turn credential matches into stored text or fi
  for(const table of ['records','call_logs','call_notes','call_reasons']){const text=JSON.stringify((await query(kit,`SELECT * FROM ${table}`)).rows);assert.ok(!text.includes(secret));assert.ok(!text.includes(sha256Hex(secret)));}
  const files=await readdir(join(kit.dataDir,'logs'));for(const name of files)assert.ok(!(await readFile(join(kit.dataDir,'logs',name),'utf8')).includes(secret));
 });
+
+test('a query can name one call by its trace id and the digest of its arguments, and a user still sees only their own calls', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const { alice, bob } = await people(kit);
+  const make = (n: number, user: Principal, args: unknown): CallLogInput => ({ at: `2026-10-22T00:00:0${n}.000Z`, traceId: trace(80 + n), spanId: span(80 + n), userId: user.id, sessionId: null, tool: 'get_nodes', runId: null, arguments: args, callResult: 'ok', durationMs: 1 });
+  await kit.callLog.append(make(1, alice, { reference: 'one' }));
+  await kit.callLog.append(make(2, alice, { reference: 'two' }));
+  await kit.callLog.append(make(3, bob, { reference: 'one' }));
+  const one = argumentDigest({ reference: 'one' }).digest;
+  const byDigest = await kit.callLog.query(alice, { tool: 'get_nodes', argsDigest: one });
+  assert.deepEqual(byDigest.items.map((line) => line.trace_id), [trace(81)], 'bob\'s call with the same arguments is not alice\'s');
+  const byTrace = await kit.callLog.query(alice, { tool: 'get_nodes', traceId: trace(82) });
+  assert.deepEqual(byTrace.items.map((line) => line.trace_id), [trace(82)]);
+  assert.deepEqual((await kit.callLog.query(alice, { traceId: trace(83) })).items, [], 'another user\'s trace gives the empty page');
+  assert.deepEqual((await kit.callLog.query(alice, { traceId: 'not-a-trace' })).items, [], 'a malformed trace id matches nothing');
+  assert.deepEqual((await kit.callLog.query(alice, { argsDigest: 'xyz' })).items, [], 'a malformed digest matches nothing');
+  assert.deepEqual((await kit.callLog.query(alice, { argsDigest: one, traceId: trace(82) })).items, [], 'both filters must hold');
+});
