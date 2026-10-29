@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { SandboxError } from './errors.ts';
 import { isolatedCommand, NODE, osIsolationAvailable } from './isolation.ts';
+import { carries, listProcesses } from './orphans.ts';
 import { callPackFunction, type SandboxLimits } from './sandbox.ts';
 
 // Real path: on macOS the temporary directory sits behind the /var symbolic link, which the permission model will not follow.
@@ -43,25 +44,12 @@ async function failure(promise: Promise<unknown>): Promise<SandboxError> {
  * returns how many were killed: an exit by signal, without a result frame, for the tests that need one.
  */
 async function killChildren(dir: string): Promise<number> {
-  const listing = (): Promise<string> =>
-    new Promise((resolve) => {
-      const ps = spawn('/bin/ps', ['-eo', 'pid=,command='], { stdio: ['ignore', 'pipe', 'ignore'] });
-      let text = '';
-      ps.stdout.setEncoding('utf8');
-      ps.stdout.on('data', (chunk: string) => (text += chunk));
-      ps.on('error', () => resolve(text));
-      ps.on('close', () => resolve(text));
-    });
+  // The child's command line carries the pack directory as one read allowance; a sibling pack whose name starts with the
+  // same characters must not match, so the allowance has to be a whole argument. The orphan sweep's listing keeps a path
+  // outside ASCII as it is, whatever locale this test runs in.
+  const allowance = `--allow-fs-read=${dir}`;
   for (let round = 0; round < 100; round++) {
-    const pids: number[] = [];
-    for (const line of (await listing()).split('\n')) {
-      const match = /^\s*(\d+)\s+(.*)$/.exec(line);
-      // The child's command line carries the pack directory as one read allowance; a sibling pack whose name starts with
-      // the same characters must not match, so the allowance has to end there.
-      const command = match?.[2] ?? '';
-      const allowance = `--allow-fs-read=${dir}`;
-      if (match !== null && (command.includes(`${allowance} `) || command.endsWith(allowance))) pids.push(Number(match[1]));
-    }
+    const pids = (await listProcesses()).filter((p) => carries(p, allowance)).map((p) => p.pid);
     if (pids.length > 0) {
       for (const pid of pids) {
         try {
