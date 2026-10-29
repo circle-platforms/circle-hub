@@ -20,6 +20,7 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 - The `Hub checks` workflow now runs type checking, the contracts check, unit tests, acceptance on a temporary PostgreSQL, the reference archive check and the docs checks (`.github/checks`) on Ubuntu. Each test job lists its counts and every skipped test in the job summary and fails when no test ran, so the acceptance job fails until the acceptance suite exists. Tests that need macOS or libpq (the pack sandbox's network denial, the keychain, the launchd check, backup, restore and deploy) skip there, so CI is no evidence for those paths.
 - The unit jobs of `Hub checks` install the PostgreSQL 18 client, so the backup, restore and deploy tests run on Ubuntu. A new `macOS-only paths` workflow runs the tests that need sandbox-exec, the keychain, plutil or launchd on `macos-15` on every push to `main`, nightly and on demand, but not on pull requests. The docs checks refuse a test that calls a pack function in the sandbox without a skip guard.
+- The tests of the pack sandbox run on every pull request: the `Linux isolation` jobs of `Hub checks` install bubblewrap and AppArmor, load the Hub's AppArmor policy for the job's Node, fail when the isolation does not work and run the unit and acceptance files that guard on the sandbox. `tools/run-macos-tests.ts` is now `tools/run-guarded-tests.ts`, which selects the macOS and the Linux files from the same skip guards.
 
 ### Fixed
 

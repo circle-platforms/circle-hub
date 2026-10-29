@@ -1,5 +1,5 @@
 // The Hub checks and macOS workflows must count what each test job ran: an empty or skipped run is not a pass (AGENTS.md,
-// Verification).
+// Verification). The pack sandbox's tests run under real Linux isolation on every pull request, never quietly skipped.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
@@ -50,6 +50,7 @@ describe('test jobs count what ran', () => {
   for (const [job, command, log] of [
     ['unit_parts', 'npm run test:unit -- ${{ matrix.suite }}', 'unit'],
     ['acceptance_parts', 'npm run test:acceptance', 'acceptance'],
+    ['isolation_parts', 'node tools/run-guarded-tests.ts linux ${{ matrix.suite }}', 'isolation'],
     ['docs', 'node --test ".github/checks/*.test.ts"', 'docs'],
   ] as const) {
     it(`${job}: the output is kept and counted, and an empty run fails`, () => {
@@ -59,6 +60,16 @@ describe('test jobs count what ran', () => {
 
   it('docs: the checks are type-checked', () => {
     assert.ok(steps('docs').some((s) => s.includes('npx tsc --noEmit -p .github/checks')));
+  });
+
+  it('no plain scalar holds a colon and a space, which YAML refuses (the whole workflow would then fail to start)', () => {
+    for (const workflow of [WORKFLOW, MACOS]) {
+      const refused = workflow.split('\n').filter((line) => {
+        const value = /^\s*(?:- )?[\w-]+: (?!["'|>])(.*)$/.exec(line)?.[1];
+        return value !== undefined && value.includes(': ');
+      });
+      assert.deepEqual(refused, []);
+    }
   });
 
   it('no job reaches a secret', () => {
@@ -71,6 +82,7 @@ describe('sharded test jobs keep one stable status each', () => {
   for (const [aggregate, parts, variable] of [
     ['unit', 'unit_parts', 'UNIT_SHARD'],
     ['acceptance', 'acceptance_parts', 'ACCEPTANCE_SHARD'],
+    ['isolation', 'isolation_parts', 'GUARDED_SHARD'],
   ] as const) {
     it(`${aggregate} requires every ${parts} job, with no continue-on-error`, () => {
       const body = job(aggregate);
@@ -93,6 +105,18 @@ describe('sharded test jobs keep one stable status each', () => {
   it('acceptance: complete shards, each within the job timeout', () => {
     assertCompleteShards(shards('acceptance_parts'), 'acceptance');
     assert.match(job('acceptance_parts'), /timeout-minutes: \d+/);
+  });
+
+  it('Linux isolation: the unit and the acceptance files each in complete shards, each within the job timeout', () => {
+    const body = job('isolation_parts');
+    let listed = 0;
+    for (const suite of ['unit', 'acceptance']) {
+      const suiteShards = [...body.matchAll(new RegExp(`\\{ suite: ${suite}, shard: ([\\d/]+) \\}`, 'g'))].map((m) => m[1]);
+      assertCompleteShards(suiteShards, `Linux isolation ${suite}`);
+      listed += suiteShards.length;
+    }
+    assert.equal(shards('isolation_parts').length, listed, 'no other Linux isolation partition');
+    assert.match(body, /^    timeout-minutes: \d+$/m);
   });
 
   it('no job continues on error', () => {
@@ -118,6 +142,46 @@ describe('backup, restore and deploy tests find pg_dump and pg_restore 18 on Ubu
     assert.match(step, /https:\/\/apt\.postgresql\.org\/pub\/repos\/apt/, 'from the PostgreSQL apt repository');
     assert.match(step, /--version \| grep -E ' 18\\\.'/, 'the installed tools report major 18');
     assert.ok(step.includes('echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"'), 'first on PATH, where hub/platform/backup.ts looks on Linux');
+  });
+});
+
+describe('the pack sandbox runs under Linux isolation on every pull request and push to main', () => {
+  const all = steps('isolation_parts');
+  const index = (text: string): number => all.findIndex((s) => s.includes(text));
+
+  it('checks.yml runs on pull requests and on a push to main', () => {
+    const triggers = WORKFLOW.slice(WORKFLOW.indexOf('\non:'), WORKFLOW.indexOf('\npermissions:'));
+    assert.match(triggers, /^  push:\n    branches: \[main\]$/m);
+    assert.match(triggers, /^  pull_request:$/m);
+    assert.ok(job('isolation_parts').includes('runs-on: ubuntu-24.04'));
+  });
+
+  it('installs bubblewrap and the AppArmor tools, bounded, with retries, and checks both executables', () => {
+    const install = all[index('install -y --no-install-recommends bubblewrap apparmor')];
+    assert.ok(install !== undefined, 'installs bubblewrap and apparmor');
+    assert.match(install, /timeout-minutes: \d+/);
+    assert.match(install, /sudo timeout \d+ apt-get -o Acquire::Retries=\d+ update/);
+    assert.match(install, /sudo timeout \d+ apt-get -o Acquire::Retries=\d+ install -y/);
+    assert.ok(install.includes('test -x /usr/bin/bwrap') && install.includes('test -x /usr/bin/aa-exec'), 'the paths linux.ts runs');
+  });
+
+  it('loads the policy generated for the job\'s own Node, then requires isolation before any test runs', () => {
+    const install = index('bubblewrap apparmor');
+    const load = index('node hub/rules/sandbox/linux.ts');
+    const ready = index('id: ready');
+    const run = index('node tools/run-guarded-tests.ts linux');
+    assert.ok(install !== -1 && install < load && load < ready && ready < run, 'install, load, require, run, in that order');
+    assert.match(all[load], /node hub\/rules\/sandbox\/linux\.ts > "\$RUNNER_TEMP\/([\w.-]+)"[\s\S]*sudo apparmor_parser -r "\$RUNNER_TEMP\/\1"/);
+    assert.ok(all[ready].includes('osIsolationAvailable()') && all[ready].includes('process.exit(1)'), 'missing isolation fails the job');
+    assert.doesNotMatch(all[run], /\bif:/, 'the tests run only when every earlier step passed');
+  });
+
+  it('no workflow loosens the kernel\'s user namespace restriction: the profile\'s own userns rule is enough', () => {
+    const loosening = /\bsysctl\s+(?:-\w+\s+)*-w\b|apparmor_restrict_unprivileged_userns\s*=|(?:>|\btee\b[^\n|]*)\s*\/proc\/sys\/kernel\/apparmor_restrict_unprivileged_userns/;
+    for (const workflow of [WORKFLOW, MACOS]) assert.doesNotMatch(workflow, loosening);
+    assert.match('sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0', loosening);
+    assert.match('echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns', loosening);
+    assert.ok(all[index('node hub/rules/sandbox/linux.ts')].includes('cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns'), 'the log shows the value in effect');
   });
 });
 
@@ -147,7 +211,7 @@ describe('the macOS-only paths run outside pull requests', () => {
     ['acceptance', 'macos-acceptance'],
   ] as const) {
     it(`${kind}: the selected files run, and the output is kept and counted`, () => {
-      assertCounted(steps('macos', MACOS), `node tools/run-macos-tests.ts ${kind}`, log);
+      assertCounted(steps('macos', MACOS), `node tools/run-guarded-tests.ts macos ${kind}`, log);
     });
   }
 });

@@ -165,7 +165,9 @@ Layers, outermost first:
    An administrator installs the generated policy for the exact service Node binary, for example by piping the output of
    `node hub/rules/sandbox/linux.ts` to `apparmor_parser -r`. Reinstall it after changing that binary or shell. The host must
    allow the launcher profile to create user namespaces. Linux systems without a usable AppArmor policy need an equivalent
-   independently verified kernel backend before Hub can run pack functions. This does not alter CI configuration.
+   independently verified kernel backend before Hub can run pack functions. The `Linux isolation` jobs of the Hub checks
+   do the same on an `ubuntu-24.04` runner for the Node that setup-node provides, leave
+   `kernel.apparmor_restrict_unprivileged_userns` at the runner's default (1) and run the tests that guard on the sandbox.
 
    Each Linux child also tests the loaded enforcement before importing any pack: real execution of Node, synchronous and
    asynchronous writes to an isolated writable synthetic directory, and a pathname Unix socket connection must all fail with
@@ -295,7 +297,8 @@ whose name is not ASCII; all are killed at the end); nothing else is reached.
 - **platform/server**: call `stopAll()` from the SIGTERM and SIGINT handlers before exiting, and `sweepOrphans()` once at
   start; decide where `requireOsIsolation: false` may be configured (test harnesses only); optionally run `runSamples()` at
   start and refuse to serve when a sample fails (C05 R[0]).
-- **CI**: the Linux runners lack `sandbox-exec`; sandbox-dependent acceptance either runs on macOS or explicitly opts out.
+- **CI**: done. The `Linux isolation` jobs run the unit and acceptance files that guard on the sandbox under bubblewrap and
+  AppArmor on every pull request; `sandbox-exec` itself runs only in the `macOS-only paths` workflow.
 
 ## quote@1: which sources the check reads
 

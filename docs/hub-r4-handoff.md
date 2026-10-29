@@ -40,7 +40,7 @@ node --test --test-concurrency=3 "hub/**/*.test.ts" "packs/**/*.test.ts" "contra
 node bin/circle-hub status          # 持久部署的状态；其他命令见 node bin/circle-hub help
 ```
 
-跳过的用例和 `todo` 用例要如实报，不算通过。需要 macOS 的路径（沙箱断网、钥匙串、launchd）在 Linux CI 上跳过。
+跳过的用例和 `todo` 用例要如实报，不算通过。包内函数的沙箱和断网在 Linux CI 的 `Linux isolation` 任务里以 bubblewrap 与 AppArmor 运行；需要 macOS 的路径（`sandbox-exec`、钥匙串、launchd）在 Linux CI 上跳过。
 
 ## 规则（摘要，全文在 AGENTS.md）
 
