@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { EGRESS, GENERATED, PACK } from './constants.ts';
 import { scanWithMatches } from './credentials.ts';
 import { canonical, exact, isRecord, need, sessionDirectory, sha256, splitTextLines, text } from './common.ts';
-import { HubClient, validateTokenFile } from './hub.ts';
+import { HubClient, holdsToken, validateTokenFile } from './hub.ts';
 import { appendReceipt, outputBytes, readSettings, verifyState, withLock, type VerifiedCapture } from './state.ts';
 
 interface Quote { reference: string; text: string }
@@ -163,6 +163,8 @@ function checkTargetTokens(rows: readonly Prepared[], token: string): void {
     if (row.device !== undefined) targetText(row.device, 'device', token);
     if (row.bed !== undefined) targetText(row.bed, 'bed', token);
   }
+  // Any text of a proposal, not only its target names, is refused before a run is started for it (round-six review).
+  need(!holdsToken(JSON.stringify(rows), token), 'credential_in_request', '提案含当前 Hub 令牌；清理含令牌的文字后重交');
 }
 
 export async function submitProposals(session: string, proposalPath: string, product: string, build: string | undefined, model: string) {

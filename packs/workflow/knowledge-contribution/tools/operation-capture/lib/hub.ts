@@ -16,6 +16,12 @@ export async function validateTokenFile(path: string): Promise<string> {
   return value;
 }
 
+/** Whether text holds the token, or any 12-character run of it (a shorter token whole). */
+export function holdsToken(value: string, token: string): boolean {
+  const runs = token.length < 12 ? [token] : Array.from({ length: token.length - 11 }, (_, index) => token.slice(index, index + 12));
+  return runs.some(run => value.includes(run));
+}
+
 export class HubClient {
   private url: URL;
   private tokenFile: string;
@@ -31,8 +37,7 @@ export class HubClient {
   }
 
   private guard(value: string, token: string): void {
-    const runs = token.length < 12 ? [token] : Array.from({ length: token.length - 11 }, (_, index) => token.slice(index, index + 12));
-    need(!runs.some(run => value.includes(run)), 'token_echo', 'Hub 应答含令牌形状，整份丢弃');
+    need(!holdsToken(value, token), 'token_echo', 'Hub 应答含令牌形状，整份丢弃');
   }
 
   // A token a caller has checked is passed down to the request that carries it, never kept on the client: concurrent calls
@@ -99,6 +104,9 @@ export class HubClient {
   async callChecked(name: string, args: unknown, check: (token: string) => void): Promise<Record<string, unknown>> {
     const token = await validateTokenFile(this.tokenFile);
     check(token);
+    // Nothing a checked call sends may hold the token it authenticates with, in any field: model-written statements and
+    // quotes included, not only the target names `check` looks at (round-six review).
+    need(!holdsToken(JSON.stringify(args), token), 'credential_in_request', '请求含当前 Hub 令牌；清理提案里含令牌的文字后重交');
     return this.call(name, args, token);
   }
 

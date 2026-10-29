@@ -254,6 +254,51 @@ test('a token rotated after start_run is checked again before submit_result', as
   assert.equal(hub.submissions.length, 0);
 });
 
+test('a proposal text holding the current token is refused before any request carries it (round-six review)', async t => {
+  const local = await scratch(t);
+  const hub = await fakeHub(t);
+  assert.equal((await enable(local, hub.url)).code, 0);
+  assert.equal((await hook(local, 'ORBIT synthetic status: ready\n')).code, 0);
+  const capture = [...hub.uploads.keys()][0]!;
+  const proposals = join(local.home, 'proposals.json');
+  await writeFile(proposals, JSON.stringify({
+    schema: 'operation-integration@1', session: SESSION,
+    items: [{ capture, kind: 'observation', path: '/commands/system/show', statement: `合成说明 ${TOKEN}`, action: '执行合成检查', device: 'edge-a', quote: { line: 1, text: 'ORBIT synthetic status: ready' } }],
+  }));
+  const result = await skill(local, ['submit', '--session', SESSION, '--proposals', proposals, '--product', 'ORBIT', '--model', 'integration-synthetic@1']);
+  assert.equal(result.code, 1, result.err);
+  assert.match(result.err, /令牌/);
+  assert.equal(result.err.includes(TOKEN), false);
+  assert.equal(hub.runs.length, 0, 'refused before a run is started for it');
+  assert.equal(hub.submissions.length, 0);
+  assert.ok(hub.requests.every(row => !JSON.stringify(row.body).includes(TOKEN)), 'no request body carries the token');
+});
+
+test('a token rotated after start_run into a proposal text is refused before submit_result (round-six review)', async t => {
+  const local = await scratch(t);
+  const rotated = 'FictRotatedIntoActionText55';
+  const hub = await fakeHub(t, {
+    tokens: [TOKEN, rotated],
+    onRequest: async input => {
+      if (input.method === 'tools/call' && input.params.name === 'start_run') await writeFile(local.tokenFile, `${rotated}\n`, { mode: 0o600 });
+    },
+  });
+  assert.equal((await enable(local, hub.url)).code, 0);
+  assert.equal((await hook(local, 'ORBIT synthetic status: ready\n')).code, 0);
+  const capture = [...hub.uploads.keys()][0]!;
+  const proposals = join(local.home, 'proposals.json');
+  await writeFile(proposals, JSON.stringify({
+    schema: 'operation-integration@1', session: SESSION,
+    items: [{ capture, kind: 'observation', path: '/commands/system/show', statement: '轮换后的令牌', action: `执行 ${rotated} 检查`, device: 'edge-a', quote: { line: 1, text: 'ORBIT synthetic status: ready' } }],
+  }));
+  const result = await skill(local, ['submit', '--session', SESSION, '--proposals', proposals, '--product', 'ORBIT', '--model', 'integration-synthetic@1']);
+  assert.equal(result.code, 1, result.err);
+  assert.match(result.err, /令牌/);
+  assert.equal(result.err.includes(rotated), false);
+  assert.equal(hub.runs.length, 1);
+  assert.equal(hub.submissions.length, 0);
+});
+
 test('credential-shaped explicit device or bed text is refused before start_run', async t => {
   const local = await scratch(t);
   const hub = await fakeHub(t);
