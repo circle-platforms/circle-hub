@@ -29,6 +29,7 @@ import {
   parserCacheKey,
   prefetchReferences,
   resolveReference,
+  sandboxReadDiagnostic,
   withRange,
   type QuoteCandidate,
   type ReaderIdentity,
@@ -383,9 +384,9 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
           attempt => { if (attempt.retry || attempt.attempt > 1) attempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt, {reference:canonical})); });
       } catch (error) {
         // A sandbox failure can carry plugin-controlled output and paths in its details.
-        ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: error instanceof SandboxError ? `技能包沙箱失败：${error.code}` : error instanceof ParseError ? `技能包解析失败：${error.code}` : describe(error) });
+        ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: error instanceof SandboxError ? sandboxReadDiagnostic(error).admin : error instanceof ParseError ? `技能包解析失败：${error.code}` : describe(error) });
         if (consumer === 'function') throw new HubReadFailure(canonical, 'check_error', attempts);
-        if (error instanceof SandboxError) return { ok: false, code: 'SOURCE_RETRYABLE', retryable: true, message: error.detail.limit === 'document_cache_bytes' ? `文档缓存估算超过预算：${error.code}` : `来源片段暂时未核对：技能包沙箱 ${error.code}`, fix: error.detail.limit === 'document_cache_bytes' ? '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读' : '管理员核对技能包和沙箱状态，恢复后重新解析该引用' };
+        if (error instanceof SandboxError) { const diagnostic=sandboxReadDiagnostic(error); return { ok: false, code: 'SOURCE_RETRYABLE', retryable: true, message: diagnostic.message, fix: error.detail.limit==='document_cache_bytes' ? diagnostic.fix : `${diagnostic.fix}；恢复后重新解析该引用` }; }
         if (error instanceof ParseError) return { ok: false, code: 'SOURCE_RETRYABLE', retryable: true, message: '来源片段暂时未核对：技能包解析未完成', fix: '管理员核对技能包和原件格式，修正后重新解析该引用' };
         return { ok: false, message: `引用解析不出（${UNAVAILABLE_MESSAGE}）` };
       }
@@ -457,10 +458,11 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
       catch (error) {
         const code = error instanceof SandboxError ? error.code : 'SOURCE_RETRYABLE';
         const cacheLimit = error instanceof SandboxError && error.detail.limit === 'document_cache_bytes';
-        ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:`来源片段预取未完成：${code}`});
+        const diagnostic=error instanceof SandboxError?sandboxReadDiagnostic(error):null;
+        ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:diagnostic?.admin??`来源片段预取未完成：${code}`});
         aborted=new HubReadFailure(inScope[0] ?? '', 'check_error', attempts,
-          cacheLimit ? `Hub 文档缓存估算超过预算，核验未完成（${code}）` : `Hub 来源片段核对未完成（${code}）`,
-          cacheLimit ? '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读；本次不计修复轮数' : '管理员核对技能包和沙箱状态，恢复后原样重交；本次不计修复轮数');
+          cacheLimit ? `Hub 文档缓存估算超过预算，核验未完成（${code}）` : diagnostic ? `Hub 核验未完成：${diagnostic.message}` : `Hub 来源片段核对未完成（${code}）`,
+          diagnostic ? `${diagnostic.fix}；恢复后原样重交，本次不计修复轮数` : '管理员核对技能包和沙箱状态，恢复后原样重交；本次不计修复轮数');
         throw aborted;
       }
     },
