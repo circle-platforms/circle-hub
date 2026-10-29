@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { chmod, lstat, readdir, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readdir, readFile, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { canonicalBytes, IntegrityError, sha256Hex } from '../../records/api.ts';
 import { callPackFunction } from '../../rules/api.ts';
 import { readPackDirectory } from './directory.ts';
-import { Extractor, type ExtractionSource, type TamperEvent } from './extract.ts';
+import { Extractor, moveReadOnlyDirectory, type ExtractionSource, type TamperEvent } from './extract.ts';
 import { corruptByte, temporaryDirectory, withFiles, workflowPack, writePack } from './testing/builder.ts';
 import type { PackDirectory } from './types.ts';
 
@@ -214,4 +214,34 @@ test('a pack function runs from the extracted directory, and nothing it does can
   const ok = await callPackFunction({ packDir: directory, module: 'functions/project.ts' }, { inputs: [] }, {}, { requireOsIsolation: false });
   assert.deepEqual(ok.output, { items: [], warnings: [] });
   await rm(join(temp.path, `fn${n}`), { recursive: true, force: true });
+});
+
+// macOS 15 refuses to rename a directory without write permission; Linux and macOS 26 allow it.
+const macos15Rename = async (from: string, to: string): Promise<void> => {
+  if (((await lstat(from)).mode & 0o200) === 0) throw Object.assign(new Error(`EACCES: permission denied, rename '${from}' -> '${to}'`), { code: 'EACCES' });
+  await rename(from, to);
+};
+
+test('a read-only tree reaches its place where the system refuses to rename a read-only directory, and stays read-only', async () => {
+  const root = join(temp.path, `mv${++n}`);
+  await mkdir(join(root, 'from', 'sub'), { recursive: true });
+  await writeFile(join(root, 'from', 'sub', 'f'), 'x');
+  await chmod(join(root, 'from', 'sub'), 0o500);
+  await chmod(join(root, 'from'), 0o500);
+  await moveReadOnlyDirectory(join(root, 'from'), join(root, 'to'), macos15Rename);
+  assert.equal(await mode(join(root, 'to')), 0o500);
+  assert.equal(await mode(join(root, 'to', 'sub')), 0o500);
+  assert.equal(await readFile(join(root, 'to', 'sub', 'f'), 'utf8'), 'x');
+  await assert.rejects(lstat(join(root, 'from')), { code: 'ENOENT' });
+});
+
+test('a refused rename onto a tree already in place is the lost race: rethrown, the existing tree untouched', async () => {
+  const root = join(temp.path, `mv${++n}`);
+  await mkdir(join(root, 'from'), { recursive: true });
+  await mkdir(join(root, 'to'), { recursive: true });
+  await chmod(join(root, 'from'), 0o500);
+  await chmod(join(root, 'to'), 0o500);
+  await assert.rejects(moveReadOnlyDirectory(join(root, 'from'), join(root, 'to'), macos15Rename), { code: 'EACCES' });
+  assert.equal(await mode(join(root, 'from')), 0o500);
+  assert.equal(await mode(join(root, 'to')), 0o500);
 });
