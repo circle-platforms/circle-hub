@@ -4,7 +4,7 @@
 
 ## How it was checked
 
-- [ ] `npm run typecheck` and `npm test` pass, on synthetic fixtures, scripted models and a temporary PostgreSQL; skipped tests are named here, because a skip is not a pass (tests that need macOS or libpq skip on Ubuntu)
+- [ ] `npm run typecheck` and `npm test` pass, on synthetic fixtures, scripted models and a temporary PostgreSQL; skipped tests are named here, because a skip is not a pass (tests that need macOS skip on Ubuntu, and the macOS workflow does not run on pull requests)
 - [ ] A change to `docs/`, the root Markdown files or `.github/` passes the docs checks, `node --test ".github/checks/*.test.ts"`
 - [ ] Every commit is signed off (`git commit -s`), as the contributor terms in CONTRIBUTING.md require
 - [ ] A contract change edits `contracts/model.json`, `contracts/codes.json` or `contracts/src` and regenerates `contracts/generated` with `npm run gen:contracts` in the same pull request

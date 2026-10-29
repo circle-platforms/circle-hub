@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { setup } from './testing/context.ts';
 import type { Aggregation } from '../../contracts/generated/vocabulary.ts';
 
@@ -147,7 +148,7 @@ test('an uncertified result ownership premise makes every round no_verdict', { t
 test('resume reconciles the started round and a new dispatch continues at the next one', { timeout: 60000 }, async t => {
   const c = await setup(); t.after(() => c.close());
   install(c, policy(3, 'all'));
-  const child = spawn(process.execPath, [new URL('./testing/worker.ts', import.meta.url).pathname], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./testing/worker.ts', import.meta.url))], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
   let output = ''; child.stdout!.on('data', chunk => { output += chunk; });
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
   const ready = new Promise<void>(resolve => child.once('message', () => resolve()));

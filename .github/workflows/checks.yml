@@ -1,8 +1,11 @@
 name: Hub checks
 
 # Synthetic fixtures and scripted models only: no job reaches a real system, a real model endpoint or a secret.
-# Ubuntu has no sandbox-exec, keychain, launchd or libpq of the embedded PostgreSQL's major version, so the tests that need
-# them skip here. The job summary lists every skip; a skip is not a pass, and those paths are checked on macOS (AGENTS.md).
+# Ubuntu has no sandbox-exec, keychain or launchd, so the tests that need them skip here; the unit jobs install the PostgreSQL 18
+# client so that backup, restore and deploy run. The tests of the pack sandbox run in the Linux isolation jobs, which install
+# bubblewrap and AppArmor and load the Hub's policy; every other job has no isolation and skips them. The job summary lists
+# every skip; a skip is not a pass. The macOS paths (sandbox-exec, the keychain, plutil, launchd) run in macos.yml on every
+# push to main, nightly and on demand, and in the local macOS run of each phase (AGENTS.md).
 
 on:
   push:
@@ -11,6 +14,11 @@ on:
 
 permissions:
   contents: read
+
+# A newer push to a pull request replaces its running checks; every push to main keeps its own run.
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   typecheck:
@@ -39,14 +47,21 @@ jobs:
       - run: npm ci
       - run: npm run verify:contracts
 
+  # regular runs in three shards balanced by measured durations (tools/run-unit-tests.ts); parser-bounds stays one single-worker process.
   unit_parts:
-    name: Unit tests / ${{ matrix.suite }}
+    name: Unit tests / ${{ matrix.suite }} ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        suite: [regular, parser-bounds]
+        include:
+          - { suite: regular, shard: 1/3 }
+          - { suite: regular, shard: 2/3 }
+          - { suite: regular, shard: 3/3 }
+          - { suite: parser-bounds, shard: 1/1 }
+    env:
+      UNIT_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -54,12 +69,29 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      # Backup, restore and deploy tests need pg_dump and pg_restore of the embedded server's major version (18), which
+      # Ubuntu does not ship; they come from the PostgreSQL apt repository and go first on PATH (hub/platform/backup.ts).
+      - name: Install the PostgreSQL 18 client
+        if: ${{ matrix.suite == 'regular' }}
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! grep -rqs 'apt.postgresql.org' /etc/apt/sources.list /etc/apt/sources.list.d; then
+            sudo install -d /usr/share/postgresql-common/pgdg
+            sudo curl -fsS --retry 3 --max-time 60 -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+            echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          fi
+          sudo timeout 240 apt-get -o Acquire::Retries=3 update
+          sudo timeout 240 apt-get -o Acquire::Retries=3 install -y --no-install-recommends postgresql-client-18
+          for tool in pg_dump pg_restore; do /usr/lib/postgresql/18/bin/$tool --version | grep -E ' 18\.'; done
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
       - name: Run the unit tests
         shell: bash
         run: npm run test:unit -- ${{ matrix.suite }} 2>&1 | tee "$RUNNER_TEMP/unit.log"
       - name: Count what ran and what was skipped
         if: ${{ !cancelled() }}
-        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/unit.log" 'Unit tests / ${{ matrix.suite }}'
+        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/unit.log" 'Unit tests / ${{ matrix.suite }} ${{ matrix.shard }}'
 
   unit:
     name: Unit tests
@@ -71,10 +103,17 @@ jobs:
       - name: Require every unit partition to pass
         run: test '${{ needs.unit_parts.result }}' = 'success'
 
-  acceptance:
-    name: Acceptance on a temporary PostgreSQL
+  # Four slices balanced by measured file durations (tools/run-acceptance-tests.ts); each file runs in exactly one.
+  acceptance_parts:
+    name: Acceptance on a temporary PostgreSQL / ${{ matrix.shard }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/4, 2/4, 3/4, 4/4]
+    env:
+      ACCEPTANCE_SHARD: ${{ matrix.shard }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -86,11 +125,87 @@ jobs:
       - name: Run the acceptance tests
         shell: bash
         run: npm run test:acceptance 2>&1 | tee "$RUNNER_TEMP/acceptance.log"
-      # node --test succeeds when its pattern matches no file; this step fails then, so the job is red until
-      # tests/acceptance exists (phase 4), never green with nothing run.
+      # A slice that ran no test fails here, so no slice is green with nothing run.
       - name: Count what ran and what was skipped
         if: ${{ !cancelled() }}
-        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/acceptance.log" 'Acceptance'
+        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/acceptance.log" 'Acceptance ${{ matrix.shard }}'
+
+  acceptance:
+    name: Acceptance on a temporary PostgreSQL
+    needs: acceptance_parts
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every acceptance slice to pass
+        run: test '${{ needs.acceptance_parts.result }}' = 'success'
+
+  # The pack sandbox under Linux isolation: bubblewrap and the Hub's AppArmor policy (hub/rules/README.md), installed and loaded
+  # on these runners only, for the Node that setup-node provides and the shell linux.ts expects. The launcher profile's own
+  # userns rule lets bubblewrap create its namespaces, so kernel.apparmor_restrict_unprivileged_userns keeps the runner's
+  # default. The unit and acceptance files that guard on the sandbox (tools/run-guarded-tests.ts linux) run here, in slices
+  # balanced by measured durations; the other jobs have no isolation and skip those tests.
+  isolation_parts:
+    name: Linux isolation / ${{ matrix.suite }} ${{ matrix.shard }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { suite: unit, shard: 1/2 }
+          - { suite: unit, shard: 2/2 }
+          - { suite: acceptance, shard: 1/2 }
+          - { suite: acceptance, shard: 2/2 }
+    env:
+      GUARDED_SHARD: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Install bubblewrap and AppArmor
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo timeout 240 apt-get -o Acquire::Retries=3 update
+          sudo timeout 240 apt-get -o Acquire::Retries=3 install -y --no-install-recommends bubblewrap apparmor
+          test -x /usr/bin/bwrap
+          test -x /usr/bin/aa-exec
+      # The policy names the real paths of this Node and of /bin/sh, so it is generated here, after setup-node.
+      - name: Load the Hub's AppArmor policy for this Node
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "kernel.apparmor_restrict_unprivileged_userns is $(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo absent), as the runner has it"
+          node hub/rules/sandbox/linux.ts > "$RUNNER_TEMP/circle-hub-sandbox.apparmor"
+          cat "$RUNNER_TEMP/circle-hub-sandbox.apparmor"
+          sudo apparmor_parser -r "$RUNNER_TEMP/circle-hub-sandbox.apparmor"
+      # Fail here rather than let every guarded test skip quietly; the runner refuses a machine without isolation as well.
+      - name: Require bubblewrap and AppArmor isolation
+        id: ready
+        run: |
+          node --input-type=module -e "const m = await import('./hub/rules/api.ts'); if (!(await m.osIsolationAvailable())) { console.error('Linux isolation unavailable: ' + m.osIsolationFailure()); process.exit(1); }"
+      - name: Run the ${{ matrix.suite }} tests that need the pack sandbox
+        shell: bash
+        run: node tools/run-guarded-tests.ts linux ${{ matrix.suite }} 2>&1 | tee "$RUNNER_TEMP/isolation.log"
+      - name: Count what ran and what was skipped
+        if: ${{ !cancelled() }}
+        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/isolation.log" 'Linux isolation / ${{ matrix.suite }} ${{ matrix.shard }}'
+
+  isolation:
+    name: Linux isolation
+    needs: isolation_parts
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every Linux isolation part to pass
+        run: test '${{ needs.isolation_parts.result }}' = 'success'
 
   docs:
     name: Docs and CI checks
