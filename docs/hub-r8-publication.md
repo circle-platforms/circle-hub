@@ -30,9 +30,14 @@ by hand.
 
 ## Not included
 
-Private progress notes, task pages, and the private test-runner concurrency policy. Public CI keeps
-`tools/run-unit-tests.ts` and `tools/run-acceptance-tests.ts` as they are on `main`. The dynamic worker policy remains
-in the private tree. `foundation/`, `references/`, and `.github/` are unchanged by this commit.
+Private progress notes, task pages, and the private test-runner concurrency policy. The public unit runner keeps
+the shard and concurrency policy from `main`, and lists `tools/prepare-packs.test.ts` so that new test is actually run.
+The dynamic worker policy remains in the private tree. `foundation/`, `references/`, and `.github/` are unchanged.
+
+A follow-up on this branch regenerates the two case-compile workbook samples from the current synthetic recipe,
+points the mindmap-format tests at 1.0.3, and scans client skills from their tools and hooks. Hub functions that a
+client script does not import stay out of that scan. The template-gap test bed asks for operating-system isolation
+only where that probe succeeds. The worker-command test names the same probe and does not start the sandbox.
 
 ## Scan
 

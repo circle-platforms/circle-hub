@@ -371,7 +371,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "a34248af84daa3a4af8d3277c6f81cb0bf50bb82efa96100df6fc5fe8d3a220b",
+      "sha256": "846c66e51ecc4b48447099483cc01520d385138c62b11b3a0bfc172b716ee1cb",
       "size": 39656
     },
     {
@@ -411,7 +411,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "0f7841778de143f13cedf02fc59057b4d76bd2cbaeb3ea7d83c88680667417b9",
+      "sha256": "6e7e6c8e05003de4d9287430589019849e13486941da3fb515c9463c1b1b2f94",
       "size": 39660
     },
     {
@@ -486,7 +486,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "6b467853f73f9fc9c342d5e5fe68928f4f3ce87ac38708a00807f006f643b3b2",
+      "sha256": "e6ab15c1eb1be5e4c2e1759670fa742271ad6b59a0a4b34aab91927a00c82c5f",
       "size": 39610
     },
     {
@@ -526,7 +526,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "985e5412c28070a74e0c632785569d3b8e4c9b8beb49a74ea89ef361e92deda1",
+      "sha256": "eac03aca304b3dfd850e9c7c546be3778bef8e2ad14977e5a54d44d085b1259c",
       "size": 39614
     },
     {

@@ -22,7 +22,7 @@ import {
 } from '../../../../hub/runs/api.ts';
 import type { TemporaryPostgres } from '../../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../../hub/testing/records.ts';
-import { buildCatalog } from '../../../../hub/rules/api.ts';
+import { buildCatalog, osIsolationAvailable } from '../../../../hub/rules/api.ts';
 import type { KnownBuild } from '../../../../contracts/src/product.ts';
 import { ROOT, BUILD, PRODUCT, digest } from './index.ts';
 import { PACK_DIR, PACK_ID, signManifest, readManifest, packFiles } from '../api.ts';
@@ -148,7 +148,7 @@ export async function openBed(postgres: TemporaryPostgres, options: BedOptions =
     const runner = principal(await kit.principals.createUser(admin, '评审人'));
     const stranger = principal(await kit.principals.createUser(admin, '旁人'));
     await kit.authorizations.grantPublishRight(admin, owner.id);
-    const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted'), now });
+    const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted'), now, sandbox: { requireOsIsolation: await osIsolationAvailable() } });
     const parsers=await installMindmapFixture(registry,kit,admin);
     const staged = join(temp.path, 'staged');
     for (const file of await packFiles()) { await mkdir(dirname(join(staged, file.path)), { recursive: true }); await copyFile(join(PACK_DIR, file.path), join(staged, file.path)); }

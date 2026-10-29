@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { BOOTSTRAP, isolatedCommand, linuxProbeOutcome, NODE } from './isolation.ts';
+import { BOOTSTRAP, isolatedCommand, linuxProbeOutcome, NODE, osIsolationAvailable } from './isolation.ts';
 
 test('Node starts without child or write grants even when permission.drop is unavailable', () => {
   const script = `process.permission.drop=undefined; if(process.permission.has('child')||process.permission.has('fs.write','/dev/null'))process.exit(1);`;
@@ -11,6 +11,7 @@ test('Node starts without child or write grants even when permission.drop is una
 
 test('the normal worker command grants neither child execution nor filesystem writes', () => {
   const command = isolatedCommand({ entry: BOOTSTRAP, reads: [], heapMb: 256, cpuSeconds: 10, os: false });
+  assert.equal(typeof osIsolationAvailable, 'function');
   assert.ok(!command.args.some(arg => arg.startsWith('--allow-child-process') || arg.startsWith('--allow-fs-write')));
 });
 
