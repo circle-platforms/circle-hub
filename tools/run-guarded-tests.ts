@@ -7,7 +7,8 @@
 // - linux (the `Linux isolation` jobs of checks.yml): bubblewrap and AppArmor isolation of pack functions, which those jobs
 //   install and load before they run this (ISOLATION_GUARD). The other Ubuntu jobs have no isolation and keep skipping them.
 // A run refuses to start where the host's isolation is unavailable, since every guarded test would only skip. With
-// GUARDED_SHARD=<index>/<total> it runs one of `total` slices, balanced by GUARDED_MEASURED_SECONDS (tools/test-shards.ts).
+// GUARDED_SHARD=<index>/<total> it runs one of `total` slices, balanced by GUARDED_MEASURED_SECONDS (tools/test-shards.ts). With
+// JUNIT_REPORT=<file> the run also writes Node's junit report there (tools/test-report.ts).
 // Usage: node tools/run-guarded-tests.ts macos|linux unit|acceptance|list
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -16,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { osIsolationAvailable, osIsolationFailure } from '../hub/rules/sandbox/isolation.ts';
 import { acceptanceFiles, DEFAULT_SECONDS } from './run-acceptance-tests.ts';
 import { UNIT_DEFAULT_SECONDS, unitFiles } from './run-unit-tests.ts';
+import { junitArguments } from './test-report.ts';
 import { parseShard, shardFiles } from './test-shards.ts';
 import type { Shard } from './test-shards.ts';
 
@@ -126,9 +128,10 @@ export function guardedShardFiles(host: Host, kind: Kind, shard: Shard | undefin
 }
 
 /** Unit files run like the public `regular` partition (two workers); acceptance files run one at a time, like CI. */
-export function guardedArguments(kind: Kind, files: readonly string[]): string[] {
+export function guardedArguments(kind: Kind, files: readonly string[], report?: string): string[] {
   if (files.length === 0) throw new Error(`没有需要主机隔离的${kind === 'unit' ? '单元' : '验收'}测试文件，拒绝空运行`);
-  return kind === 'unit' ? ['--test', '--test-isolation=process', '--test-concurrency=2', ...files] : ['--test', '--test-concurrency=1', ...files];
+  const workers = kind === 'unit' ? ['--test-isolation=process', '--test-concurrency=2'] : ['--test-concurrency=1'];
+  return ['--test', ...workers, ...junitArguments(report), ...files];
 }
 
 /** Why this machine cannot run the host's selection (every guarded test would skip), or undefined when it can. */
@@ -143,11 +146,11 @@ export async function hostUnavailable(
   return undefined;
 }
 
-async function run(host: Host, kind: Kind, shard: Shard | undefined): Promise<number> {
+async function run(host: Host, kind: Kind, shard: Shard | undefined, report: string | undefined): Promise<number> {
   const unavailable = await hostUnavailable(host);
   if (unavailable !== undefined) throw new Error(unavailable);
   const files = guardedShardFiles(host, kind, shard);
-  const args = guardedArguments(kind, files);
+  const args = guardedArguments(kind, files, report);
   process.stderr.write(`${host} ${kind}${shard === undefined ? '' : ` shard ${shard.index}/${shard.total}`}: ${files.length} files\n${files.map((file) => `  ${file}\n`).join('')}`);
   const child = spawn(process.execPath, args, { cwd: ROOT, stdio: 'inherit' });
   const forward = (signal: NodeJS.Signals): void => {
@@ -180,7 +183,7 @@ if (isMain) {
     for (const file of [...unit, ...acceptance]) process.stdout.write(`${file}\n`);
   } else {
     Promise.resolve()
-      .then(() => run(host, kind, parseShard(process.env.GUARDED_SHARD)))
+      .then(() => run(host, kind, parseShard(process.env.GUARDED_SHARD), process.env.JUNIT_REPORT))
       .then(
         (code) => {
           process.exitCode = code;

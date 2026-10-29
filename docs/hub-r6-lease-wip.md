@@ -14,8 +14,10 @@ be grounds for a verified result.
 
 Related changes: the exact capture record is part of the identity of an operation record, a missing capture time is
 marked and never replaced silently by the upload time, lease actions use the lease service's own clock with an exact
-resource-key index, and batch lease actions replay per key. The `knowledge-contribution` pack moves to 1.3.2 in the public
-numbering, and three entries of `contracts/model.json` gain optional fields only.
+resource-key index, and batch lease actions replay per key. The `knowledge-contribution` pack moves to 1.3.7 in the public
+numbering, and three entries of `contracts/model.json` gain optional fields only. It was 1.3.2 here until `main` published
+its own 1.3.2 (the dead-lock recovery fix, #92); the merge of `main` combines both as 1.3.7, after this branch's internal
+numbers 1.3.3 to 1.3.6.
 
 ## Known blockers (see issue #28)
 

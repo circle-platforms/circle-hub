@@ -223,6 +223,22 @@ onDiagnostic? }`. It never rejects for anything a reference or a stored source c
   Parsing and all lazy lookups sharing a cache use one 120-second monotonic operation deadline, including time spent
   waiting to parse. A timed-out parse is not inserted if it subsequently completes. The sandbox's separate per-call
   timeout and input/output limits still apply.
+- **Skill parser limits**: every parse and locate call of a skill parser runs in the pack sandbox with
+  `PARSE_SANDBOX_LIMITS` (`skills.ts`): 30 s of wall time, 96 MiB of input and 64 MiB of output, and the sandbox's
+  default memory (256 MB, plus its 192 MB headroom for Node itself). The time limit was 5 s until the owner raised it
+  on 2026-10-29 (#86): a 2 MB document had taken up to 4.2 s on a busy macOS runner, so a slower machine than the one a
+  document was tried on could refuse it. It is a backstop for a parser that does not finish, not a size control.
+  What stops a large document is memory. In a measurement on the Ubuntu runner under Linux isolation, a macOS-15
+  runner and a development Mac (#86), each skill's synthetic documents of 2 to 16 MiB either parsed within 2.1 s or
+  were stopped within 4.3 s: by the memory limit from 2 to 8.5 MB depending on their shape, or by the parser's own
+  `maxSelectorChars`. The skills declare `maxBytes` of 16 MiB, which these shapes therefore do not reach.
+  Neither the parse memory nor `maxBytes` was changed for that (2026-10-29). The Hub's own document cache budget above
+  would refuse most such documents anyway: the resource test's two XML shapes retain an estimated 35 and 54 times their
+  input, so the budget ends at about 3.5 to 5.5 MB of them. A lower `maxBytes` would refuse lighter documents that parse
+  today, such as 8.5 MB of text-heavy XML, while a 2 MiB block of links still runs out of memory: what a parse needs
+  follows a document's structure, not its size. A document that the memory or output limit stops is answered like one
+  over the cache budget (`sandboxError` in `hub/server/tools.ts`): rereading it as it is fails again, so the source
+  maintainer splits it, or the parser maintainer makes the parser need less.
 
 ## Decisions and deviations from the brief
 

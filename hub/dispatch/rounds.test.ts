@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { setup } from './testing/context.ts';
+import { observationLockFree, setup } from './testing/context.ts';
 import type { Aggregation } from '../../contracts/generated/vocabulary.ts';
 
 type Fixture = Awaited<ReturnType<typeof setup>>;
@@ -162,6 +162,7 @@ test('resume reconciles the started round and a new dispatch continues at the ne
   const first = (await intents(c)).find(row => row.body.detail.round === 1);
   assert.ok(first);
   assert.equal((await intents(c)).some(row => row.body.detail.round === 2), false);
+  await observationLockFree(c, String(first.body.detail.job));
   const resumed = await c.service.resume(c.admin, String(first.body.detail.job));
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
   assert.equal((await c.service.journal.events(String(first.body.detail.job))).some(event => event.body.detail.phase === 'intent' && event.body.detail.round === 2), false);

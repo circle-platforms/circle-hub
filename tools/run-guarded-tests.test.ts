@@ -104,9 +104,19 @@ test('the two Linux slices of each kind stay balanced, and every measured file i
   }
 });
 
-test('unit files run with two workers, acceptance files one at a time, and an empty list is refused', () => {
+test('unit files run with two workers, acceptance files one at a time, a junit report before the files, and an empty list is refused', () => {
   assert.deepEqual(guardedArguments('unit', ['a.test.ts']), ['--test', '--test-isolation=process', '--test-concurrency=2', 'a.test.ts']);
   assert.deepEqual(guardedArguments('acceptance', ['b.test.ts']), ['--test', '--test-concurrency=1', 'b.test.ts']);
+  assert.deepEqual(guardedArguments('unit', ['a.test.ts'], 'r.xml'), [
+    '--test',
+    '--test-isolation=process',
+    '--test-concurrency=2',
+    '--test-reporter=spec',
+    '--test-reporter-destination=stdout',
+    '--test-reporter=junit',
+    '--test-reporter-destination=r.xml',
+    'a.test.ts',
+  ]);
   assert.throws(() => guardedArguments('unit', []), /拒绝空运行/);
 });
 

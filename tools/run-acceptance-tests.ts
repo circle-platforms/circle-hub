@@ -1,9 +1,11 @@
 // Acceptance runner. Without ACCEPTANCE_SHARD it runs every acceptance file in one `node --test` process at concurrency 1.
 // With ACCEPTANCE_SHARD=<index>/<total> (CI) it runs one of `total` slices, balanced by the durations below (test-shards.ts).
+// With JUNIT_REPORT=<file> (CI) the run also writes Node's junit report there (test-report.ts).
 import { spawn } from 'node:child_process';
 import { globSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { junitArguments } from './test-report.ts';
 import { parseShard, shardFiles } from './test-shards.ts';
 import type { Shard } from './test-shards.ts';
 
@@ -61,12 +63,17 @@ export function expectedSeconds(file: string): number {
   return MEASURED_SECONDS[file] ?? DEFAULT_SECONDS;
 }
 
+/** One file at a time: every acceptance file starts its own PostgreSQL and Hub. */
+export function acceptanceArguments(files: readonly string[], report?: string): string[] {
+  return ['--test', '--test-concurrency=1', ...junitArguments(report), ...files];
+}
+
 /** Resolves to the test runner's exit code; signals reach the runner, which stops its PostgreSQL clusters. */
-export async function runAcceptanceTests(shard: Shard | undefined): Promise<number> {
+export async function runAcceptanceTests(shard: Shard | undefined, report?: string): Promise<number> {
   const files = shardFiles(acceptanceFiles(), shard, expectedSeconds);
   if (files.length === 0) throw new Error('验收分片没有文件，拒绝空运行；减少分片数或检查 tests/acceptance');
   if (shard !== undefined) process.stderr.write(`acceptance shard ${shard.index}/${shard.total}: ${files.length} files\n`);
-  const child = spawn(process.execPath, ['--test', '--test-concurrency=1', ...files], { cwd: ROOT, stdio: 'inherit' });
+  const child = spawn(process.execPath, acceptanceArguments(files, report), { cwd: ROOT, stdio: 'inherit' });
   const forward = (signal: NodeJS.Signals): void => {
     if (child.exitCode === null && child.signalCode === null) child.kill(signal);
   };
@@ -94,7 +101,7 @@ if (isMain) {
     process.exitCode = 2;
   }
   if (process.exitCode !== 2) {
-    runAcceptanceTests(shard).then(
+    runAcceptanceTests(shard, process.env.JUNIT_REPORT).then(
       (code) => {
         process.exitCode = code;
       },
