@@ -1,4 +1,4 @@
-import {completeKnowledgeView} from '../../knowledge/api.ts';
+import {completeKnowledgeView,parseViewId} from '../../knowledge/api.ts';
 import {defectIndexKeys,mergeIndexBindings,narrowIndexId} from './index-default.ts';
 // Binding the start_run inputs to the workflow's input slots (W02 F[8], P02, A03): a reference the caller may read (an
 // upload_file result, or a Hub record reference, B03 R[4]) or an external object read through its system pack as the
@@ -58,6 +58,8 @@ export function withRevision(id: string, revision: string | null): string {
   return ExternalObjectId.safeParse(full).success ? full : id;
 }
 
+const VIEW_ID_FIX = '照该输入槽说明里的写法逐字填视图标识：knowledge:<视图>:<产品>:<构建>?<参数>=<取值>；错误里点名的参数必须写上，取值不要自己编；改好后重新开始运行';
+
 export async function bindInputs(
   ctx: EngineContext,
   user: Principal,
@@ -85,6 +87,17 @@ export async function bindInputs(
   };
   for (const name of Object.keys(inputs)) {
     if (!slots.has(name)) schemaError(`/inputs/${name}`, `任务包没有输入槽 ${name}（有：${[...slots.keys()].join('、')}）`);
+  }
+  // Cheap checks first. A malformed knowledge view id is a deterministic caller mistake: say so at once, with the way to write
+  // it, instead of building another input's large view first and reporting the mistake behind a bare "unavailable".
+  for (const [name, given] of Object.entries(inputs)) {
+    if (!slots.has(name)) continue;
+    const list = Array.isArray(given) ? given : [given];
+    for (const [k, binding] of list.entries()) {
+      if (!('external' in binding) || !binding.external.startsWith('knowledge:')) continue;
+      const parsed = parseViewId(binding.external);
+      if (!parsed.ok) schemaError(Array.isArray(given) ? `/inputs/${name}/${k}` : `/inputs/${name}`, parsed.reason, VIEW_ID_FIX);
+    }
   }
 
   const readReference = async (slot: WorkflowInput, path: string, text: string): Promise<Read | null> => {
@@ -163,6 +176,8 @@ export async function bindInputs(
   };
 
   const readExternal = async (slot: WorkflowInput, path: string, id: string): Promise<Read | null> => {
+    // The run will be refused anyway once an input is known to be wrong: do not build a large knowledge view for another one.
+    if (errors.length > 0 && id.startsWith('knowledge:')) return null;
     if (!slot.accepts.includes(externalType(id))) {
       schemaError(path, `输入槽 ${slot.slot} 不接受 ${externalType(id)} 类型的外部对象（接受：${slot.accepts.join('、')}）`);
       return null;
