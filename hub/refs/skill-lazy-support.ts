@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import ExcelJS from 'exceljs';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { openPackTestbed, type PackTestbed } from '../runs/packs/testing/setup.ts';
-import { createSkillParserRegistry } from './skills.ts';
+import { createSkillParserRegistry, PARSE_SANDBOX_LIMITS } from './skills.ts';
 import { installHtmlFixture, installMindmapFixture, installWorkbookFixture, installXmlFixture } from '../testing/skills.ts';
 import { callPackFunction } from '../rules/api.ts';
 import type { FunctionAttempt } from '../rules/sandbox/retry.ts';
@@ -14,7 +14,6 @@ import { QUOTATION_UNITS as HTML_QUOTATION } from '../../packs/skill/html-format
 import { QUOTATION_UNITS as MIND_QUOTATION } from '../../packs/skill/mindmap-format/functions/format.ts';
 
 const OUTPUT_BUDGET = 24 * 1024 * 1024;
-const SANDBOX = { timeoutMs: 5000, inputBytes: 96 * 1024 * 1024, outputBytes: 64 * 1024 * 1024 };
 const packDir = (id: string) => fileURLToPath(new URL(`../../packs/skill/${id}/`, import.meta.url));
 
 export type LazyKind = 'xml' | 'html' | 'mindmap' | 'workbook';
@@ -99,7 +98,7 @@ export async function measure(pack: string, bytes: Buffer) {
   const out = await callPackFunction(
     { packDir: packDir(pack), module: 'functions/parse.ts', export: 'default' },
     { bytes: bytes.toString('base64'), options: {} },
-    SANDBOX,
+    PARSE_SANDBOX_LIMITS,
     { requireOsIsolation: false },
   );
   const output = Buffer.byteLength(JSON.stringify(out.output));
