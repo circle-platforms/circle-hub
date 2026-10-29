@@ -177,7 +177,11 @@ describe('the pack sandbox runs under Linux isolation on every pull request and 
   });
 
   it('no workflow loosens the kernel\'s user namespace restriction: the profile\'s own userns rule is enough', () => {
-    for (const workflow of [WORKFLOW, MACOS]) assert.doesNotMatch(workflow, /apparmor_restrict_unprivileged_userns\s*=|sysctl -w/);
+    const loosening = /\bsysctl\s+(?:-\w+\s+)*-w\b|apparmor_restrict_unprivileged_userns\s*=|(?:>|\btee\b[^\n|]*)\s*\/proc\/sys\/kernel\/apparmor_restrict_unprivileged_userns/;
+    for (const workflow of [WORKFLOW, MACOS]) assert.doesNotMatch(workflow, loosening);
+    assert.match('sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0', loosening);
+    assert.match('echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns', loosening);
+    assert.ok(all[index('node hub/rules/sandbox/linux.ts')].includes('cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns'), 'the log shows the value in effect');
   });
 });
 

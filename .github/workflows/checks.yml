@@ -181,6 +181,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "kernel.apparmor_restrict_unprivileged_userns is $(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo absent), as the runner has it"
           node hub/rules/sandbox/linux.ts > "$RUNNER_TEMP/circle-hub-sandbox.apparmor"
           cat "$RUNNER_TEMP/circle-hub-sandbox.apparmor"
           sudo apparmor_parser -r "$RUNNER_TEMP/circle-hub-sandbox.apparmor"
