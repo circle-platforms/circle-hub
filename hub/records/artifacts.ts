@@ -3,10 +3,11 @@
 // whole (B02 R[4]); a read or generated artifact with a hit is kept at read tier retain_only, unless an admin accepted
 // exactly these findings of exactly these bytes (a resource configuration, README decision 18), which lifts only bytes
 // the Hub read or made, never what a person supplied. Readers get bytes only through source(), which applies the read tier
-// (B02 F[5]): retain_only bytes are never handed out, function_bytes_only bytes only to functions. Every read re-reads the
-// account, and a share covers the one record it names (B04 R[3]).
+// (B02 F[5]): retain_only bytes are never handed out, function_bytes_only bytes only to functions. A request freezes the
+// reader's permissions; outside a request each read checks the current account. A share names one record (B04 R[3]).
 import { RunRecord } from '../../contracts/src/run.ts';
 import { runIsSharedWith } from './authorizations.ts';
+import { captureRequestPermissions, requestPermissions } from './request-permissions.ts';
 import { PackId, RunId, UserId, Versioned } from '../../contracts/src/common.ts';
 import { ExternalObjectId } from '../../contracts/src/reference.ts';
 import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
@@ -223,6 +224,8 @@ export class RecordArtifacts implements Artifacts {
     this.#authorizations = authorizations;
     this.#options = options;
   }
+
+  capturePermissionSnapshot(principal: Principal) { return captureRequestPermissions(this.#db,principal,this.#options.now()); }
 
   ingest(input: IngestInput): Promise<SourceArtifact> { return this.#ingest(input, false); }
 
@@ -565,10 +568,12 @@ export class RecordArtifacts implements Artifacts {
     return choice.credential ? labelOf('validity_status', 'credential_unreadable') : labelOf('read_tier', choice.tier);
   }
 
-  /** The account as stored now; a disabled or unknown account reads nothing (a Principal may be stale). */
+  /** A request uses its captured account; outside it a disabled or unknown account reads nothing. */
   async #viewer(principal: Principal): Promise<Viewer | null> {
     const id = typeof principal?.id === 'string' && USER_ID.test(principal.id) ? principal.id : null;
     if (id === null) return null;
+    const snapshot = requestPermissions(id);
+    if (snapshot) return snapshot.user === null || snapshot.user.disabled ? null : {id,role:snapshot.user.role};
     const row = (await this.#db.query('SELECT id, role, disabled FROM users WHERE id = $1', [id])).rows[0];
     if (row === undefined || row.disabled === true) return null;
     return { id: String(row.id), role: row.role === ADMIN ? ADMIN : 'user' };

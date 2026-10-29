@@ -557,7 +557,7 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
   const declarations = new Set((run.outputs?.tasks ?? []).map(output => output.id));
   for (const [i, output] of (submission.task_outputs ?? []).entries()) if (!declarations.has(output.output)) structure.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', '按任务的产出未在任务包里声明', {path:pointerOf('task_outputs',i,'output'),fix:'请任务包维护人在 workflow.outputs.tasks 声明该产出，或从 task_outputs 移除后重交'}));
   const exact = await resolveSubmission(scope, resolver, workflow, run.items, submission);
-  const origin: ProducerOrigin = submissionOrigin(submission,[run.session ?? null, sessionOf(call)]);
+  const origin: ProducerOrigin = submissionOrigin(submission,[run.session ?? null, sessionOf(call)],run,sessionOf(call));
   const author: AuthorOrigin | null = await authorOriginOf(ctx, run);
   const moved = (errors: ProtocolError[]): ProtocolError[] => errors.map((e) => (positions === null || e.path === undefined ? e : { ...e, path: remap(e.path, positions) }));
   // Partial-schema errors already carry original argument positions and rounds.

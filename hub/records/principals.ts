@@ -9,6 +9,7 @@ import type { Database, PgTransaction, Row } from './db.ts';
 import { sha256Hex } from './digest.ts';
 import { AccessError, ConflictError, IntegrityError } from './errors.ts';
 import { newId } from './ids.ts';
+import { requestPermissions } from './request-permissions.ts';
 
 const ADMIN: PermissionRole = 'admin';
 const USER: PermissionRole = 'user';
@@ -111,6 +112,7 @@ export class PgPrincipals implements Principals {
 
   async get(userId: string): Promise<User | null> {
     if (typeof userId !== 'string' || !USER_ID.test(userId)) return null;
+    const snapshot = requestPermissions(userId); if (snapshot) return snapshot.user;
     const row = (await this.#db.query('SELECT * FROM users WHERE id = $1', [userId])).rows[0];
     return row === undefined ? null : userOf(row);
   }

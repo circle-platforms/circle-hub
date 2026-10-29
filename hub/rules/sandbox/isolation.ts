@@ -75,20 +75,10 @@ export function createIsolationProbe(options: { probe: () => Promise<ProbeOutcom
   };
 }
 
-/** Trusted startup probe: temporary grants must actually be revocable before readiness can be cached. */
-export const LINUX_PERMISSION_PROBE = `
-if(typeof process.permission?.drop!=='function')process.exit(22);
-try {
-  if(!process.permission.has('child')||!process.permission.has('fs.write','/dev/null'))process.exit(23);
-  process.permission.drop('child');process.permission.drop('fs.write');
-  if(process.permission.has('child')||process.permission.has('fs.write','/dev/null'))process.exit(23);
-} catch { process.exit(23); }
-`;
-
 /** Private startup diagnostics, not protocol or vocabulary codes. */
 export function linuxProbeOutcome(code: number | null): ProbeOutcome {
   if (code === 0) return { available: true };
-  return { available: false, lasting: false, reason: code === 22 ? 'node_permission_drop_missing' : code === 23 ? 'node_permission_drop_failed' : 'bubblewrap_apparmor_or_user_namespace_unavailable' };
+  return { available: false, lasting: false, reason: 'bubblewrap_apparmor_or_user_namespace_unavailable' };
 }
 
 /** Runs sandbox-exec with the real profile once. */
@@ -97,8 +87,8 @@ async function probeSandboxExec(): Promise<ProbeOutcome> {
     if (!linuxToolsPresent()) return { available: false, lasting: false, reason: 'bubblewrap_or_apparmor_tools_missing' };
     let args: string[];
     try {
-      const source = `if(typeof process.permission?.drop!=='function')process.exit(22);const fs=require('node:fs'),cp=require('node:child_process');const label=fs.readFileSync(3,'utf8').trim();fs.closeSync(3);if(label!==${JSON.stringify(LINUX_LABEL)}&&label!==${JSON.stringify(LINUX_LABEL_UBUNTU26)})process.exit(20);const child=cp.spawnSync(process.execPath,['-e','process.exit(0)']);if(child.error?.code!=='EACCES')process.exit(21);${LINUX_PERMISSION_PROBE}`;
-      args = ['-p', LAUNCH_PROFILE, '--', BWRAP, ...linuxBubblewrapArgs(NODE, ['--permission', '--allow-child-process', '--allow-fs-write=/dev/null', '--no-warnings', '-e', source], [])];
+      const source = `const fs=require('node:fs'),cp=require('node:child_process');const label=fs.readFileSync(3,'utf8').trim();fs.closeSync(3);if(label!==${JSON.stringify(LINUX_LABEL)}&&label!==${JSON.stringify(LINUX_LABEL_UBUNTU26)})process.exit(20);const child=cp.spawnSync(process.execPath,['-e','process.exit(0)']);if(child.error?.code!=='EACCES')process.exit(21);`;
+      args = ['-p', LAUNCH_PROFILE, '--', BWRAP, ...linuxBubblewrapArgs(NODE, ['--permission', '--allow-child-process', '--no-warnings', '-e', source], [])];
     } catch {
       return { available: false, lasting: false, reason: 'linux_runtime_bindings_unavailable' };
     }
@@ -191,12 +181,9 @@ export interface IsolatedCommand {
  * paths it may read. The CPU limit is in seconds of processor time across all threads. `heapMb` is V8's heap limit: a backstop
  * set well above the resident limit the parent enforces, because V8 aborts on heap exhaustion (which leaves a crash report).
  */
-export function isolatedCommand(options: { entry: string; reads: string[]; heapMb: number; cpuSeconds: number; os: boolean; probeDir?: string }): IsolatedCommand {
-  const linuxProbe = options.os && process.platform === 'linux' && options.probeDir !== undefined;
+export function isolatedCommand(options: { entry: string; reads: string[]; heapMb: number; cpuSeconds: number; os: boolean }): IsolatedCommand {
   const node = [
     '--permission',
-    // Only the trusted bootstrap receives these temporary grants; it must drop both before it loads a pack.
-    ...(linuxProbe ? ['--allow-child-process', '--disable-warning=PERM0002', `--allow-fs-write=${options.probeDir}`] : []),
     ...[options.entry, POLICY, ...options.reads].map((path) => `--allow-fs-read=${path}`),
     `--max-old-space-size=${options.heapMb}`,
     '--disallow-code-generation-from-strings',
@@ -206,7 +193,7 @@ export function isolatedCommand(options: { entry: string; reads: string[]; heapM
   ];
   const program = options.os
     ? process.platform === 'linux'
-      ? [AA_EXEC, '-p', LAUNCH_PROFILE, '--', BWRAP, ...linuxBubblewrapArgs(NODE, node, [options.entry, POLICY, ...options.reads], linuxProbe ? [options.probeDir!] : [])]
+      ? [AA_EXEC, '-p', LAUNCH_PROFILE, '--', BWRAP, ...linuxBubblewrapArgs(NODE, node, [options.entry, POLICY, ...options.reads])]
       : [SANDBOX_EXEC, '-p', sandboxProfile(), NODE, ...node]
     : [NODE, ...node];
   return {

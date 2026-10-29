@@ -654,6 +654,7 @@ async function startFresh(
     ...(workflow.workflow.predecessor_access==='view'?{predecessor_access:'view' as const}:{}),
     ...(criterionReview?{criterion_review:criterionReview.marker}:{}),
     ...(session !== null ? { session } : {}),
+    ...(input.model_identity !== undefined ? { model_identity: input.model_identity } : {}),
     started_at: startedAt,
     submission_due: input.submission_due ?? new Date(at.getTime()+86400000).toISOString(),
     ...(hub ? { host: 'hub' as const, trigger: 'standing_obligation' as const, configurer: user.id } : { runner: user.id, host: 'local_circle' as const, trigger: 'session' as const }),

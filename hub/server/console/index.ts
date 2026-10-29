@@ -3,7 +3,7 @@
 // own origin. Every page re-authenticates the session's token, so revoking it or disabling the account ends the session.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { labelOf } from '../../../contracts/generated/vocabulary.ts';
-import { RecordsError, type Principal } from '../../records/api.ts';
+import { RecordsError, withRequestPermissions, type Principal } from '../../records/api.ts';
 import type { ServerDeps } from '../api.ts';
 import { cookiesOf, mediaTypeOf, readBody, setCommonHeaders } from '../http.ts';
 import { CONTENT_SECURITY_POLICY, html, page, type Html, type PageChrome } from './html.ts';
@@ -211,7 +211,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
   const route = Object.hasOwn(ROUTES, segments[0]) ? ROUTES[segments[0]] : undefined;
   let result: PageResult;
   try {
-    result = route === undefined ? neutralPage(ctx) : await route(ctx, segments.slice(1));
+    result = await withRequestPermissions(options.deps.records.artifacts,principal,async()=>route === undefined ? neutralPage(ctx) : route(ctx, segments.slice(1)));
   } catch (error) {
     if (error instanceof RecordsError && error.code === null && !(error.name === 'IntegrityError')) {
       result = { status: 400, body: page(ctx.chrome('请求有误'), html`<p class="error">${error.message}</p>`) };

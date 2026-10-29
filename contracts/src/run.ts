@@ -1,5 +1,5 @@
 import {CommandPolicy} from './product.ts';
-import {FeedingOffsetSchema} from '../generated/shared-interfaces.ts';
+import {FeedingOffsetSchema, ModelIdentitySchema} from '../generated/shared-interfaces.ts';
 import {AcceptedCriterionRef,CriterionNotice} from './criterion.ts';
 // Run (W06), item projection (W01), source binding (P02) and the summaries start_run and list_task_packs return.
 import { WorkflowOutputs } from './contributions.ts';
@@ -161,6 +161,7 @@ export const RunSummary = z.strictObject({
   predecessor: RunId.optional(),
   input_defaults: z.array(InputDefault).min(1).refine(rows=>new Set(rows.map(row=>`${row.slot}\0${row.reference}`)).size===rows.length,'defaulted bindings are unique').optional().describe('Hub-selected input defaults frozen at start_run; absent on explicit or historical bindings'),
   session: z.string().optional().describe('client session id observed from the request header'),
+  model_identity: ModelIdentitySchema.optional().describe('Explicit client declaration at start; a submission from the same observed session can reuse it'),
   started_at: IsoTime,
   submission_due:IsoTime.optional().describe('Absolute submission deadline; absent only on historical runs, never inferred by readers'),
 });

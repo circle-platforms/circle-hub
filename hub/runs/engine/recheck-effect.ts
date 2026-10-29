@@ -3,7 +3,7 @@ import {submissionOrigin} from './independence.ts';
 import {Submission} from '../../../contracts/src/submission.ts';
 import type {EffectCheckReplay} from '../../ports.ts';
 import {createEngineContext,type RunsEngineDeps} from './deps.ts';
-import {runById,submissionByDigest,resultFor} from './store.ts';
+import {actionOfResult,runById,submissionByDigest,resultFor} from './store.ts';
 import {buildScope,createResolver,resolveSubmission} from './exact.ts';
 import {evaluate,productionEvaluationInput} from './evaluate.ts';
 import {authorOriginOf} from './lineage.ts';
@@ -37,6 +37,7 @@ export async function recheckEffectChecks(deps:RunsEngineDeps,input:Parameters<E
  const scope=await buildScope(ctx,run,workflow,user,'function'),resolver=createResolver(ctx,scope,'function');
  const exact=await resolveSubmission(scope,resolver,workflow,run.items,submission);
  if(exact.errors.length)throw new Error('冻结提交的精确来源当前不能解析；请修复来源、受理或权限后重核');
- const replay=await evaluate(ctx,{run,workflow,submission,submissionDigest:input.submission,exact,carried:new Map(),roundsUsed:new Map(),origin:submissionOrigin(submission,[run.session??null]),author:await authorOriginOf(ctx,run),traceId:result.body.trace,replayChecks:ids});
+ const action=await actionOfResult(store,record.digest,result.digest),session=typeof action?.body.detail?.session==='string'?action.body.detail.session:null;
+ const replay=await evaluate(ctx,{run,workflow,submission,submissionDigest:input.submission,exact,carried:new Map(),roundsUsed:new Map(),origin:submissionOrigin(submission,[run.session??null],run,session),author:await authorOriginOf(ctx,run),traceId:result.body.trace,replayChecks:ids});
  return replay.outcomes;
 }

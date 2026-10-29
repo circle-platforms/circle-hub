@@ -31,6 +31,8 @@ export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_
 export { textPreview, stripNul } from './text.ts';
 export { maskedForDisplay, FileKeyProvider } from './vault.ts';
 export { sharedWith, runIsSharedWith, productionShareKey, productionShareBinding } from './authorizations.ts';
+export { withRequestPermissions, requestRead } from './request-permissions.ts';
+export type { RequestPermissions } from './request-permissions.ts';
 export { WHOLE_HUB, RECORD_SCHEMAS, artifactShareKey, scanAcceptanceKey } from './constants.ts';
 
 // ---------------------------------------------------------------- identity
@@ -409,6 +411,8 @@ export interface FindingsAcceptance {
 }
 
 export interface Artifacts {
+  /** Capture the reader's direct and pack-audience permissions for one request. */
+  capturePermissionSnapshot?(principal: Principal): Promise<import('./request-permissions.ts').RequestPermissions>;
   /**
    * Stores the bytes and a source_artifact record. An upload with a credential hit is refused with a RecordsError coded
    * CREDENTIAL_IN_UPLOAD: no bytes are stored, only a validate action with the digest and the scan conclusion (B02 R[4]).
@@ -428,7 +432,7 @@ export interface Artifacts {
   coverDerived(input: DerivedScanInput): Promise<DerivedScanAcceptance | null>;
   /** Every source_artifact record of these bytes, oldest first. No access check: for trusted callers only. */
   records(sha256: string): Promise<SourceArtifact[]>;
-  /** B02 R[3] for one record. The account is re-read: a disabled or demoted account loses access at once. */
+  /** B02 R[3] for one record; a request uses its initial reader permissions, otherwise current permissions. */
   canRead(principal: Principal, artifact: SourceArtifact): Promise<boolean>;
   /**
    * The record of these bytes that decides for this reader (README decision 6): the newest record the reader may read,

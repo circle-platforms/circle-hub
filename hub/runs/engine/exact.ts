@@ -331,12 +331,12 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
   const cache = new Map<string, Promise<ValueOutcome>>();
   const resolving = new Set<string>();
   // Documents may be evicted between groups. Retain only bounded successful
-  // reference results, and re-authorize their source before every actual use.
+  // reference results; source access is checked against the current request's permission snapshot.
   const prepared = new Map<string, { result: Extract<ValueOutcome,{ok:true}>; tier:string }>();
   let preparedBytes=0;
   const preparedLimit=64*1024*1024;
   let aborted:HubReadFailure|undefined;
-  // Reading is an authorization decision, not immutable document content: recheck it on every use.
+  // A request owns its permission snapshot and bounded source-read cache; neither is shared with another request.
   const sources = sourceReader(artifacts, consumer);
   const context = {
     reader: scope.reader,
@@ -467,7 +467,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
     async resolve(reference, options = {}) {
       const scoped = options.scoped !== false;
       if(aborted)throw aborted;
-      // Immutable parsed documents may be cached, but source access and disclosure may change between reads.
+      // Immutable parsed documents may be cached; source access is checked in this request's scope.
       let ref:Reference|undefined;
       try{ref=parseReference(reference);}catch{/* run gives the structured syntax error */}
       if(ref?.scheme==='src'){

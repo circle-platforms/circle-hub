@@ -1,5 +1,9 @@
 # Linux sandbox startup capability preflight
 
+Historical task: decision 82 later retired the per-child attestation and its temporary permission grants; the proof-only
+`linux-policy-ab.ts` script was removed. Its past measurements below are historical, not current instructions. Actual
+bubblewrap/AppArmor isolation and the corresponding Linux isolation tests remain.
+
 Follow-up to linux-server-migration: readiness must verify the Node permission revocation required by the real bootstrap.
 
 Allowed paths:
