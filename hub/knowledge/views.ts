@@ -1577,7 +1577,11 @@ export class KnowledgeViews {
     const flagged = flaggedParts(view, coverage, part => part instanceof Uint8Array ? part : this.#entryBytes.get(part as ViewEntry) ?? canonicalBytes(part), encoded);
     const originalReferences=view.schema==='facet-view@1'?[]:Object.values(view.entries).map(entry=>entry.reference);
     if(request.after&&flagged.excluded.size>0)return credentialRefusal(await ingest(originalBytes ?? this.#bytes(view)),originalReferences);
-    if (flagged.excluded.size > 0) view = await compute(flagged.excluded);
+    let indexExcludedEntries = 0;
+    if (flagged.excluded.size > 0) {
+      if (view.schema === 'index-view@1') indexExcludedEntries = flagged.excluded.size;
+      view = await compute(flagged.excluded);
+    }
     const annotate = (value: ImpactView | FacetView | IndexView, covered: number, limited: number, fallback = 0): void => {
       const unit = value.schema === 'facet-view@1' ? '计数行' : '条目';
       if (covered > 0) value.notes.push(`有 ${covered} 个${unit}的凭据命中由来源的受理覆盖；每次读取重新核对受理仍有效`);
@@ -1599,6 +1603,7 @@ export class KnowledgeViews {
     // Keys or other surrounding content can add hits beyond the per-part budget.
     // Fall back once to the previous safe omission behavior, never scan every prefix.
     if (artifact.body.scan.truncated && flagged.eligible.size > 0) {
+      if (view.schema === 'index-view@1') indexExcludedEntries = flagged.allHits.size;
       view = await compute(flagged.allHits);
       annotate(view,0,flagged.limited.size,covered);
       view.scope=scoped;
@@ -1613,7 +1618,8 @@ export class KnowledgeViews {
       return credentialRefusal(artifact,originalReferences);
     }
     const meta = await this.#context.records.artifacts.ingest({
-      bytes: canonicalBytes({ title, view: request.type, product, roots, revision }),
+      bytes: canonicalBytes({ title, view: request.type, product, roots, revision,
+        ...(view.schema === 'index-view@1' ? { index_excluded_entries: indexExcludedEntries, index_view_sha256: artifact.body.sha256 } : {}) }),
       mediaType: 'application/json',
       origin,
       derivedCoverage:coverage,

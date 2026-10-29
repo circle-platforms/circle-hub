@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import project from '../functions/project.ts';
 import { boundView, caseEntry, indexViewOf } from '../../traceability/functions/test-support.ts';
 const p = project({ inputs: [boundView('stories', { stories: [{ id: '21', status: 'synthetic', stage: null, title: '合成需求' }], unread: [] }, 'plm:stories:21'),
-  boundView('cases', indexViewOf('case', 'stories', [caseEntry({ stories: ['21'], defects: [], case: 'c1' })]))] }) as { items: unknown[]; groups: unknown[] };
+  boundView('cases', { ...indexViewOf('case', 'stories', [caseEntry({ stories: ['21'], defects: [], case: 'c1' })]), key_space_complete: true })] }) as { items: unknown[]; groups: unknown[] };
 const subject = { items: p.items, context: { groups: p.groups } };
 for (const [check, code] of [['traced', 'join_mismatch'], ['counts', 'count_mismatch']] as const) {
   for (const positive of [true, false]) {

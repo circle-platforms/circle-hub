@@ -33,6 +33,8 @@ export type IndexViewData = {
   key_space_complete: boolean | null;
   /** The Hub's source scope completeness, when present. */
   scope_complete: boolean | null;
+  /** Entries omitted by the producing read, or null when that read did not declare the fact for these bytes. */
+  excluded_entries: number | null;
   cut_keys: string[];
   only: string[] | null;
   /** Listed sources the producers could not use: an absent key is unknown, not proof of absence, when this is not zero. */

@@ -59,7 +59,7 @@ describe('publishing the story-traceability pack', { skip }, () => {
       report.warnings.map((w) => w.rule),
       ['publish.author_samples_only', 'publish.author_samples_only'],
     );
-    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['story-traceability', '1.0.14', 'workflow']);
+    assert.deepEqual([outcome.version.id, outcome.version.version, outcome.version.kind], ['story-traceability', '1.0.15', 'workflow']);
     // The same content again is the same publication.
     const again = await registry.publish(owner, await staged());
     assert.ok(again.ok && again.created === false);
