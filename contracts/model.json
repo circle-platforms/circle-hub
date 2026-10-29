@@ -3070,7 +3070,7 @@
     "list_task_packs：列出可用任务包（效果类无、不写 Hub 记录 → readOnlyHint=true，openWorldHint=false）",
     "upload_file：上传源文件，返回引用、sha256、size、mediaType 和解析器给出的结构摘要（只写 Hub 记录 → readOnlyHint=false，destructiveHint=false，idempotentHint=true，openWorldHint=false）",
     "start_run：按输入槽传入引用与参数，可带前驱运行；返回冻结的要求项、条目投影结果、锁定的版本与运行目标、血缘和规程（只写 Hub 记录 → readOnlyHint=false，destructiveHint=false，openWorldHint=false；键有时间窗，不标 idempotentHint；所分配的包要按规则选定构建、因而要读外部系统时，openWorldHint=true）",
-    "get_nodes：取知识树子树（不写 Hub 记录 → readOnlyHint=true，openWorldHint=false）；也接受任一引用，按读取档位返回被指内容（模型可读的给原文，只许函数读的给摘要和结构，只保留的显示“原文不可读”），按可见范围重验读者权限，这是已定的扩展语义",
+    "get_nodes：取知识树子树（不写 Hub 记录 → readOnlyHint=true，openWorldHint=false）；也接受任一引用，按读取档位返回被指内容（模型可读的给原文，只许函数读的给摘要和结构，只保留的显示“原文不可读”），按可见范围重验读者权限。可按本人调用的完整参数只读查询 start_run 或 get_nodes 的当前进程在途记录与已有完成日志；缺记录不推定失败，开运行成功时给可读记录引用，读取回答正文未保存时明示缺失与下一步，这是已定的扩展语义",
     "resolve_reference：交付前的预览解析，返回解析状态、诊断和可能所指，结果不作凭据（readOnlyHint=true，openWorldHint=false）",
     "submit_result：交提交，返回校验结果；对同一（运行, 提交摘要）重复调用返回当前校验结果（只写 Hub 记录时 → readOnlyHint=false，destructiveHint=false，idempotentHint=true，openWorldHint=false）；用重复调用读异步进展是已定的扩展语义",
     "待你决定的职能（不写工具名，注解按 D03 推出）：现场观察（读外部系统：只读由传输层强制已认证时 readOnlyHint=true、openWorldHint=true，否则按写）；效果写入（对外写：openWorldHint=true，destructiveHint 由可逆性推出，只有同键安全的写才标 idempotentHint；含租约与意图键，丢回复返回未知而不当错误，这个未知写明缺的是效果的结局，出口是核对（D04 R[1]））；取消（只停新派发）只写 Hub 记录。回答请求不加工具（所有者 2026-10-23 晚）：Hub 自己卡住、要人做一步时，在回答里写明下一步该谁用哪个现有工具或命令做，例如修复轮数用完时由运行者选续跑还是放弃，登录被锁时由管理员重置"

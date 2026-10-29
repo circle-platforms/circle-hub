@@ -193,6 +193,14 @@ Semantics owned by the server:
   never split a character), is no page position: the first page is shown and the text says so. An empty partition or item
   list (every item delivered leaves three partitions empty) reads as its head, `条目 0 个`.
   Neither run, root nor reference is a schema violation.
+- `get_nodes {call_query: {start_run: <original arguments>}}` or `{call_query: {get_nodes: <original arguments>}}`
+  checks the authenticated caller's current-process calls and recent completion logs without reissuing the call. Only an
+  argument digest, trace and start time are held while the call runs; the last 500 log lines and at most 20 matching
+  entries are shown, with truncation disclosed. When known, `call_query.trace` narrows the candidates. Matching arguments
+  alone do not prove which of several calls timed out; an absent entry also does not prove a failure or that the request
+  never arrived. A completed visible start names its run and production-result records for `get_nodes` to read under
+  current permissions. The former `get_nodes` response body is not saved, so a lost read response remains missing and
+  names a current-permission re-read exit. Restart loses the in-flight index; the durable call log remains.
 - `start_run`: `ServerDeps.runsDetail.startRunDetailed` when the assembly gives it (the answer, the run record digest, the
   production result, the evidence gaps for the text), else `RunsService.startRun`.
 - `resolve_reference`, `submit_result`: `RunsService`; a `submit_result` answer that carries a result also gets its stored

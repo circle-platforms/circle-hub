@@ -1074,6 +1074,12 @@ function nodeEntry(node: KnowledgeNode, root: string, room: number): Entry {
 
 function nodesText(v: NodesOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
+  if(v.call_status){
+    const status=v.call_status;
+    const head=[`调用查询 ${status.tool}：当前进程在途 ${status.active_total} 个，最近日志匹配 ${status.completed.length} 条`,...(status.truncated?['调用或日志范围未列全']:[]),...(status.missing?[`缺失事实：${status.missing}`]:[]),`下一步：${status.next_action}`];
+    const entries=[...status.active.map(call=>`- 进行中：追踪 ${call.trace}，开始 ${call.started_at}`),...status.completed.map(call=>`- 已结束：追踪 ${call.trace}，${call.call_result}${call.error_code?`，${call.error_code}`:''}，耗时 ${call.duration_ms} 毫秒${call.run?`，运行 ${call.run}`:''}${call.run_record?`，运行记录 ${call.run_record}`:''}${call.result_record?`，结果 ${call.result_record}`:''}`)];
+    return fit([{priority:0,head},{priority:1,entries,unit:'调用',measure:'条',more:()=>null}],{tail:[traceLine(v.trace)]}).text;
+  }
   if (v.content !== undefined) return contentText(v.content, v.trace, context);
   const nodes = v.nodes ?? [];
   const root = v.root ?? '';

@@ -590,7 +590,7 @@ export class FakeRuns implements RunsService {
       trigger: 'session',
       parameters: input.parameters ?? {},
     };
-    const stored = await this.#records.store.put({ kind: 'run', schema: 'run@1', provenance: 'declared', body: record, index: [{ key: 'run.id', value: run }] });
+    const stored = await this.#records.store.put({ kind: 'run', schema: 'run@1', provenance: 'declared', body: record, index: [{ key: 'run.id', value: run },{key:'runs.id',value:run}] });
     const kept: StoredRun = { record, recordDigest: stored.digest, submissions: [], results: new Map(), resultsBySession: new Map(), latest: null, production: null };
     this.runs.set(run, kept);
     if (summary.requirements.every((r) => r.accepted_producer === 'fact')) kept.production = await this.#produce(kept, context);
