@@ -35,6 +35,8 @@ import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
 import { feedingText, fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
 import { callStatus } from './call-status.ts';
+import { cachedReadReply } from './read-replies.ts';
+import { recoverRead } from './recover-read.ts';
 import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOfAsync as structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
@@ -423,7 +425,16 @@ const getNodes: Handler = async (deps, call, args) => {
     // Hash the original argument object, not a schema-transformed copy (for example a JSON __proto__ member).
     const rawQuery=args.call_query as Record<string,unknown>;
     const original=rawQuery[tool] as Record<string,unknown>;
-    return {answer:{call_result:'ok',errors:[],call_status:await callStatus(deps,call.principal,tool,original,input.call_query.trace)}};
+    const trace=input.call_query.trace,status=await callStatus(deps,call.principal,tool,original,trace);
+    if(tool==='get_nodes'&&trace&&status.active_total===0&&!status.truncated&&status.completed.length===1&&status.completed[0].call_result==='ok'){
+      const cached=cachedReadReply(deps,call.principal.id,original,trace);
+      if(cached){
+        const restored=await recoverRead(deps,call.principal,original,cached.answer,trace,cached.at);
+        if(restored){const {trace:_trace,...answer}=restored;const originalInput=GetNodesInput.safeParse(original);return {answer,text:{cursor:originalInput.success&&originalInput.data.cursor?originalInput.data.cursor:null}};}
+        status.missing='暂存的原回答未能按当前权限或来源状态核对';status.next_action='请管理员核对来源、权限和凭据状态；也可按当前权限重读原引用或路径';
+      }
+    }
+    return {answer:{call_result:'ok',errors:[],call_status:status}};
   }
   // An empty cursor is no cursor (a model may fill an optional string with ''), for a reference as for a subtree.
   const cursor = input.cursor === undefined || input.cursor === '' ? null : input.cursor;

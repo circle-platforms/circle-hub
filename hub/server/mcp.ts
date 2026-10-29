@@ -16,6 +16,7 @@ import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { newTraceId, sessionIdOf, traceIdFrom } from './trace.ts';
 import { callTool, internalError, listTools, type CallState, type ToolCall } from './tools.ts';
 import { beginObservedCall } from './inflight-calls.ts';
+import { retainReadReply } from './read-replies.ts';
 
 export interface McpOptions {
   deps: ServerDeps;
@@ -265,7 +266,11 @@ async function answer(
     if ((message.params.name==='start_run'||message.params.name==='get_nodes') && !(message.params.name==='get_nodes' && isPlainObject(args) && Object.hasOwn(args,'call_query'))) {
       finishObserved=beginObservedCall(deps,principal.id,message.params.name,state.args,traceId);
     }
-    return guarded(state, () => callTool(deps, call, message.params.name, args));
+    const result=await guarded(state, () => callTool(deps, call, message.params.name, args));
+    if(message.params.name==='get_nodes' && !(isPlainObject(args)&&Object.hasOwn(args,'call_query')) && !result.isError){
+      retainReadReply(deps,principal.id,state.args,traceId,result.structuredContent);
+    }
+    return result;
   });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   try {
