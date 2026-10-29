@@ -36,6 +36,18 @@ category, model identity or case ownership; escaped and double-encoded JSON keep
 matches are left for the client to resolve. Both tools write new mode-0600 files rather than printing source text; their
 output is a preparation aid and the normal Hub check remains authoritative. `SKILL.md` gives the commands.
 
+`tools/prepare-claims.ts` assembles the locator's result into the existing `coverage` list without asking the model to repeat
+its identity in every claim. Supply the explicit `model-identity@1` object once, or a saved start-run response/run record
+containing `model_identity`. Supply choices as `[{"ordinal":1,"category_id":"audit_log","statement":"合成判断"}]`:
+`ordinal` refers to a locator result. If it has several quotations, add the zero-based `quote_index`; zero quotations or an
+ambiguous selection without an index is refused. Category ids are checked by exact equality against `template-v3.json`.
+Run `node <template-gap>/tools/prepare-claims.ts --located <locator.json> --choices <choices.json> --identity <identity.json>
+--out <coverage.json>`, then put the array in that document item's `slots.coverage`. The tool copies the chosen raw quote and
+the declared identity; it does not classify text, decide which quote belongs to a case, or establish acceptance. Hub still
+checks those facts. It creates a mode-0600 file without overwriting and prints counts only. The same output shape can be used
+with old locked runs, and a different session must use its own explicitly declared identity.
+The helper copies that declaration; it does not establish which session produced a claim.
+
 The frozen context holds the bound source digest and parser model. The function read declaration obtains the original subject
 text through the existing permission/integrity boundary. SHA-256 of its UTF-8 bytes must equal the bound original digest before
 raw offsets are used. Transformed text is an evidence gap requiring an original-byte reading path; it is never silently accepted.
