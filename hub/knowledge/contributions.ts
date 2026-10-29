@@ -79,13 +79,19 @@ function identityOf(prepared: PreparedContribution): string {
       ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});
 }
 
+export const HISTORICAL_CAPTURE_TIME = '历史记录未记明采集时刻是否由客户端声明：at 可能是上传时刻，不能当作已声明的采集时间';
+
 function noteWithDevice(body: KnowledgeContributionBody, note: string): string;
 function noteWithDevice(body: KnowledgeContributionBody, note: string | null): string | null;
 function noteWithDevice(body: KnowledgeContributionBody, note: string | null): string | null {
   const device = operationDeviceNote(body.feeding);
   const feeding = body.feeding;
-  // Every operation record says when its capture time was not declared, with or without a device.
-  const time = feeding && operationRecord(feeding.schema) && 'captured_at_declared' in feeding && feeding.captured_at_declared === false ? `采集时间未声明（取自上传时刻）；Hub 收到 ${feeding.received_at}` : null;
+  // Every operation record says when its capture time was not declared, with or without a device. A record from before the
+  // declaration existed carries no marker: its view says the source of its `at` is unknown, and its bytes stay as they were
+  // (round-five review, item 8).
+  const time = !feeding || !operationRecord(feeding.schema) ? null
+    : !('captured_at_declared' in feeding) ? HISTORICAL_CAPTURE_TIME
+    : feeding.captured_at_declared === false ? `采集时间未声明（取自上传时刻）；Hub 收到 ${feeding.received_at}` : null;
   return [note, device, time].filter((value): value is string => value !== null).join('；') || null;
 }
 

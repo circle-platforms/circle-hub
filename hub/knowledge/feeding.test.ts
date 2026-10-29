@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {makeWorld,startPostgres,STATIC_PLAN_SOURCE,DEFAULT_SYNC,catalogXml,type World} from './test-support.ts';
 import {SeedlingBody} from '../../contracts/src/knowledge.ts';
 import {formatKnowledgeRetract, knowledgeRetract} from './api.ts';
-import {newId} from '../records/api.ts';
+import {newId,scanForCredentials,RECORD_SCHEMAS,type SourceArtifact,type SourceArtifactBody} from '../records/api.ts';
 import {runRecord} from '../../contracts/src/fixtures.ts';
 import {RunRecord} from '../../contracts/src/run.ts';
 import {putRun} from '../runs/engine/store.ts';
@@ -43,6 +43,33 @@ test('an upload note records a capture time only when the client declared one (r
  assert.equal(timed.at,'2026-10-27T08:00:00.000Z');assert.equal(timed.captured_at_declared,true);assert.equal(timed.received_at,declared.created_at);
  // Each note still finds its own upload and passes the check against the body the Hub generates.
  for(const body of [plain,timed])assert.ok(await layer.prepare(w.user,{...body,classification:[{value:'ticket',quote:{reference:'src:'+String(body.object)+'/text@1/l/1',text:'synthetic note'}}]} as never,{}));
+});
+
+test('two uploads of the same bytes at the same declared time are each annotated through their own note (round-five review, item 5)',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
+ const capturedAt='2026-10-27T08:00:00.000Z',bytes=Buffer.from('synthetic note captured twice');
+ const upload=(session:string)=>w.kit.artifacts.ingest({bytes,mediaType:'text/plain',origin:{upload:{session,message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},readTier:'model_readable',capturedAt});
+ const first=await upload('synthetic-first');await new Promise(resolve=>setTimeout(resolve,5));const second=await upload('synthetic-second');
+ assert.notEqual(first.digest,second.digest,'two upload records');assert.notEqual(first.created_at,second.created_at);
+ await layer.upload(w.user,first);await layer.upload(w.user,second);
+ const notes=(await layer.entries(w.user,w.user.id)).map(row=>row.body as Record<string,unknown>).filter(body=>body.object===first.body.sha256);
+ assert.deepEqual(notes.map(body=>body.received_at).sort(),[first.created_at,second.created_at].sort());
+ for(const body of notes)assert.ok(await layer.prepare(w.user,{...body,classification:[{value:'ticket',quote:{reference:'src:'+first.body.sha256+'/text@1/l/1',text:'synthetic note'}}]} as never,{}),String(body.received_at));
+});
+
+test('a new note for an upload recorded before capture times could be declared says the time was not declared (round-five review, item 5)',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
+ // The record main wrote: an upload never named a capture time, so its captured_at was the Hub's own, and it has no marker.
+ const bytes=Buffer.from('synthetic note from before the marker');
+ const body:SourceArtifactBody={sha256:'',size:bytes.byteLength,media_type:'text/plain',name:'note.txt',origin:{upload:{session:'synthetic-main',message:null}},author:{user:w.user.id,declared:null},captured_at:'2026-10-27T08:00:00.000Z',provenance_type:'declared',read_tier:'model_readable',requested_read_tier:'model_readable',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},scan:scanForCredentials(bytes)};
+ body.sha256=(await w.kit.objects.put(bytes,'text/plain')).sha256;
+ const legacy=await w.kit.store.put({kind:'source_artifact',schema:RECORD_SCHEMAS.source_artifact,provenance:'declared',created_at:'2026-10-27T08:00:00.004Z',body,index:[{key:'artifact.sha256',value:body.sha256},{key:'artifact.reader',value:w.user.id},{key:'artifact.author',value:w.user.id}]});
+ assert.equal('captured_at_declared' in legacy.body,false);
+ await layer.upload(w.user,legacy as unknown as SourceArtifact);
+ const note=(await layer.entries(w.user,w.user.id)).map(row=>row.body as Record<string,unknown>).find(row=>row.object===body.sha256)!;
+ assert.equal('at' in note,false,'the Hub time of an old upload is not claimed as a capture time');
+ assert.equal(note.captured_at_declared,false);assert.equal(note.received_at,legacy.created_at);
+ assert.ok(await layer.prepare(w.user,{...note,classification:[{value:'ticket',quote:{reference:'src:'+body.sha256+'/text@1/l/1',text:'synthetic note'}}]} as never,{}));
 });
 
 test('a current pointer naming a content root selects its own line record when two lines share tree bytes',async t=>{const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const root=await seed(w,'10.8');await seed(w,'10.9');for(const line of ['10.8','10.9']){const old=await w.kit.pointers.get(seedlingName(w.product.id,line));assert.ok(old);await w.kit.pointers.move({name:old.name,expected:old.target,next:root.root,by:w.admin,run:null,component:'synthetic.feeding@1'});}assert.equal((await w.knowledge.feeding!.seedFor(w.product.id,'10.8'))!.line,'10.8');assert.equal((await w.knowledge.feeding!.seedFor(w.product.id,'10.9'))!.line,'10.9');});

@@ -82,14 +82,13 @@ const annotations=['classification','manual_link','relations','applicability','c
 export const operationRecord=(schema:unknown):schema is 'fed-observation@1'|'fed-procedure@1'|'fed-pitfall@1'=>operationSchema(schema);
 /** Content identity of an operation record: its canonical statement, quotations, exact capture and declared target, nothing else. */
 /**
- * The capture facts of an upload's note. A client that declared the capture time gives `at`; one that did not leaves `at`
- * out, and the note keeps the Hub's receipt time apart from it, as operation records do (round-four review, item 5). An
- * upload from before the declaration existed keeps the note it always had.
+ * The capture facts of a new note for an upload. A client that declared the capture time gives `at`; one that did not
+ * leaves `at` out, and the note keeps the Hub's receipt time apart from it, as operation records do (round-four review,
+ * item 5). An upload record without the declaration flag comes from before uploads could declare a capture time, when its
+ * captured_at was always the Hub's own time: undeclared too (round five). A note already written is never rewritten.
  */
 function noteCapture(artifact:SourceArtifact):Record<string,unknown>{
- const declared=artifact.body.captured_at_declared;
- if(declared===undefined)return {at:artifact.body.captured_at};
- return declared?{at:artifact.body.captured_at,captured_at_declared:true,received_at:artifact.created_at}:{captured_at_declared:false,received_at:artifact.created_at};
+ return artifact.body.captured_at_declared===true?{at:artifact.body.captured_at,captured_at_declared:true,received_at:artifact.created_at}:{captured_at_declared:false,received_at:artifact.created_at};
 }
 export function operationIdentity(body:Record<string,unknown>):Record<string,unknown>{
   const capture=Object.fromEntries([['artifact',object(body.source)?body.source.artifact:undefined],['device',body.device],['bed',body.bed]].filter(([,value])=>value!==undefined));
@@ -379,7 +378,26 @@ export class FeedingLayer {
  }
  async freeze(principal:Principal,run:string,root:string|null):Promise<FeedingOffset>{return this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);const body={schema:'feeding-offset@1',run,root,offset:await this.offset(tx)} as const;const stored=await this.context.records.store.put({kind:'claim',schema:'feeding-offset@1',provenance:'observed',body,unique_key:'feeding.freeze:'+run,index:[{key:'knowledge.feeding.offset',value:run}]},tx);return stored.body;});}
  async usages(principal:Principal,run:string):Promise<string[]>{const owned=await runById(this.context.records.store,run);if(!owned||!await canViewRun(principal,owned.body,this.context.records.store))return [];const rows=await this.all(USAGE,run);const out:string[]=[];for(const row of rows){const body=this.body(row);if(body&&await this.visible(body.object,principal))out.push(body.object);}for(const row of await this.pending(principal,run))out.push(row.source);return [...new Set(out)];}
- private async uploadedSource(principal:Principal,body:Record<string,any>){const original=(await this.context.records.artifacts.records(body.source.bytes)).find(row=>'upload'in row.body.origin&&row.body.author.user===body.by&&(body.at!==undefined?row.body.captured_at===body.at&&row.body.captured_at_declared!==false:row.body.captured_at_declared===false&&row.created_at===body.received_at));if(!original)fail('缺少与上传者和采集时刻一致的上传原件');return this.source(principal,body.source.bytes,original.digest);}
+ /**
+  * A note proposal annotates the note the Hub wrote for one upload, exactly as it was written: a note from before the
+  * capture-time declaration keeps its `at`, and two uploads of the same bytes are told apart by their own notes, never by
+  * a time looked up again (round-five review, item 5).
+  */
+ private async uploadedSource(principal:Principal,body:Record<string,any>){
+  const base=canonicalize(Object.fromEntries(Object.entries(body).filter(([key])=>!annotations.includes(key as never))));
+  for(const row of await this.context.records.artifacts.records(body.source.bytes)){
+   if(!('upload'in row.body.origin)||row.body.author.user!==body.by)continue;
+   const written=await this.uploadNote(row.digest);
+   if(written!==null&&canonicalize(written)===base)return this.source(principal,body.source.bytes,row.digest);
+  }
+  fail('缺少与上传者和这份上传说明一致的上传原件');
+ }
+ /** The note body `upload()` wrote for one upload record, or null when none was written. */
+ private async uploadNote(artifact:string):Promise<Record<string,unknown>|null>{
+  const record=await this.context.records.store.getByKey<any>('claim','feeding:note:'+artifact);
+  const feeding=record?.body?.statement?.data?.feeding;
+  return object(feeding)&&feeding.schema==='fed-note@1'?feeding:null;
+ }
  private async visible(id:string,principal:Principal):Promise<boolean>{const rows=await this.all(OBJECT,id);if(!rows.length)return Boolean((await this.context.records.artifacts.source(principal,id,{consumer:'model'}))?.bytes);for(const row of rows)if(await this.recordVisible(row,principal))return true;return false;}
  private async recordVisible(record:StoredRecord<ClaimBody>,principal:Principal):Promise<boolean>{
   const account=await this.context.records.principals.get(principal.id);if(!account||account.disabled)return false;const body=this.body(record);if(!body)return false;if(body.schema==='fed-note@1'&&principal.role!=='admin'&&body.by!==principal.id)return false;
@@ -500,8 +518,8 @@ export class FeedingLayer {
   const source=await this.originalSource(principal,body,scope);
   if(body.schema==='fed-note@1'){
    if(!('upload'in source.artifact.body.origin)||source.artifact.body.author.user!==principal.id&&principal.role!=='admin')fail('声明来源只允许上传者和管理员');
-   const expected={schema:'fed-note@1',object:source.artifact.body.sha256,product:null,root:null,path:null,source:{system:'upload',bytes:source.artifact.body.sha256},by:source.artifact.body.author.user,run:null,...noteCapture(source.artifact)};
-   const base=Object.fromEntries(Object.entries(body).filter(([key])=>!annotations.includes(key as never)));if(canonicalize(base)!==canonicalize(expected))fail('上传对象的采集事实或摘要被改写');
+   const written=await this.uploadNote(source.artifact.digest);
+   const base=Object.fromEntries(Object.entries(body).filter(([key])=>!annotations.includes(key as never)));if(written===null||canonicalize(base)!==canonicalize(written))fail('上传对象的采集事实或摘要被改写');
   }else if(operationRecord(body.schema)){
    await this.checkOperation(body,source);
   }else{
