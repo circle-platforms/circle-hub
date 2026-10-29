@@ -159,13 +159,24 @@ export function internalError(trace: string): McpError {
   return new McpError(ErrorCode.InternalError, `Hub 内部错误，原因已记入管理员日志（追踪 ${trace}）`, { trace });
 }
 
+/**
+ * The answer to a skill parser's sandbox failure. A document that its parse cannot hold, by the document cache's budget, the
+ * sandbox's memory or its output limit, fails again on every reread, so the fix is a smaller original or a parser that keeps
+ * less (hub/refs/README.md, Skill parser limits). Any other failure is the administrator's to look into.
+ */
+export function sandboxError(error: SandboxError): ProtocolError {
+  if (error.detail.limit === 'document_cache_bytes') return { code: 'SOURCE_RETRYABLE', message: `文档缓存估算超过预算：${error.code}`, fix: '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读' };
+  const tooLarge = error.detail.limit === 'memory' ? '解析原件超过沙箱内存上限' : error.code === 'SANDBOX_OUTPUT_TOO_LARGE' ? '解析结果超过沙箱输出上限' : undefined;
+  if (tooLarge !== undefined) return { code: 'SOURCE_RETRYABLE', message: `${tooLarge}：${error.code}`, fix: '原样重读仍会失败；请来源维护者拆分原件后重读，或请解析器维护者降低解析所需的内存和输出' };
+  return { code: 'SOURCE_RETRYABLE', message: `来源片段暂时未核对：技能包沙箱 ${error.code}`, fix: '管理员核对技能包和沙箱状态，恢复后重新读取' };
+}
+
 /** A thrown error with a registered protocol code becomes that error answer; anything else is an internal error. */
 function fromThrown(tool: ToolName, error: unknown, call: ToolCall): Answer {
   if (error instanceof SandboxError) {
     // Pack-controlled diagnostics and stdout may contain function-only source bytes. Record only the fixed sandbox code.
     call.context.adminNote(`技能包沙箱失败：${error.code}`);
-    const cacheLimit = error.detail.limit === 'document_cache_bytes';
-    return errorAnswer(tool, [{ code: 'SOURCE_RETRYABLE', message: cacheLimit ? `文档缓存估算超过预算：${error.code}` : `来源片段暂时未核对：技能包沙箱 ${error.code}`, fix: cacheLimit ? '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读' : '管理员核对技能包和沙箱状态，恢复后重新读取' }]);
+    return errorAnswer(tool, [sandboxError(error)]);
   }
   const code = protocolCodeOf(error);
   if (code === null) {

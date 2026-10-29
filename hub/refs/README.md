@@ -232,6 +232,13 @@ onDiagnostic? }`. It never rejects for anything a reference or a stored source c
   runner and a development Mac (#86), each skill's synthetic documents of 2 to 16 MiB either parsed within 2.1 s or
   were stopped within 4.3 s: by the memory limit from 2 to 8.5 MB depending on their shape, or by the parser's own
   `maxSelectorChars`. The skills declare `maxBytes` of 16 MiB, which these shapes therefore do not reach.
+  Neither the parse memory nor `maxBytes` was changed for that (2026-10-29). The Hub's own document cache budget above
+  would refuse most such documents anyway: the resource test's two XML shapes retain an estimated 35 and 54 times their
+  input, so the budget ends at about 3.5 to 5.5 MB of them. A lower `maxBytes` would refuse lighter documents that parse
+  today, such as 8.5 MB of text-heavy XML, while a 2 MiB block of links still runs out of memory: what a parse needs
+  follows a document's structure, not its size. A document that the memory or output limit stops is answered like one
+  over the cache budget (`sandboxError` in `hub/server/tools.ts`): rereading it as it is fails again, so the source
+  maintainer splits it, or the parser maintainer makes the parser need less.
 
 ## Decisions and deviations from the brief
 
