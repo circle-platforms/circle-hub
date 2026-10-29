@@ -1,0 +1,42 @@
+# Version updates for the Hub's own dependencies and for the actions the workflows pin by commit SHA.
+# foundation/circle and references/ are frozen bytes (AGENTS.md, Source and reference ownership): Dependabot must not
+# open pull requests for their manifests. exclude-paths keeps them out of version updates only; the frozen entry at the
+# end ignores every dependency there, and ignore conditions apply to security updates as well, so an advisory against
+# one of their lock files raises an alert but no pull request.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    exclude-paths:
+      - 'foundation/**'
+      - 'references/**'
+    schedule:
+      interval: weekly
+    ignore:
+      # The Hub runs on Node 24 (package.json engines); types from a later major describe APIs it does not have.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    exclude-paths:
+      - 'foundation/**'
+      - 'references/**'
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
+
+  # The frozen archives: never updated, by version or security pull requests.
+  - package-ecosystem: npm
+    directories:
+      - '/foundation/**'
+      - '/references/**'
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: '*'

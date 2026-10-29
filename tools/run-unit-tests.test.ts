@@ -1,16 +1,34 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {execFileSync} from 'node:child_process';
+import {execFileSync,spawnSync} from 'node:child_process';
+import {globSync,readFileSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {unitArguments,unitFiles,PARSER_BOUNDS,SENTINELS,classifyLanes,sentinelConcurrency,sharedConcurrency,unitLane} from './run-unit-tests.ts';
+import {acceptanceFiles} from './run-acceptance-tests.ts';
+import {unitArguments,unitFiles,PARSER_BOUNDS,SENTINELS,classifyLanes,laneArguments,runUnitTests,sentinelConcurrency,sharedConcurrency,unitLane,unitSeconds,unitShardFiles,UNIT_MEASURED_SECONDS} from './run-unit-tests.ts';
 const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-test('CI test partitions are disjoint and cover every original tracked unit test',()=>{
+
+// Tracked test files that no runner picks up on purpose, each with the reason. Everything else must be run.
+const NOT_RUN:Array<[pattern:string,reason:string]>=[
+ ['foundation/**/*.test.ts','frozen Circle baseline: its own test setup, never changed or run here (AGENTS.md)'],
+ ['references/**/*.test.ts','immutable reference archive: never run or imported (AGENTS.md)'],
+ ['docs/hub-r4-research/adoc-sandbox/prototype.test.ts','research prototype: needs an explicit public-registry download first (docs/hub-r4-research/adoc-sandbox.md)'],
+];
+
+/** The acceptance runner's files and the test files of the npm scripts that run node --test directly, read from package.json so they stay in step. */
+function scriptFiles():string[]{
+ const scripts=(JSON.parse(readFileSync(resolve(ROOT,'package.json'),'utf8')) as {scripts:Record<string,string>}).scripts;
+ const files:string[]=[...acceptanceFiles()];
+ for(const name of ['test:docs','test:references']){
+  const patterns=[...scripts[name].matchAll(/"([^"]+\.test\.ts)"|(\S+\.test\.ts)/g)].map(match=>match[1]??match[2]);
+  assert.ok(patterns.length>0,`${name} names no test files`);
+  for(const pattern of patterns)files.push(...globSync(pattern,{cwd:ROOT}));
+ }
+ return files;
+}
+test('CI test partitions are disjoint and cover every unit test',()=>{
  const all=unitFiles(),regular=unitFiles('regular'),parsers=unitFiles('parser-bounds');
  assert.deepEqual([...regular,...parsers].sort(),all);assert.equal(new Set([...regular,...parsers]).size,all.length);
- const owned=new Set(['contracts','hub','packs','scripts']);
- const tracked=execFileSync('git',['ls-files','-z'],{cwd:ROOT}).toString().split('\0').filter(file=>file.endsWith('.test.ts')&&owned.has(file.split('/')[0]));
- for(const file of tracked)assert.ok(all.includes(file),file);
  assert.deepEqual(parsers,[
   'hub/refs/adversarial.test.ts',
   'hub/refs/parsers/html.test.ts',
@@ -63,4 +81,42 @@ test('local concurrency tracks this machine and the public partitions stay cappe
   assert.equal(sentinelConcurrency('regular'), sharedConcurrency('regular'));
   assert.equal(sentinelConcurrency('all'), 2);
   assert.equal(classifyLanes(unitFiles('parser-bounds')).shared.length, 0);
+});
+
+test('the shards of a public partition cover it once, balanced, and the measured files exist', () => {
+  const regular = unitFiles('regular');
+  assert.deepEqual(laneArguments(regular, 2), ['--test', '--test-isolation=process', '--test-concurrency=2', ...regular]);
+  assert.deepEqual(unitShardFiles('regular', undefined), regular, 'without a shard the whole partition runs');
+  for (const group of ['regular', 'parser-bounds'] as const) {
+    for (let total = 1; total <= 4; total++) {
+      const files = unitFiles(group);
+      const parts = Array.from({ length: total }, (_, i) => unitShardFiles(group, { index: i + 1, total }));
+      assert.equal(parts.flat().length, files.length, `${group} in ${total} shards: no overlap`);
+      assert.deepEqual(parts.flat().sort(), files, `${group} in ${total} shards: every file`);
+      for (const part of parts) assert.ok(part.length > 0, `${group} ${total} shards: none empty`);
+    }
+  }
+  const loads = [1, 2, 3].map((index) => unitShardFiles('regular', { index, total: 3 }).reduce((sum, file) => sum + unitSeconds(file), 0));
+  assert.ok(Math.max(...loads) <= Math.min(...loads) * 1.1, `balanced shards: ${loads.join(', ')}`);
+  const all = new Set(unitFiles('all'));
+  for (const file of Object.keys(UNIT_MEASURED_SECONDS)) assert.ok(all.has(file), file);
+});
+
+test('the runner refuses a shard of the local lanes and a malformed shard', async () => {
+  await assert.rejects(runUnitTests('all', { index: 1, total: 2 }), /分片只用于/);
+  const out = spawnSync(process.execPath, ['tools/run-unit-tests.ts', 'regular', '4/3'], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(out.status, 2);
+  assert.match(out.stderr, /分片必须写成/);
+});
+
+test('every tracked test file is run by a runner or listed as not run, with its reason',()=>{
+ const run=new Set([...unitFiles(),...scriptFiles()]);
+ const excluded=new Set(NOT_RUN.flatMap(([pattern])=>globSync(pattern,{cwd:ROOT})));
+ for(const [pattern] of NOT_RUN)assert.ok(globSync(pattern,{cwd:ROOT}).length>0,`stale exclusion: ${pattern}`);
+ const tracked=execFileSync('git',['ls-files','-z','--','*.test.ts'],{cwd:ROOT}).toString().split('\0').filter(Boolean);
+ assert.ok(tracked.length>100);
+ const orphans=tracked.filter(file=>!run.has(file)&&!excluded.has(file));
+ assert.deepEqual(orphans,[],'add these to a runner (tools/run-unit-tests.ts UNIT_PATTERNS, tools/run-acceptance-tests.ts ACCEPTANCE_PATTERNS or a package.json test script) or to NOT_RUN with a reason');
+ for(const file of excluded)assert.equal(run.has(file),false,`${file} is both run and listed as not run`);
+ for(const file of ['tests/acceptance/oracle/oracle.test.ts','tests/acceptance/oracle/differential.test.ts','tools/slot-schema.test.ts','tests/fixtures/recompose/checks.test.ts','.github/checks/workflow.test.ts','tools/verify-reference-archive.test.ts'])assert.ok(run.has(file),file);
 });

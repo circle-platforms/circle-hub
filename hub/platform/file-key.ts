@@ -69,7 +69,15 @@ export function fileKeyStore(options: FileKeyOptions): KeychainStore {
       try { if (!timingSafeEqual(bytes, actual)) throw new PlatformError(`读回的${item.label}不一致`); } finally { actual.fill(0); }
     } finally { bytes.fill(0); }
   };
-  return {service,account,status,read,write,async init(){const bytes=randomBytes(KEY_BYTES);try{await write(bytes);}finally{bytes.fill(0);}},async delete(){if(!(await status()).present)return false;return removeKeyFile(path);}};
+  return {service,account,status,read,write,async init(){const bytes=randomBytes(KEY_BYTES);try{await write(bytes);}finally{bytes.fill(0);}},async delete(){
+    // A concurrent delete can unlink the file while status() is looking at it (seen as a stat of an inode already being
+    // removed); when the check fails and the path is gone by the time we look again, the file was removed, not unsafe.
+    let present: boolean;
+    try { present = (await status()).present; }
+    catch (error) { if (await lstat(path).then(() => false, (e: NodeJS.ErrnoException) => e.code === 'ENOENT')) return false; throw error; }
+    if (!present) return false;
+    return removeKeyFile(path);
+  }};
 }
 export function fileKeyProvider(options: FileKeyOptions): Required<KeyProvider> {
   const store = fileKeyStore({...options,item:VAULT_KEY_ITEM});

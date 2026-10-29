@@ -47,15 +47,19 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
  const alternativeInverses=(identity:CommandIdentity,received:CommandIdentity|undefined):{identities:CommandIdentity[];ambiguous:boolean}=>{
   const pairs=policy.inverse_alternatives??[];
   if(!pairs.length)return {identities:[],ambiguous:false};
+  // A union argument type (an address of either family, say) publishes one native argument list as several catalog
+  // signatures under the same reference, so each supplied position is read across all of them: where none declares an
+  // enum holding a declared pair there is no alternative, and a pair is used only where every one declares that enum.
   const signatures=native.filter(definition=>definition.path===identity.path).flatMap(definition=>definition.signatures).filter(signature=>signature.reference===identity.signature);
-  if(!signatures.length||signatures.some(signature=>JSON.stringify(signature.params)!==JSON.stringify(signatures[0].params)))return {identities:[],ambiguous:true};
+  if(!signatures.length)return {identities:[],ambiguous:true};
   const inverses=new Map<string,CommandIdentity>();let unrepresentable=false;
   for(const parameter of identity.parameters){
-   const declared=signatures[0].params[parameter.position];
-   if(declared?.type!=='enum'||!Array.isArray(declared.values)||parameter.parsed.kind!=='text')continue;
-   const value=parameter.parsed.value;
-   const pair=pairs.find(([a,b])=>(a===value||b===value)&&declared.values!.includes(a)&&declared.values!.includes(b));
-   if(!pair)continue;
+   if(parameter.parsed.kind!=='text')continue;
+   const value=parameter.parsed.value,declared=signatures.map(signature=>signature.params[parameter.position]);
+   const pairIn=(param:(typeof declared)[number])=>param?.type==='enum'&&Array.isArray(param.values)?pairs.find(([a,b])=>(a===value||b===value)&&param.values!.includes(a)&&param.values!.includes(b)):undefined;
+   if(!declared.some(pairIn))continue;
+   const pair=pairIn(declared[0]);
+   if(!pair||declared.some(param=>JSON.stringify(param)!==JSON.stringify(declared[0]))){unrepresentable=true;continue;}
    const swapped=pair[0]===value?pair[1]:pair[0];
    const supplied=received?.parameters.find(p=>p.position===parameter.position);
    const tokens=commandTokens(swapped);
