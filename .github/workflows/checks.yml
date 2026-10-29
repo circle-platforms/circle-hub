@@ -2,8 +2,10 @@ name: Hub checks
 
 # Synthetic fixtures and scripted models only: no job reaches a real system, a real model endpoint or a secret.
 # Ubuntu has no sandbox-exec, keychain or launchd, so the tests that need them skip here; the unit jobs install the PostgreSQL 18
-# client so that backup, restore and deploy run. The job summary lists every skip; a skip is not a pass. The skipped macOS
-# paths run in macos.yml on every push to main, nightly and on demand, and in the local macOS run of each phase (AGENTS.md).
+# client so that backup, restore and deploy run. The tests of the pack sandbox run in the Linux isolation jobs, which install
+# bubblewrap and AppArmor and load the Hub's policy; every other job has no isolation and skips them. The job summary lists
+# every skip; a skip is not a pass. The macOS paths (sandbox-exec, the keychain, plutil, launchd) run in macos.yml on every
+# push to main, nightly and on demand, and in the local macOS run of each phase (AGENTS.md).
 
 on:
   push:
@@ -137,6 +139,71 @@ jobs:
     steps:
       - name: Require every acceptance slice to pass
         run: test '${{ needs.acceptance_parts.result }}' = 'success'
+
+  # The pack sandbox under Linux isolation: bubblewrap and the Hub's AppArmor policy (hub/rules/README.md), installed and loaded
+  # on these runners only, for the Node that setup-node provides and the shell linux.ts expects. The launcher profile's own
+  # userns rule lets bubblewrap create its namespaces, so kernel.apparmor_restrict_unprivileged_userns keeps the runner's
+  # default. The unit and acceptance files that guard on the sandbox (tools/run-guarded-tests.ts linux) run here, in slices
+  # balanced by measured durations; the other jobs have no isolation and skip those tests.
+  isolation_parts:
+    name: Linux isolation / ${{ matrix.suite }} ${{ matrix.shard }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { suite: unit, shard: 1/2 }
+          - { suite: unit, shard: 2/2 }
+          - { suite: acceptance, shard: 1/2 }
+          - { suite: acceptance, shard: 2/2 }
+    env:
+      GUARDED_SHARD: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Install bubblewrap and AppArmor
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo timeout 240 apt-get -o Acquire::Retries=3 update
+          sudo timeout 240 apt-get -o Acquire::Retries=3 install -y --no-install-recommends bubblewrap apparmor
+          test -x /usr/bin/bwrap
+          test -x /usr/bin/aa-exec
+      # The policy names the real paths of this Node and of /bin/sh, so it is generated here, after setup-node.
+      - name: Load the Hub's AppArmor policy for this Node
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          node hub/rules/sandbox/linux.ts > "$RUNNER_TEMP/circle-hub-sandbox.apparmor"
+          cat "$RUNNER_TEMP/circle-hub-sandbox.apparmor"
+          sudo apparmor_parser -r "$RUNNER_TEMP/circle-hub-sandbox.apparmor"
+      # Fail here rather than let every guarded test skip quietly; the runner refuses a machine without isolation as well.
+      - name: Require bubblewrap and AppArmor isolation
+        id: ready
+        run: node --input-type=module -e "const m = await import('./hub/rules/api.ts'); if (!(await m.osIsolationAvailable())) { console.error('Linux isolation unavailable: ' + m.osIsolationFailure()); process.exit(1); }"
+      - name: Run the ${{ matrix.suite }} tests that need the pack sandbox
+        shell: bash
+        run: node tools/run-guarded-tests.ts linux ${{ matrix.suite }} 2>&1 | tee "$RUNNER_TEMP/isolation.log"
+      - name: Count what ran and what was skipped
+        if: ${{ !cancelled() }}
+        run: node .github/checks/test-summary.ts "$RUNNER_TEMP/isolation.log" 'Linux isolation / ${{ matrix.suite }} ${{ matrix.shard }}'
+
+  isolation:
+    name: Linux isolation
+    needs: isolation_parts
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every Linux isolation part to pass
+        run: test '${{ needs.isolation_parts.result }}' = 'success'
 
   docs:
     name: Docs and CI checks

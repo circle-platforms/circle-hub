@@ -1,9 +1,11 @@
 name: macOS-only paths
 
 # The tests that skip on Ubuntu because they need macOS: sandbox-exec isolation of pack functions (and its network denial),
-# the keychain, plutil and launchd, plus backup, restore and deploy with pg_dump and pg_restore 18. tools/run-macos-tests.ts
-# selects them from the sources by their skip guards. Synthetic fixtures and scripted models only; no secret is read.
-# Not on pull requests: macOS runners are few and shared across the organisation. This workflow is not a required check.
+# the keychain, plutil and launchd, plus backup, restore and deploy with pg_dump and pg_restore 18. `tools/run-guarded-tests.ts
+# macos` selects them from the sources by their skip guards. The pack sandbox's tests also run under Linux isolation on every
+# pull request (checks.yml); sandbox-exec itself is reached only here. Synthetic fixtures and scripted models only; no secret
+# is read. Not on pull requests: macOS runners are few and shared across the organisation. This workflow is not a required
+# check.
 
 on:
   push:
@@ -57,17 +59,17 @@ jobs:
           test -x /usr/bin/security
           node --input-type=module -e "const m = await import('./hub/rules/api.ts'); if (!(await m.osIsolationAvailable())) { console.error('sandbox-exec isolation unavailable: ' + m.osIsolationFailure()); process.exit(1); }"
       - name: List the selected test files
-        run: node tools/run-macos-tests.ts list
+        run: node tools/run-guarded-tests.ts macos list
       - name: Run the unit tests that need macOS
         shell: bash
-        run: node tools/run-macos-tests.ts unit 2>&1 | tee "$RUNNER_TEMP/macos-unit.log"
+        run: node tools/run-guarded-tests.ts macos unit 2>&1 | tee "$RUNNER_TEMP/macos-unit.log"
       - name: Count what ran and what was skipped (unit)
         if: ${{ !cancelled() }}
         run: node .github/checks/test-summary.ts "$RUNNER_TEMP/macos-unit.log" 'macOS unit tests'
       - name: Run the acceptance tests that need macOS
         if: ${{ !cancelled() && steps.ready.outcome == 'success' }}
         shell: bash
-        run: node tools/run-macos-tests.ts acceptance 2>&1 | tee "$RUNNER_TEMP/macos-acceptance.log"
+        run: node tools/run-guarded-tests.ts macos acceptance 2>&1 | tee "$RUNNER_TEMP/macos-acceptance.log"
       - name: Count what ran and what was skipped (acceptance)
         if: ${{ !cancelled() }}
         run: node .github/checks/test-summary.ts "$RUNNER_TEMP/macos-acceptance.log" 'macOS acceptance'
