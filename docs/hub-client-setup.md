@@ -41,7 +41,7 @@ nav_order: 10
 - **审批**：Hub 把 `list_task_packs`、`get_nodes`、`resolve_reference` 标为只读，Circle 不会逐次询问；`upload_file`、`start_run`、`submit_result` 不是只读，按你的审批模式询问。想让这台服务器的所有工具都询问，在条目里加 `"trust_annotations": false`。
 - **长时间的调用不要盲目重发**：有些计算（例如质量看板、大树的读取）要几分钟甚至更久，客户端可能先断线（`fetch failed`），这不代表服务端停了，重发会再算一遍。先用 `get_nodes` 的调用查询（`call_query`：原来的参数加追踪号）看那次调用还在算还是已经结束；成功读取的回答在 10 分钟内可以按同样的参数找回。
 - **同内容文件重复上传**：Circle 可能直接回答 `cached (same content)`，不再发到 Hub；这是 Circle 对"重复调用没有新效果"的工具的做法，Hub 里已经有那份原件。
-- **无头模式**（`circle -p "…"`）：必须加 `--extensions` 才会连接 MCP 服务器；`start_run` 这类非只读工具需要 `--yolo`；项目里的 hooks 需要 `--approve-hooks`。连接失败时无头模式不提示原因，用全屏界面里的 `/mcp` 才能看到。
+- **无头模式**（`circle -p "…"`，建议加 `</dev/null` 以免等标准输入 3 秒）：必须加 `--extensions` 才会连接 MCP 服务器，不加时模型的工具列表里就没有 Hub 的工具，也没有任何提示；无头模式不能询问审批，审批模式是 `auto` 时非只读工具（`upload_file`、`start_run`、`submit_result`）直接运行，其它模式下需要 `--yolo`；带 `destructiveHint` 的工具无头模式即使加了 `--yolo` 也不运行（Hub 的六个工具没有这种标注）；项目里的 hooks 需要 `--approve-hooks`。连接失败时用全屏界面里的 `/mcp` 才能看到原因。
 - **看结果**：每次运行和提交都有运行编号；用管理员给你的账号登录 Hub 的只读控制台（`/console`，运行页 `/console/runs`，任务包页 `/console/packs`）可以查看。
 
 ## 常见问题
