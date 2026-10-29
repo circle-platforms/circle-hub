@@ -32,7 +32,7 @@ async function capturedRun(h: Harness) {
   });
   assert.ok(old.sources.some(source => source.reference === declared && source.artifact === undefined));
   await putRun(h.kit.store, old, current.started_at);
-  return { old, sha256: captured.body.sha256 };
+  return { old, sha256: captured.body.sha256, captured };
 }
 
 test('prefetch cannot bypass declaration-grade refusal on a later grounds use', { skip }, async t => {
@@ -146,4 +146,79 @@ test('a run that binds one digest to two records refuses it as grounds when eith
   const grounded = await resolver.resolve(reference, { grounds: true });
   assert.equal(grounded.ok, false, 'the captured record bound second is checked too');
   assert.match(JSON.stringify(grounded), /客户端捕获/);
+});
+
+test('evaluation checks the record its read came from, even when a newer record of the same bytes appears in between (round six, item 3)', { skip }, async t => {
+  const h = await openHarness(postgres, { dataQuotes: true }); t.after(() => h.close());
+  const { old, sha256, captured } = await capturedRun(h);
+  const declared = (await h.kit.artifacts.records(sha256)).find(row => row.body.provenance_type === 'declared');
+  assert.ok(declared);
+  // The first unpinned lookup sees the captured record; any later one sees the declared record, as if a newer record of the
+  // same bytes appeared between the read and the check. A pinned read gets the record it names.
+  const source = h.kit.artifacts.source.bind(h.kit.artifacts);
+  let unpinned = 0;
+  t.mock.method(h.kit.artifacts, 'source', async (...args: Parameters<typeof source>) => {
+    const [principal, sha, options = {}] = args;
+    if (sha !== sha256 || options.record !== undefined) return source(...args);
+    return source(principal, sha, { ...options, record: unpinned++ === 0 ? captured.digest : declared.digest });
+  });
+  const reference = `src:${sha256}/json@1/p`;
+  const items = old.items.map(item => ({ item: item.id, handling: 'handled' as const, slots: { findings: item.id === ITEM.c4 ? [{ text: '合成', code: 'edge_case_gap', rank: 'major', data: { expected_quote: { reference, text: 'x' } } }] : [] } }));
+  const evaluated = await evaluate(createEngineContext({ records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external }), {
+    run: old, workflow: h.review,
+    submission: { run: old.run, model: 'synthetic-evaluation', items },
+    submissionDigest: 'b'.repeat(64), exact: null, carried: new Map(), roundsUsed: new Map(), origin: null, author: null, traceId: '4bf92f3577b34da6a3ce929d0e0e4737',
+  });
+  assert.ok(unpinned >= 1, 'the source was looked up');
+  assert.match(JSON.stringify(evaluated.result), /客户端捕获的原件只随操作记录进入回注层/, 'the captured record that was read is the one checked');
+});
+
+test('a run that bound no record reads a generated source on its own authority through the record it checks (round six, item 3)', { skip }, async t => {
+  const h = await openHarness(postgres); t.after(() => h.close());
+  const declared = await h.upload(h.alice, toyMap(standardDocument()));
+  const started = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: declared } } }, h.call());
+  const current = (await h.service.getRun(h.alice, started.run!.run))!.run;
+  // A generated source no reader names: the runner reads it only through the run that refers to it.
+  const generated = await h.kit.artifacts.ingest({
+    bytes: Buffer.from(JSON.stringify({ p: 'synthetic generated' })), mediaType: 'application/json', name: 'generated.json',
+    origin: { generated: { generator: 'synthetic@1', inputs: [] } }, author: { user: null }, provenanceType: 'projected',
+    visibility: { readers: [], admins: true, packs: [], shareable: false },
+  });
+  assert.equal(await h.kit.artifacts.source(h.alice, generated.body.sha256, { consumer: 'function' }), null, 'not readable directly');
+  const template = current.sources.find(source => source.reference === declared)!;
+  const { feeding_offset: _feedingOffset, ...base } = current;
+  const legacy = RunRecord.parse({ ...base, run: newId('run'), sources: [...current.sources, { ...template, reference: `src:${generated.body.sha256}`, artifact: undefined }] });
+  await putRun(h.kit.store, legacy, current.started_at);
+  const ctx = createEngineContext({ records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external });
+  const resolver = createResolver(ctx, await buildScope(ctx, legacy, h.review, h.alice, 'function'), 'function');
+  const reference = `src:${generated.body.sha256}/json@1/p`;
+  const read = await resolver.resolve(reference);
+  assert.equal(read.ok, true, JSON.stringify(read));
+  assert.equal((await resolver.resolve(reference, { grounds: true })).ok, true, 'a projected record may be grounds');
+});
+
+test('a binding to anything but a source artifact of these bytes leaves the record undetermined for grounds (round six, item 3)', { skip }, async t => {
+  const h = await openHarness(postgres); t.after(() => h.close());
+  const bytes = toyMap(standardDocument());
+  const declared = await h.upload(h.alice, bytes);
+  const started = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: declared } } }, h.call());
+  const current = (await h.service.getRun(h.alice, started.run!.run))!.run;
+  const binding = current.sources.find(source => source.reference === declared);
+  assert.ok(binding?.artifact);
+  // A second binding of the same digest names a real source artifact, but of other bytes.
+  const other = await h.kit.artifacts.ingest({
+    bytes: Buffer.from(JSON.stringify({ p: 'other bytes' })), mediaType: 'application/json', name: 'other.json',
+    origin: { upload: { session: 'other-bytes', message: null } }, author: { user: h.alice.id }, provenanceType: 'declared',
+    visibility: { readers: [h.alice.id], admins: true, packs: [], shareable: true },
+  });
+  const { feeding_offset: _feedingOffset, ...base } = current;
+  const damaged = RunRecord.parse({ ...base, run: newId('run'), sources: [...current.sources, { ...binding, artifact: other.digest }] });
+  await putRun(h.kit.store, damaged, current.started_at);
+  const ctx = createEngineContext({ records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external });
+  const resolver = createResolver(ctx, await buildScope(ctx, damaged, h.review, h.alice, 'function'), 'function');
+  const reference = `${declared}/json@1/p`;
+  assert.equal((await resolver.resolve(reference)).ok, true, 'the verified binding is still read');
+  const grounded = await resolver.resolve(reference, { grounds: true });
+  assert.equal(grounded.ok, false);
+  assert.match(JSON.stringify(grounded), /无法确定作根据的原件/);
 });

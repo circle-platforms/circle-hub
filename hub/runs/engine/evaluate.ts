@@ -32,10 +32,10 @@ import { createFunctionBatches } from './function-batches.ts';
 import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
 import { declarationGroundRefusal, UNKNOWN_GROUND } from '../../knowledge/declaration-grade.ts';
-import { boundArtifacts, buildScope, scopeProblem, emptyEvidence, sourceRecords, type ExactResult, type ItemEvidence } from './exact.ts';
+import { boundOf, buildScope, groundRecords, pinnedSources, scopeProblem, emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
-import { identityOf, principalOf, recordReader, sourceReader } from './readers.ts';
+import { identityOf, principalOf, recordReader } from './readers.ts';
 import { runRequirementOf } from './slots.ts';
 import {
   applyRouting,
@@ -350,14 +350,18 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const onError = (error: unknown, check: string): void => ctx.log({ traceId: input.traceId, run: run.run, what: `check ${check}`, detail: describe(error) });
 
   let resolveCtx: ResolveContext;
+  // Reads and every use as grounds share one choice of record per source digest (round-six review, item 3).
+  let pinned: ReturnType<typeof pinnedSources>;
   if (run.runner !== undefined) {
     const user = ctx.deps.records.principals !== undefined ? await ctx.deps.records.principals.get(run.runner) : null;
     const role: PermissionRole = user?.role ?? 'user';
     const runnerPrincipal: Principal = { id: run.runner, name: user?.name ?? run.runner, role };
+    const reader = identityOf(runnerPrincipal, run.run);
+    pinned = pinnedSources(ctx, reader, boundOf(run), 'function');
     resolveCtx = {
-      reader: identityOf(runnerPrincipal, run.run),
+      reader,
       parsers: ctx.parsers,
-      sources: sourceReader(ctx.deps.records.artifacts, 'function',run.sources),
+      sources: pinned.sources,
       trees: ctx.deps.knowledge.treeReader({ compositions: run.target_basis.flatMap(c => {const d=c.statement.data;return d && [run.root,run.unversioned_root].includes(d.root as string) && typeof d.composition === 'string' ? [d.composition] : [];}) }),
       records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
       consumer: 'function',
@@ -368,10 +372,12 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     // Standing obligations read as their configuring admin through the same effective-tier gate as ordinary runs.
     const configurer = run.configurer ?? 'hub';
     const user = ctx.deps.records.principals !== undefined ? await ctx.deps.records.principals.get(configurer) : null;
+    const reader = { user: configurer, role: user?.role ?? 'user', run: run.run };
+    pinned = pinnedSources(ctx, reader, boundOf(run), 'function');
     resolveCtx = {
-      reader: { user: configurer, role: user?.role ?? 'user', run: run.run },
+      reader,
       parsers: ctx.parsers,
-      sources: sourceReader(ctx.deps.records.artifacts, 'function',run.sources),
+      sources: pinned.sources,
       trees: ctx.deps.knowledge.treeReader({ compositions: run.target_basis.flatMap(c => {const d=c.statement.data;return d && [run.root,run.unversioned_root].includes(d.root as string) && typeof d.composition === 'string' ? [d.composition] : [];}) }),
       records: recordReader(ctx.deps.records.store, ctx.deps.knowledge.layers?.contributions),
       consumer: 'function',
@@ -492,12 +498,12 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
             return { why: r.code === 'REFERENCE_UNRESOLVED' ? 'no_fragment' : 'unavailable' };
           }
           if (!r.groundable) return { why: 'not_groundable' };
-          // Every record the run bound to the digest (the read is pinned to the first), or else the one the reader can read;
-          // none refuses (round-five review, item 3). The knowledge-contribution pack feeds captured sources: the one exemption.
+          // The records the reads of this digest stand on, every one of them; none refuses (rounds five and six, item 3). The
+          // knowledge-contribution pack feeds captured sources: the one exemption.
           const groundRefusal = async (sourceRef: ReturnType<typeof parseReference>) => {
             if (sourceRef.scheme !== 'src') return declarationGroundRefusal(sourceRef, digest => ctx.deps.records.store.get(digest));
             if (workflow.pack.id === 'knowledge-contribution') return null;
-            return declarationGroundRefusal(sourceRef, digest => ctx.deps.records.store.get(digest), await sourceRecords(ctx, resolveCtx.reader, boundArtifacts(run, sourceRef.sha256), sourceRef.sha256, 'function'));
+            return declarationGroundRefusal(sourceRef, digest => ctx.deps.records.store.get(digest), groundRecords(await pinned.choice(sourceRef.sha256)));
           };
           const named = await groundRefusal(ref);
           if (named) return { why: 'not_groundable', rule: named };

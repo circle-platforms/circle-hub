@@ -11,7 +11,7 @@ import type { TreeRootBody } from '../../../contracts/src/knowledge.ts';
 import { SlotClaim, type ResolvedEvidence } from '../../../contracts/src/pack.ts';
 import type { ItemProjection, RunRecord } from '../../../contracts/src/run.ts';
 import type { CriterionChange, Submission } from '../../../contracts/src/submission.ts';
-import { canonicalize, sha256Hex, type Principal, type SourceArtifact } from '../../records/api.ts';
+import { canonicalize, RECORD_SCHEMAS, sha256Hex, type Principal, type SourceArtifact, type SourceArtifactBody } from '../../records/api.ts';
 import type { LoadedWorkflow } from '../../ports.ts';
 import {
   ReferenceSyntaxError,
@@ -64,32 +64,86 @@ export interface RunScope {
   pack?: string;
 }
 
-/** The distinct artifact records a run bound to one source digest, in binding order. */
-export function boundArtifacts(run: Pick<RunRecord, 'sources'>, sha256: string): string[] {
-  const out: string[] = [];
+/** Every source digest a run bound to artifact records, with its distinct records in binding order. */
+export function boundOf(run: Pick<RunRecord, 'sources'>): Map<string, string[]> {
+  const out = new Map<string, string[]>();
   for (const binding of run.sources) {
-    if (binding.artifact === undefined || out.includes(binding.artifact)) continue;
+    if (binding.artifact === undefined) continue;
     let ref: Reference;
     try { ref = parseReference(binding.reference); } catch { continue; }
-    if (ref.scheme === 'src' && ref.sha256 === sha256) out.push(binding.artifact);
+    if (ref.scheme !== 'src') continue;
+    const records = out.get(ref.sha256) ?? [];
+    if (!records.includes(binding.artifact)) records.push(binding.artifact);
+    out.set(ref.sha256, records);
   }
   return out;
 }
 
 /**
- * The artifact records a use of one source digest stands on: every record the run bound to it, or else the one record the
- * reader can read now. None means the record cannot be determined.
+ * The artifact records chosen for one source digest and how they were found, which decides how a read stays on them.
+ * `complete` is false when a binding names anything but a source artifact of exactly these bytes.
  */
-export async function sourceRecords(ctx: EngineContext, reader: ReaderIdentity, pins: readonly string[], sha256: string, consumer: ProducerKind): Promise<SourceArtifact[]> {
+export interface SourceChoice { records: SourceArtifact[]; via: 'bound' | 'reader' | 'run'; complete: boolean }
+
+/** The records a use as grounds must check: all of them, or none when the choice could not be determined in full. */
+export function groundRecords(choice: SourceChoice): SourceArtifact[] {
+  return choice.complete ? choice.records : [];
+}
+
+/**
+ * The artifact records a use of one source digest stands on: the records the run bound to it, each verified to be a source
+ * artifact of exactly these bytes ('bound'); else the one record the reader can read now ('reader'); else, for a run that
+ * bound none, the generated record the run itself may read ('run'). A read uses the first; a use as grounds checks them all
+ * and is refused when there is none or a binding could not be verified (round-six review, item 3).
+ */
+export async function sourceChoice(ctx: EngineContext, reader: ReaderIdentity, pins: readonly string[], sha256: string, consumer: ProducerKind): Promise<SourceChoice> {
   const { store, artifacts } = ctx.deps.records;
   if (pins.length > 0) {
-    const records = await Promise.all(pins.map(pin => store.get(pin)));
-    return records.every(record => record !== null) ? records as SourceArtifact[] : [];
+    const records = await Promise.all(pins.map(pin => store.get<SourceArtifactBody>(pin)));
+    const exact = records.filter(record => record !== null && record.kind === 'source_artifact' && record.schema === RECORD_SCHEMAS.source_artifact && record.body.sha256 === sha256) as SourceArtifact[];
+    return { records: exact, via: 'bound', complete: exact.length === pins.length };
   }
   const principal = principalOf(reader);
-  const found = await artifacts.source(principal, sha256, { consumer })
-    ?? (reader.run === undefined ? null : await artifacts.sourceForRun(principal, sha256, reader.run, { consumer }));
-  return found === null ? [] : [found.artifact];
+  const direct = await artifacts.source(principal, sha256, { consumer });
+  if (direct !== null) return { records: [direct.artifact], via: 'reader', complete: true };
+  const viaRun = reader.run === undefined ? null : await artifacts.sourceForRun(principal, sha256, reader.run, { consumer });
+  return { records: viaRun === null ? [] : [viaRun.artifact], via: 'run', complete: viaRun !== null };
+}
+
+/**
+ * A source reader that stays on the records chosen for each digest, with the choice behind it. A bound or directly readable
+ * record is pinned for every read; a generated record that a run reads on its own authority cannot be pinned, so each read
+ * of it is checked to return that same record. Every read rechecks access, and a failed or empty choice is not kept, so a
+ * retry looks again. The resolver and the evaluator both read through this, so a use as grounds checks the records its
+ * reads came from (round-four review, item 3; rounds five and six).
+ */
+export function pinnedSources(ctx: EngineContext, owner: ReaderIdentity, bound: ReadonlyMap<string, readonly string[]> | undefined, consumer: ProducerKind): { sources: SourceReader; choice(sha256: string): Promise<SourceChoice> } {
+  const { artifacts } = ctx.deps.records;
+  const chosen = new Map<string, Promise<SourceChoice>>();
+  const choice = (sha256: string): Promise<SourceChoice> => {
+    let found = chosen.get(sha256);
+    if (!found) {
+      const lookup = sourceChoice(ctx, owner, bound?.get(sha256) ?? [], sha256, consumer);
+      chosen.set(sha256, found = lookup);
+      const forget = () => { if (chosen.get(sha256) === lookup) chosen.delete(sha256); };
+      lookup.then(made => { if (made.records.length === 0) forget(); }, forget);
+    }
+    return found;
+  };
+  const sources: SourceReader = {
+    async read(sha256, reader) {
+      const made = await choice(sha256);
+      const [record] = made.records;
+      if (record === undefined) return null;
+      if (made.via !== 'run') return sourceReader(artifacts, consumer, [{ reference: `src:${sha256}`, role: 'expected', artifact: record.digest }]).read(sha256, reader);
+      if (reader.run === undefined) return null;
+      const source = await artifacts.sourceForRun(principalOf(reader), sha256, reader.run, { consumer });
+      if (source === null || source.artifact.digest !== record.digest) return null;
+      if (consumer === 'model' && source.bytes === null && source.readTier !== 'retain_only') return null;
+      return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
+    },
+  };
+  return { sources, choice };
 }
 
 /** Bytes a Hub record reference binds as a source (B03 R[4]): the canonical JSON of the record, or of the value its pointer names. */
@@ -160,14 +214,9 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
   }
   let candidates: Promise<QuoteCandidate[]> | undefined;
   const identity: ReaderIdentity = { user: reader.id, role: reader.role, run: run.run };
-  const bound = new Map<string, string[]>();
-  for (const sha of sources.keys()) {
-    const pins = boundArtifacts(run, sha);
-    if (pins.length > 0) bound.set(sha, pins);
-  }
   return {
     reader: identity,
-    bound,
+    bound: boundOf(run),
     pack: packIdOf(run.pack),
     sources,
     records,
@@ -354,29 +403,10 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
   let preparedBytes=0;
   const preparedLimit=64*1024*1024;
   let aborted:HubReadFailure|undefined;
-  // The artifact records each source digest stands on for this resolver, chosen once they are found: every record the run
-  // bound to it (the bindings come with the scope, so a run that is still starting reads before its record is stored), or
-  // else the one record the reader could read at first use. Every read is pinned to the first of them and a use as grounds
-  // checks them all, so a record read is always a record checked (round-four review, item 3; round five). A failed or
-  // empty lookup is not kept, so a retried read looks again.
-  const chosen = new Map<string, Promise<SourceArtifact[]>>();
-  const recordsFor = (sha256: string): Promise<SourceArtifact[]> => {
-    let found = chosen.get(sha256);
-    if (!found) {
-      const lookup = sourceRecords(ctx, scope.reader, scope.bound?.get(sha256) ?? [], sha256, consumer);
-      chosen.set(sha256, found = lookup);
-      lookup.then(records => { if (records.length === 0 && chosen.get(sha256) === lookup) chosen.delete(sha256); }, () => { if (chosen.get(sha256) === lookup) chosen.delete(sha256); });
-    }
-    return found;
-  };
-  // Reading is an authorization decision, not immutable document content: recheck it on every use, of the chosen record.
-  const sources: SourceReader = {
-    async read(sha256, reader) {
-      const [record] = await recordsFor(sha256);
-      if (record === undefined) return null;
-      return sourceReader(artifacts, consumer, [{ reference: `src:${sha256}`, role: scope.sources.get(sha256) ?? 'expected', artifact: record.digest }]).read(sha256, reader);
-    },
-  };
+  // Reading is an authorization decision, not immutable document content: every read rechecks it, of the records chosen
+  // for the digest. The bindings come with the scope, so a run that is still starting reads before its record is stored.
+  const pinned = pinnedSources(ctx, scope.reader, scope.bound, consumer);
+  const sources = pinned.sources;
   const context = {
     reader: scope.reader,
     parsers: ctx.parsers,
@@ -391,7 +421,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
     if (ref.scheme !== 'src') return declarationGroundRefusal(ref, digest => store.get(digest));
     // The knowledge-contribution pack feeds captured sources with their own operation records: the one exemption.
     if (scope.pack === 'knowledge-contribution') return null;
-    return declarationGroundRefusal(ref, digest => store.get(digest), await recordsFor(ref.sha256));
+    return declarationGroundRefusal(ref, digest => store.get(digest), groundRecords(await pinned.choice(ref.sha256)));
   };
   const run = async (reference: string, scoped: boolean, grounds: boolean): Promise<ValueOutcome> => {
     let ref: Reference;
