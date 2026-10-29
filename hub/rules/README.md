@@ -201,8 +201,10 @@ Layers, outermost first:
    every child. The rules package installs no signal handler (that would change how the Hub exits): the server calls
    `stopAll()` on SIGTERM and SIGINT. `sweepOrphans()` (exported) ends children an earlier Hub process left behind: processes
    whose parent is pid 1 and whose command line grants read access to this installation's bootstrap (macOS through
-   `/bin/ps -axww`, Linux through `/proc`). The OS-isolation probe keeps a success and a lasting absence (another platform, no
-   `sandbox-exec`); a failed probe run is retried after 5 s, and `osIsolationFailure()` says why it failed.
+   `/bin/ps -axww`, whose fixed environment holds only `LC_CTYPE=UTF-8`, so a path outside ASCII is printed as it is rather
+   than in the C locale's `vis` notation; Linux through the argv in `/proc`). The OS-isolation probe keeps a success and a
+   lasting absence (another platform, no `sandbox-exec`); a failed probe run is retried after 5 s, and `osIsolationFailure()`
+   says why it failed.
 
 Errors (`SandboxError.code`): `SANDBOX_TIMEOUT` (`detail.limit` `time` or `cpu`), `SANDBOX_OUTPUT_TOO_LARGE`,
 `SANDBOX_VIOLATION` (`detail.what`, or `detail.limit = memory`, or `detail.reason` for the scan), `SANDBOX_UNAVAILABLE`
@@ -227,7 +229,9 @@ the missing observation and the administrator's next step. It is never presented
   resident.
 - If the Hub is killed (SIGKILL, a crash), Linux bubblewrap's `--die-with-parent` ends its child. On macOS an orphan that
   sleeps without using CPU can remain until the next Hub start calls `sweepOrphans()`; CPU-bound children end at the CPU limit.
-  On a machine where orphans are not reparented to pid 1 (Linux with a subreaper) the sweep finds nothing.
+  On a machine where orphans are not reparented to pid 1 (Linux with a subreaper) the sweep finds nothing. On macOS `ps`
+  still writes a character that UTF-8 does not count as printable (a control character such as a tab) in `vis` notation, so
+  an installation path containing one is not recognised.
 - The waiting line is bounded by count, not bytes: waiting calls hold only references to the caller's objects; the bytes in
   flight are at most 8 children times the input limit.
 - The pack directory is scanned before each call; it must not be writable by anyone else while a function runs.
@@ -243,7 +247,8 @@ npx tsc --noEmit
 ```
 
 The sandbox tests start real child processes (about 8 s in total), a loopback TCP server on 127.0.0.1 with an ephemeral port,
-and, on macOS, two short-lived orphan `node` processes for the sweep test (killed at the end); nothing else is reached.
+and two short-lived orphan `node` processes for each sweep test (one sweep test puts its installation in a temporary directory
+whose name is not ASCII; all are killed at the end); nothing else is reached.
 
 ## Deviations
 

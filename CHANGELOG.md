@@ -23,6 +23,7 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Fixed
 
+- **The start-up sweep finds orphaned sandbox processes when the Hub lives under a path outside ASCII on macOS.** The sweep ran `ps` with an empty environment; in that C locale `ps` prints every byte outside ASCII in `vis` notation (a folder named `开发` as `M-eM-<M^@M-eM^OM^Q`), so the bootstrap path never matched and sandbox processes an earlier Hub process left behind kept running. `ps` still gets a fixed environment, now holding only `LC_CTYPE=UTF-8`. Linux reads the argv from `/proc` and was not affected.
 - **Pack extraction works on macOS 15.** A pack's read-only tree is built under a temporary name and renamed into place; macOS 15 refuses to rename a read-only directory (macOS 26 and Linux allow it), so every pack function failed there with `EACCES`. When that rename is refused and no tree is in place yet, the directory is made writable for the move and read-only again at its new name.
 
 ## 0.2.0 - 2026-10-15
