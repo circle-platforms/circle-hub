@@ -1,7 +1,7 @@
 // Differential test: random scenarios through the real runs engine and the reference in oracle.ts. The pack and the
 // scripted checks exist only to drive the engine; the expectations come from the reference.
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -462,10 +462,13 @@ async function agree(plan: Plan, run: RunSummary): Promise<void> {
   const left = JSON.parse(sorted({ ...JSON.parse(sorted(engineView(got.result))) as object, counts: got.counts })) as Differ;
   const right = JSON.parse(sorted({ ...JSON.parse(sorted(referenceView(want))) as object, counts: want.counts })) as Differ;
   const lines = differences(left, right);
+  let report = '';
   if (lines.length > 0) {
-    writeFileSync(join(tmpdir(), 'oracle-diff.txt'), [`seed ${plan.seed}`, ...lines].join('\n'));
+    // A directory of its own, kept after the run for reading: a fixed name would collide between parallel runs.
+    report = join(mkdtempSync(join(tmpdir(), 'oracle-diff-report-')), 'oracle-diff.txt');
+    writeFileSync(report, [`seed ${plan.seed}`, ...lines].join('\n'));
   }
-  assert.deepEqual(lines, [], `seed ${plan.seed}: ${lines.length} differences, see ${join(tmpdir(), 'oracle-diff.txt')}`);
+  assert.deepEqual(lines, [], `seed ${plan.seed}: ${lines.length} differences, see ${report}`);
 }
 
 interface Differ {
