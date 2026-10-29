@@ -2,7 +2,7 @@
   {
     "name": "list_task_packs",
     "title": "List task packs",
-    "description": "List the task packs you may use, with the inputs, parameters and requirements of each.",
+    "description": "List the task packs you may use, with inputs, parameters and requirements. Filter by exact pack_id or continue a truncated list with offset.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -16,6 +16,17 @@
             "system",
             "skill"
           ]
+        },
+        "pack_id": {
+          "description": "Only the pack with this exact ID",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,40}$"
+        },
+        "offset": {
+          "description": "Continue at this zero-based position in the same filtered list",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "additionalProperties": false
@@ -866,6 +877,34 @@
         "build": {
           "description": "Exact build name; chosen by the pack rule when omitted",
           "type": "string"
+        },
+        "model_identity": {
+          "description": "Explicit model and family declaration; submissions from this same observed session can reuse it",
+          "type": "object",
+          "properties": {
+            "model_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "model_family_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "configuration_reference": {
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+              "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+            }
+          },
+          "required": [
+            "model_id",
+            "model_family_id"
+          ],
+          "additionalProperties": false,
+          "title": "model-identity@1"
         },
         "inputs": {
           "type": "object",
@@ -2175,6 +2214,34 @@
               "description": "client session id observed from the request header",
               "type": "string"
             },
+            "model_identity": {
+              "description": "Explicit client declaration at start; a submission from the same observed session can reuse it",
+              "type": "object",
+              "properties": {
+                "model_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "model_family_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "configuration_reference": {
+                  "type": "string",
+                  "maxLength": 8192,
+                  "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+                  "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
+                }
+              },
+              "required": [
+                "model_id",
+                "model_family_id"
+              ],
+              "additionalProperties": false,
+              "title": "model-identity@1"
+            },
             "started_at": {
               "type": "string",
               "format": "date-time",
@@ -2279,7 +2346,7 @@
   {
     "name": "get_nodes",
     "title": "Read knowledge nodes",
-    "description": "Read subtrees of the knowledge tree locked by a run, or the content a reference points at.",
+    "description": "Read subtrees or referenced content; use call_query with exact original arguments to check your own long start_run or get_nodes call without rerunning it.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -2319,6 +2386,34 @@
         },
         "cursor": {
           "type": "string"
+        },
+        "call_query": {
+          "description": "Check your own in-flight call and recent completion logs without rerunning it; provide the exact original arguments",
+          "type": "object",
+          "properties": {
+            "start_run": {
+              "description": "Exact arguments of your earlier start_run call",
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "get_nodes": {
+              "description": "Exact arguments of your earlier get_nodes call",
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "trace": {
+              "description": "The original trace when known; omit it to list matching candidates",
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -2497,6 +2592,125 @@
             ],
             "additionalProperties": false
           }
+        },
+        "call_status": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            },
+            "active_total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "active": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "trace": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{32}$"
+                  },
+                  "started_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "trace",
+                  "started_at"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "completed": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "trace": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{32}$"
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "call_result": {
+                    "type": "string",
+                    "enum": [
+                      "ok",
+                      "error",
+                      "transport_failure"
+                    ]
+                  },
+                  "error_code": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "duration_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "run": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "run_record": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                  },
+                  "result_record": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                  }
+                },
+                "required": [
+                  "trace",
+                  "at",
+                  "call_result",
+                  "error_code",
+                  "duration_ms",
+                  "run"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "missing": {
+              "type": "string"
+            },
+            "next_action": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tool",
+            "active_total",
+            "active",
+            "completed",
+            "truncated",
+            "next_action"
+          ],
+          "additionalProperties": false
         },
         "root": {
           "description": "Knowledge root the nodes belong to",
@@ -3130,6 +3344,89 @@
                                             "bytes"
                                           ],
                                           "additionalProperties": false
+                                        },
+                                        "title": {
+                                          "type": "string",
+                                          "maxLength": 1048576,
+                                          "description": "Exact case-node text in this source projection; absent when unavailable. It does not enter the case content identity."
+                                        },
+                                        "path_labels": {
+                                          "maxItems": 256,
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "maxLength": 1048576
+                                          },
+                                          "description": "Exact ancestor-node texts in this source projection, in root-to-case order."
+                                        },
+                                        "node_selector": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 4096,
+                                          "description": "The parser's exact selector of this source node, including positional selectors for duplicate ids."
+                                        },
+                                        "node_parser": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 200,
+                                          "description": "The parser id and version that produced node_selector."
+                                        },
+                                        "node_key": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 200,
+                                          "description": "The product reader's deterministic case key within this document, including duplicate-id disambiguation."
+                                        },
+                                        "command_tree_root": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "pattern": "^[0-9a-f]{64}$"
+                                            },
+                                            {
+                                              "type": "null",
+                                              "const": null
+                                            }
+                                          ],
+                                          "description": "Digest of the command-tree source used by this projection; null when no tree was read."
+                                        },
+                                        "stories": {
+                                          "maxItems": 1000,
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 200
+                                          },
+                                          "description": "Exact author-declared story identities from this source's declared structural fields."
+                                        },
+                                        "defects": {
+                                          "maxItems": 1000,
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 200
+                                          },
+                                          "description": "Exact author-declared defect identities from this source's declared structural fields."
+                                        },
+                                        "has_expected": {
+                                          "type": "boolean",
+                                          "description": "The product reader's structural observation that at least one expected-result node is nonblank."
+                                        },
+                                        "module": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "minLength": 1,
+                                              "maxLength": 1000
+                                            },
+                                            {
+                                              "type": "null",
+                                              "const": null
+                                            }
+                                          ],
+                                          "description": "Module from the product's declared directory structure; null when the structure does not identify one."
                                         },
                                         "autoid": {
                                           "anyOf": [
@@ -11050,12 +11347,12 @@
           "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
         },
         "model": {
+          "description": "Legacy model name and exact configuration; may be omitted when an explicit model_identity is supplied or the same observed session reuses the run declaration",
           "type": "string",
-          "minLength": 1,
-          "description": "model name and exact configuration as the client declares it"
+          "minLength": 1
         },
         "model_identity": {
-          "description": "Explicit exact model and family identity; absent on legacy submissions, whose family independence stays unknown",
+          "description": "Explicit model and family identity; if omitted, the current run declaration is reused only for the same observed session; legacy submissions without either stay unknown",
           "type": "object",
           "properties": {
             "model_id": {
@@ -11573,7 +11870,6 @@
       },
       "required": [
         "run",
-        "model",
         "items"
       ],
       "additionalProperties": false,

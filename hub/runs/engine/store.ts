@@ -243,3 +243,15 @@ export async function actionOfSubmission(store: RecordStore, submissionRecord: s
   const page = await store.find<ActionBody>({ key: INDEX.actionSubmission, value: submissionRecord, kind: 'action', limit: 1, newestFirst: true });
   return page.items[0] ?? null;
 }
+
+/** The actual validation action of this result, not a later call that reused the same submission bytes. */
+export async function actionOfResult(store: RecordStore, submissionRecord: string, result: string): Promise<StoredRecord<ActionBody> | null> {
+  let cursor: string | null = null;
+  do {
+    const page: Page<StoredRecord<ActionBody>> = await store.find<ActionBody>({ key: INDEX.actionSubmission, value: submissionRecord, kind: 'action', limit: 100, cursor, newestFirst: true });
+    const found = page.items.find(action => action.body.action === 'validate' && action.body.detail?.result === result);
+    if (found) return found;
+    cursor = page.next;
+  } while (cursor !== null);
+  return null;
+}

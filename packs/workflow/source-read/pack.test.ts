@@ -21,7 +21,7 @@ describe('the source-read pack files', () => {
   it('pack.json lists exactly the pack files with their digests', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['source-read', '0.1.1', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['source-read', '0.1.2', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('workflow.json') && files.includes('requirements.json') && files.includes('checks.json') && files.includes('slots.schema.json') && files.includes('SKILL.md') && files.includes('functions/project.ts'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'README.md' || f === 'pack-files.ts' || f === 'api.ts'));

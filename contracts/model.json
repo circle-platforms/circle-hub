@@ -149,7 +149,7 @@
     "ExpectedQuoteIdentity 固定源摘要、parser@major、片段路径及原始源字节 offset/length（零起点、正长度），QuoteEvidence 将原文与该身份配对"
    ],
    "rules": [
-    "解析时重验摘要，并带出被指记录的有效条件。读者权限分两种：Hub 自己评估一次运行时（边界核对与检查、只出事实的生产结果、检查按声明读来源、自动重判），按运行开始时的授权读这次运行冻结的输入（输入与期望来源、绑定的 Hub 记录、前驱的结果、锁定的根），不按运行者此刻的权限重查，Hub 侧运行按配置者开始时的授权；别人查看时（运行者本人也一样），按读者当前的权限重验，分享撤回或账号停用以后答“对你不可用”。读取档位和凭据受理每次都核，不随授权冻结；没绑定的摘要照旧解析不出",
+    "解析时重验摘要，并带出被指记录的有效条件。读者权限分两种：Hub 自己评估一次运行时（边界核对与检查、只出事实的生产结果、检查按声明读来源、自动重判），按运行开始时的授权读这次运行冻结的输入（输入与期望来源、绑定的 Hub 记录、前驱的结果、锁定的根），不按运行者此刻的权限重查，Hub 侧运行按配置者开始时的授权；别人查看时（运行者本人也一样），按本次请求开始时的读者权限核验；处理中撤权或停用在下一次请求生效。读取档位和凭据受理仍按读取核对，不得向模型或日志泄露真实凭据；没绑定的摘要照旧解析不出",
     "只对 Hub 保存的记录解析；客户端副本被改或过期即解析不了",
     "可以在本地缓存里构造，交付时由 Hub 核验",
     "经 Hub 记录引用交接时，接收方只继承所选条目和它们的产物引用，不继承判定，在自己的边界上重新核查",
@@ -212,7 +212,7 @@
     "许可不当证据，通过的检查不当许可",
     "只覆盖绑定的确切内容，由使用端在使用时检查；对 Hub 自己的评估，“使用时”就是 start_run 绑定的那一刻（B03 R[0]）；分享一个包里要求项都只接受事实的全部运行时，绑定的确切内容是这个包和这一条件，每个运行的内容由它自己的记录摘要固定",
     "分配只授予“已发布且未下架的版本”的使用权；每次运行绑定所用版本，开始运行时核对",
-    "分享：管理员把运行、结果、上传的源文件或 Hub 生成的产物分给受众；受众是主体集合（Hub 用户，或经身份映射前提映射的外部账号），也可以是“能用这个任务包的用户”（所分享运行的任务包），读时按当时的分配核对，取消分配就看不到，不用重写分享；分享运行时，对象可以是一个运行（它的运行记录、全部已受理的结果和它绑定的 Hub 生成的产物），也可以是一个包里要求项都只接受事实的全部运行（现在和以后的，Hub 侧运行也算，这个包的别的运行不算）；可撤回；读者查看时按它重验权限（Hub 自己评估运行时见 B03 R[0]）；经分享的读者解析知识树引用，照旧按自己能读的知识树（R01 R[2]）。经连接器读到的源文件不能分享，可见性只由凭据方式推出",
+    "分享：管理员把运行、结果、上传的源文件或 Hub 生成的产物分给受众；受众是主体集合（Hub 用户，或经身份映射前提映射的外部账号），也可以是“能用这个任务包的用户”（所分享运行的任务包），每次请求按开始时的分配核对，处理中取消分配在下一次请求生效，不用重写分享；分享运行时，对象可以是一个运行（它的运行记录、全部已受理的结果和它绑定的 Hub 生成的产物），也可以是一个包里要求项都只接受事实的全部运行（现在和以后的，Hub 侧运行也算，这个包的别的运行不算）；可撤回；读者查看时按它重验权限（Hub 自己评估运行时见 B03 R[0]）；经分享的读者解析知识树引用，照旧按自己能读的知识树（R01 R[2]）。经连接器读到的源文件不能分享，可见性只由凭据方式推出",
     "冻结解除：核对观察解除不了冻结时，由管理员作一次资源配置",
     "本人同意不是许可：它是附在效果记录上的声明（见 B06）",
     "不经独立审批人，没有两人规则（10-21）；处置不是许可（见 B07）",
@@ -1490,7 +1490,7 @@
     "E1-69"
    ],
    "fields": [
-    "模型确切身份 model_id、模型族 model_family_id 和配置引用（均由客户端显式声明）；每份提交分别记录，与 Hub 观察的会话 id 分开，不继承猜测族名",
+    "模型确切身份 model_id、模型族 model_family_id 和配置引用由客户端显式声明；提交未写身份且 Hub 观察到的提交会话与本运行开始会话相同时，可沿用本运行开始时的声明，旧 model 字段也可省略。提交有声明时以提交为准，不同或缺失会话不继承；没有可沿用或显式声明的模型时提示补声明，提交原文不改，不从模型名猜模型族",
     "逐条目的槽位记录：附上下文摘要；整体一次写出的标“无复用”",
     "条目处理声明：已处理 / 跳过及理由",
     "跨条目主张（可选）",
@@ -3070,7 +3070,7 @@
     "list_task_packs：列出可用任务包（效果类无、不写 Hub 记录 → readOnlyHint=true，openWorldHint=false）",
     "upload_file：上传源文件，返回引用、sha256、size、mediaType 和解析器给出的结构摘要（只写 Hub 记录 → readOnlyHint=false，destructiveHint=false，idempotentHint=true，openWorldHint=false）",
     "start_run：按输入槽传入引用与参数，可带前驱运行；返回冻结的要求项、条目投影结果、锁定的版本与运行目标、血缘和规程（只写 Hub 记录 → readOnlyHint=false，destructiveHint=false，openWorldHint=false；键有时间窗，不标 idempotentHint；所分配的包要按规则选定构建、因而要读外部系统时，openWorldHint=true）",
-    "get_nodes：取知识树子树（不写 Hub 记录 → readOnlyHint=true，openWorldHint=false）；也接受任一引用，按读取档位返回被指内容（模型可读的给原文，只许函数读的给摘要和结构，只保留的显示“原文不可读”），按可见范围重验读者权限，这是已定的扩展语义",
+    "get_nodes：取知识树子树（不写 Hub 记录 → readOnlyHint=true，openWorldHint=false）；也接受任一引用，按读取档位返回被指内容（模型可读的给原文，只许函数读的给摘要和结构，只保留的显示“原文不可读”），按可见范围重验读者权限。可按本人调用的完整参数只读查询 start_run 或 get_nodes 的当前进程在途记录与已有完成日志；缺记录不推定失败，开运行成功时给可读记录引用，读取回答正文未保存时明示缺失与下一步，这是已定的扩展语义",
     "resolve_reference：交付前的预览解析，返回解析状态、诊断和可能所指，结果不作凭据（readOnlyHint=true，openWorldHint=false）",
     "submit_result：交提交，返回校验结果；对同一（运行, 提交摘要）重复调用返回当前校验结果（只写 Hub 记录时 → readOnlyHint=false，destructiveHint=false，idempotentHint=true，openWorldHint=false）；用重复调用读异步进展是已定的扩展语义",
     "待你决定的职能（不写工具名，注解按 D03 推出）：现场观察（读外部系统：只读由传输层强制已认证时 readOnlyHint=true、openWorldHint=true，否则按写）；效果写入（对外写：openWorldHint=true，destructiveHint 由可逆性推出，只有同键安全的写才标 idempotentHint；含租约与意图键，丢回复返回未知而不当错误，这个未知写明缺的是效果的结局，出口是核对（D04 R[1]））；取消（只停新派发）只写 Hub 记录。回答请求不加工具（所有者 2026-10-23 晚）：Hub 自己卡住、要人做一步时，在回答里写明下一步该谁用哪个现有工具或命令做，例如修复轮数用完时由运行者选续跑还是放弃，登录被锁时由管理员重置"
@@ -5127,6 +5127,86 @@
          "bytes"
         ],
         "additionalProperties": false
+       },
+       "title": {
+        "type": "string",
+        "maxLength": 1048576,
+        "description": "Exact case-node text in this source projection; absent when unavailable. It does not enter the case content identity."
+       },
+       "path_labels": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "maxLength": 1048576
+        },
+        "maxItems": 256,
+        "description": "Exact ancestor-node texts in this source projection, in root-to-case order."
+       },
+       "node_selector": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096,
+        "description": "The parser's exact selector of this source node, including positional selectors for duplicate ids."
+       },
+       "node_parser": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "The parser id and version that produced node_selector."
+       },
+       "node_key": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "The product reader's deterministic case key within this document, including duplicate-id disambiguation."
+       },
+       "command_tree_root": {
+        "anyOf": [
+         {
+          "$ref": "contract:common/Sha256"
+         },
+         {
+          "const": null
+         }
+        ],
+        "description": "Digest of the command-tree source used by this projection; null when no tree was read."
+       },
+       "stories": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 200
+        },
+        "maxItems": 1000,
+        "description": "Exact author-declared story identities from this source's declared structural fields."
+       },
+       "defects": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 200
+        },
+        "maxItems": 1000,
+        "description": "Exact author-declared defect identities from this source's declared structural fields."
+       },
+       "has_expected": {
+        "type": "boolean",
+        "description": "The product reader's structural observation that at least one expected-result node is nonblank."
+       },
+       "module": {
+        "anyOf": [
+         {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+         },
+         {
+          "const": null
+         }
+        ],
+        "description": "Module from the product's declared directory structure; null when the structure does not identify one."
        },
        "autoid": {
         "anyOf": [

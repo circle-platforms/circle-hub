@@ -1104,6 +1104,28 @@ function packOf(i: number): PackSummary {
 }
 
 describe('list_task_packs, upload_file and resolve_reference texts', () => {
+  test('a truncated task-pack list names an advancing offset with the same filters', () => {
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: Array.from({ length: 300 }, (_, i) => packOf(i)), trace: TRACE });
+    const text = toolText('list_task_packs', answer, { packList: { offset: 7, kind: 'workflow' } });
+    withinBudget(text, 'task-pack continuation');
+    const match = noteOf(text)?.match(/list_task_packs (\{[^}]+\})/);
+    assert.ok(match, 'the omitted packs have a tool-based continuation');
+    const next = JSON.parse(match[1]!) as { kind: string; offset: number };
+    assert.equal(next.kind, 'workflow');
+    assert.ok(next.offset > 7 && next.offset < 307);
+    assert.match(noteOf(text)!, /\/console\/packs/);
+  });
+
+  test('an oversized single pack does not suggest the same exact query in a loop', () => {
+    const pack = packOf(1);
+    const oversized = { ...pack, inputs: Array.from({ length: 300 }, (_, i) => ({ ...pack.inputs[0]!, slot: `input_${i}` })) };
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [oversized], trace: TRACE });
+    const text = toolText('list_task_packs', answer, { packList: { offset: 0, packId: pack.id } });
+    withinBudget(text, 'oversized task pack');
+    assert.match(noteOf(text)!, /单个任务包详情超出回答预算/);
+    assert.doesNotMatch(noteOf(text)!, /list_task_packs/);
+  });
+
   test('every pack with its inputs, parameters and an example start_run call that parses with StartRunInput and names a product', () => {
     const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [packOf(1), packOf(2)], trace: TRACE });
     const text = toolText('list_task_packs', answer);

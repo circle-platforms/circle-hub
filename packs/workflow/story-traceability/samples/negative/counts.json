@@ -21,8 +21,12 @@
           "status": "synthetic",
           "stage": null,
           "fields_absent": [],
+          "fields_nonscalar": [],
           "plm_returned": true,
           "plm_responded": true,
+          "indexed_match_count": 1,
+          "case_count_lower_bound": false,
+          "coverage_complete": true,
           "cases": [
             {
               "case": "c1",
@@ -50,12 +54,13 @@
           "root": "67e914f22d224053b4e7f968c09058ac4cd4bf88e25abce867dbcb03e15f4591",
           "scope": "declared",
           "view": {
-            "source": "src:0ed6028f89377d795017343e132cc5163c1d0718e70112665a84680b92c9bd94",
+            "source": "src:0527d3cf47b27d3d7ab651a5bce0ea37c017ae627f6f1cf6dccb7b38f5748468",
             "truncated": false,
             "skipped": 0,
             "missing": 0,
             "cut_keys": [],
             "only": null,
+            "key_space_complete": true,
             "total_keys": 1,
             "total_entries": 2,
             "listed_keys": 1,

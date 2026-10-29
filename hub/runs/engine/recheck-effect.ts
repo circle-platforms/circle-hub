@@ -1,9 +1,9 @@
-import {submissionOrigin} from './independence.ts';
+import {effectiveSubmission,submissionOrigin} from './independence.ts';
 // Reuse the evaluator's exact same subject construction; stop before classification and persistence.
 import {Submission} from '../../../contracts/src/submission.ts';
 import type {EffectCheckReplay} from '../../ports.ts';
 import {createEngineContext,type RunsEngineDeps} from './deps.ts';
-import {runById,submissionByDigest,resultFor} from './store.ts';
+import {actionOfResult,runById,submissionByDigest,resultFor} from './store.ts';
 import {buildScope,createResolver,resolveSubmission} from './exact.ts';
 import {evaluate,productionEvaluationInput} from './evaluate.ts';
 import {authorOriginOf} from './lineage.ts';
@@ -22,8 +22,8 @@ export async function recheckEffectChecks(deps:RunsEngineDeps,input:Parameters<E
  };
  const ids=new Set(input.checks);
  if(!ids.size || [...ids].some(id=>!workflow.checks.some(check=>check.id===id)))throw new Error('点名检查不在冻结的包里；请修正效果表后开始新修订');
- const result=await resultFor(store,run.run,input.submission),record=await submissionByDigest(store,run.run,input.submission);
- if(result?.body.acceptance!=='accepted')throw new Error('缺少已受理核验结果的原记录；请恢复记录后重核');
+ const result=input.result!==undefined?await store.get<import('../../../contracts/src/validation.ts').ValidationResult>(input.result):await resultFor(store,run.run,input.submission),record=await submissionByDigest(store,run.run,input.submission);
+ if(!result||result.kind!=='validation_result'||result.body.run!==run.run||result.body.submission!==input.submission||result.body.acceptance!=='accepted')throw new Error('缺少已受理核验结果的原记录；请恢复记录后重核');
  // A production result is bound to the immutable run record, not to a model submission.
  if(input.submission===saved.digest&&isProduction(workflow)) {
    await requireReplayReader();
@@ -32,11 +32,14 @@ export async function recheckEffectChecks(deps:RunsEngineDeps,input:Parameters<E
  }
  const user=await requireReplayReader();
  if(!record)throw new Error('缺少已受理提交的原记录；请恢复记录后重核');
- const submission=Submission.parse(record.body);
- if(submission.run!==run.run)throw new Error('提交归属不符；请核对原运行和提交后重核');
+ const raw=Submission.parse(record.body);
+ if(raw.run!==run.run)throw new Error('提交归属不符；请核对原运行和提交后重核');
+ const action=await actionOfResult(store,record.digest,result.digest),session=typeof action?.body.detail?.session==='string'?action.body.detail.session:null;
+ const submission=effectiveSubmission(raw,run,session);
+ if(!submission)throw new Error('缺少本次提交的模型身份；请恢复原验证动作或显式声明后重核');
  const scope=await buildScope(ctx,run,workflow,user,'function'),resolver=createResolver(ctx,scope,'function');
  const exact=await resolveSubmission(scope,resolver,workflow,run.items,submission);
  if(exact.errors.length)throw new Error('冻结提交的精确来源当前不能解析；请修复来源、受理或权限后重核');
- const replay=await evaluate(ctx,{run,workflow,submission,submissionDigest:input.submission,exact,carried:new Map(),roundsUsed:new Map(),origin:submissionOrigin(submission,[run.session??null]),author:await authorOriginOf(ctx,run),traceId:result.body.trace,replayChecks:ids});
+ const replay=await evaluate(ctx,{run,workflow,submission,submissionDigest:input.submission,exact,carried:new Map(),roundsUsed:new Map(),origin:submissionOrigin(submission,[run.session??null],run,session),author:await authorOriginOf(ctx,run),traceId:result.body.trace,replayChecks:ids});
  return replay.outcomes;
 }

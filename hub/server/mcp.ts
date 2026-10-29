@@ -15,6 +15,8 @@ import { mediaTypeOf, readBody, sendRpcError, setCommonHeaders, type BodyBudget 
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { newTraceId, sessionIdOf, traceIdFrom } from './trace.ts';
 import { callTool, internalError, listTools, type CallState, type ToolCall } from './tools.ts';
+import { beginObservedCall } from './inflight-calls.ts';
+import { retainReadReply } from './read-replies.ts';
 
 export interface McpOptions {
   deps: ServerDeps;
@@ -221,6 +223,7 @@ async function answer(
 ): Promise<void> {
   const { deps } = options;
   const own = isRequest(parsed) ? { key: idKey(parsed.id), state: stateOf(parsed, started) } : null;
+  let finishObserved:(()=>void)|undefined;
   const states: CallState[] = own === null ? [] : [own.state];
   const stateFor = (requestId: string | number): CallState => {
     if (own !== null && own.key === idKey(requestId)) return own.state;
@@ -260,7 +263,14 @@ async function answer(
     // The arguments as received (the server's own parse), not the SDK's validated copy: its record schema drops members
     // such as `__proto__`, and submit_result must reach the runs service exactly as sent (W07).
     const args = isPlainObject(state.args) ? state.args : message.params.arguments;
-    return guarded(state, () => callTool(deps, call, message.params.name, args));
+    if ((message.params.name==='start_run'||message.params.name==='get_nodes') && !(message.params.name==='get_nodes' && isPlainObject(args) && Object.hasOwn(args,'call_query'))) {
+      finishObserved=beginObservedCall(deps,principal.id,message.params.name,state.args,traceId);
+    }
+    const result=await guarded(state, () => callTool(deps, call, message.params.name, args));
+    if(message.params.name==='get_nodes' && !(isPlainObject(args)&&Object.hasOwn(args,'call_query')) && !result.isError){
+      retainReadReply(deps,principal.id,state.args,traceId,result.structuredContent);
+    }
+    return result;
   });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   try {
@@ -302,6 +312,7 @@ async function answer(
     response.writeHead(reply.status, headers);
     response.end(text);
   } finally {
+    finishObserved?.();
     await transport.close().catch(() => {});
     await server.close().catch(() => {});
   }

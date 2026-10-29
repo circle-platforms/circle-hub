@@ -385,6 +385,89 @@
               ],
               "additionalProperties": false
             },
+            "title": {
+              "type": "string",
+              "maxLength": 1048576,
+              "description": "Exact case-node text in this source projection; absent when unavailable. It does not enter the case content identity."
+            },
+            "path_labels": {
+              "maxItems": 256,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 1048576
+              },
+              "description": "Exact ancestor-node texts in this source projection, in root-to-case order."
+            },
+            "node_selector": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The parser's exact selector of this source node, including positional selectors for duplicate ids."
+            },
+            "node_parser": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The parser id and version that produced node_selector."
+            },
+            "node_key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The product reader's deterministic case key within this document, including duplicate-id disambiguation."
+            },
+            "command_tree_root": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null",
+                  "const": null
+                }
+              ],
+              "description": "Digest of the command-tree source used by this projection; null when no tree was read."
+            },
+            "stories": {
+              "maxItems": 1000,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "description": "Exact author-declared story identities from this source's declared structural fields."
+            },
+            "defects": {
+              "maxItems": 1000,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "description": "Exact author-declared defect identities from this source's declared structural fields."
+            },
+            "has_expected": {
+              "type": "boolean",
+              "description": "The product reader's structural observation that at least one expected-result node is nonblank."
+            },
+            "module": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                {
+                  "type": "null",
+                  "const": null
+                }
+              ],
+              "description": "Module from the product's declared directory structure; null when the structure does not identify one."
+            },
             "autoid": {
               "anyOf": [
                 {

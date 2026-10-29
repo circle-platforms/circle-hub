@@ -278,6 +278,8 @@ test('a missing unrelated relation node preserves the requested definitions and 
   const f=await fixture(t),root=await f.w.knowledge.store.node(f.first.root!);assert.ok(root);
   const missing=root.children.find(child=>child.name==='notes')!.digest,read=f.w.knowledge.store.node.bind(f.w.knowledge.store);
   t.mock.method(f.w.knowledge.store,'node',async(digest:string)=>digest===missing?null:read(digest));
+  const readMany=f.w.knowledge.store.nodes.bind(f.w.knowledge.store);
+  t.mock.method(f.w.knowledge.store,'nodes',async(ids:readonly string[])=>{const result=await readMany(ids);result.delete(missing);return result;});
   const page=await f.w.knowledge.getNodes({root:f.first.root!,paths:['/terms/alpha'],depth:0},f.w.admin);
   assert.ok(page);assert.equal(page.nodes[0].entries[0].statement,'Alpha');
   assert.ok(page.coverage.note?.includes(missing));assert.match(page.coverage.note??'',/下一步.*管理员.*可信备份.*重新核验/);assert.doesNotMatch(page.coverage.note??'',/Claude|重建|重读/);

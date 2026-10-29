@@ -23,7 +23,7 @@ export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationP
  for(const [name,pointer] of Object.entries({target:d.proof.target,manifest_sha256:d.proof.manifest_sha256,build:d.proof.build,sha256:d.proof.sha256,items:d.proof.items,generator:d.proof.generator})){const value=at(data,pointer);if(value!==undefined)parameters[name]=value;}
  const replay=async(checks:readonly string[])=>{
    if(!o.recheck||!detail.latest)throw new Error('缺少冻结提交的检查重核接口；请恢复接口后重核');
-   return o.recheck({run:o.run,submission:detail.latest.result.submission,checks});
+   return o.recheck({run:o.run,submission:detail.latest.result.submission,result:detail.latest.record,checks});
  };
  const supports=async(checks:readonly string[])=>{
    const outcomes=await replay(checks);

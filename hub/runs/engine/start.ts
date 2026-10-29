@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { NatureSchema, VerdictSchema, isSourceRole, type SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import { Ground } from '../../../contracts/src/reference.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
+import type { KnownBuild } from '../../../contracts/src/product.ts';
 import type { ContextBuild, RequirementTemplate, RunContext, ProjectionOutput } from '../../../contracts/src/pack.ts';
 import { RunRecord, RunSummary, type RequirementSummary, type RunRecordView } from '../../../contracts/src/run.ts';
 import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools.ts';
@@ -115,9 +116,9 @@ const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 
  * name families, an alias carrying its base, sorted by (line, built_at, name); null when the workflow did not ask or the run
  * is bound to no product — absent then means "not asked", never an empty list.
  */
-export async function contextBuilds(ctx: EngineContext, workflow: LoadedWorkflow, product: string | null): Promise<ContextBuild[] | null> {
+export async function contextBuilds(ctx: EngineContext, workflow: LoadedWorkflow, product: string | null, snapshot?: readonly KnownBuild[]): Promise<ContextBuild[] | null> {
   if (product === null || !(workflow.workflow.context ?? []).includes('builds')) return null;
-  const known = await ctx.deps.knowledge.builds(product);
+  const known = snapshot ?? await ctx.deps.knowledge.builds(product);
   return known
     .map((b) => ({ name: b.name, family: b.family, line: b.line, base: b.base, platform: b.platform, built_at: b.built_at, released_at: b.released_at, has_root: b.root !== null }))
     .sort((a, b) => compareText(a.line, b.line) || compareText(a.built_at ?? '', b.built_at ?? '') || compareText(a.name, b.name));
@@ -530,7 +531,8 @@ async function startFresh(
   }
   const runId = newId('run', at.getTime());
   return ctx.lock(`submit:${runId}`,async()=>{
-  const selectedBuild=target.buildName===null?undefined:(await ctx.deps.knowledge.builds(target.product!.product.id)).find(build=>build.name.normalize('NFC').toLowerCase()===target.buildName!.normalize('NFC').toLowerCase())?.name??target.buildName;
+  const knownBuilds=target.knownBuilds??(target.buildName===null?undefined:await ctx.deps.knowledge.builds(target.product!.product.id));
+  const selectedBuild=target.buildName===null?undefined:knownBuilds!.find(build=>build.name.normalize('NFC').toLowerCase()===target.buildName!.normalize('NFC').toLowerCase())?.name??target.buildName;
 
   const feedingOffset=await ctx.deps.knowledge.feeding?.freeze(user,runId,target.root?.root??null);
   const feedingScope={composition:target.root?.composition??null,product:target.product?.product.id??null,root:target.root?.root??null,run:runId,line:target.line,feeding_offset:feedingOffset,declaredLine:workflow.workflow.feeding?.declared_line_parameter?parameters[workflow.workflow.feeding.declared_line_parameter] as string:undefined};
@@ -539,7 +541,7 @@ async function startFresh(
   // the bound product are known from the target and frozen with the run, so they are the same at projection and evaluation.
   const criterionReview=await prepareCriterionReview(ctx,user,workflow,bound,predecessor?.body??null);
   const criterionSnapshot=workflow.workflow.predecessor_access==='view'?{refs:[],requests:[],criteria:[],notices:[]}:await freezeCriteria(ctx,predecessor?.body??null,workflow.pack.id,startedAt);
-  const builds = await contextBuilds(ctx, workflow, target.product?.product.id ?? null);
+  const builds = await contextBuilds(ctx, workflow, target.product?.product.id ?? null, knownBuilds);
   // The lease view is taken BEFORE the projection runs, so the projection sees real rows, none of them this run's own
   // acquisitions. Rows this run's lineage already holds (the holder run sits in the predecessor chain, same user; D04
   // R[0]) are marked `mine`, so an extend or release projection discovers the keys it may operate on (C6 item 5); a run
@@ -652,6 +654,7 @@ async function startFresh(
     ...(workflow.workflow.predecessor_access==='view'?{predecessor_access:'view' as const}:{}),
     ...(criterionReview?{criterion_review:criterionReview.marker}:{}),
     ...(session !== null ? { session } : {}),
+    ...(input.model_identity !== undefined ? { model_identity: input.model_identity } : {}),
     started_at: startedAt,
     submission_due: input.submission_due ?? new Date(at.getTime()+86400000).toISOString(),
     ...(hub ? { host: 'hub' as const, trigger: 'standing_obligation' as const, configurer: user.id } : { runner: user.id, host: 'local_circle' as const, trigger: 'session' as const }),

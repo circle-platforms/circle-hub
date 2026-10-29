@@ -14,7 +14,7 @@ import { mapLimited } from './concurrency.ts';
 import { compareText } from './digest.ts';
 import { KnowledgeError } from './errors.ts';
 import { infoOf } from './produce.ts';
-import { COMPONENTS, KnowledgeStore, buildKey, indexValueFits, listRoles, pointerName, withoutLists, type ProduceAction, type StoredBuild } from './store.ts';
+import { COMPONENTS, INDEX, KnowledgeStore, buildKey, indexValueFits, listRoles, pointerName, withoutLists, type ProduceAction, type StoredBuild } from './store.ts';
 
 export { pointerName };
 
@@ -84,9 +84,23 @@ export class Builds {
   /** The newest completed production of each of these base builds, looked up per base (a few records each). */
   async roots(product: string, bases: Iterable<string>): Promise<Map<string, ProduceAction>> {
     const unique = [...new Set(bases)];
-    const found = await mapLimited(unique, 8, (base) => this.#store.latestProduction(product, base));
+    // Most known bases can have no production at all. Probe exact index keys in small batches, then use the
+    // existing newest-valid reader for every key that exists. A failed probe is only an optimization failure:
+    // fall back to the original reads, including their original integrity and error behavior.
+    const batches: string[][] = [];
+    for (let i = 0; i < unique.length; i += 16) batches.push(unique.slice(i, i + 16));
+    const present = await mapLimited(batches, 2, async batch => {
+      try {
+        const found = await this.#store.records.findFirstMany({ key: INDEX.produce, values: batch.map(base => buildKey(product, base)), kind: 'action' });
+        return batch.filter(base => found.has(buildKey(product, base)));
+      } catch {
+        return batch;
+      }
+    });
+    const candidates = present.flat();
+    const found = await mapLimited(candidates, 8, (base) => this.#store.latestProduction(product, base));
     const out = new Map<string, ProduceAction>();
-    unique.forEach((base, i) => {
+    candidates.forEach((base, i) => {
       const production = found[i];
       if (production !== null) out.set(base, production);
     });

@@ -169,17 +169,12 @@ Layers, outermost first:
    do the same on an `ubuntu-24.04` runner for the Node that setup-node provides, leave
    `kernel.apparmor_restrict_unprivileged_userns` at the runner's default (1) and run the tests that guard on the sandbox.
 
-   Each Linux child also tests the loaded enforcement before importing any pack: real execution of Node, synchronous and
-   asynchronous writes to an isolated writable synthetic directory, and a pathname Unix socket connection must all fail with
-   the expected kernel denial. The trusted bootstrap temporarily receives child-process and synthetic-directory write grants;
-   it drops both using `process.permission.drop`, confirms they are gone, and refuses the call if that API is unavailable.
-   The synthetic listener and directory are removed on completion. Policy names include a digest of the canonical worker rules;
-   this is a version identifier, not proof that the administrator loaded those exact rules. An administrator or root able to
-   replace an active kernel policy and the Node executable are within the deployment trust boundary. Reloading an active
-   same-named profile can change confinement between checks: stop the Hub and drain its children before installing or replacing
-   policy, and do not treat a successful synthetic path test as proof of every possible pathname. The dedicated-VM-only A/B
-   command is `CIRCLE_HUB_SYNTHETIC_APPARMOR_TEST=1 node --test hub/rules/sandbox/testing/linux-policy-ab.ts`; it refuses to
-   replace an already installed Hub sandbox policy and intentionally tests same-name weak policies and a cached probe.
+   The Linux startup check tests the launcher, AppArmor worker label and execution denial once before caching readiness.
+   Every function still runs under bubblewrap, AppArmor and Node's permission model with no write or child-process grant.
+   Decision 82 removes the per-child attestation and synthetic probe directory; the operator is responsible for not
+   replacing the installed policy while Hub is running. Linux OS-isolation tests exercise the actual restrictions in a
+   dedicated synthetic environment; a cached startup check does not prove a later policy was unchanged.
+
 4. Node's permission model: read access only to the bootstrap, `policy.ts`, the pack directory and the declared dependencies'
    package directories (resolved recursively); no writes, child processes, workers, addons, WASI or inspector;
    `--disallow-code-generation-from-strings`, `--no-addons`, `--no-experimental-websocket`, an empty environment (only `TZ=UTC`).
@@ -388,18 +383,15 @@ substring contract as the independent rules and refs implementations.
 
 ### Independent Linux isolation review
 
-Antigravity independently reviewed the fixed implementation at `ab2ec6c6` and found the two earlier blockers addressed:
+The following is historical: Antigravity independently reviewed the then-current implementation at `ab2ec6c6` and found the two earlier blockers addressed:
 all-thread descendant accounting and per-child kernel isolation attestation. This was a source review, not production
-proof. The policy administrator remains trusted; stop the Hub and drain children before replacing an AppArmor policy.
+proof. Decision 82 subsequently removed the per-child attestation. The policy administrator remains trusted; stop the Hub and drain children before replacing an AppArmor policy.
 
-### Linux startup Node capability preflight
+### Linux startup capability
 
-The Linux readiness probe now runs the real Node executable with its permission model and the temporary child/write
-permissions used by the bootstrap. It requires `permission.drop`, revokes both grants, and checks they are gone before
-caching readiness. Missing support reports private diagnostic `node_permission_drop_missing`; a throwing or ineffective
-implementation reports `node_permission_drop_failed`. Neither condition permits a fallback. The existing per-child
-attestation still runs before pack loading. Synthetic missing/no-op/throwing implementations are regression inputs;
-verification results are recorded in `docs/hub-r4-tasks/linux-probe-capability.md`.
+The startup probe checks bubblewrap and the worker policy without relying on `process.permission.drop`. Workers start
+without temporary Node write or child-process grants. The previous per-call proof and the proof-only A/B script were
+retired by owner decision 82; tests of actual operating-system isolation remain.
 
 Independent Linux RSS review: Antigravity reviewed fixed merge `23ec924d` and found no remaining static blocker in
 bounded thread-tree retries or the distinction between measured excess and unavailable observation. The review did not

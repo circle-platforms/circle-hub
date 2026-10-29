@@ -70,7 +70,9 @@ Before schema diagnostics or any external read, the entry point scans the comple
    `selectCandidate` in `target.ts`) or the documented default `runs.newest_released@1` (newest
    released build of the requested line with a root) chooses (projected), with its basis text and alternatives. Unknown builds,
    builds of another line and lines without a root are `REFERENCE_UNRESOLVED` with the existing builds as options. The run
-   records the root; the composition digest is in the build basis claim.
+   records the root; the composition digest is in the build basis claim. Within one start, the unfiltered build list is reused
+   for selection, exact-name resolution and the optional frozen build context; seedling lookups are memoized by exact line.
+   Neither cache crosses calls, and the selected build's root is still resolved before it is locked.
 4. **Hub record inputs** (handover, B03 R[3]-R[4]): the bound bytes are the canonical JSON of the record envelope (so their
    SHA-256 is the record digest), or of the value its pointer names, stored as a generated artifact readable by the caller;
    `BoundInput.meta` names the record. The receiver gets the record as a source; no carry-over is offered across a handover.
@@ -626,6 +628,13 @@ full replacement submissions remain allowed after exhaustion. Answers reference 
 rewrite requests or old results. `getRun`/`listRequests` apply run visibility before listing requests. Unknown-routing
 rows retain an empty hypothesis set with the mandatory open residual and a named judgment request, without inventing
 hypotheses or predictions. The console lists unanswered requests with their named audience and deadline.
+
+Maintenance also checks accepted historical results whose layer already contains a complete named request exit. If the
+corresponding item/requirement request is absent, it uses the ordinary routing rules on a detached result copy to append
+the request with the recorded missing fact, audience, source and deadline. Existing or answered requests are retained,
+independent gaps are kept, and the old result is never rewritten. Non-request exits are not turned into human requests.
+For older results without those fields, the already-created repair requests are looked up by their existing exact
+identity in batches; repeated maintenance does not refresh their deadlines or issue one lookup per historical layer.
 
 Installed checks returning no outcome for an item are `check_error`, not `no_check`. Output failures retain
 `output_failed` on the dynamic not-run layer. Work-limit exhaustion is unchecked; it is distinct from an effect budget.

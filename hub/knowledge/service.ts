@@ -279,7 +279,7 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
       // Establish permission before even decoding a contribution cursor.
       if(!(await reading.mayReadRoot(reader,query.root)))return null;
       const page=await contributionNodes(context,reading,contributions,query,reader);if(!page)return null;
-      const products=await reading.productsOfRoot(query.root);const rows=[];for(const product of products)rows.push(...await feeding.entries(reader,product,query.feeding_offset?.offset??Number.MAX_SAFE_INTEGER));
+      const paths=page.nodes.map(node=>node.path),products=paths.length?await reading.productsOfRoot(query.root):[];const rows=[];for(const product of products)rows.push(...await feeding.entriesAtNodes(reader,product,query.root,paths,query.feeding_offset?.offset??Number.MAX_SAFE_INTEGER));
       for(const node of page.nodes){const relevant=rows.filter(row=>row.validity==='valid'&&row.body.root===query.root&&(row.body.path===node.path||row.body.path===null&&node.path==='/'||Array.isArray(row.body.commands)&&row.body.commands.some((command:Record<string,unknown>)=>command.path===node.path)));const references=[];for(const row of relevant){if(references.length===100)break;const ref={object:row.body.object,reference:'rec:'+row.record};if(canonicalSize(page)+canonicalSize(references)+canonicalSize(ref)>context.limits.pageBytes-1024)break;references.push(ref);}if(relevant.length){node.feeding_objects=references;node.feeding_complete=references.length===relevant.length;if(!node.feeding_complete)page.coverage={...page.coverage,complete:false,note:[page.coverage.note,'喂入引用达到本页预算；从知识 index/facets 视图读取完整范围'].filter(Boolean).join('；')};}}
       return page;
     }),

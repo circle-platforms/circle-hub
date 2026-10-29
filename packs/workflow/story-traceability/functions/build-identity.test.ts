@@ -6,6 +6,7 @@ import { boundView, caseEntry, indexViewOf } from '../../traceability/functions/
 const root = 'a'.repeat(64), otherRoot = 'd'.repeat(64), buildName = 'Synthetic_10_7_A';
 function input(name: unknown, context: Record<string, unknown> = {}) {
   const view = indexViewOf('case', 'stories', []);
+  view.key_space_complete = true;
   view.build = { build: buildName, root };
   const record = { id: '7', name, stories: ['21'], fields: { id: 7, name, stamp: 'synthetic-scalar', released: false } };
   return { inputs: [boundView('cases', view), boundView('build', { builds: [record] }, 'plm:builds:5')], parameters: { build_id: '007' }, context };

@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { createHash } from 'node:crypto';
+import { ValidationResult } from '../../../contracts/src/validation.ts';
+import { startPostgres } from '../../../hub/testing/postgres.ts';
+import { BUILD, LOCK } from './testing/index.ts';
+import { openBed } from './testing/bed.ts';
+
+test('a raw escaped quote is accepted as a model category through the actual SlotClaim shape', async t => {
+  const postgres = await startPostgres();
+  const bed = await openBed(postgres);
+  t.after(async () => { await bed.close(); await postgres.stop(); });
+  const raw = '{"root":{"data":{"id":"root","text":"Synthetic"},"children":[{"data":{"id":"case","text":"Synthetic case","priority":2,"resource":["functional"]},"children":[{"data":{"id":"step","text":"\\u6210\\u529f"}}]}]}}';
+  const bytes = Buffer.from(raw), sha256 = createHash('sha256').update(bytes).digest('hex');
+  const reference = await bed.upload(bed.runner, bytes);
+  const started = await bed.service.startRunDetailed(bed.runner, { pack: 'template-gap', product: LOCK.names[0], build: BUILD, inputs: { documents: { reference } } }, bed.call());
+  assert.equal(started.answer.call_result, 'ok', JSON.stringify(started.answer.errors));
+  const run = started.answer.run!, document = run.items[0].id, quote = '\\u6210\\u529f';
+  const at = raw.indexOf(quote); assert.ok(at >= 0);
+  const data = { item: `${document}:case`, category_id: 'functional', quote: { identity: { source_sha256: sha256, parser: 'kityminder@1', path: 'n/step', span: { unit: 'byte', offset: Buffer.byteLength(raw.slice(0, at)), length: Buffer.byteLength(quote) } }, text: quote }, producer: { model_id: 'synthetic-model', model_family_id: 'synthetic-family' } };
+  const submission = (claim: unknown) => ({ run: run.run, model: 'synthetic-model', model_identity: { model_id: 'synthetic-model', model_family_id: 'synthetic-family' }, items: [{ item: document, handling: 'handled', slots: { coverage: [claim] } }] });
+  const wrong = await bed.service.submitResult(bed.runner, submission({ statement: '合成判断', data }), bed.call());
+  assert.equal(wrong.acceptance, 'not_accepted');
+  assert.ok(wrong.errors.some(error => error.code === 'SUBMISSION_SCHEMA_VIOLATION'));
+  const accepted = await bed.service.submitResult(bed.runner, submission({ text: '合成判断', data }), bed.call());
+  assert.equal(accepted.acceptance, 'accepted', JSON.stringify(accepted.errors));
+  const result = ValidationResult.parse(accepted.result);
+  const item = Object.values(result.partitions).flat().find(row => row.item === document); assert.ok(item);
+  const coverage = item.requirements.find(row => row.requirement === 'coverage'); assert.ok(coverage);
+  const judgment = coverage.claims.find(row => row.warrant.producer === 'model'); assert.ok(judgment);
+  assert.equal(judgment.qualifier.nature, 'judgment');
+  const resultClaim = coverage.claims.find(row => row.warrant.producer === 'function'); assert.ok(resultClaim);
+  assert.equal(resultClaim.statement.data?.classification_status, 'classified');
+  assert.ok((resultClaim.statement.data?.covered as string[]).includes('functional'));
+  assert.ok((resultClaim.statement.data?.qualifier_marks as string[]).includes('conditional_on_judgment'));
+});

@@ -251,7 +251,10 @@ export interface ReplayedChecks {outcomes:Record<string,CheckOutcome[]>;retryAtt
 export function evaluate(ctx:EngineContext,input:EvaluationInput & {replayChecks:ReadonlySet<string>}):Promise<ReplayedChecks>;
 export function evaluate(ctx:EngineContext,input:EvaluationInput):Promise<Evaluation>;
 export async function evaluate(ctx: EngineContext, input: EvaluationInput & {replayChecks?:ReadonlySet<string>}): Promise<Evaluation|ReplayedChecks> {
-  const { run, workflow, submission } = input;
+  const { run, workflow } = input;
+  const model=input.submission?.model??input.origin?.model;
+  if(input.submission!==null && !model)throw new Error('提交缺少已声明的模型身份，不能生成判断');
+  const submission=input.submission===null?null:{...input.submission,model:model!};
   const accountAuthors=workflow.requirements.some(t=>t.independence_by_account)?await authorAccountsOf(ctx,run.predecessor):null;
   const administrators = (await ctx.deps.records.principals?.list?.() ?? [])
     .filter(user => user.role === 'admin' && !user.disabled).sort((a, b) => a.id.localeCompare(b.id));

@@ -83,6 +83,8 @@ export interface WorkflowStore {
   publicationOf?(digest: string): Promise<string | null>;
   /** A version the user may use: `id` (latest published, assigned to the user) or `id@version`. Unknown, unassigned and withdrawn give the same null. */
   forUser(user: Principal, ref: string): Promise<LoadedWorkflow | null>;
+  /** Installed skill packages may expose local tools without declaring a workflow method. */
+  skillForTools?(user: Principal, ref: string): Promise<Pick<LoadedWorkflow, 'pack' | 'manifest'> | null>;
   /**
    * Admin-log reason when forUser returned null. Does not extract the pack. null means the version is published, assigned
    * and not withdrawn, so the caller has another reason (for example the manifest has no tools/).
@@ -367,5 +369,5 @@ export interface EffectRegistryPort {
 
 /** Pure re-evaluation of named frozen-package checks; it cannot store submissions or spend repair rounds. */
 export interface EffectCheckReplay {
- (input:{run:string;submission:string;checks:readonly string[]}):Promise<Record<string,import('../contracts/src/tables.ts').CheckOutcome[]>>;
+ (input:{run:string;submission:string;result?:string;checks:readonly string[]}):Promise<Record<string,import('../contracts/src/tables.ts').CheckOutcome[]>>;
 }

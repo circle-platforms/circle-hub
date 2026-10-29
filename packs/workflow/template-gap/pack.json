@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "template-gap",
-  "version": "1.2.14",
+  "version": "1.2.19",
   "kind": "workflow",
   "title": "模板缺口检查",
   "description": "文档级核验模板 v3 全部 24 类，并从锁定构建的用例索引核验每个已解析命令的 9 类覆盖；缺输入写明补齐动作、对象和期限",
@@ -13,8 +13,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "44088a5fb67cda3f3f3e75d53269cb71383836f9da5b64f9d83e7474db28fcd7",
-      "size": 8718
+      "sha256": "4ce6f6c3c79b4ca2d08ec23ffaa9c2359d0fc411174a528ed1da2be28a08f557",
+      "size": 9085
     },
     {
       "path": "checks.json",
@@ -23,23 +23,23 @@
     },
     {
       "path": "examples/command_partial_shortfall.json",
-      "sha256": "700150db261c354c02c94dba1f1fab1d36a8b239e4ad000959fc58a21217267b",
-      "size": 83866
+      "sha256": "c306efd92d3230b5e5ac6ea0bb1908b3f935944b72182e03c0fc5ebd22bf1adf",
+      "size": 87188
     },
     {
       "path": "examples/command_partial_support.json",
-      "sha256": "cfe33998e767e01889ec77cfbb0c18944f24e74a28a16f0adc2e1a1eff130987",
-      "size": 92894
+      "sha256": "9d7ef7fd6f9101bc93e337a66a1e7103d89e6f5d6fea2e2625b99ffef53a1908",
+      "size": 96624
     },
     {
       "path": "examples/command_unbound.json",
-      "sha256": "ca6a4dad8f04656c2d46b12ec1b36a0d0d73e3e5815fec593bdd88a9444ae16c",
-      "size": 69150
+      "sha256": "1207505ee62e42af937aa57aaff0eeb966916ad63c9f9020f9fbd55df457860b",
+      "size": 71015
     },
     {
       "path": "examples/command_unmatched.json",
-      "sha256": "d0b462337c6c1b76c74b34084121418c9cdd7c9156a3027b9907d831428223e0",
-      "size": 99336
+      "sha256": "5c08a7d85f4bb97b7fb973b6848e3b62644b3feea07e7e2a6f52597cacc8e019",
+      "size": 103270
     },
     {
       "path": "examples/synthetic-gap.km.json",
@@ -73,8 +73,8 @@
     },
     {
       "path": "functions/command-check.ts",
-      "sha256": "9e49d6eb4f86e9beca16b70c5d3d22f0e38879e7de7711928a88904b23b3a452",
-      "size": 11696
+      "sha256": "9a120f528c65f106006a82b31f3dd225ede8993ba0bcfbdbac9ce11c7fab2f39",
+      "size": 12075
     },
     {
       "path": "functions/command-identity.ts",
@@ -88,8 +88,8 @@
     },
     {
       "path": "functions/commands.ts",
-      "sha256": "7e9e3878141abf9574df5b96221b6ff58410196f9965f6e0673f8da3a271fceb",
-      "size": 6760
+      "sha256": "8f188d8f1ec5ee431814c8eff7ae5499fd70b3aa2fc1326aa3d2a5fe56dc99d7",
+      "size": 7159
     },
     {
       "path": "functions/common.ts",
@@ -108,8 +108,8 @@
     },
     {
       "path": "functions/index.ts",
-      "sha256": "44726f1ac87189fc86b6b590a8596650f07a1fc63f3ad30768a5104b638ba94b",
-      "size": 7103
+      "sha256": "afa21628fd1cd21db23623a8b7978d7c6aa34610e539e1348595fed3da2e9c2c",
+      "size": 7674
     },
     {
       "path": "functions/project.ts",
@@ -148,8 +148,8 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "8d096194abb9ac737967680d94becd62dd488eeb33cad8b5e00963ca9ed6ab42",
-      "size": 6539
+      "sha256": "9f411bfc0d44b4ab26065d7bb767198163773710a9f8c1bb39729cd2813a5f3d",
+      "size": 6572
     },
     {
       "path": "requirements.json",
@@ -158,28 +158,28 @@
     },
     {
       "path": "samples/negative/command_absent.json",
-      "sha256": "ad0a3246594067a861e21beb2b967fa3c87601709ffac65ae592e223dc06b311",
-      "size": 3460
+      "sha256": "e2b8fab56b7f1cb87510de16115406dfd69bab447dc7afb06e82c4015e5eb493",
+      "size": 3489
     },
     {
       "path": "samples/negative/command_none.json",
-      "sha256": "5310f9f5d89d83c79581485b6fedf383f0ee69a115e9fb47e2799f8e1f6c365d",
-      "size": 10254
+      "sha256": "21dbf9451be3e9c09bdf7e1075d79d19871b862b8b4ad5afc28c19150da71f31",
+      "size": 11192
     },
     {
       "path": "samples/negative/command_rule_mismatch.json",
-      "sha256": "e45e9b310352c2415fb6114616a8128c786e001faf54eb798ca3ecaedab5c9fb",
-      "size": 13756
+      "sha256": "6ebabb920600afbc5d4d3aebe417344d6e928de616a6d6537129c1a3c44593ea",
+      "size": 14694
     },
     {
       "path": "samples/negative/command_shortfall.json",
-      "sha256": "e79acda7755122db27e2a3729bf50d05a44147e8720a79b496bd933dfbd83e58",
-      "size": 13682
+      "sha256": "a952b60967d7ca17e9c53f8b940c6f8ea9f613ad4e187ace892722159593e0f1",
+      "size": 14620
     },
     {
       "path": "samples/negative/command_upload.json",
-      "sha256": "3b830a0288e2ba52eb37b5b541f370fa65bce3594c6160e3110341871b214632",
-      "size": 13732
+      "sha256": "2a2fe39b179b7534bf91f0d5c1d2034c948ef2907c0ecb2ea16c261baf1c8a33",
+      "size": 14670
     },
     {
       "path": "samples/negative/coverage-blank-reason.json",
@@ -208,13 +208,13 @@
     },
     {
       "path": "samples/positive/command_all.json",
-      "sha256": "e93dc194778eb0e7fc05134892ebfa5f586978730c0fcb88f428ecd01c4a2711",
-      "size": 13691
+      "sha256": "ec0c8cd71108fedfafda1ce8fd784d6d7c18bd0f8fa765ff4b6523ae4f0b8723",
+      "size": 14629
     },
     {
       "path": "samples/positive/command_skip.json",
-      "sha256": "87071506ebe09524e6d2648e030ea2f175888e0e8c511cd396804f4d9b61ca4b",
-      "size": 13739
+      "sha256": "b255b493c9feb35dbf246045e7668a8144a28de30f18e7f771ec96f1acfb7c2c",
+      "size": 14677
     },
     {
       "path": "samples/positive/coverage-all-covered.json",
@@ -265,6 +265,11 @@
       "path": "tables/template-v3.json",
       "sha256": "6da08dd2265a630d0dec6290da52ee27c416e941ca6d1c581146f16d121cfb92",
       "size": 4821
+    },
+    {
+      "path": "tools/prepare-claims.ts",
+      "sha256": "edf78552c3be69f6cdb966cb281ca22b0955045bdd47d2dc3a04d3b7122f8793",
+      "size": 4584
     },
     {
       "path": "workflow.json",

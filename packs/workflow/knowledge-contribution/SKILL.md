@@ -4,7 +4,7 @@
 
 喂入是自动的：凡在运行里经 Hub 读到的用例、缺陷、构建、规格都由程序按来源 schema 填进喂入层，不是 Circle 的动作；Circle 只经回注补程序填不了的语义（分类、关系、适用条件、更正、版本声明），每条带逐字引文。运行中不问人：缺事实按具名请求补证或把该条标为 skipped，不向人提问。结构契约随包下发（tables/knowledge-structure.json），get_nodes 根路径也返回它；喂入层不改树、不进根摘要。
 
-1. 用 JSON 清单标识本次工作，items 各带 id、title。上传清单，按 examples/start-run.json 开独立运行。这个任务包不绑定产品线：不要给 start_run 的 product、version、build，也不要写进 parameters。非管理员产品读者从 get_nodes 复制 tree:<root><path>[@entry] 引用，不绑定 originals；根原件只允许管理员读取。examples/start-run.json 默认就是这个路径。管理员确有可读 src: 原文时才另行绑定 originals，所有引用仍受锁定根约束。
+1. 用 JSON 清单标识本次工作，items 各带 id、title。上传清单，按 examples/start-run.json 开独立运行；在 start_run 顶层写已确认的 product，并按目标范围写 version 或 build（已知构建时明确写 build），不写进 parameters。核对回执里的 product、build 和 root 与目标一致；目标或根缺失时记未知，向来源维护者补齐目标后再开运行，不猜测。非管理员产品读者从 get_nodes 复制 tree:<root><path>[@entry] 引用，不绑定 originals；根原件只允许管理员读取。管理员确有可读 src: 原文时才另行绑定 originals，所有引用仍受锁定根约束。
 2. 每项只交一条 contribution，code 使用分类、归位提议、声明、关系、版本声明对应的生成词表值；text 写整合后的陈述，data 按 examples/submit-result.json 带 root、path、source。版本声明（version_declaration）是人对某对象版本线的声明：object 引用、line、以及支撑它的来源结构逐字引文；Hub 记声明人和运行，来源结构绑定仍优先展示。
 3. source 的 reference 必须读得到，quote 逐字引原文。非管理员继续使用 get_nodes 返回的 tree:<root><path>[@entry]，不绑定 originals；不要尝试用根的 src: 原件绕过权限。只收锁定根里已有的、可追溯 Hub 原件；不要把清单或会话当作知识根据。只有会话说法须负责人署名，本版没有署名通道。
 4. 关系另外带 relation.kind 和 relation.other（同样是 reference、quote）。same_subject 仅表示同一议题，不表示内容等价；contradicts 记录矛盾关系；covers 记录覆盖关系（如构建覆盖缺陷）。三者都不修改任一方。矛盾和覆盖在视图里单列，不进版本差。

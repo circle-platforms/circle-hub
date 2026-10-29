@@ -8,6 +8,8 @@ import type { ProducerKind, Resolution, SourceRole } from '../../../contracts/ge
 import type { ValueResolution } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { TreeRootBody } from '../../../contracts/src/knowledge.ts';
+import { IndexView } from '../../../contracts/src/views.ts';
+import { KnowledgeStructureSchema } from '../../../contracts/src/feeding.ts';
 import { SlotClaim, type ResolvedEvidence } from '../../../contracts/src/pack.ts';
 import type { ItemProjection, RunRecord } from '../../../contracts/src/run.ts';
 import type { CriterionChange, Submission } from '../../../contracts/src/submission.ts';
@@ -27,6 +29,7 @@ import {
   parserCacheKey,
   prefetchReferences,
   resolveReference,
+  sandboxReadDiagnostic,
   withRange,
   type QuoteCandidate,
   type ReaderIdentity,
@@ -34,20 +37,25 @@ import {
   type Resolved,
 } from '../../refs/api.ts';
 import { SandboxError, type CatalogView } from '../../rules/api.ts';
+import { parseExternal } from '../../connectors/api.ts';
+import { COMPONENTS } from '../../knowledge/api.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead } from './retry-read.ts';
 import { describe, protocolError } from './errors.ts';
 import { declarationGroundRefusal } from '../../knowledge/declaration-grade.ts';
-import { recordReader, sourceReader } from './readers.ts';
+import { principalOf, recordReader, sourceReader } from './readers.ts';
 import { resultsOf } from './store.ts';
-import { pointerOf, valueAt } from './util.ts';
+import { isObject, pointerOf, valueAt } from './util.ts';
 
 /** What a run may cite: its bound sources by digest, the records bound as inputs, the locked root and its catalogs. */
 export interface RunScope {
   reader: ReaderIdentity;
   sources: ReadonlyMap<string, SourceRole>;
   records: ReadonlyMap<string, SourceRole | null>;
+  /** Feeding claims named by a Hub-generated index bound to this run; validity is checked on actual use. */
+  indexedFeedingRecords?: ReadonlySet<string>;
+  feedingOffset?: number;
   /** The judged source: the sources and records bound through the workflow's subject slot (where a statement's location lies). */
   subject: { shas: ReadonlySet<string>; records: ReadonlySet<string> };
   root: string | null;
@@ -81,6 +89,7 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
   };
   const sources = new Map<string, SourceRole>();
   const records = new Map<string, SourceRole | null>();
+  const indexedFeedingRecords = new Set<string>();
   const subject = { shas: new Set<string>(), records: new Set<string>() };
   for (const binding of run.sources) {
     let ref: Reference;
@@ -103,6 +112,19 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
         sources.set(sha, binding.role);
         if (judged) subject.shas.add(sha);
       }
+    }
+  }
+  if(run.feeding_offset&&run.root&&run.product&&ctx.deps.knowledge.feeding){
+    for(const binding of run.sources){
+      const external=typeof binding.external==='string'?parseExternal(binding.external):null;
+      if(external?.system!=='knowledge'||external.type!=='index'||!binding.artifact)continue;
+      let ref:Reference;try{ref=parseReference(binding.reference);}catch{continue;}if(ref.scheme!=='src')continue;
+      const source=await readScope(binding.reference,async()=>await artifacts.source(reader,ref.sha256,{consumer,record:binding.artifact!})??await artifacts.sourceForRun(reader,ref.sha256,run.run,{consumer,record:binding.artifact!}));
+      if(!source?.bytes||!('generated'in source.artifact.body.origin)||source.artifact.body.origin.generated.generator!==COMPONENTS.views)continue;
+      let raw:unknown;try{raw=JSON.parse(new TextDecoder().decode(source.bytes));}catch{continue;}
+      const parsed=IndexView.safeParse(raw);if(!parsed.success||parsed.data.kind!=='case'||parsed.data.product!==run.product||parsed.data.build.root!==run.root)continue;
+      const listed=new Set(Object.values(parsed.data.keys).flat());
+      for(const [digest,entry] of Object.entries(parsed.data.entries))if(listed.has(digest)&&entry.entry===digest&&entry.reference===`rec:${digest}`&&!records.has(digest)){records.set(digest,binding.role);indexedFeedingRecords.add(digest);}
     }
   }
   // A projection may place items in another slot than the subject (FragmentRef.slot): their sources are judged too.
@@ -130,6 +152,8 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
     reader: identity,
     sources,
     records,
+    indexedFeedingRecords,
+    ...(run.feeding_offset?{feedingOffset:run.feeding_offset.offset}:{}),
     subject,
     root: run.root ?? null,
     unversionedRoot: run.unversioned_root ?? null,
@@ -308,12 +332,12 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
   const cache = new Map<string, Promise<ValueOutcome>>();
   const resolving = new Set<string>();
   // Documents may be evicted between groups. Retain only bounded successful
-  // reference results, and re-authorize their source before every actual use.
+  // reference results; source access is checked against the current request's permission snapshot.
   const prepared = new Map<string, { result: Extract<ValueOutcome,{ok:true}>; tier:string }>();
   let preparedBytes=0;
   const preparedLimit=64*1024*1024;
   let aborted:HubReadFailure|undefined;
-  // Reading is an authorization decision, not immutable document content: recheck it on every use.
+  // A request owns its permission snapshot and bounded source-read cache; neither is shared with another request.
   const sources = sourceReader(artifacts, consumer);
   const context = {
     reader: scope.reader,
@@ -325,7 +349,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
     documents: ctx.documents,
     onDiagnostic: (diagnostic: {reference:string;message:string}) => ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
   } as const;
-  const run = async (reference: string, scoped: boolean, grounds: boolean): Promise<ValueOutcome> => {
+  const run = async (reference: string, scoped: boolean, grounds: boolean, onResolved?: (result: Resolved) => void): Promise<ValueOutcome> => {
     let ref: Reference;
     let canonical: string;
     try {
@@ -343,6 +367,15 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
       if (scoped) {
         const problem = scopeProblem(ref, scope);
         if (problem !== null) return { ok: false, code:'REFERENCE_UNRESOLVED', message: problem };
+        if(ref.scheme==='rec'&&scope.indexedFeedingRecords?.has(ref.record)){
+          const position=await store.position?.(ref.record),feeding=ctx.deps.knowledge.feeding;
+          if(position===undefined||position===null||scope.feedingOffset===undefined||position>scope.feedingOffset||!feeding)return {ok:false,code:'REFERENCE_UNRESOLVED',message:'喂入记录不在本次运行冻结的序号内；重新绑定当前索引后开新运行'};
+          const stored=await store.get<unknown>(ref.record),body=stored?.body;
+          const data=isObject(body)&&isObject(body.statement)&&isObject(body.statement.data)?body.statement.data.feeding:undefined;
+          const parsed=KnowledgeStructureSchema.safeParse(data),warrant=isObject(body)&&isObject(body.warrant)?body.warrant:null;
+          const state=await feeding.recordState(ref.record,principalOf(scope.reader));
+          if(!stored||stored.kind!=='claim'||stored.provenance!=='projected'||warrant?.producer!=='function'||!parsed.success||parsed.data.schema!=='fed-case@1'||parsed.data.root!==scope.root||state?.validity!=='valid')return {ok:false,code:'REFERENCE_UNRESOLVED',message:'索引中的喂入用例不是当前可读、有效的同根投影；核对来源和撤回状态后重读索引'};
+        }
       } else if (ref.scheme === 'entry') return { ok: false, message: scopeProblem(ref, scope) ?? '' };
       let result: Awaited<ReturnType<typeof resolveReference>>;
       try {
@@ -351,9 +384,9 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
           attempt => { if (attempt.retry || attempt.attempt > 1) attempts.push(attemptEvidence('read', ENGINE_COMPONENT, attempt, {reference:canonical})); });
       } catch (error) {
         // A sandbox failure can carry plugin-controlled output and paths in its details.
-        ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: error instanceof SandboxError ? `技能包沙箱失败：${error.code}` : error instanceof ParseError ? `技能包解析失败：${error.code}` : describe(error) });
+        ctx.log({ traceId: null, run: scope.reader.run ?? null, what: 'exact source', detail: error instanceof SandboxError ? sandboxReadDiagnostic(error).admin : error instanceof ParseError ? `技能包解析失败：${error.code}` : describe(error) });
         if (consumer === 'function') throw new HubReadFailure(canonical, 'check_error', attempts);
-        if (error instanceof SandboxError) return { ok: false, code: 'SOURCE_RETRYABLE', retryable: true, message: error.detail.limit === 'document_cache_bytes' ? `文档缓存估算超过预算：${error.code}` : `来源片段暂时未核对：技能包沙箱 ${error.code}`, fix: error.detail.limit === 'document_cache_bytes' ? '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读' : '管理员核对技能包和沙箱状态，恢复后重新解析该引用' };
+        if (error instanceof SandboxError) { const diagnostic=sandboxReadDiagnostic(error); return { ok: false, code: 'SOURCE_RETRYABLE', retryable: true, message: diagnostic.message, fix: error.detail.limit==='document_cache_bytes' ? diagnostic.fix : `${diagnostic.fix}；恢复后重新解析该引用` }; }
         if (error instanceof ParseError) return { ok: false, code: 'SOURCE_RETRYABLE', retryable: true, message: '来源片段暂时未核对：技能包解析未完成', fix: '管理员核对技能包和原件格式，修正后重新解析该引用' };
         return { ok: false, message: `引用解析不出（${UNAVAILABLE_MESSAGE}）` };
       }
@@ -378,6 +411,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
           return { ok: false, message: `成环的引用：${innerCanonical}` };
         }
       }
+      onResolved?.(result);
       return { ok: true, value: valueOf(result, ref, scope) };
     } finally {
       resolving.delete(canonical);
@@ -404,18 +438,15 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
           const additions:Array<{key:string;result:Extract<ValueOutcome,{ok:true}>;tier:string;bytes:number}>=[];
           let total=0;
           for(const [key,row] of group){
-            const checking=Promise.resolve(sources.read(row.sha,scope.reader));
-            const read=await (ctx.documents.within?.(checking)??checking);
-            if(!read?.bytes||read.bytes.length!==read.size||sha256Hex(read.bytes)!==row.sha)continue;
-            const result=await run(row.reference,scoped,false);
-            if(!result.ok||result.value.text===null)continue;
-            const confirming=Promise.resolve(sources.read(row.sha,scope.reader));
-            const confirmed=await (ctx.documents.within?.(confirming)??confirming);
-            if(!confirmed?.bytes||confirmed.readTier!==read.readTier||confirmed.bytes.length!==confirmed.size||sha256Hex(confirmed.bytes)!==row.sha)continue;
+            // run checks access and byte identity before and after locate. Save that observed
+            // tier; resolve() still checks it against current access before every actual use.
+            let tier: Resolved['readTier'] | undefined;
+            const result=await run(row.reference,scoped,false,resolved=>{tier=resolved.readTier;});
+            if(!result.ok||result.value.text===null||tier===undefined)continue;
             const value=result.value;
             const bytes=512+2*(key.length+value.reference.length+(value.text?.length??0)+(value.role?.length??0)+value.digest.length+(value.source?.length??0));
             total+=bytes;if(total>preparedLimit)throw new SandboxError('SANDBOX_OUTPUT_TOO_LARGE',{limit:'document_cache_bytes'});
-            additions.push({key,result,tier:read.readTier,bytes});
+            additions.push({key,result,tier,bytes});
           }
           // Another prefetch can have completed the same keys while this batch
           // awaited authorization. Charge each retained result only once.
@@ -427,17 +458,18 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
       catch (error) {
         const code = error instanceof SandboxError ? error.code : 'SOURCE_RETRYABLE';
         const cacheLimit = error instanceof SandboxError && error.detail.limit === 'document_cache_bytes';
-        ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:`来源片段预取未完成：${code}`});
+        const diagnostic=error instanceof SandboxError?sandboxReadDiagnostic(error):null;
+        ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:diagnostic?.admin??`来源片段预取未完成：${code}`});
         aborted=new HubReadFailure(inScope[0] ?? '', 'check_error', attempts,
-          cacheLimit ? `Hub 文档缓存估算超过预算，核验未完成（${code}）` : `Hub 来源片段核对未完成（${code}）`,
-          cacheLimit ? '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读；本次不计修复轮数' : '管理员核对技能包和沙箱状态，恢复后原样重交；本次不计修复轮数');
+          cacheLimit ? `Hub 文档缓存估算超过预算，核验未完成（${code}）` : diagnostic ? `Hub 核验未完成：${diagnostic.message}` : `Hub 来源片段核对未完成（${code}）`,
+          diagnostic ? `${diagnostic.fix}；恢复后原样重交，本次不计修复轮数` : '管理员核对技能包和沙箱状态，恢复后原样重交；本次不计修复轮数');
         throw aborted;
       }
     },
     async resolve(reference, options = {}) {
       const scoped = options.scoped !== false;
       if(aborted)throw aborted;
-      // Immutable parsed documents may be cached, but source access and disclosure may change between reads.
+      // Immutable parsed documents may be cached; source access is checked in this request's scope.
       let ref:Reference|undefined;
       try{ref=parseReference(reference);}catch{/* run gives the structured syntax error */}
       if(ref?.scheme==='src'){

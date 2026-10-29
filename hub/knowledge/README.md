@@ -150,8 +150,10 @@ catalogs, grounds and provenance.
     the production, by reference, decision 16), so records grow with the builds, not with their lists. A build whose base
     differs from its name is an alias and has no tree; aliases are followed to their final base (at most 8 hops, cycle
     safe, whatever line the base is on) before a root is looked up; names match exactly, else without case when only one
-    spelling exists. Roots are keyed by product and base build, and found by one indexed lookup per base (its newest
-    completed production; a few records read), never by reading every production. A build produced without a build
+    spelling exists. Roots are keyed by product and base build. Build-list reads first discover nonempty index keys in
+    batches of at most 16, with at most two batches in flight; each present key still uses the existing newest-completed
+    per-base reader. A failed batch falls back to those original reads, and no discovery result survives the call. This
+    avoids an individual empty lookup per unproduced base without reading every production. A build produced without a build
     record (not by a sync) gets one in the production's last transaction (`plan` and `sync` null), so every known build has
     a record. `builds()`, `resolveBuild()` and `RootInfo.build` carry no list roles. A build whose name or base does not fit
     the build index (well-formed, no NUL, at most 1000 UTF-8 bytes with the product), whose other text cannot be stored or
@@ -734,6 +736,12 @@ Milestone 2:
 
 ## Composition-pinned literal relations (kb-links, first step)
 
+Relation preparation reads tree nodes in batches of at most 128 instead of issuing one indexed read per node. Each node
+uses the same oldest indexed record and digest/shape validation as the single-node reader; missing or invalid records still
+produce the existing repair outcome. After prefetch, relation sources are processed in the original depth-first order,
+including a shared digest reached at more than one path. The computation still examines the full declared relation scope;
+batching reduces storage round trips and does not establish a wall-time bound for an arbitrarily large composition.
+
 The product's optional `links` array declares `id`, a top-level literal `field`, a target `namespace`, generated `link_match`,
 and an `entry_kind` (required for longest-prefix matching). Only declared boolean normalizers are supported: `lowercase`,
 `nfc`, `nfkc` and `strip_nul`; NFC and NFKC are mutually exclusive. Omission means unchanged spelling. Tokenization is by
@@ -1150,3 +1158,62 @@ The optional `tree_root@1.empty_scope` stores complete=true and each producer la
 ## Explicit source parsers
 
 `ProducerSource.parser` pins a registered core parser for a single source or every member of a list. The product pack owns that source interpretation; a system pack retains its observed Content-Type. SourceLoader executes the exact declaration without recognition fallback, while undeclared sources keep media recognition. Original artifacts, read manifests, composition rows and producer slots retain the observed media type; mismatch notes identify the declared parser in the production report. Parse caches include source digest, parser and media/charset options, and declaration-specific slot caches cannot grant recognition to an undeclared binary source. Read tiers, credential checks and size budgets still apply.
+
+## Index read omission metadata
+
+Each generated index-view read places two fields in its accompanying `meta` artifact: `index_excluded_entries` is the
+number of distinct entries excluded by the scan for that delivered page, and `index_view_sha256` is the digest of that
+page's original view bytes. Zero is an explicit observation. Other incomplete sources, pagination and per-key cuts retain
+their existing fields; this count does not cover them. The index-view original and its existing byte identity do not change.
+Readers must compare the digest before using the count. A legacy or collated view with absent or mismatched metadata does
+not acquire a zero count by inference; the caller handles the missing fact using its other structural coverage fields.
+
+## Frozen feeding cuts
+
+For a frozen append position, the feeding reader pages the product, retraction, source-head, binding and usage indexes in bounded batches. Index values and insertion order are retained, so a record indexed under multiple objects is still associated with each matching object. Product-wide notes and all other records in the frozen cut remain included. Each record and original is still checked against the reader's current permissions and read tier; those decisions are not shared between records. This changes query layout only, not historical records or their frozen horizon.
+
+When an unbound source discovers products from prior feeding records, one currently readable witness establishes each distinct product. Additional records of that same product do not need another visibility check to prove the same existence fact. An unreadable record establishes nothing, so later records of that product are still checked; two distinct readable products remain ambiguous. No other record is made readable by a witness.
+
+Live feeding entry reads, including `get_nodes`, use the same batched retraction and source-head index reads as frozen
+cuts when the store supports them; the previous per-record path remains the fallback. Each record still has its current
+reader and source permission checked separately. A synthetic 40-record regression reproduces 80 per-record retraction
+and source-head reads before the change and at most four after it, while comparing the returned entries with the old
+path. This does not establish that index reads are the only cause of a slow real request.
+
+For `get_nodes`, the batched read selects candidate records by the requested root and the same exact node path or
+declared command path before reading their originals. Every selected record still receives its own current permission,
+source, retraction and frozen-offset checks. A synthetic request for an unrelated node previously read the same source
+40 times and now reads it zero times; the related node still checks all 40 candidates. A store without batch support
+uses the earlier per-record path. This is not a measurement of total latency on a real document.
+
+### Feeding cases in views
+
+A feeding cut keeps valid function projections by exact locked root and exact source identity. A later source-only read
+cannot replace a root-specific command projection; projections on different roots stay separate. Facets count the content
+identity once. If multiple sources of that identity disagree on a requested facet field, that identity is omitted from
+that facet, the view is marked truncated, and a note names the missing agreement and the next action.
+
+An index lists each source projection by its immutable claim-record digest, with `rec:<digest>` as its reference and the
+shared content digest in `data.object`; multiple sources can therefore point to one content object without inventing tree
+membership. Tree entries keep their existing tree references. Exact source title, ancestors, parser selector and command-tree
+source are used only when present and verified in that projection. Older records without these fields remain readable and
+must be re-read under the desired locked root when a consumer needs them. A nonempty legacy expectation list without a
+product-declared nonblank flag remains unknown in expectation-count facets; it is not counted as present. A case seen only without a locked root is not
+attached to a version view by this change; it needs a root-bound read. No version inheritance is inferred here.
+When a case has unparsed steps, its complete command set is unknown: the view omits `commands` and `command_identities`
+for that source, and command-dependent facets and indexes are incomplete with a missing fact and next action. This does
+not assert whether the unparsed steps contain commands.
+An index may carry `key_space_complete`: it is true only when the page covers every raw key in the frozen unfiltered
+view, no listed source was skipped, and no known unresolved feeding projection or missing indexed field can add a key.
+A page may have complete keys while some entries under a listed key remain paginated. The flag says nothing about sources
+not observed in that view, and does not make `only=` a normalized-id query; legacy views without the flag
+cannot prove an absent key. When all pages of one frozen index are bound together, the final page must carry the new
+structural flag, the combined keys must cover the reported key count, and the unfiltered source scope must be complete
+before the combined view can assert key-space completeness. A legacy paginated view is not upgraded from its old
+`truncated` flag.
+The view artifact's derived-coverage ancestry still pins the tree and its composition, not the individual feeding source
+artifacts. A credential finding in a feeding field may therefore require source-coverage handling before that view can be
+read, even when the individual feeding record is readable. This limit does not grant access through another capture.
+The shared `ViewEntry` contract also allows record references in impact and links views, but their current producers still
+emit only tree references and regression-scope and maintenance-sweep accept only those. Before adding feeding records to
+an impact view, narrow that shared contract or update the affected consumers together.

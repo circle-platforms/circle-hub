@@ -474,12 +474,36 @@ export class KnowledgeStore {
     const page = await this.records.find<unknown>({ key: INDEX.node, value: digest, kind: 'tree_node', limit: 1 }, tx);
     const record = page.items[0];
     if (record === undefined) return null;
+    const body = this.#verifiedNode(record, digest);
+    this.#nodes.set(digest, body);
+    return body;
+  }
+
+  #verifiedNode(record: StoredRecord<unknown>, digest: string): TreeNodeBody {
     const body = TreeNodeBody.safeParse(record.body);
     if (!body.success || record.schema !== SCHEMAS.node || nodeDigest(body.data) !== digest) {
       throw new IntegrityError('知识树节点记录与它的摘要不符', { detail: { node: digest, record: record.digest } });
     }
-    this.#nodes.set(digest, body.data);
     return body.data;
+  }
+
+  /** Bounded batches use the same oldest indexed record and verification as node(). */
+  async nodes(digests: readonly string[], tx?: Transaction): Promise<Map<string, TreeNodeBody>> {
+    const out = new Map<string, TreeNodeBody>();
+    const missing: string[] = [];
+    for (const digest of new Set(digests)) {
+      const cached = this.#nodes.get(digest);
+      if (cached === undefined) missing.push(digest); else out.set(digest, cached);
+    }
+    for (let i = 0; i < missing.length; i += 128) {
+      const found = await this.records.findFirstMany<unknown>({ key: INDEX.node, values: missing.slice(i, i + 128), kind: 'tree_node' }, tx);
+      for (const [digest, record] of found) {
+        const body = this.#verifiedNode(record, digest);
+        out.set(digest, body);
+        this.#nodes.set(digest, body);
+      }
+    }
+    return out;
   }
 
   // ------------------------------------------------------------ entries

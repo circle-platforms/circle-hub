@@ -2,16 +2,12 @@
 // stdin. This file is trusted: it locks the process down, imports the pack module, calls the function once, writes a single
 // result frame to fd 1 and exits. Pack code never sees the real stdio, the frame nonce or the request.
 import { Console } from 'node:console';
-import { closeSync, readFileSync, writeFileSync, writeSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
+import { closeSync, readFileSync, writeSync } from 'node:fs';
 import { isBuiltin, registerHooks, syncBuiltinESMExports } from 'node:module';
-import { createConnection } from 'node:net';
-import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { format } from 'node:util';
 import type { SandboxErrorCode } from './errors.ts';
-import { DECLARED_DEPENDENCIES, DEPENDENCY_BUILTINS, LINUX_LABEL, LINUX_LABEL_UBUNTU26, PACK_MODULE_FORMATS, PURE_BUILTINS } from './policy.ts';
+import { DECLARED_DEPENDENCIES, DEPENDENCY_BUILTINS, PACK_MODULE_FORMATS, PURE_BUILTINS } from './policy.ts';
 
 // Intrinsics captured before any pack code runs. Pack code shares this realm and may replace prototype methods or globals;
 // everything this file does after the import goes through these captured functions (the primordials technique of Node core).
@@ -52,7 +48,6 @@ interface Dependency {
 interface Request {
   nonce: string;
   linuxOsIsolation?: boolean;
-  linuxProbeDir?: string;
   batch?: boolean;
   /** File URL of the extracted pack directory, with a trailing slash. */
   pack: string;
@@ -82,45 +77,8 @@ try {
 } catch {
   hardExit(71);
 }
-if (request.linuxOsIsolation) {
-  let verified = false;
-  const permission = process.permission as typeof process.permission & { drop?: (scope: string) => void };
-  try {
-    const label = readFileSync(3, 'utf8').trim();
-    closeSync(3);
-    const dir = request.linuxProbeDir;
-    if ((label !== LINUX_LABEL && label !== LINUX_LABEL_UBUNTU26) || typeof dir !== 'string' || typeof permission?.drop !== 'function') throw new Error('missing isolation proof');
-    if (!permission.has('child') || !permission.has('fs.write', dir)) throw new Error('missing temporary test permissions');
-    // `ignore` opens /dev/null for writing, which could fail before exec even under a weak policy.
-    const executable = spawnSync(process.execPath, ['--version'], { stdio: 'pipe', env: {}, timeout: 1_000 });
-    if ((executable.error as NodeJS.ErrnoException | undefined)?.code !== 'EACCES') throw new Error('execution was not denied by the kernel');
-    let syncDenied = false;
-    try { writeFileSync(join(dir, 'sync'), 'synthetic'); } catch (error) { syncDenied = (error as NodeJS.ErrnoException).code === 'EACCES'; }
-    if (!syncDenied) throw new Error('synchronous write was not denied by the kernel');
-    let asyncDenied = false;
-    try { await writeFile(join(dir, 'async'), 'synthetic'); } catch (error) { asyncDenied = (error as NodeJS.ErrnoException).code === 'EACCES'; }
-    if (!asyncDenied) throw new Error('asynchronous write was not denied by the kernel');
-    const socketResult = await new Promise<string>((resolve) => {
-      let done = false;
-      const finish = (value: string): void => { if (!done) { done = true; clearTimeout(timer); socket?.destroy(); resolve(value); } };
-      let socket: ReturnType<typeof createConnection> | undefined;
-      const timer = setTimeout(() => finish('timeout'), 1_000);
-      try {
-        socket = createConnection(join(dir, 'probe.sock'));
-        socket.once('connect', () => finish('connected'));
-        socket.once('error', error => finish((error as NodeJS.ErrnoException).code ?? 'error'));
-      } catch (error) { finish((error as NodeJS.ErrnoException).code ?? 'error'); }
-    });
-    if (socketResult !== 'EACCES') throw new Error('Unix socket connection was not denied by the kernel');
-    verified = true;
-  } catch {
-    verified = false;
-  } finally {
-    try { permission?.drop?.('child'); permission?.drop?.('fs.write'); } catch { verified = false; }
-  }
-  if (!verified || permission.has('child') || permission.has('fs.write', request.linuxProbeDir)) hardExit(72);
-  try { writeSync(4, request.nonce); closeSync(4); } catch { hardExit(72); }
-}
+// Only the Linux OS launcher opens fd 3 for its AppArmor label; an unisolated synthetic worker must keep its own descriptors.
+if (request.linuxOsIsolation) try { closeSync(3); } catch { /* no launcher descriptor */ }
 const dependencies = new Map(request.dependencies.map((d) => [d.name, d] as const));
 const loadable = [request.pack, ...request.dependencyDirs];
 

@@ -1,4 +1,5 @@
 import { createDocumentCache } from '../../refs/api.ts';
+import { withRequestPermissions } from '../../records/api.ts';
 import { abandonRun } from './management.ts';
 import { maintainRuns } from './maintenance.ts';
 import { requestsOf } from './requests.ts';
@@ -46,9 +47,9 @@ function forCall(ctx: EngineContext, call: CallContext|undefined): EngineContext
 }
 
 /** Parsed sources can be much larger than their immutable bytes. A service instance must never own them across calls. */
-async function withDocuments<T>(ctx:EngineContext,call:CallContext|undefined,operation:(scoped:EngineContext)=>Promise<T>):Promise<T>{
+async function withDocuments<T>(ctx:EngineContext,call:CallContext|undefined,operation:(scoped:EngineContext)=>Promise<T>,principal?:Principal):Promise<T>{
   const scoped=forCall(ctx,call);
-  try{return await operation(scoped);}finally{scoped.documents.dispose?.();}
+  try{return principal ? await withRequestPermissions(scoped.deps.records.artifacts,principal,()=>operation(scoped)) : await operation(scoped);}finally{scoped.documents.dispose?.();}
 }
 
 export interface RunsEngine extends RunsService {
@@ -91,34 +92,34 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
       timer.unref();
     },
     async stopMaintenance(){if(timer){clearInterval(timer);timer=null;}await ongoing;},
-    listRequests(user,run) { return requestsOf(ctx,user,run); },
+    listRequests(user,run) { return withRequestPermissions(ctx.deps.records.artifacts,user,()=>requestsOf(ctx,user,run)); },
     async startRun(user, input, context) {
-      return withDocuments(ctx,context,async current=>(await startRun(current,user,input,context,{host:'local_circle'})).answer);
+      return withDocuments(ctx,context,async current=>(await startRun(current,user,input,context,{host:'local_circle'})).answer,user);
     },
     startRunDetailed(user, input, context) {
-      return withDocuments(ctx,context,current=>startRun(current,user,input,context,{host:'local_circle'}));
+      return withDocuments(ctx,context,current=>startRun(current,user,input,context,{host:'local_circle'}),user);
     },
     async startHubRun(configurer, input, context) {
       if (configurer.role !== 'admin') return refused([unavailableError('/pack')]);
-      return withDocuments(ctx,context,current=>startRun(current,configurer,input,context,{host:'hub'}));
+      return withDocuments(ctx,context,current=>startRun(current,configurer,input,context,{host:'hub'}),configurer);
     },
     submitResult(user, args, context) {
-      return withDocuments(ctx,context,current=>submitResult(current,user,args,context));
+      return withDocuments(ctx,context,current=>submitResult(current,user,args,context),user);
     },
     resolveReference(user, input, context) {
-      return withDocuments(ctx,context,current=>previewReference(current,user,input,context));
+      return withDocuments(ctx,context,current=>previewReference(current,user,input,context),user);
     },
     getRun(user, run): Promise<RunDetail | null> {
-      return getRun(ctx, user, run);
+      return withRequestPermissions(ctx.deps.records.artifacts,user,()=>getRun(ctx, user, run));
     },
     listRuns(user, query) {
-      return listRuns(ctx, user, query);
+      return withRequestPermissions(ctx.deps.records.artifacts,user,()=>listRuns(ctx, user, query));
     },
     getResult(user, run, submission) {
-      return getResult(ctx, user, run, submission);
+      return withRequestPermissions(ctx.deps.records.artifacts,user,()=>getResult(ctx, user, run, submission));
     },
     runsFor(user, pack, query) {
-      return runsFor(ctx, user, pack, query);
+      return withRequestPermissions(ctx.deps.records.artifacts,user,()=>runsFor(ctx, user, pack, query));
     },
   };
 }

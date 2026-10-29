@@ -19,7 +19,7 @@ test('build story ids normalize the trimmed text before leading-zero removal, so
 });
 test('normalized projected scope starts the story workflow without a generic content-conflict refusal', () => {
   const { model } = content([' 21', '00022 ']);
-  const result = project({ inputs: [boundView('build', model, 'plm:builds:5'), boundView('cases', indexViewOf('case', 'stories', []))], parameters: { build_id: '007' } }) as any;
+  const result = project({ inputs: [boundView('build', model, 'plm:builds:5'), boundView('cases', { ...indexViewOf('case', 'stories', []), key_space_complete: true })], parameters: { build_id: '007' } }) as any;
   assert.ok(!result.error, JSON.stringify(result));
   assert.deepEqual(result.items.map((row: any) => row.id), ['21', '22']);
 });

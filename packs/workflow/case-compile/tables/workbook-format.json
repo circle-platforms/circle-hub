@@ -1,6 +1,6 @@
 {
   "schema": "case-compile.workbook-format@1",
-  "generator": "case-compile@3.8.6",
+  "generator": "case-compile@3.8.7",
   "members": [
     "[Content_Types].xml",
     "_rels/.rels",

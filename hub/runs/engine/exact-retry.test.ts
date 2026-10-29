@@ -39,7 +39,7 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
       assert.equal(answer.acceptance, 'not_accepted'); assert.equal(answer.errors[0].code, 'REFERENCE_UNRESOLVED');
       assert.ok(reads >= 4, 'prefetch and later resolves each recheck current authorization; a previous absence is not an authorization cache'); assert.ok(!(await actions())[0].body.detail.hub_error); return;
     }
-    if (mode === 'recover') assert.ok(reads > 3, 'after bounded recovery every later resolution rechecks current authorization');
+    if (mode === 'recover') assert.equal(reads, 3, 'after bounded recovery the successful read is reused within this request');
     else assert.equal(reads, 3, 'a failed prefetch retries only three times before reporting an unfinished Hub check');
     if (mode === 'recover') {
       assert.equal(answer.acceptance, 'accepted'); assert.equal(answer.result?.rounds.used, 0);
