@@ -22,7 +22,6 @@ export class HubClient {
   private session: string;
   private initialized = false;
   private sequence = 0;
-  private tokenSnapshot: string | null = null;
   lastText: string[] = [];
 
   constructor(url: string, tokenFile: string, session: string) {
@@ -31,17 +30,15 @@ export class HubClient {
     this.session = session;
   }
 
-  private async token(): Promise<string> {
-    return this.tokenSnapshot ?? validateTokenFile(this.tokenFile);
-  }
-
   private guard(value: string, token: string): void {
     const runs = token.length < 12 ? [token] : Array.from({ length: token.length - 11 }, (_, index) => token.slice(index, index + 12));
     need(!runs.some(run => value.includes(run)), 'token_echo', 'Hub 应答含令牌形状，整份丢弃');
   }
 
-  private async rpc(method: string, params: unknown): Promise<Record<string, unknown>> {
-    const token = await this.token();
+  // A token a caller has checked is passed down to the request that carries it, never kept on the client: concurrent calls
+  // on one client each send the token they checked (round-five review, item 4).
+  private async rpc(method: string, params: unknown, checked?: string): Promise<Record<string, unknown>> {
+    const token = checked ?? await validateTokenFile(this.tokenFile);
     const id = ++this.sequence;
     const mutation = method === 'tools/call' && ['upload_file', 'start_run', 'submit_result'].includes((params as { name?: string })?.name ?? '');
     let response: Response;
@@ -75,19 +72,19 @@ export class HubClient {
     return reply.result;
   }
 
-  private async initialize(): Promise<void> {
+  private async initialize(checked?: string): Promise<void> {
     if (this.initialized) return;
     await this.rpc('initialize', {
       protocolVersion: '2025-06-18',
       capabilities: {},
       clientInfo: { name: 'operation-capture', version: GENERATED.version },
-    });
+    }, checked);
     this.initialized = true;
   }
 
-  async call(name: string, args: unknown): Promise<Record<string, unknown>> {
-    await this.initialize();
-    const result = await this.rpc('tools/call', { name, arguments: args });
+  async call(name: string, args: unknown, checked?: string): Promise<Record<string, unknown>> {
+    await this.initialize(checked);
+    const result = await this.rpc('tools/call', { name, arguments: args }, checked);
     this.lastText = Array.isArray(result.content) ? result.content.flatMap(block => isRecord(block) && block.type === 'text' && typeof block.text === 'string' ? [block.text] : []) : [];
     const value = result.structuredContent;
     need(isRecord(value), 'invalid_hub_response', 'Hub 工具缺少结构化应答');
@@ -102,12 +99,7 @@ export class HubClient {
   async callChecked(name: string, args: unknown, check: (token: string) => void): Promise<Record<string, unknown>> {
     const token = await validateTokenFile(this.tokenFile);
     check(token);
-    this.tokenSnapshot = token;
-    try {
-      return await this.call(name, args);
-    } finally {
-      this.tokenSnapshot = null;
-    }
+    return this.call(name, args, token);
   }
 
   async upload(bytes: Uint8Array, sequence: number, capturedAt?: string): Promise<{reference:string;artifact:string}> {
@@ -122,20 +114,14 @@ export class HubClient {
     const check = (token: string) => need(!Buffer.from(bytes).toString('utf8').includes(token), 'credential_redaction_failed', '原件含当前 Hub 令牌，停止上传');
     const initial = await validateTokenFile(this.tokenFile);
     check(initial);
-    this.tokenSnapshot = initial;
-    try {
-      await this.initialize();
-      const current = await validateTokenFile(this.tokenFile);
-      check(current);
-      this.tokenSnapshot = current;
-      const value = await this.call('upload_file', args);
-      const digest = sha256(bytes);
-      need(value.call_result === 'ok' && value.acceptance === 'accepted' && value.reference === `src:${digest}` && value.sha256 === digest && value.size === bytes.byteLength, 'invalid_upload_receipt', 'Hub 上传回执与原件不符');
-      need(typeof value.artifact === 'string' && /^[0-9a-f]{64}$/.test(value.artifact), 'invalid_upload_receipt', 'Hub 上传回执缺具体原件记录；使用支持 artifact 的 Hub，不按字节猜采集身份');
-      return { reference: value.reference as string, artifact: value.artifact };
-    } finally {
-      this.tokenSnapshot = null;
-    }
+    await this.initialize(initial);
+    const current = await validateTokenFile(this.tokenFile);
+    check(current);
+    const value = await this.call('upload_file', args, current);
+    const digest = sha256(bytes);
+    need(value.call_result === 'ok' && value.acceptance === 'accepted' && value.reference === `src:${digest}` && value.sha256 === digest && value.size === bytes.byteLength, 'invalid_upload_receipt', 'Hub 上传回执与原件不符');
+    need(typeof value.artifact === 'string' && /^[0-9a-f]{64}$/.test(value.artifact), 'invalid_upload_receipt', 'Hub 上传回执缺具体原件记录；使用支持 artifact 的 Hub，不按字节猜采集身份');
+    return { reference: value.reference as string, artifact: value.artifact };
   }
 
   async uploadDocument(value: unknown, name: string): Promise<string> {

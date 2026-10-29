@@ -205,6 +205,32 @@ test('a checked call carries exactly the token its check saw, even when the toke
   assert.equal(sent[0]!.headers.authorization, `Bearer ${TOKEN}`, 'the request uses the token the check saw, not the one rotated in after it');
 });
 
+test('two checked calls on one client each carry the token their own check saw (round-five review, item 4)', async t => {
+  const local = await scratch(t);
+  const rotated = 'FictCaptureTokenRotated88';
+  let secondChecked!: () => void;
+  const checkedSecond = new Promise<void>(resolve => { secondChecked = resolve; });
+  let held = false;
+  // The first call's initialize is held until the second call has checked the rotated token, so both are in flight at once.
+  const hub = await fakeHub(t, { tokens: [TOKEN, rotated], onRequest: async input => { if (input.method === 'initialize' && !held) { held = true; await checkedSecond; } } });
+  const client = new HubClient(hub.url, local.tokenFile, SESSION);
+  let startSecond!: () => void;
+  const secondMayStart = new Promise<void>(resolve => { startSecond = resolve; });
+  const seen: string[] = [];
+  const first = client.callChecked('start_run', { pack: 'knowledge-contribution', product: 'ORBIT-FIRST', inputs: {} }, token => {
+    seen.push(token);
+    writeFileSync(local.tokenFile, `${rotated}\n`, { mode: 0o600 });
+    startSecond();
+  });
+  await secondMayStart;
+  const second = client.callChecked('start_run', { pack: 'knowledge-contribution', product: 'ORBIT-SECOND', inputs: {} }, token => { seen.push(token); secondChecked(); });
+  await Promise.all([first, second]);
+  assert.deepEqual(seen, [TOKEN, rotated]);
+  const sent = (product: string) => hub.requests.filter(row => row.body.method === 'tools/call' && row.body.params.name === 'start_run' && row.body.params.arguments.product === product);
+  assert.equal(sent('ORBIT-FIRST')[0]?.headers.authorization, `Bearer ${TOKEN}`, 'the first call is not sent with the token the second call checked');
+  assert.equal(sent('ORBIT-SECOND')[0]?.headers.authorization, `Bearer ${rotated}`);
+});
+
 test('a token rotated after start_run is checked again before submit_result', async t => {
   const local = await scratch(t);
   const rotated = 'edge';
