@@ -6,7 +6,7 @@ Hub serves colleagues in an internal laboratory. The high-cost failures are real
 
 ## Inventory and proposed decisions
 
-This is a concrete proposal, not a claim that any existing rule was removed. The owner must explicitly decide the changed mechanisms and corresponding tests before they or their governing model/AGENTS clauses change.
+This table records the initial inventory and proposals. The owner subsequently made the request-permission, same-session identity, Linux proof and adaptive-concurrency decisions recorded in `docs/hub-r4-progress.md` (82–83); the implemented results are summarized below. Other contract changes still need their own explicit decision.
 
 | Mechanism | Present implementation | Proposal | Compatibility and decision needed |
 | --- | --- | --- | --- |
@@ -33,6 +33,7 @@ For the approved simplification batches, aim to reduce full unit-test wall time 
 
 * The repository helper `node tools/prepare-packs.ts --changed <base>` runs each changed pack's own manifest generator in one step. It does not choose a version or publish; if files changed at the same version as the base it warns the author to check whether a new version is needed. Explicit pack directories may be supplied instead.
 * Unit and acceptance test workers adjust with available CPU cores, sampled utilization, memory pressure and the host's available shared-memory slots. Timing-sensitive files run alone to keep their existing performance assertions meaningful. The acceptance command includes the oracle once. No fixed two-worker ceiling remains.
+* Model-facing source text leads with whether the original is readable. The existing reason still explains function-only access or credential withholding, the structured answer retains its exact tier, and administrator diagnostics and historical records are unchanged.
 * T1-2: the current review still needs the client's explicit model family. The same source under a new locked root does not make the old and new roots equal. Reuse declarations without inventing them.
 * T1-3: category claims require raw-source byte spans, and the client had to compute them manually. A future tool should derive spans from original bytes and the declared selector, preserve ambiguity and escaped/double-encoded input, and let Hub independently check the submitted quotation. The existing preview's fragment-relative ranges are not raw-source offsets.
 * T2-1, T2-3 and T6-2: a client timed out while the server continued. Provide a queryable state for long operations rather than retrying blindly; the observed T2-3 failure's root cause remains unproven.

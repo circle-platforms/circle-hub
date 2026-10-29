@@ -1272,6 +1272,11 @@ interface Position {
   offset: number;
 }
 
+/** A concise model-facing access outcome; detailed tiers and the reason remain in the structured answer and note. */
+function sourceAccess(c: Content): string {
+  return c.readable && c.read_tier === 'model_readable' ? labelOf('read_tier', c.read_tier) : '原文不可读';
+}
+
 /** Whether UTF-16 offset `at` of `text` falls between the two halves of a surrogate pair (no page starts there). */
 function insidePair(text: string, at: number): boolean {
   if (at <= 0 || at >= text.length) return false;
@@ -1296,7 +1301,7 @@ function structurePage(c:Content,trace:string,context:TextContext):string {
   const {parser,summary,...rest}=c.structure!;
   const fields=isRecord(summary)?summary:summary===undefined?{}:{summary};
   const lines=Object.entries({...fields,...rest}).map(([key,value])=>`  ${oneLine(key)} ${valueText(value)}`);
-  const head=[`内容 ${c.reference}：${labelOf('read_tier',c.read_tier)}`,...(c.sha256?[`sha256 ${c.sha256}`]:[]),...(c.note?[oneLine(c.note)]:[]),...(typeof parser==='string'?[`解析器 ${oneLine(parser)} 认出了这份文件`]:[]),'结构摘要：'];
+  const head=[`内容 ${c.reference}：${sourceAccess(c)}`,...(c.sha256?[`sha256 ${c.sha256}`]:[]),...(c.note?[oneLine(c.note)]:[]),...(typeof parser==='string'?[`解析器 ${oneLine(parser)} 认出了这份文件`]:[]),'结构摘要：'];
   const tail=[traceLine(trace)];
   if(!lines.length)return fit([{priority:0,head:[...head,'（空）']}],{tail}).text;
   const at=context.cursor?cursorPosition(c.reference,context.cursor):null;
@@ -1328,7 +1333,7 @@ function structurePage(c:Content,trace:string,context:TextContext):string {
 function contentText(c: Content, trace: string, context: TextContext): string {
   if(c.text===undefined && c.structure!==undefined)return structurePage(c,trace,context);
   const tail = [traceLine(trace)];
-  const head = [`内容 ${c.reference}：${labelOf('read_tier', c.read_tier)}`];
+  const head = [`内容 ${c.reference}：${sourceAccess(c)}`];
   if (c.sha256 !== undefined) head.push(`sha256 ${c.sha256}`);
   if (c.note !== undefined) head.push(oneLine(c.note));
   const blocks: Block[] = [{ priority: 0, head }];
