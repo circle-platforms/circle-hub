@@ -1170,7 +1170,26 @@ not acquire a zero count by inference; the caller handles the missing fact using
 
 ## Frozen feeding cuts
 
-For a frozen append position, the feeding reader pages the product, retraction, source-head, binding and usage indexes in bounded batches. Index values and insertion order are retained, so a record indexed under multiple objects is still associated with each matching object. Product-wide notes and all other records in the frozen cut remain included. Each record and original is still checked against the reader's current permissions and read tier; those decisions are not shared between records. This changes query layout only, not historical records or their frozen horizon.
+For a frozen append position, the feeding reader pages the product, retraction, source-head, binding and usage indexes in bounded batches. Index values and insertion order are retained, so a record indexed under multiple objects is still associated with each matching object. Product-wide notes and all other records in the frozen cut remain included. Each record and original is still checked against the reader's current permissions and read tier. This changes query layout only, not historical records or their frozen horizon.
+
+A frozen cut, a `get_nodes` page and a run's usages (the `feeding_objects` of every tool reply on a run) evaluate those
+checks as one group (perf-n-plus-one): every check of the per-record path is still made for every record, in the same
+order and with the same answer per record; only the reads are grouped. A record reads its bound digests in order up to the
+first capture of its own source bytes, one batched query per position, so no record reads a record its sequential check
+would not. Decisions whose inputs do not depend on the record are made once per call: the reader's account, the reader and
+one product, the reader and one capture (the source record a record pins by digest, its bytes and effective read tier),
+the reader and one run. Such a decision applies only to records that cite that same product, capture or run; nothing is
+shared across captures, readers or calls, and the call runs inside the request that captured its permissions, so a
+revocation is seen by the next request. The per-record path stays in place where the store has no batched index scan and
+for live cuts (`cut` without a frozen offset). `feeding-visibility-batch.test.ts` compares the grouped answers with that
+path (cuts, node pages, run usages, and the bytes of facet and index views) for two readers, after a credential
+acceptance is revoked, after the product is revoked and after the account is disabled, and bounds the single-key lookups
+over a fourfold history; on the previous code that bound fails (a frozen cut's lookups grow 720 → 2,880). Synthetic
+measurement (`node tools/feeding-perf.ts`, a seedling root with 35,772 compiled cases and 4,040 fed records from 10
+documents read in 4 runs, a non-admin reader through the real pack registry): a quality-board start_run took 195,035 SQL
+executions before and 1,178 after, a bound facet view 64,849 and 230, a root `get_nodes` page 40,457 and 76, the usages of
+a run with 1,010 fed objects 11,119 and 43, with byte-identical views, pages and usages. This is not a measurement of a
+real deployment.
 
 When an unbound source discovers products from prior feeding records, one currently readable witness establishes each distinct product. Additional records of that same product do not need another visibility check to prove the same existence fact. An unreadable record establishes nothing, so later records of that product are still checked; two distinct readable products remain ambiguous. No other record is made readable by a witness.
 
@@ -1183,8 +1202,11 @@ path. This does not establish that index reads are the only cause of a slow real
 For `get_nodes`, the batched read selects candidate records by the requested root and the same exact node path or
 declared command path before reading their originals. Every selected record still receives its own current permission,
 source, retraction and frozen-offset checks. A synthetic request for an unrelated node previously read the same source
-40 times and now reads it zero times; the related node still checks all 40 candidates. A store without batch support
-uses the earlier per-record path. This is not a measurement of total latency on a real document.
+40 times and now reads it zero times; the related node still checks all 40 candidates, each against its own capture.
+Since perf-n-plus-one the one capture those 40 candidates share is read once within the call (decision 82: one request,
+reader and consumer reuse the permission they started with), so `feeding-node-select.test.ts` asserts one read pinned to
+that capture where it asserted 40 reads before. A store without batch support uses the earlier per-record path. This is
+not a measurement of total latency on a real document.
 
 ### Feeding cases in views
 

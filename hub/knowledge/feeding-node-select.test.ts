@@ -17,9 +17,10 @@ test('a node read authorizes only structurally relevant feeding sources and reta
   await layer.retract(w.admin, { schema: 'retraction@1', objects: [receipt.objects[0]], by: w.admin.id, at: new Date().toISOString(), reason: 'Synthetic withdrawal' });
 
   let sourceReads = 0;
+  let pinned: Array<string | undefined> = [];
   const source = w.kit.artifacts.source.bind(w.kit.artifacts);
   t.mock.method(w.kit.artifacts, 'source', async (...args: Parameters<typeof source>) => {
-    if (args[1] === w.document.body.sha256) sourceReads++;
+    if (args[1] === w.document.body.sha256) { sourceReads++; pinned.push(args[2]?.record); }
     return source(...args);
   });
   const unrelated = await w.knowledge.getNodes({ root: w.root.root, paths: ['/commands/system/status'], depth: 0 }, w.user);
@@ -30,10 +31,14 @@ test('a node read authorizes only structurally relevant feeding sources and reta
   const unrelatedReads = sourceReads;
 
   sourceReads = 0;
+  pinned = [];
   const current = await w.knowledge.getNodes({ root: w.root.root, paths: ['/commands/system/show'], depth: 0 }, w.user);
   assert.ok(current);
   assert.equal(current.nodes[0].feeding_objects?.length, 39);
-  assert.equal(sourceReads, 40, 'each candidate still checks its own exact source');
+  // Each candidate is decided by its own exact capture. The 40 candidates pin one capture, whose read tier one call decides
+  // for this reader (decision 82: one request, reader and consumer reuse the permission they started with).
+  assert.deepEqual(pinned, [w.document.digest], 'each candidate still checks its own exact source, once per capture within the call');
+  assert.equal(sourceReads, new Set(pinned).size);
   const previous = await w.knowledge.getNodes({ root: w.root.root, paths: ['/commands/system/show'], depth: 0, feeding_offset: frozen }, w.user);
   assert.ok(previous);
   assert.equal(previous.nodes[0].feeding_objects?.length, 40);
@@ -46,5 +51,5 @@ test('a node read authorizes only structurally relevant feeding sources and reta
   sourceReads = 0;
   assert.equal(await w.knowledge.getNodes({ root: w.root.root, paths: ['/commands/system/show'], depth: 0 }, w.outsider), null);
   assert.equal(sourceReads, 0);
-  t.diagnostic(`synthetic unrelated source reads ${unrelatedReads}; related candidates each checked separately`);
+  t.diagnostic(`synthetic unrelated source reads ${unrelatedReads}; related candidates checked against their own capture, once per capture`);
 });

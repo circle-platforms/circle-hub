@@ -11,7 +11,7 @@ import {runById,canViewRun} from '../runs/api.ts';
 import {pathSegments} from '../refs/api.ts';
 // Append-only feeding beside immutable tree content. The record insertion sequence is the frozen horizon (gaps are valid).
 import {Claim,type Claim as ClaimBody} from '../../contracts/src/claim.ts';
-import {KnowledgeStructureSchema,FeedingRetractionSchema,type FeedingRetraction,type VersionBinding,type FeedingOffset} from '../../contracts/src/feeding.ts';
+import {KnowledgeStructureSchema,FeedingRetractionSchema,type FeedingRetraction,type VersionBinding,type FeedingOffset,type FeedingUsage} from '../../contracts/src/feeding.ts';
 import type {FeedingQuote as QuoteEvidence} from '../../contracts/generated/shared-interfaces.ts';
 import {parseReference,parserKey,parseDocument,quoteMatches,recognizeAsync,sliceUtf8,type ParsedDocument} from '../refs/api.ts';
 import {parseExternal} from '../connectors/api.ts';
@@ -25,7 +25,28 @@ import type {KnowledgeContext} from './context.ts';
 import type {TreeReading} from './read.ts';
 import {seedlingOfRoot,currentSeedling,seedlingRecord,seedlingName} from './seedling.ts';
 import {KnowledgeError} from './errors.ts';
+import type {RunRecord} from '../../contracts/src/run.ts';
 const PROJECTION='knowledge.feeding.projection';
+/** Digests or ids per batched query. */
+const BATCH=1000;
+/** The run ids runById looks up; any other value finds no run. */
+const RUN_RECORD_ID=/^run_[0-9a-hjkmnp-tv-z]{26}$/;
+
+/**
+ * One permission evaluation over many feeding records: a frozen cut, a node page or a run's usages. Every check of
+ * recordVisible, the binding proofs and the usage runs is still made per record; only the reads are grouped and the decisions
+ * that do not depend on the record (the account, a product, a capture's read tier, a run's visibility) are made once. A
+ * session never outlives the call that opened it, so each request still decides on the permissions it captured at its start.
+ */
+interface Visibility {
+ principal:Principal;
+ account?:Promise<boolean>;
+ products:Map<string,Promise<boolean>>;
+ captures:Map<string,Promise<{present:boolean;bytes:boolean;readable:boolean}>>;
+ runCaptures:Map<string,Promise<{matches:boolean;readable:boolean}>>;
+ runs:Map<string,Promise<boolean>>;
+}
+function once<T>(cache:Map<string,Promise<T>>,key:string,load:()=>Promise<T>):Promise<T>{let pending=cache.get(key);if(!pending){pending=load();cache.set(key,pending);}return pending;}
 
 interface LeaseBody { leases?: unknown; groups?: unknown; predecessor?: unknown }
 
@@ -383,7 +404,14 @@ export class FeedingLayer {
   await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);await this.put(body,principal,'hub.upload@1',['src:'+artifact.body.sha256],[artifact.body.sha256,artifact.digest],'note:'+artifact.digest,[{key:OBJECT,value:body.object},{key:'knowledge.feeding.product',value:principal.id}],tx,false,scope.run??null);await this.usage(principal,body.object,scope,tx);});return {objects:[body.object],offset:await this.offset(),pending:[]};
  }
  async freeze(principal:Principal,run:string,root:string|null):Promise<FeedingOffset>{return this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);const body={schema:'feeding-offset@1',run,root,offset:await this.offset(tx)} as const;const stored=await this.context.records.store.put({kind:'claim',schema:'feeding-offset@1',provenance:'observed',body,unique_key:'feeding.freeze:'+run,index:[{key:'knowledge.feeding.offset',value:run}]},tx);return stored.body;});}
- async usages(principal:Principal,run:string):Promise<string[]>{const owned=await runById(this.context.records.store,run);if(!owned||!await canViewRun(principal,owned.body,this.context.records.store))return [];const rows=await this.all(USAGE,run);const out:string[]=[];for(const row of rows){const body=this.body(row);if(body&&await this.visible(body.object,principal))out.push(body.object);}for(const row of await this.pending(principal,run))out.push(row.source);return [...new Set(out)];}
+ async usages(principal:Principal,run:string):Promise<string[]>{
+  const owned=await runById(this.context.records.store,run);if(!owned||!await canViewRun(principal,owned.body,this.context.records.store))return [];
+  const bodies=(await this.all(USAGE,run)).map(row=>this.body(row));
+  // Each object is checked as visible() checks it, grouped over the run's objects when the store can scan an index in batches.
+  const shown=this.context.records.store.findIndexed?await this.objectsVisible(bodies.flatMap(body=>body?[body.object as string]:[]),this.visibility(principal)):null;
+  const out:string[]=[];for(const body of bodies){if(body&&(shown?shown.get(body.object):await this.visible(body.object,principal)))out.push(body.object);}
+  for(const row of await this.pending(principal,run))out.push(row.source);return [...new Set(out)];
+ }
  private async uploadedSource(principal:Principal,body:Record<string,any>){const original=(await this.context.records.artifacts.records(body.source.bytes)).find(row=>'upload'in row.body.origin&&row.body.author.user===body.by&&row.body.captured_at===body.at);if(!original)fail('缺少与上传者和采集时刻一致的上传原件');return this.source(principal,body.source.bytes,original.digest);}
  private async visible(id:string,principal:Principal):Promise<boolean>{const rows=await this.all(OBJECT,id);if(!rows.length)return Boolean((await this.context.records.artifacts.source(principal,id,{consumer:'model'}))?.bytes);for(const row of rows)if(await this.recordVisible(row,principal))return true;return false;}
  private async recordVisible(record:StoredRecord<ClaimBody>,principal:Principal):Promise<boolean>{
@@ -391,6 +419,86 @@ export class FeedingLayer {
   if(body.product&&!await this.reading.mayReadProducts(principal,[body.product]))return false;
   for(const digest of record.body.validity.bound){const original=await this.context.records.store.get<any>(digest);if(original?.kind!=='source_artifact'||original.body.sha256!==body.source?.bytes)continue;let source=await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:original.digest});const run=record.body.statement.data?.run;if(!source&&typeof run==='string'){const scoped=await this.context.records.artifacts.sourceForRun(principal,original.body.sha256,run,{consumer:'model',record:original.digest});if(scoped?.artifact.digest===original.digest)source=scoped;}return Boolean(source?.bytes&&source.readTier==='model_readable');}
   return false;
+ }
+ private visibility(principal:Principal):Visibility{return {principal,products:new Map(),captures:new Map(),runCaptures:new Map(),runs:new Map()};}
+ /** Verified records by digest, a batch per query; a digest that names no record is absent, as store.get answers null. */
+ private async recordsByDigest(digests:Iterable<string>):Promise<Map<string,StoredRecord<any>>>{
+  const wanted=[...new Set(digests)],out=new Map<string,StoredRecord<any>>();
+  for(let at=0;at<wanted.length;at+=BATCH)for(const [digest,record] of await this.context.records.store.getMany<any>(wanted.slice(at,at+BATCH)))out.set(digest,record);
+  return out;
+ }
+ /** Run records by id in one query per batch: the oldest record under runs.id, the record runById returns. */
+ private async runsById(ids:Iterable<string>):Promise<Map<string,StoredRecord<RunRecord>>>{
+  const wanted=[...new Set(ids)].filter(id=>RUN_RECORD_ID.test(id)),out=new Map<string,StoredRecord<RunRecord>>();
+  for(let at=0;at<wanted.length;at+=BATCH)for(const [id,record] of await this.context.records.store.findFirstMany<RunRecord>({key:'runs.id',values:wanted.slice(at,at+BATCH),kind:'run'}))out.set(id,record);
+  return out;
+ }
+ /** What Artifacts.source answers this reader for one capture, without keeping the bytes. */
+ private capture(session:Visibility,sha:string,record:string){
+  return once(session.captures,sha+'\0'+record,async()=>{const source=await this.context.records.artifacts.source(session.principal,sha,{consumer:'model',record});return {present:source!==null,bytes:Boolean(source?.bytes),readable:Boolean(source?.bytes&&source.readTier==='model_readable')};});
+ }
+ private runCapture(session:Visibility,sha:string,run:string,record:string){
+  return once(session.runCaptures,sha+'\0'+run+'\0'+record,async()=>{const scoped=await this.context.records.artifacts.sourceForRun(session.principal,sha,run,{consumer:'model',record});return {matches:scoped?.artifact.digest===record,readable:Boolean(scoped?.bytes&&scoped.readTier==='model_readable')};});
+ }
+ /**
+  * recordVisible for many records: the same checks in the same order with the same answer per record, read in groups. The
+  * account and every product are checked once; each record reads its bound digests in order up to the first capture of its
+  * own source bytes, one batched query per position, so no record reads a digest its sequential check would not; and each
+  * capture's read tier is decided once.
+  */
+ private async recordsVisible(items:ReadonlyArray<{record:StoredRecord<ClaimBody>;body:Record<string,any>|null}>,session:Visibility):Promise<boolean[]>{
+  const shown=items.map(()=>false);
+  if(!items.length)return shown;
+  session.account??=this.context.records.principals.get(session.principal.id).then(account=>Boolean(account&&!account.disabled));
+  if(!await session.account)return shown;
+  let open:Array<{at:number;record:StoredRecord<ClaimBody>;body:Record<string,any>;next:number}>=[];
+  for(const [at,{record,body}] of items.entries()){
+   if(!body||body.schema==='fed-note@1'&&session.principal.role!=='admin'&&body.by!==session.principal.id)continue;
+   if(body.product&&!await once(session.products,body.product,()=>this.reading.mayReadProducts(session.principal,[body.product])))continue;
+   if(record.body.validity.bound.length)open.push({at,record,body,next:0});
+  }
+  while(open.length){
+   const found=await this.recordsByDigest(open.map(item=>item.record.body.validity.bound[item.next]));
+   const rest:typeof open=[];
+   for(const item of open){
+    const original=found.get(item.record.body.validity.bound[item.next++]);
+    if(original?.kind==='source_artifact'&&original.body.sha256===item.body.source?.bytes){
+     const direct=await this.capture(session,original.body.sha256,original.digest),run=item.record.body.statement.data?.run;
+     if(direct.present)shown[item.at]=direct.readable;
+     else if(typeof run==='string'){const scoped=await this.runCapture(session,original.body.sha256,run,original.digest);shown[item.at]=scoped.matches&&scoped.readable;}
+     continue;
+    }
+    if(item.next<item.record.body.validity.bound.length)rest.push(item);
+   }
+   open=rest;
+  }
+  return shown;
+ }
+ /**
+  * visible() for many object ids. An id without object records asks for its bytes, as visible does; otherwise its records are
+  * checked in order and the first visible one decides, a batched round per position, so no record is checked that the
+  * sequential loop would not check.
+  */
+ private async objectsVisible(ids:readonly string[],session:Visibility):Promise<Map<string,boolean>>{
+  const out=new Map<string,boolean>(),wanted=[...new Set(ids)];
+  if(!wanted.length)return out;
+  const groups=await this.indexed<ClaimBody>(OBJECT,wanted,'claim',Number.MAX_SAFE_INTEGER);
+  let open:Array<{id:string;rows:IndexedRecord<ClaimBody>[];next:number}>=[];
+  for(const id of wanted){
+   const rows=groups.get(id)??[];
+   if(rows.length)open.push({id,rows,next:0});
+   else out.set(id,Boolean((await this.context.records.artifacts.source(session.principal,id,{consumer:'model'}))?.bytes));
+  }
+  while(open.length){
+   const shown=await this.recordsVisible(open.map(item=>({record:item.rows[item.next].record,body:this.body(item.rows[item.next].record)})),session);
+   const rest:typeof open=[];
+   for(const [k,item] of open.entries()){
+    if(shown[k]){out.set(item.id,true);continue;}
+    if(++item.next<item.rows.length)rest.push(item);else out.set(item.id,false);
+   }
+   open=rest;
+  }
+  return out;
  }
  async entries(principal:Principal,product:string,offset=Number.MAX_SAFE_INTEGER):Promise<FeedingView[]>{
   if(this.context.records.store.findIndexed)return this.frozenEntries(principal,product,offset);
@@ -402,7 +510,7 @@ export class FeedingLayer {
    typeof body.path==='string'&&selected.has(body.path)||body.path===null&&selected.has('/')||
    Array.isArray(body.commands)&&body.commands.some((command:unknown)=>object(command)&&typeof command.path==='string'&&selected.has(command.path))
   );
-  if(this.context.records.store.findIndexed)return this.frozenEntries(principal,product,offset,relevant);
+  if(this.context.records.store.findIndexed)return this.frozenEntries(principal,product,offset,relevant,this.visibility(principal));
   return (await this.entries(principal,product,offset)).filter(row=>relevant(row.body));
  }
  /** Keep the matched index value: one record can be indexed under more than one object. */
@@ -418,17 +526,23 @@ export class FeedingLayer {
   }
   return groups;
  }
- /** Frozen cuts batch immutable index facts but still check every record's present-day read permission. */
- private async frozenEntries(principal:Principal,product:string,through:number,select?:(body:Record<string,any>)=>boolean):Promise<FeedingView[]>{
+ /**
+  * Frozen cuts batch immutable index facts but still check every record's present-day read permission: one by one, or with a
+  * session as one grouped evaluation (recordsVisible) with the same answer per record.
+  */
+ private async frozenEntries(principal:Principal,product:string,through:number,select?:(body:Record<string,any>)=>boolean,session?:Visibility):Promise<FeedingView[]>{
   const productRows=(await this.indexed<ClaimBody>('knowledge.feeding.product',[product],'claim',through)).get(product)??[];
+  const candidates:Array<{row:IndexedRecord<ClaimBody>;body:Record<string,any>}>=[];
+  for(const row of productRows){const body=this.body(row.record);if(body&&(!select||select(body)))candidates.push({row,body});}
+  const shown=session?await this.recordsVisible(candidates.map(({row,body})=>({record:row.record,body})),session):null;
   const visible:Array<{row:IndexedRecord<ClaimBody>;body:Record<string,any>}>=[];
-  for(const row of productRows){const body=this.body(row.record);if(body&&(!select||select(body))&&await this.recordVisible(row.record,principal))visible.push({row,body});}
-  const withdrawals=(await this.indexed<ClaimBody>(RETRACT,['1'],'claim',through)).get('1')??[];
+  for(const [at,candidate] of candidates.entries())if(shown?shown[at]:await this.recordVisible(candidate.row.record,principal))visible.push(candidate);
+  const withdrawals=((await this.indexed<ClaimBody>(RETRACT,['1'],'claim',through)).get('1')??[]).map(item=>({item,value:this.body(item.record)}));
   const heads=await this.indexed<any>('knowledge.feeding.head',visible.flatMap(({body})=>{const key=this.sourceKey(body);return key?[key]:[];}),'action',through);
   return visible.map(({row,body})=>{
    const record=row.record,run=typeof record.body.statement.data?.run==='string'?record.body.statement.data.run:null,bound=record.body.validity.bound;
    const retractions:string[]=[];
-   for(const item of withdrawals){const value=this.body(item.record);if(!value)continue;
+   for(const {item,value} of withdrawals){if(!value)continue;
     if(value.objects?.some((target:string)=>target===body.object||bound.includes(target))||value.entries?.some((target:string)=>target===record.digest||bound.includes(target))||run!==null&&value.runs?.includes(run))retractions.push(item.record.digest);
    }
    const unique=[...new Set(retractions)],key=this.sourceKey(body),history=key?heads.get(key):undefined,head=history?.at(-1)?.record;
@@ -618,13 +732,26 @@ export class FeedingLayer {
  async admit(principal:Principal,payload:readonly unknown[],scope:FeedingScope&{classifications?:readonly string[]}):Promise<string[]>{const bodies:Record<string,any>[]=[];for(const raw of payload)bodies.push(await this.prepare(principal,raw,scope));return this.context.records.store.withTransaction(async tx=>{const refs=[];for(const body of bodies)refs.push(await this.appendPrepared(principal,body,scope,'client-declared-model',tx));return refs;});}
  async frozenOffset(run:string):Promise<number|null>{const row=(await this.context.records.store.find<FeedingOffset>({key:'knowledge.feeding.offset',value:run,kind:'claim',limit:1})).items[0];return row?.body.offset??null;}
  async cut(product:string,offset:number|null,principal?:Principal):Promise<FeedingCut|null>{
-  if(!principal)return null;const ceiling=offset??Number.MAX_SAFE_INTEGER,batched=offset!==null&&Boolean(this.context.records.store.findIndexed),entries=batched?await this.frozenEntries(principal,product,ceiling):await this.entries(principal,product,ceiling);
-  const objects=new Map<string,KnowledgeStructureObject>(),casesByRoot:NonNullable<FeedingCut['casesByRoot']>=new Map(),bindings=new Map<string,VersionBinding[]>(),retracted=new Set<string>(),contradicted=new Set<string>(),usages=[];
+  if(!principal)return null;const ceiling=offset??Number.MAX_SAFE_INTEGER,batched=offset!==null&&Boolean(this.context.records.store.findIndexed),session=batched?this.visibility(principal):undefined,entries=batched?await this.frozenEntries(principal,product,ceiling,undefined,session):await this.entries(principal,product,ceiling);
+  const objects=new Map<string,KnowledgeStructureObject>(),casesByRoot:NonNullable<FeedingCut['casesByRoot']>=new Map(),bindings=new Map<string,VersionBinding[]>(),retracted=new Set<string>(),contradicted=new Set<string>(),usages:FeedingUsage[]=[];
   for(const entry of entries){if(entry.validity==='invalid'){retracted.add(entry.body.object);continue;}const old=objects.get(entry.body.object);const relations=[...old?.relations??[],...entry.body.relations??[]];objects.set(entry.body.object,{...old,...entry.body,relations} as KnowledgeStructureObject);if(entry.body.schema==='fed-case@1'&&(entry.body.root===null||typeof entry.body.root==='string')&&entry.claim.warrant.producer==='function'){const cases=casesByRoot.get(entry.body.root)??new Map(),sources=cases.get(entry.body.object)??new Map();const source=object(entry.body.source)?entry.body.source:{},key=canonicalize({source,node:entry.body.node_key??source.element??null,external:entry.claim.statement.data?.external??null});sources.set(key,{body:entry.body,record:entry.record,position:entry.offset});cases.set(entry.body.object,sources);casesByRoot.set(entry.body.root,cases);}}
-  const bound=batched?await this.indexed<ClaimBody>(BINDING,[...objects.keys()],'claim',ceiling):null;
-  const used=batched?await this.indexed<ClaimBody>('knowledge.feeding.usage.object',[...objects.keys()],'claim',ceiling):null;
-  for(const id of objects.keys()){retracted.delete(id);const rows=bound?(bound.get(id)??[]).map(item=>item.record):await this.all(BINDING,id),list:VersionBinding[]=[];for(const row of rows){if(!batched&&await this.position(row.digest)>ceiling)continue;let readable=false;for(const proof of row.body.validity.bound){const original=await this.context.records.store.get<any>(proof);if(original?.kind==='source_artifact'&&(await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:proof}))?.bytes)readable=true;}const value=this.body(row);if(value&&readable)list.push(value as VersionBinding);}bindings.set(id,list);
-   for(const row of used?(used.get(id)??[]).map(item=>item.record):await this.all('knowledge.feeding.usage.object',id)){if(!batched&&await this.position(row.digest)>ceiling)continue;const value=this.body(row);if(!value)continue;const run=await runById(this.context.records.store,value.run);if(run&&await canViewRun(principal,run.body,this.context.records.store))usages.push(value as import('../../contracts/src/feeding.ts').FeedingUsage);}
+  if(session){
+   const bound=await this.indexed<ClaimBody>(BINDING,[...objects.keys()],'claim',ceiling);
+   const used=await this.indexed<ClaimBody>('knowledge.feeding.usage.object',[...objects.keys()],'claim',ceiling);
+   // Every proof of every binding is read and every capture among them is asked for, as below; each one once.
+   const proofs=await this.recordsByDigest([...bound.values()].flat().flatMap(item=>item.record.body.validity.bound));
+   const usageBodies=new Map<string,Record<string,any>|null>();for(const item of [...used.values()].flat())usageBodies.set(item.record.digest,this.body(item.record));
+   const runs=await this.runsById([...usageBodies.values()].flatMap(value=>value&&typeof value.run==='string'?[value.run]:[]));
+   for(const id of objects.keys()){retracted.delete(id);const list:VersionBinding[]=[];
+    for(const {record:row} of bound.get(id)??[]){let readable=false;for(const proof of row.body.validity.bound){const original=proofs.get(proof);if(original?.kind==='source_artifact'&&(await this.capture(session,original.body.sha256,proof)).bytes)readable=true;}const value=this.body(row);if(value&&readable)list.push(value as VersionBinding);}
+    bindings.set(id,list);
+    for(const {record:row} of used.get(id)??[]){const value=usageBodies.get(row.digest);if(!value)continue;const run=typeof value.run==='string'?runs.get(value.run):undefined;if(run&&await once(session.runs,value.run,()=>canViewRun(principal,run.body,this.context.records.store)))usages.push(value as FeedingUsage);}
+    if(objects.get(id)!.relations?.some(relation=>relation.kind==='contradicts'))contradicted.add(id);
+   }
+   return entries.length?{offset,objects,casesByRoot,bindings,retracted,contradicted,usages}:null;
+  }
+  for(const id of objects.keys()){retracted.delete(id);const rows=await this.all(BINDING,id),list:VersionBinding[]=[];for(const row of rows){if(await this.position(row.digest)>ceiling)continue;let readable=false;for(const proof of row.body.validity.bound){const original=await this.context.records.store.get<any>(proof);if(original?.kind==='source_artifact'&&(await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:proof}))?.bytes)readable=true;}const value=this.body(row);if(value&&readable)list.push(value as VersionBinding);}bindings.set(id,list);
+   for(const row of await this.all('knowledge.feeding.usage.object',id)){if(await this.position(row.digest)>ceiling)continue;const value=this.body(row);if(!value)continue;const run=await runById(this.context.records.store,value.run);if(run&&await canViewRun(principal,run.body,this.context.records.store))usages.push(value as FeedingUsage);}
    if(objects.get(id)!.relations?.some(relation=>relation.kind==='contradicts'))contradicted.add(id);
   }
   return entries.length?{offset,objects,casesByRoot,bindings,retracted,contradicted,usages}:null;
