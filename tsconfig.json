@@ -23,6 +23,7 @@
   "exclude": [
     "foundation",
     "references",
-    "node_modules"
+    "node_modules",
+    "tests/fixtures/frozen/*@*"
   ]
 }

@@ -1,0 +1,42 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "contribution",
+      "name": "Circle 整合后的回注",
+      "description": "整合陈述由 Circle 判断，保留为判断，不因存在引文而变为 Hub 观察",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "judgment",
+      "checks": [],
+      "error_handling": []
+    },
+    {
+      "key": "verified",
+      "name": "回注原文与归位",
+      "description": "边界核对根、路径、来源和逐字引文；要求项核对产物结构和引文；全部满足才入回注层",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": [
+        "static"
+      ],
+      "accepted_producer": "fact",
+      "checks": [
+        "shape",
+        "quotes"
+      ],
+      "error_handling": [
+        {
+          "code": "*",
+          "action": "repair",
+          "max_rounds": 2
+        }
+      ]
+    }
+  ]
+}

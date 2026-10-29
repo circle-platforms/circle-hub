@@ -1,0 +1,40 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "subject",
+      "role": "subject",
+      "description": "Circle 回注条目清单（JSON）：items 中每项有 id 和 title；不是知识根据",
+      "accepts": [
+        "application/json"
+      ],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "originals",
+      "role": "expected",
+      "description": "回注引用的锁定根已有原文；src: 须绑定本槽，tree: 由锁定根约束。rec: 只用于定位输入记录，本版不能作为回注原文根据，应改引原始源文件或树片段",
+      "accepts": [
+        "text/plain",
+        "text/markdown",
+        "application/json",
+        "application/xml"
+      ],
+      "required": false,
+      "many": true
+    }
+  ],
+  "parameters": [],
+  "product": {
+    "catalogs": []
+  },
+  "subject": "subject",
+  "projection": {
+    "module": "functions/project.ts"
+  },
+  "contribution": {
+    "slot": "contribution",
+    "requirement": "verified"
+  }
+}
