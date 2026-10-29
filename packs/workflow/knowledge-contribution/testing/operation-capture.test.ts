@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { chmod, lstat, mkdir, readFile, readdir, rename, symlink, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import type { PathLike } from 'node:fs';
+import fsPromises, { chmod, lstat, mkdir, readFile, readdir, rename, symlink, writeFile } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { setTimeout as delay } from 'node:timers/promises';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { SESSION, TOKEN, scratch, fakeHub, enable, hook, hookInput, skill } from './operation-support.ts';
 import { appendCapture, readEvents, withLock } from '../tools/operation-capture/lib/state.ts';
 import { sessionDirectory } from '../tools/operation-capture/lib/common.ts';
@@ -325,4 +328,59 @@ test('a quarantined live owner releases by identity before another waiter can en
   await Promise.all([first, second]);
   assert.deepEqual(order, ['first:start', 'first:end', 'second']);
   assert.equal(await lstat(join(dir, '.lock')).catch(() => null), null);
+});
+
+const DEAD_OWNER = `${JSON.stringify({ id: 'synthetic-stale', pid: 999999, at: '2026-01-01T00:00:00.000Z' })}\n`;
+
+/** Enters the lock once while `name` of node:fs/promises is replaced, in state.ts's named imports too. */
+async function enterWith<K extends 'lstat' | 'unlink'>(t: import('node:test').TestContext, name: K, replacement: (typeof fsPromises)[K], dir: string): Promise<void> {
+  t.mock.method(fsPromises, name, replacement);
+  syncBuiltinESMExports();
+  try {
+    let entered = false;
+    await withLock(dir, async () => { entered = true; });
+    assert.ok(entered);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  }
+  assert.equal(await lstat(join(dir, '.lock')).catch(() => null), null, 'the lock and every quarantined owner are gone');
+}
+
+test('a waiter whose quarantined owner another waiter quarantines in turn looks again instead of failing', async t => {
+  const local = await scratch(t);
+  const dir = join(local.home, 'session');
+  await mkdir(join(dir, '.lock'), { recursive: true });
+  await writeFile(join(dir, '.lock', 'owner.json'), DEAD_OWNER);
+  const unlink = fsPromises.unlink;
+  let taken = '';
+  await enterWith(t, 'unlink', async (path: PathLike) => {
+    // The other waiter read this quarantine as a stale owner and moved it to a quarantine of its own just before.
+    if (taken === '' && basename(String(path)).startsWith('.stale-')) {
+      taken = join(dirname(String(path)), `.stale-${randomUUID()}`);
+      await rename(path, taken);
+    }
+    return unlink(path);
+  }, dir);
+  assert.notEqual(taken, '', 'the race happened');
+});
+
+test('a lock owner file that another waiter is removing reads as gone, not as an invalid owner', async t => {
+  const local = await scratch(t);
+  const dir = join(local.home, 'session');
+  await mkdir(join(dir, '.lock'), { recursive: true });
+  await writeFile(join(dir, '.lock', 'owner.json'), DEAD_OWNER);
+  const real = fsPromises.lstat;
+  let taken = '';
+  await enterWith(t, 'lstat', (async (path: PathLike) => {
+    const stats = await real(path);
+    // The other waiter quarantines the owner while this one looks at it: at that moment the file has no links left.
+    if (taken === '' && basename(String(path)) === 'owner.json') {
+      taken = join(dirname(String(path)), `.stale-${randomUUID()}`);
+      await rename(path, taken);
+      stats.nlink = 0;
+    }
+    return stats;
+  }) as typeof fsPromises.lstat, dir);
+  assert.notEqual(taken, '', 'the race happened');
 });
