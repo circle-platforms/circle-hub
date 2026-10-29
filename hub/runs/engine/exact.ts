@@ -348,7 +348,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
     documents: ctx.documents,
     onDiagnostic: (diagnostic: {reference:string;message:string}) => ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
   } as const;
-  const run = async (reference: string, scoped: boolean, grounds: boolean): Promise<ValueOutcome> => {
+  const run = async (reference: string, scoped: boolean, grounds: boolean, onResolved?: (result: Resolved) => void): Promise<ValueOutcome> => {
     let ref: Reference;
     let canonical: string;
     try {
@@ -410,6 +410,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
           return { ok: false, message: `成环的引用：${innerCanonical}` };
         }
       }
+      onResolved?.(result);
       return { ok: true, value: valueOf(result, ref, scope) };
     } finally {
       resolving.delete(canonical);
@@ -436,18 +437,15 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
           const additions:Array<{key:string;result:Extract<ValueOutcome,{ok:true}>;tier:string;bytes:number}>=[];
           let total=0;
           for(const [key,row] of group){
-            const checking=Promise.resolve(sources.read(row.sha,scope.reader));
-            const read=await (ctx.documents.within?.(checking)??checking);
-            if(!read?.bytes||read.bytes.length!==read.size||sha256Hex(read.bytes)!==row.sha)continue;
-            const result=await run(row.reference,scoped,false);
-            if(!result.ok||result.value.text===null)continue;
-            const confirming=Promise.resolve(sources.read(row.sha,scope.reader));
-            const confirmed=await (ctx.documents.within?.(confirming)??confirming);
-            if(!confirmed?.bytes||confirmed.readTier!==read.readTier||confirmed.bytes.length!==confirmed.size||sha256Hex(confirmed.bytes)!==row.sha)continue;
+            // run checks access and byte identity before and after locate. Save that observed
+            // tier; resolve() still checks it against current access before every actual use.
+            let tier: Resolved['readTier'] | undefined;
+            const result=await run(row.reference,scoped,false,resolved=>{tier=resolved.readTier;});
+            if(!result.ok||result.value.text===null||tier===undefined)continue;
             const value=result.value;
             const bytes=512+2*(key.length+value.reference.length+(value.text?.length??0)+(value.role?.length??0)+value.digest.length+(value.source?.length??0));
             total+=bytes;if(total>preparedLimit)throw new SandboxError('SANDBOX_OUTPUT_TOO_LARGE',{limit:'document_cache_bytes'});
-            additions.push({key,result,tier:read.readTier,bytes});
+            additions.push({key,result,tier,bytes});
           }
           // Another prefetch can have completed the same keys while this batch
           // awaited authorization. Charge each retained result only once.
