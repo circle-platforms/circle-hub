@@ -369,5 +369,5 @@ export interface EffectRegistryPort {
 
 /** Pure re-evaluation of named frozen-package checks; it cannot store submissions or spend repair rounds. */
 export interface EffectCheckReplay {
- (input:{run:string;submission:string;checks:readonly string[]}):Promise<Record<string,import('../contracts/src/tables.ts').CheckOutcome[]>>;
+ (input:{run:string;submission:string;result?:string;checks:readonly string[]}):Promise<Record<string,import('../contracts/src/tables.ts').CheckOutcome[]>>;
 }
