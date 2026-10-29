@@ -321,7 +321,7 @@ export class LeaseService {
    * read on the same clock, so it can still land inside such a window, equal milliseconds included (round-five review,
    * item 1). The order holds for one lease clock that does not step back; a step back of it is not detected here.
    */
-  async history(input: { key: string; from: string; to: string; limit?: number }): Promise<{ before: StoredRecord<ActionBody> | null; events: StoredRecord<ActionBody>[]; complete: boolean; unattributable: StoredRecord<ActionBody>[]; settled: boolean }> {
+  async history(input: { key: string; from: string; to: string; limit?: number }): Promise<{ before: StoredRecord<ActionBody> | null; events: StoredRecord<ActionBody>[]; complete: boolean; unattributable: StoredRecord<ActionBody>[]; settled: boolean; asOf: string }> {
     if (!KEY.test(input.key)) throw new TypeError('invalid lease history key');
     const from = IsoTime.parse(input.from), to = IsoTime.parse(input.to);
     if (Date.parse(from) > Date.parse(to)) throw new TypeError('lease history window is inverted');
@@ -354,7 +354,7 @@ export class LeaseService {
     const before = beforeRows.rows.length === 0 ? null : (await load(beforeRows.rows))[0]!;
     const events = await load(eventRows.rows.slice(0, limit));
     const unattributable = await load(damaged.rows);
-    return { before, events, complete: eventRows.rows.length <= limit, unattributable, settled: Date.parse(to) < asOf.getTime() };
+    return { before, events, complete: eventRows.rows.length <= limit, unattributable, settled: Date.parse(to) < asOf.getTime(), asOf: asOf.toISOString() };
   }
 
   /** The lease action records of a prefix, oldest first (the audit line B05 keeps). */

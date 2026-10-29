@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import { IsoTime } from '../../contracts/src/common.ts';
 import { LeaseDetail } from '../../contracts/src/records.ts';
 import { LeaseOpSchema } from '../../contracts/generated/vocabulary.ts';
@@ -14,6 +15,8 @@ interface LeaseResult { lease: string | null; lease_id: string | null; lease_unc
 interface HeldDevice { lease_id: string; user: string; until: string | null }
 type HeldLease = Extract<import('zod').z.infer<typeof LeaseDetail>, { keys: string[] }>;
 type HistoryService = Pick<LeaseService, 'history'>;
+// The longest the Hub waits for the lease clock to pass a receipt before it reads the history again.
+const SETTLE_WAIT_MS = 1000;
 type Check<T> = { ok: true; value: T } | { ok: false; missing: string; next_action?: string };
 
 const KEY = /^[a-z0-9][a-z0-9:._/-]{0,199}$/;
@@ -123,10 +126,21 @@ export async function operationLease(
   const key = input.key ?? (input.bed ? `bed/${input.bed}/${input.device}` : undefined);
   if (!key || !KEY.test(key) || !key.startsWith('bed/') || key.split('/').length !== 3) return unconfirmed('缺完整有效的台架（床）与设备身份；在提案中写明床后重交');
   if (!leases) return unconfirmed('缺租约历史只读查询接口；管理员完成接线后重传');
-  const { before, events, complete, unattributable = [], settled } = await leases.history({ key, from: capturedAt.data, to: receivedAt.data });
+  const window = { key, from: capturedAt.data, to: receivedAt.data };
+  let answer = await leases.history(window);
+  // A receipt the lease clock has not passed yet can still gain a lease change inside the window (round five, item 1). When
+  // the clock passes it within a second (the same millisecond, or a small skew) the Hub reads again once it has: an
+  // unconfirmed record would stay, since the same capture submitted again reuses it (round six, item 1).
+  if (answer.settled === false) {
+    const wait = Date.parse(receivedAt.data) - Date.parse(answer.asOf) + 1;
+    if (wait <= SETTLE_WAIT_MS) {
+      await delay(Math.max(wait, 1));
+      answer = await leases.history(window);
+    }
+  }
+  const { before, events, complete, unattributable = [], settled } = answer;
   if (!complete) return unconfirmed('声明采集至收到时刻之间的租约记录超过有界读取上限；缩小时间窗口或让管理员核对记录后重传');
-  // A receipt time not before the lease clock's own read can still gain a lease change inside the window (round five, item 1).
-  if (settled === false) return unconfirmed('收到时刻不早于租约时钟读取历史的时刻，窗口内仍可能出现租约动作；稍后重交，或让管理员核对 Hub 与数据库的时钟');
+  if (settled === false) return unconfirmed('Hub 的收到时刻比租约时钟（数据库时钟）的当前时刻晚一秒以上，两个时钟不一致，窗口内仍可能出现租约动作，不能确认；请管理员校准 Hub 与数据库的时钟。同一采集再交会沿用这条未确认记录，校准后重新执行并采集这一步');
   if (unattributable.length > 0) return uncertain(leaseDetail(unattributable[0]!));
   const initial = before ? leaseDetail(before, key) : null;
   if (initial && !initial.ok) return uncertain(initial);

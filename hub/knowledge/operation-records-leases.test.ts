@@ -492,6 +492,23 @@ test('a receipt not yet before the lease clock is unconfirmed, since a later lea
   assert.match(JSON.stringify(view.feeding.lease_unconfirmed), /租约时钟/);
 });
 
+test('a receipt the lease clock passes within a second is read again and confirmed, not left unconfirmed (round six, item 1)', {skip}, async t => {
+  const ctx = await world(t);
+  // The lease clock runs 800 ms behind the clock that times the receipt: the first read may come before the lease clock has
+  // passed the receipt, and the Hub reads again once it has.
+  const {service:leases} = leasesOf(t, ctx, async () => new Date(Date.now() - 800));
+  ctx.w.knowledge.__context.leases = leases;
+  const reads = t.mock.method(leases, 'history');
+  const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'});
+  assert.ok(acquired.ok);
+  const current = await captureRun(ctx);
+  const view = await stored(current, await submit(current, {...observation(current, '租约时钟稍慢'), device:'device0'}, '租约时钟稍慢'));
+  assert.equal(view.feeding.lease, 'bed/synthetic/device0', JSON.stringify(view.feeding.lease_unconfirmed));
+  assert.equal(view.feeding.lease_id, acquired.lease);
+  assert.equal(view.feeding.lease_unconfirmed, undefined);
+  assert.ok(reads.mock.calls.length >= 1);
+});
+
 test('a damaged acquire record is unconfirmed rather than a confirmed absence', {skip}, async t => {
   const ctx = await world(t);
   const lease = 'lse_synthetic_missing_keys';
