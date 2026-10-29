@@ -274,14 +274,26 @@ async function executePack(
     throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'os_isolation', platform: process.platform, probe: osIsolationFailure() ?? null });
   }
   return retryFunction(() => {
-    if (epoch !== stopEpoch) return Promise.reject(new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' }));
-    return slots.run(async () => {
+    const attempt = epoch !== stopEpoch ? Promise.reject(new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' })) : slots.run(async () => {
       const inputText = serializeInput(input, lim.inputBytes);
       const pack = await preparePack(target);
       if (epoch !== stopEpoch) throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' });
       return runChild(pack, inputText, lim, os, batch);
     });
+    return UNAVAILABLE_DIAGNOSTICS ? attempt.catch(reportUnavailable) : attempt;
   }, lim.timeoutMs, options.onAttempt, options);
+}
+
+/**
+ * With HUB_SANDBOX_DIAGNOSTICS=1 (the Linux isolation jobs of the Hub checks), every attempt that ends SANDBOX_UNAVAILABLE is
+ * written to stderr with its detail, so a rare one names its reason whichever caller met it (#96). The detail is the Hub's
+ * own (reason, limits, timings, host errors), never the function's output; the error is rethrown unchanged.
+ */
+const UNAVAILABLE_DIAGNOSTICS = process.env.HUB_SANDBOX_DIAGNOSTICS === '1';
+
+function reportUnavailable(error: unknown): never {
+  if (error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE') process.stderr.write(`hub sandbox unavailable: ${JSON.stringify(error.detail)}\n`);
+  throw error;
 }
 
 /** Preserve host startup diagnostics only on the private error; the public sandbox message stays fixed. */

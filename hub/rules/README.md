@@ -222,6 +222,11 @@ of all its threads. A changing thread set is retried at most 12 times; an inacce
 missing RSS, a failed sampler or a sampler that does not answer within one second ends the call as `SANDBOX_UNAVAILABLE` with
 the missing observation and the administrator's next step. It is never presented as a measured memory overrun.
 
+With `HUB_SANDBOX_DIAGNOSTICS=1` in the Hub's environment, every attempt that ends `SANDBOX_UNAVAILABLE` also writes one
+line to stderr, `hub sandbox unavailable: <detail as JSON>`, and the error is rethrown unchanged. The detail is the Hub's own
+(reason, limits, timings, host errors), never the function's output. The `Linux isolation` jobs of the Hub checks set it, so
+a rare unavailable call names its reason in the log, whichever caller met it (#96).
+
 ## Limits
 
 - Linux requires the bubblewrap and AppArmor policy described above; without them the default is `SANDBOX_UNAVAILABLE`.
