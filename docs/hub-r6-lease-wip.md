@@ -32,14 +32,21 @@ numbers 1.3.3 to 1.3.6.
 Each has an implementation and a targeted counter-example on this branch, but none has been independently reviewed, and
 the lease concurrency test covers one code path only.
 
-## Tests that fail on this branch
+## Tests that failed on this branch
 
-All are carried as they are; no assertion was weakened, deleted or skipped.
+All three are fixed; no assertion was weakened, deleted or skipped.
 
-- Two scenario-28 acceptance tests, the same pair as on main (#37).
-- `hub/knowledge/view-perf.test.ts`: the predecessor byte digest differs from the expected one. The cause is not known.
-- `hub/runs/engine/exact-prefetch-budget.test.ts`: 15 parses (3 batches and 12 single reads) where 3 parses in 3 batches are
-  expected. It may come from blocker 1's fix; this is not established.
+- The two scenario-28 acceptance tests (#37, #56) pass since main's case-compile 3.8.6 (#78) was merged in.
+- `hub/runs/engine/exact-prefetch-budget.test.ts` (15 parses where 3 were expected): blocker 1's fix made a use as grounds
+  skip the prefetched result and resolve the reference again, one parse and one lookup each. A prefetched source is now
+  reused for grounds after the same declaration-grade check that `run()` makes (`declarationGroundRefusal` with the run's
+  ground source); a `src` reference is otherwise always groundable and has no inner grounds. The source is still read again
+  on every use. `hub/runs/engine/captured-ground.test.ts` still refuses the prefetched declaration-grade source, and fails
+  if that check is removed. Blocker 1's review should cover this path too.
+- `hub/knowledge/view-perf.test.ts` (predecessor digest): every new artifact record carried `captured_at_declared`,
+  `false` for the Hub's own non-upload artifacts as well, so the 1,800 documents of the fixture changed their record bytes
+  and with them the view's `listed_documents` part and the root's composition; all 49,000 entries were identical. Only an
+  upload records the flag now (`true` or `false`); every reader already treats a missing flag as not declared.
 
 The two replay tests, `hub/knowledge/operation-records-leases.test.ts` and `hub/knowledge/operation-records-upgrade.test.ts`,
 no longer extract an unpublished commit (886d9f4c, which no clone has). They read committed fixtures under
