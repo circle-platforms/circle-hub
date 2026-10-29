@@ -24,6 +24,8 @@ export interface Target {
   root: RootInfo | null;
   unversionedRoot?: RootInfo<null> | null;
   basis: Claim[];
+  /** The unfiltered list already read to select a build, reused only inside this start call. */
+  knownBuilds?: KnownBuild[];
 }
 
 type Input = z.infer<typeof StartRunInput>;
@@ -141,7 +143,28 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
     structuralLines=[...new Set(structuralLines)];if(structuralLines.length!==1)throw unresolved('/version',structuralLines.length?'来源结构存在多个版本层，不能自动选择':'来源结构未声明版本；缺版本事实，请在 start_run 指定版本', [...new Set((await knowledge.builds(pid)).map(build=>build.line))]);
   }
   const requestedLine=input.version??structuralLines[0];
-  const withRoot = async (): Promise<KnownBuild[]> => {const out=[];for(const build of await knowledge.builds(pid)){if(requestedLine!==undefined){const a=await knowledge.feeding?.seedFor(pid,requestedLine),b=await knowledge.feeding?.seedFor(pid,build.line);if(a&&b?a.root!==b.root:build.line!==requestedLine)continue;}if(build.root!==null||await knowledge.seedlingRoot?.(pid,build.line))out.push(build);}return out;};
+  let knownBuilds: Promise<KnownBuild[]> | undefined;
+  const allKnown = (): Promise<KnownBuild[]> => knownBuilds ??= knowledge.builds(pid);
+  const seeds = new Map<string, Promise<Awaited<ReturnType<NonNullable<typeof knowledge.feeding>['seedFor']>>>>();
+  const seed = (line:string) => {
+    let value=seeds.get(line);
+    if(!value){value=knowledge.feeding?.seedFor(pid,line)??Promise.resolve(null);seeds.set(line,value);}
+    return value;
+  };
+  const seedlings = new Map<string, Promise<RootInfo | null>>();
+  const seedling = (line:string) => {
+    let value=seedlings.get(line);
+    if(!value){value=knowledge.seedlingRoot?.(pid,line)??Promise.resolve(null);seedlings.set(line,value);}
+    return value;
+  };
+  const withRoot = async (): Promise<KnownBuild[]> => {
+    const out:KnownBuild[]=[];
+    for(const build of await allKnown()){
+      if(requestedLine!==undefined){const a=await seed(requestedLine),b=await seed(build.line);if(a&&b?a.root!==b.root:build.line!==requestedLine)continue;}
+      if(build.root!==null||await seedling(build.line))out.push(build);
+    }
+    return out;
+  };
   let build: KnownBuild;
   let buildName: string;
   let buildText: string;
@@ -161,7 +184,7 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
     const candidates = await withRoot();
     const line = input.version !== undefined ? `版本线 ${input.version} ` : '';
     if (candidates.length === 0) {
-      const all = (await knowledge.builds(pid, input.version !== undefined ? { line: input.version } : undefined)).map((b) => b.name);
+      const all = (await allKnown()).filter(b => input.version === undefined || b.line === input.version).map((b) => b.name);
       throw unresolved(input.version !== undefined ? '/version' : '/build', `产品线 ${pid} ${line}下没有已产出知识根的构建`, all, '先同步这条产品线的知识，或换一个版本线');
     }
     const select = product.product.select_build;
@@ -243,5 +266,5 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
     grounds: unversionedRoot === null ? [] : [treeReference(unversionedRoot.root, '/')],
     bound: unversionedRoot === null ? [product.digest] : [product.digest, unversionedRoot.root, unversionedRoot.composition], at,
   }));
-  return { product, build, buildName, line: build.line, root, unversionedRoot, basis };
+  return { product, build, buildName, line: build.line, root, unversionedRoot, basis, ...(knownBuilds?{knownBuilds:await knownBuilds}:{}) };
 }
