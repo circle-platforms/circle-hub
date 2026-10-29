@@ -28,6 +28,7 @@ export { sha256Hex, digestOf, recordDigest, isSha256, SHA256_PATTERN } from './d
 export { newId, ulid, idTime, isId } from './ids.ts';
 export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
 export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, MAX_ADMIN_FINDINGS, CREDENTIAL_DETECTORS } from './scan.ts';
+export { argumentDigest } from './calllog.ts';
 export { textPreview, stripNul } from './text.ts';
 export { maskedForDisplay, FileKeyProvider } from './vault.ts';
 export { sharedWith, runIsSharedWith, productionShareKey, productionShareBinding } from './authorizations.ts';

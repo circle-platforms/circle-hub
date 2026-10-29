@@ -2346,7 +2346,7 @@
   {
     "name": "get_nodes",
     "title": "Read knowledge nodes",
-    "description": "Read subtrees of the knowledge tree locked by a run, or the content a reference points at.",
+    "description": "Read subtrees or referenced content; use call_query with exact original arguments to check your own long start_run or get_nodes call without rerunning it.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -2386,6 +2386,34 @@
         },
         "cursor": {
           "type": "string"
+        },
+        "call_query": {
+          "description": "Check your own in-flight call and recent completion logs without rerunning it; provide the exact original arguments",
+          "type": "object",
+          "properties": {
+            "start_run": {
+              "description": "Exact arguments of your earlier start_run call",
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "get_nodes": {
+              "description": "Exact arguments of your earlier get_nodes call",
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "trace": {
+              "description": "The original trace when known; omit it to list matching candidates",
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -2564,6 +2592,125 @@
             ],
             "additionalProperties": false
           }
+        },
+        "call_status": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            },
+            "active_total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "active": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "trace": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{32}$"
+                  },
+                  "started_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  }
+                },
+                "required": [
+                  "trace",
+                  "started_at"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "completed": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "trace": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{32}$"
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "call_result": {
+                    "type": "string",
+                    "enum": [
+                      "ok",
+                      "error",
+                      "transport_failure"
+                    ]
+                  },
+                  "error_code": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "duration_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "run": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "run_record": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                  },
+                  "result_record": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "pattern": "^(?:rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+                  }
+                },
+                "required": [
+                  "trace",
+                  "at",
+                  "call_result",
+                  "error_code",
+                  "duration_ms",
+                  "run"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "missing": {
+              "type": "string"
+            },
+            "next_action": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tool",
+            "active_total",
+            "active",
+            "completed",
+            "truncated",
+            "next_action"
+          ],
+          "additionalProperties": false
         },
         "root": {
           "description": "Knowledge root the nodes belong to",

@@ -34,6 +34,7 @@ import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
 import { feedingText, fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
+import { callStatus } from './call-status.ts';
 import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOfAsync as structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
@@ -415,6 +416,15 @@ const getNodes: Handler = async (deps, call, args) => {
   if (!parsed.success) return { answer: errorAnswer('get_nodes', schemaErrors('get_nodes', parsed.error)) };
   const input = parsed.data;
   const note = call.context.adminNote;
+  if(input.call_query!==undefined){
+    const mixed=(['run','root','paths','depth','reference','cursor'] as const).find(key=>input[key]!==undefined);
+    if(mixed)return {answer:errorAnswer('get_nodes',[violation('get_nodes',`/${mixed}`,'查询调用状态时只给 call_query','把调用状态查询与读取内容分开')])};
+    const tool=input.call_query.start_run!==undefined?'start_run':'get_nodes';
+    // Hash the original argument object, not a schema-transformed copy (for example a JSON __proto__ member).
+    const rawQuery=args.call_query as Record<string,unknown>;
+    const original=rawQuery[tool] as Record<string,unknown>;
+    return {answer:{call_result:'ok',errors:[],call_status:await callStatus(deps,call.principal,tool,original,input.call_query.trace)}};
+  }
   // An empty cursor is no cursor (a model may fill an optional string with ''), for a reference as for a subtree.
   const cursor = input.cursor === undefined || input.cursor === '' ? null : input.cursor;
   if (input.run !== undefined) call.state.runId = input.run;
