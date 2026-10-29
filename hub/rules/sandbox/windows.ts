@@ -165,8 +165,9 @@ export function createWindowsRestrictedToken(koffi: {
   let token: bigint | undefined;
   try {
     const output = Buffer.alloc(8);
-    // TOKEN_DUPLICATE | TOKEN_QUERY. Never request privilege adjustment rights.
-    if (!open(current(), 0xa, output)) throw new Error('Windows 当前进程令牌读取失败');
+    // TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT. The derived token's handle carries these rights, and the
+    // LPAC probe needs ADJUST_DEFAULT to set the derived token's default DACL. Never request privilege adjustment rights.
+    if (!open(current(), 0x8a, output)) throw new Error('Windows 当前进程令牌读取失败');
     original = output.readBigUInt64LE();
     if (!valid(original)) throw new Error('Windows 当前进程令牌无效');
     output.fill(0);
