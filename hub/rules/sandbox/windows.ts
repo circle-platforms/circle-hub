@@ -327,8 +327,7 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     const capabilities = Buffer.alloc(24); // SECURITY_CAPABILITIES, zero capabilities.
     capabilities.writeBigUInt64LE(sid);
     const one = Buffer.alloc(4); one.writeUInt32LE(1);
-    const mitigation = Buffer.alloc(8); mitigation.writeBigUInt64LE(0x10000000n); // Win32k disabled.
-    for (const [kind, value] of [[0x20009, capabilities], [0x2000f, one], [0x2000e, one], [0x20007, mitigation]] as const) {
+    for (const [kind, value] of [[0x20009, capabilities], [0x2000f, one], [0x2000e, one]] as const) {
       const pointer = native(value);
       if (!update(attributes, 0, kind, pointer, value.length, null, null)) failed('属性设置');
     }
