@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assertLinearGrowth, measureGrowth } from './growth.ts';
+import { assertLinearGrowth, assertLinearGrowthAsync, measureGrowth, measureGrowthAsync } from './growth.ts';
 
 // Synthetic workloads with a known cost: `steps` iterations of a loop the compiler cannot remove.
 let sink = 0;
@@ -35,4 +35,17 @@ test('a cost below the noise floor is not judged by its ratio', () => {
   const growth = assertLinearGrowth('constant', (n) => n, (n) => work(n * n), { small: 10, noiseFloorMs: 1_000 });
   assert.equal(growth.belowNoise, true);
   assert.throws(() => measureGrowth((n) => n, () => undefined, { small: 1, factor: 1 }), /factor > 1/);
+});
+
+test('awaited work is timed on the calling thread until it settles, without the time spent waiting', async () => {
+  const pause = () => new Promise((resolve) => setTimeout(resolve, 20));
+  const linear = await assertLinearGrowthAsync('awaited linear', (n) => n, async (n) => { await pause(); work(n); await pause(); }, { small: 500_000 });
+  assert.equal(linear.belowNoise, false, `the large run must be above the noise floor: ${linear.largeMs} ms`);
+  assert.ok(linear.ratio > 2 && linear.ratio <= linear.maxRatio, `ratio ${linear.ratio}`);
+  const waiting = await measureGrowthAsync((n) => n, (n) => new Promise((resolve) => setTimeout(resolve, n)), { small: 5, runs: 1, noiseFloorMs: 1_000 });
+  assert.ok(waiting.largeMs < 20, `40 ms of waiting cost ${waiting.largeMs} ms of CPU`);
+  await assert.rejects(
+    assertLinearGrowthAsync('awaited quadratic', (n) => n, async (n) => { await pause(); work(n * n); }, { small: 400 }),
+    (error: unknown) => error instanceof assert.AssertionError && /super-linear growth: awaited quadratic: 400 → 3200 took .* ms of CPU, ratio [\d.]+ \(limit 16\)/.test(error.message),
+  );
 });

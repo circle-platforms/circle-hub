@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import {ParseEncodingError,ParseError,ParseForbiddenError,ParseLimitError,ParseSyntaxError,candidatesFrom,createDocumentCache,findQuote,jsonParser,markdownParser,resolveReference,srcFragment,textParser,type Parser} from "./api.ts";
-import { assertLinearGrowth } from '../testing/growth.ts';
+import { assertLinearGrowth, assertLinearGrowthAsync, describeGrowth } from '../testing/growth.ts';
 import { fixture, seeded, timed, utf8 } from './test-support.ts';
 
 const MB = 1024 * 1024;
@@ -244,29 +244,34 @@ describe('random bytes', () => {
 });
 
 // Parsing is not the only cost: listing, locating, quotation candidates, quotation search and resolution must stay
-// linear too on inputs that parse (long names over many nodes, deep nesting, wide siblings, many links).
-describe('every public API stays within the time bound on hostile input that parses', () => {
-  const PIPELINE_BOUND_MS = 6_000;
+// linear too on inputs that parse (long names over many nodes, deep nesting, wide siblings, many links). Each input is
+// made from a count of its repeated unit. At full size the whole pipeline runs under the catastrophic ceiling: the
+// slowest input took up to 4.6 s on the CI runner, and 6.6 s once against the 6 s bound this replaces. Its growth is
+// then checked on the CPU time of this thread between 1/64 and 1/8 of that count, or between 1/8 and all of it where a
+// smaller input would stay below the timer noise.
+describe('every public API stays within the ceiling and in linear time on hostile input that parses', () => {
   const names = Array.from({ length: 3 }, (_, i) => `n${i}${'q'.repeat(400)}`);
-  let deepJson: unknown = Array.from({ length: 100_000 }, (_, i) => `v${i}`);
-  for (let depth = 0; depth < 99; depth++) deepJson = [deepJson];
-  const inputs: Array<[string, Parser, () => Uint8Array]> = [
-    ['XML: long names over 20000 leaves', xmlParser, () => utf8(`${names.map((n) => `<${n}>`).join('')}${'<l a="1"/>'.repeat(20_000)}${[...names].reverse().map((n) => `</${n}>`).join('')}`)],
-    ['XML: 1 MB of text 60 levels deep', xmlParser, () => utf8(`${'<a>'.repeat(60)}${`<t>${'x '.repeat(500)}</t>`.repeat(1_000)}${'</a>'.repeat(60)}`)],
-    ['XML: 40000 siblings', xmlParser, () => utf8(`<r>${'<i/>'.repeat(40_000)}</r>`)],
-    ['HTML: 200000 links in one block', htmlParser, () => utf8(`<p>${'<a href=x>y </a>'.repeat(200_000)}`)],
-    ['HTML: foster-parented text', htmlParser, () => utf8(`<table>${'x<b>y</b>'.repeat(100_000)}`)],
-    ['Markdown: a long heading over 40000 blocks', markdownParser, () => utf8(`# ${'h'.repeat(20_000)}\n\n${'p\n\n'.repeat(40_000)}# short\n\ntext\n`)],
-    ['Markdown: 40000 sections', markdownParser, () => utf8(Array.from({ length: 40_000 }, (_, i) => `# 标题 ${i}\n\n的 段落\n`).join('\n'))],
-    ['JSON: 100000 values 100 levels deep', jsonParser, () => utf8(JSON.stringify(deepJson))],
-    ['mind map: 50000 nodes', kityminderParser, () => utf8(JSON.stringify({ root: { data: { id: 'r', text: 'root' }, children: Array.from({ length: 50_000 }, (_, i) => ({ data: { id: `c${i}`, text: `用例 ${i}`, note: 'a b' } })) } }))],
-    ['text: 200000 lines', textParser, () => utf8('a b\n'.repeat(200_000))],
+  const deepJson = (count: number): unknown => {
+    let value: unknown = Array.from({ length: count }, (_, i) => `v${i}`);
+    for (let depth = 0; depth < 99; depth++) value = [value];
+    return value;
+  };
+  const inputs: Array<[string, Parser, number, (count: number) => Uint8Array, divisor?: number]> = [
+    ['XML: long names over 20000 leaves', xmlParser, 20_000, (n) => utf8(`${names.map((name) => `<${name}>`).join('')}${'<l a="1"/>'.repeat(n)}${[...names].reverse().map((name) => `</${name}>`).join('')}`)],
+    ['XML: 1 MB of text 60 levels deep', xmlParser, 1_000, (n) => utf8(`${'<a>'.repeat(60)}${`<t>${'x '.repeat(500)}</t>`.repeat(n)}${'</a>'.repeat(60)}`), 8],
+    ['XML: 40000 siblings', xmlParser, 40_000, (n) => utf8(`<r>${'<i/>'.repeat(n)}</r>`)],
+    ['HTML: 200000 links in one block', htmlParser, 200_000, (n) => utf8(`<p>${'<a href=x>y </a>'.repeat(n)}`)],
+    ['HTML: foster-parented text', htmlParser, 100_000, (n) => utf8(`<table>${'x<b>y</b>'.repeat(n)}`)],
+    ['Markdown: a long heading over 40000 blocks', markdownParser, 40_000, (n) => utf8(`# ${'h'.repeat(20_000)}\n\n${'p\n\n'.repeat(n)}# short\n\ntext\n`), 8],
+    ['Markdown: 40000 sections', markdownParser, 40_000, (n) => utf8(Array.from({ length: n }, (_, i) => `# 标题 ${i}\n\n的 段落\n`).join('\n'))],
+    ['JSON: 100000 values 100 levels deep', jsonParser, 100_000, (n) => utf8(JSON.stringify(deepJson(n)))],
+    ['mind map: 50000 nodes', kityminderParser, 50_000, (n) => utf8(JSON.stringify({ root: { data: { id: 'r', text: 'root' }, children: Array.from({ length: n }, (_, i) => ({ data: { id: `c${i}`, text: `用例 ${i}`, note: 'a b' } })) } }))],
+    ['text: 200000 lines', textParser, 200_000, (n) => utf8('a b\n'.repeat(n))],
   ];
-  for (const [name, parser, make] of inputs) {
-    it(name, async () => {
-      const bytes = make();
+  for (const [name, parser, full, make, divisor = 64] of inputs) {
+    /** Parses, lists, locates every selector, builds quotation candidates and searches them, and resolves three references. */
+    const pipeline = async (bytes: Uint8Array): Promise<void> => {
       const sha = createHash('sha256').update(bytes).digest('hex');
-      const start = performance.now();
       const document = parser.parse(bytes);
       const selectors = document.listSelectors('', { properties: true });
       for (const selector of selectors) assert.ok((await document.locate(selector)), `${name}: ${selector}`);
@@ -282,8 +287,14 @@ describe('every public API stays within the time bound on hostile input that par
         const result = await resolveReference(srcFragment(sha, `${parser.id}@${parser.version}`, selector), ctx);
         assert.ok(result.resolved, `${name}: ${selector}`);
       }
+    };
+    it(name, async (t) => {
+      const bytes = make(full);
+      const start = performance.now();
+      await pipeline(bytes);
       const ms = performance.now() - start;
-      assert.ok(ms < PIPELINE_BOUND_MS, `${name} took ${ms.toFixed(0)} ms`);
+      assert.ok(ms < CEILING_MS, `${name} took ${ms.toFixed(0)} ms`);
+      t.diagnostic(`${ms.toFixed(0)} ms at full size; ${describeGrowth(name, await assertLinearGrowthAsync(name, make, pipeline, { small: Math.round(full / divisor) }))}`);
     });
   }
 });
