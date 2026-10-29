@@ -103,6 +103,20 @@ test('a run and receipt persisted by the frozen Hub replay unchanged after upgra
   assert.deepEqual(plain(await knowledge.layers.contributions.readView(fixture.receipt, admin)), upgradedView);
   assert.deepEqual(await digests('run'), runsBefore);
   assert.deepEqual(await digests('validation_result'), resultsBefore);
+
+  // The run stays locked to the frozen pack, which stays loadable as a published version does: a note in the new shape is
+  // refused at that pack's own slot schema, and the current pack's schema is not used for it (round-six review, item 5).
+  await upgradedWorkflows.add(FROZEN_KNOWLEDGE_CONTRIBUTION.directory);
+  type Contribution = { code: string; text: string; data: Record<string, unknown> };
+  const submitted = fixture.submission as { run: string; model: string; items: Array<{ item: string; handling: string; slots: { contribution: Contribution[] } }> };
+  const item = submitted.items[0]!;
+  const contribution = item.slots.contribution[0]!;
+  const upload = (await kit.artifacts.records(TEXT_UPLOAD)).find(row => 'upload' in row.body.origin)!;
+  const newShape = { schema: 'fed-note@1', object: TEXT_UPLOAD, product: null, root: null, path: null, source: { system: 'upload', bytes: TEXT_UPLOAD, artifact: upload.digest }, by: admin.id, run: null, captured_at_declared: false, received_at: upload.created_at, classification: [{ value: 'ticket', quote: { reference: `src:${TEXT_UPLOAD}/text@1/l/1`, text: '合成旧回显' } }] };
+  const refused = await upgraded.submitResult(admin, { ...submitted, items: [{ ...item, slots: { contribution: [{ ...contribution, text: '新结构说明', data: { ...contribution.data, feeding: newShape } }] } }] } as Parameters<typeof upgraded.submitResult>[1], UPGRADE_CALL);
+  assert.notEqual(refused.acceptance, 'accepted', JSON.stringify(refused));
+  assert.match(JSON.stringify(refused.errors), /SUBMISSION_SCHEMA_VIOLATION.*\/items\/0\/slots\/contribution\/0\/data\/feeding/, JSON.stringify(refused.errors));
+  assert.deepEqual(await digests('run'), runsBefore);
 });
 
 test('a run locked to the frozen pack carries notes as the frozen Hub wrote them, and refuses a note in the new shape (round-five review, item 5)', async () => {
@@ -118,7 +132,7 @@ test('a run locked to the frozen pack carries notes as the frozen Hub wrote them
   const currentNote = await noteSchema(new URL('../../packs/workflow/knowledge-contribution/slots.schema.json', import.meta.url));
   const base = { schema: 'fed-note@1', object: TEXT_UPLOAD, product: null, root: null, path: null, source: { system: 'upload', bytes: TEXT_UPLOAD }, by: 'usr_01m62bf7k7fvab10tqtrydw0qp', run: null };
   const written = { ...base, at: '2026-10-28T22:53:08.801Z' };
-  const undeclared = { ...base, captured_at_declared: false, received_at: '2026-10-28T22:53:08.808Z' };
+  const undeclared = { ...base, source: { ...base.source, artifact: 'a'.repeat(64) }, captured_at_declared: false, received_at: '2026-10-28T22:53:08.808Z' };
   assert.equal(frozenNote(written), true, 'a note the frozen Hub wrote');
   assert.equal(currentNote(written), true);
   // A run started before the upgrade keeps its pack: it is refused at its slot schema rather than given a note it cannot

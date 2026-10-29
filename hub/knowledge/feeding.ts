@@ -79,6 +79,8 @@ const object=(v:unknown):v is Record<string,any>=>v!==null&&typeof v==='object'&
 interface SeedlingAttachment {locked_root:string;locked_composition:string|null;seedling_root:string;seedling_composition:string;line:string}
 interface Projected {rows:Projection[];pack:string;digest:string;attachment:SeedlingAttachment|null}
 const annotations=['classification','manual_link','relations','applicability','correction','command_link','case_link','paragraph'] as const;
+// The most uploads of one uploader's equal bytes compared for an older note that does not name its upload record.
+const NOTE_CANDIDATES=64;
 export const operationRecord=(schema:unknown):schema is 'fed-observation@1'|'fed-procedure@1'|'fed-pitfall@1'=>operationSchema(schema);
 /** Content identity of an operation record: its canonical statement, quotations, exact capture and declared target, nothing else. */
 /**
@@ -373,24 +375,27 @@ export class FeedingLayer {
  private async changed(body:Record<string,any>,offset=Number.MAX_SAFE_INTEGER){const key=this.sourceKey(body);if(!key)return [];let head:StoredRecord<any>|undefined;for(const row of await this.context.store.all<any>({key:'knowledge.feeding.head',value:key,kind:'action'}))if(await this.position(row.digest)<=offset)head=row;return head&&head.body.detail?.object!==body.object?[head.digest]:[];}
  async upload(principal:Principal,artifact:SourceArtifact,scope:FeedingScope={}):Promise<FeedingReceipt>{
   if(!('upload'in artifact.body.origin)||artifact.body.author.user===null||artifact.body.author.user!==principal.id&&principal.role!=='admin')fail('上传出处必须是当前上传者的 Hub 原件');
-  const body={schema:'fed-note@1',object:artifact.body.sha256,product:null,root:null,path:null,source:{system:'upload',bytes:artifact.body.sha256},by:artifact.body.author.user,run:null,...noteCapture(artifact)};
+  const body={schema:'fed-note@1',object:artifact.body.sha256,product:null,root:null,path:null,source:{system:'upload',bytes:artifact.body.sha256,artifact:artifact.digest},by:artifact.body.author.user,run:null,...noteCapture(artifact)};
   await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);await this.put(body,principal,'hub.upload@1',['src:'+artifact.body.sha256],[artifact.body.sha256,artifact.digest],'note:'+artifact.digest,[{key:OBJECT,value:body.object},{key:'knowledge.feeding.product',value:principal.id}],tx,false,scope.run??null);await this.usage(principal,body.object,scope,tx);});return {objects:[body.object],offset:await this.offset(),pending:[]};
  }
  async freeze(principal:Principal,run:string,root:string|null):Promise<FeedingOffset>{return this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);const body={schema:'feeding-offset@1',run,root,offset:await this.offset(tx)} as const;const stored=await this.context.records.store.put({kind:'claim',schema:'feeding-offset@1',provenance:'observed',body,unique_key:'feeding.freeze:'+run,index:[{key:'knowledge.feeding.offset',value:run}]},tx);return stored.body;});}
  async usages(principal:Principal,run:string):Promise<string[]>{const owned=await runById(this.context.records.store,run);if(!owned||!await canViewRun(principal,owned.body,this.context.records.store))return [];const rows=await this.all(USAGE,run);const out:string[]=[];for(const row of rows){const body=this.body(row);if(body&&await this.visible(body.object,principal))out.push(body.object);}for(const row of await this.pending(principal,run))out.push(row.source);return [...new Set(out)];}
  /**
-  * A note proposal annotates the note the Hub wrote for one upload, exactly as it was written: a note from before the
-  * capture-time declaration keeps its `at`, and two uploads of the same bytes are told apart by their own notes, never by
-  * a time looked up again (round-five review, item 5).
+  * A note proposal annotates the note the Hub wrote for one upload, exactly as it was written (round-five review, item 5).
+  * A note written now names its upload record, so only that record's note is read. An older note does not: the uploader's
+  * uploads of these bytes are compared, a bounded number of them, and more than one equal note is refused rather than
+  * guessed (round six).
   */
  private async uploadedSource(principal:Principal,body:Record<string,any>){
   const base=canonicalize(Object.fromEntries(Object.entries(body).filter(([key])=>!annotations.includes(key as never))));
-  for(const row of await this.context.records.artifacts.records(body.source.bytes)){
-   if(!('upload'in row.body.origin)||row.body.author.user!==body.by)continue;
-   const written=await this.uploadNote(row.digest);
-   if(written!==null&&canonicalize(written)===base)return this.source(principal,body.source.bytes,row.digest);
-  }
-  fail('缺少与上传者和这份上传说明一致的上传原件');
+  const named=typeof body.source?.artifact==='string'?body.source.artifact as string:undefined;
+  const candidates=named!==undefined?[named]:(await this.context.records.artifacts.records(body.source.bytes)).filter(row=>'upload'in row.body.origin&&row.body.author.user===body.by).map(row=>row.digest);
+  if(candidates.length>NOTE_CANDIDATES)fail(`同一上传者上传了超过 ${NOTE_CANDIDATES} 份相同字节，无法逐份核对说明；请管理员核对这些上传`);
+  const matches:string[]=[];
+  for(const digest of candidates){const written=await this.uploadNote(digest);if(written!==null&&canonicalize(written)===base)matches.push(digest);}
+  if(matches.length===0)fail('缺少与上传者和这份上传说明一致的上传原件');
+  if(matches.length>1)fail('多次上传写下了完全相同的说明，无法确定是哪一次上传；请管理员核对这些上传');
+  return this.source(principal,body.source.bytes,matches[0]!);
  }
  /** The note body `upload()` wrote for one upload record, or null when none was written. */
  private async uploadNote(artifact:string):Promise<Record<string,unknown>|null>{

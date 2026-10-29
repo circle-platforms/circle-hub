@@ -45,16 +45,37 @@ test('an upload note records a capture time only when the client declared one (r
  for(const body of [plain,timed])assert.ok(await layer.prepare(w.user,{...body,classification:[{value:'ticket',quote:{reference:'src:'+String(body.object)+'/text@1/l/1',text:'synthetic note'}}]} as never,{}));
 });
 
-test('two uploads of the same bytes at the same declared time are each annotated through their own note (round-five review, item 5)',async t=>{
+test('two uploads of the same bytes at the same declared time are each annotated through their own note and record (round five and six, item 5)',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
  const capturedAt='2026-10-27T08:00:00.000Z',bytes=Buffer.from('synthetic note captured twice');
  const upload=(session:string)=>w.kit.artifacts.ingest({bytes,mediaType:'text/plain',origin:{upload:{session,message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},readTier:'model_readable',capturedAt});
- const first=await upload('synthetic-first');await new Promise(resolve=>setTimeout(resolve,5));const second=await upload('synthetic-second');
- assert.notEqual(first.digest,second.digest,'two upload records');assert.notEqual(first.created_at,second.created_at);
+ // No pause between them: even within one millisecond each note names its own upload record.
+ const [first,second]=await Promise.all([upload('synthetic-first'),upload('synthetic-second')]);
+ assert.notEqual(first.digest,second.digest,'two upload records');
  await layer.upload(w.user,first);await layer.upload(w.user,second);
- const notes=(await layer.entries(w.user,w.user.id)).map(row=>row.body as Record<string,unknown>).filter(body=>body.object===first.body.sha256);
- assert.deepEqual(notes.map(body=>body.received_at).sort(),[first.created_at,second.created_at].sort());
- for(const body of notes)assert.ok(await layer.prepare(w.user,{...body,classification:[{value:'ticket',quote:{reference:'src:'+first.body.sha256+'/text@1/l/1',text:'synthetic note'}}]} as never,{}),String(body.received_at));
+ const notes=(await layer.entries(w.user,w.user.id)).map(row=>row.body as Record<string,any>).filter(body=>body.object===first.body.sha256);
+ assert.deepEqual(notes.map(body=>body.source.artifact).sort(),[first.digest,second.digest].sort());
+ for(const body of notes){
+  const proposal={...body,classification:[{value:'ticket',quote:{reference:'src:'+first.body.sha256+'/text@1/l/1',text:'synthetic note'}}]};
+  assert.ok(await layer.prepare(w.user,proposal as never,{}));
+  const [ref]=await layer.admit(w.user,[proposal],{});
+  const stored=JSON.stringify(await layer.readRecord(ref!,w.user));
+  const other=body.source.artifact===first.digest?second.digest:first.digest;
+  assert.ok(stored.includes(body.source.artifact)&&!stored.includes(other),'the annotation is bound to the upload its note names');
+ }
+});
+
+test('an older note that two uploads wrote alike is refused rather than bound to a guessed upload (round six, item 5)',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
+ const bytes=Buffer.from('synthetic note uploaded twice before notes named their upload');
+ const upload=(session:string)=>w.kit.artifacts.ingest({bytes,mediaType:'text/plain',origin:{upload:{session,message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},readTier:'model_readable'});
+ const uploads=[await upload('synthetic-older-1'),await upload('synthetic-older-2')];
+ // The notes an older Hub wrote: the same body for both, with `at` and without the upload record.
+ const older={schema:'fed-note@1',object:uploads[0]!.body.sha256,product:null,root:null,path:null,source:{system:'upload',bytes:uploads[0]!.body.sha256},by:w.user.id,run:null,at:'2026-10-27T08:00:00.000Z'};
+ const write=(layer as unknown as {put(...args:unknown[]):Promise<unknown>}).put.bind(layer);
+ await w.kit.store.withTransaction(async tx=>{for(const artifact of uploads)await write(older,w.user,'hub.upload@1',['src:'+older.object],[older.object,artifact.digest],'note:'+artifact.digest,[{key:'knowledge.feeding.object',value:older.object},{key:'knowledge.feeding.product',value:w.user.id}],tx,false,null);});
+ const proposal={...older,classification:[{value:'ticket',quote:{reference:'src:'+older.object+'/text@1/l/1',text:'synthetic note'}}]};
+ await assert.rejects(()=>layer.prepare(w.user,proposal as never,{}),/无法确定是哪一次上传/);
 });
 
 test('a new note for an upload recorded before capture times could be declared says the time was not declared (round-five review, item 5)',async t=>{
