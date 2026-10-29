@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {livePids} from '../../../../hub/rules/sandbox/sandbox.ts';
-import {residentSizes} from '../../../../hub/rules/sandbox/resident.ts';
+import {residentSizes,residentTreeSizes} from '../../../../hub/rules/sandbox/resident.ts';
 import {osIsolationAvailable} from '../../../../hub/rules/sandbox/isolation.ts';
 import {createSkillParserRegistry} from '../../../../hub/refs/skills.ts';
 import {createDocumentCache} from '../../../../hub/refs/resolve.ts';
@@ -13,8 +13,9 @@ import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 
 const packDir=fileURLToPath(new URL('../',import.meta.url));
-// Portable synthetic tests run where sandbox-exec is absent as well. On macOS
-// the wrapper still enables available OS isolation and reports osIsolation.
+// Portable synthetic tests run where OS isolation is absent as well. Where it is
+// available (sandbox-exec on macOS, bubblewrap with AppArmor on Linux) the
+// wrapper still enables it and reports osIsolation.
 
 type Shape={name:string;bytes:Buffer;minElements:number};
 function deepAttributes():Shape {
@@ -40,9 +41,11 @@ function monitor(){
  const sample=()=>{
   if(active)return;
   const pids=livePids();
-  active=residentSizes([process.pid,...pids]).then(sizes=>{
-   const child=pids.reduce((sum,pid)=>sum+(sizes.get(pid)??0),0);
-   childPeak=Math.max(childPeak,child);totalPeak=Math.max(totalPeak,child+(sizes.get(process.pid)??0));rounds++;
+  // Each child's whole process tree, as the sandbox's own watchdog measures it: under bubblewrap the
+  // child is bubblewrap, and Node runs below it in a PID namespace (resident.ts).
+  active=Promise.all([residentTreeSizes(pids),residentSizes([process.pid])]).then(([trees,own])=>{
+   const child=pids.reduce((sum,pid)=>{const bytes=trees.get(pid);return sum+(typeof bytes==='number'&&bytes>0?bytes:0);},0);
+   childPeak=Math.max(childPeak,child);totalPeak=Math.max(totalPeak,child+(own.get(process.pid)??0));rounds++;
   }).finally(()=>{active=undefined;});
  };
  const timer=setInterval(sample,25);
@@ -83,6 +86,8 @@ for(const [label,make] of [['deep attributes',deepAttributes],['rich attributes'
  const fullMs=performance.now()-started;
  const rss=await stop();
  assert.ok(rss.rounds>0 && rss.childPeak>0,'sandbox child memory was sampled');
+ // Node parsing 2 MB holds far more than 64 MiB; a few MiB would be the launcher's own size, not Node's.
+ assert.ok(rss.childPeak>64*1024*1024,`${name}: child peak ${rss.childPeak} is not Node's`);
  // Leave 32 MiB of sampled headroom below the sandbox's 448 MiB RSS watchdog.
  assert.ok(rss.childPeak<416*1024*1024,`${name}: child peak ${rss.childPeak}`);
  // Includes this test process, live sandbox children and earlier shapes' retained
