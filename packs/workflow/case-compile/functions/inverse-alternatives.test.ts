@@ -121,3 +121,37 @@ test('a declared sibling pair with no paired leaf cannot authorize repeated clea
  const doc=catalogOf(value);doc.entries=doc.entries.filter(entry=>entry.words.join(' ')!=='demo switch off');
  assert.ok(obligations(value).some(gap=>gap.verdict==='unknown'));
 });
+
+// A union argument type: the product's command-tree producer publishes a native IPADDR argument as one catalog signature
+// per address family (ids 1.1 and 1.2) under the same native reference (issue #56). Synthetic commands only.
+const unionEntry=(words:string[],item:number,state?:string[])=>{
+ const root=catalogOf(fixture([])).root,reference=`src:${root}/xml@1/x/commands/item[${item}]/arguments`;
+ const arg=(position:number,name:string,type:'enum'|'ipv4'|'ipv6'|'int',nativeName:string,values?:string[])=>({name,type,...(values?{values:[...values]}:{}),native_type:{name:nativeName,declaration:`${reference}/arg[${position+1}]`,grammar:'famx-command-tree@2'}});
+ const lead=state?1:0;
+ return {words,reference:'tree:'+root+'/commands/'+words.join('/'),signatures:(['ipv4','ipv6'] as const).map((family,j)=>({id:`1.${j+1}`,reference,params:[...(state?[arg(0,'state','enum','ENUM',state)]:[]),arg(lead,'address',family,'IPADDR'),arg(lead+1,'port','int','U16')]}))};
+};
+const withUnions=(lines:Parameters<typeof fixture>[0])=>{
+ const value=fixture(lines),doc=catalogOf(value);
+ doc.entries.push(unionEntry(['demo','peer','add'],101),unionEntry(['no','demo','peer','add'],102),unionEntry(['demo','bind'],103,['on','off']));
+ doc.policy.inverse_rules.push({source_prefix:'/commands/demo/peer',inverse_prefix:'/commands/no/demo/peer'});
+ return value;
+};
+test('an address union under one signature reference is no enum alternative: the declared prefix inverse still applies',()=>{
+ assert.deepEqual(obligations(withUnions(['demo peer add 192.0.2.74 80',cleanup('no demo peer add 192.0.2.74 80')])),[]);
+ assert.deepEqual(obligations(withUnions(['demo peer add 2001:db8::74 80',cleanup('no demo peer add 2001:db8::74 80')])),[]);
+ const changed=obligations(withUnions(['demo peer add 192.0.2.74 80',cleanup('no demo peer add 192.0.2.75 80')]));
+ assert.ok(changed.some(gap=>gap.verdict==='refute'),JSON.stringify(changed));
+ const missing=obligations(withUnions(['demo peer add 192.0.2.74 80']));
+ assert.ok(missing.some(gap=>gap.verdict==='refute'&&gap.obligation?.inverse_path==='/commands/no/demo/peer/add'),JSON.stringify(missing));
+});
+test('a declared enum pair still inverts a signature that an address union expands',()=>{
+ assert.deepEqual(obligations(withUnions(['demo bind on 192.0.2.74 80',cleanup('demo bind off 192.0.2.74 80')])),[]);
+ const repeated=obligations(withUnions(['demo bind on 192.0.2.74 80',cleanup('demo bind on 192.0.2.74 80')]));
+ assert.ok(repeated.some(gap=>gap.verdict==='refute'&&gap.message.includes('声明的枚举互逆')),JSON.stringify(repeated));
+});
+test('expansions of one signature that disagree on a paired enum stay ambiguous',()=>{
+ const value=withUnions(['demo bind on 192.0.2.74 80',cleanup('demo bind off 192.0.2.74 80')]);
+ const bind=catalogOf(value).entries.find(entry=>entry.words.join(' ')==='demo bind')!;
+ bind.signatures[1].params[0].values=['on','off','auto'];
+ assert.ok(obligations(value).some(gap=>gap.verdict==='unknown'));
+});

@@ -1,4 +1,4 @@
-# case-compile 3.8.3
+# case-compile 3.8.6
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -209,6 +209,10 @@ The default trigger types are the package's closed router/client/server set. A p
 `trigger_types`; an omitted field uses the default, while an explicit empty array declares no trigger types. Types
 outside the package's closed trigger set are rejected rather than silently filtered. The reachability rules still
 use the frozen bed interfaces and declared capability, not keyword inference or an observed connectivity claim.
+
+### 联合类型参数与声明的互逆对（3.8.6）
+
+命令树里的联合类型参数（例如 IPADDR 是 IPv4 或 IPv6）由产品包生成器发布成同一签名引用下的几个目录签名（编号 k.1、k.2），CommandIdentity 的签名引用仍是这一个。互逆对按参数位置跨这些展开逐一核对：没有哪个展开在该位置声明含这对值的枚举，该位置就不是互逆备选，命令照常走声明的前缀逆规则；每个展开都在该位置声明同一个枚举，才换成配对值；展开在这样的位置不一致，仍记未知。3.8.5 及以前把同一引用下参数不同的展开一律当作歧义，带地址参数的配置命令即使没有枚举也停在“声明的枚举互逆不能在同一签名中得到唯一完整身份”（issue #56，验收场景 28）。
 
 ## 块模型（R5 B1，先声明后实现）
 
