@@ -42,45 +42,45 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
  const ordinal=(pointer:string)=>Number(pointer.split('/')[2]);actual.sort((a,b)=>ordinal(a.pointer)-ordinal(b.pointer));
  // A signature whose enum alternatives the product declared as inverse pairs (on/off and the like): the inverse of a
  // value is the paired value of the SAME signature — decided on the locked tree's declared enum members, never by
- // matching free text. Each configured operation may carry at most one such parameter; anything else keeps the
- // prefix rules.
- const alternativeInverse=(identity:CommandIdentity):CommandIdentity|null=>{
+ // matching free text. Multiple inverse positions or a non-unique target stay unknown; only an absent enum rule
+ // falls back to the declared prefix rules.
+ const alternativeInverses=(identity:CommandIdentity,received:CommandIdentity|undefined):{identities:CommandIdentity[];ambiguous:boolean}=>{
   const pairs=policy.inverse_alternatives??[];
-  if(!pairs.length)return null;
-  const entry=native.find(definition=>definition.path===identity.path);
-  if(entry){
-   // Same-signature enum alternatives (demo feature on/off as one parameter): the inverse swaps the paired value.
-   let found:CommandIdentity|null=null;
-   for(const parameter of identity.parameters){
-    const alternatives=entry.signatures.flatMap(signature=>signature.params).find(param=>param.type==='enum'&&Array.isArray(param.values)&&param.values.includes(parameter.raw));
-    if(!alternatives||!Array.isArray(alternatives.values))continue;
-    const pair=pairs.find(([a,b])=>(a===parameter.raw||b===parameter.raw)&&(alternatives.values as string[]).includes(a)&&(alternatives.values as string[]).includes(b));
-    if(!pair)continue;
-    const swapped=pair[1]===parameter.raw?pair[0]:pair[1];
-    if(!(alternatives.values as string[]).includes(swapped))continue;
-    const words=identity.path.split('/').slice(2).map(decodeURIComponent);
-    const line=[...words,...identity.parameters.map(other=>other===parameter?swapped:other.raw)].join(' ');
-    const inverse=identityOf(commandIdentity(grammar,line));
-    if(inverse&&inverse.path===identity.path&&inverse.signature===identity.signature&&found!==null&&identityKey(found)!==identityKey(inverse))return null; // ambiguous: two invertible parameters
-    if(inverse&&inverse.path===identity.path&&inverse.signature===identity.signature)found=inverse;
-   }
-   if(found!==null)return found;
+  if(!pairs.length)return {identities:[],ambiguous:false};
+  // A union argument type (an address of either family, say) publishes one native argument list as several catalog
+  // signatures under the same reference, so each supplied position is read across all of them: where none declares an
+  // enum holding a declared pair there is no alternative, and a pair is used only where every one declares that enum.
+  const signatures=native.filter(definition=>definition.path===identity.path).flatMap(definition=>definition.signatures).filter(signature=>signature.reference===identity.signature);
+  if(!signatures.length)return {identities:[],ambiguous:true};
+  const inverses=new Map<string,CommandIdentity>();let unrepresentable=false;
+  for(const parameter of identity.parameters){
+   if(parameter.parsed.kind!=='text')continue;
+   const value=parameter.parsed.value,declared=signatures.map(signature=>signature.params[parameter.position]);
+   const pairIn=(param:(typeof declared)[number])=>param?.type==='enum'&&Array.isArray(param.values)?pairs.find(([a,b])=>(a===value||b===value)&&param.values!.includes(a)&&param.values!.includes(b)):undefined;
+   if(!declared.some(pairIn))continue;
+   const pair=pairIn(declared[0]);
+   if(!pair||declared.some(param=>JSON.stringify(param)!==JSON.stringify(declared[0]))){unrepresentable=true;continue;}
+   const swapped=pair[0]===value?pair[1]:pair[0];
+   const supplied=received?.parameters.find(p=>p.position===parameter.position);
+   const tokens=commandTokens(swapped);
+   const quoted='\"'+swapped.replaceAll('\\','\\\\').replaceAll('\"','\\\"')+'\"';
+   const raw=supplied?.parsed.kind==='text'&&supplied.parsed.value===swapped?supplied.raw:tokens?.length===1&&tokens[0].value===swapped?swapped:quoted;
+   const words=identity.path.split('/').slice(2).map(decodeURIComponent);
+   const line=[...words,...identity.parameters.map(other=>{if(other===parameter)return raw;const same=received?.parameters.find(p=>p.position===other.position&&JSON.stringify(p.parsed)===JSON.stringify(other.parsed));return same?.raw??other.raw;})].join(' ');
+   const inverse=identityOf(commandIdentity(grammar,line));
+   if(inverse&&inverse.path===identity.path&&inverse.signature===identity.signature)inverses.set(identityKey(inverse),inverse);else unrepresentable=true;
   }
-  // Sibling leaf paths (demo feature on and demo feature off as two leaves of one parent): the leaf's last segment is
-  // a declared pair member and the sibling leaf of the paired member exists on the locked tree; the inverse is that
-  // sibling with the same bound parameters. No word lists or text matching — exact last-segment equality only.
-  const segments=identity.path.split('/');
-  const leaf=decodeURIComponent(segments.at(-1)!);
+  if(inverses.size||unrepresentable)return {identities:[...inverses.values()],ambiguous:unrepresentable||inverses.size>1};
+  // Only complete sibling paths of the same parent can use the leaf form of a declared pair.
+  const segments=identity.path.split('/'),leaf=decodeURIComponent(segments.at(-1)!);
   const pair=pairs.find(([a,b])=>a===leaf||b===leaf);
-  if(!pair)return null;
-  const sibling=pair[1]===leaf?pair[0]:pair[1];
-  const parent=segments.slice(0,-1).join('/');
-  const siblingPath=parent+'/'+encodeURIComponent(sibling);
-  if(!native.some(definition=>definition.path===siblingPath))return null;
-  const words=siblingPath.split('/').slice(2).map(decodeURIComponent);
-  const line=[...words,...identity.parameters.map(parameter=>parameter.raw)].join(' ');
+  if(!pair)return {identities:[],ambiguous:false};
+  const sibling=pair[0]===leaf?pair[1]:pair[0];
+  const siblingPath=segments.slice(0,-1).join('/')+'/'+encodeURIComponent(sibling);
+  if(!native.some(definition=>definition.path===siblingPath))return {identities:[],ambiguous:false};
+  const line=[...siblingPath.split('/').slice(2).map(decodeURIComponent),...identity.parameters.map(parameter=>parameter.raw)].join(' ');
   const inverse=identityOf(commandIdentity(grammar,line));
-  return inverse&&inverse.path===siblingPath?inverse:null;
+  return inverse&&inverse.path===siblingPath?{identities:[inverse],ambiguous:false}:{identities:[],ambiguous:true};
  };
  configured.forEach((operation,index)=>{
   const identity=operation.identity!;
@@ -90,8 +90,10 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
    if(step.restore_for!==configOrdinal||step.object!==operation.object||!target||target.tree_root!==identity.tree_root)note(operation.pointer,'缺同设备、逆序且绑定该配置的捕获恢复守卫','refute',{cleanup_for:operation.pointer,missing_count:1});
    return;
   }
-  const alternative=alternativeInverse(identity);
-  if(alternative!==null){
+  const alternatives=alternativeInverses(identity,received?.identity??undefined);
+  if(alternatives.ambiguous){note(operation.pointer,'声明的枚举互逆不能在同一签名中得到唯一完整身份；下一步由产品包作者修正互逆声明或命令树后重核','unknown');return;}
+  const alternative=alternatives.identities[0];
+  if(alternative!==undefined){
    if(!received||received.object!==operation.object||identityKey(received.identity!)!==identityKey(alternative))note(operation.pointer,`配置命令 ${identity.path} 缺同设备、逆序的清理操作（声明的枚举互逆：${commandLine(alternative)}）`,'refute',{cleanup_for:operation.pointer,inverse:alternative,missing_count:1});
    return;
   }

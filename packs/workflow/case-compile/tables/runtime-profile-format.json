@@ -37,5 +37,5 @@
     "checkpoint_count": "由执行器从检查点 I 列提供的次数，不能冒充 executor_return 或由 G 参数补默认",
     "captured_restore": "仅供已声明的捕获还原守卫；运行时完整解析并核角色与效果后才可发送"
   },
-  "trigger_types_basis": "触发能力的设备类型闭集：台架清单里这些类型的设备在其所在网段能做触发（执行器在这些设备上有可用的主机 shell 座位）；server 默认在闭集里。部署可用 runtime-profile@1 的 trigger_types 字段按台架实际座位收窄（仍须是清单设备类型的子集）"
+  "trigger_types_basis": "包默认触发类型为 router/client/server；runtime-profile@1 可按实际主机 shell 座位收窄到该闭集的子集。省略字段用默认值，显式空数组表示没有触发类型。"
 }

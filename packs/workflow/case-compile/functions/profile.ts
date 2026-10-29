@@ -41,7 +41,7 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   if (value.schema !== FORMAT.profile_schema) issue('/schema', '不是 runtime-profile@1');
   if (typeof value.synthetic !== 'boolean') issue('/synthetic', '没有明确的 synthetic 布尔声明');
   if (value.trigger_types !== undefined) {
-    if (!Array.isArray(value.trigger_types) || value.trigger_types.some((type) => typeof type !== 'string' || !FORMAT.manifest_device_types.includes(type)) || new Set(value.trigger_types).size !== (value.trigger_types as string[]).length) issue('/trigger_types', 'trigger_types 必须是无重复的清单设备类型子集');
+    if (!Array.isArray(value.trigger_types) || value.trigger_types.some((type) => typeof type !== 'string' || !FORMAT.trigger_types.includes(type)) || new Set(value.trigger_types).size !== (value.trigger_types as string[]).length) issue('/trigger_types', 'trigger_types 必须是无重复的包声明触发类型子集；显式空数组表示没有触发类型');
   }
   const runtime = isRecord(value.runtime) ? value.runtime : {};
   if (runtime.minimum_version !== contract.runtimeVersion) issue('/runtime/minimum_version', '运行时版本与合约不符');
