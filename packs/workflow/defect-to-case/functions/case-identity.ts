@@ -5,7 +5,7 @@ import COMMAND from '../tables/command-identity.schema.json' with {type:'json'};
 import EXPECTED from '../tables/expected-quote-identity.schema.json' with {type:'json'};
 import POLICY from '../tables/case-structure-rules.json' with {type:'json'};
 import type {CommandIdentity,ExpectedQuoteIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
-import type {CatalogEntry} from '../../../../contracts/src/tables.ts';
+import type {CatalogEntry,CatalogSignature} from '../../../../contracts/src/tables.ts';
 const Command=fromJSONSchema(COMMAND as Parameters<typeof fromJSONSchema>[0]),Expected=fromJSONSchema(EXPECTED as Parameters<typeof fromJSONSchema>[0]);
 const object=(v:unknown):v is Record<string,unknown>=>typeof v==='object'&&v!==null&&!Array.isArray(v);
 const canonical=(v:unknown):unknown=>Array.isArray(v)?v.map(canonical):object(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonical(v[k])])):v;
@@ -20,18 +20,29 @@ export function commandIdentity(value:unknown,catalog?:CatalogEntry[]):CommandId
   else if(type==='ip_or_hostname'){if(parsed.kind==='address'){if(parsed.value.kind!=='ipv4'&&parsed.value.kind!=='ipv6'||parsed.value.value!==raw)return null;}else if(parsed.kind!=='text'||parsed.value!==raw)return null;}
   else if(!type||parsed.kind!=='text'||parsed.value!==raw)return null;
  }
- if(catalog){const entry=catalog.find(e=>e.reference.startsWith('tree:')&&e.reference.slice(69).split('@')[0]===i.path);const signature=entry?.signatures.find(s=>s.reference===i.signature);if(!signature)return null;
-  if(signature.params.some((p,position)=>p.type===undefined||p.unchecked_constraints?.length||!p.native_type||p.optional!==true&&!i.parameters.some(v=>v.position===position)))return null;
-  for(const p of i.parameters){const declared=signature.params[p.position];if(!declared?.native_type||p.name!==declared.name||p.type.catalog_type!==declared.type||p.type.name!==declared.native_type.name||p.type.declaration!==declared.native_type.declaration||p.type.grammar!==declared.native_type.grammar)return null;
-   const value=argument(p.raw)!,t=declared.type;
-   if((t==='int'||t==='port')&&(declared.minimum!==undefined&&Number(value)<declared.minimum||declared.maximum!==undefined&&Number(value)>declared.maximum||t==='port'&&(Number(value)<0||Number(value)>65535)))return null;
-   if(t==='enum'&&!declared.values?.includes(value)||t==='keyword'&&value!==(declared.keyword??declared.name))return null;
-   if(declared.minLength!==undefined&&[...value].length<declared.minLength||declared.maxLength!==undefined&&[...value].length>declared.maxLength)return null;
-   if(t==='mask'&&!/^1*0*$/.test(value.split('.').map(v=>Number(v).toString(2).padStart(8,'0')).join('')))return null;
-   if(t==='hostname'||t==='ip_or_hostname'&&p.parsed.kind==='text'){const host=value.endsWith('.')?value.slice(0,-1):value;if(!host.length||host.length>253||!host.split('.').every(v=>/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(v)))return null;}
-  }
+ if(catalog){const entry=catalog.find(e=>e.reference.startsWith('tree:')&&e.reference.slice(69).split('@')[0]===i.path);
+  // A union argument type (an address of either family, say) publishes one native argument list as several catalog
+  // signatures under the same reference, one per alternative, and the identity names that shared reference. They must
+  // agree on everything but each argument's typed alternative (count, names, native types, optional flags); the identity
+  // then holds when it is complete under one of them. Expansions that disagree leave it unresolved.
+  const signatures=entry?.signatures.filter(s=>s.reference===i.signature)??[],shape=(s:CatalogSignature)=>JSON.stringify(canonical(s.params.map(p=>[p.name,p.native_type??null,p.optional===true])));
+  if(!signatures.length||signatures.some(s=>shape(s)!==shape(signatures[0]))||!signatures.some(s=>complete(i,s)))return null;
  }
  return i;
+}
+/** The identity under one catalog signature: every parameter typed and checked, every required one supplied, and every
+ * supplied argument within its declared type. */
+function complete(i:CommandIdentity,signature:CatalogSignature):boolean {
+ if(signature.params.some((p,position)=>p.type===undefined||p.unchecked_constraints?.length||!p.native_type||p.optional!==true&&!i.parameters.some(v=>v.position===position)))return false;
+ for(const p of i.parameters){const declared=signature.params[p.position];if(!declared?.native_type||p.name!==declared.name||p.type.catalog_type!==declared.type||p.type.name!==declared.native_type.name||p.type.declaration!==declared.native_type.declaration||p.type.grammar!==declared.native_type.grammar)return false;
+  const value=argument(p.raw)!,t=declared.type;
+  if((t==='int'||t==='port')&&(declared.minimum!==undefined&&Number(value)<declared.minimum||declared.maximum!==undefined&&Number(value)>declared.maximum||t==='port'&&(Number(value)<0||Number(value)>65535)))return false;
+  if(t==='enum'&&!declared.values?.includes(value)||t==='keyword'&&value!==(declared.keyword??declared.name))return false;
+  if(declared.minLength!==undefined&&[...value].length<declared.minLength||declared.maxLength!==undefined&&[...value].length>declared.maxLength)return false;
+  if(t==='mask'&&!/^1*0*$/.test(value.split('.').map(v=>Number(v).toString(2).padStart(8,'0')).join('')))return false;
+  if(t==='hostname'||t==='ip_or_hostname'&&p.parsed.kind==='text'){const host=value.endsWith('.')?value.slice(0,-1):value;if(!host.length||host.length>253||!host.split('.').every(v=>/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(v)))return false;}
+ }
+ return true;
 }
 export function expectedIdentity(value:unknown):ExpectedQuoteIdentity|null {const r=Expected.safeParse(value);return r.success?r.data as ExpectedQuoteIdentity:null;}
 export function structure(value:unknown,catalog?:CatalogEntry[]):{key:string;commands:CommandIdentity[];expected:Array<{after:number;quote:ExpectedQuoteIdentity}>}|null {

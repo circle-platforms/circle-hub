@@ -15,7 +15,7 @@
 | `tables/` | 检查表定义：`commands.json`（`catalog@1` 解释器表）与 `quotes.json`（`quote@1` 解释器表） |
 | `samples/` | 18 个样例（`pack-sample@1`，positive 与 negative 各 9 个），覆盖九项检查 |
 | `examples/` | 合成示例：`start-run.json`、`submission.json` 与 `submit-result.json` |
-| `pack.json` | 任务包清单（`defect-to-case@1.6.20`，由 pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
+| `pack.json` | 任务包清单（`defect-to-case@1.6.22`，由 pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
 
 非任务包发布文件：`api.ts`（外部包与工具接口）、`pack-files.ts`（打包与签名工具）、`README.md`、测试文件（`*.test.ts`）与测试辅助目录（`testing/`）。
 
@@ -173,3 +173,9 @@ R7 新规则：发布状态只取 release-notes@2 JSON 的显式 product/build/d
 缺 release-notes@2 原始 status 不再作为整个构建的 producer incomplete。结构身份可核对的缺陷保留原文引用，status:null、declaration_status:undeclared，并带 missing/next_action；缺身份另记 identity_declaration_status:undeclared，不能从正文数字、标题、标记或文件名猜编号和 fixed/known。HTML 仅从解析后的明确 tracker URL 结构取身份，不从锚文本猜状态。
 
 命令树、手册等独立来源仍照常成根；未声明条目不被追溯状态过滤静默删掉，依赖“已修复”的判断保持未知并请求来源维护者补结构状态后重产。缺陷转用例单列 fixed_status 要求项，其他检查继续独立核对。历史根不改写，本版验证只使用合成 JSON/HTML、临时 PostgreSQL 和脚本化模型，不重跑真实同步。
+
+## 联合类型参数的结构身份（1.6.22）
+
+命令树里的联合类型参数（例如 IPADDR 是 IPv4 或 IPv6）由产品包生成器发布成同一签名引用下的几个目录签名（编号 k.1、k.2），草稿和索引用例的 CommandIdentity 记的仍是这一个签名引用。结构身份按这个引用下的全部展开核对：各展开除了每个参数的类型备选，其余必须一致（参数个数、名称、原生类型、可省略标记）；一致时，身份只要在其中一个展开下完整就成立，即每个参数都有类型且约束已核、必填参数都给了、每个实参都落在所声明的类型内。不会拿一个展开的地址和另一个展开的端口拼出身份。展开之间不一致时身份不成立，查重记未知，不再默认取第一个展开。
+
+1.6.20 及以前只拿第一个展开核对，排在后面的备选永远对不上（IPv6 地址；IPMASK 先列点分掩码时的前缀长度）：带这种参数的草稿查重停在未知；索引里这样的用例被算作“缺完整作者结构声明”，同一视图下的其他草稿，只要没查出与别的用例重复，也跟着停在未知。`functions/union-identity.test.ts` 用合成的双族地址命令复现并覆盖这几种情况。公开仓库 main 上同一修正是 1.6.21（公开提交 c17a1566），与本线改动合并后的公开快照是 1.6.22；本线直接采用 1.6.22。
