@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { Worker } from 'node:worker_threads';
-import { createLinuxResidentMeasure, createResidentTreeMeasure, createResidentWatch, residentFailure, residentSizes, residentTreeSizes, RESIDENT_EXITED, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
+import { createLinuxResidentMeasure, createResidentTreeMeasure, createResidentVerdict, createResidentWatch, residentFailure, residentSizes, residentTreeSizes, RESIDENT_EXITED, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
 import { SandboxError } from './errors.ts';
 import { runCheck } from '../check.ts';
 
@@ -167,6 +167,22 @@ test('an unobserved tree becomes an unknown with a missing fact and next step, n
   });
   assert.equal(outcome.verdict, 'unknown'); assert.match(outcome.missing!, /内存观测/); assert.match(outcome.missing!, /下一步/);
   assert.equal(outcome.data?.sandbox, 'SANDBOX_UNAVAILABLE');
+});
+
+test('a round that cannot see the tree ends the call only after a second without a complete measurement (#96)', () => {
+  let clock = 0;
+  const verdict = createResidentVerdict(256, 1, 1_000, () => clock);
+  // A starting child whose thread set is still changing: unobservable rounds within the grace are retried by the next.
+  for (clock = 100; clock < 1_000; clock += 100) assert.equal(verdict(null), undefined, `${clock} ms`);
+  assert.equal(verdict(100), undefined, 'a complete measurement at 1000 ms');
+  // The grace runs from the last complete measurement, not from the start of the call.
+  for (clock = 1_100; clock < 2_000; clock += 100) assert.equal(verdict(null), undefined, `${clock} ms`);
+  clock = 2_000;
+  assert.equal(verdict(null)?.code, 'SANDBOX_UNAVAILABLE', 'a tree unobservable for a whole second still fails closed');
+  // A measured overrun is never deferred, also inside the grace.
+  const fresh = createResidentVerdict(256, 1, 1_000, () => 0);
+  assert.deepEqual(fresh(257), { code: 'SANDBOX_VIOLATION', detail: { limit: 'memory', residentBytes: 257, memoryMb: 1 } });
+  assert.equal(fresh(RESIDENT_EXITED), undefined);
 });
 
 test('Linux resident accounting finds a child started by a non-leader thread', { skip: process.platform !== 'linux', timeout: 10_000 }, async () => {
