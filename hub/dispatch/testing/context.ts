@@ -78,3 +78,18 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
     close: () => (closing ??= (async () => { await server.close(); await db.end(); await kit.close(); })()) };
   } catch(error) { await endpoint?.close().catch(()=>{});await db.end().catch(()=>{});await kit.close();throw error; }
 }
+
+/**
+ * Resolves once nobody holds the job's observation lock, the one dispatch and resume take, failing after `ms`. A worker
+ * that exits or is killed while dispatching held that lock on its own database session, which PostgreSQL frees only once
+ * it notices the connection is gone; until then resume rightly reports the job as observed elsewhere.
+ */
+export async function observationLockFree(c: { kit: Awaited<ReturnType<typeof setup>>['kit'] }, job: string, ms = 15000): Promise<void> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const unlock = await c.kit.store.tryHold(`dispatch.observation:${job}`);
+    if (unlock) { await unlock(); return; }
+    if (Date.now() > deadline) throw new Error(`the observation lock of ${job} was still held ${ms} ms after its holder ended`);
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+}

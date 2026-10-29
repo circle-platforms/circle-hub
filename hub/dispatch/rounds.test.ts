@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
-import { setup } from './testing/context.ts';
+import { fileURLToPath } from 'node:url';
+import { observationLockFree, setup } from './testing/context.ts';
 import type { Aggregation } from '../../contracts/generated/vocabulary.ts';
 
 type Fixture = Awaited<ReturnType<typeof setup>>;
@@ -147,7 +148,7 @@ test('an uncertified result ownership premise makes every round no_verdict', { t
 test('resume reconciles the started round and a new dispatch continues at the next one', { timeout: 60000 }, async t => {
   const c = await setup(); t.after(() => c.close());
   install(c, policy(3, 'all'));
-  const child = spawn(process.execPath, [new URL('./testing/worker.ts', import.meta.url).pathname], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./testing/worker.ts', import.meta.url))], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
   let output = ''; child.stdout!.on('data', chunk => { output += chunk; });
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
   const ready = new Promise<void>(resolve => child.once('message', () => resolve()));
@@ -161,6 +162,7 @@ test('resume reconciles the started round and a new dispatch continues at the ne
   const first = (await intents(c)).find(row => row.body.detail.round === 1);
   assert.ok(first);
   assert.equal((await intents(c)).some(row => row.body.detail.round === 2), false);
+  await observationLockFree(c, String(first.body.detail.job));
   const resumed = await c.service.resume(c.admin, String(first.body.detail.job));
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
   assert.equal((await c.service.journal.events(String(first.body.detail.job))).some(event => event.body.detail.phase === 'intent' && event.body.detail.round === 2), false);
