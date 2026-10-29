@@ -189,14 +189,13 @@ export async function submitProposals(session: string, proposalPath: string, pro
   })).values()];
   const clientKey = sha256(canonical({ schema: GENERATED.proposal_schema, session, subject, product, build: build ?? null, originals }));
   const started = await allowed(async () => {
-    checkTargetTokens(rows, await validateTokenFile(settings.token_file));
-    return hub.call('start_run', {
+    return hub.callChecked('start_run', {
       pack: PACK,
       product,
       ...(build === undefined ? {} : { build }),
       inputs: { subject: { reference: subject }, originals },
       client_key: clientKey,
-    });
+    }, token => checkTargetTokens(rows, token));
   });
   need(isRecord(started.run), 'invalid_run', 'Hub 没有返回回注运行');
   const run = started.run;
@@ -224,10 +223,7 @@ export async function submitProposals(session: string, proposalPath: string, pro
       },
     })),
   };
-  const result = await allowed(async () => {
-    checkTargetTokens(rows, await validateTokenFile(settings.token_file));
-    return hub.call('submit_result', submission);
-  });
+  const result = await allowed(() => hub.callChecked('submit_result', submission, token => checkTargetTokens(rows, token)));
   await appendReceipt(session, result);
   return { result, texts: hub.lastText, submission, run };
 }

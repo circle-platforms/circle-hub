@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { writeFileSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Submission } from '../../../../contracts/src/submission.ts';
@@ -7,6 +8,7 @@ import { ContributionInput } from '../../../../contracts/src/contributions.ts';
 import { KnowledgeStructureSchema } from '../../../../contracts/src/feeding.ts';
 import { SESSION, ROOT, PACK_DIGEST, TOKEN, scratch, fakeHub, enable, hook, skill } from './operation-support.ts';
 import { scanWithMatches } from '../tools/operation-capture/lib/credentials.ts';
+import { HubClient } from '../tools/operation-capture/lib/hub.ts';
 
 test('observation procedure and pitfall submissions use the actual B3 contracts and run lock without model versions', async t => {
   const local = await scratch(t);
@@ -184,6 +186,23 @@ test('a target containing the current token is refused while a case variant is n
   assert.equal(hub.submissions.length, 0);
   assert.equal((await submit(TOKEN.toUpperCase())).code, 0);
   assert.equal(hub.submissions.length, 1);
+});
+
+test('a checked call carries exactly the token its check saw, even when the token rotates between them', async t => {
+  const local = await scratch(t);
+  const rotated = 'FictCaptureTokenRotated77';
+  const hub = await fakeHub(t, { tokens: [TOKEN, rotated] });
+  const client = new HubClient(hub.url, local.tokenFile, SESSION);
+  let seen = '';
+  // The check runs between the token read and the request: the window a rotation used to slip through (round-four review, item 4).
+  await client.callChecked('start_run', { pack: 'knowledge-contribution', product: 'ORBIT', inputs: {} }, token => {
+    seen = token;
+    writeFileSync(local.tokenFile, `${rotated}\n`, { mode: 0o600 });
+  });
+  assert.equal(seen, TOKEN);
+  const sent = hub.requests.filter(row => row.body.method === 'tools/call' && row.body.params.name === 'start_run');
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.headers.authorization, `Bearer ${TOKEN}`, 'the request uses the token the check saw, not the one rotated in after it');
 });
 
 test('a token rotated after start_run is checked again before submit_result', async t => {

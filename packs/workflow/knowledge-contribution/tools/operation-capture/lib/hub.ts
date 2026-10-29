@@ -95,6 +95,21 @@ export class HubClient {
     return value;
   }
 
+  /**
+   * One read of the token for both the check and the request: `check` sees exactly the token the request will carry, so a
+   * rotation between the two cannot send a field that holds the token it authenticates with (round-four review, item 4).
+   */
+  async callChecked(name: string, args: unknown, check: (token: string) => void): Promise<Record<string, unknown>> {
+    const token = await validateTokenFile(this.tokenFile);
+    check(token);
+    this.tokenSnapshot = token;
+    try {
+      return await this.call(name, args);
+    } finally {
+      this.tokenSnapshot = null;
+    }
+  }
+
   async upload(bytes: Uint8Array, sequence: number, capturedAt?: string): Promise<{reference:string;artifact:string}> {
     if (capturedAt !== undefined) need(new Date(capturedAt).toISOString() === capturedAt, 'invalid_capture_time', '采集时刻格式不对');
     const args = {
