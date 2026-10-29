@@ -286,7 +286,9 @@ test('native LPAC denies file create overwrite delete rename and directory creat
 });
 
 test('native LPAC denies starting another Node process without Node permission flags', { skip: !native, timeout: 20_000 }, async () => {
-  const source = `const cp=require('node:child_process');const result=cp.spawnSync(process.execPath,['-e','process.exit(0)']);process.exit(result.error&&['EACCES','EPERM'].includes(result.error.code)?0:2);`;
+  // stdio 'ignore' so the spawn reaches process creation: with the default pipes, libuv first creates a named pipe,
+  // which LPAC denies, and libuv retries that indefinitely (issue 73), so the old probe measured libuv, not the denial.
+  const source = `const cp=require('node:child_process');const result=cp.spawnSync(process.execPath,['-e','process.exit(0)'],{stdio:'ignore'});process.exit(result.error&&['EACCES','EPERM'].includes(result.error.code)?0:2);`;
   assert.equal(await runWindowsIsolationProbe(source), 0);
 });
 
