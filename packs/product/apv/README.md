@@ -478,7 +478,7 @@ sandbox: 12 chapters of 1200 short paragraphs each with an attribute reference a
 paragraphs, 358 ms in one warm host process, 19575674 bytes of output JSON. Both runs stay far inside the producer
 profile; neither is an SLA.
 
-The tests run with `node --test --test-concurrency=2 "packs/product/apv/functions/adoc/*.test.ts"`; concurrency is capped at 2 on this host. A cold process gives
+Run `node tools/run-unit-tests.ts files packs/product/apv/functions/adoc/*.test.ts` to schedule the tests according to available CPU and load. A cold process gives
 the same bytes under a different Date and Math.random, and the same sandbox still refuses the network, file writes and
 child processes. Where the environment gives no OS network isolation the sandbox evidence is skipped explicitly instead of
 being weakened into a pass. Every check so far uses synthetic originals: no real manual and no knowledge root has been

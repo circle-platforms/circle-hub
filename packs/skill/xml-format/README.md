@@ -26,4 +26,4 @@ XML 的新包产出可将相邻路径按共同前缀编码，引文的选择器�
 
 一次 macOS 合成测量中，三种形状的输出分别为 20,050,017、18,676,564、12,185,282 字节；沙箱 RSS 采样峰分别为 325,910,528、336,543,744、169,787,392 字节；完整流程分别为 1495、1131、712 毫秒。三项在同一测试进程顺序执行，父子 RSS 合计采样峰分别为 741,130,240、951,697,408、938,934,272 字节，后两项可能包含 V8 留存的前一项内存。结果只证明这些合成形状，不能外推到真实原件。
 
-运行 `node --test --test-concurrency=2 packs/skill/xml-format/functions/resource.test.ts` 复测。测试允许没有 OS 隔离的合成环境执行，因此设 `requireOsIsolation: false`；macOS 可用 `sandbox-exec` 时包装器仍启用它，测试记录 `osIsolation` 以便确认本机结果。旧地址 `x/` 与 `i/` 不变。
+运行 `node tools/run-unit-tests.ts files packs/skill/xml-format/functions/resource.test.ts` 复测；调度器按核数和 CPU 负载调整并发。测试允许没有 OS 隔离的合成环境执行，因此设 `requireOsIsolation: false`；macOS 可用 `sandbox-exec` 时包装器仍启用它，测试记录 `osIsolation` 以便确认本机结果。旧地址 `x/` 与 `i/` 不变。

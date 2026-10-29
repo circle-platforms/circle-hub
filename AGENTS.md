@@ -40,7 +40,9 @@ Inspect status and diffs and preserve other people's work; use isolated worktree
 
 ## Verification
 
-A package agent runs `npx tsc --noEmit` and its own tests, `node --test "<own paths>/**/*.test.ts"`, and reports errors of other packages that are mid-edit instead of fixing them. The integrator runs the whole set: `npm run typecheck`, `npm run verify:contracts`, `npm run test:unit`, `npm run test:acceptance`, `npm run verify:references`, `npm run test:references` (`npm test` runs the contracts check and the unit, docs, acceptance and reference tests; the docs checks are `npm run test:docs`).
+Owner decisions 80 and 83 supersede older per-task fixed-concurrency instructions. For routine changes use the workspace's affected-tests helper; run the whole set for broad contract, dependency, sandbox, port, record-structure or shared-fixture changes, before deployment and in public PR CI. `tools/run-unit-tests.ts` adapts workers to available cores, CPU use, memory and database capacity; timing-sensitive tests run alone. Do not weaken assertions or count skipped tests as passed. Report other packages' unrelated errors instead of silently changing them.
+
+The whole set is `npm run typecheck`, `npm run verify:contracts`, `npm run test:unit`, `npm run test:acceptance`, `npm run verify:references`, `npm run test:references` (`npm test` runs the contracts check and the unit, docs, acceptance and reference tests; the docs checks are `npm run test:docs`).
 
 `contracts/generated` is generated from `contracts/model.json`, `contracts/codes.json` and the shapes in `contracts/src`, and is never edited by hand. A model change goes through the integrator, and a new code is requested from the contracts owner. A package that changes the `contracts/src` file it owns (`pack.ts`, `knowledge.ts`, `resources.ts`, `tables.ts`) runs `npm run gen:contracts` and hands the regenerated files in with its change; the contracts owner reviews that generated diff (`contracts/README.md`). Run npm run verify:references and npm run test:references after changing provenance tooling or approved imports.
 
