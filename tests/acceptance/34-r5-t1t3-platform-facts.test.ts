@@ -229,5 +229,22 @@ describe('T2 平台事实端到端验收', () => {
       assert.ok(res.out.errors.some((e) => e.code === 'quality-board.no_cases'));
       assert.ok(res.text.includes('没有用例条目') || res.text.includes('确认这个构建的用例索引已经同步'));
     });
+
+    it('refuses a view id that lacks a required parameter at once, naming the parameter and the way to write it, before any view is built', async () => {
+      const res = await client.call('start_run', {
+        pack: 'quality-board',
+        inputs: {
+          facets: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case' },
+          placement: { external: 'knowledge:facets:apv:Rel_APV_10_6_1_57?kind=case&by=commands' },
+        },
+      });
+      assert.equal(res.out.call_result, 'error');
+      const refused = res.out.errors.find((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION' && e.path === '/inputs/facets');
+      assert.ok(refused, JSON.stringify(res.out.errors));
+      assert.match(refused.message, /要有参数 by/);
+      assert.match(refused.fix ?? '', /knowledge:<视图>:<产品>:<构建>/);
+      assert.ok(!res.out.errors.some((e) => e.code === 'SOURCE_UNAVAILABLE'), 'not the bare unavailable answer');
+      assert.ok(!res.out.errors.some((e) => e.code === 'quality-board.no_cases'), 'the other input was not built into a view after the mistake was known');
+    });
   });
 });
