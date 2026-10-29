@@ -62,6 +62,16 @@ describe('test jobs count what ran', () => {
     assert.ok(steps('docs').some((s) => s.includes('npx tsc --noEmit -p .github/checks')));
   });
 
+  it('no plain scalar holds a colon and a space, which YAML refuses (the whole workflow would then fail to start)', () => {
+    for (const workflow of [WORKFLOW, MACOS]) {
+      const refused = workflow.split('\n').filter((line) => {
+        const value = /^\s*(?:- )?[\w-]+: (?!["'|>])(.*)$/.exec(line)?.[1];
+        return value !== undefined && value.includes(': ');
+      });
+      assert.deepEqual(refused, []);
+    }
+  });
+
   it('no job reaches a secret', () => {
     assert.doesNotMatch(WORKFLOW, /secrets\./);
     assert.doesNotMatch(MACOS, /secrets\./);

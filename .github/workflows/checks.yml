@@ -187,7 +187,8 @@ jobs:
       # Fail here rather than let every guarded test skip quietly; the runner refuses a machine without isolation as well.
       - name: Require bubblewrap and AppArmor isolation
         id: ready
-        run: node --input-type=module -e "const m = await import('./hub/rules/api.ts'); if (!(await m.osIsolationAvailable())) { console.error('Linux isolation unavailable: ' + m.osIsolationFailure()); process.exit(1); }"
+        run: |
+          node --input-type=module -e "const m = await import('./hub/rules/api.ts'); if (!(await m.osIsolationAvailable())) { console.error('Linux isolation unavailable: ' + m.osIsolationFailure()); process.exit(1); }"
       - name: Run the ${{ matrix.suite }} tests that need the pack sandbox
         shell: bash
         run: node tools/run-guarded-tests.ts linux ${{ matrix.suite }} 2>&1 | tee "$RUNNER_TEMP/isolation.log"
