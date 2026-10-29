@@ -147,6 +147,15 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       const info = await registry.resolve(ref);
       return info === null || info.kind==='skill'&&!(await registry.installedSkills()).some(p=>p.info.digest===info.digest) ? null : load(info);
     },
+    async skillForTools(user: Principal, ref: string) {
+      const account = await registry.account(user);
+      const parsed = parsePackRef(ref);
+      if (account === null || parsed?.version == null || !(await registry.canUse(account.id, parsed.id))) return null;
+      const info = await registry.resolve(ref);
+      if (info === null || info.kind !== 'skill' || !(await registry.installedSkills()).some(p => p.info.digest === info.digest)) return null;
+      const opened = await registry.open(info.digest);
+      return opened === null ? null : { pack: opened.handle, manifest: structuredClone(info.manifest) };
+    },
     async absence(user: Principal, ref: string): Promise<WorkflowAbsence | null> {
       const account = await registry.account(user);
       if (account === null) return 'disabled';

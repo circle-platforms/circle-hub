@@ -4,9 +4,13 @@
 
 ## 发布、安装与依赖
 
-用 `node packs/skill/mindmap-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install mindmap-format@1.0.1` 安装；`pack uninstall mindmap-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
+用 `node packs/skill/mindmap-format/api.ts sign` 重签，`check` 检查；`stage <目录>` 导出仅含清单文件的发布目录。管理员以 `circle-hub pack publish <目录>` 发布，再 `circle-hub pack install mindmap-format@1.0.2` 安装；`pack uninstall mindmap-format` 停止新运行使用。发布新版本不会自动升级安装版本。技能包不赋予任何原件或产品知识的读取权限。
 
 工作包在 pack.json 声明 `dependencies: [{"pack":"mindmap-format"}]`，可附精确 `version`。管理员安装的版本必须满足声明，否则 start_run 在读取前拒绝，写出缺少的依赖和安装出口。新运行将可用的安装集合锁为 `skills: [{pack,version,digest}]`，因为输入解析器可能来自任一已安装能力；结果锁与主张有效条件包括这些摘要。已锁运行按自己的摘要读取，后续升级、卸载不改历史。安装是全局授权记录绑定包摘要，非用户分配。
+
+## 本地解析工具
+
+已获准读取的原件可用本包 `tools/parse-model.ts --source <原件> --out <新模型文件>` 在本地解析，生成原件摘要及同一 kityminder@1 解析器的模型。工具不联网、不打印原文，输出文件权限为 0600，不覆盖已有文件。模型可能包含原件内容，应保存在当前用户的私有工作目录；不把它写进仓库。再用 `tools/locate-quotes.ts` 在明确选定的节点里定位原文，得到原件字节跨度；它不判断用例归属或语义，结果须由 Hub 核验。这些文件只是准备输入，不是 Hub 的核验结果。
 
 ## 解析器迁移模板
 
