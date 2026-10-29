@@ -170,9 +170,11 @@ export function createWindowsRestrictedToken(koffi: {
     original = output.readBigUInt64LE();
     if (!valid(original)) throw new Error('Windows 当前进程令牌无效');
     output.fill(0);
-    // NULL SID has no intended grants. It is a restricting SID, not an empty DACL.
-    // Actual write denial still requires native behavioral validation of the derived token.
-    if (!sidFromString(Buffer.from('S-1-0-0\0', 'utf16le'), output)) throw new Error('Windows 限制 SID 创建失败');
+    // RESTRICTED (S-1-5-12) is the well-known SID that system objects grant to restricted code; a write needs a grant
+    // to it as well as the normal check. The NULL SID (no grants) was tried first: with an AppContainer every process,
+    // even one with no other mitigation, then failed DLL initialisation (0xC0000142, issue 73). AppContainer SIDs are
+    // rejected as restricting SIDs (87). Actual write denial still requires native behavioral validation.
+    if (!sidFromString(Buffer.from('S-1-5-12\0', 'utf16le'), output)) throw new Error('Windows 限制 SID 创建失败');
     sid = output.readBigUInt64LE();
     if (!valid(sid)) throw new Error('Windows 限制 SID 无效');
     const entry = Buffer.alloc(16); // SID_AND_ATTRIBUTES on both supported 64-bit ABIs.
@@ -283,6 +285,10 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
   const exitCode = kernel.func('int __stdcall GetExitCodeProcess(void *process, void *code)');
   const close = kernel.func('int __stdcall CloseHandle(void *handle)');
   const lastError = kernel.func('uint32_t __stdcall GetLastError()');
+  const createFile = kernel.func('void * __stdcall CreateFileW(void *name, uint32_t access, uint32_t share, void *security, uint32_t disposition, uint32_t flags, void *template)');
+  const localFree = kernel.func('void * __stdcall LocalFree(void *memory)');
+  // kernelbase is a KnownDLL; no caller-controlled path is consulted.
+  const deriveCapability = koffi.load('kernelbase.dll').func('int __stdcall DeriveCapabilitySidsFromName(void *name, void *groupSids, void *groupCount, void *sids, void *count)');
   const diagnostics = { executableExists: false, executableBinary: false, directoryExists: false };
   const failed = (stage: string, code = Number(lastError())): never => {
     throw windowsProbeFailure(stage, code, diagnostics);
@@ -305,6 +311,8 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
   let processHandle: bigint | undefined;
   let thread: bigint | undefined;
   let childToken: bigint | undefined;
+  let nul: bigint | undefined;
+  let capabilityArrays: { groups: bigint; groupCount: number; sids: bigint; count: number } | undefined;
   let job: { stop(): Promise<void> } | undefined;
   const restricted = createWindowsRestrictedToken(koffi);
   let launchFailure: unknown;
@@ -317,6 +325,25 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     profileCreated = true;
     sid = output.readBigUInt64LE();
     if (!valid(sid)) failed('包 SID');
+    // The single capability: registryRead. Zero-capability LPAC cannot read the Winsock catalog, so WSAStartup fails
+    // (10107) and Node aborts before running any code (issue 73). The capability grants registry reads only where a key's
+    // DACL grants it; it adds no network, file or device capability.
+    const groupsOut = Buffer.alloc(8), groupCountOut = Buffer.alloc(4), sidsOut = Buffer.alloc(8), countOut = Buffer.alloc(4);
+    if (!deriveCapability(w('registryRead'), groupsOut, groupCountOut, sidsOut, countOut)) failed('能力 SID 派生');
+    capabilityArrays = { groups: groupsOut.readBigUInt64LE(), groupCount: groupCountOut.readUInt32LE(), sids: sidsOut.readBigUInt64LE(), count: countOut.readUInt32LE() };
+    if (capabilityArrays.count !== 1 || !valid(capabilityArrays.sids)) failed('能力 SID 数量', -2);
+    const capabilityPointer = Buffer.alloc(8);
+    copy(capabilityPointer, capabilityArrays.sids, 8);
+    const registryRead = capabilityPointer.readBigUInt64LE();
+    if (!valid(registryRead)) failed('能力 SID', -2);
+    // Inheritable NUL device handle for stdin, stdout and stderr; it is the only handle the child inherits.
+    const inheritable = Buffer.alloc(24); // SECURITY_ATTRIBUTES, bInheritHandle = TRUE.
+    inheritable.writeUInt32LE(inheritable.length);
+    inheritable.writeUInt32LE(1, 16);
+    const nulHandle: unknown = createFile(w('\\\\.\\NUL'), 0xc0000000, 3, inheritable, 3, 0, null);
+    if (!valid(nulHandle)) return failed('NUL 打开');
+    nul = nulHandle;
+    const nulDevice: bigint = nulHandle;
     const size = Buffer.alloc(8);
     initialize(null, 4, 0, size);
     const bytes = Number(size.readBigUInt64LE());
@@ -324,16 +351,28 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     attributes = native(Buffer.alloc(bytes));
     if (!initialize(attributes, 4, 0, size)) failed('属性初始化');
     attributesInitialized = true;
-    const capabilities = Buffer.alloc(24); // SECURITY_CAPABILITIES, zero capabilities.
+    const capabilityList = Buffer.alloc(16); // One SID_AND_ATTRIBUTES, SE_GROUP_ENABLED.
+    capabilityList.writeBigUInt64LE(registryRead);
+    capabilityList.writeUInt32LE(4, 8);
+    const capabilities = Buffer.alloc(24); // SECURITY_CAPABILITIES with the single capability above.
     capabilities.writeBigUInt64LE(sid);
+    capabilities.writeBigUInt64LE(native(capabilityList), 8);
+    capabilities.writeUInt32LE(1, 16);
     const one = Buffer.alloc(4); one.writeUInt32LE(1);
-    const mitigation = Buffer.alloc(8); mitigation.writeBigUInt64LE(0x10000000n); // Win32k disabled.
-    for (const [kind, value] of [[0x20009, capabilities], [0x2000f, one], [0x2000e, one], [0x20007, mitigation]] as const) {
+    const handles = Buffer.alloc(8); handles.writeBigUInt64LE(nulDevice);
+    // No Win32k system-call lockdown: Node statically imports USER32, and under that mitigation node.exe (and whoami.exe)
+    // fail DLL initialisation (0xC0000142) even with no other restriction (issue 73). The handle list limits
+    // inheritance to the NUL handle.
+    for (const [kind, value] of [[0x20009, capabilities], [0x2000f, one], [0x2000e, one], [0x20002, handles]] as const) {
       const pointer = native(value);
       if (!update(attributes, 0, kind, pointer, value.length, null, null)) failed('属性设置');
     }
     const startup = Buffer.alloc(112); // STARTUPINFOEXW, x64/ARM64.
     startup.writeUInt32LE(startup.length);
+    startup.writeUInt32LE(0x100, 60); // STARTF_USESTDHANDLES
+    startup.writeBigUInt64LE(nulDevice, 80);
+    startup.writeBigUInt64LE(nulDevice, 88);
+    startup.writeBigUInt64LE(nulDevice, 96);
     startup.writeBigUInt64LE(attributes, 104);
     const info = Buffer.alloc(24);
     const getAttributes = kernel.func('uint32_t __stdcall GetFileAttributesW(void *path)');
@@ -344,10 +383,13 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     diagnostics.executableBinary = Boolean(getBinaryType(w(process.execPath), binary));
     if (!diagnostics.executableExists || !diagnostics.executableBinary || !diagnostics.directoryExists) failed('父侧路径预检');
     const command = w([process.execPath, '--no-addons', '--no-experimental-websocket', '-e', source].map(quoteWindowsArgument).join(' '));
-    // CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW.
-    // No inherited handles, no shell, no pack bytes, and only the allow-listed system and profile locations.
+    // CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | DETACHED_PROCESS.
+    // No console: with CREATE_NO_WINDOW the system must start a console host for the child, which the child-process
+    // restriction refuses, and the child failed DLL initialisation (0xC0000142, issue 73). Node needs valid standard
+    // handles when detached (it aborts otherwise), so all three are the NUL device.
+    // Only the NUL handle is inherited; no shell, no pack bytes, and only the allow-listed system and profile locations.
     const environment = windowsEnvironmentBlock(process.env);
-    if (!create(restricted.handle, w(process.execPath), command, null, null, 0, 0x08080404,
+    if (!create(restricted.handle, w(process.execPath), command, null, null, 1, 0x0008040c,
       environment, w(directory), startup, info)) failed('挂起创建');
     processHandle = info.readBigUInt64LE();
     thread = info.readBigUInt64LE(8);
@@ -390,7 +432,9 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     };
     // TokenIsAppContainer, TokenCapabilities (none) and TokenAppContainerSid.
     if (tokenInfo(childToken, 29).readUInt32LE() !== 1) failed('AppContainer 核验', -2);
-    if (tokenInfo(childToken, 30).readUInt32LE() !== 0) failed('能力列表核验', -2);
+    // TOKEN_GROUPS: exactly the registryRead capability, nothing else.
+    const capabilityGroups = tokenInfo(childToken, 30);
+    if (capabilityGroups.readUInt32LE() !== 1 || !equal(capabilityGroups.readBigUInt64LE(8), registryRead)) failed('能力列表核验', -2);
     if (!equal(tokenInfo(childToken, 31).readBigUInt64LE(), sid)) failed('包 SID 核验', -2);
     // Querying TokenIsLessPrivilegedAppContainer (46) and TokenChildProcessFlags (45) together with the classes
     // above failed with ERROR_INVALID_PARAMETER (87) on both Windows runners. Read both policies where the
@@ -440,9 +484,24 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     catch { cleanupFailures.push(windowsProbeFailure('Job 清理', -1, diagnostics)); }
     if (childToken !== undefined && valid(childToken)) cleanup('子令牌关闭', () => Boolean(close(childToken)));
     if (thread !== undefined && valid(thread)) cleanup('线程关闭', () => Boolean(close(thread)));
+    if (nul !== undefined && valid(nul)) cleanup('NUL 关闭', () => Boolean(close(nul)));
     if (processHandle !== undefined && valid(processHandle)) cleanup('进程关闭', () => Boolean(close(processHandle)));
     if (attributesInitialized) cleanup('属性删除', () => { deleteAttributes(attributes!); return true; });
     for (const pointer of allocations.reverse()) cleanup('内存释放', () => Boolean(release(heap, 0, pointer)));
+    if (capabilityArrays !== undefined) {
+      // DeriveCapabilitySidsFromName returns LocalAlloc'd SIDs and arrays.
+      const { groups, groupCount, sids, count } = capabilityArrays;
+      for (const [array, length] of [[groups, groupCount], [sids, count]] as const) {
+        if (!valid(array)) continue;
+        for (let index = 0; index < length && index < 64; index++) {
+          const entry = Buffer.alloc(8);
+          copy(entry, array + BigInt(index * 8), 8);
+          const pointer = entry.readBigUInt64LE();
+          if (valid(pointer)) cleanup('能力 SID 释放', () => { const result = localFree(pointer); return result === null || result === 0n; });
+        }
+        cleanup('能力数组释放', () => { const result = localFree(array); return result === null || result === 0n; });
+      }
+    }
     if (sid !== undefined && valid(sid)) cleanup('SID 释放', () => { const result = freeSid(sid); return result === null || result === 0n; });
     cleanup('受限令牌关闭', () => { restricted.close(); return true; });
     if (profileCreated) {
