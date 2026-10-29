@@ -150,8 +150,10 @@ catalogs, grounds and provenance.
     the production, by reference, decision 16), so records grow with the builds, not with their lists. A build whose base
     differs from its name is an alias and has no tree; aliases are followed to their final base (at most 8 hops, cycle
     safe, whatever line the base is on) before a root is looked up; names match exactly, else without case when only one
-    spelling exists. Roots are keyed by product and base build, and found by one indexed lookup per base (its newest
-    completed production; a few records read), never by reading every production. A build produced without a build
+    spelling exists. Roots are keyed by product and base build. Build-list reads first discover nonempty index keys in
+    batches of at most 16, with at most two batches in flight; each present key still uses the existing newest-completed
+    per-base reader. A failed batch falls back to those original reads, and no discovery result survives the call. This
+    avoids an individual empty lookup per unproduced base without reading every production. A build produced without a build
     record (not by a sync) gets one in the production's last transaction (`plan` and `sync` null), so every known build has
     a record. `builds()`, `resolveBuild()` and `RootInfo.build` carry no list roles. A build whose name or base does not fit
     the build index (well-formed, no NUL, at most 1000 UTF-8 bytes with the product), whose other text cannot be stored or
