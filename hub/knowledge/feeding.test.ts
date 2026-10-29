@@ -31,6 +31,20 @@ test('source changes invalidate old claims without rewriting history; bindings a
 test('uploads remain uploader/admin-only even with identical public bytes; uploaded source cannot impersonate a defect',async t=>{const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;const note=await w.kit.artifacts.ingest({bytes:Buffer.from('synthetic note at 192.0.2.8'),mediaType:'text/plain',origin:{upload:{session:'synthetic',message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id,w.outsider.id],admins:true,packs:[],shareable:true},readTier:'model_readable'});await layer.upload(w.user,note);await w.kit.artifacts.ingest({bytes:Buffer.from('synthetic note at 192.0.2.8'),mediaType:'text/plain',origin:{read:{object:'plm:bug:PUBLIC'}},author:{user:null},provenanceType:'observed',visibility:{readers:[w.user.id,w.outsider.id],admins:true,packs:[],shareable:false},readTier:'model_readable'});const row=(await layer.entries(w.user,w.user.id))[0];assert.equal(row.body.schema,'fed-note@1');assert.equal((await layer.entries(w.outsider,w.user.id)).length,0);assert.equal((await layer.entries(w.admin,w.user.id)).length,1);const proposal={...row.body,classification:[{value:'ticket',quote:{reference:'src:'+note.body.sha256+'/text@1/l/1',text:'synthetic note'}}]};await assert.rejects(()=>layer.prepare(w.outsider,proposal,{}),/上传者/);assert.ok(await layer.prepare(w.user,proposal,{}));
 });
 
+test('an upload note records a capture time only when the client declared one (round-four review, item 5)',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
+ const upload=(text:string,capturedAt?:string)=>w.kit.artifacts.ingest({bytes:Buffer.from(text),mediaType:'text/plain',origin:{upload:{session:'synthetic',message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},readTier:'model_readable',...(capturedAt?{capturedAt}:{})});
+ const undeclared=await upload('synthetic note without a capture time'),declared=await upload('synthetic note with a capture time','2026-10-27T08:00:00.000Z');
+ await layer.upload(w.user,undeclared);await layer.upload(w.user,declared);
+ const notes=new Map((await layer.entries(w.user,w.user.id)).map(row=>[row.body.object,row.body as Record<string,unknown>]));
+ const plain=notes.get(undeclared.body.sha256)!,timed=notes.get(declared.body.sha256)!;
+ assert.equal('at' in plain,false,'the upload time is not claimed as a capture time');
+ assert.equal(plain.captured_at_declared,false);assert.equal(plain.received_at,undeclared.created_at);
+ assert.equal(timed.at,'2026-10-27T08:00:00.000Z');assert.equal(timed.captured_at_declared,true);assert.equal(timed.received_at,declared.created_at);
+ // Each note still finds its own upload and passes the check against the body the Hub generates.
+ for(const body of [plain,timed])assert.ok(await layer.prepare(w.user,{...body,classification:[{value:'ticket',quote:{reference:'src:'+String(body.object)+'/text@1/l/1',text:'synthetic note'}}]} as never,{}));
+});
+
 test('a current pointer naming a content root selects its own line record when two lines share tree bytes',async t=>{const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const root=await seed(w,'10.8');await seed(w,'10.9');for(const line of ['10.8','10.9']){const old=await w.kit.pointers.get(seedlingName(w.product.id,line));assert.ok(old);await w.kit.pointers.move({name:old.name,expected:old.target,next:root.root,by:w.admin,run:null,component:'synthetic.feeding@1'});}assert.equal((await w.knowledge.feeding!.seedFor(w.product.id,'10.8'))!.line,'10.8');assert.equal((await w.knowledge.feeding!.seedFor(w.product.id,'10.9'))!.line,'10.9');});
 
 test('knowledge retract appends one record per target kind and leaves a covered target unwritten',async t=>{
