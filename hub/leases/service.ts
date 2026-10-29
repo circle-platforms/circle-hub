@@ -105,6 +105,8 @@ export class LeaseService {
     return this.#db
       .transaction(async (tx) => {
         await this.#ownershipLock(tx);
+        // The key locks come before the clock, so an acquire that waits for a concurrent release is timed after it.
+        await this.#keyLocks(tx, keys);
         const now = await this.#nowIn(tx);
         const until = input.maxTtlSeconds === undefined ? null : new Date(now.getTime() + input.ttlSeconds! * 1000);
         const lease = newId('lse');
@@ -233,6 +235,7 @@ export class LeaseService {
         const registered = await this.registrationsForTransaction(tx);
         if (!input.keys.every(key=>registered.some(row=>row.owner===input.owner && key.startsWith(row.prefix)))) return {ok:false,code:'LEASE_UNAVAILABLE',message:'这些键不在你登记的前缀下'};
       }
+      await this.#keyLocks(tx, input.keys);
       // Rows are read FOR UPDATE so a concurrent extend of the same key waits, and every row is present.
       const rows = await this.#rowsLocked(input.keys, tx);
       // Only a row that still holds (unreleased, unexpired) may be force-released; a released or expired one answers
@@ -283,17 +286,28 @@ export class LeaseService {
   /** Frees rows whose run record no longer exists and that were acquired over 60 seconds ago; returns how many. */
   async reclaimOrphans(): Promise<number> {
     return this.#db.transaction(async (tx) => {
+      // Candidates first, then their key locks, then the clock, then the rows again under their locks: a change that was
+      // in flight is either finished and seen, or starts after this reclaim (round-four review, item 2).
+      const candidates = await this.#db.query<{ key: string }>(
+        `SELECT key FROM leases WHERE released_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM records r WHERE r.kind = 'run' AND ((r.body)::jsonb ->> 'run') = leases.run_id) ORDER BY key`,
+        [],
+        tx,
+      );
+      if (candidates.rows.length === 0) return 0;
+      await this.#keyLocks(tx, candidates.rows.map(row => row.key));
       const now = await this.#nowIn(tx);
       const rows = await this.#db.query<Row>(
         `SELECT key, lease_id, run_id, user_id, token, acquired_at, expires_at, released_at FROM leases
-         WHERE released_at IS NULL AND (expires_at IS NULL OR expires_at > $1) AND acquired_at < $1 - interval '60 seconds'
-           AND NOT EXISTS (SELECT 1 FROM records r WHERE r.kind = 'run' AND ((r.body)::jsonb ->> 'run') = leases.run_id)`,
-        [now],
+         WHERE key = ANY($2) AND released_at IS NULL AND (expires_at IS NULL OR expires_at > $1) AND acquired_at < $1 - interval '60 seconds'
+           AND NOT EXISTS (SELECT 1 FROM records r WHERE r.kind = 'run' AND ((r.body)::jsonb ->> 'run') = leases.run_id)
+         ORDER BY key FOR UPDATE`,
+        [now, candidates.rows.map(row => row.key)],
         tx,
       );
       let reclaimed = 0;
       for (const row of rows.rows) {
-        await this.#db.query(`UPDATE leases SET released_at = $2, token = token + 1 WHERE key = $1`, [row.key, now], tx);
+        await this.#db.query(`UPDATE leases SET released_at = $2, token = token + 1 WHERE key = $1 AND released_at IS NULL`, [row.key, now], tx);
         await this.#appendAction(tx, 'take_over', row.lease_id, [row.key], { user: row.user_id, run: row.run_id }, row.expires_at?.toISOString() ?? null, Number(row.token) + 1, { reason: '孤儿回收：行引用的运行不存在' }, now.toISOString());
         reclaimed++;
       }
@@ -311,22 +325,27 @@ export class LeaseService {
     const action = `i.key = 'action.kind' AND i.value = 'lease' AND r.kind = 'action' AND r.schema = '${RECORD_SCHEMAS.action}' AND (r.body)::jsonb ->> 'action' = 'lease'`;
     const legacy = `(${action} AND ((r.body)::jsonb -> 'detail' -> 'keys') @> $2::jsonb AND NOT EXISTS (SELECT 1 FROM record_index newer WHERE newer.digest = r.digest AND newer.key = 'lease.key'))`;
     const predicate = `((i.key = 'lease.key' AND i.value = $1) OR ${legacy})`;
-    const beforeRows = await this.#db.query<{ digest: string }>(`SELECT r.digest FROM record_index i JOIN records r ON r.digest = i.digest WHERE ${predicate} AND r.created_at < $3::timestamptz ORDER BY r.seq DESC LIMIT 1`, [input.key, JSON.stringify([input.key]), from]);
-    const eventRows = await this.#db.query<{ digest: string }>(`SELECT r.digest FROM record_index i JOIN records r ON r.digest = i.digest WHERE ${predicate} AND r.created_at >= $3::timestamptz AND r.created_at <= $4::timestamptz ORDER BY r.seq ASC LIMIT $5`, [input.key, JSON.stringify([input.key]), from, to, limit + 1]);
-    const keys = `(r.body)::jsonb -> 'detail' -> 'keys'`;
-    const damaged = await this.#db.query<{ digest: string }>(`SELECT r.digest FROM record_index i JOIN records r ON r.digest = i.digest WHERE ${action} AND COALESCE((r.body)::jsonb -> 'detail' ->> 'op', '') NOT IN ('register', 'unregister') AND r.created_at <= $1::timestamptz AND (CASE WHEN jsonb_typeof(${keys}) = 'array' THEN jsonb_array_length(${keys}) = 0 OR EXISTS (SELECT 1 FROM jsonb_array_elements(${keys}) entry WHERE jsonb_typeof(entry) <> 'string') ELSE true END) ORDER BY r.seq DESC LIMIT 1`, [to]);
-    const load = async (rows: readonly { digest: string }[]): Promise<StoredRecord<ActionBody>[]> => {
-      const records = await this.#records.getMany<ActionBody>(rows.map(row => row.digest));
-      return rows.map(row => {
-        const record = records.get(row.digest);
-        if (!record) throw new Error('租约历史记录不可读');
-        return record;
-      });
-    };
-    const before = beforeRows.rows.length === 0 ? null : (await load(beforeRows.rows))[0]!;
-    const events = await load(eventRows.rows.slice(0, limit));
-    const unattributable = await load(damaged.rows);
-    return { before, events, complete: eventRows.rows.length <= limit, unattributable };
+    // The shared key lock waits for every change of this key that already holds it, so an action timed inside the window
+    // is committed before the window is read (round-four review, item 1).
+    return this.#db.transaction(async (tx) => {
+      await this.#keyLocks(tx, [input.key], true);
+      const beforeRows = await this.#db.query<{ digest: string }>(`SELECT r.digest FROM record_index i JOIN records r ON r.digest = i.digest WHERE ${predicate} AND r.created_at < $3::timestamptz ORDER BY r.seq DESC LIMIT 1`, [input.key, JSON.stringify([input.key]), from], tx);
+      const eventRows = await this.#db.query<{ digest: string }>(`SELECT r.digest FROM record_index i JOIN records r ON r.digest = i.digest WHERE ${predicate} AND r.created_at >= $3::timestamptz AND r.created_at <= $4::timestamptz ORDER BY r.seq ASC LIMIT $5`, [input.key, JSON.stringify([input.key]), from, to, limit + 1], tx);
+      const keys = `(r.body)::jsonb -> 'detail' -> 'keys'`;
+      const damaged = await this.#db.query<{ digest: string }>(`SELECT r.digest FROM record_index i JOIN records r ON r.digest = i.digest WHERE ${action} AND COALESCE((r.body)::jsonb -> 'detail' ->> 'op', '') NOT IN ('register', 'unregister') AND r.created_at <= $1::timestamptz AND (CASE WHEN jsonb_typeof(${keys}) = 'array' THEN jsonb_array_length(${keys}) = 0 OR EXISTS (SELECT 1 FROM jsonb_array_elements(${keys}) entry WHERE jsonb_typeof(entry) <> 'string') ELSE true END) ORDER BY r.seq DESC LIMIT 1`, [to], tx);
+      const load = async (rows: readonly { digest: string }[]): Promise<StoredRecord<ActionBody>[]> => {
+        const records = await this.#records.getMany<ActionBody>(rows.map(row => row.digest));
+        return rows.map(row => {
+          const record = records.get(row.digest);
+          if (!record) throw new Error('租约历史记录不可读');
+          return record;
+        });
+      };
+      const before = beforeRows.rows.length === 0 ? null : (await load(beforeRows.rows))[0]!;
+      const events = await load(eventRows.rows.slice(0, limit));
+      const unattributable = await load(damaged.rows);
+      return { before, events, complete: eventRows.rows.length <= limit, unattributable };
+    });
   }
 
   /** The lease action records of a prefix, oldest first (the audit line B05 keeps). */
@@ -354,6 +373,7 @@ export class LeaseService {
   async #change(keys: string[], holder: Holder, op: Extract<LeaseOp, 'extend' | 'release'>, ttlSeconds: number, maxTtlSeconds: number | undefined): Promise<ChangeOutcome> {
     const ordered = [...keys].sort();
     return this.#db.transaction(async (tx) => {
+      await this.#keyLocks(tx, ordered);
       const rows = await this.#rowsLocked(ordered, tx);
       const now = await this.#nowIn(tx);
       if (rows.length === 0) return { ok: false, code: 'LEASE_NO_ROW', message: `这些键上没有租约行` };
@@ -410,6 +430,17 @@ export class LeaseService {
 
   async #nowIn(tx: PgTransaction): Promise<Date> {
     return this.#now(tx);
+  }
+
+  /**
+   * One coordination lock per resource key, held to the end of the transaction and taken in key order (no deadlock). Every
+   * change takes it before it reads the clock, and history() takes it shared before it reads, so an action timed inside a
+   * window is committed before history answers for that window, and one that starts later is timed after it. Advisory
+   * rather than row locks, because a key may have no row yet (round-four review, items 1 and 2).
+   */
+  async #keyLocks(tx: PgTransaction, keys: readonly string[], shared = false): Promise<void> {
+    const lock = shared ? 'pg_advisory_xact_lock_shared' : 'pg_advisory_xact_lock';
+    for (const key of [...new Set(keys)].sort()) await this.#db.query(`SELECT ${lock}(hashtextextended('lease.key:' || $1, 0))`, [key], tx);
   }
 
   async #rowsLocked(keys: string[], tx: PgTransaction): Promise<Row[]> {

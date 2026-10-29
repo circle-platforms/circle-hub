@@ -538,7 +538,8 @@ test('thousands of historical lease records use bounded database calls and retur
   const limited = await leases.history({key:'bed/history/0', from:'2026-01-01T00:00:00.000Z', to:new Date().toISOString(), limit:32});
   assert.equal(limited.complete, false, JSON.stringify({complete:limited.complete, events:limited.events.length, first:limited.events[0]?.body.detail}));
   assert.equal(limited.events.length, 32);
-  assert.equal(queries.mock.calls.length, 6);
+  // Two history reads: each takes its shared key lock (one call) before its three bounded reads.
+  assert.equal(queries.mock.calls.length, 8);
   const returned: number[] = [];
   let scanned = 0;
   for (const call of queries.mock.calls) {
@@ -546,8 +547,8 @@ test('thousands of historical lease records use bounded database calls and retur
     returned.push(answer.rows.length);
   }
   for (const plan of plans) for (const match of plan.matchAll(/Rows Removed by (?:Filter|Index Recheck): (\d+)/g)) scanned += Number(match[1]);
-  assert.equal(returned.length, 6);
-  assert.equal(plans.length, 6);
+  assert.equal(returned.length, 8);
+  assert.equal(plans.length, 6, 'the six reads; the two lock calls have no plan');
   assert.ok(returned.every(count => count <= 1025), JSON.stringify(returned));
   assert.ok(returned.reduce((sum, count) => sum + count, 0) < 100, JSON.stringify(returned));
   assert.ok(scanned < 3000, `rows removed by filter/index recheck: ${scanned}`);
