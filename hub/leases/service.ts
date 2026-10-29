@@ -315,8 +315,13 @@ export class LeaseService {
     });
   }
 
-  /** Read one exact resource key's latest pre-window action and bounded in-window actions, with verified record bodies. */
-  async history(input: { key: string; from: string; to: string; limit?: number }): Promise<{ before: StoredRecord<ActionBody> | null; events: StoredRecord<ActionBody>[]; complete: boolean; unattributable: StoredRecord<ActionBody>[] }> {
+  /**
+   * Read one exact resource key's latest pre-window action and bounded in-window actions, with verified record bodies.
+   * `settled` is false while the window has not ended before the read: a change after the read is timed no earlier than the
+   * read on the same clock, so it can still land inside such a window, equal milliseconds included (round-five review,
+   * item 1). The order holds for one lease clock that does not step back; a step back of it is not detected here.
+   */
+  async history(input: { key: string; from: string; to: string; limit?: number }): Promise<{ before: StoredRecord<ActionBody> | null; events: StoredRecord<ActionBody>[]; complete: boolean; unattributable: StoredRecord<ActionBody>[]; settled: boolean }> {
     if (!KEY.test(input.key)) throw new TypeError('invalid lease history key');
     const from = IsoTime.parse(input.from), to = IsoTime.parse(input.to);
     if (Date.parse(from) > Date.parse(to)) throw new TypeError('lease history window is inverted');
@@ -326,26 +331,30 @@ export class LeaseService {
     const legacy = `(${action} AND ((r.body)::jsonb -> 'detail' -> 'keys') @> $2::jsonb AND NOT EXISTS (SELECT 1 FROM record_index newer WHERE newer.digest = r.digest AND newer.key = 'lease.key'))`;
     const predicate = `((i.key = 'lease.key' AND i.value = $1) OR ${legacy})`;
     // The shared key lock waits for every change of this key that already holds it, so an action timed inside the window
-    // is committed before the window is read (round-four review, item 1).
-    return this.#db.transaction(async (tx) => {
+    // is committed before the window is read (round-four review, item 1), and the read takes its own moment on the lease
+    // clock under it. Only the digests are read under it: the records load after the transaction, so a history read never
+    // holds one pooled connection while waiting for another (round five).
+    const { beforeRows, eventRows, damaged, asOf } = await this.#db.transaction(async (tx) => {
       await this.#keyLocks(tx, [input.key], true);
+      const asOf = await this.#nowIn(tx);
       const beforeRows = await this.#db.query<{ digest: string }>(`SELECT r.digest FROM record_index i JOIN records r ON r.digest = i.digest WHERE ${predicate} AND r.created_at < $3::timestamptz ORDER BY r.seq DESC LIMIT 1`, [input.key, JSON.stringify([input.key]), from], tx);
       const eventRows = await this.#db.query<{ digest: string }>(`SELECT r.digest FROM record_index i JOIN records r ON r.digest = i.digest WHERE ${predicate} AND r.created_at >= $3::timestamptz AND r.created_at <= $4::timestamptz ORDER BY r.seq ASC LIMIT $5`, [input.key, JSON.stringify([input.key]), from, to, limit + 1], tx);
       const keys = `(r.body)::jsonb -> 'detail' -> 'keys'`;
       const damaged = await this.#db.query<{ digest: string }>(`SELECT r.digest FROM record_index i JOIN records r ON r.digest = i.digest WHERE ${action} AND COALESCE((r.body)::jsonb -> 'detail' ->> 'op', '') NOT IN ('register', 'unregister') AND r.created_at <= $1::timestamptz AND (CASE WHEN jsonb_typeof(${keys}) = 'array' THEN jsonb_array_length(${keys}) = 0 OR EXISTS (SELECT 1 FROM jsonb_array_elements(${keys}) entry WHERE jsonb_typeof(entry) <> 'string') ELSE true END) ORDER BY r.seq DESC LIMIT 1`, [to], tx);
-      const load = async (rows: readonly { digest: string }[]): Promise<StoredRecord<ActionBody>[]> => {
-        const records = await this.#records.getMany<ActionBody>(rows.map(row => row.digest));
-        return rows.map(row => {
-          const record = records.get(row.digest);
-          if (!record) throw new Error('租约历史记录不可读');
-          return record;
-        });
-      };
-      const before = beforeRows.rows.length === 0 ? null : (await load(beforeRows.rows))[0]!;
-      const events = await load(eventRows.rows.slice(0, limit));
-      const unattributable = await load(damaged.rows);
-      return { before, events, complete: eventRows.rows.length <= limit, unattributable };
+      return { beforeRows, eventRows, damaged, asOf };
     });
+    const load = async (rows: readonly { digest: string }[]): Promise<StoredRecord<ActionBody>[]> => {
+      const records = await this.#records.getMany<ActionBody>(rows.map(row => row.digest));
+      return rows.map(row => {
+        const record = records.get(row.digest);
+        if (!record) throw new Error('租约历史记录不可读');
+        return record;
+      });
+    };
+    const before = beforeRows.rows.length === 0 ? null : (await load(beforeRows.rows))[0]!;
+    const events = await load(eventRows.rows.slice(0, limit));
+    const unattributable = await load(damaged.rows);
+    return { before, events, complete: eventRows.rows.length <= limit, unattributable, settled: Date.parse(to) < asOf.getTime() };
   }
 
   /** The lease action records of a prefix, oldest first (the audit line B05 keeps). */
@@ -435,8 +444,9 @@ export class LeaseService {
   /**
    * One coordination lock per resource key, held to the end of the transaction and taken in key order (no deadlock). Every
    * change takes it before it reads the clock, and history() takes it shared before it reads, so an action timed inside a
-   * window is committed before history answers for that window, and one that starts later is timed after it. Advisory
-   * rather than row locks, because a key may have no row yet (round-four review, items 1 and 2).
+   * window is committed before history answers for that window, and one that starts later reads the clock after the
+   * history's own moment (history() reports whether its window ended before that moment). Advisory rather than row locks,
+   * because a key may have no row yet (round-four review, items 1 and 2).
    */
   async #keyLocks(tx: PgTransaction, keys: readonly string[], shared = false): Promise<void> {
     const lock = shared ? 'pg_advisory_xact_lock_shared' : 'pg_advisory_xact_lock';

@@ -123,8 +123,10 @@ export async function operationLease(
   const key = input.key ?? (input.bed ? `bed/${input.bed}/${input.device}` : undefined);
   if (!key || !KEY.test(key) || !key.startsWith('bed/') || key.split('/').length !== 3) return unconfirmed('缺完整有效的台架（床）与设备身份；在提案中写明床后重交');
   if (!leases) return unconfirmed('缺租约历史只读查询接口；管理员完成接线后重传');
-  const { before, events, complete, unattributable = [] } = await leases.history({ key, from: capturedAt.data, to: receivedAt.data });
+  const { before, events, complete, unattributable = [], settled } = await leases.history({ key, from: capturedAt.data, to: receivedAt.data });
   if (!complete) return unconfirmed('声明采集至收到时刻之间的租约记录超过有界读取上限；缩小时间窗口或让管理员核对记录后重传');
+  // A receipt time not before the lease clock's own read can still gain a lease change inside the window (round five, item 1).
+  if (settled === false) return unconfirmed('收到时刻不早于租约时钟读取历史的时刻，窗口内仍可能出现租约动作；稍后重交，或让管理员核对 Hub 与数据库的时钟');
   if (unattributable.length > 0) return uncertain(leaseDetail(unattributable[0]!));
   const initial = before ? leaseDetail(before, key) : null;
   if (initial && !initial.ok) return uncertain(initial);

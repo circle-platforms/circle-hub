@@ -61,8 +61,11 @@ function leasesOf(t: {after(fn: () => Promise<void>): void}, ctx: Context, now?:
   const db = new Database(createPool(ctx.w.kit.database, 2));
   t.after(() => db.end());
   const service = new LeaseService(db, {records:ctx.w.kit.store, ...(now ? {now} : {})});
-  ctx.w.knowledge.__context.leases = service;
-  return {db, service};
+  // A test clock only places the lease actions this service writes; history is read at the present on the database clock,
+  // as the Hub reads it, so a backdated clock does not leave every window unsettled (round five, item 1).
+  const reader = now ? new LeaseService(db, {records:ctx.w.kit.store}) : service;
+  ctx.w.knowledge.__context.leases = reader;
+  return {db, service, reader};
 }
 
 async function captureRun(ctx: Context, options: {author?: string; capturedAt?: string; text?: string; historicalFinding?: boolean; declareCaptureTime?: boolean; predecessor?: string} = {}): Promise<Context> {
@@ -432,18 +435,18 @@ test('lease proof covers the declared capture through Hub receipt and exposes it
 
 test('continuous coverage permits the same lease renewal but not an interval expiry', {skip}, async t => {
   const ctx = await world(t);
-  const {db, service:leases} = leasesOf(t, ctx, async () => new Date('2026-10-27T09:59:00.000Z'));
+  const {db, service:leases, reader} = leasesOf(t, ctx, async () => new Date('2026-10-27T09:59:00.000Z'));
   const acquired = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/', ttlSeconds:600, maxTtlSeconds:600});
   assert.ok(acquired.ok);
   const extending = new LeaseService(db, {records:ctx.w.kit.store, now:async () => new Date('2026-10-27T10:00:05.000Z')});
   assert.ok((await extending.extend({keys:['bed/synthetic/device0'], holder:holder(ctx), ttlSeconds:60, maxTtlSeconds:600})).ok);
   const {operationLease} = await import('./feeding-leases.ts');
-  const renewed = await operationLease(ctx.w.kit.store, {key:'bed/synthetic/device0', device:'device0', user:ctx.w.admin.id, capturedAt:'2026-10-27T10:00:00.000Z', receivedAt:'2026-10-27T10:00:10.000Z'}, leases);
+  const renewed = await operationLease(ctx.w.kit.store, {key:'bed/synthetic/device0', device:'device0', user:ctx.w.admin.id, capturedAt:'2026-10-27T10:00:00.000Z', receivedAt:'2026-10-27T10:00:10.000Z'}, reader);
   assert.deepEqual(renewed, {lease:'bed/synthetic/device0', lease_id:acquired.lease});
 
   const expiring = await leases.acquire({keys:['bed/synthetic/expiring0'], holder:holder(ctx), prefix:'bed/', ttlSeconds:60, maxTtlSeconds:600});
   assert.ok(expiring.ok);
-  const expired = await operationLease(ctx.w.kit.store, {key:'bed/synthetic/expiring0', device:'expiring0', user:ctx.w.admin.id, capturedAt:'2026-10-27T09:59:30.000Z', receivedAt:'2026-10-27T10:00:10.000Z'}, leases);
+  const expired = await operationLease(ctx.w.kit.store, {key:'bed/synthetic/expiring0', device:'expiring0', user:ctx.w.admin.id, capturedAt:'2026-10-27T09:59:30.000Z', receivedAt:'2026-10-27T10:00:10.000Z'}, reader);
   assert.equal(expired.lease, null);
   assert.equal(expired.lease_id, null);
   assert.match(expired.lease_unconfirmed?.missing ?? '', /到期/);
@@ -475,6 +478,18 @@ test('capture and lease acquisition in the same millisecond is unconfirmed', {sk
   const view = await stored(current, await submit(current, {...observation(current, '同毫秒采集'), device:'device0'}, '同毫秒采集'));
   assert.ok(view.feeding.lease_unconfirmed);
   assert.match(view.view.note ?? '', /未能确认/);
+});
+
+test('a receipt not yet before the lease clock is unconfirmed, since a later lease change could still land in its window (round five, item 1)', {skip}, async t => {
+  const ctx = await world(t);
+  // The lease clock runs a minute behind the clock that times the receipt: by the lease clock the window has not ended.
+  const {service:leases} = leasesOf(t, ctx, async () => new Date(Date.now() - 60_000));
+  ctx.w.knowledge.__context.leases = leases;
+  assert.ok((await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx), prefix:'bed/'})).ok);
+  const current = await captureRun(ctx);
+  const view = await stored(current, await submit(current, {...observation(current, '窗口未结束'), device:'device0'}, '窗口未结束'));
+  assert.ok(view.feeding.lease_unconfirmed);
+  assert.match(JSON.stringify(view.feeding.lease_unconfirmed), /租约时钟/);
 });
 
 test('a damaged acquire record is unconfirmed rather than a confirmed absence', {skip}, async t => {
@@ -533,13 +548,17 @@ test('thousands of historical lease records use bounded database calls and retur
   });
   const {operationLease} = await import('./feeding-leases.ts');
   const capturedAt = await justAfter(ctx, granted.lease);
-  const result = await operationLease(ctx.w.kit.store, {bed:'synthetic', device:'device0', user:ctx.w.admin.id, capturedAt, receivedAt:new Date().toISOString()}, leases);
+  const receivedAt = new Date().toISOString();
+  // The Hub reads history after the receipt, never in its millisecond (round five, item 1).
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const result = await operationLease(ctx.w.kit.store, {bed:'synthetic', device:'device0', user:ctx.w.admin.id, capturedAt, receivedAt}, leases);
   assert.deepEqual(result, {lease:'bed/synthetic/device0', lease_id:granted.lease});
   const limited = await leases.history({key:'bed/history/0', from:'2026-01-01T00:00:00.000Z', to:new Date().toISOString(), limit:32});
   assert.equal(limited.complete, false, JSON.stringify({complete:limited.complete, events:limited.events.length, first:limited.events[0]?.body.detail}));
   assert.equal(limited.events.length, 32);
-  // Two history reads: each takes its shared key lock (one call) before its three bounded reads.
-  assert.equal(queries.mock.calls.length, 8);
+  // Two history reads: each takes its shared key lock and its moment on the lease clock (two calls) before its three
+  // bounded reads.
+  assert.equal(queries.mock.calls.length, 10);
   const returned: number[] = [];
   let scanned = 0;
   for (const call of queries.mock.calls) {
@@ -547,8 +566,8 @@ test('thousands of historical lease records use bounded database calls and retur
     returned.push(answer.rows.length);
   }
   for (const plan of plans) for (const match of plan.matchAll(/Rows Removed by (?:Filter|Index Recheck): (\d+)/g)) scanned += Number(match[1]);
-  assert.equal(returned.length, 8);
-  assert.equal(plans.length, 6, 'the six reads; the two lock calls have no plan');
+  assert.equal(returned.length, 10);
+  assert.equal(plans.length, 6, 'the six reads; the lock and clock calls have no plan');
   assert.ok(returned.every(count => count <= 1025), JSON.stringify(returned));
   assert.ok(returned.reduce((sum, count) => sum + count, 0) < 100, JSON.stringify(returned));
   assert.ok(scanned < 3000, `rows removed by filter/index recheck: ${scanned}`);
@@ -628,15 +647,20 @@ test('a bed derived from the frozen manifest stays in the record and its identit
   const replay = await submit(current, {...raw, bed:'synthetic'}, '推导床但未声明采集时间', {missingBed:true});
   assert.equal(replay.acceptance, 'accepted', JSON.stringify(replay.errors));
   assert.equal(replay.result?.contributions?.stored[0]?.record, saved.receipt.record);
+  // And a different bed is a different record (round five, item 6).
+  const {operationIdentity} = await import('./feeding.ts');
+  const identity = (bed: string) => JSON.stringify(operationIdentity({...saved.feeding, bed} as Record<string, unknown>));
+  assert.equal(identity('synthetic'), JSON.stringify(operationIdentity(saved.feeding as Record<string, unknown>)));
+  assert.notEqual(identity('synthetic'), identity('synthetic-other'));
 });
 
 test('another holders expiry inside the interval is a change rather than a confirmed absence', {skip}, async t => {
   const ctx = await world(t);
-  const {service:leases} = leasesOf(t, ctx, async () => new Date('2026-10-27T09:59:00.000Z'));
+  const {service:leases, reader} = leasesOf(t, ctx, async () => new Date('2026-10-27T09:59:00.000Z'));
   const foreign = await leases.acquire({keys:['bed/synthetic/device0'], holder:holder(ctx, ctx.w.user.id), prefix:'bed/', ttlSeconds:60, maxTtlSeconds:600});
   assert.ok(foreign.ok);
   const {operationLease} = await import('./feeding-leases.ts');
-  const result = await operationLease(ctx.w.kit.store, {key:'bed/synthetic/device0', device:'device0', user:ctx.w.admin.id, capturedAt:'2026-10-27T09:59:30.000Z', receivedAt:'2026-10-27T10:00:10.000Z'}, leases);
+  const result = await operationLease(ctx.w.kit.store, {key:'bed/synthetic/device0', device:'device0', user:ctx.w.admin.id, capturedAt:'2026-10-27T09:59:30.000Z', receivedAt:'2026-10-27T10:00:10.000Z'}, reader);
   assert.equal(result.lease, null);
   assert.equal(result.lease_id, null);
   assert.match(result.lease_unconfirmed?.missing ?? '', /到期/);
