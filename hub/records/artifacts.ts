@@ -281,7 +281,9 @@ export class RecordArtifacts implements Artifacts {
       origin,
       author,
       captured_at: capturedAt,
-      captured_at_declared: 'upload' in origin && input.capturedAt !== undefined,
+      // An upload says whether its client declared the capture time. Any other artifact has no client capture to declare
+      // and keeps exactly the record it had before the field existed, so its identity and every view built on it do not move.
+      ...('upload' in origin ? { captured_at_declared: input.capturedAt !== undefined } : {}),
       provenance_type: input.provenanceType,
       read_tier: readTier,
       requested_read_tier:requestedTier,
