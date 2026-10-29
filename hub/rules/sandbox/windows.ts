@@ -212,6 +212,28 @@ export function quoteWindowsArgument(value: string): string {
   return '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
 }
 
+// Windows needs these to start a process (libuv adds the same kind of set to every spawn), and kernelbase
+// derives the AppContainer folders from the profile ones; an empty block fails with ERROR_ENVVAR_NOT_FOUND.
+// Only non-secret system and profile locations are copied; every other parent variable stays out.
+const windowsProbeEnvironment = [
+  'APPDATA', 'HOMEDRIVE', 'HOMEPATH', 'LOCALAPPDATA', 'PATH', 'SYSTEMDRIVE', 'SYSTEMROOT', 'TEMP', 'TMP',
+  'USERPROFILE', 'WINDIR',
+] as const;
+
+/** A sorted CREATE_UNICODE_ENVIRONMENT block holding only the fixed allow-list, read case-insensitively. */
+export function windowsEnvironmentBlock(environment: Record<string, string | undefined>): Buffer {
+  const values = new Map<string, string>();
+  for (const [name, value] of Object.entries(environment)) {
+    const key = name.toUpperCase();
+    if (value === undefined || !(windowsProbeEnvironment as readonly string[]).includes(key) || values.has(key)) continue;
+    if (value === '' || value.includes('\0')) throw new TypeError('Windows 环境变量无效');
+    values.set(key, value);
+  }
+  if (!values.has('SYSTEMROOT')) throw new Error('Windows 环境缺少 SystemRoot');
+  const entries = [...values].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+  return Buffer.from(entries.map(([name, value]) => `${name}=${value}\0`).join('') + '\0', 'utf16le');
+}
+
 export function windowsProbeFailure(stage: string, code: number, diagnostics: {
   executableExists: boolean; executableBinary: boolean; directoryExists: boolean;
 }): Error {
@@ -323,9 +345,10 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     if (!diagnostics.executableExists || !diagnostics.executableBinary || !diagnostics.directoryExists) failed('父侧路径预检');
     const command = w([process.execPath, '--no-addons', '--no-experimental-websocket', '-e', source].map(quoteWindowsArgument).join(' '));
     // CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW.
-    // No inherited handles, no shell, no ambient environment, no pack bytes.
+    // No inherited handles, no shell, no pack bytes, and only the allow-listed system and profile locations.
+    const environment = windowsEnvironmentBlock(process.env);
     if (!create(restricted.handle, w(process.execPath), command, null, null, 0, 0x08080404,
-      Buffer.alloc(4), w(directory), startup, info)) failed('挂起创建');
+      environment, w(directory), startup, info)) failed('挂起创建');
     processHandle = info.readBigUInt64LE();
     thread = info.readBigUInt64LE(8);
     if (!valid(processHandle) || !valid(thread)) failed('进程句柄');
@@ -334,14 +357,49 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     childToken = tokenOut.readBigUInt64LE();
     if (!valid(childToken)) failed('子令牌句柄');
     const tokenInfo = (handle: bigint, kind: number): Buffer => {
-      const data = Buffer.alloc(4096), needed = Buffer.alloc(4);
-      if (!query(handle, kind, data, data.length, needed) || needed.readUInt32LE() > data.length) failed('子令牌核验');
+      const data = Buffer.alloc(65536), needed = Buffer.alloc(4);
+      if (!query(handle, kind, data, data.length, needed) || needed.readUInt32LE() > data.length) failed(`子令牌核验 ${kind}`);
       return data;
     };
-    if (tokenInfo(childToken, 29).readUInt32LE() !== 1 || tokenInfo(childToken, 46).readUInt32LE() !== 1 ||
-        tokenInfo(childToken, 30).readUInt32LE() !== 0 ||
-        (tokenInfo(childToken, 45).readUInt32LE() & 1) !== 1 ||
-        !equal(tokenInfo(childToken, 31).readBigUInt64LE(), sid)) failed('LPAC 能力核验');
+    // TokenSecurityAttributes returns TOKEN_SECURITY_ATTRIBUTES_INFORMATION, whose V1 entries name themselves
+    // with a UNICODE_STRING (40 bytes each on x64/ARM64). It holds absolute pointers, so it is read from a
+    // native block whose base address is known, and every pointer is bounds-checked before it is followed.
+    const tokenSecurityAttribute = (handle: bigint, expected: string): true => {
+      const length = 65536, needed = Buffer.alloc(4);
+      const base = native(Buffer.alloc(length));
+      if (!query(handle, 39, base, length, needed) || needed.readUInt32LE() > length) failed('子令牌核验 39');
+      const data = Buffer.alloc(length);
+      copy(data, base, length);
+      const offset = (pointer: bigint, size: number): number => {
+        const at = pointer - base;
+        if (at < 0n || at + BigInt(size) > BigInt(length)) failed('安全属性越界', -2);
+        return Number(at);
+      };
+      const count = data.readUInt32LE(4);
+      if (data.readUInt16LE(0) !== 1 || count > 1024) failed('安全属性数量', -2);
+      const entries = count === 0 ? 0 : offset(data.readBigUInt64LE(8), count * 40);
+      for (let index = 0; index < count; index++) {
+        const entry = entries + index * 40;
+        const size = data.readUInt16LE(entry);
+        if (size % 2 !== 0) failed('安全属性名称', -2);
+        const name = size === 0 ? 0 : offset(data.readBigUInt64LE(entry + 8), size);
+        if (data.subarray(name, name + size).toString('utf16le') === expected) return true;
+      }
+      // Only the attribute count is reported; names and values stay out of the diagnostic.
+      return failed('LPAC 属性核验', count);
+    };
+    // TokenIsAppContainer, TokenCapabilities (none) and TokenAppContainerSid.
+    if (tokenInfo(childToken, 29).readUInt32LE() !== 1) failed('AppContainer 核验', -2);
+    if (tokenInfo(childToken, 30).readUInt32LE() !== 0) failed('能力列表核验', -2);
+    if (!equal(tokenInfo(childToken, 31).readBigUInt64LE(), sid)) failed('包 SID 核验', -2);
+    // Querying TokenIsLessPrivilegedAppContainer (46) and TokenChildProcessFlags (45) together with the classes
+    // above failed with ERROR_INVALID_PARAMETER (87) on both Windows runners. Read both policies where the
+    // kernel records them instead:
+    // TOKEN_ACCESS_INFORMATION.Flags carries TOKEN_LOWBOX (0x4000) and TOKEN_NO_CHILD_PROCESS (0x80000),
+    // and an LPAC token carries the WIN://NOALLAPPPKG security attribute.
+    const access = tokenInfo(childToken, 22).readUInt32LE(44);
+    if ((access & 0x84000) !== 0x84000) failed('子进程限制核验', access);
+    tokenSecurityAttribute(childToken, 'WIN://NOALLAPPPKG');
     const before = tokenInfo(restricted.handle, 11), after = tokenInfo(childToken, 11);
     if (before.readUInt32LE() !== 1 || after.readUInt32LE() !== 1 ||
         !equal(before.readBigUInt64LE(8), after.readBigUInt64LE(8))) failed('写限制 SID 核验');
