@@ -283,6 +283,17 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
   const exitCode = kernel.func('int __stdcall GetExitCodeProcess(void *process, void *code)');
   const close = kernel.func('int __stdcall CloseHandle(void *handle)');
   const lastError = kernel.func('uint32_t __stdcall GetLastError()');
+  const user = koffi.load('user32.dll');
+  const processStation = user.func('void * __stdcall GetProcessWindowStation()');
+  const setProcessStation = user.func('int __stdcall SetProcessWindowStation(void *station)');
+  const createStation = user.func('void * __stdcall CreateWindowStationW(void *name, uint32_t flags, uint32_t access, void *attributes)');
+  const closeStation = user.func('int __stdcall CloseWindowStation(void *station)');
+  const createDesktop = user.func('void * __stdcall CreateDesktopW(void *name, void *device, void *mode, uint32_t flags, uint32_t access, void *attributes)');
+  const closeDesktop = user.func('int __stdcall CloseDesktop(void *desktop)');
+  const sidText = security.func('int __stdcall ConvertSidToStringSidW(void *sid, void *text)');
+  const descriptorFromText = security.func('int __stdcall ConvertStringSecurityDescriptorToSecurityDescriptorW(void *text, uint32_t revision, void *descriptor, void *size)');
+  const localFree = kernel.func('void * __stdcall LocalFree(void *memory)');
+  const wideLength = kernel.func('int __stdcall lstrlenW(void *text)');
   const diagnostics = { executableExists: false, executableBinary: false, directoryExists: false };
   const failed = (stage: string, code = Number(lastError())): never => {
     throw windowsProbeFailure(stage, code, diagnostics);
@@ -304,6 +315,8 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
   let attributesInitialized = false;
   let processHandle: bigint | undefined;
   let thread: bigint | undefined;
+  let station: bigint | undefined;
+  let desktop: bigint | undefined;
   let childToken: bigint | undefined;
   let job: { stop(): Promise<void> } | undefined;
   const restricted = createWindowsRestrictedToken(koffi);
@@ -331,8 +344,58 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
       const pointer = native(value);
       if (!update(attributes, 0, kind, pointer, value.length, null, null)) failed('属性设置');
     }
+    const tokenInfo = (handle: bigint, kind: number): Buffer => {
+      const data = Buffer.alloc(65536), needed = Buffer.alloc(4);
+      if (!query(handle, kind, data, data.length, needed) || needed.readUInt32LE() > data.length) failed(`子令牌核验 ${kind}`);
+      return data;
+    };
+    // USER32 initialisation opens the child's window station and desktop; the runner's shared ones grant neither
+    // the LPAC package SID nor the restricting NULL SID, which ends the child with STATUS_DLL_INIT_FAILED.
+    // A private, uniquely named station and desktop grant exactly the user, the package SID, the restricting SID
+    // and SYSTEM, carry a Low label for the AppContainer, and are closed once the child has exited.
+    const sidString = (pointer: unknown): string => {
+      const out = Buffer.alloc(8);
+      if (!sidText(pointer, out)) return failed('SID 文本');
+      const text = out.readBigUInt64LE();
+      try {
+        const length = Number(wideLength(text));
+        if (!Number.isSafeInteger(length) || length < 3 || length > 256) failed('SID 文本', -2);
+        const chars = Buffer.alloc(length * 2);
+        copy(chars, text, chars.length);
+        return chars.toString('utf16le');
+      } finally { localFree(text); }
+    };
+    // TOKEN_USER holds an absolute SID pointer, so it is read into a native block that outlives the conversion.
+    const tokenUser = native(Buffer.alloc(1024)), tokenUserSize = Buffer.alloc(4);
+    if (!query(restricted.handle, 1, tokenUser, 1024, tokenUserSize) || tokenUserSize.readUInt32LE() > 1024) failed('用户 SID');
+    const tokenUserHead = Buffer.alloc(8);
+    copy(tokenUserHead, tokenUser, 8);
+    const userSid = sidString(tokenUserHead.readBigUInt64LE());
+    const packageSid = sidString(sid);
+    const descriptorOut = Buffer.alloc(8);
+    const sddl = `D:P(A;;GA;;;${userSid})(A;;GA;;;${packageSid})(A;;GA;;;S-1-0-0)(A;;GA;;;SY)S:(ML;;NW;;;LW)`;
+    if (!descriptorFromText(w(sddl), 1, descriptorOut, null)) failed('桌面安全描述符');
+    const descriptor = descriptorOut.readBigUInt64LE();
+    const stationName = 'CircleHubProbe-' + randomUUID(), desktopName = 'Probe';
+    try {
+      const securityAttributes = Buffer.alloc(24); // SECURITY_ATTRIBUTES, not inheritable.
+      securityAttributes.writeUInt32LE(securityAttributes.length);
+      securityAttributes.writeBigUInt64LE(descriptor, 8);
+      // CWF_CREATE_ONLY, GENERIC_ALL for the creating parent only.
+      const createdStation: unknown = createStation(w(stationName), 1, 0x10000000, securityAttributes);
+      station = valid(createdStation) ? createdStation : failed('窗口站创建');
+      // CreateDesktopW creates on the caller's window station; the parent's own station is restored at once.
+      const previous: unknown = processStation();
+      if (!valid(previous)) failed('窗口站读取');
+      if (!setProcessStation(station)) failed('窗口站切换');
+      let createdDesktop: unknown;
+      try { createdDesktop = createDesktop(w(desktopName), null, null, 0, 0x10000000, securityAttributes); }
+      finally { if (!setProcessStation(previous)) failed('窗口站恢复'); }
+      desktop = valid(createdDesktop) ? createdDesktop : failed('桌面创建');
+    } finally { localFree(descriptor); }
     const startup = Buffer.alloc(112); // STARTUPINFOEXW, x64/ARM64.
     startup.writeUInt32LE(startup.length);
+    startup.writeBigUInt64LE(native(w(stationName + '\\' + desktopName)), 16); // lpDesktop.
     startup.writeBigUInt64LE(attributes, 104);
     const info = Buffer.alloc(24);
     const getAttributes = kernel.func('uint32_t __stdcall GetFileAttributesW(void *path)');
@@ -355,11 +418,6 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     if (!openToken(processHandle, 8, tokenOut)) failed('子令牌读取');
     childToken = tokenOut.readBigUInt64LE();
     if (!valid(childToken)) failed('子令牌句柄');
-    const tokenInfo = (handle: bigint, kind: number): Buffer => {
-      const data = Buffer.alloc(65536), needed = Buffer.alloc(4);
-      if (!query(handle, kind, data, data.length, needed) || needed.readUInt32LE() > data.length) failed(`子令牌核验 ${kind}`);
-      return data;
-    };
     // TokenSecurityAttributes returns TOKEN_SECURITY_ATTRIBUTES_INFORMATION, whose V1 entries name themselves
     // with a UNICODE_STRING (40 bytes each on x64/ARM64). It holds absolute pointers, so it is read from a
     // native block whose base address is known, and every pointer is bounds-checked before it is followed.
@@ -440,6 +498,8 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
     if (childToken !== undefined && valid(childToken)) cleanup('子令牌关闭', () => Boolean(close(childToken)));
     if (thread !== undefined && valid(thread)) cleanup('线程关闭', () => Boolean(close(thread)));
     if (processHandle !== undefined && valid(processHandle)) cleanup('进程关闭', () => Boolean(close(processHandle)));
+    if (desktop !== undefined) cleanup('桌面关闭', () => Boolean(closeDesktop(desktop)));
+    if (station !== undefined) cleanup('窗口站关闭', () => Boolean(closeStation(station)));
     if (attributesInitialized) cleanup('属性删除', () => { deleteAttributes(attributes!); return true; });
     for (const pointer of allocations.reverse()) cleanup('内存释放', () => Boolean(release(heap, 0, pointer)));
     if (sid !== undefined && valid(sid)) cleanup('SID 释放', () => { const result = freeSid(sid); return result === null || result === 0n; });
