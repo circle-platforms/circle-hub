@@ -32,3 +32,6 @@ test('something', async (t) => {
   interleaved, after a warm-up pair and a full collection before each run, keeps the fastest of `runs` (3), and fails
   when the ratio exceeds `maxRatio` (2 × factor): linear and n log n work pass with margin, quadratic work fails. A large
   run under `noiseFloorMs` (25) is not judged. Pair it with a generous wall-clock ceiling that only catches a hang.
+  `assertLinearGrowthAsync` (and `measureGrowthAsync`) do the same for work that is awaited: they count what the calling
+  thread does until `run` settles, not the time spent waiting, so `run` must keep its work on that thread (no worker or
+  child process) and nothing else may run on it meanwhile.
