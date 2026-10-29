@@ -29,8 +29,26 @@ numbers 1.3.3 to 1.3.6.
 4. A lease timestamp is taken before the row lock; the history read and the commit do not share one lock, so an action
    that arrives later can be missed inside the interval.
 
-Each has an implementation and a targeted counter-example on this branch, but none has been independently reviewed, and
-the lease concurrency test covers one code path only.
+Each has an implementation and a targeted counter-example on this branch.
+
+## Fourth independent review (codex, 2026-10-30)
+
+A read-only review by a different model family (codex, gpt-6.1-terra) of eb663b9 found the targeted fixes cover the original
+counter-examples and listed eight remaining problems; its full text is on issue #28. Each is fixed here with a test that
+fails without the fix:
+
+| # | Problem | Fix | Test |
+|---|---|---|---|
+| 1 | History read without a lock could miss a lease action timed inside its window but not yet committed. | Every lease change takes a per-key advisory lock before its clock; `history()` takes it shared before it reads (`hub/leases/service.ts`). | `history does not miss a change that was timed inside its window but had not committed yet` (`hub/leases/time-order.test.ts`) |
+| 2 | `acquire()` and `reclaimOrphans()` took their time before the row lock. | Both take the key locks first; reclaim re-reads its rows under them and never releases a row twice. | `an acquire that waits for a release is timed after it, never before`; `an orphan reclaim that meets a release in flight re-reads the row instead of releasing it twice` |
+| 3 | The artifact read and the artifact whose provenance a use as grounds checks could differ. | One concrete artifact per digest per resolver: the run's bound one, or the one readable at first use; reads are pinned to it (`hub/runs/engine/exact.ts`). | `a use as grounds reads the very artifact whose provenance it checks` (`captured-ground.test.ts`) |
+| 4 | The token was read once for the target check and again for the request. | `HubClient.callChecked()`: one read for both (pack 1.3.8). | `a checked call carries exactly the token its check saw, even when the token rotates between them` |
+| 5 | An upload's `fed-note` still recorded the upload time as `at`. | Model and contracts: `at` optional on `fed-note@1`, with `captured_at_declared` and `received_at` as on operation records; a note has `at` only when the client declared it (pack 1.3.9). | `an upload note records a capture time only when the client declared one` (`feeding.test.ts`) |
+| 6 | An undeclared capture time dropped a bed derived from the frozen manifest. | The derived bed is kept in the record and its identity. | `a bed derived from the frozen manifest stays in the record and its identity when the capture time is not declared` |
+| 7 | Every artifact origin put the capture time into its dedupe key, so connector re-reads made new records. | Only an upload's declared capture time takes part. The legacy fixture uses main's real key. | `a connector answer read again at another time reuses its record, as before capture times existed` |
+| 8 | Only operation records with a device said the capture time was undeclared. | Every operation record says so. | the two notes asserted in `operation-records-leases.test.ts` |
+
+A fifth review should confirm these before the branch is offered for main.
 
 ## Tests that failed on this branch
 
