@@ -149,6 +149,40 @@ export function scanSkillScripts(files: ReadonlyMap<string, string>, reviews: re
   return { files: files.size, issues, reviewed: approved };
 }
 
+/** Static relative modules a client script names. Dynamic specifiers stay in the scan of the file that names them. */
+function relativeModules(file: string, text: string): string[] {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, /\.[cm]?js$/.test(file) ? ts.ScriptKind.JS : ts.ScriptKind.TS);
+  const names: string[] = [];
+  const specifier = (node: ts.Expression | undefined) => { if (node && ts.isStringLiteralLike(node) && node.text.startsWith('.')) names.push(node.text); };
+  const visit = (node: ts.Node): void => {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier) specifier(node.moduleSpecifier);
+    if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || ts.isIdentifier(node.expression) && node.expression.text === 'require')) specifier(node.arguments[0]);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return names;
+}
+
+/**
+ * Client entry points are the tools tree and inline hooks. Hub sandbox modules under functions/ ship in the same
+ * manifest but run only inside the Hub, so they are scanned when a client script actually imports them.
+ */
+export function clientSkillSources(files: ReadonlyMap<string, string>): Map<string, string> {
+  const virtual = '/skill-static-check';
+  const byResolved = new Map([...files].map(([file]) => [resolve(virtual, file), file]));
+  const included = new Set<string>();
+  const visit = (file: string): void => {
+    if (included.has(file) || !files.has(file)) return;
+    included.add(file);
+    for (const name of relativeModules(file, files.get(file)!)) {
+      const target = byResolved.get(resolve(virtual, file, '..', name));
+      if (target) visit(target);
+    }
+  };
+  for (const file of files.keys()) if (file.includes('/tools/') || file.includes('#')) visit(file);
+  return new Map([...files].filter(([file]) => included.has(file)));
+}
+
 /** Reads the exact published bytes, including helpers and inline skill hooks; never follows a source link. */
 export function scanSkillPack(directory: string, reviews: readonly CallReview[] = REVIEWED_SKILL_CALLS): ScriptAudit {
   const root = realpathSync(directory), manifest = JSON.parse(readFileSync(join(root, 'pack.json'), 'utf8')) as { id?: unknown; kind?: unknown; files?: Array<{ path: string; size: number; sha256: string }> };
@@ -174,7 +208,7 @@ export function scanSkillPack(directory: string, reviews: readonly CallReview[] 
       }
     }
   }
-  return scanSkillScripts(files, reviews);
+  return scanSkillScripts(clientSkillSources(files), reviews);
 }
 
 if (import.meta.main) {

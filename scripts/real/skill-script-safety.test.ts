@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { callSnippet, scanSkillPack, scanSkillScripts, REVIEWED_SKILL_CALLS, type CallReview } from './skill-script-safety.ts';
+import { callSnippet, clientSkillSources, scanSkillPack, scanSkillScripts, REVIEWED_SKILL_CALLS, type CallReview } from './skill-script-safety.ts';
 const file = 'packs/workflow/synthetic/tools/client.ts';
 const audit = (source: string, reviews: readonly CallReview[] = []) => scanSkillScripts(new Map([[file, source]]), reviews);
 const sha = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -88,6 +88,22 @@ test('the administrator entry scans manifest bytes and never executes the inspec
   }finally{f.close();}
 });
 
+test('hub sandbox modules stay out of the client scan until a tool or hook imports them', () => {
+  const fn = 'packs/workflow/synthetic/functions/check.ts';
+  const tool = 'packs/workflow/synthetic/tools/client.ts';
+  const hubOnly = new Map([[tool, `import '../tables/template-v3.json' with { type: 'json' };`], [fn, `import { fromJSONSchema } from 'zod';`]]);
+  assert.deepEqual([...clientSkillSources(hubOnly).keys()], [tool]);
+  const pulled = new Map([[tool, `import '../functions/check.ts';`], [fn, `import { fromJSONSchema } from 'zod';`]]);
+  assert.deepEqual([...clientSkillSources(pulled).keys()].sort(), [fn, tool]);
+  assert.ok(scanSkillScripts(clientSkillSources(pulled)).issues.some(issue => issue.file === fn && issue.operation === 'import'));
+  const f = fixture();
+  try {
+    f.write({ 'tools/prepare.ts': `import '../tables/template-v3.json' with { type: 'json' };`, 'functions/check.ts': `import { fromJSONSchema } from 'zod';`, 'tables/template-v3.json': '{}' });
+    assert.deepEqual(scanSkillPack(f.dir).issues, []);
+    f.write({ 'tools/prepare.ts': `import '../functions/check.ts';`, 'functions/check.ts': `import { fromJSONSchema } from 'zod';` });
+    assert.ok(scanSkillPack(f.dir).issues.some(issue => issue.operation === 'import'));
+  } finally { f.close(); }
+});
 test('every published client skill and helper passes the manifest gate with all call reviews accounted for', t => {
   const repository=fileURLToPath(new URL('../../',import.meta.url));
   const directories: string[]=[];
