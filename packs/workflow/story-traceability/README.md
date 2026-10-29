@@ -4,6 +4,10 @@
 
 可选构建路径由 PLM 资源 settings.build_story_field 指定真实顶层编号数组，配合 build 槽和 build_id。字段名属于管理员部署数据，不是用户参数。缺配置或字段时拒绝并向用户索取编号。范围依据在事实数据用 provenance_type 的 observed，用户范围用 declared；摘要通过生成的 labelOf 显示标签。主路径优先，避免混合两种范围。一个条目最多一份一致 PLM 详情；批次冲突拒绝，不采用最后写入。
 
+## 1.0.15：结构化遗漏事实
+
+索引读取的 Hub 元数据以 `index_excluded_entries` 记录本页因扫描而排除的条目数，`index_view_sha256` 绑定对应视图原件。只有摘要相等的非负整数才用于判断；不再检查说明文字。该数不覆盖其他来源缺失、分页或逐键截断，它们仍分别按原有结构字段处理。旧视图没有该事实且自身截断时，已知连接只报下限、写缺失事实和重读动作；未截断视图和不相关的明确逐键截断仍按其结构核对。视图原件字节不改，历史运行不改。
+
 ## 决定与限制
 
 完整视图中的连接与无连接都交付支持事实，并给出知识根、视图引用、条目数与键数；无连接不是全局无用例。部分视图中的已知连接仍可交付，拒绝仅点名无法判断的编号。错误保留来源说明，并说明 only= 原文匹配的限制和可执行的补充动作，不要求靠同步消除固定上限。Hub 不自动同步、不重试、不调用模型，也不声称已经自动衔接外部动作。
@@ -59,7 +63,8 @@ identities; partial detail is stated as a lower bound rather than an impossible 
 ### Needs from core and the traceability pack
 
 Core index only= currently compares raw spellings before normalization; an empty filtered view cannot rule out aliases
-such as 00021 versus 21. Core needs normalized-id filtering plus explicit scope-completeness and excluded-entry counts.
+such as 00021 versus 21. Core needs normalized-id filtering and per-key excluded-entry counts. The global count is now
+declared in the read metadata, while key-space and source-scope completeness have their own structural fields.
 Until then, narrowing by a verified raw key can recover a positive match; a narrowed miss is not proof of absence. The
 refusal explicitly hands this missing capability to the core maintainer rather than asking a sync to remove hard limits.
 The sibling workflow traceability must adopt the same bounded absence/positive-lower-bound decision; its check.ts still
@@ -84,8 +89,8 @@ Merged artifact 1.0.5 combines plm-fields selected-build identity verification w
 
 Closure B1: absence uses the complete key listing, not entry totals or unrelated missing bodies. Each row keeps an exact
 count unless its raw aliases are cut, keys/sources are incomplete, only is set, its own bodies are missing, or credential
-exclusions may affect it. Credential exclusion notes keep positive counts conservative; core must expose per-key excluded
-counts (and a structured exclusion flag) to remove that conservatism without interpreting notes. Undetermined ids can be
+exclusions may affect it. The earlier implementation used credential exclusion notes; 1.0.15 uses the structured global
+count and remains conservative until per-key excluded counts exist. Undetermined ids can be
 omitted to run the determinate remainder. Unrelated per-key cuts alone do not lower an uncut row count.
 
 Integration with hub-redesign 956d65f1 keeps PLM 1.3.2 and story-traceability 1.0.8, the larger versions on the two sides.

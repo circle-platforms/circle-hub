@@ -70,6 +70,9 @@ export function readIndexView(input: BoundInput, slot: string, expect: { kind: s
   }
   const digest = input.sha256;
   if (typeof digest !== 'string' || !HEX.test(digest)) return failure('绑定的输入没有有效的源文件摘要', fix);
+  const metadata = isRecord(input.meta) && input.meta.index_view_sha256 === digest ? input.meta : null;
+  const omitted = metadata?.index_excluded_entries;
+  if (omitted !== undefined && (!Number.isSafeInteger(omitted) || (omitted as number) < 0)) return failure('视图元数据的 index_excluded_entries 不是非负整数', '请管理员修复视图元数据并重读');
   const view: IndexViewData = {
     product: model.product,
     build: buildName,
@@ -83,6 +86,7 @@ export function readIndexView(input: BoundInput, slot: string, expect: { kind: s
     truncated: model.truncated,
     key_space_complete: typeof model.key_space_complete==='boolean'?model.key_space_complete:null,
     scope_complete: scopeComplete,
+    excluded_entries: typeof omitted === 'number' ? omitted : null,
     cut_keys: strings(model.cut_keys),
     only: Array.isArray(model.only) ? strings(model.only) : null,
     skipped: model.skipped as number,

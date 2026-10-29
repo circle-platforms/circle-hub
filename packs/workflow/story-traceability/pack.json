@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "story-traceability",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "kind": "workflow",
   "title": "需求追溯矩阵",
   "description": "用户给出的需求编号或管理员配置的构建记录需求范围到已索引用例的矩阵；只核验事实，保留原样状态和阶段，按请求编号报告已列出的确定命中与条目下限，仅拒绝无法判断的编号，不绑定产品线",
@@ -23,8 +23,8 @@
     },
     {
       "path": "functions/check.ts",
-      "sha256": "f0520a37dc767831ba88d9edc34c3f67a72b8b93b4aa927dfc4d3bbe62a6412f",
-      "size": 6569
+      "sha256": "4b10f60cb499a98c6c2a8424eff368618916f94cd94b044dc7cd6b6f158100a6",
+      "size": 6864
     },
     {
       "path": "functions/counts.ts",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "084708cb13b234bd650ee8d1c4ba0b579834a2deea06e6a8007af6765752eb27",
-      "size": 14611
+      "sha256": "5d9e773ddcfab17e61ec6e999a17fe2ceaef0502ac5ae8de27d0537d27ed16a9",
+      "size": 14628
     },
     {
       "path": "functions/scope.ts",
@@ -73,13 +73,13 @@
     },
     {
       "path": "functions/types.ts",
-      "sha256": "f63ef3662b79a915cd1cec6559feae21ab0d19d2221a1bd553e05a28b840771c",
-      "size": 1838
+      "sha256": "810c3b58eada6d7338d0783b1ede9818a5533497ea667f7be62ae353858f9d67",
+      "size": 1986
     },
     {
       "path": "functions/views.ts",
-      "sha256": "3ba17f38587910872e1c7d4238314d7b4dcfb6bf775fa16c21ce80580a3cd468",
-      "size": 5889
+      "sha256": "0e24141f87eb8c7d7a6d4426e8057e18b7aa95ded8839ce1ba0d033153f95d23",
+      "size": 6331
     },
     {
       "path": "requirements.json",
@@ -88,23 +88,23 @@
     },
     {
       "path": "samples/negative/counts.json",
-      "sha256": "8491f1540cf680455abace2f184eee3b58d3f943c72c6ebb333141ecb2b6a859",
-      "size": 2143
+      "sha256": "840563b6d23254e486ced2dee3fe933fb880e687cd9df428179f19f7f9c83727",
+      "size": 2333
     },
     {
       "path": "samples/negative/traced.json",
-      "sha256": "aa2c1022cbcc7ac75f7fe7adb61143ca5c71f5191f27306a0331e113eae2552c",
-      "size": 2142
+      "sha256": "7b4b779b6e30ac8bcf33a0f02d7c6bdcf5140ed5f9f9e3fb15ca094db98c65f4",
+      "size": 2332
     },
     {
       "path": "samples/positive/counts.json",
-      "sha256": "6212c60897ded1fa7e303747e35ce2739136782ea93d74a186e3e0d7cd0c5a89",
-      "size": 2094
+      "sha256": "cb2896019d8d0283169655ba14fb94fd4f95d8bd785de2f2fe36ab302b0768a6",
+      "size": 2284
     },
     {
       "path": "samples/positive/traced.json",
-      "sha256": "c1fbd8bcab14b418f412bfb396050cf8fa4387ab9cd70e23187fa0cf0f9e9334",
-      "size": 2094
+      "sha256": "ca117c57b9cac1685c2ed27442a63fb436916cca3c0b1a4e9b602f37e5080bfa",
+      "size": 2284
     },
     {
       "path": "slots.schema.json",

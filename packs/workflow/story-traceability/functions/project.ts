@@ -111,8 +111,8 @@ export function projectItems(input: unknown): unknown {
     row.indexed_match_count = digests.size;
     const ownKeys = Object.keys(view.keys).filter(key => normalizeId(key) === row.id);
     const missingBodies = [...digests].some(digest => view.entries[digest] === undefined);
-    // The current core signals credential exclusions only in notes, without their per-key counts.
-    const excluded = view.notes.some(note => note.includes('凭据扫描命中'));
+    // Only the generating read's bound numeric metadata can establish whether entries were omitted.
+    const excluded = view.excluded_entries === null ? view.truncated : view.excluded_entries > 0;
     row.case_count_lower_bound = digests.size > 0 && (ownKeys.some(key => view.cut_keys.includes(key))
       || !absenceComplete || missingBodies || excluded || view.truncated && view.cut_keys.length === 0);
     row.coverage_complete = digests.size > 0 ? !row.case_count_lower_bound : absenceComplete;

@@ -1159,6 +1159,15 @@ The optional `tree_root@1.empty_scope` stores complete=true and each producer la
 
 `ProducerSource.parser` pins a registered core parser for a single source or every member of a list. The product pack owns that source interpretation; a system pack retains its observed Content-Type. SourceLoader executes the exact declaration without recognition fallback, while undeclared sources keep media recognition. Original artifacts, read manifests, composition rows and producer slots retain the observed media type; mismatch notes identify the declared parser in the production report. Parse caches include source digest, parser and media/charset options, and declaration-specific slot caches cannot grant recognition to an undeclared binary source. Read tiers, credential checks and size budgets still apply.
 
+## Index read omission metadata
+
+Each generated index-view read places two fields in its accompanying `meta` artifact: `index_excluded_entries` is the
+number of distinct entries excluded by the scan for that delivered page, and `index_view_sha256` is the digest of that
+page's original view bytes. Zero is an explicit observation. Other incomplete sources, pagination and per-key cuts retain
+their existing fields; this count does not cover them. The index-view original and its existing byte identity do not change.
+Readers must compare the digest before using the count. A legacy or collated view with absent or mismatched metadata does
+not acquire a zero count by inference; the caller handles the missing fact using its other structural coverage fields.
+
 ## Frozen feeding cuts
 
 For a frozen append position, the feeding reader pages the product, retraction, source-head, binding and usage indexes in bounded batches. Index values and insertion order are retained, so a record indexed under multiple objects is still associated with each matching object. Product-wide notes and all other records in the frozen cut remain included. Each record and original is still checked against the reader's current permissions and read tier; those decisions are not shared between records. This changes query layout only, not historical records or their frozen horizon.
