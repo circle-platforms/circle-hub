@@ -37,7 +37,7 @@ The dynamic worker policy remains in the private tree. `foundation/`, `reference
 A follow-up on this branch regenerates the two case-compile workbook samples from the current synthetic recipe,
 points the mindmap-format tests at 1.0.3, and scans client skills from their tools and hooks. Hub functions that a
 client script does not import stay out of that scan. The template-gap test bed asks for operating-system isolation
-only where that probe succeeds. The worker-command test names the same probe and does not start the sandbox.
+only where that probe succeeds, both when publishing the pack and when a run projects documents. The worker-command test names the same probe and does not start the sandbox.
 
 ## Scan
 

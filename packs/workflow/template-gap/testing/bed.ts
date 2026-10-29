@@ -148,7 +148,8 @@ export async function openBed(postgres: TemporaryPostgres, options: BedOptions =
     const runner = principal(await kit.principals.createUser(admin, '评审人'));
     const stranger = principal(await kit.principals.createUser(admin, '旁人'));
     await kit.authorizations.grantPublishRight(admin, owner.id);
-    const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted'), now, sandbox: { requireOsIsolation: await osIsolationAvailable() } });
+    const sandbox = { requireOsIsolation: await osIsolationAvailable() };
+    const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted'), now, sandbox });
     const parsers=await installMindmapFixture(registry,kit,admin);
     const staged = join(temp.path, 'staged');
     for (const file of await packFiles()) { await mkdir(dirname(join(staged, file.path)), { recursive: true }); await copyFile(join(PACK_DIR, file.path), join(staged, file.path)); }
@@ -173,6 +174,7 @@ export async function openBed(postgres: TemporaryPostgres, options: BedOptions =
       knowledge: SYNTHETIC_KNOWLEDGE,
       external: agile,
       now,
+      sandbox,
       adminLog: (entry) => logs.push(entry),
     });
     return {
