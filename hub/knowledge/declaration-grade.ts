@@ -16,16 +16,21 @@ export function declarationGradeBody(body: unknown): boolean {
 
 export const DECLARATION_GROUND = '声明级操作记录不能作核验、评分或放行的根据（决定 73）；改引锁定根里的原文';
 export const CAPTURED_GROUND = '客户端捕获的原件只随操作记录进入回注层，不能作另一次提交的根据（决定 73）；改引锁定根里的原文';
+export const UNKNOWN_GROUND = '无法确定作根据的原件是哪一条 Hub 记录，不能作根据（决定 73）；改引锁定根里的原文';
 
-/** A declaration-grade rec or an exactly bound captured source cannot be evidence for another workflow. */
+/**
+ * A declaration-grade rec or an exactly bound captured source cannot be evidence for another workflow. A src use names
+ * every artifact record it may stand on; when there is none the record cannot be determined, and that refuses too
+ * (round-five review, item 3). The knowledge-contribution pack, which feeds captured sources, does not call this for them.
+ */
 export async function declarationGroundRefusal(
   ref: {scheme: string; record?: string},
   record: (digest: string) => Promise<{body: unknown} | null>,
-  source?: {body: unknown} | null,
+  sources: ReadonlyArray<{body: unknown}> = [],
 ): Promise<string | null> {
   if (ref.scheme === 'src') {
-    if (source?.body !== null && typeof source?.body === 'object' && (source.body as {provenance_type?:unknown}).provenance_type === 'client_captured') return CAPTURED_GROUND;
-    return null;
+    if (sources.length === 0) return UNKNOWN_GROUND;
+    return sources.some(source => source.body !== null && typeof source.body === 'object' && (source.body as {provenance_type?:unknown}).provenance_type === 'client_captured') ? CAPTURED_GROUND : null;
   }
   if (ref.scheme !== 'rec' || !ref.record) return null;
   const stored = await record(ref.record);

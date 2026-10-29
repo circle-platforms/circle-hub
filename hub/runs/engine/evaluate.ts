@@ -31,8 +31,8 @@ import { putAction } from './store.ts';
 import { createFunctionBatches } from './function-batches.ts';
 import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
-import { declarationGroundRefusal } from '../../knowledge/declaration-grade.ts';
-import { buildScope, scopeProblem, emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
+import { declarationGroundRefusal, UNKNOWN_GROUND } from '../../knowledge/declaration-grade.ts';
+import { boundArtifacts, buildScope, scopeProblem, emptyEvidence, sourceRecords, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
 import { identityOf, principalOf, recordReader, sourceReader } from './readers.ts';
@@ -492,22 +492,19 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
             return { why: r.code === 'REFERENCE_UNRESOLVED' ? 'no_fragment' : 'unavailable' };
           }
           if (!r.groundable) return { why: 'not_groundable' };
-          const groundArtifact = async (sourceRef: {scheme:'src';sha256:string}) => {
+          // Every record the run bound to the digest (the read is pinned to the first), or else the one the reader can read;
+          // none refuses (round-five review, item 3). The knowledge-contribution pack feeds captured sources: the one exemption.
+          const groundRefusal = async (sourceRef: ReturnType<typeof parseReference>) => {
+            if (sourceRef.scheme !== 'src') return declarationGroundRefusal(sourceRef, digest => ctx.deps.records.store.get(digest));
             if (workflow.pack.id === 'knowledge-contribution') return null;
-            const binding = run.sources.find(row => {
-              const candidate = parseReference(row.reference);
-              return candidate.scheme === 'src' && candidate.sha256 === sourceRef.sha256 && row.artifact !== undefined;
-            });
-            if (binding?.artifact) return ctx.deps.records.store.get(binding.artifact);
-            const found = await ctx.deps.records.artifacts.source(principalOf(resolveCtx.reader), sourceRef.sha256, {consumer:'function'})
-              ?? await ctx.deps.records.artifacts.sourceForRun(principalOf(resolveCtx.reader), sourceRef.sha256, run.run, {consumer:'function'});
-            return found?.artifact ?? null;
+            return declarationGroundRefusal(sourceRef, digest => ctx.deps.records.store.get(digest), await sourceRecords(ctx, resolveCtx.reader, boundArtifacts(run, sourceRef.sha256), sourceRef.sha256, 'function'));
           };
-          const named = await declarationGroundRefusal(ref, digest => ctx.deps.records.store.get(digest), ref.scheme === 'src' ? await groundArtifact(ref) : null);
+          const named = await groundRefusal(ref);
           if (named) return { why: 'not_groundable', rule: named };
           for (const ground of r.grounds ?? []) {
-            const inner = parseReference(ground);
-            const refusal = await declarationGroundRefusal(inner, digest => ctx.deps.records.store.get(digest), inner.scheme === 'src' ? await groundArtifact(inner) : null);
+            let inner: ReturnType<typeof parseReference>;
+            try { inner = parseReference(ground); } catch { return { why: 'not_groundable', rule: UNKNOWN_GROUND }; }
+            const refusal = await groundRefusal(inner);
             if (refusal) return { why: 'not_groundable', rule: refusal };
           }
           if (r.readTier === 'retain_only') return { why: 'retain_only', unread: {reason:'credential_unreadable', missing_fact:'管理员尚未接受此来源', next_action:'请求管理员接受来源，接受后重新核验'} };

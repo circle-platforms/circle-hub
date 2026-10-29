@@ -39,9 +39,9 @@ import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead } from './retry-read.ts';
 import { describe, protocolError } from './errors.ts';
-import { declarationGroundRefusal } from '../../knowledge/declaration-grade.ts';
+import { declarationGroundRefusal, UNKNOWN_GROUND } from '../../knowledge/declaration-grade.ts';
 import { recordReader, sourceReader, principalOf } from './readers.ts';
-import { resultsOf, runById } from './store.ts';
+import { resultsOf } from './store.ts';
 import { packIdOf } from './lineage.ts';
 import { pointerOf, valueAt } from './util.ts';
 
@@ -58,6 +58,38 @@ export interface RunScope {
   catalogs: readonly CatalogView[];
   /** Quotation candidates of every bound source the consumer may read, parsed on first use. */
   candidates(): Promise<QuoteCandidate[]>;
+  /** The distinct artifact records the run bound to each source digest; absent without a run. */
+  bound?: ReadonlyMap<string, readonly string[]>;
+  /** The run's pack id; absent without a run. */
+  pack?: string;
+}
+
+/** The distinct artifact records a run bound to one source digest, in binding order. */
+export function boundArtifacts(run: Pick<RunRecord, 'sources'>, sha256: string): string[] {
+  const out: string[] = [];
+  for (const binding of run.sources) {
+    if (binding.artifact === undefined || out.includes(binding.artifact)) continue;
+    let ref: Reference;
+    try { ref = parseReference(binding.reference); } catch { continue; }
+    if (ref.scheme === 'src' && ref.sha256 === sha256) out.push(binding.artifact);
+  }
+  return out;
+}
+
+/**
+ * The artifact records a use of one source digest stands on: every record the run bound to it, or else the one record the
+ * reader can read now. None means the record cannot be determined.
+ */
+export async function sourceRecords(ctx: EngineContext, reader: ReaderIdentity, pins: readonly string[], sha256: string, consumer: ProducerKind): Promise<SourceArtifact[]> {
+  const { store, artifacts } = ctx.deps.records;
+  if (pins.length > 0) {
+    const records = await Promise.all(pins.map(pin => store.get(pin)));
+    return records.every(record => record !== null) ? records as SourceArtifact[] : [];
+  }
+  const principal = principalOf(reader);
+  const found = await artifacts.source(principal, sha256, { consumer })
+    ?? (reader.run === undefined ? null : await artifacts.sourceForRun(principal, sha256, reader.run, { consumer }));
+  return found === null ? [] : [found.artifact];
 }
 
 /** Bytes a Hub record reference binds as a source (B03 R[4]): the canonical JSON of the record, or of the value its pointer names. */
@@ -128,8 +160,15 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
   }
   let candidates: Promise<QuoteCandidate[]> | undefined;
   const identity: ReaderIdentity = { user: reader.id, role: reader.role, run: run.run };
+  const bound = new Map<string, string[]>();
+  for (const sha of sources.keys()) {
+    const pins = boundArtifacts(run, sha);
+    if (pins.length > 0) bound.set(sha, pins);
+  }
   return {
     reader: identity,
+    bound,
+    pack: packIdOf(run.pack),
     sources,
     records,
     subject,
@@ -315,38 +354,27 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
   let preparedBytes=0;
   const preparedLimit=64*1024*1024;
   let aborted:HubReadFailure|undefined;
-  let groundRun: ReturnType<typeof runById> | undefined;
-  // One concrete artifact per source digest for this resolver: the record a read returns is the record whose provenance a
-  // use as grounds checks. The run's bound artifact when it names one; otherwise the record readable when the digest is
-  // first used, kept for the rest of the resolver (round-four review, item 3).
-  const chosen = new Map<string, Promise<SourceArtifact | null>>();
-  const recordFor = (sha256: string): Promise<SourceArtifact | null> => {
+  // The artifact records each source digest stands on for this resolver, chosen once they are found: every record the run
+  // bound to it (the bindings come with the scope, so a run that is still starting reads before its record is stored), or
+  // else the one record the reader could read at first use. Every read is pinned to the first of them and a use as grounds
+  // checks them all, so a record read is always a record checked (round-four review, item 3; round five). A failed or
+  // empty lookup is not kept, so a retried read looks again.
+  const chosen = new Map<string, Promise<SourceArtifact[]>>();
+  const recordsFor = (sha256: string): Promise<SourceArtifact[]> => {
     let found = chosen.get(sha256);
-    if (!found) chosen.set(sha256, found = (async () => {
-      if (scope.reader.run === undefined) return null;
-      groundRun ??= runById(store, scope.reader.run);
-      const stored = await groundRun;
-      if (stored === null) return null;
-      const binding = stored.body.sources.find(row => {
-        const candidate = parseReference(row.reference);
-        return candidate.scheme === 'src' && candidate.sha256 === sha256 && row.artifact !== undefined;
-      });
-      if (binding?.artifact) return (await store.get(binding.artifact)) as SourceArtifact | null;
-      const found = await artifacts.source(principalOf(scope.reader), sha256, { consumer: 'function' })
-        ?? await artifacts.sourceForRun(principalOf(scope.reader), sha256, scope.reader.run, { consumer: 'function' });
-      return found?.artifact ?? null;
-    })());
+    if (!found) {
+      const lookup = sourceRecords(ctx, scope.reader, scope.bound?.get(sha256) ?? [], sha256, consumer);
+      chosen.set(sha256, found = lookup);
+      lookup.then(records => { if (records.length === 0 && chosen.get(sha256) === lookup) chosen.delete(sha256); }, () => { if (chosen.get(sha256) === lookup) chosen.delete(sha256); });
+    }
     return found;
   };
   // Reading is an authorization decision, not immutable document content: recheck it on every use, of the chosen record.
-  // Without a run there is no binding and no provenance check, and any readable record answers as before.
   const sources: SourceReader = {
     async read(sha256, reader) {
-      if (scope.reader.run === undefined) return sourceReader(artifacts, consumer).read(sha256, reader);
-      const record = await recordFor(sha256);
-      if (record === null) return null;
-      const bound = (await groundRun)?.body.sources.find(row => { const candidate = parseReference(row.reference); return candidate.scheme === 'src' && candidate.sha256 === sha256; });
-      return sourceReader(artifacts, consumer, [{ reference: `src:${sha256}`, role: bound?.role ?? 'expected', artifact: record.digest }]).read(sha256, reader);
+      const [record] = await recordsFor(sha256);
+      if (record === undefined) return null;
+      return sourceReader(artifacts, consumer, [{ reference: `src:${sha256}`, role: scope.sources.get(sha256) ?? 'expected', artifact: record.digest }]).read(sha256, reader);
     },
   };
   const context = {
@@ -359,12 +387,11 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
     documents: ctx.documents,
     onDiagnostic: (diagnostic: {reference:string;message:string}) => ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
   } as const;
-  const groundSource = async (ref: Reference) => {
-    if (ref.scheme !== 'src' || scope.reader.run === undefined) return null;
-    groundRun ??= runById(store, scope.reader.run);
-    const stored = await groundRun;
-    if (stored === null || packIdOf(stored.body.pack) === 'knowledge-contribution') return null;
-    return recordFor(ref.sha256);
+  const groundRefusal = async (ref: Reference): Promise<string | null> => {
+    if (ref.scheme !== 'src') return declarationGroundRefusal(ref, digest => store.get(digest));
+    // The knowledge-contribution pack feeds captured sources with their own operation records: the one exemption.
+    if (scope.pack === 'knowledge-contribution') return null;
+    return declarationGroundRefusal(ref, digest => store.get(digest), await recordsFor(ref.sha256));
   };
   const run = async (reference: string, scoped: boolean, grounds: boolean): Promise<ValueOutcome> => {
     let ref: Reference;
@@ -404,7 +431,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
       }
       if (!result.resolved) return { ok: false, code:result.code, message: result.code === 'SOURCE_UNAVAILABLE' ? `引用解析不出（${UNAVAILABLE_MESSAGE}）` : result.message };
       if (grounds) {
-        const named = await declarationGroundRefusal(ref, digest => store.get(digest), await groundSource(ref));
+        const named = await groundRefusal(ref);
         if (named) return { ok: false, message: named };
       }
       if (grounds && !result.groundable) return { ok: false, message: '这类记录不能作根据（B01 R[4]），请改引结果、动作或效果记录' };
@@ -415,10 +442,12 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
           innerRef = parseReference(ground);
           innerCanonical = formatReference(innerRef);
         } catch {
+          // An inner ground that does not parse has no provenance to check, so it cannot stand under grounds.
+          if (grounds) return { ok: false, message: UNKNOWN_GROUND };
           continue;
         }
         if (grounds) {
-          const named = await declarationGroundRefusal(innerRef, digest => store.get(digest), await groundSource(innerRef));
+          const named = await groundRefusal(innerRef);
           if (named) return { ok: false, message: named };
         }
         if (resolving.has(innerCanonical)) {
@@ -497,7 +526,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
             if(read?.bytes&&read.readTier===saved.tier&&read.bytes.length===read.size&&sha256Hex(read.bytes)===ref.sha256){
               // Only the parse result is reused. A use as grounds checks the source's provenance again, as run() does; a src
               // reference is otherwise always groundable and has no inner grounds (refs/resolve.ts isGroundable).
-              if(options.grounds===true){const named=await declarationGroundRefusal(ref,digest=>store.get(digest),await groundSource(ref));if(named)return {ok:false,message:named};}
+              if(options.grounds===true){const named=await groundRefusal(ref);if(named)return {ok:false,message:named};}
               return {ok:true,value:{...saved.result.value}};
             }
           }
