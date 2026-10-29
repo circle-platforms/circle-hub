@@ -76,7 +76,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   let closing: Promise<void> | null = null;
   const inflight = new Set<Promise<void>>();
 
-  const mcpOptions = { deps, serverVersion: packageVersion(), log, budget };
+  const mcpOptions = { deps, serverVersion: packageVersion(), log, budget, ...(options.keepalive ? { keepalive: options.keepalive } : {}) };
   const consoleOptions = {
     deps, sessions, ownOrigins: () => origins, log,
     // Forwarded headers never establish the HTTPS channel; only the configured authority and peer do.

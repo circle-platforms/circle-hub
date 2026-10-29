@@ -27,6 +27,8 @@ export interface TestServerOptions {
   withoutProducts?: boolean;
   /** Leave out the engine's extras (ServerDeps.runsDetail): start_run through RunsService.startRun, no record references. */
   withoutRunsDetail?: boolean;
+  /** Keepalive timing for long tool calls (see AppOptions). */
+  keepalive?: { headersAfterMs: number; keepaliveMs: number };
 }
 
 export interface TestUser {
@@ -134,7 +136,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
       limits: { ...records.config.limits },
     };
     const { deps, fakes } = fakeDeps(config, records, options);
-    const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000 });
+    const app = createApp(deps, { codeRoot: options.codeRoot ?? records.dataDir, log: (line) => logs.push(line), closeTimeoutMs: 5000, ...(options.keepalive ? { keepalive: options.keepalive } : {}) });
     const info = await app.listen();
     const boot = await records.principals.bootstrapAdmin('管理员');
     const admin: TestUser = { user: boot.user, principal: principalOf(boot.user), token: boot.token.token };

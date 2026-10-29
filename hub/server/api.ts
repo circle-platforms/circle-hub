@@ -57,6 +57,8 @@ export interface AppOptions {
   closeGraceMs?: number;
   /** Request body bytes held at once over all /mcp requests; over it a request gets 503. Default four times the request cap. */
   maxInflightBodyBytes?: number;
+  /** Long tool calls: response head after `headersAfterMs`, then a space every `keepaliveMs`; default 20 s and 30 s. */
+  keepalive?: { headersAfterMs: number; keepaliveMs: number };
 }
 
 export interface ListenInfo {

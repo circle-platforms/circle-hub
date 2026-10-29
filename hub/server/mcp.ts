@@ -24,7 +24,15 @@ export interface McpOptions {
   log: (line: string) => void;
   /** Request body bytes held at once over all requests (the app's budget). */
   budget: BodyBudget;
+  /**
+   * A tool call that is still working after `headersAfterMs` gets its response head sent, then one space every `keepaliveMs`
+   * (insignificant whitespace before the JSON body), so a client that gives up on a silent connection (Node's fetch waits
+   * 300 s for headers and between body chunks) keeps waiting for a call that needs minutes.
+   */
+  keepalive?: { headersAfterMs: number; keepaliveMs: number };
 }
+
+const KEEPALIVE = { headersAfterMs: 20_000, keepaliveMs: 30_000 } as const;
 
 /** Same body for missing, unknown, revoked and disabled tokens. */
 const UNAUTHENTICATED = '需要有效的 Bearer 令牌';
@@ -273,6 +281,23 @@ async function answer(
     return result;
   });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+  const keepalive = options.keepalive ?? KEEPALIVE;
+  let early = false;
+  let ticker: NodeJS.Timeout | undefined;
+  const opening = isRequest(parsed) && parsed.method === 'tools/call'
+    ? setTimeout(() => {
+        if (response.headersSent || response.destroyed || response.writableEnded) return;
+        early = true;
+        setCommonHeaders(response);
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.flushHeaders();
+        ticker = setInterval(() => {
+          if (!response.destroyed && !response.writableEnded) response.write(' ');
+        }, keepalive.keepaliveMs);
+        ticker.unref();
+      }, keepalive.headersAfterMs)
+    : undefined;
+  opening?.unref();
   try {
     await server.connect(transport);
     // The Host header passed the allow-list already; the path is always /mcp (an absolute-form target is not reused).
@@ -303,15 +328,22 @@ async function answer(
       for (const state of states) state.callResult ??= 'error';
     }
     for (const state of states) await logCall(options, principal, traceId, sessionId, state);
-    setCommonHeaders(response);
-    const headers: Record<string, string> = {};
-    reply.headers.forEach((value, name) => {
-      headers[name] = value;
-    });
-    headers['content-length'] = String(Buffer.byteLength(text));
-    response.writeHead(reply.status, headers);
-    response.end(text);
+    if (early) {
+      // The head (HTTP 200, JSON) went out while the call worked; the body follows the keepalive spaces.
+      response.end(text);
+    } else {
+      setCommonHeaders(response);
+      const headers: Record<string, string> = {};
+      reply.headers.forEach((value, name) => {
+        headers[name] = value;
+      });
+      headers['content-length'] = String(Buffer.byteLength(text));
+      response.writeHead(reply.status, headers);
+      response.end(text);
+    }
   } finally {
+    if (opening !== undefined) clearTimeout(opening);
+    if (ticker !== undefined) clearInterval(ticker);
     finishObserved?.();
     await transport.close().catch(() => {});
     await server.close().catch(() => {});
