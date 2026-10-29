@@ -1,13 +1,12 @@
-// Unit-test partitions. `regular` and `parser-bounds` are the public CI split (same files, concurrency 2 and 1).
-// `all` is the local run: one shared PostgreSQL cluster, per-file CREATE DATABASE ... TEMPLATE, and a higher
-// concurrency for files that do not start a postmaster. Files that need their own cluster stay at concurrency 2.
-// Timing sentinels run in their own process so a crowded template clone does not share their millisecond budget.
+// Unit-test partitions share a migrated PostgreSQL template where possible. Normal work adapts to CPU and memory;
+// timing sentinels run alone so other tests do not consume their millisecond budget. Acceptance uses the same scheduler.
 import { execFileSync, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { globSync, readFileSync } from 'node:fs';
-import { availableParallelism, loadavg } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { closeSync, globSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
+import { availableParallelism, cpus, freemem, loadavg, platform, tmpdir, totalmem } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { COUNTERS, parseTestOutput, type Counts } from '../.github/checks/test-summary.ts';
 import { createPool, Database } from '../hub/records/db.ts';
 import { migrate } from '../hub/records/migrations.ts';
 import { startPostgres } from '../hub/testing/postgres.ts';
@@ -53,10 +52,13 @@ const SENTINEL_SET = new Set<string>(SENTINELS);
 
 const ISOLATED_MARK = /passwordless\s*:\s*true|CREATE ROLE\b|startPostgres\(\s*\{[^)]*socket\s*:\s*true|createPostgres\s*\(|postgresFor\s*\(|ensureDatabaseRunning\s*\(/;
 
-export type UnitGroup = 'all' | 'regular' | 'parser-bounds';
+export type UnitGroup = 'all' | 'regular' | 'parser-bounds' | 'acceptance' | 'docs' | 'files';
 export type UnitLane = 'shared' | 'isolated' | 'sentinel';
 
-export function unitFiles(group: UnitGroup = 'all'): string[] {
+export function unitFiles(group: UnitGroup = 'all', explicit:readonly string[]=[]): string[] {
+  if (group === 'acceptance') return [...new Set(globSync(['tests/acceptance/*.test.ts','tests/acceptance/oracle/*.test.ts'], { cwd: ROOT }))].sort();
+  if (group === 'docs') return [...new Set(globSync('.github/checks/*.test.ts', { cwd: ROOT }))].sort();
+  if (group === 'files') return [...new Set(explicit)].sort();
   const all = [...new Set(globSync(UNIT_PATTERNS, { cwd: ROOT }))].sort();
   if (group === 'all') return all;
   if (group === 'regular') return all.filter((file) => !PARSER_BOUND_SET.has(file));
@@ -77,24 +79,29 @@ export function classifyLanes(files: readonly string[]): Record<UnitLane, string
   return lanes;
 }
 
-/** Public `regular` stays at 2 and `parser-bounds` at 1. `all` uses most of this machine, leaving the postmaster a core. */
+/** Maximum from available cores (or the operator's explicit cap); actual workers adapt to load. */
 export function sharedConcurrency(group: UnitGroup): number {
   if (group === 'parser-bounds') return 1;
-  if (group === 'regular') return 2;
   const fromEnv = Number(process.env.HUB_UNIT_CONCURRENCY);
-  if (Number.isInteger(fromEnv) && fromEnv >= 1 && fromEnv <= 32) return fromEnv;
-  return Math.max(2, Math.min(14, availableParallelism() - 1));
+  const capacity=Math.max(1,availableParallelism()-1);
+  return Number.isInteger(fromEnv) && fromEnv >= 1 ? Math.min(capacity,fromEnv) : capacity;
 }
 
-/**
- * Timing sentinels follow the group concurrency, so `parser-bounds` stays a single worker.
- * `all` does not inherit the shared lane's width. On this machine three consecutive runs of the
- * sentinel lane at concurrency 2 all passed (99–171s), including one that started at load 30,
- * and three at concurrency 1 also passed but took 166–315s. The local default is 2.
- */
+/** Timing sentinels run individually because their assertions measure elapsed time. */
 export function sentinelConcurrency(group: UnitGroup): number {
-  if (group === 'all') return 2;
-  return sharedConcurrency(group);
+  return 1; // timing-sensitive files run alone, without other tests in this runner
+}
+
+/** Start from observed idle capacity, then adjust gradually to keep the machine responsive. */
+export function initialWorkers(cores: number, busy: number): number {
+  const cap=Math.max(1,Math.floor(cores)-1);
+  return Math.max(1,Math.min(cap,Math.ceil(cap*(1-Math.max(0,Math.min(1,busy))))));
+}
+export function nextWorkers(current: number, cap: number, busy: number, memoryFree: number): number {
+  if(memoryFree<0.08)return Math.max(1,current-2);
+  if(memoryFree<0.18 || busy>0.90)return Math.max(1,current-1);
+  if(memoryFree>0.25 && busy<0.72)return Math.min(cap,current+1);
+  return current;
 }
 
 function stringEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
@@ -104,48 +111,114 @@ function stringEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   return env;
 }
 
-function spawnLane(files: string[], concurrency: number, env: NodeJS.ProcessEnv): ChildProcess | undefined {
-  if (files.length === 0) return undefined;
-  return spawn(process.execPath, ['--test', '--test-isolation=process', `--test-concurrency=${concurrency}`, ...files], { cwd: ROOT, env, stdio: 'inherit' });
-}
-
-function exitOf(child: ChildProcess | undefined): Promise<number> {
-  if (child === undefined) return Promise.resolve(0);
-  return new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('exit', (code) => resolve(code ?? 1));
-  });
-}
-
-interface Peaks {
-  shm: number;
-  rssKiB: number;
-  cpu: number;
-}
-
-function samplePeaks(postmaster: number, into: Peaks): void {
+/** Current spare shared-memory slots, if the host exposes the limit. */
+function sharedMemorySpare(): number | null {
   try {
+    if(platform()!=='darwin')return null;
+    const limit=Number(execFileSync('sysctl',['-n','kern.sysv.shmmni'],{encoding:'utf8',timeout:1000}).trim());
     const text = execFileSync('ipcs', ['-m', '-o'], { encoding: 'utf8' });
-    const shm = text.split('\n').filter((line) => line.startsWith('m ')).length;
-    if (shm > into.shm) into.shm = shm;
+    const used=text.split('\n').filter(line=>line.startsWith('m ')).length;
+    return Number.isFinite(limit) ? Math.max(0,limit-used) : null;
   } catch {
-    /* ipcs is informational */
+    return null;
   }
-  if (postmaster <= 0) return;
-  const listed = execFileSync('ps', ['-ax', '-o', 'pid=,ppid=,rss=,pcpu='], { encoding: 'utf8' });
-  let rss = 0;
-  let cpu = 0;
-  for (const line of listed.split('\n')) {
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 4) continue;
-    const pid = Number(parts[0]);
-    const ppid = Number(parts[1]);
-    if (pid !== postmaster && ppid !== postmaster) continue;
-    rss += Number(parts[2]);
-    cpu += Number(parts[3]);
+}
+
+/** macOS free memory excludes reclaimable cache; memory_pressure reports the OS's available percentage. */
+function freeMemoryRatio(): number {
+  try {
+    if(platform()==='darwin'){
+      const text=execFileSync('memory_pressure',['-Q'],{encoding:'utf8',timeout:1000});
+      const match=/System-wide memory free percentage:\s*(\d+)%/.exec(text);
+      if(match)return Number(match[1])/100;
+    }
+    if(platform()==='linux'){
+      const text=readFileSync('/proc/meminfo','utf8'),match=/^MemAvailable:\s*(\d+)\s+kB/m.exec(text);
+      if(match)return Math.min(1,Number(match[1])*1024/totalmem());
+    }
+  } catch { /* fall back to the OS-reported free bytes */ }
+  return Math.min(1,freemem()/totalmem());
+}
+
+type CpuSample = {total:number;idle:number};
+function cpuSample(): CpuSample {
+  return cpus().reduce((sum,cpu)=>({total:sum.total+Object.values(cpu.times).reduce((a,b)=>a+b,0),idle:sum.idle+cpu.times.idle}),{total:0,idle:0});
+}
+export function cpuBusy(before:CpuSample,after:CpuSample):number {
+  const total=after.total-before.total,idle=after.idle-before.idle;
+  return total>0?Math.max(0,Math.min(1,1-idle/total)):0.5;
+}
+
+type TestTask = {file:string;lane:UnitLane};
+type AdaptiveOptions = { root?:string; cap?:number; initialBusy?:number; memoryFree?:()=>number; sampleBusy?:()=>number; intervalMs?:number; onWorkers?:(active:number,target:number)=>void; output?:(text:string)=>void };
+const emptyCounts=():Counts=>Object.fromEntries(COUNTERS.map(key=>[key,0])) as Counts;
+
+/** Run one isolated Node test process per file and adapt the number in flight without stopping running tests. */
+export async function runAdaptiveTasks(tasks:readonly TestTask[], shared:NodeJS.ProcessEnv, clean:NodeJS.ProcessEnv, options:AdaptiveOptions={}):Promise<{code:number;counts:Counts}> {
+  const root=options.root??ROOT,cap=Math.max(1,options.cap??sharedConcurrency('all'));
+  const memory=options.memoryFree??freeMemoryRatio,interval=options.intervalMs??3000;
+  const pending=[...tasks],active=new Map<ChildProcess,UnitLane>(),counts=emptyCounts();
+  let resourceAt=0,cachedFree=1,cachedPrivate=cap;
+  const resources=()=>{if(Date.now()-resourceAt>=interval){
+    cachedFree=memory();const spare=sharedMemorySpare(),running=[...active.values()].filter(lane=>lane==='isolated').length;
+    const memoryLimit=running+Math.max(0,Math.floor(totalmem()*cachedFree/(2*1024**3)));
+    const shmLimit=spare===null?cap:running+Math.max(0,Math.floor(Math.max(0,spare-4)/2));
+    cachedPrivate=Math.min(cap,memoryLimit,shmLimit);resourceAt=Date.now();
+  }return {free:cachedFree,privateLimit:cachedPrivate};};
+  let previous=cpuSample();
+  if(options.initialBusy===undefined)await new Promise(resolve=>setTimeout(resolve,350));
+  let current=cpuSample();const firstBusy=options.initialBusy??cpuBusy(previous,current);let target=initialWorkers(cap+1,firstBusy);previous=current;
+  if(resources().free<0.08)target=1;
+  process.stderr.write(`adaptive start ${target}/${cap} workers (CPU ${Math.round(firstBusy*100)}%, memory free ${Math.round(resources().free*100)}%)\n`);
+  const dir=mkdtempSync(join(tmpdir(),'circle-hub-test-output-'));let serial=0,stopping=false,failed=false,waitingSince:number|null=null;
+  const stop=()=>{stopping=true;for(const child of active.keys())child.kill('SIGINT');};
+  process.once('SIGINT',stop);process.once('SIGTERM',stop);
+  try {
+    await new Promise<void>((done,reject)=>{
+      const tick=setInterval(()=>{
+        current=cpuSample();const busy=options.sampleBusy?.()??cpuBusy(previous,current);previous=current;const free=resources().free;
+        const next=nextWorkers(target,cap,busy,free);
+        if(next!==target){process.stderr.write(`adaptive workers ${target} -> ${next} (CPU ${Math.round(busy*100)}%, memory free ${Math.round(free*100)}%)\n`);target=next;}
+        schedule();
+      },interval);
+      const finish=()=>{if(active.size===0&&(pending.length===0||stopping)){clearInterval(tick);done();}};
+      const schedule=()=>{
+        if(stopping)return finish();
+        const {privateLimit}=resources(),runningPrivate=[...active.values()].filter(lane=>lane==='isolated').length;
+        let availablePrivate=Math.max(0,privateLimit-runningPrivate);
+        while(active.size<target&&pending.length){
+          const index=pending.findIndex(task=>task.lane!=='isolated'||availablePrivate>0);
+          if(index<0)break;
+          const [task]=pending.splice(index,1),path=join(dir,`${serial++}.tap`),fd=openSync(path,'w');
+          if(task.lane==='isolated')availablePrivate--;
+          const child=spawn(process.execPath,['--test','--test-reporter=tap',task.file],{cwd:root,env:task.lane==='shared'?shared:clean,stdio:['ignore',fd,fd]});
+          active.set(child,task.lane);options.onWorkers?.(active.size,target);
+          let ended=false;
+          const complete=(code:number)=>{
+            if(ended)return;ended=true;closeSync(fd);active.delete(child);
+            try {
+              const output=readFileSync(path,'utf8');if(options.output)options.output(output);else process.stdout.write(output);
+              const parsed=parseTestOutput(output);
+              if(parsed.counts){for(const key of COUNTERS)counts[key]+=parsed.counts[key];}
+              else {counts.tests++;counts.fail++;failed=true;process.stderr.write(`No complete test summary: ${task.file}\n`);}
+              if(code!==0){failed=true;if(parsed.counts?.fail===0 && parsed.counts?.cancelled===0){counts.tests++;counts.fail++;}}
+            } catch(error){failed=true;counts.tests++;counts.fail++;process.stderr.write(`Cannot read test output for ${task.file}: ${String(error)}\n`);}
+            options.onWorkers?.(active.size,target);schedule();finish();
+          };
+          child.once('error',()=>complete(1));child.once('close',code=>complete(code??1));
+        }
+        if(active.size===0&&pending.length){
+          waitingSince??=Date.now();
+          if(Date.now()-waitingSince>30_000){failed=true;counts.tests++;counts.fail++;pending.length=0;process.stderr.write('No memory or shared-memory capacity for the remaining tests\n');}
+        }else waitingSince=null;
+        finish();
+      };
+      try{schedule();}catch(error){clearInterval(tick);reject(error);}
+    });
+  } finally {
+    process.off('SIGINT',stop);process.off('SIGTERM',stop);rmSync(dir,{recursive:true,force:true});
   }
-  if (rss > into.rssKiB) into.rssKiB = rss;
-  if (cpu > into.cpu) into.cpu = cpu;
+  return {code:stopping?130:failed||counts.fail>0||counts.cancelled>0||counts.tests===0?1:0,counts};
 }
 
 async function timeClone(postgres: TemporaryPostgres): Promise<number> {
@@ -189,24 +262,17 @@ function sharedEnv(postgres: TemporaryPostgres): NodeJS.ProcessEnv {
   });
 }
 
-/** Runs one public partition or the whole local suite. Resolves to the test runner's exit code. */
-export async function runUnitTests(group: UnitGroup = 'all'): Promise<number> {
-  const files = unitFiles(group);
+/** Runs a partition or acceptance, adjusting normal work while keeping timing-sensitive files isolated. */
+export async function runUnitTests(group: UnitGroup = 'all', explicit:readonly string[]=[]): Promise<number> {
+  const files = unitFiles(group,explicit);
   if (files.length === 0) throw new Error('单元测试分组没有文件，拒绝空运行；检查测试文件声明');
   const lanes = classifyLanes(files);
-  const concurrency = sharedConcurrency(group);
-  const sentinelLimit = sentinelConcurrency(group);
+  const cap = sharedConcurrency(group);
   const wallBegan = Date.now();
   process.stderr.write(
-    `unit lanes shared=${lanes.shared.length} isolated=${lanes.isolated.length} sentinel=${lanes.sentinel.length} sharedConcurrency=${concurrency} sentinelConcurrency=${sentinelLimit} load=${loadavg().map((n) => n.toFixed(2)).join(' ')}\n`,
+    `test lanes shared=${lanes.shared.length} isolated=${lanes.isolated.length} sentinel=${lanes.sentinel.length} adaptiveCeiling=${cap} load=${loadavg().map((n) => n.toFixed(2)).join(' ')}\n`,
   );
-  const postgres = lanes.shared.length === 0 ? undefined : await startPostgres({ maxConnections: 500, sharedBuffers: '512MB', autovacuum: false, private: true });
-  const children: ChildProcess[] = [];
-  const stopChildren = (): void => {
-    for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGINT');
-  };
-  process.once('SIGINT', stopChildren);
-  process.once('SIGTERM', stopChildren);
+  const postgres = lanes.shared.length === 0 || group==='docs' ? undefined : await startPostgres({ maxConnections: 500, sharedBuffers: '512MB', autovacuum: false, private: true });
   try {
     if (postgres) {
       await prepareTemplate(postgres);
@@ -214,36 +280,18 @@ export async function runUnitTests(group: UnitGroup = 'all'): Promise<number> {
     } else {
       process.stderr.write('unit shared cluster not started\n');
     }
-    const shared = postgres ? spawnLane(lanes.shared, concurrency, sharedEnv(postgres)) : undefined;
-    // Own-cluster files stay at 2 so they do not add SysV segments while the shared lane is busy.
-    const isolated = spawnLane(lanes.isolated, 2, stringEnv());
-    const sentinel = spawnLane(lanes.sentinel, sentinelLimit, stringEnv());
-    for (const child of [shared, isolated, sentinel]) if (child) children.push(child);
-    const peaks: Peaks = { shm: 0, rssKiB: 0, cpu: 0 };
-    const postmaster = postgres?.pid ?? 0;
-    const timer = setInterval(() => samplePeaks(postmaster, peaks), 2000);
-    timer.unref();
-    const laneDone = async (name: string, child: ChildProcess | undefined): Promise<number> => {
-      const began = Date.now();
-      const code = await exitOf(child);
-      process.stderr.write(`lane ${name} exit ${code} ${((Date.now() - began) / 1000).toFixed(1)}s\n`);
-      return code;
-    };
-    let codes: number[];
-    try {
-      codes = await Promise.all([laneDone('shared', shared), laneDone('isolated', isolated), laneDone('sentinel', sentinel)]);
-    } finally {
-      clearInterval(timer);
-      samplePeaks(postmaster, peaks);
+    const sharedSet=new Set(lanes.shared),isolatedSet=new Set(lanes.isolated);
+    const tasks=files.flatMap<TestTask>(file=>sharedSet.has(file)?[{file,lane:postgres?'shared':'sentinel'}]:isolatedSet.has(file)?[{file,lane:'isolated'}]:[]);
+    const counts=emptyCounts();let code=0;
+    if(tasks.length){const result=await runAdaptiveTasks(tasks,postgres?sharedEnv(postgres):stringEnv(),stringEnv(),{cap});code=result.code;for(const key of COUNTERS)counts[key]+=result.counts[key];}
+    if(code!==130&&lanes.sentinel.length){
+      const result=await runAdaptiveTasks(lanes.sentinel.map(file=>({file,lane:'sentinel' as const})),stringEnv(),stringEnv(),{cap:1,initialBusy:0});
+      if(code===0)code=result.code;for(const key of COUNTERS)counts[key]+=result.counts[key];
     }
-    const failed = codes.find((code) => code !== 0) ?? 0;
-    process.stderr.write(
-      `unit wall ${((Date.now() - wallBegan) / 1000).toFixed(1)}s exit ${failed} shm=${peaks.shm} rssKiB=${peaks.rssKiB} cpu=${peaks.cpu.toFixed(0)} load=${loadavg().map((n) => n.toFixed(2)).join(' ')}\n`,
-    );
-    return failed;
+    for(const key of COUNTERS)process.stdout.write(`# ${key} ${counts[key]}\n`);
+    process.stderr.write(`test wall ${((Date.now()-wallBegan)/1000).toFixed(1)}s exit ${code}\n`);
+    return code;
   } finally {
-    process.off('SIGINT', stopChildren);
-    process.off('SIGTERM', stopChildren);
     await postgres?.stop();
   }
 }
@@ -251,11 +299,12 @@ export async function runUnitTests(group: UnitGroup = 'all'): Promise<number> {
 const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 if (isMain) {
   const group = process.argv[2] ?? 'all';
-  if ((group !== 'all' && group !== 'regular' && group !== 'parser-bounds') || process.argv.length > 3) {
-    process.stderr.write('用法：node tools/run-unit-tests.ts [all|regular|parser-bounds]\n');
+  const explicit=group==='files'?process.argv.slice(3):[];
+  if ((group !== 'all' && group !== 'regular' && group !== 'parser-bounds' && group !== 'acceptance' && group !== 'docs' && group !== 'files') || (group==='files'?explicit.length===0:process.argv.length>3)) {
+    process.stderr.write('用法：node tools/run-unit-tests.ts [all|regular|parser-bounds|acceptance|docs|files <测试文件>...]\n');
     process.exitCode = 2;
   } else {
-    runUnitTests(group).then(
+    runUnitTests(group,explicit).then(
       (code) => {
         process.exitCode = code;
       },

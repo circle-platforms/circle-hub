@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { availableParallelism, tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { PARSER_BOUNDS, SENTINELS, classifyLanes, sentinelConcurrency, sharedConcurrency, unitFiles, unitLane } from './run-unit-tests.ts';
+import { PARSER_BOUNDS, SENTINELS, classifyLanes, cpuBusy, initialWorkers, nextWorkers, runAdaptiveTasks, sentinelConcurrency, sharedConcurrency, unitFiles, unitLane } from './run-unit-tests.ts';
 
 test('public partitions cover the unit files once', () => {
   const all = unitFiles('all');
@@ -11,6 +14,14 @@ test('public partitions cover the unit files once', () => {
   for (const file of bounds) assert.equal(regular.has(file), false);
   const boundSet = new Set<string>(bounds);
   for (const file of all) assert.equal(regular.has(file) || boundSet.has(file), true);
+});
+
+test('acceptance includes oracle files once and explicit file selection is exact', () => {
+  const files=unitFiles('acceptance');assert.equal(new Set(files).size,files.length);
+  assert.ok(files.includes('tests/acceptance/oracle/differential.test.ts'));
+  assert.ok(files.includes('tests/acceptance/oracle/oracle.test.ts'));
+  assert.deepEqual(unitFiles('files',['b.test.ts','a.test.ts','b.test.ts']),['a.test.ts','b.test.ts']);
+  assert.ok(unitFiles('docs').includes('.github/checks/docs.test.ts'));
 });
 
 test('lanes partition the suite and keep private clusters and timing sentinels out of the shared pool', () => {
@@ -27,12 +38,33 @@ test('lanes partition the suite and keep private clusters and timing sentinels o
   assert.equal(lanes.shared.length > lanes.isolated.length, true);
 });
 
-test('local concurrency tracks this machine and the public partitions stay capped', () => {
-  assert.equal(sharedConcurrency('regular'), 2);
+test('worker ceilings follow available cores while timing-sensitive files stay isolated', () => {
+  assert.equal(sharedConcurrency('regular'), sharedConcurrency('all'));
   assert.equal(sharedConcurrency('parser-bounds'), 1);
-  assert.ok(sharedConcurrency('all') >= 2 && sharedConcurrency('all') <= 14);
+  assert.ok(sharedConcurrency('all') >= 1 && sharedConcurrency('all') <= Math.max(1,availableParallelism()-1));
   assert.equal(sentinelConcurrency('parser-bounds'), 1);
-  assert.equal(sentinelConcurrency('regular'), sharedConcurrency('regular'));
-  assert.equal(sentinelConcurrency('all'), 2);
+  assert.equal(sentinelConcurrency('regular'), 1);
+  assert.equal(sentinelConcurrency('all'), 1);
   assert.equal(classifyLanes(unitFiles('parser-bounds')).shared.length, 0);
+});
+
+test('CPU and memory pressure change the target without a fixed two-worker ceiling', () => {
+  assert.equal(cpuBusy({total:100,idle:40},{total:200,idle:100}),0.4);
+  assert.equal(initialWorkers(16,0.25),12);
+  assert.equal(initialWorkers(4,0.9),1);
+  assert.equal(nextWorkers(8,15,0.95,0.5),7);
+  assert.equal(nextWorkers(8,15,0.3,0.5),9);
+  assert.equal(nextWorkers(8,15,0.3,0.05),6);
+  assert.equal(nextWorkers(1,15,0.95,0.01),1);
+});
+
+test('adaptive pool actually runs over two files together and reduces its target under load', async () => {
+  const dir=mkdtempSync(join(tmpdir(),'synthetic-adaptive-tests-'));
+  try {
+    const files=Array.from({length:8},(_,i)=>{const path=join(dir,`case-${i}.test.mjs`);writeFileSync(path,"import {test} from 'node:test';test('synthetic',async()=>new Promise(r=>setTimeout(r,150)));"+(i===0?"test('synthetic skipped',{skip:'synthetic reason'},()=>{});":"")+"\n");return path;});
+    const observations:Array<[number,number]>=[];
+    const result=await runAdaptiveTasks(files.map(file=>({file,lane:'shared'})),{}, {},{root:dir,cap:4,initialBusy:0,memoryFree:()=>0.8,sampleBusy:()=>0.99,intervalMs:30,onWorkers:(active,target)=>observations.push([active,target]),output:()=>{}});
+    assert.equal(result.code,0);assert.equal(result.counts.tests,9);assert.equal(result.counts.pass,8);assert.equal(result.counts.skipped,1);
+    assert.ok(observations.some(([active])=>active>2));assert.ok(observations.some(([,target])=>target<4));
+  } finally {rmSync(dir,{recursive:true,force:true});}
 });
