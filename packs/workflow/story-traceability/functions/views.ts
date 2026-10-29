@@ -55,6 +55,9 @@ export function readIndexView(input: BoundInput, slot: string, expect: { kind: s
   }
   if (typeof model.truncated !== 'boolean') return failure('视图的 truncated 不是布尔值', fix);
   const keys = model.keys as Record<string, string[]>;
+  if(model.key_space_complete!==undefined&&typeof model.key_space_complete!=='boolean')return failure('视图的 key_space_complete 不是布尔值',fix);
+  const scopeComplete=isRecord(model.scope)&&typeof model.scope.complete==='boolean'?model.scope.complete:null;
+  if(model.key_space_complete===true&&(Object.hasOwn(model,'only')||model.skipped!==0||model.total_keys!==Object.keys(keys).length||scopeComplete===false))return failure('视图声称键范围完整，但范围、来源或键计数不完整',fix);
   let missing = 0;
   for (const list of Object.values(keys)) for (const digest of list) if (entries[digest] === undefined) missing++;
   const warnings: PackWarning[] = [];
@@ -78,6 +81,8 @@ export function readIndexView(input: BoundInput, slot: string, expect: { kind: s
     total_keys: model.total_keys as number,
     total_entries: model.total_entries as number,
     truncated: model.truncated,
+    key_space_complete: typeof model.key_space_complete==='boolean'?model.key_space_complete:null,
+    scope_complete: scopeComplete,
     cut_keys: strings(model.cut_keys),
     only: Array.isArray(model.only) ? strings(model.only) : null,
     skipped: model.skipped as number,

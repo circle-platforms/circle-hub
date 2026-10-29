@@ -8,7 +8,7 @@ function cutView() {
   const entries = [0,1].map(i => caseEntry({defects:[],stories:['00021'],case:`a${i}`}));
   entries.push(...Array.from({length:2000},(_,i)=>caseEntry({defects:[],stories:['99'],case:`b${i}`})));
   const view=indexViewOf('case','stories',entries);
-  Object.assign(view,{cut_keys:['99'],truncated:true,total_entries:2003});
+  Object.assign(view,{cut_keys:['99'],truncated:true,total_entries:2003,key_space_complete:true});
   return IndexView.parse(view);
 }
 function run(ids:string[],view=cutView()):any {

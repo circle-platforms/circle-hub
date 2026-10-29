@@ -606,6 +606,10 @@
         "type": "string"
       }
     },
+    "key_space_complete": {
+      "description": "true only when this page lists every raw key in the frozen view and no known skipped source, unresolved feeding projection or missing indexed field can add a key; it does not cover unobserved sources; absent on legacy views",
+      "type": "boolean"
+    },
     "totals": {
       "type": "object",
       "properties": {

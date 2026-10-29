@@ -29,6 +29,10 @@ export type IndexViewData = {
   total_keys: number;
   total_entries: number;
   truncated: boolean;
+  /** Whether every raw index key in scope was enumerated; null on legacy views. */
+  key_space_complete: boolean | null;
+  /** The Hub's source scope completeness, when present. */
+  scope_complete: boolean | null;
   cut_keys: string[];
   only: string[] | null;
   /** Listed sources the producers could not use: an absent key is unknown, not proof of absence, when this is not zero. */
