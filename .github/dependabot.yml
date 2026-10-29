@@ -16,6 +16,11 @@ updates:
       # The Hub runs on Node 24 (package.json engines); types from a later major describe APIs it does not have.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
+      # Pack publication checks a function's imports with TypeScript's JavaScript compiler API (hub/runs/packs/imports.ts),
+      # as several tests do. TypeScript 7, the native port, does not provide that API, so every pack publication fails with
+      # it (#53). 6.x keeps the API and still comes; moving to 7 means replacing that checker first.
+      - dependency-name: 'typescript'
+        versions: ['>= 7']
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]

@@ -187,6 +187,8 @@ jobs:
           - { suite: acceptance, shard: 2/2 }
     env:
       GUARDED_SHARD: ${{ matrix.shard }}
+      # Every sandbox attempt that ends SANDBOX_UNAVAILABLE names its reason in the log (hub/rules/README.md, #96).
+      HUB_SANDBOX_DIAGNOSTICS: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
