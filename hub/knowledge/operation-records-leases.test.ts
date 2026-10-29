@@ -152,7 +152,8 @@ test('capture time decides absent, acquired and released leases without changing
   assert.equal(plain.receipt.device, undefined);
   assert.equal(plain.receipt.lease, undefined);
   assert.equal(plain.feeding.lease, undefined);
-  assert.equal(plain.view.note, null);
+  // No device, but the capture time was not declared either: the view says so (round-four review, item 8).
+  assert.match(plain.view.note ?? '', /^采集时间未声明（取自上传时刻）；Hub 收到 /);
   assert.doesNotMatch(plain.text, /无租约|设备 device0/);
 
   const earlyCapture = await captureRun(ctx);
@@ -607,6 +608,27 @@ test('omitted artifacts and a manifest-derived bed identify equal-byte captures 
   assert.equal(replay.result?.contributions?.stored[0]?.record, second.receipt.record);
 });
 
+test('a bed derived from the frozen manifest stays in the record and its identity when the capture time is not declared', {skip}, async t => {
+  const ctx = await world(t);
+  const {run:_run, predecessor:_predecessor, groups:_groups, leases:_leases, feeding_offset:_feedingOffset, ...base} = ctx.run;
+  const booking = await putRun(ctx.w.kit.store, {
+    ...base, run:newId('run'), pack:'test-bed@1.0.0',
+    groups:[{manifest:{schema:'test-bed-manifest@1', beds:[{name:'synthetic', devices:[{name:'device0', type:'router', ipv4:[], ipv6:[]}]}]}}],
+  }, ctx.run.started_at);
+  const current = await captureRun(ctx, {predecessor:booking.body.run, declareCaptureTime:false});
+  const raw = {...observation(current, '推导床但未声明采集时间'), device:'device0'};
+  delete raw.source.artifact;
+  const saved = await stored(current, await submit(current, raw, '推导床但未声明采集时间', {missingBed:true}));
+  assert.equal(saved.feeding.bed, 'synthetic', 'the derived bed is kept, not dropped with the unconfirmed lease');
+  assert.equal(saved.feeding.lease, null);
+  assert.equal(saved.feeding.captured_at_declared, false);
+  assert.ok(saved.feeding.lease_unconfirmed);
+  // The bed takes part in the identity: the same capture declared on the same bed is the same record.
+  const replay = await submit(current, {...raw, bed:'synthetic'}, '推导床但未声明采集时间', {missingBed:true});
+  assert.equal(replay.acceptance, 'accepted', JSON.stringify(replay.errors));
+  assert.equal(replay.result?.contributions?.stored[0]?.record, saved.receipt.record);
+});
+
 test('another holders expiry inside the interval is a change rather than a confirmed absence', {skip}, async t => {
   const ctx = await world(t);
   const {service:leases} = leasesOf(t, ctx, async () => new Date('2026-10-27T09:59:00.000Z'));
@@ -712,7 +734,8 @@ test('a frozen old pack replays a legacy operation without device or lease field
   assert.equal(saved.receipt.device, undefined);
   assert.equal(saved.receipt.lease, undefined);
   assert.equal(saved.view.status, 'valid');
-  assert.equal(saved.view.note, null);
+  // An old client declares no capture time; the view discloses that, as for any operation record (round-four review, item 8).
+  assert.match(saved.view.note ?? '', /^采集时间未声明（取自上传时刻）；Hub 收到 /);
   const first = await ctx.w.knowledge.layers.contributions.readView(saved.receipt.record, ctx.w.admin);
   const second = await ctx.w.knowledge.layers.contributions.readView(saved.receipt.record, ctx.w.admin);
   assert.deepEqual(second, first);

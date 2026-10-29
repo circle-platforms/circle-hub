@@ -201,7 +201,8 @@ export async function completeOperationDevice(
     }
   }
   if (bed === undefined) return withIdentity(unconfirmed('运行未绑定台架清单且声明里没有床身份；在提案中写明床，或先预订台架使运行冻结清单后重交'));
-  if (input.captureTimeDeclared === false) return withIdentity(unconfirmed('客户端没有明确声明采集时刻，上传时刻不能替代它；用支持 captured_at 的客户端重新采集上传，或补交带明确采集时刻的新原件', '升级采集客户端，重新采集并在 upload_file 中显式传 captured_at 后重交；本次记录保留为租约未能确认，不按上传时刻判定'));
+  // The bed is known here (declared or derived from the frozen manifest) even when the capture time is not: keep it in the record and its identity.
+  if (input.captureTimeDeclared === false) return withIdentity(unconfirmed('客户端没有明确声明采集时刻，上传时刻不能替代它；用支持 captured_at 的客户端重新采集上传，或补交带明确采集时刻的新原件', '升级采集客户端，重新采集并在 upload_file 中显式传 captured_at 后重交；本次记录保留为租约未能确认，不按上传时刻判定'), bed);
   return withIdentity(await operationLease(store, { ...input, device, bed, key: `bed/${bed}/${device}` }, leases), bed);
 }
 

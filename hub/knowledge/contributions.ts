@@ -84,7 +84,8 @@ function noteWithDevice(body: KnowledgeContributionBody, note: string | null): s
 function noteWithDevice(body: KnowledgeContributionBody, note: string | null): string | null {
   const device = operationDeviceNote(body.feeding);
   const feeding = body.feeding;
-  const time = feeding && operationRecord(feeding.schema) && 'device' in feeding && feeding.captured_at_declared === false ? `采集时间未声明（取自上传时刻）；Hub 收到 ${feeding.received_at}` : null;
+  // Every operation record says when its capture time was not declared, with or without a device.
+  const time = feeding && operationRecord(feeding.schema) && 'captured_at_declared' in feeding && feeding.captured_at_declared === false ? `采集时间未声明（取自上传时刻）；Hub 收到 ${feeding.received_at}` : null;
   return [note, device, time].filter((value): value is string => value !== null).join('；') || null;
 }
 
