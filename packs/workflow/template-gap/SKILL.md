@@ -1,6 +1,6 @@
 # 模板类别核验（模板 v3，R1）
 
-Hub 不调用模型。类别语义来自作者原件的 `category_ids`，或你逐用例提交的模型判断；Hub 只核验结构、身份、逐字引文、用例归属与集合运算。引文存在不证明分类语义正确，结果仍需独立复核查漏。不得用关键词、词典、同义词、前缀、自由文本正则判断类别，也不得把 Functional 等测试类型标签映射成 functional。
+Hub 不调用模型。类别语义来自作者 `category_ids` 或模型逐用例判断；Hub 核结构、身份、逐字引文、用例归属和集合。引文存在不证明语义正确，仍需独立复核查漏。禁止关键词、词典、同义词、前缀、自由文本正则判断类别；不将 Functional 等测试类型标签映射为 functional。
 
 ## 知识视图标识
 
@@ -21,8 +21,8 @@ Hub 不调用模型。类别语义来自作者原件的 `category_ids`，或你�
 1. 用 list_task_packs 读此版本的输入和要求项；start_run 后从运行回执及其运行记录读取槽位模式。本规程末尾按 `tables/template-v3.json` 列出描述性闭集。类别的 id、label、group、description 供阅读，不能编译成文字匹配规则。24 个类别的必选范围与用户跳过政策在 `template-v3-coverage.json`。
 2. start_run：pack=template-gap；documents 绑定敏捷平台脑图或 upload_file 回执。要对照某个构建时，product 和 build、version 写在 start_run 顶层，与 pack、inputs 并列，用来锁定目录，不写进 parameters。每份脑图一个条目。默认 case_rule=marked；tagged 会与按命令的默认用例范围不一致，按回执改用 marked 重跑。批量过大时拆批。
 3. 可选 case_index 绑定 `knowledge:index:<产品>:<同构建>?kind=case&key=document&only=<本次敏捷平台文档编号>&fields=document,node,commands,command_identities,title,path_labels,object,command_tree_root`。only 不多不少，不含上传文件。commands 是 command_identities 派生的路径集合；完整身份包含根、路径、签名及带类型的参数，command_tree_root 标明签名来自哪棵命令树，不能按路径相同合并不同参数调用。
-4. 读 start_run 的条目字段和运行记录。unclassified 是还缺类别判断的用例，不是缺类别。读取原件中这些用例的节点及下属步骤/结果；用模型逐用例判断可适用类别，按该包声明的 id 提出 CategoryJudgment。每条写 item（用例编号）、category_id、quote、producer；quote.identity 写原件 source_sha256、kityminder@1、精确 selector、原始字节 span（unit=byte、offset、length），quote.text 逐字对应这些原始字节；producer 显式写 model_id、model_family_id。不得拿祖先、兄弟或嵌套用例的同文当证据。JSON 转义和双重编码按原始字节身份写，不正规化宽窄、大小写或空白。
-5. submit_result：每份文档条目的 slots.coverage 为 SlotClaim 列表，每条的 data 是一份 CategoryJudgment，statement 是你的分类陈述。已有作者精确声明且不另补判断的文档也显式交 coverage:[]。空列表只代表没交模型判断，不能把未分类用例变成已分类。提交回执不受理时，按逐条结构/引文错误修正后重交；原件字段非法时请作者改正原件再重读、开始新运行，不暗中修剪或映射标签。
+4. 读运行条目；unclassified 是还缺类别判断的用例，不是缺类别。读这些用例及其步骤/结果，模型按声明 id 逐用例提出 CategoryJudgment。每条写 item（用例编号）、category_id、quote、producer；quote.identity 写 source_sha256、kityminder@1、精确 selector、原始字节 span（unit=byte、offset、length），quote.text 逐字对应原件字节；producer 显式写 model_id、model_family_id。span.offset 从整份原件第 0 字节算；src 的 :from-to 是片段内 UTF-8 字节区间，两者不可互换或推算。转义或双重编码时 quote.text 写原件字节，显示文字只供判断。无法机械取得跨度则未知，请维护者提供字节定位工具，不得猜测。不得用祖先、兄弟或嵌套用例同文作证，也不正规化宽窄、大小写或空白。
+5. submit_result：每份文档条目的 slots.coverage 为 SlotClaim 列表，每条的 data 是一份 CategoryJudgment，text 是你的分类陈述。已有作者精确声明且不另补判断的文档也显式交 coverage:[]。空列表只代表没交模型判断，不能把未分类用例变成已分类。提交回执不受理时，按逐条结构/引文错误修正后重交；原件字段非法时请作者改正原件再重读、开始新运行，不暗中修剪或映射标签。
 6. 未分类时继续第 4–5 步，不索要已绑定的原件。来源读失败按回执重读；缺命令身份就用新生产器重产、重读索引并开新运行；命令未连接则按文档键和精确修订补同步。仍失败时记录缺失事实和已做动作，交维护者处理，不声称完成。
 7. skipped 只按用户明确声明填写：category 是精确 id，reason 照用户原话，可选 document 限定文档；可选 command 是完整 CommandIdentity 对象，不能写命令路径字符串。它与未分类分栏披露，不制造覆盖证据；默认文档跳过也应用于该文档每个命令身份。
 8. 完整范围内全部用例分类完成后，才把未覆盖、未显式跳过的必选类别称为缺类别。按命令的结果比较完整身份；缺 command_identities 或 command_tree_root 的旧根不能判覆盖完整，按回执补齐缺的事实后重读。已找到的覆盖和计数可据证转述，未见部分、未读完整范围、未分类和显式跳过分别说明。计数含全量，证据列表只为显示截断。
