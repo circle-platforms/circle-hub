@@ -34,3 +34,19 @@ test('a disconnected source read can recover its exact reply only while current 
   assert.ok(!JSON.stringify(denied).includes('合成正文'));
   const hidden=await other.call('get_nodes',{call_query:{get_nodes:args,trace}});assert.equal(hidden.structuredContent.content,undefined);
 });
+
+test('a finished read is still recovered by its trace when the user has more than 500 logged reads',async t=>{
+  const pg=await startPostgres();t.after(()=>pg.stop());const hub=await createTestServer({postgres:pg});t.after(()=>hub.close());
+  const alice=await hub.createUser('synthetic-owner');
+  const source=await hub.records.artifacts.ingest({bytes:Buffer.from('合成正文\n合成下一行'),mediaType:'text/plain',origin:{upload:{session:'synthetic'}},author:{user:alice.user.id},provenanceType:'declared',visibility:{readers:[alice.user.id],admins:true,packs:[],shareable:true}});
+  // The user's newest 500 get_nodes lines are other reads: a status query that only looks at them finds nothing and calls itself truncated.
+  for(let i=0;i<505;i++)await hub.records.callLog.append({traceId:(i+1).toString(16).padStart(32,'0'),userId:alice.user.id,sessionId:null,tool:'get_nodes',runId:null,arguments:{reference:`src:${source.body.sha256}/text@1/l/${i+2}`},callResult:'ok',durationMs:1});
+  const trace='ab'.repeat(16);
+  const client=await hub.client(alice.token,{sessionId:'synthetic-owner-session',traceparent:`00-${trace}-${'cd'.repeat(8)}-01`});t.after(()=>client.close());
+  const args={reference:`src:${source.body.sha256}/text@1/l/1`};
+  const read=await client.call('get_nodes',args);assert.equal(read.isError,false);
+  const recovered=await client.call('get_nodes',{call_query:{get_nodes:args,trace}});
+  assert.equal(recovered.structuredContent.call_status,undefined,'the reply came back, not a status that calls itself truncated');
+  const content=recovered.structuredContent.content as {text:string;note:string};
+  assert.equal(content.text,'合成正文');assert.match(content.note,/历史快照/);
+});
