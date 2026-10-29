@@ -104,7 +104,7 @@ export function projectItems(input: unknown): unknown {
         stories: Object.hasOwn(data, 'stories') ? strings(data.stories) : null });
     }
   }
-  const absenceComplete = view.only === null && view.skipped === 0 && view.total_keys === Object.keys(view.keys).length;
+  const absenceComplete = view.only === null && view.skipped === 0 && view.scope_complete!==false && view.total_keys === Object.keys(view.keys).length && view.key_space_complete===true;
   const undetermined: string[] = [];
   for (const row of rows.values()) {
     const digests = digestsById.get(row.id) ?? new Set<string>();
@@ -128,7 +128,7 @@ export function projectItems(input: unknown): unknown {
       location: { slot: loc.slot, source: loc.source, parser: 'json@1', selector: loc.selector }, fields: row as unknown as Record<string, unknown> };
   });
   const facts = { ...(selectedBuild ? { selected_build: selectedBuild } : {}), product: view.product, build: view.build, root: view.root, scope, view: { source: view.source, truncated: view.truncated, skipped: view.skipped, missing: view.missing,
-    cut_keys: view.cut_keys, only: view.only, total_keys: view.total_keys, total_entries: view.total_entries, listed_keys: Object.keys(view.keys).length, listed_entries: Object.keys(view.entries).length } };
+    cut_keys: view.cut_keys, only: view.only, ...(view.key_space_complete!==null?{key_space_complete:view.key_space_complete}:{}), ...(view.scope_complete!==null?{scope_complete:view.scope_complete}:{}), total_keys: view.total_keys, total_entries: view.total_entries, listed_keys: Object.keys(view.keys).length, listed_entries: Object.keys(view.entries).length } };
   const result = { items, groups: [facts], warnings: read.warnings };
   if (utf8Length(JSON.stringify(result)) > 5 * 1024 * 1024) return selectedBuild
     ? fail(`PLM 构建记录 ${selectedBuild.id} 的需求范围投影超过 5 MiB`, '请任务包维护人提供保留同一构建来源的分块核对，或由用户明确给出需求编号后按声明范围另开分批运行；不要重复绑定整份构建范围')

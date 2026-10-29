@@ -49,6 +49,13 @@ export async function completeKnowledgeView(id:string,context:ExternalReadContex
   }
   next=page.next??null;
   if(next===null&&page.truncated)return fail('知识视图仍有未交付的内容，不能作为完整绑定；请按视图说明处理来源或凭据后重试');
+  if(next===null&&page.schema==='index-view@1'&&merged.kind==='case'&&visited.size>1){
+   // A page's flag describes only that page. Once the frozen sequence is exhausted, its final
+   // flag also establishes that the producer knew how to report missing indexed facts; legacy
+   // pages without it cannot be upgraded merely because their old truncated flag was false.
+   if(typeof page.key_space_complete==='boolean')merged.key_space_complete=!Object.hasOwn(merged,'only')&&merged.skipped===0&&merged.scope?.complete!==false&&Object.keys(merged.keys).length===merged.total_keys;
+   else delete merged.key_space_complete;
+  }
   if(next!==null&&(!next.startsWith('knowledge:')||next.split(':',3).join(':')!==id.split(':',3).join(':')))return fail('知识视图续读跳出了原视图；从首页重新绑定');
   merged.next=next;
   if(canonicalBytes(merged).byteLength>MAX_BINDING_BYTES)return fail('本次知识视图绑定超过 16 MiB；请按条目所需取值收窄范围');

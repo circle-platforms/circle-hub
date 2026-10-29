@@ -9,10 +9,10 @@ import { boundView, caseEntry, indexViewOf } from '../../traceability/functions/
 
 export function input(ids = ['00021', '22', '23']) {
   return { inputs: [boundView('stories', { stories: [{ id: '21', status: 'synthetic-status', stage: 'synthetic-stage', title: '合成需求' }, { id: '22', title: null, fields_absent: ['status', 'stage'] }], unread: ['23'] }, `plm:stories:${ids.map(normalizeId).join('+')}`),
-    boundView('cases', indexViewOf('case', 'stories', [
+    boundView('cases', { ...indexViewOf('case', 'stories', [
       caseEntry({ defects: ['22'], stories: ['00021'], case: 'c1' }),
       caseEntry({ defects: [], stories: ['21', '22'], case: 'c2' }),
-    ]))] };
+    ]), key_space_complete: true })] };
 }
 export function projected(value: unknown = input()): any {
   const p = project(value) as any;
@@ -55,7 +55,7 @@ test('two thousand requirements match an independent double loop', () => {
   const cases = Array.from({ length: 1300 }, (_, i) => caseEntry({ defects: [String(i + 1)], stories: Array.from({ length: 3 }, () => String(1 + Math.floor(random() * 2000))), case: `c${i}` }));
   const inputs = [];
   for (let i = 0; i < stories.length; i += 50) { const batch = stories.slice(i, i + 50); inputs.push(boundView('stories', { stories: batch, unread: [] }, `plm:stories:${batch.map(s => s.id).join('+')}`)); }
-  inputs.push(boundView('cases', indexViewOf('case', 'stories', cases)));
+  inputs.push(boundView('cases', { ...indexViewOf('case', 'stories', cases), key_space_complete: true }));
   const s = projected({ inputs });
   for (const row of s.items) {
     const expected = cases.filter(c => (c.data.stories as string[]).some(id => id === row.id)).map(c => c.data.node).sort();
@@ -86,7 +86,7 @@ test('empty raw story arrays contradict a key mapping while omitted raw fields p
 
 test('partial views refuse projection and name the missing facts and recovery action', () => {
   for (const patch of [{ total_keys: 4, truncated: true }, { skipped: 1, notes: ['来源 src:synthetic 不可读'] }, { only: ['21'] }]) {
-    const i = input(); Object.assign(i.inputs[1].model as any, patch);
+    const i = input(); Object.assign(i.inputs[1].model as any, patch, { key_space_complete: false });
     const p = project(i) as any; assert.ok(p.error); assert.match(p.error.message, /缺少|不完整/); assert.match(p.error.fix, /知识同步/);
     if ('notes' in patch) assert.match(p.error.message, /src:synthetic/);
   }
@@ -192,13 +192,13 @@ test('every projection refusal conforms to projection-output and retains its own
 });
 
 for (const patch of [{ cut_keys: ['00021'], truncated: true }, { only: ['00021'], truncated: true }, { total_keys: 99, truncated: true }]) test(`listed matches remain determinate despite ${JSON.stringify(patch)}`, () => {
-  const i = input(['21']); Object.assign(i.inputs[1].model as object, patch);
+  const i = input(['21']); Object.assign(i.inputs[1].model as object, patch, { key_space_complete: false });
   const s = projected(i); const [outcome] = check({ subject: s }) as any[];
   assert.equal(outcome.verdict, 'support'); assert.match(outcome.statement, /至少 2 个已索引条目/);
   assert.equal(outcome.data.coverage.complete, false);
 });
 test('only the undetermined ids refuse and the fix acknowledges normalized-only matching needs', () => {
-  const i = input(['21', '23']); Object.assign(i.inputs[1].model as object, { total_keys: 99, truncated: true });
+  const i = input(['21', '23']); Object.assign(i.inputs[1].model as object, { total_keys: 99, truncated: true, key_space_complete: false });
   const refusal = project(i) as any;
   assert.match(refusal.error.message, /需求 23.*完整/); assert.doesNotMatch(refusal.error.message, /需求 21/);
   assert.match(refusal.error.fix, /only=/); assert.match(refusal.error.fix, /规范化/);

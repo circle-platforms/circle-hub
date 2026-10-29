@@ -1064,7 +1064,7 @@ export class KnowledgeViews {
     };
     let ofKind = 0;
     let unplacedCount = 0;
-    let feedingRecords=0;
+    let feedingRecords=0,keyFactsUnknown=0;
     const feedingObjects=new Set<string>();
     const excluded = new Map<string, string>();
     const seenScope = scope === null ? null : new Set<string>();
@@ -1074,6 +1074,7 @@ export class KnowledgeViews {
         seen.add(row.entry);
         ofKind++;
         if (row.unplaced && !scopePlaced?.has(row.entry)) unplacedCount++;
+        if(kind==='case'&&['stories','defects','commands','command_identities'].includes(key)&&!Array.isArray(row.content.data[key]))keyFactsUnknown++;
         const values = indexKeys(row.content.data, key).filter((value) => onlySet === null || onlySet.has(value));
         if (values.length === 0) return;
         if(typeof row.reference==='string'&&row.reference.startsWith('rec:')){feedingRecords++;if(typeof row.content.data.object==='string')feedingObjects.add(row.content.data.object);}
@@ -1204,6 +1205,7 @@ export class KnowledgeViews {
       if(feedingRecords)out.push(`喂入索引列出 ${feedingRecords} 条来源记录、${feedingObjects.size} 个内容身份；同一内容的多个出处分别引用记录，data.object 是共享身份`);
       if(feedingConflicts)out.push(`${feedingConflicts} 条用例来源的版本层有冲突，未计入本索引；下一步由来源维护者核对目录后重读`);
       if(feedingCommandsUnknown)out.push(`${feedingCommandsUnknown} 条用例来源缺完整命令身份，不能认为命令集合为空；下一步核对锁定命令树或补完整命令后重读`);
+      if(keyFactsUnknown)out.push(`${keyFactsUnknown} 个用例缺少索引字段 ${key} 的结构事实，不能据此判断键不存在；下一步由作者补声明或用新版生产器重读原件`);
       if(unrooted)out.push(`${unrooted} 个用例缺所查树苗的投影，未计入本索引；下一步用绑定树苗的运行重读原件`);
       if (only !== null) {
         const absent = only.filter((value) => !keys.has(value));
@@ -1228,6 +1230,9 @@ export class KnowledgeViews {
       const entries: Record<string, ViewEntry> = {};
       const digests = items.flatMap(item => item.fresh).sort(compareText);
       if (!encodedOnly) for (const digest of digests) entries[digest] = decode(digest);
+      const truncated=page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0 || unrooted>0 || feedingConflicts>0 || feedingCommandsUnknown>0 || keyFactsUnknown>0;
+      const keySpaceComplete=only===null&&skippedCount(composition)+skippedCount(scope)===0&&unrooted===0&&feedingConflicts===0&&keyFactsUnknown===0&&keys.size===items.length;
+      const discloseKeySpace=kind==='case'&&(Boolean(feeding?.cut)||keyFactsUnknown>0||!truncated||keySpaceComplete);
       const answer: IndexView = {
         schema: 'index-view@1',
         next: page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available?page.next(page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)):null,
@@ -1243,9 +1248,10 @@ export class KnowledgeViews {
         entries,
         ...(only !== null ? { only: [...new Set(only)].sort(compareText) } : {}),
         cut_keys: items.filter((item) => item.cut).map((item) => item.value),
+        ...(discloseKeySpace?{key_space_complete:keySpaceComplete}:{}),
         total_keys: keys.size,
         total_entries: carriers.size,
-        truncated: page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0 || unrooted>0 || feedingConflicts>0 || feedingCommandsUnknown>0,
+        truncated,
         skipped: skippedCount(composition) + skippedCount(scope),
         notes: notes(count),
       };
@@ -1580,6 +1586,7 @@ export class KnowledgeViews {
     };
     if(flagged.excluded.size>0&&view.next){view.next=null;view.notes.push('本页有未受理凭据，先由管理员处理这些来源或用 only 收窄；处理后从首页重读，不沿偏移后的页继续');}
     view.scope=scoped;
+    if(view.schema==='index-view@1'&&view.kind==='case'&&!scoped.complete)view.key_space_complete=false;
     const finalEncoded = view.schema === 'index-view@1' ? this.#encodedIndexes.get(view) : undefined;
     const finalKeys = finalEncoded ? new Set(finalEncoded.keys()) : partKeys(view);
     const covered = [...flagged.kept].filter(key => finalKeys.has(key)).length;
@@ -1595,6 +1602,7 @@ export class KnowledgeViews {
       view = await compute(flagged.allHits);
       annotate(view,0,flagged.limited.size,covered);
       view.scope=scoped;
+      if(view.schema==='index-view@1'&&view.kind==='case'&&!scoped.complete)view.key_space_complete=false;
       if(view.next)view.next=continuationId(bare,view.next,revision);
       bytes = this.#bytes(view);
       large = tooLarge(bytes);

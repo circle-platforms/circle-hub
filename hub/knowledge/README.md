@@ -1192,6 +1192,14 @@ attached to a version view by this change; it needs a root-bound read. No versio
 When a case has unparsed steps, its complete command set is unknown: the view omits `commands` and `command_identities`
 for that source, and command-dependent facets and indexes are incomplete with a missing fact and next action. This does
 not assert whether the unparsed steps contain commands.
+An index may carry `key_space_complete`: it is true only when the page covers every raw key in the frozen unfiltered
+view, no listed source was skipped, and no known unresolved feeding projection or missing indexed field can add a key.
+A page may have complete keys while some entries under a listed key remain paginated. The flag says nothing about sources
+not observed in that view, and does not make `only=` a normalized-id query; legacy views without the flag
+cannot prove an absent key. When all pages of one frozen index are bound together, the final page must carry the new
+structural flag, the combined keys must cover the reported key count, and the unfiltered source scope must be complete
+before the combined view can assert key-space completeness. A legacy paginated view is not upgraded from its old
+`truncated` flag.
 The view artifact's derived-coverage ancestry still pins the tree and its composition, not the individual feeding source
 artifacts. A credential finding in a feeding field may therefore require source-coverage handling before that view can be
 read, even when the individual feeding record is readable. This limit does not grant access through another capture.
