@@ -4,24 +4,23 @@ Hub 不调用模型。类别语义来自作者 `category_ids` 或模型逐用例
 
 ## 知识视图标识
 
-写法是 `knowledge:<视图>:<产品>:<构建>[?参数]`，四段用冒号，参数在问号后。产品按登记的大小写照抄。下面用合成产品 ORBIT、构建 Rel_ORBIT_7_1_0_30，不要写成 orbit，也不要换成别的分隔符。
+写法 `knowledge:<视图>:<产品>:<构建>[?参数]`；产品按登记大小写照抄。以下均为合成示例。
 
 - facets：`knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。必填 kind、by。
 - index：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。必填 kind、key。
 - impact：`knowledge:impact:ORBIT:Rel_ORBIT_7_1_0_29..Rel_ORBIT_7_1_0_30?changed=definition&attached=case`。构建段写成 `<起始>..<目标>`；changed、attached、catalog 可以不写。
 - links：`knowledge:links:ORBIT:Rel_ORBIT_7_1_0_30`。没有必填参数，prefix 默认 /。
 
-三种写错：
-（1）分隔符用了 @。错 `knowledge:facets@ORBIT@Rel_ORBIT_7_1_0_30?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
-（2）缺构建。错 `knowledge:facets:ORBIT?kind=case&by=commands`。对 `knowledge:facets:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&by=commands`。
-（3）参数不全。错 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?key=commands`。对 `knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=commands`。
+注意：四段之间用冒号，不用 @；构建和视图必填参数不能省略。
 
-本包要收窄到一份文档时照抄：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=document&only=1001&fields=document,node,commands,command_identities,title,path_labels,object,command_tree_root`。喂入索引的条目引用是 `rec:`，条目摘要是来源记录摘要；`data.object` 才是共享的用例内容身份。旧树条目仍用 `tree:`。
+收窄到一份文档时照抄：`knowledge:index:ORBIT:Rel_ORBIT_7_1_0_30?kind=case&key=document&only=1001&fields=document,node,commands,command_identities,title,path_labels,object,command_tree_root`。喂入索引的条目引用是 `rec:`，条目摘要是来源记录摘要；`data.object` 才是共享的用例内容身份。旧树条目仍用 `tree:`。
 
 1. 用 list_task_packs 读此版本的输入和要求项；start_run 后从运行回执及其运行记录读取槽位模式。本规程末尾按 `tables/template-v3.json` 列出描述性闭集。类别的 id、label、group、description 供阅读，不能编译成文字匹配规则。24 个类别的必选范围与用户跳过政策在 `template-v3-coverage.json`。
 2. start_run：pack=template-gap；documents 绑定敏捷平台脑图或 upload_file 回执。要对照某个构建时，product 和 build、version 写在 start_run 顶层，与 pack、inputs 并列，用来锁定目录，不写进 parameters。每份脑图一个条目。默认 case_rule=marked；tagged 会与按命令的默认用例范围不一致，按回执改用 marked 重跑。批量过大时拆批。
 3. 可选 case_index 绑定 `knowledge:index:<产品>:<同构建>?kind=case&key=document&only=<本次敏捷平台文档编号>&fields=document,node,commands,command_identities,title,path_labels,object,command_tree_root`。only 不多不少，不含上传文件。commands 是 command_identities 派生的路径集合；完整身份包含根、路径、签名及带类型的参数，command_tree_root 标明签名来自哪棵命令树，不能按路径相同合并不同参数调用。
-4. 读运行条目；unclassified 是还缺类别判断的用例，不是缺类别。读这些用例及其步骤/结果，模型按声明 id 逐用例提出 CategoryJudgment。每条写 item（用例编号）、category_id、quote、producer；quote.identity 写 source_sha256、kityminder@1、精确 selector、原始字节 span（unit=byte、offset、length），quote.text 逐字对应原件字节；producer 显式写 model_id、model_family_id。span.offset 从整份原件第 0 字节算；src 的 :from-to 是片段内 UTF-8 字节区间，两者不可互换或推算。转义或双重编码时 quote.text 写原件字节，显示文字只供判断。无法机械取得跨度则未知，请维护者提供字节定位工具，不得猜测。不得用祖先、兄弟或嵌套用例同文作证，也不正规化宽窄、大小写或空白。
+4. 读运行条目；unclassified 是还缺类别判断的用例，不是缺类别。读这些用例及其步骤/结果，模型按声明 id 逐用例提出 CategoryJudgment。每条写 item（用例编号）、category_id、quote、producer；quote.identity 写 source_sha256、kityminder@1、精确 selector、原始字节 span（unit=byte、offset、length），quote.text 逐字对应原件字节；producer 显式写 model_id、model_family_id。span.offset 从整份原件第 0 字节算；src 的 :from-to 是片段内 UTF-8 字节区间，两者不可互换或推算。转义或双重编码时 quote.text 写原件字节，显示文字只供判断。先用下述工具机械定位；仍无法取得跨度则未知，请维护者核对原件，不得猜测。不得用祖先、兄弟或嵌套用例同文作证，也不正规化宽窄、大小写或空白。
+
+   定位跨度：安装 mindmap-format 1.0.2 或之后的本地工具。旧运行也可用同为 kityminder@1 的新工具准备，仍由运行锁定版本核验。对完整原件运行 `node <mindmap格式目录>/tools/parse-model.ts --source <原件> --out <模型文件>`；将候选写成 `[{"item":"<用例编号>","selector":"<节点>","text":"<显示原文>"}]`；运行 `node <mindmap格式目录>/tools/locate-quotes.ts --source <原件> --model <模型文件> --candidates <候选> --out <结果>`。结果 quotes 供填 CategoryJudgment：一处直接选，多处选位置，零处核对来源。category_id 和 producer 仍由模型明确声明；Hub 提交时核验用例归属。原件、模型和结果仅放私有目录。
 5. submit_result：每份文档条目的 slots.coverage 为 SlotClaim 列表，每条的 data 是一份 CategoryJudgment，text 是你的分类陈述。已有作者精确声明且不另补判断的文档也显式交 coverage:[]。空列表只代表没交模型判断，不能把未分类用例变成已分类。提交回执不受理时，按逐条结构/引文错误修正后重交；原件字段非法时请作者改正原件再重读、开始新运行，不暗中修剪或映射标签。
 6. 未分类时继续第 4–5 步，不索要已绑定的原件。来源读失败按回执重读；缺命令身份就用新生产器重产、重读索引并开新运行；命令未连接则按文档键和精确修订补同步。仍失败时记录缺失事实和已做动作，交维护者处理，不声称完成。
 7. skipped 只按用户明确声明填写：category 是精确 id，reason 照用户原话，可选 document 限定文档；可选 command 是完整 CommandIdentity 对象，不能写命令路径字符串。它与未分类分栏披露，不制造覆盖证据；默认文档跳过也应用于该文档每个命令身份。
@@ -57,4 +56,4 @@ Hub 不调用模型。类别语义来自作者 `category_ids` 或模型逐用例
 | security | 安全 | other | 用例检验所声明的安全需求。 |
 | database | 数据库 | other | 用例检验数据库相关的行为和结果。 |
 
-喂入层：Hub 读取来源时会触发喂入，投影可能在后台继续，也可能因缺事实停在未知；按回执读取已有运行状态，不把暂时的空清单当作没有用例。视图按锁定树苗和冻结序号读取已完成的可见记录；版本未声明和矛盾的对象单列计数，不进版本差。Circle 只经 knowledge-contribution 回注补程序填不了的语义（带逐字引文），结构契约见该包 tables/knowledge-structure.json 或 get_nodes 根路径。
+喂入层：读取来源触发喂入，投影可能在后台继续；缺事实时为未知；按回执查状态，不把暂时的空清单当作没有用例。视图按锁定树苗和冻结序号读取已完成的可见记录；版本未声明和矛盾的对象单列计数，不进版本差。Circle 经 knowledge-contribution 回注语义（带逐字引文），结构契约见该包 tables/knowledge-structure.json 或 get_nodes 根路径。

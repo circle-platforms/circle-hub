@@ -24,11 +24,17 @@ The existing submit_result item slot `coverage` is a SlotClaim list; each claim 
 object is the generated CategoryJudgment shape. A CategoryJudgment span counts absolute bytes of the retained original;
 a `src:` reference's `:from-to` range instead counts UTF-8 bytes inside the selected fragment. When JSON escapes or double
 encoding change the displayed text, the submitted quote must still match the original bytes. If the client cannot locate
-the original span mechanically, classification remains unknown and the pack maintainer must provide a byte-location tool.
+the original span mechanically, classification remains unknown; the local byte-location tool below can prepare it.
 It contains the exact case item id, category_id, QuoteEvidence and explicit ModelIdentity. The package bundles the generated
 category-judgment@1 schema byte-for-byte; a test checks the copy against contracts/generated. A nonempty accepted claim supplies
 classification for that case. An empty claim list supplies none. A document entirely classified by author fields can submit
 coverage:[]; it does not need invented model judgments. A new run is no longer a wholly factual production run.
+
+The mindmap-format local `tools/locate-quotes.ts` accepts the original UTF-8 file, the model produced by its
+`tools/parse-model.ts`, and exact node/text candidates. It returns raw byte slices and absolute offsets without deciding a
+category, model identity or case ownership; escaped and double-encoded JSON keep their original bytes. Zero and multiple
+matches are left for the client to resolve. Both tools write new mode-0600 files rather than printing source text; their
+output is a preparation aid and the normal Hub check remains authoritative. `SKILL.md` gives the commands.
 
 The frozen context holds the bound source digest and parser model. The function read declaration obtains the original subject
 text through the existing permission/integrity boundary. SHA-256 of its UTF-8 bytes must equal the bound original digest before
