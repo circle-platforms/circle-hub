@@ -145,7 +145,8 @@ async function staleLock(path: string): Promise<{ stale: boolean; owners: Array<
   for (const name of names) {
     const file = join(path, name);
     const fileStat = await lstat(file).catch(() => null);
-    if (!fileStat) return { stale: false, owners: [] };
+    // No links left: another waiter is removing this file right now. Like a file already gone, look again later.
+    if (!fileStat || fileStat.nlink === 0) return { stale: false, owners: [] };
     need(fileStat.isFile() && !fileStat.isSymbolicLink() && fileStat.nlink === 1, 'invalid_state_file', '锁所有者文件无效');
     const raw = await readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => error.code === 'ENOENT' ? null : Promise.reject(error));
     if (raw === null || !staleOwner(raw, old)) return { stale: false, owners: [] };
@@ -170,7 +171,12 @@ async function clearStaleLock(path: string): Promise<boolean> {
     const raw = await readFile(quarantine, 'utf8').catch((error: NodeJS.ErrnoException) => error.code === 'ENOENT' ? null : Promise.reject(error));
     if (raw === null || raw !== snapshot.owners[index].raw) return false;
   }
-  for (const quarantine of quarantined) await unlink(quarantine);
+  // A quarantined owner reads as a stale owner to the other waiters too, so one of them may have quarantined it in turn and
+  // now finishes this recovery; this waiter looks again.
+  for (const quarantine of quarantined) {
+    try { await unlink(quarantine); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
+  }
   try { await rmdir(path); return true; }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT' || (error as NodeJS.ErrnoException).code === 'ENOTEMPTY') return false; throw error; }
 }
