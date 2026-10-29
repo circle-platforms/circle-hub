@@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url';
 import { SandboxError, isSandboxErrorCode, type SandboxErrorCode } from './errors.ts';
 import { BOOTSTRAP, declaredDependencies, isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { ENTRY_EXTENSIONS } from './policy.ts';
-import { createResidentWatch, residentFailure, residentTreeSizes, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
+import { createResidentVerdict, createResidentWatch, residentTreeSizes, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
 import { createSlotPool } from './slots.ts';
 import { retryFunction, type FunctionAttempt } from './retry.ts';
 
@@ -112,6 +112,8 @@ const slots = createSlotPool({
   full: () => new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'queue_full', limit: 'queue', waiting: MAX_WAITING }),
 });
 const residentWatch = createResidentWatch({ intervalMs: POLL_MS, measure: residentTreeSizes, unavailable: () => null, timeoutMs: 1_000 });
+/** How long no round may measure a child's whole tree before the call ends as unobservable (resident.ts createResidentVerdict). */
+const UNOBSERVED_GRACE_MS = 1_000;
 
 // Running children by pid, with the function that stops each.
 const live = new Map<number, (code: SandboxErrorCode, detail: Record<string, unknown>) => void>();
@@ -274,14 +276,26 @@ async function executePack(
     throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'os_isolation', platform: process.platform, probe: osIsolationFailure() ?? null });
   }
   return retryFunction(() => {
-    if (epoch !== stopEpoch) return Promise.reject(new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' }));
-    return slots.run(async () => {
+    const attempt = epoch !== stopEpoch ? Promise.reject(new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' })) : slots.run(async () => {
       const inputText = serializeInput(input, lim.inputBytes);
       const pack = await preparePack(target);
       if (epoch !== stopEpoch) throw new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'stopping' });
       return runChild(pack, inputText, lim, os, batch);
     });
+    return UNAVAILABLE_DIAGNOSTICS ? attempt.catch(reportUnavailable) : attempt;
   }, lim.timeoutMs, options.onAttempt, options);
+}
+
+/**
+ * With HUB_SANDBOX_DIAGNOSTICS=1 (the Linux isolation jobs of the Hub checks), every attempt that ends SANDBOX_UNAVAILABLE is
+ * written to stderr with its detail, so a rare one names its reason whichever caller met it (#96). The detail is the Hub's
+ * own (reason, limits, timings, host errors), never the function's output; the error is rethrown unchanged.
+ */
+const UNAVAILABLE_DIAGNOSTICS = process.env.HUB_SANDBOX_DIAGNOSTICS === '1';
+
+function reportUnavailable(error: unknown): never {
+  if (error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE') process.stderr.write(`hub sandbox unavailable: ${JSON.stringify(error.detail)}\n`);
+  throw error;
 }
 
 /** Preserve host startup diagnostics only on the private error; the public sandbox message stays fixed. */
@@ -404,11 +418,12 @@ function runChildWithProbe(pack: PreparedPack, inputText: string, lim: SandboxLi
 
     const timer = setTimeout(() => stop('SANDBOX_TIMEOUT', { limit: 'time', timeoutMs: lim.timeoutMs }), lim.timeoutMs);
     const residentLimit = (lim.memoryMb + RESIDENT_HEADROOM_MB) * 1024 * 1024;
+    const verdict = createResidentVerdict(residentLimit, lim.memoryMb, UNOBSERVED_GRACE_MS);
     const unwatch =
       pid === undefined
         ? () => {}
         : residentWatch.watch(pid, (bytes) => {
-            const failure = residentFailure(bytes, residentLimit, lim.memoryMb);
+            const failure = verdict(bytes);
             if (failure && !settled && !stopped && alive()) stop(failure.code, failure.detail);
           });
     const forget = (): void => {

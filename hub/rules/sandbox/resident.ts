@@ -20,6 +20,25 @@ export function residentFailure(bytes: TreeObservation, limit: number, memoryMb:
   return bytes > limit ? { code: 'SANDBOX_VIOLATION', detail: { limit: 'memory', residentBytes: bytes, memoryMb } } : undefined;
 }
 
+/**
+ * The watchdog's verdict on each round of one call. A measured overrun stops the call at once. A round that cannot see the
+ * whole tree stops it only once no round has measured the tree for `graceMs`: while Node starts, its thread set keeps
+ * changing, which outlasts one round's retries on a loaded machine and failed healthy calls (#96). A pack function cannot
+ * start threads or processes (no --allow-worker, no --allow-child-process), so the grace adds no way to evade the watchdog;
+ * it matches the second a stalled sampler already has.
+ */
+export function createResidentVerdict(limit: number, memoryMb: number, graceMs: number, now: () => number = Date.now): (bytes: TreeObservation) => ReturnType<typeof residentFailure> {
+  let measuredAt = now();
+  return (bytes) => {
+    const failure = residentFailure(bytes, limit, memoryMb);
+    if (failure?.code !== 'SANDBOX_UNAVAILABLE') {
+      measuredAt = now();
+      return failure;
+    }
+    return now() - measuredAt < graceMs ? undefined : failure;
+  };
+}
+
 /** VmRSS is occasionally absent during exec or exit; statm supplies the kernel's resident-page count instead. */
 export function createLinuxResidentMeasure(options: { status(pid: number): Promise<string>; statm(pid: number): Promise<string>; pageBytes?: number }): Measure {
   return async pids => {
