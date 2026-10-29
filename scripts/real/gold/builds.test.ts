@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 import { type BuildCandidate, main, parseBuildCandidates, privatePath } from './builds.ts';
+import { fileURLToPath } from 'node:url';
 
 // Synthetic HTML listing page with:
 // 1. Rel_FAMX_10_6_1_57 (FAMX, released 2026-05-14, command tree)
@@ -198,9 +199,9 @@ describe('multiple listing pages and private output', () => {
 });
 
 test('rejects repository paths and symlinks back into a checkout', () => {
-  assert.throws(() => privatePath(new URL('./forbidden.json', import.meta.url).pathname));
+  assert.throws(() => privatePath(fileURLToPath(new URL('./forbidden.json', import.meta.url))));
   const link = join(tmpDir!, 'repo-link');
-  symlinkSync(new URL('../../../', import.meta.url).pathname, link, 'dir');
+  symlinkSync(fileURLToPath(new URL('../../../', import.meta.url)), link, 'dir');
   assert.throws(() => privatePath(join(link, 'forbidden.json')));
 });
 

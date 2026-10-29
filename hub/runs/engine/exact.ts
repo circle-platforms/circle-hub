@@ -469,7 +469,12 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
             ctx.documents.assertActive?.();
             const checking=Promise.resolve(sources.read(ref.sha256,scope.reader));
             const read=await (ctx.documents.within?.(checking)??checking);
-            if(options.grounds!==true&&read?.bytes&&read.readTier===saved.tier&&read.bytes.length===read.size&&sha256Hex(read.bytes)===ref.sha256)return {ok:true,value:{...saved.result.value}};
+            if(read?.bytes&&read.readTier===saved.tier&&read.bytes.length===read.size&&sha256Hex(read.bytes)===ref.sha256){
+              // Only the parse result is reused. A use as grounds checks the source's provenance again, as run() does; a src
+              // reference is otherwise always groundable and has no inner grounds (refs/resolve.ts isGroundable).
+              if(options.grounds===true){const named=await declarationGroundRefusal(ref,digest=>store.get(digest),await groundSource(ref));if(named)return {ok:false,message:named};}
+              return {ok:true,value:{...saved.result.value}};
+            }
           }
       }catch{/* The ordinary path reports read errors and deadline exhaustion. */}
       return run(reference, scoped, options.grounds === true);

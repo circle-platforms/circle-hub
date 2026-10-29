@@ -4,8 +4,10 @@ name: Hub checks
 # Ubuntu has no sandbox-exec, keychain or launchd, so the tests that need them skip here; the unit jobs install the PostgreSQL 18
 # client so that backup, restore and deploy run. The tests of the pack sandbox run in the Linux isolation jobs, which install
 # bubblewrap and AppArmor and load the Hub's policy; every other job has no isolation and skips them. The job summary lists
-# every skip; a skip is not a pass. The macOS paths (sandbox-exec, the keychain, plutil, launchd) run in macos.yml on every
-# push to main, nightly and on demand, and in the local macOS run of each phase (AGENTS.md).
+# every skip; a skip is not a pass. The sharded test jobs also list their slowest files there, from the junit report their
+# runner writes (JUNIT_REPORT), to compare with the measured durations that balance the shards, and keep that report for 14
+# days. The macOS paths (sandbox-exec, the keychain, plutil, launchd) run in macos.yml on every push to main, nightly and on
+# demand, and in the local macOS run of each phase (AGENTS.md).
 
 on:
   push:
@@ -88,10 +90,23 @@ jobs:
           echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
       - name: Run the unit tests
         shell: bash
+        env:
+          JUNIT_REPORT: ${{ runner.temp }}/unit.xml
         run: npm run test:unit -- ${{ matrix.suite }} 2>&1 | tee "$RUNNER_TEMP/unit.log"
       - name: Count what ran and what was skipped
         if: ${{ !cancelled() }}
         run: node .github/checks/test-summary.ts "$RUNNER_TEMP/unit.log" 'Unit tests / ${{ matrix.suite }} ${{ matrix.shard }}'
+      - name: List the slowest test files
+        if: ${{ !cancelled() }}
+        run: node .github/checks/test-timings.ts "$RUNNER_TEMP/unit.xml" 'Unit tests / ${{ matrix.suite }} ${{ matrix.shard }}'
+      - name: Keep the junit report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-unit-${{ matrix.suite }}-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/unit.xml
+          if-no-files-found: ignore
+          retention-days: 14
 
   unit:
     name: Unit tests
@@ -124,11 +139,24 @@ jobs:
       # The tests start and remove their own loopback PostgreSQL through hub/testing/postgres.ts.
       - name: Run the acceptance tests
         shell: bash
+        env:
+          JUNIT_REPORT: ${{ runner.temp }}/acceptance.xml
         run: npm run test:acceptance 2>&1 | tee "$RUNNER_TEMP/acceptance.log"
       # A slice that ran no test fails here, so no slice is green with nothing run.
       - name: Count what ran and what was skipped
         if: ${{ !cancelled() }}
         run: node .github/checks/test-summary.ts "$RUNNER_TEMP/acceptance.log" 'Acceptance ${{ matrix.shard }}'
+      - name: List the slowest test files
+        if: ${{ !cancelled() }}
+        run: node .github/checks/test-timings.ts "$RUNNER_TEMP/acceptance.xml" 'Acceptance ${{ matrix.shard }}'
+      - name: Keep the junit report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-acceptance-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/acceptance.xml
+          if-no-files-found: ignore
+          retention-days: 14
 
   acceptance:
     name: Acceptance on a temporary PostgreSQL
@@ -192,10 +220,23 @@ jobs:
           node --input-type=module -e "const m = await import('./hub/rules/api.ts'); if (!(await m.osIsolationAvailable())) { console.error('Linux isolation unavailable: ' + m.osIsolationFailure()); process.exit(1); }"
       - name: Run the ${{ matrix.suite }} tests that need the pack sandbox
         shell: bash
+        env:
+          JUNIT_REPORT: ${{ runner.temp }}/isolation.xml
         run: node tools/run-guarded-tests.ts linux ${{ matrix.suite }} 2>&1 | tee "$RUNNER_TEMP/isolation.log"
       - name: Count what ran and what was skipped
         if: ${{ !cancelled() }}
         run: node .github/checks/test-summary.ts "$RUNNER_TEMP/isolation.log" 'Linux isolation / ${{ matrix.suite }} ${{ matrix.shard }}'
+      - name: List the slowest test files
+        if: ${{ !cancelled() }}
+        run: node .github/checks/test-timings.ts "$RUNNER_TEMP/isolation.xml" 'Linux isolation / ${{ matrix.suite }} ${{ matrix.shard }}'
+      - name: Keep the junit report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-isolation-${{ matrix.suite }}-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/isolation.xml
+          if-no-files-found: ignore
+          retention-days: 14
 
   isolation:
     name: Linux isolation

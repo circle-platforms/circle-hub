@@ -19,6 +19,13 @@ export interface SkillParserOptions {registry:PackRegistry;records:RecordsKit;sa
 export interface LegacySkillBinding {run:string;skills:SkillLock[];decided_by:string;reason:string;run_record:string}
 
 const LOCATE_BATCH=256;
+/**
+ * Sandbox limits of every parse and locate call of a skill parser. The time limit is a backstop for a parser that does not
+ * finish; parsing itself is linear in the input. The owner raised it from 5 s on 2026-10-29 (#86) so that a slower machine
+ * than the one a document was tried on does not refuse it: what stops a large document is the sandbox's memory limit, which
+ * every skill's parsing reaches well within this time (hub/refs/README.md, Skill parser limits).
+ */
+export const PARSE_SANDBOX_LIMITS={timeoutMs:30_000,inputBytes:96*1024*1024,outputBytes:64*1024*1024} as const;
 
 function failPack(parser:string,value:Record<string,unknown>,limits?:ParseLimits):never {
   // A pack is untrusted and can put original bytes, paths or credentials in any message.
@@ -213,14 +220,13 @@ function parserOf(opened:OpenedPack,row:SkillDeclaration['parsers'][number],opti
       if(!verified||verified.declarations.kind!=='skill')throw new IntegrityError('冻结技能包缺失或被改变');
       try{
         const input={bytes:Buffer.from(bytes).toString('base64'),options:{...parseOptions,...limits}};
-        const limitsBox={timeoutMs:5000,inputBytes:96*1024*1024,outputBytes:64*1024*1024};
-        const out=await callPackFunction({packDir:verified.handle.directory,module:row.function.module,export:row.function.export},input,limitsBox,options.sandbox);
+        const out=await callPackFunction({packDir:verified.handle.directory,module:row.function.module,export:row.function.export},input,PARSE_SANDBOX_LIMITS,options.sandbox);
         if(options.onWireOutput)try{options.onWireOutput(Buffer.byteLength(JSON.stringify(out.output),'utf8'));}catch{/* Instrumentation must not alter parsing. */}
         const locate=row.locate;
         const fetchFragments=locate?async(selectors:string[])=>{
           const again=await options.registry.open(opened.info.digest);
           if(!again||again.declarations.kind!=='skill')throw new IntegrityError('冻结技能包缺失或被改变');
-          const located=await callPackFunction({packDir:again.handle.directory,module:locate.module,export:locate.export},{...input,selectors},limitsBox,options.sandbox);
+          const located=await callPackFunction({packDir:again.handle.directory,module:locate.module,export:locate.export},{...input,selectors},PARSE_SANDBOX_LIMITS,options.sandbox);
           return located.output;
         }:undefined;
         return hydrate(out.output,row.parser,fetchFragments,input.bytes.length,limits);

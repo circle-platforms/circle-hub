@@ -29,6 +29,11 @@ function pack(files: Record<string, string>): string {
 const call = (dir: string, input: unknown = null, limits: Partial<SandboxLimits> = {}, exportName?: string, module = 'fn.ts') =>
   callPackFunction({ packDir: dir, module, export: exportName }, input, limits, { requireOsIsolation: os });
 
+/** The code with its detail, as the message of a code assertion: a wrong code then names its reason (#96). */
+function detailOf(error: SandboxError): string {
+  return `${error.code} ${JSON.stringify(error.detail)}`;
+}
+
 async function failure(promise: Promise<unknown>): Promise<SandboxError> {
   try {
     await promise;
@@ -145,10 +150,10 @@ describe('function failures', () => {
       ].join('\n'),
     });
     const a = await failure(call(dir, null, {}, 'sync'));
-    assert.equal(a.code, 'FUNCTION_THREW');
+    assert.equal(a.code, 'FUNCTION_THREW', detailOf(a));
     assert.equal(a.detail.message, 'kaboom');
     const b = await failure(call(dir, null, {}, 'rejects'));
-    assert.equal(b.code, 'FUNCTION_THREW');
+    assert.equal(b.code, 'FUNCTION_THREW', detailOf(b));
     assert.equal(b.detail.name, 'TypeError');
     assert.equal((await failure(call(dir, null, {}, 'value'))).detail.message, '42');
   });
@@ -165,7 +170,7 @@ describe('function failures', () => {
     });
     for (const name of ['big', 'none', 'cyclic']) {
       const error = await failure(call(dir, null, {}, name));
-      assert.equal(error.code, 'FUNCTION_THREW', name);
+      assert.equal(error.code, 'FUNCTION_THREW', `${name} ${detailOf(error)}`);
       assert.equal(error.detail.reason, 'output_not_json', name);
     }
     assert.equal((await failure(call(dir, null, {}, 'never'))).detail.reason, 'never_settled');
@@ -200,7 +205,7 @@ describe('function failures', () => {
     });
     for (const module of ['output.ts', 'message.ts', 'code.ts']) {
       const error = await failure(call(dir, null, {}, undefined, module));
-      assert.equal(error.code, 'SANDBOX_VIOLATION', module);
+      assert.equal(error.code, 'SANDBOX_VIOLATION', `${module} ${detailOf(error)}`);
       assert.equal(error.detail.what, 'process.binding', module);
     }
   });
@@ -208,7 +213,7 @@ describe('function failures', () => {
   it('a CommonJS pack module is refused', async () => {
     const dir = pack({ 'fn.js': 'module.exports = function () { return require("node:fs").readdirSync("/"); };' });
     const error = await failure(call(dir, null, {}, undefined, 'fn.js'));
-    assert.equal(error.code, 'SANDBOX_VIOLATION');
+    assert.equal(error.code, 'SANDBOX_VIOLATION', detailOf(error));
     assert.match(String(error.detail.what), /format commonjs/);
   });
 });
@@ -229,7 +234,7 @@ describe('boundaries', () => {
         ].join('\n'),
       });
       const error = await failure(call(dir));
-      assert.equal(error.code, 'SANDBOX_VIOLATION');
+      assert.equal(error.code, 'SANDBOX_VIOLATION', detailOf(error));
       assert.equal(error.detail.what, 'fetch');
       assert.equal((await failure(call(dir, null, {}, undefined, 'ws.ts'))).code, 'SANDBOX_VIOLATION');
       assert.equal((await failure(call(dir, null, {}, undefined, 'dispatch.ts'))).code, 'SANDBOX_VIOLATION');
@@ -288,7 +293,7 @@ describe('boundaries', () => {
       'worker.ts': "export default async function () { const w = await import('node:worker_threads'); return new w.Worker('1', { eval: true }).threadId; }",
     });
     const static_ = await failure(call(dir, null, {}, undefined, 'static.ts'));
-    assert.equal(static_.code, 'IMPORT_NOT_DECLARED');
+    assert.equal(static_.code, 'IMPORT_NOT_DECLARED', detailOf(static_));
     assert.equal(static_.detail.what, 'node:child_process');
     assert.equal((await failure(call(dir, null, {}, undefined, 'dynamic.ts'))).code, 'IMPORT_NOT_DECLARED');
     assert.equal((await failure(call(dir, null, {}, undefined, 'kill.ts'))).code, 'SANDBOX_VIOLATION');
@@ -323,12 +328,12 @@ describe('boundaries', () => {
     });
     for (const module of ['up.ts', 'absolute.ts', 'url.ts']) {
       const error = await failure(call(dir, null, {}, undefined, module));
-      assert.equal(error.code, 'SANDBOX_VIOLATION', module);
+      assert.equal(error.code, 'SANDBOX_VIOLATION', `${module} ${detailOf(error)}`);
     }
     const linked = pack({ 'fn.ts': "import s from './secret.json' with { type: 'json' }; export default () => s;" });
     symlinkSync(join(outside, 'secret.json'), join(linked, 'secret.json'));
     const a = await failure(call(linked));
-    assert.equal(a.code, 'SANDBOX_VIOLATION');
+    assert.equal(a.code, 'SANDBOX_VIOLATION', detailOf(a));
     assert.equal(a.detail.reason, 'symbolic_link');
     const linkedDir = pack({ 'fn.ts': "import s from './dir/secret.json' with { type: 'json' }; export default () => s;" });
     symlinkSync(outside, join(linkedDir, 'dir'));
@@ -386,7 +391,7 @@ describe('boundaries', () => {
     });
     for (const module of ['heap.ts', 'buffers.ts']) {
       const error = await failure(call(dir, null, { memoryMb: 64, timeoutMs: 20_000 }, undefined, module));
-      assert.equal(error.code, 'SANDBOX_VIOLATION', module);
+      assert.equal(error.code, 'SANDBOX_VIOLATION', `${module} ${detailOf(error)}`);
       assert.equal(error.detail.limit, 'memory', module);
       // The cause is a measurement of the parent's poller, not a sentence of the child's: the observed bytes are kept.
       assert.equal(typeof error.detail.residentBytes, 'number', module);
@@ -412,7 +417,7 @@ describe('boundaries', () => {
     const killed = await killChildren(dir);
     assert.ok(killed > 0, 'the sandboxed child of this pack was not found among the processes');
     const aborted = await pending;
-    assert.equal(aborted.code, 'SANDBOX_VIOLATION');
+    assert.equal(aborted.code, 'SANDBOX_VIOLATION', detailOf(aborted));
     assert.equal(aborted.detail.reason, 'signal');
     assert.notEqual(aborted.detail.limit, 'memory');
     assert.equal(aborted.detail.resourceObservation, 'absent');
@@ -421,7 +426,7 @@ describe('boundaries', () => {
     assert.equal(printed.output, 7);
     assert.ok(printed.stderr.includes('heap out of memory'), printed.stderr);
     const threw = await failure(call(dir, null, {}, undefined, 'liar.ts'));
-    assert.equal(threw.code, 'FUNCTION_THREW');
+    assert.equal(threw.code, 'FUNCTION_THREW', detailOf(threw));
     assert.notEqual(threw.detail.limit, 'memory');
   });
 
@@ -429,7 +434,7 @@ describe('boundaries', () => {
     const dir = pack({ 'fn.ts': 'export default function () { for (;;) {} }' });
     const started = Date.now();
     const error = await failure(call(dir, null, { timeoutMs: 1000 }));
-    assert.equal(error.code, 'SANDBOX_TIMEOUT');
+    assert.equal(error.code, 'SANDBOX_TIMEOUT', detailOf(error));
     assert.ok(Date.now() - started < 5000);
   });
 
@@ -441,7 +446,7 @@ describe('boundaries', () => {
     });
     for (const module of ['result.ts', 'printed.ts', 'logged.ts']) {
       const error = await failure(call(dir, null, { memoryMb: 768, timeoutMs: 30_000 }, undefined, module));
-      assert.equal(error.code, 'SANDBOX_OUTPUT_TOO_LARGE', module);
+      assert.equal(error.code, 'SANDBOX_OUTPUT_TOO_LARGE', `${module} ${detailOf(error)}`);
     }
   });
 
@@ -597,6 +602,6 @@ describe('isolation layers', () => {
     if (os) return t.skip('sandbox-exec is available here');
     const dir = pack({ 'fn.ts': 'export default () => 1;' });
     const error = await failure(callPackFunction({ packDir: dir, module: 'fn.ts' }, null));
-    assert.equal(error.code, 'SANDBOX_UNAVAILABLE');
+    assert.equal(error.code, 'SANDBOX_UNAVAILABLE', detailOf(error));
   });
 });

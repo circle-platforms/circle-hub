@@ -170,6 +170,7 @@ test('source identity, malformed submissions and missing case evidence are never
 import { mkdtempSync, readFileSync as read, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 const privateInputs = (t: { after(fn: () => void): void }) => {
   const directory = mkdtempSync(join(tmpdir(), 'gold-catalog-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
   const files = { tree: join(directory, 'tree.xml'), source: join(directory, 'source.json'), run: join(directory, 'run.json'), submission: join(directory, 'submission.json'), manifest: join(directory, 'pack.json'), types: join(directory, 'types.json'), table: join(directory, 'table.json'), out: join(directory, 'report') };
@@ -206,7 +207,7 @@ test('scope drift and missing submission bytes exit one with a request, never as
 });
 test('output in a Git checkout and malformed input cannot leak file paths or source values', async t => {
   const { main } = await import('./catalog-marks.ts'); const files = privateInputs(t), screen: string[] = [];
-  const args = cliArgs(files); args[args.length - 1] = new URL('./forbidden-output', import.meta.url).pathname;
+  const args = cliArgs(files); args[args.length - 1] = fileURLToPath(new URL('./forbidden-output', import.meta.url));
   assert.equal(main(args, line => screen.push(line)), 1);
   assert.ok(!screen.join('').includes(files.source));
 });

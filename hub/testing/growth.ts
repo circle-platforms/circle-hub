@@ -55,32 +55,73 @@ function timeOnce(run: () => unknown): number {
   } catch {
     // A refusal (for example a parser limit) is a valid outcome here; the caller checks the outcome separately.
   }
+  return cpuMs(start);
+}
+
+/** The same for work that is awaited: only what the calling thread does until it settles counts, not time spent waiting. */
+async function timeOnceAsync(run: () => Promise<unknown>): Promise<number> {
+  collect();
+  const start = process.threadCpuUsage();
+  try {
+    await run();
+  } catch {
+    // As in timeOnce.
+  }
+  return cpuMs(start);
+}
+
+function cpuMs(start: NodeJS.CpuUsage): number {
   const used = process.threadCpuUsage(start);
   return (used.user + used.system) / 1000;
 }
 
-/** Times `run` on inputs of size `small` and `factor × small` and returns the ratio of the fastest runs. */
-export function measureGrowth<T>(make: (size: number) => T, run: (input: T) => unknown, options: GrowthOptions): Growth {
+type Plan = { small: number; large: number; runs: number; maxRatio: number; noiseFloorMs: number };
+
+function plan(options: GrowthOptions): Plan {
   const factor = options.factor ?? 8;
   const runs = options.runs ?? 3;
-  const maxRatio = options.maxRatio ?? 2 * factor;
-  const noiseFloorMs = options.noiseFloorMs ?? 25;
   if (!(factor > 1) || !(runs >= 1) || !(options.small > 0)) throw new Error('growth: small > 0, factor > 1 and runs >= 1 are required');
-  const small = options.small;
-  const large = Math.round(small * factor);
-  const smallInput = make(small);
-  const largeInput = make(large);
+  return { small: options.small, large: Math.round(options.small * factor), runs, maxRatio: options.maxRatio ?? 2 * factor, noiseFloorMs: options.noiseFloorMs ?? 25 };
+}
+
+function result({ small, large, maxRatio, noiseFloorMs }: Plan, smallMs: number, largeMs: number): Growth {
+  return { small, large, smallMs, largeMs, ratio: largeMs / Math.max(smallMs, Number.EPSILON), maxRatio, belowNoise: largeMs < noiseFloorMs };
+}
+
+/** Times `run` on inputs of size `small` and `factor × small` and returns the ratio of the fastest runs. */
+export function measureGrowth<T>(make: (size: number) => T, run: (input: T) => unknown, options: GrowthOptions): Growth {
+  const sizes = plan(options);
+  const smallInput = make(sizes.small);
+  const largeInput = make(sizes.large);
   // Warm-up: JIT compilation and first-touch allocation would otherwise land on whichever size runs first.
   timeOnce(() => run(smallInput));
   timeOnce(() => run(largeInput));
   let smallMs = Infinity;
   let largeMs = Infinity;
-  for (let i = 0; i < runs; i++) {
+  for (let i = 0; i < sizes.runs; i++) {
     smallMs = Math.min(smallMs, timeOnce(() => run(smallInput)));
     largeMs = Math.min(largeMs, timeOnce(() => run(largeInput)));
   }
-  const belowNoise = largeMs < noiseFloorMs;
-  return { small, large, smallMs, largeMs, ratio: largeMs / Math.max(smallMs, Number.EPSILON), maxRatio, belowNoise };
+  return result(sizes, smallMs, largeMs);
+}
+
+/**
+ * measureGrowth for work that is awaited. Only work the calling thread does counts, so `run` must not hand its work to
+ * another thread or process, and nothing else may run on the thread meanwhile (tests of one file run one at a time).
+ */
+export async function measureGrowthAsync<T>(make: (size: number) => T, run: (input: T) => Promise<unknown>, options: GrowthOptions): Promise<Growth> {
+  const sizes = plan(options);
+  const smallInput = make(sizes.small);
+  const largeInput = make(sizes.large);
+  await timeOnceAsync(() => run(smallInput));
+  await timeOnceAsync(() => run(largeInput));
+  let smallMs = Infinity;
+  let largeMs = Infinity;
+  for (let i = 0; i < sizes.runs; i++) {
+    smallMs = Math.min(smallMs, await timeOnceAsync(() => run(smallInput)));
+    largeMs = Math.min(largeMs, await timeOnceAsync(() => run(largeInput)));
+  }
+  return result(sizes, smallMs, largeMs);
 }
 
 /** Message for a failed growth check, with the measurements so a CI log shows what was seen. */
@@ -88,9 +129,17 @@ export function describeGrowth(label: string, growth: Growth): string {
   return `${label}: ${growth.small} → ${growth.large} took ${growth.smallMs.toFixed(1)} → ${growth.largeMs.toFixed(1)} ms of CPU, ratio ${growth.ratio.toFixed(2)} (limit ${growth.maxRatio})`;
 }
 
-/** Throws when the cost of `run` grows faster than the bound allows between the two sizes. */
-export function assertLinearGrowth<T>(label: string, make: (size: number) => T, run: (input: T) => unknown, options: GrowthOptions): Growth {
-  const growth = measureGrowth(make, run, options);
+function judge(label: string, growth: Growth): Growth {
   assert.ok(growth.belowNoise || growth.ratio <= growth.maxRatio, `super-linear growth: ${describeGrowth(label, growth)}`);
   return growth;
+}
+
+/** Throws when the cost of `run` grows faster than the bound allows between the two sizes. */
+export function assertLinearGrowth<T>(label: string, make: (size: number) => T, run: (input: T) => unknown, options: GrowthOptions): Growth {
+  return judge(label, measureGrowth(make, run, options));
+}
+
+/** assertLinearGrowth for work that is awaited (see measureGrowthAsync). */
+export async function assertLinearGrowthAsync<T>(label: string, make: (size: number) => T, run: (input: T) => Promise<unknown>, options: GrowthOptions): Promise<Growth> {
+  return judge(label, await measureGrowthAsync(make, run, options));
 }

@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import ExcelJS from 'exceljs';
-import {createSkillParserRegistry} from './skills.ts';
+import {createSkillParserRegistry, PARSE_SANDBOX_LIMITS} from './skills.ts';
 import {parseDocument, QUOTATION_UNITS, type Fragment, type ParsedDocument, type QuotationSource} from './parser.ts';
 import {candidatesFrom} from './quote.ts';
 import {callPackFunction} from '../rules/api.ts';
@@ -42,7 +42,7 @@ async function equalSandboxLocate(format: 'xml' | 'html' | 'workbook', bytes: Bu
   const directory = fileURLToPath(new URL(`../../packs/skill/${format}-format/`, import.meta.url));
   const result = await callPackFunction({packDir: directory, module: 'functions/parse.ts', export: 'locate'},
     {bytes: bytes.toString('base64'), options: {}, selectors},
-    {timeoutMs: 5000, inputBytes: 96 * 1024 * 1024, outputBytes: 64 * 1024 * 1024}, {requireOsIsolation: false});
+    PARSE_SANDBOX_LIMITS, {requireOsIsolation: false});
   const output = result.output as {fragments: Array<Fragment & {lookup: string}>};
   for (const selector of selectors) {
     const row = output.fragments.find((value) => value.lookup === selector);

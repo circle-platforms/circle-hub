@@ -1,7 +1,7 @@
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 // Unit tests without a database: trace and session ids, strict base64 and media types, escaping and the CSP hash, origin and
 // host rules, request targets, admin notes, the body budget, console sessions, claim display order, terminal symbols, item
-// cells and the counts line, the run of a record, JSON Pointers of schema issues.
+// cells and the counts line, the run of a record, JSON Pointers of schema issues, the answer to a skill parser's sandbox failure.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
@@ -11,6 +11,7 @@ import { accepted } from '../../contracts/src/fixtures.ts';
 import { ListTaskPacksInput, StartRunInput } from '../../contracts/src/tools.ts';
 import { LayerResult, ValidationResult, isUnknownTerminal, type Partitions } from '../../contracts/src/validation.ts';
 import { VIEW_SYSTEM } from '../knowledge/api.ts';
+import { SandboxError } from '../rules/api.ts';
 
 import { parseTarget } from './app.ts';
 import { SYMBOL, cellText, claimFields, terminalSymbol, terminalText } from './claims.ts';
@@ -20,7 +21,7 @@ import { BodyBudget, REFERRER_POLICY, allowedHosts, isLoopbackOrigin } from './h
 import { MAX_ADMIN_NOTE, clipNote, describeError, describeInternalError, cleanStack, sanitizeStackLine } from './notes.ts';
 import { runOfRecord } from './readers.ts';
 import { countsLine } from './text.ts';
-import { KNOWLEDGE_VIEW_SYSTEM, isExternalType, pointerOfPath, readsOutside, schemaErrors } from './tools.ts';
+import { KNOWLEDGE_VIEW_SYSTEM, isExternalType, pointerOfPath, readsOutside, sandboxError, schemaErrors } from './tools.ts';
 import { newTraceId, sessionIdOf, traceIdFrom } from './trace.ts';
 import { base64Size, decodeBase64Strict, mediaTypeFor, structureOf } from './upload.ts';
 
@@ -271,6 +272,27 @@ test('the run of a run-scoped record, by the runs engine\'s shapes; other kinds 
   assert.equal(runOfRecord('claim', { run }), null);
   assert.equal(runOfRecord('call_log', { run }), null);
   assert.equal(runOfRecord('action', { run: null }), null);
+});
+
+test('a document too large for its parse is answered with a smaller original, any other sandbox failure goes to the administrator', () => {
+  assert.deepEqual(sandboxError(new SandboxError('SANDBOX_OUTPUT_TOO_LARGE', { limit: 'document_cache_bytes' })), {
+    code: 'SOURCE_RETRYABLE',
+    message: '文档缓存估算超过预算：SANDBOX_OUTPUT_TOO_LARGE',
+    fix: '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读',
+  });
+  // The memory watchdog's own detail, as the sandbox gives it, and the output limit.
+  for (const [error, message] of [
+    [new SandboxError('SANDBOX_VIOLATION', { limit: 'memory', residentBytes: 495_583_232, memoryMb: 256 }), '解析原件超过沙箱内存上限：SANDBOX_VIOLATION'],
+    [new SandboxError('SANDBOX_OUTPUT_TOO_LARGE', { outputBytes: 67_108_865 }), '解析结果超过沙箱输出上限：SANDBOX_OUTPUT_TOO_LARGE'],
+  ] as const) {
+    const answer = sandboxError(error);
+    assert.equal(answer.code, 'SOURCE_RETRYABLE');
+    assert.equal(answer.message, message);
+    assert.match(answer.fix ?? '', /^原样重读仍会失败；请来源维护者拆分原件后重读/);
+  }
+  for (const error of [new SandboxError('SANDBOX_VIOLATION', { reason: 'symbolic_link' }), new SandboxError('SANDBOX_TIMEOUT'), new SandboxError('FUNCTION_THREW')]) {
+    assert.equal(sandboxError(error).fix, '管理员核对技能包和沙箱状态，恢复后重新读取', error.code);
+  }
 });
 
 test('an input slot reads an external system when it accepts system:type, never a media type', () => {

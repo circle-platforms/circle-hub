@@ -78,6 +78,31 @@ describe('test jobs count what ran', () => {
   });
 });
 
+describe('the sharded test jobs list their slowest files and keep the junit report', () => {
+  for (const [name, command, log] of [
+    ['unit_parts', 'npm run test:unit -- ${{ matrix.suite }}', 'unit'],
+    ['acceptance_parts', 'npm run test:acceptance', 'acceptance'],
+    ['isolation_parts', 'node tools/run-guarded-tests.ts linux ${{ matrix.suite }}', 'isolation'],
+  ] as const) {
+    it(`${name}: the runner writes ${log}.xml, a later step lists its slowest files by shard and keeps it for 14 days`, () => {
+      const all = steps(name);
+      const run = all.findIndex((s) => s.includes(command));
+      assert.ok(all[run].includes(`JUNIT_REPORT: \${{ runner.temp }}/${log}.xml`), 'the runner writes the report');
+      const later = all.slice(run + 1);
+      const timings = later.find((s) => s.includes('node .github/checks/test-timings.ts'));
+      assert.ok(timings !== undefined, 'lists the slowest files after the run');
+      assert.ok(timings.includes(`"$RUNNER_TEMP/${log}.xml"`) && timings.includes('${{ matrix.shard }}'), 'of the same report, labelled by shard');
+      const upload = later.find((s) => s.includes('uses: actions/upload-artifact@'));
+      assert.ok(upload !== undefined, 'keeps the report');
+      assert.match(upload, /uses: actions\/upload-artifact@[0-9a-f]{40} # v\d/, 'pinned by commit, like the other actions');
+      assert.ok(upload.includes(`path: \${{ runner.temp }}/${log}.xml`), 'the same report');
+      assert.match(upload, /^ {10}retention-days: 14$/m);
+      assert.ok(upload.includes('${{ strategy.job-index }}-${{ github.run_attempt }}'), 'one artifact name per shard and attempt');
+      for (const step of [timings, upload]) assert.match(step, /if: \$\{\{ !cancelled\(\) \}\}/, 'also when the tests failed');
+    });
+  }
+});
+
 describe('sharded test jobs keep one stable status each', () => {
   for (const [aggregate, parts, variable] of [
     ['unit', 'unit_parts', 'UNIT_SHARD'],

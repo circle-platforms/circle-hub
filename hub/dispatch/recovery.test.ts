@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { setup } from './testing/context.ts';
+import { observationLockFree, setup } from './testing/context.ts';
 
 async function worker(c: Awaited<ReturnType<typeof setup>>) {
   const child = spawn(process.execPath, [fileURLToPath(new URL('./testing/worker.ts', import.meta.url))], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
@@ -12,17 +12,6 @@ async function worker(c: Awaited<ReturnType<typeof setup>>) {
   child.stdin!.end(JSON.stringify({ config: { ...c.kit.config, database: c.kit.database }, now: c.now().toISOString(), detail: c.detail, admin: c.admin, executor: c.executor.id }));
   await Promise.race([ready, exited.then(e => { throw new Error(`synthetic worker exited before ready: ${e.code}`); })]);
   return { child, exited };
-}
-
-/** Resolves once nobody holds the job's observation lock (the one resume takes), failing after `ms`. */
-async function observationLockFree(c: Awaited<ReturnType<typeof setup>>, job: string, ms = 15000) {
-  const deadline = Date.now() + ms;
-  for (;;) {
-    const unlock = await c.kit.store.tryHold(`dispatch.observation:${job}`);
-    if (unlock) { await unlock(); return; }
-    if (Date.now() > deadline) throw new Error(`the observation lock of ${job} was still held ${ms} ms after its holder was killed`);
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
 }
 
 test('two independent processes dispatching identical bytes produce exactly one successful submission', { timeout: 30000 }, async t => {
@@ -42,6 +31,7 @@ test('a process killed during submission is recovered as unknown and never submi
   const exit = await w.exited; assert.equal(exit.signal, 'SIGKILL');
   const intent = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}:1`);
   assert.ok(intent);
+  await observationLockFree(c, intent.body.detail.job);
   const state = await c.service.resume(c.admin, intent.body.detail.job);
   assert.equal(state.outcome, 'unknown'); assert.equal(state.frozen, true);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
@@ -111,6 +101,7 @@ test('a process killed after journal admission resumes by request identity witho
   const w=await worker(c);child=w.child;t.after(()=>child?.kill('SIGKILL'));child.send('go');
   assert.equal((await w.exited).signal,'SIGKILL');
   const intent=await c.kit.store.getByKey<any>('action',`dispatch.bytes:${c.payload.body.sha256}:1`);assert.ok(intent);
+  await observationLockFree(c,intent.body.detail.job);
   const state=await c.service.resume(c.admin,intent.body.detail.job);
   assert.equal(state.outcome,'effective');assert.equal(state.frozen,false);
   assert.equal(c.calls.filter(n=>n==='send_blob').length,1);assert.ok(c.calls.includes('lookup_blob'));

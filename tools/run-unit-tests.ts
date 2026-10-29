@@ -3,7 +3,8 @@
 // concurrency for files that do not start a postmaster. Files that need their own cluster stay at concurrency 2.
 // Timing sentinels run in their own process so a crowded template clone does not share their millisecond budget.
 // CI splits a public partition further with a shard (`UNIT_SHARD=<index>/<total>` or a second argument), balanced by the
-// durations in UNIT_MEASURED_SECONDS (tools/test-shards.ts).
+// durations in UNIT_MEASURED_SECONDS (tools/test-shards.ts). With JUNIT_REPORT=<file> (CI) a public partition also writes Node's
+// junit report there (tools/test-report.ts); `all` runs three processes at once and refuses it.
 import { execFileSync, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { globSync, readFileSync } from 'node:fs';
@@ -14,6 +15,7 @@ import { createPool, Database } from '../hub/records/db.ts';
 import { migrate } from '../hub/records/migrations.ts';
 import { startPostgres } from '../hub/testing/postgres.ts';
 import type { TemporaryPostgres } from '../hub/testing/postgres.ts';
+import { junitArguments } from './test-report.ts';
 import { parseShard, shardFiles } from './test-shards.ts';
 import type { Shard } from './test-shards.ts';
 
@@ -178,13 +180,13 @@ export function unitShardFiles(group: UnitGroup, shard: Shard | undefined): stri
   return shardFiles(unitFiles(group), shard, unitSeconds);
 }
 
-export function laneArguments(files: readonly string[], concurrency: number): string[] {
-  return ['--test', '--test-isolation=process', `--test-concurrency=${concurrency}`, ...files];
+export function laneArguments(files: readonly string[], concurrency: number, report?: string): string[] {
+  return ['--test', '--test-isolation=process', `--test-concurrency=${concurrency}`, ...junitArguments(report), ...files];
 }
 
-function spawnLane(files: string[], concurrency: number, env: NodeJS.ProcessEnv): ChildProcess | undefined {
+function spawnLane(files: string[], concurrency: number, env: NodeJS.ProcessEnv, report?: string): ChildProcess | undefined {
   if (files.length === 0) return undefined;
-  return spawn(process.execPath, laneArguments(files, concurrency), { cwd: ROOT, env, stdio: 'inherit' });
+  return spawn(process.execPath, laneArguments(files, concurrency, report), { cwd: ROOT, env, stdio: 'inherit' });
 }
 
 function exitOf(child: ChildProcess | undefined): Promise<number> {
@@ -267,11 +269,15 @@ function sharedEnv(postgres: TemporaryPostgres): NodeJS.ProcessEnv {
   });
 }
 
-/** Runs one public partition (optionally one shard of it) or the whole local suite. Resolves to the test runner's exit code. */
-export async function runUnitTests(group: UnitGroup = 'all', shard?: Shard): Promise<number> {
+/**
+ * Runs one public partition (optionally one shard of it, with a junit report) or the whole local suite. Resolves to the test
+ * runner's exit code.
+ */
+export async function runUnitTests(group: UnitGroup = 'all', shard?: Shard, report?: string): Promise<number> {
   const files = unitFiles(group);
   if (files.length === 0) throw new Error('单元测试分组没有文件，拒绝空运行；检查测试文件声明');
   if (shard !== undefined && group === 'all') throw new Error('分片只用于 regular 和 parser-bounds 分组');
+  if (report !== undefined && report !== '' && group === 'all') throw new Error('JUNIT_REPORT 只用于 regular 和 parser-bounds 分组；all 同时运行三个进程');
   const sharded = unitShardFiles(group, shard);
   if (sharded.length === 0) throw new Error('单元测试分片没有文件，拒绝空运行；减少分片数');
   const children: ChildProcess[] = [];
@@ -285,7 +291,7 @@ export async function runUnitTests(group: UnitGroup = 'all', shard?: Shard): Pro
     // Public CI partitions keep one process and a global worker cap; shared lanes are local-all only.
     if (group !== 'all') {
       if (shard !== undefined) process.stderr.write(`unit ${group} shard ${shard.index}/${shard.total}: ${sharded.length} files\n`);
-      const child = spawnLane(sharded, sharedConcurrency(group), stringEnv());
+      const child = spawnLane(sharded, sharedConcurrency(group), stringEnv(), report);
       if (child) children.push(child);
       return await exitOf(child);
     }
@@ -356,7 +362,7 @@ if (isMain) {
     fail('用法：node tools/run-unit-tests.ts [all|regular|parser-bounds] [<序号>/<总数>]（分片也可由 UNIT_SHARD 指定）');
   } else {
     Promise.resolve()
-      .then(() => runUnitTests(group, parseShard(process.argv[3] ?? process.env.UNIT_SHARD)))
+      .then(() => runUnitTests(group, parseShard(process.argv[3] ?? process.env.UNIT_SHARD), process.env.JUNIT_REPORT))
       .then(
         (code) => {
           process.exitCode = code;

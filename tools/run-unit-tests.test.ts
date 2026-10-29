@@ -86,6 +86,13 @@ test('local concurrency tracks this machine and the public partitions stay cappe
 test('the shards of a public partition cover it once, balanced, and the measured files exist', () => {
   const regular = unitFiles('regular');
   assert.deepEqual(laneArguments(regular, 2), ['--test', '--test-isolation=process', '--test-concurrency=2', ...regular]);
+  assert.deepEqual(laneArguments(['a.test.ts'], 2, 'r.xml').slice(3), [
+    '--test-reporter=spec',
+    '--test-reporter-destination=stdout',
+    '--test-reporter=junit',
+    '--test-reporter-destination=r.xml',
+    'a.test.ts',
+  ]);
   assert.deepEqual(unitShardFiles('regular', undefined), regular, 'without a shard the whole partition runs');
   for (const group of ['regular', 'parser-bounds'] as const) {
     for (let total = 1; total <= 4; total++) {
@@ -102,8 +109,9 @@ test('the shards of a public partition cover it once, balanced, and the measured
   for (const file of Object.keys(UNIT_MEASURED_SECONDS)) assert.ok(all.has(file), file);
 });
 
-test('the runner refuses a shard of the local lanes and a malformed shard', async () => {
+test('the runner refuses a shard or a junit report of the local lanes, and a malformed shard', async () => {
   await assert.rejects(runUnitTests('all', { index: 1, total: 2 }), /分片只用于/);
+  await assert.rejects(runUnitTests('all', undefined, 'r.xml'), /JUNIT_REPORT 只用于/);
   const out = spawnSync(process.execPath, ['tools/run-unit-tests.ts', 'regular', '4/3'], { cwd: ROOT, encoding: 'utf8' });
   assert.equal(out.status, 2);
   assert.match(out.stderr, /分片必须写成/);
