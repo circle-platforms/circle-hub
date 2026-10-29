@@ -70,3 +70,34 @@ test('evaluate resolves the actual captured artifact when a legacy binding has n
   });
   assert.match(JSON.stringify(evaluated.result), /客户端捕获的原件只随操作记录进入回注层/);
 });
+
+test('a use as grounds reads the very artifact whose provenance it checks (round-four review, item 3)', { skip }, async t => {
+  const h = await openHarness(postgres); t.after(() => h.close());
+  const bytes = toyMap(standardDocument());
+  const declared = await h.upload(h.alice, bytes);
+  const started = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: declared } } }, h.call());
+  const run = (await h.service.getRun(h.alice, started.run!.run))!.run;
+  const bound = run.sources.find(source => source.reference === declared)?.artifact;
+  assert.ok(bound, 'a current run names the artifact it bound');
+  // Later the same user uploads the same bytes as a client capture: a second, newer record of that digest.
+  const captured = await h.kit.artifacts.ingest({
+    bytes, mediaType: 'application/json', name: 'later-captured.json',
+    origin: { upload: { session: 'later-capture', message: null } }, author: { user: h.alice.id }, provenanceType: 'client_captured',
+    visibility: { readers: [h.alice.id], admins: true, packs: [], shareable: true },
+  });
+  assert.notEqual(captured.digest, bound);
+  const reads: Array<string | undefined> = [];
+  const source = h.kit.artifacts.source.bind(h.kit.artifacts);
+  t.mock.method(h.kit.artifacts, 'source', async (...args: Parameters<typeof source>) => {
+    if (args[1] === captured.body.sha256) reads.push(args[2]?.record);
+    return source(...args);
+  });
+  const ctx = createEngineContext({ records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external });
+  const resolver = createResolver(ctx, await buildScope(ctx, run, h.review, h.alice, 'function'), 'function');
+  const reference = `src:${captured.body.sha256}/json@1/p`;
+  await resolver.prefetch([reference]);
+  const grounded = await resolver.resolve(reference, { grounds: true });
+  assert.equal(grounded.ok, true, 'the declared artifact the run bound may be grounds');
+  assert.ok(reads.length > 0, 'the resolver read the source');
+  assert.deepEqual([...new Set(reads)], [bound], 'every read asks for the bound record, never the newer captured one');
+});

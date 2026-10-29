@@ -11,7 +11,7 @@ import type { TreeRootBody } from '../../../contracts/src/knowledge.ts';
 import { SlotClaim, type ResolvedEvidence } from '../../../contracts/src/pack.ts';
 import type { ItemProjection, RunRecord } from '../../../contracts/src/run.ts';
 import type { CriterionChange, Submission } from '../../../contracts/src/submission.ts';
-import { canonicalize, sha256Hex, type Principal } from '../../records/api.ts';
+import { canonicalize, sha256Hex, type Principal, type SourceArtifact } from '../../records/api.ts';
 import type { LoadedWorkflow } from '../../ports.ts';
 import {
   ReferenceSyntaxError,
@@ -32,6 +32,7 @@ import {
   type ReaderIdentity,
   type Reference,
   type Resolved,
+  type SourceReader,
 } from '../../refs/api.ts';
 import { SandboxError, type CatalogView } from '../../rules/api.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
@@ -314,8 +315,40 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
   let preparedBytes=0;
   const preparedLimit=64*1024*1024;
   let aborted:HubReadFailure|undefined;
-  // Reading is an authorization decision, not immutable document content: recheck it on every use.
-  const sources = sourceReader(artifacts, consumer);
+  let groundRun: ReturnType<typeof runById> | undefined;
+  // One concrete artifact per source digest for this resolver: the record a read returns is the record whose provenance a
+  // use as grounds checks. The run's bound artifact when it names one; otherwise the record readable when the digest is
+  // first used, kept for the rest of the resolver (round-four review, item 3).
+  const chosen = new Map<string, Promise<SourceArtifact | null>>();
+  const recordFor = (sha256: string): Promise<SourceArtifact | null> => {
+    let found = chosen.get(sha256);
+    if (!found) chosen.set(sha256, found = (async () => {
+      if (scope.reader.run === undefined) return null;
+      groundRun ??= runById(store, scope.reader.run);
+      const stored = await groundRun;
+      if (stored === null) return null;
+      const binding = stored.body.sources.find(row => {
+        const candidate = parseReference(row.reference);
+        return candidate.scheme === 'src' && candidate.sha256 === sha256 && row.artifact !== undefined;
+      });
+      if (binding?.artifact) return (await store.get(binding.artifact)) as SourceArtifact | null;
+      const found = await artifacts.source(principalOf(scope.reader), sha256, { consumer: 'function' })
+        ?? await artifacts.sourceForRun(principalOf(scope.reader), sha256, scope.reader.run, { consumer: 'function' });
+      return found?.artifact ?? null;
+    })());
+    return found;
+  };
+  // Reading is an authorization decision, not immutable document content: recheck it on every use, of the chosen record.
+  // Without a run there is no binding and no provenance check, and any readable record answers as before.
+  const sources: SourceReader = {
+    async read(sha256, reader) {
+      if (scope.reader.run === undefined) return sourceReader(artifacts, consumer).read(sha256, reader);
+      const record = await recordFor(sha256);
+      if (record === null) return null;
+      const bound = (await groundRun)?.body.sources.find(row => { const candidate = parseReference(row.reference); return candidate.scheme === 'src' && candidate.sha256 === sha256; });
+      return sourceReader(artifacts, consumer, [{ reference: `src:${sha256}`, role: bound?.role ?? 'expected', artifact: record.digest }]).read(sha256, reader);
+    },
+  };
   const context = {
     reader: scope.reader,
     parsers: ctx.parsers,
@@ -326,20 +359,12 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
     documents: ctx.documents,
     onDiagnostic: (diagnostic: {reference:string;message:string}) => ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
   } as const;
-  let groundRun: ReturnType<typeof runById> | undefined;
   const groundSource = async (ref: Reference) => {
     if (ref.scheme !== 'src' || scope.reader.run === undefined) return null;
     groundRun ??= runById(store, scope.reader.run);
     const stored = await groundRun;
     if (stored === null || packIdOf(stored.body.pack) === 'knowledge-contribution') return null;
-    const binding = stored.body.sources.find(row => {
-      const candidate = parseReference(row.reference);
-      return candidate.scheme === 'src' && candidate.sha256 === ref.sha256 && row.artifact !== undefined;
-    });
-    if (binding?.artifact) return store.get(binding.artifact);
-    const found = await artifacts.source(principalOf(scope.reader), ref.sha256, { consumer: 'function' })
-      ?? await artifacts.sourceForRun(principalOf(scope.reader), ref.sha256, scope.reader.run, { consumer: 'function' });
-    return found?.artifact ?? null;
+    return recordFor(ref.sha256);
   };
   const run = async (reference: string, scoped: boolean, grounds: boolean): Promise<ValueOutcome> => {
     let ref: Reference;
