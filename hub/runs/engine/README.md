@@ -70,7 +70,9 @@ Before schema diagnostics or any external read, the entry point scans the comple
    `selectCandidate` in `target.ts`) or the documented default `runs.newest_released@1` (newest
    released build of the requested line with a root) chooses (projected), with its basis text and alternatives. Unknown builds,
    builds of another line and lines without a root are `REFERENCE_UNRESOLVED` with the existing builds as options. The run
-   records the root; the composition digest is in the build basis claim.
+   records the root; the composition digest is in the build basis claim. Within one start, the unfiltered build list is reused
+   for selection, exact-name resolution and the optional frozen build context; seedling lookups are memoized by exact line.
+   Neither cache crosses calls, and the selected build's root is still resolved before it is locked.
 4. **Hub record inputs** (handover, B03 R[3]-R[4]): the bound bytes are the canonical JSON of the record envelope (so their
    SHA-256 is the record digest), or of the value its pointer names, stored as a generated artifact readable by the caller;
    `BoundInput.meta` names the record. The receiver gets the record as a source; no carry-over is offered across a handover.
