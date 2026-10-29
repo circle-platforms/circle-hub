@@ -174,6 +174,10 @@ describe('the pack sandbox runs under Linux isolation on every pull request and 
   const all = steps('isolation_parts');
   const index = (text: string): number => all.findIndex((s) => s.includes(text));
 
+  it('every sandbox attempt that ends SANDBOX_UNAVAILABLE names its reason in the log (#96)', () => {
+    assert.ok(job('isolation_parts').includes("HUB_SANDBOX_DIAGNOSTICS: '1'"));
+  });
+
   it('checks.yml runs on pull requests and on a push to main', () => {
     const triggers = WORKFLOW.slice(WORKFLOW.indexOf('\non:'), WORKFLOW.indexOf('\npermissions:'));
     assert.match(triggers, /^  push:\n    branches: \[main\]$/m);
