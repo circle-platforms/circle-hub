@@ -14,7 +14,7 @@ be grounds for a verified result.
 
 Related changes: the exact capture record is part of the identity of an operation record, a missing capture time is
 marked and never replaced silently by the upload time, lease actions use the lease service's own clock with an exact
-resource-key index, and batch lease actions replay per key. The `knowledge-contribution` pack moves to 1.3.10 in the public
+resource-key index, and batch lease actions replay per key. The `knowledge-contribution` pack moves to 1.3.11 in the public
 numbering, and three entries of `contracts/model.json` gain optional fields only. It was 1.3.2 here until `main` published
 its own 1.3.2 (the dead-lock recovery fix, #92); the merge of `main` combines both as 1.3.7, after this branch's internal
 numbers 1.3.3 to 1.3.6.
@@ -76,7 +76,26 @@ Known limits, not changed:
 - `reclaimOrphans()` locks every unreleased key whose run is missing, one query per key, before it checks age and expiry
   under the clock. Nothing in the Hub calls it on a schedule yet; measure it before it does.
 
-A sixth review should confirm these before the branch is offered for main.
+## Sixth independent review (codex, 2026-10-30)
+
+The reviewer confirmed items 2, 4, 6 and 8 and asked for more on items 1, 3 and 5. Its full text is on issue #28. Each fix
+below has a test that fails without it:
+
+| Item | Problem | Fix | Test |
+|---|---|---|---|
+| 1 | "Resubmit later" could not help: an identical submission returns its cached result, and the same operation identity reuses its record. | When the lease clock passes the receipt within a second (the same millisecond, or a small skew), the Hub waits and reads the history again. A larger gap means the clocks disagree, and the message says so and asks for a new capture once they are fixed. | `a receipt the lease clock passes within a second is read again and confirmed, not left unconfirmed` |
+| 3 | The evaluator read through an unpinned reader and chose the checked record separately; a run-authorized generated record could not be pinned; an invalid second binding passed. | One shared `pinnedSources` choice per digest for the resolver and the evaluator. A run-authorized record is read unpinned and checked to be the chosen record. Every binding is verified (kind, schema, bytes), and any failure refuses grounds (`UNKNOWN_GROUND`). | `evaluation checks the record its read came from …`; `a run that bound no record reads a generated source on its own authority …`; `a binding to anything but a source artifact of these bytes …` |
+| 5 | Notes alike in the same millisecond could not be told apart, and the record bound was a guess. | A new note names its upload record in `source.artifact` (model and contracts; pack 1.3.11). An older note is compared across at most 64 of the uploader's equal uploads, and more than one match is refused. | `two uploads of the same bytes at the same declared time are each annotated through their own note and record`; `an older note that two uploads wrote alike is refused …` |
+| 5 | No real submission to a run on the frozen pack. | The upgrade test submits a new-shape note to the frozen run and gets `SUBMISSION_SCHEMA_VIOLATION` at `/items/0/slots/contribution/0/data/feeding`. | `a run and receipt persisted by the frozen Hub replay unchanged after upgrade` |
+| Tokens | Only device and bed were checked for the current token. | Every checked request is refused when its serialized arguments hold the current token, and every proposal text is checked before `start_run` (pack 1.3.11). | `a proposal text holding the current token is refused before any request carries it`; `a token rotated after start_run into a proposal text is refused before submit_result` |
+
+The review also found two baseline risks that main has as well. They are tracked on their own issues rather than in this
+branch:
+
+- #104: the feeding append path reads through the pool while it holds the feeding log lock.
+- #105: the Hub stores a raw submission before validation, so a caller's token written into its text is persisted.
+
+A seventh review should confirm these before the branch is offered for main.
 
 ## Tests that failed on this branch
 
