@@ -220,7 +220,16 @@ Memory is enforced on the resident size rather than by V8's heap limit, because 
 writes a crash report (observed); the heap limit is set far above as a backstop. Linux sums the supervisor and descendants
 of all its threads. A changing thread set is retried at most 12 times; an inaccessible or persistently unstable process tree,
 missing RSS, a failed sampler or a sampler that does not answer within one second ends the call as `SANDBOX_UNAVAILABLE` with
-the missing observation and the administrator's next step. It is never presented as a measured memory overrun.
+the missing observation and the administrator's next step. It is never presented as a measured memory overrun. One round
+that cannot see the whole tree does not end the call by itself: that takes a second in which no round has measured it, the
+time a stalled sampler already has. While Node starts, its thread set keeps changing, and on a loaded machine that outlasted
+one round's retries and ended healthy calls (#96). A pack function cannot start threads or processes, so this adds no way to
+evade the watchdog, and a measured overrun still ends the call at once.
+
+With `HUB_SANDBOX_DIAGNOSTICS=1` in the Hub's environment, every attempt that ends `SANDBOX_UNAVAILABLE` also writes one
+line to stderr, `hub sandbox unavailable: <detail as JSON>`, and the error is rethrown unchanged. The detail is the Hub's own
+(reason, limits, timings, host errors), never the function's output. The `Linux isolation` jobs of the Hub checks set it, so
+a rare unavailable call names its reason in the log, whichever caller met it (#96).
 
 ## Limits
 

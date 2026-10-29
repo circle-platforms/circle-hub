@@ -605,3 +605,39 @@ describe('isolation layers', () => {
     assert.equal(error.code, 'SANDBOX_UNAVAILABLE', detailOf(error));
   });
 });
+
+describe('diagnostics of an unavailable sandbox (#96)', () => {
+  // The flag is read when the module loads, so each case runs in a process of its own: a call is stopped while it runs.
+  function stoppedCall(env: NodeJS.ProcessEnv): Promise<{ stdout: string; stderr: string }> {
+    const dir = pack({ 'fn.ts': 'export default async function () { await new Promise(resolve => setTimeout(resolve, 10_000)); }' });
+    const script = join(root, `stop-${++counter}.ts`);
+    writeFileSync(script, [
+      `import { callPackFunction, livePids, stopAll } from ${JSON.stringify(new URL('./sandbox.ts', import.meta.url).href)};`,
+      `const call = callPackFunction({ packDir: ${JSON.stringify(dir)}, module: 'fn.ts' }, null, { timeoutMs: 20_000 }, { requireOsIsolation: false });`,
+      'while (livePids().length === 0) await new Promise(resolve => setTimeout(resolve, 10));',
+      'stopAll();',
+      'try { await call; } catch (error) { process.stdout.write(String((error as { code?: unknown }).code)); }',
+    ].join('\n'));
+    return new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [script], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => (stdout += chunk));
+      child.stderr.on('data', (chunk) => (stderr += chunk));
+      child.on('error', reject);
+      child.on('close', () => resolve({ stdout, stderr }));
+    });
+  }
+
+  it('with HUB_SANDBOX_DIAGNOSTICS=1 every unavailable attempt names its reason on stderr; without it nothing is written', { timeout: 60_000 }, async () => {
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    delete env.HUB_SANDBOX_DIAGNOSTICS;
+    delete env.NODE_TEST_CONTEXT;
+    const reported = await stoppedCall({ ...env, HUB_SANDBOX_DIAGNOSTICS: '1' });
+    assert.equal(reported.stdout, 'SANDBOX_UNAVAILABLE', reported.stderr);
+    assert.match(reported.stderr, /^hub sandbox unavailable: \{"reason":"stopping"/m);
+    const quiet = await stoppedCall(env);
+    assert.equal(quiet.stdout, 'SANDBOX_UNAVAILABLE', quiet.stderr);
+    assert.doesNotMatch(quiet.stderr, /hub sandbox unavailable/);
+  });
+});
