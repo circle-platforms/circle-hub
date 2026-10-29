@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { test } from 'node:test';
-import { setup } from './testing/context.ts';
+import { fileURLToPath } from 'node:url';
+import { observationLockFree, setup } from './testing/context.ts';
 
 async function worker(c: Awaited<ReturnType<typeof setup>>) {
-  const child = spawn(process.execPath, [new URL('./testing/worker.ts', import.meta.url).pathname], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./testing/worker.ts', import.meta.url))], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
   let output = ''; let errors = ''; child.stdout!.on('data', b => output += b); child.stderr!.on('data', b => errors += b);
   const exited = new Promise<{ code: number | null; signal: string | null; output: string; errors: string }>(resolve => child.once('exit', (code, signal) => resolve({ code, signal, output, errors })));
   const ready = new Promise<void>(resolve => child.once('message', () => resolve()));
@@ -30,6 +31,7 @@ test('a process killed during submission is recovered as unknown and never submi
   const exit = await w.exited; assert.equal(exit.signal, 'SIGKILL');
   const intent = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}:1`);
   assert.ok(intent);
+  await observationLockFree(c, intent.body.detail.job);
   const state = await c.service.resume(c.admin, intent.body.detail.job);
   assert.equal(state.outcome, 'unknown'); assert.equal(state.frozen, true);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
@@ -61,7 +63,12 @@ test('an accepted job resumes status reads after restart without a new submissio
   const w = await worker(c); child = w.child; t.after(() => child?.kill('SIGKILL')); child.send('go');
   assert.equal((await w.exited).signal, 'SIGKILL');
   const intent = await c.kit.store.getByKey<any>('action', `dispatch.bytes:${c.payload.body.sha256}:1`);
-  const state = await c.service.resume(c.admin, intent!.body.detail.job);
+  const job = intent!.body.detail.job;
+  // The killed worker held the job's observation lock on its own database session; PostgreSQL frees it only once it
+  // notices that connection is gone. Until then resume rightly reports the job as being observed elsewhere, so wait
+  // for the lock to be free rather than for an amount of time.
+  await observationLockFree(c, job);
+  const state = await c.service.resume(c.admin, job);
   assert.equal(state.outcome, 'effective'); assert.equal(state.frozen, false);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
 });
@@ -94,6 +101,7 @@ test('a process killed after journal admission resumes by request identity witho
   const w=await worker(c);child=w.child;t.after(()=>child?.kill('SIGKILL'));child.send('go');
   assert.equal((await w.exited).signal,'SIGKILL');
   const intent=await c.kit.store.getByKey<any>('action',`dispatch.bytes:${c.payload.body.sha256}:1`);assert.ok(intent);
+  await observationLockFree(c,intent.body.detail.job);
   const state=await c.service.resume(c.admin,intent.body.detail.job);
   assert.equal(state.outcome,'effective');assert.equal(state.frozen,false);
   assert.equal(c.calls.filter(n=>n==='send_blob').length,1);assert.ok(c.calls.includes('lookup_blob'));

@@ -12,8 +12,8 @@ export const TRIGGER_TYPES: ReadonlySet<string> = new Set(FORMAT.trigger_types);
  *  (every type the executor gives a usable host shell seat on, server included by default), or the whole set when
  *  the deployment declares none. */
 export function triggerTypesOf(narrowed: readonly string[] | undefined): ReadonlySet<string> {
-  if (narrowed === undefined || narrowed.length === 0) return TRIGGER_TYPES;
-  return new Set(narrowed.filter((type) => TRIGGER_TYPES.has(type)));
+  if (narrowed === undefined) return TRIGGER_TYPES;
+  return new Set(narrowed);
 }
 
 export interface SegmentFact {

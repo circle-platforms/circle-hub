@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chmod, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { devNull } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { after, test } from 'node:test';
 import { exists, listFiles } from './files.ts';
 import { ensureLayout, layoutAt, type Layout } from './layout.ts';
@@ -9,7 +9,6 @@ import { runCommand } from './process.ts';
 import { prepareRelease, readCurrentRelease, readReleaseFile, RELEASE_FILE, switchCurrent } from './release.ts';
 import { exit, ok, recordingRunner, removeDir, tempDir, type Call } from './test-support.ts';
 
-const WORKTREE = fileURLToPath(new URL('../../', import.meta.url));
 const roots: string[] = [];
 after(async () => {
   for (const root of roots) await removeDir(root);
@@ -183,19 +182,36 @@ test('a commit release goes through git rev-parse, git archive without the refer
   assert.match(messages.join('\n'), /未提交的改动/);
 });
 
-test('git archive of a real commit of this repository (read-only)', async (t) => {
-  const check = await runCommand('git', ['-C', WORKTREE, 'rev-parse', '--verify', 'ca66002^{commit}'], { env: process.env });
-  if (check.code !== 0) {
-    t.skip('skipped: commit ca66002 is not in this clone');
-    return;
-  }
+test('git archive of a commit in a throwaway repository leaves out foundation and references', async () => {
+  // A synthetic repository with two commits: the release is built from the first, named explicitly, so the test needs
+  // no history of this clone (CI checks out depth 1) and proves the commit, not the work tree, is what gets deployed.
+  const source = await syntheticSource();
+  await writeFile(join(source, '.gitignore'), 'node_modules/\n');
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: devNull };
+  const git = async (...args: string[]): Promise<string> => {
+    const result = await runCommand('git', ['-C', source, '-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@example.invalid', '-c', 'commit.gpgsign=false', ...args], { env });
+    assert.equal(result.code, 0, `git ${args.join(' ')}: ${result.stderr}`);
+    return result.stdout.trim();
+  };
+  await git('init', '--quiet');
+  await git('add', '--all');
+  await git('commit', '--quiet', '-m', 'Synthetic release');
+  const commit = await git('rev-parse', 'HEAD');
+  await writeFile(join(source, 'later.txt'), 'committed after the release\n');
+  await git('add', 'later.txt');
+  await git('commit', '--quiet', '-m', 'Synthetic later change');
+  assert.deepEqual((await git('ls-tree', '--name-only', commit)).split('\n').sort(), ['.gitignore', 'bin', 'foundation', 'hub', 'package-lock.json', 'package.json', 'references']);
+
   const layout = await freshLayout();
   const { runner } = fakeNpm();
-  const release = await prepareRelease({ path: WORKTREE, commit: 'ca66002' }, { layout, runner, env: process.env });
-  assert.equal(release.file.commit, check.stdout.trim());
+  const release = await prepareRelease({ path: source, commit: commit.slice(0, 7) }, { layout, runner, env });
+  assert.equal(release.id, commit.slice(0, 12));
+  assert.equal(release.file.commit, commit);
   assert.ok(await exists(join(release.dir, 'package.json')));
+  assert.ok(await exists(join(release.dir, 'hub', 'synthetic.ts')));
   assert.ok(!(await exists(join(release.dir, 'foundation'))));
   assert.ok(!(await exists(join(release.dir, 'references'))));
+  assert.ok(!(await exists(join(release.dir, 'later.txt'))), 'the named commit is deployed, not HEAD');
 });
 
 test('current switches between complete releases only and is read back', async () => {

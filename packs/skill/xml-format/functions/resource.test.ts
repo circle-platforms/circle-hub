@@ -2,53 +2,65 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {livePids} from '../../../../hub/rules/sandbox/sandbox.ts';
-import {residentSizes} from '../../../../hub/rules/sandbox/resident.ts';
+import {residentSizes,residentTreeSizes} from '../../../../hub/rules/sandbox/resident.ts';
 import {osIsolationAvailable} from '../../../../hub/rules/sandbox/isolation.ts';
 import {createSkillParserRegistry} from '../../../../hub/refs/skills.ts';
 import {createDocumentCache} from '../../../../hub/refs/resolve.ts';
 import {parseDocument, QUOTATION_UNITS} from '../../../../hub/refs/parser.ts';
+import {assertLinearGrowth, describeGrowth} from '../../../../hub/testing/growth.ts';
 import type {PackRegistry} from '../../../../hub/runs/api.ts';
 import type {RecordsKit} from '../../../../hub/records/api.ts';
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import parse from './parse.ts';
 
 const packDir=fileURLToPath(new URL('../',import.meta.url));
-// Portable synthetic tests run where sandbox-exec is absent as well. On macOS
-// the wrapper still enables available OS isolation and reports osIsolation.
+// Portable synthetic tests run where OS isolation is absent as well. Where it is
+// available (sandbox-exec on macOS, bubblewrap with AppArmor on Linux) the
+// wrapper still enables it and reports osIsolation.
+
+// The time these shapes take in the sandbox measures the runner as much as the parser: the 2 MB rich attributes took
+// 1.4-1.7 s in the Ubuntu jobs and 2.3-4.2 s on macOS runners, where a 3 s bound failed three times. Time is checked by
+// the growth of the parse instead, and the 2 MB runs keep a ceiling for a hang or a gross regression only.
+const CEILING_MS=60_000;
+const SIZE=2_100_000;
 
 type Shape={name:string;bytes:Buffer;minElements:number};
-function deepAttributes():Shape {
+function deepAttributes(target=SIZE):Shape {
  const row=(i:number)=>`<item name="cmd_${i}" help_string="synthetic command" user_level="view" lock="none" func="do"/>`;
  const lines:string[]=[];let size=0;
- for(let i=0;size<2_100_000;i++){const x=row(i);lines.push(x);size+=Buffer.byteLength(x);}
+ for(let i=0;size<target;i++){const x=row(i);lines.push(x);size+=Buffer.byteLength(x);}
  const names=Array.from({length:15},(_,i)=>'synthetic_section_'+i);
  return {name:'deep attributes',bytes:Buffer.from('<commands>'+names.map(n=>`<${n}>`).join('')+lines.join('')+[...names].reverse().map(n=>`</${n}>`).join('')+'</commands>'),minElements:20_000};
 }
-function richAttributes():Shape {
+function richAttributes(target=SIZE):Shape {
  const row=(i:number)=>`<item name="demo_${i}" help_string="synthetic control instruction for a sample value" user_level="view" lock="none" func="synthetic_action"><arguments><arg name="address" type="IPV4" help_string="synthetic endpoint"/><arg name="count" type="U32" help_string="synthetic count"/></arguments></item>`;
  const lines:string[]=[];let size=0;
- for(let i=0;size<2_100_000;i++){const x=row(i);lines.push(x);size+=Buffer.byteLength(x);}
+ for(let i=0;size<target;i++){const x=row(i);lines.push(x);size+=Buffer.byteLength(x);}
  return {name:'rich attributes',bytes:Buffer.from('<commands><menu name="demo">'+lines.join('')+'</menu></commands>'),minElements:20_000};
 }
-function deepText():Shape {
- const names=Array.from({length:40},(_,i)=>'layer'+i);
- return {name:'deep long text',bytes:Buffer.from('<r>'+names.map(n=>`<${n}>`).join('')+'x'.repeat(2_050_000)+'<z/>'.repeat(20_000)+[...names].reverse().map(n=>`</${n}>`).join('')+'</r>'),minElements:20_000};
+function deepText(target=SIZE):Shape {
+ const names=Array.from({length:40},(_,i)=>'layer'+i),scale=target/SIZE;
+ return {name:'deep long text',bytes:Buffer.from('<r>'+names.map(n=>`<${n}>`).join('')+'x'.repeat(Math.round(2_050_000*scale))+'<z/>'.repeat(Math.round(20_000*scale))+[...names].reverse().map(n=>`</${n}>`).join('')+'</r>'),minElements:20_000};
 }
+const SHAPES=[['deep attributes',deepAttributes],['rich attributes',richAttributes],['deep long text',deepText]] as const;
 
 function monitor(){
  let childPeak=0,totalPeak=0,rounds=0,active:Promise<void>|undefined;
  const sample=()=>{
   if(active)return;
   const pids=livePids();
-  active=residentSizes([process.pid,...pids]).then(sizes=>{
-   const child=pids.reduce((sum,pid)=>sum+(sizes.get(pid)??0),0);
-   childPeak=Math.max(childPeak,child);totalPeak=Math.max(totalPeak,child+(sizes.get(process.pid)??0));rounds++;
+  // Each child's whole process tree, as the sandbox's own watchdog measures it: under bubblewrap the
+  // child is bubblewrap, and Node runs below it in a PID namespace (resident.ts).
+  active=Promise.all([residentTreeSizes(pids),residentSizes([process.pid])]).then(([trees,own])=>{
+   const child=pids.reduce((sum,pid)=>{const bytes=trees.get(pid);return sum+(typeof bytes==='number'&&bytes>0?bytes:0);},0);
+   childPeak=Math.max(childPeak,child);totalPeak=Math.max(totalPeak,child+(own.get(process.pid)??0));rounds++;
   }).finally(()=>{active=undefined;});
  };
  const timer=setInterval(sample,25);
  return async()=>{clearInterval(timer);await active;return {childPeak,totalPeak,rounds};};
 }
-for(const [label,make] of [['deep attributes',deepAttributes],['rich attributes',richAttributes],['deep long text',deepText]] as const)test(`XML sandbox bound: ${label}`,{timeout:30_000},async()=>{
+for(const [label,make] of SHAPES)test(`XML sandbox bound: ${label}`,{timeout:120_000},async()=>{
  const {name,bytes,minElements}=make();
  assert.ok(bytes.length>=2_000_000);
  const osIsolation=await osIsolationAvailable();
@@ -83,13 +95,23 @@ for(const [label,make] of [['deep attributes',deepAttributes],['rich attributes'
  const fullMs=performance.now()-started;
  const rss=await stop();
  assert.ok(rss.rounds>0 && rss.childPeak>0,'sandbox child memory was sampled');
+ // Node parsing 2 MB holds far more than 64 MiB; a few MiB would be the launcher's own size, not Node's.
+ assert.ok(rss.childPeak>64*1024*1024,`${name}: child peak ${rss.childPeak} is not Node's`);
  // Leave 32 MiB of sampled headroom below the sandbox's 448 MiB RSS watchdog.
  assert.ok(rss.childPeak<416*1024*1024,`${name}: child peak ${rss.childPeak}`);
  // Includes this test process, live sandbox children and earlier shapes' retained
  // V8 pages; this is a sampled process total, not a promise about all Hub traffic.
  assert.ok(rss.totalPeak<1152*1024*1024,`${name}: total peak ${rss.totalPeak}`);
- assert.ok(attempts.length===2 && attempts[0]<3_000,`${name}: parse sandbox ${attempts[0]} ms`);
- assert.ok(parseMs<5_000 && fullMs<10_000,`${name}: elapsed ${fullMs} ms`);
+ // One parse call and one locate call, neither retried.
+ assert.equal(attempts.length,2,`${name}: sandbox attempts of ${attempts.join(', ')} ms`);
+ assert.ok(fullMs<CEILING_MS,`${name}: elapsed ${fullMs} ms`);
  console.log('XML_SANDBOX_METRICS '+JSON.stringify({name,input:bytes.length,output,parseSandboxMs:attempts[0],parseMs:Math.round(parseMs),fullMs:Math.round(fullMs),osIsolation,...rss}));
  } finally { await stop(); }
+});
+// What the sandbox child does with a shape (parse, list, take fragments, serialize the answer), timed in this process on
+// the CPU time of this thread at 1/8 of the 2 MB size and at the full size. These run after the sandbox runs, so the work they
+// leave in this process's heap cannot reach the sampled memory peaks above.
+for(const [label,make] of SHAPES)test(`XML parse grows linearly: ${label}`,{timeout:120_000},t=>{
+ const growth=assertLinearGrowth(label,size=>({bytes:make(size).bytes.toString('base64')}),input=>JSON.stringify(parse(input)),{small:SIZE/8});
+ t.diagnostic(describeGrowth(label,growth));
 });

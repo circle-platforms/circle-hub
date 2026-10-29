@@ -22,6 +22,8 @@ export const UNIT_PATTERNS = [
   'tools/gen-contracts*.test.ts',
   'tools/prepare-packs.test.ts',
   'tools/run-unit-tests.test.ts',
+  'tools/slot-schema.test.ts',
+  'tests/fixtures/**/*.test.ts',
 ];
 
 /** The public parser-boundary partition. Assertions stay in these files; only the schedule changes. */

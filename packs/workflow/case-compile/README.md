@@ -1,4 +1,4 @@
-# case-compile 3.8.5
+# case-compile 3.8.7
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -195,13 +195,17 @@ Hub 按检查声明的 judgment_sources，从本条目原始提交的精确槽�
 
 产品包的 `command_policy` 随知识组成冻结，再随运行传入检查；不是模型槽位，也不读取后来换版的产品声明。`read_only` 只取声明的路径范围；其余设备命令须有规则映射的逆操作。规则映射 source_prefix 到 inverse_prefix，保留剩余路径与前导参数；`leading_parameters` 可明确给出数量，省略时须由已完整解析的逆签名唯一确定。缺规则或有歧义时保持未知并请求产品作者补声明。
 
-开关命令的第二种逆：`inverse_alternatives` 声明成对互逆的取值（on/off、enable/disable），两种形态都按锁定树结构判定，不按自由文本或关键词猜——(a) 同一签名的枚举参数，取值与配对成员都在该参数声明的取值闭集里，逆操作是同签名换配对值；(b) 同父节点下的兄弟叶子路径，路径末段与配对成员精确相等且兄弟叶子在锁定树上存在，逆操作是兄弟命令（`demo switch on` 的清理是 `demo switch off`）。一条命令命中两个可互逆参数时按歧义拒绝；没有声明的取值对仍拒绝。清理是 steps 的末尾连续段，显式 `cleanup:true`，同设备按主段改动的逆序对应；逆操作本身也必须通过锁定树、合约范围、类型和角色核验。目录只取计划实际命令与冻结作者片段的路径，不展开整个 `/commands`；逆路径存在性由计划中完整解析的清理命令证明。
+开关命令的第二种逆：`inverse_alternatives` 声明成对互逆的取值（on/off、enable/disable），两种形态都按锁定树结构判定，不按自由文本或关键词猜——(a) 同一签名引用、同一参数位置的枚举参数，取值与配对成员都在该位置声明的取值闭集里，逆操作是同签名换配对值；别的签名或别的位置上的枚举不能让一个文本参数变成可互逆；(b) 同父节点下的兄弟叶子路径，路径末段与配对成员精确相等且两条完整兄弟路径都在锁定树上存在，逆操作是兄弟命令（`demo switch on` 的清理是 `demo switch off`）。一条命令有两处可互逆参数、配对目标不唯一或配对值不能按原语法写成完整身份时记未知，不退回前缀规则；只有该位置根本没有含这对值的枚举时才照常走声明的前缀逆规则。一个取值配给两个不同伙伴的声明整份无效。没有声明的取值对仍拒绝。清理是 steps 的末尾连续段，显式 `cleanup:true`，同设备按主段改动的逆序对应；逆操作本身也必须通过锁定树、合约范围、类型和角色核验。目录只取计划实际命令与冻结作者片段的路径，不展开整个 `/commands`；逆路径存在性由计划中完整解析的清理命令证明。
 
-触发能力的设备类型闭集是 `runtime-profile-format.json.trigger_types`（router、client、server——server 默认在闭集里：执行器在服务器上有可用的主机 shell 座位，只有服务器做触发的网段不是盲网段）。部署可按台架实际座位用 runtime-profile@1 的 `trigger_types` 字段收窄（无重复的清单设备类型子集，空集等于全闭集），收窄后该类型的设备不再算触发设备，网段按剩余类型判定；没有任何触发类型的网段仍是盲网段。
+触发能力的设备类型闭集是 `runtime-profile-format.json.trigger_types`（router、client、server——server 默认在闭集里：执行器在服务器上有可用的主机 shell 座位，只有服务器做触发的网段不是盲网段）。部署可按台架实际座位用 runtime-profile@1 的 `trigger_types` 字段收窄（无重复的包声明触发类型子集；省略字段用默认闭集，显式空数组表示没有触发类型；闭集之外的类型整份拒绝，不静默滤掉），收窄后该类型的设备不再算触发设备，网段按剩余类型判定；没有任何触发类型的网段仍是盲网段。
 
 作者片段按原有完整行语法解析，不截散文。出现次数按定义身份（来源根、完整路径、签名引用）计，不把参数值当成必须保留的文字；计划仍须独立核参数。可以改参数，不可以删命令：同一定义的执行次数至少等于作者次数，清理段不充数，缺失次数写入阻断结果的 `data.obligations` 并随结果留存。工作簿生成、独立核验、派发前检查共用这些边界。
 
 容量来自冻结 profile 的显式 ordinal 与台架同类型设备计数，不读对象名中的数字。设备座位还不超过冻结的预检设备数；主机映射若声明 ordinal，也按其类型计数核对。越界时投影整份拒绝，写明“框架取不到那台设备，整卷不跑”，没有部分工作簿。旧根缺产品规则时设备计划保持未知，需升级产品包并重新育苗，不能从命令文字猜只读/修改。
+
+### 公开线的互逆与触发核对（3.8.7）
+
+3.8.7 采用公开仓库 case-compile 已有的三处修正（公开提交 ac95f6f6、ebfec96f、2dc82f3c；公开 main 上是 3.8.6，与本线改动合并后的公开快照是 3.8.7），上面两段已按它改写。命令树里的联合类型参数（例如 IPADDR 是 IPv4 或 IPv6）由产品包生成器发布成同一签名引用下的几个目录签名（编号 k.1、k.2），CommandIdentity 的签名引用仍是这一个。互逆对按参数位置跨这些展开逐一核对：没有哪个展开在该位置声明含这对值的枚举，该位置就不是互逆备选，命令照常走声明的前缀逆规则；每个展开都在该位置声明同一个枚举，才换成配对值；展开在这样的位置不一致，仍记未知（公开 issue #56，验收场景 28）。3.8.5 及以前，本线在条目的任意签名、任意位置找含该取值的枚举，可能把文本参数当成可互逆；一条命令有两处可互逆时退回前缀规则；`trigger_types` 的空数组等于全闭集，闭集外的类型被静默滤掉。
 
 ## 块模型（R5 B1，先声明后实现）
 

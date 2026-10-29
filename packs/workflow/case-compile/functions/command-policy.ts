@@ -13,7 +13,11 @@ export function readCommandPolicy(value:unknown):CommandPolicy|null {
  // Inverse alternatives are exact closed-set pairs of non-space values; a value paired with itself is meaningless.
  if(value.inverse_alternatives!==undefined){
   if(!Array.isArray(value.inverse_alternatives)||value.inverse_alternatives.length>64)return null;
-  for(const pair of value.inverse_alternatives)if(!Array.isArray(pair)||pair.length!==2||pair.some(member=>typeof member!=='string'||!/\S/.test(member))||pair[0]===pair[1])return null;
+  const partners=new Map<string,string>();
+  for(const pair of value.inverse_alternatives){
+   if(!Array.isArray(pair)||pair.length!==2||pair.some(member=>typeof member!=='string'||!/\S/.test(member))||pair[0]===pair[1])return null;
+   for(const [from,to]of [[pair[0],pair[1]],[pair[1],pair[0]]]){if(partners.has(from)&&partners.get(from)!==to)return null;partners.set(from,to);}
+  }
  }
  return value as unknown as CommandPolicy;
 }

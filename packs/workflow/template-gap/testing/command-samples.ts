@@ -8,6 +8,7 @@ import { projectDocuments } from '../functions/project.ts';
 import { commandSubject } from '../functions/command-subject.ts';
 import TEMPLATE from '../tables/template-v3.json' with { type: 'json' };
 import { BUILD, LOCK, ROOT, assignedCases, bindIndex, digest, indexView } from './index.ts';
+import { fileURLToPath } from 'node:url';
 const document = '900001';
 const categories = TEMPLATE.categories.filter(c => c.group === 'command');
 export function commandSampleSubjects(): { id: string; polarity: 'positive' | 'negative'; note: string; subject: any; verdicts: Verdict[] }[] {
@@ -60,4 +61,4 @@ export async function writeCommandSamples(dir: string): Promise<void> {
   }
   for (const example of commandTransitionalExamples()) await writeFile(join(dir, `examples/${example.id}.json`), `${JSON.stringify(example, null, 2)}\n`);
 }
-if (import.meta.main) await writeCommandSamples(new URL('../', import.meta.url).pathname);
+if (import.meta.main) await writeCommandSamples(fileURLToPath(new URL('../', import.meta.url)));

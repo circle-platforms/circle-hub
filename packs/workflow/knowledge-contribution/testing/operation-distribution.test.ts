@@ -7,13 +7,14 @@ import { scratch, execute } from './operation-support.ts';
 import { scanForCredentials as hubScan } from '../../../../hub/records/scan.ts';
 import { scanForCredentials as skillScan, CREDENTIAL_SCANNER } from '../tools/operation-capture/lib/credentials.ts';
 import { sanitizeText } from '../tools/operation-capture/lib/redact.ts';
+import { fileURLToPath } from 'node:url';
 
 const skillRoot = new URL('../tools/operation-capture/', import.meta.url);
 
 test('the standalone operation skill matches its signed installation and rejects extras changes missing files and links', async t => {
   const local = await scratch(t);
   assert.deepEqual(await verifyInstall(local.skill, 'tools/operation-capture/'), []);
-  const verifier = new URL('../pack-files.ts', import.meta.url).pathname;
+  const verifier = fileURLToPath(new URL('../pack-files.ts', import.meta.url));
   const official = await execute(process.execPath, [verifier, '--verify-install', local.skill, '--skill', 'operation-capture'], local.env);
   assert.equal(official.code, 0, official.err);
   await writeFile(join(local.skill, 'extra.txt'), 'synthetic');

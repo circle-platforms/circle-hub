@@ -202,7 +202,9 @@ Semantics owned by the server:
   current permissions. A future successful `get_nodes` response can be retained in memory for at most 10 minutes within
   a 64 MiB budget. With a unique trace, the caller may retrieve that historical snapshot only after the current source
   and dynamic-record visibility checks succeed. A tree check is limited to 512 source captures and 100 each of included
-  contributions and feeding records; unsupported or unverifiable cases stay unknown with a re-read exit. Original
+  contributions and feeding records; unsupported or unverifiable cases stay unknown with a re-read exit. A `rec:` read
+  of a feeding record is recovered only while that record is still valid and its current state equals the saved
+  `structure.feeding_state`; after a retraction or a revised original it stays unknown, like a tree page. Original
   responses lost before this feature, expired or evicted entries, and process restarts cannot be recovered from the cache.
   Restart also loses the in-flight index; the durable call log remains. The recovered text is labeled as the original
   call's snapshot and may differ from current knowledge.

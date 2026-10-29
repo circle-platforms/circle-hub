@@ -8,7 +8,7 @@ import { isAbsolute, join } from 'node:path';
 import type { PackManifest } from '../../../contracts/src/pack.ts';
 import { canonicalBytes, IntegrityError, isSha256, sha256Hex } from '../../records/api.ts';
 import { MANIFEST_FILE } from './directory.ts';
-import { removeTree, verifyTree, writeReadOnlyTree, type ExpectedFile, type TreeFile } from './tree.ts';
+import { DIRECTORY_MODE, removeTree, verifyTree, writeReadOnlyTree, type ExpectedFile, type TreeFile } from './tree.ts';
 
 /** Where the files of one pack version come from: its manifest and a reader of verified bytes by SHA-256. */
 export interface ExtractionSource {
@@ -108,7 +108,7 @@ export class Extractor {
       const temporary = this.#temporary(digest);
       try {
         await writeReadOnlyTree(temporary, files);
-        await rename(temporary, target);
+        await moveReadOnlyDirectory(temporary, target);
       } catch (error) {
         await removeTree(temporary);
         // Another process put a tree in place first (rename onto it fails: ENOTEMPTY, EEXIST, or EACCES on macOS for a
@@ -156,7 +156,7 @@ export class Extractor {
         if (done) return target;
         done = true;
         try {
-          await rename(directory, target);
+          await moveReadOnlyDirectory(directory, target);
         } catch (error) {
           await removeTree(directory);
           if (!(await exists(target))) throw error;
@@ -170,6 +170,28 @@ export class Extractor {
       },
     };
   }
+}
+
+/**
+ * Renames a read-only (0500) directory within one parent. macOS 15 refuses that rename with EACCES while Linux and macOS 26
+ * allow it, so when the plain rename is refused and nothing is in the target's place yet, the directory is made writable
+ * for the move and read-only again at its new name. EACCES with a tree already in place is the lost race and is rethrown.
+ */
+export async function moveReadOnlyDirectory(from: string, to: string, move: (from: string, to: string) => Promise<void> = rename): Promise<void> {
+  try {
+    await move(from, to);
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EACCES' || (await exists(to))) throw error;
+  }
+  await chmod(from, 0o700);
+  try {
+    await move(from, to);
+  } catch (error) {
+    await chmod(from, DIRECTORY_MODE).catch(() => {});
+    throw error;
+  }
+  await chmod(to, DIRECTORY_MODE);
 }
 
 async function exists(path: string): Promise<boolean> {

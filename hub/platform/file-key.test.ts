@@ -89,4 +89,10 @@ test('concurrent removal treats ENOENT as absent but does not hide other failure
  assert.equal(await removeKeyFile('synthetic',async()=>{throw missing;}),false);
  const denied=Object.assign(new Error('denied'),{code:'EACCES'});
  await assert.rejects(removeKeyFile('synthetic',async()=>{throw denied;}),error=>error===denied);
+ // A key file that is present but unsafe still fails delete: only a vanished file counts as removed by someone else.
+ await store.init();
+ const [file]=(await readdir(join(root,'keys'))).filter(name=>name.endsWith('.key'));
+ await chmod(join(root,'keys',file!),0o644);
+ await assert.rejects(store.delete(),/属主或权限不对/);
+ assert.ok((await readdir(join(root,'keys'))).includes(file!));
 });

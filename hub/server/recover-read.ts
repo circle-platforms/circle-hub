@@ -35,6 +35,10 @@ export async function recoverRead(deps:ServerDeps,user:Principal,args:Record<str
         }else if(answer.content.text!==undefined||answer.content.structure!==undefined)return null;
       }else if(ref.scheme==='rec'){
         const current=await recordReaderFor(deps.records,deps.runs,user,()=>{},layer).read(ref.record,reader);if(!current)return null;
+        // A feeding record may have been retracted, or its original revised, since the reply was saved: the reply then no
+        // longer states its current validity, so recovery stays unknown, as for the feeding objects of a tree page below.
+        const state=deps.knowledge.feeding?await deps.knowledge.feeding.recordState(ref.record,user):null,saved=answer.content.structure?.feeding_state;
+        if(state?state.validity!=='valid'||saved===undefined||canonicalize(saved)!==canonicalize(state):saved!==undefined)return null;
       }else return null; // Tree/reference validity needs its own bounded provenance path.
     }else{
       if(!answer.nodes||!answer.root||request.root!==undefined&&request.root!==answer.root||request.root===undefined&&run?.run.root!==answer.root)return null;

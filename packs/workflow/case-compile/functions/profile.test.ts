@@ -67,3 +67,14 @@ test('the same checkpoint without the executor role on result is refused, and an
   const unknown = structuredClone(profileDoc); ((unknown.allowed[2] as unknown as { parameters: Record<string, string> }).parameters).result = 'model_writes';
   assert.equal(parseProfile(unknown, parsed.contract, bedsOf()).ok, false);
 });
+
+import {bedFacts,triggerTypesOf} from './bed.ts';
+test('an explicit empty trigger declaration stays empty instead of regaining the default set',()=>{
+ const result=parseProfile({...profileDocument(),trigger_types:[]},contract,bedsOf());assert.ok(result.ok,JSON.stringify(result));
+ const types=triggerTypesOf(result.profile.trigger_types);assert.equal(types.size,0);
+ assert.deepEqual(bedFacts(bedsOf()[0],types).listeners,[]);
+});
+test('profile trigger types must narrow the pack declaration rather than silently losing unsupported types',()=>{
+ const result=parseProfile({...profileDocument(),trigger_types:['load-balancer']},contract,bedsOf());assert.ok(!result.ok);
+ assert.ok(result.problems.some(problem=>problem.pointer==='/trigger_types'));
+});
