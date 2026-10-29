@@ -294,6 +294,8 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
   const descriptorFromText = security.func('int __stdcall ConvertStringSecurityDescriptorToSecurityDescriptorW(void *text, uint32_t revision, void *descriptor, void *size)');
   const localFree = kernel.func('void * __stdcall LocalFree(void *memory)');
   const wideLength = kernel.func('int __stdcall lstrlenW(void *text)');
+  const daclOf = security.func('int __stdcall GetSecurityDescriptorDacl(void *descriptor, void *present, void *dacl, void *defaulted)');
+  const setTokenInfo = security.func('int __stdcall SetTokenInformation(void *token, uint32_t kind, void *data, uint32_t size)');
   const diagnostics = { executableExists: false, executableBinary: false, directoryExists: false };
   const failed = (stage: string, code = Number(lastError())): never => {
     throw windowsProbeFailure(stage, code, diagnostics);
@@ -393,6 +395,21 @@ export async function runWindowsIsolationProbe(source: string): Promise<number> 
       finally { if (!setProcessStation(previous)) failed('窗口站恢复'); }
       desktop = valid(createdDesktop) ? createdDesktop : failed('桌面创建');
     } finally { localFree(descriptor); }
+    // A write-restricted token passes a write access check only if the restricting NULL SID is granted too, so
+    // without this the child cannot write even the objects it creates while its DLLs initialise. The default
+    // DACL, which applies only to objects the child creates itself, grants the user, SYSTEM, the restricting SID
+    // and the package SID; every other object's DACL is untouched.
+    const defaultOut = Buffer.alloc(8);
+    if (!descriptorFromText(w(`D:(A;;GA;;;${userSid})(A;;GA;;;SY)(A;;GA;;;S-1-0-0)(A;;GA;;;${packageSid})`), 1, defaultOut, null))
+      failed('默认 DACL 描述符');
+    const defaultDescriptor = defaultOut.readBigUInt64LE();
+    try {
+      const present = Buffer.alloc(4), dacl = Buffer.alloc(8), defaulted = Buffer.alloc(4);
+      if (!daclOf(defaultDescriptor, present, dacl, defaulted) || present.readUInt32LE() !== 1 || dacl.readBigUInt64LE() === 0n)
+        failed('默认 DACL 读取');
+      // TOKEN_DEFAULT_DACL holds one PACL.
+      if (!setTokenInfo(restricted.handle, 6, dacl, 8)) failed('默认 DACL 设置');
+    } finally { localFree(defaultDescriptor); }
     const startup = Buffer.alloc(112); // STARTUPINFOEXW, x64/ARM64.
     startup.writeUInt32LE(startup.length);
     startup.writeBigUInt64LE(native(w(stationName + '\\' + desktopName)), 16); // lpDesktop.
