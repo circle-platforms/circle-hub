@@ -14,7 +14,7 @@ be grounds for a verified result.
 
 Related changes: the exact capture record is part of the identity of an operation record, a missing capture time is
 marked and never replaced silently by the upload time, lease actions use the lease service's own clock with an exact
-resource-key index, and batch lease actions replay per key. The `knowledge-contribution` pack moves to 1.3.9 in the public
+resource-key index, and batch lease actions replay per key. The `knowledge-contribution` pack moves to 1.3.10 in the public
 numbering, and three entries of `contracts/model.json` gain optional fields only. It was 1.3.2 here until `main` published
 its own 1.3.2 (the dead-lock recovery fix, #92); the merge of `main` combines both as 1.3.7, after this branch's internal
 numbers 1.3.3 to 1.3.6.
@@ -48,7 +48,35 @@ fails without the fix:
 | 7 | Every artifact origin put the capture time into its dedupe key, so connector re-reads made new records. | Only an upload's declared capture time takes part. The legacy fixture uses main's real key. | `a connector answer read again at another time reuses its record, as before capture times existed` |
 | 8 | Only operation records with a device said the capture time was undeclared. | Every operation record says so. | the two notes asserted in `operation-records-leases.test.ts` |
 
-A fifth review should confirm these before the branch is offered for main.
+## Fifth independent review (codex, 2026-10-30)
+
+The same reviewer read the round-four fixes (PR #102) and confirmed items 2, 6 and 7. It asked for more on items 1, 3, 4, 5
+and 8; its full text is on issue #28. CI on the same PR also found a regression from the round-four fix for item 3: the
+resolver looked up the run record to find a source's bound artifact, so a run that was still starting, with no stored run
+record yet, could not read its own sources (`hub/runs/engine/production-notes.test.ts`, five tests). Each point below has a
+test that fails without its fix:
+
+| Item | Problem | Fix | Test |
+|---|---|---|---|
+| 1 | `history()` held one pooled connection while loading records through the same pool. | Only digests are read under the lock; records load after the transaction. | `a history read on a one-connection pool shared with its records does not wait for its own connection` |
+| 1 | A window that had not ended before the read could still gain a change, timed later, even in the same millisecond. | `history()` takes its own moment on the lease clock under the lock and reports `settled`; an unsettled answer leaves the lease unconfirmed. | `a history read is settled only for a window that ended before its own moment on the lease clock`; `a receipt not yet before the lease clock is unconfirmed …` |
+| 1 | The ordering test stopped the change before it had read its clock. | The test now holds the change after its clock, at its record write. | `history does not miss a change that was timed inside its window but had not committed yet` |
+| 2 | No test showed the reclaim reads its clock only after the key lock. | The reclaim test records when its clock is read. | `an orphan reclaim that meets a release in flight …` |
+| 3 | Without a run, a use as grounds was not checked; several bound records chose the first; an undeterminable record passed. | Bindings come with the scope (`RunScope.bound`, `pack`). Every record bound to the digest is checked; when no record can be determined the use is refused (`UNKNOWN_GROUND`), and so is an inner ground that does not parse. `evaluate.ts` uses the same rule. | `without a run, a use as grounds still checks the record it reads …`; `a run that binds one digest to two records refuses it as grounds when either record is captured …` |
+| 4 | The checked token was kept on the shared client, so two concurrent calls could swap tokens. | The token is passed down to the request that carries it (pack 1.3.10). | `two checked calls on one client each carry the token their own check saw` |
+| 5 | Note compatibility: same bytes uploaded twice at one declared time; notes written before the declaration; old uploads given new notes. | A note proposal must equal the note the Hub wrote for one upload record (looked up by its unique key), whatever its shape. A new note for an upload without the marker says the time was not declared (main never let uploads declare one). | `two uploads of the same bytes at the same declared time …`; `a new note for an upload recorded before …`; the upgrade replay annotates the frozen Hub's note |
+| 5 | A run locked to 1.3.8 or older cannot carry a note in the new shape. | By design: its slot schema requires `at` and allows no other time field, so it is refused there; start a new run. | `a run locked to the frozen pack carries notes as the frozen Hub wrote them, and refuses a note in the new shape` |
+| 6 | No test showed that a different bed changes the identity. | Added. | the derived-bed test |
+| 8 | A historical operation record with no marker showed no time-source note. | Its view says the source of its `at` is unknown (`HISTORICAL_CAPTURE_TIME`); its bytes are unchanged. The upgrade test now expects that note. | `a run and receipt persisted by the frozen Hub replay unchanged after upgrade` |
+
+Known limits, not changed:
+
+- The order holds for one lease clock (the database clock by default) that does not step back. A step back can time a later
+  change into a window already answered; detecting that would need a recorded per-key read mark.
+- `reclaimOrphans()` locks every unreleased key whose run is missing, one query per key, before it checks age and expiry
+  under the clock. Nothing in the Hub calls it on a schedule yet; measure it before it does.
+
+A sixth review should confirm these before the branch is offered for main.
 
 ## Tests that failed on this branch
 
