@@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url';
 import { SandboxError, isSandboxErrorCode, type SandboxErrorCode } from './errors.ts';
 import { BOOTSTRAP, declaredDependencies, isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { ENTRY_EXTENSIONS } from './policy.ts';
-import { createResidentWatch, residentFailure, residentTreeSizes, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
+import { createResidentVerdict, createResidentWatch, residentTreeSizes, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
 import { createSlotPool } from './slots.ts';
 import { retryFunction, type FunctionAttempt } from './retry.ts';
 
@@ -112,6 +112,8 @@ const slots = createSlotPool({
   full: () => new SandboxError('SANDBOX_UNAVAILABLE', { reason: 'queue_full', limit: 'queue', waiting: MAX_WAITING }),
 });
 const residentWatch = createResidentWatch({ intervalMs: POLL_MS, measure: residentTreeSizes, unavailable: () => null, timeoutMs: 1_000 });
+/** How long no round may measure a child's whole tree before the call ends as unobservable (resident.ts createResidentVerdict). */
+const UNOBSERVED_GRACE_MS = 1_000;
 
 // Running children by pid, with the function that stops each.
 const live = new Map<number, (code: SandboxErrorCode, detail: Record<string, unknown>) => void>();
@@ -416,11 +418,12 @@ function runChildWithProbe(pack: PreparedPack, inputText: string, lim: SandboxLi
 
     const timer = setTimeout(() => stop('SANDBOX_TIMEOUT', { limit: 'time', timeoutMs: lim.timeoutMs }), lim.timeoutMs);
     const residentLimit = (lim.memoryMb + RESIDENT_HEADROOM_MB) * 1024 * 1024;
+    const verdict = createResidentVerdict(residentLimit, lim.memoryMb, UNOBSERVED_GRACE_MS);
     const unwatch =
       pid === undefined
         ? () => {}
         : residentWatch.watch(pid, (bytes) => {
-            const failure = residentFailure(bytes, residentLimit, lim.memoryMb);
+            const failure = verdict(bytes);
             if (failure && !settled && !stopped && alive()) stop(failure.code, failure.detail);
           });
     const forget = (): void => {
