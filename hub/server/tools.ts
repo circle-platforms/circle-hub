@@ -28,7 +28,7 @@ import {
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
 import { IntegrityError, RecordsError, isSha256, withRequestPermissions, type Principal } from '../records/api.ts';
-import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, type ReaderIdentity, type Reference } from '../refs/api.ts';
+import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, sandboxReadDiagnostic, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import { SandboxError } from '../rules/api.ts';
 import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
@@ -162,10 +162,10 @@ export function internalError(trace: string): McpError {
 /** A thrown error with a registered protocol code becomes that error answer; anything else is an internal error. */
 function fromThrown(tool: ToolName, error: unknown, call: ToolCall): Answer {
   if (error instanceof SandboxError) {
-    // Pack-controlled diagnostics and stdout may contain function-only source bytes. Record only the fixed sandbox code.
-    call.context.adminNote(`技能包沙箱失败：${error.code}`);
-    const cacheLimit = error.detail.limit === 'document_cache_bytes';
-    return errorAnswer(tool, [{ code: 'SOURCE_RETRYABLE', message: cacheLimit ? `文档缓存估算超过预算：${error.code}` : `来源片段暂时未核对：技能包沙箱 ${error.code}`, fix: cacheLimit ? '请来源维护者拆分原件，或请解析器维护者缩小保留结构后重读' : '管理员核对技能包和沙箱状态，恢复后重新读取' }]);
+    // Pack-controlled diagnostics and stdout may contain source bytes; retain only the code and safe declaration identity.
+    const diagnostic = sandboxReadDiagnostic(error);
+    call.context.adminNote(diagnostic.admin);
+    return errorAnswer(tool, [{ code: 'SOURCE_RETRYABLE', message: diagnostic.message, fix: diagnostic.fix }]);
   }
   const code = protocolCodeOf(error);
   if (code === null) {

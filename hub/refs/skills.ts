@@ -11,6 +11,7 @@ import {parseReference,ReferenceSyntaxError} from './reference.ts';
 import type {RecordStore,Transaction,StoredRecord,Page} from '../records/api.ts';
 import type {RecordKind} from '../../contracts/generated/protocol.ts';
 import {createParserRegistry,ParseError,ParseLimitError,ParseSyntaxError,ParseEncodingError,QUOTATION_UNITS,DEFAULT_MAX_SELECTOR_CHARS,type ParserRegistry,type Parser,type ParsedDocument,type Fragment,type JsonValue,type JsonObject,type ParseLimits,type QuotationUnits} from './parser.ts';
+import {withParserSite} from './sandbox-diagnostic.ts';
 
 const object=(v:unknown):v is Record<string,unknown>=>typeof v==='object'&&v!==null&&!Array.isArray(v);
 const missing=(message:string)=>new ConflictError(message,{fix:'管理员安装所需通用技能包；缺历史锁时用 circle-hub skill bind-legacy <解析器 id@版本> <技能包 id@版本> 追加迁移声明，再按原引用重读'});
@@ -214,13 +215,14 @@ function parserOf(opened:OpenedPack,row:SkillDeclaration['parsers'][number],opti
       try{
         const input={bytes:Buffer.from(bytes).toString('base64'),options:{...parseOptions,...limits}};
         const limitsBox={timeoutMs:5000,inputBytes:96*1024*1024,outputBytes:64*1024*1024};
-        const out=await callPackFunction({packDir:verified.handle.directory,module:row.function.module,export:row.function.export},input,limitsBox,options.sandbox);
+        const site=(phase:'parse'|'locate',fn:{module:string;export?:string})=>({parser:row.parser,pack:`${opened.info.id}@${opened.info.version}`,module:fn.module,export:fn.export??'default',phase});
+        const out=await callPackFunction({packDir:verified.handle.directory,module:row.function.module,export:row.function.export},input,limitsBox,options.sandbox).catch(error=>{throw withParserSite(error,site('parse',row.function));});
         if(options.onWireOutput)try{options.onWireOutput(Buffer.byteLength(JSON.stringify(out.output),'utf8'));}catch{/* Instrumentation must not alter parsing. */}
         const locate=row.locate;
         const fetchFragments=locate?async(selectors:string[])=>{
           const again=await options.registry.open(opened.info.digest);
           if(!again||again.declarations.kind!=='skill')throw new IntegrityError('冻结技能包缺失或被改变');
-          const located=await callPackFunction({packDir:again.handle.directory,module:locate.module,export:locate.export},{...input,selectors},limitsBox,options.sandbox);
+          const located=await callPackFunction({packDir:again.handle.directory,module:locate.module,export:locate.export},{...input,selectors},limitsBox,options.sandbox).catch(error=>{throw withParserSite(error,site('locate',locate));});
           return located.output;
         }:undefined;
         return hydrate(out.output,row.parser,fetchFragments,input.bytes.length,limits);
