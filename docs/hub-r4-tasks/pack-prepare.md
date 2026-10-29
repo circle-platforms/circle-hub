@@ -1,0 +1,5 @@
+# Prepare changed pack manifests in one command
+
+Decision 81 asks to remove repeated manual package bookkeeping while preserving published version identities. Provide a repository-side helper which accepts explicit pack directories, or derives affected pack directories from `git diff` and untracked paths against a supplied base. It calls each pack's own manifest/generator tool, including the shared packaging tool where that pack declares no individual one. It never publishes, changes version deliberately, edits Git state, or reads production data. Warn when the package bytes changed but the version matches the supplied committed base; the pack author must decide the new version in the owning source before publishing.
+
+Scope: `tools/prepare-packs.ts`, its synthetic tests, the existing unit-test file list, this task page and a short entry in `docs/hub-r4-research/hub-simplification.md`. Test the selected owners' command dispatch, changed-file selection, version warning, explicit errors, and a real synthetic temporary pack. No existing assertions change.

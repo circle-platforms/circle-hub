@@ -21,6 +21,7 @@ export const UNIT_PATTERNS = [
   'packs/**/*.test.ts',
   'scripts/**/*.test.ts',
   'tools/gen-contracts*.test.ts',
+  'tools/prepare-packs.test.ts',
   'tools/run-unit-tests.test.ts',
 ];
 
