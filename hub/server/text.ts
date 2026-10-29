@@ -558,14 +558,15 @@ const isProductionRun = (run: RunSummary): boolean => run.requirements.length > 
  * item slots, one cross-item judgment. Once the lists are filled it parses with Submission.
  */
 export function submitExample(run: RunSummary): string {
+  const model = run.model_identity !== undefined && run.session !== undefined ? {} : {model: MODEL_PLACEHOLDER};
   if (isProductionRun(run)) {
-    const commentary = (grounds: string[]) => ({ run: run.run, model: MODEL_PLACEHOLDER, items: [], cross_item: [{ nature: 'judgment', statement: '<你的评论>', grounds }] });
+    const commentary = (grounds: string[]) => ({ run: run.run, ...model, items: [], cross_item: [{ nature: 'judgment', statement: '<你的评论>', grounds }] });
     const grounded = commentary(run.items.length > 0 ? [run.items[0].location] : []);
     return JSON.stringify(Submission.safeParse(grounded).success ? grounded : commentary([]));
   }
   const keys = slotKeys(run.slots);
   const items = run.items.slice(0, 2).map((item) => ({ item: item.id, handling: 'handled', slots: Object.fromEntries(keys.map((key) => [key, []])) }));
-  const example = { run: run.run, model: MODEL_PLACEHOLDER, items, ...(crossKeys(run.slots).length > 0 ? { cross_item: [] } : {}) };
+  const example = { run: run.run, ...model, items, ...(crossKeys(run.slots).length > 0 ? { cross_item: [] } : {}) };
   return JSON.stringify(Submission.safeParse(example).success ? example : { run: run.run, model: MODEL_PLACEHOLDER, items: [] });
 }
 
@@ -812,6 +813,7 @@ function startText(v: StartOut, context: TextContext): string {
   let supportedBlock:(Block & {entries:readonly Entry[]})|undefined;
   const headClip = new Clip(null, seeConsole(r.run));
   const head = [`运行 ${r.run}：任务包 ${headClip.field(r.pack, CLIP.name, '任务包编号的超出部分')}，条目 ${r.items.length} 个，要求项 ${r.requirements.length} 个`];
+  if(r.model_identity!==undefined&&r.session!==undefined)head.push('同一开始会话提交可省略 model 和 model_identity；其他会话须明确声明自己的模型身份');
   const production = v.result ?? null;
   const full = production !== null ? (context.production ?? null) : null;
   const layout = full !== null ? resultLayout(full, production!.reference) : null;

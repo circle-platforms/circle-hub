@@ -6,4 +6,4 @@ The inventory and concrete decisions are in `docs/hub-r4-research/hub-simplifica
 
 This first worktree covers the inventory, this task page, and the resolver's repeated source reads in `hub/runs/engine/exact.ts` with synthetic tests alongside it. A prefetched reference still checks current access before use; revoked access and withheld credentials must never be disclosed from a cache. Other batches get their own task pages and worktrees after the relevant decisions.
 
-Run the affected checks at concurrency 2. Do not access production systems or credentials for development. Deployment, a real-device window and a public push remain separate owner decisions.
+Run the affected checks with the CPU-adaptive scheduler (decision 83). Do not access production systems or credentials for development. Deployment, a real-device window and a public push remain separate owner decisions.

@@ -14,7 +14,7 @@ export type { StoredResult } from './queries.ts';
 // Pure rules, for the console and for other packages' tests.
 export { itemCell, attributionByReason, attributionByRole, isSandboxFailure } from './terminals.ts';
 export type { CellLayer, ItemCell } from './terminals.ts';
-export { declaredFamily, independenceGap, independenceOf, warrantIndependence } from './independence.ts';
+export { declaredFamily, effectiveSubmission, independenceGap, independenceOf, warrantIndependence } from './independence.ts';
 export type { AuthorOrigin, ProducerOrigin } from './independence.ts';
 export { slotSchemaOf } from './slots.ts';
 export { canSeeRun } from './readers.ts';
