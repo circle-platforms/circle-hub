@@ -1,4 +1,4 @@
-# case-compile 3.8.10
+# case-compile 3.8.11
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -301,3 +301,26 @@ under a step whose several actions precede it, binds to those actions as one ste
 model splits it into verbatim clauses of the expectation node and asserts each after the plan operation it observes; that
 placement is a model judgment, and the Hub still checks every quote against the expectation's original bytes. An explicit
 `step_ref`, label or number that matches no action, or several, still leaves the expectation unbound.
+
+### 3.8.11: declared confirmations, net-effect cleanup and declared text shapes (decision 104)
+
+Aligned with InfoTest's `SSL_CERT_LOAD` block and its paired teardown (owner, 2026-10-30): three generic rules a case that
+loads an SSL host needs.
+
+- **Declared confirmations.** A product's command-policy@1 may declare `confirmations` (`command_prefix`, `prompt`, `answer`).
+  A device command under a declared prefix must pass the declared prompt as its runner prompt (the parameter whose declared
+  type is `runner_prompt`, role `runner_option`), and the very next step, on the same object and method and in the same
+  section, must carry exactly the declared answer as its only value. That step is dialogue: it is not parsed against the
+  catalog, needs no catalog entry and has no cleanup obligation (`confirmationSteps` in `functions/plan-commands.ts`, used by
+  the plan resolution, the catalog selection and the cleanup operations). A declared command without its prompt or answer, a
+  runner prompt on any other device command, and an answer that follows nothing are refused, since a missing answer leaves the
+  device waiting inside the dialogue.
+- **Net-effect cleanup.** InfoTest tears down only what is alive at the end. An execution step that is exactly the declared
+  inverse of a still-live earlier one on the same device (delete, then re-create) undoes it, and neither needs cleanup; every
+  other configuration stays live and needs its own cleanup in reverse order, as before (`functions/command-obligations.ts`).
+  The bed's pre/post check still decides whether the bed was restored.
+- **Declared text shapes.** A runtime-contract@2 type of catalog type `string` may declare `pattern`, one anchored expression
+  the whole value must match (`functions/typed-contract.ts`), for names the runner splices into device lines (an SSL host
+  name passed to the certificate import methods).
+
+Test: `functions/confirmations.test.ts` with the synthetic fixture `testing/confirmations.ts`.

@@ -36,7 +36,6 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
  for(const [key,row]of authored){const actual=planned.get(key)??0;if(actual<row.count)note('/steps',`可以改参数，不可以删命令：${row.identity.path} 作者 ${row.count} 次、计划 ${actual} 次，尚缺 ${row.count-actual} 次`,'refute',{identity:{tree_root:row.identity.tree_root,path:row.identity.path,signature:row.identity.signature},required_count:row.count,planned_count:actual,missing_count:row.count-actual});}
  if(!policy){if(operations.length)note('/command_policy','缺锁定根的产品命令范围与逆操作声明；下一步：产品包作者声明 command-policy@1 后重新育苗并核验','unknown');return gaps;}
  const modifies=(identity:CommandIdentity)=>!policy.read_only.some(prefix=>within(identity.path,prefix));
- const configured=main.filter(operation=>modifies(operation.identity!)).reverse();
  const actual=cleanup.filter(operation=>modifies(operation.identity!)).map(operation=>({...operation,restore:undefined as typeof slots.steps[number]|undefined}));
  for(const [index,step]of slots.steps.entries())if(step.restore_for!==undefined)actual.push({line:'',pointer:'/steps/'+index,object:step.object,cleanup:true,identity:null,restore:step});
  const ordinal=(pointer:string)=>Number(pointer.split('/')[2]);actual.sort((a,b)=>ordinal(a.pointer)-ordinal(b.pointer));
@@ -82,34 +81,42 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
   const inverse=identityOf(commandIdentity(grammar,line));
   return inverse&&inverse.path===siblingPath?{identities:[inverse],ambiguous:false}:{identities:[],ambiguous:true};
  };
- configured.forEach((operation,index)=>{
+type Problem={pointer:string;message:string;verdict:'unknown'|'refute';obligation?:Record<string,unknown>};
+ // Whether `received` is the declared inverse of the configured `operation` (null) or why not. The same rule decides a cleanup
+ // step and an execution step that undoes an earlier one.
+ const inverseProblem=(operation:typeof main[number],received:(typeof actual)[number]|undefined):Problem|null=>{
   const identity=operation.identity!;
-  const received=actual[index];
   if(received?.restore){
    const step=received.restore,target=step.restore_target,configOrdinal=Number(operation.pointer.split('/')[2])+1;
-   if(step.restore_for!==configOrdinal||step.object!==operation.object||!target||target.tree_root!==identity.tree_root)note(operation.pointer,'缺同设备、逆序且绑定该配置的捕获恢复守卫','refute',{cleanup_for:operation.pointer,missing_count:1});
-   return;
+   return step.restore_for!==configOrdinal||step.object!==operation.object||!target||target.tree_root!==identity.tree_root?{pointer:operation.pointer,message:'缺同设备、逆序且绑定该配置的捕获恢复守卫',verdict:'refute',obligation:{cleanup_for:operation.pointer,missing_count:1}}:null;
   }
   const alternatives=alternativeInverses(identity,received?.identity??undefined);
-  if(alternatives.ambiguous){note(operation.pointer,'声明的枚举互逆不能在同一签名中得到唯一完整身份；下一步由产品包作者修正互逆声明或命令树后重核','unknown');return;}
+  if(alternatives.ambiguous)return {pointer:operation.pointer,message:'声明的枚举互逆不能在同一签名中得到唯一完整身份；下一步由产品包作者修正互逆声明或命令树后重核',verdict:'unknown'};
   const alternative=alternatives.identities[0];
-  if(alternative!==undefined){
-   if(!received||received.object!==operation.object||identityKey(received.identity!)!==identityKey(alternative))note(operation.pointer,`配置命令 ${identity.path} 缺同设备、逆序的清理操作（声明的枚举互逆：${commandLine(alternative)}）`,'refute',{cleanup_for:operation.pointer,inverse:alternative,missing_count:1});
-   return;
-  }
+  if(alternative!==undefined)return !received||received.object!==operation.object||identityKey(received.identity!)!==identityKey(alternative)?{pointer:operation.pointer,message:`配置命令 ${identity.path} 缺同设备、逆序的清理操作（声明的枚举互逆：${commandLine(alternative)}）`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse:alternative,missing_count:1}}:null;
   const matches=policy.inverse_rules.filter(rule=>within(identity.path,rule.source_prefix)).sort((a,b)=>pathSegments(b.source_prefix)!.length-pathSegments(a.source_prefix)!.length);
-  const rule=matches[0];if(!rule||matches[1]&&rule.source_prefix===matches[1].source_prefix){note(operation.pointer,`配置命令 ${identity.path} 缺唯一的产品逆操作规则；下一步由产品包作者补声明后重核`,'unknown');return;}
+  const rule=matches[0];if(!rule||matches[1]&&rule.source_prefix===matches[1].source_prefix)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 缺唯一的产品逆操作规则；下一步由产品包作者补声明后重核`,verdict:'unknown'};
   const path='/'+[...pathSegments(rule.inverse_prefix)!,...pathSegments(identity.path)!.slice(pathSegments(rule.source_prefix)!.length)].join('/');
-  if(!received||received.object!==operation.object||received.identity!.path!==path){note(operation.pointer,`配置命令 ${identity.path} 缺同设备、逆序的清理操作 ${path}（清理命令必须由锁定树完整解析）`,'refute',{cleanup_for:operation.pointer,inverse_path:path,missing_count:1});return;}
+  if(!received||received.object!==operation.object||received.identity!.path!==path)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 缺同设备、逆序的清理操作 ${path}（清理命令必须由锁定树完整解析）`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse_path:path,missing_count:1}};
   const parameters=[...identity.parameters].sort((a,b)=>a.position-b.position);
   const counts=rule.leading_parameters!==undefined?[rule.leading_parameters]:[...new Set(native.filter(definition=>definition.path===path).flatMap(definition=>definition.signatures.flatMap(signature=>Array.from({length:Math.min(signature.params.length,parameters.length)+1},(_,count)=>count))))];
   const copied=parameters.map((parameter,position)=>{const proposed=received.identity!.parameters.find(value=>value.position===position);return proposed&&commandTokens(parameter.raw)?.[0]?.value===commandTokens(proposed.raw)?.[0]?.value?proposed.raw:parameter.raw;});
   const inverses=new Map<string,CommandIdentity>();
   for(const count of counts){if(count>parameters.length)continue;const line=[...path.split('/').slice(2).map(decodeURIComponent),...copied.slice(0,count)].join(' ');const inverse=identityOf(commandIdentity(grammar,line));if(inverse&&inverse.path===path&&inverse.parameters.length===count)inverses.set(identityKey(inverse),inverse);if(inverses.size>1)break;}
-  if(inverses.size!==1){note(operation.pointer,`配置命令 ${identity.path} 的逆操作 ${path} ${inverses.size>1?'没有唯一前导身份参数声明':'不能按锁定树完整解析'}；由产品包作者核对规则与命令树`,inverses.size>1?'unknown':'refute');return;}
+  if(inverses.size!==1)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 的逆操作 ${path} ${inverses.size>1?'没有唯一前导身份参数声明':'不能按锁定树完整解析'}；由产品包作者核对规则与命令树`,verdict:inverses.size>1?'unknown':'refute'};
   const inverse=[...inverses.values()][0];
-  if(identityKey(received.identity!)!==identityKey(inverse))note(operation.pointer,`配置命令 ${identity.path} 在逆序位置的清理参数不等于声明的前导身份参数：${commandLine(inverse)}`,'refute',{cleanup_for:operation.pointer,inverse,missing_count:1});
- });
+  return identityKey(received.identity!)!==identityKey(inverse)?{pointer:operation.pointer,message:`配置命令 ${identity.path} 在逆序位置的清理参数不等于声明的前导身份参数：${commandLine(inverse)}`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse,missing_count:1}}:null;
+ };
+ // Net effect, as InfoTest tears down only what is alive at the end: an execution step that is exactly the declared inverse of
+ // a still-live earlier one on the same device undoes it (delete then re-create), and neither needs cleanup. The latest live
+ // match is undone; anything not exactly the declared inverse stays live and needs its own cleanup.
+ const live:typeof main=[];
+ for(const operation of main.filter(operation=>modifies(operation.identity!))){
+  let undone=-1;for(let k=live.length-1;k>=0;k--)if(live[k].object===operation.object&&inverseProblem(live[k],{...operation,restore:undefined})===null){undone=k;break;}
+  if(undone>=0)live.splice(undone,1);else live.push(operation);
+ }
+ const configured=live.reverse();
+ configured.forEach((operation,index)=>{const problem=inverseProblem(operation,actual[index]);if(problem)note(problem.pointer,problem.message,problem.verdict,problem.obligation);});
  if(actual.length>configured.length)for(const extra of actual.slice(configured.length))note(extra.pointer,'清理段含没有对应执行命令的额外配置操作');
  return gaps;
 }

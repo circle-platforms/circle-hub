@@ -1200,3 +1200,10 @@ what they added. The rules are longer prefixes than the generic one, so they tak
 
 The pack's copy of the shared command grammar is regenerated with the positional binding of union expansions (see
 contracts/src/command-grammar.ts): an omitted optional IPADDR argument no longer lets a given address bind one position later.
+
+### SSL host teardown (1.7.40)
+
+Decision 104 (aligned with InfoTest's `SSL_CERT_LOAD` and the CES teardown): an SSL virtual host created by
+`ssl host virtual <host> <service>` is removed with everything loaded onto it by `clear ssl host <host>`, which the device
+confirms: the command waits for the prompt `abort:` and the next line is `YES`. The command policy declares this inverse
+(leading parameter: the host name) and the confirmation; `ssl start <host>` is undone by `ssl stop <host>` before the clear.
