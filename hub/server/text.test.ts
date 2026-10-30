@@ -1126,6 +1126,14 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     assert.doesNotMatch(noteOf(text)!, /list_task_packs/);
   });
 
+  test('a knowledge view input is shown in the form its parser requires, not as a bare number', () => {
+    const pack = packOf(1);
+    const view = { ...pack, inputs: [{ slot: 'facets', role: 'subject' as const, description: '结构计数视图', accepts: ['knowledge:facets'], required: true, many: false }] };
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [view], trace: TRACE });
+    const lines = linesOf(toolText('list_task_packs', answer));
+    assert.ok(lines.includes('  输入 facets（被判对象，必填）：结构计数视图；接受 knowledge:facets；写法 {"external":"knowledge:facets:<产品>:<构建>?kind=<kind>&by=<by>"}'), lines.join('\n'));
+  });
+
   test('every pack with its inputs, parameters and an example start_run call that parses with StartRunInput and names a product', () => {
     const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [packOf(1), packOf(2)], trace: TRACE });
     const text = toolText('list_task_packs', answer);

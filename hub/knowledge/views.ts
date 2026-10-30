@@ -140,6 +140,18 @@ function kindsOf(values: string[], what: string): Parsed<EntryKind[]> {
   return { ok: true, value: out.sort(compareText) };
 }
 
+/**
+ * How to write one knowledge view id, taken from the grammar `parseViewId` enforces: the view, placeholders for the product and
+ * the build(s), and the required query parameters. Null for a type that is no knowledge view.
+ */
+export function viewIdExample(type: string): string | null {
+  if (!Object.hasOwn(QUERY, type)) return null;
+  const view = type as keyof typeof QUERY;
+  const builds = view === 'impact' ? '<起始构建>..<目标构建>' : '<构建>';
+  const required = (QUERY[view].required as readonly string[]).map((name) => `${name}=<${name}>`);
+  return `knowledge:${view}:<产品>:${builds}${required.length > 0 ? `?${required.join('&')}` : ''}`;
+}
+
 /** Parses a knowledge view id; the reason says what is wrong (for the admin log). */
 export function parseViewId(id: string): Parsed<ViewRequest> {
   if (typeof id !== 'string' || id.length > 8192) return { ok: false, reason: '不是外部对象标识' };

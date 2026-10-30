@@ -14,7 +14,7 @@ import type { Principal } from '../records/api.ts';
 import { parserKey, recognize } from '../refs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { createKnowledgeReader, routeKnowledgeViews } from './api.ts';
-import { parseViewId } from './views.ts';
+import { parseViewId, viewIdExample } from './views.ts';
 import { BASE_CATALOG, DEFAULT_PRODUCERS, casesProducer, catalogXml, extraProducer, makeWorld, mindMap, startPostgres, type World } from './test-support.ts';
 
 let postgres: TemporaryPostgres;
@@ -580,6 +580,15 @@ describe('the attached_fields parameter of the impact view', () => {
       slim.changes.slice(0, plain.changes.length).map((c) => c.path),
       'the kept paths are the same prefix in path order',
     );
+  });
+
+  test('viewIdExample shows how to write each view from the grammar the parser enforces, and every example parses once its placeholders are filled', () => {
+    assert.equal(viewIdExample('facets'), 'knowledge:facets:<产品>:<构建>?kind=<kind>&by=<by>');
+    assert.equal(viewIdExample('index'), 'knowledge:index:<产品>:<构建>?kind=<kind>&key=<key>');
+    assert.equal(viewIdExample('impact'), 'knowledge:impact:<产品>:<起始构建>..<目标构建>');
+    assert.equal(viewIdExample('links'), 'knowledge:links:<产品>:<构建>');
+    assert.equal(viewIdExample('graph'), null);
+    assert.equal(parseViewId(`knowledge:facets:acme:${B}?kind=case&by=module`).ok, true);
   });
 
   test('parseViewId names, as structure, the required parameters an id lacks, and only for that failure', () => {
