@@ -129,6 +129,9 @@ interface EntryAt {
   content: EntryContent;
 }
 
+/** Children of an expanded node read in one query. */
+const CHILD_BATCH = 64;
+
 export class TreeReading {
   readonly #context: KnowledgeContext;
   readonly #products = new Lru<string, { products: Set<string>; at: number }>(64,Number.POSITIVE_INFINITY,true);
@@ -390,14 +393,17 @@ export class TreeReading {
         walk.position++;
       }
       if (remaining === 0) return true;
-      // The children are read in one batch, verified as node() verifies them (the same oldest record). A child the batch
-      // did not find, or every child when the batch failed, is read on its own as before, so a missing or corrupt record
-      // is reported where the walk reaches it.
-      const children = await this.#context.store.nodes(node.children.map((child) => child.digest)).catch(() => null);
-      for (const child of node.children) {
-        const childNode = children?.get(child.digest) ?? await this.#context.store.node(child.digest);
-        if (childNode === null) continue;
-        if (!(await visit([...segments, child.name], child.digest, childNode, remaining - 1))) return false;
+      // The children are read in batches of CHILD_BATCH as the walk reaches them, so a full page stops the reading, verified as
+      // node() verifies them (the same oldest record). A child the batch did not find, or every child of a batch that failed,
+      // is read on its own as before, so a missing or corrupt record is reported where the walk reaches it.
+      for (let at = 0; at < node.children.length; at += CHILD_BATCH) {
+        const slice = node.children.slice(at, at + CHILD_BATCH);
+        const batch = await this.#context.store.nodes(slice.map((child) => child.digest)).catch(() => null);
+        for (const child of slice) {
+          const childNode = batch?.get(child.digest) ?? await this.#context.store.node(child.digest);
+          if (childNode === null) continue;
+          if (!(await visit([...segments, child.name], child.digest, childNode, remaining - 1))) return false;
+        }
       }
       return true;
     };

@@ -187,3 +187,41 @@ test('the product decision holds for one request and one reader only', { timeout
   assert.ok(await w.knowledge.getNodes(query, w.user));
   assert.ok(port.calls() > 1, `outside a request every check asks (${port.calls()})`);
 });
+
+test('a failing batched lookup of the contribution nodes falls back to the per-node pages', { timeout: 300_000 }, async (t) => {
+  const w = await makeWorld(postgres, { knowledge: { limits: LIMITS } });
+  t.after(() => w.close());
+  const at = await build(w, 'Rel_ACME_10_6_1_10', 12);
+  await contribute(w, at, '/commands/wide/c03');
+  const query: NodesQuery = { root: at.root, paths: ['/commands/wide'], depth: 1 };
+  const expected = await reference(w, query, w.user);
+  assert.ok(expected?.nodes.some((node) => node.contributions !== undefined));
+  // The batch verifies the oldest record of every path asked, which a corrupt record would fail for pages the per-node read
+  // never reaches; the answer must then be the per-node answer.
+  const records = w.knowledge.store.records as unknown as { findFirstMany: (...args: unknown[]) => Promise<unknown> };
+  const original = records.findFirstMany;
+  let failed = 0;
+  records.findFirstMany = async () => { failed++; throw new Error('synthetic integrity failure'); };
+  try {
+    const answered = await inRequest(w, query, w.user);
+    assert.ok(failed > 0, 'the batched lookup ran and failed');
+    assert.equal(canonicalize(answered), canonicalize(expected));
+  } finally { records.findFirstMany = original; }
+});
+
+test('the children of an expanded node are read only as far as the page reaches', { timeout: 300_000 }, async (t) => {
+  const w = await makeWorld(postgres, { knowledge: { limits: LIMITS } });
+  t.after(() => w.close());
+  const at = await build(w, 'Rel_ACME_10_6_1_10', 150);
+  Object.assign(w.knowledge.__context.limits, { pageNodes: 10 });
+  const store = w.knowledge.store, nodes = store.nodes;
+  const sizes: number[] = [];
+  store.nodes = async (digests, ...rest) => { sizes.push(new Set(digests).size); return nodes.call(store, digests, ...rest); };
+  try {
+    const first = await inRequest(w, { root: at.root, paths: ['/commands/wide'], depth: 1 }, w.user);
+    assert.ok(first?.next, 'the page is full before the children are');
+    assert.equal(first.nodes.length, 10);
+    assert.ok(sizes.length > 0 && sizes.every((size) => size <= 64), `batches ${sizes.join(',')}`);
+    assert.ok(sizes.reduce((sum, size) => sum + size, 0) <= 64, `children read for one page: ${sizes.join(',')}`);
+  } finally { store.nodes = nodes; }
+});

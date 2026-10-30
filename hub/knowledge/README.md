@@ -199,7 +199,9 @@ catalogs, grounds and provenance.
     for that account is asked once and reused by every later check of the same account in the same request
     (`readable-products.ts`, decision 82: a request uses the permissions it started with; a revocation applies from the
     next request); another account, another request and a read outside any request ask the port again, and a failed
-    answer is not kept. Absent and forbidden are the same null; the reader is
+    answer is not kept. A node page finds the nodes that have contribution records with one batched lookup (a failing
+    batch pages every node on its own) and reads the children of an expanded node in batches of 64 as the walk reaches
+    them; the pages are the same as the per-node reads give. Absent and forbidden are the same null; the reader is
     checked before anything else of a get_nodes request is read. `getNodes` lists each requested path (duplicates
     removed, at most 256 distinct paths, the rest named in the coverage note) and its subtree to `depth` (default 1) in
     pre-order, each node once (a subtree is walked again only with more levels to go, capped at the node's height, so

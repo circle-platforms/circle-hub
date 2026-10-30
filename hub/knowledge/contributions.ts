@@ -394,7 +394,10 @@ export class ContributionLayer {
     const pathOfValue=new Map<string,string>();
     for(const path of new Set(paths))for(const product of products)pathOfValue.set(digestOf({product,path}),path);
     const values=[...pathOfValue.keys()],found=new Set<string>();
-    for(let at=0;at<values.length;at+=256)for(const value of (await this.#context.store.records.findFirstMany({key:'knowledge.contribution.node',values:values.slice(at,at+256),kind:'claim'})).keys())found.add(pathOfValue.get(value)!);
+    // The batch verifies the oldest record of every path asked, which the per-node page may never reach; when it fails for any
+    // reason every path is paged on its own as before, so a corrupt record is reported where its page is read.
+    try{for(let at=0;at<values.length;at+=256)for(const value of (await this.#context.store.records.findFirstMany({key:'knowledge.contribution.node',values:values.slice(at,at+256),kind:'claim'})).keys())found.add(pathOfValue.get(value)!);}
+    catch{return new Set(paths);}
     return found;
   }
 

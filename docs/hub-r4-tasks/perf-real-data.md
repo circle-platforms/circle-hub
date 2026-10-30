@@ -41,3 +41,11 @@ remaining per-request costs are reported), contracts, packs.
 Synthetic data and a temporary loopback PostgreSQL only in Git. The real-data copy is opened read-only or copied into a
 throwaway cluster; no deployment, no server, no environment or credential file. No assertion is weakened or removed; a
 skipped test is not a pass. Commits with `git commit -s` on this branch only; the integrator merges.
+
+## Review follow-up (integrator, independent read-only review)
+
+The independent review found no permission defect and two deviations from "same answers, fewer reads", both fixed here with
+tests that fail without the fix: the batched lookup of the contribution nodes verifies the oldest record of every path
+asked, which a corrupt record would fail for pages the per-node read never reaches, so a failing batch now pages every node
+on its own as before; and the children of an expanded node are read in batches of 64 as the walk reaches them instead of
+all at once, so a full page stops the reading. Allowed paths unchanged.
