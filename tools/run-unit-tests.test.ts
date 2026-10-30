@@ -5,7 +5,7 @@ import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { PARSER_BOUNDS, SENTINELS, classifyLanes, cpuBusy, initialWorkers, nextWorkers, runAdaptiveTasks, sentinelConcurrency, sharedConcurrency, unitFiles, unitLane } from './run-unit-tests.ts';
+import { PARSER_BOUNDS, SENTINELS, classifyLanes, cpuBusy, initialWorkers, longestFirst, nextWorkers, readDurations, runAdaptiveTasks, sentinelConcurrency, sharedConcurrency, unitFiles, unitLane, writeDurations } from './run-unit-tests.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -111,5 +111,29 @@ test('a failed test file makes the aggregate fail and retains its test count', a
     const file=join(dir,'failure.test.mjs');writeFileSync(file,"import {test} from 'node:test';test('synthetic failure',()=>{throw Error('synthetic')});\n");
     const result=await runAdaptiveTasks([{file,lane:'shared'}],{}, {},{root:dir,cap:1,initialBusy:0,memoryFree:()=>0.8,output:()=>{}});
     assert.equal(result.code,1);assert.equal(result.counts.tests,1);assert.equal(result.counts.fail,1);assert.equal(result.counts.pass,0);
+  } finally {rmSync(dir,{recursive:true,force:true});}
+});
+
+test('earlier durations start the longest files first; files without one go first in their given order', () => {
+  const tasks=['a','b','c','d','e'].map(file=>({file,lane:'shared' as const}));
+  assert.deepEqual(longestFirst(tasks,{a:10,b:300,d:300,e:20}).map(task=>task.file),['c','b','d','e','a']);
+  assert.deepEqual(longestFirst(tasks,{}).map(task=>task.file),['a','b','c','d','e']);
+  assert.deepEqual(longestFirst(tasks,{a:Number.NaN,b:-1,c:5}).map(task=>task.file),['a','b','d','e','c']);
+});
+
+test('durations survive between runs, merge with earlier ones and a damaged file means no order', async () => {
+  const dir=mkdtempSync(join(tmpdir(),'synthetic-durations-'));
+  try {
+    const path=join(dir,'durations.json');
+    assert.deepEqual(readDurations(path),{});
+    writeDurations({'a.test.ts':120,'b.test.ts':40},path);writeDurations({'b.test.ts':60},path);
+    assert.deepEqual(readDurations(path),{'a.test.ts':120,'b.test.ts':60});
+    writeFileSync(path,'{not json');assert.deepEqual(readDurations(path),{});
+    const files=Array.from({length:3},(_,i)=>{const file=join(dir,`case-${i}.test.mjs`);writeFileSync(file,"import {test} from 'node:test';test('synthetic',()=>{});\n");return file;});
+    const started:string[]=[],ended:Record<string,number>={};
+    const result=await runAdaptiveTasks(files.map(file=>({file,lane:'shared' as const})),{},{},{root:dir,cap:1,initialBusy:0,memoryFree:()=>0.8,output:()=>{},
+      durations:{[files[0]]:1,[files[1]]:3,[files[2]]:2},onWorkers:()=>{},onDuration:(file,ms)=>{started.push(file);ended[file]=ms;}});
+    assert.equal(result.code,0);assert.deepEqual(started,[files[1],files[2],files[0]]);
+    for(const file of files)assert.ok(ended[file]>=0);
   } finally {rmSync(dir,{recursive:true,force:true});}
 });

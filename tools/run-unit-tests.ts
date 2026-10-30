@@ -1,8 +1,10 @@
 // Unit-test partitions share a migrated PostgreSQL template where possible. Normal work adapts to CPU and memory;
 // timing sentinels run alone so other tests do not consume their millisecond budget. Acceptance uses the same scheduler.
+// Files start longest first by their wall time in earlier runs on this machine (a file in the temporary directory), so the
+// run does not end with one long file alone; without that file the order is the sorted one.
 import { execFileSync, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { closeSync, globSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
+import { closeSync, globSync, mkdtempSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism, cpus, freemem, loadavg, platform, tmpdir, totalmem } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -152,14 +154,44 @@ export function cpuBusy(before:CpuSample,after:CpuSample):number {
 }
 
 type TestTask = {file:string;lane:UnitLane};
-type AdaptiveOptions = { root?:string; cap?:number; initialBusy?:number; memoryFree?:()=>number; sampleBusy?:()=>number; intervalMs?:number; onWorkers?:(active:number,target:number)=>void; output?:(text:string)=>void };
+type AdaptiveOptions = { root?:string; cap?:number; initialBusy?:number; memoryFree?:()=>number; sampleBusy?:()=>number; intervalMs?:number; onWorkers?:(active:number,target:number)=>void; output?:(text:string)=>void;
+  /** Wall milliseconds of each file in earlier runs: the longest start first, so no long file is left for the end. */
+  durations?:Readonly<Record<string,number>>;
+  /** Called with each file's wall milliseconds when it ends. */
+  onDuration?:(file:string,ms:number)=>void };
 const emptyCounts=():Counts=>Object.fromEntries(COUNTERS.map(key=>[key,0])) as Counts;
+
+/** Longest first by earlier durations; files without one (new files, a first run, CI) go first in their given order. */
+export function longestFirst<T extends {file:string}>(tasks:readonly T[],durations:Readonly<Record<string,number>>):T[] {
+  const known=(file:string)=>{const ms=durations[file];return typeof ms==='number'&&Number.isFinite(ms)&&ms>=0?ms:undefined;};
+  return tasks.map((task,index)=>({task,index,ms:known(task.file)})).sort((a,b)=>{
+    if(a.ms===undefined||b.ms===undefined)return a.ms===b.ms?a.index-b.index:a.ms===undefined?-1:1;
+    return b.ms-a.ms||a.index-b.index;
+  }).map(entry=>entry.task);
+}
+
+/** Durations of earlier runs on this machine. Only the order of later runs uses them; a missing or damaged file is no order. */
+export const DURATIONS_FILE=join(tmpdir(),'circle-hub-unit-durations.json');
+export function readDurations(path=DURATIONS_FILE):Record<string,number> {
+  try {
+    const value=JSON.parse(readFileSync(path,'utf8')) as {durations?:unknown};
+    if(!value||typeof value.durations!=='object'||value.durations===null)return {};
+    return Object.fromEntries(Object.entries(value.durations as Record<string,unknown>).filter((entry):entry is [string,number]=>typeof entry[1]==='number'&&Number.isFinite(entry[1])&&entry[1]>=0));
+  } catch { return {}; }
+}
+export function writeDurations(observed:Readonly<Record<string,number>>,path=DURATIONS_FILE):void {
+  if(Object.keys(observed).length===0)return;
+  try {
+    const temporary=`${path}.${process.pid}.tmp`;
+    writeFileSync(temporary,JSON.stringify({durations:{...readDurations(path),...observed}}));renameSync(temporary,path);
+  } catch { /* the order is a convenience: an unwritable temporary directory changes nothing else */ }
+}
 
 /** Run one isolated Node test process per file and adapt the number in flight without stopping running tests. */
 export async function runAdaptiveTasks(tasks:readonly TestTask[], shared:NodeJS.ProcessEnv, clean:NodeJS.ProcessEnv, options:AdaptiveOptions={}):Promise<{code:number;counts:Counts}> {
   const root=options.root??ROOT,cap=Math.max(1,options.cap??sharedConcurrency('all'));
   const memory=options.memoryFree??freeMemoryRatio,interval=options.intervalMs??3000;
-  const pending=[...tasks],active=new Map<ChildProcess,UnitLane>(),counts=emptyCounts();
+  const pending=options.durations?longestFirst(tasks,options.durations):[...tasks],active=new Map<ChildProcess,UnitLane>(),counts=emptyCounts();
   let resourceAt=0,cachedFree=1,cachedPrivate=cap;
   const resources=()=>{if(Date.now()-resourceAt>=interval){
     cachedFree=memory();const spare=sharedMemorySpare(),running=[...active.values()].filter(lane=>lane==='isolated').length;
@@ -195,9 +227,9 @@ export async function runAdaptiveTasks(tasks:readonly TestTask[], shared:NodeJS.
           if(task.lane==='isolated')availablePrivate--;
           const child=spawn(process.execPath,['--test','--test-reporter=tap',task.file],{cwd:root,env:task.lane==='shared'?shared:clean,stdio:['ignore',fd,fd]});
           active.set(child,task.lane);options.onWorkers?.(active.size,target);
-          let ended=false;
+          let ended=false;const startedAt=Date.now();
           const complete=(code:number)=>{
-            if(ended)return;ended=true;closeSync(fd);active.delete(child);
+            if(ended)return;ended=true;closeSync(fd);active.delete(child);options.onDuration?.(task.file,Date.now()-startedAt);
             try {
               const output=readFileSync(path,'utf8');if(options.output)options.output(output);else process.stdout.write(output);
               const parsed=parseTestOutput(output);
@@ -284,8 +316,12 @@ export async function runUnitTests(group: UnitGroup = 'all', explicit:readonly s
     }
     const sharedSet=new Set(lanes.shared),isolatedSet=new Set(lanes.isolated);
     const tasks=files.flatMap<TestTask>(file=>sharedSet.has(file)?[{file,lane:postgres?'shared':'sentinel'}]:isolatedSet.has(file)?[{file,lane:'isolated'}]:[]);
-    const counts=emptyCounts();let code=0;
-    if(tasks.length){const result=await runAdaptiveTasks(tasks,postgres?sharedEnv(postgres):stringEnv(),stringEnv(),{cap});code=result.code;for(const key of COUNTERS)counts[key]+=result.counts[key];}
+    const counts=emptyCounts();let code=0;const observed:Record<string,number>={};
+    if(tasks.length){
+      const result=await runAdaptiveTasks(tasks,postgres?sharedEnv(postgres):stringEnv(),stringEnv(),{cap,durations:readDurations(),onDuration:(file,ms)=>{observed[file]=ms;}});
+      code=result.code;for(const key of COUNTERS)counts[key]+=result.counts[key];
+      if(code!==130)writeDurations(observed);
+    }
     if(code!==130&&lanes.sentinel.length){
       const result=await runAdaptiveTasks(lanes.sentinel.map(file=>({file,lane:'sentinel' as const})),stringEnv(),stringEnv(),{cap:1,initialBusy:0});
       if(code===0)code=result.code;for(const key of COUNTERS)counts[key]+=result.counts[key];
