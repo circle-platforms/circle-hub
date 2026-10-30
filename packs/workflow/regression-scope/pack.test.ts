@@ -24,7 +24,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['regression-scope', '1.8.8', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['regression-scope', '1.8.9', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/scope.ts') && files.includes('samples/negative/not-in-scope.json') && files.includes('examples/scope.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -136,6 +136,16 @@ describe('the staged pack', { skip: (await osIsolationAvailable()) ? false : 'no
 import { test } from 'node:test';
 test('unplaced followup is bounded and never demands enumeration to the facet total', () => {
   assert.match(text('SKILL.md'), /最多展示一页/); assert.match(text('SKILL.md'), /下一页引用或游标/); assert.ok(!text('SKILL.md').includes('列出的去重数量必须与披露计数一致'));
+});
+
+test('only the facets slot opts in to unknown entries, and the skill says them as unknown', () => {
+  const workflow = WorkflowFile.parse(json('workflow.json'));
+  assert.deepEqual(workflow.inputs.map((input) => [input.slot, input.unknown_entries]), [['impact', undefined], ['behaviour', undefined], ['facets', 'disclose']]);
+  const skill = text('SKILL.md');
+  assert.match(skill, /unknown_only=true）时照常启动/);
+  assert.match(skill, /其他截断拒绝启动/);
+  assert.match(skill, /M 取 unknown_entries/);
+  assert.match(skill, /不是 0 个，也不算未归位/);
 });
 
 test('skill distinguishes exact unplaced counts from skipped-source lower bounds',()=>{

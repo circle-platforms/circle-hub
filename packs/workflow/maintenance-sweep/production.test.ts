@@ -22,6 +22,12 @@ const SKIPPED = 'knowledge:impact:widget:Rel_W_1_0_3..Rel_W_1_0_4?catalog=comman
 const EMPTY = 'knowledge:impact:widget:Rel_W_1_0_0..Rel_W_1_0_2?catalog=commands@1';
 const FACETS = 'knowledge:facets:widget:Rel_W_1_0_1?kind=case&by=commands';
 const FACETS_SKIPPED='knowledge:facets:widget:'+SKIPPED.split('knowledge:impact:widget:')[1].split('?')[0].split('..')[0]+'?kind=case&by=commands';
+// A pair whose earlier build's facet view is truncated only because 3 cases' command attribution is unknown (unknown_only),
+// and two facet views of the review pair's earlier build that are truncated for another reason too, or for no stated one.
+const UNKNOWN = 'knowledge:impact:widget:Rel_W_1_0_8..Rel_W_1_0_9?catalog=commands@1';
+const FACETS_UNKNOWN = 'knowledge:facets:widget:Rel_W_1_0_8?kind=case&by=commands';
+const FACETS_CUT = 'knowledge:facets:widget:Rel_W_1_0_6?kind=case&by=commands';
+const FACETS_TRUNCATED = 'knowledge:facets:widget:Rel_W_1_0_7?kind=case&by=commands';
 const bytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
 
 const both = [
@@ -52,6 +58,16 @@ before(async () => {
   (skippedView.from as {build:string}).build=selectedBuilds[0];(skippedView.to as {build:string}).build=selectedBuilds[1];
   hub.external.put(SKIPPED,bytes(skippedView));hub.external.put(FACETS_SKIPPED,bytes(facetInput(skippedView).model));
   hub.external.put(EMPTY, bytes(buildImpact([], { catalog: 'commands@1' })));
+  const unknownView = buildImpact(reviewSweep(), { catalog: 'commands@1' });
+  (unknownView.from as { build: string }).build = 'Rel_W_1_0_8';
+  (unknownView.to as { build: string }).build = 'Rel_W_1_0_9';
+  hub.external.put(UNKNOWN, bytes(unknownView));
+  hub.external.put(FACETS_UNKNOWN, bytes(facetInput(unknownView, 1, { unknown: 3 }).model));
+  for (const [id, options] of [[FACETS_CUT, { unknown: 3, undelivered: true }], [FACETS_TRUNCATED, { undelivered: true }]] as const) {
+    const model = facetInput(buildImpact([]), 0, options).model as { build: { build: string } };
+    model.build.build = id.split(':')[3].split('?')[0];
+    hub.external.put(id, bytes(model));
+  }
 });
 after(async () => {
   await hub?.close();
@@ -219,6 +235,43 @@ describe('a production run of maintenance-sweep', { skip }, () => {
     const parsed = JSON.parse(content.text);
     assert.deepEqual(parsed.partitions, { delivered: [], incomplete: [], quarantined: [], rejected: [] });
     assert.deepEqual(parsed.coverage, { complete: true, examined: 0, total: 0 });
+  });
+
+  it('binds a facets view truncated only by unknown entries, starts, and says those cases as unknown', async () => {
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: UNKNOWN }, facets: { external: FACETS_UNKNOWN } } }, call());
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    const run = detail.answer.run!;
+    assert.deepEqual(run.items.map((item) => item.id), ['doc-1:n1', 'doc-2:n2', 'doc-3:n1', 'doc-4:n1'], 'the unknown cases never change the items');
+    assert.deepEqual(run.sources.map((source) => source.external), [UNKNOWN, `${FACETS_UNKNOWN}@1`]);
+    const result = detail.production!.result;
+    assert.ok(ValidationResult.safeParse(result).success);
+    assert.equal(result.acceptance, 'accepted');
+    assert.deepEqual(detail.production!.counts, { delivered: 4, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
+    const said = result.cross_item.filter((claim) => claim.statement.text.startsWith('较早构建有 3 个用例的命令归属未知'));
+    assert.equal(said.length, 1, JSON.stringify(result.cross_item.map((claim) => claim.statement.text)));
+    assert.equal(said[0].requirement, 'command_exists');
+    assert.deepEqual([said[0].statement.verdict, said[0].statement.reason, said[0].qualifier.nature], ['unknown', 'missing_input', 'unknown']);
+    assert.match(said[0].statement.text, /不是 0 个，也不算未归位/);
+    assert.match(said[0].statement.text, /巡检可能漏了其中需要维护的用例/);
+    assert.match(said[0].statement.text, /下一步照分面视图的说明补齐它们的命令归属，再重新开始运行（视图说明：3 个用例缺完整命令身份/);
+    assert.ok(result.cross_item.every((claim) => claim.statement.verdict !== 'support' || claim.statement.text.startsWith('命令差共')), 'no claim calls the sweep empty');
+    assert.ok(result.errors.some((error) => error.code === 'missing_input' && error.requirement === 'command_exists' && error.message.includes('3 个用例的命令归属未知')), JSON.stringify(result.errors));
+    for (const id of ['doc-1:n1', 'doc-2:n2']) assert.equal(requirement(located(result, id), 'command_exists').layers[0].terminal, 'violation', 'the removed commands stay blocking');
+    const stored = (await hub.service.getRun(hub.alice, run.run))!;
+    const note = stored.run.groups?.[0] as { unplaced?: number; unknown_entries?: number; facet_notes?: string[]; message?: string };
+    assert.deepEqual([note.unplaced, note.unknown_entries, note.facet_notes?.length], [1, 3, 1]);
+    assert.match(String(note.message), /命令归属已知的用例里有 4 条需要维护/);
+    assert.match(String(note.message), /已知 1 个用例没有解析出命令（未归位）/);
+    assert.match(String(note.message), /另有 3 个用例的命令归属未知/);
+  });
+
+  it('still refuses a facets view truncated for any other reason, with unknown entries or without', async () => {
+    for (const facets of [FACETS_CUT, FACETS_TRUNCATED]) {
+      const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'maintenance-sweep', inputs: { impact: { external: REVIEW }, facets: { external: facets } } }, call());
+      assert.equal(detail.answer.call_result, 'error', facets);
+      assert.ok(detail.answer.errors.some((error) => error.message.includes('知识视图仍有未交付的内容')), JSON.stringify(detail.answer.errors));
+      assert.equal(detail.production, null);
+    }
   });
 
   it('refuses a product on an unbound pack, and keeps the pack from users it is not assigned to', async () => {

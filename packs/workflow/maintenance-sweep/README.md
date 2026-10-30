@@ -63,6 +63,31 @@ view says the whole count and that only the listed part follows. Its one ground 
 bound `src:`). Since the answer shows
 cross-item claims before items, the diff is visible however many items are paged away.
 
+## Unknown entries (1.8.9)
+
+The `facets` slot declares `unknown_entries: disclose` (`hub/knowledge/README.md`, "Unknown entries in facet and index
+views"), so the engine binds a facet view truncated only because some cases' command attribution is unknown
+(`unknown_only`). `readFacets` accepts `unknown_entries` (a positive integer on a truncated view) and `unknown_only` (true,
+with the count); any other value is a shape refusal, and a truncated view without `unknown_only` is refused as before
+(`maintenance-sweep.facets_view`). The notes are quoted, never read to decide anything.
+
+With M such cases the note carries `unknown_entries: M` and `facet_notes` (the view's notes); the message says 已知 N 个
+未归位 and 另有 M 个用例的命令归属未知（不是 0 个，也不算未归位）with the next step quoted from the notes, and the warning
+`maintenance-sweep.unknown_entries` says the same. While the note's diff has a removed or modified path they could sit on
+it: like skipped documents, `command_exists` adds one unknown (`missing_input`, blocking), `command_unchanged` turns its
+empty-sweep support into an unknown, and the note's sweep sentence speaks of the cases whose attribution is known.
+Without such a path they cannot need maintenance, so the claims are those of 1.8.8 and only the note, the message and the
+warning say them (judgment call: no unknown where the unknown cases cannot change the result). The test reads the note's
+diff, which does not hold per-path differences, so a modified path whose differences `ignore_fields` hides entirely still
+counts: then the unknown is over-cautious, never a missed one. Without unknown entries every output is byte for byte that
+of 1.8.8. This pack compares no facet `total` with another view, so the population rule (`total + unknown_entries`)
+changes nothing here.
+
+`samples/negative/command-removed.json` now also carries two unknown cases and expects their unknown after the blocking
+refutation, so the publish check runs the disclosure in the sandbox; the other samples are unchanged and stand for a
+complete view. `functions/facets.test.ts` and `production.test.ts` cover a complete view, an unknown-only view, unknown
+entries with other truncation and a truncated view with neither field; `examples/sweep.json` illustrates the disclosure.
+
 ## Decisions
 
 1. The pack names no product and no catalog, so a run must not pass `product`, `version` or `build`.
@@ -88,7 +113,7 @@ A skip is not a pass. The real knowledge reader test uses synthetic cases includ
 
 ## Limits
 
-- A missing, malformed, duplicate, mismatched or truncated facet input refuses startup (`maintenance-sweep.facets_view`), with the missing complete count, the view notes and root reference for integrator repair; no automatic retry of the same root. Unplaced cases are a hint disclosure, not an unknown sweep verdict. K2 placement proposals are not implemented; the client shows at most one page of examples with a continuation reference; bulk review uses an integrator export.
+- A missing, malformed, duplicate, mismatched or truncated facet input refuses startup (`maintenance-sweep.facets_view`; since 1.8.9 a view truncated only by unknown entries starts and is disclosed, see above), with the missing complete count, the view notes and root reference for integrator repair; no automatic retry of the same root. Unplaced cases are a hint disclosure, not an unknown sweep verdict. K2 placement proposals are not implemented; the client shows at most one page of examples with a continuation reference; bulk review uses an integrator export.
 
 
 - At most 10,000 check outcomes in one call (the engine's cap). The 5,000-case test calls the function directly.

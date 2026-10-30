@@ -19,5 +19,11 @@
     "change": "added",
     "verdict": "unknown",
     "reason": "missing_input"
+  },
+  "unknown_entries": {
+    "facets": { "truncated": true, "unknown_entries": 40, "unknown_only": true },
+    "note": "分面视图只因 40 个用例的命令归属未知而截断：照常启动，这 40 个用例记为未知，不是 0 个，也不算未归位；有纳入范围的变更路径时回归范围的完整性记为未知。其他截断照旧拒绝启动",
+    "verdict": "unknown",
+    "reason": "missing_input"
   }
 }

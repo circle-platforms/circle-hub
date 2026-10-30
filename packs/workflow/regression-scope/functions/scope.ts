@@ -199,8 +199,10 @@ function conclusionOf(change: PathDetail['definition_change']): string {
   return DEFINITION_CHANGE_LABEL[change];
 }
 
-/** The cases in scope, the uncovered paths and the run-level note. */
-export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
+/** The cases in scope, the uncovered paths and the run-level note. `unknown` counts the later-build cases whose command
+ * attribution the facet view could not tell: when a considered path exists they could sit on it, so the note speaks of
+ * the cases whose attribution is known and never calls the scope empty or whole. */
+export function scopeOf(view: NormView, parameters: Parameters, unknown = 0): ScopeResult {
   const warnings: Warning[] = [];
   const missing = new Set<string>();
   const byPath = new Map<string, Side>();
@@ -329,11 +331,12 @@ export function scopeOf(view: NormView, parameters: Parameters): ScopeResult {
   });
 
   const parts: string[] = [`比较 ${view.fromBuild} 与 ${view.toBuild}。`];
+  const partial = unknown > 0 && considered.length > 0;
   if (items.length === 0) {
     if (considered.length === 0) parts.push('两个构建之间没有纳入范围的变更路径，回归范围是空的。');
-    else if (parameters.priorities !== null && casesBeforeFilter > 0) parts.push('按优先级筛选后没有用例留在回归范围内。');
-    else parts.push('变更路径上没有后一构建的用例，回归范围是空的。');
-  } else parts.push(`回归范围共 ${items.length} 条用例。`);
+    else if (parameters.priorities !== null && casesBeforeFilter > 0) parts.push(partial ? '按优先级筛选后没有命令归属已知的用例留在回归范围内。' : '按优先级筛选后没有用例留在回归范围内。');
+    else parts.push(partial ? '变更路径上没有命令归属已知的后一构建用例。' : '变更路径上没有后一构建的用例，回归范围是空的。');
+  } else parts.push(partial ? `命令归属已知的用例里有 ${items.length} 条在回归范围内。` : `回归范围共 ${items.length} 条用例。`);
   if (view.skippedTo > 0) parts.push(`后一构建的索引缺少 ${view.skippedTo} 份列出的文档，未覆盖的路径可能是用例没有被读到。`);
   if (view.truncated) parts.push(`影响视图被截断，变更路径共 ${view.changedPaths} 条，列出的不是全部。`);
   const message = parts.join('');
