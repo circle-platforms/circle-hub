@@ -97,9 +97,29 @@ test('a source projection reads nothing through the pool once its transaction ho
  const a=await source(w,'SYN-ONE');
  const narrow=await openRecords({dataDir:w.kit.dataDir,logDir:join(w.kit.dataDir,'one-connection-logs'),database:w.kit.database,limits:DEFAULT_LIMITS},{keyProvider:w.kit.keyProvider,maxConnections:1});
  t.after(()=>narrow.close());
- const knowledge=createKnowledge({records:narrow,parsers:createTestParserRegistry(),packs:w.packs,external:w.external,jev:null,sandbox:{requireOsIsolation:await sandboxIsolation()},admin:w.admin});
+ // The real registry reads the product's pack records through the pool (hub/runs/packs/registry.ts), and so does this
+ // stand-in: a pack check moved back under the lock would wait for the one connection (review of #108, item 5).
+ const packs=new Proxy(w.packs,{get(target,key){
+  if(key==='productById')return async(id:string)=>{await narrow.store.find({key:'synthetic.pack-read',value:id,kind:'claim',limit:1});return target.productById(id);};
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ const knowledge=createKnowledge({records:narrow,parsers:createTestParserRegistry(),packs,external:w.external,jev:null,sandbox:{requireOsIsolation:await sandboxIsolation()},admin:w.admin});
  const receipt=await knowledge.feeding!.observeSource(w.user,a.body.sha256,{product:w.product.id});
  assert.equal(receipt.objects.length,1,JSON.stringify(receipt));
+});
+
+test('an append binds a native observation committed after its plan was read (review of #108, item 2)',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!,a=await source(w,'SYN-LATE');
+ await layer.observeSource(w.user,a.body.sha256,{product:w.product.id});
+ const native=(await layer.entries(w.user,w.product.id)).find(row=>row.claim.warrant.producer==='function')!;
+ const scope={product:w.product.id,classifications:['functional']};
+ const body=await layer.prepare(w.user,{...native.body,classification:[{value:'functional',quote:{reference:'src:'+a.body.sha256+'/json@1/p/fields/status',text:'open'}}]},scope);
+ const plan=await layer.planAppend(w.user,body,scope);
+ assert.deepEqual(plan.natives,[native.record]);
+ // The plan as it was read before the native observation was committed: the append, holding the lock, binds it anyway.
+ const earlier={bound:plan.bound.filter(digest=>digest!==native.record),natives:[]};
+ const stored=await w.kit.store.withTransaction(tx=>layer.appendPrepared(w.user,body,earlier,scope,'synthetic',tx));
+ assert.ok((await w.kit.store.get<{validity:{bound:string[]}}>(stored))!.body.validity.bound.includes(native.record));
 });
 
 test('a feeding append is checked again just before its transaction (issue #104)',async t=>{
