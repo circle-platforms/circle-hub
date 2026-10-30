@@ -6,12 +6,9 @@ import { isReason } from '../../../contracts/generated/vocabulary.ts';
 import { applyDispatchResults } from './dispatch-results.ts';
 import { recordResultRequests, answerRepairedRequests } from './requests.ts';
 import { ContributionRefusal, KnowledgeError, type PreparedContribution, type ContributionScope } from '../../knowledge/api.ts';
-import { operationDeviceStatus } from '../../knowledge/feeding-leases.ts';
-import { assertOperationFields, CAPTURED_GROUND } from '../../knowledge/declaration-grade.ts';
-import { KnowledgeStore } from '../../knowledge/store.ts';
+import { CAPTURED_GROUND } from '../../knowledge/declaration-grade.ts';
 import { getInterpreter, type CheckOutcome } from '../../rules/api.ts';
-// submit_result (W07, W08, T03, A04): credential-shaped operation device/bed fields are refused before raw persistence;
-// every other argument is stored exactly as received before anything else. A repeat of the same
+// submit_result (W07, W08, T03, A04): the arguments are stored exactly as received before anything else; a repeat of the same
 // (run, submission digest) observed at the same session and declared model returns the stored result without re-running
 // anything. A different session or model is a different judge of that body and is validated again, so a drafter cannot
 // receive the verifier's receipt by resubmitting it. A run superseded by a newer revision of
@@ -193,14 +190,6 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   if(ctx.parsers.forRun)ctx={...ctx,parsers:await ctx.parsers.forRun(stored.body.run)};
   const store = ctx.deps.records.store;
   const run = stored.body;
-  try {
-    assertOperationFields(args);
-  } catch (error) {
-    if (error instanceof KnowledgeError && (error.code === 'CREDENTIAL_IN_UPLOAD' || error.code === 'SUBMISSION_SCHEMA_VIOLATION')) {
-      return { call_result: 'error', acceptance: 'not_accepted', errors: [{ code: error.code, message: error.message, fix: error.fix ?? PROTOCOL_CODES[error.code].fix, ...(typeof error.detail.path === 'string' ? { path: error.detail.path } : {}) }] };
-    }
-    throw error;
-  }
   const received = receivedDigest(args);
   const sessionNow = sessionOf(call);
   const modelNow = typeof args.model === 'string' ? wellFormed(args.model) : null;
@@ -426,10 +415,7 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
             continue;
           }
           const record = await layer.append(prepared, {run:base.run.run,submission:base.digest,session:sessionOf(base.call),model:outcome.model!}, tx);
-          const saved = await store.get(record, tx);
-          const body = saved && KnowledgeStore.contributionOf(saved);
-          if (!body) throw new KnowledgeError('回注入层记录缺失或结构不符，不能确定设备租约状态', {code:'SOURCE_UNAVAILABLE'});
-          receipt.stored.push({ item, record, ...(operationDeviceStatus(body.feeding) ?? {}) });
+          receipt.stored.push({ item, record });
         }
         return putResult(store, { ...outcome.result, contributions: receipt }, ctx.now().toISOString(), tx);
       });
@@ -600,8 +586,6 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
     submissionDigest: base.digest,
     submissionRecord:base.submissionRecord,
     exact,
-    // The evaluation grades the texts this exact phase read against the records they came from (round-eight review, item 3).
-    ...(scope.pinned === undefined ? {} : { pinned: scope.pinned }),
     carried: carried.carried,
     roundsUsed,
     origin,

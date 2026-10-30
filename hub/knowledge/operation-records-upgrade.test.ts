@@ -46,7 +46,7 @@ async function noteSchema(slots: URL | string): Promise<(value: unknown) => bool
 }
 
 test('a run and receipt persisted by the frozen Hub replay unchanged after upgrade', async t => {
-  // The records were written by the Hub before the operation lease binding (generate-upgrade-records.ts); only the
+  // The records were written by the Hub before the operation device fields (generate-upgrade-records.ts); only the
   // current code reads them here.
   const fixture = JSON.parse(await readFile(new URL('upgrade-records.json', frozen), 'utf8')) as UpgradeFixture;
   const oldManifest = JSON.parse(await readFile(join(FROZEN_KNOWLEDGE_CONTRIBUTION.directory, 'pack.json'), 'utf8'));
@@ -145,7 +145,7 @@ test('a run locked to the frozen pack carries notes as the frozen Hub wrote them
   assert.equal(frozenNote(written), true, 'a note the frozen Hub wrote');
   assert.equal(currentNote(written), true);
   // A run started before the upgrade keeps its pack: it is refused at its slot schema rather than given a note it cannot
-  // carry. Its remedy is a new run under the current pack (docs/hub-r6-lease-wip.md).
+  // carry. Its remedy is a new run under the current pack (the 1.3.14 notes of packs/workflow/knowledge-contribution/README.md).
   assert.equal(frozenNote(undeclared), false, 'the frozen pack requires `at` and allows no other time field');
   assert.equal(currentNote(undeclared), true);
 });

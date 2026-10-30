@@ -15,12 +15,12 @@ import {KnowledgeStructureSchema,FeedingRetractionSchema,type FeedingRetraction,
 import type {FeedingQuote as QuoteEvidence} from '../../contracts/generated/shared-interfaces.ts';
 import {parseReference,parserKey,parseDocument,quoteMatches,recognizeAsync,sliceUtf8} from '../refs/api.ts';
 import {parseExternal} from '../connectors/api.ts';
-import {canonicalize,sha256Hex,scanForCredentials,type Page,type Principal,type Transaction,type StoredRecord,type SourceArtifact,type SourceArtifactBody} from '../records/api.ts';
+import {canonicalize,sha256Hex,scanForCredentials,type Principal,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
 import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabulary.ts';
 import {callPackFunction,callPackFunctionBatch} from '../rules/api.ts';
 import {INDEX} from './store.ts';
 import {operationSchema} from './declaration-grade.ts';
-import {completeOperationDevice} from './feeding-leases.ts';
+import {completeOperationDevice} from './operation-device.ts';
 import {SeedlingBody} from '../../contracts/src/knowledge.ts';
 import type {KnowledgeContext} from './context.ts';
 import type {TreeReading} from './read.ts';
@@ -79,10 +79,6 @@ const object=(v:unknown):v is Record<string,any>=>v!==null&&typeof v==='object'&
 interface SeedlingAttachment {locked_root:string;locked_composition:string|null;seedling_root:string;seedling_composition:string;line:string}
 interface Projected {rows:Projection[];pack:string;digest:string;attachment:SeedlingAttachment|null}
 const annotations=['classification','manual_link','relations','applicability','correction','command_link','case_link','paragraph'] as const;
-// The most uploads of one uploader's equal bytes compared for an older note that does not name its upload record, and the
-// most of the uploader's own records read to find them.
-const NOTE_CANDIDATES=64;
-const NOTE_SCAN=2000;
 export const operationRecord=(schema:unknown):schema is 'fed-observation@1'|'fed-procedure@1'|'fed-pitfall@1'=>operationSchema(schema);
 /** Content identity of an operation record: its canonical statement, quotations, exact capture and declared target, nothing else. */
 /**
@@ -384,37 +380,18 @@ export class FeedingLayer {
  async usages(principal:Principal,run:string):Promise<string[]>{const owned=await runById(this.context.records.store,run);if(!owned||!await canViewRun(principal,owned.body,this.context.records.store))return [];const rows=await this.all(USAGE,run);const out:string[]=[];for(const row of rows){const body=this.body(row);if(body&&await this.visible(body.object,principal))out.push(body.object);}for(const row of await this.pending(principal,run))out.push(row.source);return [...new Set(out)];}
  /**
   * A note proposal annotates the note the Hub wrote for one upload, exactly as it was written (round-five review, item 5).
-  * Only the uploader or an admin may, and that is checked before any upload is looked up, so no answer depends on another
-  * person's uploads (round seven). A note written now names its upload record, so only that record's note is read. An older
-  * note does not: the uploader's own uploads of these bytes are compared, a bounded number of them, and more than one equal
-  * note is refused rather than guessed (rounds six and seven).
+  * Only the uploader or an admin may. A note written now names its upload record. An older note does not, and is read as
+  * main always read it: the uploader's upload of these bytes captured at its `at`. Equal uploads without a record of their
+  * own count as one, as InfoTest merges equal facts that carry no id of their own.
   */
  private async uploadedSource(principal:Principal,body:Record<string,any>){
   if(typeof body.by!=='string'||body.by!==principal.id&&principal.role!=='admin')fail('声明来源只允许上传者和管理员');
-  const base=canonicalize(Object.fromEntries(Object.entries(body).filter(([key])=>!annotations.includes(key as never))));
   const named=typeof body.source?.artifact==='string'?body.source.artifact as string:undefined;
-  const candidates=named!==undefined?[named]:await this.olderUploads(body.by,body.source.bytes);
-  const matches:string[]=[];
-  for(const digest of candidates){const written=await this.uploadNote(digest);if(written!==null&&canonicalize(written)===base)matches.push(digest);}
-  if(matches.length===0)fail('缺少与上传者和这份上传说明一致的上传原件');
-  if(matches.length>1)fail('多次上传写下了完全相同的说明，无法确定是哪一次上传；请管理员核对这些上传');
-  return this.source(principal,body.source.bytes,matches[0]!);
- }
- /**
-  * The uploader's own uploads of these bytes, for an older note that does not name its upload. Only the uploader's records
-  * are read, page by page and at most NOTE_SCAN of them, never every record of the bytes (round-seven review, item 5).
-  */
- private async olderUploads(by:string,bytes:string):Promise<string[]>{
-  const found:string[]=[];
-  let cursor:string|null=null,read=0;
-  do{
-   const page:Page<StoredRecord<SourceArtifactBody>>=await this.context.records.store.find<SourceArtifactBody>({key:'artifact.author',value:by,kind:'source_artifact',limit:500,cursor});
-   for(const row of page.items)if(row.body.sha256===bytes&&'upload'in row.body.origin&&row.body.author.user===by)found.push(row.digest);
-   if(found.length>NOTE_CANDIDATES)fail(`同一上传者上传了超过 ${NOTE_CANDIDATES} 份相同字节，无法逐份核对说明；重新上传原件，按新写下的说明（带上传记录）提交`);
-   read+=page.items.length;cursor=page.next;
-   if(cursor!==null&&read>=NOTE_SCAN)fail(`上传者的上传记录超过 ${NOTE_SCAN} 份，无法有界地找到这份旧说明对应的上传；重新上传原件，按新写下的说明（带上传记录）提交`);
-  }while(cursor!==null);
-  return found;
+  const artifact=named??(await this.context.records.artifacts.records(body.source.bytes)).find(row=>'upload'in row.body.origin&&row.body.author.user===body.by&&row.body.captured_at===body.at)?.digest;
+  const written=artifact===undefined?null:await this.uploadNote(artifact);
+  const base=Object.fromEntries(Object.entries(body).filter(([key])=>!annotations.includes(key as never)));
+  if(written===null||canonicalize(written)!==canonicalize(base))fail('缺少与上传者和这份上传说明一致的上传原件');
+  return this.source(principal,body.source.bytes,artifact);
  }
  /** The note body `upload()` wrote for one upload record, or null when none was written. */
  private async uploadNote(artifact:string):Promise<Record<string,unknown>|null>{
@@ -512,8 +489,7 @@ export class FeedingLayer {
  }
  private async completeOperation(principal:Principal,raw:unknown,scope:FeedingScope):Promise<unknown>{
   if(!object(raw)||!operationRecord(raw.schema))return raw;
-  for(const key of ['binding','version','build','line','family','by','run','at','object','lease','lease_id','lease_unconfirmed','captured_at_declared','received_at'])if(key in raw){
-   if(key==='lease'||key==='lease_id'||key==='lease_unconfirmed')fail(`提交写了 ${key}。租约由 Hub 填写，删掉该字段后重交；Hub 按上传者、声明采集时刻和收到时刻核对租约记录。`);
+  for(const key of ['binding','version','build','line','family','by','run','at','object','captured_at_declared','received_at'])if(key in raw){
    fail(`提交写了 ${key}。操作记录的版本和采集事实只由 Hub 填写；缺的是运行锁定的构建或台架在装构建。删掉该字段后重交；这不是终局。`);
   }
   const bytes=object(raw.source)&&raw.source.system==='upload'&&typeof raw.source.bytes==='string'?raw.source.bytes:null;
@@ -522,7 +498,7 @@ export class FeedingLayer {
   const actor=artifact.body.author.user;
   if(actor===null)fail('操作记录的上传原件缺记录者');
   if(raw.product!==scope.product||raw.root!==(scope.root??null)||!scope.product||!scope.root)fail('操作记录必须挂在本次运行锁定的产品和根上');
-  const device=await completeOperationDevice(this.context.records.store,{run:scope.run??null,device:raw.device,bed:raw.bed,user:actor,capturedAt:artifact.body.captured_at,receivedAt:artifact.created_at,captureTimeDeclared:artifact.body.captured_at_declared===true},this.context.leases);
+  const device=await completeOperationDevice(this.context.records.store,{run:scope.run??null,device:raw.device,bed:raw.bed});
   const resolved={...raw,source:{...raw.source as Record<string,unknown>,artifact:artifact.digest},...device};
   return {...resolved,object:sha256Hex(canonicalize(operationIdentity(resolved))),binding:await this.operationBinding(scope),by:actor,run:scope.run??null,at:artifact.body.captured_at_declared===true?artifact.body.captured_at:undefined,captured_at_declared:artifact.body.captured_at_declared===true,received_at:artifact.created_at};
  }

@@ -65,67 +65,6 @@ test('two uploads of the same bytes at the same declared time are each annotated
  }
 });
 
-test('an older note that two uploads wrote alike is refused rather than bound to a guessed upload (round six, item 5)',async t=>{
- const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
- const bytes=Buffer.from('synthetic note uploaded twice before notes named their upload');
- const upload=(session:string)=>w.kit.artifacts.ingest({bytes,mediaType:'text/plain',origin:{upload:{session,message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},readTier:'model_readable'});
- const uploads=[await upload('synthetic-older-1'),await upload('synthetic-older-2')];
- // The notes an older Hub wrote: the same body for both, with `at` and without the upload record.
- const older={schema:'fed-note@1',object:uploads[0]!.body.sha256,product:null,root:null,path:null,source:{system:'upload',bytes:uploads[0]!.body.sha256},by:w.user.id,run:null,at:'2026-10-27T08:00:00.000Z'};
- const write=(layer as unknown as {put(...args:unknown[]):Promise<unknown>}).put.bind(layer);
- await w.kit.store.withTransaction(async tx=>{for(const artifact of uploads)await write(older,w.user,'hub.upload@1',['src:'+older.object],[older.object,artifact.digest],'note:'+artifact.digest,[{key:'knowledge.feeding.object',value:older.object},{key:'knowledge.feeding.product',value:w.user.id}],tx,false,null);});
- const proposal={...older,classification:[{value:'ticket',quote:{reference:'src:'+older.object+'/text@1/l/1',text:'synthetic note'}}]};
- await assert.rejects(()=>layer.prepare(w.user,proposal as never,{}),/无法确定是哪一次上传/);
-});
-
-/** Uploads of the same bytes by one user, each its own record, and the note an older Hub wrote for one of them. */
-async function olderUploads(w:World,user:World['user'],count:number,label:string){
- const bytes=Buffer.from('synthetic note '+label);
- const uploads:SourceArtifact[]=[];
- for(let index=0;index<count;index++)uploads.push(await w.kit.artifacts.ingest({bytes,mediaType:'text/plain',origin:{upload:{session:`synthetic-${label}-${index}`,message:null}},author:{user:user.id},provenanceType:'declared',visibility:{readers:[user.id],admins:true,packs:[],shareable:true},readTier:'model_readable'}));
- const older={schema:'fed-note@1',object:uploads[0]!.body.sha256,product:null,root:null,path:null,source:{system:'upload',bytes:uploads[0]!.body.sha256},by:user.id,run:null,at:'2026-10-27T08:00:00.000Z'};
- const layer=w.knowledge.feeding!,write=(layer as unknown as {put(...args:unknown[]):Promise<unknown>}).put.bind(layer);
- await w.kit.store.withTransaction(async tx=>{await write(older,user,'hub.upload@1',['src:'+older.object],[older.object,uploads[0]!.digest],'note:'+uploads[0]!.digest,[{key:'knowledge.feeding.object',value:older.object},{key:'knowledge.feeding.product',value:user.id}],tx,false,null);});
- return {uploads,proposal:{...older,classification:[{value:'ticket',quote:{reference:'src:'+older.object+'/text@1/l/1',text:'synthetic note'}}]}};
-}
-
-test('who may annotate an upload is checked before the uploader\'s uploads are counted (round-seven review, item 5)',async t=>{
- const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
- // Another user names the uploader in an older note: the answer is the same whether the uploader has one upload of the
- // bytes or more than the bound.
- for(const [count,label] of [[1,'probed-once'],[65,'probed-often']] as const){
-  const {proposal}=await olderUploads(w,w.user,count,label);
-  await assert.rejects(()=>layer.prepare(w.outsider,proposal as never,{}),(error:Error)=>/上传者和管理员/.test(error.message)&&!/超过/.test(error.message),`${count} uploads`);
- }
-});
-
-test('an older note is matched among at most 64 of the uploader\'s own uploads, read without every record of the bytes (round-seven review, item 5)',async t=>{
- const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
- // Reading the chosen upload's bytes looks at every record of them, as every source read does; finding which upload an older
- // note belongs to adds no such read.
- const all=t.mock.method(w.kit.artifacts,'records');
- const named=await w.kit.artifacts.ingest({bytes:Buffer.from('synthetic note named'),mediaType:'text/plain',origin:{upload:{session:'synthetic-named',message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},readTier:'model_readable'});
- await layer.upload(w.user,named);
- const note=(await layer.entries(w.user,w.user.id)).map(row=>row.body as Record<string,any>).find(body=>body.object===named.body.sha256)!;
- let before=all.mock.calls.length;
- assert.ok(await layer.prepare(w.user,{...note,classification:[{value:'ticket',quote:{reference:'src:'+named.body.sha256+'/text@1/l/1',text:'synthetic note'}}]} as never,{}));
- const byName=all.mock.calls.length-before;
- const {proposal}=await olderUploads(w,w.user,64,'sixty-four');
- before=all.mock.calls.length;
- assert.ok(await layer.prepare(w.user,proposal as never,{}),'64 uploads are compared');
- assert.equal(all.mock.calls.length-before,byName,'the search adds no read of every record of the bytes');
- const over=await olderUploads(w,w.user,65,'sixty-five');
- await assert.rejects(()=>layer.prepare(w.user,over.proposal as never,{}),/超过 64 份相同字节/);
-});
-
-test('an older note is refused, not guessed, once the uploader\'s records exceed the bounded read (round-seven review, item 5)',async t=>{
- const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
- const {proposal}=await olderUploads(w,w.user,1,'among-many');
- // Later records of other bytes by the same uploader; only their index entries and bodies are read.
- await w.kit.store.withTransaction(async tx=>{for(let index=0;index<2000;index++){const sha=index.toString(16).padStart(64,'0');await w.kit.store.put({kind:'source_artifact',schema:RECORD_SCHEMAS.source_artifact,provenance:'declared',body:{sha256:sha,origin:{upload:{session:'synthetic-many',message:null}},author:{user:w.user.id,declared:null}},index:[{key:'artifact.sha256',value:sha},{key:'artifact.author',value:w.user.id}]},tx);}});
- await assert.rejects(()=>layer.prepare(w.user,proposal as never,{}),/超过 2000 份/);
-});
-
 test('a new note that names another person\'s upload of the same bytes is refused (round-seven review, item 5)',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
  const bytes=Buffer.from('synthetic note uploaded by two people');

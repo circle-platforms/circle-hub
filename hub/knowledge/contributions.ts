@@ -17,7 +17,7 @@ import type { TreeReading } from './read.ts';
 import { canonicalSize } from './digest.ts';
 import { CAPTURED_GROUND, DECLARATION_GROUND, declarationGradeBody } from './declaration-grade.ts';
 import { operationIdentity, operationRecord, reproductionLease } from './feeding.ts';
-import { operationDeviceNote } from './feeding-leases.ts';
+import { operationDeviceNote } from './operation-device.ts';
 import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
 
 export interface ContributionScope {
@@ -328,11 +328,8 @@ export class ContributionLayer {
     const principal=await this.#context.records.principals.get(prepared.submitted_by);
     const feedingRecord=prepared.feeding&&principal?await this.#context.feeding?.appendPrepared(principal,prepared.feeding,{product:prepared.product,root:prepared.root,run:origin.run},origin.model,tx):undefined;
     const body = KnowledgeContributionBody.parse({ ...prepared,...(feedingRecord?{feeding_record:feedingRecord}:{}), session:origin.session,model:origin.model, submitted_at: this.#context.now().toISOString() });
-    const feeding=body.feeding;
-    const operation=feeding!==undefined&&operationRecord(feeding.schema);
-    const lease=operation&&feeding!==undefined
-      ? ('lease_id' in feeding ? (typeof feeding.lease_id==='string'?feeding.lease_id:null) : await reproductionLease(this.#context.records.store,origin.run))
-      : null;
+    const operation=body.feeding!==undefined&&operationRecord(body.feeding.schema);
+    const lease=operation?await reproductionLease(this.#context.records.store,origin.run):null;
     return (await this.#context.store.putClaim(SCHEMAS.contribution, operation?'client_captured':'declared', body,
       [{ key: INDEX.contribution, value: body.product }, { key: 'knowledge.contribution.identity', value: key },
         {key:'knowledge.contribution.node',value:digestOf({product:body.product,path:body.path})},

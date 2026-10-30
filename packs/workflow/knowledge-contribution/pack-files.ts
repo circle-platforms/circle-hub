@@ -16,7 +16,7 @@ export function slots(){
  const schema=JSON.parse(readFileSync(new URL('../../../contracts/generated/schemas/contribution-input.v1.schema.json',import.meta.url),'utf8'));
  return contributionSlots(schema,DOCUMENT_OUTPUT_KIND.map(code=>({code,label:labelOf('document_output_kind',code)})));
 }
-export const VERSION = '1.3.13';
+export const VERSION = '1.3.14';
 export function generated() {
   const axis = (name: string, values: readonly string[]) => values.map(code => ({code,label:labelOf(name as 'entry_kind',code as never)}));
   return {id:'knowledge-contribution',version:VERSION, model_readable:READ_TIER.find(code=>code==='model_readable'), axes: {entry_kind:axis('entry_kind',ENTRY_KIND),document_output_kind:axis('document_output_kind',DOCUMENT_OUTPUT_KIND),relation_kind:axis('relation_kind',RELATION_KIND),read_tier:axis('read_tier',READ_TIER)}};

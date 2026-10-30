@@ -88,10 +88,6 @@ export interface ReviewOptions {
   externalSamples?: string[];
   /** Add the data_quotes check: a quote@1 table reaching a reference deep inside slot data. */
   dataQuotes?: boolean;
-  /** Add the self_cited check: a pack function that cites the item's own location as the ground of a support. */
-  selfCited?: boolean;
-  /** Give the data_quotes check a read declaration with this byte cap (it reads the hint sources). */
-  dataQuotesMaxBytes?: number;
   /** Replace the JSON Schema of the findings' `data`. */
   findingsData?: Record<string, unknown>;
   /** Replace the JSON Schema of the `strict` parameter. */
@@ -116,7 +112,7 @@ export function reviewPack(options: ReviewOptions = {}): PackSpec {
       independent_of: 'predecessor',
       ...(options.acceptsDeclared === false ? {} : { accepts_declared_independence: true }),
       ...(options.dynamicFindings ? { layers: [...LAYER] } : {}),
-      checks: ['findings_quotes', 'findings_catalog', 'findings_rank', 'findings_grounds', ...(options.dataQuotes ? ['data_quotes'] : []), ...(options.selfCited ? ['self_cited'] : [])],
+      checks: ['findings_quotes', 'findings_catalog', 'findings_rank', 'findings_grounds', ...(options.dataQuotes ? ['data_quotes'] : [])],
       error_handling: [
         { code: 'core.catalog.membership_contradicted', action: 'repair', max_rounds: 2 },
         { code: 'toy-review.rank_too_low', action: 'reject' },
@@ -132,7 +128,7 @@ export function reviewPack(options: ReviewOptions = {}): PackSpec {
       { id: 'catalog', interpreter: 'catalog@1', table: 'tables/catalog.json', applies: 'item', catalog: 'commands@1', judges: 'subject', tier: 'blocking' },
       { id: 'findings_quotes', interpreter: 'quote@1', table: 'tables/findings-quotes.json', applies: 'item', judges: 'artifact_under_verification', tier: 'blocking' },
       ...(options.dataQuotes
-        ? [{ id: 'data_quotes', interpreter: 'quote@1' as const, table: 'tables/data-quotes.json', applies: 'item' as const, judges: 'artifact_under_verification' as const, tier: 'blocking' as const, ...(options.dataQuotesMaxBytes ? { reads: { roles: ['hint' as const], max_bytes: options.dataQuotesMaxBytes } } : {}) }]
+        ? [{ id: 'data_quotes', interpreter: 'quote@1' as const, table: 'tables/data-quotes.json', applies: 'item' as const, judges: 'artifact_under_verification' as const, tier: 'blocking' as const }]
         : []),
       { id: 'findings_catalog', interpreter: 'catalog@1', table: 'tables/findings-catalog.json', applies: 'item', catalog: 'commands@1', judges: 'artifact_under_verification', tier: 'blocking' },
       {
@@ -152,7 +148,6 @@ export function reviewPack(options: ReviewOptions = {}): PackSpec {
         basis: '要求项 findings：关于产品行为的发现要有线索以外的根据',
       },
       ...(options.fragile ? [{ id: 'fragile', function: { module: `functions/${options.fragile}.ts` }, applies: 'item' as const, judges: 'subject' as const, tier: 'advisory' as const }] : []),
-      ...(options.selfCited ? [{ id: 'self_cited', function: { module: 'functions/self-cited.ts' }, applies: 'item' as const, judges: 'artifact_under_verification' as const, tier: 'advisory' as const, basis: '要求项 findings：条目原文可读（合成，引用条目自身作根据）' }] : []),
     ],
   };
   const workflow: WorkflowFile = {
@@ -258,7 +253,6 @@ export function reviewPack(options: ReviewOptions = {}): PackSpec {
     'functions/grounds.ts': { function: 'review/grounds.ts' },
   };
   if (options.fragile) files[`functions/${options.fragile}.ts`] = { function: `review/${options.fragile}.ts` };
-  if (options.selfCited) files['functions/self-cited.ts'] = { function: 'review/self-cited.ts' };
   for (const check of options.externalSamples ?? []) {
     files[`samples/external/${check}.json`] = {
       json: { id: `external_${check}`, source: 'retained_delivery', check, note: '合成外部留存交付样例（占位，发布校验只数来源）', subject: {}, expect: [] },

@@ -1,34 +1,18 @@
-# knowledge-contribution 1.3.13
+# knowledge-contribution 1.3.14
 
 所有者 2026-10-23 傍晚决定：候选留在 Circle 本地。Circle 的整合技能判定成为事实后开独立回注运行；Hub 核对原文、来源和归位，要求项全部满足才入回注层。依据是新版 `docs/hub-r4-tasks/kb-candidates.md`、知识库方向第二节及 K03、W07 R[4]、P10、K02 F[6]。
 
-## 1.3.13（第八轮复核，2026-10-30）
+## 1.3.14（按所有者方向收窄，2026-10-30）
 
-- operation-capture 的统一出口也核对请求目标：Hub 地址里（原样或百分号解码后的路径）含当前 Hub 令牌或其 12 个字符片段时，一个请求也不发出（第八轮复核）。片段规则只认连续 12 个字符：切成更短的几段或另行编码的令牌不在其内。
-- 未声明采集时间的操作记录，读侧说明改为「采集时间未声明，记录里没有采集时刻」；此前「取自上传时刻」一句会让人以为上传时刻被当成了采集时间（第八轮复核第 1 项）。
+1.3.8 至 1.3.13 是 circle-hub #102 复核期间的编号，没有合入；本版取代它们。所有者 2026-10-30 决定：台架的预订、租约和释放都归 test-bed 包，回注层不证明租约；Circle Hub 及其任务包暂不支持 Windows。
 
-## 1.3.12（第七轮复核，2026-10-30）
-
-- operation-capture 的每个请求都在同一个出口核对：除授权头外，请求的方法与参数、上传文件解码后的字节和其余请求头（包括会话号）都不得含当前 Hub 令牌或它的任意 12 个字符片段；初始化和工作清单上传也在其中，此前只核对了经过检查的工具调用（第七轮复核）。
-- 上传原件前的检查改用同一片段规则：采集后轮换进来的令牌，哪怕只有一段出现在原件里，也停止上传（第七轮复核）。
-
-## 1.3.11（第六轮复核，2026-10-30）
-
-- 包内生成的结构随模型更新：Hub 新写的上传说明（fed-note）在 `source.artifact` 里写明对应的上传原件记录，同一份字节上传两次也能分清是哪一次；提案原样带回这个字段即可，Hub 只核对它指向的那份说明（第六轮复核第 5 项）。
-- operation-capture 发出任何经过核对的请求前，整份请求不得含当前 Hub 令牌：提案里的说明、动作、引文等全部文字都在检查之内，不只设备与台架名；含令牌的提案在开始运行前就被拒（第六轮复核）。
-
-## 1.3.10（第五轮复核，2026-10-30）
-
-- operation-capture 的 Hub 客户端不再把核对过的令牌存在客户端上：令牌随调用逐级传给携带它的请求，同一客户端上并发的两次调用各自带着自己核对过的令牌（第五轮复核第 4 项）。
-- 锁定 1.3.8 及更早版本的运行，其槽位结构要求 fed-note 带 `at` 且不允许其他时间字段，因此带不了新结构的上传说明，提交会在结构检查处被拒；用当前版本重新开始运行。冻结 Hub 写下的旧说明照旧可以标注。
-
-## 1.3.9（第四轮复核，2026-10-30）
-
-- 包内生成的结构（`tables/knowledge-structure.json`、`slots.schema.json`）随模型更新：上传自动生成的 fed-note 只在客户端声明了采集时刻时带 `at`；未声明时不写 `at`，另记 `captured_at_declared=false` 与 Hub 收到时刻 `received_at`，和三类操作记录一致。此前未声明的上传时刻被当作采集事实写进 `at`（第四轮复核第 5 项）。
-
-## 1.3.8（第四轮复核，2026-10-30）
-
-- start_run 与 submit_result 只读一次当前令牌：检查 device/bed 的令牌与请求 Authorization 使用的是同一个。此前检查后、发送前若令牌轮换，请求会用新令牌发送字段，旧令牌的检查拦不住（第四轮复核第 4 项）。
+- 操作记录只写设备和台架，不写租约：结构里去掉 `lease`、`lease_id` 和 `lease_unconfirmed`，客户端写了也会被拒。运行或它接续的预订冻结了台架清单时，Hub 按清单核对 `device` 和 `bed`；只有一个台架含该设备时补上台架，同名设备在几个台架里就要写明 `bed`。没有清单时照声明记录。视图写「设备 X（台架 Y）」。
+- submit_result 回执的 `stored` 只有 `item` 和 `record`。
+- Hub 新写的上传说明（fed-note）在 `source.artifact` 里写明对应的上传原件记录，同一份字节上传两次也能分清；提案原样带回这个字段即可。旧说明不带这个字段，仍按上传者和采集时刻找它的上传。
+- 上传自动生成的 fed-note 只在客户端声明了采集时刻时带 `at`；没有声明时不写 `at`，另记 `captured_at_declared=false` 和 Hub 收到时刻 `received_at`，和三类操作记录一致。读侧写「采集时间未声明，记录里没有采集时刻」。锁定 1.3.7 及更早版本的运行带不了新结构的上传说明，用当前版本重新开运行；冻结 Hub 写下的旧说明照旧可以标注。
+- operation-capture：采集时把当前 Hub 令牌替换为 `%HUB_TOKEN%`，照常上传。提案任何文字含当前令牌，开运行前就拒；submit_result 用同一次读到的令牌核对整份请求并发送，令牌在两步之间轮换也拦得住。令牌随调用传给携带它的请求，不存在客户端上。
+- 撤回 1.3.12、1.3.13 的出口核对（Hub 地址、请求头、上传文件里的 12 个字符令牌片段）：只核对整个令牌，Hub 另在服务端拒收含调用者令牌的请求（circle-hub #106）。
+- operation-capture 在 Windows 上直接报错，钩子不采集。
 
 ## 1.3.7（合入 main，2026-10-30）
 
@@ -135,7 +119,7 @@ Circle 做过的事走同一回注槽，不另开通道。产出种类用 `asser
 
 ## Circle 的操作采集技能（随本版提供）
 
-技能位于 `tools/operation-capture`，自成一体，Node 24 直接运行，只用内置模块和 fetch。安装时把清单所列的该目录原样复制到目标 Circle home 的 `skills/operation-capture/`，不要复制成整个回注包，也不要改写 `hooks.json`、`egress.json` 或 `generated.json`。官方核验命令是 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录> --skill operation-capture`；它核大小、SHA-256、缺项、额外文件和链接，Jev 不带 `--skill` 的原命令不变。
+技能位于 `tools/operation-capture`，自成一体，Node 24 直接运行，只用内置模块和 fetch；目前只支持 macOS 和 Linux。安装时把清单所列的该目录原样复制到目标 Circle home 的 `skills/operation-capture/`，不要复制成整个回注包，也不要改写 `hooks.json`、`egress.json` 或 `generated.json`。官方核验命令是 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录> --skill operation-capture`；它核大小、SHA-256、缺项、额外文件和链接，Jev 不带 `--skill` 的原命令不变。
 
 技能只在会话加载后启动 `after_tool` 钩子，且默认不采。用户按技能说明为明确会话执行 `enable`，提供 Hub 地址和单独配置的 0600 令牌文件；不读 Circle 密钥库、环境密钥或其他配置。状态目录在该 Circle home 的 `operation-capture/`。`disable` 与进行中的采集、上传和整合串行，返回后不再执行这些动作；`flush` 只在重新开启后重试。钩子没有模型输出，失败只写不含原文的本地结构日志。
 

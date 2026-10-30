@@ -4,14 +4,14 @@
 // source, as a quotation of it (T04 R[5]). A value that does not resolve keeps the whole submission from being accepted
 // (T03 R[3]); a statement the catalog contradicts is not an unresolved value but a fact the checks judge.
 import { CORE_VIOLATION_CODES,type ProtocolCode } from '../../../contracts/generated/protocol.ts';
-import { ProvenanceTypeSchema, type ProducerKind, type Resolution, type SourceRole } from '../../../contracts/generated/vocabulary.ts';
+import type { ProducerKind, Resolution, SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import type { ValueResolution } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { TreeRootBody } from '../../../contracts/src/knowledge.ts';
 import { SlotClaim, type ResolvedEvidence } from '../../../contracts/src/pack.ts';
 import type { ItemProjection, RunRecord } from '../../../contracts/src/run.ts';
 import type { CriterionChange, Submission } from '../../../contracts/src/submission.ts';
-import { canonicalize, RECORD_SCHEMAS, sha256Hex, type Principal, type SourceArtifact, type SourceArtifactBody } from '../../records/api.ts';
+import { canonicalize, sha256Hex, type Principal } from '../../records/api.ts';
 import type { LoadedWorkflow } from '../../ports.ts';
 import {
   ReferenceSyntaxError,
@@ -32,17 +32,15 @@ import {
   type ReaderIdentity,
   type Reference,
   type Resolved,
-  type SourceReader,
 } from '../../refs/api.ts';
 import { SandboxError, type CatalogView } from '../../rules/api.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
 import { HubReadFailure, retryRead } from './retry-read.ts';
 import { describe, protocolError } from './errors.ts';
-import { declarationGroundRefusal, UNKNOWN_GROUND } from '../../knowledge/declaration-grade.ts';
-import { recordReader, sourceReader, principalOf } from './readers.ts';
+import { declarationGroundsRefusal } from '../../knowledge/declaration-grade.ts';
+import { recordReader, sourceReader } from './readers.ts';
 import { resultsOf } from './store.ts';
-import { packIdOf } from './lineage.ts';
 import { pointerOf, valueAt } from './util.ts';
 
 /** What a run may cite: its bound sources by digest, the records bound as inputs, the locked root and its catalogs. */
@@ -58,116 +56,6 @@ export interface RunScope {
   catalogs: readonly CatalogView[];
   /** Quotation candidates of every bound source the consumer may read, parsed on first use. */
   candidates(): Promise<QuoteCandidate[]>;
-  /** The distinct artifact records the run bound to each source digest; absent without a run. */
-  bound?: ReadonlyMap<string, readonly string[]>;
-  /** The run's pack id; absent without a run. */
-  pack?: string;
-  /** The records chosen for each source digest, shared by the quote search and the resolver of this scope; absent without a run. */
-  pinned?: PinnedSources;
-}
-
-/** Every source digest a run bound to artifact records, with its distinct records in binding order. */
-export function boundOf(run: Pick<RunRecord, 'sources'>): Map<string, string[]> {
-  const out = new Map<string, string[]>();
-  for (const binding of run.sources) {
-    if (binding.artifact === undefined) continue;
-    let ref: Reference;
-    try { ref = parseReference(binding.reference); } catch { continue; }
-    if (ref.scheme !== 'src') continue;
-    const records = out.get(ref.sha256) ?? [];
-    if (!records.includes(binding.artifact)) records.push(binding.artifact);
-    out.set(ref.sha256, records);
-  }
-  return out;
-}
-
-/**
- * The artifact records chosen for one source digest and how they were found, which decides how a read stays on them.
- * `complete` is false when a binding names anything but a source artifact of exactly these bytes.
- */
-export interface SourceChoice { records: SourceArtifact[]; via: 'bound' | 'reader' | 'run'; complete: boolean }
-
-/** The records a use as grounds must check: all of them, or none when the choice could not be determined in full. */
-export function groundRecords(choice: SourceChoice): SourceArtifact[] {
-  return choice.complete ? choice.records : [];
-}
-
-/**
- * A source artifact of exactly these bytes whose provenance is a known one and the same in its body and on the record, so
- * the grade of grounds read from it is known (round-seven review, item 3).
- */
-function exactSource(record: { kind: string; schema: string; provenance: string; body: unknown } | null, sha256: string): boolean {
-  // The store does not check a body against its schema: a malformed one is no source rather than a crash (round eight).
-  if (record === null || record.kind !== 'source_artifact' || record.schema !== RECORD_SCHEMAS.source_artifact) return false;
-  const body = record.body as { sha256?: unknown; provenance_type?: unknown } | null;
-  return body !== null && typeof body === 'object' && !Array.isArray(body) && body.sha256 === sha256
-    && ProvenanceTypeSchema.safeParse(body.provenance_type).success && body.provenance_type === record.provenance;
-}
-
-/**
- * The artifact records a use of one source digest stands on: the records the run bound to it, each verified to be a source
- * artifact of exactly these bytes ('bound'); else the one record the reader can read now ('reader'); else, for a run that
- * bound none, the generated record the run itself may read ('run'). A read uses the first; a use as grounds checks them all
- * and is refused when there is none or a binding could not be verified (round-six review, item 3).
- */
-export async function sourceChoice(ctx: EngineContext, reader: ReaderIdentity, pins: readonly string[], sha256: string, consumer: ProducerKind): Promise<SourceChoice> {
-  const { store, artifacts } = ctx.deps.records;
-  if (pins.length > 0) {
-    const records = await Promise.all(pins.map(pin => store.get<SourceArtifactBody>(pin)));
-    const exact = records.filter(record => exactSource(record, sha256)) as SourceArtifact[];
-    return { records: exact, via: 'bound', complete: exact.length === pins.length };
-  }
-  const principal = principalOf(reader);
-  const direct = await artifacts.source(principal, sha256, { consumer });
-  if (direct !== null) return { records: [direct.artifact], via: 'reader', complete: exactSource(direct.artifact, sha256) };
-  const viaRun = reader.run === undefined ? null : await artifacts.sourceForRun(principal, sha256, reader.run, { consumer });
-  return { records: viaRun === null ? [] : [viaRun.artifact], via: 'run', complete: viaRun !== null && exactSource(viaRun.artifact, sha256) };
-}
-
-/** A source reader that stays on the records chosen for each source digest, with the choice behind it and whose it is. */
-export interface PinnedSources { sources: SourceReader; choice(sha256: string): Promise<SourceChoice>; consumer: ProducerKind; owner: ReaderIdentity }
-
-/** Whether two reader identities read alike: the same account, role and run. */
-export function sameReader(a: ReaderIdentity, b: ReaderIdentity): boolean {
-  return a.user === b.user && a.role === b.role && a.run === b.run;
-}
-
-/**
- * A source reader that stays on the records chosen for each digest, with the choice behind it. A bound or directly readable
- * record is pinned for every read. A generated record that a run reads on its own authority is the newest of its bytes and
- * cannot be named: each read is checked to return the chosen record, so a newer one of the same bytes fails the read rather
- * than changing the evidence; the Hub then answers that the source could not be checked, and the same submission again is
- * a new evaluation that chooses again (rounds seven and eight). Every read rechecks access, and a failed or empty choice is
- * not kept, so a retry looks again. The resolver, its scope's quote search and the evaluator read through one of these, so a
- * use as grounds checks the records its reads came from (round-four review, item 3; rounds five to eight).
- */
-export function pinnedSources(ctx: EngineContext, owner: ReaderIdentity, bound: ReadonlyMap<string, readonly string[]> | undefined, consumer: ProducerKind): PinnedSources {
-  const { artifacts } = ctx.deps.records;
-  const chosen = new Map<string, Promise<SourceChoice>>();
-  const choice = (sha256: string): Promise<SourceChoice> => {
-    let found = chosen.get(sha256);
-    if (!found) {
-      const lookup = sourceChoice(ctx, owner, bound?.get(sha256) ?? [], sha256, consumer);
-      chosen.set(sha256, found = lookup);
-      const forget = () => { if (chosen.get(sha256) === lookup) chosen.delete(sha256); };
-      lookup.then(made => { if (made.records.length === 0) forget(); }, forget);
-    }
-    return found;
-  };
-  const sources: SourceReader = {
-    async read(sha256, reader) {
-      const made = await choice(sha256);
-      const [record] = made.records;
-      if (record === undefined) return null;
-      if (made.via !== 'run') return sourceReader(artifacts, consumer, [{ reference: `src:${sha256}`, role: 'expected', artifact: record.digest }]).read(sha256, reader);
-      if (reader.run === undefined) return null;
-      const source = await artifacts.sourceForRun(principalOf(reader), sha256, reader.run, { consumer });
-      if (source === null || source.artifact.digest !== record.digest) return null;
-      if (consumer === 'model' && source.bytes === null && source.readTier !== 'retain_only') return null;
-      return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
-    },
-  };
-  return { sources, choice, consumer, owner };
 }
 
 /** Bytes a Hub record reference binds as a source (B03 R[4]): the canonical JSON of the record, or of the value its pointer names. */
@@ -238,15 +126,8 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
   }
   let candidates: Promise<QuoteCandidate[]> | undefined;
   const identity: ReaderIdentity = { user: reader.id, role: reader.role, run: run.run };
-  const bound = boundOf(run);
-  // The quote search reads the records the resolver reads: a command resolves only against the bytes of the chosen record
-  // (round-seven review, item 3).
-  const pinned = pinnedSources(ctx, identity, bound, consumer);
   return {
     reader: identity,
-    bound,
-    pack: packIdOf(run.pack),
-    pinned,
     sources,
     records,
     subject,
@@ -258,7 +139,7 @@ export async function buildScope(ctx: EngineContext, run: RunRecord, workflow: L
       (candidates ??= (async () => {
         const out: QuoteCandidate[] = [];
         for (const [sha, role] of sources) {
-          const source = await readScope(`src:${sha}`, async () => await pinned.sources.read(sha, identity));
+          const source = await readScope(`src:${sha}`, () => artifacts.source(reader, sha, { consumer }));
           if (source === null || source.bytes === null) continue;
           const key=(parser:import('../../refs/api.ts').Parser)=>`${sha}\0${parserCacheKey(parser)}\0${source.mediaType}`;
           const cached=ctx.parsers.forMediaType(source.mediaType).map(parser=>({parser,document:ctx.documents.get(key(parser))})).find(row=>row.document!==undefined);
@@ -432,10 +313,8 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
   let preparedBytes=0;
   const preparedLimit=64*1024*1024;
   let aborted:HubReadFailure|undefined;
-  // Reading is an authorization decision, not immutable document content: every read rechecks it, of the records chosen
-  // for the digest. The bindings come with the scope, so a run that is still starting reads before its record is stored.
-  const pinned = scope.pinned?.consumer === consumer ? scope.pinned : pinnedSources(ctx, scope.reader, scope.bound, consumer);
-  const sources = pinned.sources;
+  // Reading is an authorization decision, not immutable document content: recheck it on every use.
+  const sources = sourceReader(artifacts, consumer);
   const context = {
     reader: scope.reader,
     parsers: ctx.parsers,
@@ -446,12 +325,6 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
     documents: ctx.documents,
     onDiagnostic: (diagnostic: {reference:string;message:string}) => ctx.log({traceId:null,run:scope.reader.run ?? null,what:'exact source',detail:`${diagnostic.reference}: ${diagnostic.message}`}),
   } as const;
-  const groundRefusal = async (ref: Reference): Promise<string | null> => {
-    if (ref.scheme !== 'src') return declarationGroundRefusal(ref, digest => store.get(digest));
-    // The knowledge-contribution pack feeds captured sources with their own operation records: the one exemption.
-    if (scope.pack === 'knowledge-contribution') return null;
-    return declarationGroundRefusal(ref, digest => store.get(digest), groundRecords(await pinned.choice(ref.sha256)));
-  };
   const run = async (reference: string, scoped: boolean, grounds: boolean): Promise<ValueOutcome> => {
     let ref: Reference;
     let canonical: string;
@@ -490,24 +363,16 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
       }
       if (!result.resolved) return { ok: false, code:result.code, message: result.code === 'SOURCE_UNAVAILABLE' ? `引用解析不出（${UNAVAILABLE_MESSAGE}）` : result.message };
       if (grounds) {
-        const named = await groundRefusal(ref);
+        const named = await declarationGroundsRefusal(ref, result.grounds, digest => store.get(digest));
         if (named) return { ok: false, message: named };
       }
       if (grounds && !result.groundable) return { ok: false, message: '这类记录不能作根据（B01 R[4]），请改引结果、动作或效果记录' };
       for (const ground of result.grounds ?? []) {
         let innerCanonical: string;
-        let innerRef: Reference;
         try {
-          innerRef = parseReference(ground);
-          innerCanonical = formatReference(innerRef);
+          innerCanonical = formatReference(parseReference(ground));
         } catch {
-          // An inner ground that does not parse has no provenance to check, so it cannot stand under grounds.
-          if (grounds) return { ok: false, message: UNKNOWN_GROUND };
           continue;
-        }
-        if (grounds) {
-          const named = await groundRefusal(innerRef);
-          if (named) return { ok: false, message: named };
         }
         if (resolving.has(innerCanonical)) {
           return { ok: false, message: `成环的引用：${innerCanonical}` };
@@ -582,12 +447,7 @@ export function createResolver(ctx: EngineContext, scope: RunScope, consumer: Ex
             ctx.documents.assertActive?.();
             const checking=Promise.resolve(sources.read(ref.sha256,scope.reader));
             const read=await (ctx.documents.within?.(checking)??checking);
-            if(read?.bytes&&read.readTier===saved.tier&&read.bytes.length===read.size&&sha256Hex(read.bytes)===ref.sha256){
-              // Only the parse result is reused. A use as grounds checks the source's provenance again, as run() does; a src
-              // reference is otherwise always groundable and has no inner grounds (refs/resolve.ts isGroundable).
-              if(options.grounds===true){const named=await groundRefusal(ref);if(named)return {ok:false,message:named};}
-              return {ok:true,value:{...saved.result.value}};
-            }
+            if(read?.bytes&&read.readTier===saved.tier&&read.bytes.length===read.size&&sha256Hex(read.bytes)===ref.sha256)return {ok:true,value:{...saved.result.value}};
           }
       }catch{/* The ordinary path reports read errors and deadline exhaustion. */}
       return run(reference, scoped, options.grounds === true);

@@ -223,14 +223,7 @@ export const ValidationResult = z
   .strictObject({
     schema: z.literal('validation@1'),
   contributions: z.strictObject({ submitted: z.number().int().nonnegative(),
-    stored: z.array(z.strictObject({
-      item: z.string(), record: Sha256,
-      device: z.string().min(1).max(200).optional().describe('The declared device of a stored operation record'),
-      bed: z.string().min(1).max(200).optional().describe('The declared bed completing the bed/device identity'),
-      lease: z.string().min(1).max(200).nullable().optional().describe('The resource key covered by a lease continuously held from declared capture through Hub receipt; null when absent or unconfirmed'),
-      lease_id: z.string().min(1).max(200).nullable().optional().describe('The Hub lease action identity lse_... for that resource key; null when absent or unconfirmed'),
-      lease_unconfirmed: z.strictObject({ missing: z.string().min(1).max(8192), next_action: z.string().min(1).max(8192) }).optional().describe('Why continuous coverage, bed identity or history cannot be proven, and the action that can resolve it'),
-    })),
+    stored: z.array(z.strictObject({ item: z.string(), record: Sha256 })),
     not_stored: z.array(z.strictObject({ item: z.string(), reason: z.string() })),
   }).optional().describe('Dedicated contribution run receipt; ordinary submissions never write the knowledge layer'),
     run: RunId,
@@ -250,17 +243,6 @@ export const ValidationResult = z
       const c = v.contributions;
       if (c.submitted !== c.stored.length + c.not_stored.length) ctx.addIssue({code:'custom',path:['contributions'],message:'contribution receipt counts agree'});
       if (v.acceptance === 'not_accepted' && c.stored.length > 0) ctx.addIssue({code:'custom',path:['contributions','stored'],message:'a refused submission admits no contribution'});
-      for (const row of c.stored) {
-        if (row.device === undefined) {
-          if (row.bed !== undefined || row.lease !== undefined || row.lease_id !== undefined || row.lease_unconfirmed !== undefined) {
-            ctx.addIssue({code:'custom',path:['contributions','stored'],message:'lease details require a declared device'});
-          }
-        } else {
-          if (row.lease === undefined || row.lease_id === undefined) ctx.addIssue({code:'custom',path:['contributions','stored'],message:'a declared device has both a resource key and lease id, or null when absent or unconfirmed'});
-          if (row.lease !== undefined && row.lease_id !== undefined && (row.lease === null) !== (row.lease_id === null)) ctx.addIssue({code:'custom',path:['contributions','stored'],message:'a confirmed lease has both a resource key and lease id; absence has neither'});
-          if (row.lease_unconfirmed !== undefined && (row.lease !== null || row.lease_id !== null)) ctx.addIssue({code:'custom',path:['contributions','stored'],message:'a confirmed lease cannot also be unconfirmed'});
-        }
-      }
     }
     if (v.acceptance !== 'not_accepted') return;
     if (v.errors.length === 0) ctx.addIssue({ code: 'custom', path: ['errors'], message: 'a submission that is not accepted names its codes (W08 R[1])' });

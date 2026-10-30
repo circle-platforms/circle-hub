@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FedObservationSchema } from '../../contracts/src/feeding.ts';
-import { INDEX } from '../../hub/runs/engine/store.ts';
 import {
   capture, capturedArtifact, commandTarget, contribution, openOperationWorld, quote, startOperationRun,
 } from './support/operation-acceptance.ts';
@@ -94,16 +93,14 @@ test('scenario 43: T4-3 preserves three synthetic configuration snapshots and th
   assert.deepEqual(action?.holder, { user: world.bed.reviewer.user.id, run: run.run });
   const linked = await world.bed.hub.records.store.find({ key: 'knowledge.contribution.run', value: run.run, kind: 'claim', limit: 10 });
   for (const record of records) assert.ok(linked.items.some(row => row.digest === record), 'the contribution and lease holder name the same run');
-  // This original scenario keeps the indirect association; the added scenario below checks the capture-time lease itself.
+  // The record names the device and bed it touched; the lease stays with the test-bed booking (owner's decision, 2026-10-30).
 });
 
-test('scenario 43: T4-3 binds a declared device to its capture-time lease and rejects foreign devices', async t => {
+test('scenario 43: T4-3 records a declared device on its booked bed and rejects foreign devices', async t => {
   const world = await openOperationWorld(t);
   if (!world) return;
   await world.bed.hub.assignPack(world.bed.reviewer.principal, 'test-bed');
   const target = await commandTarget(world.client, world.root, '/commands/widget/health/interval');
-  const common = { command: 'show health synthetic-pool', bed: 'bench-a', device: 'edge-a', address: '192.0.2.44' };
-  const beforeBooking = await capture(world, 'ORBIT synthetic probe interval: 10\n', common);
   const inventory = {
     schema: 'test-bed-manifest@1',
     beds: [{
@@ -115,34 +112,25 @@ test('scenario 43: T4-3 binds a declared device to its capture-time lease and re
       services: [], reserved: [],
     }],
   };
-  await world.bed.hub.hub.docs.put(world.bed.hub.admin.principal, 'operation-device-lease', new TextEncoder().encode(JSON.stringify(inventory)), { fileName: 'operation-device-lease.json' });
+  await world.bed.hub.hub.docs.put(world.bed.hub.admin.principal, 'operation-device-bed', new TextEncoder().encode(JSON.stringify(inventory)), { fileName: 'operation-device-bed.json' });
   const booked = await world.client.call('start_run', {
-    pack: 'test-bed', inputs: { inventory: { external: 'doc:doc:operation-device-lease' } },
+    pack: 'test-bed', inputs: { inventory: { external: 'doc:doc:operation-device-bed' } },
     parameters: { action: 'acquire', bed: 'bench-a', need: { devices: [{ type: 'router', count: 1 }], build: world.build } },
   });
   assert.equal(booked.isError, false, booked.text);
   const booking = booked.out.run?.run;
   assert.ok(booking);
-  const key = 'bed/bench-a/edge-a';
-  const bookingRun = await world.bed.hub.hub.runs.getRun(world.bed.reviewer.principal, booking);
-  const lease = (bookingRun?.run as { leases?: Array<{ lease: string; keys: string[] }> } | undefined)?.leases?.find(row => row.keys.includes(key));
-  assert.ok(lease);
 
-  const duringBooking = await capture(world, 'ORBIT synthetic probe interval: 20\n', common);
-  const subject = await world.client.upload(new TextEncoder().encode(JSON.stringify({ items: [{ id: 'assertion', title: '合成设备操作' }] })), 'operation-device-lease.json');
+  const saved = await capture(world, 'ORBIT synthetic probe interval: 20\n', { command: 'show health synthetic-pool', bed: 'bench-a', device: 'edge-a', address: '192.0.2.44' });
+  const subject = await world.client.upload(new TextEncoder().encode(JSON.stringify({ items: [{ id: 'assertion', title: '合成设备操作' }] })), 'operation-device-bed.json');
   const started = await world.client.call('start_run', {
     pack: 'knowledge-contribution', product: world.product, build: world.build, predecessor: booking,
-    inputs: {
-      subject: { reference: subject },
-      originals: [beforeBooking, duringBooking].map(saved => ({ reference: `src:${saved.event.output.sha256}` })),
-    },
+    inputs: { subject: { reference: subject }, originals: [{ reference: `src:${saved.event.output.sha256}` }] },
   });
   assert.equal(started.isError, false, JSON.stringify(started.out.errors));
   const run = started.out.run?.run;
   assert.ok(run);
-  const submit = async (
-    saved: Awaited<ReturnType<typeof capture>>, device: string, action: string, extra: Record<string, unknown> = {},
-  ): Promise<import('./support/mcp.ts').Answer<import('./support/mcp.ts').Outputs['submit_result']>> => {
+  const submit = async (device: string, action: string, extra: Record<string, unknown> = {}): Promise<import('./support/mcp.ts').Answer<import('./support/mcp.ts').Outputs['submit_result']>> => {
     const citation = quote(saved.event, 1, saved.bytes.toString('utf8').split('\n')[0]!);
     return world.client.call('submit_result', {
       run, model: 'integration-synthetic@1',
@@ -162,45 +150,26 @@ test('scenario 43: T4-3 binds a declared device to its capture-time lease and re
     });
   };
 
-  const beforeAnswer = await submit(beforeBooking, 'edge-a', '预订前采集');
-  assert.equal(beforeAnswer.out.acceptance, 'accepted', JSON.stringify(beforeAnswer.out.errors));
-  const beforeReceipt = beforeAnswer.out.result?.contributions?.stored[0];
-  assert.ok(beforeReceipt);
-  assert.equal(beforeReceipt.device, 'edge-a');
-  assert.equal(beforeReceipt.lease, null);
-  assert.match(beforeAnswer.text, /设备 edge-a；无租约（未授权）/);
-  const beforeView = await contribution(world, target.path, beforeReceipt.record);
-  const beforeFeeding = FedObservationSchema.parse(beforeView.contribution.feeding);
-  assert.equal(beforeFeeding.device, 'edge-a');
-  assert.equal(beforeFeeding.lease, null);
-  assert.match(beforeView.note ?? '', /设备 edge-a；无租约（未授权）/);
+  const answer = await submit('edge-a', '预订台架上的采集');
+  assert.equal(answer.out.acceptance, 'accepted', JSON.stringify(answer.out.errors));
+  const receipt = answer.out.result?.contributions?.stored[0];
+  assert.ok(receipt);
+  assert.deepEqual(Object.keys(receipt).sort(), ['item', 'record']);
+  const view = await contribution(world, target.path, receipt.record);
+  const feeding = FedObservationSchema.parse(view.contribution.feeding);
+  assert.equal(feeding.device, 'edge-a');
+  assert.equal(feeding.bed, 'bench-a', 'the only bed of the frozen manifest that has the device');
+  assert.match(view.note ?? '', /设备 edge-a（台架 bench-a）/);
 
-  const duringAnswer = await submit(duringBooking, 'edge-a', '持有租约期间采集');
-  assert.equal(duringAnswer.out.acceptance, 'accepted', JSON.stringify(duringAnswer.out.errors));
-  const duringReceipt = duringAnswer.out.result?.contributions?.stored[0];
-  assert.ok(duringReceipt);
-  assert.equal(duringReceipt.device, 'edge-a');
-  assert.equal(duringReceipt.lease, key);
-  assert.equal(duringReceipt.lease_id, lease.lease);
-  assert.match(duringAnswer.text, new RegExp(`设备 edge-a；租约 ${key}（记录 ${lease.lease}）`));
-  const duringView = await contribution(world, target.path, duringReceipt.record);
-  const duringFeeding = FedObservationSchema.parse(duringView.contribution.feeding);
-  assert.equal(duringFeeding.device, 'edge-a');
-  assert.equal(duringFeeding.lease, key);
-  assert.equal(duringFeeding.lease_id, lease.lease);
-  assert.match(duringView.note ?? '', new RegExp(`设备 edge-a；租约 ${key}（记录 ${lease.lease}）`));
-  const linked = await world.bed.hub.records.store.find({ key: 'knowledge.contribution.lease', value: lease.lease, kind: 'claim', limit: 10 });
-  assert.ok(linked.items.some(row => row.digest === duringReceipt.record));
-
-  const foreign = await submit(duringBooking, 'edge-other', '清单外设备');
+  const foreign = await submit('edge-other', '清单外设备');
   assert.equal(foreign.out.acceptance, 'not_accepted');
-  assert.equal(foreign.out.result?.contributions?.stored.length, 0);
+  assert.equal(foreign.out.result?.contributions?.stored.length ?? 0, 0);
   const message = JSON.stringify(foreign.out.errors);
   assert.match(message, /不在运行绑定的台架清单里/);
   assert.match(message, /edge-a/);
   assert.match(message, /peer-a/);
-  const supplied = await submit(duringBooking, 'edge-a', '客户端自报租约', { lease: 'lse_client_supplied' });
+  const supplied = await submit('edge-a', '客户端自报租约', { lease: 'lse_client_supplied' });
   assert.equal(supplied.out.acceptance, 'not_accepted');
-  assert.equal(supplied.out.result?.contributions?.stored.length, 0);
-  assert.match(JSON.stringify(supplied.out.errors), /租约由 Hub 填写，删掉该字段后重交/);
+  assert.equal(supplied.out.result?.contributions?.stored.length ?? 0, 0);
+  assert.match(JSON.stringify(supplied.out.errors), /lease/);
 });

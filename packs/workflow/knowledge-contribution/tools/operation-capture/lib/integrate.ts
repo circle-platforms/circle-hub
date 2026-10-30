@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { EGRESS, GENERATED, PACK } from './constants.ts';
 import { scanWithMatches } from './credentials.ts';
 import { canonical, exact, isRecord, need, sessionDirectory, sha256, splitTextLines, text } from './common.ts';
-import { HubClient, holdsToken, validateTokenFile } from './hub.ts';
+import { HubClient, validateTokenFile } from './hub.ts';
 import { appendReceipt, outputBytes, readSettings, verifyState, withLock, type VerifiedCapture } from './state.ts';
 
 interface Quote { reference: string; text: string }
@@ -158,13 +158,9 @@ function primaryQuote(row: Prepared): Quote {
   return (row.kind === 'observation' ? row.result : row.kind === 'procedure' ? row.steps?.[0]?.quote : row.quote)!;
 }
 
+/** A proposal holding the token the request carries is refused before a run is started for it (round-six review). */
 function checkTargetTokens(rows: readonly Prepared[], token: string): void {
-  for (const row of rows) {
-    if (row.device !== undefined) targetText(row.device, 'device', token);
-    if (row.bed !== undefined) targetText(row.bed, 'bed', token);
-  }
-  // Any text of a proposal, not only its target names, is refused before a run is started for it (round-six review).
-  need(!holdsToken(JSON.stringify(rows), token), 'credential_in_request', '提案含当前 Hub 令牌；清理含令牌的文字后重交');
+  need(!JSON.stringify(rows).includes(token), 'credential_in_request', '提案含当前 Hub 令牌；删掉令牌后重交');
 }
 
 export async function submitProposals(session: string, proposalPath: string, product: string, build: string | undefined, model: string) {
@@ -176,6 +172,7 @@ export async function submitProposals(session: string, proposalPath: string, pro
   const captures = await verifyState(session);
   const token = await validateTokenFile(settings.token_file);
   const rows = await proposals(resolve(proposalPath), session, captures, token);
+  checkTargetTokens(rows, token);
   const hub = new HubClient(settings.hub, settings.token_file, session);
   const dir = sessionDirectory(session);
   const allowed = async <T>(action: () => Promise<T>): Promise<T> => withLock(dir, async () => {
@@ -190,15 +187,13 @@ export async function submitProposals(session: string, proposalPath: string, pro
     return [canonical(input), input];
   })).values()];
   const clientKey = sha256(canonical({ schema: GENERATED.proposal_schema, session, subject, product, build: build ?? null, originals }));
-  const started = await allowed(async () => {
-    return hub.callChecked('start_run', {
-      pack: PACK,
-      product,
-      ...(build === undefined ? {} : { build }),
-      inputs: { subject: { reference: subject }, originals },
-      client_key: clientKey,
-    }, token => checkTargetTokens(rows, token));
-  });
+  const started = await allowed(() => hub.call('start_run', {
+    pack: PACK,
+    product,
+    ...(build === undefined ? {} : { build }),
+    inputs: { subject: { reference: subject }, originals },
+    client_key: clientKey,
+  }));
   need(isRecord(started.run), 'invalid_run', 'Hub 没有返回回注运行');
   const run = started.run;
   const runId = text(run.run, 'invalid_run', '运行号格式不对', 100);

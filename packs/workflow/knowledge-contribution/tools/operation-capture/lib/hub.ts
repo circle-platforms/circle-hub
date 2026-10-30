@@ -16,12 +16,6 @@ export async function validateTokenFile(path: string): Promise<string> {
   return value;
 }
 
-/** Whether text holds the token, or any 12-character run of it (a shorter token whole). */
-export function holdsToken(value: string, token: string): boolean {
-  const runs = token.length < 12 ? [token] : Array.from({ length: token.length - 11 }, (_, index) => token.slice(index, index + 12));
-  return runs.some(run => value.includes(run));
-}
-
 export class HubClient {
   private url: URL;
   private tokenFile: string;
@@ -37,21 +31,8 @@ export class HubClient {
   }
 
   private guard(value: string, token: string): void {
-    need(!holdsToken(value, token), 'token_echo', 'Hub 应答含令牌形状，整份丢弃');
-  }
-
-  /**
-   * Every request leaves through `rpc`, and there everything it sends but the authorization header is checked against the
-   * token that header carries: the target, as written and with its path decoded, the method and parameters, an uploaded
-   * file's decoded bytes, and the other headers, the session id included (rounds seven and eight). The rule is a run of 12
-   * characters: a token cut into shorter pieces, or encoded otherwise, is outside it.
-   */
-  private refuseToken(token: string, method: string, params: unknown, headers: Record<string, string>): void {
-    const sent = [this.url.href, method, JSON.stringify(params), ...Object.entries(headers).flatMap(([name, value]) => name === 'authorization' ? [] : [value])];
-    try { sent.push(decodeURIComponent(this.url.pathname)); } catch { /* a malformed escape is checked as written, in the target */ }
-    const file = isRecord(params) && params.name === 'upload_file' && isRecord(params.arguments) ? params.arguments.file_path : undefined;
-    if (typeof file === 'string') sent.push(Buffer.from(file, 'base64').toString('latin1'));
-    need(!sent.some(text => holdsToken(text, token)), 'credential_in_request', '请求含当前 Hub 令牌形状，停止发送；清理含令牌的文字或会话号后重试');
+    const runs = token.length < 12 ? [token] : Array.from({ length: token.length - 11 }, (_, index) => token.slice(index, index + 12));
+    need(!runs.some(run => value.includes(run)), 'token_echo', 'Hub 应答含令牌形状，整份丢弃');
   }
 
   // A token a caller has checked is passed down to the request that carries it, never kept on the client: concurrent calls
@@ -60,19 +41,17 @@ export class HubClient {
     const token = checked ?? await validateTokenFile(this.tokenFile);
     const id = ++this.sequence;
     const mutation = method === 'tools/call' && ['upload_file', 'start_run', 'submit_result'].includes((params as { name?: string })?.name ?? '');
-    const headers = {
-      authorization: `Bearer ${token}`,
-      'content-type': 'application/json',
-      accept: 'application/json, text/event-stream',
-      'circle-session-id': this.session,
-      traceparent: `00-${randomBytes(16).toString('hex')}-${randomBytes(8).toString('hex')}-01`,
-    };
-    this.refuseToken(token, method, params, headers);
     let response: Response;
     try {
       response = await fetch(this.url, {
         method: 'POST',
-        headers,
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'circle-session-id': this.session,
+          traceparent: `00-${randomBytes(16).toString('hex')}-${randomBytes(8).toString('hex')}-01`,
+        },
         body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
         redirect: 'manual',
         signal: AbortSignal.timeout(EGRESS.http_timeout_ms),
@@ -115,14 +94,12 @@ export class HubClient {
 
   /**
    * One read of the token for both the check and the request: `check` sees exactly the token the request will carry, so a
-   * rotation between the two cannot send a field that holds the token it authenticates with (round-four review, item 4).
+   * rotation between the two cannot send a proposal that holds the token it authenticates with (round-four review, item 4).
    */
   async callChecked(name: string, args: unknown, check: (token: string) => void): Promise<Record<string, unknown>> {
     const token = await validateTokenFile(this.tokenFile);
     check(token);
-    // Nothing a checked call sends may hold the token it authenticates with, in any field: model-written statements and
-    // quotes included, not only the target names `check` looks at (round-six review).
-    need(!holdsToken(JSON.stringify(args), token), 'credential_in_request', '请求含当前 Hub 令牌；清理提案里含令牌的文字后重交');
+    need(!JSON.stringify(args).includes(token), 'credential_in_request', '请求含当前 Hub 令牌；删掉提案里的令牌后重交');
     return this.call(name, args, token);
   }
 
@@ -135,8 +112,9 @@ export class HubClient {
       provenance_type: GENERATED.provenance_type,
       ...(capturedAt ? { captured_at: capturedAt } : {}),
     };
-    // Any 12-character run of the token counts, as in every other check (round-seven review).
-    const check = (token: string) => need(!holdsToken(Buffer.from(bytes).toString('latin1'), token), 'credential_redaction_failed', '原件含当前 Hub 令牌形状，停止上传');
+    // The capture masked the token it read (redact.ts); a token rotated in since then stops the upload, so the bytes stay the
+    // ones the session recorded.
+    const check = (token: string) => need(!Buffer.from(bytes).toString('utf8').includes(token), 'credential_redaction_failed', '原件含采集后轮换的 Hub 令牌，停止上传；重新采集这一步');
     const initial = await validateTokenFile(this.tokenFile);
     check(initial);
     await this.initialize(initial);

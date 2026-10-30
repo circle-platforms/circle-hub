@@ -6,7 +6,7 @@ import fsPromises, { chmod, lstat, mkdir, readFile, readdir, rename, symlink, wr
 import { syncBuiltinESMExports } from 'node:module';
 import { setTimeout as delay } from 'node:timers/promises';
 import { basename, dirname, join } from 'node:path';
-import { SESSION, TOKEN, scratch, fakeHub, enable, hook, hookInput, skill } from './operation-support.ts';
+import { SESSION, TOKEN, scratch, fakeHub, enable, execute, hook, hookInput, skill } from './operation-support.ts';
 import { appendCapture, readEvents, withLock } from '../tools/operation-capture/lib/state.ts';
 import { sessionDirectory } from '../tools/operation-capture/lib/common.ts';
 
@@ -260,23 +260,6 @@ test('a token rotated between initialize and upload is rechecked before any uplo
   assert.match(await readFile(join(dir, 'errors.jsonl'), 'utf8'), /credential_redaction_failed/);
 });
 
-test('a run of a token rotated in before upload is refused like the whole token (round-seven review)', async t => {
-  const local = await scratch(t);
-  const rotated = 'FictCaptureTokenRotated44';
-  const fragment = rotated.slice(-12);
-  assert.ok(!TOKEN.includes(fragment) && !rotated.startsWith(fragment));
-  const hub = await fakeHub(t, { onRequest: async input => {
-    if (input.method === 'initialize') await writeFile(local.tokenFile, `${rotated}\n`, { mode: 0o600 });
-  } });
-  assert.equal((await enable(local, hub.url)).code, 0);
-  const result = await hook(local, `ORBIT synthetic status ${fragment}\n`);
-  assert.equal(result.code, 0, result.err);
-  assert.equal(hub.uploads.size, 0);
-  assert.ok(!hub.attempts.some(row => row.body.method === 'tools/call' && row.body.params.name === 'upload_file'));
-  const dir = sessionDirectory(SESSION, { CIRCLE_HOME: local.home });
-  assert.match(await readFile(join(dir, 'errors.jsonl'), 'utf8'), /credential_redaction_failed/);
-});
-
 test('two waiters recover one dead lock without losing mutual exclusion or the chain', async t => {
   const local = await scratch(t);
   const hub = await fakeHub(t);
@@ -400,4 +383,19 @@ test('a lock owner file that another waiter is removing reads as gone, not as an
     return stats;
   }) as typeof fsPromises.lstat, dir);
   assert.notEqual(taken, '', 'the race happened');
+});
+
+test('on Windows every command is refused and the hook captures nothing', async t => {
+  const local = await scratch(t);
+  const hub = await fakeHub(t);
+  const windows = ['--import', 'data:text/javascript,Object.defineProperty(process,"platform",{value:"win32"})', local.entry];
+  const enabled = await execute(process.execPath, [...windows, 'enable', '--session', SESSION, '--hub', hub.url, '--token-file', local.tokenFile], local.env, undefined, local.home);
+  assert.equal(enabled.code, 1);
+  assert.match(enabled.err, /Windows/);
+  assert.equal((await enable(local, hub.url)).code, 0, 'sharing enabled on a supported platform');
+  const input = JSON.stringify({ event: 'after_tool', session_id: SESSION, cwd: '/synthetic/workspace', hook: 'operation-capture', source: 'skill', source_label: 'operation-capture', tool_name: 'execute', tool_input: { command: 'orbit synthetic-status' }, paths: [], tool_output: 'ORBIT synthetic status: ready\n', tool_status: 'success' });
+  const hooked = await execute(process.execPath, [...windows, 'hook'], local.env, input, local.home);
+  assert.equal(hooked.code, 0);
+  assert.equal(hooked.out + hooked.err, '');
+  assert.equal(hub.uploads.size, 0, 'nothing captured or uploaded');
 });
