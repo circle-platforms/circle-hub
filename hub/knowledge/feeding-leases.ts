@@ -20,7 +20,12 @@ const SETTLE_WAIT_MS = 1000;
 type Check<T> = { ok: true; value: T } | { ok: false; missing: string; next_action?: string };
 
 const KEY = /^[a-z0-9][a-z0-9:._/-]{0,199}$/;
-const NEXT = '重传本次采集；仍无法确定时请管理员核对台架与租约记录，不能把不确定当成有租约或无租约';
+// A record stays as it was stored: the same capture uploaded again (an upload with the same bytes and capture time is the
+// same record) or the same submission again reuses it. Only a new capture gets a new lease answer (round seven, item 1).
+const REUSED = '同一采集再传或同一提交再交都会沿用这条未确认记录';
+const NEXT = `请管理员核对台架与租约记录；要得到租约结论，须在持有该设备租约期间重新执行并采集这一步后提交，${REUSED}；不能把不确定当成有租约或无租约`;
+const HOLD = `在持有该设备租约期间重新执行并采集这一步，租约须覆盖到上传完成，其间不释放、不转交、不到期；${REUSED}`;
+const CLOCKS = `请管理员核对 Hub 与数据库的时钟；校准后在持有租约期间重新执行并采集这一步再提交，${REUSED}`;
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -81,17 +86,17 @@ function manifestDevices(frozen: Record<string, unknown>): Check<{ names: string
 
 function leaseDetail(record: StoredRecord<ActionBody>, key?: string): Check<{ detail: HeldLease; lease_id: string; at: number; record: StoredRecord<ActionBody> } | null> {
   if (record.integrity_note || record.schema !== RECORD_SCHEMAS.action || record.provenance !== 'observed' || record.body.action !== 'lease') {
-    return problem(`租约动作 rec:${record.digest} 未通过完整性核对；请管理员核对记录后重传`);
+    return problem(`租约动作 rec:${record.digest} 未通过完整性核对；请管理员核对记录`);
   }
   const raw = record.body.detail;
-  if (!object(raw)) return problem(`租约动作 rec:${record.digest} 的结构不完整；请管理员核对记录后重传`);
+  if (!object(raw)) return problem(`租约动作 rec:${record.digest} 的结构不完整；请管理员核对记录`);
   if (raw.keys === undefined) {
     if (LeaseOpSchema.extract(['register', 'unregister']).safeParse(raw.op).success) return { ok: true, value: null };
-    return problem(`租约动作 rec:${record.digest} 缺少 keys，不能确定它是否覆盖声明的设备；请管理员核对记录后重传`);
+    return problem(`租约动作 rec:${record.digest} 缺少 keys，不能确定它是否覆盖声明的设备；请管理员核对记录`);
   }
   const projected = Object.fromEntries(['op', 'lease', 'keys', 'holder', 'until', 'token'].map(key => [key, raw[key]]));
   const parsed = LeaseDetail.safeParse(projected);
-  if (!parsed.success || !('keys' in parsed.data)) return problem(`租约动作 rec:${record.digest} 的结构不完整；请管理员核对记录后重传`);
+  if (!parsed.success || !('keys' in parsed.data)) return problem(`租约动作 rec:${record.digest} 的结构不完整；请管理员核对记录`);
   if (key !== undefined && !parsed.data.keys.includes(key)) return problem(`租约动作 rec:${record.digest} 不覆盖完整设备键 ${key}；请管理员核对记录`);
   let leaseId = parsed.data.lease;
   if (parsed.data.op === 'extend' && parsed.data.keys.length > 1) {
@@ -107,9 +112,9 @@ function leaseDetail(record: StoredRecord<ActionBody>, key?: string): Check<{ de
   const at = IsoTime.safeParse(record.body.started_at);
   const received = IsoTime.safeParse(record.created_at);
   if (!at.success || !received.success || Date.parse(at.data) !== Date.parse(received.data) || record.body.ended_at !== record.body.started_at) {
-    return problem(`租约动作 rec:${record.digest} 的发生时刻与记录时刻不一致或无效；请管理员核对记录后重传`);
+    return problem(`租约动作 rec:${record.digest} 的发生时刻与记录时刻不一致或无效；请管理员核对记录`);
   }
-  if (parsed.data.until !== null && !IsoTime.safeParse(parsed.data.until).success) return problem(`租约动作 rec:${record.digest} 的到期时刻无效；请管理员核对记录后重传`);
+  if (parsed.data.until !== null && !IsoTime.safeParse(parsed.data.until).success) return problem(`租约动作 rec:${record.digest} 的到期时刻无效；请管理员核对记录`);
   return { ok: true, value: { detail: parsed.data, lease_id: leaseId, at: Date.parse(at.data), record } };
 }
 
@@ -125,22 +130,31 @@ export async function operationLease(
   if (from > to) return unconfirmed('声明的采集时刻晚于 Hub 收到时刻，无法证明连续租约；校正客户端时钟后重新采集上传');
   const key = input.key ?? (input.bed ? `bed/${input.bed}/${input.device}` : undefined);
   if (!key || !KEY.test(key) || !key.startsWith('bed/') || key.split('/').length !== 3) return unconfirmed('缺完整有效的台架（床）与设备身份；在提案中写明床后重交');
-  if (!leases) return unconfirmed('缺租约历史只读查询接口；管理员完成接线后重传');
+  if (!leases) return unconfirmed('缺租约历史只读查询接口', `管理员完成租约接线后，在持有租约期间重新执行并采集这一步再提交；${REUSED}`);
   const window = { key, from: capturedAt.data, to: receivedAt.data };
-  let answer = await leases.history(window);
+  const first = await leases.history(window);
+  let answer = first;
   // A receipt the lease clock has not passed yet can still gain a lease change inside the window (round five, item 1). When
   // the clock passes it within a second (the same millisecond, or a small skew) the Hub reads again once it has: an
   // unconfirmed record would stay, since the same capture submitted again reuses it (round six, item 1).
-  if (answer.settled === false) {
-    const wait = Date.parse(receivedAt.data) - Date.parse(answer.asOf) + 1;
+  let waited = 0;
+  if (first.settled === false) {
+    const wait = to - Date.parse(first.asOf) + 1;
     if (wait <= SETTLE_WAIT_MS) {
-      await delay(Math.max(wait, 1));
+      waited = Math.max(wait, 1);
+      await delay(waited);
       answer = await leases.history(window);
     }
   }
   const { before, events, complete, unattributable = [], settled } = answer;
-  if (!complete) return unconfirmed('声明采集至收到时刻之间的租约记录超过有界读取上限；缩小时间窗口或让管理员核对记录后重传');
-  if (settled === false) return unconfirmed('Hub 的收到时刻比租约时钟（数据库时钟）的当前时刻晚一秒以上，两个时钟不一致，窗口内仍可能出现租约动作，不能确认；请管理员校准 Hub 与数据库的时钟。同一采集再交会沿用这条未确认记录，校准后重新执行并采集这一步');
+  if (!complete) return unconfirmed('声明采集至收到时刻之间的租约记录超过有界读取上限', `缩短采集到上传的间隔，在持有租约期间重新执行并采集这一步再提交，或请管理员核对记录；${REUSED}`);
+  // Only what the reads observed is stated: a second read can still come before the receipt, when the lease clock did not
+  // advance with the wait (round seven, item 1).
+  if (settled === false) {
+    return unconfirmed(waited === 0
+      ? `Hub 收到时刻 ${receivedAt.data} 比租约时钟（数据库时钟）读到的 ${first.asOf} 晚 ${to - Date.parse(first.asOf)} 毫秒，Hub 只等租约时钟追上不到 ${SETTLE_WAIT_MS} 毫秒的差距；两个时钟不一致，窗口内仍可能出现租约动作，不能确认`
+      : `Hub 等待 ${waited} 毫秒后重读，租约时钟（数据库时钟）读到的 ${answer.asOf} 仍未越过收到时刻 ${receivedAt.data}（第一次读到 ${first.asOf}）；租约时钟没有随等待前进或两个时钟不一致，窗口内仍可能出现租约动作，不能确认`, CLOCKS);
+  }
   if (unattributable.length > 0) return uncertain(leaseDetail(unattributable[0]!));
   const initial = before ? leaseDetail(before, key) : null;
   if (initial && !initial.ok) return uncertain(initial);
@@ -153,7 +167,7 @@ export async function operationLease(
   }
   if (held?.until !== undefined && held.until !== null) {
     const expiry = Date.parse(held.until);
-    if (expiry === from) return unconfirmed('租约到期与采集同毫秒，先后未能确认；请管理员核对租约记录后重传');
+    if (expiry === from) return unconfirmed('租约到期与采集同毫秒，先后未能确认');
     if (expiry < from) held = null;
   }
   let previous = initial?.value?.at ?? from;
@@ -163,17 +177,17 @@ export async function operationLease(
     if (checked.value === null) return unconfirmed('设备窗口内混入非持有租约动作；请管理员核对记录');
     const { detail, lease_id, at } = checked.value;
     if (!detail.keys.includes(key)) return unconfirmed(`窗口内动作 rec:${record.digest} 不覆盖完整设备键 ${key}；请管理员核对记录`);
-    if (at === from || at === to) return unconfirmed(`租约动作 rec:${record.digest} 与采集或收到时刻同毫秒，先后未能确认；重传或让管理员核对租约记录`);
+    if (at === from || at === to) return unconfirmed(`租约动作 rec:${record.digest} 与采集或收到时刻同毫秒，先后未能确认`);
     if (at < previous || at < from || at > to) return unconfirmed('租约动作的时间窗口或追加次序不一致；请管理员核对租约记录');
     previous = at;
-    if (detail.op !== 'extend') return unconfirmed('租约在声明采集至 Hub 收到之间取得、释放或被接管，不能证明同一租约连续覆盖；核对操作与租约时间后重传');
-    if (!held || held.lease_id !== lease_id || held.user !== detail.holder.user) return unconfirmed('续租记录缺少同一租约与持有者的连续前序，不能证明连续覆盖；请管理员核对后重传');
-    if (held.until !== null && Date.parse(held.until) <= at) return unconfirmed('续租前已经到期或先后不明，不能证明连续覆盖；请管理员核对后重传');
-    if (detail.until !== null && held.until !== null && Date.parse(detail.until) < Date.parse(held.until)) return unconfirmed('续租记录的到期时间倒退，不能证明连续覆盖；请管理员核对后重传');
+    if (detail.op !== 'extend') return unconfirmed('租约在声明采集至 Hub 收到之间取得、释放或被接管，不能证明同一租约连续覆盖', HOLD);
+    if (!held || held.lease_id !== lease_id || held.user !== detail.holder.user) return unconfirmed('续租记录缺少同一租约与持有者的连续前序，不能证明连续覆盖');
+    if (held.until !== null && Date.parse(held.until) <= at) return unconfirmed('续租前已经到期或先后不明，不能证明连续覆盖');
+    if (detail.until !== null && held.until !== null && Date.parse(detail.until) < Date.parse(held.until)) return unconfirmed('续租记录的到期时间倒退，不能证明连续覆盖');
     held.until = detail.until;
   }
   if (!held) return { lease: null, lease_id: null };
-  if (held.until !== null && Date.parse(held.until) <= to) return unconfirmed('租约在声明采集至 Hub 收到之间到期，不能证明连续覆盖；核对操作与租约时间后重传');
+  if (held.until !== null && Date.parse(held.until) <= to) return unconfirmed('租约在声明采集至 Hub 收到之间到期，不能证明连续覆盖', HOLD);
   if (held.user !== input.user) return { lease: null, lease_id: null };
   return { lease: key, lease_id: held.lease_id };
 }
@@ -216,7 +230,7 @@ export async function completeOperationDevice(
       bed = matches[0]![0];
     }
   }
-  if (bed === undefined) return withIdentity(unconfirmed('运行未绑定台架清单且声明里没有床身份；在提案中写明床，或先预订台架使运行冻结清单后重交'));
+  if (bed === undefined) return withIdentity(unconfirmed('运行未绑定台架清单且声明里没有床身份；在提案中写明床后重交（写明床是新的记录），或在先预订台架、冻结了台架清单的运行里提交'));
   // The bed is known here (declared or derived from the frozen manifest) even when the capture time is not: keep it in the record and its identity.
   if (input.captureTimeDeclared === false) return withIdentity(unconfirmed('客户端没有明确声明采集时刻，上传时刻不能替代它；用支持 captured_at 的客户端重新采集上传，或补交带明确采集时刻的新原件', '升级采集客户端，重新采集并在 upload_file 中显式传 captured_at 后重交；本次记录保留为租约未能确认，不按上传时刻判定'), bed);
   return withIdentity(await operationLease(store, { ...input, device, bed, key: `bed/${bed}/${device}` }, leases), bed);
