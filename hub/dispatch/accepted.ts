@@ -27,7 +27,13 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   if (state.reserved) { const { job, executor } = state.reserved; return [{ job, executor, text: `Hub 已按任务包的效果行派发作业 ${job}（执行器 ${executor}）；作业结束后对同一提交再调用 submit_result 读进展和结果引用` }]; }
   const settled = await Promise.race([work, Promise.resolve(null)]);
   if (settled === null) return [{ text: 'Hub 正在做派发前核对；稍后对同一提交再调用 submit_result 读进展' }];
-  return [{ ...(settled.executor ? { executor: settled.executor } : {}), text: settled.started ? 'Hub 已派发作业' : `Hub 没有派发：${settled.reason}` }];
+  // A dispatch that ended before any reservation was refused at the effect boundary (for example without a lease covering
+  // the executor's whole target): nothing was sent, so the answer says why instead of reporting a dispatch.
+  if (settled.started && settled.status) {
+    const { status } = settled; const why = status.reason ?? status.next_action ?? '派发前核对没有通过';
+    return [{ job: status.job, ...(settled.executor ? { executor: settled.executor } : {}), text: `Hub 没有派发：${why}${status.reason && status.next_action ? `；下一步：${status.next_action}` : ''}`.slice(0, 800) }];
+  }
+  return [{ ...(settled.executor ? { executor: settled.executor } : {}), text: `Hub 没有派发：${settled.reason ?? '派发前核对没有通过'}` }];
 }
 
 function noteOf(job: RunJob): DispatchNote {
@@ -36,6 +42,7 @@ function noteOf(job: RunJob): DispatchNote {
   const parts = [`作业 ${job.job}：${state}（阶段 ${status.phase}）`, `${labelOf('effect_outcome', status.outcome)}`];
   if (status.result) parts.push(`结果引用 ${status.result}（每个派发条目一行，读它看逐条结论）`);
   else if (job.ended === null) parts.push('作业还在进行，稍后对同一提交再调用 submit_result');
+  if (status.reason) parts.push(`原因：${status.reason}`);
   // A failed bed check is reported as it is, the way CES reports its environment check before a run.
   for (const check of status.failed_checks ?? []) parts.push(`未通过的核对 ${[check.step, check.seat, check.check].filter(Boolean).join(' ')}：${check.missing_fact}`);
   if (status.failed_conditions?.length) parts.push(`未满足的条件：${status.failed_conditions.map((c) => `${c.pointer} ${c.operator}`).join('、')}`);

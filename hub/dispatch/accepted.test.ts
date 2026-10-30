@@ -42,6 +42,16 @@ test('without an enabled administrator, or when the release does not hold, the H
   assert.equal(c.calls.includes('send_blob'), false);
 });
 
+test('a dispatch refused at the effect boundary before any reservation says that nothing was sent and why', async (t) => {
+  // The lease on the target belongs to another lineage, as when the run's own booking does not cover the executor's target.
+  const c = await setup({ mode: 'lineage' }); t.after(() => c.close());
+  const [note] = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.ok(note?.job, JSON.stringify(note)); assert.match(note.text, /^Hub 没有派发：/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
+  assert.equal(c.calls.includes('send_blob'), false);
+  const [again] = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.equal(again.job, note.job, JSON.stringify(again)); assert.match(again.text, /已结束/); assert.match(again.text, /原因：/);
+});
+
 test('the accepted answer reports the reserved job, then a repeat reads its progress and result reference', async (t) => {
   const c = await setup(); t.after(() => c.close());
   assert.deepEqual(await acceptedDispatch(c.kit, c.service, c.run, false), []);

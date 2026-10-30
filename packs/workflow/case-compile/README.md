@@ -1,4 +1,4 @@
-# case-compile 3.9.3
+# case-compile 3.9.4
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -397,3 +397,11 @@ and data, no verdict), so every whole-mindmap verification was refused with `wor
 judgment claim (exactly one, with data) and the catalog receipt the supporting `commands_known` verdict; the unit fixture
 of `functions/whole-mindmap.test.ts` had carried an invented verdict and now carries the recorded shapes. Found by the
 whole-mindmap test of acceptance scenario 28.
+
+### 3.9.4: the booking covers the whole bed
+
+Step 1 of `SKILL.md` asked only for "a test-bed booking", and the whole-bed requirement appeared first in step 8. In the first
+real whole-mindmap run the model booked one load balancer; the executor's target is the whole bed, so the dispatch would have
+been refused after the plans, the workbook and the verification were done. Step 1 now asks for the whole bed (`need.devices`
+with every device of the inventory, because the dispatch must cover it); two phrases of the same step that repeated other
+steps were dropped to stay within the length limit.
