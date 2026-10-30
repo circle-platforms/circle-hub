@@ -16,6 +16,10 @@ test('a synthetic tree page with 40 fed cases can be recovered and a later retra
   const recovered=await recoverRead(deps,w.user,query,answer,trace,'2035-01-01T00:00:00.000Z');
   assert.equal(recovered?.nodes?.[0].feeding_objects?.length,40);assert.match(recovered!.coverage!.note!,/历史快照/);
   assert.equal(w.external.reads.length,reads,'recovery does not contact the external source');
+  // A deployed Hub has no standing admin in the knowledge context (every sync names its own): the recheck of the root's raw
+  // captures takes an enabled administrator account as stored now instead.
+  const context=w.knowledge.__context as {admin:unknown},standing=context.admin;context.admin=null;
+  try{assert.ok(await recoverRead(deps,w.user,query,answer,trace,'2035-01-01T00:00:00.000Z'),'recovery works without a standing admin');}finally{context.admin=standing;}
   // Exercise the real MCP/cache route with the same knowledge service and its own records.
   const hub=await createTestServer({postgres:pg});t.after(()=>hub.close());
   hub.deps.records=w.kit;hub.deps.knowledge=w.knowledge;

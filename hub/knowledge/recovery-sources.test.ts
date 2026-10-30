@@ -43,3 +43,23 @@ test('a source with credential findings is recheckable only while an acceptance 
   assert.equal(await check(answer({ bytes: new TextEncoder().encode('changed') })), false, 'bytes that no longer hash to the source');
   assert.equal(await check(null), false, 'a source the reader cannot read');
 });
+
+test('without a standing admin in the knowledge context the recheck takes an enabled administrator account', async () => {
+  const user = { id: 'usr_01hzzzzzzzzzzzzzzzzzzzzzza', name: 'synthetic', role: 'user' as const };
+  const bytes = new TextEncoder().encode('synthetic capture');
+  const sha256 = sha256Hex(bytes);
+  const seen: string[] = [];
+  const check = async (list: unknown) => {
+    const knowledge = {
+      __context: { admin: null, records: { principals: { list }, artifacts: { source: async (reader: { id: string }) => { seen.push(reader.id); return { readTier: 'model_readable', bytes, size: bytes.length, artifact: { body: { scan: { inspected: true, truncated: false, findings: [] } } } }; } } } },
+      treeReader: () => ({ hasRoot: async () => true }),
+      rootSources: async () => [{ sha256, artifact: 'a'.repeat(64) }],
+    } as unknown as KnowledgePort;
+    return recoverySourcesReadable(knowledge, user, 'a'.repeat(64));
+  };
+  const account = (id: string, role: string, disabled: boolean) => ({ id, name: id, role, disabled });
+  assert.equal(await check(async () => [account('usr_user', 'user', false), account('usr_off', 'admin', true), account('usr_admin', 'admin', false)]), true);
+  assert.deepEqual(seen, ['usr_admin'], 'the captures are read as the enabled administrator, not as the disabled one or the user');
+  assert.equal(await check(async () => [account('usr_user', 'user', false), account('usr_off', 'admin', true)]), false, 'no enabled administrator: it cannot be checked');
+  assert.equal(await check(undefined), false, 'no way to list accounts: it cannot be checked');
+});
