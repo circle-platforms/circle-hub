@@ -528,11 +528,12 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   /** Every reference-like string in the slot records (an interpreter's table may point at any of them). */
   const collectQuotedReferences = (value: unknown): void => {
     if (typeof value === 'string' && value.length <= MAX_REFERENCE_LENGTH && /^(?:src|tree|entry|rec):/.test(value)) {
-      // A subject can quote more references than one evaluation may read (the rows of a large command diff). Those past the
-      // budget are not warmed: a check that needs their text sees them as unavailable, an honest unknown, and a check that
-      // does not need them is unaffected. The budget stays the bound on what is read.
+      // A production run's subject is the Hub's own projection and can quote more references than one evaluation may read (the
+      // rows of a large command diff). Those past the budget are not warmed: a check that needs their text sees them as
+      // unavailable, an honest unknown, and a check that does not need them is unaffected; the budget stays the bound on what is
+      // read. A model submission keeps failing closed: unread quotations are never taken as passed.
       try { readBudget.reserve(value); }
-      catch (error) { if (error instanceof HubReadFailure) return; throw error; }
+      catch (error) { if (submission === null && error instanceof HubReadFailure) return; throw error; }
       quotedReferences.add(value);
     } else if (Array.isArray(value)) {
       for (const item of value) collectQuotedReferences(item);

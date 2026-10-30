@@ -160,8 +160,10 @@ export function indexNote(skippedFrom: number): string {
 /** Whether the diff has a path an earlier-build case could need maintenance on: a removed or a modified command. A case of
  * unknown command attribution could sit on such a path, so then the sweep cannot be called empty or whole. */
 export function maintainable(diff: readonly { change: string }[]): boolean {
-  return diff.some((row) => row.change === 'removed' || row.change === 'modified');
+  return diff.some((row) => MAINTAINABLE.includes(row.change));
 }
+/** The change kinds a case can need maintenance on: every kind of the vocabulary except an added command. */
+const MAINTAINABLE: readonly string[] = CHANGE_KIND.filter((kind) => kind !== 'added');
 
 /** The cases that need maintenance, and the run-level note. `unknown` counts the earlier-build cases whose command
  * attribution the facet view could not tell: when the diff is maintainable the note speaks of the cases whose attribution
