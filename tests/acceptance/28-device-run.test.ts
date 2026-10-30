@@ -288,6 +288,10 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.equal(v.result?.acceptance, 'accepted', JSON.stringify(v.result?.errors));
     const note = v.result?.dispatch?.[0]; assert.ok(note, JSON.stringify(v.result?.dispatch));
     assert.match(note.text, /^Hub 没有派发：.*租约/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
+    // Like CES's failed bed check, the refusal names what is missing: every device key of the bed the run did not book.
+    const held = new Set((await bed.hub.leases.view('bed/')).entries.map(e => e.key));
+    const missing = MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`).filter(key => !held.has(key));
+    assert.ok(missing.length > 0); for (const key of missing) assert.ok(note.text.includes(key), `${key} named: ${note.text}`);
     assert.equal(submissions, before);
     await release(partial);
   });

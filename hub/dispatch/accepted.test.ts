@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setup } from './testing/context.ts';
 import { acceptedDispatch } from './accepted.ts';
+import { definition } from './testing/definition.ts';
 import { readRunJobs } from './read-runs.ts';
 import type { ActionBody } from '../records/api.ts';
 
@@ -47,6 +48,7 @@ test('a dispatch refused at the effect boundary before any reservation says that
   const c = await setup({ mode: 'lineage' }); t.after(() => c.close());
   const [note] = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.ok(note?.job, JSON.stringify(note)); assert.match(note.text, /^Hub 没有派发：/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
+  for (const key of definition('x').resources) assert.ok(note.text.includes(key), `the refusal names the uncovered key ${key}: ${note.text}`);
   assert.equal(c.calls.includes('send_blob'), false);
   const [again] = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.equal(again.job, note.job, JSON.stringify(again)); assert.match(again.text, /已结束/); assert.match(again.text, /原因：/);
