@@ -98,6 +98,7 @@ async function probeSandboxExec(): Promise<ProbeOutcome> {
       child.on('exit', (code) => resolve(linuxProbeOutcome(code)));
     });
   }
+  // Only macOS and Linux are supported. Windows is TBD (decision 92): no sandbox is provided there, so the probe stays unavailable.
   if (process.platform !== 'darwin') return { available: false, lasting: true, reason: 'platform' };
   try {
     await access(SANDBOX_EXEC, constants.X_OK);

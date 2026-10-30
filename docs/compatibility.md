@@ -15,6 +15,10 @@
 | `foundation/circle` | Circle **1.0.4** 源基线，冻结 | `references/README.md` 的来源记录 | 只是源码参考，不装、不跑它的安装器；不是 hub 的运行依赖 |
 | circle-packs | 见其 CHANGELOG | circle-packs 仓库 | 存放已退役服务器用的包（`modules.json`、`product-line/1`、`hub-*/1`），重建后的 Hub 不读取它们；第一个里程碑不改这个仓库 |
 
+## 平台
+
+Hub 服务端只支持并发布 macOS（开发与本机验证）和 Linux（生产，systemd 服务）两个平台。Windows 的支持整体列为待定（TBD，决定 92）：没有 Windows 的服务、沙箱、密库和安装包，现有的发布与 release 也不含 Windows 版本；此前的准备工作留在本地分支，不合并。代码里涉及平台的分支只加注释说明，不删除。Circle 客户端自己的平台不受影响。
+
 ## 包函数的隔离
 
 按 [Hub r4 架构](hub-r4-architecture.md)，任务包里的函数在受限的子进程里运行（由 rules 包实现，待复核）：Node 权限模型禁止写文件和起子进程，只许读解压后的包；架构简报记录了在 Node 24.17 上核实过权限模型不限制网络，所以子进程另在 macOS `sandbox-exec` 下运行并禁止网络；另有时间、内存和输入输出大小的限制。没有 `sandbox-exec` 的地方默认拒绝运行包内函数（`SANDBOX_UNAVAILABLE`）。其他平台上的等价隔离尚未确定。
