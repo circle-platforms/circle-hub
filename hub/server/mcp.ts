@@ -15,7 +15,7 @@ import { mediaTypeOf, readBody, sendRpcError, setCommonHeaders, type BodyBudget 
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { newTraceId, sessionIdOf, traceIdFrom } from './trace.ts';
 import { callTool, internalError, listTools, type CallState, type ToolCall } from './tools.ts';
-import { holdsToken, tokenRuns } from './token-echo.ts';
+import { headersHold, holdsToken, tokenRuns } from './token-echo.ts';
 
 export interface McpOptions {
   deps: ServerDeps;
@@ -27,7 +27,8 @@ export interface McpOptions {
 
 /** Same body for missing, unknown, revoked and disabled tokens. */
 const UNAUTHENTICATED = '需要有效的 Bearer 令牌';
-const TOKEN_IN_REQUEST = 'Invalid params: 请求里含调用方当前的 Hub 令牌或它的片段，整份请求没有处理，也没有保存；删去这段文字（或换一个会话号）后重发';
+const TOKEN_IN_REQUEST = 'Invalid params: 请求里含调用方当前的 Hub 令牌或它的片段，整份请求没有处理，也没有保存；删去这段文字后重发';
+const TOKEN_IN_HEADERS = 'Invalid Request: 请求头、方法或请求目标里含调用方当前的 Hub 令牌或它的片段，整份请求没有处理，也没有保存；改正后重发';
 const BATCH_REFUSED = 'Invalid Request: 不接受 JSON-RPC 批量请求（MCP 2025-06-18 起没有批量）；每个请求单独用一次 POST 发送';
 const LOGGED_TOOL = /^[A-Za-z0-9_./:-]{1,100}$/;
 const LOGGED_CODE = /^[A-Za-z0-9_.:-]{1,100}$/;
@@ -84,6 +85,28 @@ function batchStates(messages: readonly unknown[], started: number): CallState[]
   if (out.length === 0) out.push(transportState(`JSON-RPC batch of ${messages.length} messages refused (no request in it)`, started));
   else if (requests.length > LOGGED_BATCH) out.push(transportState(`JSON-RPC batch refused: ${requests.length - LOGGED_BATCH} more requests not logged one by one`, started));
   return out;
+}
+
+/**
+ * The call-log lines of a request refused for holding the caller's token: what can be logged without it, a line per request
+ * of a batch. Arguments are logged only as their digest and size; a method, tool or run id holding the token is not logged.
+ */
+function refusedStates(runs: RegExp, parsed: unknown, reason: string, started: number): CallState[] {
+  const states = Array.isArray(parsed) ? batchStates(parsed, started) : isRequest(parsed) ? [stateOf(parsed, started)] : [transportState(reason, started)];
+  return states.map(state => ({
+    ...state,
+    method: runs.test(state.method) ? 'mcp' : state.method,
+    tool: runs.test(state.tool) ? 'mcp' : state.tool,
+    runId: state.runId !== null && runs.test(state.runId) ? null : state.runId,
+    callResult: 'transport_failure',
+    notes: state.notes.includes(reason) ? state.notes : [...state.notes, reason],
+  }));
+}
+
+/** The id of a single request, answered back unless it holds the token; a batch or an unsafe id gets null. */
+function safeId(runs: RegExp, parsed: unknown): string | number | null {
+  if (!isRequest(parsed)) return null;
+  return typeof parsed.id === 'number' || !runs.test(parsed.id) ? parsed.id : null;
 }
 
 /** The message of the transport's JSON-RPC error, for the admin note. */
@@ -158,18 +181,22 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
     sendRpcError(response, 401, -32001, UNAUTHENTICATED, { 'www-authenticate': 'Bearer realm="circle-hub"', connection: 'close' });
     return;
   }
-  const traceId = traceIdFrom(request.headers.traceparent) ?? newTraceId();
-  // The caller's own token anywhere in the request refuses all of it before it is handled or stored, the session id that
-  // the call log keeps included (issue #105).
+  // The caller's own token anywhere in the request refuses all of it before it is handled or stored (issue #105). A header,
+  // the method or the target that holds it is refused before any of them reaches a log: that line keeps no session id and
+  // a trace id of the Hub's own.
   const runs = tokenRuns(authorization);
-  const session = request.headers['circle-session-id'];
-  const sessionHolds = runs !== null && (Array.isArray(session) ? session : [session ?? '']).some(value => runs.test(value));
-  const sessionId = sessionHolds ? null : sessionIdOf(session);
+  const headerHolds = runs !== null && headersHold(runs, request);
+  const traceId = (headerHolds ? null : traceIdFrom(request.headers.traceparent)) ?? newTraceId();
+  const sessionId = headerHolds ? null : sessionIdOf(request.headers['circle-session-id']);
   /** A refusal before any handler ran: its call-log lines (one transport_failure line by default), then the JSON-RPC error. */
-  const refuse = async (status: number, code: number, message: string, reason: string, headers: Record<string, string> = {}, states?: CallState[]): Promise<void> => {
+  const refuse = async (status: number, code: number, message: string, reason: string, headers: Record<string, string> = {}, states?: CallState[], id: string | number | null = null): Promise<void> => {
     for (const state of states ?? [transportState(reason, started)]) await logCall(options, principal, traceId, sessionId, state);
-    sendRpcError(response, status, code, message, headers);
+    sendRpcError(response, status, code, message, headers, id);
   };
+  if (headerHolds) {
+    request.resume();
+    return refuse(400, -32600, TOKEN_IN_HEADERS, "a request header, the method or the target held the caller's own Hub token or a 12-character run of it; nothing in the request was handled or stored", { connection: 'close' });
+  }
 
   if (request.method !== 'POST') {
     request.resume();
@@ -208,8 +235,9 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
     } catch {
       return await refuse(400, -32700, 'Parse error: 请求体不是 JSON', 'request body is not JSON');
     }
-    if (sessionHolds || runs !== null && holdsToken(runs, text, parsed)) {
-      return await refuse(400, -32602, TOKEN_IN_REQUEST, `the request held the caller's own Hub token or a 12-character run of it${sessionHolds ? ' in its session id' : ''}; nothing in it was handled or stored`);
+    if (runs !== null && holdsToken(runs, text, parsed)) {
+      const reason = "the request held the caller's own Hub token or a 12-character run of it; nothing in it was handled or stored";
+      return await refuse(400, -32602, TOKEN_IN_REQUEST, reason, {}, refusedStates(runs, parsed, reason, started), safeId(runs, parsed));
     }
     if (Array.isArray(parsed)) return await refuse(400, -32600, BATCH_REFUSED, 'JSON-RPC batch refused', {}, batchStates(parsed, started));
     await answer(request, response, options, principal, traceId, sessionId, parsed, started);

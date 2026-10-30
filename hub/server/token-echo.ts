@@ -1,6 +1,8 @@
 // A caller's own Hub token, or any 12-character run of it, inside what the caller sends (issue #105). The bearer token is
 // known only while the request is authenticated; this answers whether the request holds it without storing or echoing it,
 // so the request can be refused before anything in it is handled, logged or stored.
+import type { IncomingMessage } from 'node:http';
+
 const BEARER = /^Bearer[ \t]+([A-Za-z0-9_-]{43})[ \t]*$/i;
 const RUN = 12;
 
@@ -13,17 +15,46 @@ export function tokenRuns(authorization: unknown): RegExp | null {
   return new RegExp(Array.from({ length: token.length - RUN + 1 }, (_, index) => token.slice(index, index + RUN)).join('|'));
 }
 
-/** The bytes an upload_file call carries, decoded, so a token inside the file is found as well. */
-function uploadedText(message: unknown): string | null {
-  if (message === null || typeof message !== 'object' || Array.isArray(message)) return null;
-  const { method, params } = message as { method?: unknown; params?: { name?: unknown; arguments?: { file_path?: unknown } } };
-  if (method !== 'tools/call' || params?.name !== 'upload_file' || typeof params.arguments?.file_path !== 'string') return null;
-  return Buffer.from(params.arguments.file_path, 'base64').toString('latin1');
+/** Whether the method, the target or any header but the authorization holds the token: all of them may reach a log. */
+export function headersHold(runs: RegExp, request: IncomingMessage): boolean {
+  if (runs.test(request.method ?? '') || runs.test(request.url ?? '')) return true;
+  for (const [name, value] of Object.entries(request.headers)) {
+    if (name === 'authorization' || value === undefined) continue;
+    if ((Array.isArray(value) ? value : [value]).some(one => runs.test(one))) return true;
+  }
+  return false;
 }
 
-/** Whether a parsed request, its text as received, or an uploaded file in it holds the token. */
+/** Every key and string of a parsed JSON value, walked without recursion, so a value of any depth is checked. */
+function valueHolds(runs: RegExp, value: unknown): boolean {
+  const pending: unknown[] = [value];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (typeof current === 'string') {
+      if (runs.test(current)) return true;
+    } else if (Array.isArray(current)) {
+      for (const item of current) pending.push(item);
+    } else if (current !== null && typeof current === 'object') {
+      for (const [key, item] of Object.entries(current)) {
+        if (runs.test(key)) return true;
+        pending.push(item);
+      }
+    }
+  }
+  return false;
+}
+
+/** The decoded bytes of every upload_file call in a message or in a batch of them. */
+function uploadedTexts(message: unknown): string[] {
+  return (Array.isArray(message) ? message : [message]).flatMap(one => {
+    if (one === null || typeof one !== 'object' || Array.isArray(one)) return [];
+    const { method, params } = one as { method?: unknown; params?: { name?: unknown; arguments?: { file_path?: unknown } } };
+    const file = method === 'tools/call' && params?.name === 'upload_file' ? params.arguments?.file_path : undefined;
+    return typeof file === 'string' ? [Buffer.from(file, 'base64').toString('latin1')] : [];
+  });
+}
+
+/** Whether a parsed body, its text as received, or a file uploaded in it holds the token. */
 export function holdsToken(runs: RegExp, text: string, message: unknown): boolean {
-  if (runs.test(text) || runs.test(JSON.stringify(message) ?? '')) return true;
-  const uploaded = uploadedText(message);
-  return uploaded !== null && runs.test(uploaded);
+  return runs.test(text) || valueHolds(runs, message) || uploadedTexts(message).some(uploaded => runs.test(uploaded));
 }
