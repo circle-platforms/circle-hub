@@ -13,7 +13,11 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   const admin = (await records.principals.list()).find((p) => p.role === 'admin' && !p.disabled);
   if (!admin) return ready ? [{ text: 'Hub 没有在职管理员负责作业未知结果的处置，没有自动派发；请管理员开通账号，或由管理员用 job dispatch 派发' }] : [];
   const jobs = await readRunJobs(records, service, admin, run);
-  if (jobs.length) return jobs.map(noteOf);
+  // A job refused at the effect boundary ended before any reservation or remote call and used nothing of the run's dispatch:
+  // once the cause is fixed (a lease covering the target, for example), a repeat of the ready submission tries again, as CES
+  // resubmits a workbook its gateway refused. A job that reached the target, its precheck included, is only read.
+  const retry = ready && jobs.length > 0 && jobs.every((job) => job.ended === 'done' && job.boundary_refused && job.status.outcome === 'not_dispatched');
+  if (jobs.length && !retry) return jobs.map(noteOf);
   if (!ready) return [];
   const state: { reserved?: { job: string; executor: string } } = {};
   let wake: () => void = () => {};
