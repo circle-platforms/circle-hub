@@ -1,10 +1,14 @@
-// The HTTP surface of the Hub: POST /mcp, the read-only console under /console and GET /healthz, on a loopback address only.
-// Every request first passes the Host check (only 127.0.0.1:<port> and localhost:<port>, against DNS rebinding) and the
-// Origin check (absent, or a loopback origin); then the route decides. The request target is parsed once and never throws:
+// The HTTP surface of the Hub: POST /mcp, the console under /console and GET /healthz, on a loopback address unless the
+// configuration declares the allowed hosts; the same routes also over the built-in HTTPS when it is configured (a second
+// listener with the certificate of <data root>/tls). Every request first passes the Host check of the listener it arrived
+// on (127.0.0.1:<port>, localhost:<port> and the declared names, against DNS rebinding) and the Origin check (absent, or
+// one of this server's own origins); then the route decides. The request target is parsed once and never throws:
 // a target that is neither a path nor an absolute http URL of this server is a 400. close() stops accepting, lets requests in
 // flight end (bounded), closes every connection, then waits (bounded again) for the handlers it cut off, so their call-log
 // lines are written before the caller closes the records; it never stops the database.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer as createSecureServer } from 'node:https';
+import type { TLSSocket } from 'node:tls';
 import type { AddressInfo } from 'node:net';
 import { isLoopbackAddress } from '../config/index.ts';
 import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
@@ -47,6 +51,11 @@ export function parseTarget(target: string | undefined): RequestTarget | null {
   return null;
 }
 
+/** True for a request that arrived over the built-in TLS listener. */
+function encrypted(request: IncomingMessage): boolean {
+  return (request.socket as TLSSocket).encrypted === true;
+}
+
 /** A target for the operator's log: at most 200 characters, controls replaced. */
 function printable(target: string | undefined): string {
   return String(target ?? '').slice(0, 200).replace(/[\u0000-\u001f\u007f]/g, '?');
@@ -61,6 +70,9 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const proxyPeer = deps.config.proxyPeer;
   if (!validListenAddress(host) || (declared && !validAllowedHosts(declared)) || (!isLoopbackAddress(host) && !declared) || (proxyOrigin && !validProxyOrigin(proxyOrigin, declared, deps.config.port)) || Boolean(proxyOrigin) !== Boolean(proxyPeer) || (proxyPeer && !validListenAddress(proxyPeer))) throw new Error('监听地址、允许主机或可信代理无效');
   const proxyAuthority = proxyOrigin ? new URL(proxyOrigin).host : null;
+  const https = deps.config.https;
+  if (https && (!validListenAddress(https.host) || (!isLoopbackAddress(https.host) && !declared) || proxyOrigin)) throw new Error('内置 HTTPS 的监听地址无效，或与 HTTPS 代理同时配置');
+  if (https && !options.tls) throw new Error('配置了内置 HTTPS，但没有给证书和私钥');
   const release = readReleaseId(options.codeRoot);
   const log = options.log ?? ((line: string) => process.stderr.write(`${line}\n`));
   const closeTimeoutMs = options.closeTimeoutMs ?? 10_000;
@@ -69,9 +81,11 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const sessions = new SessionStore(() => clock().getTime());
   const budget = new BodyBudget(options.maxInflightBodyBytes ?? 4 * deps.config.limits.maxRequestBytes);
   let hosts = allowedHosts(host, deps.config.port, declared);
-  let origins = ownOrigins(hosts);
+  let secureHosts = https ? allowedHosts(https.host, https.port, declared, 443) : new Set<string>();
+  let origins = new Set([...ownOrigins(hosts), ...ownOrigins(secureHosts, 'https')]);
   if (proxyOrigin) { hosts.add(new URL(proxyOrigin).host); origins.add(proxyOrigin); }
   let server: Server | null = null;
+  let secureServer: Server | null = null;
   let stopping = false;
   let closing: Promise<void> | null = null;
   const inflight = new Set<Promise<void>>();
@@ -79,19 +93,22 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const mcpOptions = { deps, serverVersion: packageVersion(), log, budget };
   const consoleOptions = {
     deps, sessions, ownOrigins: () => origins, log,
-    // Forwarded headers never establish the HTTPS channel; only the configured authority and peer do.
-    secureRequest: (request: IncomingMessage) => proxyAuthority !== null
+    // Forwarded headers never establish the HTTPS channel; only the built-in TLS listener, or the configured proxy
+    // authority and peer, do.
+    secureRequest: (request: IncomingMessage) => encrypted(request) || (proxyAuthority !== null
       && request.headers.host?.toLowerCase() === proxyAuthority
-      && request.socket.remoteAddress?.replace(/^::ffff:/, '') === proxyPeer,
+      && request.socket.remoteAddress?.replace(/^::ffff:/, '') === proxyPeer),
   };
 
   const route = async (request: IncomingMessage, response: ServerResponse, target: RequestTarget | null): Promise<void> => {
     if (stopping) response.setHeader('connection', 'close');
+    // Each listener answers only to its own authorities: an HTTPS name sent over plain HTTP (or the reverse) is refused.
+    const listenerHosts = encrypted(request) ? secureHosts : hosts;
     const isMcp = target?.url.pathname === '/mcp';
     // An absolute-form target names an authority too: it must be this server, like the Host header.
     const usesProxy = proxyAuthority !== null && (request.headers.host?.toLowerCase() === proxyAuthority || target?.authority === proxyAuthority || request.headers.origin === proxyOrigin);
     const peer = request.socket.remoteAddress?.replace(/^::ffff:/, '');
-    const hostOk = hostAllowed(request, hosts) && (target === null || target.authority === null || hosts.has(target.authority)) && (!usesProxy || peer === proxyPeer);
+    const hostOk = hostAllowed(request, listenerHosts) && (target === null || target.authority === null || listenerHosts.has(target.authority)) && (!usesProxy || peer === proxyPeer);
     if (!hostOk || !originAllowed(request, declared ? origins : undefined)) {
       request.resume();
       const message = hostOk ? refusedOrigin : refusedHost;
@@ -170,27 +187,50 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     });
     server = created;
     const port = (created.address() as AddressInfo).port;
+    let secure: ListenInfo['https'];
+    if (https && options.tls) {
+      const tls = createSecureServer({ cert: options.tls.cert, key: options.tls.key, minVersion: 'TLSv1.2', requestTimeout: 120_000, headersTimeout: 30_000, keepAliveTimeout: 5_000 }, handler);
+      try {
+        await new Promise<void>((resolve, reject) => {
+          tls.once('error', reject);
+          tls.listen(https.port, https.host, () => {
+            tls.off('error', reject);
+            resolve();
+          });
+        });
+      } catch (error) {
+        await new Promise<void>(resolve => created.close(() => resolve()));
+        server = null;
+        throw error;
+      }
+      secureServer = tls;
+      const securePort = (tls.address() as AddressInfo).port;
+      secureHosts = allowedHosts(https.host, securePort, declared, 443);
+      const secureLiteral = https.host.includes(':') ? `[${https.host}]` : https.host;
+      secure = { host: https.host, port: securePort, url: `https://${secureLiteral}:${securePort}` };
+    }
     if (proxyOrigin && !validProxyOrigin(proxyOrigin, declared, port)) {
       await new Promise<void>(resolve => created.close(() => resolve()));
       server = null;
       throw new Error('HTTPS 代理来源不能与实际 HTTP 监听权威相同');
     }
     hosts = allowedHosts(host, port, declared);
-    origins = ownOrigins(hosts);
+    origins = new Set([...ownOrigins(hosts), ...ownOrigins(secureHosts, 'https')]);
     if (proxyOrigin) { hosts.add(new URL(proxyOrigin).host); origins.add(proxyOrigin); }
     const literal = host.includes(':') ? `[${host}]` : host;
-    return { host, port, url: `http://${literal}:${port}` };
+    return { host, port, url: `http://${literal}:${port}`, ...(secure ? { https: secure } : {}) };
   };
 
   const close = (): Promise<void> =>
     (closing ??= (async () => {
       stopping = true;
       const current = server;
+      const listeners = [server, secureServer].filter((s): s is Server => s !== null);
       if (current !== null) {
-        const closed = new Promise<void>((resolve) => current.close(() => resolve()));
-        current.closeIdleConnections();
+        const closed = Promise.all(listeners.map((s) => new Promise<void>((resolve) => s.close(() => resolve()))));
+        for (const s of listeners) s.closeIdleConnections();
         await drained(closeTimeoutMs);
-        current.closeAllConnections();
+        for (const s of listeners) s.closeAllConnections();
         // Cutting a connection does not stop its handler: wait for those too (bounded), so a call that is still running
         // writes its call-log line before the caller stops the sandbox and closes the records.
         if (!(await drained(closeGraceMs))) {

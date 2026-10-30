@@ -35,6 +35,8 @@ export interface HubConfig {
   proxyOrigin?: string;
   proxyPeer?: string;
   port: number;
+  /** The Hub's own HTTPS listener (its certificate and key are in <dataDir>/tls); absent when HTTPS is off. */
+  https?: { host: string; port: number };
   database: DatabaseConfig;
   keychain: { service: string; account: string };
   limits: Limits;
@@ -158,6 +160,18 @@ export function loadConfig(
   const proxyPeer = read('CIRCLE_HUB_PROXY_PEER');
   if (proxyOrigin && (port === undefined || !validProxyOrigin(proxyOrigin, allowedHosts, port))) problems.push('CIRCLE_HUB_PROXY_ORIGIN 必须是允许主机上的精确 HTTPS 来源，与直接 HTTP 监听权威不同');
   if (Boolean(proxyOrigin) !== Boolean(proxyPeer) || (proxyPeer && !validListenAddress(proxyPeer))) problems.push('CIRCLE_HUB_PROXY_ORIGIN 与 CIRCLE_HUB_PROXY_PEER 必须同时声明，可信代理对端须是明确的内网 IP 或回环地址');
+  const httpsPort = read('CIRCLE_HUB_HTTPS_PORT') === undefined ? undefined : integer('CIRCLE_HUB_HTTPS_PORT', undefined, 0, 65535);
+  const httpsHost = read('CIRCLE_HUB_HTTPS_HOST');
+  let https: { host: string; port: number } | undefined;
+  if (httpsHost !== undefined && read('CIRCLE_HUB_HTTPS_PORT') === undefined) problems.push('设了 CIRCLE_HUB_HTTPS_HOST 就要设 CIRCLE_HUB_HTTPS_PORT');
+  if (httpsPort !== undefined) {
+    const listen = httpsHost ?? '127.0.0.1';
+    if (!validListenAddress(listen)) problems.push(`CIRCLE_HUB_HTTPS_HOST 只允许回环地址或明确的内网 IP，不能用通配地址${listen === 'localhost' ? '，请写 127.0.0.1' : ''}`);
+    else if (!isLoopbackAddress(listen) && !allowedHosts) problems.push('CIRCLE_HUB_HTTPS_HOST 不是回环地址时，必须显式设置 CIRCLE_HUB_ALLOWED_HOSTS');
+    if (proxyOrigin) problems.push('内置 HTTPS 与 HTTPS 代理（CIRCLE_HUB_PROXY_ORIGIN）只能选一个');
+    if (port !== undefined && httpsPort !== 0 && httpsPort === port) problems.push('CIRCLE_HUB_HTTPS_PORT 不能和 CIRCLE_HUB_PORT 相同');
+    https = { host: listen, port: httpsPort };
+  }
 
   const socketDir = absolute('CIRCLE_HUB_DATABASE_SOCKET_DIR', false);
   const databaseHost = read('CIRCLE_HUB_DATABASE_HOST');
@@ -205,6 +219,7 @@ export function loadConfig(
     ...(proxyOrigin ? { proxyOrigin } : {}),
     ...(proxyPeer ? { proxyPeer } : {}),
     port,
+    ...(https ? { https } : {}),
     database: { host: resolvedDatabaseHost, port: databasePort, database, user },
     keychain,
     limits: { maxUploadBytes, maxRecordBytes, maxRequestBytes },

@@ -1,12 +1,13 @@
 // `circle-hub serve`: configuration from CIRCLE_HUB_* only (a retired CIRCLE_SERVER_* name refuses to start, and so does an
 // operator token in the environment: a server needs no admin token), the platform's cluster started when the database is the
 // data root's own socket (never initialised, never stopped on exit), records opened as the runtime role without migrating,
-// the assembly, then the app on loopback until SIGTERM or SIGINT.
+// the assembly, then the app (on loopback unless the configuration declares allowed hosts, and over the built-in HTTPS
+// with the certificate of <data root>/tls when it is configured) until SIGTERM or SIGINT.
 // `serve --migrate-only` applies the migrations as the owner role, grants the runtime role (records decision 16) and exits 0.
 import { userInfo } from 'node:os';
 import { parseArgs } from 'node:util';
 import { HubConfigError, HubEnvironmentError, assertNoRetiredEnvironment, loadConfig, type HubConfig } from '../config/index.ts';
-import { PLATFORM_ONLY_VARIABLES, ensureHubDatabase, hubKeyProvider, layoutAt } from '../platform/api.ts';
+import { PLATFORM_ONLY_VARIABLES, RENEW_WITHIN_DAYS, daysLeft, ensureHubDatabase, hubKeyProvider, layoutAt, readServerTls } from '../platform/api.ts';
 import { migrateRecords, openRecords, type KeyProvider, type RecordsKit } from '../records/index.ts';
 import { stopAll, sweepOrphans } from '../rules/api.ts';
 import type { AppOptions, AssemblyModule, CliIo, HubApp, ListenInfo } from './api.ts';
@@ -33,7 +34,7 @@ export interface ServeOptions {
   now?: () => Date;
 }
 
-export const SERVE_USAGE = 'serve [--migrate-only] [--migrate]   启动 Hub（只监听本机）；--migrate-only 以拥有表的角色应用迁移后退出；--migrate 用连接角色先迁移（单角色的开发环境）';
+export const SERVE_USAGE = 'serve [--migrate-only] [--migrate]   启动 Hub（默认只监听本机；配置了内置 HTTPS 时另开 HTTPS）；--migrate-only 以拥有表的角色应用迁移后退出；--migrate 用连接角色先迁移（单角色的开发环境）';
 
 /** CIRCLE_HUB_* names hub/config does not know but this program accepts: the platform's own (its commands read them). */
 export const ACCEPTED_PLATFORM_VARIABLES: readonly string[] = PLATFORM_ONLY_VARIABLES;
@@ -159,13 +160,22 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
   let app: HubApp | undefined;
   let maintenance: import('./api.ts').ServerDeps['maintenance'];
   try {
+    // The built-in HTTPS certificate is read before anything starts: a missing, loose or expired one stops serve here.
+    let tls = options.appOptions?.tls;
+    if (config.https && tls === undefined) {
+      const material = await readServerTls(config.dataDir);
+      const left = daysLeft(material.certificate);
+      if (left <= RENEW_WITHIN_DAYS) operatorLog(`注意：内置 HTTPS 的服务器证书 ${material.certificate.validTo} 到期（还有 ${left} 天）；运行 circle-hub tls issue 重新签发后重启服务`);
+      tls = { cert: material.cert, key: material.key };
+    }
     const assembly = await (options.assembly ?? (() => import('./assemble.ts') as Promise<AssemblyModule>))();
     const deps = await assembly.assemble(config, records);
     maintenance=deps.maintenance;
     await maintenance?.startMaintenance();
-    app = createApp(deps, { log: operatorLog, ...options.appOptions });
+    app = createApp(deps, { log: operatorLog, ...options.appOptions, ...(tls ? { tls } : {}) });
     const info = await app.listen();
     io.stdout(`circle-hub 在 ${info.url} 上监听${app.release === null ? '' : `（发布 ${app.release}）`}`);
+    if (info.https) io.stdout(`内置 HTTPS：${info.https.url}`);
     options.onListening?.(info);
   } catch (error) {
     await maintenance?.stopMaintenance().catch(() => {});

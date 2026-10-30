@@ -34,6 +34,7 @@ import {
   type PlatformSettingsFile,
 } from './settings.ts';
 import { withSession } from './sql.ts';
+import { RENEW_WITHIN_DAYS, certificateHosts, daysLeft, initTls, readTlsState } from './tls.ts';
 
 export interface PlatformIo {
   stdout(line: string): void;
@@ -66,7 +67,7 @@ export function usage(platform: NodeJS.Platform = process.platform): string {
   return [
     '用法：circle-hub <命令>',
     '',
-    `  init --environment <环境类别> [--port <端口>]   建数据根和部署设置，初始化并启动数据库；环境类别：${environmentChoices()}`,
+    `  init --environment <环境类别> [--port <端口>] [--https-port <端口> [--https-host <地址>]]   建数据根和部署设置，初始化并启动数据库；环境类别：${environmentChoices()}`,
     '  db start|stop|status                           本机 PostgreSQL（只有 unix 套接字，没有 TCP 端口）',
     `  key init [--set-aside-vault]|status|export --confirm|import   建立或查看${VAULT_KEY_ITEM.label}；密钥只经管道传输且不覆盖`,
     `  service install|uninstall|start|stop|status    ${platform === 'linux' ? 'systemd' : 'launchd'} 用户服务 circle-hub serve`,
@@ -75,6 +76,7 @@ export function usage(platform: NodeJS.Platform = process.platform): string {
     '  deploy [--source <目录>] [--commit <提交>] [--copy]   部署一个提交；失败时恢复部署前备份并切回上一版',
     '  rollback                                       回到上一版并恢复它部署前的备份',
     '  rehearse [--keep]                              在临时数据根里演练备份、销毁与恢复',
+    '  tls init [--renew-authority]|issue|status      内置 HTTPS 的本地证书颁发机构和服务器证书（数据根的 tls 目录）',
     '  status                                         汇总状态',
     '',
     `数据根默认是 ~/Library/Application Support/circle-hub，可用 ${DATA_ROOT_VARIABLE} 改。端口、数据库名与钥匙串项只来自部署设置。`,
@@ -113,15 +115,20 @@ async function refuseWhilePending(context: PlatformContext, action: string): Pro
 }
 
 const init: Handler = async (args, context, io) => {
-  const { values, positionals } = parse(args, { environment: { type: 'string' }, port: { type: 'string' } });
+  const { values, positionals } = parse(args, { environment: { type: 'string' }, port: { type: 'string' }, 'https-port': { type: 'string' }, 'https-host': { type: 'string' } });
   noArguments(positionals);
   const { layout } = context;
   let port: number | undefined;
+  let httpsPort: number | undefined;
   try {
     port = values.port === undefined ? undefined : parsePort(values.port, '--port');
+    const envHttpsPort = variable(context.env, PLATFORM_VARIABLES.httpsPort);
+    httpsPort = values['https-port'] !== undefined ? parsePort(values['https-port'], '--https-port') : envHttpsPort === undefined ? undefined : parsePort(envHttpsPort, PLATFORM_VARIABLES.httpsPort);
   } catch (error) {
     throw new UsageError((error as Error).message);
   }
+  const httpsHost = values['https-host'] ?? variable(context.env, PLATFORM_VARIABLES.httpsHost);
+  if (httpsHost !== undefined && httpsPort === undefined) throw new UsageError('--https-host 要和 --https-port 一起给');
   if (values.environment !== undefined && !isEnvironment(values.environment)) throw new UsageError(`环境类别只能是：${environmentChoices()}`);
   let file = await readSettingsFile(layout);
   if (!file) {
@@ -137,6 +144,8 @@ const init: Handler = async (args, context, io) => {
       allowedHosts: variable(context.env, PLATFORM_VARIABLES.allowedHosts)?.split(','),
       proxyOrigin: variable(context.env, PLATFORM_VARIABLES.proxyOrigin),
       proxyPeer: variable(context.env, PLATFORM_VARIABLES.proxyPeer),
+      httpsHost,
+      httpsPort,
       keychainService: variable(context.env, PLATFORM_VARIABLES.keychainService),
       keychainAccount: variable(context.env, PLATFORM_VARIABLES.keychainAccount),
       database: context.database,
@@ -148,7 +157,7 @@ const init: Handler = async (args, context, io) => {
     file = fresh;
     io.stdout(`已写入部署设置：${settingsPath(layout)}`);
   } else {
-    const conflict = (values.environment !== undefined && values.environment !== file.environment) || (port !== undefined && port !== file.port);
+    const conflict = (values.environment !== undefined && values.environment !== file.environment) || (port !== undefined && port !== file.port) || (httpsPort !== undefined && httpsPort !== file.https_port) || (httpsHost !== undefined && httpsHost !== (file.https_host ?? '127.0.0.1'));
     if (conflict) throw new PlatformError('已有部署设置，与这次给的参数不同，不改写', `要改就手动编辑 ${settingsPath(layout)}`);
     await ensureLayout(layout);
     io.stdout(`沿用已有部署设置：${settingsPath(layout)}`);
@@ -163,7 +172,64 @@ const init: Handler = async (args, context, io) => {
   io.stdout(`数据根：${layout.root}`);
   io.stdout(`环境类别：${environmentText(settings.environment)}；端口：${settings.listenHost ?? '127.0.0.1'}:${settings.port}${settings.allowedHosts ? `；允许主机：${settings.allowedHosts.join('、')}` : ''}${settings.proxyOrigin ? `；代理来源：${settings.proxyOrigin}；可信对端：${settings.proxyPeer}` : ''}`);
   io.stdout(databaseText(layout, settings, await databaseOwner(cluster)));
-  io.stdout('下一步：circle-hub key init，然后 circle-hub deploy');
+  if (settings.https) io.stdout(`内置 HTTPS：${httpsAuthority(settings.https)}`);
+  io.stdout(`下一步：circle-hub key init，${settings.https ? '然后 circle-hub tls init，' : ''}然后 circle-hub deploy`);
+  return 0;
+};
+
+function httpsAuthority(https: { host: string; port: number }): string {
+  return `https://${https.host.includes(':') ? `[${https.host}]` : https.host}:${https.port}`;
+}
+
+/** The names the server certificate must cover: the HTTPS listen address when it is not loopback, and every allowed host. */
+function certificateNames(settings: PlatformSettings): string[] {
+  const names = [...(settings.allowedHosts ?? [])];
+  const listen = settings.https?.host;
+  if (listen !== undefined && listen !== '::1' && !listen.startsWith('127.') && !names.includes(listen)) names.unshift(listen);
+  return names;
+}
+
+const tls: Handler = async (args, context, io) => {
+  const [action, ...rest] = args;
+  const { values, positionals } = parse(rest, { 'renew-authority': { type: 'boolean' } });
+  noArguments(positionals);
+  if (action !== 'init' && action !== 'issue' && action !== 'status') throw new UsageError('用法：circle-hub tls init [--renew-authority]|issue|status');
+  if (action !== 'init' && values['renew-authority']) throw new UsageError('--renew-authority 只用于 tls init');
+  const { layout } = context;
+  const settings = await settingsOf(context);
+  if (action === 'status') {
+    const state = await readTlsState(layout.root);
+    io.stdout(`内置 HTTPS：${settings.https ? httpsAuthority(settings.https) : '没有开启（部署设置里没有 https_port）'}`);
+    if (state.authority === null) {
+      io.stdout('证书颁发机构：没有；运行 circle-hub tls init 建立');
+      return NOT_RUNNING;
+    }
+    io.stdout(`证书颁发机构：${state.paths.authorityCert}（SHA-256 指纹 ${state.authority.fingerprint256}，${state.authority.validTo} 到期）`);
+    const server = state.server;
+    if (server === null) {
+      io.stdout('服务器证书：没有；运行 circle-hub tls issue 签发');
+      return NOT_RUNNING;
+    }
+    const left = daysLeft(server);
+    io.stdout(`服务器证书：${certificateHosts(server).join('、')}；${server.validTo} 到期（还有 ${left} 天）${left <= RENEW_WITHIN_DAYS ? '；快到期了，运行 circle-hub tls issue 重新签发后重启服务' : ''}`);
+    const uncovered = certificateNames(settings).filter((name) => !certificateHosts(server).includes(name));
+    if (uncovered.length > 0) io.stdout(`注意：服务器证书没有覆盖部署设置里的 ${uncovered.join('、')}；运行 circle-hub tls issue 重新签发`);
+    return 0;
+  }
+  if (!settings.https) io.stdout('注意：部署设置里还没有开启内置 HTTPS（https_port）；证书照样签发，开启后才会用到');
+  if (action === 'issue' && (await readTlsState(layout.root)).authority === null) {
+    throw new PlatformError('还没有证书颁发机构，不能只签发服务器证书', '先运行 circle-hub tls init');
+  }
+  const result = await initTls(layout.root, certificateNames(settings), { renewAuthority: values['renew-authority'] === true });
+  if (result.createdAuthority) {
+    io.stdout(`已建立证书颁发机构：${result.paths.authorityCert}`);
+    io.stdout(`SHA-256 指纹：${result.authorityFingerprint}`);
+    io.stdout('让浏览器和 Circle 信任这份证书：在浏览器或系统钥匙串里导入它，Circle 在设置的 trust_cert_files 里加上它；信任前核对指纹');
+  } else {
+    io.stdout(`沿用已有的证书颁发机构：${result.paths.authorityCert}（指纹 ${result.authorityFingerprint}）`);
+  }
+  io.stdout(`已签发服务器证书：${result.hosts.join('、')}；${result.serverValidTo} 到期`);
+  io.stdout('服务正在运行时，重启后才用上新证书：circle-hub service stop，然后 circle-hub service start');
   return 0;
 };
 
@@ -431,6 +497,15 @@ const status: Handler = async (args, context, io) => {
   io.stdout(`环境类别：${environmentText(settings.environment)}；端口：${settings.listenHost ?? '127.0.0.1'}:${settings.port}${settings.allowedHosts ? `；允许主机：${settings.allowedHosts.join('、')}` : ''}${settings.proxyOrigin ? `；代理来源：${settings.proxyOrigin}；可信对端：${settings.proxyPeer}` : ''}`);
   // The owner is printed only from the running cluster: a data root of an earlier platform version has another one.
   io.stdout(databaseText(layout, settings));
+  if (settings.https) {
+    try {
+      const server = (await readTlsState(layout.root)).server;
+      const left = server === null ? null : daysLeft(server);
+      io.stdout(`内置 HTTPS：${httpsAuthority(settings.https)}；${server === null || left === null ? '没有服务器证书，运行 circle-hub tls init' : `服务器证书 ${server.validTo} 到期（还有 ${left} 天）${left <= RENEW_WITHIN_DAYS ? '，运行 circle-hub tls issue 重新签发后重启服务' : ''}`}`);
+    } catch (error) {
+      io.stdout(`内置 HTTPS：${httpsAuthority(settings.https)}；证书无法确认（${messageOf(error)}）`);
+    }
+  }
   const unsure = (subject: string, error: unknown) => io.stdout(`${subject}：无法确认（${messageOf(error)}）`);
   try {
     const pending = await readProgress(layout);
@@ -500,6 +575,7 @@ const HANDLERS: Record<string, Handler> = {
   rollback: rollbackCommand,
   rehearse: rehearseCommand,
   status,
+  tls,
 };
 
 export const PLATFORM_COMMANDS: readonly string[] = Object.keys(HANDLERS);

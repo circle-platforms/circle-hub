@@ -22,6 +22,12 @@ An optional `CIRCLE_HUB_PROXY_ORIGIN` names the exact HTTPS origin served by a T
 its authority must differ from the directly listened HTTP authority. It requires `CIRCLE_HUB_PROXY_PEER`, the proxy's
 exact source IP. Only connections from that peer can use the proxy authority; forwarded headers do not change the check.
 
+The built-in HTTPS is on when `CIRCLE_HUB_HTTPS_PORT` is set (`HubConfig.https`): a second listener on
+`CIRCLE_HUB_HTTPS_HOST` (default `127.0.0.1`) serving the same routes with the certificate and key of `<data dir>/tls`
+(`circle-hub tls init`). A non-loopback HTTPS address needs `CIRCLE_HUB_ALLOWED_HOSTS` like the HTTP listener; the
+HTTPS port may not equal the HTTP port; a TLS proxy (`CIRCLE_HUB_PROXY_ORIGIN`) and the built-in HTTPS are exclusive.
+`CIRCLE_HUB_HTTPS_HOST` without the port is refused.
+
 | Variable | Default | `HubConfig` |
 | --- | --- | --- |
 | `CIRCLE_HUB_KEYCHAIN_SERVICE` | `circle-hub` | `keychain.service` |

@@ -13,6 +13,8 @@ export const HUB_ENVIRONMENT = {
   CIRCLE_HUB_PROXY_ORIGIN: '可选的 HTTPS 代理公开来源，必须属于允许主机且与直接 HTTP 监听权威不同',
   CIRCLE_HUB_PROXY_PEER: 'HTTPS 代理连接到 Hub 时的可信对端 IP，必须与代理来源同时配置',
   CIRCLE_HUB_PORT: '监听端口，必填，0 表示由系统分配',
+  CIRCLE_HUB_HTTPS_HOST: '内置 HTTPS 的监听地址，默认回环；指定内网地址时须同时声明允许主机；只在设了 CIRCLE_HUB_HTTPS_PORT 时有效',
+  CIRCLE_HUB_HTTPS_PORT: '内置 HTTPS 的监听端口，设了才开 HTTPS，0 表示由系统分配；证书和私钥在 <数据目录>/tls，由 circle-hub tls init 签发',
   CIRCLE_HUB_DATABASE_SOCKET_DIR: 'PostgreSQL 的 Unix 套接字目录，绝对路径；与 CIRCLE_HUB_DATABASE_HOST 二选一',
   CIRCLE_HUB_DATABASE_HOST: 'PostgreSQL 的回环地址；与 CIRCLE_HUB_DATABASE_SOCKET_DIR 二选一',
   CIRCLE_HUB_DATABASE_PORT: 'PostgreSQL 端口，默认 5432（用套接字时决定套接字文件名）',
