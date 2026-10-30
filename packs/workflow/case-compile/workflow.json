@@ -45,12 +45,25 @@
     {
       "slot": "workbook",
       "role": "artifact_under_verification",
-      "description": "客户端从已满足计划生成并上传的单用例工作簿，xlsx@1 解析；缺少时只核计划，工作簿要求项保持缺输入并由客户端继续生成上传",
+      "description": "客户端从已满足计划生成并上传的工作簿（本运行全部用例的一份），xlsx@1 解析；缺少时只核计划，工作簿要求项保持缺输入并由客户端继续生成上传",
       "accepts": [
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       ],
       "required": false,
       "many": false
+    },
+    {
+      "slot": "plan_result",
+      "role": "expected",
+      "description": "绑定 workbook 时写计划运行号（与 plan_run 相同）；Hub 换成该计划运行最近一次受理的结果，冻结全部用例已受理的计划和命令目录回执，每个用例按它们重算整份工作簿。多于一个用例时必填",
+      "accepts": [
+        "application/json"
+      ],
+      "required": false,
+      "many": false,
+      "from_runs": {
+        "pack": "case-compile"
+      }
     },
     {
       "slot": "case_index",
@@ -121,8 +134,8 @@
     },
     {
       "name": "autoid",
-      "description": "本轮只编译这个自动化编号，按原始文字匹配；找不到或重复均拒绝开始运行",
-      "required": true,
+      "description": "只编译这个自动化编号（按原始文字匹配；找不到或重复均拒绝开始运行）。不填时编译整份文档：全部带文字 autoid、未声明不自动化的用例，一个运行一份工作簿",
+      "required": false,
       "schema": {
         "type": "string",
         "minLength": 1,

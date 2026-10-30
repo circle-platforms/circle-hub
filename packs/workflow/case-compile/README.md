@@ -1,4 +1,4 @@
-# case-compile 3.8.11
+# case-compile 3.9.0
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -324,3 +324,29 @@ loads an SSL host needs.
   name passed to the certificate import methods).
 
 Test: `functions/confirmations.test.ts` with the synthetic fixture `testing/confirmations.ts`.
+
+### 3.9.0: one run and one workbook for the whole document (decision 104)
+
+A user converts a whole mindmap for a version, not one case at a time (owner, 2026-10-30). Without `parameters.autoid` the run
+takes every case of the document that has a textual autoid of the configured shape and is not excluded by the author, in
+document order, one item each; duplicate autoids refuse startup, and a recomposed pipeline stays one case per run. With
+`autoid`, exactly that case, as before.
+
+- **One workbook.** `generateWorkbookSet` writes one identity row, header and description, then each case's rows in item order,
+  each followed by a blank row, then the closing row; the InfoTest runner begins a case at every A-column autoid row
+  (`test_xlsx.py`), and CES emits the same layout. The identity recipe digest covers the ordered list of the cases' recipes;
+  one case keeps exactly the single-case bytes. The independent reader (`readWorkbook`) walks the case blocks in the same
+  order, and a block plan and a flat plan cannot share a workbook.
+- **Verification against every accepted plan.** The verification run binds `plan_result` (a `from_runs` input: the plan run
+  id, which the Hub replaces with that run's latest accepted result). The projection freezes, in item order, every case's
+  accepted plan and commands_known catalog receipt (`plan_set` in the run group). Each item's `workbook_verified` check
+  requires its resubmitted plan to equal its frozen plan and regenerates the whole workbook from the frozen set; all items
+  return the same support data, whose `autoids` lists every case. More than one case without a usable `plan_result` refuses
+  startup.
+- **Dispatch.** `policies/dispatch.json` binds 1 to `max_items` (64) distinct autoids; the Hub's dispatch proof accepts a
+  verification run of several items when it names one dispatched id per item (the runner reports one row per autoid).
+- **Client.** `tools/generate-workbook.ts` generates the whole workbook from the plan run's run, accepted result and
+  submission when every case's plan requirements are satisfied (only the workbook may still be missing); with a case not
+  yet satisfied it produces nothing, as CES does not emit a batch with unsealed cases.
+
+Test: `functions/whole-mindmap.test.ts`.

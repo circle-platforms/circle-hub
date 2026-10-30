@@ -12,15 +12,15 @@ import { parseManifest } from './functions/manifest.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
-  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.8.11'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
+  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.9.0'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles(); assert.ok(files.includes('functions/runtime-contract.ts')); assert.ok(files.includes('tables/runtime-profile-format.json'));
   assert.ok(!files.some((path) => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/')));
   assert.ok(!files.includes('functions/contract.ts') && !files.includes('functions/plan.ts'));
 });
 test('workflow binds the published profile and exposes reservation addresses under bed/', () => {
   const workflow = WorkflowFile.parse(json('workflow.json'));
-  assert.deepEqual(workflow.inputs.map((v) => [v.slot, v.role, v.required]), [['subject', 'subject', true], ['contract', 'expected', true], ['inventory', 'expected', true], ['profile', 'expected', true], ['workbook', 'artifact_under_verification', false], ['case_index','expected',false],['criteria_review','expected',false],['criteria_review_run','expected',false],['recomposition_run','expected',false],['recomposition_result','expected',false]]);
-  assert.equal(workflow.parameters.find((v) => v.name === 'autoid')?.required, true);
+  assert.deepEqual(workflow.inputs.map((v) => [v.slot, v.role, v.required]), [['subject', 'subject', true], ['contract', 'expected', true], ['inventory', 'expected', true], ['profile', 'expected', true], ['workbook', 'artifact_under_verification', false], ['plan_result', 'expected', false], ['case_index','expected',false],['criteria_review','expected',false],['criteria_review_run','expected',false],['recomposition_run','expected',false],['recomposition_result','expected',false]]);
+  assert.equal(workflow.parameters.find((v) => v.name === 'autoid')?.required, false);
   assert.equal(workflow.leases?.prefix, 'bed/'); assert.deepEqual(workflow.context, ['leases']); assert.deepEqual(workflow.product.catalogs, ['commands@1']);
 });
 test('every check serves one requirement and repairable codes have exactly two rounds', () => {

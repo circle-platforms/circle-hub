@@ -202,12 +202,12 @@
     },
     {
       "code": "case-compile.workbook_input",
-      "when": "绑定工作簿不是完整的 xlsx@1 原件，或解析模型超过单用例核验预算",
+      "when": "绑定工作簿不是完整的 xlsx@1 原件，或解析模型超过核验预算",
       "fix": "上传原始 xlsx 并按返回的 src: 绑定；超预算时减少该用例的非必要内容后重新生成，不截断模型或删除执行行"
     },
     {
       "code": "case-compile.workbook_context",
-      "when": "绑定工作簿时没有合式的已满足计划运行号 plan_run",
+      "when": "绑定工作簿时没有合式的已满足计划运行号 plan_run；多于一个用例时缺计划运行的已受理结果 plan_result，或它没有受理每个用例的唯一计划和命令目录回执",
       "fix": "从已满足的计划提交与结果复制运行号，以其为 predecessor，填写相同 plan_run 并开始绑定原件的新核验运行"
     }
   ],
