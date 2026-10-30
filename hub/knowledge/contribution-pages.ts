@@ -28,13 +28,16 @@ export async function contributionNodes(context:KnowledgeContext,reading:TreeRea
   const nodes:NodesPage['nodes']=state.l?[]:base.nodes.map(node=>({...node}));
   let next:string|null=base.next;
   let continued=false;
+  // One batched lookup finds the nodes that have contribution records at all; every other node's page is empty and
+  // complete without reading it (ContributionLayer.pathsWithRecords). A resumed node is always paged from its cursor.
+  const recorded=await layer.pathsWithRecords(query.root,base.nodes.slice(state.n).map(node=>node.path),reader);
   for(let i=state.n;i<base.nodes.length;i++){
     // The first slice of a split tree node already emitted its contribution pages.
     if(!state.l&&i===0&&continuesNodeEntries(state.b))continue;
     let node=state.l?{...base.nodes[i],entries:[],children:[]}:nodes[i];
     if(state.l)nodes.push(node);
-    const remaining=Math.max(0,budget-16384-canonicalSize(nodes));
-    const page=await layer.page(query.root,node.path,reader,{cursor:i===state.n?state.r:null,bytes:remaining});
+    const cursor=i===state.n?state.r:null;
+    const page=cursor===null&&!recorded.has(node.path)?{items:[],next:null}:await layer.page(query.root,node.path,reader,{cursor,bytes:Math.max(0,budget-16384-canonicalSize(nodes))});
     if(page.items.length>0)node.contributions=page.items;
     for(const entry of node.entries)applyApplicabilityJudgments(entry,page.items,page.next===null);
     if(page.next!==null){

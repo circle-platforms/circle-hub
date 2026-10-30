@@ -384,6 +384,20 @@ export class ContributionLayer {
     return false;
   }
 
+  /**
+   * The paths among `paths` whose node index holds at least one record under a product of the root this reader may read,
+   * found with one batched lookup instead of one per path. page() of any other path reads no record and answers an empty,
+   * complete page; a path in the answer is paged as before.
+   */
+  async pathsWithRecords(root:string,paths:readonly string[],reader:Principal):Promise<Set<string>>{
+    const products:string[]=[];for(const product of [...await this.#reading.productsOfRoot(root)].sort())if(await this.mayRead(product,reader))products.push(product);
+    const pathOfValue=new Map<string,string>();
+    for(const path of new Set(paths))for(const product of products)pathOfValue.set(digestOf({product,path}),path);
+    const values=[...pathOfValue.keys()],found=new Set<string>();
+    for(let at=0;at<values.length;at+=256)for(const value of (await this.#context.store.records.findFirstMany({key:'knowledge.contribution.node',values:values.slice(at,at+256),kind:'claim'})).keys())found.add(pathOfValue.get(value)!);
+    return found;
+  }
+
   /** Keyset page of the node index. Query size and returned bytes are bounded even when source ACLs hide rows. */
   async page(root:string,path:string,reader:Principal,options:{cursor?:string|null;limit?:number;bytes?:number}={}):Promise<{items:KnowledgeContributionPageView[];next:string|null}>{
     const products:string[]=[];for(const product of [...await this.#reading.productsOfRoot(root)].sort())if(await this.mayRead(product,reader))products.push(product);

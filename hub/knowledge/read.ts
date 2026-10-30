@@ -390,8 +390,12 @@ export class TreeReading {
         walk.position++;
       }
       if (remaining === 0) return true;
+      // The children are read in one batch, verified as node() verifies them (the same oldest record). A child the batch
+      // did not find, or every child when the batch failed, is read on its own as before, so a missing or corrupt record
+      // is reported where the walk reaches it.
+      const children = await this.#context.store.nodes(node.children.map((child) => child.digest)).catch(() => null);
       for (const child of node.children) {
-        const childNode = await this.#context.store.node(child.digest);
+        const childNode = children?.get(child.digest) ?? await this.#context.store.node(child.digest);
         if (childNode === null) continue;
         if (!(await visit([...segments, child.name], child.digest, childNode, remaining - 1))) return false;
       }

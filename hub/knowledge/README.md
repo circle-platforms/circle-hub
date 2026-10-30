@@ -1212,6 +1212,19 @@ reader and consumer reuse the permission they started with), so `feeding-node-se
 that capture where it asserted 40 reads before. A store without batch support uses the earlier per-record path. This is
 not a measurement of total latency on a real document.
 
+Since perf-real-data a node page beside contributions no longer reads per node what the page decides once. The reader's
+readable products are decided once per request (item 13) instead of once per node and per check, which walked the pack
+registry (about 45 index lookups) for every node of the page. One batched lookup finds the nodes whose contribution node
+index holds any record under a product the reader may read (`ContributionLayer.pathsWithRecords`); only those nodes, and a
+node resumed from a contribution cursor, are paged, and every other node gets the empty, complete page that paging it
+answered. The children of a node the walk expands are read in one batch with the same verification and the same oldest
+record as `node()`; a child the batch does not find, or every child when the batch fails, is read on its own, so a missing
+or corrupt record is still reported where the walk reaches it. `node-page-lookups.test.ts` compares pages, cursors and
+contribution continuations with a per-node reference read for three readers and checks that the single-key lookups of a
+page do not grow from 13 to 49 nodes. Still read once per request and not reduced here: the link facts of the whole
+composition (backlinks, about 90 batched reads on a large real root), the frozen feeding index scan, and the entries of an
+inline composition (at most `inlineRows` rows), which carry no content in their rows and are read one by one.
+
 ### Feeding cases in views
 
 A feeding cut keeps valid function projections by exact locked root and exact source identity. A later source-only read
