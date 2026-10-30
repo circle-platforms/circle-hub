@@ -15,7 +15,7 @@ import {KnowledgeStructureSchema,FeedingRetractionSchema,type FeedingRetraction,
 import type {FeedingQuote as QuoteEvidence} from '../../contracts/generated/shared-interfaces.ts';
 import {parseReference,parserKey,parseDocument,quoteMatches,recognizeAsync,sliceUtf8} from '../refs/api.ts';
 import {parseExternal} from '../connectors/api.ts';
-import {canonicalize,sha256Hex,scanForCredentials,type Principal,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
+import {canonicalize,sha256Hex,scanForCredentials,type Page,type Principal,type Transaction,type StoredRecord,type SourceArtifact,type SourceArtifactBody} from '../records/api.ts';
 import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabulary.ts';
 import {callPackFunction,callPackFunctionBatch} from '../rules/api.ts';
 import {INDEX} from './store.ts';
@@ -79,8 +79,10 @@ const object=(v:unknown):v is Record<string,any>=>v!==null&&typeof v==='object'&
 interface SeedlingAttachment {locked_root:string;locked_composition:string|null;seedling_root:string;seedling_composition:string;line:string}
 interface Projected {rows:Projection[];pack:string;digest:string;attachment:SeedlingAttachment|null}
 const annotations=['classification','manual_link','relations','applicability','correction','command_link','case_link','paragraph'] as const;
-// The most uploads of one uploader's equal bytes compared for an older note that does not name its upload record.
+// The most uploads of one uploader's equal bytes compared for an older note that does not name its upload record, and the
+// most of the uploader's own records read to find them.
 const NOTE_CANDIDATES=64;
+const NOTE_SCAN=2000;
 export const operationRecord=(schema:unknown):schema is 'fed-observation@1'|'fed-procedure@1'|'fed-pitfall@1'=>operationSchema(schema);
 /** Content identity of an operation record: its canonical statement, quotations, exact capture and declared target, nothing else. */
 /**
@@ -382,20 +384,37 @@ export class FeedingLayer {
  async usages(principal:Principal,run:string):Promise<string[]>{const owned=await runById(this.context.records.store,run);if(!owned||!await canViewRun(principal,owned.body,this.context.records.store))return [];const rows=await this.all(USAGE,run);const out:string[]=[];for(const row of rows){const body=this.body(row);if(body&&await this.visible(body.object,principal))out.push(body.object);}for(const row of await this.pending(principal,run))out.push(row.source);return [...new Set(out)];}
  /**
   * A note proposal annotates the note the Hub wrote for one upload, exactly as it was written (round-five review, item 5).
-  * A note written now names its upload record, so only that record's note is read. An older note does not: the uploader's
-  * uploads of these bytes are compared, a bounded number of them, and more than one equal note is refused rather than
-  * guessed (round six).
+  * Only the uploader or an admin may, and that is checked before any upload is looked up, so no answer depends on another
+  * person's uploads (round seven). A note written now names its upload record, so only that record's note is read. An older
+  * note does not: the uploader's own uploads of these bytes are compared, a bounded number of them, and more than one equal
+  * note is refused rather than guessed (rounds six and seven).
   */
  private async uploadedSource(principal:Principal,body:Record<string,any>){
+  if(typeof body.by!=='string'||body.by!==principal.id&&principal.role!=='admin')fail('声明来源只允许上传者和管理员');
   const base=canonicalize(Object.fromEntries(Object.entries(body).filter(([key])=>!annotations.includes(key as never))));
   const named=typeof body.source?.artifact==='string'?body.source.artifact as string:undefined;
-  const candidates=named!==undefined?[named]:(await this.context.records.artifacts.records(body.source.bytes)).filter(row=>'upload'in row.body.origin&&row.body.author.user===body.by).map(row=>row.digest);
-  if(candidates.length>NOTE_CANDIDATES)fail(`同一上传者上传了超过 ${NOTE_CANDIDATES} 份相同字节，无法逐份核对说明；请管理员核对这些上传`);
+  const candidates=named!==undefined?[named]:await this.olderUploads(body.by,body.source.bytes);
   const matches:string[]=[];
   for(const digest of candidates){const written=await this.uploadNote(digest);if(written!==null&&canonicalize(written)===base)matches.push(digest);}
   if(matches.length===0)fail('缺少与上传者和这份上传说明一致的上传原件');
   if(matches.length>1)fail('多次上传写下了完全相同的说明，无法确定是哪一次上传；请管理员核对这些上传');
   return this.source(principal,body.source.bytes,matches[0]!);
+ }
+ /**
+  * The uploader's own uploads of these bytes, for an older note that does not name its upload. Only the uploader's records
+  * are read, page by page and at most NOTE_SCAN of them, never every record of the bytes (round-seven review, item 5).
+  */
+ private async olderUploads(by:string,bytes:string):Promise<string[]>{
+  const found:string[]=[];
+  let cursor:string|null=null,read=0;
+  do{
+   const page:Page<StoredRecord<SourceArtifactBody>>=await this.context.records.store.find<SourceArtifactBody>({key:'artifact.author',value:by,kind:'source_artifact',limit:500,cursor});
+   for(const row of page.items)if(row.body.sha256===bytes&&'upload'in row.body.origin&&row.body.author.user===by)found.push(row.digest);
+   if(found.length>NOTE_CANDIDATES)fail(`同一上传者上传了超过 ${NOTE_CANDIDATES} 份相同字节，无法逐份核对说明；重新上传原件，按新写下的说明（带上传记录）提交`);
+   read+=page.items.length;cursor=page.next;
+   if(cursor!==null&&read>=NOTE_SCAN)fail(`上传者的上传记录超过 ${NOTE_SCAN} 份，无法有界地找到这份旧说明对应的上传；重新上传原件，按新写下的说明（带上传记录）提交`);
+  }while(cursor!==null);
+  return found;
  }
  /** The note body `upload()` wrote for one upload record, or null when none was written. */
  private async uploadNote(artifact:string):Promise<Record<string,unknown>|null>{
