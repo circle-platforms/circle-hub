@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {makeWorld,startPostgres,STATIC_PLAN_SOURCE,DEFAULT_SYNC,catalogXml,type World} from './test-support.ts';
 import {SeedlingBody} from '../../contracts/src/knowledge.ts';
-import {formatKnowledgeRetract, knowledgeRetract} from './api.ts';
+import {createKnowledge,formatKnowledgeRetract, knowledgeRetract} from './api.ts';
+import {join} from 'node:path';
+import {openRecords} from '../records/index.ts';
+import {DEFAULT_LIMITS} from '../config/index.ts';
+import {createTestParserRegistry} from '../testing/parsers.ts';
 import {newId} from '../records/api.ts';
 import {runRecord} from '../../contracts/src/fixtures.ts';
 import {RunRecord} from '../../contracts/src/run.ts';
@@ -67,4 +71,22 @@ test('legacy src ranges slice quotation fragments at UTF-8 byte boundaries',asyn
  await layer.quote(w.user,{reference:reference+':3-7',text:'open'});
  await assert.rejects(()=>layer.quote(w.user,{reference:reference+':1-5',text:'open'}),/逐字/);
  await assert.rejects(()=>layer.quote(w.user,{reference:reference+':2-7',text:'open'}),/逐字/);
+});
+
+test('a feeding append reads nothing through the pool once its transaction holds the feeding log lock (issue #104)',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());
+ const note=await w.kit.artifacts.ingest({bytes:Buffer.from('synthetic note on one connection'),mediaType:'text/plain',origin:{upload:{session:'synthetic-one-connection',message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},readTier:'model_readable'});
+ await w.knowledge.feeding!.upload(w.user,note);
+ const row=(await w.knowledge.feeding!.entries(w.user,w.user.id)).find(entry=>entry.body.object===note.body.sha256)!;
+ const proposal={...row.body,classification:[{value:'ticket',quote:{reference:'src:'+note.body.sha256+'/text@1/l/1',text:'synthetic note'}}]};
+ // The same Hub on a pool of one connection: the append's transaction holds it, so any read through the pool after the lock
+ // would wait for the pool's ten-second timeout and fail.
+ const narrow=await openRecords({dataDir:w.kit.dataDir,logDir:join(w.kit.dataDir,'one-connection-logs'),database:w.kit.database,limits:DEFAULT_LIMITS},{keyProvider:w.kit.keyProvider,maxConnections:1});
+ t.after(()=>narrow.close());
+ const knowledge=createKnowledge({records:narrow,parsers:createTestParserRegistry(),packs:w.packs,external:w.external,jev:null,sandbox:{requireOsIsolation:false},admin:w.admin});
+ const started=Date.now();
+ const [stored]=await knowledge.feeding!.admit(w.user,[proposal],{});
+ assert.ok(stored);
+ assert.ok(Date.now()-started<8000,'no wait for a second connection');
+ assert.equal((await w.kit.store.get(stored!))?.kind,'claim');
 });

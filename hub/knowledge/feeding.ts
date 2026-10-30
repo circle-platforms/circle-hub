@@ -108,6 +108,8 @@ export class FeedingLayer {
  private activeJobs=0;
  private readonly projecting=new Map<string,Promise<Projected>>();
  private readonly normalized=new Map<string,Promise<Map<string,string|null>>>();
+ // The reads of an append, made when prepare() returned the body, outside any transaction (issue #104).
+ private readonly planned=new WeakMap<object,{by:string;run:string|null;root:string|null;bound:string[]}>();
  constructor(context:KnowledgeContext,reading:TreeReading){this.context=context;this.reading=reading;}
  async offset(tx?:Transaction):Promise<number>{const n=await this.context.records.store.watermark?.(tx);if(n===undefined)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});return n;}
  private async position(digest:string,tx?:Transaction){const n=await this.context.records.store.position?.(digest,tx);if(n===undefined||n===null)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});return n;}
@@ -541,18 +543,30 @@ export class FeedingLayer {
     }
    }
   }
+  this.planned.set(body,{by:principal.id,run:scope.run??null,root:scope.root??null,bound:await this.planAppend(principal,body,scope,source)});
   return body;
  }
  private async nativeObservation(principal:Principal,body:Record<string,any>){for(const row of await this.all(OBJECT,body.object)){const value=this.body(row);if(!value||row.body.warrant.producer!=='function'||!await this.recordVisible(row,principal))continue;const base=Object.fromEntries(Object.entries(body).filter(([key])=>!annotations.includes(key as never)));if(canonicalize(value)===canonicalize(base))return row;}return null;}
  private async proofReadable(record:StoredRecord<ClaimBody>,principal:Principal){for(const proof of record.body.validity.bound){const original=await this.context.records.store.get<any>(proof);if(original?.kind==='source_artifact'&&(await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:proof}))?.bytes)return true;}return false;}
  async originalRecord(principal:Principal,body:Record<string,any>,scope:FeedingScope={}){return (await this.originalSource(principal,body,scope)).artifact.digest;}
- async appendPrepared(principal:Principal,body:Record<string,any>,scope:FeedingScope,model:string,tx:Transaction):Promise<string>{
-  await this.context.records.store.lock('knowledge.feeding.log',tx);
-  if(body.schema==='retraction@1')return (await this.put(body,principal,'hub.retraction@1',[],[],'retraction:'+this.key(body),[{key:RETRACT,value:'1'}],tx)).digest;
-  const source=await this.originalSource(principal,body,scope);const quotes=annotations.flatMap(key=>(body[key]??[]).map((value:any)=>value.quote));
+ /**
+  * What an append writes beside the body, read through the pool: the records the claim is bound to, and the canonical object of
+  * a projection. An append holds the feeding log lock on its caller's transaction, so it reads none of this there: a waiting
+  * append holds a connection too, and the lock holder could wait for one until the pool's timeout (issue #104).
+  */
+ private async planAppend(principal:Principal,body:Record<string,any>,scope:FeedingScope,known?:Source):Promise<string[]>{
+  if(body.schema==='retraction@1')return [];
+  const source=known??await this.originalSource(principal,body,scope);const quotes=annotations.flatMap(key=>(body[key]??[]).map((value:any)=>value.quote));
   const native=await this.nativeObservation(principal,body);
   if(!native&&body.schema!=='fed-note@1'&&!operationRecord(body.schema)){const projected=await this.projection(principal,source,scope),row=projected.rows.find(row=>row.body.object===body.object);if(!row)fail('缺规范内容；重新读取后重交');const stored=await this.context.records.objects.put(new TextEncoder().encode(canonicalize(row.identity)),'application/json');if(stored.sha256!==body.object)fail('规范内容摘要不一致');}
-  const bound=[body.source.bytes,source.artifact.digest,...(native?[native.digest]:[]),...quotes.map(q=>this.quoteRef(q).sha),...(scope.root?[scope.root]:[])];
+  return [body.source.bytes,source.artifact.digest,...(native?[native.digest]:[]),...quotes.map(q=>this.quoteRef(q).sha),...(scope.root?[scope.root]:[])];
+ }
+ async appendPrepared(principal:Principal,body:Record<string,any>,scope:FeedingScope,model:string,tx:Transaction):Promise<string>{
+  // A body prepare() returned carries its reads; any other is read here, before the lock.
+  const planned=this.planned.get(body);
+  const bound=planned!==undefined&&planned.by===principal.id&&planned.run===(scope.run??null)&&planned.root===(scope.root??null)?planned.bound:await this.planAppend(principal,body,scope);
+  await this.context.records.store.lock('knowledge.feeding.log',tx);
+  if(body.schema==='retraction@1')return (await this.put(body,principal,'hub.retraction@1',[],[],'retraction:'+this.key(body),[{key:RETRACT,value:'1'}],tx)).digest;
   const stored=await this.put(body,principal,model,['src:'+body.source.bytes],bound,'annotation:'+sha256Hex(canonicalize({body,actor:principal.id,model,run:scope.run??null})),[{key:OBJECT,value:body.object},{key:'knowledge.feeding.product',value:body.product??principal.id},{key:'knowledge.feeding.annotation',value:'1'}],tx,true,scope.run??null);await this.usage(principal,body.object,scope,tx);return stored.digest;
  }
  async admit(principal:Principal,payload:readonly unknown[],scope:FeedingScope&{classifications?:readonly string[]}):Promise<string[]>{const bodies:Record<string,any>[]=[];for(const raw of payload)bodies.push(await this.prepare(principal,raw,scope));return this.context.records.store.withTransaction(async tx=>{const refs=[];for(const body of bodies)refs.push(await this.appendPrepared(principal,body,scope,'client-declared-model',tx));return refs;});}

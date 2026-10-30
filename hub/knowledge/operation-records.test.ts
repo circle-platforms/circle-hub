@@ -6,11 +6,14 @@ import {KnowledgeContributionView} from '../../contracts/src/contributions.ts';
 import {Claim} from '../../contracts/src/claim.ts';
 import {RunRecord} from '../../contracts/src/run.ts';
 import {startPostgres, type TemporaryPostgres} from '../testing/postgres.ts';
-import {makeWorld, catalogXml, BASE_CATALOG} from './test-support.ts';
+import {makeWorld, catalogXml, BASE_CATALOG, sandboxIsolation} from './test-support.ts';
+import {join} from 'node:path';
+import {openRecords} from '../records/index.ts';
+import {DEFAULT_LIMITS} from '../config/index.ts';
 import {createRunsService} from '../runs/engine/api.ts';
 import {FakeWorkflowStore} from '../runs/engine/testing/workflows.ts';
 import {toolText} from '../server/text.ts';
-import {formatKnowledgeRetract, knowledgeRetract} from './api.ts';
+import {createKnowledge, formatKnowledgeRetract, knowledgeRetract} from './api.ts';
 import {operationIdentity} from './feeding.ts';
 import {canonicalize, sha256Hex} from '../records/api.ts';
 import {osIsolationAvailable} from '../rules/api.ts';
@@ -259,4 +262,20 @@ test('a repeated byte output keeps the exact capture record bound by its run', {
   assert.ok(storedFeeding && (storedFeeding.schema === 'fed-observation@1' || storedFeeding.schema === 'fed-procedure@1' || storedFeeding.schema === 'fed-pitfall@1'));
   assert.equal(storedFeeding.at,second.body.captured_at);
   assert.ok(run.sources.some(source => source.artifact===second.digest));
+});
+
+test('a contribution with an operation record is stored on a pool of one connection (issue #104)', {skip}, async t => {
+  const ctx = await world(t);
+  // The same Hub on one connection: the submission's save transaction holds it, so nothing after its locks may read through
+  // the pool, or it waits for the pool's ten-second timeout.
+  const narrow = await openRecords({dataDir:ctx.w.kit.dataDir, logDir:join(ctx.w.kit.dataDir, 'one-connection-logs'), database:ctx.w.kit.database, limits:DEFAULT_LIMITS}, {keyProvider:ctx.w.kit.keyProvider, maxConnections:1});
+  t.after(() => narrow.close());
+  const knowledge = createKnowledge({records:narrow, parsers:createDefaultRegistry(), packs:ctx.w.packs, external:ctx.w.external, jev:null, sandbox:{requireOsIsolation:await sandboxIsolation()}, admin:ctx.w.admin});
+  const workflows = new FakeWorkflowStore();
+  await workflows.add(fileURLToPath(new URL('../../packs/workflow/knowledge-contribution/', import.meta.url)));
+  const service = createRunsService({records:narrow, packs:ctx.w.packs, knowledge, external:ctx.w.external, workflows, parsers:createDefaultRegistry()});
+  const started = Date.now();
+  const answer = await service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', observation(ctx, '/commands/system/show')), call);
+  assert.equal(answer.result?.contributions?.stored.length, 1, JSON.stringify(answer.errors));
+  assert.ok(Date.now() - started < 30_000, 'no wait for a second connection');
 });
