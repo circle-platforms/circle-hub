@@ -104,6 +104,10 @@ Since 1.2.20 the case_index slot declares `unknown_entries: disclose`, so an ind
 not complete commands) is one of those entries: its command set is unknown, not empty. Categories the read cases do not
 show are potential gaps, never a shortfall; the document gets an unknown with the count, the view notes and the next
 action (complete the commands, re-read the index, rerun), and the projection warns `template-gap.index_unknown_entries`.
+
+Since 1.2.21 a case_index bound for a run whose documents are all uploads is refused with the way out: an upload has no
+agile document number, so no `only=` admits it; the fix says to bind the agile mindmap (`agile:mindmap:<number>`) for command
+coverage, or to drop case_index. Before, the fix wrote an empty `only=`, which is no view id.
 An entry without commands on a view that declares no unknown entries is still index_invalid.
 
 skipped contains exact category, the user's verbatim reason, optional document and optional complete CommandIdentity command.

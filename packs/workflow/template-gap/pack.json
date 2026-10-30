@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "template-gap",
-  "version": "1.2.20",
+  "version": "1.2.21",
   "kind": "workflow",
   "title": "模板缺口检查",
   "description": "文档级核验模板 v3 全部 24 类，并从锁定构建的用例索引核验每个已解析命令的 9 类覆盖；缺输入写明补齐动作、对象和期限",
@@ -118,8 +118,8 @@
     },
     {
       "path": "functions/index.ts",
-      "sha256": "a4004d44fa18a712a628857aeb669a685652e47f3fa01a33520c25d88bb5f3b0",
-      "size": 9931
+      "sha256": "656cf9754c6626604e4a1495b9e27e08ba5a4a0b5061a0dc5257f300e5eac755",
+      "size": 10378
     },
     {
       "path": "functions/project.ts",
