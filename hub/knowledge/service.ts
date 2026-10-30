@@ -45,8 +45,6 @@ export interface KnowledgeOptions {
   credentialAcceptance?:import('./credential-policy.ts').CredentialAcceptanceOptions;
   /** Reads the feeding layer beside seedlings (kb-feeding); absent when nothing was fed yet. */
   feeding?:import('./feeding-types.ts').FeedingReader;
-  /** Read-only lease history; never lets knowledge acquire, extend or release a lease. */
-  leases?:KnowledgeContext['leases'];
 }
 
 export interface BuildCalibrationInput {
@@ -118,7 +116,6 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     additionalScopeRoots: options.additionalScopeRoots,
     additionalScopeRootsDeclared: options.additionalScopeRoots !== undefined,
     records: options.records,
-    leases: options.leases,
     store,
     parsers: options.parsers,
     packs: options.packs,

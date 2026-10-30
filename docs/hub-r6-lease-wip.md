@@ -1,70 +1,73 @@
-# Operation device and lease binding (work in progress)
+# Operation device and bed (work in progress)
 
-This branch is a hand-off, not a finished change. Do not merge it into main until the blockers below are fixed and
-independently reviewed. It is based on the R6 snapshot branch and carries only the new work, as one signed-off commit.
+This branch is a hand-off, not a finished change. Do not merge it into main until the open items below are settled and
+independently reviewed. It started as "operation device and lease binding"; on 2026-10-30 the owner narrowed it to the
+device and bed an operation record names, and moved leases out of the knowledge layer.
 
-## What it adds
+## Direction (owner, 2026-10-30)
 
-Operation records (observation, procedure, pitfall) from a Circle session can carry two optional declarations, `device`
-and `bed`. When a record is stored, the Hub adds lease evidence of its own: the resource key and the lease record that
-covered the bed and device continuously from the declared capture time to the time the Hub received the record. When
-coverage cannot be shown (acquired, released, taken over or expired inside the interval, or no lease at all) the record
-is still accepted, and it says which of these applies and what to do next. Records stay at declaration grade and can never
-be grounds for a verified result.
+- **Beds belong to the test-bed pack.** `packs/workflow/test-bed` owns the bed inventory, booking, release, force release
+  and the bed surface. Hub core keeps only its generic lease primitive on resource keys: dispatch requires a run's lineage
+  to hold the keys its executor needs, which makes a lease a mutex at execution time, as InfoTest's `env_pool` holds one
+  per bed while a case runs.
+- **Records name a device and bed; they never claim a lease.** An operation record (observation, procedure, pitfall)
+  may declare `device` and `bed`. When the run, or the booking it continues, froze a bed manifest, the Hub checks both
+  against it and fills in the bed when only one bed has the device; a device in several beds needs its bed. Without a
+  manifest the declaration is kept as written. InfoTest's read-only probes do the same: they record their bed and leave
+  the lease empty, because a lease id there would be a false claim.
+- **No Windows for now.** Circle Hub and its packs support macOS and Linux only. `operation-capture` refuses its commands on
+  Windows and its hook captures nothing there.
+- **Tokens are masked, not hunted.** The client replaces the current Hub token in captured output with `%HUB_TOKEN%` and
+  uploads the rest. A proposal holding the whole token is refused before a run starts, and `submit_result` checks the
+  request with the same token read it sends. The Hub refuses a request whose body holds the caller's whole token (#106).
+  There is no 12-character fragment rule.
 
-Related changes: the exact capture record is part of the identity of an operation record, a missing capture time is
-marked and never replaced silently by the upload time, lease actions use the lease service's own clock with an exact
-resource-key index, and batch lease actions replay per key. The `knowledge-contribution` pack moves to 1.3.7 in the public
-numbering, and three entries of `contracts/model.json` gain optional fields only. It was 1.3.2 here until `main` published
-its own 1.3.2 (the dead-lock recovery fix, #92); the merge of `main` combines both as 1.3.7, after this branch's internal
-numbers 1.3.3 to 1.3.6.
+## What this branch adds to main
 
-## Known blockers (see issue #28)
+- `device` and `bed` on the three operation records, checked by `hub/knowledge/operation-device.ts` and shown as
+  "设备 X（台架 Y）"; the bed is part of the record's identity.
+- The exact capture record in an operation record's identity: `artifact` on `src` input bindings and on the upload
+  receipt, `captured_at` on `upload_file`, and `source.artifact` on the upload notes (fed-note) the Hub writes now.
+- A missing capture time is recorded as such (`captured_at_declared=false`, `received_at`) and never replaced by the
+  upload time; the view says so.
+- Decision 73 at the edges: `start_run` refuses a client-captured input for any pack but knowledge-contribution
+  (`hub/runs/engine/inputs.ts`), and `submit_result` refuses a run bound to one before that check existed
+  (`hub/runs/engine/submit.ts`). The declaration-grade refusal also covers the grounds a tree entry carries
+  (`declarationGroundsRefusal`).
+- Client: one token read per checked call, the token passed down to the request instead of kept on the client, and the
+  Windows refusal. The pack is knowledge-contribution 1.3.14.
 
-1. A prefetched source can skip the declaration-grade check when it is later used as grounds. Prefetch may cache only the
-   parse result; every use as grounds must check provenance again.
-2. The current Hub token can leak inside the `device` or `bed` field of a proposal: only an exact match is refused. Refuse
-   any substring and check the current token again just before sending.
-3. When the client omits the capture time, the upload time can be mistaken for it in the record's `at`.
-4. A lease timestamp is taken before the row lock; the history read and the commit do not share one lock, so an action
-   that arrives later can be missed inside the interval.
+## What was removed
 
-Each has an implementation and a targeted counter-example on this branch, but none has been independently reviewed, and
-the lease concurrency test covers one code path only.
+Lease evidence on records (`lease`, `lease_id`, `lease_unconfirmed`, "无租约（未授权）", "租约未能确认") and everything
+built to prove it: the capture-time lease history reader, its key index, the lease service's own clock and per-key replay,
+the lease fields of the submit receipt, and their tests. Review rounds 4 to 9 had also added source pinning, provenance
+checks of `src` grounds in the resolver and the evaluator, a credential scanner over submissions before they are stored,
+the bounded search for older upload notes, and request-exit token checks on the Hub address, headers and uploaded bytes.
+The two decision-73 gates above make the pinning and `src` checks redundant, #106 covers the token on the Hub side, and the
+rest only served the lease proof; all of it is gone, with the open items of the ninth review that were about it.
 
-## Tests that failed on this branch
+## Open items
 
-All three are fixed; no assertion was weakened, deleted or skipped.
+- The knowledge layer reads the test-bed manifest itself: the device check here, and, from before this branch, the
+  reproduction lease index and the installed build of a booked bed. That belongs behind a test-bed contract (#110).
+- Circle runs a skill's hooks through `cmd.exe` on Windows, where this pack's hook cannot start; skills cannot declare
+  their platforms yet (circle-platforms/circle#374).
+- The native Windows work (the Windows platform code and the platform matrix) lives only on the `synthetic-platform/*`
+  and `docs/windows-probe-*` branches, and is frozen (owner, 2026-10-30). Main and this branch have no Windows code.
+- #109 (the connector's nested reads are cached and withheld by record, not by effective tier) is on main.
+- #106 (#105) and #108 (#104) are open on main and need an independent review; main then needs syncing into this branch.
 
-- The two scenario-28 acceptance tests (#37, #56) pass since main's case-compile 3.8.6 (#78) was merged in.
-- `hub/runs/engine/exact-prefetch-budget.test.ts` (15 parses where 3 were expected): blocker 1's fix made a use as grounds
-  skip the prefetched result and resolve the reference again, one parse and one lookup each. A prefetched source is now
-  reused for grounds after the same declaration-grade check that `run()` makes (`declarationGroundRefusal` with the run's
-  ground source); a `src` reference is otherwise always groundable and has no inner grounds. The source is still read again
-  on every use. `hub/runs/engine/captured-ground.test.ts` still refuses the prefetched declaration-grade source, and fails
-  if that check is removed. Blocker 1's review should cover this path too.
-- `hub/knowledge/view-perf.test.ts` (predecessor digest): every new artifact record carried `captured_at_declared`,
-  `false` for the Hub's own non-upload artifacts as well, so the 1,800 documents of the fixture changed their record bytes
-  and with them the view's `listed_documents` part and the root's composition; all 49,000 entries were identical. Only an
-  upload records the flag now (`true` or `false`); every reader already treats a missing flag as not declared.
+## Frozen replay fixtures
 
-The two replay tests, `hub/knowledge/operation-records-leases.test.ts` and `hub/knowledge/operation-records-upgrade.test.ts`,
-no longer extract an unpublished commit (886d9f4c, which no clone has). They read committed fixtures under
-`tests/fixtures/frozen/`: `knowledge-contribution@1.3.1` byte for byte from aecc1a9 (the parent of this work), and
+`hub/knowledge/operation-device.test.ts` and `hub/knowledge/operation-records-upgrade.test.ts` read committed fixtures
+under `tests/fixtures/frozen/`: `knowledge-contribution@1.3.1` byte for byte from aecc1a9 (the parent of this work), and
 `upgrade-records.json`, the rows and objects that the Hub at aecc1a9 wrote for one run, generated by running that tree's
-code once with `hub/knowledge/testing/frozen/generate-upgrade-records.ts`.
-
-886d9f4c is the local parent this work had before it was rebased: ef833de was authored on 2026-10-28 at 02:38 (+0900)
-and committed at 23:33 the same day onto aecc1a9, and a rebase rewrites commit ids but not a commit id written inside a
-test. The frozen pack is the same bytes 886d9f4c held, unless that unpublished commit carried a local pack change that no
-pushed commit shows: `packs/workflow/knowledge-contribution` last changed in 5b45a24 (01:53 that day) and is identical at
-aecc1a9. The upgrade fixture is the output of aecc1a9's Hub, not necessarily of 886d9f4c's: between a5f21bd (02:22, the
-closest pushed commit before the work began) and aecc1a9, 14 files under `hub/knowledge`, `hub/runs`, `hub/records` and
-`contracts` changed. Both predate the lease fields, which is what the test needs: records written without them replay
-unchanged. Neither replay test ever pinned a digest of 886d9f4c; they check that the frozen inputs are self-consistent.
+code once with `hub/knowledge/testing/frozen/generate-upgrade-records.ts`. They no longer extract 886d9f4c, the local
+parent this work had before it was rebased, which no clone has. Both fixtures predate the device fields, which is what the
+tests need: records written without them replay unchanged.
 
 ## To continue
 
-Read `hub/knowledge/README.md` and the work-in-progress notes at the top of
-`packs/workflow/knowledge-contribution/README.md`. Have the four items reviewed by a different model family, fix what it
-finds, then run the complete suites, not only the affected directories.
+Read `hub/knowledge/README.md` and the 1.3.14 notes in `packs/workflow/knowledge-contribution/README.md`. Have the narrowed
+change reviewed by a different model family, then run the complete suites, not only the affected directories.

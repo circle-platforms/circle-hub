@@ -26,65 +26,6 @@
               "record": {
                 "type": "string",
                 "pattern": "^[0-9a-f]{64}$"
-              },
-              "device": {
-                "description": "The declared device of a stored operation record",
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 200
-              },
-              "bed": {
-                "description": "The declared bed completing the bed/device identity",
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 200
-              },
-              "lease": {
-                "description": "The resource key covered by a lease continuously held from declared capture through Hub receipt; null when absent or unconfirmed",
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "lease_id": {
-                "description": "The Hub lease action identity lse_... for that resource key; null when absent or unconfirmed",
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "lease_unconfirmed": {
-                "description": "Why continuous coverage, bed identity or history cannot be proven, and the action that can resolve it",
-                "type": "object",
-                "properties": {
-                  "missing": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 8192
-                  },
-                  "next_action": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 8192
-                  }
-                },
-                "required": [
-                  "missing",
-                  "next_action"
-                ],
-                "additionalProperties": false
               }
             },
             "required": [

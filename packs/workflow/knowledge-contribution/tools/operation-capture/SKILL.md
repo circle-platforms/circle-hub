@@ -5,6 +5,8 @@ description: 在用户明确开启共享的 Circle 会话里，由工具后钩�
 
 # 操作采集与整合
 
+本技能目前只支持 macOS 和 Linux：Circle Hub 及其任务包暂不支持 Windows，在 Windows 上命令直接报错，钩子不采集。
+
 先用 `/skill operation-capture` 加载本技能；只安装或只读 SKILL.md 不会启动钩子。共享默认关闭，每个会话单独开启。技能不读 Circle 密钥库、环境密钥或真实配置，不上传人的说法、模型转述或其他工具原文。
 
 ## 1. 用户开启本会话
@@ -17,7 +19,7 @@ node <技能目录>/operation.ts enable --session <会话号> --hub <Hub MCP 地
 
 明文 HTTP 只许本机回环假 Hub。状态保存在 Circle home 的 `operation-capture/` 下，不写工作区。`CIRCLE_HOME` 未设置时按 Circle 默认 home；去空白、`~` 展开和 realpath 与 Circle 一致。技能须安装在该 home 的 `skills/operation-capture/`，因为 Circle 不向钩子提供技能目录。
 
-开启后，`after_tool` 钩子自动把工具输出和当前 Hub 令牌的字面出现脱敏、保存完整 UTF-8 原件、追加 SHA-256 哈希链清单并直传 Hub，出处为 `client_captured`。钩子显式传递 `captured_at`；旧客户端缺这个声明时记录仍保留，但上传时刻不能替代采集时刻证明租约。模型不参与采集或上传。不能完整脱敏、扫描不完整、Unicode 不良或超限时整条不采，不截断。钩子对模型静默；错误只在本地日志写结构错误码。网络结果未知不等于未上传，重试依靠幂等上传。
+开启后，`after_tool` 钩子自动把工具输出和当前 Hub 令牌的字面出现脱敏、保存完整 UTF-8 原件、追加 SHA-256 哈希链清单并直传 Hub，出处为 `client_captured`。钩子显式传递 `captured_at`；旧客户端缺这个声明时记录仍保留，视图注明采集时间未声明，上传时刻不当作采集时刻。模型不参与采集或上传。不能完整脱敏、扫描不完整、Unicode 不良或超限时整条不采，不截断。钩子对模型静默；错误只在本地日志写结构错误码。网络结果未知不等于未上传，重试依靠幂等上传。
 
 随时核对或停止：
 
@@ -44,7 +46,7 @@ node <技能目录>/operation.ts read --session <会话号> --sha <原件 SHA-25
 
 ## 3. 模型只写三类提案
 
-写一个普通 JSON 文件，结构如下。`kind` 只能是 `observation`、`procedure`、`pitfall`，其他内容不提交。`session` 与开启共享的会话相同，`capture` 是已上传原件摘要，`path` 从 Hub 知识树复制。每条可写 `device` 和 `bed`，只是客户端声明，只收字符串且任何位置不得包含当前 Hub 令牌；省略时分别沿用采集清单的 `targets.device` / `device_id`、`targets.bed` / `bed_id`，不得冲突，声明床必须同时有设备。运行冻结清单唯一匹配时可由 Hub 补床，不从持租候选反推。Hub 只证明同一租约连续覆盖声明采集到 Hub 收到的整段；成立时 `lease` 是资源键，`lease_id` 是 `lse_…` 记录身份。确认无租约标「无租约（未授权）」；缺床身份、区间内变化或同毫秒边界标「租约未能确认」并给下一步。两种状态照常入层。单份采集会自动带上 `upload.source.artifact`；同字节有多份采集时必须在条目里另写 `artifact`，从 `list` 选本次原件。旧清单缺这个字段时须重新采集上传，不按字节或顺序猜采集时刻。
+写一个普通 JSON 文件，结构如下。`kind` 只能是 `observation`、`procedure`、`pitfall`，其他内容不提交。`session` 与开启共享的会话相同，`capture` 是已上传原件摘要，`path` 从 Hub 知识树复制。每条可写 `device` 和 `bed`，只是客户端声明，只收字符串；省略时分别沿用采集清单的 `targets.device` / `device_id`、`targets.bed` / `bed_id`，不得冲突，声明床必须同时有设备。运行或它接续的预订冻结了台架清单时，Hub 按清单核对；只有一个台架含该设备时补上台架，同名设备在几个台架里就写明 `bed`。记录只写设备和台架，不写租约。提案任何文字都不得含当前 Hub 令牌，含了就在开运行前被拒。单份采集会自动带上 `upload.source.artifact`；同字节有多份采集时必须在条目里另写 `artifact`，从 `list` 选本次原件。旧清单缺这个字段时须重新采集上传，不按字节或顺序猜采集时刻。
 
 - observation：`statement`、`action`、`quote`；quote 为 `{line: 行号, text: 逐字引文}`。
 - procedure：`statement`、`goal`、`steps`；每步为 `{text: 步骤, quote: {line, text}}`。

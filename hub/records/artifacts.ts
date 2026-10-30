@@ -291,10 +291,12 @@ export class RecordArtifacts implements Artifacts {
       scan: { ...scan, ...(accepted === null ? {} : {accepted}), ...(derived === null ? {} : {derived}) },
     };
     // The acceptance takes part only when there is one, so the dedupe key of every other ingest is what it always was.
-    // An explicit capture time distinguishes captures; omitting it keeps the legacy upload idempotency unchanged.
+    // An upload's explicit capture time distinguishes its captures; an upload without one keeps the legacy idempotency.
+    // Every other origin (a connector read, a projection) passes a time too, but keeps the key it always had, so reading
+    // the same answer again reuses its record (round-four review, item 7).
     const dedupe = digestOf({
       sha256,
-      ...(input.capturedAt === undefined ? {} : { captured_at: capturedAt }),
+      ...('upload' in origin && input.capturedAt !== undefined ? { captured_at: capturedAt } : {}),
       media_type: input.mediaType,
       name,
       origin,

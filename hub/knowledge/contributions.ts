@@ -17,7 +17,7 @@ import type { TreeReading } from './read.ts';
 import { canonicalSize } from './digest.ts';
 import { CAPTURED_GROUND, DECLARATION_GROUND, declarationGradeBody } from './declaration-grade.ts';
 import { operationIdentity, operationRecord, reproductionLease } from './feeding.ts';
-import { operationDeviceNote } from './feeding-leases.ts';
+import { operationDeviceNote } from './operation-device.ts';
 import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
 
 export interface ContributionScope {
@@ -79,12 +79,19 @@ function identityOf(prepared: PreparedContribution): string {
       ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});
 }
 
+export const HISTORICAL_CAPTURE_TIME = '历史记录未记明采集时刻是否由客户端声明：at 可能是上传时刻，不能当作已声明的采集时间';
+
 function noteWithDevice(body: KnowledgeContributionBody, note: string): string;
 function noteWithDevice(body: KnowledgeContributionBody, note: string | null): string | null;
 function noteWithDevice(body: KnowledgeContributionBody, note: string | null): string | null {
   const device = operationDeviceNote(body.feeding);
   const feeding = body.feeding;
-  const time = feeding && operationRecord(feeding.schema) && 'device' in feeding && feeding.captured_at_declared === false ? `采集时间未声明（取自上传时刻）；Hub 收到 ${feeding.received_at}` : null;
+  // Every operation record says when its capture time was not declared, with or without a device. A record from before the
+  // declaration existed carries no marker: its view says the source of its `at` is unknown, and its bytes stay as they were
+  // (round-five review, item 8).
+  const time = !feeding || !operationRecord(feeding.schema) ? null
+    : !('captured_at_declared' in feeding) ? HISTORICAL_CAPTURE_TIME
+    : feeding.captured_at_declared === false ? `采集时间未声明，记录里没有采集时刻；Hub 收到 ${feeding.received_at}` : null;
   return [note, device, time].filter((value): value is string => value !== null).join('；') || null;
 }
 
@@ -321,11 +328,8 @@ export class ContributionLayer {
     const principal=await this.#context.records.principals.get(prepared.submitted_by);
     const feedingRecord=prepared.feeding&&principal?await this.#context.feeding?.appendPrepared(principal,prepared.feeding,{product:prepared.product,root:prepared.root,run:origin.run},origin.model,tx):undefined;
     const body = KnowledgeContributionBody.parse({ ...prepared,...(feedingRecord?{feeding_record:feedingRecord}:{}), session:origin.session,model:origin.model, submitted_at: this.#context.now().toISOString() });
-    const feeding=body.feeding;
-    const operation=feeding!==undefined&&operationRecord(feeding.schema);
-    const lease=operation&&feeding!==undefined
-      ? ('lease_id' in feeding ? (typeof feeding.lease_id==='string'?feeding.lease_id:null) : await reproductionLease(this.#context.records.store,origin.run))
-      : null;
+    const operation=body.feeding!==undefined&&operationRecord(body.feeding.schema);
+    const lease=operation?await reproductionLease(this.#context.records.store,origin.run):null;
     return (await this.#context.store.putClaim(SCHEMAS.contribution, operation?'client_captured':'declared', body,
       [{ key: INDEX.contribution, value: body.product }, { key: 'knowledge.contribution.identity', value: key },
         {key:'knowledge.contribution.node',value:digestOf({product:body.product,path:body.path})},
