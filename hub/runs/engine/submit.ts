@@ -600,6 +600,8 @@ async function validate(base: Basis, submission: Submission, before: ProtocolErr
     submissionDigest: base.digest,
     submissionRecord:base.submissionRecord,
     exact,
+    // The evaluation grades the texts this exact phase read against the records they came from (round-eight review, item 3).
+    ...(scope.pinned === undefined ? {} : { pinned: scope.pinned }),
     carried: carried.carried,
     roundsUsed,
     origin,

@@ -46,6 +46,9 @@ export const quoteInterpreter = defineInterpreter({
           else if (why === 'no_fragment') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的片段不存在`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'too_large') outcomes.push(refuteProtocol(base, 'QUOTE_MISMATCH', `引用 ${ref} 的片段超过大小上限，请改引更小的片段`, { pointer, grounds: [ref], data: { quote: text.value, reference: ref, why } }));
           else if (why === 'integrity_unproven') outcomes.push(unknown(base, 'integrity_unproven', `引用 ${ref} 的完整性未证明；缺与摘要一致的可信原文，请管理员从可信备份恢复记录或原始字节后重新核验`, { pointer, grounds: [ref], data: { why } }));
+          // A source whose record cannot be determined reads as unavailable with the rule that says so: no grounds, and no
+          // refutation either (round-eight review of the lease work, item 3).
+          else if (why === 'unavailable' && request.sources?.rule?.(ref) !== undefined) outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的原件出处无法确定：${request.sources.rule(ref)}`, { pointer, grounds: [ref], missing: `引用 ${ref} 可确定出处的原件记录`, data: { why } }));
           else if (why === 'unavailable') outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的源文件暂时取不回；缺该片段的可读原文，请重读后重评`, { pointer, grounds: [ref], missing: `引用 ${ref} 的可读片段原文`, data: { why } }));
           else outcomes.push(unknown(base, 'missing_input', `引用 ${ref} 的片段尚未读到；缺片段原文，请重新读取并重评`, { pointer, grounds: [ref], missing: `引用 ${ref} 的片段原文`, data: { why: 'unavailable' } }));
           continue;

@@ -32,7 +32,7 @@ import { createFunctionBatches } from './function-batches.ts';
 import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
 import { declarationGroundRefusal, UNKNOWN_GROUND } from '../../knowledge/declaration-grade.ts';
-import { boundOf, buildScope, groundRecords, pinnedSources, scopeProblem, emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
+import { boundOf, buildScope, groundRecords, pinnedSources, sameReader, scopeProblem, emptyEvidence, type ExactResult, type ItemEvidence, type PinnedSources } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
 import { identityOf, principalOf, recordReader } from './readers.ts';
@@ -73,6 +73,11 @@ export interface EvaluationInput {
   submissionDigest: string;
   submissionRecord?: string;
   exact: ExactResult | null;
+  /**
+   * The exact phase's choice of source records. The evaluation shares it when it reads as the same reader, so a text the exact
+   * phase read is graded against the record it came from (round-eight review, item 3).
+   */
+  pinned?: PinnedSources;
   carried: ReadonlyMap<string, CarriedItem>;
   /** Repair rounds each requirement used in earlier submissions of the run. */
   roundsUsed: ReadonlyMap<string, number>;
@@ -357,7 +362,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     const role: PermissionRole = user?.role ?? 'user';
     const runnerPrincipal: Principal = { id: run.runner, name: user?.name ?? run.runner, role };
     const reader = identityOf(runnerPrincipal, run.run);
-    pinned = pinnedSources(ctx, reader, boundOf(run), 'function');
+    pinned = input.pinned?.consumer === 'function' && sameReader(input.pinned.owner, reader) ? input.pinned : pinnedSources(ctx, reader, boundOf(run), 'function');
     resolveCtx = {
       reader,
       parsers: ctx.parsers,
@@ -373,7 +378,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
     const configurer = run.configurer ?? 'hub';
     const user = ctx.deps.records.principals !== undefined ? await ctx.deps.records.principals.get(configurer) : null;
     const reader = { user: configurer, role: user?.role ?? 'user', run: run.run };
-    pinned = pinnedSources(ctx, reader, boundOf(run), 'function');
+    pinned = input.pinned?.consumer === 'function' && sameReader(input.pinned.owner, reader) ? input.pinned : pinnedSources(ctx, reader, boundOf(run), 'function');
     resolveCtx = {
       reader,
       parsers: ctx.parsers,
@@ -479,6 +484,9 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   let fragmentScope: ReturnType<typeof buildScope> | undefined;
   type GradedFragment = {text?: string; why: FragmentRead; unread?: FragmentReadFailure; rule?: string};
   const fragmentCache = new Map<string, Promise<GradedFragment>>();
+  // A record that cannot be determined is no grounds, and it is not a refutation either: the reference reads as unavailable
+  // and names why (round-eight review, item 3).
+  const refused = (rule: string): GradedFragment => rule === UNKNOWN_GROUND ? { why: 'unavailable', rule } : { why: 'not_groundable', rule };
   // The records the reads of this digest stand on, every one of them; none refuses (rounds five and six, item 3). The
   // knowledge-contribution pack feeds captured sources: the one exemption.
   const groundRefusal = async (sourceRef: ReturnType<typeof parseReference>) => {
@@ -506,12 +514,12 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
           }
           if (!r.groundable) return { why: 'not_groundable' };
           const named = await groundRefusal(ref);
-          if (named) return { why: 'not_groundable', rule: named };
+          if (named) return refused(named);
           for (const ground of r.grounds ?? []) {
             let inner: ReturnType<typeof parseReference>;
-            try { inner = parseReference(ground); } catch { return { why: 'not_groundable', rule: UNKNOWN_GROUND }; }
+            try { inner = parseReference(ground); } catch { return refused(UNKNOWN_GROUND); }
             const refusal = await groundRefusal(inner);
-            if (refusal) return { why: 'not_groundable', rule: refusal };
+            if (refusal) return refused(refusal);
           }
           if (r.readTier === 'retain_only') return { why: 'retain_only', unread: {reason:'credential_unreadable', missing_fact:'管理员尚未接受此来源', next_action:'请求管理员接受来源，接受后重新核验'} };
           if (r.text === null) return { why: 'no_fragment' };
@@ -557,41 +565,72 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const warmedUnread = new Map<string, FragmentReadFailure>();
   const warmedRule = new Map<string, string>();
   // A graded reference answers by its grade, also when it is an item's own location: that text was read as the judged object,
-  // never checked as grounds, so a quotation citing it is graded like any other (round-seven review, item 3).
-  const gradedSourceView = (texts: ReadonlyMap<string, string>): SourceView => ({
-    text: (reference) => warmed.get(reference) ?? (warmedWhy.has(reference) ? undefined : texts.get(reference)),
-    unread: reference => warmedUnread.get(reference),
-    rule: reference => warmedRule.get(reference),
-    // A reference never warmed (not collected, or the warm pass failed) reads as unavailable: an honest
-    // unknown, never a refutation.
-    why: (reference) => (warmed.has(reference) ? 'bound' : warmedWhy.get(reference) ?? (texts.has(reference) ? 'bound' : 'unavailable')),
-  });
+  // never checked as grounds, so a quotation citing it is graded like any other (round-seven review, item 3). A reference is
+  // graded once per evaluation, and each check's own byte cap applies to the text it is given (round eight).
+  const gradedSourceView = (texts: ReadonlyMap<string, string>, capBytes: number): SourceView => {
+    const over = (reference: string) => { const text = warmed.get(reference); return text !== undefined && Buffer.byteLength(text, 'utf8') > capBytes; };
+    return {
+      text: (reference) => over(reference) ? undefined : warmed.get(reference) ?? (warmedWhy.has(reference) ? undefined : texts.get(reference)),
+      unread: reference => warmedUnread.get(reference),
+      rule: reference => warmedRule.get(reference),
+      // A reference never warmed (not collected, or the warm pass failed) reads as unavailable: an honest
+      // unknown, never a refutation.
+      why: (reference) => (over(reference) ? 'too_large' : warmed.has(reference) ? 'bound' : warmedWhy.get(reference) ?? (texts.has(reference) ? 'bound' : 'unavailable')),
+    };
+  };
   /**
-   * An item's own src text is read already: only its use as grounds is checked, against the record this evaluation chose for
-   * those bytes. A src reference is otherwise always groundable and has no inner grounds (refs/resolve.ts isGroundable); any
-   * other scheme is read and graded again.
+   * An item's own src text was read by the exact phase. It is reused as grounds only when this evaluation shares that phase's
+   * choice of records, after reading the source again for access and tier (once per digest) and within the size cap; it is
+   * then checked as grounds against the record it came from. A src reference is otherwise always groundable and has no inner
+   * grounds (refs/resolve.ts isGroundable). Anything else is read and graded again (rounds seven and eight, item 3).
    */
+  const access = new Map<string, Promise<boolean>>();
   const gradeOwn = async (reference: string, text: string, capBytes: number): Promise<GradedFragment> => {
     let ref: ReturnType<typeof parseReference>;
     try { ref = parseReference(reference); } catch { return { why: 'malformed' }; }
-    if (ref.scheme !== 'src') return gradeFragment(reference, capBytes);
+    if (ref.scheme !== 'src' || pinned !== input.pinned) return gradeFragment(reference, capBytes);
+    const sha = ref.sha256;
+    let readable = access.get(sha);
+    if (readable === undefined) access.set(sha, readable = Promise.resolve(pinned.sources.read(sha, resolveCtx.reader)).then(read => read !== null && read.bytes !== null));
+    if (!await readable) return gradeFragment(reference, capBytes);
+    if (Buffer.byteLength(text, 'utf8') > capBytes) return { why: 'too_large' };
     const named = await groundRefusal(ref);
-    return named ? { why: 'not_groundable', rule: named } : { text, why: 'bound' };
+    return named ? refused(named) : { text, why: 'bound' };
+  };
+  /** Grade one reference once per evaluation: the graded view and the checks of every item read the same grade. */
+  const warmOne = async (reference: string, capBytes: number, texts: ReadonlyMap<string, string>): Promise<void> => {
+    if (warmed.has(reference) || warmedWhy.has(reference)) return;
+    const own = texts.get(reference);
+    const graded = own === undefined ? await gradeFragment(reference, capBytes) : await gradeOwn(reference, own, capBytes);
+    if (warmed.has(reference) || warmedWhy.has(reference)) return;
+    if (graded.text !== undefined) warmed.set(reference, graded.text);
+    else {
+      warmedWhy.set(reference, graded.why);
+      if(graded.unread) warmedUnread.set(reference,graded.unread);
+      if(graded.rule) warmedRule.set(reference, graded.rule);
+    }
   };
   /** Warm every quoted reference of an item's slot record before its checks run (once per reference per evaluation). */
   const warmQuoted = async (value: unknown, capBytes: number, texts: ReadonlyMap<string, string>): Promise<void> => {
     collectQuotedReferences(value);
-    await mapLimited([...quotedReferences],4,async (reference) => {
-      if (warmed.has(reference) || warmedWhy.has(reference)) return;
-      const own = texts.get(reference);
-      const graded = own === undefined ? await gradeFragment(reference, capBytes) : await gradeOwn(reference, own, capBytes);
-      if (graded.text !== undefined) warmed.set(reference, graded.text);
-      else {
-        warmedWhy.set(reference, graded.why);
-        if(graded.unread) warmedUnread.set(reference,graded.unread);
-        if(graded.rule) warmedRule.set(reference, graded.rule);
-      }
-    });
+    await mapLimited([...quotedReferences],4,reference => warmOne(reference, capBytes, texts));
+  };
+  /**
+   * A package function is given the items' own texts and may cite them, or a reference graded here, as grounds. A ground that
+   * grades as no grounds, or whose record cannot be determined, turns its conclusion into an unknown, as it does an
+   * interpreter's (round-eight review, item 3).
+   */
+  const gradeFunctionGrounds = async (outcome: CheckOutcome, texts: ReadonlyMap<string, string>): Promise<CheckOutcome> => {
+    if (outcome.verdict === 'unknown') return outcome;
+    for (const ground of outcome.grounds) {
+      if (!texts.has(ground) && !warmed.has(ground) && !warmedWhy.has(ground)) continue;
+      await warmOne(ground, MAX_CHECK_READ_BYTES, texts);
+      const why = warmedWhy.get(ground), rule = warmedRule.get(ground);
+      if (why !== 'not_groundable' && !(why === 'unavailable' && rule !== undefined)) continue;
+      const missing = `引用 ${ground} 不能作这条结论的根据：${rule ?? '这类记录不能作根据（B01 R[4]）'}`;
+      return { verdict: 'unknown', reason: 'missing_input', missing, statement: missing, grounds: outcome.grounds, tier: outcome.tier, ...(outcome.item !== undefined ? { item: outcome.item } : {}), ...(outcome.pointer !== undefined ? { pointer: outcome.pointer } : {}) };
+    }
+    return outcome;
   };
 
   const callCheck = async (check: CheckEntry, subject: unknown, texts: ReadonlyMap<string, string>, item?: string): Promise<CheckOutcome[]> => {
@@ -672,14 +711,15 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
         context: { run: run.run, requirement: requirementsOf.get(check.id)?.[0]?.key, pack: workflow.pack.id, sets },
         packDir: workflow.pack.directory,
         sourceTexts: record,
-        sources: gradedSourceView(texts),
+        sources: gradedSourceView(texts, check.reads?.max_bytes ?? MAX_CHECK_READ_BYTES),
         unreadSources,
         sandbox: sandboxFor('check', check.function?.module, item),
         ...(item !== undefined && check.function !== undefined ? { functionRunner: functionBatches.runner(check.id, item) } : {}),
         onError,
       },
     );
-    return outcomes.map((o) => {
+    const graded = check.function === undefined ? outcomes : await Promise.all(outcomes.map(outcome => gradeFunctionGrounds(outcome, texts)));
+    return graded.map((o) => {
       if(o.judgment_sources?.length){
         const declaration=item?entries.get(item)?.entry:undefined;
         const slots=declaration?.handling==='handled'?declaration.slots:null;
@@ -794,7 +834,10 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
       await warmQuoted([subject,declared.table],MAX_CHECK_READ_BYTES,texts);
       const outcome=await callCheck(checks.get(`@runtime.${index}`)!,subject,texts,item.id);
       const ref=parseReference(item.location);
-      const artifact=ref.scheme==='src' ? await ctx.deps.records.artifacts.readable(principalOf(resolveCtx.reader),ref.sha256) : null;
+      // The proof names the record this evaluation reads for the item's bytes, never whichever record of them is readable: a
+      // newer record of the same bytes from outside cannot make the author's own sample count as one (round eight, item 3).
+      const chosen=ref.scheme==='src' ? await pinned.choice(ref.sha256) : null;
+      const artifact=chosen!==null && chosen.complete && chosen.records.length===1 ? chosen.records[0]! : null;
       const proof=artifact===null ? null : {reference:item.location,record:artifact.digest,provenance:artifact.provenance,origin:artifact.body.origin,author:artifact.body.author,outside_author:'read' in artifact.body.origin || 'upload' in artifact.body.origin && artifact.body.author.user!==null && artifact.body.author.user!==(run.runner??run.configurer)};
       const passed=sample.expect.length===outcome.length && sample.expect.every((expected,i)=>Object.entries(expected).every(([key,value])=>outcome[i][key as keyof CheckOutcome]===value));
       record.samples.push({item:item.id,expect:sample.expect,source_provenance:proof,outcome,passed,...(proof===null?{missing:`条目 ${item.id} 所在源文件的读取或上传来源记录`,next_action:'由运行者重新读取或上传该源文件，绑定新来源后重验'}:{})});

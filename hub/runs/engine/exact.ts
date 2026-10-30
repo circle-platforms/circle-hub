@@ -96,9 +96,12 @@ export function groundRecords(choice: SourceChoice): SourceArtifact[] {
  * A source artifact of exactly these bytes whose provenance is a known one and the same in its body and on the record, so
  * the grade of grounds read from it is known (round-seven review, item 3).
  */
-function exactSource(record: { kind: string; schema: string; provenance: string; body: { sha256?: unknown; provenance_type?: unknown } } | null, sha256: string): boolean {
-  return record !== null && record.kind === 'source_artifact' && record.schema === RECORD_SCHEMAS.source_artifact && record.body.sha256 === sha256
-    && ProvenanceTypeSchema.safeParse(record.body.provenance_type).success && record.body.provenance_type === record.provenance;
+function exactSource(record: { kind: string; schema: string; provenance: string; body: unknown } | null, sha256: string): boolean {
+  // The store does not check a body against its schema: a malformed one is no source rather than a crash (round eight).
+  if (record === null || record.kind !== 'source_artifact' || record.schema !== RECORD_SCHEMAS.source_artifact) return false;
+  const body = record.body as { sha256?: unknown; provenance_type?: unknown } | null;
+  return body !== null && typeof body === 'object' && !Array.isArray(body) && body.sha256 === sha256
+    && ProvenanceTypeSchema.safeParse(body.provenance_type).success && body.provenance_type === record.provenance;
 }
 
 /**
@@ -121,15 +124,22 @@ export async function sourceChoice(ctx: EngineContext, reader: ReaderIdentity, p
   return { records: viaRun === null ? [] : [viaRun.artifact], via: 'run', complete: viaRun !== null && exactSource(viaRun.artifact, sha256) };
 }
 
-/** A source reader that stays on the records chosen for each source digest, with the choice behind it. */
-export interface PinnedSources { sources: SourceReader; choice(sha256: string): Promise<SourceChoice>; consumer: ProducerKind }
+/** A source reader that stays on the records chosen for each source digest, with the choice behind it and whose it is. */
+export interface PinnedSources { sources: SourceReader; choice(sha256: string): Promise<SourceChoice>; consumer: ProducerKind; owner: ReaderIdentity }
+
+/** Whether two reader identities read alike: the same account, role and run. */
+export function sameReader(a: ReaderIdentity, b: ReaderIdentity): boolean {
+  return a.user === b.user && a.role === b.role && a.run === b.run;
+}
 
 /**
- * A source reader that stays on the records chosen for each digest, with the choice behind it. Every read is pinned to the
- * chosen record, a generated record that a run reads on its own authority too, so a newer record of the same bytes does not
- * change the evidence of one evaluation (round seven). Every read rechecks access, and a failed or empty choice is not kept,
- * so a retry looks again. The resolver, its scope's quote search and the evaluator read through this, so a use as grounds
- * checks the records its reads came from (round-four review, item 3; rounds five to seven).
+ * A source reader that stays on the records chosen for each digest, with the choice behind it. A bound or directly readable
+ * record is pinned for every read. A generated record that a run reads on its own authority is the newest of its bytes and
+ * cannot be named: each read is checked to return the chosen record, so a newer one of the same bytes fails the read rather
+ * than changing the evidence; the Hub then answers that the source could not be checked, and the same submission again is
+ * a new evaluation that chooses again (rounds seven and eight). Every read rechecks access, and a failed or empty choice is
+ * not kept, so a retry looks again. The resolver, its scope's quote search and the evaluator read through one of these, so a
+ * use as grounds checks the records its reads came from (round-four review, item 3; rounds five to eight).
  */
 export function pinnedSources(ctx: EngineContext, owner: ReaderIdentity, bound: ReadonlyMap<string, readonly string[]> | undefined, consumer: ProducerKind): PinnedSources {
   const { artifacts } = ctx.deps.records;
@@ -151,13 +161,13 @@ export function pinnedSources(ctx: EngineContext, owner: ReaderIdentity, bound: 
       if (record === undefined) return null;
       if (made.via !== 'run') return sourceReader(artifacts, consumer, [{ reference: `src:${sha256}`, role: 'expected', artifact: record.digest }]).read(sha256, reader);
       if (reader.run === undefined) return null;
-      const source = await artifacts.sourceForRun(principalOf(reader), sha256, reader.run, { consumer, record: record.digest });
+      const source = await artifacts.sourceForRun(principalOf(reader), sha256, reader.run, { consumer });
       if (source === null || source.artifact.digest !== record.digest) return null;
       if (consumer === 'model' && source.bytes === null && source.readTier !== 'retain_only') return null;
       return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier };
     },
   };
-  return { sources, choice, consumer };
+  return { sources, choice, consumer, owner };
 }
 
 /** Bytes a Hub record reference binds as a source (B03 R[4]): the canonical JSON of the record, or of the value its pointer names. */

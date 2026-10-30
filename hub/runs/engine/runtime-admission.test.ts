@@ -134,3 +134,22 @@ test('runtime admission reruns contrasting bound items and records observed sour
  const admittedRequired=await evaluate(ctx,{...input,workflow:{...workflow,requirements:[{...requirement,requires_discrimination:true}]}});
  assert.equal(resultItem(admittedRequired.result,'positive').requirements[0].status,'satisfied');
 });
+
+test('a runtime sample names the record the evaluation reads, not a newer readable record of its bytes (round-eight review, item 3)',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const h=await openHarness(pg);t.after(()=>h.close());
+ const bytes=new TextEncoder().encode('{"positive":1,"negative":9}');
+ // The runner's own upload is what the run bound: no sample of it comes from outside the author.
+ const own=await h.kit.artifacts.ingest({bytes,mediaType:'application/json',origin:{upload:{session:'synthetic-own-sample',message:null}},author:{user:h.alice.id},provenanceType:'declared',visibility:{readers:[h.alice.id],admins:true,packs:[],shareable:false}});
+ const reference=`src:${own.body.sha256}`;
+ const requirement={key:'r',name:'合成要求',description:'合成',target:'item' as const,required:true,done_rule:'bookkeeping' as const,layers:['static' as const],accepted_producer:'fact' as const,checks:['base'],error_handling:[],run_table:true};
+ const workflow={...h.review,requirements:[requirement],checks:[{id:'base',interpreter:'range@1',table:'tables/base.json',applies:'item' as const,judges:'subject' as const}],readJson:(path:string)=>path==='tables/base.json'?{...table,checks:[{values:'$.fields.value',range:{minimum:0,maximum:100}}]}:h.review.readJson(path),slots:{...h.review.slots,item:{},run:{}},ledger:{schema:'ledger@1' as const,shapes:[{requirement:'r',interpreter:'range@1',ruled_in:'10.6.0'}]}};
+ const run=RunRecord.parse({...runRecord,pack:'synthetic@10.6.0',product:'synthetic',version:'10.6',build:'SYNTHETIC_10_6_0',runner:h.alice.id,sources:[{reference,role:'subject',artifact:own.digest}],requirements:[],items:[{id:'positive',label:'正例',location:reference,fields:{value:1}},{id:'negative',label:'反例',location:reference,fields:{value:9}}]});
+ const submission:Submission={run:run.run,model:'synthetic',items:run.items.map(item=>({item:item.id,handling:'handled',slots:{}})),checks:[{requirement:'r',interpreter:'range@1',table,samples:[{item:'positive',expect:[{verdict:'support'}]},{item:'negative',expect:[{verdict:'refute'}]}]}]};
+ // Later a Hub connector reads the same bytes: a newer record from outside the author that the runner can read too.
+ await h.kit.artifacts.ingest({bytes,mediaType:'application/json',origin:{read:{object:'synthetic:document:later@1'}},author:{user:null},provenanceType:'observed',visibility:{readers:[h.alice.id],admins:true,packs:[],shareable:false}});
+ const ctx=createEngineContext({records:h.kit,workflows:h.workflows,packs:h.packs,knowledge:h.knowledge,external:h.external,sandbox:{requireOsIsolation:false}});
+ const checked=await evaluate(ctx,{run,workflow,submission,submissionDigest:H,exact:null,carried:new Map(),roundsUsed:new Map(),origin:{sessions:['synthetic'],model:'synthetic'},author:null,traceId:TRACE});
+ assert.ok(checked.runtimeAdmission[0].samples.every(sample=>sample.source_provenance?.record===own.digest),JSON.stringify(checked.runtimeAdmission[0].samples.map(sample=>sample.source_provenance)));
+ assert.ok(checked.runtimeAdmission[0].samples.every(sample=>sample.source_provenance?.outside_author===false));
+ assert.equal(checked.runtimeAdmission[0].admitted,false,'no sample from outside the author');
+});
