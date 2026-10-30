@@ -86,10 +86,10 @@ async function startRun(client: TestMcpClient, reference: string, pack = 'review
 }
 
 /** A raw POST /mcp with exactly this body (the SDK client never sends batches or odd member names). */
-async function post(token: string, body: string): Promise<{ status: number; json: unknown }> {
+async function post(token: string, body: string, authorization = `Bearer ${token}`): Promise<{ status: number; json: unknown }> {
   const reply = await fetch(server.mcpUrl, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${token}` },
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization },
     body,
   });
   const text = await reply.text();
@@ -1296,5 +1296,42 @@ describe("the caller's own token in a request (issue #105)", () => {
     assert.equal(server.fakes.runs.contexts.length, before);
     await post(issued.token, submission(`撤销的旧令牌 ${user.token}`));
     assert.equal(server.fakes.runs.contexts.length, before + 1, 'a revoked token is not the caller\'s current token');
+  });
+
+  test('only the whole token as written counts: a run of it, its other case and the masked form reach the handler', async () => {
+    const user = await person();
+    const swapped = [...user.token].map(char => (char === char.toUpperCase() ? char.toLowerCase() : char.toUpperCase())).join('');
+    assert.notEqual(swapped, user.token);
+    for (const [label, text] of [['first 12', user.token.slice(0, 12)], ['last 12', user.token.slice(-12)], ['other case', swapped], ['masked', '%HUB_TOKEN%']]) {
+      const before = server.fakes.runs.contexts.length;
+      const reply = await post(user.token, submission(`合成说明 ${text}`));
+      assert.equal(server.fakes.runs.contexts.length, before + 1, `${label}: ${reply.status}`);
+    }
+  });
+
+  test('the token is found in every authorization form the Hub accepts', async () => {
+    const user = await person();
+    for (const authorization of [`bearer ${user.token}`, `BEARER\t${user.token}`, `Bearer   ${user.token} \t`]) {
+      const before = server.fakes.runs.contexts.length;
+      refused(await post(user.token, submission(`合成说明 ${user.token}`), authorization), user.token);
+      assert.equal(server.fakes.runs.contexts.length, before);
+    }
+  });
+
+  test('a refusal keeps the token out of the answer and every log, as the request id and in a body that is not JSON', async () => {
+    const user = await person();
+    const asId = JSON.stringify({ jsonrpc: '2.0', id: user.token, method: 'tools/list', params: {} });
+    const broken = `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":"${user.token}"`;
+    for (const body of [asId, broken]) {
+      const reply = await post(user.token, body);
+      refused(reply, user.token);
+      assert.equal((reply.json as { id?: unknown }).id, null);
+    }
+    const lines = (await server.records.callLog.query(server.admin.principal, { userId: user.user.id, limit: 10 })).items;
+    assert.equal(lines.filter(line => line.call_result === 'transport_failure').length, 2);
+    const files = await readdir(server.records.config.logDir);
+    const fileText = (await Promise.all(files.map((f) => readFile(join(server.records.config.logDir, f), 'utf8')))).join('\n');
+    const stored = await server.records.store.list({ kind: 'call_log', limit: 500 });
+    for (const text of [JSON.stringify(lines), fileText, JSON.stringify(stored.items)]) assert.ok(!text.includes(user.token), 'no log holds the token');
   });
 });
