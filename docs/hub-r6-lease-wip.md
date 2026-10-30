@@ -1,8 +1,8 @@
-# Operation device and bed (work in progress)
+# Operation device and bed
 
-This branch is a hand-off, not a finished change. Do not merge it into main until the open items below are settled and
-independently reviewed. It started as "operation device and lease binding"; on 2026-10-30 the owner narrowed it to the
-device and bed an operation record names, and moved leases out of the knowledge layer.
+This started as a hand-off of "operation device and lease binding" (#28, #40). On 2026-10-30 the owner narrowed it to the
+device and bed an operation record names and moved leases out of the knowledge layer. The owner then merged it into main
+(#40) without a further independent review. The main fixes it waited for, #106 and #108, had one review round each.
 
 ## Direction (owner, 2026-10-30)
 
@@ -22,7 +22,7 @@ device and bed an operation record names, and moved leases out of the knowledge 
   request with the same token read it sends. The Hub refuses a request whose body holds the caller's whole token (#106).
   There is no 12-character fragment rule.
 
-## What this branch adds to main
+## What it adds
 
 - `device` and `bed` on the three operation records, checked by `hub/knowledge/operation-device.ts` and shown as
   "设备 X（台架 Y）"; the bed is part of the record's identity.
@@ -54,9 +54,8 @@ rest only served the lease proof; all of it is gone, with the open items of the 
 - Circle runs a skill's hooks through `cmd.exe` on Windows, where this pack's hook cannot start; skills cannot declare
   their platforms yet (circle-platforms/circle#374).
 - The native Windows work (the Windows platform code and the platform matrix) lives only on the `synthetic-platform/*`
-  and `docs/windows-probe-*` branches, and is frozen (owner, 2026-10-30). Main and this branch have no Windows code.
+  and `docs/windows-probe-*` branches, and is frozen (owner, 2026-10-30). Main has no Windows code.
 - #109 (the connector's nested reads are cached and withheld by record, not by effective tier) is on main.
-- #106 (#105) and #108 (#104) are open on main and need an independent review; main then needs syncing into this branch.
 
 ## Frozen replay fixtures
 
@@ -67,7 +66,7 @@ code once with `hub/knowledge/testing/frozen/generate-upgrade-records.ts`. They 
 parent this work had before it was rebased, which no clone has. Both fixtures predate the device fields, which is what the
 tests need: records written without them replay unchanged.
 
-## To continue
+## Follow-ups
 
-Read `hub/knowledge/README.md` and the 1.3.14 notes in `packs/workflow/knowledge-contribution/README.md`. Have the narrowed
-change reviewed by a different model family, then run the complete suites, not only the affected directories.
+The open items above are the follow-ups. Read `hub/knowledge/README.md` and the 1.3.14 notes in
+`packs/workflow/knowledge-contribution/README.md` first.
