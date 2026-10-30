@@ -21,14 +21,14 @@ import { catalogXml, COMMANDS_SOURCE, DEFAULT_SYNC, makeWorld, startPostgres, ST
 
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 const APV = new URL('../../packs/product/apv/', import.meta.url);
-const BUILD = 'Rel_APV_10_5_0_31';
+const BUILD = 'Rel_APV_10_6_1_57';
 const PAGE = `buildsite:file:/builds/Bugs_Fixed_with_DemoOS_${BUILD}.html`;
 const DEFECTS = `knowledge:index:APV:${BUILD}?kind=defect&key=bug`;
 const CASES = `knowledge:index:APV:${BUILD}?kind=case&key=defects`;
 const plm = (id: string) => `<a href="https://tracker.example.invalid/index.php?m=bug&f=view&t=html&id=${id}">${id}</a><br />`;
 const PAGE_BYTES = Buffer.from(`<HTML><HEAD><TITLE>Bugs fixed with ${BUILD}</TITLE></HEAD><BODY>${plm('900301')}${plm('900302')}${plm('900305')}<a href="https://bugs.example.invalid/show_bug.cgi?id=4401">4401</a><br /></BODY></HTML>`, 'latin1');
 const caseNode = (id: string, title: string) => ({ data: { id, text: title, priority: 2, resource: ['functional'] }, children: [{ data: { id: id + '-step', text: 'show health' }, children: [{ data: { id: id + '-expect', text: 'Synthetic expected ' + id } }] }] });
-const MAP = Buffer.from(JSON.stringify({ agile: { id: 'SYN-TRACE' }, root: { data: { id: 'root', text: 'Synthetic regression 10.5' }, children: [caseNode('case-1', 'bug:900301'), caseNode('case-2', 'bug:900302,900309'), caseNode('case-3', 'Synthetic case without ids')] } }));
+const MAP = Buffer.from(JSON.stringify({ agile: { id: 'SYN-TRACE' }, root: { data: { id: 'root', text: 'Synthetic regression 10.6.1' }, children: [caseNode('case-1', 'bug:900301'), caseNode('case-2', 'bug:900302,900309'), caseNode('case-3', 'Synthetic case without ids')] } }));
 
 const located = (result: ValidationResult, id: string): ItemResult => {
   for (const items of Object.values(result.partitions)) { const item = (items as ItemResult[]).find((row) => row.item === id); if (item) return item; }
@@ -43,7 +43,7 @@ test('a product-bound read of a fixed-bug page feeds the defect index, and trace
   functions['synthetic-tree.ts'] = COMMANDS_SOURCE;
   functions['synthetic-plan.ts'] = STATIC_PLAN_SOURCE;
   const w = await makeWorld(pg, { pack: { id: 'apv', names: ['APV', 'NSAE'], functions, declaration: {
-    sync: { ...DEFAULT_SYNC, plan: { module: 'functions/synthetic-plan.ts' }, options: { builds: [{ name: BUILD, base: BUILD, family: 'APV', line: '10.5', platform: null, built_at: '2026-09-20T10:00:00.000Z', released_at: '2026-09-21T00:00:00.000Z', sources: { tree: 'site:tree:synthetic' } }] } },
+    sync: { ...DEFAULT_SYNC, plan: { module: 'functions/synthetic-plan.ts' }, options: { builds: [{ name: BUILD, base: BUILD, family: 'APV', line: '10.6.1', platform: null, built_at: '2026-09-20T10:00:00.000Z', released_at: '2026-09-21T00:00:00.000Z', sources: { tree: 'site:tree:synthetic' } }] } },
     catalogs: [], producers: [{ id: 'tree', title: 'Synthetic tree', function: { module: 'functions/synthetic-tree.ts' }, inputs: { tree: { source: 'tree' } } }],
     feeding: { project: { module: 'functions/feeding.ts' }, normalize_line: { module: 'functions/feeding.ts', export: 'normalizeLine' } },
   } } });
@@ -55,14 +55,14 @@ test('a product-bound read of a fixed-bug page feeds the defect index, and trace
   const root = await w.knowledge.rootOfBuild('apv', BUILD);
   assert.ok(root);
   const original = (await w.knowledge.store.composition(root.composition))!.sources[0];
-  const seed = SeedlingBody.parse({ product: 'apv', line: '10.5', root: root.root, composition: root.composition, build: BUILD, origin: [{ role: 'command-tree', producer: original.producer, slot: original.slot, external: original.external, sha256: original.sha256, revision: null }], parent: null, basis: 'synthetic seed' });
-  const seeded = await w.knowledge.store.putClaim('seedling@1', 'projected', seed, [{ key: 'knowledge.seedling', value: 'apv/10.5' }, { key: 'knowledge.seedling.root', value: 'apv/' + root.root }]);
-  await w.kit.pointers.move({ name: seedlingName('apv', '10.5'), expected: null, next: seeded.digest, by: w.admin, run: null, component: 'synthetic.feeding@1' });
-  const seedling = (await w.knowledge.seedlingRoot!('apv', '10.5'))!;
+  const seed = SeedlingBody.parse({ product: 'apv', line: '10.6.1', root: root.root, composition: root.composition, build: BUILD, origin: [{ role: 'command-tree', producer: original.producer, slot: original.slot, external: original.external, sha256: original.sha256, revision: null }], parent: null, basis: 'synthetic seed' });
+  const seeded = await w.knowledge.store.putClaim('seedling@1', 'projected', seed, [{ key: 'knowledge.seedling', value: 'apv/10.6.1' }, { key: 'knowledge.seedling.root', value: 'apv/' + root.root }]);
+  await w.kit.pointers.move({ name: seedlingName('apv', '10.6.1'), expected: null, next: seeded.digest, by: w.admin, run: null, component: 'synthetic.feeding@1' });
+  const seedling = (await w.knowledge.seedlingRoot!('apv', '10.6.1'))!;
   // Earlier use fed the cases of one regression map under the seedling; two carry fixed numbers, one carries none.
   const ingest = (bytes: Uint8Array, object: string, mediaType = 'application/json') => w.kit.artifacts.ingest({ bytes, mediaType, origin: { read: { object } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [w.user.id], admins: true, packs: [], shareable: false }, readTier: 'model_readable' });
   const map = await ingest(MAP, 'agile:mindmap:SYN-TRACE');
-  const meta = await ingest(Buffer.from(JSON.stringify({ id: 'SYN-TRACE', title: 'Synthetic regression', ancestors: ['rel_apv_10_5'], root: { id: 'synthetic-root', title: 'APV' } })), 'agile:mindmap:SYN-TRACE');
+  const meta = await ingest(Buffer.from(JSON.stringify({ id: 'SYN-TRACE', title: 'Synthetic regression', ancestors: ['rel_apv_10_6_1'], root: { id: 'synthetic-root', title: 'APV' } })), 'agile:mindmap:SYN-TRACE');
   const cases = await layer.observeSource(w.user, map.body.sha256, { product: 'apv', root: seedling.root, composition: seedling.composition, sourceRecord: map.digest, metaSource: meta.body.sha256 });
   assert.equal(cases.objects.length, 3, JSON.stringify(cases.pending));
 
@@ -86,7 +86,7 @@ test('a product-bound read of a fixed-bug page feeds the defect index, and trace
   assert.equal(refused.answer.call_result, 'error');
   const empty = refused.answer.errors.find((error) => error.message.includes('缺陷索引没有编号'));
   assert.ok(empty, JSON.stringify(refused.answer.errors));
-  assert.match(empty.fix ?? '', /pack 写 source-read，顶层同时写 product APV 和 build Rel_APV_10_5_0_31/);
+  assert.match(empty.fix ?? '', /pack 写 source-read，顶层同时写 product APV 和 build Rel_APV_10_6_1_57/);
 
   // The step: the generic read pack with product and build reads the page under that build's seedling.
   const read = await service.startRunDetailed(w.user, { pack: 'source-read', product: 'APV', build: BUILD, inputs: { build_page: { external: PAGE } } }, call());

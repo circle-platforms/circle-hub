@@ -10,7 +10,7 @@ import {KnowledgeStructureSchema} from '../../../../contracts/src/feeding.ts';
 import {canonicalize,sha256Hex} from '../../../../hub/records/api.ts';
 
 const sha='c'.repeat(64);
-const BUILD='Rel_APV_10_5_0_31';
+const BUILD='Rel_APV_10_6_1_57';
 type Row={body:Record<string,unknown>;identity:unknown;lines:string[];selector:string;grammar:string;conflict:boolean;missing?:Array<{missing:string;next_action:string}>};
 const rows=(value:unknown):Row[]=>(value as {rows:Row[]}).rows;
 const page=(body:string)=>html(Buffer.from(`<HTML><HEAD><TITLE>Bugs fixed with Rel_APV_10_9_9_99</TITLE></HEAD><BODY>${body}</BODY></HTML>`));
@@ -46,10 +46,10 @@ test('a fixed-bug page gives one fed-build record per tracker identity, bound to
  const fed=read(key,model);
  assert.equal(fed.length,3,JSON.stringify(fed.map(row=>row.body.fixed_bugs)));
  assert.deepEqual(fed.map(row=>row.body.fixed_bugs),[['plm:bug:900301'],['plm:bug:900302'],['bugzilla:bug:4401']]);
- const listed=rows(project({product:'apv',root:null,parser:'html@1',model:html(Buffer.from(`<font color=red>${BUILD} (build on 2026-09-20 10:00:00 ): Released on 2026-09-21</font>`)),source:{system:'buildsite',type:'listing',key:'rel_apv_10_5',bytes:sha}}))[0];
+ const listed=rows(project({product:'apv',root:null,parser:'html@1',model:html(Buffer.from(`<font color=red>${BUILD} (build on 2026-09-20 10:00:00 ): Released on 2026-09-21</font>`)),source:{system:'buildsite',type:'listing',key:'rel_apv_10_6_1',bytes:sha}}))[0];
  for(const row of fed){
   assert.deepEqual(row.identity,listed.identity,'the same build object as its listing entry: name, family, line and platform');
-  assert.deepEqual(row.lines,['10.5']);assert.equal(row.grammar,'apv-assets@2');assert.equal(row.conflict,false);assert.equal(row.missing,undefined);
+  assert.deepEqual(row.lines,['10.6.1']);assert.equal(row.grammar,'apv-assets@2');assert.equal(row.conflict,false);assert.equal(row.missing,undefined);
   assert.match(row.selector,/^a\/[0-9]+$/);
   assert.deepEqual([row.body.name,row.body.built_at,row.body.released_at,row.body.tree,row.body.root],[BUILD,null,null,null,'d'.repeat(64)]);
   assert.deepEqual(row.body.source,{system:'build-site',page:key,bytes:sha});
@@ -73,6 +73,6 @@ test('a fixed-bug page without a readable tracker link records the gap instead o
 test('other build-site files and listing pages keep their reading',()=>{
  assert.deepEqual(read('/builds/release-notes.html',page(plm('900301'))),[],'a page that is not the fixed-bug form is read as a listing, which lists no build here');
  assert.deepEqual(rows(project({product:'apv',root:null,parser:'html@1',model:page(plm('900301')),source:{system:'buildsite',type:'listing',key:`Bugs_Fixed_with_${BUILD}.html`,bytes:sha}})),[],'only a build-site file read is a fixed-bug page');
- const nsae=read('Bugs_Fixed_with_Rel_NSAE_10_5_0_31.html',page(plm('900301')));
- assert.deepEqual(nsae.map(row=>[row.body.name,row.body.family,row.lines]),[['Rel_NSAE_10_5_0_31','NSAE',['10.5']]],'a page of the second name family is its own build, never its base');
+ const nsae=read('Bugs_Fixed_with_Rel_NSAE_10_6_1_57.html',page(plm('900301')));
+ assert.deepEqual(nsae.map(row=>[row.body.name,row.body.family,row.lines]),[['Rel_NSAE_10_6_1_57','NSAE',['10.6.1']]],'a page of the second name family is its own build, never its base');
 });
