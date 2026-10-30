@@ -5,7 +5,7 @@ import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { COMPILE_CACHE_DIR, PARSER_BOUNDS, SENTINELS, classifyLanes, cpuBusy, initialWorkers, longestFirst, nextWorkers, readDurations, runAdaptiveTasks, sentinelConcurrency, sharedConcurrency, unitFiles, unitLane, withCompileCache, writeDurations } from './run-unit-tests.ts';
+import { COMPILE_CACHE_DIR, NO_FSYNC, PARSER_BOUNDS, SENTINELS, classifyLanes, cpuBusy, fsyncArgs, initialWorkers, longestFirst, nextWorkers, readDurations, runAdaptiveTasks, sentinelConcurrency, sharedConcurrency, unitFiles, unitLane, withCompileCache, writeDurations } from './run-unit-tests.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -142,4 +142,21 @@ test('the shared and isolated lanes reuse a compile cache unless the caller chos
   assert.equal(withCompileCache({ PATH: '/usr/bin' }).NODE_COMPILE_CACHE, COMPILE_CACHE_DIR);
   assert.equal(withCompileCache({ NODE_COMPILE_CACHE: '/synthetic/cache' }).NODE_COMPILE_CACHE, '/synthetic/cache');
   assert.equal(COMPILE_CACHE_DIR.startsWith(tmpdir()), true);
+});
+
+test('the shared and isolated lanes preload the fsync stand-in unless real fsync is asked for', async () => {
+  assert.deepEqual(fsyncArgs({ HUB_UNIT_FSYNC: 'on' }), []);
+  const args = fsyncArgs({});
+  assert.equal(args[0], '--import');
+  assert.equal(fileURLToPath(args[1]), NO_FSYNC);
+  const dir=mkdtempSync(join(tmpdir(),'synthetic-no-fsync-'));
+  try {
+    const file=join(dir,'fsync.test.mjs');
+    writeFileSync(file,"import {test} from 'node:test';import assert from 'node:assert/strict';import {fsyncSync} from 'node:fs';import {open} from 'node:fs/promises';"
+      +"test('fsync returns at once',async()=>{assert.doesNotThrow(()=>fsyncSync(-1));const h=await open(process.execPath,'r');await h.close();await h.sync();});\n");
+    const ran=await runAdaptiveTasks([{file,lane:'shared'}],{},{},{root:dir,cap:1,initialBusy:0,memoryFree:()=>0.8,output:()=>{},nodeArgs:args});
+    assert.equal(ran.code,0);assert.equal(ran.counts.pass,1);
+    const real=await runAdaptiveTasks([{file,lane:'shared'}],{},{},{root:dir,cap:1,initialBusy:0,memoryFree:()=>0.8,output:()=>{}});
+    assert.equal(real.code,1,'without the stand-in fsync of a closed descriptor fails');
+  } finally {rmSync(dir,{recursive:true,force:true});}
 });

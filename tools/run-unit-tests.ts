@@ -8,7 +8,7 @@ import type { ChildProcess } from 'node:child_process';
 import { closeSync, globSync, mkdtempSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { availableParallelism, cpus, freemem, loadavg, platform, tmpdir, totalmem } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { COUNTERS, parseTestOutput, type Counts } from '../.github/checks/test-summary.ts';
 import { createPool, Database } from '../hub/records/db.ts';
 import { migrate } from '../hub/records/migrations.ts';
@@ -122,6 +122,12 @@ function stringEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
  * cold processes, as their budgets were measured. Sandboxed pack functions never see it: their environment is fixed.
  */
 export const COMPILE_CACHE_DIR = join(tmpdir(), 'circle-hub-unit-compile-cache');
+
+/** hub/testing/no-fsync.ts for the shared and isolated lanes (see there); HUB_UNIT_FSYNC=on keeps real fsync. */
+export const NO_FSYNC = resolve(ROOT, 'hub/testing/no-fsync.ts');
+export function fsyncArgs(env: NodeJS.ProcessEnv = process.env): string[] {
+  return env.HUB_UNIT_FSYNC === 'on' ? [] : ['--import', pathToFileURL(NO_FSYNC).href];
+}
 export function withCompileCache(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return env.NODE_COMPILE_CACHE ? env : { ...env, NODE_COMPILE_CACHE: COMPILE_CACHE_DIR };
 }
@@ -169,7 +175,9 @@ type AdaptiveOptions = { root?:string; cap?:number; initialBusy?:number; memoryF
   /** Wall milliseconds of each file in earlier runs: the longest start first, so no long file is left for the end. */
   durations?:Readonly<Record<string,number>>;
   /** Called with each file's wall milliseconds when it ends. */
-  onDuration?:(file:string,ms:number)=>void };
+  onDuration?:(file:string,ms:number)=>void;
+  /** Node options placed before --test for every file of this call, for example a module to preload. */
+  nodeArgs?:readonly string[] };
 const emptyCounts=():Counts=>Object.fromEntries(COUNTERS.map(key=>[key,0])) as Counts;
 
 /** Longest first by earlier durations; files without one (new files, a first run, CI) go first in their given order. */
@@ -236,7 +244,7 @@ export async function runAdaptiveTasks(tasks:readonly TestTask[], shared:NodeJS.
           if(index<0)break;
           const [task]=pending.splice(index,1),path=join(dir,`${serial++}.tap`),fd=openSync(path,'w');
           if(task.lane==='isolated')availablePrivate--;
-          const child=spawn(process.execPath,['--test','--test-reporter=tap',task.file],{cwd:root,env:task.lane==='shared'?shared:clean,stdio:['ignore',fd,fd]});
+          const child=spawn(process.execPath,[...(options.nodeArgs??[]),'--test','--test-reporter=tap',task.file],{cwd:root,env:task.lane==='shared'?shared:clean,stdio:['ignore',fd,fd]});
           active.set(child,task.lane);options.onWorkers?.(active.size,target);
           let ended=false;const startedAt=Date.now();
           const complete=(code:number)=>{
@@ -335,7 +343,7 @@ export async function runUnitTests(group: UnitGroup = 'all', explicit:readonly s
       code=result.code;for(const key of COUNTERS)counts[key]+=result.counts[key];
     }
     if(code!==130&&tasks.length){
-      const result=await runAdaptiveTasks(tasks,withCompileCache(postgres?sharedEnv(postgres):stringEnv()),withCompileCache(stringEnv()),{cap,durations:readDurations(),onDuration:(file,ms)=>{observed[file]=ms;}});
+      const result=await runAdaptiveTasks(tasks,withCompileCache(postgres?sharedEnv(postgres):stringEnv()),withCompileCache(stringEnv()),{cap,durations:readDurations(),onDuration:(file,ms)=>{observed[file]=ms;},nodeArgs:fsyncArgs()});
       if(code===0||result.code===130)code=result.code;for(const key of COUNTERS)counts[key]+=result.counts[key];
       if(result.code!==130)writeDurations(observed);
     }
