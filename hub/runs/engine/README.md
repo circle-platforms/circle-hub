@@ -652,8 +652,13 @@ additional item count, never a partition; the primary-terminal partitions remain
 these layers inherit its named exit and identify the requirement and repair path. No dependency is inferred from prose.
 
 New runs freeze a finite submission deadline (explicit future `submission_due`, otherwise 24 hours after start).
-The serving lifecycle runs maintenance at startup and every minute, with one pass in flight, and drains it before
-closing records; command-only assemblies do not start maintenance. An expired run with no accepted submission gets
+The serving lifecycle runs maintenance at startup and every minute, with one pass in flight, and asks a pass in progress
+to stop at its next run before closing records (serve listens first and starts maintenance in the background); command-only
+assemblies do not start maintenance. Scheduled passes are incremental: they remember, per run, the newest append position
+among its records, its predecessor's and its dispatch jobs' events (`RecordStore.lastPositions`), and visit a run only when
+that moved or its submission deadline passed since the last visit. The first pass after a start and one every half hour
+(`FULL_PASS_MS`) visit every run, for what no record of the run shows (a moved knowledge root, a disabled account); an
+explicit `maintain()` visits every run unless called with `incremental: true`. An expired run with no accepted submission gets
 one append-only Hub delivery containing every frozen item as not-covered/incomplete and a named disposition request.
 A late full submission remains possible. Old runs without deadlines are not assigned invented historical deadlines: a
 named disposition request asks their runner to open a dated successor. The console shows deadline and delivery state.

@@ -207,6 +207,8 @@ export interface RecordStore {
   findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
   /** Bounded index scan retaining each matching value and the record's append position. */
   findIndexed?<B = unknown>(query: IndexedQuery, tx?: Transaction): Promise<{ items: IndexedRecord<B>[]; next: IndexedCursor | null }>;
+  /** The newest append position among the index entries of each value under any of the keys, in one query (absent: none). */
+  lastPositions?(query: { keys: readonly string[]; values: readonly string[] }, tx?: Transaction): Promise<Map<string, number>>;
   getById<B = unknown>(id: string, tx?: Transaction): Promise<StoredRecord<B> | null>;
   find<B = unknown>(query: FindQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>>;
   list<B = unknown>(query: ListQuery, tx?: Transaction): Promise<Page<StoredRecord<B>>>;

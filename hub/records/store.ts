@@ -154,6 +154,21 @@ export class PgRecordStore implements RecordStore {
     return new Map(result.rows.map(row => [row.value as string, verifiedRecord<B>(row)]));
   }
 
+  async lastPositions(query: { keys: readonly string[]; values: readonly string[] }, tx?: Transaction): Promise<Map<string, number>> {
+    const keys = [...new Set(query.keys)];
+    if (keys.some((key) => typeof key !== 'string' || !INDEX_KEY.test(key))) throw new TypeError('invalid index key');
+    const values = [...new Set(query.values.filter(isIndexValue))];
+    if (!keys.length || !values.length) return new Map();
+    const result = await this.#db.query(
+      `SELECT value, max(record_seq) AS position FROM record_index WHERE key = ANY($1::text[]) AND value = ANY($2::text[]) GROUP BY value`,
+      [keys, values], tx);
+    return new Map(result.rows.map((row) => {
+      const position = Number(row.position);
+      if (!Number.isSafeInteger(position)) throw new LimitError('索引序号超过安全整数范围');
+      return [String(row.value), position];
+    }));
+  }
+
   async findIndexed<B = unknown>(query: IndexedQuery, tx?: Transaction): Promise<{items: IndexedRecord<B>[]; next: IndexedCursor | null}> {
     if (typeof query.key !== 'string' || !INDEX_KEY.test(query.key)) throw new TypeError('invalid index key');
     if (query.kind !== undefined && !RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');
@@ -305,20 +320,54 @@ function verifiedRecordText(row: Row): Omit<StoredRecord, 'body'> & { bodyText: 
   return { id: String(row.id), digest: String(row.digest), ...meta, kind: kind.data, provenance: meta.provenance, bodyText };
 }
 
+type Envelope = { kind: string; schema: string; provenance: string; created_at: string };
+/**
+ * Rows this process verified already, by digest (B05 R[5]): a row read again with the same envelope and the same body text is
+ * the same bytes, so the digest it was checked against still holds and its hash is not computed again. Any difference (a row
+ * changed behind the triggers) goes through the full check and is refused. Only byte-canonical rows are kept; the oldest go
+ * first once the bodies kept pass the bound.
+ */
+const VERIFIED_COPIES_LIMIT = 32 * 1024 * 1024;
+const verifiedCopies = new Map<string, Envelope & { body: string }>();
+let verifiedCopiesSize = 0;
+function verifiedBefore(digest: string, meta: Envelope, body: string): boolean {
+  const copy = verifiedCopies.get(digest);
+  if (copy === undefined || copy.body !== body || copy.kind !== meta.kind || copy.schema !== meta.schema || copy.provenance !== meta.provenance || copy.created_at !== meta.created_at) return false;
+  verifiedCopies.delete(digest);
+  verifiedCopies.set(digest, copy);
+  return true;
+}
+function rememberVerified(digest: string, meta: Envelope, body: string): void {
+  if (body.length > VERIFIED_COPIES_LIMIT / 64) return;
+  const old = verifiedCopies.get(digest);
+  if (old !== undefined) { verifiedCopies.delete(digest); verifiedCopiesSize -= old.body.length; }
+  verifiedCopies.set(digest, { ...meta, body });
+  verifiedCopiesSize += body.length;
+  for (const [key, copy] of verifiedCopies) {
+    if (verifiedCopiesSize <= VERIFIED_COPIES_LIMIT) break;
+    verifiedCopies.delete(key);
+    verifiedCopiesSize -= copy.body.length;
+  }
+}
+
 export function verifiedRecord<B>(row: Row): StoredRecord<B> {
   const createdAt = iso(row.created_at);
   const meta = { kind: String(row.kind), schema: String(row.schema), provenance: String(row.provenance), created_at: createdAt };
   const body = String(row.body);
+  const digest = String(row.digest);
   let parsedFallback: unknown;
   let noncanonical = false;
-  if (envelopeDigest(meta, body) !== row.digest) {
-    try {
-      parsedFallback = parseStrictJson(body);
-      const canonicalBody = canonicalize(parsedFallback);
-      if (envelopeDigest(meta, canonicalBody) !== row.digest) throw new Error('digest mismatch');
-      noncanonical = true;
-    } catch {
-      throw new IntegrityError('记录内容与它的摘要不符（存储被改动过或正文不能规范化）', { detail: { record: row.id, digest: row.digest } });
+  if (!verifiedBefore(digest, meta, body)) {
+    if (envelopeDigest(meta, body) === digest) rememberVerified(digest, meta, body);
+    else {
+      try {
+        parsedFallback = parseStrictJson(body);
+        const canonicalBody = canonicalize(parsedFallback);
+        if (envelopeDigest(meta, canonicalBody) !== digest) throw new Error('digest mismatch');
+        noncanonical = true;
+      } catch {
+        throw new IntegrityError('记录内容与它的摘要不符（存储被改动过或正文不能规范化）', { detail: { record: row.id, digest: row.digest } });
+      }
     }
   }
   const kind = RecordKindSchema.safeParse(meta.kind);

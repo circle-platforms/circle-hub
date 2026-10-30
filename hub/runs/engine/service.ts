@@ -1,7 +1,7 @@
 import { createDocumentCache } from '../../refs/api.ts';
 import { withRequestPermissions } from '../../records/api.ts';
 import { abandonRun } from './management.ts';
-import { maintainRuns } from './maintenance.ts';
+import { maintainRuns, type MaintenanceMemory } from './maintenance.ts';
 import { requestsOf } from './requests.ts';
 // createRunsService: the RunsService of hub/ports.ts plus the engine's extras (results, runs of a pack, the production result
 // of a start, Hub-side runs for standing obligations). Every call that carries a CallContext reports the real reasons behind
@@ -53,8 +53,12 @@ async function withDocuments<T>(ctx:EngineContext,call:CallContext|undefined,ope
 }
 
 export interface RunsEngine extends RunsService {
-  maintain():Promise<void>;
-  /** Schedules a pass every minute and resolves when the first pass is done (it is retried on schedule should it fail). */
+  /** One pass over every run; with `incremental`, only the runs the scheduled passes' memory shows something happened to. */
+  maintain(options?:{incremental?:boolean}):Promise<void>;
+  /**
+   * Schedules a pass every minute and resolves when the first pass is done (it is retried on schedule should it fail). The
+   * scheduled passes are incremental; the first one, and one every FULL_PASS_MS, visit every run.
+   */
   startMaintenance():Promise<void>;
   /** Ends the schedule and waits for a pass in progress; with `abort` that pass returns at its next run (shutting down). */
   stopMaintenance(options?:{abort?:boolean}):Promise<void>;
@@ -85,16 +89,17 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
   let ongoing:Promise<void>|null=null;
   let timer:ReturnType<typeof setInterval>|null=null;
   let aborted=false;
-  const maintain=():Promise<void>=>ongoing??=(withDocuments(ctx,undefined,current=>maintainRuns(current,()=>aborted)).finally(()=>{ongoing=null;}));
+  const memory:MaintenanceMemory={runs:new Map(),fullAt:null};
+  const maintain=(options:{incremental?:boolean}={}):Promise<void>=>ongoing??=(withDocuments(ctx,undefined,current=>maintainRuns(current,()=>aborted,options.incremental===true?memory:undefined)).finally(()=>{ongoing=null;}));
   return {
     abandonRun(user,run,request,reason){return abandonRun(ctx,user,run,request,reason);},
     maintain,
     async startMaintenance(){
       aborted=false;
       // Scheduled first, so a failed first pass is retried like any other.
-      timer??=setInterval(()=>{void maintain().catch(error=>ctx.log({traceId:null,run:null,what:'run maintenance',detail:String(error)}));},60000);
+      timer??=setInterval(()=>{void maintain({incremental:true}).catch(error=>ctx.log({traceId:null,run:null,what:'run maintenance',detail:String(error)}));},60000);
       timer.unref();
-      await maintain();
+      await maintain({incremental:true});
     },
     async stopMaintenance(options={}){if(timer){clearInterval(timer);timer=null;}if(options.abort===true)aborted=true;try{await ongoing;}finally{aborted=false;}},
     listRequests(user,run) { return withRequestPermissions(ctx.deps.records.artifacts,user,()=>requestsOf(ctx,user,run)); },
