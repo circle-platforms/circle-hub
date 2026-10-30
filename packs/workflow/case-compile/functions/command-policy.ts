@@ -1,6 +1,7 @@
 // Exact path segments and product-authored structure only. No command words are classified here.
 import {isRecord} from './text.ts';
-export interface CommandPolicy {schema:'command-policy@1';read_only:string[];inverse_rules:Array<{source_prefix:string;inverse_prefix:string;leading_parameters?:number}>;inverse_alternatives?:Array<[string,string]>}
+export interface Confirmation {command_prefix:string;prompt:string;answer:string}
+export interface CommandPolicy {schema:'command-policy@1';read_only:string[];inverse_rules:Array<{source_prefix:string;inverse_prefix:string;leading_parameters?:number}>;inverse_alternatives?:Array<[string,string]>;confirmations?:Confirmation[]}
 export function pathSegments(path:unknown):string[]|null {
  if(typeof path!=='string'||!path.startsWith('/'))return null;
  const parts=path.slice(1).split('/');if(parts[0]!=='commands'||parts.some(part=>!part||part==='.'||part==='..'||/[\u0000-\u0020]/.test(part)))return null;
@@ -8,7 +9,7 @@ export function pathSegments(path:unknown):string[]|null {
 }
 export function within(path:string,prefix:string):boolean {const a=pathSegments(path),b=pathSegments(prefix);return !!a&&!!b&&a.length>=b.length&&b.every((part,index)=>a[index]===part);}
 export function readCommandPolicy(value:unknown):CommandPolicy|null {
- if(!isRecord(value)||value.schema!=='command-policy@1'||Object.keys(value).some(key=>!['schema','read_only','inverse_rules','inverse_alternatives'].includes(key))||!Array.isArray(value.read_only)||value.read_only.length>64||value.read_only.some(path=>!pathSegments(path))||!Array.isArray(value.inverse_rules)||value.inverse_rules.length>64)return null;
+ if(!isRecord(value)||value.schema!=='command-policy@1'||Object.keys(value).some(key=>!['schema','read_only','inverse_rules','inverse_alternatives','confirmations'].includes(key))||!Array.isArray(value.read_only)||value.read_only.length>64||value.read_only.some(path=>!pathSegments(path))||!Array.isArray(value.inverse_rules)||value.inverse_rules.length>64)return null;
  for(const rule of value.inverse_rules)if(!isRecord(rule)||Object.keys(rule).some(key=>!['source_prefix','inverse_prefix','leading_parameters'].includes(key))||!pathSegments(rule.source_prefix)||!pathSegments(rule.inverse_prefix)||rule.leading_parameters!==undefined&&(!Number.isSafeInteger(rule.leading_parameters)||Number(rule.leading_parameters)<0||Number(rule.leading_parameters)>128))return null;
  // Inverse alternatives are exact closed-set pairs of non-space values; a value paired with itself is meaningless.
  if(value.inverse_alternatives!==undefined){
@@ -17,6 +18,16 @@ export function readCommandPolicy(value:unknown):CommandPolicy|null {
   for(const pair of value.inverse_alternatives){
    if(!Array.isArray(pair)||pair.length!==2||pair.some(member=>typeof member!=='string'||!/\S/.test(member))||pair[0]===pair[1])return null;
    for(const [from,to]of [[pair[0],pair[1]],[pair[1],pair[0]]]){if(partners.has(from)&&partners.get(from)!==to)return null;partners.set(from,to);}
+  }
+ }
+ // A confirmation is the product's declared dialogue: one prompt text and one answer word per command prefix.
+ if(value.confirmations!==undefined){
+  if(!Array.isArray(value.confirmations)||value.confirmations.length>16)return null;
+  const prefixes=new Set<string>();
+  for(const row of value.confirmations){
+   if(!isRecord(row)||Object.keys(row).some(key=>!['command_prefix','prompt','answer'].includes(key))||!pathSegments(row.command_prefix)||prefixes.has(String(row.command_prefix)))return null;
+   if(typeof row.prompt!=='string'||!/^\S(?:.*\S)?$/.test(row.prompt)||row.prompt.length>64||typeof row.answer!=='string'||!/^\S+$/.test(row.answer)||row.answer.length>16)return null;
+   prefixes.add(String(row.command_prefix));
   }
  }
  return value as unknown as CommandPolicy;

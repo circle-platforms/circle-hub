@@ -100,7 +100,7 @@
       ]
     }
   ],
-  "command_policy": {"schema": "command-policy@1", "read_only": ["/commands/show"], "inverse_rules": [{"source_prefix": "/commands/no", "inverse_prefix": "/commands"}, {"source_prefix": "/commands", "inverse_prefix": "/commands/no"}, {"source_prefix": "/commands/slb/virtual/addrlists", "inverse_prefix": "/commands/no/slb/virtual/addrlists", "leading_parameters": 2}, {"source_prefix": "/commands/slb/virtual/portlists", "inverse_prefix": "/commands/no/slb/virtual/portlists", "leading_parameters": 2}], "inverse_alternatives": [["on", "off"], ["enable", "disable"]]},
+  "command_policy": {"schema": "command-policy@1", "read_only": ["/commands/show"], "inverse_rules": [{"source_prefix": "/commands/no", "inverse_prefix": "/commands"}, {"source_prefix": "/commands", "inverse_prefix": "/commands/no"}, {"source_prefix": "/commands/slb/virtual/addrlists", "inverse_prefix": "/commands/no/slb/virtual/addrlists", "leading_parameters": 2}, {"source_prefix": "/commands/slb/virtual/portlists", "inverse_prefix": "/commands/no/slb/virtual/portlists", "leading_parameters": 2}, {"source_prefix": "/commands/ssl/host/virtual", "inverse_prefix": "/commands/clear/ssl/host", "leading_parameters": 1}, {"source_prefix": "/commands/ssl/start", "inverse_prefix": "/commands/ssl/stop", "leading_parameters": 1}], "inverse_alternatives": [["on", "off"], ["enable", "disable"]], "confirmations": [{"command_prefix": "/commands/clear/ssl/host", "prompt": "abort:", "answer": "YES"}]},
   "catalogs": [
     {
       "id": "commands@1",
