@@ -119,9 +119,16 @@ export type CommandFact = { command: string; identity?: CommandIdentity; unclass
 export type CommandCoverage = {
   case_rule: 'marked' | 'tagged'; rule_mismatch: boolean; bound: boolean; uploaded: boolean; documentIndexed: boolean; root: string | null; build: string | null;
   caseCount: number; matchedCases: number; unmatched: string[]; orphaned: string[]; pending_commands: string[]; pending_skips: Skip[]; commandlessCases: number;
-  truncated: boolean; skippedSources: number; cutKeys: string[]; unplacedRoot: number | null; notes: string[];
+  truncated: boolean;
+  /** The index's unknown_entries: cases left out of it, or listed without commands, because a fact the query needs is unknown. */
+  unknownEntries?: number;
+  /** The index says those unknown entries are the only reason it is truncated (index-view unknown_only). */
+  unknownOnly?: true;
+  skippedSources: number; cutKeys: string[]; unplacedRoot: number | null; notes: string[];
   missing_identities?: string[];
   missing_tree_roots?: string[];
+  /** Matched cases the index lists without a command set (unknown entries): their commands are unknown, not empty. */
+  unknown_commands?: string[];
   unclassified?: string[];
   pending_identities?: CommandIdentity[];
   commands: CommandFact[];
