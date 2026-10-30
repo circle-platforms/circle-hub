@@ -26,6 +26,16 @@ circle-hub 是 [Circle](https://github.com/circle-platforms/circle) 的团队 hu
 
 设计的权威是 [contracts/model.json](contracts/model.json) 里的通用模型，摘要见 [docs/design/generic-model.md](docs/design/generic-model.md)。
 
+## 一键安装
+
+只支持 macOS 和 Linux（arm64、x64）：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/circle-platforms/circle-hub/main/install.sh | bash
+```
+
+要让内网其他电脑访问，加上这台机器的内网地址：`… | bash -s -- --https-host 192.168.1.20`（可再加 `--hostname hub.example.lan`）。脚本下载这台机器对应的发布包（自带 Node 24、Hub 和 PostgreSQL），按 GitHub 发行版的 SHA256SUMS 核对后安装：建数据目录和数据库，HTTP 只监听本机，HTTPS 用 Hub 自己的证书颁发机构，部署并启动服务，最后给出控制台地址和一次性设置码。在浏览器打开 `/console/setup` 用设置码建立第一位管理员，之后的用户、令牌、任务包、业务系统和密钥都在控制台的“管理”里办。macOS 用当前账户（LaunchAgent 和登录钥匙串），需要 Homebrew 来装备份用的 PostgreSQL 客户端；Linux 用专门的 `circle-hub` 账户和 systemd 用户服务，安装时要 sudo（建账户、装 bubblewrap 与 AppArmor 策略、PostgreSQL 18 客户端）。再运行一次就是升级：部署前自动备份，失败自动回滚。
+
 ## 状态
 
 第一个里程碑已建成并部署，这里还没有受支持的发行。通用模型、由它生成的合约、[架构简报](docs/hub-r4-architecture.md)、`hub/` 下的各个包（服务器、网页控制台、知识树、只读连接器、派发），任务包，以及只监听本机的单机持久部署都已就位；哪些部分已经落地、复核过，还有什么未完，见 [docs/hub-r4-progress.md](docs/hub-r4-progress.md)。此前的任务与审批服务器（截至 0.2.0）已退役，它的简报和交接文档作为[历史记录](docs/README.md#历史记录)保留。

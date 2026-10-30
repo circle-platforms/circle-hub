@@ -2,8 +2,8 @@
 // `current` symlink that the service runs. A release directory is built beside its final name and renamed into place
 // only when complete, so a directory named after a release is always usable.
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { cp, mkdir, readFile, readdir, readlink, rename, rm, stat } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { IsoTime } from '../../contracts/src/common.ts';
 import { PlatformError } from './errors.ts';
@@ -78,6 +78,8 @@ export interface ReleaseSource {
   commit?: string;
   /** Copy a plain directory instead of archiving a commit (private names are left out; see isPrivateName). */
   copy?: boolean;
+  /** `path` is an unpacked release bundle: its `app/` is the release as is, node_modules included, without npm ci. */
+  bundle?: boolean;
 }
 
 export interface ReleaseOptions {
@@ -89,6 +91,8 @@ export interface ReleaseOptions {
   tar?: string;
   now?: () => Date;
   log?: (message: string) => void;
+  /** The platform a bundle must be built for; default this machine's (tests pass another). */
+  bundlePlatform?: BundlePlatform | null;
 }
 
 export interface PreparedRelease extends ReleaseRef {
@@ -147,8 +151,12 @@ async function run(runner: CommandRunner, command: string, args: string[], optio
   return result;
 }
 
-/** Builds releases/<id> from a commit or a directory copy and runs npm ci in it; an existing complete release is reused. */
+/**
+ * Builds releases/<id> from a commit or a directory copy and runs npm ci in it, or from an unpacked bundle as it is; an
+ * existing complete release is reused.
+ */
 export async function prepareRelease(source: ReleaseSource, options: ReleaseOptions): Promise<PreparedRelease> {
+  if (source.bundle) return prepareBundleRelease(source.path, options);
   const { layout } = options;
   const runner = options.runner ?? runCommand;
   const env = inheritedEnvironment(options.env ?? process.env);
@@ -214,6 +222,120 @@ export async function prepareRelease(source: ReleaseSource, options: ReleaseOpti
       ...(tree ? { tree_sha256: tree } : {}),
       created_at: now().toISOString(),
     });
+    await writeFileAtomic(join(partial, RELEASE_FILE), `${JSON.stringify(file, null, 2)}\n`, 0o644);
+    await rename(partial, dir);
+    return { id, dir, file, reused: false };
+  } catch (error) {
+    await removeWithin(layout.releases, partial).catch(() => {});
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------- release bundles
+
+/**
+ * A release bundle (owner decision 76): what `tools/build-bundle.ts` builds for one platform and the installer unpacks.
+ * `app/` is the source tree with its node_modules already installed for that platform (the PostgreSQL binaries included),
+ * `node/` the Node runtime, and bundle.json names them. `deploy --bundle <dir>` copies `app/` as the release without
+ * npm ci, after checking the tree digest the bundle declares (symlinks included, as `link` lines) and the platform.
+ */
+export const BUNDLE_FILE = 'bundle.json';
+export const BUNDLE_SCHEMA = 'circle-hub-bundle@1';
+export const BUNDLE_PLATFORMS = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'] as const;
+export type BundlePlatform = (typeof BUNDLE_PLATFORMS)[number];
+
+export const BundleFile = z
+  .object({
+    schema: z.literal(BUNDLE_SCHEMA),
+    version: z.string().regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/),
+    commit: z.string().regex(/^[0-9a-f]{40,64}$/),
+    platform: z.enum(BUNDLE_PLATFORMS),
+    node: z.string().regex(/^v[0-9]+\.[0-9]+\.[0-9]+$/),
+    tree_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    created_at: IsoTime,
+  })
+  .strict();
+export type BundleFile = z.infer<typeof BundleFile>;
+
+/** This machine as a bundle platform, or null for one no bundle is built for. */
+export function hostBundlePlatform(platform: NodeJS.Platform = process.platform, arch: string = process.arch): BundlePlatform | null {
+  const name = `${platform}-${arch}`;
+  return (BUNDLE_PLATFORMS as readonly string[]).includes(name) ? (name as BundlePlatform) : null;
+}
+
+/**
+ * The digest of a tree as bundles declare it: SHA-256 of the sorted lines `<sha256>  <path>` for files and
+ * `link  <path> -> <target>` for symlinks (never followed). Any other kind of entry is refused.
+ */
+export async function bundleTreeDigest(dir: string): Promise<string> {
+  const lines: string[] = [];
+  const walk = async (current: string, prefix: string): Promise<void> => {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      const name = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) await walk(path, name);
+      else if (entry.isSymbolicLink()) lines.push(`link  ${name} -> ${await readlink(path)}`);
+      else if (entry.isFile()) lines.push(`${(await sha256File(path)).sha256}  ${name}`);
+      else throw new PlatformError(`发布包里有特殊文件：${name}`);
+    }
+  };
+  await walk(dir, '');
+  lines.sort();
+  return sha256Text(`${lines.join('\n')}\n`);
+}
+
+/** Refuses a symlink that is absolute or leads outside `root` (resolved lexically from its own directory). */
+async function assertLinksInside(root: string): Promise<void> {
+  const walk = async (current: string): Promise<void> => {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) await walk(path);
+      else if (entry.isSymbolicLink()) {
+        const target = await readlink(path);
+        const resolved = resolve(dirname(path), target);
+        if (isAbsolute(target) || (resolved !== root && !resolved.startsWith(`${root}${sep}`))) {
+          throw new PlatformError(`发布包里的符号链接指向发布之外：${relative(root, path)} -> ${target}`);
+        }
+      }
+    }
+  };
+  await walk(root);
+}
+
+/** Reads and checks bundle.json of an unpacked bundle: its schema, this machine's platform and its app tree. */
+export async function readBundle(dir: string, platform: BundlePlatform | null = hostBundlePlatform()): Promise<BundleFile> {
+  let value: unknown;
+  try {
+    value = JSON.parse(await readFile(join(dir, BUNDLE_FILE), 'utf8'));
+  } catch {
+    throw new PlatformError(`${dir} 不是解开的发布包（没有可读的 ${BUNDLE_FILE}）`, '用安装脚本下载并校验发布包，或指定它解开后的目录');
+  }
+  const parsed = BundleFile.safeParse(value);
+  if (!parsed.success) throw new PlatformError(`${join(dir, BUNDLE_FILE)} 不符合 ${BUNDLE_SCHEMA}`);
+  if (parsed.data.platform !== platform) throw new PlatformError(`发布包是给 ${parsed.data.platform} 的，这台机器是 ${platform ?? `${process.platform}-${process.arch}`}`, '下载这台机器对应的发布包');
+  const digest = await bundleTreeDigest(join(dir, 'app'));
+  if (digest !== parsed.data.tree_sha256) throw new PlatformError('发布包的 app 目录与 bundle.json 记录的摘要不符：不完整或被改过', '重新下载并校验发布包');
+  return parsed.data;
+}
+
+/** releases/<id> from an unpacked bundle: `app/` copied with its symlinks, never npm ci; the id is the bundle's commit. */
+async function prepareBundleRelease(path: string, options: ReleaseOptions): Promise<PreparedRelease> {
+  const { layout } = options;
+  const now = options.now ?? (() => new Date());
+  const bundle = await readBundle(path, options.bundlePlatform === undefined ? hostBundlePlatform() : options.bundlePlatform);
+  const id = bundle.commit.slice(0, 12);
+  const dir = releaseDir(layout, id);
+  const existing = await readReleaseFile(dir);
+  if (existing) return { id, dir, file: existing, reused: true };
+  if (await exists(dir)) throw new PlatformError(`${dir} 已存在但不是完整的发布`, '手动检查后删除它再部署');
+  await mkdir(layout.releases, { recursive: true, mode: 0o700 });
+  const partial = join(layout.releases, `.partial-${id}-${randomBytes(4).toString('hex')}`);
+  try {
+    await cp(join(path, 'app'), partial, { recursive: true, verbatimSymlinks: true, errorOnExist: true, force: false });
+    await assertLinksInside(partial);
+    if (!(await exists(join(partial, 'bin', 'circle-hub')))) throw new PlatformError('发布包里没有 bin/circle-hub');
+    if (!(await exists(join(partial, 'node_modules')))) throw new PlatformError('发布包里没有 node_modules');
+    const file = ReleaseFile.parse({ schema: RELEASE_SCHEMA, id, commit: bundle.commit, created_at: now().toISOString() });
     await writeFileAtomic(join(partial, RELEASE_FILE), `${JSON.stringify(file, null, 2)}\n`, 0o644);
     await rename(partial, dir);
     return { id, dir, file, reused: false };

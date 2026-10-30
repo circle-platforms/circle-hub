@@ -26,6 +26,16 @@ The contracts define six tools: `list_task_packs`, `upload_file`, `start_run`, `
 
 The design authority is the generic model in [contracts/model.json](contracts/model.json), summarised in [docs/design/en/generic-model.md](docs/design/en/generic-model.md).
 
+## One-click install
+
+macOS and Linux only (arm64, x64):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/circle-platforms/circle-hub/main/install.sh | bash
+```
+
+For other computers on the internal network, add this machine's address: `… | bash -s -- --https-host 192.168.1.20` (and optionally `--hostname hub.example.lan`). The script downloads the release bundle for this machine (Node 24, the Hub and PostgreSQL), checks it against the release's SHA256SUMS and sets the Hub up: data root and database, HTTP on loopback, HTTPS with the Hub's own certificate authority, deploy and service, then prints the console address and a one-time setup code. Create the first administrator at `/console/setup`; users, tokens, packs, business systems and secrets are managed in the console from then on. macOS uses the current account (LaunchAgent, login keychain) and Homebrew for the PostgreSQL client the backups need; Linux uses a dedicated `circle-hub` account with a systemd user service and needs sudo once (the account, bubblewrap and the AppArmor policy, the PostgreSQL 18 client). Running it again upgrades: deploy backs up first and rolls back on failure.
+
 ## Status
 
 Milestone 1 is built and deployed, and nothing here is a supported release. The model, the contracts generated from it, the [architecture brief](docs/hub-r4-architecture.md), the packages under `hub/` (server, web console, knowledge tree, read-only connectors, dispatch), the packs and a persistent single-machine deployment listening on loopback are in place; [docs/hub-r4-progress.md](docs/hub-r4-progress.md) says which parts have landed and been reviewed, and what is still open. The task-and-approval server that came before (up to 0.2.0) is retired, and its briefs and handoffs are kept as [historical records](docs/README.md#历史记录).

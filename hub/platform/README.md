@@ -56,6 +56,34 @@ configured and no valid pair, and warns in the operator's log when the certifica
 shows the HTTPS address and the days left. Browsers import `ca.crt` (system keychain or browser settings); Circle
 names it in `trust_cert_files`. Check the fingerprint before trusting it.
 
+## Release bundles and the installer
+
+Owner decision 76 (2026-10-31): the Hub installs with one command on macOS and Linux (arm64 and x64). A release bundle
+(`tools/build-bundle.ts`) is one directory `circle-hub-<version>-<platform>/` holding `app/` (git archive of the commit
+without foundation/ and references/, with `npm ci --include=dev --os --cpu` for that platform, the PostgreSQL binaries
+included), `node/` (bin/node and LICENSE of the official Node.js build, checked against its SHASUMS256.txt) and
+`bundle.json` (`circle-hub-bundle@1`: version, commit, platform, Node version and the tree digest of `app/`). The digest is
+SHA-256 of the sorted lines `<sha256>  <path>` and `link  <path> -> <target>` (`bundleTreeDigest`; symlinks are never
+followed, other special files refused). `deploy --bundle <dir>` checks schema, platform and digest, copies `app/` with its
+symlinks (`fs.cp`, `verbatimSymlinks`), refuses any absolute link or one that resolves outside the release, and makes it
+the release without npm ci; its id is the first 12 hex of the bundle's commit. Everything after that is an ordinary
+deploy: backup, migration, service, health and recovery.
+
+`install.sh` (repository root, `curl … | bash`) checks the system and architecture (anything but macOS and Linux on arm64
+or x64 is refused), downloads the bundle and SHA256SUMS of the GitHub release (latest, or `--version`), checks the
+SHA-256, unpacks it under `<data root>/runtime/bundles/` and points `<data root>/runtime/node` at its Node. It then runs
+the Hub's own commands with that Node: `init` (HTTP on loopback, `--https-port`, and `--https-host` with the allowed hosts
+when one is given) unless settings exist, `key init` and `tls init` unless present, `deploy --bundle … --node
+<data root>/runtime/node/bin/node` unless that commit is current, and `setup-code`; it writes a `circle-hub` wrapper and
+prints the console address, the setup code and the authority certificate to trust. Every deploy backs up first, so the
+installer provides a PostgreSQL 18 client: Homebrew `libpq` on macOS, `postgresql-client-18` on Linux (from the system
+sources, else apt.postgresql.org), passed as `CIRCLE_HUB_LIBPQ_BIN`. On Linux it also creates the `circle-hub` account
+(its data root is `lib/circle-hub` under `/var`, as for that account above; lingering, its user manager started), installs bubblewrap and AppArmor and loads the
+Hub's AppArmor policy for the bundled Node (`hub/rules/sandbox/linux.ts`). Running it again upgrades through deploy.
+`.github/workflows/release.yml` installs a freshly built bundle with install.sh on a fresh Ubuntu runner and checks HTTP,
+HTTPS and the setup page, runs the macOS bundle's Node and PostgreSQL, and on a version tag attaches all four bundles
+with SHA256SUMS to a draft release for the owner to publish.
+
 ## Data root
 
 `~/Library/Application Support/circle-hub`, or `CIRCLE_HUB_DATA_DIR` (the name hub/config reads too; there is no second
@@ -73,6 +101,7 @@ name). Every directory is 0700.
 | `releases/operation.json` | progress of a deploy or rollback that has not finished (`circle-hub-operation@1`) |
 | `current` | relative symlink to `releases/<id>` |
 | `config/platform.json` | the deployment instance (`circle-hub-platform@2`): environment class, HTTP port, database name, role and socket port, keychain service and account, backups kept, optional node path |
+| `runtime/` | the installer's unpacked bundles (`bundles/<name>/`) and `node`, the link to the Node the service runs |
 | `tls/` | the built-in HTTPS: the private certificate authority and the server certificate it signed (`tls init`); never backed up |
 | `set-aside/<time>-<reason>/` | data moved out of the way by a failed deploy, a rollback or a failed restore; never deleted automatically |
 
