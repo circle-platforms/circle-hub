@@ -292,6 +292,8 @@ effect@1 随意图、回执、终局与处置追加快照，保存上个快照�
 
 `report` 缺口仅表示声明的结果字段尚未得到通过/不通过映射：先核 `result.complete`，再由 `result.items` 取列表、用每项相对 `item_id` 匹配冻结条目，最后取相对 `item_outcome` 并按 `result.map` 完全相等映射。`sessions` 只收集可选日志，不参与判定；成功用例没有它不会产生缺口。日志中的检查点成功文字也不替代结构结果字段。
 
+没有报告通过的条目（fail、未映射或无判定）在结果行里带 `evidence`：按声明的 `result.log` 与 `result.sessions` 取出这一条的日志和每台设备的会话，各存成一份只对运行者和管理员可见、模型可读的投影原件（生成自原始应答），`evidence.log` 和 `evidence.sessions.<会话名>` 给引用。原始应答本身仍只许函数按引用读字节；每份证据单独做凭据扫描，一份会话被扣留不影响其他会话和结论可读。这样运行者的模型能读失败用例的设备回显来归因和返工，与 CES 把非 pass 用例的失败检查点和会话转储交给模型一致；证据是目标自报，不是 Hub 的判定。
+
 对明确声明的 `cases=[{case_id, result:"pass", log, log_stale:false}]` 形状，条目指针为 `items:"/cases"`、`item_id:"/case_id"`、`item_outcome:"/result"`，并需显式声明 `map:{pass:"pass",fail:"fail"}`。后两项相对列表元素，不应写成响应根路径。其他身份、摘要、请求和完整性字段仍按各执行器定义核验。
 
 每条判定的 `report_check` 保留实际组合指针、声明的相对指针、存在性、完全相等映射结果、值摘要和 result 定义摘要。缺失时给出具体字段和修正只读定义后 resume 的出口；作业说明、管理员日志及 Hub 回注也保留该原因。只读定义修复沿用旧作业的写入身份，不重交 submit，不从常用字段名、大小写变体或 sessions 猜结果。
