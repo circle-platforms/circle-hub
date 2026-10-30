@@ -15,19 +15,44 @@ import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import type { EngineContext } from './deps.ts';
 import { latestAccepted, listRunRecords, putAction, putResult, submissionsOf, submissionByDigest, actionOfSubmission, actionsOf, isVerbatimObject } from './store.ts';
-import { putRequest, recordResultRequests, requestRecords, answerRequest, answerSuccessorRequests } from './requests.ts';
+import { putRequest, recordResultRequests, requestRecords, answerRequest, answerSuccessorRequests, requestKey, requestKeyOf, RequestBodySchema, type RequestBody } from './requests.ts';
 import { restoreLegacyRequests,restoreRecordedRequests } from './maintenance-requests.ts';
 
-export async function maintainRuns(ctx:EngineContext):Promise<void>{
+/**
+ * One maintenance pass. `stop` is asked between runs and between the request sweeps: a pass asked to stop (the service is
+ * shutting down) returns there, and what it did not reach is done by the next pass, since every step is idempotent.
+ */
+export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false):Promise<void>{
+  const ctx=passContext(base);
   let cursor:string|null=null;
   do{
     const page:Page<StoredRecord<RunRecord>>=await listRunRecords(ctx.deps.records.store,{}, {limit:200,cursor});
-    for(const run of page.items){const stopped=await abandonDecision(ctx,run.body.run);if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run);continue;}if(run.body.predecessor){const before=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,run.body.predecessor!));if(before)await answerSuccessorRequests(ctx,before.body,run);}await reconcileDispatch(ctx,run);await rootUpdateRequest(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>legacyResultRequests(ctx,run));await recoverRun(ctx,run);await recoverParent(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
+    for(const run of page.items){if(stop())return;const stopped=await abandonDecision(ctx,run.body.run);if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run);continue;}if(run.body.predecessor){const before=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,run.body.predecessor!));if(before)await answerSuccessorRequests(ctx,before.body,run);}await reconcileDispatch(ctx,run);await rootUpdateRequest(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>legacyResultRequests(ctx,run));await recoverRun(ctx,run);await recoverParent(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
     cursor=page.next;
   }while(cursor!==null);
+  if(stop())return;
   await repairedPackRequests(ctx);
+  if(stop())return;
   await acceptedSourceRequests(ctx);
+  if(stop())return;
   await escalateOverdueRequests(ctx);
+}
+/**
+ * The pass reads the account list once: every step looks up the named administrator, and on a store with hundreds of runs
+ * and thousands of requests that was one account query per run and per overdue request. An account changed during a pass
+ * is seen by the next one.
+ */
+function passContext(ctx:EngineContext):EngineContext{
+  const principals=ctx.deps.records.principals;
+  const list=principals?.list;
+  if(!principals||!list)return ctx;
+  let listed:ReturnType<typeof list>|undefined;
+  const once=new Proxy(principals,{get(target,property){
+    if(property==='list')return ()=>listed??=list.call(target);
+    const value=Reflect.get(target,property,target);
+    return typeof value==='function'?value.bind(target):value;
+  }});
+  return {...ctx,deps:{...ctx.deps,records:{...ctx.deps.records,principals:once}}};
 }
 /** A committed human choice is never repeated; only its deterministic delivery projection is retried. */
 async function recoverManagement(ctx:EngineContext,stored:StoredRecord<RunRecord>,decision:StoredRecord<import('../../records/api.ts').ActionBody>):Promise<void>{
@@ -320,6 +345,8 @@ async function recoverParent(ctx:EngineContext,stored:StoredRecord<RunRecord>):P
 /** Keep original deadlines immutable; each expired unanswered request advances to a named administrator. */
 async function escalateOverdueRequests(ctx:EngineContext):Promise<void>{
   const requests=await requestRecords(ctx),byId=new Map(requests.map(request=>[request.record,request]));
+  // The escalations that exist already: writing one again only finds it (requests are deduplicated by this key).
+  const existing=new Set(requests.map(requestKeyOf));
   const answerOf=(request:(typeof requests)[number],seen=new Set<string>()):string|null=>{
     if(request.answered_by)return request.answered_by;
     if(seen.has(request.record))return null;
@@ -334,6 +361,10 @@ async function escalateOverdueRequests(ctx:EngineContext):Promise<void>{
     if(Date.parse(request.due)>ctx.now().getTime())continue;
     const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
     if(!admin)throw new Error('到期请求升级缺少具名管理员');
-    await putRequest(ctx,{...(request.run?{run:request.run}:{}),...(request.pack_digest?{pack_digest:request.pack_digest}:{}),kind:'clarification',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:request.record,code:'awaiting_step',missing:'请求 rec:'+request.record+' 到期仍未作答，缺少该请求所列事实或处置',next_action:'管理员核对原请求 rec:'+request.record+' 的缺失事实、原受众和下一步，按其真实作答入口推进；只有原请求的实际回答才能关闭升级请求，不修改原期限或原记录'});
+    const escalation:RequestBody={...(request.run?{run:request.run}:{}),...(request.pack_digest?{pack_digest:request.pack_digest}:{}),kind:'clarification',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:request.record,code:'awaiting_step',missing:'请求 rec:'+request.record+' 到期仍未作答，缺少该请求所列事实或处置',next_action:'管理员核对原请求 rec:'+request.record+' 的缺失事实、原受众和下一步，按其真实作答入口推进；只有原请求的实际回答才能关闭升级请求，不修改原期限或原记录'};
+    const key=requestKey(RequestBodySchema.parse(escalation));
+    if(existing.has(key))continue;
+    await putRequest(ctx,escalation);
+    existing.add(key);
   }
 }

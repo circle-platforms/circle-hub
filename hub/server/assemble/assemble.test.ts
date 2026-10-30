@@ -88,6 +88,38 @@ describe('start-up order and failure modes', () => {
     assert.equal(keyAsked, 0, 'the key provider is never asked');
   });
 
+  test('serve listens before the first maintenance pass ends and asks a pass in progress to stop when it stops', async () => {
+    const deployment = await harness.deployment();
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const calls: string[] = [];
+    const assembly = async (): Promise<AssemblyModule> => {
+      const module = await realAssembly();
+      return {
+        assemble: async (config, records) => {
+          const deps = await module.assemble(config, records);
+          // A first pass that does not end until it is asked to stop: serve must not wait for it to listen.
+          deps.maintenance = {
+            startMaintenance: async () => { calls.push('start'); await held; },
+            stopMaintenance: async (options) => { calls.push(`stop abort=${options?.abort === true}`); release(); },
+          };
+          return deps;
+        },
+      };
+    };
+    let listening: ListenInfo | null = null;
+    let stop: () => void = () => {};
+    const stopped = new Promise<void>((resolve) => (stop = resolve));
+    const serving = deployment.run(['serve'], { assembly, stopSignal: () => stopped, onListening: (info) => (listening = info) });
+    for (let i = 0; i < 400 && listening === null; i++) await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.notEqual(listening, null, 'listening while the first pass is still running');
+    assert.deepEqual(calls, ['start']);
+    stop();
+    const result = await serving;
+    assert.equal(result.code, 0, result.text);
+    assert.deepEqual(calls, ['start', 'stop abort=true'], 'the pass in progress is asked to stop at its next run');
+  });
+
   test('serve on a database the owner never migrated refuses before the assembly runs', async () => {
     const deployment = await harness.deployment({ migrate: false });
     const spy = spyAssembly();
