@@ -210,9 +210,9 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const frozenWorkflow=eligible&&sessionNow===null?await ctx.deps.workflows.byDigest(run.pack_digest):undefined;
   const useCached=eligible&&(sessionNow!==null||frozenWorkflow!==undefined&&frozenWorkflow!==null&&frozenWorkflow.requirements.every(t=>t.independent_of===undefined));
   const repeat = !useCached ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
-  if (repeat !== null) return answerOf(repeat);
+  if (repeat !== null) return withDispatch(ctx, run, answerOf(repeat));
   const previous=useCached?await resultFor(store,run.run,received.digest):null;
-  if (useCached && effective !== null && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return answerOf(previous.body);
+  if (useCached && effective !== null && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return withDispatch(ctx, run, answerOf(previous.body));
 
   const model = parsed?.success ? effective?.model ?? null : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
@@ -290,7 +290,24 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     result: saved.result.digest,
     extra: { ...(saved.result.body.acceptance==='accepted' && outcome.runtimeAdmission?.length ? {admission:outcome.runtimeAdmission} : {}), reevaluation:refresh,...(incrementalGrowth?{first_material_growth:true}:{}),retry_attempts: saved.retryAttempts,...(outcome.parentObservedSuccess?{parent_observed_success:true}:{}), ...(sessionMissing ? {refusal:'session_missing'} : {}) },
   });
-  return answerOf(saved.result.body);
+  return withDispatch(ctx, run, answerOf(saved.result.body));
+}
+
+/** Decision 105 (W03, D06): an accepted run whose pack declares a hub_template effect row carries the jobs the Hub dispatched
+ * for it. An accepted answer whose result is ready (every item delivered, no error) lets the Hub dispatch when the run has no
+ * job yet; a repeat of the same submission reads the jobs' progress. */
+async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAnswer): Promise<SubmitAnswer> {
+  if (answer.acceptance !== 'accepted' || !answer.result || !ctx.deps.dispatch?.accepted) return answer;
+  const workflow = await ctx.deps.workflows.byDigest(run.pack_digest);
+  if (!workflow?.effects?.some((row) => row.trigger === 'hub_template')) return answer;
+  const result = answer.result;
+  const ready = result.errors.length === 0 && Object.entries(result.partitions).every(([key, list]) => key === 'delivered' || list.length === 0) && result.partitions.delivered.length === run.items.length;
+  try {
+    const notes = await ctx.deps.dispatch.accepted(run.run, ready);
+    return notes.length ? { ...answer, dispatch: notes } : answer;
+  } catch (error) {
+    return { ...answer, dispatch: [{ text: `Hub 读取或发起派发时出错（${error instanceof Error ? error.message.slice(0, 300) : '未知原因'}）；请管理员查看日志，必要时用 job dispatch 派发` }] };
+  }
 }
 
 /** What a validation of one submission is made from. */

@@ -231,9 +231,27 @@ export async function startRunReadsExternal(deps: ServerDeps, principal: Princip
   return false;
 }
 
-/** The six tools with the published schemas and the caller's annotations (D06 F[2]: start_run is open-world when it reads outside). */
+/** D06 R[4], decision 105: submit_result makes the Hub dispatch for this caller when one of the caller's packs declares a
+ * hub_template effect row; a pack that cannot be loaded counts as dispatching, so the hints stay conservative. */
+export async function submitDispatchesJobs(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}): Promise<boolean> {
+  for (const summary of await deps.workflows.summaries(principal)) {
+    let loaded;
+    try {
+      loaded = await deps.workflows.forUser(principal, summary.pack);
+    } catch (error) {
+      note(`pack ${summary.pack} could not be loaded to derive the submit_result annotation: ${describeError(error)}`);
+      return true;
+    }
+    if (loaded?.effects?.some((row) => row.trigger === 'hub_template')) return true;
+  }
+  return false;
+}
+
+/** The six tools with the published schemas and the caller's annotations (D06 F[2]: start_run is open-world when it reads outside;
+ * D06 R[4]: submit_result carries the widest effect class of the rows it may make the Hub dispatch). */
 export async function listTools(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}): Promise<PublishedTool[]> {
   const external = await startRunReadsExternal(deps, principal, note);
+  const dispatches = await submitDispatchesJobs(deps, principal, note);
   return TOOLS.map((tool) => {
     const published = PUBLISHED.get(tool.name)!;
     return {
@@ -242,7 +260,7 @@ export async function listTools(deps: ServerDeps, principal: Principal, note: (r
       description: published.description,
       inputSchema: published.inputSchema,
       outputSchema: published.outputSchema,
-      annotations: annotationsFor(tool.effect, tool.writesHubRecords, { readsExternal: tool.readsExternal === true && external, idempotent: tool.idempotent === true }),
+      annotations: annotationsFor(tool.name === 'submit_result' && dispatches ? 'job' : tool.effect, tool.writesHubRecords, { readsExternal: tool.readsExternal === true && external, idempotent: tool.idempotent === true }),
     };
   });
 }

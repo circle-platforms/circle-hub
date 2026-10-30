@@ -61,6 +61,8 @@ export interface FakePack {
   summary: PackSummary | null;
   /** The workflow binds expected sources at start_run (workflow `expected_sources`), so start_run reads outside. */
   expectedSources?: boolean;
+  /** The workflow declares a hub_template effect row, so an accepted submit_result can make the Hub dispatch (decision 105). */
+  hubTemplate?: boolean;
 }
 
 const REQUIREMENTS: PackSummary['requirements'] = [
@@ -72,7 +74,7 @@ const REQUIREMENTS: PackSummary['requirements'] = [
  * A synthetic workflow pack with one subject input slot that accepts `accepts`. `factsOnly`: its requirements are facts
  * only, so the fake run service computes its result at start_run (a production run).
  */
-export function fakeWorkflowPack(id: string, title: string, accepts: string[], options: { expectedSources?: boolean; factsOnly?: boolean } = {}): FakePack {
+export function fakeWorkflowPack(id: string, title: string, accepts: string[], options: { expectedSources?: boolean; factsOnly?: boolean; hubTemplate?: boolean } = {}): FakePack {
   const version = '1.0.0';
   return {
     id,
@@ -83,6 +85,7 @@ export function fakeWorkflowPack(id: string, title: string, accepts: string[], o
     digest: sha(`pack:${id}@${version}`),
     owner: null,
     ...(options.expectedSources ? { expectedSources: true } : {}),
+    ...(options.hubTemplate ? { hubTemplate: true } : {}),
     summary: {
       pack: `${id}@${version}`,
       id,
@@ -215,6 +218,7 @@ function loaded(pack: FakePack): LoadedWorkflow {
     manifest,
     workflow,
     requirements,
+    ...(pack.hubTemplate ? { effects: [{ id: 'submit_verified', resource_kind: 'executor', action: 'submit', effect_class: 'job', parameters: { policy: 'policies/dispatch.json', check: 'dispatch_policy' }, release: { requirements: ['structure'], artifact: 'structure' }, trigger: 'hub_template', budget: { count: 1, duration_ms: 1000 }, deadline_ms: 86400000, optional: false, policy_checks: ['dispatch_policy'] }] as LoadedWorkflow['effects'] } : {}),
     checks: [],
     slots,
     knowledge: null,

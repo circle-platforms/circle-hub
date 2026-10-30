@@ -267,7 +267,28 @@ export class DispatchService {
     await this.unknown(binding,fact,sources,{request_id:intent.body.detail.request_id,next_action:`请管理员 ${by.id} 核对该请求的审计、收尾和设备现场；读取通道需修复时先修复后运行 circle-hub job resume ${binding.job}，再用 circle-hub job dispose ${binding.job} 具名处置；不得重跑 conformance 或重交`});
   }
 
-  async dispatch(by: Principal, run: string, executor: string, onReserved?: (job: string) => void): Promise<JobStatus> {
+  /** Decision 105 (model W03, D06): once the runner's submission is accepted and the release conditions hold, the Hub starts the
+   * hub_template job itself for the runner's run; a named administrator stays responsible for an unknown outcome. Exactly one
+   * enabled executor of the run's pack must release; none or several start nothing and say why. The byte and budget guards of
+   * dispatch refuse a repeat, so an accepted submission dispatches at most once. */
+  async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string }> {
+    const admin = (await this.options.records.principals.list()).find((p) => p.role === 'admin' && !p.disabled);
+    if (!admin) return { started: false, reason: '没有在职管理员负责作业未知结果的处置，Hub 不自动派发；请管理员开通账号或用 job dispatch 派发' };
+    const detail = await this.options.runs.getRun(admin, run);
+    if (!detail?.run.runner) return { started: false, reason: '运行不可读或没有发起用户' };
+    const pack = detail.run.pack.split('@')[0];
+    const candidates = (await this.registry.list(admin)).filter((e) => e.definition.enabled && e.definition.proof.package === pack);
+    const released: typeof candidates = [];
+    for (const candidate of candidates) { try { if ((await this.explainRelease(admin, run, candidate.id)).satisfied) released.push(candidate); } catch { /* an executor that cannot explain does not release */ } }
+    if (released.length !== 1) return { started: false, reason: released.length ? `有 ${released.length} 个执行器同时满足放行条件，等管理员用 job dispatch 指定执行器` : candidates.length ? '放行条件尚未全部满足，Hub 没有派发；按放行说明补齐后重交' : '没有为该任务包登记的启用执行器，Hub 没有派发' };
+    const chosen = released[0];
+    try {
+      const status = await this.dispatch(admin, run, chosen.id, (job) => onReserved?.(job, chosen.id), { initiatedBy: detail.run.runner });
+      return { started: true, executor: chosen.id, status };
+    } catch (error) { return { started: false, executor: chosen.id, reason: error instanceof Error ? error.message : '派发前核对失败' }; }
+  }
+
+  async dispatch(by: Principal, run: string, executor: string, onReserved?: (job: string) => void, options: { initiatedBy?: string } = {}): Promise<JobStatus> {
     await this.registry.admin(by);
     const registered = await this.registry.get(executor);
     if (!registered?.definition.enabled) throw new Error('执行器不可用或已禁用');
@@ -276,7 +297,7 @@ export class DispatchService {
     await this.options.records.objects.put(canonicalBytes(d),'application/json');
     if (registrationMissing(d).filter(name=>name!=='environment').length) throw new Error(`派发登记缺事实：${registrationMissing(d).filter(name=>name!=='environment').join('、')}；请先 precheck 采证、转换并发布清单，再 update 补齐`);
     const gate=await prepareEffectGate({records:this.options.records,runs:this.options.runs,workflows:this.options.workflows,recheck:this.options.recheckChecks,by,run,executor,definition:d,resolved_digest:registered.resolved_digest,now:this.now});
-    const provisional:JobBinding={run,job:newJob(),initiated_by:by.id,executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,input:null,user:gate.detail.run.runner??by.id,resources:d.resources,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort())};
+    const provisional:JobBinding={run,job:newJob(),initiated_by:options.initiatedBy??by.id,...(options.initiatedBy?{acting_by:by.id}:{}),executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,input:null,user:gate.detail.run.runner??by.id,resources:d.resources,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort())};
     const preflight=await gate.preflight();if(!preflight.ok)return this.boundaryRefused(by,provisional,preflight);
     const input=preflight.input;
     const previous = await this.options.records.store.getByKey('action', `dispatch.bytes:${input.sha256}`);
@@ -427,7 +448,7 @@ export class DispatchService {
         await this.unknown(binding, '回执请求身份与意图不符；须按原请求记录核对，不能重交', [answer.source], { observed_outcome: 'read_back_mismatch' }); return this.status(by, binding.job);
       }
       if(requestSnapshot.request_identity && !sameRequestIdentity(requestSnapshot.request_identity,requestIdentity(answer.value,d.receipt.identity,d.reconciliation?.time_scale_ms))) {
-        await this.unknown(binding,'投递回答的日志身份、记账起点或完整主体与投递前快照不一致；缺少原投递归属事实',[answer.source],{next_action:`请管理员 ${binding.initiated_by} 人工核对原投递事实、日志迁移和调用身份；不得重交`});return this.status(by,binding.job);
+        await this.unknown(binding,'投递回答的日志身份、记账起点或完整主体与投递前快照不一致；缺少原投递归属事实',[answer.source],{next_action:`请管理员 ${binding.acting_by ?? binding.initiated_by} 人工核对原投递事实、日志迁移和调用身份；不得重交`});return this.status(by,binding.job);
       }
       if (!accepted) {
         if (await this.refused(binding,d,session,answer,remote)) return this.status(by,binding.job);

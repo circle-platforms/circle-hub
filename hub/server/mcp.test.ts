@@ -145,6 +145,26 @@ describe('initialize and tools/list', () => {
     }
   });
 
+  test('submit_result is an open-world, destructive and still idempotent call for a caller whose pack makes the Hub dispatch', async () => {
+    const packs = [...defaultPacks(), fakeWorkflowPack('template-dispatch', '合成模板派发', ['application/json'], { hubTemplate: true })];
+    const other = await createTestServer({ postgres, packs });
+    try {
+      const dispatching = await other.createUser('模板派发');
+      await other.assign(dispatching.principal, 'template-dispatch');
+      const client = await other.client(dispatching.token);
+      const submit = (await client.listTools()).tools.find((t) => t.name === 'submit_result')!;
+      assert.deepEqual(submit.annotations, { readOnlyHint: false, destructiveHint: true, openWorldHint: true, idempotentHint: true });
+      await client.close();
+      const plain = await other.createUser('普通');
+      await other.assign(plain.principal, 'local-review');
+      const second = await other.client(plain.token);
+      assert.deepEqual((await second.listTools()).tools.find((t) => t.name === 'submit_result')!.annotations, PUBLISHED.find((t) => t.name === 'submit_result')!.annotations);
+      await second.close();
+    } finally {
+      await other.close();
+    }
+  });
+
   test('start_run is open-world for a caller whose pack binds expected sources at start_run, whatever its inputs accept', async () => {
     const packs = [...defaultPacks(), fakeWorkflowPack('expected-review', '合成期望来源评审', ['application/json'], { expectedSources: true })];
     const other = await createTestServer({ postgres, packs });

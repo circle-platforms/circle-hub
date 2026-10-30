@@ -1473,6 +1473,8 @@ function submitText(v: SubmitOut, context: TextContext): string {
     for (const entry of c.stored) head.push(`回注条目 ${oneLine(entry.item)}：rec:${entry.record}`);
     for (const entry of c.not_stored) head.push(`未入层条目 ${oneLine(entry.item)}：${oneLine(entry.reason)}`);
   }
+  // Decision 105: jobs the Hub dispatched for this accepted run, or why it did not; a repeat of this submission reads progress.
+  for (const note of v.dispatch ?? []) head.push(`派发：${oneLine(note.text)}`);
   const blocks: Block[] = [{ priority: 0, head }];
   if (accepted) blocks.push({ priority: 0, head: ['要求项（满足状态与各层终态的条目数）：', ...requirementCounts(result)] });
   if (v.errors.length > 0) {
