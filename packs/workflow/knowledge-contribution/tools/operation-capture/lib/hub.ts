@@ -40,23 +40,37 @@ export class HubClient {
     need(!holdsToken(value, token), 'token_echo', 'Hub 应答含令牌形状，整份丢弃');
   }
 
+  /**
+   * Every request leaves through `rpc`, and there everything it sends but the authorization header is checked against the
+   * token that header carries: the method and parameters, an uploaded file's decoded bytes, and the other headers, the session
+   * id included (round-seven review).
+   */
+  private refuseToken(token: string, method: string, params: unknown, headers: Record<string, string>): void {
+    const sent = [method, JSON.stringify(params), ...Object.entries(headers).flatMap(([name, value]) => name === 'authorization' ? [] : [value])];
+    const file = isRecord(params) && params.name === 'upload_file' && isRecord(params.arguments) ? params.arguments.file_path : undefined;
+    if (typeof file === 'string') sent.push(Buffer.from(file, 'base64').toString('latin1'));
+    need(!sent.some(text => holdsToken(text, token)), 'credential_in_request', '请求含当前 Hub 令牌形状，停止发送；清理含令牌的文字或会话号后重试');
+  }
+
   // A token a caller has checked is passed down to the request that carries it, never kept on the client: concurrent calls
   // on one client each send the token they checked (round-five review, item 4).
   private async rpc(method: string, params: unknown, checked?: string): Promise<Record<string, unknown>> {
     const token = checked ?? await validateTokenFile(this.tokenFile);
     const id = ++this.sequence;
     const mutation = method === 'tools/call' && ['upload_file', 'start_run', 'submit_result'].includes((params as { name?: string })?.name ?? '');
+    const headers = {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+      'circle-session-id': this.session,
+      traceparent: `00-${randomBytes(16).toString('hex')}-${randomBytes(8).toString('hex')}-01`,
+    };
+    this.refuseToken(token, method, params, headers);
     let response: Response;
     try {
       response = await fetch(this.url, {
         method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-          accept: 'application/json, text/event-stream',
-          'circle-session-id': this.session,
-          traceparent: `00-${randomBytes(16).toString('hex')}-${randomBytes(8).toString('hex')}-01`,
-        },
+        headers,
         body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
         redirect: 'manual',
         signal: AbortSignal.timeout(EGRESS.http_timeout_ms),
@@ -119,7 +133,8 @@ export class HubClient {
       provenance_type: GENERATED.provenance_type,
       ...(capturedAt ? { captured_at: capturedAt } : {}),
     };
-    const check = (token: string) => need(!Buffer.from(bytes).toString('utf8').includes(token), 'credential_redaction_failed', '原件含当前 Hub 令牌，停止上传');
+    // Any 12-character run of the token counts, as in every other check (round-seven review).
+    const check = (token: string) => need(!holdsToken(Buffer.from(bytes).toString('latin1'), token), 'credential_redaction_failed', '原件含当前 Hub 令牌形状，停止上传');
     const initial = await validateTokenFile(this.tokenFile);
     check(initial);
     await this.initialize(initial);

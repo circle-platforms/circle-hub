@@ -260,6 +260,23 @@ test('a token rotated between initialize and upload is rechecked before any uplo
   assert.match(await readFile(join(dir, 'errors.jsonl'), 'utf8'), /credential_redaction_failed/);
 });
 
+test('a run of a token rotated in before upload is refused like the whole token (round-seven review)', async t => {
+  const local = await scratch(t);
+  const rotated = 'FictCaptureTokenRotated44';
+  const fragment = rotated.slice(-12);
+  assert.ok(!TOKEN.includes(fragment) && !rotated.startsWith(fragment));
+  const hub = await fakeHub(t, { onRequest: async input => {
+    if (input.method === 'initialize') await writeFile(local.tokenFile, `${rotated}\n`, { mode: 0o600 });
+  } });
+  assert.equal((await enable(local, hub.url)).code, 0);
+  const result = await hook(local, `ORBIT synthetic status ${fragment}\n`);
+  assert.equal(result.code, 0, result.err);
+  assert.equal(hub.uploads.size, 0);
+  assert.ok(!hub.attempts.some(row => row.body.method === 'tools/call' && row.body.params.name === 'upload_file'));
+  const dir = sessionDirectory(SESSION, { CIRCLE_HOME: local.home });
+  assert.match(await readFile(join(dir, 'errors.jsonl'), 'utf8'), /credential_redaction_failed/);
+});
+
 test('two waiters recover one dead lock without losing mutual exclusion or the chain', async t => {
   const local = await scratch(t);
   const hub = await fakeHub(t);

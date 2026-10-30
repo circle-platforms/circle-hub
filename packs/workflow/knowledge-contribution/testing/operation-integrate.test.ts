@@ -299,6 +299,25 @@ test('a token rotated after start_run into a proposal text is refused before sub
   assert.equal(hub.submissions.length, 0);
 });
 
+test('a session id holding the token, whole or in part, is refused before any request leaves, initialize included (round-seven review)', async t => {
+  const local = await scratch(t);
+  const hub = await fakeHub(t);
+  for (const session of [`${SESSION}-${TOKEN}`, `${SESSION}-${TOKEN.slice(3, 15)}`]) {
+    const client = new HubClient(hub.url, local.tokenFile, session);
+    await assert.rejects(() => client.call('start_run', { pack: 'knowledge-contribution', product: 'ORBIT', inputs: {} }), (error: Error & { code?: string }) => error.code === 'credential_in_request' && !error.message.includes(TOKEN));
+  }
+  assert.equal(hub.attempts.length, 0, 'no request reached the Hub');
+});
+
+test('an uploaded document is checked in its decoded bytes before the upload is sent (round-seven review)', async t => {
+  const local = await scratch(t);
+  const hub = await fakeHub(t);
+  const client = new HubClient(hub.url, local.tokenFile, SESSION);
+  await assert.rejects(() => client.uploadDocument({ note: `synthetic ${TOKEN.slice(2, 14)}` }, 'synthetic-manifest.json'), (error: Error & { code?: string }) => error.code === 'credential_in_request');
+  assert.ok(!hub.attempts.some(row => row.body.method === 'tools/call' && row.body.params.name === 'upload_file'), 'no upload request was sent');
+  assert.ok(await client.uploadDocument({ note: 'synthetic manifest' }, 'synthetic-manifest.json'), 'a document without the token is uploaded');
+});
+
 test('credential-shaped explicit device or bed text is refused before start_run', async t => {
   const local = await scratch(t);
   const hub = await fakeHub(t);
