@@ -14,7 +14,7 @@ be grounds for a verified result.
 
 Related changes: the exact capture record is part of the identity of an operation record, a missing capture time is
 marked and never replaced silently by the upload time, lease actions use the lease service's own clock with an exact
-resource-key index, and batch lease actions replay per key. The `knowledge-contribution` pack moves to 1.3.12 in the public
+resource-key index, and batch lease actions replay per key. The `knowledge-contribution` pack moves to 1.3.13 in the public
 numbering, and three entries of `contracts/model.json` gain optional fields only. It was 1.3.2 here until `main` published
 its own 1.3.2 (the dead-lock recovery fix, #92); the merge of `main` combines both as 1.3.7, after this branch's internal
 numbers 1.3.3 to 1.3.6.
@@ -113,12 +113,33 @@ test that fails without it:
 
 Known limits, not changed:
 
-- Reading any source, the chosen upload of a note included, looks at every record of its bytes to decide the read tier, as
-  it does on main. The older-note search no longer adds such a read of its own.
+- Reading a source looks at every record of its bytes to decide the read tier, as it does on main. The older-note search no
+  longer adds such a read of its own.
 - The reviewer recommends fixing #104 and #105 before this branch goes into main. Both are on main as well; they will be
   fixed on main by their own changes first, and the branch synced with main before it is offered.
 
-An eighth review should confirm these before the branch is offered for main.
+## Eighth independent review (codex, 2026-10-30)
+
+The reviewer confirmed item 5 and asked for more on items 1 and 3 and on the token checks. Its full text is on issue #28.
+Each fix below has a test that fails without it (checked by mutation):
+
+| Item | Problem | Fix | Test |
+|---|---|---|---|
+| 1 | After the wait the answer still named a cause ("the lease clock did not advance, or the clocks disagree") that two reads do not show. A view said an undeclared capture time was "taken from the upload time", though no time is recorded. | The answer states the wait the Hub set and both readings, and leaves the cause to the administrator. The view says the capture time was not declared and the record has none. | `a second read the lease clock still has not passed …`; `the answers for a capture without a bed or without a declared capture time …`; the three wording assertions in `operation-records-leases.test.ts` |
+| 3 | The exact phase and the evaluation each chose records, so an item's text could be read from one record and graded by another; a reused text skipped the access, tier and size checks. | `submit` and the effect recheck pass the exact phase's choice to the evaluation (`EvaluationInput.pinned`), which shares it when it reads as the same reader. A reused text is read again for access and tier once per digest and held to the check's byte cap; each check's cap applies in the graded view, not only the first check's. | `the evaluation grades a text the exact phase read against the record that phase chose`; `an item's own text quoted as grounds keeps the check's byte cap` |
+| 3 | A pack function was given the items' own texts and could cite them as grounds without the grade. | A function's support or refutation that cites an item text or a graded reference which grades as no grounds, or whose record cannot be determined, becomes an unknown. | `an item's own location quoted in slot data, or cited by a pack function, is graded as grounds` (with the `self_cited` check of the toy pack) |
+| 3 | A record that cannot be determined was answered as a refutation. | It reads as unavailable with the rule that says why: `quote@1` answers unknown, with the record as the missing fact. | the same test |
+| 3 | A binding to a record without a body crashed the choice. | A malformed body is no source; the use as grounds is undetermined. | `a binding to a record without a body leaves the record undetermined …` |
+| 3 | A runtime sample's provenance was taken from whichever record of the bytes was readable. | It names the record the evaluation chose; with no single complete choice there is no proof. | `a runtime sample names the record the evaluation reads …` |
+| 3 | Round seven let `sourceForRun` read any generated record of the bytes by its digest. | Reverted: a run reads the newest generated record on its own authority, as before. Within one evaluation a newer record of the same bytes fails the read instead of changing the evidence; the Hub answers that the source could not be checked, and the same submission again is a new evaluation that chooses again. | `a generated source a run reads on its own authority is not switched …` (a new resolver chooses the newer record) |
+| Tokens | The request target was not checked. | The exit checks the Hub address too, as written and with its path decoded (pack 1.3.13). The rule is a run of 12 characters; a token cut into shorter pieces or encoded otherwise is outside it. | `a Hub address whose path holds the token, as written or percent-encoded, sends nothing` |
+
+Known limits, not changed:
+
+- A bound generated record that the run reads on its own authority takes its read tier from that record alone, not from a
+  newer scan of the same bytes. This is on main too; it is fixed on main by its own change and comes here with the next sync.
+
+A ninth review should confirm these before the branch is offered for main.
 
 ## Tests that failed on this branch
 
