@@ -6,6 +6,7 @@ import {parseViewId,splitRevision} from './views.ts';
 import {ACTION,COMPONENTS,SCHEMAS} from './store.ts';
 
 const MAX_BINDING_BYTES=16*1024*1024;
+const VIEW_ID_FIX='照该输入槽说明里的写法逐字填视图标识：knowledge:<视图>:<产品>:<构建>?<参数>=<取值>；错误里点名的参数按说明写，取值不要留空或自己编；改好后重新开始运行';
 /**
  * `unknownEntries:'disclose'` is the input slot's opt-in (WorkflowInput.unknown_entries): a facet or index view whose last page is
  * truncated only because some entries are unknown (`unknown_only`, with `unknown_entries` above zero) is bound as it is,
@@ -25,7 +26,11 @@ export async function completeKnowledgeView(id:string,context:ExternalReadContex
  const visited=new Set<string>(),inputs:string[]=[];
  while(next!==null){
   if(visited.has(next))return fail('知识视图续读没有前进；请管理员修复页游标后重试');visited.add(next);
-  const read=await external.read(next,context);if(!read.ok)return read;
+  const read=await external.read(next,context);
+  // An id the knowledge grammar refuses is the caller's own mistake, and its reason comes from that id alone: name it rather than
+  // answer the bare "unavailable" kept for what the caller may not see. Only when the reader refused it too (stub readers know ids
+  // the grammar does not).
+  if(!read.ok)return !parsed.ok&&next===beginning&&read.inputError===undefined&&read.retry===undefined?{...read,inputError:{message:`知识视图标识写错了：${parsed.reason}`,fix:VIEW_ID_FIX}}:read;
   first??=read;
   if(read.revision!==first.revision)return fail('知识视图续读时修订改变；请从首页重新绑定');
   const chosen=read.artifacts.find(v=>v.name==='content')??read.artifacts.find(v=>v.name==='original');
