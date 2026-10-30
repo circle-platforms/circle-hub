@@ -28,7 +28,7 @@ circle-hub 是 [Circle](https://github.com/circle-platforms/circle) 的团队 hu
 
 ## 状态
 
-第一个里程碑已建成并部署，这里还没有受支持的发行。通用模型、由它生成的合约、[架构简报](docs/hub-r4-architecture.md)、`hub/` 下的各个包（服务器、只读控制台、知识树、只读连接器、派发），任务包，以及只监听本机的单机持久部署都已就位；哪些部分已经落地、复核过，还有什么未完，见 [docs/hub-r4-progress.md](docs/hub-r4-progress.md)。此前的任务与审批服务器（截至 0.2.0）已退役，它的简报和交接文档作为[历史记录](docs/README.md#历史记录)保留。
+第一个里程碑已建成并部署，这里还没有受支持的发行。通用模型、由它生成的合约、[架构简报](docs/hub-r4-architecture.md)、`hub/` 下的各个包（服务器、网页控制台、知识树、只读连接器、派发），任务包，以及只监听本机的单机持久部署都已就位；哪些部分已经落地、复核过，还有什么未完，见 [docs/hub-r4-progress.md](docs/hub-r4-progress.md)。此前的任务与审批服务器（截至 0.2.0）已退役，它的简报和交接文档作为[历史记录](docs/README.md#历史记录)保留。
 
 ## 运行检查
 

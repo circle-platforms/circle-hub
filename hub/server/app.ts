@@ -14,6 +14,7 @@ import { isLoopbackAddress } from '../config/index.ts';
 import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
 import type { AppOptions, HubApp, ListenInfo, ServerDeps } from './api.ts';
 import { handleConsole } from './console/index.ts';
+import { JobStore } from './console/manage.ts';
 import { SessionStore } from './console/session.ts';
 import { BodyBudget, allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
 import { handleLocalTools, localToolsTarget } from './local-tools.ts';
@@ -93,6 +94,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const mcpOptions = { deps, serverVersion: packageVersion(), log, budget };
   const consoleOptions = {
     deps, sessions, ownOrigins: () => origins, log,
+    jobs: new JobStore(clock),
+    ...(options.bridge ? { bridge: options.bridge } : {}),
     // Forwarded headers never establish the HTTPS channel; only the built-in TLS listener, or the configured proxy
     // authority and peer, do.
     secureRequest: (request: IncomingMessage) => encrypted(request) || (proxyAuthority !== null

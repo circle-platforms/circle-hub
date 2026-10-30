@@ -22,7 +22,7 @@ The design authority is the generic model in [contracts/model.json](https://gith
 | [Approvals and the enforcement chain](approvals-and-enforcement.md) | Change-set approvals, the enforcement chain, the error-code catalogue | Authorization records B04, publish check T02, boundary validation T03, the two mandatory boundaries P11 |
 | [Roles and scope](roles.md) | Administrator / member / guest by scope, the two-person rule | Permission role R01 (user, administrator), visibility R02 |
 | [Terms and states](vocabulary.md) | The old terms, state enumerations and colours | The model's vocabulary (generated into `contracts/generated/vocabulary.ts`) |
-| [Levels and elements](levels-and-elements.md) | Five levels of interface in Circle | No Hub-specific interface in Circle; a read-only console (runs, knowledge, packs, system administration) |
+| [Levels and elements](levels-and-elements.md) | Five levels of interface in Circle | No Hub-specific interface in Circle; a web console (runs, knowledge, packs, system administration) |
 | [Integration with Circle](circle-integration.md) | hub extending Circle's menus | Circle connects as an ordinary MCP client (D06) |
 | [Product-line pack exemplar](product-line-pack.md) | The `product-line/1` pack | Task pack T01, publish record and publish check T02 |
 | [Execution flows in product-line packs](execution-flow-packs.md) | Execution flows and `module-execute` | Effect writes, leases and executors (B06, D04, the write declarations of D03, the executor part of D07) are implemented by `hub/dispatch`; the read part of D03 and the resource part of D07 are implemented by the connectors package, and MCP annotations follow D03 |

@@ -44,6 +44,8 @@ export interface ServerDeps {
 }
 
 export interface AppOptions {
+  /** Runs the console's management actions as `circle-hub` commands (serve gives one); without it they are unavailable. */
+  bridge?: import('./command-bridge.ts').CommandBridge;
   /** The server certificate and key of the built-in HTTPS (PEM); required when the configuration has `https`. */
   tls?: { cert: string; key: string };
   /** Directory whose release.json names the running release; default the code root of this server. */

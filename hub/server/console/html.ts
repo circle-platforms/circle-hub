@@ -1,4 +1,4 @@
-// Server-rendered HTML for the read-only console: a tagged template that escapes every interpolated value, a fixed
+// Server-rendered HTML for the console: a tagged template that escapes every interpolated value, a fixed
 // stylesheet allowed by its hash in a strict Content-Security-Policy, and no script at all. Dynamic values only ever go into
 // element text or double-quoted attributes; links are built from fixed paths and encoded query parameters.
 import { createHash } from 'node:crypto';
@@ -83,7 +83,9 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:.2em 1em}dt{font-weigh
 form.filters input{margin-right:.6em}
 .t-pass{color:#1a6b2f}.t-failure{color:#a1001b}.t-judgment{color:#24508f}.t-incomplete{color:#6b5300}
 .t-unknown{color:#7a3fb0;font-weight:600}
-.unverified{background:#fff6d6}details summary{cursor:pointer}`;
+.unverified{background:#fff6d6}details summary{cursor:pointer}
+.ok{color:#1a6b2f}.subnav{margin:.2em 0 1em}form.inline{display:inline;margin-right:.4em}
+form{margin:.4em 0}label{margin-right:.8em}input,select,textarea,button{font:inherit}textarea{font-family:ui-monospace,Menlo,monospace}`;
 
 const CSS_HASH = createHash('sha256').update(CSS, 'utf8').digest('base64');
 
