@@ -582,6 +582,18 @@ describe('the attached_fields parameter of the impact view', () => {
     );
   });
 
+  test('parseViewId names, as structure, the required parameters an id lacks, and only for that failure', () => {
+    const none = parseViewId(`knowledge:facets:acme:${B}`);
+    assert.equal(none.ok, false);
+    assert.deepEqual(none.ok ? null : none.missing, ['kind', 'by']);
+    const one = parseViewId(`knowledge:index:acme:${B}?kind=case`);
+    assert.deepEqual(one.ok ? null : one.missing, ['key']);
+    const unknown = parseViewId(`knowledge:facets:acme:${B}?kind=case&by=module&variant=x`);
+    assert.equal(unknown.ok, false);
+    assert.equal(unknown.ok ? null : unknown.missing, undefined, 'an unknown parameter is not a missing one');
+    assert.equal(parseViewId(`knowledge:facets:acme:${B}?kind=case&by=module`).ok, true);
+  });
+
   test('parseViewId accepts attached_fields on the impact view only, deduped and sorted; rejects bad names', () => {
     const parsed = parseViewId(`knowledge:impact:acme:${A}..${B}?attached_fields=title,document,document`);
     assert.ok(parsed.ok);

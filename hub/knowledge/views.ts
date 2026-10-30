@@ -79,7 +79,8 @@ export type ViewRequest =
   | { type: 'links'; product: string; build: string; prefix: string; target: string | null; rule: string | null; composition: string | null; cursor: string | null; limit: number; revision: string | null }
   | { type: 'index'; after?: string | null; product: string; build: string; kind: EntryKind; key: string; only: string[] | null; fields: string[] | null; revision: string | null };
 
-type Parsed<T> = { ok: true; value: T } | { ok: false; reason: string };
+/** A failure may name the required query parameters the id lacks (`missing`), for a caller that wants to say how to write it. */
+type Parsed<T> = { ok: true; value: T } | { ok: false; reason: string; missing?: readonly string[] };
 
 /** The query keys each view takes, and which of them it needs. */
 const QUERY = {
@@ -181,7 +182,8 @@ export function parseViewId(id: string): Parsed<ViewRequest> {
       query.set(name, values as string[]);
     }
   }
-  for (const name of QUERY[view].required as readonly string[]) if (!query.has(name)) return { ok: false, reason: `视图 ${view} 要有参数 ${name}` };
+  const missing = (QUERY[view].required as readonly string[]).filter((name) => !query.has(name));
+  if (missing.length > 0) return { ok: false, reason: `视图 ${view} 要有参数 ${missing.join('、')}`, missing };
   const one = (name: string): Parsed<string> => {
     const values = query.get(name) ?? [];
     return values.length === 1 ? { ok: true, value: values[0] } : { ok: false, reason: `参数 ${name} 只能有一个取值` };

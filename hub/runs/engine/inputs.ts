@@ -88,15 +88,16 @@ export async function bindInputs(
   for (const name of Object.keys(inputs)) {
     if (!slots.has(name)) schemaError(`/inputs/${name}`, `任务包没有输入槽 ${name}（有：${[...slots.keys()].join('、')}）`);
   }
-  // Cheap checks first. A malformed knowledge view id is a deterministic caller mistake: say so at once, with the way to write
-  // it, instead of building another input's large view first and reporting the mistake behind a bare "unavailable".
+  // Cheap checks first. A knowledge view id that lacks a required parameter is a deterministic caller mistake: say so at once,
+  // with the way to write it, instead of building another input's large view first and reporting it behind a bare "unavailable".
   for (const [name, given] of Object.entries(inputs)) {
     if (!slots.has(name)) continue;
     const list = Array.isArray(given) ? given : [given];
     for (const [k, binding] of list.entries()) {
       if (!('external' in binding) || !binding.external.startsWith('knowledge:')) continue;
+      // Only a missing required parameter is certain to fail at the read: other grammar problems are left to the reader.
       const parsed = parseViewId(binding.external);
-      if (!parsed.ok) schemaError(Array.isArray(given) ? `/inputs/${name}/${k}` : `/inputs/${name}`, parsed.reason, VIEW_ID_FIX);
+      if (!parsed.ok && parsed.missing !== undefined) schemaError(Array.isArray(given) ? `/inputs/${name}/${k}` : `/inputs/${name}`, parsed.reason, VIEW_ID_FIX);
     }
   }
 
