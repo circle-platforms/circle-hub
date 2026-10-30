@@ -120,12 +120,12 @@ function fail(id:string,message:string,fix:string):ExternalRead {
 }
 
 /** Reads each only= slice and stores one index view. One slice is the caller's job. */
-export async function mergeIndexBindings(ids:readonly string[],label:string,context:ExternalReadContext,external:ExternalReaderPort,records:Records):Promise<ExternalRead> {
+export async function mergeIndexBindings(ids:readonly string[],label:string,context:ExternalReadContext,external:ExternalReaderPort,records:Records,options:{unknownEntries?:'disclose'}={}):Promise<ExternalRead> {
   let first:Extract<ExternalRead,{ok:true}> | null = null;
   const pages:Record<string,unknown>[] = [];
   const sources:string[] = [];
   for(const id of ids){
-    const read = await completeKnowledgeView(id,context,external,records);
+    const read = await completeKnowledgeView(id,context,external,records,options);
     if(!read.ok)return read;
     if(first === null)first = read;
     else if(read.revision !== first.revision)return fail(label,'知识视图分段读取时修订改变；从首页重新绑定','重新开始这次运行');
@@ -140,8 +140,11 @@ export async function mergeIndexBindings(ids:readonly string[],label:string,cont
   const notes = new Set<string>();
   const cut = new Set<string>();
   const only = new Set<string>();
+  let unknownEntries = 0;
   for(const page of pages){
     if(page.truncated === true)merged.truncated = true;
+    // The unknown entries of a query do not depend on its only= slice: every slice names the same entries.
+    if(typeof page.unknown_entries === 'number')unknownEntries = Math.max(unknownEntries,page.unknown_entries);
     for(const note of Array.isArray(page.notes) ? page.notes : [])if(typeof note === 'string')notes.add(note);
     for(const key of Array.isArray(page.cut_keys) ? page.cut_keys : [])if(typeof key === 'string')cut.add(key);
     for(const value of Array.isArray(page.only) ? page.only : [])if(typeof value === 'string')only.add(value);
@@ -156,6 +159,8 @@ export async function mergeIndexBindings(ids:readonly string[],label:string,cont
     }
   }
   notes.add(`only 超出单条标识长度，已按 ${ids.length} 段读取后合并`);
+  // Every slice was bound with the same opt-in, so a truncated slice is truncated by unknown entries alone.
+  if(unknownEntries > 0){merged.unknown_entries = unknownEntries;merged.unknown_only = true;}else{delete merged.unknown_entries;delete merged.unknown_only;}
   merged.only = [...only].sort(compareText);
   merged.cut_keys = [...cut].sort(compareText);
   merged.notes = [...notes];

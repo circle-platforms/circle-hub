@@ -195,9 +195,9 @@ export async function bindInputs(
       const scoped = await narrowIndexId(slot,id,inputs,defectId => defectIndexKeys(defectId,readContext,ctx.deps.external,records));
       if(!scoped.ok){schemaError(path,scoped.message,scoped.fix);return null;}
       if(scoped.ids.length === 1)requestId = scoped.ids[0];
-      else merged = await mergeIndexBindings(scoped.ids,scoped.label,readContext,ctx.deps.external,records);
+      else merged = await mergeIndexBindings(scoped.ids,scoped.label,readContext,ctx.deps.external,records,{unknownEntries:slot.unknown_entries});
     }
-    const read = merged ?? (requestId.startsWith('knowledge:') ? await completeKnowledgeView(requestId,readContext,ctx.deps.external,records) : await ctx.deps.external.read(requestId,readContext));
+    const read = merged ?? (requestId.startsWith('knowledge:') ? await completeKnowledgeView(requestId,readContext,ctx.deps.external,records,{unknownEntries:slot.unknown_entries}) : await ctx.deps.external.read(requestId,readContext));
     if (!read.ok) {
       if(read.retry) {
         const step = read.inputError?.fix;

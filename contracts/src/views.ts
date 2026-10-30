@@ -128,6 +128,15 @@ export type ImpactView = z.infer<typeof ImpactView>;
 
 // ---------------------------------------------------------------- facets: counts of entries by the values of data fields
 
+/**
+ * Why a view can be truncated (the flag itself keeps meaning "something is not in the lists"): `unknown_entries` counts the
+ * entries left out because a fact the query needs is unknown or their sources disagree, and `unknown_only` says the view is
+ * truncated for that reason alone (nothing else was cut or withheld: no rows left for a later page, no limit, no credential
+ * scan hit). The notes name the missing fact and the next action in words; a consumer reads these two fields, never the
+ * notes. Both are absent when there are no unknown entries, so a view without unknown entries is exactly what it was.
+ */
+const UnknownEntries = z.number().int().positive().describe('Entries left out of the lists and counts because a fact this query needs is unknown or their sources disagree; each is named in the notes with the next action. Absent when none');
+const UnknownOnly = z.literal(true).describe('True when the unknown entries are the only reason this view is truncated: nothing was cut or withheld. Absent otherwise');
 /** Most rows one facet answer holds. */
 export const MAX_FACET_ROWS = 20000;
 
@@ -153,9 +162,13 @@ export const FacetView = z.strictObject({
     empty: z.record(DataFieldName, z.number().int().nonnegative()).describe('Entries in the null group of each by field, once per entry per field; includes rows omitted by every truncation limit; zero is explicit'),
   }),
   truncated: z.boolean(),
+  unknown_entries: UnknownEntries.optional(),
+  unknown_only: UnknownOnly.optional(),
   skipped: z.number().int().nonnegative().describe('listed sources the producers could not use across the build root and its locked product-wide root together: the counts do not cover their possible entries'),
   notes: z.array(z.string()),
 }).superRefine((view, ctx) => {
+  if(!view.truncated&&view.unknown_entries!==undefined)ctx.addIssue({code:'custom',path:['truncated'],message:'a view with unknown entries is truncated'});
+  if(view.unknown_only&&view.unknown_entries===undefined)ctx.addIssue({code:'custom',path:['unknown_only'],message:'unknown_only needs unknown_entries'});
   if(view.totals.entry_counts&&view.totals.entry_counts.total!==view.total)ctx.addIssue({code:'custom',path:['totals','entry_counts','total'],message:'条目汇总与分面视图 total 不一致'});
   for (const field of view.by) {
     if (!Object.hasOwn(view.totals.empty, field)) ctx.addIssue({code:'custom',path:['totals','empty',field],message:'every by field has an explicit empty count'});
@@ -195,6 +208,8 @@ export const IndexView = z.strictObject({
   total_keys: z.number().int().nonnegative(),
   total_entries: z.number().int().nonnegative(),
   truncated: z.boolean(),
+  unknown_entries: UnknownEntries.optional(),
+  unknown_only: UnknownOnly.optional(),
   skipped: z.number().int().nonnegative().describe('listed sources the producers could not use across the build root and its locked product-wide root together: the absence of a key does not prove absence from these sources'),
   notes: z.array(z.string()),
 });

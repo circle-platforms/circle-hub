@@ -1008,6 +1008,9 @@ export class KnowledgeViews {
     if(feedingUnknown)notes.push(`${feedingUnknown} 个用例缺期望节点的结构判定，未计入本页；下一步用新版产品包按锁定树苗重读原件`);
     if(feedingCommandsUnknown)notes.push(`${feedingCommandsUnknown} 个用例缺完整命令身份，未计入命令分面；下一步核对锁定命令树或补完整命令后重读，不把未知当作没有命令`);
     if(unrooted)notes.push(`${unrooted} 个用例缺所查树苗的投影，未计入本页；下一步用绑定树苗的运行重读原件，不把未核命令当作没有命令`);
+    // truncated says something is not in the lists; unknown_entries and unknown_only say whether that is all there is to it.
+    const undelivered = page.offset + rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0;
+    const unknownEntries = feedingConflicts + feedingUnknown + feedingCommandsUnknown + unrooted;
     const view: FacetView = {
       schema: 'facet-view@1',
       next: page.offset+rows.length<all.length?page.next(page.offset+rows.length):null,
@@ -1019,7 +1022,9 @@ export class KnowledgeViews {
       rows,
       total: seen.size,
       totals: { empty, entry_counts: entryCounts, ...this.#scopeCounts(summary) },
-      truncated: page.offset + rows.length < all.length || cut > 0 || unlisted > 0 || excluded > 0 || feedingConflicts>0 || feedingUnknown>0 || feedingCommandsUnknown>0 || unrooted>0,
+      truncated: undelivered || unknownEntries > 0,
+      ...(unknownEntries > 0 ? { unknown_entries: unknownEntries } : {}),
+      ...(unknownEntries > 0 && !undelivered ? { unknown_only: true as const } : {}),
       skipped: skippedCount(composition) + skippedCount(scope),
       notes: [...notes,this.#scopeNote(summary,scopeLocked,scope)],
     };
@@ -1079,6 +1084,8 @@ export class KnowledgeViews {
     let ofKind = 0;
     let unplacedCount = 0;
     let feedingRecords=0,keyFactsUnknown=0;
+    // The entries left out of the answer for an unknown fact, each once whichever counters name it.
+    const unknownEntryIds=new Set<string>();
     const feedingObjects=new Set<string>();
     const excluded = new Map<string, string>();
     const seenScope = scope === null ? null : new Set<string>();
@@ -1088,7 +1095,7 @@ export class KnowledgeViews {
         seen.add(row.entry);
         ofKind++;
         if (row.unplaced && !scopePlaced?.has(row.entry)) unplacedCount++;
-        if(kind==='case'&&['stories','defects','commands','command_identities'].includes(key)&&!Array.isArray(row.content.data[key]))keyFactsUnknown++;
+        if(kind==='case'&&['stories','defects','commands','command_identities'].includes(key)&&!Array.isArray(row.content.data[key])){keyFactsUnknown++;unknownEntryIds.add(row.entry);}
         const values = indexKeys(row.content.data, key).filter((value) => onlySet === null || onlySet.has(value));
         if (values.length === 0) return;
         if(typeof row.reference==='string'&&row.reference.startsWith('rec:')){feedingRecords++;if(typeof row.content.data.object==='string')feedingObjects.add(row.content.data.object);}
@@ -1143,10 +1150,10 @@ export class KnowledgeViews {
     }
     let feedingConflicts=0,feedingCommandsUnknown=0;
     if (at.seedling && kind === 'case' && feeding?.cut) for (const row of fedCaseRows(at.root, feeding.cut,true)) {
-      if(Array.isArray(row.content.data.line_candidates)&&row.content.data.line_candidates.length>1){if(key!=='document'||!onlySet||typeof row.content.data.document!=='string'||onlySet.has(row.content.data.document))feedingConflicts++;continue;}
+      if(Array.isArray(row.content.data.line_candidates)&&row.content.data.line_candidates.length>1){if(key!=='document'||!onlySet||typeof row.content.data.document!=='string'||onlySet.has(row.content.data.document)){feedingConflicts++;unknownEntryIds.add(row.entry);}continue;}
       const needsCommands=key==='commands'||key==='command_identities'||fields===null||fields.includes('commands')||fields.includes('command_identities');
       const selectedDocument=key!=='document'||!onlySet||typeof row.content.data.document!=='string'||onlySet.has(row.content.data.document);
-      if(needsCommands&&selectedDocument&&typeof row.content.data.unparsed_steps==='number'&&row.content.data.unparsed_steps>0)feedingCommandsUnknown++;
+      if(needsCommands&&selectedDocument&&typeof row.content.data.unparsed_steps==='number'&&row.content.data.unparsed_steps>0){feedingCommandsUnknown++;unknownEntryIds.add(row.entry);}
       absorb(row);
     }
     const entryCounts = { total: seen.size, placed: seen.size - unplacedCount, unplaced: unplacedCount };
@@ -1244,7 +1251,9 @@ export class KnowledgeViews {
       const entries: Record<string, ViewEntry> = {};
       const digests = items.flatMap(item => item.fresh).sort(compareText);
       if (!encodedOnly) for (const digest of digests) entries[digest] = decode(digest);
-      const truncated=page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0 || unrooted>0 || feedingConflicts>0 || feedingCommandsUnknown>0 || keyFactsUnknown>0;
+      const undelivered=page.offset+items.reduce((sum,item)=>sum+item.listed.length,0)<available || excluded.size > 0;
+      const unknownEntries=unrooted+unknownEntryIds.size;
+      const truncated=undelivered || unknownEntries>0;
       const keySpaceComplete=only===null&&skippedCount(composition)+skippedCount(scope)===0&&unrooted===0&&feedingConflicts===0&&keyFactsUnknown===0&&keys.size===items.length;
       const discloseKeySpace=kind==='case'&&(Boolean(feeding?.cut)||keyFactsUnknown>0||!truncated||keySpaceComplete);
       const answer: IndexView = {
@@ -1266,6 +1275,8 @@ export class KnowledgeViews {
         total_keys: keys.size,
         total_entries: carriers.size,
         truncated,
+        ...(unknownEntries > 0 ? { unknown_entries: unknownEntries } : {}),
+        ...(unknownEntries > 0 && !undelivered ? { unknown_only: true as const } : {}),
         skipped: skippedCount(composition) + skippedCount(scope),
         notes: notes(count),
       };

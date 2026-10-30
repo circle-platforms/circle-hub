@@ -1239,3 +1239,24 @@ read, even when the individual feeding record is readable. This limit does not g
 The shared `ViewEntry` contract also allows record references in impact and links views, but their current producers still
 emit only tree references and regression-scope and maintenance-sweep accept only those. Before adding feeding records to
 an impact view, narrow that shared contract or update the affected consumers together.
+
+### Unknown entries in facet and index views
+
+`truncated` says that something is not in the lists. Two optional fields say whether that is all there is to it, and a
+consumer reads them, never the notes (`contracts/src/views.ts`):
+
+- `unknown_entries: N` (N above zero) — N entries are left out of the lists and counts because a fact the query needs is
+  unknown or their sources disagree (an expectation node never judged, steps that are not complete commands, a case with no
+  projection on the locked seedling, a legacy source). Each entry counts once, whichever of the reasons name it. The notes
+  name the missing fact and the next action; the unknown entries are not zero and not a failure.
+- `unknown_only: true` — the unknown entries are the only reason the view is truncated: no rows are left for a later page and
+  nothing was cut or withheld by a limit or a credential scan hit.
+
+Both are absent when there are no unknown entries, so such a view is byte for byte what it was. `completeKnowledgeView` still
+refuses every truncated last page, with one exception: an input slot that declares `unknown_entries: 'disclose'`
+(`WorkflowInput`, only on a `knowledge:facets` or `knowledge:index` input) gets a last page that says `unknown_only`. The bound
+view then stays `truncated` and carries the count; when several pages are collated, the earlier pages' own flags are spent and
+the last page decides. A pack that opts in must say the unknown entries as unknown, with the missing fact and the next action
+the view's notes name, and must not count them as zero or fail on them. In a facet view `total` counts only the entries in the
+lists, so `total + unknown_entries` is the population of the root for the query. Impact and links views do not carry the fields
+and keep the refusal.
