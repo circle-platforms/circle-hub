@@ -50,8 +50,19 @@ test('a dispatch refused at the effect boundary before any reservation says that
   assert.ok(note?.job, JSON.stringify(note)); assert.match(note.text, /^Hub 没有派发：/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
   for (const key of definition('x').resources) assert.ok(note.text.includes(key), `the refusal names the uncovered key ${key}: ${note.text}`);
   assert.equal(c.calls.includes('send_blob'), false);
-  const [again] = await acceptedDispatch(c.kit, c.service, c.run, true);
+  const [again] = await acceptedDispatch(c.kit, c.service, c.run, false);
   assert.equal(again.job, note.job, JSON.stringify(again)); assert.match(again.text, /已结束/); assert.match(again.text, /原因：/);
+  // Once the run's own lineage holds the target, a repeat of the ready submission dispatches: the refusal sent nothing.
+  const keys = definition('x').resources;
+  await c.leases.forceRelease({ keys, by: c.admin.id, reason: '合成：改由本运行的谱系持有' });
+  await c.leases.acquire({ keys, prefix: 'synthetic/', ttlSeconds: 3600, maxTtlSeconds: 3600, holder: { user: c.owner.id, run: c.run } });
+  const [retried] = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.ok(retried.job && retried.job !== note.job, JSON.stringify(retried)); assert.match(retried.text, /已按任务包的效果行派发作业/);
+  await settled(c);
+  assert.equal(c.calls.filter((call) => call === 'send_blob').length, 1);
+  const [after] = (await acceptedDispatch(c.kit, c.service, c.run, true)).filter((row) => row.job === retried.job);
+  assert.ok(after, 'a dispatched job is read, never dispatched again');
+  assert.equal(c.calls.filter((call) => call === 'send_blob').length, 1);
 });
 
 test('the accepted answer reports the reserved job, then a repeat reads its progress and result reference', async (t) => {

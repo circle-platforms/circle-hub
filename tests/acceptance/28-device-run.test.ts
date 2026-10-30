@@ -292,6 +292,9 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const held = new Set((await bed.hub.leases.view('bed/')).entries.map(e => e.key));
     const missing = MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`).filter(key => !held.has(key));
     assert.ok(missing.length > 0); for (const key of missing) assert.ok(note.text.includes(key), `${key} named: ${note.text}`);
+    // Nothing was sent, so repeating the ready submission checks the boundary again (as CES resubmits a refused workbook).
+    const again = (await client.call('submit_result', v.sent!)).out.dispatch?.[0];
+    assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^Hub 没有派发：.*租约/);
     assert.equal(submissions, before);
     await release(partial);
   });

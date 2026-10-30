@@ -13,6 +13,8 @@ export interface RunJob {
    * 'done' once the job has its terminal record, 'unknown' once its effect is recorded as unresolved and waits for an
    * administrator, null while it runs. */
   ended:'done'|'unknown'|null;
+  /** Whether the job ended at the effect boundary, before any reservation or remote call (its journal records the refusal). */
+  boundary_refused:boolean;
 }
 /**
  * The jobs of each run a dispatch job is bound to (as its verification run or its plan run), from one scan of the
@@ -65,7 +67,8 @@ export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick
     const proof=history[status.events-1];
     if(!proof)throw new IntegrityError('派发状态缺少对应的追加记录前缀');
     const ended=prefix.some(e=>e.body.detail.done===true)?'done':prefix.some(e=>e.body.detail.phase==='unknown')?'unknown':null;
-    out.push({job,record:proof.digest,verification_run:input.run,plan_run:input.plan_run,verification_item:input.item,items:[...input.items],sha256:input.sha256,status,ended,...(management_exit?{management_exit}:{})});
+    const boundary_refused=prefix.some(e=>e.body.detail.phase==='boundary_refused');
+    out.push({job,record:proof.digest,verification_run:input.run,plan_run:input.plan_run,verification_item:input.item,items:[...input.items],sha256:input.sha256,status,ended,boundary_refused,...(management_exit?{management_exit}:{})});
   }
   return out;
 }
