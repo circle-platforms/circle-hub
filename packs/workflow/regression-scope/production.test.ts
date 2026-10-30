@@ -27,6 +27,9 @@ const UNKNOWN = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_5?attached_field
 const FACETS_UNKNOWN = 'knowledge:facets:widget:Rel_W_1_0_5?kind=case&by=commands';
 const FACETS_CUT = 'knowledge:facets:widget:Rel_W_1_0_6?kind=case&by=commands';
 const FACETS_TRUNCATED = 'knowledge:facets:widget:Rel_W_1_0_7?kind=case&by=commands';
+// A command diff with far more rows than one evaluation may read quoted references of (the budget is 256 references).
+const BULK = 'knowledge:impact:widget:Rel_W_1_0_1..Rel_W_1_0_8?attached_fields=document,node,title,priority,negative&catalog=commands@1';
+const FACETS_BULK = 'knowledge:facets:widget:Rel_W_1_0_8?kind=case&by=commands';
 const bytes = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
 
 before(async () => {
@@ -40,6 +43,10 @@ before(async () => {
   hub.external.put(SKIPPED,bytes(skippedView));hub.external.put(FACETS_SKIPPED,bytes(facetInput(skippedView).model));
   hub.external.put(EMPTY, bytes(buildImpact([], { catalog: 'commands@1' })));
   hub.external.put(FACETS, bytes(facetInput(buildImpact([])).model));
+  const bulkView = buildImpact(Array.from({ length: 400 }, (_, i) => ({ path: `/commands/bulk/c${i}`, change: 'added' as const, after: [{ name: `c${i}` }], to: [{ document: `doc-b${i}`, node: 'n1', title: `批量用例 ${i}`, priority: 1 }] })), { catalog: 'commands@1' });
+  (bulkView.to as { build: string }).build = 'Rel_W_1_0_8';
+  hub.external.put(BULK, bytes(bulkView));
+  hub.external.put(FACETS_BULK, bytes(facetInput(bulkView).model));
   const unknownView = buildImpact(reviewChanges(), { ...reviewOptions(), catalog: 'commands@1' });
   (unknownView.to as { build: string }).build = 'Rel_W_1_0_5';
   hub.external.put(UNKNOWN, bytes(unknownView));
@@ -254,6 +261,16 @@ describe('a production run of regression-scope', { skip }, () => {
     const parsed = JSON.parse(content.text);
     assert.deepEqual(parsed.partitions, { delivered: [], incomplete: [], quarantined: [], rejected: [] });
     assert.deepEqual(parsed.coverage, { complete: true, examined: 0, total: 0 });
+  });
+
+  it('starts on a command diff that quotes more references than one evaluation may read', async () => {
+    const detail = await hub.service.startRunDetailed(hub.alice, { pack: 'regression-scope', inputs: { impact: { external: BULK }, facets: { external: FACETS_BULK } } }, call());
+    assert.equal(detail.answer.call_result, 'ok', JSON.stringify(detail.answer.errors));
+    assert.equal(detail.answer.run!.items.length, 400, 'every case on an added path is an item');
+    const result = detail.production!.result;
+    assert.ok(ValidationResult.safeParse(result).success);
+    assert.equal(result.acceptance, 'accepted');
+    assert.ok(result.cross_item.every((claim) => claim.statement.verdict !== 'refute'), 'the references past the budget are never a refutation');
   });
 
   it('binds a facets view truncated only by unknown entries, starts, and says those cases as unknown', async () => {

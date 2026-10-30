@@ -26,6 +26,7 @@ import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, prefetchReferences, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, describe, protocolError, unavailable } from './errors.ts';
+import { HubReadFailure } from './retry-read.ts';
 import { productionEvaluationInput, evaluate, type Evaluation } from './evaluate.ts';
 import { factClaim, sourceCoverage, rootDigest, strongestRole } from './claims.ts';
 import { buildScope, createResolver } from './exact.ts';
@@ -732,7 +733,14 @@ async function startFresh(
 async function evaluateProduction(ctx: EngineContext, run: RunRecord, runDigest: string, workflow: LoadedWorkflow, traceId: string, user: Principal): Promise<{ evaluation: Evaluation; startedAt: string }> {
   if(ctx.parsers.forRun)ctx={...ctx,parsers:await ctx.parsers.forRun(run.run)};
   const startedAt = ctx.now().toISOString();
-  const evaluation = await evaluate(ctx, productionEvaluationInput(run, workflow, runDigest, traceId));
+  let evaluation: Evaluation;
+  try { evaluation = await evaluate(ctx, productionEvaluationInput(run, workflow, runDigest, traceId)); }
+  catch (error) {
+    // A source the checks needed could not be read: say which fact is missing and the next step, as submit_result does,
+    // instead of letting the caller see an internal error.
+    if (!(error instanceof HubReadFailure)) throw error;
+    throw new Refusal([protocolError('SOURCE_UNAVAILABLE', error.message, { fix: error.fix })], `production evaluation of ${run.run} stopped by a source read failure (${error.reason}) on ${error.reference}`);
+  }
   const notes = (run.groups ?? []).map((group, i) => ({group, i})).filter(({group}) => group.nature === 'fact' && group.verdict === 'support');
   if (notes.length === 0) return {evaluation, startedAt};
   const noteSchema = z.strictObject({
