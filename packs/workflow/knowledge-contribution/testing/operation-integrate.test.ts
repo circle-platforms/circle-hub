@@ -309,6 +309,17 @@ test('a session id holding the token, whole or in part, is refused before any re
   assert.equal(hub.attempts.length, 0, 'no request reached the Hub');
 });
 
+test('a Hub address whose path holds the token, as written or percent-encoded, sends nothing (round-eight review)', async t => {
+  const local = await scratch(t);
+  const hub = await fakeHub(t);
+  const encoded = [...TOKEN].map(char => `%${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`).join('');
+  for (const path of [`/mcp/${TOKEN}`, `/mcp/${encoded}`]) {
+    const client = new HubClient(`${hub.url}${path}`, local.tokenFile, SESSION);
+    await assert.rejects(() => client.call('list_task_packs', {}), (error: Error & { code?: string }) => error.code === 'credential_in_request' && !error.message.includes(TOKEN), path);
+  }
+  assert.equal(hub.attempts.length, 0, 'no request left');
+});
+
 test('an uploaded document is checked in its decoded bytes before the upload is sent (round-seven review)', async t => {
   const local = await scratch(t);
   const hub = await fakeHub(t);

@@ -42,11 +42,13 @@ export class HubClient {
 
   /**
    * Every request leaves through `rpc`, and there everything it sends but the authorization header is checked against the
-   * token that header carries: the method and parameters, an uploaded file's decoded bytes, and the other headers, the session
-   * id included (round-seven review).
+   * token that header carries: the target, as written and with its path decoded, the method and parameters, an uploaded
+   * file's decoded bytes, and the other headers, the session id included (rounds seven and eight). The rule is a run of 12
+   * characters: a token cut into shorter pieces, or encoded otherwise, is outside it.
    */
   private refuseToken(token: string, method: string, params: unknown, headers: Record<string, string>): void {
-    const sent = [method, JSON.stringify(params), ...Object.entries(headers).flatMap(([name, value]) => name === 'authorization' ? [] : [value])];
+    const sent = [this.url.href, method, JSON.stringify(params), ...Object.entries(headers).flatMap(([name, value]) => name === 'authorization' ? [] : [value])];
+    try { sent.push(decodeURIComponent(this.url.pathname)); } catch { /* a malformed escape is checked as written, in the target */ }
     const file = isRecord(params) && params.name === 'upload_file' && isRecord(params.arguments) ? params.arguments.file_path : undefined;
     if (typeof file === 'string') sent.push(Buffer.from(file, 'base64').toString('latin1'));
     need(!sent.some(text => holdsToken(text, token)), 'credential_in_request', '请求含当前 Hub 令牌形状，停止发送；清理含令牌的文字或会话号后重试');
