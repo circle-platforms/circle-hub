@@ -14,7 +14,8 @@
 // not read the product, an unknown product or build and a malformed id give ok:false with the real reason for the admin log
 // (callers show the neutral SOURCE_UNAVAILABLE, D05 R[3]); a root without entries of the asked kind is a valid answer with a
 // note, and so is a root whose listed sources were not all used: what they would give is unknown, never absent.
-import { ENTRY_KIND, EntryKindSchema, labelOf, type EntryKind } from '../../contracts/generated/vocabulary.ts';
+import { DeclarationStatusSchema, ENTRY_KIND, EntryKindSchema, labelOf, type EntryKind } from '../../contracts/generated/vocabulary.ts';
+import { parseExternal } from '../connectors/api.ts';
 import { RunId, Sha256, Versioned } from '../../contracts/src/common.ts';
 import {
   DataFieldName,
@@ -375,7 +376,9 @@ function feedingIdentity(cut:FeedingCut,reader:string):string {
   const objects=[...cut.objects.entries()].map(([id,body])=>cut.casesByRoot===undefined?[id,body]:[id,body.schema]).sort((a,b)=>compareText(String(a[0]),String(b[0])));
   const cases=[...cut.casesByRoot?.entries()??[]].flatMap(([root,byObject])=>[...byObject.entries()].flatMap(([id,bySource])=>[...bySource.entries()].map(([source,value])=>canonicalize([root,id,source,value.record,value.position])))).sort(compareText);
   const bindings=[...cut.bindings.entries()].map(([id,values])=>[id,values.map(value=>canonicalize({state:value.state,line:value.line,candidates:value.candidates})).sort(compareText)]).sort((a,b)=>compareText(String(a[0]),String(b[0])));
-  return sha256Hex(canonicalize({reader,offset:cut.offset,objects,cases,bindings,retracted:[...cut.retracted].sort(compareText),contradicted:[...cut.contradicted].sort(compareText)}));
+  // Records of one build share its content identity, so each fed-build record counts apart; absent, the identity is as before.
+  const builds=(cut.builds??[]).map(row=>canonicalize([row.record,row.position])).sort(compareText);
+  return sha256Hex(canonicalize({reader,offset:cut.offset,objects,cases,...(builds.length?{builds}:{}),bindings,retracted:[...cut.retracted].sort(compareText),contradicted:[...cut.contradicted].sort(compareText)}));
 }
 
 function rootlessCases(cut:FeedingCut,root:string,key?:string,only?:ReadonlySet<string>|null):number {
@@ -461,6 +464,49 @@ function fedCaseRows(root: string, cut: FeedingCut, sourceEntries=false): KindEn
     });
   }
   return rows;
+}
+
+/**
+ * The defect entries the feeding layer gives one build: every valid function projection of fed-build@1 with fixed bugs whose
+ * name is exactly this build (fixed_bugs are the build's original structural defect identities, never a status). A record is
+ * one entry cited by its claim record; an identity written as an external object id names its system and number. The latest
+ * bytes of each source page decide that page's list. Records of the build projected under another root, or none, are not
+ * listed: counted (`unrooted`) when the page has no projection under this root, as root-less fed cases are.
+ */
+function fedDefectRows(root: string, build: string, cut: FeedingCut): { rows: KindEntry[]; unrooted: KindEntry[] } {
+  type Row = NonNullable<FeedingCut['builds']>[number];
+  const own = (cut.builds ?? []).filter(row => row.body.name === build).sort((a, b) => a.position - b.position);
+  // A source page apart from its bytes, and the bytes of one read of it.
+  const page = (row: Row): string => { const { bytes: _bytes, ...rest } = record(row.body.source) ?? {}; return canonicalize({ page: rest, external: row.external }); };
+  const bytes = (row: Row): unknown => record(row.body.source)?.bytes;
+  const latest = new Map<string, unknown>();
+  for (const row of own) latest.set(canonicalize([row.body.root, page(row)]), bytes(row));
+  const current = own.filter(row => latest.get(canonicalize([row.body.root, page(row)])) === bytes(row));
+  const rootedPages = new Set(current.filter(row => row.body.root === root).map(page));
+  const entry = (row: Row): KindEntry => {
+    const identities = (row.body.fixed_bugs as unknown[]).filter((value): value is string => typeof value === 'string');
+    const parsed = identities.map(value => { const external = parseExternal(value); return external ? { bug: external.key, system: external.system } : { bug: value, system: null }; });
+    const systems = [...new Set(parsed.map(value => value.system))];
+    const source = record(row.body.source);
+    return {
+      entry: row.record, path: '/', unplaced: true, root, unversioned: false, reference: `rec:${row.record}`,
+      content: { kind: 'defect', statement: '', applicability: null, data: {
+        bug: parsed.length === 1 ? parsed[0].bug : parsed.map(value => value.bug),
+        ...(systems.length === 1 && systems[0] !== null ? { system: systems[0] } : {}),
+        status: null,
+        declaration_status: DeclarationStatusSchema.enum.undeclared,
+        build,
+        line: typeof row.body.line === 'string' ? row.body.line : null,
+        fixed_bugs: identities,
+        object: row.body.object,
+        ...(typeof source?.bytes === 'string' ? { source_sha256: source.bytes } : {}),
+      } },
+    };
+  };
+  return {
+    rows: current.filter(row => row.body.root === root).map(entry),
+    unrooted: current.filter(row => row.body.root !== root && !rootedPages.has(page(row))).map(entry),
+  };
 }
 
 function viewEntry(digest: string, content: EntryContent, root: string, path: string, unversioned = false, reference?: string): ViewEntry {
@@ -572,11 +618,13 @@ export class KnowledgeViews {
    * are counted apart and never enter version differences; a fed kind the roots hold nothing of falls back to the
    * layer, and when the layer holds nothing either, the view says so plainly and names the way in (used = fed).
    */
-  async #feedingNotes(product: string, context: ExternalReadContext | undefined, kindEmpty: readonly EntryKind[], rootCaseCount: number, feeding: FeedingNotes | null = null): Promise<string[]> {
+  async #feedingNotes(product: string, context: ExternalReadContext | undefined, kindEmpty: readonly EntryKind[], rootCaseCount: number, feeding: FeedingNotes | null = null, build?: string): Promise<string[]> {
     void product; void context; void rootCaseCount;
-    if (feeding === null) return kindEmpty.map((kind) => `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：喂入层还没有记录；在运行里经 Hub 读到或上传后即进入喂入层`);
+    // A build's defects come from its fixed-bug list (fed-build@1); the read that feeds it must name product and build.
+    const way = (kind: EntryKind): string => kind === 'defect' && build !== undefined ? `；构建 ${build} 的缺陷来自它的修复清单：用 start_run 读这份原件，顶层同时写 product 和 build ${build}（不绑定产品线的通用读取包 source-read 也接受这两项），回执完成后再读本视图` : '';
+    if (feeding === null) return kindEmpty.map((kind) => `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：喂入层还没有记录；在运行里经 Hub 读到或上传后即进入喂入层${way(kind)}`);
     const cut = feeding.cut;
-    if (cut === null) return kindEmpty.map((kind) => `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：喂入层为空；在运行里经 Hub 读到或上传后即进入`);
+    if (cut === null) return kindEmpty.map((kind) => `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：喂入层为空；在运行里经 Hub 读到或上传后即进入${way(kind)}`);
     const notes: string[] = [];
     let undeclared = 0;
     for (const bindings of cut.bindings.values()) if (bindings.some((binding) => binding.state === 'undeclared')) undeclared++;
@@ -586,7 +634,7 @@ export class KnowledgeViews {
       const inLayer = kind === 'case' ? [...cut.objects.values()].filter(object=>object.schema==='fed-case@1').length : 0;
       notes.push(inLayer > 0
         ? `根里没有${labelOf('entry_kind', kind)}种类的条目；喂入层（冻结序号之前）有 ${inLayer} 个对象，按锁定树苗 + 喂入层读`
-        : `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：根和喂入层都没有；在运行里经 Hub 读到或上传后即进入喂入层`);
+        : `这个版本的${labelOf('entry_kind', kind)}还没有被用到过：根和喂入层都没有；在运行里经 Hub 读到或上传后即进入喂入层${way(kind)}`);
     }
     return notes;
   }
@@ -1055,7 +1103,9 @@ export class KnowledgeViews {
     const scope = await this.#scopeView(product,scopeRoot === undefined ? await this.#scope(product) : scopeRoot);
     const page=pageState(after,{product,at,kind,key,only,fields,composition:composition?.record,scope:scope?.record??null,exclude:[...exclude].sort(),...(feeding?.identity?{feeding:feeding.identity}:{})});
     const onlySet = only === null ? null : new Set(only);
-    const unrooted=at.seedling&&kind==='case'&&feeding?.cut?rootlessCases(feeding.cut,at.root,key,onlySet):0;
+    // A build's fed fixed-bug records join the defect entries of its seedling root, as fed cases join its case entries.
+    const fedDefects=at.seedling&&kind==='defect'&&feeding?.cut?fedDefectRows(at.root,at.build,feeding.cut):null;
+    const unrooted=at.seedling&&kind==='case'&&feeding?.cut?rootlessCases(feeding.cut,at.root,key,onlySet):(fedDefects?.unrooted.filter(row=>indexKeys(row.content.data,key).some(value=>onlySet===null||onlySet.has(value))).length??0);
     // Position membership is collected before the index-key filter; the count covers every entry of the kind.
     const scopePlaced = composition !== null && scope !== null ? new Set<string>() : null;
     const summary = await this.#scopeSummary(scope, [kind], row => indexKeys(row.content.data, key).some(value => onlySet === null || onlySet.has(value)), scopePlaced === null ? undefined : row => {
@@ -1156,6 +1206,7 @@ export class KnowledgeViews {
       if(needsCommands&&selectedDocument&&typeof row.content.data.unparsed_steps==='number'&&row.content.data.unparsed_steps>0){feedingCommandsUnknown++;unknownEntryIds.add(row.entry);}
       absorb(row);
     }
+    for (const row of fedDefects?.rows ?? []) absorb(row);
     const entryCounts = { total: seen.size, placed: seen.size - unplacedCount, unplaced: unplacedCount };
     interface Kept {
       value: string;
@@ -1209,6 +1260,12 @@ export class KnowledgeViews {
         wanted.delete(row.entry);
       }
     }
+    for (const row of fedDefects?.rows ?? []) {
+      if (wanted.size === 0) break;
+      if (!wanted.has(row.entry)) continue;
+      held.set(row.entry, encoder.bytes(viewEntry(row.entry, slim(row.content), row.root!, row.path, row.unversioned, row.reference??undefined)));
+      wanted.delete(row.entry);
+    }
     if(wanted.size>0)throw new Error('第二遍读取缺少不可变索引条目');
     // The selection is fixed. Drop unselected serialized candidates before materializing the answer.
     for (const digest of held.keys()) if (!listedAll.has(digest)) held.delete(digest);
@@ -1218,7 +1275,8 @@ export class KnowledgeViews {
       if (entry === undefined) { const bytes = held.get(digest)!; entry = JSON.parse(Buffer.from(bytes).toString('utf8')) as ViewEntry; this.#entryBytes.set(entry, bytes); decoded.set(digest, entry); held.delete(digest); }
       return entry;
     }
-    const feedingNotes: string[] = ofKind === 0 && feeding !== null ? await this.#feedingNotes(product, feeding.context, [kind], 0, feeding) : [];
+    // Root-less fixed-bug records are said by the unrooted note; the empty-layer note would deny them.
+    const feedingNotes: string[] = ofKind === 0 && feeding !== null && !(fedDefects !== null && unrooted > 0) ? await this.#feedingNotes(product, feeding.context, [kind], 0, feeding, at.build) : [];
     const notes = (count: number): string[] => {
       const out: string[] = [];
       if (ofKind === 0) { out.push(`构建 ${at.build} 的根里没有${labelOf('entry_kind', kind)}种类的条目`); out.push(...feedingNotes); }
@@ -1227,7 +1285,7 @@ export class KnowledgeViews {
       if(feedingConflicts)out.push(`${feedingConflicts} 条用例来源的版本层有冲突，未计入本索引；下一步由来源维护者核对目录后重读`);
       if(feedingCommandsUnknown)out.push(`${feedingCommandsUnknown} 条用例来源缺完整命令身份，不能认为命令集合为空；下一步核对锁定命令树或补完整命令后重读`);
       if(keyFactsUnknown)out.push(`${keyFactsUnknown} 个用例缺少索引字段 ${key} 的结构事实，不能据此判断键不存在；下一步由作者补声明或用新版生产器重读原件`);
-      if(unrooted)out.push(`${unrooted} 个用例缺所查树苗的投影，未计入本索引；下一步用绑定树苗的运行重读原件`);
+      if(unrooted)out.push(`${unrooted} 个${labelOf('entry_kind', kind)}缺所查树苗的投影，未计入本索引；下一步用绑定树苗的运行重读原件`);
       if (only !== null) {
         const absent = only.filter((value) => !keys.has(value));
         if (absent.length > 0 && keys.size > 0) out.push(`这些取值没有条目：${cutText(absent.slice(0, 20).join('、'), 500)}${absent.length > 20 ? ` 等 ${absent.length} 个` : ''}`);

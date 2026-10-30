@@ -1,4 +1,4 @@
-import {structuredDefect} from './fixed-bugs.ts';
+import {structuredDefect,fixedBugEntries} from './fixed-bugs.ts';
 import {structuredSpecification} from './specifications.ts';
 import {commandIdentity} from './commands.ts';
 import {isoTime} from './sync.ts';
@@ -9,12 +9,14 @@ import {commandCatalog,stepCommands} from './cases-commands.ts';
 import {folderLine} from './documents.ts';
 import {directoryBindingLines} from './locate.ts';
 import {parseBuildName,lineKey,PRODUCT_LINE} from './naming.ts';
-import {parseListing} from './listing.ts';
+import {parseListing,fixedBugsBuild} from './listing.ts';
 import {idsFromTitle} from './ids.ts';
 import {compareDigits,isRecord} from './util.ts';
 import {declareResourceTags,TEST_TYPE_IDS,RESOURCE_TAG_TEXTS} from './generated/vocabulary.ts';
 import type {XmlModel,HtmlModel} from './types.ts';
 const text=(value:unknown):string|null=>typeof value==='string'?value:Number.isSafeInteger(value)?String(value):null;
+// The parts of a defect's external object id `<system>:bug:<number>`: what that id grammar carries (no @, space or control).
+const DEFECT_SYSTEM=/^[a-z][a-z0-9-]{0,63}$/,DEFECT_KEY=/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
 export function normalizeLine(input:unknown):{line:string|null}{const value=isRecord(input)&&typeof input.line==='string'?input.line:null;return {line:value===null?null:folderLine('rel_apv_'+value.replaceAll('.','_'))};}
 const nativeLine=(value:string)=>{const line=normalizeLine({line:value}).line;if(line===null)throw Error('结构版本线不符合产品包完整语法');return line;};
 export function verifyCommand(input:unknown):unknown{if(!isRecord(input)||!isRecord(input.tree)||!isRecord(input.command)||!Array.isArray(input.command.parameters)||typeof input.command.path!=='string')throw Error('缺完整命令身份与冻结树');const command=input.command;const words=(command.path as string).split('/').slice(2).map(decodeURIComponent);const parameters=[...command.parameters as Array<{position:number;raw:string}>].sort((a,b)=>a.position-b.position);return {identity:commandIdentity(commandCatalog(input.tree.model as XmlModel,input.tree.sha256 as string).catalog,[...words,...parameters.map(p=>p.raw)].join(' '))};}
@@ -59,6 +61,20 @@ export default function project(input:unknown):unknown{
  }else if((s.system==='plm'&&(s.type==='requirements'||s.type==='story'&&model.kind==='story'))||(s.system==='manual'&&model.schema==='specification@1')){
   const fields=structuredSpecification(model),linked_builds=fields.linked_builds;for(const name of linked_builds)if(parseBuildName(name).line===null)throw Error('linked_builds 不符合完整构建名语法');
   rows.push({body:{schema:'fed-spec@1',...base,source:s.system==='plm'?{system:'plm-requirements',ticket:text(s.key),bytes:s.bytes}:{system:'manual-store',path:text(s.key),bytes:s.bytes},id:text(fields.id),title:text(fields.title)??'',linked_builds,document_lines:lines},identity:model,lines:[...new Set([...lines,...linked_builds.map(name=>lineKey(parseBuildName(name).line!))])],selector:'p',grammar:'apv-structured-specification@1',conflict:lines.length>1});
+ }else if(s.system==='buildsite'&&s.type==='file'&&input.parser==='html@1'&&typeof s.key==='string'&&fixedBugsBuild(s.key)!==null){
+  // A build's fixed-bug page: the build only from the whole file name (apv-assets@2), each defect identity only from a
+  // tracker link as fixed-bugs.ts reads it, one fed-build@1 record per identity; no release status is declared here.
+  const build=fixedBugsBuild(s.key)!,parsed=parseBuildName(build);if(parsed.line===null)throw Error('修复清单文件名里的构建名不能完整解析；修正链接或补命名语法后重读');
+  const content={name:build,family:parsed.family,line:lineKey(parsed.line),platform:parsed.platform};
+  const page={...base,source:{system:'build-site',page:s.key,bytes:s.bytes},...content,built_at:null,released_at:null,tree:null};
+  let unreadable=0;
+  for(const entry of fixedBugEntries(model,build).entries){
+   const bug=entry.data.bug,system=entry.data.system;if(typeof bug!=='string'||typeof system!=='string')continue;
+   // The identity is written as the defect's external object id, so the tracker it belongs to stays with the number.
+   if(!DEFECT_KEY.test(bug)||!DEFECT_SYSTEM.test(system)){unreadable++;continue;}
+   rows.push({body:{schema:'fed-build@1',...page,fixed_bugs:[system+':bug:'+bug]},identity:content,lines:[content.line],selector:entry.fragments[0]!.selector,grammar:'apv-assets@2',conflict:false});
+  }
+  if(!rows.length||unreadable)rows.push({body:{schema:'fed-build@1',...page,fixed_bugs:[]},identity:content,lines:[content.line],selector:'b/0',grammar:'apv-assets@2',conflict:false,missing:[{missing:rows.length?'修复清单原件里有 '+unreadable+' 个缺陷系统链接的编号不能写成缺陷身份':'修复清单原件里没有可读的缺陷系统链接；只认缺陷系统链接里的编号，不读正文、标题或文件名里的数字',next_action:'发布页维护者把缺陷写成缺陷系统链接后重新读取该原件；读到之前依赖该构建修复清单的追溯保持未知'}]});
  }else if(s.system==='buildsite'&&input.parser==='html@1'){
   const listing=parseListing(model as unknown as HtmlModel);
   for(const build of listing.builds){const parsed=parseBuildName(build.name);if(parsed.line===null)throw Error('构建名称不能完整解析');const content={name:build.name,family:parsed.family,line:lineKey(parsed.line),platform:parsed.platform};rows.push({body:{schema:'fed-build@1',...base,source:{system:'build-site',page:text(s.key),bytes:s.bytes},...content,built_at:isoTime(build.built_raw??build.built).iso,released_at:isoTime(build.released).iso,tree:null,fixed_bugs:[]},identity:content,lines:[content.line],selector:'b/0',grammar:'apv-build-name@1',conflict:false,missing:[{missing:'本次清单只声明构建信息，未读到该构建的命令树摘要与原始修复清单；tree=null 与 fixed_bugs=[] 不证明不存在',next_action:'经 Hub 读取该构建命令树及带结构状态的发布说明后补喂入；依赖这些字段的要求项保持未知'}]});}

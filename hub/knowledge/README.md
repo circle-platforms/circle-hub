@@ -1259,6 +1259,28 @@ The shared `ViewEntry` contract also allows record references in impact and link
 emit only tree references and regression-scope and maintenance-sweep accept only those. Before adding feeding records to
 an impact view, narrow that shared contract or update the affected consumers together.
 
+### Fed fixed-bug lists in the defect index (feed-fixed-bugs, decision 94)
+
+A seedling holds only the manual and the command tree, so a build's fixed bugs reach its `kind=defect` index by feeding on
+use. The model's field for a build's fixed-bug list is `fed-build@1.fixed_bugs` (original structural identities, never a
+status; `docs/hub-r4-tasks/kb-feeding.md` §1.4); `fed-defect@1` stays the PLM record, whose `source.system` is `plm`. The cut
+therefore keeps every valid function projection of `fed-build@1` with a non-empty `fixed_bugs` apart (`FeedingCut.builds`):
+the records of one build share its content identity, so `objects` alone would keep only the last of them.
+
+For `kind=defect` on a seedling root the index adds one entry per such record whose `name` is exactly the view's build and
+whose root is the view's root: the entry is the claim record (`rec:<digest>`), `data.object` is the shared build identity,
+`data.bug` the identity's number and `data.system` its system when the identity is written as an external object id
+(`<system>:<type>:<key>`, parsed by the connectors' grammar; any other string is a number without a system), `data.status`
+null and `data.declaration_status` `undeclared`, as a release-notes entry without a structural status. The product pack
+decides how many identities a record holds (the APV pack writes one per defect). The latest bytes read of each source page
+under a root decide that page's list, so a changed page does not keep its old numbers. Records of the build projected without
+a root or under another root are not listed; when no record of the same page is under this root they count as unknown
+entries with the next action to re-read under the seedling, as root-less fed cases do; `only=` counts only the selected
+numbers. Frozen offsets, retractions, readable proofs and credential holds are the cut's and the view's, unchanged. An empty
+defect index of a build says, in its feeding note, that the read must name product and build (`source-read` takes both). The
+feeding identity of a view counts these records apart only when there are some, so views without them keep their revision.
+Facets and impact views do not read fed fixed-bug records yet.
+
 ### Unknown entries in facet and index views
 
 `truncated` says that something is not in the lists. Two optional fields say whether that is all there is to it, and a

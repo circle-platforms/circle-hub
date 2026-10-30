@@ -4,7 +4,7 @@
     {
       "slot": "defects",
       "role": "subject",
-      "description": "构建的缺陷索引视图：knowledge:index:<产品>:<构建>?kind=defect&key=bug。知识根里 fixed-bugs 与发布页生产的缺陷条目，一个条目一个缺陷：data.bug 是编号，data.status 仅在 declaration_status=declared 时是 fixed 或 known；未声明的缺陷仍列为未知，不被状态筛选静默剔除。不要写 only=，不要向用户索取缺陷编号；不能将其他系统的同号混成一个条目",
+      "description": "构建的缺陷索引视图：knowledge:index:<产品>:<构建>?kind=defect&key=bug。知识根里的缺陷条目，以及喂入层里该构建修复清单的缺陷记录（先用 source-read 顶层写 product 和 build 读该构建的修复清单原件），一个条目一个缺陷：data.bug 是编号，data.status 仅在 declaration_status=declared 时是 fixed 或 known；未声明的缺陷仍列为未知，不被状态筛选静默剔除。不要写 only=，不要向用户索取缺陷编号；不能将其他系统的同号混成一个条目",
       "accepts": [
         "knowledge:index"
       ],

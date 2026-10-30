@@ -66,6 +66,12 @@ by construction (absence is not proof).
   itself never fails on absence. `join_mismatch` cannot occur from the pack's own projection; it guards the frozen subject.
 - The checks never receive the views again: everything they need is frozen in the item fields and the run's `groups` (the
   view facts). The grounds of the counts claim are the `src:` references of the two stored views.
+- **The defect numbers are fed on use** (1.0.12, decision 94): a line's seedling holds only the manual and the command tree,
+  so the build's `kind=defect` index lists the fed records of its fixed-bug page. The SKILL.md's step 0 names the one read
+  that feeds them (`source-read` with `product` and `build` written together, the page as `buildsite:file:<link>`); the Hub's
+  refusal for an empty defect index names the same step. Those records declare no release status, so every defect of such a
+  build is unknown for `traced` with the cases still listed in its data (the hits), and `counts` says how many statuses are
+  undeclared. The pack's functions are unchanged; only SKILL.md and the `defects` slot description changed.
 - **No `api.ts`**: a pack is loaded by the engine from the registry and offers nothing to other packages (same as
   case-location; architecture section 10's file rule is met by this README and the declarations).
 
