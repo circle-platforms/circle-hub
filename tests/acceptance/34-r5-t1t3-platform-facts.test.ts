@@ -246,5 +246,22 @@ describe('T2 平台事实端到端验收', () => {
       assert.ok(!res.out.errors.some((e) => e.code === 'SOURCE_UNAVAILABLE'), 'not the bare unavailable answer');
       assert.ok(!res.out.errors.some((e) => e.code === 'quality-board.no_cases'), 'the other input was not built into a view after the mistake was known');
     });
+
+    it('names a parameter value the knowledge grammar refuses (an empty only) instead of the bare unavailable answer', async () => {
+      // Seen in a real template-gap run (10-30): a model followed a fix that left only= empty and was told "unavailable" six times.
+      const res = await client.call('start_run', {
+        pack: 'traceability',
+        inputs: {
+          defects: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=defect&key=bug&only=' },
+          cases: { external: 'knowledge:index:apv:Rel_APV_10_6_1_57?kind=case&key=defects' },
+        },
+      });
+      assert.equal(res.out.call_result, 'error');
+      const refused = res.out.errors.find((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION' && e.path === '/inputs/defects');
+      assert.ok(refused, JSON.stringify(res.out.errors));
+      assert.match(refused.message, /only 要列 1 到/);
+      assert.match(refused.fix ?? '', /knowledge:<视图>:<产品>:<构建>/);
+      assert.ok(!res.out.errors.some((e) => e.code === 'SOURCE_UNAVAILABLE' && e.path === '/inputs/defects'), 'not the bare unavailable answer');
+    });
   });
 });
