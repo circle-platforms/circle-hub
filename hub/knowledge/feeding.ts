@@ -107,6 +107,12 @@ function operationQuotes(body:Record<string,any>):Array<Record<string,any>>{
 }
 function fail(message:string):never{throw new KnowledgeError(message+'；修正原件或按生成结构修正整份提交后重交，不能猜测补值',{code:'SUBMISSION_SCHEMA_VIOLATION'});}
 export interface FeedingScope {product?:string|null;root?:string|null;composition?:string|null;run?:string|null;line?:string|null;meta?:Record<string,unknown>|null;metaSource?:string;metaRecord?:string;readManifest?:string;sourceRecord?:string;requested?:string;declaredLine?:string|null;}
+/**
+ * What a feeding append writes beside its body, read through the pool just before the caller opens its transaction: the
+ * append holds the feeding log lock on that transaction and reads nothing through the pool there (issue #104). `natives` are
+ * the native observations of the body's object that the plan saw.
+ */
+export interface AppendPlan {bound:string[];natives:string[]}
 export interface FeedingReceipt {objects:string[];offset:number|null;pending:Array<{source:string;missing:string;next_action:string}>;}
 export interface FeedingView {record:string;offset:number;body:Record<string,any>;claim:ClaimBody;validity:'valid'|'invalid';retractions:string[];}
 function captureScope(scope:FeedingScope){return {product:scope.product??null,root:scope.root??null,composition:scope.composition??null,run:scope.run??null,line:scope.line??null,metaSource:scope.metaSource??null,metaRecord:scope.metaRecord??null,readManifest:scope.readManifest??null,sourceRecord:scope.sourceRecord??null,declaredLine:scope.declaredLine??null};}
@@ -358,12 +364,14 @@ export class FeedingLayer {
    evidenceBySelector.set(selector,fallback);
   }
   const ids=projection.rows.map(row=>row.body.object as string);for(const row of projection.rows)for(const gap of row.missing??[])pending.push({source:sha,...gap});
+  // The pack, the access to the sources and the canonical objects are checked and written just before the transaction: once
+  // it holds the feeding log lock it reads nothing through the pool (issue #104).
+  if(!await this.currentPack(pack))return this.superseded(sha);
+  await this.sourceAccess(principal,sha,source.artifact.digest,scope.readManifest,'input_source',scope.run);if(scope.metaSource)await this.sourceAccess(principal,scope.metaSource,evidenceSource.artifact.digest,scope.readManifest,'metadata');
+  for(const row of projection.rows){const stored=await this.context.records.objects.put(new TextEncoder().encode(canonicalize(row.identity)),'application/json');if(stored.sha256!==row.body.object)fail('规范内容摘要不一致');}
   const committed=await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);
-   if(!await this.currentPack(pack))return false;
-   const recheck=async()=>{await this.sourceAccess(principal,sha,source.artifact.digest,scope.readManifest,'input_source',scope.run);if(scope.metaSource)await this.sourceAccess(principal,scope.metaSource,evidenceSource.artifact.digest,scope.readManifest,'metadata');};
-   await recheck();
    if(!projection.rows.length){await this.usage(principal,sha,scope,tx);if(!scope.product){const missing='缺少产品及树苗上下文，不能按业务来源猜产品',next_action='用绑定产品和树苗的运行号重新 get_nodes 读取此原件';pending.push({source:sha,missing,next_action});await this.todo(principal,{system:source.external?.system??'unknown',document:source.external?.key??sha},null,missing,next_action,tx);}return true;}
-   for(const row of projection.rows){await recheck();const bytes=new TextEncoder().encode(canonicalize(row.identity));const stored=await this.context.records.objects.put(bytes,'application/json');if(stored.sha256!==row.body.object)fail('规范内容摘要不一致');await this.put(row.body,principal,projection.pack,['src:'+sha],[sha,source.artifact.digest,...(scope.metaSource?[scope.metaSource]:[]),projection.digest,...(scope.readManifest&&Sha256.safeParse(scope.readManifest).success?[scope.readManifest]:[]),...(scope.root?[scope.root]:[]),...(scope.composition?[scope.composition]:[]),...(projection.attachment?[projection.attachment.seedling_root,projection.attachment.seedling_composition]:[])],'object:'+this.key(row.body)+':'+source.artifact.digest+':'+(scope.run??'')+':'+(scope.composition??'')+':'+(scope.readManifest??'')+(projection.attachment?':'+projection.attachment.seedling_composition:''),[{key:OBJECT,value:row.body.object},{key:'knowledge.feeding.product',value:scope.product!},{key:'knowledge.feeding.source',value:sha}],tx,false,scope.run??null,scope.metaSource,row.missing,{external:source.external?.id??null,read_manifest:scope.readManifest&&Sha256.safeParse(scope.readManifest).success?scope.readManifest:null,...(projection.attachment?{seedling_attachment:projection.attachment}:{})});await this.bindings(principal,row,source,scope,tx,evidenceBySelector.get(scope.metaSource?'p/ancestors':row.selector)!,projection.attachment);if(scope.sourceRecord&&scope.requested&&parseExternal(scope.requested)?.revision===null)await this.sourceHead(row.body,source,tx);await this.usage(principal,row.body.object,scope,tx);}
+   for(const row of projection.rows){await this.put(row.body,principal,projection.pack,['src:'+sha],[sha,source.artifact.digest,...(scope.metaSource?[scope.metaSource]:[]),projection.digest,...(scope.readManifest&&Sha256.safeParse(scope.readManifest).success?[scope.readManifest]:[]),...(scope.root?[scope.root]:[]),...(scope.composition?[scope.composition]:[]),...(projection.attachment?[projection.attachment.seedling_root,projection.attachment.seedling_composition]:[])],'object:'+this.key(row.body)+':'+source.artifact.digest+':'+(scope.run??'')+':'+(scope.composition??'')+':'+(scope.readManifest??'')+(projection.attachment?':'+projection.attachment.seedling_composition:''),[{key:OBJECT,value:row.body.object},{key:'knowledge.feeding.product',value:scope.product!},{key:'knowledge.feeding.source',value:sha}],tx,false,scope.run??null,scope.metaSource,row.missing,{external:source.external?.id??null,read_manifest:scope.readManifest&&Sha256.safeParse(scope.readManifest).success?scope.readManifest:null,...(projection.attachment?{seedling_attachment:projection.attachment}:{})});await this.bindings(principal,row,source,scope,tx,evidenceBySelector.get(scope.metaSource?'p/ancestors':row.selector)!,projection.attachment);if(scope.sourceRecord&&scope.requested&&parseExternal(scope.requested)?.revision===null)await this.sourceHead(row.body,source,tx);await this.usage(principal,row.body.object,scope,tx);}
    const at=this.context.now().toISOString();await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',unique_key:'feeding.observed:'+observationKey,body:{action:'read',run:scope.run??null,item:null,component:'hub.feeding@2',inputs:['src:'+sha],lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{receipt:{objects:ids,pending}}},index:[{key:'knowledge.feeding.observed',value:observationKey}]},tx);
    return true;
   });if(!committed)return this.superseded(sha);return {objects:ids,offset:await this.offset(),pending};
@@ -580,19 +588,34 @@ export class FeedingLayer {
   }
   return body;
  }
- private async nativeObservation(principal:Principal,body:Record<string,any>){for(const row of await this.all(OBJECT,body.object)){const value=this.body(row);if(!value||row.body.warrant.producer!=='function'||!await this.recordVisible(row,principal))continue;const base=Object.fromEntries(Object.entries(body).filter(([key])=>!annotations.includes(key as never)));if(canonicalize(value)===canonicalize(base))return row;}return null;}
+ private async nativeObservation(principal:Principal,body:Record<string,any>){for(const row of await this.natives(body))if(await this.recordVisible(row,principal))return row;return null;}
+ /** The native observations whose body is this body without its annotations, read on `tx` when one is given. */
+ private async natives(body:Record<string,any>,tx?:Transaction){const base=canonicalize(Object.fromEntries(Object.entries(body).filter(([key])=>!annotations.includes(key as never))));return (await this.all(OBJECT,body.object,tx)).filter(row=>{const value=this.body(row);return value!==null&&row.body.warrant.producer==='function'&&canonicalize(value)===base;});}
  private async proofReadable(record:StoredRecord<ClaimBody>,principal:Principal){for(const proof of record.body.validity.bound){const original=await this.context.records.store.get<any>(proof);if(original?.kind==='source_artifact'&&(await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:proof}))?.bytes)return true;}return false;}
  async originalRecord(principal:Principal,body:Record<string,any>,scope:FeedingScope={}){return (await this.originalSource(principal,body,scope)).artifact.digest;}
- async appendPrepared(principal:Principal,body:Record<string,any>,scope:FeedingScope,model:string,tx:Transaction):Promise<string>{
+ /**
+  * What an append writes beside the body, read through the pool: the records the claim is bound to, and the canonical object of
+  * a projection. An append holds the feeding log lock on its caller's transaction, so it reads none of this there: a waiting
+  * append holds a connection too, and the lock holder could wait for one until the pool's timeout (issue #104).
+  */
+ async planAppend(principal:Principal,body:Record<string,any>,scope:FeedingScope):Promise<AppendPlan>{
+  if(body.schema==='retraction@1')return {bound:[],natives:[]};
+  const source=await this.originalSource(principal,body,scope);const quotes=annotations.flatMap(key=>(body[key]??[]).map((value:any)=>value.quote));
+  const seen=await this.natives(body);let native:StoredRecord<ClaimBody>|null=null;for(const row of seen)if(await this.recordVisible(row,principal)){native=row;break;}
+  if(!native&&body.schema!=='fed-note@1'&&!operationRecord(body.schema)){const projected=await this.projection(principal,source,scope),row=projected.rows.find(row=>row.body.object===body.object);if(!row)fail('缺规范内容；重新读取后重交');const stored=await this.context.records.objects.put(new TextEncoder().encode(canonicalize(row.identity)),'application/json');if(stored.sha256!==body.object)fail('规范内容摘要不一致');}
+  return {bound:[body.source.bytes,source.artifact.digest,...(native?[native.digest]:[]),...quotes.map(q=>this.quoteRef(q).sha),...(scope.root?[scope.root]:[])],natives:seen.map(row=>row.digest)};
+ }
+ /** Appends a prepared body with the plan read for it just before the transaction: only the lock and writes on the transaction. */
+ async appendPrepared(principal:Principal,body:Record<string,any>,plan:AppendPlan,scope:FeedingScope,model:string,tx:Transaction):Promise<string>{
   await this.context.records.store.lock('knowledge.feeding.log',tx);
   if(body.schema==='retraction@1')return (await this.put(body,principal,'hub.retraction@1',[],[],'retraction:'+this.key(body),[{key:RETRACT,value:'1'}],tx)).digest;
-  const source=await this.originalSource(principal,body,scope);const quotes=annotations.flatMap(key=>(body[key]??[]).map((value:any)=>value.quote));
-  const native=await this.nativeObservation(principal,body);
-  if(!native&&body.schema!=='fed-note@1'&&!operationRecord(body.schema)){const projected=await this.projection(principal,source,scope),row=projected.rows.find(row=>row.body.object===body.object);if(!row)fail('缺规范内容；重新读取后重交');const stored=await this.context.records.objects.put(new TextEncoder().encode(canonicalize(row.identity)),'application/json');if(stored.sha256!==body.object)fail('规范内容摘要不一致');}
-  const bound=[body.source.bytes,source.artifact.digest,...(native?[native.digest]:[]),...quotes.map(q=>this.quoteRef(q).sha),...(scope.root?[scope.root]:[])];
+  // Native observations are written under this lock, so the append sees every one, and binds one committed after its plan was
+  // read, as main bound it here (review of #108, item 2). Its visibility is not checked again where nothing is read through
+  // the pool: the body equals it, and the plan checked the principal's access to that content.
+  const bound=[...plan.bound,...(await this.natives(body,tx)).map(row=>row.digest).filter(digest=>!plan.natives.includes(digest))];
   const stored=await this.put(body,principal,model,['src:'+body.source.bytes],bound,'annotation:'+sha256Hex(canonicalize({body,actor:principal.id,model,run:scope.run??null})),[{key:OBJECT,value:body.object},{key:'knowledge.feeding.product',value:body.product??principal.id},{key:'knowledge.feeding.annotation',value:'1'}],tx,true,scope.run??null);await this.usage(principal,body.object,scope,tx);return stored.digest;
  }
- async admit(principal:Principal,payload:readonly unknown[],scope:FeedingScope&{classifications?:readonly string[]}):Promise<string[]>{const bodies:Record<string,any>[]=[];for(const raw of payload)bodies.push(await this.prepare(principal,raw,scope));return this.context.records.store.withTransaction(async tx=>{const refs=[];for(const body of bodies)refs.push(await this.appendPrepared(principal,body,scope,'client-declared-model',tx));return refs;});}
+ async admit(principal:Principal,payload:readonly unknown[],scope:FeedingScope&{classifications?:readonly string[]}):Promise<string[]>{const bodies:Record<string,any>[]=[];for(const raw of payload)bodies.push(await this.prepare(principal,raw,scope));const plans:AppendPlan[]=[];for(const body of bodies)plans.push(await this.planAppend(principal,body,scope));return this.context.records.store.withTransaction(async tx=>{const refs=[];for(const [index,body] of bodies.entries())refs.push(await this.appendPrepared(principal,body,plans[index]!,scope,'client-declared-model',tx));return refs;});}
  async frozenOffset(run:string):Promise<number|null>{const row=(await this.context.records.store.find<FeedingOffset>({key:'knowledge.feeding.offset',value:run,kind:'claim',limit:1})).items[0];return row?.body.offset??null;}
  async cut(product:string,offset:number|null,principal?:Principal):Promise<FeedingCut|null>{
   if(!principal)return null;const ceiling=offset??Number.MAX_SAFE_INTEGER,entries=await this.entries(principal,product,ceiling);

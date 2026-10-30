@@ -15,6 +15,7 @@ import { mediaTypeOf, readBody, sendRpcError, setCommonHeaders, type BodyBudget 
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { newTraceId, sessionIdOf, traceIdFrom } from './trace.ts';
 import { callTool, internalError, listTools, type CallState, type ToolCall } from './tools.ts';
+import { bearerToken } from './token-echo.ts';
 
 export interface McpOptions {
   deps: ServerDeps;
@@ -26,6 +27,7 @@ export interface McpOptions {
 
 /** Same body for missing, unknown, revoked and disabled tokens. */
 const UNAUTHENTICATED = '需要有效的 Bearer 令牌';
+const TOKEN_IN_REQUEST = 'Invalid params: 请求正文里含调用方当前的 Hub 令牌，整份请求没有处理，也没有保存；删去令牌后重发';
 const BATCH_REFUSED = 'Invalid Request: 不接受 JSON-RPC 批量请求（MCP 2025-06-18 起没有批量）；每个请求单独用一次 POST 发送';
 const LOGGED_TOOL = /^[A-Za-z0-9_./:-]{1,100}$/;
 const LOGGED_CODE = /^[A-Za-z0-9_.:-]{1,100}$/;
@@ -195,6 +197,9 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
     } catch {
       return await refuse(400, -32700, 'Parse error: 请求体不是 UTF-8 编码的 JSON', 'request body is not UTF-8');
     }
+    // The caller's own token in the body refuses all of it, before anything in it is handled or stored (issue #105).
+    const token = bearerToken(authorization);
+    if (token !== null && text.includes(token)) return await refuse(400, -32602, TOKEN_IN_REQUEST, "the request body held the caller's own Hub token; nothing in it was handled or stored");
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);

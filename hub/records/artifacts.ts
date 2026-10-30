@@ -377,7 +377,7 @@ export class RecordArtifacts implements Artifacts {
     const captures=[...new Set(snapshot.sources.filter(binding=>binding.artifact!==undefined&&/^src:([0-9a-f]{64})(?:\/|$)/.exec(binding.reference)?.[1]===sha256).map(binding=>binding.artifact!))];
     const requested=pinned(options.record);if(requested&&!captures.includes(requested))return null;
     if(captures.length){
-      for(const digest of requested?[requested]:captures){const stored=await this.#store.get<SourceArtifactBody>(digest);if(stored?.kind!=='source_artifact'||stored.schema!=='source_artifact@1'||stored.body.sha256!==sha256)continue;const direct=await this.source(principal,sha256,{consumer,record:digest});if(direct)return direct;if('generated'in stored.body.origin)return this.#sourceChoice(await this.#effectiveChoice(stored as SourceArtifact,[stored as SourceArtifact]),consumer);}
+      for(const digest of requested?[requested]:captures){const stored=await this.#store.get<SourceArtifactBody>(digest);if(stored?.kind!=='source_artifact'||stored.schema!=='source_artifact@1'||stored.body.sha256!==sha256)continue;const direct=await this.source(principal,sha256,{consumer,record:digest});if(direct)return direct;if('generated'in stored.body.origin)return this.#sourceChoice(await this.#effectiveChoice(stored as SourceArtifact,await this.records(sha256)),consumer);}
       return null;
     }
     const all = await this.records(sha256);
