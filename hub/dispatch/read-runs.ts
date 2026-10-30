@@ -9,6 +9,10 @@ const Input=z.object({run:RunId,plan_run:RunId,item:z.string().min(1),items:z.ar
 export interface RunJob {
   /** Administrative proof reference; keep it behind an administrator-only read tier, never return raw journal bodies. */
   job:string;record?:string;management_exit?:UnknownExit;verification_run:string;plan_run:string;verification_item:string;items:string[];sha256:string;status:JobStatus;
+  /** From the journal, never from the name of the last phase (cleanup such as the target lease release may follow the end):
+   * 'done' once the job has its terminal record, 'unknown' once its effect is recorded as unresolved and waits for an
+   * administrator, null while it runs. */
+  ended:'done'|'unknown'|null;
 }
 /**
  * The jobs of each run a dispatch job is bound to (as its verification run or its plan run), from one scan of the
@@ -60,7 +64,8 @@ export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick
     }
     const proof=history[status.events-1];
     if(!proof)throw new IntegrityError('派发状态缺少对应的追加记录前缀');
-    out.push({job,record:proof.digest,verification_run:input.run,plan_run:input.plan_run,verification_item:input.item,items:[...input.items],sha256:input.sha256,status,...(management_exit?{management_exit}:{})});
+    const ended=prefix.some(e=>e.body.detail.done===true)?'done':prefix.some(e=>e.body.detail.phase==='unknown')?'unknown':null;
+    out.push({job,record:proof.digest,verification_run:input.run,plan_run:input.plan_run,verification_item:input.item,items:[...input.items],sha256:input.sha256,status,ended,...(management_exit?{management_exit}:{})});
   }
   return out;
 }

@@ -15,7 +15,7 @@
     {
       "slot": "contract",
       "role": "expected",
-      "description": "运行器原格式函数合约命名文档（doc:doc），按完整原文重算身份并与 runtime-profile 的期望身份核对；不转换格式、不补参数类型或默认值",
+      "description": "运行器原格式函数合约命名文档（doc:doc），按完整原文重算身份并与 runtime-profile 的期望身份核对；不转换格式、不补参数类型或默认值。缺省写 doc:doc:runner-contract",
       "accepts": [
         "doc:doc"
       ],
@@ -35,7 +35,7 @@
     {
       "slot": "profile",
       "role": "expected",
-      "description": "发布的 runtime-profile@1：期望运行时和合约身份、工作簿字面格式、座位和主机映射、本轮允许组合及参数角色、设备和主机拒绝表、synthetic 声明",
+      "description": "发布的 runtime-profile@1 命名文档（doc:doc）：期望运行时和合约身份、工作簿字面格式、座位和主机映射、本轮允许组合及参数角色、设备和主机拒绝表、synthetic 声明。缺省写 doc:doc:runtime-profile",
       "accepts": [
         "doc:doc"
       ],

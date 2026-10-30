@@ -14,7 +14,7 @@ async function bindingOf(c: C, job: string): Promise<Record<string, unknown>> {
   assert.ok(found, 'reservation binding'); return found!;
 }
 async function settled(c: C) {
-  for (let i = 0; i < 200; i++) { const jobs = await readRunJobs(c.kit, c.service, c.admin, c.run); if (jobs.length && jobs.every((job) => job.status.phase === 'complete')) return jobs; await new Promise((resolve) => setTimeout(resolve, 50)); }
+  for (let i = 0; i < 200; i++) { const jobs = await readRunJobs(c.kit, c.service, c.admin, c.run); if (jobs.length && jobs.every((job) => job.ended === 'done')) return jobs; await new Promise((resolve) => setTimeout(resolve, 50)); }
   throw new Error('the dispatched job did not complete');
 }
 

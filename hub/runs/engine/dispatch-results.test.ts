@@ -20,7 +20,7 @@ test('unknown dispatch quarantines only its bound item, reconciles without sendi
   const run=(await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}},h.call())).run!;
   const submitted=await h.service.submitResult(h.alice,{run:run.run,model:'synthetic',items:run.items.map(i=>({item:i.id,handling:'handled',slots:{findings:[]}})),cross_item:[{nature:'judgment',statement:'合成等级',grounds:[],code:'draft_level',rank:'P4'}]},h.call('observed-session'));
   assert.equal(submitted.acceptance,'accepted');
-  const job:RunJob={job:'a'.repeat(64),verification_run:run.run,plan_run:run.run,verification_item:run.items[0].id,items:[run.items[0].id],sha256:'b'.repeat(64),status:{job:'a'.repeat(64),phase:'unknown',outcome:'unknown',frozen:true,events:4,missing_fact:'原作业缺完整回执'}};
+  const job:RunJob={job:'a'.repeat(64),verification_run:run.run,plan_run:run.run,verification_item:run.items[0].id,items:[run.items[0].id],sha256:'b'.repeat(64),status:{job:'a'.repeat(64),phase:'unknown',outcome:'unknown',frozen:true,events:4,missing_fact:'原作业缺完整回执'},ended:'unknown'};
   let reconciles=0;
   const service=createRunsService({parsers:createTestParserRegistry(),records:h.kit,workflows:h.workflows,packs:h.packs,knowledge:h.knowledge,external:h.external,dispatch:{jobs:async()=>[structuredClone(job)],reconcile:async()=>{reconciles++;return job.status;}}});
   await service.maintain();
@@ -73,7 +73,7 @@ test('dispatch recomputation keeps an unruled static judgment unmet for a fact-o
   assert.ok(result.cross_item.some(claim=>claim.qualifier.marks.includes('decision_shape_unruled')));
   const record=(await h.service.getRun(h.alice,run.run))!.run;
   const ctx=createEngineContext({records:h.kit,workflows:h.workflows,packs:h.packs,knowledge:h.knowledge,external:h.external});
-  const job:RunJob={job:'c'.repeat(64),verification_run:run.run,plan_run:run.run,verification_item:item,items:[item],sha256:'d'.repeat(64),status:{job:'c'.repeat(64),phase:'unknown',outcome:'unknown',frozen:true,events:1,missing_fact:'合成作业缺少完整观察'}};
+  const job:RunJob={job:'c'.repeat(64),verification_run:run.run,plan_run:run.run,verification_item:item,items:[item],sha256:'d'.repeat(64),status:{job:'c'.repeat(64),phase:'unknown',outcome:'unknown',frozen:true,events:1,missing_fact:'合成作业缺少完整观察'},ended:'unknown'};
   const pending=structuredClone(result);
   assert.equal(await applyDispatchResults(ctx,record,pending,[job]),true);
   assert.equal(requirementOf(pending).layers.find(layer=>layer.layer==='dynamic')!.terminal,'no_verdict');
@@ -102,7 +102,7 @@ test('a meeting intermittent carries no attribution and a missing one is unattri
   const ctx = createEngineContext({ records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external });
   const project = async (rounds: Array<{ round: number; terminal: string; meets: boolean | null; early_stop?: boolean }>, digest: string) => {
     const artifact = await h.kit.artifacts.ingest({ bytes: canonicalBytes({ job: digest, sha256: 'e'.repeat(64), rows: [{ item, dynamic_terminal: rounds.find(round => round.terminal === 'pass' || round.terminal === 'fail')?.terminal ?? 'not_run', accepted_as_fact: false, qualifier: { nature: 'judgment', marks: ['target_reported', 'report_for_dispatch', 'local_ops_not_excluded'] }, missing_facts: [] }], rounds }), mediaType: 'application/json', origin: { generated: { generator: 'dispatch@1', inputs: [] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [h.alice.id], admins: true, packs: [], shareable: false } });
-    const job: RunJob = { job: digest, verification_run: started.run, plan_run: started.run, verification_item: item, items: [item], sha256: 'e'.repeat(64), status: { job: digest, phase: 'complete', outcome: 'effective', frozen: false, events: 4, result: `src:${artifact.body.sha256}` } };
+    const job: RunJob = { job: digest, verification_run: started.run, plan_run: started.run, verification_item: item, items: [item], sha256: 'e'.repeat(64), status: { job: digest, phase: 'complete', outcome: 'effective', frozen: false, events: 4, result: `src:${artifact.body.sha256}` }, ended: 'done' };
     return job;
   };
   const early = structuredClone(result);

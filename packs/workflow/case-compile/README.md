@@ -1,4 +1,4 @@
-# case-compile 3.9.2
+# case-compile 3.9.3
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -375,3 +375,25 @@ original entry records and the entry carries typed authority. A promotion of any
 release replay is the dispatch of a workbook that uses the method; its result is judged as any other.
 
 Test: `functions/promotions.test.ts`.
+
+### 3.9.3: the verdict pair of a cleanup problem comes from the generated vocabulary
+
+The verdict of a cleanup problem (`functions/command-obligations.ts`, net-effect cleanup since 3.8.11) was a handwritten
+`'unknown'|'refute'` union; it now narrows the generated `Verdict` with `Extract`, as `functions/plan-commands.ts` does. The
+behaviour is unchanged. The version moves because the bytes did: a tracked version keeps the manifest of the commit that set
+it, and 3.9.2 was never published.
+
+`tools/fetch-run.ts` reported every failure other than an HTTP status as a malformed run export, and waited as long as the
+platform's request timeout. A Hub that cannot be reached is now reported as unreachable with its cause, a Hub that does not
+answer within 120 s as such, and only an answer that does not parse as UTF-8 JSON as malformed (CES likewise tells a
+submission that never arrived from one whose results could not be read). Test: `tools/fetch-run.test.ts`.
+
+The contract and profile inputs now name their default documents (`doc:doc:runner-contract`, `doc:doc:runtime-profile`) as
+the inventory input already did (`doc:doc:bed-topology`): in the first real run a model guessed the names nine times.
+
+A verification run of several cases could not start: freezing the plans from `plan_result` looked for a supporting rule
+verdict on the `plan` requirement, but the Hub records the accepted plan as the model's judgment claim (the plan slot's text
+and data, no verdict), so every whole-mindmap verification was refused with `workbook_context`. The plan is now that
+judgment claim (exactly one, with data) and the catalog receipt the supporting `commands_known` verdict; the unit fixture
+of `functions/whole-mindmap.test.ts` had carried an invented verdict and now carries the recorded shapes. Found by the
+whole-mindmap test of acceptance scenario 28.

@@ -12,14 +12,24 @@ import { argumentsOf, writeNew, sha256 } from './files.ts';
 
 const SLOTS = ['contract', 'profile', 'inventory'] as const;
 const MAX_BYTES = 16 * 1024 * 1024;
+const TIMEOUT_MS = 120_000;
 
 async function tokenFromStdin(): Promise<string> {
   const chunks: Buffer[] = []; for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks).toString('utf8').trim();
 }
+// A failure to reach the Hub is reported as what it is, never as a malformed answer (as CES tells a submission that never
+// arrived from one whose results could not be read).
 async function get(url: string, bearer: string): Promise<Uint8Array> {
-  const reply = await fetch(url, { headers: { authorization: `Bearer ${bearer}` } });
-  const bytes = new Uint8Array(await reply.arrayBuffer());
+  let reply: Response; let bytes: Uint8Array;
+  try {
+    reply = await fetch(url, { headers: { authorization: `Bearer ${bearer}` }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    bytes = new Uint8Array(await reply.arrayBuffer());
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') throw new Error(`Hub ${TIMEOUT_MS / 1000} 秒内没有答复；稍后用同一命令重取`);
+    const cause = error instanceof Error ? (error.cause as { code?: unknown } | undefined)?.code ?? error.message : '未知原因';
+    throw new Error(`Hub 不可达（${String(cause).slice(0, 120)}）；核对 --hub 是 MCP 条目的地址、网络可达后重取`);
+  }
   if (!reply.ok) throw new Error(`Hub 答复 ${reply.status}：${new TextDecoder().decode(bytes).trim().slice(0, 300)}`);
   if (bytes.length > MAX_BYTES) throw new Error('Hub 答复超过 16 MiB 上限');
   return bytes;
