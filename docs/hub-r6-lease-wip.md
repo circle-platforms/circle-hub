@@ -14,7 +14,7 @@ be grounds for a verified result.
 
 Related changes: the exact capture record is part of the identity of an operation record, a missing capture time is
 marked and never replaced silently by the upload time, lease actions use the lease service's own clock with an exact
-resource-key index, and batch lease actions replay per key. The `knowledge-contribution` pack moves to 1.3.11 in the public
+resource-key index, and batch lease actions replay per key. The `knowledge-contribution` pack moves to 1.3.12 in the public
 numbering, and three entries of `contracts/model.json` gain optional fields only. It was 1.3.2 here until `main` published
 its own 1.3.2 (the dead-lock recovery fix, #92); the merge of `main` combines both as 1.3.7, after this branch's internal
 numbers 1.3.3 to 1.3.6.
@@ -95,7 +95,30 @@ branch:
 - #104: the feeding append path reads through the pool while it holds the feeding log lock.
 - #105: the Hub stores a raw submission before validation, so a caller's token written into its text is persisted.
 
-A seventh review should confirm these before the branch is offered for main.
+## Seventh independent review (codex, 2026-10-30)
+
+The reviewer asked for more on items 1, 3 and 5 and on the token checks. Its full text is on issue #28. Each fix below has a
+test that fails without it:
+
+| Item | Problem | Fix | Test |
+|---|---|---|---|
+| 1 | After the wait, a second read can still come before the receipt, and the answer then claimed a gap of more than a second it had not measured. Other unconfirmed answers said to send the capture again, which reuses the unconfirmed record. | The answer states what the reads saw: the receipt, both lease-clock moments and the wait, or the measured gap when there was no wait. Every next action asks for a new capture made while the lease is held, and says that the same capture or submission again reuses the record. | `hub/knowledge/feeding-leases.test.ts`, with a scripted history: one read or two, a second read still unsettled, a gap of a second, a gap just under it, and no answer that says to resend |
+| 3 | The exact phase reads every item's location as the judged object; a quotation in slot data citing that same location took its text without the grounds check. | A quoted reference is graded also when it is an item's own location: a `src` text already read is checked as grounds against the record the evaluation chose, any other scheme is read and graded again. | `a quotation in slot data of an item's own location is graded as grounds …` (a real submission, with a control that is supported) |
+| 3 | A bound record was checked by kind, schema and bytes, not by its provenance. | A chosen record must have a known provenance, the same in its body and on the record; otherwise it is no grounds (`UNKNOWN_GROUND`), on every path. `declarationGroundRefusal` refuses a missing or unknown provenance too. | `a bound record of provenance client_captured with declared in its body …`; `… declared with synthetic-unknown …`; `a source whose provenance is missing or not a known one cannot be grounds` |
+| 3 | The quote search that resolves commands read whatever record of the bytes the reader could read, not the one the run bound. | The scope and its resolver share one choice of records (`RunScope.pinned`); the quote search reads through it. | `the quote search reads the record the run bound, not another readable record of the same bytes` |
+| 3 | A generated record a run reads on its own authority could not be pinned, so a newer record of the same bytes made later reads fail. | `sourceForRun` reads a named generated record of the bytes the run refers to; every read stays on the chosen record for the whole evaluation, and a new evaluation chooses again. | `a generated source a run reads on its own authority stays on the chosen record …` |
+| 5 | The older-note search loaded every record of the bytes, of every user, and counted the uploader's uploads before checking who asked, so another user could tell whether someone had more than 64. | Who may annotate is checked first. The search reads only the uploader's own records, at most 2000, page by page; more than 64 uploads of the same bytes, or more records than that, are refused with a new upload as the remedy. | `who may annotate an upload is checked before the uploader's uploads are counted`; `an older note is matched among at most 64 …`; `an older note is refused, not guessed, once the uploader's records exceed the bounded read`; `a new note that names another person's upload of the same bytes is refused` |
+| 5 | The frozen-pack refusal was shown with a hand-built note. | The upgrade test submits the note the current Hub writes for a new upload, checks the two slot schemas, and asserts the error object at `/items/0/slots/contribution/0/data/feeding`. | `a run and receipt persisted by the frozen Hub replay unchanged after upgrade` |
+| Tokens | An upload's original was checked for the whole token only; `uploadDocument`, `initialize` and the session header were not checked. | Every request leaves through one exit, where everything it sends but the authorization header is checked against the token that header carries: method and parameters, an uploaded file's decoded bytes, and the other headers. The upload check uses the 12-character rule too (pack 1.3.12). | `a session id holding the token, whole or in part, is refused before any request leaves …`; `an uploaded document is checked in its decoded bytes …`; `a run of a token rotated in before upload is refused like the whole token` |
+
+Known limits, not changed:
+
+- Reading any source, the chosen upload of a note included, looks at every record of its bytes to decide the read tier, as
+  it does on main. The older-note search no longer adds such a read of its own.
+- The reviewer recommends fixing #104 and #105 before this branch goes into main. Both are on main as well; they will be
+  fixed on main by their own changes first, and the branch synced with main before it is offered.
+
+An eighth review should confirm these before the branch is offered for main.
 
 ## Tests that failed on this branch
 
