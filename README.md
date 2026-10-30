@@ -32,7 +32,7 @@ Milestone 1 is built and deployed, and nothing here is a supported release. The 
 
 ## Run the checks
 
-Node.js 24. The PostgreSQL server is not installed separately: tests start a temporary one from the `embedded-postgres` development dependency. Backup, restore and deploy also need `pg_dump` and `pg_restore` of the same major version (PostgreSQL 18 today): `brew install libpq`, or set `CIRCLE_HUB_LIBPQ_BIN`. Without them those tests skip, and a skip is not a pass.
+Node.js 24 on macOS or Linux; Windows is not supported. The PostgreSQL server is not installed separately: tests start a temporary one from the `embedded-postgres` development dependency. Backup, restore and deploy also need `pg_dump` and `pg_restore` of the same major version (PostgreSQL 18 today): `brew install libpq`, or set `CIRCLE_HUB_LIBPQ_BIN`. Without them those tests skip, and a skip is not a pass.
 
 ```sh
 npm ci
