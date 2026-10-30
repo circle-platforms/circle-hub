@@ -12,6 +12,7 @@ import {
   SlotClaim,
   SlotsFile,
   WorkflowFile,
+  WorkflowInput,
   packPathProblem,
   schemas,
 } from './pack.ts';
@@ -172,4 +173,16 @@ test('samples carry their source and what the check must say', () => {
 
 test('every registered schema key is name@major', () => {
   for (const key of Object.keys(schemas)) assert.match(key, /^[a-z][a-z0-9_-]*@(?:0|[1-9][0-9]*)$/);
+});
+
+test('a knowledge facets or index input may declare that unknown entries are disclosed; no other input may', () => {
+  const base = { slot: 'view', role: 'subject', description: '合成计数视图', required: true, many: false };
+  for (const accepts of [['knowledge:facets'], ['knowledge:index'], ['knowledge:facets', 'knowledge:index']]) {
+    assert.ok(WorkflowInput.safeParse({ ...base, accepts, unknown_entries: 'disclose' }).success, accepts.join());
+  }
+  for (const accepts of [['application/json'], ['knowledge:impact'], ['knowledge:links']]) {
+    assert.ok(!WorkflowInput.safeParse({ ...base, accepts, unknown_entries: 'disclose' }).success, accepts.join());
+  }
+  assert.ok(!WorkflowInput.safeParse({ ...base, accepts: ['knowledge:facets'], unknown_entries: 'accept' }).success, 'one value is defined');
+  assert.ok(WorkflowInput.safeParse({ ...base, accepts: ['knowledge:facets'] }).success, 'absent keeps the refusal of every truncated last page');
 });

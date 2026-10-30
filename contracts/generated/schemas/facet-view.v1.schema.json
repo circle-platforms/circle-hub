@@ -626,6 +626,17 @@
     "truncated": {
       "type": "boolean"
     },
+    "unknown_entries": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "description": "Entries left out of the lists and counts because a fact this query needs is unknown or their sources disagree; each is named in the notes with the next action. Absent when none"
+    },
+    "unknown_only": {
+      "type": "boolean",
+      "const": true,
+      "description": "True when the unknown entries are the only reason this view is truncated: nothing was cut or withheld. Absent otherwise"
+    },
     "skipped": {
       "type": "integer",
       "minimum": 0,

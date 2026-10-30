@@ -163,6 +163,11 @@
               "fields"
             ],
             "additionalProperties": false
+          },
+          "unknown_entries": {
+            "description": "For a knowledge:facets or knowledge:index input: bind a view whose last page is truncated only because some entries are unknown (the view says unknown_only and carries unknown_entries), still marked truncated and carrying the count. The pack’s functions must state the unknown entries as unknown, never as zero or as a failure. Absent: every truncated last page is refused",
+            "type": "string",
+            "const": "disclose"
           }
         },
         "required": [

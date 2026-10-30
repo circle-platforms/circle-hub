@@ -6,7 +6,13 @@ import {parseViewId,splitRevision} from './views.ts';
 import {ACTION,COMPONENTS,SCHEMAS} from './store.ts';
 
 const MAX_BINDING_BYTES=16*1024*1024;
-export async function completeKnowledgeView(id:string,context:ExternalReadContext,external:ExternalReaderPort,records:{artifacts:Artifacts;store:RecordStore}):Promise<ExternalRead>{
+/**
+ * `unknownEntries:'disclose'` is the input slot's opt-in (WorkflowInput.unknown_entries): a facet or index view whose last page is
+ * truncated only because some entries are unknown (`unknown_only`, with `unknown_entries` above zero) is bound as it is,
+ * still `truncated` and carrying the count, for a pack that says the unknown entries out loud. Without the opt-in, and for
+ * any other truncation (rows cut, credential hits), a truncated last page is refused.
+ */
+export async function completeKnowledgeView(id:string,context:ExternalReadContext,external:ExternalReaderPort,records:{artifacts:Artifacts;store:RecordStore},options:{unknownEntries?:'disclose'}={}):Promise<ExternalRead>{
  const fail=(message:string):ExternalRead=>({ok:false,id,reason:message,inputError:{message,fix:'索引用 only= 列出本次条目需要的取值，并用 fields= 收窄字段；影响视图用 attached_fields= 收窄后重新开运行'}});
  const parsed=parseViewId(id);let beginning=id;
  if(parsed.ok&&parsed.value.type!=='links'){
@@ -15,7 +21,7 @@ export async function completeKnowledgeView(id:string,context:ExternalReadContex
  }
  const delivered=new Set<string>();
  const placements=new Set<string>();
- let first:Extract<ExternalRead,{ok:true}>|null=null,merged:any=null,next:string|null=beginning;
+ let first:Extract<ExternalRead,{ok:true}>|null=null,merged:any=null,next:string|null=beginning,disclosed=0;
  const visited=new Set<string>(),inputs:string[]=[];
  while(next!==null){
   if(visited.has(next))return fail('知识视图续读没有前进；请管理员修复页游标后重试');visited.add(next);
@@ -48,7 +54,11 @@ export async function completeKnowledgeView(id:string,context:ExternalReadContex
    merged.notes=[...new Set([...merged.notes,...page.notes])];
   }
   next=page.next??null;
-  if(next===null&&page.truncated)return fail('知识视图仍有未交付的内容，不能作为完整绑定；请按视图说明处理来源或凭据后重试');
+  if(next===null&&page.truncated){
+   // Only the unknown-entries truncation of a slot that opted in is bound; every other truncation stays refused.
+   if(options.unknownEntries!=='disclose'||page.unknown_only!==true||!(page.unknown_entries>0))return fail('知识视图仍有未交付的内容，不能作为完整绑定；请按视图说明处理来源或凭据后重试');
+   disclosed=page.unknown_entries;
+  }
   if(next===null&&page.schema==='index-view@1'&&merged.kind==='case'&&visited.size>1){
    // A page's flag describes only that page. Once the frozen sequence is exhausted, its final
    // flag also establishes that the producer knew how to report missing indexed facts; legacy
@@ -62,7 +72,9 @@ export async function completeKnowledgeView(id:string,context:ExternalReadContex
  }
  if(first===null)return fail('知识视图没有首页');
  if(visited.size===1)return first;
- merged.truncated=false;
+ // The earlier pages' own flags are spent: what is left of the sequence is the last page's unknown entries, if any.
+ merged.truncated=disclosed>0;
+ if(disclosed>0){merged.unknown_entries=disclosed;merged.unknown_only=true;}else{delete merged.unknown_entries;delete merged.unknown_only;}
  const schema=merged.schema==='index-view@1'?IndexView:merged.schema==='facet-view@1'?FacetView:ImpactView;
  if(!schema.safeParse(merged).success)return fail('完整知识视图超过单份绑定的结构上限；请按条目所需取值收窄范围');
  const origin={generated:{generator:COMPONENTS.views,inputs}};
