@@ -23,7 +23,10 @@ import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
 /** One input given to start_run: bytes already uploaded, or an external object the Hub reads (read-only) with the pack's system adapter. Exactly one key. */
 export const InputBinding = z.union([
-  z.strictObject({ reference: ReferenceUri.describe('reference returned by upload_file, or any reference the caller may read') }),
+  z.strictObject({
+    reference: ReferenceUri.describe('reference returned by upload_file, or any reference the caller may read'),
+    artifact: Sha256.optional().describe('Exact source_artifact record to bind when equal bytes have multiple captures; only meaningful with a src reference'),
+  }),
   z.strictObject({ external: ExternalObjectId.describe('external object identity system:type:id[@revision], of a type the input slot accepts') }),
   z.strictObject({ run: RunId.describe('a run whose latest accepted submitted validation record this slot binds, when the slot declares from_runs') }),
 ]);

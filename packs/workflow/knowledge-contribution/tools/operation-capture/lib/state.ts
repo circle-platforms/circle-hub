@@ -36,7 +36,7 @@ export interface UploadEvent {
   session: string;
   uploaded_at: string;
   capture: number;
-  source: { sha256: string; reference: string };
+  source: { sha256: string; reference: string; artifact?: string };
   provenance_type: string;
   previous: string | null;
   digest: string;
@@ -282,8 +282,11 @@ function uploadEvent(value: unknown, session: string, sequence: number): UploadE
   need(row.kind === 'upload' && row.provenance_type === GENERATED.provenance_type, 'invalid_manifest', '上传事件种类或出处不符');
   time(row.uploaded_at);
   need(Number.isSafeInteger(row.capture) && (row.capture as number) > 0 && (row.capture as number) < sequence, 'invalid_manifest', '上传对应的采集序号不符');
-  const source = exact(row.source, ['sha256', 'reference']);
+  need(isRecord(row.source), 'invalid_manifest', '上传来源格式不对');
+  const { artifact, ...source } = row.source;
+  exact(source, ['sha256', 'reference']);
   need(typeof source.sha256 === 'string' && /^[0-9a-f]{64}$/.test(source.sha256) && source.reference === `src:${source.sha256}`, 'invalid_manifest', '上传引用与原件摘要不符');
+  need(artifact === undefined || typeof artifact === 'string' && /^[0-9a-f]{64}$/.test(artifact), 'invalid_manifest', '上传原件记录格式不对');
   return row as unknown as UploadEvent;
 }
 
@@ -378,9 +381,10 @@ export async function appendCapture(dir: string, input: Omit<CaptureEvent, 'sche
   }
 }
 
-export async function appendUpload(dir: string, capture: CaptureEvent, reference: string): Promise<UploadEvent> {
+export async function appendUpload(dir: string, capture: CaptureEvent, receipt: string | {reference:string;artifact?:string}): Promise<UploadEvent> {
   const events = await readEvents(dir, capture.session);
   need(!events.some(event => event.kind === 'upload' && event.capture === capture.sequence), 'duplicate_upload', '该采集已经有上传回执');
+  const source = typeof receipt === 'string' ? {reference:receipt} : receipt;
   const event: UploadEvent = {
     schema: GENERATED.event_schema,
     kind: 'upload',
@@ -388,7 +392,7 @@ export async function appendUpload(dir: string, capture: CaptureEvent, reference
     session: capture.session,
     uploaded_at: new Date().toISOString(),
     capture: capture.sequence,
-    source: { sha256: capture.output.sha256, reference },
+    source: { sha256: capture.output.sha256, ...source },
     provenance_type: GENERATED.provenance_type,
     previous: events.at(-1)?.digest ?? null,
     digest: '',

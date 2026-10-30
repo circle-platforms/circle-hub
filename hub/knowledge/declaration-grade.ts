@@ -1,3 +1,5 @@
+import { parseReference } from '../refs/api.ts';
+
 const OPERATION_SCHEMAS = new Set(['fed-observation@1', 'fed-procedure@1', 'fed-pitfall@1']);
 
 export function operationSchema(schema: unknown): boolean {
@@ -22,4 +24,20 @@ export async function declarationGroundRefusal(
   if (ref.scheme !== 'rec' || !ref.record) return null;
   const stored = await record(ref.record);
   return stored && declarationGradeBody(stored.body) ? DECLARATION_GROUND : null;
+}
+
+/**
+ * A use as grounds stands on the reference and on the grounds it carries (a tree entry's or record's own grounds): none of
+ * them may be a declaration-grade record. A ground that does not parse names no record and is left to the caller.
+ */
+export async function declarationGroundsRefusal(
+  ref: {scheme: string; record?: string},
+  inner: readonly string[] | undefined,
+  record: (digest: string) => Promise<{body: unknown} | null>,
+): Promise<string | null> {
+  for (const one of [ref, ...(inner ?? []).flatMap(ground => { try { return [parseReference(ground)]; } catch { return []; } })]) {
+    const named = await declarationGroundRefusal(one, record);
+    if (named) return named;
+  }
+  return null;
 }

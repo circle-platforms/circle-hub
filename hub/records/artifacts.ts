@@ -281,6 +281,9 @@ export class RecordArtifacts implements Artifacts {
       origin,
       author,
       captured_at: capturedAt,
+      // An upload says whether its client declared the capture time. Any other artifact has no client capture to declare
+      // and keeps exactly the record it had before the field existed, so its identity and every view built on it do not move.
+      ...('upload' in origin ? { captured_at_declared: input.capturedAt !== undefined } : {}),
       provenance_type: input.provenanceType,
       read_tier: readTier,
       requested_read_tier:requestedTier,
@@ -288,8 +291,12 @@ export class RecordArtifacts implements Artifacts {
       scan: { ...scan, ...(accepted === null ? {} : {accepted}), ...(derived === null ? {} : {derived}) },
     };
     // The acceptance takes part only when there is one, so the dedupe key of every other ingest is what it always was.
+    // An upload's explicit capture time distinguishes its captures; an upload without one keeps the legacy idempotency.
+    // Every other origin (a connector read, a projection) passes a time too, but keeps the key it always had, so reading
+    // the same answer again reuses its record (round-four review, item 7).
     const dedupe = digestOf({
       sha256,
+      ...('upload' in origin && input.capturedAt !== undefined ? { captured_at: capturedAt } : {}),
       media_type: input.mediaType,
       name,
       origin,

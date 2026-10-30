@@ -68,15 +68,16 @@ export async function enable(scratch: Scratch, url: string): Promise<Result> {
   return skill(scratch, ['enable', '--session', SESSION, '--hub', url, '--token-file', scratch.tokenFile]);
 }
 
-interface StoredUpload { bytes: Buffer; provenance: string }
+interface StoredUpload { bytes: Buffer; provenance: string; artifact: string; captured_at: string; received_at: string }
 async function body(request: IncomingMessage): Promise<any> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(Buffer.from(chunk));
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-export async function fakeHub(t: { after(fn: () => Promise<void>): void }, options: { delayUploadMs?: number; onRequest?: (input: any) => void | Promise<void> } = {}) {
+export async function fakeHub(t: { after(fn: () => Promise<void>): void }, options: { delayUploadMs?: number; tokens?: readonly string[]; onRequest?: (input: any) => void | Promise<void> } = {}) {
   const requests: Array<{ headers: IncomingMessage['headers']; body: any }> = [];
+  const tokens = new Set(options.tokens ?? [TOKEN]);
   const attempts: Array<{ headers: IncomingMessage['headers']; body: any }> = [];
   const uploads = new Map<string, StoredUpload>();
   const runs: any[] = [];
@@ -86,7 +87,7 @@ export async function fakeHub(t: { after(fn: () => Promise<void>): void }, optio
       const input = await body(request);
       attempts.push({ headers: request.headers, body: input });
       await options.onRequest?.(input);
-      if (request.headers.authorization !== `Bearer ${TOKEN}`) {
+      if (![...tokens].some(token => request.headers.authorization === `Bearer ${token}`)) {
         response.writeHead(401).end('{}');
         return;
       }
@@ -102,11 +103,15 @@ export async function fakeHub(t: { after(fn: () => Promise<void>): void }, optio
           if (options.delayUploadMs) await new Promise(resolve => setTimeout(resolve, options.delayUploadMs));
           const bytes = Buffer.from(args.file_path, 'base64');
           const digest = createHash('sha256').update(bytes).digest('hex');
-          uploads.set(digest, { bytes, provenance: args.provenance_type ?? 'declared' });
-          value = { call_result: 'ok', errors: [], trace: 'b'.repeat(32), acceptance: 'accepted', reference: `src:${digest}`, sha256: digest, size: bytes.length, media_type: args.media_type ?? 'text/plain' };
+          const provenance = args.provenance_type ?? 'declared';
+          const receivedAt = new Date().toISOString();
+          const capturedAt = args.captured_at ?? receivedAt;
+          const artifact = createHash('sha256').update(JSON.stringify({ name: args.name ?? null, provenance, digest, captured_at: capturedAt, received_at: receivedAt })).digest('hex');
+          uploads.set(digest, { bytes, provenance, artifact, captured_at: capturedAt, received_at: receivedAt });
+          value = { call_result: 'ok', errors: [], trace: 'b'.repeat(32), acceptance: 'accepted', reference: `src:${digest}`, artifact, sha256: digest, size: bytes.length, media_type: args.media_type ?? 'text/plain' };
         } else if (name === 'start_run') {
           runs.push(args);
-          value = { call_result: 'ok', errors: [], trace: 'b'.repeat(32), run: { run: 'run_01arz3ndektsv4rrffq69g5fav', pack: 'knowledge-contribution@1.3.2', pack_digest: PACK_DIGEST, product: args.product, root: ROOT } };
+          value = { call_result: 'ok', errors: [], trace: 'b'.repeat(32), run: { run: 'run_01arz3ndektsv4rrffq69g5fav', pack: 'knowledge-contribution@1.3.14', pack_digest: PACK_DIGEST, product: args.product, root: ROOT } };
         } else if (name === 'submit_result') {
           submissions.push(args);
           const errors: any[] = [];

@@ -116,7 +116,10 @@ test('procedure and pitfall keep the same binding, a contradiction is marked, an
   const first = await ctx.service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', procedure, '核对合成状态的步骤'), call);
   assert.equal(first.result?.contributions?.stored.length, 1, JSON.stringify(first.errors));
   const left = first.result!.contributions!.stored[0].record;
-  const pitfall = {schema:'fed-pitfall@1', product:ctx.run.product, root:ctx.root, path:'/commands/net/ping', source:{system:'upload', bytes:ctx.sha}, phenomenon:'合成显示为空', suggestion:'先核对地址', quote:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}, relations:[{kind:'contradicts', object:sha256Hex(canonicalize(operationIdentity(procedure))), quote:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}}]};
+  const leftView = await ctx.w.knowledge.layers.contributions.readView(left, ctx.w.admin);
+  const target = leftView && 'statement' in leftView.contribution && leftView.contribution.feeding?.schema === 'fed-procedure@1' ? leftView.contribution.feeding.object : undefined;
+  assert.ok(target);
+  const pitfall = {schema:'fed-pitfall@1', product:ctx.run.product, root:ctx.root, path:'/commands/net/ping', source:{system:'upload', bytes:ctx.sha}, phenomenon:'合成显示为空', suggestion:'先核对地址', quote:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}, relations:[{kind:'contradicts', object:target, quote:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}}]};
   const secondRun = await ctx.service.startRun(ctx.w.admin, {pack:'knowledge-contribution', product:'Acme', build:ctx.build.name, inputs:{subject:{reference:ctx.run.sources.find(source => source.slot==='subject')!.reference}, originals:ctx.run.sources.filter(source => source.slot==='originals').map(source => ({reference:source.reference}))}}, {...call, traceId:'d'.repeat(32)});
   assert.equal(secondRun.call_result, 'ok', JSON.stringify(secondRun.errors));
   const other = {...ctx, run:RunRecord.parse((await ctx.service.getRun(ctx.w.admin, secondRun.run!.run))!.run)};
@@ -152,7 +155,10 @@ test('retracting a pitfall contribution marks only that entry and leaves the tre
   const observed = await ctx.service.submitResult(ctx.w.admin, submit(ctx, '/commands/system/show', observedFeeding), call);
   assert.equal(observed.result?.contributions?.stored.length, 1, JSON.stringify(observed.errors));
   const observationRecord = observed.result!.contributions!.stored[0].record;
-  const pitfall = {schema:'fed-pitfall@1', product:ctx.run.product, root:ctx.root, path:'/commands/net/ping', source:{system:'upload', bytes:ctx.sha}, phenomenon:'合成显示为空', suggestion:'先核对地址', quote:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}, relations:[{kind:'contradicts', object:sha256Hex(canonicalize(operationIdentity(observedFeeding as unknown as Record<string, unknown>))), quote:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}}]};
+  const observedView = await ctx.w.knowledge.layers.contributions.readView(observationRecord, ctx.w.admin);
+  const target = observedView && 'statement' in observedView.contribution && observedView.contribution.feeding?.schema === 'fed-observation@1' ? observedView.contribution.feeding.object : undefined;
+  assert.ok(target);
+  const pitfall = {schema:'fed-pitfall@1', product:ctx.run.product, root:ctx.root, path:'/commands/net/ping', source:{system:'upload', bytes:ctx.sha}, phenomenon:'合成显示为空', suggestion:'先核对地址', quote:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}, relations:[{kind:'contradicts', object:target, quote:{reference:`src:${ctx.sha}/text@1/l/1`, text:quote}}]};
   const secondRun = await ctx.service.startRun(ctx.w.admin, {pack:'knowledge-contribution', product:'Acme', build:ctx.build.name, inputs:{subject:{reference:ctx.run.sources.find(source => source.slot==='subject')!.reference}, originals:ctx.run.sources.filter(source => source.slot==='originals').map(source => ({reference:source.reference}))}}, {...call, traceId:'f'.repeat(32)});
   assert.equal(secondRun.call_result, 'ok', JSON.stringify(secondRun.errors));
   const other = {...ctx, run:RunRecord.parse((await ctx.service.getRun(ctx.w.admin, secondRun.run!.run))!.run)};
@@ -222,7 +228,10 @@ test('a product reader who can read the original sees the operation record on th
   const first = await ctx.service.submitResult(ctx.w.admin, submit(reader, '/commands/net/ping', seen, '执行了读者可见的显示'), {...call, traceId:'9'.repeat(32)});
   assert.equal(first.result?.contributions?.stored.length, 1, JSON.stringify(first.errors));
   const left = first.result!.contributions!.stored[0].record;
-  const pitfall = {schema:'fed-pitfall@1', product:run.product, root:ctx.root, path:'/commands/net/ping', source:{system:'upload', bytes:shared.body.sha256}, phenomenon:'读者可见的显示为空', suggestion:'先核对地址', quote:{reference:`src:${shared.body.sha256}/text@1/l/1`, text:sharedQuote}, relations:[{kind:'contradicts', object:sha256Hex(canonicalize(operationIdentity(seen))), quote:{reference:`src:${shared.body.sha256}/text@1/l/1`, text:sharedQuote}}]};
+  const seenView = await ctx.w.knowledge.layers.contributions.readView(left, ctx.w.admin);
+  const target = seenView && 'statement' in seenView.contribution && seenView.contribution.feeding?.schema === 'fed-observation@1' ? seenView.contribution.feeding.object : undefined;
+  assert.ok(target);
+  const pitfall = {schema:'fed-pitfall@1', product:run.product, root:ctx.root, path:'/commands/net/ping', source:{system:'upload', bytes:shared.body.sha256}, phenomenon:'读者可见的显示为空', suggestion:'先核对地址', quote:{reference:`src:${shared.body.sha256}/text@1/l/1`, text:sharedQuote}, relations:[{kind:'contradicts', object:target, quote:{reference:`src:${shared.body.sha256}/text@1/l/1`, text:sharedQuote}}]};
   const second = await ctx.service.submitResult(ctx.w.admin, {...submit(reader, '/commands/net/ping', pitfall, '读者可见的显示为空时先核对地址'), run:run.run}, {...call, traceId:'a1'.padEnd(32, 'a')});
   assert.equal(second.result?.contributions?.stored.length, 1, JSON.stringify(second.errors));
   const page = await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/net/ping'], depth:0}, ctx.w.user);
@@ -243,7 +252,7 @@ test('a product reader who can read the original sees the operation record on th
 test('a repeated byte output keeps the exact capture record bound by its run', {skip}, async t => {
   const ctx = await world(t);
   const first = ctx.run.sources.find(source => source.slot === 'originals' && source.reference === `src:${ctx.sha}`)!.artifact;
-  const second = await ctx.w.kit.artifacts.ingest({bytes:new TextEncoder().encode(echo), mediaType:'text/plain', origin:{upload:{session:'operation-session-two',message:null}}, author:{user:ctx.w.admin.id}, provenanceType:'client_captured', visibility:{readers:[ctx.w.admin.id],admins:true,packs:[],shareable:false}, name:'second-capture.txt'});
+  const second = await ctx.w.kit.artifacts.ingest({bytes:new TextEncoder().encode(echo), mediaType:'text/plain', origin:{upload:{session:'operation-session-two',message:null}}, author:{user:ctx.w.admin.id}, provenanceType:'client_captured', visibility:{readers:[ctx.w.admin.id],admins:true,packs:[],shareable:false}, name:'second-capture.txt', capturedAt:'2026-10-27T08:00:00.000Z'});
   assert.notEqual(second.digest, first);
   const tree = ctx.run.sources.find(source => source.slot === 'originals' && source.reference !== `src:${ctx.sha}`)!.reference;
   const started = await ctx.service.startRun(ctx.w.admin, {pack:'knowledge-contribution',product:ctx.run.product,build:ctx.build.name,inputs:{subject:{reference:ctx.run.sources.find(source => source.slot==='subject')!.reference},originals:[{reference:tree},{reference:`src:${second.body.sha256}`}]}}, {...call,traceId:'a2'.repeat(16)});

@@ -11,9 +11,9 @@ import { startPostgres } from '../testing/postgres.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords } from '../testing/records.ts';
 import type { TestRecordsKit } from '../testing/records.ts';
-import type { ActionBody, IngestInput, Principal, Visibility } from './api.ts';
-import { artifactShareKey } from './constants.ts';
-import { sha256Hex } from './digest.ts';
+import { scanForCredentials, type ActionBody, type IngestInput, type Principal, type SourceArtifactBody, type Visibility } from './api.ts';
+import { artifactShareKey, RECORD_SCHEMAS } from './constants.ts';
+import { digestOf, sha256Hex } from './digest.ts';
 import { runRecord } from '../../contracts/src/fixtures.ts';
 import { IntegrityError, LimitError, RecordsError } from './errors.ts';
 
@@ -87,6 +87,70 @@ test('a clean upload stores the bytes and a source_artifact record; repeating it
   assert.notEqual(second.digest, artifact.digest);
   assert.equal((await kit.artifacts.records(body.sha256)).length, 2);
   assert.deepEqual(await readdir(join(kit.dataDir, 'objects', body.sha256.slice(0, 2))), [body.sha256]);
+});
+
+test('explicit capture times distinguish equal bytes and the same capture replays idempotently', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const { uploader } = await people(kit);
+  const input = { ...upload(uploader, Buffer.from('synthetic repeated capture')), provenanceType: 'client_captured' as const };
+  const first = await kit.artifacts.ingest({ ...input, capturedAt: '2026-10-27T08:00:00.000Z' });
+  const second = await kit.artifacts.ingest({ ...input, capturedAt: '2026-10-27T08:00:01.000Z' });
+  const replay = await kit.artifacts.ingest({ ...input, capturedAt: '2026-10-27T08:00:00.000Z' });
+  assert.notEqual(first.digest, second.digest);
+  assert.equal(replay.digest, first.digest);
+  assert.notEqual(first.created_at, second.created_at);
+  assert.equal((await kit.artifacts.records(first.body.sha256)).length, 2);
+});
+
+test('a fresh capture creates a new identity when an old record has no time-source marker', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const { uploader } = await people(kit);
+  const bytes = Buffer.from('synthetic legacy capture');
+  const capturedAt = '2026-10-27T08:00:00.000Z';
+  // The record main wrote: its uploads named no capture time, and their dedupe key had none.
+  const input = { ...upload(uploader, bytes), provenanceType: 'client_captured' as const };
+  const body: SourceArtifactBody = {
+    sha256: sha256Hex(bytes), size: bytes.byteLength, media_type: 'text/markdown', name: '用例说明.md',
+    origin: { upload: { session: 'sess-synthetic-1', message: 'msg-7' } }, author: { user: uploader.id, declared: '合成作者' },
+    captured_at: capturedAt, provenance_type: 'client_captured', read_tier: 'model_readable', requested_read_tier: 'model_readable',
+    visibility: { readers: [uploader.id], admins: true, packs: [], shareable: true }, scan: scanForCredentials(bytes),
+  };
+  const dedupe = digestOf({
+    sha256: body.sha256, media_type: body.media_type, name: body.name, origin: body.origin,
+    author: body.author, provenance_type: body.provenance_type, read_tier: body.read_tier, visibility: body.visibility,
+    requested_read_tier: undefined, accepted: undefined, derived: undefined,
+  });
+  await kit.objects.put(bytes, body.media_type);
+  const legacy = await kit.store.put({
+    kind: 'source_artifact', schema: RECORD_SCHEMAS.source_artifact, provenance: 'client_captured', created_at: '2026-10-27T08:00:02.000Z', body,
+    index: [{ key: 'artifact.sha256', value: body.sha256 }, { key: 'artifact.dedupe', value: dedupe }, { key: 'artifact.reader', value: uploader.id }, { key: 'artifact.author', value: uploader.id }],
+  });
+  const replay = await kit.artifacts.ingest(input);
+  assert.equal(replay.digest, legacy.digest);
+  assert.equal(replay.body.captured_at_declared, undefined);
+  const fresh = await kit.artifacts.ingest({ ...input, capturedAt: '2026-10-27T08:00:01.000Z' });
+  assert.notEqual(fresh.digest, legacy.digest);
+  assert.equal(fresh.body.captured_at_declared, true);
+  assert.equal((await kit.store.get<SourceArtifactBody>(legacy.digest))?.body.captured_at_declared, undefined);
+});
+
+test('a connector answer read again at another time reuses its record, as before capture times existed', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const { uploader } = await people(kit);
+  const read = {
+    bytes: Buffer.from('synthetic connector answer'), mediaType: 'application/json',
+    origin: { read: { object: 'synthetic:item:obj-1', resource: 'res-synthetic', action: null } }, author: { user: null },
+    provenanceType: 'observed' as const, visibility: { readers: [uploader.id], admins: true, packs: [], shareable: false },
+    name: 'synthetic-read/answer',
+  };
+  const first = await kit.artifacts.ingest({ ...read, capturedAt: '2026-10-27T08:00:00.000Z' });
+  const again = await kit.artifacts.ingest({ ...read, capturedAt: '2026-10-27T09:30:00.000Z' });
+  assert.equal(again.digest, first.digest, 'the same answer read later is the same record');
+  assert.equal(Object.hasOwn(first.body, 'captured_at_declared'), false, 'not an upload: no capture declaration either way');
+  assert.equal((await kit.artifacts.records(first.body.sha256)).length, 1);
 });
 
 test('an upload with a plaintext credential is refused: no bytes kept, only the digest and the scan conclusion', async (t) => {

@@ -62,7 +62,7 @@ test('scenario 43: T4-3 preserves three synthetic configuration snapshots and th
     const citation = quote(saved.event, 1, `ORBIT synthetic probe interval: ${index === 1 || index === 2 ? '30' : '10'}`);
     const feeding = {
       schema: 'fed-observation@1', product: world.productId, root: world.root, path: target.path,
-      source: { system: 'upload', bytes: saved.event.output.sha256 }, action: actionText, result: citation,
+      source: { system: 'upload', bytes: saved.event.output.sha256, artifact: saved.upload.source.artifact! }, action: actionText, result: citation,
     };
     const submitted: import('./support/mcp.ts').Answer<import('./support/mcp.ts').Outputs['submit_result']> = await world.client.call('submit_result', {
       run: run.run, model: 'integration-synthetic@1',
@@ -93,5 +93,83 @@ test('scenario 43: T4-3 preserves three synthetic configuration snapshots and th
   assert.deepEqual(action?.holder, { user: world.bed.reviewer.user.id, run: run.run });
   const linked = await world.bed.hub.records.store.find({ key: 'knowledge.contribution.run', value: run.run, kind: 'claim', limit: 10 });
   for (const record of records) assert.ok(linked.items.some(row => row.digest === record), 'the contribution and lease holder name the same run');
-  // Full run-lease binding and the no-lease authorization marker are not present in the current operation schema.
+  // The record names the device and bed it touched; the lease stays with the test-bed booking (owner's decision, 2026-10-30).
+});
+
+test('scenario 43: T4-3 records a declared device on its booked bed and rejects foreign devices', async t => {
+  const world = await openOperationWorld(t);
+  if (!world) return;
+  await world.bed.hub.assignPack(world.bed.reviewer.principal, 'test-bed');
+  const target = await commandTarget(world.client, world.root, '/commands/widget/health/interval');
+  const inventory = {
+    schema: 'test-bed-manifest@1',
+    beds: [{
+      name: 'bench-a',
+      devices: [
+        { name: 'edge-a', type: 'router', ipv4: ['192.0.2.44/26'], ipv6: [], installed: { build: world.build } },
+        { name: 'peer-a', type: 'client', ipv4: ['192.0.2.45/26'], ipv6: [] },
+      ],
+      services: [], reserved: [],
+    }],
+  };
+  await world.bed.hub.hub.docs.put(world.bed.hub.admin.principal, 'operation-device-bed', new TextEncoder().encode(JSON.stringify(inventory)), { fileName: 'operation-device-bed.json' });
+  const booked = await world.client.call('start_run', {
+    pack: 'test-bed', inputs: { inventory: { external: 'doc:doc:operation-device-bed' } },
+    parameters: { action: 'acquire', bed: 'bench-a', need: { devices: [{ type: 'router', count: 1 }], build: world.build } },
+  });
+  assert.equal(booked.isError, false, booked.text);
+  const booking = booked.out.run?.run;
+  assert.ok(booking);
+
+  const saved = await capture(world, 'ORBIT synthetic probe interval: 20\n', { command: 'show health synthetic-pool', bed: 'bench-a', device: 'edge-a', address: '192.0.2.44' });
+  const subject = await world.client.upload(new TextEncoder().encode(JSON.stringify({ items: [{ id: 'assertion', title: '合成设备操作' }] })), 'operation-device-bed.json');
+  const started = await world.client.call('start_run', {
+    pack: 'knowledge-contribution', product: world.product, build: world.build, predecessor: booking,
+    inputs: { subject: { reference: subject }, originals: [{ reference: `src:${saved.event.output.sha256}` }] },
+  });
+  assert.equal(started.isError, false, JSON.stringify(started.out.errors));
+  const run = started.out.run?.run;
+  assert.ok(run);
+  const submit = async (device: string, action: string, extra: Record<string, unknown> = {}): Promise<import('./support/mcp.ts').Answer<import('./support/mcp.ts').Outputs['submit_result']>> => {
+    const citation = quote(saved.event, 1, saved.bytes.toString('utf8').split('\n')[0]!);
+    return world.client.call('submit_result', {
+      run, model: 'integration-synthetic@1',
+      items: [{
+        item: 'assertion', handling: 'handled', slots: { contribution: [{
+          code: 'assertion', text: action,
+          data: {
+            root: world.root, path: target.path,
+            source: { reference: citation.reference, quote: citation.text },
+            feeding: {
+              schema: 'fed-observation@1', product: world.productId, root: world.root, path: target.path,
+              source: { system: 'upload', bytes: saved.event.output.sha256, artifact: saved.upload.source.artifact! }, action, result: citation, device, ...extra,
+            },
+          },
+        }] },
+      }],
+    });
+  };
+
+  const answer = await submit('edge-a', '预订台架上的采集');
+  assert.equal(answer.out.acceptance, 'accepted', JSON.stringify(answer.out.errors));
+  const receipt = answer.out.result?.contributions?.stored[0];
+  assert.ok(receipt);
+  assert.deepEqual(Object.keys(receipt).sort(), ['item', 'record']);
+  const view = await contribution(world, target.path, receipt.record);
+  const feeding = FedObservationSchema.parse(view.contribution.feeding);
+  assert.equal(feeding.device, 'edge-a');
+  assert.equal(feeding.bed, 'bench-a', 'the only bed of the frozen manifest that has the device');
+  assert.match(view.note ?? '', /设备 edge-a（台架 bench-a）/);
+
+  const foreign = await submit('edge-other', '清单外设备');
+  assert.equal(foreign.out.acceptance, 'not_accepted');
+  assert.equal(foreign.out.result?.contributions?.stored.length ?? 0, 0);
+  const message = JSON.stringify(foreign.out.errors);
+  assert.match(message, /不在运行绑定的台架清单里/);
+  assert.match(message, /edge-a/);
+  assert.match(message, /peer-a/);
+  const supplied = await submit('edge-a', '客户端自报租约', { lease: 'lse_client_supplied' });
+  assert.equal(supplied.out.acceptance, 'not_accepted');
+  assert.equal(supplied.out.result?.contributions?.stored.length ?? 0, 0);
+  assert.match(JSON.stringify(supplied.out.errors), /lease/);
 });

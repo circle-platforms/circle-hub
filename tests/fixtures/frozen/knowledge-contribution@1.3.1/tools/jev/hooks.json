@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "before_tool": [
+      {
+        "name": "Jev 外发选择加入确认",
+        "tools": "execute",
+        "command": "node --input-type=module -e 'import{readFileSync}from \"node:fs\";try{const v=JSON.parse(readFileSync(0,\"utf8\"));if(!v||v.event!==\"before_tool\"||typeof v.tool_name!==\"string\")throw new Error();if(v.tool_name!==\"execute\"){console.log(\"{}\");}else if(typeof v.tool_input?.command!==\"string\"){console.log(JSON.stringify({decision:\"ask\"}));}else{const c=v.tool_input.command;console.log(JSON.stringify(c.includes(\"jev.ts\")&&c.includes(\"--send\")?{decision:\"ask\"}:{}));}}catch{console.log(JSON.stringify({decision:\"ask\"}));}'"
+      }
+    ]
+  }
+}

@@ -24,6 +24,9 @@ function required(values: Map<string, string>, key: string): string {
 
 async function main(args: string[]): Promise<number> {
   const [command, ...rest] = args;
+  // Circle Hub and its packs support macOS and Linux only for now (owner's decision, 2026-10-30): on Windows the hook
+  // captures nothing and every command stops here, rather than failing later on POSIX file modes.
+  const windows = process.platform === 'win32';
   if (command === 'hook') {
     const value: unknown = JSON.parse(await new Promise<string>((resolveInput, reject) => {
       const chunks: Buffer[] = [];
@@ -31,9 +34,10 @@ async function main(args: string[]): Promise<number> {
       process.stdin.on('end', () => resolveInput(Buffer.concat(chunks).toString('utf8')));
       process.stdin.on('error', reject);
     }));
-    await captureAfterTool(value);
+    if (!windows) await captureAfterTool(value);
     return 0;
   }
+  if (windows) throw new OperationError('unsupported_platform', '操作采集暂不支持 Windows：Circle Hub 及其任务包目前只支持 macOS 和 Linux');
   if (command === 'enable') {
     const values = options(rest, ['--session', '--hub', '--token-file']);
     const session = required(values, '--session');

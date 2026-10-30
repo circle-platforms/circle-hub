@@ -1,11 +1,63 @@
-# knowledge-contribution 1.3.2
+# knowledge-contribution 1.3.14
 
 所有者 2026-10-23 傍晚决定：候选留在 Circle 本地。Circle 的整合技能判定成为事实后开独立回注运行；Hub 核对原文、来源和归位，要求项全部满足才入回注层。依据是新版 `docs/hub-r4-tasks/kb-candidates.md`、知识库方向第二节及 K03、W07 R[4]、P10、K02 F[6]。
 
-## 1.3.2
+## 1.3.14（按所有者方向收窄，2026-10-30）
 
+1.3.8 至 1.3.13 是 circle-hub #102 复核期间的编号，没有合入；本版取代它们。所有者 2026-10-30 决定：台架的预订、租约和释放都归 test-bed 包，回注层不证明租约；Circle Hub 及其任务包暂不支持 Windows。
+
+- 操作记录只写设备和台架，不写租约：结构里去掉 `lease`、`lease_id` 和 `lease_unconfirmed`，客户端写了也会被拒。运行或它接续的预订冻结了台架清单时，Hub 按清单核对 `device` 和 `bed`；只有一个台架含该设备时补上台架，同名设备在几个台架里就要写明 `bed`。没有清单时照声明记录。视图写「设备 X（台架 Y）」。
+- submit_result 回执的 `stored` 只有 `item` 和 `record`。
+- Hub 新写的上传说明（fed-note）在 `source.artifact` 里写明对应的上传原件记录，同一份字节上传两次也能分清；提案原样带回这个字段即可。旧说明不带这个字段，仍按上传者和采集时刻找它的上传。
+- 上传自动生成的 fed-note 只在客户端声明了采集时刻时带 `at`；没有声明时不写 `at`，另记 `captured_at_declared=false` 和 Hub 收到时刻 `received_at`，和三类操作记录一致。读侧写「采集时间未声明，记录里没有采集时刻」。锁定 1.3.7 及更早版本的运行带不了新结构的上传说明，用当前版本重新开运行；冻结 Hub 写下的旧说明照旧可以标注。
+- operation-capture：采集时把当前 Hub 令牌替换为 `%HUB_TOKEN%`，照常上传。提案任何文字含当前令牌，开运行前就拒；submit_result 用同一次读到的令牌核对整份请求并发送，令牌在两步之间轮换也拦得住。令牌随调用传给携带它的请求，不存在客户端上。
+- 撤回 1.3.12、1.3.13 的出口核对（Hub 地址、请求头、上传文件里的 12 个字符令牌片段）：只核对整个令牌，Hub 另在服务端拒收含调用者令牌的请求（circle-hub #106）。
+- operation-capture 在 Windows 上直接报错，钩子不采集。
+
+## 1.3.7（合入 main，2026-10-30）
+
+- main 另发了自己的 1.3.2（会话锁死锁恢复修复，circle-hub #92），与本分支公开编号里的 1.3.2 字节不同；合入后的包改为 1.3.7，排在本分支内部交接编号之后。下面的 1.3.1–1.3.6 是本分支的内部编号，不是 main 上的同号版本。
 - 会话状态锁的持有进程死掉后，几个钩子同时恢复这把锁时，不会再有钩子中途报错退出。隔离出来的所有者文件（`.lock/.stale-*`）在其他等待者看来同样是失效所有者，可能被再隔离一次。因此，等待者删除自己的隔离文件时发现它已不在（ENOENT），或读到一个正被删除、链接数为 0 的锁文件，都改为放弃这一轮，稍后再看，不再当错误抛出。互斥不变。
 - 1.3.1 及以前，碰上这两种竞争的钩子照常静默返回，只在 `errors.jsonl` 记一条错误；这次工具输出不进清单，也不上传。`testing/operation-capture.test.ts` 在恢复过程中注入这两种竞争并覆盖。
+
+## 1.3.6（WIP 交接，2026-10-27）
+
+本版只补交接边界和验证限制，不新增功能。
+
+本分支不作为已解除阻断的成品合入。第三轮复核指出的预取绕过声明级检查、当前令牌子串泄露、缺采集时间的 `at` 表达，以及租约时间戳与行锁顺序，均已有实现和定向反例；在独立复核确认前，仍按 GitHub issue 中的已知阻断项交接。复现入口分别是 `hub/runs/engine/captured-ground.test.ts`、`testing/operation-integrate.test.ts`、`hub/records/artifacts.test.ts` 和 `hub/leases/time-order.test.ts`，每条直接构造旧绑定或预取、令牌前后缀与轮换、缺采集时间声明、受行锁阻塞的释放动作。
+
+时间顺序修复覆盖 `LeaseService.#change` 的取锁后取时；单个 gated 事务反例不等于证明所有租约操作及其调用方都没有并发时序问题，同事仍须独立复核锁、时间戳与可见性。合并 `hub-redesign@768ff328` 后只按要求运行受影响测试、类型检查、契约生成检查和 docs；此前的最终全量已按所有者要求停止，合入后的最终全量没有运行，不能据此排除其他目录或旧场景的回归。
+
+## 1.3.5
+
+- 缺采集时间声明时操作记录省略 `at`，另存 `received_at` 与 `captured_at_declared=false`，读侧说明「采集时间未声明（取自上传时刻）」。同元数据旧记录原样重传不补标记；新的明确采集时刻产生新身份。
+- 预取只复用普通解析结果，作为根据使用时重新核对出处和 groundable；旧绑定缺 artifact 也通过现有原件读取接口核定出处。
+- device/bed 中任何位置包含当前 Hub 令牌都拒绝，start_run 和 submit_result 前重新读取当前令牌文件，覆盖轮换；大小写变体不冒充实际令牌。
+- 租约行锁先取得再取动作时间，晚提交的动作不倒填较早采集区间。扫描遍历先计宽度再展开字段，历史测试旁路执行 EXPLAIN ANALYZE 汇总实际过滤行数。
+
+## 1.3.4
+
+- 原件用可选 `captured_at_declared` 区分客户端明确声明的采集时刻与 Hub 默认时刻；缺声明的旧上传保留，但设备租约为未能确认，不能用上传时刻补造证明。其他持有人的租约在区间内到期也按区间变化处理。
+- 省略 `source.artifact` 时，Hub 先用运行绑定核定原件，再以该记录和补全的床/设备计算身份。不同采集分别入层，同一次重交幂等；冻结清单推导的床同样进入身份。
+- 非字符串 device/bed 在原始提交持久化前拒绝；提交扫描改为有界迭代，18 万兄弟项不抛栈溢出，超深或超宽有正式出口。Circle 另对当前 Hub 令牌做精确比对，形状扫描不能替代它。
+- 升级回放直接读取冻结 Hub 代码持久化的旧运行和回执；当前代码重放结果、回注视图和记录摘要不变。旧普通运行已绑定捕获原件的提交仍按声明级边界拒绝。
+
+## 1.3.3
+
+- `lease` 现在保存完整资源键 `bed/<床>/<设备>`，`lease_id` 另存 `lse_…` 租约记录身份。Hub 只证明同一租约从客户端声明的采集时刻到 Hub 收到时刻连续覆盖；区间内获租、释放、接管、到期或边界同毫秒均为 `lease_unconfirmed`，不冒充有租约或确认无租约。
+- 提案可用 `bed` 补全设备身份，省略时沿用 `targets.bed` / `bed_id`。清单唯一匹配可以补床，不能从持租候选反推床；缺身份、损坏记录或有界历史不完整时保留未确认原因和下一步。设备与床在 Circle 发送前和 Hub 原始提交持久化前都做凭据扫描。
+- 显式 `captured_at` 参与上传去重，操作身份包含具体原件记录、设备和床。不同采集或设备不再复用第一条记录；同一次采集的相同提交保持幂等。旧采集清单缺 `source.artifact` 仍须重新采集上传。
+- 租约动作使用租约服务自己的时钟并增加精确资源键索引；历史读取只取窗口前一条和有界窗口记录，不全量加载。冻结旧包摘要的无设备旧运行、读取和核验行为不变。
+
+## 1.3.2
+
+- 上传回执增加可选 `artifact`，`start_run` 的 src 输入也接受它，以绑定同字节的不同采集记录。技能把它写入上传清单、运行输入和操作的 `source.artifact`，Hub 再对照运行绑定核验；同字节多份提案必须显式选择，缺具体记录的旧清单须重新采集上传，不能按摘要或顺序猜采集时刻。
+- 批量租约动作逐键重放，不以首个租约排除其他键。幂等回执读取实际入层记录的 device/lease；凭据扣留视图保留设备与未授权说明。
+
+## 1.3.1
+
+- 三类操作记录可声明 `device`；Hub 按原件上传者与采集时刻重放租约记录，填 `lease`，没有则填 `null`。客户端自报 `lease` 拒绝；设备无租约仍入层，但回执、节点与列表标「无租约（未授权）」。
+- 运行或其预订前驱冻结台架清单时，设备名必须在该清单内；没有清单时只记声明。整合提案可写 `device`，省略时沿用采集清单 `targets.device` / `device_id`，不一致则拒收，不另造设备身份。
 
 ## 1.3.0
 
@@ -67,7 +119,7 @@ Circle 做过的事走同一回注槽，不另开通道。产出种类用 `asser
 
 ## Circle 的操作采集技能（随本版提供）
 
-技能位于 `tools/operation-capture`，自成一体，Node 24 直接运行，只用内置模块和 fetch。安装时把清单所列的该目录原样复制到目标 Circle home 的 `skills/operation-capture/`，不要复制成整个回注包，也不要改写 `hooks.json`、`egress.json` 或 `generated.json`。官方核验命令是 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录> --skill operation-capture`；它核大小、SHA-256、缺项、额外文件和链接，Jev 不带 `--skill` 的原命令不变。
+技能位于 `tools/operation-capture`，自成一体，Node 24 直接运行，只用内置模块和 fetch；目前只支持 macOS 和 Linux。安装时把清单所列的该目录原样复制到目标 Circle home 的 `skills/operation-capture/`，不要复制成整个回注包，也不要改写 `hooks.json`、`egress.json` 或 `generated.json`。官方核验命令是 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录> --skill operation-capture`；它核大小、SHA-256、缺项、额外文件和链接，Jev 不带 `--skill` 的原命令不变。
 
 技能只在会话加载后启动 `after_tool` 钩子，且默认不采。用户按技能说明为明确会话执行 `enable`，提供 Hub 地址和单独配置的 0600 令牌文件；不读 Circle 密钥库、环境密钥或其他配置。状态目录在该 Circle home 的 `operation-capture/`。`disable` 与进行中的采集、上传和整合串行，返回后不再执行这些动作；`flush` 只在重新开启后重试。钩子没有模型输出，失败只写不含原文的本地结构日志。
 
@@ -81,7 +133,7 @@ Circle 做过的事走同一回注槽，不另开通道。产出种类用 `asser
 
 技能位于 tools/jev，自成一体，Node 24 直接运行，只用 Node 内置模块和 fetch。Hub 核心、知识层、包内函数不导入它；它不会把 Jev 密钥交给 Hub。技能脚本从 Circle 执行命令的标准输入读取密钥，既不读环境密钥，也不读 Circle 文件或钥匙串。官方接口说明见 [TypeSafe System One](https://docs.typesafe.ai/api/system-one)；本版有意保留仓库对 noul/choice/score 的字符串问题子集，服务商增加的其他能力不在技能接口中。
 
-先按 pack.json 下载并核对整个包，再将其中 tools/jev 的已列文件原样复制到 circle-home-skills 任务所备上机和技能用 Circle 主目录的 skills/jev（不是把整个回注包当技能安装）；运行 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录>` 逐项核大小、SHA-256、缺项、额外文件和链接。不要改写目录内的脚本、hooks.json、egress.json 或 generated.json。generated.json 的 id 和 version 分别记录包名与版本，本版为 knowledge-contribution、1.3.2；不写包号或清单摘要，以免自引用。真实身份核对仍以 pack.json 的规范清单摘要和每文件摘要为准。`pack-files.ts --check` 同时比对四个词表轴及外发策略快照，重签命令无参数。
+先按 pack.json 下载并核对整个包，再将其中 tools/jev 的已列文件原样复制到 circle-home-skills 任务所备上机和技能用 Circle 主目录的 skills/jev（不是把整个回注包当技能安装）；运行 `node packs/workflow/knowledge-contribution/pack-files.ts --verify-install <安装目录>` 逐项核大小、SHA-256、缺项、额外文件和链接。不要改写目录内的脚本、hooks.json、egress.json 或 generated.json。generated.json 的 id 和 version 分别记录包名与版本，本版为 knowledge-contribution、1.3.13；不写包号或清单摘要，以免自引用。真实身份核对仍以 pack.json 的规范清单摘要和每文件摘要为准。`pack-files.ts --check` 同时比对四个词表轴及外发策略快照，重签命令无参数。
 
 默认只向 Jev 发送 Hub 原树中的定义、行为和题目；默认不发用例、缺陷、观察或 src。选择加入只在本次 --send 生效；技能加载后钩子才要求确认，另备主目录也须安装同一钩子；档位必须是 model_readable，不能选择加入绕过。条目的种类、原文、引用以 Hub 返回为准，输入文件自报的 text/kind 无效。子节点说明永不取用例、缺陷或观察。问题最多 2000 字、选项说明最多 160 字；脚本不能证明模型撰写的问题里没有夹带受限原文，规程明确禁止。请求记录与未提交的判断记录留在 Circle 的工作目录内，不在仓库；submit 才上传这批提议引用的判断记录（题目、候选、摘要、版本、概率、用量等），以 notes 的 src 引用使判断可追查，不上传 Jev 凭据或 state 原文。
 

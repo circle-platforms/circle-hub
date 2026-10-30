@@ -8,7 +8,7 @@ import {openRecords} from '../records/index.ts';
 import {DEFAULT_LIMITS} from '../config/index.ts';
 import {createTestParserRegistry} from '../testing/parsers.ts';
 import {sandboxIsolation} from './test-support.ts';
-import {newId} from '../records/api.ts';
+import {newId,scanForCredentials,RECORD_SCHEMAS,type SourceArtifact,type SourceArtifactBody} from '../records/api.ts';
 import {runRecord} from '../../contracts/src/fixtures.ts';
 import {RunRecord} from '../../contracts/src/run.ts';
 import {putRun} from '../runs/engine/store.ts';
@@ -34,6 +34,68 @@ test('source changes invalidate old claims without rewriting history; bindings a
  const c=await source(w,'SYN-3',{status:'open',affected_lines:[],description:'revision 3'});await layer.observeSource(w.user,c.body.sha256,{...scope,sourceRecord:c.digest});assert.equal((await layer.todos(w.admin)).length,1);const unknown=await source(w,'SYN-4',{status:'fixed',affected_lines:['10.9']});const pending=await layer.observeSource(w.user,unknown.body.sha256,{product:w.product.id});assert.equal(pending.objects.length,0);assert.match(pending.pending[0].missing,/没有树苗/);
 });
 test('uploads remain uploader/admin-only even with identical public bytes; uploaded source cannot impersonate a defect',async t=>{const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;const note=await w.kit.artifacts.ingest({bytes:Buffer.from('synthetic note at 192.0.2.8'),mediaType:'text/plain',origin:{upload:{session:'synthetic',message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id,w.outsider.id],admins:true,packs:[],shareable:true},readTier:'model_readable'});await layer.upload(w.user,note);await w.kit.artifacts.ingest({bytes:Buffer.from('synthetic note at 192.0.2.8'),mediaType:'text/plain',origin:{read:{object:'plm:bug:PUBLIC'}},author:{user:null},provenanceType:'observed',visibility:{readers:[w.user.id,w.outsider.id],admins:true,packs:[],shareable:false},readTier:'model_readable'});const row=(await layer.entries(w.user,w.user.id))[0];assert.equal(row.body.schema,'fed-note@1');assert.equal((await layer.entries(w.outsider,w.user.id)).length,0);assert.equal((await layer.entries(w.admin,w.user.id)).length,1);const proposal={...row.body,classification:[{value:'ticket',quote:{reference:'src:'+note.body.sha256+'/text@1/l/1',text:'synthetic note'}}]};await assert.rejects(()=>layer.prepare(w.outsider,proposal,{}),/上传者/);assert.ok(await layer.prepare(w.user,proposal,{}));
+});
+
+test('an upload note records a capture time only when the client declared one (round-four review, item 5)',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
+ const upload=(text:string,capturedAt?:string)=>w.kit.artifacts.ingest({bytes:Buffer.from(text),mediaType:'text/plain',origin:{upload:{session:'synthetic',message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},readTier:'model_readable',...(capturedAt?{capturedAt}:{})});
+ const undeclared=await upload('synthetic note without a capture time'),declared=await upload('synthetic note with a capture time','2026-10-27T08:00:00.000Z');
+ await layer.upload(w.user,undeclared);await layer.upload(w.user,declared);
+ const notes=new Map((await layer.entries(w.user,w.user.id)).map(row=>[row.body.object,row.body as Record<string,unknown>]));
+ const plain=notes.get(undeclared.body.sha256)!,timed=notes.get(declared.body.sha256)!;
+ assert.equal('at' in plain,false,'the upload time is not claimed as a capture time');
+ assert.equal(plain.captured_at_declared,false);assert.equal(plain.received_at,undeclared.created_at);
+ assert.equal(timed.at,'2026-10-27T08:00:00.000Z');assert.equal(timed.captured_at_declared,true);assert.equal(timed.received_at,declared.created_at);
+ // Each note still finds its own upload and passes the check against the body the Hub generates.
+ for(const body of [plain,timed])assert.ok(await layer.prepare(w.user,{...body,classification:[{value:'ticket',quote:{reference:'src:'+String(body.object)+'/text@1/l/1',text:'synthetic note'}}]} as never,{}));
+});
+
+test('two uploads of the same bytes at the same declared time are each annotated through their own note and record (round five and six, item 5)',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
+ const capturedAt='2026-10-27T08:00:00.000Z',bytes=Buffer.from('synthetic note captured twice');
+ const upload=(session:string)=>w.kit.artifacts.ingest({bytes,mediaType:'text/plain',origin:{upload:{session,message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},readTier:'model_readable',capturedAt});
+ // No pause between them: even within one millisecond each note names its own upload record.
+ const [first,second]=await Promise.all([upload('synthetic-first'),upload('synthetic-second')]);
+ assert.notEqual(first.digest,second.digest,'two upload records');
+ await layer.upload(w.user,first);await layer.upload(w.user,second);
+ const notes=(await layer.entries(w.user,w.user.id)).map(row=>row.body as Record<string,any>).filter(body=>body.object===first.body.sha256);
+ assert.deepEqual(notes.map(body=>body.source.artifact).sort(),[first.digest,second.digest].sort());
+ for(const body of notes){
+  const proposal={...body,classification:[{value:'ticket',quote:{reference:'src:'+first.body.sha256+'/text@1/l/1',text:'synthetic note'}}]};
+  assert.ok(await layer.prepare(w.user,proposal as never,{}));
+  const [ref]=await layer.admit(w.user,[proposal],{});
+  const stored=JSON.stringify(await layer.readRecord(ref!,w.user));
+  const other=body.source.artifact===first.digest?second.digest:first.digest;
+  assert.ok(stored.includes(body.source.artifact)&&!stored.includes(other),'the annotation is bound to the upload its note names');
+ }
+});
+
+test('a new note that names another person\'s upload of the same bytes is refused (round-seven review, item 5)',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
+ const bytes=Buffer.from('synthetic note uploaded by two people');
+ const upload=(user:World['user'])=>w.kit.artifacts.ingest({bytes,mediaType:'text/plain',origin:{upload:{session:'synthetic-'+user.id,message:null}},author:{user:user.id},provenanceType:'declared',visibility:{readers:[w.user.id,w.outsider.id],admins:true,packs:[],shareable:true},readTier:'model_readable'});
+ const mine=await upload(w.user),theirs=await upload(w.outsider);
+ await layer.upload(w.user,mine);await layer.upload(w.outsider,theirs);
+ const note=(await layer.entries(w.user,w.user.id)).map(row=>row.body as Record<string,any>).find(body=>body.object===mine.body.sha256)!;
+ const quoted={classification:[{value:'ticket',quote:{reference:'src:'+mine.body.sha256+'/text@1/l/1',text:'synthetic note'}}]};
+ assert.ok(await layer.prepare(w.user,{...note,...quoted} as never,{}),'the uploader annotates their own upload');
+ await assert.rejects(()=>layer.prepare(w.user,{...note,source:{...note.source,artifact:theirs.digest},...quoted} as never,{}),/上传原件|上传者/);
+ await assert.rejects(()=>layer.prepare(w.user,{...note,by:w.outsider.id,source:{...note.source,artifact:theirs.digest},...quoted} as never,{}),/上传者和管理员/);
+});
+
+test('a new note for an upload recorded before capture times could be declared says the time was not declared (round-five review, item 5)',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
+ // The record main wrote: an upload never named a capture time, so its captured_at was the Hub's own, and it has no marker.
+ const bytes=Buffer.from('synthetic note from before the marker');
+ const body:SourceArtifactBody={sha256:'',size:bytes.byteLength,media_type:'text/plain',name:'note.txt',origin:{upload:{session:'synthetic-main',message:null}},author:{user:w.user.id,declared:null},captured_at:'2026-10-27T08:00:00.000Z',provenance_type:'declared',read_tier:'model_readable',requested_read_tier:'model_readable',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},scan:scanForCredentials(bytes)};
+ body.sha256=(await w.kit.objects.put(bytes,'text/plain')).sha256;
+ const legacy=await w.kit.store.put({kind:'source_artifact',schema:RECORD_SCHEMAS.source_artifact,provenance:'declared',created_at:'2026-10-27T08:00:00.004Z',body,index:[{key:'artifact.sha256',value:body.sha256},{key:'artifact.reader',value:w.user.id},{key:'artifact.author',value:w.user.id}]});
+ assert.equal('captured_at_declared' in legacy.body,false);
+ await layer.upload(w.user,legacy as unknown as SourceArtifact);
+ const note=(await layer.entries(w.user,w.user.id)).map(row=>row.body as Record<string,unknown>).find(row=>row.object===body.sha256)!;
+ assert.equal('at' in note,false,'the Hub time of an old upload is not claimed as a capture time');
+ assert.equal(note.captured_at_declared,false);assert.equal(note.received_at,legacy.created_at);
+ assert.ok(await layer.prepare(w.user,{...note,classification:[{value:'ticket',quote:{reference:'src:'+body.sha256+'/text@1/l/1',text:'synthetic note'}}]} as never,{}));
 });
 
 test('a current pointer naming a content root selects its own line record when two lines share tree bytes',async t=>{const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const root=await seed(w,'10.8');await seed(w,'10.9');for(const line of ['10.8','10.9']){const old=await w.kit.pointers.get(seedlingName(w.product.id,line));assert.ok(old);await w.kit.pointers.move({name:old.name,expected:old.target,next:root.root,by:w.admin,run:null,component:'synthetic.feeding@1'});}assert.equal((await w.knowledge.feeding!.seedFor(w.product.id,'10.8'))!.line,'10.8');assert.equal((await w.knowledge.feeding!.seedFor(w.product.id,'10.9'))!.line,'10.9');});

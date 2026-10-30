@@ -4312,6 +4312,11 @@
                 "bytes": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
+                },
+                "artifact": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "The exact upload record this note was written for; absent on notes written before it was recorded. A note proposal is checked against that record's note."
                 }
               },
               "required": [
@@ -4340,6 +4345,16 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "captured_at_declared": {
+              "type": "boolean",
+              "description": "Whether at was explicitly declared by the uploading client; absent on historical notes. False means at is absent and received_at holds the Hub's receipt time of the upload instead."
+            },
+            "received_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "The Hub receipt time of the uploaded source artifact, separate from the optional client-declared capture time."
             },
             "classification": {
               "minItems": 0,
@@ -4740,12 +4755,11 @@
             "path",
             "source",
             "by",
-            "run",
-            "at"
+            "run"
           ],
           "additionalProperties": false,
           "title": "fed-note@1",
-          "description": "Identity is exactly the uploaded source byte digest. by/run/at are collection facts outside identity; visibility remains uploader and administrators only; note bytes never establish team knowledge."
+          "description": "Identity is exactly the uploaded source byte digest. by/run/at are collection facts outside identity; at is present only when the uploading client declared the capture time, otherwise captured_at_declared is false and received_at holds the Hub's receipt time; source.artifact names the exact upload record, so equal bytes uploaded twice keep two distinguishable notes; visibility remains uploader and administrators only; note bytes never establish team knowledge."
         },
         {
           "type": "object",
@@ -4783,6 +4797,11 @@
                 "bytes": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
+                },
+                "artifact": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "Exact source_artifact record for equal-byte captures; Hub checks it against the run binding."
                 }
               },
               "required": [
@@ -4987,6 +5006,28 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "captured_at_declared": {
+              "type": "boolean",
+              "description": "Whether at was explicitly declared by the client; absent on historical records. False means at is absent and the timestamp came from upload, not declared capture."
+            },
+            "received_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "The Hub receipt time of the exact source artifact, separate from the optional client-declared capture time."
+            },
+            "device": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The client's declared device name, checked against the run's frozen bed manifest when one is bound; otherwise an unverified declaration."
+            },
+            "bed": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The client's declared bed name; with a bed manifest frozen by the run or its booking it is checked against it, or taken from it when only one bed has the device. Leases belong to the test-bed pack and are never recorded here."
             },
             "version": {
               "type": "string",
@@ -5247,7 +5288,7 @@
           ],
           "additionalProperties": false,
           "title": "fed-observation@1",
-          "description": "Circle operation record of one action and what was seen. Identity is only the canonical action and result quotation. product, root, path, upload digest, version binding and collector are outside identity. The grade is a declaration and is not evidence for verification, scoring or release. Hub fills the binding from the run-locked build or the bed's installed build and refuses a model-reported version."
+          "description": "Circle operation record of one action and what was seen. Identity is the canonical action and result quotation, exact capture artifact, and declared bed/device. Product, root, path, version binding and collector are outside identity. The grade is a declaration and is not evidence for verification, scoring or release. Hub fills the binding from the run-locked build or the bed's installed build and refuses a model-reported version."
         },
         {
           "type": "object",
@@ -5285,6 +5326,11 @@
                 "bytes": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
+                },
+                "artifact": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "Exact source_artifact record for equal-byte captures; Hub checks it against the run binding."
                 }
               },
               "required": [
@@ -5489,6 +5535,28 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "captured_at_declared": {
+              "type": "boolean",
+              "description": "Whether at was explicitly declared by the client; absent on historical records. False means at is absent and the timestamp came from upload, not declared capture."
+            },
+            "received_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "The Hub receipt time of the exact source artifact, separate from the optional client-declared capture time."
+            },
+            "device": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The client's declared device name, checked against the run's frozen bed manifest when one is bound; otherwise an unverified declaration."
+            },
+            "bed": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The client's declared bed name; with a bed manifest frozen by the run or its booking it is checked against it, or taken from it when only one bed has the device. Leases belong to the test-bed pack and are never recorded here."
             },
             "version": {
               "type": "string",
@@ -5769,7 +5837,7 @@
           ],
           "additionalProperties": false,
           "title": "fed-procedure@1",
-          "description": "Circle operation record of a method. Identity is only the canonical goal and the ordered steps with their quotations. Version binding and collector are outside identity. The grade is a declaration and is not evidence. Hub fills the binding and refuses a model-reported version."
+          "description": "Circle operation record of a method. Identity is the canonical goal and ordered steps with their quotations, exact capture artifact, and declared bed/device. Version binding and collector are outside identity. The grade is a declaration and is not evidence. Hub fills the binding and refuses a model-reported version."
         },
         {
           "type": "object",
@@ -5807,6 +5875,11 @@
                 "bytes": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
+                },
+                "artifact": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "Exact source_artifact record for equal-byte captures; Hub checks it against the run binding."
                 }
               },
               "required": [
@@ -6011,6 +6084,28 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "captured_at_declared": {
+              "type": "boolean",
+              "description": "Whether at was explicitly declared by the client; absent on historical records. False means at is absent and the timestamp came from upload, not declared capture."
+            },
+            "received_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "The Hub receipt time of the exact source artifact, separate from the optional client-declared capture time."
+            },
+            "device": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The client's declared device name, checked against the run's frozen bed manifest when one is bound; otherwise an unverified declaration."
+            },
+            "bed": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The client's declared bed name; with a bed manifest frozen by the run or its booking it is checked against it, or taken from it when only one bed has the device. Leases belong to the test-bed pack and are never recorded here."
             },
             "version": {
               "type": "string",
@@ -6277,7 +6372,7 @@
           ],
           "additionalProperties": false,
           "title": "fed-pitfall@1",
-          "description": "Circle operation record of a lesson. Identity is only the canonical phenomenon, suggestion and quotation. Version binding and collector are outside identity. The grade is a declaration and is not evidence. Hub fills the binding and refuses a model-reported version."
+          "description": "Circle operation record of a lesson. Identity is the canonical phenomenon, suggestion and quotation, exact capture artifact, and declared bed/device. Version binding and collector are outside identity. The grade is a declaration and is not evidence. Hub fills the binding and refuses a model-reported version."
         },
         {
           "anyOf": [

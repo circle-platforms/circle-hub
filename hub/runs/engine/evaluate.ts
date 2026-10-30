@@ -31,7 +31,7 @@ import { putAction } from './store.ts';
 import { createFunctionBatches } from './function-batches.ts';
 import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
-import { declarationGroundRefusal } from '../../knowledge/declaration-grade.ts';
+import { declarationGroundsRefusal } from '../../knowledge/declaration-grade.ts';
 import { buildScope, scopeProblem, emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
@@ -492,7 +492,7 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
             return { why: r.code === 'REFERENCE_UNRESOLVED' ? 'no_fragment' : 'unavailable' };
           }
           if (!r.groundable) return { why: 'not_groundable' };
-          const named = await declarationGroundRefusal(ref, digest => ctx.deps.records.store.get(digest));
+          const named = await declarationGroundsRefusal(ref, r.grounds, digest => ctx.deps.records.store.get(digest));
           if (named) return { why: 'not_groundable', rule: named };
           if (r.readTier === 'retain_only') return { why: 'retain_only', unread: {reason:'credential_unreadable', missing_fact:'管理员尚未接受此来源', next_action:'请求管理员接受来源，接受后重新核验'} };
           if (r.text === null) return { why: 'no_fragment' };

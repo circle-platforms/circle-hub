@@ -6,6 +6,7 @@ import { isReason } from '../../../contracts/generated/vocabulary.ts';
 import { applyDispatchResults } from './dispatch-results.ts';
 import { recordResultRequests, answerRepairedRequests } from './requests.ts';
 import { ContributionRefusal, KnowledgeError, type PreparedContribution, type ContributionScope } from '../../knowledge/api.ts';
+import { CAPTURED_GROUND } from '../../knowledge/declaration-grade.ts';
 import type { ContributionAppendPlan } from '../../knowledge/contributions.ts';
 import { getInterpreter, type CheckOutcome } from '../../rules/api.ts';
 // submit_result (W07, W08, T03, A04): the arguments are stored exactly as received before anything else; a repeat of the same
@@ -229,6 +230,21 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
       detail: { submission: received.digest, session, model, ...(input.extra?.refusal === 'session_missing' ? {} : {repair: input.repair}), result: input.result, ...(input.extra ?? {}) },
       submissionRecord: record.digest,
     });
+
+  if (packIdOf(run.pack) !== 'knowledge-contribution') {
+    for (const binding of run.sources) {
+      const ref = parseReference(binding.reference);
+      if (ref.scheme !== 'src') continue;
+      const original = binding.artifact !== undefined
+        ? await store.get<import('../../records/api.ts').SourceArtifactBody>(binding.artifact)
+        : (await ctx.deps.records.artifacts.source(user, ref.sha256, { consumer: 'function' })
+          ?? await ctx.deps.records.artifacts.sourceForRun(user, ref.sha256, run.run, { consumer: 'function' }))?.artifact;
+      if (original?.kind !== 'source_artifact' || original.body.provenance_type !== 'client_captured') continue;
+      const refusal = protocolError('SUBMISSION_SCHEMA_VIOLATION', CAPTURED_GROUND, { path: '/run' });
+      await action({ acceptance: 'not_accepted', codes: [refusal.code], repair: [], result: null, extra: { refusal: 'captured_ground' } });
+      return { call_result: 'error', acceptance: 'not_accepted', errors: [refusal] };
+    }
+  }
 
   // W06 R[1]: superseded by a newer revision of the same work, the runner's own (another runner's run of this pack that
   // names this run is a branch of theirs; a run of another pack, such as the verification, continues it).
