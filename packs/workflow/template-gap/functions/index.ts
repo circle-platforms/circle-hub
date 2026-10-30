@@ -10,6 +10,8 @@ const count = (v: unknown): v is number => Number.isSafeInteger(v) && (v as numb
 const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === 'string');
 export function indexBindingFix(build: unknown, documents: string[]): string {
   const expected = [...new Set(documents)].sort(compareText);
+  // An upload has no agile document number, so no only= admits it: an empty only is not a view id (T1-3, 2026-10-30).
+  if (expected.length === 0) return `这次的被判对象都是上传文件：用例索引按敏捷平台文档编号收窄，上传文件对不上；要按命令核对覆盖，把 documents 改绑敏捷平台脑图 {"external":"agile:mindmap:<编号>"} 后重新开始运行，否则去掉 case_index；不要写空的 only`;
   return `锁定构建 ${String(build ?? '未提供')}；按这个构建重新绑定 knowledge:index:<产品>:<构建>?kind=case&key=document&only=${expected.join(',')}&fields=document,node,commands,command_identities,command_tree_root,title,path_labels,object；only 只写这次敏捷平台文档，不含上传文件`;
 }
 /**
