@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ActionBody, RecordStore, StoredRecord } from '../records/api.ts';
-import { operationLease } from './feeding-leases.ts';
+import { completeOperationDevice, operationLease } from './feeding-leases.ts';
 
 const CAPTURED = '2026-01-01T00:00:00.000Z';
 const RECEIVED = '2026-01-01T00:00:10.000Z';
@@ -39,9 +39,10 @@ test('a second read the lease clock still has not passed states both observed mo
   const answer = await operationLease(store, input, history.service);
   assert.equal(history.windows.length, 2);
   const missing = answer.lease_unconfirmed?.missing ?? '';
-  assert.match(missing, /等待 6 毫秒后重读/);
+  assert.match(missing, /设定等待 6 毫秒后重读/);
   assert.ok(missing.includes(shifted(RECEIVED, -2)) && missing.includes(shifted(RECEIVED, -5)) && missing.includes(RECEIVED), missing);
-  assert.doesNotMatch(missing, /一秒以上/);
+  // The lease clock did move between the reads; why it is still behind is not something two reads show (round eight).
+  assert.doesNotMatch(missing, /一秒以上|没有随等待前进|不一致/);
   assert.match(answer.lease_unconfirmed?.next_action ?? '', /时钟/);
   assert.match(answer.lease_unconfirmed?.next_action ?? '', /重新执行并采集这一步/);
 });
@@ -75,4 +76,16 @@ test('no unconfirmed answer tells the client to send the same capture again, sin
     assert.doesNotMatch(text, /重传/);
     assert.match(answer.lease_unconfirmed.next_action, /沿用这条未确认记录/);
   }
+});
+
+test('the answers for a capture without a bed or without a declared capture time ask for what can change the record', async () => {
+  const base = { run: null, device: 'device0', user: 'synthetic-user', capturedAt: CAPTURED, receivedAt: RECEIVED };
+  const bedless = await completeOperationDevice(store, base);
+  assert.ok('lease_unconfirmed' in bedless && bedless.lease_unconfirmed);
+  assert.match(bedless.lease_unconfirmed.missing, /写明床后重交/);
+  const undeclared = await completeOperationDevice(store, { ...base, bed: 'synthetic', captureTimeDeclared: false });
+  assert.ok('lease_unconfirmed' in undeclared && undeclared.lease_unconfirmed);
+  assert.equal(undeclared.bed, 'synthetic');
+  assert.match(undeclared.lease_unconfirmed.next_action, /重新采集.*captured_at/);
+  for (const answer of [bedless, undeclared]) assert.doesNotMatch(JSON.stringify(answer), /重传/);
 });

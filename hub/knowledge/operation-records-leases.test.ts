@@ -156,7 +156,7 @@ test('capture time decides absent, acquired and released leases without changing
   assert.equal(plain.receipt.lease, undefined);
   assert.equal(plain.feeding.lease, undefined);
   // No device, but the capture time was not declared either: the view says so (round-four review, item 8).
-  assert.match(plain.view.note ?? '', /^采集时间未声明（取自上传时刻）；Hub 收到 /);
+  assert.match(plain.view.note ?? '', /^采集时间未声明，记录里没有采集时刻；Hub 收到 /);
   assert.doesNotMatch(plain.text, /无租约|设备 device0/);
 
   const earlyCapture = await captureRun(ctx);
@@ -602,8 +602,8 @@ test('an upload without a declared capture time keeps its record but cannot prov
   assert.equal(saved.feeding.at, undefined);
   assert.equal(saved.feeding.captured_at_declared, false);
   assert.equal(saved.feeding.received_at, artifact?.created_at);
-  assert.match(saved.view.note ?? '', /采集时间未声明（取自上传时刻）/);
-  assert.match(saved.text, /采集时间未声明（取自上传时刻）/);
+  assert.match(saved.view.note ?? '', /采集时间未声明，记录里没有采集时刻/);
+  assert.match(saved.text, /采集时间未声明，记录里没有采集时刻/);
   assert.equal(saved.feeding.lease, null);
   assert.equal(saved.feeding.lease_id, null);
   assert.match(JSON.stringify(saved.feeding.lease_unconfirmed), /没有明确声明采集时刻/);
@@ -777,7 +777,7 @@ test('a frozen old pack replays a legacy operation without device or lease field
   assert.equal(saved.receipt.lease, undefined);
   assert.equal(saved.view.status, 'valid');
   // An old client declares no capture time; the view discloses that, as for any operation record (round-four review, item 8).
-  assert.match(saved.view.note ?? '', /^采集时间未声明（取自上传时刻）；Hub 收到 /);
+  assert.match(saved.view.note ?? '', /^采集时间未声明，记录里没有采集时刻；Hub 收到 /);
   const first = await ctx.w.knowledge.layers.contributions.readView(saved.receipt.record, ctx.w.admin);
   const second = await ctx.w.knowledge.layers.contributions.readView(saved.receipt.record, ctx.w.admin);
   assert.deepEqual(second, first);

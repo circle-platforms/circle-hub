@@ -91,7 +91,7 @@ function noteWithDevice(body: KnowledgeContributionBody, note: string | null): s
   // (round-five review, item 8).
   const time = !feeding || !operationRecord(feeding.schema) ? null
     : !('captured_at_declared' in feeding) ? HISTORICAL_CAPTURE_TIME
-    : feeding.captured_at_declared === false ? `采集时间未声明（取自上传时刻）；Hub 收到 ${feeding.received_at}` : null;
+    : feeding.captured_at_declared === false ? `采集时间未声明，记录里没有采集时刻；Hub 收到 ${feeding.received_at}` : null;
   return [note, device, time].filter((value): value is string => value !== null).join('；') || null;
 }
 

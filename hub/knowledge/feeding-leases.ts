@@ -148,12 +148,12 @@ export async function operationLease(
   }
   const { before, events, complete, unattributable = [], settled } = answer;
   if (!complete) return unconfirmed('声明采集至收到时刻之间的租约记录超过有界读取上限', `缩短采集到上传的间隔，在持有租约期间重新执行并采集这一步再提交，或请管理员核对记录；${REUSED}`);
-  // Only what the reads observed is stated: a second read can still come before the receipt, when the lease clock did not
-  // advance with the wait (round seven, item 1).
+  // Only what the reads observed is stated: the wait the Hub set and both readings. Why the second still comes before the
+  // receipt is for the administrator to find (rounds seven and eight, item 1).
   if (settled === false) {
     return unconfirmed(waited === 0
       ? `Hub 收到时刻 ${receivedAt.data} 比租约时钟（数据库时钟）读到的 ${first.asOf} 晚 ${to - Date.parse(first.asOf)} 毫秒，Hub 只等租约时钟追上不到 ${SETTLE_WAIT_MS} 毫秒的差距；两个时钟不一致，窗口内仍可能出现租约动作，不能确认`
-      : `Hub 等待 ${waited} 毫秒后重读，租约时钟（数据库时钟）读到的 ${answer.asOf} 仍未越过收到时刻 ${receivedAt.data}（第一次读到 ${first.asOf}）；租约时钟没有随等待前进或两个时钟不一致，窗口内仍可能出现租约动作，不能确认`, CLOCKS);
+      : `Hub 设定等待 ${waited} 毫秒后重读：租约时钟（数据库时钟）第一次读到 ${first.asOf}，重读读到 ${answer.asOf}，仍未越过收到时刻 ${receivedAt.data}；窗口内仍可能出现租约动作，不能确认`, CLOCKS);
   }
   if (unattributable.length > 0) return uncertain(leaseDetail(unattributable[0]!));
   const initial = before ? leaseDetail(before, key) : null;
