@@ -31,6 +31,11 @@ export interface FeedingCut {
   objects: Map<string, KnowledgeStructureObject>;
   /** Valid function projections, grouped by exact root (or null), content identity and source identity. */
   casesByRoot?: Map<string|null, Map<string, Map<string, { body: KnowledgeStructureObject; record: string; position: number }>>>;
+  /**
+   * Valid function projections of fed-build@1 that list fixed bugs, each record apart (records of one build share its content
+   * identity, so `objects` keeps only the last of them), oldest first; `external` is the read the record was projected from.
+   */
+  builds?: Array<{ body: KnowledgeStructureObject; record: string; position: number; external: string | null }>;
   /** Direct bindings per object digest, oldest first. */
   bindings: Map<string, VersionBinding[]>;
   /** Digests a retraction before the offset invalidated (withdrawn: excluded from views, still visible in provenance). */

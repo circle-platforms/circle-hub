@@ -83,6 +83,10 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
   const human: Warrant = { producer: 'human', id: user.id };
   // A workflow that names no product and requires no catalog is bound to no product line (see boundProducts in runs/packs).
   const unbound = binding.id === undefined && binding.catalogs.length === 0 && workflow.workflow.contribution === undefined;
+  // It may still run for one build the caller names exactly, product and build together, among the products the caller can
+  // read: the run then locks that build's root (W03 R[0]: a declared build), so what it reads feeds that product's layer.
+  // A product alone would let the default rule lock an unrelated build, and stays refused.
+  const declaredTarget = unbound && input.product !== undefined && input.build !== undefined;
   const eligible = async (): Promise<ProductHandle[]> => {
     if (unbound) return [];
     if (binding.id !== undefined) {
@@ -97,10 +101,10 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
   let declaredProduct = false;
   if (input.product !== undefined) {
     const named = await packs.productByName(input.product);
-    const ok = !unbound && named !== null && readable.has(named.product.id) && (binding.id !== undefined ? named.product.id === binding.id : provides(named, binding.catalogs));
+    const ok = (!unbound || declaredTarget) && named !== null && readable.has(named.product.id) && (unbound || (binding.id !== undefined ? named.product.id === binding.id : provides(named, binding.catalogs)));
     if (!ok) {
-      const options = namesOf(await eligible());
-      if (unbound) throw unresolved('/product', '这个任务包不绑定产品线，不能指定产品', [], '去掉 product 参数');
+      if (unbound && !declaredTarget) throw unresolved('/product', '这个任务包不绑定产品线，不写 build 时不能指定产品', [], '去掉 product 参数；要按某个构建读取并锁定它的知识根时，product 和 build 两项都写');
+      const options = namesOf(unbound ? (await packs.products()).filter((p) => readable.has(p.product.id)) : await eligible());
       throw unresolved('/product', `产品“${input.product}”不是这个任务包能用的产品线`, options, options.length > 0 ? '改用下面列出的产品名称之一（同一产品线的任何名称都可以）' : undefined);
     }
     product = named;
@@ -113,7 +117,7 @@ export async function resolveTarget(ctx: EngineContext, user: Principal, workflo
   }
   if (product === null) {
     if (input.version !== undefined || input.build !== undefined) {
-      throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '这个任务包不绑定产品线，不能指定版本或构建', { path: input.build !== undefined ? '/build' : '/version', fix: '去掉 version 和 build 参数' })]);
+      throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '这个任务包不绑定产品线，不能指定版本或构建', { path: input.build !== undefined ? '/build' : '/version', fix: unbound && input.build !== undefined ? '去掉 build 参数；要按这个构建读取时同时写 product' : '去掉 version 和 build 参数' })]);
     }
     return { product: null, build: null, buildName: null, line: null, root: null, basis: [] };
   }
