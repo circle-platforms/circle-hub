@@ -35,6 +35,16 @@ const frozen = new URL('../../tests/fixtures/frozen/', import.meta.url);
 const TEXT_UPLOAD = '53e0ef88f65189cdc6e03b0ef5f4bec73b403cf21a632aa1c9dcd7a44bb34d7f';
 const plain = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
 
+/** Whether a pack's slot schema admits a value as its fed-note entry. */
+async function noteSchema(slots: URL | string): Promise<(value: unknown) => boolean> {
+  const file = JSON.parse(await readFile(slots, 'utf8')) as { item: { contribution: { data: { properties: { feeding: { anyOf: Array<{ properties?: { schema?: { const?: string } } }> } } } } } };
+  const entry = file.item.contribution.data.properties.feeding.anyOf.find(row => row.properties?.schema?.const === 'fed-note@1');
+  assert.ok(entry);
+  const compiled = packSchema(entry as Record<string, unknown>);
+  assert.ok(compiled.ok);
+  return (value: unknown) => compiled.schema.safeParse(value).success;
+}
+
 test('a run and receipt persisted by the frozen Hub replay unchanged after upgrade', async t => {
   // The records were written by the Hub before the operation lease binding (generate-upgrade-records.ts); only the
   // current code reads them here.
@@ -111,23 +121,22 @@ test('a run and receipt persisted by the frozen Hub replay unchanged after upgra
   const submitted = fixture.submission as { run: string; model: string; items: Array<{ item: string; handling: string; slots: { contribution: Contribution[] } }> };
   const item = submitted.items[0]!;
   const contribution = item.slots.contribution[0]!;
-  const upload = (await kit.artifacts.records(TEXT_UPLOAD)).find(row => 'upload' in row.body.origin)!;
-  const newShape = { schema: 'fed-note@1', object: TEXT_UPLOAD, product: null, root: null, path: null, source: { system: 'upload', bytes: TEXT_UPLOAD, artifact: upload.digest }, by: admin.id, run: null, captured_at_declared: false, received_at: upload.created_at, classification: [{ value: 'ticket', quote: { reference: `src:${TEXT_UPLOAD}/text@1/l/1`, text: '合成旧回显' } }] };
+  // The note the current Hub writes for a new upload, carried into a proposal as written (round-seven review, item 5).
+  const fresh = await kit.artifacts.ingest({ bytes: new TextEncoder().encode('合成新回显\n'), mediaType: 'text/plain', origin: { upload: { session: 'synthetic-upgrade-fresh', message: null } }, author: { user: admin.id }, provenanceType: 'declared', visibility: { readers: [admin.id], admins: true, packs: [], shareable: true }, readTier: 'model_readable' });
+  await knowledge.feeding!.upload(admin, fresh);
+  const written = (await knowledge.feeding!.entries(admin, admin.id)).map(row => row.body as Record<string, unknown>).find(body => (body.source as { artifact?: unknown }).artifact === fresh.digest);
+  assert.ok(written && 'received_at' in written && !('at' in written), JSON.stringify(written));
+  assert.equal((await noteSchema(new URL('../../packs/workflow/knowledge-contribution/slots.schema.json', import.meta.url)))(written), true, 'the current pack carries it');
+  assert.equal((await noteSchema(join(FROZEN_KNOWLEDGE_CONTRIBUTION.directory, 'slots.schema.json')))(written), false, 'the frozen pack does not');
+  const newShape = { ...written, classification: [{ value: 'ticket', quote: { reference: `src:${fresh.body.sha256}/text@1/l/1`, text: '合成新回显' } }] };
   const refused = await upgraded.submitResult(admin, { ...submitted, items: [{ ...item, slots: { contribution: [{ ...contribution, text: '新结构说明', data: { ...contribution.data, feeding: newShape } }] } }] } as Parameters<typeof upgraded.submitResult>[1], UPGRADE_CALL);
   assert.notEqual(refused.acceptance, 'accepted', JSON.stringify(refused));
-  assert.match(JSON.stringify(refused.errors), /SUBMISSION_SCHEMA_VIOLATION.*\/items\/0\/slots\/contribution\/0\/data\/feeding/, JSON.stringify(refused.errors));
+  const violation = refused.errors.find(error => error.code === 'SUBMISSION_SCHEMA_VIOLATION' && error.path === '/items/0/slots/contribution/0/data/feeding');
+  assert.ok(violation, JSON.stringify(refused.errors));
   assert.deepEqual(await digests('run'), runsBefore);
 });
 
 test('a run locked to the frozen pack carries notes as the frozen Hub wrote them, and refuses a note in the new shape (round-five review, item 5)', async () => {
-  const noteSchema = async (slots: URL | string) => {
-    const file = JSON.parse(await readFile(slots, 'utf8')) as { item: { contribution: { data: { properties: { feeding: { anyOf: Array<{ properties?: { schema?: { const?: string } } }> } } } } } };
-    const entry = file.item.contribution.data.properties.feeding.anyOf.find(row => row.properties?.schema?.const === 'fed-note@1');
-    assert.ok(entry);
-    const compiled = packSchema(entry as Record<string, unknown>);
-    assert.ok(compiled.ok);
-    return (value: unknown) => compiled.schema.safeParse(value).success;
-  };
   const frozenNote = await noteSchema(join(FROZEN_KNOWLEDGE_CONTRIBUTION.directory, 'slots.schema.json'));
   const currentNote = await noteSchema(new URL('../../packs/workflow/knowledge-contribution/slots.schema.json', import.meta.url));
   const base = { schema: 'fed-note@1', object: TEXT_UPLOAD, product: null, root: null, path: null, source: { system: 'upload', bytes: TEXT_UPLOAD }, by: 'usr_01m62bf7k7fvab10tqtrydw0qp', run: null };
