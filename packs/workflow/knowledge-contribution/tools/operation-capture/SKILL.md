@@ -12,10 +12,10 @@ description: 在用户明确开启共享的 Circle 会话里，由工具后钩�
 用户先准备仅供采集使用的 Hub 令牌文件：一行令牌、普通单链接文件、权限 0600。令牌不写在命令、提案或仓库里。用 `/session` 查会话号，然后由用户确认执行：
 
 ```sh
-node <技能目录>/operation.ts enable --session <会话号> --hub <Hub MCP 地址> --token-file <令牌文件>
+node <技能目录>/operation.ts enable --session <会话号> --hub <Hub MCP 地址> --token-file <令牌文件> [--allow-plaintext-host <Hub 主机>]
 ```
 
-明文 HTTP 只许本机回环假 Hub。状态保存在 Circle home 的 `operation-capture/` 下，不写工作区。`CIRCLE_HOME` 未设置时按 Circle 默认 home；去空白、`~` 展开和 realpath 与 Circle 一致。技能须安装在该 home 的 `skills/operation-capture/`，因为 Circle 不向钩子提供技能目录。
+明文 HTTP 只许本机回环。内网的 Hub 没有 TLS 时，由用户对这一个主机明确放行：在 enable 命令末尾加 `--allow-plaintext-host <Hub 主机>`（必须与 `--hub` 里的主机相同，只记在这个会话的状态里，对别的主机无效）；这样令牌和上传的内容会在网络上不加密传输，是用户的决定，技能不替用户做。状态保存在 Circle home 的 `operation-capture/` 下，不写工作区。`CIRCLE_HOME` 未设置时按 Circle 默认 home；去空白、`~` 展开和 realpath 与 Circle 一致。技能须安装在该 home 的 `skills/operation-capture/`，因为 Circle 不向钩子提供技能目录。
 
 开启后，`after_tool` 钩子自动把工具输出和当前 Hub 令牌的字面出现脱敏、保存完整 UTF-8 原件、追加 SHA-256 哈希链清单并直传 Hub，出处为 `client_captured`。模型不参与采集或上传。不能完整脱敏、扫描不完整、Unicode 不良或超限时整条不采，不截断。钩子对模型静默；错误只在本地日志写结构错误码。网络结果未知不等于未上传，重试依靠幂等上传。
 

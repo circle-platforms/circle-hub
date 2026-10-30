@@ -35,13 +35,15 @@ async function main(args: string[]): Promise<number> {
     return 0;
   }
   if (command === 'enable') {
-    const values = options(rest, ['--session', '--hub', '--token-file']);
+    const values = options(rest, ['--session', '--hub', '--token-file', '--allow-plaintext-host']);
     const session = required(values, '--session');
-    const hub = normalizeHubUrl(required(values, '--hub')).href;
+    const plaintextHost = values.get('--allow-plaintext-host')?.toLowerCase() ?? null;
+    const url = normalizeHubUrl(required(values, '--hub'), plaintextHost);
+    if (plaintextHost !== null && url.hostname !== plaintextHost) throw new OperationError('invalid_hub_url', '--allow-plaintext-host 必须与 Hub 地址的主机相同');
     const tokenFile = resolve(required(values, '--token-file'));
     await validateTokenFile(tokenFile);
-    await enable(session, hub, tokenFile);
-    process.stdout.write('已只为本会话开启共享；工具输出由钩子脱敏后自动上传\n');
+    await enable(session, url.href, tokenFile, plaintextHost !== null && url.protocol === 'http:' ? plaintextHost : null);
+    process.stdout.write(plaintextHost !== null && url.protocol === 'http:' ? '已只为本会话开启共享；注意：令牌和上传内容经明文 HTTP 在网络上传输，只对你指定的这一个主机放行\n' : '已只为本会话开启共享；工具输出由钩子脱敏后自动上传\n');
     return 0;
   }
   if (command === 'disable') {

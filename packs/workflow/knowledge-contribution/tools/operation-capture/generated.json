@@ -1,6 +1,6 @@
 {
   "id": "knowledge-contribution",
-  "version": "1.3.11",
+  "version": "1.3.12",
   "assertion": "assertion",
   "provenance_type": "client_captured",
   "event_schema": "operation-capture-event@1",
