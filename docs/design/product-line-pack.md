@@ -4,7 +4,7 @@
 
 一个产品线接进 circle-hub，交付物只有一样东西：**产品线包**——四种 harness 原语的集合（Skill、MCP server 实例声明及其 Tool、Hook 处理器）加原件 role、流程版本和一份清单。hub 核心不为任何产品线改代码；产品线包按本文的布局和适配单来写，装进 hub 后经独立审批人批准生效。
 
-本仓库里的合成产品线 [meridian](../../packs/meridian/) 是公开的样板；真实产品线包放在各自的 packs 仓库里（例如 [circle-packs](https://github.com/circle-platforms/circle-packs)），不进 hub。
+本仓库里的合成产品线 [meridian](../../packs/meridian/) 是公开的样板；真实产品线包放在各自的私有 packs 仓库里，不进 hub。
 
 ## 和对象标准的对应
 

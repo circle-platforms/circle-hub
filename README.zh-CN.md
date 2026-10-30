@@ -40,7 +40,7 @@ npm run typecheck
 npm run verify:contracts   # contracts/generated 与 contracts/model.json、contracts/codes.json、contracts/src 一致
 npm run test:unit
 npm run test:acceptance    # 临时 PostgreSQL、合成夹具、脚本化模型
-npm run verify:references  # 按 SHA 核对冻结的归档
+npm run verify:references  # 按 SHA 核对冻结的 Circle 基线
 npm test                   # 合约检查、单元、验收与参考测试
 node --test ".github/checks/*.test.ts"   # 文档检查
 ```
@@ -52,13 +52,13 @@ node --test ".github/checks/*.test.ts"   # 文档检查
 - [第一个里程碑简报](docs/hub-r4-brief.md) · [架构](docs/hub-r4-architecture.md) · [进度与决定](docs/hub-r4-progress.md)
 - [通用模型](docs/design/generic-model.md) · [五要素检查单](docs/design/object-standard.md) · [设计索引](docs/design/README.md)
 - [兼容矩阵](docs/compatibility.md)：circle、circle-hub、circle-packs 三个仓库彼此的要求。
-- [参考库](references/README.md)：hub 之前的归档平台；冻结、按 SHA 核验、运行时从不导入。
+- [来源清单](references/README.md)：`foundation/circle` 里冻结的 Circle 源基线；按 SHA 核验、运行时从不导入。
 
 ## 参与与安全
 
 参与开发见 [CONTRIBUTING.md](CONTRIBUTING.md)，编程助手见 [AGENTS.md](AGENTS.md)。安全问题按 [SECURITY.md](SECURITY.md) 报告。参与的每个人都遵守[行为准则](CODE_OF_CONDUCT.md)。
 
-circle-hub 是三个仓库之一：[circle](https://github.com/circle-platforms/circle) 是 agent，circle-hub 是它连接的 MCP 服务器，[circle-packs](https://github.com/circle-platforms/circle-packs) 存放已退役服务器用的技能包和产品线包。
+circle-hub 与 [circle](https://github.com/circle-platforms/circle) 配合使用：circle 是 agent，circle-hub 是它连接的 MCP 服务器。任务包放在本仓库的 `packs/` 下。
 
 ## 许可
 

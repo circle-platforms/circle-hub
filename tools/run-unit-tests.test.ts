@@ -11,7 +11,6 @@ const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 // Tracked test files that no runner picks up on purpose, each with the reason. Everything else must be run.
 const NOT_RUN:Array<[pattern:string,reason:string]>=[
  ['foundation/**/*.test.ts','frozen Circle baseline: its own test setup, never changed or run here (AGENTS.md)'],
- ['references/**/*.test.ts','immutable reference archive: never run or imported (AGENTS.md)'],
  ['docs/hub-r4-research/adoc-sandbox/prototype.test.ts','research prototype: needs an explicit public-registry download first (docs/hub-r4-research/adoc-sandbox.md)'],
 ];
 

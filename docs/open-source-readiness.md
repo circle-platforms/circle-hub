@@ -22,7 +22,7 @@
 
 ### OS-02：完整私有归档的公开范围已由持有人确认
 
-状态：已确认；技术扫描不代替权利声明。位置：[来源清单](../references/source-manifest.json)、[platform 原件](../references/platform/snapshot)及[初始化记录](bootstrap.md)。
+状态：已确认；技术扫描不代替权利声明。位置：[来源清单](../references/source-manifest.json)及[初始化记录](bootstrap.md)；platform 原件已于 2026-10-30 移出公开仓库。
 
 新仓库包含旧私有平台全部 427 份跟踪文件，不只是将来要用的业务代码。范围包括研究记录、模型评测摘要、13 个旧项目的能力索引、GitHub 工作项、截图、样本和历史设计。静态扫描不能证明这些内容都由仓库持有人拥有公开权利，也不能替组织或客户决定公开范围。
 

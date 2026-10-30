@@ -31,6 +31,6 @@ circle-hub 正在重建为一个标准 MCP 服务器。模型在客户端（例�
 - 接口交接与命令：[客户端接口交接](client-api-handoff.md) · [用例执行交接](case-execution-handoff.md) · [资源身份交接](resource-identity-handoff.md) · [模块安装](module-installation.md) · [对象存储接口](object-storage-api.md) · [管理命令](admin-cli.md)
 - 起点：[初始化记录](bootstrap.md)
 
-## 三个仓库
+## 相关仓库
 
-[circle](https://circle-platforms.github.io/circle/) 是 agent，circle-hub 是它当作普通 MCP 服务器连接的 Hub，[circle-packs](https://circle-platforms.github.io/circle-packs/) 存放已退役服务器用的技能包和产品线包。
+[circle](https://circle-platforms.github.io/circle/) 是 agent，circle-hub 是它当作普通 MCP 服务器连接的 Hub。任务包放在本仓库的 `packs/` 下。

@@ -38,10 +38,7 @@ function fixture(t: { after(fn: () => void): void }) {
     sources: {},
     files: [],
   };
-  for (const [name, prefix] of [
-    ['circle', 'foundation/circle'],
-    ['legacydemo-platform', 'references/platform/snapshot'],
-  ]) {
+  for (const [name, prefix] of [['circle', 'foundation/circle']]) {
     manifest.sources[name] = {
       repository: 'synthetic fixture',
       commit: 'a'.repeat(40),
@@ -63,29 +60,24 @@ function fixture(t: { after(fn: () => void): void }) {
           encoding: 'utf8',
         }).trim(),
         sha256: createHash('sha256').update(bytes).digest('hex'),
-        owner: name === 'circle' ? 'A' : 'G',
+        owner: 'A',
         related: [],
-        status:
-          name === 'circle'
-            ? 'unmodified-source-baseline'
-            : 'reference-only-not-production',
+        status: 'unmodified-source-baseline',
       });
     }
   }
   return { root, manifest };
 }
-test('the actual archive reconstructs both complete source Git trees', () => {
+test('the actual archive reconstructs the complete Circle source Git tree', () => {
   const root = fileURLToPath(new URL('../', import.meta.url));
   const result = verifyReferenceArchive(root);
-  assert.equal(result.files, 714);
+  assert.equal(result.files, 287);
+  assert.deepEqual(Object.keys(result.sources), ['circle']);
   assert.equal(result.sources.circle.files, 287);
-  const archived = Object.entries(result.sources).filter(([name]) => name !== 'circle');
-  assert.equal(archived.length, 1);
-  assert.equal(archived[0][1].files, 427);
 });
 test('Git independently confirms tree ordering, Unicode paths and CRLF bytes', (t) => {
   const f = fixture(t);
-  assert.equal(verifyReferenceArchive(f.root, f.manifest).files, 6);
+  assert.equal(verifyReferenceArchive(f.root, f.manifest).files, 3);
 });
 test('changed source bytes fail without changing their expected receipt', (t) => {
   const f = fixture(t);
@@ -143,12 +135,11 @@ test('a symlink cannot replace the approved archive root', (t) => {
   );
 });
 
-test('archive source ids come from structural declarations without changing byte or placement checks', (t) => {
+test('the Circle baseline is the only archive source a manifest may declare', (t) => {
   const f = fixture(t);
-  f.manifest.sources['synthetic-archive'] = f.manifest.sources['legacydemo-platform'];
-  delete f.manifest.sources['legacydemo-platform'];
-  for (const file of f.manifest.files) if (file.source === 'legacydemo-platform') file.source = 'synthetic-archive';
-  assert.equal(verifyReferenceArchive(f.root, f.manifest).sources['synthetic-archive'].files, 3);
-  f.manifest.files.find(file => file.source === 'synthetic-archive')!.destination = 'foundation/circle/node.ts';
+  f.manifest.sources['synthetic-archive'] = f.manifest.sources.circle;
+  assert.throws(() => verifyReferenceArchive(f.root, f.manifest), /invalid source manifest/);
+  delete f.manifest.sources['synthetic-archive'];
+  f.manifest.files[0].source = 'synthetic-archive';
   assert.throws(() => verifyReferenceArchive(f.root, f.manifest), /invalid or duplicate source placement/);
 });
