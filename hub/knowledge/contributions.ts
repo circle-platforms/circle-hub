@@ -16,7 +16,7 @@ import { KnowledgeError } from './errors.ts';
 import type { TreeReading } from './read.ts';
 import { canonicalSize } from './digest.ts';
 import { CAPTURED_GROUND, DECLARATION_GROUND, declarationGradeBody } from './declaration-grade.ts';
-import { operationIdentity, operationRecord, reproductionLease } from './feeding.ts';
+import { operationIdentity, operationRecord, reproductionLease, type AppendPlan } from './feeding.ts';
 import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
 
 export interface ContributionScope {
@@ -77,6 +77,9 @@ function identityOf(prepared: PreparedContribution): string {
       ...(prepared.applicability_claim===undefined?{}:{applicability_claim:prepared.applicability_claim}),
       ...(prepared.relation===undefined?{}:{relation:{kind:prepared.relation.kind,other:{reference:prepared.relation.other.reference,quote:prepared.relation.other.quote}}})});
 }
+
+/** What append() writes beside a contribution with a feeding object, read before the save transaction (issue #104). */
+export interface ContributionAppendPlan { submitter: Principal | null; feeding: AppendPlan | null; lease: string | null }
 
 export class ContributionLayer {
   readonly #context: KnowledgeContext;
@@ -155,6 +158,7 @@ export class ContributionLayer {
       // basis_rank has no value labeled 声明. The stored rank stays the existing contribution default; the record is kept out of evidence by its schema and claim qualifier.
       const provenance=operationRecord(value.schema)&&same?'client_captured':value.schema==='fed-note@1'?'declared':original.artifact.body.provenance_type as Extract<ProvenanceType, 'observed' | 'projected' | 'declared' | 'client_captured'>;
       return {layer:'contribution',product:scope.product,root:input.root,path:input.path,cited_fragment:sha256Hex(fragment.text),kind:input.kind,statement:input.statement,source:{...input.source,fragment:sha256Hex(input.source.quote),provenance,records:[original.artifact.digest],sources:[ref.sha256]},feeding:value as KnowledgeContributionBody['feeding'],submitted_by:reader.id,basis_rank:'judgment',applicability:null};
+
     }
     const {composition, compositions, originals, lineage, custodian, fragments} = await this.#preparation(scope, reader, cacheScope);
     let segments:string[];
@@ -301,18 +305,34 @@ export class ContributionLayer {
     for (const key of [...new Set(prepared.map(identityOf))].sort()) await this.#context.store.records.lock(`knowledge.contribution:${key}`, tx);
   }
 
-  /** Called only after every requirement of the item is satisfied; validation result and layer share the transaction. */
-  async append(prepared: PreparedContribution, origin: ContributionOrigin, tx: Transaction): Promise<string> {
+  /**
+   * What append() needs for a contribution with a feeding object, read just before the caller opens its save transaction:
+   * the submitter's account, the feeding object's plan and the run's booked lease (issue #104). Null without a feeding object.
+   */
+  async planAppend(prepared: PreparedContribution, origin: { run: string }): Promise<ContributionAppendPlan | null> {
+    if (prepared.feeding === undefined) return null;
+    const user = await this.#context.records.principals.get(prepared.submitted_by);
+    const submitter: Principal | null = user === null ? null : { id: user.id, name: user.name, role: user.role };
+    const feeding = submitter === null || this.#context.feeding === undefined ? null : await this.#context.feeding.planAppend(submitter, prepared.feeding as Record<string, unknown>, { product: prepared.product, root: prepared.root, run: origin.run });
+    return { submitter, feeding, lease: operationRecord(prepared.feeding.schema) ? await reproductionLease(this.#context.records.store, origin.run) : null };
+  }
+
+  /**
+   * Called only after every requirement of the item is satisfied; validation result and layer share the transaction. A
+   * contribution with a feeding object needs the plan read for it before the transaction: nothing here reads through the pool.
+   */
+  async append(prepared: PreparedContribution, origin: ContributionOrigin, tx: Transaction, plan: ContributionAppendPlan | null = null): Promise<string> {
     scanPublicText([origin.model,origin.session??'']);
     const key = identityOf(prepared);
     await this.#context.store.records.lock(`knowledge.contribution:${key}`, tx);
     const old = await this.#context.store.records.find({ key: 'knowledge.contribution.identity', value: key, kind: 'claim', limit: 1 }, tx);
     if (old.items.length > 0) return old.items[0].digest;
-    const principal=await this.#context.records.principals.get(prepared.submitted_by);
-    const feedingRecord=prepared.feeding&&principal?await this.#context.feeding?.appendPrepared(principal,prepared.feeding,{product:prepared.product,root:prepared.root,run:origin.run},origin.model,tx):undefined;
+    if(prepared.feeding!==undefined&&plan===null)throw new Error('contribution append without the plan read before its transaction (issue #104)');
+    const principal=plan?.submitter??null;
+    const feedingRecord=prepared.feeding&&principal&&plan?.feeding?await this.#context.feeding?.appendPrepared(principal,prepared.feeding,plan.feeding,{product:prepared.product,root:prepared.root,run:origin.run},origin.model,tx):undefined;
     const body = KnowledgeContributionBody.parse({ ...prepared,...(feedingRecord?{feeding_record:feedingRecord}:{}), session:origin.session,model:origin.model, submitted_at: this.#context.now().toISOString() });
     const operation=body.feeding!==undefined&&operationRecord(body.feeding.schema);
-    const lease=operation?await reproductionLease(this.#context.records.store,origin.run):null;
+    const lease=operation?plan?.lease??null:null;
     return (await this.#context.store.putClaim(SCHEMAS.contribution, operation?'client_captured':'declared', body,
       [{ key: INDEX.contribution, value: body.product }, { key: 'knowledge.contribution.identity', value: key },
         {key:'knowledge.contribution.node',value:digestOf({product:body.product,path:body.path})},
