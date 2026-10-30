@@ -44,6 +44,8 @@ export interface ServerDeps {
 }
 
 export interface AppOptions {
+  /** The server certificate and key of the built-in HTTPS (PEM); required when the configuration has `https`. */
+  tls?: { cert: string; key: string };
   /** Directory whose release.json names the running release; default the code root of this server. */
   codeRoot?: string;
   /** Operational problems (a call-log write that failed); default stderr. Never receives arguments or secrets. */
@@ -62,6 +64,8 @@ export interface AppOptions {
 export interface ListenInfo {
   host: string;
   port: number;
+  /** The built-in HTTPS listener, when the configuration has one. */
+  https?: { host: string; port: number; url: string };
   /** http://127.0.0.1:<port> */
   url: string;
 }

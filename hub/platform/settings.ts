@@ -82,6 +82,8 @@ export const PlatformSettingsFile = z
     allowed_hosts: z.array(z.string()).optional(),
     proxy_origin: z.string().optional(),
     proxy_peer: z.string().optional(),
+    https_host: z.string().optional().describe('listen address of the built-in HTTPS; loopback when left out'),
+    https_port: Port.optional().describe('the built-in HTTPS listens only when this is set'),
     keychain_service: KeychainName,
     keychain_account: KeychainName,
     database: DatabaseSettings,
@@ -95,6 +97,15 @@ export const PlatformSettingsFile = z
     const loopback = host === '::1' || (isIP(host) === 4 && host.startsWith('127.'));
     if (!loopback && !value.allowed_hosts) ctx.addIssue({ code: 'custom', path: ['allowed_hosts'], message: '非回环监听必须声明允许主机' });
     if (value.proxy_origin && !validProxyOrigin(value.proxy_origin, value.allowed_hosts, value.port)) ctx.addIssue({ code: 'custom', path: ['proxy_origin'], message: '代理来源须为明确声明的 HTTPS 主机，且与直接监听权威不同' });
+    if (value.https_host !== undefined && value.https_port === undefined) ctx.addIssue({ code: 'custom', path: ['https_host'], message: '有 HTTPS 监听地址就要有 HTTPS 端口' });
+    if (value.https_port !== undefined) {
+      const httpsHost = value.https_host ?? '127.0.0.1';
+      const httpsLoopback = httpsHost === '::1' || (isIP(httpsHost) === 4 && httpsHost.startsWith('127.'));
+      if (!validListenAddress(httpsHost)) ctx.addIssue({ code: 'custom', path: ['https_host'], message: 'HTTPS 监听地址须是明确的内网 IP 或回环地址' });
+      else if (!httpsLoopback && !value.allowed_hosts) ctx.addIssue({ code: 'custom', path: ['allowed_hosts'], message: '非回环的 HTTPS 监听必须声明允许主机' });
+      if (value.https_port === value.port) ctx.addIssue({ code: 'custom', path: ['https_port'], message: 'HTTPS 端口不能和 HTTP 端口相同' });
+      if (value.proxy_origin) ctx.addIssue({ code: 'custom', path: ['https_port'], message: '内置 HTTPS 与 HTTPS 代理只能选一个' });
+    }
     if (Boolean(value.proxy_origin) !== Boolean(value.proxy_peer) || (value.proxy_peer && !validListenAddress(value.proxy_peer))) ctx.addIssue({ code: 'custom', path: ['proxy_peer'], message: '代理来源和可信对端须同时声明，对端为明确的内网 IP 或回环地址' });
   });
 export type PlatformSettingsFile = z.infer<typeof PlatformSettingsFile>;
@@ -127,6 +138,8 @@ export interface PlatformSettings {
   allowedHosts?: readonly string[];
   proxyOrigin?: string;
   proxyPeer?: string;
+  /** The built-in HTTPS listener; absent when HTTPS is off. */
+  https?: { host: string; port: number };
   keychainService: string;
   keychainAccount: string;
   database: DatabaseNames;
@@ -146,6 +159,8 @@ export function newSettingsFile(input: {
   allowedHosts?: readonly string[];
   proxyOrigin?: string;
   proxyPeer?: string;
+  httpsHost?: string;
+  httpsPort?: number;
   keychainService?: string;
   keychainAccount?: string;
   backupsKeep?: number;
@@ -159,6 +174,8 @@ export function newSettingsFile(input: {
     ...(input.allowedHosts ? { allowed_hosts: input.allowedHosts } : {}),
     ...(input.proxyOrigin ? { proxy_origin: input.proxyOrigin } : {}),
     ...(input.proxyPeer ? { proxy_peer: input.proxyPeer } : {}),
+    ...(input.httpsHost ? { https_host: input.httpsHost } : {}),
+    ...(input.httpsPort !== undefined ? { https_port: input.httpsPort } : {}),
     keychain_service: input.keychainService ?? DEFAULT_KEYCHAIN_SERVICE,
     keychain_account: input.keychainAccount ?? DEFAULT_KEYCHAIN_ACCOUNT,
     database: {
@@ -269,6 +286,8 @@ export function resolveSettings(file: PlatformSettingsFile, env: NodeJS.ProcessE
   agree(PLATFORM_VARIABLES.allowedHosts, (file.allowed_hosts ?? []).join(','));
   agree(PLATFORM_VARIABLES.proxyOrigin, file.proxy_origin ?? '');
   agree(PLATFORM_VARIABLES.proxyPeer, file.proxy_peer ?? '');
+  agree(PLATFORM_VARIABLES.httpsPort, file.https_port === undefined ? '' : String(file.https_port));
+  agree(PLATFORM_VARIABLES.httpsHost, file.https_port === undefined ? '' : file.https_host ?? '127.0.0.1');
   agree(PLATFORM_VARIABLES.keychainService, file.keychain_service);
   agree(PLATFORM_VARIABLES.keychainAccount, file.keychain_account);
   agree(PLATFORM_VARIABLES.databaseName, database.name);
@@ -288,6 +307,7 @@ export function resolveSettings(file: PlatformSettingsFile, env: NodeJS.ProcessE
     ...(file.allowed_hosts ? { allowedHosts: file.allowed_hosts } : {}),
     ...(file.proxy_origin ? { proxyOrigin: file.proxy_origin } : {}),
     ...(file.proxy_peer ? { proxyPeer: file.proxy_peer } : {}),
+    ...(file.https_port !== undefined ? { https: { host: file.https_host ?? '127.0.0.1', port: file.https_port } } : {}),
     keychainService: file.keychain_service,
     keychainAccount: file.keychain_account,
     database,

@@ -73,4 +73,5 @@ export { isPlatformCommand, main, PLATFORM_COMMANDS, runPlatformCommand, type Pl
 export { fdIsKeyPipe, liveKeyPipe, readKeyStdin, type KeyPipe } from './key-transfer.ts';
 export { ensureHubDatabase, hubKeyProvider } from './service.ts';
 export { fileKeyStore, fileKeyProvider, type FileKeyOptions } from './file-key.ts';
+export { RENEW_WITHIN_DAYS, daysLeft, readServerTls, tlsPaths, type ServerTls, type TlsPaths } from './tls.ts';
 export { runCommand, type CommandResult, type CommandRunner } from './process.ts';

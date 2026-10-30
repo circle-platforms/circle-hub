@@ -32,6 +32,30 @@ installation can use an internal address only when this data root's existing dep
 port and all supplied environment values agree. A client without that trusted lock still accepts loopback only.
 Configure the target and firewall before exposing the service; this setting does not itself configure network access.
 
+## Built-in HTTPS
+
+Owner decision 74 (2026-10-31): the Hub can serve HTTPS itself, so the web console and Circle reach it on an internal
+address without a separate TLS proxy. `init --https-port <p> [--https-host <ip>]` (or `CIRCLE_HUB_HTTPS_PORT` and
+`CIRCLE_HUB_HTTPS_HOST` at init) pins `https_port` and `https_host` in the deployment settings; a non-loopback HTTPS
+address needs the allowed-host list, the port may not be the HTTP port, and a TLS proxy and the built-in HTTPS are
+exclusive. The service environment carries both values to `serve`, which opens a second listener beside the HTTP one
+(the HTTP listener keeps its own address, loopback by default). A variable that disagrees with the settings, or that
+would switch HTTPS on behind them, is refused like every other pinned value.
+
+`tls init` creates a private certificate authority for this data root (EC P-256, ten years, path length 0) and a
+server certificate it signs (EC P-256, 397 days, serverAuth) for the HTTPS listen address, every allowed host,
+`localhost`, `127.0.0.1` and `::1`; `tls issue` signs a new server certificate with the same authority (after the
+allowed hosts change, or before the old one ends); `tls init --renew-authority` replaces the authority, after which
+every client must trust the new one; `tls status` prints the authority's SHA-256 fingerprint, the names and the days
+left, and says when the certificate no longer covers the settings. The certificates are encoded and signed with
+node:crypto (`tls.ts`), not openssl, whose LibreSSL and OpenSSL flags differ between macOS and Linux. The files live in
+`tls/` (0700): `ca.crt`, `ca.key` and `server.key` owner-only, `server.crt`; every read refuses a symlink, a file of
+another account or a key readable by others. `tls/` is not backed up (backups copy objects, vault and config): a
+restored deployment runs `tls init` and its clients trust the new authority. `serve` refuses to start with HTTPS
+configured and no valid pair, and warns in the operator's log when the certificate ends within 30 days; `status`
+shows the HTTPS address and the days left. Browsers import `ca.crt` (system keychain or browser settings); Circle
+names it in `trust_cert_files`. Check the fingerprint before trusting it.
+
 ## Data root
 
 `~/Library/Application Support/circle-hub`, or `CIRCLE_HUB_DATA_DIR` (the name hub/config reads too; there is no second
@@ -49,6 +73,7 @@ name). Every directory is 0700.
 | `releases/operation.json` | progress of a deploy or rollback that has not finished (`circle-hub-operation@1`) |
 | `current` | relative symlink to `releases/<id>` |
 | `config/platform.json` | the deployment instance (`circle-hub-platform@2`): environment class, HTTP port, database name, role and socket port, keychain service and account, backups kept, optional node path |
+| `tls/` | the built-in HTTPS: the private certificate authority and the server certificate it signed (`tls init`); never backed up |
 | `set-aside/<time>-<reason>/` | data moved out of the way by a failed deploy, a rollback or a failed restore; never deleted automatically |
 
 ## Commands

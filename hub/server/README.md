@@ -43,7 +43,12 @@ target server. In particular, the VM check injects fake principals and call logg
 does not validate a real identity store, colleague's Circle, actual credentials or the target network.
 
 The default is loopback `127.0.0.1`; a specific internal IP requires an explicit allowed-host list. Wildcard and public
-listeners are refused. The port comes from `CIRCLE_HUB_PORT`. The request target is parsed once and never throws (`parseTarget`): an origin-form target is always a
+listeners are refused. The port comes from `CIRCLE_HUB_PORT`. With `CIRCLE_HUB_HTTPS_PORT` (owner decision 74) the app
+opens a second listener with the certificate of `<data dir>/tls` (`AppOptions.tls`, read by `serve` before anything
+starts) and serves the same routes there. Each listener answers only to its own authorities: an HTTPS name sent over
+plain HTTP, or the reverse, is a 403. A request that arrived over that listener is secure for the console (the
+`__Secure-` cookies with `Secure`), as one from the configured TLS proxy is; the HTTPS origins join the console's own
+origins. `ListenInfo.https` gives the listening address. The request target is parsed once and never throws (`parseTarget`): an origin-form target is always a
 path on this server, so `//x/mcp` is the path `//x/mcp` (404), never an authority `x` with the path `/mcp`; an absolute
 `http://` target without user information is served by its path; anything else (`*`, a URL the parser refuses such as
 `http://a:b/`) is 400 with `connection: close`. A request whose handling fails anyway is logged and answered 500; no

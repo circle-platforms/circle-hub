@@ -14,6 +14,7 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- **Built-in HTTPS** (owner decision 74). `circle-hub init --https-port <p> [--https-host <ip>]` pins an HTTPS listener in the deployment settings; `circle-hub tls init|issue|status` keeps a private certificate authority and the server certificate it signs in `<data root>/tls` (EC P-256, made with node:crypto; never backed up). `serve` opens the HTTPS listener beside the HTTP one, with its own Host authorities and `Secure` console cookies. A TLS proxy and the built-in HTTPS are exclusive.
 - The generic model (`contracts/model.json`, version 5), the error-code registry (`contracts/codes.json`) and the contracts generated from them in `contracts/generated`: vocabulary, protocol codes, JSON Schemas and the six MCP tools. `npm run gen:contracts` regenerates them, `npm run verify:contracts` checks them, and `tools/show-element.ts` prints model elements.
 - The milestone 1 architecture brief, human brief and progress record under `docs/`. The earlier briefs, progress records and handoffs are marked historical and the old design pages superseded; none was deleted.
 

@@ -99,7 +99,7 @@ describe('platform CLI', () => {
     assert.match(unknown.err, /未知命令：frobnicate/);
     assert.match((await run('serve')).err, /serve 由服务器包提供/);
     assert.ok(isPlatformCommand('deploy') && !isPlatformCommand('serve') && !isPlatformCommand('toString'));
-    assert.deepEqual([...PLATFORM_COMMANDS].sort(), ['backup', 'db', 'deploy', 'init', 'key', 'rehearse', 'restore', 'rollback', 'service', 'status']);
+    assert.deepEqual([...PLATFORM_COMMANDS].sort(), ['backup', 'db', 'deploy', 'init', 'key', 'rehearse', 'restore', 'rollback', 'service', 'status', 'tls']);
     assert.equal((await run('db', 'explode')).code, 2);
     assert.equal((await run('service', 'explode')).code, 2, 'usage is checked before the settings are read');
     assert.equal((await run('key', 'explode')).code, 2);
