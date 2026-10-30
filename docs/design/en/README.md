@@ -31,7 +31,7 @@ The design authority is the generic model in [contracts/model.json](https://gith
 | [Harness format survey](harness-formats.md) | On-disk formats of five harnesses (surveyed 2026-10-13) | No longer needed: the Hub does not import or export harness primitives |
 | [Handoff-to-design map](handoff-map.md) | Where the two handoffs went in the design | Both handoffs are now historical records |
 
-Two earlier principles still hold: determined content is given to scripts, and the rest is given to the model to judge and disclosed in full ([ADR 0024](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/decisions/0024-truth-and-disclosure-principle.md)); local cancel, remote stop and task delivery are recorded separately ([ADR 0025](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/decisions/0025-complete-product-task-delivery.md)).
+Two earlier principles still hold: determined content is given to scripts, and the rest is given to the model to judge and disclosed in full (ADR 0024); local cancel, remote stop and task delivery are recorded separately (ADR 0025).
 
 ## License
 

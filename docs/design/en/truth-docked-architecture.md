@@ -38,9 +38,9 @@ Every guarantee needs definitions, quantifiers, premises, a proof or counterexam
 
 This research does not depend on mischaracterizing the current design:
 
-- The [object standard](object-standard.md) and [runtime-object reference](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/object-boundaries-v1.md) allocate authority and responsibilities; professional algorithms and domain validation already have a methods-layer owner. Ownership boundaries and computational loops can coexist.
+- The [object standard](object-standard.md) and runtime-object reference allocate authority and responsibilities; professional algorithms and domain validation already have a methods-layer owner. Ownership boundaries and computational loops can coexist.
 - [Execution flows](execution-flow-packs.md) already have persistent state, observations, actions, and step identities. A pure transition function not directly calling a model does not imply that the system cannot call models or form loops.
-- The [Knowledge V1 reference](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/knowledge-v1.md) separates exact parsing from semantic judgment. semantic=not-asserted bounds a conclusion; it does not deny completed structural checks.
+- The Knowledge V1 reference separates exact parsing from semantic judgment. semantic=not-asserted bounds a conclusion; it does not deny completed structural checks.
 - The [approval specification](approvals-and-enforcement.md) already has execution-submission approval bound to concrete inputs and consumable by the corresponding operation. More precise impact policy is a research direction, not a consequence of an absence of execution approval.
 - The five fixed Hooks and their domain subjects are current contracts. Generalizing them requires separate contract design, compatibility work, and acceptance; this document does not remove them.
 

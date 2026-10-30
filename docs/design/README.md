@@ -31,7 +31,7 @@ nav_order: 4
 | [harness 原语格式调查](harness-formats.md) | 五家 harness 的磁盘格式（2026-10-13 的调查） | 不再需要：Hub 不导入导出 harness 原语 |
 | [handoff 到设计文档的对照表](handoff-map.md) | 两份交接文档并入设计篇的对照 | 两份交接都已成为历史记录 |
 
-两条更早的原则仍然成立：确定内容交给脚本、其余交给模型判断并完整披露（[ADR 0024](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/decisions/0024-truth-and-disclosure-principle.md)）；本地取消、远端停止、任务交付分别记录（[ADR 0025](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/decisions/0025-complete-product-task-delivery.md)）。
+两条更早的原则仍然成立：确定内容交给脚本、其余交给模型判断并完整披露（ADR 0024）；本地取消、远端停止、任务交付分别记录（ADR 0025）。
 
 ## 许可
 

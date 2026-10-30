@@ -12,7 +12,7 @@ Circle's earlier Git history is kept as well. The licenses and notices of each h
 
 ## The platform references
 
-`references/platform/snapshot` comes from legacydemo-platform commit `4ab6c5ea593eb1b1d71bed92374b3a013ba61ad9`. The project's own content in it is covered by the root license. The `private` flags, the old package metadata without a declared license and the historical scope records in the originals stay as they are, as evidence of provenance; the current grant is what this page and the root LICENSE say.
+The archive of the platform that preceded the hub was removed from this repository on 2026-10-30 and is no longer distributed with it.
 
 External products, project names, source links, trademarks and method descriptions in the research documents keep their own ownership. Linking to a public repository or studying how it works confers no trademark right and does not bring that product into this project's license.
 

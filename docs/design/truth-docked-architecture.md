@@ -38,9 +38,9 @@ nav_order: 8
 
 本研究不以误读现行设计为前提：
 
-- [对象标准](object-standard.md)与[运行对象参考](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/object-boundaries-v1.md)划分权威状态和职责；专业算法与领域验证已有方法层归属。职责划分与计算闭环可以同时存在。
+- [对象标准](object-standard.md)与运行对象参考划分权威状态和职责；专业算法与领域验证已有方法层归属。职责划分与计算闭环可以同时存在。
 - [执行流](execution-flow-packs.md)已有持久状态、观察、动作与步骤身份。纯状态转换函数不直接调用模型，不能据此推出整个系统不能调用模型或形成循环。
-- [知识 V1 参考](https://github.com/circle-platforms/circle-hub/blob/main/references/platform/snapshot/docs/knowledge-v1.md)把精确解析与语义判断分开。semantic=not-asserted 限制结论范围，不否定已完成的结构检查。
+- 知识 V1 参考把精确解析与语义判断分开。semantic=not-asserted 限制结论范围，不否定已完成的结构检查。
 - [审批规范](approvals-and-enforcement.md)已有绑定具体执行输入、只能由对应操作消费的 execution-submission。按操作影响细化策略是研究方向，不是从“旧设计完全无执行审批”推出的结论。
 - 五个固定 Hook 及其领域 subject 确实是现行契约。是否以及如何通用化，需要独立的契约设计、兼容方案与验收，本文不直接废除它们。
 
