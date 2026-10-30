@@ -10,6 +10,24 @@ export interface RunJob {
   /** Administrative proof reference; keep it behind an administrator-only read tier, never return raw journal bodies. */
   job:string;record?:string;management_exit?:UnknownExit;verification_run:string;plan_run:string;verification_item:string;items:string[];sha256:string;status:JobStatus;
 }
+/**
+ * The jobs of each run a dispatch job is bound to (as its verification run or its plan run), from one scan of the
+ * reservations. Job events are indexed by job, not by run: run maintenance reads these jobs' positions to see whether
+ * anything happened to the run.
+ */
+export async function dispatchedRuns(records:Pick<RecordsKit,'store'>):Promise<Map<string,string[]>>{
+  const runs=new Map<string,string[]>();let cursor:string|null=null;
+  do{
+    const page:Page<StoredRecord<ActionBody>>=await records.store.find<ActionBody>({kind:'action',key:'dispatch.phase',value:'reservation',limit:500,cursor});
+    for(const record of page.items){
+      const binding=record.body.detail.binding as {job?:unknown;input?:{run?:unknown;plan_run?:unknown}}|undefined;
+      if(typeof binding?.job!=='string')continue;
+      for(const run of [binding.input?.run,binding.input?.plan_run])if(typeof run==='string'){const jobs=runs.get(run)??[];if(!jobs.includes(binding.job))jobs.push(binding.job);runs.set(run,jobs);}
+    }
+    cursor=page.next;
+  }while(cursor!==null);
+  return runs;
+}
 export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick<DispatchService,'status'>,by:Principal,run:string):Promise<RunJob[]>{
   RunId.parse(run);
   const jobs=new Map<string,z.infer<typeof Input>>();let cursor:string|null=null;

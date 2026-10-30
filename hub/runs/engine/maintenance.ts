@@ -14,7 +14,7 @@ import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import type { EngineContext } from './deps.ts';
-import { latestAccepted, listRunRecords, putAction, putResult, submissionsOf, submissionByDigest, actionOfSubmission, actionsOf, isVerbatimObject } from './store.ts';
+import { INDEX, latestAccepted, listRunRecords, putAction, putResult, submissionsOf, submissionByDigest, actionOfSubmission, actionsOf, isVerbatimObject } from './store.ts';
 import { putRequest, recordResultRequests, requestRecords, answerRequest, answerSuccessorRequests, requestKey, requestKeyOf, RequestBodySchema, type RequestBody } from './requests.ts';
 import { restoreLegacyRequests,restoreRecordedRequests } from './maintenance-requests.ts';
 
@@ -22,20 +22,59 @@ import { restoreLegacyRequests,restoreRecordedRequests } from './maintenance-req
  * One maintenance pass. `stop` is asked between runs and between the request sweeps: a pass asked to stop (the service is
  * shutting down) returns there, and what it did not reach is done by the next pass, since every step is idempotent.
  */
-export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false):Promise<void>{
+export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false,memory?:MaintenanceMemory):Promise<void>{
   const ctx=passContext(base);
+  const started=ctx.now().getTime();
+  const store=ctx.deps.records.store;
+  // A pass with memory visits only the runs something happened to; without one, or when it cannot tell, it visits every run.
+  const full=memory===undefined||memory.fullAt===null||started-memory.fullAt>=FULL_PASS_MS||!store.lastPositions||ctx.deps.dispatch!==undefined&&!ctx.deps.dispatch.runs;
+  // The jobs of the dispatched runs: their events count as the run's records (they are indexed by job, not by run).
+  const dispatched=memory&&store.lastPositions?await ctx.deps.dispatch?.runs?.()??new Map<string,readonly string[]>():null;
   let cursor:string|null=null;
   do{
     const page:Page<StoredRecord<RunRecord>>=await listRunRecords(ctx.deps.records.store,{}, {limit:200,cursor});
-    for(const run of page.items){if(stop())return;const stopped=await abandonDecision(ctx,run.body.run);if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run);continue;}if(run.body.predecessor){const before=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,run.body.predecessor!));if(before)await answerSuccessorRequests(ctx,before.body,run);}await reconcileDispatch(ctx,run);await rootUpdateRequest(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>legacyResultRequests(ctx,run));await recoverRun(ctx,run);await recoverParent(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
+    // Read on full passes too, so that the memory a full pass leaves lets the next pass skip what did not change.
+    const watched=(run:StoredRecord<RunRecord>)=>[run.body.run,...(run.body.predecessor?[run.body.predecessor]:[]),...(dispatched?.get(run.body.run)??[])];
+    const positions=dispatched===null?null:await store.lastPositions!({keys:RUN_KEYS,values:[...new Set(page.items.flatMap(watched))]});
+    for(const run of page.items){if(stop())return;
+      // The run's own records, its predecessor's (a successor answers the predecessor's requests) and its jobs' events.
+      const position=positions===null?0:Math.max(0,...watched(run).map(value=>positions.get(value)??0));
+      if(memory&&!full&&positions!==null&&unchanged(memory,run.body,position,started))continue;
+      memory?.runs.set(run.body.run,{position,at:started});
+      const stopped=await abandonDecision(ctx,run.body.run);if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run);continue;}if(run.body.predecessor){const before=await import('./store.ts').then(m=>m.runById(ctx.deps.records.store,run.body.predecessor!));if(before)await answerSuccessorRequests(ctx,before.body,run);}await reconcileDispatch(ctx,run);await rootUpdateRequest(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>legacyResultRequests(ctx,run));await recoverRun(ctx,run);await recoverParent(ctx,run);await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));}
     cursor=page.next;
   }while(cursor!==null);
+  if(memory&&full)memory.fullAt=started;
   if(stop())return;
   await repairedPackRequests(ctx);
   if(stop())return;
   await acceptedSourceRequests(ctx);
   if(stop())return;
   await escalateOverdueRequests(ctx);
+}
+/**
+ * What scheduled passes remember: per run, the newest append position among its records (its predecessor's and its
+ * dispatch jobs' events included) when a pass last visited it, and when. A pass then visits a run only when that position
+ * moved or its submission deadline passed since.
+ */
+export interface MaintenanceMemory {
+  runs: Map<string, { position: number; at: number }>;
+  /** When the last pass that visited every run started (null: none yet). */
+  fullAt: number | null;
+}
+/**
+ * How often a scheduled pass visits every run anyway: for what no record of the run shows, such as a moved knowledge root or
+ * a disabled account. The first pass after a start always visits every run.
+ */
+export const FULL_PASS_MS = 30 * 60 * 1000;
+/** The index keys whose value is a run id (its actions, submissions, results, requests, successor runs) or a job id. */
+const RUN_KEYS = [INDEX.actionRun, INDEX.submissionRun, INDEX.resultRun, INDEX.runPredecessor, 'runs.request.run', 'dispatch.job'];
+function unchanged(memory:MaintenanceMemory,run:RunRecord,position:number,now:number):boolean{
+  const seen=memory.runs.get(run.run);
+  if(!seen||seen.position!==position)return false;
+  const due=run.submission_due?Date.parse(run.submission_due):Number.NaN;
+  // A deadline that passed since the last visit is work no record shows yet.
+  return !(Number.isFinite(due)&&seen.at<due&&due<=now);
 }
 /**
  * The pass reads the account list once: every step looks up the named administrator, and on a store with hundreds of runs

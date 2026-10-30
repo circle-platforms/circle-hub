@@ -9,7 +9,7 @@ export { observationHashes, rpcResponse, toolContent } from './observations.ts';
 
 export type { BuildKnowledge } from './probes.ts';
 
-export { readRunJobs, type RunJob } from './read-runs.ts';
+export { dispatchedRuns, readRunJobs, type RunJob } from './read-runs.ts';
 export {ExecutorSource,resolveExecutorValues} from './source.ts';
 
 export {freezeEffectRegistry} from './snapshot.ts';
