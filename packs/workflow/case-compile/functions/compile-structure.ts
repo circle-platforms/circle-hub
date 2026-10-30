@@ -157,12 +157,18 @@ export function analyzeStructure(model: unknown, sha: string, depths?: number[])
                     let matches = explicit ? after.filter(a => a.labels.includes(explicit) || a.node_id === explicit) : labels.length ? after.filter(a => a.labels.some(label => labels.includes(label))) : after.length === 1 ? after : [];
                     if (!explicit && !matches.length && after.length === 1 && !after[0].explicit_labels.length && (!number || after[0].number_label === number || after[0].number_label === null))
                         matches = after;
+                    // Decision 103 (aligned with InfoTest): an expectation with no step_ref, label or number under several actions
+                    // belongs to them as one step; the authoring model splits it into verbatim clauses and asserts each after the
+                    // operation it observes, a judgment the Hub checks by quote. An explicit reference matching none or several stays unbound.
+                    const wholeStep = !explicit && !(n.data && Object.hasOwn(n.data, 'step_ref')) && !labels.length && !number && !matches.length && after.length > 1;
+                    if (wholeStep)
+                        matches = after;
                     if (n.data && Object.hasOwn(n.data, 'step_ref') && typeof n.data.step_ref !== 'string') {
                         matches = [];
                         missing.push('step_ref 必须是声明的文字标识符；作者修正结构字段');
                     }
                     a.after = matches.map(a => a.id);
-                    if (matches.length !== 1)
+                    if (matches.length !== 1 && !wholeStep)
                         missing.push('期望 ' + a.id + ' 缺作者动作定位；作者补 step_ref 或方括号定位后重读');
                 }
                 atoms.push(a);

@@ -1,4 +1,4 @@
-# case-compile 3.8.9
+# case-compile 3.8.10
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -293,3 +293,11 @@ alternative whose type at that position rejected the given address, the address 
 `no slb virtual addrlists <name> <address>` had two identities and its cleanup could not be checked. The expansions of one
 declared signature now bind as the declared signature does, the given arguments at the earliest positions; identities of
 different declared signatures still make a line ambiguous.
+
+### 3.8.10: an unlabeled expectation under several actions binds to the step (decision 103)
+
+Aligned with InfoTest's handling (owner, 2026-10-30): an expectation with no `step_ref`, no bracket label and no number,
+under a step whose several actions precede it, binds to those actions as one step instead of staying unbound. The authoring
+model splits it into verbatim clauses of the expectation node and asserts each after the plan operation it observes; that
+placement is a model judgment, and the Hub still checks every quote against the expectation's original bytes. An explicit
+`step_ref`, label or number that matches no action, or several, still leaves the expectation unbound.
