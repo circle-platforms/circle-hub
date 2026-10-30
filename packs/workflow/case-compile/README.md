@@ -1,4 +1,4 @@
-# case-compile 3.9.0
+# case-compile 3.9.1
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -350,3 +350,15 @@ document order, one item each; duplicate autoids refuse startup, and a recompose
   yet satisfied it produces nothing, as CES does not emit a batch with unsealed cases.
 
 Test: `functions/whole-mindmap.test.ts`.
+
+### 3.9.1: the client fetches its run's inputs; the Hub dispatches the verified run (decisions 104, 105)
+
+`tools/fetch-run.ts --hub <address> --run <run> --out <directory>` reads the user's token from standard input only and fetches
+from the Hub's `/run-export/<run>` (runner and administrators) the run, its latest accepted result and that result's
+submission, and from `/run-export/<run>/sources/<sha256>` the run's bound contract, profile and inventory, checking each
+against the digest the run bound; nothing is overwritten. These are exactly the inputs of `tools/generate-workbook.ts`, which
+an administrator had to export before. Once the verification run is accepted with every requirement satisfied while the
+runner holds the executor's bed keys, the Hub dispatches the workbook itself (decision 105) and the answer's `派发` line names
+the job; repeating the same submission reads its progress and the result reference. SKILL.md steps 5, 6 and 8 say so.
+
+Test: `tools/fetch-run.test.ts`.

@@ -202,6 +202,9 @@ export interface RunsService {
   resolveReference(user: Principal, input: z.infer<typeof ResolveReferenceInput>, context: CallContext): Promise<Untraced<z.infer<typeof ResolveReferenceOutput>>>;
   /** Own runs for a user, any run for an admin; null when absent or forbidden. */
   getRun(user: Principal, run: string): Promise<RunDetail | null>;
+  /** Decision 104: what a client needs to generate from its own run without an administrator export: the run, its latest
+   * accepted result and that result's submission as stored. Only the runner and administrators; null when absent or forbidden. */
+  exportRun?(user: Principal, run: string): Promise<{ run: RunDetail['run']; result: ValidationResult | null; submission: unknown | null } | null>;
   /** Own runs for a user, every run for an admin, newest first. */
   listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null }): Promise<RunListing>;
 }

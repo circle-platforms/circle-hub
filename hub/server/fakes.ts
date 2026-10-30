@@ -504,6 +504,8 @@ export class FakeRuns implements RunsService {
   readonly #workflows: FakeWorkflows;
   readonly #now: () => Date;
   readonly runs = new Map<string, StoredRun>();
+  /** Submission bodies by run and canonical digest, as the engine stores them (for exportRun). */
+  readonly #bodies = new Map<string, Record<string, unknown>>();
   readonly script = new Script();
   /** The contexts the service was called with, newest last. */
   readonly contexts: CallContext[] = [];
@@ -691,6 +693,7 @@ export class FakeRuns implements RunsService {
       text = JSON.stringify(args);
     }
     const digest = sha(text);
+    this.#bodies.set(`${runId}:${digest}`, { ...args });
     const parsed = Submission.safeParse(args);
     const effective = parsed.success ? effectiveSubmission(parsed.data,stored.record,context.sessionId) : null;
     const observer=JSON.stringify([digest,context.sessionId,effective?.model??null]);
@@ -829,6 +832,13 @@ export class FakeRuns implements RunsService {
     const stored = await this.#visible(user, run);
     return stored === null ? null : { run: stored.record, submissions: [...stored.submissions], latest: stored.latest,
       production:stored.production === null ? null : {record:stored.production.record,result:stored.production.result} };
+  }
+
+  async exportRun(user: Principal, run: string): Promise<{ run: RunRecordView; result: ValidationResult | null; submission: unknown | null } | null> {
+    const stored = await this.#visible(user, run);
+    if (stored === null || (stored.record.runner !== user.id && !(await isAdmin(this.#records, user)))) return null;
+    const result = stored.latest?.result.acceptance === 'accepted' ? stored.latest.result : null;
+    return { run: stored.record, result, submission: result ? this.#bodies.get(`${run}:${result.submission}`) ?? null : null };
   }
 
   async listRuns(user: Principal, query: { pack?: string; limit?: number; cursor?: string | null } = {}): Promise<Page<RunRecordView>> {

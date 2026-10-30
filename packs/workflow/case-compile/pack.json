@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.9.0",
+  "version": "3.9.1",
   "kind": "workflow",
   "dependencies": [
     {
@@ -16,8 +16,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "7e774e8fdd680c2fd4951c19860e985b79d580262bf8cdfe02c19419ae4bd158",
-      "size": 17574
+      "sha256": "6937db5df3c5fb1af965afb5a398a7a7f1f1b1a9ffab4e6508253c623b4c92e8",
+      "size": 17494
     },
     {
       "path": "checks.json",
@@ -371,7 +371,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "1dfc1cfc672d4c7bb0eaeb60158489c31517287cf61ce5eab634044f07147289",
+      "sha256": "792994caa49f97f8ef9a52a1021b2c7d5218f2fcca028df30bff0c86cc7fa76b",
       "size": 39651
     },
     {
@@ -411,7 +411,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "c8b21faa0063f9a3c889813a6e77f4e6365b8fb8c15e33df0b4afc5efc3a9356",
+      "sha256": "1dc4770d786359c562137cbfd1a3551ee7ea1a0296c28260bb33419fca3f1f4f",
       "size": 39655
     },
     {
@@ -486,7 +486,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "25c071170354f070f746cb2c2566b03cd53504a11cf95a94905d14b62ddee1cc",
+      "sha256": "03a113bb879cfafa4c60e9fb5ce77ff9a074c1ae75a0757d9b96774e2a46f6aa",
       "size": 39605
     },
     {
@@ -526,7 +526,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "e25996bfccd539c458e66cfb9c2a33b21bd181c224e25a7b60aad02b6002131d",
+      "sha256": "37fcc6eecaae612d8a9aee5195cc263152fdfa96c0c4ffc93c58803cab78671b",
       "size": 39609
     },
     {
@@ -626,8 +626,13 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "69b5e79c75f7f0459e36bf104f22c194df7e6b9729dfdcd959ba257607c99fc9",
+      "sha256": "dd54a6bb568bd912e93c428b9d6e07bab7e53697524cf7c5ce908e99c6c2f666",
       "size": 555
+    },
+    {
+      "path": "tools/fetch-run.ts",
+      "sha256": "7520354a0d1d04134e28efb37e22e8dd80d3d6795bb2607606cd8fff48a51df2",
+      "size": 4486
     },
     {
       "path": "tools/files.ts",

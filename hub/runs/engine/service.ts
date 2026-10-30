@@ -13,6 +13,7 @@ import { createEngineContext, type EngineContext, type RunsEngineDeps } from './
 import { unavailableError } from './errors.ts';
 import { previewReference, type ResolveAnswer } from './preview.ts';
 import { getResult, getRun, listRuns, runsFor, type StoredResult } from './queries.ts';
+import { submissionByDigest } from './store.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
 import { submitResult, type SubmitAnswer } from './submit.ts';
 import { wellFormed } from './util.ts';
@@ -121,6 +122,15 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
     },
     getRun(user, run): Promise<RunDetail | null> {
       return withRequestPermissions(ctx.deps.records.artifacts,user,()=>getRun(ctx, user, run));
+    },
+    exportRun(user, run) {
+      return withRequestPermissions(ctx.deps.records.artifacts, user, async () => {
+        const detail = await getRun(ctx, user, run);
+        if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
+        const result = detail.latest?.result.acceptance === 'accepted' ? detail.latest.result : null;
+        const submission = result ? (await submissionByDigest(ctx.deps.records.store, run, result.submission))?.body ?? null : null;
+        return { run: detail.run, result, submission };
+      });
     },
     listRuns(user, query) {
       return withRequestPermissions(ctx.deps.records.artifacts,user,()=>listRuns(ctx, user, query));
