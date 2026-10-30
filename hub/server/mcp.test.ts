@@ -1265,3 +1265,59 @@ describe('tokens and concurrency', () => {
     await Promise.all(clients.map((c) => c.close()));
   });
 });
+
+describe("the caller's own token in a request (issue #105)", () => {
+  const RUN = 'run_01arz3ndektsv4rrffq69g5fav';
+  const submission = (text: string) => JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'submit_result', arguments: { run: RUN, model: 'synthetic', items: [{ item: 'c1', handling: 'handled', slots: { findings: [{ text, data: { nested: [{ note: text }] } }] } }] } } });
+  const refused = (reply: { status: number; json: unknown }, secret: string) => {
+    assert.equal(reply.status, 400, JSON.stringify(reply.json));
+    assert.equal((reply.json as { error?: { code?: number } }).error?.code, -32602);
+    assert.ok(!JSON.stringify(reply.json).includes(secret), 'the answer does not echo the token');
+  };
+
+  test('a submission holding the token, whole, as a run in a nested field or escaped in the JSON text, is refused before it is handled', async () => {
+    const user = await person();
+    const before = server.fakes.runs.contexts.length;
+    const run = user.token.slice(5, 17);
+    refused(await post(user.token, submission(user.token)), user.token);
+    refused(await post(user.token, submission(`合成说明 ${run} 结束`)), run);
+    const escaped = submission(`合成说明 ${run}`).replaceAll(run, [...run].map(char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`).join(''));
+    assert.ok(!escaped.includes(run));
+    refused(await post(user.token, escaped), run);
+    assert.equal(server.fakes.runs.contexts.length, before, 'the runs service never saw them');
+    const lines = (await server.records.callLog.query(server.admin.principal, { userId: user.user.id, limit: 10 })).items;
+    assert.equal(lines.length, 3);
+    assert.ok(lines.every(line => line.tool === 'mcp' && line.call_result === 'transport_failure'), JSON.stringify(lines));
+    // Without the token the same submission reaches the runs service.
+    await post(user.token, submission('合成说明'));
+    assert.equal(server.fakes.runs.contexts.length, before + 1);
+  });
+
+  test('only the token that authenticates the request is looked for: after a rotation the new one is', async () => {
+    const user = await person();
+    const old = (await server.records.principals.tokens(user.user.id))[0]!;
+    const issued = await server.records.principals.issueToken(server.admin.principal, user.user.id, 'rotated');
+    assert.ok(await server.records.principals.revokeToken(server.admin.principal, old.id));
+    const before = server.fakes.runs.contexts.length;
+    refused(await post(issued.token, submission(`轮换后 ${issued.token.slice(20, 32)}`)), issued.token.slice(20, 32));
+    assert.equal(server.fakes.runs.contexts.length, before);
+    await post(issued.token, submission(`撤销的旧令牌 ${user.token}`));
+    assert.equal(server.fakes.runs.contexts.length, before + 1, 'a revoked token is not the caller\'s current token');
+  });
+
+  test('a session id or an uploaded file holding the token is refused, and the call log keeps neither', async () => {
+    const user = await person();
+    const reply = await fetch(server.mcpUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${user.token}`, 'circle-session-id': `sess-${user.token.slice(0, 12)}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'list_task_packs', arguments: {} } }),
+    });
+    refused({ status: reply.status, json: JSON.parse(await reply.text()) }, user.token.slice(0, 12));
+    const content = `合成文件 ${user.token.slice(30, 42)}`;
+    refused(await post(user.token, JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'upload_file', arguments: { file_path: b64(content) } } })), user.token.slice(30, 42));
+    assert.deepEqual(await server.records.artifacts.records(sha256Hex(Buffer.from(content))), [], 'the file was not stored');
+    const lines = (await server.records.callLog.query(server.admin.principal, { userId: user.user.id, limit: 10 })).items;
+    assert.equal(lines.length, 2);
+    assert.ok(lines.every(line => line.session === null && line.call_result === 'transport_failure'), JSON.stringify(lines));
+  });
+});

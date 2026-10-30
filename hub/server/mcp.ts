@@ -15,6 +15,7 @@ import { mediaTypeOf, readBody, sendRpcError, setCommonHeaders, type BodyBudget 
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { newTraceId, sessionIdOf, traceIdFrom } from './trace.ts';
 import { callTool, internalError, listTools, type CallState, type ToolCall } from './tools.ts';
+import { holdsToken, tokenRuns } from './token-echo.ts';
 
 export interface McpOptions {
   deps: ServerDeps;
@@ -26,6 +27,7 @@ export interface McpOptions {
 
 /** Same body for missing, unknown, revoked and disabled tokens. */
 const UNAUTHENTICATED = '需要有效的 Bearer 令牌';
+const TOKEN_IN_REQUEST = 'Invalid params: 请求里含调用方当前的 Hub 令牌或它的片段，整份请求没有处理，也没有保存；删去这段文字（或换一个会话号）后重发';
 const BATCH_REFUSED = 'Invalid Request: 不接受 JSON-RPC 批量请求（MCP 2025-06-18 起没有批量）；每个请求单独用一次 POST 发送';
 const LOGGED_TOOL = /^[A-Za-z0-9_./:-]{1,100}$/;
 const LOGGED_CODE = /^[A-Za-z0-9_.:-]{1,100}$/;
@@ -157,7 +159,12 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
     return;
   }
   const traceId = traceIdFrom(request.headers.traceparent) ?? newTraceId();
-  const sessionId = sessionIdOf(request.headers['circle-session-id']);
+  // The caller's own token anywhere in the request refuses all of it before it is handled or stored, the session id that
+  // the call log keeps included (issue #105).
+  const runs = tokenRuns(authorization);
+  const session = request.headers['circle-session-id'];
+  const sessionHolds = runs !== null && (Array.isArray(session) ? session : [session ?? '']).some(value => runs.test(value));
+  const sessionId = sessionHolds ? null : sessionIdOf(session);
   /** A refusal before any handler ran: its call-log lines (one transport_failure line by default), then the JSON-RPC error. */
   const refuse = async (status: number, code: number, message: string, reason: string, headers: Record<string, string> = {}, states?: CallState[]): Promise<void> => {
     for (const state of states ?? [transportState(reason, started)]) await logCall(options, principal, traceId, sessionId, state);
@@ -200,6 +207,9 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
       parsed = JSON.parse(text);
     } catch {
       return await refuse(400, -32700, 'Parse error: 请求体不是 JSON', 'request body is not JSON');
+    }
+    if (sessionHolds || runs !== null && holdsToken(runs, text, parsed)) {
+      return await refuse(400, -32602, TOKEN_IN_REQUEST, `the request held the caller's own Hub token or a 12-character run of it${sessionHolds ? ' in its session id' : ''}; nothing in it was handled or stored`);
     }
     if (Array.isArray(parsed)) return await refuse(400, -32600, BATCH_REFUSED, 'JSON-RPC batch refused', {}, batchStates(parsed, started));
     await answer(request, response, options, principal, traceId, sessionId, parsed, started);
