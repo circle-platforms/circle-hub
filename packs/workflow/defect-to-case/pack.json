@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.6.22",
+  "version": "1.6.23",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "dc0034e71b93790f257a12acd53a4e30fef24e61b658ab0d14877135d31b65c6",
-      "size": 11074
+      "sha256": "1c540faf534534a28657a4601427492053fe41abdb84a691c2e809e5f58b1243",
+      "size": 11588
     },
     {
       "path": "checks.json",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "99a437a5c2ef13c8aa2c1a56dcc0f5839473a5320596e06349d27c1121fc9627",
-      "size": 23277
+      "sha256": "8d5d91bfa8a256b06b5fb75bf3c2337be62c190275223e46471be82d5f5d1a3c",
+      "size": 24539
     },
     {
       "path": "functions/command-head.ts",
@@ -48,13 +48,13 @@
     },
     {
       "path": "functions/compact-index.ts",
-      "sha256": "d8244c19d58352ff59a3fde5402546f4ebfea382d86ccc37030603070ef69da3",
-      "size": 11828
+      "sha256": "177d2de23f3da2b38e3b045787c44cd1fedafaa8eecf1ff693afebfb9ef2e51d",
+      "size": 15384
     },
     {
       "path": "functions/expected.ts",
-      "sha256": "2636dd6fb2bdc791f9eafbb5f296a8c3aae00e48c11a9c275d9fd014c06fc57b",
-      "size": 1936
+      "sha256": "855001310ad6d7c8b9b78d112587897b61b138d017252f99a0f211ffa407ceed",
+      "size": 3504
     },
     {
       "path": "functions/fixed-status.ts",
@@ -100,6 +100,11 @@
       "path": "samples/negative/duplicate_found.json",
       "sha256": "b025084a8a27c158357b8655c2b575645a23946fc1296e108c34d42c1471179b",
       "size": 6961
+    },
+    {
+      "path": "samples/negative/duplicate_unknown_entries.json",
+      "sha256": "0d28201c13161d4736819e5f26c3505ffded1d094ac3ecad072e1aa133d6baa5",
+      "size": 8954
     },
     {
       "path": "samples/negative/fixed_status_known.json",
@@ -223,8 +228,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "1eb0ff71c27ebf9332723884d2e1b0d5325718e385c83ba355b8721bf70b368d",
-      "size": 1911
+      "sha256": "e6045705d13ba4389002b2257eee059abe065d0bcda552730e30f02115c871d9",
+      "size": 2092
     }
   ]
 }

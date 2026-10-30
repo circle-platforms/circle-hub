@@ -75,6 +75,20 @@ export const INCOMPLETE_INDEX_VIEW: IndexView = {
   notes: ['3 listed sources went unused'],
 };
 
+/** The note the knowledge views write for cases whose steps are not complete commands (missing fact and next action). */
+export const UNKNOWN_COMMANDS_NOTE = '2 条用例来源缺完整命令身份，不能认为命令集合为空；下一步核对锁定命令树或补完整命令后重读';
+
+/** A narrowed view truncated only because two cases' facts are unknown (unknown_only): what the Hub binds for this slot. */
+export const UNKNOWN_ONLY_INDEX_VIEW: IndexView = {
+  ...SYNTHETIC_INDEX_VIEW,
+  only: ['/commands/show/health', '/commands/show/health/detail'],
+  cut_keys: [],
+  truncated: true,
+  unknown_entries: 2,
+  unknown_only: true,
+  notes: [UNKNOWN_COMMANDS_NOTE],
+};
+
 export const BUG_RAW=JSON.stringify(SYNTHETIC_BUG_74001);
 export const BUG_SHA=createHash('sha256').update(BUG_RAW).digest('hex');
 export const FIX_REF='src:'+BUG_SHA+'/json@1/p/fields/fix';
