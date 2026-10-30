@@ -13,6 +13,11 @@ try {
   process.stderr.write(`错误：${error.message}\n${error.hint ? `处理：${error.hint}\n` : ''}`);
   process.exit(1);
 }
+// Under the Windows service host (hub/platform/windows-service-host.ts) a stop arrives as a message on the IPC channel the
+// host opened, since Windows has no SIGTERM; it reaches the same SIGTERM listeners `serve` waits on. Nothing changes elsewhere.
+if (process.platform === 'win32' && process.channel !== undefined && existsSync(local('hub/platform/windows-service.ts'))) {
+  (await import(local('hub/platform/windows-service.ts').href)).acceptServiceStop(process);
+}
 // On the machine that hosts a deployment an operator command needs no exported variables: the deployment settings give the
 // CIRCLE_HUB_* values the service has, for every name the shell has not set (hub/platform/operator-env.ts).
 if (existsSync(local('hub/platform/operator-env.ts'))) {
