@@ -71,8 +71,8 @@ export function sendJson(response: ServerResponse, status: number, body: unknown
 }
 
 /** A JSON-RPC error outside any request (refused before the body is read, or not parseable): id null. */
-export function sendRpcError(response: ServerResponse, status: number, code: number, message: string, headers: Record<string, string> = {}, id: string | number | null = null): void {
-  sendJson(response, status, { jsonrpc: '2.0', error: { code, message }, id }, headers);
+export function sendRpcError(response: ServerResponse, status: number, code: number, message: string, headers: Record<string, string> = {}): void {
+  sendJson(response, status, { jsonrpc: '2.0', error: { code, message }, id: null }, headers);
 }
 
 export function sendText(response: ServerResponse, status: number, text: string, headers: Record<string, string> = {}): void {
