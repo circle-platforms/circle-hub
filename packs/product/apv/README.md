@@ -1195,3 +1195,8 @@ several possible inverse identities, and case-compile could not name the one cle
 declares, for these two paths, the inverse with the two leading identity parameters, the list name and the start value
 (`no slb virtual addrlists <name> <start>`), which is how earlier compiled and executed cases on the automation bed removed
 what they added. The rules are longer prefixes than the generic one, so they take precedence only for these paths.
+
+### Union-typed optional arguments (1.7.39)
+
+The pack's copy of the shared command grammar is regenerated with the positional binding of union expansions (see
+contracts/src/command-grammar.ts): an omitted optional IPADDR argument no longer lets a given address bind one position later.
