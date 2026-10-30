@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "maintenance-sweep",
-  "version": "1.8.9",
+  "version": "1.8.10",
   "kind": "workflow",
   "title": "维护巡检",
   "description": "按两个构建的影响视图（限定命令目录：catalog=commands@1）先按路径列出整个命令差（变更种类、前一构建用例数），再列出较早构建里需要维护的用例：命令已删除的记阻断，命令定义有差异的记提示并逐字段给出两边的值。只含事实要求项，开始运行时由 Hub 直接算出结果",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/sweep.ts",
-      "sha256": "22789ad158a1afde1c10c94af86d21888feab7251ef66957d8cbc2606ac91cac",
-      "size": 15057
+      "sha256": "dc4417d1943bcc7a0cff99d8de0d1e299892849a655286859c72f954ad1cd759",
+      "size": 15235
     },
     {
       "path": "functions/text.ts",

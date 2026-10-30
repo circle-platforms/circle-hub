@@ -63,7 +63,7 @@ view says the whole count and that only the listed part follows. Its one ground 
 bound `src:`). Since the answer shows
 cross-item claims before items, the diff is visible however many items are paged away.
 
-## Unknown entries (1.8.9)
+## Unknown entries (1.8.9, code of the check reworded in 1.8.10)
 
 The `facets` slot declares `unknown_entries: disclose` (`hub/knowledge/README.md`, "Unknown entries in facet and index
 views"), so the engine binds a facet view truncated only because some cases' command attribution is unknown
