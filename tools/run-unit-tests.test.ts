@@ -5,7 +5,7 @@ import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { PARSER_BOUNDS, SENTINELS, classifyLanes, cpuBusy, initialWorkers, longestFirst, nextWorkers, readDurations, runAdaptiveTasks, sentinelConcurrency, sharedConcurrency, unitFiles, unitLane, writeDurations } from './run-unit-tests.ts';
+import { COMPILE_CACHE_DIR, PARSER_BOUNDS, SENTINELS, classifyLanes, cpuBusy, initialWorkers, longestFirst, nextWorkers, readDurations, runAdaptiveTasks, sentinelConcurrency, sharedConcurrency, unitFiles, unitLane, withCompileCache, writeDurations } from './run-unit-tests.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -136,4 +136,10 @@ test('durations survive between runs, merge with earlier ones and a damaged file
     assert.equal(result.code,0);assert.deepEqual(started,[files[1],files[2],files[0]]);
     for(const file of files)assert.ok(ended[file]>=0);
   } finally {rmSync(dir,{recursive:true,force:true});}
+});
+
+test('the shared and isolated lanes reuse a compile cache unless the caller chose one', () => {
+  assert.equal(withCompileCache({ PATH: '/usr/bin' }).NODE_COMPILE_CACHE, COMPILE_CACHE_DIR);
+  assert.equal(withCompileCache({ NODE_COMPILE_CACHE: '/synthetic/cache' }).NODE_COMPILE_CACHE, '/synthetic/cache');
+  assert.equal(COMPILE_CACHE_DIR.startsWith(tmpdir()), true);
 });

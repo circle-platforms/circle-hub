@@ -115,6 +115,16 @@ function stringEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   return env;
 }
 
+/**
+ * Node's on-disk compile cache (V8 code and stripped TypeScript, checked against each source's hash) for the shared and
+ * isolated lanes: the test processes of a run, and later runs, stop compiling the same modules again. Timing sentinels keep
+ * cold processes, as their budgets were measured. Sandboxed pack functions never see it: their environment is fixed.
+ */
+export const COMPILE_CACHE_DIR = join(tmpdir(), 'circle-hub-unit-compile-cache');
+export function withCompileCache(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return env.NODE_COMPILE_CACHE ? env : { ...env, NODE_COMPILE_CACHE: COMPILE_CACHE_DIR };
+}
+
 /** Current spare shared-memory slots, if the host exposes the limit. */
 function sharedMemorySpare(): number | null {
   try {
@@ -318,7 +328,7 @@ export async function runUnitTests(group: UnitGroup = 'all', explicit:readonly s
     const tasks=files.flatMap<TestTask>(file=>sharedSet.has(file)?[{file,lane:postgres?'shared':'sentinel'}]:isolatedSet.has(file)?[{file,lane:'isolated'}]:[]);
     const counts=emptyCounts();let code=0;const observed:Record<string,number>={};
     if(tasks.length){
-      const result=await runAdaptiveTasks(tasks,postgres?sharedEnv(postgres):stringEnv(),stringEnv(),{cap,durations:readDurations(),onDuration:(file,ms)=>{observed[file]=ms;}});
+      const result=await runAdaptiveTasks(tasks,withCompileCache(postgres?sharedEnv(postgres):stringEnv()),withCompileCache(stringEnv()),{cap,durations:readDurations(),onDuration:(file,ms)=>{observed[file]=ms;}});
       code=result.code;for(const key of COUNTERS)counts[key]+=result.counts[key];
       if(code!==130)writeDurations(observed);
     }
