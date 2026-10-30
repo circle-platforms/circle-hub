@@ -33,6 +33,16 @@ export interface BedOptions {
   /** More pack directories to publish after the repository's. */
   packs?: string[];
   limits?: Partial<Limits>;
+  /**
+   * The repository packs to publish (default all of them). bedPacks() names the ones the bed itself uses: a test that needs
+   * no other pack passes it and saves publishing the rest.
+   */
+  repositoryPacks?: string[];
+}
+
+/** The repository packs the bed itself uses: the two products, one system pack per resource and the reviewer's workflows. */
+export async function bedPacks(): Promise<string[]> {
+  return [(await twoNameProduct()).id, (await oneNameProduct()).id, ...Object.values(SYSTEM), ...Object.values(WORKFLOW)];
 }
 
 export interface Bed {
@@ -71,6 +81,7 @@ export async function openBed(options: BedOptions): Promise<Bed> {
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.packs === undefined ? {} : { packs: options.packs }),
     ...(options.limits === undefined ? {} : { limits: options.limits }),
+    ...(options.repositoryPacks === undefined ? {} : { repositoryPacks: options.repositoryPacks }),
   });
   let plmStub: StubServer | null = null;
   const clients: McpClient[] = [];

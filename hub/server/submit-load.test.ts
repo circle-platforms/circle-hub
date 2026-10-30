@@ -22,7 +22,7 @@ import { test } from 'node:test';
 import { startPostgres } from '../testing/postgres.ts';
 import type { ToolCallResult } from './testing-real.ts';
 import { DOCUMENTS } from '../../tests/fixtures/agile/index.ts';
-import { openBed } from '../../tests/acceptance/support/hub.ts';
+import { bedPacks, openBed } from '../../tests/acceptance/support/hub.ts';
 import { checkAnswer } from '../../tests/acceptance/support/mcp.ts';
 import { draft, resultOf, startReview } from '../../tests/acceptance/support/review.ts';
 
@@ -50,7 +50,8 @@ test('scenario 19 under load: ten 67-item MCP submissions each launch a fixed nu
     childProcess.spawn = spawn; syncBuiltinESMExports(); restoreEngine();
     await bed?.close(); await postgres.stop();
   });
-  bed = await openBed({ postgres });
+  // Only the packs the bed uses: publishing the other repository packs is setup the measured submissions never touch.
+  bed = await openBed({ postgres, repositoryPacks: await bedPacks() });
   const client = await bed.connect(bed.reviewer, 'synthetic-submit-load');
   const submitter = await bed.hub.client(bed.reviewer.token, { sessionId: 'synthetic-submit-load' });
   // One run is submitted alone first, as the baseline; the other ten together.

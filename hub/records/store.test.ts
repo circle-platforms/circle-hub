@@ -375,11 +375,19 @@ test('batch first matches equal oldest per-value reads, including duplicates, mi
 });
 
 test('the pool never falls back to a password file or PG* variables when the server asks for a password', async () => {
-  const { password: _password, ...withoutPassword } = postgres.config;
-  const db = new Database(createPool(withoutPassword, 1));
+  // A cluster of its own: the refused client keeps its socket, so the server backend stays in authentication until
+  // authentication_timeout (60 s). On the shared unit cluster that backend holds every DROP DATABASE of every other test
+  // file (each waits for all backends to absorb a barrier); stopping a private cluster ends it at once.
+  const own = await startPostgres({ private: true });
   try {
-    await assert.rejects(db.query('SELECT 1'), /口令只经密钥库提供/);
+    const { password: _password, ...withoutPassword } = own.config;
+    const db = new Database(createPool(withoutPassword, 1));
+    try {
+      await assert.rejects(db.query('SELECT 1'), /口令只经密钥库提供/);
+    } finally {
+      await db.end();
+    }
   } finally {
-    await db.end();
+    await own.stop();
   }
 });
