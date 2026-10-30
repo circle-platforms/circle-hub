@@ -172,7 +172,8 @@ describe('createTestHub', () => {
     const { createTestHub } = await import('../testing-real.ts');
     const postgres = await startPostgres();
     t.after(() => postgres.stop());
-    const hub = await createTestHub({ postgres, stubs: false });
+    // The lease service does not depend on any pack; the default publication is covered with a synthetic tree below.
+    const hub = await createTestHub({ postgres, repositoryPacks: false, stubs: false });
     t.after(() => hub.close());
     assert.ok(hub.leases !== null && hub.leases !== undefined, 'the assembled hub carries the lease service');
     const holder = { user: hub.admin.user.id, run: 'run_0123456789abcdefghjkmnpqrs' };
