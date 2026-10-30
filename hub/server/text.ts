@@ -9,7 +9,7 @@ import { isCallResult, isAcceptance } from '../../contracts/generated/vocabulary
 // says it pages (TextContext.paging); otherwise byte ranges and text@1 line ranges of sources, record pointers and the
 // console page. structuredContent keeps the whole answer as JSON.
 import { createHash } from 'node:crypto';
-import { applicabilityText } from '../knowledge/api.ts';
+import { applicabilityText, viewIdExample } from '../knowledge/api.ts';
 import { ZodError, type z } from 'zod';
 import { REFERENCE_FORMS } from '../../contracts/generated/protocol.ts';
 import {
@@ -317,6 +317,9 @@ export function pageCursorProblem(reference: string, cursor: string): string | n
 
 /** The input binding an example call gives for one accepted type: an upload reference, or an external object identity. */
 function bindingExample(accepts: string): { reference: string } | { external: string } {
+  // A knowledge view is not named by one number: show the form its parser requires, with the required parameters.
+  const view = accepts.startsWith('knowledge:') ? viewIdExample(accepts.slice('knowledge:'.length)) : null;
+  if (view !== null) return { external: view };
   return EXTERNAL_TYPE.test(accepts) ? { external: `${accepts}:<编号>` } : { reference: EXAMPLE_SOURCE };
 }
 

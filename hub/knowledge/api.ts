@@ -51,6 +51,7 @@ export {
   VIEW_SYSTEM,
   compareValues,
   parseViewId,
+  viewIdExample,
   routeKnowledgeViews,
 } from './views.ts';
 
