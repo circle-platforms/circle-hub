@@ -279,13 +279,25 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const again = (await client.call('submit_result', sent)).out; assert.equal(again.dispatch?.[0]?.job, state.job); assert.equal(submissions, before + 1);
     await release(booked);
   });
+  test('a booking of part of the bed dispatches nothing and the runner is told why', async () => {
+    // The first real whole-mindmap run booked one load balancer: the executor's target is the whole bed, so the Hub refuses
+    // at the effect boundary, and its answer must say that nothing was sent and what is missing, never that it dispatched.
+    const partial = (await start({ pack: 'test-bed', inputs: { inventory: startInputs().inventory }, parameters: { action: 'acquire', bed: 'bed-a', need: { devices: [{ type: 'load-balancer', count: 1 }] } } })).run!.run;
+    assert.ok((await bed.hub.leases.view('bed/')).entries.length > 0);
+    const before = submissions; const v = await verify(await plan(partial));
+    assert.equal(v.result?.acceptance, 'accepted', JSON.stringify(v.result?.errors));
+    const note = v.result?.dispatch?.[0]; assert.ok(note, JSON.stringify(v.result?.dispatch));
+    assert.match(note.text, /^Hub 没有派发：.*租约/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
+    assert.equal(submissions, before);
+    await release(partial);
+  });
   test('a frozen workflow without its allowed effect row cannot submit a verified workbook',async()=>{
     const booked=await booking(),p=await plan(booked),before=submissions;
     const workflows=dispatch().options.workflows,read=workflows.byDigest.bind(workflows);
     // An older workflow port has no effects declaration; all source and result fixtures remain the real run's. It is in place
     // before the verification run is submitted, which is when the Hub would dispatch it (decision 105).
     const legacy=()=>{workflows.byDigest=async digest=>{const workflow=await read(digest);if(!workflow)return workflow;return {...workflow,readJson:async path=>{const value=await workflow.readJson(path);if(path!=='requirements.json')return value;const {effects,...legacy}=value as Record<string,unknown>;return legacy;}};};};
-    try{const v=await verify(p,0,false,legacy);assert.ok(!v.result?.dispatch?.some(note=>note.job),JSON.stringify(v.result?.dispatch));assert.equal(submissions,before,'the accepted submission dispatched nothing');
+    try{const v=await verify(p,0,false,legacy);assert.ok((v.result?.dispatch??[]).every(note=>/^Hub 没有派发/.test(note.text)),JSON.stringify(v.result?.dispatch));assert.equal(submissions,before,'the accepted submission dispatched nothing');
       const state=await dispatch().dispatch(bed.hub.admin.principal,v.run,executor);assert.equal(state.outcome,'not_dispatched');const event=(await dispatch().journal.events(state.job)).find(e=>e.body.detail.phase==='boundary_refused')!;assert.equal(event.body.error_code,'EFFECT_NOT_ALLOWED');assert.equal(event.body.detail.boundary_clause,1);assert.equal(submissions,before);}
     finally{workflows.byDigest=read;await release(booked);}
   });
