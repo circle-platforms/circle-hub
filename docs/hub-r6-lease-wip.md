@@ -50,9 +50,11 @@ rest only served the lease proof; all of it is gone, with the open items of the 
 ## Open items
 
 - The knowledge layer reads the test-bed manifest itself: the device check here, and, from before this branch, the
-  reproduction lease index and the installed build of a booked bed. That belongs behind a test-bed contract.
-- Windows is unsupported but `hub/rules/sandbox/windows.ts` and the synthetic platform matrix remain; whether to freeze or
-  remove them is the owner's call.
+  reproduction lease index and the installed build of a booked bed. That belongs behind a test-bed contract (#110).
+- Circle runs a skill's hooks through `cmd.exe` on Windows, where this pack's hook cannot start; skills cannot declare
+  their platforms yet (circle-platforms/circle#374).
+- The native Windows work (the Windows platform code and the platform matrix) lives only on the `synthetic-platform/*`
+  and `docs/windows-probe-*` branches, and is frozen (owner, 2026-10-30). Main and this branch have no Windows code.
 - #109 (the connector's nested reads are cached and withheld by record, not by effective tier) is on main.
 - #106 (#105) and #108 (#104) are open on main and need an independent review; main then needs syncing into this branch.
 
