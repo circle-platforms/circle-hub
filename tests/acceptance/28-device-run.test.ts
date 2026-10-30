@@ -55,7 +55,7 @@ let postgres: TemporaryPostgres; let bed: { hub: TestHub; product: ProductPack; 
 let endpoint: Awaited<ReturnType<typeof startEndpoint>>;
 let executor: string;
 const itemIds = new Map<string, string>();
-let lose = false; let mismatch = false; let submissions = 0; let releases = 0;
+let lose = false; let mismatch = false; let aliasEcho = false; let submissions = 0; let releases = 0;
 let latest: { request:string; key: string; digest: string; ids: string[]; submitted: string; payload: Buffer };
 const dispatch = () => { assert.ok(bed.hub.hub.dispatch); return bed.hub.hub.dispatch; };
 const startInputs = () => ({ subject: { reference: subject }, contract: { external: 'doc:doc:runner-contract' }, profile: { external: 'doc:doc:runtime-profile' }, inventory: { external: 'doc:doc:bed-topology' } });
@@ -195,7 +195,7 @@ before(async () => {
     if (name === 'open_slot' || name === 'touch_slot') return { ok: true, ticket: 'synthetic-ticket', token: 'synthetic-fence', ttl: 60000 };
     if (name === 'close_slot') { releases++; return { ok: true }; }
     if (name === 'inspect_slot') return { build: bed.site.RELEASED, seats: mismatch ? 1 : PROFILE_DOC.device_count, reachable: true };
-    if(name==='inspect_seat'){const device=MANIFEST_DOC.beds[0].devices[Number(args.seat)];assert.ok(device);return {output:args.command==='inspect version'?`version: ${bed.site.RELEASED}`:device.interfaces.map(address=>`address: ${address}`).join('\n')};}
+    if(name==='inspect_seat'){const device=MANIFEST_DOC.beds[0].devices[Number(args.seat)];assert.ok(device);return {output:args.command==='inspect version'?`version: ${aliasEcho ? bed.site.ALIAS : bed.site.RELEASED}`:device.interfaces.map(address=>`address: ${address}`).join('\n')};}
     if (name === 'send_blob') {
       submissions++; const payload = Buffer.from(String(args.blob), 'base64');
       const intents=await bed.hub.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.bytes',values:[sha256Hex(payload)]});const intent=intents.find(row=>row.body.detail.phase==='intent'&&row.body.detail.request_id===args.request);assert.ok(intent,'matching request intent committed before submission');assert.ok(intent.body.inputs.includes(`src:${sha256Hex(payload)}`));assert.equal((await bed.hub.records.store.getByKey('action',`dispatch.bytes:${sha256Hex(payload)}:${intent.body.detail.attempt}`))?.digest,intent.digest);
@@ -219,7 +219,7 @@ before(async () => {
 });
 after(async () => { await client?.close(); await endpoint?.close(); await bed?.hub.close(); await postgres?.stop(); if (staged) await rm(staged, { recursive: true, force: true }); });
 
-beforeEach(async () => { if (!skip && bed) { const keys = (await bed.hub.leases.view('bed/')).entries.map(e => e.key); if (keys.length) await bed.hub.leases.forceRelease({ keys, by: bed.hub.admin.principal.id, reason: '合成测试失败后的隔离清理' }); } });
+beforeEach(async () => { aliasEcho = false; if (!skip && bed) { const keys = (await bed.hub.leases.view('bed/')).entries.map(e => e.key); if (keys.length) await bed.hub.leases.forceRelease({ keys, by: bed.hub.admin.principal.id, reason: '合成测试失败后的隔离清理' }); } });
 
 describe('scenario 28: published documents to real Hub workbook dispatch and release', { skip }, () => {
   test('two authored cases use independent bookings, different S, terminal results and qualified reports', async () => {
@@ -246,6 +246,9 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
   test('a whole mindmap compiles into one workbook that the Hub dispatches once, with one verdict row per case', async () => {
     // Decisions 104 and 105 at the user's unit of work, as CES runs a mindmap batch: no autoid, one plan submission for every
     // case, the generation inputs fetched with the runner's own token, one workbook, one verification run, one dispatch.
+    // The real devices echo another family's name of the locked build (dotted, based on it): the Hub's own dispatch accepts the
+    // knowledge base's aliases of that build, as the administrator command always did.
+    aliasEcho = true;
     const booked = await booking(); const before = submissions;
     const scope = { pack: 'case-compile', product: bed.product.names[0], build: bed.site.RELEASED };
     const whole = await start({ ...scope, predecessor: booked, inputs: startInputs(), parameters: {} });
@@ -277,6 +280,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.deepEqual(report.rows.map((row: { item: string }) => row.item), ids, 'one verdict row per case of the workbook');
     for (const row of report.rows) assert.equal(row.reported_terminal, 'pass');
     const again = (await client.call('submit_result', sent)).out; assert.equal(again.dispatch?.[0]?.job, state.job); assert.equal(submissions, before + 1);
+    aliasEcho = false;
     await release(booked);
   });
   test('a booking of part of the bed dispatches nothing and the runner is told why', async () => {
