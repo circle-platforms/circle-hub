@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {openRecords} from '../records/index.ts';
 import {DEFAULT_LIMITS} from '../config/index.ts';
 import {createTestParserRegistry} from '../testing/parsers.ts';
+import {sandboxIsolation} from './test-support.ts';
 import {newId} from '../records/api.ts';
 import {runRecord} from '../../contracts/src/fixtures.ts';
 import {RunRecord} from '../../contracts/src/run.ts';
@@ -89,4 +90,31 @@ test('a feeding append reads nothing through the pool once its transaction holds
  assert.ok(stored);
  assert.ok(Date.now()-started<8000,'no wait for a second connection');
  assert.equal((await w.kit.store.get(stored!))?.kind,'claim');
+});
+
+test('a source projection reads nothing through the pool once its transaction holds the feeding log lock (issue #104)',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());
+ const a=await source(w,'SYN-ONE');
+ const narrow=await openRecords({dataDir:w.kit.dataDir,logDir:join(w.kit.dataDir,'one-connection-logs'),database:w.kit.database,limits:DEFAULT_LIMITS},{keyProvider:w.kit.keyProvider,maxConnections:1});
+ t.after(()=>narrow.close());
+ const knowledge=createKnowledge({records:narrow,parsers:createTestParserRegistry(),packs:w.packs,external:w.external,jev:null,sandbox:{requireOsIsolation:await sandboxIsolation()},admin:w.admin});
+ const receipt=await knowledge.feeding!.observeSource(w.user,a.body.sha256,{product:w.product.id});
+ assert.equal(receipt.objects.length,1,JSON.stringify(receipt));
+});
+
+test('a feeding append is checked again just before its transaction, and an unchecked or changed body is refused (issue #104)',async t=>{
+ const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
+ const note=await w.kit.artifacts.ingest({bytes:Buffer.from('synthetic note checked twice'),mediaType:'text/plain',origin:{upload:{session:'synthetic-checked-twice',message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},readTier:'model_readable'});
+ await layer.upload(w.user,note);
+ const row=(await layer.entries(w.user,w.user.id)).find(entry=>entry.body.object===note.body.sha256)!;
+ const body=await layer.prepare(w.user,{...row.body,classification:[{value:'ticket',quote:{reference:'src:'+note.body.sha256+'/text@1/l/1',text:'synthetic note'}}]},{});
+ // Access lost after the proposal was checked: the check just before the transaction refuses it.
+ await w.kit.principals.setDisabled(w.admin,w.user.id,true);
+ await assert.rejects(()=>layer.planAppends(w.user,[body],{}));
+ await w.kit.principals.setDisabled(w.admin,w.user.id,false);
+ // Without that check, or with the body changed after it, nothing is appended.
+ await assert.rejects(()=>w.kit.store.withTransaction(tx=>layer.appendPrepared(w.user,body,{},'synthetic',tx)),/plan/);
+ await layer.planAppends(w.user,[body],{});
+ body.classification=[];
+ await assert.rejects(()=>w.kit.store.withTransaction(tx=>layer.appendPrepared(w.user,body,{},'synthetic',tx)),/plan/);
 });

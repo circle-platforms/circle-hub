@@ -383,6 +383,11 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
       const criteria=outcome.criterionChanges??[];
       if(outcome.result.acceptance!=='accepted')return putResult(store,outcome.result,ctx.now().toISOString());
       if(outcome.prepared===undefined&&!criteria.length&&!base.run.criterion_review)return putResult(store,outcome.result,ctx.now().toISOString());
+      // What storing the contributions reads is read now, before the transaction holds its locks (issue #104).
+      if(outcome.prepared!==undefined){
+        const delivered=new Set(outcome.result.partitions.delivered.filter(item => item.requirements.length > 0 && item.requirements.every(r => r.status === 'satisfied')).map(item => item.item));
+        await ctx.deps.knowledge.layers!.contributions.planAppends([...outcome.prepared].filter(([item]) => delivered.has(item)).map(([, prepared]) => prepared), {run:base.run.run});
+      }
       return store.withTransaction(async tx => {
         await publishCriterionRequests(ctx,base.run,base.submissionRecord,criteria,outcome.result,tx);
         if(outcome.prepared===undefined){const stored=await putResult(store,outcome.result,ctx.now().toISOString(),tx);await answerCriterionReview(ctx,base.run,stored,tx);return stored;}

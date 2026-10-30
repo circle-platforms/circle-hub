@@ -108,8 +108,8 @@ export class FeedingLayer {
  private activeJobs=0;
  private readonly projecting=new Map<string,Promise<Projected>>();
  private readonly normalized=new Map<string,Promise<Map<string,string|null>>>();
- // The reads of an append, made when prepare() returned the body, outside any transaction (issue #104).
- private readonly planned=new WeakMap<object,{by:string;run:string|null;root:string|null;bound:string[]}>();
+ // The reads of an append, made just before its transaction and bound to the exact body, actor and scope (issue #104).
+ private readonly planned=new WeakMap<object,{key:string;bound:string[]}>();
  constructor(context:KnowledgeContext,reading:TreeReading){this.context=context;this.reading=reading;}
  async offset(tx?:Transaction):Promise<number>{const n=await this.context.records.store.watermark?.(tx);if(n===undefined)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});return n;}
  private async position(digest:string,tx?:Transaction){const n=await this.context.records.store.position?.(digest,tx);if(n===undefined||n===null)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});return n;}
@@ -349,12 +349,14 @@ export class FeedingLayer {
    evidenceBySelector.set(selector,fallback);
   }
   const ids=projection.rows.map(row=>row.body.object as string);for(const row of projection.rows)for(const gap of row.missing??[])pending.push({source:sha,...gap});
+  // The pack, the access to the sources and the canonical objects are checked and written just before the transaction: once
+  // it holds the feeding log lock it reads nothing through the pool (issue #104).
+  if(!await this.currentPack(pack))return this.superseded(sha);
+  await this.sourceAccess(principal,sha,source.artifact.digest,scope.readManifest,'input_source',scope.run);if(scope.metaSource)await this.sourceAccess(principal,scope.metaSource,evidenceSource.artifact.digest,scope.readManifest,'metadata');
+  for(const row of projection.rows){const stored=await this.context.records.objects.put(new TextEncoder().encode(canonicalize(row.identity)),'application/json');if(stored.sha256!==row.body.object)fail('规范内容摘要不一致');}
   const committed=await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);
-   if(!await this.currentPack(pack))return false;
-   const recheck=async()=>{await this.sourceAccess(principal,sha,source.artifact.digest,scope.readManifest,'input_source',scope.run);if(scope.metaSource)await this.sourceAccess(principal,scope.metaSource,evidenceSource.artifact.digest,scope.readManifest,'metadata');};
-   await recheck();
    if(!projection.rows.length){await this.usage(principal,sha,scope,tx);if(!scope.product){const missing='缺少产品及树苗上下文，不能按业务来源猜产品',next_action='用绑定产品和树苗的运行号重新 get_nodes 读取此原件';pending.push({source:sha,missing,next_action});await this.todo(principal,{system:source.external?.system??'unknown',document:source.external?.key??sha},null,missing,next_action,tx);}return true;}
-   for(const row of projection.rows){await recheck();const bytes=new TextEncoder().encode(canonicalize(row.identity));const stored=await this.context.records.objects.put(bytes,'application/json');if(stored.sha256!==row.body.object)fail('规范内容摘要不一致');await this.put(row.body,principal,projection.pack,['src:'+sha],[sha,source.artifact.digest,...(scope.metaSource?[scope.metaSource]:[]),projection.digest,...(scope.readManifest&&Sha256.safeParse(scope.readManifest).success?[scope.readManifest]:[]),...(scope.root?[scope.root]:[]),...(scope.composition?[scope.composition]:[]),...(projection.attachment?[projection.attachment.seedling_root,projection.attachment.seedling_composition]:[])],'object:'+this.key(row.body)+':'+source.artifact.digest+':'+(scope.run??'')+':'+(scope.composition??'')+':'+(scope.readManifest??'')+(projection.attachment?':'+projection.attachment.seedling_composition:''),[{key:OBJECT,value:row.body.object},{key:'knowledge.feeding.product',value:scope.product!},{key:'knowledge.feeding.source',value:sha}],tx,false,scope.run??null,scope.metaSource,row.missing,{external:source.external?.id??null,read_manifest:scope.readManifest&&Sha256.safeParse(scope.readManifest).success?scope.readManifest:null,...(projection.attachment?{seedling_attachment:projection.attachment}:{})});await this.bindings(principal,row,source,scope,tx,evidenceBySelector.get(scope.metaSource?'p/ancestors':row.selector)!,projection.attachment);if(scope.sourceRecord&&scope.requested&&parseExternal(scope.requested)?.revision===null)await this.sourceHead(row.body,source,tx);await this.usage(principal,row.body.object,scope,tx);}
+   for(const row of projection.rows){await this.put(row.body,principal,projection.pack,['src:'+sha],[sha,source.artifact.digest,...(scope.metaSource?[scope.metaSource]:[]),projection.digest,...(scope.readManifest&&Sha256.safeParse(scope.readManifest).success?[scope.readManifest]:[]),...(scope.root?[scope.root]:[]),...(scope.composition?[scope.composition]:[]),...(projection.attachment?[projection.attachment.seedling_root,projection.attachment.seedling_composition]:[])],'object:'+this.key(row.body)+':'+source.artifact.digest+':'+(scope.run??'')+':'+(scope.composition??'')+':'+(scope.readManifest??'')+(projection.attachment?':'+projection.attachment.seedling_composition:''),[{key:OBJECT,value:row.body.object},{key:'knowledge.feeding.product',value:scope.product!},{key:'knowledge.feeding.source',value:sha}],tx,false,scope.run??null,scope.metaSource,row.missing,{external:source.external?.id??null,read_manifest:scope.readManifest&&Sha256.safeParse(scope.readManifest).success?scope.readManifest:null,...(projection.attachment?{seedling_attachment:projection.attachment}:{})});await this.bindings(principal,row,source,scope,tx,evidenceBySelector.get(scope.metaSource?'p/ancestors':row.selector)!,projection.attachment);if(scope.sourceRecord&&scope.requested&&parseExternal(scope.requested)?.revision===null)await this.sourceHead(row.body,source,tx);await this.usage(principal,row.body.object,scope,tx);}
    const at=this.context.now().toISOString();await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',unique_key:'feeding.observed:'+observationKey,body:{action:'read',run:scope.run??null,item:null,component:'hub.feeding@2',inputs:['src:'+sha],lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{receipt:{objects:ids,pending}}},index:[{key:'knowledge.feeding.observed',value:observationKey}]},tx);
    return true;
   });if(!committed)return this.superseded(sha);return {objects:ids,offset:await this.offset(),pending};
@@ -543,7 +545,6 @@ export class FeedingLayer {
     }
    }
   }
-  this.planned.set(body,{by:principal.id,run:scope.run??null,root:scope.root??null,bound:await this.planAppend(principal,body,scope,source)});
   return body;
  }
  private async nativeObservation(principal:Principal,body:Record<string,any>){for(const row of await this.all(OBJECT,body.object)){const value=this.body(row);if(!value||row.body.warrant.producer!=='function'||!await this.recordVisible(row,principal))continue;const base=Object.fromEntries(Object.entries(body).filter(([key])=>!annotations.includes(key as never)));if(canonicalize(value)===canonicalize(base))return row;}return null;}
@@ -554,22 +555,31 @@ export class FeedingLayer {
   * a projection. An append holds the feeding log lock on its caller's transaction, so it reads none of this there: a waiting
   * append holds a connection too, and the lock holder could wait for one until the pool's timeout (issue #104).
   */
- private async planAppend(principal:Principal,body:Record<string,any>,scope:FeedingScope,known?:Source):Promise<string[]>{
+ private async planAppend(principal:Principal,body:Record<string,any>,scope:FeedingScope):Promise<string[]>{
   if(body.schema==='retraction@1')return [];
-  const source=known??await this.originalSource(principal,body,scope);const quotes=annotations.flatMap(key=>(body[key]??[]).map((value:any)=>value.quote));
+  const source=await this.originalSource(principal,body,scope);const quotes=annotations.flatMap(key=>(body[key]??[]).map((value:any)=>value.quote));
   const native=await this.nativeObservation(principal,body);
   if(!native&&body.schema!=='fed-note@1'&&!operationRecord(body.schema)){const projected=await this.projection(principal,source,scope),row=projected.rows.find(row=>row.body.object===body.object);if(!row)fail('缺规范内容；重新读取后重交');const stored=await this.context.records.objects.put(new TextEncoder().encode(canonicalize(row.identity)),'application/json');if(stored.sha256!==body.object)fail('规范内容摘要不一致');}
   return [body.source.bytes,source.artifact.digest,...(native?[native.digest]:[]),...quotes.map(q=>this.quoteRef(q).sha),...(scope.root?[scope.root]:[])];
  }
+ private appendKey(principal:Principal,body:Record<string,any>,scope:FeedingScope){return sha256Hex(canonicalize({body,by:principal.id,product:scope.product??null,root:scope.root??null,run:scope.run??null}));}
+ /**
+  * Reads what appendPrepared() will write, just before the caller opens its transaction: the source and its access are
+  * checked again here, as close to the commit as a read through the pool can be (issue #104).
+  */
+ async planAppends(principal:Principal,bodies:readonly Record<string,any>[],scope:FeedingScope):Promise<void>{
+  for(const body of bodies)this.planned.set(body,{key:this.appendKey(principal,body,scope),bound:await this.planAppend(principal,body,scope)});
+ }
  async appendPrepared(principal:Principal,body:Record<string,any>,scope:FeedingScope,model:string,tx:Transaction):Promise<string>{
-  // A body prepare() returned carries its reads; any other is read here, before the lock.
+  // Inside the transaction nothing is read through the pool: a body without its plan, or changed since, is refused.
   const planned=this.planned.get(body);
-  const bound=planned!==undefined&&planned.by===principal.id&&planned.run===(scope.run??null)&&planned.root===(scope.root??null)?planned.bound:await this.planAppend(principal,body,scope);
+  if(body.schema!=='retraction@1'&&(planned===undefined||planned.key!==this.appendKey(principal,body,scope)))throw new Error('feeding append without a plan made for this body just before its transaction (issue #104)');
+  const bound=planned?.bound??[];
   await this.context.records.store.lock('knowledge.feeding.log',tx);
   if(body.schema==='retraction@1')return (await this.put(body,principal,'hub.retraction@1',[],[],'retraction:'+this.key(body),[{key:RETRACT,value:'1'}],tx)).digest;
   const stored=await this.put(body,principal,model,['src:'+body.source.bytes],bound,'annotation:'+sha256Hex(canonicalize({body,actor:principal.id,model,run:scope.run??null})),[{key:OBJECT,value:body.object},{key:'knowledge.feeding.product',value:body.product??principal.id},{key:'knowledge.feeding.annotation',value:'1'}],tx,true,scope.run??null);await this.usage(principal,body.object,scope,tx);return stored.digest;
  }
- async admit(principal:Principal,payload:readonly unknown[],scope:FeedingScope&{classifications?:readonly string[]}):Promise<string[]>{const bodies:Record<string,any>[]=[];for(const raw of payload)bodies.push(await this.prepare(principal,raw,scope));return this.context.records.store.withTransaction(async tx=>{const refs=[];for(const body of bodies)refs.push(await this.appendPrepared(principal,body,scope,'client-declared-model',tx));return refs;});}
+ async admit(principal:Principal,payload:readonly unknown[],scope:FeedingScope&{classifications?:readonly string[]}):Promise<string[]>{const bodies:Record<string,any>[]=[];for(const raw of payload)bodies.push(await this.prepare(principal,raw,scope));await this.planAppends(principal,bodies,scope);return this.context.records.store.withTransaction(async tx=>{const refs=[];for(const body of bodies)refs.push(await this.appendPrepared(principal,body,scope,'client-declared-model',tx));return refs;});}
  async frozenOffset(run:string):Promise<number|null>{const row=(await this.context.records.store.find<FeedingOffset>({key:'knowledge.feeding.offset',value:run,kind:'claim',limit:1})).items[0];return row?.body.offset??null;}
  async cut(product:string,offset:number|null,principal?:Principal):Promise<FeedingCut|null>{
   if(!principal)return null;const ceiling=offset??Number.MAX_SAFE_INTEGER,entries=await this.entries(principal,product,ceiling);
