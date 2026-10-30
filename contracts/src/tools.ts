@@ -246,6 +246,12 @@ export const SubmitResultOutput = Envelope.safeExtend({
     'The validation result (validation@1) when the submission was validated against a run you may use; absent on a protocol error such as an unknown or unavailable run. A repeated submission returns the stored result, whose trace is that of the call that produced it',
   ),
   counts: PartitionCounts.optional().describe('Counts derived from result.partitions, only when the submission was accepted'),
+  dispatch: z.array(z.strictObject({
+    job: Sha256.optional().describe('The job the Hub dispatched for this run'),
+    executor: z.string().min(1).max(200).optional().describe('The executor the job runs on'),
+    result: ReferenceUri.optional().describe('The job result once it is complete (src:), readable by the runner: one row per dispatched item'),
+    text: z.string().min(1).max(800).describe('What happened or what is missing, in the user language'),
+  })).max(16).optional().describe('Jobs of this run that the Hub dispatches by a hub_template effect row once a submission is accepted and the release conditions hold (W03, decision 105). Repeating the same submission reads their progress'),
 }).superRefine((o, ctx) => {
   if (o.result !== undefined && o.result.acceptance !== o.acceptance) issue(ctx, ['result', 'acceptance'], 'the receipt and the validation result agree');
   if (o.acceptance !== 'accepted') {
