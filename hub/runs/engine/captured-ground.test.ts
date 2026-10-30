@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
-import { newId } from '../../records/api.ts';
+import type { ProvenanceType } from '../../../contracts/generated/vocabulary.ts';
+import { newId, RECORD_SCHEMAS } from '../../records/api.ts';
 import { RunRecord } from '../../../contracts/src/run.ts';
 import { createEngineContext } from './deps.ts';
 import { buildScope, createResolver, type RunScope } from './exact.ts';
@@ -221,4 +222,123 @@ test('a binding to anything but a source artifact of these bytes leaves the reco
   const grounded = await resolver.resolve(reference, { grounds: true });
   assert.equal(grounded.ok, false);
   assert.match(JSON.stringify(grounded), /无法确定作根据的原件/);
+});
+
+/**
+ * A run of the review pack that binds the map's digest to its uploaded record and, when asked, to a second record of the
+ * same bytes whose provenance is not a known one or not the record's own. The first record is the one read; a use as
+ * grounds checks both (round-seven review, item 3).
+ */
+async function runWithSecondRecord(h: Harness, second?: { provenance: ProvenanceType; type: string }) {
+  const declared = await h.upload(h.alice, toyMap(standardDocument()));
+  const notes = await h.upload(h.alice, new TextEncoder().encode('合成线索：引用条目自身的原文'), 'text/plain');
+  const started = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: declared }, notes: [{ reference: notes }] } }, h.call());
+  const current = (await h.service.getRun(h.alice, started.run!.run))!.run;
+  if (second === undefined) return { run: current, notes, declared };
+  const binding = current.sources.find(source => source.reference === declared)!;
+  const real = (await h.kit.store.get<Record<string, unknown> & { sha256: string }>(binding.artifact!))!;
+  const forged = await h.kit.store.put({
+    kind: 'source_artifact', schema: RECORD_SCHEMAS.source_artifact, provenance: second.provenance,
+    body: { ...real.body, name: 'second-record.json', provenance_type: second.type }, index: [{ key: 'artifact.sha256', value: real.body.sha256 }],
+  });
+  const { feeding_offset: _feedingOffset, ...base } = current;
+  const run = RunRecord.parse({ ...base, run: newId('run'), sources: [...current.sources, { ...binding, artifact: forged.digest }] });
+  await putRun(h.kit.store, run, current.started_at);
+  return { run, notes, declared };
+}
+
+/** Submit c4 with a quotation, deep in slot data, of c4's own location; its top-level quote cites the notes. */
+async function quoteOwnLocation(h: Harness, run: RunRecord, notes: string) {
+  const c4 = run.items.find(item => item.id === ITEM.c4)!;
+  const submission = {
+    run: run.run, model: 'synthetic-model',
+    items: run.items.map(item => ({ item: item.id, handling: 'handled', slots: { findings: item.id === ITEM.c4 ? [{
+      text: '引用条目自身', code: 'edge_case_gap', rank: 'major', quotes: [{ reference: notes, text: '引用条目自身的原文' }],
+      data: { expected_quote: { reference: c4.location, text: c4.label } },
+    }] : [] } })),
+    cross_item: [{ nature: 'judgment', statement: '一般', grounds: [], code: 'draft_level', rank: 'P4' }],
+  };
+  const answer = await h.service.submitResult(h.alice, submission, h.call());
+  assert.equal(answer.acceptance, 'accepted', JSON.stringify(answer.errors));
+  const row = Object.values(answer.result!.partitions).flat().find(it => it.item === ITEM.c4)!;
+  const claims = row.requirements.find(requirement => requirement.requirement === 'findings')!.claims.map(claim => claim.statement);
+  return claims.filter(statement => JSON.stringify(statement).includes(c4.location));
+}
+
+test('a quotation in slot data of an item\'s own location is graded as grounds, not taken from the text read for the item (round seven, item 3)', { skip }, async t => {
+  const h = await openHarness(postgres, { dataQuotes: true }); t.after(() => h.close());
+  const plain = await runWithSecondRecord(h);
+  const supported = await quoteOwnLocation(h, plain.run, plain.notes);
+  assert.ok(supported.some(statement => statement.verdict === 'support' && /逐字一致/.test(statement.text ?? '')), JSON.stringify(supported));
+  // The exact phase reads every item's location as the judged object; the same text quoted as grounds must stand on records
+  // whose grade is known.
+  const unknown = await runWithSecondRecord(h, { provenance: 'declared', type: 'synthetic-unknown' });
+  const refused = await quoteOwnLocation(h, unknown.run, unknown.notes);
+  assert.ok(refused.length > 0, 'the quotation was checked');
+  assert.ok(refused.every(statement => statement.verdict !== 'support'), JSON.stringify(refused));
+  assert.ok(refused.some(statement => statement.verdict === 'refute' && /无法确定作根据的原件/.test(statement.text ?? '')), JSON.stringify(refused));
+});
+
+// Each case in a Hub of its own: a later upload of the same bytes would otherwise bind the newest record, the second one.
+for (const second of [{ provenance: 'client_captured' as const, type: 'declared' }, { provenance: 'declared' as const, type: 'synthetic-unknown' }]) {
+  test(`a bound record of provenance ${second.provenance} with ${second.type} in its body is no grounds (round seven, item 3)`, { skip }, async t => {
+    const h = await openHarness(postgres); t.after(() => h.close());
+    const ctx = createEngineContext({ records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external });
+    const { run, declared } = await runWithSecondRecord(h, second);
+    const resolver = createResolver(ctx, await buildScope(ctx, run, h.review, h.alice, 'function'), 'function');
+    const reference = `${declared}/json@1/p`;
+    assert.equal((await resolver.resolve(reference)).ok, true, 'the first, verified record is read');
+    const grounded = await resolver.resolve(reference, { grounds: true });
+    assert.equal(grounded.ok, false);
+    assert.match(JSON.stringify(grounded), /无法确定作根据的原件/);
+  });
+}
+
+test('the quote search reads the record the run bound, not another readable record of the same bytes (round seven, item 3)', { skip }, async t => {
+  const h = await openHarness(postgres); t.after(() => h.close());
+  const bytes = toyMap(standardDocument());
+  const own = await h.upload(h.alice, bytes);
+  const started = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: own } } }, h.call());
+  const current = (await h.service.getRun(h.alice, started.run!.run))!.run;
+  const ctx = createEngineContext({ records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external });
+  const map = own.slice('src:'.length);
+  const inMap = async (run: RunRecord) => (await (await buildScope(ctx, run, h.review, h.alice, 'function')).candidates()).filter(candidate => candidate.source === map);
+  assert.ok((await inMap(current)).length > 0, 'the bound record is searched');
+  // The same bytes as a record only another user can read, bound to the run in place of the runner's own record.
+  const hidden = await h.kit.artifacts.ingest({
+    bytes, mediaType: 'application/json', name: 'hidden.json',
+    origin: { upload: { session: 'hidden-upload', message: null } }, author: { user: h.bob.id }, provenanceType: 'declared',
+    visibility: { readers: [h.bob.id], admins: false, packs: [], shareable: false },
+  });
+  const { feeding_offset: _feedingOffset, ...base } = current;
+  const rebound = RunRecord.parse({ ...base, run: newId('run'), sources: current.sources.map(source => source.reference === own ? { ...source, artifact: hidden.digest } : source) });
+  await putRun(h.kit.store, rebound, current.started_at);
+  assert.deepEqual(await inMap(rebound), [], 'the bound record is unreadable, so nothing is found in its bytes');
+});
+
+test('a generated source a run reads on its own authority stays on the chosen record when a newer one of the same bytes appears (round seven, item 3)', { skip }, async t => {
+  const h = await openHarness(postgres); t.after(() => h.close());
+  const declared = await h.upload(h.alice, toyMap(standardDocument()));
+  const started = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: declared } } }, h.call());
+  const current = (await h.service.getRun(h.alice, started.run!.run))!.run;
+  const bytes = Buffer.from(JSON.stringify({ p: 'synthetic generated p', q: 'synthetic generated q' }));
+  const generate = (name: string) => h.kit.artifacts.ingest({
+    bytes, mediaType: 'application/json', name,
+    origin: { generated: { generator: 'synthetic@1', inputs: [] } }, author: { user: null }, provenanceType: 'projected',
+    visibility: { readers: [], admins: true, packs: [], shareable: false },
+  });
+  const first = await generate('generated-first.json');
+  const template = current.sources.find(source => source.reference === declared)!;
+  const { feeding_offset: _feedingOffset, ...base } = current;
+  const legacy = RunRecord.parse({ ...base, run: newId('run'), sources: [...current.sources, { ...template, reference: `src:${first.body.sha256}`, artifact: undefined }] });
+  await putRun(h.kit.store, legacy, current.started_at);
+  const ctx = createEngineContext({ records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external });
+  const scope = await buildScope(ctx, legacy, h.review, h.alice, 'function');
+  const resolver = createResolver(ctx, scope, 'function');
+  assert.equal((await resolver.resolve(`src:${first.body.sha256}/json@1/p/p`)).ok, true);
+  const second = await generate('generated-second.json');
+  assert.notEqual(second.digest, first.digest);
+  const later = await resolver.resolve(`src:${first.body.sha256}/json@1/p/q`, { grounds: true });
+  assert.equal(later.ok, true, JSON.stringify(later));
+  assert.equal((await scope.pinned!.choice(first.body.sha256)).records[0]?.digest, first.digest, 'the evaluation keeps the record it chose');
 });

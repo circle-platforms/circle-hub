@@ -1,3 +1,4 @@
+import { PROVENANCE_TYPE } from '../../contracts/generated/vocabulary.ts';
 import { scanForCredentials } from '../records/api.ts';
 import { KnowledgeError } from './errors.ts';
 
@@ -21,7 +22,8 @@ export const UNKNOWN_GROUND = '无法确定作根据的原件是哪一条 Hub �
 /**
  * A declaration-grade rec or an exactly bound captured source cannot be evidence for another workflow. A src use names
  * every artifact record it may stand on; when there is none the record cannot be determined, and that refuses too
- * (round-five review, item 3). The knowledge-contribution pack, which feeds captured sources, does not call this for them.
+ * (round-five review, item 3), as does a record whose provenance is not a known one (round seven). The
+ * knowledge-contribution pack, which feeds captured sources, does not call this for them.
  */
 export async function declarationGroundRefusal(
   ref: {scheme: string; record?: string},
@@ -30,7 +32,9 @@ export async function declarationGroundRefusal(
 ): Promise<string | null> {
   if (ref.scheme === 'src') {
     if (sources.length === 0) return UNKNOWN_GROUND;
-    return sources.some(source => source.body !== null && typeof source.body === 'object' && (source.body as {provenance_type?:unknown}).provenance_type === 'client_captured') ? CAPTURED_GROUND : null;
+    const provenance = sources.map(source => source.body !== null && typeof source.body === 'object' ? (source.body as {provenance_type?: unknown}).provenance_type : undefined);
+    if (provenance.includes('client_captured')) return CAPTURED_GROUND;
+    return provenance.every(type => (PROVENANCE_TYPE as readonly unknown[]).includes(type)) ? null : UNKNOWN_GROUND;
   }
   if (ref.scheme !== 'rec' || !ref.record) return null;
   const stored = await record(ref.record);

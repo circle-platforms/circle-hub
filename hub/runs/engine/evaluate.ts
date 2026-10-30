@@ -479,6 +479,13 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   let fragmentScope: ReturnType<typeof buildScope> | undefined;
   type GradedFragment = {text?: string; why: FragmentRead; unread?: FragmentReadFailure; rule?: string};
   const fragmentCache = new Map<string, Promise<GradedFragment>>();
+  // The records the reads of this digest stand on, every one of them; none refuses (rounds five and six, item 3). The
+  // knowledge-contribution pack feeds captured sources: the one exemption.
+  const groundRefusal = async (sourceRef: ReturnType<typeof parseReference>) => {
+    if (sourceRef.scheme !== 'src') return declarationGroundRefusal(sourceRef, digest => ctx.deps.records.store.get(digest));
+    if (workflow.pack.id === 'knowledge-contribution') return null;
+    return declarationGroundRefusal(sourceRef, digest => ctx.deps.records.store.get(digest), groundRecords(await pinned.choice(sourceRef.sha256)));
+  };
   const gradeFragment = (reference: string, capBytes: number = MAX_CHECK_READ_BYTES): Promise<GradedFragment> => {
     let pending = fragmentCache.get(reference);
     if (pending === undefined) {
@@ -498,13 +505,6 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
             return { why: r.code === 'REFERENCE_UNRESOLVED' ? 'no_fragment' : 'unavailable' };
           }
           if (!r.groundable) return { why: 'not_groundable' };
-          // The records the reads of this digest stand on, every one of them; none refuses (rounds five and six, item 3). The
-          // knowledge-contribution pack feeds captured sources: the one exemption.
-          const groundRefusal = async (sourceRef: ReturnType<typeof parseReference>) => {
-            if (sourceRef.scheme !== 'src') return declarationGroundRefusal(sourceRef, digest => ctx.deps.records.store.get(digest));
-            if (workflow.pack.id === 'knowledge-contribution') return null;
-            return declarationGroundRefusal(sourceRef, digest => ctx.deps.records.store.get(digest), groundRecords(await pinned.choice(sourceRef.sha256)));
-          };
           const named = await groundRefusal(ref);
           if (named) return { why: 'not_groundable', rule: named };
           for (const ground of r.grounds ?? []) {
@@ -556,20 +556,35 @@ export async function evaluate(ctx: EngineContext, input: EvaluationInput & {rep
   const warmedWhy = new Map<string, FragmentRead>();
   const warmedUnread = new Map<string, FragmentReadFailure>();
   const warmedRule = new Map<string, string>();
+  // A graded reference answers by its grade, also when it is an item's own location: that text was read as the judged object,
+  // never checked as grounds, so a quotation citing it is graded like any other (round-seven review, item 3).
   const gradedSourceView = (texts: ReadonlyMap<string, string>): SourceView => ({
-    text: (reference) => texts.get(reference) ?? warmed.get(reference),
+    text: (reference) => warmed.get(reference) ?? (warmedWhy.has(reference) ? undefined : texts.get(reference)),
     unread: reference => warmedUnread.get(reference),
     rule: reference => warmedRule.get(reference),
     // A reference never warmed (not collected, or the warm pass failed) reads as unavailable: an honest
     // unknown, never a refutation.
-    why: (reference) => (texts.has(reference) || warmed.has(reference) ? 'bound' : warmedWhy.get(reference) ?? 'unavailable'),
+    why: (reference) => (warmed.has(reference) ? 'bound' : warmedWhy.get(reference) ?? (texts.has(reference) ? 'bound' : 'unavailable')),
   });
+  /**
+   * An item's own src text is read already: only its use as grounds is checked, against the record this evaluation chose for
+   * those bytes. A src reference is otherwise always groundable and has no inner grounds (refs/resolve.ts isGroundable); any
+   * other scheme is read and graded again.
+   */
+  const gradeOwn = async (reference: string, text: string, capBytes: number): Promise<GradedFragment> => {
+    let ref: ReturnType<typeof parseReference>;
+    try { ref = parseReference(reference); } catch { return { why: 'malformed' }; }
+    if (ref.scheme !== 'src') return gradeFragment(reference, capBytes);
+    const named = await groundRefusal(ref);
+    return named ? { why: 'not_groundable', rule: named } : { text, why: 'bound' };
+  };
   /** Warm every quoted reference of an item's slot record before its checks run (once per reference per evaluation). */
   const warmQuoted = async (value: unknown, capBytes: number, texts: ReadonlyMap<string, string>): Promise<void> => {
     collectQuotedReferences(value);
     await mapLimited([...quotedReferences],4,async (reference) => {
-      if (texts.has(reference) || warmed.has(reference) || warmedWhy.has(reference)) return;
-      const graded = await gradeFragment(reference, capBytes);
+      if (warmed.has(reference) || warmedWhy.has(reference)) return;
+      const own = texts.get(reference);
+      const graded = own === undefined ? await gradeFragment(reference, capBytes) : await gradeOwn(reference, own, capBytes);
       if (graded.text !== undefined) warmed.set(reference, graded.text);
       else {
         warmedWhy.set(reference, graded.why);
