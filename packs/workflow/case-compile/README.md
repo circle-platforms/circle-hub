@@ -1,4 +1,4 @@
-# case-compile 3.9.1
+# case-compile 3.9.2
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -362,3 +362,16 @@ runner holds the executor's bed keys, the Hub dispatches the workbook itself (de
 the job; repeating the same submission reads its progress and the result reference. SKILL.md steps 5, 6 and 8 say so.
 
 Test: `tools/fetch-run.test.ts`.
+
+### 3.9.2: promoted certification candidates (decision 104)
+
+The runner contract marks the SSL certificate import methods (importKey, importCert, importRootCA and others) as certification
+candidates: device certified through a device receipt set, "final-contract release replay is still required". case-compile
+never enables a candidate. InfoTest and CES use these methods with their certified material after a promoted release replay
+(compile_ref `SSL_CERT_LOAD` `certified_default`, authority `promoted_release_replay`). A runtime-contract@2 document may now
+declare `promotions` (`object`, `method`, `status_authority`, `reason`), an addition removed with the others when the
+original identity is recovered: a candidate is enabled only when a promotion names it with exactly the device receipt set the
+original entry records and the entry carries typed authority. A promotion of anything else refuses the whole contract. The
+release replay is the dispatch of a workbook that uses the method; its result is judged as any other.
+
+Test: `functions/promotions.test.ts`.

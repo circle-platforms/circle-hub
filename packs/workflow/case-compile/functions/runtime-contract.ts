@@ -45,7 +45,7 @@ export function runtimeMethod(contract: RuntimeContract, object: string, method:
   return contract.enabled.find((entry) => entry.object === object && entry.method === method) ?? null;
 }
 /** The members a runtime-contract@2 document adds on top of the original contract (Hub-side deployment declaration). */
-const ADDITIONS = ['types', 'roles', 'effects'];
+const ADDITIONS = ['types', 'roles', 'effects', 'promotions'];
 /**
  * Runtime members B1 reads that the pinned original contract does not have. That original (canonical identity
  * ca32544f…) has exactly minimum_version, runner_source, runner_sha256 and found_times_supported. block_model and
@@ -116,6 +116,20 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
     if (!FORMAT.statuses.includes(String(object.status))) issue(`${at}/status`, '不认识的对象状态');
     if (object.reason !== undefined && typeof object.reason !== 'string') issue(`${at}/reason`, '禁用原因不是文字');
   }
+  // A @2 promotion enables a certification candidate the original contract records as device certified (its status_authority
+  // a device receipt set) once the contract publisher names it with that same authority and gives it typed authority; the
+  // final release replay is the dispatch of a workbook that uses it (decision 104, as InfoTest's promoted release replay).
+  const promotions = new Map<string, { index: number; status_authority: string }>();
+  if (value.promotions !== undefined) {
+    if (value.schema !== 'runtime-contract@2' || !Array.isArray(value.promotions) || value.promotions.length > 64) issue('/promotions', '认证候选推广只能是 runtime-contract@2 里至多 64 条的列表');
+    else for (const [k, row] of value.promotions.entries()) {
+      const at = `/promotions/${k}`;
+      if (!isRecord(row) || Object.keys(row).some((key) => !['object', 'method', 'status_authority', 'reason'].includes(key)) || !nonempty(row.object) || !nonempty(row.method) || typeof row.status_authority !== 'string' || !row.status_authority.startsWith(FORMAT.receipt_authority_prefix) || !SHA.test(row.status_authority.slice(FORMAT.receipt_authority_prefix.length)) || !nonempty(row.reason) || String(row.reason).length > 400) { issue(at, '推广须写对象、方法、该条目的设备回执集认证依据和理由'); continue; }
+      const key = JSON.stringify([row.object, row.method]);
+      if (promotions.has(key)) issue(at, '同一条目重复推广'); else promotions.set(key, { index: k, status_authority: row.status_authority });
+    }
+  }
+  const promotedPairs = new Set<string>();
   const enabled: RuntimeEntry[] = [];
   const pairs = new Set<string>();
   if (!Array.isArray(value.entries)) issue('/entries', '没有函数条目列表');
@@ -154,8 +168,15 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
       if (JSON.stringify(signature[field]) !== JSON.stringify(wanted)) issue(`${at}/signature/${field}`, '签名参数分组与逐参数标志不一致');
     }
     if (typeof signature.text !== 'string') issue(`${at}/signature/text`, '签名说明不是文字');
-    if (entry.status === 'enabled' && entry.certification_candidate !== true) enabled.push({ object: String(entry.e), method: String(entry.f), dispatch: String(entry.dispatch), parameters, sourcePointer: at, authority: readAuthority(value,entry,parameters.map(p=>p.name)) });
+    const promotion = promotions.get(pair);
+    if (promotion) {
+      if (entry.certification_candidate !== true || entry.status !== 'enabled' || entry.status_authority !== promotion.status_authority) issue(`/promotions/${promotion.index}`, '推广的条目不是已启用的认证候选，或认证依据与原合约记录不同');
+      else if (!isRecord(entry.typed_authority)) issue(`/promotions/${promotion.index}`, '推广的认证候选必须带 runtime-contract@2 的类型权限');
+      else promotedPairs.add(pair);
+    }
+    if (entry.status === 'enabled' && (entry.certification_candidate !== true || promotedPairs.has(pair))) enabled.push({ object: String(entry.e), method: String(entry.f), dispatch: String(entry.dispatch), parameters, sourcePointer: at, authority: readAuthority(value,entry,parameters.map(p=>p.name)) });
   }
+  for (const [key, promotion] of promotions) if (!pairs.has(key)) issue(`/promotions/${promotion.index}`, '推广的对象和方法在合约里不存在');
   let digest = '';
   try { digest = runtimeDigest(value); } catch { /* Precise numeric/key problems were already listed above. */ }
   if (typeof value.contract_sha256 !== 'string' || !SHA.test(value.contract_sha256)) issue('/contract_sha256', '声明的合约摘要无效');
