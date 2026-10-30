@@ -155,12 +155,14 @@ function summaryOf(fields: DocumentFields, template: Template): string {
     const parts = [`用例 ${fields.caseCount} 个`];
     const command = fields.command_coverage;
     if (command) {
-      const partial = (command.missing_identities?.length ?? 0) > 0 || (command.unclassified?.length ?? 0) > 0 || command.truncated || command.skippedSources > 0 || command.cutKeys.includes(fields.document) || command.unmatched.length > 0;
+      const partial = (command.missing_identities?.length ?? 0) > 0 || (command.unknown_commands?.length ?? 0) > 0 || (command.unclassified?.length ?? 0) > 0 || command.truncated || command.skippedSources > 0 || command.cutKeys.includes(fields.document) || command.unmatched.length > 0;
       const missing = command.commands.filter(row => row.missing.length > 0).length;
       if (command.uploaded) parts.push('按命令：上传文件不在索引里');
       else if (command.rule_mismatch) parts.push('按命令：规则不一致，用默认 marked 重跑');
       else if (!command.bound) parts.push('按命令：未计算，缺 case_index');
       else if (!command.documentIndexed && !command.truncated && command.skippedSources === 0 && !command.cutKeys.includes(fields.document)) parts.push('按命令：文档不在完整索引里，用收了该文档的构建或同步收进后重跑');
+      // Unknown entries are not cases that do not exist: their count and where the next action is, not a sync.
+      else if (partial && command.unknownOnly === true) parts.push(`按命令：已读 ${command.commands.length} 个命令，${missing} 个潜在缺口待补证；索引有 ${command.unknownEntries} 个用例缺查询所需的事实未计入，按视图说明补齐后重跑，未判覆盖完整`);
       else if (partial) parts.push(`按命令：已读 ${command.commands.length} 个命令，${missing} 个潜在缺口待补证，知识同步后重跑，未判覆盖完整`);
       else if (!command.documentIndexed) parts.push('按命令：文档不在索引里');
       else parts.push(`按命令：${command.commands.length} 个命令，${missing} 个缺类别${command.commands.length === 0 ? '；用例未解析出命令' : ''}`);
@@ -247,6 +249,8 @@ export function projectDocuments(input: unknown, options: ProjectOptions = {}): 
   const agileDocuments = input.inputs.filter(isRecord).filter(raw => raw.slot === SUBJECT_SLOT && typeof raw.external === 'string' && raw.external.startsWith('agile:mindmap:')).map(raw => documentIdOf(raw) as string);
   const caseIndex = readCaseIndex(input, agileDocuments);
   if (caseIndex !== null && 'error' in caseIndex) return { ...caseIndex, warnings: warnings.list() };
+  // The Hub bound an index truncated only by unknown entries (workflow.json case_index unknown_entries: disclose).
+  if (caseIndex?.unknown_only === true) warnings.note({ code: `${PACK}.index_unknown_entries`, message: `用例索引只因 ${caseIndex.unknown_entries} 个用例缺查询所需的事实而截断：这些用例没有计入或没给命令，按命令覆盖记未知，不当作没有用例或缺类别。视图说明「${caseIndex.notes.join('；')}」。下一步：按视图说明补齐这些用例的事实后，重新读取 case_index 并重跑`, data: { unknown_entries: caseIndex.unknown_entries } });
 
   const admitted = new Map(documents.map(document => [document.id, commandCoverage(template, document.id, document.cases.cases.map(c => ({ id: c.id, visit: c.visit, categories: [] })), caseIndex, [], document.uploaded, {}, caseRule, caseRevisionNodes(document.cases))]));
   const skips = readSkips(parameters.skipped, template, documents, admitted);

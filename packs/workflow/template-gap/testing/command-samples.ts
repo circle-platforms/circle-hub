@@ -7,7 +7,7 @@ import { bind, isFailure, projectionInput } from './support.ts';
 import { projectDocuments } from '../functions/project.ts';
 import { commandSubject } from '../functions/command-subject.ts';
 import TEMPLATE from '../tables/template-v3.json' with { type: 'json' };
-import { BUILD, LOCK, ROOT, assignedCases, bindIndex, digest, indexView } from './index.ts';
+import { BUILD, LOCK, ROOT, assignedCases, bindIndex, commandless, digest, indexView, unknownOnly } from './index.ts';
 import { fileURLToPath } from 'node:url';
 const document = '900001';
 const categories = TEMPLATE.categories.filter(c => c.group === 'command');
@@ -27,6 +27,8 @@ export function commandSampleSubjects(): { id: string; polarity: 'positive' | 'n
     make('command_partial_shortfall', 'negative', '来源不全且已知类别不齐：命令和文档各给一条带出口的缺输入；补来源和类别即 command_all 正例', ['unknown', 'unknown'], s => { s.index.skipped = 2; s.index.notes = ['未归位条目 3 个，标在根下']; s.cases[0].categories = []; }),
     make('command_partial_support', 'positive', '来源不全但已知九类齐全：保留支持并追加文档缺输入；完整反例不能假报覆盖完整', [...VerdictSchema.extract(['support', 'unknown']).options], s => { s.index.skipped = 2; s.index.notes = ['未归位条目 3 个，标在根下']; }),
     make('command_unmatched', 'negative', '脑图多了未收录用例：保留已知支持并追加文档缺输入；同步收录后为完整正例', [...VerdictSchema.extract(['support', 'unknown']).options], s => { s.cases.push({ id: `${document}:fresh`, visit: s.nodes.texts.length, categories: [] }); s.nodes.texts.push('新增用例'); s.nodes.parents.push(0); s.case_count++; }),
+    make('command_unknown_entries', 'positive', '索引只因 2 个用例缺查询所需的事实而截断：已知九类齐全的命令保留支持，文档另给一条带条数、视图说明和下一步的未知；补齐事实后即 command_all 正例', [...VerdictSchema.extract(['support', 'unknown']).options], s => { unknownOnly(s.index); }),
+    make('command_unknown_commands', 'positive', '索引把 2 个步骤未解析成命令的用例作为未知条目列在文档下、不给 commands：已读用例没显示的类别只记潜在缺口，不判缺类别，文档另给一条带条数和下一步的未知；补齐命令后即 command_all 正例', ['unknown', 'unknown'], s => { commandless(s.index); }),
   ];
 }
 function declaredSample(example: ReturnType<typeof commandSampleSubjects>[number]) {
@@ -39,6 +41,8 @@ export function commandTransitionalExamples() {
     const source = example.id === 'command_partial_shortfall' ? withoutCategory(baseline, 'audit_log') : example.id === 'command_unmatched' ? withCase(baseline, '其他', witnessCase('audit_log', 9876)) : baseline;
     const pendingView = example.id === 'command_unbound' ? null : indexView(assignedCases(example.id === 'command_unmatched' ? baseline : source, document), [document]);
     if (pendingView && example.id.startsWith('command_partial')) { pendingView.skipped = 2; pendingView.notes = ['未归位条目 3 个，标在根下']; }
+    if (pendingView && example.id === 'command_unknown_entries') unknownOnly(pendingView);
+    if (pendingView && example.id === 'command_unknown_commands') commandless(pendingView);
     const restoredView = indexView(assignedCases(source, document), [document]);
     restoredView.notes = pendingView?.notes.filter(note => note.startsWith('未归位')) ?? [];
     const snapshot = (view: ReturnType<typeof indexView> | null) => {

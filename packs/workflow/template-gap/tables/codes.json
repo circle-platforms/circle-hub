@@ -84,6 +84,11 @@
       "code": "template-gap.tag_not_text",
       "when": "标签列表里有不是文字的项，已忽略",
       "fix": "标签只写文字"
+    },
+    {
+      "code": "template-gap.index_unknown_entries",
+      "when": "绑定的用例索引只因部分用例缺查询所需的事实而截断（unknown_only）：这些用例没有计入或没给命令，本次文档的按命令覆盖记未知；调用方从条目字段 command_coverage.unknownEntries 和摘要读到条数",
+      "fix": "按视图说明补齐这些用例的事实后，重新读取 case_index 并重跑；同一冻结视图重读补不出这些事实"
     }
   ],
   "violations": [

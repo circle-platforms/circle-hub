@@ -99,6 +99,13 @@ Old roots without command_identities are missing complete identity evidence, eve
 new producer, re-read the index and start a new run. Truncation, skipped sources, unmatched revisions, missing identities and
 unclassified cases preserve known observations and block unsupported shortfalls/full-coverage claims.
 
+Since 1.2.20 the case_index slot declares `unknown_entries: disclose`, so an index truncated only by unknown entries
+(`unknown_entries` with `unknown_only`) binds. A case the view lists under its document without `commands` (its steps are
+not complete commands) is one of those entries: its command set is unknown, not empty. Categories the read cases do not
+show are potential gaps, never a shortfall; the document gets an unknown with the count, the view notes and the next
+action (complete the commands, re-read the index, rerun), and the projection warns `template-gap.index_unknown_entries`.
+An entry without commands on a view that declares no unknown entries is still index_invalid.
+
 skipped contains exact category, the user's verbatim reason, optional document and optional complete CommandIdentity command.
 A command skip matches only that identity; a path string is invalid. Document skips apply to all identities of that document.
 Unknown, overlapping or inapplicable targets refuse start_run. Explicit skipped categories remain separate from unclassified.
