@@ -54,8 +54,10 @@ async function withDocuments<T>(ctx:EngineContext,call:CallContext|undefined,ope
 
 export interface RunsEngine extends RunsService {
   maintain():Promise<void>;
+  /** Schedules a pass every minute and resolves when the first pass is done (it is retried on schedule should it fail). */
   startMaintenance():Promise<void>;
-  stopMaintenance():Promise<void>;
+  /** Ends the schedule and waits for a pass in progress; with `abort` that pass returns at its next run (shutting down). */
+  stopMaintenance(options?:{abort?:boolean}):Promise<void>;
   /** For a run whose requirements are all facts the answer carries `result`: the reference and counts of the result computed at once. */
   startRun(user: Principal, input: Parameters<RunsService['startRun']>[1], context: CallContext): Promise<StartRunAnswer>;
   submitResult(user: Principal, args: Record<string, unknown>, context: CallContext): Promise<SubmitAnswer>;
@@ -82,16 +84,19 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
   ctx.documents.dispose?.();
   let ongoing:Promise<void>|null=null;
   let timer:ReturnType<typeof setInterval>|null=null;
-  const maintain=():Promise<void>=>ongoing??=(withDocuments(ctx,undefined,current=>maintainRuns(current)).finally(()=>{ongoing=null;}));
+  let aborted=false;
+  const maintain=():Promise<void>=>ongoing??=(withDocuments(ctx,undefined,current=>maintainRuns(current,()=>aborted)).finally(()=>{ongoing=null;}));
   return {
     abandonRun(user,run,request,reason){return abandonRun(ctx,user,run,request,reason);},
     maintain,
     async startMaintenance(){
-      await maintain();
+      aborted=false;
+      // Scheduled first, so a failed first pass is retried like any other.
       timer??=setInterval(()=>{void maintain().catch(error=>ctx.log({traceId:null,run:null,what:'run maintenance',detail:String(error)}));},60000);
       timer.unref();
+      await maintain();
     },
-    async stopMaintenance(){if(timer){clearInterval(timer);timer=null;}await ongoing;},
+    async stopMaintenance(options={}){if(timer){clearInterval(timer);timer=null;}if(options.abort===true)aborted=true;try{await ongoing;}finally{aborted=false;}},
     listRequests(user,run) { return withRequestPermissions(ctx.deps.records.artifacts,user,()=>requestsOf(ctx,user,run)); },
     async startRun(user, input, context) {
       return withDocuments(ctx,context,async current=>(await startRun(current,user,input,context,{host:'local_circle'})).answer,user);
