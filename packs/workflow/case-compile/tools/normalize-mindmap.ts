@@ -1,4 +1,5 @@
-// Public, byte-accounted normalization only: two leading U+FFFF and a single-element wrapper array.
+// Public, byte-accounted normalization only: the KityMinder export head (U+FFFF then U+FEFF, bytes EF BF BF EF BB BF, as the
+// platform's local export writes it) or two leading U+FFFF, and a single-element wrapper array.
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -7,7 +8,8 @@ import { argumentsOf, readBytes, writeNew, sha256 } from './files.ts';
 export function normalizeMindmap(bytes: Uint8Array): { bytes: Uint8Array; before_sha256: string; after_sha256: string; transformations: string[] } {
   let text: string; try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { throw new Error('脑图不是完整 UTF-8，不作猜测修复'); }
   const transformations: string[] = [];
-  if (text.startsWith('\uffff\uffff')) { text = text.slice(2); transformations.push('删除文件头两个 U+FFFF'); }
+  if (text.startsWith('\uffff\ufeff')) { text = text.slice(2); transformations.push('删除 KityMinder 导出文件头 U+FFFF U+FEFF'); }
+  else if (text.startsWith('\uffff\uffff')) { text = text.slice(2); transformations.push('删除文件头两个 U+FFFF'); }
   let value: unknown; try { value = JSON.parse(text); } catch { throw new Error('脑图不是有效 JSON；只允许声明的两种规整'); }
   if (Array.isArray(value)) {
     if (value.length !== 1 || !isRecord(value[0])) throw new Error('脑图外层数组必须恰好一个对象');
