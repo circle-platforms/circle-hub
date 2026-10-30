@@ -29,15 +29,16 @@ async function setup(t: any) {
 }
 test('variable commands preserve explicit text and hide values until show --value', async (t) => {
     const f = await setup(t);
-    await writeFile(join(f.kit.dataDir, 'value.txt'), '10.6\n');
+    // A bare '10.6' also occurs in a printed decision time whose seconds are 10 and milliseconds start with 6.
+    await writeFile(join(f.kit.dataDir, 'value.txt'), 'MEADOW_LINE_10.6\n');
     await variableCommand(f.session, ['set', 'DEMO_LINE', '--file', 'value.txt', '--text', '--reason', '合成设置']);
     await variableCommand(f.session, ['list']);
     await variableCommand(f.session, ['show', 'DEMO_LINE']);
-    assert.ok(!f.lines.join('\n').includes('10.6'));
+    assert.ok(!f.lines.join('\n').includes('MEADOW_LINE_10.6'));
     f.lines.length = 0;
     await variableCommand(f.session, ['show', 'DEMO_LINE', '--value', '--history']);
     assert.match(f.lines[0], /会留在终端记录/);
-    assert.ok(f.lines.join('\n').includes('"10.6"'));
+    assert.ok(f.lines.join('\n').includes('"MEADOW_LINE_10.6"'));
     await variableCommand(f.session, ['unset', 'DEMO_LINE', '--reason', '合成撤回']);
     assert.equal((await f.kit.variables.snapshot()).has('DEMO_LINE'), false);
 });
