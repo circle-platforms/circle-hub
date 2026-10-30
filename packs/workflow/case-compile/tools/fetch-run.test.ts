@@ -37,6 +37,16 @@ test('fetches the run, result, submission and the three bound originals with the
   assert.equal(await main(['--hub', h.url, '--run', RUN, '--out', out], async () => TOKEN), 1, 'existing files are never overwritten');
 });
 
+test('an unreachable Hub is reported as unreachable, never as a malformed answer', async () => {
+  const closed = createServer(); await new Promise<void>((resolve) => closed.listen(0, '127.0.0.1', resolve));
+  const { port } = closed.address() as { port: number }; await new Promise<void>((resolve) => closed.close(() => resolve()));
+  const written: string[] = []; const write = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: string | Uint8Array) => { written.push(String(chunk)); return true; }) as typeof process.stderr.write;
+  try { assert.equal(await main(['--hub', `http://127.0.0.1:${port}/mcp`, '--run', RUN, '--out', await mkdtemp(join(tmpdir(), 'cc-fetch-'))], async () => TOKEN), 1); }
+  finally { process.stderr.write = write; }
+  assert.match(written.join(''), /Hub 不可达（ECONNREFUSED）/);
+});
+
 test('a source whose bytes do not match the bound digest, a missing token and a refused token fail', async (t) => {
   const h = await hub((sources) => { const [key] = [...sources.keys()]; sources.set(key, Buffer.from('changed')); }); t.after(h.close);
   assert.equal(await main(['--hub', h.url, '--run', RUN, '--out', await mkdtemp(join(tmpdir(), 'cc-fetch-'))], async () => TOKEN), 1);

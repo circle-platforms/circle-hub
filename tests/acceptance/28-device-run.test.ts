@@ -8,7 +8,7 @@ import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgre
 import { osIsolationAvailable } from '../../hub/rules/api.ts';
 import { recognize } from '../../hub/refs/api.ts';
 import { sha256Hex, type ActionBody } from '../../hub/records/api.ts';
-import { ExecutorDefinition, type JobStatus } from '../../hub/dispatch/api.ts';
+import { ExecutorDefinition, readRunJobs, type JobStatus } from '../../hub/dispatch/api.ts';
 import { definition } from '../../hub/dispatch/testing/definition.ts';
 import { startEndpoint } from '../../hub/dispatch/testing/server.ts';
 import { CONTRACT_DOC as BASE_CONTRACT, PROFILE_DOC as BASE_PROFILE, MANIFEST_DOC as BASE_MANIFEST, goodData } from '../../packs/workflow/case-compile/functions/test-support.ts';
@@ -21,7 +21,8 @@ import { reportLines, batchQualifications } from '../../scripts/real/accept/devi
 import { createScriptedModel } from '../../scripts/real/scripted-model.ts';
 import { createTestHub, type TestHub, type TestUser } from '../../hub/server/testing-real.ts';
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stage } from '../../packs/workflow/case-compile/pack-files.ts';
@@ -73,6 +74,9 @@ async function release(booked: string) {
   assert.equal((await bed.hub.leases.view('bed/')).entries.length, 0);
 }
 function submission(run: string, index: number, bad = false) {
+  return { run, model: 'synthetic-scripted-model', items: [planItem(index, itemIds.get(run)!, bad)] };
+}
+function planItem(index: number, item: string, bad = false) {
   const data = goodData(); data.steps[0].args = bad ? 'synthetic-invalid' as unknown as string[] : [line];
   // Second authored case also exercises another enabled, role-resolvable method.
   // dut0's 192.0.2.74/26 shares its segment with client0, so the address is reachable at compile time.
@@ -80,7 +84,7 @@ function submission(run: string, index: number, bad = false) {
   data.steps.push({object:'widget-seat',method:'configure',args:['no widget health interval pool-a'],keywords:{},cleanup:true});
   data.expects[0].text = expected;
   data.expects[0].quote = { reference: `src:${sha256Hex(original)}/kityminder@1/${model.nodes.find(n => n.selector === `n/expected-${index}`)!.selector}`, text: expected };
-  return { run, model: 'synthetic-scripted-model', items: [{ item: itemIds.get(run)!, handling: 'handled', slots: { plan: [{ text: '合成计划', quotes: [data.expects[0].quote], data }] } }] };
+  return { item, handling: 'handled', slots: { plan: [{ text: '合成计划', quotes: [data.expects[0].quote], data }] } };
 }
 async function plan(booked: string, index = 0, repair = false) {
   const input = { pack: 'case-compile', product: bed.product.names[0], build: bed.site.RELEASED, predecessor: booked, inputs: startInputs(), parameters: { autoid: ids[index] } };
@@ -117,19 +121,34 @@ async function plan(booked: string, index = 0, repair = false) {
   const payload = await readFile(output); assert.equal(receipt.sha256, sha256Hex(payload));
   return { input, run, recipe, sent, payload };
 }
-async function verify(p: Awaited<ReturnType<typeof plan>>, index = 0, changed = false) {
+async function verify(p: Awaited<ReturnType<typeof plan>>, index = 0, changed = false, beforeSubmit: () => void = () => {}) {
   const payload = Buffer.from(p.payload);
   if (changed) { const at = payload.indexOf('pool-a'); assert.ok(at >= 0); payload[at + 5] = 'b'.charCodeAt(0); assert.equal(payload.filter((v, i) => v !== p.payload[i]).length, 1); }
   if (changed) {
     const refused=await client.call('upload_file',{file_path:payload.toString('base64'),name:'synthetic.xlsx',media_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     assert.equal(refused.isError,true);assert.equal(refused.out.acceptance,'not_accepted');assert.ok(refused.out.errors.some(e=>e.code==='SOURCE_UNPARSEABLE'&&/xlsx@1.*CRC/.test(e.message)&&e.fix));assert.equal(refused.out.reference,undefined);
-    return {run:p.run,result:null,ref:null};
+    return {run:p.run,result:null,ref:null,sent:null};
   }
   const ref = await client.upload(payload, 'synthetic.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   const input = { ...p.input, predecessor: p.run, parameters: { autoid: ids[index], plan_run: p.run }, inputs: { ...startInputs(), workbook: { reference: ref } } };
   const second = await start(input);
-  const result = (await client.call('submit_result', submission(second.run!.run, index))).out;
-  return { run: second.run!.run, result, ref };
+  // Decision 105: the Hub dispatches when this submission is accepted, so the conditions of that dispatch are set before it.
+  beforeSubmit();
+  const sent = submission(second.run!.run, index);
+  const result = (await client.call('submit_result', sent)).out;
+  return { run: second.run!.run, result, ref, sent };
+}
+// The job the Hub dispatched for an accepted verification run. It runs on after the answer, so it is read, as the runner's
+// repeated submission reads it, until the journal records its end (never inferred from the name of the last phase).
+async function settled(v: { run: string; result: z.infer<typeof SubmitResultOutput> | null }): Promise<JobStatus> {
+  const note = v.result?.dispatch?.[0]; assert.ok(note?.job, JSON.stringify(v.result?.dispatch)); assert.match(note.text, /已按任务包的效果行派发作业/);
+  let read: unknown;
+  for (let i = 0; i < 600; i++) {
+    const job = (await readRunJobs(bed.hub.records, dispatch(), bed.hub.admin.principal, v.run)).find(row => row.job === note.job); read = job;
+    if (job?.ended) return job.status;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw new Error(`the dispatched job did not end: ${JSON.stringify(read)}`);
 }
 async function resultReport(state: JobStatus) {
   assert.match(state.result!, /^src:[a-f0-9]{64}$/);
@@ -210,21 +229,64 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
       const booked = await booking(); bookings.push(booked);
       const p = await plan(booked, index, index === 0); const v = await verify(p, index);
       assert.ok(v.result!.result!.partitions.delivered[0].requirements.every(r => r.status === 'satisfied'));
-      const state = await dispatch().dispatch(bed.hub.admin.principal, v.run, executor);
+      // Decision 105: the runner's own accepted verification run dispatches, with an administrator answerable for an unknown outcome.
+      const state = await settled(v); const job = state.job;
       assert.equal(state.outcome, 'effective'); assert.equal(state.frozen, false);
+      const binding = await dispatch().journal.binding(job); assert.equal(binding.initiated_by, bed.reviewer.principal.id); assert.equal(binding.acting_by, bed.hub.admin.principal.id);
       assert.deepEqual(latest.payload, p.payload); hashes.push(latest.digest);
       const report = await resultReport(state); assert.equal(report.rows[0].reported_terminal, 'pass'); assert.equal(report.rows[0].dynamic_terminal, 'no_verdict'); assert.ok(report.rows[0].limits.includes('未排除本地操作'));
+      // Like the task id CES prints: repeating the same submission reads this job and its result, it never dispatches again.
+      const count = submissions; const again = (await client.call('submit_result', v.sent!)).out;
+      assert.equal(again.dispatch?.length, 1); assert.equal(again.dispatch![0].job, job); assert.equal(again.dispatch![0].result, state.result); assert.equal(submissions, count);
       const read = await client.call('get_nodes', { reference: state.result }); assert.equal(read.isError, false);
       const stored = await bed.hub.hub.runs.getRun(bed.reviewer.principal, p.run); assert.equal(stored!.run.predecessor, booked); await release(booked);
     }
     assert.equal(new Set(hashes).size, 2); assert.equal(new Set(bookings).size, 2);
   });
+  test('a whole mindmap compiles into one workbook that the Hub dispatches once, with one verdict row per case', async () => {
+    // Decisions 104 and 105 at the user's unit of work, as CES runs a mindmap batch: no autoid, one plan submission for every
+    // case, the generation inputs fetched with the runner's own token, one workbook, one verification run, one dispatch.
+    const booked = await booking(); const before = submissions;
+    const scope = { pack: 'case-compile', product: bed.product.names[0], build: bed.site.RELEASED };
+    const whole = await start({ ...scope, predecessor: booked, inputs: startInputs(), parameters: {} });
+    const planRun = whole.run!.run; const items = whole.run!.items.map(item => item.id);
+    assert.equal(items.length, ids.length, 'every textual-autoid case of the document is an item');
+    const planned = (await client.call('submit_result', { run: planRun, model: 'synthetic-scripted-model', items: items.map((item, index) => planItem(index, item)) })).out;
+    assert.equal(planned.acceptance, 'accepted', JSON.stringify(planned.errors));
+    for (const row of planned.result!.partitions.delivered) assert.ok(row.requirements.filter(r => r.requirement !== 'workbook_verified').every(r => r.status === 'satisfied'), JSON.stringify(row.requirements));
+    // The client's own published tools: fetch-run reads the token from standard input only, generate-workbook writes one file.
+    // fetch-run calls this in-process Hub back, so it runs asynchronously: a synchronous child would block the Hub that answers it.
+    const directory = await mkdtemp(join(staged, 'whole-mindmap-'));
+    const fetching = promisify(execFile)(process.execPath, [join(staged, 'case-compile/tools/fetch-run.ts'), '--hub', bed.hub.mcpUrl, '--run', planRun, '--out', directory], { encoding: 'utf8' });
+    fetching.child.stdin!.end(bed.reviewer.token); await fetching;
+    const argv = ['run', 'result', 'submission', 'contract', 'profile', 'inventory'].flatMap(name => [`--${name}`, join(directory, `${name}.json`)]);
+    const output = join(directory, 'case.xlsx');
+    const receipt = JSON.parse(execFileSync(process.execPath, [join(staged, 'case-compile/tools/generate-workbook.ts'), ...argv, '--out', output], { encoding: 'utf8' }));
+    const payload = await readFile(output); assert.equal(receipt.sha256, sha256Hex(payload));
+    const ref = await client.upload(payload, 'synthetic-whole.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    const verification = await start({ ...scope, predecessor: planRun, parameters: { plan_run: planRun }, inputs: { ...startInputs(), workbook: { reference: ref }, plan_result: { run: planRun } } });
+    const sent = { run: verification.run!.run, model: 'synthetic-scripted-model', items: verification.run!.items.map((item, index) => planItem(index, item.id)) };
+    const result = (await client.call('submit_result', sent)).out;
+    assert.equal(result.acceptance, 'accepted', JSON.stringify(result.errors));
+    assert.equal(result.result!.partitions.delivered.length, ids.length);
+    for (const row of result.result!.partitions.delivered) assert.ok(row.requirements.every(r => r.status === 'satisfied'), JSON.stringify(row.requirements));
+    const state = await settled({ run: verification.run!.run, result });
+    assert.equal(state.outcome, 'effective'); assert.equal(submissions, before + 1, 'one dispatch carries the whole mindmap');
+    assert.deepEqual(latest.ids, ids); assert.deepEqual(latest.payload, payload);
+    const report = await resultReport(state);
+    assert.deepEqual(report.rows.map((row: { item: string }) => row.item), ids, 'one verdict row per case of the workbook');
+    for (const row of report.rows) assert.equal(row.reported_terminal, 'pass');
+    const again = (await client.call('submit_result', sent)).out; assert.equal(again.dispatch?.[0]?.job, state.job); assert.equal(submissions, before + 1);
+    await release(booked);
+  });
   test('a frozen workflow without its allowed effect row cannot submit a verified workbook',async()=>{
-    const booked=await booking(),v=await verify(await plan(booked)),before=submissions;
+    const booked=await booking(),p=await plan(booked),before=submissions;
     const workflows=dispatch().options.workflows,read=workflows.byDigest.bind(workflows);
-    // An older workflow port has no effects declaration; all source and result fixtures remain the real run's.
-    workflows.byDigest=async digest=>{const workflow=await read(digest);if(!workflow)return workflow;return {...workflow,readJson:async path=>{const value=await workflow.readJson(path);if(path!=='requirements.json')return value;const {effects,...legacy}=value as Record<string,unknown>;return legacy;}};};
-    try{const state=await dispatch().dispatch(bed.hub.admin.principal,v.run,executor);assert.equal(state.outcome,'not_dispatched');const event=(await dispatch().journal.events(state.job)).find(e=>e.body.detail.phase==='boundary_refused')!;assert.equal(event.body.error_code,'EFFECT_NOT_ALLOWED');assert.equal(event.body.detail.boundary_clause,1);assert.equal(submissions,before);}
+    // An older workflow port has no effects declaration; all source and result fixtures remain the real run's. It is in place
+    // before the verification run is submitted, which is when the Hub would dispatch it (decision 105).
+    const legacy=()=>{workflows.byDigest=async digest=>{const workflow=await read(digest);if(!workflow)return workflow;return {...workflow,readJson:async path=>{const value=await workflow.readJson(path);if(path!=='requirements.json')return value;const {effects,...legacy}=value as Record<string,unknown>;return legacy;}};};};
+    try{const v=await verify(p,0,false,legacy);assert.ok(!v.result?.dispatch?.some(note=>note.job),JSON.stringify(v.result?.dispatch));assert.equal(submissions,before,'the accepted submission dispatched nothing');
+      const state=await dispatch().dispatch(bed.hub.admin.principal,v.run,executor);assert.equal(state.outcome,'not_dispatched');const event=(await dispatch().journal.events(state.job)).find(e=>e.body.detail.phase==='boundary_refused')!;assert.equal(event.body.error_code,'EFFECT_NOT_ALLOWED');assert.equal(event.body.detail.boundary_clause,1);assert.equal(submissions,before);}
     finally{workflows.byDigest=read;await release(booked);}
   });
   test('a plan without a workbook cannot dispatch', async () => {
@@ -247,13 +309,27 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.equal((await dispatch().dispatch(bed.hub.admin.principal,v.run,executor)).outcome,'not_dispatched'); assert.equal(submissions, before); await release(booked);
   });
   test('failed declared environment precheck submits nothing and releases its gateway lease', async () => {
-    const booked = await booking(); const v = await verify(await plan(booked)); const before = submissions; const closed = releases; mismatch = true;
-    try { const state = await dispatch().dispatch(bed.hub.admin.principal, v.run, executor); assert.equal(state.outcome, 'not_dispatched'); assert.equal(state.frozen, false); assert.equal(submissions, before); assert.equal(releases, closed + 1); }
+    const booked = await booking(); const p = await plan(booked); const before = submissions; const closed = releases;
+    try {
+      const v = await verify(p, 0, false, () => { mismatch = true; }); const state = await settled(v);
+      assert.equal(state.outcome, 'not_dispatched'); assert.equal(state.frozen, false); assert.equal(submissions, before);
+      // The target lease is released after the job's end record, so its release is awaited rather than raced.
+      for (let i = 0; i < 200 && releases === closed; i++) await new Promise(resolve => setTimeout(resolve, 50));
+      assert.equal(releases, closed + 1);
+      // CES reports a failed bed check to the user as it is and submits nothing past it: the runner's repeat reads which check
+      // failed, and that the job has ended rather than that it still runs.
+      assert.deepEqual(state.failed_conditions, [{ pointer: '/seats', operator: 'at_least' }], JSON.stringify(state));
+      const text = (await client.call('submit_result', v.sent!)).out.dispatch?.[0]?.text ?? '';
+      assert.match(text, /已结束/); assert.doesNotMatch(text, /还在进行/);
+      assert.match(text, /未满足的条件：\/seats at_least/); for (const check of state.failed_checks ?? []) assert.ok(text.includes(check.missing_fact), text);
+      assert.equal(submissions, before);
+    }
     finally { mismatch = false; await release(booked); }
   });
   test('lost receipt freezes the first case and blocks the next until administrator reconciliation', async () => {
-    const booked = await booking(); const first = await verify(await plan(booked)); const before = submissions; lose = true;
-    const frozen = await dispatch().dispatch(bed.hub.admin.principal, first.run, executor); lose = false;
+    const booked = await booking(); const p = await plan(booked); const before = submissions;
+    const first = await verify(p, 0, false, () => { lose = true; });
+    const frozen = await settled(first); lose = false;
     assert.equal(frozen.outcome, 'unknown'); assert.equal(frozen.frozen, true); assert.match(frozen.next_action!, /管理员/);
     const budgetRefused=await dispatch().dispatch(bed.hub.admin.principal,first.run,executor);
     assert.equal(budgetRefused.outcome,'not_dispatched');
@@ -261,6 +337,8 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.equal(refusal.body.error_code,'EFFECT_BUDGET_EXHAUSTED');assert.equal(refusal.body.detail.boundary_clause,4);assert.equal(refusal.body.detail.effect_row,'submit_verified_workbook');
     assert.equal((await dispatch().status(bed.hub.admin.principal,frozen.job)).frozen,true,'a new budget refusal never unfreezes the original effect');
     const whileFrozen=await verify(await plan(booked,1),1);
+    // While the first effect is unresolved the Hub dispatches nothing for the next case and says why in the runner's answer.
+    assert.ok(!whileFrozen.result?.dispatch?.some(note=>note.job),JSON.stringify(whileFrozen.result?.dispatch));assert.match(String(whileFrozen.result?.dispatch?.[0]?.text),/没有派发/);
     await assert.rejects(dispatch().dispatch(bed.hub.admin.principal,whileFrozen.run,executor),/冻结|占用/);
     assert.equal(submissions,before+1);
     assert.deepEqual(latest.ids, [ids[0]], 'the next authored case has not been dispatched');
@@ -269,7 +347,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     await release(booked);
     const nextBooking = await booking(); assert.notEqual(nextBooking, booked);
     const second = await verify(await plan(nextBooking, 1), 1);
-    assert.equal((await dispatch().dispatch(bed.hub.admin.principal, second.run, executor)).outcome, 'effective');
+    assert.equal((await settled(second)).outcome, 'effective');
     assert.equal(submissions, before + 2); await release(nextBooking);
   });
 });

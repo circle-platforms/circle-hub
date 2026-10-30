@@ -81,7 +81,7 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
   const inverse=identityOf(commandIdentity(grammar,line));
   return inverse&&inverse.path===siblingPath?{identities:[inverse],ambiguous:false}:{identities:[],ambiguous:true};
  };
-type Problem={pointer:string;message:string;verdict:'unknown'|'refute';obligation?:Record<string,unknown>};
+type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'refute'>;obligation?:Record<string,unknown>};
  // Whether `received` is the declared inverse of the configured `operation` (null) or why not. The same rule decides a cleanup
  // step and an execution step that undoes an earlier one.
  const inverseProblem=(operation:typeof main[number],received:(typeof actual)[number]|undefined):Problem|null=>{

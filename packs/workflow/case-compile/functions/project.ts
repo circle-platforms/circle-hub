@@ -149,8 +149,11 @@ export function projectItems(input: unknown): unknown {
     planSet = [];
     for (const item of items) {
       const delivered = (accepted.partitions.delivered as unknown[]).filter((row) => isRecord(row) && row.item === item.id);
-      const requirement = (key: string) => { const row = delivered.length === 1 && isRecord(delivered[0]) && Array.isArray(delivered[0].requirements) ? (delivered[0].requirements as unknown[]).find((value) => isRecord(value) && value.requirement === key) : undefined; return isRecord(row) && row.status === 'satisfied' && Array.isArray(row.claims) ? row.claims.filter((claim: unknown) => isRecord(claim) && isRecord(claim.statement) && claim.statement.verdict === 'support') : []; };
-      const plans = requirement('plan'), catalogs = requirement('commands_known').filter((claim: any) => isRecord(claim.statement.data) && Object.hasOwn(claim.statement.data, 'command_catalog'));
+      const requirement = (key: string) => { const row = delivered.length === 1 && isRecord(delivered[0]) && Array.isArray(delivered[0].requirements) ? (delivered[0].requirements as unknown[]).find((value) => isRecord(value) && value.requirement === key) : undefined; return isRecord(row) && row.status === 'satisfied' && Array.isArray(row.claims) ? row.claims.filter((claim: unknown) => isRecord(claim) && isRecord(claim.statement)) : []; };
+      // The plan is the model's accepted judgment (its claim carries the plan slot's data and no rule verdict); the catalog
+      // receipt is the commands_known rule verdict that supports with the catalog.
+      const plans = requirement('plan').filter((claim: any) => isRecord(claim.statement.data) && claim.statement.verdict === undefined);
+      const catalogs = requirement('commands_known').filter((claim: any) => claim.statement.verdict === 'support' && isRecord(claim.statement.data) && Object.hasOwn(claim.statement.data, 'command_catalog'));
       if (plans.length !== 1 || catalogs.length !== 1) return refusal('workbook_context', `计划运行没有受理用例 ${item.fields.autoid} 的唯一计划和命令目录回执`, '先在计划运行里让每个用例的计划要求项都满足并被受理，再按其运行号绑定 plan_result');
       const data = (catalogs[0] as any).statement.data;
       planSet.push({ item: item.id, fields: { autoid: item.fields.autoid, title: item.fields.title, priority: item.fields.priority, steps: item.fields.steps.map((step: { text: string }) => ({ text: step.text })), source_atoms: item.fields.source_atoms, expected_nodes: item.fields.expected_nodes }, plan: (plans[0] as any).statement.data, command_catalog: data.command_catalog ?? null, ...(item.fields.command_identities !== undefined ? { command_identities: item.fields.command_identities } : {}) });

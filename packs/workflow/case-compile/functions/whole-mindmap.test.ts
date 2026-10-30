@@ -98,13 +98,20 @@ test('a workbook of several cases needs the plan run accepted result, and its pl
   const workbook = { slot: 'workbook', parser: 'xlsx@1', sha256: 'b'.repeat(64), model: coreModel(generateWorkbook(generationFixture())) };
   assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_plan' }, [workbook])), 'case-compile.workbook_context');
   const ids = (projectItems(startInput(twoCaseModel())) as { items: Array<{ id: string }> }).items.map((item) => item.id);
-  const delivered = ids.map((item, k) => ({ item, requirements: [
-    { requirement: 'plan', status: 'satisfied', claims: [{ statement: { verdict: 'support', data: { plan: k } } }] },
+  // The shapes the Hub records: the plan is the model's judgment claim (the plan slot's text and data, no rule verdict), the
+  // catalog receipt the commands_known rule verdict.
+  const planClaim = (data: unknown, extra: Record<string, unknown> = {}) => ({ item: 'x', requirement: 'plan', pointer: '/items/0/slots/plan/0', statement: { text: '合成计划', ...(data === undefined ? {} : { data }), ...extra }, qualifier: { nature: 'judgment' } });
+  const rows = (plan: (k: number) => unknown) => ids.map((item, k) => ({ item, requirements: [
+    { requirement: 'plan', status: 'satisfied', claims: [plan(k)] },
     { requirement: 'commands_known', status: 'satisfied', claims: [{ statement: { verdict: 'support', data: { command_catalog: { root: 'c'.repeat(64), entries: [] } } } }] },
   ] }));
+  const delivered = rows((k) => planClaim({ plan: k }));
   const result = (body: Record<string, unknown>) => ({ slot: 'plan_result', external: null, meta: { kind: 'validation_result', record: 'd'.repeat(64) }, model: { kind: 'validation_result', body: { schema: 'validation@1', acceptance: 'accepted', run: 'run_plan', locks: { pack: FORMAT.generator }, partitions: { delivered }, ...body } } });
   const out = projectItems(startInput(twoCaseModel(), { plan_run: 'run_plan' }, [workbook, result({})])) as { groups: Array<{ plan_set: Array<{ item: string; plan: unknown; fields: { autoid: string } }> }> };
   assert.deepEqual(out.groups[0].plan_set.map((entry) => [entry.item, entry.plan, entry.fields.autoid]), [[ids[0], { plan: 0 }, AUTOID], [ids[1], { plan: 1 }, SECOND]]);
   assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_other' }, [workbook, result({})])), 'case-compile.workbook_context');
   assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_plan' }, [workbook, result({ partitions: { delivered: delivered.slice(0, 1) } })])), 'case-compile.workbook_context');
+  // A plan claim without the plan's data, or a rule verdict standing in for the model's plan, freezes nothing.
+  for (const plan of [(_k: number) => planClaim(undefined), (k: number) => planClaim({ plan: k }, { verdict: 'support' })])
+    assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_plan' }, [workbook, result({ partitions: { delivered: rows(plan) } })])), 'case-compile.workbook_context');
 });

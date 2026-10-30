@@ -32,9 +32,13 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
 
 function noteOf(job: RunJob): DispatchNote {
   const { status } = job;
-  const parts = [`作业 ${job.job}：阶段 ${status.phase}`, `${labelOf('effect_outcome', status.outcome)}`];
+  const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '结果未知，等管理员对账' : '进行中';
+  const parts = [`作业 ${job.job}：${state}（阶段 ${status.phase}）`, `${labelOf('effect_outcome', status.outcome)}`];
   if (status.result) parts.push(`结果引用 ${status.result}（每个派发条目一行，读它看逐条结论）`);
-  else if (status.phase !== 'complete') parts.push('作业还在进行，稍后对同一提交再调用 submit_result');
+  else if (job.ended === null) parts.push('作业还在进行，稍后对同一提交再调用 submit_result');
+  // A failed bed check is reported as it is, the way CES reports its environment check before a run.
+  for (const check of status.failed_checks ?? []) parts.push(`未通过的核对 ${[check.step, check.seat, check.check].filter(Boolean).join(' ')}：${check.missing_fact}`);
+  if (status.failed_conditions?.length) parts.push(`未满足的条件：${status.failed_conditions.map((c) => `${c.pointer} ${c.operator}`).join('、')}`);
   if (status.next_action) parts.push(`下一步：${status.next_action}`);
   return { job: job.job, ...(status.result ? { result: status.result } : {}), text: parts.join('；').slice(0, 800) };
 }
