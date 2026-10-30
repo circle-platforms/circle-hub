@@ -96,6 +96,11 @@ function operationQuotes(body:Record<string,any>):Array<Record<string,any>>{
 }
 function fail(message:string):never{throw new KnowledgeError(message+'；修正原件或按生成结构修正整份提交后重交，不能猜测补值',{code:'SUBMISSION_SCHEMA_VIOLATION'});}
 export interface FeedingScope {product?:string|null;root?:string|null;composition?:string|null;run?:string|null;line?:string|null;meta?:Record<string,unknown>|null;metaSource?:string;metaRecord?:string;readManifest?:string;sourceRecord?:string;requested?:string;declaredLine?:string|null;}
+/**
+ * What a feeding append writes beside its body, read through the pool just before the caller opens its transaction: the
+ * append holds the feeding log lock on that transaction and reads nothing through the pool there (issue #104).
+ */
+export interface AppendPlan {bound:string[]}
 export interface FeedingReceipt {objects:string[];offset:number|null;pending:Array<{source:string;missing:string;next_action:string}>;}
 export interface FeedingView {record:string;offset:number;body:Record<string,any>;claim:ClaimBody;validity:'valid'|'invalid';retractions:string[];}
 function captureScope(scope:FeedingScope){return {product:scope.product??null,root:scope.root??null,composition:scope.composition??null,run:scope.run??null,line:scope.line??null,metaSource:scope.metaSource??null,metaRecord:scope.metaRecord??null,readManifest:scope.readManifest??null,sourceRecord:scope.sourceRecord??null,declaredLine:scope.declaredLine??null};}
@@ -108,8 +113,6 @@ export class FeedingLayer {
  private activeJobs=0;
  private readonly projecting=new Map<string,Promise<Projected>>();
  private readonly normalized=new Map<string,Promise<Map<string,string|null>>>();
- // The reads of an append, made just before its transaction and bound to the exact body, actor and scope (issue #104).
- private readonly planned=new WeakMap<object,{key:string;bound:string[]}>();
  constructor(context:KnowledgeContext,reading:TreeReading){this.context=context;this.reading=reading;}
  async offset(tx?:Transaction):Promise<number>{const n=await this.context.records.store.watermark?.(tx);if(n===undefined)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});return n;}
  private async position(digest:string,tx?:Transaction){const n=await this.context.records.store.position?.(digest,tx);if(n===undefined||n===null)throw new KnowledgeError('缺记录追加序号能力；管理员恢复记录库后重试',{code:'SOURCE_UNAVAILABLE'});return n;}
@@ -555,31 +558,21 @@ export class FeedingLayer {
   * a projection. An append holds the feeding log lock on its caller's transaction, so it reads none of this there: a waiting
   * append holds a connection too, and the lock holder could wait for one until the pool's timeout (issue #104).
   */
- private async planAppend(principal:Principal,body:Record<string,any>,scope:FeedingScope):Promise<string[]>{
-  if(body.schema==='retraction@1')return [];
+ async planAppend(principal:Principal,body:Record<string,any>,scope:FeedingScope):Promise<AppendPlan>{
+  if(body.schema==='retraction@1')return {bound:[]};
   const source=await this.originalSource(principal,body,scope);const quotes=annotations.flatMap(key=>(body[key]??[]).map((value:any)=>value.quote));
   const native=await this.nativeObservation(principal,body);
   if(!native&&body.schema!=='fed-note@1'&&!operationRecord(body.schema)){const projected=await this.projection(principal,source,scope),row=projected.rows.find(row=>row.body.object===body.object);if(!row)fail('缺规范内容；重新读取后重交');const stored=await this.context.records.objects.put(new TextEncoder().encode(canonicalize(row.identity)),'application/json');if(stored.sha256!==body.object)fail('规范内容摘要不一致');}
-  return [body.source.bytes,source.artifact.digest,...(native?[native.digest]:[]),...quotes.map(q=>this.quoteRef(q).sha),...(scope.root?[scope.root]:[])];
+  return {bound:[body.source.bytes,source.artifact.digest,...(native?[native.digest]:[]),...quotes.map(q=>this.quoteRef(q).sha),...(scope.root?[scope.root]:[])]};
  }
- private appendKey(principal:Principal,body:Record<string,any>,scope:FeedingScope){return sha256Hex(canonicalize({body,by:principal.id,product:scope.product??null,root:scope.root??null,run:scope.run??null}));}
- /**
-  * Reads what appendPrepared() will write, just before the caller opens its transaction: the source and its access are
-  * checked again here, as close to the commit as a read through the pool can be (issue #104).
-  */
- async planAppends(principal:Principal,bodies:readonly Record<string,any>[],scope:FeedingScope):Promise<void>{
-  for(const body of bodies)this.planned.set(body,{key:this.appendKey(principal,body,scope),bound:await this.planAppend(principal,body,scope)});
- }
- async appendPrepared(principal:Principal,body:Record<string,any>,scope:FeedingScope,model:string,tx:Transaction):Promise<string>{
-  // Inside the transaction nothing is read through the pool: a body without its plan, or changed since, is refused.
-  const planned=this.planned.get(body);
-  if(body.schema!=='retraction@1'&&(planned===undefined||planned.key!==this.appendKey(principal,body,scope)))throw new Error('feeding append without a plan made for this body just before its transaction (issue #104)');
-  const bound=planned?.bound??[];
+ /** Appends a prepared body with the plan read for it just before the transaction: only the lock and writes on the transaction. */
+ async appendPrepared(principal:Principal,body:Record<string,any>,plan:AppendPlan,scope:FeedingScope,model:string,tx:Transaction):Promise<string>{
+  const bound=plan.bound;
   await this.context.records.store.lock('knowledge.feeding.log',tx);
   if(body.schema==='retraction@1')return (await this.put(body,principal,'hub.retraction@1',[],[],'retraction:'+this.key(body),[{key:RETRACT,value:'1'}],tx)).digest;
   const stored=await this.put(body,principal,model,['src:'+body.source.bytes],bound,'annotation:'+sha256Hex(canonicalize({body,actor:principal.id,model,run:scope.run??null})),[{key:OBJECT,value:body.object},{key:'knowledge.feeding.product',value:body.product??principal.id},{key:'knowledge.feeding.annotation',value:'1'}],tx,true,scope.run??null);await this.usage(principal,body.object,scope,tx);return stored.digest;
  }
- async admit(principal:Principal,payload:readonly unknown[],scope:FeedingScope&{classifications?:readonly string[]}):Promise<string[]>{const bodies:Record<string,any>[]=[];for(const raw of payload)bodies.push(await this.prepare(principal,raw,scope));await this.planAppends(principal,bodies,scope);return this.context.records.store.withTransaction(async tx=>{const refs=[];for(const body of bodies)refs.push(await this.appendPrepared(principal,body,scope,'client-declared-model',tx));return refs;});}
+ async admit(principal:Principal,payload:readonly unknown[],scope:FeedingScope&{classifications?:readonly string[]}):Promise<string[]>{const bodies:Record<string,any>[]=[];for(const raw of payload)bodies.push(await this.prepare(principal,raw,scope));const plans:AppendPlan[]=[];for(const body of bodies)plans.push(await this.planAppend(principal,body,scope));return this.context.records.store.withTransaction(async tx=>{const refs=[];for(const [index,body] of bodies.entries())refs.push(await this.appendPrepared(principal,body,plans[index]!,scope,'client-declared-model',tx));return refs;});}
  async frozenOffset(run:string):Promise<number|null>{const row=(await this.context.records.store.find<FeedingOffset>({key:'knowledge.feeding.offset',value:run,kind:'claim',limit:1})).items[0];return row?.body.offset??null;}
  async cut(product:string,offset:number|null,principal?:Principal):Promise<FeedingCut|null>{
   if(!principal)return null;const ceiling=offset??Number.MAX_SAFE_INTEGER,entries=await this.entries(principal,product,ceiling);

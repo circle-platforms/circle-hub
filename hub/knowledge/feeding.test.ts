@@ -102,19 +102,17 @@ test('a source projection reads nothing through the pool once its transaction ho
  assert.equal(receipt.objects.length,1,JSON.stringify(receipt));
 });
 
-test('a feeding append is checked again just before its transaction, and an unchecked or changed body is refused (issue #104)',async t=>{
+test('a feeding append is checked again just before its transaction (issue #104)',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
  const note=await w.kit.artifacts.ingest({bytes:Buffer.from('synthetic note checked twice'),mediaType:'text/plain',origin:{upload:{session:'synthetic-checked-twice',message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},readTier:'model_readable'});
  await layer.upload(w.user,note);
  const row=(await layer.entries(w.user,w.user.id)).find(entry=>entry.body.object===note.body.sha256)!;
  const body=await layer.prepare(w.user,{...row.body,classification:[{value:'ticket',quote:{reference:'src:'+note.body.sha256+'/text@1/l/1',text:'synthetic note'}}]},{});
- // Access lost after the proposal was checked: the check just before the transaction refuses it.
+ // Access lost after the proposal was checked: the plan read just before the transaction refuses it.
  await w.kit.principals.setDisabled(w.admin,w.user.id,true);
- await assert.rejects(()=>layer.planAppends(w.user,[body],{}));
+ await assert.rejects(()=>layer.planAppend(w.user,body,{}));
  await w.kit.principals.setDisabled(w.admin,w.user.id,false);
- // Without that check, or with the body changed after it, nothing is appended.
- await assert.rejects(()=>w.kit.store.withTransaction(tx=>layer.appendPrepared(w.user,body,{},'synthetic',tx)),/plan/);
- await layer.planAppends(w.user,[body],{});
- body.classification=[];
- await assert.rejects(()=>w.kit.store.withTransaction(tx=>layer.appendPrepared(w.user,body,{},'synthetic',tx)),/plan/);
+ const plan=await layer.planAppend(w.user,body,{});
+ assert.ok(plan.bound.includes(note.digest),'the plan binds the upload record');
+ assert.ok(await w.kit.store.withTransaction(tx=>layer.appendPrepared(w.user,body,plan,{},'synthetic',tx)));
 });

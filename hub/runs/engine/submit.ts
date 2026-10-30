@@ -6,6 +6,7 @@ import { isReason } from '../../../contracts/generated/vocabulary.ts';
 import { applyDispatchResults } from './dispatch-results.ts';
 import { recordResultRequests, answerRepairedRequests } from './requests.ts';
 import { ContributionRefusal, KnowledgeError, type PreparedContribution, type ContributionScope } from '../../knowledge/api.ts';
+import type { ContributionAppendPlan } from '../../knowledge/contributions.ts';
 import { getInterpreter, type CheckOutcome } from '../../rules/api.ts';
 // submit_result (W07, W08, T03, A04): the arguments are stored exactly as received before anything else; a repeat of the same
 // (run, submission digest) observed at the same session and declared model returns the stored result without re-running
@@ -384,9 +385,10 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
       if(outcome.result.acceptance!=='accepted')return putResult(store,outcome.result,ctx.now().toISOString());
       if(outcome.prepared===undefined&&!criteria.length&&!base.run.criterion_review)return putResult(store,outcome.result,ctx.now().toISOString());
       // What storing the contributions reads is read now, before the transaction holds its locks (issue #104).
+      const plans=new Map<string,ContributionAppendPlan|null>();
       if(outcome.prepared!==undefined){
         const delivered=new Set(outcome.result.partitions.delivered.filter(item => item.requirements.length > 0 && item.requirements.every(r => r.status === 'satisfied')).map(item => item.item));
-        await ctx.deps.knowledge.layers!.contributions.planAppends([...outcome.prepared].filter(([item]) => delivered.has(item)).map(([, prepared]) => prepared), {run:base.run.run});
+        for(const [item,prepared] of outcome.prepared)if(delivered.has(item))plans.set(item,await ctx.deps.knowledge.layers!.contributions.planAppend(prepared,{run:base.run.run}));
       }
       return store.withTransaction(async tx => {
         await publishCriterionRequests(ctx,base.run,base.submissionRecord,criteria,outcome.result,tx);
@@ -403,7 +405,7 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
             receipt.not_stored.push({ item, reason: `要求项尚未全部满足，未入回注层：${missing}；按本回执的要求项和修正说明修复后，用 submit_result 重交本次运行` });
             continue;
           }
-          const record = await layer.append(prepared, {run:base.run.run,submission:base.digest,session:sessionOf(base.call),model:outcome.model!}, tx);
+          const record = await layer.append(prepared, {run:base.run.run,submission:base.digest,session:sessionOf(base.call),model:outcome.model!}, tx, plans.get(item) ?? null);
           receipt.stored.push({ item, record });
         }
         return putResult(store, { ...outcome.result, contributions: receipt }, ctx.now().toISOString(), tx);
