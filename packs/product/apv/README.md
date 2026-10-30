@@ -1186,3 +1186,12 @@ Disagreement with the task brief, reported as the rules ask: the brief asks for 
 but in `fed-build@1` (the model's field for a build's fixed-bug list, `docs/hub-r4-tasks/kb-feeding.md` §1.4), not
 `fed-defect@1`, whose `source.system` the model fixes to `plm` and whose identity is the PLM record (§1.2); writing a
 build-site page there would misstate its source and collide with the PLM record's source identity.
+
+### List command inverses (1.7.38)
+
+`no slb virtual addrlists` and `no slb virtual portlists` take the list name and an optional start and end, so the generic
+`/commands ↔ /commands/no` rule left the cleanup of `slb virtual addrlists <name> <start> [<end>]` (and of portlists) with
+several possible inverse identities, and case-compile could not name the one cleanup it requires. The command policy now
+declares, for these two paths, the inverse with the two leading identity parameters, the list name and the start value
+(`no slb virtual addrlists <name> <start>`), which is how earlier compiled and executed cases on the automation bed removed
+what they added. The rules are longer prefixes than the generic one, so they take precedence only for these paths.

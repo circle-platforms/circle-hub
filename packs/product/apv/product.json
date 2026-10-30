@@ -100,7 +100,7 @@
       ]
     }
   ],
-  "command_policy": {"schema": "command-policy@1", "read_only": ["/commands/show"], "inverse_rules": [{"source_prefix": "/commands/no", "inverse_prefix": "/commands"}, {"source_prefix": "/commands", "inverse_prefix": "/commands/no"}], "inverse_alternatives": [["on", "off"], ["enable", "disable"]]},
+  "command_policy": {"schema": "command-policy@1", "read_only": ["/commands/show"], "inverse_rules": [{"source_prefix": "/commands/no", "inverse_prefix": "/commands"}, {"source_prefix": "/commands", "inverse_prefix": "/commands/no"}, {"source_prefix": "/commands/slb/virtual/addrlists", "inverse_prefix": "/commands/no/slb/virtual/addrlists", "leading_parameters": 2}, {"source_prefix": "/commands/slb/virtual/portlists", "inverse_prefix": "/commands/no/slb/virtual/portlists", "leading_parameters": 2}], "inverse_alternatives": [["on", "off"], ["enable", "disable"]]},
   "catalogs": [
     {
       "id": "commands@1",
