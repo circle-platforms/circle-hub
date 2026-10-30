@@ -97,8 +97,57 @@ const DATABASE_NAME_RULE = /^[A-Za-z0-9_$-]{1,63}$/;
 const MANAGED_CONF = 'circle-hub.conf';
 const IDENT_MAP = 'owner';
 
+/**
+ * How the cluster is reached. Darwin and Linux: the owner-only Unix socket with peer authentication. Windows has no peer
+ * authentication, so its cluster listens on 127.0.0.1 only, without a Unix socket, and every role logs in with SCRAM
+ * (loopbackConf, loopbackHba, loopbackInitdbArguments; sql.ts loopbackConnector).
+ */
+export type PostgresTransport = 'unix-socket-peer' | 'loopback-scram';
+
+/** The embedded-postgres build that serves a host: its package, executables, architecture and transport. */
+export interface PostgresBuild {
+  /** The package under node_modules whose native/bin holds the executables. */
+  readonly package: string;
+  /** File names of the executables (`.exe` on Windows). */
+  readonly executables: Readonly<Record<(typeof TOOLS)[number], string>>;
+  /** Architecture the executables are built for. */
+  readonly architecture: string;
+  /** True when they run under the operating system's emulation of that architecture, not natively on the host. */
+  readonly emulated: boolean;
+  readonly transport: PostgresTransport;
+}
+
+/**
+ * The build for a host. Windows uses `@embedded-postgres/windows-x64` (the package is named windows-, not win32-, and its
+ * executables end in .exe). embedded-postgres publishes no Windows ARM64 build: an ARM64 host runs the x64 build under
+ * Windows' x64 emulation (owner decision of 2026-10-30, "hybrid"), and npm ci skips that package there because its cpu
+ * field says x64 (postgres-hybrid.ts installs it). Nothing falls back to a PostgreSQL on PATH, a system cluster or a
+ * download at start. Other hosts keep `<platform>-<arch>`.
+ */
+export function postgresBuild(platform: NodeJS.Platform = process.platform, arch: string = process.arch): PostgresBuild {
+  if (platform === 'win32') {
+    if (arch !== 'x64' && arch !== 'arm64') {
+      throw new PlatformError(`Windows ${arch} 没有可用的 PostgreSQL 构建（embedded-postgres 只提供 windows-x64）`, '在 Windows x64 或 Windows ARM64（x64 模拟）上部署');
+    }
+    return {
+      package: '@embedded-postgres/windows-x64',
+      executables: { initdb: 'initdb.exe', pg_ctl: 'pg_ctl.exe', postgres: 'postgres.exe' },
+      architecture: 'x64',
+      emulated: arch === 'arm64',
+      transport: 'loopback-scram',
+    };
+  }
+  return {
+    package: `@embedded-postgres/${platform}-${arch}`,
+    executables: { initdb: 'initdb', pg_ctl: 'pg_ctl', postgres: 'postgres' },
+    architecture: arch,
+    emulated: false,
+    transport: 'unix-socket-peer',
+  };
+}
+
 export function binaryPackage(): string {
-  return `@embedded-postgres/${process.platform}-${process.arch}`;
+  return postgresBuild().package;
 }
 
 async function present(path: string): Promise<boolean> {
@@ -111,8 +160,8 @@ async function present(path: string): Promise<boolean> {
 }
 
 /** The pinned binaries under `<root>/node_modules`, falling back to Node resolution for this checkout. */
-export async function resolveBinaries(root: string = CODE_ROOT): Promise<PostgresBinaries> {
-  const pkg = binaryPackage();
+export async function resolveBinaries(root: string = CODE_ROOT, build: PostgresBuild = postgresBuild()): Promise<PostgresBinaries> {
+  const pkg = build.package;
   const candidates = [join(root, 'node_modules', pkg, 'native', 'bin')];
   if (root === CODE_ROOT) {
     try {
@@ -122,12 +171,16 @@ export async function resolveBinaries(root: string = CODE_ROOT): Promise<Postgre
     }
   }
   for (const dir of candidates) {
-    const binaries = { initdb: join(dir, 'initdb'), pg_ctl: join(dir, 'pg_ctl'), postgres: join(dir, 'postgres') };
+    const names = build.executables;
+    const binaries = { initdb: join(dir, names.initdb), pg_ctl: join(dir, names.pg_ctl), postgres: join(dir, names.postgres) };
     let complete = true;
     for (const tool of TOOLS) complete &&= await present(binaries[tool]);
     if (complete) return binaries;
   }
-  throw new PlatformError(`找不到 PostgreSQL 二进制（${pkg}，在 ${root}）`, '在该目录运行 npm ci');
+  throw new PlatformError(
+    `找不到 PostgreSQL 二进制（${pkg}，在 ${root}）`,
+    build.emulated ? '在该目录运行 npm ci，再运行 node hub/platform/postgres-hybrid.ts 装上锁文件固定的 x64 构建' : '在该目录运行 npm ci',
+  );
 }
 
 /** "postgres (PostgreSQL) 18.4" -> 18 */
@@ -186,6 +239,70 @@ export function managedIdent(admin: string, role: string): string {
   const lines = ['# Managed by circle-hub and rewritten at every start; do not edit.', '# MAP   SYSTEM-USER   DATABASE-ROLE'];
   for (const target of new Set([admin, role])) lines.push(`${IDENT_MAP}   "${admin}"   "${target}"`);
   return `${lines.join('\n')}\n`;
+}
+
+/** The only address a loopback-scram cluster listens on and its clients connect to. */
+export const LOOPBACK_HOST = '127.0.0.1';
+
+/**
+ * A configuration string for postgresql.conf. The server reads backslash escapes in quoted values (`\U` would lose its
+ * backslash), so backslashes are doubled as well as quotes: Windows paths keep their separators.
+ */
+export function quoteConfPath(value: string): string {
+  if (/[\u0000-\u001f\u007f]/.test(value)) throw new PlatformError('PostgreSQL 配置值含控制字符');
+  return `'${value.replaceAll('\\', '\\\\').replaceAll("'", "''")}'`;
+}
+
+/**
+ * The managed configuration of a loopback-scram cluster: TCP on 127.0.0.1 only, no Unix socket, passwords stored as SCRAM
+ * verifiers. Logging and time zone settings are the socket configuration's (managedConf); `logDirectory` is the server's
+ * own log directory (`<logs>/postgres`), given whole so a Windows path keeps its separators.
+ */
+export function loopbackConf(logDirectory: string, port: number): string {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new PlatformError(`数据库端口无效：${port}`);
+  return [
+    '# Managed by circle-hub and rewritten at every start; do not edit.',
+    `listen_addresses = '${LOOPBACK_HOST}'`,
+    `port = ${port}`,
+    "unix_socket_directories = ''",
+    "password_encryption = 'scram-sha-256'",
+    'logging_collector = on',
+    `log_directory = ${quoteConfPath(logDirectory)}`,
+    "log_filename = 'postgresql-%a.log'",
+    'log_truncate_on_rotation = on',
+    "log_rotation_age = '1d'",
+    'log_rotation_size = 0',
+    "timezone = 'UTC'",
+    "log_timezone = 'UTC'",
+    '',
+  ].join('\n');
+}
+
+/**
+ * pg_hba.conf of a loopback-scram cluster: the superuser role may connect to every database and the application role only
+ * to the Hub database, each from 127.0.0.1 with its own SCRAM password. Every other connection is rejected explicitly;
+ * there are no `local` lines because the cluster has no Unix socket.
+ */
+export function loopbackHba(admin: string, role: string, database: string): string {
+  for (const name of [admin, role]) if (!ROLE_NAME.test(name)) throw new PlatformError(`数据库角色名只能含字母、数字、点、下划线、$ 和连字符：${name}`);
+  if (!DATABASE_NAME_RULE.test(database)) throw new PlatformError(`数据库名只能含字母、数字、下划线、$ 和连字符：${database}`);
+  const lines = [
+    '# Managed by circle-hub and rewritten at every start; do not edit.',
+    `# TCP on ${LOOPBACK_HOST} only, SCRAM with each role's own password; everything else is rejected.`,
+    `host   all   "${admin}"   ${LOOPBACK_HOST}/32   scram-sha-256`,
+  ];
+  if (role !== admin) lines.push(`host   "${database}"   "${role}"   ${LOOPBACK_HOST}/32   scram-sha-256`);
+  lines.push('host   all   all   0.0.0.0/0   reject', 'host   all   all   ::/0   reject');
+  return `${lines.join('\n')}\n`;
+}
+
+/**
+ * initdb arguments of a loopback-scram cluster. The superuser's password is read from `passwordFile`, which the caller
+ * creates private, removes right after initdb and never logs: it is never an argument or an environment value.
+ */
+export function loopbackInitdbArguments(db: string, admin: string, passwordFile: string): string[] {
+  if (!ROLE_NAME.test(admin)) throw new PlatformError(`数据库角色名只能含字母、数字、点、下划线、$ 和连字符：${admin}`);
+  return [`--pgdata=${db}`, `--username=${admin}`, '--auth-local=reject', '--auth-host=scram-sha-256', `--pwfile=${passwordFile}`, '--encoding=UTF8', '--locale=C', '--no-instructions'];
 }
 
 export function dataMajorMismatch(dataMajor: number, binaryMajor: number): PlatformError {

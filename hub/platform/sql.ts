@@ -1,4 +1,6 @@
-// SQL over the cluster's unix socket, and per-table row counts and digests used to prove a restore complete.
+// SQL over the cluster's unix socket (or, where there is no peer authentication, loopback TCP with SCRAM), and per-table
+// row counts and digests used to prove a restore complete.
+import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { PlatformError } from './errors.ts';
 
@@ -63,6 +65,111 @@ export function socketConnector(target: SocketTarget): SqlConnector {
       },
     };
   };
+}
+
+/** A database password: the 64 lowercase hexadecimal characters of 32 bytes from the deployment's key store. */
+const DATABASE_PASSWORD = /^[0-9a-f]{64}$/;
+
+/** The password of a database role made from 32 key-store bytes; the caller zeroes its bytes. */
+export function databasePassword(bytes: Uint8Array): string {
+  if (!(bytes instanceof Uint8Array) || bytes.length !== 32) throw new PlatformError('数据库口令必须来自 32 字节的密钥');
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('hex');
+}
+
+function assertDatabasePassword(password: string): void {
+  // Never echo the value: a near miss may be a real password.
+  if (typeof password !== 'string' || !DATABASE_PASSWORD.test(password)) throw new PlatformError('数据库口令格式不对（要 64 个小写十六进制字符）');
+}
+
+/**
+ * The SCRAM-SHA-256 verifier PostgreSQL stores for a password (`SCRAM-SHA-256$<iterations>:<salt>$<StoredKey>:<ServerKey>`,
+ * RFC 5802 and 7677). CREATE ROLE ... PASSWORD '<verifier>' stores it as it is, so the plaintext never reaches the server,
+ * its statement log or its statistics. Hexadecimal passwords need no SASLprep.
+ */
+export function scramVerifier(password: string, salt: Uint8Array = randomBytes(16), iterations = 4096): string {
+  assertDatabasePassword(password);
+  if (!Number.isSafeInteger(iterations) || iterations < 4096) throw new PlatformError('SCRAM 迭代次数至少 4096');
+  if (salt.length < 16) throw new PlatformError('SCRAM 盐至少 16 字节');
+  const { storedKey, serverKey } = scramKeys(password, salt, iterations);
+  return `SCRAM-SHA-256$${iterations}:${Buffer.from(salt).toString('base64')}$${storedKey.toString('base64')}:${serverKey.toString('base64')}`;
+}
+
+/** StoredKey and ServerKey of RFC 5802 for SCRAM-SHA-256 (the client key and salted password are zeroed). */
+export function scramKeys(password: string, salt: Uint8Array, iterations: number): { storedKey: Buffer; serverKey: Buffer } {
+  const salted = pbkdf2Sync(password, salt, iterations, 32, 'sha256');
+  try {
+    const clientKey = createHmac('sha256', salted).update('Client Key').digest();
+    const storedKey = createHash('sha256').update(clientKey).digest();
+    clientKey.fill(0);
+    return { storedKey, serverKey: createHmac('sha256', salted).update('Server Key').digest() };
+  } finally {
+    salted.fill(0);
+  }
+}
+
+/** A role of a loopback-scram cluster: 127.0.0.1 (LOOPBACK_HOST in postgres.ts), its port, and its password on demand. */
+export interface LoopbackTarget {
+  port: number;
+  user: string;
+  /** Read at every connect from the key store; never an environment value or a password file. */
+  password: () => Promise<string>;
+}
+
+/** sessionConfig for a loopback-scram cluster: TCP to 127.0.0.1, the role's password, nothing from PG* or ~/.pgpass. */
+export function loopbackSessionConfig(target: LoopbackTarget, database: string): pg.ClientConfig & { replication: string } {
+  return {
+    host: '127.0.0.1',
+    port: target.port,
+    user: target.user,
+    password: async () => {
+      const password = await target.password();
+      assertDatabasePassword(password);
+      return password;
+    },
+    database,
+    ssl: false,
+    sslnegotiation: 'postgres',
+    replication: 'false',
+    options: SESSION_OPTIONS,
+    client_encoding: 'UTF8',
+    connectionTimeoutMillis: 10_000,
+    application_name: 'circle-hub-platform',
+  };
+}
+
+export function loopbackConnector(target: LoopbackTarget): SqlConnector {
+  return async (database) => {
+    const client = new pg.Client(loopbackSessionConfig(target, database));
+    try {
+      await client.connect();
+    } catch (error) {
+      await client.end().catch(() => {});
+      const code = (error as { code?: unknown }).code;
+      throw Object.assign(new PlatformError(`连不上数据库 ${database}（127.0.0.1:${target.port}，角色 ${target.user}）：${(error as Error).message}`), typeof code === 'string' ? { code } : {});
+    }
+    return {
+      async query(text, values) {
+        const result = await client.query(text, values);
+        return result.rows as Record<string, unknown>[];
+      },
+      async close() {
+        await client.end();
+      },
+    };
+  };
+}
+
+/**
+ * A port that answers proves nothing: the cluster on it must be this deployment's. Run as the superuser role, which may
+ * read data_directory; Windows compares without regard to case or separator.
+ */
+export async function assertClusterDirectory(session: SqlSession, expected: string, platform: NodeJS.Platform = process.platform): Promise<void> {
+  const [row] = await session.query('SHOW data_directory');
+  const actual = String(row?.data_directory ?? '');
+  const normal = (path: string) => (platform === 'win32' ? path.replaceAll('/', '\\').replace(/\\+$/, '').toLowerCase() : path.replace(/\/+$/, ''));
+  if (actual === '' || normal(actual) !== normal(expected)) {
+    throw new PlatformError(`端口上的 PostgreSQL 不是这个数据根的集群（数据目录 ${actual || '未知'}，应为 ${expected}）`, '检查部署设置里的数据库端口，或停掉占用这个端口的其他 PostgreSQL');
+  }
 }
 
 export async function withSession<T>(connector: SqlConnector, database: string, fn: (session: SqlSession) => Promise<T>): Promise<T> {

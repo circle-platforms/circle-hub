@@ -101,6 +101,31 @@ export function toolEnvironment(extra: Record<string, string> = {}): NodeJS.Proc
   return { ...env, ...extra };
 }
 
+/**
+ * toolEnvironment for Windows: the system locations a Windows program needs to start (Winsock and the C runtime need
+ * SystemRoot) and a PATH of the system directories only. Names are matched without regard to case, as Windows does. No
+ * PG* setting, profile, user variable or secret of the caller is passed on.
+ */
+export function windowsToolEnvironment(source: NodeJS.ProcessEnv = process.env, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  const pick = (name: string): string | undefined => {
+    for (const [key, value] of Object.entries(source)) if (key.toUpperCase() === name && value) return value;
+    return undefined;
+  };
+  const systemRoot = pick('SYSTEMROOT');
+  if (systemRoot === undefined || !/^[A-Za-z]:\\[^;\u0000-\u001f]*$/.test(systemRoot)) throw new PlatformError('Windows 环境缺少有效的 SystemRoot', '从服务或正常登录的会话运行');
+  const env: NodeJS.ProcessEnv = { SystemRoot: systemRoot, windir: systemRoot, PATH: `${systemRoot}\\System32;${systemRoot};${systemRoot}\\System32\\Wbem`, TZ: 'UTC' };
+  for (const [name, key] of [['SYSTEMDRIVE', 'SystemDrive'], ['COMSPEC', 'ComSpec'], ['TEMP', 'TEMP'], ['TMP', 'TMP']] as const) {
+    const value = pick(name);
+    if (value !== undefined) env[key] = value;
+  }
+  return { ...env, ...extra };
+}
+
+/** toolEnvironment, or windowsToolEnvironment on Windows. */
+export function hostToolEnvironment(platform: NodeJS.Platform = process.platform, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  return platform === 'win32' ? windowsToolEnvironment(process.env, extra) : toolEnvironment(extra);
+}
+
 /** The caller's environment without PostgreSQL client settings or retired names, for git and npm. */
 export function inheritedEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
