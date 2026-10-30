@@ -24,6 +24,7 @@ import { SERVE_USAGE, loadServerConfig, prepareDatabase, serve, type ServeOption
 import { localToolsCommand, LOCAL_TOOLS_USAGE } from './cli-local-tools.ts';
 import { listRunInventory, RUN_LIST_DEFAULT_LIMIT, RUN_LIST_MAX_LIMIT, RUN_LIST_STATES, runListLines, type RunListState } from './run-list.ts';
 import { countsLine } from './text.ts';
+import { issueSetupCode } from './setup-code.ts';
 
 export interface CliOptions extends Omit<ServeOptions, 'io'> {
   io: CliIo;
@@ -54,7 +55,7 @@ const RESERVED_COMMAND_DESCRIPTIONS: ReservedCommandDescriptions = {
   'operator-token': '管理操作令牌',
 };
 export const RESERVED_COMMANDS: readonly string[] = Object.keys(RESERVED_COMMAND_DESCRIPTIONS);
-const BUILT_IN = new Set(['help', 'serve', 'user', 'token', 'logs', 'run', 'local-tools']);
+const BUILT_IN = new Set(['help', 'serve', 'user', 'token', 'logs', 'run', 'local-tools', 'setup-code']);
 const COMMAND_NAME = /^[a-z][a-z0-9-]{1,30}$/;
 
 const registry = new Map<string, CliCommand>();
@@ -84,6 +85,7 @@ function usage(extra: readonly CliCommand[]): string {
     '  token list [<用户>]                           列出令牌（不显示令牌值）',
     '  logs export [--from <时间>] [--to <时间>] [--user <用户>] [--tool <工具>] [--run <运行>] [--out <文件>] [--as <管理员>]   导出调用日志（JSON Lines）',
     `  ${LOCAL_TOOLS_USAGE}`,
+    '  setup-code                                   还没有管理员时，给网页控制台发一个设置码（24 小时内有效，只显示一次），在 /console/setup 用它建第一位管理员',
     '  run abandon <运行> --answer-request <摘要> --reason <理由>  管理放弃目标，原效果与冻结不改',
     '  run list [--pack <包>] [--user <用户>] [--state 受理|未受理|进行中] [--since <ISO时间>] [--unknown] [--limit <N>] [--cursor <游标>] [--json] [--as <管理员>]  列出运行（仅管理员；默认 50 条，新到旧，超出给下一页游标）',
     '  run show <运行> [--json] [--as <管理员>]        显示一次运行',
@@ -465,12 +467,27 @@ async function runCommand(args: readonly string[], ctx: CliContext, options: Cli
   return 0;
 }
 
+/** A one-time code for /console/setup; refused once an administrator exists (they add users in the console). */
+async function setupCodeCommand(args: readonly string[], ctx: CliContext): Promise<number> {
+  parse(args, {}, 0);
+  const kit = await ctx.records();
+  if ((await kit.principals.list()).some((user) => user.role === 'admin')) {
+    throw new CliError('已经有管理员，不再发设置码', '管理员登录控制台后在“管理”里添加用户、签发令牌；管理员令牌丢了用 circle-hub operator-token reissue');
+  }
+  const code = await issueSetupCode(ctx.config().dataDir);
+  ctx.io.stdout('设置码（24 小时内有效，只显示这一次；再运行一次会作废它）：');
+  ctx.io.stdout(code);
+  ctx.io.stdout('在浏览器打开控制台的 /console/setup，输入设置码，建立第一位管理员');
+  return 0;
+}
+
 const BUILT_IN_HANDLERS: Record<string, (args: readonly string[], ctx: CliContext, options: CliOptions) => Promise<number>> = {
   'local-tools': (args, ctx) => localToolsCommand(args, ctx.io),
   user: userCommand,
   token: tokenCommand,
   logs: logsCommand,
   run: runCommand,
+  'setup-code': setupCodeCommand,
 };
 
 /**

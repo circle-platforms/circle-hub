@@ -1,6 +1,6 @@
 # hub/server
 
-The MCP server, the read-only console, the HTTP surface and the server CLI of the Hub. Model elements: D05 (uniform
+The MCP server, the console (read-only pages, and management for administrators: decision 75), the HTTP surface and the server CLI of the Hub. Model elements: D05 (uniform
 response), D06 (the six tools), B08 (call log), R01 and R02 (roles, visibility); brief sections 3, 6 and 9. The server is
 built against the ports of `hub/ports.ts` (RunsService, KnowledgePort, WorkflowStore, PackCatalogPort,
 ResourceCatalogPort), the run engine's extras (`ServerDeps.runsDetail`) and the real phase 1 packages (records, refs,
@@ -301,6 +301,30 @@ links are fixed paths with encoded query parameters).
 
 The refresh target reader follows the [HTML shared declarative refresh steps](https://html.spec.whatwg.org/multipage/semantics.html#shared-declarative-refresh-steps); image-set string handling follows [CSS Images Level 4](https://drafts.csswg.org/css-images-4/#image-set-notation). These are syntax scans only: the probe does not follow any discovered resource URL.
 
+## Management in the console (decision 75)
+
+Owner decision 75 (2026-10-31): administrators manage the Hub from the browser. `/console/admin` carries the user and
+token forms; `/console/admin/packs`, `/resources`, `/secrets` and `/knowledge` the others. Every action is a POST form
+to `/console/admin/do/<action>` (`console/manage.ts` `ACTIONS`): this server's own origin, the session's CSRF token and
+an administrator's session, else 403 or the neutral 404. It runs the matching `circle-hub` command through the command
+bridge (`command-bridge.ts`): the CLI's `main()` in this process with serve's own `CIRCLE_HUB_*` environment and the
+session's token as `CIRCLE_HUB_TOKEN`, so the command acts as that administrator with the same checks, records and
+messages as `CIRCLE_HUB_TOKEN="$T" circle-hub …`, and its output is the result page. Only `user`, `token`, `pack`,
+`resource`, `secret` and `knowledge` are bridged; backup, restore, deploy, rollback and every other platform command
+stop the server and stay on the command line. A positional from a form never starts with `-`, flag values go as
+`--flag=value`, and a secret value reaches `secret set` through the command's `readSecret`, never argv or the
+environment. A pack is uploaded as a zip (`console/upload.ts`: a multipart body read within the upload limit, then a
+zip reader over node:zlib that inflates each entry within its declared size and checks its CRC-32, refusing traversal,
+symlinks, ZIP64 and encryption), unpacked into a private temporary directory, published with `--stage` and removed.
+Knowledge sync runs as a background job of this process (`JobStore`, the last 50, listed with their output; they end
+with the process, their records stay). A token issued here is shown once on the result page.
+
+The first administrator: `circle-hub setup-code` (refused once an administrator exists) prints a one-time code and
+keeps its SHA-256 in `<data dir>/config/setup-code.json` (0600, 24 hours). `/console/setup` takes the code and a name
+while no administrator exists (its own nonce cookie, own origin), creates the administrator with `bootstrapAdmin`,
+removes the code, opens a session and shows the token once with the Circle `mcp_servers` entry to paste. The sign-in
+page links there while no administrator exists.
+
 ## CLI
 
 `hub/server/cli.ts` exports `main(argv, overrides?): Promise<number>` and never runs on import (bin/circle-hub calls it
@@ -314,7 +338,8 @@ circle-hub token issue <user> [--label <l>] [--raw] | token revoke <tok_…> | t
 circle-hub logs export [--from <time>] [--to <time>] [--user <u>] [--tool <t>] [--run <r>] [--out <file>] [--as <account>]
 circle-hub run list [--pack <id>] [--user <user>] [--state 受理|未受理|进行中] [--since <ISO time>] [--unknown] [--limit <N>] [--cursor <cursor>] [--json] [--as <admin>]
 circle-hub run show <run> [--json] [--as <account>]                   # the assembly module's assembleCommand
-circle-hub <platform command>                                         # init, db, key, service, backup, restore, deploy, rollback, rehearse, status
+circle-hub setup-code                                                 # no admin yet: a one-time code for /console/setup, shown once
+circle-hub <platform command>                                         # init, db, key, service, backup, restore, deploy, rollback, rehearse, status, tls
 circle-hub pack|resource|secret|knowledge|init-admin|operator-token … # registered by the assembly module
 circle-hub knowledge retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因>
 ```

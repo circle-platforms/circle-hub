@@ -1,5 +1,6 @@
 import { digestOf } from '../../records/api.ts';
-// The console pages (read-only): runs, one run, knowledge, task packs and admin data. Every enumeration value is shown
+// The console pages: runs, one run, knowledge, task packs and admin data (the admin page also carries the user and token
+// forms of manage.ts; everything else here only reads). Every enumeration value is shown
 // through labelOf, every claim in DISPLAY_ORDER, unknown with its own symbol and colour; absent and forbidden are the same
 // neutral page. The run page is the authoritative view (display rule 17): the partition list in the three groups of display
 // rule 13, each item's two cells by the conjunction of hub/runs (V03 R[3]), and every submission as received, marked
@@ -20,6 +21,7 @@ import type { ServerDeps } from '../api.ts';
 import { NOT_APPLICABLE, cellText, statusText, claimFields, coverageText, terminalKind, terminalText, type LayerTerminal } from '../claims.ts';
 import { countsLine, countsText } from '../text.ts';
 import { code, definitions, html, link, page, pre, section, table, type Html, type PageChrome } from './html.ts';
+import { actionForm, manageNav, roleOptions } from './manage.ts';
 
 export interface PageContext {
   deps: ServerDeps;
@@ -27,6 +29,8 @@ export interface PageContext {
   admin: boolean;
   url: URL;
   chrome: (title: string) => PageChrome;
+  /** The session's CSRF token, for the management forms (only the console's own requests carry one). */
+  csrf?: string;
   /** Display name of a user id, cached for the request. */
   userName: (userId: string | null | undefined) => Promise<string>;
 }
@@ -622,6 +626,7 @@ export async function adminPage(ctx: PageContext): Promise<PageResult> {
   const tokenRows = [];
   for (const user of users) {
     const packs = await authorizations.packsFor(user.id);
+    const id = html`<input type="hidden" name="user" value="${user.id}">`;
     userRows.push([
       code(user.id),
       user.name,
@@ -630,9 +635,13 @@ export async function adminPage(ctx: PageContext): Promise<PageResult> {
       yesNo(await authorizations.canPublish(user.id)),
       packs.join('、'),
       user.created_at,
+      actionForm(user.disabled ? 'user-enable' : 'user-disable', ctx.csrf ?? '', id, user.disabled ? '恢复' : '停用', { inline: true }),
     ]);
     for (const token of await principals.tokens(user.id)) {
-      tokenRows.push([code(token.id), user.name, token.label, token.created_at, token.last_used_at ?? '—', token.revoked_at ?? '有效']);
+      tokenRows.push([
+        code(token.id), user.name, token.label, token.created_at, token.last_used_at ?? '—', token.revoked_at ?? '有效',
+        token.revoked_at === null ? actionForm('token-revoke', ctx.csrf ?? '', html`<input type="hidden" name="token" value="${token.id}">`, '撤销', { inline: true }) : '',
+      ]);
     }
   }
   const history = await authorizations.history({ permission: 'assign', limit: 50, newestFirst: true });
@@ -655,9 +664,12 @@ export async function adminPage(ctx: PageContext): Promise<PageResult> {
     status: 200,
     body: page(
       ctx.chrome('管理'),
-      html`<p>${link('/console/admin/calls', '调用日志')}</p>
-${section('用户', table(['用户', '名称', axisLabel('permission_role'), '状态', '发布权', '分配的任务包', '建立时间'], userRows))}
-${section('令牌（不显示令牌值）', table(['令牌', '用户', '标签', '签发时间', '最近使用', '撤销时间'], tokenRows, '没有令牌'))}
+      html`${manageNav()}
+${section('用户', table(['用户', '名称', axisLabel('permission_role'), '状态', '发布权', '分配的任务包', '建立时间', '操作'], userRows))}
+${actionForm('user-create', ctx.csrf ?? '', html`<label>新用户 <input name="name" required size="20"></label> <label>角色 <select name="role">${roleOptions()}</select></label>`, '新建用户')}
+${section('令牌（不显示令牌值）', table(['令牌', '用户', '标签', '签发时间', '最近使用', '撤销时间', '操作'], tokenRows, '没有令牌'))}
+${actionForm('token-issue', ctx.csrf ?? '', html`<label>给用户 <select name="user" required>${users.filter((user) => !user.disabled).map((user) => html`<option value="${user.id}">${user.name}</option>`)}</select></label> <label>标签（可空） <input name="label" size="20"></label>`, '签发令牌')}
+<p>新令牌只在签发结果页显示一次；用户在 Circle 的 MCP 服务器设置里以 Authorization: Bearer 带上它，也用它登录控制台。</p>
 ${section('任务包分配记录', table(['决定时间', '用户', '任务包', '决定', '决定人', '到期', '备注'], assignmentRows, '没有分配记录'))}
 ${section('资源', table(['资源', '系统包', '名称', axisLabel('environment'), '启用', '地址', '允许明文凭据的地址'], resourceRows, '没有资源'))}`,
     ),

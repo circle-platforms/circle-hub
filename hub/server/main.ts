@@ -12,6 +12,7 @@ import { migrateRecords, openRecords, type KeyProvider, type RecordsKit } from '
 import { stopAll, sweepOrphans } from '../rules/api.ts';
 import type { AppOptions, AssemblyModule, CliIo, HubApp, ListenInfo } from './api.ts';
 import { createApp } from './app.ts';
+import { createCommandBridge } from './command-bridge.ts';
 import { OPERATOR_TOKEN_VARIABLE } from './assemble/operator-token.ts';
 import { terminalSafe } from './assemble/terminal.ts';
 import { isAssemblyMissing, UsageError } from './errors.ts';
@@ -172,7 +173,9 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     const deps = await assembly.assemble(config, records);
     maintenance=deps.maintenance;
     await maintenance?.startMaintenance();
-    app = createApp(deps, { log: operatorLog, ...options.appOptions, ...(tls ? { tls } : {}) });
+    // The console's management actions run the CLI's commands with this process's own configuration (decision 75).
+    const bridge = options.appOptions?.bridge ?? createCommandBridge({ env: io.env, cwd: io.cwd, ...(options.keyProvider ? { overrides: { keyProvider: options.keyProvider } } : {}) });
+    app = createApp(deps, { log: operatorLog, ...options.appOptions, bridge, ...(tls ? { tls } : {}) });
     const info = await app.listen();
     io.stdout(`circle-hub 在 ${info.url} 上监听${app.release === null ? '' : `（发布 ${app.release}）`}`);
     if (info.https) io.stdout(`内置 HTTPS：${info.https.url}`);
