@@ -85,7 +85,7 @@ export async function narrowIndexId(slot:WorkflowInput,id:string,inputs:Record<s
     const loaded = await load(pinned);
     if(!loaded.ok)return loaded;
     raw = loaded.keys;
-    if(raw.length === 0)return {ok:false,message:'该构建的缺陷索引没有编号：知识根和喂入层里都没有这个构建修复清单的缺陷身份',fix:`先经 Hub 读该构建的修复清单原件：start_run 的 pack 写 source-read，顶层同时写 product ${parsed.value.product} 和 build ${parsed.value.build}（两项都写，读到的原件才按这个构建进喂入层），inputs 绑定这份原件的外部标识；回执不再显示投影进行中后再开始本运行；读取回执写明原件缺失的事实时按回执处理，不重复读取；不要向用户索取编号`};
+    if(raw.length === 0)return {ok:false,message:'该构建的缺陷索引没有编号：知识根和喂入层里都没有这个构建修复清单的缺陷身份',fix:`先经 Hub 读该构建的修复清单原件：start_run 的 pack 写 source-read，顶层同时写 product ${parsed.value.product} 和 build ${parsed.value.build}（两项都写，读到的原件才按这个构建进喂入层），输入槽和外部标识照本任务包说明里读修复清单的那一步写，不要换成别的读取槽；回执不再显示投影进行中后再开始本运行；读取回执写明原件缺失的事实时按回执处理，不重复读取；不要向用户索取编号`};
   }else{
     const found = identifiersOf(inputs,declared.only_from.slot);
     if(!found.ok)return found;
