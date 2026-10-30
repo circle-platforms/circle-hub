@@ -37,6 +37,7 @@ import { CompositionView, type ReadRow } from './composition.ts';
 import { CONTRADICTION, pointerName } from './store.ts';
 import { mapLimited } from './concurrency.ts';
 import type { KnowledgeContext } from './context.ts';
+import { readableProducts } from './readable-products.ts';
 import { canonicalSize, compareText, cutText, entryDigest, type EntryContent } from './digest.ts';
 import { catalogCanon, catalogData } from './produce.ts';
 import type { LinkReading } from './links.ts';
@@ -128,6 +129,9 @@ interface EntryAt {
   content: EntryContent;
 }
 
+/** Children of an expanded node read in one query. */
+const CHILD_BATCH = 64;
+
 export class TreeReading {
   readonly #context: KnowledgeContext;
   readonly #products = new Lru<string, { products: Set<string>; at: number }>(64,Number.POSITIVE_INFINITY,true);
@@ -156,14 +160,17 @@ export class TreeReading {
     return products;
   }
 
-  /** The reader is an enabled admin, or a pack assigned to them binds one of the products. The account is re-read. */
+  /**
+   * The reader is an enabled admin, or a pack assigned to them binds one of the products. The account is re-read; the
+   * port's answer is decided once per request (readable-products.ts).
+   */
   async mayReadProducts(reader: { id: string } | null | undefined, products: Iterable<string>): Promise<boolean> {
     const wanted = [...products];
     if (wanted.length === 0 || typeof reader?.id !== 'string') return false;
     const account = await this.#context.records.principals.get(reader.id);
     if (account === null || account.disabled) return false;
     if (account.role === 'admin') return true;
-    const readable = await this.#context.packs.readableProducts({ id: account.id, name: account.name, role: account.role });
+    const readable = await readableProducts(this.#context.packs, { id: account.id, name: account.name, role: account.role });
     return wanted.some((product) => readable.has(product));
   }
 
@@ -386,10 +393,17 @@ export class TreeReading {
         walk.position++;
       }
       if (remaining === 0) return true;
-      for (const child of node.children) {
-        const childNode = await this.#context.store.node(child.digest);
-        if (childNode === null) continue;
-        if (!(await visit([...segments, child.name], child.digest, childNode, remaining - 1))) return false;
+      // The children are read in batches of CHILD_BATCH as the walk reaches them, so a full page stops the reading, verified as
+      // node() verifies them (the same oldest record). A child the batch did not find, or every child of a batch that failed,
+      // is read on its own as before, so a missing or corrupt record is reported where the walk reaches it.
+      for (let at = 0; at < node.children.length; at += CHILD_BATCH) {
+        const slice = node.children.slice(at, at + CHILD_BATCH);
+        const batch = await this.#context.store.nodes(slice.map((child) => child.digest)).catch(() => null);
+        for (const child of slice) {
+          const childNode = batch?.get(child.digest) ?? await this.#context.store.node(child.digest);
+          if (childNode === null) continue;
+          if (!(await visit([...segments, child.name], child.digest, childNode, remaining - 1))) return false;
+        }
       }
       return true;
     };

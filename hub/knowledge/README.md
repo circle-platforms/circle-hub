@@ -195,7 +195,13 @@ catalogs, grounds and provenance.
     after the other. Dry runs store nothing of their own. Text a pack function wrote (the plan note) is cut to storable
     text before it is recorded.
 13. **Reading** (R02, D05 R[3]): a reader is an enabled admin or has a pack that binds the root's product
-    (`PacksPort.readableProducts` of the account as stored now). Absent and forbidden are the same null; the reader is
+    (`PacksPort.readableProducts` of the account as stored now). Inside a request's permission snapshot the port's answer
+    for that account is asked once and reused by every later check of the same account in the same request
+    (`readable-products.ts`, decision 82: a request uses the permissions it started with; a revocation applies from the
+    next request); another account, another request and a read outside any request ask the port again, and a failed
+    answer is not kept. A node page finds the nodes that have contribution records with one batched lookup (a failing
+    batch pages every node on its own) and reads the children of an expanded node in batches of 64 as the walk reaches
+    them; the pages are the same as the per-node reads give. Absent and forbidden are the same null; the reader is
     checked before anything else of a get_nodes request is read. `getNodes` lists each requested path (duplicates
     removed, at most 256 distinct paths, the rest named in the coverage note) and its subtree to `depth` (default 1) in
     pre-order, each node once (a subtree is walked again only with more levels to go, capped at the node's height, so
@@ -1207,6 +1213,19 @@ Since perf-n-plus-one the one capture those 40 candidates share is read once wit
 reader and consumer reuse the permission they started with), so `feeding-node-select.test.ts` asserts one read pinned to
 that capture where it asserted 40 reads before. A store without batch support uses the earlier per-record path. This is
 not a measurement of total latency on a real document.
+
+Since perf-real-data a node page beside contributions no longer reads per node what the page decides once. The reader's
+readable products are decided once per request (item 13) instead of once per node and per check, which walked the pack
+registry (about 45 index lookups) for every node of the page. One batched lookup finds the nodes whose contribution node
+index holds any record under a product the reader may read (`ContributionLayer.pathsWithRecords`); only those nodes, and a
+node resumed from a contribution cursor, are paged, and every other node gets the empty, complete page that paging it
+answered. The children of a node the walk expands are read in one batch with the same verification and the same oldest
+record as `node()`; a child the batch does not find, or every child when the batch fails, is read on its own, so a missing
+or corrupt record is still reported where the walk reaches it. `node-page-lookups.test.ts` compares pages, cursors and
+contribution continuations with a per-node reference read for three readers and checks that the single-key lookups of a
+page do not grow from 13 to 49 nodes. Still read once per request and not reduced here: the link facts of the whole
+composition (backlinks, about 90 batched reads on a large real root), the frozen feeding index scan, and the entries of an
+inline composition (at most `inlineRows` rows), which carry no content in their rows and are read one by one.
 
 ### Feeding cases in views
 

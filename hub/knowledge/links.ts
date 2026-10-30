@@ -12,6 +12,7 @@ import { compareText, cutText, type EntryContent } from './digest.ts';
 import type { KnowledgeContext } from './context.ts';
 import type { Builds } from './builds.ts';
 import { Lru } from './store.ts';
+import { readableProducts } from './readable-products.ts';
 
 export interface LiteralSource { path: string; entry: string; content: EntryContent; unplaced?: boolean;producers?:readonly string[] }
 export type RelationNode=ReadonlySet<string>&{producersByKind?:ReadonlyMap<string,ReadonlySet<string>>};
@@ -143,7 +144,7 @@ export class LinkReading {
   }
   async #allowed(product:string,reader:Principal):Promise<boolean>{
     const user=await this.#context.records.principals.get(reader.id);if(!user||user.disabled)return false;
-    return user.role==='admin'||(await this.#context.packs.readableProducts(reader)).has(product);
+    return user.role==='admin'||(await readableProducts(this.#context.packs,reader)).has(product);
   }
   async runLock(run:string,reader:Principal):Promise<{found:boolean;root:string|null;composition:string|null;build?:string;product?:string;unversioned?:{root:string;composition:string}|null}>{
     if(!RunId.safeParse(run).success)throw new LinkRefusal('运行编号写法不对');

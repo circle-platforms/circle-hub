@@ -18,6 +18,7 @@ import { canonicalSize } from './digest.ts';
 import { CAPTURED_GROUND, DECLARATION_GROUND, declarationGradeBody } from './declaration-grade.ts';
 import { operationIdentity, operationRecord, reproductionLease } from './feeding.ts';
 import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
+import { readableProducts } from './readable-products.ts';
 
 export interface ContributionScope {
   run?:string;classifications?:readonly string[];
@@ -85,10 +86,10 @@ export class ContributionLayer {
   readonly #preparations = new WeakMap<ContributionScope, Map<string, Promise<Preparation>>>();
   constructor(context: KnowledgeContext, reading: TreeReading) { this.#context = context; this.#reading = reading; }
 
-  /** Every reader, including an admin, passes the product reader port. No run-admin bypass. */
+  /** Every reader, including an admin, passes the product reader port (decided once per request). No run-admin bypass. */
   async mayRead(product: string, reader: Principal): Promise<boolean> {
     const account = await this.#context.records.principals.get(reader.id);
-    return account !== null && !account.disabled && (await this.#context.packs.readableProducts(account)).has(product);
+    return account !== null && !account.disabled && (await readableProducts(this.#context.packs, account)).has(product);
   }
 
   async #custodian(reader: Principal): Promise<Principal> {
@@ -381,6 +382,23 @@ export class ContributionLayer {
       if((await this.#context.store.records.find({key:INDEX.contribution,value:product,kind:'claim',limit:1})).items.length>0)return true;
     }
     return false;
+  }
+
+  /**
+   * The paths among `paths` whose node index holds at least one record under a product of the root this reader may read,
+   * found with one batched lookup instead of one per path. page() of any other path reads no record and answers an empty,
+   * complete page; a path in the answer is paged as before.
+   */
+  async pathsWithRecords(root:string,paths:readonly string[],reader:Principal):Promise<Set<string>>{
+    const products:string[]=[];for(const product of [...await this.#reading.productsOfRoot(root)].sort())if(await this.mayRead(product,reader))products.push(product);
+    const pathOfValue=new Map<string,string>();
+    for(const path of new Set(paths))for(const product of products)pathOfValue.set(digestOf({product,path}),path);
+    const values=[...pathOfValue.keys()],found=new Set<string>();
+    // The batch verifies the oldest record of every path asked, which the per-node page may never reach; when it fails for any
+    // reason every path is paged on its own as before, so a corrupt record is reported where its page is read.
+    try{for(let at=0;at<values.length;at+=256)for(const value of (await this.#context.store.records.findFirstMany({key:'knowledge.contribution.node',values:values.slice(at,at+256),kind:'claim'})).keys())found.add(pathOfValue.get(value)!);}
+    catch{return new Set(paths);}
+    return found;
   }
 
   /** Keyset page of the node index. Query size and returned bytes are bounded even when source ACLs hide rows. */
