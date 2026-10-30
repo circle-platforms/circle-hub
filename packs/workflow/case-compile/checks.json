@@ -117,7 +117,7 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "只认可冻结槽位、绑定身份和配置的单用例工作簿；读取与生成独立，原字节摘要须与同版生成器重算相等",
+      "basis": "只认可冻结槽位、绑定身份和配置的工作簿（多个用例时按计划运行受理的全部计划逐条重算）；读取与生成独立，原字节摘要须与同版生成器重算相等",
       "catalog": "commands@1",
       "catalog_select": {
         "module": "functions/subject.ts",

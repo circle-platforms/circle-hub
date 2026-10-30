@@ -104,7 +104,7 @@ export function workbookSubject(input: unknown): unknown {
   const groups = Array.isArray(context.groups) ? context.groups : []; const group = groups.find((v) => isRecord(v) && v.kind === 'case-compile');
   const frozen = isRecord(group) ? group : {}; const item = isRecord(raw.item) ? raw.item : {};
   const subject=planSubject(input),contract=parseRuntimeContract(subject.contract),manifest=parseManifest(subject.manifest),slots=readSlots(subject.data);const profile=contract.ok&&manifest.ok?parseProfile(subject.profile,contract.contract,manifest.beds):null;const catalog=contract.ok&&profile?.ok&&slots.ok?planCommands(contract.contract,profile.profile,slots.slots,subject.command_catalog).catalog:null;
-  return {...subject,fields:{...(isRecord(item.fields)?item.fields:{}),bed_services:subject.bed_services,manifest_sha256:subject.manifest_sha256,criteria_review:subject.criteria_review,expected_nodes:subject.expected_nodes,command_catalog:catalog},workbook:frozen.workbook??null,generation:frozen.generation??null,manifest_sha256:frozen.manifest_sha256??null};
+  return {...subject,fields:{...(isRecord(item.fields)?item.fields:{}),bed_services:subject.bed_services,manifest_sha256:subject.manifest_sha256,criteria_review:subject.criteria_review,expected_nodes:subject.expected_nodes,command_catalog:catalog},workbook:frozen.workbook??null,generation:frozen.generation??null,plan_set:frozen.plan_set??null,manifest_sha256:frozen.manifest_sha256??null};
 }
 
 /** Only frozen contract/profile roles choose device CLI slots; no scanning prose or author identities. */
