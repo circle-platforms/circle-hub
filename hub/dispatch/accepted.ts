@@ -44,7 +44,7 @@ function noteOf(job: RunJob): DispatchNote {
   const { status } = job;
   const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '结果未知，等管理员对账' : '进行中';
   const parts = [`作业 ${job.job}：${state}（阶段 ${status.phase}）`, `${labelOf('effect_outcome', status.outcome)}`];
-  if (status.result) parts.push(`结果引用 ${status.result}（每个派发条目一行，读它看逐条结论）`);
+  if (status.result) parts.push(`结果引用 ${status.result}（每个派发条目一行，读它看逐条结论；没有通过的条目在 evidence 里列出目标报告的日志和各设备会话，读它们找原因）`);
   else if (job.ended === null) parts.push('作业还在进行，稍后对同一提交再调用 submit_result');
   if (status.reason) parts.push(`原因：${status.reason}`);
   // A failed bed check is reported as it is, the way CES reports its environment check before a run.

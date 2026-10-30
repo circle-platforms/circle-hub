@@ -824,6 +824,28 @@ export class DispatchService {
   }
 
   private context(binding: JobBinding): Record<string, unknown> { return { ...binding.context, job: binding.job, user: binding.user, actor: binding.acting_by ?? binding.initiated_by, build_base:binding.input?.build_base ?? binding.context?.build_base, product:binding.input?.product ?? binding.context?.product, root:binding.input?.root ?? binding.context?.root, target: binding.input?.target ?? binding.context?.target, build: binding.input?.build ?? binding.context?.build, sha256: binding.input?.sha256, items: binding.input?.items, seats: binding.context?.seats ?? (binding.resources.length ? binding.resources.length : undefined), manifest_sha256: binding.input?.manifest_sha256 ?? binding.context?.manifest_sha256 }; }
+  /**
+   * Where the evidence of every row that did not pass is: the log and the per-device sessions the target reported for it, at
+   * the result's declared pointers, each saved on its own and readable by the runner (CES hands the model the failed checks
+   * and the session dumps of every non-pass case to attribute the failure). The raw report stays readable by functions only;
+   * a session the credential scan holds back leaves the other sessions and the verdicts readable.
+   */
+  private async failureEvidence(binding: JobBinding, d: ExecutorDefinition, response: { value: unknown; source: string }, items: readonly string[]): Promise<Map<string, { log?: string; sessions?: Record<string, string> }>> {
+    const found = new Map<string, { log?: string; sessions?: Record<string, string> }>();
+    if (!d.result.log && !d.result.sessions) return found;
+    const save = async (text: string, name: string) => `src:${(await this.options.records.artifacts.ingest({ bytes: new TextEncoder().encode(text), mediaType: 'text/plain; charset=utf-8', origin: { generated: { generator: 'dispatch@1', inputs: [response.source] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false }, name })).body.sha256}`;
+    for (const id of items) {
+      const { row, reported } = reportOutcome(response.value, d, id);
+      if (reported === 'pass' || !object(row)) continue;
+      const log = d.result.log ? at(row, d.result.log) : undefined;
+      const sessions = d.result.sessions ? at(row, d.result.sessions) : undefined;
+      const evidence: { log?: string; sessions?: Record<string, string> } = {};
+      if (typeof log === 'string' && log) evidence.log = await save(log, 'log.txt');
+      if (object(sessions)) for (const [name, text] of Object.entries(sessions)) if (typeof text === 'string' && text) (evidence.sessions ??= {})[name] = await save(text, name);
+      if (evidence.log || evidence.sessions) found.set(id, evidence);
+    }
+    return found;
+  }
   private session(binding: JobBinding, d: ExecutorDefinition, secret: string): RpcClient {
     return new RpcClient(d, secret, `${binding.user}/${binding.job}`, async (bytes, status, operation, complete = true, metadata) => {
       const captured = await this.journal.raw(binding, bytes, operation, complete);
@@ -1561,6 +1583,7 @@ export class DispatchService {
     const ownershipObservation={declared:!!attribution,certified:ownershipCertified,matched:ownershipMatched,consistent:!ownershipConflict,reported:typeof ownershipReported==='string'?ownershipReported:null,reason:ownershipReason===undefined?null:ownershipReason,source:response.source};
     const admin=binding.acting_by ?? binding.initiated_by;
     const ownershipFailure=!attribution?{missing_fact:'执行器尚未声明本次结果的归属字段和唯一归属值',next_action:`请管理员 ${admin} 核对 ${response.source} 并登记 result.ownership 的字段、唯一归属值及原因指针声明；本作业保留无判定，不重交`}:!ownershipMatched?{missing_fact:'本结果未报告声明的唯一归属；具体原因见归属观察及原件',next_action:`请管理员 ${admin} 依据 ${response.source} 检查原派发日志、收集器目录和保留证据，恢复归属或登记该版本的能力缺口；本作业保留无判定，不重交`}:ownershipConflict?{missing_fact:'本结果的唯一归属值与原因字段相互矛盾，不能采用为归属事实',next_action:`请管理员 ${admin} 依据 ${response.source} 核对目标协议实现及报告归属，修复肯定值与原因的矛盾或登记能力缺口；本作业保留无判定，不重交`}:{missing_fact:'本结果的归属值相符，但当前目标版本的归属前提尚未认证',next_action:`请管理员 ${admin} 复核 ${response.source} 的归属证据，为该目标版本登记 result_ownership 认证；认证用于后续核验，本作业保留无判定，不重交`};
+    const evidence = await this.failureEvidence(binding, d, response, input.items);
     const projected = input.items.map(id => {
       const resolution=reportOutcome(response.value,d,id),{row,reported}=resolution;
       if(!resolution.check.resolved)try{this.options.adminLog?.({traceId:null,run:binding.input?.run??binding.run??null,what:'result interpretation '+binding.job,detail:JSON.stringify(resolution.check)});}catch{}
@@ -1568,7 +1591,7 @@ export class DispatchService {
       const disposition = dynamicDisposition(reported,{owned:ownership,request:!!d.result.request_id && at(response.value,d.result.request_id) === intent.body.detail.request_id,remote:same(at(response.value,d.result.id),remoteId),digest:at(response.value,d.result.sha256) === input.sha256,complete:complete && Array.isArray(rows) && rows.length === input.items.length,unique:resolution.matches === 1,closed:!!d.result.closing_marker && typeof log === 'string' && log.includes(d.result.closing_marker),device:intent.body.detail.device_identity_proven === true && intent.body.detail.device_lease_digest === digestOfValue([remoteLease.id,remoteLease.token]),continuity:options?.execution?.continuity??(!drift&&!leaseInterrupted)},input.judgments?.length?['conditional_on_judgment']:[]);
       const gaps=disposition.dynamic_terminal==='no_verdict'?unmetPremises(disposition.missing_facts,ownershipUnmet(ownershipObservation,ownershipFailure)):[];
       const named=gaps.length?{missing_fact:gaps.map(gap=>gap.missing_fact).join('；'),next_action:gaps.map(gap=>gap.next_action).join('；')}:{missing_fact:'动态完整性事实尚不齐全；见 missing_facts 和下一步',next_action:'管理员按 unmet_premises 补齐所列前提；本结果保留无判定，不重交'};
-      return {item:id,reported_terminal:reported,...disposition,report_check:resolution.check,...(input.judgments?.length?{judgment_premises:input.judgments}:{}),...(disposition.dynamic_terminal==='no_verdict'?{unmet_premises:gaps,...(!resolution.check.resolved?{missing_fact:resolution.check.missing_fact!,next_action:resolution.check.next_action!}:!ownership?ownershipFailure:named)}:{}),limits:disposition.qualifier.marks.map(mark=>labelOf('qualifier_mark',mark))};
+      return {item:id,reported_terminal:reported,...disposition,report_check:resolution.check,...(evidence.has(id)?{evidence:evidence.get(id)}:{}),...(input.judgments?.length?{judgment_premises:input.judgments}:{}),...(disposition.dynamic_terminal==='no_verdict'?{unmet_premises:gaps,...(!resolution.check.resolved?{missing_fact:resolution.check.missing_fact!,next_action:resolution.check.next_action!}:!ownership?ownershipFailure:named)}:{}),limits:disposition.qualifier.marks.map(mark=>labelOf('qualifier_mark',mark))};
     });
     const savedLogs = Array.isArray(rows) ? rows.flatMap(row=>[
       ...(d.result.log && typeof at(row,d.result.log)==='string' ? [String(at(row,d.result.log))] : []),

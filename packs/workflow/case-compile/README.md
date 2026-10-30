@@ -1,4 +1,4 @@
-# case-compile 3.9.4
+# case-compile 3.9.5
 
 The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -405,3 +405,16 @@ real whole-mindmap run the model booked one load balancer; the executor's target
 been refused after the plans, the workbook and the verification were done. Step 1 now asks for the whole bed (`need.devices`
 with every device of the inventory, because the dispatch must cover it); two phrases of the same step that repeated other
 steps were dropped to stay within the length limit.
+
+### 3.9.5: rework after the run on the bed
+
+In the first real whole-mindmap run on the bed, three of five cases passed and two failed for reasons of the plans (a TCP
+virtual service bound to an HTTP group, and three traffic expectations each placed one step before its trigger), which only
+the device's answers showed. `SKILL.md` said nothing about what follows a run with failures, so the model stopped and asked,
+and it could not read the evidence anyway. The Hub's dispatch result now names, for every row that did not pass, its log and
+its device sessions as sources the runner reads (`evidence`), and a new step 9 says what CES says after a run: read that
+evidence, attribute each failure (plan, expectation, product or environment), never copy device output into an expectation,
+change only the failed cases and keep every passed plan as it ran, then book the whole bed and run the whole mindmap again
+until every case passes or the remaining failures go to the user with their evidence. Step 3 says that `after` points at the
+step whose output the expectation reads (a traffic expectation at its trigger). Duplicated sentences were shortened to stay
+within the length limit.
