@@ -139,7 +139,28 @@ Known limits, not changed:
 - A bound generated record that the run reads on its own authority takes its read tier from that record alone, not from a
   newer scan of the same bytes. This is on main too; it is fixed on main by its own change and comes here with the next sync.
 
-A ninth review should confirm these before the branch is offered for main.
+## Ninth independent review (codex, 2026-10-30): open, review loop stopped
+
+The reviewer confirmed the item 1 wording, the reader-identity check for the shared choice, the unknown answer for an
+undetermined record in `quote@1`, and the knowledge-contribution exemption. Its full text is on issue #28. It found eight
+more items, none fixed here: on 2026-10-30 the owner decided to stop the review loop at this point. This branch is not
+merged into `hub-lease-wip`.
+
+| # | Open item |
+|---|---|
+| 1 | A pack function is given the items' texts without the current access, tier and byte cap; a ground that is unavailable, retain-only or too large does not turn its conclusion into an unknown. |
+| 2 | A pack function that cites a source it read through its declared reads (`boundSources`) is not graded. |
+| 3 | Byte caps of different checks still affect each other: a `too_large` grade is cached at the first check that grades a reference. |
+| 4 | Reusing an item text bypasses the evaluation's read budget (its concurrency gate and the 16 MiB total). |
+| 5 | A runtime sample gets an outside-the-author proof even when the evaluation could not read its source. |
+| 6 | A bound record with `sha256` and `provenance_type` but no `origin` or `author` counts as a source; the sample proof then throws. |
+| 7 | A read that fails because a newer generated record appeared is answered as `REFERENCE_UNRESOLVED`, which is cached: the same submission again may return it instead of choosing again. |
+| 8 | A malformed percent escape in the Hub address makes the decoded-path check throw, so a percent-encoded token later in the path is not checked. |
+
+The reviewer also asked for tests of the two call sites that pass the exact phase's choice (`submit`, effect recheck).
+
+Before this branch is offered for main, these items need fixing, and so do the related main changes: #106 (#105) and
+#108 (#104) are open, #107 is merged, and #109 tracks the connector read tier. Main then needs syncing into this branch.
 
 ## Tests that failed on this branch
 
