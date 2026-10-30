@@ -14,6 +14,7 @@ import type { TestRecordsKit } from '../testing/records.ts';
 import { scanForCredentials, type ActionBody, type IngestInput, type Principal, type SourceArtifactBody, type Visibility } from './api.ts';
 import { artifactShareKey, RECORD_SCHEMAS } from './constants.ts';
 import { digestOf, sha256Hex } from './digest.ts';
+import { runRecord } from '../../contracts/src/fixtures.ts';
 import { IntegrityError, LimitError, RecordsError } from './errors.ts';
 
 let postgres: TemporaryPostgres;
@@ -261,6 +262,35 @@ test('a credential hit by the newest scanner makes the bytes retain_only for eve
   assert.equal(rescanned.body.scan.findings.length, 1);
   assert.deepEqual({ readable: (await kit.artifacts.text(admin, sha))?.readable, tier: (await kit.artifacts.source(admin, sha))?.readTier }, { readable: false, tier: 'retain_only' });
   assert.equal((await kit.artifacts.source(admin, sha, { consumer: 'function' }))?.bytes, null);
+});
+
+test('a run reading its bound generated record on its own authority takes the newest scan of the bytes into account (B02 R[4])', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const { uploader } = await people(kit);
+  const bytes = Buffer.from('exported\nDB_PASS=Synth3tic9y\n');
+  const sha = sha256Hex(bytes);
+  // A private generated record an older scanner wrote without the hit, bound to a run of the uploader's.
+  await kit.objects.put(bytes, 'text/plain');
+  const old = await kit.store.put({ kind: 'source_artifact', schema: 'source_artifact@1', provenance: 'observed', index: [{ key: 'artifact.sha256', value: sha }], body: {
+    sha256: sha, size: bytes.byteLength, media_type: 'text/plain', name: null,
+    origin: { generated: { generator: 'synthetic-exporter@1', inputs: [], read_back: null } }, author: { user: null, declared: null },
+    captured_at: '2026-10-01T00:00:00.000Z', provenance_type: 'observed', read_tier: 'model_readable',
+    visibility: { readers: [], admins: true, packs: [], shareable: false },
+    scan: { scanner: 'credential-scan@1', inspected: true, clean: true, findings: [], truncated: false },
+  } });
+  const run = 'run_01arz3ndektsv4rrffq69g5faw';
+  await kit.store.put({ kind: 'run', schema: 'run@1', provenance: 'observed', index: [{ key: 'runs.id', value: run }], body: {
+    ...runRecord, run, runner: uploader.id, sources: [{ reference: `src:${sha}`, role: 'subject', artifact: old.digest }],
+    items: [{ id: 'synthetic', label: '合成', location: `src:${sha}`, fields: {} }],
+  } });
+  assert.equal((await kit.artifacts.sourceForRun(uploader, sha, run, { consumer: 'function' }))?.readTier, 'model_readable');
+  // The current scanner finds the credential in a newer record of the same bytes: the run's read is held back too.
+  const rescanned = await kit.artifacts.ingest({ bytes, mediaType: 'text/plain', origin: { read: { object: 'exports:file:settings@2' } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false } });
+  assert.equal(rescanned.body.scan.findings.length, 1);
+  const held = await kit.artifacts.sourceForRun(uploader, sha, run, { consumer: 'function' });
+  assert.equal(held?.artifact.digest, old.digest);
+  assert.deepEqual({ tier: held?.readTier, bytes: held?.bytes }, { tier: 'retain_only', bytes: null });
 });
 
 test('a share covers the shared record only: other uploads of the same bytes stay private (B02 R[3], B04 R[3])', async (t) => {
