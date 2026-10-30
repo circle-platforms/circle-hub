@@ -8,7 +8,7 @@ import {createRequestService} from '../../requests/api.ts';
 import {runById} from './store.ts';
 let pg:TemporaryPostgres;const skip=await sandboxSkip();
 before(async()=>{pg=await startPostgres();});after(async()=>{await pg?.stop();});
-test('overdue requests stay separately visible and escalate once per deadline without replacing their originals',{skip},async()=>{
+test('overdue requests stay separately visible and escalate once to an active administrator without replacing their originals',{skip},async()=>{
   const h=await openRetryHarness(pg);
   try{
     const map=await h.upload(h.alice,toyMap(standardDocument()));
@@ -27,11 +27,17 @@ test('overdue requests stay separately visible and escalate once per deadline wi
     await h.service.maintain();
     assert.equal((await requests.all(run.run)).filter(q=>q.source===question.digest).length,1);
     h.advance(86400001);await h.service.maintain();
-    assert.equal((await requests.all(run.run)).filter(q=>q.source===escalation.record).length,1,'an administrator deadline also has a next action');
+    assert.equal((await requests.all(run.run)).filter(q=>q.source===escalation.record).length,0,'an escalation naming an active administrator is not escalated again');
+    assert.ok((await h.service.listRuns(h.admin)).overdue_requests?.some(q=>q.record===escalation.record&&q.due===escalation.due),'it stays overdue under its own deadline');
+    await h.kit.principals.setRole(h.admin,h.bob.id,'admin');await h.kit.principals.setDisabled(h.bob,h.admin.id,true);
+    await h.service.maintain();
+    const moved=(await requests.all(run.run)).filter(q=>q.source===escalation.record);
+    assert.equal(moved.length,1,'the escalation of a disabled administrator advances to an active one');
+    assert.equal(moved[0]!.audience,h.bob.id);
     await requests.answer(question.digest,stored.digest);await h.service.maintain();
     const all=await requests.all(run.run);
     assert.equal(all.find(q=>q.record===escalation.record)!.answered_by,stored.digest);
     assert.equal(all.find(q=>q.source===escalation.record)!.answered_by,stored.digest);
-    assert.ok(!(await h.service.listRuns(h.admin)).overdue_requests?.some(q=>q.record===question.digest));
+    assert.ok(!(await h.service.listRuns(h.bob)).overdue_requests?.some(q=>q.record===question.digest));
   }finally{await h.close();}
 });

@@ -381,7 +381,11 @@ async function recoverParent(ctx:EngineContext,stored:StoredRecord<RunRecord>):P
   });
 }
 
-/** Keep original deadlines immutable; each expired unanswered request advances to a named administrator. */
+/**
+ * Keep original deadlines immutable; each expired unanswered request advances to a named administrator. An escalation that
+ * already names an active administrator stays listed as overdue under its own deadline: escalating it again would name the
+ * same next action and audience. It advances only when its administrator was disabled or lost the role (decision 101).
+ */
 async function escalateOverdueRequests(ctx:EngineContext):Promise<void>{
   const requests=await requestRecords(ctx),byId=new Map(requests.map(request=>[request.record,request]));
   // The escalations that exist already: writing one again only finds it (requests are deduplicated by this key).
@@ -398,7 +402,9 @@ async function escalateOverdueRequests(ctx:EngineContext):Promise<void>{
     const answer=answerOf(request);
     if(answer){await answerRequest(ctx,request.record,answer);continue;}
     if(Date.parse(request.due)>ctx.now().getTime())continue;
-    const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
+    const admins=((await ctx.deps.records.principals?.list?.())??[]).filter(p=>p.role==='admin'&&!p.disabled);
+    if(byId.has(request.source)&&admins.some(p=>p.id===request.audience))continue;
+    const admin=admins[0];
     if(!admin)throw new Error('到期请求升级缺少具名管理员');
     const escalation:RequestBody={...(request.run?{run:request.run}:{}),...(request.pack_digest?{pack_digest:request.pack_digest}:{}),kind:'clarification',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:request.record,code:'awaiting_step',missing:'请求 rec:'+request.record+' 到期仍未作答，缺少该请求所列事实或处置',next_action:'管理员核对原请求 rec:'+request.record+' 的缺失事实、原受众和下一步，按其真实作答入口推进；只有原请求的实际回答才能关闭升级请求，不修改原期限或原记录'};
     const key=requestKey(RequestBodySchema.parse(escalation));
