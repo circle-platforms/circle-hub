@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PackSample } from '../../../../contracts/src/pack.ts';
 import { commandSubject, duplicateSubject, quoteSubject } from '../functions/subjects.ts';
-import { SYNTHETIC_BUG_74001, SYNTHETIC_CATALOG_SPEC, SYNTHETIC_INDEX_VIEW, goodDraft } from './fixtures.ts';
+import { SYNTHETIC_BUG_74001, SYNTHETIC_CATALOG_SPEC, SYNTHETIC_INDEX_VIEW, UNKNOWN_ONLY_INDEX_VIEW, goodDraft } from './fixtures.ts';
 
 const BUG_ID = SYNTHETIC_BUG_74001.id;
 const BUG_DIGEST = createHash('sha256').update(JSON.stringify(SYNTHETIC_BUG_74001)).digest('hex');
@@ -291,6 +291,35 @@ export function samples(): Entry[] {
         indexed_cases: SYNTHETIC_INDEX_VIEW,
       },
       [{ verdict: 'refute', code: 'defect-to-case.duplicate_case', item: BUG_ID, tier: 'advisory' }],
+      { catalog: SYNTHETIC_CATALOG_SPEC },
+    ),
+    sample(
+      'negative',
+      'duplicate_unknown_entries',
+      'duplicate_check',
+      '索引只因 2 个用例缺查询所需的事实而截断：可见的结构重复照样驳回，没查出重复的草稿记未知，写明条数和视图说明的下一步',
+      {
+        item: BUG_ID,
+        drafts: [
+          goodDraft({
+            id: 'draft-duplicate',
+            title: '标题不同仍是同一结构',
+            steps: [nativeStep('show health detail')],
+            expected: [nativeExpected()],
+          }),
+          goodDraft({
+            id: 'draft-new',
+            title: '查看健康检查状态',
+            steps: [nativeStep('show health')],
+            expected: [nativeExpected('显示健康')],
+          }),
+        ],
+        indexed_cases: UNKNOWN_ONLY_INDEX_VIEW,
+      },
+      [
+        { verdict: 'refute', code: 'defect-to-case.duplicate_case', item: BUG_ID, tier: 'advisory' },
+        { verdict: 'unknown', reason: 'integrity_unproven', item: BUG_ID, tier: 'advisory' },
+      ],
       { catalog: SYNTHETIC_CATALOG_SPEC },
     ),
   ];

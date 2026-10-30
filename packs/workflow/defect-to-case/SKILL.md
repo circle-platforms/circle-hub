@@ -124,4 +124,6 @@ Hub 对提交进行两层核对：
 
 查重的读取键和期望引用身份都由 Hub 计算，不要在修复轮里补写。截断、跳过或每键上限仍是未知：按 missing_fact 和 next_action 在同一修订重读。可见重复照样驳回。不要用标题或文字前缀查重。索引里同命令用例缺作者 case_structure 时，请作者补结构后重产新根。发布状态只取原始 JSON status。
 
+索引只因部分用例缺查询所需的事实而截断时（视图带 unknown_only 和 unknown_entries），Hub 照样绑定，start_run 回执给出 defect-to-case.index_unknown_entries。可见重复照样驳回；没查出重复的草稿记未知。告诉用户未知用例的条数和视图说明里的下一步，不说成没有重复，也不说成重复；同一修订重读补不出这些事实，补齐后以新输入重开运行。索引还有别的截断时 Hub 仍拒绝绑定，按回执处理。
+
 喂入层：这个包读到的用例、缺陷、构建、规格凡经 Hub 读的都由程序自动进喂入层（带锁定树苗和冻结序号），视图按"锁定树苗 + 冻结序号之前的喂入层"读；版本未声明和矛盾的对象单列计数，不进版本差。Circle 只经 knowledge-contribution 回注补程序填不了的语义（带逐字引文），运行中不问人；结构契约见该包 tables/knowledge-structure.json 或 get_nodes 根路径。

@@ -274,23 +274,28 @@ export function checkQuoteSources(input: unknown): CheckOutcome[] {
 export function checkDuplicate(input:unknown):CheckOutcome[]{
  const raw=isRecord(input)?input:{},s=isRecord(raw.subject)?raw.subject:raw,own=typeof s.item==='string'?{item:s.item}:{},catalog=Array.isArray(raw.catalog)?raw.catalog as CatalogEntry[]:undefined;
  const drafts=Array.isArray(s.drafts)?s.drafts as DraftCase[]:extractDrafts(s.slots),index=isRecord(s.indexed_cases)?s.indexed_cases:null;
- const missing=(draft:DraftCase,fact:string):CheckOutcome=>({verdict:'unknown',reason:'missing_input',missing:fact+'；下一步：客户端补完整草稿身份；索引缺作者结构声明时由作者补 case_structure 后重产新根并重绑，截断时按同一根补读；非法负向命令缺合法身份时交包作者补身份合约或具名人工复核',statement:fact+'；下一步按回执补结构或范围并重开核验',grounds:[],tier:'advisory',...own,data:{draft_id:draft.id??null,requirement:'not_duplicate',rule_version:STRUCTURE_RULE,structure_key:null}});
- if(!index)return drafts.map(draft=>missing(draft,'缺冻结 indexed_cases 视图'));
+ const compact=index?buildCompactIndex(index):null;
+ // A view truncated only by unknown entries: those cases may carry the draft's commands, so "no duplicate" stays unknown
+ // with the count and the view's own next action. Re-reading the same frozen revision does not supply the missing facts.
+ const unknownOnly=compact?.unknownOnly===true&&Number(compact.unknownEntries)>0;
+ const missing=(draft:DraftCase,fact:string):CheckOutcome=>({verdict:'unknown',reason:'missing_input',missing:fact+'；下一步：客户端补完整草稿身份；索引缺作者结构声明时由作者补 case_structure 后重产新根并重绑，'+(unknownOnly?'索引只因未知用例截断时按视图说明补齐这些用例的事实后以新输入重开运行，同一修订重读补不出这些事实':'截断时按同一根补读')+'；非法负向命令缺合法身份时交包作者补身份合约或具名人工复核',statement:fact+'；下一步按回执补结构或范围并重开核验',grounds:[],tier:'advisory',...own,data:{draft_id:draft.id??null,requirement:'not_duplicate',rule_version:STRUCTURE_RULE,structure_key:null,...(unknownOnly?{unknown_entries:compact!.unknownEntries}:{})}});
+ if(!index||!compact)return drafts.map(draft=>missing(draft,'缺冻结 indexed_cases 视图'));
  const entries=index.schema==='compact-case-index@1'&&isRecord(index.by_commands)?Object.values(index.by_commands).flatMap(v=>Array.isArray(v)?v:[]):isRecord(index.entries)?Object.values(index.entries):[];
  const entities=new Map<string,{document:string;node:string;reference:string;keys:Set<string>}>();let unresolved=0;
  for(const row of entries){if(!isRecord(row)){unresolved++;continue;}const d=isRecord(row.data)?row.data:row,identity=structure(d.case_structure,catalog);if(!identity||typeof d.document!=='string'||typeof d.node!=='string'||typeof row.reference!=='string'){unresolved++;continue;}const key=JSON.stringify([d.document,d.node]),entity=entities.get(key)??{document:d.document,node:d.node,reference:row.reference,keys:new Set<string>()};entity.keys.add(identity.key);entities.set(key,entity);}
- const compact=buildCompactIndex(index);
+ const unknownFact=():string=>'源索引有 '+compact.unknownEntries+' 个用例缺本次查询所需的事实，未列入索引'+(compact.missingKeys?.length?'，请求的键 '+compact.missingKeys.join('、')+' 在已列出的用例里没有条目':'')+'；这些用例可能与草稿同命令，不能当作没有用例或没有重复；视图说明「'+(compact.sourceNotes?.join('；')||'无')+'」；下一步按视图说明补齐这些用例的事实后以新输入重开运行';
  const coverage=(paths:string[]):string[]=>{
   const facts:string[]=[];const keys=paths.map(normalizeCommand),only=compact.only?.map(normalizeCommand);
   if(compact.invalidMetadata)facts.push('only 或 cut_keys 字段形状无效；下一步集成者修正核心元数据');
+  if(compact.invalidUnknown)facts.push('unknown_entries 或 unknown_only 字段形状无效或与 truncated 矛盾；下一步集成者修正核心元数据');
   if(Number(compact.sourceSkipped)>0)facts.push('缺少 '+compact.sourceSkipped+' 份文档；下一步作者补产新根并重绑');
   if(only&&!keys.some(key=>only.includes(key)))facts.push('索引没有收窄到草稿命令 '+keys.join('、')+'；下一步按草稿命令补读 only');
   if(compact.unplacedCommands>0)facts.push('缺 '+compact.unplacedCommands+' 个条目的 commands 字段；下一步作者补结构并重产新根');
   if(compact.unplaced>0)facts.push('存在 '+compact.unplaced+' 个未归位条目；下一步作者补完整结构声明');
   if(compact.dropped>0)facts.push('紧凑索引丢弃 '+compact.dropped+' 个条目；下一步包作者调整有界投影读取能力');
-  if(compact.missingKeys?.length)facts.push('缺少请求的键 '+compact.missingKeys.join('、')+'；下一步同一根重新读取这些键');
+  if(compact.missingKeys?.length&&!unknownOnly)facts.push('缺少请求的键 '+compact.missingKeys.join('、')+'；下一步同一根重新读取这些键');
   if(compact.cappedKeys?.length&&keys.filter(k=>!only||only.includes(k)).every(k=>compact.cappedKeys.map(normalizeCommand).includes(k)))facts.push('索引每键上限截断；下一步集成者补分页能力后同根续读');
-  if(compact.sourceTruncated)facts.push('源索引截断；下一步同根补完整范围');
+  if(compact.sourceTruncated)facts.push(unknownOnly?unknownFact():'源索引截断；下一步同根补完整范围');
   if(!compact.complete&&!facts.length)facts.push('索引未声明完整范围；下一步补完整范围回执');
   return facts;
  };

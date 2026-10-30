@@ -14,12 +14,13 @@
     {
       "slot": "indexed_cases",
       "role": "expected",
-      "description": "已索引的用例清单。绑定 knowledge:index:<产品>:<构建>?kind=case&key=commands&fields=commands,document,node,title,negative,case_structure，不要写 only。Hub 从起草命令的 CommandIdentity 完整路径计算读取键，并在同一修订重绑 only。fields 必须带 commands。索引里没有同命令用例时，结论是范围内没有重复。由 Hub 知识读取器提供，必填",
+      "description": "已索引的用例清单。绑定 knowledge:index:<产品>:<构建>?kind=case&key=commands&fields=commands,document,node,title,negative,case_structure，不要写 only。Hub 从起草命令的 CommandIdentity 完整路径计算读取键，并在同一修订重绑 only。fields 必须带 commands。索引里没有同命令用例时，结论是范围内没有重复。视图只因部分用例缺查询所需的事实而截断时照样绑定，这些用例记未知，没查出重复的草稿不算没有重复。由 Hub 知识读取器提供，必填",
       "accepts": [
         "knowledge:index"
       ],
       "required": true,
-      "many": false
+      "many": false,
+      "unknown_entries": "disclose"
     },
     {
       "slot": "manual",
