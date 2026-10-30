@@ -21,6 +21,12 @@ updates:
       # it (#53). 6.x keeps the API and still comes; moving to 7 means replacing that checker first.
       - dependency-name: 'typescript'
         versions: ['>= 7']
+      # The Windows adapters (hub/platform/windows-*.ts, hub/rules/sandbox/windows.ts) load koffi only on Windows and refuse
+      # every version but the reviewed 3.3.3, the one the Circle client pins; an update would make them fail closed there.
+      # koffi pins its per-platform @koromix packages exactly. Moving to another version means reviewing the native calls
+      # and changing those checks together, by hand.
+      - dependency-name: 'koffi'
+      - dependency-name: '@koromix/koffi-*'
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
