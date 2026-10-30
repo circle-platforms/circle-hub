@@ -1,5 +1,6 @@
 // Unit-test partitions share a migrated PostgreSQL template where possible. Normal work adapts to CPU and memory;
-// timing sentinels run alone so other tests do not consume their millisecond budget. Acceptance uses the same scheduler.
+// timing sentinels run alone, before the rest, so other tests do not consume their millisecond budget. Acceptance uses the
+// same scheduler.
 // Files start longest first by their wall time in earlier runs on this machine (a file in the temporary directory), so the
 // run does not end with one long file alone; without that file the order is the sorted one.
 import { execFileSync, spawn } from 'node:child_process';
@@ -327,14 +328,16 @@ export async function runUnitTests(group: UnitGroup = 'all', explicit:readonly s
     const sharedSet=new Set(lanes.shared),isolatedSet=new Set(lanes.isolated);
     const tasks=files.flatMap<TestTask>(file=>sharedSet.has(file)?[{file,lane:postgres?'shared':'sentinel'}]:isolatedSet.has(file)?[{file,lane:'isolated'}]:[]);
     const counts=emptyCounts();let code=0;const observed:Record<string,number>={};
-    if(tasks.length){
-      const result=await runAdaptiveTasks(tasks,withCompileCache(postgres?sharedEnv(postgres):stringEnv()),withCompileCache(stringEnv()),{cap,durations:readDurations(),onDuration:(file,ms)=>{observed[file]=ms;}});
-      code=result.code;for(const key of COUNTERS)counts[key]+=result.counts[key];
-      if(code!==130)writeDurations(observed);
-    }
-    if(code!==130&&lanes.sentinel.length){
+    // Timing sentinels first, one at a time on a machine nothing else of this run uses yet: after the parallel lanes the
+    // operating system is still working off their file events (fseventsd), which the sentinels' budgets would absorb.
+    if(lanes.sentinel.length){
       const result=await runAdaptiveTasks(lanes.sentinel.map(file=>({file,lane:'sentinel' as const})),stringEnv(),stringEnv(),{cap:1,initialBusy:0});
-      if(code===0)code=result.code;for(const key of COUNTERS)counts[key]+=result.counts[key];
+      code=result.code;for(const key of COUNTERS)counts[key]+=result.counts[key];
+    }
+    if(code!==130&&tasks.length){
+      const result=await runAdaptiveTasks(tasks,withCompileCache(postgres?sharedEnv(postgres):stringEnv()),withCompileCache(stringEnv()),{cap,durations:readDurations(),onDuration:(file,ms)=>{observed[file]=ms;}});
+      if(code===0||result.code===130)code=result.code;for(const key of COUNTERS)counts[key]+=result.counts[key];
+      if(result.code!==130)writeDurations(observed);
     }
     for(const key of COUNTERS)process.stdout.write(`# ${key} ${counts[key]}\n`);
     process.stderr.write(`test wall ${((Date.now()-wallBegan)/1000).toFixed(1)}s exit ${code}\n`);
