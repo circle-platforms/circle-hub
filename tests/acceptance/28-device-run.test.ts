@@ -53,6 +53,8 @@ const model = recognize(createDefaultRegistry(), original, 'application/json')!.
 let staged: string;
 let postgres: TemporaryPostgres; let bed: { hub: TestHub; product: ProductPack; site: ProductSite; reviewer: TestUser }; let client: McpClient; let subject: string;
 let endpoint: Awaited<ReturnType<typeof startEndpoint>>;
+// Closed by after() even when before() fails between creating the Hub and filling bed: its listeners would keep the file open.
+let opened: TestHub | undefined;
 let executor: string;
 const itemIds = new Map<string, string>();
 let lose = false; let mismatch = false; let aliasEcho = false; let submissions = 0; let releases = 0;
@@ -166,7 +168,7 @@ before(async () => {
   const files=site.site();const treeKey=`${site.SITE_BASE}/command_tree-${site.RELEASED}.xml`;
   const inverse='<menu name="no"><menu name="widget"><menu name="health"><item name="interval"><arguments><arg name="pool" type="STRING"/></arguments></item></menu></menu><menu name="relay"><menu name="endpoint"><item name="add"><arguments><arg name="address" type="IPADDR"/><arg name="port" type="U16"/></arguments></item></menu></menu></menu>';
   const xml=Buffer.from(files[treeKey].body).toString('latin1');files[treeKey]={...files[treeKey],body:Buffer.from(xml.replace('</scope>',inverse+'</scope>'),'latin1')};
-  const hub = await createTestHub({ postgres, repositoryPacks: ['apv', 'build-site', 'test-bed'], packs: [await stage(join(staged, 'case-compile'))], buildSite: files, requireOsIsolation: true });
+  const hub = await createTestHub({ postgres, repositoryPacks: ['apv', 'build-site', 'test-bed'], packs: [await stage(join(staged, 'case-compile'))], buildSite: files, requireOsIsolation: true }); opened = hub;
   const resource = await hub.addResource({ system_pack: 'build-site', name: '合成构建站', environment: 'test', origins: { 'build-site': `${hub.stubs!.buildSite.origin}${site.SITE_BASE}` }, settings: { index_page: 'index.html' } });
   assert.ok(resource.id);
   for(const active of await hub.hub.registry.activeProducts())for(const variable of active.product.variables??[])await hub.records.variables.setVariable(hub.admin.principal,variable.name,variable.default,'合成台架验收显式部署设置');
@@ -217,7 +219,7 @@ before(async () => {
     result:{...raw.result,request_id:'/request'},proof:{...raw.proof,package:'case-compile',slot:'workbook',warrant_id:`case-compile.workbook_verified@${CASE_COMPILE_PACK.version}`} });
   executor = (await addSyntheticExecutor(bed.hub.records,dispatch().registry,bed.hub.admin.principal,configured,'synthetic-dispatch-key')).id;
 });
-after(async () => { await client?.close(); await endpoint?.close(); await bed?.hub.close(); await postgres?.stop(); if (staged) await rm(staged, { recursive: true, force: true }); });
+after(async () => { await client?.close(); await endpoint?.close(); await opened?.close(); await postgres?.stop(); if (staged) await rm(staged, { recursive: true, force: true }); });
 
 beforeEach(async () => { aliasEcho = false; if (!skip && bed) { const keys = (await bed.hub.leases.view('bed/')).entries.map(e => e.key); if (keys.length) await bed.hub.leases.forceRelease({ keys, by: bed.hub.admin.principal.id, reason: '合成测试失败后的隔离清理' }); } });
 
