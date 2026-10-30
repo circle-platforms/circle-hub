@@ -18,6 +18,7 @@ import { canonicalSize } from './digest.ts';
 import { CAPTURED_GROUND, DECLARATION_GROUND, declarationGradeBody } from './declaration-grade.ts';
 import { operationIdentity, operationRecord, reproductionLease } from './feeding.ts';
 import { INDEX, KnowledgeStore, SCHEMAS } from './store.ts';
+import { readableProducts } from './readable-products.ts';
 
 export interface ContributionScope {
   run?:string;classifications?:readonly string[];
@@ -85,10 +86,10 @@ export class ContributionLayer {
   readonly #preparations = new WeakMap<ContributionScope, Map<string, Promise<Preparation>>>();
   constructor(context: KnowledgeContext, reading: TreeReading) { this.#context = context; this.#reading = reading; }
 
-  /** Every reader, including an admin, passes the product reader port. No run-admin bypass. */
+  /** Every reader, including an admin, passes the product reader port (decided once per request). No run-admin bypass. */
   async mayRead(product: string, reader: Principal): Promise<boolean> {
     const account = await this.#context.records.principals.get(reader.id);
-    return account !== null && !account.disabled && (await this.#context.packs.readableProducts(account)).has(product);
+    return account !== null && !account.disabled && (await readableProducts(this.#context.packs, account)).has(product);
   }
 
   async #custodian(reader: Principal): Promise<Principal> {

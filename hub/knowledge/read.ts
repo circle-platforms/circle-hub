@@ -37,6 +37,7 @@ import { CompositionView, type ReadRow } from './composition.ts';
 import { CONTRADICTION, pointerName } from './store.ts';
 import { mapLimited } from './concurrency.ts';
 import type { KnowledgeContext } from './context.ts';
+import { readableProducts } from './readable-products.ts';
 import { canonicalSize, compareText, cutText, entryDigest, type EntryContent } from './digest.ts';
 import { catalogCanon, catalogData } from './produce.ts';
 import type { LinkReading } from './links.ts';
@@ -156,14 +157,17 @@ export class TreeReading {
     return products;
   }
 
-  /** The reader is an enabled admin, or a pack assigned to them binds one of the products. The account is re-read. */
+  /**
+   * The reader is an enabled admin, or a pack assigned to them binds one of the products. The account is re-read; the
+   * port's answer is decided once per request (readable-products.ts).
+   */
   async mayReadProducts(reader: { id: string } | null | undefined, products: Iterable<string>): Promise<boolean> {
     const wanted = [...products];
     if (wanted.length === 0 || typeof reader?.id !== 'string') return false;
     const account = await this.#context.records.principals.get(reader.id);
     if (account === null || account.disabled) return false;
     if (account.role === 'admin') return true;
-    const readable = await this.#context.packs.readableProducts({ id: account.id, name: account.name, role: account.role });
+    const readable = await readableProducts(this.#context.packs, { id: account.id, name: account.name, role: account.role });
     return wanted.some((product) => readable.has(product));
   }
 

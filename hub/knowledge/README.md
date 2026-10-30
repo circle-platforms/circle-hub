@@ -195,7 +195,11 @@ catalogs, grounds and provenance.
     after the other. Dry runs store nothing of their own. Text a pack function wrote (the plan note) is cut to storable
     text before it is recorded.
 13. **Reading** (R02, D05 R[3]): a reader is an enabled admin or has a pack that binds the root's product
-    (`PacksPort.readableProducts` of the account as stored now). Absent and forbidden are the same null; the reader is
+    (`PacksPort.readableProducts` of the account as stored now). Inside a request's permission snapshot the port's answer
+    for that account is asked once and reused by every later check of the same account in the same request
+    (`readable-products.ts`, decision 82: a request uses the permissions it started with; a revocation applies from the
+    next request); another account, another request and a read outside any request ask the port again, and a failed
+    answer is not kept. Absent and forbidden are the same null; the reader is
     checked before anything else of a get_nodes request is read. `getNodes` lists each requested path (duplicates
     removed, at most 256 distinct paths, the rest named in the coverage note) and its subtree to `depth` (default 1) in
     pre-order, each node once (a subtree is walked again only with more levels to go, capped at the node's height, so
