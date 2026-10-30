@@ -12,7 +12,7 @@ permissions:
 jobs:
   native:
     name: Synthetic (${{ matrix.platform }}-${{ matrix.arch }})
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -40,6 +40,17 @@ jobs:
       - name: Execute synthetic Windows native Job fixtures
         if: ${{ !cancelled() && runner.os == 'Windows' }}
         run: node --test --test-reporter=tap --test-concurrency=2 hub/rules/sandbox/windows.test.ts
+      # A real service and a real scheduled task are created under synthetic names and deleted again; one file at a time.
+      - name: Execute synthetic Windows service fixtures
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        run: node --test --test-reporter=tap --test-concurrency=1 hub/platform/windows-service.test.ts hub/platform/windows-scm.test.ts hub/platform/windows-task.test.ts
+      # No Windows ARM64 PostgreSQL build exists: install the lockfile's x64 build, checked against its SHA-512, for x64 emulation.
+      - name: Install the x64 PostgreSQL build for the Windows ARM64 hybrid
+        if: ${{ !cancelled() && runner.os == 'Windows' && matrix.arch == 'arm64' }}
+        run: node hub/platform/postgres-hybrid.ts
+      - name: Execute synthetic loopback SCRAM PostgreSQL fixtures
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        run: node --test --test-reporter=tap --test-concurrency=1 hub/platform/postgres-loopback.test.ts hub/platform/postgres-hybrid.test.ts
       - name: Report unsupported Windows release readiness
         if: ${{ !cancelled() && runner.os == 'Windows' }}
         run: node .github/checks/platform-matrix.ts --windows-readiness

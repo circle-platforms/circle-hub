@@ -22,6 +22,30 @@ test('native matrix is restricted, read-only and fixed to six native runners', (
   assert.ok(workflow.includes("if: ${{ !cancelled() && runner.os == 'Windows' }}"));
   assert.match(workflow, /name: Report unsupported Windows release readiness\n.*\n        run: node .github\/checks\/platform-matrix.ts --windows-readiness/);
 });
+test('Windows runners also run the service, Task Scheduler and loopback PostgreSQL fixtures, ARM64 on the x64 build', () => {
+  const step = (name: string) => {
+    const match = new RegExp(`      - name: ${name}\\n        if: (.*)\\n        run: (.*)\\n`).exec(workflow);
+    assert.ok(match, name);
+    return { condition: match[1], command: match[2] };
+  };
+  assert.deepEqual(step('Execute synthetic Windows service fixtures'), {
+    condition: "${{ !cancelled() && runner.os == 'Windows' }}",
+    command: 'node --test --test-reporter=tap --test-concurrency=1 hub/platform/windows-service.test.ts hub/platform/windows-scm.test.ts hub/platform/windows-task.test.ts',
+  });
+  assert.deepEqual(step('Install the x64 PostgreSQL build for the Windows ARM64 hybrid'), {
+    condition: "${{ !cancelled() && runner.os == 'Windows' && matrix.arch == 'arm64' }}",
+    command: 'node hub/platform/postgres-hybrid.ts',
+  });
+  assert.deepEqual(step('Execute synthetic loopback SCRAM PostgreSQL fixtures'), {
+    condition: "${{ !cancelled() && runner.os == 'Windows' }}",
+    command: 'node --test --test-reporter=tap --test-concurrency=1 hub/platform/postgres-loopback.test.ts hub/platform/postgres-hybrid.test.ts',
+  });
+  // The hybrid install comes after the native contracts (a failure there must not skip them) and before the PostgreSQL fixtures.
+  const order = ['Check the native architecture', 'Install the x64 PostgreSQL build', 'Execute synthetic loopback SCRAM', 'Report unsupported Windows release readiness'].map((name) => workflow.indexOf(name));
+  assert.deepEqual([...order].sort((a, b) => a - b), order);
+  assert.ok(order.every((index) => index > 0));
+  assert.match(workflow, /^    timeout-minutes: 30$/m);
+});
 test('Windows release readiness is reported as unsupported without failing the synthetic matrix', () => {
   const script = readFileSync(new URL('./platform-matrix.ts', import.meta.url), 'utf8');
   const readiness = script.slice(script.indexOf("'--windows-readiness'"), script.indexOf('} else {'));
