@@ -331,6 +331,7 @@ async function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimit
         cwd: pack.dir,
         env: { TZ: 'UTC' },
         stdio: ['pipe', 'pipe', 'pipe'],
+        // The win32 condition is kept as written; Windows is TBD (decision 92) and no Windows sandbox exists.
         detached: process.platform !== 'win32',
       }) as ChildProcessWithoutNullStreams;
     } catch (error) {

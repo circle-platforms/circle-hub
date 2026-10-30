@@ -15,6 +15,10 @@ The three repositories are versioned separately: circle (the agent), circle-hub 
 | `foundation/circle` | Circle **1.0.4** source baseline, frozen | the source record in `references/README.md` | Source reference only: it is not installed, and its installer is not run; it is not a runtime dependency of hub |
 | circle-packs | see its CHANGELOG | the circle-packs repository | Holds the packs of the retired server (`modules.json`, `product-line/1`, `hub-*/1`), which the redesigned Hub does not read; milestone 1 does not change that repository |
 
+## Platforms
+
+The Hub server supports and ships for two platforms only: macOS (development and local verification) and Linux (production, a systemd service). Windows support as a whole is to be determined (TBD, decision 92): there is no Windows service, sandbox, vault or installer, and the existing release and publication carry no Windows build. Earlier preparation stays on local branches and is not merged. Platform branches in the code are annotated, not deleted. The platforms of the Circle client itself are not affected.
+
 ## Isolation of pack functions
 
 Following the [Hub r4 architecture](hub-r4-architecture.md), a task pack's functions run in a restricted child process (implemented by the rules package, under review): the Node permission model forbids file writes and child processes and allows reading only the extracted pack; the architecture brief records that on Node 24.17 the permission model was found not to restrict network access, so the child process also runs under macOS `sandbox-exec` with network denied; time, memory and input and output sizes are limited as well. Where `sandbox-exec` is missing, pack functions are refused by default (`SANDBOX_UNAVAILABLE`). Equivalent isolation on other platforms is not decided yet.
