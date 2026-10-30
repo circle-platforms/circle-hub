@@ -1,0 +1,117 @@
+name: Release bundles
+
+# The one-click install bundles (owner decision 76): macOS and Linux on arm64 and x64, built by tools/build-bundle.ts.
+# A pull request that touches the installer or the bundle code builds the Linux and macOS bundles of this runner and
+# installs them for real: install.sh on a fresh Ubuntu runner (service account, systemd user service, AppArmor policy,
+# PostgreSQL 18 client, HTTPS) and the bundled Node and PostgreSQL on macOS (no keychain or launchd changes there).
+# A version tag builds all four, runs the same checks, and attaches the bundles with SHA256SUMS to a draft release; the
+# owner publishes it. Synthetic only: no job reaches a real system or a secret beyond the workflow's own token.
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - install.sh
+      - tools/build-bundle.ts
+      - hub/platform/release.ts
+      - .github/workflows/release.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  install-linux:
+    name: Install on Linux (install.sh, real service)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+      # The build tool itself imports the Hub's code (bundle digest, zod): the checkout's own dependencies first.
+      - run: npm ci
+      - name: Build the linux-x64 bundle
+        run: |
+          node tools/build-bundle.ts --platform linux-x64 --out dist --version 0.0.0-ci
+          (cd dist && cat ./*.sha256 > SHA256SUMS)
+      - name: Install with install.sh
+        run: bash install.sh --bundle dist/circle-hub-0.0.0-ci-linux-x64.tar.gz --environment test
+      - name: The service answers over HTTP and HTTPS, and the first administrator can be set up
+        run: |
+          set -eu
+          curl -fsS http://127.0.0.1:7420/healthz
+          # The service account's home is its data root.
+          sudo -u circle-hub -H sh -c 'cat "$HOME/tls/ca.crt"' > "$RUNNER_TEMP/ca.crt"
+          curl -fsS --cacert "$RUNNER_TEMP/ca.crt" https://127.0.0.1:7443/healthz
+          curl -fsS --cacert "$RUNNER_TEMP/ca.crt" https://127.0.0.1:7443/console/setup | grep -q '设置码'
+          circle-hub status
+          circle-hub tls status
+      - name: Running the installer again is an upgrade that changes nothing
+        run: bash install.sh --bundle dist/circle-hub-0.0.0-ci-linux-x64.tar.gz --environment test
+
+  bundle-macos:
+    name: Bundled Node and PostgreSQL on macOS
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+      # The build tool itself imports the Hub's code (bundle digest, zod): the checkout's own dependencies first.
+      - run: npm ci
+      - name: Build the darwin-arm64 bundle
+        run: node tools/build-bundle.ts --platform darwin-arm64 --out dist --version 0.0.0-ci
+      - name: Run the bundled Hub with its own Node and PostgreSQL in a scratch data root
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/unpacked"
+          tar -x -z -f dist/circle-hub-0.0.0-ci-darwin-arm64.tar.gz -C "$RUNNER_TEMP/unpacked"
+          bundle="$RUNNER_TEMP/unpacked/circle-hub-0.0.0-ci-darwin-arm64"
+          "$bundle/node/bin/node" --version
+          export CIRCLE_HUB_DATA_DIR="$RUNNER_TEMP/hub-root"
+          "$bundle/node/bin/node" "$bundle/app/bin/circle-hub" help > /dev/null
+          "$bundle/node/bin/node" "$bundle/app/bin/circle-hub" init --environment test --https-port 7443
+          "$bundle/node/bin/node" "$bundle/app/bin/circle-hub" db status
+          "$bundle/node/bin/node" "$bundle/app/bin/circle-hub" tls init
+          "$bundle/node/bin/node" "$bundle/app/bin/circle-hub" tls status
+          "$bundle/node/bin/node" "$bundle/app/bin/circle-hub" db stop
+
+  publish:
+    name: Draft release with all bundles
+    if: github.ref_type == 'tag'
+    needs: [install-linux, bundle-macos]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+      # The build tool itself imports the Hub's code (bundle digest, zod): the checkout's own dependencies first.
+      - run: npm ci
+      - name: Build every bundle
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME#v}"
+          for platform in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
+            node tools/build-bundle.ts --platform "$platform" --out dist --version "$version"
+          done
+          (cd dist && cat ./*.sha256 > SHA256SUMS && rm ./*.sha256 && ls -l)
+      - name: Attach them to a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --title "circle-hub ${GITHUB_REF_NAME#v}" \
+            --notes "一键安装：curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/install.sh | bash（macOS 和 Linux）。变更见 CHANGELOG.md。"

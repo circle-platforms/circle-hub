@@ -73,7 +73,7 @@ export function usage(platform: NodeJS.Platform = process.platform): string {
     `  service install|uninstall|start|stop|status    ${platform === 'linux' ? 'systemd' : 'launchd'} 用户服务 circle-hub serve`,
     '  backup [--keep <份数>]                         备份数据库、对象、密钥库与设置文件，并清理旧备份',
     '  restore <备份目录>                             校验后恢复到空的数据根',
-    '  deploy [--source <目录>] [--commit <提交>] [--copy]   部署一个提交；失败时恢复部署前备份并切回上一版',
+    '  deploy [--source <目录>] [--commit <提交>] [--copy] | --bundle <解开的发布包> [--node <路径>]   部署一个提交或发布包；失败时恢复部署前备份并切回上一版',
     '  rollback                                       回到上一版并恢复它部署前的备份',
     '  rehearse [--keep]                              在临时数据根里演练备份、销毁与恢复',
     '  tls init [--renew-authority]|issue|status      内置 HTTPS 的本地证书颁发机构和服务器证书（数据根的 tls 目录）',
@@ -440,14 +440,17 @@ const restore: Handler = async (args, context, io) => {
 };
 
 const deployCommand: Handler = async (args, context, io) => {
-  const { values, positionals } = parse(args, { source: { type: 'string' }, commit: { type: 'string' }, copy: { type: 'boolean' }, node: {type:'string'} });
+  const { values, positionals } = parse(args, { source: { type: 'string' }, commit: { type: 'string' }, copy: { type: 'boolean' }, bundle: { type: 'string' }, node: {type:'string'} });
   noArguments(positionals);
   if (values.copy && values.commit !== undefined) throw new UsageError('--copy 与 --commit 不能同时用');
-  const source = {
-    path: resolve(io.cwd, values.source ?? '.'),
-    ...(values.commit === undefined ? {} : { commit: values.commit }),
-    ...(values.copy ? { copy: true } : {}),
-  };
+  if (values.bundle !== undefined && (values.copy || values.commit !== undefined || values.source !== undefined)) throw new UsageError('--bundle 不能和 --source、--commit 或 --copy 同时用');
+  const source = values.bundle !== undefined
+    ? { path: resolve(io.cwd, values.bundle), bundle: true }
+    : {
+      path: resolve(io.cwd, values.source ?? '.'),
+      ...(values.commit === undefined ? {} : { commit: values.commit }),
+      ...(values.copy ? { copy: true } : {}),
+    };
   io.stdout(`数据根：${context.layout.root}`);
   const node = context.platform === 'linux' || values.node !== undefined ? (await selectedNode(context, (await settingsOf(context)).node, values.node)).node : undefined;
   const report = await deploy(node === undefined ? context : { ...context, nodePath: node }, source);
