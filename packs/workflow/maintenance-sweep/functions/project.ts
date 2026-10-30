@@ -3,10 +3,10 @@
 // clarified), the run starts with an empty result. A sweep that would not fit the sandbox's output budget is a clean
 // refusal (too_large), never a sandbox memory failure.
 
-import { readParameters, sweepOf, type SweepItem } from './sweep.ts';
+import { maintainable, readParameters, sweepOf, type SweepItem } from './sweep.ts';
 import { PACK, guarded, isRecord } from './text.ts';
 import { parseView } from './view.ts';
-import { FacetsError, readFacets, unplacedMessage, FACETS_FIX } from './facets.ts';
+import { FacetsError, readFacets, unknownSentence, unplacedMessage, FACETS_FIX } from './facets.ts';
 
 export const SLOT = 'impact';
 const BEHAVIOUR_SLOT = 'behaviour';
@@ -81,9 +81,15 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   const clue = behaviourClue(input, parsed.view);
   if (typeof clue === 'string') return refusal('behaviour_view', clue, 'behaviour 槽绑定同一对构建的 changed=behaviour 视图，或不绑定');
   let facets;try{facets=readFacets({ inputs: input.inputs }, parsed.view);}catch(error){if(error instanceof FacetsError)return refusal('facets_view',error.message,error.fix);throw error;}
-  const sweep = sweepOf(parsed.view, parameters);
+  const sweep = sweepOf(parsed.view, parameters, facets.unknown);
+  // Cases the facet view left out because their command attribution is unknown: the note carries their count and the
+  // view's notes (absent when there are none, so such a note is what 1.8.8 wrote), the message and a warning say them as
+  // unknown, and the checks keep any completeness claim unknown. They could change the sweep only through a removed or
+  // modified path.
+  const open = maintainable(sweep.note.diff);
+  const unknown = facets.unknown > 0 ? { unknown_entries: facets.unknown, facet_notes: facets.notes } : {};
   // The run note also names the view itself: the command-diff summary of the check cites it as its ground.
-  const note = { ...sweep.note, view: `src:${sha256}`, unplaced: facets.unplaced, unplaced_build: facets.build, message: `${sweep.note.message} ${unplacedMessage(facets)}` };
+  const note = { ...sweep.note, view: `src:${sha256}`, unplaced: facets.unplaced, unplaced_build: facets.build, message: `${sweep.note.message} ${unplacedMessage(facets)}${facets.unknown > 0 ? `另有 ${unknownSentence(facets.unknown, facets.notes, open)}` : ''}`, ...unknown };
   const budget = { ...LIMITS, ...limits };
   if (sweep.items.length > budget.maxItems) {
     return refusal('too_large', `要维护的用例有 ${sweep.items.length} 条，一次运行最多 ${budget.maxItems} 条`, '巡检范围只按命令定义的变化算：先看定义变化是否已经把范围缩小，再把起始构建换得离目标更近（少跨几个版本）', sweep.warnings.slice(0, 20));
@@ -91,7 +97,7 @@ export function projectItems(input: unknown, limits: Partial<ProjectLimits> = {}
   const out = {
     items: sweep.items.map((item) => itemOf(item, sha256)),
     groups: [note, ...(clue !== null ? [clue] : [])],
-    warnings: sweep.warnings.slice(0, 100),
+    warnings: facets.unknown > 0 ? [...sweep.warnings.slice(0, 99), { code: `${PACK}.unknown_entries`, message: `较早构建有 ${unknownSentence(facets.unknown, facets.notes, open)}` }] : sweep.warnings.slice(0, 100),
   };
   const bytes = Buffer.byteLength(JSON.stringify(out), 'utf8');
   if (bytes > budget.outputBytes) {

@@ -157,8 +157,16 @@ export function indexNote(skippedFrom: number): string {
   return `较早构建的索引缺少 ${skippedFrom} 份列出的文档，没有维护项并不能证明没有过期的用例。索引没有收录的用例，这里不作结论。缺少这些文档里用例的命令归属事实；下一步由集成者按视图说明补齐来源、重新同步知识库后重跑巡检，不能把未读范围当成没有。`;
 }
 
-/** The cases that need maintenance, and the run-level note. */
-export function sweepOf(view: NormView, parameters: Parameters): SweepResult {
+/** Whether the diff has a path an earlier-build case could need maintenance on: a removed or a modified command. A case of
+ * unknown command attribution could sit on such a path, so then the sweep cannot be called empty or whole. */
+export function maintainable(diff: readonly { change: string }[]): boolean {
+  return diff.some((row) => row.change === 'removed' || row.change === 'modified');
+}
+
+/** The cases that need maintenance, and the run-level note. `unknown` counts the earlier-build cases whose command
+ * attribution the facet view could not tell: when the diff is maintainable the note speaks of the cases whose attribution
+ * is known. */
+export function sweepOf(view: NormView, parameters: Parameters, unknown = 0): SweepResult {
   const warnings: Warning[] = [];
   const missing = new Set<string>();
   const byPath = new Map<string, Side>();
@@ -279,8 +287,9 @@ export function sweepOf(view: NormView, parameters: Parameters): SweepResult {
   });
 
   const parts: string[] = [`比较 ${view.fromBuild} 与 ${view.toBuild}。`];
-  if (items.length === 0) parts.push('没有需要维护的用例。');
-  else parts.push(`有 ${items.length} 条用例需要维护。`);
+  const partial = unknown > 0 && maintainable(diff);
+  if (items.length === 0) parts.push(partial ? '命令归属已知的用例里没有需要维护的。' : '没有需要维护的用例。');
+  else parts.push(partial ? `命令归属已知的用例里有 ${items.length} 条需要维护。` : `有 ${items.length} 条用例需要维护。`);
   // Only actually skipped sources make the index note; a fully read scope says so without an unknown.
   if (view.skippedFrom > 0) parts.push(indexNote(view.skippedFrom));
   if (view.truncated) parts.push(`影响视图被截断，变更路径共 ${view.changedPaths} 条，列出的不是全部。`);

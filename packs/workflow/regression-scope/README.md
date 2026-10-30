@@ -63,6 +63,30 @@ The uncovered list is computed before the priority filter and stored on the proj
 not make its path uncovered. `include_added: false` drops added paths from the scope and from the uncovered list. An
 empty `priorities` array keeps nothing. Input order does not change the output.
 
+## Unknown entries (1.8.9)
+
+The `facets` slot declares `unknown_entries: disclose` (`hub/knowledge/README.md`, "Unknown entries in facet and index
+views"), so the engine binds a facet view truncated only because some cases' command attribution is unknown
+(`unknown_only`). `readFacets` accepts `unknown_entries` (a positive integer on a truncated view) and `unknown_only` (true,
+with the count); any other value is a shape refusal, and a truncated view without `unknown_only` is refused as before
+(`regression-scope.facets_view`). The notes are quoted, never read to decide anything.
+
+With M such cases the note carries `unknown_entries: M` and `facet_notes` (the view's notes); the message says 已知 N 个
+未归位 and 另有 M 个用例的命令归属未知（不是 0 个，也不算未归位）with the next step quoted from the notes, and the warning
+`regression-scope.unknown_entries` says the same. While the note lists a considered path they could sit on it:
+`uncovered_changes` adds one unknown (`missing_input`), each uncovered path's statement says it may hold some of them,
+`in_scope` turns its empty-scope support into an unknown, and the note's scope sentence speaks of the cases whose
+attribution is known. Without a considered path they cannot enter the scope, so the claims are those of 1.8.8 and only
+the note, the message and the warning say them (judgment call: no unknown where the unknown cases cannot change the
+result). Without unknown entries every output is byte for byte that of 1.8.8. This pack compares no facet `total` with
+another view, so the population rule (`total + unknown_entries`) changes nothing here.
+
+The samples are unchanged: a check sample sees the projection note, a positive sample may only support and a negative one
+must refute, and no claim about unknown cases comes with a refutation of this pack, so no sample can hold one without
+changing the four samples the publish tests pin. `functions/facets.test.ts` and `production.test.ts` cover a complete
+view, an unknown-only view, unknown entries with other truncation and a truncated view with neither field;
+`examples/scope.json` illustrates the disclosure.
+
 ## Decisions
 
 1. The pack names no product and no catalog, so a run must not pass `product`, `version` or `build`.
@@ -92,7 +116,7 @@ fake reader. Both use a temporary PostgreSQL and are skipped where `sandbox-exec
 
 ## Limits
 
-- A missing, malformed, duplicate, mismatched or truncated facet input refuses startup (`regression-scope.facets_view`), with the missing complete count, the view notes and root reference for integrator repair; no automatic retry of the same root. Unplaced cases are a hint disclosure, not an unknown scope verdict. K2 placement proposals are not implemented; the client shows at most one page of examples with a continuation reference; bulk review uses an integrator export.
+- A missing, malformed, duplicate, mismatched or truncated facet input refuses startup (`regression-scope.facets_view`; since 1.8.9 a view truncated only by unknown entries starts and is disclosed, see above), with the missing complete count, the view notes and root reference for integrator repair; no automatic retry of the same root. Unplaced cases are a hint disclosure, not an unknown scope verdict. K2 placement proposals are not implemented; the client shows at most one page of examples with a continuation reference; bulk review uses an integrator export.
 
 
 - At most 10,000 check outcomes in one call (the engine's cap). A larger run becomes one `check_error`. The 5,000-case

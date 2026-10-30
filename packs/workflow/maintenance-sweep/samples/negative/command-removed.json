@@ -2,7 +2,7 @@
   "id": "command_removed",
   "source": "author",
   "check": "command_exists",
-  "note": "合成样例：用例放在已删除的路径上，阻断",
+  "note": "合成样例：用例放在已删除的路径上，阻断；分面视图另有 2 个用例的命令归属未知，记为未知，不是 0 个、不算未归位，也不是不通过",
   "subject": {
     "items": [
       {
@@ -31,6 +31,10 @@
           "fields": [],
           "references": []
         }
+      ],
+      "unknown_entries": 2,
+      "facet_notes": [
+        "2 个用例缺完整命令身份，未计入命令分面；下一步核对锁定命令树或补完整命令后重读，不把未知当作没有命令"
       ]
     }
   },
@@ -39,6 +43,11 @@
       "verdict": "refute",
       "code": "maintenance-sweep.case.command_removed",
       "item": "doc-1:n1",
+      "tier": "blocking"
+    },
+    {
+      "verdict": "unknown",
+      "reason": "missing_input",
       "tier": "blocking"
     }
   ]
