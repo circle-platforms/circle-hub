@@ -526,6 +526,33 @@ user-unit directory must be controlled by that account or a trusted administrato
 and linger. For a durable migration freeze use `service uninstall`, which stops and disables the unit; `service stop`
 alone does not disable autostart on the next login or reboot.
 
+## Windows (prepared, not verified on Windows)
+
+Nothing below is wired into the production factories (`agentFor`, `keychainFor`, `hubKeyProvider`, `createPostgres`), and
+the Windows release readiness verdict stays "not supported"; the evidence and open work are in
+`docs/hub-r4-tasks/windows-service-postgres.md`.
+
+- **PostgreSQL build** (`postgresBuild`): Windows x64 uses `@embedded-postgres/windows-x64` and its `.exe` files; Windows
+  ARM64 uses the same x64 build under Windows' x64 emulation (owner decision of 2026-10-30), installed after `npm ci` by
+  `node hub/platform/postgres-hybrid.ts`, which takes exactly the lockfile's version and SHA-512 and refuses anything else.
+  A missing build is an error naming that step, never a PostgreSQL from PATH, a system cluster or a download at start.
+- **Transport**: Windows has no peer authentication, so its cluster uses `loopbackConf`, `loopbackHba` and
+  `loopbackInitdbArguments`: 127.0.0.1 only, no Unix socket, SCRAM per role (the superuser role everywhere, the
+  application role on the Hub database only), everything else rejected. Passwords are 64 hexadecimal characters of key-store
+  bytes, never arguments or environment values; the application role is created from `scramVerifier`, and
+  `assertClusterDirectory` checks that the cluster on the port is this data root's before it is used.
+- **Service** (`windowsServiceAgent`, the same contract as launchd and systemd): the definition is
+  `<directory>/<label>.json` (`circle-hub-service@1`); the SCM command line is this Node, the release's
+  `windows-service-host.ts` and that file. Automatic start at boot, restart 10 s after a failure (also a non-crash one),
+  30 s graceful stop through the IPC channel and then the Job, PRESHUTDOWN accepted. The account is the service's virtual
+  account `NT SERVICE\<label>` unless a managed service account or LocalService is named; never LocalSystem, never a
+  password. A same-named service whose command line does not name this definition is never stopped, replaced or deleted.
+- **Fallback** (`windowsTaskAgent`): a boot-triggered scheduled task running the same host in task mode, as LocalService;
+  its stop is immediate and its host restarts the server 10 s after any exit. Chosen explicitly, never automatically.
+- **koffi**: only `windows-scm.ts` (and the stack's DPAPI, file and Job adapters) load it, only on Windows and only at
+  3.3.3. The SCM callbacks rely on koffi bringing calls from foreign threads to the JS main thread while
+  `StartServiceCtrlDispatcherW` blocks a koffi worker; that is a runner check.
+
 ### Independent platform review
 
 Antigravity independently reviewed commits `f6640e08` and `385d37d3` by static inspection and reported PASS, with two
