@@ -25,8 +25,8 @@ export class HubClient {
   private tokenSnapshot: string | null = null;
   lastText: string[] = [];
 
-  constructor(url: string, tokenFile: string, session: string) {
-    this.url = normalizeHubUrl(url);
+  constructor(url: string, tokenFile: string, session: string, plaintextHost: string | null = null) {
+    this.url = normalizeHubUrl(url, plaintextHost);
     this.tokenFile = tokenFile;
     this.session = session;
   }

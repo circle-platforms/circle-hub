@@ -12,6 +12,8 @@ export interface Settings {
   enabled: boolean;
   hub: string;
   token_file: string;
+  /** The one non-loopback host the user allowed to be reached over plain HTTP when enabling sharing. */
+  plaintext_host?: string;
 }
 
 export interface CaptureEvent {
@@ -75,9 +77,11 @@ export async function readSettings(session: string): Promise<Settings | null> {
   if (!await regular(path, true)) return null;
   let value: unknown;
   try { value = JSON.parse(await readFile(path, 'utf8')); } catch { throw new Error('invalid_settings'); }
-  const row = exact(value, ['schema', 'session', 'enabled', 'hub', 'token_file']);
+  const base = ['schema', 'session', 'enabled', 'hub', 'token_file'];
+  const row = exact(value, isRecord(value) && Object.hasOwn(value, 'plaintext_host') ? [...base, 'plaintext_host'] : base);
   need(row.schema === 'operation-capture-settings@1' && row.session === session && typeof row.enabled === 'boolean', 'invalid_settings', '会话开关格式不对');
   text(row.hub, 'invalid_settings', 'Hub 地址格式不对', 2048);
+  if (Object.hasOwn(row, 'plaintext_host')) need(typeof row.plaintext_host === 'string' && /^[a-z0-9.-]{1,253}$/.test(row.plaintext_host), 'invalid_settings', '明文主机格式不对');
   const tokenFile = text(row.token_file, 'invalid_settings', '令牌文件路径格式不对', 4096);
   need(isAbsolute(tokenFile), 'invalid_settings', '令牌文件必须使用绝对路径');
   return row as unknown as Settings;
@@ -96,10 +100,10 @@ async function writeSettings(settings: Settings): Promise<void> {
   }
 }
 
-export async function enable(session: string, hub: string, tokenFile: string): Promise<void> {
+export async function enable(session: string, hub: string, tokenFile: string, plaintextHost: string | null = null): Promise<void> {
   const id = validSession(session);
   const dir = await prepareSession(id);
-  await withLock(dir, () => writeSettings({ schema: 'operation-capture-settings@1', session: id, enabled: true, hub, token_file: tokenFile }));
+  await withLock(dir, () => writeSettings({ schema: 'operation-capture-settings@1', session: id, enabled: true, hub, token_file: tokenFile, ...(plaintextHost === null ? {} : { plaintext_host: plaintextHost }) }));
 }
 
 export async function disable(session: string): Promise<void> {

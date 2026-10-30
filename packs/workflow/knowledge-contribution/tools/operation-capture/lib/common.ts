@@ -65,12 +65,17 @@ export function sessionDirectory(session: string, env?: NodeJS.ProcessEnv): stri
   return join(stateRoot(env), 'sessions', sha256(validSession(session)));
 }
 
-export function normalizeHubUrl(value: string): URL {
+/**
+ * Plain HTTP is accepted for a loopback address, and for exactly one other host the user named when enabling sharing
+ * (`plaintextHost`): the token and the captured output then cross the network unencrypted, which is the user's decision.
+ */
+export function normalizeHubUrl(value: string, plaintextHost: string | null = null): URL {
   let url: URL;
   try { url = new URL(value); } catch { throw new OperationError('invalid_hub_url', 'Hub 地址格式不对'); }
   const loopback = url.hostname === 'localhost' || url.hostname === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(url.hostname);
   need(url.username === '' && url.password === '' && url.search === '' && url.hash === '', 'invalid_hub_url', 'Hub 地址不能带凭据、查询或片段');
-  need(url.protocol === 'https:' || (url.protocol === 'http:' && loopback), 'invalid_hub_url', 'Hub 只用 HTTPS，回环假 Hub 可用 HTTP');
+  const named = plaintextHost !== null && plaintextHost.length > 0 && url.hostname === plaintextHost.toLowerCase();
+  need(url.protocol === 'https:' || (url.protocol === 'http:' && (loopback || named)), 'invalid_hub_url', 'Hub 只用 HTTPS；明文 HTTP 只许本机回环，或开启时用 --allow-plaintext-host 对这一个主机明确放行');
   if (url.hostname === 'localhost') url.hostname = '127.0.0.1';
   return url;
 }

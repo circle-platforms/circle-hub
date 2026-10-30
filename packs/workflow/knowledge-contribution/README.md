@@ -1,4 +1,8 @@
-# knowledge-contribution 1.3.11
+# knowledge-contribution 1.3.12
+
+## 1.3.12
+
+- 操作采集技能可以连没有 TLS 的内网 Hub：`enable` 新增可选 `--allow-plaintext-host <主机>`，主机必须与 `--hub` 的主机相同，只记在这个会话的状态里（设置里多一个可选字段 `plaintext_host`；旧设置照常读取）。没有这个参数时规则不变：只用 HTTPS，明文 HTTP 只许本机回环。用了这个参数，令牌和上传的内容会在网络上不加密传输——这是用户在开启共享时明确做的决定，技能不替用户做。`testing/operation-plaintext.test.ts` 覆盖拒绝、放行、主机不符、凭据地址、旧设置。
 
 ## 1.3.11
 

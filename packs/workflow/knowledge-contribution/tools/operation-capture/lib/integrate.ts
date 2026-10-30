@@ -130,7 +130,7 @@ export async function submitProposals(session: string, proposalPath: string, pro
   model = text(model, 'invalid_model', '需要声明整合模型的确切身份', 500);
   const captures = await verifyState(session);
   const rows = await proposals(resolve(proposalPath), session, captures);
-  const hub = new HubClient(settings.hub, settings.token_file, session);
+  const hub = new HubClient(settings.hub, settings.token_file, session, settings.plaintext_host ?? null);
   const dir = sessionDirectory(session);
   const allowed = async <T>(action: () => Promise<T>): Promise<T> => withLock(dir, async () => {
     const current = await readSettings(session);

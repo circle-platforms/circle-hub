@@ -9,7 +9,7 @@ async function uploadPending(dir: string, settings: Settings): Promise<void> {
   const uploaded = new Set(events.flatMap(event => event.kind === 'upload' ? [event.capture] : []));
   const pending = events.filter(event => event.kind === 'capture' && !uploaded.has(event.sequence));
   if (pending.length === 0) return;
-  const hub = new HubClient(settings.hub, settings.token_file, settings.session);
+  const hub = new HubClient(settings.hub, settings.token_file, settings.session, settings.plaintext_host ?? null);
   for (const capture of pending) {
     if (capture.kind !== 'capture') continue;
     const bytes = await outputBytes(settings.session, capture);
