@@ -53,6 +53,7 @@ nav_order: 10
 | 所有调用都失败，提示未授权 | 令牌被吊销、账号被停用，或复制时多了空格 | 请管理员重发令牌，重新 `/secrets HUB_TOKEN` 后 `/mcp reload` |
 | 长调用后 `fetch failed` | 连接断了，服务端可能还在算 | 用调用查询对账，不要重发 |
 | 主机名不被接受 | Hub 只认配置里列出的主机名 | 用管理员给的那个地址，不要换成别名或 IP |
+| `circle update` 报 `release lookup failed: fetch failed` | 安装记录 `installation.json`（安装目录下）里的 `repo` 还是旧仓库名 `qingshanfeihu/circle`，GitHub 现在对它回 301 重定向，更新器不跟 | 把 `repo` 改成 `circle-platforms/circle`（改前备份），再 `circle update --check`；新装的 Circle 不会有这个问题 |
 
 ## 给管理员：开通一位同事
 
