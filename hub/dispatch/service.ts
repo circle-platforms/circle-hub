@@ -93,6 +93,12 @@ function precheckIssues(events:readonly Event[]):NonNullable<JobStatus['failed_c
     return [{step:typeof d.step==='string'?d.step:String(d.phase),...(typeof d.seat==='string'?{seat:d.seat}:{}),...(typeof d.check==='string'?{check:d.check}:{}),missing_fact:d.missing_fact,next_action:typeof d.next_action==='string'?d.next_action:'管理员核对附加只读来源及期望条件声明，补齐来源与期望事实后再采证'}];
   });
 }
+/** The physical resources a run's lineage does not hold for the whole dispatch window; the refusal names them (CES reports a
+ * failed bed check as it is). */
+class LeaseCoverageError extends Error {
+  missing: string[];
+  constructor(missing: string[]) { super('血缘不持有全部物理资源，或租约到期早于最长运行时间；请重新预订后核验'); this.missing = missing; }
+}
 export class DispatchService {
   readonly options: DispatchOptions;
   readonly registry: ExecutorRegistry;
@@ -315,7 +321,7 @@ export class DispatchService {
     }
     const attempt = attempts.length + 1;
     const source = await this.options.records.artifacts.source({ id: input.user, name: '', role: 'user' }, input.sha256, { consumer: 'function' });
-    let initial:HolderSnapshot[];try{initial=await this.holders(input.ancestors,input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);}catch{return this.boundaryRefused(by,{...provisional,input},deny(5,'LEASE_UNAVAILABLE','缺少覆盖派发窗口的同血缘资源租约；请取得租约并重证基线'));}
+    let initial:HolderSnapshot[];try{initial=await this.holders(input.ancestors,input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);}catch(error){const missing=error instanceof LeaseCoverageError?error.missing:[];return this.boundaryRefused(by,{...provisional,input},deny(5,'LEASE_UNAVAILABLE',missing.length?`缺少覆盖派发窗口的同血缘资源租约：${missing.join('、')}；执行器的目标是这些键所在的整台，在本运行的预订谱系里取得全部键后重开计划与核验`:'缺少覆盖派发窗口的同血缘资源租约；请取得租约并重证基线'));}
     const binding: JobBinding = { ...provisional, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
     if(d.calls.submit.write)binding.target_key=digestOfValue(bind(d.calls.submit.write.target_key,this.context(binding)));
     delete binding.run; // Restricted response captures deliberately clear input; never leave a second run binding behind.
@@ -754,7 +760,9 @@ export class DispatchService {
   }
   private async holders(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<HolderSnapshot[]> {
     const rows = await this.options.leases.holderSnapshot(keys);
-    if (rows.length !== keys.length || rows.some(r => r.released || r.user !== user || !ancestors.includes(r.run) || (r.expires_at !== null && Date.parse(r.expires_at) <= this.now().getTime() + requiredMs))) throw new Error('血缘不持有全部物理资源，或租约到期早于最长运行时间；请重新预订后核验');
+    const held = (key: string) => rows.some(r => r.key === key && !r.released && r.user === user && ancestors.includes(r.run) && (r.expires_at === null || Date.parse(r.expires_at) > this.now().getTime() + requiredMs));
+    const missing = keys.filter(key => !held(key));
+    if (rows.length !== keys.length || missing.length) throw new LeaseCoverageError(missing.length ? missing : keys);
     return rows;
   }
   private sameFences(before: readonly HolderSnapshot[], after: readonly HolderSnapshot[]): boolean {
