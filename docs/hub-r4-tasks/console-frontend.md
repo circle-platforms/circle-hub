@@ -38,3 +38,11 @@
 - `/console/api` JSON 接口、MCP 标准授权（授权页、邀请码）、一次性登录链接、实时推送：等所有者在接口文档里定下待定事项后再做。
 - 业务系统的读取统计、知识条目的被引用次数、最近备份、数据库大小、运行环境的占用与冻结：后端还没有这些数据，页面上不显示。
 - 其余手写的状态词（启用、停用、是、否等）改由词表提供。
+
+## 验证（2026-11-01，本机 macOS，Node 24.21）
+
+- `npm run typecheck`、`npm run verify:contracts`：通过。
+- `npm run test:unit`：8039 项，8032 通过，0 失败。跳过的都是只在 Linux 上运行的检查（systemd 用户服务、Linux 恢复与私钥演练、Linux 操作系统隔离、孤儿进程清理、驻留内存统计），以及本机有 `sandbox-exec` 而不适用的一项。
+- `npm run test:acceptance`：201 项，201 通过，0 跳过。
+- `npm run test:docs`：276 项全部通过；`npm run verify:references`、`npm run test:references`：8 项全部通过。
+- 控制台各页面另用无头 Chrome（临时配置目录）截图核对了深色与浅色两种主题。
