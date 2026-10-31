@@ -37,6 +37,8 @@ usage() {
   --environment <类别>      环境类别 test、shared 或 production（默认 production）
   --bundle <文件>           用本地的发布包代替下载（同目录下要有 SHA256SUMS）
   --dry-run                只显示要做什么，不改动任何东西
+环境变量：
+  CIRCLE_HUB_LIBPQ_BIN=<目录>  备份用的 PostgreSQL 18 pg_dump 和 pg_restore 所在的绝对目录（默认 macOS 用 Homebrew 的 libpq，Linux 用 postgresql-client-18）
 EOF
 }
 
@@ -143,23 +145,30 @@ BUNDLE_DIR_NAME="${NAME%.tar.gz}"
 
 # ---------------------------------------------------------------- per system
 
-# Every deploy backs the database up first with pg_dump and pg_restore of the server's major version (PostgreSQL 18).
-LIBPQ_BIN=""
+# Every deploy backs the database up first with pg_dump and pg_restore of the server's major version (PostgreSQL 18):
+# those in CIRCLE_HUB_LIBPQ_BIN when it is set, else the system's (Homebrew's libpq, postgresql-client-18).
+LIBPQ_BIN="${CIRCLE_HUB_LIBPQ_BIN:-}"
 pg18() { [ -x "$1/pg_dump" ] && [ -x "$1/pg_restore" ] && "$1/pg_dump" --version 2>/dev/null | grep -q ' 18\.'; }
+if [ -n "${LIBPQ_BIN}" ]; then
+  case "${LIBPQ_BIN}" in /*) ;; *) fail "CIRCLE_HUB_LIBPQ_BIN 要是绝对路径：${LIBPQ_BIN}" ;; esac
+  pg18 "${LIBPQ_BIN}" || fail "CIRCLE_HUB_LIBPQ_BIN 里没有 PostgreSQL 18 的 pg_dump 和 pg_restore：${LIBPQ_BIN}"
+fi
 
 if [ "${OS}" = darwin ]; then
   DATA="${CIRCLE_HUB_DATA_DIR:-${HOME}/Library/Application Support/circle-hub}"
   WRAPPER_DIR="${HOME}/.local/bin"
-  for candidate in /opt/homebrew/opt/libpq/bin /usr/local/opt/libpq/bin; do
-    if pg18 "${candidate}"; then LIBPQ_BIN="${candidate}"; break; fi
-  done
+  if [ -z "${LIBPQ_BIN}" ]; then
+    for candidate in /opt/homebrew/opt/libpq/bin /usr/local/opt/libpq/bin; do
+      if pg18 "${candidate}"; then LIBPQ_BIN="${candidate}"; break; fi
+    done
+  fi
   if [ -z "${LIBPQ_BIN}" ]; then
     if command -v brew >/dev/null 2>&1; then
       say "安装备份要用的 PostgreSQL 客户端（Homebrew 的 libpq）"
       run brew install libpq
       LIBPQ_BIN="$(brew --prefix libpq 2>/dev/null)/bin"
     elif [ "${DRY_RUN}" != 1 ]; then
-      fail "部署前要先备份数据库，需要 PostgreSQL 18 的 pg_dump 和 pg_restore：先安装 Homebrew（https://brew.sh），再重新运行；或装好 libpq 后设置 CIRCLE_HUB_LIBPQ_BIN"
+      fail "部署前要先备份数据库，需要 PostgreSQL 18 的 pg_dump 和 pg_restore：先安装 Homebrew（https://brew.sh），再重新运行；或把 CIRCLE_HUB_LIBPQ_BIN 设成它们所在的绝对目录再运行"
     fi
   fi
 else
@@ -191,7 +200,7 @@ if [ "${OS}" = linux ]; then
     say "安装包函数沙箱需要的 bubblewrap、AppArmor 工具，和备份要用的 PostgreSQL 18 客户端"
     run ${SUDO} apt-get update -qq
     run ${SUDO} apt-get install -y bubblewrap apparmor ca-certificates curl
-    if ! pg18 /usr/lib/postgresql/18/bin; then
+    if [ -z "${LIBPQ_BIN}" ] && ! pg18 /usr/lib/postgresql/18/bin; then
       if ! run ${SUDO} apt-get install -y postgresql-client-18; then
         say "系统软件源里没有 postgresql-client-18：加入 PostgreSQL 官方 apt 源（apt.postgresql.org）"
         CODENAME="$(. /etc/os-release && printf '%s' "${VERSION_CODENAME:-}")"
@@ -206,9 +215,9 @@ if [ "${OS}" = linux ]; then
       fi
     fi
   else
-    say "注意：这台机器没有 apt-get；请自行安装 PostgreSQL 18 客户端（pg_dump、pg_restore），以及包函数沙箱要的 /usr/bin/bwrap、/usr/bin/aa-exec 和 apparmor_parser"
+    say "注意：这台机器没有 apt-get；请自行安装 PostgreSQL 18 客户端（pg_dump、pg_restore，装在别处时用 CIRCLE_HUB_LIBPQ_BIN 指出目录），以及包函数沙箱要的 /usr/bin/bwrap、/usr/bin/aa-exec 和 apparmor_parser"
   fi
-  LIBPQ_BIN="/usr/lib/postgresql/18/bin"
+  LIBPQ_BIN="${LIBPQ_BIN:-/usr/lib/postgresql/18/bin}"
   if ! id circle-hub >/dev/null 2>&1; then
     say "建立服务账户 circle-hub（数据目录 ${DATA}）"
     run ${SUDO} useradd --system --home-dir "${DATA}" --create-home --shell /usr/sbin/nologin circle-hub
