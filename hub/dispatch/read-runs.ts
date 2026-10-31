@@ -13,9 +13,11 @@ export interface RunJob {
    * 'done' once the job has its terminal record, 'unknown' once its effect is recorded as unresolved and waits for an
    * administrator, null while it runs. */
   ended:'done'|'unknown'|null;
-  /** Whether the job ended at the effect boundary, before any reservation or remote call (its journal records the refusal). */
+  /** Whether the job ended at the effect boundary before any remote call: its journal records the refusal and no response
+   * of the target. A refusal at the final boundary, after the connector session, the precheck and the probes, is not one. */
   boundary_refused:boolean;
 }
+const remoteResponse=(phase:unknown)=>typeof phase==='string'&&phase.endsWith('.response');
 /**
  * The jobs of each run a dispatch job is bound to (as its verification run or its plan run), from one scan of the
  * reservations. Job events are indexed by job, not by run: run maintenance reads these jobs' positions to see whether
@@ -34,13 +36,19 @@ export async function dispatchedRuns(records:Pick<RecordsKit,'store'>):Promise<M
   }while(cursor!==null);
   return runs;
 }
-export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick<DispatchService,'status'>,by:Principal,run:string):Promise<RunJob[]>{
+/**
+ * The jobs bound to a run. With `unbound`, also the run's jobs refused by the preflight before any input was bound (their
+ * binding names the run only): the runner's notes list them, run maintenance does not need them. Such a job carries the
+ * run as its verification run and no plan run, item or digest.
+ */
+export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick<DispatchService,'status'>,by:Principal,run:string,options:{unbound?:boolean}={}):Promise<RunJob[]>{
   RunId.parse(run);
-  const jobs=new Map<string,z.infer<typeof Input>>();let cursor:string|null=null;
+  const jobs=new Map<string,z.infer<typeof Input>|null>();let cursor:string|null=null;
   do{
     const page:Page<StoredRecord<ActionBody>>=await records.store.find<ActionBody>({kind:'action',key:'dispatch.phase',value:'reservation',limit:500,cursor});
     for(const record of page.items){
-      const binding=record.body.detail.binding as {job?:unknown;input?:{run?:unknown;plan_run?:unknown}}|undefined;
+      const binding=record.body.detail.binding as {job?:unknown;run?:unknown;input?:{run?:unknown;plan_run?:unknown}|null}|undefined;
+      if(options.unbound&&binding&&!binding.input&&binding.run===run){const job=Sha256.safeParse(binding.job);if(job.success&&!jobs.has(job.data))jobs.set(job.data,null);continue;}
       if(!binding?.input||binding.input.run!==run&&binding.input.plan_run!==run)continue;
       const input=Input.safeParse(binding.input),job=Sha256.safeParse(binding.job);
       if(!input.success||!job.success)throw new IntegrityError('派发预订记录缺少运行绑定');
@@ -67,8 +75,10 @@ export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick
     const proof=history[status.events-1];
     if(!proof)throw new IntegrityError('派发状态缺少对应的追加记录前缀');
     const ended=prefix.some(e=>e.body.detail.done===true)?'done':prefix.some(e=>e.body.detail.phase==='unknown')?'unknown':null;
-    const boundary_refused=prefix.some(e=>e.body.detail.phase==='boundary_refused');
-    out.push({job,record:proof.digest,verification_run:input.run,plan_run:input.plan_run,verification_item:input.item,items:[...input.items],sha256:input.sha256,status,ended,boundary_refused,...(management_exit?{management_exit}:{})});
+    const refusal=prefix.findIndex(e=>e.body.detail.phase==='boundary_refused');
+    const boundary_refused=refusal>=0&&!prefix.slice(0,refusal).some(e=>remoteResponse(e.body.detail.phase));
+    const bound=input?{verification_run:input.run,plan_run:input.plan_run,verification_item:input.item,items:[...input.items],sha256:input.sha256}:{verification_run:run,plan_run:'',verification_item:'',items:[],sha256:''};
+    out.push({job,record:proof.digest,...bound,status,ended,boundary_refused,...(management_exit?{management_exit}:{})});
   }
   return out;
 }

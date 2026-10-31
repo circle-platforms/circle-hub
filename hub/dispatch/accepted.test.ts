@@ -3,10 +3,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setup } from './testing/context.ts';
-import { acceptedDispatch } from './accepted.ts';
+import { acceptedDispatch, MAX_NOTE_TEXT, MAX_NOTES, runnerNote } from './accepted.ts';
 import { definition } from './testing/definition.ts';
 import { readRunJobs } from './read-runs.ts';
 import type { ActionBody } from '../records/api.ts';
+import type { JobStatus } from './service.ts';
 
 type C = Awaited<ReturnType<typeof setup>>;
 async function bindingOf(c: C, job: string): Promise<Record<string, unknown>> {
@@ -40,7 +41,53 @@ test('without an enabled administrator, or when the release does not hold, the H
   c.detail.latest!.result.errors.push({ code: 'SOURCE_UNAVAILABLE', message: 'synthetic' });
   const held = await c.service.dispatchAccepted(c.run);
   assert.equal(held.started, false); assert.match(held.reason ?? '', /放行条件尚未全部满足/);
+  // The release check that does not hold is named by its fixed label; no administrator command.
+  assert.match(held.reason ?? '', /核验结果没有未消除错误/); assert.doesNotMatch(held.reason ?? '', /circle-hub|job dispatch/);
   assert.equal(c.calls.includes('send_blob'), false);
+});
+
+test('a refusal at the final boundary, after the target was reached, is read and never tried again', async (t) => {
+  const c = await setup(); t.after(() => c.close());
+  // The executor changes after the verification run froze its snapshot, as at every release of the pack: the final boundary
+  // refuses after the connector session, the precheck and the probes.
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, limitations: ['合成：核验运行之后更新的执行器'] });
+  const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.ok(first?.job, JSON.stringify(first));
+  const [job] = await settled(c);
+  assert.equal(job.job, first.job); assert.equal(job.status.outcome, 'not_dispatched'); assert.equal(job.boundary_refused, false);
+  assert.ok(c.calls.length > 0 && !c.calls.includes('send_blob'), JSON.stringify(c.calls));
+  const reached = c.calls.length;
+  const again = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.equal(again.length, 1, JSON.stringify(again)); assert.equal(again[0].job, first.job, 'the refused job is read, no new job');
+  assert.match(again[0].text, /不会再派发/); assert.doesNotMatch(again[0].text, /circle-hub/);
+  assert.equal(c.calls.length, reached, 'a repeat does not reach the target again');
+});
+
+test('the notes of a run stay within the answer limits: the newest, after a line counting the older', async (t) => {
+  const c = await setup({ mode: 'lineage' }); t.after(() => c.close());
+  for (let i = 0; i < 18; i++) await acceptedDispatch(c.kit, c.service, c.run, true);
+  const notes = await acceptedDispatch(c.kit, c.service, c.run, false);
+  assert.equal(notes.length, MAX_NOTES, JSON.stringify(notes.map((note) => note.text)));
+  assert.match(notes[0].text, /另有 3 个更早的作业/);
+  for (const note of notes) assert.ok(note.text.length <= MAX_NOTE_TEXT, note.text);
+  assert.equal(c.calls.includes('send_blob'), false);
+});
+
+test('the runner note names no administrator command in any job state', () => {
+  const job = 'a'.repeat(64);
+  const status = (extra: Record<string, unknown>) => ({ job, phase: 'synthetic', outcome: 'unknown', frozen: false, events: 3, next_action: `circle-hub job resume ${job}`, ...extra }) as unknown as JobStatus;
+  const rows: Array<{ ended: 'done' | 'unknown' | null; boundary_refused?: boolean; status: JobStatus; expect: RegExp }> = [
+    { ended: null, status: status({}), expect: /还在进行/ },
+    { ended: 'unknown', status: status({ frozen: true }), expect: /等管理员 admin-1 对账/ },
+    { ended: 'done', status: status({ outcome: 'not_dispatched', reason: '合成：缺整台租约' }), expect: /不会再派发/ },
+    { ended: 'done', boundary_refused: true, status: status({ outcome: 'not_dispatched', reason: '合成：缺整台租约' }), expect: /Hub 会再试一次/ },
+    { ended: 'done', status: status({ outcome: 'effective', result: `src:${'b'.repeat(64)}` }), expect: /读结果引用看逐条结论/ },
+    { ended: 'done', status: status({ outcome: 'effective', result: `src:${'b'.repeat(64)}`, missing_fact: '合成：缺归属认证' }), expect: /部分条目没有判定/ },
+  ];
+  for (const row of rows) {
+    const note = runnerNote({ job, boundary_refused: row.boundary_refused ?? false, ended: row.ended, status: row.status }, 'admin-1');
+    assert.match(note.text, row.expect); assert.doesNotMatch(note.text, /circle-hub|job resume|job dispose/);
+  }
 });
 
 test('a dispatch refused at the effect boundary before any reservation says that nothing was sent and why', async (t) => {

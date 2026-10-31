@@ -130,3 +130,19 @@ test('a row that did not pass names its log and device sessions as sources its r
     assert.equal(await text(other, row.evidence.log), null);
   }
 });
+
+test('a session name that is no valid source name still saves the session under a positional name and the job completes', async t => {
+  const long = 'x'.repeat(301);
+  const c = await setup({ alter: (name, value) => name === 'read_blob' ? { ...value, rows: [{ id: 'synthetic-case', outcome: 'bad', log: 'synthetic log', sessions: { 'bad\u0007name': 'synthetic bell session', [long]: 'synthetic long session' } }] } : value }); t.after(() => c.close());
+  await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, result: { ...c.executor.definition.result, log: '/log', sessions: '/sessions' } });
+  await c.freezeExecutor();
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(state.outcome, 'effective', JSON.stringify(state)); assert.ok(state.result);
+  const row = (await report(c, state.result!)).rows[0];
+  // The row keeps the names the target reported; the sources take positional names.
+  assert.deepEqual(Object.keys(row.evidence.sessions).sort(), ['bad\u0007name', long].sort());
+  for (const [index, name] of ['bad\u0007name', long].entries()) {
+    const source = await c.kit.artifacts.source(c.owner, row.evidence.sessions[name].slice(4));
+    assert.equal(source?.artifact.body.name, `session-${index + 1}.txt`);
+  }
+});
