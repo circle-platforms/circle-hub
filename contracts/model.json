@@ -1038,6 +1038,9 @@
     "处置为暂缓且未到期的条目留在已隔离，随处置轴把“保持未知”改为带期限的暂缓（来源：任务页 hub-unknown-model 第 4 条；未知普查第 3 节第 1 条）",
     "提交未覆盖不再单独把条目归入未完成：各要求项照 W07 R[3] 记终态，还有必需要求项未完成的才进未完成（来源：决定 35 第 24 项；任务页 hub-unknown-exits 第 12 条）",
     "已隔离和未完成的条目写明缺什么和出口（来源：所有者 2026-10-23 的规矩；未知普查第 3 节第 1 条）"
+   ],
+   "changes14": [
+    "加任务结果轴 task_result：控制台按分区与要求项满足状态推出一个任务的结果，未知不显示为通过（来源：所有者 2026-10-31 在简化提案中勾选的界面用语一项）"
    ]
   },
   {
@@ -3583,6 +3586,12 @@
    "rule": "分类、判断、类型声明、命令解析和结构声明状态分栏，不与 V03 层终态混同；未分类/未判断/类型未声明/参数未核点名缺事实和下一步。含糊率显示已判断分母及未判断数；旧结果追加 legacy_keyword_rules 和受影响字段，凭据防护信号用 possible_credentials，不把它们显示为业务真假结论。",
    "tracedTo": [
     "决定（集成者，10-24，关键词整改）"
+   ]
+  },
+  {
+   "rule": "控制台用界面用语：词表的取值或轴带界面用语（ui）时，控制台只显示界面用语，其余显示模型标签；返回给模型的文字仍用模型标签。一个任务的结果（task_result）由分区与要求项满足状态推出：有条目已隔离为派发结果未确认；否则有条目未完成为未完成；否则有条目已拒收为已拒收；全部已交付时，要求项全部满足为已通过，有未决的为已交付（含未决项），其余为已交付（含未满足项）；还没有校验结果为等待提交中，管理放弃为已放弃。未知不显示为通过。",
+   "tracedTo": [
+    "决定（所有者，10-31，简化提案决策第 3 项）"
    ]
   }
  ],
@@ -8260,11 +8269,13 @@
    "values": [
     {
      "code": "observed",
-     "label": "观察"
+     "label": "观察",
+     "ui": "观测"
     },
     {
      "code": "projected",
-     "label": "投影"
+     "label": "投影",
+     "ui": "推算"
     },
     {
      "code": "declared",
@@ -8272,11 +8283,13 @@
     },
     {
      "code": "candidate",
-     "label": "候选"
+     "label": "候选",
+     "ui": "待确认"
     },
     {
      "code": "client_captured",
-     "label": "客户端捕获"
+     "label": "客户端捕获",
+     "ui": "客户端采集"
     }
    ]
   },
@@ -8360,34 +8373,41 @@
   {
    "axis": "resolution",
    "label": "解析状态",
+   "ui": "出处定位",
    "owner": "T04",
    "values": [
     {
      "code": "resolved",
-     "label": "已解析"
+     "label": "已解析",
+     "ui": "已定位"
     },
     {
      "code": "ambiguous",
-     "label": "有歧义"
+     "label": "有歧义",
+     "ui": "多处匹配"
     },
     {
      "code": "unresolved",
-     "label": "未解析"
+     "label": "未解析",
+     "ui": "未定位"
     }
    ]
   },
   {
    "axis": "verdict",
    "label": "判定",
+   "ui": "校验结果",
    "owner": "V01",
    "values": [
     {
      "code": "support",
-     "label": "支持"
+     "label": "支持",
+     "ui": "成立"
     },
     {
      "code": "refute",
-     "label": "反驳"
+     "label": "反驳",
+     "ui": "不成立"
     },
     {
      "code": "unknown",
@@ -8417,21 +8437,25 @@
   {
    "axis": "layer",
    "label": "判定层",
+   "ui": "检查方式",
    "owner": "V03",
    "values": [
     {
      "code": "static",
-     "label": "静态"
+     "label": "静态",
+     "ui": "引用校验"
     },
     {
      "code": "dynamic",
-     "label": "动态"
+     "label": "动态",
+     "ui": "沙箱复验"
     }
    ]
   },
   {
    "axis": "static_terminal",
    "label": "静态层终态",
+   "ui": "引用校验结果",
    "owner": "V03",
    "values": [
     {
@@ -8440,25 +8464,30 @@
     },
     {
      "code": "violation",
-     "label": "不通过"
+     "label": "不通过",
+     "ui": "未通过"
     },
     {
      "code": "judgment",
-     "label": "判断"
+     "label": "判断",
+     "ui": "等待判定中"
     },
     {
      "code": "unchecked",
-     "label": "未核对"
+     "label": "未核对",
+     "ui": "未检查"
     },
     {
      "code": "incomplete",
-     "label": "未完成"
+     "label": "未完成",
+     "ui": "检查未完成"
     }
    ]
   },
   {
    "axis": "dynamic_terminal",
    "label": "动态层终态",
+   "ui": "沙箱复验结果",
    "owner": "V03",
    "values": [
     {
@@ -8467,11 +8496,13 @@
     },
     {
      "code": "fail",
-     "label": "失败"
+     "label": "失败",
+     "ui": "未通过"
     },
     {
      "code": "no_verdict",
-     "label": "无判定"
+     "label": "无判定",
+     "ui": "无结论"
     },
     {
      "code": "not_run",
@@ -8479,13 +8510,15 @@
     },
     {
      "code": "incomplete",
-     "label": "未完成"
+     "label": "未完成",
+     "ui": "检查未完成"
     }
    ]
   },
   {
    "axis": "requirement_status",
    "label": "要求满足状态",
+   "ui": "要求项状态",
    "owner": "V03",
    "values": [
     {
@@ -8509,7 +8542,8 @@
    "values": [
     {
      "code": "no_producer",
-     "label": "无生产者"
+     "label": "无生产者",
+     "ui": "无产出方"
     },
     {
      "code": "abandoned",
@@ -8517,7 +8551,8 @@
     },
     {
      "code": "outcome_mismatch",
-     "label": "终态不符合期望"
+     "label": "终态不符合期望",
+     "ui": "结果不符合期望"
     },
     {
      "code": "independence_unknown",
@@ -8559,6 +8594,7 @@
   {
    "axis": "partition",
    "label": "分区",
+   "ui": "结果分类",
    "owner": "V05",
    "values": [
     {
@@ -8571,11 +8607,51 @@
     },
     {
      "code": "quarantined",
-     "label": "已隔离"
+     "label": "已隔离",
+     "ui": "派发结果未确认"
     },
     {
      "code": "incomplete",
      "label": "未完成"
+    }
+   ]
+  },
+  {
+   "axis": "task_result",
+   "label": "任务结果",
+   "owner": "V05",
+   "values": [
+    {
+     "code": "passed",
+     "label": "已通过"
+    },
+    {
+     "code": "delivered_pending",
+     "label": "已交付（含未决项）"
+    },
+    {
+     "code": "delivered_unsatisfied",
+     "label": "已交付（含未满足项）"
+    },
+    {
+     "code": "rejected",
+     "label": "已拒收"
+    },
+    {
+     "code": "incomplete",
+     "label": "未完成"
+    },
+    {
+     "code": "held",
+     "label": "派发结果未确认"
+    },
+    {
+     "code": "awaiting",
+     "label": "等待提交中"
+    },
+    {
+     "code": "abandoned",
+     "label": "已放弃"
     }
    ]
   },
@@ -8673,19 +8749,23 @@
   {
    "axis": "execution_host",
    "label": "执行宿主",
+   "ui": "执行位置",
    "owner": "W06",
    "values": [
     {
      "code": "local_circle",
-     "label": "本地 Circle"
+     "label": "本地 Circle",
+     "ui": "本机 Circle"
     },
     {
      "code": "bot",
-     "label": "bot"
+     "label": "bot",
+     "ui": "机器人"
     },
     {
      "code": "hub",
-     "label": "Hub（仅确定性函数）"
+     "label": "Hub（仅确定性函数）",
+     "ui": "Hub 校验"
     }
    ]
   },
@@ -8727,7 +8807,8 @@
     },
     {
      "code": "validate",
-     "label": "边界校验"
+     "label": "边界校验",
+     "ui": "校验"
     },
     {
      "code": "dispatch",
@@ -8739,7 +8820,8 @@
     },
     {
      "code": "move_root",
-     "label": "移动当前根"
+     "label": "移动当前根",
+     "ui": "发布新版本"
     },
     {
      "code": "lease",
@@ -9004,11 +9086,13 @@
     },
     {
      "code": "disposition",
-     "label": "处置"
+     "label": "处置",
+     "ui": "处置决策"
     },
     {
      "code": "judgment",
-     "label": "判断"
+     "label": "判断",
+     "ui": "独立判定"
     }
    ]
   },
@@ -9023,11 +9107,13 @@
     },
     {
      "code": "assign",
-     "label": "任务包分配"
+     "label": "任务包分配",
+     "ui": "使用范围"
     },
     {
      "code": "publish_right",
-     "label": "发布权授予"
+     "label": "发布权授予",
+     "ui": "维护人"
     },
     {
      "code": "resource_config",
@@ -9100,15 +9186,18 @@
    "values": [
     {
      "code": "trunk",
-     "label": "干"
+     "label": "干",
+     "ui": "大类"
     },
     {
      "code": "branch",
-     "label": "枝"
+     "label": "枝",
+     "ui": "分类"
     },
     {
      "code": "leaf",
-     "label": "叶"
+     "label": "叶",
+     "ui": "条目"
     }
    ]
   },
@@ -9256,21 +9345,25 @@
   {
    "axis": "check_tier",
    "label": "检查档位",
+   "ui": "检查级别",
    "owner": "C05",
    "values": [
     {
      "code": "blocking",
-     "label": "阻断"
+     "label": "阻断",
+     "ui": "阻断项"
     },
     {
      "code": "advisory",
-     "label": "提示"
+     "label": "提示",
+     "ui": "提示项"
     }
    ]
   },
   {
    "axis": "pack_kind",
    "label": "任务包种类",
+   "ui": "类型",
    "owner": "T01",
    "values": [
     {
@@ -9287,13 +9380,15 @@
     },
     {
      "code": "skill",
-     "label": "通用技能包"
+     "label": "通用技能包",
+     "ui": "技能包"
     }
    ]
   },
   {
    "axis": "environment",
    "label": "环境类别",
+   "ui": "环境",
    "owner": "D01",
    "values": [
     {
@@ -9306,18 +9401,21 @@
     },
     {
      "code": "production",
-     "label": "生产"
+     "label": "生产",
+     "ui": "正式"
     }
    ]
   },
   {
    "axis": "permission_role",
    "label": "权限角色",
+   "ui": "角色",
    "owner": "R01",
    "values": [
     {
      "code": "user",
-     "label": "用户"
+     "label": "用户",
+     "ui": "成员"
     },
     {
      "code": "admin",
@@ -9477,11 +9575,13 @@
   {
    "axis": "reason",
    "label": "未知与未完成的原因",
+   "ui": "原因",
    "owner": "V03",
    "values": [
     {
      "code": "no_check",
-     "label": "未装检查"
+     "label": "未装检查",
+     "ui": "未配置检查"
     },
     {
      "code": "check_error",
@@ -9493,7 +9593,8 @@
     },
     {
      "code": "missing_input",
-     "label": "缺输入"
+     "label": "缺输入",
+     "ui": "缺少输入"
     },
     {
      "code": "declared_skip",
@@ -9505,19 +9606,23 @@
     },
     {
      "code": "awaiting_step",
-     "label": "在等某一步"
+     "label": "在等某一步",
+     "ui": "等待前序步骤中"
     },
     {
      "code": "output_failed",
-     "label": "出件失败"
+     "label": "出件失败",
+     "ui": "输出失败"
     },
     {
      "code": "repair_exhausted",
-     "label": "修复轮数用完"
+     "label": "修复轮数用完",
+     "ui": "修复次数已用完"
     },
     {
      "code": "budget_exhausted",
-     "label": "预算用完"
+     "label": "预算用完",
+     "ui": "预算已用完"
     },
     {
      "code": "integrity_unproven",

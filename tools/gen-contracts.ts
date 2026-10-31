@@ -20,8 +20,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 
-type Value = { code: string; label: string };
-type Axis = { axis: string; label: string; owner: string; values: Value[] };
+/** `ui`: the interface term of the console when it differs from the model's label (the console shows only it). */
+type Value = { code: string; label: string; ui?: string };
+type Axis = { axis: string; label: string; ui?: string; owner: string; values: Value[] };
 type Model = {
   version: number;
   elements: { id: string }[];
@@ -238,6 +239,7 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
     if (!isText(a.label)) p.push(`${at} (${name}): label must be non-empty text without control characters`);
     // The axis label is written into a doc comment of vocabulary.ts.
     else if (a.label.includes('*/')) p.push(`${at} (${name}): label must not contain */`);
+    if (a.ui !== undefined && (!isText(a.ui) || a.ui === a.label)) p.push(`${at} (${name}): ui must be non-empty text that differs from the label`);
     if (typeof a.owner !== 'string' || !ELEMENT_ID.test(a.owner) || !elementIds.has(a.owner)) p.push(`${at} (${name}): owner ${JSON.stringify(a.owner)} is not an element id of the model`);
     if (!Array.isArray(a.values) || a.values.length === 0) {
       p.push(`${at} (${name}): values must be a non-empty array`);
@@ -245,6 +247,7 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
     }
     const codesOf: string[] = [];
     const labelsOf: string[] = [];
+    const termsOf: string[] = [];
     a.values.forEach((v, j) => {
       const vat = `${at} (${name}).values[${j}]`;
       if (!isRecord(v)) {
@@ -255,9 +258,13 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
       else p.push(`${vat}: code ${JSON.stringify(v.code)} must be snake_case`);
       if (isText(v.label)) labelsOf.push(v.label);
       else p.push(`${vat}: label must be non-empty text without control characters`);
+      if (v.ui !== undefined && (!isText(v.ui) || v.ui === v.label)) p.push(`${vat}: ui must be non-empty text that differs from the label`);
+      else if (isText(v.ui ?? v.label)) termsOf.push((v.ui ?? v.label) as string);
     });
     for (const d of duplicates(codesOf)) p.push(`${at} (${name}): code ${d} appears twice`);
     for (const d of duplicates(labelsOf)) p.push(`${at} (${name}): label ${d} appears twice`);
+    // Two codes of one axis must never look the same on the console either.
+    for (const d of duplicates(termsOf)) p.push(`${at} (${name}): interface term ${d} appears twice`);
   });
   for (const d of duplicates(axes)) p.push(`${M}: axis ${d} appears twice`);
   p.push(...identifierClashes(axes));
@@ -329,7 +336,7 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
 }
 
 /** Names the generator itself declares in vocabulary.ts and protocol.ts; index.ts re-exports both with export *. */
-const FIXED_VALUES = ['AXES', 'LABELS', 'labelOf', 'axisLabel', 'z', 'PROTOCOL_CODES', 'CORE_VIOLATION_CODES', 'REFERENCE_FORMS', 'RECORD_KINDS', 'PACK_FILE_PATHS', 'DISPLAY_ORDER', 'MODEL_VERSION'];
+const FIXED_VALUES = ['AXES', 'LABELS', 'labelOf', 'axisLabel', 'UI_LABELS', 'uiLabelOf', 'axisUiLabel', 'z', 'PROTOCOL_CODES', 'CORE_VIOLATION_CODES', 'REFERENCE_FORMS', 'RECORD_KINDS', 'PACK_FILE_PATHS', 'DISPLAY_ORDER', 'MODEL_VERSION'];
 const FIXED_TYPES = ['AxisName', 'AxisValues', 'ProtocolCode', 'CoreViolationCode', 'RecordKind'];
 
 /** Names the vocabulary module declares; two axes must never render to the same name, nor to a fixed one. */
@@ -347,6 +354,7 @@ function identifierClashes(axes: string[]): string[] {
     const T = pascal(a);
     claim(values, C, a);
     claim(values, `${C}_LABEL`, a);
+    claim(values, `${C}_UI`, a);
     claim(values, `${T}Schema`, a);
     claim(values, `is${T}`, a);
     claim(types, T, a);
@@ -358,7 +366,8 @@ function renderVocabulary(model: Model): string {
   const out: string[] = [HEADER, "import { z } from 'zod';\n"];
   out.push('export const AXES = {');
   for (const a of model.vocabulary) {
-    out.push(`  ${a.axis}: { label: ${q(a.label)}, owner: ${q(a.owner)}, values: [${a.values.map((v) => `{ code: ${q(v.code)}, label: ${q(v.label)} }`).join(', ')}] },`);
+    const values = a.values.map((v) => `{ code: ${q(v.code)}, label: ${q(v.label)}${v.ui === undefined ? '' : `, ui: ${q(v.ui)}`} }`).join(', ');
+    out.push(`  ${a.axis}: { label: ${q(a.label)}, ${a.ui === undefined ? '' : `ui: ${q(a.ui)}, `}owner: ${q(a.owner)}, values: [${values}] },`);
   }
   out.push('} as const;\n', 'export type AxisName = keyof typeof AXES;\n');
   // Mapped types instead of Record and Readonly: an axis may render a type of the same name (record -> Record).
@@ -369,6 +378,7 @@ function renderVocabulary(model: Model): string {
     out.push(`export const ${C} = [${a.values.map((v) => q(v.code)).join(', ')}] as const;`);
     out.push(`export type ${T} = (typeof ${C})[number];`);
     out.push(`export const ${C}_LABEL = { ${a.values.map((v) => `${q(v.code)}: ${q(v.label)}`).join(', ')} } as const satisfies { readonly [K in ${T}]: string };`);
+    out.push(`export const ${C}_UI = { ${a.values.map((v) => `${q(v.code)}: ${q(v.ui ?? v.label)}`).join(', ')} } as const satisfies { readonly [K in ${T}]: string };`);
     out.push(`export const ${T}Schema = z.enum(${C});`);
     out.push(`export function is${T}(value: unknown): value is ${T} {\n  return (${C} as readonly unknown[]).includes(value);\n}\n`);
   }
@@ -378,9 +388,16 @@ function renderVocabulary(model: Model): string {
   out.push('const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {');
   for (const a of model.vocabulary) out.push(`  ${a.axis}: ${upper(a.axis)}_LABEL,`);
   out.push('};\n');
+  out.push('const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {');
+  for (const a of model.vocabulary) out.push(`  ${a.axis}: ${upper(a.axis)}_UI,`);
+  out.push('};\n');
   out.push('/** Chinese display label of a vocabulary code. The only place labels come from. */');
   out.push('export function labelOf<A extends AxisName>(axis: A, code: AxisValues[A]): string {\n  return LABELS[axis][code];\n}\n');
   out.push('export function axisLabel(axis: AxisName): string {\n  return AXES[axis].label;\n}\n');
+  out.push('/** The console\'s interface term of a vocabulary code: its `ui` when the model gives one, else its label. */');
+  out.push('export function uiLabelOf<A extends AxisName>(axis: A, code: AxisValues[A]): string {\n  return UI_LABELS[axis][code];\n}\n');
+  out.push('/** The console\'s interface term of an axis: its `ui` when the model gives one, else its label. */');
+  out.push('export function axisUiLabel(axis: AxisName): string {\n  const entry: { label: string; ui?: string } = AXES[axis];\n  return entry.ui ?? entry.label;\n}\n');
   return out.join('\n');
 }
 

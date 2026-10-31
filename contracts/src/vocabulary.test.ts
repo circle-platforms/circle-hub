@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { z } from 'zod';
 import * as vocabulary from '../generated/vocabulary.ts';
-import { AXES, axisLabel, labelOf, type AxisName } from '../generated/vocabulary.ts';
+import { AXES, axisLabel, axisUiLabel, labelOf, uiLabelOf, type AxisName } from '../generated/vocabulary.ts';
 
-type Axis = { axis: string; label: string; owner: string; values: { code: string; label: string }[] };
+type Axis = { axis: string; label: string; ui?: string; owner: string; values: { code: string; label: string; ui?: string }[] };
 const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url), 'utf8')) as { vocabulary: Axis[] };
 const exported = vocabulary as unknown as Record<string, unknown>;
 const pascal = (s: string): string => s.split('_').map((p) => p[0].toUpperCase() + p.slice(1)).join('');
@@ -31,6 +31,8 @@ for (const axis of model.vocabulary) {
 
     assert.deepEqual(exported[C], codes, `${C} lists the codes`);
     assert.deepEqual(exported[`${C}_LABEL`], Object.fromEntries(axis.values.map((v) => [v.code, v.label])), `${C}_LABEL maps every code`);
+    assert.deepEqual(exported[`${C}_UI`], Object.fromEntries(axis.values.map((v) => [v.code, v.ui ?? v.label])), `${C}_UI maps every code to its interface term`);
+    assert.equal(axisUiLabel(axis.axis as AxisName), axis.ui ?? axis.label);
 
     const schema = exported[`${T}Schema`];
     assert.ok(schema instanceof z.ZodEnum, `${T}Schema is a zod enum`);
@@ -40,6 +42,7 @@ for (const axis of model.vocabulary) {
 
     for (const v of axis.values) {
       assert.equal(labelOf(axis.axis as AxisName, v.code as never), v.label, `labelOf(${axis.axis}, ${v.code})`);
+      assert.equal(uiLabelOf(axis.axis as AxisName, v.code as never), v.ui ?? v.label, `uiLabelOf(${axis.axis}, ${v.code})`);
       assert.equal(schema.parse(v.code), v.code);
       assert.equal(guard(v.code), true);
     }
@@ -56,4 +59,17 @@ test('labels are non-empty and unique within each axis', () => {
     assert.equal(new Set(labels).size, labels.length, `${axis.axis} has duplicate labels`);
     for (const label of [axis.label, ...labels]) assert.ok(label.trim().length > 0, `${axis.axis} has an empty label`);
   }
+});
+
+test('an interface term is written only where it differs from the label, and none repeats within an axis', () => {
+  // The console shows only interface terms (owner's proposal decision 3, 2026-10-31); the model's labels stay for model text.
+  for (const axis of model.vocabulary) {
+    if (axis.ui !== undefined) assert.notEqual(axis.ui, axis.label, axis.axis);
+    for (const v of axis.values) if (v.ui !== undefined) assert.notEqual(v.ui, v.label, `${axis.axis}.${v.code}`);
+    const terms = axis.values.map((v) => v.ui ?? v.label);
+    assert.equal(new Set(terms).size, terms.length, `${axis.axis} has duplicate interface terms`);
+  }
+  assert.equal(uiLabelOf('partition', 'quarantined'), '派发结果未确认');
+  assert.equal(uiLabelOf('static_terminal', 'unchecked'), '未检查');
+  assert.equal(labelOf('static_terminal', 'unchecked'), '未核对', 'the model label is unchanged');
 });
