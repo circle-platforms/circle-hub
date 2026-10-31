@@ -1,20 +1,20 @@
 {
   "schema": "pack@1",
   "id": "test-bed",
-  "version": "1.2.9",
+  "version": "1.2.10",
   "kind": "workflow",
-  "title": "设备台架",
-  "description": "读管理员发布的台架清单（命名文档），按需求搜索台架（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订台架（租约键 bed/<台架>/<设备>，可带地址分配，没有时长限额，由运行持有到释放）；只含事实要求项，开始运行时由 Hub 直接算出结果",
+  "title": "设备自动化测试环境",
+  "description": "读管理员发布的自动化测试环境清单（命名文档），按需求搜索自动化测试环境（空闲状态、构建一致性、缺什么）、算环境事实（监听候选、盲地址、后端候选、空闲地址数）、预订自动化测试环境（租约键 bed/<自动化测试环境>/<设备>，可带地址分配，没有时长限额，由运行持有到释放）；只含事实要求项，开始运行时由 Hub 直接算出结果",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "f6449340e413c96aa8c4cc8a270123c394a661eaa3bb4ed8eacb5cd757e9ff44",
-      "size": 2518
+      "sha256": "dbcc9c6aa40c69fde5ca777e83c6e39d6d115ddea9e0e160b6f54e10f8d7550b",
+      "size": 2593
     },
     {
       "path": "checks.json",
-      "sha256": "673521d7da771093856c4bcbd21f68a0e20e8541a993fdab4cf0a4046607e6bb",
-      "size": 303
+      "sha256": "8be2c70ce221ed4609224f803d3801aa16b6384e2b34032280ecf4f818e4d641",
+      "size": 318
     },
     {
       "path": "examples/bed-topology.json",
@@ -43,8 +43,8 @@
     },
     {
       "path": "examples/start-run-search.json",
-      "sha256": "c6c40823f0f96953a3d26d825c2d2f75423668bc42eda2dabe4acb9b5352184e",
-      "size": 722
+      "sha256": "ee47ee54f3f7db88ad9f6eacdc056b3990efa19e3ea5756a84200f1c0750e822",
+      "size": 737
     },
     {
       "path": "functions/addresses.ts",
@@ -53,8 +53,8 @@
     },
     {
       "path": "functions/check-bed.ts",
-      "sha256": "8f7dd067a7d68edef8b456bad1641784bcf2933b64c72babb13ce691c9ed9843",
-      "size": 14226
+      "sha256": "f4a21b0f6f187260387d2cfb0939379e2459176cf4581bd7fc6007891019c989",
+      "size": 14436
     },
     {
       "path": "functions/common.ts",
@@ -63,8 +63,8 @@
     },
     {
       "path": "functions/conclude.ts",
-      "sha256": "1675f85ce3dddffcdcb5bde97b38c648ef8b49f52374fe4018a0efc28509009e",
-      "size": 19397
+      "sha256": "5ba9d520eb977f73c7a2eb93200a1d98a383b999543a17547f3e96ad1f5b931b",
+      "size": 19712
     },
     {
       "path": "functions/facts.ts",
@@ -73,23 +73,23 @@
     },
     {
       "path": "functions/manifest.ts",
-      "sha256": "3cced4cdc4329f83681a30581048d077a019ba88b13cb0ff4199507021bfbba6",
-      "size": 23850
+      "sha256": "cc01971e55d1078d637e8f0916481602d3e5e08e55784b9211ce15a80b7eaad1",
+      "size": 24180
     },
     {
       "path": "functions/match.ts",
-      "sha256": "c9a84a35bd54e7506ed2e5c0a20f0c0ba04a5e95b92cd80fea6299959f75a013",
-      "size": 10674
+      "sha256": "477e2cb1f6bf3c6a6ec1b7bab5663e8b9a64da9b00ea6de9266313d1806a52c5",
+      "size": 10704
     },
     {
       "path": "functions/ownership.ts",
-      "sha256": "a98463628da8c33436c16075ad90ed67ae2055f53d14d54d58612f9358ad86aa",
-      "size": 4186
+      "sha256": "106cd00225201dfccefa1101bd1465f4fc6776d26c4bed2743fae94a62d30bd0",
+      "size": 4306
     },
     {
       "path": "functions/project.ts",
-      "sha256": "d55530710b1c856e7a6cbc009c204ecf36f908f87ddb0137fa90d969e7472a1a",
-      "size": 8740
+      "sha256": "bc2af9cb0f38593fb96937154c7c8cf7a0109fe980207996ac3cf9693192f7b9",
+      "size": 8770
     },
     {
       "path": "functions/subject.ts",
@@ -98,13 +98,13 @@
     },
     {
       "path": "functions/surface.ts",
-      "sha256": "b38eca77d94620c2f5d83c59dc2e2caf4e06c61c50d6e781ae844437ec5d8709",
-      "size": 25074
+      "sha256": "9a1c97dac27ba891118df3aa40c3a05fefb6aa81a02cd56703143cdea196360f",
+      "size": 25104
     },
     {
       "path": "requirements.json",
-      "sha256": "10a330a3d969cc6f1fddade0b65754805af61103b1202462b4c01d71716c8e46",
-      "size": 1164
+      "sha256": "1071a91f127aad5feba3fe1593e3ba6a7bb53567ae961a9aef67e59a1d5dd20a",
+      "size": 1269
     },
     {
       "path": "samples/negative/acquire-mismatch.json",
@@ -198,13 +198,13 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "ac97cb3f5493b7d7ad8df119a08e5a72ebdba3d48a5564ce3ba6a992a6bfe4fb",
-      "size": 1536
+      "sha256": "321f251c660e477052bc77e2c594cbab59f9a7175e4d256b46fad270f9119cf8",
+      "size": 1596
     },
     {
       "path": "workflow.json",
-      "sha256": "1edc4b962dc92d8a1bcac47fdde53531fa956ac0ace5aa060ffe8e58efd5fe05",
-      "size": 3247
+      "sha256": "6c5e805a8402c6496f780876464d580048d791467e213c596bb954fa45489661",
+      "size": 3352
     }
   ]
 }

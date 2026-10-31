@@ -123,7 +123,7 @@ test('contract and profile refusals retain fixed parser reasons and choose corre
   const manifest = parseManifest(MANIFEST_DOC); assert.ok(manifest.ok);
   const profile = parseProfile({ ...profileDocument(raw), bed: 'synthetic-absent' }, parsed.contract, manifest.beds); assert.ok(!profile.ok);
   const diagnosis = parserDiagnostics('runtime-profile', profile.problems, '重新 --check');
-  assert.match(diagnosis, /配置的台架不在清单里/); assert.ok(!diagnosis.includes('synthetic-absent'));
+  assert.match(diagnosis, /配置的自动化测试环境不在清单里/); assert.ok(!diagnosis.includes('synthetic-absent'));
   assert.match(parserDiagnostics('runtime-profile', [{ pointer: '/allowed/0/reviewed', message: '合成固定审阅原因', fix: '合成固定动作' }], '重跑'), /\/reviewed.*合成固定审阅原因/);
   const unknown = signRuntime({ ...raw, entries: raw.entries.map((v, i) => i ? v : { ...v, dispatch: 'synthetic-unknown' }) });
   assert.throws(() => checkContract(Buffer.from(JSON.stringify(unknown)), unknown.contract_sha256), /\/dispatch.*不认识的派发方式.*格式表/);

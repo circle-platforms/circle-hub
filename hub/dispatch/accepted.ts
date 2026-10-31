@@ -74,7 +74,7 @@ function nextStep(job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>, ad
   if (status.decided_by) return '管理员已处置这个作业；要再派发请开新的核验运行';
   if (job.ended === 'unknown' || status.frozen) return `结果未知，等管理员 ${admin} 对账（Hub 已记下）；对账后原样重交读进展`;
   if (status.report_pending) return `目标报告还没取全，Hub 会自动补读；${PROGRESS}`;
-  if (status.outcome === 'not_dispatched') return job.boundary_refused ? '按原因补齐（例如整台预订）后原样重交，Hub 会再试一次' : NO_MORE;
+  if (status.outcome === 'not_dispatched') return job.boundary_refused ? '按原因补齐（例如预订整个自动化测试环境）后原样重交，Hub 会再试一次' : NO_MORE;
   if (status.missing_fact) return '部分条目没有判定，缺的事实写在结果引用对应的行里；要管理员补的 Hub 已记下';
   return '读结果引用看逐条结论';
 }

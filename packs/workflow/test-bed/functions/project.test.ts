@@ -62,7 +62,7 @@ describe('project action search', () => {
     const out2 = project(input({ need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }] } }));
     const b2 = fieldsOf(out2, 'bed-b');
     assert.equal(b2.devices_ok, false);
-    assert.deepEqual(b2.missing, ['需要 1 台负载均衡，台架里有 0 台']);
+    assert.deepEqual(b2.missing, ['需要 1 台负载均衡，自动化测试环境里有 0 台']);
     const leased = project(input({ need: { devices: [{ type: 'client', count: 1 }] } }, { leases: [{ key: 'bed/bed-a/client0', until: LATER }] }));
     const a3 = fieldsOf(leased, 'bed-a');
     assert.equal(a3.earliest_free, LATER);
@@ -155,9 +155,9 @@ describe('project action extend and release', () => {
     { key: 'bed/bed-b/client1', until: LATER, mine: false },
   ];
 
-  it("reject retired extend: the lineage-held keys with the extension TTL, devices and addresses named",()=>{const out=project(input({action:'extend',booking:'run_book1',hours:3})) as {error?:{code:string;fix:string}};assert.equal(out.error?.code,'test-bed.duration_removed');assert.match(out.error!.fix,/台架预订不限时长/);});
+  it("reject retired extend: the lineage-held keys with the extension TTL, devices and addresses named",()=>{const out=project(input({action:'extend',booking:'run_book1',hours:3})) as {error?:{code:string;fix:string}};assert.equal(out.error?.code,'test-bed.duration_removed');assert.match(out.error!.fix,/自动化测试环境预订不限时长/);});
 
-  it("reject retired extend: hours falls back to need.hours",()=>{const out=project(input({action:'acquire',need:{hours:5}})) as {error?:{code:string;fix:string}};assert.equal(out.error?.code,'test-bed.duration_removed');assert.match(out.error!.fix,/台架预订不限时长/);});
+  it("reject retired extend: hours falls back to need.hours",()=>{const out=project(input({action:'acquire',need:{hours:5}})) as {error?:{code:string;fix:string}};assert.equal(out.error?.code,'test-bed.duration_removed');assert.match(out.error!.fix,/自动化测试环境预订不限时长/);});
 
   it('release: the lineage-held keys without a TTL', () => {
     const out = project(input({ action: 'release', booking: 'run_book1' }, { leases: HELD })) as { lease_requests?: unknown[]; items?: Array<{ fields: Record<string, unknown> }> };
@@ -236,7 +236,7 @@ describe('project with declared installs in the manifest', () => {
     const out = project(input({ need: { ...needBuild, build: 'Rel_APV_10_6_1_9' } }, { manifest: DECLARED })) as { warnings?: Array<{ code: string; message: string }> };
     const warning = out.warnings?.find((row) => row.code === 'test-bed.no_matching_build');
     assert.ok(warning);
-    assert.match(warning.message, /没有任何台架的在装构建匹配版本线 Rel_APV_10_6_1_9/);
+    assert.match(warning.message, /没有任何自动化测试环境的在装构建匹配版本线 Rel_APV_10_6_1_9/);
     assert.match(warning.message, /管理员在清单登记在装构建，或把某台升级到该构建后重试/);
     assert.equal(fieldsOf(out, 'bed-a').build_ok, 'mismatch');
     assert.match(String(fieldsOf(out, 'bed-a').conclusion), /需要升级到 Rel_APV_10_6_1_9/);
@@ -281,7 +281,7 @@ describe('project on a bad inventory', () => {
 it('rejects removed duration inputs and projects owner registration without a TTL', () => {
   for(const parameters of [{action:'extend'}, {action:'acquire',hours:1}, {need:{hours:1}}]){
     const out=project(input(parameters)) as {error?:{fix:string}};
-    assert.match(out.error?.fix??'',/台架预订不限时长，用完由运行释放/);
+    assert.match(out.error?.fix??'',/自动化测试环境预订不限时长，用完由运行释放/);
   }
   const registered=project(input({action:'register',bed:'bed-a'})) as {lease_requests?:unknown[]};
   assert.deepEqual(registered.lease_requests,[{op:'register',prefix:'bed/bed-a/'}]);

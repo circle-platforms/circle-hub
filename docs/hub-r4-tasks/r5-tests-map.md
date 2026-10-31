@@ -8,4 +8,4 @@
 - `docs/hub-r4-tasks/r5-tests-map.md`
 - `tests/acceptance/32-r5-dispatch-rules.test.ts`
 
-合成执行器、合成产品 ORBIT/COMET 与 lumen-api、地址 192.0.2.0/24、临时 PostgreSQL。不连接真实台架，不读环境配置，不使用钥匙串。
+合成执行器、合成产品 ORBIT/COMET 与 lumen-api、地址 192.0.2.0/24、临时 PostgreSQL。不连接真实自动化测试环境，不读环境配置，不使用钥匙串。

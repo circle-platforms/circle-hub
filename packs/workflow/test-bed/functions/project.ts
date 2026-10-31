@@ -66,7 +66,7 @@ export default function project(input: unknown): Out | Failure {
   const inputs = Array.isArray(params.inputs) ? params.inputs : [];
   const slot = inputs.find((candidate): candidate is Slot => isRecord(candidate) && candidate.slot === 'inventory');
   if (slot === undefined || slot.model === null || slot.model === undefined) {
-    return failure('test-bed.no_inventory', '没有台架清单', '在 inputs.inventory 里写命名文档 {"external": "doc:doc:<名字>"}（管理员用 circle-hub doc put 发布）');
+    return failure('test-bed.no_inventory', '没有自动化测试环境清单', '在 inputs.inventory 里写命名文档 {"external": "doc:doc:<名字>"}（管理员用 circle-hub doc put 发布）');
   }
   const read = readParameters(isRecord(params.parameters) ? params.parameters : {});
   if ('code' in read) return failure(read.code, read.message, read.fix);
@@ -75,7 +75,7 @@ export default function project(input: unknown): Out | Failure {
   if (!manifest.ok) {
     return failure(
       'test-bed.manifest_invalid',
-      `台架清单有 ${manifest.problems.length} 个问题，整份拒绝`,
+      `自动化测试环境清单有 ${manifest.problems.length} 个问题，整份拒绝`,
       manifest.problems[0] === undefined ? '按清单的形状（test-bed-manifest@1）改正后重新发布' : `${manifest.problems[0].pointer === '' ? '整份' : manifest.problems[0].pointer}：${manifest.problems[0].fix}`,
       manifest.problems.slice(0, 100).map((problem: { pointer: string; message: string; fix: string }) => ({ code: 'test-bed.manifest_problem', message: `${problem.pointer === '' ? '整份' : problem.pointer}：${problem.message}（处理：${problem.fix}）` })),
     );

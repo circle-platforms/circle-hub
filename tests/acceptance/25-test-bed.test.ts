@@ -100,7 +100,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     // The administrator publishes the inventory as a named document.
     await bed.hub.hub.docs.put(bed.hub.admin.principal, 'bed-topology', new TextEncoder().encode(JSON.stringify(INVENTORY)), { fileName: 'bed-topology.json' });
     await bed.hub.hub.docs.put(bed.hub.admin.principal, 'bed-topology-dup', new TextEncoder().encode(JSON.stringify(DUPLICATE)), { fileName: 'bed-topology-dup.json' });
-    const user = await bed.user('台架用户', ['test-bed']);
+    const user = await bed.user('自动化测试环境用户', ['test-bed']);
     client = await bed.connect(user, 'sess-s25');
   });
 
@@ -140,7 +140,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const shortRun = (short.out as { run?: { run?: string } }).run?.run;
     assert.ok(shortRun);
     const shortClaims = await claimsOf(bed, shortRun);
-    assert.ok(shortClaims.some((c) => c.statement.text.includes('bed-b') && c.statement.text.includes('需要 2 台负载均衡，台架里有 1 台')), 'bed-b says what it lacks');
+    assert.ok(shortClaims.some((c) => c.statement.text.includes('bed-b') && c.statement.text.includes('需要 2 台负载均衡，自动化测试环境里有 1 台')), 'bed-b says what it lacks');
   });
 
   test('acquire: the lease is granted and frozen; the second user on the same device is refused with the earliest free moment', async () => {
@@ -160,7 +160,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const view = await bed.hub.leases.view('bed/');
     assert.ok(view.entries.some((e) => e.key === 'bed/bed-a/apv0' && e.until === until), 'the lease table holds the rows');
 
-    const other = await bed.user('台架用户乙', ['test-bed']);
+    const other = await bed.user('自动化测试环境用户乙', ['test-bed']);
     const otherClient = await bed.connect(other, 'sess-s25-b');
     const refused = await otherClient.call('start_run', {
       pack: 'test-bed',
@@ -185,7 +185,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     assert.equal(row.leases![0]!.until,null);
     for(const parameters of [{action:'extend',booking},{action:'acquire',hours:2}]){
       const legacy=await client.call('start_run',{pack:'test-bed',inputs,predecessor:booking,parameters});
-      assert.equal(legacy.isError,true);assert.match(JSON.stringify(legacy.out),/台架预订不限时长，用完由运行释放/);
+      assert.equal(legacy.isError,true);assert.match(JSON.stringify(legacy.out),/自动化测试环境预订不限时长，用完由运行释放/);
     }
     const unlinked=await client.call('start_run',{pack:'test-bed',inputs,parameters:{action:'release',booking}});
     assert.equal(unlinked.isError,true);assert.match(JSON.stringify(unlinked.out),/你没有持有这个预订/);
@@ -265,7 +265,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     });
     assert.equal(dup.isError, true, 'the invalid inventory refuses the call');
     const text = JSON.stringify(dup.out);
-    assert.match(text, /test-bed.manifest_invalid|台架清单/);
+    assert.match(text, /test-bed.manifest_invalid|自动化测试环境清单/);
     assert.match(text, /\/beds\/0\/devices\/1\/ipv4\/0/, 'the pointer of the duplicate address is named');
     const outsider = await bed.user('没分配的人', []);
     const outsideClient = await bed.connect(outsider, 'sess-s25-c');

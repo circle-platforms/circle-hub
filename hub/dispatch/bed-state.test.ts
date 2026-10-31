@@ -429,7 +429,7 @@ test('config channel without snapshot_only and without manifest baseline records
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(state.outcome, 'not_dispatched');
   assert.match(state.missing_fact ?? '', /未声明基线，无法判残留/);
-  assert.match(state.next_action ?? '', /由合成管理员在台架清单中声明 baseline 行或将通道声明为 snapshot_only 后重开/);
+  assert.match(state.next_action ?? '', /由合成管理员在自动化测试环境清单中声明 baseline 行或将通道声明为 snapshot_only 后重开/);
 });
 
 test('captureText strips declared lead and trail lines verbatim, preserving content', () => {

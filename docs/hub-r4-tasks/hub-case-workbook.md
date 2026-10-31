@@ -1,6 +1,6 @@
 # 任务：客户端生成工作簿，Hub 回读核验并记摘要
 
-依据：`docs/hub-r4-device-run.md`（上真实台架的设计，第 1–5 节和第 8 节的分工），决定 26、27（`docs/hub-r4-progress.md`），理论文档第 6、7 节；模型用 `node tools/show-element.ts D02 D03 D04 D07 B05 B06 B07 V03 W05 P05` 读。
+依据：`docs/hub-r4-device-run.md`（上真实自动化测试环境的设计，第 1–5 节和第 8 节的分工），决定 26、27（`docs/hub-r4-progress.md`），理论文档第 6、7 节；模型用 `node tools/show-element.ts D02 D03 D04 D07 B05 B06 B07 V03 W05 P05` 读。
 
 - 分支和工作树：`hub-case-workbook`，目录 `circle-hub-hub-case-workbook`（依赖已装好）
 - 可以改的路径：packs/workflow/case-compile/**（新的 functions/generate.ts、functions/g-syntax.ts、functions/workbook.ts、scripts/**，以及 workflow.json、requirements.json、checks.json、SKILL.md、README.md、samples/）。核心文件不碰：xlsx@1 解析器和 upload.ts 的 xlsx 一行在 `xlsx-parser.md` 那件里做。
@@ -11,10 +11,10 @@
 
 1. 核心 xlsx@1 解析器已拆成 `xlsx-parser.md` 先做，这里只用它的模型。“只认生成器写的子集”（设计第 3 节第 1 条的后半）在第 6 条的核验检查里判：成员恰为生成器写的那几个、一张可见的表、没有隐藏的表和行、只用内联字符串、没有公式、没有以 `=` 开头的值。
 2. G 写法（functions/g-syntax.ts）：按 README 里的格式说明实现运行器解析规则的 encode 和 decode（逗号、引号、反斜杠、关键字、数字、换行）。encode 之后 decode 必须原样回来，回不来的值生成器拒绝；读取器用同一套规则解析。
-3. 生成器（functions/generate.ts，零依赖，只用 Node 内置；包的检查和 Circle 脚本导入同一个模块）：输入为槽位、条目字段（autoid、标题、步骤原文）、合约身份和配置；输出 xlsx 字节。zip 只用 STORE、固定时间戳、固定成员次序、自算 CRC32；只用内联字符串，C 列是数字，A 列是文本；行序为身份行、表头、说明行（C=0，E–I 空，D 写运行号和构建，不写人名）、用例各步（autoid 只在第一行且该行 E 不空，每条期望一行字面断言紧跟它的 after 步骤）、空行、收尾行；范围名是工作簿级、指向表头行。OOXML 的写法参照 circle-packs 里 10-13 在台架上跑通过的 xlsx.mjs（只读参照），差异逐条写进 README。
+3. 生成器（functions/generate.ts，零依赖，只用 Node 内置；包的检查和 Circle 脚本导入同一个模块）：输入为槽位、条目字段（autoid、标题、步骤原文）、合约身份和配置；输出 xlsx 字节。zip 只用 STORE、固定时间戳、固定成员次序、自算 CRC32；只用内联字符串，C 列是数字，A 列是文本；行序为身份行、表头、说明行（C=0，E–I 空，D 写运行号和构建，不写人名）、用例各步（autoid 只在第一行且该行 E 不空，每条期望一行字面断言紧跟它的 after 步骤）、空行、收尾行；范围名是工作簿级、指向表头行。OOXML 的写法参照 circle-packs 里 10-13 在自动化测试环境上跑通过的 xlsx.mjs（只读参照），差异逐条写进 README。
 4. Circle 脚本（scripts/）：normalize-mindmap.ts 把本地导出文件规整成 kityminder 形状，打印两边的摘要；generate-workbook.ts 读本地保存的已满足提交、条目字段、合约身份和配置，写出 xlsx，打印 sha256 和生成器版本。只用 Node 内置，不联网。SKILL.md 写明这些输入从哪次工具调用的回答里取。
 5. 输入槽 workbook（角色待判定产物，接受 xlsx 媒体类型，选填）和要求项 workbook_verified（事实、阻断）；没绑定时记未知（缺输入）。
-6. 核验检查（functions/workbook.ts，独立读取器，不调用生成器去解析）：设计第 3 节第 1 到 8 条；再用生成器从本次提交的槽位重算，字节相等才支持。支持结论的 data 写 {sha256, autoids, bed, build, generator, plan_run}（任务 3 的接口），其中 bed 是 {id, manifest_sha256}：id 是台架清单里的台架名，manifest_sha256 是本次运行绑定的台架清单的字节摘要；plan_run 是工作簿据以生成的已满足计划运行，说明行的 D 和参数 plan_run 都要等于它（它和本运行的 predecessor 相等由派发核）；不带工作簿内容；生成器版本与本运行的包版本不符时写明。
+6. 核验检查（functions/workbook.ts，独立读取器，不调用生成器去解析）：设计第 3 节第 1 到 8 条；再用生成器从本次提交的槽位重算，字节相等才支持。支持结论的 data 写 {sha256, autoids, bed, build, generator, plan_run}（任务 3 的接口），其中 bed 是 {id, manifest_sha256}：id 是自动化测试环境清单里的自动化测试环境名，manifest_sha256 是本次运行绑定的自动化测试环境清单的字节摘要；plan_run 是工作簿据以生成的已满足计划运行，说明行的 D 和参数 plan_run 都要等于它（它和本运行的 predecessor 相等由派发核）；不带工作簿内容；生成器版本与本运行的包版本不符时写明。
 7. Hub 侧生成计划的要求项（deterministic_plan）已在 hub-case-runtime 里随 2.0 移除（决定 26：Hub 不生成内容）；这里在 README 和 SKILL.md 里写两次运行的步骤。
 
 ## 必须有的测试
@@ -27,7 +27,7 @@
 - 生产测试（真引擎、假外部）：计划运行满足后工作簿一项是未知（缺输入）；带工作簿的第二次运行全部满足，结论带 S。
 - npx tsc --noEmit；全仓词表扫描零命中，不加例外（`packs/workflow/case-review/packs.test.ts` 里的 handWrittenAxes，core-fixes 合并后覆盖 hub/ 和全部包）。
 
-完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。真实台架上的任何动作都由集成者做，并且要等所有者答复设计第 6 节的问题。
+完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。真实自动化测试环境上的任何动作都由集成者做，并且要等所有者答复设计第 6 节的问题。
 
 ## 附：运行器怎么读行和 G 列（集成者 2026-10-23 照运行器源码只读整理）
 

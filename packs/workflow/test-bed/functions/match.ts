@@ -89,7 +89,7 @@ export function matchNeed(
       const have = bed.devices.filter((d) => d.type === type).length;
       if (have < count) {
         const label = TYPE_LABEL[type] ?? type;
-        missing.push(`需要 ${count} 台${label}，台架里有 ${have} 台`);
+        missing.push(`需要 ${count} 台${label}，自动化测试环境里有 ${have} 台`);
       } else {
         spare += have - count;
       }
@@ -197,7 +197,7 @@ export function unmatchedBuildExit(
       else if (baseOf(builds, record.build) !== want) other.push(`${where} 装的是 ${record.build}`);
     }
   }
-  const parts = [`没有任何台架的在装构建匹配版本线 ${need.build}`];
+  const parts = [`没有任何自动化测试环境的在装构建匹配版本线 ${need.build}`];
   if (absent.length > 0) parts.push(`缺在装构建记录：${absent.join('、')}`);
   if (other.length > 0) parts.push(`在装构建不是该版本线：${other.join('、')}`);
   return { verdict: 'unknown', missing: parts.join('。'), fix: UNMATCHED_FIX };

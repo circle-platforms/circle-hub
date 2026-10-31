@@ -3,7 +3,7 @@
   "checks": [
     {
       "id": "bed",
-      "title": "台架结论复核",
+      "title": "自动化测试环境结论复核",
       "function": { "module": "functions/check-bed.ts" },
       "applies": "run",
       "subject": { "module": "functions/subject.ts" },

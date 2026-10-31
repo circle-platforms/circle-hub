@@ -11,7 +11,7 @@ import type { RequirementTemplate } from '../../../contracts/src/pack.ts';
 import { RequirementSummary } from '../../../contracts/src/run.ts';
 import { terminalLabel } from '../../server/claims.ts';
 
-const dynamic: RequirementTemplate = { key: 'bed_run', name: '合成台架运行', description: '合成', target: 'item', required: true, done_rule: 'bookkeeping', layers: ['dynamic'], accepted_producer: 'fact', checks: [], error_handling: [], observation: 'dispatch@1' };
+const dynamic: RequirementTemplate = { key: 'bed_run', name: '合成自动化测试环境运行', description: '合成', target: 'item', required: true, done_rule: 'bookkeeping', layers: ['dynamic'], accepted_producer: 'fact', checks: [], error_handling: [], observation: 'dispatch@1' };
 /** The shape `dispatchCountOf` reads: which requirements a row releases, and the rounds it writes. */
 const row = (repetition?: number): { release: { requirements: string[] }; repetition?: number } => ({
   release: { requirements: ['bed_run'] },

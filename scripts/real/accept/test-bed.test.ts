@@ -5,14 +5,14 @@ import type {LoggedTurn} from '../lib/accept.ts';
 import type {Reply,Turn} from '../scripted-model.ts';
 import scenario,{IDLE_WORDING,earliestWording,type TestBedGold} from './test-bed.ts';
 
-const FIX='台架预订不限时长，用完由运行释放';
+const FIX='自动化测试环境预订不限时长，用完由运行释放';
 const gold:TestBedGold={inventory:'synthetic-bed-topology',need:{devices:[{type:'load-balancer',count:1},{type:'client',count:1}]},beds:[{name:'bed-a',free:'idle',ownership:'你登记的'},{name:'bed-b',free:'held',ownership:'有主人'},{name:'bed-c',free:'2026-10-24T18:00:00.000Z',ownership:'未登记'}],acquire:{bed:'bed-a',devices:['dut0','client0']},release:true};
 const run=(char:string)=>'run_'+char.repeat(26);
 const SEARCH=run('a'),BOOKING=run('b'),RELEASE=run('c');
 const reference=(char:string)=>'rec:'+char.repeat(64);
 const start=(id:string,ref:string)=>`运行 ${id}：任务包 test-bed@1.2.0\n完整结果 ${ref}：用 get_nodes 读第一页`;
 const refusal=`出错：SUBMISSION_SCHEMA_VIOLATION\n不再接受 hours 或 extend\n修正：${FIX}`;
-const searchPage=`台架 bed-a：${IDLE_WORDING}；你登记的\n台架 bed-b：Hub 记录里被占用，没有到期时刻（未排除本地操作）；有主人\n台架 bed-c：${earliestWording('2026-10-24T18:00:00.000Z')}；未登记`;
+const searchPage=`自动化测试环境 bed-a：${IDLE_WORDING}；你登记的\n自动化测试环境 bed-b：Hub 记录里被占用，没有到期时刻（未排除本地操作）；有主人\n自动化测试环境 bed-c：${earliestWording('2026-10-24T18:00:00.000Z')}；未登记`;
 const acquirePage='预订 bed-a，设备 dut0、client0，不限时长，用完由运行释放';
 const releasePage=`释放 bed-a 的预订 ${BOOKING}，设备 dut0、client0`;
 type Response={text:string;error?:boolean};

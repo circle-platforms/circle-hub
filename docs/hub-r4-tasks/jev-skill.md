@@ -6,7 +6,7 @@
 - 决定 26：生成在客户端，任务包随技能带 TypeScript 脚本，Hub 只核验（理论文档第 3 节 R7：生产和独立检查分开）。决定 25：回注走单独的回注运行，Hub 只做确定性核验。
 - 模型 K04、K03（`node tools/show-element.ts K04 K03`，K03 以 kb-candidates 改过的为准）；回注包 `packs/workflow/knowledge-contribution`（kb-candidates 分支：`workflow.json`、`slots.schema.json`、`SKILL.md`、`README.md`、`pack-files.ts`）。
 - 拿掉的 Hub 客户端，用 `git show 7c1ecaa5^:<路径>` 读：`hub/jev/http.ts`、`hub/jev/test-support.ts`、`hub/jev/README.md`、`scripts/real/jev-smoke.ts`。仓库里还留着的形状：`hub/jev/`（validate、record、decide、batch、tokens），`hub/knowledge/placement.ts`、`calibration.ts`，`hub/knowledge/service.ts` 的 buildCalibrationSet。任务页 `no-judgment-in-hub.md`、`jev-optin.md`。
-- `docs/hub-r4-device-run.md` 第 1 节第 0 步、决定 35 上台架第 12 问：包里的脚本由集成者放进所有者 Circle 的技能目录，按 pack.json 的摘要核对。
+- `docs/hub-r4-device-run.md` 第 1 节第 0 步、决定 35 上自动化测试环境第 12 问：包里的脚本由集成者放进所有者 Circle 的技能目录，按 pack.json 的摘要核对。
 - Circle 现状（Circle 仓库，只读，不改）：`docs/skills.md`、`docs/security.md`、`docs/hooks.md`、`src/mcp_loader.ts`、`src/sandbox.ts`；Hub 这边的 `scripts/real/circle-home.ts`（专用评审目录）。
 
 - 分支和工作树：`jev-skill`，目录 `circle-hub-jev-skill`，从 kb-candidates 开出（要它的回注包、回注层和新加的三个词表轴；kb-candidates 再有提交时合进来，合并时排在它后面）。原先排在它前面的“回注署名”一件已按所有者的更正作废（决定 35 第 6 项：只有会话说法的不入库）。
@@ -56,7 +56,7 @@ Circle 现在怎么接技能和密钥（不改 Circle）：
    - `generated.json` 由 `pack-files.ts` 写，`--check` 比对，脚本里不手写枚举。内容：
      - 包的 id 和版本，不写包号。generated.json 自己列在 pack.json 的清单里，写不进它所在那个包的摘要。
      - entry_kind、document_output_kind、relation_kind、read_tier 的码和标签，取自 `contracts/generated/vocabulary.ts`。
-   - `pack-files.ts --verify-install <目录>`：逐个比对目录里的文件和 pack.json 里 `tools/jev/` 各项的 sha256 和大小，多一个、少一个、改过一个都报。集成者照决定 35 上台架第 12 问的做法，把 pack.json 里列着的 `tools/jev/` 文件（测试不在里面）装到上面那个上机和技能用主目录的 `skills/jev/`，再跑这条核对。
+   - `pack-files.ts --verify-install <目录>`：逐个比对目录里的文件和 pack.json 里 `tools/jev/` 各项的 sha256 和大小，多一个、少一个、改过一个都报。集成者照决定 35 上自动化测试环境第 12 问的做法，把 pack.json 里列着的 `tools/jev/` 文件（测试不在里面）装到上面那个上机和技能用主目录的 `skills/jev/`，再跑这条核对。
    - Circle 只认 `skills/` 下一层（或下两层、中间那层没有 SKILL.md）的技能目录。`script-distribution.md` 的 `local-tools install` 把整个包装成 `<目录>/<包>@<版本>/`，顶上是回注包自己的 SKILL.md，`tools/jev/` 在那里不会被认出来；所以下发做好以后，也是把装好的 `tools/jev/` 放到 `skills/jev/`，照样跑上面这条核对。
    - 包升一个次版本（接在前面已有的版本后面），用 `node packs/workflow/knowledge-contribution/pack-files.ts` 重签。
 

@@ -32,7 +32,7 @@ export function draftProfile(environment: unknown, manifest: unknown, rawContrac
   const contract = parseRuntimeContract(rawContract); const beds = parseManifest(manifest);
   requireFact(contract.ok, contract.ok ? '' : parserDiagnostics('runtime-contract', contract.problems, '集成者重新只读取得网关钉住的合约原件后重跑'));
   if (!beds.ok) throw parserRefusal('case-compile manifest', beds.problems, '集成者核对该清单字段，重新转换完整清单后重跑');
-  requireFact(beds.beds.length === 1, '清单 /beds 缺少唯一台架；集成者明确本轮单台架输入后重跑');
+  requireFact(beds.beds.length === 1, '清单 /beds 缺少唯一自动化测试环境；集成者明确本轮单自动化测试环境输入后重跑');
   requireFact(record(environment) && environment.ready === true && Number.isSafeInteger(environment.device_count) && (environment.device_count as number) > 0, '缺少成功预检及 device_count；集成者重新只读取得环境预检回答');
   const wanted = contract.contract;
   requireFact(decisions === undefined || record(decisions) && Array.isArray(decisions.allowed) && Array.isArray(decisions.unopened), '角色决定文件须有 allowed 和 unopened 列表；按 README 填写');
@@ -138,7 +138,7 @@ export function run(args: string[]): void {
   const checking = args.includes('--check'); const normalized = args.filter((arg) => arg !== '--check');
   const { files, options } = argumentsOf(normalized, 3, ['--out', '--decisions']);
   requireFact(!checking || !options['--decisions'], '--check 不接收角色决定草稿；直接核验填写后的配置');
-  const source = readJson(files[0]!, checking ? '运行环境配置' : '环境预检'); const manifest = readJson(files[1]!, '台架清单'); const contract = readJson(files[2]!, '运行器合约');
+  const source = readJson(files[0]!, checking ? '运行环境配置' : '环境预检'); const manifest = readJson(files[1]!, '自动化测试环境清单'); const contract = readJson(files[2]!, '运行器合约');
   const profile = checking ? (checkProfile(source, manifest, contract), source) : draftProfile(source, manifest, contract, options['--decisions'] ? readJson(options['--decisions'], '角色决定') : undefined);
   const bytes = jsonBytes(profile); const filename = checking ? 'runtime-profile.json' : 'runtime-profile.draft.json';
   output(options['--out'] ?? '', filename, bytes);

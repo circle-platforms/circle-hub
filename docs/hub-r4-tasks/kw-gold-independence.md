@@ -15,7 +15,7 @@
 - A54：`scripts/real/gold/locations.ts:65`；分类：以模块排除词和数字约束构造定位答案。
 - A55：`scripts/real/gold/board-locate.ts:10`；分类：模块排除词、长数字和 bugIdsOf 决定看板分组。
 - A77：`scripts/real/gold/dup-recount.ts:44`；抽取/计数：statement 自由文字前缀定位某草稿的查重主张。
-- A78：`scripts/real/gold/compile-check.ts:587`；检查：按原因句前缀把台架外失败改 unknown。
+- A78：`scripts/real/gold/compile-check.ts:587`；检查：按原因句前缀把自动化测试环境外失败改 unknown。
 - B07：`scripts/real/gold/cases.ts:93`；分类/检查/计数：标签别名、边缘字符或后缀折叠为规范测试类型/反向标记。
 - B08：`scripts/real/gold/board.ts:15`；分类/检查/计数：标签别名、边缘字符或后缀折叠为规范测试类型/反向标记。
 - B09：`scripts/real/lib/inject.ts:94`；分类/检查/计数：标签别名、边缘字符或后缀折叠为规范测试类型/反向标记。

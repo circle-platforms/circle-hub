@@ -6,7 +6,7 @@
   - 网关的运行密钥只能在 `executor add` 时经标准输入进一条执行器登记，换钥匙要整份定义重交；
   - APV 的 min_line 和主线页的词要等一套新的产品部署定义（apv-deployment-conventions 第一步）；adoc 各名称族的属性集，部件、许可、部署形态的闭集，都排在它后面；
   - PLM 修复说明的字段名、手册库的规格目录各占一项资源设置；第一次真实评审的基线构建还没有去处；
-  - 台架清单的摘要每次 `doc put bed-topology` 以后要手抄进执行器定义，再整份 `executor update`。
+  - 自动化测试环境清单的摘要每次 `doc put bed-topology` 以后要手抄进执行器定义，再整份 `executor update`。
 - Circle 的做法（Circle 仓库，行号会变，以小节为准）：
   - main 的 `docs/settings.md` 的 `variables`：名字是大写字母、数字和 `_`，字母开头，至多 64 个字符（`src/settings.ts` 的 VARIABLE_NAME：`^[A-Z][A-Z0-9_]{0,63}$`），值至多 2000 个字符；模型在工具参数里写 `%NAME%`，模型知道名字和值。
   - main 的 `docs/security.md` 的 Secrets by name：密钥存在主目录的 `secrets.json`，模型只知道名字；工具运行之前 Circle 把 `%NAME%` 换成值，任何工具的输入都换，MCP 工具也换，所以也包括 Hub 的工具。
@@ -22,7 +22,7 @@
   - B04：资源配置是管理员作出、当时生效的决定，只增；没有审批人（R[6]）。C04 R[4]：缺不等于空。
   - W06：运行冻结输入。决定 35 能力第 26 项：Hub 评估运行时，按运行开始时的授权读冻结的输入。
   - 协议码 SOURCE_UNAVAILABLE：对读者一律“对你不可用”，真实原因只在管理员日志里。
-  - 决定 35：知识库第 3、5、9 项（属性集、闭集、版本线约定是部署数据），运维第 12 项（基线构建记在部署数据里），上真实台架第 11 问和“仍要所有者亲手做的”网关运行密钥。
+  - 决定 35：知识库第 3、5、9 项（属性集、闭集、版本线约定是部署数据），运维第 12 项（基线构建记在部署数据里），上真实自动化测试环境第 11 问和“仍要所有者亲手做的”网关运行密钥。
 - 分工：模型文字由集成者先改，并把 version 加一。要改的有：
   - D01 DEF、R[6]，新加 R[11]；
   - B04 F[0]、F[1]；R01 R[1]；R02 新加 R[3]；
@@ -107,7 +107,7 @@
 - `secret import`：改成写到名字（第 3 条）。
 - APV 的 min_line 和主线页的词、adoc 各名称族的属性集，部件、许可、部署形态的闭集：改成 APV 包声明的变量（第二步；包由 apv-deployment-conventions 和 kb-applicability 改）。apv-deployment-conventions 第一步的产品部署定义、`knowledge settings` 命令和 `param_sources` 都不做了。
 - PLM 的 `settings.bug_fix_field`、手册库的 `settings.spec_folders`：照旧是资源设置，部署时用 `--setting-var` 写成引用；PLM、手册库和缺陷转用例包的代码都不改。
-- 台架清单摘要的手抄：执行器定义写 `${var:BED_MANIFEST_SHA256}`，重发清单以后一条 `var set`。
+- 自动化测试环境清单摘要的手抄：执行器定义写 `${var:BED_MANIFEST_SHA256}`，重发清单以后一条 `var set`。
 - 第一次真实评审的基线构建：变量 `REVIEW_BASELINE_BUILD`，没有包读它，只是记录。
 
 管理员平常这样用（占位）：
@@ -419,7 +419,7 @@ circle-hub var list
    - 已经经 `executor add` 登记过的：`executor update <执行器> <定义文件>`，定义加 `"credential": "${secret:GATEWAY_RUN_KEY}"`，钥匙迁移过去，所有者不用再交；
    - 还没交的：集成者先登记执行器，定义里引用这个名字；所有者再执行 `circle-hub secret set --name GATEWAY_RUN_KEY --reason …`，从标准输入交；
    - 或者集成者在本机生成一把新的，明文只经管道进 `secret set`；跳板机上的摘要文件照那一节换；
-   - 定义写 `"manifest_sha256": "${var:BED_MANIFEST_SHA256}"`。以后每次 `doc put bed-topology`，执行 `printf '%s\n' <doc put 打印的摘要> | circle-hub var set BED_MANIFEST_SHA256 --text --reason "重发台架清单"`，执行器定义不用改。台架名照旧写在定义里，资源键只经 `executor update` 改；
+   - 定义写 `"manifest_sha256": "${var:BED_MANIFEST_SHA256}"`。以后每次 `doc put bed-topology`，执行 `printf '%s\n' <doc put 打印的摘要> | circle-hub var set BED_MANIFEST_SHA256 --text --reason "重发自动化测试环境清单"`，执行器定义不用改。自动化测试环境名照旧写在定义里，资源键只经 `executor update` 改；
    - 改了执行器的 endpoint 或 CA，要重新输入一次钥匙。
 4. 基线：`circle-hub var set REVIEW_BASELINE_BUILD --file <暂存目录里的文件> --text --reason "决定 35 运维第 12 项：第一次真实评审用的构建"`。没有包读它，`var list` 写“设置了，没有使用者”，只是记录，不当基线依据；以后要当依据，引用那次评审运行。
 5. PLM（plm-fields 已经合并）：

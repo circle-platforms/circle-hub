@@ -2,7 +2,7 @@
   "id": "scope_authorized_negative",
   "source": "author",
   "check": "commands_catalog",
-  "note": "合成闭集命令范围、逆序清理、作者次数与台架容量",
+  "note": "合成闭集命令范围、逆序清理、作者次数与自动化测试环境容量",
   "subject": {
     "command_catalog": {
       "root": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

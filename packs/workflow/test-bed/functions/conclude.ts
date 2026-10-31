@@ -43,7 +43,7 @@ export interface PlanFailure {
 }
 
 
-export const ACTION_LABEL: Record<Action, string> = { search: '搜索台架', facts: '环境事实', acquire: '预订台架', release: '释放预订', register:'登记台架', unregister:'注销台架', force_release:'强制释放' };
+export const ACTION_LABEL: Record<Action, string> = { search: '搜索自动化测试环境', facts: '环境事实', acquire: '预订自动化测试环境', release: '释放预订', register:'登记自动化测试环境', unregister:'注销自动化测试环境', force_release:'强制释放' };
 
 export function isAction(value: unknown): value is Action {
   return typeof value === 'string' && Object.hasOwn(ACTION_LABEL, value);
@@ -61,8 +61,8 @@ export function leaseRecord(frozen: FrozenLeases | undefined): Record<string, Le
 /** Parameters of a run call: action (default search), need, bed, addresses and booking, every problem named with its fix. */
 export function readParameters(params: Record<string, unknown>): Normalized | PlanFailure {
   const needRaw = isRecord(params.need) ? params.need : {};
-  if (params.action === 'extend' || Object.hasOwn(params,'hours') || Object.hasOwn(needRaw,'hours')) return {code:'test-bed.duration_removed',message:'不再接受 hours 或 extend',fix:'台架预订不限时长，用完由运行释放'};
-  if (params.action !== undefined && !isAction(params.action)) return {code:'test-bed.bad_action',message:'不认识的台架动作',fix:'使用 search、facts、acquire、release、register、unregister 或 force_release'};
+  if (params.action === 'extend' || Object.hasOwn(params,'hours') || Object.hasOwn(needRaw,'hours')) return {code:'test-bed.duration_removed',message:'不再接受 hours 或 extend',fix:'自动化测试环境预订不限时长，用完由运行释放'};
+  if (params.action !== undefined && !isAction(params.action)) return {code:'test-bed.bad_action',message:'不认识的自动化测试环境动作',fix:'使用 search、facts、acquire、release、register、unregister 或 force_release'};
   const action: Action = isAction(params.action) ? params.action : 'search';
   const devices: NeedDevice[] = [];
   const rawDevices = Array.isArray(needRaw.devices) ? needRaw.devices : [];
@@ -94,8 +94,8 @@ export function readParameters(params: Record<string, unknown>): Normalized | Pl
   }
   const reason=typeof params.reason==='string'?params.reason:'';
   if ((action==='unregister'||action==='force_release')&&!reason.trim()) return {code:'test-bed.reason_required',message:'必须写释放或注销的理由',fix:'reason 照用户原话填写'};
-  if ((action==='register'||action==='unregister'||action==='force_release')&&bed===null) return {code:'test-bed.unknown_bed',message:'必须指定台架',fix:'bed 写当前清单里的台架名'};
-  if(params.devices!==undefined && (!Array.isArray(params.devices)||params.devices.length===0||params.devices.some(d=>typeof d!=='string')||new Set(params.devices).size!==params.devices.length))return {code:'test-bed.bad_devices',message:'devices 须为不重复的设备名数组',fix:'devices 写清单里的设备名，不写表示整个台架'};
+  if ((action==='register'||action==='unregister'||action==='force_release')&&bed===null) return {code:'test-bed.unknown_bed',message:'必须指定自动化测试环境',fix:'bed 写当前清单里的自动化测试环境名'};
+  if(params.devices!==undefined && (!Array.isArray(params.devices)||params.devices.length===0||params.devices.some(d=>typeof d!=='string')||new Set(params.devices).size!==params.devices.length))return {code:'test-bed.bad_devices',message:'devices 须为不重复的设备名数组',fix:'devices 写清单里的设备名，不写表示整个自动化测试环境'};
   return { action, need: { devices, build }, bed, addresses, booking, reason, devices:Array.isArray(params.devices)?params.devices as string[]:null };
 }
 
@@ -204,15 +204,15 @@ export function acquirePlan(beds: ManifestBed[], need: BedNeed, bedParam: string
   let chosen: SearchFields | undefined;
   if (bedParam !== null) {
     chosen = matches.find((m) => m.bed === bedParam);
-    if (chosen === undefined) return { ok: false, failure: { code: 'test-bed.unknown_bed', message: `清单里没有台架 ${bedParam}`, fix: 'bed 写清单里的一个台架名，或不写按 need 选最佳匹配' } };
-    if (!chosen.devices_ok) return { ok: false, failure: { code: 'test-bed.bed_short', message: `台架 ${bedParam} 不满足需求：${chosen.conclusion}`, fix: '换 need 或换台架' } };
-    if (need.build !== undefined && chosen.build_ok === 'mismatch') return { ok: false, failure: { code: 'test-bed.build_mismatch', message: `台架 ${bedParam} 的构建不一致：${chosen.conclusion}`, fix: '先升级，或换构建一致的台架' } };
+    if (chosen === undefined) return { ok: false, failure: { code: 'test-bed.unknown_bed', message: `清单里没有自动化测试环境 ${bedParam}`, fix: 'bed 写清单里的一个自动化测试环境名，或不写按 need 选最佳匹配' } };
+    if (!chosen.devices_ok) return { ok: false, failure: { code: 'test-bed.bed_short', message: `自动化测试环境 ${bedParam} 不满足需求：${chosen.conclusion}`, fix: '换 need 或换自动化测试环境' } };
+    if (need.build !== undefined && chosen.build_ok === 'mismatch') return { ok: false, failure: { code: 'test-bed.build_mismatch', message: `自动化测试环境 ${bedParam} 的构建不一致：${chosen.conclusion}`, fix: '先升级，或换构建一致的自动化测试环境' } };
   } else {
     // matchNeed's order is idle first: the first fitting bed is idle when one exists, else the earliest to free; a
     // taken bed is refused by the Hub's lease grant with LEASE_UNAVAILABLE and the earliest free moment, not here.
     chosen = matches.find((m) => m.devices_ok && (need.build === undefined || m.build_ok !== 'mismatch'));
     if (chosen === undefined) {
-      return { ok: false, failure: { code: 'test-bed.no_bed', message: '没有满足需求的台架', fix: '缩小 need；各台架的最早空闲时刻见 search 的结论' } };
+      return { ok: false, failure: { code: 'test-bed.no_bed', message: '没有满足需求的自动化测试环境', fix: '缩小 need；各自动化测试环境的最早空闲时刻见 search 的结论' } };
     }
   }
   const bed = beds.find((b) => b.name === (chosen as SearchFields).bed) as ManifestBed;
@@ -224,7 +224,7 @@ export function acquirePlan(beds: ManifestBed[], need: BedNeed, bedParam: string
   if (addressesParam !== null) {
     const subnet = parseSubnet(addressesParam.segment) as Subnet;
     if (!bed.devices.some((d) => [...d.ipv4, ...d.ipv6].some((a) => a.subnet === addressesParam.segment))) {
-      return { ok: false, failure: { code: 'test-bed.no_segment', message: `台架 ${bed.name} 没有网段 ${addressesParam.segment}`, fix: 'addresses.segment 写台架的一个网段' } };
+      return { ok: false, failure: { code: 'test-bed.no_segment', message: `自动化测试环境 ${bed.name} 没有网段 ${addressesParam.segment}`, fix: 'addresses.segment 写自动化测试环境的一个网段' } };
     }
     const taken = new Set<bigint>();
     for (const device of bed.devices) for (const a of [...device.ipv4, ...device.ipv6]) if (a.subnet === addressesParam.segment) taken.add(a.value);
@@ -238,7 +238,7 @@ export function acquirePlan(beds: ManifestBed[], need: BedNeed, bedParam: string
     for (const range of bed.reserved) for (const value of range.addresses) reserved.add(value);
     const free = nextFree(subnet, taken, reserved, addressesParam.count);
     if (free.length < addressesParam.count) {
-      return { ok: false, failure: { code: 'test-bed.not_enough_addresses', message: `台架 ${bed.name} 的网段 ${addressesParam.segment} 只有 ${free.length} 个空闲地址，少于 ${addressesParam.count} 个`, fix: '少要几个，或换网段' } };
+      return { ok: false, failure: { code: 'test-bed.not_enough_addresses', message: `自动化测试环境 ${bed.name} 的网段 ${addressesParam.segment} 只有 ${free.length} 个空闲地址，少于 ${addressesParam.count} 个`, fix: '少要几个，或换网段' } };
     }
     for (const value of free) addresses.push(formatIp(subnet.family, value));
   }
@@ -297,7 +297,7 @@ function splitKeys(keys: string[]): { bed: string | null; devices: string[]; add
 
 /** The conclusion parts both held actions share: what is held, as devices and addresses. */
 function heldParts(verb: string, split: { bed: string | null; devices: string[]; addresses: string[] }, booking: string): string[] {
-  const parts = [`${verb} ${split.bed ?? '台架'} 的预订 ${booking}`];
+  const parts = [`${verb} ${split.bed ?? '自动化测试环境'} 的预订 ${booking}`];
   if (split.devices.length > 0) parts.push(`设备 ${split.devices.join('、')}`);
   if (split.addresses.length > 0) parts.push(`地址 ${split.addresses.join('、')}`);
   return parts;

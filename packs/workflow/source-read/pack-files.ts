@@ -14,7 +14,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'source-read',
-  version: '0.1.1',
+  version: '0.1.2',
   kind: 'workflow',
   title: '来源原件读取',
   description: '通用技能包：按系统路由读取平台原件（缺陷、需求、构建、脑图、构建页、手册文件、SVN 文件），零要求项，返回原件引用与投影',

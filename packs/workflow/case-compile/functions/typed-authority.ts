@@ -75,6 +75,6 @@ export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile
  return uses;
 }
 export const authorityRecovery = (gaps: readonly AuthorityGap[]): string => {
- const repair=gaps.some(gap=>gap.verdict==='refute')?'当前运行者按指针和未完成义务补齐作者命令、合法参数及逆序清理，再重新核验；不得改冻结授权绕过':'当前运行者按指针请求产品包、合约或台架发布管理员补齐相应事实；产品命令规则更新后重新育苗并开新运行';
+ const repair=gaps.some(gap=>gap.verdict==='refute')?'当前运行者按指针和未完成义务补齐作者命令、合法参数及逆序清理，再重新核验；不得改冻结授权绕过':'当前运行者按指针请求产品包、合约或自动化测试环境发布管理员补齐相应事实；产品命令规则更新后重新育苗并开新运行';
  return `缺少原合约的类型与效果事实或不符合显式授权：${gaps.map(gap => `${gap.document}${gap.pointer}：${gap.message}`).join('；')}。下一步：${repair}；原合约按 runtime-contract@2 核对。不得编辑冻结 profile 绕过。Hub 为缺失事实绑定具名受众与期限；当前不生成或派发工作簿。`;
 };

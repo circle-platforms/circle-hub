@@ -5,7 +5,7 @@
 - 分支和工作树：`hub-leases`，目录 `circle-hub-leases`
 - 可以改的路径：`contracts/**`（只通过生成器改生成物）、`hub/leases/**`（新建）、`hub/records/**`（只是迁移和动作记录的形状）、`hub/runs/**`（只是 `start_run` 的接线和包发布校验）、`hub/server/**`（只是 C4 的命令和 MCP 工具结果里的租约文字）、`hub/refs/**`（只是 C4 的外部标识）、以及这些目录里的测试和 README。别的路径不动。
 - 先读：`AGENTS.md`、`docs/hub-r4-handoff.md`、`docs/hub-r4-device-pack.md`、`docs/hub-r4-device-pack-review.md`（尤其第 2、3、4 节）、`node tools/show-element.ts D04 B05 W06 K05`、`contracts/src/pack.ts`（`CONTEXT_KEY`、`RunContext`、`WorkflowDeclaration`）、`hub/runs/engine/start.ts`（`startFresh`）、`hub/records/pointers.ts`（比较并交换和 `pg_advisory_xact_lock` 的写法）、`hub/records/api.ts`（`ActionBody`）、`hub/server/cli-admin.ts`。
-- 规则：不推送、不建 PR；不发布、不部署，不碰 7420 上的持久部署、钥匙串、环境配置文件和任何真实系统；测试只用合成数据和临时 PostgreSQL；提交只暂存明确的路径，`git commit -s`，一句首字母大写的英文祈使句，不加前缀和句号，空一行后写你自己的署名行。核心代码里不出现设备、台架、产品的词：键只是带前缀的字符串。注意 `hub-nojudge` 和 `hub-engine3` 两个分支也在改 `contracts/model.json` 和生成物（别的元素），合并时由监督者重新生成，你只管自己这几处。
+- 规则：不推送、不建 PR；不发布、不部署，不碰 7420 上的持久部署、钥匙串、环境配置文件和任何真实系统；测试只用合成数据和临时 PostgreSQL；提交只暂存明确的路径，`git commit -s`，一句首字母大写的英文祈使句，不加前缀和句号，空一行后写你自己的署名行。核心代码里不出现设备、自动化测试环境、产品的词：键只是带前缀的字符串。注意 `hub-nojudge` 和 `hub-engine3` 两个分支也在改 `contracts/model.json` 和生成物（别的元素），合并时由监督者重新生成，你只管自己这几处。
 
 ## C1 模型和合约
 

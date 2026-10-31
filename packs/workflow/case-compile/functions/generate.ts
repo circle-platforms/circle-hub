@@ -77,7 +77,7 @@ function caseRows(input: GenerationInput, slots: PlanSlots, at: (pointer: string
   const { fields, contract, profile } = input;
   const gaps = typedAuthorityGaps(contract, profile, slots,fields.command_identities,fields.command_catalog,authorTexts(fields),fields.manifest_sha256,fields.bed_services);
   if (gaps.length) reject(at('/contract'), authorityRecovery(gaps));
-  if (slots.bucket !== profile.bed || typeof fields.autoid !== 'string' || !new RegExp(profile.workbook.autoid_pattern, 'u').test(fields.autoid)) reject(at('/fields/autoid'), '台架或 autoid 与已核验输入不符');
+  if (slots.bucket !== profile.bed || typeof fields.autoid !== 'string' || !new RegExp(profile.workbook.autoid_pattern, 'u').test(fields.autoid)) reject(at('/fields/autoid'), '自动化测试环境或 autoid 与已核验输入不符');
   if (typeof fields.title !== 'string' || !fields.title || !Array.isArray(fields.steps) || fields.steps.some((v) => typeof v.text !== 'string')) reject(at('/fields'), '缺少条目标题或步骤原文');
   if (!slots.expects.length) reject(at('/expects'), '至少一条溯源期望才可生成');
   const rows: Array<Array<string | number>> = [];

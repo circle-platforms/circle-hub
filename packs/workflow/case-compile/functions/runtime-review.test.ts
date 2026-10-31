@@ -89,7 +89,7 @@ test('review 18 every imprecise case id has its source pointer and a lossless-in
 });
 test('review 19 decision 35 opens covered combinations and all bed interfaces without dropping lineage allocations', () => {
   const description = JSON.parse(readFileSync(new URL('../requirements.json', import.meta.url), 'utf8')).requirements.find((v: { key: string }) => v.key === 'bed_addresses').description;
-  assert.match(description, /本血缘分配/); assert.match(description, /本台架/);
+  assert.match(description, /本血缘分配/); assert.match(description, /本自动化测试环境/);
   assert.equal(checkAddresses(addressInput('192.0.2.1'))[0].verdict,'support');
   const doc = structuredClone(CONTRACT_DOC); doc.entries.push({ ...entry('widget-host', 'fixture_action', [{ name: 'command', kind: 'positional_or_keyword', required: true, default: null }]), dispatch: 'execute_registry' }); const signed = signRuntime(doc); const rawProfile = profileDocument(signed);
   rawProfile.allowed.push({ object: 'widget-host', method: 'fixture_action', parameters: { command: 'host_shell' } } as any); rawProfile.hosts.push({ object: 'widget-host', method: 'fixture_action', device: 'client0' });

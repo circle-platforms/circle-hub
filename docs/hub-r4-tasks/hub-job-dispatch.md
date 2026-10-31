@@ -1,6 +1,6 @@
 # 任务：作业派发连接器：只读核对、至多一次提交、回执、结果、冻结与对账
 
-依据：`docs/hub-r4-device-run.md`（上真实台架的设计，第 1–5 节和第 8 节的分工），决定 26、27（`docs/hub-r4-progress.md`），理论文档第 6、7 节；模型用 `node tools/show-element.ts D02 D03 D04 D07 B05 B06 B07 V03 W05 P05` 读。
+依据：`docs/hub-r4-device-run.md`（上真实自动化测试环境的设计，第 1–5 节和第 8 节的分工），决定 26、27（`docs/hub-r4-progress.md`），理论文档第 6、7 节；模型用 `node tools/show-element.ts D02 D03 D04 D07 B05 B06 B07 V03 W05 P05` 读。
 
 - 分支和工作树：`hub-job-dispatch`，目录 `circle-hub-hub-job-dispatch`（依赖已装好）
 - 可以改的路径：hub/dispatch/**（新包）；hub/server/cli-job.ts（新）；hub/server/cli-admin.ts 命令表加 executor 和 job 两行；hub/server/assemble/ 里装配 dispatch 的几行。只经 api 使用 hub/records、hub/leases 和密钥库，不改它们；不碰 contracts（executor@1 的形状先放在 hub/dispatch 里，README 记为偏离）。
@@ -9,9 +9,9 @@
 
 ## 要做的
 
-1. 执行器登记（D07）：circle-hub executor add|update|list|disable；密钥经标准输入存进密钥库（executor.<id>.bearer），不回显。（hub-variables 第一步以后的做法，这一件照现在的写：执行器定义的 `credential` 写 `${secret:名字}`，钥匙用 `circle-hub secret set --name` 写；`executor add` 不读标准输入，`update --secret` 和 `setSecret` 去掉；没有 `credential` 的旧定义 precheck 和派发都拒绝，`executor update` 加上 `credential` 时，`executor.<id>.bearer` 里的钥匙迁移过去；定义里只有期望值能写成 `${var:…}`；作业钉住解析后的定义。）定义：台架名；端点（https，明文只许回环）；固定 CA；每类调用的超时（提交默认 300 秒）；生命周期各角色的工具名和参数名（取得、心跳、释放租约，只读核对，提交，状态，结果）；回执、状态、结果的 JSON 指针；对方状态词和结果词到词表码的映射（只许 action_result、acceptance、effect_outcome、dynamic_terminal 的生成值，没映射的词一律未知）；只读核对的条件（JSON 指针等于、不小于、摘要等于，值可引用运行的构建和座位数）；允许调用的工具清单；最长运行时间。定义存成规范 JSON，按摘要经 resource_config 授权生效，照 connectors 的资源做法。
+1. 执行器登记（D07）：circle-hub executor add|update|list|disable；密钥经标准输入存进密钥库（executor.<id>.bearer），不回显。（hub-variables 第一步以后的做法，这一件照现在的写：执行器定义的 `credential` 写 `${secret:名字}`，钥匙用 `circle-hub secret set --name` 写；`executor add` 不读标准输入，`update --secret` 和 `setSecret` 去掉；没有 `credential` 的旧定义 precheck 和派发都拒绝，`executor update` 加上 `credential` 时，`executor.<id>.bearer` 里的钥匙迁移过去；定义里只有期望值能写成 `${var:…}`；作业钉住解析后的定义。）定义：自动化测试环境名；端点（https，明文只许回环）；固定 CA；每类调用的超时（提交默认 300 秒）；生命周期各角色的工具名和参数名（取得、心跳、释放租约，只读核对，提交，状态，结果）；回执、状态、结果的 JSON 指针；对方状态词和结果词到词表码的映射（只许 action_result、acceptance、effect_outcome、dynamic_terminal 的生成值，没映射的词一律未知）；只读核对的条件（JSON 指针等于、不小于、摘要等于，值可引用运行的构建和座位数）；允许调用的工具清单；最长运行时间。定义存成规范 JSON，按摘要经 resource_config 授权生效，照 connectors 的资源做法。
 2. 客户端：MCP JSON-RPC over HTTPS。每个作业先 tools/list，与允许清单逐个比对，缺了就停，多出来的从不调用；固定 CA，不跟重定向，有字节上限；密钥只在请求头，日志和错误都过脱敏；操作者头写作业号。
-3. 状态机：每个阶段一条 action@1（读取用 read，提交用 dispatch，对账回读用 read_back），原始回答先存成源文件再解释（B05 R[2]）；B06 的意图键、请求 id、动作摘要、目标键、效果类、重试安全类和结局写在 detail，取值来自词表生成物。次序：前提（核验运行全部必需要求项满足，取出 S、台架、构建、用例号和 plan_run，plan_run 必须等于核验运行自己的 predecessor；血缘持有台架上每台设备的租约，到期晚于现在加最长运行时间；目标键没有冻结）→ 网关租约（心跳不超过期限的三分之一）→ 只读核对 → 意图写盘 → 提交一次（不随进程退出中止，绝不重试）→ 回执 → 状态 → 结果 → 释放。每种情形的记法照设计第 4 节的表。
+3. 状态机：每个阶段一条 action@1（读取用 read，提交用 dispatch，对账回读用 read_back），原始回答先存成源文件再解释（B05 R[2]）；B06 的意图键、请求 id、动作摘要、目标键、效果类、重试安全类和结局写在 detail，取值来自词表生成物。次序：前提（核验运行全部必需要求项满足，取出 S、自动化测试环境、构建、用例号和 plan_run，plan_run 必须等于核验运行自己的 predecessor；血缘持有自动化测试环境上每台设备的租约，到期晚于现在加最长运行时间；目标键没有冻结）→ 网关租约（心跳不超过期限的三分之一）→ 只读核对 → 意图写盘 → 提交一次（不随进程退出中止，绝不重试）→ 回执 → 状态 → 结果 → 释放。每种情形的记法照设计第 4 节的表。
 4. 冻结由没有处置的未知派发推出，不另开表；同一目标键的新派发一律拒绝。重启恢复：有意图没回执的记未知；已受理没终态的接着读状态；从不重发。
 5. 处置（B07，这一轮用核对、保持未知、标记失败）：job dispose <作业> --reconcile <task_id> 读状态和结果，摘要等于 S 且投递时刻在派发窗口内才算对上，然后接着走状态和结果；--keep-unknown；--mark-failed --reason。只记选择和选择人，原结局不改，冻结由处置解除；“查无记录”从不当作没执行。
 6. 结果：逐用例给动态层终态，带“目标对本次派发的报告”和“未排除本地操作”；结果通道不完整的用例记无判定；结果存成运行用户和管理员可读的源文件，命令打印它的引用。
@@ -32,4 +32,4 @@
 - tools/list 缺工具就停；桩多出来的管理工具从不被调用。心跳按期限的三分之一发；心跳失败记“网关租约中断”，照常读状态。
 - 密钥不出现在任何日志、记录、源文件和命令输出里（扫描全部产出）；npx tsc --noEmit；全仓词表扫描零命中，不加例外。
 
-完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。真实台架上的任何动作都由集成者做，并且要等所有者答复设计第 6 节的问题。
+完成后在终端里回报：提交号、测试数量、没做完或拿不准的地方。真实自动化测试环境上的任何动作都由集成者做，并且要等所有者答复设计第 6 节的问题。
