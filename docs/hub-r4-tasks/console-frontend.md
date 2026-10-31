@@ -10,7 +10,7 @@
 
 - 分支和工作树：`console-frontend`，目录 `circle-hub-console`（从 main 开出）
 - 可以改的路径：
-  - `contracts/model.json` 的词表（取值加 `ui`，加 `task_result` 轴）、显示规则和 V05 的变更记录，`tools/gen-contracts.ts` 的词表生成，`contracts/generated/` 重新生成，`contracts/src/vocabulary.test.ts`；
+  - `contracts/model.json` 的词表（取值加 `ui`，加 `task_result` 轴）、显示规则和 V05 的变更记录，`tools/gen-contracts.ts` 的词表生成，`contracts/generated/` 重新生成，`contracts/src/vocabulary.test.ts`；`contracts/src/tools.ts` 给每个工具加控制台用的中文名 `label`（不发给模型）及其测试；
   - `hub/server/console/**`，`hub/server/claims.ts`（标签函数可换成界面用语，MCP 文本照旧用模型标签）和 `hub/server/text.ts` 里随之改写的一处调用；
   - `hub/server/api.ts`、`hub/server/app.ts` 和 `hub/server/assemble/hub.ts`（给控制台一个可选的执行器与作业只读端口）；
   - `hub/server/console*.test.ts`、`hub/server/console/*.test.ts` 和受控制台文字影响的验收断言；

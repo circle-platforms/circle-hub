@@ -1,10 +1,11 @@
 // Building blocks of the console pages in the design canvas's vocabulary of classes: chips, cards, figures, the command
 // dialog and the charts. Nothing here reads data; the pages pass what they show. Charts are SVG whose geometry lives in
 // attributes, because the Content-Security-Policy refuses style attributes; every value is escaped by `html`.
+import type { DynamicTerminal, Nature, StaticTerminal } from '../../../contracts/generated/vocabulary.ts';
 import { html, href, icon, type Html, type ICONS } from './html.ts';
 
-/** The colour families of states (display rule 5: unknown has its own). */
-export type Tone = 'pass' | 'fail' | 'judgment' | 'unchecked' | 'incomplete' | 'unknown';
+/** The colour families of states, named after the terminals they colour (display rule 5: unknown has its own). */
+export type Tone = Extract<StaticTerminal, 'pass' | 'judgment' | 'unchecked' | 'incomplete'> | Extract<DynamicTerminal, 'fail'> | Extract<Nature, 'unknown'>;
 export type DotState = 'ok' | 'warn' | 'down' | 'idle' | 'info' | 'unknown';
 
 export function chip(text: unknown, tone: Tone | 'plain' | null = null): Html {

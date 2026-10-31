@@ -2,10 +2,12 @@
 // and per result over the last 14 days, and the lines themselves. Administrators see every call with the admin notes; a
 // member sees their own calls only (the call log answers so itself). /console/admin/calls is the administrators' path of
 // the same page (decision 75).
-import { CALL_RESULT, MCP_TOOL, isMcpTool, uiLabelOf, type CallResult } from '../../../contracts/generated/vocabulary.ts';
+import { CALL_RESULT, uiLabelOf, type CallResult } from '../../../contracts/generated/vocabulary.ts';
+import { TOOLS } from '../../../contracts/src/tools.ts';
 import type { CallLogLine, Page } from '../../records/api.ts';
 import { html, link, page, type Html } from './html.ts';
 import { callTable, names, neutralPage, type PageContext, type PageResult } from './pages.ts';
+import { TOOL_LABELS, toolName } from './tasks.ts';
 import { card, count, dayBars, hbar, kpi, plannedCard, sectionHead, stackBar } from './ui.ts';
 
 const param = (ctx: PageContext, name: string): string | undefined => {
@@ -56,13 +58,13 @@ ${kpi(ctx.admin ? '成员' : '本人', count(users.size), { unit: '人', note: c
     start.setHours(0, 0, 0, 0);
     days.push({ label: day(start.getTime()), start: start.getTime() });
   }
-  const tools = [...MCP_TOOL];
+  const tools = TOOLS.map((t) => t.name);
   const perDay = days.map((d, i) => {
     const end = i + 1 < days.length ? days[i + 1].start : Infinity;
     const inDay = items.filter((line) => { const t = Date.parse(line.at); return t >= d.start && t < end; });
     return { label: d.label, parts: tools.map((tool, j) => ({ value: inDay.filter((line) => line.tool === tool).length, fill: TOOL_FILLS[j % TOOL_FILLS.length] })) };
   });
-  const legend = html`<div class="result-legend">${tools.map((tool, j) => html`<span title="${tool}"><i class="${TOOL_FILLS[j % TOOL_FILLS.length].replace('fill-', '')}"></i>${uiLabelOf('mcp_tool', tool)} <b class="num">${items.filter((line) => line.tool === tool).length}</b></span>`)}</div>`;
+  const legend = html`<div class="result-legend">${tools.map((tool, j) => html`<span title="${tool}"><i class="${TOOL_FILLS[j % TOOL_FILLS.length].replace('fill-', '')}"></i>${toolName(tool)} <b class="num">${items.filter((line) => line.tool === tool).length}</b></span>`)}</div>`;
   const distribution = card({ title: '工具调用分布', meta: `按日 · 按工具 · ${scope}` }, html`${legend}${dayBars(perDay, '每日各工具的调用次数')}<div class="axis"><span>${days[0].label}</span><span>${days[Math.floor(days.length / 2)].label}</span><span>今日</span></div>`);
   const byUser = new Map<string, number>();
   for (const line of items) if (line.user !== null) byUser.set(line.user, (byUser.get(line.user) ?? 0) + 1);
@@ -90,7 +92,7 @@ export async function recordsPage(ctx: PageContext, path: '/console/records' | '
   if (user !== undefined) {
     userId = /^usr_[0-9a-z]{26}$/.test(user) ? user : ((await ctx.deps.records.principals.findByName(user))?.id ?? '');
   }
-  const toolOptions = html`<option value="">全部工具</option>${MCP_TOOL.map((name) => html`<option value="${name}"${name === tool ? html` selected` : ''}>${uiLabelOf('mcp_tool', name)}</option>`)}${tool !== undefined && !isMcpTool(tool) ? html`<option value="${tool}" selected>${tool}</option>` : ''}`;
+  const toolOptions = html`<option value="">全部工具</option>${TOOLS.map((t) => html`<option value="${t.name}"${t.name === tool ? html` selected` : ''}>${t.label}</option>`)}${tool !== undefined && !TOOL_LABELS.has(tool) ? html`<option value="${tool}" selected>${tool}</option>` : ''}`;
   const filters = html`<form class="filters" method="get" action="${path}">
 ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></label>` : ''}<label>工具 <select name="tool">${toolOptions}</select></label>
 <label>运行 <input name="run" value="${run ?? ''}"></label><label>从 <input name="from" value="${param(ctx, 'from') ?? ''}" placeholder="2026-11-01"></label>

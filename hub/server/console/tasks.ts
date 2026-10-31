@@ -3,7 +3,8 @@
 // time on one call; the gap before a submission is Circle's own time, which the Hub does not observe), the Hub's checks of
 // the authoritative result, the requests with their audience and due time, the dispatch jobs (administrators only) and the
 // result. A time the Hub did not record is not drawn.
-import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, isMcpTool, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
+import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, uiLabelOf, type EffectOutcome, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
+import { TOOLS } from '../../../contracts/src/tools.ts';
 import type { RunRecordView } from '../../../contracts/src/run.ts';
 import { isUnknownTerminal, type LayerResult, type RequirementResult } from '../../../contracts/src/validation.ts';
 import type { RunDetail } from '../../ports.ts';
@@ -87,7 +88,11 @@ interface Step {
   dur: string;
 }
 
-const toolName = (tool: string): string => (isMcpTool(tool) ? uiLabelOf('mcp_tool', tool) : tool);
+/** The Chinese name of each of the six tools (contracts/src/tools.ts), by the name the protocol uses. */
+export const TOOL_LABELS: ReadonlyMap<string, string> = new Map(TOOLS.map((tool) => [tool.name, tool.label]));
+
+/** A tool of the call log by its Chinese name; a protocol method that is not a tool keeps its name. */
+export const toolName = (tool: string): string => TOOL_LABELS.get(tool) ?? tool;
 
 function callDot(line: CallLogLine): DotState {
   if (line.call_result !== 'ok') return 'down';
@@ -128,7 +133,7 @@ function layerSummary(results: readonly RequirementResult[]): string {
   return out.join(' · ');
 }
 
-const DISPATCH_DOT: Record<string, DotState> = { issued: 'info', effective: 'ok', read_back_consistent: 'ok', read_back_mismatch: 'down', target_rejected: 'down', not_dispatched: 'idle', proven_not_executed: 'idle', unknown: 'unknown' };
+const DISPATCH_DOT: Readonly<Record<EffectOutcome, DotState>> = { issued: 'info', effective: 'ok', read_back_consistent: 'ok', read_back_mismatch: 'down', target_rejected: 'down', not_dispatched: 'idle', proven_not_executed: 'idle', unknown: 'unknown' };
 
 async function stepsOf(ctx: PageContext, detail: RunDetail, calls: readonly CallLogLine[], now: number): Promise<Step[]> {
   const run = detail.run;
@@ -203,7 +208,7 @@ async function stepsOf(ctx: PageContext, detail: RunDetail, calls: readonly Call
         const parts = [uiLabelOf('effect_outcome', job.outcome)];
         if (job.frozen) parts.push('运行环境已冻结，不可重发');
         if (job.disposition !== undefined) parts.push(`处置：${uiLabelOf('disposition', job.disposition)}`);
-        steps.push({ name: '派发到运行环境', sub: parts.join(' · '), fill: job.outcome === 'unknown' ? 'fill-unknown' : 'fill-hub', dot: DISPATCH_DOT[job.outcome] ?? 'unknown', start: at, end: at, point: true, depth: 0, dur: '' });
+        steps.push({ name: '派发到运行环境', sub: parts.join(' · '), fill: job.outcome === 'unknown' ? 'fill-unknown' : 'fill-hub', dot: DISPATCH_DOT[job.outcome], start: at, end: at, point: true, depth: 0, dur: '' });
       }
     } catch {
       steps.push({ name: '派发到运行环境', sub: '派发记录暂不可用', fill: 'fill-unchecked', dot: 'idle', start: resultAt ?? Date.parse(run.started_at), end: resultAt ?? Date.parse(run.started_at), point: true, depth: 0, dur: '' });
@@ -261,7 +266,8 @@ ${callsShown ? '' : html`<p class="note">调用记录暂不可用，只显示 Hu
 
 /** A tool of the call log by its Chinese name, with the name the protocol uses (a method that is not a tool shows only that). */
 export function toolCell(tool: string): Html {
-  return isMcpTool(tool) ? html`${uiLabelOf('mcp_tool', tool)} ${code(tool)}` : code(tool);
+  const label = TOOL_LABELS.get(tool);
+  return label === undefined ? code(tool) : html`${label} ${code(tool)}`;
 }
 
 /** A link to the full record of a run, for the list rows. */

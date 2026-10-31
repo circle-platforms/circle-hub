@@ -35,7 +35,6 @@ export const AXES = {
   action_result: { label: '动作结果', owner: 'B05', values: [{ code: 'completed', label: '完成' }, { code: 'error', label: '报错' }, { code: 'unknown', label: '未知' }] },
   acceptance: { label: '回执', owner: 'B05', values: [{ code: 'accepted', label: '已受理' }, { code: 'not_accepted', label: '未受理' }] },
   call_result: { label: '调用结果', owner: 'B08', values: [{ code: 'ok', label: '正常' }, { code: 'error', label: '出错' }, { code: 'transport_failure', label: '传输失败' }] },
-  mcp_tool: { label: '工具', owner: 'D06', values: [{ code: 'list_task_packs', label: '查询任务包' }, { code: 'upload_file', label: '上传文件' }, { code: 'start_run', label: '启动任务' }, { code: 'get_nodes', label: '读取知识' }, { code: 'resolve_reference', label: '引用解析' }, { code: 'submit_result', label: '提交结果' }] },
   effect_outcome: { label: '效果结局', owner: 'B06', values: [{ code: 'issued', label: '已发出' }, { code: 'effective', label: '已生效' }, { code: 'read_back_consistent', label: '已回读一致' }, { code: 'read_back_mismatch', label: '内容不符' }, { code: 'target_rejected', label: '目标拒绝' }, { code: 'not_dispatched', label: '未发出' }, { code: 'proven_not_executed', label: '已证明未执行' }, { code: 'unknown', label: '未知' }] },
   effect_mark: { label: '效果追加标记', owner: 'B06', values: [{ code: 'disposed', label: '已处置' }, { code: 'compensated', label: '已补偿' }, { code: 'possible_duplicate', label: '可能重复' }] },
   effect_class: { label: '效果类', owner: 'D03', values: [{ code: 'none', label: '无' }, { code: 'read', label: '读' }, { code: 'sync_write', label: '同步写' }, { code: 'job', label: '作业' }, { code: 'notification', label: '通知' }] },
@@ -409,16 +408,6 @@ export const CALL_RESULT_UI = { 'ok': '正常', 'error': '出错', 'transport_fa
 export const CallResultSchema = z.enum(CALL_RESULT);
 export function isCallResult(value: unknown): value is CallResult {
   return (CALL_RESULT as readonly unknown[]).includes(value);
-}
-
-/** 工具 (D06) */
-export const MCP_TOOL = ['list_task_packs', 'upload_file', 'start_run', 'get_nodes', 'resolve_reference', 'submit_result'] as const;
-export type McpTool = (typeof MCP_TOOL)[number];
-export const MCP_TOOL_LABEL = { 'list_task_packs': '查询任务包', 'upload_file': '上传文件', 'start_run': '启动任务', 'get_nodes': '读取知识', 'resolve_reference': '引用解析', 'submit_result': '提交结果' } as const satisfies { readonly [K in McpTool]: string };
-export const MCP_TOOL_UI = { 'list_task_packs': '查询任务包', 'upload_file': '上传文件', 'start_run': '启动任务', 'get_nodes': '读取知识', 'resolve_reference': '引用解析', 'submit_result': '提交结果' } as const satisfies { readonly [K in McpTool]: string };
-export const McpToolSchema = z.enum(MCP_TOOL);
-export function isMcpTool(value: unknown): value is McpTool {
-  return (MCP_TOOL as readonly unknown[]).includes(value);
 }
 
 /** 效果结局 (B06) */
@@ -964,7 +953,6 @@ export interface AxisValues {
   action_result: ActionResult;
   acceptance: Acceptance;
   call_result: CallResult;
-  mcp_tool: McpTool;
   effect_outcome: EffectOutcome;
   effect_mark: EffectMark;
   effect_class: EffectClass;
@@ -1051,7 +1039,6 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   action_result: ACTION_RESULT_LABEL,
   acceptance: ACCEPTANCE_LABEL,
   call_result: CALL_RESULT_LABEL,
-  mcp_tool: MCP_TOOL_LABEL,
   effect_outcome: EFFECT_OUTCOME_LABEL,
   effect_mark: EFFECT_MARK_LABEL,
   effect_class: EFFECT_CLASS_LABEL,
@@ -1138,7 +1125,6 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   action_result: ACTION_RESULT_UI,
   acceptance: ACCEPTANCE_UI,
   call_result: CALL_RESULT_UI,
-  mcp_tool: MCP_TOOL_UI,
   effect_outcome: EFFECT_OUTCOME_UI,
   effect_mark: EFFECT_MARK_UI,
   effect_class: EFFECT_CLASS_UI,

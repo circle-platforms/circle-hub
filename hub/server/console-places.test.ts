@@ -155,7 +155,7 @@ describe('tasks', () => {
     assert.ok(!(await get(`/console/runs?result=${other}`, session)).body.includes(`/console/runs/${run}"`), 'another result filters it out');
     assert.equal((await get('/console/runs?result=bogus', session)).status, 400);
     const detail = await get(`/console/runs/${run}`, session);
-    for (const text of ['执行过程', '工具调用', 'Hub 校验', '任务结果', '完整记录', uiLabelOf('mcp_tool', 'submit_result'), uiLabelOf('mcp_tool', 'start_run')]) assert.ok(detail.body.includes(text), text);
+    for (const text of ['执行过程', '工具调用', 'Hub 校验', '任务结果', '完整记录', '提交结果', '启动任务']) assert.ok(detail.body.includes(text), text);
     assert.ok(detail.body.indexOf('执行过程') < detail.body.indexOf('完整记录'), 'the process comes first');
     assert.match(detail.body, /<svg class="svg-track" role="img"/, 'bars are SVG attributes');
   });

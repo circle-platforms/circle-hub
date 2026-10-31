@@ -10,7 +10,7 @@ import type { ResourceListing } from '../../ports.ts';
 import { commands } from './commands.ts';
 import { code, html, icon, page, table, type Html } from './html.ts';
 import type { PageContext, PageResult } from './pages.ts';
-import { button, callout, card, chip, commandLink, commandModal, kpi, plannedCard, sectionHead, seg, when, type CommandDialog } from './ui.ts';
+import { button, callout, card, chip, commandLink, commandModal, kpi, plannedCard, sectionHead, seg, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
 
 interface Circle {
   owner: string;
@@ -29,7 +29,7 @@ async function circlesOf(ctx: PageContext): Promise<Circle[]> {
   return out.sort((a, b) => (b.token.last_used_at ?? '').localeCompare(a.token.last_used_at ?? ''));
 }
 
-function systemState(resource: ResourceListing): { text: string; tone: 'pass' | 'unchecked' | 'fail'; dot: 'ok' | 'idle' | 'down' } {
+function systemState(resource: ResourceListing): { text: string; tone: Tone; dot: DotState } {
   if (resource.binding_error !== undefined) return { text: '配置有误', tone: 'fail', dot: 'down' };
   return resource.enabled ? { text: '启用', tone: 'pass', dot: 'ok' } : { text: '已停用', tone: 'unchecked', dot: 'idle' };
 }

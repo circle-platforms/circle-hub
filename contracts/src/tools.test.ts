@@ -3,7 +3,6 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { MCP_TOOL, labelOf } from '../generated/vocabulary.ts';
 import { MAX_UPLOAD_BASE64_LENGTH, MAX_UPLOAD_BYTES, TOOLS } from './tools.ts';
 
 type Schema = Record<string, unknown>;
@@ -55,9 +54,10 @@ test('tools.json lists exactly the six tools, in the order of TOOLS', () => {
   );
 });
 
-test('the mcp_tool axis names exactly the six tools, in the order of TOOLS, each with a Chinese name for the console', () => {
-  assert.deepEqual([...MCP_TOOL], TOOLS.map((t) => t.name));
-  for (const name of MCP_TOOL) assert.ok(CJK.test(labelOf('mcp_tool', name)), name);
+test('every tool has a Chinese name for the console that is never published to models', () => {
+  for (const tool of TOOLS) assert.ok(CJK.test(tool.label), tool.name);
+  assert.equal(new Set(TOOLS.map((tool) => tool.label)).size, TOOLS.length, 'labels are unique');
+  for (const tool of tools) assert.ok(!('label' in tool), `${tool.name}: tools.json carries no console label`);
 });
 
 test('every tool has an English title and description', () => {
