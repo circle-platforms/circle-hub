@@ -24,8 +24,8 @@ import { HubConfigError, HubEnvironmentError, type HubConfig } from '../config/i
 import { ConnectorError, type AddResourceInput, type LoginStatus, type UpdateResourceInput } from '../connectors/api.ts';
 import { KnowledgeError, createKnowledgeReader, formatKnowledgeRetract, formatSeedReport, formatSyncReport, knowledgeRetract, knowledgeSeed, knowledgeSync, parseKnowledgeSeedArgs, parseKnowledgeSyncArgs, type KnowledgeSeedArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
 import { DocsError } from './docs.ts';
-import type { ProductHandle } from '../ports.ts';
-import { productionShareKey, RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
+import type { ProductHandle, RunsService } from '../ports.ts';
+import { productionShareKey, RecordsError, WHOLE_HUB, parseStrictJson, isSha256, scanForCredentials, type EffectiveScanAcceptance, type IssuedToken, type Page, type Principal, type RecordStore, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
 import { unruledShapes, parsePackRef, type PackProblem } from '../runs/api.ts';
 import type { CliCommand, CliContext } from './api.ts';
 import { hintOf, messageOf } from './assemble/errors.ts';
@@ -800,6 +800,36 @@ export async function writeKnowledgeViewFile(target: string, bytes: Uint8Array, 
   }
 }
 
+const objectOf = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+
+/**
+ * `knowledge retract --run`: the contribution records a run stored, in receipt order, as its accepted validation results
+ * list them (`contributions.stored`); a contribution record names no run. The run is read through the runs service, as
+ * `run show` and `share run` read it. Every accepted result the run's detail names is read, not only the latest: a later
+ * accepted submission's receipt lists only its own items, and an abandoned run's latest result is the management projection,
+ * which has no receipt. Stored results are read as stored, so older result shapes still give their receipts. Null when the
+ * run is absent; the retraction screen then refuses it.
+ */
+export async function runContributionEntries(runs: Pick<RunsService, 'getRun'>, store: Pick<RecordStore, 'get'>, by: Principal, run: string): Promise<string[] | null> {
+  const detail = await runs.getRun(by, run);
+  if (detail === null) return null;
+  const results = new Map<string, unknown>();
+  for (const submission of detail.submissions) if (submission.result !== null) results.set(submission.result, null);
+  if (detail.latest !== null) results.set(detail.latest.record, detail.latest.result);
+  const entries: string[] = [];
+  for (const [digest, known] of results) {
+    const stored = known === null ? await store.get(digest) : null;
+    const result = objectOf(known ?? (stored?.kind === 'validation_result' ? stored.body : null));
+    if (result === null || result.run !== run || result.acceptance !== 'accepted') continue;
+    const rows = objectOf(result.contributions)?.stored;
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const record = objectOf(row)?.record;
+      if (typeof record === 'string' && isSha256(record) && !entries.includes(record)) entries.push(record);
+    }
+  }
+  return entries;
+}
+
 async function knowledgeCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'view') {
@@ -879,7 +909,18 @@ async function knowledgeCommand(session: Session, args: readonly string[]): Prom
     const hub = await session.hub(true);
     const feeding = hub.knowledge.feeding;
     if (!feeding) throw new CliError('喂入层没有装上', '用当前 Hub 装配后重试');
-    const report = await decided(() => knowledgeRetract(feeding, admin, { entries, runs, objects, reason: reason.trim(), at: hub.knowledge.__context.now().toISOString() }));
+    // A run's contributions join the entries of the same command, so the entry record lists them and the read side marks
+    // each one; entries an earlier record already lists are skipped as covered, as any other target is.
+    const included: Array<{ run: string; count: number }> = [];
+    const targets = [...entries];
+    for (const run of new Set(runs)) {
+      const stored = await decided(() => runContributionEntries(hub.deps.runs, hub.records.store, admin, run));
+      if (stored === null) continue;
+      included.push({ run, count: stored.length });
+      targets.push(...stored);
+    }
+    const report = await decided(() => knowledgeRetract(feeding, admin, { entries: targets, runs, objects, reason: reason.trim(), at: hub.knowledge.__context.now().toISOString() }));
+    for (const row of included) session.out(`运行 ${row.run} 存下的回注条目 ${row.count} 个一并列为撤回目标`);
     for (const line of formatKnowledgeRetract(report)) session.out(line);
     return 0;
   }

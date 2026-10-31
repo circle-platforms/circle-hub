@@ -36,6 +36,10 @@ export interface ContributionOrigin {
 }
 export type PreparedContribution = Omit<KnowledgeContributionBody, 'submitted_at' | 'run' | 'submission' | 'session' | 'model'>;
 interface GroundState {visible:boolean;held:boolean}
+/** Shared by the views of one page call: tree digests, endpoint digests, ground states and the retracted entries. */
+interface ViewCache {digests:Map<string,string|null>;endpoints:Map<string,Promise<string|null>>;readable:Map<string,Promise<GroundState>>;retracted?:Promise<ReadonlySet<string>>}
+/** The note of a contribution an administrator's retraction@1 lists among its entries: no longer valid, never deleted. */
+const RETRACTED = '这条回注本身已被管理员撤回；历史引文仍保留';
 interface Preparation {
   composition: CompositionView;
   compositions: CompositionView[];
@@ -314,10 +318,13 @@ export class ContributionLayer {
     const body = KnowledgeContributionBody.parse({ ...prepared,...(feedingRecord?{feeding_record:feedingRecord}:{}), session:origin.session,model:origin.model, submitted_at: this.#context.now().toISOString() });
     const operation=body.feeding!==undefined&&operationRecord(body.feeding.schema);
     const lease=operation?await reproductionLease(this.#context.records.store,origin.run):null;
+    // knowledge.contribution.run names the run that first stored the record; nothing reads it yet. A run's contributions
+    // are the records its accepted receipts list (knowledge retract --run), which include records stored before this index
+    // and records an identical later submission of another run shares.
     return (await this.#context.store.putClaim(SCHEMAS.contribution, operation?'client_captured':'declared', body,
       [{ key: INDEX.contribution, value: body.product }, { key: 'knowledge.contribution.identity', value: key },
         {key:'knowledge.contribution.node',value:digestOf({product:body.product,path:body.path})},
-        ...(operation?[{key:'knowledge.contribution.run',value:origin.run}]:[]),
+        {key:'knowledge.contribution.run',value:origin.run},
         ...(lease?[{key:'knowledge.contribution.lease',value:lease}]:[])], tx)).digest;
   }
 
@@ -373,9 +380,14 @@ export class ContributionLayer {
     const record=await this.#context.records.store.get(digest);const body=record===null?null:KnowledgeStore.contributionOf(record);
     if(body===null||!(await this.mayRead(body.product,reader)))return null;
     const state=await this.#groundsState(body,reader,new Map());if(!state.visible)return null;
+    if(state.held)return this.#withheld(digest,body);
+    if((await this.#retracted()).has(digest))return {record:digest,contribution:body,status:'grounds_withdrawn',note:RETRACTED};
     const feedingState=body.feeding_record?await this.#context.feeding?.recordState(body.feeding_record,reader,digest):null;
-    return state.held?this.#withheld(digest,body):{record:digest,contribution:body,status:feedingState?.validity==='invalid'?'grounds_withdrawn':'valid',note:feedingState?.validity==='invalid'?'根据已失效；查看喂入撤回和来源修订记录':null};
+    return {record:digest,contribution:body,status:feedingState?.validity==='invalid'?'grounds_withdrawn':'valid',note:feedingState?.validity==='invalid'?'根据已失效；查看喂入撤回和来源修订记录':null};
   }
+
+  /** The record digests retraction records list as entries; empty without a feeding layer, which holds every retraction. */
+  #retracted():Promise<ReadonlySet<string>>{return this.#context.feeding?.retractedEntries()??Promise.resolve(new Set<string>());}
 
   async has(root:string,reader:Principal):Promise<boolean>{
     for(const product of await this.#reading.productsOfRoot(root))if(await this.mayRead(product,reader)){
@@ -410,7 +422,7 @@ export class ContributionLayer {
     const encode=()=>at>=products.length?null:Buffer.from(JSON.stringify({q,p:products[at],c:cursor})).toString('base64url');
     const limit=Math.min(MAX_NODE_CONTRIBUTIONS,Math.max(1,options.limit??MAX_NODE_CONTRIBUTIONS));
     const budget=Math.max(0,options.bytes??this.#context.limits.pageBytes);let bytes=0,scanned=0;
-    const cache={digests:new Map<string,string|null>(),endpoints:new Map<string,Promise<string|null>>(),readable:new Map<string,Promise<GroundState>>()};
+    const cache:ViewCache={digests:new Map(),endpoints:new Map(),readable:new Map()};
     const items:KnowledgeContributionPageView[]=[];
     const deferred = () => ({items,next:encode()});
     while(at<products.length&&items.length<limit&&scanned<MAX_NODE_CONTRIBUTIONS*4){
@@ -447,7 +459,7 @@ export class ContributionLayer {
     return items;
   }
 
-  async #views(root:string,records:StoredRecord[],reader:Principal,cache:{digests:Map<string,string|null>;endpoints:Map<string,Promise<string|null>>;readable:Map<string,Promise<GroundState>>}):Promise<KnowledgeContributionView[]>{
+  async #views(root:string,records:StoredRecord[],reader:Principal,cache:ViewCache):Promise<KnowledgeContributionView[]>{
     const out: KnowledgeContributionView[] = [];
     const {digests,endpoints,readable}=cache;
     for (const record of records) {
@@ -455,6 +467,8 @@ export class ContributionLayer {
       if (body === null) continue;
       const state=await this.#groundsState(body,reader,readable);if(!state.visible)continue;
       if(state.held){out.push(this.#withheld(record.digest,body));continue;}
+      // The retraction records are read once for the whole page call, not once per contribution.
+      if((await (cache.retracted??=this.#retracted())).has(record.digest)){out.push({record:record.digest,contribution:body,status:'grounds_withdrawn',note:RETRACTED});continue;}
       if(body.feeding_record&&(await this.#context.feeding?.recordState(body.feeding_record,reader,record.digest))?.validity==='invalid'){out.push({record:record.digest,contribution:body,status:'grounds_withdrawn',note:'喂入主张根据已撤回或原件已修订；历史引文仍保留'});continue;}
       if (!digests.has(body.path)) {
         const fragment = await this.#reading.treeReader().read(root, body.path, null, { user: reader.id, role: reader.role });
