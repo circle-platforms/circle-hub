@@ -13,7 +13,8 @@ import type { McpClient } from './support/mcp.ts';
 
 const PHENOMENON = 'ORBIT 合成监听没有应答';
 const ECHO = 'ORBIT 合成回显：没有应答';
-const EXIT = '管理员在清单登记在装构建，或把某台升级到该构建后重试';
+// The exit of an unmatched build: who takes each step and by which existing means; test-bed has no upgrade action (D05 R[8]).
+const EXIT = '要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；清单声明的在装构建与设备实际不符时：请管理员核对设备后重新发布清单。test-bed 没有升级设备的动作';
 
 interface Claim { statement: { text: string } }
 interface ResultBody { partitions?: Record<string, Array<{ requirements?: Array<{ claims?: Claim[] }> }>>; cross_item?: Claim[] }
@@ -137,21 +138,22 @@ test('T4-4 synthetic reproduction: ticket, bed search, observation quotes, lease
   assert.ok(matchedRun);
   const matchedClaims = (await claimsOf(bed, matchedRun)).map((claim) => claim.statement.text);
   assert.ok(matchedClaims.some((text) => text.includes('orbit-bed') && text.includes(`构建一致（${ticketBuild}，声明，未核对）`)), JSON.stringify(matchedClaims).slice(0, 500));
-  assert.ok(!matchedClaims.some((text) => text.includes('没有任何自动化测试环境的在装构建匹配')));
+  assert.ok(!matchedClaims.some((text) => text.includes('没有任何自动化测试环境声明在装')));
 
   const missed = await client.call('start_run', { pack: 'test-bed', inputs, parameters: { action: 'search', need: { ...need, build: otherBuild } } });
   assert.equal(missed.isError, false, missed.text.slice(0, 800));
   const missedRun = missed.out.run?.run;
   assert.ok(missedRun);
   const missedClaims = (await claimsOf(bed, missedRun)).map((claim) => claim.statement.text);
-  assert.ok(missedClaims.some((text) => text.includes('orbit-bed') && text.includes(`需要升级到 ${otherBuild}`)));
+  assert.ok(missedClaims.some((text) => text.includes('orbit-bed') && text.includes(`要的是 ${otherBuild}`)));
   assert.ok(missedClaims.some((text) => text.includes('comet-bed') && text.includes('没有记录（未知）')));
-  const unknown = missedClaims.find((text) => text.includes('没有任何自动化测试环境的在装构建匹配'));
+  const unknown = missedClaims.find((text) => text.includes('没有任何自动化测试环境声明在装'));
   assert.ok(unknown, JSON.stringify(missedClaims).slice(0, 800));
-  assert.match(unknown, new RegExp(`版本线 ${otherBuild}`));
+  assert.ok(unknown.includes(`声明在装 ${otherBuild}（构建名或它的基础构建逐字相等才算；在装构建来自清单声明，未核对）`), unknown);
   assert.match(unknown, new RegExp(`orbit-bed/orbit0 装的是 ${ticketBuild}`));
   assert.match(unknown, /缺在装构建记录：comet-bed\/comet0/);
-  assert.match(unknown, new RegExp(EXIT));
+  assert.ok(unknown.includes(`。下一步：${EXIT}`), unknown);
+  assert.doesNotMatch(unknown, /升级到|先升级|把某台升级/);
 
   const booked = await client.call('start_run', { pack: 'test-bed', inputs, parameters: { action: 'acquire', bed: 'orbit-bed', need } });
   assert.equal(booked.isError, false, booked.text.slice(0, 800));
