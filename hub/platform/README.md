@@ -77,7 +77,8 @@ when one is given) unless settings exist, `key init` and `tls init` unless prese
 <data root>/runtime/node/bin/node` unless that commit is current, and `setup-code`; it writes a `circle-hub` wrapper and
 prints the console address, the setup code and the authority certificate to trust. Every deploy backs up first, so the
 installer provides a PostgreSQL 18 client: Homebrew `libpq` on macOS, `postgresql-client-18` on Linux (from the system
-sources, else apt.postgresql.org), passed as `CIRCLE_HUB_LIBPQ_BIN`. On Linux it also creates the `circle-hub` account
+sources, else apt.postgresql.org), passed as `CIRCLE_HUB_LIBPQ_BIN`; a `CIRCLE_HUB_LIBPQ_BIN` already set names the client
+to use instead (an absolute directory with PostgreSQL 18's `pg_dump` and `pg_restore`, else the installer stops). On Linux it also creates the `circle-hub` account
 (its data root is `lib/circle-hub` under `/var`, as for that account above; lingering, its user manager started), installs bubblewrap and AppArmor and loads the
 Hub's AppArmor policy for the bundled Node (`hub/rules/sandbox/linux.ts`). Running it again upgrades through deploy.
 `.github/workflows/release.yml` installs a freshly built bundle with install.sh on a fresh Ubuntu runner and checks HTTP,

@@ -13,11 +13,11 @@ import { BUNDLED_NODE, hydratePostgresLinks, nodeTarball, npmTarget, shasumOf } 
 
 const SCRIPT = fileURLToPath(new URL('../../install.sh', import.meta.url));
 
-function install(args: string[], os: string, arch = 'arm64'): { code: number; out: string; err: string } {
+function install(args: string[], os: string, arch = 'arm64', extra: NodeJS.ProcessEnv = {}): { code: number; out: string; err: string } {
   const result = spawnSync('bash', [SCRIPT, ...args], {
     encoding: 'utf8',
     timeout: 60_000,
-    env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: join(tmpdir(), 'circle-hub-synthetic-home'), CIRCLE_HUB_INSTALL_OS: os, CIRCLE_HUB_INSTALL_ARCH: arch, CIRCLE_HUB_DATA_DIR: '/srv/synthetic-hub' },
+    env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: join(tmpdir(), 'circle-hub-synthetic-home'), CIRCLE_HUB_INSTALL_OS: os, CIRCLE_HUB_INSTALL_ARCH: arch, CIRCLE_HUB_DATA_DIR: '/srv/synthetic-hub', ...extra },
   });
   return { code: result.status ?? -1, out: result.stdout, err: result.stderr };
 }
@@ -67,6 +67,28 @@ test('other systems, other architectures and contradictory options are refused b
   ] as const) {
     const { code, err } = install(['--dry-run', '--version', '0.3.0', ...args], 'Darwin');
     assert.equal(code, 1, args.join(' '));
+    assert.match(err, pattern);
+  }
+});
+
+test('CIRCLE_HUB_LIBPQ_BIN names PostgreSQL 18 client tools installed elsewhere; another major version or a relative path is refused', async (t) => {
+  const clientTools = async (major: number): Promise<string> => {
+    const dir = await mkdtemp(join(tmpdir(), 'circle-hub-libpq-'));
+    t.after(() => rm(dir, { recursive: true, force: true }));
+    for (const tool of ['pg_dump', 'pg_restore']) await writeFile(join(dir, tool), `#!/bin/sh\necho '${tool} (PostgreSQL) ${major}.6'\n`, { mode: 0o755 });
+    return dir;
+  };
+  const pg18 = await clientTools(18);
+  for (const [os, arch] of [['Darwin', 'arm64'], ['Linux', 'x86_64']] as const) {
+    const { code, out, err } = install(['--dry-run', '--version', '0.3.0'], os, arch, { CIRCLE_HUB_LIBPQ_BIN: pg18 });
+    assert.equal(code, 0, err);
+    const deploy = out.split('\n').find((line) => line.includes(' deploy --bundle '));
+    assert.ok(deploy?.includes(`env CIRCLE_HUB_LIBPQ_BIN=${pg18} `), deploy);
+    assert.doesNotMatch(out, /brew install libpq|postgresql-client-18/, `${os}: the named tools are used, nothing is installed for them`);
+  }
+  for (const [dir, pattern] of [[await clientTools(17), /没有 PostgreSQL 18 的 pg_dump 和 pg_restore/], ['relative/bin', /要是绝对路径/]] as const) {
+    const { code, err } = install(['--dry-run', '--version', '0.3.0'], 'Darwin', 'arm64', { CIRCLE_HUB_LIBPQ_BIN: dir });
+    assert.equal(code, 1, dir);
     assert.match(err, pattern);
   }
 });
