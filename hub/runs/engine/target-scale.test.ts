@@ -85,7 +85,10 @@ test('a missing seedling preserves the refusal and its exact version options', a
   await assert.rejects(resolveTarget(ctx, user, workflow, StartRunInput.parse({ pack: 'synthetic', product: 'Meridian', version: '10.8', inputs: {} }), '2026-10-28T00:00:00.000Z', 'synthetic'), (error: any) => {
     assert.equal(error.errors[0].code, 'REFERENCE_UNRESOLVED');
     assert.equal(error.errors[0].path, '/version');
-    assert.deepEqual(error.errors[0].options, builds.filter(b => b.line === '10.8').slice(0, 20).map(b => b.name));
+    // Every build of the line is an option, with its count; none is cut silently (A05 R[1], D05 R[8]).
+    const line = builds.filter(b => b.line === '10.8').map(b => b.name);
+    assert.deepEqual(error.errors[0].options, line);
+    assert.deepEqual([error.errors[0].options_coverage.complete, error.errors[0].options_coverage.examined, error.errors[0].options_coverage.total], [true, line.length, line.length]);
     return true;
   });
   assert.equal(counts.builds, 1);

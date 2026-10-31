@@ -96,26 +96,27 @@ describe('matchNeed with a build requirement', () => {
     assert.equal(answer.find((b) => b.bed === 'bed-a')!.buildOk, 'match');
     assert.equal(answer.find((b) => b.bed === 'bed-a')!.buildSource, 'declared');
   });
-  it('a different base build: mismatch, the conclusion says 需要升级', () => {
+  it('a different base build: mismatch, the conclusion says what is installed and what is wanted, never to upgrade', () => {
     const installed: Record<string, Installed> = { 'bed/bed-a/apv0': { build: 'Rel_APV_10_6_1_9', source: 'declared', at: '2026-10-20T00:00:00.000Z' } };
     const answer = matchNeed(beds, buildNeed, installed, {}, noLeases, NOW);
     assert.equal(answer.find((b) => b.bed === 'bed-a')!.buildOk, 'mismatch');
-    assert.match(answer.find((b) => b.bed === 'bed-a')!.conclusion, /需要升级/);
+    assert.match(answer.find((b) => b.bed === 'bed-a')!.conclusion, /要的是/);
+    assert.doesNotMatch(answer.find((b) => b.bed === 'bed-a')!.conclusion, /升级/);
   });
   it('a declared record is shown as declared and unchecked (声明，未核对), on a match and on a mismatch', () => {
     const match = matchNeed(beds, buildNeed, { 'bed/bed-a/apv0': { build: 'Rel_APV_10_6_1_8', source: 'declared', at: '2026-10-20T00:00:00.000Z' } }, {}, noLeases, NOW);
     assert.match(match.find((b) => b.bed === 'bed-a')!.conclusion, /构建一致（Rel_APV_10_6_1_8，声明，未核对）/);
     const mismatch = matchNeed(beds, buildNeed, { 'bed/bed-a/apv0': { build: 'Rel_APV_10_6_1_9', source: 'declared', at: '2026-10-20T00:00:00.000Z' } }, {}, noLeases, NOW);
-    assert.match(mismatch.find((b) => b.bed === 'bed-a')!.conclusion, /构建不一致（装的是 Rel_APV_10_6_1_9，需要升级到 Rel_APV_10_6_1_8，声明，未核对）/);
+    assert.match(mismatch.find((b) => b.bed === 'bed-a')!.conclusion, /构建不一致（装的是 Rel_APV_10_6_1_9，要的是 Rel_APV_10_6_1_8，声明，未核对）/);
   });
   it('no install record at all: unknown, never mismatch; source none', () => {
     const answer = matchNeed(beds, buildNeed, noInstalled, {}, noLeases, NOW);
     const a = answer.find((b) => b.bed === 'bed-a')!;
     assert.equal(a.buildOk, 'unknown');
     assert.equal(a.buildSource, 'none');
-    assert.doesNotMatch(a.conclusion, /需要升级/);
+    assert.doesNotMatch(a.conclusion, /要的是|升级/);
   });
-  it('no bed matches the required build: unknown names the version line, each deciding device and the exit; per-bed fields stay', () => {
+  it('no bed matches the required build: unknown names the build, each deciding device and exits someone can take; per-bed fields stay', () => {
     const need = { devices: [{ type: 'load-balancer', count: 1 }], build: 'Rel_APV_10_6_1_9' };
     const installed: Record<string, Installed> = { 'bed/bed-a/apv0': { build: 'Rel_APV_10_6_1_8', source: 'declared', at: '2026-10-20T00:00:00.000Z' } };
     const matches = matchNeed(beds, need, installed, {}, noLeases, NOW);
@@ -124,10 +125,11 @@ describe('matchNeed with a build requirement', () => {
     const gap = unmatchedBuildExit(beds, need, installed, {}, noLeases, NOW, matches);
     assert.ok(gap);
     assert.equal(gap.verdict, 'unknown');
-    assert.match(gap.missing, /没有任何自动化测试环境的在装构建匹配版本线 Rel_APV_10_6_1_9/);
+    assert.match(gap.missing, /没有任何自动化测试环境声明在装 Rel_APV_10_6_1_9（构建名或它的基础构建逐字相等才算；在装构建来自清单声明，未核对）/);
     assert.match(gap.missing, /bed-a\/apv0 装的是 Rel_APV_10_6_1_8/);
     assert.match(gap.missing, /缺在装构建记录：bed-b\/lb0/);
-    assert.equal(gap.fix, '管理员在清单登记在装构建，或把某台升级到该构建后重试');
+    assert.equal(gap.fix, '要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；清单声明的在装构建与设备实际不符时：请管理员核对设备后重新发布清单。test-bed 没有升级设备的动作');
+    assert.doesNotMatch(gap.fix, /升级到|先升级|把某台升级/);
     const matched = matchNeed(beds, { ...need, build: 'Rel_APV_10_6_1_8' }, installed, {}, noLeases, NOW);
     assert.equal(unmatchedBuildExit(beds, { ...need, build: 'Rel_APV_10_6_1_8' }, installed, {}, noLeases, NOW, matched), null);
   });

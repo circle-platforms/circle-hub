@@ -1,7 +1,9 @@
 import {fixedStatusDeclaration} from './fixed-status.ts';
 // Projection function for defect-to-case: turns bound defects into run items.
+import type { ErrorHypothesis } from '../../../../contracts/src/common.ts';
 import type {
   BoundInput,
+  PackError,
   PackWarning,
   ProjectedItem,
   ProjectionInput,
@@ -9,6 +11,26 @@ import type {
 } from '../../../../contracts/src/pack.ts';
 import { buildCompactIndex } from './compact-index.ts';
 import { PACK } from './types.ts';
+
+/**
+ * The claim of a defect without fix text (D05 R[8]): the record it rests on, the missing fact and the open causes. The
+ * fixed-status rule predicts that a defect not yet fixed has no original structured status fixed, so an observed fixed
+ * excludes that cause; the other cause has no rule prediction and stays open.
+ */
+function noFixTextClaim(model: Record<string, unknown>, sha256: string, fixField: string | null, notes: number[] | null): Pick<PackError, 'grounds' | 'provenance' | 'missing' | 'hypotheses'> {
+  const declared = fixedStatusDeclaration(model);
+  const fields = isRecord(model.fields) ? model.fields : {};
+  const raw = Object.hasOwn(fields, 'status') ? fields.status : model.status;
+  const seen = typeof raw === 'string' && raw.trim() !== '' ? `“${raw}”` : '没有';
+  const record = `src:${sha256}`;
+  const prediction = '没修复的缺陷，原始结构状态不会声明 fixed（defect-to-case 的已修复状态规则）';
+  const notFixed: ErrorHypothesis = declared.status === 'fixed'
+    ? { statement: '缺陷还没有修复，所以没有修复说明', prediction, refute: [`原始结构状态声明 fixed（${record}）`], status: 'excluded' }
+    : { statement: '缺陷还没有修复，所以没有修复说明', prediction, support: [`原始结构状态是 ${seen}，没有声明 fixed（${record}）`], status: 'open' };
+  const configured = fixField === null && notes === null ? 'PLM 资源没有配置 settings.bug_fix_field，也没有配置 settings.bug_fix_actions' : fixField !== null ? `配置的字段 ${fixField} 在这条缺陷里没有文字` : '声明的动作码在这条缺陷里没有非空 comment';
+  const elsewhere: ErrorHypothesis = { statement: '修复说明写在 Hub 没有配置读取的字段或动作里', support: [configured], status: 'open' };
+  return { grounds: [record], provenance: 'projected', missing: '可以引用的修复说明', hypotheses: [notFixed, elsewhere] };
+}
 
 export const DEFECTS_SLOT = 'defects';
 export const INDEXED_CASES_SLOT = 'indexed_cases';
@@ -109,8 +131,11 @@ export function projectDefects(input: unknown): ProjectionOutput {
     const fieldText = fixField !== null && isRecord(model.fields) && typeof model.fields[fixField] === 'string' && (model.fields[fixField] as string).trim() !== '';
     const notes = !Object.hasOwn(model, 'fix_notes') || model.fix_notes === null ? null : Array.isArray(model.fix_notes) ? model.fix_notes.flatMap((row, index) => isRecord(row) && typeof row.comment === 'string' && row.comment.trim() !== '' ? [index] : []) : null;
     if (!fieldText && !(notes !== null && notes.length > 0)) {
-      if (fixField === null) return { error: { code: `${PACK}.missing_fix_field`, message: `缺陷 ${id} 没有可引用的修复说明：content.fix_field 未配置，content.fix_notes 也没有非空 comment`, fix: '请集成者配置 PLM 资源 settings.bug_fix_field（字段名）或 settings.bug_fix_actions（动作码 JSON 字符串数组）后自动重新读取缺陷；不得猜字段名或动作码' }, warnings: [] };
-      return { error: { code: `${PACK}.fix_text_missing`, message: `缺陷 ${id} 的修复说明字段 ${fixField} 不存在、不是文字或为空，且 fix_notes 没有非空 comment`, fix: notes === null ? '核对 PLM 资源 settings.bug_fix_field，或配置 settings.bug_fix_actions 后重新读取；不进入运行或消耗修复轮' : '该缺陷的配置字段为空，且声明的动作码没有非空 comment；换有修复说明的缺陷，不进入运行或消耗修复轮' }, warnings: [] };
+      // Why there is no fix text is open: the error lists the causes the pack knows with what bears on each, plus 其他
+      // (V08); only the fixed-status rule gives a prediction, so only that hypothesis can be excluded (V08 R[0]).
+      const claim = noFixTextClaim(model, b.sha256, fixField, notes);
+      if (fixField === null) return { error: { code: `${PACK}.missing_fix_field`, message: `缺陷 ${id} 没有可引用的修复说明：content.fix_field 未配置，content.fix_notes 也没有非空 comment`, fix: '缺陷修复后再开运行（你的运行能做）；修复说明若写在别的字段或动作里，请集成者配置 PLM 资源 settings.bug_fix_field（字段名）或 settings.bug_fix_actions（动作码 JSON 字符串数组）后重读（集成者做）；不得猜字段名或动作码', ...claim }, warnings: [] };
+      return { error: { code: `${PACK}.fix_text_missing`, message: `缺陷 ${id} 的修复说明字段 ${fixField} 不存在、不是文字或为空，且 fix_notes 没有非空 comment`, fix: notes === null ? '缺陷修复后再开运行（你的运行能做）；字段配错时请集成者核对 PLM 资源 settings.bug_fix_field，或配置 settings.bug_fix_actions 后重读（集成者做）；不进入运行或消耗修复轮' : '该缺陷的配置字段为空，且声明的动作码没有非空 comment；缺陷修复后再开运行，或换有修复说明的缺陷；不进入运行或消耗修复轮', ...claim }, warnings: [] };
     }
     const quotable = [fieldText ? `修复说明字段 ${fixField}` : '', notes !== null && notes.length > 0 ? 'fix_notes 中的 comment' : ''].filter(Boolean).join('，或');
     if (manual === null) warnings.push({ code: `${PACK}.manual_missing`, item: id, message: `版本线 ${line ?? '未确定'} 没有绑定手册 manual:cli:${line ?? '<版本线>'}：本次期望结果只能引用缺陷 ${id} 的${quotable}；自动先核实该版本线的手册是否可读，存在时在 inputs.manual 绑定后重开运行，不存在则保留本条来源限制` });

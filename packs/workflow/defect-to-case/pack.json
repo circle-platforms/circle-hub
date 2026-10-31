@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "defect-to-case",
-  "version": "1.6.23",
+  "version": "1.6.24",
   "kind": "workflow",
   "title": "缺陷转用例",
   "description": "从缺陷（现象、修复说明）起草回归测试用例，Hub 核对命令和参数合法性、期望结果引文依据、用例结构及重复用例",
@@ -68,8 +68,8 @@
     },
     {
       "path": "functions/projection.ts",
-      "sha256": "78c62f2b1f4de38e93557ecff99ee54baaea8b013c3fa1cbe56a6d202d2cf8e6",
-      "size": 8453
+      "sha256": "8ad55ea9229c7c1f3c0e62e184d685654d9743881897460f77f88ed5e048a038",
+      "size": 11051
     },
     {
       "path": "functions/quote-identity.ts",

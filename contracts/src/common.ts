@@ -1,7 +1,7 @@
 // Shared primitives of the Hub contracts. Enumerations never appear here: they come from the generated vocabulary.
 // Every object is strict: an unknown or misspelled key is an issue with a path, never silently dropped.
 import { z } from 'zod';
-import { AcceptanceSchema, CallResultSchema } from '../generated/vocabulary.ts';
+import { AcceptanceSchema, CallResultSchema, HypothesisStatusSchema, ProvenanceTypeSchema } from '../generated/vocabulary.ts';
 
 export const Sha256 = z.string().regex(/^[0-9a-f]{64}$/, 'lowercase hex SHA-256');
 export type Sha256 = z.infer<typeof Sha256>;
@@ -79,6 +79,32 @@ export const Coverage = z
   });
 export type Coverage = z.infer<typeof Coverage>;
 
+/**
+ * One candidate cause of an open cause (V08 F[1]). The status is excluded only when a versioned rule gave the prediction
+ * and an observation refuted it (V08 R[0]); the residual 其他 is never listed here, every answer shows it.
+ */
+export const ErrorHypothesis = z.strictObject({
+  statement: z.string().min(1),
+  prediction: z.string().optional(),
+  support: z.array(z.string().min(1)).max(20).optional().describe('observations and references that agree with the hypothesis'),
+  refute: z.array(z.string().min(1)).max(20).optional().describe('observations and references that disagree with it'),
+  status: HypothesisStatusSchema,
+});
+export type ErrorHypothesis = z.infer<typeof ErrorHypothesis>;
+
+/**
+ * The fields that make an error a claim (B01, D05 R[8]): what it rests on, the rule that decided it, its qualifier, the
+ * missing fact when no next step has a warrant (A06 F[0]) and the candidate causes when the cause is open (V08).
+ */
+export const ErrorClaimFields = {
+  grounds: z.array(z.string().min(1)).max(20).optional().describe('references and external ids the error rests on'),
+  warrant: z.string().min(1).optional().describe('the rule or component that decided it, as id@version'),
+  provenance: ProvenanceTypeSchema.optional().describe('declared, observed or projected (A02)'),
+  collected_at: IsoTime.optional().describe('when the facts it rests on were read; an observation holds only for that moment (A05 R[3])'),
+  missing: z.string().min(1).optional().describe('the missing fact, written instead of a next step nobody can take'),
+  hypotheses: z.array(ErrorHypothesis).max(10).optional(),
+};
+
 /** One protocol error or item-level refutation with its fix (D05). `code` is a protocol code or a namespaced violation code. */
 export const ProtocolError = z.strictObject({
   code: z.string().min(1),
@@ -90,6 +116,9 @@ export const ProtocolError = z.strictObject({
   rounds_left: z.number().int().nonnegative().optional(),
   request_id: z.string().optional(),
   options: z.array(z.string()).optional(),
+  options_coverage: Coverage.optional().describe('how many options there are and how many are listed; note says where the rest are (A05 R[1])'),
+  coverage: Coverage.optional().describe('of the lookup the statement rests on'),
+  ...ErrorClaimFields,
 });
 export type ProtocolError = z.infer<typeof ProtocolError>;
 

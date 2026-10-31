@@ -211,11 +211,11 @@ test('parameters are checked against the workflow and frozen', { skip }, async (
   assert.equal((await start({ strict: false })).call_result, 'ok');
 });
 
-test('a projection that yields no item refuses the whole start_run with the pack fix', { skip }, async () => {
+test('a projection that yields no item refuses the whole start_run with the pack fix and the pack function as its rule', { skip }, async () => {
   const outline = await h.upload(h.alice, toyMap({ id: 'docout', title: '只有提纲', groups: [{ id: 'g1outline000', text: '提纲', cases: [] }] }));
   const answer = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', inputs: { map: { reference: outline } } }, h.call());
   valid(answer);
-  assert.deepEqual(answer.errors, [{ code: 'toy-review.no_case', message: '文档里没有用例节点（docout）', fix: '给用例节点加上 resource 标签', path: '/inputs/map' }]);
+  assert.deepEqual(answer.errors, [{ code: 'toy-review.no_case', message: '文档里没有用例节点（docout）', fix: '给用例节点加上 resource 标签', path: '/inputs/map', warrant: 'toy-review@1.0.0 functions/project.ts' }]);
   assert.equal(answer.run, undefined);
 });
 

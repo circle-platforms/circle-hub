@@ -225,21 +225,31 @@ describe('project with declared installs in the manifest', () => {
     assert.match(String(c.conclusion), /没有记录（未知）/);
   });
 
-  it('search: a declared mismatch says 需要升级, still 声明，未核对', () => {
+  it('acquire on a declared mismatch: the refusal cites the bed of the inventory, says declared, and its fix names no upgrade', () => {
+    const out = project(input({ action: 'acquire', bed: 'bed-a', need: { ...needBuild, build: 'Rel_APV_10_6_1_9' } }, { manifest: DECLARED })) as { error?: { code: string; message: string; fix: string; provenance?: string; grounds?: string[] } };
+    assert.equal(out.error?.code, 'test-bed.build_mismatch');
+    assert.equal(out.error?.provenance, 'declared');
+    assert.deepEqual(out.error?.grounds, [`src:${'a'.repeat(64)}/json@1/p/beds/0`]);
+    assert.match(out.error?.message ?? '', /要的是 Rel_APV_10_6_1_9，声明，未核对/);
+    assert.doesNotMatch(`${out.error?.message}${out.error?.fix}`, /需要升级|先升级/);
+    assert.match(out.error?.fix ?? '', /test-bed 没有升级设备的动作/);
+  });
+
+  it('search: a declared mismatch says what is installed and what is wanted, still 声明，未核对', () => {
     const out = project(input({ need: { ...needBuild, build: 'Rel_APV_10_6_1_9' } }, { manifest: DECLARED }));
     const a = fieldsOf(out, 'bed-a');
     assert.equal(a.build_ok, 'mismatch');
-    assert.match(String(a.conclusion), /构建不一致（装的是 Rel_APV_10_6_1_8，需要升级到 Rel_APV_10_6_1_9，声明，未核对）/);
+    assert.match(String(a.conclusion), /构建不一致（装的是 Rel_APV_10_6_1_8，要的是 Rel_APV_10_6_1_9，声明，未核对）/);
   });
 
   it('search: no matching build adds one unknown exit and does not rewrite the per-bed fields', () => {
     const out = project(input({ need: { ...needBuild, build: 'Rel_APV_10_6_1_9' } }, { manifest: DECLARED })) as { warnings?: Array<{ code: string; message: string }> };
     const warning = out.warnings?.find((row) => row.code === 'test-bed.no_matching_build');
     assert.ok(warning);
-    assert.match(warning.message, /没有任何自动化测试环境的在装构建匹配版本线 Rel_APV_10_6_1_9/);
-    assert.match(warning.message, /管理员在清单登记在装构建，或把某台升级到该构建后重试/);
+    assert.match(warning.message, /没有任何自动化测试环境声明在装 Rel_APV_10_6_1_9/);
+    assert.ok(warning.message.endsWith(`。下一步：要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；清单声明的在装构建与设备实际不符时：请管理员核对设备后重新发布清单。test-bed 没有升级设备的动作`));
     assert.equal(fieldsOf(out, 'bed-a').build_ok, 'mismatch');
-    assert.match(String(fieldsOf(out, 'bed-a').conclusion), /需要升级到 Rel_APV_10_6_1_9/);
+    assert.match(String(fieldsOf(out, 'bed-a').conclusion), /要的是 Rel_APV_10_6_1_9/);
     const matched = project(input({ need: needBuild }, { manifest: DECLARED })) as { warnings?: Array<{ code: string }> };
     assert.equal(matched.warnings?.some((row) => row.code === 'test-bed.no_matching_build'), false);
   });

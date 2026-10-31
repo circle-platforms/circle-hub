@@ -705,8 +705,8 @@ export class KnowledgeViews {
 
   #scopeNote(summary: UnversionedView | null, scopeLocked = false, scope?: CompositionView | null): string {
     if(summary===null)return scopeLocked
-      ? '本次锁定范围没有不分版本的根；下一步：以同样输入新开运行，非运行读取请从首页重读当前范围（需要时先同步这条产品线）'
-      : '这条产品线还没有不分版本的根；下一步：同步这条产品线';
+      ? '本次锁定范围没有不分版本的根；下一步：以同样输入新开运行，非运行读取请从首页重读当前范围（需要时请管理员先同步这条产品线）'
+      : '这条产品线还没有不分版本的根；下一步：管理员同步这条产品线（circle-hub knowledge sync）';
     let note=`不分版本的根 ${summary.root}：构建未声明；${summary.totals.entries} 个条目，${summary.totals.documents} 份文档`;
     if(summary.skipped_sources>0){
       const producers=[...new Set((scope?.body.skipped??[]).map(row=>row.producer))].sort(compareText);

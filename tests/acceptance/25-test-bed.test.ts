@@ -234,7 +234,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const mismatchRun = (mismatch.out as { run?: { run?: string } }).run?.run;
     assert.ok(mismatchRun);
     const mismatchClaims = await claimsOf(bed, mismatchRun);
-    assert.ok(mismatchClaims.some((c) => c.statement.text.includes('bed-a') && c.statement.text.includes('需要升级到 Rel_APV_10_6_1_9，声明，未核对')), JSON.stringify(mismatchClaims.map((c) => c.statement.text)).slice(0, 500));
+    assert.ok(mismatchClaims.some((c) => c.statement.text.includes('bed-a') && c.statement.text.includes('要的是 Rel_APV_10_6_1_9，声明，未核对') && !c.statement.text.includes('升级到')), JSON.stringify(mismatchClaims.map((c) => c.statement.text)).slice(0, 500));
   });
 
   test('facts: the listener of bed-a and the blind address of bed-b, computed from the frozen manifest', async () => {

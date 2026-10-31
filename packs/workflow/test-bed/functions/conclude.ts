@@ -1,5 +1,5 @@
 import { occupancyText } from './ownership.ts';
-import type { LeaseOp } from '../../../../contracts/generated/vocabulary.ts';
+import type { LeaseOp, ProvenanceType } from '../../../../contracts/generated/vocabulary.ts';
 // conclude: the one computation the search/facts/acquire conclusions rest on, shared by the projection
 // (functions/project.ts) and the check (functions/check-bed.ts), so the check recomputes exactly what the projection
 // computed from the same frozen manifest and lease view. The lease context the workflow declares gives only keys and
@@ -40,6 +40,9 @@ export interface PlanFailure {
   code: string;
   message: string;
   fix: string;
+  /** Whether the facts the refusal rests on are declared (the inventory) or observed (D05 R[8]). */
+  provenance?: Extract<ProvenanceType, 'declared' | 'observed'>;
+  grounds?: string[];
 }
 
 
@@ -206,7 +209,7 @@ export function acquirePlan(beds: ManifestBed[], need: BedNeed, bedParam: string
     chosen = matches.find((m) => m.bed === bedParam);
     if (chosen === undefined) return { ok: false, failure: { code: 'test-bed.unknown_bed', message: `清单里没有自动化测试环境 ${bedParam}`, fix: 'bed 写清单里的一个自动化测试环境名，或不写按 need 选最佳匹配' } };
     if (!chosen.devices_ok) return { ok: false, failure: { code: 'test-bed.bed_short', message: `自动化测试环境 ${bedParam} 不满足需求：${chosen.conclusion}`, fix: '换 need 或换自动化测试环境' } };
-    if (need.build !== undefined && chosen.build_ok === 'mismatch') return { ok: false, failure: { code: 'test-bed.build_mismatch', message: `自动化测试环境 ${bedParam} 的构建不一致：${chosen.conclusion}`, fix: '先升级，或换构建一致的自动化测试环境' } };
+    if (need.build !== undefined && chosen.build_ok === 'mismatch') return { ok: false, failure: { code: 'test-bed.build_mismatch', message: `自动化测试环境 ${bedParam} 的构建不一致：${chosen.conclusion}`, fix: '换一个清单声明在装这个构建的自动化测试环境（search 的结论列出各环境声明的在装构建）；要用这个环境现有的构建，去掉 need.build 再预订。test-bed 没有升级设备的动作', provenance: 'declared' } };
   } else {
     // matchNeed's order is idle first: the first fitting bed is idle when one exists, else the earliest to free; a
     // taken bed is refused by the Hub's lease grant with LEASE_UNAVAILABLE and the earliest free moment, not here.

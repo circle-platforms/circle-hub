@@ -170,7 +170,9 @@ export function bedOutcomes(subject: unknown): CheckOutcome[] {
   }
   if (frozen.action === 'search') {
     const gap = unmatchedBuild(manifest.beds, frozen.need, leases, frozen.leases.now);
-    if (gap) out.push({ verdict: 'unknown', reason: 'missing_input', missing: gap.missing, statement: `${gap.missing}。${gap.fix}`, grounds: [], tier: TIER, data: { missing_fact: gap.missing, next_action: gap.fix } });
+    // The search-level unknown rests on the inventory beds it compared (their locations), and its exit is a plan said apart.
+    const beds = items.flatMap((item) => (typeof item.location === 'string' ? [item.location] : []));
+    if (gap) out.push({ verdict: 'unknown', reason: 'missing_input', missing: gap.missing, statement: `${gap.missing}。下一步：${gap.fix}`, grounds: beds, tier: TIER, data: { missing_fact: gap.missing, next_action: gap.fix } });
   }
   if (out.length === 0) out.push(transitional({ verdict: 'unknown', missing: '尚未取得本检查所需的事实：' + ('自动化测试环境结论复核的被判对象里没有条目（子对象构建函数没有给出 items）'), reason: 'check_error', statement: '自动化测试环境结论复核的被判对象里没有条目（子对象构建函数没有给出 items）', grounds: [], tier: TIER }));
   return out;

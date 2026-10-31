@@ -248,7 +248,13 @@ export async function grantLeases(
     }
     for(const request of requests)if(request.op===undefined||request.op==='acquire'){
       const outcome=await service.acquire({keys:request.keys,ttlSeconds:request.ttl_seconds,holder:{user:user.id,run:runId},prefix,maxTtlSeconds:cap});
-      if(!outcome.ok){const when=outcome.earliestFree?'，最早空闲时刻 '+outcome.earliestFree:'';refuse(outcome.code,outcome.message+when,outcome.code==='LEASE_UNAVAILABLE'?'等持有谱系释放、请主人带理由处置，或改用别的键'+when:'核对租约前缀和期限后重开运行');}
+      if(!outcome.ok){
+        // The refusal names the holding run and when it took the key (B01 grounds), and says when that run is the caller's own.
+        const when=outcome.earliestFree?'，最早空闲时刻 '+outcome.earliestFree:'';const holder=outcome.holder;const own=holder!==undefined&&holder.user===user.id;
+        const held=holder===undefined?'':'（持有运行 '+holder.run+'，取得于 '+holder.acquired_at+(own?'，是你自己的运行'+(lineage.has(holder.run)?'，在这次运行的前驱谱系里':''):'')+'）';
+        const fix=outcome.code!=='LEASE_UNAVAILABLE'?'核对租约前缀和期限后重开运行':own?'这个键已在你自己的运行 '+holder!.run+' 名下：计划、核验和派发把 predecessor 写成这个运行（或它的后继），沿用这份租约；要一次取得更多键，先由这个运行的谱系释放，再一起取得':'等持有谱系释放、请主人带理由处置，或改用别的键'+when;
+        refuse(outcome.code,outcome.message+held+when,fix);
+      }
       acquired.push(...outcome.keys);done.push({lease:outcome.lease,keys:outcome.keys,until:outcome.until});
     }
   }catch(error){await compensate();throw error;}

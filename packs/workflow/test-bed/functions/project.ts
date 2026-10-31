@@ -27,11 +27,13 @@ import {
   type Action,
   type FrozenLeases,
   type Normalized,
+  type PlanFailure,
 } from './conclude.ts';
 
 interface Slot {
   slot: string;
   model: unknown;
+  sha256?: unknown;
 }
 
 type LeaseRequest = OwnershipRequest | { op?: Extract<LeaseOp,'acquire'>; keys:string[] } | { op:Extract<LeaseOp,'release'>; keys:string[] };
@@ -44,12 +46,15 @@ interface Out {
 }
 
 interface Failure {
-  error: { code: string; message: string; fix: string; documents?: string[] };
+  error: { code: string; message: string; fix: string; documents?: string[] } & Claimed;
   warnings: Array<{ code: string; message: string }>;
 }
 
-function failure(code: string, message: string, fix: string, warnings: Array<{ code: string; message: string }> = []): Failure {
-  return { error: { code, message, fix }, warnings };
+/** The claim fields a refusal adds (D05 R[8]): the inventory fragments it rests on and whether its facts are declared. */
+type Claimed = Pick<PlanFailure, 'provenance' | 'grounds'>;
+
+function failure(code: string, message: string, fix: string, warnings: Array<{ code: string; message: string }> = [], claim: Claimed = {}): Failure {
+  return { error: { code, message, fix, ...claim }, warnings };
 }
 
 /** The raw index of a bed name in the document's beds array (the fragment selector's last segment). */
@@ -107,7 +112,7 @@ export default function project(input: unknown): Out | Failure {
   if (action === 'search') {
     const fields = searchFields(beds, normalized.need, leases, now, frozenLeases);
     const gap = unmatchedBuild(beds, normalized.need, leases, now);
-    if (gap) warnings.push({ code: 'test-bed.no_matching_build', message: `${gap.missing}。${gap.fix}` });
+    if (gap) warnings.push({ code: 'test-bed.no_matching_build', message: `${gap.missing}。下一步：${gap.fix}` });
     return {
       items: fields.map((f) => ({
         id: f.bed,
@@ -162,7 +167,12 @@ export default function project(input: unknown): Out | Failure {
   }
   // acquire
   const planned = acquirePlan(beds, normalized.need, normalized.bed, normalized.addresses, leases, now);
-  if (!planned.ok) return failure(planned.failure.code, planned.failure.message, planned.failure.fix);
+  if (!planned.ok) {
+    // A refusal about a named bed rests on that bed's fragment of the frozen inventory.
+    const named = normalized.bed !== null && beds.some((bed) => bed.name === normalized.bed) && typeof slot.sha256 === 'string';
+    const grounds = named ? [`src:${slot.sha256 as string}/json@1/p/beds/${bedIndex(slot.model, normalized.bed as string)}`] : [];
+    return failure(planned.failure.code, planned.failure.message, planned.failure.fix, [], { ...(planned.failure.provenance ? { provenance: planned.failure.provenance } : {}), ...(grounds.length > 0 ? { grounds } : {}) });
+  }
   const plan: AcquirePlan = planned.plan;
   return {
     items: [
