@@ -69,7 +69,7 @@ export function generateWorkbookSet(inputs: GenerationInput[]): Uint8Array {
   for (const [k, input] of inputs.entries()) { rows.push(...caseRows(input, plans[k], (pointer) => at(k, pointer))); rows.push([]); }
   if (profile.workbook.closing_row.slice(4).some((v) => v !== '')) reject('/profile/workbook/closing_row', '收尾行 E–I 必须为空');
   rows.push([...profile.workbook.closing_row]);
-  if (rows.length > FORMAT.max_rows) reject('/rows', '工作簿行数超过本包上限');
+  if (rows.length > FORMAT.max_rows) reject('/rows', `工作簿 ${rows.length} 行，超过本包上限 ${FORMAT.max_rows} 行；把脑图拆成几份分别上传、各开一次运行，或填 autoid 一次编一条`);
   return workbookBytes(profile, rows);
 }
 /** One case's rows; `at` places a pointer inside the case. */

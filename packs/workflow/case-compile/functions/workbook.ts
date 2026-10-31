@@ -72,10 +72,18 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
   if (grid(expectedLast - 1).some(Boolean) || grid(3)[2] !== '0' || grid(3)[3] !== `计划运行 ${recipe.plan_run}；构建 ${recipe.build}` || grid(3).some((v, i) => i !== 2 && i !== 3 && v !== '')) issue('description', '/sheets/0', '说明或空行不符合冻结的 plan_run/构建，说明行 E–I 必须为空');
   const defaultAssertion=assertionTarget(recipe.contract,profile);
   if (!defaultAssertion) issue('assertion', '/profile/allowed', '缺少唯一的允许字面断言组合');
-  // Scan every post-header E–I row, including description, blank and closing rows.
-  const registers=new Set<string>(),caps=runtimeBlocks(recipe.contract);
+  // Scan every post-header E–I row, including description, blank and closing rows. Registers live within one case, as in
+  // InfoTest's runner (lib/test_xlsx.py): its static preflight of a workbook resets them, at every row that starts a case
+  // (an autoid in A on a row whose C is not the init type 1), to the registers its init rows captured, and the run clears
+  // them before each case's init ("寄存器和当前结果仅在单个 case 内有效"). This generator writes no init rows, so every case
+  // starts without registers; inside a case a name is still captured once.
+  const initRegisters=new Set<string>(),caps=runtimeBlocks(recipe.contract); let registers=new Set<string>();
   const executions: ReadExecution[] = []; const executionByRow = new Map<number, ReadExecution>();
-  for (const [number, cells] of values) if (number > 2 && cells.slice(4).some(Boolean)) {
+  for (const [number, cells] of values) {
+    if (number <= 2) continue;
+    const init = cells[2] === '1';
+    if (cells[0] !== '' && !init) registers = new Set(initRegisters);
+    if (!cells.slice(4).some(Boolean)) continue;
     const at = `/sheets/0/rows/${number - 1}`; const [object, method, g, h, variable] = cells.slice(4);
     const entry = runtimeMethod(recipe.contract, object, method); const allowed = allowedCall(profile, object, method);
     if (!object || !method || !entry || !allowed || !blockMeta(plan)&&(!g||h||variable)) { issue('execution', at, 'E/F/G 必须是启用且角色配置完整的调用，H/I 必须为空'); continue; }
@@ -96,7 +104,7 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
         }else{
           if(!g)issue('execution',at,'普通调用 G 不能为空');
           if(variable&&(!registers.has(variable)||!Array.isArray(caps?.restore_methods)||!caps.restore_methods.some((row:any)=>row.object===object&&row.method===method)||decoded.args.length!==1||decoded.args[0]!=='{}'))issue('register',at,'普通 I 仅用于已捕获原文的声明还原守卫');
-          if(h){if(!identifier(h)||registers.has(h)||!Array.isArray(caps?.output_methods)||!caps.output_methods.some((row:any)=>row.object===object&&row.method===method&&row.output==='raw_text'))issue('register',at,'H 捕获必须命名唯一并由声明的原文观察产生');else registers.add(h);}
+          if(h){if(!identifier(h)||registers.has(h)||!Array.isArray(caps?.output_methods)||!caps.output_methods.some((row:any)=>row.object===object&&row.method===method&&row.output==='raw_text'))issue('register',at,'H 捕获必须在本用例内命名唯一并由声明的原文观察产生');else{registers.add(h);if(init)initRegisters.add(h);}}
         }
       }
       const execution = { row: number, object, method, ...decoded, assertion,...(blockMeta(plan)?{h,i:variable}:{}) }; executions.push(execution); executionByRow.set(number, execution);
