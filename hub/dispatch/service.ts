@@ -99,6 +99,17 @@ class LeaseCoverageError extends Error {
   missing: string[];
   constructor(missing: string[]) { super('血缘不持有全部物理资源，或租约到期早于最长运行时间；请重新预订后核验'); this.missing = missing; }
 }
+/** Another job holds the physical target. The message names the jobs and the administrator's commands (the CLI shows it);
+ * the Hub's own dispatch tells the runner only that the target is occupied, since those jobs may be other users'. */
+export class TargetOccupiedError extends Error {
+  readonly jobs: readonly string[];
+  constructor(jobs: readonly string[], message: string) { super(message); this.jobs = jobs; }
+}
+/** The fixed labels of the release checks that do not hold. Fields carry digests only, so the labels disclose no value. */
+function unmetReleaseLabels(explanation: { checks: ReleaseCheck[]; rows: Array<{ applicable: boolean; checks: ReleaseCheck[] }> }): string[] {
+  const checks = [...explanation.checks, ...explanation.rows.filter((row) => row.applicable).flatMap((row) => row.checks)];
+  return [...new Set(checks.filter((check) => check.satisfied !== true).map((check) => check.label))];
+}
 export class DispatchService {
   readonly options: DispatchOptions;
   readonly registry: ExecutorRegistry;
@@ -277,21 +288,39 @@ export class DispatchService {
    * hub_template job itself for the runner's run; a named administrator stays responsible for an unknown outcome. Exactly one
    * enabled executor of the run's pack must release; none or several start nothing and say why. The byte and budget guards of
    * dispatch refuse a repeat, so an accepted submission dispatches at most once. */
+  /**
+   * The Hub's own dispatch of an accepted run for its runner (decision 105). The reasons are the runner's: release checks
+   * that do not hold are named by their fixed labels; what only an administrator can see or do goes to the administrator
+   * log, errors included, and the answer says the administrator has it.
+   */
   async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string }> {
     const admin = (await this.options.records.principals.list()).find((p) => p.role === 'admin' && !p.disabled);
-    if (!admin) return { started: false, reason: '没有在职管理员负责作业未知结果的处置，Hub 不自动派发；请管理员开通账号或用 job dispatch 派发' };
+    if (!admin) return { started: false, reason: '没有在职管理员负责作业未知结果的处置，Hub 不自动派发；等管理员开通账号' };
     const detail = await this.options.runs.getRun(admin, run);
     if (!detail?.run.runner) return { started: false, reason: '运行不可读或没有发起用户' };
+    const log = (what: string, text: string) => { try { this.options.adminLog?.({ traceId: null, run, what: `hub dispatch ${what}`, detail: this.redactor.maskText(text).slice(0, 2000) }); } catch { /* the log never decides the answer */ } };
+    const described = (error: unknown) => error instanceof Error ? error.message : String(error);
     const pack = detail.run.pack.split('@')[0];
     const candidates = (await this.registry.list(admin)).filter((e) => e.definition.enabled && e.definition.proof.package === pack);
-    const released: typeof candidates = [];
-    for (const candidate of candidates) { try { if ((await this.explainRelease(admin, run, candidate.id)).satisfied) released.push(candidate); } catch { /* an executor that cannot explain does not release */ } }
-    if (released.length !== 1) return { started: false, reason: released.length ? `有 ${released.length} 个执行器同时满足放行条件，等管理员用 job dispatch 指定执行器` : candidates.length ? '放行条件尚未全部满足，Hub 没有派发；按放行说明补齐后重交' : '没有为该任务包登记的启用执行器，Hub 没有派发' };
+    const released: typeof candidates = [], unmet = new Set<string>();
+    for (const candidate of candidates) {
+      try {
+        const explanation = await this.explainRelease(admin, run, candidate.id);
+        if (explanation.satisfied) { released.push(candidate); continue; }
+        const labels = unmetReleaseLabels(explanation); for (const label of labels) unmet.add(label);
+        log('release unmet', `${candidate.id}: ${labels.join('；')}`);
+      } catch (error) { unmet.add('放行核对出错'); log('release error', `${candidate.id}: ${described(error)}`); }
+    }
+    if (released.length > 1) { log('release ambiguous', released.map((e) => e.id).join('、')); return { started: false, reason: `有 ${released.length} 个执行器同时满足放行条件，等管理员指定执行器（已记下）` }; }
+    if (!released.length) return { started: false, reason: candidates.length ? `放行条件尚未全部满足：${[...unmet].join('、')}；能在提交、计划或预订上补齐的补齐后原样重交，其余等管理员处理（已记下）` : '没有为该任务包登记的启用执行器，Hub 没有派发；等管理员登记执行器' };
     const chosen = released[0];
     try {
       const status = await this.dispatch(admin, run, chosen.id, (job) => onReserved?.(job, chosen.id), { initiatedBy: detail.run.runner });
       return { started: true, executor: chosen.id, status };
-    } catch (error) { return { started: false, executor: chosen.id, reason: error instanceof Error ? error.message : '派发前核对失败' }; }
+    } catch (error) {
+      log('error', `${chosen.id}: ${described(error)}`);
+      return { started: false, executor: chosen.id, reason: error instanceof TargetOccupiedError ? '台架正被作业占用，这次没有派发；等占用结束后原样重交' : '派发前核对出错，没有派发；等管理员处理（已记下）后原样重交' };
+    }
   }
 
   async dispatch(by: Principal, run: string, executor: string, onReserved?: (job: string) => void, options: { initiatedBy?: string } = {}): Promise<JobStatus> {
@@ -359,7 +388,7 @@ export class DispatchService {
       let fresh:HolderSnapshot[];try{fresh=await this.holders(input.ancestors,input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);}catch{throw new EffectBoundaryError(deny(5,'LEASE_EXPIRED','资源租约已到期或不再覆盖窗口；请恢复租约并重证基线'));}
       if (!this.sameFences(initial, fresh)) throw new EffectBoundaryError(deny(5,'FENCING_STALE','派发前围栏已变；请重新证明基线'));
       const currentProof = await verifyInput(by,run,d,this.options.records,this.options.runs,this.options.workflows,this.now());
-      if(!same({...input,result:null},{...currentProof,result:null}))throw new InputVerificationError('只读核对期间核验数据已改变；请按当前核验结果重新派发，尚未提交');
+      if(!same({...input,result:null},{...currentProof,result:null}))throw new InputVerificationError('只读核对期间这个运行的最新核验结果改变了，没有提交');
       const notAfter = new Date(this.now().getTime() + d.submit_timeout_ms).toISOString();
       const sequence = attempts.length ? Number(attempts[0].body.detail.sequence) : (await this.options.records.store.findMany({ kind: 'action', key: 'dispatch.lineage', values: [input.lineage] })).filter(e => (e.body as Record<string, unknown>)?.detail && ((e.body as { detail: Record<string, unknown> }).detail.phase === 'intent')).length + 1;
       const key = attempts.length ? String(attempts[0].body.detail.intent_key) : digestOfValue([input.lineage, input.item, d.proof.slot, multi ? round : sequence]);
@@ -739,7 +768,7 @@ export class DispatchService {
     // that check must either be observed as a blocker or invalidate our CAS head.
     const history=await this.options.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.phase',values:['reservation']});
     const blocked=await this.journal.blockers(binding.executor,definition.target,new URL(definition.endpoint).origin,binding.resources);
-    if(blocked.length){const actions=await Promise.all(blocked.map(async job=>isFrozen(await this.journal.events(job))?`circle-hub job dispose ${job} --reconcile <原远端编号>`:`circle-hub job resume ${job}`));throw new Error(`物理目标被作业 ${blocked.join('、')} 占用；下一步：${actions.join('；')}`);}
+    if(blocked.length){const actions=await Promise.all(blocked.map(async job=>isFrozen(await this.journal.events(job))?`circle-hub job dispose ${job} --reconcile <原远端编号>`:`circle-hub job resume ${job}`));throw new TargetOccupiedError(blocked,`物理目标被作业 ${blocked.join('、')} 占用；下一步：${actions.join('；')}`);}
     const resources = binding.resources.map(r => sha256Hex(r)).sort();
     const identities=[['executor',binding.executor],['target',definition.target],['origin',new URL(definition.endpoint).origin]].map(digestOfValue).sort();
     await this.options.records.store.withTransaction(async tx => {
@@ -833,15 +862,21 @@ export class DispatchService {
   private async failureEvidence(binding: JobBinding, d: ExecutorDefinition, response: { value: unknown; source: string }, items: readonly string[]): Promise<Map<string, { log?: string; sessions?: Record<string, string> }>> {
     const found = new Map<string, { log?: string; sessions?: Record<string, string> }>();
     if (!d.result.log && !d.result.sessions) return found;
-    const save = async (text: string, name: string) => `src:${(await this.options.records.artifacts.ingest({ bytes: new TextEncoder().encode(text), mediaType: 'text/plain; charset=utf-8', origin: { generated: { generator: 'dispatch@1', inputs: [response.source] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false }, name })).body.sha256}`;
+    // A session name that is no valid source name (empty, over 300 characters, control characters) gets a positional one,
+    // and a piece that cannot be saved is logged and left out: this runs after the receipt, so it must not stall the job.
+    const sourceName = (name: string, index: number) => name.length > 0 && name.length <= 300 && !/\p{Cc}/u.test(name) && name.isWellFormed() ? name : `session-${index + 1}.txt`;
+    const save = async (text: string, name: string): Promise<string | undefined> => {
+      try { return `src:${(await this.options.records.artifacts.ingest({ bytes: new TextEncoder().encode(text), mediaType: 'text/plain; charset=utf-8', origin: { generated: { generator: 'dispatch@1', inputs: [response.source] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [binding.user], admins: true, packs: [], shareable: false }, name })).body.sha256}`; }
+      catch (error) { try { this.options.adminLog?.({ traceId: null, run: binding.input?.run ?? binding.run ?? null, what: 'failure evidence ' + binding.job, detail: error instanceof Error ? error.message : String(error) }); } catch { /* logging never stalls the job */ } return undefined; }
+    };
     for (const id of items) {
       const { row, reported } = reportOutcome(response.value, d, id);
       if (reported === 'pass' || !object(row)) continue;
       const log = d.result.log ? at(row, d.result.log) : undefined;
       const sessions = d.result.sessions ? at(row, d.result.sessions) : undefined;
       const evidence: { log?: string; sessions?: Record<string, string> } = {};
-      if (typeof log === 'string' && log) evidence.log = await save(log, 'log.txt');
-      if (object(sessions)) for (const [name, text] of Object.entries(sessions)) if (typeof text === 'string' && text) (evidence.sessions ??= {})[name] = await save(text, name);
+      if (typeof log === 'string' && log) { const saved = await save(log, 'log.txt'); if (saved) evidence.log = saved; }
+      if (object(sessions)) for (const [index, [name, text]] of Object.entries(sessions).entries()) if (typeof text === 'string' && text) { const saved = await save(text, sourceName(name, index)); if (saved) (evidence.sessions ??= {})[name] = saved; }
       if (evidence.log || evidence.sessions) found.set(id, evidence);
     }
     return found;
@@ -1776,7 +1811,7 @@ export class DispatchService {
     catch { throw new EffectBoundaryError(deny(5, 'LEASE_EXPIRED', '资源租约已到期或不再覆盖窗口；请恢复租约并重证基线')); }
     if (!this.sameFences(initial, fresh)) throw new EffectBoundaryError(deny(5, 'FENCING_STALE', '派发前围栏已变；请重新证明基线'));
     const currentProof = await verifyInput(by, run, d, this.options.records, this.options.runs, this.options.workflows, this.now());
-    if (!same({ ...input, result: null }, { ...currentProof, result: null })) throw new InputVerificationError('只读核对期间核验数据已改变；请按当前核验结果重新派发，尚未提交');
+    if (!same({ ...input, result: null }, { ...currentProof, result: null })) throw new InputVerificationError('只读核对期间这个运行的最新核验结果改变了，没有提交');
     const notAfter = new Date(this.now().getTime() + d.submit_timeout_ms).toISOString();
     const sequence = (await this.options.records.store.findMany({ kind: 'action', key: 'dispatch.lineage', values: [input.lineage] })).filter(event => (event.body as { detail?: { phase?: string } }).detail?.phase === 'intent').length + 1;
     const attempt = 1;

@@ -24,7 +24,10 @@ export interface RunsEngineDeps {
     runs?():Promise<ReadonlyMap<string,readonly string[]>>;
     /** Decision 105 (W03): for an accepted run with a hub_template effect row, report the jobs bound to the run, or, when there
      * is none and the result is ready (every item delivered, no error), let the Hub dispatch and report the reserved job. */
-    accepted?(run:string,ready:boolean):Promise<Array<{job?:string;executor?:string;result?:string;text:string}>> };
+    accepted?(run:string,ready:boolean):Promise<Array<{job?:string;executor?:string;result?:string;text:string}>>;
+    /** The run's jobs that have not ended and their notes, or null. While one runs, a different submission is stored but not
+     * validated, so the run's latest accepted result (what the job verifies again before its submit) stays the one it took. */
+    inFlight?(run:string):Promise<{jobs:string[];notes:Array<{job?:string;executor?:string;result?:string;text:string}>}|null> };
   /** The records kit parts the engine uses; with `config`, start_run knows the record size limit before it stores anything. */
   records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts'> & {
     variables: Pick<RecordsKit['variables'], 'snapshot'>;

@@ -43,6 +43,7 @@ import {
   actionsOf,
   isVerbatimObject,
   keyOwner,
+  latestAccepted,
   putAction,
   putResult,
   putSubmission,
@@ -104,7 +105,7 @@ export async function roundsUsedOf(ctx: EngineContext, run: string): Promise<Map
   const counts = new Map<string, number>();
   for (const action of await actionsOf(ctx.deps.records.store, run)) {
     if (action.body.action !== 'validate' || !isObject(action.body.detail)) continue;
-    if (action.body.detail.hub_error === true || action.body.detail.refusal === 'session_missing' || action.body.detail.refusal === 'RUN_ABANDONED') continue;
+    if (action.body.detail.hub_error === true || action.body.detail.refusal === 'session_missing' || action.body.detail.refusal === 'RUN_ABANDONED' || action.body.detail.refusal === 'dispatch_in_flight') continue;
     const { submission, repair } = action.body.detail;
     if (typeof submission !== 'string' || seen.has(submission) || !Array.isArray(repair)) continue;
     seen.add(submission);
@@ -210,9 +211,9 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const frozenWorkflow=eligible&&sessionNow===null?await ctx.deps.workflows.byDigest(run.pack_digest):undefined;
   const useCached=eligible&&(sessionNow!==null||frozenWorkflow!==undefined&&frozenWorkflow!==null&&frozenWorkflow.requirements.every(t=>t.independent_of===undefined));
   const repeat = !useCached ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
-  if (repeat !== null) return withDispatch(ctx, run, answerOf(repeat));
+  if (repeat !== null) return withDispatch(ctx, run, answerOf(repeat), call.traceId);
   const previous=useCached?await resultFor(store,run.run,received.digest):null;
-  if (useCached && effective !== null && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return withDispatch(ctx, run, answerOf(previous.body));
+  if (useCached && effective !== null && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest))?.workflow.contribution !== undefined)) return withDispatch(ctx, run, answerOf(previous.body), call.traceId);
 
   const model = parsed?.success ? effective?.model ?? null : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
@@ -248,6 +249,18 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     ctx.log({ traceId: call.traceId, run: run.run, what: 'submit_result', detail: `pack version ${run.pack} (${run.pack_digest}) is no longer loadable` });
     await action({ acceptance: 'not_accepted', codes: ['SOURCE_UNAVAILABLE'], repair: [], result: null });
     return { call_result: 'error', acceptance: 'not_accepted', errors: [unavailableError('/run')] };
+  }
+  // A job of the run that has not ended verifies the run's latest accepted result again before its submit. While it runs,
+  // the same submission reads progress from the stored result, and a different one is kept as received but not validated,
+  // so the job goes on (CES reads a running task by its id and never resubmits it).
+  if (!refresh && workflow.effects?.some((row) => row.trigger === 'hub_template') && ctx.deps.dispatch?.inFlight) {
+    const flight = await ctx.deps.dispatch.inFlight(run.run);
+    if (flight !== null) {
+      const dispatched = await latestAccepted(store, run.run);
+      if (dispatched !== null && dispatched.body.submission === received.digest) return { ...answerOf(dispatched.body), dispatch: flight.notes };
+      await action({ acceptance: 'not_accepted', codes: ['IDEMPOTENCY_MISMATCH'], repair: [], result: null, extra: { refusal: 'dispatch_in_flight', jobs: flight.jobs } });
+      return { call_result: 'error', acceptance: 'not_accepted', dispatch: flight.notes, errors: [protocolError('IDEMPOTENCY_MISMATCH', `运行 ${run.run} 的派发作业 ${flight.jobs.join('、')} 还在进行；这次提交与派发所用的那次不同，已原样保存但没有核验，派发不受影响`, { path: '/run', fix: '读进展：逐字原样重交派发时的那次提交；要改内容，等作业结束后开新的核验运行' })] };
+    }
   }
   if(!await criterionReviewVisible(ctx,user,run))return {call_result:'error',acceptance:'not_accepted',errors:[unavailableError('/inputs')]};
   const priorMaterial=workflow.workflow.incremental_submissions===true&&existing===null?(await store.find({key:INDEX.submissionRun,value:run.run,kind:'submission',newestFirst:true,limit:2})).items.find(r=>r.digest!==record.digest)?.body??null:null;
@@ -290,23 +303,28 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     result: saved.result.digest,
     extra: { ...(saved.result.body.acceptance==='accepted' && outcome.runtimeAdmission?.length ? {admission:outcome.runtimeAdmission} : {}), reevaluation:refresh,...(incrementalGrowth?{first_material_growth:true}:{}),retry_attempts: saved.retryAttempts,...(outcome.parentObservedSuccess?{parent_observed_success:true}:{}), ...(sessionMissing ? {refusal:'session_missing'} : {}) },
   });
-  return withDispatch(ctx, run, answerOf(saved.result.body));
+  return withDispatch(ctx, run, answerOf(saved.result.body), call.traceId);
 }
 
 /** Decision 105 (W03, D06): an accepted run whose pack declares a hub_template effect row carries the jobs the Hub dispatched
- * for it. An accepted answer whose result is ready (every item delivered, no error) lets the Hub dispatch when the run has no
- * job yet; a repeat of the same submission reads the jobs' progress. */
-async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAnswer): Promise<SubmitAnswer> {
+ * for it. An accepted answer whose result is ready lets the Hub dispatch when the run has no job yet; a repeat of the same
+ * submission reads the jobs' progress. Ready is every item delivered without error with every release requirement of the
+ * hub_template rows that the item lists satisfied, so a run whose artifact is not verified yet (a plan run) does not try. */
+async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAnswer, traceId: string | null): Promise<SubmitAnswer> {
   if (answer.acceptance !== 'accepted' || !answer.result || !ctx.deps.dispatch?.accepted) return answer;
   const workflow = await ctx.deps.workflows.byDigest(run.pack_digest);
-  if (!workflow?.effects?.some((row) => row.trigger === 'hub_template')) return answer;
+  const rows = workflow?.effects?.filter((row) => row.trigger === 'hub_template') ?? [];
+  if (!rows.length) return answer;
   const result = answer.result;
-  const ready = result.errors.length === 0 && Object.entries(result.partitions).every(([key, list]) => key === 'delivered' || list.length === 0) && result.partitions.delivered.length === run.items.length;
+  const release = new Set(rows.flatMap((row) => row.release.requirements));
+  const released = result.partitions.delivered.every((item) => item.requirements.every((row) => !release.has(row.requirement) || row.status === 'satisfied'));
+  const ready = result.errors.length === 0 && Object.entries(result.partitions).every(([key, list]) => key === 'delivered' || list.length === 0) && result.partitions.delivered.length === run.items.length && released;
   try {
     const notes = await ctx.deps.dispatch.accepted(run.run, ready);
     return notes.length ? { ...answer, dispatch: notes } : answer;
   } catch (error) {
-    return { ...answer, dispatch: [{ text: `Hub 读取或发起派发时出错（${error instanceof Error ? error.message.slice(0, 300) : '未知原因'}）；请管理员查看日志，必要时用 job dispatch 派发` }] };
+    ctx.log({ traceId, run: run.run, what: 'hub dispatch', detail: describe(error) });
+    return { ...answer, dispatch: [{ text: 'Hub 读取或发起派发时出错，没有派发；等管理员处理（已记下）后原样重交' }] };
   }
 }
 
