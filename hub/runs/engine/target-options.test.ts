@@ -48,47 +48,47 @@ async function refusalOf(ctx: EngineContext, name: string): Promise<ProtocolErro
 
 test('an unknown build name lists every lockable build, newest line first, own roots first, with the lookup as a claim', async () => {
   const builds = [
-    build('Rel_MERIDIAN_10_4_5_66', '10.4.5', true),
-    build('Rel_MERIDIAN_10_4_5_62', '10.4.5', true),
-    build('Beta_MERIDIAN_10_5_0_12', '10.5', false),
-    build('Beta_MERIDIAN_10_5_0_585', '10.5', true),
-    build('Rel_MERIDIAN_10_4_6_8', '10.4.6', true),
-    build('Beta_MERIDIAN_10_5_0_700', '10.5', false),
-    build('Rel_MERIDIAN_10_3_0_61', '10.3', false),
+    build('Rel_MERIDIAN_10_8_1_66', '10.8.1', true),
+    build('Rel_MERIDIAN_10_8_1_62', '10.8.1', true),
+    build('Beta_MERIDIAN_10_9_0_12', '10.9', false),
+    build('Beta_MERIDIAN_10_9_0_585', '10.9', true),
+    build('Rel_MERIDIAN_10_8_2_8', '10.8.2', true),
+    build('Beta_MERIDIAN_10_9_0_700', '10.9', false),
+    build('Rel_MERIDIAN_10_7_0_61', '10.7', false),
   ];
-  const error = await refusalOf(context(builds, new Set(['10.5'])), '10.5.0.585');
+  const error = await refusalOf(context(builds, new Set(['10.9'])), '10.9.0.585');
   assert.equal(error.code, 'REFERENCE_UNRESOLVED');
-  assert.equal(error.message, '产品线 meridian 里没有名字或别名是“10.5.0.585”的构建');
+  assert.equal(error.message, '产品线 meridian 里没有名字或别名是“10.9.0.585”的构建');
   assert.equal(error.warrant, 'runs.build_name@1');
   assert.equal(error.provenance, 'projected');
   assert.equal(error.collected_at, AT);
   assert.deepEqual({ ...error.coverage, note: undefined }, { complete: true, examined: 7, total: 7, note: undefined });
-  // 10.3 has neither a root of its own nor a seedling: not lockable, not an option.
-  assert.deepEqual(error.options, ['Beta_MERIDIAN_10_5_0_585', 'Beta_MERIDIAN_10_5_0_12', 'Beta_MERIDIAN_10_5_0_700', 'Rel_MERIDIAN_10_4_6_8', 'Rel_MERIDIAN_10_4_5_66', 'Rel_MERIDIAN_10_4_5_62']);
+  // 10.7 has neither a root of its own nor a seedling: not lockable, not an option.
+  assert.deepEqual(error.options, ['Beta_MERIDIAN_10_9_0_585', 'Beta_MERIDIAN_10_9_0_12', 'Beta_MERIDIAN_10_9_0_700', 'Rel_MERIDIAN_10_8_2_8', 'Rel_MERIDIAN_10_8_1_66', 'Rel_MERIDIAN_10_8_1_62']);
   assert.equal(error.options_coverage?.complete, true);
   assert.equal(error.options_coverage?.examined, 6);
   assert.equal(error.options_coverage?.total, 6);
-  assert.match(error.options_coverage?.note ?? '', /各版本线：10\.5 3 个（有自己知识根的 1 个）、10\.4\.6 1 个、10\.4\.5 2 个/);
+  assert.match(error.options_coverage?.note ?? '', /各版本线：10\.9 3 个（有自己知识根的 1 个）、10\.8\.2 1 个、10\.8\.1 2 个/);
   const line = errorLine(error);
   assert.match(line, /限定：投影，采集于 2026-11-01T00:00:00.000Z，查找范围完整：已查 7，共 7（名字或别名不分大小写逐字相等才算/);
   assert.match(line, /规则：runs\.build_name@1/);
   assert.match(line, /可选（共 6 个，全部列出；可以锁定知识根的构建，按版本线从新到旧/);
-  assert.ok(line.includes('Beta_MERIDIAN_10_5_0_585'), 'the 10.5 build with its own root is listed, not hidden behind a cut');
+  assert.ok(line.includes('Beta_MERIDIAN_10_9_0_585'), 'the newest line build with its own root is listed, not hidden behind a cut');
 });
 
 test('a list past the limit names every build with a root of its own first and says how to list one line in full', async () => {
   const builds: KnownBuild[] = [];
-  for (let i = 0; i < 450; i++) builds.push(build(`Rel_MERIDIAN_10_4_2_${i}`, '10.4.2', false));
-  builds.push(build('Rel_MERIDIAN_10_4_2_own', '10.4.2', true));
-  for (let i = 0; i < 30; i++) builds.push(build(`Beta_MERIDIAN_10_5_0_${i}`, '10.5', i % 10 === 0));
-  const error = await refusalOf(context(builds, new Set(['10.4.2', '10.5'])), 'no-such-build');
+  for (let i = 0; i < 450; i++) builds.push(build(`Rel_MERIDIAN_10_8_0_${i}`, '10.8.0', false));
+  builds.push(build('Rel_MERIDIAN_10_8_0_own', '10.8.0', true));
+  for (let i = 0; i < 30; i++) builds.push(build(`Beta_MERIDIAN_10_9_0_${i}`, '10.9', i % 10 === 0));
+  const error = await refusalOf(context(builds, new Set(['10.8.0', '10.9'])), 'no-such-build');
   assert.equal(error.options?.length, 400);
-  assert.deepEqual(error.options?.slice(0, 4), ['Beta_MERIDIAN_10_5_0_0', 'Beta_MERIDIAN_10_5_0_10', 'Beta_MERIDIAN_10_5_0_20', 'Rel_MERIDIAN_10_4_2_own']);
+  assert.deepEqual(error.options?.slice(0, 4), ['Beta_MERIDIAN_10_9_0_0', 'Beta_MERIDIAN_10_9_0_10', 'Beta_MERIDIAN_10_9_0_20', 'Rel_MERIDIAN_10_8_0_own']);
   assert.equal(error.options_coverage?.complete, false);
   assert.equal(error.options_coverage?.examined, 400);
   assert.equal(error.options_coverage?.total, 481);
   assert.match(error.options_coverage?.note ?? '', /先按版本线从新到旧列出全部有自己知识根的，再列其余的/);
-  assert.match(error.options_coverage?.note ?? '', /10\.5 30 个（有自己知识根的 3 个）、10\.4\.2 451 个（有自己知识根的 1 个）/);
+  assert.match(error.options_coverage?.note ?? '', /10\.9 30 个（有自己知识根的 3 个）、10\.8\.0 451 个（有自己知识根的 1 个）/);
   assert.match(error.options_coverage?.note ?? '', /start_run 写上 version（版本线），这里就只列这条线的全部构建/);
   assert.match(errorLine(error), /可选（列出 400 个，共 481 个；/);
 });

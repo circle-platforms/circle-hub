@@ -4,13 +4,13 @@
 
 10-31 所有者亲测时，模型被 Hub 自己的回答带偏了，原因有三：
 
-- 候选清单丢了限定：构建候选只列了 20 个 10.4.5 的构建，没有说一共多少个、其余在哪里。模型据此断定"APV 没有 10.5 的知识根"，其实 10.5 有 18 个有根的构建。
+- 候选清单丢了限定：构建候选只列了前 20 个，全是同一条旧版本线的，没有说一共多少个、其余在哪里。模型据此断定新版本线没有知识根，其实新版本线有带自己知识根的构建，只是没列进前 20 个。
 - 下一步没有根据："先升级""或把某台升级到该构建"，可平台不能升级。
 - 原因没定时只给了一个原因：缺陷没有修复说明，就说"请集成者配置字段"，可缺陷的状态是 active，还没修复。
 
 不另立原则，只把错误和修正放进 B01 的结构里。
 
-- 分支和工作树：`claim-shaped-answers`，目录 `~/claude-trees/claim-shaped-answers`（从 hub-redesign 开出）
+- 分支和工作树：`claim-shaped-answers`（从 hub-redesign 开出）
 - 可以改的路径：
   - `contracts/model.json`（D05 加一条规则和它的变更记录），以及 `npm run gen:contracts` 重新生成的文件；
   - `contracts/src/common.ts` 的 ProtocolError，`contracts/src/pack.ts` 的 PackError；
