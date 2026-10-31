@@ -10,7 +10,7 @@
 - A73：`packs/workflow/case-compile/functions/addresses.ts:20`；检查：剥引号/转义并正规化后按拒绝词的文字边界禁止命令。
 - A74：`packs/workflow/case-compile/functions/addresses.ts:34`；分类：相邻地址和空白推断掩码；同网段 network/broadcast 也被排除出主机计数。
 - A75：`packs/workflow/case-compile/functions/addresses.ts:50`；检查/分类：裸数字大小和 0.x 特例决定是否为歧义 IPv4。
-- A78：`scripts/real/gold/compile-check.ts:587`；检查：按原因句前缀把台架外失败改 unknown。
+- A78：`scripts/real/gold/compile-check.ts:587`；检查：按原因句前缀把自动化测试环境外失败改 unknown。
 - C06：`packs/workflow/case-compile/functions/profile.ts:45`；解析标识符：autoid：冻结 runtime-profile@1 的 workbook.autoid_pattern，必须 ^/$ 锚定、限 200 字符；出处同函数校验及 runtime-profile-format。
 - D01：`packs/workflow/case-compile/functions/runtime-contract.ts:37`；结构解析/精确核验：runtime-contract-format.json 闭集、digest、object/method/signature 原名解析。
 - D02：`packs/workflow/case-compile/functions/profile.ts:78`；结构解析/精确核验：dispatch-roles/runtime-profile-format 的 dispatch/parameter_roles 精确匹配；seats/hosts/allowed 依合约身份绑定。
@@ -35,7 +35,7 @@
 
 2. 按原合约声明的参数 type/address role 从结构参数取值；CLI 内部参数来自 R4 锁定树语法和结构化类型。分别明确 IP、mask、prefix、普通数值/string，角色只能等于声明值。型未声明时未核对并阻止派发，下一步补合约，不让模型编辑冻结配置来绕过。
 
-3. 台架数值身份、子网和 replacements 一一对应的机械核验保留；地址替换只作用于被合约声明为地址的位置并保留原引文身份，不依赖附近空白、前一个 token 或网络/广播外形猜主机。期望是字面断言，不凭其中像 IP 的文字推类型；所需结构位置由合约明确。
+3. 自动化测试环境数值身份、子网和 replacements 一一对应的机械核验保留；地址替换只作用于被合约声明为地址的位置并保留原引文身份，不依赖附近空白、前一个 token 或网络/广播外形猜主机。期望是字面断言，不凭其中像 IP 的文字推类型；所需结构位置由合约明确。
 
 4. 派发允许集合只由合约方法、参数角色闭集、效果表及相应预算/放行条件推出；移除 denied.device/host 的词表行为并更新 profile schema、SKILL、样例。不能把“删词表”实现成放开一切；合约无类型或无效果授权组合均不得派发。显式语法限制可以保留但注明 grammar。
 

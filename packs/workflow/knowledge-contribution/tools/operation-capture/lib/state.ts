@@ -265,10 +265,10 @@ function captureEvent(value: unknown, session: string, sequence: number): Captur
   const input = exact(row.input, ['summary', 'sha256', 'truncated']);
   text(input.summary, 'invalid_manifest', '参数摘要格式不对', EGRESS.max_input_summary_chars + 1, true);
   need(typeof input.sha256 === 'string' && /^[0-9a-f]{64}$/.test(input.sha256) && typeof input.truncated === 'boolean', 'invalid_manifest', '参数摘要身份不符');
-  need(isRecord(row.targets), 'invalid_manifest', '台架或设备字段格式不对');
+  need(isRecord(row.targets), 'invalid_manifest', '自动化测试环境或设备字段格式不对');
   for (const [key, target] of Object.entries(row.targets)) {
-    need(['bed', 'bed_id', 'device', 'device_id', 'target'].includes(key), 'invalid_manifest', '台架或设备字段不在闭集');
-    text(target, 'invalid_manifest', '台架或设备标识格式不对', 1024);
+    need(['bed', 'bed_id', 'device', 'device_id', 'target'].includes(key), 'invalid_manifest', '自动化测试环境或设备字段不在闭集');
+    text(target, 'invalid_manifest', '自动化测试环境或设备标识格式不对', 1024);
   }
   const output = exact(row.output, ['file', 'sha256', 'size']);
   need(output.file === `outputs/${String(sequence).padStart(16, '0')}.txt`, 'invalid_manifest', '原件路径与事件序号不符');

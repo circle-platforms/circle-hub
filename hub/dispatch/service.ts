@@ -319,7 +319,7 @@ export class DispatchService {
       return { started: true, executor: chosen.id, status };
     } catch (error) {
       log('error', `${chosen.id}: ${described(error)}`);
-      return { started: false, executor: chosen.id, reason: error instanceof TargetOccupiedError ? '台架正被作业占用，这次没有派发；等占用结束后原样重交' : '派发前核对出错，没有派发；等管理员处理（已记下）后原样重交' };
+      return { started: false, executor: chosen.id, reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次没有派发；等占用结束后原样重交' : '派发前核对出错，没有派发；等管理员处理（已记下）后原样重交' };
     }
   }
 
@@ -350,7 +350,7 @@ export class DispatchService {
     }
     const attempt = attempts.length + 1;
     const source = await this.options.records.artifacts.source({ id: input.user, name: '', role: 'user' }, input.sha256, { consumer: 'function' });
-    let initial:HolderSnapshot[];try{initial=await this.holders(input.ancestors,input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);}catch(error){const missing=error instanceof LeaseCoverageError?error.missing:[];return this.boundaryRefused(by,{...provisional,input},deny(5,'LEASE_UNAVAILABLE',missing.length?`缺少覆盖派发窗口的同血缘资源租约：${missing.join('、')}；执行器的目标是这些键所在的整台，在本运行的预订谱系里取得全部键后重开计划与核验`:'缺少覆盖派发窗口的同血缘资源租约；请取得租约并重证基线'));}
+    let initial:HolderSnapshot[];try{initial=await this.holders(input.ancestors,input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);}catch(error){const missing=error instanceof LeaseCoverageError?error.missing:[];return this.boundaryRefused(by,{...provisional,input},deny(5,'LEASE_UNAVAILABLE',missing.length?`缺少覆盖派发窗口的同血缘资源租约：${missing.join('、')}；执行器的目标是这些键所在的整个自动化测试环境，在本运行的预订谱系里取得全部键后重开计划与核验`:'缺少覆盖派发窗口的同血缘资源租约；请取得租约并重证基线'));}
     const binding: JobBinding = { ...provisional, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
     if(d.calls.submit.write)binding.target_key=digestOfValue(bind(d.calls.submit.write.target_key,this.context(binding)));
     delete binding.run; // Restricted response captures deliberately clear input; never leave a second run binding behind.
@@ -1247,7 +1247,7 @@ export class DispatchService {
     if (!spec) return;
     const bed = spec.bed ? await this.frozenValue(binding, d, spec.bed) : undefined;
     const name = spec.bed ? bedName(bed) : binding.executor;
-    if (spec.bed && !name) throw new PrecheckFactError('冻结清单里没有声明的台架对象或台架名', '管理员核对床面指针和已发布的台架清单，补齐台架名后再派发；尚未提交');
+    if (spec.bed && !name) throw new PrecheckFactError('冻结清单里没有声明的自动化测试环境对象或自动化测试环境名', '管理员核对床面指针和已发布的自动化测试环境清单，补齐自动化测试环境名后再派发；尚未提交');
     const bedNameOrExecutor = name ?? binding.executor;
     const reads = await this.readBed(binding, d, client, context, 'pre');
 

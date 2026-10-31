@@ -40,7 +40,7 @@ test('cases are sequential with independent bookings and confirmation before eac
   assert.deepEqual(f.calls, ['prepare:one', 'confirm', 'dispatch', 'result', 'release:booking-one', 'save', 'prepare:two', 'confirm', 'dispatch', 'result', 'release:booking-two', 'save']);
 });
 test('reuse of the first booking is refused before the next confirmation or dispatch', async () => {
-  const f = fixture(undefined, false, true); await assert.rejects(runCases(['one', 'two'], [], f.ports), /自己占台架/); assert.equal(f.calls.filter(c => c === 'dispatch').length, 1);
+  const f = fixture(undefined, false, true); await assert.rejects(runCases(['one', 'two'], [], f.ports), /自己占自动化测试环境/); assert.equal(f.calls.filter(c => c === 'dispatch').length, 1);
 });
 test('declining confirmation emits no dispatch and never advances to another case', async () => {
   const f = fixture(['no']); await assert.rejects(runCases(['one', 'two'], [], f.ports), /确认/); assert.ok(!f.calls.includes('dispatch')); assert.equal(f.completed.length, 0);

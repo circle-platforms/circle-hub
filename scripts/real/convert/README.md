@@ -11,19 +11,19 @@ node scripts/real/convert/check-runtime-contract.ts <合约副本> --expect <网
 真实动作由集成者运行。本分支只有下述合成全链路和离线管理脚本测试，没有真实联机或上机结果。
 
 ```
-node scripts/real/convert/bed-topology.ts <网关原始 RPC 回答> --definition <执行器定义> --out <暂存目录> [--read-index 0] [--capture-index 0] [--bed-name <明确台架标识>]
+node scripts/real/convert/bed-topology.ts <网关原始 RPC 回答> --definition <执行器定义> --out <暂存目录> [--read-index 0] [--capture-index 0] [--bed-name <明确自动化测试环境标识>]
 ```
 
 从执行器定义读取 capture_pointers；read-index 0 是主只读核对，1 起对应 precheck_reads，capture-index 选择其中的指针（默认均为 0）。不猜字段名。原始 JSON-RPC/流式回答先用派发公开的同一解码器读取，再按该指针取值、调用核心 RFC 8785 摘要函数；标准输出同时打印指针、原件字节摘要和规范内容摘要。请求号变化只影响原件摘要，内容没有变化时规范摘要不变。指针下必须包含拓扑、服务和观察，派发核对同一指针才覆盖这三者。管理员把打印出的内容摘要登记进对应只读核对条件；已有常量摘要不符则拒绝转换，要求重新采证并更新定义。
 
-选中内容是含 `topology.devices`、`topology._bed.conf`、`services` 和 `observation.unregistered_neighbours` 的完整回答。源中文设备标签只在转换表中出现一次；设备名、服务主机名和台架名转小写，撞名拒绝。`_mask_assumed` 为真、地址没有前缀、未知标签、重复地址、缺服务或邻居观察均拒绝。保留地址只来自 IPv4 ARP 邻居观察，只保留本台架设备接口网段内的邻居，逐项变成单地址范围，重复观察合并；网段外邻居仅记到私有 topology-accounting.json，屏幕打印排除个数。服务源协议只按一张表转换：http、https → tcp，dns → udp；表外整份拒绝，指出服务序号与 proto 字段。屏幕打印这三类服务个数、保留与排除个数。清单必须同时通过 test-bed 和 case-compile 的解析器；不借助管理地址推断接口，不填默认网段。topology-accounting.json 另留两个摘要和所选指针，便于管理员登记时逐项核对。
+选中内容是含 `topology.devices`、`topology._bed.conf`、`services` 和 `observation.unregistered_neighbours` 的完整回答。源中文设备标签只在转换表中出现一次；设备名、服务主机名和自动化测试环境名转小写，撞名拒绝。`_mask_assumed` 为真、地址没有前缀、未知标签、重复地址、缺服务或邻居观察均拒绝。保留地址只来自 IPv4 ARP 邻居观察，只保留本自动化测试环境设备接口网段内的邻居，逐项变成单地址范围，重复观察合并；网段外邻居仅记到私有 topology-accounting.json，屏幕打印排除个数。服务源协议只按一张表转换：http、https → tcp，dns → udp；表外整份拒绝，指出服务序号与 proto 字段。屏幕打印这三类服务个数、保留与排除个数。清单必须同时通过 test-bed 和 case-compile 的解析器；不借助管理地址推断接口，不填默认网段。topology-accounting.json 另留两个摘要和所选指针，便于管理员登记时逐项核对。
 
 ```
 node scripts/real/convert/runtime-profile.ts <环境预检回答> <清单> <合约副本> --out <暂存目录> [--decisions <角色决定文件>]
 node scripts/real/convert/runtime-profile.ts <填写后的配置> <清单> <合约副本> --check --out <新暂存目录>
 ```
 
-预检须明确 `ready: true` 和正整数 `device_count`。草稿的版本、合约摘要、台架名、设备数来自输入；全部合约启用组合都进入覆盖核对，候选、内部和禁用组合不加入；零参数方法先待明确决定，不能传入凭据的方法列为未开。参数角色、工作簿字面量、座位顺序、主机映射、等待上限、折叠名单和拒绝表不能从签名推出，用 `null` 与 `pending` 的缺失事实和补取动作表示。集成者填写后清空已经落实的 `pending`，再次 `--check`。发布用通过检查的 `runtime-profile.json`；不要发布 `.draft.json`。
+预检须明确 `ready: true` 和正整数 `device_count`。草稿的版本、合约摘要、自动化测试环境名、设备数来自输入；全部合约启用组合都进入覆盖核对，候选、内部和禁用组合不加入；零参数方法先待明确决定，不能传入凭据的方法列为未开。参数角色、工作簿字面量、座位顺序、主机映射、等待上限、折叠名单和拒绝表不能从签名推出，用 `null` 与 `pending` 的缺失事实和补取动作表示。集成者填写后清空已经落实的 `pending`，再次 `--check`。发布用通过检查的 `runtime-profile.json`；不要发布 `.draft.json`。
 
 可选角色决定文件为 `{ "allowed": […], "unopened": […] }`。`allowed` 每项包含 `{object, method, parameters: {参数名: 角色}}`，可另带本转换器核对的 `unsupplied` 可选参数名单；角色只读包格式表，不按函数名猜。无法归入现有角色的组合放 `unopened`，每项 `{object, method, parameters: [{name, missing, reason, next}]}`，写明哪个签名参数缺什么事实、为什么现有检查无法覆盖、下一步怎样另开包角色和检查任务。可选脱敏参数不传入、不定角色；其他未定角色参数先写 null。零参数方法不自动开放，必须在 allowed 项明确写 reviewed:true 或选择带方法级事实说明的 unopened；所有待填项落实前不能发布。
 
@@ -52,7 +52,7 @@ circle-hub original export <产物 content 那一行的摘要> --out <仓库外�
 node scripts/real/accept/device-run.ts --config <暂存配置> --out <仓库外批次目录> --executor <exe_…>
 ```
 
-本分支没有运行这条真机入口。它只运行显式配置的 Hub 管理 CLI，不调 MCP、不填槽、不生成或上传工作簿、不占台架、不设置时长、不续租。Circle 会话按 SKILL 完成每例独立占用、计划、修复、生成、上传及核验；终态后也由 Circle 经 test-bed 释放。本脚本逐例等集成者输入核验运行号和“确认派发”，核对唯一 autoid、固定部署文档、清单摘要、计划与占用前驱。第一例释放后停止；后四例须先更新执行器定义，并输入“已用首例证据更新认证”。这一步是人工确认，不是机械核对认证字段；dispatch-gateway 的认证字段合并以后再换机械核对。
+本分支没有运行这条真机入口。它只运行显式配置的 Hub 管理 CLI，不调 MCP、不填槽、不生成或上传工作簿、不占自动化测试环境、不设置时长、不续租。Circle 会话按 SKILL 完成每例独立占用、计划、修复、生成、上传及核验；终态后也由 Circle 经 test-bed 释放。本脚本逐例等集成者输入核验运行号和“确认派发”，核对唯一 autoid、固定部署文档、清单摘要、计划与占用前驱。第一例释放后停止；后四例须先更新执行器定义，并输入“已用首例证据更新认证”。这一步是人工确认，不是机械核对认证字段；dispatch-gateway 的认证字段合并以后再换机械核对。
 
 配置是仓库外 JSON，相对文件路径以配置所在目录为准：
 
@@ -80,7 +80,7 @@ CLI 必须指向待验收的同一部署，管理员身份由集成者按现有 
 逐台探测、按请求记录自动恢复、带阶段的未上机拒绝、副作用日志标记等验收仍依赖 dispatch-gateway；没有提前写跳过占位。当前合成结果不能认证真实网关、设备或结果归属。
 
 
-首段开发时的本机合成验证（历史快照）：全链路 6、管理脚本离线单测 13、转换 24、派发包全量 57，均通过、零跳过；类型检查零错误，生成物核对 68 文件一致。全仓词表扫描 16 项中 15 通过、1 失败：命中的是接手前就存在的 8 处（knowledge 的 lists/read/test-support/views、runs/engine/submit、server/tools），均未被本分支修改；没有加例外或为它们改越界文件，交集成者与各包主人清理后重跑。没有真实台架结论。
+首段开发时的本机合成验证（历史快照）：全链路 6、管理脚本离线单测 13、转换 24、派发包全量 57，均通过、零跳过；类型检查零错误，生成物核对 68 文件一致。全仓词表扫描 16 项中 15 通过、1 失败：命中的是接手前就存在的 8 处（knowledge 的 lists/read/test-support/views、runs/engine/submit、server/tools），均未被本分支修改；没有加例外或为它们改越界文件，交集成者与各包主人清理后重跑。没有真实自动化测试环境结论。
 
 部署发布检查要求 synthetic 显式为 false；允许设备命令或主机 shell 时，对应拒绝表必须非空。拒绝表文字由集成者从部署规则补取，覆盖决定 35 的整机命令类别；非空只证明提供了筛查文字，不自证其完整性。缺哪一类会指出 denied/device 或 denied/host 和补取后重跑 --check 的动作。
 
@@ -94,7 +94,7 @@ CLI 必须指向待验收的同一部署，管理员身份由集成者按现有 
 
 原脑图先走同一份 normalize-mindmap.ts 的公开规整：仅去掉头部两个 U+FFFF、转换单元素数组包装。选用例使用 case-source.normalized.json 那份字节，仅作本工具的私有核对副本；另存变换说明及规整前后摘要。交给 Circle 的是原始导出文件，由 Circle 按 SKILL 运行 normalize-mindmap.ts；集成者把 Circle 输出的 before_sha256 与本工具 sha256、after_sha256 与 normalized_sha256 逐项比较，一致后在上传说明保留原件摘要和“客户端规整”说明。不要把本工具的规整副本当原始输入交给 Circle，否则会丢失原件摘要和变换说明。屏幕只加变换条数和规整摘要，不显示原件内容；无法规整时明确要求补取原件并重跑该工具。
 
-解析器拒绝时逐项打印安全字段指针、固定问题类别和下一步，原始问题消息里的源值不进屏幕。源台架标识仅转小写仍不合清单格式时，管理员可显式给 --bed-name（1–64 位小写字母、数字、连字符）；不自动删扩展名或改符号。topology-accounting.json 私有保存原标识、清单标识及是否显式映射，供管理员核对执行器和清单；原观察的两个摘要不受映射影响。输入文件不可读、JSON 损坏和暂存输出已存在也分别指明补件、重导出或更换新目录的动作。
+解析器拒绝时逐项打印安全字段指针、固定问题类别和下一步，原始问题消息里的源值不进屏幕。源自动化测试环境标识仅转小写仍不合清单格式时，管理员可显式给 --bed-name（1–64 位小写字母、数字、连字符）；不自动删扩展名或改符号。topology-accounting.json 私有保存原标识、清单标识及是否显式映射，供管理员核对执行器和清单；原观察的两个摘要不受映射影响。输入文件不可读、JSON 损坏和暂存输出已存在也分别指明补件、重导出或更换新目录的动作。
 
 转换入口比较实际文件路径，支持从软链接工作树调用；输入缺失时仍非零退出，不能无输出地假成功。作为模块导入不会执行 CLI。
 

@@ -1,4 +1,8 @@
-# knowledge-contribution 1.3.12
+# knowledge-contribution 1.3.13
+
+## 1.3.13
+
+- bed 的中文名改为"自动化测试环境"（所有者 2026-10-31，任务页 `docs/hub-r4-tasks/rename-test-environment.md`）：说明和操作采集技能的提示文字跟着改，行为不变。
 
 ## 1.3.12
 
@@ -77,7 +81,7 @@ Generated feeding schemas accept the optional source-node context and locked com
 
 Circle 做过的事走同一回注槽，不另开通道。产出种类用 `assertion`（声明）。结构化内容放在 `feeding`：`fed-observation@1`（做了什么、结果引文）、`fed-procedure@1`（目标、每步带引文）、`fed-pitfall@1`（现象、建议、引文）。根据必须是本次上传、出处为 `client_captured` 的原件；观察到的、投影的、声明的和候选的原件仍拒收。
 
-不要在提交里写 `object`、`binding`、`by`、`run`、`at`、`version`、`build` 或 `line`。Hub 用规范化后的陈述和引文计算身份，并从本次运行锁定的构建或台架结构里的在装构建填写版本；两边不一致就两边都留，不选边。结构里没有时记未声明，并写明缺什么、下一步是什么。模型自己写的版本一律拒收。
+不要在提交里写 `object`、`binding`、`by`、`run`、`at`、`version`、`build` 或 `line`。Hub 用规范化后的陈述和引文计算身份，并从本次运行锁定的构建或自动化测试环境结构里的在装构建填写版本；两边不一致就两边都留，不选边。结构里没有时记未声明，并写明缺什么、下一步是什么。模型自己写的版本一律拒收。
 
 引文必须逐字出自该上传原件，比对规则与边界相同。产品读者可以读这三类；读不到原件的人整条都看不到。和手册或来源结构矛盾时只打 `contradicts`，两边都返回，Hub 不裁决。管理员追加撤回后条目失效但不删除，默认不再当作有效条目。依据等级轴目前没有「声明」这个码，存储的 `basis_rank` 仍是既有的 `judgment`；这三类的喂入主张性质是未知，不进入核验、评分或放行当证据。
 

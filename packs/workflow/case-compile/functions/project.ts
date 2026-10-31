@@ -60,14 +60,14 @@ export function projectItems(input: unknown): unknown {
   }
   const inventorySlot = slotOf(inputs, 'inventory');
   if (inventorySlot === undefined || inventorySlot.model === null || inventorySlot.model === undefined) {
-    return refusal('no_inventory', '没有台架清单', '在 inputs.inventory 里写命名文档 {"external": "doc:doc:bed-topology"}（管理员用 circle-hub doc put 发布）');
+    return refusal('no_inventory', '没有自动化测试环境清单', '在 inputs.inventory 里写命名文档 {"external": "doc:doc:bed-topology"}（管理员用 circle-hub doc put 发布）');
   }
   const manifestRead = parseManifest(inventorySlot.model);
   if (!manifestRead.ok) {
     const first = manifestRead.problems[0];
     return refusal(
       'manifest_invalid',
-      `台架清单有 ${manifestRead.problems.length} 个问题，整份拒绝`,
+      `自动化测试环境清单有 ${manifestRead.problems.length} 个问题，整份拒绝`,
       first === undefined ? '按清单的形状（test-bed-manifest@1）改正后重新发布' : `${first.pointer === '' ? '整份' : first.pointer}：${first.fix}`,
       problemWarnings('case-compile.manifest_problem', manifestRead.problems),
     );

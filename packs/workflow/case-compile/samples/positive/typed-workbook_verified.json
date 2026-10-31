@@ -821,7 +821,7 @@
     "generation": {
       "plan_run": "run_00000000000000000000000000",
       "build": "Fixture_Build_A",
-      "generator": "case-compile@3.9.6"
+      "generator": "case-compile@3.9.7"
     },
     "manifest_sha256": "5bc9f5ab333dde710f9023c6db1f99411f3e254f61b4e44b11340ce362b1fcd7",
     "workbook": {
@@ -920,14 +920,14 @@
                   {
                     "reference": "F1",
                     "type": "inlineStr",
-                    "text": "case-compile@3.9.6",
+                    "text": "case-compile@3.9.7",
                     "formula": false,
                     "style": null
                   },
                   {
                     "reference": "G1",
                     "type": "inlineStr",
-                    "text": "13c476017f5b9105933f375299fbe8e39af7a9409ccad059f4d0a12c7f040389",
+                    "text": "75e5feb5c68c0070fb52e8f4d55f625de11275bf920ebf1a238f39bd42b7dda6",
                     "formula": false,
                     "style": null
                   }
@@ -1261,7 +1261,7 @@
           }
         ]
       },
-      "sha256": "e73d566bc53f2538b52addd35715c2fa83484a3428607a79e07e14ef0b337b59"
+      "sha256": "e119c50ee5cc29a20a216f8df6133a8eb82747979109d8e8abf77b8fdac80d7c"
     }
   },
   "expect": [

@@ -1,4 +1,4 @@
-# 任务：核心的 xlsx@1 解析器（上真实台架第 2 件的通用部分）
+# 任务：核心的 xlsx@1 解析器（上真实自动化测试环境第 2 件的通用部分）
 
 依据：`docs/hub-r4-device-run.md` 第 3 节第 1 条，第 8 节第 2 件；`docs/hub-r4-tasks/hub-case-workbook.md` 第 1 条（这一件就是那一条，拆出来先做）。
 

@@ -621,7 +621,7 @@ export class FeedingLayer {
   if(locked&&bed&&locked!==bed)return {source:'conflict',run_lock:{build:locked,line},bed_installed:{build:bed,line:null}};
   if(bed)return {source:'bed_installed',build:bed,line};
   if(locked)return {source:'run_lock',build:locked,line};
-  return {source:'undeclared',build:null,line:null,missing:'运行没有锁定构建，台架结构里也没有在装构建',next_action:'用锁定了构建的运行重交，或在台架结构里登记在装构建后再交；不要在提交里写版本'};
+  return {source:'undeclared',build:null,line:null,missing:'运行没有锁定构建，自动化测试环境结构里也没有在装构建',next_action:'用锁定了构建的运行重交，或在自动化测试环境结构里登记在装构建后再交；不要在提交里写版本'};
  }
  private async operationArtifact(principal:Principal,bytes:string,runId:string|null):Promise<SourceArtifact>{
   const candidates=(await this.context.records.artifacts.records(bytes)).filter(row=>'upload' in row.body.origin&&row.body.provenance_type==='client_captured'&&row.body.author.user!==null&&(row.body.author.user===principal.id||principal.role==='admin'));
@@ -642,7 +642,7 @@ export class FeedingLayer {
  }
  private async completeOperation(principal:Principal,raw:unknown,scope:FeedingScope):Promise<unknown>{
   if(!object(raw)||!operationRecord(raw.schema))return raw;
-  for(const key of ['binding','version','build','line','family','by','run','at','object'])if(key in raw)fail(`提交写了 ${key}。操作记录的版本和采集事实只由 Hub 填写；缺的是运行锁定的构建或台架在装构建。删掉该字段后重交；这不是终局。`);
+  for(const key of ['binding','version','build','line','family','by','run','at','object'])if(key in raw)fail(`提交写了 ${key}。操作记录的版本和采集事实只由 Hub 填写；缺的是运行锁定的构建或自动化测试环境在装构建。删掉该字段后重交；这不是终局。`);
   const bytes=object(raw.source)&&raw.source.system==='upload'&&typeof raw.source.bytes==='string'?raw.source.bytes:null;
   if(!bytes)fail('操作记录缺上传原件');
   const artifact=await this.operationArtifact(principal,bytes,scope.run??null);

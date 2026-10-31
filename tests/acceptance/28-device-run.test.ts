@@ -171,7 +171,7 @@ before(async () => {
   const hub = await createTestHub({ postgres, repositoryPacks: ['apv', 'build-site', 'test-bed'], packs: [await stage(join(staged, 'case-compile'))], buildSite: files, requireOsIsolation: true }); opened = hub;
   const resource = await hub.addResource({ system_pack: 'build-site', name: '合成构建站', environment: 'test', origins: { 'build-site': `${hub.stubs!.buildSite.origin}${site.SITE_BASE}` }, settings: { index_page: 'index.html' } });
   assert.ok(resource.id);
-  for(const active of await hub.hub.registry.activeProducts())for(const variable of active.product.variables??[])await hub.records.variables.setVariable(hub.admin.principal,variable.name,variable.default,'合成台架验收显式部署设置');
+  for(const active of await hub.hub.registry.activeProducts())for(const variable of active.product.variables??[])await hub.records.variables.setVariable(hub.admin.principal,variable.name,variable.default,'合成自动化测试环境验收显式部署设置');
   const synced = await hub.knowledgeSync(product.line, { options: { case_index: false } }); assert.equal(synced.error, null, JSON.stringify(synced));
   // Provision this synthetic deployment's exact effect closure from its locked tree, rather than
   // carrying identities of the unrelated package unit fixture into a different product root.

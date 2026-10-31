@@ -5,7 +5,7 @@
 - 决定 35 第 13、16 项（`docs/hub-r4-progress.md`）：D03 和 P11 的边界也装配上；D04 R[0] 的修订确认。
 - 对照模型的复核 `docs/hub-r4-model-review.md` 第 2 节第 6 条：效果前边界和全局边界政策表没装配，D03、P11 只部分落实。
 - 模型：D03 F[0]–F[10]、R[0]–R[7]；P11 R[3]（效果前边界逐次核对的各款）、R[4]；D04 R[0]–R[6]；C06 R[0]、R[2]、R[3]；W03 F[0]、R[3]、R[4]；B05 F[6]；B06 F[0]–F[10]；D01 R[6]；D02 R[0]；D07 R[0]；B02 R[4]；W06 F[7]。待定项“全局边界政策表的归属”已定：随核心版本发布。用 `node tools/show-element.ts D03 P11 D04 C06 W03 B05 B06 D01 D02 D07 B02 W06` 读。
-- 上真实台架的设计 `docs/hub-r4-device-run.md` 第 4、5、7 节。hub-job-dispatch 分支上：`hub/dispatch/service.ts` 写意图时把效果类“作业”、重试安全类“不安全”、署名“服务账号代表发起用户”写死（约 105 行）；`proof.ts` 的 `verifyInput` 核了放行条件；允许的效果表、全局政策表、任务包政策表和预算都没核；`hub/dispatch/README.md` 的 Needs 要 effect@1、request@1、executor@1 进合约。
+- 上真实自动化测试环境的设计 `docs/hub-r4-device-run.md` 第 4、5、7 节。hub-job-dispatch 分支上：`hub/dispatch/service.ts` 写意图时把效果类“作业”、重试安全类“不安全”、署名“服务账号代表发起用户”写死（约 105 行）；`proof.ts` 的 `verifyInput` 核了放行条件；允许的效果表、全局政策表、任务包政策表和预算都没核；`hub/dispatch/README.md` 的 Needs 要 effect@1、request@1、executor@1 进合约。
 - 同一批写的 `gateway-request-ids.md` 第二步（分支 `dispatch-gateway`）在 hub/dispatch 里做按请求 id 核对、拒绝阶段、前提的认证（执行器定义的 `premises`）、逐台探测和结果归属。这一件在它之上做，不重复做那几件。
 - 合约里 `RunRecord.policy`（所用全局边界政策表的版本）和 `RunRecord.executors`（执行器登记的摘要，W06 F[7]）已有，没人填。
 

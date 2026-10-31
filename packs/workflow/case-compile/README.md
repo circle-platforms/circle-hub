@@ -1,4 +1,4 @@
-# case-compile 3.9.6
+# case-compile 3.9.7
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -116,7 +116,7 @@ allowed 是合约启用集合中、经角色和检查覆盖的已开放子集；
 独立 compile-check 核对要求每项 Hub 状态存在且确定：未知不算一致，缺状态或缺结论都是差异；报告 position_comparisons 保留逐检查的已比位置、未定标记和差异，不因旁边有未知而跳过已知反驳的位置。未知的缺失事实和下一步随核对结果返回。
 
 2.3.5 兼容不限时预订：冻结租约的 until 为 null 时，本血缘分配的地址仍可用；其他用户的地址仍拒绝。
-只改变租约期限的解释和相应合成输入，不改变命令、规格或真实台架判断。独立合成测试装配显式提供空作业端口，
+只改变租约期限的解释和相应合成输入，不改变命令、规格或真实自动化测试环境判断。独立合成测试装配显式提供空作业端口，
 其私有数据库没有派发服务；真实服务仍由 Hub 装配接上实际只读作业记录。生成器版本标记随包升版，
 工作簿正反样例由合成原件重新生成、解析和计算摘要；没有手改字节摘要。
 
@@ -154,7 +154,7 @@ samples are not evidence of completed remediation and this work-in-progress tree
 
 新合约沿用原始签名、完整性字段和 canonical 摘要计算，schema 精确为 runtime-contract@2，并新增 types、roles、effects 三个以 id 为键的闭集对象。types[id] 包含 declaration（共享 DeclaredParameterType，catalog_type 必填），可声明 address_kind（共享 TypedAddressValue 的 kind）、数值/长度上下界、values 或 literal；roles[id] 包含来源 source，地址用途须显式给 bed_member 布尔值；effects[id] 包含 source、roles、每计划调用预算 budget，以及按需明确的完整 commands、allowed_literals、command_roles（signature、零基 position、role）。每个启用条目的 typed_authority 给 source、parameters[name]={type,role} 和 effects id 列表。allowed 项的 unsupplied 列出永不传入的可选参数：这些名字不计入个数，也不要求类型和角色；授权里若仍写了它们，照常接受。计划写入这些参数则拒绝。必需参数不能列入该名单。来源均为结构化 Ground 引用，作为合约作者声明保留，不冒充设备观察。合约身份仍覆盖全部字段。旧合约只核原身份，authority=null，一律未核对并阻止生成、回读受理与派发。
 
-设备命令由 Hub 提供锁定根的完整 commands@1 目录，复用 APV 的同一套精确语法从计划命令解析出 CommandIdentity，不要求自然语言用例或模型预先提供身份。逐词核路径，参数按树声明类型完整消费；不接受缩写、前缀、散文抽取或文本折叠。case_index 若有 data.command_identities，则从相同知识根按 document/node 精确取出，并额外核计划身份一致；畸形声明记未知。模型额外交身份时也核一致，不能代替原生目录。身份比较忽略 raw 的展示差异，但逐参数重核 raw 与 parsed 一致；显式替换仅改变已声明地址参数，保持根、签名和类型出处。普通字符串和期望正文不扫描地址；掩码/前缀按其声明语法核验，不按网络形状猜用途。替换源必须来自冻结类型化参数，目标须在台架/本血缘租约中。
+设备命令由 Hub 提供锁定根的完整 commands@1 目录，复用 APV 的同一套精确语法从计划命令解析出 CommandIdentity，不要求自然语言用例或模型预先提供身份。逐词核路径，参数按树声明类型完整消费；不接受缩写、前缀、散文抽取或文本折叠。case_index 若有 data.command_identities，则从相同知识根按 document/node 精确取出，并额外核计划身份一致；畸形声明记未知。模型额外交身份时也核一致，不能代替原生目录。身份比较忽略 raw 的展示差异，但逐参数重核 raw 与 parsed 一致；显式替换仅改变已声明地址参数，保持根、签名和类型出处。普通字符串和期望正文不扫描地址；掩码/前缀按其声明语法核验，不按网络形状猜用途。替换源必须来自冻结类型化参数，目标须在自动化测试环境/本血缘租约中。
 
 派发允许集合来自方法、角色闭集、完整命令/字面效果允许集合及预算。denied 字段和拒绝词表已经退役；host_shell 另保留已声明的静态 POSIX 子集语法限制（无扩展、管道或重定向）。同一检查用于计划、客户端生成、独立工作簿回读和派发前重核；工作簿生成器升至 @3，旧记录不改写，新合约须重绑后生成新运行及新制品。缺事实时由当前运行者请求合约发布管理员补声明或绑定命令索引，按 Hub 具名补证请求继续。本次续接未运行验证。
 
@@ -173,7 +173,7 @@ samples are not evidence of completed remediation and this work-in-progress tree
 
 测试：`functions/criterion-grounding.test.ts` 七条，用包已发布的 runtime-contract@2 样例（合约、配置、命令身份）作类型化夹具，改前（主线 `d5aa4a68`）整个文件因缺 `criteriaOf` 加载失败，改后七条全过；覆盖冻结声明逐字接地并写出声明/复核/复核人、未冻结或属于别条目的引用不接地、客户端副本与冻结字节不符按 `expect_not_in_criterion` 退回、同一条目里引文接地与判据接地并存、grounds 交 quote@1 在本次边界重核、以及缺 grounds/新判据/复核身份的声明不可用。
 
-未做（下一步）：整链合成验收“用例的期望和手册对不上 → 作者提交声明 → 作者以外的账号开复核运行接受 → 新修订通过；未接受时照旧不通过”还没有写；它要 case-compile 与 criterion-review 两个包在同一张合成台架上跑通，而 R5 的类型化夹具迁移尚未完成（本包 303 条里 128 条在主线就失败，原因是旧夹具的 profile/contract 不合 runtime-contract@2）。缺的事实：可跑通整链的类型化夹具与验收台架；下一步：R5 负责人完成夹具迁移后补这条验收。本次未运行该场景，不宣称已证明。
+未做（下一步）：整链合成验收“用例的期望和手册对不上 → 作者提交声明 → 作者以外的账号开复核运行接受 → 新修订通过；未接受时照旧不通过”还没有写；它要 case-compile 与 criterion-review 两个包在同一张合成自动化测试环境上跑通，而 R5 的类型化夹具迁移尚未完成（本包 303 条里 128 条在主线就失败，原因是旧夹具的 profile/contract 不合 runtime-contract@2）。缺的事实：可跑通整链的类型化夹具与验收自动化测试环境；下一步：R5 负责人完成夹具迁移后补这条验收。本次未运行该场景，不宣称已证明。
 
 ## runtime-contract@2 夹具迁移（3.1.3）
 
@@ -197,11 +197,11 @@ Hub 按检查声明的 judgment_sources，从本条目原始提交的精确槽�
 
 开关命令的第二种逆：`inverse_alternatives` 声明成对互逆的取值（on/off、enable/disable），两种形态都按锁定树结构判定，不按自由文本或关键词猜——(a) 同一签名引用、同一参数位置的枚举参数，取值与配对成员都在该位置声明的取值闭集里，逆操作是同签名换配对值；别的签名或别的位置上的枚举不能让一个文本参数变成可互逆；(b) 同父节点下的兄弟叶子路径，路径末段与配对成员精确相等且两条完整兄弟路径都在锁定树上存在，逆操作是兄弟命令（`demo switch on` 的清理是 `demo switch off`）。一条命令有两处可互逆参数、配对目标不唯一或配对值不能按原语法写成完整身份时记未知，不退回前缀规则；只有该位置根本没有含这对值的枚举时才照常走声明的前缀逆规则。一个取值配给两个不同伙伴的声明整份无效。没有声明的取值对仍拒绝。清理是 steps 的末尾连续段，显式 `cleanup:true`，同设备按主段改动的逆序对应；逆操作本身也必须通过锁定树、合约范围、类型和角色核验。目录只取计划实际命令与冻结作者片段的路径，不展开整个 `/commands`；逆路径存在性由计划中完整解析的清理命令证明。
 
-触发能力的设备类型闭集是 `runtime-profile-format.json.trigger_types`（router、client、server——server 默认在闭集里：执行器在服务器上有可用的主机 shell 座位，只有服务器做触发的网段不是盲网段）。部署可按台架实际座位用 runtime-profile@1 的 `trigger_types` 字段收窄（无重复的包声明触发类型子集；省略字段用默认闭集，显式空数组表示没有触发类型；闭集之外的类型整份拒绝，不静默滤掉），收窄后该类型的设备不再算触发设备，网段按剩余类型判定；没有任何触发类型的网段仍是盲网段。
+触发能力的设备类型闭集是 `runtime-profile-format.json.trigger_types`（router、client、server——server 默认在闭集里：执行器在服务器上有可用的主机 shell 座位，只有服务器做触发的网段不是盲网段）。部署可按自动化测试环境实际座位用 runtime-profile@1 的 `trigger_types` 字段收窄（无重复的包声明触发类型子集；省略字段用默认闭集，显式空数组表示没有触发类型；闭集之外的类型整份拒绝，不静默滤掉），收窄后该类型的设备不再算触发设备，网段按剩余类型判定；没有任何触发类型的网段仍是盲网段。
 
 作者片段按原有完整行语法解析，不截散文。出现次数按定义身份（来源根、完整路径、签名引用）计，不把参数值当成必须保留的文字；计划仍须独立核参数。可以改参数，不可以删命令：同一定义的执行次数至少等于作者次数，清理段不充数，缺失次数写入阻断结果的 `data.obligations` 并随结果留存。工作簿生成、独立核验、派发前检查共用这些边界。
 
-容量来自冻结 profile 的显式 ordinal 与台架同类型设备计数，不读对象名中的数字。设备座位还不超过冻结的预检设备数；主机映射若声明 ordinal，也按其类型计数核对。越界时投影整份拒绝，写明“框架取不到那台设备，整卷不跑”，没有部分工作簿。旧根缺产品规则时设备计划保持未知，需升级产品包并重新育苗，不能从命令文字猜只读/修改。
+容量来自冻结 profile 的显式 ordinal 与自动化测试环境同类型设备计数，不读对象名中的数字。设备座位还不超过冻结的预检设备数；主机映射若声明 ordinal，也按其类型计数核对。越界时投影整份拒绝，写明“框架取不到那台设备，整卷不跑”，没有部分工作簿。旧根缺产品规则时设备计划保持未知，需升级产品包并重新育苗，不能从命令文字猜只读/修改。
 
 ### 公开线的互逆与触发核对（3.8.7）
 
@@ -265,7 +265,7 @@ W06：本用例全部期望节点有稳定引用身份；每条都映射到断�
 
 覆盖分母是结构投影的作者原子全集，不采信模型 author_atoms 自报；mapped/unmapped 由代码与全集双向比。原文账只存逐字原子，释义另留说明。适配 action 为声明操作，commands 为完整命令行，按锁定树比较定义身份及次数；等价理由附声明引用。实际参数变化按产品声明的语义角色核 load_bearing，未能机械判定的语义由独立裁定提出且带逐字引文。具体化只接作者/规范来源/目录声明的值，缺来源或权限一律未知，点名产品包作者或重组者及提交前时点。
 
-床无关按类型与来源判定：重组输入不读取 inventory；账本结构不允许物理床、座位或设备字段，具体化的来源闭集不含台架，重组阶段 rebindings 为空。不会拿床名词表扫散文，也不会因作者原文地址恰好与某床相等就改写原文；散文是否带入物理语义由带引文的独立裁定披露。对两床运行同一产物，字节及结论必须一致。物理替换仅在编写阶段的类型化 replacements/重绑定账执行。
+床无关按类型与来源判定：重组输入不读取 inventory；账本结构不允许物理床、座位或设备字段，具体化的来源闭集不含自动化测试环境，重组阶段 rebindings 为空。不会拿床名词表扫散文，也不会因作者原文地址恰好与某床相等就改写原文；散文是否带入物理语义由带引文的独立裁定披露。对两床运行同一产物，字节及结论必须一致。物理替换仅在编写阶段的类型化 replacements/重绑定账执行。
 
 孪生文件入库迁移：原示意中的占位引用、释义原文账、本机路径和自述裁定改成可核引用与合成凭证；四种预期状态不变。原 README 中的真实名扫描模式不作为数据复制。检查脚本改写为 TypeScript，使用已安装技能的解析接口，不恢复核心默认 KityMinder。
 
@@ -466,3 +466,19 @@ Tests: `functions/whole-mindmap.test.ts` (pasted node ids, autoid shape and coun
 `baseline`, the cap at 64 and 65 cases, the dispatch-policy statement), `tools/fetch-run.test.ts` (placeholder, run mismatch,
 no partial files), `scripts/real/circle-home.test.ts` (the SKILL's commands pass the skills guard; the 3.9.5 spelling does
 not).
+
+### 3.9.7: the Chinese name of the bed is 自动化测试环境
+
+The owner named the bed 自动化测试环境 in Chinese text (2026-10-31, task page
+`docs/hub-r4-tasks/rename-test-environment.md`). `SKILL.md`, the README, codes, requirements, checks and the messages of
+the functions say 自动化测试环境, and 整个自动化测试环境 where the whole bed is meant; identifiers (`bed`, `test-bed`,
+lease keys, the manifest schema) and behaviour are unchanged. `SKILL.md` stays within its 8000-character limit: step 1 no
+longer repeats why the booking covers every device, the opening no longer repeats the sentence step 8 relays verbatim, and
+two half sentences that said the same rule as a later paragraph are gone. 3.9.6 was never published; 3.9.7 carries its
+changes. Version files, regenerated samples (`testing/samples.ts`) and the manifest by `pack-files.ts --write`.
+
+The stage copies made by `testing/gen-recompose.ts` carry two of the renamed messages, so recompose, recompose-authority
+and recompose-adjudication move to 1.0.2 together, as they moved to 1.0.1 with 3.8.10: `functions/recompose-evidence.ts`
+accepts stage evidence of exactly that version, so the pin moves to 1.0.2 with them (in the parent, the three copies,
+`testing/recompose.ts` and the recompose samples). No recompose run exists on the deployed Hub, so no stored evidence
+is left behind. Each stage pack is signed by its own `api.ts sign`.

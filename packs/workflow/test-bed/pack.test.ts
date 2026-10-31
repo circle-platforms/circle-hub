@@ -24,7 +24,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['test-bed', '1.2.9', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['test-bed', '1.2.10', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/project.ts') && files.includes('functions/check-bed.ts') && files.includes('samples/negative/acquire-mismatch.json') && files.includes('examples/bed-topology.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -50,7 +50,7 @@ describe('the pack files', () => {
     );
     assert.match(requirements[0].description, /Hub 记录里空闲（未排除本地操作）/, 'the qualifier is in the requirement text');
     const checks = ChecksFile.parse(json('checks.json')).checks;
-    assert.deepEqual(checks, [{ id: 'bed', title: '台架结论复核', function: { module: 'functions/check-bed.ts' }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' }]);
+    assert.deepEqual(checks, [{ id: 'bed', title: '自动化测试环境结论复核', function: { module: 'functions/check-bed.ts' }, applies: 'run', subject: { module: 'functions/subject.ts' }, judges: 'subject', tier: 'advisory' }]);
     assert.deepEqual(SlotsFile.parse(json('slots.schema.json')), { schema: 'slots@1', item: {}, run: {} });
     assert.ok(/\p{Script=Han}/u.test(text('SKILL.md')) && text('SKILL.md').includes('Hub 记录里空闲（未排除本地操作）'), 'the qualifier is in the procedure');
   });

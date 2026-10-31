@@ -79,8 +79,8 @@ test('the runner note names no administrator command in any job state', () => {
   const rows: Array<{ ended: 'done' | 'unknown' | null; boundary_refused?: boolean; status: JobStatus; expect: RegExp }> = [
     { ended: null, status: status({}), expect: /还在进行/ },
     { ended: 'unknown', status: status({ frozen: true }), expect: /等管理员 admin-1 对账/ },
-    { ended: 'done', status: status({ outcome: 'not_dispatched', reason: '合成：缺整台租约' }), expect: /不会再派发/ },
-    { ended: 'done', boundary_refused: true, status: status({ outcome: 'not_dispatched', reason: '合成：缺整台租约' }), expect: /Hub 会再试一次/ },
+    { ended: 'done', status: status({ outcome: 'not_dispatched', reason: '合成：缺整个自动化测试环境的租约' }), expect: /不会再派发/ },
+    { ended: 'done', boundary_refused: true, status: status({ outcome: 'not_dispatched', reason: '合成：缺整个自动化测试环境的租约' }), expect: /Hub 会再试一次/ },
     { ended: 'done', status: status({ outcome: 'effective', result: `src:${'b'.repeat(64)}` }), expect: /读结果引用看逐条结论/ },
     { ended: 'done', status: status({ outcome: 'effective', result: `src:${'b'.repeat(64)}`, missing_fact: '合成：缺归属认证' }), expect: /部分条目没有判定/ },
   ];

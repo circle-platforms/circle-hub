@@ -144,7 +144,7 @@ export function undeclaredBaselineFact(ids?: readonly string[]): string {
 
 export function undeclaredBaselineNext(items: readonly BedItem[], ids: readonly string[]): string {
   const wanted = new Set(ids);
-  return items.filter(item => wanted.has(item.id)).map(item => `由${item.cleanup.actor}在台架清单中声明 baseline 行或将通道声明为 snapshot_only 后重开`).join('；');
+  return items.filter(item => wanted.has(item.id)).map(item => `由${item.cleanup.actor}在自动化测试环境清单中声明 baseline 行或将通道声明为 snapshot_only 后重开`).join('；');
 }
 
 export function unrestoredFact(diffs: readonly Difference[]): string {

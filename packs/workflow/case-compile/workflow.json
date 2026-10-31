@@ -25,7 +25,7 @@
     {
       "slot": "inventory",
       "role": "expected",
-      "description": "台架清单命名文档（doc:doc:<名字>，json@1 解析，形状 test-bed-manifest@1，与 test-bed 包同一份）：设备、类型、接口地址、服务、保留段。缺省写 doc:doc:bed-topology；清单有问题时整份拒绝并指出位置",
+      "description": "自动化测试环境清单命名文档（doc:doc:<名字>，json@1 解析，形状 test-bed-manifest@1，与 test-bed 包同一份）：设备、类型、接口地址、服务、保留段。缺省写 doc:doc:bed-topology；清单有问题时整份拒绝并指出位置",
       "accepts": [
         "doc:doc"
       ],

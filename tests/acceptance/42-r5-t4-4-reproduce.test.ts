@@ -137,7 +137,7 @@ test('T4-4 synthetic reproduction: ticket, bed search, observation quotes, lease
   assert.ok(matchedRun);
   const matchedClaims = (await claimsOf(bed, matchedRun)).map((claim) => claim.statement.text);
   assert.ok(matchedClaims.some((text) => text.includes('orbit-bed') && text.includes(`构建一致（${ticketBuild}，声明，未核对）`)), JSON.stringify(matchedClaims).slice(0, 500));
-  assert.ok(!matchedClaims.some((text) => text.includes('没有任何台架的在装构建匹配')));
+  assert.ok(!matchedClaims.some((text) => text.includes('没有任何自动化测试环境的在装构建匹配')));
 
   const missed = await client.call('start_run', { pack: 'test-bed', inputs, parameters: { action: 'search', need: { ...need, build: otherBuild } } });
   assert.equal(missed.isError, false, missed.text.slice(0, 800));
@@ -146,7 +146,7 @@ test('T4-4 synthetic reproduction: ticket, bed search, observation quotes, lease
   const missedClaims = (await claimsOf(bed, missedRun)).map((claim) => claim.statement.text);
   assert.ok(missedClaims.some((text) => text.includes('orbit-bed') && text.includes(`需要升级到 ${otherBuild}`)));
   assert.ok(missedClaims.some((text) => text.includes('comet-bed') && text.includes('没有记录（未知）')));
-  const unknown = missedClaims.find((text) => text.includes('没有任何台架的在装构建匹配'));
+  const unknown = missedClaims.find((text) => text.includes('没有任何自动化测试环境的在装构建匹配'));
   assert.ok(unknown, JSON.stringify(missedClaims).slice(0, 800));
   assert.match(unknown, new RegExp(`版本线 ${otherBuild}`));
   assert.match(unknown, new RegExp(`orbit-bed/orbit0 装的是 ${ticketBuild}`));

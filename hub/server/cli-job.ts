@@ -191,7 +191,7 @@ export async function bedCommand(s: JobCommandSession, args: readonly string[]):
       if (!values.reason || !values.reason.trim() || values.reason.includes('\n') || values.reason.includes('\r')) throw new UsageError('结清理由必须是一行非空说明');
       const result = await dispatch.clearBedHold(by, positionals[0], values.reason.trim());
       if (!result.cleared) { s.out('没有未结清的占用'); return 0; }
-      s.out(`已结清占用：执行器 ${positionals[0]}；台架 ${result.bed}；作业 ${result.job.slice(0, 12)}；方式 admin`);
+      s.out(`已结清占用：执行器 ${positionals[0]}；自动化测试环境 ${result.bed}；作业 ${result.job.slice(0, 12)}；方式 admin`);
       return 0;
     }
     if (sub === 'record') {

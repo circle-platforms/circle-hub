@@ -45,7 +45,7 @@
     },
     {
       "code": "case-compile.bed_unknown",
-      "when": "bucket 不是配置选定的清单台架",
+      "when": "bucket 不是配置选定的清单自动化测试环境",
       "fix": "bucket 写配置的 bed"
     },
     {
@@ -152,12 +152,12 @@
     },
     {
       "code": "case-compile.no_inventory",
-      "when": "没有台架清单",
-      "fix": "绑定发布的台架清单"
+      "when": "没有自动化测试环境清单",
+      "fix": "绑定发布的自动化测试环境清单"
     },
     {
       "code": "case-compile.manifest_invalid",
-      "when": "台架清单不合式",
+      "when": "自动化测试环境清单不合式",
       "fix": "按指针修正清单并重新发布"
     },
     {
@@ -234,7 +234,7 @@
     },
     {
       "code": "case-compile.manifest_problem",
-      "when": "台架清单逐条问题",
+      "when": "自动化测试环境清单逐条问题",
       "fix": "按指针处理"
     },
     {

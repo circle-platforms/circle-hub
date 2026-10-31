@@ -33,7 +33,7 @@ export const IDLE_WORDING='Hub 记录里空闲（未排除本地操作）';
 export const earliestWording=(moment:string):string=>`Hub 记录里最早 ${moment} 空闲（未排除本地操作）`;
 export const MAX_PAGES=4;
 export function parseRunId(text:string):string|null{return /\b(run_[0-9a-z]{26})\b/.exec(text)?.[1]??null;}
-const CORRECTION='台架预订不限时长，用完由运行释放';
+const CORRECTION='自动化测试环境预订不限时长，用完由运行释放';
 const UNLIMITED='不限时长，用完由运行释放';
 const HELD='Hub 记录里被占用，没有到期时刻（未排除本地操作）';
 type Step='search'|'hours'|'need-hours'|'acquire'|'extend'|'release';
@@ -94,12 +94,12 @@ function machine(gold:TestBedGold):Machine {
 }
 
 export default function scenario(gold:TestBedGold):Scenario {
-  if(!gold||!gold.need||!gold.acquire||Object.hasOwn(gold.need,'hours')||Object.hasOwn(gold.acquire,'hours')||Object.hasOwn(gold,'extend')||gold.release!==true)throw new TypeError('台架金标准已改为不限时长并由运行释放：删除 need.hours、acquire.hours 和 extend，写 release:true');
-  if(gold.beds.some(bed=>Object.hasOwn(bed,'owner')||Object.hasOwn(bed,'prefix')))throw new TypeError('台架金标准不能声称已核验 owner 或 prefix：当前搜索结论只披露 ownership 登记状态；主人身份和登记前缀需要额外只读接口');
-  const area='台架',live=machine(gold);
+  if(!gold||!gold.need||!gold.acquire||Object.hasOwn(gold.need,'hours')||Object.hasOwn(gold.acquire,'hours')||Object.hasOwn(gold,'extend')||gold.release!==true)throw new TypeError('自动化测试环境金标准已改为不限时长并由运行释放：删除 need.hours、acquire.hours 和 extend，写 release:true');
+  if(gold.beds.some(bed=>Object.hasOwn(bed,'owner')||Object.hasOwn(bed,'prefix')))throw new TypeError('自动化测试环境金标准不能声称已核验 owner 或 prefix：当前搜索结论只披露 ownership 登记状态；主人身份和登记前缀需要额外只读接口');
+  const area='自动化测试环境',live=machine(gold);
   return {
     name:'test-bed',area,
-    prompt:`在合成清单 ${gold.inventory} 只读搜索台架，核对旧 hours 和 extend 请求的确定拒绝；不限时预订 ${gold.acquire.bed}，用完由预订运行谱系释放。`,
+    prompt:`在合成清单 ${gold.inventory} 只读搜索自动化测试环境，核对旧 hours 和 extend 请求的确定拒绝；不限时预订 ${gold.acquire.bed}，用完由预订运行谱系释放。`,
     respond:turn=>live.consume(turn),
     check(turns:LoggedTurn[]):Check[]{
       const replay=machine(gold);for(const turn of turns)replay.consume(turn);
@@ -111,10 +111,10 @@ export default function scenario(gold:TestBedGold):Scenario {
       for(const step of ['hours','need-hours','extend'] as const)add(`旧入口 ${step} 返回确定修正`,CORRECTION,e[step].texts.join('\n'),e[step].refused);
       const search=e.search.pages.join('\n').split('\n');
       for(const bed of gold.beds){
-        const lines=search.filter(line=>line.includes(`台架 ${bed.name}：`));
+        const lines=search.filter(line=>line.includes(`自动化测试环境 ${bed.name}：`));
         const wording=bed.free==='idle'?IDLE_WORDING:bed.free==='held'?HELD:earliestWording(bed.free);
-        add(`台架 ${bed.name} 的空闲结论`,wording,lines.join('\n')||'没有这个台架的结论',lines.some(line=>line.includes(wording)));
-        if(bed.ownership!==undefined)add(`台架 ${bed.name} 的登记状态`,bed.ownership,lines.join('\n'),lines.some(line=>line.split('；').some(part=>part.trim()===bed.ownership)));
+        add(`自动化测试环境 ${bed.name} 的空闲结论`,wording,lines.join('\n')||'没有这个自动化测试环境的结论',lines.some(line=>line.includes(wording)));
+        if(bed.ownership!==undefined)add(`自动化测试环境 ${bed.name} 的登记状态`,bed.ownership,lines.join('\n'),lines.some(line=>line.split('；').some(part=>part.trim()===bed.ownership)));
       }
       const acquired=e.acquire.pages.join('\n').split('\n').find(line=>line.includes(`预订 ${gold.acquire.bed}，`));
       add('预订明确不限时长并由运行释放',UNLIMITED,acquired??'没有预订结论',acquired!==undefined&&acquired.includes(UNLIMITED)&&!/[0-9]+\s*小时/u.test(acquired));

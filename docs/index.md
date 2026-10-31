@@ -20,7 +20,7 @@ circle-hub 正在重建为一个标准 MCP 服务器。模型在客户端（例�
 | 看进度和已定的决定 | [Hub r4 进度](hub-r4-progress.md) |
 | 研究背景 | [置真对接架构](design/truth-docked-architecture.md)（研究提案，不是实现说明） |
 | 三个仓库彼此的要求 | [兼容矩阵](compatibility.md) |
-| 真实台架派发排错、执行器对齐与全流程操作 | [R5 派发运维手册](hub-r5-runbook-dispatch.md) |
+| 真实自动化测试环境派发排错、执行器对齐与全流程操作 | [R5 派发运维手册](hub-r5-runbook-dispatch.md) |
 | 设计索引，以及已被取代的旧设计篇 | [设计](design/README.md)（[English](design/en/README.md)） |
 
 ## 历史记录

@@ -8,7 +8,7 @@ export function acceptedPair(runInput: any, resultInput: any, pack: string): {
     run: any;
     result: any;
     reference: string;
-} | null { const r = envelope(runInput, 'run'), v = envelope(resultInput, 'validation_result'); if (!r || !v || r.body.pack !== pack + '@1.0.1' || v.body.schema !== 'validation@1' || v.body.run !== r.body.run || v.body.acceptance !== 'accepted' || v.body.locks?.pack !== r.body.pack || v.body.locks?.pack_digest !== r.body.pack_digest)
+} | null { const r = envelope(runInput, 'run'), v = envelope(resultInput, 'validation_result'); if (!r || !v || r.body.pack !== pack + '@1.0.2' || v.body.schema !== 'validation@1' || v.body.run !== r.body.run || v.body.acceptance !== 'accepted' || v.body.locks?.pack !== r.body.pack || v.body.locks?.pack_digest !== r.body.pack_digest)
     return null; return { run: r.body, result: v.body, reference: v.reference }; }
 export function satisfied(result: any, key: string, item?: string) { const rows = item === undefined ? result.cross_item ?? [] : Object.values(result.partitions ?? {}).flatMap((v: any) => Array.isArray(v) ? v : []).find((v: any) => v.item === item)?.requirements?.find((r: any) => r.requirement === key)?.claims ?? []; if (item !== undefined) {
     const row = Object.values(result.partitions ?? {}).flatMap((v: any) => Array.isArray(v) ? v : []).find((v: any) => v.item === item)?.requirements?.find((r: any) => r.requirement === key);

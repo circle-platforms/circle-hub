@@ -53,7 +53,7 @@ export function satisfiedRecipes(input: { run: unknown; result: unknown; submiss
     if (required.length !== 1 || !isRecord(required[0]) || required[0].status !== 'satisfied') throw new Error('计划必需要求项尚未全部满足；工作簿缺输入一项不能掩盖其他未决或反驳');
   }
   const contract = parseRuntimeContract(jsonBytes(input.contract,'contract')); const inventory = parseManifest(jsonBytes(input.inventory,'inventory'));
-  if (!contract.ok || !inventory.ok) throw new Error('绑定合约或台架清单无法重算');
+  if (!contract.ok || !inventory.ok) throw new Error('绑定合约或自动化测试环境清单无法重算');
   const profile = parseProfile(jsonBytes(input.profile,'profile'), contract.contract, inventory.beds); if (!profile.ok) throw new Error('绑定运行环境配置不合式');
   const identity = itemResult.requirements.filter((v) => isRecord(v) && v.requirement === 'contract_methods').flatMap((v) => isRecord(v) && Array.isArray(v.claims) ? v.claims : []).find((v) => isRecord(v) && isRecord(v.statement) && v.statement.verdict === 'support' && isRecord(v.statement.data) && v.statement.data.runtime_version === contract.contract.runtimeVersion && v.statement.data.contract_sha256 === contract.contract.pinned.identity);
   if (!identity) throw new Error('缺少与绑定合约匹配的支持身份回执');

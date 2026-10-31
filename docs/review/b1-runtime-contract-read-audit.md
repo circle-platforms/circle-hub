@@ -27,7 +27,7 @@
 | checkpoint_expected_register、checkpoint_result_register | :57–58 检查点 H/I 寄存器能力 |
 | restore_registers | :46 还原必须显式开启 |
 | restore_methods[].{object,method,raw_input,complete_command_parse,role_checks,effect_scope_checks,root_parameter} | :44–50 发送前完整语法、角色、范围及锁根守卫 |
-| restore_methods[].target_parameter | block-restore.ts:28–34 另由恢复准备读取，写入确定的目标路径、前导参数、台架与冻结清单摘要；不是回显解析 |
+| restore_methods[].target_parameter | block-restore.ts:28–34 另由恢复准备读取，写入确定的目标路径、前导参数、自动化测试环境与冻结清单摘要；不是回显解析 |
 
 ## 条目、配置与计划字段
 

@@ -48,7 +48,7 @@ describe('matchNeed without a build requirement', () => {
     assert.equal(a.devicesOk, true);
     assert.match(a.conclusion, /^Hub 记录里空闲（未排除本地操作）$/);
     assert.equal(b.devicesOk, false);
-    assert.match(b.conclusion, /需要 1 台路由器，台架里有 0 台/);
+    assert.match(b.conclusion, /需要 1 台路由器，自动化测试环境里有 0 台/);
   });
   it('a needed device leased until 10:30: the bed matches with that earliest-free time', () => {
     const leases = { 'bed/bed-a/router0': { until: '2026-10-22T10:30:00.000Z' } };
@@ -76,8 +76,8 @@ describe('matchNeed without a build requirement', () => {
   it('a bed without the needed device counts says what is missing', () => {
     const bigger = { devices: [{ type: 'load-balancer', count: 1 }, { type: 'router', count: 2 }], hours: 1 };
     const answer = matchNeed(beds, bigger, noInstalled, {}, noLeases, NOW);
-    assert.match(answer.find((b) => b.bed === 'bed-a')!.conclusion, /需要 2 台路由器，台架里有 1 台/);
-    assert.match(answer.find((b) => b.bed === 'bed-b')!.conclusion, /需要 2 台路由器，台架里有 0 台/);
+    assert.match(answer.find((b) => b.bed === 'bed-a')!.conclusion, /需要 2 台路由器，自动化测试环境里有 1 台/);
+    assert.match(answer.find((b) => b.bed === 'bed-b')!.conclusion, /需要 2 台路由器，自动化测试环境里有 0 台/);
   });
 });
 
@@ -124,7 +124,7 @@ describe('matchNeed with a build requirement', () => {
     const gap = unmatchedBuildExit(beds, need, installed, {}, noLeases, NOW, matches);
     assert.ok(gap);
     assert.equal(gap.verdict, 'unknown');
-    assert.match(gap.missing, /没有任何台架的在装构建匹配版本线 Rel_APV_10_6_1_9/);
+    assert.match(gap.missing, /没有任何自动化测试环境的在装构建匹配版本线 Rel_APV_10_6_1_9/);
     assert.match(gap.missing, /bed-a\/apv0 装的是 Rel_APV_10_6_1_8/);
     assert.match(gap.missing, /缺在装构建记录：bed-b\/lb0/);
     assert.equal(gap.fix, '管理员在清单登记在装构建，或把某台升级到该构建后重试');

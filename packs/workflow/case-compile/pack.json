@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.9.6",
+  "version": "3.9.7",
   "kind": "workflow",
   "dependencies": [
     {
@@ -12,17 +12,17 @@
     }
   ],
   "title": "用例编译",
-  "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、类型化参数与效果授权、台架与血缘地址、地址替换及逐字期望（期望也可逐字取自本次运行冻结的已受理判据声明，其引文在本次边界上重核）。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
+  "description": "按运行器原始函数合约与 runtime-profile 核验单用例计划：重算身份，启用组合与本轮允许集合、签名、单行值、命令目录、类型化参数与效果授权、自动化测试环境与血缘地址、地址替换及逐字期望（期望也可逐字取自本次运行冻结的已受理判据声明，其引文在本次边界上重核）。Hub 不生成内容、不调用模型；不证明在真实设备上跑得通",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "198ef91df3d12f26de6fd0b8c3c22b0563cc506621ba2a9f7d2e2573c8d5bb5f",
-      "size": 17473
+      "sha256": "ad17796d78281531ff0245ad811c185968d08a3671080f17a182ddd1e7e8ca12",
+      "size": 17437
     },
     {
       "path": "checks.json",
-      "sha256": "8bfb89cbd2b51435e6f7702aef52bb6c65fcaf3820792b577c16dcb6570e893a",
-      "size": 5102
+      "sha256": "146296adbe8b3798499b1906829bb4b222b2bbec137b9eef87fc84590581f291",
+      "size": 5147
     },
     {
       "path": "examples/bed-topology.json",
@@ -101,8 +101,8 @@
     },
     {
       "path": "functions/block-checks.ts",
-      "sha256": "09a054f8747dbe59c1bcd10f670ac007dc85be0970c949d20183f35efd4ed591",
-      "size": 5840
+      "sha256": "8bf3a816cf223e75a0104e7ae9aacacf2949444ae0249bd45142e349f0be1e86",
+      "size": 5855
     },
     {
       "path": "functions/block-expected.ts",
@@ -141,8 +141,8 @@
     },
     {
       "path": "functions/checks.ts",
-      "sha256": "e3633770e9bbd50898e71a31669ff79053caa04defe8e922e54af0101f8f9ad8",
-      "size": 23059
+      "sha256": "4a84f053eab6c13b4f31b7e0d8cb1b25f18f2a8d5249c3f3ffd213080364ddbb",
+      "size": 23074
     },
     {
       "path": "functions/command-obligations.ts",
@@ -176,8 +176,8 @@
     },
     {
       "path": "functions/generate.ts",
-      "sha256": "e66e5e168b4c193d203f452eadcf4f880c9f3c81b22ea3a2082d59bf7c4704ca",
-      "size": 16470
+      "sha256": "727e2a6803f1564dc4fe0475f3beedf48e993f921e71d58293f47e63061478ad",
+      "size": 16485
     },
     {
       "path": "functions/generated/command-grammar.ts",
@@ -191,8 +191,8 @@
     },
     {
       "path": "functions/manifest.ts",
-      "sha256": "759f8ee74fe08c227d9c91be549f19895af7b8b449deb2cb4a284fd7e64fc2bd",
-      "size": 16132
+      "sha256": "f55d6acbf74797c69b644b3b13d2fb4aa4e8feaf4a93699376d071cbe6e1db03",
+      "size": 16402
     },
     {
       "path": "functions/plan-commands.ts",
@@ -201,13 +201,13 @@
     },
     {
       "path": "functions/profile.ts",
-      "sha256": "c57c1f87c7ce5b178c8dd50d08e9283e499034b7067e649ea017140ebb3f730d",
-      "size": 17023
+      "sha256": "2dbca8d2212740e0f15bef0726f8f7c572e8caee0581513d5d04493518264b79",
+      "size": 17113
     },
     {
       "path": "functions/project.ts",
-      "sha256": "9aa94a05de4ed1729bc68e139ce70a532ce31784321ad574d0b5fe5772528890",
-      "size": 21882
+      "sha256": "47742cf0669b67c813fb63e9c150809a805f3bb3ada569ec27378786294745db",
+      "size": 21912
     },
     {
       "path": "functions/quote-width.ts",
@@ -226,18 +226,18 @@
     },
     {
       "path": "functions/recompose-check.ts",
-      "sha256": "14d5a8d13f15a7c50fc4794ee4cf3286a293c9e699c6bad3ff44ef18def359f8",
-      "size": 23052
+      "sha256": "c6ccb66bb6d7f99123a37c3a1353750733be63237907cae3a34a3823419b411a",
+      "size": 23067
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "07370dca08b95d55dc92923049d055a98f835f97e265ac9810f33664f6588778",
+      "sha256": "c7f896ee4349e16cc4efb4357639ac0f8d56b18580031b0891ff49fd8143c645",
       "size": 4185
     },
     {
       "path": "functions/recomposition.ts",
-      "sha256": "a873f60ca5b860b0e79065e26ad092d82f8aa5e170cd4196e339a0fa3096ad5e",
-      "size": 4807
+      "sha256": "88a8f8acb67437459cbe77a37f4efeb898a8eab5e091fd7e52435f4ae5d5f396",
+      "size": 4822
     },
     {
       "path": "functions/runtime-contract.ts",
@@ -251,8 +251,8 @@
     },
     {
       "path": "functions/slots.ts",
-      "sha256": "6003ccd76481b8c9a00e2c66a13b8f3ed2b73719000c3817d28580338ebebebc",
-      "size": 7164
+      "sha256": "3bab397eb41eff067dfb541dc232606ba48209559938be710f3cb0b4ab4bdf6e",
+      "size": 7179
     },
     {
       "path": "functions/subject.ts",
@@ -266,8 +266,8 @@
     },
     {
       "path": "functions/typed-authority.ts",
-      "sha256": "bc85a2d74260aa5f6ab7dedec858404e3b2b70290f1f621b1653e06160609acc",
-      "size": 11288
+      "sha256": "c0ce971be475dc0eeedcc32af46c755f03f5a975d4e17ed543eff63824b033f7",
+      "size": 11303
     },
     {
       "path": "functions/typed-contract.ts",
@@ -296,8 +296,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "3d05ddaf1b31e4903b558bce852a0552591cc2b6e16c5c78d309405a93782bb5",
-      "size": 11285
+      "sha256": "fa65512a9c46636f59b29880847607ae84c58b0a35df3a64d97df40d37b4beac",
+      "size": 11360
     },
     {
       "path": "samples/negative/quote.json",
@@ -371,7 +371,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "67df408dddfa4b35f84dbd2dcde169487c4a06b7614ff5701aeba4d56d239163",
+      "sha256": "cbf2ecb3818f1feb7260cadd36c55028484fd3e86870a4d3303a73b702cb32b9",
       "size": 39651
     },
     {
@@ -391,27 +391,27 @@
     },
     {
       "path": "samples/negative/typed-scope-authorized.json",
-      "sha256": "6cf57f137e65d1bf4e1829ad049c409f6d0d8178b0a1738743f8a315cfaa444e",
-      "size": 23702
+      "sha256": "23ed9ba3cfea66ccb84a06e3c275fef738c524db7c13ee6a3ff8fdb150b4d853",
+      "size": 23717
     },
     {
       "path": "samples/negative/typed-scope-bed-capacity.json",
-      "sha256": "6d896389c45133ca47956f960c0b503d3f75b0f48697e23d3784071fc82c7272",
-      "size": 23903
+      "sha256": "de0878c6a24572e740628b901f5f25254aa620895fa03a97a548f702c16cfec4",
+      "size": 23918
     },
     {
       "path": "samples/negative/typed-scope-deleted-occurrence.json",
-      "sha256": "75bac72e67bf43723bdd5bbd844af6a26ae62d23ef8ee0e6b854865e1d5eb587",
-      "size": 23980
+      "sha256": "e04e7af182bfe6336eceec6cc3f36ca828f82f03b717deb023cd51f67c293d89",
+      "size": 23995
     },
     {
       "path": "samples/negative/typed-scope-missing-cleanup.json",
-      "sha256": "0a3ca891d59e1380ef2798f5b990132a4d23a5f82b7102c2dbed3bf3c04db80e",
-      "size": 23704
+      "sha256": "29c40b213947017c1811e25e49d3a18b79d7b4a5b5cdcf8b8f48221de6a136b9",
+      "size": 23719
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "70473c7f4eebac24cf35915f12f398b4c00e396a1e4d29aa212bea60d1567fba",
+      "sha256": "7f4552cc8a6fca2854668703b91134ddf0e6b8962977d3195bef6e021ea387a2",
       "size": 39655
     },
     {
@@ -486,7 +486,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "b9cda5e17194f6bf05d57402ec73087f76f6b669debf1b6496807bf0083b906d",
+      "sha256": "8e9b2373429f87a49ae93a90395c31ee934a43ebd2ad671d351fbc6a945263d3",
       "size": 39605
     },
     {
@@ -506,27 +506,27 @@
     },
     {
       "path": "samples/positive/typed-scope-authorized.json",
-      "sha256": "ae4ffe840d94a02f964b9f9de6b40946e72a58cd226df3ed1f6b9dcea7034df6",
-      "size": 23862
+      "sha256": "2cbe62e75abef9a1d403f32aa5deea107ebd985c89cf67ab1ed46f19e9c1c170",
+      "size": 23877
     },
     {
       "path": "samples/positive/typed-scope-bed-capacity.json",
-      "sha256": "0259481d4527a997e8d09c0623756867bf612d9908c4038b47f9c0eb5b472e87",
-      "size": 23862
+      "sha256": "ca7e46d72e442df629fc208013346cf7caf1142bd5048fe192789dbd8cdb8851",
+      "size": 23877
     },
     {
       "path": "samples/positive/typed-scope-deleted-occurrence.json",
-      "sha256": "12f8edb3029aac85fec0db5cc2f8115168913769bb2106d84140de1539eddad7",
-      "size": 24325
+      "sha256": "46dc772adfbef5be5e1c092938d9542158196e0c9a130b27363517bef3c98a57",
+      "size": 24340
     },
     {
       "path": "samples/positive/typed-scope-missing-cleanup.json",
-      "sha256": "503cb9019097e75036265766b2f9d7c56db1c2f9bb406e644e35bb198ef91149",
-      "size": 23867
+      "sha256": "550f4cc06d86e45310611efcb4e422894d1b4b3fa485e4aa3d66679759e67763",
+      "size": 23882
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "0157cedc3cf99a90a5b67edce116423626deda42d1a3138b113de7a3986e973c",
+      "sha256": "289ff341bf8fa2453513367f10859be9499887af9776eb0145fd24f2a7dbc94a",
       "size": 39609
     },
     {
@@ -546,8 +546,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "61c59157e37db5d5606c9af364cb5559c0dd28b0470bf59dd38e3d03a6c75bb5",
-      "size": 10502
+      "sha256": "dd29e410f5fc329f4d4dee69654d2ed5307d35cdc88b13a413d1ab37d9ee24e3",
+      "size": 10577
     },
     {
       "path": "tables/command-identity.schema.json",
@@ -586,8 +586,8 @@
     },
     {
       "path": "tables/recompose-codes.json",
-      "sha256": "8b1af856f9e4b377e2b7342d8834daefb1ed408184d1cf7fbf89f5e6dfb13520",
-      "size": 1413
+      "sha256": "f1c3a4d47ce1fde2421c18f2228ac7083fbee33f10cbcd71ddac8c0bc1c0304e",
+      "size": 1428
     },
     {
       "path": "tables/recompose-format.json",
@@ -626,7 +626,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "0acf745834f218261c361db715bac53b9e326424696f9e6971ae4ac2cdd5fe95",
+      "sha256": "bb6d66d6e4d11d7cd3c8c7bcc0be2ac06df7978abebfe704b9eb381d61ff1696",
       "size": 555
     },
     {
@@ -641,8 +641,8 @@
     },
     {
       "path": "tools/generate-workbook.ts",
-      "sha256": "6565e6caf1d023f708abfbe5efb3304d27dd37f69f43c1bfd3a99f3ef330d4e5",
-      "size": 11349
+      "sha256": "63f07a2e1a48f172c03d78493b53a928bebebd9d4e250e9e5207890d1f261a70",
+      "size": 11364
     },
     {
       "path": "tools/normalize-mindmap.ts",
@@ -656,8 +656,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "80fbe8bf3ec4152fdf9169dbe8173e7254f136e5ea21e1830b27d2d1841ed33f",
-      "size": 6008
+      "sha256": "acdd5347033c44bfdcf8c3d3ea2ea187ba68ceeea627424599f30c171070b4a1",
+      "size": 6023
     }
   ]
 }

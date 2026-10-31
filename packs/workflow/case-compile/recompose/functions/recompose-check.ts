@@ -176,7 +176,7 @@ export function checkRecomposition(input: any): any[] {
     const fromBed = (ref: any) => typeof ref === 'string' && (s.bed_sources ?? []).some((base: string) => ref === base || ref.startsWith(base + '/'));
     for (const row of [...record.ledgers.adapted, ...record.ledgers.concretizations])
         if ([row.source_of_value, row.authority, row.value_ref].some(fromBed))
-            bad('bound_to_bed', '重组取值引用了本轮已解析的物理台架来源');
+            bad('bound_to_bed', '重组取值引用了本轮已解析的物理自动化测试环境来源');
     const raw = s.catalog ?? {}, entries = Array.isArray(raw.entries) ? raw.entries : [], definitions: CommandDefinition[] = entries.filter((e: any) => Array.isArray(e.words) && Array.isArray(e.signatures)).map((e: any) => ({ path: '/commands/' + e.words.map(encodeURIComponent).join('/'), words: e.words, signatures: e.signatures })), grammar = compileGrammar(definitions), identity = (line: string) => commandIdentity(grammar, line);
     for (const atom of atoms) {
         const state = parseCommandState(grammar, atom.content);

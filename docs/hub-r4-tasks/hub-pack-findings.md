@@ -7,7 +7,7 @@
 - 理论文档 `docs/design/truth-docked-architecture.md`；模型用 `node tools/show-element.ts <元素>` 读。
 
 - 分支和工作树：`hub-pack-findings`，目录 `circle-hub-pack-findings`。等这一批（K2、core-fixes、views-and-notes、kb-sections、hub-job-dispatch 等）合并以后，由集成者从 hub-redesign 开出并通知。
-- 范围（普查拟定，集成者照当时合并后的代码再核一遍）：第 1、2、5、7 条可以马上做；用到缺席观察和视图范围的部分等 hub-read-absence、hub-view-scope；regression-scope、maintenance-sweep、quality-board 等 views-and-notes 合并后再改；台架观察等 hub-job-dispatch。可以改：packs/workflow/**（各包的 functions、测试、checks.json、requirements.json、README、SKILL、版本号）、scripts/real/accept/**、scripts/real/gold/compile-check.ts；对应测试。
+- 范围（普查拟定，集成者照当时合并后的代码再核一遍）：第 1、2、5、7 条可以马上做；用到缺席观察和视图范围的部分等 hub-read-absence、hub-view-scope；regression-scope、maintenance-sweep、quality-board 等 views-and-notes 合并后再改；自动化测试环境观察等 hub-job-dispatch。可以改：packs/workflow/**（各包的 functions、测试、checks.json、requirements.json、README、SKILL、版本号）、scripts/real/accept/**、scripts/real/gold/compile-check.ts；对应测试。
 - 规则：同前（不推送、不建 PR、不发布、不部署；不碰 7420、钥匙串、环境配置文件和任何真实系统；测试只用合成数据，版本线 10.6 以后，地址只用 192.0.2.0/24 和 2001:db8::/32；`git commit -s`）。枚举只来自生成的词表；Hub 只核验，不生成内容。
 - 验证：`npx tsc --noEmit`；`node tools/gen-contracts.ts --check`；`node --test --test-concurrency=1` 对改到的目录；每条先写改前失败、改后通过的测试。
 

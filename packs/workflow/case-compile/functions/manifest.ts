@@ -196,33 +196,33 @@ export function parseManifest(input: unknown): ParsedManifest {
   const problems: Problem[] = [];
   if (!isRecord(input)) return { ok: false, problems: [problem('', '清单不是对象', '按 test-bed-manifest@1 的形状写')] };
   if (input.schema !== 'test-bed-manifest@1') problems.push(problem('/schema', 'schema 不是 test-bed-manifest@1', 'schema 写 test-bed-manifest@1'));
-  if (!Array.isArray(input.beds) || input.beds.length === 0) problems.push(problem('/beds', '清单没有台架数组', 'beds 写台架的非空数组'));
-  if (Array.isArray(input.beds) && input.beds.length > LIMITS.beds) problems.push(problem('/beds', `台架超过 ${LIMITS.beds} 个`, '减少台架'));
+  if (!Array.isArray(input.beds) || input.beds.length === 0) problems.push(problem('/beds', '清单没有自动化测试环境数组', 'beds 写自动化测试环境的非空数组'));
+  if (Array.isArray(input.beds) && input.beds.length > LIMITS.beds) problems.push(problem('/beds', `自动化测试环境超过 ${LIMITS.beds} 个`, '减少自动化测试环境'));
   const beds: ManifestBed[] = [];
   const bedNames = new Set<string>();
   for (const [bi, rawBed] of (Array.isArray(input.beds) ? input.beds : []).entries()) {
     const at = `/beds/${bi}`;
     if (!isRecord(rawBed) || typeof rawBed.name !== 'string' || !BED_NAME.test(rawBed.name)) {
-      problems.push(problem(`${at}/name`, '台架名不对', '台架名只用小写字母、数字和连字符，至多 64 个字符'));
+      problems.push(problem(`${at}/name`, '自动化测试环境名不对', '自动化测试环境名只用小写字母、数字和连字符，至多 64 个字符'));
       continue;
     }
-    if (bedNames.has(rawBed.name)) problems.push(problem(at, `台架 ${rawBed.name} 重复`, '台架名不能重复'));
+    if (bedNames.has(rawBed.name)) problems.push(problem(at, `自动化测试环境 ${rawBed.name} 重复`, '自动化测试环境名不能重复'));
     bedNames.add(rawBed.name);
     const devices: ManifestDevice[] = [];
-    if (!Array.isArray(rawBed.devices)) problems.push(problem(`${at}/devices`, `台架 ${rawBed.name} 没有设备数组`, 'devices 写设备数组'));
+    if (!Array.isArray(rawBed.devices)) problems.push(problem(`${at}/devices`, `自动化测试环境 ${rawBed.name} 没有设备数组`, 'devices 写设备数组'));
     else {
-      if (rawBed.devices.length > LIMITS.devices) problems.push(problem(`${at}/devices`, `台架 ${rawBed.name} 的设备超过 ${LIMITS.devices} 台`, '减少设备'));
+      if (rawBed.devices.length > LIMITS.devices) problems.push(problem(`${at}/devices`, `自动化测试环境 ${rawBed.name} 的设备超过 ${LIMITS.devices} 台`, '减少设备'));
       const deviceNames = new Set<string>();
       const addressOwners = new Map<string, string>();
       rawBed.devices.forEach((rawDevice, di) => {
         const device = parseDevice(rawDevice, `${at}/devices/${di}`, problems);
         if (device === null) return;
-        if (deviceNames.has(device.name)) problems.push(problem(`${at}/devices/${di}`, `设备 ${device.name} 重复`, '同一台架内设备名不能重复'));
+        if (deviceNames.has(device.name)) problems.push(problem(`${at}/devices/${di}`, `设备 ${device.name} 重复`, '同一自动化测试环境内设备名不能重复'));
         deviceNames.add(device.name);
         for (const iface of [...device.ipv4, ...device.ipv6]) {
           const key = `${iface.family}:${iface.value.toString(16)}`;
           const held = addressOwners.get(key);
-          if (held !== undefined) problems.push(problem(`${at}/devices/${di}`, `地址 ${iface.address} 同时属于 ${held} 和 ${device.name}`, '同一台架内一个地址只能属于一台设备'));
+          if (held !== undefined) problems.push(problem(`${at}/devices/${di}`, `地址 ${iface.address} 同时属于 ${held} 和 ${device.name}`, '同一自动化测试环境内一个地址只能属于一台设备'));
           else addressOwners.set(key, device.name);
         }
         devices.push(device);
@@ -231,7 +231,7 @@ export function parseManifest(input: unknown): ParsedManifest {
     const services: ManifestService[] = [];
     if (rawBed.services === undefined) problems.push(problem(`${at}/services`, '缺少 services 数组', '没有服务也要写 services: []'));
     if (rawBed.services !== undefined) {
-      if (!Array.isArray(rawBed.services)) problems.push(problem(`${at}/services`, `台架 ${rawBed.name} 的 services 不是数组`, 'services 写 {host, ip, proto, port} 的数组'));
+      if (!Array.isArray(rawBed.services)) problems.push(problem(`${at}/services`, `自动化测试环境 ${rawBed.name} 的 services 不是数组`, 'services 写 {host, ip, proto, port} 的数组'));
       else {
         for (const [si, rawService] of rawBed.services.entries()) {
           const sat = `${at}/services/${si}`;
@@ -240,7 +240,7 @@ export function parseManifest(input: unknown): ParsedManifest {
             continue;
           }
           const host = devices.find((device) => device.name === rawService.host);
-          if (host === undefined) problems.push(problem(`${sat}/host`, `服务的主机 ${rawService.host} 不是这台架的设备`, 'host 写这台架 devices 里的设备名'));
+          if (host === undefined) problems.push(problem(`${sat}/host`, `服务的主机 ${rawService.host} 不是这自动化测试环境的设备`, 'host 写这自动化测试环境 devices 里的设备名'));
           const onHost = host !== undefined && [...host.ipv4, ...host.ipv6].some((iface) => addressKey(iface.address) === addressKey(rawService.ip as string));
           if (host !== undefined && !onHost) problems.push(problem(`${sat}/ip`, `服务的地址 ${rawService.ip} 不是 ${rawService.host} 的接口地址`, 'ip 写该设备的接口地址（不带前缀）'));
           const proto = rawService.proto === 'udp' ? 'udp' : rawService.proto === 'tcp' ? 'tcp' : null;
@@ -254,7 +254,7 @@ export function parseManifest(input: unknown): ParsedManifest {
     const reserved: ManifestBed['reserved'] = [];
     if (rawBed.reserved === undefined) problems.push(problem(`${at}/reserved`, '缺少 reserved 数组', '没有保留段也要写 reserved: []'));
     if (rawBed.reserved !== undefined) {
-      if (!Array.isArray(rawBed.reserved)) problems.push(problem(`${at}/reserved`, `台架 ${rawBed.name} 的 reserved 不是数组`, 'reserved 写 "起始地址-结束地址" 的数组'));
+      if (!Array.isArray(rawBed.reserved)) problems.push(problem(`${at}/reserved`, `自动化测试环境 ${rawBed.name} 的 reserved 不是数组`, 'reserved 写 "起始地址-结束地址" 的数组'));
       else {
         for (const [ri, item] of rawBed.reserved.entries()) {
           const rat = `${at}/reserved/${ri}`;
@@ -279,7 +279,7 @@ export function parseManifest(input: unknown): ParsedManifest {
             continue;
           }
           const inside = devices.some((device) => [...device.ipv4, ...device.ipv6].some((iface) => iface.family === family && (start & mask(family, iface.prefix)) === (iface.value & mask(family, iface.prefix)) && (end & mask(family, iface.prefix)) === (iface.value & mask(family, iface.prefix))));
-          if (!inside) { problems.push(problem(rat, '保留段不在台架任何网段里', '保留段两端必须在台架的同一个网段内')); continue; }
+          if (!inside) { problems.push(problem(rat, '保留段不在自动化测试环境任何网段里', '保留段两端必须在自动化测试环境的同一个网段内')); continue; }
           const addresses: bigint[] = [];
           for (let value = start; value <= end; value += 1n) addresses.push(value);
           reserved.push({ family, addresses, text: item });

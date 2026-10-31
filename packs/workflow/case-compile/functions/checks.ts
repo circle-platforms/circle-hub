@@ -85,7 +85,7 @@ export function checkAddresses(input: unknown): Outcome[] {
   const unverified = typedPrerequisites(s, read.slots); if (unverified) return unverified;
   const slots = read.slots; const bed = s.beds.find((v) => v.name === slots.bucket);
   const triggerTypes = triggerTypesOf(s.profile!.trigger_types);
-  if (!bed || bed.name !== s.profile!.bed) return [refute(s, 'bed_unknown', 'bucket 必须是运行环境配置选定的清单台架', '/data/bucket')];
+  if (!bed || bed.name !== s.profile!.bed) return [refute(s, 'bed_unknown', 'bucket 必须是运行环境配置选定的清单自动化测试环境', '/data/bucket')];
   const out:Outcome[]=[];
   const uses=typedAddressUses(s.contract!,s.profile!,slots,s.command_catalog);
   const sourceIdentities=Array.isArray(s.command_identities)?s.command_identities:[];

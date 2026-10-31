@@ -9,7 +9,7 @@ failed bed check as it is (section 9 of its skill).
 Change: `hub/dispatch/service.ts` `holders` computes the keys the lineage does not hold for the whole window (released,
 another user, outside the lineage, expiring too early, or absent) and throws `LeaseCoverageError` with them; the first check
 before a dispatch names them in the `LEASE_UNAVAILABLE` refusal ("缺少覆盖派发窗口的同血缘资源租约：<keys>；执行器的目标是这些键
-所在的整台…"). The two rechecks during a run are unchanged. Device keys are the bed's lease keys the runner already sees.
+所在的整个自动化测试环境…"). The two rechecks during a run are unchanged. Device keys are the bed's lease keys the runner already sees.
 
 Tests: `hub/dispatch/accepted.test.ts` (the lineage refusal names every resource key); scenario 28 (a booking of part of the
 bed names every device key it did not book).
