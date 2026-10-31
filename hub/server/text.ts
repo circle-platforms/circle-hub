@@ -1288,6 +1288,12 @@ function sourceAccess(c: Content): string {
   return c.readable && c.read_tier === 'model_readable' ? labelOf('read_tier', c.read_tier) : '原文不可读';
 }
 
+/** A source held back for credentials (B02 R[4]) names the way out: an administrator reviews the findings and may accept a
+ * false hit; a real credential or a policy that requires retain_only is not lifted. */
+function heldStep(c: Content): string[] {
+  return !c.readable && c.read_tier === 'retain_only' ? ['下一步：请管理员核看这份来源为何只保留；凭据误报经管理员接受后，用同一引用重读；含真凭据或按策略只保留的不会放行'] : [];
+}
+
 /** Whether UTF-16 offset `at` of `text` falls between the two halves of a surrogate pair (no page starts there). */
 function insidePair(text: string, at: number): boolean {
   if (at <= 0 || at >= text.length) return false;
@@ -1312,7 +1318,7 @@ function structurePage(c:Content,trace:string,context:TextContext):string {
   const {parser,summary,...rest}=c.structure!;
   const fields=isRecord(summary)?summary:summary===undefined?{}:{summary};
   const lines=Object.entries({...fields,...rest}).map(([key,value])=>`  ${oneLine(key)} ${valueText(value)}`);
-  const head=[`内容 ${c.reference}：${sourceAccess(c)}`,...(c.sha256?[`sha256 ${c.sha256}`]:[]),...(c.note?[oneLine(c.note)]:[]),...(typeof parser==='string'?[`解析器 ${oneLine(parser)} 认出了这份文件`]:[]),'结构摘要：'];
+  const head=[`内容 ${c.reference}：${sourceAccess(c)}`,...(c.sha256?[`sha256 ${c.sha256}`]:[]),...(c.note?[oneLine(c.note)]:[]),...heldStep(c),...(typeof parser==='string'?[`解析器 ${oneLine(parser)} 认出了这份文件`]:[]),'结构摘要：'];
   const tail=[traceLine(trace)];
   if(!lines.length)return fit([{priority:0,head:[...head,'（空）']}],{tail}).text;
   const at=context.cursor?cursorPosition(c.reference,context.cursor):null;
@@ -1347,6 +1353,7 @@ function contentText(c: Content, trace: string, context: TextContext): string {
   const head = [`内容 ${c.reference}：${sourceAccess(c)}`];
   if (c.sha256 !== undefined) head.push(`sha256 ${c.sha256}`);
   if (c.note !== undefined) head.push(oneLine(c.note));
+  head.push(...heldStep(c));
   const blocks: Block[] = [{ priority: 0, head }];
   if (c.structure !== undefined) {
     const structure = structureLines(c.structure, null);

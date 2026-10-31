@@ -1,5 +1,6 @@
 // W10 lifecycle: append requests and their safe answers; never rewrite source bytes or accepted results.
 import {Submission,type CriterionChange} from '../../../contracts/src/submission.ts';
+import { labelOf } from '../../../contracts/generated/vocabulary.ts';
 import type {RunRecord} from '../../../contracts/src/run.ts';
 import type {ValidationResult} from '../../../contracts/src/validation.ts';
 import type {EngineContext} from './deps.ts';
@@ -35,7 +36,7 @@ export function criterionReviewInstruction(run:string,source:string,change:Crite
  const input={pack:'criterion-review',predecessor:run,inputs:{declaration:{reference:'rec:'+source},evidence:refs.map(reference=>({reference}))}};
  return {unsupported,next_action:'作者以外的账号以 start_run 开复核运行，显式绑定声明提交及期望原件，quotes 仍指向原片段：'+JSON.stringify(input)+'；缺原件读权时由管理员补授权或由有权的非作者复核；接受以后以声明运行为前驱开新修订'};
 }
-export async function publishCriterionRequests(ctx:EngineContext,run:RunRecord,source:string,changes:Array<{index:number;change:CriterionChange}>,result:ValidationResult,tx:Transaction):Promise<void>{
+export async function publishCriterionRequests(ctx:EngineContext,run:RunRecord,source:string,changes:readonly import('./exact.ts').AcceptedCriterionChange[],result:ValidationResult,tx:Transaction):Promise<void>{
  if(!changes.length)return;
  if(!run.submission_due)throw new Error('criterion request requires the frozen submission deadline');
  const authors=await authorAccountsOf(ctx,run.run),people=(await ctx.deps.records.principals?.list?.()??[]).filter(user=>!user.disabled).sort((a,b)=>a.id.localeCompare(b.id));
@@ -43,8 +44,10 @@ export async function publishCriterionRequests(ctx:EngineContext,run:RunRecord,s
  const audience=eligible[0]??people.find(user=>user.role==='admin');
  if(!audience)throw new Error('判据复核请求缺少具名管理员');
  const service=requestService(ctx,tx),old=await service.all(run.run);
- for(const {index,change} of changes){
+ for(const {index,change,ground_roles} of changes){
   const pointer='/criterion_changes/'+index;
+  // A03 R[3]: a ground quoting the subject's original is allowed with its role marked; the reviewer reads it here.
+  const marked=(ground_roles??[]).flatMap((role,j)=>role==='subject'?[`依据第 ${j+1} 条引的是${labelOf('source_role','subject')}原文`]:[]).join('；');
   const prior=old.find(request=>request.source===source&&request.declaration===pointer);
   let request=prior;
   if(!request){
@@ -54,10 +57,10 @@ export async function publishCriterionRequests(ctx:EngineContext,run:RunRecord,s
     await safeAnswer(ctx,previous,source,{message:'由后一份提交的同名声明取代',replacement:'rec:'+source},tx,true);
    }
    const instruction=criterionReviewInstruction(run.run,source,change,people.find(user=>user.role==='admin')?.id??audience.id);
-   const created=await service.write({run:run.run,kind:'judgment',audience:audience.id,due:run.submission_due,missing:(instruction.unsupported.length?'复核入口缺少锁定知识树片段的只读绑定能力；':'')+'判据变更声明尚未由作者以外的账号复核：'+change.assertion,next_action:(eligible.length?'':'管理员先创建非作者账号并明确分享本运行；')+instruction.next_action,source,code:'awaiting_step',item:change.item,declaration:pointer});
+   const created=await service.write({run:run.run,kind:'judgment',audience:audience.id,due:run.submission_due,missing:(instruction.unsupported.length?'复核入口缺少锁定知识树片段的只读绑定能力；':'')+'判据变更声明尚未由作者以外的账号复核：'+change.assertion+(marked?'（'+marked+'）':''),next_action:(eligible.length?'':'管理员先创建非作者账号并明确分享本运行；')+instruction.next_action,source,code:'awaiting_step',item:change.item,declaration:pointer});
    request={...created.body,record:created.digest,answered_by:null};
   }
-  result.errors.push({code:'awaiting_step',item:change.item,path:pointer,message:`判据变更声明：${change.assertion}；旧值 ${change.old}；新值 ${change.new}；等待作者以外的账号复核`,fix:`缺失事实：声明尚未复核；请求 rec:${request.record}，受众 ${request.audience}，期限 ${request.due}；${request.next_action}`});
+  result.errors.push({code:'awaiting_step',item:change.item,path:pointer,message:`判据变更声明：${change.assertion}；旧值 ${change.old}；新值 ${change.new}${marked?'；'+marked:''}；等待作者以外的账号复核`,fix:`缺失事实：声明尚未复核；请求 rec:${request.record}，受众 ${request.audience}，期限 ${request.due}；${request.next_action}`});
  }
 }
 export async function prepareCriterionReview(ctx:EngineContext,user:Principal,workflow:LoadedWorkflow,bound:readonly BoundSource[],previous:RunRecord|null):Promise<{marker:NonNullable<RunRecord['criterion_review']>;context:NonNullable<import('../../../contracts/src/pack.ts').RunContext['criterion_review']>}|null>{
