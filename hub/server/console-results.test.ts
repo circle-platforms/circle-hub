@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { request } from 'node:http';
 import { after, before, test } from 'node:test';
-import { PARTITION, STATIC_TERMINAL, labelOf } from '../../contracts/generated/vocabulary.ts';
+import { PARTITION, STATIC_TERMINAL, uiLabelOf } from '../../contracts/generated/vocabulary.ts';
+import { INTERFACE_LABELS } from './claims.ts';
+import { NEUTRAL } from './console/pages.ts';
 import { partitionCountsOf } from '../../contracts/src/validation.ts';
 import { countsLine } from './text.ts';
 import { probeConsole } from '../../scripts/real/console-page.ts';
@@ -44,14 +46,14 @@ test('result page keeps the production record and counts after accepted model co
   assert.equal(response.acceptance,'accepted');assert.notEqual(stored.latest!.record,original.record);
   const result=await send(`/console/results/${id}`,cookie);
   assert.match(result.body,new RegExp(original.record));
-  assert.ok(result.body.includes(countsLine(original.result.acceptance,original.result.partitions)));
+  assert.ok(result.body.includes(countsLine(original.result.acceptance,original.result.partitions,INTERFACE_LABELS)));
   assert.match(result.body,/生产结果记录（start_run 计算）/);
   assert.ok(result.body.includes(stored.latest!.record));assert.match(result.body,/后续受理的模型评论/);
   assert.ok(!result.body.includes('模型评论独立标记'));
   const run=await send(`/console/runs/${id}`,cookie);
-  const main=run.body.split('<h2>分区清单</h2>')[1].split('<h2>模型评论（判断）</h2>')[0];
-  assert.ok(main.includes(original.record));assert.ok(main.includes(countsLine(original.result.acceptance,original.result.partitions)));
-  assert.ok(!main.includes(countsLine(stored.latest!.result.acceptance,stored.latest!.result.partitions)));
+  const main=run.body.split('<h2>结果分类</h2>')[1].split('<h2>模型评论（判断）</h2>')[0];
+  assert.ok(main.includes(original.record));assert.ok(main.includes(countsLine(original.result.acceptance,original.result.partitions,INTERFACE_LABELS)));
+  assert.ok(!main.includes(countsLine(stored.latest!.result.acceptance,stored.latest!.result.partitions,INTERFACE_LABELS)));
   const commentary=run.body.split('<h2>模型评论（判断）</h2>')[1]?.split('<h2>提交与回执</h2>')[0];assert.ok(commentary);assert.ok(commentary.includes(stored.latest!.record));assert.ok(commentary.includes('模型评论独立标记'));
   for(const title of ['已采用的成果','仍需处理的事项','需要你决定的请求'])assert.ok(!commentary.includes(title),title);
   assert.match(commentary,/模型声明的分区（判断，未采用）/);assert.match(commentary,/模型声明跳过 entry-0/);assert.match(commentary,/合成跳过/);
@@ -68,9 +70,9 @@ test('each result row retains its partition and partition code or reason',async(
   const rows=[...result.body.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(match=>match[1]);
   for(const partition of PARTITION){
     const item=parts[partition][0];const row=rows.find(row=>row.includes(`<code>${item.item}</code>`))!;
-    assert.ok(row.includes(labelOf('partition',partition)),partition);
+    assert.ok(row.includes(uiLabelOf('partition',partition)),partition);
     if('code'in item)assert.match(row,/synthetic\.&lt;reject&gt;/);
-    if('reason'in item)assert.ok(row.includes(labelOf('reason',item.reason)));
+    if('reason'in item)assert.ok(row.includes(uiLabelOf('reason',item.reason)));
   }
 });
 
@@ -82,10 +84,10 @@ test('requirements show both layers, satisfaction and reason, and dynamic unknow
   const response=await send(`/console/results/${id}`,cookie);
   const rows=[...response.body.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(match=>match[1]);
   const first=rows.find(row=>row.includes('<code>entry-0</code>'))!;
-  assert.match(first,/静态：通过/);assert.match(first,/动态：未运行/);assert.match(first,/未决/);assert.match(first,/t-unknown/);
+  assert.match(first,/引用校验：通过/);assert.match(first,/沙箱复验：未运行/);assert.match(first,/未决/);assert.match(first,/t-unknown/);
   const second=rows.find(row=>row.includes('<code>entry-1</code>'))!;
-  assert.match(second,/静态：本层不适用/);assert.match(second,/动态：失败/);assert.match(second,/未满足（终态不符合期望）/);
-  const third=rows.find(row=>row.includes('<code>entry-2</code>'))!;assert.match(third,/动态：本层不适用/);
+  assert.match(second,/引用校验：本层不适用/);assert.match(second,/沙箱复验：未通过/);assert.match(second,/未满足（结果不符合期望）/);
+  const third=rows.find(row=>row.includes('<code>entry-2</code>'))!;assert.match(third,/沙箱复验：本层不适用/);
   const filtered=await send(`/console/results/${id}?terminal=not_run`,cookie);
   assert.equal(filtered.status,200);assert.match(filtered.body,/筛选后 1 个/);assert.ok(!filtered.body.includes('<code>entry-1</code>'));
   assert.equal((await send(`/console/results/${id}?terminal=fail`,cookie)).status,200);
@@ -98,7 +100,7 @@ test('production visibility, neutral refusals, admin and list filters', async ()
   const missing = await send(`/console/results/run_${'z'.repeat(26)}`, cookie);
   for (const id of [other, review, 'bad', `run_${'z'.repeat(26)}`]) {
     const page = await send(`/console/results/${id}`, cookie);
-    assert.equal(page.status, 404); assert.equal(page.body, missing.body); assert.match(page.body, /对你不可用/);
+    assert.equal(page.status, 404); assert.equal(page.body, missing.body); assert.ok(page.body.includes(NEUTRAL));
   }
   const list = await send('/console/results?pack=facts&build=synthetic-10.7', cookie);
   assert.equal(list.status, 200); assert.ok(list.body.indexOf(own) < list.body.indexOf(earlier)); assert.ok(list.body.includes(own)); assert.ok(!list.body.includes(other)); assert.ok(!list.body.includes(review));
@@ -140,7 +142,7 @@ test('1200 items have three pages, stable whole-result counts, summaries, claims
   const counts = partitionCountsOf(result.partitions); assert.equal(counts.unknown, 240);
   const pages = await Promise.all([0, 500, 1000].map((offset) => send(`/console/results/${id}?offset=${offset}`, cookie)));
   for (const [i, page] of pages.entries()) {
-    assert.equal(page.status, 200); assert.ok(page.body.includes(countsLine(result.acceptance, result.partitions)));
+    assert.equal(page.status, 200); assert.ok(page.body.includes(countsLine(result.acceptance, result.partitions, INTERFACE_LABELS)));
     assert.equal((page.body.match(/<tbody>[\s\S]*?<\/tbody>/g) ?? []).flatMap((body) => body.match(/<tr>/g) ?? []).length, i === 2 ? 200 : 500);
     assert.match(page.body, /跨条目主张/); assert.match(page.body, /补采/);
   }
@@ -150,7 +152,7 @@ test('1200 items have three pages, stable whole-result counts, summaries, claims
   const unknown = await send(`/console/results/${id}?terminal=unchecked`, cookie);
   assert.equal((unknown.body.match(/<tbody>[\s\S]*?<\/tbody>/g) ?? []).flatMap((body) => body.match(/<tr>/g) ?? []).length, 240);
   assert.doesNotMatch(unknown.body, /✓|✗/);
-  assert.match(unknown.body, /class="t-unknown">？ 静态：未核对/);
+  assert.match(unknown.body, /class="t-unknown">？ 引用校验：未检查/);
   assert.doesNotMatch(unknown.body, /<strong>[^<]*通过/);
   assert.equal((await send(`/console/results/${id}?terminal=bogus`, cookie)).status, 400);
   stored.latest = null;

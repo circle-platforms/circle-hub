@@ -95,6 +95,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const consoleOptions = {
     deps, sessions, ownOrigins: () => origins, log,
     jobs: new JobStore(clock),
+    hub: { release, startedAt: clock(), certificate: options.tls?.cert ?? null },
     ...(options.bridge ? { bridge: options.bridge } : {}),
     // Forwarded headers never establish the HTTPS channel; only the built-in TLS listener, or the configured proxy
     // authority and peer, do.

@@ -33,7 +33,9 @@ test('run log pagination uses the stored cursor and historical missing exits rem
   const first=String((await runPage(context(deps,`/console/runs/${runRecord.run}`),runRecord.run)).body);
   assert.ok(first.includes('出口未写'));
   await runPage(context(deps,next(first)),runRecord.run);
-  assert.equal(seen[1].cursor,'synthetic-next');
+  // The waterfall reads the call log too; the paged queries are the ones that carry a cursor.
+  const paged=seen.filter(query=>'cursor' in query);
+  assert.equal(paged[1].cursor,'synthetic-next');
 });
 
 test('runs page separates overdue unanswered requests from the ordinary request list',async()=>{

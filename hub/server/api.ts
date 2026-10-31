@@ -2,6 +2,7 @@
 // The assembly step (next phase) imports only this file: it builds ServerDeps from the real packages and registers the
 // CLI commands that need them.
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { Disposition, EffectOutcome } from '../../contracts/generated/vocabulary.ts';
 import type { HubConfig } from '../config/index.ts';
 import type { PacksPort, KnowledgePort, PackCatalogPort, ResourceCatalogPort, RunsService, WorkflowStore } from '../ports.ts';
 import type { Principal, RecordsKit } from '../records/api.ts';
@@ -41,6 +42,35 @@ export interface ServerDeps {
    * Optional: without it an admin sees the product pack ids of the catalog and a user sees no line.
    */
   products?: Pick<PacksPort, 'products' | 'readableProducts'>;
+  /** Registered executors and the jobs of a run, read-only, for the console's administrators; absent where dispatch is not wired. */
+  dispatch?: DispatchView;
+}
+
+/** One registered executor as the console lists it (the runtime environment of the design canvas). */
+export interface ExecutorView {
+  id: string;
+  target: string;
+  /** Origin of the gateway the executor calls. */
+  endpoint: string;
+  enabled: boolean;
+  resources: string[];
+}
+
+/** One dispatch job of a run: its outcome and whether its target is frozen until a disposition (V05 R[3] ①). */
+export interface JobView {
+  job: string;
+  outcome: EffectOutcome;
+  frozen: boolean;
+  phase: string;
+  disposition?: Disposition;
+  missing_fact?: string;
+  next_action?: string;
+}
+
+/** Read-only dispatch facts for the console; every method rechecks that the reader is an enabled administrator. */
+export interface DispatchView {
+  executors(by: Principal): Promise<ExecutorView[]>;
+  jobs(by: Principal, run: string): Promise<JobView[]>;
 }
 
 export interface AppOptions {

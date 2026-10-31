@@ -1,7 +1,9 @@
 // Server-rendered HTML for the console: a tagged template that escapes every interpolated value, a fixed
-// stylesheet allowed by its hash in a strict Content-Security-Policy, and no script at all. Dynamic values only ever go into
-// element text or double-quoted attributes; links are built from fixed paths and encoded query parameters.
+// stylesheet (style.ts) allowed by its hash in a strict Content-Security-Policy, and no script at all. Dynamic values only
+// ever go into element text or double-quoted attributes; links are built from fixed paths and encoded query parameters.
+// Every page of a signed-in account has the side navigation of the design canvas; the login and setup pages are a card.
 import { createHash } from 'node:crypto';
+import { CSS } from './style.ts';
 
 /** Markup that is already safe: produced by `html` or a constant of this module. */
 export class Html {
@@ -46,11 +48,11 @@ export function link(path: string, text: unknown, params: Record<string, string 
   return html`<a href="${href(path, params)}">${text}</a>`;
 }
 
-export function table(headers: readonly string[], rows: readonly unknown[][], empty = '没有记录'): Html {
+export function table(headers: readonly string[], rows: readonly unknown[][], empty = '没有记录', cls?: string): Html {
   if (rows.length === 0) return html`<p class="empty">${empty}</p>`;
-  return html`<table><thead><tr>${headers.map((h) => html`<th>${h}</th>`)}</tr></thead><tbody>${rows.map(
+  return html`<div class="tablewrap"><table${cls === undefined ? '' : html` class="${cls}"`}><thead><tr>${headers.map((h) => html`<th>${h}</th>`)}</tr></thead><tbody>${rows.map(
     (row) => html`<tr>${row.map((cell) => html`<td>${cell}</td>`)}</tr>`,
-  )}</tbody></table>`;
+  )}</tbody></table></div>`;
 }
 
 export function definitions(pairs: readonly (readonly [string, unknown])[]): Html {
@@ -70,26 +72,9 @@ export function pre(value: unknown): Html {
   return html`<pre>${value}</pre>`;
 }
 
-const CSS = `body{font-family:-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif;margin:0;color:#1d1d1f;background:#fafafa}
-header{display:flex;gap:1.2em;align-items:center;padding:.6em 1.2em;background:#20232a;color:#fff;flex-wrap:wrap}
-header a{color:#cfe3ff;text-decoration:none}header .who{margin-left:auto}header form{margin:0}
-main{padding:1em 1.4em;max-width:110em}h1{font-size:1.4em}h2{font-size:1.15em;margin-top:1.6em}
-table{border-collapse:collapse;margin:.4em 0;font-size:.92em}th,td{border:1px solid #d0d0d5;padding:.25em .5em;vertical-align:top;text-align:left}
-th{background:#eef0f4}code,pre{font-family:ui-monospace,Menlo,monospace;font-size:.88em;word-break:break-all}
-pre{white-space:pre-wrap;background:#f0f0f3;padding:.6em;max-height:40em;overflow:auto}
-dl{display:grid;grid-template-columns:max-content 1fr;gap:.2em 1em}dt{font-weight:600}dd{margin:0}
-.empty{color:#666}.error{color:#a1001b}.notice{background:#fff6d6;padding:.5em}
-.claim{border-left:3px solid #8aa0c8;padding-left:.6em;margin:.4em 0}
-form.filters input{margin-right:.6em}
-.t-pass{color:#1a6b2f}.t-failure{color:#a1001b}.t-judgment{color:#24508f}.t-incomplete{color:#6b5300}
-.t-unknown{color:#7a3fb0;font-weight:600}
-.unverified{background:#fff6d6}details summary{cursor:pointer}
-.ok{color:#1a6b2f}.subnav{margin:.2em 0 1em}form.inline{display:inline;margin-right:.4em}
-form{margin:.4em 0}label{margin-right:.8em}input,select,textarea,button{font:inherit}textarea{font-family:ui-monospace,Menlo,monospace}`;
-
 const CSS_HASH = createHash('sha256').update(CSS, 'utf8').digest('base64');
 
-/** No script, no external asset, no framing; only the stylesheet below by its hash, and forms to this console. */
+/** No script, no external asset, no framing; only the stylesheet of style.ts by its hash, and forms to this console. */
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   `style-src 'sha256-${CSS_HASH}'`,
@@ -99,22 +84,87 @@ export const CONTENT_SECURITY_POLICY = [
   "base-uri 'none'",
 ].join('; ');
 
+/** The seven places of the console (proposal decision 3 of 2026-10-31): no sub-menus and no counters. */
+export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'connections' | 'records' | 'settings';
+
 export interface PageChrome {
   title: string;
   /** Signed-in user: name and role label; null on the login page. */
   user: { name: string; role: string; admin: boolean } | null;
   /** CSRF token of the session for the logout form. */
   csrf: string | null;
+  /** The place of the navigation this page belongs to; none on the neutral page, which never depends on the path. */
+  active?: NavKey;
+  /** One line under the title. */
+  sub?: unknown;
+  /** Buttons to the right of the title. */
+  actions?: unknown;
+  /** A page without an account shown as a wider card (the setup steps). */
+  wide?: boolean;
 }
 
-export function page(chrome: PageChrome, body: unknown): Html {
-  const nav = chrome.user === null
-    ? html``
-    : html`<nav>${link('/console/runs', '运行')} ${link('/console/results', '结果')} ${link('/console/knowledge', '知识')} ${link('/console/packs', '任务包')} ${chrome.user.admin ? link('/console/admin', '管理') : ''}</nav>
-<span class="who">${chrome.user.name}（${chrome.user.role}）</span>
-<form method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit">退出</button></form>`;
+/** Path data of the line icons (24 x 24, stroked), from the design canvas. */
+export const ICONS = {
+  home: 'M4 11l8-7 8 7M6 9.5V20h12V9.5M10 20v-5h4v5',
+  review: 'M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3zM9 12l2 2 4-4',
+  book: 'M5 4h10a4 4 0 0 1 4 4v12H9a4 4 0 0 1-4-4V4zM5 16a4 4 0 0 1 4-4h10M9 8h6',
+  pack: 'M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zM4 7.5l8 4.5 8-4.5M12 12v9',
+  sys: 'M4 5h16v5H4zM4 14h16v5H4zM7.5 7.5h.01M7.5 16.5h.01',
+  rec: 'M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6',
+  gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+  logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
+  lock: 'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z',
+  info: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 11v5M12 8h.01',
+  warn: 'M12 3l9 16H3l9-16zM12 10v4M12 17h.01',
+  terminal: 'M4 5h16v11H4zM8 20h8M7.5 9l2.5 2-2.5 2M12 13h4',
+  plus: 'M12 5v14M5 12h14',
+  upload: 'M12 15V4M7 9l5-5 5 5M5 20h14',
+  users: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a7 7 0 0 1 14 0M16 3.5a4 4 0 0 1 0 7.5M22 21a7 7 0 0 0-4-6.3',
+  key: 'M8 15a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 11h9M18 11v3M21 11v2',
+  back: 'M15 18l-6-6 6-6',
+  chat: 'M4 5h16v11H10l-5 4v-4H4z',
+  clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.5V12l3 2',
+  flow: 'M3 6h5c5 0 5 12 10 12h3M3 18h5c2.5 0 3.5-3 4.5-6M15 6h6',
+} as const;
+
+export function icon(name: keyof typeof ICONS, cls = 'ico'): Html {
+  return html`<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name]}"></path></svg>`;
+}
+
+const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = [
+  ['overview', '总览', '/console/overview', 'home'],
+  ['tasks', '任务', '/console/runs', 'review'],
+  ['knowledge', '知识库', '/console/knowledge', 'book'],
+  ['packs', '任务包', '/console/packs', 'pack'],
+  ['connections', '连接', '/console/connections', 'sys'],
+  ['records', '记录', '/console/records', 'rec'],
+  ['settings', '设置', '/console/settings', 'gear'],
+];
+
+function htmlDocument(title: string, body: Html): Html {
   return html`<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${chrome.title} · circle-hub</title><style>${new Html(CSS)}</style></head>
-<body><header><strong>circle-hub</strong>${nav}</header><main><h1>${chrome.title}</h1>${body}</main></body></html>`;
+<title>${title} · circle-hub</title><style>${new Html(CSS)}</style></head>
+<body class="hub">${body}</body></html>`;
+}
+
+/** A page of the console: the side navigation and the signed-in account, then the title and the body. */
+export function page(chrome: PageChrome, body: unknown): Html {
+  const user = chrome.user;
+  const top = html`<header class="top"><div><h1>${chrome.title}</h1>${chrome.sub === undefined ? '' : html`<p class="sub">${chrome.sub}</p>`}</div>${chrome.actions === undefined ? '' : html`<div class="actions">${chrome.actions}</div>`}</header>`;
+  if (user === null) return htmlDocument(chrome.title, html`<div class="login"><div class="login-card${chrome.wide ? ' setup-card' : ''}">${brand()}${top}${body}</div></div>`);
+  const nav = NAV.map(([key, label, path, name]) => html`<a class="nav-item${key === chrome.active ? ' on' : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}>${icon(name, 'nav-ico')}<span>${label}</span></a>`);
+  return htmlDocument(chrome.title, html`<div class="shell">
+<div class="side-wrap"><nav class="side" aria-label="主导航">
+<div class="brand"><span class="logo" aria-hidden="true"></span><strong>circle-hub</strong></div>
+${nav}
+<div class="me"><span class="avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="me-t"><div>${user.name}</div><div class="me-r">${user.role}</div></div>
+<form class="logout" method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit" class="icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>
+</nav></div>
+<main class="content">${top}${body}</main>
+</div>`);
+}
+
+function brand(): Html {
+  return html`<div class="row"><span class="logo lg" aria-hidden="true"></span><div><div class="brand-name">circle-hub</div><div class="sub">Circle 结果校验与共享知识服务</div></div></div>`;
 }

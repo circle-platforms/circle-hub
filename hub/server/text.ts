@@ -44,7 +44,7 @@ import {
 import { PartitionCounts, StoredValidationResult, StoredPartitionItem, Partitions, ValidationResult, readStoredValidationResult, storedItemNotices, partitionCountsOf, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { ReferenceSyntaxError, UNAVAILABLE_MESSAGE, canonicalJson, parseReference, pointerTokens, recReference, srcFragment, withRange, type Reference } from '../refs/api.ts';
 import { TEXT_BUDGET, fit, oneLine, softCap, type Block, type Entry, type Omission } from './budget.ts';
-import { NOT_APPLICABLE, claimFields, coverageText, requirementText, statusText, terminalLabel, terminalSymbol, terminalText, type LayerTerminal } from './claims.ts';
+import { MODEL_LABELS, NOT_APPLICABLE, claimFields, coverageText, requirementText, statusText, terminalLabel, terminalSymbol, terminalText, type Labels, type LayerTerminal } from './claims.ts';
 
 type ListOut = z.infer<typeof ListTaskPacksOutput>;
 type UploadOut = z.infer<typeof UploadFileOutput>;
@@ -174,23 +174,24 @@ function claimText(claim: Claim, clip: Clip, max: number): string {
 }
 
 /** The reasons of the items a partition holds with a reason (held back, incomplete), counted in order of first use: （模型声明跳过 47，提交未覆盖 3）; nothing when none carries one. */
-function reasonCounts(items: readonly ItemResult[] | undefined): string {
+function reasonCounts(items: readonly ItemResult[] | undefined, { of: labelOf }: Labels = MODEL_LABELS): string {
   const counted = new Map<Reason, number>();
   for (const item of items ?? []) if ('reason' in item) counted.set(item.reason, (counted.get(item.reason) ?? 0) + 1);
   return counted.size === 0 ? '' : `（${[...counted].map(([reason, n]) => `${labelOf('reason', reason)} ${n}`).join('，')}）`;
 }
 
 /** Items per partition (a declared skip is told apart from an item the submission did not cover) and the items with an unknown terminal (V03 R[4]); unknown is never an error. */
-export function countsText(counts: PartitionCounts, partitions?: Partitions): string {
-  const shown = PARTITION.map((p) => `${labelOf('partition', p)} ${counts[p]}${reasonCounts(partitions?.[p])}`).join('，');
+export function countsText(counts: PartitionCounts, partitions?: Partitions, labels: Labels = MODEL_LABELS): string {
+  const { of: labelOf, axis: axisLabel } = labels;
+  const shown = PARTITION.map((p) => `${labelOf('partition', p)} ${counts[p]}${reasonCounts(partitions?.[p], labels)}`).join('，');
   return `${axisLabel('partition')}：${shown}；${labelOf('nature', 'unknown')} ${counts.unknown}${counts.pending_unknown ? `；其中 ${counts.pending_unknown} 个还有未决未知` : ''}`;
 }
 
 /** The partition counts line: receipt, items per partition and the items with an unknown terminal. */
-export function countsLine(acceptance: SubmitOut['acceptance'], partitions: Partitions | undefined): string {
-  const receipt = `${axisLabel('acceptance')}：${labelOf('acceptance', acceptance)}`;
+export function countsLine(acceptance: SubmitOut['acceptance'], partitions: Partitions | undefined, labels: Labels = MODEL_LABELS): string {
+  const receipt = `${labels.axis('acceptance')}：${labels.of('acceptance', acceptance)}`;
   if (partitions === undefined) return `${receipt}；没有分区（未受理的提交不分区）`;
-  return `${receipt}；${countsText(partitionCountsOf(partitions), partitions)}`;
+  return `${receipt}；${countsText(partitionCountsOf(partitions), partitions, labels)}`;
 }
 
 // ---------------------------------------------------------------- errors
@@ -681,7 +682,7 @@ function problemLines(result: ValidationResult, record: string | null, more: str
     for (const r of problems) {
       const clip = new Clip(whole, more);
       const shown = r.layers.filter((l) => l.terminal !== 'pass' && l.terminal !== 'judgment');
-      const terminals = (shown.length > 0 ? shown : r.layers).map(terminalText).join('；');
+      const terminals = (shown.length > 0 ? shown : r.layers).map((layer) => terminalText(layer)).join('；');
       const columns = [...base(clip), clip.field(r.requirement, CLIP.code, '要求项键的超出部分'), terminals === '' ? '—' : terminals, statusText(r)];
       const notices=storedItemNotices({requirements:[r]});
       if(notices.length)columns.push(clip.field(notices.map(n=>n.message).join('、'),CLIP.problemMessage,'历史记录缺失提示的超出部分'));

@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { after, before, describe, test } from 'node:test';
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
-import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
+import { uiLabelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
+import { NEUTRAL } from './console/pages.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ROOT_1, ROOT_2 } from './fakes.ts';
 import { createTestServer, type TestServer, type TestUser } from './testing.ts';
@@ -138,7 +139,7 @@ describe('sign-in', () => {
     const { nonce, cookie } = await loginForm();
     const reply = await send('/console/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie, origin: own() }, body: form({ token: `Bearer ${user.token}`, csrf: nonce }) });
     assert.equal(reply.status, 303);
-    assert.equal(reply.headers.location, '/console/runs');
+    assert.equal(reply.headers.location, '/console/overview');
     const session = cookieHeader(reply, 'circle_hub_session') ?? '';
     assert.match(session, /^circle_hub_session=[A-Za-z0-9_-]{43}; Path=\/console; HttpOnly; SameSite=Strict$/);
     assert.ok(!session.includes(user.token), 'the session cookie is not the token');
@@ -235,7 +236,8 @@ describe('pages', () => {
     assert.ok(list.body.includes(run));
     const page = await get(`/console/runs/${run}`, session);
     assert.equal(page.status, 200);
-    for (const text of ['已交付', '未完成', '动态：本层不适用', '？ 静态：未核对', '✓ 静态：通过', '回执：已受理；分区：已交付 2', '期望结果缺失', '调用日志', 'submit_result']) {
+    const [stat, dyn] = [uiLabelOf('layer', 'static'), uiLabelOf('layer', 'dynamic')];
+    for (const text of ['已交付', '未完成', `${dyn}：本层不适用`, `？ ${stat}：未检查`, `✓ ${stat}：通过`, '回执：已受理；结果分类：已交付 2', '期望结果缺失', '调用日志', 'submit_result', '执行过程', '完整记录']) {
       assert.ok(page.body.includes(text), `the run page shows ${text}`);
     }
     const blocks = [...page.body.matchAll(/<div class="claim"><dl>([\s\S]*?)<\/dl><\/div>/g)].map((m) => [...m[1].matchAll(/<dt>([^<]+)<\/dt>/g)].map((d) => d[1]));
@@ -258,16 +260,17 @@ describe('pages', () => {
     const page = await get(`/console/runs/${run}`, session);
     assert.equal(page.status, 200);
     // V03 R[3], display rule 4: one cell per layer, the strongest terminal and the counts of the non-pass values.
-    assert.ok(page.body.includes('◇ 静态：判断（判断 1）'), 'a handled item: pass and judgment give judgment');
-    assert.ok(page.body.includes('？ 静态：未核对（未核对 1，判断 1）'), 'unknown is not hidden behind the judgment');
-    assert.ok(page.body.includes('… 静态：未完成（未完成 2）'), 'the item the submission did not cover');
-    assert.ok(page.body.includes('动态：本层不适用'), 'a layer no requirement declares');
+    // The words are the interface terms of display rule 20: 引用校验 for the static layer, 等待判定中 for a judgment, ….
+    assert.ok(page.body.includes('◇ 引用校验：等待判定中（等待判定中 1）'), 'a handled item: pass and judgment give judgment');
+    assert.ok(page.body.includes('？ 引用校验：未检查（未检查 1，等待判定中 1）'), 'unknown is not hidden behind the judgment');
+    assert.ok(page.body.includes('… 引用校验：检查未完成（检查未完成 2）'), 'the item the submission did not cover');
+    assert.ok(page.body.includes('沙箱复验：本层不适用'), 'a layer no requirement declares');
     // Display rule 5: unknown has its own colour.
-    assert.match(page.body, /<span class="t-unknown">？ 静态：未核对/);
+    assert.match(page.body, /<span class="t-unknown">？ 引用校验：未检查/);
     assert.match(page.body, /\.t-unknown\{color:/);
     // Display rule 13: the three groups derived from the partition list.
     const adopted = page.body.indexOf('已采用的成果（已交付');
-    const open = page.body.indexOf('仍需处理的事项（已拒收、已隔离、未完成');
+    const open = page.body.indexOf('仍需处理的事项（已拒收、派发结果未确认、未完成');
     const requests = page.body.indexOf('未回答的请求');
     assert.ok(adopted > 0 && open > adopted && requests > open, 'adopted, still to handle, requests');
     // Display rule 3: the submission as received, marked unverified, next to its receipt.
@@ -324,7 +327,7 @@ describe('pages', () => {
     const absent = await get('/console/runs/run_7zzzzzzzzzzzzzzzzzzzzzzzzz', session);
     assert.equal(forbidden.status, 404);
     assert.equal(forbidden.body, absent.body);
-    assert.match(forbidden.body, /对你不可用/);
+    assert.ok(forbidden.body.includes(NEUTRAL));
     assert.ok(!(await get('/console/runs', session)).body.includes(run), 'a user lists only their own runs');
     for (const path of ['/console/__proto__', '/console/constructor', '/console/knowledge/__proto__', '/console/runs/a/b']) {
       const reply = await get(path, session);
@@ -357,7 +360,7 @@ describe('pages', () => {
 
     const stranger = await person([]);
     const strangerSession = await signIn(stranger.token);
-    assert.match((await get('/console/knowledge', strangerSession)).body, /没有你可读的产品线/);
+    assert.match((await get('/console/knowledge', strangerSession)).body, /没有可读的产品线/);
     const hidden = await get(`/console/knowledge/tree?root=${ROOT_1}&path=%2F`, strangerSession);
     const missing = await get(`/console/knowledge/tree?root=${'e'.repeat(64)}&path=%2F`, strangerSession);
     assert.equal(hidden.status, 404);
@@ -374,7 +377,7 @@ describe('pages', () => {
       const user = await bare.createUser('无产品端口');
       await bare.assign(user.principal, 'review');
       const page = await send('/console/knowledge', { port: bare.port, headers: { cookie: await signIn(user.token, bare.port) } });
-      assert.match(page.body, /没有你可读的产品线/);
+      assert.match(page.body, /没有可读的产品线/);
     } finally {
       await bare.close();
     }
@@ -398,16 +401,28 @@ describe('pages', () => {
     const userSession = await signIn(user.token);
     const refused = await get('/console/admin', userSession);
     assert.equal(refused.status, 404);
-    assert.match(refused.body, /对你不可用/);
+    assert.ok(refused.body.includes(NEUTRAL));
     assert.equal((await get('/console/admin/calls', userSession)).status, 404);
+    // The settings page of a member shows only their own Circles.
+    const mine = await get('/console/settings', userSession);
+    assert.equal(mine.status, 200);
+    assert.ok(mine.body.includes('我的 Circle'));
+    for (const token of await server.records.principals.tokens(server.admin.user.id)) assert.ok(!mine.body.includes(token.id), 'no other account\'s token');
+    for (const token of await server.records.principals.tokens(user.user.id)) assert.ok(mine.body.includes(token.id), 'the member\'s own token');
 
     const session = await signIn(server.admin.token);
-    const admin = await get('/console/admin', session);
-    assert.equal(admin.status, 200);
-    assert.ok(admin.body.includes(user.user.name));
-    assert.ok(!admin.body.includes(user.token) && !admin.body.includes(server.admin.token), 'no token value is ever shown');
-    assert.ok(admin.body.includes('http://192.0.2.10:8080'), 'resource addresses for admins');
-    assert.ok(admin.body.includes('review'), 'assignments');
+    for (const path of ['/console/admin', '/console/settings']) {
+      const admin = await get(path, session);
+      assert.equal(admin.status, 200, path);
+      assert.ok(admin.body.includes(user.user.name));
+      assert.ok(!admin.body.includes(user.token) && !admin.body.includes(server.admin.token), 'no token value is ever shown');
+      assert.ok(admin.body.includes(`circle-hub user disable ${user.user.id}`), 'disabling a member is a command for the Circle');
+    }
+    const connections = await get('/console/connections', session);
+    assert.ok(connections.body.includes('http://192.0.2.10:8080'), 'resource addresses for admins');
+    assert.ok(!(await get('/console/connections', userSession)).body.includes('http://192.0.2.10:8080'), 'not for a member');
+    const packs = await get('/console/packs', session);
+    assert.match(packs.body, new RegExp(`使用范围：[^<]*${user.user.name}`), 'assignments');
     await runWithResult(user);
     const calls = await get(`/console/admin/calls?user=${encodeURIComponent(user.user.name)}&tool=submit_result`, session);
     assert.equal(calls.status, 200);
