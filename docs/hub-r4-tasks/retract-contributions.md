@@ -36,6 +36,8 @@ Change:
   detection runs on the expanded entries: a run an older record retracted alone still gets one record for its uncovered
   entries, and an identical repeat appends nothing.
 - `hub/knowledge/README.md`: the retraction section, the run index, and a need of the server package.
+- `hub/server/README.md` (integrator, at review): the `knowledge retract` paragraph names the `--entry` targets and the
+  `--run` expansion.
 
 Not changed: `hub/server/tools.ts` (its `rec:` read takes status and note from `readView`); `ContributionLayer.read`
 (readability only; a retracted record stays readable); `hub/knowledge/api.ts` (`knowledgeRetract` retracts the targets
@@ -68,7 +70,7 @@ refusal "撤回目标不是已登记的喂入或回注条目"; `knowledge-retrac
 `runContributionEntries`); the feeding-grounded test passes, as it pins unchanged behaviour.
 
 Allowed paths: `hub/knowledge/feeding.ts`, `hub/knowledge/contributions.ts`, `hub/knowledge/api.ts`,
-`hub/knowledge/README.md`, `hub/server/cli-admin.ts`, `hub/server/tools.ts` (only if a status reader there needs it), the
+`hub/knowledge/README.md`, `hub/server/README.md`, `hub/server/cli-admin.ts`, `hub/server/tools.ts` (only if a status reader there needs it), the
 test files added or extended under `hub/knowledge` and `hub/server`, this page.
 
 Verification: `npx tsc --noEmit -p .`; `node --test hub/knowledge/contribution-retraction.test.ts
