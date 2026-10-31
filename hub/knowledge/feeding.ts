@@ -18,7 +18,7 @@ import {parseExternal} from '../connectors/api.ts';
 import {canonicalize,sha256Hex,scanForCredentials,type IndexedRecord,type Principal,type RecordKind,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
 import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabulary.ts';
 import {callPackFunction,callPackFunctionBatch} from '../rules/api.ts';
-import {INDEX} from './store.ts';
+import {INDEX,SCHEMAS} from './store.ts';
 import {operationSchema} from './declaration-grade.ts';
 import {SeedlingBody} from '../../contracts/src/knowledge.ts';
 import type {KnowledgeContext} from './context.ts';
@@ -555,7 +555,9 @@ export class FeedingLayer {
   for(const row of rows){if(await this.position(row.digest)>offset)continue;const body=this.body(row);if(!body)continue;if(body.objects?.some((target:string)=>target===id||bound.includes(target))||body.entries?.some((target:string)=>target===entry||bound.includes(target))||run!==null&&body.runs?.includes(run))found.push(row.digest);}
   return [...new Set(found)];
  }
- private async retractionTargets(body:FeedingRetraction){for(const id of 'objects'in body?body.objects:[]){if(!(await this.all(OBJECT,id)).length)fail('撤回对象不存在；按喂入清单的对象摘要修正');}for(const id of 'entries'in body?body.entries:[]){const record=await this.context.records.store.get(id);if(!record||!this.body(record as StoredRecord<ClaimBody>)&&!(record.schema==='knowledge-contribution@1'&&object(record.body)&&typeof record.body.feeding_record==='string'))fail('撤回目标不是已登记的喂入或回注条目；按喂入清单中的记录摘要修正');}for(const id of 'runs'in body?body.runs:[]){if(!await runById(this.context.records.store,id))fail('撤回运行不存在');}}
+ /** A knowledge-contribution@1 record, grounded in a feeding record or directly in tree entries and originals. */
+ private contribution(record:StoredRecord<unknown>){return record.kind==='claim'&&record.schema===SCHEMAS.contribution;}
+ private async retractionTargets(body:FeedingRetraction){for(const id of 'objects'in body?body.objects:[]){if(!(await this.all(OBJECT,id)).length)fail('撤回对象不存在；按喂入清单的对象摘要修正');}for(const id of 'entries'in body?body.entries:[]){const record=await this.context.records.store.get(id);if(!record||!this.body(record as StoredRecord<ClaimBody>)&&!this.contribution(record))fail('撤回目标不是已登记的喂入或回注条目；按喂入清单中的记录摘要修正');}for(const id of 'runs'in body?body.runs:[]){if(!await runById(this.context.records.store,id))fail('撤回运行不存在');}}
  /** Same target check as retract, without appending. */
  async screenRetraction(principal:Principal,raw:unknown):Promise<void>{if(principal.role!=='admin')fail('只有管理员能追加撤回记录');const body=FeedingRetractionSchema.parse(raw);if(body.by!==principal.id||body.reason.includes('\n')||body.reason.includes('\r'))fail('撤回人或一行原因不合格');await this.retractionTargets(body);}
  /** Retraction records that already cover this target, using the same match as withdrawals. */
@@ -566,13 +568,21 @@ export class FeedingLayer {
   const stored=await this.context.records.store.get(id);if(!stored)return [];
   const claim=stored as StoredRecord<ClaimBody>;const feeding=this.body(claim);
   if(feeding){const data=claim.body.statement.data;const run=typeof data?.run==='string'?data.run:null;return this.withdrawals(typeof feeding.object==='string'?feeding.object:'',id,run,[...claim.body.validity.bound]);}
-  if(stored.schema==='knowledge-contribution@1'&&object(stored.body)&&typeof stored.body.feeding_record==='string'){
-   const child=await this.context.records.store.get<ClaimBody>(stored.body.feeding_record);const body=child?this.body(child):null;
-   if(child&&body){const data=child.body.statement.data;const run=typeof data?.run==='string'?data.run:null;return this.withdrawals(typeof body.object==='string'?body.object:'',child.digest,run,[...child.body.validity.bound,id]);}
+  if(this.contribution(stored)){
+   if(object(stored.body)&&typeof stored.body.feeding_record==='string'){
+    const child=await this.context.records.store.get<ClaimBody>(stored.body.feeding_record);const body=child?this.body(child):null;
+    if(child&&body){const data=child.body.statement.data;const run=typeof data?.run==='string'?data.run:null;return this.withdrawals(typeof body.object==='string'?body.object:'',child.digest,run,[...child.body.validity.bound,id]);}
+   }
+   // Without a feeding record (grounded in tree entries) only a record that lists the contribution itself covers it.
    return this.withdrawals('',id,null,[]);
   }
   return [];
  }
+ /**
+  * Every digest the entries of a retraction record name. The contribution read side shows a contribution listed here as
+  * retracted itself, with or without a feeding record; callers read it once per view, not once per contribution.
+  */
+ async retractedEntries():Promise<ReadonlySet<string>>{const out=new Set<string>();for(const row of await this.all(RETRACT,'1')){const body=this.body(row);if(Array.isArray(body?.entries))for(const id of body.entries)if(typeof id==='string')out.add(id);}return out;}
  async retract(principal:Principal,raw:unknown):Promise<string>{if(principal.role!=='admin')fail('只有管理员能追加撤回记录');const body=FeedingRetractionSchema.parse(raw);if(body.by!==principal.id||body.reason.includes('\n')||body.reason.includes('\r'))fail('撤回人或一行原因不合格');await this.retractionTargets(body);return this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);return (await this.put(body,principal,'hub.retraction@1',[],[],'retraction:'+this.key(body),[{key:RETRACT,value:'1'}],tx)).digest;});}
  private async todoState(key:string,resolved:boolean,tx:Transaction){
   await this.context.records.store.lock('knowledge.feeding.todo:'+key,tx);

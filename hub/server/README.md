@@ -329,7 +329,7 @@ circle-hub pack|resource|secret|knowledge|init-admin|operator-token … # regist
 circle-hub knowledge retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因>
 ```
 
-`knowledge retract` is an administrator command (the operator token, same as `knowledge sync`). It appends one `retraction@1` per target kind through `FeedingLayer.retract`. A retraction does not delete or rewrite the original record; the read side then shows the grounds as withdrawn. A target that already has a retraction record is not appended again.
+`knowledge retract` is an administrator command (the operator token, same as `knowledge sync`). It appends one `retraction@1` per target kind through `FeedingLayer.retract`. A retraction does not delete or rewrite the original record; the read side then shows the grounds as withdrawn. A target that already has a retraction record is not appended again. `--entry` takes a feeding record or any knowledge contribution record, including one grounded directly in tree entries. `--run` also lists, as entries of the same command, the contribution records the run's accepted results stored (`contributions.stored`), and prints how many it added; a run an older record retracted alone gets one entries record when the command is run again.
 
 Records commands open the records as the runtime role without migrating. **State-changing built-ins** (`user create`
 once an admin exists, `user disable|enable`, `token issue|revoke`) act as the enabled admin of the **operator token**,

@@ -738,6 +738,11 @@ Milestone 2:
   documents it cannot handle rare (more than half of a list skipped fails the production); give cases data fields the
   views can count (`module`, `line`, `has_expected`, `defects`, ...) as scalars or lists of scalars, and avoid the value
   `__proto__`.
+- **server (`hub/server/recover-read.ts`)**: replaying a saved `get_nodes` answer for `rec:<contribution record>` rechecks
+  that the record is readable but not its current status (`recordState` answers feeding records only), so an answer saved
+  before a retraction replays its old note under the snapshot label. Comparing `layers.contributions.readView` with the
+  saved status and note, as the tree-page branch already does, would close it; it holds for every contribution status
+  change, feeding-grounded ones included (found by retract-contributions, outside its paths).
 
 
 ## Composition-pinned literal relations (kb-links, first step)
@@ -849,7 +854,15 @@ entry edits. Ordinary-field declarations and their counts keep their existing be
 
 ### 撤回喂入条目
 
-管理员执行 `circle-hub knowledge retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因>`。`--entry` 可以是喂入条目的记录摘要，也可以是 `knowledge-contribution@1` 回注记录的摘要。三种目标可以混用，每种目标各追加一条 `retraction@1`。撤回不删除、不改写原记录；读侧随后把对应喂入条目标成 `invalid`，把回注标成 `grounds_withdrawn`（根据已撤回）。同一目标已经有撤回记录时不再追加。
+管理员执行 `circle-hub knowledge retract (--entry <记录摘要> | --run <运行> | --object <对象摘要>)… --reason <一行原因>`。`--entry` 可以是喂入条目的记录摘要，也可以是任一 `knowledge-contribution@1` 回注记录的摘要：带 `feeding_record` 的回注，以及直接以树条目或原件为根据、没有喂入记录的回注（例如两端都是 `tree:` 引用的 `contradicts` 关系）。三种目标可以混用，每种目标各追加一条 `retraction@1`。撤回不删除、不改写原记录；读侧随后把对应喂入条目标成 `invalid`，把回注标成 `grounds_withdrawn`（根据已撤回）。同一目标已经有撤回记录时不再追加。
+
+回注记录本身不写运行。`--run` 因此由命令行经运行服务读这个运行（与 `run show`、`share run` 同一入口），取运行详情列出的每一份已受理校验结果回执里的 `contributions.stored[].record`，并入同一条命令的条目撤回记录，并为每个运行打印一行“运行 … 存下的回注条目 N 个一并列为撤回目标”。不只取最新一份：后一次受理的提交回执只列它自己的条目，已放弃运行的最新结果是管理投影，没有回执；结果按存储原样读取，旧结构的回执也取得到。已覆盖判断按展开后的条目逐个做：以前只记了运行的旧撤回记录仍覆盖运行，再执行同一条命令会追加一条只含未覆盖条目的记录；完全相同的再执行不追加。内容完全相同的回注跨运行共用一条记录，任何一个回执列出它的运行被撤回，这条记录都随之撤回。
+
+读侧：回注自身的记录摘要出现在任一撤回记录的条目里时，节点页（`ContributionLayer.page` 的视图）与单条读取（`readView`，get_nodes 的 `rec:` 读取和历史回答恢复的状态比较都用它）都显示 `grounds_withdrawn`，说明为“这条回注本身已被管理员撤回；历史引文仍保留”，先于喂入记录的判断。撤回记录每次页面调用只读一遍（`FeedingLayer.retractedEntries`），不按回注逐条读。没有列出回注自身时，带喂入记录的回注照旧按喂入记录的状态判断（节点页说明“喂入主张根据已撤回或原件已修订；历史引文仍保留”）。只列运行的撤回记录本身不标记没有喂入记录的回注，要按上面再执行一次命令。
+
+每条新回注都写索引 `knowledge.contribution.run`（首次存下它的运行），不再只限操作记录；目前没有读者。`--run` 仍以回执为准：回执也列出这个索引出现之前存下的回注，以及相同内容的后一次提交共用的记录，索引只记首次存下它的运行。
+
+测试钉住：`hub/knowledge/contribution-retraction.test.ts`（以树条目为根据的矛盾关系按条目撤回后记录不变、读侧显示撤回、另一端不变、再撤回不追加；只记运行的旧撤回之后按回执条目追加一条，再执行不追加），`hub/server/knowledge-retract-cli.test.ts`（`--run` 读每一份已受理回执，`rec:` 读取显示同一说明），`hub/knowledge/operation-records.test.ts`（带喂入记录的回注照旧按喂入记录判断，并由喂入记录和运行覆盖）。
 
 ### 矛盾关系怎样存、怎样查
 
