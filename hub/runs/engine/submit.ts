@@ -342,7 +342,7 @@ interface Basis {
 }
 
 interface Validated {
-  criterionChanges?:Array<{index:number;change:import('../../../contracts/src/criterion.ts').CriterionChange}>;
+  criterionChanges?:import('./exact.ts').AcceptedCriterionChange[];
   runtimeAdmission?:RuntimeAdmission[];
   result: ValidationResult;
   /** Requirements whose problems in this submission count as a repair round. */

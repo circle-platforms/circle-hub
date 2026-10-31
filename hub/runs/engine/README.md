@@ -902,6 +902,9 @@ run. Current summaries do not acquire a dependency on reloading the package; lis
 
 `criterion_changes` declares a proposed replacement without changing bound source bytes. The Hub resolves the criterion and
 all grounds and checks their quotes before accepting the submission; source-role errors refuse only that declaration.
+The criterion must be an expected fragment (A03 R[0]). A ground may be an expected fragment or quote the judged subject's
+original (A03 R[3]); a subject ground is marked by its position in the judgment request and its awaiting step. Every
+misplaced fragment is named with its role at its own pointer.
 For a W10 tree criterion or quote, every provenance fragment must be a src reference whose exact digest is bound as expected
 in this run. Missing provenance, an unbound original or any mixed non-expected original locally refuses the declaration.
 The general tree citation role stays unchanged. This uses parsed reference syntax and explicit source bindings, without text
