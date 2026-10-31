@@ -45,7 +45,7 @@ test('format capability requires an administrator install and rejects user assig
   const registry=createSkillParserRegistry(options());
   h.review.manifest.dependencies=[{pack:'mindmap-format'}];
   const refused=await h.service.startRun(h.alice,{pack:'toy-review',product:'PASTURE',version:'3.2',inputs:{map:{reference:await h.upload(h.alice,bytes)}}},h.call());
-  assert.equal(refused.call_result,'error');assert.ok(JSON.stringify(refused).includes('安装'));
+  assert.equal(refused.call_result,'error');assert.deepEqual(refused.errors.map(e=>[e.code,e.path,e.message]),[['SOURCE_UNAVAILABLE','/pack','缺少已安装技能包 mindmap-format；新运行没有开始']],'T9-2: the refusal names the missing skill pack');
   assert.equal((await h.kit.store.find({kind:'run',key:'runs.user',value:h.alice.id,limit:10})).items.length,0);
   await assert.rejects(registry.freeze!([{pack:'mindmap-format'}]),/缺少已安装技能包/);
   await assert.rejects(bed.registry.install(bed.alice,'mindmap-format@1.0.2'),/管理员/);
