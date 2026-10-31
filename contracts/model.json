@@ -3099,6 +3099,9 @@
    "changes10": [
     "合并候选入口撤销与请求不加工具的决定，写明现有工具和命令的作答方式及效果未知的核对出口（来源：决定 35 第 25 项；D06 的六工具边界；决定 25；决定 35 第 25 项；hub-unknown-model 第 4 条；未知普查第 3.1 节（不引用尚未补入的理论句子））",
     "按已定事项清理现行文本中过时的待确认标记；真正暂缓的事项不变（来源：独立批评第 5 条；模型相应 pendingDecisions 的已定决定）"
+   ],
+   "changes14": [
+    "加工具轴 mcp_tool：六个工具名各有中文名，控制台的调用记录与执行过程按它显示，代码与工具定义一一对应（来源：所有者 2026-10-31 在简化提案中勾选的界面用语一项）"
    ]
   },
   {
@@ -8914,6 +8917,37 @@
     {
      "code": "transport_failure",
      "label": "传输失败"
+    }
+   ]
+  },
+  {
+   "axis": "mcp_tool",
+   "label": "工具",
+   "owner": "D06",
+   "values": [
+    {
+     "code": "list_task_packs",
+     "label": "查询任务包"
+    },
+    {
+     "code": "upload_file",
+     "label": "上传文件"
+    },
+    {
+     "code": "start_run",
+     "label": "启动任务"
+    },
+    {
+     "code": "get_nodes",
+     "label": "读取知识"
+    },
+    {
+     "code": "resolve_reference",
+     "label": "引用解析"
+    },
+    {
+     "code": "submit_result",
+     "label": "提交结果"
     }
    ]
   },
