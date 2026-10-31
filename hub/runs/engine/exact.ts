@@ -866,8 +866,6 @@ export async function resolveSubmission(
 
 /** An accepted criterion change and the source role of each ground, which the review request names (A03 R[3]). */
 export type AcceptedCriterionChange={index:number;change:CriterionChange;ground_roles?:readonly SourceRole[]};
-/** Roles a ground may quote: expected sources, and the subject's own original with its role marked (A03 R[3]). */
-const GROUND_ROLES:readonly SourceRole[]=['expected','subject'];
 /** W10 exact boundary: role errors refuse one declaration; missing values and non-verbatim text refuse the submission. */
 export async function resolveCriterionChanges(resolver:Resolver,items:readonly {id:string}[],changes:NonNullable<Submission['criterion_changes']>):Promise<{errors:ProtocolError[];refused:ProtocolError[];accepted:AcceptedCriterionChange[]}>{
   const errors:ProtocolError[]=[],refused:ProtocolError[]=[];
@@ -880,19 +878,19 @@ export async function resolveCriterionChanges(resolver:Resolver,items:readonly {
     // A03 R[0]: the criterion is a fragment of an expected source. R[3]: a ground may also quote the subject's original; every
     // other role is no ground. Each misplaced reference is named by its own pointer.
     const misplaced:Array<{path:string;message:string}>=[],groundRoles:SourceRole[]=[];
-    const locate=async(reference:string,quote:string,path:string,quotePath:string,allowed:readonly SourceRole[],what:string)=>{
+    const locate=async(reference:string,quote:string,path:string,quotePath:string,ground:number|null)=>{
       const result=await resolver.resolve(reference,{grounds:true});
       if(!result.ok||result.value.text===null){errors.push(protocolError('REFERENCE_UNRESOLVED',result.ok?'判据片段没有可核对的原文':result.message,{path,item:change.item}));return null;}
       if(!quoteMatches(result.value.text,quote))errors.push(protocolError('QUOTE_MISMATCH','判据变更声明的原文或引文不逐字',{path:quotePath,item:change.item}));
       const role=result.value.role,unboundTree=parseReference(result.value.reference).scheme==='tree'&&result.value.expectedSourceBound!==true;
-      if(role===null||!allowed.includes(role)||role==='expected'&&unboundTree)misplaced.push({path,message:`${what}的来源角色是${role===null||unboundTree?'未绑定为期望来源的片段':labelOf('source_role',role)}，${allowed.length>1?'依据只能取期望来源或被判对象原文（A03 R[3]）':'判据只能取期望来源的片段（A03 R[0]）'}`});
-      else if(what!=='判据')groundRoles.push(role);
+      if(role===null||(role==='expected'?unboundTree:ground===null||role!=='subject'))misplaced.push({path,message:`${ground===null?'判据':`依据第 ${ground+1} 条`}的来源角色是${role===null||unboundTree?'未绑定为期望来源的片段':labelOf('source_role',role)}，${ground===null?'判据只能取期望来源的片段（A03 R[0]）':'依据只能取期望来源或被判对象原文（A03 R[3]）'}`});
+      else if(ground!==null)groundRoles.push(role);
       return result.value.reference;
     };
-    const reference=await locate(change.criterion,change.old,at+'/criterion',at+'/old',['expected'],'判据');
+    const reference=await locate(change.criterion,change.old,at+'/criterion',at+'/old',null);
     if(reference)canonical.criterion=reference;
     for(const [j,ground] of change.grounds.entries()){
-      const ref=await locate(ground.reference,ground.quote,at+`/grounds/${j}/reference`,at+`/grounds/${j}/quote`,GROUND_ROLES,`依据第 ${j+1} 条`);
+      const ref=await locate(ground.reference,ground.quote,at+`/grounds/${j}/reference`,at+`/grounds/${j}/quote`,j);
       if(ref)canonical.grounds[j]!.reference=ref;
     }
     const key=JSON.stringify([change.item,canonical.criterion]);
