@@ -73,7 +73,9 @@ function fixture(
   const deps = {
     ...hub,
     startPostgres: async () => {
-      const pg = await hub.startPostgres();
+      // The release checks below need a real postmaster pid; the local unit runner's shared lane would hand out a
+      // scratch handle of its shared cluster instead, so the repro asks for a private one.
+      const pg = await hub.startPostgres({ private: true });
       owned.pg = {
         root: pg.root,
         port: pg.config.port,
@@ -289,8 +291,8 @@ for (const mode of ['body', 'cleanup', 'both']) {
           body += `import {startPostgres as original} from ${original};
 import {appendFileSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
-export async function startPostgres(...args) {
-  const pg = await original(...args);
+export async function startPostgres(options = {}) {
+  const pg = await original({ ...options, private: true });
   appendFileSync(${JSON.stringify(audit)}, JSON.stringify({kind:'postgres',pid:Number(readFileSync(join(pg.root,'data/postmaster.pid'),'utf8').split('\\n')[0]),port:pg.config.port})+'\\n');
   return pg;
 }\n`;

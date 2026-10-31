@@ -14,7 +14,8 @@
   - `hub/server/console/**`，`hub/server/claims.ts`（标签函数可换成界面用语，MCP 文本照旧用模型标签）和 `hub/server/text.ts` 里随之改写的一处调用；
   - `hub/server/api.ts`、`hub/server/app.ts` 和 `hub/server/assemble/hub.ts`（给控制台一个可选的执行器与作业只读端口）；
   - `hub/server/console*.test.ts`、`hub/server/console/*.test.ts` 和受控制台文字影响的验收断言；
-  - `hub/server/README.md`、`docs/hub-r4-progress.md`、`CHANGELOG.md` 和本页。
+  - `hub/server/README.md`、`docs/hub-r4-progress.md`、`CHANGELOG.md` 和本页；
+  - `scripts/diagnostics/seed-lists-repro.test.ts`：主线上已有的问题，本地 `npm run test:unit` 把它分进共享集群通道，它要核对的 postmaster 进程号读不到，17 项必然失败（公开 CI 分组不用共享集群，所以 CI 不受影响）；只改为请求私有集群。
 
   别的路径不动。不加依赖。
 - 规则：不推送、不建 PR、不发布、不部署；不碰 7420、7443、默认数据根、钥匙串和环境配置文件；测试只用合成数据（地址 192.0.2.0/24）；`git commit -s`，只暂存点名的路径。界面文字只陈述事实，不用“你、他”，进行中的状态写作“等待××中”，状态用规范术语。
