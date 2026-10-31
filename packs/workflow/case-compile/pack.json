@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.9.5",
+  "version": "3.9.6",
   "kind": "workflow",
   "dependencies": [
     {
@@ -16,8 +16,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "0cb97602fd73ea4ac903f3cf7f2c15bb2b02f1991738d984219780fe392711c4",
-      "size": 17615
+      "sha256": "198ef91df3d12f26de6fd0b8c3c22b0563cc506621ba2a9f7d2e2573c8d5bb5f",
+      "size": 17473
     },
     {
       "path": "checks.json",
@@ -161,8 +161,8 @@
     },
     {
       "path": "functions/dispatch-policy.ts",
-      "sha256": "5f4a54d79198e6bae7c6b1af62740ee3fcc604ddf14c8c4e650832e81b9a9ed1",
-      "size": 1635
+      "sha256": "c74e42787ce3ae5fd43a5e5c1caad600788583a1f41cc1a202cc37e72040719e",
+      "size": 2114
     },
     {
       "path": "functions/expected-nodes.ts",
@@ -176,8 +176,8 @@
     },
     {
       "path": "functions/generate.ts",
-      "sha256": "aa551dada654b2724fadd325622ab8e71312037f24cf63d6004781202c84b238",
-      "size": 16342
+      "sha256": "e66e5e168b4c193d203f452eadcf4f880c9f3c81b22ea3a2082d59bf7c4704ca",
+      "size": 16470
     },
     {
       "path": "functions/generated/command-grammar.ts",
@@ -206,8 +206,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "7cd39cf7333ac454aa92d47fe2479b0bd7ce642c5a61cdc57b92b548b6b1d39b",
-      "size": 18647
+      "sha256": "9aa94a05de4ed1729bc68e139ce70a532ce31784321ad574d0b5fe5772528890",
+      "size": 21882
     },
     {
       "path": "functions/quote-width.ts",
@@ -276,8 +276,8 @@
     },
     {
       "path": "functions/workbook.ts",
-      "sha256": "602b57567bfb183841f9b089ab9377500e0d9266379c198df314db6c16f6fe43",
-      "size": 22643
+      "sha256": "524d43e7998db4b10527be470b39b4a98058dc256ebb145169acf91856a7cf60",
+      "size": 23363
     },
     {
       "path": "functions/xlsx-model.ts",
@@ -371,7 +371,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "ed7b546ab81830853c0b4b45cab2f27b4523e79b4d09750a4d23c9975f5248d4",
+      "sha256": "67df408dddfa4b35f84dbd2dcde169487c4a06b7614ff5701aeba4d56d239163",
       "size": 39651
     },
     {
@@ -411,7 +411,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "d30b784dd6f3ff0c1299bb33f4c69f08635688b0a63a0f6891bdaed940e615d8",
+      "sha256": "70473c7f4eebac24cf35915f12f398b4c00e396a1e4d29aa212bea60d1567fba",
       "size": 39655
     },
     {
@@ -486,7 +486,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "22a91d410aedf63a764109901115b108ab711fcfe9e0702a43da2df605120b60",
+      "sha256": "b9cda5e17194f6bf05d57402ec73087f76f6b669debf1b6496807bf0083b906d",
       "size": 39605
     },
     {
@@ -526,7 +526,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "ffb702c2bf2396daa568f442aaad112a1a12f914914c5e731ee715c89722a0fc",
+      "sha256": "0157cedc3cf99a90a5b67edce116423626deda42d1a3138b113de7a3986e973c",
       "size": 39609
     },
     {
@@ -546,8 +546,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "810e52ecdd0fa436d6aa50f2b0d1509bf055c0712e54cfe5e1bd3452dcf477c0",
-      "size": 9945
+      "sha256": "61c59157e37db5d5606c9af364cb5559c0dd28b0470bf59dd38e3d03a6c75bb5",
+      "size": 10502
     },
     {
       "path": "tables/command-identity.schema.json",
@@ -626,13 +626,13 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "9fb97b085e2d072a486e20c3a99af7f73786b71c2add5f8f044775cfbcfd3acf",
+      "sha256": "0acf745834f218261c361db715bac53b9e326424696f9e6971ae4ac2cdd5fe95",
       "size": 555
     },
     {
       "path": "tools/fetch-run.ts",
-      "sha256": "4c2df42ff08b2254cf76d0bb0a780456c1aff1824efd1a2d75bd0ea547b72002",
-      "size": 5230
+      "sha256": "02a69413ec43fc731309ac5d6e6127218e541d9d503318be11f1085307e9e919",
+      "size": 6960
     },
     {
       "path": "tools/files.ts",
@@ -656,8 +656,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "81d6afbd330b7a2d7db26f1f6a93b5c84cd85ce0c281cf06a6a3ab10340ac797",
-      "size": 5869
+      "sha256": "80fbe8bf3ec4152fdf9169dbe8173e7254f136e5ea21e1830b27d2d1841ed33f",
+      "size": 6008
     }
   ]
 }

@@ -1,10 +1,10 @@
-# case-compile 3.9.5
+# case-compile 3.9.6
 
-The client authors one case plan and generates an XLSX. The Hub verifies the plan, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
+The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
 ## Frozen inputs and plan
 
-subject is a KityMinder document; contract, inventory and profile are required published expected sources. Textual autoid selects exactly one case; absent/duplicate selections refuse startup. Items retain autoid, auto, priority, title and authored steps. Both child-step and case-body/one-leaf layouts preserve source text. Unsafe numeric identifiers cannot be reconstructed.
+subject is a KityMinder document; contract, inventory and profile are required published expected sources. Without `parameters.autoid` the run takes every case of the document that the rule takes, the author did not exclude and that carries an autoid of the profile's shape, one item each in document order (3.9.0); an autoid of another shape, a duplicate autoid or more cases than one dispatch takes refuse startup, and a case without an autoid is counted in the selection summary (3.9.6). With `autoid`, exactly that case; an absent or duplicate selection refuses startup. Items retain autoid, auto, priority, title and authored steps, each from its own node (a repeated node id takes the node's selector in the item id). Both child-step and case-body/one-leaf layouts preserve source text. Unsafe numeric identifiers cannot be reconstructed.
 
 The original runner contract is not converted. Every original member except contract_sha256 participates in sorted compact UTF-8 identity; unknown status/dispatch/kind/authority values, unsafe/non-integer numbers and non-BMP keys refuse the whole contract. Object names are read from the key `e` (`name` stays accepted; both present and different refuses). Enabled non-internal, non-candidate entries alone are callable. Default text is not copied or evaluated; redacted parameters cannot be submitted. Identity must equal the declaration. A runtime-contract@2 document must declare `original` (the original contract's canonical identity and byte digest): the additions are a Hub-side deployment declaration, removing them recovers the original identity, and the pinned original identity — not the recomputed @2 digest — is what the profile expects, the workbook identity row carries and check-runtime-contract --expect checks. The parameter role `executor_return` marks a required parameter the executor fills with the previous step's return (the two-argument checkpoints' `result`); the profile check exempts it and the generator refuses to let the model write it.
 
@@ -22,15 +22,15 @@ encodeG always decodes its result and compares types and values. It names the vi
 
 ## Deterministic file and independent reading
 
-The Node-built-in-only generator emits six fixed OOXML members, ZIP32 STORE with its own CRC32, fixed DOS timestamps and member order. A is inline text, C is numeric 0/2 and never initialization 1. Other values are inline strings. Row order is identity, nine-column header, description, each step with its after expectations immediately following, blank row, configured closing row. The description contains plan_run and build, never a person. Exactly one textual autoid starts the case with nonempty E. Every assertion row is generated from expects. Legacy register cells and all certification-request cells remain empty; block register cells are verified under the explicit runtime capability.
+The Node-built-in-only generator emits six fixed OOXML members, ZIP32 STORE with its own CRC32, fixed DOS timestamps and member order. A is inline text, C is numeric 0/2 and never initialization 1. Other values are inline strings. Row order is identity, nine-column header, description, then for each case in item order its steps, each with its after expectations immediately following, and a blank row, then the configured closing row. The description contains plan_run and build, never a person. Each case starts at the row of its textual autoid, with nonempty E. Every assertion row is generated from expects. Legacy register cells and all certification-request cells remain empty; block register cells are verified under the explicit runtime capability.
 
 Identity F records the generator id; G records a canonical recipe digest so a changed quote/replacement also changes bytes without copying source content. The workbook-level range points exactly to the header. Invalid XML values are refused rather than dropped; CR text is preserved. SpreadsheetML-looking _xHHHH_ sequences are refused with xstring_escape because literal inline and ST_Xstring readers disagree. The reference circle-packs 10-13 xlsx.mjs was read only for OOXML behavior: differences are STORE versus Deflate, strict fixed layout and subset, no hidden-row facility, exact identity/range, rejection of invalid characters and _xHHHH_ text, and accounted recipe metadata. No reference code or template bytes are imported.
 
-The only ZIP/XML reader is the existing core xlsx@1 parser, unchanged here. readWorkbook consumes its structural model and independently scans all post-header E–I rows, including description/closing rows. It checks members, one visible sheet, inline strings/numeric C, no formulas or equals-prefixed cells, hidden rows, unique identity/header/range, exact original fields, signatures, one autoid, immediate assertions, empty registers, seat bounds and final closing row. It never calls the generator to parse input. Existing catalog@1 and quote@1 checks also serve workbook_verified. Only after semantic reading does the verifier regenerate and compare SHA-256 against the integrity-checked bound original bytes. A single changed ZIP timestamp byte fails even if the parsed model is identical.
+The only ZIP/XML reader is the existing core xlsx@1 parser, unchanged here. readWorkbook consumes its structural model and independently scans all post-header E–I rows, including description/closing rows. It checks members, one visible sheet, inline strings/numeric C, no formulas or equals-prefixed cells, hidden rows, unique identity/header/range, exact original fields, signatures, one autoid per case in item order, immediate assertions, empty legacy registers and block registers scoped to their case, seat bounds and final closing row. It never calls the generator to parse input. Existing catalog@1 and quote@1 checks also serve workbook_verified. Only after semantic reading does the verifier regenerate and compare SHA-256 against the integrity-checked bound original bytes. A single changed ZIP timestamp byte fails even if the parsed model is identical.
 
 The support data is exactly {sha256,autoids,bed:{id,manifest_sha256},build,generator,plan_run}. manifest_sha256 is the raw bound inventory digest, not a re-encoded model hash. No workbook text/bytes are returned. The package checks description D against frozen plan_run; dispatch must compare data.plan_run with the verification run's own predecessor. The bundle's generator id is tied to the pack version by tests; uploaded stale generator identities are refused.
 
-Limits are declared in tables/workbook-format.json: 2,048 rows, 32,767 characters per cell, 2 MiB frozen model, 8 MiB output. Exceeding them refuses rather than truncates. SHA integrity and synthetic checks do not certify actual runner behavior.
+Limits are declared in tables/workbook-format.json: 2,048 rows, 32,767 characters per cell, 2 MiB frozen model, 8 MiB output; policies/dispatch.json caps one run at `max_items` (64) cases, checked when the run starts. Exceeding them refuses rather than truncates, and the refusal names the split the workflow offers: several uploaded documents, or one autoid per run. SHA integrity and synthetic checks do not certify actual runner behavior.
 
 ## Two runs and offline scripts
 
@@ -38,11 +38,11 @@ First reserve the bed, then start a plan run with that reservation predecessor a
 
 Run normalize-mindmap.ts only for local exports needing the declared transformations: remove the KityMinder export head (U+FFFF then U+FEFF, bytes EF BF BF EF BB BF, which every real local export carries; since 3.8.8) or two leading U+FFFF, and convert a single array wrapper into root. It preserves element spelling, including long numeric literals, and prints before/after SHA plus client-normalization disclosure. Ordinary root documents retain their original bytes.
 
-The offline generator accepts --run --result --submission --contract --profile --inventory --out. It checks the received-submission digest, accepted result, full single-item coverage, locked pack/root, every mandatory plan status and exact expected-source bytes, then reads the verified identity receipt. It writes a new private file and prints only digest/version/size. No environment or network is read and existing files are not overwritten.
+The offline generator accepts --run --result --submission --contract --profile --inventory --out. It checks the received-submission digest, accepted result, full coverage of every item of the run, locked pack/root, every mandatory plan status and exact expected-source bytes, then reads the verified identity receipt. It writes a new private file and prints only digest/version/size. No environment or network is read and existing files are not overwritten.
 
 Source and published scripts both live under tools/, exactly as pack.json declares; staging copies those paths without namespace mapping. Installation must preserve tools/, functions/, tables/ and requirements.json together. The script and checker import the same functions/generate.ts. Node 24 is required; no production dependencies beyond built-ins are added.
 
-Upload the exact generated file. The second start_run binds workbook by its uploaded src: reference, uses the same sources/build, and sets both predecessor and plan_run to the satisfied plan run. Resubmit the unchanged slots. Fixing slots requires regeneration and a new successor because inputs are frozen. Every required check must then be satisfied before handoff. SKILL.md drives missing-input continuation through generation/upload, never reports missing input as success, and retains the qualifications 按合成合约核对 / 按发布的运行器合约核对 and 不证明在真实设备上跑得通. Real dispatch remains the integrator's operation after the owner's design-section-6 answers.
+Upload the exact generated file. The second start_run binds workbook by its uploaded src: reference, uses the same sources/build, and sets predecessor, plan_run and (for several cases) plan_result to the satisfied plan run. Resubmit the unchanged slots of every case. Fixing slots requires regeneration and a new successor because inputs are frozen. Every required check must then be satisfied before handoff. SKILL.md drives missing-input continuation through generation/upload, never reports missing input as success, and retains the qualifications 按合成合约核对 / 按发布的运行器合约核对 and 不证明在真实设备上跑得通. Since 3.9.1 the Hub dispatches the verified run itself while the runner holds the whole bed (decision 105).
 
 ## Verification
 
@@ -418,3 +418,51 @@ change only the failed cases and keep every passed plan as it ran, then book the
 until every case passes or the remaining failures go to the user with their evidence. Step 3 says that `after` points at the
 step whose output the expectation reads (a traffic expectation at its trigger). Duplicated sentences were shortened to stay
 within the length limit.
+
+### 3.9.6: commands the skills home admits, each case's own identity and registers, and the size cap at the start
+
+A review of 3.9.5 against the colleague skills home (`scripts/real/circle-home.ts --profile skills`), InfoTest and CES found
+what follows (task page `docs/hub-r4-tasks/case-compile-396.md`).
+
+- **Local commands.** That home's guard runs only `node` with the installed script's full path, takes a token only as a
+  quoted here-document whose lines are Circle placeholders, and has no way to change directory; it refused SKILL steps 5 and
+  6 (`<<<`, relative `tools/` paths, "run it in that directory"). As the Jev skill does, `SKILL.md` now names the skill
+  directory (the client tree installed as the Circle skill `skills/case-compile/`, the Base directory Circle shows when the
+  skill loads) and writes every command in that form, with file arguments relative to the work directory.
+  `scripts/real/circle-home.test.ts` fills in the SKILL's commands and feeds them to the generated guard.
+- **Progress of the Hub's own dispatch.** Step 8: progress and the result reference are read by repeating, byte for byte, the
+  submission the dispatch was made from, as CES polls its task and never resubmits a running workbook. Another submission
+  while a job of the run is in flight is stored as received but not validated; the Hub answers `IDEMPOTENCY_MISMATCH` with
+  the jobs' progress and the dispatch continues. A change waits for the job to end and goes to a new verification run. The
+  progress notes carry no administrator commands any more (Hub change of the same release).
+- **Each case's own node.** A pasted case keeps the node id of the case it was copied from; the parser then addresses both by
+  position. The projection found the earlier extraction by selector or id, so the second case took the first one's id,
+  autoid, title and selector: a false duplicate-autoid refusal, or, with the first case declared not automatable, the second
+  case's steps under the first one's autoid. The earlier extraction is now found by selector alone (a model without
+  selectors falls back to a node id that names one case), and an item id uses the node's selector where the node id repeats
+  in the document; a unique node id keeps `<document>:<node id>`.
+- **Autoid shape.** A whole-document run dropped a case whose autoid did not match the profile's shape (a trailing space, a
+  missing digit, a full-width digit, a number) without saying so. As CES's batch check refuses an autoid the framework would
+  not take for a case boundary, the run now refuses with `autoid_invalid`, naming up to ten cases by selector and quoted
+  autoid, with the fix (correct or remove the autoid and upload again, or name one autoid). A case without an autoid is still
+  not compiled, as CES takes only nodes that carry one; the selection summary counts them.
+- **Registers per case.** The independent reader kept one register set for the whole workbook, so two block-plan cases that
+  both captured `baseline` were generated by the client and refused by the Hub. InfoTest's runner keeps registers within one
+  case: its static preflight (`lib/test_xlsx.py`, `_preflight_excel_rows`) resets them at every row that starts a case (an
+  autoid in A, C not 1) to those its init rows captured, and the run clears them before each case's init
+  (`_reset_case_state`). The reader does the same; this generator writes no init rows, so each case starts without
+  registers, and within a case a name is still captured once.
+- **Size cap at the start.** One run is one workbook and one dispatch, and `policies/dispatch.json` takes at most `max_items`
+  (64) cases. More selectable cases now refuse the start with `too_many_cases` and a split the workflow offers (several
+  uploaded documents, or one autoid per run); before, they went through plans, generation and verification and were refused
+  by `dispatch_policy`, which blamed the policy table. That refusal now states the cap, and the model-budget and row-limit
+  messages name the same split instead of a batch mode the workflow does not have.
+- **fetch-run.** A secret Circle does not store arrives as its literal placeholder: it is answered with `/secrets HUB_TOKEN`
+  and never sent, as the Jev skill handles it in the same home. The export must be of the requested run. Every original is
+  fetched and checked before anything is written, and a failed write removes what the call wrote, so a failure leaves no
+  partial inputs and a directory that already holds one is left as it was.
+
+Tests: `functions/whole-mindmap.test.ts` (pasted node ids, autoid shape and count, two block-plan cases capturing
+`baseline`, the cap at 64 and 65 cases, the dispatch-policy statement), `tools/fetch-run.test.ts` (placeholder, run mismatch,
+no partial files), `scripts/real/circle-home.test.ts` (the SKILL's commands pass the skills guard; the 3.9.5 spelling does
+not).
