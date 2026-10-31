@@ -133,7 +133,7 @@ export function matchNeed(
         buildOk = 'mismatch';
         const one = known[0].record!;
         buildSource = one.source;
-        buildText = `构建不一致（装的是 ${one.build}，需要升级到 ${need.build}${one.source === 'observed' ? '，观察' : '，声明，未核对'}）`;
+        buildText = `构建不一致（装的是 ${one.build}，要的是 ${need.build}${one.source === 'observed' ? '，观察' : '，声明，未核对'}）`;
       }
     }
     const parts: string[] = [];
@@ -154,7 +154,11 @@ export interface UnmatchedBuild {
   fix: string;
 }
 
-const UNMATCHED_FIX = '管理员在清单登记在装构建，或把某台升级到该构建后重试';
+/**
+ * The next steps of an unmatched build, each with who takes it and by which existing means (D05 R[8]). test-bed has no
+ * action that upgrades a device, so no step says to upgrade one.
+ */
+const UNMATCHED_FIX = '要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；清单声明的在装构建与设备实际不符时：请管理员核对设备后重新发布清单。test-bed 没有升级设备的动作';
 
 /** The deciding devices of one fitting bed, the same pick matchNeed uses for the build verdict. */
 function decidingDevices(bed: ManifestBed, need: Need, leases: Record<string, LeaseEntry>, now: string): string[] {
@@ -197,7 +201,7 @@ export function unmatchedBuildExit(
       else if (baseOf(builds, record.build) !== want) other.push(`${where} 装的是 ${record.build}`);
     }
   }
-  const parts = [`没有任何自动化测试环境的在装构建匹配版本线 ${need.build}`];
+  const parts = [`没有任何自动化测试环境声明在装 ${need.build}（构建名或它的基础构建逐字相等才算；在装构建来自清单声明，未核对）`];
   if (absent.length > 0) parts.push(`缺在装构建记录：${absent.join('、')}`);
   if (other.length > 0) parts.push(`在装构建不是该版本线：${other.join('、')}`);
   return { verdict: 'unknown', missing: parts.join('。'), fix: UNMATCHED_FIX };

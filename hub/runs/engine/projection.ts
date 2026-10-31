@@ -70,10 +70,14 @@ export async function projectItems(
     const e = parsed.data.error;
     const namespaced = e.code.startsWith(`${workflow.pack.id}.`) && e.code.length > workflow.pack.id.length + 1;
     const documents = e.documents && e.documents.length > 0 ? `（${e.documents.join('、')}）` : '';
+    // The refusal keeps the claim fields the pack gave (grounds, rule, qualifier, missing fact, hypotheses: D05 R[8]).
+    const { code: _code, message: _message, fix: _fix, documents: _documents, ...given } = e;
+    // Every pack refusal names the rule that decided it; a pack that does not say gives its function at its version.
+    const claim = { ...given, warrant: given.warrant ?? `${workflow.pack.id}@${workflow.pack.version} ${fn.module}` };
     throw new Refusal([
       namespaced
-        ? { code: e.code, message: `${e.message}${documents}`, fix: e.fix, path }
-        : protocolError('SUBMISSION_SCHEMA_VIOLATION', `${e.code}：${e.message}${documents}`, { path, fix: e.fix }),
+        ? { code: e.code, message: `${e.message}${documents}`, fix: e.fix, path, ...claim }
+        : protocolError('SUBMISSION_SCHEMA_VIOLATION', `${e.code}：${e.message}${documents}`, { path, fix: e.fix, ...claim }),
     ]);
   }
   const { items: projected, warnings } = parsed.data;

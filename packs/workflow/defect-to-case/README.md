@@ -15,7 +15,7 @@
 | `tables/` | 检查表定义：`commands.json`（`catalog@1` 解释器表）与 `quotes.json`（`quote@1` 解释器表） |
 | `samples/` | 19 个样例（`pack-sample@1`，positive 9 个、negative 10 个），覆盖九项检查 |
 | `examples/` | 合成示例：`start-run.json`、`submission.json` 与 `submit-result.json` |
-| `pack.json` | 任务包清单（`defect-to-case@1.6.23`，由 pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
+| `pack.json` | 任务包清单（`defect-to-case@1.6.24`，由 pack-files.ts 签名，包含所有包内文件的相对路径、SHA-256 与文件大小） |
 
 非任务包发布文件：`api.ts`（外部包与工具接口）、`pack-files.ts`（打包与签名工具）、`README.md`、测试文件（`*.test.ts`）与测试辅助目录（`testing/`）。
 
@@ -191,3 +191,13 @@ R7 新规则：发布状态只取 release-notes@2 JSON 的显式 product/build/d
 - 测试与样例：`functions/unknown-entries.test.ts` 覆盖完整视图、只因未知条目截断、未知条目加别的截断、两个字段都没有四种情况，以及字段读法、开始运行缺口和真实知识视图生产的命令未知用例；`unknown-entries.test.ts` 经真实运行引擎验证：只因未知条目截断的索引被绑定，回执带缺口，查重主张未知并带条数，另两种截断仍被拒绝。样例 `samples/negative/duplicate_unknown_entries.json` 同一视图下一份草稿被驳回、一份记未知。
 
 任务说明假定本包的索引由 Hub 按 `index_default` 从构建缺陷索引补 only 并合并分段。本包没有 `index_default`：开始运行绑定不带 only 的完整命令索引，检查时由 `duplicate_check.reads.narrow` 按草稿命令在同一修订重读一段 only，不经过分段合并。端到端测试覆盖的是这条收窄读取路径。
+
+## 没有修复说明时给出假设（1.6.24）
+
+缺陷没有可引用的修复说明时（missing_fix_field、fix_text_missing），拒绝不再只给一个原因。拒绝引用缺陷原件，写明缺的事实是"可以引用的修复说明"，并列出两个假设，再固定留一个"其他"（决定 111，通用模型 V08）：
+
+- 缺陷还没有修复：已修复状态规则预测，没修复的缺陷不会有原始结构状态 fixed；原件里观察到 fixed 时这个假设记已排除，否则开放，并写出看到的状态；
+- 修复说明写在 Hub 没有配置读取的字段或动作里：没有规则能预测，保持开放，并写出资源的配置情况。
+
+修正写明各步由谁做：缺陷修复后由运行者再开运行；修复说明在别的字段或动作里时由集成者配置 settings.bug_fix_field 或 settings.bug_fix_actions。哪个假设成立由读者判断，Hub 不替读者选。
+

@@ -123,6 +123,142 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "options_coverage": {
+                "description": "how many options there are and how many are listed; note says where the rest are (A05 R[1])",
+                "type": "object",
+                "properties": {
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "examined": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "complete",
+                  "examined"
+                ],
+                "additionalProperties": false
+              },
+              "coverage": {
+                "description": "of the lookup the statement rests on",
+                "type": "object",
+                "properties": {
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "examined": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "complete",
+                  "examined"
+                ],
+                "additionalProperties": false
+              },
+              "grounds": {
+                "description": "references and external ids the error rests on",
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "warrant": {
+                "description": "the rule or component that decided it, as id@version",
+                "type": "string",
+                "minLength": 1
+              },
+              "provenance": {
+                "description": "declared, observed or projected (A02)",
+                "type": "string",
+                "enum": [
+                  "observed",
+                  "projected",
+                  "declared",
+                  "candidate",
+                  "client_captured"
+                ]
+              },
+              "collected_at": {
+                "description": "when the facts it rests on were read; an observation holds only for that moment (A05 R[3])",
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "missing": {
+                "description": "the missing fact, written instead of a next step nobody can take",
+                "type": "string",
+                "minLength": 1
+              },
+              "hypotheses": {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "statement": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "prediction": {
+                      "type": "string"
+                    },
+                    "support": {
+                      "description": "observations and references that agree with the hypothesis",
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "refute": {
+                      "description": "observations and references that disagree with it",
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "excluded"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "statement",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -728,6 +864,142 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "options_coverage": {
+                "description": "how many options there are and how many are listed; note says where the rest are (A05 R[1])",
+                "type": "object",
+                "properties": {
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "examined": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "complete",
+                  "examined"
+                ],
+                "additionalProperties": false
+              },
+              "coverage": {
+                "description": "of the lookup the statement rests on",
+                "type": "object",
+                "properties": {
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "examined": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "complete",
+                  "examined"
+                ],
+                "additionalProperties": false
+              },
+              "grounds": {
+                "description": "references and external ids the error rests on",
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "warrant": {
+                "description": "the rule or component that decided it, as id@version",
+                "type": "string",
+                "minLength": 1
+              },
+              "provenance": {
+                "description": "declared, observed or projected (A02)",
+                "type": "string",
+                "enum": [
+                  "observed",
+                  "projected",
+                  "declared",
+                  "candidate",
+                  "client_captured"
+                ]
+              },
+              "collected_at": {
+                "description": "when the facts it rests on were read; an observation holds only for that moment (A05 R[3])",
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "missing": {
+                "description": "the missing fact, written instead of a next step nobody can take",
+                "type": "string",
+                "minLength": 1
+              },
+              "hypotheses": {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "statement": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "prediction": {
+                      "type": "string"
+                    },
+                    "support": {
+                      "description": "observations and references that agree with the hypothesis",
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "refute": {
+                      "description": "observations and references that disagree with it",
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "excluded"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "statement",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -1139,6 +1411,142 @@
                 "type": "array",
                 "items": {
                   "type": "string"
+                }
+              },
+              "options_coverage": {
+                "description": "how many options there are and how many are listed; note says where the rest are (A05 R[1])",
+                "type": "object",
+                "properties": {
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "examined": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "complete",
+                  "examined"
+                ],
+                "additionalProperties": false
+              },
+              "coverage": {
+                "description": "of the lookup the statement rests on",
+                "type": "object",
+                "properties": {
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "examined": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "complete",
+                  "examined"
+                ],
+                "additionalProperties": false
+              },
+              "grounds": {
+                "description": "references and external ids the error rests on",
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "warrant": {
+                "description": "the rule or component that decided it, as id@version",
+                "type": "string",
+                "minLength": 1
+              },
+              "provenance": {
+                "description": "declared, observed or projected (A02)",
+                "type": "string",
+                "enum": [
+                  "observed",
+                  "projected",
+                  "declared",
+                  "candidate",
+                  "client_captured"
+                ]
+              },
+              "collected_at": {
+                "description": "when the facts it rests on were read; an observation holds only for that moment (A05 R[3])",
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "missing": {
+                "description": "the missing fact, written instead of a next step nobody can take",
+                "type": "string",
+                "minLength": 1
+              },
+              "hypotheses": {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "statement": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "prediction": {
+                      "type": "string"
+                    },
+                    "support": {
+                      "description": "observations and references that agree with the hypothesis",
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "refute": {
+                      "description": "observations and references that disagree with it",
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "excluded"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "statement",
+                    "status"
+                  ],
+                  "additionalProperties": false
                 }
               }
             },
@@ -2509,6 +2917,142 @@
                 "type": "array",
                 "items": {
                   "type": "string"
+                }
+              },
+              "options_coverage": {
+                "description": "how many options there are and how many are listed; note says where the rest are (A05 R[1])",
+                "type": "object",
+                "properties": {
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "examined": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "complete",
+                  "examined"
+                ],
+                "additionalProperties": false
+              },
+              "coverage": {
+                "description": "of the lookup the statement rests on",
+                "type": "object",
+                "properties": {
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "examined": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "complete",
+                  "examined"
+                ],
+                "additionalProperties": false
+              },
+              "grounds": {
+                "description": "references and external ids the error rests on",
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "warrant": {
+                "description": "the rule or component that decided it, as id@version",
+                "type": "string",
+                "minLength": 1
+              },
+              "provenance": {
+                "description": "declared, observed or projected (A02)",
+                "type": "string",
+                "enum": [
+                  "observed",
+                  "projected",
+                  "declared",
+                  "candidate",
+                  "client_captured"
+                ]
+              },
+              "collected_at": {
+                "description": "when the facts it rests on were read; an observation holds only for that moment (A05 R[3])",
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "missing": {
+                "description": "the missing fact, written instead of a next step nobody can take",
+                "type": "string",
+                "minLength": 1
+              },
+              "hypotheses": {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "statement": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "prediction": {
+                      "type": "string"
+                    },
+                    "support": {
+                      "description": "observations and references that agree with the hypothesis",
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "refute": {
+                      "description": "observations and references that disagree with it",
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "excluded"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "statement",
+                    "status"
+                  ],
+                  "additionalProperties": false
                 }
               }
             },
@@ -11186,6 +11730,142 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "options_coverage": {
+                "description": "how many options there are and how many are listed; note says where the rest are (A05 R[1])",
+                "type": "object",
+                "properties": {
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "examined": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "complete",
+                  "examined"
+                ],
+                "additionalProperties": false
+              },
+              "coverage": {
+                "description": "of the lookup the statement rests on",
+                "type": "object",
+                "properties": {
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "examined": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "complete",
+                  "examined"
+                ],
+                "additionalProperties": false
+              },
+              "grounds": {
+                "description": "references and external ids the error rests on",
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "warrant": {
+                "description": "the rule or component that decided it, as id@version",
+                "type": "string",
+                "minLength": 1
+              },
+              "provenance": {
+                "description": "declared, observed or projected (A02)",
+                "type": "string",
+                "enum": [
+                  "observed",
+                  "projected",
+                  "declared",
+                  "candidate",
+                  "client_captured"
+                ]
+              },
+              "collected_at": {
+                "description": "when the facts it rests on were read; an observation holds only for that moment (A05 R[3])",
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "missing": {
+                "description": "the missing fact, written instead of a next step nobody can take",
+                "type": "string",
+                "minLength": 1
+              },
+              "hypotheses": {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "statement": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "prediction": {
+                      "type": "string"
+                    },
+                    "support": {
+                      "description": "observations and references that agree with the hypothesis",
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "refute": {
+                      "description": "observations and references that disagree with it",
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "excluded"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "statement",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -11999,6 +12679,142 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "options_coverage": {
+                "description": "how many options there are and how many are listed; note says where the rest are (A05 R[1])",
+                "type": "object",
+                "properties": {
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "examined": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "complete",
+                  "examined"
+                ],
+                "additionalProperties": false
+              },
+              "coverage": {
+                "description": "of the lookup the statement rests on",
+                "type": "object",
+                "properties": {
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "examined": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "complete",
+                  "examined"
+                ],
+                "additionalProperties": false
+              },
+              "grounds": {
+                "description": "references and external ids the error rests on",
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "warrant": {
+                "description": "the rule or component that decided it, as id@version",
+                "type": "string",
+                "minLength": 1
+              },
+              "provenance": {
+                "description": "declared, observed or projected (A02)",
+                "type": "string",
+                "enum": [
+                  "observed",
+                  "projected",
+                  "declared",
+                  "candidate",
+                  "client_captured"
+                ]
+              },
+              "collected_at": {
+                "description": "when the facts it rests on were read; an observation holds only for that moment (A05 R[3])",
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "missing": {
+                "description": "the missing fact, written instead of a next step nobody can take",
+                "type": "string",
+                "minLength": 1
+              },
+              "hypotheses": {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "statement": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "prediction": {
+                      "type": "string"
+                    },
+                    "support": {
+                      "description": "observations and references that agree with the hypothesis",
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "refute": {
+                      "description": "observations and references that disagree with it",
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "excluded"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "statement",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -12209,6 +13025,142 @@
                     "type": "array",
                     "items": {
                       "type": "string"
+                    }
+                  },
+                  "options_coverage": {
+                    "description": "how many options there are and how many are listed; note says where the rest are (A05 R[1])",
+                    "type": "object",
+                    "properties": {
+                      "complete": {
+                        "type": "boolean"
+                      },
+                      "examined": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "note": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "complete",
+                      "examined"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "coverage": {
+                    "description": "of the lookup the statement rests on",
+                    "type": "object",
+                    "properties": {
+                      "complete": {
+                        "type": "boolean"
+                      },
+                      "examined": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "note": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "complete",
+                      "examined"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "grounds": {
+                    "description": "references and external ids the error rests on",
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "warrant": {
+                    "description": "the rule or component that decided it, as id@version",
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "provenance": {
+                    "description": "declared, observed or projected (A02)",
+                    "type": "string",
+                    "enum": [
+                      "observed",
+                      "projected",
+                      "declared",
+                      "candidate",
+                      "client_captured"
+                    ]
+                  },
+                  "collected_at": {
+                    "description": "when the facts it rests on were read; an observation holds only for that moment (A05 R[3])",
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "missing": {
+                    "description": "the missing fact, written instead of a next step nobody can take",
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "hypotheses": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "statement": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "prediction": {
+                          "type": "string"
+                        },
+                        "support": {
+                          "description": "observations and references that agree with the hypothesis",
+                          "maxItems": 20,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "refute": {
+                          "description": "observations and references that disagree with it",
+                          "maxItems": 20,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "excluded"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "statement",
+                        "status"
+                      ],
+                      "additionalProperties": false
                     }
                   }
                 },

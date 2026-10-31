@@ -137,9 +137,10 @@ before(async () => {
     ['toy-lease-plain', leasesPack('toy-lease-plain', { askContext: true, projection: plainProjection })],
     ['toy-lease-read', leasesPack('toy-lease-read', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: leaseReadingProjection('meadow/zone-2/target-1') })],
     ['toy-book', leasesPack('toy-book', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: opProjection("[{ keys: ['meadow/lin/1'], ttl_seconds: 300 }]") })],
+    ['toy-held', leasesPack('toy-held', { declare: { prefix: 'meadow/', max_ttl_seconds: 600 }, askContext: true, projection: opProjection("[{ keys: ['meadow/held/1'], ttl_seconds: 300 }]") })],
   ];
   for (const [name, spec] of specs) void name, await h.workflows.add(await writePack(packRoot, spec));
-  for (const name of ['toy-lease', 'toy-lease-2', 'toy-lease-small', 'toy-lease-ttl', 'toy-lease-prefix', 'toy-lease-undeclared', 'toy-lease-plain', 'toy-lease-read', 'toy-op-extend', 'toy-op-release', 'toy-op-release-acquire', 'toy-op-deep', 'toy-book', 'toy-op-cap']) {
+  for (const name of ['toy-held', 'toy-lease', 'toy-lease-2', 'toy-lease-small', 'toy-lease-ttl', 'toy-lease-prefix', 'toy-lease-undeclared', 'toy-lease-plain', 'toy-lease-read', 'toy-op-extend', 'toy-op-release', 'toy-op-release-acquire', 'toy-op-deep', 'toy-book', 'toy-op-cap']) {
       h.workflows.assign(h.alice.id, name);
       h.workflows.assign(h.bob.id, name);
     }
@@ -180,6 +181,24 @@ const addOpPack = async (id: string, requests: string): Promise<void> => {
   h.workflows.assign(h.alice.id, id);
   h.workflows.assign(h.bob.id, id);
 };
+
+describe('a taken key is answered as a claim (D05 R[8])', () => {
+  it('names the holding run and when it took the key, and says when that run is the caller own', async () => {
+    const booked = await h.service.startRunDetailed(h.alice, { pack: 'toy-held', inputs: { map: { reference: map } } }, h.call('s-held-1a'));
+    assert.equal(booked.answer.call_result, 'ok', JSON.stringify(booked.answer.errors));
+    const holder = booked.answer.run!.run;
+    const own = (await h.service.startRunDetailed(h.alice, { pack: 'toy-held', inputs: { map: { reference: map } }, predecessor: holder }, h.call('s-held-1b'))).answer.errors[0]!;
+    assert.equal(own.code, 'LEASE_UNAVAILABLE');
+    assert.match(own.message, new RegExp(`持有运行 ${holder}，取得于 \\d{4}-\\d\\d-\\d\\dT[^，）]+，是你自己的运行，在这次运行的前驱谱系里`));
+    assert.match(own.fix ?? '', new RegExp(`这个键已在你自己的运行 ${holder} 名下：计划、核验和派发把 predecessor 写成这个运行`));
+    const bobMap = await h.upload(h.bob, toyMap(standardDocument()));
+    const other = (await h.service.startRunDetailed(h.bob, { pack: 'toy-held', inputs: { map: { reference: bobMap } } }, h.call('s-held-1c'))).answer.errors[0]!;
+    assert.equal(other.code, 'LEASE_UNAVAILABLE');
+    assert.match(other.message, new RegExp(`持有运行 ${holder}，取得于 `));
+    assert.doesNotMatch(other.message, /你自己的运行/);
+    assert.match(other.fix ?? '', /等持有谱系释放/);
+  });
+});
 
 describe('lease operations by lineage (C6)', () => {
   /** A booking run of toy-book by the user; returns its run id. */

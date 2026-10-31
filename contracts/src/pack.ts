@@ -32,7 +32,7 @@ import {
   type Target,
 } from '../generated/vocabulary.ts';
 import { PACK_FILE_PATHS } from '../generated/protocol.ts';
-import { ItemId, IsoTime, JsonPointer, PackId, PackVersion, Sha256, Versioned } from './common.ts';
+import { ErrorClaimFields, ItemId, IsoTime, JsonPointer, PackId, PackVersion, Sha256, Versioned } from './common.ts';
 import { CommandPolicy, FragmentRef, PackFunctionRef } from './product.ts';
 import { ExternalObjectId, Ground, ReferenceUri, referenceUriOf } from './reference.ts';
 import { ExternalType } from './resources.ts';
@@ -652,8 +652,8 @@ export const PackWarning = z.strictObject({
 });
 export type PackWarning = z.infer<typeof PackWarning>;
 
-/** A refusal: the whole call produced nothing usable. */
-export const PackError = z.strictObject({ code: z.string().min(1), message: z.string(), fix: z.string(), documents: z.array(z.string()).optional() });
+/** A refusal: the whole call produced nothing usable. It is a claim like the Hub's own errors (B01, D05 R[8]). */
+export const PackError = z.strictObject({ code: z.string().min(1), message: z.string(), fix: z.string(), documents: z.array(z.string()).optional(), ...ErrorClaimFields });
 export type PackError = z.infer<typeof PackError>;
 export const PackFailure = z.strictObject({ error: PackError, warnings: z.array(PackWarning) });
 export type PackFailure = z.infer<typeof PackFailure>;

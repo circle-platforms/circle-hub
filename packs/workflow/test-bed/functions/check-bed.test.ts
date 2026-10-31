@@ -175,9 +175,10 @@ describe('bedOutcomes refute and unknown', () => {
     assert.ok(gap);
     assert.equal(gap.verdict, 'unknown');
     assert.equal(gap.reason, 'missing_input');
-    assert.match(gap.missing ?? '', /版本线 Rel_APV_10_6_1_9/);
-    assert.match(gap.statement, /管理员在清单登记在装构建，或把某台升级到该构建后重试/);
-    assert.equal(gap.data?.next_action, '管理员在清单登记在装构建，或把某台升级到该构建后重试');
+    assert.match(gap.missing ?? '', /声明在装 Rel_APV_10_6_1_9/);
+    assert.ok(gap.statement.endsWith(`。下一步：要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；清单声明的在装构建与设备实际不符时：请管理员核对设备后重新发布清单。test-bed 没有升级设备的动作`));
+    assert.equal(gap.data?.next_action, '要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；清单声明的在装构建与设备实际不符时：请管理员核对设备后重新发布清单。test-bed 没有升级设备的动作');
+    assert.ok(gap.grounds.length > 0, 'the unknown cites the inventory beds it compared');
   });
 
   it('search with a build requirement: support naming 声明，未核对, refute on a tampered build verdict', () => {

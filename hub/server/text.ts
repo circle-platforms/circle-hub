@@ -150,14 +150,55 @@ class Clip {
   }
 }
 
+/**
+ * The claim fields of an error after its statement (B01, D05 R[8]): qualifier, grounds, rule, the missing fact and the
+ * candidate causes, the residual 其他 always last; open hypotheses are not told apart (V08 R[2]). `field` clips a value.
+ */
+function errorClaimParts(e: ProtocolError, field: (text: string, what: string) => string): string[] {
+  const parts: string[] = [];
+  const qualifier = [
+    e.provenance !== undefined ? labelOf('provenance_type', e.provenance) : null,
+    e.collected_at !== undefined ? `采集于 ${e.collected_at}` : null,
+    e.coverage !== undefined ? `查找范围${coverageText(e.coverage)}` : null,
+  ].filter((part): part is string => part !== null);
+  if (qualifier.length > 0) parts.push(`限定：${qualifier.join('，')}`);
+  if (e.grounds !== undefined && e.grounds.length > 0) parts.push(`根据：${e.grounds.map((g) => field(g, '根据的超出部分')).join('、')}`);
+  if (e.warrant !== undefined) parts.push(`规则：${field(e.warrant, '规则的超出部分')}`);
+  if (e.missing !== undefined) parts.push(`缺失事实：${field(e.missing, '缺失事实的超出部分')}`);
+  if (e.hypotheses !== undefined && e.hypotheses.length > 0) {
+    const open = e.hypotheses.filter((h) => h.status === 'open').length + 1;
+    const listed = e.hypotheses.map((h, i) => {
+      const about = [
+        labelOf('hypothesis_status', h.status),
+        h.prediction !== undefined ? `规则的预测：${field(h.prediction, '预测的超出部分')}` : null,
+        h.support !== undefined && h.support.length > 0 ? `支持：${h.support.map((s) => field(s, '支持的超出部分')).join('、')}` : null,
+        h.refute !== undefined && h.refute.length > 0 ? `反驳：${h.refute.map((s) => field(s, '反驳的超出部分')).join('、')}` : null,
+      ].filter((part): part is string => part !== null);
+      return `${i + 1}. ${field(h.statement, '假设的超出部分')}（${about.join('；')}）`;
+    });
+    listed.push(`${e.hypotheses.length + 1}. 其他（${labelOf('hypothesis_status', 'open')}：以上都不是）`);
+    parts.push(`原因未定，假设${open > 1 ? `（${open} 个开放，未区分）` : ''}：${listed.join('；')}`);
+  }
+  return parts;
+}
+
+/** The options of an error with their coverage: how many there are, how many are listed and where the rest are (A05 R[1]). */
+function optionsPart(e: ProtocolError, option: (text: string) => string): string | null {
+  if (e.options === undefined || e.options.length === 0) return null;
+  const coverage = e.options_coverage;
+  const head = coverage === undefined ? '可选' : `可选（${coverage.complete ? `共 ${coverage.examined} 个，全部列出` : `列出 ${coverage.examined} 个${coverage.total !== undefined ? `，共 ${coverage.total} 个` : '，总数未知'}`}${coverage.note ? `；${coverage.note}` : ''}）`;
+  return `${head}：${e.options.map(option).join('、')}`;
+}
+
 export function errorLine(e: ProtocolError): string {
-  const parts = [`- ${e.code}：${oneLine(e.message)}`];
+  const parts = [`- ${e.code}：${oneLine(e.message)}`, ...errorClaimParts(e, (text) => oneLine(text))];
   if (e.fix) parts.push(`修正：${oneLine(e.fix)}`);
   if (e.path !== undefined) parts.push(`位置 ${e.path === '' ? '（整份）' : oneLine(e.path)}`);
   if (e.item !== undefined) parts.push(`条目 ${oneLine(e.item)}`);
   if (e.requirement !== undefined) parts.push(`要求项 ${oneLine(e.requirement)}`);
   if (e.rounds_left !== undefined) parts.push(`剩余修复轮数 ${e.rounds_left}`);
-  if (e.options !== undefined && e.options.length > 0) parts.push(`可选：${e.options.map(oneLine).join('、')}`);
+  const options = optionsPart(e, oneLine);
+  if (options !== null) parts.push(options);
   return parts.join('；');
 }
 
@@ -233,15 +274,15 @@ function errorList(errors: readonly ProtocolError[], limits: Limits, shared: boo
   const entries = errors.map((e, i) => {
     const clip = new Clip(whole(i), more);
     const parts = [`- ${clip.field(e.code, limits.code, '错误代码的超出部分')}：${clip.field(e.message, limits.message, '错误说明的超出部分')}`];
+    parts.push(...errorClaimParts(e, (text, what) => clip.field(text, limits.message, what)));
     if (e.fix && fixOf.get(e.code) !== e.fix) parts.push(`修正：${clip.field(e.fix, limits.fix, '修正说明的超出部分')}`);
     if (e.path !== undefined) parts.push(`位置 ${e.path === '' ? '（整份）' : clip.field(e.path, limits.path, '错误位置的超出部分')}`);
     if (e.item !== undefined) parts.push(`条目 ${oneLine(e.item)}`);
     if (e.requirement !== undefined) parts.push(`要求项 ${clip.field(e.requirement, limits.code, '要求项名的超出部分')}`);
     if (e.rounds_left !== undefined) parts.push(`剩余修复轮数 ${e.rounds_left}`);
-    if (e.options !== undefined && e.options.length > 0) {
-      const shown = e.options.slice(0, 20).map((o) => clip.field(o, limits.code, '可选项的超出部分'));
-      parts.push(`可选：${shown.join('、')}${e.options.length > 20 ? ` 等 ${e.options.length} 个` : ''}`);
-    }
+    // Every option the error carries is listed; a cut list says so through options_coverage, never by silence.
+    const options = optionsPart(e, (o) => clip.field(o, limits.code, '可选项的超出部分'));
+    if (options !== null) parts.push(options);
     return clip.entry(parts.join('；'));
   });
   return { summary, entries };
@@ -833,7 +874,7 @@ function startText(v: StartOut, context: TextContext): string {
   if (target.length > 0) head.push(target.join('，'));
   head.push(r.root !== undefined ? `锁定的知识根 ${r.root}` : '知识根：没有锁定');
   if (r.unversioned_root !== undefined) head.push(`不分版本的知识根 ${r.unversioned_root}（构建未声明）`);
-  else if (r.product !== undefined) head.push('这条产品线还没有不分版本的根；下一步：同步这条产品线');
+  else if (r.product !== undefined) head.push('这条产品线还没有不分版本的根；下一步：管理员同步这条产品线（circle-hub knowledge sync）');
   if (r.predecessor !== undefined) head.push(`前驱运行 ${r.predecessor}`);
   blocks.push({ priority: 0, head, omitted: headClip.omitted });
   if(r.criterion_changes?.length)blocks.push({priority:1,head:['判据变更声明：'],entries:r.criterion_changes.map(change=>{

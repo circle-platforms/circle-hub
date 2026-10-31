@@ -265,7 +265,7 @@ describe('skipped documents are unknown, not absent (finding: catalogs and views
     assert.ok(facets.notes.some((n) => note.test(n)), facets.notes.join('\n'));
     assert.equal(facets.skipped, 1);
     const clean = IndexView.parse((await views.json(`knowledge:index:acme:${A}?kind=case&key=doc`)).value);
-    assert.deepEqual(clean.notes, ['这条产品线还没有不分版本的根；下一步：同步这条产品线']);
+    assert.deepEqual(clean.notes, ['这条产品线还没有不分版本的根；下一步：管理员同步这条产品线（circle-hub knowledge sync）']);
     assert.equal(clean.skipped, 0);
   });
 });
