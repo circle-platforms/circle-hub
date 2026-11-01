@@ -204,6 +204,9 @@ function stringMap(value: Record<string, string> | undefined, key: string): Reco
   return value === undefined ? undefined : Object.fromEntries(Object.entries(value).map(([k, v]) => [k, v.replaceAll('{id}', key)]));
 }
 
+/** What a function is told of a request that failed for a credential or login reason (D05 R[3], decision 112). */
+const NEUTRAL_PHASE_MESSAGE = '应答对你不可用（原因只记在管理员记录里）';
+
 function zodProblem(error: { issues: readonly { path: PropertyKey[]; message: string }[] }): string {
   return error.issues
     .slice(0, 3)
@@ -296,7 +299,17 @@ export class ReadEngine {
     // Plan order, not completion order: the read functions get the same input whatever order the answers arrived in.
     const order: string[] = [];
     const nestedOrder: string[] = [];
-    const views = (): Record<string, ReadResponse> => Object.fromEntries(order.flatMap((key) => (responses.has(key) ? [[key, responses.get(key)!.view]] : [])));
+    // A function, and so whoever reads what it projects, is told of a request that failed for a credential or login reason, or
+    // whose answer was held for suspected credentials, only that it is not available (D05 R[3], decision 112). The stored view
+    // and the administrator's reason keep the detail.
+    const forFunction = (state: ResponseState): ReadResponse => {
+      const error = state.view.error;
+      if (state.view.ok || error === null || error === undefined) return state.view;
+      const hidden = Object.hasOwn(CONNECTOR_ERRORS, error.code) && readExit(error.code as ConnectorErrorCode).caller === null;
+      const neutral = hidden || state.artifact?.body.read_tier === RETAIN_ONLY;
+      return neutral ? { ...state.view, error: { ...error, message: NEUTRAL_PHASE_MESSAGE } } : state.view;
+    };
+    const views = (): Record<string, ReadResponse> => Object.fromEntries(order.flatMap((key) => (responses.has(key) ? [[key, forFunction(responses.get(key)!)]] : [])));
     const nestedViews = (): Record<string, NestedRead> => Object.fromEntries(nestedOrder.flatMap((key) => (nested.has(key) ? [[key, nested.get(key)!.view]] : [])));
 
     const store = async (exchange: HttpExchange, key: string): Promise<Stored> => {

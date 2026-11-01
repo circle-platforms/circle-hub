@@ -20,9 +20,11 @@ test('the content gives the opened build by number and name, or why there is no 
   assert.deepEqual(named.opened_build, { id: '17401', name: 'Synthetic_10_9_0_672' });
   const listed = content(detailProject(input({ detail: { ok: true, json: bug(17401) }, opened: { ok: true, json: [{ id: '17401', name: 'Synthetic_10_9_0_672' }] } })));
   assert.equal(listed.opened_build.name, 'Synthetic_10_9_0_672', 'a bare array answer is read the same way');
-  const held = content(detailProject(input({ detail: { ok: true, json: bug('17401') }, opened: { ok: false, error: { code: 'SOURCE_CREDENTIAL', message: '应答有凭据扫描命中，按“只保留”保存，函数拿不到原文' } } })));
+  const held = content(detailProject(input({ detail: { ok: true, json: bug('17401') }, opened: { ok: false, error: { code: 'SOURCE_CREDENTIAL', message: '应答对你不可用（原因只记在管理员记录里）' } } })));
   assert.equal(held.opened_build.name, null);
-  assert.match(held.opened_build.note, /构建 17401 的记录没读到：应答有凭据扫描命中/);
+  // A held build record is a credential class: the reader is told only that it is not available (D05 R[3], decision 112).
+  assert.match(held.opened_build.note, /构建 17401 的记录没读到：应答对你不可用/);
+  assert.doesNotMatch(held.opened_build.note, /凭据/);
   assert.equal(held.fields.status, 'active', 'the bug itself is read whatever happened to the build record');
   const nameless = content(detailProject(input({ detail: { ok: true, json: bug('17401') }, opened: { ok: true, json: { code: 1000, data: { id: 17401 } } } })));
   assert.deepEqual(nameless.opened_build, { id: '17401', name: null, note: '构建 17401 的记录里没有名字' });
