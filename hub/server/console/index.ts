@@ -13,7 +13,7 @@ import { RecordsError, type Principal } from '../../records/api.ts';
 import type { ServerDeps } from '../api.ts';
 import type { CommandBridge } from '../command-bridge.ts';
 import { cookiesOf, mediaTypeOf, readBody, sendJson, setCommonHeaders } from '../http.ts';
-import { issuerOf, responseUri, type AuthorizationStore } from '../oauth.ts';
+import { AUTHORIZE_COOKIE, SECURE_AUTHORIZE_COOKIE, issuerOf, responseUri, type AuthorizationStore } from '../oauth.ts';
 import { MAX_INVITATION_FAILURES, authorizeSecurityPolicy, confirmPage, endedPage, expiredPage, identityPage, invitationProblem, refusedPage } from './authorize.ts';
 import { connectionsPage } from './connections.ts';
 import { handleApi, type ApiResult } from './api.ts';
@@ -273,7 +273,10 @@ export function authorizeRefusal(response: ServerResponse, status: number, messa
 async function authorizePage(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, session: ConsoleSession | null, secure: boolean, rest: string[]): Promise<void> {
   const store = options.authorizations;
   const open = rest.length === 1 && store !== undefined ? store.get(rest[0]) : null;
-  if (open === null || open.secure !== secure) {
+  // Only the browser that opened the request (it holds the cookie the authorization endpoint set) sees or answers it; to any
+  // other the request does not exist.
+  const bound = open !== null && cookiesOf(request).get(secure ? SECURE_AUTHORIZE_COOKIE : AUTHORIZE_COOKIE) === open.browser;
+  if (open === null || open.secure !== secure || !bound) {
     request.resume();
     return sendHtml(response, 410, expiredPage());
   }

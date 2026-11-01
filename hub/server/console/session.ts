@@ -95,13 +95,18 @@ export class SessionStore {
   }
 }
 
-/** Set-Cookie value: HttpOnly, SameSite=Strict, scoped to a path; no Max-Age makes it end with the browser session. */
-export function cookie(name: string, value: string, path: string, maxAgeSeconds?: number, secure = false): string {
-  return `${name}=${value}; Path=${path}; HttpOnly; SameSite=Strict${maxAgeSeconds === undefined ? '' : `; Max-Age=${maxAgeSeconds}`}${secure ? '; Secure' : ''}`;
+/**
+ * Set-Cookie value: HttpOnly, SameSite=Strict (Lax where a top-level navigation from another site must carry it), scoped
+ * to a path; no Max-Age makes it end with the browser session.
+ */
+export function cookie(name: string, value: string, path: string, maxAgeSeconds?: number, secure = false, lax = false): string {
+  return `${name}=${value}; Path=${path}; HttpOnly; SameSite=${lax ? 'Lax' : 'Strict'}${maxAgeSeconds === undefined ? '' : `; Max-Age=${maxAgeSeconds}`}${secure ? '; Secure' : ''}`;
 }
 
 export const LOGIN_LINK_TTL_MS = 5 * 60 * 1000;
 const MAX_LOGIN_LINKS = 1000;
+/** Open links of one token: a new one beyond this drops that token's oldest, never another account's. */
+const LINKS_PER_TOKEN = 5;
 const HOME = '/console/overview';
 
 /**
@@ -135,6 +140,8 @@ export class LoginLinkStore {
   issue(token: string, next: string): { code: string; expires: number } {
     const at = this.#now();
     for (const [key, link] of this.#links) if (link.expires <= at) this.#links.delete(key);
+    const own = [...this.#links].filter(([, link]) => link.token === token);
+    if (own.length >= LINKS_PER_TOKEN) this.#links.delete(own[0][0]);
     const code = secret();
     const expires = at + LOGIN_LINK_TTL_MS;
     this.#links.set(digest(code), { token, next: safeNext(next), expires });

@@ -105,18 +105,24 @@ RFC 8414, 7591, 8707, 9728, 7009, 9207), in `oauth.ts`, with no new dependency.
   public clients only (`none`), no refresh token, and the `iss` response parameter. `<origin>` is the scheme of the
   channel and the Host the request came with (already checked against the allowed hosts).
 - **Registration** (`POST /oauth/register`, RFC 7591): JSON, public clients only; redirect URIs are https, http on a
-  loopback address (any port at authorization, RFC 8252 7.3) or a private-use scheme, never a fragment or user
-  information; at most 100 registrations in 10 minutes (then 503 `temporarily_unavailable`). The self-chosen
+  loopback address (any port at authorization, RFC 8252 7.3) or a private-use scheme named by a reversed domain name
+  (`com.example.app:`, RFC 8252 7.1, which leaves out the operating system's handlers such as `tel:` or `ms-msdt:`), never
+  a fragment or user information; at most 100 registrations in 10 minutes (then 503 `temporarily_unavailable`). The self-chosen
   `client_name` loses control and format characters, keeps 100 characters, and labels the client's token.
-- **Authorization** (`GET /oauth/authorize`): an unknown client or a redirect URI that is not registered gets an error
-  page and no redirect; every other refusal goes back to the redirect URI with `error`, `state` and `iss`
-  (`unsupported_response_type`, `invalid_request` without PKCE S256, `invalid_target` for a resource that is not this
-  Hub's `/mcp`). An accepted request is kept in memory for `AUTHORIZATION_REQUEST_TTL_MS` (10 minutes) and the browser
-  goes to the console's authorization page `/console/authorize/<request>` (under `/console`, so the console session
-  cookie is sent): see the console below.
+- **Authorization** (`GET /oauth/authorize`): every refusal (an unknown client, a redirect URI that is not registered, a
+  response type other than `code`, no PKCE S256, a resource that is not this Hub's `/mcp`) is an error page and never a
+  redirect: a client registers its redirect URIs itself, so redirecting before anybody looked at the request would make the
+  Hub an open redirector (RFC 9700 4.11). An accepted request is kept in memory for `AUTHORIZATION_REQUEST_TTL_MS`
+  (10 minutes; at most ten open per client, the oldest ending first, and 5000 in all, beyond which new ones are refused
+  rather than evicting others) and the browser goes to the console's authorization page `/console/authorize/<request>`
+  (under `/console`, so the console session cookie is sent) with a cookie scoped to that page (`circle_hub_authorize`,
+  SameSite=Lax, 10 minutes): the request belongs to that browser, and to every other one it does not exist, so nobody can
+  finish, or watch, a request another browser identified itself on.
 - **Token** (`POST /oauth/token`, form encoding, each parameter once): the code is used once, within
   `AUTHORIZATION_CODE_TTL_MS` (2 minutes), by the client it was issued to, with the same redirect URI and resource and the
-  PKCE verifier of its challenge; a code presented again is refused and the token it gave is revoked (RFC 6749 4.1.2).
+  PKCE verifier of its challenge; a code presented again, by any client, is refused and the token it gave is revoked
+  (RFC 6749 4.1.2), also when the first exchange is still under way (it then revokes what it issues) and whatever the
+  account's state.
   The answer is an ordinary Hub token (`Bearer`, no `expires_in`, no refresh token) issued by the account to itself,
   labelled with the client's name and bound to the client (`tokens.client_id`). Hub tokens are checked against the records
   on every request, so revocation is immediate: disconnecting a Circle is revoking its token (`circle-hub token revoke`).
@@ -324,7 +330,8 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   a two-minute `circle_hub_ended` cookie scoped to `/console/login`, so the page says the sign-in ended, once.
 
 - **The authorization page** (`/console/authorize/<request>`, `console/authorize.ts`, decision 78): the request the
-  authorization endpoint accepted, for its 10 minutes, on the channel it was opened on. Without a console session the page
+  authorization endpoint accepted, for its 10 minutes, on the channel it was opened on, only for the browser holding the
+  request's cookie (any other gets the 410 page that says the request does not exist). Without a console session the page
   asks for an invitation code (no password, owner-confirmed item 1); a signed-in browser confirms for its own account and
   may still switch to an invitation; the page always names the account, the client (its self-chosen name and id), the
   redirect URI and the resource. Five wrong codes end the request. Its forms carry the request's own CSRF token and must
@@ -334,7 +341,8 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   sees that the request ended.
 - **One-time login links** (decision 78): a client asks with its Bearer token, `POST /console/api/login-links` with an
   optional JSON `{"next": "/console/…"}`, and gets `{url, expires_at}`: `/console/login/<code>`, valid
-  `LOGIN_LINK_TTL_MS` (5 minutes), used once, only its SHA-256 kept. `GET` shows which account it signs in and asks to
+  `LOGIN_LINK_TTL_MS` (5 minutes), used once, only its SHA-256 kept, at most five open per token (a sixth ends that
+  token's oldest). `GET` shows which account it signs in and asks to
   confirm (so a prefetch or a planted link signs nobody in); the `POST` (its own login nonce, this origin) opens a session
   on the client's token, which every page re-authenticates, and goes to `next`. A spent or expired link says so without
   naming the account. `next` is only ever a path of this console (`safeNext`); a page opened without a session sends the

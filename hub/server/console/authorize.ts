@@ -80,8 +80,8 @@ export function endedPage(request: AuthorizationRequest): Html {
 <p class="mt12">${approved ? html`已授权 <b>${request.client.name}</b> 连接本 Hub，可关闭本页。` : html`已拒绝 <b>${request.client.name}</b> 的授权请求，该客户端未获连接。`}</p>`);
 }
 
-/** A request that does not exist (expired, ended by too many wrong codes, or a restart of the Hub). */
-export function expiredPage(message = `授权请求已过期或不存在。授权请求 ${AUTHORIZATION_REQUEST_TTL_MS / 60_000} 分钟内有效，Hub 重启后失效。`): Html {
+/** A request that does not exist for this browser (expired, ended by too many wrong codes, a restart, another browser's). */
+export function expiredPage(message = `授权请求已过期、不存在，或不是由本浏览器发起的。授权请求 ${AUTHORIZATION_REQUEST_TTL_MS / 60_000} 分钟内有效，Hub 重启后失效。`): Html {
   return page(chrome('授权请求已失效'), html`<p class="mt12">${message}</p><p class="sub">请在 Circle 中重新连接 Hub，浏览器将打开新的授权页。</p>`);
 }
 

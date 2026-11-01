@@ -7,20 +7,30 @@
 // token endpoint exchanges it for an ordinary Hub token labelled with the client's name. Access tokens are the Hub's
 // long-lived revocable tokens, checked against the records on every request, so there is no refresh token: disconnecting a
 // Circle is revoking its token. Authorization requests live in memory for AUTHORIZATION_REQUEST_TTL_MS and codes for
-// AUTHORIZATION_CODE_TTL_MS; a restart ends both, as it ends console sessions. The error codes and descriptions on the wire
-// are the protocol's own (RFC 6749 5.2 and 4.1.2.1, RFC 7591 3.2.2, RFC 8707): codes of OAuth, ASCII descriptions.
+// AUTHORIZATION_CODE_TTL_MS; a restart ends both, as it ends console sessions. A request belongs to the browser that opened
+// it: the authorization endpoint sets a cookie for the request's page, and the page answers nothing without it, so nobody
+// else can finish (or watch) a request another browser identified itself on. A request the endpoint refuses is answered with
+// a page, never by redirecting to a URI a client registered for itself (no open redirector, RFC 9700 4.11). The error codes
+// and descriptions on the wire are the protocol's own (RFC 6749 5.2, RFC 7591 3.2.2): codes of OAuth, ASCII descriptions.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { LimitError, type OAuthClient, type Principals } from '../records/api.ts';
+import { cookie } from './console/session.ts';
 import { mediaTypeOf, readBody, sendJson, setCommonHeaders } from './http.ts';
 
 export const AUTHORIZATION_REQUEST_TTL_MS = 10 * 60 * 1000;
 export const AUTHORIZATION_CODE_TTL_MS = 2 * 60 * 1000;
 /** Where the authorization endpoint sends the browser: under /console, so the console session cookie is sent. */
 export const AUTHORIZE_PAGE = '/console/authorize';
-const MAX_REQUESTS = 1000;
+/** Open requests in all; beyond it new ones are refused, so a flood never evicts a request somebody is finishing. */
+const MAX_REQUESTS = 5000;
+/** Open requests of one client: a new one beyond this ends that client's oldest. */
+const REQUESTS_PER_CLIENT = 10;
 const MAX_CODES = 1000;
+/** The cookie that ties a request to the browser that opened it (scoped to the request's page). */
+export const AUTHORIZE_COOKIE = 'circle_hub_authorize';
+export const SECURE_AUTHORIZE_COOKIE = '__Secure-circle_hub_authorize';
 const FORM_LIMIT = 16 * 1024;
 const REGISTRATION_LIMIT = 16 * 1024;
 const VERIFIER = /^[A-Za-z0-9._~-]{43,128}$/;
@@ -54,7 +64,8 @@ export function resourceMetadataUrl(request: IncomingMessage, secure: boolean): 
 
 /**
  * Why a client may not register this redirect URI, or null: https, http on a loopback address (RFC 8252 7.3) or a
- * private-use scheme (RFC 8252 7.1); never a fragment or user information.
+ * private-use scheme named by a reversed domain name (RFC 8252 7.1: `com.example.app:`), which leaves out the operating
+ * system's own handlers (`tel:`, `ms-msdt:`, `search-ms:`, …); never a fragment or user information.
  */
 export function redirectUriProblem(uri: string): string | null {
   let url: URL;
@@ -67,7 +78,7 @@ export function redirectUriProblem(uri: string): string | null {
   if (url.username !== '' || url.password !== '') return 'a redirect URI has no user information';
   if (url.protocol === 'https:') return null;
   if (url.protocol === 'http:') return LOOPBACK_HOSTS.has(url.hostname) ? null : 'http is accepted for loopback addresses only';
-  if (REFUSED_SCHEMES.has(url.protocol) || !/^[a-z][a-z0-9+.-]*:$/.test(url.protocol)) return 'this scheme is not accepted';
+  if (REFUSED_SCHEMES.has(url.protocol) || !/^[a-z][a-z0-9+-]*(?:\.[a-z0-9+-]+)+:$/.test(url.protocol)) return 'a private-use scheme is a reversed domain name, such as com.example.app';
   return null;
 }
 
@@ -115,8 +126,10 @@ export interface AuthorizationRequest {
   /** Requests opened over HTTPS are answered only over HTTPS. */
   secure: boolean;
   created: number;
-  /** CSRF token of the page's forms when the browser has no console session. */
+  /** CSRF token of the page's forms. */
   csrf: string;
+  /** The value of the cookie that ties the request to the browser that opened it. */
+  browser: string;
   /** The invitation the identity step accepted, and its account. */
   invitation: { id: string; user: string; name: string; role: PermissionRole } | null;
   /** Wrong invitation codes typed for this request. */
@@ -132,8 +145,10 @@ export interface CodeGrant {
   user: string;
   expires: number;
   used: boolean;
-  /** The token the code was exchanged for, revoked if the code comes back (RFC 6749 4.1.2). */
+  /** The token the code was exchanged for (its value, kept while the code lives), revoked if the code comes back. */
   token: string | null;
+  /** The code came back (RFC 6749 4.1.2): an exchange still under way revokes what it issues. */
+  compromised: boolean;
 }
 
 export class AuthorizationStore {
@@ -145,11 +160,14 @@ export class AuthorizationStore {
     this.#now = now;
   }
 
-  open(fields: Pick<AuthorizationRequest, 'client' | 'redirectUri' | 'state' | 'challenge' | 'resource' | 'issuer' | 'secure'>): AuthorizationRequest {
+  /** A new request, or null when too many are open (a flood is refused instead of evicting others' requests). */
+  open(fields: Pick<AuthorizationRequest, 'client' | 'redirectUri' | 'state' | 'challenge' | 'resource' | 'issuer' | 'secure'>): AuthorizationRequest | null {
     this.#prune();
-    const request: AuthorizationRequest = { ...fields, id: secret(), created: this.#now(), csrf: secret(), invitation: null, failures: 0, ended: null };
+    const own = [...this.#requests.values()].filter((request) => request.client.id === fields.client.id);
+    if (own.length >= REQUESTS_PER_CLIENT) this.#requests.delete(own[0].id);
+    if (this.#requests.size >= MAX_REQUESTS) return null;
+    const request: AuthorizationRequest = { ...fields, id: secret(), created: this.#now(), csrf: secret(), browser: secret(), invitation: null, failures: 0, ended: null };
     this.#requests.set(request.id, request);
-    while (this.#requests.size > MAX_REQUESTS) this.#requests.delete(this.#requests.keys().next().value!);
     return request;
   }
 
@@ -173,7 +191,7 @@ export class AuthorizationStore {
     this.#prune();
     const code = secret();
     request.ended = 'approved';
-    this.#codes.set(digest(code), { client: request.client.id, redirectUri: request.redirectUri, challenge: request.challenge, resource: request.resource, user, expires: this.#now() + AUTHORIZATION_CODE_TTL_MS, used: false, token: null });
+    this.#codes.set(digest(code), { client: request.client.id, redirectUri: request.redirectUri, challenge: request.challenge, resource: request.resource, user, expires: this.#now() + AUTHORIZATION_CODE_TTL_MS, used: false, token: null, compromised: false });
     while (this.#codes.size > MAX_CODES) this.#codes.delete(this.#codes.keys().next().value!);
     return code;
   }
@@ -357,21 +375,25 @@ async function authorize(response: ServerResponse, url: URL, options: OAuthOptio
   const redirectUri = sent ?? (client.redirect_uris.length === 1 ? client.redirect_uris[0] : null);
   if (redirectUri === null || !redirectMatches(client.redirect_uris, redirectUri)) return refuse(response, 400, '授权请求无效：回调地址与客户端登记的地址不一致。请在 Circle 中重新连接 Hub。');
   const state = query.get('state');
-  const back = (error: string, description: string): void => {
-    setCommonHeaders(response);
-    response.writeHead(303, { location: responseUri(redirectUri, { error, error_description: description, state, iss: issuer }), 'content-length': '0' });
-    response.end();
-  };
-  if (query.get('response_type') !== 'code') return back('unsupported_response_type', 'only response_type code is supported');
+  // Refused before anybody looked at the request: a page, not a redirect to a URI the client chose for itself.
+  if (query.get('response_type') !== 'code') return refuse(response, 400, '授权请求无效：只支持授权码（response_type=code）。请在 Circle 中重新连接 Hub。');
   const challenge = query.get('code_challenge');
-  if (challenge === null || !CHALLENGE.test(challenge) || query.get('code_challenge_method') !== 'S256') return back('invalid_request', 'PKCE with code_challenge_method S256 is required');
-  if (state !== null && state.length > 2000) return back('invalid_request', 'state is longer than 2000 characters');
+  if (challenge === null || !CHALLENGE.test(challenge) || query.get('code_challenge_method') !== 'S256') return refuse(response, 400, '授权请求无效：需要 PKCE（code_challenge_method=S256）。请在 Circle 中重新连接 Hub。');
+  if (state !== null && state.length > 2000) return refuse(response, 400, '授权请求无效：state 超过 2000 个字符。');
   const resource = `${issuer}/mcp`;
   const asked = query.get('resource');
-  if (asked !== null && asked !== resource) return back('invalid_target', 'the resource is not this server\'s /mcp');
+  if (asked !== null && asked !== resource) return refuse(response, 400, '授权请求无效：访问范围不是本 Hub 的 MCP 服务。请在 Circle 中重新连接 Hub。');
   const opened = options.store.open({ client, redirectUri, state, challenge, resource, issuer, secure });
+  if (opened === null) return refuse(response, 503, '当前待处理的授权请求过多，请稍后在 Circle 中重新连接 Hub。');
+  const page = `${AUTHORIZE_PAGE}/${opened.id}`;
   setCommonHeaders(response);
-  response.writeHead(303, { location: `${AUTHORIZE_PAGE}/${opened.id}`, 'content-length': '0', ...NO_STORE });
+  response.writeHead(303, {
+    location: page,
+    'content-length': '0',
+    // Lax: the browser arrives from the client's own navigation, which a Strict cookie set on this redirect may not follow.
+    'set-cookie': cookie(secure ? SECURE_AUTHORIZE_COOKIE : AUTHORIZE_COOKIE, opened.browser, page, AUTHORIZATION_REQUEST_TTL_MS / 1000, secure, true),
+    ...NO_STORE,
+  });
   response.end();
 }
 
@@ -390,14 +412,16 @@ async function token(request: IncomingMessage, response: ServerResponse, options
   if (client === null) return oauthError(response, 401, 'invalid_client', 'unknown client_id', { 'www-authenticate': 'Bearer realm="circle-hub"' });
   const code = form.get('code') ?? '';
   const taken = code === '' ? null : options.store.take(code);
-  if (taken === null || taken.grant.client !== client.id) return oauthError(response, 400, 'invalid_grant', 'the authorization code is invalid or expired');
+  if (taken === null) return oauthError(response, 400, 'invalid_grant', 'the authorization code is invalid or expired');
   const grant = taken.grant;
   if (taken.reused) {
-    // RFC 6749 4.1.2: a code presented again revokes the token it gave.
-    await revokeReusedGrant(options.principals, grant);
+    // RFC 6749 4.1.2: a code presented again revokes the token it gave; an exchange still under way revokes it itself.
+    grant.compromised = true;
+    if (grant.token !== null) await options.principals.revokeTokenValue(grant.token);
     options.log(`标准授权：客户端 ${client.id} 的授权码被再次使用，由它签发的令牌已吊销`);
     return oauthError(response, 400, 'invalid_grant', 'the authorization code was already used');
   }
+  if (grant.client !== client.id) return oauthError(response, 400, 'invalid_grant', 'the authorization code is invalid or expired');
   if ((form.get('redirect_uri') ?? '') !== grant.redirectUri) return oauthError(response, 400, 'invalid_grant', 'redirect_uri differs from the authorization request');
   if (!pkceMatches(form.get('code_verifier') ?? '', grant.challenge)) return oauthError(response, 400, 'invalid_grant', 'code_verifier does not match the code_challenge');
   const resource = form.get('resource');
@@ -405,7 +429,11 @@ async function token(request: IncomingMessage, response: ServerResponse, options
   const user = await options.principals.get(grant.user);
   if (user === null || user.disabled) return oauthError(response, 400, 'invalid_grant', 'the account is not available');
   const issued = await options.principals.issueToken({ id: user.id, name: user.name, role: user.role }, user.id, client.name, client.id);
-  grant.token = issued.id;
+  if (grant.compromised) {
+    await options.principals.revokeTokenValue(issued.token);
+    return oauthError(response, 400, 'invalid_grant', 'the authorization code was used twice');
+  }
+  grant.token = issued.token;
   options.log(`标准授权：${user.name}（${user.id}）的令牌 ${issued.id} 已签发给客户端 ${client.id}（${client.name}）`);
   sendJson(response, 200, { access_token: issued.token, token_type: 'Bearer' }, NO_STORE);
 }
@@ -420,10 +448,4 @@ async function revoke(request: IncomingMessage, response: ServerResponse, option
   setCommonHeaders(response);
   response.writeHead(200, { 'content-length': '0', ...NO_STORE });
   response.end();
-}
-
-async function revokeReusedGrant(principals: Principals, grant: CodeGrant): Promise<void> {
-  if (grant.token === null) return;
-  const user = await principals.get(grant.user);
-  if (user !== null) await principals.revokeToken({ id: user.id, name: user.name, role: user.role }, grant.token);
 }
