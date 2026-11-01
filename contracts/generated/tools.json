@@ -702,6 +702,31 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "run_context": {
+                "description": "the run-context parts the workflow declares beyond the defaults and its lease prefix; absent when it declares none (decision 113)",
+                "type": "object",
+                "properties": {
+                  "parts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "builds",
+                        "leases",
+                        "observations"
+                      ]
+                    }
+                  },
+                  "lease_prefix": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "parts"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
@@ -718,6 +743,188 @@
             ],
             "additionalProperties": false
           }
+        },
+        "index": {
+          "description": "Every pack of the same filter, one row each, whatever the offset",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pack": {
+                "type": "string",
+                "description": "id@version"
+              },
+              "title": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "product",
+                  "workflow",
+                  "system",
+                  "skill"
+                ]
+              }
+            },
+            "required": [
+              "pack",
+              "title",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "context": {
+          "type": "object",
+          "properties": {
+            "leases": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "prefix": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "packs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "the listed packs (id@version) that declare this lease prefix"
+                  },
+                  "registrations": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "prefix": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "mine": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "prefix",
+                        "mine"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "held": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "since": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        "until": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "run": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "jobs": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "mine": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "since",
+                        "until",
+                        "run",
+                        "jobs",
+                        "mine"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "prefix",
+                  "packs",
+                  "registrations",
+                  "held"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "observations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "build": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "base": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "observed_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "packs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "the listed packs (id@version) that declare the observations context"
+                  }
+                },
+                "required": [
+                  "label",
+                  "build",
+                  "base",
+                  "observed_at",
+                  "packs"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "leases",
+            "observations"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -3083,6 +3290,57 @@
             "counts"
           ],
           "additionalProperties": false
+        },
+        "accepted_by": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "pack": {
+                      "type": "string",
+                      "description": "id@version"
+                    },
+                    "slot": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "expected",
+                        "subject",
+                        "artifact_under_verification",
+                        "reported_actual",
+                        "republished",
+                        "hint",
+                        "request_text"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "pack",
+                    "slot",
+                    "role"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "type",
+              "inputs"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

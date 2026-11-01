@@ -773,6 +773,10 @@ export class ReadEngine {
     const total = order.length + nestedOrder.length;
     const incompleteNested=[...nested].filter(([,state])=>!state.view.ok || state.view.coverage?.complete===false).map(([external])=>external);
     if(incompleteNested.length && !note)note=`嵌套来源尚未完整：${incompleteNested.slice(0,10).join('、')}；恢复失败来源后重读本对象，再确认完整范围`;
+    // Which responses the count leaves out, by request key and route, with the reason a pack function is given for them
+    // (held and hidden classes neutral): coverage names what is missing (A05 R[1], decision 113).
+    const unread=order.filter(key=>!covered(key) && !absent?.responses?.includes(key));
+    if(unread.length){const said=`没有读进的应答 ${unread.length} 个：${unread.slice(0,10).map(key=>{const state=responses.get(key);const route=entries.find(entry=>entry.key===key)?.route;return `${key}${route?`（路由 ${route}）`:''}：${state===undefined?'没有发出':forFunction(state).error?.message??'没有读进'}`;}).join('；')}`;note=note?`${said}；${note}`:said;}
     const ok = failure === null;
     const manifest: ReadManifest = {
       action: 'read',

@@ -11,3 +11,9 @@ test('oversized feeding metadata is disclosed as omitted without dropping the pr
  const result=feedingText('回执：已受理\n追踪 synthetic',{feeding_objects:Array(1000).fill('a'.repeat(64)),feeding_pending:[]});
  assert.ok(result.length<=TEXT_BUDGET);assert.match(result,/回执：已受理/);assert.match(result,/喂入说明/);assert.match(result,/structuredContent/);assert.ok(result.endsWith('追踪 synthetic'));
 });
+test('the frozen offset is named only for a run: a content read has none, a run without one says the horizon is unknown',()=>{
+ const content=feedingText('内容\n追踪 synthetic',{content:{},feeding_objects:[],feeding_pending:[]});
+ assert.match(content,/喂入清单：\[\]\n/);assert.doesNotMatch(content,/冻结|旧运行/);
+ const run=feedingText('运行\n追踪 synthetic',{run:{},feeding_objects:[],feeding_pending:[]});
+ assert.match(run,/喂入清单：\[\]；这个运行没有冻结喂入序号，喂入边界未知/);assert.doesNotMatch(run,/旧运行/);
+});

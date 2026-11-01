@@ -30,10 +30,17 @@ test('authorized manifest and every listed dependency retain canonical identity 
   const file = await get('/local-tools/fixture-tools@10.6.0/tools/fixture.ts'); assert.equal(file.status, 200); assert.deepEqual(file.bytes, content); assert.equal(file.headers['content-digest'], digestHeader(content));
   assert.equal((await get('/local-tools/fixture-tools@10.6.0/product.json')).bytes.toString(), '{}');
 });
-test('unassigned withdrawn absent no-tool outside traversal and encoded-slash requests have identical answers', async () => {
-  const paths = ['unassigned@10.6.0', 'withdrawn@10.6.0', 'absent@10.6.0', 'no-tools@10.6.0', 'fixture-tools@10.6.0/tools/absent.ts', 'fixture-tools@10.6.0/../product.json', 'fixture-tools@10.6.0/tools%2ffixture.ts'];
+test('withdrawn absent no-tool outside traversal and encoded-slash requests have identical answers', async () => {
+  const paths = ['withdrawn@10.6.0', 'absent@10.6.0', 'no-tools@10.6.0', 'fixture-tools@10.6.0/tools/absent.ts', 'fixture-tools@10.6.0/../product.json', 'fixture-tools@10.6.0/tools%2ffixture.ts'];
   const results = await Promise.all([...paths.map((path) => get('/local-tools/' + path)), get('/local-tools%2ffixture-tools@10.6.0'), get('/local-tools/fixture-tools@10.6.0/%2e%2e/product.json')]);
   for (const result of results) { assert.equal(result.status, 404); assert.deepEqual(result.bytes, results[0]!.bytes); assert.equal(result.headers['content-digest'], undefined); }
+});
+test('an unassigned version is said to exist and not be assigned, with who can assign it (D05 R[3], decision 113)', async () => {
+  const result = await get('/local-tools/unassigned@10.6.0');
+  assert.equal(result.status, 403);
+  assert.equal(result.bytes.toString(), '这个版本存在，没有分配给你；请管理员把这个任务包分配给你\n');
+  assert.equal(result.headers['content-digest'], undefined);
+  assert.equal(calls.at(-1)?.adminNote, '版本没有分配给这个用户');
 });
 test('authentication is checked on every request and missing and revoked tokens are identical', async () => {
   const missing = await get('/local-tools/fixture-tools@10.6.0', 'GET', null); revoked = true;
@@ -55,7 +62,6 @@ test('HEAD has no body POST is 405 and shared Host and Origin checks still apply
 test('admin notes name each refusal while the answer bytes stay the same', async () => {
   const cases = [
     ['/local-tools/absent@10.6.0', '版本不存在'],
-    ['/local-tools/unassigned@10.6.0', '版本没有分配给这个用户'],
     ['/local-tools/withdrawn@10.6.0', '版本已下架'],
     ['/local-tools/no-tools@10.6.0', '这个版本没有本地工具'],
     ['/local-tools/fixture-tools@10.6.0/tools/absent.ts', '清单外路径'],

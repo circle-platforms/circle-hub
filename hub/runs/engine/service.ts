@@ -16,6 +16,7 @@ import { getResult, getRun, listRuns, runsFor, type StoredResult } from './queri
 import { submissionByDigest } from './store.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
 import { submitResult, type SubmitAnswer } from './submit.ts';
+import { packContext } from './pack-context.ts';
 import { wellFormed } from './util.ts';
 
 /** Longest single message one call's admin note takes from the engine, in code points (the server clips the joined note again). */
@@ -134,6 +135,9 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
     },
     listRuns(user, query) {
       return withRequestPermissions(ctx.deps.records.artifacts,user,()=>listRuns(ctx, user, query));
+    },
+    packContext(user, packs) {
+      return packContext(ctx, user, packs);
     },
     getResult(user, run, submission) {
       return withRequestPermissions(ctx.deps.records.artifacts,user,()=>getResult(ctx, user, run, submission));

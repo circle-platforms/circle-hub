@@ -18,7 +18,7 @@ import {
 } from '../generated/vocabulary.ts';
 import { Claim } from './claim.ts';
 import { Coverage, Versioned, IsoTime, ItemId, LeaseId, PackId, PackVersion, RunId, Sha256, UserId } from './common.ts';
-import { ContextBuild, DeviceObservation, IndexBindingDefault, LeaseContextRow, LeaseRegistrationRow, PredecessorInputDefault, RunResultSource } from './pack.ts';
+import { ContextBuild, ContextKeySchema, DeviceObservation, IndexBindingDefault, LeaseContextRow, LeaseRegistrationRow, PredecessorInputDefault, RunResultSource } from './pack.ts';
 import { ExternalObjectId, ReferenceUri, referenceUriOf } from './reference.ts';
 
 /** One input given to start_run: bytes already uploaded, or an external object the Hub reads (read-only) with the pack's system adapter. Exactly one key. */
@@ -110,6 +110,8 @@ export const PackSummary = z.strictObject({
   inputs: z.array(InputSlotSummary),
   parameters: z.array(z.strictObject({ name: z.string(), description: z.string(), required: z.boolean(), schema: z.record(z.string(), z.unknown()).optional().describe('JSON Schema 2020-12 of the value, as the pack declares it; absent when the pack declares none') })),
   requirements: z.array(RequirementSummary),
+  run_context: z.strictObject({ parts: z.array(ContextKeySchema), lease_prefix: z.string().min(1).optional() }).optional()
+    .describe('the run-context parts the workflow declares beyond the defaults and its lease prefix; absent when it declares none (decision 113)'),
 });
 export type PackSummary = z.infer<typeof PackSummary>;
 

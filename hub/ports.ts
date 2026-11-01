@@ -12,7 +12,7 @@ import type { PackSummary } from '../contracts/src/run.ts';
 import type { ProductDeclaration, KnownBuild } from '../contracts/src/product.ts';
 import type { ProtocolError } from '../contracts/src/common.ts';
 import type { RunRecord, RunRecordView } from '../contracts/src/run.ts';
-import type { ResolveReferenceInput, ResolveReferenceOutput, StartRunInput, StartRunOutput, SubmitResultOutput, GetNodesOutput } from '../contracts/src/tools.ts';
+import type { PackContextView, ResolveReferenceInput, ResolveReferenceOutput, StartRunInput, StartRunOutput, SubmitResultOutput, GetNodesOutput } from '../contracts/src/tools.ts';
 import type { ValidationResult } from '../contracts/src/validation.ts';
 import type { Acceptance } from '../contracts/generated/vocabulary.ts';
 import type { Page, Principal, SourceArtifact } from './records/api.ts';
@@ -74,7 +74,8 @@ export interface LoadedWorkflow {
 }
 
 /** Why forUser had no workflow. null from absence means the version is published, assigned and not withdrawn. */
-export type WorkflowAbsence = 'unknown' | 'unassigned' | 'withdrawn' | 'disabled';
+/** `uninstalled`: a skill pack version that exists and is not installed on this Hub (installation is Hub-wide, not per user). */
+export type WorkflowAbsence = 'unknown' | 'unassigned' | 'uninstalled' | 'withdrawn' | 'disabled';
 
 /** What the engine needs of the pack registry (provided by runs/packs, consumed by runs/engine and the server). */
 export interface WorkflowStore {
@@ -198,7 +199,7 @@ export interface RunListing extends Page<RunRecordView> {requests?:RunRequestVie
 export interface RunsService {
   abandonRun?(user:Principal,run:string,request:string,reason:string):Promise<{record:string;result:ValidationResult;decision:string;created:boolean;current:boolean}>;
   listRequests?(user: Principal, run?: string): Promise<RunRequestView[]>;
-  /** Absent and forbidden give the same SOURCE_UNAVAILABLE answer with the tool's empty shape. */
+  /** An absent pack or predecessor answers SOURCE_ABSENT, one the user may not use SOURCE_NOT_PERMITTED (D05 R[3]), with the tool's empty shape. */
   startRun(user: Principal, input: z.infer<typeof StartRunInput>, context: CallContext): Promise<Untraced<z.infer<typeof StartRunOutput>>>;
   /** `args` are the raw arguments of the call: they are stored as received before anything else (W07). */
   submitResult(user: Principal, args: Record<string, unknown>, context: CallContext): Promise<Untraced<z.infer<typeof SubmitResultOutput>>>;
@@ -210,6 +211,11 @@ export interface RunsService {
   exportRun?(user: Principal, run: string): Promise<{ run: RunDetail['run']; result: ValidationResult | null; submission: unknown | null } | null>;
   /** Own runs for a user, every run for an admin, newest first. */
   listRuns(user: Principal, query?: { pack?: string; limit?: number; cursor?: string | null }): Promise<RunListing>;
+  /**
+   * list_task_packs (decision 113): what the run context of these listed packs would hold now — the lease view of each declared
+   * prefix and the newest device observations; null when none of them declares the leases or observations context.
+   */
+  packContext?(user: Principal, packs: ReadonlyArray<Pick<PackSummary, 'pack' | 'run_context'>>): Promise<PackContextView | null>;
 }
 
 // ---------------------------------------------------------------- read-only listings for the console

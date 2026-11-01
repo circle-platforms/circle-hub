@@ -61,7 +61,7 @@ type SubmitOut = z.infer<typeof SubmitResultOutput>;
  */
 export interface TextContext {
   /** list_task_packs: the exact filters and absolute offset needed to continue the same list. */
-  packList?: { offset: number; kind?: string; packId?: string };
+  packList?: { offset: number; kind?: string; packId?: string; contextUnread?: boolean };
   /** The server takes get_nodes {reference, cursor} and passes the cursor back here: only then are page cursors offered. */
   paging?: boolean;
   /** get_nodes with a reference: the page cursor the caller gave (made by pageCursor for an earlier page). */
@@ -408,14 +408,47 @@ function packEntry(p: PackSummary): Entry {
   return clip.entry(lines);
 }
 
+/** The run context of the listed packs right now (decision 113): lease views and device observations, never who holds a key. */
+function contextEntries(c: NonNullable<ListOut['context']>): Entry[] {
+  const clip = new Clip(null, '在控制台任务包页 /console/packs 查看');
+  const entries: Entry[] = c.leases.map((l) => {
+    const registered = l.registrations.length > 0 ? l.registrations.map((r) => `${clip.field(r.prefix, CLIP.code, '登记前缀的超出部分')}（${r.mine ? '你登记的' : '有主人'}）`).join('、') : '没有';
+    const held = l.held.slice(0, HELD_SHOWN).map((h) => `${clip.field(h.key, CLIP.code, '租约键的超出部分')}（运行 ${h.run}，起于 ${h.since}${h.until !== null ? `，到 ${h.until}` : ''}${h.jobs.length > 0 ? `，未结束的作业 ${h.jobs.join('、')}` : ''}${h.mine ? '，你占着' : ''}）`);
+    const rest = l.held.length > HELD_SHOWN ? `；其余 ${l.held.length - HELD_SHOWN} 个开运行后在运行上下文里读` : '';
+    return clip.entry(`- 租约前缀 ${clip.field(l.prefix, CLIP.code, '租约前缀的超出部分')}（${l.packs.join('、')} 用）：已登记的前缀 ${registered}；占用中的键 ${l.held.length} 个${held.length > 0 ? `：${held.join('；')}${rest}` : ''}`);
+  });
+  const observed = c.observations;
+  const users = observed[0]?.packs ?? [];
+  if (observed.length > 0) {
+    entries.push(clip.entry(`- 设备最近一次观察（${users.join('、')} 的上下文；只对观察时刻成立）：${observed.map((o) => `${clip.field(o.label, CLIP.name, '设备标签的超出部分')} ${o.build === null ? '没有抽到构建' : `构建 ${clip.field(o.build, CLIP.name, '构建名的超出部分')}`}${o.base !== null && o.base !== o.build ? `（基础构建 ${clip.field(o.base, CLIP.name, '构建名的超出部分')}）` : ''}，观察于 ${o.observed_at}`).join('；')}`));
+  }
+  return entries;
+}
+const HELD_SHOWN = 30;
+
 function listText(v: ListOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
-  const head = [`可用的任务包 ${v.packs.length} 个`];
+  const index = v.index ?? v.packs.map((p) => ({ pack: p.pack, title: p.title, kind: p.kind }));
+  const offset = context.packList?.offset ?? 0;
+  const head = [`可用的任务包 ${index.length} 个${offset > 0 ? `；详情从第 ${offset + 1} 个起` : ''}`];
   if (v.packs.some((p) => p.inputs.length > 0 || p.parameters.length > 0)) {
     const product = v.packs.some((p) => p.products.length > 0) ? '；product 换成被判对象所属产品线的名字（“产品”里列出的任一个）' : '';
     head.push(`示例 start_run 里的 ${EXAMPLE_SOURCE.slice(0, 8)}… 换成 upload_file 返回的引用，尖括号里的占位换成真实的编号或取值${product}`);
   }
-  const packs: Block = { priority: 1, entries: v.packs.map(packEntry), unit: '任务包', measure: '个', more: (from) => {
+  const indexClip = new Clip(null, '在控制台任务包页 /console/packs 查看');
+  const listed: Block = {
+    priority: 0,
+    head: [`索引（${index.length} 个，同样的筛选下的全部任务包；编号@版本${SEPARATOR}标题${SEPARATOR}类型）：`],
+    entries: index.map((row) => indexClip.entry(`- ${row.pack}${SEPARATOR}${indexClip.field(row.title, CLIP.name, '任务包标题的超出部分')}${SEPARATOR}${labelOf('pack_kind', row.kind)}`)),
+    unit: '任务包', measure: '个',
+  };
+  const blocks: Block[] = [{ priority: 0, head }, listed];
+  if (v.context !== undefined && (v.context.leases.length > 0 || v.context.observations.length > 0)) {
+    blocks.push({ priority: 0, head: ['运行上下文（声明了租约或设备观察的任务包开运行时 Hub 给的事实；这里是此刻的摘要，开运行时重新冻结）：'], entries: contextEntries(v.context), unit: '运行上下文', measure: '行' });
+  } else if (context.packList?.contextUnread === true) {
+    blocks.push({ priority: 0, head: ['运行上下文：这次没有读出（原因已记入管理员日志）；开运行时 Hub 照常冻结'] });
+  }
+  const packs: Block = { priority: 1, head: ['详情（每个任务包的产品、输入、参数、示例和要求项）：'], entries: v.packs.map(packEntry), unit: '任务包', measure: '个', more: (from) => {
     const list = context.packList;
     if (!list) return '任务包：在控制台任务包页 /console/packs 查看';
     if (from === 0 && list.packId === v.packs[0]?.id) return '单个任务包详情超出回答预算；在控制台任务包页 /console/packs 查看';
@@ -423,7 +456,8 @@ function listText(v: ListOut, context: TextContext): string {
     const next = { ...(list.kind === undefined ? {} : { kind: list.kind }), ...(list.packId === undefined ? {} : { pack_id: list.packId }), offset: list.offset + from };
     return `任务包：继续 list_task_packs ${JSON.stringify(next)}；也可在控制台任务包页 /console/packs 查看`;
   } };
-  return fit([{ priority: 0, head }, packs], { tail: [traceLine(v.trace)] }).text;
+  blocks.push(packs);
+  return fit(blocks, { tail: [traceLine(v.trace)] }).text;
 }
 
 // ---------------------------------------------------------------- upload_file
@@ -993,6 +1027,15 @@ function startText(v: StartOut, context: TextContext): string {
     }),
   ];
   blocks.push({ priority: 1, head: [sources.length + gaps.length > 0 ? '来源：' : '来源：没有绑定'], entries: [...sources, ...gaps], unit: '来源', measure: '个', more: () => `来源：${seeConsole(r.run)}` });
+  if (v.accepted_by !== undefined && v.accepted_by.length > 0) {
+    blocks.push({
+      priority: 1,
+      head: ['接受这类对象的任务包输入（你能用的任务包里，接受类型与来源的外部对象类型逐字相同的输入；怎么用见 list_task_packs 的详情）：'],
+      entries: v.accepted_by.map((a) => `- ${a.type}：${a.inputs.map((i) => `${i.pack} 输入 ${i.slot}（${labelOf('source_role', i.role)}）`).join('；')}`),
+      unit: '对象类型', measure: '个',
+      more: () => '其余接受这类对象的输入：list_task_packs 详情里每个输入的“接受”',
+    });
+  }
   const items = itemLines(r.items, record, r.run);
   const itemsMore = (from: number): string => {
     const next = paged('/items', from);
@@ -1618,7 +1661,10 @@ export function feedingText(text:string,value:unknown):string {
   const v=recordsOf(value),more='完整喂入清单和未知见本次回答的 structuredContent；运行详情见控制台运行页';
   const rows:string[]=[];
   if(Array.isArray(v.feeding_pending))for(const pending of v.feeding_pending){const p=recordsOf(pending);rows.push('喂入未知：'+String(p.missing)+'；下一步：'+String(p.next_action));}
-  if('feeding_objects'in v)rows.push('喂入清单：'+JSON.stringify(v.feeding_objects)+('feeding_offset'in v?'；冻结序号：'+JSON.stringify(v.feeding_offset):'；缺冻结序号：旧运行需另开运行'));
+  // The frozen offset belongs to a run (W06): an answer about no run (a content read) has none to name, and a run record
+  // without one is a run started before offsets were frozen, whose feeding horizon stays unknown (decision 113).
+  const offset='feeding_offset'in v?'；冻结序号：'+JSON.stringify(v.feeding_offset):'run'in v?'；这个运行没有冻结喂入序号，喂入边界未知':'';
+  if('feeding_objects'in v)rows.push('喂入清单：'+JSON.stringify(v.feeding_objects)+offset);
   if(!rows.length)return text;
   // Fit disclosures first so that even a large feeding receipt cannot consume the whole answer.
   const disclosure=fit([{priority:0,entries:rows,unit:'喂入说明',measure:'条',more:()=>more}],{budget:6000,fallback:more}).text;

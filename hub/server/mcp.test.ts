@@ -221,13 +221,18 @@ describe('list_task_packs', () => {
       const user = await other.createUser('合成列表用户');
       for (const pack of packs) await other.assign(user.principal, pack.id);
       const client = await other.client(user.token);
+      // Every choice is on the first page whatever the budget (A05 R[1], decision 113): one index row per pack.
+      const first = await client.call('list_task_packs', { kind: 'workflow' });
+      assert.deepEqual([...(first.content[0].text ?? '').matchAll(/^- (sample-\d{3})@\S+ \| /gm)].map((match) => match[1]!), packs.map((pack) => pack.id), 'the index lists all 80');
+      assert.deepEqual((first.structuredContent.index as { pack: string }[]).map((row) => row.pack.split('@')[0]), packs.map((pack) => pack.id));
       const found: string[] = [];
       let offset = 0;
       for (let page = 0; page < 20; page++) {
         const result = await client.call('list_task_packs', { kind: 'workflow', offset });
         const text = result.content[0].text ?? '';
         assert.ok(text.length <= 30_000);
-        found.push(...[...text.matchAll(/^- (sample-\d{3})@/gm)].map((match) => match[1]!));
+        assert.equal([...text.matchAll(/^- (sample-\d{3})@\S+ \| /gm)].length, 80, 'every page repeats the whole index');
+        found.push(...[...text.matchAll(/^- (sample-\d{3})@\S+ (?!\| )/gm)].map((match) => match[1]!));
         const next = text.match(/list_task_packs (\{[^}]+\})/);
         if (!next) break;
         const args = JSON.parse(next[1]!) as { kind: string; offset: number };
