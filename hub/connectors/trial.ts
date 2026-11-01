@@ -1,9 +1,10 @@
 // A read-only trial of a system pack with a configuration that is not saved: the console's 测试连接 before a business system
 // is connected. The typed base URLs and credential values reach one HttpSource and nothing else: no resource, no secret, no
-// session entry, no object, no record. The configuration is checked by the rules of a saved resource (resource@1 and the
+// session entry, no object, no record (a login that failed leaves its digest, never its values, in the vault entry
+// TRIAL_LOGIN_STOPS). The configuration is checked by the rules of a saved resource (resource@1 and the
 // pack's roles and credentials). The login exchange, when the pack declares one, is sent at most once and never repeated
-// after a failure; the same values that failed are not sent again by a later trial of this process, since an account may
-// lock after repeated failures. Then every route a request can be made on without arguments (a literal path, no required
+// after a failure; the same values that failed are not sent again by any later trial, after a restart too, since an
+// account may lock after repeated failures. Then every route a request can be made on without arguments (a literal path, no required
 // query member, no body) is requested once, in the declared order, with the credential where its role carries it, until
 // TRIAL_ROUTES routes or TRIAL_DEADLINE_MS; the answer is interpreted as a read interprets it (status, envelope, JSON) and
 // dropped. A redirect is never followed: on a route declared with same-origin hops its result is unknown, on any other it
@@ -12,7 +13,7 @@
 import { createHash } from 'node:crypto';
 import type { Environment } from '../../contracts/generated/vocabulary.ts';
 import { ResourceRecord, type HttpMethod, type RouteDeclaration, type SystemProfile } from '../../contracts/src/resources.ts';
-import { canonicalBytes } from '../records/api.ts';
+import { canonicalBytes, type RecordStore, type Vault } from '../records/api.ts';
 import { CONNECTOR_ERRORS, ConnectorError, isConnectorErrorCode } from './errors.ts';
 import { HttpSource, type ConnectorLog, type FetchLike } from './http.ts';
 import { fillTemplate } from './login.ts';
@@ -24,8 +25,62 @@ import { declaredCredentials, profileProblem, storedCredential } from './resourc
 export const TRIAL_ROUTES = 20;
 /** After this long no further route is requested; the rest are reported as not tried. */
 export const TRIAL_DEADLINE_MS = 60_000;
-/** Failed logins this process remembers (as digests) so that the same values are not sent again. */
-const REMEMBERED_FAILURES = 1000;
+/** The vault entry that keeps the digests of the trial logins that failed (`circle-hub secret list` names it). */
+export const TRIAL_LOGIN_STOPS = 'login-stop.trial';
+/** Digests kept; past it the oldest goes, one at a time (the list is never cleared). */
+const REMEMBERED_FAILURES = 10_000;
+const DIGEST = /^[0-9a-f]{64}$/;
+
+/** The logins that failed in earlier trials, by digest: the same values are never sent again. */
+export interface FailedLogins {
+  /** Rejects when the record of failures cannot be read. */
+  has(key: string): Promise<boolean>;
+  /** False when only this process remembers it: the vault could not be written. */
+  add(key: string): Promise<boolean>;
+}
+
+/**
+ * The failed trial logins, sealed in the vault entry TRIAL_LOGIN_STOPS so that a restart does not forget them: digests of
+ * the pack, the login origin and path and the filled body, never the values. Writers take the store's lock on the entry
+ * (as CredentialStop does); what this process could not write it still remembers.
+ */
+export class TrialLoginStops implements FailedLogins {
+  readonly #store: Pick<RecordStore, 'withTransaction' | 'lock'>;
+  readonly #vault: Pick<Vault, 'getText' | 'put'>;
+  readonly #memory = new Set<string>();
+  constructor(store: Pick<RecordStore, 'withTransaction' | 'lock'>, vault: Pick<Vault, 'getText' | 'put'>) {
+    this.#store = store;
+    this.#vault = vault;
+  }
+
+  async #read(): Promise<string[]> {
+    const text = await this.#vault.getText(TRIAL_LOGIN_STOPS);
+    if (text === null) return [];
+    const kept: unknown = JSON.parse(text);
+    const failed = typeof kept === 'object' && kept !== null && (kept as { v?: unknown }).v === 1 ? (kept as { failed?: unknown }).failed : undefined;
+    if (Array.isArray(failed) && failed.every((key) => typeof key === 'string' && DIGEST.test(key))) return failed;
+    throw new ConnectorError('STORE_FAILED', '测试连接的登录失败记录不可读');
+  }
+
+  async has(key: string): Promise<boolean> {
+    return this.#memory.has(key) || (await this.#read()).includes(key);
+  }
+
+  async add(key: string): Promise<boolean> {
+    this.#memory.add(key);
+    try {
+      await this.#store.withTransaction(async (tx) => {
+        await this.#store.lock(TRIAL_LOGIN_STOPS, tx);
+        const failed = (await this.#read()).filter((kept) => kept !== key);
+        failed.push(key);
+        await this.#vault.put(TRIAL_LOGIN_STOPS, canonicalBytes({ v: 1, failed: failed.slice(-REMEMBERED_FAILURES) }));
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
 
 export interface SystemTrialInput {
   /** `id` or `id@x.y.z` of a published system pack. */
@@ -87,8 +142,8 @@ export interface SystemTrialOptions {
   now: () => Date;
   fetch?: FetchLike;
   log?: ConnectorLog;
-  /** Digests of login values that failed in an earlier trial of this process. */
-  failedLogins: Set<string>;
+  /** The logins that failed in earlier trials, by digest (TrialLoginStops). */
+  failedLogins: FailedLogins;
 }
 
 const PLACEHOLDER_RESOURCE = `res_${'0'.repeat(26)}`;
@@ -203,8 +258,10 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
     } else {
       const body = fillTemplate(auth.login.body, values);
       const key = createHash('sha256').update(canonicalBytes({ pack: pack.id, origin: parsed.data.origins[auth.login.role], path: auth.login.path, body })).digest('hex');
-      if (options.failedLogins.has(key)) {
-        report.reason = '同样的凭据在本次运行中已登录失败，未再次发送；更正凭据后再试';
+      // A record of failures that cannot be read may hold these very values: the login is not sent.
+      const failedBefore = await options.failedLogins.has(key).catch(() => null);
+      if (failedBefore !== false) {
+        report.reason = failedBefore === true ? '同样的凭据此前登录失败，未再次发送；更正凭据后再试' : '登录失败记录不可读，未登录';
       } else {
         const sentAt = options.now().getTime();
         try {
@@ -222,10 +279,7 @@ export async function trialSystem(options: SystemTrialOptions, input: SystemTria
           report.message = failure(error);
           // A login the source may have judged is never sent again with the same values; one that provably never reached
           // the source (no connection) may be.
-          if (sent && error.detail.delivered !== false) {
-            if (options.failedLogins.size >= REMEMBERED_FAILURES) options.failedLogins.clear();
-            options.failedLogins.add(key);
-          }
+          if (sent && error.detail.delivered !== false && !(await options.failedLogins.add(key))) event('resource_trial_failure_unkept', {});
         }
         report.ms = options.now().getTime() - sentAt;
       }
