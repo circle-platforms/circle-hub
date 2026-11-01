@@ -287,6 +287,17 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 
 ## Console
 
+Decision 83 makes username/password the ordinary sign-in for administrators and members. Only administrators create
+accounts; `user create` generates an initial password shown once and requires a first-login change. Team manages
+resets; members change their own password there. Passwords travel through forms or stdin, never command arguments or logs.
+Five failed attempts per account and 50 per peer in 15 minutes are bounded in process memory, including unknown accounts;
+a restart clears these counters. Successful logins clear that account and peer. Two expensive derivations run at most.
+The existing administrator token remains a backup; members cannot use a Circle token to sign in to the console.
+Password-created sessions have independent, hidden, 12-hour credentials. Password reset ends browser sessions while
+Circle tokens stay bound to their member account. Existing members without a password require an administrator reset
+before console login. First-use restrictions also guard API reads/writes, live streams and authorization confirmations.
+
+
 Decision 83's personal/team knowledge research is a proposal only: `docs/design/personal-team-knowledge.md`. It inventories
 current requirements and compares primary project documentation. No generic knowledge space or personal server-side
 index is implemented by this task.
@@ -332,9 +343,9 @@ paths with encoded query parameters).
 The pages follow the design canvas (version 25) and the owner's choices in the simplification proposal of 2026-10-31
 (decision 77 in `docs/hub-r4-progress.md`):
 
-- **Seven places** in a side navigation: 总览 `/console/overview` (the home `/console` and a sign-in lead to), 任务
+- **Eight places** in a side navigation: 总览 `/console/overview` (the home `/console` and a sign-in lead to), 任务
   `/console/runs`, 知识库 `/console/knowledge`, 任务包 `/console/packs`, 连接 `/console/connections`, 记录
-  `/console/records`, 设置 `/console/settings`; the account and the sign-out button below them.
+  `/console/records`, 团队 `/console/team`, 设置 `/console/settings`; the account and the sign-out button below them.
 - **Interface terms** (display rule 20): every vocabulary value is shown by `uiLabelOf`, its `ui` term where the model
   gives one (引用校验 for the static layer, 未检查 for unchecked, 派发结果未确认 for quarantined, …), so the console
   never shows the model's internal words; the text models read keeps `labelOf` (`claims.ts` and the counts of `text.ts`
@@ -474,20 +485,20 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   (`form-action 'self' <origin>`). Approving takes the invitation (if one named the account), issues the code and sends the
   browser to the redirect URI with `code`, `state` and `iss`; refusing sends `access_denied`. Back on the page, the browser
   sees that the request ended.
-- **One-time login links** (decision 78): a client asks with its Bearer token, `POST /console/api/login-links` with an
-  optional JSON `{"next": "/console/…"}`, and gets `{url, expires_at}`: `/console/login/<code>`, valid
-  `LOGIN_LINK_TTL_MS` (5 minutes), used once, only its SHA-256 kept, at most five open per token (a sixth ends that
-  token's oldest). `GET` shows which account it signs in and asks to
-  confirm (so a prefetch or a planted link signs nobody in); the `POST` (its own login nonce, this origin) opens a session
-  on the client's token, which every page re-authenticates, and goes to `next`. A spent or expired link says so without
-  naming the account. `next` is only ever a path of this console (`safeNext`); a page opened without a session sends the
-  browser to `/console/login?next=<that page>`, and signing in leads back there.
+- **One-time login links** (decisions 78 and 83): the existing Bearer endpoint and five-minute lifetime remain.
+  An administrator can confirm a link as a backup sign-in, still subject to a forced password change. A member's link
+  leads to username/password sign-in at the requested console path and never opens a token-authenticated browser session.
+  Spent and expired links disclose no account. Return paths remain local to this console.
+
 - **Sign-in**: `GET /console/login` issues a one-time nonce (server-side, 15 minutes) in the form and in a cookie
   scoped to `/console/login`; `POST /console/login` (form encoding, at most 8 KiB, from this server's own origin) needs
-  the nonce in both and a token that authenticates. The session cookie `circle_hub_session` is a random id,
+  the nonce in both and a username/password, or an administrator backup token. The session cookie `circle_hub_session` is a random id,
   `Path=/console; HttpOnly; SameSite=Strict` (no `Secure`: plain HTTP on loopback); the token stays in server memory and
   every page re-authenticates it, so a revoked token or a disabled account ends the session at the next page. Sessions
-  end after 2 hours idle or 12 hours. `POST /console/logout` needs the session's CSRF token. Everything else is GET.
+  end after 2 hours idle or 12 hours. Password changes/resets revoke password sessions; Circle disconnects do not.
+  `POST /console/password` changes the current account's password; `POST /console/password/reset` is administrator-only
+  and returns a random initial password once. Both require the session CSRF token and own origin.
+  `POST /console/logout` needs the session's CSRF token.
   `Origin: null` is never taken for this console's own origin (the pages' `same-origin` referrer policy makes a browser
   send the real one).
 - **Pages**: runs (`RunsService.listRuns`, pack filter, paging); one run, the authoritative view (display rule 17):
@@ -548,7 +559,7 @@ The refresh target reader follows the [HTML shared declarative refresh steps](ht
 
 Owner decision 75 (2026-10-31): administrators manage the Hub from the browser. Decision 77 keeps four of the operations
 as console pages under `/console/operations/`: adding a member (`member-add`: `user create`, then `user invite`, the
-invitation code shown once with this Hub's Circle entry for the standard authorization; or `token issue` for a client
+initial password and invitation code shown once with this Hub's Circle entry for the standard authorization; or `token issue` for a client
 without it), connecting a business system (`system-add`: `resource add`, then `secret set` for the credentials typed with
 it), publishing a task pack (`pack-stage`, then `pack-publish` or `pack-discard`, below) and importing knowledge
 (`knowledge-sync`). Every
@@ -580,9 +591,10 @@ Knowledge sync runs as a background job of this process (`JobStore`, the last 50
 with the process, their records stay). A token issued here is shown once on the result page.
 
 The first administrator: `circle-hub setup-code` (refused once an administrator exists) prints a one-time code and
-keeps its SHA-256 in `<data dir>/config/setup-code.json` (0600, 24 hours). `/console/setup` takes the code and a name
+keeps its SHA-256 in `<data dir>/config/setup-code.json` (0600, 24 hours). `/console/setup` takes the code, a username and an optional password
 while no administrator exists (its own nonce cookie, own origin), creates the administrator with `bootstrapAdmin`,
-removes the code, opens a session and shows the token once with the Circle `mcp_servers` entry to paste. The sign-in
+removes the code, opens a session and shows the backup token once. A generated initial password is also shown once and
+requires a password change before any data page, management action or stream can be used. The sign-in
 page links there while no administrator exists.
 
 ## CLI

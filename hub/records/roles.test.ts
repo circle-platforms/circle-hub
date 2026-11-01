@@ -47,7 +47,7 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   const config = { dataDir, logDir: join(dataDir, 'logs'), database: runtime, limits: { ...DEFAULT_LIMITS } };
   // Before the owner migrated, the runtime role refuses to start instead of trying to create tables.
   await assert.rejects(openRecords(config, { migrate: false }), (error: unknown) => error instanceof MigrationError && /还没有应用/.test((error as Error).message));
-  assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), [1, 2, 3, 4, 5, 6, 7, 8]);
   assert.deepEqual(await migrateRecords({ database: owner }, { runtimeRole: 'hub_runtime' }), []);
   // The role that owns the tables could disable the triggers, so it is refused as the runtime role.
   await assert.rejects(migrateRecords({ database: owner }, { runtimeRole: 'hub_owner' }), MigrationError);
@@ -62,6 +62,13 @@ test('the runtime role does what the Hub needs, and nothing that could rewrite o
   const admin = { id: user.id, name: user.name, role: user.role };
   assert.equal((await kit.principals.authenticate(`Bearer ${token.token}`))?.id, user.id);
   const member = await kit.principals.createUser(admin, '成员');
+  const initial = await kit.principals.resetPassword(admin, member.id);
+  const verified = await kit.principals.verifyPassword(member.name, initial);
+  assert.ok(verified?.mustChange);
+  const session = await kit.principals.openConsoleSession(member.id, verified.revision);
+  assert.ok(session);
+  assert.ok(await kit.principals.changePassword(member, initial, 'synthetic-runtime-password'));
+  assert.equal(await kit.principals.authenticate('Bearer '+session.token), null);
   await kit.principals.setRole(admin, member.id, 'admin');
   await kit.principals.setDisabled(admin, member.id, true);
   const issued = await kit.principals.issueToken(admin, user.id, '第二枚');

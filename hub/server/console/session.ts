@@ -40,6 +40,7 @@ const secret = (): string => randomBytes(32).toString('base64url');
 export class SessionStore {
   readonly #sessions = new Map<string, ConsoleSession>();
   readonly #nonces = new Map<string, { expires: number; secure: boolean }>();
+  readonly #attempts = new Map<string, { count: number; expires: number }>();
   readonly #now: () => number;
   readonly #limits: SessionLimits;
 
@@ -47,6 +48,18 @@ export class SessionStore {
     this.#now = now;
     this.#limits = { ...DEFAULT_SESSION_LIMITS, ...limits };
   }
+
+  /** Reserve before verification so concurrent failures cannot bypass the per-window bound. */
+  takeLoginAttempt(key: string, maximum = 5): boolean {
+    const now = this.#now();
+    for (const [id, entry] of this.#attempts) if (entry.expires <= now) this.#attempts.delete(id);
+    const entry = this.#attempts.get(key) ?? {count:0,expires:now+15*60*1000};
+    if (entry.count >= maximum || (!this.#attempts.has(key) && this.#attempts.size >= 10_000)) return false;
+    entry.count++;
+    this.#attempts.set(key,entry);
+    return true;
+  }
+  clearLoginAttempts(key: string): void { this.#attempts.delete(key); }
 
   /** A one-time login nonce; the oldest are dropped beyond the limit. */
   issueNonce(secure = false): string {
@@ -101,6 +114,7 @@ export class SessionStore {
   clear(): void {
     this.#sessions.clear();
     this.#nonces.clear();
+    this.#attempts.clear();
   }
 }
 

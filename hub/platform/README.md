@@ -74,8 +74,12 @@ or x64 is refused), downloads the bundle and SHA256SUMS of the GitHub release (l
 SHA-256, unpacks it under `<data root>/runtime/bundles/` and points `<data root>/runtime/node` at its Node. It then runs
 the Hub's own commands with that Node: `init` (HTTP on loopback, `--https-port`, and `--https-host` with the allowed hosts
 when one is given) unless settings exist, `key init` and `tls init` unless present, `deploy --bundle … --node
-<data root>/runtime/node/bin/node` unless that commit is current, and `setup-code`; it writes a `circle-hub` wrapper and
-prints the console address, the setup code and the authority certificate to trust. Every deploy backs up first, so the
+<data root>/runtime/node/bin/node` unless that commit is current; it writes a `circle-hub` wrapper and
+prints the console address and authority certificate to trust. Fresh installs require an administrator username and ask
+for an optional password through the terminal. `init-admin --password-stdin` receives it through stdin; an empty input
+generates an initial password, shown once, with a mandatory first change. Neither password nor token is put in argv;
+upgrades leave existing accounts unchanged. Unattended installation supplies `--admin-user` and `--password-stdin`;
+a blank stdin generates an initial password. Every deploy backs up first, so the
 installer provides a PostgreSQL 18 client: Homebrew `libpq` on macOS, `postgresql-client-18` on Linux (from the system
 sources, else apt.postgresql.org), passed as `CIRCLE_HUB_LIBPQ_BIN`; a `CIRCLE_HUB_LIBPQ_BIN` already set names the client
 to use instead (an absolute directory with PostgreSQL 18's `pg_dump` and `pg_restore`, else the installer stops). On Linux it also creates the `circle-hub` account

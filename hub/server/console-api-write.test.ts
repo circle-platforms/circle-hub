@@ -26,6 +26,7 @@ const bridge: CommandBridge = {
   async run(argv, input) {
     calls.push({ argv, input });
     if (argv.includes('fails')) return { code: 1, stdout: [], stderr: ['用户名已经存在'] };
+    if (argv[0] === 'user' && argv[1] === 'create') return {code:0,stdout:['初始口令（仅显示一次，首次登录必须修改）：','p'.repeat(24)],stderr:[]};
     if (argv[0] === 'user' && argv[1] === 'invite') return { code: 0, stdout: [`已为 ${argv[2]} 签发邀请码，2026-11-02T00:00:00.000Z 前有效，仅可使用一次。邀请码只显示这一次：`, 'ABCD-EFGH-JKMN', '成员的 Circle 连接这个 Hub 时，浏览器打开授权页，在授权页输入邀请码'], stderr: [] };
     if (argv[0] === 'token' && argv[1] === 'issue') return { code: 0, stdout: ['已签发令牌 tok_synthetic。令牌只显示这一次：', 'T'.repeat(43)], stderr: [] };
     if (argv[0] === 'pack' && argv[1] === 'publish' && argv.includes('--dry-run')) return { code: 0, stdout: [`发布校验通过：synthetic-pack@1.0.0，检查目录 ${argv[2]}`, '试运行：没有发布，也没有写入任何内容'], stderr: [] };
@@ -35,6 +36,11 @@ const bridge: CommandBridge = {
 };
 
 const principals = {
+  async verifyPassword(name: string, password: string) {
+    const user=users.find(user=>user.name===name && !user.disabled);
+    return user && password==='synthetic-api-member' ? {user,revision:1,mustChange:false} : null;
+  },
+  async openConsoleSession(id:string) {return {token:id===users[1].id ? MEMBER_TOKEN : ADMIN_TOKEN};},
   async authenticate(header: string | null | undefined) {
     const id = TOKENS.get(String(header).replace(/^Bearer /, ''));
     const user = users.find((u) => u.id === id && !u.disabled);
@@ -97,7 +103,8 @@ async function signIn(token: string, at = port): Promise<{ cookie: string; csrf:
   const page = await send('GET', '/console/login', { port: at, origin: null });
   const nonce = /name="csrf" value="([^"]+)"/.exec(page.body)![1];
   const loginCookie = ([] as string[]).concat(page.headers['set-cookie'] ?? []).find((c) => c.startsWith('circle_hub_login='))!.split(';')[0];
-  const reply = await send('POST', '/console/login', { port: at, cookie: loginCookie, type: 'application/x-www-form-urlencoded', body: new URLSearchParams({ token, csrf: nonce }).toString() });
+  const credentials: Record<string,string>=token===MEMBER_TOKEN ? {username:'bob',password:'synthetic-api-member'} : {token};
+  const reply = await send('POST', '/console/login', { port: at, cookie: loginCookie, type: 'application/x-www-form-urlencoded', body: new URLSearchParams({ ...credentials, csrf: nonce }).toString() });
   assert.equal(reply.status, 303, reply.body);
   const cookie = ([] as string[]).concat(reply.headers['set-cookie'] ?? []).find((c) => c.startsWith('circle_hub_session='))!.split(';')[0];
   const me = JSON.parse((await send('GET', '/console/api/me', { port: at, cookie, origin: null })).body);
@@ -137,6 +144,8 @@ test('adding a member runs user create then user invite and answers the invitati
   assert.deepEqual(calls.map((call) => call.argv), [['user', 'create', 'carol', '--role=user'], ['user', 'invite', 'carol']]);
   assert.ok(calls.every((call) => call.input.token === ADMIN_TOKEN), 'the commands act as the signed-in administrator');
   const body = JSON.parse(reply.body);
+  assert.equal(body.initial_password,'p'.repeat(24));
+  assert.equal(body.must_change_password,true);
   assert.equal(body.invitation, 'ABCD-EFGH-JKMN');
   assert.deepEqual(body.circle_entry.mcp_servers[0], { name: 'circle-hub', url: `http://127.0.0.1:${port}/mcp`, transport: 'streamable_http' });
   assert.deepEqual(body.steps.map((step: { command: string }) => step.command), ['circle-hub user create carol --role=user', 'circle-hub user invite carol']);

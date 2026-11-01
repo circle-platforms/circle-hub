@@ -14,7 +14,7 @@ import { CSS } from './console/style.ts';
 import { LIVE_SCRIPT } from './console/script.ts';
 import { NEUTRAL } from './console/pages.ts';
 import { taskResultOf } from './console/status.ts';
-import { createTestServer, type TestServer, type TestUser } from './testing.ts';
+import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 
 let server: TestServer;
 let counter = 0;
@@ -55,7 +55,7 @@ async function signIn(token: string): Promise<string> {
   const reply = await send('/console/login', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: `circle_hub_login=${valueOf(cookieOf(page, 'circle_hub_login'))}`, origin: own() },
-    body: new URLSearchParams({ token, csrf: csrfOf(page.body) }).toString(),
+    body: new URLSearchParams({ ...testConsoleCredentials(token), csrf: csrfOf(page.body) }).toString(),
   });
   assert.equal(reply.status, 303, reply.body);
   assert.equal(reply.headers.location, '/console/overview');
@@ -228,7 +228,7 @@ describe('operations and commands', () => {
     const admin = await signIn(server.admin.token);
     const settings = await get('/console/team', admin);
     const [token] = await server.records.principals.tokens(user.user.id);
-    for (const command of [`circle-hub user disable ${user.user.id}`, `circle-hub token revoke ${token.id}`, `circle-hub token issue ${user.user.id} '--label=备用登录'`]) assert.ok(settings.body.includes(escapeHtml(command)), command);
+    for (const command of [`circle-hub user disable ${user.user.id}`, `circle-hub token revoke ${token.id}`, `circle-hub token issue ${user.user.id} --label=Circle`]) assert.ok(settings.body.includes(escapeHtml(command)), command);
     assert.match(settings.body, /<div class="modal" id="cmd-user-disable-[^"]+" role="dialog"/);
     assert.match(settings.body, /href="#cmd-user-disable-[^"]+"/, 'the button opens its dialog by fragment');
     assert.doesNotMatch(settings.body, /action="\/console\/admin\/do\/(?!member-add)/, 'no management form on the settings page');
@@ -252,10 +252,10 @@ describe('operations and commands', () => {
 });
 
 describe('sign-in states', () => {
-  test('a session whose token was revoked returns to the login page, which says the sign-in ended once', async () => {
+  test('a session whose password was reset returns to the login page, which says the sign-in ended once', async () => {
     const user = await member();
     const session = await signIn(user.token);
-    for (const token of await server.records.principals.tokens(user.user.id)) await server.records.principals.revokeToken(server.admin.principal, token.id);
+    await server.records.principals.resetPassword(server.admin.principal,user.user.id);
     const ended = await get('/console/runs', session);
     assert.equal(ended.status, 303);
     assert.equal(ended.headers.location, '/console/login?next=%2Fconsole%2Fruns', 'signing in again leads back to the page');

@@ -14,6 +14,8 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- **Username and password login** — decision 83 adds administrator/member password accounts, first-use changes, Team password resets, bounded browser sessions and stdin-only installer initialization. MCP authorization remains account-bound.
+
 - **Knowledge integration proposal** — decision 83 inventories requirements and compares personal/team designs; implementation remains outside this task.
 
 - **Circle device lists** — decision 83 shows device names and disconnect actions without token identifiers in tables.

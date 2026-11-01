@@ -23,15 +23,15 @@ const field = (label: string, control: Html, options: { hint?: string; full?: bo
 
 function memberPage(ctx: PageContext): Html {
   const form = actionForm('member-add', ctx.csrf ?? '', html`<div class="fields">
-${field('姓名', html`<input name="name" required autocomplete="off" maxlength="200">`, { hint: '在控制台、记录与 Circle 中显示' })}
+${field('用户名', html`<input name="name" required autocomplete="off" maxlength="200">`, { hint: '在控制台、记录与 Circle 中显示' })}
 ${field('角色', html`<select name="role">${roleOptions()}</select>`, { hint: '管理员可执行四种管理操作并查看全部记录' })}
 ${field('连接方式', html`<select name="connect"><option value="invitation" selected>邀请码（MCP 标准授权）</option><option value="token">访问令牌</option></select>`, { hint: '客户端不支持 MCP 标准授权时选访问令牌' })}
 ${field('令牌标签', html`<input name="label" autocomplete="off" maxlength="200" placeholder="MacBook 上的 Circle">`, { hint: '选访问令牌时区分同一成员的多个 Circle，可留空' })}
 </div>`, '添加成员', { primary: true });
-  return html`${steps(['填写成员', '签发邀请码', '成员授权', '等待连接'], 0)}
+  return html`${steps(['填写成员', '生成初始口令', '成员授权', '等待连接中'], 0)}
 <section class="grid g-2-1 section">
-${card({ title: '成员信息' }, html`${form}<p class="note">执行 ${code('circle-hub user create')}，再执行 ${code('circle-hub user invite')}（选访问令牌时为 ${code('circle-hub token issue')}）；邀请码与令牌只在结果页显示一次。</p>`)}
-${card({ title: '成员如何连接', meta: 'MCP 标准授权' }, html`<ol class="small"><li>把结果页给出的配置写入该成员的 Circle。</li><li>Circle 首次连接时在浏览器中打开授权页。</li><li>成员输入邀请码并确认授权，Circle 即完成连接。</li></ol><p class="sub">邀请码 24 小时内有效，仅可使用一次；过期后在设置中重新签发。</p>`)}
+${card({ title: '成员信息' }, html`${form}<p class="note">执行 ${code('circle-hub user create')}，再执行 ${code('circle-hub user invite')}（选访问令牌时为 ${code('circle-hub token issue')}）；初始口令、邀请码与令牌只在结果页显示一次；首次口令登录必须修改。</p>`)}
+${card({ title: '成员如何连接', meta: 'MCP 标准授权' }, html`<ol class="small"><li>把结果页给出的配置写入该成员的 Circle。</li><li>Circle 首次连接时在浏览器中打开授权页。</li><li>成员输入邀请码并确认授权，Circle 即完成连接。</li></ol><p class="sub">邀请码 24 小时内有效，仅可使用一次；过期后在团队页重新签发。</p>`)}
 </section>`;
 }
 
@@ -110,7 +110,7 @@ ${plannedCard('上传文档导入', '从上传的文档与业务系统按条目�
 }
 
 const TITLES: Readonly<Record<Operation, { title: string; hint: string; active: 'team' | 'settings' | 'connections' | 'packs' | 'knowledge' }>> = {
-  member: { title: '添加成员', hint: '为成员签发邀请码（MCP 标准授权）或访问令牌，用于连接 Circle', active: 'team' },
+  member: { title: '添加成员', hint: '创建口令账户，初始口令仅显示一次且首次登录须修改；Circle 连接绑定该成员账户', active: 'team' },
   system: { title: '接入业务系统', hint: 'Hub 以只读方式访问业务系统；凭据加密保存，页面与模型只可见名称', active: 'connections' },
   pack: { title: '发布任务包', hint: '上传任务包，发布校验通过后确认发布，成为新版本', active: 'packs' },
   knowledge: { title: '导入知识', hint: '从产品包声明的来源导入知识，每条附出处；导入完成后为该版本线的当前版本', active: 'knowledge' },

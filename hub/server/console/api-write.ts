@@ -95,6 +95,9 @@ async function execute(ctx: PageContext, options: WriteOptions, name: string, fi
     status: 200,
     body: {
       steps,
+      username: String(fields.name ?? ''),
+      initial_password: steps[0].stdout.find(line => /^[A-Za-z0-9_-]{24}$/.test(line)) ?? null,
+      must_change_password: true,
       ...(withToken ? { token: output.find((line) => TOKEN.test(line)) ?? null } : { invitation: output.find((line) => INVITATION.test(line)) ?? null }),
       circle_entry: JSON.parse(circleEntry(originOf(ctx), withToken)) as unknown,
     },

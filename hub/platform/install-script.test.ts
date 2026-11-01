@@ -27,6 +27,14 @@ test('install.sh is valid bash', () => {
   assert.equal(result.status, 0, result.stderr);
 });
 
+test('fresh installation plans username and password initialization without putting a password in argv', () => {
+  const {code,out,err}=install(['--dry-run','--version','0.3.0','--admin-user','synthetic-admin','--password-stdin'],'Darwin');
+  assert.equal(code,0,err);
+  assert.match(out,/管理员用户名和可选口令/);
+  assert.match(out,/标准输入.*init-admin --password-stdin/);
+  assert.doesNotMatch(out,/设置码（24 小时内有效）/);
+});
+
 test('a macOS dry run plans init with HTTPS, key, tls and a bundle deploy with the bundled Node, and changes nothing', () => {
   const { code, out, err } = install(['--dry-run', '--version', '0.3.0'], 'Darwin');
   assert.equal(code, 0, err);

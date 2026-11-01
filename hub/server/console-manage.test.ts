@@ -47,6 +47,11 @@ const bridge: CommandBridge = {
 };
 
 const principals = {
+  async verifyPassword(name:string,password:string) {
+    const user=users.find(user=>user.name===name&&!user.disabled);
+    return user && password==='synthetic-management-member' ? {user,revision:1,mustChange:false} : null;
+  },
+  async openConsoleSession() {return {token:'B'.repeat(43)};},
   async authenticate(header: string | null | undefined) {
     const id = TOKENS.get(String(header).replace(/^Bearer /, ''));
     const user = users.find((u) => u.id === id && !u.disabled);
@@ -238,7 +243,7 @@ test('actions refuse a missing or wrong CSRF token, a foreign origin, GET, a non
   TOKENS.set('B'.repeat(43), 'usr_bob');
   const login = await send('GET', '/console/login');
   const nonce = cookieValue(login, 'circle_hub_login');
-  const signedIn = await send('POST', '/console/login', { cookie: `circle_hub_login=${nonce}`, body: form({ csrf: nonce, token: 'B'.repeat(43) }) });
+  const signedIn = await send('POST', '/console/login', { cookie: `circle_hub_login=${nonce}`, body: form({ csrf: nonce, username:'bob',password:'synthetic-management-member' }) });
   const bob = cookieValue(signedIn, 'circle_hub_session');
   const bobPage = await send('GET', '/console/runs', { cookie: `circle_hub_session=${bob}` });
   const bobCsrf = /name="csrf" value="([^"]+)"/.exec(bobPage.body)?.[1] ?? '';

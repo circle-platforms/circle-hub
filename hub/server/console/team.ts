@@ -23,8 +23,9 @@ export async function teamPage(ctx: PageContext, member?: string): Promise<PageR
     if (ctx.admin) dialogs.push(toggle, spare, ...(user.disabled ? [] : [invite]));
     members.push([link(`/console/team/${user.id}`, user.name), uiLabelOf('permission_role', user.role), user.disabled ? '已停用' : '使用中',
       user.role === 'admin' ? '全部任务包' : assigned.join('、') || '—',
-      ctx.admin ? html`${commandLink(toggle, user.disabled ? '启用' : '停用')} ${user.disabled ? '' : commandLink(invite, '签发邀请码')} ${commandLink(spare, '签发备用登录令牌')}` : '—']);
+      ctx.admin ? html`${commandLink(toggle, user.disabled ? '启用' : '停用')} ${user.disabled ? '' : commandLink(invite, '签发邀请码')} ${commandLink(spare, user.role === 'admin' ? '签发备用登录令牌' : '签发 Circle 访问令牌')}` : '—']);
     if (member !== undefined) {
+      if (ctx.admin) permissions.push(['重置口令', html`<form method="post" action="/console/password/reset"><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}"><input type="hidden" name="user" value="${user.id}"><button type="submit" class="btn" title="生成仅显示一次的初始口令，使该账户的控制台会话失效；下次登录必须修改">重置口令</button></form>`]);
       const canPublish = await authorizations.canPublish(user.id);
       const publish = commands.memberPublish(user.id, canPublish);
       if (ctx.admin) dialogs.push(publish);
@@ -44,7 +45,7 @@ export async function teamPage(ctx: PageContext, member?: string): Promise<PageR
       circles.push([await circleName(principals, token),user.name,when(token.last_used_at),ctx.admin ? commandLink(revoke,'断开') : '由管理员断开']);
     }
   }
-  return {status:200,body:page(ctx.chrome(member === undefined ? '团队' : users[0].name,{active:'team',hint:'第一个账户是管理员；账户仅由管理员添加，成员权限和任务包分配在此管理。',actions:ctx.admin ? button('/console/operations/member','添加成员',{primary:true,icon:'plus'}) : undefined}),html`
+  return {status:200,body:page(ctx.chrome(member === undefined ? '团队' : users[0].name,{active:'team',hint:'第一个账户是管理员；账户仅由管理员添加，成员权限和任务包分配在此管理。',actions:html`${button('/console/password','修改口令')}${ctx.admin ? button('/console/operations/member','添加成员',{primary:true,icon:'plus'}) : ''}`}),html`
 ${member === undefined ? '' : html`<p>${link('/console/team','返回团队')}</p>`}
 ${liveModule('members',['member.connected'],card({title:member === undefined ? '成员' : '成员详情',meta:`${users.length} 人`},table(['名字','角色','状态','可用的任务包','操作'],members)))}
 ${member === undefined ? '' : html`${sectionHead('权限')}${card(null,definitions(permissions))}${sectionHead('任务包分配')}${card(null,table(['任务包','可使用','操作'],assignments,'尚无任务包'))}`}

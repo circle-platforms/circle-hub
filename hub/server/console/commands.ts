@@ -3,6 +3,7 @@
 // for the administrator's Circle to run on the Hub's host, so the checks and records are those of the command line. A word
 // that is not a plain identifier is single-quoted; a value the administrator must supply (a reason) is a quoted placeholder.
 import type { CommandDialog } from './ui.ts';
+import type { PermissionRole } from '../../../contracts/generated/vocabulary.ts';
 
 /** A shell word: identifiers as they are, anything else in single quotes. */
 export function shellWord(value: string): string {
@@ -45,9 +46,9 @@ export const commands = {
     id: dialogId('user-invite', user.id), title: `签发邀请码：${user.name}`,
     text: '邀请码 24 小时内有效，仅可使用一次，只在签发时显示；该成员的 Circle 打开授权页时输入，即以该成员的身份完成连接。', command: command('user', 'invite', user.id),
   }),
-  tokenIssue: (user: { id: string; name: string }): CommandDialog => ({
-    id: dialogId('token-issue', user.id), title: `签发备用登录令牌：${user.name}`,
-    text: '新令牌仅在签发时显示一次；用于 Circle 不可用时登录控制台，也可写入新的 Circle。', command: command('token', 'issue', user.id, '--label=备用登录'),
+  tokenIssue: (user: { id: string; name: string; role?: PermissionRole }): CommandDialog => ({
+    id: dialogId('token-issue', user.id), title: `${user.role === 'admin' ? '签发备用登录令牌' : '签发 Circle 访问令牌'}：${user.name}`,
+    text: user.role === 'admin' ? '新令牌仅在签发时显示一次；用于管理员备用登录，也可写入新的 Circle。' : '新令牌仅在签发时显示一次；用于该成员的 Circle 连接，成员使用口令登录控制台。', command: command('token', 'issue', user.id, user.role === 'admin' ? '--label=备用登录' : '--label=Circle'),
   }),
   secretSet: (name: string): CommandDialog => ({
     id: dialogId('secret-set', name), title: `更新凭据 ${name}`,

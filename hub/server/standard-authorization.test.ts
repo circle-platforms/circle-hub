@@ -12,7 +12,7 @@ import { UnauthorizedError, type OAuthClientProvider } from '@modelcontextprotoc
 import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { AUTHORIZATION_CODE_TTL_MS, AUTHORIZATION_REQUEST_TTL_MS, AuthorizationStore, RegistrationWindow } from './oauth.ts';
 import { LOGIN_LINK_TTL_MS } from './console/session.ts';
-import { createTestServer, type TestServer, type TestUser } from './testing.ts';
+import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 
 let server: TestServer;
 let clock = Date.parse('2026-11-01T09:00:00.000Z');
@@ -64,7 +64,7 @@ async function signIn(token: string): Promise<string> {
   const reply = await send('/console/login', {
     method: 'POST',
     headers: { ...FORM, cookie: `circle_hub_login=${valueOf(cookieOf(page, 'circle_hub_login'))}`, origin: origin() },
-    body: form({ token, csrf: csrfOf(page.body) }),
+    body: form({ ...testConsoleCredentials(token), csrf: csrfOf(page.body) }),
   });
   assert.equal(reply.status, 303, reply.body);
   return `circle_hub_session=${valueOf(cookieOf(reply, 'circle_hub_session'))}`;
@@ -536,8 +536,8 @@ describe('one-time login links', () => {
     return send(path, { method: 'POST', headers: { ...FORM, origin: origin(), cookie: `circle_hub_login=${valueOf(cookieOf(page, 'circle_hub_login'))}` }, body: form({ csrf: csrfOf(page.body) }) });
   }
 
-  test('a client asks with its token; the link opens a session on that token at the page it names, once', async () => {
-    const user = await member();
+  test('an administrator client asks with its token; the link opens a session on that token at the page it names, once', async () => {
+    const user = await server.createUser('合成链接管理员'+(++counter),'admin');
     assert.equal((await ask(null)).status, 401);
     assert.equal((await ask('A'.repeat(43))).status, 401);
     assert.equal((await send('/console/api/login-links', { headers: { authorization: `Bearer ${user.token}` } })).status, 405);
@@ -567,7 +567,7 @@ describe('one-time login links', () => {
   });
 
   test('a link expires after its lifetime, and a return path off this console leads to the overview', async () => {
-    const user = await member();
+    const user = await server.createUser('合成链接管理员'+(++counter),'admin');
     const late = JSON.parse((await ask(user.token)).body).url as string;
     clock += LOGIN_LINK_TTL_MS;
     assert.equal((await send(new URL(late).pathname)).status, 410);
@@ -577,13 +577,21 @@ describe('one-time login links', () => {
     }
     assert.equal((await ask(user.token, { next: 3 })).status, 400);
     // One token keeps at most five open links: a sixth ends its own oldest, never another account's.
-    const other = await member();
+    const other = await server.createUser('合成其他链接管理员'+(++counter),'admin');
     const others = JSON.parse((await ask(other.token)).body).url as string;
     const links: string[] = [];
     for (let i = 0; i < 6; i++) links.push(JSON.parse((await ask(user.token)).body).url);
     assert.equal((await send(new URL(links[0]).pathname)).status, 410);
     assert.equal((await send(new URL(links[5]).pathname)).status, 200);
     assert.equal((await send(new URL(others).pathname)).status, 200);
+  });
+
+  test('a member login link leads to password sign-in without creating a session',async()=>{
+    const user=await member();
+    const issued=JSON.parse((await ask(user.token,{next:'/console/team'})).body);
+    const page=await send(new URL(issued.url).pathname);
+    assert.equal(page.status,303);assert.equal(page.headers.location,'/console/login?next=%2Fconsole%2Fteam');
+    assert.equal(cookieOf(page,'circle_hub_session'),undefined);
   });
 
   test('a page without a session sends the browser to sign in and back', async () => {
@@ -596,7 +604,7 @@ describe('one-time login links', () => {
     const reply = await send('/console/login', {
       method: 'POST',
       headers: { ...FORM, cookie: `circle_hub_login=${valueOf(cookieOf(page, 'circle_hub_login'))}`, origin: origin() },
-      body: form({ token: user.token, csrf: csrfOf(page.body), next: '/console/runs?result=passed' }),
+      body: form({ ...testConsoleCredentials(user.token), csrf: csrfOf(page.body), next: '/console/runs?result=passed' }),
     });
     assert.equal(reply.headers.location, '/console/runs?result=passed');
   });

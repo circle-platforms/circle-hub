@@ -16,6 +16,7 @@
 import { randomBytes } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { ENVIRONMENT, PERMISSION_ROLE, isEnvironment, labelOf } from '../../../contracts/generated/vocabulary.ts';
+import { initialPassword, validPassword } from '../../records/api.ts';
 import type { Principal } from '../../records/api.ts';
 import type { CommandBridge, CommandRun } from '../command-bridge.ts';
 import { NEUTRAL, neutralPage } from './pages.ts';
@@ -554,7 +555,7 @@ export async function runAction(ctx: PageContext, deps: ManageDeps, name: string
 // ---------------------------------------------------------------- setup
 
 export type SetupOutcome =
-  | { ok: true; token: string; name: string }
+  | { ok: true; token: string; name: string; password: string | null }
   | { ok: false; status: number; message: string };
 
 /**
@@ -563,7 +564,7 @@ export type SetupOutcome =
  */
 export async function completeSetup(
   dataDir: string,
-  principals: { list(): Promise<{ role: string }[]>; bootstrapAdmin(name: string): Promise<{ user: { name: string }; token: { token: string } }> },
+  principals: { list(): Promise<{ role: string }[]>; bootstrapAdmin(name: string, credential?: {password:string;mustChange:boolean}): Promise<{ user: { name: string }; token: { token: string } }> },
   form: Form,
   now: Date = new Date(),
 ): Promise<SetupOutcome> {
@@ -574,14 +575,17 @@ export async function completeSetup(
   if (check === 'none') return { ok: false, status: 403, message: '没有有效的初始化码：在 Hub 所在的主机上执行 circle-hub setup-code 生成' };
   if (check === 'expired') return { ok: false, status: 403, message: '初始化码已过期：执行 circle-hub setup-code 重新生成' };
   if (check === 'wrong') return { ok: false, status: 403, message: '初始化码不正确' };
+  const supplied=form.get('password');
+  if (supplied && !validPassword(supplied)) return {ok:false,status:400,message:'口令须为 12 至 256 个字符，不含控制字符'};
+  const password=supplied || initialPassword();
   let created;
   try {
-    created = await principals.bootstrapAdmin(name);
+    created = await principals.bootstrapAdmin(name,{password,mustChange:supplied === ''});
   } catch (error) {
     return { ok: false, status: 409, message: error instanceof Error ? error.message : String(error) };
   }
   await removeSetupCode(dataDir);
-  return { ok: true, token: created.token.token, name: created.user.name };
+  return { ok: true, token: created.token.token, name: created.user.name, password: supplied ? null : password };
 }
 
 export function environmentOptions(selected = ''): Html {

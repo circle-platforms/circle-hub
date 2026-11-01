@@ -73,6 +73,8 @@
 
 ## 做了的
 
+- 第 12 项：安装交互要求管理员用户名，可选口令经标准输入交给初始化命令，随机口令只显示一次且须首次修改。迁移 8 保存带盐 scrypt 摘要与首次修改标记，追加口令变更历史；控制台会话独立于 Circle 令牌并有期限。成员也用口令，添加成员时显示初始口令；团队页提供本人修改、管理员重置。强制修改覆盖页面、接口、流式更新和管理操作；失败限制同时覆盖未知账号。保留管理员备用令牌和管理员一次性链接，成员链接转到口令登录；旧成员未设口令的由管理员在团队页重置。MCP 标准授权、邀请码和令牌的账户绑定保留。
+
 - 知识库调研及整合方案已写入 [`personal-team-knowledge.md`](../design/personal-team-knowledge.md)：核对当前模型与知识库实现，覆盖采集、出处、搜索、计数、版本、共享、权限及维护，参考 Outline 与 Joplin 官方资料，提出个人本地与团队 Hub 共用格式、分开授权的方案。本次没有实现知识库通用化。
 
 - 第 11 项：团队、连接及成员设置按设备名显示 Circle，优先取标准授权客户端名称，其次取访问令牌标签；表格不显示令牌编号，断开命令仍保留精确目标。
@@ -89,6 +91,16 @@
 - 第 5 项：两个请求入口共用一个列表；按记录身份合并、逾期优先、显示成员名字，无请求时隐藏整段。状态取自新生成的 B07 显示轴；原请求记录不变。
 
 ## 验证
+
+- 第 12 项：`npm run typecheck` 通过；以下口令、迁移、会话、授权、管理及安装相关文件定向检查 153 项通过、0 跳过：
+
+  ```sh
+  node --test --test-concurrency=2 hub/records/password.test.ts hub/records/principals.test.ts hub/records/migrations.snapshot.test.ts hub/server/console-password.test.ts hub/server/console.test.ts hub/server/standard-authorization.test.ts hub/server/console-api-write.test.ts hub/server/console-manage.test.ts hub/server/setup-code.test.ts hub/platform/install-script.test.ts hub/server/console-places.test.ts hub/server/console-live.test.ts hub/server/console-api.test.ts hub/server/console-results.test.ts hub/server/console-search.test.ts hub/server/console-systems.test.ts hub/server/console-environments.test.ts hub/server/proxy-cookie.test.ts hub/server/units.test.ts
+  ```
+
+  `node --test --test-concurrency=1 --test-name-pattern='init-admin|initial passwords' hub/server/assemble/cli-admin.test.ts` 选中的 16 项通过、0 跳过，其余用例未选中；补充安装参数后 `node --test hub/platform/install-script.test.ts` 8 项通过、0 跳过。`npm run test:docs` 283 项通过、0 跳过。只复用现有迁移保护并追加迁移，没有新增数据 SHA 扫描。未跑全量单元、验收、来源、备份恢复或 Linux 隔离套件；未验证实际安装、发布或现有部署。
+
+- 合成页面预览：用全新临时浏览器配置查看登录、团队、知识库与空任务页，并检查团队和知识库 390 像素窄屏；未使用个人浏览器配置。浏览器配置和临时 Hub 均已停止并清理；截图与日志不入 Git。发布工作流仍期待设置码，最小同步补丁已准备，依 `AGENTS.md` 等待所有者授权后才能修改。
 
 - 知识库方案：`npm run typecheck`、`npm run test:docs` 通过（文档 283 项、0 跳过）；没有实现通用化代码，未运行知识库回归或对同类项目做部署验证。第 11 项结果页导航补正后，另跑 `node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console-manage.test.ts` 19 项通过、0 跳过。
 

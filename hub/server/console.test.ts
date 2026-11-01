@@ -1,4 +1,4 @@
-// The console: sign-in with a token (with the Origin a browser derives under the pages' Referrer-Policy), cookie flags, CSRF
+// The console: password sign-in and administrator backup tokens (with the Origin a browser derives under the pages' Referrer-Policy), cookie flags, CSRF
 // and same-origin refusals, the strict CSP, escaping of stored case text, the pages (runs, run detail with the three groups,
 // item cells, partitions, claims and the submissions marked unverified, knowledge, packs, admin) with their visibility, and
 // that a revoked token or a sign-out ends the session at once.
@@ -10,7 +10,7 @@ import { uiLabelOf, type PermissionRole } from '../../contracts/generated/vocabu
 import { NEUTRAL } from './console/pages.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ROOT_1, ROOT_2 } from './fakes.ts';
-import { createTestServer, type TestServer, type TestUser } from './testing.ts';
+import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 
 let postgres: TemporaryPostgres;
 let server: TestServer;
@@ -66,7 +66,7 @@ async function signIn(token: string, port = server.port): Promise<string> {
     method: 'POST',
     port,
     headers: { 'content-type': 'application/x-www-form-urlencoded', cookie, origin: `http://127.0.0.1:${port}` },
-    body: form({ token, csrf: nonce }),
+    body: form({ ...testConsoleCredentials(token), csrf: nonce }),
   });
   assert.equal(reply.status, 303, reply.body);
   return `circle_hub_session=${cookieValue(cookieHeader(reply, 'circle_hub_session'))}`;
@@ -156,10 +156,10 @@ describe('sign-in', () => {
     assert.equal(cookieValue(login), csrfOf(page.body));
   });
 
-  test('a valid token opens a session: HttpOnly, SameSite=Strict, Path=/console, and the token is not in the cookie', async () => {
+  test('a password opens a session: HttpOnly, SameSite=Strict, Path=/console, and the token is not in the cookie', async () => {
     const user = await person();
     const { nonce, cookie } = await loginForm();
-    const reply = await send('/console/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie, origin: own() }, body: form({ token: `Bearer ${user.token}`, csrf: nonce }) });
+    const reply = await send('/console/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie, origin: own() }, body: form({ ...testConsoleCredentials(user.token), csrf: nonce }) });
     assert.equal(reply.status, 303);
     assert.equal(reply.headers.location, '/console/overview');
     const session = cookieHeader(reply, 'circle_hub_session') ?? '';
@@ -177,15 +177,15 @@ describe('sign-in', () => {
     const a = await loginForm();
     assert.equal((await send('/console/login', { method: 'POST', headers: headers(a.cookie), body: form({ token: user.token }) })).status, 403, 'no nonce');
     const b = await loginForm();
-    assert.equal((await send('/console/login', { method: 'POST', headers: headers(a.cookie), body: form({ token: user.token, csrf: b.nonce }) })).status, 403, 'the nonce of another form');
+    assert.equal((await send('/console/login', { method: 'POST', headers: headers(a.cookie), body: form({ ...testConsoleCredentials(user.token), csrf: b.nonce }) })).status, 403, 'the nonce of another form');
     const forged = 'x'.repeat(43);
-    assert.equal((await send('/console/login', { method: 'POST', headers: headers(`circle_hub_login=${forged}`), body: form({ token: user.token, csrf: forged }) })).status, 403, 'a nonce the server never issued');
+    assert.equal((await send('/console/login', { method: 'POST', headers: headers(`circle_hub_login=${forged}`), body: form({ ...testConsoleCredentials(user.token), csrf: forged }) })).status, 403, 'a nonce the server never issued');
     const c = await loginForm();
-    assert.equal((await send('/console/login', { method: 'POST', headers: headers(c.cookie, { origin: 'http://localhost:9999' }), body: form({ token: user.token, csrf: c.nonce }) })).status, 403, 'another local origin');
+    assert.equal((await send('/console/login', { method: 'POST', headers: headers(c.cookie, { origin: 'http://localhost:9999' }), body: form({ ...testConsoleCredentials(user.token), csrf: c.nonce }) })).status, 403, 'another local origin');
     assert.equal((await send('/console/login', { method: 'POST', headers: headers(c.cookie, { 'content-type': 'application/json' }), body: JSON.stringify({ token: user.token, csrf: c.nonce }) })).status, 403, 'not a form');
     const d = await loginForm();
-    assert.equal((await send('/console/login', { method: 'POST', headers: headers(d.cookie), body: form({ token: user.token, csrf: d.nonce }) })).status, 303);
-    assert.equal((await send('/console/login', { method: 'POST', headers: headers(d.cookie), body: form({ token: user.token, csrf: d.nonce }) })).status, 403, 'a nonce is used once');
+    assert.equal((await send('/console/login', { method: 'POST', headers: headers(d.cookie), body: form({ ...testConsoleCredentials(user.token), csrf: d.nonce }) })).status, 303);
+    assert.equal((await send('/console/login', { method: 'POST', headers: headers(d.cookie), body: form({ ...testConsoleCredentials(user.token), csrf: d.nonce }) })).status, 403, 'a nonce is used once');
   });
 
   test('a browser can sign in and out: the Origin it derives under the pages\' Referrer-Policy is accepted', async () => {
@@ -196,7 +196,7 @@ describe('sign-in', () => {
     const signedIn = await send('/console/login', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: `circle_hub_login=${cookieValue(cookieHeader(login, 'circle_hub_login'))}`, origin: loginOrigin },
-      body: form({ token: user.token, csrf: csrfOf(login.body) }),
+      body: form({ ...testConsoleCredentials(user.token), csrf: csrfOf(login.body) }),
     });
     assert.equal(signedIn.status, 303, signedIn.body);
     const session = `circle_hub_session=${cookieValue(cookieHeader(signedIn, 'circle_hub_session'))}`;
@@ -211,7 +211,7 @@ describe('sign-in', () => {
     const foreign = await send('/console/login', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: again.cookie, origin: 'null' },
-      body: form({ token: user.token, csrf: again.nonce }),
+      body: form({ ...testConsoleCredentials(user.token), csrf: again.nonce }),
     });
     assert.equal(foreign.status, 403, 'Origin: null is never taken for this console');
   });
@@ -220,14 +220,14 @@ describe('sign-in', () => {
     const { nonce, cookie } = await loginForm();
     const reply = await send('/console/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie, origin: own() }, body: form({ token: 'B'.repeat(43), csrf: nonce }) });
     assert.equal(reply.status, 401);
-    assert.match(reply.body, /令牌无效/);
+    assert.match(reply.body, /用户名或口令无效/);
     assert.notEqual(csrfOf(reply.body), nonce);
     const anonymous = await send('/console/runs');
     assert.equal(anonymous.status, 303);
     assert.equal(anonymous.headers.location, '/console/login?next=%2Fconsole%2Fruns');
   });
 
-  test('revoking the token ends the console session at the next page; signing out needs the session CSRF token', async () => {
+  test('resetting the password ends the console session at the next page; signing out needs the session CSRF token', async () => {
     const user = await person();
     const session = await signIn(user.token);
     const page = await get('/console/runs', session);
@@ -242,7 +242,7 @@ describe('sign-in', () => {
     const again = await signIn(user.token);
     assert.equal((await get('/console/runs', again)).status, 200);
     const [token] = await server.records.principals.tokens(user.user.id);
-    await server.records.principals.revokeToken(server.admin.principal, token.id);
+    await server.records.principals.resetPassword(server.admin.principal,user.user.id);
     const after = await get('/console/runs', again);
     assert.equal(after.status, 303);
     assert.equal(after.headers.location, '/console/login?next=%2Fconsole%2Fruns');

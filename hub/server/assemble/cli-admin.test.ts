@@ -200,6 +200,25 @@ async function countFiles(dir: string): Promise<number> {
 }
 
 describe('init-admin and the operator token', () => {
+  test('initial passwords use stdin when supplied and otherwise appear once with a forced first change', async () => {
+    const supplied='synthetic-install-password';
+    const configured=await setup({initAdmin:false});configured.stdin.push(supplied);
+    const created=await configured.run(['init-admin','合成安装管理员','--password-stdin']);assert.equal(created.code,0,created.text);
+    assert.ok(!created.text.includes(supplied));
+    await withKit(configured,async kit=>{
+      const verified=await kit.principals.verifyPassword('合成安装管理员',supplied);assert.ok(verified);assert.equal(verified.mustChange,false);
+    });
+    const random=await setup();
+    const password=random.init!.out.find(line=>/^[A-Za-z0-9_-]{24}$/.test(line));assert.ok(password);
+    assert.equal(random.init!.out.filter(line=>line===password).length,1);
+    await withKit(random,async kit=>{
+      const verified=await kit.principals.verifyPassword('根管理员',password);assert.ok(verified?.mustChange);
+    });
+    const member=await random.run(['user','create','合成口令成员']);assert.equal(member.code,0,member.text);
+    const initial=member.out.find(line=>/^[A-Za-z0-9_-]{24}$/.test(line));assert.ok(initial);
+    assert.ok(!(await random.run(['user','list'])).text.includes(initial));
+    await withKit(random,async kit=>assert.ok((await kit.principals.verifyPassword('合成口令成员',initial))?.mustChange));
+  });
   test('an existing administrator can reissue into the Linux file store without displaying the token', async () => {
     const admin = await setup({store:(config,service)=>fileOperatorTokens(config.dataDir,service ?? config.keychain.service)});
     const config=loadServerConfig(admin.deployment.env);const store=fileOperatorTokens(config.dataDir,config.keychain.service);

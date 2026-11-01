@@ -37,6 +37,14 @@ export interface TestUser {
   token: string;
 }
 
+const SYNTHETIC_CONSOLE_PASSWORD = 'synthetic-console-only-2026';
+const consoleAccounts = new Map<string, string>();
+/** Existing token-based test helpers use the corresponding synthetic account's password at the browser boundary. */
+export function testConsoleCredentials(token: string): Record<string,string> {
+  const name=consoleAccounts.get(token.replace(/^Bearer\s+/i,''));
+  return name === undefined ? {token} : {username:name,password:SYNTHETIC_CONSOLE_PASSWORD};
+}
+
 export interface TestFakes {
   runs: FakeRuns;
   workflows: FakeWorkflows;
@@ -153,12 +161,15 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
       admin,
       logs,
       async createUser(name, role = 'user') {
-        const user = await records.principals.createUser(admin.principal, name, role);
+        const user = await records.principals.createUser(admin.principal, name, role, {password:SYNTHETIC_CONSOLE_PASSWORD,mustChange:false});
         const token = await records.principals.issueToken(admin.principal, user.id, 'test');
+        if (role === 'user') consoleAccounts.set(token.token,name);
         return { user, principal: principalOf(user), token: token.token };
       },
       async issueToken(user) {
-        return (await records.principals.issueToken(admin.principal, user.id, 'test')).token;
+        const token=(await records.principals.issueToken(admin.principal, user.id, 'test')).token;
+        if (user.role === 'user') consoleAccounts.set(token,user.name);
+        return token;
       },
       async assign(user, packId) {
         await records.authorizations.assign(admin.principal, user.id, packId);

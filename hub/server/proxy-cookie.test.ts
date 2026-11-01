@@ -13,7 +13,7 @@ const valueOf = (value: string) => value.split(';')[0]!.split('=').slice(1).join
 test('trusted proxy cookies are Secure and HTTPS and HTTP sessions cannot be replayed across channels', async () => {
   const deps = {
     config: { host: '127.0.0.1', port: 0, allowedHosts: ['hub.example'], proxyOrigin: 'https://hub.example', proxyPeer: '127.0.0.1', limits: { maxRequestBytes: 1024 } },
-    records: { principals: { authenticate: async (value: string | null) => value === `Bearer ${token}` ? { id: 'synthetic-user', name: 'synthetic', role: 'user' } : null } },
+    records: { principals: { authenticate: async (value: string | null) => value === `Bearer ${token}` ? { id: 'synthetic-user', name: 'synthetic', role: 'admin' } : null } },
     runs: { listRuns: async () => ({ items: [], next: null }) }, knowledge: {},
   } as unknown as ServerDeps;
   const app = createApp(deps, { log: () => {} });
