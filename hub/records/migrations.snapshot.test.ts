@@ -30,13 +30,23 @@ const APPLIED = [
     "version": 5,
     "name": "lease_registrations",
     "sha256": "c767dbfba4950fd0285202406e24f878ba78fc92d5c4d8b0f65ec01922fd5d54"
+  },
+  {
+    "version": 6,
+    "name": "call_reasons",
+    "sha256": "c97e6d42f43ad8b9cb977122d37b744ab83dd344aa720f7c05f9a6079f55f895"
+  },
+  {
+    "version": 7,
+    "name": "standard_authorization",
+    "sha256": "54268ed191e63bcd5bc9faab8ef0b1dd853d2460d50b341f805d46a75d4a9c92"
   }
 ];
 
 test('the applied migration source file keeps its reviewed bytes', () => {
   // An append requires reviewing this file digest; the per-migration SQL snapshots below stay fixed.
   const bytes = readFileSync(new URL('./migrations.ts', import.meta.url));
-  assert.equal(createHash('sha256').update(bytes).digest('hex'), '65d31fa110adf62754f9820d51501754f72683af0cb4fa3245872d7603a432ce');
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), '7cea7ad343cc2a18109010d8fba7a89aa61d6585f6320291a6f8869acd7dadd3');
 });
 
 test('every applied SQL migration retains its identity and exact bytes', () => {

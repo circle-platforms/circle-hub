@@ -1,25 +1,50 @@
 // Users and long-lived revocable tokens (R01; adapted from the earlier hashed-token auth). A token is 32 random bytes shown
 // once; only its SHA-256 is stored. Every change to a user is recorded as an append-only snapshot in user_history.
+// The MCP standard authorization (decision 78) adds the clients that registered themselves and the invitation codes an
+// administrator issues: a code is twelve characters shown once, kept as its SHA-256, valid INVITATION_TTL_MS and used once,
+// by the client it authorized; a token issued through the authorization names its client.
 import { randomBytes } from 'node:crypto';
 import { isPermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
-import type { IssuedToken, Principal, Principals, TokenInfo, User, UserChange } from './api.ts';
+import type { InvitationCheck, InvitationInfo, IssuedInvitation, IssuedToken, OAuthClient, Principal, Principals, TokenInfo, User, UserChange } from './api.ts';
 import { iso, isoOrNull } from './db.ts';
 import type { Database, PgTransaction, Row } from './db.ts';
 import { sha256Hex } from './digest.ts';
-import { AccessError, ConflictError, IntegrityError } from './errors.ts';
+import { AccessError, ConflictError, IntegrityError, LimitError } from './errors.ts';
 import { newId } from './ids.ts';
 
 const ADMIN: PermissionRole = 'admin';
 const USER: PermissionRole = 'user';
 /** Serializes every change to the set of active admins, and the first-admin bootstrap. */
 const ADMIN_SET_LOCK = 7_301_562_002;
+/** Serializes client registrations, so their rate bound holds under concurrency. */
+const CLIENT_LOCK = 7_301_562_003;
 const BEARER = /^Bearer[ \t]+([A-Za-z0-9_-]{43})[ \t]*$/i;
 const USER_ID = /^usr_[0-9a-z]{26}$/;
 const TOKEN_ID = /^tok_[0-9a-z]{26}$/;
 const NAME = /^[^\s\p{Cc}](?:[^\p{Cc}]{0,98}[^\s\p{Cc}])?$/u;
 /** last_used_at is refreshed at most once a minute per token. */
 const LAST_USED_STEP_MS = 60_000;
+export const INVITATION_TTL_MS = 24 * 60 * 60 * 1000;
+const INVITATION_ID = /^inv_[0-9a-z]{26}$/;
+const CLIENT_ID = /^cli_[0-9a-z]{26}$/;
+/** Crockford base32 without I, L, O and U: easy to read out and type. */
+const CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const CODE = /^[0-9A-HJKMNP-TV-Z]{12}$/;
+/** Registrations are open to anyone who reaches the Hub, so their rate is bounded: at most CLIENT_BURST per window. */
+const CLIENT_BURST = 100;
+const CLIENT_WINDOW_MS = 10 * 60 * 1000;
+
+/** Upper case without the dashes and spaces typed between the groups; O, I and L read as the digits they look like. */
+export function normalizeInvitation(text: string): string {
+  return text.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
+}
+
+/** Twelve characters in three groups (60 bits): 32 divides 256, so every character is uniform. */
+function invitationCode(): string {
+  const plain = [...randomBytes(12)].map((byte) => CODE_ALPHABET[byte % 32]).join('');
+  return `${plain.slice(0, 4)}-${plain.slice(4, 8)}-${plain.slice(8)}`;
+}
 
 function userOf(row: Row): User {
   if (!isPermissionRole(row.role)) throw new IntegrityError('用户角色不在词表里', { detail: { user: row.id } });
@@ -38,11 +63,28 @@ function tokenOf(row: Row): TokenInfo {
     id: String(row.id),
     user: String(row.user_id),
     label: String(row.label),
+    client: row.client_id === null || row.client_id === undefined ? null : String(row.client_id),
     created_at: iso(row.created_at),
     created_by: row.created_by === null ? null : String(row.created_by),
     last_used_at: isoOrNull(row.last_used_at),
     revoked_at: isoOrNull(row.revoked_at),
   };
+}
+
+function invitationOf(row: Row): InvitationInfo {
+  return {
+    id: String(row.id),
+    user: String(row.user_id),
+    created_at: iso(row.created_at),
+    created_by: String(row.created_by),
+    expires_at: iso(row.expires_at),
+    used_at: isoOrNull(row.used_at),
+    used_by_client: row.used_by_client === null ? null : String(row.used_by_client),
+  };
+}
+
+function clientOf(row: Row): OAuthClient {
+  return { id: String(row.id), name: String(row.name), redirect_uris: (row.redirect_uris as unknown[]).map(String), created_at: iso(row.created_at) };
 }
 
 function validName(name: unknown): string {
@@ -138,14 +180,16 @@ export class PgPrincipals implements Principals {
     }));
   }
 
-  async issueToken(by: Principal, userId: string, label = ''): Promise<IssuedToken> {
+  async issueToken(by: Principal, userId: string, label = '', client?: string): Promise<IssuedToken> {
     if (typeof label !== 'string' || label.length > 100 || /\p{Cc}/u.test(label)) throw new TypeError('token labels are at most 100 characters without control characters');
+    if (client !== undefined && (typeof client !== 'string' || !CLIENT_ID.test(client))) throw new TypeError('client ids are cli_<ULID>');
     return this.#db.transaction(async (tx) => {
       const decider = await this.#decider(tx, by, false);
       if (decider.role !== ADMIN && decider.id !== userId) throw new AccessError('只有管理员可以为别人签发令牌');
       const target = await this.#locked(tx, userId);
       if (target.disabled) throw new ConflictError('用户已停用，不能签发令牌');
-      return this.#issue(tx, target.id, label, decider.id);
+      if (client !== undefined && (await this.#db.query('SELECT 1 FROM oauth_clients WHERE id = $1', [client], tx)).rowCount === 0) throw new ConflictError('没有这个客户端');
+      return this.#issue(tx, target.id, label, decider.id, client ?? null);
     });
   }
 
@@ -165,10 +209,99 @@ export class PgPrincipals implements Principals {
     });
   }
 
+  async revokeTokenValue(token: string): Promise<boolean> {
+    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) return false;
+    const result = await this.#db.query(
+      'UPDATE tokens SET revoked_at = $2, revoked_by = user_id WHERE sha256 = $1 AND revoked_at IS NULL',
+      [sha256Hex(token), this.#now().toISOString()],
+    );
+    return result.rowCount === 1;
+  }
+
   async tokens(userId: string): Promise<TokenInfo[]> {
     if (typeof userId !== 'string' || !USER_ID.test(userId)) return [];
-    const rows = (await this.#db.query('SELECT id, user_id, label, created_at, created_by, last_used_at, revoked_at FROM tokens WHERE user_id = $1 ORDER BY created_at DESC, id DESC', [userId])).rows;
+    const rows = (await this.#db.query('SELECT id, user_id, label, client_id, created_at, created_by, last_used_at, revoked_at FROM tokens WHERE user_id = $1 ORDER BY created_at DESC, id DESC', [userId])).rows;
     return rows.map(tokenOf);
+  }
+
+  async invite(by: Principal, userId: string): Promise<IssuedInvitation> {
+    return this.#db.transaction(async (tx) => {
+      const decider = await this.#decider(tx, by, true);
+      const target = await this.#locked(tx, userId);
+      if (target.disabled) throw new ConflictError('用户已停用，不能邀请');
+      const code = invitationCode();
+      const at = this.#now();
+      const row = (
+        await this.#db.query(
+          'INSERT INTO invitations (id, user_id, sha256, created_at, created_by, expires_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+          [newId('inv'), target.id, sha256Hex(normalizeInvitation(code)), at.toISOString(), decider.id, new Date(at.getTime() + INVITATION_TTL_MS).toISOString()],
+          tx,
+        )
+      ).rows[0];
+      return { ...invitationOf(row), code };
+    });
+  }
+
+  async checkInvitation(code: string): Promise<InvitationCheck> {
+    const plain = typeof code === 'string' && code.length <= 64 ? normalizeInvitation(code) : '';
+    if (!CODE.test(plain)) return { ok: false, reason: 'absent' };
+    const row = (await this.#db.query('SELECT id, user_id, expires_at, used_at FROM invitations WHERE sha256 = $1', [sha256Hex(plain)])).rows[0];
+    if (row === undefined) return { ok: false, reason: 'absent' };
+    if (row.used_at !== null) return { ok: false, reason: 'used' };
+    if (new Date(row.expires_at as string).getTime() <= this.#now().getTime()) return { ok: false, reason: 'expired' };
+    const user = await this.get(String(row.user_id));
+    if (user === null || user.disabled) return { ok: false, reason: 'disabled' };
+    return { ok: true, invitation: String(row.id), user, expires_at: iso(row.expires_at) };
+  }
+
+  async takeInvitation(invitationId: string, clientId: string): Promise<User | null> {
+    if (typeof invitationId !== 'string' || !INVITATION_ID.test(invitationId) || typeof clientId !== 'string' || !CLIENT_ID.test(clientId)) return null;
+    return this.#db.transaction(async (tx) => {
+      const at = this.#now().toISOString();
+      const taken = (
+        await this.#db.query(
+          'UPDATE invitations SET used_at = $3, used_by_client = $2 WHERE id = $1 AND used_at IS NULL AND expires_at > $3 RETURNING user_id',
+          [invitationId, clientId, at],
+          tx,
+        )
+      ).rows[0];
+      if (taken === undefined) return null;
+      const user = await this.#locked(tx, String(taken.user_id));
+      // A disabled account leaves the invitation unused: the update is rolled back with the transaction.
+      if (user.disabled) throw new ConflictError('用户已停用');
+      return user;
+    }).catch((error: unknown) => {
+      if (error instanceof ConflictError) return null;
+      throw error;
+    });
+  }
+
+  async invitations(userId: string): Promise<InvitationInfo[]> {
+    if (typeof userId !== 'string' || !USER_ID.test(userId)) return [];
+    return (await this.#db.query('SELECT * FROM invitations WHERE user_id = $1 ORDER BY created_at DESC, id DESC', [userId])).rows.map(invitationOf);
+  }
+
+  async registerClient(name: string, redirectUris: readonly string[]): Promise<OAuthClient> {
+    if (typeof name !== 'string' || !NAME.test(name)) throw new TypeError('client names are 1 to 100 characters without control characters or surrounding spaces');
+    if (!Array.isArray(redirectUris) || redirectUris.length < 1 || redirectUris.length > 10 || redirectUris.some((uri) => typeof uri !== 'string' || uri.length > 2000)) {
+      throw new TypeError('a client has 1 to 10 redirect URIs of at most 2000 characters');
+    }
+    return this.#db.transaction(async (tx) => {
+      await this.#db.query('SELECT pg_advisory_xact_lock($1)', [CLIENT_LOCK], tx);
+      const at = this.#now();
+      const recent = (await this.#db.query('SELECT count(*)::int AS n FROM oauth_clients WHERE created_at > $1', [new Date(at.getTime() - CLIENT_WINDOW_MS).toISOString()], tx)).rows[0];
+      if (Number(recent.n) >= CLIENT_BURST) throw new LimitError('最近登记的客户端太多，请稍后再登记');
+      const row = (
+        await this.#db.query('INSERT INTO oauth_clients (id, name, redirect_uris, created_at) VALUES ($1, $2, $3, $4) RETURNING *', [newId('cli'), name, [...redirectUris], at.toISOString()], tx)
+      ).rows[0];
+      return clientOf(row);
+    });
+  }
+
+  async client(clientId: string): Promise<OAuthClient | null> {
+    if (typeof clientId !== 'string' || !CLIENT_ID.test(clientId)) return null;
+    const row = (await this.#db.query('SELECT * FROM oauth_clients WHERE id = $1', [clientId])).rows[0];
+    return row === undefined ? null : clientOf(row);
   }
 
   async authenticate(authorization: string | null | undefined): Promise<Principal | null> {
@@ -243,13 +376,13 @@ export class PgPrincipals implements Principals {
     );
   }
 
-  async #issue(tx: PgTransaction, userId: string, label: string, by: string | null): Promise<IssuedToken> {
+  async #issue(tx: PgTransaction, userId: string, label: string, by: string | null, client: string | null = null): Promise<IssuedToken> {
     const token = randomBytes(32).toString('base64url');
     const id = newId('tok');
     const at = this.#now().toISOString();
     await this.#db.query(
-      'INSERT INTO tokens (id, user_id, sha256, label, created_at, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
-      [id, userId, sha256Hex(token), label, at, by],
+      'INSERT INTO tokens (id, user_id, sha256, label, created_at, created_by, client_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [id, userId, sha256Hex(token), label, at, by, client],
       tx,
     );
     return { id, user: userId, token, label, created_at: at };

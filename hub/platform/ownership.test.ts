@@ -34,6 +34,8 @@ const COLUMN: Record<string, string> = {
   call_reasons: 'note',
   users: 'name',
   tokens: 'label',
+  oauth_clients: 'name',
+  invitations: 'user_id',
   pointers: 'name',
   leases: 'key',
   lease_registrations: 'owner',

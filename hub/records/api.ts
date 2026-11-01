@@ -26,6 +26,7 @@ export { parseStrictJson } from './strict-json.ts';
 export { canonicalize, canonicalBytes, canonicalByteLength, createCanonicalEncoder, CanonicalizationError } from './canonical.ts';
 export { sha256Hex, digestOf, recordDigest, isSha256, SHA256_PATTERN } from './digest.ts';
 export { newId, ulid, idTime, isId } from './ids.ts';
+export { INVITATION_TTL_MS, normalizeInvitation } from './principals.ts';
 export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
 export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, MAX_ADMIN_FINDINGS, CREDENTIAL_DETECTORS } from './scan.ts';
 export { textPreview, stripNul } from './text.ts';
@@ -71,11 +72,40 @@ export interface TokenInfo {
   id: string;
   user: string;
   label: string;
+  /** The registered client the token was issued to through the standard authorization; null for a token issued directly. */
+  client: string | null;
   created_at: string;
   created_by: string | null;
   last_used_at: string | null;
   revoked_at: string | null;
 }
+
+/** A client that registered itself for the MCP standard authorization (RFC 7591): a Circle on one machine, say. */
+export interface OAuthClient {
+  id: string;
+  /** The name the client gave, shown on the authorization page and as the label of its token. */
+  name: string;
+  redirect_uris: string[];
+  created_at: string;
+}
+
+/** An invitation as listed; its code is shown once when issued and never stored. */
+export interface InvitationInfo {
+  id: string;
+  user: string;
+  created_at: string;
+  created_by: string;
+  expires_at: string;
+  used_at: string | null;
+  used_by_client: string | null;
+}
+
+export interface IssuedInvitation extends InvitationInfo {
+  code: string;
+}
+
+/** What an invitation code names: its invitation and account, or why it cannot be used. */
+export type InvitationCheck = { ok: true; invitation: string; user: User; expires_at: string } | { ok: false; reason: 'absent' | 'used' | 'expired' | 'disabled' };
 
 export interface Principals {
   /** Creates the first admin and its token. Refused (ConflictError) once any admin exists. */
@@ -87,11 +117,23 @@ export interface Principals {
   findByName(name: string): Promise<User | null>;
   list(): Promise<User[]>;
   history(userId: string): Promise<UserChange[]>;
-  /** Admins issue tokens for anyone; a user only for themselves. */
-  issueToken(by: Principal, userId: string, label?: string): Promise<IssuedToken>;
+  /** Admins issue tokens for anyone; a user only for themselves. `client` is the registered client it goes to, if any. */
+  issueToken(by: Principal, userId: string, label?: string, client?: string): Promise<IssuedToken>;
   /** Admins revoke any token; a user only their own. False when the token does not exist or was already revoked. */
   revokeToken(by: Principal, tokenId: string): Promise<boolean>;
+  /** Revokes the live token with this value (RFC 7009: whoever holds a token may revoke it). False when there is none. */
+  revokeTokenValue(token: string): Promise<boolean>;
   tokens(userId: string): Promise<TokenInfo[]>;
+  /** Admins invite an enabled account: a code valid INVITATION_TTL_MS that the authorization page takes once. */
+  invite(by: Principal, userId: string): Promise<IssuedInvitation>;
+  /** Looks a code up without using it. */
+  checkInvitation(code: string): Promise<InvitationCheck>;
+  /** Marks the invitation used by `clientId`; null when it was used meanwhile, expired, or its account was disabled. */
+  takeInvitation(invitationId: string, clientId: string): Promise<User | null>;
+  invitations(userId: string): Promise<InvitationInfo[]>;
+  /** Registers a client; refused (LimitError) while too many registered in the last minutes. */
+  registerClient(name: string, redirectUris: readonly string[]): Promise<OAuthClient>;
+  client(clientId: string): Promise<OAuthClient | null>;
   /** `Authorization` header value (`Bearer <token>`). Null for anything that is not a live token of an enabled user. */
   authenticate(authorization: string | null | undefined): Promise<Principal | null>;
 }
