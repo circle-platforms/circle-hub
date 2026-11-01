@@ -14,7 +14,15 @@ export interface RuntimeEntry { object: string; method: string; dispatch: string
  * byte digest of the original file, as recorded by the @2 declaration (null when the document is the original itself).
  */
 export interface PinnedIdentity { identity: string; bytes: string | null }
-export interface RuntimeContract { runtimeVersion: string; digest: string; pinned: PinnedIdentity; objects: string[]; enabled: RuntimeEntry[] }
+/**
+ * The runner's own cleanup (a runtime-contract@2 addition, decision 112): at every case boundary and at the end of a workbook
+ * the runner clears the listed objects, deriving its clear commands from every command line it sent, tested against these
+ * prefix rules in source order (first hit wins). Only the prefixes are declared, never the clear commands: many are
+ * module-wide and are not a teardown a case may copy. `pinned` says whether the original contract's source_hashes record
+ * the same digest for the source; when it does not, the digest is the Hub-side declaration only.
+ */
+export interface RunnerCleanup { source: string; sha256: string; objects: string[]; rules: Array<{ prefixes: string[]; line: number | null }>; pinned: boolean }
+export interface RuntimeContract { runtimeVersion: string; digest: string; pinned: PinnedIdentity; objects: string[]; enabled: RuntimeEntry[]; cleanup?: RunnerCleanup }
 const sourceDocuments = new WeakMap<RuntimeContract, Record<string, unknown>>();
 export function sourceDocument(contract: RuntimeContract): Record<string, unknown> | null { return sourceDocuments.get(contract) ?? null; }
 export type ParsedRuntimeContract = { ok: true; contract: RuntimeContract } | { ok: false; problems: Problem[] };
@@ -45,7 +53,7 @@ export function runtimeMethod(contract: RuntimeContract, object: string, method:
   return contract.enabled.find((entry) => entry.object === object && entry.method === method) ?? null;
 }
 /** The members a runtime-contract@2 document adds on top of the original contract (Hub-side deployment declaration). */
-const ADDITIONS = ['types', 'roles', 'effects', 'promotions'];
+const ADDITIONS = ['types', 'roles', 'effects', 'promotions', 'cleanup'];
 /**
  * Runtime members B1 reads that the pinned original contract does not have. That original (canonical identity
  * ca32544f…) has exactly minimum_version, runner_source, runner_sha256 and found_times_supported. block_model and
@@ -129,6 +137,22 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
       if (promotions.has(key)) issue(at, '同一条目重复推广'); else promotions.set(key, { index: k, status_authority: row.status_authority });
     }
   }
+  let cleanup: RunnerCleanup | undefined;
+  if (value.cleanup !== undefined) {
+    const c = value.cleanup;
+    const rules = isRecord(c) && Array.isArray(c.rules) ? c.rules : [];
+    const prefix = (p: unknown): p is string => typeof p === 'string' && /\S/.test(p) && p.length <= 200 && !/[\r\n]/.test(p);
+    if (value.schema !== 'runtime-contract@2' || !isRecord(c) || Object.keys(c).some((key) => !['source', 'sha256', 'objects', 'rules'].includes(key)) || !nonempty(c.source) || typeof c.sha256 !== 'string' || !SHA.test(c.sha256)
+      || !Array.isArray(c.objects) || c.objects.length === 0 || c.objects.length > 16 || c.objects.some((o) => !nonempty(o)) || new Set(c.objects).size !== c.objects.length
+      || rules.length === 0 || rules.length > 512 || rules.some((r) => !isRecord(r) || Object.keys(r).some((key) => !['prefixes', 'line'].includes(key)) || !Array.isArray(r.prefixes) || r.prefixes.length === 0 || r.prefixes.length > 16 || !r.prefixes.every(prefix) || r.line !== undefined && (!Number.isSafeInteger(r.line) || (r.line as number) < 1))) {
+      issue('/cleanup', '运行器清理声明只能是 runtime-contract@2 里的 source、sha256、objects（1–16 个对象）和 rules（1–512 条，每条 1–16 个单行前缀，可带源码行号）');
+    } else {
+      for (const [k, o] of (c.objects as string[]).entries()) if (!objects.has(o)) issue(`/cleanup/objects/${k}`, '清理声明的对象不在合约对象列表里');
+      const recorded = isRecord(value.source_hashes) ? value.source_hashes[c.source as string] : undefined;
+      if (recorded !== undefined && recorded !== c.sha256) issue('/cleanup/sha256', '清理源文件摘要与原合约源文件摘要表记的不同');
+      cleanup = { source: String(c.source), sha256: c.sha256, objects: [...c.objects as string[]], rules: rules.map((r) => ({ prefixes: [...(r as { prefixes: string[] }).prefixes], line: typeof (r as { line?: unknown }).line === 'number' ? (r as { line: number }).line : null })), pinned: recorded === c.sha256 };
+    }
+  }
   const promotedPairs = new Set<string>();
   const enabled: RuntimeEntry[] = [];
   const pairs = new Set<string>();
@@ -199,7 +223,7 @@ export function parseRuntimeContract(value: unknown, expected?: { runtimeVersion
   }
   if (expected && (expected.digest !== pinned.identity || expected.runtimeVersion !== runtime.minimum_version)) issue('/runtime', '合约身份与运行环境配置的期望值不一致');
   if (problems.length) return { ok: false, problems };
-  const contract: RuntimeContract = { digest, runtimeVersion: String(runtime.minimum_version), pinned, objects: [...objects.keys()], enabled };
+  const contract: RuntimeContract = { digest, runtimeVersion: String(runtime.minimum_version), pinned, objects: [...objects.keys()], enabled, ...(cleanup ? { cleanup } : {}) };
   sourceDocuments.set(contract, value);
   return { ok: true, contract };
 }

@@ -1,4 +1,4 @@
-# case-compile 3.9.7
+# case-compile 3.9.8
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -301,6 +301,25 @@ under a step whose several actions precede it, binds to those actions as one ste
 model splits it into verbatim clauses of the expectation node and asserts each after the plan operation it observes; that
 placement is a model judgment, and the Hub still checks every quote against the expectation's original bytes. An explicit
 `step_ref`, label or number that matches no action, or several, still leaves the expectation unbound.
+
+### 3.9.8: the runner's own cleanup (decision 112)
+
+Aligned with InfoTest's clear.py and CES's framework cleanup class C1 (owner, 2026-11-01: "按 clear 规则算，规则外仍要逆命令"). Before
+every case after the first and at the end of a workbook the runner clears each of its device objects: `clear_config` derives
+the clear commands from every command line the object sent since it connected, testing each line against the `CMD_RULES`
+prefixes of `get_clear_list` in source order and taking the first hit. A runtime-contract@2 document may declare that cleanup
+as the closed addition `cleanup`: `source` (the runner path), `sha256` (the file bytes), `objects` (1–16 contract objects the
+runner clears) and `rules` (1–512, each 1–16 single-line `prefixes` and an optional source `line`). The clear commands are never
+declared: many are module-wide and are not a teardown a case may copy (CES's lesson). Like the other additions it is removed
+when the original identity is recovered; a `sha256` that differs from the original contract's `source_hashes` entry for the
+same path refuses the contract.
+
+A live configuration command on a listed object whose line starts with a declared prefix needs no inverse in the case; every
+other one still needs its declared inverse in the cleanup segment, in reverse order, as before, and an explicit inverse of a
+covered command is still accepted. The contract check's support statement says how many commands the runner's cleanup
+discharges, which rule and prefix covers each, and whether the original contract records the same digest for the source
+(otherwise the digest is the Hub-side declaration only and the bytes on the jumphost are unchecked). Not modelled: a console
+object in segment mode skips clear commands containing `segment`.
 
 ### 3.8.11: declared confirmations, net-effect cleanup and declared text shapes (decision 104)
 

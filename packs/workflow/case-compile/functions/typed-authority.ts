@@ -2,7 +2,7 @@ import {blockMeta,blockPointer} from './blocks.ts';
 import {blockGraphGaps} from './block-checks.ts';
 import {blockRuntimeGaps,assertionTarget,assertionCells} from './block-runtime.ts';
 import {prepareRestores} from './block-restore.ts';
-import {commandObligations,definitionKey} from './command-obligations.ts';
+import {commandObligations,definitionKey,type RunnerCovered} from './command-obligations.ts';
 import {within} from './command-policy.ts';
 import {planCommands} from './plan-commands.ts';
 // One authority boundary is shared by checks, generation, workbook verification and dispatch.
@@ -18,7 +18,7 @@ export interface AuthorityGap { document: string; pointer: string; message: stri
 export function replacedIdentity(identity:CommandIdentity,slots:PlanSlots):CommandIdentity {
  const out=structuredClone(identity);for(const p of out.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const original=p.parsed.value.value;const replacement=slots.replacements.find(r=>addressKey(r.case)===addressKey(original));if(replacement){p.parsed.value.value=replacement.bed;p.raw=replacement.bed;}}return out;
 }
-export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimeProfile, slots: PlanSlots, known?:unknown,catalog?:unknown,caseTexts:readonly string[]=[],manifestSha?:string,services?:unknown): AuthorityGap[] {
+export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimeProfile, slots: PlanSlots, known?:unknown,catalog?:unknown,caseTexts:readonly string[]=[],manifestSha?:string,services?:unknown,covered?:RunnerCovered[]): AuthorityGap[] {
  const blockGaps=blockRuntimeGaps(contract,profile,slots,catalog);if(blockGaps.length)return blockGaps;
  const gaps:AuthorityGap[]=[];const note=(pointer:string,message:string,verdict:Verdict='unknown')=>gaps.push({document:'contract',pointer,message,verdict});
  const resolution=planCommands(contract,profile,slots,catalog);gaps.push(...resolution.problems);gaps.push(...prepareRestores(contract,profile,slots,catalog,resolution.byLine,manifestSha));gaps.push(...blockGraphGaps(contract,profile,slots,catalog,resolution.byLine,services));const knownIds=Array.isArray(known)?known.map(identityOf):known===undefined?[]:null;
@@ -51,7 +51,9 @@ export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimePr
   if(!a||!name||!a.parameters[name])note(entry?.sourcePointer??'/entries','断言方法缺类型、角色或效果依据');
   else{effectUse(a,`/expects/${i}`);if(a.parameters[name].role!=='literal_assertion')note(`/expects/${i}`,'断言角色不等于原合约声明','refute');if(!expect.register){const problem=valueProblem(a.parameters[name].type,assertionCells(expect,target!).g);if(problem)note(`/expects/${i}/text`,problem,'refute');}if(expect.count!==undefined&&target){const countName=Object.keys(target.call.parameters).find(name=>target.call.parameters[name]==='checkpoint_count');if(countName&&a.parameters[countName]){const problem=valueProblem(a.parameters[countName].type,expect.count);if(problem)note(`/expects/${i}/count`,problem,'refute');}}}
  }
- gaps.push(...commandObligations((awaitOperations(contract,profile,slots,resolution.answers)),slots,catalog,caseTexts));
+ const discharged:RunnerCovered[]=[];
+ gaps.push(...commandObligations((awaitOperations(contract,profile,slots,resolution.answers)),slots,catalog,caseTexts,contract.cleanup,discharged));
+ covered?.push(...discharged.map(row=>({...row,pointer:blockPointer(slots,row.pointer)})));
  return gaps.map(gap=>({...gap,pointer:blockPointer(slots,gap.pointer)}));
 }
 function awaitOperations(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,answers:ReadonlySet<number>){return slots.steps.flatMap((step,index)=>{if(answers.has(index))return [];const entry=runtimeMethod(contract,step.object,step.method),allowed=profile.allowed.find(call=>call.object===step.object&&call.method===step.method);if(!entry||!allowed)return [];return bindArguments(entry,step,`/steps/${index}`).values.filter(value=>allowed.parameters[value.name]==='device_cli'&&typeof value.value==='string').map(value=>({line:String(value.value),pointer:value.pointer,object:step.object,cleanup:step.cleanup===true}));});}

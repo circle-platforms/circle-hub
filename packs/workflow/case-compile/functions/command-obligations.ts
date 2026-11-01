@@ -7,6 +7,15 @@ import {readCommandPolicy,within,pathSegments,type CommandPolicy} from './comman
 import {identityOf,identityKey,commandLine} from './typed-contract.ts';
 import type {PlanSlots} from './slots.ts';
 import type {AuthorityGap} from './typed-authority.ts';
+import type {RunnerCleanup} from './runtime-contract.ts';
+/** A configuration command the runner's own cleanup clears (decision 112), with the rule that covers it. */
+export interface RunnerCovered {pointer:string;object:string;line:string;rule:number;prefix:string;source_line:number|null}
+/** The first rule whose prefix starts the sent line, as the runner tests it; null when no rule covers the line. */
+export function runnerRule(cleanup:RunnerCleanup|undefined,object:string,line:string):{rule:number;prefix:string;source_line:number|null}|null{
+ if(!cleanup||!cleanup.objects.includes(object))return null;
+ for(const [rule,row]of cleanup.rules.entries()){const prefix=row.prefixes.find(p=>line.startsWith(p));if(prefix!==undefined)return {rule,prefix,source_line:row.line};}
+ return null;
+}
 export const definitionKey=(identity:CommandIdentity)=>JSON.stringify([identity.tree_root,identity.path,identity.signature]);
 export interface Operation {line:string;pointer:string;object:string;cleanup:boolean}
 function definitions(raw:unknown):CommandDefinition[]{
@@ -18,7 +27,7 @@ function definitions(raw:unknown):CommandDefinition[]{
   return [{path,words:entry.words,signatures:entry.signatures} as CommandDefinition];
  });
 }
-export function commandObligations(operations:readonly Operation[],slots:PlanSlots,raw:unknown,sourceTexts:readonly string[]):AuthorityGap[]{
+export function commandObligations(operations:readonly Operation[],slots:PlanSlots,raw:unknown,sourceTexts:readonly string[],runner?:RunnerCleanup,covered?:RunnerCovered[]):AuthorityGap[]{
  if(!operations.length&&!sourceTexts.length&&!slots.steps.some(step=>step.restore_for!==undefined))return [];
  const policy=readCommandPolicy(isRecord(raw)?raw.policy:undefined);
  const gaps:AuthorityGap[]=[];
@@ -116,7 +125,15 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   if(undone>=0)live.splice(undone,1);else live.push(operation);
  }
  const configured=live.reverse();
- configured.forEach((operation,index)=>{const problem=inverseProblem(operation,actual[index]);if(problem)note(problem.pointer,problem.message,problem.verdict,problem.obligation);});
- if(actual.length>configured.length)for(const extra of actual.slice(configured.length))note(extra.pointer,'清理段含没有对应执行命令的额外配置操作');
+ // In reverse order each live configuration takes the next cleanup step that is its declared inverse. One the runner's own
+ // cleanup covers (InfoTest clear.py: every sent line against the prefix rules, first hit) needs none; any other still does.
+ let next=0;
+ for(const operation of configured){
+  if(next<actual.length&&inverseProblem(operation,actual[next])===null){next++;continue;}
+  const rule=runnerRule(runner,operation.object,operation.line);
+  if(rule){covered?.push({pointer:operation.pointer,object:operation.object,line:operation.line,...rule});continue;}
+  const problem=inverseProblem(operation,actual[next]);if(problem)note(problem.pointer,problem.message,problem.verdict,problem.obligation);next++;
+ }
+ for(const extra of actual.slice(next))note(extra.pointer,'清理段含没有对应执行命令的额外配置操作');
  return gaps;
 }

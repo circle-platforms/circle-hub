@@ -4,6 +4,7 @@ import {blockMeta,blockPointer,withoutModelIdentities} from './blocks.ts';
 import {labelOf} from './generated/vocabulary.ts';
 import {planCommands} from './plan-commands.ts';
 import { typedAuthorityGaps, authorityRecovery, typedAddressUses } from './typed-authority.ts';
+import type { RunnerCovered } from './command-obligations.ts';
 // Verify authored plans against original runner identities, runtime profile, manifest, and frozen lineage addresses.
 import { quoteMatches } from './quote.ts';
 import { encodeG, GSyntaxError } from './g-syntax.ts';
@@ -40,23 +41,32 @@ function slotsOf(s: CheckSubject): { slots: PlanSlots; errors: null } | { slots:
   const read = readSlots(s.data);
   return read.ok ? { slots: read.slots, errors: null } : { slots: null, errors: read.problems.map((v) => refute(s, v.pointer.includes('/quote') ? 'expect_without_source' : 'slots_invalid', `槽位 ${v.pointer}：${v.message}；按 slots.schema.json 的形状修正`, `/data${v.pointer}`)) };
 }
-function typedPrerequisites(s: CheckSubject, slots: PlanSlots): Outcome[] | null {
+function typedPrerequisites(s: CheckSubject, slots: PlanSlots, covered?: RunnerCovered[]): Outcome[] | null {
   const gaps0=[...(s.projection_unknowns??[]),...(s.recomposition_requested&&!s.recomposition?['缺可受理的独立重组记录；等待重组模型与核对方在编写之前完成重组并绑定真实 Hub 运行及结果']:[]),...recompositionGaps(slots,s.recomposition,s.manifest_sha256).filter(i=>i.verdict==='unknown').map(i=>i.message)];
   const invalidRecomposition=recompositionGaps(slots,s.recomposition,s.manifest_sha256).filter(i=>i.verdict==='refute');
   if(invalidRecomposition.length)return [refute(s,'slots_invalid',invalidRecomposition.map(i=>i.message).join('；'),'/data/recomposition')];
   if(gaps0.length)return [{verdict:'unknown',reason:'missing_input',missing:gaps0.join('；'),statement:gaps0.join('；'),grounds:[],tier:'blocking',item:s.item}];
   // Model identity proposals belong to commands_known, not shared contract prerequisites.
   const plan=withoutModelIdentities(slots);
-  const gaps = typedAuthorityGaps(s.contract!, s.profile!, plan,s.command_identities,s.command_catalog,s.case_texts,s.manifest_sha256,s.bed_services);
+  const gaps = typedAuthorityGaps(s.contract!, s.profile!, plan,s.command_identities,s.command_catalog,s.case_texts,s.manifest_sha256,s.bed_services,covered);
   if (!gaps.length) return null;
   const missing = authorityRecovery(gaps);
   if(gaps.some(g=>g.verdict==='refute')){const first=gaps.find(gap=>gap.verdict==='refute')!;const pointer=blockMeta(slots)&&first.pointer.startsWith('/blocks/')?'/data'+first.pointer:'/data';return [refute(s,'method_forbidden',missing,pointer,{problems:gaps,obligations:gaps.flatMap(gap=>gap.obligation?[gap.obligation]:[])})];}
   return [{ verdict: 'unknown', reason: 'missing_input', missing, statement: missing, grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, data: { problems: gaps } }];
 }
+/** What the runner's own cleanup discharges (decision 112), with its source, rule and how far its digest is pinned. */
+function runnerCleanupText(contract: RuntimeContract, covered: readonly RunnerCovered[]): string {
+  const c = contract.cleanup;
+  if (!c || covered.length === 0) return '';
+  const listed = covered.slice(0, 5).map((row) => `${row.object} 的“${row.line}”（规则 ${row.rule + 1}${row.source_line !== null ? `，${c.source} 第 ${row.source_line} 行` : ''}，前缀“${row.prefix}”）`).join('、');
+  const pinned = c.pinned ? '原合约的源文件摘要表记了同一摘要' : '原合约的源文件摘要表里没有这个文件，摘要只是 Hub 侧声明，跳转机上的字节未核对';
+  return `；其中 ${covered.length} 条配置命令由运行器自己的清理收尾，不要求逆命令（规则 ${c.source}@${c.sha256.slice(0, 12)}：每个用例开始前和整本结束时按发过的命令行逐条比前缀、第一条命中即用；${pinned}）：${listed}${covered.length > 5 ? ` 等 ${covered.length} 条` : ''}`;
+}
 export function checkContractShape(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
   const read = slotsOf(s); if (read.errors) return read.errors;
-  const unverified = typedPrerequisites(s, read.slots); if (unverified) return unverified;
+  const covered: RunnerCovered[] = [];
+  const unverified = typedPrerequisites(s, read.slots, covered); if (unverified) return unverified;
   const out: Outcome[] = [];
   for (const [i, step] of read.slots.steps.entries()) {
     const at = `/data/steps/${i}`; const beforeStep=out.length;
@@ -77,7 +87,8 @@ export function checkContractShape(input: unknown): Outcome[] {
     }
     if(out.length===beforeStep)try { encodeG(step,gOptions(step.object,step.method,s.contract!,s.profile!)); } catch(error) { if(error instanceof GSyntaxError)out.push(refute(s,'param_value',`G 写法 ${error.rule}：${error.message}；修正该步骤后自动重核`,at+'/G')); else throw error; }
   }
-  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，参数角色、签名和值规则均已核对`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.pinned.identity })];
+  const cleanup = s.contract!.cleanup;
+  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，参数角色、签名和值规则均已核对${runnerCleanupText(s.contract!, covered)}`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.pinned.identity, ...(cleanup && covered.length ? { runner_cleanup: { source: cleanup.source, sha256: cleanup.sha256, pinned: cleanup.pinned, covered } } : {}) })];
 }
 export function checkAddresses(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
