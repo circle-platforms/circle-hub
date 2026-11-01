@@ -287,6 +287,10 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 
 ## Console
 
+Owner decision 83 (2026-11-02), walkthrough item 4: an empty, unfiltered task page hides the pack/result filters and
+zero-page counts. An active filter remains visible even when empty. Nonempty lists keep factual page/filter counts;
+the ordering explanation is a title hint. The walkthrough task page records each scoped check.
+
 Server-rendered HTML, no external assets; `Content-Security-Policy: default-src 'none'; style-src 'sha256-…'; img-src
 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; script-src 'sha256-…'; connect-src 'self'`, the one
 stylesheet and the one inline module script (`console/script.ts`, the live updates below; signed-in pages with a live

@@ -14,6 +14,7 @@ The Hub is being rebuilt as a standard MCP server; see [docs/hub-r4-brief.md](do
 
 ### Added
 
+- **Console walkthrough task lists** (owner decision 83). Empty unfiltered task lists show their empty state without filters or zero counters; active filters remain available to clear, and ordering explanations use a hover hint.
 - **circle-hub's own mark** (owner decision 82). The console no longer shows Circle's ring: its mark is the Hub at the centre with the Circles on an orbit around it, in Circle's four colours, drawn inline on every page, and the browser shows it as the console's icon (`GET /console/favicon.svg`; the pages' `img-src` is now `'self'`).
 - **Targeted connection-login reset** (owner decision 81). Administrators can clear the failure record for the credentials typed in a blocked connection attempt, through its form or `POST /console/api/systems/test/forget`. It removes only that stop from the vault and the running process, retains concurrent newer failures and other credentials, and never sends a login or retries automatically. No CLI command is added.
 - **Runtime environment response times** (owner decision 81). Each environment shows its observed calls in the last 24 hours, with median and slowest send-to-receive time, from the existing dispatch journal. The bounded scan discloses partial counts, duplicate transport/read records count once, and new timed exchanges send a coalesced administrator-only `environment.status` event.

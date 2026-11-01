@@ -98,6 +98,7 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   const pack = param(ctx, 'pack');
   const cursor = param(ctx, 'cursor');
   const wanted = param(ctx, 'result');
+  const filtering = pack !== undefined || wanted !== undefined;
   if (wanted !== undefined && !isTaskResult(wanted)) return { status: 400, body: page(ctx.chrome('请求有误', { active: 'tasks' }), html`<p class="error">筛选的任务结果不对</p>`) };
   const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack, limit: TASKS_PER_PAGE, cursor: cursor ?? null });
   const [tasks, titles] = await Promise.all([loadTasks(ctx, listing.items), packTitles(ctx)]);
@@ -127,10 +128,13 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   const next = listing.next === null ? html`` : html`<p class="mt12">${link('/console/runs', '下一页', { pack, result: wanted, cursor: listing.next })}</p>`;
   const feedingTodos=await ctx.deps.knowledge.feeding?.todos(ctx.principal)??[];
   const requests=(await ctx.deps.runs.listRequests?.(ctx.principal)??[]).filter(r=>r.answered_by===null);
-  const list = card({ title: listing.items.length === 0 ? '尚无任务' : '任务', meta: `本页 ${tasks.length} 个任务${wanted === undefined ? '' : `，筛选后 ${shown.length} 个`} · 按开始时间` }, html`${filter}${table(['任务', '任务包版本', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '会话', '结果'], rows, listing.items.length === 0 ? 'Circle 启动任务后在此列出。' : '本页没有符合筛选的任务')}${next}`);
+  const empty = tasks.length === 0 && !filtering;
+  const list = empty
+    ? card({ title: '尚无任务' }, html`<p class="sub">Circle 启动任务后在此列出。</p>`)
+    : card({ title: '任务', meta: `本页 ${tasks.length} 个任务${filtering ? `，筛选后 ${shown.length} 个` : ''}`, hint: '按开始时间排列' }, html`${filter}${table(['任务', '任务包版本', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '会话', '结果'], rows, '本页没有符合筛选的任务')}${next}`);
   return {
     status: 200,
-    body: page(ctx.chrome('任务', { active: 'tasks', hint: 'Circle 提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验' }), html`${filters}<div class="mt16">${liveModule('tasks', ['task.updated'], list)}</div>
+    body: page(ctx.chrome('任务', { active: 'tasks', hint: 'Circle 提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验' }), html`${empty ? '' : filters}<div class="mt16">${liveModule('tasks', ['task.updated'], list)}</div>
 ${section('知识喂入待办',table(['来源','缺什么','下一步','函数失败详情'],feedingTodos.map(row=>[code(JSON.stringify(row.source)),row.missing,row.next_action,row.detail?code(JSON.stringify(row.detail)): '—']),'没有待办'))}
 ${liveModule('task-requests', ['request.updated'], html`${section('已到期未回答的请求',table(['请求','运行 / 包摘要','接收人','原期限','缺什么','下一步'],(listing.overdue_requests??[]).map(r=>[code(r.record),code(r.run??r.pack_digest??''),code(r.audience),r.due,r.missing,r.next_action]),'没有已到期未回答的请求'))}
 ${section('未回答的请求',table(['请求','运行 / 包摘要','种类','接收人','期限','缺什么','下一步'],requests.map(r=>[code(r.record),code(r.run??r.pack_digest??''),uiLabelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}`)}

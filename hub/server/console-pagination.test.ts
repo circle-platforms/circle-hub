@@ -7,6 +7,18 @@ const root='a'.repeat(64),other='b'.repeat(64);
 function context(deps:unknown,url:string):PageContext{return{deps:deps as ServerDeps,principal:{id:runRecord.runner,name:'合成用户',role:'user'},admin:false,url:new URL(url,'http://127.0.0.1'),userName:async()=> '合成用户',chrome:title=>({title,user:{name:'合成用户',role:'用户',admin:false},csrf:null})};}
 const products={products:async()=>[{product:{id:'demo',title:'合成产品',names:['Demo']}}],readableProducts:async()=>new Set(['demo'])};
 function next(body:string):string {const href=/href="([^"]+)"[^>]*>下一页/.exec(body)?.[1];assert.ok(href,body.slice(-600));return href.replaceAll('&amp;','&');}
+test('an empty task list hides filters and zero counts, while an active filter remains clearable', async () => {
+  const deps = { knowledge: {}, runs: { listRuns: async () => ({ items: [], next: null }) } };
+  const empty = String((await runsPage(context(deps, '/console/runs'))).body);
+  assert.match(empty, /尚无任务/);
+  assert.doesNotMatch(empty, /name="pack"|本页 0 个任务|按任务结果筛选/);
+  for (const query of ['?pack=missing', '?result=passed']) {
+    const filtered = String((await runsPage(context(deps, `/console/runs${query}`))).body);
+    assert.match(filtered, /name="pack"/);
+    assert.match(filtered, /本页 0 个任务，筛选后 0 个/);
+    assert.match(filtered, /title="按开始时间排列"/);
+  }
+});
 test('products page exposes the 501st build through a bounded cursor rather than truncating it',async()=>{
   const builds=Array.from({length:501},(_,i)=>({name:`rel_demo_10_6_${i}`,family:'Demo',line:'10.6',base:`rel_demo_10_6_${i}`,platform:null,built_at:null,released_at:null,root:null}));
   const deps={products,knowledge:{builds:async()=>builds}};
