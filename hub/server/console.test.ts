@@ -430,7 +430,7 @@ describe('pages', () => {
     assert.equal(mine.status, 200);
     assert.ok(mine.body.includes('我的 Circle'));
     for (const token of await server.records.principals.tokens(server.admin.user.id)) assert.ok(!mine.body.includes(token.id), 'no other account\'s token');
-    for (const token of await server.records.principals.tokens(user.user.id)) assert.ok(mine.body.includes(token.id), 'the member\'s own token');
+    for (const token of await server.records.principals.tokens(user.user.id)) assert.ok(!mine.body.includes(token.id), 'device rows do not expose token identifiers');
 
     const session = await signIn(server.admin.token);
     for (const path of ['/console/admin', '/console/team']) {

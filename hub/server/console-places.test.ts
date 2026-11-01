@@ -183,6 +183,26 @@ describe('tasks', () => {
 });
 
 describe('operations and commands', () => {
+  test('Circle tables show registered device names or direct-token labels without token identifiers', async () => {
+    const user=await member();
+    const client=await server.records.principals.registerClient('合成 MacBook Circle',['http://127.0.0.1/callback']);
+    const oauth=await server.records.principals.issueToken(server.admin.principal,user.user.id,'不应替代客户端名称',client.id);
+    const direct=await server.records.principals.issueToken(server.admin.principal,user.user.id,'合成 Linux Circle');
+    const admin=await signIn(server.admin.token), memberSession=await signIn(user.token);
+    for(const path of ['/console/team',`/console/team/${user.user.id}`,'/console/connections']) {
+      const reply=await get(path,admin);
+      const tables=[...reply.body.matchAll(/<table[\s\S]*?<\/table>/g)].map(match=>match[0]).join('');
+      assert.match(tables,/设备名/);
+      assert.match(tables,/合成 MacBook Circle/);
+      assert.match(tables,/合成 Linux Circle/);
+      const visible=tables.replace(/<[^>]*>/g,'');
+      assert.ok(!visible.includes(oauth.id)&&!visible.includes(direct.id));
+      assert.ok(reply.body.includes(`circle-hub token revoke ${oauth.id}`),'disconnect command retains its exact target');
+    }
+    const mine=await get('/console/settings',memberSession);
+    assert.match(mine.body,/合成 MacBook Circle/);
+    assert.ok(!mine.body.includes(oauth.id)&&!mine.body.includes(direct.id));
+  });
   test('team owns members and permissions, settings retains system settings and members cannot browse another account', async () => {
     const user=await member(), other=await member();
     const admin=await signIn(server.admin.token), session=await signIn(user.token);

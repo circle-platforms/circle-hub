@@ -73,6 +73,8 @@
 
 ## 做了的
 
+- 第 11 项：团队、连接及成员设置按设备名显示 Circle，优先取标准授权客户端名称，其次取访问令牌标签；表格不显示令牌编号，断开命令仍保留精确目标。
+
 - 第 10 项：新增团队导航、成员列表和详情；管理员可查看权限、任务包分配、连接并生成现有管理命令，成员仅查看本人。成员管理移出设置，成员设置保留“我的 Circle”；导航设计与决定 83 同步。
 
 - 第 8 项：流程图改为个人与团队两栏，中间显示提交共享与出处校验；运行位置和读取权限放入悬停说明，原文归档仍标规划中。没有扩大现有读取权限。
@@ -85,6 +87,8 @@
 - 第 5 项：两个请求入口共用一个列表；按记录身份合并、逾期优先、显示成员名字，无请求时隐藏整段。状态取自新生成的 B07 显示轴；原请求记录不变。
 
 ## 验证
+
+- 第 11 项：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console.test.ts hub/server/console-environments.test.ts` 29 项通过、0 跳过；`npm run test:docs` 281 项通过、0 跳过。未运行全量回归。
 
 - 第 10 项：`npm run typecheck` 通过；`node --test --test-concurrency=2 hub/server/console-places.test.ts hub/server/console-search.test.ts hub/server/console.test.ts` 31 项通过、0 跳过；`npm run test:docs` 281 项通过、0 跳过。新增成员状态显示轴另有确认待答，当前保留原设置页状态用语；未运行全量回归。
 

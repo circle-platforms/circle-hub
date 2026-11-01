@@ -296,7 +296,7 @@ ${run.stderr.length > 0 ? html`<pre class="error">${run.stderr.join('\n')}</pre>
 
 /** The chrome of a management result: the place of the navigation the action belongs to. */
 function actionChrome(ctx: PageContext, action: Action) {
-  return ctx.chrome(action.title, { active: action.back.startsWith('/console/operations/knowledge') || action.back === KNOWLEDGE ? 'knowledge' : action.back.startsWith('/console/operations/pack') || action.back === PACKS ? 'packs' : action.back.startsWith('/console/operations/system') || action.back === RESOURCES ? 'connections' : 'settings', sub: '与命令行执行相同的命令，写入相同的记录' });
+  return ctx.chrome(action.title, { active: action.back.startsWith('/console/operations/member') ? 'team' : action.back.startsWith('/console/operations/knowledge') || action.back === KNOWLEDGE ? 'knowledge' : action.back.startsWith('/console/operations/pack') || action.back === PACKS ? 'packs' : action.back.startsWith('/console/operations/system') || action.back === RESOURCES ? 'connections' : 'settings', sub: '与命令行执行相同的命令，写入相同的记录' });
 }
 
 /** Each command of an action with its output; the commands after one that did not finish were not run. */
@@ -308,7 +308,7 @@ export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | 
     ? card({ title: `第 ${index + 1} 步`, meta: html`<code>${['circle-hub', ...step.argv].join(' ')}</code>` }, runLines(step.run, action.once === true ? onceNotice(step.argv) : null))
     : card(null, runLines(step.run, action.once === true ? TOKEN_ONCE : null)));
   const trust = ctx.secure ? html`，并把颁发机构证书加入 ${code('trust_cert_files')}` : '';
-  const connected = html`<p class="sub">成员完成连接后，${link('/console/settings', '设置')}的“已连接的 Circle”显示该 Circle 与最近使用时间。</p>`;
+  const connected = html`<p class="sub">成员完成连接后，${link('/console/team', '团队')}的“已连接的 Circle”显示该 Circle 与最近使用时间。</p>`;
   const after = last.code !== 0 || action !== ACTIONS['member-add'] || form === undefined
     ? ''
     : form.get('connect') === 'token'

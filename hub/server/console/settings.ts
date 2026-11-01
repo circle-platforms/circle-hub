@@ -10,6 +10,7 @@ import { MANIFEST_FILE, layoutAt, listBackups } from '../../platform/api.ts';
 import type { TokenInfo, User } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
 import { commands } from './commands.ts';
+import { circleName } from './circles.ts';
 import { code, html, link, liveModule, page, pre, table, type Html } from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './pages.ts';
 import { button, card, chip, commandLink, commandModal, duration, kv, sectionHead, seg, when, type CommandDialog } from './ui.ts';
@@ -230,9 +231,9 @@ ${liveModule('dialogs', ['member.connected'], dialogs.map(commandModal))}`;
 
 async function memberSettings(ctx: PageContext): Promise<PageResult> {
   const tokens = await ctx.deps.records.principals.tokens(ctx.principal.id);
-  const rows = tokens.map((token) => [code(token.id), token.label || '—', token.client === null ? '访问令牌' : '标准授权', when(token.created_at), when(token.last_used_at), token.revoked_at === null ? chip('已连接', 'pass') : chip(`已断开 ${when(token.revoked_at)}`, 'unchecked')]);
+  const rows = await Promise.all(tokens.filter(token => token.revoked_at === null).map(async token => [await circleName(ctx.deps.records.principals, token),ctx.principal.name,when(token.last_used_at),'由管理员断开']));
   const body = html`<section class="grid g-2-1 section" id="mine">
-${liveModule('my-circles', ['member.connected'], card({ title: ctx.principal.name, lead: html`<span class="avatar" aria-hidden="true">${[...ctx.principal.name][0] ?? ''}</span>`, tail: chip(uiLabelOf('permission_role', ctx.principal.role), 'plain') }, html`${sectionHead('我的 Circle', undefined, undefined, undefined, '每台设备上的 Circle 独立连接；不显示令牌内容')}${table(['令牌', '标签', '连接方式', '签发时间', '最近使用', '状态'], rows, '尚无已连接的 Circle')}<p class="sub mt12">断开连接由管理员在 Circle 中执行。</p>`))}
+${liveModule('my-circles', ['member.connected'], card({ title: ctx.principal.name, lead: html`<span class="avatar" aria-hidden="true">${[...ctx.principal.name][0] ?? ''}</span>`, tail: chip(uiLabelOf('permission_role', ctx.principal.role), 'plain') }, html`${sectionHead('我的 Circle', undefined, undefined, undefined, '每台设备上的 Circle 独立连接；断开由管理员在 Circle 中执行')}${table(['设备名','成员','最近使用时间','操作'], rows, '尚无已连接的 Circle')}`))}
 ${card({ title: '连接新的 Circle', meta: 'MCP 标准授权' }, html`<p class="sub">把以下配置写入新设备上 Circle 的 settings.json。Circle 打开授权页后，在已登录控制台的浏览器中确认以本账号授权；在其他设备上，输入管理员签发的邀请码。</p><pre class="snippet">${circleEntry(originOf(ctx), false)}</pre>`)}
 </section>
 ${sectionHead('Hub 状态', undefined, undefined, 'hub', '服务、证书、备份与数据库')}

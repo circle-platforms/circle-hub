@@ -287,6 +287,10 @@ log and does not change the answer. No argument preview is sent (B08 F[7], see D
 
 ## Console
 
+Decision 83 shows Circle connections as devices: the registered OAuth client name, or a direct token's label, the member,
+last use and disconnect action. Team, Connections and member Settings omit token identifiers from their tables; exact
+identifiers remain inside disconnect command dialogs only.
+
 Decision 83 adds Team before Settings. Administrators manage member details, publish rights, task-pack assignments and
 Circle connections there using the existing commands. Members see only their own account. Settings retains system
 secrets and Hub state; member Settings still contains My Circle. See `docs/design/console-navigation.md` for navigation.

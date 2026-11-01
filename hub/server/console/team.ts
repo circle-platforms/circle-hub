@@ -1,5 +1,6 @@
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { commands } from './commands.ts';
+import { circleName } from './circles.ts';
 import { code, definitions, html, link, liveModule, page, table } from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './pages.ts';
 import { button, card, chip, commandLink, commandModal, sectionHead, when, type CommandDialog } from './ui.ts';
@@ -37,15 +38,16 @@ export async function teamPage(ctx: PageContext, member?: string): Promise<PageR
       }
     }
     for (const token of tokens) {
+      if (token.revoked_at !== null || user.disabled) continue;
       const revoke = commands.tokenRevoke(token, user.name);
       if (ctx.admin && token.revoked_at === null) dialogs.push(revoke);
-      circles.push([code(token.id),user.name,token.label || '—',when(token.last_used_at),token.revoked_at === null ? '已连接' : '已断开',ctx.admin && token.revoked_at === null ? commandLink(revoke,'断开') : '—']);
+      circles.push([await circleName(principals, token),user.name,when(token.last_used_at),ctx.admin ? commandLink(revoke,'断开') : '由管理员断开']);
     }
   }
   return {status:200,body:page(ctx.chrome(member === undefined ? '团队' : users[0].name,{active:'team',hint:'第一个账户是管理员；账户仅由管理员添加，成员权限和任务包分配在此管理。',actions:ctx.admin ? button('/console/operations/member','添加成员',{primary:true,icon:'plus'}) : undefined}),html`
 ${member === undefined ? '' : html`<p>${link('/console/team','返回团队')}</p>`}
 ${liveModule('members',['member.connected'],card({title:member === undefined ? '成员' : '成员详情',meta:`${users.length} 人`},table(['名字','角色','状态','可用的任务包','操作'],members)))}
 ${member === undefined ? '' : html`${sectionHead('权限')}${card(null,definitions(permissions))}${sectionHead('任务包分配')}${card(null,table(['任务包','可使用','操作'],assignments,'尚无任务包'))}`}
-<div class="mt16">${liveModule('member-circles',['member.connected'],card({title:'已连接的 Circle',hint:'停用、启用和断开生成命令，在管理员的 Circle 或 Hub 主机上执行。'},table(['令牌','成员','标签','最近使用','状态','操作'],circles,'尚无已连接的 Circle')))}</div>
+<div class="mt16">${liveModule('member-circles',['member.connected'],card({title:'已连接的 Circle',hint:'停用、启用和断开生成命令，在管理员的 Circle 或 Hub 主机上执行。'},table(['设备名','成员','最近使用时间','操作'],circles,'尚无已连接的 Circle')))}</div>
 ${liveModule('dialogs',['member.connected'],dialogs.map(commandModal))}`)};
 }
