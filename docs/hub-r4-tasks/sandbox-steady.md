@@ -13,7 +13,7 @@
 原因在沙箱：它每 100 毫秒看一次函数进程树的常驻内存，进程的线程表在 12 次、约 24 毫秒的复读里一直变化就算看不全，看不全一次就停。Node 子进程刚启动时线程表正是这样在变。下一次读数多半能看全。
 
 - 分支和工作树：`sandbox-steady`（从 hub-redesign b3508640d 开出）
-- 可以改的路径：`hub/rules/sandbox/resident.ts`、`hub/rules/sandbox/sandbox.ts`、`hub/runs/engine/evaluate.ts`、`hub/dispatch/boundary.ts`、`hub/dispatch/effect-gate.ts`，以及这些地方的测试；`docs/hub-r4-progress.md` 补记决定 116。
+- 可以改的路径：`hub/rules/sandbox/resident.ts`、`hub/rules/sandbox/sandbox.ts`、`hub/runs/engine/evaluate.ts`、`hub/dispatch/boundary.ts`、`hub/dispatch/effect-gate.ts`、`hub/dispatch/accepted.ts`，以及这些地方的测试；`docs/hub-r4-progress.md` 补记决定 116。
 - 规则：同前（不推送、不建 PR；测试只用合成数据）。部署经所有者同意（"继续修复，直到circle成功复现为止"）。
 
 ## 做了什么
@@ -23,6 +23,7 @@
 3. **照实说**：
    - 命令目录选择因沙箱没跑成时，缺口写"Hub 的沙箱这次没能运行目录选择函数（不是目录、计划或包的错），已在服务内重试过；原样重交再核"；
    - 派发前重核里有检查没出结论、也没有驳回时，关口写"有检查没出结论……不是计划、工作簿或包被驳回；什么都没发出；原样重交，或开新的核验运行再派发"，不再写"请修正后重核"。真有驳回时照旧。
+   - 作业还没发到设备时，进展里附的引用叫"派发前核对的结论"（逐台设备的版本和接口核对，不是用例在设备上的结果），不再叫"结果引用……读它看逐条结论"，免得模型以为用例已经跑完。
 
 ## 不做
 
