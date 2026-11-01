@@ -1,0 +1,36 @@
+# bed-install 1.0.0
+
+给整台预订的自动化测试环境装构建（决定 117）。照 InfoTest：升级就是框架里的普通用例
+`smoke_test/system/upgrade/99999999{0,1,2}.py`，conf 里第 i 台设备一个，镜像名取环境变量 `test_build`，设备
+`show version` 已是目标就跳过，床内文件服务器上缺镜像先从构建库下载，再 `system update`、等重启、升级后核对
+（`lib/apv/apv.py` 的 `upgrade`）。CES 不升级。自动化测试环境网关的 `build_install`（0.4.4 起）原样跑这些用例，
+请求协议、恢复和结果读取与 `case_submit` 相同。
+
+不生成内容，不调用模型。
+
+## 流程
+
+1. test-bed 整台预订；本包的运行以那次预订为前驱。
+2. 客户端写并上传装构建请求 `{"schema":"bed-install@1","build":…,"image":…}`（待核验产物槽 `request`）。
+3. 开运行时 product 和 build 写设备现在装的构建：派发前的逐座位版本探针按它核对设备，没对上就不派发。
+4. 投影：清单里该环境类型在 `policies/install.json` 的 `device_types` 里的设备（清单顺序）各一个条目，条目号是
+   同表 `cases` 里同位置的框架升级用例。冻结分组带环境、全部设备、派发目标、两个摘要和请求原样。
+5. 提交：每个条目一份 `reason`（data.build，grounds 是依据）。
+6. 检查 `install`：请求只有三项；镜像名按升级用例的读法（第一个 `-` 之后到最后一个 `.` 之前，`_` 读作 `.`）正是
+   build；reason 写同一个构建；前驱在开运行时的租约视图里持有 `bed/<环境>/<每台设备>`；运行锁定了构建。支持事实
+   带执行器绑定的派发参数（请求摘要、升级用例、环境、清单摘要、锁定构建、前驱）。`dispatch_policy` 是同一检查加
+   参数表，受理时和写意图前各跑一次。
+7. 效果行 `install_build`：放行要求 reason 和 install，由登记了 `proof.package = bed-install` 的执行器派发。
+
+## 执行器（集成者登记，不在本包）
+
+装构建执行器的提交调用网关 `build_install`（`install_b64` 绑定 `payload_base64`），proof 指向本包的 `install`
+要求项、`bed-install.install@<版本>`、槽 `request`；结果的条目号是升级用例号，收尾标记用 InfoTest 每例收尾都写的
+`################# The passed check point num:`（Python 用例不写 `end case:`）。资源键与用例执行器相同，所以两者
+不会同时占床。不声明床面快照：装构建本来就会改变设备。
+
+## 限制
+
+- 条目与设备的对应按清单里派发目标的顺序，假定它就是 conf 的设备顺序（执行器的探测座位按同一顺序登记）。
+- 不核对构建库里有没有这个镜像，也不核对设备装不装得上：以作业结果为准。
+- 装构建之后，用例执行器的床面基线若因设备重装而不同，派发前的残留检查会列出差异和出口。

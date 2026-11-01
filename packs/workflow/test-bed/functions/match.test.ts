@@ -129,7 +129,7 @@ describe('matchNeed with a build requirement', () => {
     assert.match(gap.missing, /最近一次观察到的是别的构建：bed-a\/apv0 装的是 Rel_APV_10_6_1_8/);
     assert.doesNotMatch(gap.missing, /版本线/, 'a different build is not called a different version line');
     assert.match(gap.missing, /没有观察记录：bed-b\/lb0/);
-    assert.equal(gap.fix, '要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；没有观察记录的设备，预订时 Hub 会在设备上看一次。test-bed 没有升级设备的动作');
+    assert.equal(gap.fix, '要在这个构建上跑：去掉 need.build 整台预订一个设备够用的环境，再用 bed-install 给它装上这个构建（你的运行就能做）；只用环境现有的构建也可以，去掉 need.build 再搜索或预订。没有观察记录的设备，预订时 Hub 会在设备上看一次');
     assert.doesNotMatch(gap.fix, /升级到|先升级|把某台升级/);
     const matched = matchNeed(beds, { ...need, build: 'Rel_APV_10_6_1_8' }, installed, {}, noLeases, NOW);
     assert.equal(unmatchedBuildExit(beds, { ...need, build: 'Rel_APV_10_6_1_8' }, installed, {}, noLeases, NOW, matched), null);

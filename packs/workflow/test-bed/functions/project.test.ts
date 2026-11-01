@@ -253,7 +253,7 @@ describe('project with observed installs (decision 112)', () => {
     assert.deepEqual(out.error?.grounds, [`src:${inventory}/json@1/p/beds/0`]);
     assert.match(out.error?.message ?? '', /要的是 Rel_APV_10_6_1_9，观察于 2026-10-21T12:00:00.000Z/);
     assert.doesNotMatch(`${out.error?.message}${out.error?.fix}`, /需要升级|先升级/);
-    assert.match(out.error?.fix ?? '', /test-bed 没有升级设备的动作/);
+    assert.match(out.error?.fix ?? '', /再用 bed-install 装上/);
   });
 
   it('acquire asks the Hub to observe every booked device, by the inventory digest and pointer, with a label', () => {
@@ -271,7 +271,7 @@ describe('project with observed installs (decision 112)', () => {
     assert.match(warning.message, /没有任何自动化测试环境最近一次观察到装的是 Rel_APV_10_6_1_9/);
     assert.match(warning.message, /最近一次观察到的是别的构建：bed-a\/apv0 装的是 Rel_APV_10_6_1_8（观察于 2026-10-21T12:00:00.000Z）/);
     assert.match(warning.message, /没有观察记录：bed-c\/apv2/);
-    assert.match(warning.message, /。下一步：要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；没有观察记录的设备，预订时 Hub 会在设备上看一次。test-bed 没有升级设备的动作$/);
+    assert.match(warning.message, /。下一步：要在这个构建上跑：去掉 need.build 整台预订一个设备够用的环境，再用 bed-install 给它装上这个构建（你的运行就能做）；只用环境现有的构建也可以，去掉 need.build 再搜索或预订。没有观察记录的设备，预订时 Hub 会在设备上看一次$/);
     assert.equal(fieldsOf(out, 'bed-a').build_ok, 'mismatch');
     const matched = project(input({ need: needBuild }, { manifest: DECLARED, observations: OBSERVED })) as { warnings?: Array<{ code: string }> };
     assert.equal(matched.warnings?.some((row) => row.code === 'test-bed.no_matching_build'), false);

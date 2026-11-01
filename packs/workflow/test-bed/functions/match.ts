@@ -158,7 +158,7 @@ export interface UnmatchedBuild {
  * The next steps of an unmatched build, each with who takes it and by which existing means (D05 R[8]). test-bed has no
  * action that upgrades a device, so no step says to upgrade one.
  */
-const UNMATCHED_FIX = '要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；没有观察记录的设备，预订时 Hub 会在设备上看一次。test-bed 没有升级设备的动作';
+const UNMATCHED_FIX = '要在这个构建上跑：去掉 need.build 整台预订一个设备够用的环境，再用 bed-install 给它装上这个构建（你的运行就能做）；只用环境现有的构建也可以，去掉 need.build 再搜索或预订。没有观察记录的设备，预订时 Hub 会在设备上看一次';
 
 /** The deciding devices of one fitting bed, the same pick matchNeed uses for the build verdict. */
 function decidingDevices(bed: ManifestBed, need: Need, leases: Record<string, LeaseEntry>, now: string): string[] {

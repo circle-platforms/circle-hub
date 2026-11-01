@@ -1,0 +1,34 @@
+{
+  "schema": "workflow@1",
+  "inputs": [
+    {
+      "slot": "inventory",
+      "role": "subject",
+      "description": "自动化测试环境清单：管理员用 circle-hub doc put 发布的命名文档（doc:doc:<名字>，json@1 解析，形状 test-bed-manifest@1），缺省写 doc:doc:bed-topology",
+      "accepts": ["doc:doc"],
+      "required": true,
+      "many": false
+    },
+    {
+      "slot": "request",
+      "role": "artifact_under_verification",
+      "description": "装构建请求：客户端写好、upload_file 上传的 JSON {\"schema\":\"bed-install@1\",\"build\":\"<要装的构建>\",\"image\":\"<构建库里这个构建的镜像文件名>\"}。Hub 原样核对，受理后把这份字节交给自动化测试环境",
+      "accepts": ["application/json"],
+      "required": true,
+      "many": false
+    }
+  ],
+  "parameters": [
+    {
+      "name": "bed",
+      "description": "要装构建的自动化测试环境名（清单里的名字）；整台须已由本运行的前驱（test-bed 的整台预订）持有",
+      "required": true,
+      "schema": { "type": "string", "minLength": 1, "maxLength": 64 }
+    }
+  ],
+  "product": { "catalogs": [] },
+  "context": ["leases"],
+  "leases": { "prefix": "bed/" },
+  "subject": "inventory",
+  "projection": { "module": "functions/project.ts" }
+}

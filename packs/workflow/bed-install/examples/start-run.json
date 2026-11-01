@@ -1,0 +1,17 @@
+{
+  "pack": "bed-install@1.0.0",
+  "predecessor": "<test-bed 整台预订的运行号>",
+  "product": "<产品>",
+  "build": "<设备现在装的构建>",
+  "parameters": {
+    "bed": "bed-a"
+  },
+  "inputs": {
+    "inventory": {
+      "external": "doc:doc:bed-topology"
+    },
+    "request": {
+      "reference": "<upload_file 返回的引用>"
+    }
+  }
+}

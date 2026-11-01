@@ -1,0 +1,46 @@
+{
+  "schema": "requirements@1",
+  "requirements": [
+    {
+      "key": "reason",
+      "name": "要装的构建和依据",
+      "description": "客户端写要装哪个构建，grounds 引用依据（例如缺陷原件里写的发现构建，或用户原话）；Hub 只核对它和上传的装构建请求是同一个构建，不判断该不该装",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "judgment",
+      "checks": [],
+      "error_handling": []
+    },
+    {
+      "key": "install",
+      "name": "装构建请求核验",
+      "description": "上传的装构建请求只有 schema、build、image；镜像名按 InfoTest 升级用例的读法正是要装的构建；提交的 reason 是同一个构建；前驱运行在开运行时持有整台自动化测试环境；运行锁定设备现在装的构建（派发前 Hub 在每台设备上核对）。满足后由 Hub 派发：每台负载均衡设备一个框架升级用例，已是目标构建的设备跳过。不证明构建库里有这个镜像，也不证明设备装得上",
+      "target": "item",
+      "required": true,
+      "done_rule": "bookkeeping",
+      "layers": ["static"],
+      "accepted_producer": "fact",
+      "checks": ["install", "dispatch_policy"],
+      "error_handling": [
+        { "code": "bed-install.claim_mismatch", "action": "repair", "max_rounds": 2 }
+      ]
+    }
+  ],
+  "effects": [
+    {
+      "id": "install_build",
+      "resource_kind": "executor",
+      "action": "submit",
+      "effect_class": "job",
+      "parameters": { "policy": "policies/install.json", "check": "dispatch_policy" },
+      "release": { "requirements": ["reason", "install"], "artifact": "install" },
+      "trigger": "hub_template",
+      "budget": { "count": 1, "duration_ms": { "executor_max_run_ms": true } },
+      "deadline_ms": 86400000,
+      "optional": false,
+      "policy_checks": ["dispatch_policy"]
+    }
+  ]
+}

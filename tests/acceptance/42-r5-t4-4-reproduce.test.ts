@@ -20,7 +20,7 @@ import type { McpClient } from './support/mcp.ts';
 const PHENOMENON = 'ORBIT 合成监听没有应答';
 const ECHO = 'ORBIT 合成回显：没有应答';
 // The exit of an unmatched build: who takes each step and by which existing means; test-bed has no upgrade action (D05 R[8]).
-const EXIT = '要用环境现有的构建：去掉 need.build 再搜索或预订（你的运行就能做）；没有观察记录的设备，预订时 Hub 会在设备上看一次。test-bed 没有升级设备的动作';
+const EXIT = '要在这个构建上跑：去掉 need.build 整台预订一个设备够用的环境，再用 bed-install 给它装上这个构建（你的运行就能做）；只用环境现有的构建也可以，去掉 need.build 再搜索或预订。没有观察记录的设备，预订时 Hub 会在设备上看一次';
 
 interface Claim { statement: { text: string } }
 interface ResultBody { partitions?: Record<string, Array<{ requirements?: Array<{ claims?: Claim[] }> }>>; cross_item?: Claim[] }
