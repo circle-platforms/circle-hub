@@ -427,6 +427,15 @@ describe('start_run text', () => {
     });
   }
 
+  test('the inputs that accept the type of a read source follow the sources (decision 113)', () => {
+    const accepted_by = [{ type: 'toy:mindmap', inputs: [{ pack: 'toy-review@1.0.0', slot: 'map', role: 'subject' }, { pack: 'toy-compile@2.0.0', slot: 'subject', role: 'subject' }] }];
+    const lines = linesOf(toolText('start_run', startAnswer(runOf(items(3)), { accepted_by })));
+    const at = indexOf(lines, (l) => l.startsWith('接受这类对象的任务包输入'));
+    assert.ok(at > indexOf(lines, (l) => l === '来源：') && at < indexOf(lines, (l) => l.startsWith('条目（')), 'after the sources, before the items');
+    assert.equal(lines[at + 1], '- toy:mindmap：toy-review@1.0.0 输入 map（被判对象）；toy-compile@2.0.0 输入 subject（被判对象）');
+    assert.equal(indexOf(linesOf(toolText('start_run', startAnswer(runOf(items(3))))), (l) => l.startsWith('接受这类对象的任务包输入')), -1, 'nothing said without accepting inputs');
+  });
+
   test('the example skeleton parses with Submission once its lists are filled, and the slot records validate against the slot schema', () => {
     const run = runOf(items(62));
     const text = toolText('start_run', startAnswer(run));
@@ -1114,6 +1123,25 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     assert.equal(next.kind, 'workflow');
     assert.ok(next.offset > 7 && next.offset < 307);
     assert.match(noteOf(text)!, /\/console\/packs/);
+  });
+
+  test('every pack is in the index whatever the offset, then the declared run context, then the details (decision 113)', () => {
+    const index = [0, 1, 2].map((i) => ({ pack: packOf(i).pack, title: packOf(i).title, kind: 'workflow' as const }));
+    const context = {
+      leases: [{ prefix: 'rig/', packs: ['toy-pack-1@1.0.1', 'toy-pack-2@1.0.2'], registrations: [{ prefix: 'rig/r1/', mine: true }, { prefix: 'rig/r2/', mine: false }], held: [{ key: 'rig/r2/dev-a', since: '2026-01-01T00:00:00.000Z', until: null, run: RUN, jobs: ['job-1'], mine: false }] }],
+      observations: [{ label: 'r1/dev-a', build: 'Toy_1_0_7', base: 'Toy_1_0_7', observed_at: '2026-01-02T00:00:00.000Z', packs: ['toy-pack-1@1.0.1'] }, { label: 'r1/dev-b', build: null, base: null, observed_at: '2026-01-02T00:00:00.000Z', packs: ['toy-pack-1@1.0.1'] }],
+    };
+    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [packOf(2)], index, context, trace: TRACE });
+    const lines = linesOf(toolText('list_task_packs', answer, { packList: { offset: 2 } }));
+    assert.equal(lines[0], '可用的任务包 3 个；详情从第 3 个起');
+    const at = (head: string) => indexOf(lines, (l) => l.startsWith(head));
+    assert.ok(at('索引（3 个') < at('运行上下文（') && at('运行上下文（') < at('详情（'), lines.join('\n'));
+    assert.deepEqual(lines.slice(at('索引（3 个') + 1, at('索引（3 个') + 4), ['- toy-pack-0@1.0.0 | 合成任务包 0 | 工作流包', '- toy-pack-1@1.0.1 | 合成任务包 1 | 工作流包', '- toy-pack-2@1.0.2 | 合成任务包 2 | 工作流包']);
+    assert.ok(lines.includes(`- 租约前缀 rig/（toy-pack-1@1.0.1、toy-pack-2@1.0.2 用）：已登记的前缀 rig/r1/（你登记的）、rig/r2/（有主人）；占用中的键 1 个：rig/r2/dev-a（运行 ${RUN}，起于 2026-01-01T00:00:00.000Z，未结束的作业 job-1）`), lines.join('\n'));
+    assert.ok(lines.includes('- 设备最近一次观察（toy-pack-1@1.0.1 的上下文；只对观察时刻成立）：r1/dev-a 构建 Toy_1_0_7，观察于 2026-01-02T00:00:00.000Z；r1/dev-b 没有抽到构建，观察于 2026-01-02T00:00:00.000Z'));
+    assert.ok(lines.includes('- toy-pack-2@1.0.2 合成任务包 2（工作流包）：评审合成的思维导图（合成）'), 'the details of the page');
+    const unread = linesOf(toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [packOf(1)], index: index.slice(1, 2), trace: TRACE }), { packList: { offset: 0, contextUnread: true } }));
+    assert.ok(unread.includes('运行上下文：这次没有读出（原因已记入管理员日志）；开运行时 Hub 照常冻结'), 'a context that could not be read is said, not left out');
   });
 
   test('an oversized single pack does not suggest the same exact query in a loop', () => {

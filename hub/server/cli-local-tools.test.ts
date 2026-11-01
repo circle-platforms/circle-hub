@@ -133,7 +133,7 @@ test('an existing different target is refused with the file path and is not over
   assert.equal(await readFile(file, 'utf8'), 'changed');
 });
 
-test('a stopped hub, a bad token and an unassigned pack each say why', async () => {
+test('a stopped hub, a bad token, an absent version and an unassigned one each say why', async () => {
   const { createServer } = await import('node:http');
   const closed = createServer();
   await new Promise<void>((done) => closed.listen(0, '127.0.0.1', done));
@@ -148,8 +148,18 @@ test('a stopped hub, a bad token and an unassigned pack each say why', async () 
   assert.equal(denied.err.join('\n').includes('wrong-token'), false);
   const absent = io();
   assert.equal(await localToolsCommand(['install', 'other-workflow@10.6.0', '--digest', 'ab'.repeat(32), '--into', join(root, 'absent'), '--hub', url], absent, { input: Readable.from([token + '\n']) }), 1);
-  assert.equal(absent.err.join('\n'), '这个版本没有分给你、已下架或不存在；向管理员确认分配后再试');
+  assert.equal(absent.err.join('\n'), 'Hub 里没有这个版本的本地工具（版本不存在、已下架、技能包没有安装或这个版本没有本地工具）；核对包号后再试');
   assert.equal(absent.err.join('\n').includes(token), false);
+  // The download answers 403 for a version that exists and is not assigned (D05 R[3], decision 113).
+  const refusing = createServer((_request, response) => { response.statusCode = 403; response.end('这个版本存在，没有分配给你；请管理员把这个任务包分配给你\n'); });
+  await new Promise<void>((done) => refusing.listen(0, '127.0.0.1', done));
+  try {
+    const unassigned = io();
+    assert.equal(await localToolsCommand(['install', ref, '--digest', source.digest, '--into', join(root, 'unassigned'), '--hub', `http://127.0.0.1:${(refusing.address() as import('node:net').AddressInfo).port}`], unassigned, { input: Readable.from([token + '\n']) }), 1);
+    assert.equal(unassigned.err.join('\n'), '这个版本存在，没有分配给你；请管理员把这个任务包分配给你后再试');
+  } finally {
+    await new Promise<void>((done) => refusing.close(() => done()));
+  }
 });
 
 test('a local path that is not a directory reports the filesystem error', async () => {

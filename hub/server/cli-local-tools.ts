@@ -32,6 +32,7 @@ export type LocalToolsReason =
   | { kind: 'unreachable'; address: string }
   | { kind: 'unauthorized' }
   | { kind: 'unavailable' }
+  | { kind: 'unassigned' }
   | { kind: 'integrity'; path: string }
   | { kind: 'redirect' }
   | { kind: 'filesystem'; path: string; code: string };
@@ -60,7 +61,9 @@ export function localToolsRefusal(reason: LocalToolsReason): string {
     case 'unauthorized':
       return '令牌无效或已撤销；重新领取令牌后再试';
     case 'unavailable':
-      return '这个版本没有分给你、已下架或不存在；向管理员确认分配后再试';
+      return 'Hub 里没有这个版本的本地工具（版本不存在、已下架、技能包没有安装或这个版本没有本地工具）；核对包号后再试';
+    case 'unassigned':
+      return '这个版本存在，没有分配给你；请管理员把这个任务包分配给你后再试';
     case 'integrity':
       return `完整性核对未通过；第一处不符 ${reason.path}；重新取这一份后再试`;
     case 'redirect':
@@ -193,6 +196,7 @@ function download(url: URL, token: string, max: number, path: string, authority?
         };
         if (status === 401) return refuse(new LocalToolsError({ kind: 'unauthorized' }));
         if (status === 404) return refuse(new LocalToolsError({ kind: 'unavailable' }));
+        if (status === 403) return refuse(new LocalToolsError({ kind: 'unassigned' }));
         if (status >= 300 && status < 400) return refuse(new LocalToolsError({ kind: 'redirect' }));
         if (status !== 200) return refuse(new LocalToolsError({ kind: 'integrity', path }));
         const declared = res.headers['content-length'];

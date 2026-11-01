@@ -264,7 +264,7 @@ test('build-site-like reads: ISO-8859-1 kept as received, unquoted links followe
     [false, 404],
   ]);
   const manifest = await w.k.records.store.get<ReadManifest>(hub.manifest);
-  assert.deepEqual(manifest!.body.coverage, { complete: false, examined: 3, total: 4 }, 'a dead link leaves the coverage incomplete');
+  assert.deepEqual(manifest!.body.coverage, { complete: false, examined: 3, total: 4, note: '没有读进的应答 1 个：listing-3（路由 page）：路由 page 的应答是 HTTP 404' }, 'a dead link leaves the coverage incomplete and names the response left out');
   assert.deepEqual(hub.coverage,manifest!.body.coverage,'external readers retain the exact read coverage');
   assert.ok(w.site.requests.every((r) => r.headers.authorization === undefined), 'an anonymous system never gets a credential');
   assert.equal(w.site.maxInFlight, 1, 'the resource limits requests in flight');

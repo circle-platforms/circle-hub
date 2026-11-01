@@ -32,7 +32,7 @@ test('an active user can install tools from an installed parser-only skill, but 
     const address = new URL('/local-tools/mindmap-format@1.0.3', url);
     assert.equal((await fetch(address, { headers: { authorization: 'Bearer synthetic-token' } })).status, 200);
     await bed.kit.principals.setDisabled(bed.admin, bed.bob.id, true);
-    assert.equal((await fetch(address, { headers: { authorization: 'Bearer synthetic-token' } })).status, 404, 'the cached tool is not available to a disabled account');
+    assert.equal((await fetch(address, { headers: { authorization: 'Bearer synthetic-token' } })).status, 401, 'the cached tool is not available to a disabled account, which is answered like an unusable token (D05 R[3])');
     await bed.kit.principals.setDisabled(bed.admin, bed.bob.id, false);
     await bed.registry.uninstall(bed.admin, 'mindmap-format');
     assert.equal((await fetch(address, { headers: { authorization: 'Bearer synthetic-token' } })).status, 404, 'the cached tool is not available after uninstall');

@@ -357,6 +357,31 @@
         ],
         "additionalProperties": false
       }
+    },
+    "run_context": {
+      "description": "the run-context parts the workflow declares beyond the defaults and its lease prefix; absent when it declares none (decision 113)",
+      "type": "object",
+      "properties": {
+        "parts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "builds",
+              "leases",
+              "observations"
+            ]
+          }
+        },
+        "lease_prefix": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "parts"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

@@ -61,7 +61,34 @@ export const ListTaskPacksInput = z.strictObject({
   pack_id: PackId.optional().describe('Only the pack with this exact ID'),
   offset: z.number().int().nonnegative().optional().describe('Continue at this zero-based position in the same filtered list'),
 });
-export const ListTaskPacksOutput = Envelope.extend({ packs: z.array(PackSummary) }).superRefine((o, ctx) => {
+/** One line of the whole filtered list (A05 R[1]): every choice is in the answer even when the details are paged. */
+export const PackIndexRow = z.strictObject({ pack: z.string().describe('id@version'), title: z.string(), kind: PackKindSchema });
+/**
+ * What the run context of the listed packs would hold right now (decision 113), from the Hub's own records: the lease view of
+ * every declared lease prefix (R02 R[3]: who holds a key is not said) and the newest observation of every observed device
+ * (A05 R[3]: it holds for its moment only). Present only when a listed pack declares the leases or observations context.
+ */
+export const PackContextView = z.strictObject({
+  leases: z.array(z.strictObject({
+    prefix: z.string().min(1),
+    packs: z.array(z.string()).describe('the listed packs (id@version) that declare this lease prefix'),
+    registrations: z.array(z.strictObject({ prefix: z.string().min(1), mine: z.boolean() })),
+    held: z.array(z.strictObject({ key: z.string().min(1), since: IsoTime, until: IsoTime.nullable(), run: z.string().min(1), jobs: z.array(z.string()), mine: z.boolean() })),
+  })),
+  observations: z.array(z.strictObject({
+    label: z.string().min(1),
+    build: z.string().nullable(),
+    base: z.string().nullable(),
+    observed_at: IsoTime,
+    packs: z.array(z.string()).describe('the listed packs (id@version) that declare the observations context'),
+  })),
+});
+export type PackContextView = z.infer<typeof PackContextView>;
+export const ListTaskPacksOutput = Envelope.extend({
+  packs: z.array(PackSummary),
+  index: z.array(PackIndexRow).optional().describe('Every pack of the same filter, one row each, whatever the offset'),
+  context: PackContextView.optional(),
+}).superRefine((o, ctx) => {
   if (o.call_result === 'error' && o.packs.length > 0) issue(ctx, ['packs'], 'an error answer lists no packs');
 });
 
@@ -119,7 +146,12 @@ export const ProductionResult = z.strictObject({
   reference: referenceUriOf('rec').describe('the validation_result record of the run; read it with get_nodes and this reference'),
   counts: PartitionCounts,
 });
-export const StartRunOutput = Envelope.extend({ run: RunSummary.optional(), result: ProductionResult.optional() }).superRefine((o, ctx) => {
+/** The inputs of the reader's packs that accept the type (`system:kind`, exact) of a source the run read (decision 113). */
+export const AcceptedBy = z.strictObject({
+  type: z.string().min(1),
+  inputs: z.array(z.strictObject({ pack: z.string().describe('id@version'), slot: z.string().min(1), role: SourceRoleSchema })),
+});
+export const StartRunOutput = Envelope.extend({ run: RunSummary.optional(), result: ProductionResult.optional(), accepted_by: z.array(AcceptedBy).optional() }).superRefine((o, ctx) => {
   if ((o.call_result === 'ok') !== (o.run !== undefined)) issue(ctx, ['run'], 'an ok answer carries the run and an error answer carries none');
   if (o.result !== undefined && o.run === undefined) issue(ctx, ['result'], 'a result belongs to a run');
 });

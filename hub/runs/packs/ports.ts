@@ -63,6 +63,7 @@ export function packSummary(info: PackVersionInfo, declarations: WorkflowDeclara
       // The most rounds any repair row of the requirement allows (W02 F[7]); 0 without repair rows.
       repair_rounds: Math.max(0, ...r.error_handling.map((row) => row.max_rounds ?? 0)),
     })),
+    ...((declarations.workflow.context ?? []).length > 0 ? { run_context: { parts: [...declarations.workflow.context!], ...(declarations.workflow.leases ? { lease_prefix: declarations.workflow.leases.prefix } : {}) } } : {}),
   };
 }
 
@@ -165,7 +166,8 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       const info = parsed.version === null ? await registry.latestVersion(parsed.id) : await registry.getVersion(parsed.id, parsed.version);
       if (info === null) return parsed.version === null && (await registry.publications(parsed.id)).length > 0 ? 'withdrawn' : 'unknown';
       if (info.withdrawn) return 'withdrawn';
-      if (!(await registry.canUse(account.id, parsed.id)) || info.kind==='skill'&&!(await registry.installedSkills()).some(p=>p.info.digest===info.digest)) return 'unassigned';
+      if (info.kind==='skill'&&!(await registry.installedSkills()).some(p=>p.info.digest===info.digest)) return 'uninstalled';
+      if (!(await registry.canUse(account.id, parsed.id))) return 'unassigned';
       return null;
     },
     async publicationOf(digest: string): Promise<string | null> {return (await registry.byDigest(digest))?.record??null;},

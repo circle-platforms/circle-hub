@@ -16,6 +16,7 @@ import type { Acceptance, CallResult } from '../../contracts/generated/vocabular
 import { annotationsFor, type ToolAnnotations } from '../../contracts/src/annotations.ts';
 import { RunId, type ProtocolError } from '../../contracts/src/common.ts';
 import type { PackSummary } from '../../contracts/src/run.ts';
+import { ExternalObjectId } from '../../contracts/src/reference.ts';
 import {
   GetNodesInput,
   ListTaskPacksInput,
@@ -285,9 +286,21 @@ const listTaskPacks: Handler = async (deps, call, args) => {
   const packs = await deps.workflows.summaries(call.principal);
   const { kind, pack_id: packId, offset = 0 } = parsed.data;
   const filtered = packs.filter((pack) => (kind === undefined || pack.kind === kind) && (packId === undefined || pack.id === packId));
+  // Every choice is in the answer whatever the offset (A05 R[1]); only the details are paged (decision 113).
+  const index = filtered.map((pack) => ({ pack: pack.pack, title: pack.title, kind: pack.kind }));
+  let context: Awaited<ReturnType<NonNullable<ServerDeps['runs']['packContext']>>> = null;
+  let contextUnread = false;
+  if (deps.runs.packContext !== undefined) {
+    try {
+      context = await deps.runs.packContext(call.principal, filtered);
+    } catch (error) {
+      contextUnread = true;
+      call.context.adminNote(`list_task_packs: the run context of the listed packs was not read: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000));
+    }
+  }
   return {
-    answer: { call_result: 'ok', errors: [], packs: filtered.slice(offset) },
-    text: { packList: { offset, ...(kind === undefined ? {} : { kind }), ...(packId === undefined ? {} : { packId }) } },
+    answer: { call_result: 'ok', errors: [], packs: filtered.slice(offset), index, ...(context !== null ? { context } : {}) },
+    text: { packList: { offset, ...(kind === undefined ? {} : { kind }), ...(packId === undefined ? {} : { packId }), ...(contextUnread ? { contextUnread } : {}) } },
   };
 };
 
@@ -400,8 +413,31 @@ const startRun: Handler = async (deps, call, args) => {
   }
   const run = (answer.run as { run?: unknown } | undefined)?.run;
   if (typeof run === 'string' && RunId.safeParse(run).success) call.state.runId = run;
+  if (answer.call_result === 'ok') {
+    try {
+      const accepted = await acceptedBy(deps, call.principal, answer);
+      if (accepted.length > 0) answer = { ...answer, accepted_by: accepted };
+    } catch (error) {
+      call.context.adminNote(`start_run: the packs accepting the read sources were not listed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000));
+    }
+  }
   return { answer, text };
 };
+
+/**
+ * The inputs of the reader's packs that accept the type of a source the run read (decision 113): the type is `system:kind`
+ * of the external object, compared by exact equality with each input's declared accepts; nothing is matched by wording.
+ */
+export async function acceptedBy(deps: Pick<ServerDeps, 'workflows'>, principal: Principal, answer: Answer): Promise<Array<{ type: string; inputs: Array<{ pack: string; slot: string; role: PackSummary['inputs'][number]['role'] }> }>> {
+  const sources = (answer.run as { sources?: ReadonlyArray<{ external?: unknown }> } | undefined)?.sources ?? [];
+  const types = [...new Set(sources.flatMap((s) => typeof s.external === 'string' && ExternalObjectId.safeParse(s.external).success ? [s.external.slice(0, s.external.indexOf(':', s.external.indexOf(':') + 1))] : []))];
+  if (types.length === 0) return [];
+  const packs = await deps.workflows.summaries(principal);
+  return types.flatMap((type) => {
+    const inputs = packs.flatMap((p) => p.inputs.filter((i) => i.accepts.includes(type)).map((i) => ({ pack: p.pack, slot: i.slot, role: i.role })));
+    return inputs.length > 0 ? [{ type, inputs }] : [];
+  });
+}
 
 const resolveTool: Handler = async (deps, call, args) => {
   const parsed = ResolveReferenceInput.safeParse(args);
