@@ -70,6 +70,14 @@
 - **测试连接**（`/systems/test`）、`/search`、被引用次数等文档中标为“需新增”的数据不在本件。
 - **Circle 端**：Circle 基线（`foundation/circle`）的 MCP 客户端没有 OAuth，也不会请求一次性登录链接；这两项要在 Circle 仓库里做通用的 MCP 客户端改进，需所有者授权，不在本件。在此之前 Circle 以访问令牌连接（添加成员时选“访问令牌”）；任何支持 MCP 标准授权的客户端现在即可用邀请码连接。
 
-## 验证
+## 验证（2026-11-01，本机 macOS，Node 24.21）
 
-（全部合并后补写。）
+最终提交（两次独立安全审查的修复之后）上：
+
+- `npm run typecheck`、`npm run verify:contracts`：退出码 0（生成的 140 个文件与模型一致）。
+- `npm run test:unit`：共享通道 190/190；隔离通道 175 项，173 通过，0 失败，2 项跳过（只在 Linux 上运行的检查）；主通道跑到一半时，Claude Code 因本机内存不足停止了这次运行，停止前没有失败。本地没有重跑，全量以 CI 为准。
+- 单独运行：`node --test "hub/server/**/*.test.ts"` 484/484；记录与权限（`hub/records/standard-authorization`、`roles`、`principals`、`migrations.snapshot`、`lock-namespaces`、`hub/platform/ownership`）18/18；`hub/server/mcp.test.ts` 53/53；`hub/server/assemble/testing-real.test.ts` 6/6；`hub/dispatch/bed-state.test.ts` 23/23；`hub/server/submit-load.test.ts` 1/1。
+- 此前的全量运行（审查修复之前，与审查子代理的测试同时进行）里，`submit-load` 的负载场景、`bed-state` 的一项计时检查失败过，单独重跑均通过；`roles.test.ts` 的失败是真实的（只认迁移 1–6），已改为 1–7，并以运行角色实际使用了新表。
+- `npm run test:acceptance`：审查修复之前 200/201，唯一的失败是一条仍期待旧登录跳转地址的断言（新行为带 `?next=` 返回原页面），已更新并单独验证通过；实时更新分支在合并前 201/201。最终提交上的全量验收没有在本地运行，以 CI 为准。
+- `npm run test:docs`：文档改动前 277/277，最终文档以 CI 为准。
+- 页面在无头 Chrome（临时配置）中核对过：授权页的身份与确认两步（浅色、深色）、添加成员、设置。官方 MCP SDK 客户端走完整个标准授权流程（发现、登记、授权、换令牌、调用工具）在 `hub/server/standard-authorization.test.ts` 中。
