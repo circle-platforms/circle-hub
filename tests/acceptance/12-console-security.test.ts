@@ -146,11 +146,11 @@ describe('scenario 12: console and API host, origin, and token security', () => 
     const authHeader = unauthMcp.headers['www-authenticate'];
     assert.ok(authHeader && String(authHeader).includes('Bearer realm="circle-hub"'));
 
-    // 2. /console/runs without session cookie -> redirects to /console/login
+    // 2. /console/runs without session cookie -> redirects to /console/login, which leads back after signing in
     const unauthConsole = await requestHttp(bed.hub.port, '/console/runs');
     assert.ok(unauthConsole.status === 303 || unauthConsole.status === 401);
     if (unauthConsole.status === 303) {
-      assert.equal(unauthConsole.headers.location, '/console/login');
+      assert.equal(unauthConsole.headers.location, '/console/login?next=%2Fconsole%2Fruns');
     }
 
     // 3. Security headers: Content-Security-Policy on console pages

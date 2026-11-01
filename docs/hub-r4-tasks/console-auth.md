@@ -19,6 +19,7 @@
   - `hub/records/migrations.ts`（追加迁移 7）及其快照测试，`hub/records/principals.ts`、`hub/records/api.ts`，新测试 `hub/records/standard-authorization.test.ts`；`hub/platform/ownership.test.ts` 里新表的列；
   - `hub/server/oauth.ts`（新）、`hub/server/app.ts`、`hub/server/mcp.ts`、`hub/server/cli.ts`、`hub/server/cli-admin.ts`（`pack publish --dry-run`）、`hub/server/console/**` 及对应测试；
   - `hub/runs/packs/registry.ts`、`hub/runs/packs/types.ts`、`hub/runs/packs/changes.ts`（新）、`hub/runs/api.ts` 和 `hub/runs/packs/publish-check.test.ts`（新）：发布校验的试运行；
+  - 受登录后返回原页面影响的验收断言（`tests/acceptance/12-console-security.test.ts`）；
   - `hub/server/README.md`、`hub/records/README.md`、`docs/hub-r4-progress.md`、`CHANGELOG.md` 和本页。
 
   别的路径不动。不加依赖。
