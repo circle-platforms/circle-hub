@@ -70,11 +70,14 @@ never forward plaintext client traffic under that authority; the Hub does not in
 
 For a Circle MCP connection, select transport `streamable_http`, use this service's `/mcp` endpoint, and ensure the URL's
 host exactly matches the deployment's allowed-host declaration (and its HTTPS proxy origin, when applicable). MCP still
-requires a valid Bearer token on every request; `/healthz` alone is unauthenticated.
+requires a valid Bearer token on every request; a client gets one through the MCP standard authorization (below) or from
+an administrator (`circle-hub token issue`). `/healthz` and the authorization's metadata and endpoints are unauthenticated.
 
 Routes: `POST /mcp`; `GET|HEAD /healthz` (no token, `{"status":"ok","release":<id or null>}` with the id of
 `release.json` in the code root, so a deploy tells the new process from the old one; a `release.json` that is not a
-`circle-hub-release@1` record refuses to start); `/console/**`; anything else 404. Responses carry `nosniff`,
+`circle-hub-release@1` record refuses to start); the standard authorization's `/.well-known/oauth-protected-resource`,
+`/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-authorization-server` and `/oauth/{register,authorize,
+token,revoke}`; `/console/**`; anything else 404. Responses carry `nosniff`,
 `no-store`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`. The referrer policy is `same-origin`, not
 `no-referrer`: under `no-referrer` a browser sends `Origin: null` with every form POST (Fetch, "append a request Origin
 header"), so nobody could sign in to the console; requests to other origins still get no referrer.
@@ -88,6 +91,44 @@ and `connection: close` before the rest is read (logged as a transport failure).
 closes every connection, then waits again (`closeGraceMs`, 15 s by default; both fit launchd's `ExitTimeOut` of 30 s) for
 the handlers it cut off, so their call-log lines are written before `serve` stops the sandbox and closes the records; what
 still runs after that is named in the operator's log. It never stops the database.
+
+## MCP standard authorization (decision 78)
+
+Owner decision 78 (2026-11-01, the seven open items of the interface doc confirmed as assumed): the Hub is both the
+protected resource `/mcp` and its authorization server, by the MCP authorization specification (OAuth 2.1 with PKCE;
+RFC 8414, 7591, 8707, 9728, 7009, 9207), in `oauth.ts`, with no new dependency.
+
+- **Discovery.** An unauthenticated `/mcp` answer carries `WWW-Authenticate: Bearer realm="circle-hub",
+  resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp"`, plus `error="invalid_token"` when a token was
+  sent and does not work (the body stays the same for every reason). The resource metadata names `<origin>/mcp` and this
+  Hub as its authorization server; the authorization server metadata offers the authorization code with PKCE S256 only,
+  public clients only (`none`), no refresh token, and the `iss` response parameter. `<origin>` is the scheme of the
+  channel and the Host the request came with (already checked against the allowed hosts).
+- **Registration** (`POST /oauth/register`, RFC 7591): JSON, public clients only; redirect URIs are https, http on a
+  loopback address (any port at authorization, RFC 8252 7.3) or a private-use scheme, never a fragment or user
+  information; at most 100 registrations in 10 minutes (then 503 `temporarily_unavailable`). The self-chosen
+  `client_name` loses control and format characters, keeps 100 characters, and labels the client's token.
+- **Authorization** (`GET /oauth/authorize`): an unknown client or a redirect URI that is not registered gets an error
+  page and no redirect; every other refusal goes back to the redirect URI with `error`, `state` and `iss`
+  (`unsupported_response_type`, `invalid_request` without PKCE S256, `invalid_target` for a resource that is not this
+  Hub's `/mcp`). An accepted request is kept in memory for `AUTHORIZATION_REQUEST_TTL_MS` (10 minutes) and the browser
+  goes to the console's authorization page `/console/authorize/<request>` (under `/console`, so the console session
+  cookie is sent): see the console below.
+- **Token** (`POST /oauth/token`, form encoding, each parameter once): the code is used once, within
+  `AUTHORIZATION_CODE_TTL_MS` (2 minutes), by the client it was issued to, with the same redirect URI and resource and the
+  PKCE verifier of its challenge; a code presented again is refused and the token it gave is revoked (RFC 6749 4.1.2).
+  The answer is an ordinary Hub token (`Bearer`, no `expires_in`, no refresh token) issued by the account to itself,
+  labelled with the client's name and bound to the client (`tokens.client_id`). Hub tokens are checked against the records
+  on every request, so revocation is immediate: disconnecting a Circle is revoking its token (`circle-hub token revoke`).
+- **Revocation** (`POST /oauth/revoke`, RFC 7009): whoever holds a token revokes it by its value; an unknown token gets
+  the same 200.
+- **Invitations**: `circle-hub user invite <user>` (an administrator; the console's 添加成员) prints a twelve-character
+  code once; the records keep its SHA-256 (`invitations`, migration 7), valid 24 hours, used once by the client it
+  authorized. Requests, codes and login links live in memory and end with the process, like console sessions.
+
+Wire errors and descriptions are OAuth's own (ASCII, RFC 6749 5.2), not Hub codes. Circle's own client (the frozen
+baseline) has no OAuth yet; until the generic MCP-client improvement lands in the Circle repository, Circle connects with
+an issued token, while any client with the standard authorization connects with an invitation code.
 
 ## MCP (D05, D06)
 
@@ -267,13 +308,36 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   `members`, `secrets`, `hub`. The pages' session and visibility, built from the same helpers; GET or HEAD only (405
   otherwise); 401 in JSON without a session (no redirect); absent and forbidden alike 404 `SOURCE_UNAVAILABLE`; an error is
   `{code, message, fix}` with `code` null where no code is registered (not signed in, a bad parameter); codes come with their
-  interface terms (`*_label`); token values and credential contents never appear. No write interface: the operations stay
-  forms. MCP standard authorization, invitation codes, one-time login links and live updates wait for the open items of the
-  interface doc.
+  interface terms (`*_label`); token values and credential contents never appear.
+- **The write interfaces** (`console/api-write.ts`, decision 78): `POST /console/api/members`, `/systems`,
+  `/knowledge/imports` (202, a background job read at `knowledge/imports/<job>`), `/packs/stage` (multipart, the zip in
+  field `archive`) and `/packs/stage/<id>/publish|discard` run the very commands of the forms, built by the same builders
+  of `manage.ts`, through the command bridge as the signed-in administrator; `/commands` (`{operation, object}`) answers
+  the command of a dialog for an object that exists and runs nothing. A write needs an administrator's session, this
+  console's Origin (required: every browser sends it on a POST), the session's CSRF token in `X-CSRF-Token` (`/me` gives it)
+  and a JSON object of strings and booleans; 400 for a refused parameter or exit code 2, 409 for exit code 1 (with what the
+  command said), 503 without a command bridge, the neutral 404 for members and unknown objects. Adding a member answers the
+  invitation code (or the token) once, with the Circle entry.
 - **The neutral page** says “该内容不存在或无权查看” on the console (the MCP tools keep their own neutral text), the same
   words whatever the path. A session that ended (revoked token, disabled account, expiry) returns to the login page with
   a two-minute `circle_hub_ended` cookie scoped to `/console/login`, so the page says the sign-in ended, once.
 
+- **The authorization page** (`/console/authorize/<request>`, `console/authorize.ts`, decision 78): the request the
+  authorization endpoint accepted, for its 10 minutes, on the channel it was opened on. Without a console session the page
+  asks for an invitation code (no password, owner-confirmed item 1); a signed-in browser confirms for its own account and
+  may still switch to an invitation; the page always names the account, the client (its self-chosen name and id), the
+  redirect URI and the resource. Five wrong codes end the request. Its forms carry the request's own CSRF token and must
+  come from this server's origin; the confirm page's CSP allows its form to lead to the redirect URI's origin
+  (`form-action 'self' <origin>`). Approving takes the invitation (if one named the account), issues the code and sends the
+  browser to the redirect URI with `code`, `state` and `iss`; refusing sends `access_denied`. Back on the page, the browser
+  sees that the request ended.
+- **One-time login links** (decision 78): a client asks with its Bearer token, `POST /console/api/login-links` with an
+  optional JSON `{"next": "/console/…"}`, and gets `{url, expires_at}`: `/console/login/<code>`, valid
+  `LOGIN_LINK_TTL_MS` (5 minutes), used once, only its SHA-256 kept. `GET` shows which account it signs in and asks to
+  confirm (so a prefetch or a planted link signs nobody in); the `POST` (its own login nonce, this origin) opens a session
+  on the client's token, which every page re-authenticates, and goes to `next`. A spent or expired link says so without
+  naming the account. `next` is only ever a path of this console (`safeNext`); a page opened without a session sends the
+  browser to `/console/login?next=<that page>`, and signing in leads back there.
 - **Sign-in**: `GET /console/login` issues a one-time nonce (server-side, 15 minutes) in the form and in a cookie
   scoped to `/console/login`; `POST /console/login` (form encoding, at most 8 KiB, from this server's own origin) needs
   the nonce in both and a token that authenticates. The session cookie `circle_hub_session` is a random id,
@@ -339,9 +403,11 @@ The refresh target reader follows the [HTML shared declarative refresh steps](ht
 ## Management in the console (decision 75)
 
 Owner decision 75 (2026-10-31): administrators manage the Hub from the browser. Decision 77 keeps four of the operations
-as console pages under `/console/operations/`: adding a member (`member-add`: `user create`, then `token issue`, the token
-shown once with this Hub's Circle entry), connecting a business system (`system-add`: `resource add`, then `secret set` for
-the credentials typed with it), publishing a task pack (`pack-publish`) and importing knowledge (`knowledge-sync`). Every
+as console pages under `/console/operations/`: adding a member (`member-add`: `user create`, then `user invite`, the
+invitation code shown once with this Hub's Circle entry for the standard authorization; or `token issue` for a client
+without it), connecting a business system (`system-add`: `resource add`, then `secret set` for the credentials typed with
+it), publishing a task pack (`pack-stage`, then `pack-publish` or `pack-discard`, below) and importing knowledge
+(`knowledge-sync`). Every
 other operation (disabling a member, disconnecting a Circle, a spare login token, changing or withdrawing a credential,
 switching a system or a product pack, use and maintenance of a pack, retiring a version, an environment, the stopping
 platform commands) is a button that opens a dialog with its `circle-hub` command and the real ids, for the administrator's
@@ -358,7 +424,14 @@ stop the server and stay on the command line. A positional from a form never sta
 `--flag=value`, and a secret value reaches `secret set` through the command's `readSecret`, never argv or the
 environment. A pack is uploaded as a zip (`console/upload.ts`: a multipart body read within the upload limit, then a
 zip reader over node:zlib that inflates each entry within its declared size and checks its CRC-32, refusing traversal,
-symlinks, ZIP64 and encryption), unpacked into a private temporary directory, published with `--stage` and removed.
+symlinks, ZIP64 and encryption) and unpacked into a private temporary directory. Publishing is two steps (owner-confirmed
+item 5): `pack-stage` runs `pack publish <dir> --stage --dry-run` (every check of publish, nothing written) and keeps a
+passing upload as a stage (`console/staging.ts`: in memory, 30 minutes, at most 10, removed on expiry, after publishing or
+discarding, and when the app closes); its page lists every check and the difference from the pack's highest version not
+withdrawn (files added, removed and modified by digest). `pack-publish` with the stage id runs `pack publish <dir>
+--stage` if pack.json still has the digest that passed, and `pack-discard` drops the stage; only the administrator who
+staged it may do either, and an unknown, expired or foreign stage id gets the neutral page. The private directory never
+appears on a page.
 Knowledge sync runs as a background job of this process (`JobStore`, the last 50, listed with their output; they end
 with the process, their records stay). A token issued here is shown once on the result page.
 
