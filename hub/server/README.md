@@ -334,7 +334,8 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   request's cookie (any other gets the 410 page that says the request does not exist). Without a console session the page
   asks for an invitation code (no password, owner-confirmed item 1); a signed-in browser confirms for its own account and
   may still switch to an invitation; the page always names the account, the client (its self-chosen name and id), the
-  redirect URI and the resource. Five wrong codes end the request. Its forms carry the request's own CSRF token and must
+  redirect URI and the resource, and warns when the redirect URI is not a loopback address of this machine (the code then
+  goes to another host, which can connect as the account). Five wrong codes end the request. Its forms carry the request's own CSRF token and must
   come from this server's origin; the confirm page's CSP allows its form to lead to the redirect URI's origin
   (`form-action 'self' <origin>`). Approving takes the invitation (if one named the account), issues the code and sends the
   browser to the redirect URI with `code`, `state` and `iss`; refusing sends `access_denied`. Back on the page, the browser

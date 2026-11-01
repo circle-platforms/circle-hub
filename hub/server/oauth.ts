@@ -82,6 +82,16 @@ export function redirectUriProblem(uri: string): string | null {
   return null;
 }
 
+/** Whether a redirect URI leads to this machine of the browser (an http loopback address) rather than to another host. */
+export function redirectIsLocal(uri: string): boolean {
+  try {
+    const url = new URL(uri);
+    return url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /** Whether `sent` is one of the registered URIs: exactly, or for an http loopback URI, up to the port (RFC 8252 7.3). */
 export function redirectMatches(registered: readonly string[], sent: string): boolean {
   if (registered.includes(sent)) return true;
@@ -116,7 +126,8 @@ const digest = (value: string): string => createHash('sha256').update(value, 'ut
 
 export interface AuthorizationRequest {
   id: string;
-  client: OAuthClient;
+  /** Only what the page shows and the code needs, not the client's whole registration. */
+  client: Pick<OAuthClient, 'id' | 'name'>;
   redirectUri: string;
   state: string | null;
   challenge: string;
@@ -383,7 +394,7 @@ async function authorize(response: ServerResponse, url: URL, options: OAuthOptio
   const resource = `${issuer}/mcp`;
   const asked = query.get('resource');
   if (asked !== null && asked !== resource) return refuse(response, 400, '授权请求无效：访问范围不是本 Hub 的 MCP 服务。请在 Circle 中重新连接 Hub。');
-  const opened = options.store.open({ client, redirectUri, state, challenge, resource, issuer, secure });
+  const opened = options.store.open({ client: { id: client.id, name: client.name }, redirectUri, state, challenge, resource, issuer, secure });
   if (opened === null) return refuse(response, 503, '当前待处理的授权请求过多，请稍后在 Circle 中重新连接 Hub。');
   const page = `${AUTHORIZE_PAGE}/${opened.id}`;
   setCommonHeaders(response);

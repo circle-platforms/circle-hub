@@ -6,7 +6,7 @@
 // the page carries no script. The confirm page allows its form to lead to the redirect URI's origin (CSP form-action).
 import type { InvitationCheck } from '../../records/api.ts';
 import type { AuthorizationRequest } from '../oauth.ts';
-import { AUTHORIZATION_REQUEST_TTL_MS } from '../oauth.ts';
+import { AUTHORIZATION_REQUEST_TTL_MS, redirectIsLocal } from '../oauth.ts';
 import { CONTENT_SECURITY_POLICY, code, html, page, type Html } from './html.ts';
 import { callout, card, kv, stepper } from './ui.ts';
 
@@ -69,6 +69,7 @@ export function confirmPage(request: AuthorizationRequest, account: { name: stri
 ${error === null ? '' : html`<p class="error mt12">${error}</p>`}
 <p class="mt12">以 <b>${account.name}</b>（${account.role}）的身份授权 <b>${request.client.name}</b> 连接本 Hub。</p>
 ${card(null, facts(request), 'mt12')}
+${redirectIsLocal(request.redirectUri) ? '' : callout('warn', html`<span><b>回调地址不在本机。</b>授权后，授权码发送到 ${redirectTarget(request.redirectUri)}；该地址的服务可凭它以 ${account.name} 的身份连接本 Hub。仅在确认该服务可信时授权。</span>`)}
 ${callout('info', html`<span>授权后，该客户端以 ${account.name} 的身份调用 Hub 的工具，权限与该账号相同；在设置的“已连接的 Circle”中可随时断开。</span>`)}
 ${decide}${other}`);
 }
