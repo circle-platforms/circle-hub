@@ -32,7 +32,7 @@ export function originOf(ctx: PageContext): string {
   return ctx.origin ?? `${ctx.secure ? 'https' : 'http'}://${ctx.url.host}`;
 }
 
-function certificateFacts(pem: string | null, now: number): { fingerprint: string; daysLeft: number; validTo: string } | null {
+export function certificateFacts(pem: string | null, now: number): { fingerprint: string; daysLeft: number; validTo: string } | null {
   if (pem === null) return null;
   try {
     const cert = new X509Certificate(pem);
@@ -43,7 +43,7 @@ function certificateFacts(pem: string | null, now: number): { fingerprint: strin
   }
 }
 
-async function authorityFingerprint(dataDir: string): Promise<string | null> {
+export async function authorityFingerprint(dataDir: string): Promise<string | null> {
   try {
     return new X509Certificate(await readFile(join(dataDir, 'tls', 'ca.crt'))).fingerprint256;
   } catch {
@@ -102,13 +102,13 @@ function lastUse(tokens: readonly TokenInfo[]): string | null {
   return times.at(-1) ?? null;
 }
 
-interface Secrets {
+export interface Secrets {
   rows: { name: string; consumers: string[]; by: string; at: string; withdrawn: boolean }[] | null;
   /** The text of `secret list` when the records have no variables port (or it failed). */
   text: CommandRun | null;
 }
 
-async function secretsOf(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<Secrets> {
+export async function secretsOf(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<Secrets> {
   const variables = ctx.deps.records.variables as { list?: (by: typeof ctx.principal) => Promise<import('../../records/api.ts').NamedVersion[]> } | undefined;
   if (variables?.list !== undefined) {
     try {

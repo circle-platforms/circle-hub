@@ -260,6 +260,16 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
 - **Style**: `console/style.ts` is the canvas's `hub.css` with the dark theme and reduced motion following the system;
   the markup uses classes only (a `style` attribute would be refused by the CSP) and charts are SVG whose geometry is in
   attributes. The command dialogs open on their fragment (`:target`) without a script.
+- **The read-only JSON interface** `/console/api/…` (`console/api.ts`, owner's choice of 2026-11-01 to build the read part
+  of the interface doc first): `me`, `overview?days=7|14|30`, `tasks[?pack&result&cursor]`, `tasks/<run>` (the waterfall's
+  steps, the requests and the calls), `knowledge/lines`, `knowledge/nodes?root&path&cursor`, `knowledge/diff?from&to`,
+  `knowledge/imports[/<job>]`, `packs`, `packs/<id>`, `systems`, `system-packs`, `environments`, `circles`, `records[?…]`,
+  `members`, `secrets`, `hub`. The pages' session and visibility, built from the same helpers; GET or HEAD only (405
+  otherwise); 401 in JSON without a session (no redirect); absent and forbidden alike 404 `SOURCE_UNAVAILABLE`; an error is
+  `{code, message, fix}` with `code` null where no code is registered (not signed in, a bad parameter); codes come with their
+  interface terms (`*_label`); token values and credential contents never appear. No write interface: the operations stay
+  forms. MCP standard authorization, invitation codes, one-time login links and live updates wait for the open items of the
+  interface doc.
 - **The neutral page** says “该内容不存在或无权查看” on the console (the MCP tools keep their own neutral text), the same
   words whatever the path. A session that ended (revoked token, disabled account, expiry) returns to the login page with
   a two-minute `circle_hub_ended` cookie scoped to `/console/login`, so the page says the sign-in ended, once.

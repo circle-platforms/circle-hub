@@ -452,7 +452,7 @@ async function productReadable(ctx: PageContext, product: string): Promise<Produ
 }
 
 /** A root is readable when one of its compositions belongs to a product line the reader may read. */
-async function rootReadable(ctx: PageContext, root: string): Promise<boolean> {
+export async function rootReadable(ctx: PageContext, root: string): Promise<boolean> {
   if (!SHA256.test(root)) return false;
   const infos = await ctx.deps.knowledge.rootInfo(root);
   if (infos.length === 0) return false;

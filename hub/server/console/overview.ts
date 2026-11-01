@@ -12,18 +12,18 @@ import { TASK_FILL, primaryResult, swatch, taskChip } from './status.ts';
 import { loadTasks, packTitles, taskTitle, type TaskRow } from './tasks.ts';
 import { button, card, clock, count, dayBars, donut, hbar, kpi, plannedCard, sectionHead, track, when } from './ui.ts';
 
-const PERIODS = [7, 14, 30] as const;
-const RECENT_LIMIT = 120;
+export const PERIODS = [7, 14, 30] as const;
+export const RECENT_LIMIT = 120;
 const DAY = 86_400_000;
 
-const startOfDay = (time: number): number => {
+export const startOfDay = (time: number): number => {
   const d = new Date(time);
   d.setHours(0, 0, 0, 0);
   return d.getTime();
 };
 
 /** The runs that started since `since`, newest first, at most `limit`; `more` when the window holds others. */
-async function runsSince(ctx: PageContext, since: number, limit: number): Promise<{ runs: RunRecordView[]; more: boolean }> {
+export async function runsSince(ctx: PageContext, since: number, limit: number): Promise<{ runs: RunRecordView[]; more: boolean }> {
   const runs: RunRecordView[] = [];
   let cursor: string | null = null;
   do {
@@ -39,7 +39,7 @@ async function runsSince(ctx: PageContext, since: number, limit: number): Promis
 }
 
 /** The checks of the results, each layer terminal under its interface term (display rule 5: unknown kept apart). */
-function checkCounts(tasks: readonly TaskRow[]): { label: string; value: number; stroke: string; fill: string }[] {
+export function checkCounts(tasks: readonly TaskRow[]): { label: string; value: number; stroke: string; fill: string }[] {
   const tally = new Map<string, number>();
   let unknown = 0;
   for (const task of tasks) {
@@ -63,7 +63,7 @@ function checkCounts(tasks: readonly TaskRow[]): { label: string; value: number;
 }
 
 /** Why items were held back: the codes of rejected items and the reasons of incomplete and held items, most frequent first. */
-function blockers(tasks: readonly TaskRow[]): { label: string; value: number }[] {
+export function blockers(tasks: readonly TaskRow[]): { label: string; value: number }[] {
   const tally = new Map<string, number>();
   for (const task of tasks) {
     const primary = task.detail === null ? null : primaryResult(task.detail);

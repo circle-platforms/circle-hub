@@ -11,8 +11,9 @@ import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { RecordsError, type Principal } from '../../records/api.ts';
 import type { ServerDeps } from '../api.ts';
 import type { CommandBridge } from '../command-bridge.ts';
-import { cookiesOf, mediaTypeOf, readBody, setCommonHeaders } from '../http.ts';
+import { cookiesOf, mediaTypeOf, readBody, sendJson, setCommonHeaders } from '../http.ts';
 import { connectionsPage } from './connections.ts';
+import { handleApi, type ApiResult } from './api.ts';
 import { CONTENT_SECURITY_POLICY, code, html, link, page, pre, type Html, type PageChrome } from './html.ts';
 import { ACTIONS, completeSetup, jobPage, runAction, type Form, type JobStore } from './manage.ts';
 import { operationsPage } from './operations.ts';
@@ -360,6 +361,62 @@ async function action(request: IncomingMessage, response: ServerResponse, option
   return runAction(ctx, { bridge: options.bridge, jobs: options.jobs, log: options.log }, name, form, session.token, upload);
 }
 
+/** What a page or an interface answer of one signed-in request knows; user names are cached for the request. */
+function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL, principal: Principal, session: ConsoleSession, secure: boolean): PageContext {
+  const names = new Map<string, Promise<string>>();
+  return {
+    deps: options.deps,
+    principal,
+    admin: principal.role === 'admin',
+    url,
+    csrf: session.csrf,
+    secure,
+    origin: mcpOrigin(request, secure),
+    ...(options.hub === undefined ? {} : { hub: options.hub }),
+    chrome: (title, extra = {}) => ({ title, user: { name: principal.name, role: uiLabelOf('permission_role', principal.role), admin: principal.role === 'admin' }, csrf: session.csrf, ...extra }),
+    userName: (userId) => {
+      if (userId === null || userId === undefined) return Promise.resolve('—');
+      let pending = names.get(userId);
+      if (pending === undefined) {
+        pending = options.deps.records.principals.get(userId).then((user) => user?.name ?? userId);
+        names.set(userId, pending);
+      }
+      return pending;
+    },
+  };
+}
+
+/**
+ * The read-only JSON interface (console/api.ts): GET or HEAD only, the session of the pages; without one a 401 answer, not
+ * the redirect a page gets, so a client can tell the sign-in ended.
+ */
+async function api(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions, session: ConsoleSession | null, secure: boolean, rest: string[]): Promise<void> {
+  const headers = { 'content-security-policy': "default-src 'none'; frame-ancestors 'none'" };
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    request.resume();
+    return sendJson(response, 405, { code: null, message: '控制台接口只读，只接受 GET', fix: '用 GET 读取；管理操作在控制台页面或 Circle 中执行' }, { ...headers, allow: 'GET, HEAD' });
+  }
+  const principal: Principal | null = session === null ? null : await options.deps.records.principals.authenticate(`Bearer ${session.token}`);
+  if (principal === null) {
+    if (session !== null) options.sessions.close(session.id);
+    return sendJson(response, 401, { code: null, message: '登录已过期或已退出', fix: '重新登录控制台后再读取' }, headers);
+  }
+  const ctx = pageContext(options, request, url, principal, session!, secure);
+  let result: ApiResult;
+  try {
+    result = await handleApi(ctx, rest, { jobs: options.jobs, run: bridgeRun(options, session!) });
+  } catch (error) {
+    if ((error instanceof RecordsError && error.code === null && error.name !== 'IntegrityError') || error instanceof TypeError) {
+      options.log(`控制台接口参数不对（${url.pathname}）：${error instanceof Error ? error.message : String(error)}`);
+      result = { status: 400, body: { code: null, message: '请求参数不正确', fix: '核对查询参数；分页游标只能取自上一页的 next' } };
+    } else {
+      options.log(`控制台接口出错（${url.pathname}）：${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+      result = { status: 500, body: { code: null, message: 'Hub 内部错误，原因已记入服务日志', fix: '稍后重试；仍出错时由管理员查看服务日志' } };
+    }
+  }
+  sendJson(response, result.status, result.body, headers);
+}
+
 /** Handles every path under /console. */
 export async function handleConsole(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions): Promise<void> {
   const segments = url.pathname.split('/').slice(2).filter((s) => s.length > 0);
@@ -384,6 +441,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     request.resume();
     return sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>退出只接受 POST</p>`), { allow: 'POST' });
   }
+  if (segments[0] === 'api') return api(request, response, url, options, session, secure, segments.slice(1));
   const isAction = segments.length === 3 && segments[0] === 'admin' && segments[1] === 'do';
   if (isAction ? request.method !== 'POST' : request.method !== 'GET') {
     request.resume();
@@ -401,27 +459,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     return redirect(response, '/console/login', cookies);
   }
   if (segments.length === 0) return redirect(response, HOME);
-  const names = new Map<string, Promise<string>>();
-  const ctx: PageContext = {
-    deps: options.deps,
-    principal,
-    admin: principal.role === 'admin',
-    url,
-    csrf: session!.csrf,
-    secure,
-    origin: mcpOrigin(request, secure),
-    ...(options.hub === undefined ? {} : { hub: options.hub }),
-    chrome: (title, extra = {}) => ({ title, user: { name: principal.name, role: uiLabelOf('permission_role', principal.role), admin: principal.role === 'admin' }, csrf: session!.csrf, ...extra }),
-    userName: (userId) => {
-      if (userId === null || userId === undefined) return Promise.resolve('—');
-      let pending = names.get(userId);
-      if (pending === undefined) {
-        pending = options.deps.records.principals.get(userId).then((user) => user?.name ?? userId);
-        names.set(userId, pending);
-      }
-      return pending;
-    },
-  };
+  const ctx = pageContext(options, request, url, principal, session!, secure);
   let result: PageResult | null;
   try {
     if (isAction) {

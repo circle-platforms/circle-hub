@@ -73,7 +73,8 @@ export async function taskHead(ctx: PageContext, detail: RunDetail, titles: Read
 
 // ---------------------------------------------------------------- the waterfall
 
-interface Step {
+/** One step of a task's waterfall: times in milliseconds since the epoch, a fill class and a dot state for the page. */
+export interface Step {
   name: string;
   sub: string;
   fill: string;
@@ -135,7 +136,7 @@ function layerSummary(results: readonly RequirementResult[]): string {
 
 const DISPATCH_DOT: Readonly<Record<EffectOutcome, DotState>> = { issued: 'info', effective: 'ok', read_back_consistent: 'ok', read_back_mismatch: 'down', target_rejected: 'down', not_dispatched: 'idle', proven_not_executed: 'idle', unknown: 'unknown' };
 
-async function stepsOf(ctx: PageContext, detail: RunDetail, calls: readonly CallLogLine[], now: number): Promise<Step[]> {
+export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: readonly CallLogLine[], now: number): Promise<Step[]> {
   const run = detail.run;
   const steps: Step[] = [];
   const lines = [...calls].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
@@ -233,7 +234,7 @@ export async function taskWaterfall(ctx: PageContext, detail: RunDetail, read?: 
       callsShown = false;
     }
   }
-  const steps = await stepsOf(ctx, detail, calls, now);
+  const steps = await taskSteps(ctx, detail, calls, now);
   const started = Date.parse(detail.run.started_at);
   const t0 = Math.min(started, ...steps.map((s) => s.start).filter(Number.isFinite));
   let t1 = Math.max(...steps.map((s) => s.end).filter(Number.isFinite), t0);

@@ -12,14 +12,14 @@ import { button, card, chip, commandLink, commandModal, kpi, kv, plannedCard, se
 
 const PACK_ICON: Readonly<Record<PackKind, string>> = { workflow: 'pack-i', product: 'pack-i g', system: 'pack-i o', skill: 'pack-i v' };
 
-function stateOf(pack: PackListing): { text: string; tone: Tone | 'plain' } {
+export function stateOf(pack: PackListing): { text: string; tone: Tone | 'plain' } {
   if (pack.withdrawn) return { text: '已退役', tone: 'unchecked' };
   if (pack.kind === 'product') return pack.active ? { text: '已启用', tone: 'pass' } : { text: '未启用', tone: 'plain' };
   return { text: '已发布', tone: 'pass' };
 }
 
 /** Every version of each pack id, newest version first. */
-function byId(listings: readonly PackListing[]): Map<string, PackListing[]> {
+export function byId(listings: readonly PackListing[]): Map<string, PackListing[]> {
   const out = new Map<string, PackListing[]>();
   for (const listing of listings) out.set(listing.id, [...(out.get(listing.id) ?? []), listing]);
   for (const versions of out.values()) versions.sort((a, b) => compareVersions(b.version, a.version));
@@ -27,7 +27,7 @@ function byId(listings: readonly PackListing[]): Map<string, PackListing[]> {
 }
 
 /** The version a card shows: the newest one still published, else the newest. */
-const shownVersion = (versions: readonly PackListing[]): PackListing => versions.find((v) => !v.withdrawn) ?? versions[0];
+export const shownVersion = (versions: readonly PackListing[]): PackListing => versions.find((v) => !v.withdrawn) ?? versions[0];
 
 async function assignedNames(ctx: PageContext, pack: PackListing): Promise<string[] | null> {
   if (pack.assigned_to === undefined) return null;
@@ -71,7 +71,7 @@ ${sectionHead('定时任务与机器人', '按时间或事件自动执行：知�
   };
 }
 
-const PACK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+export const PACK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 export async function packPage(ctx: PageContext, id: string): Promise<PageResult> {
   if (!PACK_ID.test(id)) return neutralPage(ctx);

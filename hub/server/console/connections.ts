@@ -12,14 +12,14 @@ import { code, html, icon, page, table, type Html } from './html.ts';
 import type { PageContext, PageResult } from './pages.ts';
 import { button, callout, card, chip, commandLink, commandModal, kpi, plannedCard, sectionHead, seg, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
 
-interface Circle {
+export interface Circle {
   owner: string;
   token: TokenInfo;
 }
 
 const DAY = 86_400_000;
 
-async function circlesOf(ctx: PageContext): Promise<Circle[]> {
+export async function circlesOf(ctx: PageContext): Promise<Circle[]> {
   const users = ctx.admin ? await ctx.deps.records.principals.list() : [{ id: ctx.principal.id, name: ctx.principal.name, disabled: false }];
   const out: Circle[] = [];
   for (const user of users) {
