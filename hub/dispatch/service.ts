@@ -109,6 +109,12 @@ export class TargetOccupiedError extends Error {
   readonly jobs: readonly string[];
   constructor(jobs: readonly string[], message: string) { super(message); this.jobs = jobs; }
 }
+/** The at-most-once guard (V07): these bytes were already dispatched by `job`; `ended` when that job reached its end. */
+export class AlreadyDispatchedError extends Error {
+  readonly job: string;
+  readonly ended: boolean;
+  constructor(job: string, ended: boolean, message: string) { super(message); this.job = job; this.ended = ended; }
+}
 /** The fixed labels of the release checks that do not hold. Fields carry digests only, so the labels disclose no value. */
 function unmetReleaseLabels(explanation: { checks: ReleaseCheck[]; rows: Array<{ applicable: boolean; checks: ReleaseCheck[] }> }): string[] {
   const checks = [...explanation.checks, ...explanation.rows.filter((row) => row.applicable).flatMap((row) => row.checks)];
@@ -323,7 +329,11 @@ export class DispatchService {
       return { started: true, executor: chosen.id, status };
     } catch (error) {
       log('error', `${chosen.id}: ${described(error)}`);
-      return { started: false, executor: chosen.id, reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次没有派发；等占用结束后原样重交' : '派发前核对出错，没有派发；等管理员处理（已记下）后原样重交' };
+      return { started: false, executor: chosen.id, reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次没有派发；等占用结束后原样重交'
+        : error instanceof AlreadyDispatchedError
+          // The same bytes are dispatched at most once (V07): that is the runner's matter, not the administrator's.
+          ? error.ended ? `这份产物已经由作业 ${error.job} 派发过，作业已结束；同一份字节只派发一次。结果读那个作业；要再做一次，按任务包的规程做一份新的产物，上传后开新运行` : `这份产物已经由作业 ${error.job} 派发，那个作业还没结束或结果未知；等它结束（或管理员对账）后读它的结果，不要用同一份字节再开运行`
+          : '派发前核对出错，没有派发；等管理员处理（已记下）后原样重交' };
     }
   }
 
@@ -350,7 +360,7 @@ export class DispatchService {
     for (const prior of attempts) {
       const priorJob = String(prior.body.detail.job); const priorEvents = await this.journal.events(priorJob);
       const end = eventOf(priorEvents,'complete'); const pinned = await this.journal.binding(priorJob);
-      if (!end || isFrozen(priorEvents) || !(retrySafeOutcome(end.body.detail.outcome) || end.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false) || pinned.input?.run !== input.run || digestOfValue(operationDefinition(await this.pinned(pinned))) !== digestOfValue(operationDefinition(d)) || !same({...pinned.input,result:null},{...input,result:null})) throw new Error(`这份字节已有派发意图；作业摘要 ${priorJob}；只能查询或对账，不能重交`);
+      if (!end || isFrozen(priorEvents) || !(retrySafeOutcome(end.body.detail.outcome) || end.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false) || pinned.input?.run !== input.run || digestOfValue(operationDefinition(await this.pinned(pinned))) !== digestOfValue(operationDefinition(d)) || !same({...pinned.input,result:null},{...input,result:null})) throw new AlreadyDispatchedError(priorJob, !!end && !isFrozen(priorEvents), `这份字节已有派发意图；作业摘要 ${priorJob}；只能查询或对账，不能重交`);
     }
     const attempt = attempts.length + 1;
     const source = await this.options.records.artifacts.source({ id: input.user, name: '', role: 'user' }, input.sha256, { consumer: 'function' });

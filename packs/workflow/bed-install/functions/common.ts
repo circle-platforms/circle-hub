@@ -47,14 +47,18 @@ export const versionOfBuild = (build: string): string => build.replace(/_/g, '.'
 export interface Request {
   build: string;
   image: string;
+  /** Which attempt this is: the same bytes are dispatched at most once, so another try is a new request saying so. */
+  attempt?: number;
 }
 
-/** The uploaded request: exactly {schema, build, image}; the problem in words otherwise. */
+/** The uploaded request: {schema, build, image} and an optional attempt; the problem in words otherwise. */
 export function readRequest(model: unknown): { ok: true; request: Request } | { ok: false; problem: string } {
   if (!isRecord(model)) return { ok: false, problem: '装构建请求不是 JSON 对象' };
   const keys = Object.keys(model).sort();
-  if (keys.join(',') !== 'build,image,schema') return { ok: false, problem: `装构建请求只能有 schema、build、image 三项（现在是 ${keys.join('、') || '空的'}）` };
+  const extra = keys.filter((key) => !['attempt', 'build', 'image', 'schema'].includes(key));
+  if (extra.length > 0 || !['build', 'image', 'schema'].every((key) => keys.includes(key))) return { ok: false, problem: `装构建请求是 schema、build、image 三项，再装一次时加 attempt（现在是 ${keys.join('、') || '空的'}）` };
   if (model.schema !== REQUEST_SCHEMA) return { ok: false, problem: `装构建请求的 schema 要写 ${REQUEST_SCHEMA}` };
   if (typeof model.build !== 'string' || model.build === '' || typeof model.image !== 'string' || model.image === '') return { ok: false, problem: '装构建请求的 build 和 image 要是不空的文字' };
-  return { ok: true, request: { build: model.build, image: model.image } };
+  if (model.attempt !== undefined && (typeof model.attempt !== 'number' || !Number.isInteger(model.attempt) || model.attempt < 1 || model.attempt > 1000)) return { ok: false, problem: '装构建请求的 attempt 是第几次装（1 到 1000 的整数）' };
+  return { ok: true, request: { build: model.build, image: model.image, ...(model.attempt !== undefined ? { attempt: model.attempt as number } : {}) } };
 }

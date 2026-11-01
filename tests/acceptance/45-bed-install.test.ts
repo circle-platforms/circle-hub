@@ -126,6 +126,27 @@ describe('scenario 45: installing a build on a whole booked bed (decision 117)',
     assert.equal(again.dispatch?.[0].job, note!.job); assert.equal(sent.length, 1);
   });
 
+  test('the same request bytes are not installed twice; a retry is a new request with its attempt', async () => {
+    const booking = await wholeBed();
+    // The scenario's first test installed REQUEST itself: this one starts from its own first attempt.
+    const first = await install(booking, { ...REQUEST, attempt: 1 });
+    await settled(first.run, first.result.dispatch?.[0]);
+    assert.equal(sent.length, 1);
+    // The at-most-once guard answers the runner with the job that used these bytes and its way out, not an administrator.
+    const again = await install(booking, { ...REQUEST, attempt: 1 });
+    assert.equal(again.result.acceptance, 'accepted', JSON.stringify(again.result.errors));
+    const refused = again.result.dispatch?.[0];
+    assert.equal(refused?.job, undefined, JSON.stringify(again.result.dispatch));
+    assert.match(refused?.text ?? '', /这份产物已经由作业 [0-9a-f]{64} 派发过，作业已结束；同一份字节只派发一次/);
+    assert.doesNotMatch(refused?.text ?? '', /等管理员/);
+    assert.equal(sent.length, 1);
+    const retry = await install(booking, { ...REQUEST, attempt: 2 });
+    assert.equal(retry.result.acceptance, 'accepted', JSON.stringify(retry.result.errors));
+    await settled(retry.run, retry.result.dispatch?.[0]);
+    assert.equal(sent.length, 2);
+    assert.deepEqual(JSON.parse(sent[1].toString()), { ...REQUEST, attempt: 2 });
+  });
+
   test('an image that is not the requested build, or a bed not wholly booked, is refused and nothing is dispatched', async () => {
     const booking = await wholeBed();
     const wrong = await install(booking, { ...REQUEST, image: 'brandOS-Beta_SYN-K_1_2_0_8.click' });
