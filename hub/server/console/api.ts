@@ -5,7 +5,7 @@
 // credential contents never appear. The write interfaces, which run the same commands as the forms, are console/api-write.ts.
 // An error is {code, message, fix}; a situation without a registered code (not signed in, a bad parameter) has code null.
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
-import { TASK_RESULT, isEnvironment, isNodeLevel, isTaskResult, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
+import { ACTION_RESULT, TASK_RESULT, isEnvironment, isNodeLevel, isTaskResult, uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf } from '../../../contracts/src/validation.ts';
 import type { CallLogLine, User } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
@@ -348,7 +348,9 @@ async function environments(ctx: PageContext): Promise<ApiResult> {
       const state = environmentState(view);
       // The derived status (its code and interface term) beside the facts it comes from (state, null when not read);
       // detail says why, line by line.
-      return { ...view, state: view.state ?? null, status: state.code, status_label: state.text, status_detail: state.detail };
+      return { ...view, state: view.state ?? null, status: state.code, status_label: state.text, status_detail: state.detail,
+        calls_24h: view.calls_24h == null ? null : { ...view.calls_24h, results_label: Object.fromEntries(ACTION_RESULT.map((result) => [result, uiLabelOf('action_result', result)])) },
+      };
     }),
   });
 }

@@ -62,6 +62,8 @@
 
 1. **试读记录**：B05 增加动作 `trial`，模型第 14 版，合约由生成器更新；中英文设计说明列出新动作。`trial-report@1` 在连接器中用 zod 定义，只从答复中提取允许记录的字段，保存前校验，使用 `action.kind=trial` 与 `action.user` 索引；不写正式读取的资源索引。写入失败记 `resource_trial_record_failed`，保留原答复、不重发请求。管理员记录页可按成员、时间查试读记录并查看各接口结果，成员看不到。测试连接说明已区分试读记录、失败登录摘要与不保存的配置和凭据内容。
 
+2. **运行环境响应时间**：`readEnvironmentCalls` 只读作业绑定对应的 `dispatch.executor` 索引，不发测量请求、不新增记录。优先统计有显式发送、接收时刻的网络应答记录，读取／回读／租约／预检记录作为旧记录的补充；同一调用的应答和上层读取记录按作业、来源引用及两端时间去重。真实 0 毫秒调用计入，没有显式请求时间的内部记录排除。每个运行环境扫描至多 2,000 条；`calls_24h` 给出 `executor`、`since`、`until`、`calls`、`results`、`results_label`、`median_ms`、`slowest_ms`、`last_at`、`partial`，存储失败为 null。页面显示中位与最慢、无调用或不可用，受限时次数写“至少”、耗时只涵盖已扫描调用。新的计时记录经预约定位执行器，`environment.status` 保留 6 秒合并发送。
+
 ## 验证
 
 ### 第 1 项（本机 macOS，Node 24.22.1）
@@ -73,3 +75,9 @@
 - `node --test --test-concurrency=1 --test-name-pattern='uses generated axes' packs/workflow/case-review/packs.test.ts`：选中的 1 项通过，0 失败、0 跳过；其余名称未选中的测试未运行，不计为通过。
 - `npm run test:docs`：280/280，0 失败、0 跳过。
 - 没有运行整仓单元回归、验收或来源校验；本项没有变更来源工具。
+
+### 第 2 项（本机 macOS，Node 24.22.1）
+
+- `npm run typecheck`：退出码 0。
+- `node --test --test-concurrency=2 hub/dispatch/environment.test.ts hub/dispatch/environment-statistics.test.ts hub/dispatch/read-runs.test.ts hub/server/console-environments.test.ts hub/server/console-live.test.ts hub/server/console-api.test.ts hub/server/assemble/testing-real.test.ts`：44/44，0 失败、0 跳过；包含真实回环执行器请求数与统计逐次对照、0 毫秒调用、重复记录、窗口、上限、不可读、页面与接口、事件可见范围和合并发送。
+- `npm run test:docs`：280/280，0 失败、0 跳过。

@@ -1,4 +1,4 @@
-import { readRunJobs } from '../../dispatch/api.ts';
+import { readEnvironmentCalls, readRunJobs } from '../../dispatch/api.ts';
 import { productVariableNameAvailable } from '../variables.ts';
 // assembleHub: the Hub built from the real packages over an opened configuration and records kit. Order: the vault master
 // key (when required: a missing or wrong key stops here, before anything listens), the core parsers, the pack registry and
@@ -228,7 +228,8 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
         for (const entry of await new ExecutorRegistry(records).sources(by)) {
           // The state is read per environment; one that cannot be read stays unknown and leaves the others as they are.
           const state = dispatch === null ? null : await dispatch.environment(by, entry.id).catch(() => null);
-          views.push({ id: entry.id, target: entry.source.target, endpoint: entry.source.endpoint, enabled: entry.source.enabled, resources: [...entry.source.resources], ...(state === null ? {} : { state }) });
+          const calls = await readEnvironmentCalls(records.store, [entry.id], now?.() ?? new Date()).catch(() => null);
+          views.push({ id: entry.id, target: entry.source.target, endpoint: entry.source.endpoint, enabled: entry.source.enabled, resources: [...entry.source.resources], ...(state === null ? {} : { state }), calls_24h: calls?.[0] ?? null });
         }
         return views;
       },

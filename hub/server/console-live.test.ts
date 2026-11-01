@@ -269,6 +269,9 @@ describe('runtime environments', () => {
     }
     // A read answer, a heartbeat or a record of another component changes neither.
     assert.equal(environmentTransition(dispatchAction({ phase: 'heartbeat.response' })), null);
+    const timed = { ...dispatchAction({ phase: 'status', started_at: '2026-11-01T00:00:00.000Z', ended_at: '2026-11-01T00:00:00.000Z' }) };
+    Object.assign(timed.body, { action: 'read', inputs: [`src:${'a'.repeat(64)}`] });
+    assert.deepEqual(environmentTransition(timed), { job: JOB, executor: null }, 'a genuine zero-ms request changes the statistics');
     assert.equal(environmentTransition({ kind: 'action', body: { component: 'requests@1', detail: { job: JOB, phase: 'intent' } } }), null);
     assert.equal(environmentTransition({ kind: 'call_log', body: { component: 'dispatch@1', detail: { job: JOB, phase: 'intent' } } }), null);
     assert.equal(environmentTransition(dispatchAction({ phase: 'reservation', binding: { executor: 'bench-1' } }))?.executor, null, 'not an executor id');
@@ -277,7 +280,7 @@ describe('runtime environments', () => {
   test('a dispatch on an environment reaches administrators as environment.status, never members', async () => {
     const someone = await member();
     // As the journal writes them: indexed by job, so a later record of a job is traced to its reservation.
-    const put = (job: string, detail: Record<string, unknown>) => server.records.store.put({ kind: 'action', schema: 'action@1', provenance: 'observed', body: { component: 'dispatch@1', run: null, detail: { job, ...detail } }, index: [{ key: 'dispatch.job', value: job }] });
+    const put = (job: string, detail: Record<string, unknown>, fields: Record<string, unknown> = {}) => server.records.store.put({ kind: 'action', schema: 'action@1', provenance: 'observed', body: { component: 'dispatch@1', run: null, ...fields, detail: { job, ...detail } }, index: [{ key: 'dispatch.job', value: job }] });
     const earlier = createHash('sha256').update(`合成作业 早 ${counter}`).digest('hex');
     const OTHER = 'exe_0000000000000000000000000b';
     // A reservation written before any stream opened is not read by the poller; its job's later records still name it.
@@ -286,15 +289,21 @@ describe('runtime environments', () => {
     const user = await openStream('/console/api/stream?events=environment.status', await signIn(someone.token));
     await delay(200);
     await put(earlier, { phase: 'unknown', uncertain: true });
-    await until(has(admin, 'environment.status', { environment: OTHER }), 'the event traced to an earlier reservation');
+    await until(has(admin, 'environment.status', { environment: OTHER }), 'the event traced to an earlier reservation', 9_000);
     const job = createHash('sha256').update(`合成作业 ${counter}`).digest('hex');
     await put(job, { phase: 'reservation', binding: { job, executor: EXECUTOR } });
-    await until(has(admin, 'environment.status', { environment: EXECUTOR }), 'the reservation event');
+    await until(has(admin, 'environment.status', { environment: EXECUTOR }), 'the reservation event', 9_000);
     admin.events.length = 0;
     await put(job, { phase: 'complete', done: true, outcome: 'effective' });
-    await until(has(admin, 'environment.status', { environment: EXECUTOR }), 'the end event');
+    await until(has(admin, 'environment.status', { environment: EXECUTOR }), 'the end event', 9_000);
+    admin.events.length = 0;
+    for (let i = 0; i < 3; i++) await put(job,
+      { phase: 'status.response', attempt: i, started_at: '2026-11-01T00:00:00.000Z', ended_at: '2026-11-01T00:00:00.100Z', source_record: `rec:${'b'.repeat(64)}`, http_status: 200 },
+      { action: 'read', inputs: [`src:${'a'.repeat(64)}`] });
+    await until(has(admin, 'environment.status', { environment: EXECUTOR }), 'a timed response event', 9_000);
     await delay(300);
     assert.ok(!user.events.some((e) => e.name === 'environment.status'), 'members never hear of environments');
+    assert.equal(admin.events.filter((e) => e.name === 'environment.status').length, 1, 'one held event per environment');
     for (const event of admin.events) assert.deepEqual(Object.keys(event.data), ['environment']);
     for (const client of [admin, user]) client.close();
     await Promise.all([admin.ended, user.ended]);

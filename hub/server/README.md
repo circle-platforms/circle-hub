@@ -377,6 +377,11 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   with its outcome; two dialogs give `circle-hub bed hold clear <executor> --reason=…` (确认已恢复) and `circle-hub job
   status <job>` (处置派发结果). The task page's dispatch step names the environment and its current status; a job waiting
   for its result with no disposition request open reads 等待派发结果中，不可重发.
+  Decision 81 adds `calls_24h: {executor, since, until, calls, results, results_label, median_ms, slowest_ms, last_at,
+  partial} | null` to each environment. The assembly reads hub/dispatch's existing timed exchange records; null is
+  unreadable, not zero. The connections page adds 响应时间 (median and slowest), or 近 24 小时无调用 when complete and
+  empty. A capped scan says 至少 for the count and the durations cover the scanned calls only. No new measurement request
+  or record is made, and duplicate read/transport records of one exchange count once.
 - **Backups and the database** (decision 79): `GET /console/api/hub` adds `backups: {count, latest_at} | null` (the
   complete backups under the data root that `circle-hub backup` wrote, through hub/platform's `listBackups`, the newest by
   its manifest's `created_at`; a partial one does not count) and `database_bytes: number | null` (the records store's
@@ -404,7 +409,9 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   sent once. Occupancy and freezing come from the dispatch journal: a record that can change
   them (a reservation, an intent, an end, a request left uncertain or answered, a disposition, a bed hold opened or
   cleared, an unknown outcome) is `environment.status` for the executor its job reserved (the last 2,000 jobs are kept in
-  mind). Response times of an environment are recorded nowhere, so no event claims them. A live module carries `data-live="<events>"` and a stable id; on an
+  mind). An explicitly timed executor response changes its call statistics and sends `environment.status` too (decision
+  81), resolved through the job's reservation. Events of one environment are held for 6 s and sent once during that period.
+  A live module carries `data-live="<events>"` and a stable id; on an
   event the script fetches its own page (`circle-hub-refresh: live`, which does not count as session activity, so an
   unattended page still reaches the idle limit) and swaps those modules, keeping the scroll position and leaving a module
   alone while it holds an open dialog or a focused field; when the stream breaks the page says 连接中断 with the time of
