@@ -203,7 +203,8 @@ export function unmatchedBuildExit(
   }
   const parts = [`没有任何自动化测试环境声明在装 ${need.build}（构建名或它的基础构建逐字相等才算；在装构建来自清单声明，未核对）`];
   if (absent.length > 0) parts.push(`缺在装构建记录：${absent.join('、')}`);
-  if (other.length > 0) parts.push(`在装构建不是该版本线：${other.join('、')}`);
+  // A different build is not a different version line: say only what the inventory declares (D05 R[8]).
+  if (other.length > 0) parts.push(`清单声明的在装构建是别的构建：${other.join('、')}`);
   return { verdict: 'unknown', missing: parts.join('。'), fix: UNMATCHED_FIX };
 }
 

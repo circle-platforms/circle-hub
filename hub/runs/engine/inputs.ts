@@ -209,8 +209,10 @@ export async function bindInputs(
         return null;
       }
       if (read.inputError !== undefined) {
-        if(read.inputError.code)errors.push(protocolError(read.inputError.code,read.inputError.message,{path,fix:read.inputError.fix}));
-        else schemaError(path, read.inputError.message, read.inputError.fix);
+        // The reader's claim fields (grounds, qualifier, missing fact) stay on the answer (D05 R[8]).
+        const { code, message, fix, ...claim } = read.inputError;
+        if(code)errors.push(protocolError(code,message,{path,fix,...claim}));
+        else errors.push(protocolError('SUBMISSION_SCHEMA_VIOLATION', message, { path, ...(fix ? { fix } : {}), ...claim }));
         notes.push(`${path}: ${read.reason}`);
         return null;
       }

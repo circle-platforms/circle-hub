@@ -140,7 +140,10 @@ export interface ExternalReadRetry {code:string;at:string;attempts:number}
 
 export type ExternalRead =
   | { ok: true; id: string; revision: string | null; artifacts: ExternalArtifact[]; manifest: string; coverage?:Coverage;absent?:SourceAbsent }
-  | { ok: false; id: string; reason: string; manifest?:string|null; retry?:ExternalReadRetry; redirect?:ExternalRedirect; inputError?: { code?:ProtocolCode; message: string; fix: string } };
+  | { ok: false; id: string; reason: string; manifest?:string|null; retry?:ExternalReadRetry; redirect?:ExternalRedirect; inputError?: InputError };
+
+/** A caller-input problem of a read, with the claim fields its answer carries (D05 R[8]): grounds, qualifier, the missing fact. */
+export type InputError = { code?:ProtocolCode; message: string; fix: string } & Pick<ProtocolError, 'grounds' | 'warrant' | 'provenance' | 'collected_at' | 'coverage' | 'missing' | 'hypotheses'>;
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */
