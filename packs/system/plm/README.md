@@ -98,3 +98,7 @@ A regression feeds this actual projection into story-traceability instead of man
 决定 111 加一条只读读法 `plm:bug-list:<条件>`，读查询服务的缺陷列表接口 `GET /plmquery/bug/`。条件写成 `名=值`，多个用 `&` 连接，值做 URI 编码；名只取 product、status（active、resolved、closed）、severity（1–5）、assignedTo、openedBy、lastEditedDate_start、lastEditedDate_end，每个最多一次，至少一个。路由的 query 只放行这七个参数，读法函数再逐个核对值的格式；不认识的条件、重复的条件、格式不对的值都不发请求，拒绝写明正确写法。
 
 这个接口的参数是 2026-10-12 用所有者本人 token 做只读探测时记下的结构（旧 S2 文档），列表不分页。回答原样给出每一行的标量字段（不改名、不按 deleted 或 status 筛掉），带过滤条件和行数；说明写明：Hub 没有核对服务端是否另有行数上限，按哪些行计数由读者判断，空列表只说明读取时刻按这些条件没有匹配，不说明没有。
+
+## 缺陷读法带出发现构建（1.3.7）
+
+PLM 的缺陷详情只给 `openedBuild`（构建编号，如 17401 这样的数字，或 trunk、空值），构建名要另读。决定 111 起，`plm:bug:<编号>` 读完详情后，按 openedBuild 的编号再读那一条构建记录（只读路由 `GET /plmquery/build/{id}/`，id 只能是数字），content 里加 `opened_build: {id, name}`。读不到名字时 name 为 null，并写明原因：openedBuild 不是构建编号、构建记录没读到（被凭据扫描扣下或读取失败，照原因写）、记录里没有名字。缺陷本身照常读出，不受构建记录的影响。按编号读单条构建，是因为整个产品的构建列表可能因个别记录带凭据而被整份扣下。
