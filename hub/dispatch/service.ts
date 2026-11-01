@@ -20,7 +20,7 @@ import type { BuildKnowledge } from './probes.ts';
 import {requestIdentity,sameRequestIdentity} from './request-identity.ts';
 import {PrecheckFactError,precheckFailure} from './precheck-failure.ts';
 import { canRetryRead } from './read-policy.ts';
-import { bindingRun, NEWEST_PAGE_SIZE, reportedVersion, scanNewest, type EnvironmentJob, type EnvironmentState } from './environment.ts';
+import { bindingRun, NEWEST_PAGE_SIZE, reportedVersion, scanNewest, type EnvironmentJob, type EnvironmentFacts } from './environment.ts';
 import { dynamicDisposition, DISPATCH_QUALIFICATIONS, missingOwnershipCertification, ownershipUnmet, unmetPremises } from './dynamic.ts';
 import { judgeBedSurface } from '../../packs/workflow/test-bed/api.ts';
 import {
@@ -188,7 +188,7 @@ export class DispatchService {
    * target and whether they wait for a disposition, its open bed hold, the latest dispatch and the version the target
    * reported. Null for an id that is not a registered executor. A fact that cannot be read is named in `missing`.
    */
-  async environment(by: Principal, executor: string): Promise<EnvironmentState | null> {
+  async environment(by: Principal, executor: string): Promise<EnvironmentFacts | null> {
     await this.registry.admin(by);
     const source = await this.registry.readSource(executor);
     if (!source) return null;
@@ -226,7 +226,7 @@ export class DispatchService {
     } catch {
       // Neither the latest dispatch nor the version is established.
     }
-    let latest: EnvironmentState['latest'] = null;
+    let latest: EnvironmentFacts['latest'] = null;
     let latestKnown = scan !== null && scan.reservation === null && scan.exhausted;
     if (scan?.reservation) {
       try {

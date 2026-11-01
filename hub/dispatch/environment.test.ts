@@ -4,7 +4,7 @@
 // registration says so; administrators only, and nothing for an id that is not an executor. Synthetic endpoint only.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { newestOf, reportedVersion, scanNewest, type EnvironmentState } from './environment.ts';
+import { newestOf, reportedVersion, scanNewest, type EnvironmentFacts } from './environment.ts';
 import { setup } from './testing/context.ts';
 
 const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
@@ -47,7 +47,7 @@ test('the latest dispatch and session are searched page by page; what lies past 
 });
 
 test('an environment is free, then held during a dispatch, then free with its latest dispatch and the version it reported', async (t) => {
-  let during: EnvironmentState | null = null;
+  let during: EnvironmentFacts | null = null;
   let service: Awaited<ReturnType<typeof setup>>['service'] | undefined;
   let admin: Awaited<ReturnType<typeof setup>>['admin'] | undefined;
   let executor = '';
@@ -77,7 +77,7 @@ test('an environment is free, then held during a dispatch, then free with its la
   const done = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(done.outcome, 'effective');
   // During the submit the job held the environment, and nothing was frozen.
-  const held = during as EnvironmentState | null;
+  const held = during as EnvironmentFacts | null;
   assert.ok(held);
   assert.deepEqual(held.holding?.map((job) => [job.job, job.frozen]), [[done.job, false]]);
   assert.equal(held.holding?.[0]?.run, c.run);

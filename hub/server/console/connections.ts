@@ -3,7 +3,7 @@
 // registered executors, administrators only). The Hub only reads business systems; a write route is never opened here.
 // Enabling, disabling and re-authenticating a system or an environment are commands for the administrator's Circle
 // (proposal decision 6 of 2026-10-31); connecting a business system is one of the console's four operations.
-import { axisUiLabel, isEnvironment, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { ENVIRONMENT_STATE, axisUiLabel, isEnvironment, uiLabelOf, type EnvironmentState } from '../../../contracts/generated/vocabulary.ts';
 import type { TokenInfo } from '../../records/api.ts';
 import type { ExecutorView } from '../api.ts';
 import type { ResourceListing } from '../../ports.ts';
@@ -32,9 +32,6 @@ export async function circlesOf(ctx: PageContext): Promise<Circle[]> {
 
 const shortJob = (job: string): string => job.slice(0, 12);
 
-/** The states a runtime environment is shown in, in the order the page counts them. */
-const ENVIRONMENT_STATES = ['可用', '使用中', '已冻结', '已停用', '未知'] as const;
-type EnvironmentStateText = (typeof ENVIRONMENT_STATES)[number];
 
 /**
  * A runtime environment's state on the page, from the facts the dispatch journal establishes (ExecutorView.state):
@@ -42,33 +39,35 @@ type EnvironmentStateText = (typeof ENVIRONMENT_STATES)[number];
  * an unconfirmed result, or a job left it unrestored (an open bed hold); 使用中 when a job holds it; 可用 otherwise.
  * `detail` says why, one line each.
  */
-export function environmentState(view: ExecutorView): { text: EnvironmentStateText; tone: Tone; dot: DotState; detail: string[] } {
+export function environmentState(view: ExecutorView): { code: EnvironmentState; text: string; tone: Tone; dot: DotState; detail: string[] } {
+  const as = (code: EnvironmentState, tone: Tone, dot: DotState, detail: string[]) => ({ code, text: uiLabelOf('environment_state', code), tone, dot, detail });
   const state = view.state;
   if (!view.enabled) {
     const waiting = state?.holding?.filter((job) => job.frozen).length ?? 0;
-    return { text: '已停用', tone: 'unchecked', dot: 'idle', detail: waiting > 0 ? [`仍有 ${waiting} 个作业的派发结果未确认，等待处置中`] : [] };
+    return as('deactivated', 'unchecked', 'idle', waiting > 0 ? [`仍有 ${waiting} 个作业的派发结果未确认，等待处置中`] : []);
   }
   if (state === undefined || !state.known.occupancy || state.holding === null) {
-    return { text: '未知', tone: 'unknown', dot: 'unknown', detail: state !== undefined && state.missing.length > 0 ? [...state.missing] : ['占用与冻结状态暂不可读'] };
+    return as('unknown', 'unknown', 'unknown', state !== undefined && state.missing.length > 0 ? [...state.missing] : ['占用与冻结状态暂不可读']);
   }
   const frozen = state.holding.filter((job) => job.frozen);
   const detail: string[] = [];
   for (const job of frozen) detail.push(`作业 ${shortJob(job.job)} 的派发结果未确认，等待处置中`);
   if (state.bed_hold !== null) detail.push(`作业 ${shortJob(state.bed_hold.job)} 结束后运行环境未恢复（${state.bed_hold.bed}），等待管理员确认中`);
-  if (frozen.length > 0 || state.bed_hold !== null) return { text: '已冻结', tone: 'fail', dot: 'down', detail };
-  if (state.holding.length > 0) return { text: '使用中', tone: 'judgment', dot: 'info', detail: state.holding.map((job) => `作业 ${shortJob(job.job)}（${axisUiLabel('effect_outcome')}：${uiLabelOf('effect_outcome', job.outcome)}）`) };
-  return { text: '可用', tone: 'pass', dot: 'ok', detail: [] };
+  if (frozen.length > 0 || state.bed_hold !== null) return as('frozen', 'fail', 'down', detail);
+  if (state.holding.length > 0) return as('in_use', 'judgment', 'info', state.holding.map((job) => `作业 ${shortJob(job.job)}（${axisUiLabel('effect_outcome')}：${uiLabelOf('effect_outcome', job.outcome)}）`));
+  return as('available', 'pass', 'ok', []);
 }
 
 /** The note under the environments count: how many are in use, frozen, disabled or unknown. */
 function environmentNote(executors: readonly ExecutorView[]): string {
-  const counts = new Map<EnvironmentStateText, number>();
+  const counts = new Map<EnvironmentState, number>();
   for (const e of executors) {
-    const text = environmentState(e).text;
-    counts.set(text, (counts.get(text) ?? 0) + 1);
+    const code = environmentState(e).code;
+    counts.set(code, (counts.get(code) ?? 0) + 1);
   }
-  const parts = ENVIRONMENT_STATES.filter((text) => text !== '可用' && (counts.get(text) ?? 0) > 0).map((text) => `${text} ${counts.get(text)}`);
-  return parts.length > 0 ? `可用 / 全部；${parts.join('，')}` : '可用 / 全部';
+  const head = `${uiLabelOf('environment_state', 'available')} / 全部`;
+  const parts = ENVIRONMENT_STATE.filter((code) => code !== 'available' && (counts.get(code) ?? 0) > 0).map((code) => `${uiLabelOf('environment_state', code)} ${counts.get(code)}`);
+  return parts.length > 0 ? `${head}；${parts.join('，')}` : head;
 }
 
 function systemState(resource: ResourceListing): { text: string; tone: Tone; dot: DotState } {
@@ -104,7 +103,7 @@ export async function connectionsPage(ctx: PageContext): Promise<PageResult> {
   const kpis = html`<section class="grid g4 section">
 ${kpi('已连接的 Circle', circles.length, { unit: '个', note: `24 小时内使用过 ${recent} 个`, state: circles.length > 0 ? 'ok' : 'idle' })}
 ${ctx.admin ? kpi('业务系统', resources.filter((r) => r.enabled).length, { unit: `/ ${resources.length}`, note: '启用 / 全部，只读访问', state: resources.some((r) => r.binding_error) ? 'down' : 'ok' }) : kpi('业务系统', '—', { note: '仅管理员可见', state: 'idle' })}
-${ctx.admin ? kpi('运行环境', executors === null ? '—' : executors.filter((e) => environmentState(e).text === '可用').length, { unit: executors === null ? '' : `/ ${executors.length}`, note: executors === null ? (executorsFailed ? '暂不可用' : '派发未接入') : environmentNote(executors), state: executors !== null && executors.some((e) => environmentState(e).text === '已冻结') ? 'down' : 'idle' }) : kpi('运行环境', '—', { note: '仅管理员可见', state: 'idle' })}
+${ctx.admin ? kpi('运行环境', executors === null ? '—' : executors.filter((e) => environmentState(e).code === 'available').length, { unit: executors === null ? '' : `/ ${executors.length}`, note: executors === null ? (executorsFailed ? '暂不可用' : '派发未接入') : environmentNote(executors), state: executors !== null && executors.some((e) => environmentState(e).code === 'frozen') ? 'down' : 'idle' }) : kpi('运行环境', '—', { note: '仅管理员可见', state: 'idle' })}
 ${kpi('业务系统写操作', '未开放', { note: '消息通知与数据回写均未开放', state: 'idle' })}
 </section>`;
   const leftNodes = circles.slice(0, 5).map((c) => html`<div class="tnode"><span class="dot ${c.token.last_used_at !== null && now - Date.parse(c.token.last_used_at) < DAY ? 'ok' : 'idle'}" aria-hidden="true"></span><b>${c.owner}</b><span class="sub">${c.token.label || c.token.id}</span></div>`);

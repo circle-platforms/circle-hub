@@ -22,7 +22,7 @@ export interface EnvironmentJob {
   phase: string;
 }
 
-export interface EnvironmentState {
+export interface EnvironmentFacts {
   executor: string;
   enabled: boolean;
   /** The registered source definition: its digest, and when that registration was decided (null when unknown). */

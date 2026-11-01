@@ -346,8 +346,9 @@ async function environments(ctx: PageContext): Promise<ApiResult> {
     wired: true,
     environments: (await ctx.deps.dispatch.executors(ctx.principal)).map((view) => {
       const state = environmentState(view);
-      // The derived state beside the facts it comes from (state, null when not read); detail says why, line by line.
-      return { ...view, state: view.state ?? null, state_label: state.text, state_detail: state.detail };
+      // The derived status (its code and interface term) beside the facts it comes from (state, null when not read);
+      // detail says why, line by line.
+      return { ...view, state: view.state ?? null, status: state.code, status_label: state.text, status_detail: state.detail };
     }),
   });
 }

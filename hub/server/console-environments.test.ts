@@ -5,7 +5,8 @@
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { after, before, describe, test } from 'node:test';
-import type { EnvironmentState } from '../dispatch/api.ts';
+import { uiLabelOf, type EnvironmentState } from '../../contracts/generated/vocabulary.ts';
+import type { EnvironmentFacts } from '../dispatch/api.ts';
 import type { DispatchView, ExecutorView, JobView } from './api.ts';
 import { createTestServer, type TestServer, type TestUser } from './testing.ts';
 
@@ -14,7 +15,7 @@ let counter = 0;
 const RUN = 'run_00000000000000000000000077';
 const job = (n: number): string => String(n).repeat(64).slice(0, 64);
 const id = (n: number): string => `exe_${String(n).padStart(26, '0')}`;
-const state = (facts: Partial<EnvironmentState> = {}): EnvironmentState => ({
+const state = (facts: Partial<EnvironmentFacts> = {}): EnvironmentFacts => ({
   executor: 'x', enabled: true, registration: { digest: 'd'.repeat(64), decided_at: '2026-11-01T00:00:00.000Z' }, known: { occupancy: true, latest: true, version: true },
   holding: [], bed_hold: null, latest: null, reported_version: null, missing: [], ...facts,
 });
@@ -120,14 +121,15 @@ describe('runtime environments', () => {
   test('the interface gives the derived state beside the facts; members get the neutral answer', async () => {
     const body = JSON.parse((await send('/console/api/environments', { headers: { cookie: await signIn(server.admin.token) } })).body);
     assert.equal(body.wired, true);
-    assert.deepEqual(body.environments.map((e: { state_label: string }) => e.state_label), ['可用', '使用中', '已冻结', '已冻结', '已停用', '未知', '未知']);
+    assert.deepEqual(body.environments.map((e: { status: string }) => e.status), ['available', 'in_use', 'frozen', 'frozen', 'deactivated', 'unknown', 'unknown']);
+    assert.deepEqual(body.environments.map((e: { status: EnvironmentState; status_label: string }) => e.status_label === uiLabelOf('environment_state', e.status)), Array(7).fill(true), 'each status comes with its interface term');
     const unknown = body.environments.find((e: { id: string }) => e.id === id(6));
     assert.equal(unknown.state, null, 'not read');
-    assert.deepEqual(unknown.state_detail, ['占用与冻结状态暂不可读']);
+    assert.deepEqual(unknown.status_detail, ['占用与冻结状态暂不可读']);
     assert.equal(body.environments[0].state.reported_version, 'gateway 2.4.1');
     assert.deepEqual(body.environments[2].state.known, { occupancy: true, latest: false, version: false });
-    assert.deepEqual(body.environments[3].state_detail, [`作业 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`]);
-    assert.deepEqual(body.environments[6].state_detail, ['占用该运行环境的作业暂不可读']);
+    assert.deepEqual(body.environments[3].status_detail, [`作业 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`]);
+    assert.deepEqual(body.environments[6].status_detail, ['占用该运行环境的作业暂不可读']);
     const refused = await send('/console/api/environments', { headers: { cookie: await signIn((await member()).token) } });
     assert.equal(refused.status, 404);
     assert.equal(JSON.parse(refused.body).code, 'SOURCE_UNAVAILABLE');

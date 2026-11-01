@@ -3,7 +3,7 @@
 // CLI commands that need them.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Disposition, EffectOutcome } from '../../contracts/generated/vocabulary.ts';
-import type { EnvironmentState } from '../dispatch/api.ts';
+import type { EnvironmentFacts } from '../dispatch/api.ts';
 import type { HubConfig } from '../config/index.ts';
 import type { SystemTrialInput, SystemTrialReport } from '../connectors/api.ts';
 import type { PacksPort, KnowledgePort, PackCatalogPort, ResourceCatalogPort, RunsService, WorkflowStore } from '../ports.ts';
@@ -68,7 +68,7 @@ export interface ExecutorView {
    * them; absent when this process cannot read them (no dispatch service, or the read failed), which the console shows as
    * unknown.
    */
-  state?: EnvironmentState;
+  state?: EnvironmentFacts;
 }
 
 /** One dispatch job of a run: its outcome and whether its target is frozen until a disposition (V05 R[3] ①). */

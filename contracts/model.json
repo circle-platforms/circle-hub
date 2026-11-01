@@ -3168,6 +3168,9 @@
    ],
    "changes12": [
     "DeclaredParameterType/Role 和 TypedAddressValue 给出可导入共用形状；类型未声明不能被凑成 typed 参数，派发前仍核原声明与效果表（来源：决定（集成者，10-24，关键词整改）；所有者本轮补充共用接口）"
+   ],
+   "changes14": [
+    "加运行环境状态轴 environment_state：控制台由派发记录推出运行环境可用、使用中、已冻结或已停用，推不出时为未知，不当作可用（来源：所有者 2026-11-01 选择现在补齐接口文档中“需新增”的后端数据）"
    ]
   },
   {
@@ -8652,6 +8655,33 @@
     {
      "code": "abandoned",
      "label": "已放弃"
+    }
+   ]
+  },
+  {
+   "axis": "environment_state",
+   "label": "运行环境状态",
+   "owner": "D07",
+   "values": [
+    {
+     "code": "available",
+     "label": "可用"
+    },
+    {
+     "code": "in_use",
+     "label": "使用中"
+    },
+    {
+     "code": "frozen",
+     "label": "已冻结"
+    },
+    {
+     "code": "deactivated",
+     "label": "已停用"
+    },
+    {
+     "code": "unknown",
+     "label": "未知"
     }
    ]
   },
