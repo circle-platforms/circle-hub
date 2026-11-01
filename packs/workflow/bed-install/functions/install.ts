@@ -54,7 +54,7 @@ export function installOutcome(subjectInput: unknown, tableInput: unknown): Outc
   const refute = (code: string, statement: string): Outcome => ({ verdict: 'refute', code, statement, grounds, tier: TIER, ...(item ? { item } : {}) });
   const read = readRequest(group.request);
   if (!read.ok) return refute('bed-install.request_invalid', `${read.problem}；改好后重新上传，以新的引用开运行`);
-  const { build, image } = read.request;
+  const { build, image, attempt } = read.request;
   const version = imageVersion(image, table.image_extensions);
   if (version === null) {
     return refute('bed-install.request_invalid', `镜像名 ${image} 不是构建库的镜像文件名（字母、数字和 . _ -，以 ${table.image_extensions.map((extension) => `.${extension}`).join(' 或 ')} 结尾，构建名前有 -）；照构建站列表页上 ${build} 条目里镜像链接的文件名写（source-read 的 build_page 从 buildsite:listing:index 读起，经版本线导航页到列有它的列表页），重新上传后开运行`);
@@ -75,7 +75,7 @@ export function installOutcome(subjectInput: unknown, tableInput: unknown): Outc
   if (!cases.includes(item)) return unknown('check_error', `条目 ${item} 不是 ${group.bed} 的升级用例（${cases.join('、')}）；用本包重新开运行`);
   return {
     verdict: 'support',
-    statement: `装构建请求核对通过：在 ${group.bed} 的 ${group.targets.join('、')} 上装 ${build}（镜像 ${image}，按 InfoTest 升级用例的读法是 ${version}）；前驱 ${subject.predecessor} 持有整台；运行锁定 ${subject.build}，派发前在每台设备上核对。不证明构建库里有这个镜像，也不证明设备装得上`,
+    statement: `装构建请求核对通过：在 ${group.bed} 的 ${group.targets.join('、')} 上${attempt !== undefined ? `第 ${attempt} 次` : ''}装 ${build}（镜像 ${image}，按 InfoTest 升级用例的读法是 ${version}）；前驱 ${subject.predecessor} 持有整台；运行锁定 ${subject.build}，派发前在每台设备上核对。不证明构建库里有这个镜像，也不证明设备装得上`,
     grounds,
     tier: TIER,
     ...(item ? { item } : {}),
@@ -86,7 +86,7 @@ export function installOutcome(subjectInput: unknown, tableInput: unknown): Outc
       build: subject.build,
       generator: GENERATOR,
       plan_run: subject.predecessor,
-      install: { build, image, version, targets: group.targets },
+      install: { build, image, version, targets: group.targets, ...(attempt !== undefined ? { attempt } : {}) },
     },
   };
 }

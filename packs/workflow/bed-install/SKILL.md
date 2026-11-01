@@ -4,7 +4,7 @@
 
 1. 先用 test-bed 整台预订这个环境（action acquire，need.devices 按清单写全）。记下预订运行号，以及预订回答里“预订时在设备上看到的构建”：这是设备现在装的构建。
 2. 定要装的构建（缺陷原件里 show version 写的那个），再到构建站上找它的镜像文件名：用 source-read 的 build_page 读入口页 `{"external":"buildsite:listing:index"}`，它列出各版本线的导航页；读这个构建所在版本线的导航页，它列出各平台的列表页；读列有这个构建的列表页（页面名照导航页上的链接写），在这个构建的条目里取镜像链接的文件名，形如 `<前缀>-<构建名>.click`。镜像名按升级用例的读法（第一个 `-` 之后到最后一个 `.` 之前，`_` 读作 `.`）必须正是这个构建，否则 Hub 拒收。
-3. 在工作目录写 `install.json`：`{"schema":"bed-install@1","build":"<构建名>","image":"<镜像文件名>"}`，只能有这三项，用 upload_file 上传。
+3. 在工作目录写 `install.json`：`{"schema":"bed-install@1","build":"<构建名>","image":"<镜像文件名>"}`，用 upload_file 上传。同一份请求（同样的字节）Hub 只派发一次：上一次装没成要再装时，请求里加 `"attempt": <第几次>`（从 2 起），另存一份上传，再开新运行。
 4. start_run：pack 写本包，predecessor 写预订运行号，product 和 build 写设备现在装的构建（第 1 步看到的那个；派发前 Hub 在每台设备上再核对一次），parameters.bed 写环境名，inputs.inventory 写 `{"external":"doc:doc:bed-topology"}`，inputs.request 写上传得到的引用。条目是每台负载均衡设备的升级用例。
 5. submit_result：每个条目交 reason，data.build 写和 install.json 一样的构建，grounds 引用依据（缺陷原件里写的发现构建，或用户原话）。
 6. 受理后 Hub 自己派发作业，不用再做别的。逐字原样重交同一份提交读进展；作业结束后读结果引用：每个升级用例的 pass/fail，没过的看它的日志和设备会话找原因。装完以后，在新构建上编译和派发用例时，开运行写新构建。

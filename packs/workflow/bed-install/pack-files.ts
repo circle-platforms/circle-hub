@@ -14,7 +14,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'bed-install',
-  version: '1.0.1',
+  version: '1.0.2',
   kind: 'workflow',
   title: '自动化测试环境装构建',
   description: '复现缺陷要在发现它的构建上跑：自动化测试环境装的不是这个构建时，先用本包照 InfoTest 的升级用例给整台预订的环境装上（设备会重启），不用问用户。装构建请求写要装的构建和它在构建站上的镜像文件名（source-read 从入口页 buildsite:listing:index 读起，经版本线导航页到列有它的列表页，取它的镜像链接文件名）；Hub 核对镜像名按升级用例的读法正是这个构建、前驱运行持有整台环境、运行锁定设备现在装的构建，受理后由 Hub 派发，每台负载均衡设备一个框架升级用例，已是目标构建的设备跳过',

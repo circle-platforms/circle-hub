@@ -111,6 +111,17 @@ describe('the install check', () => {
     assert.equal(install({ subject: subjectFor('999999990', { build: null }), table: TABLE })[0].code, 'bed-install.build_unlocked');
   });
 
+  it('takes an attempt so a retry is a new request, and refuses one that is not a whole number from 1 to 1000', () => {
+    const [retry] = install({ subject: subjectFor('999999990', { request: { ...request, attempt: 2 } }), table: TABLE });
+    assert.equal(retry.verdict, 'support', retry.statement);
+    assert.match(retry.statement, /上第 2 次装/);
+    assert.equal((retry.data?.install as { attempt?: number }).attempt, 2);
+    for (const attempt of [0, 1.5, '2', 1001]) {
+      const [outcome] = install({ subject: subjectFor('999999990', { request: { ...request, attempt } }), table: TABLE });
+      assert.equal(outcome.code, 'bed-install.request_invalid', String(attempt));
+    }
+  });
+
   it('the dispatch policy adds the six dispatch parameters from the checked fact and passes refutations on', () => {
     const [outcome] = dispatchPolicy({ subject: subjectFor('999999990'), table: TABLE });
     assert.equal(outcome.verdict, 'support');

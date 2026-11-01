@@ -1,15 +1,15 @@
 {
   "schema": "pack@1",
   "id": "bed-install",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "kind": "workflow",
   "title": "自动化测试环境装构建",
   "description": "复现缺陷要在发现它的构建上跑：自动化测试环境装的不是这个构建时，先用本包照 InfoTest 的升级用例给整台预订的环境装上（设备会重启），不用问用户。装构建请求写要装的构建和它在构建站上的镜像文件名（source-read 从入口页 buildsite:listing:index 读起，经版本线导航页到列有它的列表页，取它的镜像链接文件名）；Hub 核对镜像名按升级用例的读法正是这个构建、前驱运行持有整台环境、运行锁定设备现在装的构建，受理后由 Hub 派发，每台负载均衡设备一个框架升级用例，已是目标构建的设备跳过",
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "f74d02de7f1260085ac4ac6e29343ff1081b839c567f9ed0a8330b2c89615c25",
-      "size": 2937
+      "sha256": "e527973d7de3d1cabc416dbb0ff242b436fd2233790939dfc413150a5d8ac1db",
+      "size": 3101
     },
     {
       "path": "checks.json",
@@ -28,8 +28,8 @@
     },
     {
       "path": "functions/common.ts",
-      "sha256": "903e380fab8d729a6a30c1d0907d7fed03e7ac7cb0a4672ae14b0f6b3c61a65f",
-      "size": 3618
+      "sha256": "ecb177de641d1ca71ffca69ce263a15cc6a6035ed55d2e908de4cc0a28706eca",
+      "size": 4271
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/install.ts",
-      "sha256": "6e897762fd6dcb81fc330bfb373af34d9183ee21316317b9daf3826c0076ac6e",
-      "size": 7341
+      "sha256": "8545a144772ffbfab5e697a0d6d13ff9af350b0a6e96cb447015f62e660caeb0",
+      "size": 7449
     },
     {
       "path": "functions/project.ts",
@@ -108,8 +108,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "82ebbbde183ee3bfd06a1145f6880e231e772ee1bb3e165601b494333f424fa8",
-      "size": 1771
+      "sha256": "a7e3462200a33c02491a038181331caf5c2d207c6d8180eb8867544808600e4d",
+      "size": 1849
     }
   ]
 }
