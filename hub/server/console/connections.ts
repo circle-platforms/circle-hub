@@ -3,12 +3,12 @@
 // registered executors, administrators only). The Hub only reads business systems; a write route is never opened here.
 // Enabling, disabling and re-authenticating a system or an environment are commands for the administrator's Circle
 // (proposal decision 6 of 2026-10-31); connecting a business system is one of the console's four operations.
-import { isEnvironment, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { axisUiLabel, isEnvironment, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { TokenInfo } from '../../records/api.ts';
 import type { ExecutorView } from '../api.ts';
 import type { ResourceListing } from '../../ports.ts';
 import { commands } from './commands.ts';
-import { code, html, icon, liveModule, page, table, type Html } from './html.ts';
+import { code, html, icon, link, liveModule, page, table, type Html } from './html.ts';
 import type { PageContext, PageResult } from './pages.ts';
 import { readsText, systemReads } from './trial.ts';
 import { button, callout, card, chip, commandLink, commandModal, kpi, plannedCard, sectionHead, seg, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
@@ -28,6 +28,47 @@ export async function circlesOf(ctx: PageContext): Promise<Circle[]> {
     for (const token of await ctx.deps.records.principals.tokens(user.id)) if (token.revoked_at === null) out.push({ owner: user.name, token });
   }
   return out.sort((a, b) => (b.token.last_used_at ?? '').localeCompare(a.token.last_used_at ?? ''));
+}
+
+const shortJob = (job: string): string => job.slice(0, 12);
+
+/** The states a runtime environment is shown in, in the order the page counts them. */
+const ENVIRONMENT_STATES = ['可用', '使用中', '已冻结', '已停用', '未知'] as const;
+type EnvironmentStateText = (typeof ENVIRONMENT_STATES)[number];
+
+/**
+ * A runtime environment's state on the page, from the facts the dispatch journal establishes (ExecutorView.state):
+ * 已停用 when disabled; 未知 when its occupancy could not be read; 已冻结 when a job holding it waits for a disposition of
+ * an unconfirmed result, or a job left it unrestored (an open bed hold); 使用中 when a job holds it; 可用 otherwise.
+ * `detail` says why, one line each.
+ */
+export function environmentState(view: ExecutorView): { text: EnvironmentStateText; tone: Tone; dot: DotState; detail: string[] } {
+  const state = view.state;
+  if (!view.enabled) {
+    const waiting = state?.holding?.filter((job) => job.frozen).length ?? 0;
+    return { text: '已停用', tone: 'unchecked', dot: 'idle', detail: waiting > 0 ? [`仍有 ${waiting} 个作业的派发结果未确认，等待处置中`] : [] };
+  }
+  if (state === undefined || !state.known.occupancy || state.holding === null) {
+    return { text: '未知', tone: 'unknown', dot: 'unknown', detail: state !== undefined && state.missing.length > 0 ? [...state.missing] : ['占用与冻结状态暂不可读'] };
+  }
+  const frozen = state.holding.filter((job) => job.frozen);
+  const detail: string[] = [];
+  for (const job of frozen) detail.push(`作业 ${shortJob(job.job)} 的派发结果未确认，等待处置中`);
+  if (state.bed_hold !== null) detail.push(`作业 ${shortJob(state.bed_hold.job)} 结束后运行环境未恢复（${state.bed_hold.bed}），等待管理员确认中`);
+  if (frozen.length > 0 || state.bed_hold !== null) return { text: '已冻结', tone: 'fail', dot: 'down', detail };
+  if (state.holding.length > 0) return { text: '使用中', tone: 'judgment', dot: 'info', detail: state.holding.map((job) => `作业 ${shortJob(job.job)}（${axisUiLabel('effect_outcome')}：${uiLabelOf('effect_outcome', job.outcome)}）`) };
+  return { text: '可用', tone: 'pass', dot: 'ok', detail: [] };
+}
+
+/** The note under the environments count: how many are in use, frozen, disabled or unknown. */
+function environmentNote(executors: readonly ExecutorView[]): string {
+  const counts = new Map<EnvironmentStateText, number>();
+  for (const e of executors) {
+    const text = environmentState(e).text;
+    counts.set(text, (counts.get(text) ?? 0) + 1);
+  }
+  const parts = ENVIRONMENT_STATES.filter((text) => text !== '可用' && (counts.get(text) ?? 0) > 0).map((text) => `${text} ${counts.get(text)}`);
+  return parts.length > 0 ? `可用 / 全部；${parts.join('，')}` : '可用 / 全部';
 }
 
 function systemState(resource: ResourceListing): { text: string; tone: Tone; dot: DotState } {
@@ -63,7 +104,7 @@ export async function connectionsPage(ctx: PageContext): Promise<PageResult> {
   const kpis = html`<section class="grid g4 section">
 ${kpi('已连接的 Circle', circles.length, { unit: '个', note: `24 小时内使用过 ${recent} 个`, state: circles.length > 0 ? 'ok' : 'idle' })}
 ${ctx.admin ? kpi('业务系统', resources.filter((r) => r.enabled).length, { unit: `/ ${resources.length}`, note: '启用 / 全部，只读访问', state: resources.some((r) => r.binding_error) ? 'down' : 'ok' }) : kpi('业务系统', '—', { note: '仅管理员可见', state: 'idle' })}
-${ctx.admin ? kpi('运行环境', executors === null ? '—' : executors.filter((e) => e.enabled).length, { unit: executors === null ? '' : `/ ${executors.length}`, note: executors === null ? (executorsFailed ? '暂不可用' : '派发未接入') : '可用 / 全部', state: 'idle' }) : kpi('运行环境', '—', { note: '仅管理员可见', state: 'idle' })}
+${ctx.admin ? kpi('运行环境', executors === null ? '—' : executors.filter((e) => environmentState(e).text === '可用').length, { unit: executors === null ? '' : `/ ${executors.length}`, note: executors === null ? (executorsFailed ? '暂不可用' : '派发未接入') : environmentNote(executors), state: executors !== null && executors.some((e) => environmentState(e).text === '已冻结') ? 'down' : 'idle' }) : kpi('运行环境', '—', { note: '仅管理员可见', state: 'idle' })}
 ${kpi('业务系统写操作', '未开放', { note: '消息通知与数据回写均未开放', state: 'idle' })}
 </section>`;
   const leftNodes = circles.slice(0, 5).map((c) => html`<div class="tnode"><span class="dot ${c.token.last_used_at !== null && now - Date.parse(c.token.last_used_at) < DAY ? 'ok' : 'idle'}" aria-hidden="true"></span><b>${c.owner}</b><span class="sub">${c.token.label || c.token.id}</span></div>`);
@@ -105,12 +146,34 @@ ${wires(rightNodes.length, false)}
   if (!ctx.admin) environmentsBody = html`<p class="sub">运行环境仅管理员可见。</p>`;
   else if (executors === null) environmentsBody = html`<p class="sub">${executorsFailed ? '运行环境列表暂不可用。' : '这个 Hub 进程未接入派发；运行环境在 Hub 所在主机上以 circle-hub executor 登记。'}</p>`;
   else {
-    environmentsBody = table(['运行环境', '执行器', '网关', '资源', '状态', '操作'], executors.map((e) => {
+    environmentsBody = table(['运行环境', '执行器', '执行器版本', '网关', '资源', '最近派发', '状态', '操作'], executors.map((e) => {
       const disable = commands.executorDisable(e);
       if (e.enabled) dialogs.push(disable);
       let gateway = e.endpoint;
       try { gateway = new URL(e.endpoint).origin; } catch { /* shown as written */ }
-      return [html`<b>${e.target}</b>`, code(e.id), code(gateway), e.resources.length, e.enabled ? chip('可用', 'pass') : chip('已停用', 'unchecked'), e.enabled ? commandLink(disable, '停用') : ''];
+      const s = environmentState(e);
+      const latest = e.state?.latest ?? null;
+      const clear = e.state?.bed_hold ? commands.bedHoldClear(e) : null;
+      if (clear !== null) dialogs.push(clear);
+      // A frozen job is disposed of on the command line; its status names the disposition request and the choices. Two
+      // environments on one physical target list the same job, and its dialog once.
+      const frozen = (e.state?.holding ?? []).find((job) => job.frozen);
+      const dispose = frozen === undefined ? null : commands.jobDispose(frozen.job);
+      if (dispose !== null && !dialogs.some((dialog) => dialog.id === dispose.id)) dialogs.push(dispose);
+      return [
+        html`<b>${e.target}</b>`,
+        code(e.id),
+        e.state?.known.version !== true ? html`<span class="sub">未知</span>` : e.state.reported_version !== null ? code(e.state.reported_version) : html`<span class="sub">未上报</span>`,
+        code(gateway),
+        e.resources.length,
+        e.state?.known.latest !== true
+          ? html`<span class="sub">未知</span>`
+          : latest === null
+            ? html`<span class="sub">尚无派发</span>`
+            : html`${latest.run === null ? when(latest.at) : link(`/console/runs/${latest.run}`, when(latest.at))}<div class="sub">${uiLabelOf('effect_outcome', latest.outcome)}${latest.frozen ? ' · 派发结果未确认' : ''}</div>`,
+        html`${chip(s.text, s.tone)}${s.detail.map((line) => html`<div class="sub">${line}</div>`)}`,
+        html`${e.enabled ? commandLink(disable, '停用') : ''}${clear === null ? '' : html` ${commandLink(clear, '确认已恢复')}`}${dispose === null ? '' : html` ${commandLink(dispose, '处置派发结果')}`}${frozen?.run ? html` ${link(`/console/runs/${frozen.run}`, '查看任务')}` : ''}`,
+      ];
     }), '尚无运行环境');
   }
   const body = html`${liveModule('connections', ['member.connected', 'system.added', 'system.status', 'environment.status'], html`${kpis}
@@ -121,7 +184,7 @@ ${sectionHead('业务系统', '凭据加密保存，页面与模型只可见名�
 ${liveModule('systems', ['system.added', 'system.status'], card(null, systemsBody))}
 ${sectionHead('运行环境', '派发作业的执行环境，由管理员登记；派发结果未确认时冻结，不接受新的派发', undefined, 'envs')}
 ${liveModule('environments', ['environment.status'], card(null, environmentsBody))}
-${executors !== null && executors.length > 0 ? callout('info', '运行环境的占用与冻结状态显示在各任务执行过程的派发步骤中。') : ''}
+${executors !== null && executors.length > 0 ? callout('info', '占用与冻结取自派发记录：有作业持有时为使用中，派发结果未确认或作业结束后未恢复时为已冻结；执行器版本取自 Hub 与该执行器最近一次会话。') : ''}
 ${sectionHead('多终端协同与消息通知', '各终端 Circle 的工作状态同步，经 Hub 收发消息、转交任务', undefined, 'more')}
 <section class="grid g2">${plannedCard('多终端协同', '各终端 Circle 的工作状态同步至 Hub，可在任一终端查看并继续任务。', 'terminal')}${plannedCard('消息通知', '接入 Telegram、微信、企业微信、飞书，经 Hub 收发消息、转交任务；需先开放“消息通知”。', 'chat')}</section>
 ${liveModule('dialogs', ['member.connected', 'system.added', 'system.status', 'environment.status'], dialogs.map(commandModal))}`;

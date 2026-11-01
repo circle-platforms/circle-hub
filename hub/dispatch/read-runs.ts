@@ -9,20 +9,23 @@ const Input=z.object({run:RunId,plan_run:RunId,item:z.string().min(1),items:z.ar
 export interface RunJob {
   /** Administrative proof reference; keep it behind an administrator-only read tier, never return raw journal bodies. */
   job:string;record?:string;management_exit?:UnknownExit;verification_run:string;plan_run:string;verification_item:string;items:string[];sha256:string;status:JobStatus;
+  /** The executor (runtime environment) the reservation bound; absent when it names none. */
+  executor?:string;
 }
 export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick<DispatchService,'status'>,by:Principal,run:string):Promise<RunJob[]>{
   RunId.parse(run);
-  const jobs=new Map<string,z.infer<typeof Input>>();let cursor:string|null=null;
+  const jobs=new Map<string,z.infer<typeof Input>>();const executors=new Map<string,string>();let cursor:string|null=null;
   do{
     const page:Page<StoredRecord<ActionBody>>=await records.store.find<ActionBody>({kind:'action',key:'dispatch.phase',value:'reservation',limit:500,cursor});
     for(const record of page.items){
-      const binding=record.body.detail.binding as {job?:unknown;input?:{run?:unknown;plan_run?:unknown}}|undefined;
+      const binding=record.body.detail.binding as {job?:unknown;executor?:unknown;input?:{run?:unknown;plan_run?:unknown}}|undefined;
       if(!binding?.input||binding.input.run!==run&&binding.input.plan_run!==run)continue;
       const input=Input.safeParse(binding.input),job=Sha256.safeParse(binding.job);
       if(!input.success||!job.success)throw new IntegrityError('派发预订记录缺少运行绑定');
       const old=jobs.get(job.data);
       if(old&&JSON.stringify(old)!==JSON.stringify(input.data))throw new IntegrityError('同一作业有不同运行绑定');
       jobs.set(job.data,input.data);
+      if(typeof binding.executor==='string'&&/^exe_[0-9a-hjkmnp-tv-z]{26}$/.test(binding.executor))executors.set(job.data,binding.executor);
     }
     cursor=page.next;
   }while(cursor!==null);
@@ -42,7 +45,7 @@ export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick
     }
     const proof=history[status.events-1];
     if(!proof)throw new IntegrityError('派发状态缺少对应的追加记录前缀');
-    out.push({job,record:proof.digest,verification_run:input.run,plan_run:input.plan_run,verification_item:input.item,items:[...input.items],sha256:input.sha256,status,...(management_exit?{management_exit}:{})});
+    out.push({job,record:proof.digest,verification_run:input.run,plan_run:input.plan_run,verification_item:input.item,items:[...input.items],sha256:input.sha256,status,...(executors.has(job)?{executor:executors.get(job)!}:{}),...(management_exit?{management_exit}:{})});
   }
   return out;
 }

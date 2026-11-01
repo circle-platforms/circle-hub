@@ -36,7 +36,7 @@ import {
   type RunsEngine,
   type RunsEngineDeps,
 } from '../../runs/api.ts';
-import type { AssembleFunction, CommandIo, ServerDeps } from '../api.ts';
+import type { AssembleFunction, CommandIo, ExecutorView, ServerDeps } from '../api.ts';
 import { createDocs, routeDocs, type Docs } from '../docs.ts';
 import { CallNotes, withCallNotes } from './notes.ts';
 import { terminalSafe } from './terminal.ts';
@@ -223,11 +223,18 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     systems: { trial: (by, input) => connectors.admin.trial(by, input) },
     // The console's read-only view of dispatch: the registry and readRunJobs recheck the administrator themselves.
     dispatch: {
-      executors: async (by) => (await new ExecutorRegistry(records).sources(by)).map((entry) => ({
-        id: entry.id, target: entry.source.target, endpoint: entry.source.endpoint, enabled: entry.source.enabled, resources: [...entry.source.resources],
-      })),
+      executors: async (by) => {
+        const views: ExecutorView[] = [];
+        for (const entry of await new ExecutorRegistry(records).sources(by)) {
+          // The state is read per environment; one that cannot be read stays unknown and leaves the others as they are.
+          const state = dispatch === null ? null : await dispatch.environment(by, entry.id).catch(() => null);
+          views.push({ id: entry.id, target: entry.source.target, endpoint: entry.source.endpoint, enabled: entry.source.enabled, resources: [...entry.source.resources], ...(state === null ? {} : { state }) });
+        }
+        return views;
+      },
       jobs: async (by, run) => (dispatch === null ? [] : (await readRunJobs(records, dispatch, by, run)).map((job) => ({
         job: job.job, outcome: job.status.outcome, frozen: job.status.frozen, phase: job.status.phase,
+        ...(job.executor === undefined ? {} : { executor: job.executor }),
         ...(job.status.disposition === undefined ? {} : { disposition: job.status.disposition }),
         ...(job.status.missing_fact === undefined ? {} : { missing_fact: job.status.missing_fact }),
         ...(job.status.next_action === undefined ? {} : { next_action: job.status.next_action }),
