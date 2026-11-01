@@ -349,8 +349,9 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   position, digest, children and entries with their provenance (the tree reader's grounds, at most 20 per entry for 50
   entries; the source text behind them is not resolved) and `citations`. Those are the accepted submissions of the last 30
   days citing the node in this root, or any of its entries from any root (hub/runs indexes them, see its README), with a
-  count per entry, capped at 10,000. They are exact when the window starts after `indexed_since`, the oldest indexed
-  submission; otherwise they are a lower bound, and the page says from when it counts. The knowledge tree page shows
+  count per entry, capped at 10,000. They are exact (`complete`) once the runs engine's backfill has indexed the older
+  submissions (decision 80), or when the window starts after `indexed_since`, the oldest submission indexed as it was
+  stored; otherwise they are a lower bound, and the page says from when it counts. The knowledge tree page shows
   被引用 for the node and 出处 and 近 30 天被引用 for its entries.
 - **The connection test** (decision 79): `POST /console/api/systems/test`, a write interface for administrators, and the
   测试连接 button on `/console/operations/system` (action `system-test`). They run the trial of hub/connectors (its README
@@ -393,7 +394,9 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   so commands of other processes are seen too. The state the records hold of a business system or a runtime environment
   is its configuration: a later `resource_config` decision on a system (enabled, disabled, changed) is `system.status
   {system}`, held 6 s like `system.added`, and any decision on an executor (`executor.<id>`) is `environment.status
-  {environment}`, both for administrators. Occupancy and freezing come from the dispatch journal: a record that can change
+  {environment}`, both for administrators. A read of a business system that ended (its read manifest, decision 80) is
+  `system.status {system}` too, since its reads and times of the last day changed; the held events of one system are
+  sent once. Occupancy and freezing come from the dispatch journal: a record that can change
   them (a reservation, an intent, an end, a request left uncertain or answered, a disposition, a bed hold opened or
   cleared, an unknown outcome) is `environment.status` for the executor its job reserved (the last 2,000 jobs are kept in
   mind). Response times of an environment are recorded nowhere, so no event claims them. A live module carries `data-live="<events>"` and a stable id; on an

@@ -8,7 +8,7 @@ import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import { ConnectorError, Redactor, readProfile, trialSystem, type ConnectorLogEvent } from '../connectors/api.ts';
+import { ConnectorError, Redactor, TrialLoginStops, readProfile, trialSystem, type ConnectorLogEvent } from '../connectors/api.ts';
 import { PLM_FUNCTIONS, PLM_PRODUCTS, agileFixture, plmSystem, startAgileStub, startPlmStub, writePack, type AgileStub, type PlmStub } from '../connectors/testing/api.ts';
 import type { PackHandle } from '../ports.ts';
 import { createTestServer, type TestServer } from './testing.ts';
@@ -28,7 +28,7 @@ before(async () => {
   plm = await startPlmStub({ accepts: (token) => agile.tokens.has(token) });
   packRoot = await mkdtemp(join(tmpdir(), 'circle-hub-console-systems-'));
   handle = await writePack(packRoot, { id: 'plm-test', system: plmSystem(), functions: PLM_FUNCTIONS });
-  const failedLogins = new Set<string>();
+  const failedLogins = new TrialLoginStops(server.records.store, server.records.vault);
   const redactor = new Redactor();
   // The trial as the assembly wires it (connectors' admin.trial), over the synthetic PLM pack.
   server.deps.systems = {

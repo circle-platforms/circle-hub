@@ -540,7 +540,7 @@ Shared-stop repair messages retain the actual secret names and the resource id s
   - 填的配置按已保存资源的同一套规则核对（resource@1 与 `profileProblem`）。
   - 凭据内容在发送任何请求之前进入脱敏器。
   - 一个 HttpSource 走与真实读取相同的路由、来源、明文、跳转拒绝、字节上限与超时处理。
-  - 认证：`none` 不发送；`static_header` 由第一条带它的路由判定；`login_token` 只登录一次，绕过会话管理器，不留会话条目、不重试。可能已到达来源却失败的登录，以 {系统包、登录来源、路径、填好的正文} 的 SHA-256 记在进程内存（至多 1000 条），同样的内容不再发送，改正后的照常发送。
+  - 认证：`none` 不发送；`static_header` 由第一条带它的路由判定；`login_token` 只登录一次，绕过会话管理器，不留会话条目、不重试。可能已到达来源却失败的登录，以 {系统包、登录来源、路径、填好的正文} 的 SHA-256 记在密钥库条目 `login-stop.trial`（`TrialLoginStops`，决定 80）：加密保存，只有摘要，不含凭据内容；`circle-hub secret list` 列为登录状态条目；写入时取记录库对该条目的锁（同 `CredentialStop`）；至多 10,000 条，满了只去掉最早的一条。重启后同样的内容也不再发送，改正后的照常发送；这份记录读不出时不登录（“登录失败记录不可读，未登录”）；写入密钥库失败时本进程仍记得，并记 `resource_trial_failure_unkept` 事件。
   - 路由按声明顺序试读：只试不需要参数的（字面路径、无正文、无必填查询项），其余写明“未试读”及原因。至多 20 条，60 秒后不再开始新的一条；不跟随跳转（声明了同源跳转的路由结果未知，其余为 SOURCE_REDIRECT_REFUSED）。读到的内容解释后即丢弃。
   - 答复只用 CONNECTOR_ERRORS 的通用文字、HTTP 状态与原因码，从不转述来源原文，也从不回显凭据内容。管理员日志写 `resource_trial`、`resource_trial_done` 两条，经脱敏。
   - 不读密钥库里已有的密钥：之前已设置过密钥的系统，试读时显示“未填写，未登录”。没有审计记录；要写成记录需合约增加记录类型。

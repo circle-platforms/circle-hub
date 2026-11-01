@@ -1,10 +1,11 @@
 // A knowledge node's citations and provenance for the console (the interface doc's node detail): how many accepted
 // submissions cited the node or its entries in the last CITATION_DAYS, from the index the runs engine writes as it
 // stores a submission (hub/runs citationIndex), and the source references each entry rests on (the tree reader's
-// grounds). Submissions stored before citations were indexed are not counted: when the window starts before the index,
-// the count is a lower bound and says from when it counts. Called only for a node the reader could read.
+// grounds). Submissions stored before citations were indexed count once the runs engine's backfill has indexed them all
+// (hub/runs backfillCitations); until then, when the window starts before the index, the count is a lower bound and says
+// from when it counts. Called only for a node the reader could read.
 import type { NodeViews } from '../../ports.ts';
-import { citationsIndexedSince, countCitations } from '../../runs/api.ts';
+import { citationsComplete, citationsIndexedSince, countCitations } from '../../runs/api.ts';
 import type { PageContext } from './pages.ts';
 import { when } from './ui.ts';
 
@@ -35,9 +36,9 @@ export interface Citations {
   /** Accepted submissions in the window that cited the node, or any of its entries from any root. */
   count: number;
   capped: boolean;
-  /** When the citation index starts: the oldest indexed submission; null before any. */
+  /** When submissions started to be indexed as they are stored: the oldest so indexed; null before any. */
   indexed_since: string | null;
-  /** The index covers the whole window, so the count is exact (up to the cap). */
+  /** The count is exact (up to the cap): the index covers the whole window, or every submission once the backfill ended. */
   complete: boolean;
   /** At most MAX_ENTRIES entries, in the node's order. */
   entries: EntryCitation[];
@@ -66,13 +67,14 @@ export async function nodeCitations(ctx: PageContext, root: string, node: NodeVi
     entries.push({ entry: entry.entry, count: counted.count, capped: counted.capped, grounds: grounds === null ? null : grounds.slice(0, MAX_GROUNDS), grounds_truncated: grounds !== null && grounds.length > MAX_GROUNDS });
   }
   const indexedSince = await citationsIndexedSince(store);
+  const backfilled = await citationsComplete(store);
   return {
     days: CITATION_DAYS,
     since,
     count: total.count,
     capped: total.capped,
     indexed_since: indexedSince,
-    complete: indexedSince !== null && indexedSince <= since,
+    complete: backfilled || (indexedSince !== null && indexedSince <= since),
     entries,
     entries_truncated: node.entries.length > shown.length,
   };

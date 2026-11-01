@@ -138,6 +138,32 @@ export class PgRecordStore implements RecordStore {
     return result.rows.map(row => verifiedRecord<B>(row));
   }
 
+  async addIndex(digest: string, entries: readonly IndexEntry[], tx?: Transaction): Promise<number> {
+    if (typeof digest !== 'string' || !/^[0-9a-f]{64}$/.test(digest)) throw new TypeError('a record digest is 64 hexadecimal characters');
+    const index = validateIndex(entries);
+    if (index.length === 0) return 0;
+    return this.#db.transaction(async (t) => {
+      const row = (await this.#db.query<{ seq: string }>('SELECT seq FROM records WHERE digest = $1', [digest], t)).rows[0];
+      if (row === undefined) return 0;
+      const held = Number((await this.#db.query<{ n: string }>('SELECT count(*) AS n FROM record_index WHERE digest = $1', [digest], t)).rows[0].n);
+      const fresh = (await this.#db.query<{ key: string; value: string }>(
+        `SELECT k AS key, v AS value FROM unnest($1::text[], $2::text[]) AS e(k, v)
+          WHERE NOT EXISTS (SELECT 1 FROM record_index i WHERE i.key = e.k AND i.value = e.v AND i.digest = $3)`,
+        [index.map((entry) => entry.key), index.map((entry) => entry.value), digest],
+        t,
+      )).rows;
+      if (fresh.length === 0) return 0;
+      if (held + fresh.length > 200) throw new TypeError('a record holds at most 200 index entries');
+      const inserted = await this.#db.query(
+        `INSERT INTO record_index (key, value, digest, record_seq)
+         SELECT k, v, $3, $4 FROM unnest($1::text[], $2::text[]) AS e(k, v) ON CONFLICT DO NOTHING`,
+        [fresh.map((entry) => entry.key), fresh.map((entry) => entry.value), digest, row.seq],
+        t,
+      );
+      return inserted.rowCount ?? 0;
+    }, tx);
+  }
+
   async databaseSize(): Promise<number> {
     const row = (await this.#db.query<{ size: string }>('SELECT pg_database_size(current_database())::text AS size')).rows[0];
     return Number(row.size);

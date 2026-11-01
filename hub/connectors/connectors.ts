@@ -17,7 +17,7 @@ import { HttpSource, type ConnectorLog, type FetchLike } from './http.ts';
 import { LoginManager, StaticCredential, type LoginStatus } from './login.ts';
 import { ProfileCache, type LoadedProfile } from './profiles.ts';
 import { ReadEngine, externalRoutingType, externalSizeReason, parseExternal, type PackFunctionRunner, type ReadArgs, type ReadOutcome, type ResourceRuntime } from './read.ts';
-import { trialSystem, type SystemTrialInput, type SystemTrialReport } from './trial.ts';
+import { TrialLoginStops, trialSystem, type SystemTrialInput, type SystemTrialReport } from './trial.ts';
 import { Redactor } from './redact.ts';
 import { ResourceRegistry, sessionEntry, resourceConsumer, storedCredential, type AddResourceInput, type ResourceDescription, type ResourceState, type UpdateResourceInput } from './resources.ts';
 import { compileRoutes } from './routes.ts';
@@ -411,7 +411,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
   };
 
   // Login values that failed in a trial of this process (digests only): never sent again by a trial.
-  const failedTrialLogins = new Set<string>();
+  const failedTrialLogins = new TrialLoginStops(records.store, records.vault);
   const admin: ResourceAdmin = {
     async trial(by, input) {
       const viewer = typeof by?.id === 'string' ? await records.principals.get(by.id) : null;

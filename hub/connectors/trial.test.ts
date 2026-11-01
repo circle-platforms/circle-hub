@@ -14,7 +14,7 @@ import { openConnectorKit, type ConnectorKit } from './testing/kit.ts';
 import { writePack } from './testing/packs.ts';
 import { PLM_PRODUCTS, startPlmStub, type PlmStub } from './testing/plm.ts';
 import { json, startStub } from './testing/stub.ts';
-import type { SystemTrialReport } from './trial.ts';
+import { TRIAL_LOGIN_STOPS, type SystemTrialReport } from './trial.ts';
 
 let postgres: TemporaryPostgres;
 before(async () => {
@@ -108,11 +108,40 @@ test('a refused login is not sent again with the same values; corrected values a
   assert.equal(w.agile.logins, 1);
   const again = await w.k.connectors.admin.trial(w.k.admin, plmInput(w, 'wrong-password'));
   assert.equal(again.auth.sent, false);
-  assert.match(again.auth.reason!, /已登录失败，未再次发送/);
+  assert.match(again.auth.reason!, /此前登录失败，未再次发送/);
   assert.equal(w.agile.logins, 1, 'no second login with the values that failed');
   const corrected = await w.k.connectors.admin.trial(w.k.admin, plmInput(w));
   assert.equal(corrected.auth.ok, true);
   assert.equal(w.agile.logins, 2);
+});
+
+test('a refused login stays refused after a restart: the vault keeps its digest, never the values', async (t) => {
+  const w = await world(t);
+  const refused = await w.k.connectors.admin.trial(w.k.admin, plmInput(w, 'wrong-password'));
+  assert.equal(refused.auth.ok, false);
+  assert.equal(w.agile.logins, 1);
+  // A new process over the same records and vault: nothing in its memory.
+  const restarted = w.k.make();
+  const again = await restarted.admin.trial(w.k.admin, plmInput(w, 'wrong-password'));
+  assert.equal(again.auth.sent, false);
+  assert.match(again.auth.reason!, /此前登录失败，未再次发送/);
+  assert.equal(w.agile.logins, 1, 'no second login with the values that failed, after a restart either');
+  const kept = (await w.k.records.vault.getText(TRIAL_LOGIN_STOPS))!;
+  assert.ok(!kept.includes('wrong-password') && !kept.includes('reader'), 'digests only');
+  const parsed = JSON.parse(kept) as { v: number; failed: string[] };
+  assert.equal(parsed.v, 1);
+  assert.equal(parsed.failed.length, 1);
+  assert.match(parsed.failed[0], /^[0-9a-f]{64}$/);
+  assert.equal((await restarted.admin.trial(w.k.admin, plmInput(w))).auth.ok, true, 'corrected values are sent');
+});
+
+test('a record of failed logins that cannot be read refuses the login', async (t) => {
+  const w = await world(t);
+  await w.k.records.vault.put(TRIAL_LOGIN_STOPS, 'not a record');
+  const report = await w.k.make().admin.trial(w.k.admin, plmInput(w));
+  assert.equal(report.auth.sent, false);
+  assert.equal(report.auth.reason, '登录失败记录不可读，未登录');
+  assert.equal(w.agile.logins, 0);
 });
 
 test('a trial is for administrators, of a published system pack, with every role and the plaintext rule', async (t) => {

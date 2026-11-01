@@ -26,9 +26,17 @@ export const INDEX = {
   /** The knowledge an accepted submission cites (citationIndex): a node by its root and path, an entry by its digest. */
   citesNode: 'runs.submission.cites.node',
   citesEntry: 'runs.submission.cites.entry',
-  /** On every accepted submission stored since citations are indexed: where the index starts. */
+  /**
+   * On every accepted submission whose citations are indexed: CITES_STORED when indexed as it was stored (the oldest such
+   * is where that started), CITES_BACKFILLED when indexed later by backfillCitations.
+   */
   citesIndexed: 'runs.submission.cites.indexed',
+  /** On the submission where a backfill pass of the older ones ended: from then on every accepted submission is indexed. */
+  citesComplete: 'runs.submission.cites.complete',
 } as const;
+
+const CITES_STORED = '1';
+const CITES_BACKFILLED = 'backfilled';
 
 /** Cited nodes and entries indexed per submission (a record takes at most 200 index entries, two are the run's). */
 export const MAX_CITED_NODES = 100;
@@ -39,9 +47,10 @@ export const citedNodeKey = (root: string, path: string): string => sha256Hex(`$
 
 /**
  * The knowledge an accepted submission cites: every string of its body that is a tree reference, as index entries for
- * its node (root and path) and, when pinned, its entry; at most MAX_CITED_NODES and MAX_CITED_ENTRIES, and a marker.
+ * its node (root and path) and, when pinned, its entry; at most MAX_CITED_NODES and MAX_CITED_ENTRIES, and the marker
+ * (CITES_STORED as the submission is stored, CITES_BACKFILLED later).
  */
-export function citationIndex(body: unknown): IndexEntry[] {
+export function citationIndex(body: unknown, marker: string = CITES_STORED): IndexEntry[] {
   const nodes = new Set<string>();
   const entries = new Set<string>();
   const visit = (value: unknown, depth: number): void => {
@@ -63,10 +72,55 @@ export function citationIndex(body: unknown): IndexEntry[] {
   };
   visit(body, 0);
   return [
-    { key: INDEX.citesIndexed, value: '1' },
+    { key: INDEX.citesIndexed, value: marker },
     ...[...nodes].map((value) => ({ key: INDEX.citesNode, value })),
     ...[...entries].map((value) => ({ key: INDEX.citesEntry, value })),
   ];
+}
+
+/**
+ * Indexes the citations of the accepted submissions stored before submissions were indexed by the knowledge they cite, so
+ * the console's counts need no lower bound. A pass walks the submissions oldest first up to the oldest one indexed as it
+ * was stored (every later one was indexed then) and gives each accepted one the entries putSubmission gives it now,
+ * marked backfilled; entries already held are kept, so a pass that stopped is simply run again. A pass that reaches its
+ * end marks it on that boundary (before any, on the newest submission): later passes then do nothing and the counts are
+ * exact. `complete` stays false while there is no submission to mark; an aborted pass throws the signal's reason.
+ */
+export async function backfillCitations(
+  store: Pick<RecordStore, 'list' | 'find' | 'addIndex'>,
+  options: { batch?: number; signal?: AbortSignal } = {},
+): Promise<{ examined: number; indexed: number; complete: boolean }> {
+  if (store.addIndex === undefined) return { examined: 0, indexed: 0, complete: false };
+  if (await citationsComplete(store)) return { examined: 0, indexed: 0, complete: true };
+  const boundary = (await store.find<unknown>({ key: INDEX.citesIndexed, value: CITES_STORED, kind: 'submission', limit: 1 })).items[0];
+  let examined = 0;
+  let indexed = 0;
+  let last: StoredRecord<unknown> | undefined;
+  let cursor: string | null = null;
+  walk: do {
+    options.signal?.throwIfAborted();
+    // Bodies are read to find what they cite: a small page keeps the memory a pass holds small.
+    const page: Page<StoredRecord<unknown>> = await store.list<unknown>({ kind: 'submission', limit: options.batch ?? 50, cursor });
+    for (const record of page.items) {
+      if (record.digest === boundary?.digest) break walk;
+      last = record;
+      examined += 1;
+      // A submission that did not parse cites nothing (putSubmission indexes only accepted ones).
+      if (record.schema !== SCHEMAS.submission) continue;
+      if ((await store.addIndex(record.digest, citationIndex(record.body, CITES_BACKFILLED))) > 0) indexed += 1;
+    }
+    cursor = page.next;
+  } while (cursor !== null);
+  options.signal?.throwIfAborted();
+  const end = boundary ?? last;
+  if (end === undefined) return { examined, indexed, complete: false };
+  await store.addIndex(end.digest, [{ key: INDEX.citesComplete, value: '1' }]);
+  return { examined, indexed, complete: true };
+}
+
+/** Every accepted submission is indexed by what it cites: a backfill pass reached its end (backfillCitations). */
+export async function citationsComplete(store: Pick<RecordStore, 'find'>): Promise<boolean> {
+  return (await store.find<unknown>({ key: INDEX.citesComplete, value: '1', kind: 'submission', limit: 1 })).items.length > 0;
 }
 
 export interface CitationCount {
@@ -89,9 +143,12 @@ export async function countCitations(
   return store.countIndexed({ index, kind: 'submission', since: query.since, ...(query.cap === undefined ? {} : { cap: query.cap }) });
 }
 
-/** When citations started to be indexed: the oldest accepted submission that carries the marker; null before any. */
+/**
+ * When submissions started to be indexed as they are stored: the oldest so indexed; null before any. The older ones a
+ * backfill indexes do not move it (citationsComplete says when they are all indexed).
+ */
 export async function citationsIndexedSince(store: RecordStore): Promise<string | null> {
-  const first = await store.find<unknown>({ key: INDEX.citesIndexed, value: '1', kind: 'submission', limit: 1 });
+  const first = await store.find<unknown>({ key: INDEX.citesIndexed, value: CITES_STORED, kind: 'submission', limit: 1 });
   return first.items[0]?.created_at ?? null;
 }
 

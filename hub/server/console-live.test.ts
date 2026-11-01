@@ -441,6 +441,11 @@ describe('events and their audience', () => {
     assert.deepEqual(eventsOf({ kind: 'authorization', digest: DIGEST, body: { ...system, object: 'executor.bench-1' } }), [{ name: 'environment.status', data: { environment: 'bench-1' } }]);
     assert.deepEqual(eventsOf({ kind: 'authorization', digest: DIGEST, body: { ...system, object: 'secret:DEMO' } }), []);
     assert.deepEqual(eventsOf({ kind: 'authorization', digest: DIGEST, body: { ...system, permission: 'publish' } }), []);
+    // A read of a business system ended: its reads and response times changed.
+    const manifest = { resource: system.object, started_at: '2026-11-01T00:00:00.000Z', ended_at: '2026-11-01T00:00:01.000Z', result: 'completed', run: null };
+    assert.deepEqual(eventsOf({ kind: 'action', digest: DIGEST, body: manifest }), [{ name: 'system.status', data: { system: system.object } }]);
+    assert.deepEqual(eventsOf({ kind: 'action', digest: DIGEST, body: { ...manifest, run: RUN } }).map((e) => e.name), ['task.updated', 'system.status']);
+    assert.deepEqual(eventsOf({ kind: 'action', digest: DIGEST, body: { ...manifest, resource: 'not-a-resource' } }), []);
     assert.deepEqual(eventsOf({ kind: 'tree_node', digest: DIGEST, body: { run: RUN } }), []);
   });
 
