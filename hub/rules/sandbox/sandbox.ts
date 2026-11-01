@@ -13,7 +13,7 @@ import { pathToFileURL } from 'node:url';
 import { SandboxError, isSandboxErrorCode, type SandboxErrorCode } from './errors.ts';
 import { BOOTSTRAP, declaredDependencies, isolatedCommand, osIsolationAvailable, osIsolationFailure } from './isolation.ts';
 import { ENTRY_EXTENSIONS } from './policy.ts';
-import { createResidentWatch, residentFailure, residentTreeSizes, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
+import { createResidentWatch, residentFailure, residentTreeSizes, unseenGrace, RESIDENT_UNAVAILABLE_MESSAGE } from './resident.ts';
 import { createSlotPool } from './slots.ts';
 import { retryFunction, type FunctionAttempt } from './retry.ts';
 
@@ -238,15 +238,22 @@ function parseFrame(raw: Buffer, nonce: string): Frame | 'invalid' | undefined {
  */
 export type SandboxBatchItem = { ok: true; result: SandboxResult } | { ok: false; error: SandboxError };
 
+/** The sandbox could not keep the process tree in view: a state of the Hub, not of the function (decision 116). */
+const unobserved = (error: unknown): boolean => error instanceof SandboxError && error.code === 'SANDBOX_UNAVAILABLE' && error.detail.reason === 'resident_observation_unavailable';
+
 export async function callPackFunction(target: PackFunctionTarget, input: unknown, limits: Partial<SandboxLimits> = {}, options: SandboxOptions = {}): Promise<SandboxResult> {
-  return executePack(target, input, limits, options, false);
+  // Pack functions have no effects, so the sandbox tries once more when it lost sight of the tree (D05 R[3]).
+  try { return await executePack(target, input, limits, options, false); }
+  catch (error) { if (!unobserved(error)) throw error; return executePack(target, input, limits, options, false); }
 }
 
 /** One pure module invocation per item inside one evaluation-scoped isolated process. */
 export async function callPackFunctionBatch(target: PackFunctionTarget, inputs: readonly unknown[], limits: Partial<SandboxLimits> = {}, options: SandboxOptions = {}): Promise<SandboxBatchItem[]> {
   if (!Array.isArray(inputs)) throw new TypeError('批量输入必须是数组');
   if (!inputs.length) return [];
-  const batch = await executePack(target, inputs, limits, options, true);
+  let batch: SandboxResult;
+  try { batch = await executePack(target, inputs, limits, options, true); }
+  catch (error) { if (!unobserved(error)) throw error; batch = await executePack(target, inputs, limits, options, true); }
   if (!Array.isArray(batch.output) || batch.output.length !== inputs.length) throw new SandboxError('SANDBOX_VIOLATION', { reason: 'invalid_batch_frame' });
   return batch.output.map((item: unknown): SandboxBatchItem => {
     if (item === null || typeof item !== 'object') throw new SandboxError('SANDBOX_VIOLATION', { reason: 'invalid_batch_item' });
@@ -375,11 +382,12 @@ async function runChild(pack: PreparedPack, inputText: string, lim: SandboxLimit
 
     const timer = setTimeout(() => stop('SANDBOX_TIMEOUT', { limit: 'time', timeoutMs: lim.timeoutMs }), lim.timeoutMs);
     const residentLimit = (lim.memoryMb + RESIDENT_HEADROOM_MB) * 1024 * 1024;
+    const grace = unseenGrace();
     const unwatch =
       pid === undefined
         ? () => {}
         : residentWatch.watch(pid, (bytes) => {
-            const failure = residentFailure(bytes, residentLimit, lim.memoryMb);
+            const failure = grace(residentFailure(bytes, residentLimit, lim.memoryMb));
             if (failure && !settled && !stopped && alive()) stop(failure.code, failure.detail);
           });
     const forget = (): void => {

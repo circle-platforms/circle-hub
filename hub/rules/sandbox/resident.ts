@@ -20,6 +20,22 @@ export function residentFailure(bytes: TreeObservation, limit: number, memoryMb:
   return bytes > limit ? { code: 'SANDBOX_VIOLATION', detail: { limit: 'memory', residentBytes: bytes, memoryMb } } : undefined;
 }
 
+/** Polls in a row that may not see the whole tree before the function is stopped (decision 116). */
+export const UNSEEN_POLLS = 5;
+/**
+ * One reading that could not see the whole process tree (a Node child still starting its threads) is no evidence of a
+ * breach, and the next poll usually sees it (decision 116): an unavailable observation stops the function only when
+ * `polls` readings in a row could not see the tree. A breach, or anything else, is passed on at once; a clean reading resets.
+ */
+export function unseenGrace(polls: number = UNSEEN_POLLS): (failure: ReturnType<typeof residentFailure>) => ReturnType<typeof residentFailure> {
+  let unseen = 0;
+  return (failure) => {
+    if (failure === undefined) { unseen = 0; return undefined; }
+    if (failure.code === 'SANDBOX_UNAVAILABLE' && failure.detail.reason === 'resident_observation_unavailable' && ++unseen < polls) return undefined;
+    return failure;
+  };
+}
+
 /** VmRSS is occasionally absent during exec or exit; statm supplies the kernel's resident-page count instead. */
 export function createLinuxResidentMeasure(options: { status(pid: number): Promise<string>; statm(pid: number): Promise<string>; pageBytes?: number }): Measure {
   return async pids => {
