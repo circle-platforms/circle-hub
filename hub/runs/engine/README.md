@@ -946,3 +946,7 @@ The complete predecessor-result scan, including submission-existence reads, hold
 ### Read-time withdrawal qualifier
 
 getRun / getResult check the exact frozen pack version through the existing workflow metadata port after run visibility is established. A known withdrawn version adds rule_withdrawn: true to the read wrapper, outside the immutable run and validation_result bodies. Run and production-result pages disclose the generated validity label with “版本已下架”. Historical result digests, claims, partitions and requirement terminals remain byte-for-byte unchanged; unassignment is not withdrawal, and no approval workflow is introduced. Raw record references remain original evidence, not a rewritten current-state result.
+
+### Citations of knowledge (decision 79, 2026-11-01)
+
+`putSubmission` indexes the knowledge an accepted (parsed) submission cites, in the existing `record_index`, with no migration: each `tree:` reference among the body's strings as `runs.submission.cites.node` (SHA-256 of the root and the canonical path) and, when pinned to an entry, `runs.submission.cites.entry` (the entry digest), at most 100 nodes and 95 entries so a record stays within its 200 index entries, plus the marker `runs.submission.cites.indexed=1` on every accepted submission. Submissions accepted before this were not indexed and are not backfilled: the console counts citations from the oldest marked submission on and says so.

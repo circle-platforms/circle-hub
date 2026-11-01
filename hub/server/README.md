@@ -333,6 +333,48 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   and a JSON object of strings and booleans; a member gets the neutral 404 before any body is read, an upload included; 400 for a refused parameter or exit code 2, 409 for exit code 1 (with what the
   command said), 503 without a command bridge, the neutral 404 for members and unknown objects. Adding a member answers the
   invitation code (or the token) once, with the Circle entry.
+- **Search** (`console/search.ts`, decision 79): `GET /console/api/search?q=` and the page `/console/search?q=`, reached
+  from the sidebar's 搜索 box on every signed-in page. Each kind is searched only within what the reader may see:
+  - tasks: run id, pack, title, product, version, build and runner, among the reader's latest 300 runs;
+  - packs: id or title in the reader's catalog;
+  - knowledge: readable product lines with their builds and version lines, and a tree path (a query starting with `/`) in
+    the current roots, at most 20 lines and 20 roots;
+  - records: call-log lines the reader may see, matched exactly by run id, tool name or label, or (administrators) a member,
+    otherwise among the latest 300;
+  - members: administrators only.
+
+  The query keeps 100 characters and each kind at most 10 hits; `partial.{tasks,knowledge,records}` says when a bound
+  stopped a scan, and the page says it in words. It is no full-text index: an older item may be missed, never silently.
+- **A knowledge node's detail** (`console/citations.ts`): `GET /console/api/knowledge/node?root&path` answers the node's
+  position, digest, children and entries with their provenance (the tree reader's grounds, at most 20 per entry for 50
+  entries; the source text behind them is not resolved) and `citations`. Those are the accepted submissions of the last 30
+  days citing the node in this root, or any of its entries from any root (hub/runs indexes them, see its README), with a
+  count per entry, capped at 10,000. They are exact when the window starts after `indexed_since`, the oldest indexed
+  submission; otherwise they are a lower bound, and the page says from when it counts. The knowledge tree page shows
+  被引用 for the node and 出处 and 近 30 天被引用 for its entries.
+- **The connection test** (decision 79): `POST /console/api/systems/test`, a write interface for administrators, and the
+  测试连接 button on `/console/operations/system` (action `system-test`). They run the trial of hub/connectors (its README
+  says what the trial does and never does) with the typed system pack, origins, environment and credential contents. The
+  answer is `{report: {system_pack, environment, auth: {kind, sent, ok, reason, code, message, ms}, routes: [{route, role,
+  method, path, tried, reason, ok, status, code, message, ms, bytes}], started_at, ended_at, saved: false}}`; 400 for a
+  form error, RESOURCE_INVALID, PACK_UNAVAILABLE or PROFILE_INVALID; 503 without the port (`ServerDeps.systems`, wired by
+  the assembly); the neutral 404 for members. The form comes back with the secret names, never their contents.
+- **Runtime environments' state** (decision 79; vocabulary axis `environment_state` of D07): `GET
+  /console/api/environments` gives each executor its derived `status` (`available`, `in_use`, `frozen`, `deactivated`,
+  `unknown`) with `status_label` and `status_detail` (why, line by line), beside the facts it comes from (`state`, from
+  hub/dispatch's `environment`, null when not read): `deactivated` when the registration is disabled; `unknown` when the
+  occupancy could not be read; `frozen` when a job holding the physical target waits for the disposition of an
+  unconfirmed result, or a job left the environment unrestored (an open bed hold); `in_use` when a job holds the target;
+  `available` otherwise. Jobs still in flight and jobs a crash left behind are both `in_use`: the records cannot tell them
+  apart. The connections page shows the status with its reasons, the executor version the executor reported of itself in
+  the newest kept MCP initialize (not verified; 未上报 when it reported none, 未知 when not found) and the latest dispatch
+  with its outcome; two dialogs give `circle-hub bed hold clear <executor> --reason=…` (确认已恢复) and `circle-hub job
+  status <job>` (处置派发结果). The task page's dispatch step names the environment and its current status; a job waiting
+  for its result with no disposition request open reads 等待派发结果中，不可重发.
+- **Reads of the last day**: each system in `GET /console/api/systems` carries `reads_24h: {since, until, reads,
+  results, results_label, median_ms, slowest_ms, last_at, partial} | null`, from hub/connectors' read manifests. The
+  connections page (column 近 24 小时读取) and the overview's systems card show it, naming the window; `partial` reads
+  “至少 N 次”, and null 暂不可用.
 - **Live updates** (`console/live.ts`, decision 78; owner-confirmed item 7: no build step, so the script is an inline
   JavaScript module allowed by its hash): `GET /console/api/stream[?events=a,b]` is a server-sent event stream on the
   pages' session (401 in JSON without one, 400 for an unknown event name; `retry: 5000`; a heartbeat every 25 s that
@@ -346,8 +388,10 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   so commands of other processes are seen too. The state the records hold of a business system or a runtime environment
   is its configuration: a later `resource_config` decision on a system (enabled, disabled, changed) is `system.status
   {system}`, held 6 s like `system.added`, and any decision on an executor (`executor.<id>`) is `environment.status
-  {environment}`, both for administrators. Response times, occupancy and freezing are recorded nowhere, so no event
-  claims them. A live module carries `data-live="<events>"` and a stable id; on an
+  {environment}`, both for administrators. Occupancy and freezing come from the dispatch journal: a record that can change
+  them (a reservation, an intent, an end, a request left uncertain or answered, a disposition, a bed hold opened or
+  cleared, an unknown outcome) is `environment.status` for the executor its job reserved (the last 2,000 jobs are kept in
+  mind). Response times of an environment are recorded nowhere, so no event claims them. A live module carries `data-live="<events>"` and a stable id; on an
   event the script fetches its own page (`circle-hub-refresh: live`, which does not count as session activity, so an
   unattended page still reaches the idle limit) and swaps those modules, keeping the scroll position and leaving a module
   alone while it holds an open dialog or a focused field; when the stream breaks the page says 连接中断 with the time of

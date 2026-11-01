@@ -603,3 +603,5 @@ error. A source reference without the authorized run continues to use the reader
 - `tokens.client_id`：`issueToken(by, userId, label, client)` 签发的令牌属于哪个已登记的客户端，`TokenInfo.client` 读出；不存在的客户端拒签。`revokeTokenValue(token)` 按令牌值吊销（RFC 7009：持有者可吊销），吊销人记为令牌所属账号。
 
 运行角色对 `oauth_clients` 有 `SELECT, INSERT, DELETE`（只为删除没用上的客户端；被令牌或邀请码引用的，外键不让删），对 `invitations` 另有 `UPDATE (used_at, used_by_client)`；令牌标签的 100 字按码点计，与 PostgreSQL 的 `length()` 一致；`hub/platform/ownership.test.ts` 的逐表拒绝清单含这两张表。令牌和邀请码的签发、使用与吊销记在这些可变存储里，与此前的令牌一样不写记录；合约里没有对应的记录类型。测试：`standard-authorization.test.ts`。
+
+`RecordStore.countIndexed`（决定 79）：一条 SQL 统计一组 (key, value) 索引项下的不同记录，按记录类型和 `created_at >= since` 过滤，有上限；不读记录正文。控制台用它统计知识条目近 30 天被引用的次数。
