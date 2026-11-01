@@ -1,13 +1,25 @@
 // Display of claims (B01, D05 R[6]) and layer terminals (V03) for the MCP content text and the console. Claims are shown in
-// DISPLAY_ORDER; every enumeration value is shown through labelOf. Unknown terminals have their own symbol and are never
-// shown as success or failure.
+// DISPLAY_ORDER; every enumeration value is shown through the generated vocabulary: the model's labels for the text models
+// read, the interface terms for the console (display rule 20). Unknown terminals have their own symbol and are never shown
+// as success or failure.
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
-import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, labelOf, type DynamicTerminal, type Layer, type StaticTerminal } from '../../contracts/generated/vocabulary.ts';
+import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, axisUiLabel, labelOf, uiLabelOf, type DynamicTerminal, type Layer, type StaticTerminal } from '../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { Coverage } from '../../contracts/src/common.ts';
 import { isUnknownTerminal, type LayerResult, type RequirementResult } from '../../contracts/src/validation.ts';
 
 type DisplayLabel = (typeof DISPLAY_ORDER)[number];
+
+/** Where the words of a display come from: the model's labels, or the console's interface terms. */
+export interface Labels {
+  of: typeof labelOf;
+  axis: typeof axisLabel;
+}
+
+/** The model's labels: the MCP content text and the CLI. */
+export const MODEL_LABELS: Labels = { of: labelOf, axis: axisLabel };
+/** The interface terms of the console (display rule 20); a value without one shows its label. */
+export const INTERFACE_LABELS: Labels = { of: uiLabelOf, axis: axisUiLabel };
 
 const join = (parts: (string | null | undefined | false)[], separator = '，'): string =>
   parts.filter((p): p is string => typeof p === 'string' && p.length > 0).join(separator);
@@ -19,7 +31,7 @@ export function coverageText(coverage: Coverage | undefined): string | null {
 }
 
 /** One renderer per display field; a field added to DISPLAY_ORDER without one fails to compile. */
-const FIELDS = {
+const fieldsOf = ({ of: labelOf }: Labels) => ({
   位置: (c) => join([c.item && `条目 ${c.item}`, c.requirement && `要求项 ${c.requirement}`, c.pointer]),
   陈述: (c) =>
     join([
@@ -57,14 +69,18 @@ const FIELDS = {
       c.validity.bound.length > 0 && `绑定 ${c.validity.bound.length} 个摘要`,
       c.validity.premises.length > 0 && `前提 ${c.validity.premises.join(' ')}`,
     ]),
-} satisfies Record<DisplayLabel, (claim: Claim) => string>;
+}) satisfies Record<DisplayLabel, (claim: Claim) => string>;
+
+const FIELDS = new Map<Labels, ReturnType<typeof fieldsOf>>();
 
 /** The fields of a claim in display order, as [label, text]; empty fields are left out. */
-export function claimFields(claim: Claim, ruleWithdrawn = false): [DisplayLabel, string][] {
+export function claimFields(claim: Claim, ruleWithdrawn = false, labels: Labels = MODEL_LABELS): [DisplayLabel, string][] {
+  let fields = FIELDS.get(labels);
+  if (fields === undefined) FIELDS.set(labels, (fields = fieldsOf(labels)));
   const out: [DisplayLabel, string][] = [];
   for (const label of DISPLAY_ORDER) {
-    const recorded = FIELDS[label](claim);
-    const text = label === '有效条件' && ruleWithdrawn ? `${labelOf('validity_status','rule_withdrawn')}（版本已下架）；记录时：${recorded}` : recorded;
+    const recorded = fields[label](claim);
+    const text = label === '有效条件' && ruleWithdrawn ? `${labels.of('validity_status','rule_withdrawn')}（版本已下架）；记录时：${recorded}` : recorded;
     if (text.length > 0) out.push([label, text]);
   }
   return out;
@@ -95,7 +111,7 @@ export function terminalSymbol(layer: LayerTerminal): string {
  * The label of a layer's terminal state. A dynamic layer that carries its rounds also shows the observed distribution
  * beside the label (V07 R[3], display rule 16): “通过（3/3 次未见失败）”, “不通过（间歇：3 次里 1 次失败（第 2 次））”.
  */
-export function terminalLabel(layer: LayerTerminal & { observation?: string }): string {
+export function terminalLabel(layer: LayerTerminal & { observation?: string }, { of: labelOf }: Labels = MODEL_LABELS): string {
   const label = layer.layer === 'static' ? labelOf('static_terminal', layer.terminal) : labelOf('dynamic_terminal', layer.terminal);
   return layer.layer === 'dynamic' && typeof layer.observation === 'string' && layer.observation !== '' ? `${label}（${layer.observation}）` : label;
 }
@@ -111,19 +127,20 @@ export interface CellOfLayer {
  * item's requirements show each non-pass value, that terminal first and the rest in vocabulary order, so an unknown is
  * never hidden behind a pass or a failure.
  */
-export function cellText(layer: Layer, cell: CellOfLayer): string {
+export function cellText(layer: Layer, cell: CellOfLayer, labels: Labels = MODEL_LABELS): string {
   const shown = { layer, terminal: cell.terminal } as LayerTerminal;
   const order: readonly string[] = layer === 'static' ? STATIC_TERMINAL : DYNAMIC_TERMINAL;
   const counted = order.filter((terminal) => (cell.counts[terminal] ?? 0) > 0).sort((a, b) => (a === cell.terminal ? -1 : b === cell.terminal ? 1 : 0));
-  const head = `${terminalSymbol(shown)} ${labelOf('layer', layer)}：${terminalLabel(shown)}`;
+  const head = `${terminalSymbol(shown)} ${labels.of('layer', layer)}：${terminalLabel(shown, labels)}`;
   if (counted.length === 0) return head;
-  return `${head}（${counted.map((terminal) => `${terminalLabel({ layer, terminal } as LayerTerminal)} ${cell.counts[terminal]}`).join('，')}）`;
+  return `${head}（${counted.map((terminal) => `${terminalLabel({ layer, terminal } as LayerTerminal, labels)} ${cell.counts[terminal]}`).join('，')}）`;
 }
 
 /** A layer terminal with its symbol, label, code, tier, reason and attribution. */
-export function terminalText(layer: LayerResult): string {
+export function terminalText(layer: LayerResult, labels: Labels = MODEL_LABELS): string {
+  const { of: labelOf, axis: axisLabel } = labels;
   return join([
-    `${terminalSymbol(layer)} ${labelOf('layer', layer.layer)}：${terminalLabel(layer)}`,
+    `${terminalSymbol(layer)} ${labelOf('layer', layer.layer)}：${terminalLabel(layer, labels)}`,
     layer.code,
     layer.tier && labelOf('check_tier', layer.tier),
     layer.reason && labelOf('reason', layer.reason),
@@ -136,14 +153,14 @@ export function terminalText(layer: LayerResult): string {
 export const NOT_APPLICABLE = '本层不适用';
 
 /** The satisfaction status of a requirement, with the reason when it is unsatisfied. */
-export function statusText(r: Pick<RequirementResult, 'status' | 'unsatisfied_reason'> & Partial<Pick<RequirementResult,'claims'>>): string {
+export function statusText(r: Pick<RequirementResult, 'status' | 'unsatisfied_reason'> & Partial<Pick<RequirementResult,'claims'>>, { of: labelOf }: Labels = MODEL_LABELS): string {
   const judged=r.status==='satisfied'&&r.claims?.some(claim=>claim.qualifier.nature==='judgment'&&claim.warrant.producer==='model'&&claim.statement.data?.judgment_source!==undefined);
   return `${labelOf('requirement_status', r.status)}${judged?'（'+labelOf('static_terminal','judgment')+'）':''}${r.unsatisfied_reason ? `（${labelOf('unsatisfied_reason', r.unsatisfied_reason)}）` : ''}`;
 }
 
 /** One requirement of an item: every declared layer's terminal, 本层不适用 for the others (display rule 4), then the status. */
-export function requirementText(r: RequirementResult): string {
-  const declared = r.layers.map(terminalText);
-  const others = LAYER.filter((layer) => !r.layers.some((l) => l.layer === layer)).map((layer) => `${labelOf('layer', layer)}：${NOT_APPLICABLE}`);
-  return `${r.requirement}：${[...declared, ...others].join('；')}；${statusText(r)}`;
+export function requirementText(r: RequirementResult, labels: Labels = MODEL_LABELS): string {
+  const declared = r.layers.map((layer) => terminalText(layer, labels));
+  const others = LAYER.filter((layer) => !r.layers.some((l) => l.layer === layer)).map((layer) => `${labels.of('layer', layer)}：${NOT_APPLICABLE}`);
+  return `${r.requirement}：${[...declared, ...others].join('；')}；${statusText(r, labels)}`;
 }

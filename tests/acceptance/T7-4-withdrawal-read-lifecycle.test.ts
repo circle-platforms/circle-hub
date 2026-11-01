@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
 import {parse,type DefaultTreeAdapterMap} from 'parse5';
+import {axisUiLabel} from '../../contracts/generated/vocabulary.ts';
 import {canonicalBytes} from '../../hub/records/api.ts';
 import {startPostgres} from '../../hub/testing/postgres.ts';
 import {stagePack} from '../../packs/workflow/case-review/packaging.ts';
@@ -25,7 +26,8 @@ function conditions(document:string):string[]{
  }
  function sections(node:Node){
   if('childNodes'in node){
-   if(node.nodeName==='section'&&node.childNodes.some(child=>child.nodeName==='h2'&&text(child)==='分区清单')){fields(node);return;}
+   // The partition list's section, titled by the interface term of the partition axis (display rule 20).
+   if(node.nodeName==='section'&&node.childNodes.some(child=>child.nodeName==='h2'&&text(child)===axisUiLabel('partition'))){fields(node);return;}
    node.childNodes.forEach(sections);
   }
  }

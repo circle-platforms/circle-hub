@@ -73,10 +73,13 @@ Every vocabulary axis is a closed set (list them all with `node tools/show-eleme
 | `requirement_status` | `satisfied`, `unsatisfied`, `pending` |
 | `partition` | `delivered`, `rejected`, `quarantined`, `incomplete` |
 | `acceptance` | `accepted`, `not_accepted` |
+| `task_result` | `passed`, `delivered_pending`, `delivered_unsatisfied`, `rejected`, `incomplete`, `held`, `awaiting`, `abandoned` |
+
+Values and axes may also carry an interface term (`ui`). The console takes words only through `uiLabelOf(axis, code)` and shows the interface term where there is one (for example `quarantined` as “派发结果未确认”, `unchecked` as “未检查”); the text models read keeps the labels. A task's result is derived from the partitions and the requirement statuses, and unknown is never shown as passed (display rule 20).
 
 Every item lands in exactly one partition: the partitions are pairwise disjoint and their union is the item set; claims across items are listed separately and not counted in the partitions (V05). A requirement has a terminal state only on the layers it declares; other layers read "not applicable" (V03).
 
-Error codes are registered and generated too, into `contracts/generated/protocol.ts`: the protocol codes `PROTOCOL_CODES` come from the model (for example `QUOTE_MISMATCH` and `SOURCE_UNAVAILABLE`), and the core interpreters' violation codes `CORE_VIOLATION_CODES` (`core.<interpreter>.<code>`) come from `contracts/codes.json`; a pack's own codes sit under the pack name, for example `case-review.<code>`. Something absent and something forbidden both return `SOURCE_UNAVAILABLE`, shown as “对你不可用” (not available to you). References take four forms: `src:` (a source artifact or fragment), `tree:` (a knowledge-tree node), `entry:` (a knowledge entry) and `rec:` (a Hub record).
+Error codes are registered and generated too, into `contracts/generated/protocol.ts`: the protocol codes `PROTOCOL_CODES` come from the model (for example `QUOTE_MISMATCH` and `SOURCE_UNAVAILABLE`), and the core interpreters' violation codes `CORE_VIOLATION_CODES` (`core.<interpreter>.<code>`) come from `contracts/codes.json`; a pack's own codes sit under the pack name, for example `case-review.<code>`. Something absent and something forbidden both return `SOURCE_UNAVAILABLE`, shown by the tools as “对你不可用” (not available to you) and by the console as “该内容不存在或无权查看” (absent or not visible). References take four forms: `src:` (a source artifact or fragment), `tree:` (a knowledge-tree node), `entry:` (a knowledge entry) and `rec:` (a Hub record).
 
 ## What milestone 1 uses
 

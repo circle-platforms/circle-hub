@@ -1,7 +1,9 @@
 // The console's management (owner decision 75): administrators manage users and tokens, task packs, resources, secrets and
 // knowledge sync from the browser. Every action is a form POST (this server's own origin, the session's CSRF token, an
-// administrator's session) that runs the matching `circle-hub` command through the command bridge, as the signed-in
-// administrator: the same checks, records and messages as the command line, shown on the result page. Values from a form
+// administrator's session) that runs the matching `circle-hub` commands through the command bridge, as the signed-in
+// administrator: the same checks, records and messages as the command line, shown on the result page. The console's pages
+// offer four of them (proposal decision 6 of 2026-10-31: adding a member, connecting a business system, publishing a task
+// pack, importing knowledge); the first two are a sequence of commands that stops at the first one that does not finish. Values from a form
 // become argv words only after the checks here (a positional never starts with `-`; flag values are passed as
 // `--flag=value`), and a secret value goes to `secret set` through the bridge, never into argv. Knowledge sync can run for
 // minutes, so it runs as a background job whose output the jobs page shows. Backup, restore, deploy and rollback stop the
@@ -16,6 +18,8 @@ import type { Principal } from '../../records/api.ts';
 import type { CommandBridge, CommandRun } from '../command-bridge.ts';
 import { checkSetupCode, removeSetupCode } from '../setup-code.ts';
 import { code, html, link, page, pre, section, table, type Html } from './html.ts';
+import { circleEntry, originOf } from './settings.ts';
+import { card, chip, when } from './ui.ts';
 import type { PageContext, PageResult } from './pages.ts';
 import { UploadError, unpackZip } from './upload.ts';
 
@@ -59,7 +63,8 @@ export interface Action {
   title: string;
   /** Where the result page links back to. */
   back: string;
-  build(form: Form): Built;
+  /** One command, or several run in order; a command that does not finish (exit code other than 0) stops the rest. */
+  build(form: Form): Built | Built[];
   /** Runs as a background job (knowledge sync). */
   background?: boolean;
   /** The result's standard output holds a value shown only once (an issued token). */
@@ -67,6 +72,24 @@ export interface Action {
 }
 
 const USERS = '/console/admin';
+const OPERATIONS = '/console/operations';
+
+/** Up to three credentials of a business system, each a name and its content (the content is taken as typed). */
+const SECRET_SLOTS = [1, 2, 3] as const;
+
+function credentialValues(form: Form): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const slot of SECRET_SLOTS) {
+    const name = form.get(`secret_name_${slot}`);
+    const value = form.get(`value_${slot}`);
+    if (name === '' && value === '') continue;
+    if (name === '' || value === '') throw new FormError('凭据的名称与内容都要填写');
+    if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) throw new FormError(`凭据名称 ${name.slice(0, 64)} 只能用大写字母、数字和下划线，并以字母开头`);
+    if (Object.hasOwn(out, name)) throw new FormError(`凭据 ${name} 填了两次`);
+    out[name] = value;
+  }
+  return out;
+}
 const PACKS = '/console/admin/packs';
 const RESOURCES = '/console/admin/resources';
 const SECRETS = '/console/admin/secrets';
@@ -138,6 +161,32 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
     back: SECRETS,
     build: (form) => ({ argv: ['secret', 'unset', flag('name', word(form, 'name', '密钥名')), flag('reason', word(form, 'reason', '理由'))] }),
   },
+  'member-add': {
+    title: '添加成员',
+    back: `${OPERATIONS}/member`,
+    once: true,
+    build: (form) => {
+      const role = form.get('role') || 'user';
+      if (!(PERMISSION_ROLE as readonly string[]).includes(role)) throw new FormError('角色不对');
+      const name = word(form, 'name', '姓名');
+      return [
+        { argv: ['user', 'create', name, flag('role', role)] },
+        { argv: ['token', 'issue', name, flag('label', form.get('label') || 'Circle')] },
+      ];
+    },
+  },
+  'system-add': {
+    title: '接入业务系统',
+    back: `${OPERATIONS}/system`,
+    build: (form) => {
+      // The resource first: `secret set` names the definitions that reference a credential, so they must exist.
+      const add = ACTIONS['resource-add'].build(form) as Built;
+      const secrets = credentialValues(form);
+      const names = Object.keys(secrets);
+      if (names.length === 0) return [add];
+      return [add, { argv: ['secret', 'set', ...names.map((name) => flag('name', name)), flag('reason', `接入业务系统 ${form.get('name')}`)], secrets }];
+    },
+  },
   'knowledge-sync': {
     title: '知识同步',
     back: KNOWLEDGE,
@@ -198,52 +247,65 @@ export class JobStore {
 
 // ---------------------------------------------------------------- rendering
 
-/** The links between the management pages. */
-export function manageNav(): Html {
-  return html`<p class="subnav">${link('/console/admin', '用户和令牌')} · ${link('/console/admin/packs', '任务包')} · ${link('/console/admin/resources', '资源')} · ${link('/console/admin/secrets', '密钥')} · ${link('/console/admin/knowledge', '知识同步')} · ${link('/console/admin/calls', '调用日志')}</p>`;
-}
-
-
 /** A POST form to an action of this console, with the session's CSRF token. */
-export function actionForm(name: string, csrf: string, fields: Html | string, submit: string, options: { multipart?: boolean; inline?: boolean } = {}): Html {
-  return html`<form method="post" action="/console/admin/do/${name}"${options.multipart ? html` enctype="multipart/form-data"` : ''}${options.inline ? html` class="inline"` : ''}><input type="hidden" name="csrf" value="${csrf}">${fields}<button type="submit">${submit}</button></form>`;
+export function actionForm(name: string, csrf: string, fields: Html | string, submit: string, options: { multipart?: boolean; inline?: boolean; primary?: boolean } = {}): Html {
+  const button = options.primary ? html`<div class="form-f"><button type="submit" class="primary">${submit}</button></div>` : html`<button type="submit">${submit}</button>`;
+  return html`<form method="post" action="/console/admin/do/${name}"${options.multipart ? html` enctype="multipart/form-data"` : ''}${options.inline ? html` class="inline"` : ''}><input type="hidden" name="csrf" value="${csrf}">${fields}${button}</form>`;
 }
 
 function runLines(run: CommandRun, once: boolean): Html {
-  return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${run.code === 0 ? '已完成' : run.code === 2 ? '参数不对，没有执行' : '没有完成'}（退出码 ${run.code}）</p>
+  return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${run.code === 0 ? '已完成' : run.code === 2 ? '参数不正确，未执行' : '未完成'}（退出码 ${run.code}）</p>
 ${once && run.code === 0 ? html`<p class="notice">下面的令牌只显示这一次：现在复制，保存到只有使用者能读的地方。离开这页就再也看不到它。</p>` : ''}
 ${run.stdout.length > 0 ? pre(run.stdout.join('\n')) : ''}
 ${run.stderr.length > 0 ? html`<pre class="error">${run.stderr.join('\n')}</pre>` : ''}`;
 }
 
-export function resultPage(ctx: PageContext, action: Action, run: CommandRun): PageResult {
+/** The chrome of a management result: the place of the navigation the action belongs to. */
+function actionChrome(ctx: PageContext, action: Action) {
+  return ctx.chrome(action.title, { active: action.back.startsWith('/console/operations/knowledge') || action.back === KNOWLEDGE ? 'knowledge' : action.back.startsWith('/console/operations/pack') || action.back === PACKS ? 'packs' : action.back.startsWith('/console/operations/system') || action.back === RESOURCES ? 'connections' : 'settings', sub: '与命令行执行相同的命令，写入相同的记录' });
+}
+
+/** Each command of an action with its output; the commands after one that did not finish were not run. */
+export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | readonly { argv: readonly string[]; run: CommandRun }[], form?: Form): PageResult {
+  const steps = 'code' in runs ? [{ argv: [] as readonly string[], run: runs }] : runs;
+  const last = steps[steps.length - 1].run;
+  const several = !('code' in runs);
+  const body = steps.map((step, index) => several
+    ? card({ title: `第 ${index + 1} 步`, meta: html`<code>${['circle-hub', ...step.argv].join(' ')}</code>` }, runLines(step.run, action.once === true && step.argv[0] === 'token'))
+    : card(null, runLines(step.run, action.once === true)));
+  const after = last.code === 0 && action === ACTIONS['member-add'] && form !== undefined
+    ? card({ title: '写入成员的 Circle', meta: '标准授权上线前使用' }, html`<p class="sub">在该成员的 Circle 中用 ${code('/secrets CIRCLE_HUB_TOKEN')} 保存上面的令牌，再把以下配置写入 Circle 的 settings.json${ctx.secure ? html`，并把颁发机构证书加入 ${code('trust_cert_files')}` : ''}：</p><pre class="snippet">${circleEntry(originOf(ctx))}</pre><p class="sub">连接完成后，${link('/console/settings', '设置')}的“已连接的 Circle”显示该令牌的最近使用时间。</p>`)
+    : '';
   return {
-    status: run.code === 0 ? 200 : run.code === 2 ? 400 : 409,
-    body: page(ctx.chrome(action.title), html`${runLines(run, action.once === true)}<p>${link(action.back, '返回')}</p>`),
+    status: last.code === 0 ? 200 : last.code === 2 ? 400 : 409,
+    body: page(actionChrome(ctx, action), html`<div class="stack">${body}${after}</div><p class="mt16">${link(action.back, '返回')}</p>`),
   };
 }
 
 export function formErrorPage(ctx: PageContext, action: Action, message: string): PageResult {
-  return { status: 400, body: page(ctx.chrome(action.title), html`<p class="error">${message}</p><p>${link(action.back, '返回')}</p>`) };
+  return { status: 400, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${message}</p>`)}<p class="mt16">${link(action.back, '返回')}</p>`) };
 }
+
+const jobState = (job: Job): Html => job.result === null ? chip('进行中', 'judgment') : job.result.code === 0 ? chip('已完成', 'pass') : chip(`未完成，退出码 ${job.result.code}`, 'fail');
 
 export function jobsSection(jobs: readonly Job[]): Html {
   return section('后台任务', table(['开始', '任务', '发起人', '状态'], jobs.map((job) => [
-    job.started,
+    when(job.started),
     link(`/console/admin/jobs/${job.id}`, `${job.title}：${job.argv.slice(2).join(' ')}`),
     job.by,
-    job.result === null ? '进行中' : job.result.code === 0 ? `完成（${job.finished}）` : `没有完成，退出码 ${job.result.code}`,
-  ]), '还没有后台任务'));
+    html`${jobState(job)}${job.finished === null ? '' : html` <span class="sub">${when(job.finished)}</span>`}`,
+  ]), '尚无后台任务'));
 }
 
 export function jobPage(ctx: PageContext, job: Job | undefined): PageResult {
-  if (job === undefined) return { status: 404, body: page(ctx.chrome('后台任务'), html`<p>没有这个任务（服务重启后，之前的任务不再列出；它们写下的记录照常保留）</p><p>${link(KNOWLEDGE, '返回')}</p>`) };
+  const chrome = ctx.chrome('后台任务', { active: 'knowledge', sub: html`${link('/console/operations/knowledge', '导入知识')} · 后台任务` });
+  if (job === undefined) return { status: 404, body: page(chrome, html`${card(null, html`<p>没有这个任务（服务重启后，之前的任务不再列出；它们写下的记录照常保留）</p>`)}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`) };
   const state = job.result === null
     ? html`<p class="notice">进行中，刷新本页查看进展</p>`
     : runLines(job.result, false);
   return {
     status: 200,
-    body: page(ctx.chrome(`后台任务：${job.title}`), html`<p>${code(job.argv.join(' '))}</p><p>发起人 ${job.by}，开始于 ${job.started}</p>${state}<p>${link(KNOWLEDGE, '返回')}</p>`),
+    body: page(chrome, html`${card({ title: job.title, tail: jobState(job), meta: `发起人 ${job.by} · 开始于 ${when(job.started)}` }, html`<p>${code(job.argv.join(' '))}</p>${state}`)}<p class="mt16">${link('/console/operations/knowledge', '返回')}</p>`),
   };
 }
 
@@ -261,16 +323,17 @@ export interface ManageDeps {
  */
 export async function runAction(ctx: PageContext, deps: ManageDeps, name: string, form: Form, token: string, upload?: Buffer): Promise<PageResult> {
   const action = name === 'pack-publish' ? PUBLISH : ACTIONS[name];
-  if (deps.bridge === undefined) return { status: 503, body: page(ctx.chrome(action.title), html`<p class="error">这个 Hub 进程没有接上命令执行，网页管理不可用；请在命令行执行</p>`) };
-  let built: Built;
+  if (deps.bridge === undefined) return { status: 503, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">这个 Hub 进程没有接上命令执行，网页管理暂不可用；请在 Hub 所在主机的 Circle 中执行对应的命令</p>`)}<p class="mt16">${link(action.back, '返回')}</p>`) };
+  let built: Built[];
   let unpacked: { root: string; dir: string } | null = null;
   try {
     if (name === 'pack-publish') {
       if (upload === undefined || upload.length === 0) throw new FormError('请选择要上传的任务包 zip 文件');
       unpacked = await unpackZip(upload);
-      built = { argv: ['pack', 'publish', unpacked.dir, '--stage'] };
+      built = [{ argv: ['pack', 'publish', unpacked.dir, '--stage'] }];
     } else {
-      built = action.build(form);
+      const made = action.build(form);
+      built = Array.isArray(made) ? made : [made];
     }
   } catch (error) {
     if (unpacked !== null) await rm(unpacked.root, { recursive: true, force: true });
@@ -278,21 +341,28 @@ export async function runAction(ctx: PageContext, deps: ManageDeps, name: string
     throw error;
   }
   const bridge = deps.bridge;
-  const run = () => bridge.run(built.argv, { token, ...(built.secrets ? { secrets: built.secrets } : {}) });
-  const what = built.argv.slice(0, 2).join(' ');
+  const run = (step: Built) => bridge.run(step.argv, { token, ...(step.secrets ? { secrets: step.secrets } : {}) });
   if (action.background) {
-    const job = deps.jobs.start(action.title, built.argv, ctx.principal, async () => {
-      const result = await run();
+    const [step] = built;
+    const what = step.argv.slice(0, 2).join(' ');
+    const job = deps.jobs.start(action.title, step.argv, ctx.principal, async () => {
+      const result = await run(step);
       deps.log(`控制台后台任务 ${what}（${ctx.principal.name}）结束：退出码 ${result.code}`);
       return result;
     });
     deps.log(`控制台后台任务 ${what} 由 ${ctx.principal.name} 发起`);
-    return { status: 202, body: page(ctx.chrome(action.title), html`<p>已在后台开始。${link(`/console/admin/jobs/${job.id}`, '查看进展')}</p><p>${link(action.back, '返回')}</p>`) };
+    return { status: 202, body: page(actionChrome(ctx, action), html`${card(null, html`<p>已在后台开始，${link(`/console/admin/jobs/${job.id}`, '查看进展')}。Hub 重启时，进行中的任务需重新发起，已写入的内容不受影响。</p>`)}<p class="mt16">${link(action.back, '返回')}</p>`) };
   }
   try {
-    const result = await run();
-    deps.log(`控制台管理操作 ${what}（${ctx.principal.name}）：退出码 ${result.code}`);
-    return resultPage(ctx, action, result);
+    const runs: { argv: readonly string[]; run: CommandRun }[] = [];
+    for (const step of built) {
+      const result = await run(step);
+      deps.log(`控制台管理操作 ${step.argv.slice(0, 2).join(' ')}（${ctx.principal.name}）：退出码 ${result.code}`);
+      // Only words a form gave are shown; a pack's private directory is not.
+      runs.push({ argv: name === 'pack-publish' ? [] : step.argv, run: result });
+      if (result.code !== 0) break;
+    }
+    return resultPage(ctx, action, built.length === 1 ? runs[0].run : runs, form);
   } finally {
     if (unpacked !== null) await rm(unpacked.root, { recursive: true, force: true });
   }
@@ -318,11 +388,11 @@ export async function completeSetup(
 ): Promise<SetupOutcome> {
   if ((await principals.list()).some((user) => user.role === 'admin')) return { ok: false, status: 409, message: '已经有管理员了：请用管理员的令牌登录' };
   const name = form.get('name');
-  if (name === '' || name.startsWith('-') || /[\u0000-\u001f\u007f]/.test(name)) return { ok: false, status: 400, message: '请填写管理员的名字' };
+  if (name === '' || name.startsWith('-') || /[\u0000-\u001f\u007f]/.test(name)) return { ok: false, status: 400, message: '请填写管理员姓名' };
   const check = await checkSetupCode(dataDir, form.get('code'), now);
-  if (check === 'none') return { ok: false, status: 403, message: '没有有效的设置码：在 Hub 所在的机器上运行 circle-hub setup-code 生成一个' };
-  if (check === 'expired') return { ok: false, status: 403, message: '设置码已过期：运行 circle-hub setup-code 生成新的' };
-  if (check === 'wrong') return { ok: false, status: 403, message: '设置码不对' };
+  if (check === 'none') return { ok: false, status: 403, message: '没有有效的初始化码：在 Hub 所在的主机上执行 circle-hub setup-code 生成' };
+  if (check === 'expired') return { ok: false, status: 403, message: '初始化码已过期：执行 circle-hub setup-code 重新生成' };
+  if (check === 'wrong') return { ok: false, status: 403, message: '初始化码不正确' };
   let created;
   try {
     created = await principals.bootstrapAdmin(name);

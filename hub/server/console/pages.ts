@@ -1,36 +1,43 @@
 import { digestOf } from '../../records/api.ts';
-// The console pages: runs, one run, knowledge, task packs and admin data (the admin page also carries the user and token
-// forms of manage.ts; everything else here only reads). Every enumeration value is shown
-// through labelOf, every claim in DISPLAY_ORDER, unknown with its own symbol and colour; absent and forbidden are the same
-// neutral page. The run page is the authoritative view (display rule 17): the partition list in the three groups of display
-// rule 13, each item's two cells by the conjunction of hub/runs (V03 R[3]), and every submission as received, marked
-// unverified, next to its receipt (display rule 3).
+// The console pages that read: tasks, one task, knowledge and task packs. Every enumeration value is shown through its
+// interface term (uiLabelOf, display rule 20), every claim in DISPLAY_ORDER, unknown with its own symbol and colour; absent
+// and forbidden are the same neutral page. The task page keeps the run's authoritative view (display rule 17) under the
+// waterfall: the partition list in the three groups of display rule 13, each item's two cells by the conjunction of hub/runs
+// (V03 R[3]), and every submission as received, marked unverified, next to its receipt (display rule 3).
 import { DISPLAY_ORDER } from '../../../contracts/generated/protocol.ts';
-import { LAYER, PARTITION, axisLabel, isEnvironment, isItemHandling, labelOf, type Partition } from '../../../contracts/generated/vocabulary.ts';
+import { LAYER, PARTITION, TASK_RESULT, axisUiLabel, isItemHandling, isNodeLevel, isTaskResult, uiLabelOf, type Partition, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import { partitionCountsOf, type ItemResult, type LayerResult, type RequirementResult, type ValidationResult } from '../../../contracts/src/validation.ts';
 import type { RunDetail } from '../../ports.ts';
 import type { CallLogLine, Principal } from '../../records/api.ts';
-import { UNAVAILABLE_MESSAGE } from '../../refs/api.ts';
 import { canSeeRun } from '../../runs/engine/api.ts';
 import { productionShareKey } from '../../records/api.ts';
 import { itemCell, isAbandonedResult } from '../../runs/api.ts';
 import type { ServerDeps } from '../api.ts';
-import { NOT_APPLICABLE, cellText, statusText, claimFields, coverageText, terminalKind, terminalText, type LayerTerminal } from '../claims.ts';
+import type { HubFacts } from './settings.ts';
+import { INTERFACE_LABELS, NOT_APPLICABLE, cellText, statusText, claimFields, coverageText, terminalKind, terminalText, type LayerTerminal } from '../claims.ts';
 import { countsLine, countsText } from '../text.ts';
-import { code, definitions, html, link, page, pre, section, table, type Html, type PageChrome } from './html.ts';
-import { actionForm, manageNav, roleOptions } from './manage.ts';
+import { code, definitions, html, icon, link, page, pre, section, table, type Html, type PageChrome } from './html.ts';
+import { loadTasks, packIdOf, packTitles, resultCell, runLink, taskHead, taskTitle, taskWaterfall, toolCell } from './tasks.ts';
+import { button, callout, card, pills, planned, sectionHead, when } from './ui.ts';
 
 export interface PageContext {
   deps: ServerDeps;
   principal: Principal;
   admin: boolean;
   url: URL;
-  chrome: (title: string) => PageChrome;
+  /** The chrome of a page: its title, and the place of the navigation, a line and buttons when the page has them. */
+  chrome: (title: string, extra?: Pick<PageChrome, 'active' | 'sub' | 'actions'>) => PageChrome;
   /** The session's CSRF token, for the management forms (only the console's own requests carry one). */
   csrf?: string;
+  /** The request came over HTTPS (the built-in listener or the configured proxy). */
+  secure?: boolean;
+  /** The origin the browser reached (scheme and the Host the app accepted), for the Circle entry of this Hub. */
+  origin?: string;
+  /** The process serving the console, for the Hub's state. */
+  hub?: HubFacts;
   /** Display name of a user id, cached for the request. */
   userName: (userId: string | null | undefined) => Promise<string>;
 }
@@ -40,11 +47,14 @@ export interface PageResult {
   body: Html;
 }
 
-/** The neutral answer for absent and forbidden alike (D05 R[3]). */
-const NEUTRAL = UNAVAILABLE_MESSAGE;
+/**
+ * The neutral answer for absent and forbidden alike (D05 R[3]): the same words whatever the path, so neither the object's
+ * name nor its id shows. The MCP tools keep their own neutral text (UNAVAILABLE_MESSAGE).
+ */
+export const NEUTRAL = '该内容不存在或无权查看';
 
 export function neutralPage(ctx: PageContext): PageResult {
-  return { status: 404, body: page(ctx.chrome(NEUTRAL), html`<p>${NEUTRAL}</p>`) };
+  return { status: 404, body: page(ctx.chrome(NEUTRAL), html`${callout('info', '对象可能已删除，或当前账号没有查看权限；两种情况显示相同的结果。')}<p class="mt16">${link('/console/overview', '返回总览')}</p>`) };
 }
 
 const param = (ctx: PageContext, name: string): string | undefined => {
@@ -66,43 +76,64 @@ function errorsTable(errors: readonly ProtocolError[]): Html {
 
 /** Current rule status is a view qualifier, never a replacement for the immutable receipt. */
 export function ruleWithdrawalNotice(detail:Pick<RunDetail,'rule_withdrawn'>):Html{
-  return detail.rule_withdrawn?html`<p class="notice"><strong>${labelOf('validity_status','rule_withdrawn')}（版本已下架）</strong>；下列回执展示生成时的状态；原摘要、分区和要求项终态保持原样，这是当前读取时的限定。</p>`:html``;
+  return detail.rule_withdrawn?html`<p class="notice"><strong>${uiLabelOf('validity_status','rule_withdrawn')}（版本已下架）</strong>；下列回执展示生成时的状态；原摘要、分区和要求项终态保持原样，这是当前读取时的限定。</p>`:html``;
 }
 
 export function claimBlock(claim: Claim): Html {
-  return html`<div class="claim">${definitions(claimFields(claim))}</div>`;
+  return html`<div class="claim">${definitions(claimFields(claim, false, INTERFACE_LABELS))}</div>`;
 }
 
 // ---------------------------------------------------------------- runs
 
 /** Bind the live condition only to result claims; the claim and its receipt remain original evidence. */
 export function claimBlockAtRead(ruleWithdrawn:boolean):typeof claimBlock{
-  return ruleWithdrawn?claim=>html`<div class="claim">${definitions(claimFields(claim,true))}</div>`:claimBlock;
+  return ruleWithdrawn?claim=>html`<div class="claim">${definitions(claimFields(claim,true,INTERFACE_LABELS))}</div>`:claimBlock;
 }
+
+/** Tasks per page: each one's result needs its run read, so a page stays small. */
+const TASKS_PER_PAGE = 30;
 
 export async function runsPage(ctx: PageContext): Promise<PageResult> {
   const pack = param(ctx, 'pack');
   const cursor = param(ctx, 'cursor');
-  const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack, limit: 50, cursor: cursor ?? null });
+  const wanted = param(ctx, 'result');
+  if (wanted !== undefined && !isTaskResult(wanted)) return { status: 400, body: page(ctx.chrome('请求有误', { active: 'tasks' }), html`<p class="error">筛选的任务结果不对</p>`) };
+  const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack, limit: TASKS_PER_PAGE, cursor: cursor ?? null });
+  const [tasks, titles] = await Promise.all([loadTasks(ctx, listing.items), packTitles(ctx)]);
+  const counts = new Map<TaskResult, number>();
+  for (const task of tasks) if (task.result !== null) counts.set(task.result, (counts.get(task.result) ?? 0) + 1);
+  const shown = wanted === undefined ? tasks : tasks.filter((task) => task.result === wanted);
   const rows = [];
-  for (const run of listing.items) {
+  for (const task of shown) {
+    const run = task.run;
     rows.push([
-      link(`/console/runs/${run.run}`, run.run),
+      html`${runLink(run, html`<b>${taskTitle(run, titles)}</b>`)}<div class="digest">${run.run}</div>`,
       run.pack,
-      [run.product, run.version, run.build].filter(Boolean).join(' / '),
-      run.started_at,
-      run.runner === undefined ? labelOf('execution_host', run.host) : await ctx.userName(run.runner),
+      [run.product, run.version, run.build].filter(Boolean).join(' / ') || '—',
+      run.runner === undefined ? uiLabelOf('execution_host', run.host) : await ctx.userName(run.runner),
+      when(run.started_at),
       run.items.length,
       run.session ?? '',
+      resultCell(task),
     ]);
   }
-  const filter = html`<form class="filters" method="get" action="/console/runs"><label>任务包 <input name="pack" value="${pack ?? ''}"></label><button type="submit">筛选</button></form>`;
-  const next = listing.next === null ? html`` : html`<p>${link('/console/runs', '下一页', { pack, cursor: listing.next })}</p>`;
+  // The dispatch-unconfirmed filter, like every other, appears only while such a task is on the page.
+  const filters = pills([
+    { label: '全部', count: tasks.length, path: '/console/runs', params: { pack, cursor }, on: wanted === undefined },
+    ...TASK_RESULT.filter((result) => (counts.get(result) ?? 0) > 0 || result === wanted).map((result) => ({ label: uiLabelOf('task_result', result), count: counts.get(result) ?? 0, path: '/console/runs', params: { pack, cursor, result }, on: result === wanted })),
+  ], '按任务结果筛选');
+  const filter = html`<form class="filters" method="get" action="/console/runs"><label>任务包 <input name="pack" value="${pack ?? ''}"></label>${wanted === undefined ? '' : html`<input type="hidden" name="result" value="${wanted}">`}<button type="submit">筛选</button></form>`;
+  const next = listing.next === null ? html`` : html`<p class="mt12">${link('/console/runs', '下一页', { pack, result: wanted, cursor: listing.next })}</p>`;
   const feedingTodos=await ctx.deps.knowledge.feeding?.todos(ctx.principal)??[];
   const requests=(await ctx.deps.runs.listRequests?.(ctx.principal)??[]).filter(r=>r.answered_by===null);
+  const list = card({ title: listing.items.length === 0 ? '尚无任务' : '任务', meta: `本页 ${tasks.length} 个任务${wanted === undefined ? '' : `，筛选后 ${shown.length} 个`} · 按开始时间` }, html`${filter}${table(['任务', '任务包版本', '产品 / 版本 / 构建', '执行人', '开始时间', '条目', '会话', '结果'], rows, listing.items.length === 0 ? 'Circle 启动任务后在此列出。' : '本页没有符合筛选的任务')}${next}`);
   return {
     status: 200,
-    body: page(ctx.chrome('运行'), html`${section('知识喂入待办',table(['来源','缺什么','下一步','函数失败详情'],feedingTodos.map(row=>[code(JSON.stringify(row.source)),row.missing,row.next_action,row.detail?code(JSON.stringify(row.detail)): '—']),'没有待办'))}${filter}${table(['运行', '任务包', '产品 / 版本 / 构建', '开始时间', '运行者', '条目', '会话'], rows, '没有运行')}${next}${section('已到期未回答的请求',table(['请求','运行 / 包摘要','受众','原期限','缺什么','下一步'],(listing.overdue_requests??[]).map(r=>[code(r.record),code(r.run??r.pack_digest??''),code(r.audience),r.due,r.missing,r.next_action]),'没有已到期未回答的请求'))}${section('未回答的请求',table(['请求','运行 / 包摘要','种类','受众','期限','缺什么','下一步'],requests.map(r=>[code(r.record),code(r.run??r.pack_digest??''),labelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}`),
+    body: page(ctx.chrome('任务', { active: 'tasks', sub: 'Circle 提交的每个结果都经过 Hub 校验：引用溯源、原文比对、沙箱复验。' }), html`${filters}<div class="mt16">${list}</div>
+${section('知识喂入待办',table(['来源','缺什么','下一步','函数失败详情'],feedingTodos.map(row=>[code(JSON.stringify(row.source)),row.missing,row.next_action,row.detail?code(JSON.stringify(row.detail)): '—']),'没有待办'))}
+${section('已到期未回答的请求',table(['请求','运行 / 包摘要','接收人','原期限','缺什么','下一步'],(listing.overdue_requests??[]).map(r=>[code(r.record),code(r.run??r.pack_digest??''),code(r.audience),r.due,r.missing,r.next_action]),'没有已到期未回答的请求'))}
+${section('未回答的请求',table(['请求','运行 / 包摘要','种类','接收人','期限','缺什么','下一步'],requests.map(r=>[code(r.record),code(r.run??r.pack_digest??''),uiLabelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}
+<p class="note">请求的处理在接收人的 Circle 中完成；本页只显示请求的接收人、期限与状态。</p>`),
   };
 }
 
@@ -116,15 +147,15 @@ function itemCells(requirements: readonly RequirementResult[]): Html {
   const cell = itemCell(requirements);
   return html`${LAYER.map((layer) => {
     const found = cell[layer];
-    if (found === undefined) return html`<div>${labelOf('layer', layer)}：${NOT_APPLICABLE}</div>`;
-    return html`<div>${terminalHtml({ layer, terminal: found.terminal } as LayerTerminal, cellText(layer, found))}</div>`;
+    if (found === undefined) return html`<div>${uiLabelOf('layer', layer)}：${NOT_APPLICABLE}</div>`;
+    return html`<div>${terminalHtml({ layer, terminal: found.terminal } as LayerTerminal, cellText(layer, found, INTERFACE_LABELS))}</div>`;
   })}`;
 }
 
 function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, string>, renderClaim:typeof claimBlock = claimBlock): Html {
   const rows: unknown[][] = [];
   for (const item of items) {
-    const why = 'code' in item ? code(item.code) : 'reason' in item ? labelOf('reason', item.reason) : '';
+    const why = 'code' in item ? code(item.code) : 'reason' in item ? uiLabelOf('reason', item.reason) : '';
     const head = [
       html`${code(item.item)}<br>${item.label}`,
       html`${code(item.location)}${item.replaced_criteria?.map(change=>html`<details><summary>被取代的判据</summary>${definitions([['位置',code(change.criterion)],['旧值',pre(change.old)],['新值',pre(change.new)],['声明',code(change.declaration)],['复核结果',code(change.review)],['复核人',code(change.reviewer)]])}</details>`)??''}${item.carried_over ? html`<br>沿用 ${code(item.carried_over)}` : ''}`,
@@ -135,18 +166,18 @@ function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, stri
     for (const [index, r] of item.requirements.entries()) {
       const layers = LAYER.map((layer) => {
         const found: LayerResult | undefined = r.layers.find((l) => l.layer === layer);
-        return found === undefined ? html`${labelOf('layer', layer)}：${NOT_APPLICABLE}` : html`${terminalHtml(found, terminalText(found))}${found.reason?html`<div>${found.missing??'缺失事实未写'}；${found.exit?`${found.exit.due} 前，${'user'in found.exit.audience?found.exit.audience.user:labelOf('execution_host','hub')}：${labelOf('exit_action',found.exit.action)}`:'出口未写'}</div>`:''}${found.gaps?.map(g=>html`<div>未决未知：${g.missing}；${g.exit.due} 前：${labelOf('exit_action',g.exit.action)}</div>`)??''}`;
+        return found === undefined ? html`${uiLabelOf('layer', layer)}：${NOT_APPLICABLE}` : html`${terminalHtml(found, terminalText(found, INTERFACE_LABELS))}${found.reason?html`<div>${found.missing??'缺失事实未写'}；${found.exit?`${found.exit.due} 前，${'user'in found.exit.audience?found.exit.audience.user:uiLabelOf('execution_host','hub')}：${uiLabelOf('exit_action',found.exit.action)}`:'出口未写'}</div>`:''}${found.gaps?.map(g=>html`<div>未决未知：${g.missing}；${g.exit.due} 前：${uiLabelOf('exit_action',g.exit.action)}</div>`)??''}`;
       });
       rows.push([
         ...(index === 0 ? head : ['', '', '', '']),
         html`${r.requirement} ${names.get(r.requirement) ?? ''}`,
         html`${layers.map((text) => html`<div>${text}</div>`)}`,
-        statusText(r),
+        statusText(r, INTERFACE_LABELS),
         html`${r.claims.map(renderClaim)}`,
       ]);
     }
   }
-  return table(['条目', '位置', '原因', '条目终态（每层一格）', '要求项', '判定层终态', axisLabel('requirement_status'), `主张（${DISPLAY_ORDER.join('、')}）`], rows, '没有条目');
+  return table(['条目', '位置', '原因', `条目结果（每种${axisUiLabel('layer')}一格）`, '要求项', `各${axisUiLabel('layer')}的结果`, axisUiLabel('requirement_status'), `结论（${DISPLAY_ORDER.join('、')}）`], rows, '没有条目');
 }
 
 /**
@@ -163,8 +194,8 @@ function partitionGroups(result: ValidationResult, run: RunRecord, renderClaim:t
     const members = PARTITION.filter((p) => GROUP_OF[p] === group);
     const total = members.reduce((sum, p) => sum + result.partitions[p].length, 0);
     // Display rule 6: every partition shows its count and lists its items, an empty one included.
-    const parts = members.map((p) => section(`${labelOf('partition', p)}（${result.partitions[p].length}）`, itemTable(result.partitions[p], names,renderClaim)));
-    groups.push(section(`${GROUP_TITLE[group]}（${members.map((p) => labelOf('partition', p)).join('、')}，${total}）`, html`${parts}`));
+    const parts = members.map((p) => section(`${uiLabelOf('partition', p)}（${result.partitions[p].length}）`, itemTable(result.partitions[p], names,renderClaim)));
+    groups.push(section(`${GROUP_TITLE[group]}（${members.map((p) => uiLabelOf('partition', p)).join('、')}，${total}）`, html`${parts}`));
   }
 
   return html`${groups}`;
@@ -182,7 +213,7 @@ async function commentaryHandling(ctx: PageContext, detail: RunDetail, result: N
   const body = record?.body;
   if (record?.kind !== 'submission' || !isObject(body) || body.run !== detail.run.run || !Array.isArray(body.items)) return html`<p class="notice">缺少对应的模型提交原件；请刷新本页重读，仍缺请管理员按评论结果记录核对原提交。</p>`;
   return table(['条目', '模型处理声明（未经平台验证）', '声明理由'], body.items.filter(isObject).map(item => [code(String(item.item ?? '')),
-    isItemHandling(item.handling) ? `模型声明${labelOf('item_handling', item.handling)} ${String(item.item ?? '')}` : '没有可识别的模型处理声明',
+    isItemHandling(item.handling) ? `模型声明${uiLabelOf('item_handling', item.handling)} ${String(item.item ?? '')}` : '没有可识别的模型处理声明',
     typeof item.reason === 'string' ? item.reason : '—']), '没有模型处理声明');
 }
 
@@ -238,7 +269,7 @@ async function runSharing(ctx: PageContext, run: RunRecord): Promise<Html> {
   const policies = run.requirements.length && run.requirements.every(row=>row.accepted_producer==='fact')
     ? await ctx.deps.records.authorizations.shares(ctx.principal,productionShareKey(pack)) : [];
   return section('当前分享',table(['对象','受众','主体','决定时刻','理由'],[...direct,...policies].map(share=>[
-    code(share.body.object),labelOf('share_audience',share.body.share_audience ?? 'user'),code(share.body.subject),share.body.decided_at,share.body.note ?? '—',
+    code(share.body.object),uiLabelOf('share_audience',share.body.share_audience ?? 'user'),code(share.body.subject),share.body.decided_at,share.body.note ?? '—',
   ]),'没有有效分享'));
 }
 
@@ -252,10 +283,10 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     ['运行', code(run.run)],
     ['任务包', html`${run.pack} ${code(run.pack_digest)}`],
     ['产品 / 版本 / 构建', [run.product, run.version, run.build].filter(Boolean).join(' / ') || '—'],
-    ['锁定的知识根', run.root === undefined ? '—' : link('/console/knowledge/tree', run.root, { root: run.root, path: '/' })],
-    ['运行者', run.runner === undefined ? '—' : await ctx.userName(run.runner)],
-    [axisLabel('execution_host'), labelOf('execution_host', run.host)],
-    [axisLabel('trigger'), labelOf('trigger', run.trigger)],
+    ['锁定的知识版本', run.root === undefined ? '—' : link('/console/knowledge/tree', run.root, { root: run.root, path: '/' })],
+    ['执行人', run.runner === undefined ? '—' : await ctx.userName(run.runner)],
+    [axisUiLabel('execution_host'), uiLabelOf('execution_host', run.host)],
+    [axisUiLabel('trigger'), uiLabelOf('trigger', run.trigger)],
     ['配置者', run.configurer === undefined ? '—' : await ctx.userName(run.configurer)],
     ['前驱运行', run.predecessor === undefined ? '—' : link(`/console/runs/${run.predecessor}`, run.predecessor)],
     ['会话', run.session ?? '—'],
@@ -263,22 +294,22 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     ['提交期限', run.submission_due ?? '旧运行没有记录期限，请以它为前驱开新修订'],
     ['交付', detail.latest === null ? '尚未交付' : '已有交付结果'],
     ['边界政策', run.policy ?? '—'],
-    ['规程摘要', code(run.instructions_digest)],
+    ['规程内容哈希', code(run.instructions_digest)],
   ]);
   const basis = run.target_basis.length === 0 ? html`<p class="empty">没有</p>` : html`${run.target_basis.map(claimBlock)}`;
   const sources = table(
-    [axisLabel('source_role'), '引用', '输入', '外部对象', '媒体类型', '名称'],
-    run.sources.map((s) => [labelOf('source_role', s.role), code(s.reference), s.slot ?? '', s.external ? code(s.external) : '', s.media_type ?? '', s.label ?? '']),
+    [axisUiLabel('source_role'), '引用', '输入', '外部对象', '媒体类型', '名称'],
+    run.sources.map((s) => [uiLabelOf('source_role', s.role), code(s.reference), s.slot ?? '', s.external ? code(s.external) : '', s.media_type ?? '', s.label ?? '']),
   );
   const requirements = table(
-    ['键', '名称', '说明', axisLabel('layer'), axisLabel('done_rule'), axisLabel('accepted_producer'), '修复轮数'],
+    ['键', '名称', '说明', axisUiLabel('layer'), axisUiLabel('done_rule'), axisUiLabel('accepted_producer'), '修复轮数'],
     run.requirements.map((r) => [
       code(r.key),
       r.name,
       r.description,
-      LAYER.map((layer) => `${labelOf('layer', layer)}：${r.layers.includes(layer) ? '适用' : NOT_APPLICABLE}`).join('；'),
-      labelOf('done_rule', r.done_rule),
-      labelOf('accepted_producer', r.accepted_producer),
+      LAYER.map((layer) => `${uiLabelOf('layer', layer)}：${r.layers.includes(layer) ? '适用' : NOT_APPLICABLE}`).join('；'),
+      uiLabelOf('done_rule', r.done_rule),
+      uiLabelOf('accepted_producer', r.accepted_producer),
       r.repair_rounds,
     ]),
   );
@@ -288,14 +319,14 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     const result = latest.result;
     const management=isAbandonedResult(result);
     const unwritten=management?result.cross_item.find(c=>c.warrant.id==='runs.engine@1'&&c.statement.data?.run_disposition==='abandon')?.statement.data?.legacy_unwritten_fields:undefined;
-    return html`<p><strong>${management?'管理放弃（不是目标通过）；':commentary ? '模型声明的分区（判断，未采用）：' : ''}${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined)}</strong></p>
+    return html`<p><strong>${management?'管理放弃（不是目标通过）；':commentary ? '模型声明的分区（判断，未采用）：' : ''}${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions,INTERFACE_LABELS):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined, INTERFACE_LABELS)}</strong></p>
 ${management?html`<p>技术层未重新核验；原记录 ${typeof unwritten==='number'?unwritten:0} 处技术字段未写，原件仍显示“出口未写”；本投影出口仅引用本次真实处置请求。</p>`:''}
 ${definitions([
   [recordLabel, code(latest.record)],
-  [result.system_input?'系统交付输入摘要':'提交摘要',code(result.submission)],
+  [result.system_input?'系统交付输入内容哈希':'提交内容哈希',code(result.submission)],
   ['修复轮数', `已用 ${result.rounds.used}，最多 ${result.rounds.max}`],
   ['覆盖', coverageText(result.coverage) ?? '—'],
-  ['锁定', html`任务包 ${result.locks.pack} ${code(result.locks.pack_digest)}${result.locks.root ? html`，知识根 ${code(result.locks.root)}` : ''}${result.locks.policy ? `，政策 ${result.locks.policy}` : ''}`],
+  ['锁定', html`任务包 ${result.locks.pack} ${code(result.locks.pack_digest)}${result.locks.root ? html`，知识版本 ${code(result.locks.root)}` : ''}${result.locks.policy ? `，政策 ${result.locks.policy}` : ''}`],
   ['追踪', code(result.trace)],
 ])}
 ${commentary ? section('逐条模型判断（未采用）', commentaryJudgments(result,renderClaim)) : partitionGroups(result, run,renderClaim)}
@@ -311,13 +342,13 @@ ${section('错误与修正', errorsTable(result.errors))}`;
     submissionRows.push([
       code(s.record),
       s.received_at,
-      s.acceptance === null ? '未校验（Hub 中断）' : labelOf('acceptance', s.acceptance),
+      s.acceptance === null ? '未校验（Hub 中断）' : uiLabelOf('acceptance', s.acceptance),
       s.errors.length === 0 ? '' : html`${s.errors.map((e) => html`<div>${code(e.code)} ${e.message}${e.fix ? `；修正：${e.fix}` : ''}${e.rounds_left !== undefined ? `；剩余修复轮数 ${e.rounds_left}` : ''}</div>`)}`,
       s.result ?? '—',
       await submissionContent(ctx, s.record, run.run),
     ]);
   }
-  const submissions = table(['提交记录', '收到时间', axisLabel('acceptance'), '错误', '校验结果', '提交内容（未经平台验证）'], submissionRows, '没有提交');
+  const submissions = table(['提交记录', '收到时间', axisUiLabel('acceptance'), '错误', '校验结果', '提交内容（未经平台验证）'], submissionRows, '没有提交');
   const calls = await ctx.deps.records.callLog.query(ctx.principal, { runId: run.run, limit: 200, newestFirst: false, cursor:param(ctx,'call_cursor')??null });
   const items = table(
     ['条目', '名称', '位置', '指纹', '可沿用'],
@@ -328,11 +359,17 @@ ${section('错误与修正', errorsTable(result.errors))}`;
     typeof value==='string'?[[code(item.id),code(key),pre(value)]]:[]));
   const projectedFields=stringFields.length===0?'':section('投影字符串字段（只读）',
     html`<details><summary>查看原文（全文，不截断）</summary>${table(['条目','字段','原文'],stringFields)}</details>`);
+  const titles = await packTitles(ctx);
+  const head = await taskHead(ctx, detail, titles);
+  // The first page of the call log is the waterfall's too; a later page is not.
+  const process = await taskWaterfall(ctx, detail, param(ctx, 'call_cursor') === undefined ? calls.items : undefined);
   return {
     status: 200,
     body: page(
-      ctx.chrome(`运行 ${run.run}`),
-      html`${sharedRunNotice(ctx,run)}${ruleWithdrawalNotice(detail)}${summary}
+      ctx.chrome('任务', { active: 'tasks', sub: html`${link('/console/runs', '全部任务')} · ${taskTitle(run, titles)}` }),
+      html`${head}<div class="mt16">${process}</div>
+<div class="record"><h2>完整记录</h2><p class="sub">结果分类清单、各条目的检查结果、提交原文与回执；任务的结果以本节为准。</p>
+${sharedRunNotice(ctx,run)}${ruleWithdrawalNotice(detail)}${summary}
 ${await runSharing(ctx,run)}
 ${detail.management?section('管理处置',html`<p>目标已放弃；来源 ${link('/console/runs/'+run.run,'运行',{})} ${code(detail.management.record)}。${detail.management.result?'下列为管理交付，技术终态沿用原记录，未重新核验；未知计数保留，旧缺字段只引用此次真实处置请求。':'管理交付投影尚未形成，Hub 将自动重试；旧技术结果仍在原记录中。'}</p>`):''}
 ${section('版本依据', basis)}
@@ -340,34 +377,35 @@ ${section('来源', sources)}
 ${section('要求项', requirements)}
 ${section(`条目（${run.items.length}）`, items)}
 ${projectedFields}
-${run.criterion_changes?.length?section('判据变更声明',table(['声明 / 请求','条目 / 判据','原断言','旧值 / 新值','状态 / 复核人 / 理由','受众 / 期限','下一步'],run.criterion_changes.map(change=>[html`${code(change.declaration)}<br>${code(change.request)}`,html`${code(change.item)}<br>${code(change.criterion)}`,change.assertion,html`${pre(change.old)}${pre(change.new)}`,change.superseded_by?`由后一份提交的同名声明取代：${change.superseded_by}`:change.accepted===true?`已接受；复核人 ${change.reviewer??'未写'}；理由 ${change.reason??'未写'}`:change.accepted===false?`未接受；复核人 ${change.reviewer??'未写'}；理由 ${change.reason??'未写'}`:change.expired?'请求已过期，仍等作者以外的账号复核；新修订不带这条声明':'请求还没有回答；等作者以外的账号复核',html`${code(change.audience)}<br>${change.due}`,change.next_action]),'没有判据变更声明')):''}
-${section('分区清单', results)}
+${run.criterion_changes?.length?section('判据变更声明',table(['声明 / 请求','条目 / 判据','原断言','旧值 / 新值','状态 / 复核人 / 理由','接收人 / 期限','下一步'],run.criterion_changes.map(change=>[html`${code(change.declaration)}<br>${code(change.request)}`,html`${code(change.item)}<br>${code(change.criterion)}`,change.assertion,html`${pre(change.old)}${pre(change.new)}`,change.superseded_by?`由后一份提交的同名声明取代：${change.superseded_by}`:change.accepted===true?`已接受；复核人 ${change.reviewer??'未写'}；理由 ${change.reason??'未写'}`:change.accepted===false?`未接受；复核人 ${change.reviewer??'未写'}；理由 ${change.reason??'未写'}`:change.expired?'请求已过期，仍在等待作者以外的账号复核；新修订不带这条声明':'等待作者以外的账号复核中',html`${code(change.audience)}<br>${change.due}`,change.next_action]),'没有判据变更声明')):''}
+${section(axisUiLabel('partition'), results)}
 ${commentary}
-${section('未回答的请求', table(['请求','种类','受众','期限','缺什么','下一步'], (detail.requests??[]).filter(r=>r.answered_by===null).map(r=>[code(r.record),labelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}
+${section('未回答的请求', table(['请求','种类','接收人','期限','缺什么','下一步'], (detail.requests??[]).filter(r=>r.answered_by===null).map(r=>[code(r.record),uiLabelOf('request_kind',r.kind),code(r.audience),r.due,r.missing,r.next_action]),'没有未回答的请求'))}
 ${section('提交与回执', submissions)}
-${section('调用日志',html`${callTable(calls.items, ctx.admin, await names(ctx, calls.items))}<p>分页：本页 ${calls.items.length} 条${typeof calls.next==='string'?html`；${link(`/console/runs/${run.run}`,'下一页',{call_cursor:calls.next})}`:''}</p>`)}`,
+${section('调用日志',html`${callTable(calls.items, ctx.admin, await names(ctx, calls.items))}<p>分页：本页 ${calls.items.length} 条${typeof calls.next==='string'?html`；${link(`/console/runs/${run.run}`,'下一页',{call_cursor:calls.next})}`:''}</p>`)}
+</div>`,
     ),
   };
 }
 
-async function names(ctx: PageContext, lines: readonly CallLogLine[]): Promise<Map<string, string>> {
+export async function names(ctx: PageContext, lines: readonly CallLogLine[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   for (const line of lines) if (line.user !== null && !out.has(line.user)) out.set(line.user, await ctx.userName(line.user));
   return out;
 }
 
-function callTable(lines: readonly CallLogLine[], admin: boolean, users: ReadonlyMap<string, string>): Html {
-  const headers = ['时间', '用户', '工具', axisLabel('call_result'), axisLabel('acceptance'), '错误码', '耗时（毫秒）', '运行', '追踪', '会话', '参数摘要（字节）'];
+export function callTable(lines: readonly CallLogLine[], admin: boolean, users: ReadonlyMap<string, string>): Html {
+  const headers = ['时间', '用户', '工具', axisUiLabel('call_result'), axisUiLabel('acceptance'), '错误码', '耗时（毫秒）', '运行', '追踪', '会话', '参数摘要（字节）'];
   if (admin) headers.push('管理员备注');
   return table(
     headers,
     lines.map((line) => {
       const row: unknown[] = [
-        line.at,
+        html`<time datetime="${line.at}" title="${line.at}">${when(line.at)}</time>`,
         line.user === null ? '—' : (users.get(line.user) ?? line.user),
-        line.tool,
-        labelOf('call_result', line.call_result),
-        line.acceptance === null ? '' : labelOf('acceptance', line.acceptance),
+        toolCell(line.tool),
+        uiLabelOf('call_result', line.call_result),
+        line.acceptance === null ? '' : uiLabelOf('acceptance', line.acceptance),
         line.error_code ?? '',
         line.duration_ms,
         line.run === null ? '' : link(`/console/runs/${line.run}`, line.run),
@@ -379,18 +417,19 @@ function callTable(lines: readonly CallLogLine[], admin: boolean, users: Readonl
       return row;
     }),
     '没有调用',
+    'calls',
   );
 }
 
 // ---------------------------------------------------------------- knowledge
 
-interface ProductLine {
+export interface ProductLine {
   id: string;
   title: string;
   names: string[];
 }
 
-async function readableLines(ctx: PageContext): Promise<ProductLine[]> {
+export async function readableLines(ctx: PageContext): Promise<ProductLine[]> {
   const products = ctx.deps.products;
   if (products !== undefined) {
     const all = await products.products();
@@ -413,7 +452,7 @@ async function productReadable(ctx: PageContext, product: string): Promise<Produ
 }
 
 /** A root is readable when one of its compositions belongs to a product line the reader may read. */
-async function rootReadable(ctx: PageContext, root: string): Promise<boolean> {
+export async function rootReadable(ctx: PageContext, root: string): Promise<boolean> {
   if (!SHA256.test(root)) return false;
   const infos = await ctx.deps.knowledge.rootInfo(root);
   if (infos.length === 0) return false;
@@ -451,17 +490,27 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
     rows.push(['不分版本', '—', '构建未声明', '—', unversioned === null ? '—' : `1（来源 ${unversioned.source_count} 个）`,
       unversioned === null ? '—' : link('/console/knowledge/root', unversioned.root.slice(0,16), {root:unversioned.root})]);
     blocks.push(
-      section(
-        `${line.title}（${line.id}）`,
-        html`<p>名称：${line.names.length > 0 ? line.names.join('、') : '—'}；${link('/console/knowledge/product', '全部构建', { id: line.id })}</p>
-${table(['版本线', '名称族', '构建', '已发布', '已产出根', '当前根'], rows, '还没有构建')}`,
+      card(
+        { title: `${line.title}（${line.id}）`, meta: html`名称：${line.names.length > 0 ? line.names.join('、') : '—'}` },
+        html`${table(['版本', '名称族', '构建', '已发布', '已产出版本', '当前版本'], rows, '还没有构建')}<div class="card-f"><span class="sub">当前版本为该版本线最新产出的知识；内容变化后内容哈希随之改变。</span>${link('/console/knowledge/product', '全部构建', { id: line.id })}</div>`,
       ),
     );
   }
-  const diffForm = html`<form class="filters" method="get" action="/console/knowledge/diff"><label>从根 <input name="from" size="66"></label><label>到根 <input name="to" size="66"></label><button type="submit">比较</button></form>`;
+  const diffForm = html`<form class="filters" method="get" action="/console/knowledge/diff"><label>从版本（内容哈希） <input name="from" size="66"></label><label>到版本（内容哈希） <input name="to" size="66"></label><button type="submit">比较</button></form>`;
+  const flow = card({ title: '知识入库流程', meta: '共享知识须经 Hub 出处校验' }, html`<div class="stages">
+<div class="stage planned-stage"><span class="host"><span class="dot idle"></span>仅本人可见</span><b>原文归档</b><span class="sub">Circle 读取的网页、文件、系统数据连同出处归档</span>${planned()}</div>
+<div class="stage circle"><span class="host"><span class="dot unknown"></span>本机 Circle</span><b>模型归纳</b><span class="sub">模型生成的归纳保留在本机，不上传 Hub</span></div>
+<div class="stage circle"><span class="host"><span class="dot unknown"></span>本机 Circle</span><b>提交共享</b><span class="sub">确认为事实后，连同出处提交</span></div>
+<div class="stage on-hub"><span class="host"><span class="dot info"></span>Hub</span><b>出处校验</b><span class="sub">可追溯至原文且引文一致方可入库</span></div>
+<div class="stage"><span class="host"><span class="dot ok"></span>所有人可见</span><b>共享知识</b><span class="sub">按产品线与版本组织，所有 Circle 可读取、可引用</span></div>
+</div><p class="note">从业务系统与文档导入的知识同样经 Hub 校验；个人账号读取的内容不会自动成为共享知识。</p>`);
+  const actions = ctx.admin ? button('/console/operations/knowledge', '导入知识', { primary: true, icon: 'upload' }) : undefined;
   return {
     status: 200,
-    body: page(ctx.chrome('知识'), html`${blocks.length === 0 ? html`<p class="empty">没有你可读的产品线</p>` : blocks}${section('版本比较', diffForm)}`),
+    body: page(ctx.chrome('知识库', { active: 'knowledge', sub: '统一的知识库：每条知识均附出处，按产品线与版本组织。', ...(actions === undefined ? {} : { actions }) }), html`${flow}
+${sectionHead('按产品线浏览', '可读的产品线及其版本')}
+${blocks.length === 0 ? html`<article class="card"><p class="empty">没有可读的产品线</p><p class="sub mt4">产品线随产品包发布；成员可读分配给自己的任务包所绑定的产品线。</p></article>` : html`<div class="stack">${blocks}</div>`}
+<div class="mt16">${card({ title: '版本差异', meta: '两个版本之间新增、删除与修改的条目' }, diffForm)}</div>`),
   };
 }
 
@@ -504,7 +553,7 @@ export async function productPage(ctx: PageContext): Promise<PageResult> {
   return {
     status: 200,
     body: page(
-      ctx.chrome(`${line.title}${versionLine ? ` ${versionLine}` : ''}`),
+      ctx.chrome(`${line.title}${versionLine ? ` ${versionLine}` : ''}`, { active: 'knowledge', sub: html`${link('/console/knowledge', '知识库')} · 构建` }),
       html`<p>名称：${line.names.join('、') || '—'}</p>${table(['构建', '名称族', '版本线', '别名', '平台', '构建时间', '发布时间', '根'], rows, '没有构建')}${more}`,
     ),
   };
@@ -517,8 +566,8 @@ export async function rootPage(ctx: PageContext): Promise<PageResult> {
   return {
     status: 200,
     body: page(
-      ctx.chrome('知识根'),
-      html`<p>${code(root)} ${link('/console/knowledge/tree', '浏览树', { root, path: '/' })}</p>
+      ctx.chrome('知识版本', { active: 'knowledge', sub: html`${link('/console/knowledge', '知识库')} · 内容哈希 ${code(root.slice(0, 16))}` }),
+      html`<p>${code(root)} ${link('/console/knowledge/tree', '浏览条目', { root, path: '/' })}</p>
 ${table(
   ['组成记录', '产品线', '构建', '名称族', '版本线', '产出时间'],
   infos.map((info) => [code(info.composition), info.product, info.build?.name ?? '构建未声明', info.build?.family ?? '—', info.build?.line ?? '不分版本', info.produced_at]),
@@ -536,13 +585,13 @@ export async function treePage(ctx: PageContext): Promise<PageResult> {
   if (nodes === null) return neutralPage(ctx);
   const parts = nodes.nodes.map((node) =>
     section(
-      `${node.path}（${node.level}）`,
+      `${node.path}（${isNodeLevel(node.level) ? uiLabelOf('node_level', node.level) : node.level}）`,
       html`${definitions([
         ['名称', node.name],
         ['引用', code(node.reference)],
-        ['摘要', code(node.digest)],
+        ['内容哈希', code(node.digest)],
       ])}
-${table(['子节点', '路径'], node.children.map((child) => [link('/console/knowledge/tree', child.name, { root, path: child.path }), code(child.path)]), '没有子节点')}
+${table(['下级', '路径'], node.children.map((child) => [link('/console/knowledge/tree', child.name, { root, path: child.path }), code(child.path)]), '没有下级')}
 ${table(
   ['种类', '陈述', '适用', '引用', '数据'],
   node.entries.map((entry) => [entry.kind, entry.statement, entry.applicability, code(entry.reference), entry.data === undefined ? '' : pre(JSON.stringify(entry.data, null, 2))]),
@@ -555,8 +604,8 @@ ${table(
   return {
     status: 200,
     body: page(
-      ctx.chrome('知识树'),
-      html`<p>根 ${code(root)}${parent === null ? '' : html` · ${link('/console/knowledge/tree', '上一级', { root, path: parent })}`}</p>
+      ctx.chrome('知识条目', { active: 'knowledge', sub: html`${link('/console/knowledge', '知识库')} · ${path}` }),
+      html`<p class="sub">版本 ${code(root)}${parent === null ? '' : html` · ${link('/console/knowledge/tree', '上一级', { root, path: parent })}`}</p>
 <p>覆盖：${coverageText(nodes.coverage) ?? '—'}</p>${parts}${next}`,
     ),
   };
@@ -581,141 +630,11 @@ export async function diffPage(ctx: PageContext): Promise<PageResult> {
   return {
     status: 200,
     body: page(
-      ctx.chrome('版本比较'),
+      ctx.chrome('版本差异', { active: 'knowledge', sub: html`${link('/console/knowledge', '知识库')}` }),
       html`<p>从 ${code(from)} 到 ${code(to)}</p>
 ${section(`只在新根里（${diff.added.length}）`, listOf(0))}
 ${section(`只在旧根里（${diff.removed.length}）`, listOf(1))}
 ${section(`内容变了（${diff.modified.length}）`, listOf(2))}`,
     ),
   };
-}
-
-// ---------------------------------------------------------------- packs
-
-export async function packsPage(ctx: PageContext): Promise<PageResult> {
-  const packs = await ctx.deps.packs.list(ctx.principal);
-  const rows = [];
-  for (const p of packs) {
-    const assigned = p.assigned_to === undefined ? null : await Promise.all(p.assigned_to.map((user) => ctx.userName(user)));
-    const row: unknown[] = [
-      `${p.id}@${p.version}`,
-      labelOf('pack_kind', p.kind),
-      p.title,
-      await ctx.userName(p.owner),
-      code(p.digest.slice(0, 16)),
-      p.published_at,
-      yesNo(p.withdrawn),
-      p.kind === 'product' ? yesNo(p.active) : '—',
-      Object.entries(p.samples).map(([source, count]) => `${source} ${count}`).join('，'),
-    ];
-    if (ctx.admin) row.push(assigned === null ? '' : assigned.join('、'));
-    rows.push(row);
-  }
-  const headers = ['任务包', axisLabel('pack_kind'), '标题', '所有者', '摘要', '发布时间', '已下架', '全 Hub 启用', '样例'];
-  if (ctx.admin) headers.push('分配给');
-  return { status: 200, body: page(ctx.chrome('任务包'), table(headers, rows, '没有你可用的任务包')) };
-}
-
-// ---------------------------------------------------------------- admin
-
-export async function adminPage(ctx: PageContext): Promise<PageResult> {
-  if (!ctx.admin) return neutralPage(ctx);
-  const { principals, authorizations } = ctx.deps.records;
-  const users = await principals.list();
-  const userRows = [];
-  const tokenRows = [];
-  for (const user of users) {
-    const packs = await authorizations.packsFor(user.id);
-    const id = html`<input type="hidden" name="user" value="${user.id}">`;
-    userRows.push([
-      code(user.id),
-      user.name,
-      labelOf('permission_role', user.role),
-      user.disabled ? '停用' : '启用',
-      yesNo(await authorizations.canPublish(user.id)),
-      packs.join('、'),
-      user.created_at,
-      actionForm(user.disabled ? 'user-enable' : 'user-disable', ctx.csrf ?? '', id, user.disabled ? '恢复' : '停用', { inline: true }),
-    ]);
-    for (const token of await principals.tokens(user.id)) {
-      tokenRows.push([
-        code(token.id), user.name, token.label, token.created_at, token.last_used_at ?? '—', token.revoked_at ?? '有效',
-        token.revoked_at === null ? actionForm('token-revoke', ctx.csrf ?? '', html`<input type="hidden" name="token" value="${token.id}">`, '撤销', { inline: true }) : '',
-      ]);
-    }
-  }
-  const history = await authorizations.history({ permission: 'assign', limit: 50, newestFirst: true });
-  const assignmentRows = [];
-  for (const record of history.items) {
-    const body = record.body;
-    assignmentRows.push([body.decided_at, await ctx.userName(body.subject), body.object, body.revoked ? '撤销分配' : '分配', await ctx.userName(body.decided_by), body.expires_at ?? '—', body.note ?? '']);
-  }
-  const resources = await ctx.deps.resources.list(ctx.principal);
-  const resourceRows = resources.map((r) => [
-    code(r.id),
-    r.system_pack,
-    r.name,
-    isEnvironment(r.environment) ? labelOf('environment', r.environment) : r.environment,
-    yesNo(r.enabled),
-    r.origins === undefined ? '' : html`${Object.entries(r.origins).map(([role, origin]) => html`<div>${role}：${code(origin)}</div>`)}`,
-    (r.allow_plaintext ?? []).join('、'),
-  ]);
-  return {
-    status: 200,
-    body: page(
-      ctx.chrome('管理'),
-      html`${manageNav()}
-${section('用户', table(['用户', '名称', axisLabel('permission_role'), '状态', '发布权', '分配的任务包', '建立时间', '操作'], userRows))}
-${actionForm('user-create', ctx.csrf ?? '', html`<label>新用户 <input name="name" required size="20"></label> <label>角色 <select name="role">${roleOptions()}</select></label>`, '新建用户')}
-${section('令牌（不显示令牌值）', table(['令牌', '用户', '标签', '签发时间', '最近使用', '撤销时间', '操作'], tokenRows, '没有令牌'))}
-${actionForm('token-issue', ctx.csrf ?? '', html`<label>给用户 <select name="user" required>${users.filter((user) => !user.disabled).map((user) => html`<option value="${user.id}">${user.name}</option>`)}</select></label> <label>标签（可空） <input name="label" size="20"></label>`, '签发令牌')}
-<p>新令牌只在签发结果页显示一次；用户在 Circle 的 MCP 服务器设置里以 Authorization: Bearer 带上它，也用它登录控制台。</p>
-${section('任务包分配记录', table(['决定时间', '用户', '任务包', '决定', '决定人', '到期', '备注'], assignmentRows, '没有分配记录'))}
-${section('资源', table(['资源', '系统包', '名称', axisLabel('environment'), '启用', '地址', '允许明文凭据的地址'], resourceRows, '没有资源'))}`,
-    ),
-  };
-}
-
-function isoOrUndefined(value: string | undefined): string | undefined | null {
-  if (value === undefined) return undefined;
-  const time = Date.parse(value);
-  return Number.isNaN(time) ? null : new Date(time).toISOString();
-}
-
-export async function callsPage(ctx: PageContext): Promise<PageResult> {
-  if (!ctx.admin) return neutralPage(ctx);
-  const user = param(ctx, 'user');
-  const tool = param(ctx, 'tool');
-  const run = param(ctx, 'run');
-  const from = isoOrUndefined(param(ctx, 'from'));
-  const to = isoOrUndefined(param(ctx, 'to'));
-  const cursor = param(ctx, 'cursor');
-  const problems: string[] = [];
-  if (from === null) problems.push('“从”不是时间');
-  if (to === null) problems.push('“到”不是时间');
-  let userId: string | undefined;
-  if (user !== undefined) {
-    userId = /^usr_[0-9a-z]{26}$/.test(user) ? user : ((await ctx.deps.records.principals.findByName(user))?.id ?? '');
-  }
-  const filters = html`<form class="filters" method="get" action="/console/admin/calls">
-<label>用户 <input name="user" value="${user ?? ''}"></label><label>工具 <input name="tool" value="${tool ?? ''}"></label>
-<label>运行 <input name="run" value="${run ?? ''}"></label><label>从 <input name="from" value="${param(ctx, 'from') ?? ''}"></label>
-<label>到 <input name="to" value="${param(ctx, 'to') ?? ''}"></label><button type="submit">筛选</button></form>`;
-  if (problems.length > 0 || from === null || to === null) {
-    return { status: 400, body: page(ctx.chrome('调用日志'), html`${filters}<p class="error">${problems.join('；')}</p>`) };
-  }
-  const lines =
-    userId === ''
-      ? { items: [], next: null }
-      : await ctx.deps.records.callLog.query(ctx.principal, {
-          ...(userId === undefined ? {} : { userId }),
-          ...(tool === undefined ? {} : { tool }),
-          ...(run === undefined ? {} : { runId: run }),
-          ...(from === undefined ? {} : { from }),
-          ...(to === undefined ? {} : { to }),
-          limit: 100,
-          cursor: cursor ?? null,
-        });
-  const next = lines.next === null ? html`` : html`<p>${link('/console/admin/calls', '下一页', { user, tool, run, from: param(ctx, 'from'), to: param(ctx, 'to'), cursor: lines.next })}</p>`;
-  return { status: 200, body: page(ctx.chrome('调用日志'), html`${filters}${callTable(lines.items, true, await names(ctx, lines.items))}${next}`) };
 }

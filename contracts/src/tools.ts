@@ -19,6 +19,8 @@ export interface ToolDefinition {
   name: string;
   title: string;
   description: string;
+  /** The Chinese name the console shows for the tool; never published to models (tools.json and tools/list leave it out). */
+  label: string;
   input: z.ZodType;
   output: z.ZodType;
   effect: EffectClass;
@@ -246,6 +248,7 @@ export const SubmitResultOutput = Envelope.safeExtend({
 export const TOOLS: ToolDefinition[] = [
   {
     name: 'list_task_packs',
+    label: '查询任务包',
     title: 'List task packs',
     description: 'List the task packs you may use, with the inputs, parameters and requirements of each.',
     input: ListTaskPacksInput,
@@ -255,6 +258,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'upload_file',
+    label: '上传文件',
     title: 'Upload a file',
     description: 'Upload a local file as a source artifact. Returns a reference to use as a run input. Identical bytes give the same reference.',
     input: UploadFileInput,
@@ -265,6 +269,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'start_run',
+    label: '启动任务',
     title: 'Start a run',
     description: 'Freeze the work for a task pack: requirements, items, locked knowledge version and the pack procedure. Inputs are references from upload_file or external object identities.',
     input: StartRunInput,
@@ -275,6 +280,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'get_nodes',
+    label: '读取知识',
     title: 'Read knowledge nodes',
     description: 'Read subtrees of the knowledge tree locked by a run, or the content a reference points at.',
     input: GetNodesInput,
@@ -284,6 +290,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'resolve_reference',
+    label: '引用解析',
     title: 'Resolve a value to a reference',
     description:
       'Preview how an exact value or quotation resolves against the sources bound to a run (using run) or against a standalone knowledge root (using root). When run is given, resolves against run-bound sources, catalog commands and records. When root is given, resolves tree: addresses and constituent src: grounds without starting a run. Exactly one of run or root must be provided. The result is a preview and not evidence.',
@@ -294,6 +301,7 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'submit_result',
+    label: '提交结果',
     title: 'Submit results',
     description: 'Submit your results item by item. The Hub validates them and returns the receipt, partitions and the terminal state of every requirement. Repeating a submission returns the current result.',
     input: SubmitResultInput,

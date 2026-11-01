@@ -54,6 +54,12 @@ test('tools.json lists exactly the six tools, in the order of TOOLS', () => {
   );
 });
 
+test('every tool has a Chinese name for the console that is never published to models', () => {
+  for (const tool of TOOLS) assert.ok(CJK.test(tool.label), tool.name);
+  assert.equal(new Set(TOOLS.map((tool) => tool.label)).size, TOOLS.length, 'labels are unique');
+  for (const tool of tools) assert.ok(!('label' in tool), `${tool.name}: tools.json carries no console label`);
+});
+
 test('every tool has an English title and description', () => {
   for (const t of tools) {
     assert.ok(t.title.trim().length > 0 && t.description.trim().length > 0, t.name);

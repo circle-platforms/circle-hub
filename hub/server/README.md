@@ -19,7 +19,7 @@ administrator commands of `cli-admin.ts`.
 | `notes.ts` | admin notes and operator log text that records accept (no NUL, no lone surrogate, cut between code points) |
 | `upload.ts` | strict base64, media types (given, by name, sniffed), the parser structure summary |
 | `trace.ts`, `http.ts`, `release.ts` | W3C traceparent, Circle-Session-Id, loopback rules, body limits and the body budget, release.json |
-| `console/` | sign-in, sessions, CSRF, CSP, the pages (runs, run, knowledge, packs, admin, call logs) |
+| `console/` | sign-in, sessions, CSRF, CSP and the seven places of the design canvas: overview, tasks (list, waterfall and the run's record), knowledge, packs, connections, records, settings; the four operations and the command dialogs; `style.ts` the stylesheet, `ui.ts` the blocks, `status.ts` the task result |
 | `main.ts` | `serve [--migrate-only] [--migrate]`, `loadServerConfig` (serve refuses the operator token, commands accept it) |
 | `cli.ts` | `main(argv)`: user, token, logs, run, platform delegation, `registerCommand` |
 | `assemble.ts`, `assemble/`, `cli-admin.ts`, `testing-real.ts` | the assembly module (`assemble` for serve, `assembleCommand` for one command, `registerCommands`), the administrator commands and `operatorAdmin`, the real Hub for acceptance tests: see `assemble/README.md` |
@@ -239,6 +239,41 @@ Server-rendered HTML, no JavaScript, no external assets; `Content-Security-Polic
 by its hash. Every dynamic value goes through an escaping template (element text or double-quoted attributes only;
 links are fixed paths with encoded query parameters).
 
+The pages follow the design canvas (version 25) and the owner's choices in the simplification proposal of 2026-10-31
+(decision 77 in `docs/hub-r4-progress.md`):
+
+- **Seven places** in a side navigation: 总览 `/console/overview` (the home `/console` and a sign-in lead to), 任务
+  `/console/runs`, 知识库 `/console/knowledge`, 任务包 `/console/packs`, 连接 `/console/connections`, 记录
+  `/console/records`, 设置 `/console/settings`; the account and the sign-out button below them.
+- **Interface terms** (display rule 20): every vocabulary value is shown by `uiLabelOf`, its `ui` term where the model
+  gives one (引用校验 for the static layer, 未检查 for unchecked, 派发结果未确认 for quarantined, …), so the console
+  never shows the model's internal words; the text models read keeps `labelOf` (`claims.ts` and the counts of `text.ts`
+  take the labels as a parameter, `MODEL_LABELS` by default, `INTERFACE_LABELS` on the console). A task's result
+  (`task_result`) is derived from the partition list and the requirement statuses of the authoritative result in
+  `console/status.ts` only; an unknown terminal keeps a delivered task from 已通过.
+- **The task page** (`/console/runs/<run>`) puts the head and the execution process above the run's full record: the
+  call-log lines of the run (each bar the Hub's time on one call; the gap before a submission is Circle's time, which the
+  Hub does not observe), the Hub's checks of the authoritative result per requirement, the requests with their audience,
+  due time and whether they are answered, the dispatch jobs (administrators, through the optional `ServerDeps.dispatch`
+  view the assembly wires from the executor registry and `readRunJobs`) and the result. Times the Hub did not record are
+  not drawn. The list filters by task result and keeps the request and feeding sections.
+- **Style**: `console/style.ts` is the canvas's `hub.css` with the dark theme and reduced motion following the system;
+  the markup uses classes only (a `style` attribute would be refused by the CSP) and charts are SVG whose geometry is in
+  attributes. The command dialogs open on their fragment (`:target`) without a script.
+- **The read-only JSON interface** `/console/api/…` (`console/api.ts`, owner's choice of 2026-11-01 to build the read part
+  of the interface doc first): `me`, `overview?days=7|14|30`, `tasks[?pack&result&cursor]`, `tasks/<run>` (the waterfall's
+  steps, the requests and the calls), `knowledge/lines`, `knowledge/nodes?root&path&cursor`, `knowledge/diff?from&to`,
+  `knowledge/imports[/<job>]`, `packs`, `packs/<id>`, `systems`, `system-packs`, `environments`, `circles`, `records[?…]`,
+  `members`, `secrets`, `hub`. The pages' session and visibility, built from the same helpers; GET or HEAD only (405
+  otherwise); 401 in JSON without a session (no redirect); absent and forbidden alike 404 `SOURCE_UNAVAILABLE`; an error is
+  `{code, message, fix}` with `code` null where no code is registered (not signed in, a bad parameter); codes come with their
+  interface terms (`*_label`); token values and credential contents never appear. No write interface: the operations stay
+  forms. MCP standard authorization, invitation codes, one-time login links and live updates wait for the open items of the
+  interface doc.
+- **The neutral page** says “该内容不存在或无权查看” on the console (the MCP tools keep their own neutral text), the same
+  words whatever the path. A session that ended (revoked token, disabled account, expiry) returns to the login page with
+  a two-minute `circle_hub_ended` cookie scoped to `/console/login`, so the page says the sign-in ended, once.
+
 - **Sign-in**: `GET /console/login` issues a one-time nonce (server-side, 15 minutes) in the form and in a cookie
   scoped to `/console/login`; `POST /console/login` (form encoding, at most 8 KiB, from this server's own origin) needs
   the nonce in both and a token that authenticates. The session cookie `circle_hub_session` is a random id,
@@ -260,8 +295,8 @@ links are fixed paths with encoded query parameters).
   root compositions, a tree browser over `getNodes`, a version diff over `diffRoots`; a user sees the lines bound by a pack
   assigned to them, the server checks this before `builds` and `diffRoots`, which take no principal); packs
   (`PackCatalogPort`); admin (users, tokens without values, assignments and their decisions, resources with addresses,
-  call logs with user/tool/run/time filters and admin notes). Non-admins get the neutral page for admin pages, and absent
-  or forbidden runs and roots give the same 404 "对你不可用".
+  call logs with user/tool/run/time filters and admin notes; a member sees their own calls on `/console/records`). Non-admins
+  get the neutral page for admin pages, and absent or forbidden runs and roots give the same 404.
 
 - **Production results**: `/console/results` lists the visible runs whose requirements all accept fact producers,
   newest first, with `pack` and exact `build` filters. It retains the service's next cursor even when filtering leaves
@@ -303,8 +338,16 @@ The refresh target reader follows the [HTML shared declarative refresh steps](ht
 
 ## Management in the console (decision 75)
 
-Owner decision 75 (2026-10-31): administrators manage the Hub from the browser. `/console/admin` carries the user and
-token forms; `/console/admin/packs`, `/resources`, `/secrets` and `/knowledge` the others. Every action is a POST form
+Owner decision 75 (2026-10-31): administrators manage the Hub from the browser. Decision 77 keeps four of the operations
+as console pages under `/console/operations/`: adding a member (`member-add`: `user create`, then `token issue`, the token
+shown once with this Hub's Circle entry), connecting a business system (`system-add`: `resource add`, then `secret set` for
+the credentials typed with it), publishing a task pack (`pack-publish`) and importing knowledge (`knowledge-sync`). Every
+other operation (disabling a member, disconnecting a Circle, a spare login token, changing or withdrawing a credential,
+switching a system or a product pack, use and maintenance of a pack, retiring a version, an environment, the stopping
+platform commands) is a button that opens a dialog with its `circle-hub` command and the real ids, for the administrator's
+Circle on the Hub's host (`console/commands.ts`). The actions of decision 75 stay as they were; `/console/admin` shows the
+settings page, `/console/admin/calls` the records, and `/packs`, `/resources`, `/secrets` and `/knowledge` the task packs,
+connections, settings and the import page. Every action is a POST form
 to `/console/admin/do/<action>` (`console/manage.ts` `ACTIONS`): this server's own origin, the session's CSRF token and
 an administrator's session, else 403 or the neutral 404. It runs the matching `circle-hub` command through the command
 bridge (`command-bridge.ts`): the CLI's `main()` in this process with serve's own `CIRCLE_HUB_*` environment and the

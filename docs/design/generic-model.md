@@ -73,10 +73,13 @@ Hub 是标准 MCP 服务器（D06）：本地 Circle、bot 和其他客户端共
 | `requirement_status` | 要求满足状态 | 满足、未满足、未决 |
 | `partition` | 分区 | 已交付、已拒收、已隔离、未完成 |
 | `acceptance` | 回执 | 已受理、未受理 |
+| `task_result` | 任务结果 | 已通过、已交付（含未决项）、已交付（含未满足项）、已拒收、未完成、派发结果未确认、等待提交中、已放弃 |
+
+取值和轴还可以带界面用语（`ui`）。控制台只经 `uiLabelOf(轴, 代码)` 取词，带界面用语的显示界面用语（例如“已隔离”显示为“派发结果未确认”，“未核对”显示为“未检查”），返回给模型的文字仍用标签；一个任务的结果由分区与要求项满足状态推出，未知不显示为通过（显示规则 20）。
 
 每个条目恰好落在一个分区里：分区两两不交，并集等于条目集；跨条目主张单独列出，不计入分区（V05）。要求项只在它声明的判定层上有终态，其余层显示“本层不适用”（V03）。
 
-错误码也有登记，同样生成到 `contracts/generated/protocol.ts`：协议码 `PROTOCOL_CODES` 来自模型（例如 `QUOTE_MISMATCH`、`SOURCE_UNAVAILABLE`），核心部件的违规码 `CORE_VIOLATION_CODES`（`core.<部件>.<码>`）来自 `contracts/codes.json`；登记表的历史字段 `interpreter` 表示发出该码的核心部件，不表示可安装的解释器。包校验判断错误处理行是否用得上时：解释器发出的码核对该要求项的检查是否使用对应解释器；回注准入发出的 `core.contribution.*` 核对 `workflow.contribution.requirement` 是否指向该要求项。码表不增加字段；任务包的码挂在包名下，例如 `case-review.<码>`。缺失与无权一律返回 `SOURCE_UNAVAILABLE`，显示“对你不可用”。引用有四种形式：`src:`（源文件或片段）、`tree:`（知识树节点）、`entry:`（知识条目）、`rec:`（Hub 记录）。
+错误码也有登记，同样生成到 `contracts/generated/protocol.ts`：协议码 `PROTOCOL_CODES` 来自模型（例如 `QUOTE_MISMATCH`、`SOURCE_UNAVAILABLE`），核心部件的违规码 `CORE_VIOLATION_CODES`（`core.<部件>.<码>`）来自 `contracts/codes.json`；登记表的历史字段 `interpreter` 表示发出该码的核心部件，不表示可安装的解释器。包校验判断错误处理行是否用得上时：解释器发出的码核对该要求项的检查是否使用对应解释器；回注准入发出的 `core.contribution.*` 核对 `workflow.contribution.requirement` 是否指向该要求项。码表不增加字段；任务包的码挂在包名下，例如 `case-review.<码>`。缺失与无权一律返回 `SOURCE_UNAVAILABLE`：工具显示“对你不可用”，控制台显示“该内容不存在或无权查看”。引用有四种形式：`src:`（源文件或片段）、`tree:`（知识树节点）、`entry:`（知识条目）、`rec:`（Hub 记录）。
 
 ## 第一个里程碑用到哪些
 

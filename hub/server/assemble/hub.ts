@@ -9,7 +9,7 @@ import { productVariableNameAvailable } from '../variables.ts';
 // left in the vault is never read.
 // Nothing here reads the environment, a file outside the data directory, or a credential value.
 import { join } from 'node:path';
-import { DispatchService, freezeEffectRegistry } from '../../dispatch/api.ts';
+import { DispatchService, ExecutorRegistry, freezeEffectRegistry } from '../../dispatch/api.ts';
 import type { HubConfig } from '../../config/index.ts';
 import {
   createConnectors,
@@ -219,6 +219,18 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     parsers,
     ...(now === undefined ? {} : { now }),
     products: packs,
+    // The console's read-only view of dispatch: the registry and readRunJobs recheck the administrator themselves.
+    dispatch: {
+      executors: async (by) => (await new ExecutorRegistry(records).sources(by)).map((entry) => ({
+        id: entry.id, target: entry.source.target, endpoint: entry.source.endpoint, enabled: entry.source.enabled, resources: [...entry.source.resources],
+      })),
+      jobs: async (by, run) => (dispatch === null ? [] : (await readRunJobs(records, dispatch, by, run)).map((job) => ({
+        job: job.job, outcome: job.status.outcome, frozen: job.status.frozen, phase: job.status.phase,
+        ...(job.status.disposition === undefined ? {} : { disposition: job.status.disposition }),
+        ...(job.status.missing_fact === undefined ? {} : { missing_fact: job.status.missing_fact }),
+        ...(job.status.next_action === undefined ? {} : { next_action: job.status.next_action }),
+      }))),
+    },
   };
   return { deps, config, records, parsers, registry, packs, workflows, catalog, connectors, external, runsExternal, resources, docs, knowledge, runs, leases: leases as LeaseService, dispatch, notes, notices };
 }
