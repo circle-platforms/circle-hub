@@ -120,7 +120,7 @@
       },
       "response": "json",
       "envelope": "when_present",
-      "max_bytes": 1048576,
+      "max_bytes": 16777216,
       "timeout_ms": 60000,
       "read": true,
       "description": "按编号读一条构建记录（缺陷读法用它带出发现构建的名字）"
