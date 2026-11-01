@@ -26,8 +26,8 @@ function truncatedRefusal(page:{unknown_only?:boolean;unknown_entries?:number},n
  const said=notes.length?`视图说明：${notes.join('；')}`:'视图没有给出说明';
  const unknown=page.unknown_only===true&&(page.unknown_entries??0)>0?page.unknown_entries!:0;
  const claim={grounds:grounds.slice(0,20),provenance:'projected' as const,coverage:{complete:false,examined:delivered,note:unknown>0?`另有 ${unknown} 个条目取值未知`:'最后一页仍被截断'}};
- if(unknown>0&&!disclosing)return [`知识视图仍有未交付的内容：只因 ${unknown} 个条目取值未知而截断，这个输入槽不接受带未知条目的视图`,'收窄 only= 或 fields= 去不掉这些未知条目：照视图说明补齐它们后再重新开运行（说明里写了谁来补、怎么补），或改用声明接受未知条目的任务包',{...claim,missing:`${unknown} 个条目的取值；${said}`}];
- return ['知识视图仍有未交付的内容：最后一页被截断，不只是因为条目取值未知（还有条目没有交付）',`${NARROW_FIX}；视图说明里点名的来源或凭据问题要管理员处理`,{...claim,missing:`没有交付的条目；${said}`}];
+ if(unknown>0&&!disclosing)return [`知识视图仍有未交付的内容，不能作为完整绑定：只因 ${unknown} 个条目取值未知而截断，这个输入槽不接受带未知条目的视图`,'收窄 only= 或 fields= 去不掉这些未知条目：照视图说明补齐它们后再重新开运行（说明里写了谁来补、怎么补），或改用声明接受未知条目的任务包',{...claim,missing:`${unknown} 个条目的取值；${said}`}];
+ return ['知识视图仍有未交付的内容，不能作为完整绑定：最后一页被截断，不只是因为条目取值未知（还有条目没有交付）',`${NARROW_FIX}；视图说明里点名的来源或凭据问题要管理员处理`,{...claim,missing:`没有交付的条目；${said}`}];
 }
 
 export async function completeKnowledgeView(id:string,context:ExternalReadContext,external:ExternalReaderPort,records:{artifacts:Artifacts;store:RecordStore},options:{unknownEntries?:'disclose'}={}):Promise<ExternalRead>{

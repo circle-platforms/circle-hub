@@ -139,7 +139,7 @@ test('the refusal says which truncation it is, carries the view notes as the mis
   const w = world({ [FACET_ID]: facet(UNKNOWN) });
   const refused = (await w.bind(FACET_ID)).read as Extract<ExternalRead, { ok: false }>;
   const error = refused.inputError!;
-  assert.match(error.message, /知识视图仍有未交付的内容：只因 40 个条目取值未知而截断，这个输入槽不接受带未知条目的视图/);
+  assert.match(error.message, /知识视图仍有未交付的内容，不能作为完整绑定：只因 40 个条目取值未知而截断，这个输入槽不接受带未知条目的视图/);
   assert.equal(error.missing, `40 个条目的取值；视图说明：${UNKNOWN.notes[0]}`);
   assert.deepEqual(error.grounds, [`src:${sha(FACET_ID)}`], 'the refusal rests on the view page it read');
   assert.equal(error.provenance, 'projected');
