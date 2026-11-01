@@ -174,7 +174,7 @@ ${kpi('等待回应中的请求', count(requests.length), { unit: '条', note: '
   const body = html`${liveModule('overview-kpis', ['task.updated', 'request.updated'], kpis)}
 ${liveModule('overview-today', ['task.updated'], html`<section class="card section"><div class="card-h"><h3>今日任务</h3><span class="meta">每行一个任务，点击查看执行过程</span></div>${await todayTasks(ctx, today, titles, now)}</section>`)}
 ${liveModule('overview-results', ['task.updated'], html`<section class="grid g-2-1 section">${daily}${checkCard}</section>`)}
-${liveModule('overview-state', ['task.updated', 'system.added', 'knowledge.published'], html`<section class="grid g3 section">${stuckCard}${systems}${knowledge}</section>`)}
+${liveModule('overview-state', ['task.updated', 'system.added', 'system.status', 'knowledge.published'], html`<section class="grid g3 section">${stuckCard}${systems}${knowledge}</section>`)}
 ${sectionHead('规划中的功能', '已规划、尚未上线的功能，上线后在此处启用')}
 <section class="grid g3">${plannedCard('多终端协同', '各终端 Circle 的工作状态同步至 Hub，可在任一终端继续任务。', 'terminal')}${plannedCard('消息通知', '经 Hub 收发消息、转交任务；需先开放“消息通知”。', 'chat')}${plannedCard('定时任务与机器人', '按时间或事件自动执行知识导入、系统巡检与未知项汇总。', 'clock')}</section>
 ${sectionHead('运行状况', '服务、证书、数据库、备份与记录')}

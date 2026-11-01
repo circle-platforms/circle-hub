@@ -343,8 +343,11 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   version}`, `knowledge.published {product, line}` (readable lines), `system.added {system}` (held 6 s, past the resource
   catalog's cache), `member.connected {user}` (a token used for the first time; administrators and that member) and
   `import.progress {job}` (administrators). One poller reads the records and call logs every 2 s while a stream is open,
-  so commands of other processes are seen too. `environment.status` and `system.status` are never sent: nothing records
-  the state of an environment or a business system. A live module carries `data-live="<events>"` and a stable id; on an
+  so commands of other processes are seen too. The state the records hold of a business system or a runtime environment
+  is its configuration: a later `resource_config` decision on a system (enabled, disabled, changed) is `system.status
+  {system}`, held 6 s like `system.added`, and any decision on an executor (`executor.<id>`) is `environment.status
+  {environment}`, both for administrators. Response times, occupancy and freezing are recorded nowhere, so no event
+  claims them. A live module carries `data-live="<events>"` and a stable id; on an
   event the script fetches its own page (`circle-hub-refresh: live`, which does not count as session activity, so an
   unattended page still reaches the idle limit) and swaps those modules, keeping the scroll position and leaving a module
   alone while it holds an open dialog or a focused field; when the stream breaks the page says 连接中断 with the time of

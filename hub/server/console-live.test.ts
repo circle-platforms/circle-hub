@@ -390,8 +390,13 @@ describe('events and their audience', () => {
     assert.deepEqual(eventsOf({ kind: 'root_pointer', digest: DIGEST, body: { product: 'line-a', line: null } }), [{ name: 'knowledge.published', data: { product: 'line-a', line: null } }]);
     const system = { permission: 'resource_config', subject: '*', object: `res_${'f'.repeat(26)}`, revoked: false, supersedes: null };
     assert.deepEqual(eventsOf({ kind: 'authorization', digest: DIGEST, body: system }), [{ name: 'system.added', data: { system: system.object } }]);
-    assert.deepEqual(eventsOf({ kind: 'authorization', digest: DIGEST, body: { ...system, supersedes: DIGEST } }), [], 'an update is not a new system');
+    // A later decision (enabled, disabled, changed) is a change of state, not a new system.
+    assert.deepEqual(eventsOf({ kind: 'authorization', digest: DIGEST, body: { ...system, supersedes: DIGEST } }), [{ name: 'system.status', data: { system: system.object } }]);
+    assert.deepEqual(eventsOf({ kind: 'authorization', digest: DIGEST, body: { ...system, revoked: true, supersedes: DIGEST } }), [{ name: 'system.status', data: { system: system.object } }]);
+    // A runtime environment is the configuration of an executor.
+    assert.deepEqual(eventsOf({ kind: 'authorization', digest: DIGEST, body: { ...system, object: 'executor.bench-1' } }), [{ name: 'environment.status', data: { environment: 'bench-1' } }]);
     assert.deepEqual(eventsOf({ kind: 'authorization', digest: DIGEST, body: { ...system, object: 'secret:DEMO' } }), []);
+    assert.deepEqual(eventsOf({ kind: 'authorization', digest: DIGEST, body: { ...system, permission: 'publish' } }), []);
     assert.deepEqual(eventsOf({ kind: 'tree_node', digest: DIGEST, body: { run: RUN } }), []);
   });
 
@@ -423,6 +428,11 @@ describe('events and their audience', () => {
     assert.equal(await visibleTo(ctx(false, 'usr_me'), event('member.connected', { user: 'usr_else' })), false);
     assert.equal(await visibleTo(ctx(false), event('task.updated', { run: RUN })), true);
     assert.equal(await visibleTo(ctx(false), event('task.updated', { run: `run_${'z'.repeat(26)}` })), false);
-    for (const name of ['system.status', 'environment.status'] as const) assert.equal(await visibleTo(ctx(true), event(name, {})), false, `${name} has no source`);
+    // A system's state goes to administrators who see the system; an environment's to administrators.
+    assert.equal(await visibleTo(ctx(true), event('system.status', { system: 'res_x' })), true);
+    assert.equal(await visibleTo(ctx(true), event('system.status', { system: 'res_other' })), false);
+    assert.equal(await visibleTo(ctx(false), event('system.status', { system: 'res_x' })), false);
+    assert.equal(await visibleTo(ctx(true), event('environment.status', { environment: 'bench-1' })), true);
+    assert.equal(await visibleTo(ctx(false), event('environment.status', { environment: 'bench-1' })), false);
   });
 });
