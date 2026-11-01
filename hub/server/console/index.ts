@@ -15,7 +15,7 @@ import { cookiesOf, mediaTypeOf, readBody, sendJson, setCommonHeaders } from '..
 import { connectionsPage } from './connections.ts';
 import { handleApi, type ApiResult } from './api.ts';
 import { CONTENT_SECURITY_POLICY, code, html, link, page, pre, type Html, type PageChrome } from './html.ts';
-import { ACTIONS, completeSetup, jobPage, runAction, type Form, type JobStore } from './manage.ts';
+import { ACTIONS, completeSetup, isPackStep, jobPage, runAction, type Form, type JobStore } from './manage.ts';
 import { operationsPage } from './operations.ts';
 import { overviewPage } from './overview.ts';
 import { packPage, packsPage } from './packs.ts';
@@ -25,6 +25,7 @@ import { resultPage, resultsPage } from './results.ts';
 import { circleEntry, settingsPage, trustSteps, type HubFacts } from './settings.ts';
 import { planned, stepper } from './ui.ts';
 import { LOGIN_COOKIE, SESSION_COOKIE, SECURE_LOGIN_COOKIE, SECURE_SESSION_COOKIE, cookie, type ConsoleSession, type SessionStore } from './session.ts';
+import type { PackStaging } from './staging.ts';
 import { UploadError, boundaryOf, parseMultipart } from './upload.ts';
 
 export interface ConsoleOptions {
@@ -39,6 +40,8 @@ export interface ConsoleOptions {
   bridge?: CommandBridge;
   /** Background management runs (knowledge sync) of this process. */
   jobs: JobStore;
+  /** Task packs that passed the check of 发布任务包 and wait for its 发布 step, in this process. */
+  staging: PackStaging;
   /** The process serving the console, for the Hub's state on the settings and overview pages. */
   hub?: HubFacts;
 }
@@ -275,7 +278,7 @@ const ADMIN_PAGES: Record<string, Route> = {
   packs: (ctx) => packsPage(ctx),
   resources: (ctx) => connectionsPage(ctx),
   secrets: (ctx, _rest, options, session) => settingsPage(ctx, bridgeRun(options, session)),
-  knowledge: (ctx, _rest, options) => operationsPage(ctx, 'knowledge', options.jobs),
+  knowledge: (ctx, _rest, options) => operationsPage(ctx, 'knowledge', options.jobs, options.staging),
 };
 
 const ROUTES: Record<string, Route> = {
@@ -292,7 +295,7 @@ const ROUTES: Record<string, Route> = {
   connections: (ctx, rest) => (rest.length === 0 ? connectionsPage(ctx) : Promise.resolve(neutralPage(ctx))),
   records: (ctx, rest) => (rest.length === 0 ? recordsPage(ctx, '/console/records') : Promise.resolve(neutralPage(ctx))),
   settings: (ctx, rest, options, session) => (rest.length === 0 ? settingsPage(ctx, bridgeRun(options, session)) : Promise.resolve(neutralPage(ctx))),
-  operations: (ctx, rest, options) => (rest.length <= 1 ? operationsPage(ctx, rest[0], options.jobs) : Promise.resolve(neutralPage(ctx))),
+  operations: (ctx, rest, options) => (rest.length <= 1 ? operationsPage(ctx, rest[0], options.jobs, options.staging) : Promise.resolve(neutralPage(ctx))),
   admin: (ctx, rest, options, session) => {
     if (!ctx.admin) return Promise.resolve(neutralPage(ctx));
     if (rest.length === 0) return settingsPage(ctx, bridgeRun(options, session));
@@ -313,13 +316,14 @@ async function action(request: IncomingMessage, response: ServerResponse, option
     request.resume();
     return neutralPage(ctx);
   }
-  if (name !== 'pack-publish' && !Object.hasOwn(ACTIONS, name)) {
+  if (!isPackStep(name) && !Object.hasOwn(ACTIONS, name)) {
     request.resume();
     return neutralPage(ctx);
   }
   let form: Form;
   let upload: Buffer | undefined;
-  if (name === 'pack-publish') {
+  // The check of 发布任务包 takes the uploaded zip; every other action, the 发布 of a stage included, is a plain form.
+  if (name === 'pack-stage') {
     const boundary = boundaryOf(request.headers['content-type']);
     if (boundary === null) {
       request.resume();
@@ -358,7 +362,7 @@ async function action(request: IncomingMessage, response: ServerResponse, option
     forbidden(response, '表单已过期或不是本控制台发出的，请刷新页面后重试');
     return null;
   }
-  return runAction(ctx, { bridge: options.bridge, jobs: options.jobs, log: options.log }, name, form, session.token, upload);
+  return runAction(ctx, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log }, name, form, session.token, upload);
 }
 
 /** What a page or an interface answer of one signed-in request knows; user names are cached for the request. */

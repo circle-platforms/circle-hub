@@ -16,6 +16,7 @@ import type { AppOptions, HubApp, ListenInfo, ServerDeps } from './api.ts';
 import { handleConsole } from './console/index.ts';
 import { JobStore } from './console/manage.ts';
 import { SessionStore } from './console/session.ts';
+import { PackStaging } from './console/staging.ts';
 import { BodyBudget, allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
 import { handleLocalTools, localToolsTarget } from './local-tools.ts';
 import { handleMcp } from './mcp.ts';
@@ -80,6 +81,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const closeGraceMs = options.closeGraceMs ?? 15_000;
   const clock = deps.now ?? (() => new Date());
   const sessions = new SessionStore(() => clock().getTime());
+  const staging = new PackStaging(() => clock().getTime());
   const budget = new BodyBudget(options.maxInflightBodyBytes ?? 4 * deps.config.limits.maxRequestBytes);
   let hosts = allowedHosts(host, deps.config.port, declared);
   let secureHosts = https ? allowedHosts(https.host, https.port, declared, 443) : new Set<string>();
@@ -95,6 +97,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const consoleOptions = {
     deps, sessions, ownOrigins: () => origins, log,
     jobs: new JobStore(clock),
+    staging,
     hub: { release, startedAt: clock(), certificate: options.tls?.cert ?? null },
     ...(options.bridge ? { bridge: options.bridge } : {}),
     // Forwarded headers never establish the HTTPS channel; only the built-in TLS listener, or the configured proxy
@@ -245,6 +248,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
         await Promise.allSettled([...inflight]);
       }
       sessions.clear();
+      await staging.clear();
     })());
 
   return { handler, listen, close, release };
